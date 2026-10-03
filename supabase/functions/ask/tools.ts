@@ -1650,10 +1650,30 @@ export function engineFindings(
     .map((f) => ({
       type: f.type as string,
       priorityClass: f.priorityClass === 'safety' ? 'safety' : 'insight',
-      payload: f.payload ?? f,
+      payload: relayPayload(f.payload ?? f),
     }))
-  relayed.sort((a, b) => rankPriority(a.priorityClass) - rankPriority(b.priorityClass))
+  // EN-9 (PR-23, AC 7): a watched concern ("with your vet") follows every other safety finding,
+  // never dropped, never above a raised one.
+  relayed.sort((a, b) => rankPriority(a.priorityClass) - rankPriority(b.priorityClass) || watchedRank(a) - watchedRank(b))
   return { kind: 'engine_findings', findings: relayed, hasFindings: relayed.length > 0, relayOnly: true }
+}
+
+// EN-9 (Engines v3 PR-23, CUL-1417): the model sees a concern's care state as its STATE WORD
+// only, beside the engine's own sentence (which already says "You said … vet knows" with its
+// date and count). The reference counts, the answer id and the re-raise reason are the engine's
+// working, not facts about the pet, and a model handed "with_vet" plus a reference is a
+// paraphrase away from "under control" (BRK-13; validateAnswer's screens are the backstop).
+function relayPayload(payload: unknown): unknown {
+  if (!payload || typeof payload !== 'object') return payload
+  const p = payload as Record<string, unknown>
+  if (!('careState' in p)) return payload
+  const state = (p.careState as { state?: unknown } | null)?.state
+  return { ...p, careState: typeof state === 'string' ? { state } : null }
+}
+
+function watchedRank(f: RelayedFinding): number {
+  const state = ((f.payload as { careState?: { state?: unknown } } | null)?.careState)?.state
+  return state === 'with_vet' || state === 'recheck_booked' ? 1 : 0
 }
 
 function rankPriority(p: 'safety' | 'insight'): number {

@@ -1160,6 +1160,20 @@ Deno.test('engineFindings — relay only, safety-first, empty = engine silent (n
   assert.equal(empty.findings.length, 0)
 })
 
+Deno.test('engineFindings — EN-9: a watched concern follows a raised one and reaches the model as its state word only', () => {
+  const watched = {
+    type: 'symptom_chronicity', priorityClass: 'safety',
+    payload: { text: 'with your vet …', careState: { state: 'with_vet', ackId: 'a', reference: { episodes: 8 }, reason: null, text: 'with your vet …' } },
+  }
+  const raised = { type: 'symptom_worsening', priorityClass: 'safety', payload: { text: 'worth a word …', careState: { state: 'raised' } } }
+  const r = engineFindings([watched, { type: 'reflection', priorityClass: 'insight', payload: {} }, raised])
+  assert.deepEqual(r.findings.map((f) => f.type), ['symptom_worsening', 'symptom_chronicity', 'reflection'])
+  assert.deepEqual((r.findings[1].payload as { careState: unknown }).careState, { state: 'with_vet' })
+  assert.equal((r.findings[1].payload as { text: string }).text, 'with your vet …', 'the engine\'s sentence is relayed whole')
+  // A finding with no care state is passed through untouched.
+  assert.deepEqual(engineFindings([{ type: 'intake_decline', priorityClass: 'safety', payload: { b: 2 } }]).findings[0].payload, { b: 2 })
+})
+
 Deno.test('engineFindings — a stood-down marker (CUL-786) is never relayed and never counts as a finding', () => {
   // The marker rides ai_signals.findings beside real findings but is the engine SAYING a card
   // stopped. Alone it must read as "engine silent" (never an all-clear from either side), and

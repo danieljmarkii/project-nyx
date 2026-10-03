@@ -649,14 +649,6 @@ export function readPriorCare(raw: unknown, cfg: CareStateConfig): Map<string, P
 
 // ── Copy (template-only, AC 8; nyx-voice pass at PR-35) ───────────────────────
 
-const SIGN_NOUN: Partial<Record<SymptomType, string>> = {
-  vomit: 'Vomiting',
-  diarrhea: 'Loose stool',
-  itch: 'Itching',
-  scratch: 'Scratching',
-  skin_reaction: 'Skin irritation',
-  cough: 'Coughing',
-}
 
 /** The source sentence, verbatim from §3.3: always "you said", never "your vet saw". */
 export function sourceSentence(ack: AckFact, petName: string, today: number, tz: string | undefined, drugLabel: string | null): string {
@@ -712,12 +704,13 @@ function sinceLine(sign: SymptomType, ack: AckFact, ix: DayIndex, args: CareStat
   return `Since ${sinceOn}, ${plural(n, 'day', 'days')}: ${plural(c.count as number, 'episode', 'episodes')}, with something logged on ${c.logged} of ${n}.`
 }
 
-function backBecauseLine(r: ReRaise, petName: string, today: number): string {
+function backBecauseLine(r: ReRaise, sign: SymptomType, petName: string, today: number): string {
+  const label = SYMPTOM_LABEL[sign]
   switch (r.reason) {
     case 'rate':
-      return `Back because it's coming more often.`
+      return `Back because the ${label} is coming more often.`
     case 'dense':
-      return `Back because it's been logged on ${r.denseDays} of the last 7 days.`
+      return `Back because ${possessive(petName)} ${label} has been logged on ${r.denseDays} of the last 7 days.`
     case 'co_sign': {
       const cs = r.coSign!
       const since = formatDay(cs.sinceDay, today)
@@ -790,7 +783,7 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, args) => {
     const source = sourceSentence(ack, args.petName, ix.today, tz, drug)
     if (rr || latched) {
       const reason: ReRaiseReason = rr?.reason ?? priorSame?.reason ?? 'rate'
-      const back = rr ? backBecauseLine(rr, args.petName, ix.today) : `Back because something changed since your answer.`
+      const back = rr ? backBecauseLine(rr, sign, args.petName, ix.today) : `Back because something changed since your answer.`
       const pair = rr ? pairLine(rr, reference, ix.today) : null
       const fact: CareStateFact = {
         state: 'raised_again', ackId: ack.id, source: ack.source, anchorOn: ack.anchorOn, reference, reason, recheckOn: null,
@@ -802,7 +795,7 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, args) => {
       return fact
     }
     const recheck = recheckFor(sign, ack, args)
-    const head = `${possessive(args.petName)} ${(SYMPTOM_NOUN_LOWER[sign] ?? SYMPTOM_LABEL[sign])}, with your vet.`
+    const head = `${possessive(args.petName)} ${SYMPTOM_LABEL[sign]}, with your vet.`
     const tail = recheck
       ? `Recheck booked for ${formatDay(recheck.day, ix.today)}.`
       : sinceLine(sign, ack, ix, args, cfg)
@@ -826,9 +819,6 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, args) => {
   return rankWatchedLast(decorated)
 }
 
-const SYMPTOM_NOUN_LOWER: Partial<Record<SymptomType, string>> = Object.fromEntries(
-  Object.entries(SIGN_NOUN).map(([k, v]) => [k, (v as string).toLowerCase()]),
-) as Partial<Record<SymptomType, string>>
 
 /** Where a raised_again row's lane sentence goes. */
 const LANE_TOKEN = '{lane}'

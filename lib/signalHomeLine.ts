@@ -23,6 +23,7 @@
 // The headline IS `signalTitle` — the screen's title — so the owner lands on the screen
 // they tapped, by name.
 
+import { careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { onsetMonth, stripDayUTC } from './signalCopy';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
@@ -183,7 +184,9 @@ export function signalHomeLine(finding: SignalFinding, trial: SignalTrialWindow 
     eyebrow: eyebrow(finding),
     headline,
     count: countLine(finding),
-    ask: finding.priorityClass === 'safety' ? signalHomeAsk(finding) : null,
+    // EN-9 (PR-23): a concern the owner said the vet knows about asks nothing until a tested
+    // change brings it back (`raised_again` keeps the lane's ask word for word).
+    ask: finding.priorityClass === 'safety' && !careStateQuietsAsk(finding) ? signalHomeAsk(finding) : null,
   };
 }
 

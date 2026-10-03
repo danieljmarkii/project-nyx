@@ -629,6 +629,32 @@ Deno.test('leadingSafetyText: returns the first live safety finding verbatim, el
   )
 })
 
+Deno.test('EN-9 AC 7: a watched concern leads only when nothing raised is live, and the screens hold over its sentence', () => {
+  const watched = {
+    type: 'symptom_chronicity', priorityClass: 'safety',
+    payload: { text: "Nyx's vomiting, with your vet. You said on Sep 16 Nyx's vet knows. Since Sep 16, 14 days: 3 episodes, with something logged on 14 of 14.", careState: { state: 'with_vet' } },
+  }
+  const raised = { type: 'symptom_chronicity', priorityClass: 'safety', payload: { text: 'Coughing for Nyx … worth a word with your vet.', careState: { state: 'raised' } } }
+  const back = { type: 'symptom_chronicity', priorityClass: 'safety', payload: { text: 'Back because the vomiting is coming more often. … worth booking a vet visit.', careState: { state: 'raised_again' } } }
+  // Even where a stale or edited cache put the watched one first.
+  assert.equal(leadingSafetyText([watched, raised]), raised.payload.text)
+  assert.equal(leadingSafetyText([watched, back]), back.payload.text)
+  // Alone, it still leads: a watched concern is never dropped from the safety lead.
+  assert.equal(leadingSafetyText([watched]), watched.payload.text)
+  // The verdicts a model could hang on "with your vet" are rejected (BRK-13).
+  const allowed = new Set(['16', '14', '3'])
+  for (const bad of [
+    "Nyx's vomiting is under control since the Sep 16 visit, with 3 episodes logged.",
+    "The vet has it covered: 3 episodes since Sep 16.",
+    "The Cerenia seems to be helping; 3 episodes since Sep 16.",
+    "It's in the vet's hands now, with 3 episodes logged since Sep 16.",
+  ]) {
+    assert.equal(validateAnswer({ text: bad, allowedNumerals: allowed, mode: 'data' }).ok, false, bad)
+  }
+  // The honest relay passes.
+  assert.equal(validateAnswer({ text: 'You said on Sep 16 Nyx\'s vet knows. 3 episodes are logged since, with something logged on 14 of 14 days.', allowedNumerals: allowed, mode: 'data' }).ok, true)
+})
+
 Deno.test('leadingSafetyText: a safety-class finding with no text still surfaces (keys on class, not prose)', () => {
   const lead = leadingSafetyText([{ type: 'symptom_worsening', priorityClass: 'safety', payload: {} }], 'Biscuit')
   assert.ok(lead && lead.includes('safety flag') && lead.includes('Biscuit'))

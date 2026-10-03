@@ -141,6 +141,8 @@ const ALLOWED: Record<string, string> = {
     'The one Modal (C-14), which passes the panel\u2019s onSave straight through to the host and never inspects its payload. Registered because it names the field in that signature, not because it decides anything with it \u2014 and a registry entry describes what the file HANDLES, so a pass-through says so plainly.',
   'hooks/useTrialLifecycle.ts':
     'The lifecycle host that carries the minted boolean to the one write path (changeWindow \u2192 changeTrialWindow), passing false as false rather than folding it into null — the column keeps three states. It renders the value nowhere; the only thing it renders from these columns is the refusal sentence, phrased from structured fields. Moved here from the Pet tab by CUL-1299 (TS-3) so the trial screen can share it; `components/trial/TrialLifecycleSheets.tsx` hands the sheet\u2019s onSave to it without naming the field, and so is not an entry.',
+  'supabase/functions/generate-signal/index.ts':
+    'EN-9\'S ANSWER BOUND (CUL-1417, PR-23; care-state spec §3.2). readCareRecord reads target_duration_days_initial, ALONE of the three, and only for a trial an owner\'s "the vet started this trial for it" answer names, behind engines_v3_en9. It decides one thing: the answer stops counting at the end of the trial\'s INITIAL target, so an extension re-asks instead of silently extending a "with your vet". It is mapped onto the pure step\'s scope (careState.ts `initialTargetDays`) and never cached, rendered, phrased or handed to a model; the CareStateFact the Signal caches carries no trial field. Never set_at, never vet_directed.',
 };
 
 /** Every non-test source in the tree, derived from the REPOSITORY rather than from a list

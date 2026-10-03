@@ -530,6 +530,14 @@ const WALK: WalkRow[] = [
     check_in: { now: false, decision: 'NO — a look is not a sign a drug moves, and it never reaches a context line (the logging pull excludes it; see the whole-source row).' },
   },
   {
+    list: 'coSignsFor (supabase/functions/generate-signal/careState.ts)',
+    governs: 'EN-9\'s C1a co-signs (CUL-1417, ruled 2026-10-02): which other sign, on 2+ days after the owner\'s answer and new against the 28 days before it, brings a watched concern back. Presence only, never a count',
+    read: () => scan('supabase/functions/generate-signal/careState.ts', 'export function coSignsFor', '\n}'),
+    cough: { now: false, decision: 'NO — C1a: "itch, scratch, skin and cough concerns take no co-signs in v1 (cough already has the pair trigger)", and cough is never a co-sign for vomiting either: the pair trigger is its own rule (GAP-29), keyed on cough turning CHRONIC, not on two cough days.' },
+    sneeze: { now: false, decision: 'NO — no lane reads sneeze, and C1a names none.' },
+    check_in: { now: false, decision: 'NO — C1b ruled B (2026-10-02): a look never enters the engine and raises nothing; T-5 holds.' },
+  },
+  {
     list: 'LOOK_WORDS + LOOK_HEAD_WORDS (constants/lookWords.ts)',
     governs: 'the look vocabulary — the one list on this table that must contain NO symptom leaf, ever',
     read: () => scan('constants/lookWords.ts', 'const CAT_WORDS', 'export const LOOK_VOCAB_VERSION'),
@@ -671,7 +679,8 @@ describe('membership walk (HR-6) — every list decided, current state == decide
     // +1 (CUL-1161 / HV-4): SAME_MINUTE_OBSERVATION_TYPES, the shared duplicate rule's set.
     // +1 (CUL-1420 / PR-22): EN-10's drug table (careContext.ts).
     // +1 (CUL-1415 / PR-21): the care_acknowledgements sign CHECK (migration 082).
-    expect(WALK).toHaveLength(25);
+    // +1 (CUL-1417 / PR-23): EN-9's C1a co-signs (careState.ts coSignsFor).
+    expect(WALK).toHaveLength(26);
   });
 });
 

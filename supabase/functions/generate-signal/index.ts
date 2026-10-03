@@ -61,7 +61,7 @@ import {
 // degrades safely — it just stops a hung upstream from holding the function open.
 import { fetchWithTimeout } from '../_shared/http.ts'
 // CUL-989 — CUL-975's paged reader, shared with generate-report and ask.
-import { fetchAll, incompletePullNames } from '../_shared/pull.ts'
+import { fetchAll, incompletePullNames, type Pull } from '../_shared/pull.ts'
 import {
   templateForFinding,
   validatePhrasing,
@@ -914,19 +914,26 @@ export async function readCareContextFacts(
 //
 // Fails toward RAISED: any failure returns EMPTY_CARE_RECORD, so no answer quiets a concern on a
 // read that did not answer.
-const ACK_LIMIT = 500
 const ACK_SOURCES: ReadonlySet<string> = new Set<AckSource>(['at_vet_tick', 'visit_answer', 'my_vet_knows', 'vet_started_trial', 'vet_started_course'])
+
+type AckRow = { id: string; symptom_type: string; source: string; anchor_on: string; diet_trial_id: string | null; medication_id: string | null; retracts: string | null; created_at: string }
+type AckTrialRow = { id: string; started_at: string; ended_at: string | null; target_duration_days: number | null; target_duration_days_initial: number | null }
+type AckMedRow = { id: string; drug_name: string | null; started_at: string | null; ended_at: string | null; status: string | null; target_duration_days: number | null; target_duration_doses: number | null }
+type AckDoseRow = { id: string; occurred_at: string; medication_administrations: { medication_id: string | null } | { medication_id: string | null }[] | null }
 
 export async function readCareRecord(supabase: SupabaseClient, petId: string, lookbackIso: string): Promise<CareRecord> {
   try {
-    const [ackRes, lethargyPull] = await Promise.all([
-      supabase
-        .from('care_acknowledgements')
-        .select('id, symptom_type, source, anchor_on, diet_trial_id, medication_id, retracts, created_at', { count: 'exact' })
-        .eq('pet_id', petId)
-        .order('created_at', { ascending: false })
-        .order('id', { ascending: false })
-        .limit(ACK_LIMIT),
+    // Every read pages to the end (CUL-975): a capped read could drop the newest retraction and
+    // leave the answer it takes back live. An incomplete one is refused, below.
+    const [ackPull, lethargyPull] = await Promise.all([
+      fetchAll<AckRow>('care_acknowledgements', (r) => r.id, (from, to) =>
+        supabase
+          .from('care_acknowledgements')
+          .select('id, symptom_type, source, anchor_on, diet_trial_id, medication_id, retracts, created_at', { count: 'exact' })
+          .eq('pet_id', petId)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)),
       fetchAll<{ id: string; occurred_at: string }>('events', (r) => r.id, (from, to) =>
         supabase
           .from('events')
@@ -939,61 +946,55 @@ export async function readCareRecord(supabase: SupabaseClient, petId: string, lo
           .order('id', { ascending: false })
           .range(from, to)),
     ])
-    if (ackRes.error) {
-      console.warn('generate-signal: care_acknowledgements read failed, every concern stays raised:', ackRes.error.message)
-      return EMPTY_CARE_RECORD
-    }
-    type AckRow = { id: string; symptom_type: string; source: string; anchor_on: string; diet_trial_id: string | null; medication_id: string | null; retracts: string | null; created_at: string }
-    const rows = (ackRes.data ?? []) as AckRow[]
-    // A capped read could drop the newest retraction and leave its answer live: refuse it.
-    if (typeof ackRes.count !== 'number' || ackRes.count > rows.length) {
-      console.warn('generate-signal: care_acknowledgements read incomplete, every concern stays raised:', petId)
-      return EMPTY_CARE_RECORD
-    }
-    if (incompletePullNames({ lethargy: lethargyPull }).length > 0) {
-      console.warn('generate-signal: the lethargy pull was incomplete, every concern stays raised:', petId)
-      return EMPTY_CARE_RECORD
-    }
+    const rows = ackPull.rows
     const trialIds = [...new Set(rows.map((r) => r.diet_trial_id).filter((x): x is string => typeof x === 'string'))]
     const medIds = [...new Set(rows.map((r) => r.medication_id).filter((x): x is string => typeof x === 'string'))]
-    const [trialRes, medRes, doseRes] = await Promise.all([
-      trialIds.length === 0 ? Promise.resolve({ data: [], error: null }) : supabase
-        .from('diet_trials')
-        .select('id, started_at, ended_at, target_duration_days, target_duration_days_initial')
-        .eq('pet_id', petId)
-        .in('id', trialIds),
-      medIds.length === 0 ? Promise.resolve({ data: [], error: null }) : supabase
-        .from('medications')
-        .select('id, drug_name, started_at, ended_at, status, target_duration_days, target_duration_doses')
-        .eq('pet_id', petId)
-        .in('id', medIds),
-      // Newest given / partial dose per course. A course's doses within the lookback suffice:
-      // a last dose older than the lookback is past its 14 days anyway.
-      medIds.length === 0 ? Promise.resolve({ data: [], error: null }) : supabase
-        .from('events')
-        .select('occurred_at, medication_administrations!medication_administrations_event_id_fkey!inner(medication_id, adherence)')
-        .eq('pet_id', petId)
-        .eq('event_type', 'medication')
-        .is('deleted_at', null)
-        .gte('occurred_at', lookbackIso)
-        .in('medication_administrations.medication_id', medIds)
-        .in('medication_administrations.adherence', ['given', 'partial'])
-        .order('occurred_at', { ascending: false })
-        .limit(1000),
+    // No answer names a trial or a course: nothing to read, and an empty read is complete.
+    const none = <T>(): Promise<Pull<T>> => Promise.resolve({ rows: [], complete: true })
+    const [trialPull, medPull, dosePull] = await Promise.all([
+      trialIds.length === 0 ? none<AckTrialRow>() : fetchAll<AckTrialRow>('diet_trials', (r) => r.id, (from, to) =>
+        supabase
+          .from('diet_trials')
+          .select('id, started_at, ended_at, target_duration_days, target_duration_days_initial', { count: 'exact' })
+          .eq('pet_id', petId)
+          .in('id', trialIds)
+          .order('started_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)),
+      medIds.length === 0 ? none<AckMedRow>() : fetchAll<AckMedRow>('medications', (r) => r.id, (from, to) =>
+        supabase
+          .from('medications')
+          .select('id, drug_name, started_at, ended_at, status, target_duration_days, target_duration_doses', { count: 'exact' })
+          .eq('pet_id', petId)
+          .in('id', medIds)
+          .order('started_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)),
+      // The given or partial doses of each such course in the lookback, newest first: a last
+      // dose older than the lookback is past its 14 days anyway.
+      medIds.length === 0 ? none<AckDoseRow>() : fetchAll<AckDoseRow>('events', (r) => r.id, (from, to) =>
+        supabase
+          .from('events')
+          .select('id, occurred_at, medication_administrations!medication_administrations_event_id_fkey!inner(medication_id)', { count: 'exact' })
+          .eq('pet_id', petId)
+          .eq('event_type', 'medication')
+          .is('deleted_at', null)
+          .gte('occurred_at', lookbackIso)
+          .in('medication_administrations.medication_id', medIds)
+          .in('medication_administrations.adherence', ['given', 'partial'])
+          .order('occurred_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)),
     ])
-    for (const [name, res] of [['diet_trials', trialRes], ['medications', medRes], ['doses', doseRes]] as const) {
-      if (res.error) {
-        console.warn(`generate-signal: the care record's ${name} read failed, every concern stays raised:`, (res.error as { message?: string }).message)
-        return EMPTY_CARE_RECORD
-      }
+    const short = incompletePullNames({ acknowledgements: ackPull, lethargy: lethargyPull, trials: trialPull, medications: medPull, doses: dosePull })
+    if (short.length > 0) {
+      console.warn('generate-signal: the care-record reads were incomplete, every concern stays raised:', petId, short.join(', '))
+      return EMPTY_CARE_RECORD
     }
-    type TrialRow = { id: string; started_at: string; ended_at: string | null; target_duration_days: number | null; target_duration_days_initial: number | null }
-    type MedRow = { id: string; drug_name: string | null; started_at: string | null; ended_at: string | null; status: string | null; target_duration_days: number | null; target_duration_doses: number | null }
-    type DoseRow = { occurred_at: string; medication_administrations: { medication_id: string | null } | { medication_id: string | null }[] | null }
-    const trials = new Map(((trialRes.data ?? []) as TrialRow[]).map((t) => [t.id, t]))
-    const meds = new Map(((medRes.data ?? []) as MedRow[]).map((m) => [m.id, m]))
+    const trials = new Map(trialPull.rows.map((t) => [t.id, t]))
+    const meds = new Map(medPull.rows.map((m) => [m.id, m]))
     const lastDose = new Map<string, string>()
-    for (const d of (doseRes.data ?? []) as DoseRow[]) {
+    for (const d of dosePull.rows) {
       const admins = Array.isArray(d.medication_administrations) ? d.medication_administrations : d.medication_administrations ? [d.medication_administrations] : []
       for (const a of admins) {
         if (a.medication_id && !lastDose.has(a.medication_id)) lastDose.set(a.medication_id, d.occurred_at)
