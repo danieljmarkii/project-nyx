@@ -105,6 +105,13 @@ import { useMomentStore } from '../../store/momentStore';
 import { useUiStore } from '../../store/uiStore';
 import { lookNoteCue } from '../../lib/lookCard';
 
+// What the Signal zone reports when it has answered for the pet on screen with no safety
+// card (CUL-909). Read at render time, so a test that switches pets and re-renders reports
+// for the new one.
+function quiet() {
+  return { petId: mockPetState.activePet?.id ?? null, live: false };
+}
+
 const WRITTEN = {
   eventId: 'e1',
   lookId: 'l1',
@@ -152,23 +159,23 @@ afterEach(() => {
 describe('who sees it', () => {
   it('renders nothing off the flag — Home is byte-identical', () => {
     mockFlagOn = false;
-    expect(render(<LookCard />).queryByTestId('look-card')).toBeNull();
+    expect(render(<LookCard safety={quiet()} />).queryByTestId('look-card')).toBeNull();
   });
 
   it('renders nothing for an account that is eligible but has not opted in', () => {
     mockOptedIn = false;
-    expect(render(<LookCard />).queryByTestId('look-card')).toBeNull();
+    expect(render(<LookCard safety={quiet()} />).queryByTestId('look-card')).toBeNull();
   });
 
   it('renders nothing for a pet of species OTHER (CUL-864 brief 2)', () => {
     // The PM's ruling, at the surface: no card, rather than a dog's words offered for a
     // rabbit. `lookSpeciesOf` returns null and this card declines to guess.
     mockPetState = { activePet: { ...MOCHI, species: 'other' }, pets: [] };
-    expect(render(<LookCard />).queryByTestId('look-card')).toBeNull();
+    expect(render(<LookCard safety={quiet()} />).queryByTestId('look-card')).toBeNull();
   });
 
   it('asks the question, offers the seven head words, and pre-selects nothing', () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     expect(t.getByText('How does Mochi seem right now, compared with his usual?')).toBeTruthy();
     expect(t.getByTestId('look-chip-subdued')).toBeTruthy();
     expect(t.getByTestId('look-chip-walk_refused')).toBeTruthy();
@@ -181,7 +188,7 @@ describe('who sees it', () => {
 
 describe('two taps and Done', () => {
   it('writes ONE look, for the captured pet, clock-seeded — and lands it as an entry', async () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-chip-subdued'));
     fireEvent.press(t.getByTestId('look-chip-walk_refused'));
 
@@ -218,7 +225,7 @@ describe('two taps and Done', () => {
   });
 
   it('writes the observed-absence row with NO words', async () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-absence-chip'));
     await act(async () => {
       fireEvent.press(t.getByTestId('look-done'));
@@ -229,7 +236,7 @@ describe('two taps and Done', () => {
   });
 
   it('ticks on every chip and is SILENT on Done (T-10)', async () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-chip-subdued'));
     expect(mockHaptics.selectChip).toHaveBeenCalledTimes(1);
     await act(async () => {
@@ -243,7 +250,7 @@ describe('two taps and Done', () => {
   });
 
   it('the energy poles clear each other inside one look (T-14)', () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-chip-subdued'));
     fireEvent.press(t.getByTestId('look-chip-sleeping_more'));
     fireEvent.press(t.getByTestId('look-chip-lively'));
@@ -253,7 +260,7 @@ describe('two taps and Done', () => {
 
 describe('Undo', () => {
   it('reverses the row and gives the words back, still selected', async () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-chip-subdued'));
     await act(async () => {
       fireEvent.press(t.getByTestId('look-done'));
@@ -292,19 +299,19 @@ describe('two pets (T-11)', () => {
         } as never,
       ],
     });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     expect(t.queryByTestId('look-entries')).toBeNull();
     expect(t.queryByTestId('look-undo-e9')).toBeNull();
   });
 
   it('a header switch mid-draft clears the words and SAYS so — never a wrong-pet look', async () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-chip-subdued'));
     expect(t.getByText('Mochi · off')).toBeTruthy();
 
     // The header moves. The card is now Juniper's question.
     mockPetState = { activePet: JUNIPER, pets: [MOCHI, JUNIPER] };
-    t.rerender(<LookCard />);
+    t.rerender(<LookCard safety={quiet()} />);
 
     await waitFor(() => expect(t.getByTestId('look-switch-notice')).toBeTruthy());
     expect(t.getByTestId('look-switch-notice').props.children).toContain('Mochi');
@@ -318,14 +325,14 @@ describe('two pets (T-11)', () => {
   });
 
   it('and the notice goes when the owner switches BACK — it never names the wrong pet', async () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-chip-subdued'));
     mockPetState = { activePet: JUNIPER, pets: [MOCHI, JUNIPER] };
-    t.rerender(<LookCard />);
+    t.rerender(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-switch-notice')).toBeTruthy());
 
     mockPetState = { activePet: MOCHI, pets: [MOCHI, JUNIPER] };
-    t.rerender(<LookCard />);
+    t.rerender(<LookCard safety={quiet()} />);
     // It used to clear only on the next chip tap, so a flip-and-back left "this is
     // Juniper's question now" over a card asking about Mochi.
     await waitFor(() => expect(t.queryByTestId('look-switch-notice')).toBeNull());
@@ -333,7 +340,7 @@ describe('two pets (T-11)', () => {
   });
 
   it('a switch DURING the completion dwell reverses the row but keeps its words off the new pet', async () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-chip-subdued'));
     await act(async () => {
       fireEvent.press(t.getByTestId('look-done'));
@@ -342,7 +349,7 @@ describe('two pets (T-11)', () => {
 
     // The owner switches, then reaches for Undo before the today read has answered.
     mockPetState = { activePet: JUNIPER, pets: [MOCHI, JUNIPER] };
-    t.rerender(<LookCard />);
+    t.rerender(<LookCard safety={quiet()} />);
     // The entry is already gone from view (it is Mochi's row), so the only way to reach
     // Undo is the store — which is exactly the state this asserts about.
     await act(async () => {
@@ -357,7 +364,7 @@ describe('two pets (T-11)', () => {
 
 describe('the grid, the exits and the door', () => {
   it('opens in place, publishes the pinned exits, and closes from the way back', () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-more-words'));
 
     // The families, with their owner-phrase labels and full head + gloss labels.
@@ -381,7 +388,7 @@ describe('the grid, the exits and the door', () => {
   });
 
   it('the chip row\u2019s gap is DERIVED from the chip\u2019s own reach (C-5)', () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     const row = StyleSheet.flatten(t.getByTestId('look-head-words').props.style) as Record<
       string,
       number
@@ -396,7 +403,7 @@ describe('the grid, the exits and the door', () => {
   });
 
   it('the head words NEVER MOVE — same row, same position, glosses added', () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     const before = t.getByTestId('look-chip-subdued');
     expect(t.getByText('Off')).toBeTruthy();
 
@@ -412,7 +419,7 @@ describe('the grid, the exits and the door', () => {
   });
 
   it('a word chosen in the grid TRAVELS UP on fold (T-12)', () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-more-words'));
     fireEvent.press(t.getByTestId('look-grid-chip-hunched'));
     fireEvent.press(t.getByTestId('look-fewer-words'));
@@ -425,7 +432,7 @@ describe('the grid, the exits and the door', () => {
   });
 
   it('gives the corner back on unmount — the FAB is never stranded', () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-more-words'));
     expect(useUiStore.getState().captureOverlay).not.toBeNull();
     t.unmount();
@@ -433,7 +440,7 @@ describe('the grid, the exits and the door', () => {
   });
 
   it('the opening chip selects the chief complaint AND opens the grid, in one tap', () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-opening-chip'));
     expect(t.getByTestId('look-grid')).toBeTruthy();
     expect(t.getByText('What did you see? Done on its own keeps “not himself”.')).toBeTruthy();
@@ -448,7 +455,7 @@ describe('the grid, the exits and the door', () => {
     let release: (facts: unknown) => void = () => {};
     mockLoadFacts.mockReturnValue(new Promise((resolve) => { release = resolve; }) as never);
 
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-more-words'));
     fireEvent.press(t.getByTestId('look-emergency-door'));
 
@@ -472,7 +479,7 @@ describe('the grid, the exits and the door', () => {
     // The one case fail-closed is for: asked, and no answer. n=1 never reassures, and a
     // conditional is the reassuring-shaped half of the pair.
     mockLoadFacts.mockResolvedValue(null as never);
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-more-words'));
     await act(async () => {
       fireEvent.press(t.getByTestId('look-emergency-door'));
@@ -482,7 +489,7 @@ describe('the grid, the exits and the door', () => {
   });
 
   it('the door names whose record it read', async () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-more-words'));
     await act(async () => {
       fireEvent.press(t.getByTestId('look-emergency-door'));
@@ -492,7 +499,7 @@ describe('the grid, the exits and the door', () => {
   });
 
   it('opens the emergency door, which writes nothing', async () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-more-words'));
     await act(async () => {
       fireEvent.press(t.getByTestId('look-emergency-door'));
@@ -502,14 +509,14 @@ describe('the grid, the exits and the door', () => {
   });
 
   it('and the notice goes when the owner switches BACK — it never names the wrong pet', async () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-chip-subdued'));
     mockPetState = { activePet: JUNIPER, pets: [MOCHI, JUNIPER] };
-    t.rerender(<LookCard />);
+    t.rerender(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-switch-notice')).toBeTruthy());
 
     mockPetState = { activePet: MOCHI, pets: [MOCHI, JUNIPER] };
-    t.rerender(<LookCard />);
+    t.rerender(<LookCard safety={quiet()} />);
     // It used to clear only on the next chip tap, so a flip-and-back left "this is
     // Juniper's question now" over a card asking about Mochi.
     await waitFor(() => expect(t.queryByTestId('look-switch-notice')).toBeNull());
@@ -517,7 +524,7 @@ describe('the grid, the exits and the door', () => {
   });
 
   it('a switch DURING the completion dwell reverses the row but keeps its words off the new pet', async () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     fireEvent.press(t.getByTestId('look-chip-subdued'));
     await act(async () => {
       fireEvent.press(t.getByTestId('look-done'));
@@ -526,7 +533,7 @@ describe('the grid, the exits and the door', () => {
 
     // The owner switches, then reaches for Undo before the today read has answered.
     mockPetState = { activePet: JUNIPER, pets: [MOCHI, JUNIPER] };
-    t.rerender(<LookCard />);
+    t.rerender(<LookCard safety={quiet()} />);
     // The entry is already gone from view (it is Mochi's row), so the only way to reach
     // Undo is the store — which is exactly the state this asserts about.
     await act(async () => {
@@ -545,7 +552,7 @@ describe('the intake router (CUL-870 / N-3b)', () => {
     // and the reassuring one never cheaper than the concerned one. N-4a built this row as
     // a list precisely so the insertion moved nothing, and this is what would notice if a
     // later edit appended the router after the opening chip instead.
-    const { findByTestId, getByTestId, getAllByText } = render(<LookCard />);
+    const { findByTestId, getByTestId, getAllByText } = render(<LookCard safety={quiet()} />);
     await findByTestId('look-card');
 
     // The row itself: all three share one parent, and it is not the card.
@@ -565,12 +572,12 @@ describe('the intake router (CUL-870 / N-3b)', () => {
   });
 
   it('reads *Left his food ›* on a multi-pet account, inflected for THIS pet', async () => {
-    const { findByTestId } = render(<LookCard />);
+    const { findByTestId } = render(<LookCard safety={quiet()} />);
     const chip = await findByTestId('look-intake-door');
     expect(chip.props.accessibilityLabel).toBe('Left his food ›');
 
     mockPetState = { activePet: JUNIPER, pets: [MOCHI, JUNIPER] };
-    const second = render(<LookCard />);
+    const second = render(<LookCard safety={quiet()} />);
     expect((await second.findByTestId('look-intake-door')).props.accessibilityLabel).toBe(
       'Left her food ›',
     );
@@ -578,21 +585,21 @@ describe('the intake router (CUL-870 / N-3b)', () => {
 
   it('reads *Didn’t eat ›* on a single-pet account', async () => {
     mockPetState = { activePet: MOCHI, pets: [MOCHI] };
-    const { findByTestId } = render(<LookCard />);
+    const { findByTestId } = render(<LookCard safety={quiet()} />);
     expect((await findByTestId('look-intake-door')).props.accessibilityLabel).toBe('Didn’t eat ›');
   });
 
   it('is a BUTTON, never a checkbox — a tap records nothing', async () => {
     // The chips either side of it toggle what the look will say. A `checked` state here
     // would announce that this one did too (C-7: state is an accessibility CLAIM).
-    const { findByTestId } = render(<LookCard />);
+    const { findByTestId } = render(<LookCard safety={quiet()} />);
     const chip = await findByTestId('look-intake-door');
     expect(chip.props.accessibilityRole).toBe('button');
     expect(chip.props.accessibilityState?.checked).toBeUndefined();
   });
 
   it('opens the sheet for the CARD’S pet and writes nothing', async () => {
-    const { findByTestId } = render(<LookCard />);
+    const { findByTestId } = render(<LookCard safety={quiet()} />);
     fireEvent.press(await findByTestId('look-intake-door'));
     expect(useUiStore.getState().intakeDoor).toEqual({
       petId: 'p1',
@@ -607,7 +614,7 @@ describe('the intake router (CUL-870 / N-3b)', () => {
   it('leaves the words already chosen exactly where they are, and says they are kept', async () => {
     // T-3 and §3.1a together: the router is not a look word, so it neither selects nor
     // clears — and the sheet is told there is something to promise.
-    const { findByTestId, getByTestId } = render(<LookCard />);
+    const { findByTestId, getByTestId } = render(<LookCard safety={quiet()} />);
     fireEvent.press(await findByTestId('look-absence-chip'));
     fireEvent.press(getByTestId('look-intake-door'));
     expect(useUiStore.getState().intakeDoor?.cardHasSelections).toBe(true);
@@ -619,7 +626,7 @@ describe('the intake router (CUL-870 / N-3b)', () => {
   it('ticks like a door, not like a chip', async () => {
     // T-10: every chip in this row ticks because a tap changes what the look will say.
     // Nothing is selected here — a surface opens — so it takes the menu verb.
-    const { findByTestId } = render(<LookCard />);
+    const { findByTestId } = render(<LookCard safety={quiet()} />);
     fireEvent.press(await findByTestId('look-intake-door'));
     expect(mockHaptics.openMenu).toHaveBeenCalledTimes(1);
     expect(mockHaptics.selectChip).not.toHaveBeenCalled();
@@ -674,7 +681,7 @@ describe('the today list — the entries that stay (T-15)', () => {
   it('keeps the day’s entries after the register lets go of the beat', async () => {
     useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
     mockLoadLookDays.mockResolvedValue([recordRow('e1', 0, ['subdued'])]);
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-entries')).toBeTruthy());
     // No register card is showing, so this entry is a RESTING one — and it is still here.
     expect(t.getByText('Off')).toBeTruthy();
@@ -686,7 +693,7 @@ describe('the today list — the entries that stay (T-15)', () => {
   it('folds the question to one line and re-opens the chips CLEARED', async () => {
     useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
     mockLoadLookDays.mockResolvedValue([recordRow('e1', 0, ['subdued'])]);
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-folded-ask')).toBeTruthy());
     expect(t.getByText('How does Mochi seem now?')).toBeTruthy();
     // The chips are away while the question is folded.
@@ -702,7 +709,7 @@ describe('the today list — the entries that stay (T-15)', () => {
       todayEvents: [lookRow('e1', 1), lookRow('e2', 3), lookRow('e3', 6), lookRow('e4', 9)],
     });
     mockLoadLookDays.mockResolvedValue([recordRow('e1', 0, ['subdued'])]);
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-entries')).toBeTruthy());
     expect(t.getByTestId('look-open-e1')).toBeTruthy();
     expect(t.getByTestId('look-open-e2')).toBeTruthy();
@@ -714,7 +721,7 @@ describe('the today list — the entries that stay (T-15)', () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { router } = require('expo-router');
     useEventStore.setState({ todayEvents: [lookRow('e1', 1), lookRow('e2', 3), lookRow('e3', 6)] });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-more-today')).toBeTruthy());
     fireEvent.press(t.getByTestId('look-more-today'));
     expect(router.push).toHaveBeenCalledWith(expect.stringContaining('type=check_in'));
@@ -725,7 +732,7 @@ describe('the today list — the entries that stay (T-15)', () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { router } = require('expo-router');
     useEventStore.setState({ todayEvents: [lookRow('e1', 1), lookRow('e2', 3)] });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-open-e2')).toBeTruthy());
     fireEvent.press(t.getByTestId('look-open-e2'));
     expect(router.push).toHaveBeenCalledWith('/event/e2');
@@ -735,7 +742,7 @@ describe('the today list — the entries that stay (T-15)', () => {
     useEventStore.setState({
       todayEvents: [lookRow('e1', 1), lookRow('e-other', 2, { pet_id: JUNIPER.id })],
     });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-open-e1')).toBeTruthy());
     expect(t.queryByTestId('look-open-e-other')).toBeNull();
   });
@@ -748,7 +755,7 @@ describe('the receipt and the footer', () => {
       recordRow('e1', 0, ['subdued']),
       ...Array.from({ length: 20 }, (_, i) => recordRow(`q${i}`, i + 1)),
     ]);
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-receipt-e1')).toBeTruthy());
     expect(t.getByTestId('look-receipt-e1').props.children).toContain(
       'First day you’ve marked off for Mochi',
@@ -761,7 +768,7 @@ describe('the receipt and the footer', () => {
       recordRow('e1', 0, ['subdued']),
       ...Array.from({ length: 19 }, (_, i) => recordRow(`q${i}`, i + 1)),
     ]);
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-coverage')).toBeTruthy());
     expect(t.getByText('Answered 20 of the last 28 days')).toBeTruthy();
   });
@@ -772,7 +779,7 @@ describe('the receipt and the footer', () => {
       recordRow('e1', 0, ['subdued']),
       ...Array.from({ length: 3 }, (_, i) => recordRow(`q${i}`, i + 1)),
     ]);
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-entries')).toBeTruthy());
     expect(t.queryByTestId('look-coverage')).toBeNull();
     expect(t.queryByTestId('look-receipt-e1')).toBeNull();
@@ -784,7 +791,7 @@ describe('the receipt and the footer', () => {
       recordRow('e1', 0, ['subdued']),
       ...Array.from({ length: 19 }, (_, i) => recordRow(`q${i}`, i + 1)),
     ]);
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-coverage')).toBeTruthy());
     const flat = StyleSheet.flatten(t.getByTestId('look-coverage').props.style);
     expect(flat.fontVariant).toEqual(['tabular-nums']);
@@ -796,11 +803,59 @@ describe('the receipt and the footer', () => {
       recordRow('e1', 0, ['subdued']),
       ...Array.from({ length: 19 }, (_, i) => recordRow(`q${i}`, i + 1)),
     ]);
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-coverage')).toBeTruthy());
     // Walk UP to the nearest responder host: a line with no owning touchable is a line
     // (C-6 — `fireEvent.press` cannot prove the opposite, so identity is what is asked).
     expect(owningTouchable(t.getByTestId('look-coverage'))).toBeNull();
+  });
+});
+
+describe('under a live safety-class card (Q-6 ruled (c), CUL-909)', () => {
+  // Normal eating, twenty answered days, and a quiet look today: the shape the issue names,
+  // a dog with a live red flag whose card would otherwise read *Nothing unusual* above
+  // *Answered 20 of the last 28 days*, one card below the ask to call the vet.
+  function seedQuietRun() {
+    useEventStore.setState({
+      todayEvents: [lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null })],
+    });
+    mockLoadLookDays.mockResolvedValue([
+      recordRow('e1', 0),
+      ...Array.from({ length: 19 }, (_, i) => recordRow(`q${i}`, i + 1)),
+    ]);
+  }
+
+  it('withholds the footer and KEEPS her words', async () => {
+    seedQuietRun();
+    const t = render(<LookCard safety={{ petId: MOCHI.id, live: true }} />);
+    await waitFor(() => expect(t.getByText('Nothing unusual')).toBeTruthy());
+    expect(t.queryByTestId('look-coverage')).toBeNull();
+    // Her words, not the intake state's withheld entry or its reason line.
+    expect(t.queryByTestId('look-withheld-e1')).toBeNull();
+    expect(t.queryByText(/eating needs attention/)).toBeNull();
+  });
+
+  it('marks no withheld day, so the footer returns when the card stands down', async () => {
+    seedQuietRun();
+    const t = render(<LookCard safety={{ petId: MOCHI.id, live: true }} />);
+    await waitFor(() => expect(t.getByText('Nothing unusual')).toBeTruthy());
+    expect(mockMarkWithheldToday).not.toHaveBeenCalled();
+    t.rerender(<LookCard safety={{ petId: MOCHI.id, live: false }} />);
+    await waitFor(() => expect(t.getByText('Answered 20 of the last 28 days')).toBeTruthy());
+  });
+
+  it('fails CLOSED before the Signal answers: no footer, words still drawn', async () => {
+    seedQuietRun();
+    const t = render(<LookCard safety={null} />);
+    await waitFor(() => expect(t.getByText('Nothing unusual')).toBeTruthy());
+    expect(t.queryByTestId('look-coverage')).toBeNull();
+  });
+
+  it('fails CLOSED on a report for ANOTHER pet (C-9) — the previous pet’s all-clear', async () => {
+    seedQuietRun();
+    const t = render(<LookCard safety={{ petId: JUNIPER.id, live: false }} />);
+    await waitFor(() => expect(t.getByText('Nothing unusual')).toBeTruthy());
+    expect(t.queryByTestId('look-coverage')).toBeNull();
   });
 });
 
@@ -817,7 +872,7 @@ describe('the withheld state (floor item 12, T-20)', () => {
     useEventStore.setState({
       todayEvents: [lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null })],
     });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
     expect(t.queryByText('Nothing unusual')).toBeNull();
     expect(
@@ -830,7 +885,7 @@ describe('the withheld state (floor item 12, T-20)', () => {
   it('a SYMPTOM entry still speaks — words can only raise', async () => {
     mockLoadWithheldFacts.mockResolvedValue(withheldFacts);
     useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByText('Off')).toBeTruthy());
     expect(t.queryByTestId('look-withheld-e1')).toBeNull();
   });
@@ -843,7 +898,7 @@ describe('the withheld state (floor item 12, T-20)', () => {
     useEventStore.setState({
       todayEvents: [lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null })],
     });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByText('Nothing unusual')).toBeTruthy());
     mockLoadWithheldFacts.mockResolvedValue(withheldFacts);
     await act(async () => {
@@ -861,7 +916,7 @@ describe('the withheld state (floor item 12, T-20)', () => {
       recordRow('e1', 0),
       ...Array.from({ length: 25 }, (_, i) => recordRow(`q${i}`, i + 1)),
     ]);
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
     expect(t.queryByTestId('look-coverage')).toBeNull();
   });
@@ -869,7 +924,7 @@ describe('the withheld state (floor item 12, T-20)', () => {
   it('records the withheld DAY, so the footer stays away after the state clears', async () => {
     mockLoadWithheldFacts.mockResolvedValue(withheldFacts);
     useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
-    render(<LookCard />);
+    render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(mockMarkWithheldToday).toHaveBeenCalledWith(MOCHI.id));
   });
 
@@ -879,7 +934,7 @@ describe('the withheld state (floor item 12, T-20)', () => {
     useEventStore.setState({
       todayEvents: [lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null })],
     });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     // Hidden from assistive tech, so the query has to opt in (the Skeleton convention).
     await waitFor(() =>
       expect(t.getByTestId('look-entries-skeleton', { includeHiddenElements: true })).toBeTruthy(),
@@ -910,7 +965,7 @@ describe('the withheld state (floor item 12, T-20)', () => {
       recordRow('e1', 0, ['subdued']),
       ...Array.from({ length: 25 }, (_, i) => recordRow(`q${i}`, i + 1)),
     ]);
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-entries')).toBeTruthy());
     // Not withheld (nothing positive), not open (a fact has not answered) — so no number.
     expect(t.queryByTestId('look-coverage')).toBeNull();
@@ -922,7 +977,7 @@ describe('the withheld state (floor item 12, T-20)', () => {
   it('the withheld entry never marks the day when the state is merely UNKNOWN', async () => {
     mockLoadWithheldFacts.mockReturnValue(new Promise(() => {}));
     useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
-    render(<LookCard />);
+    render(<LookCard safety={quiet()} />);
     await act(async () => {});
     expect(mockMarkWithheldToday).not.toHaveBeenCalled();
   });
@@ -934,7 +989,7 @@ describe('the note, after the save (T-22)', () => {
   });
 
   it('offers *Say more ›* under the newest entry and saves to looks.notes on return', async () => {
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-note-link-e1')).toBeTruthy());
     fireEvent.press(t.getByTestId('look-note-link-e1'));
     const field = t.getByTestId('look-note-field-e1');
@@ -962,7 +1017,7 @@ describe('the note, after the save (T-22)', () => {
 
   it('renders a saved note in quotes under the newest entry, in the PRIMARY ink', async () => {
     useEventStore.setState({ todayEvents: [lookRow('e1', 1, { look_note: 'he hung back' })] });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-note-e1')).toBeTruthy());
     expect(t.getByText('“he hung back”')).toBeTruthy();
     // Hers, above the app's line: primary ink, and no rule.
@@ -977,7 +1032,7 @@ describe('the note, after the save (T-22)', () => {
     useEventStore.setState({
       todayEvents: [lookRow('e1', 1), lookRow('e2', 4, { look_note: 'he hung back' })],
     });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-open-e2')).toBeTruthy());
     expect(t.getByText('❞')).toBeTruthy();
     expect(t.queryByTestId('look-note-e2')).toBeNull();
@@ -990,7 +1045,7 @@ describe('the note, after the save (T-22)', () => {
     useEventStore.setState({
       todayEvents: [lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null })],
     });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByText('Nothing unusual')).toBeTruthy());
     expect(t.queryByTestId('look-note-link-e1')).toBeNull();
   });
@@ -1005,7 +1060,7 @@ describe('the note, after the save (T-22)', () => {
     useEventStore.setState({
       todayEvents: [lookRow('e1', 1, { look_outcome: 'nothing_unusual', look_words: null })],
     });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
     expect(t.queryByTestId('look-note-link-e1')).toBeNull();
   });
@@ -1015,7 +1070,7 @@ describe('the note, after the save (T-22)', () => {
     const { Alert } = require('react-native');
     const spy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     mockUpdateLookNote.mockRejectedValue(new Error('disk'));
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-note-link-e1')).toBeTruthy());
     fireEvent.press(t.getByTestId('look-note-link-e1'));
     fireEvent.changeText(t.getByTestId('look-note-field-e1'), 'he hung back');
@@ -1043,7 +1098,7 @@ describe('the touchable stack’s geometry (C-5)', () => {
 
   it('the note link clears the entry’s chevron by the sum of their reaches', async () => {
     useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-note-link-e1')).toBeTruthy());
     const link = t.getByTestId('look-note-link-e1');
     const chevron = t.getByTestId('look-open-e1');
@@ -1052,7 +1107,7 @@ describe('the touchable stack’s geometry (C-5)', () => {
 
   it('the note link reaches 44pt — its box is 32 by design, the slop makes the rest', async () => {
     useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-note-link-e1')).toBeTruthy());
     const link = t.getByTestId('look-note-link-e1');
     const box = (StyleSheet.flatten(link.props.style) as { minHeight?: number }).minHeight ?? 0;
@@ -1061,7 +1116,7 @@ describe('the touchable stack’s geometry (C-5)', () => {
 
   it('the cap’s door is at the floor by its BOX, and clears the chevron above it', async () => {
     useEventStore.setState({ todayEvents: [lookRow('e1', 1), lookRow('e2', 3), lookRow('e3', 6)] });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-more-today')).toBeTruthy());
     const door = t.getByTestId('look-more-today');
     const flat = StyleSheet.flatten(door.props.style) as { minHeight?: number };
@@ -1073,7 +1128,7 @@ describe('the touchable stack’s geometry (C-5)', () => {
 
   it('the folded ask row clears whatever touchable rendered above it', async () => {
     useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-folded-ask')).toBeTruthy());
     const ask = t.getByTestId('look-folded-ask');
     const flat = StyleSheet.flatten(ask.props.style) as { minHeight?: number };
@@ -1089,7 +1144,7 @@ describe('the touchable stack’s geometry (C-5)', () => {
     // Undo and the chevron take the SAME slot, so a frame holding both would be two
     // targets at one point (T-15's swap is a replacement, never an addition).
     useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-open-e1')).toBeTruthy());
     expect(t.queryByTestId('look-undo-e1')).toBeNull();
   });
@@ -1103,7 +1158,7 @@ describe('what the product review changed', () => {
       trialNotEating: true,
       recentQualifyingMeals: [],
     });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-absence-chip')).toBeTruthy());
     fireEvent.press(t.getByTestId('look-absence-chip'));
     await act(async () => {
@@ -1129,7 +1184,7 @@ describe('what the product review changed', () => {
     useEventStore.setState({
       todayEvents: [lookRow('e1', 3, { look_outcome: 'nothing_unusual', look_words: null })],
     });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
     expect(t.queryByTestId('look-withheld-e1-undo')).toBeNull();
   });
@@ -1147,7 +1202,7 @@ describe('what the product review changed', () => {
         lookRow('e2', 5, { look_outcome: 'nothing_unusual', look_words: null }),
       ],
     });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
     expect(t.getByTestId('look-withheld-e2')).toBeTruthy();
     // Two entries, ONE paragraph. A repeated system message reads as a bug.
@@ -1162,7 +1217,7 @@ describe('what the product review changed', () => {
       recentQualifyingMeals: [],
     });
     useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByText('Off')).toBeTruthy());
     expect(t.queryByTestId('look-withheld-reason')).toBeNull();
   });
@@ -1196,7 +1251,7 @@ describe('what the product review changed', () => {
       ],
     });
     // The card withholds…
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
     // …and the door, opened from the same card, is handed the same refusal. The question
     // is folded once a look exists, so the grid is two gestures away rather than one.
@@ -1228,7 +1283,7 @@ describe('what the product review changed', () => {
       recordRow('e1', 0, ['subdued']),
       ...Array.from({ length: 20 }, (_, i) => recordRow(`q${i}`, i + 1)),
     ]);
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     // The morning entry is third-newest and would have been folded away — its receipt keeps
     // it on the card.
     await waitFor(() => expect(t.getByTestId('look-receipt-e1')).toBeTruthy());
@@ -1242,7 +1297,7 @@ describe('what the product review changed', () => {
       todayEvents: [lookRow('e3', 1), lookRow('e2', 4), lookRow('e1', 8)],
     });
     mockLoadLookDays.mockResolvedValue([recordRow('e1', 0, ['subdued'])]);
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByTestId('look-more-today')).toBeTruthy());
     expect(t.getByText('1 more today ›')).toBeTruthy();
     expect(t.queryByTestId('look-open-e1')).toBeNull();
@@ -1257,7 +1312,7 @@ describe('what the product review changed', () => {
         lookRow('e2', 4, { look_outcome: null, look_words: null }),
       ],
     });
-    const t = render(<LookCard />);
+    const t = render(<LookCard safety={quiet()} />);
     await waitFor(() => expect(t.getByText('Off')).toBeTruthy());
     expect(t.getByText('Noticed')).toBeTruthy();
     expect(t.queryByText('off')).toBeNull();

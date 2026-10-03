@@ -119,7 +119,8 @@ export default function HomeScreen() {
     loadedPetId: trialPetId,
   } = useDietTrial(activePetId);
   // TS-5 (CUL-1301) — what the Signal zone last reported about safety-class cards for its
-  // pet, handed to the trial strip so this week's lane never draws under one. Null until the
+  // pet, handed to the trial strip so this week's lane never draws under one, and to the
+  // look card so its coverage footer never does either (CUL-909). Null until the
   // zone reports; the strip fails closed on null and on a report for another pet.
   const [signalSafety, setSignalSafety] = useState<TrialStripSafety | null>(null);
   // B-721 SR-5 (§3.4) — is a trial running for the active pet? Computed here from the
@@ -350,6 +351,7 @@ export default function HomeScreen() {
             <>
               <LookCard
                 trialNotEating={trialNotEating}
+                safety={signalSafety}
                 onLayout={(e) =>
                   setLookRect({ top: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
                 }

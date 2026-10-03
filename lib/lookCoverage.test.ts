@@ -35,7 +35,7 @@ function answered(n: number): LookDayRow[] {
 }
 
 function coverage(record: LookDayRow[], over: Partial<Parameters<typeof lookCoverage>[1]> = {}) {
-  return lookCoverage(record, { nowMs: NOW, withheldNow: false, lastWithheldDay: null, ...over });
+  return lookCoverage(record, { nowMs: NOW, withheldNow: false, safetyHolds: false, lastWithheldDay: null, ...over });
 }
 
 describe('the three forms, walked across the floor and the saturation point', () => {
@@ -96,6 +96,26 @@ describe('when it is absent', () => {
     const record = [...answered(20), row(0, { eventId: 'e-second' })];
     const afterUndo = record.filter((r) => r.eventId !== 'e-0');
     expect(coverage(afterUndo).form).toBe('ratio');
+  });
+});
+
+describe('a live safety-class card (Q-6 ruled (c), CUL-909)', () => {
+  it('holds the footer at every coverage, the saturation form included', () => {
+    expect(coverage(answered(20), { safetyHolds: true })).toEqual({ form: 'absent', reason: 'safety' });
+    expect(coverage(answered(28), { safetyHolds: true })).toEqual({ form: 'absent', reason: 'safety' });
+  });
+
+  it('reports the intake state as the stronger reason when both hold', () => {
+    expect(coverage(answered(20), { safetyHolds: true, withheldNow: true })).toEqual({
+      form: 'absent',
+      reason: 'withheld',
+    });
+  });
+
+  it('is live only: once the card stands down the same record speaks again', () => {
+    expect(lookCoverageText(coverage(answered(20), { safetyHolds: false }))).toBe(
+      'Answered 20 of the last 28 days',
+    );
   });
 });
 
@@ -221,7 +241,7 @@ describe('timezone honesty (C-29)', () => {
       }));
       expect(
         lookCoverageText(
-          lookCoverage(record, { nowMs: NOW, timeZone, withheldNow: false, lastWithheldDay: null }),
+          lookCoverage(record, { nowMs: NOW, timeZone, withheldNow: false, safetyHolds: false, lastWithheldDay: null }),
         ),
       ).toBe('Answered 20 of the last 28 days');
     },
@@ -240,6 +260,6 @@ describe('timezone honesty (C-29)', () => {
       words: [],
       vocabVersion: LOOK_VOCAB_VERSION,
     }));
-    expect(lookCoverage(record, { nowMs: NOW, timeZone, withheldNow: false, lastWithheldDay: null }).form).toBe('ratio');
+    expect(lookCoverage(record, { nowMs: NOW, timeZone, withheldNow: false, safetyHolds: false, lastWithheldDay: null }).form).toBe('ratio');
   });
 });

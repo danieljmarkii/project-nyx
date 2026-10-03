@@ -94,8 +94,10 @@ import {
   lookWithheldState,
   markWithheldToday,
   readLastWithheldDay,
+  safetyHoldsLookFooter,
   type LookWithheldFacts,
 } from '../../lib/lookWithheld';
+import type { TrialStripSafety } from '../../lib/trialStripDoor';
 import {
   LookWithheldEntry,
   LookWithheldReasonLine,
@@ -228,12 +230,20 @@ interface Props {
    * for "no trial", which is most pets.
    */
   trialNotEating?: boolean | null;
+  /**
+   * What the Signal zone last reported about safety-class cards (`onSafetyLive`, the same
+   * report the trial strip's lane reads). Holds the coverage FOOTER under any live safety
+   * card and touches nothing else — the entries keep their words (Q-6 ruled (c), CUL-909).
+   * REQUIRED, `null` until the zone reports: unlike `trialNotEating`, there is no honest
+   * default, and a default here would be the decision (C-37).
+   */
+  safety: TrialStripSafety | null;
   /** Measured by Home so the pinned exits know where this card is (C-22: a
    *  passthrough on `Card`, never a wrapper View that would change what it measures). */
   onLayout?: (event: LayoutChangeEvent) => void;
 }
 
-export function LookCard({ trialNotEating = false, onLayout }: Props) {
+export function LookCard({ trialNotEating = false, safety, onLayout }: Props) {
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
   // The B-712 two-gate shape, both hooks called unconditionally then combined: server
@@ -360,13 +370,15 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
   const recordAnswered = resting !== null && activePet !== null && resting.petId === activePet.id;
 
   // The footer. Absent while anything is in flight, absent on a day with no look, absent
-  // below the floor, absent while withheld and until the window clears (T-16).
+  // below the floor, absent while withheld and until the window clears (T-16), and absent
+  // under any live safety-class card while the entries keep their words (CUL-909).
   const coverageText =
-    recordAnswered && resting
+    recordAnswered && resting && activePet
       ? lookCoverageText(
           lookCoverage(record, {
             nowMs: Date.now(),
             withheldNow: withheldState !== 'open',
+            safetyHolds: safetyHoldsLookFooter({ id: activePet.id }, safety),
             lastWithheldDay: resting.lastWithheldDay,
           }),
         )
