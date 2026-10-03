@@ -79,6 +79,7 @@ import { isHistoryDoorTapSpent, isWidgetPetTapSpent, spendHistoryDoorTap, spendW
 import { useSyncStore } from '../store/syncStore';
 import { useUiStore } from '../store/uiStore';
 import { useEventStore } from '../store/eventStore';
+import { useMomentStore } from '../store/momentStore';
 import { useSnackbarStore } from '../store/snackbarStore';
 import { useAskStore } from '../store/askStore';
 import { useHistoryListStore } from '../store/historyListStore';
@@ -289,6 +290,24 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect(useSnackbarStore.getState()).toMatchObject({ visible: false, payload: null });
     expect(useAskStore.getState()).toMatchObject({ petId: null, messages: [] });
     expect(useHistoryListStore.getState().snapshot).toBeNull();
+  });
+
+  // CUL-1255 (rls-privacy-reviewer): a card presented with a delay holds a pending reveal.
+  // Clearing the state alone let that reveal fire after the wipe and repaint the card.
+  it("cancels a completion card's pending reveal, so it cannot repaint after the wipe", async () => {
+    jest.useFakeTimers();
+    useMomentStore.getState().showNamed(
+      { eventId: 'e1', petId: 'pet-a', occurredAt: '2026-10-03T08:00:00.000Z' } as never,
+      { delayMs: 450 },
+    );
+    expect(useMomentStore.getState().payload).toBeNull();
+    try {
+      await wipeLocalSession();
+      await jest.advanceTimersByTimeAsync(10_000);
+      expect(useMomentStore.getState()).toMatchObject({ visible: false, payload: null });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   // CUL-1255: the sync banner's counts. The previous owner signed out past the unsent
@@ -592,7 +611,9 @@ describe('unsentSignOutWarning — the copy', () => {
 //
 // THE BLIND SPOT, stated (C-38): WIPED checks that the wipe NAMES the hook, not which
 // fields it clears. The per-store behaviour is asserted by the tests above; a field added
-// to a wiped store later is a review question this registry does not answer.
+// to a wiped store later is a review question this registry does not answer. And it
+// scans `store/` only: a Zustand store declared elsewhere (`lib/betaFeatures.ts`'s
+// opt-in store, cleared by `clearBetaOptIns`) is invisible to it.
 describe('every store is classified against the sign-out wipe (CUL-1255)', () => {
   const fs = jest.requireActual<typeof import('fs')>('fs');
   const path = jest.requireActual<typeof import('path')>('path');
@@ -625,6 +646,7 @@ describe('every store is classified against the sign-out wipe (CUL-1255)', () =>
     .map((f) => f.replace(/\.ts$/, ''));
   // Code only: a hook named in a comment is not a wipe.
   const sessionCode = fs.readFileSync(path.join(__dirname, 'session.ts'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
     .split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
 
   it('reads a real directory (non-vacuity floor)', () => {

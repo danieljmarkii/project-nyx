@@ -197,6 +197,10 @@ export async function wipeLocalSession(): Promise<void> {
   // Pre-existing, and named here because this issue added `previousSnapshotKg` — a
   // second health value — to that payload. Same FR-9 parity rule as the App Group and
   // notification wipes above: wipe every place account data rests, not just SQLite.
+  // CUL-1255 (rls-privacy-reviewer): `hide()` first, for its timers, not its state. A card
+  // presented with `delayMs` (the picker path's ~450ms) holds a pending reveal that would
+  // otherwise fire after this line and paint the previous owner's record back up.
+  useMomentStore.getState().hide();
   useMomentStore.setState({ visible: false, payload: null, removed: false });
   // The same leak through the root-mounted SHEETS. The log sheet and the intake door
   // each open on a request in the UI store and mount in the root layout, so a sign-out
