@@ -320,6 +320,9 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     arrivesWithPair: [],
     promoteOnly: [],
     laterInstant: [],
+    // `trigger` is in the identity since CUL-1213, so a trigger change is a new key and renders
+    // open: this entry can no longer fire, and stays only as the §5.3 table states it until the
+    // spec edit lands. `refusedFoodLabel` still moves under one key (a different food refused).
     anyChange: ['trigger', 'refusedFoodLabel'],
     reason: (_field, kind) => (kind === 'increase' ? 'intake_day' : 'ask_changed'),
   },

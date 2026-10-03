@@ -130,3 +130,35 @@ Deno.test('CUL-1213 — no cache row in the Signal pipeline corpus shares an ide
   // Non-vacuity: a corpus that served nothing would pass the uniqueness check trivially.
   assert.ok(rows >= SIGNAL_PIPELINE_CORPUS.length, `only ${rows} rows served`)
 })
+
+// The carry over an incomplete read (CUL-989) keys a prior safety card on its identity too. When
+// it keyed `intake_decline:` for both triggers, a prior Signal holding a refusal AND a
+// consecutive-low decline, followed by an incomplete read that reproduced only the refusal,
+// treated the decline as shown and dropped it: an eating-less card lost in the reassuring
+// direction (adversarial review, this PR). Red on the hand-rolled key.
+Deno.test('CUL-1213 — an incomplete read carries the prior decline beside the refusal it reproduced', () => {
+  const c = SIGNAL_PIPELINE_CORPUS.find((x) => x.name.startsWith('a cat that ate everything'))
+  assert.ok(c, 'the corpus holds the refusing-cat case')
+  const run = (incompletePulls: string[], prior: Parameters<typeof runSignalPipeline>[0]['prior']) =>
+    runSignalPipeline({
+      rows: c.rows,
+      incompletePulls,
+      prior,
+      nowMs: Date.parse(c.nowIso),
+      engineFlags: { on: [], readOk: true },
+      careRecord: { ownerAnswers: [], appointments: [] },
+      careContextFacts: null,
+    })
+  const complete = templatePayload(run([], null))
+  const refused = complete.findings.find((e) => e.finding.type === 'intake_decline')
+  assert.ok(refused && (refused.finding as { trigger: string }).trigger === 'refused_normal_food', 'the case serves the refusal')
+  const decline = { ...refused.finding, trigger: 'consecutive_low', daysBelowBaseline: 1, refusedFoodLabel: null }
+  const prior = {
+    findings: [{ rank: 0, text: 'x', finding: refused.finding }, { rank: 1, text: 'y', finding: decline }],
+    generatedAt: new Date(Date.parse(c.nowIso) - 3_600_000).toISOString(),
+    engineFlags: [],
+  } as unknown as Parameters<typeof runSignalPipeline>[0]['prior']
+  const keys = templatePayload(run(['events'], prior)).findings.map((e) => findingIdentity(e.finding))
+  assert.ok(keys.includes('intake_decline:consecutive_low'), keys.join(', '))
+  assert.ok(keys.includes('intake_decline:refused_normal_food'), keys.join(', '))
+})
