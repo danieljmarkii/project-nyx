@@ -7,7 +7,7 @@ import { ThemedText } from './ThemedText';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { TimeEditSheet } from './TimeEditSheet';
-import { useMomentStore } from '../../store/momentStore';
+import { useMomentStore, isIntakeDecline } from '../../store/momentStore';
 import {
   removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
 } from '../../lib/completionCard';
@@ -385,7 +385,17 @@ export function MealCompletionCard() {
   // logged" — that rule already has two implementations (EventRow, lib/dayEvents) and
   // this is not the place to mint a third; "Food" is true for all four foodType values,
   // including the 'other' and null ones neither of those covers.
-  const headline = foodName ? `Logged · ${foodName}` : 'Food logged';
+  //
+  // CUL-894 — on a refused or picked-at bowl the title names the RECORD, not the act:
+  // "Refused · Royal Canin HP", never "Logged · …" over an animal that did not eat
+  // (C-17 applied to the half of the record the title used to drop). It follows the
+  // record live, so a correction on the chips re-titles the card to match; the beat's
+  // haptic is the reveal's alone (`playCommitHaptic`). The phrases are the drill-in's
+  // (`lib/dayEvents.ts` INTAKE_PHRASE), so the card never says a warmer word than the
+  // row it wrote.
+  const decline = isIntakeDecline(meal?.intakeRating);
+  const verb = meal?.intakeRating === 'refused' ? 'Refused' : meal?.intakeRating === 'picked' ? 'Picked at' : 'Logged';
+  const headline = foodName ? `${verb} · ${foodName}` : `Food ${verb.toLowerCase()}`;
   // Name the MEAL's pet, not the active one. The flag is already targeted
   // correctly either way (evaluateMealLogTimeFlag runs against payload.petId, the
   // pet captured at log time), but a queue-then-switch would otherwise print
@@ -547,8 +557,18 @@ export function MealCompletionCard() {
           <>
           <View style={styles.headerRow}>
             {/* Gold beat: mint check + warm-gold halo, carrying the moment's
-                warmth into the non-blocking card. */}
-            <Animated.View style={[styles.checkBadge, { transform: [{ scale: checkScale }] }]}>
+                warmth into the non-blocking card — on an eaten or unrated meal only.
+                Over a refusal the halo goes (CUL-894): the named card's calm tone,
+                acknowledged and never congratulated. The check stays — it says the
+                record landed, which is still true. */}
+            <Animated.View
+              testID="meal-card-check"
+              style={[
+                styles.checkBadge,
+                !decline && styles.checkBadgeCelebrate,
+                { transform: [{ scale: checkScale }] },
+              ]}
+            >
               <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
             </Animated.View>
             {/* One summary node, as on the named card: the food and the time are one
@@ -594,7 +614,15 @@ export function MealCompletionCard() {
           </View>
           {showIntake && (
             <View style={styles.intakeWrap}>
-              <ThemedText style={styles.intakeLabel}>How much did {mealPetName} eat?</ThemedText>
+              {/* CUL-894 — on the intake door's card the owner has ALREADY answered (the
+                  sheet asked the same question a second ago), so the row is her answer
+                  held up for correction, not a second ask. Keyed on what the card was
+                  presented with, the same fact the clear-guard above reads. */}
+              <ThemedText style={styles.intakeLabel}>
+                {presentedIntake.current.rating !== null
+                  ? 'You said · tap another to change'
+                  : `How much did ${mealPetName} eat?`}
+              </ThemedText>
               <IntakeChipRow
                 value={payload.intakeRating ?? null}
                 onChange={handleIntakeChange}
@@ -741,7 +769,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space2,
   },
-  // Mint ring on the dark card with a warm-gold halo — the celebrate warmth.
+  // Mint ring on the dark card. The warm-gold halo is its own style, as on the named
+  // card: a refusal takes the ring without it (CUL-894).
   checkBadge: {
     width: 32,
     height: 32,
@@ -751,6 +780,9 @@ const styles = StyleSheet.create({
     borderColor: theme.colorMomentConfirm,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // The celebrate warmth — eaten and unrated meals only.
+  checkBadgeCelebrate: {
     shadowColor: theme.colorMomentGlow,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5,
