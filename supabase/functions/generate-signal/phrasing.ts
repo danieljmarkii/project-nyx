@@ -22,6 +22,7 @@ import type {
   ReflectionFinding,
   SymptomWorseningFinding,
   SymptomBurdenFinding,
+  WeightLossFinding,
   SymptomChronicityFinding,
   PostprandialTimingFinding,
   EmptyStomachTimingFinding,
@@ -36,6 +37,7 @@ import type {
   SymptomType,
 } from './detection.ts'
 import { careClaimReason } from '../../../lib/careClaimScreens.ts'
+import { kgToLbsNum } from '../../../lib/weightUnits.ts'
 
 // §3.2 visible-card cap: governs the LOW/MEDIUM-priority insight set only.
 // Safety/concern findings are exempt — never withheld to honor the cap.
@@ -170,6 +172,32 @@ export function templateBurden(f: SymptomBurdenFinding, petName: string): string
     return `${petName} has vomited ${times} in the last ${f.windowDays} days — worth booking a vet visit soon.`
   }
   return `${petName} vomited on ${days} this week — worth booking a vet visit soon.`
+}
+
+// Engines v3 PR-19 (EN-8, CUL-1413) — the weight row (docs/nyx-weight-lane-requirements.md §6.1).
+// Two readings and their dates, each with where it was taken, in pounds to 0.1 lb (the owner's own
+// unit and precision); never a percentage and never a difference (WG-4), never a cause, never
+// "stable" or any verdict (WG-7). A high end that is one reading says so (ruling sheet W1's fix).
+// The ask is the tier's: soft "worth raising with your vet", firm "worth booking a vet visit". A
+// running plan is named, because a planned loss only fires when it goes faster or further than
+// the plan (W6). Template only: validatePhrasing refuses every model sentence for this type.
+const WEIGHT_SOURCE_WORDS: Record<WeightLossFinding['low']['source'], string> = {
+  clinic: 'at the vet',
+  home_scale: 'on a home scale',
+}
+
+function weightReadingPhrase(p: WeightLossFinding['low']): string {
+  return `${kgToLbsNum(p.kg)} lb on ${onsetDay(p.occurredAt)} ${WEIGHT_SOURCE_WORDS[p.source]}`
+}
+
+export function templateWeightLoss(f: WeightLossFinding, petName: string): string {
+  // The sentence's two readings (spec §5.2), never the decision's levels: the owner reads the
+  // latest weigh-in they logged, and the highest before it, as on every other weight surface.
+  const hb = f.highBefore
+  const high = hb.confirmed ? weightReadingPhrase(hb) : `${weightReadingPhrase(hb)}, a single reading`
+  const ask = f.tier === 'firm' ? 'worth booking a vet visit' : 'worth raising with your vet'
+  const plan = f.planned ? ', faster or further than the weight plan allows' : ''
+  return `${petName} weighed ${weightReadingPhrase(f.latest)}, down from ${high}${plan} — ${ask}.`
 }
 
 export function templateWorsening(f: SymptomWorseningFinding, petName: string): string {
@@ -543,6 +571,8 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
         ? `${SYMPTOM_LABEL[f.symptomType]} coming more often`
         : f.type === 'symptom_burden'
           ? `${SYMPTOM_LABEL[f.symptomType]} on several days close together`
+        : f.type === 'weight_loss'
+          ? 'a drop in weight between two weigh-ins'
         : f.type === 'intake_decline'
           ? f.trigger === 'refused_normal_food'
             ? 'turning down a food they usually eat'
@@ -557,6 +587,10 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
         ? f.tier === 'today'
           ? 'worth a call to your vet'
           : 'worth booking a vet visit'
+        : f.type === 'weight_loss'
+          ? f.tier === 'firm'
+            ? 'worth booking a vet visit'
+            : 'worth raising with your vet'
         : (f.type === 'symptom_chronicity' || f.type === 'symptom_worsening') && f.tier === 'firm'
           ? 'worth booking a vet visit'
           : 'worth a word with your vet'
@@ -571,6 +605,7 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
  */
 const CARRYABLE_TIERS = { soft: true, standard: true, firm: true }
 const CARRYABLE_BURDEN_TIERS = { today: true, soon: true }
+const CARRYABLE_WEIGHT_TIERS = { soft: true, firm: true }
 
 export function canRenderCarried(f: unknown): boolean {
   if (!f || typeof f !== 'object') return false
@@ -582,6 +617,8 @@ export function canRenderCarried(f: unknown): boolean {
       return known(SYMPTOM_LABEL, x.symptomType) && (x.tier === undefined || known(CARRYABLE_TIERS, x.tier))
     case 'symptom_burden':
       return known(SYMPTOM_LABEL, x.symptomType) && known(CARRYABLE_BURDEN_TIERS, x.tier)
+    case 'weight_loss':
+      return known(CARRYABLE_WEIGHT_TIERS, x.tier)
     case 'intake_decline':
       return x.trigger === undefined || typeof x.trigger === 'string'
     case 'incident_red_flag':
@@ -608,6 +645,8 @@ export function templateForFinding(finding: Finding, petName: string): string {
       return templateWorsening(finding, petName)
     case 'symptom_burden':
       return templateBurden(finding, petName)
+    case 'weight_loss':
+      return templateWeightLoss(finding, petName)
     case 'symptom_chronicity':
       return templateChronicity(finding, petName)
     case 'postprandial_timing':
@@ -705,6 +744,14 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
   if (finding.priorityClass === 'safety') {
     // Never reassure on a safety flag; never reframe a decline as fussiness.
     if (REASSURANCE_RE.test(t) || DISMISSIVE_RE.test(t)) return false
+  }
+  if (finding.type === 'weight_loss') {
+    // Engines v3 PR-19 (EN-8, CUL-1413): NO MODEL SENTENCE IS EVER ACCEPTED, for the burden card's
+    // reason below: the load is two readings, their sources and the tier's ask, and no screen over
+    // a free sentence holds a number. A carried line is held to its exact template.
+    if (finding.carriedFrom === undefined) return false
+    const name = /^An earlier read of (.+)'s record, /.exec(t)?.[1]
+    return name !== undefined && t === templateCarried(finding, name, finding.carriedFrom)
   }
   if (finding.type === 'symptom_burden') {
     // Engines v3 PR-14d (CUL-1410): NO MODEL SENTENCE IS EVER ACCEPTED. The card's load is its ask
@@ -1013,6 +1060,20 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       median_gap_hours: finding.medianGapHours,
       episode_count: finding.episodeCount,
       relationship: 'descriptive_count', // inter-episode gaps we are noting — NOT a cause, NOT a verdict
+    }
+  }
+  if (finding.type === 'weight_loss') {
+    // Engines v3 PR-19 (CUL-1413). validatePhrasing refuses every model sentence for this type, so
+    // this payload is never used; kept for shape-correctness and to narrow the union for the
+    // intake_decline fallthrough below. Readings only, in pounds; no percentage, no cause.
+    return {
+      insight_type: 'weight_loss',
+      pet_name: petName,
+      latest_lb: kgToLbsNum(finding.latest.kg),
+      earlier_lb: kgToLbsNum(finding.highBefore.kg),
+      tier: finding.tier,
+      relationship: 'descriptive_readings',
+      severity: 'calm_safety_flag',
     }
   }
   if (finding.type === 'incident_red_flag') {

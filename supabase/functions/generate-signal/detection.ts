@@ -99,6 +99,10 @@ import { dateTimeFormat, localDayIndex, localDayIndexOf, trialDayCounter } from 
 // exposure) — the "counts always render; a comparison sentence only when the gate passes"
 // discipline (§2 L2). p-values never surface (§3); this returns a boolean gate + direction.
 import { rateContrast } from '../../../lib/rateContrast.ts'
+// Engines v3 PR-19 (EN-8, CUL-1413): the weight lane's one predicate. Every weight surface calls
+// it (WG-1), so this lane never picks its own anchor or line.
+import { weightStory, WEIGHT_RULES, type WeightReading, type WeightPlan, type WeightRow } from '../../../lib/weightStory.ts'
+const WEIGHT_WINDOW_DAYS = WEIGHT_RULES.windowDays
 
 // The ONE symptom-episode collapse, shared with hooks/useTrend.ts (B-067/CUL-372).
 import {
@@ -745,8 +749,27 @@ export interface DetectionInput {
    * derives `pet.dietTrialActive` from) or omits the field; L2 re-checks `isTrialRunning` itself.
    */
   dietTrial?: DietTrialInput
+  /**
+   * Engines v3 PR-19 (EN-8, CUL-1413): the weight lane's input. The ONLY input `detectWeightLoss`
+   * reads. Optional, and the shell passes it only while `engines_v3_en8` is on, so absent is the
+   * lane's dark state: silent, byte-identical to before the lane existed (no other detector reads
+   * it). CONTRACT: the caller passes this pet's non-soft-deleted `weight_checks` rows with their
+   * source; estimates arrive only as a reading the owner relabelled (CUL-1390 W1).
+   */
+  weight?: WeightLaneInput
   /** Reference "now" (ISO-8601 UTC), injected so detection is deterministic and testable. */
   now: string
+}
+
+/** What the weight lane reads (lib/weightStory.ts's input, less the clock). */
+export interface WeightLaneInput {
+  readings: WeightReading[]
+  /** `pets.date_of_birth`. Null reads young (ruling sheet W5). */
+  dateOfBirth: string | null
+  /** Vet-set planned-loss states (CUL-1390 W6, PR-37). None exist yet. */
+  plans?: WeightPlan[]
+  /** The owner's stand-downs of an earlier weight finding (EN-9). None exist yet. */
+  standDowns?: string[]
 }
 
 /**
@@ -776,6 +799,8 @@ export type InsightType =
   | 'symptom_worsening'
   // Engines v3 PR-14d (CUL-1410): absolute burden, the safety card that needs no earlier week.
   | 'symptom_burden'
+  // Engines v3 PR-19 (EN-8, CUL-1413): a confirmed weight loss, the safety row with no paired sign.
+  | 'weight_loss'
   | 'symptom_chronicity'
   | 'postprandial_timing'
   // Signals v2 (B-755 / CUL-7): the empty-stomach ≥6h lane (L1, the ⑤ mirror) and the
@@ -1248,6 +1273,37 @@ export interface SymptomBurdenFinding extends FindingBase {
   /** The window, in days (the reflection lane's, so "this week" means one thing). */
   windowDays: number
   /** Hard marker for the phrasing layer + reviewers: counts only, never causal. */
+  associationalOnly: true
+}
+
+/**
+ * Engines v3 PR-19 (EN-8, CUL-1413) — a confirmed weight loss (docs/nyx-weight-lane-requirements.md
+ * §5, values ruled on docs/clinical-ruling-sheet-2026-10.md §2.3). Two readings and their dates,
+ * each with its source; whether the higher one is a single reading; the tier the lines resolved.
+ * No percentage reaches an owner (WG-4), no cause, no diagnosis. NEVER reassures: a steady or
+ * rising weight emits nothing, and silence is not wellness (WG-7).
+ */
+export interface WeightLossFinding extends FindingBase {
+  type: 'weight_loss'
+  priorityClass: 'safety'
+  /** 'soft' asks "worth raising with your vet"; 'firm' "worth booking a vet visit". */
+  tier: WeightRow['tier']
+  basis: WeightRow['basis']
+  /**
+   * What the card SAYS (spec §5.2, the one sentence every surface states): the latest reading and
+   * the highest reading before it in the window, each saying whether it is a single reading.
+   */
+  latest: WeightRow['low']
+  highBefore: WeightRow['high']
+  /** What the decision COMPARED: the confirmed (or W1-fix single) high and the confirmed low. */
+  high: WeightRow['high']
+  low: WeightRow['low']
+  mixedInstruments: boolean
+  planned: boolean
+  juvenile: boolean
+  /** The window, in days (the predicate's). */
+  windowDays: number
+  /** Hard marker for the phrasing layer + reviewers: readings only, never causal. */
   associationalOnly: true
 }
 
@@ -1855,6 +1911,7 @@ export type Finding =
   | ReflectionFinding
   | SymptomWorseningFinding
   | SymptomBurdenFinding
+  | WeightLossFinding
   | SymptomChronicityFinding
   | PostprandialTimingFinding
   | EmptyStomachTimingFinding
@@ -4816,6 +4873,47 @@ export function detectBurden(
   ]
 }
 
+// ── Engines v3 PR-19 (EN-8, CUL-1413): the weight lane ─────────────────────────
+//
+// A thin adapter over lib/weightStory.ts, which owns the anchor, the confirmation and the lines.
+// Dark by construction: the lane reads `input.weight` and nothing else, and the shell passes it
+// only while `engines_v3_en8` is on. Every species gets the rows (ruling sheet W8 = A). Only a
+// RAISED row emits (drop_confirmed / drop_firm); CUL-1390 W5's plain row for a single low reading
+// is a client decision still open, so `drop_unconfirmed` emits nothing here.
+
+export function detectWeightLoss(input: DetectionInput): WeightLossFinding[] {
+  if (!input.weight) return []
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return []
+  const story = weightStory({
+    readings: input.weight.readings,
+    nowMs,
+    dateOfBirth: input.weight.dateOfBirth,
+    plans: input.weight.plans ?? [],
+    standDowns: input.weight.standDowns ?? [],
+  })
+  const row = story.row
+  // A raised row implies two counted readings, so both sentence ends exist; the guard narrows.
+  if (row === null || story.latest === null || story.highBefore === null) return []
+  return [
+    {
+      type: 'weight_loss',
+      priorityClass: 'safety',
+      tier: row.tier,
+      basis: row.basis,
+      latest: story.latest,
+      highBefore: story.highBefore,
+      high: row.high,
+      low: row.low,
+      mixedInstruments: row.mixedInstruments,
+      planned: row.planned,
+      juvenile: row.juvenile,
+      windowDays: WEIGHT_WINDOW_DAYS,
+      associationalOnly: true,
+    },
+  ]
+}
+
 // ── Detector ⑦: symptom chronicity / persistence (B-182 — the safety chronicity lane) ──
 //
 // The single strongest TRUE signal in the data that the engine never stated (vet-council
@@ -7051,6 +7149,9 @@ export const DETECTOR_REGISTRY: Detector[] = [
   // drops nothing for it, so the vet report (which ignores the type) keeps every flag it had. The
   // Home pipeline alone drops a same-sign ④ under it (pipeline.ts, suppressWorseningUnderBurden).
   { type: 'symptom_burden', detect: detectBurden },
+  // Engines v3 PR-19 (EN-8, CUL-1413): the weight lane, safety class, silent unless the shell
+  // hands it `input.weight` (only while `engines_v3_en8` is on). The vet report never passes it.
+  { type: 'weight_loss', detect: detectWeightLoss },
   // Detector ⑦ (B-182). Live in detectSignals (PR 1), with its within-safety-band RANKING
   // (SAFETY_TYPE_ORDER: chronicity above worsening) and composition couplings — the
   // ③-suppression valve (§4.4) and same-symptom ④-suppression with firm-tier inheritance
@@ -7102,7 +7203,7 @@ export const DETECTOR_REGISTRY: Detector[] = [
 //   4  gap_shortening (L4, CUL-10) — the sub-floor watching/quiet row; the engine's
 //      quietest, ranked below even reflection so it leads only when nothing else exists.
 function priorityBand(finding: Finding, ctx: PetContext): number {
-  if (finding.priorityClass === 'safety') return 0 // incident_red_flag, intake_decline, symptom_burden, symptom_chronicity, symptom_worsening
+  if (finding.priorityClass === 'safety') return 0 // incident_red_flag, intake_decline, symptom_burden, weight_loss, symptom_chronicity, symptom_worsening
   // The gap-shortening lane (L4, CUL-10) is the QUIETEST insight — a sub-floor watching row shown while
   // real-world behavior is still being observed (§2 L4, D5). It ranks BELOW even reflection so it only
   // ever leads when nothing louder exists, which is exactly the sub-floor state it is built for. Band 4
@@ -7160,12 +7261,19 @@ const INSIGHT_TYPE_ORDER: Record<string, number> = {
 //   • burden (PR-14d, CUL-1410) sits between intake-decline and chronicity: it is this week's
 //     count, and its ask can be "today"; chronicity's is at most "book a visit". Both show when
 //     they co-fire (duration and this week's burden are different statements).
-const SAFETY_TYPE_ORDER: Record<string, number> = {
+//   • weight loss (PR-19, CUL-1413) sits below the burden card and above chronicity (ruling sheet
+//     W7, PM 2026-10-02): four vomits this week is the more acute ask; a confirmed loss over
+//     months is the more serious finding than a course of vomiting alone.
+//   Typed over every safety-class finding (MFU-8, PR-19): a new safety finding type that is not
+//   placed here fails the type check, rather than falling to the `?? 9` default and ranking last.
+export type SafetyFindingType = Extract<Finding, { priorityClass: 'safety' }>['type']
+export const SAFETY_TYPE_ORDER: Readonly<Record<SafetyFindingType, number>> = {
   incident_red_flag: 0,
   intake_decline: 1,
   symptom_burden: 2,
-  symptom_chronicity: 3,
-  symptom_worsening: 4,
+  weight_loss: 3,
+  symptom_chronicity: 4,
+  symptom_worsening: 5,
 }
 
 /**
@@ -7190,7 +7298,8 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
     // (SAFETY_TYPE_ORDER); within intake-decline, an outright refusal of a normally-eaten
     // food leads.
     if (x.priorityClass === 'safety' && y.priorityClass === 'safety') {
-      const safetyDiff = (SAFETY_TYPE_ORDER[x.type] ?? 9) - (SAFETY_TYPE_ORDER[y.type] ?? 9)
+      const order = SAFETY_TYPE_ORDER as Readonly<Record<string, number>>
+      const safetyDiff = (order[x.type] ?? 9) - (order[y.type] ?? 9)
       if (safetyDiff !== 0) return safetyDiff
       // Two per-incident red-flag cards (a bloody vomit AND a bloody stool, B-364): both lead every
       // other safety lane; between the two, vomit leads stool — a fixed, deterministic order (also

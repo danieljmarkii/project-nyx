@@ -172,7 +172,10 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
     finding.type === 'timeofday_clustering' ||
     // B-340 — a SAFETY finding naming what a photo VISIBLY showed, routed to the vet. Template-only
     // (no LLM) is itself a structural never-reassure guarantee, matching the other safety templates.
-    finding.type === 'incident_red_flag'
+    finding.type === 'incident_red_flag' ||
+    // Engines v3 PR-19 (EN-8, CUL-1413) — the weight row: two readings, their sources and the
+    // tier's ask. Template-only, which also saves the call (validatePhrasing refuses it anyway).
+    finding.type === 'weight_loss'
   ) {
     return fallback
   }
