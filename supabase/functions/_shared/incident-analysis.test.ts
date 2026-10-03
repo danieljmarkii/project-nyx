@@ -400,7 +400,7 @@ Deno.test('CUL-1323 — a HOLD writes no words, clears a hide it finds, and writ
   // client (old builds hide unconditionally), which is why "the owner hid these words" is
   // not enough to keep it (adversarial round 2, Break 1).
   const stored = (over: Partial<StoredAnalysis>): StoredAnalysis => ({
-    recommendation: 'worth_a_call', tier: null, status: 'completed', edited: false, presentFlags: [], hidden: false, ...over,
+    recommendation: 'worth_a_call', tier: null, status: 'completed', edited: false, presentFlags: [], hidden: false, errored: false, ...over,
   })
   const call = (s: StoredAnalysis | null, recommendation: 'worth_a_call' | 'monitor') =>
     resolveReanalysisWrite({
@@ -708,13 +708,14 @@ Deno.test('snapshotStoredAnalysis — reads the verdict, the status, the edit an
       edited_at: '2026-09-20T10:00:00Z',
       blood_col: 'yes',
       dismissed_at: '2026-09-21T10:00:00Z',
+      error: 'Claude API error 529',
     }),
-    { recommendation: 'monitor', tier: null, status: 'failed', edited: true, presentFlags: ['blood'], hidden: true },
+    { recommendation: 'monitor', tier: null, status: 'failed', edited: true, presentFlags: ['blood'], hidden: true, errored: true },
   )
   // Garbage in the typed columns reads as absent, never as a verdict.
   assertEquals(
     snapshotStoredAnalysis(FAKE_DESCRIPTOR, { recommendation: 7, status: null, edited_at: null, blood_col: 'no' }),
-    { recommendation: null, tier: null, status: null, edited: false, presentFlags: [], hidden: false },
+    { recommendation: null, tier: null, status: null, edited: false, presentFlags: [], hidden: false, errored: false },
   )
 })
 
@@ -727,6 +728,7 @@ const stored = (o: Partial<StoredAnalysis> = {}): StoredAnalysis => ({
   edited: false,
   presentFlags: [],
   hidden: false,
+  errored: false,
   ...o,
 })
 
@@ -781,6 +783,45 @@ Deno.test('resolveReanalysisWrite — a held row the last run left failed settle
   assertEquals(resolve(stored({ status: 'failed' }), readOf('not_enough_to_say')), { mode: 'hold', values: { status: 'uncertain', error: null } })
   // An already-finished row is left exactly as it is.
   assertEquals(resolve(stored({ status: 'uncertain' }), readOf('monitor')), { mode: 'hold', values: null })
+})
+
+Deno.test('resolveReanalysisWrite — CUL-1509: a held run clears the error an earlier failed run left on a FINISHED call', () => {
+  // The sequence: a call stands (completed); a re-read fails over it, so the error-only write
+  // notes `error` and leaves status 'completed' (buildFailureWrite); a later re-read finishes
+  // calmer and is held. That run finished, so "the latest read hit a problem" must go. The
+  // error clears and nothing else: no status, no words, no flags.
+  for (const s of [stored({ errored: true }), stored({ errored: true, status: 'uncertain' }), stored({ errored: true, presentFlags: ['blood'] })]) {
+    for (const next of [readOf('monitor'), readOf('not_enough_to_say')]) {
+      assertEquals(resolve(s, next), { mode: 'hold', values: { error: null } })
+    }
+  }
+  // With the hide on file too, both clear (CUL-1323), still no words.
+  assertEquals(resolve(stored({ errored: true, hidden: true }), readOf('monitor')), { mode: 'hold', values: { error: null, dismissed_at: null } })
+  // A tier-only call (a client lowered `recommendation` beside it) holds and clears the same way.
+  assertEquals(
+    resolve(stored({ errored: true, recommendation: 'monitor', tier: 'call_today' }), readOf('monitor')),
+    { mode: 'hold', values: { error: null } },
+  )
+  // A failed row still settles its status, and the error goes once.
+  assertEquals(resolve(stored({ errored: true, status: 'failed' }), readOf('monitor')), { mode: 'hold', values: { status: 'completed', error: null } })
+  // No error on file and nothing hidden: the hold still writes nothing.
+  assertEquals(resolve(stored({ errored: false }), readOf('monitor')), { mode: 'hold', values: null })
+})
+
+Deno.test('the error-only failure and the hold round-trip: a failed run then a calm run leaves no error standing', () => {
+  // buildFailureWrite over a finished call writes the error only; snapshot the row it leaves
+  // and hand that to the next calm run's write decision, the order runIncidentAnalysis takes.
+  const failure = buildFailureWrite({
+    existing: { recommendation: 'worth_a_call', presentFlags: [] }, existingReadFailed: false,
+    eventId: 'evt', petId: 'pet', incidentType: 'vomit', message: 'Claude API error 529', rescue: null, stamps: null,
+  })
+  assertEquals(failure, { mode: 'error-only', values: { error: 'Claude API error 529' } })
+  const after = snapshotStoredAnalysis(FAKE_DESCRIPTOR, {
+    recommendation: 'worth_a_call', status: 'completed', edited_at: null, blood_col: 'no',
+    ...(failure.mode === 'error-only' ? failure.values : {}),
+  })
+  assertStrictEquals(after?.errored, true)
+  assertEquals(resolve(after, readOf('monitor')), { mode: 'hold', values: { error: null } })
 })
 
 Deno.test('resolveReanalysisWrite — an escalation replacing an escalation is not a lowering: it writes', () => {

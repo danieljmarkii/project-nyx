@@ -32,7 +32,7 @@ const FIELDS: AnalysisReadFields = {
 }
 
 const stored = (o: Partial<StoredAnalysis> = {}): StoredAnalysis => ({
-  recommendation: 'worth_a_call', tier: null, status: 'completed', edited: false, presentFlags: [], hidden: false, ...o,
+  recommendation: 'worth_a_call', tier: null, status: 'completed', edited: false, presentFlags: [], hidden: false, errored: false, ...o,
 })
 
 // ── tieredReadFields: the map, and nothing flag-off ─────────────────────────────────
