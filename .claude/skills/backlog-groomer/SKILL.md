@@ -177,6 +177,8 @@ Every step below is bounded by the table above. Where a step's prose and the tab
 
     List every open issue carrying the label (`list_issues` `label: "Waiting on PM"`, `fields: ["id", "title", "labels", "updatedAt"]`). Then **read each description and its newest comments**. Step 6's measurement holds here too: the title does not tell you which lane an item is in.
 
+    **One exception: a `/dispatch:` index** (title `/dispatch: <project> — what's holding the run order`, CUL-1506). It is not a question; it lists questions that live on their own issues or on the project's decisions table, and `/dispatch` owns its description and state. Count it once in the queue total and report it as `index: CUL-NNN (<n> holds, top: <hold>)`. Never lane it, post a default on it, propose it closed or close it. Rank the docket by its table where an item appears there, since it counts rows unblocked.
+
     **The never-list, which is absolute.** Clinical · a safety invariant (intake is not preference, n=1 never reassures) · privacy / RLS / Storage / deletion / export / share links · money or Pets > $ (a gate, a cap, a paywall, an entitlement) · schema · App Store · anything irreversible. An item is on it when it carries `Gate: clinical`, `Gate: privacy` or `Area: Privacy/RLS`, **or** when its body touches any of these. **Uncertain counts as on the list.** A never-list item cannot enter the team call or the default lane, whatever else it is.
 
     **Sort each item into the first lane that matches, read in this order:**

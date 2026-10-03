@@ -362,7 +362,7 @@ If any box is unchecked, the work is not done — say so explicitly rather than 
 
 ### Dev Handoff — After Every Push
 
-After every `git push`, output the exact terminal commands the PM needs to run to get the latest code onto their phone. Format each command as a code block followed by one plain-English sentence explaining why it is being run. Do not skip commands or assume the PM remembers the sequence from a previous session.
+After every `git push`, output the exact terminal commands the PM needs to get the latest code onto their phone, each a code block plus one plain-English sentence on why. Skip none; assume the PM remembers nothing. (A `/dispatch` child: `/wrap --dispatched`.)
 
 There are **two runtimes** the PM uses, and the handoff differs for each. Pick the one that matches what the PM is doing this session, and emit only that sequence — do not dump both unless the change requires both.
 
