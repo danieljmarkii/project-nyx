@@ -34,8 +34,9 @@
 // began, so a bout chained across days (re-logs under three hours apart are one episode,
 // however long the chain) drew its first day rose and the rest as ordinary days: the
 // worst run on the record read calmer than one lone vomit a day. The rose is the row's
-// fact; the episode count stays the month's corner and the Signal's. A symptom filter marks its own kind, and All
-// symptoms any symptom, through `isSymptomFilter`, which rides `SYMPTOM_TYPES`: a leaf
+// fact; the episode count stays the month's corner and the Signal's. A symptom filter
+// marks its own kind, and All symptoms any symptom, through `isSymptomFilter`, which
+// rides `SYMPTOM_TYPES`: a leaf
 // that joins that set is rose here the same day. `stool_normal` is not in it, so the Stool
 // filter draws a line, neutral, as its rows are (the membership walk states it).
 //

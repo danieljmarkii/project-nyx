@@ -613,7 +613,7 @@ function Legend({ model, layers }: { model: MonthModel; layers: MonthLayers }) {
     <View style={styles.legend} testID="month-legend">
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchVomit]} />
-        <ThemedText style={styles.legendText}>vomit day, count in the corner</ThemedText>
+        <ThemedText style={styles.legendText}>vomit day, count where a bout began</ThemedText>
       </View>
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchLogged]}>
