@@ -369,6 +369,13 @@ export function LookCard({ trialNotEating = false, safety, onLayout }: Props) {
     resting && activePet && resting.petId === activePet.id ? resting.record : [];
   const recordAnswered = resting !== null && activePet !== null && resting.petId === activePet.id;
 
+  // Q-6 ruled (c) (CUL-909): a live safety-class card holds the APP's counts — the footer,
+  // and the receipt's denominators, which state the same answered-day count (*of the 20
+  // days you've answered*, *in the 27 days you'd answered before it*) and would let the
+  // footer be read back off the line above it. The words stay. Fails closed (null, or a
+  // report for another pet) like the footer.
+  const footerHeld = activePet ? safetyHoldsLookFooter({ id: activePet.id }, safety) : true;
+
   // The footer. Absent while anything is in flight, absent on a day with no look, absent
   // below the floor, absent while withheld and until the window clears (T-16), and absent
   // under any live safety-class card while the entries keep their words (CUL-909).
@@ -378,7 +385,7 @@ export function LookCard({ trialNotEating = false, safety, onLayout }: Props) {
           lookCoverage(record, {
             nowMs: Date.now(),
             withheldNow: withheldState !== 'open',
-            safetyHolds: safetyHoldsLookFooter({ id: activePet.id }, safety),
+            safetyHolds: footerHeld,
             lastWithheldDay: resting.lastWithheldDay,
           }),
         )
@@ -528,13 +535,16 @@ export function LookCard({ trialNotEating = false, safety, onLayout }: Props) {
               petName,
               pet: { species: activePet.species, sex },
               nowMs: Date.now(),
-              withheld,
+              // The receipt's `withheld` is "reduce to the bare first date". Under a safety
+              // card that reduction holds too (CUL-909) — the entry's words are untouched,
+              // which `withholdsWords` decides from the intake state alone.
+              withheld: withheld || footerHeld,
             },
           ),
         )?.text ?? null
       );
     },
-    [record, recordAnswered, activePet, petName, sex, withheld],
+    [record, recordAnswered, activePet, petName, sex, withheld, footerHeld],
   );
 
   /**

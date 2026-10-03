@@ -844,6 +844,30 @@ describe('under a live safety-class card (Q-6 ruled (c), CUL-909)', () => {
     await waitFor(() => expect(t.getByText('Answered 20 of the last 28 days')).toBeTruthy());
   });
 
+  it('reduces an Off receipt to the bare first date — no answered-day count by another route', async () => {
+    // *Off* today and once five days ago, over 20 answered days: quiet, the count form
+    // speaks the footer's own denominator; under a safety card it must not.
+    useEventStore.setState({ todayEvents: [lookRow('e1', 1)] });
+    mockLoadLookDays.mockResolvedValue([
+      recordRow('e1', 0, ['subdued']),
+      ...Array.from({ length: 19 }, (_, i) => recordRow(`q${i}`, i + 1, i === 4 ? ['subdued'] : [])),
+    ]);
+    const quietRender = render(<LookCard safety={quiet()} />);
+    await waitFor(() => expect(quietRender.getByTestId('look-receipt-e1')).toBeTruthy());
+    // Non-vacuity: the quiet card really does speak the count this test is about.
+    expect(String(quietRender.getByTestId('look-receipt-e1').props.children)).toMatch(/of the 20 days/);
+    quietRender.unmount();
+
+    const t = render(<LookCard safety={{ petId: MOCHI.id, live: true }} />);
+    await waitFor(() => expect(t.getByTestId('look-receipt-e1')).toBeTruthy());
+    const text = String(t.getByTestId('look-receipt-e1').props.children);
+    expect(text).toMatch(/first marked/);
+    expect(text).not.toMatch(/\d+ days/);
+    // Her words stay: the intake state's withheld entry is not drawn.
+    expect(t.queryByTestId('look-withheld-e1')).toBeNull();
+    expect(t.queryByTestId('look-coverage')).toBeNull();
+  });
+
   it('fails CLOSED before the Signal answers: no footer, words still drawn', async () => {
     seedQuietRun();
     const t = render(<LookCard safety={null} />);

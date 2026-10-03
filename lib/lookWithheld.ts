@@ -237,7 +237,7 @@ export function lookWithheld(pet: { id: string }, record: LookWithheldFacts | nu
 }
 
 /**
- * The FOOTER's own gate under a live safety-class finding — Q-6, ruled (c) by the PM on
+ * The gate on the APP's counts under a live safety-class finding — Q-6, ruled (c) by the PM on
  * 2026-10-03 (CUL-909). NOT a fourth arm, and it must never become one.
  *
  * The three arms above withhold the owner's WORDS, because a falling intake record is the
@@ -252,7 +252,12 @@ export function lookWithheld(pet: { id: string }, record: LookWithheldFacts | nu
  *     clinical case for refusing an owner her own answer, and hiding it on an analogy is
  *     the large behaviour change option (a) was rejected for.
  *
- * So this returns whether the footer is held, and nothing reads it but the footer.
+ * So this returns whether the app's counts are held: the footer, and the receipt's
+ * denominators, which state the same answered-day count (*of the 20 days you've answered*)
+ * and so reduce to the bare first date — the intake state's own receipt form, for the
+ * reason §3.3 gives it (a rate the withheld count could be read back out of). Found by the
+ * adversarial pass on CUL-909; it is the ruling's own reason applied to the second place
+ * the count is spoken. Nothing here reaches the words.
  *
  * ── `safety` IS WHAT THE SIGNAL ZONE REPORTS ─────────────────────────────────
  * `onSafetyLive` — any `priorityClass === 'safety'` card in the zone's settled set, plus
@@ -264,11 +269,13 @@ export function lookWithheld(pet: { id: string }, record: LookWithheldFacts | nu
  * and the footer is a nicety whose absence carries no reading.
  *
  * ── IT WRITES NO WITHHELD MARK ───────────────────────────────────────────────
- * Deliberately live-only: the footer returns the day the card stands down. The T-16 mark
- * exists because a withheld day suppresses the WORDS, so the days after it hold a gap the
- * owner did not choose; under a safety card she can still answer, so there is no imposed
- * gap to protect. Marking would also hide the footer for 28 days after every safety card,
- * which on a chronic pet means never — a cost the ruling did not ask for.
+ * Deliberately live-only: the footer returns the day the card stands down. That leaves a
+ * KNOWN, ACCEPTED T-16 exposure, stated rather than argued away: a cat in a clinic for six
+ * days under a red-flag card, with nobody opening the app, comes home to *Answered 22 of
+ * the last 28 days* once the card stands down — a number pulled down by the illness. It is
+ * not a regression (the same number rendered before this ruling, and renders today for a
+ * hospitalisation no Signal card saw), and the alternative is worse: a mark would hide the
+ * footer for 28 days after EVERY safety card, which on a chronic pet means never.
  */
 export function safetyHoldsLookFooter(
   pet: { id: string },
