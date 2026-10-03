@@ -400,6 +400,7 @@ describe('a visit landing sends what waited on it', () => {
       medication_administrations: 1,
       diet_trials: 1,
       diet_trial_foods: 1,
+      care_acknowledgements: 1,
     });
   });
 

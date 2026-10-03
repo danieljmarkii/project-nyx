@@ -7,6 +7,8 @@ import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { focusAccessibility } from '../../../lib/a11yFocus';
 import { measureNodeInWindow, type WindowRect } from '../../../lib/measureNode';
 import { CARE_CONTEXT_TITLE } from '../../../lib/careContext';
+import { CARE_WATCHED_LINE, CARE_WATCHED_TAG, careStateViewOf } from '../../../lib/careState';
+import { symptomWord } from '../../../lib/signalCopy';
 import { loadSignalScreen, screenLeadsWithLanes, UNSUPPORTED_LINE, withheldLines, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
 import { usePetStore } from '../../../store/petStore';
 import { WhorlSpinner } from '../../brand/WhorlSpinner';
@@ -28,6 +30,7 @@ import {
 import { SIGNAL_OPEN_MOTION, useSignalOpen } from '../../motion/signalOpenMotion';
 import { Header } from '../../ui/Header';
 import { ThemedText } from '../../ui/ThemedText';
+import { CareAnswers } from './CareAnswers';
 import { EpisodeGallery } from './EpisodeGallery';
 import { leadChartWidth } from './SignalLeadCard';
 
@@ -208,6 +211,7 @@ export function SignalScreen({ petId, identity }: Props) {
         </View>
       ) : (
         <Body
+          petId={petId}
           model={load.model}
           petName={load.petName}
           landStyle={landStyle}
@@ -335,6 +339,7 @@ function Hero({
 }
 
 function Body({
+  petId,
   model,
   petName,
   landStyle,
@@ -343,6 +348,8 @@ function Body({
   flew,
   windowWidth,
 }: {
+  /** The route's pet (C-9): the record's, never the active one. */
+  petId: string;
   model: SignalScreenModel;
   petName: string;
   landStyle: ReturnType<typeof useSignalOpen>;
@@ -363,6 +370,10 @@ function Body({
 
   const drawIn = true;
   const lanesLead = screenLeadsWithLanes(model);
+  // EN-9 (PR-35): the concern's care state, as the server wrote it, or null (flag off, an old
+  // cache, an escalation). Null draws exactly today's screen.
+  const care = careStateViewOf(model.finding);
+  const watched = care?.state === 'with_vet' || care?.state === 'recheck_booked';
   const lanesSection = model.lanes ? (
     <View style={styles.section} testID="signal-section-lanes">
       <ThemedText style={styles.sectionTitle} accessibilityRole="header">
@@ -406,7 +417,31 @@ function Body({
 
       {/* 3 + 4 · the sentence and the compare land together */}
       <Animated.View style={[styles.section, landStyle]} testID="signal-section-sentence">
+        {watched ? (
+          <ThemedText style={styles.careTag} testID="signal-care-tag">
+            {CARE_WATCHED_TAG}
+          </ThemedText>
+        ) : null}
         <ThemedText style={styles.sentence}>{model.sentence}</ThemedText>
+        {care?.state === 'with_vet' ? (
+          <ThemedText style={styles.careLine} testID="signal-care-line">
+            {CARE_WATCHED_LINE}
+          </ThemedText>
+        ) : null}
+        {/* EN-9's answers (PR-35): only where the server wrote a care state that takes one. */}
+        {care ? (
+          <CareAnswers
+            // Keyed on the state: a state change starts the answers afresh, so a confirmation
+            // (and its Undo) given on a raised concern can never stand over one that came back.
+            key={care.state}
+            petId={petId}
+            petName={petName}
+            view={care}
+            noun={symptomWord(care.sign)}
+            title={model.title}
+            onsetIso={model.finding.type === 'symptom_chronicity' ? model.finding.firstOnsetIso : null}
+          />
+        ) : null}
         {model.compare && model.noun ? (
           <View style={styles.compare} testID="signal-section-compare">
             {/* The compare draws on its own landing (CUL-1223): it sits inside the view
@@ -540,6 +575,23 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     lineHeight: theme.lineHeightBody,
     color: theme.colorTextPrimary,
+  },
+  // "Your vet knows" (D6): a word tag, never colour alone (§7).
+  careTag: {
+    alignSelf: 'flex-start',
+    marginBottom: theme.space1,
+    fontSize: theme.textXS,
+    lineHeight: theme.lineHeightXS,
+    fontWeight: theme.weightMedium,
+    letterSpacing: theme.trackingWide,
+    textTransform: 'uppercase',
+    color: theme.colorEventSymptomInk,
+  },
+  careLine: {
+    marginTop: theme.space1,
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextSecondary,
   },
   compare: {
     marginTop: theme.space1,

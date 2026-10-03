@@ -338,12 +338,13 @@ describe('SYNC_QUEUES covers the real schema (B-398, the B-424 shape)', () => {
         (q) => [q.table, withUpdatedAt.includes(q.table) ? 'updated_at' : null] as const,
       ),
     );
-    // The insert-only pair is the whole of the unguarded set, stated rather than
-    // implied: an attachment row is written once and never edited, so there is no
-    // version of it to compare. Anything else appearing here is a new queue that
+    // The insert-only queues are the whole of the unguarded set, stated rather than
+    // implied: an attachment row, and a care answer (append-only by 082's RLS; an Undo
+    // is a new row), is written once and never edited, so there is no version of it to
+    // compare. Anything else appearing here is a new queue that
     // slipped past the check above.
     expect(SYNC_QUEUES.filter((q) => pushGuardColumn(q.table) === null).map((q) => q.table))
-      .toEqual(['event_attachments', 'vet_visit_attachments']);
+      .toEqual(['event_attachments', 'vet_visit_attachments', 'care_acknowledgements']);
   });
 
   it('answers null for a table it has never heard of — never a default guard', () => {

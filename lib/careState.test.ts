@@ -1,4 +1,14 @@
-import { careStateQuietsAsk, careStateValueOf } from './careState';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  CARE_SIGNS,
+  careBackLine,
+  careStateBody,
+  careStateQuietsAsk,
+  careStateTakesAnswers,
+  careStateValueOf,
+  careStateViewOf,
+} from './careState';
 import type { SignalFinding } from './signal';
 import { signalHomeLine } from './signalHomeLine';
 
@@ -56,5 +66,71 @@ describe("Home's ask under a care state", () => {
     expect(signalHomeLine(chronicity({ state: 'recheck_booked' }))?.ask).toBeNull();
     // The row itself stays: a watched concern is never dropped from Home.
     expect(signalHomeLine(chronicity({ state: 'with_vet' }))?.headline).toBe(signalHomeLine(chronicity())?.headline);
+  });
+});
+
+// ── PR-35 (CUL-1418): the client's offered signs and the drawn lines ──────────────
+
+describe('CARE_SIGNS — the answers the app offers', () => {
+  it('equals 082’s care_acknowledgements CHECK, so no tap writes a row the server refuses', () => {
+    const sql = readFileSync(join(__dirname, '..', 'supabase/migrations/082_care_record.sql'), 'utf8');
+    const m = /symptom_type\s+TEXT\s+NOT NULL CHECK \(symptom_type IN \(([^)]*)\)\)/.exec(sql);
+    expect(m).not.toBeNull();
+    const checked = (m as RegExpExecArray)[1].split(',').map((x) => x.trim().replace(/'/g, ''));
+    expect([...CARE_SIGNS].sort()).toEqual(checked.sort());
+  });
+});
+
+describe('careStateViewOf — the PR-35 gate', () => {
+  const chronic = (careState: unknown, symptomType = 'vomit') =>
+    ({ type: 'symptom_chronicity', priorityClass: 'safety', symptomType, careState }) as never;
+
+  it('is null without a server state (flag off, an old cache): nothing new renders', () => {
+    expect(careStateViewOf(chronic(undefined))).toBeNull();
+  });
+
+  it('is null on an escalation even when a state is forged onto it (AC 3)', () => {
+    const decline = { type: 'intake_decline', priorityClass: 'safety', careState: { state: 'with_vet', text: 'x' } } as never;
+    expect(careStateViewOf(decline)).toBeNull();
+  });
+
+  it('is null for a sign 082 refuses, so no answer is offered on it', () => {
+    expect(careStateViewOf(chronic({ state: 'raised', text: null }, 'sneeze'))).toBeNull();
+  });
+
+  it('takes answers when raised or raised again, never when the vet knows', () => {
+    expect(careStateTakesAnswers(careStateViewOf(chronic({ state: 'raised', text: null })))).toBe(true);
+    expect(careStateTakesAnswers(careStateViewOf(chronic({ state: 'raised_again', text: 'Back because x.' })))).toBe(true);
+    expect(careStateTakesAnswers(careStateViewOf(chronic({ state: 'with_vet', text: 'x' })))).toBe(false);
+    expect(careStateTakesAnswers(careStateViewOf(chronic({ state: 'recheck_booked', text: 'x' })))).toBe(false);
+  });
+});
+
+describe('the watched row’s body and the back line', () => {
+  const view = (state: string, text: string) =>
+    careStateViewOf({ type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'vomit', careState: { state, text } } as never)!;
+
+  it('drops the head sentence the tag already says, in the D6 words and the older ones', () => {
+    expect(careStateBody(view('with_vet', "Otis's vomiting, your vet knows. You said Otis's vet started the trial for it. Since Sep 1, 30 days."))).toBe(
+      "You said Otis's vet started the trial for it. Since Sep 1, 30 days.",
+    );
+    expect(careStateBody(view('with_vet', "Otis's vomiting, with your vet. You said on Sep 30 Otis's vet knows."))).toBe(
+      "You said on Sep 30 Otis's vet knows.",
+    );
+  });
+
+  it('keeps the whole sentence when the head is not where it is expected (never a guessed split)', () => {
+    expect(careStateBody(view('with_vet', 'You said on Sep 30 his vet knows.'))).toBe('You said on Sep 30 his vet knows.');
+  });
+
+  it('reads the back line from its own field, never by splitting the sentence (a pet called "Mr. Biggles")', () => {
+    const back = careStateViewOf({
+      type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'vomit',
+      careState: { state: 'raised_again', text: 'Back because Mr. Biggles has also vomited on 2 days since Sep 3. Lane.', backLine: 'Back because Mr. Biggles has also vomited on 2 days since Sep 3.' },
+    } as never)!;
+    expect(careBackLine(back)).toBe('Back because Mr. Biggles has also vomited on 2 days since Sep 3.');
+    // An older cache without the field: no back line, and nothing guessed out of the text.
+    expect(careBackLine(view('raised_again', 'Back because the vomiting is coming more often. Lane.'))).toBeNull();
+    expect(careBackLine(view('with_vet', 'Back because x.'))).toBeNull();
   });
 });

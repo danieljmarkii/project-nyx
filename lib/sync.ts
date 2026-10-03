@@ -41,6 +41,7 @@ import {
   pushGuardColumn,
   RLS_FILTERED_ERROR,
   NOT_QUARANTINED_SQL,
+  parentLandedSql,
   visitLandedSql,
   type SyncFailureClass,
 } from './syncQueue';
@@ -129,7 +130,8 @@ type QueueTable =
   | 'medication_administrations'
   | 'diet_trials'
   | 'diet_trial_foods'
-  | 'notification_preferences';
+  | 'notification_preferences'
+  | 'care_acknowledgements';
 
 // The queues whose rows CANNOT CHANGE between the moment a push reads them and the
 // moment its response lands: an attachment row is written once and never edited in
@@ -147,7 +149,7 @@ type QueueTable =
 // table is unguarded, and was blind to this list claiming it. syncQueue.test.ts now
 // pins this array against the schema-derived null set, so the two halves check each
 // other in both directions. (rls-privacy-reviewer, CUL-691.)
-export const INSERT_ONLY_QUEUE_TABLES = ['event_attachments', 'vet_visit_attachments'] as const;
+export const INSERT_ONLY_QUEUE_TABLES = ['event_attachments', 'vet_visit_attachments', 'care_acknowledgements'] as const;
 type InsertOnlyQueueTable = (typeof INSERT_ONLY_QUEUE_TABLES)[number];
 
 // Everything else is last-write-wins: a row an owner can rewrite — edit, soft
@@ -1289,6 +1291,8 @@ function sendWhatWaitedOnVisits(): void {
     () => syncPendingDietTrialFoods().catch(queued('diet_trial_foods')),
     queued('diet_trials'),
   );
+  // The owner's "Talked about it" answers name the visit that just landed (PR-35).
+  syncPendingCareAcknowledgements().catch(queued('care_acknowledgements'));
 }
 
 async function drainVetVisitsQueue(): Promise<void> {
@@ -3462,6 +3466,117 @@ let syncCycleInFlight = false;
 // Not exported on its own account — callers want syncNow() or
 // flushPendingForSignOut(). Pulling on the way out of the app would be pure waste:
 // the wipe deletes whatever it hydrates, moments later.
+// ── Engines v3 PR-35: the owner's care answers ──────────────────────────────────
+
+/**
+ * Push the owner's queued care answers (`care_acknowledgements`, migration 082).
+ *
+ * THE SERVER TABLE IS APPEND-ONLY BY RLS: authenticated holds INSERT on nine named
+ * columns and no UPDATE, so this is a plain INSERT of exactly those columns, never an
+ * upsert (a merge upsert needs UPDATE; created_at is left to the server's clock, which
+ * orders "latest wins"). A 23505 on the primary key means THIS row already landed (a
+ * response lost on the way back), since the id is minted on this phone and the table
+ * has no other unique index: it is marked synced, never quarantined.
+ *
+ * PARENT-GATED (`visitLandedSql`, `parentLandedSql`): 082's same-pet guard looks every
+ * link up before the foreign keys can answer, so a row sent ahead of its visit, trial,
+ * course or retracted answer is refused with a terminal 23514.
+ *
+ * RE-SELECTS UNTIL NOTHING MOVES. An Undo is held behind its answer, so one read sends the
+ * answer and leaves the Undo for a later sync, and the regen between them would show
+ * "Your vet knows" over a choice the owner already took back (adversarial F2). So the drain
+ * reads again after each pass that landed something, and regenerates once, at the end.
+ *
+ * THE CARE STATE IS THE SERVER'S, so each pet whose answers landed gets a Signal regen
+ * (only a regen run after the row landed can read it, §3.3). Fired for every row that
+ * landed, even when a later row stopped the drain on a transient error.
+ *
+ * SIGN-OUT (CUL-642's class, rls-privacy-reviewer): the regen is armed after a network
+ * round trip, so it could otherwise arm after `wipeLocalSession` cancelled every pending
+ * regen and carry the previous owner's pet id under the next account's token. The drain
+ * captures the sign-out epoch and stops, marking and arming nothing, once it moves.
+ */
+export function syncPendingCareAcknowledgements(): Promise<void> {
+  return serializeQueuePush('care_acknowledgements', drainCareAcknowledgementsQueue);
+}
+
+const CARE_ACK_MAX_PASSES = 5;
+
+async function drainCareAcknowledgementsQueue(): Promise<void> {
+  const epoch = signOutEpoch;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+  const db = getDb();
+  const landedPets = new Set<string>();
+  try {
+    for (let pass = 0; pass < CARE_ACK_MAX_PASSES; pass++) {
+      if (epoch !== signOutEpoch) return;
+      const rows = await db.getAllAsync<{
+        id: string; pet_id: string; symptom_type: string; source: string; anchor_on: string;
+        vet_visit_id: string | null; diet_trial_id: string | null; medication_id: string | null;
+        retracts: string | null;
+      }>(
+        `SELECT * FROM care_acknowledgements WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+       AND ${visitLandedSql('care_acknowledgements')}
+       AND ${parentLandedSql('care_acknowledgements')}
+     ORDER BY created_at ASC, rowid ASC LIMIT 50`,
+      );
+      let landedThisPass = 0;
+      for (const r of rows) {
+        const { data, error } = await supabase
+          .from('care_acknowledgements')
+          .insert({
+            id: r.id, pet_id: r.pet_id, symptom_type: r.symptom_type, source: r.source,
+            anchor_on: r.anchor_on, vet_visit_id: r.vet_visit_id, diet_trial_id: r.diet_trial_id,
+            medication_id: r.medication_id, retracts: r.retracts,
+          })
+          .select('id');
+        // A sign-out landed while the request was in the air: this account's rows are gone
+        // from the phone, and nothing more may be marked or armed for them.
+        if (epoch !== signOutEpoch) return;
+        if (error && error.code !== '23505') {
+          if (classifySyncFailure(error) === 'transient') {
+            console.warn('[sync] care_acknowledgements push failed (retrying next cycle):', error.message);
+            return;
+          }
+          await recordPushFailure(db, 'care_acknowledgements', r, error);
+          continue;
+        }
+        if (!error && !((data ?? []) as { id: string }[]).some((d) => d.id === r.id)) {
+          console.warn(`[sync] care_acknowledgements row ${r.id} returned no id (RLS-blocked?) — left queued`);
+          await recordPushFailure(db, 'care_acknowledgements', r, RLS_FILTERED_ERROR);
+          continue;
+        }
+        await markSyncedInsertOnly(db, 'care_acknowledgements', [r.id]);
+        landedPets.add(r.pet_id);
+        landedThisPass += 1;
+      }
+      if (landedThisPass === 0) break;
+    }
+  } finally {
+    if (landedPets.size > 0 && epoch === signOutEpoch) {
+      // Required lazily: lib/signal.ts imports this module, so a top-level import would be
+      // a cycle. By the time a row has landed, both modules are long loaded.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { triggerSignalRegenDebounced } = require('./signal') as typeof import('./signal');
+      for (const petId of landedPets) {
+        // An Undo of an answer that HAS landed, still waiting here (its push stopped on a
+        // transient error): a regen now would draw "Your vet knows" over a choice the owner
+        // took back, and write the quiet state the next run reads as its prior (adversarial
+        // pass 2, N3). The regen waits for the drain that lands the Undo.
+        const pendingUndo = await db.getFirstAsync<{ id: string }>(
+          `SELECT u.id FROM care_acknowledgements u
+             JOIN care_acknowledgements a ON a.id = u.retracts
+            WHERE u.pet_id = ? AND u.synced = 0 AND u.sync_error IS NULL AND a.synced = 1
+            LIMIT 1`,
+          [petId],
+        );
+        if (!pendingUndo) triggerSignalRegenDebounced(petId);
+      }
+    }
+  }
+}
+
 async function pushAllQueues(): Promise<void> {
   await syncPendingEvents();
   await syncPendingMeals();
@@ -3498,6 +3613,10 @@ async function pushAllQueues(): Promise<void> {
   // food_items (Pattern 6).
   await syncPendingDietTrials();
   await syncPendingDietTrialFoods();
+  // Engines v3 PR-35: the care answers name a visit, a trial, a course or an earlier
+  // answer, all pushed above. The drain holds a row whose parent has not landed
+  // (082's guard refuses it with a TERMINAL 23514); this position saves it a cycle.
+  await syncPendingCareAcknowledgements();
   // B-661: account-scoped, no FK to anything pushed above (v1 rows are
   // account-wide, pet_id NULL), so its position is free — last, after the
   // pet-scoped queues.

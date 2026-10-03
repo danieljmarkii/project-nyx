@@ -4,6 +4,7 @@ import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ThemedText } from '../ui/ThemedText';
 import type { AppointmentQuestion } from '../../lib/vetVisits';
+import type { HomeConcernRow } from '../../lib/careVisitConcerns';
 
 interface Props {
   /** The RECORD's pet, via `resolveRecordPetName(pets, appointment.pet_id)` — CUL-574. */
@@ -19,6 +20,12 @@ interface Props {
   paperworkCount: number;
   onPhotographPaperwork: () => void;
   capturing: boolean;
+  /** EN-9 (Engines v3 PR-35): the concerns Home is raising, ticked as raised in the room.
+   *  Empty with the Engines v3 flag off (no care state is written), and then no section
+   *  renders: the screen is exactly what it was. */
+  concerns?: ReadonlyArray<HomeConcernRow>;
+  tickedConcerns?: ReadonlySet<string>;
+  onToggleConcern?: (row: HomeConcernRow) => void;
 }
 
 // The visit's notes (mock C1) — open from the moment the visit is booked.
@@ -44,6 +51,7 @@ interface Props {
 export function AtTheVetBody({
   petName, when, where, draft, onChangeDraft,
   questions, onToggleQuestion, paperworkCount, onPhotographPaperwork, capturing,
+  concerns = [], tickedConcerns, onToggleConcern,
 }: Props) {
   return (
     <View>
@@ -77,6 +85,39 @@ export function AtTheVetBody({
           Saved as you type · kept with this visit
         </ThemedText>
       </View>
+
+      {/* What Home is raising (EN-9, mock round 2 §08 frame 3): the concerns, tickable like
+          the questions. A tick is the owner's note that she raised it; it pre-selects
+          "Talked about it" when she finishes the visit, and writes nothing until then. */}
+      {concerns.length > 0 && onToggleConcern ? (
+        <View style={styles.block} testID="at-the-vet-concerns">
+          <SectionLabel label="What Home is raising" header style={styles.sectionLabel} />
+          <View style={styles.rows}>
+            {concerns.map((c) => {
+              const ticked = tickedConcerns?.has(c.sign) ?? false;
+              return (
+                <TouchableOpacity
+                  key={c.sign}
+                  style={styles.questionRow}
+                  onPress={() => onToggleConcern(c)}
+                  activeOpacity={0.7}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: ticked }}
+                  accessibilityLabel={c.title}
+                  testID={`at-the-vet-concern-${c.sign}`}
+                >
+                  <View style={[styles.tick, ticked && styles.tickOn]}>
+                    {ticked ? <Check size={14} color={theme.colorSurface} strokeWidth={3} /> : null}
+                  </View>
+                  <ThemedText style={[styles.questionText, ticked && styles.questionAsked]}>
+                    {c.title}
+                  </ThemedText>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
 
       {/* No questions section when none were prepared, and no empty state for it
           either. An empty state may be forward-looking; it may not ask for an action

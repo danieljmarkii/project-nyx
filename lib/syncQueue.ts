@@ -340,6 +340,11 @@ export const SYNC_QUEUES: readonly SyncQueue[] = [
   { table: 'diet_trial_foods', pendingSince: 'updated_at' },
   // B-661 — the per-account notification-preferences mirror (LWW, updated_at).
   { table: 'notification_preferences', pendingSince: 'updated_at' },
+  // Engines v3 PR-35 — the owner's care answers. Insert-only (082 grants no UPDATE;
+  // an Undo is a new row), so created_at is the honest and only age. PARENT-GATED:
+  // drainCareAcknowledgementsQueue holds a row until its visit, trial, course and
+  // retracted answer have landed.
+  { table: 'care_acknowledgements', pendingSince: 'created_at' },
 ];
 
 /**
@@ -388,7 +393,7 @@ export const NOT_QUARANTINED_SQL = 'sync_error IS NULL';
 
 /** The queues whose rows can name a vet visit (`vet_visit_id`). A runtime list, so a
  *  test can check it against every local table that carries the column. */
-export const VISIT_LINKED_TABLES = ['vet_appointments', 'medications', 'diet_trials', 'vet_documents'] as const;
+export const VISIT_LINKED_TABLES = ['vet_appointments', 'medications', 'diet_trials', 'vet_documents', 'care_acknowledgements'] as const;
 export type VisitLinkedTable = (typeof VISIT_LINKED_TABLES)[number];
 
 /**
@@ -467,8 +472,20 @@ export function petTrialsVisitLandedSql(): string {
  * exemption and its reason (lib/syncQueue.visitLink.test.ts).
  */
 export const PARENT_GATED_QUEUES = {
-  diet_trial_foods: { parent: 'diet_trials', column: 'diet_trial_id' },
-} as const;
+  diet_trial_foods: [{ parent: 'diet_trials', column: 'diet_trial_id' }],
+  // • care_acknowledgements (Engines v3 PR-35) → its trial, its course, and the answer
+  //   it retracts. 082's same-pet guard runs BEFORE the foreign keys and refuses an
+  //   unseen parent with a TERMINAL 23514, so a "Yes, for this" written against a trial
+  //   started a minute ago, or an Undo racing its own answer, would be quarantined on
+  //   its first try. The visit it names is held by `visitLandedSql` like every other
+  //   visit-linked queue. `retracts` names a row of the SAME table; the gate reads it
+  //   through its own alias, so the outer statement stays unaliased.
+  care_acknowledgements: [
+    { parent: 'diet_trials', column: 'diet_trial_id' },
+    { parent: 'medications', column: 'medication_id' },
+    { parent: 'care_acknowledgements', column: 'retracts' },
+  ],
+} as const satisfies Record<string, readonly { parent: string; column: string }[]>;
 export type ParentGatedQueue = keyof typeof PARENT_GATED_QUEUES;
 
 /**
@@ -485,10 +502,12 @@ export type ParentGatedQueue = keyof typeof PARENT_GATED_QUEUES;
  * The outer statement must read the child table unaliased, as `visitLandedSql`'s must.
  */
 export function parentLandedSql(child: ParentGatedQueue): string {
-  const { parent, column } = PARENT_GATED_QUEUES[child];
-  return `NOT EXISTS (SELECT 1 FROM ${parent} gate_p
+  const gates: readonly { parent: string; column: string }[] = PARENT_GATED_QUEUES[child];
+  return gates
+    .map(({ parent, column }) => `NOT EXISTS (SELECT 1 FROM ${parent} gate_p
      WHERE gate_p.id = ${child}.${column}
-       AND gate_p.synced = 0 AND gate_p.sync_error IS NULL)`;
+       AND gate_p.synced = 0 AND gate_p.sync_error IS NULL)`)
+    .join('\n     AND ');
 }
 
 // Table names are compile-time literals from SYNC_QUEUES, never caller data —

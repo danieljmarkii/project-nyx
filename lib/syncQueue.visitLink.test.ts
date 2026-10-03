@@ -45,6 +45,8 @@ async function runtimeDb(): Promise<Db> {
 function shippedSelect(
   table: Exclude<VisitLinkedTable, 'diet_trials'> | 'medication_administrations',
 ): string {
+  // A drain may SELECT its named columns rather than `*`, so the anchor is the table
+  // and its queue predicate; the column list ahead of it is the drain's own business.
   const src = readFileSync(join(__dirname, 'sync.ts'), 'utf8');
   const start = src.indexOf(`\`SELECT * FROM ${table} WHERE synced = 0`);
   if (start === -1) throw new Error(`the ${table} drain's SELECT is not where this test looks — did it move?`);
@@ -63,6 +65,7 @@ const PUSH_QUEUE_SQL: Record<VisitLinkedTable, () => string> = {
   medications: () => shippedSelect('medications'),
   vet_documents: () => shippedSelect('vet_documents'),
   diet_trials: () => DIET_TRIAL_PUSH_QUEUE_SQL,
+  care_acknowledgements: () => shippedSelect('care_acknowledgements'),
 };
 
 function columns(db: Db, table: string): Column[] {
@@ -202,14 +205,21 @@ it('every local table carrying vet_visit_id is a gated queue', async () => {
 
 const CHILD_PUSH_QUEUE_SQL: Record<ParentGatedQueue, () => string> = {
   diet_trial_foods: () => DIET_TRIAL_FOOD_PUSH_QUEUE_SQL,
+  care_acknowledgements: () => shippedSelect('care_acknowledgements'),
 };
 
 function pickedChildren(db: Db, child: ParentGatedQueue): string[] {
   return (db.prepare(CHILD_PUSH_QUEUE_SQL[child]()).all() as { id: string }[]).map((r) => r.id).sort();
 }
 
-describe.each(Object.keys(PARENT_GATED_QUEUES) as ParentGatedQueue[])('the %s push queue', (child) => {
-  const { parent, column } = PARENT_GATED_QUEUES[child];
+/** Every (child, parent column) gate, one row each: a child may wait on several parents. */
+const PARENT_GATES = (Object.keys(PARENT_GATED_QUEUES) as ParentGatedQueue[]).flatMap((child) =>
+  (PARENT_GATED_QUEUES[child] as readonly { parent: string; column: string }[]).map(
+    (g) => [`${child}.${g.column}`, child, g.parent, g.column] as const,
+  ),
+);
+
+describe.each(PARENT_GATES)('the %s push gate', (_name, child, parent, column) => {
   let db: Db;
   beforeEach(async () => {
     db = await runtimeDb();
@@ -225,7 +235,10 @@ describe.each(Object.keys(PARENT_GATED_QUEUES) as ParentGatedQueue[])('the %s pu
   });
   afterEach(() => db.close());
 
-  const UNHELD = ['after-landing', 'after-quarantine', 'parent-not-held-here'];
+  // A gate on a row of the child's OWN table (an Undo's `retracts`): the waiting parent
+  // is itself a queued row, and goes out first.
+  const SELF = parent === child ? ['p-waiting'] : [];
+  const UNHELD = ['after-landing', 'after-quarantine', 'parent-not-held-here', ...SELF].sort();
 
   it(`holds a row whose ${parent} row has not landed, and only that row`, () => {
     expect(pickedChildren(db, child)).toEqual(UNHELD);
@@ -233,12 +246,14 @@ describe.each(Object.keys(PARENT_GATED_QUEUES) as ParentGatedQueue[])('the %s pu
 
   it('pushes the held row once its parent lands', () => {
     db.prepare(`UPDATE ${parent} SET synced = 1 WHERE id = ?`).run('p-waiting');
-    expect(pickedChildren(db, child)).toEqual([...UNHELD, 'waits'].sort());
+    const landed = UNHELD.filter((id) => id !== 'p-waiting');
+    expect(pickedChildren(db, child)).toEqual([...landed, 'waits'].sort());
   });
 
   it('holds nothing behind a quarantined parent: there is no landing left to wait for', () => {
     db.prepare(`UPDATE ${parent} SET sync_error = '23514: refused' WHERE id = ?`).run('p-waiting');
-    expect(pickedChildren(db, child)).toEqual([...UNHELD, 'waits'].sort());
+    const parked = UNHELD.filter((id) => id !== 'p-waiting');
+    expect(pickedChildren(db, child)).toEqual([...parked, 'waits'].sort());
   });
 
   it('still skips a quarantined row, whatever its parent', () => {
@@ -305,7 +320,10 @@ it('every queue column that names another queue table\'s row is parent-gated, or
     }
   }
   db.close();
-  const gated = Object.entries(PARENT_GATED_QUEUES).map(([child, { parent, column }]) => `${child}.${column} -> ${parent}`);
+  // Only the `<parent>_id` gates are the convention's to find; a gate on another
+  // column (care_acknowledgements.retracts, a row of its own table) is pinned above.
+  const gated = PARENT_GATES.filter(([, , , column]) => /_id$/.test(column))
+    .map(([, child, parent, column]) => `${child}.${column} -> ${parent}`);
   // Non-vacuity: the convention finds both the gated parent and the exempt one.
   expect(found.length).toBeGreaterThanOrEqual(2);
   expect(found.sort()).toEqual([...gated, ...Object.keys(UNGATED_PARENT_COLUMNS)].sort());

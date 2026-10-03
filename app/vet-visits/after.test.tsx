@@ -102,6 +102,21 @@ jest.mock('../../lib/vetVisits', () => {
   };
 });
 
+// EN-9 (Engines v3 PR-35): what Home was raising. Empty by default, the flag-off case (no
+// care state written), so every test above the EN-9 block renders the pre-PR-35 screen.
+let mockConcerns: Array<{ sign: string; title: string; state: string; answerableFrom?: string | null }> | null = [];
+let mockTicks = new Set<string>();
+const mockRecordCareAnswer = jest.fn(async (_input: Record<string, unknown>) => 'answer-1');
+jest.mock('../../lib/careVisitConcerns', () => ({
+  readHomeConcerns: jest.fn(async () => mockConcerns?.map((c) => ({ answerableFrom: null, ...c })) ?? null),
+  readCareVisitTicks: jest.fn(async () => mockTicks),
+  clearCareVisitTicksFor: jest.fn(async () => undefined),
+}));
+jest.mock('../../lib/careAnswers', () => ({
+  recordCareAnswer: (input: Record<string, unknown>) => mockRecordCareAnswer(input),
+  pushCareAnswers: jest.fn(async () => undefined),
+}));
+
 const PET_A = { id: 'pet-a', name: 'Nyx', species: 'dog' };
 const PET_B = { id: 'pet-b', name: 'Juniper', species: 'cat' };
 let mockStoreState: { pets: typeof PET_A[]; activePet: typeof PET_A | null };
@@ -1001,3 +1016,69 @@ describe('CUL-1092 — a save after midnight names the day the course ended', ()
     expect(screen.queryByText('Stopped today')).toBeNull();
   });
 });
+
+
+describe('What Home was raising (EN-9, Engines v3 PR-35)', () => {
+  afterEach(() => {
+    mockConcerns = [];
+    mockTicks = new Set();
+    mockRecordCareAnswer.mockClear();
+  });
+
+  it('draws no section and writes no answer when Home raises nothing with a care state (flag off)', async () => {
+    render(<AfterVisitScreen />);
+    await screen.findByText('Save Nyx’s visit');
+    expect(screen.queryByTestId('after-visit-home-concerns')).toBeNull();
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
+    expect(mockRecordCareAnswer).not.toHaveBeenCalled();
+  });
+
+  it('a concern ticked in the room arrives as Talked about it, and Save writes it against this visit', async () => {
+    mockConcerns = [
+      { sign: 'vomit', title: 'Vomiting in 5 of the last 8 weeks', state: 'raised' },
+      { sign: 'cough', title: 'Coughing in 7 of the last 8 weeks', state: 'raised' },
+    ];
+    mockTicks = new Set(['vomit']);
+    render(<AfterVisitScreen />);
+    await screen.findByTestId('after-visit-home-concerns');
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await waitFor(() => expect(mockRecordCareAnswer).toHaveBeenCalledTimes(1));
+    // One sign per row (GAP-29): the unticked cough stays Later and writes nothing.
+    expect(mockRecordCareAnswer.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ petId: 'pet-a', sign: 'vomit', source: 'at_vet_tick' }),
+    );
+    const written = mockRecordCareAnswer.mock.calls[0][0] as { vetVisitId: string; anchorOn: string };
+    expect(written.vetVisitId).toBe(await mockLogFromAppointment.mock.results[0].value);
+    expect(written.anchorOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('an answer given on the screen itself is a visit answer; Not this time writes nothing', async () => {
+    mockConcerns = [
+      { sign: 'vomit', title: 'Vomiting in 5 of the last 8 weeks', state: 'raised' },
+      { sign: 'cough', title: 'Coughing in 7 of the last 8 weeks', state: 'with_vet' },
+    ];
+    render(<AfterVisitScreen />);
+    await screen.findByTestId('after-visit-home-concerns');
+    fireEvent.press(screen.getAllByText('Talked about it')[0]);
+    fireEvent.press(screen.getAllByText('Not this time')[1]);
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await waitFor(() => expect(mockRecordCareAnswer).toHaveBeenCalledTimes(1));
+    expect(mockRecordCareAnswer.mock.calls[0][0]).toEqual(expect.objectContaining({ sign: 'vomit', source: 'visit_answer' }));
+  });
+
+  it('offers no concern a visit on that day could not have been about, and writes none (adversarial F1)', async () => {
+    // The visit is Sep 16 (the appointment's day); the vomiting came back on Sep 20.
+    mockConcerns = [
+      { sign: 'vomit', title: 'Vomiting in 6 of the last 6 weeks', state: 'raised_again', answerableFrom: '2026-09-20' },
+    ];
+    mockTicks = new Set(['vomit']);
+    render(<AfterVisitScreen />);
+    await screen.findByText('Save Nyx’s visit');
+    await waitFor(() => expect(screen.queryByTestId('after-visit-home-concerns')).toBeNull());
+    fireEvent.press(screen.getByText('Save Nyx’s visit'));
+    await waitFor(() => expect(mockLogFromAppointment).toHaveBeenCalledTimes(1));
+    expect(mockRecordCareAnswer).not.toHaveBeenCalled();
+  });
+});
+

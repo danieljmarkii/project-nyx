@@ -50,6 +50,9 @@ interface Props {
   /** Every OTHER pet in the account. Empty in a one-pet account. */
   otherPets: Array<{ id: string; name: string }>;
   prefill: VisitPrefill;
+  /** The reason a door carried in (the finding's "Book a visit", Engines v3 PR-35; mock
+   *  round 2 §03 frame 2). Seeded on each open like the prefill, and the owner may edit it. */
+  initialReason?: string | null;
   busy?: boolean;
   onClose: () => void;
   onSubmit: (input: BookVisitSubmit) => void;
@@ -75,6 +78,7 @@ export function BookVisitSheet({
   petName,
   otherPets,
   prefill,
+  initialReason = null,
   busy = false,
   onClose,
   onSubmit,
@@ -102,7 +106,7 @@ export function BookVisitSheet({
     setMode(initialMode);
     setClinicName(prefill.clinicName ?? '');
     setVetName(prefill.vetName ?? '');
-    setReason('');
+    setReason(initialReason ?? '');
     setTime(null);
     setAlsoFor(new Set());
     setShowDayPicker(false);
@@ -125,7 +129,7 @@ export function BookVisitSheet({
     const seeded = prefill.suggestedDate ? parseDayKey(prefill.suggestedDate) : null;
     const today = new Date();
     setDay(seeded && isLegalForMode(seeded, initialMode, today) ? seeded : today);
-  }, [visible, initialMode, prefill.clinicName, prefill.vetName, prefill.suggestedDate]);
+  }, [visible, initialMode, prefill.clinicName, prefill.vetName, prefill.suggestedDate, initialReason]);
 
   const dayLabel = useMemo(() => formatVisitWeekday(localDateKey(day)), [day]);
   const isBooked = mode === 'booked';

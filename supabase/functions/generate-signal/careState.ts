@@ -227,6 +227,10 @@ export interface CareStateFact {
   reason: ReRaiseReason | null
   /** Set on `recheck_booked`: the appointment's day. */
   recheckOn: string | null
+  /** Set on `raised_again`: the "Back because …" sentence on its own (DF-8), which also opens
+   *  `text`. Its own field so Home draws it without splitting a sentence that carries the
+   *  pet's name ("Mr. Biggles"), PR-35's code review. Absent on every other state. */
+  backLine?: string | null
   /** The cached sentence for this state, template-only (AC 8). Null on `raised`: the lane's own
    *  sentence stands, phrased as it always was. */
   text: string | null
@@ -872,13 +876,18 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
         // The lane's own sentence (its ask word for word) is spliced in per card below, since
         // chronicity and worsening for one sign share the state but not the sentence.
         text: [back, LANE_TOKEN, pair, source].filter((x): x is string => !!x).join(' '),
+        backLine: back,
         lapsed: lapsedList,
       }
       bySign.set(sign, fact)
       return fact
     }
     const recheck = recheckFor(sign, ack, args)
-    const head = `${possessive(args.petName)} ${SYMPTOM_LABEL[sign]}, with your vet.`
+    // D6 (ruled 2026-10-01 on CUL-1440): "your vet knows", the owner's own words (the button
+    // is "My vet knows"). "With your vet" read as the pet being at the clinic, or the vet
+    // having taken over; neither is true. The head opens the sentence so it stands alone
+    // where Get ready and Ask relay it (GAP-17); Home's row shows the tag instead.
+    const head = `${possessive(args.petName)} ${SYMPTOM_LABEL[sign]}, your vet knows.`
     const tail = recheck
       ? `Recheck booked for ${formatDay(recheck.day, ix.today)}.`
       : sinceLine(sign, ack, ix, args, cfg)

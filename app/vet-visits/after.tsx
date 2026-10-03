@@ -13,6 +13,14 @@ import {
   type TrialRow,
 } from '../../components/vetvisits/AfterVisitBody';
 import { VisitSavedMoment } from '../../components/vetvisits/VisitSavedMoment';
+import type { HomeConcernAnswer } from '../../components/vetvisits/AfterVisitBody';
+import { pushCareAnswers, recordCareAnswer } from '../../lib/careAnswers';
+import {
+  clearCareVisitTicksFor,
+  readCareVisitTicks,
+  readHomeConcerns,
+  type HomeConcernRow,
+} from '../../lib/careVisitConcerns';
 import { AddMedicationModal, type Regimen } from '../../components/profile/AddMedicationModal';
 import { StartTrialModal } from '../../components/profile/StartTrialModal';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
@@ -151,6 +159,13 @@ export default function AfterVisitScreen() {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [summary, setSummary] = useState<VisitSaveSummary | null>(null);
+  // EN-9 (Engines v3 PR-35): what Home was raising, the owner's answer per sign, and the
+  // signs ticked in the room (they arrive as *Talked about it*). Empty flag-off.
+  const [homeConcerns, setHomeConcerns] = useState<HomeConcernRow[]>([]);
+  const [concernAnswers, setConcernAnswers] = useState<Record<string, HomeConcernAnswer>>({});
+  const tickedSigns = useRef<Set<string>>(new Set());
+  // Signs whose answer this screen already wrote, so a second Save writes nothing twice.
+  const answeredSigns = useRef<Set<string>>(new Set());
 
   // The visit, once it exists. A REF as well as state: `ensureVisit` is awaited from
   // several handlers and each needs the id the instant it is written, not a render
@@ -220,6 +235,20 @@ export default function AfterVisitScreen() {
       if (appt) setPaperwork(await readPaperworkFor(appt.id));
 
       if (!seeded.current) {
+        // Seeded once with the form: a re-focus must not undo an answer the owner changed.
+        // Never blocks the screen; an unreadable Signal cache draws no section.
+        void Promise.all([
+          readHomeConcerns(forPetId),
+          appt ? readCareVisitTicks(appt.id) : Promise.resolve(new Set<string>()),
+        ])
+          .then(([rows, ticks]) => {
+            tickedSigns.current = ticks;
+            setHomeConcerns(rows ?? []);
+            setConcernAnswers(
+              Object.fromEntries((rows ?? []).filter((r) => ticks.has(r.sign)).map((r) => [r.sign, 'talked' as const])),
+            );
+          })
+          .catch((e) => console.warn('[after-visit] Home concerns read failed:', e));
         seeded.current = true;
         const prefill = appt ? null : await readVisitPrefill(forPetId);
         setFields({
@@ -665,7 +694,38 @@ export default function AfterVisitScreen() {
           notes: fields.notes,
         });
       }
+      // EN-9 (PR-35): each *Talked about it* is the owner's answer, dated by this visit and
+      // naming it (082 requires a visit source to name its visit). Written before the push
+      // so the visit's landing sends them on (`sendWhatWaitedOnVisits`); the queue holds each
+      // until the visit has landed. *Not this time* and *Later* write nothing (§3.2).
+      const visitedOn = localDateKey(fields.visitedAt);
+      // `note` is state, read by the moment below from this render's closure, so the lines
+      // written here are also carried into the moment directly.
+      const careLines: LinkedLine[] = [];
+      for (const c of answerableConcerns(homeConcerns, visitedOn)) {
+        if (concernAnswers[c.sign] !== 'talked' || answeredSigns.current.has(c.sign)) continue;
+        // Claimed BEFORE the await: a second Save in the same frame passes the `saving` state
+        // guard, and must not write the answer twice (code review). Released if the write fails.
+        answeredSigns.current.add(c.sign);
+        try {
+          await recordCareAnswer({
+            petId,
+            sign: c.sign,
+            source: tickedSigns.current.has(c.sign) ? 'at_vet_tick' : 'visit_answer',
+            anchorOn: visitedOn,
+            vetVisitId: id,
+          });
+        } catch (e) {
+          answeredSigns.current.delete(c.sign);
+          throw e;
+        }
+        const line: LinkedLine = { key: `care:${c.sign}`, title: c.title, note: 'talked about it' };
+        careLines.push(line);
+        note(line);
+      }
+      if (appointment && answeredSigns.current.size > 0) void clearCareVisitTicksFor(appointment.id);
       syncPendingVetVisits().catch(console.error);
+      if (answeredSigns.current.size > 0) void pushCareAnswers();
 
       // The moment's consequence lines are DERIVED from what the record now says,
       // not asserted: a visit logged behind one already on file changes neither the
@@ -681,7 +741,11 @@ export default function AfterVisitScreen() {
           consequence,
           // As of the SAVE, so a course stopped before midnight and saved after it
           // names its day rather than saying "today" (CUL-1092).
-          linked: linkedLinesAsOf(linked, localDateKey(new Date()), (day) => formatVisitDate(day)),
+          linked: linkedLinesAsOf(
+            [...linked.filter((l) => !careLines.some((c) => c.key === l.key)), ...careLines],
+            localDateKey(new Date()),
+            (day) => formatVisitDate(day),
+          ),
         }),
       );
       // A soft impact, never a success chime (the issue's ruling). `commitRoutine`
@@ -819,6 +883,9 @@ export default function AfterVisitScreen() {
                   busyRow={busyRow}
                   saving={saving}
                   onSave={handleSave}
+                  homeConcerns={answerableConcerns(homeConcerns, localDateKey(fields.visitedAt))}
+                  concernAnswers={concernAnswers}
+                  onConcernAnswer={(c, answer) => setConcernAnswers((prev) => ({ ...prev, [c.sign]: answer }))}
                 />
               </ScrollView>
             </KeyboardAvoidingView>
@@ -918,6 +985,13 @@ function toRegimen(course: ActiveCourse): Regimen {
     status: 'active',
     ended_at: null,
   };
+}
+
+/** The concerns a visit on `visitedOn` can be asked about: none whose answer could not be
+ *  true for that day (a visit before the concern began, or before it came back). Re-derived
+ *  from the date field, so moving the visit date moves the list with it. */
+function answerableConcerns(rows: readonly HomeConcernRow[], visitedOn: string): HomeConcernRow[] {
+  return rows.filter((r) => r.answerableFrom === null || visitedOn >= r.answerableFrom);
 }
 
 const styles = StyleSheet.create({

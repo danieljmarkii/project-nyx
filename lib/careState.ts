@@ -33,3 +33,73 @@ export function careStateQuietsAsk(finding: SignalFinding): boolean {
   const s = careStateValueOf(finding);
   return s === 'with_vet' || s === 'recheck_booked';
 }
+
+// ── PR-35: what the client draws from the server's state ─────────────────────────
+
+/** The signs a care answer may name: 082's CHECK on `care_acknowledgements.symptom_type`
+ *  (the chronicity ∪ worsening lanes). `sneeze` is a lane sign the table refuses, so a
+ *  finding on it never offers an answer (a write would be a terminal 23514). */
+export const CARE_SIGNS = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough'] as const;
+export type CareSign = (typeof CARE_SIGNS)[number];
+
+/** The server's care fact on a concern, as far as the client draws it. */
+export interface CareStateView {
+  state: CareStateValue;
+  sign: CareSign;
+  /** The server's template sentence (AC 8); null on `raised`. */
+  text: string | null;
+  /** `raised_again` only: the server's "Back because …" sentence, or null. */
+  backLine: string | null;
+}
+
+/** The concern's care state, or null: the flag is off, the cache is old, the finding is not
+ *  a concern (an escalation never carries one, AC 3), or the sign is not one 082 accepts.
+ *  THE GATE for every PR-35 surface: an answer is offered only where the server wrote a
+ *  state, so flag-off nothing new renders and nothing new is read (§9). */
+export function careStateViewOf(finding: SignalFinding): CareStateView | null {
+  if (finding.type !== 'symptom_chronicity' && finding.type !== 'symptom_worsening') return null;
+  const state = careStateValueOf(finding);
+  if (state === null) return null;
+  const sign = (CARE_SIGNS as readonly string[]).includes(finding.symptomType) ? (finding.symptomType as CareSign) : null;
+  if (sign === null) return null;
+  const fact = (finding as { careState?: { text?: unknown; backLine?: unknown } }).careState;
+  const text = typeof fact?.text === 'string' && fact.text.trim().length > 0 ? fact.text : null;
+  const back = typeof fact?.backLine === 'string' && /^Back because /.test(fact.backLine) ? fact.backLine : null;
+  return { state, sign, text: state === 'raised' ? null : text, backLine: state === 'raised_again' ? back : null };
+}
+
+/** A raised or raised-again concern: the ask stands, and the owner may answer it. */
+export function careStateTakesAnswers(view: CareStateView | null): boolean {
+  return view !== null && (view.state === 'raised' || view.state === 'raised_again');
+}
+
+/** "Your vet knows" (D6, CUL-1440, ruled 2026-10-01): the tag on a watched concern, in the
+ *  owner's own words (the button is "My vet knows"). */
+export const CARE_WATCHED_TAG = 'Your vet knows';
+
+/** D6's quiet line under a `with_vet` row: what the state does, and what brings it back.
+ *  Not on `recheck_booked`, whose row names its date and asks nothing. */
+export const CARE_WATCHED_LINE = 'Not asking you to book. Back here if it comes more often.';
+
+// The server's head sentence ("{Pet's} vomiting, your vet knows." — or the pre-D6
+// "…, with your vet." an older cache holds). It opens the cached text so the sentence
+// stands alone where Get ready and Ask relay it (GAP-17); a Home row already shows the
+// tag and the sign, so it drops the head and keeps the rest.
+const HEAD_RE = /^[^.]*, (?:your vet knows|with your vet)\.\s*/;
+
+/** The watched row's body: the server's sentence without its head, or the whole sentence
+ *  when the head is not where it is expected (never a guess at a split). */
+export function careStateBody(view: CareStateView): string | null {
+  if (view.text === null) return null;
+  const body = view.text.replace(HEAD_RE, '');
+  return body.length > 0 ? body : view.text;
+}
+
+/** A raised-again row's "Back because …" sentence (DF-8), as the server wrote it on its own
+ *  (`careState.backLine`), or null. Never split out of the full sentence: a pet's name can
+ *  carry a full stop ("Mr. Biggles"). An older cache without the field draws no back line,
+ *  and the row keeps the lane's own headline and ask, so nothing goes quieter. */
+export function careBackLine(view: CareStateView): string | null {
+  if (view.state !== 'raised_again') return null;
+  return view.backLine;
+}

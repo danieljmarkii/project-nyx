@@ -649,6 +649,24 @@ const WALK: WalkRow[] = [
         + 'carries a care state.',
     },
   },
+  {
+    list: 'CARE_SIGNS (lib/careState.ts)',
+    governs: 'which concerns the app OFFERS an answer on (EN-9 client, CUL-1418): the signs 082\'s CHECK '
+      + 'accepts, so a tap never writes a row the server refuses with a terminal 23514. Held equal to the '
+      + 'CHECK row above by lib/careState.test.ts (a set equality over the migration text)',
+    read: () => scan('lib/careState.ts', 'export const CARE_SIGNS', 'as const;'),
+    cough: {
+      now: true,
+      decision: 'YES — the CHECK row above: a chronic cough is a concern, and the owner may say the vet '
+        + 'knows about it, one sign per row.',
+    },
+    sneeze: {
+      now: false,
+      decision: 'NO — the CHECK refuses it, so a sneeze finding (none fires today) is offered no answer '
+        + 'rather than a write that would be quarantined on its first push.',
+    },
+    check_in: { now: false, decision: 'NO — a look is never a concern (the CHECK row above).' },
+  },
 ];
 
 describe('membership walk (HR-6) — every list decided, current state == decided state', () => {
@@ -680,7 +698,8 @@ describe('membership walk (HR-6) — every list decided, current state == decide
     // +1 (CUL-1420 / PR-22): EN-10's drug table (careContext.ts).
     // +1 (CUL-1415 / PR-21): the care_acknowledgements sign CHECK (migration 082).
     // +1 (CUL-1417 / PR-23): EN-9's C1a co-signs (careState.ts coSignsFor).
-    expect(WALK).toHaveLength(26);
+    // +1 (CUL-1418 / PR-35): the client's CARE_SIGNS, the answers it offers.
+    expect(WALK).toHaveLength(27);
   });
 });
 

@@ -123,7 +123,7 @@ Deno.test('the exact conditional binomial: tails are right, and the test needs b
 Deno.test('§4.6 a stable cat at 2/week stays with your vet, and the row asks nothing (AC 4)', () => {
   const s = stateOf({ symptoms: STABLE, acks: [ack({ daysAgo: 40 })] })
   assertStrictEquals(s.state, 'with_vet')
-  assert(s.text!.startsWith("Nyx's vomiting, with your vet. You said on Aug 21 Nyx's vet knows. Since Aug 21, 40 days: "), s.text!)
+  assert(s.text!.startsWith("Nyx's vomiting, your vet knows. You said on Aug 21 Nyx's vet knows. Since Aug 21, 40 days: "), s.text!)
   assert(/: \d+ episodes, with something logged on 40 of 40\.$/.test(s.text!), s.text!)
   assertStrictEquals(/worth/i.test(s.text!), false, 'a watched row carries no ask')
 })
@@ -135,6 +135,8 @@ Deno.test('§4.6 a true doubling at full logging comes back, with the compared p
   const s = careStateOf(out[0].finding)!
   assertStrictEquals(s.state, 'raised_again')
   assert(s.text!.startsWith('Back because '), s.text!)
+  // PR-35: the back line also travels on its own, so Home never splits the sentence to find it.
+  assert(s.backLine && s.backLine.startsWith('Back because ') && s.text!.startsWith(s.backLine), String(s.backLine))
   assert(s.text!.includes('worth booking a vet visit'), 'the lane\'s own ask comes back word for word')
   assert(s.text!.includes('You said on Aug 1 Nyx\'s vet knows.'), 'the earlier answer stays, as a fact')
 })

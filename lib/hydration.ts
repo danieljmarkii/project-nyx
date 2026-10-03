@@ -272,6 +272,14 @@ export const LOCAL_WIPE_TABLES = [
   // clinical flag about a named household's animal, and surviving a sign-out would leave
   // it on a device now in someone else's hands. Its watermark goes with sync_watermarks.
   'event_ai_verdicts',
+  // Engines v3 PR-35 care_acknowledgements — the owner's "my vet knows" answers. It
+  // names a visit, a trial or a course (no local FK on any, see localSchema.ts), so it
+  // leads all three under the children-before-parents contract.
+  //
+  // A TRUST & SAFETY REQUIREMENT, not bookkeeping: a row is a dated statement that a
+  // named household's animal has a recurring sign a vet knows about. It must not
+  // survive a sign-out onto a device now in someone else's hands.
+  'care_acknowledgements',
   'vet_visit_attachments',
   // B-117 medication mirror (children-first). medication_administrations
   // FK→events ON DELETE CASCADE locally, so it MUST precede events. medications

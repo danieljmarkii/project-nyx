@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../../constants/theme';
 import type { CachedFinding, PriorityClass, ReflectionFinding, SignalFinding } from '../../../lib/signal';
-import { type CompareRow, dotLaneModel, isTimingFinding, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
+import { type CompareRow, dotLaneModel, isTimingFinding, symptomWord, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
 import { askStandalone, signalHomeLabel, signalHomeLine } from '../../../lib/signalHomeLine';
+import { CARE_WATCHED_LINE, CARE_WATCHED_TAG, careBackLine, careStateBody, careStateViewOf, type CareStateView } from '../../../lib/careState';
 import { loadSignalRowTrial } from '../../../lib/signalLead';
 import { signalTrialWindowFor } from '../../../lib/signalTrialAnchor';
 import type { SignalTrialWindow } from '../../../lib/signalWindows';
@@ -97,6 +98,14 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
   const line = signalHomeLine(finding, signalTrialWindowFor(finding, { generatedAt, trial }));
   if (!line) return null;
 
+  // EN-9 (PR-35): a concern the owner answered is drawn as what it now is. Display only:
+  // the row stays one door and writes nothing (Home's three write classes, C-33).
+  const care = careStateViewOf(finding);
+  if (care && (care.state === 'with_vet' || care.state === 'recheck_booked')) {
+    return <WatchedRow care={care} onOpen={() => onOpen(finding)} isLead={isLead} />;
+  }
+  const backLine = care ? careBackLine(care) : null;
+
   const safety = finding.priorityClass === 'safety';
   // A frequency row whose pair renders prints its counts in the pair, not twice (S10).
   const pairDrawn = finding.type === 'reflection' && weekPairOf(finding) != null;
@@ -107,13 +116,18 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
     <Pressable
       onPress={() => onOpen(finding)}
       accessibilityRole="button"
-      accessibilityLabel={signalHomeLabel(line)}
+      accessibilityLabel={backLine ? `${backLine} ${signalHomeLabel(line)}` : signalHomeLabel(line)}
       accessibilityHint={DOOR_A11Y_HINT}
       style={styles.row}
       testID="signal-row"
     >
       <View style={[styles.rail, { backgroundColor: RAIL_COLOR[finding.priorityClass] }]} />
       <View style={styles.body}>
+        {backLine ? (
+          <ThemedText style={styles.backLine} testID="signal-row-back">
+            {backLine}
+          </ThemedText>
+        ) : null}
         {line.eyebrow ? (
           <ThemedText style={styles.eyebrow} testID="signal-row-eyebrow">
             {line.eyebrow}
@@ -124,6 +138,57 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
         </ThemedText>
         {thumbnail}
         <SubLine count={subCount} ask={line.ask} />
+      </View>
+      <View style={isLead ? styles.chevronLead : styles.chevronBox}>
+        {/* geist-ok: Icon glyph, not copy — stays a raw <Text> (the strips' chevron). */}
+        <Text style={styles.chevron}>›</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * A concern the owner said the vet knows about (EN-9; mock round 3 §01 1c–1e, ruled D6 on
+ * CUL-1440): the "Your vet knows" tag, the sign, the server's sentence (who said what, when,
+ * and what has been logged since) and, on `with_vet`, the line saying what the state does.
+ * The rail keeps the safety colour, lighter: the finding is still a safety finding (§0.2
+ * call 3), and colour never carries the state alone (§7) — the tag says it in words.
+ * No ask: the server quiets it, and `signalHomeLine` already drops it for this state.
+ */
+function WatchedRow({ care, onOpen, isLead }: { care: CareStateView; onOpen: () => void; isLead: boolean }) {
+  const sign = symptomWord(care.sign);
+  const title = sign.charAt(0).toUpperCase() + sign.slice(1);
+  const body = careStateBody(care);
+  const tail = care.state === 'with_vet' ? CARE_WATCHED_LINE : null;
+  // One sentence, read whole (§7): "Vomiting, your vet knows. {sentence}. {what it does}"
+  const label = [`${title}, your vet knows.`, body, tail].filter((x): x is string => !!x).join(' ');
+  return (
+    <Pressable
+      onPress={onOpen}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={DOOR_A11Y_HINT}
+      style={styles.row}
+      testID="signal-row"
+    >
+      <View style={[styles.rail, styles.railWatched]} />
+      <View style={styles.body}>
+        <ThemedText style={styles.careTag} testID="signal-row-care-tag">
+          {CARE_WATCHED_TAG}
+        </ThemedText>
+        <ThemedText style={isLead ? styles.headlineLead : styles.headline} testID="signal-row-headline">
+          {title}
+        </ThemedText>
+        {body ? (
+          <ThemedText style={styles.sub} testID="signal-row-care-body">
+            {body}
+          </ThemedText>
+        ) : null}
+        {tail ? (
+          <ThemedText style={styles.careLine} testID="signal-row-care-line">
+            {tail}
+          </ThemedText>
+        ) : null}
       </View>
       <View style={isLead ? styles.chevronLead : styles.chevronBox}>
         {/* geist-ok: Icon glyph, not copy — stays a raw <Text> (the strips' chevron). */}
@@ -222,6 +287,31 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     borderRadius: 2,
     opacity: 0.85,
+  },
+  // "Your vet knows": the same rose, lighter. The tag carries the state in words.
+  railWatched: {
+    backgroundColor: theme.colorEventSymptom,
+    opacity: 0.35,
+  },
+  careTag: {
+    fontSize: theme.textXS,
+    lineHeight: theme.lineHeightXS,
+    fontWeight: theme.weightMedium,
+    letterSpacing: theme.trackingWide,
+    textTransform: 'uppercase',
+    color: theme.colorEventSymptomInk,
+  },
+  careLine: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextTertiary,
+  },
+  // DF-8's "Back because …" line, above the lane's own headline and ask.
+  backLine: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorEventSymptomInk,
   },
   body: {
     flex: 1,

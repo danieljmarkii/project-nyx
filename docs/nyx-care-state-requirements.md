@@ -1,6 +1,6 @@
 # Nyx Care State and Outcome Loop — Requirements (EN-9 + EN-14)
 
-**Version:** 1.1 — **BUILD-READY** (PMD-4, the tolerance and AC 10 ruled 2026-09-28) | **Date:** 2026-09-28 | **Issues:** CUL-1139 (EN-9, the care state), CUL-1144 (EN-14, the outcome loop); project *Engines v3: the accountable engine*, Wave 3, PR-20 | **Status:** every ruling the build rests on is in §0.1 and §0.3. The one conflict left, TD-5, is decided at PR-36. Design authority: `docs/culprit-engines-v3-mockups.html` **round 3** (published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY; the repo file wins on divergence). Everything an owner sees ships dark behind the Engines v3 flag (EN-F, CUL-1267).
+**Version:** 1.2 — **BUILD-READY** (PMD-4, the tolerance and AC 10 ruled 2026-09-28; D6's vocabulary 2026-10-01) | **Date:** 2026-10-03 | **Issues:** CUL-1139 (EN-9, the care state), CUL-1144 (EN-14, the outcome loop); project *Engines v3: the accountable engine*, Wave 3, PR-20 | **Status:** every ruling the build rests on is in §0.1 and §0.3. The one conflict left, TD-5, is decided at PR-36. Design authority: `docs/culprit-engines-v3-mockups.html` **round 3** (published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY; the repo file wins on divergence). Everything an owner sees ships dark behind the Engines v3 flag (EN-F, CUL-1267).
 
 **Read with:** `docs/engines-v3-critique-2026-09.md` (R-2, BRK-4, GAP-15/16/17/19/23/27/29/32/33, MFU-3, PMD-4/5/6) · `docs/nyx-vet-visits-requirements.md` (AC 10, §5.6, "How did it go?") · `docs/nyx-signal-fold-requirements.md` (DF-5, DF-8, FS-3, FS-10, §3.3, §5.3, §7) · `docs/nyx-notification-foundation-requirements.md` (D2, D3, G1–G6) · `docs/nyx-diet-trial-requirements.md` · `supabase/migrations/075_engines_v3_stamps.sql` (the shown log).
 
@@ -35,7 +35,7 @@ The second half is the **outcome loop**. When the app says "call your vet" and t
 
 ### 0.2 Calls this spec makes (no ruling needed; reverse any by comment)
 
-1. **One owner vocabulary** (GAP-16): the states read *raised* (the shipped ask), **With your vet**, **Recheck booked**, and **Back because …** (the fold spec's DF-8 cue). Never "watching" (the Signal's word for "still needs data"), never "stood down" (a shipped marker with its own copy), never "seen", "acknowledged", "dismissed" or "resolved" in copy or in a11y labels (fold §7). Code names in §3.3.
+1. **One owner vocabulary** (GAP-16): the states read *raised* (the shipped ask), **Your vet knows** (⚠ renamed from "With your vet" by D6, ruled 2026-10-01 on CUL-1440: "with your vet" read as the pet being at the clinic, or the vet having taken over; the tag now uses the owner's own words, and a `with_vet` row adds one quiet line on what the state does, "Not asking you to book. Back here if it comes more often."), **Recheck booked**, and **Back because …** (the fold spec's DF-8 cue). Never "watching" (the Signal's word for "still needs data"), never "stood down" (a shipped marker with its own copy), never "seen", "acknowledged", "dismissed" or "resolved" in copy or in a11y labels (fold §7). Code names in §3.3.
 2. **TD-5's count-start half:** counts after an answer start the **day after** the answer's anchor date (the visit, the "My vet knows" day), except a trial-scoped answer, which counts from the trial's first day because that is what the owner was asked about. The Data Scientist's reading; Jordan's inclusive bound loses because the visit day's episodes are the ones the vet was shown.
 3. **No separate owner "close".** A concern leaves Home when its detector stops firing (the shipped stand-down path takes over). An owner's answer closes the *ask*, not the finding; the finding keeps `priorityClass: 'safety'` while the detector fires (GAP-16's recommendation).
 4. **The follow-up arrives in-app first** (§6.3): a navigation line on the escalation's own Home row from 48 h, the finding/incident screen, and Vet visits. A notification is a separate default-off category and never the only way in.
@@ -113,8 +113,8 @@ An acknowledgement is a row the owner caused, stating that a vet knows about one
 | `careState` | When | Owner copy (Home row) | Rail |
 |---|---|---|---|
 | `raised` | no live acknowledgement for the sign, or the only one lapsed | the shipped chronicity/worsening row, ask intact | rose |
-| `with_vet` | a live acknowledgement exists and no re-raise test fires | tag **With your vet** · "{source sentence}. {count since}, with something logged on {k} of {n} days." (plus "Last weighed {Mon d}." while §4.1's weight rule applies) | rose-soft |
-| `recheck_booked` | `with_vet`, and an appointment **about this sign** is booked (§4.7) | tag **With your vet** · "{source sentence}. Recheck booked for {date}." | rose-soft |
+| `with_vet` | a live acknowledgement exists and no re-raise test fires | tag **Your vet knows** (D6) · "{source sentence}. {count since}, with something logged on {k} of {n} days." (plus "Last weighed {Mon d}." while §4.1's weight rule applies) · "Not asking you to book. Back here if it comes more often." | rose-soft |
+| `recheck_booked` | `with_vet`, and an appointment **about this sign** is booked (§4.7) | tag **Your vet knows** (D6) · "{source sentence}. Recheck booked for {date}." | rose-soft |
 | `raised_again` | a live acknowledgement exists and a §4.2 or §4.3 trigger has fired; latched until a newer answer (§4.5) | "Back because it's coming more often" line (DF-8) + the lane's row with its ask + the compared pair + the earlier answer as a fact | rose |
 
 The source sentences, verbatim (nyx-voice pass at PR-35):
@@ -279,11 +279,11 @@ Labels, per escalation, joined to the tier and the read's rule-version stamp (07
 ## 7. Accessibility (fold §7's shape)
 
 - Each Home row's label is one sentence, read whole: **name. ask (when there is one). count line.** Dates spoken in full ("September 30"). Mock §06 has the table.
-  - `with_vet`: "Vomiting, with your vet. You said {pet's} vet started the trial for it. 9 episodes in the 30 days of the trial, logged on 29 of them."
+  - `with_vet`: "Vomiting, your vet knows. You said {pet's} vet started the trial for it. 9 episodes in the 30 days of the trial, logged on 29 of them. Not asking you to book. Back here if it comes more often." (D6)
   - `raised_again`: "Back because it's coming more often. Recurring vomiting. Worth a word with your vet. 8 episodes in the last 2 weeks, 2 in the 2 before."
 - Never "seen", "acknowledged", "dismissed", "resolved" or "watching".
 - **Announcements:** an answer's save is announced once on the finding screen, from the write's result (never from an animation), on both platforms (`useLiveRegionAnnouncement` paired with `accessibilityLiveRegion`, C-44). A `raised_again` row is announced once, when Home next renders it (the fold's "Back because" rule prefixes the label). The follow-up line is part of its row's label, not announced.
-- **Colour never carries the state alone:** "With your vet" is a word tag on a lighter rail; "Back because…" is a word line.
+- **Colour never carries the state alone:** "Your vet knows" is a word tag on a lighter rail; "Back because…" is a word line.
 - The answer chips are ≥44 pt with the C-5 gap arithmetic; `ChipGroup` where the set is closed.
 
 ---
@@ -462,5 +462,6 @@ This spec's Read-These row in CLAUDE.md lands with PR-21 (CLAUDE.md is at its by
 
 | Version | Date | Change |
 |---|---|---|
+| 1.2 | 2026-10-03 | D6 (PM, 2026-10-01 on CUL-1440): the tag reads **Your vet knows**, with one line on what it does (§0.2 call 1, §3.3, §7); the server's cached sentence opens "…, your vet knows." Written with PR-35 (CUL-1418). |
 | 1.1 | 2026-09-28 | PM rulings: PMD-4 A, tolerance A, AC 10 approved (§0.3); the AC 10 text written into the vet visits spec. |
 | 1.0 | 2026-09-28 | First draft (PR-20, CUL-1139 + CUL-1144), amended the same day after the adversarial pass (§10.1). Mock round 3. |
