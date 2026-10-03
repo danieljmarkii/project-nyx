@@ -41,7 +41,7 @@ jest.mock('expo-sqlite', () => ({
 import { getTimeline, type TimelineRow } from './db';
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
-import { dayCountFor, dayFactsOn, notInFullOf, shiftDay, type DayRange, type HistoryFilter } from './historyDays';
+import { dayCountFor, dayFactsOn, notInFullOf, shiftDay, unconfirmedOf, type DayRange, type HistoryFilter } from './historyDays';
 import {
   DAY_PAGE_MIN_ROWS,
   SEARCHED_FIELDS,
@@ -472,10 +472,10 @@ describe('the facts — flags, looks, firsts, duplicates', () => {
     expect(dayFactsOn(facts.days, '2026-09-03')).toMatchObject({ total: 2, photographed: 1, noted: 1, byType: { vomit: 2 } });
     // Whitespace is not a note; a weight's note is.
     expect(dayFactsOn(facts.days, '2026-09-10')).toMatchObject({ total: 2, noted: 1, looked: true });
-    expect(dayFactsOn(facts.days, '2026-09-05').doses).toEqual({ 'reg-pred': { logged: 1, notInFull: 0 } });
-    expect(dayFactsOn(facts.days, '2026-09-06').doses).toEqual({ 'reg-pred': { logged: 1, notInFull: 1 } });
-    expect(dayFactsOn(facts.days, '2026-09-07').doses).toEqual({ 'reg-free': { logged: 1, notInFull: 1 } });
-    expect(dayFactsOn(facts.days, '2026-09-09').doses).toEqual({ 'item:item-cet': { logged: 1, notInFull: 0 } });
+    expect(dayFactsOn(facts.days, '2026-09-05').doses).toEqual({ 'reg-pred': { logged: 1, notInFull: 0, unconfirmed: 0 } });
+    expect(dayFactsOn(facts.days, '2026-09-06').doses).toEqual({ 'reg-pred': { logged: 1, notInFull: 1, unconfirmed: 0 } });
+    expect(dayFactsOn(facts.days, '2026-09-07').doses).toEqual({ 'reg-free': { logged: 1, notInFull: 1, unconfirmed: 0 } });
+    expect(dayFactsOn(facts.days, '2026-09-09').doses).toEqual({ 'item:item-cet': { logged: 1, notInFull: 0, unconfirmed: 1 } });
   });
 
   it('the doses not given in full are rows the dose filters list: Partial, Missed or Refused, never unrated (CUL-1193)', async () => {
@@ -494,6 +494,22 @@ describe('the facts — flags, looks, firsts, duplicates', () => {
       expect(notInFullOf(facts.days, course)).toBe(shortOf(await listed(course)));
     }
     expect(notInFullOf(facts.days, { kind: 'course', courseKey: 'item:item-cet' })).toBe(0);
+  });
+
+  it('the unconfirmed doses are rows the dose filters list with no chip (CUL-1209)', async () => {
+    seedRich();
+    const facts = await readHistoryFacts(PET, RANGE);
+    const listed = async (filter: HistoryFilter) =>
+      (await allPages(scopeOf(RANGE, filter))).flatMap((p) => p.days.flatMap((d) => d.rows));
+    const unratedOf = (rows: readonly HistoryRow[]) => rows.filter((r) => r.course_key !== null && r.adherence === null).length;
+    const medication: HistoryFilter = { kind: 'type', type: 'medication' };
+    // d4 is the one unrated dose.
+    expect(unconfirmedOf(facts.days, medication)).toBe(1);
+    expect(unratedOf(await listed(medication))).toBe(1);
+    for (const courseKey of ['reg-pred', 'reg-free', 'item:item-cet']) {
+      const course: HistoryFilter = { kind: 'course', courseKey };
+      expect(unconfirmedOf(facts.days, course)).toBe(unratedOf(await listed(course)));
+    }
   });
 
   it('meals not finished: the intake lens\'s own (Some and Refused count; a treat never does)', async () => {

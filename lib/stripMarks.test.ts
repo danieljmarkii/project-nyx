@@ -145,7 +145,7 @@ describe('stripMarkOf: every row of the §3.4 table (AC 25)', () => {
     ],
     [
       'a dose not given in full (Medication)',
-      day(SAT, { total: 3, byType: { medication: 2, meal: 1 }, doses: { 'reg-a': { logged: 1, notInFull: 1 }, 'reg-b': { logged: 1, notInFull: 0 } } }),
+      day(SAT, { total: 3, byType: { medication: 2, meal: 1 }, doses: { 'reg-a': { logged: 1, notInFull: 1, unconfirmed: 0 }, 'reg-b': { logged: 1, notInFull: 0, unconfirmed: 0 } } }),
       MEDICATION,
       WIN,
       'logged',
@@ -154,12 +154,32 @@ describe('stripMarkOf: every row of the §3.4 table (AC 25)', () => {
     ],
     [
       'a dose not given in full (a course)',
-      day('2026-09-05', { total: 2, byType: { medication: 1, meal: 1 }, doses: { 'reg-cet': { logged: 1, notInFull: 1 } } }),
+      day('2026-09-05', { total: 2, byType: { medication: 1, meal: 1 }, doses: { 'reg-cet': { logged: 1, notInFull: 1, unconfirmed: 0 } } }),
       COURSE,
       { ...WIN, fromDay: '2026-07-01', toDay: '2026-09-05', courseName: 'Cetirizine HCl' },
       'logged',
       'broken',
       'Saturday, September 5, 1 Cetirizine HCl dose logged, 2 logged in all, a dose not given in full',
+    ],
+    [
+      // HV-12's case (CUL-1209): a pill hidden in a refused meal carries no Partial, Missed or
+      // Refused, and once read as a solid line under "1 dose logged".
+      'a dose unconfirmed (a course)',
+      day('2026-09-05', { total: 2, byType: { medication: 1, meal: 1 }, doses: { 'reg-cet': { logged: 1, notInFull: 0, unconfirmed: 1 } } }),
+      COURSE,
+      { ...WIN, fromDay: '2026-07-01', toDay: '2026-09-05', courseName: 'Cetirizine HCl' },
+      'logged',
+      'broken',
+      'Saturday, September 5, 1 Cetirizine HCl dose logged, 2 logged in all, a dose unconfirmed',
+    ],
+    [
+      'doses not given in full and unconfirmed (Medication), in the header\'s order',
+      day(SAT, { total: 5, byType: { medication: 5 }, doses: { 'reg-a': { logged: 3, notInFull: 1, unconfirmed: 1 }, 'reg-b': { logged: 2, notInFull: 1, unconfirmed: 1 } } }),
+      MEDICATION,
+      WIN,
+      'logged',
+      'broken',
+      `${SAT_WORD}, 5 doses logged, 5 logged in all, 2 doses not given in full, 2 doses unconfirmed`,
     ],
     ['logged, but not the filtered kind', day(SAT, { total: 4, byType: { meal: 4 } }), VOMIT, WIN, 'quiet', 'none', `${SAT_WORD}, no vomit logged, 4 logged in all`],
     ['under Noticed', day(SAT, { total: 4, byType: { meal: 4 }, looked: true }), NOTICED, WIN, 'noticed', 'none', SAT_WORD],
@@ -300,7 +320,7 @@ describe('the broken line keys on a recorded state (§3.4)', () => {
   });
 
   it('a course breaks only on ITS doses; Medication on any course’s', () => {
-    const facts = day(SAT, { total: 2, byType: { medication: 2 }, doses: { 'reg-cet': { logged: 1, notInFull: 0 }, 'reg-pred': { logged: 1, notInFull: 1 } } });
+    const facts = day(SAT, { total: 2, byType: { medication: 2 }, doses: { 'reg-cet': { logged: 1, notInFull: 0, unconfirmed: 0 }, 'reg-pred': { logged: 1, notInFull: 1, unconfirmed: 0 } } });
     const course = { ...WIN, courseName: 'Cetirizine HCl' };
     expect(stripMarkOf(facts, COURSE, course, TODAY).line).toBe('solid');
     expect(stripMarkOf(facts, { kind: 'course', courseKey: 'reg-pred' }, { ...WIN, courseName: 'Prednisone' }, TODAY).line).toBe('broken');
@@ -308,14 +328,14 @@ describe('the broken line keys on a recorded state (§3.4)', () => {
   });
 
   it('a course the day holds no dose of is quiet, and names the drug in its absence', () => {
-    const facts = day(SAT, { total: 2, byType: { medication: 1, meal: 1 }, doses: { 'reg-pred': { logged: 1, notInFull: 0 } } });
+    const facts = day(SAT, { total: 2, byType: { medication: 1, meal: 1 }, doses: { 'reg-pred': { logged: 1, notInFull: 0, unconfirmed: 0 } } });
     const m = stripMarkOf(facts, COURSE, { ...WIN, courseName: 'Cetirizine HCl' }, TODAY);
     expect(m.state).toBe('quiet');
     expect(m.label).toBe(`${SAT_WORD}, no Cetirizine HCl dose logged, 2 logged in all`);
   });
 
   it('a day with no unfinished meal and no short dose keeps a whole line under every filter', () => {
-    const facts = day(SAT, { total: 3, byType: { meal: 2, medication: 1 }, doses: { 'reg-cet': { logged: 1, notInFull: 0 } } });
+    const facts = day(SAT, { total: 3, byType: { meal: 2, medication: 1 }, doses: { 'reg-cet': { logged: 1, notInFull: 0, unconfirmed: 0 } } });
     for (const filter of [ALL, MEAL, MEDICATION, COURSE]) {
       expect(stripMarkOf(facts, filter, { ...WIN, courseName: 'Cetirizine HCl' }, TODAY).line).toBe('solid');
     }
