@@ -32,6 +32,9 @@
 //     nobody opened the app during the illness, which is the same reading by another route
 //     (measured by the adversarial pass on CUL-873). On a chronic pet the footer may be
 //     absent for long stretches, and absence carries no achievement reading.
+//   • ABSENT UNDER ANY LIVE SAFETY-CLASS CARD (Q-6, ruled (c) 2026-10-03, CUL-909). The
+//     count is the app's claim and placement is what would make it reassure; the entries
+//     keep their words, which are hers. Live only — it returns when the card stands down.
 //   • ABSENT ON A DAY WITH NO LOOK (Q-16). The resting card never grows; a skip costs
 //     nothing on screen. An Undo of the day's only look takes the footer with it, so an
 //     Undo never reads as a failed save.
@@ -55,7 +58,8 @@ export const LOOK_COVERAGE_FLOOR_DAYS = 14;
 export type LookCoverageAbsence =
   | 'no_look_today'
   | 'below_floor'
-  | 'withheld';
+  | 'withheld'
+  | 'safety';
 
 export type LookCoverage =
   | { form: 'absent'; reason: LookCoverageAbsence }
@@ -73,6 +77,12 @@ export interface LookCoverageInput {
    * this module counts days and must not grow a second opinion about the pet's intake.
    */
   withheldNow: boolean;
+  /**
+   * Is a safety-class Signal card live for this pet, or not yet known not to be
+   * (`safetyHoldsLookFooter`, CUL-909)? REQUIRED, never defaulted: a default here would be
+   * the decision (C-37). Holds the footer and nothing else — the entries keep their words.
+   */
+  safetyHolds: boolean;
   /**
    * The last local day this device withheld for the pet — `null` when there is none,
    * **`undefined` when the mark could not be read**, which suppresses. The footer is a
@@ -101,6 +111,10 @@ export function lookCoverage(record: readonly LookDayRow[], input: LookCoverageI
   // through a state whose whole point is that Home refuses to count answered days one
   // card below *Call your vet today*.
   if (input.withheldNow) return { form: 'absent', reason: 'withheld' };
+  // Q-6, ruled (c) (CUL-909): under ANY live safety-class card the count goes and the
+  // owner's words stay. Here, before any counting, for the same reason as the line above;
+  // after it, so a pet that is both is reported as the stronger state.
+  if (input.safetyHolds) return { form: 'absent', reason: 'safety' };
   if (input.lastWithheldDay === undefined) return { form: 'absent', reason: 'withheld' };
 
   // Every answered day the record holds, and the earliest one after the mark — both needed

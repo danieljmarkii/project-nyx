@@ -94,8 +94,10 @@ import {
   lookWithheldState,
   markWithheldToday,
   readLastWithheldDay,
+  safetyHoldsLookFooter,
   type LookWithheldFacts,
 } from '../../lib/lookWithheld';
+import type { TrialStripSafety } from '../../lib/trialStripDoor';
 import {
   LookWithheldEntry,
   LookWithheldReasonLine,
@@ -228,12 +230,20 @@ interface Props {
    * for "no trial", which is most pets.
    */
   trialNotEating?: boolean | null;
+  /**
+   * What the Signal zone last reported about safety-class cards (`onSafetyLive`, the same
+   * report the trial strip's lane reads). Holds the coverage FOOTER under any live safety
+   * card and touches nothing else — the entries keep their words (Q-6 ruled (c), CUL-909).
+   * REQUIRED, `null` until the zone reports: unlike `trialNotEating`, there is no honest
+   * default, and a default here would be the decision (C-37).
+   */
+  safety: TrialStripSafety | null;
   /** Measured by Home so the pinned exits know where this card is (C-22: a
    *  passthrough on `Card`, never a wrapper View that would change what it measures). */
   onLayout?: (event: LayoutChangeEvent) => void;
 }
 
-export function LookCard({ trialNotEating = false, onLayout }: Props) {
+export function LookCard({ trialNotEating = false, safety, onLayout }: Props) {
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
   // The B-712 two-gate shape, both hooks called unconditionally then combined: server
@@ -359,14 +369,23 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
     resting && activePet && resting.petId === activePet.id ? resting.record : [];
   const recordAnswered = resting !== null && activePet !== null && resting.petId === activePet.id;
 
+  // Q-6 ruled (c) (CUL-909): a live safety-class card holds the APP's counts — the footer,
+  // and the receipt's denominators, which state the same answered-day count (*of the 20
+  // days you've answered*, *in the 27 days you'd answered before it*) and would let the
+  // footer be read back off the line above it. The words stay. Fails closed (null, or a
+  // report for another pet) like the footer.
+  const footerHeld = activePet ? safetyHoldsLookFooter({ id: activePet.id }, safety) : true;
+
   // The footer. Absent while anything is in flight, absent on a day with no look, absent
-  // below the floor, absent while withheld and until the window clears (T-16).
+  // below the floor, absent while withheld and until the window clears (T-16), and absent
+  // under any live safety-class card while the entries keep their words (CUL-909).
   const coverageText =
-    recordAnswered && resting
+    recordAnswered && resting && activePet
       ? lookCoverageText(
           lookCoverage(record, {
             nowMs: Date.now(),
             withheldNow: withheldState !== 'open',
+            safetyHolds: footerHeld,
             lastWithheldDay: resting.lastWithheldDay,
           }),
         )
@@ -516,13 +535,16 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
               petName,
               pet: { species: activePet.species, sex },
               nowMs: Date.now(),
-              withheld,
+              // The receipt's `withheld` is "reduce to the bare first date". Under a safety
+              // card that reduction holds too (CUL-909) — the entry's words are untouched,
+              // which `withholdsWords` decides from the intake state alone.
+              withheld: withheld || footerHeld,
             },
           ),
         )?.text ?? null
       );
     },
-    [record, recordAnswered, activePet, petName, sex, withheld],
+    [record, recordAnswered, activePet, petName, sex, withheld, footerHeld],
   );
 
   /**
@@ -536,13 +558,38 @@ export function LookCard({ trialNotEating = false, onLayout }: Props) {
    * the third look of the day — and the product review named the correlation that makes it
    * worst: the day an owner answers three times is the symptomatic day.
    *
-   * So the cap governs the entries that earned NOTHING. In practice this adds at most one
-   * row (a receipt belongs to one entry per word, and the card renders one line), and it
-   * adds it only on a day the record had something to say — which is the day T-15's "never
-   * a feed" was never arguing about.
+   * So the cap governs the entries that said NOTHING. With the concern-word rule below it
+   * adds at most one row per concern word the capped rows do not already show, and only on
+   * a day the record had something to say — which is the day T-15's "never a feed" was
+   * never arguing about.
    */
+  //
+  // ── AND EVERY CONCERN WORD STAYS ON THE CARD (CUL-909) ─────────────────────
+  // The receipt was a proxy for "this entry said something", and the proxy fails exactly
+  // where the bare-date reduction applies: a word first marked TODAY earns no bare-date
+  // receipt, so under the intake state or a safety card the day's first *Off* folded behind
+  // the door while two later *Nothing unusual* entries kept the slots — one card below the
+  // vomiting card (the adversarial pass on CUL-909). So a concern word the capped rows do
+  // not already show keeps its EARLIEST entry (the one a receipt would own, floor 5). Only
+  // a word otherwise off the card earns a row, so four *Off* looks stay a cap of two.
+  const concernKeys = (row: NyxEvent): string[] => {
+    if (!activePet) return [];
+    const described = describeLook(row, { species: activePet.species, sex });
+    if (described.kind !== 'observed') return [];
+    const species = lookSpeciesOf(activePet.species);
+    return described.words.map((w) => w.key).filter((k) => !entryWithholdsWords([k], species));
+  };
+  const shown = new Set(todayLooks.slice(0, LOOK_TODAY_CAP).flatMap(concernKeys));
+  const keptForWord = new Set<string>();
+  // Newest first, so walk backwards to find each word's EARLIEST entry today.
+  for (let i = todayLooks.length - 1; i >= LOOK_TODAY_CAP; i--) {
+    const fresh = concernKeys(todayLooks[i]).filter((k) => !shown.has(k));
+    if (fresh.length === 0) continue;
+    keptForWord.add(todayLooks[i].id);
+    fresh.forEach((k) => shown.add(k));
+  }
   const visibleLooks = todayLooks.filter(
-    (row, i) => i < LOOK_TODAY_CAP || receiptTextFor(row) !== null,
+    (row, i) => i < LOOK_TODAY_CAP || receiptTextFor(row) !== null || keptForWord.has(row.id),
   );
   const hiddenLooks = todayLooks.length - visibleLooks.length;
 

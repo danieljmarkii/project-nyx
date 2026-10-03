@@ -56,6 +56,7 @@ import {
 } from './analytics';
 import { localDayIndex, dayKeyFromIndex } from './utils';
 import { lookWordKind, type LookSpecies } from '../constants/lookWords';
+import type { TrialStripSafety } from './trialStripDoor';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -233,6 +234,54 @@ export function entryWithholdsWords(
  */
 export function lookWithheld(pet: { id: string }, record: LookWithheldFacts | null): boolean {
   return lookWithheldState(pet, record) !== 'open';
+}
+
+/**
+ * The gate on the APP's counts under a live safety-class finding — Q-6, ruled (c) by the PM on
+ * 2026-10-03 (CUL-909). NOT a fourth arm, and it must never become one.
+ *
+ * The three arms above withhold the owner's WORDS, because a falling intake record is the
+ * named clinical case (Dr. Chen's ledger row 15). Q-6 asked whether any other safety card
+ * — a photo red flag, worsening, chronicity — should do the same once N-4b made the entry
+ * persist all day. The ruling split the two things the card draws:
+ *
+ *   • the coverage footer (*Answered 24 of the last 28 days*) is the APP's claim, a count
+ *     it composes and places; drawn one card below *Call your vet today* it is placement
+ *     doing the reassuring. It goes, under the WHOLE safety class.
+ *   • the entry's words are HERS. Under a non-intake finding they stay: there is no named
+ *     clinical case for refusing an owner her own answer, and hiding it on an analogy is
+ *     the large behaviour change option (a) was rejected for.
+ *
+ * So this returns whether the app's counts are held: the footer, and the receipt's
+ * denominators, which state the same answered-day count (*of the 20 days you've answered*)
+ * and so reduce to the bare first date — the intake state's own receipt form, for the
+ * reason §3.3 gives it (a rate the withheld count could be read back out of). Found by the
+ * adversarial pass on CUL-909; it is the ruling's own reason applied to the second place
+ * the count is spoken. Nothing here reaches the words.
+ *
+ * ── `safety` IS WHAT THE SIGNAL ZONE REPORTS ─────────────────────────────────
+ * `onSafetyLive` — any `priorityClass === 'safety'` card in the zone's settled set, plus
+ * the escalate-only gap row — the one report the trial strip's lane already waits on
+ * (`lib/trialStripDoor.ts`, CUL-1301), so the lane and the footer cannot disagree about
+ * whether a safety card is on screen. It FAILS CLOSED, the same way and for the same
+ * reason: `null` (the Signal has not answered) and a report for another pet (C-9) hold the
+ * footer, because an absence the Signal has not reported is not evidence of no concern,
+ * and the footer is a nicety whose absence carries no reading.
+ *
+ * ── IT WRITES NO WITHHELD MARK ───────────────────────────────────────────────
+ * Deliberately live-only: the footer returns the day the card stands down. That leaves a
+ * KNOWN, ACCEPTED T-16 exposure, stated rather than argued away: a cat in a clinic for six
+ * days under a red-flag card, with nobody opening the app, comes home to *Answered 22 of
+ * the last 28 days* once the card stands down — a number pulled down by the illness. It is
+ * not a regression (the same number rendered before this ruling, and renders today for a
+ * hospitalisation no Signal card saw), and the alternative is worse: a mark would hide the
+ * footer for 28 days after EVERY safety card, which on a chronic pet means never.
+ */
+export function safetyHoldsLookFooter(
+  pet: { id: string },
+  safety: TrialStripSafety | null,
+): boolean {
+  return safety === null || safety.petId !== pet.id || safety.live !== false;
 }
 
 /**

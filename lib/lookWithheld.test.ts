@@ -58,6 +58,7 @@ import {
   loadRecentQualifyingMeals,
   markWithheldToday,
   readLastWithheldDay,
+  safetyHoldsLookFooter,
   type LookWithheldFacts,
 } from './lookWithheld';
 
@@ -369,5 +370,35 @@ describe('entryWithholdsWords — the asymmetry inside the withheld state', () =
   it('a key this build cannot name is not a concern, so it withholds', () => {
     // The safe direction: an unnameable key must not be able to unlock the words.
     expect(entryWithholdsWords(['from_a_future_vocabulary'], 'cat')).toBe(true);
+  });
+});
+
+describe('safetyHoldsLookFooter — the footer’s gate under any safety card (CUL-909)', () => {
+  it('holds on a live safety card for this pet', () => {
+    expect(safetyHoldsLookFooter(PET, { petId: PET.id, live: true })).toBe(true);
+  });
+
+  it('opens only on an ANSWERED all-clear for THIS pet', () => {
+    expect(safetyHoldsLookFooter(PET, { petId: PET.id, live: false })).toBe(false);
+  });
+
+  it('fails closed on every form of not-knowing', () => {
+    expect(safetyHoldsLookFooter(PET, null)).toBe(true);
+    expect(safetyHoldsLookFooter(PET, { petId: PET.id, live: null })).toBe(true);
+    expect(safetyHoldsLookFooter(PET, { petId: null, live: false })).toBe(true);
+    expect(safetyHoldsLookFooter(PET, { petId: 'pet-2', live: false })).toBe(true);
+  });
+
+  it('is not a fourth arm: a safety card leaves the WORDS’ state untouched', () => {
+    // The ruling's other half. `lookWithheldState` takes no safety input at all, so a quiet
+    // intake record under a red flag stays 'open' and her words render.
+    const facts: LookWithheldFacts = {
+      petId: PET.id,
+      serverIntakeDecline: false,
+      trialNotEating: false,
+      recentQualifyingMeals: [],
+    };
+    expect(lookWithheldState(PET, facts)).toBe('open');
+    expect(lookWithheldState.length).toBe(2);
   });
 });

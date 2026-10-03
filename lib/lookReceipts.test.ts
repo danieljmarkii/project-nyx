@@ -134,13 +134,13 @@ describe('the count form', () => {
     const nine = [today, ...quiet(8)];
     expect(receiptsFor(entryOf(today), nine, PET)).toEqual([]);
     expect(
-      lookCoverage(nine, { nowMs: NOW, withheldNow: false, lastWithheldDay: null }).form,
+      lookCoverage(nine, { nowMs: NOW, withheldNow: false, safetyHolds: false, lastWithheldDay: null }).form,
     ).toBe('absent');
     // …and they arrive together.
     const fourteen = [today, ...quiet(13)];
     expect(receiptsFor(entryOf(today), fourteen, PET)).toHaveLength(1);
     expect(
-      lookCoverage(fourteen, { nowMs: NOW, withheldNow: false, lastWithheldDay: null }).form,
+      lookCoverage(fourteen, { nowMs: NOW, withheldNow: false, safetyHolds: false, lastWithheldDay: null }).form,
     ).toBe('ratio');
   });
 
