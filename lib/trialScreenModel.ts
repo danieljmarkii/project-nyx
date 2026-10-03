@@ -33,6 +33,7 @@ import {
   resolveTrialCard,
   resolveTrialStrip,
   trialEndDayIndex,
+  viewAllowedFoodsAction,
   type TrialCardAction,
   type TrialCardInput,
   type TrialCardLine,
@@ -61,7 +62,11 @@ export const EXPOSURES_DOOR = 'Outside the trial diet';
 /** §4 — the three answers that are not a trial. */
 export const TRY_AGAIN = 'Try again';
 export const UNKNOWN_PET_LINE = 'This pet isn’t in your account any more.';
-export const TO_THE_PET_TAB = 'Go to the Pet tab';
+/** The no-trial door. It lands on the route's pet's tab, which carries the pet's NAME, so
+ *  "the Pet tab" named a label the owner never sees (CUL-1339 voice pass, 2026-10-03). */
+export function toPetTab(petName: string): string {
+  return `Go to ${petName}’s tab`;
+}
 export const TO_HOME = 'Go Home';
 
 export function unreadableLine(petName: string): string {
@@ -309,7 +314,14 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
   const hasAction = (id: TrialCardAction['id']) => card.actions.some((a) => a.id === id);
   // §3.4: the head alone until the set has hydrated. The door is Jordan's first moment,
   // so it never waits on the list read; `/trial-foods` answers its own read states.
-  const allowedAction = card.actions.find((a) => a.id === 'view_allowed_foods');
+  // CUL-1339 #4 (PM, 2026-10-03): the overrun face carries the door too. The card leaves
+  // it off both decision states so a food list never dilutes the decision; on the screen
+  // the decision block sits above it, and an overrun can run on for weeks on the vet's
+  // say-so, every day of them asking "can he have this?". The milestone stays without it.
+  // The label is the card's own action (S2).
+  const allowedAction =
+    card.actions.find((a) => a.id === 'view_allowed_foods') ??
+    (state === 'overrun' && !safety ? viewAllowedFoodsAction(input.petName) : undefined);
   const allowedFoods = allowedAction
     ? {
         label: allowedAction.label,
