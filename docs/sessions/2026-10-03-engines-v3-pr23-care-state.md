@@ -30,19 +30,42 @@ Dispatched session (`/dispatch`, Engines v3 round), BUILD on CUL-1417. Shipped v
 2. **The weight line (§4.1)** stays a go-live gate beside EN-8 (PR-19, running in parallel).
 3. **N1 (adversarial):** a dense week must lie wholly after the answer. A week the owner had already seen is not a tested change.
 
-## The adversarial pass
+## The adversarial pass (four rounds, isolated `adversarial-reviewer`)
 
-The first verdict was **FAIL, seven defects**. All seven are fixed in this PR, each with a regression test:
-
-- **D1:** a card carried over an incomplete read kept the prior row's `with_vet`. Home and Ask would then drop an escalation's ask. Now the carry strips it, and both readers ignore a care state on anything but a concern.
-- **D2:** a future anchor gave a count-less `with_vet`.
+**Round 1: FAIL, seven defects.**
+- **D1:** a card carried over an incomplete read kept the previous row's `with_vet`, so Home and Ask dropped an escalation's ask.
+- **D2:** a future anchor gave a "with your vet" with no count.
 - **D3:** a course with a target and no logged dose never lapsed.
-- **D4:** no lapse when a worsening concern left the set.
+- **D4:** an answer did not lapse when its concern left the set.
 - **D5:** the latch dropped back to an older answer.
-- **D6:** the pair trigger could be lost on a skipped run. It now reads the record at the answer's instant.
+- **D6:** the pair trigger could be lost on a skipped run.
 - **D7:** the reference slid once its window left the 180-day read.
 
-N2 (a full-logging zero beside "vet knows") went to Dr. Chen on CUL-1537. The re-verification of the fixes is recorded on CUL-1417.
+**Round 2: three of my fixes opened new quieter paths.**
+- **D4:** one skipped run revived a lapsed answer.
+- **D6:** reading the record replaced the onset test when it should have been added to it.
+- **D7:** a stored reference forged in the owner-writable cache could silence the rate arm.
+
+**Round 3: no quieter paths, but two calendar re-asks.**
+- **D6:** ⑦'s sliding first onset re-raised every co-chronic pet at about 8 weeks.
+- **D7:** every answer lapsed about 152 days after its anchor. An answer written today about an old visit did nothing.
+
+**Round 4: PASS.**
+- The pair reads the other sign's course start under the gap rule.
+- The shell reads the record behind the lookback, back to the earliest answer's anchor (capped at two years). So the reference is always rebuilt from the record, and nothing is read back from the cache.
+- Continuity is judged from the previous row: if it held the concern without a care fact, earlier answers lapse.
+
+Every defect has a regression test.
+
+The lesson for the next build on this surface: **each fix toward "louder" was checked for a new quieter path, and two of the three found one.** On a never-quiet invariant, a fix needs its own adversarial pass, not just a test.
+
+Residuals (both louder; recorded on CUL-1417):
+- The 730-day cap is still a calendar edge.
+- Re-raises accumulate over a long-lived answer, because the 5% cap is defined over eight weeks only.
+
+Cost: a retracted answer's old anchor still widens the history read.
+
+N2 (a full-logging zero beside "vet knows") went to Dr. Chen on CUL-1537.
 
 ## What the harness says (the go-live gate, not this PR's)
 
