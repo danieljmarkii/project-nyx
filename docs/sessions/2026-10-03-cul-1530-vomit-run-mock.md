@@ -1,16 +1,41 @@
-# CUL-1530: a run of vomiting is rose every day (PR-30, the mock frame)
+# CUL-1530: a run of vomiting is rose every day (PR-30)
 
 **Date:** 2026-10-03
+**One thing:** D3 L1 — Reading a test: what it proves, and why it must fail first · check: pending
 
-Dispatched as PR-30 of *Out of beta: Noticed, Design v2, History v2, the trial screen*. The issue and the plan say a mock frame comes first and the session stops for the PM's reaction before writing code. This session did that and wrote no code.
+Dispatched as PR-30 of *Out of beta: Noticed, Design v2, History v2, the trial screen*. Shipped via #1019.
 
-**What shipped:** §13 on the History v2 page (`docs/culprit-history-v2-mockups.html`), republished to the same URL (https://claude.ai/artifact/RNvdtUG6FX5utWmzGqBNa6#s13), plus a ledger row and a gold "§13 · 1 call open" pill. The frames are drawn on the issue's own chain: a vomit every 2h50m from Sep 16 9:00 PM to Sep 19 2:10 PM, which is 2, 8, 8 and 6 a day and one episode, with lone vomits added on Sep 5 and Sep 9.
+## What happened
 
-- The strip, as built (only Sep 16 rose) beside the proposal (Sep 16 to 19 rose). The strip has no counts (H-2), so it raises no call.
-- The month, as built, beside two options for the corner count:
-  - **(a), the team's recommendation:** the corner stays on the day a bout began and a continuing day is rose with no number. The line's day count becomes the rose days: "Vomiting 3 times · vomit logged on 6 days".
-  - **(b):** every rose day shows its vomit count, and the line becomes "26 vomits on 6 days". Unless the bars move to vomits too, the card then holds two populations.
+**The frame first.** The issue and the plan put a mock ahead of any code, so the session drew §13 on the History v2 page (`docs/culprit-history-v2-mockups.html`, same URL: https://claude.ai/artifact/RNvdtUG6FX5utWmzGqBNa6#s13). It used the issue's own chain: a vomit every 2h50m from Sep 16, 9:00 PM to Sep 19, 2:10 PM, which is 2, 8, 8 and 6 a day and one episode, plus lone vomits on Sep 5 and Sep 9. The strip needed no call. The month's corner did: (a) keep the episode count on the day a bout began and leave a continuing day rose with no number, or (b) put the day's vomit count in every rose corner. The session stopped there.
 
-**Decision open:** the brief is on CUL-1530. Dr. Chen leans (b) and accepts (a). Nothing in `lib/` changes until the PM rules.
+**The ruling.** The PM replied "Go option a" the same day. The page now shows (a) as ruled, and (b) has left it (in git at `c9cf137`).
 
-**Next:** the build session takes the ruling and changes `lib/historyDays.ts` (a per-day vomit fact, or reads `byType.vomit`), `lib/stripMarks.ts` (rose on `byType.vomit > 0` under All types) and `lib/monthModel.ts` (rose on continuation days, with the corner and the line per the ruling). It adds the pure chain-fixture guard over `stripMarkOf` and the month model, proven red first. The reviews owed are adversarial-reviewer (the chain, a chain across midnight at UTC+14, a found-later vomit inside a chain), Designer on the frame, and code-reviewer.
+**The build.**
+- `lib/stripMarks.ts`: under All types the rose is `byType.vomit > 0`, the row's fact, not the episode's.
+- `lib/monthModel.ts`: `MonthDay.rose`, `vomitDayCount`, `rowNoun`, and `holdsVomit`. That last is the one rule the model and `DayMark` both call, under the same coverage exclusions. The line keeps its old form when no bout spans days. When one does, it splits into "Vomiting 3 times · vomit logged on 6 days", so the times are the corners and the days are the rose days. A month whose only vomits continue a bout from the month before reads "Vomit logged on 1 day", never "No vomiting logged" (that was a false absence before this change).
+- `lib/historyDays.ts`: `DayFacts.vomitEpisode` is gone, since nothing reads it now.
+- `components/charts/DayMark.tsx` fills through `holdsVomit`.
+- `MonthInstrument` passes `rowNoun: 'vomit'`, and the legend now reads "vomit day, count where a bout began".
+- `lib/vomitRun.test.ts` drives the chain through the real builders on both surfaces. It was 7 of 8 red against the old predicate before the fix.
+
+**Reviews.**
+- The adversarial pass (Biostatistician) gave PASS. It tried the issue's chain, then 300 randomized chains per zone under UTC, Kiritimati (UTC+14), Honolulu and New York, with mixed `Z` / `+00:00` spellings. The strip and the month agreed on every drawn day, and future days were never rose. Corners equalled the line's times, rose days equalled the line's days, and the bars equalled the row corners. A bout starting in the read's slack produced no false corner. A found-later row bridging two bouts left the rose days unchanged.
+- It raised one medium finding, filed as **CUL-1539** (Waiting on PM): a bout that starts on a Saturday night leaves the next week's bar at 0 under four rose days, because the bars still count episodes by the ruling.
+- Its low findings were the legend (fixed), a comment claiming "cannot drift" without the coverage exclusions (fixed by applying them), and a pre-existing gap: a future-dated continuing row is not disclosed. The fourth was the mock's as-built caption, which is correct as the as-built frame.
+- The code-reviewer found two stale comments and a test that never asserted the rose (all fixed).
+
+## Teach
+
+### One thing: Reading a test, and why it must fail first (D3, L1)
+A test is a small program that sets up a situation, runs the real code on it, and checks the answer. It proves only what it checks, and only if it can fail. A test that passes before the fix and after it has measured nothing. So the rule here is to run the new test against the old code first and watch it fail.
+
+**Like:** a smoke alarm you test by holding a match under it. If it stays silent with the match lit, the alarm isn't proving your house is safe, it's just quiet.
+
+**In today's work:** `lib/vomitRun.test.ts`
+`expect([key, strip(key).mark.state]).toEqual([key, vomitDays.includes(key) ? 'rose' : 'logged']);`
+For every day of the month, this asks the real week strip what colour the day is, and expects rose exactly on the days that hold a vomit. On the old code it failed on Sep 17, 18 and 19, the three days the bug drew as ordinary. That failure is what proves the test can see the bug.
+
+**Why it matters to you as PM:** when a PR says "tests added", the question worth asking is "did they fail before the fix?" A green test that was never red is a claim, not evidence.
+
+**Check:** if someone later changed the strip back to marking only the first day of a run, which part of this test would turn red, and on which dates?

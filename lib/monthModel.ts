@@ -212,7 +212,8 @@ export interface MonthModel {
 
 /** The one rule for a rose day (CUL-1530): the day holds a vomit, because a bout began on
  *  it (`count`) or continues into it (`continuesFrom`). The model's `MonthDay.rose` and
- *  `DayMark`'s fill both call it, so the drawing cannot drift from the counted days. */
+ *  `DayMark`'s fill both call it; each also applies the same coverage exclusions (ahead,
+ *  unlogged, before the record), so the counted rose days are the drawn ones. */
 export function holdsVomit(d: { count: number; continuesFrom: string | null }): boolean {
   return d.count > 0 || d.continuesFrom != null;
 }
@@ -336,7 +337,11 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
       // Only on a day with no count of its own: a day on which a bout begins speaks
       // that count, which already says the day was not free of vomiting.
       continuesFrom: coverage === 'ahead' || count > 0 ? null : (continues.get(i) ?? null),
-      rose: coverage !== 'ahead' && holdsVomit({ count, continuesFrom: continues.get(i) ?? null }),
+      // The same exclusions DayMark draws by (ahead and unlogged have no rose; a day before
+      // the record is drawn without a mark), so `vomitDayCount` counts exactly the rose
+      // squares on screen. Unreachable today (a vomit day is a logged day after the record
+      // began), and stated so the count cannot drift from the drawing if that ever changes.
+      rose: coverage !== 'ahead' && coverage !== 'unlogged' && coverage !== 'before_record' && holdsVomit({ count, continuesFrom: continues.get(i) ?? null }),
       coverage,
       medication: coverage !== 'ahead' && dosed.has(i),
       photo: coverage === 'ahead' ? 'none' : (photos.get(i) ?? 'none'),

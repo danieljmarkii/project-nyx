@@ -437,6 +437,8 @@ function GridDay({
   // A neighbouring month's day in the first or last row is DRAWN, dimmed, with its
   // date and its mark: the row is the seven days its bar counts, so a bar of 3 over a
   // row never sits above one rose square and two blanks. It is not in the month's line.
+  // The bar counts the row's CORNERS (episodes); since CUL-1530 a row can also hold rose
+  // days with no corner, the days a bout continues into, which the bar does not count.
   if (day.outsideMonth) {
     return (
       <View style={styles.outsideMonth} testID="month-outside-day">
