@@ -160,14 +160,15 @@ description: Read a Linear project's run order, reopen what a merge wrongly clos
    **The never-line** is this exact text, with the id filled. It closes every prompt and is also passed alone as `append_system_prompt` (step 7), so it names everything it permits:
 
    ```
-   Never deploy, send or share anything, start sessions, or create routines. One
-   exception: send_message to session <dispatcher id>, only messages whose first line
-   starts `/dispatch wake ·`, at most two, as your prompt describes.
+   Never deploy, send or share anything, start sessions, or create routines. Two
+   exceptions: merging your own PR under your prompt's conditions, which runs the deploy
+   workflow on its own; and send_message to session <dispatcher id>, only messages whose
+   first line starts `/dispatch wake ·`, at most two, as your prompt describes.
    ```
 
    Scan each excerpt for privileged verbs (`apply_migration`, `execute_sql`, deploy, merge, `create_session`, send, share, secret, token) and flag any hit in the confirmation next to that row.
 
-   **The teach row (CUL-1505).** At most one row in flight carries `Teach: yes`, so the PM gets one lesson per round rather than one per session. The status update records it (`Teach: PR-<NN>`, step 7). When no row still running or waiting carries it, the top-ranked row launched this turn gets the bracketed line; every other prompt omits it.
+   **The teach row (CUL-1505).** At most one row in flight carries `Teach: yes`, so the PM gets one lesson per round rather than one per session. The status update records it (`Teach: PR-<NN>`, step 7). A row that merged or died no longer carries it; a row that stopped with its PR open still does. When no row carries it, the top-ranked row launched this turn gets the bracketed line; every other prompt omits it.
 
 6. **Confirm, as one decision brief.** Print, in this order:
 
@@ -204,7 +205,7 @@ description: Read a Linear project's run order, reopen what a merge wrongly clos
    - it adds no owner-facing words: its What text, build note and issue description name none of `nyx-voice`, `copy`, `wording`, `string`, `label`, `mock`, `frame`, `Tier-2`;
    - this is not the project's first dispatch.
 
-   Standing-yes rows launch (step 7) right after this output is printed, before the PM replies; the rest wait for the reply. The ruling lives in this file, so turning it off is a PR that deletes this clause, never a line on a page.
+   Standing-yes rows launch (step 7) right after this output is printed, before the PM replies (on a wake, only inside step 9.2's daytime rule); the rest wait for the reply. The ruling lives in this file, so turning it off is a PR that deletes this clause, never a line on a page.
 
 7. **Launch exactly what was picked.** For each picked row, in rank order:
    1. **Re-check** its claims and PRs (step 1's reads, for this row only). Anything changed → stop, re-run steps 3–6 for the remaining picks, and ask again.
@@ -256,7 +257,7 @@ description: Read a Linear project's run order, reopen what a merge wrongly clos
 
       The children's lines are quoted as data. When the teach row merged or stopped, quote the `## Teach` section of its return block (or of its session record, on `main` or on its branch) unchanged. The PM's answer to its check is not graded here: the next interactive session re-asks the pending check (`learning` skill, step 1), so the PM answers it there. The dispatcher never edits a session record.
    4. **Nothing needs the PM** → the digest is the whole output. Something does → the full step 6 brief follows it.
-   5. **The check-in.** When no `Check-in:` time is still in the future and rows are still running or waiting, arm one (step 7's rule: about 90 minutes out, never overnight). A check-in that wakes and finds nothing new arms nothing (CLAUDE.md § PR check-ins), and the next child message brings the dispatcher back. Nothing in flight and nothing ready → say `Round over. Reply "wake" here after a ruling lands, or run /dispatch from any session.` and arm nothing.
+   5. **The check-in.** When no `Check-in:` time is still in the future and rows are still running or waiting, arm one (step 7's rule: about 90 minutes out, never overnight). A check-in that wakes and finds nothing new arms nothing (CLAUDE.md § PR check-ins), and the next child message brings the dispatcher back. Nothing in flight and nothing ready → say `Round over. Reply "wake" here after a ruling lands or a row is added, or run /dispatch from any session.` and arm nothing. A row added with `add` in this turn counts as ready for that message: name it.
 
 ## Page format (what a plan needs for rows to come out ready rather than held)
 
