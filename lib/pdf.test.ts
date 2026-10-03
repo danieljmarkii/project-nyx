@@ -113,12 +113,12 @@ describe('generateVetReport', () => {
       data: { html: '<html>Nyx</html>', pet_name: 'Nyx', start_date: '2026-04-04', end_date: '2026-07-03', scope_basis: 'fallback_90d' },
       error: null,
     });
-    const r = await generateVetReport({ petId: 'p1' });
+    const r = await generateVetReport({ petId: 'p1', includeNotes: true });
     expect(r.html).toContain('Nyx');
     expect(r.startDate).toBe('2026-04-04');
     expect(r.scopeBasis).toBe('fallback_90d');
     expect(r.photoCount).toBe(0); // absent photo_count → 0, never undefined (owner-visibility line hides)
-    expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: { petId: 'p1', timezone: 'America/Chicago' } });
+    expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: { petId: 'p1', includeNotes: true, timezone: 'America/Chicago' } });
   });
 
   it('parses photo_count for the owner-visibility line (PR 7)', async () => {
@@ -126,7 +126,7 @@ describe('generateVetReport', () => {
       data: { html: '<html>Nyx</html>', pet_name: 'Nyx', start_date: '2026-04-04', end_date: '2026-07-03', scope_basis: 'fallback_90d', photo_count: 3 },
       error: null,
     });
-    const r = await generateVetReport({ petId: 'p1' });
+    const r = await generateVetReport({ petId: 'p1', includeNotes: true });
     expect(r.photoCount).toBe(3);
   });
 
@@ -136,31 +136,41 @@ describe('generateVetReport', () => {
       data: { html: '<html>Nyx</html>', trial_allowed_list_missing: true },
       error: null,
     });
-    expect((await generateVetReport({ petId: 'p1' })).trialAllowedListMissing).toBe(true);
+    expect((await generateVetReport({ petId: 'p1', includeNotes: true })).trialAllowedListMissing).toBe(true);
 
     mockedInvoke.mockResolvedValue({ data: { html: '<html>Nyx</html>' }, error: null });
-    expect((await generateVetReport({ petId: 'p1' })).trialAllowedListMissing).toBe(false);
+    expect((await generateVetReport({ petId: 'p1', includeNotes: true })).trialAllowedListMissing).toBe(false);
 
     // Only a literal `true` counts — a truthy string or a 1 is a contract drift, not a fact.
     mockedInvoke.mockResolvedValue({ data: { html: '<html>Nyx</html>', trial_allowed_list_missing: 'yes' }, error: null });
-    expect((await generateVetReport({ petId: 'p1' })).trialAllowedListMissing).toBe(false);
+    expect((await generateVetReport({ petId: 'p1', includeNotes: true })).trialAllowedListMissing).toBe(false);
   });
 
   it('throws on an Edge Function error', async () => {
     mockedInvoke.mockResolvedValue({ data: null, error: { message: 'boom' } });
-    await expect(generateVetReport({ petId: 'p1' })).rejects.toThrow(/boom/);
+    await expect(generateVetReport({ petId: 'p1', includeNotes: true })).rejects.toThrow(/boom/);
   });
 
   it('throws (never renders blank) when the html body comes back empty', async () => {
     mockedInvoke.mockResolvedValue({ data: { html: '' }, error: null });
-    await expect(generateVetReport({ petId: 'p1' })).rejects.toThrow(/empty/i);
+    await expect(generateVetReport({ petId: 'p1', includeNotes: true })).rejects.toThrow(/empty/i);
   });
 
   it('forwards a custom window override to the function body', async () => {
     mockedInvoke.mockResolvedValue({ data: { html: '<html></html>' }, error: null });
-    await generateVetReport({ petId: 'p1', startDate: '2026-05-01', endDate: '2026-06-01' });
+    await generateVetReport({ petId: 'p1', startDate: '2026-05-01', endDate: '2026-06-01', includeNotes: true });
     expect(mockedInvoke).toHaveBeenCalledWith('generate-report', {
-      body: { petId: 'p1', startDate: '2026-05-01', endDate: '2026-06-01', timezone: 'America/Chicago' },
+      body: { petId: 'p1', startDate: '2026-05-01', endDate: '2026-06-01', includeNotes: true, timezone: 'America/Chicago' },
+    });
+  });
+
+  // CUL-1464 — an explicit false reaches the wire. The server reads an absent value as ON,
+  // so the field is required on the type and must survive the spread unchanged.
+  it('forwards includeNotes: false as false, never dropped', async () => {
+    mockedInvoke.mockResolvedValue({ data: { html: '<html></html>' }, error: null });
+    await generateVetReport({ petId: 'p1', includeNotes: false });
+    expect(mockedInvoke).toHaveBeenCalledWith('generate-report', {
+      body: { petId: 'p1', includeNotes: false, timezone: 'America/Chicago' },
     });
   });
 });

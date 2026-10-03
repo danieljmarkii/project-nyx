@@ -3,8 +3,8 @@ import { isCustomWindowEdit, CUSTOM_RANGE_SETTLE_MS, reportScopeLine } from './r
 // CUL-371 — the one predicate behind the report's settle timer. Only an edit of a
 // custom window already on screen waits; every other change regenerates at once.
 
-const custom = (startDate: string, endDate: string, petId = 'p1') => ({ petId, startDate, endDate });
-const dflt = (petId = 'p1') => ({ petId });
+const custom = (startDate: string, endDate: string, petId = 'p1') => ({ petId, startDate, endDate, includeNotes: true });
+const dflt = (petId = 'p1') => ({ petId, includeNotes: true });
 
 describe('isCustomWindowEdit', () => {
   it('From moved inside Custom — waits', () => {
