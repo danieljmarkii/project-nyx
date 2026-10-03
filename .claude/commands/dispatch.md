@@ -143,7 +143,8 @@ description: Read a Linear project's run order, reopen what a merge wrongly clos
    these holds on a fresh read taken immediately before the merge: it is not a draft; every
    check on its head commit has completed and passed (Claude Approvals included, where it
    runs); GitHub reports it mergeable with no conflict; the head is the commit those checks
-   ran on; the issue's Definition of Done passes, adversarial review included where the
+   ran on and the one `scripts/steward/merge-check.sh` called CLEAN (or whose REVIEW you
+   cleared in writing); the issue's Definition of Done passes, adversarial review included where the
    issue requires it; and the PR holds no migration and needs none that is unapplied.
    Anything short of that, leave the PR for the PM and say which condition failed. Merging
    runs the Edge Function deploy workflow on its own; that is allowed. Starting a deploy any
