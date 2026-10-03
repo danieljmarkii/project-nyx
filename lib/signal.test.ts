@@ -1,4 +1,6 @@
 import {
+  cancelPendingSignalRegens,
+  readSignalCacheOrLast,
   readSignalsAndRefresh,
   regenerateSignal,
   triggerSignalRegenDebounced,
@@ -106,6 +108,53 @@ describe('isSignalCacheStale', () => {
   });
   it('treats an unparseable expiry as stale (never trusts a bad timestamp)', () => {
     expect(isSignalCacheStale({ ...base, expiresAt: 'not-a-date' })).toBe(true);
+  });
+});
+
+describe('readSignalCacheOrLast — the offline open (CUL-1219, GAP-7)', () => {
+  beforeEach(() => cancelPendingSignalRegens());
+
+  it('a live read answers live', async () => {
+    installCaches({ P: { data: row(), error: null } });
+    const read = await readSignalCacheOrLast('P');
+    expect(read.fromLast).toBe(false);
+    expect(read.row?.findings).toHaveLength(1);
+  });
+
+  it('a failed read after an answered one draws the last answered row, and says so', async () => {
+    installCaches({ P: { data: row(), error: null } });
+    await readSignalCacheOrLast('P');
+    installCaches({ P: { data: null, error: { message: 'offline' } } });
+    const read = await readSignalCacheOrLast('P');
+    expect(read.fromLast).toBe(true);
+    expect(read.row?.findings).toHaveLength(1);
+  });
+
+  it('"no row" is an answer too: offline it stays no row, never a throw', async () => {
+    installCaches({ P: { data: null, error: null } });
+    await readSignalCacheOrLast('P');
+    installCaches({ P: { data: null, error: { message: 'offline' } } });
+    expect(await readSignalCacheOrLast('P')).toEqual({ row: null, fromLast: true });
+  });
+
+  it('a failed read with nothing ever answered still throws (the screen says it could not open)', async () => {
+    installCaches({ P: { data: null, error: { message: 'offline' } } });
+    await expect(readSignalCacheOrLast('P')).rejects.toBeTruthy();
+  });
+
+  it('the kept row is per pet: another pet’s answer never stands in', async () => {
+    installCaches({ A: { data: row(), error: null } });
+    await readSignalCacheOrLast('A');
+    installCaches({ B: { data: null, error: { message: 'offline' } } });
+    await expect(readSignalCacheOrLast('B')).rejects.toBeTruthy();
+  });
+
+  it('sign-out (`cancelPendingSignalRegens`, from wipeLocalSession) drops every kept row', async () => {
+    installCaches({ P: { data: row(), error: null } });
+    await readSignalCacheOrLast('P');
+    cancelPendingSignalRegens();
+    installCaches({ P: { data: null, error: { message: 'offline' } } });
+    await expect(readSignalCacheOrLast('P')).rejects.toBeTruthy();
   });
 });
 

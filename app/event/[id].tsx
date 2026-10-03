@@ -20,6 +20,7 @@ import {
   getDoubleDoseFlag,
   TimelineRow,
 } from '../../lib/db';
+import { triggerSignalRegenDebounced } from '../../lib/signal';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
 import { detachEventAttachment, detachOtherEventAttachments } from '../../lib/attachments';
 import { resolveEventPhotoDisplay, addPhotoHeroCopy, EVENT_HERO_HEIGHT } from '../../lib/eventPhoto';
@@ -563,6 +564,8 @@ export default function EventDetailScreen() {
               // with the replace path so "detach a photo" has one implementation
               // (B-105) — the replace used to skip this cleanup entirely.
               await detachEventAttachment(att);
+              // CUL-1219 (BRK-44): the photo was part of what the Signal read.
+              if (event) triggerSignalRegenDebounced(event.pet_id);
             } catch (e) {
               console.error('[event-detail] remove photo failed:', e);
               setAttachment(att);
@@ -664,7 +667,12 @@ export default function EventDetailScreen() {
         // Settles on every exit — the upsert early-return and a rejected upload
         // included. A chain that died before its read settles FALSE, so a waiting
         // section triggers its own instead of watching for a row nothing writes.
-        .finally(() => readClaim?.settle(readInvoked));
+        .finally(() => {
+          readClaim?.settle(readInvoked);
+          // CUL-1219 (BRK-44): a new or replaced photo (and its read) changes what the
+          // Signal counted, so it refreshes once the read has had its turn.
+          triggerSignalRegenDebounced(event.pet_id);
+        });
       // Detach the rows this capture replaced — after the replacement is stored
       // AND its upload is in flight. Order matters twice over: removing first
       // would turn a failed insert into an event with no photo at all, and

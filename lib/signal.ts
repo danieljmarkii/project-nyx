@@ -707,8 +707,11 @@ export async function readSignalCache(petId: string): Promise<SignalCacheRow | n
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  if (!data) return null;
-  return {
+  if (!data) {
+    lastAnsweredRows.set(petId, null);
+    return null;
+  }
+  const row: SignalCacheRow = {
     signalText: (data.signal_text as string) ?? null,
     isBuilding: (data.is_building as boolean) ?? true,
     findings: Array.isArray(data.findings) ? (data.findings as CachedFinding[]) : [],
@@ -717,6 +720,37 @@ export async function readSignalCache(petId: string): Promise<SignalCacheRow | n
     expiresAt: data.expires_at as string,
     engineFlags: (data as { engine_flags?: unknown }).engine_flags ?? null,
   };
+  lastAnsweredRows.set(petId, row);
+  return row;
+}
+
+// ── The last answered row, for a read that cannot reach the network (CUL-1219, GAP-7) ──
+// Every episode and photo the Signal's screen draws is on the phone; only the finding
+// itself lives in `ai_signals`. So the last row this process READ for a pet is kept, and
+// a screen whose read throws (an exam room with no signal) draws from it, labelled with
+// when the engine wrote it, rather than "I couldn't open this signal". A pet whose read
+// answered "no row" keeps that answer too: null is an answer, absence is not.
+//
+// Account state in JS memory, so it is cleared with the regen state in
+// `cancelPendingSignalRegens` (called from `wipeLocalSession`). Memory only, on purpose:
+// a copy on disk would be a new place health data rests, which is a Trust & Safety call.
+const lastAnsweredRows = new Map<string, SignalCacheRow | null>();
+
+export interface SignalCacheRead {
+  row: SignalCacheRow | null;
+  /** True when the network read threw and `row` is the last one this process answered. */
+  fromLast: boolean;
+}
+
+/** `readSignalCache`, falling back to the last answered row when the read throws. Throws
+ *  only when the read fails and nothing has ever answered for this pet. */
+export async function readSignalCacheOrLast(petId: string): Promise<SignalCacheRead> {
+  try {
+    return { row: await readSignalCache(petId), fromLast: false };
+  } catch (e) {
+    if (!lastAnsweredRows.has(petId)) throw e;
+    return { row: lastAnsweredRows.get(petId) ?? null, fromLast: true };
+  }
 }
 
 // No cached row, or the row is past its 24h TTL → a fresh regen is due.
@@ -917,6 +951,8 @@ export function cancelPendingSignalRegens(): void {
   // would make the next account's first regen for that pet id wait behind it.
   regenInFlight.clear();
   regenTrailing.clear();
+  // The kept rows are the signing-out account's findings (CUL-1219).
+  lastAnsweredRows.clear();
   useSyncStore.setState({ signalAcknowledging: {} });
 }
 

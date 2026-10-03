@@ -14,6 +14,7 @@ import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { getDb, updateEvent, updateMealFood, getMealForEvent, getDoseForEvent, getEventAttachment, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
+import { triggerSignalRegenDebounced } from '../lib/signal';
 import { detachOtherEventAttachments } from '../lib/attachments';
 import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations, syncPendingLooks } from '../lib/sync';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
@@ -162,6 +163,8 @@ export default function EditEventModal() {
   // the chips are blank over whatever is stored, so their null is not a change (C-12)
   // and only a rating the owner picks is.
   const loadedIntakeRef = useRef<IntakeRating | null>(null);
+  // The food the meal loaded with: a save refreshes the Signal only when it moved (CUL-1219).
+  const loadedFoodRef = useRef<string | null>(null);
 
   // Medication (dose) state — the parity twin of the meal food/intake block, so the
   // Edit modal for a dose carries the fields a dose actually has (drug identity +
@@ -218,6 +221,7 @@ export default function EditEventModal() {
       getMealForEvent(id).then((meal) => {
         if (meal) {
           setCurrentFoodId(meal.food_item_id);
+          loadedFoodRef.current = meal.food_item_id;
           setCurrentFoodBrand(meal.food_brand);
           setCurrentFoodProduct(meal.food_product_name);
           setCurrentFoodFormat(meal.food_format);
@@ -667,6 +671,21 @@ export default function EditEventModal() {
         ...(isMedication && dose ? { adherence, how_given: howGiven } : {}),
         ...(isWeight && weightKg != null ? { weight_kg: weightKg } : {}),
       });
+
+      // CUL-1219 (BRK-44): a moved time, a restated confidence, a changed food or a new photo
+      // changes what the Signal counted, so the save refreshes it, as a log and a removal do.
+      // Only then: a rebuild counts toward generate-signal's daily cap (CUL-1087), so a
+      // peek-and-save spends none (a changed rating already rebuilt through `rateMealIntake`;
+      // the debounce folds the two). A look never enters the engine (T-5), so its edit does not.
+      const engineInputMoved =
+        new Date(occurredAtIso).getTime() !== new Date(occurredAtParam).getTime() ||
+        confidence != null ||
+        newAttachmentUri != null ||
+        (config.hasFood && currentFoodId != null && currentFoodId !== loadedFoodRef.current);
+      if (!isLook && engineInputMoved) {
+        const owner = await getDb().getFirstAsync<{ pet_id: string }>('SELECT pet_id FROM events WHERE id = ?', [id]);
+        if (owner) triggerSignalRegenDebounced(owner.pet_id);
+      }
 
       // Attachments are handled above with their own direct upload + retry-on-reconnect pattern.
       // One ordered push for all edited tables: events FIRST, then the children

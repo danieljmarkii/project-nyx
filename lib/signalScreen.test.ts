@@ -15,9 +15,15 @@ const mockFrom = jest.fn();
 jest.mock('./supabase', () => ({ supabase: { from: (...a: unknown[]) => mockFrom(...a) } }));
 
 const mockReadSignalCache = jest.fn();
+let mockFromLast = false;
 jest.mock('./signal', () => {
   const actual = jest.requireActual('./signal');
-  return { ...actual, readSignalCache: (...a: unknown[]) => mockReadSignalCache(...a) };
+  return {
+    ...actual,
+    readSignalCache: (...a: unknown[]) => mockReadSignalCache(...a),
+    // The fallback's own behaviour is `lib/signal.test.ts`'s; here a read is a live answer.
+    readSignalCacheOrLast: async (...a: unknown[]) => ({ row: await mockReadSignalCache(...a), fromLast: mockFromLast }),
+  };
 });
 
 const mockReadFeedingRows = jest.fn();
@@ -62,13 +68,14 @@ import {
   type SignalScreenInput,
   type SignalScreenModel,
   withheldLines,
+  asOfLineOf,
 } from './signalScreen';
 import type { CachedFinding, IntakeDeclineFinding, SymptomChronicityFinding, TrialResponseFinding } from './signal';
 import { hasTitleVerdictWord } from './signalTitle';
 import type { SignalTrialWindow } from './signalWindows';
 import { signalCompareSpec } from './signalWindows';
 import { LOOK_EVENT_TYPE } from './monthReads';
-import { dayKeyFromIndex, formatCalendarDate, localDayIndexOf, toLocalDayKey } from './utils';
+import { dayKeyFromIndex, formatCalendarDate, formatTime, localDayIndexOf, toLocalDayKey } from './utils';
 import { usePetStore } from '../store/petStore';
 import { foldIdentity } from './signalFold';
 import { isAnimalNotEating, type TrialCardInput } from './dietTrialCard';
@@ -903,6 +910,47 @@ describe('loadSignalScreen', () => {
     expect(out.model.episodes?.tiles).toHaveLength(1);
     expect(out.model.episodes?.tiles[0]).toMatchObject({ eventId: 'v1', verdict: 'worth_a_call' });
     expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  // CUL-1219 (BRK-8): the tile opens the re-log that holds the photo, so it says the re-log's
+  // time, the time that record's own screen shows; the bout still counts on its onset day.
+  it('a tile states the time of the record it opens, not the bout’s onset', async () => {
+    mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(chronicity())] });
+    const onset = new Date(Date.now() - 20 * 60_000);
+    const relog = new Date();
+    mockGetAllAsync.mockImplementation((sql: string) => {
+      if (/FROM events\s+WHERE pet_id = \? AND event_type/.test(sql))
+        return Promise.resolve([
+          { id: 'v0', occurred_at: onset.toISOString(), occurred_at_confidence: 'witnessed' },
+          { id: 'v1', occurred_at: relog.toISOString(), occurred_at_confidence: 'witnessed' },
+        ]);
+      if (/event_attachments/.test(sql)) return Promise.resolve([{ event_id: 'v1', local_uri: null, storage_path: 'p/v1.jpg' }]);
+      return Promise.resolve([]);
+    });
+    const out = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');
+    if (out.status !== 'ready') throw new Error(out.status);
+    const tile = out.model.episodes?.tiles[0];
+    expect(tile).toMatchObject({ eventId: 'v1', occurredAt: relog.toISOString(), timeWord: formatTime(relog) });
+    // The fixture is only a fixture if the two times say different words.
+    expect(formatTime(onset)).not.toBe(formatTime(relog));
+    expect(out.asOfLine).toBeNull();
+  });
+
+  // CUL-1219 (GAP-7): offline, the finding is the last row the process read, and the screen
+  // says when the engine wrote it; it still opens.
+  it('offline: the kept row opens the screen, with the line that says how old the sentence is', async () => {
+    const written = new Date(Date.now() - 3 * 60 * 60_000);
+    mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(chronicity())], generatedAt: written.toISOString() });
+    mockGetAllAsync.mockResolvedValue([]);
+    mockFromLast = true;
+    try {
+      const out = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');
+      expect(out.status).toBe('ready');
+      expect(out.status === 'ready' && out.asOfLine).toBe(asOfLineOf(written.toISOString(), Date.now()));
+      expect(out.status === 'ready' && out.asOfLine).toMatch(/^Couldn't refresh just now\. Last updated /);
+    } finally {
+      mockFromLast = false;
+    }
   });
 
   it('a trial that is not running today gives no trial window, and a failed trial read does not fail the screen', async () => {
