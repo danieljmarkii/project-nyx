@@ -415,13 +415,19 @@ Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the
   assertStrictEquals(/\bcareRecord,/.test(call), true, 'the shell no longer hands the pipeline its care record')
   // EN-8 (PR-19, CUL-1413): the weigh-ins are read behind their key, once, and handed in.
   assertStrictEquals(
-    /isEngineKeyOn\(engineFlags, 'engines_v3_en8'\)\s*\?\s*await readWeightFacts\(/.test(src),
+    /const en8On = isEngineKeyOn\(engineFlags, 'engines_v3_en8'\)/.test(src) && /en8On \? await readWeightFacts\(/.test(src),
     true,
     'the weight reads are no longer behind engines_v3_en8',
   )
   assertStrictEquals(src.split('readWeightFacts(').length - 1, 2, 'readWeightFacts is defined once and called once')
   assertStrictEquals(src.split(".from('weight_checks')").length - 1, 1, 'weight_checks is read outside readWeightFacts')
   assertStrictEquals(/\bweightFacts,/.test(call), true, 'the shell no longer hands the pipeline its weight facts')
+  // A failed weight read under the key makes the run incomplete, so a shown card is carried.
+  assertStrictEquals(
+    /const incompletePulls = en8On && weightFacts === null \? \[\.\.\.readPulls, 'weights'\] : readPulls/.test(src),
+    true,
+    'a failed weight read no longer marks the run incomplete',
+  )
   // EN-11 (PR-32, CUL-1141): the fingerprint hashes the config the pipeline detects with, chosen
   // on the same literal key pipeline.ts reads (a second site the pipeline guard cannot see).
   assertStrictEquals(

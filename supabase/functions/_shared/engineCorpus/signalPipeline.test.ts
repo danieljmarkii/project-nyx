@@ -432,6 +432,28 @@ Deno.test('(c-en8) the lane adds its row and moves nothing else: every other fin
   }
 })
 
+Deno.test('(c-en8) a weight card already shown is carried, dated, when the weight read fails (final adversarial pass)', () => {
+  const ON: EngineFlags = { on: [EN8], readOk: true }
+  let carried = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const first = withWeight(c, ON)
+    const shown = templatePayload(first).findings.find((e) => e.finding.type === 'weight_loss')
+    if (!shown) continue
+    const prior: PriorSignal = {
+      findings: templatePayload(first).findings,
+      generatedAt: new Date(Date.parse(c.nowIso) - 3_600_000).toISOString(),
+      engineFlags: [EN8],
+    }
+    // The shell's convention: a failed or partial weight read is null facts plus 'weights'.
+    const next = run({ ...c, prior }, ON, EMPTY_CARE_RECORD, ['weights'], null)
+    const kept = next.carried.find((e) => e.finding.type === 'weight_loss')
+    assertStrictEquals(kept !== undefined, true, `${c.name}: the weight card vanished on a failed weight read`)
+    assertStrictEquals(validatePhrasing(kept!.text, kept!.finding), true, `${c.name}: the carried line is off-template`)
+    carried++
+  }
+  assertStrictEquals(carried >= SIGNAL_PIPELINE_CORPUS.length / 2, true, `only ${carried} cases carried a weight card`)
+})
+
 Deno.test('(d) the care record is read by the care-state step alone: flag off, a populated record changes nothing', () => {
   for (const c of SIGNAL_PIPELINE_CORPUS) {
     assertEquals(run(c, OFF, POPULATED_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS), run(c, OFF, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS), c.name)
@@ -738,7 +760,7 @@ Deno.test('(k3) a carried card is dated, never its old sentence, and ages out; t
   assertStrictEquals(carriedSeen >= 8, true, `only ${carriedSeen} carried cards seen`)
 })
 
-Deno.test('(k4) only the five safety lanes are carried: a forged or malformed prior entry never is', () => {
+Deno.test('(k4) only the six safety lanes are carried: a forged or malformed prior entry never is', () => {
   const quiet = SIGNAL_PIPELINE_CORPUS.find((c) => c.name === 'a new pet with nothing logged')!
   const forged: PriorSignal = {
     findings: [
@@ -757,6 +779,9 @@ Deno.test('(k4) only the five safety lanes are carried: a forged or malformed pr
       { rank: 10, text: 'x', finding: { type: 'symptom_burden', priorityClass: 'safety', symptomType: 'vomit', tier: 'firm' } },
       { rank: 11, text: 'x', finding: { type: 'symptom_burden', priorityClass: 'safety', symptomType: 'vomit' } },
       { rank: 12, text: 'x', finding: { type: 'symptom_burden', priorityClass: 'safety', symptomType: 'zzz', tier: 'today' } },
+      // PR-19's weight card: soft or firm only.
+      { rank: 13, text: 'x', finding: { type: 'weight_loss', priorityClass: 'safety', tier: 'loud' } },
+      { rank: 14, text: 'x', finding: { type: 'weight_loss', priorityClass: 'safety' } },
       'garbage',
     ],
     generatedAt: new Date(Date.parse(quiet.nowIso) - 86_400_000).toISOString(),

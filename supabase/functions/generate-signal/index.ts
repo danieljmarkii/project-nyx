@@ -667,7 +667,7 @@ const handler = async (req: Request): Promise<Response> => {
     // pipeline, which withholds every reassuring or resolving entry and states counts as floors.
     // The dose pull counts only while the engine reads it: an unread pull cannot make this
     // run's record incomplete, and counting it would change output the dark gate holds still.
-    const incompletePulls = incompletePullNames({
+    const readPulls = incompletePullNames({
       symptoms: symptomsPull,
       meals: mealsPull,
       arrangements: arrangementsPull,
@@ -675,9 +675,9 @@ const handler = async (req: Request): Promise<Response> => {
       ...(SIGNAL_DOSE_LANES_ON ? { doseEvents: doseEventsPull } : {}),
       incidentAnalyses: incidentAnalysesPull,
     })
-    if (incompletePulls.length > 0) {
+    if (readPulls.length > 0) {
       // Error level on purpose: this is the line whose absence let CUL-975 run for a week.
-      console.error('generate-signal incomplete pulls:', petId, incompletePulls.join(', '))
+      console.error('generate-signal incomplete pulls:', petId, readPulls.join(', '))
     }
 
     const pet = petRes.data as { id: string; name: string; species: string; user_id: string | null } | null
@@ -714,9 +714,13 @@ const handler = async (req: Request): Promise<Response> => {
       : EMPTY_CARE_RECORD
     // 1f. EN-8 (PR-19, CUL-1413): the weigh-ins and the birthday, read ONLY while the key is on,
     //     so flag-off makes neither read. Null (a failed or partial read) means no weight card.
-    const weightFacts: WeightLaneInput | null = isEngineKeyOn(engineFlags, 'engines_v3_en8')
-      ? await readWeightFacts(supabase, petId, nowMs)
-      : null
+    const en8On = isEngineKeyOn(engineFlags, 'engines_v3_en8')
+    const weightFacts: WeightLaneInput | null = en8On ? await readWeightFacts(supabase, petId, nowMs) : null
+    // A weight read that did not answer in full, under the key, makes this run's record
+    // incomplete (CUL-989): a weight card the owner already saw is CARRIED, dated, and the row
+    // takes the short lifetime, rather than vanishing without a word (final adversarial pass).
+    // Flag off adds nothing, so the list is the one from before the lane.
+    const incompletePulls = en8On && weightFacts === null ? [...readPulls, 'weights'] : readPulls
     const fingerprint = await engineFingerprint({
       engine: 'generate-signal',
       version: SIGNAL_ENGINE_VERSION,

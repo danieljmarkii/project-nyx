@@ -247,6 +247,21 @@ describe('ruling sheet §2.3 counterexamples', () => {
     expect(story(readings, { plans: [old] }).row).toBeNull();
   });
 
+  it('W6 · a recheck date more than a year out is capped at a year (final adversarial pass)', () => {
+    const readings = [
+      home(6.0, '2025-12-01'), home(6.02, '2025-12-08'), home(6.0, '2026-08-20'), home(6.01, '2026-08-27'),
+      home(5.6, '2026-09-20'), home(5.62, '2026-09-27'),
+    ];
+    // Set Nov 2025 with a 2062 typo: capped at Nov 2026, still running, so the soft line is off.
+    expect(story(readings, { plans: [{ startedAt: '2025-11-01T00:00:00Z', recheckAt: '2062-01-01T00:00:00Z' }] }).row).toBeNull();
+    // Set Sep 2025 with the same typo: capped at Sep 1 2026, so it has ended and the loss after
+    // it is an ordinary soft row from the end level, never silenced for decades.
+    expect(story(readings, { plans: [{ startedAt: '2025-09-01T00:00:00Z', recheckAt: '2062-01-01T00:00:00Z' }] }).row).toMatchObject({
+      tier: 'soft',
+      planned: false,
+    });
+  });
+
   it('W6 · a plan that ended at its goal: the cat holding there raises nothing (counterexample 1)', () => {
     const readings = [home(7.0, '2026-03-02'), home(7.01, '2026-03-09'), home(6.3, '2026-06-20'), home(6.31, '2026-06-27'), home(6.3, '2026-09-01'), home(6.31, '2026-09-20')];
     expect(story(readings, { plans: [{ startedAt: '2026-03-01T00:00:00Z', recheckAt: '2026-07-15T00:00:00Z', endedAt: '2026-06-30T00:00:00Z' }] }).row).toBeNull();

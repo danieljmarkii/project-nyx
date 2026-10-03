@@ -79,6 +79,8 @@ export const WEIGHT_RULES = {
   plannedRateMinDays: 7,
   /** W6: a plan with no recheck date lapses after this, and its cumulative line when it names no target. */
   planLapseDays: 84,
+  /** A recheck date further out than this is capped (a typo like 2062 would quiet the lines for decades). */
+  planMaxDays: 365,
   plannedDefaultTargetFrac: 0.1,
   plannedTargetMin: 0.02,
   plannedTargetMax: 0.3,
@@ -297,7 +299,9 @@ function planEndMs(plan: WeightPlan, startMs: number): number {
   const endMs = plan.endedAt ? Date.parse(plan.endedAt) : NaN
   // A recheck date before the plan's start is a typo, read as no recheck (adversarial pass 3).
   const rawRecheck = plan.recheckAt ? Date.parse(plan.recheckAt) : NaN
-  const recheckMs = Number.isFinite(rawRecheck) && rawRecheck > startMs ? rawRecheck : NaN
+  const recheckMs = Number.isFinite(rawRecheck) && rawRecheck > startMs
+    ? Math.min(rawRecheck, startMs + WEIGHT_RULES.planMaxDays * MS_PER_DAY)
+    : NaN
   const lapseMs = Number.isFinite(recheckMs) ? recheckMs : startMs + WEIGHT_RULES.planLapseDays * MS_PER_DAY
   return Number.isFinite(endMs) ? Math.min(endMs, lapseMs) : lapseMs
 }

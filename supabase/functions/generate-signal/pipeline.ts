@@ -1075,7 +1075,9 @@ const safetyKey = (f: Finding): string => findingIdentity(f)
 /** The lanes whose card may be held or carried: the five safety lanes, by name. A prior row is
  *  written by the engine but readable and writable by its owner (ai_signals_owner), so a card of
  *  any other type, or a malformed one, is never re-emitted as engine output (adversarial re-check). */
-const CARRYABLE = new Set(['symptom_chronicity', 'symptom_worsening', 'symptom_burden', 'intake_decline', 'incident_red_flag'])
+// EN-8 (PR-19): the weight card is a safety card like the five before it; a failed weight read
+// (the shell names it 'weights') carries it rather than dropping it.
+const CARRYABLE = new Set(['symptom_chronicity', 'symptom_worsening', 'symptom_burden', 'intake_decline', 'incident_red_flag', 'weight_loss'])
 
 /**
  * How long a carried card may be carried, from the read that last COMPUTED it (`carriedFrom`,

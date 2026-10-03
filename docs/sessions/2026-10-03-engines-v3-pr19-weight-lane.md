@@ -87,6 +87,13 @@ The session first stopped before the wiring, because PR-23 (CUL-1417) owned `gen
   - The shell source pin, plus the read's columns and its failure modes (`index.test.ts`).
   - The stand-down key-set test is restated for the new key.
 
+**Adversarial pass 4 (the fixes and the wiring): FAIL on one break, now fixed.**
+- **The break:** a weight card the owner had already seen vanished silently when the weight read failed.
+- **The fix:** under the key, a failed or partial weight read now adds `'weights'` to `incompletePulls`, so the row takes the short lifetime and the card is carried and dated (CUL-989). `weight_loss` joins `CARRYABLE`. Removing it turns the new carry guard red.
+- **Also fixed:** a recheck date more than a year out is now capped at a year.
+- **Cost recorded for the E-6 brief:** a regain logged as two identical values, then a stand-down, then a relapse to the stood-down weight stays silent until new readings form a higher level.
+- **Held:** all three of pass 3's fixes (mutation-proven), every stood-down-stays-down shape, the flag gate at both layers, the soft-delete and other-pet exclusion, the window and the order key, and the row mapper.
+
 ## Next
 
 - **The CUL-583 rulings before GA:** the exact-copy sign-off, and the three edge rulings (on CUL-1413).
