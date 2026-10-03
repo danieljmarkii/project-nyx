@@ -9,7 +9,8 @@
 // Every count is over the same rows: every surviving event except a look, the population
 // the Patterns month counts (`lib/monthReads.ts`). A look never enters a count, a coverage
 // line or a gap line here (H-9; the daily look spec §5.6); it is carried only as the day's
-// `looked` flag, for the Noticed filter's dates. A vet visit is not an event and never
+// `looked` flag: the Noticed filter's dates, and under All types the cards its rows sit on
+// (CUL-1244: a look is drawn, never counted). A vet visit is not an event and never
 // enters a count or a coverage line either (`guards/visitReaders.test.ts`, the vet visits
 // spec's AC 10): it reaches History only as a date-only item, drawn at the top of its day.
 //
@@ -32,6 +33,7 @@
 
 import { EVENT_TYPES, SYMPTOM_TYPES, type EventTypeKey } from '../constants/eventTypes';
 import { isFinishedMeal, qualifyingIntakeMeals, type AnalyticsMeal } from './analytics';
+import { mealRowLabel } from './food';
 import { attributeDoses, type AttributableDose, type DoseAdherence, type RegimenWindow } from './medications';
 import type { MedicationCourse } from './medicationHistory';
 import { symptomOccurrenceLabel } from './metricDetail';
@@ -177,6 +179,10 @@ export interface DayFacts {
   byType: Partial<Record<EventTypeKey, number>>;
   /** Qualifying meals (rated, never a treat, never free-fed) rated below Most. */
   mealsNotFinished: number;
+  /** Meal events whose food is a treat, by the row's own word (`mealRowLabel`): a subset of
+   *  `byType.meal`. Under Meal the header and the count line name meals and treats apart,
+   *  so every number matches the rows beneath it (CUL-1243, PM-ruled (a)). */
+  treats: number;
   /** Dose rows by course key (the vet report's course grain). */
   doses: Record<string, DoseFacts>;
   photographed: number;
@@ -191,6 +197,7 @@ export function emptyDayFacts(day: string): DayFacts {
     total: 0,
     byType: {},
     mealsNotFinished: 0,
+    treats: 0,
     doses: {},
     photographed: 0,
     noted: 0,
@@ -314,6 +321,7 @@ export function buildDayFacts(input: DayFactsInput): Map<string, DayFacts> {
       if (r.adherence !== null && NOT_IN_FULL.has(r.adherence)) d.notInFull += 1;
     }
     if (r.eventType === 'meal') {
+      if (mealRowLabel(r.foodType) === 'Treat') f.treats += 1;
       const meal: AnalyticsMeal = {
         ms: Date.parse(r.occurredAt),
         foodItemId: r.foodItemId,
@@ -745,6 +753,28 @@ export function filterNoun(filter: HistoryFilter, n: number): string {
   }
 }
 
+/** Whether a filter is Meal: the one filter whose rows are two kinds the owner tells apart
+ *  (a meal, a treat), so its count is spoken as both (CUL-1243). */
+function isMealFilter(filter: HistoryFilter): boolean {
+  return filter.kind === 'type' && filter.type === 'meal';
+}
+
+/**
+ * Meal's count, split as the rows beneath it are titled (CUL-1243, PM-ruled (a)): '2 meals',
+ * '8 treats', each only when present, so '10 meals' never stands over two meals and eight
+ * treats. `count` is every meal event (the filter's one count, `dayCountFor`); `treats` is
+ * the subset whose row says *Treat* (`mealRowLabel`). Empty at zero: the caller says the
+ * absence. "Meals not finished" stays the intake lens's own count and never a treat (H-2).
+ */
+export function mealSplitParts(count: number, treats: number): string[] {
+  const t = Math.min(Math.max(treats, 0), count);
+  const meals = count - t;
+  const parts: string[] = [];
+  if (meals > 0) parts.push(`${formatCount(meals)} ${typeNoun('meal', meals)}`);
+  if (t > 0) parts.push(`${formatCount(t)} ${t === 1 ? 'treat' : 'treats'}`);
+  return parts;
+}
+
 /** A day's total beside a filtered count: "2 vomits · 10 in all". "10 logged" beside two
  *  rows read as ten more somewhere (HV-12). The strip SPEAKS the same fact as "10 logged
  *  in all" (`lib/stripMarks.ts`): a spoken total with no noun before it needs the verb. */
@@ -923,13 +953,21 @@ export function absenceText(filter: HistoryFilter, courseName: string | null = n
 /** "yet" on a window that is still open: today alone, where the day is not over and the day
  *  card below already says *Nothing logged yet today.* A longer window holds closed days,
  *  and its nothing is said plainly. */
-function countPhrase(filter: HistoryFilter, total: WindowTotal, todayOnly: boolean): string {
+function countPhrase(filter: HistoryFilter, total: WindowTotal, todayOnly: boolean, treats: number): string {
   const yet = todayOnly ? ' yet' : '';
   if (filter.kind === 'all') return total.count > 0 ? `${formatCount(total.count)} logged` : `nothing logged${yet}`;
   if (total.count === 0) return `${absenceText(filter) ?? ''}${yet}`;
   const days = `${formatCount(total.days)} ${total.days === 1 ? 'day' : 'days'}`;
+  if (isMealFilter(filter)) return `${mealSplitParts(total.count, treats).join(' and ')} on ${days}`;
   const noun = countsDoses(filter) ? 'logged' : filterNoun(filter, total.count);
   return `${formatCount(total.count)} ${noun} on ${days}`;
+}
+
+/** The treats over the facts' window: the subset of Meal's count the count line names. */
+function treatsOf(days: ReadonlyMap<string, DayFacts>): number {
+  let n = 0;
+  for (const f of days.values()) n += f.treats;
+  return n;
 }
 
 /** The count line, in every form of §3.2. Pure: the facts in, the words out. */
@@ -964,7 +1002,12 @@ export function countLineOf(input: CountLineInput): CountLine {
   const course = filter.kind === 'course' ? input.course : null;
   const line1: CountLineText = {
     lead: `${windowHead} · `,
-    strong: countPhrase(filter, total, window.range.fromDay === input.today && window.range.toDay === input.today),
+    strong: countPhrase(
+      filter,
+      total,
+      window.range.fromDay === input.today && window.range.toDay === input.today,
+      isMealFilter(filter) ? treatsOf(facts.days) : 0,
+    ),
     tail: window.isAllTime && filter.kind !== 'course' ? ` since ${dates.day(recordStart)}` : '',
   };
 
@@ -993,7 +1036,7 @@ export function countLineOf(input: CountLineInput): CountLine {
   // "Anything besides the trial food?" is asked under All types and Meal, and (CUL-1264,
   // PM-ruled (a), 2026-09-25) right after a symptom's count: the next question once Jordan
   // has read "13 vomits on 11 days". Only while a running trial overlaps the window (PMD-9).
-  const mealsInView = filter.kind === 'all' || (filter.kind === 'type' && filter.type === 'meal');
+  const mealsInView = filter.kind === 'all' || isMealFilter(filter);
   if ((mealsInView || symptoms) && input.trialRange !== null && overlaps(window.range, input.trialRange)) {
     doors.push(DOORS['outside-trial-diet']);
   }
@@ -1065,7 +1108,9 @@ export function dayHeaderOf(
 ): DayHeaderPart[] {
   if (opts.search || filter.kind === 'noticed') return [];
   if (f.total === 0) {
-    if (opts.hasItems) return [];
+    // A card with nothing in the population that still holds something (a date-only item,
+    // or an answered look drawn as a row under All types, CUL-1244) shows the date alone.
+    if (opts.hasItems || (filter.kind === 'all' && f.looked)) return [];
     return [{ text: opts.isToday ? 'nothing logged yet' : 'nothing logged', tone: 'neutral' }];
   }
   const total: DayHeaderPart = { text: `${formatCount(f.total)} logged`, tone: 'total' };
@@ -1074,7 +1119,9 @@ export function dayHeaderOf(
     const counted: DayHeaderPart[] =
       filter.kind === 'symptoms' && n > 0
         ? symptomParts(f)
-        : [
+        : isMealFilter(filter) && n > 0
+          ? mealSplitParts(n, f.treats).map((text) => ({ text, tone: 'neutral' as const }))
+          : [
             {
               text:
                 n === 0
@@ -1084,7 +1131,7 @@ export function dayHeaderOf(
             },
           ];
     const parts: DayHeaderPart[] = [...counted, { text: inAllText(f.total), tone: 'dayTotal' }];
-    const unfinished = filter.kind === 'type' && filter.type === 'meal' ? mealsNotFinishedPart(f) : null;
+    const unfinished = isMealFilter(filter) ? mealsNotFinishedPart(f) : null;
     if (unfinished) parts.push(unfinished);
     const notInFull = dosesNotInFullPart(f, filter);
     if (notInFull) parts.push(notInFull);
@@ -1284,8 +1331,15 @@ export function listSectionsOf(input: ListSectionsInput): HistorySection[] {
   for (const day of daysDescending(lo, hi)) {
     const f = dayFactsOn(facts.days, day);
     const hasItems = itemDays.has(day);
+    // Under All types an answered look is drawn as a row (CUL-1244, PM-ruled (b)), so a
+    // look-only day is a card, never a gap line's "nothing logged". It is still counted
+    // nowhere: coverage keeps calling it unlogged (`unloggedDaysOf`, R-1).
     const shows =
-      filter.kind === 'noticed' ? f.looked : filter.kind === 'all' ? f.total > 0 : (dayCountFor(f, filter) ?? 0) > 0;
+      filter.kind === 'noticed'
+        ? f.looked
+        : filter.kind === 'all'
+          ? f.total > 0 || f.looked
+          : (dayCountFor(f, filter) ?? 0) > 0;
 
     if (shows || (filter.kind === 'all' && hasItems)) {
       flushBoth();

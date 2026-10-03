@@ -629,6 +629,23 @@ export async function readWholeDays(petId: string, days: readonly string[]): Pro
 }
 
 /**
+ * Every surviving look on these local days, by its `local_day`, as rows: what History draws
+ * under All types beside the page (CUL-1244, PM-ruled (b): an answered look is a row there,
+ * the hollow bead the Noticed filter draws, and is never counted). Read apart from the page on
+ * purpose: the page and the whole days stay the population, so a look never reaches the
+ * shared row's pipeline (which would make it a node), a timing line, a read or a count. The
+ * Noticed filter's own condition, so the two filters draw the same looks. Rejects on a failed
+ * read.
+ */
+export async function readLookRows(petId: string, range: DayRange): Promise<Map<string, HistoryRow[]>> {
+  const out = new Map<string, HistoryRow[]>();
+  if (!isDayKey(range.fromDay) || !isDayKey(range.toDay) || range.toDay < range.fromDay) return out;
+  const scope: DayPageScope = { range, filter: { kind: 'noticed' }, search: null };
+  for (const day of await readDays(petId, scope, range, [])) out.set(day.day, day.rows);
+  return out;
+}
+
+/**
  * One page of History's list: whole local days, newest first, until the page holds at least
  * `minRows` rows (§5.2). `cursor` is the previous page's `next`, or null for the first page.
  * Rejects on a failed read (the screen's error state, C-12).

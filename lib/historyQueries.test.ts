@@ -50,6 +50,7 @@ import {
   readDayPage,
   readHistoryCourses,
   readHistoryFacts,
+  readLookRows,
   readRecordDays,
   readRecordStartDay,
   readWholeDays,
@@ -688,5 +689,32 @@ describe('readHistoryCourses — the vet report\'s course grain, named and bound
     for (const r of doses) expect(keys.has(r.course_key!)).toBe(true);
     // A dose with no library item still names its course (GAP-25).
     expect(doses.find((r) => r.id === 'd3')).toMatchObject({ drug_generic_name: null, regimen_drug_name: 'Metronidazole (compounded)' });
+  });
+});
+
+// ── CUL-1244 — the looks drawn beside the All-types page ─────────────────────────
+
+describe('CUL-1244 — readLookRows: the answered looks, apart from the population', () => {
+  it('reads each surviving look on its local_day, and the All-types page still holds none', async () => {
+    seedRich();
+    insertLook('look-del', localAt(14, 21).toISOString(), '2026-09-14');
+    softDelete('look-del');
+    const looks = await readLookRows(PET, RANGE);
+    expect([...looks.keys()].sort()).toEqual(['2026-09-10', '2026-09-12']);
+    for (const rows of looks.values()) for (const r of rows) expect(r.event_type).toBe('check_in');
+    // The same rows the Noticed filter draws: the two filters can never disagree on a look.
+    const noticed = (await allPages(scopeOf(RANGE, { kind: 'noticed' }))).flatMap((p) => p.days);
+    expect(new Map(noticed.map((d) => [d.day, d.rows]))).toEqual(looks);
+    // The page and the whole days stay the population: a look never becomes a node or a count.
+    const page = (await allPages(scopeOf(RANGE))).flatMap((p) => p.days.flatMap((d) => d.rows));
+    expect(page.some((r) => r.event_type === 'check_in')).toBe(false);
+    const whole = await readWholeDays(PET, ['2026-09-10', '2026-09-12']);
+    expect([...whole.values()].flat().some((r) => r.event_type === 'check_in')).toBe(false);
+  });
+
+  it('an inverted or malformed range reads nothing', async () => {
+    seedRich();
+    expect((await readLookRows(PET, { fromDay: '2026-09-12', toDay: '2026-09-10' })).size).toBe(0);
+    expect((await readLookRows(PET, { fromDay: 'nope', toDay: '2026-09-10' })).size).toBe(0);
   });
 });
