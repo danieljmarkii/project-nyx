@@ -89,7 +89,7 @@ import { lookCoverage, lookCoverageText } from '../../lib/lookCoverage';
 import { leadReceipt, receiptsFor } from '../../lib/lookReceipts';
 import {
   entryWithholdsWords,
-  intakeArm,
+  doorRecordRefusal,
   loadLookWithheldFacts,
   lookWithheldState,
   markWithheldToday,
@@ -889,24 +889,19 @@ export function LookCard({ trialNotEating = false, safety, onLayout }: Props) {
     const petId = activePet.id;
     loadEmergencyFacts(petId)
       .then((facts) => {
-        // BOTH intake registers, each a positive fact or nothing, never ignorance (T-20):
-        // the trial's (`=== true`, since the withheld predicate takes the SAME field the
-        // other way — see the prop's own doc) and the record-local arm's qualifying meals.
+        // EVERY intake register the card withholds on, each a positive fact or nothing,
+        // never ignorance (T-20): the trial's (`=== true`, since the withheld predicate
+        // takes the SAME field the other way — see the prop's own doc), and the record's
+        // two arms, the intake-decline flag and the qualifying meals (`doorRecordRefusal`).
         //
-        // The second one is what stops the card and the door disagreeing about the same
-        // animal: without it a non-trial cat with two refused bowls had her card withhold
-        // its words while the door one tap away still printed the intake conditionals as
-        // UNMET (the adversarial pass). `?? []` resolves an unanswered read to "no
-        // evidence" HERE rather than in the helper, because on this surface ignorance must
-        // not escalate.
+        // The record's arms are what stop the card and the door disagreeing about the same
+        // animal: without them a cat whose card withheld its words still saw the door one
+        // tap away print the intake conditionals as UNMET (the adversarial passes on N-4b
+        // and CUL-1220; arm 1 ruled in by the PM, CUL-1372).
         const merged = withIntakeRefusal(
           facts,
           trialNotEating === true,
-          // The SAME call the card's own withholding makes, so the two cannot answer
-          // differently about one animal. `?? []` resolves an unanswered read to "no
-          // evidence" here rather than in the helper, because on this surface ignorance
-          // must not escalate (T-20).
-          resting?.petId === petId ? intakeArm(resting.facts.recentQualifyingMeals ?? []) : false,
+          doorRecordRefusal({ id: petId }, resting?.petId === petId ? resting.facts : null),
         );
         // The loader returns null on a failed read — the one case that falls through to
         // the imperative (fail closed). A late answer for a pet the owner has since

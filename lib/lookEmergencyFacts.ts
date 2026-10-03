@@ -35,12 +35,13 @@
 //     positive fact said she had not eaten, the more the door reassured.
 //
 // A safety page that cries wolf daily is one an owner stops believing, and that is the
-// same failure as the delay. So the intake fact is NOT derived here. Both of the door's
-// intake registers come from elsewhere and are folded in by `withTrialRefusal`: the trial
-// card's own (`isAnimalNotEating`, the predicate CUL-871 named) and the RECORD-LOCAL arm
-// that speaks for a pet with no trial — two of the last three QUALIFYING meals (rated,
-// non-treat, non-free-fed) refused or picked inside its own recency bound, which lives in
-// `lib/lookWithheld.ts` (N-4b / CUL-873) and is shared with the Noticed card so the two
+// same failure as the delay. So the intake fact is NOT derived here. Every one of the
+// door's intake registers comes from elsewhere and is folded in by `withIntakeRefusal`:
+// the trial card's own (`isAnimalNotEating`, the predicate CUL-871 named), the client
+// intake-decline flag (arm 1, CUL-1372), and the RECORD-LOCAL arm that speaks for a pet
+// with no trial — two of the last three QUALIFYING meals (rated, non-treat, non-free-fed)
+// refused or picked inside its own recency bound. The last two live in
+// `lib/lookWithheld.ts` (N-4b / CUL-873) and are shared with the Noticed card so the two
 // can never disagree about whether this animal is eating.
 
 import { getDb } from './db';
@@ -71,7 +72,7 @@ export async function loadEmergencyFacts(
       [petId, since],
     );
     return {
-      // The caller supplies this one (see the header) — `withTrialRefusal` folds in the
+      // The caller supplies this one (see the header) — `withIntakeRefusal` folds in the
       // trial register, and the record-local arm is N-4b's.
       refusedRecently: false,
       vomitCount24h: rows.filter((r) => r.event_type === 'vomit').length,
@@ -112,6 +113,13 @@ export async function loadEmergencyFacts(
  * is still one predicate: the card cannot compute the door's refusal differently from its
  * own, because it calls the same function once for both.
  *
+ * ── AND THE INTAKE-DECLINE FLAG (CUL-1372) ──────────────────────────────────
+ * The record-local boolean now carries arm 1 too: the card withholds on the client
+ * intake-decline flag as well as on refused bowls, and a door that ignored the flag read
+ * calmer than the card one tap away. The PM ruled (a) on 2026-10-03, so the caller passes
+ * `doorRecordRefusal` (`lib/lookWithheld.ts`), arm 1 OR arm 3, rather than the meals arm
+ * alone. Same boolean, same reason it stays a boolean.
+ *
  * Every arm is a POSITIVE fact or nothing — never ignorance (T-20). A caller that cannot
  * tell passes `false`, because a door that escalated on unloaded facts would read *Call
  * your vet today.* forever for a healthy animal whose facts failed to load once. The
@@ -121,9 +129,9 @@ export async function loadEmergencyFacts(
 export function withIntakeRefusal(
   facts: EmergencyFacts | null,
   trialNotEating: boolean,
-  recordLocalRefusal: boolean = false,
+  recordRefusal: boolean = false,
 ): EmergencyFacts | null {
   if (facts === null) return null;
-  const refused = trialNotEating || recordLocalRefusal;
+  const refused = trialNotEating || recordRefusal;
   return refused ? { ...facts, refusedRecently: true } : facts;
 }
