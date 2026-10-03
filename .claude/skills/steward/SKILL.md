@@ -1,6 +1,6 @@
 ---
 name: steward
-description: Use when a Nyx branch needs `main` brought in, a PR shows a merge conflict, a session is about to merge its own PR (`/wrap and merge`, or a `/dispatch` child under the standing yes), or a project is being split into PRs that will run as parallel sessions. Loads the repo's branch rules: update a branch only when it conflicts or needs code from `main`; merge `main` in and never rebase a pushed branch; resolve each kind of conflict by its rule (lists keep both, lockfiles regenerate, two real edits to the same logic stop for the PM); prove the result with `scripts/steward/merge-check.sh`, which also catches a resolution that drops lines main added; merge only through one gate, on one of two authorizations; and keep shared files out of parallel lanes. Cloud sessions that own a PR read this file before working its CI and review events.
+description: Use when a Nyx branch needs `main` brought in, a PR shows a merge conflict, a session is about to merge its own PR (`/wrap and merge`, or a `/dispatch` child, picked or `auto`), or a project is being split into PRs that will run as parallel sessions. Loads the repo's branch rules: update a branch only when it conflicts or needs code from `main`; merge `main` in and never rebase a pushed branch; resolve each kind of conflict by its rule (lists keep both, lockfiles regenerate, two real edits to the same logic stop for the PM); prove the result with `scripts/steward/merge-check.sh`, which also catches a resolution that drops lines main added; merge only through one gate, on one of two authorizations; and keep shared files out of parallel lanes. Cloud sessions that own a PR read this file before working its CI and review events.
 ---
 
 # Steward: branches, conflicts and merges
@@ -71,7 +71,7 @@ Run `scripts/steward/merge-check.sh` again after resolving, and before any merge
 **Two authorizations, one gate.** A session merges its own PR (the one on its branch), squash, only:
 
 - when the PM said so in this session (`/wrap and merge`), or
-- as a `/dispatch` child under the standing yes, exactly as its prompt allows (`.claude/commands/dispatch.md` step 5).
+- as a `/dispatch` child (picked or `auto`), exactly as its prompt allows (`.claude/commands/dispatch.md` step 5).
 
 This file grants neither. **The gate** is the one `/dispatch` writes into its children's prompts; keep the two lists identical. On a fresh read taken immediately before the merge, never one from before a CI wait:
 
@@ -80,7 +80,7 @@ This file grants neither. **The gate** is the one `/dispatch` writes into its ch
 - GitHub reports it mergeable with no conflict;
 - the head is the commit those checks ran on, and the commit `scripts/steward/merge-check.sh` called `CLEAN` (or whose `REVIEW` is cleared in writing, §5);
 - the issue's Definition of Done passes, adversarial review included where the issue requires it;
-- the PR holds no migration and needs none that is unapplied. On the PM's word, a migration PR may merge once its migration is applied and checked; under the standing yes it never merges.
+- the PR holds no migration and needs none that is unapplied. On the PM's word, a migration PR may merge once its migration is applied and checked; a dispatched child never merges one.
 
 Anything short of that: do not merge, and say which condition failed as the first line of the summary.
 
