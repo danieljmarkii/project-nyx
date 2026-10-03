@@ -91,6 +91,9 @@ import {
   // directions cannot drift apart — see `liveRefusal`.
   REFUSAL_MIN_RATED,
   REFUSAL_SHARE,
+  // The now-fact's own recency span, reused to decide when a TERMINAL card's
+  // copy of that fact is still live (CUL-1337) — see `terminalRefusalIsLive`.
+  REFUSAL_WINDOW_DAYS,
   trialViabilityHeadline,
   trialViabilityNote,
   type TrialDietRefusal,
@@ -314,6 +317,11 @@ export interface TrialCardInput {
    *
    * A now-fact by construction: bounded to the last `REFUSAL_WINDOW_DAYS`, because
    * what it drives is a present-tense sentence about the pet today.
+   *
+   * ON A TERMINAL CARD the window is anchored at the trial's END, not at today
+   * (`computeTrialFacts` bounds every count by `min(today, ended_at)`), so the
+   * fact freezes when the trial ends. The terminal cards read it only while that
+   * frozen window still reaches today (CUL-1337, `terminalRefusalIsLive`).
    */
   trialDietRefusal?: TrialDietRefusal | null;
   /** `TrialFacts.recentFinishedFeedings` — the NUMERATOR of the stand-down. Never
@@ -930,10 +938,12 @@ export type TrialCardRegister =
   /** TERMINAL ONLY — a diet the record shows went uneaten. The counts stay; the
    *  READING is deleted. Reached from the stored reason or from `rangeRefusal`. */
   | 'refusal_withheld'
-  /** LIVE ONLY (R1) — §6.5's second, non-clinical path: the trial diet itself is
-   *  going unfinished RIGHT NOW. `refusal_withheld` is this register's history;
-   *  the two are deliberately different voices over the same shape of fact,
-   *  because a terminal card reports and a live one escalates. */
+  /** R1 — §6.5's second, non-clinical path: the trial diet itself is going
+   *  unfinished RIGHT NOW. `refusal_withheld` is this register's history; the two
+   *  are deliberately different voices over the same shape of fact, because a
+   *  report reports and an escalation escalates. A terminal card reaches THIS one
+   *  while the now-fact is still live (CUL-1337), the way it reaches `decline`
+   *  while the intake-decline flag is. */
   | 'trial_refusal'
   /** §5.6 — a bowl in force NOW, so the coverage ratio has no denominator. */
   | 'free_fed'
@@ -1014,7 +1024,31 @@ function registerFor(
       // what an owner reads on a finished trial, and it is the same "when may a
       // register speak" question Dr. Chen owes a ruling on — so it is filed as
       // B-570 rather than taken inside a wiring PR.
+      //
+      // ── RULED, CUL-1337 (PM, 2026-10-03) ──────────────────────────────────
+      // The now-fact DOES route here now, and the reason is the escalation, not
+      // the history: the live refusal face's own *Tell Culprit what's next* →
+      // *Stopped early* → *wouldn't eat it* moved the trial to `abandoned`, and
+      // the card dropped "needs a call today" over a cat that nothing on the
+      // record says has started eating. Ending the trial is not evidence of
+      // eating. So a terminal card keeps the R1 flag lines while the refusal is
+      // live, exactly as it keeps the intake-decline flags one line up — the
+      // animal outranks the trial on every state, and that sentence now has both
+      // of its not-eating lanes behind it.
+      //
+      // BELOW `decline`, as everywhere both can fire (`detectIntakeDecline` owns
+      // the clinical lane). ABOVE `refusal_withheld`, because a history voice
+      // over a live escalation is the softer word on the more urgent case; the
+      // owner's named refusal still renders, as the abandoned card's lead line.
+      //
+      // "LIVE" IS BOUNDED, and that is the half the ruling's wording leaves to
+      // the build: see `terminalRefusalIsLive`. Without it the end-anchored fact
+      // would say "today" on this card for as long as the card exists.
+      //
+      // The range fact still does NOT route here: B-566's day-2 misfire argument
+      // is about `rangeRefusal`, and it is unchanged.
       if (input.intakeDeclineHeadline) return 'decline';
+      if (terminalRefusalIsLive(input, trial)) return 'trial_refusal';
       if (state === 'abandoned' && wasRefused(trial)) return 'refusal_withheld';
       if (input.rangeRefusal) return 'refusal_withheld';
       return recordRegisterFor(input);
@@ -1029,6 +1063,41 @@ function registerFor(
       // state and watching `tsc --noEmit` stay green until this existed.
       return assertNever(state);
   }
+}
+
+/**
+ * CUL-1337 — is a TERMINAL card's now-fact still a now-fact?
+ *
+ * `computeTrialFacts` bounds every count by `min(today, ended_at)`, so on an ended
+ * trial `trialDietRefusal` measures the last `REFUSAL_WINDOW_DAYS` BEFORE THE END
+ * and then freezes. Read unbounded it would put "needs a call today" on the card
+ * for months, over a cat that has long since moved to another food — and a
+ * standing alarm nobody can clear teaches the owner to stop reading the card.
+ *
+ * So the fact is live while its own window still reaches today: the trial ended
+ * fewer than `REFUSAL_WINDOW_DAYS` local days ago. No new clinical number — it is
+ * the recency span the fact was RATIFIED with, applied to the one card where its
+ * anchor stopped moving. It is a CEILING, the over-fire side: on a live trial the
+ * same evidence would age out of the window a day at a time and could stand down
+ * sooner, and here it holds until the whole span has passed. After that the
+ * trial-diet lane has nothing left to watch (the diet is no longer offered), and
+ * `detectIntakeDecline` is the watcher on whatever replaced it.
+ *
+ * A trial with no `ended_at` takes its target end, the same day `terminalRange`
+ * renders as its range; a date that cannot be resolved at all keeps the shipped
+ * behaviour (`false`).
+ */
+function terminalRefusalIsLive(input: TrialCardInput, trial: TrialCardTrial): boolean {
+  if (!input.trialDietRefusal) return false;
+  const startIndex = localDayIndexOf(trial.startedAt);
+  const endIndex = trial.endedAt
+    ? localDayIndexOf(trial.endedAt)
+    : startIndex === null
+      ? null
+      : trialEndDayIndex(startIndex, trial.targetDurationDays);
+  const todayIndex = localDayIndexOf(toLocalDayKey(new Date(input.nowMs)));
+  if (endIndex === null || todayIndex === null) return false;
+  return todayIndex - endIndex < REFUSAL_WINDOW_DAYS;
 }
 
 /** The compile-time half of the exhaustiveness guarantee. `everyState walks every
@@ -1136,11 +1205,12 @@ export const TRIAL_CARD_DISCLOSURES: Record<TrialCardRegister, TrialCardDisclosu
     // is FILED as a hole rather than ruled: that register DOES state coverage, in
     // prose — B-560.)
     //
-    // scope — RULED `always`, not `active_only`. The two are behaviourally
-    // identical for this register, which is reachable only from a live card; the
-    // distinction `active_only` draws would imply a terminal branch exists.
-    // `always` says what is true: wherever this register speaks, an off-diet
-    // count in a multi-pet household is a claim, and §5.6 gates it.
+    // scope — RULED `always`, not `active_only`. Wherever this register speaks,
+    // an off-diet count in a multi-pet household is a claim, and §5.6 gates it.
+    // CUL-1337 gave it a terminal branch, which is where `always` and
+    // `active_only` first differ: the terminal card now carries the household
+    // caveat under its floor, where the terminal `decline` card (an INHERITED
+    // cell) does not. That is the disclose-more direction, taken on purpose.
     floor: 'separately', unmatched: true, pastBowl: false, untrackedHead: false,
     scope: 'always',
   },
@@ -2600,7 +2670,10 @@ function abandonedCard(
 
   // A live decline replaces every record line AND the way out: this card is
   // about a pet that has stopped eating, so it offers no "start a new trial".
-  if (register === 'decline') {
+  // CUL-1337: the live trial-diet refusal is the same card for the same reason —
+  // the next diet is the vet's call, and the call is what the flags ask for. The
+  // header's `+ Start` keeps the way in (`trialManageLabel`), so nothing strands.
+  if (register === 'decline' || register === 'trial_refusal') {
     return {
       state: 'abandoned',
       kicker: `${trialIdentityLabel(input.trial)} · stopped early`,
