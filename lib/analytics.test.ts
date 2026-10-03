@@ -59,6 +59,11 @@ import {
 // `lib/medications` is import-free, so it costs this suite nothing to pull in — the
 // reverse import is not possible, which is why the parity test lives here.
 import { regimenDaysElapsed } from './medications';
+import type { FreeFedIntakeSpan } from './freeFedIntake';
+
+/** A bowl down for all time: the by-food fixtures these cores' tests always meant. */
+const alwaysDown = (...ids: string[]): FreeFedIntakeSpan[] =>
+  ids.map((foodItemId) => ({ foodItemId, fromMs: -Infinity, untilMs: Infinity }));
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
@@ -272,7 +277,7 @@ describe('computeSymptomFrequencyForMonth', () => {
 });
 
 describe('computeIntakeDeclineFrequencyForMonth (the "Meals" calendar — B-310)', () => {
-  const emptyFF = new Set<string>();
+  const emptyFF: FreeFedIntakeSpan[] = [];
   // A meal on May `day` at noon UTC, with the given rating + overrides.
   const onMayMeal = (day: number, rating: string | null, over: Partial<AnalyticsMeal> = {}): AnalyticsMeal =>
     meal({ ms: Date.UTC(2026, 4, day, 12), intakeRating: rating, ...over });
@@ -300,7 +305,7 @@ describe('computeIntakeDeclineFrequencyForMonth (the "Meals" calendar — B-310)
       onMayMeal(5, null), // unrated → not a decline (a logging gap, not a refusal)
       onMayMeal(5, 'refused'), // the ONE real qualifying decline
     ];
-    const buckets = computeIntakeDeclineFrequencyForMonth(rows, new Set(['free-1']), MAY, NOW);
+    const buckets = computeIntakeDeclineFrequencyForMonth(rows, alwaysDown('free-1'), MAY, NOW);
     expect(buckets[4]).toMatchObject({ date: '2026-05-05', total: 1 });
     expect(buckets.reduce((s, b) => s + b.total, 0)).toBe(1);
   });
@@ -397,7 +402,7 @@ describe('computeTopFoods', () => {
       meal({ ms: at(9), foodItemId: 'B', foodLabel: 'Bravo B', intakeRating: 'all' }),
       meal({ ms: at(10), foodItemId: 'B', foodLabel: 'Bravo B', intakeRating: 'refused' }),
     ];
-    const top = computeTopFoods(rows, { freeFedFoodIds: new Set(['C']) }) as RankedFood[];
+    const top = computeTopFoods(rows, { freeFed: alwaysDown('C') }) as RankedFood[];
     const a = top.find((f) => f.foodItemId === 'A')!;
     const b = top.find((f) => f.foodItemId === 'B')!;
     const c = top.find((f) => f.foodItemId === 'C')!;
@@ -579,7 +584,7 @@ describe('computeTopProteins', () => {
       meal({ ms: at(3), primaryProtein: 'chicken', foodItemId: 'a', intakeRating: 'some' }),
       meal({ ms: at(4), primaryProtein: 'chicken', foodItemId: 'ff', intakeRating: 'all' }), // free-fed
     ];
-    const out = computeTopProteins(rows, { freeFedFoodIds: new Set(['ff']) }) as RankedProtein[];
+    const out = computeTopProteins(rows, { freeFed: alwaysDown('ff') }) as RankedProtein[];
     expect(out[0].count).toBe(5); // exposure counts all 5 feedings
     expect(out[0].ratedMeals).toBe(4); // the free-fed meal is excluded from the rate denominator
     expect(out[0].finishedRate).toBeCloseTo(0.75, 5); // 3 finished / 4 observed
@@ -736,7 +741,7 @@ describe('B-115 — exact-timestamp treat re-log collapse', () => {
 // ── Intake / finished-rate (MEALS ONLY) ─────────────────────────────────────────
 
 describe('computeIntakeRate', () => {
-  const emptyFreeFed = new Set<string>();
+  const emptyFreeFed: FreeFedIntakeSpan[] = [];
 
   it('is the share of rated meals finished (most/all)', () => {
     const rows: AnalyticsMeal[] = [
@@ -745,7 +750,7 @@ describe('computeIntakeRate', () => {
       meal({ ms: at(2), foodItemId: 'c', intakeRating: 'some' }),
       meal({ ms: at(3), foodItemId: 'd', intakeRating: 'refused' }),
     ];
-    expect(computeIntakeRate(rows, { freeFedFoodIds: emptyFreeFed })).toEqual({
+    expect(computeIntakeRate(rows, { freeFed: emptyFreeFed })).toEqual({
       rate: 0.5, finishedMeals: 2, ratedMeals: 4, freeFedExcluded: 0, intakeNotDirectlyObserved: false,
     });
   });
@@ -758,7 +763,7 @@ describe('computeIntakeRate', () => {
       meal({ ms: at(3), foodItemId: 'd', intakeRating: 'refused' }),
       meal({ ms: at(0, 9), foodItemId: 't', intakeRating: 'all', foodType: 'treat' }), // excluded
     ];
-    const out = computeIntakeRate(rows, { freeFedFoodIds: emptyFreeFed });
+    const out = computeIntakeRate(rows, { freeFed: emptyFreeFed });
     // 2/4 = 0.5, NOT 3/5 = 0.6 — the treat is excluded.
     expect(out).toMatchObject({ rate: 0.5, ratedMeals: 4, finishedMeals: 2 });
   });
@@ -771,7 +776,7 @@ describe('computeIntakeRate', () => {
       meal({ ms: at(3), foodItemId: 'd', intakeRating: 'refused' }),
       meal({ ms: at(0, 9), foodItemId: 'free-1', intakeRating: 'all' }), // free-fed → excluded
     ];
-    const out = computeIntakeRate(rows, { freeFedFoodIds: new Set(['free-1']) });
+    const out = computeIntakeRate(rows, { freeFed: alwaysDown('free-1') });
     expect(out).toEqual({
       rate: 0.5, finishedMeals: 2, ratedMeals: 4, freeFedExcluded: 1, intakeNotDirectlyObserved: true,
     });
@@ -783,7 +788,7 @@ describe('computeIntakeRate', () => {
       meal({ ms: at(1), foodItemId: 'b', intakeRating: 'all' }),
       meal({ ms: at(2), foodItemId: 'c', intakeRating: 'some' }),
     ];
-    expect(computeIntakeRate(rows, { freeFedFoodIds: emptyFreeFed })).toEqual({
+    expect(computeIntakeRate(rows, { freeFed: emptyFreeFed })).toEqual({
       status: 'not_enough_data', samples: 3, needed: ANALYTICS_FLOORS.minRatedMealsForIntakeRate,
     });
   });
@@ -1194,25 +1199,33 @@ describe('detectIntakeDecline', () => {
 // ── DB wrappers (prove the SQLite read + free-fed wiring) ────────────────────────
 
 describe('getIntakeRate (wrapper wiring)', () => {
-  it('reads the free-fed set and passes it to the core so free-fed meals are excluded', async () => {
-    mockGetAllAsync.mockResolvedValue([
+  it('reads the bowl spans and excludes only the meals logged while their bowl was down (CUL-1237)', async () => {
+    const meals = [
       { food_item_id: 'a', intake_rating: 'most', occurred_at: '2026-06-14T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'A' },
       { food_item_id: 'b', intake_rating: 'all', occurred_at: '2026-06-13T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'B' },
       { food_item_id: 'c', intake_rating: 'some', occurred_at: '2026-06-12T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'C' },
-      { food_item_id: 'd', intake_rating: 'refused', occurred_at: '2026-06-11T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'D' },
+      // Refused BEFORE its bowl went down (the 12th): an observed refusal, it counts.
+      { food_item_id: 'late', intake_rating: 'refused', occurred_at: '2026-06-11T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'Late' },
       { food_item_id: 'free-1', intake_rating: 'all', occurred_at: '2026-06-14T09:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'Free' },
       { food_item_id: 't', intake_rating: 'all', occurred_at: '2026-06-14T10:00:00Z', food_type: 'treat', primary_protein: null, brand: 'Acme', product_name: 'Treat' },
-    ]);
-    mockGetActiveArrangementsForPet.mockResolvedValue([
-      { id: 'arr-1', food_item_id: 'free-1', active_from: null, updated_at: '', brand: '', product_name: '', format: 'dry' },
-    ]);
+    ];
+    mockGetAllAsync.mockReset();
+    mockGetAllAsync.mockImplementation(async (sql: string) =>
+      /feeding_arrangements/.test(sql)
+        ? [
+            { food_item_id: 'free-1', created_at: '2026-06-01T08:00:00Z', active_from: '2026-06-01', active_until: null, ended_at: null },
+            { food_item_id: 'late', created_at: '2026-06-12T08:00:00Z', active_from: '2026-06-12', active_until: null, ended_at: null },
+          ]
+        : meals,
+    );
 
     const out = await getIntakeRate('pet-1', 'month', NOW);
-    expect(mockGetActiveArrangementsForPet).toHaveBeenCalledWith('pet-1');
-    // 4 normal rated meals; treat + free-fed both excluded → 2/4 finished.
+    // 4 meals counted (a, b, c, late); the treat and the free-1 bowl are out → 2/4 finished.
     expect(out).toEqual({
       rate: 0.5, finishedMeals: 2, ratedMeals: 4, freeFedExcluded: 1, intakeNotDirectlyObserved: true,
     });
+    // The by-food read is gone from the rate card (it applied today's bowls to every past day).
+    expect(mockGetActiveArrangementsForPet).not.toHaveBeenCalled();
   });
 });
 
@@ -1243,32 +1256,35 @@ describe('getIntakeDecline (wrapper wiring, CUL-1086)', () => {
 });
 
 describe('getIntakeRateWithPrior (wrapper wiring)', () => {
-  it('reads BOTH windows, applies the current free-fed exclusion to each, returns the two rates', async () => {
+  it('reads BOTH windows and judges each meal by the bowl down when IT was logged (CUL-1237)', async () => {
+    const current = [
+      { food_item_id: 'a', intake_rating: 'most', occurred_at: '2026-06-14T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'A' },
+      { food_item_id: 'b', intake_rating: 'all', occurred_at: '2026-06-13T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'B' },
+      { food_item_id: 'c', intake_rating: 'some', occurred_at: '2026-06-12T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'C' },
+      { food_item_id: 'd', intake_rating: 'refused', occurred_at: '2026-06-11T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'D' },
+      { food_item_id: 'free-1', intake_rating: 'all', occurred_at: '2026-06-14T09:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'Free' },
+    ];
+    const prior = [
+      { food_item_id: 'a', intake_rating: 'most', occurred_at: '2026-05-20T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'A' },
+      { food_item_id: 'b', intake_rating: 'refused', occurred_at: '2026-05-19T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'B' },
+      { food_item_id: 'c', intake_rating: 'refused', occurred_at: '2026-05-18T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'C' },
+      { food_item_id: 'd', intake_rating: 'some', occurred_at: '2026-05-17T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'D' },
+      // free-1 refused in May, before its bowl went down on June 1: it counts in the prior.
+      { food_item_id: 'free-1', intake_rating: 'refused', occurred_at: '2026-05-16T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'Free' },
+    ];
     mockGetAllAsync.mockReset();
-    mockGetAllAsync
-      // current window read: 2 of 4 finished → 0.5; one free-fed meal excluded
-      .mockResolvedValueOnce([
-        { food_item_id: 'a', intake_rating: 'most', occurred_at: '2026-06-14T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'A' },
-        { food_item_id: 'b', intake_rating: 'all', occurred_at: '2026-06-13T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'B' },
-        { food_item_id: 'c', intake_rating: 'some', occurred_at: '2026-06-12T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'C' },
-        { food_item_id: 'd', intake_rating: 'refused', occurred_at: '2026-06-11T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'D' },
-        { food_item_id: 'free-1', intake_rating: 'all', occurred_at: '2026-06-14T09:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'Free' },
-      ])
-      // prior window read: 1 of 4 finished → 0.25
-      .mockResolvedValueOnce([
-        { food_item_id: 'a', intake_rating: 'most', occurred_at: '2026-05-20T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'A' },
-        { food_item_id: 'b', intake_rating: 'refused', occurred_at: '2026-05-19T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'B' },
-        { food_item_id: 'c', intake_rating: 'refused', occurred_at: '2026-05-18T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'C' },
-        { food_item_id: 'd', intake_rating: 'some', occurred_at: '2026-05-17T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'D' },
-      ]);
-    mockGetActiveArrangementsForPet.mockResolvedValue([
-      { id: 'arr-1', food_item_id: 'free-1', active_from: null, updated_at: '', brand: '', product_name: '', format: 'dry' },
-    ]);
+    mockGetAllAsync.mockImplementation(async (sql: string, params: unknown[]) => {
+      if (/feeding_arrangements/.test(sql)) {
+        return [{ food_item_id: 'free-1', created_at: '2026-06-01T08:00:00Z', active_from: '2026-06-01', active_until: null, ended_at: null }];
+      }
+      // Route by the window: the prior read's bounds both sit before the current window.
+      const bounds = params.filter((p): p is string => typeof p === 'string' && /^\d{4}-/.test(p));
+      return bounds.some((b) => b >= '2026-06') ? current : prior;
+    });
 
     const out = await getIntakeRateWithPrior('pet-1', 'month', NOW);
-    expect(mockGetActiveArrangementsForPet).toHaveBeenCalledWith('pet-1');
     expect(out.current).toEqual({ rate: 0.5, finishedMeals: 2, ratedMeals: 4, freeFedExcluded: 1, intakeNotDirectlyObserved: true });
-    expect(out.prior).toEqual({ rate: 0.25, finishedMeals: 1, ratedMeals: 4, freeFedExcluded: 0, intakeNotDirectlyObserved: false });
+    expect(out.prior).toEqual({ rate: 0.2, finishedMeals: 1, ratedMeals: 5, freeFedExcluded: 0, intakeNotDirectlyObserved: false });
   });
 });
 

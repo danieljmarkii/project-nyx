@@ -32,7 +32,7 @@
 // correctly as text; an instant never does (C-40), so every instant is parsed first.
 
 import { EVENT_TYPES, SYMPTOM_TYPES, type EventTypeKey } from '../constants/eventTypes';
-import { isFinishedMeal, qualifyingIntakeMeals, type AnalyticsMeal } from './analytics';
+import { isFinishedMeal, qualifyingIntakeMeals, type AnalyticsMeal, type FreeFedExclusion } from './analytics';
 import { mealRowLabel } from './food';
 import { attributeDoses, type AttributableDose, type DoseAdherence, type RegimenWindow } from './medications';
 import type { MedicationCourse } from './medicationHistory';
@@ -278,8 +278,9 @@ export interface DayFactsInput {
    *  look on (the daily look spec), never re-derived from an instant. */
   lookDays: readonly string[];
   range: DayRange;
-  /** Food ids currently free-fed for the pet: the intake lens's own exclusion. */
-  freeFedFoodIds: ReadonlySet<string>;
+  /** The pet's free-fed bowl spans, active and ended: the intake lens's own exclusion,
+   *  by the bowl down when each meal was logged, never by today's bowls (CUL-1237). */
+  freeFedSpans: FreeFedExclusion;
   /** The pet's regimens, every status, for the course keys. */
   regimens: readonly RegimenWindow[];
 }
@@ -287,7 +288,7 @@ export interface DayFactsInput {
 /** The facts for every day of `range` that holds a population row or a look. A day absent
  *  from the map holds nothing: read it through `dayFactsOn`. */
 export function buildDayFacts(input: DayFactsInput): Map<string, DayFacts> {
-  const { rows, lookDays, range, freeFedFoodIds, regimens } = input;
+  const { rows, lookDays, range, freeFedSpans, regimens } = input;
   const out = new Map<string, DayFacts>();
   const factsOf = (day: string): DayFacts => {
     let f = out.get(day);
@@ -342,7 +343,7 @@ export function buildDayFacts(input: DayFactsInput): Map<string, DayFacts> {
   }
   // The intake lens's own qualifying set and finished predicate, so the header's "meals
   // not finished", the strip's broken line and the Meals calendar count the same meals.
-  for (const meal of qualifyingIntakeMeals(meals, freeFedFoodIds)) {
+  for (const meal of qualifyingIntakeMeals(meals, freeFedSpans)) {
     if (isFinishedMeal(meal)) continue;
     const day = mealDay.get(meal);
     if (day !== undefined) factsOf(day).mealsNotFinished += 1;

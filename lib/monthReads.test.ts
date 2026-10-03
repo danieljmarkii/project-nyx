@@ -93,6 +93,17 @@ function meal(occurredAt: string, rating: string | null, foodId: string | null =
   mockDb.prepare(`INSERT INTO meals (id, event_id, pet_id, food_item_id, intake_rating) VALUES (?, ?, ?, ?, ?)`).run(`m${id}`, id, PET, foodId, rating);
   return id;
 }
+/** A bowl row as the app writes one: `created_at` the toggle-on instant, `ended_at` the
+ *  toggle-off (migration 076), `active_from` / `active_until` the local dates. */
+function bowl(id: string, foodId: string, downAt: string, upAt: string | null = null) {
+  const day = (iso: string) => toLocalDayKey(new Date(iso));
+  mockDb
+    .prepare(
+      `INSERT INTO feeding_arrangements (id, pet_id, food_item_id, method, active_from, active_until, ended_at, created_at)
+       VALUES (?, ?, ?, 'free_choice', ?, ?, ?, ?)`,
+    )
+    .run(id, PET, foodId, day(downAt), upAt ? day(upAt) : null, upAt, downAt);
+}
 function food(id: string, type: string) {
   mockDb
     .prepare(`INSERT INTO food_items_cache (id, brand, product_name, food_type, format) VALUES (?, 'B', 'P', ?, 'dry_kibble')`)
@@ -199,14 +210,32 @@ describe('readMonthFacts against the production DDL', () => {
     meal(at('2026-09-07'), 'picked', 'treat-1'); // a treat: not qualifying
     meal(at('2026-09-08'), 'refused', 'free-1'); // free-fed below: not qualifying
     food('free-1', 'meal');
-    mockDb
-      .prepare(`INSERT INTO feeding_arrangements (id, pet_id, food_item_id, method, active_from) VALUES ('fa1', ?, 'free-1', 'free_choice', '2026-01-01')`)
-      .run(PET);
+    bowl('fa1', 'free-1', at('2026-01-01'));
     const facts = await readMonthFacts(PET, RANGE);
     expect(facts.leftSomeDays).toEqual(['2026-09-03']);
     // Every one of those meals is still a LOGGED day: the hairline's paleness is a
     // second fact on top of coverage, never instead of it.
     expect(facts.loggedDays).toEqual(['2026-09-03', '2026-09-04', '2026-09-05', '2026-09-06', '2026-09-07', '2026-09-08']);
+  });
+
+  // CUL-1237 — the exclusion is by the bowl down WHEN the meal was logged, never by today's.
+  it('a bowl set down AFTER a refusal never takes the left-some mark off its day', async () => {
+    meal(at('2026-09-03'), 'refused', 'kibble');
+    meal(at('2026-09-04'), 'picked', 'kibble');
+    food('kibble', 'meal');
+    bowl('fa-later', 'kibble', at('2026-09-04', 12)); // the owner reacts by leaving it down
+    meal(at('2026-09-06'), 'some', 'kibble'); // logged while the bowl is down: set aside
+    const facts = await readMonthFacts(PET, RANGE);
+    expect(facts.leftSomeDays).toEqual(['2026-09-03', '2026-09-04']);
+  });
+
+  it('a bowl since taken up excuses only the meals logged while it was down', async () => {
+    meal(at('2026-09-03'), 'some', 'wet');
+    meal(at('2026-09-07'), 'some', 'wet');
+    food('wet', 'meal');
+    bowl('fa-ended', 'wet', at('2026-09-01'), at('2026-09-05'));
+    const facts = await readMonthFacts(PET, RANGE);
+    expect(facts.leftSomeDays).toEqual(['2026-09-07']);
   });
 
   it('a dosed day is a DELIVERED dose — missed and refused never draw the dot', async () => {

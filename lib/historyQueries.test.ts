@@ -519,14 +519,42 @@ describe('the facts — flags, looks, firsts, duplicates', () => {
     expect(dayFactsOn(facts.days, '2026-09-04').mealsNotFinished).toBe(1);
   });
 
-  it('a free-fed food\'s meal is never "not finished" (the intake lens\'s exclusion)', async () => {
-    seedRich();
+  // A bowl row as the app writes one: `created_at` is the toggle-on instant, `ended_at` the
+  // toggle-off (migration 076), `active_from` / `active_until` the owner's local dates.
+  function insertBowl(id: string, food: string, downAt: Date, upAt: Date | null = null) {
+    const day = (d: Date) => toLocalDayKey(d);
     mockRaw
-      .prepare(`INSERT INTO feeding_arrangements (id, pet_id, food_item_id, method, active_from) VALUES ('fa', ?, 'rabbit', 'free_choice', '2026-09-01')`)
-      .run(PET);
-    // getActiveArrangementsForPet joins the food cache; the rabbit food is cached above.
+      .prepare(
+        `INSERT INTO feeding_arrangements (id, pet_id, food_item_id, method, active_from, active_until, ended_at, created_at)
+         VALUES (?, ?, ?, 'free_choice', ?, ?, ?, ?)`,
+      )
+      .run(id, PET, food, day(downAt), upAt ? day(upAt) : null, upAt ? upAt.toISOString() : null, downAt.toISOString());
+  }
+
+  it('a meal logged while its food\'s bowl was down is never "not finished" (the intake lens\'s exclusion)', async () => {
+    seedRich();
+    insertBowl('fa', 'rabbit', localAt(1, 9));
     const facts = await readHistoryFacts(PET, RANGE);
     expect(dayFactsOn(facts.days, '2026-09-02').mealsNotFinished).toBe(0);
+  });
+
+  // CUL-1237 — the exclusion is by the bowl down WHEN the meal was logged, never by today's.
+  it('a bowl set down AFTER an unfinished meal never excuses it', async () => {
+    seedRich();
+    insertBowl('fa-later', 'rabbit', localAt(5, 9)); // the owner reacts by leaving it down
+    insertBowl('fa-pct', 'pct', localAt(4, 9)); // an hour after the 08:00 refusal
+    const facts = await readHistoryFacts(PET, RANGE);
+    expect(dayFactsOn(facts.days, '2026-09-02').mealsNotFinished).toBe(1);
+    expect(dayFactsOn(facts.days, '2026-09-04').mealsNotFinished).toBe(1);
+  });
+
+  it('a bowl since taken up still excuses the meals logged while it was down, and only those', async () => {
+    seedRich();
+    insertBowl('fa-ended', 'rabbit', localAt(1, 9), localAt(3, 9));
+    insertMeal('m-after', localAt(6, 18).toISOString(), 'rabbit', 'picked');
+    const facts = await readHistoryFacts(PET, RANGE);
+    expect(dayFactsOn(facts.days, '2026-09-02').mealsNotFinished).toBe(0);
+    expect(dayFactsOn(facts.days, '2026-09-06').mealsNotFinished).toBe(1);
   });
 
   it('the record\'s first days are parsed instants, both spellings, at the exact local midnight', async () => {

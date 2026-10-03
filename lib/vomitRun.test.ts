@@ -70,7 +70,7 @@ const WIN: StripWindow = {
 };
 
 function stripOf(rows: readonly PopulationRow[]) {
-  const facts = buildDayFacts({ rows, lookDays: [], range: { fromDay: WIN.fromDay, toDay: WIN.toDay }, freeFedFoodIds: new Set(), regimens: [] });
+  const facts = buildDayFacts({ rows, lookDays: [], range: { fromDay: WIN.fromDay, toDay: WIN.toDay }, freeFedSpans: [], regimens: [] });
   return (day: string) => ({ facts: dayFactsOn(facts, day), mark: stripMarkOf(dayFactsOn(facts, day), { kind: 'all' }, WIN, TODAY) });
 }
 

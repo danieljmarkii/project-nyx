@@ -31,7 +31,7 @@
 //     is this. Because vomit is in it, an episode day is a logged day by construction —
 //     the burden `DayMark`'s header puts on this caller.
 //   • A LEFT-SOME day is a qualifying meal (`qualifyingIntakeMeals`: rated, non-treat,
-//     non-free-fed) that was not finished (`isFinishedMeal`) — the intake lens's own
+//     not logged while its food's bowl was down — by date, CUL-1237) that was not finished (`isFinishedMeal`) — the intake lens's own
 //     definition, so the paler hairline and the Meals calendar count the same meals.
 //   • A DOSED day is a delivered dose — `given` or `partial`, the therapy-delivered
 //     count B-618 D1 ratified — never a missed or refused one.
@@ -53,8 +53,7 @@ import { getDb, getTimeline, type TimelineRow } from './db';
 import { episodeDaysOf } from './chartModels';
 import { collapseEpisodes, DEFAULT_MEAL_TIMING_CONFIG, type MealTimingConfig } from './mealTiming';
 import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
-import { isFinishedMeal, qualifyingIntakeMeals, type AnalyticsMeal } from './analytics';
-import { getActiveArrangementsForPet } from './feedingArrangements';
+import { isFinishedMeal, qualifyingIntakeMeals, readFreeFedIntakeSpans, type AnalyticsMeal } from './analytics';
 import { readCopies } from './readCopy';
 import { isWorthACall } from './readState';
 import { dayKeyToLocalDate, toLocalDayKey } from './utils';
@@ -159,7 +158,7 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
   const db = getDb();
   const keyOf = (ms: number) => toLocalDayKey(new Date(ms));
 
-  const [eventRows, mealRows, doseRows, photoRows, firstRow, arrangements] = await Promise.all([
+  const [eventRows, mealRows, doseRows, photoRows, firstRow, freeFedSpans] = await Promise.all([
     db.getAllAsync<{ event_type: string; occurred_at: string }>(
       `SELECT event_type, occurred_at FROM events
         WHERE pet_id = ? AND deleted_at IS NULL
@@ -205,7 +204,7 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
         WHERE pet_id = ? AND deleted_at IS NULL AND event_type <> ?`,
       [petId, LOOK_EVENT_TYPE],
     ),
-    getActiveArrangementsForPet(petId),
+    readFreeFedIntakeSpans(petId),
   ]);
 
   // Episodes: vomit rows, collapsed through the engine's own re-log gap.
@@ -225,7 +224,6 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
   }
 
   // Left some: an unfinished qualifying meal, by the intake lens's own definition.
-  const freeFed = new Set(arrangements.map((a) => a.food_item_id));
   const meals: AnalyticsMeal[] = mealRows
     .map((r) => ({
       ms: Date.parse(r.occurred_at),
@@ -237,7 +235,7 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     }))
     .filter((m) => Number.isFinite(m.ms));
   const leftSomeSet = new Set<string>();
-  for (const m of qualifyingIntakeMeals(meals, freeFed)) {
+  for (const m of qualifyingIntakeMeals(meals, freeFedSpans)) {
     if (isFinishedMeal(m)) continue;
     const k = keyOf(m.ms);
     if (inRange(k, range)) leftSomeSet.add(k);
