@@ -159,7 +159,8 @@ export function careAt(record: SyntheticRecord, petKey: string, T: number): Care
   const lethargyAt = record.events
     .filter((e) => e.petKey === petKey && (e.ty as string) === 'lethargy' && visibleAt(e, T, LOOKBACK_DAYS))
     .map((e) => e.at)
-  return { acknowledgements, appointments: [], lethargyAt }
+  // The corpus runs 180 days, the lookback's length, so nothing lies behind it: no history read.
+  return { acknowledgements, appointments: [], lethargyAt, history: null }
 }
 
 /** EN-10's facts at `T`: the last visit before today, and every visible event and meal. */

@@ -434,6 +434,7 @@ export const POPULATED_CARE_RECORD: CareRecord = {
     { id: 'appt-1', scheduledAt: ago(-4, 15), cancelledAt: null, deletedAt: null, aboutSigns: ['vomit'] },
   ],
   lethargyAt: [ago(2, 9), ago(1, 9)],
+  history: null,
 }
 export { EMPTY_CARE_RECORD }
 

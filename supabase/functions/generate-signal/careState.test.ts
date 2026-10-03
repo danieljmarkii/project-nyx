@@ -443,14 +443,46 @@ Deno.test('D6: the pair reads whether the other sign was chronic when the answer
   assertStrictEquals(run(true).state, 'with_vet')
 })
 
-Deno.test('D7: the reference never slides while it is in the read, and the answer lapses the day it leaves', () => {
+// The record behind the 180-day lookback, as the shell's history read returns it.
+const historyBack = (fromDaysAgo: number, toDaysAgo: number, now = NOW_MS) => ({
+  sinceIso: new Date(now - fromDaysAgo * DAY).toISOString(),
+  symptoms: everyNth(3.5, fromDaysAgo - 1, toDaysAgo).map((d, i) => ({ id: `h-${i}`, type: 'vomit' as const, occurredAt: new Date(now - Math.round(d) * DAY + 12 * 3_600_000).toISOString() })),
+  loggedAt: range(fromDaysAgo - 1, toDaysAgo).map((d) => new Date(now - d * DAY + 8 * 3_600_000).toISOString()),
+  lethargyAt: [] as string[],
+})
+
+Deno.test('D7: with the history behind the lookback, the reference never slides and no answer re-asks on the calendar', () => {
   const old = ack({ id: 'old', daysAgo: 140 })
-  const at = (d: number) => stateOf({ symptoms: STABLE, acks: [old], nowMs: NOW_MS + d * DAY, loggedDaysAgo: range(175, -d) })
-  const first = at(0)
+  const at = (d: number, withHistory: boolean) => stateOf({
+    symptoms: events('vomit', everyNth(3.5, 170 + d, -d).map(Math.round).filter((x) => x <= 179 - d)),
+    acks: [old],
+    nowMs: NOW_MS + d * DAY,
+    loggedDaysAgo: range(175, -d),
+    record: withHistory ? { history: historyBack(260, 181 - d + 1, NOW_MS) } : {},
+  })
+  const first = at(0, true)
   assertStrictEquals(first.reference!.beforeAnchor, true)
-  for (let d = 1; d <= 11; d += 1) assertEquals(at(d).reference, first.reference, `day ${d}: the reference moved`)
-  // 140 + 28 + 13 days back: the window's first day is outside the 180-day read.
-  assertStrictEquals(at(13).state, 'raised')
+  for (const d of [5, 13, 20, 40]) {
+    const s = at(d, true)
+    assertStrictEquals(s.state, 'with_vet', `day ${d}`)
+    assertEquals([s.reference!.fromDay, s.reference!.toDay], [first.reference!.fromDay, first.reference!.toDay], `day ${d}: the reference moved`)
+  }
+  // Without the history read (it failed, or the anchor is past the two-year cap): the answer lapses.
+  assertStrictEquals(at(13, false).state, 'raised')
+})
+
+Deno.test('third pass: an answer written today about an old visit or course holds when the history is read', () => {
+  const visit = ack({ id: 'v', daysAgo: 1, source: 'visit_answer', anchorOn: dayOf(155) })
+  const sym = events('vomit', everyNth(3.5, 170).map(Math.round))
+  assertStrictEquals(stateOf({ symptoms: sym, acks: [visit], record: { history: historyBack(200, 181) } }).state, 'with_vet')
+  assertStrictEquals(stateOf({ symptoms: sym, acks: [visit] }).state, 'raised', 'no history: lapses (louder)')
+})
+
+Deno.test('third pass D6: a cough chronic all along never brings vomiting back on a timer', () => {
+  const cough = { ...chronicity('cough'), firstOnsetIso: at(50) } as Finding // ⑦'s sliding window start
+  const base = { findings: [chronicity('vomit'), cough], symptoms: [...STABLE, ...events('cough', everyNth(2, 170, 0), 9)], acks: [ack({ daysAgo: 60 })] }
+  const out = EN9_CARE_STATE_STEP(base.findings.map((finding, rank) => ({ rank, finding })), { ...args(base), wasChronicAt: () => true })
+  assertStrictEquals(careStateOf(out.find((r) => (r.finding as { symptomType: string }).symptomType === 'vomit')!.finding)!.state, 'with_vet')
 })
 
 Deno.test('D4 re-check: a run that skipped the step cannot revive a lapsed answer', () => {
@@ -462,7 +494,9 @@ Deno.test('D4 re-check: a run that skipped the step cannot revive a lapsed answe
 
 Deno.test('D6 re-check: a cough course that stood down and came back after the answer still brings vomiting back', () => {
   const cough = { ...chronicity('cough'), firstOnsetIso: at(20) } as Finding
-  const base = { findings: [chronicity('vomit'), cough], symptoms: STABLE, acks: [ack({ daysAgo: 40 })] }
+  // Cough until 80 days ago, a quiet gap, then a new course from 20 days ago.
+  const sym = [...STABLE, ...events('cough', [...everyNth(2, 170, 80), ...everyNth(2, 20, 0)], 9)]
+  const base = { findings: [chronicity('vomit'), cough], symptoms: sym, acks: [ack({ daysAgo: 40 })] }
   const out = EN9_CARE_STATE_STEP(base.findings.map((finding, rank) => ({ rank, finding })), { ...args(base), wasChronicAt: () => true })
   const s = careStateOf(out.find((r) => (r.finding as { symptomType: string }).symptomType === 'vomit')!.finding)!
   assertEquals([s.state, s.reason], ['raised_again', 'pair'])

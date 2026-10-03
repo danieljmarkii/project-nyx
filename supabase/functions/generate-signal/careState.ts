@@ -146,15 +146,32 @@ export interface AppointmentFact {
   aboutSigns: readonly SymptomType[]
 }
 
+/** The record BEHIND the Signal's lookback, back to the earliest answer's anchor less the
+ *  reference window, so §4.2's reference is always rebuilt from the record and never read back
+ *  from the cache (adversarial D7). Disjoint from the Signal's own pulls: [sinceIso, lookback). */
+export interface CareHistory {
+  sinceIso: string
+  symptoms: readonly { id: string; type: SymptomType; occurredAt: string }[]
+  /** Every non-deleted event instant (but the look's `check_in`): "days with anything logged". */
+  loggedAt: readonly string[]
+  /** The lethargy rows in it (C1a's "new" reads the 28 days before the anchor). */
+  lethargyAt: readonly string[]
+}
+
 /** What the shell read for EN-9, only while `engines_v3_en9` is on. */
 export interface CareRecord {
   acknowledgements: readonly AckFact[]
   appointments: readonly AppointmentFact[]
   /** `occurred_at` of every non-deleted `lethargy` row in the read window (C1a source 2). */
   lethargyAt: readonly string[]
+  /** Null when every answer's reference lies inside the Signal's own lookback. */
+  history: CareHistory | null
 }
 
-export const EMPTY_CARE_RECORD: CareRecord = { acknowledgements: [], appointments: [], lethargyAt: [] }
+export const EMPTY_CARE_RECORD: CareRecord = { acknowledgements: [], appointments: [], lethargyAt: [], history: null }
+
+/** How far back the shell will read for a reference: an answer anchored earlier than this lapses. */
+export const CARE_HISTORY_MAX_DAYS = 730
 
 export interface CareStateArgs {
   record: CareRecord
@@ -390,10 +407,10 @@ export function lapseReason(ack: AckFact, args: CareStateArgs, retracted: Readon
   if ((ack.source === 'at_vet_tick' || ack.source === 'visit_answer') && anchor < localDayIndex(courseStart, tz)) {
     return 'visit_before_onset'
   }
-  // §4.2's reference must be rebuilt from the record on every run (adversarial D7): the only other
-  // store is the previous cache row, which the owner can write, so a reference read back from it
-  // could quiet the rate arm for good. An answer whose 28 days before its anchor have left the
-  // read can no longer be compared honestly, so it lapses and the concern asks again (louder).
+  // §4.2's reference is rebuilt from the record on every run (adversarial D7): the only other store
+  // is the previous cache row, which the owner can write. The shell reads the history behind the
+  // lookback back to this answer's anchor (CareHistory), so this fires only for an anchor older
+  // than CARE_HISTORY_MAX_DAYS, or when that read failed: the concern then asks again (louder).
   const readFrom = Date.parse(args.readSinceIso)
   if (Number.isFinite(readFrom) && anchor - cfg.referenceDays < localDayIndex(readFrom, tz) + 1) return 'reference_out_of_read'
   if (ack.source === 'vet_started_trial') {
@@ -560,6 +577,9 @@ interface ReRaiseArgs {
   pairOnsetIso: string | null
   /** Whether the other sign's chronicity lane fired as of the answer (from the record). */
   pairChronicAtAnswer: boolean | null
+  /** The other sign's CURRENT course start under the gap rule (never ⑦'s sliding first onset,
+   *  which moves forward with its window: adversarial third pass). */
+  pairCourseStartMs: number | null
 }
 
 export function findReRaise(x: ReRaiseArgs): ReRaise | null {
@@ -634,7 +654,8 @@ export function findReRaise(x: ReRaiseArgs): ReRaise | null {
     // Either half is a change after the answer: the lane was not firing then, or the course firing
     // now began after it (a course that stood down and came back). The halves ADD (adversarial
     // re-check of D6: the record read replacing the onset test silenced the second case).
-    const turned = x.pairChronicAtAnswer === false || (Number.isFinite(onset) && onset > createdMs)
+    const otherStart = x.pairCourseStartMs
+    const turned = x.pairChronicAtAnswer === false || (otherStart !== null && otherStart > createdMs)
     if (turned) {
       found.push({ reason: 'pair', onDay: ix.today, pairSign: sign === 'vomit' ? 'cough' : 'vomit', pairSinceDay: Number.isFinite(onset) ? Math.max(localDayIndex(onset, tz), localDayIndex(createdMs, tz)) : ix.today })
     }
@@ -789,8 +810,9 @@ export type CareStateStep = <T extends { rank: number; finding: Finding }>(findi
  * EN-9's step: each concern gains `careState`; the watched ones rank below every other safety
  * finding; nothing else changes. Every escalation keeps its finding object untouched.
  */
-export const EN9_CARE_STATE_STEP: CareStateStep = (findings, args) => {
-  const cfg = args.config ?? CARE_STATE_CONFIG
+export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
+  const cfg = argsIn.config ?? CARE_STATE_CONFIG
+  const args = withHistory(argsIn)
   const ix = indexRecord(args)
   const tz = args.timezone
   const prior = readPriorCare(args.priorFindings)
@@ -833,7 +855,8 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, args) => {
     const pairSign: SymptomType | null = sign === 'vomit' ? 'cough' : sign === 'cough' ? 'vomit' : null
     const pairOnsetIso = pairSign ? chronicOnset.get(pairSign) ?? null : null
     const pairChronicAtAnswer = pairSign && pairOnsetIso && args.wasChronicAt ? args.wasChronicAt(pairSign, createdMs) : null
-    const rr = findReRaise({ sign, ack, reference, ix, args, cfg, pairOnsetIso, pairChronicAtAnswer })
+    const pairCourseStartMs = pairSign && pairOnsetIso ? courseStartMs(args, pairSign) : null
+    const rr = findReRaise({ sign, ack, reference, ix, args, cfg, pairOnsetIso, pairChronicAtAnswer, pairCourseStartMs })
     // §4.5 the latch: the previous row said raised_again, and this answer is no newer than that
     // row. Keyed on time, never on the answer's id (adversarial D5): a newer answer lapsing must
     // not hand the concern back to an older one, quietly.
@@ -880,6 +903,19 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, args) => {
   return rankWatchedLast(decorated)
 }
 
+
+/** The step's view of the record: the Signal's own read plus the care history behind it. */
+export function withHistory(args: CareStateArgs): CareStateArgs {
+  const h = args.record.history
+  if (!h || !(Date.parse(h.sinceIso) < Date.parse(args.readSinceIso))) return args
+  return {
+    ...args,
+    record: { ...args.record, lethargyAt: [...h.lethargyAt, ...args.record.lethargyAt] },
+    symptoms: [...h.symptoms.map((e) => ({ id: e.id, type: e.type, occurredAt: e.occurredAt, severity: null, occurredAtConfidence: null })), ...args.symptoms] as SymptomEvent[],
+    loggedAt: [...h.loggedAt, ...args.loggedAt],
+    readSinceIso: h.sinceIso,
+  }
+}
 
 /** Where a raised_again row's lane sentence goes. */
 const LANE_TOKEN = '{lane}'
