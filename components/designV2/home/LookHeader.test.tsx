@@ -401,6 +401,37 @@ describe('BRK-19 — under a live intake concern the question never closes', () 
   });
 });
 
+describe('CUL-1372 (a) — the door never reads calmer than the header', () => {
+  it('the intake-decline flag alone collapses the door’s intake rows to the imperative', async () => {
+    // Arm 1 only: no trial register, no refused bowls in view. Before the ruling the
+    // header withheld on this while the door printed *Not eating for a day* as UNMET.
+    mockLoadWithheldFacts.mockResolvedValue(refusing);
+    const t = render(<LookHeader />);
+    await waitFor(() => expect(mockLoadWithheldFacts).toHaveBeenCalled());
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-header-more'));
+    });
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-header-emergency-door'));
+    });
+    await waitFor(() => expect(t.getByTestId('look-emergency-imperative')).toBeTruthy());
+    expect(t.queryByText('Not eating for a day')).toBeNull();
+  });
+
+  it('quiet facts leave the intake row a conditional (the control the test above needs)', async () => {
+    const t = render(<LookHeader />);
+    await waitFor(() => expect(mockLoadWithheldFacts).toHaveBeenCalled());
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-header-more'));
+    });
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-header-emergency-door'));
+    });
+    await waitFor(() => expect(t.getByText('Not eating for a day')).toBeTruthy());
+    expect(t.queryByTestId('look-emergency-imperative')).toBeNull();
+  });
+});
+
 describe('BRK-20 — a later look never hides an earlier concern', () => {
   it('Hiding at 7:10, Played at 8 PM: both are on Home, newest first', async () => {
     useEventStore.setState({

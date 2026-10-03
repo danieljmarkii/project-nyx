@@ -1328,6 +1328,42 @@ describe('what the product review changed', () => {
     expect(t.queryByText('Not eating for a day')).toBeNull();
   });
 
+  it('the door reads the intake-decline flag as a refusal too (CUL-1372, ruled (a))', async () => {
+    // CUL-1220's finding 5: the card withheld on arm 1 (the intake-decline flag) with no
+    // refused bowls in view, and the door still printed *Not eating for a day* as an
+    // UNMET conditional. The PM ruled the door must not read calmer than the card.
+    mockPetState = { activePet: JUNIPER, pets: [MOCHI, JUNIPER] };
+    mockLoadWithheldFacts.mockResolvedValue({
+      petId: JUNIPER.id,
+      serverIntakeDecline: true,
+      trialNotEating: false,
+      recentQualifyingMeals: [],
+    });
+    useEventStore.setState({
+      todayEvents: [
+        lookRow('e1', 1, {
+          pet_id: JUNIPER.id,
+          look_outcome: 'nothing_unusual',
+          look_words: null,
+        }),
+      ],
+    });
+    const t = render(<LookCard safety={quiet()} />);
+    await waitFor(() => expect(t.getByTestId('look-withheld-e1')).toBeTruthy());
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-folded-ask'));
+    });
+    await waitFor(() => expect(t.getByTestId('look-more-words')).toBeTruthy());
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-more-words'));
+    });
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-emergency-door'));
+    });
+    await waitFor(() => expect(t.getByTestId('look-emergency-imperative')).toBeTruthy());
+    expect(t.queryByText('Not eating for a day')).toBeNull();
+  });
+
   it('a receipt-bearing entry survives the two-entry cap (§3.3 rule 5)', async () => {
     // The day an owner answers three times is the symptomatic day, so a newest-first cap of
     // two was deleting the morning's concern line from Home exactly when it mattered — "a

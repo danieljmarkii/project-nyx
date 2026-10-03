@@ -42,9 +42,9 @@
 // ── AND THE FOURTH CONSUMER ──────────────────────────────────────────────────
 // Home (this card), Patterns (N-5) and the report's line (N-6) are the three T-20 names.
 // The fourth is the look's own emergency door (`lib/lookEmergencyFacts.ts`), which N-4a
-// left holding the trial register alone with a comment promising this arm. `intakeArm`
-// below is what it takes, so the door and the card can never disagree about whether this
-// animal is eating.
+// left holding the trial register alone with a comment promising this arm. It now takes
+// `doorRecordRefusal` below, arm 1 OR arm 3 (arm 1 added by CUL-1372's ruling), so the
+// door and the card can never disagree about whether this animal is eating.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -168,6 +168,32 @@ export function intakeArm(meals: readonly AnalyticsMeal[]): boolean {
   // unsorted list.
   const recent = [...meals].sort((a, b) => b.ms - a.ms).slice(0, LOOK_REFUSAL_LOOKBACK);
   return recent.filter(isRefusedOrPickedMeal).length >= LOOK_REFUSAL_MIN;
+}
+
+/**
+ * The record's refusal, as the emergency door reads it: arm 1 OR arm 3, a positive fact
+ * or nothing (CUL-1372, ruled (a) by the PM 2026-10-03).
+ *
+ * The door first took arm 3 alone, and the adversarial pass on CUL-1220 found the split
+ * that left: a pet whose card WITHHELD on the intake-decline flag (arm 1) with no two
+ * refused bowls in view still saw *Not eating for a day* as an UNMET conditional one tap
+ * away. Whether a decline is a refusal was put to the PM rather than assumed, and the
+ * ruling is that the door must not read calmer than the card that sent the owner there.
+ *
+ * Arm 2 (the trial register) is not folded here: the caller holds it as its own prop and
+ * hands it to `withIntakeRefusal` separately, the shape N-4a shipped.
+ *
+ * Every input reads POSITIVE-OR-NOTHING (T-20): an arm that has not answered is `false`
+ * here, the opposite of `lookWithheldState`'s reading of the same `null`, because on the
+ * door ignorance must not escalate. Facts for another pet are `false` for the same reason
+ * (C-9: Home retains the previous pet's facts across a switch).
+ */
+export function doorRecordRefusal(
+  pet: { id: string },
+  record: LookWithheldFacts | null,
+): boolean {
+  if (record === null || record.petId !== pet.id) return false;
+  return record.serverIntakeDecline === true || intakeArm(record.recentQualifyingMeals ?? []);
 }
 
 /**

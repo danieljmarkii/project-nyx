@@ -68,7 +68,7 @@ import { EMERGENCY_DOOR_LABEL, type EmergencyRead } from '../../../lib/lookEmerg
 import { loadEmergencyFacts, withIntakeRefusal } from '../../../lib/lookEmergencyFacts';
 import {
   entryWithholdsWords,
-  intakeArm,
+  doorRecordRefusal,
   loadLookWithheldFacts,
   lookWithheldState,
   markWithheldToday,
@@ -350,7 +350,8 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
         const merged = withIntakeRefusal(
           facts,
           trialNotEating === true,
-          resting?.petId === id ? intakeArm(resting.facts.recentQualifyingMeals ?? []) : false,
+          // Arm 1 and arm 3 together, the card's own withholding facts (CUL-1372).
+          doorRecordRefusal({ id }, resting?.petId === id ? resting.facts : null),
         );
         if (activePetIdRef.current !== id) return;
         setEmergencyRead(merged ? { status: 'ready', facts: merged } : { status: 'failed' });

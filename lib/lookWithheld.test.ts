@@ -52,6 +52,7 @@ import {
   LOOK_REFUSAL_RECENCY_DAYS,
   LOOK_WITHHELD_STORAGE_KEY,
   clearLookWithheld,
+  doorRecordRefusal,
   intakeArm,
   lookWithheld,
   lookWithheldState,
@@ -167,6 +168,57 @@ describe('what the arm must NOT fire on', () => {
   it("facts for ANOTHER pet never answer for this one (C-9)", () => {
     expect(lookWithheldState({ id: 'pet-2' }, facts())).toBe('unknown');
     expect(lookWithheld({ id: 'pet-2' }, facts())).toBe(true);
+  });
+});
+
+// ── The door's reading of the same facts (CUL-1372) ─────────────────────────
+//
+// Ruled (a) by the PM 2026-10-03: the emergency door takes arm 1 as a refusal too, so it
+// never reads calmer than the card. The same facts, read POSITIVE-OR-NOTHING: every
+// `null` that `lookWithheldState` reads as 'unknown' is `false` here (T-20).
+describe('doorRecordRefusal — arm 1 OR arm 3, a positive fact or nothing', () => {
+  it('the intake-decline flag alone is a refusal at the door', () => {
+    // The CUL-1220 counterexample: the card withheld on arm 1 with no refused bowls in
+    // view, and the door printed the intake rows as unmet conditionals.
+    expect(doorRecordRefusal(PET, facts({ serverIntakeDecline: true }))).toBe(true);
+  });
+
+  it('two refused bowls alone are a refusal at the door', () => {
+    const meals = [meal(2, 'refused'), meal(10, 'refused')];
+    expect(doorRecordRefusal(PET, facts({ recentQualifyingMeals: meals }))).toBe(true);
+  });
+
+  it('quiet facts are no refusal', () => {
+    expect(doorRecordRefusal(PET, facts())).toBe(false);
+  });
+
+  it('the trial register is NOT folded here — the caller hands it over separately', () => {
+    expect(doorRecordRefusal(PET, facts({ trialNotEating: true }))).toBe(false);
+  });
+
+  it('unanswered arms are no evidence, never an escalation', () => {
+    expect(doorRecordRefusal(PET, facts({ serverIntakeDecline: null, recentQualifyingMeals: null }))).toBe(false);
+    expect(doorRecordRefusal(PET, null)).toBe(false);
+  });
+
+  it('a positive arm still counts while its sibling is unanswered', () => {
+    expect(doorRecordRefusal(PET, facts({ serverIntakeDecline: true, recentQualifyingMeals: null }))).toBe(true);
+  });
+
+  it('facts for ANOTHER pet never escalate this one (C-9)', () => {
+    expect(doorRecordRefusal({ id: 'pet-2' }, facts({ serverIntakeDecline: true }))).toBe(false);
+  });
+
+  it('every withheld verdict on answered facts outside the trial register escalates the door', () => {
+    // The ruling as a property: the door cannot read calmer than the card on the record's
+    // own arms. Exhaustive over arm 1 x arm 3, with arm 2 quiet.
+    const mealSets = [[], [meal(2, 'refused'), meal(10, 'picked')], [meal(2, 'all')]];
+    for (const decline of [true, false]) {
+      for (const meals of mealSets) {
+        const f = facts({ serverIntakeDecline: decline, recentQualifyingMeals: meals });
+        expect(doorRecordRefusal(PET, f)).toBe(lookWithheldState(PET, f) === 'withheld');
+      }
+    }
   });
 });
 
