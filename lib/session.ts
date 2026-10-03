@@ -20,6 +20,7 @@ import { clearSignalArrival } from './signalArrival';
 import { clearSignalFold } from './signalFold';
 import { clearAppointmentAsked } from './appointmentAsked';
 import { clearCareQuestionAsked } from './careQuestionAsked';
+import { clearCareVisitTicks } from './careVisitConcerns';
 import { clearLookWithheld } from './lookWithheld';
 import { clearObservationFold } from './observationFold';
 import { cancelPendingSignalRegens } from './signal';
@@ -346,4 +347,7 @@ export async function wipeLocalSession(): Promise<void> {
   // the day it last asked. Each key names a record in the previous owner's account; same
   // FR-9 parity rule.
   await clearCareQuestionAsked();
+  // …and the in-room ticks on Home's concerns (`lib/careVisitConcerns.ts`), keyed by the
+  // previous owner's appointment ids.
+  await clearCareVisitTicks();
 }

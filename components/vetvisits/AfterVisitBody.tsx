@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Platform, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { CalendarPlus, FileText, Pill, Utensils } from 'lucide-react-native';
+import { CalendarPlus, FileText, Pill, Stethoscope, Utensils } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { SectionLabel } from '../ui/SectionLabel';
@@ -16,6 +16,17 @@ import {
   type TrialVerdict,
 } from '../../lib/vetVisitPlan';
 import { formatVisitDate, localDateKey, type ActiveCourse } from '../../lib/vetVisits';
+import type { HomeConcernRow } from '../../lib/careVisitConcerns';
+
+/** The owner's answer about one concern Home was raising (EN-9, care-state spec §3.2). Only
+ *  *Talked about it* writes anything; the other two write nothing (§3.2). */
+export type HomeConcernAnswer = 'talked' | 'not_this_time' | 'later';
+
+const CONCERN_OPTIONS = [
+  { value: 'talked', label: 'Talked about it' },
+  { value: 'not_this_time', label: 'Not this time' },
+  { value: 'later', label: 'Later' },
+];
 
 /** The running trial, as this screen needs it — the trial's own numbers stay its own. */
 export interface TrialRow {
@@ -75,6 +86,12 @@ export interface AfterVisitBodyProps {
   paperworkCount: number;
   onAddPaperwork: () => void;
 
+  /** EN-9 (Engines v3 PR-35): the concerns Home was raising, each with the owner's answer.
+   *  Empty with the Engines v3 flag off, and then no section renders. */
+  homeConcerns?: ReadonlyArray<HomeConcernRow>;
+  concernAnswers?: Readonly<Record<string, HomeConcernAnswer>>;
+  onConcernAnswer?: (row: HomeConcernRow, answer: HomeConcernAnswer) => void;
+
   /** The row whose write is in flight, so only that row goes inert. */
   busyRow: string | null;
   saving: boolean;
@@ -111,6 +128,7 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
     trial, trialVerdict, endedTrial, onTrialVerdict, onStartTrial, onAddFood,
     nextVisitAt, onPickNextVisit, paperworkCount, onAddPaperwork,
     busyRow, saving, onSave,
+    homeConcerns = [], concernAnswers = {}, onConcernAnswer,
   } = props;
   const [showDayPicker, setShowDayPicker] = useState(false);
   const [showNextPicker, setShowNextPicker] = useState(false);
@@ -188,6 +206,28 @@ export function AfterVisitBody(props: AfterVisitBodyProps) {
         placeholderTextColor={theme.colorTextTertiary}
         accessibilityLabel={`Notes from ${petName}’s visit`}
       />
+
+      {/* What Home was raising (EN-9; mock round 2 §08 frame 4): one row per concern, the
+          ones ticked in the room arriving as *Talked about it*. Saving writes that answer
+          against this visit; *Not this time* and *Later* write nothing (§3.2). */}
+      {homeConcerns.length > 0 && onConcernAnswer ? (
+        <>
+          <SectionLabel label="What Home was raising" header style={styles.planLabel} />
+          <View style={styles.plan} testID="after-visit-home-concerns">
+            {homeConcerns.map((c) => (
+              <PlanChipRow
+                key={c.sign}
+                glyph={<Stethoscope size={16} color={theme.colorEventSymptomInk} strokeWidth={2} />}
+                title={c.title}
+                options={CONCERN_OPTIONS}
+                value={concernAnswers[c.sign] ?? 'later'}
+                onChange={(next) => onConcernAnswer(c, next as HomeConcernAnswer)}
+                busy={saving}
+              />
+            ))}
+          </View>
+        </>
+      ) : null}
 
       <SectionLabel label="The plan" header style={styles.planLabel} />
       <View style={styles.plan}>

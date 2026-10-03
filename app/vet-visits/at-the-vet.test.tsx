@@ -50,6 +50,16 @@ jest.mock('../../lib/vetVisits', () => {
   };
 });
 
+// EN-9 (PR-35): Home's concerns. Empty by default, which is the flag-off case (no care state
+// written), so every test above this block renders exactly the pre-PR-35 screen.
+let mockConcerns: Array<{ sign: string; title: string; state: string }> | null = [];
+const mockSetTick = jest.fn(async (_a: string, _s: string, _t: boolean) => new Set<string>());
+jest.mock('../../lib/careVisitConcerns', () => ({
+  readHomeConcerns: jest.fn(async () => mockConcerns),
+  readCareVisitTicks: jest.fn(async () => new Set<string>()),
+  setCareVisitTick: (a: string, s: string, t: boolean) => mockSetTick(a, s, t),
+}));
+
 const PET = { id: 'pet-a', name: 'Nyx', species: 'dog' };
 jest.mock('../../store/petStore', () => ({
   usePetStore: (sel: (s: unknown) => unknown) => sel({ pets: [PET], activePet: PET }),
@@ -255,5 +265,32 @@ describe('the finish door is gated, and the notes are not (CUL-966)', () => {
     fireEvent.changeText(field(), 'Ask about the limp');
     await act(async () => { jest.advanceTimersByTime(1000); });
     expect(mockSaveDraft).toHaveBeenCalledWith('appt-1', 'Ask about the limp');
+  });
+});
+
+
+describe('What Home is raising (EN-9, Engines v3 PR-35)', () => {
+  afterEach(() => {
+    mockConcerns = [];
+    mockSetTick.mockClear();
+  });
+
+  it('draws no section when Home raises nothing with a care state (flag off)', async () => {
+    mockAppointment = appointment();
+    render(<AtTheVetScreen />);
+    await waitFor(() => expect(screen.getByText('Photograph the paperwork')).toBeTruthy());
+    expect(screen.queryByTestId('at-the-vet-concerns')).toBeNull();
+  });
+
+  it('ticks a concern in the room, which writes nothing to the record', async () => {
+    mockAppointment = appointment();
+    mockConcerns = [{ sign: 'vomit', title: 'Vomiting in 5 of the last 8 weeks', state: 'raised' }];
+    render(<AtTheVetScreen />);
+    const row = await screen.findByTestId('at-the-vet-concern-vomit');
+    expect(row.props.accessibilityState).toEqual({ checked: false });
+    fireEvent.press(row);
+    expect(screen.getByTestId('at-the-vet-concern-vomit').props.accessibilityState).toEqual({ checked: true });
+    expect(mockSetTick).toHaveBeenCalledWith('appt-1', 'vomit', true);
+    expect(mockSetAsked).not.toHaveBeenCalled();
   });
 });

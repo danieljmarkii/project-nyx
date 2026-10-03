@@ -11,6 +11,12 @@ import { resolveRecordPetName, usePetStore } from '../../store/petStore';
 import { syncPendingVetAppointments } from '../../lib/sync';
 import { captureVisitPaperwork, readPaperworkFor, rememberPaperwork } from '../../lib/visitPaperwork';
 import {
+  readCareVisitTicks,
+  readHomeConcerns,
+  setCareVisitTick,
+  type HomeConcernRow,
+} from '../../lib/careVisitConcerns';
+import {
   appointmentDayReached,
   formatAppointmentWhen,
   formatWhereLine,
@@ -67,6 +73,9 @@ export default function AtTheVetScreen() {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  // EN-9 (PR-35): Home's concerns and the room's ticks on them. Empty flag-off.
+  const [concerns, setConcerns] = useState<HomeConcernRow[]>([]);
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
 
   // The draft the owner is typing, held in a ref so the debounce timer reads the
   // LATEST text rather than the value captured when it was scheduled.
@@ -109,6 +118,13 @@ export default function AtTheVetScreen() {
       ]);
       setAppointment(row);
       setPaperwork(groups);
+      if (row) {
+        // Never blocks the screen: an unreadable Signal cache simply draws no section.
+        void Promise.all([readHomeConcerns(row.pet_id), readCareVisitTicks(row.id)]).then(([rows, ticks]) => {
+          setConcerns(rows ?? []);
+          setTicked(ticks);
+        });
+      }
       if (row && !seeded.current) {
         seeded.current = true;
         setDraft(row.notes_draft ?? '');
@@ -262,6 +278,19 @@ export default function AtTheVetScreen() {
               paperworkCount={paperwork.length}
               onPhotographPaperwork={handlePhotographPaperwork}
               capturing={capturing}
+              concerns={concerns}
+              tickedConcerns={ticked}
+              onToggleConcern={(c) => {
+                if (!appointmentId) return;
+                const next = !ticked.has(c.sign);
+                setTicked((prev) => {
+                  const s2 = new Set(prev);
+                  if (next) s2.add(c.sign);
+                  else s2.delete(c.sign);
+                  return s2;
+                });
+                void setCareVisitTick(appointmentId, c.sign, next);
+              }}
             />
           </ScrollView>
         </KeyboardAvoidingView>
