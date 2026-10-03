@@ -2,7 +2,9 @@
 
 **Date:** 2026-10-03
 
-Built in #1014 (draft). It does not finish CUL-1413 yet: feeding the lane real readings needs the `weight_checks` read and a mapping in `generate-signal/pipeline.ts` behind an `engines_v3_en8` key. PR-23 (CUL-1417) owns that file and was running in parallel, so this session stayed out of it and stopped before the wiring. #1014 merges once the wiring lands, either in it or in a follow-up.
+Shipped via #1014. Finishes CUL-1413.
+
+The session first stopped before the wiring, because PR-23 (CUL-1417) owned `generate-signal/pipeline.ts`. After PR-23 merged (#1016), the PM, through the dispatcher, resumed it, and the wiring rides the same PR.
 
 ## What was built
 
@@ -66,13 +68,28 @@ Built in #1014 (draft). It does not finish CUL-1413 yet: feeding the lane real r
 - Deno: `detection.weight.test.ts`, 14 tests; the full `supabase/functions` suite passes.
 - `deno check` and `tsc` are clean.
 
+## The wiring (resumed after #1016)
+
+- **`main` merged in cleanly.**
+- **`main` was failing `deno check`:** `findingIdentity.engine.test.ts`, from #1017, built a `CareRecord` in the shape #1016 replaced. The two-line fix (`EMPTY_CARE_RECORD`) rides this PR and is noted on it.
+- **`engines_v3_en8`** joins `ENGINE_KEYS` and `SIGNAL_ENGINE_KEYS`. It adds a finding, so a flip of the key mints no stand-down. It is not seeded, so it stays off. The engine version is now `signal.8`.
+- **`readWeightFacts` (`index.ts`)** runs only under the key. It reads:
+  - the weigh-ins in the window, with their source, `events!inner` and the parent event's soft-delete, paged to the end on (`created_at`, `id`);
+  - the pet's birthday.
+
+  A failed or partial read means no weight lane this run (logged).
+- **`mapWeightCheckRows` (`pipeline.ts`)** drops unknown sources and weights that are not positive, and parses NUMERIC strings.
+- **The pipeline** hands detection `weight` only under the key; when the key is off, the field is absent from the input altogether.
+- **Guards:**
+  - (c-en8): flag off equals the run with no facts, even when the facts would raise the firm row. Deleting the gate turns this red.
+  - The gate opens on every case.
+  - The lane moves no other finding.
+  - The shell source pin, plus the read's columns and its failure modes (`index.test.ts`).
+  - The stand-down key-set test is restated for the new key.
+
 ## Next
 
-Wire the lane after PR-23 merges:
-- read `weight_checks` with `source` in `index.ts`, behind `engines_v3_en8`;
-- map it into `DetectionInput.weight` in `pipeline.ts`;
-- add the key to `SIGNAL_ENGINE_KEYS`;
-- add the C-36 flag-off guard;
-- register the 072 reader (if any) in `guards/weightDisplacements.test.ts`.
-
-Then get the three rulings above, the exact-copy sign-off, and PMD-9's re-run by cadence before GA.
+- **The CUL-583 rulings before GA:** the exact-copy sign-off, and the three edge rulings (on CUL-1413).
+- **PMD-9 re-run by cadence:** PR-16 adds EN-8 to `HARNESS_OBSERVES` once the corpus feeds weigh-ins.
+- **PR-37:** the client (the Home row, the finding's screen, the source correction, W5's plain row, which must not quote `story.highBefore` without the boundary).
+- **CUL-1390 W3:** the vet report.
