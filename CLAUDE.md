@@ -231,14 +231,14 @@ Single source of truth for every secret the project uses. Update this table inli
 
 ## Git Workflow
 
-**Branch naming:** `feat/short-description` for new features, `fix/short-description` for bug fixes. Example: `feat/attachment-support`, `fix/offline-sync-conflict`.
+**Branch naming:** `feat/short-description` for new features, `fix/short-description` for bug fixes.
 
 **Flow:**
 1. Create a feature branch off `main`
 2. Make changes via Claude Code
 3. Push branch → open PR with a detailed description (see PR format below)
 4. Test via Expo QR code on device
-5. Merge PR to `main`
+5. Merge PR to `main` (by hand, or `/wrap and merge`)
 
 **PR descriptions must include:**
 - What changed and why (not just what — the why is the important part)
@@ -253,20 +253,21 @@ Single source of truth for every secret the project uses. Update this table inli
 - **CI runs on every PR (B-390, `.github/workflows/ci.yml`):** `App (typecheck + jest)` and `Edge Functions (deno test)` are required checks on an Active `main` ruleset with an empty bypass list (plus `App (jest, non-UTC timezones)`; making it required is CUL-586), so a red check blocks the merge. The Deno job's `npm ci` and its `--allow-read=supabase/functions` are load-bearing, not cruft; actions are SHA-pinned (bump the SHA and its version comment together); never fix a red run by weakening the check (`--no-check`, `continue-on-error`, dropping a suite) without saying so in the PR.
 - Schema changes always get their own PR — never bundle a schema change with UI work.
 - Squash merge to keep `main` history clean and linear.
+- **Branches (CUL-1497):** merge `main` in only when a branch conflicts or needs code from it; never rebase a pushed branch (a stack you created is the one exception) or take one side of a file wholesale. A self-merge needs the PM's word (`/wrap and merge`) or a `/dispatch` child's prompt, and one gate that runs `scripts/steward/merge-check.sh`: `.claude/skills/steward/SKILL.md` §7 _(account: `docs/engineering-lessons.md` §P-15)_
 - Do not merge a PR if the issue's QA criteria are not yet met.
-- **One PR per session.** The end-of-session `docs/sessions/` record (and any STATUS.md / CLAUDE.md / doc edits) ride in the session's *existing* work PR — committed to its branch before merge — not a separate "record the merge" PR afterward. Write the session record's outcome as `shipped via #<n>` (the PR number is assigned at creation, drafts included), never as `merged to main (#<n>)` — the post-merge phrasing is what forces the second PR. **Exception:** if the work PR was already merged mid-session, the status update is a small standalone follow-up. This is orthogonal to the schema-isolation rule above — STATUS.md is not schema. (Mechanics in `/wrap`.)
+- **One PR per session.** The end-of-session `docs/sessions/` record (and any STATUS.md / CLAUDE.md / doc edits) ride in the session's *existing* work PR — committed to its branch before merge — not a separate "record the merge" PR afterward. Write the session record's outcome as `shipped via #<n>` (the PR number is assigned at creation, drafts included), never as `merged to main (#<n>)` — the post-merge phrasing is what forces the second PR. **Exception:** if the work PR was already merged mid-session, the status update is a small standalone follow-up. (Mechanics in `/wrap`.)
 
 **PR check-ins — arm at most one, never a standing chain (instituted 2026-07-25).** A session that opens a PR may schedule a self check-in to catch what webhooks miss. Bound it:
 
 - **Arm at most one check-in, ~90 minutes out, and only while sibling sessions are actively landing on `main`.** If nothing is in flight, arm nothing — there is no event to catch.
 - **Stop after one check-in that finds nothing.** Do not re-arm on a no-op. A chain that re-arms unconditionally can only terminate on merge, and PRs here sit open for weeks.
-- **Never arm one at `/wrap`**, and never leave one armed overnight. The PM merges by hand, in the morning; `main` does not move while they sleep, so an overnight check-in is guaranteed to find nothing.
-- **Never poll on an interval shorter than ~90 minutes.** An hourly cadence lands past the prompt-cache TTL, so every wake re-sends the session's entire context at full price to learn nothing.
+- **Never arm one at `/wrap`**, nor overnight (one exception: `/dispatch`'s 07:30 launch of rows held for daylight, PM 2026-10-03): a merge conflict wakes the PR's own subscription, so a timer adds nothing.
+- **Never poll on an interval shorter than ~90 minutes.** An hourly cadence lands past the cache TTL, so each wake re-sends the whole context at full price.
 
-**Merge → Linear status — reference `CUL-NNN` in every PR (instituted 2026-08-16).** Linear (team Culprit) owns issue status, and the native GitHub↔Linear integration moves an issue Todo/Backlog → In Progress → Done automatically **when a PR references it** — verified: CUL-15 auto-linked PR #655 and transitioned in lockstep with the merge. So:
+**Merge → Linear status — reference `CUL-NNN` in every PR (instituted 2026-08-16).** Linear (team Culprit) owns issue status, and the native GitHub↔Linear integration moves an issue Todo/Backlog → In Progress → Done automatically **when a PR references it**. So:
 
 - Put the identifier (`CUL-NNN`) of each issue the PR **finishes** in its title or description; a PR finishing several names all of them.
-- Where the session controls the branch name, prefer Linear's suggested `gitBranchName` (e.g. `danieljmarkii/cul-NNN-…`, on the issue) so the link fires off the branch too. **Agent sessions run on a fixed `claude/<slug>` branch that does not reference the issue** — for those, the PR-body reference is the only trigger, so never assume the branch alone linked it.
+- A branch name links and closes every issue it names, like the PR text (CUL-1508: `claude/cul-1134-pr28-0930` closed its parent). Name an issue in a branch only when that one PR finishes it; agent sessions' `claude/<slug>` branches name none, so the PR body is their only trigger.
 - **Backstop when auto-link didn't fire:** `/wrap` step 4 sets each touched issue's state with `save_issue`. A hand-made `create_attachment` link never closes anything (CUL-1035).
 - **The `CUL-NNN` token is what closes an issue (CUL-1397, measured):** every issue named in a PR's title or body goes `Done` when it merges, and deleting the attachment first does not stop it (CUL-973). So related or newly filed issues are pointed at in a Linear **comment**, never in the PR, and **a task that ships in several PRs gets one sub-issue per PR**: each PR names only its own sub-issue, the parent never appears in a PR, and whoever closes the last sub-issue closes the parent. After a merge, read back every issue the PR named and reopen any that closed early.
 - **Do not build a custom GitHub Action for this** — it would duplicate the native integration and fight it on status writes.
@@ -362,7 +363,7 @@ If any box is unchecked, the work is not done — say so explicitly rather than 
 
 ### Dev Handoff — After Every Push
 
-After every `git push`, output the exact terminal commands the PM needs to run to get the latest code onto their phone. Format each command as a code block followed by one plain-English sentence explaining why it is being run. Do not skip commands or assume the PM remembers the sequence from a previous session.
+After every `git push`, output the exact terminal commands the PM needs to get the latest code onto their phone, each a code block plus one plain-English sentence on why. Skip none; assume the PM remembers nothing. A `/dispatch` child puts its QA script in the PR body instead.
 
 There are **two runtimes** the PM uses, and the handoff differs for each. Pick the one that matches what the PM is doing this session, and emit only that sequence — do not dump both unless the change requires both.
 

@@ -1,10 +1,12 @@
 ---
-description: End-of-session wrap-up — run the DoD, write the session record, reconcile the touched Linear issues, emit the Session Summary, and always finish with a paste-ready Next Session Kickoff prompt.
+description: End-of-session wrap-up — run the DoD, write the session record, check the branch against main, reconcile the touched Linear issues, emit the Session Summary, and always finish with a paste-ready Next Session Kickoff prompt. `/wrap and merge` also merges the PR through the steward skill's sequence.
 ---
 
 # /wrap — End-of-session wrap-up
 
 Run the project's end-of-session ritual **in this exact order**. This is the canonical close-out — do not improvise a different shape. The goal is that every session ends the same way, and the PM always walks away knowing *what shipped* and *exactly what prompt to paste next*.
+
+**A session launched by `/dispatch` runs `/wrap --dispatched` instead** (§ Dispatched sessions, below): the same record keeping, a five-line return in place of everything written for a human reader.
 
 CLAUDE.md (the stable operating manual) is the source of truth for the formats referenced below — follow it, don't restate it from memory. `STATUS.md` is a pointer card and usually needs no edit at all (step 3b); the volatile state lives in Linear.
 
@@ -38,6 +40,10 @@ CLAUDE.md (the stable operating manual) is the source of truth for the formats r
 
    **Commit this update onto the same branch as the session's work — never a fresh branch — so it lands in the session's *existing* PR instead of spawning a second status-only PR.** Make sure that PR exists first (create the draft PR now if it doesn't; GitHub assigns the number on creation, drafts included), then write the session record's PR reference as the session's **outcome referencing that number** — `shipped via #112` — **not** as a post-merge record — `merged to main (#105)`. The post-merge phrasing is exactly what forces the annoying second PR: you can't write "merged" until after the merge, so it lands as its own commit afterward. The "shipped via #N" entry only reaches `main` when this PR merges, which is precisely when it becomes true — so it can't lie, and there's no second PR. (See the **One PR per session** rule below.)
 
+   **(3d) Check the branch against `main`; merge only if the PM asked.** Once everything is committed and pushed, run `scripts/steward/merge-check.sh` with the head branches of the other open PRs updated in the last 7 days (`list_pull_requests`), and act on its verdict by the **`steward`** skill: `CONFLICT` means merge `origin/main` in, resolve by its §4, prove by §6, push, and run the check again; `REVIEW` means read every line it lists and clear it in writing (§5). A branch that is only behind `main` is left alone. The Session Summary's What Was Built ends with the verdict line (`MERGE CHECK: …`) and any open PR the check says this branch collides with.
+
+   **`/wrap and merge`** (any `$ARGUMENTS` asking to merge) is the PM's word for the steward skill's §7: its gate (every check passed on the head, mergeable, the head the check called `CLEAN`, step 2's Definition of Done, no unapplied migration) and its sequence (ready, the wait, a fresh read, squash merge, the post-merge line naming each open PR that now conflicts with `main`). Everything that rides in the PR is committed first, step 7's learning line in the record included. Step 4's read-back then runs against the merged PR, and step 6's handoff checks out `main` rather than the branch. If a gate condition fails, nothing merges and the summary says which, first. Plain `/wrap` never merges.
+
 4. **Reconcile the Linear issues this session touched.** Linear (team Culprit) is the source of truth for backlog status, and `docs/backlog.md` is frozen — so there are no markdown rows to edit and no `B-ID` collisions to chase. For **each `CUL-NNN` this session advanced**:
 
    - **Bring its status current.** While the work is landing this session the issue should read `In Progress`; once its PR is open, `In Review`. Merging moves every issue the PR's title or body names to `Done` (CLAUDE.md § Git Workflow → "Merge → Linear status"), so **the PR names only the issues it finishes**:
@@ -56,15 +62,39 @@ CLAUDE.md (the stable operating manual) is the source of truth for the formats r
 
 6. **Emit the Dev Handoff** if anything was pushed this session — pull the exact runtime commands from `docs/dev-handoff-runbook.md` (default to Runtime B; the installed build and the traps are that file's § Current build state) and include the numbered **Manual QA Script** tied to acceptance criteria.
 
-7. **Emit the One thing block** (the PM's learning loop; procedure in the `learning` skill, curriculum in `docs/learning/curriculum.md`). One concept this session's own work illustrated, at the PM's level, with one check question. If `/handoff` already taught one this session, record that one instead of adding a second. Add its ledger line to the session record from step 3a, right under the `**Date:**` line: `**One thing:** <ID> L<n> — <title> · check: pending` (grade it `correct` / `missed` if the PM answers before the record is committed). If the session illustrated no new concept, write `**One thing:** none — <reason>`. A re-asked check from an earlier session gets its own `**One thing (re-ask):**` line here; never edit the earlier record.
+7. **Emit the One thing block** (the PM's learning loop; procedure in the `learning` skill, curriculum in `docs/learning/curriculum.md`). One concept this session's own work illustrated, at the PM's level, with one check question. If `/handoff` already taught one this session, record that one instead of adding a second. Add its ledger line to the session record from step 3a, right under the `**Date:**` line: `**One thing:** <ID> L<n> — <title> · check: pending` (grade it `correct` / `missed` if the PM answers before the record is committed). If the session illustrated no new concept, write `**One thing:** none — <reason>`. With `/wrap and merge`, pick the concept and write its line at step 3a, so it rides in the PR before the merge; an answer that arrives after the merge is graded by the next session's re-ask, never by an edit. A re-asked check from an earlier session gets its own `**One thing (re-ask):**` line here; never edit the earlier record.
 
-8. **End with the Next Session Kickoff block — this is mandatory and always last.** Even if the session was inconclusive, produce a copy-pasteable recommended first prompt that names the issue (`CUL-NNN`), the file/doc to read first, and any PM Action Item that is a prerequisite. Include 1–2 alternate prompts if other tracks are live. This is the single most-relied-on output of the wrap — never skip or bury it.
+8. **End with the Next Session Kickoff block — this is mandatory and always last** (except under `--dispatched`, whose return block is last). Even if the session was inconclusive, produce a copy-pasteable recommended first prompt that names the issue (`CUL-NNN`), the file/doc to read first, and any PM Action Item that is a prerequisite. Include 1–2 alternate prompts if other tracks are live. This is the single most-relied-on output of the wrap — never skip or bury it.
 
    **Surface efficiencies, not just a linear next step.** When two or more tracks are independent — *disjoint files, no logical dependency either direction* — say so explicitly and note they can run **concurrently as separate sessions/branches** (name any shared-file collision to expect — `STATUS.md` is no longer one of them for most sessions, since a wrap normally doesn't touch it). Flag any single decision that unblocks multiple tracks, any batchable work, and which items are **ready-to-run vs. gated on a PM/expert call**. The recommended prompt is still the best *single* next step; the alternates + a short "Parallel / efficiencies" note exist so the PM can fan work out instead of running a needlessly serial plan. Don't present a linear plan when the work can fan out.
 
+## Dispatched sessions (`/wrap --dispatched`, CUL-1505)
+
+A session `/dispatch` launched has no human reading its chat: the PM reads the dispatcher's round digest, and the dispatcher decides what runs next. So `--dispatched` keeps every step that writes the record and drops every step written for a reader. **The order differs from a normal wrap**, because the record must ride in the PR and the return must report the merge:
+
+1. **Before the merge:** steps 1–4 unchanged. That means the DoD with its adversarial line, the session record in `docs/sessions/` (committed to the PR, `shipped via #<n>`), the issue status, the outcome comment that releases the claim, and PM actions filed on the label.
+2. **Then the merge, or the stop**, under the prompt's merge conditions.
+3. **Then the post-merge read-back** from step 4: every issue the PR named, reopened if it closed early.
+4. **Last, the Dispatch return**, printed and sent to the dispatcher as the body of the single closing message the prompt describes (its first line is the wake line):
+
+   ```
+   Dispatch return · PR-<NN> · <CUL-NNN> · #<n> <merged | open, left for the PM: <the merge condition that failed>>
+   For the owner: <one plain sentence of what changed, or "nothing visible; <what the engine or the team gets>">
+   Needs the PM: <CUL-NNN — the action>, or "nothing"
+   Filed: <CUL-NNN — title>, or "nothing"
+   Residual: <the one thing a reviewer should know>, or "none"
+   ```
+
+What changes in the other steps:
+
+- **Step 5 (Session Summary):** replaced by the return.
+- **Step 6 (Dev Handoff):** nothing in chat. The Manual QA Script goes in the PR body, where the TestFlight cut's device sitting finds it. There are no runtime commands.
+- **Step 7 (One thing):** written only when the prompt says `Teach: yes`. The ledger line goes in the record as usual (`**One thing:** <ID> L<n> — <title> · check: pending`). The block itself goes in the record under a `## Teach` heading, and again under `## Teach` at the end of the return, so the dispatcher can quote it. No line of the block may start with `**One thing`, because the ledger is read by grepping that prefix. Without `Teach: yes`, the ledger line reads `**One thing:** none — dispatched session, not this round's teach row`.
+- **Step 8 (Next Session Kickoff):** none. The real next steps go to Linear as issues or comments, where the dispatcher reads them.
+
 ## Rules
 
-- If work was pushed but no PR exists yet, create a **draft** PR before wrapping (per repo policy), and reference it in the summary. Before merging anything, confirm the branch isn't diverged from a freshly-fetched `main` (parallel sessions happen) — if it conflicts, stop and surface it rather than force-resolving.
+- If work was pushed but no PR exists yet, create a **draft** PR before wrapping (per repo policy), and reference it in the summary. Merge only on one of the steward skill's two authorizations (`/wrap and merge` is the PM's word; a `/dispatch` child's prompt is the other) and only through its gate. A conflict where both sides changed the same logic stops the merge and goes to the PM as a decision brief; every other conflict is resolved by the steward skill's rules, never by taking one side of a file wholesale.
 - **One PR per session.** The wrap's session record (and any STATUS.md / CLAUDE.md / doc edits) ride in the session's *existing* work PR — committed to its branch before merge — so a session ships as a single PR. Do **not** open a separate "record the merge" status PR afterward; writing the session record's PR reference post-merge is what spawns it (see Step 3). **The one legitimate exception:** if the session's work PR was already merged mid-session (e.g. you merged it yourself to unblock something), the branch is gone, so the status update is a small standalone follow-up PR. That's the exception, not the default. (This does not relax the separate rule that *schema* changes get their own PR — STATUS.md is not schema.)
 - **Do not arm a scheduled PR check-in at wrap.** See CLAUDE.md § Git Workflow → "PR check-ins". Wrapping is precisely when a session is *finished*; a check-in armed here polls an idle repo until morning at full context cost. If the session genuinely ended with sibling PRs still landing on `main`, arm **one** check-in ~90 minutes out and let it stop itself.
 - If nothing was pushed, say so plainly in the handoff and still produce the session record + Next Session Kickoff.
