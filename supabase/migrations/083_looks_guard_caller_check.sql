@@ -24,23 +24,43 @@
 -- accepts.
 --
 -- ------------------------------------------------------------
--- THE FIX: 082's caller arm
+-- THE FIX, in two halves, both from 082
 -- ------------------------------------------------------------
--- When the request carries a user (auth.uid() is set), the guard first requires
--- the row's pet to be that user's, and reads the parent only if it is. Every
--- write naming another account's pet now gets the same 23514 and the same
--- message, whatever D is and whether the pair is real or not. BEFORE ROW
--- triggers run ahead of the RLS WITH CHECK and the FK check, so the trigger
--- answers first and no other layer gets to answer differently. The service role
--- carries no user (auth.uid() IS NULL) and keeps the same-pet check alone: it is
--- the trusted server writer and already sees every row.
+-- §1, the caller arm. When the request carries a user (auth.uid() is set), the
+-- guard first requires the row's pet to be that user's, and reads the parent
+-- only if it is. Every signed-in write naming another account's pet now gets
+-- the same 23514 and the same message, whatever D is and whether the pair is
+-- real. BEFORE ROW triggers run ahead of the RLS WITH CHECK and the FK check,
+-- so for a signed-in caller the trigger answers first.
 --
--- What a signed-in caller can still learn, stated: nothing about another
--- account. Its own pet with a foreign event id is refused 23514 whether that
+-- §2, the anon revoke. The arm trusts EVERY request with no user, and the
+-- service role is not the only one: the anon key carries none either. Supabase's
+-- default privileges gave anon every verb on looks at CREATE, 064 never took
+-- them back, and looks_owner is TO authenticated only. So with §1 alone an
+-- anon-key POST still read the parent and was refused one layer out by RLS:
+-- 42501 inside the band, 23514 outside, the oracle 083 exists to close, now
+-- with no account at all (rls-privacy-reviewer on this PR, measured on the
+-- PG16 replay; live anon held INSERT on looks when this was written). 082 is
+-- safe with the same arm because it revokes its tables from anon; this file
+-- does the same for looks. anon is then refused by the privilege check, which
+-- runs before any trigger and reads nothing: a constant 42501. Nothing reads or
+-- writes looks as anon (the client syncs signed in; generate-report reads under
+-- the caller's JWT, which is authenticated).
+--
+-- What stays trusted: a request with no user that is not anon. That is the
+-- service role (the trusted server writer, which already sees every row) and a
+-- direct database session. The authenticated role with no sub would also land
+-- there, and GoTrue cannot mint such a token.
+--
+-- What a signed-in caller can still learn, stated: no field of another
+-- account's. Its own pet with a foreign event id is refused 23514 whether that
 -- event exists or not (the lookup requires e.pet_id = NEW.pet_id). An UPDATE
 -- aimed at a foreign looks row never reaches the trigger, because looks_owner's
--- USING hides the row first. The row-id existence oracle 082 states (23505 on a
--- reused primary key) is platform-generic and unchanged.
+-- USING hides the row first. The row-id existence oracle 082 states remains and
+-- is platform-generic: an upsert on the caller's own valid pair that reuses
+-- another account's looks.id is refused 42501 (the ON CONFLICT arm meets a row
+-- looks_owner's USING hides) where a fresh id succeeds. It says a UUID exists,
+-- nothing more, and needs a UUID no path hands out.
 --
 -- Unchanged on purpose: the message (still names NEW.* only), the SQLSTATE, the
 -- ±1-day bound, the check_in predicate, DEFINER, search_path = '', the revokes,
@@ -58,21 +78,26 @@
 -- ------------------------------------------------------------
 -- MIGRATION SAFETY PRE-FLIGHT
 -- ------------------------------------------------------------
---   Destructive:  n. One function body replaced. No table, column, policy,
---                 grant, trigger or row is touched.
+--   Destructive:  n. One function body replaced and anon's grants on looks
+--                 revoked. No table, column, policy, trigger or row is
+--                 touched; authenticated and service_role grants unchanged.
 --   Backfill:     N/A. Existing rows already passed the stricter-or-equal check
 --                 (every client write is the owner's own, and RLS refused the
 --                 rest).
---   Rollback:     re-run 064's CREATE OR REPLACE FUNCTION block (§5, the
---                 enforce_look_paired_event_same_pet definition) as written; it
---                 restores the pre-083 body. Its REVOKEs and COMMENT can be re-run
---                 too.
+--   Rollback:     re-run ONLY 064's §5 CREATE OR REPLACE FUNCTION statement
+--                 plus its three REVOKEs and COMMENT (not its CREATE TRIGGER,
+--                 which already exists and stays bound). §2:
+--                   GRANT ALL ON TABLE public.looks TO anon;
+--                 Either half reopens the oracle this file closes.
 --   Ordering:     after 082. No client change depends on it; the app's writes are
 --                 always the owner's own pet and see no difference.
 --   After:        run the VERIFY block at the foot of this file, then
 --                 get_advisors (security + performance).
 -- ============================================================
 
+-- ============================================================
+-- §1. The caller arm
+-- ============================================================
 CREATE OR REPLACE FUNCTION public.enforce_look_paired_event_same_pet()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -114,7 +139,13 @@ REVOKE ALL ON FUNCTION public.enforce_look_paired_event_same_pet() FROM anon;
 REVOKE ALL ON FUNCTION public.enforce_look_paired_event_same_pet() FROM authenticated;
 
 COMMENT ON FUNCTION public.enforce_look_paired_event_same_pet() IS
-  'CUL-867 / B-520: same-pet guard for looks.event_id, bounding looks.local_day to ±1 day of the parent event''s UTC date (E-2). CUL-1457 (083): for a signed-in caller the row''s pet must be the caller''s, checked before the parent lookup, so every write naming another account''s pet gets one code and one message (closes the 42501/23514 date and membership oracle). SECURITY DEFINER, search_path pinned to '''', EXECUTE revoked from PUBLIC/anon/authenticated.';
+  'CUL-867 / B-520: same-pet guard for looks.event_id, bounding looks.local_day to ±1 day of the parent event''s UTC date (E-2). CUL-1457 (083): for a signed-in caller the row''s pet must be the caller''s, checked before the parent lookup, so every signed-in write naming another account''s pet gets one code and one message; 083 also revokes looks from anon, the other user-less role (together they close the 42501/23514 date and membership oracle). SECURITY DEFINER, search_path pinned to '''', EXECUTE revoked from PUBLIC/anon/authenticated.';
+
+
+-- ============================================================
+-- §2. anon loses every verb on looks
+-- ============================================================
+REVOKE ALL ON TABLE public.looks FROM anon;
 
 
 -- ============================================================
@@ -130,8 +161,13 @@ COMMENT ON FUNCTION public.enforce_look_paired_event_same_pet() IS
 -- 3. The trigger is still bound:
 --    SELECT tgname FROM pg_trigger WHERE tgrelid = 'public.looks'::regclass
 --      AND tgname = 'trg_looks_same_pet';  → 1 row
--- 4. The probe (CUL-1457): as `authenticated` with a zero-pet JWT, insert a looks
---    row naming a real (pet, check_in event) pair of another account, sweeping
---    local_day across the parent's date ±3. Every attempt must return SQLSTATE
---    23514 with a message holding only the values sent. Before 083 the three
---    days around the parent's date return 42501.
+-- 4. anon holds nothing:
+--    SELECT has_table_privilege('anon','public.looks','INSERT'),
+--           has_table_privilege('anon','public.looks','UPDATE'),
+--           has_table_privilege('anon','public.looks','SELECT');  → f, f, f
+-- 5. The probe (CUL-1457): insert a looks row naming a real (pet, check_in
+--    event) pair of another account, sweeping local_day across the parent's
+--    date ±3, twice: as `authenticated` with a zero-pet JWT (every attempt
+--    23514, a message holding only the values sent) and as `anon` (every
+--    attempt 42501). Before 083 both answered 42501 on the three days around
+--    the parent's date and 23514 elsewhere.
