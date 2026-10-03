@@ -563,8 +563,33 @@ export function LookCard({ trialNotEating = false, safety, onLayout }: Props) {
    * adds it only on a day the record had something to say — which is the day T-15's "never
    * a feed" was never arguing about.
    */
+  //
+  // ── AND EVERY CONCERN WORD STAYS ON THE CARD (CUL-909) ─────────────────────
+  // The receipt was a proxy for "this entry said something", and the proxy fails exactly
+  // where the bare-date reduction applies: a word first marked TODAY earns no bare-date
+  // receipt, so under the intake state or a safety card the day's first *Off* folded behind
+  // the door while two later *Nothing unusual* entries kept the slots — one card below the
+  // vomiting card (the adversarial pass on CUL-909). So a concern word the capped rows do
+  // not already show keeps its EARLIEST entry (the one a receipt would own, floor 5). Only
+  // a word otherwise off the card earns a row, so four *Off* looks stay a cap of two.
+  const concernKeys = (row: NyxEvent): string[] => {
+    if (!activePet) return [];
+    const described = describeLook(row, { species: activePet.species, sex });
+    if (described.kind !== 'observed') return [];
+    const species = lookSpeciesOf(activePet.species);
+    return described.words.map((w) => w.key).filter((k) => !entryWithholdsWords([k], species));
+  };
+  const shown = new Set(todayLooks.slice(0, LOOK_TODAY_CAP).flatMap(concernKeys));
+  const keptForWord = new Set<string>();
+  // Newest first, so walk backwards to find each word's EARLIEST entry today.
+  for (let i = todayLooks.length - 1; i >= LOOK_TODAY_CAP; i--) {
+    const fresh = concernKeys(todayLooks[i]).filter((k) => !shown.has(k));
+    if (fresh.length === 0) continue;
+    keptForWord.add(todayLooks[i].id);
+    fresh.forEach((k) => shown.add(k));
+  }
   const visibleLooks = todayLooks.filter(
-    (row, i) => i < LOOK_TODAY_CAP || receiptTextFor(row) !== null,
+    (row, i) => i < LOOK_TODAY_CAP || receiptTextFor(row) !== null || keptForWord.has(row.id),
   );
   const hiddenLooks = todayLooks.length - visibleLooks.length;
 

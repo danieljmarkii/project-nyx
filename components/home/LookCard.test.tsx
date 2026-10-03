@@ -868,6 +868,39 @@ describe('under a live safety-class card (Q-6 ruled (c), CUL-909)', () => {
     expect(t.queryByTestId('look-coverage')).toBeNull();
   });
 
+  it('never folds a concern first marked today behind the door — safety and intake alike', async () => {
+    // The re-review's break: the bare-date reduction returns NOTHING for a word first
+    // marked today, and the cap's only exemption was "earned a receipt".
+    const day = [
+      lookRow('e3', 1, { look_outcome: 'nothing_unusual', look_words: null }),
+      lookRow('e2', 6, { look_outcome: 'nothing_unusual', look_words: null }),
+      lookRow('e1', 11),
+    ];
+    const record = [
+      recordRow('e1', 0, ['subdued']),
+      recordRow('e2', 0),
+      recordRow('e3', 0),
+      ...Array.from({ length: 24 }, (_, i) => recordRow(`q${i}`, i + 1)),
+    ];
+    useEventStore.setState({ todayEvents: day });
+    mockLoadLookDays.mockResolvedValue(record);
+    const underSafety = render(<LookCard safety={{ petId: MOCHI.id, live: true }} />);
+    await waitFor(() => expect(underSafety.getByTestId('look-entries')).toBeTruthy());
+    expect(underSafety.getByTestId('look-open-e1')).toBeTruthy();
+    expect(underSafety.queryByTestId('look-receipt-e1')).toBeNull();
+    underSafety.unmount();
+
+    mockLoadWithheldFacts.mockResolvedValue({
+      petId: MOCHI.id,
+      serverIntakeDecline: true,
+      trialNotEating: false,
+      recentQualifyingMeals: [],
+    });
+    const underIntake = render(<LookCard safety={quiet()} />);
+    await waitFor(() => expect(underIntake.getByTestId('look-entries')).toBeTruthy());
+    expect(underIntake.getByTestId('look-open-e1')).toBeTruthy();
+  });
+
   it('fails CLOSED before the Signal answers: no footer, words still drawn', async () => {
     seedQuietRun();
     const t = render(<LookCard safety={null} />);
