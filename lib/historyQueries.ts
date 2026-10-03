@@ -43,7 +43,7 @@
 
 import { EVENT_TYPES, SYMPTOM_TYPES, type EventTypeKey } from '../constants/eventTypes';
 import { getDb, type TimelineRow } from './db';
-import { getActiveArrangementsForPet } from './feedingArrangements';
+import { readFreeFedIntakeSpans } from './analytics';
 import {
   buildDayFacts,
   courseKeysOf,
@@ -231,7 +231,7 @@ function toPopulationRow(r: RawPopulationRow): PopulationRow {
 }
 
 /** The reads every day's facts are built from (R-1): the population over the range with a
- *  day of slack each side, the looks' days, the regimens and the free-fed foods. The one
+ *  day of slack each side, the looks' days, the regimens and the bowl spans. The one
  *  place both `readHistoryFacts` and `readRecordDays` read them, so their days agree. */
 async function readDayFactsInput(
   db: ReturnType<typeof getDb>,
@@ -239,11 +239,11 @@ async function readDayFactsInput(
   range: DayRange,
 ): Promise<{ population: PopulationRow[]; input: DayFactsInput }> {
   const bounds = slackBounds(range);
-  const [rows, lookRows, regimens, arrangements] = await Promise.all([
+  const [rows, lookRows, regimens, freeFedSpans] = await Promise.all([
     db.getAllAsync<RawPopulationRow>(POPULATION_SQL, [petId, LOOK_EVENT_TYPE, bounds.after, bounds.before]),
     db.getAllAsync<{ local_day: string }>(LOOK_DAYS_SQL, [petId, range.fromDay, range.toDay]),
     readRegimens(petId),
-    getActiveArrangementsForPet(petId),
+    readFreeFedIntakeSpans(petId),
   ]);
   const population = rows.map(toPopulationRow);
   return {
@@ -252,7 +252,7 @@ async function readDayFactsInput(
       rows: population,
       lookDays: lookRows.map((l) => l.local_day),
       range,
-      freeFedFoodIds: new Set(arrangements.map((a) => a.food_item_id)),
+      freeFedSpans,
       regimens,
     },
   };

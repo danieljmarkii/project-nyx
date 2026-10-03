@@ -420,7 +420,7 @@ describe('a bout across midnight, built through HV-4’s facts: the rose follows
     rows: [row('v1', 'vomit', at('2026-09-12', 23, 10)), row('v2', 'vomit', at('2026-09-13', 0, 40)), row('m1', 'meal', at('2026-09-13', 8, 0))],
     lookDays: [],
     range: { fromDay: '2026-09-06', toDay: TODAY },
-    freeFedFoodIds: new Set(),
+    freeFedSpans: [],
     regimens: [],
   });
 

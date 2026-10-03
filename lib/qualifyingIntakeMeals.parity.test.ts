@@ -32,6 +32,7 @@ import {
   computeIntakeDeclineFrequencyForMonth,
   type AnalyticsMeal,
 } from './analytics';
+import type { FreeFedIntakeSpan } from './freeFedIntake';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -39,7 +40,10 @@ const MS_PER_DAY = 86_400_000;
 const FOOD_TYPES: (string | null)[] = ['meal', 'treat', 'other', null];
 const RATINGS: (string | null)[] = ['refused', 'picked', 'some', 'most', 'all', null, 'bogus'];
 const FOOD_IDS: (string | null)[] = ['f-normal', 'f-freefed', null];
-const FREE_FED = new Set(['f-freefed']);
+const FREE_FED_IDS = new Set(['f-freefed']);
+// A bowl down for all time, so the by-hand rule can stay a food lookup (the dating is
+// `lib/freeFedIntake.test.ts`'s and CUL-1237's suites').
+const FREE_FED: FreeFedIntakeSpan[] = [{ foodItemId: 'f-freefed', fromMs: -Infinity, untilMs: Infinity }];
 
 function cross(): AnalyticsMeal[] {
   const out: AnalyticsMeal[] = [];
@@ -65,7 +69,7 @@ function cross(): AnalyticsMeal[] {
 
 /** The rule, written out longhand — independently of the implementation under test. */
 function qualifiesByHand(m: AnalyticsMeal): boolean {
-  const freeFed = m.foodItemId !== null && FREE_FED.has(m.foodItemId);
+  const freeFed = m.foodItemId !== null && FREE_FED_IDS.has(m.foodItemId);
   return m.foodType !== 'treat' && m.intakeRating !== null && m.intakeRating !== undefined && !freeFed;
 }
 

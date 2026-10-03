@@ -43,7 +43,6 @@
 // day convention).
 
 import { getDb } from './db';
-import { getActiveArrangementsForPet } from './feedingArrangements';
 import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans, type FreeFedIntakeSpan } from './freeFedIntake';
 import { canonicalizeProtein, proteinsFromCacheText, readProteinSet } from './protein';
 import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
@@ -440,7 +439,7 @@ export const INTAKE_DECLINE_TYPE = 'intake_decline';
  *  empty for a future month. NOT floored (descriptive occurrence, §11 #2). */
 export function computeIntakeDeclineFrequencyForMonth(
   meals: AnalyticsMeal[],
-  freeFed: ReadonlySet<string>,
+  freeFed: FreeFedExclusion,
   m: CalendarMonth,
   nowMs: number,
 ): DayFrequencyBucket[] {
@@ -483,7 +482,7 @@ export interface ItemFinishedRate {
   ratedMeals: number;
 }
 
-function itemFinishedRate(meals: AnalyticsMeal[], freeFed: ReadonlySet<string>): ItemFinishedRate {
+function itemFinishedRate(meals: AnalyticsMeal[], freeFed: FreeFedExclusion): ItemFinishedRate {
   const rated = meals.filter((m) => m.intakeRating != null && !isFreeFedMeal(m, freeFed));
   if (rated.length < ANALYTICS_FLOORS.minRatedMealsForIntakeRate) {
     return { rate: null, ratedMeals: rated.length };
@@ -574,9 +573,10 @@ export interface RankedFood {
 export interface RankOptions {
   /** Max entries returned (default 5). The floor is independent of the cap. */
   limit?: number;
-  /** Foods currently free-fed for this pet — excluded from each item's finished-rate
-   *  denominator (§11 #6). Absent ⇒ none free-fed (pure-core tests pass it explicitly). */
-  freeFedFoodIds?: ReadonlySet<string>;
+  /** The pet's free-fed bowl spans — a rating logged while its food's bowl was down is
+   *  excluded from that item's finished-rate denominator (§11 #6, by date: CUL-1237).
+   *  Absent ⇒ no bowl was ever down (pure-core tests pass it explicitly). */
+  freeFed?: FreeFedExclusion;
 }
 
 /** Pure: most-LOGGED foods, ranked by meal count desc. Descriptive "what's logged most"
@@ -588,7 +588,7 @@ export interface RankOptions {
  *  so a multi-piece handful entered per-piece is ONE exposure, not N — count/share/floor. */
 export function computeTopFoods(rows: AnalyticsMeal[], opts: RankOptions = {}): RankedFood[] | NotEnoughData {
   const limit = opts.limit ?? 5;
-  const freeFed = opts.freeFedFoodIds ?? new Set<string>();
+  const freeFed = opts.freeFed ?? [];
   // B-115: collapse exact-timestamp same-treat re-logs BEFORE counting so a per-piece
   // handful can't inflate a treat's count/share/floor (meals untouched → finished-rate
   // and the decline lane are unaffected). See collapseTreatRelogs for the exact-ms scope.
@@ -691,7 +691,7 @@ export interface RankedProtein {
  *  residual). Meals are never collapsed, so the meals-only finished-rate (§11 #1) is untouched. */
 export function computeTopProteins(rows: AnalyticsMeal[], opts: RankOptions = {}): RankedProtein[] | NotEnoughData {
   const limit = opts.limit ?? 5;
-  const freeFed = opts.freeFedFoodIds ?? new Set<string>();
+  const freeFed = opts.freeFed ?? [];
   const byProtein = new Map<string, AnalyticsMeal[]>();
   let identified = 0;
   // B-115: collapse exact-timestamp same-treat re-logs BEFORE ranking exposure, so a
@@ -747,30 +747,36 @@ export interface IntakeRate {
   finishedMeals: number;
   /** Rated, non-treat, non-free-fed meals (the denominator). */
   ratedMeals: number;
-  /** How many rated non-treat meals were excluded because the food is free-fed. */
+  /** How many rated non-treat meals were excluded because their bowl was down when logged. */
   freeFedExcluded: number;
   /** §11 #6 — set when ≥1 free-fed meal was excluded: intake wasn't directly observed. */
   intakeNotDirectlyObserved: boolean;
 }
 
 export interface IntakeRateOptions {
-  /** Food IDs currently free-fed for this pet — excluded from the denominator. */
-  freeFedFoodIds: ReadonlySet<string>;
+  /** The pet's free-fed bowl spans — a rating logged inside one is excluded from the
+   *  denominator (§11 #6, by date: CUL-1237). */
+  freeFed: FreeFedExclusion;
 }
 
 /**
- * The free-fed exclusion a caller hands the intake predicates (§11 #6): a set of foods
- * free-fed TODAY (by food, the descriptive rate cards) or the bowl spans (by date, the
- * intake-decline detector and every reader that must see what it sees, CUL-1086). The
- * rate cards' move to spans is CUL-1392; until then they pass the set.
+ * The free-fed exclusion a caller hands the intake predicates (§11 #6): the pet's bowl
+ * spans, active AND ended, so a meal is set aside only when ITS food's bowl was down at
+ * the moment it was logged (CUL-1086, by date).
+ *
+ * SPANS ONLY (CUL-1237). This type was once `ReadonlySet<string> | spans`, and the set arm
+ * meant "foods free-fed TODAY", applied to every past meal: a kibble refused Sep 10–12
+ * and left down from Sep 20 lost all three refusals from History's day headers, the week
+ * strip, the Patterns month and the rate card — exactly the cat an owner switches to
+ * free-feeding. A bowl set down after a refusal must never excuse it, so the arm that
+ * could express that is gone: there is no way left to hand this predicate a food id.
  */
-export type FreeFedExclusion = ReadonlySet<string> | readonly FreeFedIntakeSpan[];
+export type FreeFedExclusion = readonly FreeFedIntakeSpan[];
 
 /** True when a meal was a free-fed bowl — its intake isn't directly observed, so it is
  *  excluded from every intake denominator (§11 #6). */
 function isFreeFedMeal(m: AnalyticsMeal, freeFed: FreeFedExclusion): boolean {
-  if (Array.isArray(freeFed)) return isFreeFedIntakeMeal(m.foodItemId, m.ms, freeFed);
-  return m.foodItemId !== null && (freeFed as ReadonlySet<string>).has(m.foodItemId);
+  return isFreeFedIntakeMeal(m.foodItemId, m.ms, freeFed);
 }
 
 /** A meal counts as "finished" at most/all (score ≥ FINISHED_SCORE). ONE definition,
@@ -829,8 +835,8 @@ export function isRefusedOrPickedMeal(m: AnalyticsMeal): boolean {
  */
 export function computeIntakeRate(rows: AnalyticsMeal[], opts: IntakeRateOptions): IntakeRate | NotEnoughData {
   const ratedNonTreat = rows.filter((m) => m.foodType !== 'treat' && m.intakeRating != null);
-  const freeFedExcluded = ratedNonTreat.filter((m) => isFreeFedMeal(m, opts.freeFedFoodIds)).length;
-  const denominator = qualifyingIntakeMeals(rows, opts.freeFedFoodIds);
+  const freeFedExcluded = ratedNonTreat.filter((m) => isFreeFedMeal(m, opts.freeFed)).length;
+  const denominator = qualifyingIntakeMeals(rows, opts.freeFed);
 
   if (denominator.length < ANALYTICS_FLOORS.minRatedMealsForIntakeRate) {
     return notEnoughData(denominator.length, ANALYTICS_FLOORS.minRatedMealsForIntakeRate);
@@ -1185,12 +1191,14 @@ function foodLabelOf(brand: string | null, product: string | null): string | nul
 }
 
 /**
- * This pet's free-fed bowl spans, active AND ended (CUL-1086, by date). Deliberately no join to
+ * This pet's free-fed bowl spans, active AND ended (CUL-1086, by date) — the ONE read every
+ * intake surface hands `qualifyingIntakeMeals` (History's day facts and the Patterns month
+ * too, CUL-1237), so no two of them can disagree over which bowl was down. Deliberately no join to
  * the food cache: `getActiveArrangementsForPet` inner-joins it, so a food missing from the cache
  * vanished from the phone's exclusion while the server still excluded it — the one route the
  * adversarial pass found to the server staying quiet where the phone would raise.
  */
-async function readFreeFedIntakeSpans(petId: string): Promise<FreeFedIntakeSpan[]> {
+export async function readFreeFedIntakeSpans(petId: string): Promise<FreeFedIntakeSpan[]> {
   const db = getDb();
   const rows = await db.getAllAsync<{
     food_item_id: string | null;
@@ -1214,18 +1222,12 @@ async function readFreeFedIntakeSpans(petId: string): Promise<FreeFedIntakeSpan[
   );
 }
 
-/** Foods currently free-fed for this pet (§11 #6 exclusion set, by food: the rate cards). */
-async function readFreeFedFoodIds(petId: string): Promise<Set<string>> {
-  const arrangements = await getActiveArrangementsForPet(petId);
-  return new Set(arrangements.map((a) => a.food_item_id));
-}
-
 // ── Public DB-backed metrics (the names PR 2/3 call) ─────────────────────────────
 //
 // Error contract: these read-only wrappers PROPAGATE a local-DB error to the caller
 // (they do not swallow it — matching lib/db.ts's read functions). The PR 2/3 screen
 // owns the try/catch → empty/error state. This is deliberate fail-CLOSED for §11 #6:
-// if the free-fed set can't be resolved, getIntakeRate throws rather than show a rate
+// if the bowl spans can't be resolved, getIntakeRate throws rather than show a rate
 // computed without the free-fed exclusion.
 
 export async function getSymptomCounts(
@@ -1262,7 +1264,7 @@ export async function getSymptomFrequencyByMonth(
 }
 
 /** Unfinished-meal frequency buckets for a named UTC calendar month — the "Meals" intake
- *  calendar's per-month data (B-310). Reads meals + the free-fed set (§11 #6) and delegates
+ *  calendar's per-month data (B-310). Reads meals + the bowl spans (§11 #6) and delegates
  *  to the pure core. Empty array for a future month (no query). */
 export async function getIntakeDeclineByMonth(
   petId: string,
@@ -1271,11 +1273,11 @@ export async function getIntakeDeclineByMonth(
 ): Promise<DayFrequencyBucket[]> {
   const range = calendarMonthRange(m, nowMs);
   if (range.lastDayIndex < range.firstDayIndex) return [];
-  const [meals, freeFedFoodIds] = await Promise.all([
+  const [meals, freeFed] = await Promise.all([
     readMealRows(petId, range.startMs, range.endMs),
-    readFreeFedFoodIds(petId),
+    readFreeFedIntakeSpans(petId),
   ]);
-  return computeIntakeDeclineFrequencyForMonth(meals, freeFedFoodIds, m, nowMs);
+  return computeIntakeDeclineFrequencyForMonth(meals, freeFed, m, nowMs);
 }
 
 /** The UTC calendar month of this pet's earliest non-deleted event — the calendar's
@@ -1303,11 +1305,11 @@ export async function getTopFoods(
   opts: RankOptions = {},
 ): Promise<RankedFood[] | NotEnoughData> {
   const range = calendarWindow(window, nowMs);
-  const [rows, freeFedFoodIds] = await Promise.all([
+  const [rows, freeFed] = await Promise.all([
     readMealRows(petId, range.currentStartMs, range.currentEndMs),
-    readFreeFedFoodIds(petId),
+    readFreeFedIntakeSpans(petId),
   ]);
-  return computeTopFoods(rows, { ...opts, freeFedFoodIds: opts.freeFedFoodIds ?? freeFedFoodIds });
+  return computeTopFoods(rows, { ...opts, freeFed: opts.freeFed ?? freeFed });
 }
 
 export async function getTopProteins(
@@ -1317,11 +1319,11 @@ export async function getTopProteins(
   opts: RankOptions = {},
 ): Promise<RankedProtein[] | NotEnoughData> {
   const range = calendarWindow(window, nowMs);
-  const [rows, freeFedFoodIds] = await Promise.all([
+  const [rows, freeFed] = await Promise.all([
     readMealRows(petId, range.currentStartMs, range.currentEndMs),
-    readFreeFedFoodIds(petId),
+    readFreeFedIntakeSpans(petId),
   ]);
-  return computeTopProteins(rows, { ...opts, freeFedFoodIds: opts.freeFedFoodIds ?? freeFedFoodIds });
+  return computeTopProteins(rows, { ...opts, freeFed: opts.freeFed ?? freeFed });
 }
 
 export async function getIntakeRate(
@@ -1330,11 +1332,11 @@ export async function getIntakeRate(
   nowMs: number = Date.now(),
 ): Promise<IntakeRate | NotEnoughData> {
   const range = calendarWindow(window, nowMs);
-  const [rows, freeFedFoodIds] = await Promise.all([
+  const [rows, freeFed] = await Promise.all([
     readMealRows(petId, range.currentStartMs, range.currentEndMs),
-    readFreeFedFoodIds(petId),
+    readFreeFedIntakeSpans(petId),
   ]);
-  return computeIntakeRate(rows, { freeFedFoodIds });
+  return computeIntakeRate(rows, { freeFed });
 }
 
 /** Current + prior finished-rate, for the intake card's "vs last {window}" read (B-098). */
@@ -1346,10 +1348,11 @@ export interface IntakeRateComparison {
 /**
  * The finished-rate for the current window AND the prior comparable window, so the card
  * can show "down from 41% last month" (B-098; closes the B-093 prior-rate gap). ONE
- * free-fed read is applied to BOTH windows: we don't store historical free-fed state,
- * and a food free-fed now was almost certainly free-fed last month — applying the
- * current exclusion to both keeps the two rates comparable (a small, documented
- * approximation that errs toward consistency, never toward a fabricated rate). Each side
+ * span read is applied to BOTH windows, and each meal is judged by the bowl that was down
+ * when IT was logged (CUL-1237). The old note here ("we don't store historical free-fed
+ * state … a food free-fed now was almost certainly free-fed last month") is what made a
+ * food going free-choice erase its prior refusals; the arrangement rows were always
+ * dated, and since migration 076 they carry the take-up instant too. Each side
  * floors independently, so a thin prior simply yields no comparison (the card omits the
  * delta line), never a made-up baseline.
  */
@@ -1359,14 +1362,14 @@ export async function getIntakeRateWithPrior(
   nowMs: number = Date.now(),
 ): Promise<IntakeRateComparison> {
   const range = calendarWindow(window, nowMs);
-  const [currentRows, priorRows, freeFedFoodIds] = await Promise.all([
+  const [currentRows, priorRows, freeFed] = await Promise.all([
     readMealRows(petId, range.currentStartMs, range.currentEndMs),
     readMealRows(petId, range.priorStartMs, range.priorEndMs),
-    readFreeFedFoodIds(petId),
+    readFreeFedIntakeSpans(petId),
   ]);
   return {
-    current: computeIntakeRate(currentRows, { freeFedFoodIds }),
-    prior: computeIntakeRate(priorRows, { freeFedFoodIds }),
+    current: computeIntakeRate(currentRows, { freeFed }),
+    prior: computeIntakeRate(priorRows, { freeFed }),
   };
 }
 
@@ -1382,7 +1385,7 @@ export async function getMealTreatComposition(
 
 /**
  * DB wrapper for the clinical decline detector. Reads the trailing clinical baseline
- * (DECLINE.baselineWindowDays) of meals + the free-fed set, then runs the pure
+ * (DECLINE.baselineWindowDays) of meals + the bowl spans, then runs the pure
  * detector. Window-INDEPENDENT by design — see detectIntakeDecline. `species` is
  * passed by the caller (lib/ stays free of the pet store).
  */

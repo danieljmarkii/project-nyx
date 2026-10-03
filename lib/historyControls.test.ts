@@ -163,7 +163,7 @@ const RECORD = buildDayFacts({
   rows: ROWS,
   lookDays: ['2026-09-21'],
   range: ALL_RANGE,
-  freeFedFoodIds: new Set(),
+  freeFedSpans: [],
   regimens: REGIMENS,
 });
 
@@ -441,7 +441,7 @@ describe('the window sheet (§3.9, AC 28: every row from the one window table)',
     // one read of the record. For every window and filter the two must give one number.
     for (const r of rowsFor()) {
       const bounds = windowBounds(r.value, FACTS) as DayRange;
-      const windowed = buildDayFacts({ rows: ROWS, lookDays: [], range: bounds, freeFedFoodIds: new Set(), regimens: REGIMENS });
+      const windowed = buildDayFacts({ rows: ROWS, lookDays: [], range: bounds, freeFedSpans: [], regimens: REGIMENS });
       for (const filter of EVERY_FILTER) {
         expect([r.label, filter, windowTotalOf(daysIn(RECORD, bounds), filter)]).toEqual([
           r.label,
