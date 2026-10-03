@@ -88,6 +88,7 @@ const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
 const GRID_GAP = theme.space0_5;
 
 const NOUN = 'vomiting';
+const ROW_NOUN = 'vomit';
 const DRILL_LABEL = 'Vomit';
 
 // The drill-in's category tint (the shipped DayEventsSheet's, verbatim: symptom rose, meal
@@ -193,6 +194,7 @@ export function MonthInstrument({
             recordEmpty: facts.recordStart == null,
             episodeDays: facts.episodeDays,
             continuationDays: facts.continuationDays,
+            rowNoun: ROW_NOUN,
             loggedDays: facts.loggedDays,
             leftSomeDays: facts.leftSomeDays,
             dosedDays: facts.dosedDays,

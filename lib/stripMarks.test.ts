@@ -100,7 +100,7 @@ describe('stripMarkOf: every row of the §3.4 table (AC 25)', () => {
     ['logged (All types)', day(SAT, { total: 4, byType: { meal: 4 } }), ALL, WIN, 'logged', 'solid', `${SAT_WORD}, no vomit logged, 4 logged in all`],
     [
       'a vomit day (All types)',
-      day(SAT, { total: 6, byType: { vomit: 2, meal: 4 }, vomitEpisode: true }),
+      day(SAT, { total: 6, byType: { vomit: 2, meal: 4 } }),
       ALL,
       WIN,
       'rose',
@@ -127,7 +127,7 @@ describe('stripMarkOf: every row of the §3.4 table (AC 25)', () => {
     ],
     [
       'the filtered kind (a symptom filter)',
-      day(SAT, { total: 10, byType: { vomit: 2, meal: 8 }, vomitEpisode: true }),
+      day(SAT, { total: 10, byType: { vomit: 2, meal: 8 } }),
       VOMIT,
       WIN,
       'rose',
@@ -180,7 +180,7 @@ describe('stripMarkOf: every row of the §3.4 table (AC 25)', () => {
     expect(tap(day(SAT))).toBe(true);
     expect(tap(day(TODAY))).toBe(true);
     expect(tap(day(SAT, { total: 4, byType: { meal: 4 } }), VOMIT)).toBe(true);
-    expect(tap(day(SAT, { total: 1, byType: { vomit: 1 }, vomitEpisode: true }))).toBe(true);
+    expect(tap(day(SAT, { total: 1, byType: { vomit: 1 } }))).toBe(true);
     expect(tap(day(SAT, { looked: true }), NOTICED)).toBe(true);
   });
 
@@ -216,7 +216,7 @@ describe('a cell is a door only to a day the list holds (§3.4; CUL-1165, the ad
     expect(stripMarkOf(day(TODAY, { total: 2, byType: { meal: 2 } }), VOMIT, vomitFrom, TODAY).tappable).toBe(false);
     expect(stripMarkOf(day(TODAY), VOMIT, vomitFrom, TODAY).tappable).toBe(false);
     expect(stripMarkOf(day(TODAY), ALL, WIN, TODAY).tappable).toBe(true);
-    expect(stripMarkOf(day(TODAY, { total: 1, byType: { vomit: 1 }, vomitEpisode: true }), VOMIT, vomitFrom, TODAY).tappable).toBe(true);
+    expect(stripMarkOf(day(TODAY, { total: 1, byType: { vomit: 1 } }), VOMIT, vomitFrom, TODAY).tappable).toBe(true);
   });
 
   it('a new account\u2019s today is not a door: the quiet state speaks there, not a card', () => {
@@ -275,7 +275,7 @@ describe('the rose per filter (C-11): All types marks what the month marks; a fi
   });
 
   it('Photographed and With a note draw the plain line, never rose and never broken', () => {
-    const p = stripMarkOf(day(SAT, { total: 3, byType: { vomit: 1, meal: 2 }, photographed: 1, mealsNotFinished: 1, vomitEpisode: true }), PHOTOS, WIN, TODAY);
+    const p = stripMarkOf(day(SAT, { total: 3, byType: { vomit: 1, meal: 2 }, photographed: 1, mealsNotFinished: 1 }), PHOTOS, WIN, TODAY);
     expect({ state: p.state, line: p.line }).toEqual({ state: 'logged', line: 'solid' });
     expect(p.label).toBe(`${SAT_WORD}, 1 logged with a photo, 3 logged in all`);
     const n = stripMarkOf(day(SAT, { total: 3, byType: { meal: 3 }, noted: 2 }), NOTED, WIN, TODAY);
@@ -285,7 +285,7 @@ describe('the rose per filter (C-11): All types marks what the month marks; a fi
 });
 
 describe('the broken line keys on a recorded state (§3.4)', () => {
-  const unfinishedVomitDay = day(SAT, { total: 5, byType: { vomit: 1, meal: 4 }, mealsNotFinished: 1, vomitEpisode: true });
+  const unfinishedVomitDay = day(SAT, { total: 5, byType: { vomit: 1, meal: 4 }, mealsNotFinished: 1 });
 
   it('on a vomit day the line still breaks, so an unfinished meal is never painted over (§5.7)', () => {
     const m = stripMarkOf(unfinishedVomitDay, ALL, WIN, TODAY);
@@ -366,7 +366,7 @@ describe('precedence, and the record’s edges', () => {
   });
 
   it('under Noticed nothing ever says a day had no look or nothing logged (H-9)', () => {
-    for (const facts of [day(SAT), day(SAT, { total: 3, byType: { vomit: 1 }, vomitEpisode: true }), day(SAT, { looked: true })]) {
+    for (const facts of [day(SAT), day(SAT, { total: 3, byType: { vomit: 1 } }), day(SAT, { looked: true })]) {
       const m = stripMarkOf(facts, NOTICED, WIN, TODAY);
       expect(m.state).toBe('noticed');
       expect(m.line).toBe('none');
@@ -404,9 +404,9 @@ describe('a bout across midnight, built through HV-4’s facts: the rose follows
     regimens: [],
   });
 
-  it('the first day is rose; the second is not, as the month draws it', () => {
+  it('both days are rose, as the month draws them: a bout never shrinks the rose (CUL-1530)', () => {
     expect(stripMarkOf(dayFactsOn(facts, '2026-09-12'), ALL, WIN, TODAY).state).toBe('rose');
-    expect(stripMarkOf(dayFactsOn(facts, '2026-09-13'), ALL, WIN, TODAY).state).toBe('logged');
+    expect(stripMarkOf(dayFactsOn(facts, '2026-09-13'), ALL, WIN, TODAY).state).toBe('rose');
   });
 
   it('and the second day never says "no vomit": the record holds a vomit row on it (AC 38)', () => {

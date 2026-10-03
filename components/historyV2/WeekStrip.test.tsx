@@ -72,7 +72,7 @@ function factsFor(window: ResolvedWindow, days: DayFacts[] = RECORD_DAYS, petId:
 const RECORD_DAYS: DayFacts[] = [
   day('2026-09-15', { total: 3, byType: { meal: 3 } }),
   day('2026-09-20', { total: 4, byType: { meal: 4 } }),
-  day('2026-09-21', { total: 6, byType: { vomit: 2, meal: 4 }, mealsNotFinished: 1, vomitEpisode: true }),
+  day('2026-09-21', { total: 6, byType: { vomit: 2, meal: 4 }, mealsNotFinished: 1 }),
   day('2026-09-23', { total: 2, byType: { medication: 1, meal: 1 }, doses: { 'reg-cet': { logged: 1, notInFull: 1 } } }),
   day('2026-09-24', { total: 1, byType: { meal: 1 } }),
 ];

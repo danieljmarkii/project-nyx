@@ -711,10 +711,8 @@ describe('the week strip\u2019s rose per filter (History v2 spec §3.4; CUL-1165
     }
   });
 
-  it('All types does not ride the set: only a vomiting episode is rose, as on the month', () => {
-    for (const type of HISTORY_TYPE_KEYS) expect(roseUnder({ kind: 'all' }, { [type]: 1 })).toBe(false);
-    const episode = stripMarkOf({ ...emptyDayFacts(day), total: 1, byType: { vomit: 1 }, vomitEpisode: true }, { kind: 'all' }, window, '2026-09-25');
-    expect(episode.state).toBe('rose');
+  it('All types does not ride the set: only a day holding a vomit is rose, as on the month (CUL-1530)', () => {
+    for (const type of HISTORY_TYPE_KEYS) expect(roseUnder({ kind: 'all' }, { [type]: 1 })).toBe(type === 'vomit');
   });
 });
 

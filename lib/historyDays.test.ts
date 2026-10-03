@@ -20,8 +20,6 @@ import type { BoundaryMarker } from './feedingArrangements';
 import { deriveMedicationCourses, type MedicationHistoryRegimen } from './medicationHistory';
 import type { AttributableDose } from './medications';
 import type { HistoryVisitRow } from './vetVisits';
-import { toLocalDayKey } from './utils';
-import { episodeDaysOf } from './chartModels';
 import { stripMarkOf, type StripWindow } from './stripMarks';
 import {
   HISTORY_TYPE_KEYS,
@@ -260,7 +258,7 @@ describe('buildDayFacts — one day, one population', () => {
     expect([...last7.days.keys()].sort()).toEqual(['2026-09-15', '2026-09-20', TODAY]);
   });
 
-  it('marks the day a vomiting EPISODE began, as the month does: a bout across midnight marks its first day', () => {
+  it('counts a bout across midnight on the days its rows were logged (the strip roses each, CUL-1530)', () => {
     const rows = [
       row('n1', '2026-09-20', '23:10', 'vomit'),
       row('n2', TODAY, '00:40', 'vomit'),
@@ -268,15 +266,11 @@ describe('buildDayFacts — one day, one population', () => {
       row('n4', TODAY, '19:00', 'vomit'),
     ];
     const f = buildDayFacts({ rows, lookDays: [], range: WINDOWS.all.range, freeFedFoodIds: new Set(), regimens: [] });
-    const month = episodeDaysOf(rows.map((r) => ({ ms: Date.parse(r.occurredAt) })), (ms) => toLocalDayKey(new Date(ms)));
-    expect(month).toEqual(['2026-09-20', TODAY]);
-    expect([...f.values()].filter((d) => d.vomitEpisode).map((d) => d.day).sort()).toEqual([...month].sort());
-    // The rows still count on the days they were logged.
     expect(dayFactsOn(f, '2026-09-20').byType.vomit).toBe(1);
     expect(dayFactsOn(f, TODAY).byType.vomit).toBe(3);
-    // A bout that began before the window marks no day inside it.
+    // A bout that began before the window still counts its rows inside it.
     const inside = buildDayFacts({ rows: rows.slice(0, 3), lookDays: [], range: { fromDay: TODAY, toDay: TODAY }, freeFedFoodIds: new Set(), regimens: [] });
-    expect(dayFactsOn(inside, TODAY)).toMatchObject({ vomitEpisode: false, byType: { vomit: 2 } });
+    expect(dayFactsOn(inside, TODAY).byType.vomit).toBe(2);
   });
 
   it('a stored type this build does not know counts in the total only (the §8 contract)', () => {

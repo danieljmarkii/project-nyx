@@ -95,6 +95,12 @@ export interface MonthDay {
   /** The day a bout began, when this day holds that bout's rows and no bout of its own
    *  (CUL-1226): a count of zero here is not "no vomiting". Null otherwise. */
   continuesFrom: string | null;
+  /** The day holds a vomit: a bout began on it OR continues into it (CUL-1530, the PM's
+   *  option (a), 2026-10-03). The rose is the ROW's fact, never the episode's: a run of 8,
+   *  8 and 6 a day must never read calmer than one lone vomit a day, so every day it holds
+   *  is rose, while the corner (`count`) stays on the day a bout began. History's week
+   *  strip roses the same days under All types (`lib/stripMarks.ts`). */
+  rose: boolean;
   coverage: MonthCoverage;
   /** A medication dose the record says was delivered (given or partial — B-618 D1). */
   medication: boolean;
@@ -134,7 +140,8 @@ export interface MonthModelInput {
   /** One entry PER EPISODE, after the engine's re-log collapse (`episodeDaysOf`). */
   episodeDays: readonly string[];
   /** Days a bout continues into from an earlier day (`continuationDaysOf`). They add no
-   *  count and no rose: they only keep the day's words from claiming an absence. */
+   *  count; they are rose (CUL-1530) and they keep the day's words from claiming an
+   *  absence. With `episodeDays` they are every day that holds a vomit row. */
   continuationDays?: readonly MonthContinuationDay[];
   /** Days with any logging under the caller's predicate. Duplicates are fine. */
   loggedDays: readonly string[];
@@ -151,6 +158,9 @@ export interface MonthModelInput {
   trialMark?: { day: string; label: string } | null;
   /** What is counted, lower-case ("vomiting"). */
   noun: string;
+  /** What one row is, lower-case ("vomit"), for the line's rose-day clause: "vomit logged
+   *  on 6 days". Defaults to `noun`. */
+  rowNoun?: string;
 }
 
 export interface MonthModel {
@@ -180,6 +190,9 @@ export interface MonthModel {
   count: number;
   /** Days with at least one episode among the drawn days. */
   episodeDayCount: number;
+  /** Rose days among the drawn days: every day holding a vomit (CUL-1530). Equal to
+   *  `episodeDayCount` unless a bout runs past the day it began. */
+  vomitDayCount: number;
   /** Episodes dated on a day of this month that has not arrived — disclosed, never drawn. */
   aheadCount: number;
   /** Arrived days with nothing logged (before-record days excluded). */
@@ -195,6 +208,13 @@ export interface MonthModel {
   /** `recordEmpty` echoed, so a renderer can name the state ("nothing logged yet"). */
   recordEmpty: boolean;
   noun: string;
+}
+
+/** The one rule for a rose day (CUL-1530): the day holds a vomit, because a bout began on
+ *  it (`count`) or continues into it (`continuesFrom`). The model's `MonthDay.rose` and
+ *  `DayMark`'s fill both call it, so the drawing cannot drift from the counted days. */
+export function holdsVomit(d: { count: number; continuesFrom: string | null }): boolean {
+  return d.count > 0 || d.continuesFrom != null;
 }
 
 /** Days in a Gregorian month, from the calendar and nothing else. */
@@ -316,6 +336,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
       // Only on a day with no count of its own: a day on which a bout begins speaks
       // that count, which already says the day was not free of vomiting.
       continuesFrom: coverage === 'ahead' || count > 0 ? null : (continues.get(i) ?? null),
+      rose: coverage !== 'ahead' && holdsVomit({ count, continuesFrom: continues.get(i) ?? null }),
       coverage,
       medication: coverage !== 'ahead' && dosed.has(i),
       photo: coverage === 'ahead' ? 'none' : (photos.get(i) ?? 'none'),
@@ -326,6 +347,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
   const days: MonthDay[] = [];
   let count = 0;
   let episodeDayCount = 0;
+  let vomitDayCount = 0;
   let unloggedDays = 0;
   let beforeRecordDays = 0;
   let aheadDays = 0;
@@ -338,6 +360,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
       count += day.count;
       episodeDayCount += 1;
     }
+    if (day.rose) vomitDayCount += 1;
     days.push(day);
   }
 
@@ -375,8 +398,10 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
 
   const lineFacts: LineFacts = {
     noun,
+    rowNoun: input.rowNoun ?? noun,
     count,
     episodeDayCount,
+    vomitDayCount,
     aheadCount,
     unloggedDays,
     beforeRecordDays,
@@ -403,6 +428,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     barIndexOfRow,
     count,
     episodeDayCount,
+    vomitDayCount,
     aheadCount,
     unloggedDays,
     beforeRecordDays,
@@ -416,8 +442,10 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
 
 interface LineFacts {
   noun: string;
+  rowNoun: string;
   count: number;
   episodeDayCount: number;
+  vomitDayCount: number;
   aheadCount: number;
   unloggedDays: number;
   beforeRecordDays: number;
@@ -429,7 +457,9 @@ interface LineFacts {
 
 /**
  * The line above the grid, to §05: the count · the window named · the uncounted
- * disclosed. "Vomiting 6 times on 4 days · through Sep 17 · 2 days unlogged".
+ * disclosed. "Vomiting 6 times on 4 days · through Sep 17 · 2 days unlogged"; once a bout
+ * runs past its first day, "Vomiting 3 times · vomit logged on 6 days · through Sep 21"
+ * (CUL-1530: the times are the corners, the days are the rose days).
  *
  * C-3: the coverage clause is the UN-LOGGED days and nothing when fully covered — a
  * "28 of 28" beside a partial enumeration would be a claim about the enumeration. A
@@ -446,12 +476,21 @@ export function buildLine(f: LineFacts, opts: { withCount?: boolean } = {}): str
   if (f.allBeforeRecord) return 'Before the record began';
   const parts: string[] = [];
   if (!withCount) parts.push(`Through ${dateWord(f.lastDrawnKey)}`);
-  else if (f.count === 0) parts.push(`No ${f.noun} logged`, `through ${dateWord(f.lastDrawnKey)}`);
-  else {
+  else if (f.count === 0 && f.vomitDayCount === 0) parts.push(`No ${f.noun} logged`, `through ${dateWord(f.lastDrawnKey)}`);
+  else if (f.vomitDayCount === f.episodeDayCount) {
+    // No bout runs past its first day: the episode days ARE the rose days, one number.
     parts.push(
       `${capitalize(f.noun)} ${f.count} ${plural(f.count, 'time')} on ${f.episodeDayCount} ${plural(f.episodeDayCount, 'day')}`,
       `through ${dateWord(f.lastDrawnKey)}`,
     );
+  } else {
+    // CUL-1530 (a): the times are the corners (episodes), the days are the rose days, and
+    // each clause names its own population. A month whose only vomits continue a bout
+    // from the month before has no corner and says so without claiming an absence.
+    const days = `${f.rowNoun} logged on ${f.vomitDayCount} ${plural(f.vomitDayCount, 'day')}`;
+    if (f.count === 0) parts.push(capitalize(days));
+    else parts.push(`${capitalize(f.noun)} ${f.count} ${plural(f.count, 'time')}`, days);
+    parts.push(`through ${dateWord(f.lastDrawnKey)}`);
   }
   if (f.unloggedDays > 0) parts.push(`${f.unloggedDays} ${plural(f.unloggedDays, 'day')} unlogged`);
   if (f.beforeRecordDays > 0) parts.push(`${f.beforeRecordDays} ${plural(f.beforeRecordDays, 'day')} before the record`);

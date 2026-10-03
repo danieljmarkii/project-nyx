@@ -19,8 +19,8 @@
 //   noticed        under Noticed (H-9), the date only: nothing ever says a day had no look.
 //   unlogged       nothing in the population: the grey square.
 //   open           today with nothing logged yet: a white box in today's border.
-//   rose           the rose fill: a vomiting EPISODE began this day under All types (the
-//                  month's own mark, `DayFacts.vomitEpisode`), or the filtered symptom.
+//   rose           the rose fill: the day holds a vomit under All types (the month's own
+//                  mark, CUL-1530), or the filtered symptom.
 //   logged         a line: any log under All types, or the filtered kind.
 //   quiet          a white box, no line: logged, but not the filtered kind.
 //
@@ -30,8 +30,11 @@
 // ── THE ROSE PER FILTER (C-11) ───────────────────────────────────────────────────
 //
 // All types marks what the month marks, so the two surfaces never disagree about a day:
-// a vomiting episode's FIRST day, re-logs inside the engine's gap folded in (CUL-1208 is
-// the spec edit that names the field). A symptom filter marks its own kind, and All
+// every day that holds a vomit row. Until CUL-1530 both marked only the day an EPISODE
+// began, so a bout chained across days (re-logs under three hours apart are one episode,
+// however long the chain) drew its first day rose and the rest as ordinary days: the
+// worst run on the record read calmer than one lone vomit a day. The rose is the row's
+// fact; the episode count stays the month's corner and the Signal's. A symptom filter marks its own kind, and All
 // symptoms any symptom, through `isSymptomFilter`, which rides `SYMPTOM_TYPES`: a leaf
 // that joins that set is rose here the same day. `stool_normal` is not in it, so the Stool
 // filter draws a line, neutral, as its rows are (the membership walk states it).
@@ -286,10 +289,8 @@ export function stripMarkOf(f: DayFacts, filter: HistoryFilter, window: StripWin
 
   if (filter.kind === 'all') {
     const k = f.byType[TIMING_SYMPTOM_TYPE] ?? 0;
-    const rose = f.vomitEpisode;
-    // `vomitEpisode` without a vomit row on its day cannot be built (the episode is dated by
-    // its own first row), and if it ever were the words still claim nothing they cannot see.
-    const vomit = k > 0 ? presentText({ kind: 'type', type: TIMING_SYMPTOM_TYPE }, k, null) : rose ? 'a vomiting episode began' : 'no vomit logged';
+    const rose = k > 0;
+    const vomit = rose ? presentText({ kind: 'type', type: TIMING_SYMPTOM_TYPE }, k, null) : 'no vomit logged';
     const parts = [head, vomit, total];
     if (broken.count > 0) parts.push(broken.text(broken.count));
     return mark(rose ? 'rose' : 'logged', broken.count > 0 ? 'broken' : 'solid', parts.join(', '), listHolds(true));
