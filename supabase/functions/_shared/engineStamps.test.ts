@@ -271,20 +271,22 @@ Deno.test('the shown log: one row per entry, identity + tier + a hash, and never
     fingerprint: await sha256Hex('engine'),
     entries: [
       { text: TEXT, finding: { type: 'symptom_chronicity', symptomType: 'vomit', tier: 'firm' } },
-      { text: 'Chicken shows up before…', finding: { type: 'food_symptom_correlation', protein: 'chicken', proteins: ['turkey', 'chicken'], tier: 'early' } },
+      { text: 'Chicken shows up before…', finding: { type: 'food_symptom_correlation', symptomType: 'vomit', protein: 'chicken', proteins: ['turkey', 'chicken'], tier: 'early' } },
       { text: 'A possible red flag…', finding: { type: 'incident_red_flag', incidentType: 'vomit' } },
       { text: 'Stood down.', finding: { type: 'stood_down', symptomType: 'vomit', tier: 'standard' } },
       { text: 'Trial day 12.', finding: { type: 'trial_response' } },
+      { text: 'Eating less than usual.', finding: { type: 'intake_decline', trigger: 'consecutive_low' } },
     ],
   })
   assertEquals(rows.map((r) => r.finding_key), [
     'symptom_chronicity:vomit',
-    'food_symptom_correlation:chicken+turkey',
+    'food_symptom_correlation:vomit:chicken+turkey',
     'incident_red_flag:vomit',
     'stood_down:vomit',
     'trial_response',
+    'intake_decline:consecutive_low',
   ])
-  assertEquals(rows.map((r) => r.tier), ['firm', 'early', null, 'standard', null])
+  assertEquals(rows.map((r) => r.tier), ['firm', 'early', null, 'standard', null, null])
   assertStrictEquals(rows[0].text_hash, await sha256Hex(TEXT))
   for (const r of rows) {
     assertStrictEquals(CHECK.findingType(r.finding_type), true)

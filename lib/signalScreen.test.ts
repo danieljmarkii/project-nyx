@@ -70,6 +70,7 @@ import { signalCompareSpec } from './signalWindows';
 import { LOOK_EVENT_TYPE } from './monthReads';
 import { dayKeyFromIndex, formatCalendarDate, localDayIndexOf, toLocalDayKey } from './utils';
 import { usePetStore } from '../store/petStore';
+import { foldIdentity } from './signalFold';
 import { isAnimalNotEating, type TrialCardInput } from './dietTrialCard';
 import { claimAnalysisChain } from './analysisChain';
 
@@ -1389,5 +1390,67 @@ describe('EN-3: a tile takes its bout\'s loudest call, in the map\'s words', () 
     expect(tileVerdictOf('a', ['a', 'b'], { a: 'monitor', b: 'worth_a_call' })).toBe('worth_a_call');
     expect(tileVerdictOf('a', ['a', 'b'], { a: 'logged', b: 'not_enough_to_say' })).toBe('logged');
     expect(tileVerdictOf('a', ['a', 'b'], { a: null, b: 'monitor' })).toBeNull();
+  });
+});
+
+// CUL-1213 — the route's identity names ONE finding. Two findings used to answer to one key
+// (a correlation keyed without its symptom; an intake decline keyed on its type), and the
+// loader took the first: the itch card opened the vomit screen, a cat's "Eating less than
+// usual" opened "Refused the usual food". Red on the old key (lib/findingIdentity.ts reverted).
+describe('CUL-1213 — the Signal screen opens the finding the card named', () => {
+  const pets = [{ id: 'pet-1', name: 'Nyx', species: 'cat', sex: 'female' }];
+  const vomit: CachedFinding['finding'] = {
+    type: 'food_symptom_correlation',
+    priorityClass: 'insight',
+    tier: 'early',
+    symptomType: 'vomit',
+    protein: 'chicken',
+    matchedPairs: 3,
+    symptomEventCount: 3,
+    correlationWindowHours: 12,
+  };
+  const itch: CachedFinding['finding'] = { ...vomit, tier: 'established', symptomType: 'itch', matchedPairs: 7, symptomEventCount: 7, correlationWindowHours: 72 };
+  const decline: CachedFinding['finding'] = {
+    type: 'intake_decline', priorityClass: 'safety', trigger: 'consecutive_low', species: 'cat', daysBelowBaseline: 1, refusedFoodLabel: null, ratedMealsConsidered: 9,
+  };
+  const refusal: CachedFinding['finding'] = { ...decline, trigger: 'refused_normal_food', daysBelowBaseline: 0, refusedFoodLabel: 'the turkey pâté' };
+
+  beforeEach(() => {
+    mockGetAllAsync.mockReset();
+    mockGetAllAsync.mockResolvedValue([]);
+    mockReadSignalCache.mockReset();
+    mockLoadDietTrialFacts.mockReset();
+    mockLoadDietTrialFacts.mockResolvedValue(trialLessFacts);
+    mockReadFeedingRows.mockResolvedValue([]);
+    mockReadFreeFedSpans.mockResolvedValue([]);
+    usePetStore.setState({ pets: pets as never, activePet: pets[0] as never });
+  });
+
+  it('counterexample 2: "Itching after chicken" opens the itch finding, ranked below the vomit one', async () => {
+    mockReadSignalCache.mockResolvedValue({ findings: [{ ...cachedOf(vomit), rank: 0 }, { ...cachedOf(itch), rank: 1 }] });
+    const out = await loadSignalScreen('pet-1', foldIdentity(itch));
+    expect(out.status).toBe('ready');
+    if (out.status !== 'ready') return;
+    expect(out.model.title).toBe('Itching after chicken');
+    expect(out.model.finding).toEqual(itch);
+  });
+
+  it('counterexample 3: a cat\'s "Eating less than usual" opens the decline, not the refusal ranked above it', async () => {
+    mockReadSignalCache.mockResolvedValue({
+      findings: [{ ...cachedOf(refusal, 'Nyx refused the turkey pâté.'), rank: 0 }, { ...cachedOf(decline, 'Nyx has eaten less than usual.'), rank: 1 }],
+    });
+    const out = await loadSignalScreen('pet-1', foldIdentity(decline));
+    expect(out.status).toBe('ready');
+    if (out.status !== 'ready') return;
+    expect(out.model.title).toBe('Eating less than usual');
+    expect(out.model.finding).toEqual(decline);
+  });
+
+  it('two findings answering to one key: the screen refuses to pick', async () => {
+    // A payload from an older derivation: both correlations cached without their symptom.
+    const a = { ...vomit, symptomType: undefined } as unknown as CachedFinding['finding'];
+    const b = { ...itch, symptomType: undefined } as unknown as CachedFinding['finding'];
+    mockReadSignalCache.mockResolvedValue({ findings: [{ ...cachedOf(a), rank: 0 }, { ...cachedOf(b), rank: 1 }] });
+    expect(await loadSignalScreen('pet-1', foldIdentity(a))).toEqual({ status: 'missing', petName: 'Nyx' });
   });
 });

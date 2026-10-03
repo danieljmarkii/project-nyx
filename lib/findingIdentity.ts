@@ -17,6 +17,7 @@ export interface IdentifiableFinding {
   type: string;
   incidentType?: string;
   symptomType?: string;
+  trigger?: string;
   protein?: string;
   proteins?: string[];
 }
@@ -39,14 +40,24 @@ export function correlationCluster(finding: { protein?: string; proteins?: strin
  */
 export function findingIdentity(finding: IdentifiableFinding): string {
   switch (finding.type) {
-    case 'food_symptom_correlation':
-      // The cluster, sorted — a member joining is a new key (a new identity, §5.3).
-      return `${finding.type}:${[...correlationCluster(finding)].sort().join('+')}`;
+    case 'food_symptom_correlation': {
+      // The symptom, then the cluster, sorted — a member joining is a new key (a new
+      // identity, §5.3). The symptom is load-bearing (CUL-1213): the lane runs once per
+      // symptom and nothing merges across them, so chicken→itch and chicken→vomit are two
+      // findings, and keyed on the cluster alone they folded and routed as one. A row
+      // cached without a symptom keeps the old shape rather than inventing one.
+      const cluster = [...correlationCluster(finding)].sort().join('+');
+      return finding.symptomType ? `${finding.type}:${finding.symptomType}:${cluster}` : `${finding.type}:${cluster}`;
+    }
     case 'incident_red_flag':
       // A fold on a vomit flag never covers a later stool flag.
       return `${finding.type}:${finding.incidentType}`;
-    case 'trial_response':
     case 'intake_decline':
+      // One per TRIGGER, not one per pet (CUL-1213): `detectIntakeDecline` can emit a
+      // consecutive-low decline and a refusal of a normally-eaten food in one run, at most
+      // one of each, so the trigger is what tells them apart.
+      return finding.trigger ? `${finding.type}:${finding.trigger}` : finding.type;
+    case 'trial_response':
       // One per pet.
       return finding.type;
     default:

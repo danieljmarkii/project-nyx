@@ -45,7 +45,7 @@ import { SignalLeadCard } from '../../components/designV2/signal/SignalLeadCard'
 import { SignalRow } from '../../components/designV2/signal/SignalRow';
 import { SignalZoneFoot } from '../../components/designV2/signal/SignalZoneFoot';
 import { signalScreenHref } from '../../lib/signalRoute';
-import { foldIdentity } from '../../lib/signalFold';
+import { foldIdentity, sharedFoldIdentities } from '../../lib/signalFold';
 import { Skeleton } from '../ui/Skeleton';
 import { ThemedText } from '../ui/ThemedText';
 import {
@@ -1013,6 +1013,10 @@ function LiveStack({
   // a week (adversarial pass, 2026-09-03). This is distinct from a FOLD (DF-7): a folded card
   // still occupies its rank as a strip, so nothing below it inherits the canvas.
   const leadIndex = ordered.findIndex((f) => !isStoodDown(f.finding));
+  // CUL-1213 (BRK-47): a row is keyed by its finding's identity, never its rank, so a re-rank
+  // moves a row rather than remounting another finding into it. A key two findings share
+  // (never on a payload today's engine writes) takes its rank so React still sees two rows.
+  const sharedKeys = sharedFoldIdentities(ordered.map((f) => f.finding));
   return (
     <View>
       {ordered.map((f, i) => {
@@ -1083,7 +1087,8 @@ function LiveStack({
             )}
           </>
         );
-        const key = `${f.finding.type}-${f.rank}`;
+        const identity = foldIdentity(f.finding);
+        const key = sharedKeys.has(identity) ? `${identity}#${f.rank}` : identity;
         // Design v2 keeps ONE host type per row across the moment's edges (CUL-1223): a
         // `View` → `Animated.View` swap is a remount of the row, and of its card's read.
         if (!arrival && !designV2) return <View key={key}>{row}</View>;
