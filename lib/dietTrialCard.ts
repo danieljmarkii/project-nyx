@@ -2490,7 +2490,14 @@ function completedCard(
   // `adversarial-reviewer` pass, which correctly called it this project's own
   // B-494 rule one surface over: a flow that teaches the owner it will tell them
   // about continuation may not then go silent.
-  pushContinuation(lines, trial);
+  //
+  // EXCEPT UNDER A LIVE REFUSAL (CUL-1337, `adversarial-reviewer`): on GI the note
+  // says the diet is "often continued for around three months", and directly
+  // beneath "isn't eating … needs a call today" that reads as advice to keep
+  // offering a diet the cat is refusing. The abandoned card already drops it in
+  // this register. (The terminal `decline` register has the same adjacency and
+  // predates this change; it is filed separately rather than changed here.)
+  if (register !== 'trial_refusal') pushContinuation(lines, trial);
 
   if (trial.outcome) {
     lines.push({

@@ -42,6 +42,7 @@ import {
 } from './dietTrialCard';
 import { getDietTrialProgress } from './analytics';
 import { REFUSAL_WINDOW_DAYS } from './dietTrial';
+import { milestoneNote } from './dietTrialCompletion';
 import type { TrialResponseCounts } from './trialResponseCounts';
 
 const MS_PER_DAY = 86_400_000;
@@ -3154,6 +3155,19 @@ describe('an ended trial keeps the ask while the refusal is live (CUL-1337)', ()
   it('a completed card keeps its own way to the report', () => {
     const model = resolveTrialCard(endedRefusing({ status: 'completed', stoppedReason: null }));
     expect(model.actions.map((a) => a.id)).toEqual(['open_report']);
+  });
+
+  // The continuation note ("often continued for around three months") under
+  // "needs a call today" reads as advice to keep offering a refused diet.
+  it('a completed card does not tell the owner to keep going under the call', () => {
+    const gi = (after: number) => {
+      const input = endedRefusing({ status: 'completed', stoppedReason: null, after });
+      return { ...input, trial: { ...input.trial!, indication: 'gi' as const } };
+    };
+    const note = milestoneNote('gi');
+    expect(allStrings(resolveTrialCard(gi(1)))).not.toContain(note);
+    // …and it comes back once the refusal has lapsed, so the gate is the register.
+    expect(allStrings(resolveTrialCard(gi(REFUSAL_WINDOW_DAYS)))).toContain(note);
   });
 
   // §5.2: the floor only moves toward disclosing more, on this register too.
