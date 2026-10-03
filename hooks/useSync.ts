@@ -3,6 +3,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import * as Network from 'expo-network';
 import { syncNow } from '../lib/sync';
 import { getSyncStatus, isLocalDataEmpty } from '../lib/db';
+import { consumeForcedColdStart } from '../lib/devColdStart';
 import { ingestCaptureInbox } from '../lib/captureInbox';
 import { isOnlineFromState } from '../lib/network';
 import { useAuthStore } from '../store/authStore';
@@ -43,6 +44,10 @@ export function useSync() {
         } catch (e) {
           console.warn('[sync] cold-start emptiness check failed:', e);
         }
+        // CUL-1222 — a developer's armed cold start (`__forceColdStart`) blocks this one
+        // first sync over a populated store, so the device pass can see the wait. Read
+        // and cleared on every first sync, so the arm never outlives one launch.
+        if (__DEV__ && (await consumeForcedColdStart())) blocking = true;
         if (blocking) setColdStartHydrating(true);
       }
       try {

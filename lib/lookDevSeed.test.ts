@@ -10,8 +10,9 @@
 // the seed's ARITHMETIC — nothing here writes a row.
 jest.mock('./sync', () => ({ syncPendingEvents: jest.fn(), syncPendingLooks: jest.fn() }));
 jest.mock('./db', () => ({ getDb: () => ({}) }));
+jest.mock('./simpleEvent', () => ({ insertSimpleEvent: jest.fn() }));
 
-import { buildLookSeed } from './lookDevSeed';
+import { buildLookSeed, seedLookInstant, seedRefusal, SEED_LOOK_HOUR, SEED_LOOK_MINUTE } from './lookDevSeed';
 import { LOOK_WORDS, LOOK_VOCAB_VERSION } from '../constants/lookWords';
 import { answeredDays, absenceDays, wordDays, answeredVomitDays, type LookDayRow } from './looks';
 
@@ -92,5 +93,75 @@ describe.each(['cat', 'dog'] as const)('the Noticed dev seed — %s', (species) 
   it('no day is seeded twice', () => {
     const daysAgo = seed.map((d) => d.daysAgo);
     expect(new Set(daysAgo).size).toBe(daysAgo.length);
+  });
+});
+
+describe('the Noticed dev seed — never today\'s vomit (CUL-1222)', () => {
+  it.each(['cat', 'dog'] as const)('%s: no vomit is seeded on day 0, so no seeded vomit can be in the future', (species) => {
+    expect(buildLookSeed(species).filter((d) => d.vomit && d.daysAgo === 0)).toEqual([]);
+  });
+});
+
+describe('seedLookInstant — today is clamped to now (CUL-1222, BRK-48)', () => {
+  // Local-component instants (C-29): the seed places looks in DEVICE-local time, so the
+  // fixtures are built from local components and read back through local getters.
+  const at = (h: number, m: number) => new Date(2026, 9, 5, h, m, 0, 0).getTime();
+
+  it('a morning seed puts today\'s look a minute ago, never at 7:04 PM', () => {
+    // The BRK-48 counterexample: run at 10 AM, the old seed wrote 7:04 PM today, which
+    // outranked the PM's 10:05 tap and failed step 6 because of the seed.
+    const now = at(10, 0);
+    const look = seedLookInstant(0, now);
+    expect(look.getTime()).toBe(now - 60_000);
+    expect(look.getTime()).toBeLessThan(at(10, 5));
+  });
+
+  it('an evening seed keeps 7:04 PM today', () => {
+    const look = seedLookInstant(0, at(21, 30));
+    expect([look.getHours(), look.getMinutes(), look.getDate()]).toEqual([SEED_LOOK_HOUR, SEED_LOOK_MINUTE, 5]);
+  });
+
+  it('a seed just past midnight stays on today, never yesterday', () => {
+    const now = at(0, 0) + 20_000;
+    const look = seedLookInstant(0, now);
+    expect(look.getDate()).toBe(5);
+    expect(look.getTime()).toBeLessThanOrEqual(now);
+  });
+
+  it('every seeded day is in the past, at every hour of the day', () => {
+    for (let h = 0; h < 24; h++) {
+      const now = at(h, 30);
+      for (const d of buildLookSeed('dog')) expect(seedLookInstant(d.daysAgo, now).getTime()).toBeLessThanOrEqual(now);
+    }
+  });
+
+  it('a past day is 7:04 PM on that calendar day, by local components', () => {
+    const look = seedLookInstant(9, at(10, 0));
+    expect([look.getMonth(), look.getDate(), look.getHours(), look.getMinutes()]).toEqual([8, 26, SEED_LOOK_HOUR, SEED_LOOK_MINUTE]);
+  });
+});
+
+describe('seedRefusal — the fixture account, its own pet, the record\'s species (CUL-1222)', () => {
+  const fixture = 'owner+culprit-fixture@example.com';
+  const dog = { id: 'p1', species: 'dog' };
+
+  it('proceeds for the fixture account\'s own dog', () => {
+    expect(seedRefusal({ isDev: true, email: fixture, pet: dog })).toBeNull();
+  });
+
+  it('refuses a release build', () => {
+    expect(seedRefusal({ isDev: false, email: fixture, pet: dog })).toBe('dev-only');
+  });
+
+  it.each([['owner@example.com'], ['support@getculprit.app'], [null], [undefined]])('refuses %s (the PM\'s record, the demo account, no session)', (email) => {
+    expect(seedRefusal({ isDev: true, email, pet: dog })).toMatch(/fixture account only/);
+  });
+
+  it('refuses a pet the signed-in account does not hold', () => {
+    expect(seedRefusal({ isDev: true, email: fixture, pet: undefined })).toBe('no such pet on this account');
+  });
+
+  it('refuses a species with no look vocabulary', () => {
+    expect(seedRefusal({ isDev: true, email: fixture, pet: { id: 'p2', species: 'other' } })).toMatch(/no look vocabulary/);
   });
 });

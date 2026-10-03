@@ -103,17 +103,20 @@ export default function RootLayout() {
 
     initDb().catch(console.error);
 
-    // CUL-868 — Noticed's dev seed, on the console rather than on a screen. Every
-    // floor this feature has is measured in ANSWERED DAYS (fourteen for the coverage
-    // footer), so the device pass would otherwise only ever see the day-one states.
-    // `__DEV__` is false in a release binary and Metro strips the branch, so this
-    // reaches no owner; putting it here instead of on the beta shelf keeps a designed,
-    // shipped screen free of a control that would have to be hidden on every one of
-    // them. Call it once from the debugger console: await __seedNoticed('<petId>', 'dog')
+    // CUL-868 / CUL-1222 — the device pass's dev switches, on the console rather than on a
+    // screen. `__seedNoticed('<petId>')` seeds three weeks of looks (every Noticed floor
+    // is measured in answered days) and refuses any account but the fixture account;
+    // `__forceColdStart()` arms one blocking first sync for the next reload. `__DEV__` is
+    // false in a release binary and Metro strips the branch, so neither reaches an owner,
+    // and no shipped screen carries a control that would have to be hidden from owners.
+    // Runbook: docs/device-pass-fixture-runbook.md.
     if (__DEV__) {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { seedNoticedLooks } = require('../lib/lookDevSeed');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { forceNextColdStart } = require('../lib/devColdStart');
       (globalThis as Record<string, unknown>).__seedNoticed = seedNoticedLooks;
+      (globalThis as Record<string, unknown>).__forceColdStart = forceNextColdStart;
     }
 
     // Cold start FROM a recovery link (B-280 §6.4): the deep-link handler owns the
