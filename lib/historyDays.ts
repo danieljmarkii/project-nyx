@@ -167,6 +167,11 @@ export interface DoseFacts {
   /** Recorded Partial, Missed or Refused. A dose with no chip is never counted here: the
    *  broken line keys on a recorded state, never on a missing one (§3.4). */
   notInFull: number;
+  /** Recorded with no chip at all (`adherence` null): the vet report's and the med strip's
+   *  "unconfirmed", such as a pill hidden in a meal the pet refused. Named beside
+   *  `notInFull` so "logged" minus the named subsets is exactly the doses given (CUL-1209,
+   *  PM-ruled 1(a)). A stored chip outside `DoseAdherence` is in neither. */
+  unconfirmed: number;
 }
 
 /** One local day's facts: the week strip's only input, and the unit every count sums (§5.2). */
@@ -316,9 +321,10 @@ export function buildDayFacts(input: DayFactsInput): Map<string, DayFacts> {
     if (r.hasNote) f.noted += 1;
     const key = courseKeys.get(r.id);
     if (key !== undefined) {
-      const d = f.doses[key] ?? (f.doses[key] = { logged: 0, notInFull: 0 });
+      const d = f.doses[key] ?? (f.doses[key] = { logged: 0, notInFull: 0, unconfirmed: 0 });
       d.logged += 1;
-      if (r.adherence !== null && NOT_IN_FULL.has(r.adherence)) d.notInFull += 1;
+      if (r.adherence === null) d.unconfirmed += 1;
+      else if (NOT_IN_FULL.has(r.adherence)) d.notInFull += 1;
     }
     if (r.eventType === 'meal') {
       if (mealRowLabel(r.foodType) === 'Treat') f.treats += 1;
@@ -411,7 +417,7 @@ export interface TypeSheetCounts {
   byType: Record<HistoryTypeKey, number>;
   /** Only courses with a dose row in the window, by course key: a course with none is not
    *  an option (the sheet's sub-rows, PMD-17). `logged` is the sub-row's count; `notInFull`
-   *  is named after its span (CUL-1193, `notGivenInFullText`). */
+   *  and `unconfirmed` are named after its span (CUL-1193, CUL-1209). */
   courses: Record<string, DoseFacts>;
   photographed: number;
   noted: number;
@@ -426,9 +432,10 @@ export function typeSheetCountsOf(days: ReadonlyMap<string, DayFacts>): TypeShee
     out.symptoms += symptomCountOf(f);
     for (const t of HISTORY_TYPE_KEYS) out.byType[t] += f.byType[t] ?? 0;
     for (const [key, d] of Object.entries(f.doses)) {
-      const c = out.courses[key] ?? (out.courses[key] = { logged: 0, notInFull: 0 });
+      const c = out.courses[key] ?? (out.courses[key] = { logged: 0, notInFull: 0, unconfirmed: 0 });
       c.logged += d.logged;
       c.notInFull += d.notInFull;
+      c.unconfirmed += d.unconfirmed;
     }
     out.photographed += f.photographed;
     out.noted += f.noted;
@@ -454,11 +461,29 @@ export function countsDoses(filter: HistoryFilter): boolean {
  * another type would count here and not in the list; no write path makes one.
  */
 export function notInFullOf(days: ReadonlyMap<string, DayFacts>, filter: HistoryFilter): number | null {
+  return doseSubsetOf(days.values(), filter, 'notInFull');
+}
+
+/** How many of a dose filter's rows over the window were recorded with no chip: the
+ *  "unconfirmed" the count line names after the ones not given in full (CUL-1209). Null for
+ *  any other filter. */
+export function unconfirmedOf(days: ReadonlyMap<string, DayFacts>, filter: HistoryFilter): number | null {
+  return doseSubsetOf(days.values(), filter, 'unconfirmed');
+}
+
+/** A dose filter's named subset, summed over the given days: a course's own, or every
+ *  course's under Medication. The one walk the count line, the day header and the strip
+ *  share, so the three cannot name different numbers. */
+export function doseSubsetOf(
+  days: Iterable<DayFacts>,
+  filter: HistoryFilter,
+  field: 'notInFull' | 'unconfirmed',
+): number | null {
   if (!countsDoses(filter)) return null;
   let n = 0;
-  for (const f of days.values()) {
-    if (filter.kind === 'course') n += f.doses[filter.courseKey]?.notInFull ?? 0;
-    else for (const d of Object.values(f.doses)) n += d.notInFull;
+  for (const f of days) {
+    if (filter.kind === 'course') n += f.doses[filter.courseKey]?.[field] ?? 0;
+    else for (const d of Object.values(f.doses)) n += d[field];
   }
   return n;
 }
@@ -802,10 +827,17 @@ export function courseSpanText(days: CourseDays, dates: HistoryDateFormat): stri
 
 /** The subset a dose count names (CUL-1193): '3 not given in full', on the count line and
  *  on a course's sheet sub-row (after its span, as Photographed's 'N not read'). Null at
- *  zero: an unrated dose is never counted, so a zero would claim every dose was given when
- *  some were only never rated. */
+ *  zero: an unrated dose is not counted here, so a zero would claim every dose was given
+ *  when some were only never rated; those are `unconfirmedText`'s. */
 export function notGivenInFullText(n: number): string | null {
   return n > 0 ? `${formatCount(n)} not given in full` : null;
+}
+
+/** The other subset a dose count names (CUL-1209, PM-ruled 1(a)): '2 unconfirmed', the
+ *  word the vet report and the med strip use for a dose recorded with no chip. After the
+ *  ones not given in full, so "logged" minus both is the doses given. Nothing at zero. */
+export function unconfirmedText(n: number): string | null {
+  return n > 0 ? `${formatCount(n)} unconfirmed` : null;
 }
 
 /** Coverage (C-3): "4 days with nothing logged", the gap lines' own words, never a second
@@ -1016,9 +1048,12 @@ export function countLineOf(input: CountLineInput): CountLine {
     const span = courseSpanText(course.days, dates);
     clauses.push(span === null ? course.name : `${course.name} · ${span}`);
   }
-  // Right after the course it describes (the ruling's order: CUL-1193).
+  // Right after the course it describes (the ruling's order: CUL-1193), then the doses
+  // recorded with no chip (CUL-1209).
   const notInFull = notGivenInFullText(notInFullOf(facts.days, filter) ?? 0);
   if (notInFull !== null) clauses.push(notInFull);
+  const unconfirmed = unconfirmedText(unconfirmedOf(facts.days, filter) ?? 0);
+  if (unconfirmed !== null) clauses.push(unconfirmed);
   const unlogged = unloggedDaysOf({
     days: facts.days,
     range: window.range,
@@ -1061,17 +1096,22 @@ function mealsNotFinishedPart(f: DayFacts): DayHeaderPart | null {
   return n > 0 ? { text: `${formatCount(n)} ${n === 1 ? 'meal' : 'meals'} not finished`, tone: 'unfinished' } : null;
 }
 
-/** Under a dose filter, the day's doses recorded Partial, Missed or Refused, named with
- *  their noun ("1 dose not given in full": after "10 in all", a bare "1 not given in full"
- *  read as one of the ten) in the neutral grey a meal not finished takes. Nothing at zero, as
- *  the count line: an unrated or unconfirmed dose is never named here (CUL-1193; whether to
- *  name the unconfirmed is CUL-1209's), which is why the count beside it reads "logged". */
-function dosesNotInFullPart(f: DayFacts, filter: HistoryFilter): DayHeaderPart | null {
-  if (!countsDoses(filter)) return null;
-  let n = 0;
-  if (filter.kind === 'course') n = f.doses[filter.courseKey]?.notInFull ?? 0;
-  else for (const d of Object.values(f.doses)) n += d.notInFull;
-  return n > 0 ? { text: `${formatCount(n)} ${n === 1 ? 'dose' : 'doses'} not given in full`, tone: 'unfinished' } : null;
+/** Under a dose filter, the day's doses recorded Partial, Missed or Refused, then those
+ *  recorded with no chip, each named with their noun ("1 dose not given in full": after "10
+ *  in all", a bare "1 not given in full" read as one of the ten) in the neutral grey a meal
+ *  not finished takes. Nothing at zero, as the count line (CUL-1193, CUL-1209). The count
+ *  beside them reads "logged", so the parts subtract to the doses given. */
+function doseSubsetParts(f: DayFacts, filter: HistoryFilter): DayHeaderPart[] {
+  const parts: DayHeaderPart[] = [];
+  const notInFull = doseSubsetOf([f], filter, 'notInFull') ?? 0;
+  if (notInFull > 0) {
+    parts.push({ text: `${formatCount(notInFull)} ${notInFull === 1 ? 'dose' : 'doses'} not given in full`, tone: 'unfinished' });
+  }
+  const unconfirmed = doseSubsetOf([f], filter, 'unconfirmed') ?? 0;
+  if (unconfirmed > 0) {
+    parts.push({ text: `${formatCount(unconfirmed)} ${unconfirmed === 1 ? 'dose' : 'doses'} unconfirmed`, tone: 'unfinished' });
+  }
+  return parts;
 }
 
 /** Every symptom kind the day holds, in rose, in the one symptom order: All types names them
@@ -1092,9 +1132,8 @@ function symptomParts(f: DayFacts): DayHeaderPart[] {
  * count first, then the day's total ("2 vomits · 10 in all"); All symptoms names each kind
  * instead of one sum; under Meal the meals not finished follow, and under a dose filter the
  * doses not given in full, so a refusal never reads as routine one level above the rows (§1,
- * H-2). A dose filter's count reads "logged", the count line's ruled word (CUL-1193): "2
- * doses" read as two given, and a dose left unconfirmed in a refused meal carries no
- * not-in-full to qualify it. Under All types, the total, every symptom kind, the other
+ * H-2), then those unconfirmed (CUL-1209). A dose filter's count reads "logged", the count
+ * line's ruled word (CUL-1193): "2 doses" read as two given. Under All types, the total, every symptom kind, the other
  * entries, the meals not finished. A day with nothing logged says only that (today: not
  * yet), never what its nothing lacked. A day whose only content is a date-only item (a
  * visit) shows the date alone: "nothing logged" would contradict the visit under it, and
@@ -1133,8 +1172,7 @@ export function dayHeaderOf(
     const parts: DayHeaderPart[] = [...counted, { text: inAllText(f.total), tone: 'dayTotal' }];
     const unfinished = isMealFilter(filter) ? mealsNotFinishedPart(f) : null;
     if (unfinished) parts.push(unfinished);
-    const notInFull = dosesNotInFullPart(f, filter);
-    if (notInFull) parts.push(notInFull);
+    parts.push(...doseSubsetParts(f, filter));
     return parts;
   }
   const parts: DayHeaderPart[] = [total, ...symptomParts(f)];

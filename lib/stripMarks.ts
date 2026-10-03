@@ -53,8 +53,11 @@
 // A meal left unfinished is the intake lens's own predicate, already counted into
 // `DayFacts.mealsNotFinished` (a rating below Most on a qualifying meal: rated, never a
 // treat, never free-fed); a dose not given in full is `notInFull` (Partial, Missed or
-// Refused). A missing rating or chip is never counted, so CUL-1118's exception-only
-// ratings cannot change what the line means. The line breaks under All types and Meal
+// Refused). A missing meal rating is never counted, so CUL-1118's exception-only ratings
+// cannot change what the line means. A dose is the other way round: a dose logged on its
+// own is recorded Given, so a dose with NO chip is a recorded state too, "unconfirmed" (a
+// pill hidden in a refused meal), and it breaks the line beside the ones not given in full
+// (CUL-1209, PM-ruled: the strip follows the count line). The line breaks under All types and Meal
 // for meals, and under Medication and a course for doses, on a rose day too.
 //
 // ── THE WORDS ARE THE DAY HEADER'S ───────────────────────────────────────────────
@@ -71,6 +74,7 @@
 import {
   absenceText,
   dayCountFor,
+  doseSubsetOf,
   filterNoun,
   filterShowsDay,
   formatCount,
@@ -198,25 +202,23 @@ function dosesNotInFullText(n: number): string {
   return n === 1 ? 'a dose not given in full' : `${formatCount(n)} doses not given in full`;
 }
 
-/** What breaks a filter's line on a day, and how the label says it. Zero: the line is
- *  whole. Only a recorded state counts (the header). */
-function brokenOf(f: DayFacts, filter: HistoryFilter): { count: number; text: (n: number) => string } {
-  switch (filter.kind) {
-    case 'all':
-      return { count: f.mealsNotFinished, text: unfinishedMealsText };
-    case 'type':
-      if (filter.type === 'meal') return { count: f.mealsNotFinished, text: unfinishedMealsText };
-      if (filter.type === 'medication') {
-        let n = 0;
-        for (const d of Object.values(f.doses)) n += d.notInFull;
-        return { count: n, text: dosesNotInFullText };
-      }
-      return { count: 0, text: dosesNotInFullText };
-    case 'course':
-      return { count: f.doses[filter.courseKey]?.notInFull ?? 0, text: dosesNotInFullText };
-    default:
-      return { count: 0, text: dosesNotInFullText };
+/** "a dose unconfirmed" / "2 doses unconfirmed" (CUL-1209: the day header's words). */
+function dosesUnconfirmedText(n: number): string {
+  return n === 1 ? 'a dose unconfirmed' : `${formatCount(n)} doses unconfirmed`;
+}
+
+/** What breaks a filter's line on a day, as the phrases its label says. Empty: the line
+ *  is whole. Only a recorded state counts (the header). */
+function brokenOf(f: DayFacts, filter: HistoryFilter): string[] {
+  if (filter.kind === 'all' || (filter.kind === 'type' && filter.type === 'meal')) {
+    return f.mealsNotFinished > 0 ? [unfinishedMealsText(f.mealsNotFinished)] : [];
   }
+  const out: string[] = [];
+  const notInFull = doseSubsetOf([f], filter, 'notInFull') ?? 0;
+  if (notInFull > 0) out.push(dosesNotInFullText(notInFull));
+  const unconfirmed = doseSubsetOf([f], filter, 'unconfirmed') ?? 0;
+  if (unconfirmed > 0) out.push(dosesUnconfirmedText(unconfirmed));
+  return out;
 }
 
 /** The filtered count in the header's nouns: "2 vomits logged", "1 Cetirizine HCl dose
@@ -299,9 +301,8 @@ export function stripMarkOf(f: DayFacts, filter: HistoryFilter, window: StripWin
     const k = f.byType[TIMING_SYMPTOM_TYPE] ?? 0;
     const rose = k > 0;
     const vomit = rose ? presentText({ kind: 'type', type: TIMING_SYMPTOM_TYPE }, k, null) : 'no vomit logged';
-    const parts = [head, vomit, total];
-    if (broken.count > 0) parts.push(broken.text(broken.count));
-    return mark(rose ? 'rose' : 'logged', broken.count > 0 ? 'broken' : 'solid', parts.join(', '), listHolds(true));
+    const parts = [head, vomit, total, ...broken];
+    return mark(rose ? 'rose' : 'logged', broken.length > 0 ? 'broken' : 'solid', parts.join(', '), listHolds(true));
   }
 
   const k = dayCountFor(f, filter) ?? 0;
@@ -309,9 +310,8 @@ export function stripMarkOf(f: DayFacts, filter: HistoryFilter, window: StripWin
     const none = absenceText(filter, window.courseName) ?? 'nothing of this kind logged';
     return mark('quiet', 'none', [head, none, total].join(', '), listHolds(false));
   }
-  const parts = [head, presentText(filter, k, window.courseName, f.treats), total];
-  if (broken.count > 0) parts.push(broken.text(broken.count));
-  return mark(isSymptomFilter(filter) ? 'rose' : 'logged', broken.count > 0 ? 'broken' : 'solid', parts.join(', '), listHolds(true));
+  const parts = [head, presentText(filter, k, window.courseName, f.treats), total, ...broken];
+  return mark(isSymptomFilter(filter) ? 'rose' : 'logged', broken.length > 0 ? 'broken' : 'solid', parts.join(', '), listHolds(true));
 }
 
 // ── The pager (§3.4: bounded by the window, the record and a course) ─────────────

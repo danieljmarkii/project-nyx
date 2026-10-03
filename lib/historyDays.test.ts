@@ -43,6 +43,8 @@ import {
   mealSplitParts,
   notGivenInFullText,
   notInFullOf,
+  unconfirmedOf,
+  unconfirmedText,
   typeSheetCountsOf,
   unloggedDaysOf,
   windowTotalOf,
@@ -257,12 +259,12 @@ describe('buildDayFacts — one day, one population', () => {
     expect(dayFactsOn(facts.days, '2026-09-20').mealsNotFinished).toBe(0);
   });
 
-  it('doses key by course, count every row whatever its chip, and "not in full" only when recorded', () => {
-    expect(dayFactsOn(facts.days, '2026-09-04').doses).toEqual({ 'reg-pred': { logged: 1, notInFull: 0 } });
-    expect(dayFactsOn(facts.days, '2026-09-06').doses).toEqual({ 'reg-pred': { logged: 1, notInFull: 1 } });
+  it('doses key by course, count every row whatever its chip, and "not in full" / "unconfirmed" only as recorded', () => {
+    expect(dayFactsOn(facts.days, '2026-09-04').doses).toEqual({ 'reg-pred': { logged: 1, notInFull: 0, unconfirmed: 0 } });
+    expect(dayFactsOn(facts.days, '2026-09-06').doses).toEqual({ 'reg-pred': { logged: 1, notInFull: 1, unconfirmed: 0 } });
     expect(dayFactsOn(facts.days, '2026-09-09').doses).toEqual({
-      'item:item-cet': { logged: 1, notInFull: 1 },
-      'item:unspecified': { logged: 1, notInFull: 0 },
+      'item:item-cet': { logged: 1, notInFull: 1, unconfirmed: 0 },
+      'item:unspecified': { logged: 1, notInFull: 0, unconfirmed: 1 },
     });
   });
 
@@ -351,9 +353,19 @@ describe('AC 30 — the course counts key on the vet report\'s course grain', ()
       expect(counts[c.key]?.notInFull ?? 0).toBe(c.tally.partial + c.tally.missed + c.tally.refused);
     }
     // Non-vacuity: the fixture holds a partial, a refused and an unrated dose.
-    expect(counts['reg-pred']).toEqual({ logged: 2, notInFull: 1 });
-    expect(counts['item:item-cet']).toEqual({ logged: 1, notInFull: 1 });
-    expect(counts['item:unspecified']).toEqual({ logged: 1, notInFull: 0 });
+    expect(counts['reg-pred']).toEqual({ logged: 2, notInFull: 1, unconfirmed: 0 });
+    expect(counts['item:item-cet']).toEqual({ logged: 1, notInFull: 1, unconfirmed: 0 });
+    expect(counts['item:unspecified']).toEqual({ logged: 1, notInFull: 0, unconfirmed: 1 });
+  });
+
+  it('a course\'s "unconfirmed" is the derivation\'s own unrated, and the named subsets subtract to its Given (CUL-1209)', () => {
+    const counts = typeSheetCountsOf(factsFor(WINDOWS.all.range).days).courses;
+    for (const c of courses) {
+      const d = counts[c.key] ?? { logged: 0, notInFull: 0, unconfirmed: 0 };
+      expect(d.unconfirmed).toBe(c.tally.unrated);
+      // The ruling's point: "logged" minus what the line names is exactly the doses given.
+      expect(d.logged - d.notInFull - d.unconfirmed).toBe(c.tally.given);
+    }
   });
 
   it('every chip: Partial, Missed and Refused are not in full, Given and unrated are not, as the derivation tallies them', () => {
@@ -369,8 +381,15 @@ describe('AC 30 — the course counts key on the vet report\'s course grain', ()
     }).find((c) => c.key === 'reg-pred')!.tally;
     // Non-vacuity: the derivation saw one of each short chip.
     expect([tally.partial, tally.missed, tally.refused]).toEqual([1, 1, 1]);
-    expect(typeSheetCountsOf(days).courses['reg-pred']).toEqual({ logged: 5, notInFull: tally.partial + tally.missed + tally.refused });
+    expect(typeSheetCountsOf(days).courses['reg-pred']).toEqual({
+      logged: 5,
+      notInFull: tally.partial + tally.missed + tally.refused,
+      unconfirmed: tally.unrated,
+    });
+    expect(tally.unrated).toBe(1);
     expect(notInFullOf(days, { kind: 'type', type: 'medication' })).toBe(3);
+    expect(unconfirmedOf(days, { kind: 'type', type: 'medication' })).toBe(1);
+    expect(unconfirmedOf(days, { kind: 'all' })).toBeNull();
   });
 
   it('under Medication, every course short on the same day is counted, as the derivation tallies it', () => {
@@ -404,6 +423,10 @@ describe('AC 30 — the course counts key on the vet report\'s course grain', ()
     expect(notGivenInFullText(1094)).toBe('1,094 not given in full');
     // Never "0 not given in full": an unrated dose is not "given".
     expect(notGivenInFullText(0)).toBeNull();
+    // The unrated ones have their own word, and nothing at zero (CUL-1209).
+    expect(unconfirmedText(2)).toBe('2 unconfirmed');
+    expect(unconfirmedText(1094)).toBe('1,094 unconfirmed');
+    expect(unconfirmedText(0)).toBeNull();
   });
 
   it('a course with no dose in the window is not a sheet option', () => {
@@ -639,12 +662,12 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
         course: { name: 'Cetirizine HCl', days: { fromDay: '2026-09-09', toDay: '2026-09-09' } },
       }),
     ).toMatchObject({ line1: { strong: '1 logged on 1 day' }, line2: 'Cetirizine HCl · Sep 9 · 1 not given in full' });
-    // An unrated dose is counted and never named as not given.
+    // An unrated dose is counted, never named as not given, and named unconfirmed (CUL-1209).
     expect(
       lineFor(WINDOWS.all, { kind: 'course', courseKey: 'item:unspecified' }, {
         course: { name: 'Medication · no medicine named', days: { fromDay: '2026-09-09', toDay: '2026-09-09' } },
       }),
-    ).toMatchObject({ line1: { strong: '1 logged on 1 day' }, line2: 'Medication · no medicine named · Sep 9' });
+    ).toMatchObject({ line1: { strong: '1 logged on 1 day' }, line2: 'Medication · no medicine named · Sep 9 · 1 unconfirmed' });
   });
 
   it('Medication: every medication row "logged", and every course\'s ones not given in full (CUL-1193)', () => {
@@ -653,7 +676,7 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
     expect(lineFor(WINDOWS.all, { kind: 'type', type: 'medication' })).toEqual({
       kind: 'count',
       line1: { lead: 'All time · ', strong: '5 logged on 4 days', tail: ' since Sep 1' },
-      line2: '2 not given in full · 12 days with nothing logged',
+      line2: '2 not given in full · 1 unconfirmed · 12 days with nothing logged',
       doors: [],
     });
     // A window holding only the Given dose names nothing.
@@ -673,13 +696,13 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
       { text: '1 dose not given in full', tone: 'unfinished' },
     ]);
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-09'), { kind: 'type', type: 'medication' }).map((p) => p.text))
-      .toEqual(['2 logged', '3 in all', '1 dose not given in full']);
+      .toEqual(['2 logged', '3 in all', '1 dose not given in full', '1 dose unconfirmed']);
     // Only under a dose filter: All types never names a dose's chip in the header.
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-06'), { kind: 'all' }).map((p) => p.text).join(' ')).not.toMatch(/not given/);
     // And never the retired noun, on any day of the fixture (the ruled word, CUL-1193).
     for (const f of facts.days.values()) {
       for (const filter of [{ kind: 'type', type: 'medication' } as const, { kind: 'course', courseKey: 'reg-pred' } as const]) {
-        expect(dayHeaderOf(f, filter).map((p) => p.text).join(' · ')).not.toMatch(/\d+ doses?(?! not given)/);
+        expect(dayHeaderOf(f, filter).map((p) => p.text).join(' · ')).not.toMatch(/\d+ doses?(?! not given| unconfirmed)/);
       }
     }
   });

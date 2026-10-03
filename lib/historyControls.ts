@@ -18,7 +18,8 @@
 //   • Never while a search is open (`showCounts: false`). A number that labels a
 //     destination counts what the destination holds (C-3), and under a search every
 //     destination holds only the matches, which search never counts (§3.7, R-2). So the
-//     pill, both sheets, *N not read* and *N not given in full* go quiet together.
+//     pill, both sheets, *N not read*, *N not given in full* and *N unconfirmed* go quiet
+//     together.
 //   • Never on Noticed, and never on a window row under Noticed (H-9).
 //
 // ── THE FILTER ON SCREEN IS ALWAYS LISTED ───────────────────────────────────────────
@@ -37,6 +38,7 @@ import {
   formatCount,
   inRange,
   notGivenInFullText,
+  unconfirmedText,
   typeSheetCountsOf,
   windowTotalOf,
   type DayFacts,
@@ -267,7 +269,11 @@ export function typeSheetRows(input: TypeSheetInput): SheetRow<HistoryFilter>[] 
           { kind: 'course', courseKey: course.key },
           course.name,
           num(doses?.logged),
-          [courseSpanText(course.days, dates), shown ? notGivenInFullText(doses?.notInFull ?? 0) : null],
+          [
+            courseSpanText(course.days, dates),
+            shown ? notGivenInFullText(doses?.notInFull ?? 0) : null,
+            shown ? unconfirmedText(doses?.unconfirmed ?? 0) : null,
+          ],
           { nested: true },
         ),
       );

@@ -316,18 +316,22 @@ describe('the course sub-rows (AC 30, CUL-488, CUL-1193)', () => {
       detail: 'Jul 1 – Sep 5 · 2 not given in full',
       accessibilityLabel: 'Cetirizine HCl, Jul 1 – Sep 5, 2 not given in full, 3 logged',
     });
-    // Motozol: given, refused, unrated → 3 logged, 1 not given in full; an unrated dose is
-    // never named, and the running course reads "since".
-    expect(byLabel(rows, 'Motozol')).toMatchObject({ count: '3', detail: 'since Jul 16 · 1 not given in full' });
+    // Motozol: given, refused, unrated → 3 logged, 1 not given in full, 1 unconfirmed
+    // (CUL-1209), and the running course reads "since".
+    expect(byLabel(rows, 'Motozol')).toMatchObject({
+      count: '3',
+      detail: 'since Jul 16 · 1 not given in full · 1 unconfirmed',
+      accessibilityLabel: 'Motozol, since Jul 16, 1 not given in full, 1 unconfirmed, 3 logged',
+    });
   });
 
   it('count only the window’s doses, and never print "0 not given in full"', () => {
     const lastWeek = daysIn(RECORD, { fromDay: '2026-09-19', toDay: TODAY });
     const rows = typeSheetRows(typeInput({ counts: typeSheetCountsOf(lastWeek) }));
-    expect(byLabel(rows, 'Motozol')).toMatchObject({ count: '2', detail: 'since Jul 16 · 1 not given in full' });
+    expect(byLabel(rows, 'Motozol')).toMatchObject({ count: '2', detail: 'since Jul 16 · 1 not given in full · 1 unconfirmed' });
     const sinceTwentyFirst = daysIn(RECORD, { fromDay: '2026-09-21', toDay: TODAY });
     const later = typeSheetRows(typeInput({ counts: typeSheetCountsOf(sinceTwentyFirst) }));
-    expect(byLabel(later, 'Motozol')).toMatchObject({ count: '1', detail: 'since Jul 16' });
+    expect(byLabel(later, 'Motozol')).toMatchObject({ count: '1', detail: 'since Jul 16 · 1 unconfirmed' });
   });
 
   it('span the course the way the count line does (one wording, courseSpanText)', () => {
