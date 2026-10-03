@@ -390,6 +390,12 @@ export function lapseReason(ack: AckFact, args: CareStateArgs, retracted: Readon
   if ((ack.source === 'at_vet_tick' || ack.source === 'visit_answer') && anchor < localDayIndex(courseStart, tz)) {
     return 'visit_before_onset'
   }
+  // §4.2's reference must be rebuilt from the record on every run (adversarial D7): the only other
+  // store is the previous cache row, which the owner can write, so a reference read back from it
+  // could quiet the rate arm for good. An answer whose 28 days before its anchor have left the
+  // read can no longer be compared honestly, so it lapses and the concern asks again (louder).
+  const readFrom = Date.parse(args.readSinceIso)
+  if (Number.isFinite(readFrom) && anchor - cfg.referenceDays < localDayIndex(readFrom, tz) + 1) return 'reference_out_of_read'
   if (ack.source === 'vet_started_trial') {
     const t = ack.trial
     if (!t) return 'scope_missing'
@@ -460,7 +466,6 @@ export function referenceFor(
   ix: DayIndex,
   cfg: CareStateConfig,
   tz: string | undefined,
-  stored: CareReference | null = null,
 ): CareReference | null {
   const anchor = referenceAnchorDay(ack, tz)
   if (anchor === null) return null
@@ -471,16 +476,13 @@ export function referenceFor(
   if (pre.from >= ix.firstFullDay) {
     const k = loggedIn(ix.logged, pre.from, pre.to)
     if (k >= floor) return { fromDay: pre.from, toDay: pre.to, episodes: countIn(onsets, pre.from, pre.to), loggedDays: k, beforeAnchor: true }
-  } else if (stored) {
-    // The window the rule picked has left the read (adversarial D7): the record can no longer
-    // say whether the pre-anchor window qualified, so the frozen one stands. Re-searching from
-    // the read's edge would slide a day each day.
-    return stored
+  } else {
+    // The window has left the read; lapseReason has already lapsed such an answer, so this is
+    // reached only by a direct caller. No reference, never one read back from the cache.
+    return null
   }
-  // The post-anchor search starts at the anchor, never at the read's edge: a start clamped to
-  // the edge would move forward each day. Once the anchor itself has left the read, there is no
-  // reference unless one was stored.
-  if (anchor + 1 < ix.firstFullDay) return stored
+  // The post-anchor search starts at the anchor, never at the read's edge (a start clamped to the
+  // edge would move forward each day). It is in the read whenever the pre-anchor window is.
   const lastEnd = ix.today - cfg.currentDays
   for (let from = anchor + 1; from + len - 1 <= lastEnd; from += 1) {
     const to = from + len - 1
@@ -629,7 +631,10 @@ export function findReRaise(x: ReRaiseArgs): ReRaise | null {
   // that read, its first onset after the answer is the fallback.
   if (x.pairOnsetIso) {
     const onset = Date.parse(x.pairOnsetIso)
-    const turned = x.pairChronicAtAnswer === null ? Number.isFinite(onset) && onset > createdMs : !x.pairChronicAtAnswer
+    // Either half is a change after the answer: the lane was not firing then, or the course firing
+    // now began after it (a course that stood down and came back). The halves ADD (adversarial
+    // re-check of D6: the record read replacing the onset test silenced the second case).
+    const turned = x.pairChronicAtAnswer === false || (Number.isFinite(onset) && onset > createdMs)
     if (turned) {
       found.push({ reason: 'pair', onDay: ix.today, pairSign: sign === 'vomit' ? 'cough' : 'vomit', pairSinceDay: Number.isFinite(onset) ? Math.max(localDayIndex(onset, tz), localDayIndex(createdMs, tz)) : ix.today })
     }
@@ -646,24 +651,11 @@ interface PriorCare {
   state: CareStateValue
   ackId: string | null
   reason: ReRaiseReason | null
-  reference: CareReference | null
   lapsed: string[]
 }
 
-function isInt(x: unknown): x is number {
-  return typeof x === 'number' && Number.isInteger(x)
-}
-
-function readReference(raw: unknown, cfg: CareStateConfig): CareReference | null {
-  if (!raw || typeof raw !== 'object') return null
-  const r = raw as Record<string, unknown>
-  if (!isInt(r.fromDay) || !isInt(r.toDay) || !isInt(r.episodes) || !isInt(r.loggedDays)) return null
-  if (r.toDay - r.fromDay + 1 !== cfg.referenceDays || r.episodes < 0 || r.loggedDays < 1 || r.loggedDays > cfg.referenceDays) return null
-  return { fromDay: r.fromDay, toDay: r.toDay, episodes: r.episodes, loggedDays: r.loggedDays, beforeAnchor: r.beforeAnchor === true }
-}
-
 /** The prior row's care state per sign, tolerant of any shape (a malformed entry reads as none). */
-export function readPriorCare(raw: unknown, cfg: CareStateConfig): Map<string, PriorCare> {
+export function readPriorCare(raw: unknown): Map<string, PriorCare> {
   const out = new Map<string, PriorCare>()
   if (!Array.isArray(raw)) return out
   const loud: Record<CareStateValue, number> = { with_vet: 0, recheck_booked: 0, raised: 1, raised_again: 2 }
@@ -685,7 +677,6 @@ export function readPriorCare(raw: unknown, cfg: CareStateConfig): Map<string, P
       state,
       ackId: typeof c.ackId === 'string' ? c.ackId : null,
       reason: c.reason === 'rate' || c.reason === 'dense' || c.reason === 'co_sign' || c.reason === 'pair' ? c.reason : null,
-      reference: readReference(c.reference, cfg),
       lapsed: [...new Set([...(prev?.lapsed ?? []), ...lapsed])],
     })
   }
@@ -802,7 +793,7 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, args) => {
   const cfg = args.config ?? CARE_STATE_CONFIG
   const ix = indexRecord(args)
   const tz = args.timezone
-  const prior = readPriorCare(args.priorFindings, cfg)
+  const prior = readPriorCare(args.priorFindings)
   const priorSigns = priorConcernSigns(args.priorFindings)
   const priorGen = args.priorGeneratedAtMs
   const chronicOnset = new Map<SymptomType, string>()
@@ -819,7 +810,11 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, args) => {
     // is the record of that: written after the answer and holding no concern on this sign, it
     // lapses every answer written before it. Lapses are carried, so they outlive that one row.
     const lapsed = new Set<string>(p?.lapsed ?? [])
-    if (priorSigns !== null && priorGen !== null && !priorSigns.has(sign)) {
+    // A previous row that held the concern WITHOUT a care fact did not run this step (an
+    // incomplete read, a failed flag or logging read, the flag-off engine), so it carried no lapse
+    // list and cannot vouch that the concern never left (adversarial re-check of D4). Continuity
+    // unknown is treated as broken: the louder reading, and the owner answers once more.
+    if (priorSigns !== null && priorGen !== null && (!priorSigns.has(sign) || !prior.has(sign))) {
       for (const a of args.record.acknowledgements) {
         if (a.sign === sign && Date.parse(a.createdAt) < priorGen) lapsed.add(a.id)
       }
@@ -832,10 +827,9 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, args) => {
       return raised
     }
     const createdMs = Date.parse(ack.createdAt)
-    // The frozen reference: rebuilt from the record while the rule's window is in the read, the
-    // stored one (this answer's own) once it is not (referenceFor, adversarial D7).
-    const stored = p && p.ackId === ack.id ? p.reference : null
-    const reference = referenceFor(sign, ack, ix, cfg, tz, stored)
+    // The frozen reference: rebuilt from the record on every run by one fixed rule, so it never
+    // slides; an answer whose window left the read has lapsed (adversarial D7).
+    const reference = referenceFor(sign, ack, ix, cfg, tz)
     const pairSign: SymptomType | null = sign === 'vomit' ? 'cough' : sign === 'cough' ? 'vomit' : null
     const pairOnsetIso = pairSign ? chronicOnset.get(pairSign) ?? null : null
     const pairChronicAtAnswer = pairSign && pairOnsetIso && args.wasChronicAt ? args.wasChronicAt(pairSign, createdMs) : null

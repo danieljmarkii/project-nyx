@@ -248,13 +248,13 @@ Deno.test('the reference is taken before the anchor when it can be, after it whe
   assertEquals(later.reference, first.reference, 'the reference slid')
 })
 
-Deno.test('a relabelled record keeps the frozen reference once the record no longer reaches it', () => {
-  const frozen = { fromDay: 1, toDay: 28, episodes: 3, loggedDays: 28, beforeAnchor: true }
-  // An answer whose 28 days before the anchor are outside the read, no post-anchor window logged.
-  const prior = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', careState: { state: 'with_vet', ackId: 'old', reference: frozen } } }]
+Deno.test('an answer whose reference window has left the read lapses: the cache is never trusted for it (D7)', () => {
+  const frozen = { fromDay: 1, toDay: 28, episodes: 900, loggedDays: 28, beforeAnchor: true }
+  // A forged reference in the (owner-writable) prior row would silence the rate arm; it is not read.
+  const prior = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'with_vet', ackId: 'old', reference: frozen } } }]
   const old = ack({ id: 'old', daysAgo: 160, anchorOn: dayOf(165) })
-  const s = stateOf({ symptoms: events('vomit', everyNth(3, 175, 0)), acks: [old], priorFindings: prior, loggedDaysAgo: range(175, 150) })
-  assertEquals(s.reference, frozen)
+  const s = stateOf({ symptoms: events('vomit', everyNth(3, 175, 0)), acks: [old], priorFindings: prior, priorGeneratedAtMs: NOW_MS - DAY })
+  assertStrictEquals(s.state, 'raised')
 })
 
 // ── The latch (§4.5, AC 15) ──
@@ -319,7 +319,7 @@ Deno.test('the pair: coughing turning chronic after the answer brings watched vo
   // A cough course already running before the answer, and already on the prior row, is not a change.
   const old = { ...chronicity('cough'), firstOnsetIso: at(100) } as Finding
   const prior = [
-    { rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety' } },
+    { rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'with_vet', ackId: 'ack-40' } } },
     { rank: 1, finding: { type: 'symptom_chronicity', symptomType: 'cough', priorityClass: 'safety' } },
   ]
   assertStrictEquals(stateOf({ findings: [chronicity('vomit'), old], symptoms: STABLE, acks: [ack({ daysAgo: 40 })], priorFindings: prior, priorGeneratedAtMs: NOW_MS - DAY }).state, 'with_vet')
@@ -443,18 +443,29 @@ Deno.test('D6: the pair reads whether the other sign was chronic when the answer
   assertStrictEquals(run(true).state, 'with_vet')
 })
 
-Deno.test('D7: the reference stays frozen as the pre-anchor window leaves the read, and never slides', () => {
-  const old = ack({ id: 'old', daysAgo: 150 })
-  const at = (now: number, prior: unknown) => stateOf({ symptoms: STABLE, acks: [old], nowMs: now, priorFindings: prior, priorGeneratedAtMs: now - DAY, loggedDaysAgo: range(175, Math.round((NOW_MS - now) / DAY)).filter((d) => d >= -40) })
-  const first = at(NOW_MS, null)
+Deno.test('D7: the reference never slides while it is in the read, and the answer lapses the day it leaves', () => {
+  const old = ack({ id: 'old', daysAgo: 140 })
+  const at = (d: number) => stateOf({ symptoms: STABLE, acks: [old], nowMs: NOW_MS + d * DAY, loggedDaysAgo: range(175, -d) })
+  const first = at(0)
   assertStrictEquals(first.reference!.beforeAnchor, true)
-  // Day by day for 40 days, each run carrying the last row: the same window every time.
-  let prior: unknown = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: first } }]
-  for (let d = 1; d <= 40; d += 1) {
-    const s = at(NOW_MS + d * DAY, prior)
-    assertEquals(s.reference, first.reference, `day ${d}: the reference moved`)
-    prior = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: s } }]
-  }
+  for (let d = 1; d <= 11; d += 1) assertEquals(at(d).reference, first.reference, `day ${d}: the reference moved`)
+  // 140 + 28 + 13 days back: the window's first day is outside the 180-day read.
+  assertStrictEquals(at(13).state, 'raised')
+})
+
+Deno.test('D4 re-check: a run that skipped the step cannot revive a lapsed answer', () => {
+  const a = ack({ id: 'a', daysAgo: 30 })
+  // The previous row held the concern but no care fact (an incomplete read skipped the step).
+  const skipped = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety' } }]
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a], priorFindings: skipped, priorGeneratedAtMs: NOW_MS - DAY }).state, 'raised')
+})
+
+Deno.test('D6 re-check: a cough course that stood down and came back after the answer still brings vomiting back', () => {
+  const cough = { ...chronicity('cough'), firstOnsetIso: at(20) } as Finding
+  const base = { findings: [chronicity('vomit'), cough], symptoms: STABLE, acks: [ack({ daysAgo: 40 })] }
+  const out = EN9_CARE_STATE_STEP(base.findings.map((finding, rank) => ({ rank, finding })), { ...args(base), wasChronicAt: () => true })
+  const s = careStateOf(out.find((r) => (r.finding as { symptomType: string }).symptomType === 'vomit')!.finding)!
+  assertEquals([s.state, s.reason], ['raised_again', 'pair'])
 })
 
 Deno.test('N1: the dense-day arm counts only weeks wholly after the answer', () => {
