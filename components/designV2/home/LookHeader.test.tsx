@@ -77,10 +77,12 @@ import {
   LOOK_ADD,
   LOOK_MORE,
   LookHeader,
-  REFUSAL_DOORS_ON_FIRST_ROW,
+  REFUSAL_DOORS_IN_COMPACT_SET,
 } from './LookHeader';
 import { lookWithheldReason } from '../../home/LookWithheldEntry';
 import { EMERGENCY_DOOR_LABEL } from '../../../lib/lookEmergency';
+
+type ReactTestInstance = ReturnType<typeof render>['UNSAFE_root'];
 
 const WRITTEN = {
   eventId: 'e1',
@@ -347,9 +349,9 @@ const lookAt = (id: string, iso: string, words: string[], outcome = 'observed') 
 });
 const refusing = { ...quiet, serverIntakeDecline: true };
 
-describe('GC-6 (a), a stated assumption — the refusal door and the absence on the first row', () => {
+describe('GC-6 (a), a stated assumption — the refusal door and the absence in the compact set', () => {
   it('both sit on the compact row with no More… tap, for a cat and for a dog', () => {
-    expect(REFUSAL_DOORS_ON_FIRST_ROW).toBe(true);
+    expect(REFUSAL_DOORS_IN_COMPACT_SET).toBe(true);
     for (const species of ['cat', 'dog']) {
       mockPetState = { activePet: { ...NYX, species }, pets: [{ ...NYX, species }] };
       const t = render(<LookHeader />);
@@ -357,6 +359,40 @@ describe('GC-6 (a), a stated assumption — the refusal door and the absence on 
       expect(within(row).getByTestId('look-header-intake-door')).toBeTruthy();
       expect(within(row).getByTestId('look-header-absence')).toBeTruthy();
       t.unmount();
+    }
+  });
+});
+
+describe('CUL-1501 — the refusal door LEADS the compact set (intake is not preference)', () => {
+  // The row is a layout fact the tree cannot see (at 390pt the set wraps to four), so the
+  // guarantee is READING ORDER: index 0 is on the first row at any width. Read the host
+  // responders in tree order inside the chip row, never the props passed to them.
+  const orderIn = (row: ReactTestInstance): string[] =>
+    row
+      .findAll((n: ReactTestInstance) => typeof n.type === 'string' && typeof n.props.testID === 'string')
+      .map((n: ReactTestInstance) => n.props.testID as string)
+      .filter((id: string, i: number, all: string[]) => id !== 'look-header-chips' && all.indexOf(id) === i);
+
+  it('the door is first, ahead of every word, every positive and Nothing unusual — cat and dog, one pet and two', () => {
+    for (const species of ['cat', 'dog'] as const) {
+      for (const multi of [false, true]) {
+        const pet = { ...NYX, species };
+        mockPetState = { activePet: pet, pets: multi ? [pet, { ...pet, id: 'p2', name: 'Pixel' }] : [pet] };
+        const t = render(<LookHeader />);
+        const order = orderIn(t.getByTestId('look-header-chips'));
+        const door = order.indexOf('look-header-intake-door');
+        expect(door).toBe(0);
+        const words = LOOK_HEAD_WORDS[species].map((k) => order.indexOf(`look-header-chip-${k}`));
+        // Non-vacuity: every head word is drawn in this row, positives included.
+        expect(words.every((i) => i > 0)).toBe(true);
+        expect(LOOK_HEAD_WORDS[species]).toContain('lively');
+        // Nothing unusual follows the words: an absence never leads (it is not the answer
+        // that might be illness).
+        const absence = order.indexOf('look-header-absence');
+        expect(absence).toBeGreaterThan(Math.max(...words));
+        expect(order.indexOf('look-header-more')).toBeGreaterThan(absence);
+        t.unmount();
+      }
     }
   });
 });

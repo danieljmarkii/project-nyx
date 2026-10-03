@@ -18,7 +18,7 @@
 // stays there too). A later quiet or positive look never hides an earlier concern: every
 // concern entry of the day stays drawn (BRK-20, §3.3 floor 5). The families and the
 // emergency door (§3.7, T-4) are behind *More…*; where the intake router (a navigation,
-// T-3) and the absence chip sit is GC-6, see `REFUSAL_DOORS_ON_FIRST_ROW`. The gate is
+// T-3) and the absence chip sit is GC-6, see `REFUSAL_DOORS_IN_COMPACT_SET`. The gate is
 // `lookCardLive` — the `daily_look` rollout is NOT widened by `design_v2` (CUL-891).
 //
 // What changes: ONE TAP IS ONE WORD IS ONE LOOK. The card collected several words and a
@@ -97,12 +97,18 @@ export const LOOK_ADD = 'Add a look';
 
 /**
  * GC-6 (CUL-1179) — where *Didn't eat ›* and *Nothing unusual* sit. **Unruled when this
- * shipped; option (a) is built as a stated assumption (CUL-1220):** both on the compact
- * first row, both species, because intake is not preference and a refusal must never
- * cost more taps than a mood word. Option (b) — both behind *More…* — is `false` here and
- * nothing else; the door row draws them in that case.
+ * shipped; option (a) is built as a stated assumption (CUL-1220):** both in the compact
+ * set, both species, because intake is not preference and a refusal must never cost more
+ * taps than a mood word. Option (b) — both behind *More…* — is `false` here and nothing
+ * else; the door row draws them in that case.
+ *
+ * The name says what the flag guarantees: membership of the compact set, not a row. A row
+ * is a layout fact the code cannot see (at 390pt the set wraps to four), so the ORDER is
+ * what carries "first" (CUL-1501): the intake door leads the set, ahead of every word, so
+ * it is on the first row at any width; *Nothing unusual* follows the words, so an absence
+ * never leads a set whose first answer should be the one that might be illness.
  */
-export const REFUSAL_DOORS_ON_FIRST_ROW = true;
+export const REFUSAL_DOORS_IN_COMPACT_SET = true;
 
 /** A chip's vertical reach, and the row gap it forces (C-5: two stacked chips face each
  *  other with the full reach between them, derived once here). */
@@ -375,21 +381,23 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
   const withholds = (row: NyxEvent) =>
     withheldState === 'withheld' && entryWithholdsWords(wordsFromLocalText(row.look_words), species);
 
-  const refusalDoors = (
-    <>
-      <HeaderChip label={LOOK_ABSENCE_CHIP} onPress={onAbsence} disabled={submitting} testID="look-header-absence" />
-      <Pressable
-        onPress={onIntakeDoor}
-        hitSlop={HEADER_CHIP_SLOP}
-        accessibilityRole="button"
-        accessibilityLabel={intakeDoorLabel(pets.length > 1, sex)}
-        accessibilityHint={`Opens a new meal to say how much ${petName} ate`}
-        style={styles.chip}
-        testID="look-header-intake-door"
-      >
-        <ThemedText style={styles.chipText}>{intakeDoorLabel(pets.length > 1, sex)}</ThemedText>
-      </Pressable>
-    </>
+  // The intake door and the absence render apart (CUL-1501): the door LEADS the compact
+  // set, the absence closes it, and behind *More…* (option (b)) they sit together.
+  const intakeDoor = (
+    <Pressable
+      onPress={onIntakeDoor}
+      hitSlop={HEADER_CHIP_SLOP}
+      accessibilityRole="button"
+      accessibilityLabel={intakeDoorLabel(pets.length > 1, sex)}
+      accessibilityHint={`Opens a new meal to say how much ${petName} ate`}
+      style={styles.chip}
+      testID="look-header-intake-door"
+    >
+      <ThemedText style={styles.chipText}>{intakeDoorLabel(pets.length > 1, sex)}</ThemedText>
+    </Pressable>
+  );
+  const absenceChip = (
+    <HeaderChip label={LOOK_ABSENCE_CHIP} onPress={onAbsence} disabled={submitting} testID="look-header-absence" />
   );
 
   return (
@@ -486,6 +494,8 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
             style={[styles.chips, shown.length > 0 && styles.chipsAfterEntries]}
             testID="look-header-chips"
           >
+            {/* First in reading order, so first on the first row at any width (CUL-1501). */}
+            {REFUSAL_DOORS_IN_COMPACT_SET ? intakeDoor : null}
             {headWords.map((key) => {
               const word = lookWord(species, key);
               if (!word) return null;
@@ -500,7 +510,7 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
                 />
               );
             })}
-            {REFUSAL_DOORS_ON_FIRST_ROW ? refusalDoors : null}
+            {REFUSAL_DOORS_IN_COMPACT_SET ? absenceChip : null}
             {!gridOpen ? (
               <Pressable
                 onPress={() => {
@@ -511,7 +521,7 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel="More words"
                 accessibilityHint={
-                  REFUSAL_DOORS_ON_FIRST_ROW
+                  REFUSAL_DOORS_IN_COMPACT_SET
                     ? 'Shows the full list and when to call'
                     : 'Shows the full list, the didn’t-eat door and when to call'
                 }
@@ -526,9 +536,10 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
           {gridOpen ? (
             <>
               {/* The first row's other doors. Where the refusal door and the absence sit
-                  is GC-6 (CUL-1179): see `REFUSAL_DOORS_ON_FIRST_ROW`. */}
+                  is GC-6 (CUL-1179): see `REFUSAL_DOORS_IN_COMPACT_SET`. */}
               <View style={[styles.chips, styles.doorRow]} testID="look-header-door-row">
-                {REFUSAL_DOORS_ON_FIRST_ROW ? null : refusalDoors}
+                {REFUSAL_DOORS_IN_COMPACT_SET ? null : intakeDoor}
+                {REFUSAL_DOORS_IN_COMPACT_SET ? null : absenceChip}
                 <HeaderChip
                   label={notHerselfLabel(sex)}
                   onPress={() => onWord(LOOK_OPENING_CHIP_KEY)}
