@@ -216,7 +216,16 @@ describe('fixture — emitted SQL safety', () => {
     expect(prelude).toMatch(/user_id = '[^']+'::uuid AND id NOT IN \(/);
     expect(prelude).toMatch(/FROM pets WHERE id IN \([^)]+\) AND user_id IS DISTINCT FROM/);
     expect(prelude).toMatch(/FROM food_items WHERE id IN \([^)]+\) AND created_by_user_id IS DISTINCT FROM/);
-    expect((prelude.match(/RAISE EXCEPTION/g) ?? []).length).toBe(5);
+    for (const table of ['events', 'meals', 'weight_checks', 'diet_trials', 'diet_trial_foods']) {
+      expect(prelude).toMatch(new RegExp(`FROM ${table} WHERE id IN \\([^)]+\\) AND pet_id NOT IN \\(`));
+    }
+    expect((prelude.match(/RAISE EXCEPTION/g) ?? []).length).toBe(10);
+  });
+
+  it('refuses an email that could close the prelude\'s $do$ body (PR-21 review)', () => {
+    const hostile = 'x$do$; SELECT 1; DO $do$BEGIN PERFORM 1;--+culprit-fixture@example.com';
+    expect(isFixtureEmail(hostile)).toBe(true); // the alias rule alone does not stop it…
+    expect(() => emitFixtureSql(story, hostile)).toThrow(/address charset/); // …the literal does
   });
 
   it('every pet it writes belongs to the fixture user, and it writes only the four pets', () => {
@@ -232,10 +241,14 @@ describe('fixture — emitted SQL safety', () => {
     expect(sql).not.toMatch(/'check_in'/);
   });
 
-  it('the dry run rolls back and reads the fixture pets back, scoped to the user', () => {
+  it('the dry run ends in an error carrying the scoped counts, so nothing persists and the counts are seen', () => {
+    // execute_sql returns only the last statement's result; a SELECT before a ROLLBACK is
+    // never seen. The counts ride the exception that aborts the transaction instead.
     const dry = emitFixtureSqlForParams(PARAMS, { dryRun: true });
-    expect(dry.trimEnd().endsWith('ROLLBACK;')).toBe(true);
     expect(dry).not.toMatch(/\bCOMMIT;/);
-    expect(dry).toMatch(/AND p\.user_id = '33333333-3333-4333-8333-333333333333'::uuid/);
+    const tail = dry.slice(dry.lastIndexOf('DO $do$'));
+    expect(tail).toMatch(/RAISE EXCEPTION 'fixture DRY RUN, nothing written: %', v_counts;/);
+    expect(tail).toMatch(/AND p\.user_id = '33333333-3333-4333-8333-333333333333'::uuid/);
+    expect(dry.trimEnd().endsWith('ROLLBACK;')).toBe(true);
   });
 });

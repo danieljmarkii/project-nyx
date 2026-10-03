@@ -177,50 +177,55 @@ export async function seedNoticedLooks(petIdOrName: string): Promise<number> {
   const petId = pet.id;
 
   const nowMs = Date.now();
-  const answered = new Set((await loadLookDays(petId)).map((r) => r.localDay));
-  const vomitDays = await seededVomitDays(petId);
   let written = 0;
+  try {
+    const answered = new Set((await loadLookDays(petId)).map((r) => r.localDay));
+    const vomitDays = await seededVomitDays(petId);
 
-  for (const day of buildLookSeed(species)) {
-    const at = seedLookInstant(day.daysAgo, nowMs);
-    const key = localDayForLook(at);
+    for (const day of buildLookSeed(species)) {
+      const at = seedLookInstant(day.daysAgo, nowMs);
+      const key = localDayForLook(at);
 
-    if (!answered.has(key)) {
-      await insertLook({
-        petId,
-        species,
-        outcome: day.outcome,
-        words: day.words,
-        occurredAt: at,
-        // 'manual': the point was chosen, not seeded from the clock (C-10 — a defaulted
-        // timestamp is the app's claim, and this one is not the app's).
-        occurredAtSource: 'manual',
-      });
-      answered.add(key);
-      written += 1;
+      if (!answered.has(key)) {
+        await insertLook({
+          petId,
+          species,
+          outcome: day.outcome,
+          words: day.words,
+          occurredAt: at,
+          // 'manual': the point was chosen, not seeded from the clock (C-10 — a defaulted
+          // timestamp is the app's claim, and this one is not the app's).
+          occurredAtSource: 'manual',
+        });
+        answered.add(key);
+        written += 1;
+      }
+
+      // A seeded vomit is never today's (buildLookSeed's rule, pinned by its test), so it is
+      // always in the past and always on its look's day.
+      if (day.vomit && !vomitDays.has(key)) {
+        await insertSimpleEvent({
+          petId,
+          eventType: 'vomit',
+          confidence: 'witnessed',
+          occurredAt: new Date(at.getTime() - SEED_VOMIT_LEAD_MS),
+          earliest: null,
+          latest: null,
+          source: 'manual',
+          notes: SEED_MARKER,
+        });
+        vomitDays.add(key);
+      }
     }
-
-    // A seeded vomit is never today's (buildLookSeed's rule, pinned by its test), so it is
-    // always in the past and always on its look's day.
-    if (day.vomit && !vomitDays.has(key)) {
-      const vomitAt = new Date(at.getTime() - SEED_VOMIT_LEAD_MS);
-      await insertSimpleEvent({
-        petId,
-        eventType: 'vomit',
-        confidence: 'witnessed',
-        occurredAt: vomitAt,
-        earliest: null,
-        latest: null,
-        source: 'manual',
-        notes: SEED_MARKER,
-      });
-      vomitDays.add(key);
-    }
+    console.log(`[lookDevSeed] wrote ${written} looks for ${pet.name}`);
+  } catch (e) {
+    // A failure partway leaves what landed in place; re-running fills only the missing
+    // days, so the fix is to run it again, and the console says how far it got.
+    console.warn(`[lookDevSeed] stopped after ${written} looks for ${pet.name}:`, e);
+  } finally {
+    // Screens re-read whatever landed locally, as they do after a hydration.
+    useSyncStore.getState().bumpHydrationTick();
   }
-
-  // Screens re-read what just landed locally, as they do after a hydration.
-  useSyncStore.getState().bumpHydrationTick();
-  console.log(`[lookDevSeed] wrote ${written} looks for ${pet.name}`);
   return written;
 }
 

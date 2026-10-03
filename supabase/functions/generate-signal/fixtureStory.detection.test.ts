@@ -16,13 +16,28 @@
 // because Miso's low days are UTC-anchored (the demo story's R-3 lesson: a dip read at an
 // early UTC hour can vanish).
 //
+// Two inputs are empty on purpose, because they are empty on a fresh fixture account: the
+// care record (no answers, no appointments) and the care-context facts (EN-10's context lines
+// decorate a finding and never move one, per SIGNAL_DECORATING_KEYS). Weights ARE fed, through
+// the production mapper, while engines_v3_en8 is on, as the shell does.
+//
 // Pepper's record includes the three vomits `__seedNoticed` writes on the device
 // (NOTICED_SEED_VOMIT_DAYS; fixtureStory.test.ts pins that list to the client seed's).
 
 import { strict as assert } from 'node:assert'
-import { runSignalPipeline, type SignalRows, type SymptomRow, type MealEventRow, type ActiveTrialRow } from './pipeline.ts'
+import {
+  runSignalPipeline,
+  mapWeightCheckRows,
+  type SignalRows,
+  type SymptomRow,
+  type MealEventRow,
+  type ActiveTrialRow,
+  type WeightCheckRow,
+} from './pipeline.ts'
+import { CORRELATION_SYMPTOM_TYPES, type WeightLaneInput } from './detection.ts'
 import { EMPTY_CARE_RECORD } from './careState.ts'
-import { SIGNAL_ENGINE_KEYS, type EngineFlags } from '../_shared/engineFlags.ts'
+import { SIGNAL_ENGINE_KEYS, isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
+import { WEIGHT_RULES } from '../../../lib/weightStory.ts'
 import {
   buildFixtureStory,
   NOTICED_SEED_PET_KEY,
@@ -31,14 +46,19 @@ import {
 } from '../../../scripts/fixture/fixtureStory.ts'
 import { materializeInstantIso, materializeDate } from '../../../scripts/demo/demoStory.ts'
 
-const STORY = buildFixtureStory({
-  userId: '33333333-3333-4333-8333-333333333333',
-  timezone: 'America/New_York',
-})
+// Two zones: the PM passes their own to the seed, and only the time-of-day lane reads it.
+// New York and Los Angeles bracket the PM's likely zone without hiding behind UTC.
+const ZONES: Array<{ tz: string; utcOffsetHours: number }> = [
+  { tz: 'America/New_York', utcOffsetHours: -4 },
+  { tz: 'America/Los_Angeles', utcOffsetHours: -7 },
+]
+const USER_ID = '33333333-3333-4333-8333-333333333333'
 
-const SYMPTOM_TYPES = new Set(['vomit', 'diarrhea', 'itch'])
+// Production's fetch union, imported rather than restated, so a fixture event of a type the
+// engine reads can never be silently dropped here (code-reviewer, PR-21).
+const SYMPTOM_TYPES: ReadonlySet<string> = new Set(CORRELATION_SYMPTOM_TYPES)
 
-function rowsFor(pet: FixturePet, nowMs: number): SignalRows {
+function rowsFor(pet: FixturePet, nowMs: number, zone: { tz: string; utcOffsetHours: number }): SignalRows {
   const symptoms: SymptomRow[] = pet.events
     .filter((e) => SYMPTOM_TYPES.has(e.type))
     .map((e) => ({
@@ -49,13 +69,14 @@ function rowsFor(pet: FixturePet, nowMs: number): SignalRows {
       severity: null,
     }))
   if (pet.key === NOTICED_SEED_PET_KEY) {
-    // The device-written vomits, at the client seed's 4:04 PM local (19:04 − 3h) — placed at
-    // 20:04 UTC, which is 4:04 PM in New York under daylight time; clamped to now like the seed.
+    // The device-written vomits, at the client seed's 4:04 PM local (7:04 PM − 3h), in this
+    // zone (daylight time: the pinned day below is in October). Never today's (pinned by
+    // lib/lookDevSeed.test.ts), so no clamp.
     for (const d of NOTICED_SEED_VOMIT_DAYS) {
       symptoms.push({
         id: `noticed-seed-vomit-${d}`,
         event_type: 'vomit',
-        occurred_at: materializeInstantIso({ dayOffset: -d, hour: 20, minute: 4, clampToNow: d === 0 }, nowMs),
+        occurred_at: materializeInstantIso({ dayOffset: -d, hour: 16 - zone.utcOffsetHours, minute: 4 }, nowMs),
         occurred_at_confidence: 'witnessed',
         severity: null,
       })
@@ -94,23 +115,45 @@ function rowsFor(pet: FixturePet, nowMs: number): SignalRows {
     meals,
     activeTrials,
     arrangements: [],
-    timezone: STORY.timezone,
+    timezone: zone.tz,
     regimens: [],
     doseEvents: [],
     incidentAnalyses: [],
   }
 }
 
-function leadOf(pet: FixturePet, nowMs: number, flags: EngineFlags) {
+/**
+ * The weight lane's input exactly as index.ts's readWeightFacts builds it: the window's
+ * weigh-ins through the production mapper, with the defaults migration 081 gives a seeded
+ * row (`home_scale` / `legacy`), and no birthday (the seed writes none). Null while
+ * `engines_v3_en8` is off, as the shell passes it.
+ */
+function weightFactsFor(pet: FixturePet, nowMs: number, flags: EngineFlags): WeightLaneInput | null {
+  if (!isEngineKeyOn(flags, 'engines_v3_en8')) return null
+  const since = nowMs - (WEIGHT_RULES.windowDays + 1) * 86_400_000
+  const rows: WeightCheckRow[] = pet.events
+    .filter((e) => e.weight)
+    .map((e) => ({
+      id: e.weight!.weightCheckId,
+      weight_kg: e.weight!.weightKg,
+      source: 'home_scale',
+      source_basis: 'legacy',
+      events: { occurred_at: materializeInstantIso(e.time, nowMs) },
+    }))
+    .filter((r) => Date.parse((r.events as { occurred_at: string }).occurred_at) >= since)
+  return { readings: mapWeightCheckRows(rows), dateOfBirth: null }
+}
+
+function leadOf(pet: FixturePet, nowMs: number, flags: EngineFlags, zone: { tz: string; utcOffsetHours: number }) {
   const result = runSignalPipeline({
-    rows: rowsFor(pet, nowMs),
+    rows: rowsFor(pet, nowMs, zone),
     incompletePulls: [],
     prior: null,
     nowMs,
     engineFlags: flags,
     careRecord: EMPTY_CARE_RECORD,
     careContextFacts: null,
-    weightFacts: null,
+    weightFacts: weightFactsFor(pet, nowMs, flags),
   })
   return result.findings.map((r) => r.finding)
 }
@@ -125,27 +168,30 @@ const FLAG_SETS: EngineFlags[] = [
 const DAY = Date.parse('2026-10-05T00:00:00.000Z')
 const HOURS = [1, 9, 14, 22]
 
-for (const pet of STORY.pets) {
-  Deno.test(`fixture — ${pet.name}'s Signal leads as declared (${pet.declaredLead.kind}), every hour, every key`, () => {
-    for (const h of HOURS) {
-      const nowMs = DAY + h * 3_600_000 + 30 * 60_000
-      for (const flags of FLAG_SETS) {
-        const findings = leadOf(pet, nowMs, flags)
-        const where = `${pet.name} at ${h}:30 UTC, keys [${flags.on.join(', ')}]: got [${findings.map((f) => `${f.type}/${f.priorityClass}`).join(', ')}]`
-        const decl = pet.declaredLead
-        if (decl.kind === 'none') {
-          assert.equal(findings.length, 0, where)
-          continue
-        }
-        assert.ok(findings.length > 0, `no lead — ${where}`)
-        assert.equal(findings[0].type, decl.type, `lead type — ${where}`)
-        assert.equal(findings[0].priorityClass, decl.kind === 'safety' ? 'safety' : 'insight', `lead class — ${where}`)
-        if (decl.kind === 'benign') {
-          // A benign lead means NO safety card anywhere: Home leads with its first card, and a
-          // safety card always ranks first, so one anywhere would be the lead.
-          assert.ok(findings.every((f) => f.priorityClass !== 'safety'), `a safety card — ${where}`)
+for (const zone of ZONES) {
+  const story = buildFixtureStory({ userId: USER_ID, timezone: zone.tz })
+  for (const pet of story.pets) {
+    Deno.test(`fixture — ${pet.name}'s Signal leads as declared (${pet.declaredLead.kind}), ${zone.tz}, every hour, every key`, () => {
+      for (const h of HOURS) {
+        const nowMs = DAY + h * 3_600_000 + 30 * 60_000
+        for (const flags of FLAG_SETS) {
+          const findings = leadOf(pet, nowMs, flags, zone)
+          const where = `${pet.name} (${zone.tz}) at ${h}:30 UTC, keys [${flags.on.join(', ')}]: got [${findings.map((f) => `${f.type}/${f.priorityClass}`).join(', ')}]`
+          const decl = pet.declaredLead
+          if (decl.kind === 'none') {
+            assert.equal(findings.length, 0, where)
+            continue
+          }
+          assert.ok(findings.length > 0, `no lead — ${where}`)
+          assert.equal(findings[0].type, decl.type, `lead type — ${where}`)
+          assert.equal(findings[0].priorityClass, decl.kind === 'safety' ? 'safety' : 'insight', `lead class — ${where}`)
+          if (decl.kind === 'benign') {
+            // A benign lead means NO safety card anywhere: Home leads with its first card, and a
+            // safety card always ranks first, so one anywhere would be the lead.
+            assert.ok(findings.every((f) => f.priorityClass !== 'safety'), `a safety card — ${where}`)
+          }
         }
       }
-    }
-  })
+    })
+  }
 }

@@ -64,9 +64,9 @@ The `WITH` resolves the id from the alias and re-checks the tag, so a mistyped a
    ```bash
    deno run scripts/emit-fixture-seed.deno.ts --user <uuid> --email <alias> --timezone America/New_York --dry-run > fixture-dry.sql
    ```
-   Run `fixture-dry.sql` through Supabase MCP `execute_sql`. It writes, reads each pet's live-event count back, then rolls back. Expect four rows (Fig with 0 events) and `active_trials` = 1 for Juniper and Miso.
+   Run `fixture-dry.sql` through Supabase MCP `execute_sql`. It writes, then **ends in an error on purpose**, which rolls everything back: `fixture DRY RUN, nothing written: Fig: 0 events, 0 active trial(s); Juniper: … events, 1 active trial(s); Miso: … 1 active trial(s); Pepper: … 0 active trial(s)`. That error is the pass. Any other error is a failure (see 3.3).
 2. Emit and run the live seed (the same command without `--dry-run`). It is upsert-only, so running it again later moves every seeded row back to its place and revives any you removed. Rows you log during the sitting are kept.
-3. Any `fixture seed refused: …` means nothing was written. The message names the check: the id and the email disagree, the email is not an alias, the account owns a non-fixture pet, or a fixture id belongs to someone else.
+3. Any `fixture seed refused: …` means nothing was written. The message names the check: the id and the email disagree, the email is not an alias, the account owns a non-fixture pet, or a fixture id (on any table the seed writes) belongs to someone else. Once, before the first live run, run the dry run with a deliberately wrong `--user` and confirm the only output is that refusal: it proves `execute_sql` stops at the first error.
 
 Use your own time zone for `--timezone`; it is stored on the account and only the time-of-day lane reads it.
 
@@ -88,7 +88,10 @@ Use your own time zone for `--timezone`; it is stored on the account and only th
 ## 5 · Check the leads (PM, the morning of the sitting, after Home has opened each pet once)
 
 ```sql
-WITH fixture AS (SELECT id FROM auth.users WHERE email = '<alias>')
+WITH fixture AS (
+  SELECT id FROM auth.users
+   WHERE email = '<alias>' AND split_part(email, '@', 1) LIKE '_%+culprit-fixture'
+)
 SELECT p.name,
        s.generated_at,
        s.is_building,
@@ -102,7 +105,7 @@ SELECT p.name,
  ORDER BY p.name;
 ```
 
-Expect: Juniper `timeofday_clustering` / `insight`; Miso `intake_decline` / `safety`; Pepper and Fig building (no lead). A different answer means the engine or its flags moved since CI last certified the story: post it on CUL-1529 before the sitting rather than judging the wrong card.
+The tag check means a mistyped address returns nothing rather than a real account's pets. Expect: Juniper `timeofday_clustering` / `insight`; Miso `intake_decline` / `safety`; Pepper and Fig building (no lead). A different answer means the engine or its flags moved since CI last certified the story: post it on CUL-1529 before the sitting rather than judging the wrong card.
 
 ## What the old seed got wrong, and what changed (BRK-48)
 

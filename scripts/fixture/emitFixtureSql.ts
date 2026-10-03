@@ -16,8 +16,9 @@
 //            which the PM's own account and the App Review demo account can never be;
 //        (c) the account owns NO pet outside the fixture's own four ids — so even a
 //            fixture-tagged account that someone used for real is refused;
-//        (d) no fixture pet id or food id already belongs to another account (the service
-//            role bypasses RLS, so ownership is the emitter's job).
+//        (d) no fixture id, on any table the seed upserts, already belongs to another
+//            account or pet (the service role bypasses RLS, so ownership is the emitter's
+//            job, and an upsert keyed on id would otherwise re-point a planted row).
 //   3. RUN-TIME-RELATIVE instants (`now()`-relative SQL; today's rows clamp to now − 5 min).
 //   4. DOLLAR-QUOTED literals.
 //
@@ -35,13 +36,20 @@ export interface FixtureEmitParams extends FixtureStoryParams {
 }
 
 export interface FixtureEmitOptions {
-  /** Assert + upsert + a scoped counts read-back, then ROLLBACK: the pre-flight. */
+  /** Assert + upsert, then an error carrying the scoped counts, which rolls back: the pre-flight. */
   dryRun?: boolean;
 }
 
-/** A plain single-quoted literal for the prelude's comparisons; refuses a quote outright. */
+/**
+ * A plain single-quoted literal for the prelude's comparisons. It sits INSIDE the prelude's
+ * `$do$` body, so it admits only an address-shaped charset: no quote, no backslash, and no
+ * `$` (rls-privacy-reviewer, PR-21: an email carrying `$do$` closed the body early, and the
+ * only thing failing it closed was an accident of the leftover text).
+ */
 function plainLit(v: string): string {
-  if (/['\\]/.test(v)) throw new Error(`emitFixtureSql: refusing a value with a quote or backslash: ${JSON.stringify(v)}`);
+  if (!/^[A-Za-z0-9._%+@-]+$/.test(v)) {
+    throw new Error(`emitFixtureSql: refusing a value outside the address charset: ${JSON.stringify(v)}`);
+  }
   return `'${v}'`;
 }
 
@@ -51,6 +59,24 @@ function allPetIds(story: FixtureStory): string {
 
 function allFoodIds(story: FixtureStory): string {
   return story.pets.flatMap((p) => p.foods.map((f) => uuidLit(f.id))).join(', ');
+}
+
+/**
+ * Every child row the seed upserts, by table, keyed on `pet_id`. Check (d) refuses when any
+ * of these ids already exists on a pet that is not a fixture pet: an upsert keyed on `id`
+ * would otherwise re-point that row's `pet_id` into the fixture account. The ids are v5 and a
+ * client mints v4, so no collision is accidental, but the fixture uid is readable from the
+ * allowlist and the slot strings are in the repo, so one can be planted (PR-21 review).
+ */
+function childIds(story: FixtureStory): Array<{ table: string; ids: string[] }> {
+  const events = story.pets.flatMap((p) => p.events);
+  return [
+    { table: 'events', ids: events.map((e) => e.eventId) },
+    { table: 'meals', ids: events.flatMap((e) => (e.meal ? [e.meal.mealId] : [])) },
+    { table: 'weight_checks', ids: events.flatMap((e) => (e.weight ? [e.weight.weightCheckId] : [])) },
+    { table: 'diet_trials', ids: story.pets.flatMap((p) => (p.trial ? [p.trial.id] : [])) },
+    { table: 'diet_trial_foods', ids: story.pets.flatMap((p) => (p.trial ? [p.trial.allowedFoodRowId] : [])) },
+  ].filter((t) => t.ids.length > 0);
 }
 
 function assertionPrelude(story: FixtureStory, email: string): string {
@@ -75,13 +101,21 @@ function assertionPrelude(story: FixtureStory, email: string): string {
     `  IF EXISTS (SELECT 1 FROM pets WHERE user_id = ${u} AND id NOT IN (${allPetIds(story)})) THEN\n` +
     `    RAISE EXCEPTION 'fixture seed refused: the account owns a pet that is not a fixture pet';\n` +
     `  END IF;\n` +
-    `  -- (d) No fixture pet or food id belongs to another account.\n` +
+    `  -- (d) No fixture id, on any table the seed writes, belongs to another account or pet.\n` +
     `  IF EXISTS (SELECT 1 FROM pets WHERE id IN (${allPetIds(story)}) AND user_id IS DISTINCT FROM ${u}) THEN\n` +
     `    RAISE EXCEPTION 'fixture seed refused: a fixture pet id belongs to another account';\n` +
     `  END IF;\n` +
     `  IF EXISTS (SELECT 1 FROM food_items WHERE id IN (${allFoodIds(story)}) AND created_by_user_id IS DISTINCT FROM ${u}) THEN\n` +
     `    RAISE EXCEPTION 'fixture seed refused: a fixture food id belongs to another account';\n` +
     `  END IF;\n` +
+    childIds(story)
+      .map(
+        ({ table, ids }) =>
+          `  IF EXISTS (SELECT 1 FROM ${table} WHERE id IN (${ids.map(uuidLit).join(', ')}) AND pet_id NOT IN (${allPetIds(story)})) THEN\n` +
+          `    RAISE EXCEPTION 'fixture seed refused: a fixture ${table} id belongs to another pet';\n` +
+          `  END IF;\n`,
+      )
+      .join('') +
     `END\n` +
     `$do$;`
   );
@@ -231,14 +265,28 @@ function eventUpserts(pet: FixturePet): string[] {
   });
 }
 
-function countsReadback(story: FixtureStory): string {
+/**
+ * The dry run's read-back. `execute_sql` returns only the LAST statement's result, and a
+ * SELECT before a ROLLBACK is not the last, so the counts travel in an exception message
+ * instead: the DO block reads them and RAISEs, which aborts the transaction (nothing
+ * persists) and puts the counts in the one place the operator is sure to see them.
+ */
+function dryRunReadback(story: FixtureStory): string {
   const pets = allPetIds(story);
   return (
-    `SELECT p.name, count(e.id) FILTER (WHERE e.deleted_at IS NULL) AS live_events,\n` +
-    `       (SELECT count(*) FROM diet_trials t WHERE t.pet_id = p.id AND t.status = 'active') AS active_trials\n` +
-    `  FROM pets p LEFT JOIN events e ON e.pet_id = p.id\n` +
-    ` WHERE p.id IN (${pets}) AND p.user_id = ${uuidLit(story.userId)}\n` +
-    ` GROUP BY p.id, p.name ORDER BY p.name;`
+    `DO $do$\n` +
+    `DECLARE\n` +
+    `  v_counts text;\n` +
+    `BEGIN\n` +
+    `  SELECT string_agg(format('%s: %s events, %s active trial(s)', p.name,\n` +
+    `           (SELECT count(*) FROM events e WHERE e.pet_id = p.id AND e.deleted_at IS NULL),\n` +
+    `           (SELECT count(*) FROM diet_trials t WHERE t.pet_id = p.id AND t.status = 'active')),\n` +
+    `         '; ' ORDER BY p.name)\n` +
+    `    INTO v_counts\n` +
+    `    FROM pets p WHERE p.id IN (${pets}) AND p.user_id = ${uuidLit(story.userId)};\n` +
+    `  RAISE EXCEPTION 'fixture DRY RUN, nothing written: %', v_counts;\n` +
+    `END\n` +
+    `$do$;`
   );
 }
 
@@ -251,7 +299,7 @@ export function emitFixtureSql(story: FixtureStory, email: string, options: Fixt
     `-- Run via the Supabase MCP execute_sql (SERVICE ROLE). NOT a migration.\n` +
     `-- Upsert-only, one transaction, behind an assertion prelude. Pets and their declared leads:\n` +
     story.pets.map((p) => `--   ${p.name} (${p.species}): ${p.role}\n`).join('') +
-    `-- ${options.dryRun ? 'DRY RUN: reads counts back, then ROLLBACKs (nothing persists).' : 'LIVE: COMMITs.'}\n`;
+    `-- ${options.dryRun ? 'DRY RUN: ends in an error carrying the counts, which rolls everything back.' : 'LIVE: COMMITs.'}\n`;
 
   const body: string[] = [
     'BEGIN;',
@@ -262,7 +310,7 @@ export function emitFixtureSql(story: FixtureStory, email: string, options: Fixt
     ...story.pets.flatMap((p) => trialUpserts(p)),
     ...story.pets.flatMap((p) => eventUpserts(p)),
   ];
-  body.push(...(options.dryRun ? [countsReadback(story), 'ROLLBACK;'] : ['COMMIT;']));
+  body.push(...(options.dryRun ? [dryRunReadback(story), 'ROLLBACK;'] : ['COMMIT;']));
   return header + '\n' + body.join('\n\n') + '\n';
 }
 
