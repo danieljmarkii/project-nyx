@@ -9,6 +9,7 @@
 // over hand-built findings the engine might never emit together (C-35).
 import { strict as assert } from 'node:assert'
 import { detectSignals, type DetectionInput, type MealEvent, type SymptomEvent, type SymptomType } from './detection.ts'
+import { EMPTY_CARE_RECORD } from './careState.ts'
 import { runSignalPipeline, templatePayload } from './pipeline.ts'
 import { ENGINE_KEYS, type EngineFlags } from '../_shared/engineFlags.ts'
 import { SIGNAL_PIPELINE_CORPUS } from '../_shared/engineCorpus/signalPipeline.corpus.ts'
@@ -119,7 +120,7 @@ Deno.test('CUL-1213 — no cache row in the Signal pipeline corpus shares an ide
         prior: c.prior,
         nowMs: Date.parse(c.nowIso),
         engineFlags,
-        careRecord: { ownerAnswers: [], appointments: [] },
+        careRecord: EMPTY_CARE_RECORD,
         careContextFacts: null,
       })
       const keys = templatePayload(result).findings.map((e) => findingIdentity(e.finding))
@@ -146,7 +147,7 @@ Deno.test('CUL-1213 — an incomplete read carries the prior decline beside the 
       prior,
       nowMs: Date.parse(c.nowIso),
       engineFlags: { on: [], readOk: true },
-      careRecord: { ownerAnswers: [], appointments: [] },
+      careRecord: EMPTY_CARE_RECORD,
       careContextFacts: null,
     })
   const complete = templatePayload(run([], null))
