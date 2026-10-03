@@ -41,6 +41,8 @@ import {
   type TrialCardState,
 } from './dietTrialCard';
 import { getDietTrialProgress } from './analytics';
+import { REFUSAL_WINDOW_DAYS } from './dietTrial';
+import { milestoneNote } from './dietTrialCompletion';
 import type { TrialResponseCounts } from './trialResponseCounts';
 
 const MS_PER_DAY = 86_400_000;
@@ -3073,50 +3075,161 @@ describe('the intake-rating teach line (R1b)', () => {
   });
 });
 
-// ── The residual R1 leaves on the terminal cards (B-570) ────────────────────
+// ── An ended trial keeps the ask while the refusal is live (CUL-1337) ───────
 //
-// `trialDietRefusal` and `rangeRefusal` are not nested: a trial eaten for six
-// weeks and refused for the last two clears the RANGE share and fires the recency
-// one, so a FINISHED trial can carry a now-fact with no range fact. `registerFor`
-// routes that to `record`, not to `refusal_withheld`.
+// Was B-570's open half, pinned here as `record`. The PM ruled it 2026-10-03: the
+// live refusal face's own *Tell Culprit what's next* → *Stopped early* →
+// *wouldn't eat it* moved the trial to `abandoned` and the card dropped "needs a
+// call today" over a cat nothing on the record says has started eating. A
+// terminal card now routes the now-fact to `trial_refusal`, below `decline` and
+// above `refusal_withheld`, while the fact's own window still reaches today.
 //
-// PINNED AS A BOUND, NOT AS A BLESSING. What holds is that the affirmative claim
-// is withheld — the module gate reads the now-fact, so the adapter never hands
-// the card `mayStateRecordClean: true` on such a record. What does NOT hold is
-// that the finding is disclosed, and withholding a claim is not the same as
-// disclosing a finding (this file's own `rangeRefusal` docstring). Changing it
-// changes what an owner reads on a finished trial and belongs with the Dr. Chen
-// stand-down ruling, so it is B-570.
-describe('the terminal residual R1 leaves (B-570)', () => {
-  const finishedButRefusing = (mayStateRecordClean: boolean) => activeInput({
+// EVERY FIXTURE PINS `nowMs` RELATIVE TO `endedAt`. `computeTrialFacts` anchors
+// the now-fact at the trial's end, so the liveness bound is a distance from the
+// end; a fixture whose clock sits before its own `endedAt` (the shared
+// `activeInput` default does) would test a record production cannot hand over.
+describe('an ended trial keeps the ask while the refusal is live (CUL-1337)', () => {
+  const ENDED = '2026-08-27';
+  const daysAfterEnd = (n: number) => localNoon(2026, 8, 27) + n * MS_PER_DAY;
+
+  const endedRefusing = (over: {
+    status?: 'completed' | 'abandoned';
+    stoppedReason?: string | null;
+    after?: number;
+    offDiet?: number;
+    mayStateRecordClean?: boolean;
+  } = {}) => activeInput({
     species: 'cat',
     petName: 'Mochi',
+    nowMs: daysAfterEnd(over.after ?? 1),
     trial: {
-      status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+      status: over.status ?? 'abandoned', startedAt: '2026-07-03', endedAt: ENDED,
       targetDurationDays: 56, foodLabel: FOOD,
+      stoppedReason: over.stoppedReason === undefined ? 'refused' : over.stoppedReason,
     },
     trialDietRefusal: REFUSING_NOW,
     coverage: { daysLogged: 54, daysElapsed: 56 },
-    exposures: { mayStateRecordClean, totalFeedings: 182, offDiet: 0 },
+    exposures: {
+      mayStateRecordClean: over.mayStateRecordClean ?? false,
+      totalFeedings: 182,
+      offDiet: over.offDiet ?? 0,
+    },
   });
 
-  it('withholds the clean claim, because the module gate reads the now-fact', () => {
-    expect(allStrings(resolveTrialCard(finishedButRefusing(false))).join(' '))
-      .not.toMatch(/all \d+ matched|matched the trial diet or a permitted food/i);
+  // THE ADVERSARIAL CASE THE PM NAMED: a cat that stopped early for refusal and
+  // is still refusing. The shipped card rendered the owner's reason, the
+  // "different diet" note and the withheld-reading line, and no ask.
+  it('stopped early for refusal and still refusing: the call stays on the card', () => {
+    const model = resolveTrialCard(endedRefusing());
+    expect(model.state).toBe('abandoned');
+    expect(planTrialCard(endedRefusing()).register).toBe('trial_refusal');
+    const flags = textOf(model, 'flag').join(' ');
+    expect(flags).toContain('left unfinished');
+    expect(flags).toContain('needs a call today');
+    // The owner's own reason still leads — the escalation is added, not swapped in.
+    expect(textOf(model, 'lead')).toEqual(['Stopped because Mochi wouldn’t eat it.']);
+    // The history voice yields to the escalation, as it does to `decline`.
+    expect(allStrings(model).join(' ')).not.toContain('a different diet, not a different plan');
+    expect(allStrings(model).join(' ')).not.toMatch(/Culprit isn’t showing how clean/);
   });
 
-  // The gap itself, stated so it cannot be mistaken for covered ground: the
-  // register does not change, so the refusal is not NAMED on the terminal card.
-  it('does not yet name the refusal there — the open half', () => {
-    expect(planTrialCard(finishedButRefusing(false)).register).toBe('record');
-    expect(allStrings(resolveTrialCard(finishedButRefusing(false))).join(' '))
-      .not.toContain('left unfinished');
+  it('offers no "Start a new trial" over it, and the header keeps the way in', () => {
+    const model = resolveTrialCard(endedRefusing());
+    expect(model.actions).toEqual([]);
+    expect(trialManageLabel(model)).toBe('+ Start');
+    expect(trialManageTarget(model)).toBe('start_trial');
   });
 
-  // …and Home still goes quiet over it, which is the half that IS closed: the
-  // now-fact is its own withholding reason, keyed on the raw input.
-  it('but Home is already silent about it', () => {
-    expect(withholdingReasons(finishedButRefusing(false))).toContain('trial_diet_refusal');
+  // Reached from the record, not only from the owner's word: "This trial is done"
+  // over a diet still going unfinished, and an early stop for another reason.
+  it.each([
+    ['completed', null],
+    ['abandoned', 'cost'],
+    ['abandoned', null],
+  ] as const)('%s (%s) carries the same flags', (status, stoppedReason) => {
+    const input = endedRefusing({ status, stoppedReason });
+    expect(planTrialCard(input).register).toBe('trial_refusal');
+    expect(textOf(resolveTrialCard(input), 'flag').join(' ')).toContain('needs a call today');
+  });
+
+  it('a completed card keeps its own way to the report', () => {
+    const model = resolveTrialCard(endedRefusing({ status: 'completed', stoppedReason: null }));
+    expect(model.actions.map((a) => a.id)).toEqual(['open_report']);
+  });
+
+  // The continuation note ("often continued for around three months") under
+  // "needs a call today" reads as advice to keep offering a refused diet.
+  it('a completed card does not tell the owner to keep going under the call', () => {
+    const gi = (after: number) => {
+      const input = endedRefusing({ status: 'completed', stoppedReason: null, after });
+      return { ...input, trial: { ...input.trial!, indication: 'gi' as const } };
+    };
+    const note = milestoneNote('gi');
+    expect(allStrings(resolveTrialCard(gi(1)))).not.toContain(note);
+    // …and it comes back once the refusal has lapsed, so the gate is the register.
+    expect(allStrings(resolveTrialCard(gi(REFUSAL_WINDOW_DAYS)))).toContain(note);
+  });
+
+  // §5.2: the floor only moves toward disclosing more, on this register too.
+  it('the off-diet floor still renders under the flags', () => {
+    const model = resolveTrialCard(endedRefusing({ offDiet: 12 }));
+    expect(allStrings(model).join(' ')).toMatch(/\b12\b/);
+  });
+
+  it('withholds the clean claim, as before', () => {
+    for (const status of ['completed', 'abandoned'] as const) {
+      expect(allStrings(resolveTrialCard(endedRefusing({ status, stoppedReason: null }))).join(' '))
+        .not.toMatch(/all \d+ matched|matched the trial diet or a permitted food/i);
+    }
+  });
+
+  // THE BOUND. The fact froze at the end; it is live while its own window still
+  // reaches today, and the boundary is derived from the shipped constant (C-34).
+  it('lapses once the window that measured it no longer reaches today', () => {
+    const last = REFUSAL_WINDOW_DAYS - 1;
+    expect(planTrialCard(endedRefusing({ after: last })).register).toBe('trial_refusal');
+    // Lapsed: back to the shipped voices — the owner's named refusal reports, and
+    // a "done" trial withholds its claim without the present-tense ask.
+    expect(planTrialCard(endedRefusing({ after: REFUSAL_WINDOW_DAYS })).register)
+      .toBe('refusal_withheld');
+    const done = endedRefusing({ status: 'completed', stoppedReason: null, after: REFUSAL_WINDOW_DAYS });
+    expect(planTrialCard(done).register).toBe('record');
+    expect(allStrings(resolveTrialCard(done)).join(' ')).not.toContain('needs a call today');
+  });
+
+  it('the day it ended counts as live', () => {
+    expect(planTrialCard(endedRefusing({ after: 0 })).register).toBe('trial_refusal');
+  });
+
+  // The facts adapter hands the predicate the DECLARED end only, so a terminal row
+  // with no `ended_at` has a today-anchored window: its fact is a real now-fact,
+  // and no amount of elapsed time since the target end may stand it down.
+  it('a missing ended_at leaves the fact today-anchored, so it stays live', () => {
+    const input = endedRefusing({ after: 1 });
+    const noEnd = { ...input, trial: { ...input.trial!, endedAt: null } };
+    expect(planTrialCard(noEnd).register).toBe('trial_refusal');
+    const longAfter = { ...noEnd, nowMs: daysAfterEnd(REFUSAL_WINDOW_DAYS * 3) };
+    expect(planTrialCard(longAfter).register).toBe('trial_refusal');
+  });
+
+  it('the clinical decline still outranks it', () => {
+    const input = {
+      ...endedRefusing(),
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+    };
+    expect(planTrialCard(input).register).toBe('decline');
+    expect(textOf(resolveTrialCard(input), 'flag').join(' ')).not.toContain('left unfinished');
+  });
+
+  // The range fact alone does not route here: B-566's day-2 misfire argument is
+  // about `rangeRefusal`, and the ruling did not touch it.
+  it('the range fact alone keeps the history voice', () => {
+    const input = { ...endedRefusing(), trialDietRefusal: null, rangeRefusal: REFUSING_NOW };
+    expect(planTrialCard(input).register).toBe('refusal_withheld');
+  });
+
+  it('and Home stays silent about it', () => {
+    expect(withholdingReasons(endedRefusing())).toContain('trial_diet_refusal');
   });
 });
 
