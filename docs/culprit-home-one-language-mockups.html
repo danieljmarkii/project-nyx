@@ -204,41 +204,40 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 2</span><span>CUL-1519 · from the CUL-1496 critique</span><span>Design v2 · Step 3b</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 2 · all ruled</span><span>CUL-1519 · from the CUL-1496 critique</span><span>Design v2 · Step 3b</span></p>
     <h1>One Home Language</h1>
-    <p class="standfirst">Round 2 draws your reactions as <strong>one proposal</strong> on Nyx's real Friday, Oct 2. Three decisions are ruled. <strong>Two are left:</strong> what colour means "you can tap this" (now with your indigo idea drawn), and whether the patterns fold under a safety card.</p>
+    <p class="standfirst">Round 2 draws your reactions as <strong>one proposal</strong> on Nyx's real Friday, Oct 2. <strong>All five decisions are ruled.</strong> You ruled three directly and deferred the last two to the product team's recommendation (Oct 3).</p>
     <div class="ledger" aria-label="What your reactions ruled">
       <div><b>R-1 · Card and door mark</b><span><q>I like your A recommendation.</q> <span class="pill">ruled A</span> One soft-shadow surface for every card, rails in the gutter so text starts at one edge, a plain › on every door, the circle on the Signal's lead only. Drawn in every frame.</span></div>
       <div><b>R-2 · The trial card</b><span><q>Love adding the end date. I find myself constantly thinking, when is this over.</q> <span class="pill">ruled B, end date always</span> The card is its title, a neutral bar and one line that <em>always starts with the end date</em>, then the off-diet count when there is one: <em>Ends Oct 17 · 3 off-diet feedings logged.</em> Coverage and the vomiting pair move to the trial screen.</span></div>
       <div><b>R-3 · Beside a safety card</b><span><q>I still like at least the date appearing.</q> <span class="pill">ruled B</span> Under a safety card the card keeps the end date and the off-diet count; nothing that reads as good news. With R-2's line that is the same card on every day, so the rule costs nothing to see. Dr. Chen's read is below the frames.</span></div>
-      <div><b>R-4 · What teal means</b><span><q>Not sure. Should we work in more of the dark blue/purple? It's not really anywhere in the app.</q> <span class="pill open">open, redrawn</span> Your indigo idea is drawn as option C in §02, beside A and B. It needs a brand rule changed, so it comes as a brief.</span></div>
-      <div><b>R-5 · Patterns fold</b><span>No reaction yet. <span class="pill open">open, carried</span> Unchanged in §03.</span></div>
+      <div><b>R-4 · What teal means</b><span><q>Not sure. Should we work in more of the dark blue/purple? It's not really anywhere in the app.</q> <span class="pill">ruled C, deferred to the team</span> Indigo means "you can act", teal means "a good fact". It changes brand rule 3, so it runs as its own short round across every screen (CUL-1279) before Home adopts it.</span></div>
+      <div><b>R-5 · Patterns fold</b><span><q>I'll defer to the recommendation of the product team.</q> <span class="pill">ruled B, deferred to the team</span> Pattern rows fold into a counted line while a safety card leads.</span></div>
     </div>
     <div class="howto">
-      <b>How to read it.</b> <span class="tag cur" style="margin:0 4px 0 0">current</span> is the proposal. <span class="tag opt" style="margin:0 4px 0 0">option</span> boxes are still real choices. Round 1's G1, G2 and G3 option frames have left the page; the round 1 version is in git (commit <code>5d64bcb</code>).
+      <b>How to read it.</b> Every frame tagged <span class="tag cur" style="margin:0 4px 0 0">current</span> is ruled. The retired options have left the page; round 1 is commit <code>5d64bcb</code> and round 2 with its open options is commit <code>7bf7154</code>.
     </div>
   </header>
 
   <section id="s1">
     <div class="sec-head"><span class="sec-id">§01</span><h2>Home today, and Home with your rulings</h2></div>
     <div class="col">
-      <p>Scroll inside each phone; the bottom edge is the first screenful. The colour toggle switches between the three answers to R-4. The proposal starts on C, the team's pick (§02).</p>
+      <p>Scroll inside each phone; the bottom edge is the first screenful. The colour is R-4's ruling, C. The text-size toggle shows the largest setting.</p>
     </div>
     <div class="frames">
       <div class="slot"><span class="tag built">as shipped</span><div id="f-ship"></div>
         <p class="cap"><b>Today's build</b>Two card surfaces, two text edges, three door marks, a seven-line trial card.</p></div>
       <div class="slot"><span class="tag cur">current</span>
         <div class="controls">
-          <span class="seg" role="group" aria-label="What the tap colour is"><button type="button" id="b-indigo" aria-pressed="true">C · indigo</button><button type="button" id="b-act" aria-pressed="false">A · teal acts</button><button type="button" id="b-fact" aria-pressed="false">B · teal is good</button></span>
           <span class="seg" role="group" aria-label="Text size"><button type="button" id="b-k1" aria-pressed="true">Default text</button><button type="button" id="b-k2" aria-pressed="false">Largest</button></span>
         </div>
         <div id="f-prop"></div>
-        <p class="cap"><b>The proposal</b>R-1, R-2 and R-3 applied. The trial card answers "when is this over" in its first words. The pattern row is folded per G6 (B), still open in §03.</p></div>
+        <p class="cap"><b>The proposal</b>R-1, R-2 and R-3 applied. The trial card answers "when is this over" in its first words. The pattern row folds into a counted line while a safety card leads (R-5).</p></div>
     </div>
   </section>
 
   <section id="s2">
-    <div class="sec-head"><span class="sec-id">§02 · G4</span><h2>What colour says "you can tap this"</h2></div>
+    <div class="sec-head"><span class="sec-id">§02 · G4</span><h2>What colour says "you can tap this": indigo</h2></div>
     <div class="brief">
       <p><strong>Better than the rule.</strong> In-app brand rule 3 (Aug 2026, amended Sep 26 for the + button, CUL-322) says teal is the only colour for things you tap, and indigo is only ever a background. It protects against two accent colours fighting, and it kept the Signal off a dark ground (D8). Making indigo the action colour was parked as CUL-1279 until you had judged the indigo + button on your phone. You have it now.</p>
       <p><strong>Deciding:</strong> which colour means "you can tap this" on Home, and so what teal is left to mean.</p>
@@ -248,9 +247,7 @@
       <p><strong>Consequence:</strong> C is an app-wide change, not a Home one. Home alone in indigo would be a new inconsistency with History, Foods and the trial screen, the exact problem this milestone fixes. So C opens CUL-1279 as its own short round across screens, with a new action token, a rewrite of brand rule 3 and a full contrast check. Home's G1 to G3 build does not wait for it; only the colour of links does.</p>
     </div>
     <div class="frames">
-      <div class="slot"><span class="tag cur">current · C</span><div id="f-g4c"></div><p class="cap"><b>C: indigo acts, teal is good</b>Links, the Ask dot and the + in indigo. Meals, MOST and GIVEN in teal.</p></div>
-      <div class="optbox"><span class="tag opt">option · A</span><div id="f-g4a"></div><p class="cap"><b>A: teal acts</b>Links and the + glyph teal; MOST and GIVEN grey.</p></div>
-      <div class="optbox"><span class="tag opt">option · B</span><div id="f-g4b"></div><p class="cap"><b>B: teal is good</b>MOST and GIVEN teal; links in ink.</p></div>
+      <div class="slot"><span class="tag cur">current · ruled C</span><div id="f-g4c"></div><p class="cap"><b>C: indigo acts, teal is good</b>Links, the Ask dot and the + in indigo. Meals, MOST and GIVEN in teal.</p></div>
     </div>
     <div class="tscroll">
       <table class="t">
@@ -266,11 +263,11 @@
       </table>
     </div>
     <p class="col" style="font-size:14px;color:var(--ink-3)">The action indigo drawn here (<code>#3F35A0</code>, about 9:1 on white) is a proposed new token, one step lighter than the + button's disc so a link never reads as plain black text. CUL-1279 would set the final value.</p>
-    <p class="react"><b>React R-4</b>C, A or B? If C: open CUL-1279 now as a short round across History, Foods and the trial screen?</p>
+    <p class="react"><b>Ruled R-4</b>C. Next: CUL-1279, one short round across History, Foods and the trial screen, then the brand-rule rewrite and the contrast check. Home builds its links in the shipped teal until then.</p>
   </section>
 
   <section id="s3">
-    <div class="sec-head"><span class="sec-id">§03 · G6</span><h2>Patterns fold while a safety card leads</h2></div>
+    <div class="sec-head"><span class="sec-id">§03 · G6</span><h2>Patterns fold while a safety card leads: yes</h2></div>
     <div class="brief">
       <p><strong>Better than the rule.</strong> CUL-1285 (Sep 26) retired the Signal's fold, protecting Home from a stored per-card state, a "Keep it compact" control and "seen, never resolved".</p>
       <p><strong>Deciding:</strong> whether, while a safety card leads, pattern rows fold into the Signal's foot as a count.</p>
@@ -278,10 +275,9 @@
       <p><strong>(B) Pattern rows fold into "1 more pattern · Patterns ›" while a safety card leads. Nothing stored, no control.</strong> <span class="rec">Recommended:</span> about 107pt back on this record, about 300pt on a busy one, and every CUL-1285 protection holds.</p>
     </div>
     <div class="frames">
-      <div class="optbox"><span class="tag opt">option · A</span><div id="f-g6a"></div><p class="cap"><b>A: all open</b>The pattern draws its timing as two counted bars (CUL-1499).</p></div>
-      <div class="slot"><span class="tag cur">current · B</span><div id="f-g6b"></div><p class="cap"><b>B: folded under a safety lead</b>One counted line; the same door the foot already had.</p></div>
+      <div class="slot"><span class="tag cur">current · ruled B</span><div id="f-g6b"></div><p class="cap"><b>B: folded under a safety lead</b>One counted line; the same door the foot already had.</p></div>
     </div>
-    <p class="react"><b>React R-5</b>A or B?</p>
+    <p class="react"><b>Ruled R-5</b>B. Build: the Signal's counted foot.</p>
   </section>
 
   <section id="s4">
@@ -476,9 +472,6 @@
   put('f-ship', shipped());
   renderProp();
   put('f-g4c', g4('indigo'));
-  put('f-g4a', g4('act'));
-  put('f-g4b', g4('fact'));
-  put('f-g6a', g6(false));
   put('f-g6b', g6(true));
   put('f-t1', trialDay('safety'));
   put('f-t2', trialDay('clean'));
@@ -494,7 +487,6 @@
       });
     });
   }
-  bindGroup(['b-indigo', 'b-act', 'b-fact'], function (i) { state.mode = ['indigo', 'act', 'fact'][i]; });
   bindGroup(['b-k1', 'b-k2'], function (i) { state.big = i === 1; });
 })();
 </script>
