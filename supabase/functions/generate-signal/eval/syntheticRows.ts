@@ -16,6 +16,8 @@ import { CORRELATION_SYMPTOM_TYPES } from '../detection.ts'
 import type { SignalRows } from '../pipeline.ts'
 import type { SyntheticRecord } from '../../_shared/engineCorpus/trajectory/types.ts'
 import { flagsAsOf, visibleAt } from './asOf.ts'
+import type { CareRecord, AckFact } from '../careState.ts'
+import type { CareContextFacts } from '../careContext.ts'
 
 /** generate-signal/index.ts LOOKBACK_DAYS. */
 export const LOOKBACK_DAYS = 180
@@ -100,4 +102,77 @@ export function rowsAt(record: SyntheticRecord, petKey: string, T: number): Sign
     doseEvents: [],
     incidentAnalyses,
   }
+}
+
+// ── EN-9 (Engines v3 PR-23, CUL-1417): the care record and the logging facts ──────────────
+//
+// What the shell reads while `engines_v3_en9` is on, restated over the corpus, which spells the
+// owner's side its own way (PR-15 D-2):
+//   · a "My vet knows" answer (`ownerAnswers`, kind vet_knows) is a `my_vet_knows` row anchored
+//     on its local day;
+//   · a visit whose appointment carried the concern (a `record` question naming the sign) is an
+//     `at_vet_tick` row anchored on the visit day and written when the visit was. That is the tick
+//     at the vet the client half (PR-35) collects, and the corpus's own `via: 'visit'`
+//     acknowledgement. A visit that carried nothing (the vaccine visit) writes no row: a visit
+//     alone acknowledges nothing (E-2);
+//   · no appointment is passed, as the shell passes none (CUL-1531);
+//   · lethargy instants, though no scenario writes one yet (stated: C1a's source 2 reads ~0 here).
+// The logging facts are EN-10's: every visible event and meal in the lookback, and the last visit.
+
+function localDayOf(ms: number, tz: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms))
+}
+
+/** One pet's care record as the shell would have read it at `T` (ms). */
+export function careAt(record: SyntheticRecord, petKey: string, T: number): CareRecord {
+  const acknowledgements: AckFact[] = []
+  for (const a of record.ownerAnswers) {
+    if (a.petKey !== petKey || Date.parse(a.answeredAt) > T) continue
+    acknowledgements.push({
+      id: `ack:${petKey}:${a.sign}:${a.answeredAt}`,
+      sign: a.sign as AckFact['sign'],
+      source: 'my_vet_knows',
+      anchorOn: localDayOf(Date.parse(a.answeredAt), record.tz),
+      createdAt: a.answeredAt,
+      retracts: null,
+      trial: null,
+      course: null,
+    })
+  }
+  for (const v of record.visits) {
+    if (v.petKey !== petKey || Date.parse(v.created_at) > T) continue
+    const appt = record.appointments.find((x) => x.visitId === v.id)
+    const signs = new Set((appt?.questions ?? []).filter((q) => q.source === 'record').map((q) => q.source_ref))
+    for (const sign of signs) {
+      acknowledgements.push({
+        id: `ack:${petKey}:${sign}:${v.id}`,
+        sign: sign as AckFact['sign'],
+        source: 'at_vet_tick',
+        anchorOn: v.visited_at,
+        createdAt: v.created_at,
+        retracts: null,
+        trial: null,
+        course: null,
+      })
+    }
+  }
+  const lethargyAt = record.events
+    .filter((e) => e.petKey === petKey && (e.ty as string) === 'lethargy' && visibleAt(e, T, LOOKBACK_DAYS))
+    .map((e) => e.at)
+  return { acknowledgements, appointments: [], lethargyAt }
+}
+
+/** EN-10's facts at `T`: the last visit before today, and every visible event and meal. */
+export function careFactsAt(record: SyntheticRecord, petKey: string, T: number): CareContextFacts {
+  const today = localDayOf(T, record.tz)
+  const lastVisit = record.visits
+    .filter((v) => v.petKey === petKey && Date.parse(v.created_at) <= T && v.visited_at < today)
+    .map((v) => v.visited_at)
+    .sort()
+    .pop() ?? null
+  const loggedAt = [
+    ...record.events.filter((e) => e.petKey === petKey && visibleAt(e, T, LOOKBACK_DAYS)).map((e) => e.at),
+    ...record.meals.filter((m) => m.petKey === petKey && visibleAt(m, T, LOOKBACK_DAYS)).map((m) => m.at),
+  ]
+  return { lastVisitOn: lastVisit, loggedAt, readSinceIso: new Date(T - LOOKBACK_DAYS * 86_400_000).toISOString() }
 }

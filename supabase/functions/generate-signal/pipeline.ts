@@ -11,12 +11,11 @@
 // existing suites passing (index.test.ts apart from its one source pin, which follows the
 // gate to this file) are the refactor proof. Two things are new:
 //
-//   • `careRecord` is RESERVED. Owner answers and appointment dates are what EN-9's care
-//     state is computed from (PR-23), and the critique's AC 10 amendment puts that
-//     computation in the engine's shell, never in detection.ts. It is a required input so
-//     no caller can forget it (C-37), and nothing below reads it yet: the pipeline's output
-//     is independent of it, pinned by signalPipeline.test.ts, which PR-23 flips on purpose.
-//     index.ts passes empty lists and makes no read for it.
+//   • `careRecord` carries EN-9's inputs (PR-23, CUL-1417): the owner's answers, the trial or
+//     course an answer names, and lethargy instants. It is a required input so no caller can
+//     forget it (C-37), and it is read only by the care-state step (3d), behind
+//     `engines_v3_en9`; flag off, the pipeline's output is independent of it
+//     (signalPipeline.test.ts (c-en9)).
 //   • The stand-down's two halves are split by what they need. The prior row is READ by the
 //     shell (a failed read arrives as `prior: null`, which mints nothing: today's wordless
 //     vanish), and RESOLVED here, inside the same fence the handler had (a throw costs the
@@ -39,6 +38,7 @@
 import {
   detectSignals,
   detectCoverage,
+  chronicityFloorsFor,
   risingBelowCardFloor,
   stripInternalOnsets,
   computeReflectionDensity,
@@ -103,6 +103,12 @@ import { buildSummaryPacket, summaryTemplate, type CachedSummary, type SummaryFa
 // with no network (pipeline.test.ts walks the closure). engineStamps.ts imports supabase-js.
 import { isEngineKeyOn, SIGNAL_ENGINE_KEYS, standDownMintAllowed, type EngineFlags } from '../_shared/engineFlags.ts'
 // EN-10 (PR-22): the context lines. Pure; the visit reaches it as a DATE only (AC 10 amended).
+import {
+  EN9_CARE_STATE_STEP,
+  careStateText,
+  type CareRecord,
+  type CareStateStep,
+} from './careState.ts'
 import {
   EN10_CONTEXT_STEP,
   type CareContextFacts,
@@ -471,24 +477,10 @@ export interface PriorSignal {
   engineFlags: unknown
 }
 
-// RESERVED for EN-9's care state (PR-23); read by nothing yet. Only the fields that are
-// certain today: a dated owner answer about one finding (the critique's D3 restated: an
-// append-only fact per sign, keyed on the finding's identity), and the appointment's own
-// columns from 066. PR-21 designs the answer's table and widens OwnerAnswerFact.
-export interface OwnerAnswerFact {
-  findingKey: string
-  answeredAt: string
-}
-export interface AppointmentFact {
-  id: string
-  scheduledAt: string
-  cancelledAt: string | null
-  vetVisitId: string | null
-}
-export interface CareRecord {
-  ownerAnswers: readonly OwnerAnswerFact[]
-  appointments: readonly AppointmentFact[]
-}
+// EN-9's care record (PR-23, CUL-1417): the owner's answers, the trial or course an answer
+// names, lethargy instants and (once CUL-1531 lands a legal read) the appointments about a sign.
+// The shell reads it only while `engines_v3_en9` is on; the types live with the step.
+export type { AckFact, AppointmentFact, CareRecord } from './careState.ts'
 
 export interface SignalPipelineInput {
   rows: SignalRows
@@ -500,9 +492,11 @@ export interface SignalPipelineInput {
   prior: PriorSignal | null
   nowMs: number
   engineFlags: EngineFlags
+  // EN-9 (PR-23): read by the shell only while `engines_v3_en9` is on; EMPTY_CARE_RECORD otherwise.
   careRecord: CareRecord
-  // EN-10 (PR-22): the facts the context lines need beyond `rows`. The shell reads them only
-  // while `engines_v3_en10` is on, and passes null otherwise. Required, so no caller forgets
+  // EN-10 (PR-22): the facts the context lines need beyond `rows`. The shell reads them while
+  // `engines_v3_en10` OR `engines_v3_en9` is on (the care state counts over the same logging),
+  // and passes null otherwise. Each step re-checks its own key. Required, so no caller forgets
   // to say (C-37).
   careContextFacts: CareContextFacts | null
 }
@@ -546,6 +540,7 @@ export function runSignalPipeline(
   args: SignalPipelineInput,
   careContextStep: CareContextStep = EN10_CONTEXT_STEP,
   en11Config: DetectionConfig = EN11_CONFIG,
+  careStateStep: CareStateStep = EN9_CARE_STATE_STEP,
 ): SignalPipelineResult {
   const { prior: priorSignal, nowMs, engineFlags } = args
   const rows = canonicalRows(args.rows)
@@ -725,7 +720,7 @@ export function runSignalPipeline(
   //     packet is built from `curated`, the stand-down from `curated` and `input`). Not over an
   //     incomplete read: every count on a line would be a floor, and a zero there the very
   //     reassurance CUL-989 withholds. The facts arrive only while the key is on (the shell).
-  const decorated =
+  const withContext =
     !readIncomplete && args.careContextFacts !== null && isEngineKeyOn(engineFlags, 'engines_v3_en10')
       ? careContextStep(decoratedBase, {
         facts: args.careContextFacts,
@@ -737,6 +732,31 @@ export function runSignalPipeline(
         episodeGapHours: config.symptomEpisodeGapHours,
       })
       : decoratedBase
+  // 3d. EN-9 (PR-23, CUL-1417): the care state, behind `engines_v3_en9`. Last of all, so it sees
+  //     the finished findings: each concern gains `careState`, a watched one ranks below every
+  //     other safety finding, and nothing else changes. Not over an incomplete read: a count
+  //     that is a floor cannot say "with your vet" honestly, and the re-raise tests need the
+  //     whole record, so the concern keeps asking (a kill switch makes Home louder, never
+  //     quieter). Not without the logging facts either, for the same reason.
+  const careFacts = args.careContextFacts
+  const decorated =
+    !readIncomplete && careFacts !== null && isEngineKeyOn(engineFlags, 'engines_v3_en9')
+      ? careStateStep(withContext, {
+        record: args.careRecord,
+        symptoms: symptomEvents,
+        loggedAt: careFacts.loggedAt,
+        readSinceIso: careFacts.readSinceIso,
+        lastVisitOn: careFacts.lastVisitOn,
+        courses: regimenRows.map(courseFactOf),
+        timezone,
+        nowMs,
+        petName,
+        episodeGapHours: config.symptomEpisodeGapHours,
+        recencyDaysFor: (sign) => chronicityFloorsFor(sign, rows.pet.species as Species, config.chronicity).ongoingRecencyDays,
+        priorFindings: priorSignal?.findings ?? null,
+        priorGeneratedAtMs: priorMs(priorSignal),
+      })
+      : withContext
   // CUL-989: and no safety card the previous Signal showed disappears on an incomplete read.
   // Its absence here may be the rows the read did not reach, which is the resolution the ruling
   // withholds, so the prior card is carried forward as it was shown.
@@ -833,6 +853,12 @@ export function runSignalPipeline(
       ? incompleteReadDisclosure(petName, decorated.some((r) => r.finding.priorityClass === 'safety') || carried.length > 0)
       : null,
   }
+}
+
+function priorMs(p: PriorSignal | null): number | null {
+  if (!p) return null
+  const ms = Date.parse(String(p.generatedAt ?? ''))
+  return Number.isFinite(ms) ? ms : null
 }
 
 // ── EN-10's fact mapping (PR-22) ──────────────────────────────────────────────
@@ -1122,7 +1148,8 @@ export function assembleSignal(
 // Every card's deterministic sentence: what the shell writes when the model is off, fails
 // or is skipped (phraseFinding's fallback). For the harness, which never calls a model.
 export function templateTexts(result: SignalPipelineResult): string[] {
-  return result.findings.map((r) => templateForFinding(r.finding, result.petName))
+  // A care state's sentence is template-only (EN-9 AC 8); every other card is its lane's template.
+  return result.findings.map((r) => careStateText(r.finding) ?? templateForFinding(r.finding, result.petName))
 }
 
 // The summary's deterministic form: what phraseSummaryText returns whenever it does not

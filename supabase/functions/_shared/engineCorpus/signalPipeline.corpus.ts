@@ -15,6 +15,7 @@
 //
 // PR-15 (CUL-508) writes the synthetic population beside this file; it does not edit it.
 
+import { EMPTY_CARE_RECORD } from '../../generate-signal/careState.ts'
 import type { CareContextFacts } from '../../generate-signal/careContext.ts'
 import type {
   ArrangementRow,
@@ -420,15 +421,21 @@ export const SIGNAL_PIPELINE_CORPUS: SignalPipelineCase[] = [
   },
 ]
 
-// A populated care record, for the guard that nothing reads it yet.
+// A populated care record (EN-9, PR-23): a "My vet knows" answer about vomiting three days ago,
+// a retracted answer about diarrhea, lethargy rows, and an appointment about vomiting. The
+// flag-off guard hands it in with every flag state, so a gate that leaked would show.
 export const POPULATED_CARE_RECORD: CareRecord = {
-  ownerAnswers: [{ findingKey: 'symptom_chronicity:vomit', answeredAt: ago(3) }],
-  appointments: [
-    { id: 'appt-1', scheduledAt: ago(-4, 15), cancelledAt: null, vetVisitId: null },
-    { id: 'appt-2', scheduledAt: ago(20, 10), cancelledAt: null, vetVisitId: 'visit-1' },
+  acknowledgements: [
+    { id: 'ack-1', sign: 'vomit', source: 'my_vet_knows', anchorOn: ago(3).slice(0, 10), createdAt: ago(3, 19), retracts: null, trial: null, course: null },
+    { id: 'ack-2', sign: 'diarrhea', source: 'my_vet_knows', anchorOn: ago(9).slice(0, 10), createdAt: ago(9, 19), retracts: null, trial: null, course: null },
+    { id: 'ack-3', sign: 'diarrhea', source: 'my_vet_knows', anchorOn: ago(8).slice(0, 10), createdAt: ago(8, 19), retracts: 'ack-2', trial: null, course: null },
   ],
+  appointments: [
+    { id: 'appt-1', scheduledAt: ago(-4, 15), cancelledAt: null, deletedAt: null, aboutSigns: ['vomit'] },
+  ],
+  lethargyAt: [ago(2, 9), ago(1, 9)],
 }
-export const EMPTY_CARE_RECORD: CareRecord = { ownerAnswers: [], appointments: [] }
+export { EMPTY_CARE_RECORD }
 
 // EN-10 (PR-22): the facts the shell reads while engines_v3_en10 is on. A visit 10 days ago,
 // something logged every day of the lookback, read from the shell's 180-day lookback. The

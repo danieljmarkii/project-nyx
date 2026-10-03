@@ -352,12 +352,21 @@ Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the
   // The one call site, behind the key.
   assertStrictEquals(src.split('readCareContextFacts(').length - 1, 2, 'readCareContextFacts is defined once and called once')
   assertStrictEquals(
-    /isEngineKeyOn\(engineFlags, 'engines_v3_en10'\)\s*\?\s*await readCareContextFacts\(/.test(src),
+    /isEngineKeyOn\(engineFlags, 'engines_v3_en10'\) \|\| en9On\s*\?\s*await readCareContextFacts\(/.test(src),
     true,
-    'the EN-10 reads are no longer behind engines_v3_en10',
+    'the EN-10 reads are no longer behind engines_v3_en10 (or EN-9\'s key, which counts over them)',
   )
+  // EN-9 (PR-23): the care record is read behind its key and the facts, and handed in whole.
+  assertStrictEquals(/const en9On = isEngineKeyOn\(engineFlags, 'engines_v3_en9'\)/.test(src), true, 'EN-9\'s key is no longer read')
+  assertStrictEquals(
+    /en9On && careContextFacts !== null\s*\?\s*await readCareRecord\(/.test(src),
+    true,
+    'the care-record reads are no longer behind engines_v3_en9',
+  )
+  assertStrictEquals(src.split('readCareRecord(').length - 1, 2, 'readCareRecord is defined once and called once')
   const call = src.slice(src.indexOf('runSignalPipeline({'), src.indexOf('})', src.indexOf('runSignalPipeline({')))
   assertStrictEquals(/\bcareContextFacts,/.test(call), true, 'the shell no longer hands the pipeline its EN-10 facts')
+  assertStrictEquals(/\bcareRecord,/.test(call), true, 'the shell no longer hands the pipeline its care record')
   // EN-11 (PR-32, CUL-1141): the fingerprint hashes the config the pipeline detects with, chosen
   // on the same literal key pipeline.ts reads (a second site the pipeline guard cannot see).
   assertStrictEquals(

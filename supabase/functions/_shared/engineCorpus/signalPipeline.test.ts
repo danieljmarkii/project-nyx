@@ -12,8 +12,13 @@
 //     engines_v3_en11 off, the pipeline never reads EN-11's config (one that throws on any read
 //     is handed in), so deleting the gate reds it; with it on, the config is read on every case;
 //     and with the real config on, no safety card appears that flag-off did not show.
-// (d) The care record is RESERVED: read by nothing. PR-23 (EN-9's care state) flips this
-//     test on purpose, in the PR that starts reading it.
+// (c-en9) Engines v3 PR-23 (CUL-1417), EN-9's care state: with engines_v3_en9 off, the
+//     pipeline equals the pipeline with the care-state step ABSENT, even with a populated care
+//     record, populated facts and a step that throws; with it on and the facts in hand, the
+//     step runs on every case; over an incomplete read or with no facts it never runs; and the
+//     real step leaves every escalation's finding untouched and never lowers its rank (AC-3).
+// (d) The care record is read by the care-state step alone: flag off, a populated record
+//     changes nothing (PR-23 flipped the PR-11b "read by nothing" pin into this).
 // (e) The pipeline is a function of its input: the same input twice gives the same result,
 //     and the input is never mutated.
 // (f) The stand-down fence: a throw while resolving or merging costs the marker, never the
@@ -43,6 +48,7 @@ import { ENGINE_KEYS, SIGNAL_DECORATING_KEYS, SIGNAL_ENGINE_KEYS, type EngineFla
 import { EN11_CONFIG, type DetectionConfig } from '../../generate-signal/detection.ts'
 import { hasBannedSignalVocabulary, validatePhrasing } from '../../generate-signal/phrasing.ts'
 import { EN10_CONTEXT_STEP, type CareContextFacts, type CareContextStep } from '../../generate-signal/careContext.ts'
+import { careStateOf, concernSignOf, EN9_CARE_STATE_STEP, type CareStateStep } from '../../generate-signal/careState.ts'
 import { careClaimReason } from '../../../../lib/careClaimScreens.ts'
 import {
   EMPTY_CARE_RECORD,
@@ -71,11 +77,13 @@ const run = (
   careContextFacts: CareContextFacts | null = null,
   step: CareContextStep = EN10_CONTEXT_STEP,
   en11Config: DetectionConfig = EN11_CONFIG,
+  careStep: CareStateStep = EN9_CARE_STATE_STEP,
 ) =>
   runSignalPipeline(
     { rows: c.rows, incompletePulls, prior: c.prior, nowMs: Date.parse(c.nowIso), engineFlags, careRecord, careContextFacts },
     step,
     en11Config,
+    careStep,
   )
 const payload = (c: SignalPipelineCase, engineFlags?: EngineFlags, careRecord?: CareRecord): SignalPayload =>
   templatePayload(run(c, engineFlags, careRecord))
@@ -133,8 +141,12 @@ const SENTINEL: CareContextStep = (findings) =>
     finding: { ...r.finding, careContext: [{ kind: 'visit', anchorOn: '1970-01-01', days: 1, count: 1, loggedDays: 1, text: 'sentinel' }] },
   }))
 const EN10 = 'engines_v3_en10'
-const OFF_STATES = Object.entries(FLAG_STATES).filter(([, f]) => !f.on.includes(EN10))
-const ON_STATES = Object.entries(FLAG_STATES).filter(([, f]) => f.on.includes(EN10))
+const EN9 = 'engines_v3_en9'
+// EN-10's guards hold EN-9 off: EN-9 reads the same facts and has its own guard (c-en9), so a
+// state with it on would compare two steps at once.
+const NO_EN9 = Object.entries(FLAG_STATES).map(([l, f]) => [l, { ...f, on: f.on.filter((k) => k !== EN9) }] as const)
+const OFF_STATES = NO_EN9.filter(([, f]) => !f.on.includes(EN10))
+const ON_STATES = NO_EN9.filter(([, f]) => f.on.includes(EN10))
 // The payload with every `careContext` removed: what the row would be had the step not run.
 const withoutLines = (p: SignalPayload): SignalPayload =>
   JSON.parse(JSON.stringify(p, (k, v) => (k === 'careContext' ? undefined : v)))
@@ -144,7 +156,7 @@ Deno.test('(c) tripwire: the Signal keys are exactly the ones with an absence gu
   // tests (the row changes only by its field); a new one needs its own absence guard beside
   // them, and a key that changes what is detected goes in SIGNAL_ENGINE_KEYS instead.
   assertEquals([...SIGNAL_DECORATING_KEYS], [EN10], 'a new decorating key needs its own absence guard beside (c)')
-  assertEquals([...SIGNAL_ENGINE_KEYS], [EN11], 'a Signal key that changes detection needs its own absence guard beside (c-en11)')
+  assertEquals([...SIGNAL_ENGINE_KEYS], [EN9, EN11], 'a Signal key that changes a sentence or a rank needs its own absence guard beside (c-en9) / (c-en11)')
   assertStrictEquals(ON_STATES.length >= 2 && OFF_STATES.length >= 3, true, 'the flag states lost a side')
 })
 
@@ -268,9 +280,85 @@ Deno.test('(c-en11) the real config adds no safety card and moves nothing over a
   assertStrictEquals(changed >= 1, true, 'no corpus case moves under EN-11, so this test checks nothing')
 })
 
-Deno.test('(d) the reserved care record is read by nothing (PR-23 flips this on purpose)', () => {
+// ── (c-en9) EN-9, the care state (PR-23, CUL-1417) ──
+const THROWING_CARE: CareStateStep = () => {
+  throw new Error('EN-9 step ran')
+}
+const ABSENT_CARE: CareStateStep = (findings) => findings
+const EN9_OFF_STATES = Object.entries(FLAG_STATES).filter(([, f]) => !f.on.includes(EN9))
+const EN9_ON_STATES = Object.entries(FLAG_STATES).filter(([, f]) => f.on.includes(EN9))
+
+Deno.test('(c-en9) flag off never runs the care state: the row is the one with the step absent', () => {
+  assertStrictEquals(EN9_ON_STATES.length >= 2 && EN9_OFF_STATES.length >= 3, true, 'the flag states lost a side')
   for (const c of SIGNAL_PIPELINE_CORPUS) {
-    assertEquals(run(c, OFF, POPULATED_CARE_RECORD), run(c, OFF, EMPTY_CARE_RECORD), c.name)
+    for (const [label, flags] of EN9_OFF_STATES) {
+      assertEquals(
+        run(c, flags, POPULATED_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, THROWING_CARE),
+        run(c, flags, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, ABSENT_CARE),
+        `${c.name}: ${label}`,
+      )
+    }
+  }
+})
+
+Deno.test('(c-en9) the gate opens with the facts in hand, and stays shut without them or over an incomplete read', () => {
+  let opened = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    for (const [label, flags] of EN9_ON_STATES) {
+      assertThrows(() => run(c, flags, POPULATED_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, THROWING_CARE), Error, 'EN-9 step ran', `${c.name}: ${label}`)
+      opened++
+      // No facts (the shell's read failed) or a partial read: every concern keeps asking.
+      run(c, flags, POPULATED_CARE_RECORD, [], null, EN10_CONTEXT_STEP, EN11_CONFIG, THROWING_CARE)
+      run(c, flags, POPULATED_CARE_RECORD, ['symptoms'], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, THROWING_CARE)
+    }
+  }
+  assertStrictEquals(opened >= SIGNAL_PIPELINE_CORPUS.length * 2, true, `the gate opened on only ${opened} runs`)
+})
+
+Deno.test('(c-en9) AC-3: with every concern answered, every escalation keeps its finding and never drops a rank', () => {
+  const ON: EngineFlags = { on: [EN9], readOk: true }
+  let concerns = 0
+  let escalations = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const off = run(c, OFF, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS)
+    // An answer about every sign the case has a concern on, given yesterday.
+    const signs = [...new Set(off.findings.map((r) => concernSignOf(r.finding)).filter((s): s is NonNullable<typeof s> => s !== null))]
+    const nowMs = Date.parse(c.nowIso)
+    const record: CareRecord = {
+      ...EMPTY_CARE_RECORD,
+      acknowledgements: signs.map((sign, i) => ({
+        id: `ack-${i}`, sign, source: 'my_vet_knows' as const, anchorOn: new Date(nowMs - 86_400_000).toISOString().slice(0, 10),
+        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null,
+      })),
+    }
+    const on = run(c, ON, record, [], POPULATED_CARE_CONTEXT_FACTS)
+    assertStrictEquals(on.findings.length, off.findings.length, `${c.name}: a card appeared or vanished`)
+    off.findings.forEach((r, i) => {
+      if (concernSignOf(r.finding) !== null) {
+        concerns++
+        return
+      }
+      if (r.finding.priorityClass !== 'safety') return
+      escalations++
+      const j = on.findings.findIndex((x) => JSON.stringify(x.finding) === JSON.stringify(r.finding))
+      assertStrictEquals(j >= 0, true, `${c.name}: ${r.finding.type} changed under a care state`)
+      assertStrictEquals(j <= i, true, `${c.name}: ${r.finding.type} dropped from ${i} to ${j}`)
+    })
+    // Every concern carries a care state, and a watched one never sits above an unwatched safety card.
+    const watchedAt = on.findings.findIndex((r) => careStateOf(r.finding)?.state === 'with_vet')
+    if (watchedAt >= 0) {
+      for (const r of on.findings.slice(watchedAt)) {
+        if (r.finding.priorityClass === 'safety') assertStrictEquals(careStateOf(r.finding)?.state === 'with_vet' || careStateOf(r.finding)?.state === 'recheck_booked', true, `${c.name}: ${r.finding.type} below a watched concern`)
+      }
+    }
+    for (const r of on.findings) if (concernSignOf(r.finding) !== null) assertStrictEquals(careStateOf(r.finding) !== null, true, `${c.name}: a concern with no care state`)
+  }
+  assertStrictEquals(concerns >= 3 && escalations >= 3, true, `only ${concerns} concerns and ${escalations} escalations: the property checks too little`)
+})
+
+Deno.test('(d) the care record is read by the care-state step alone: flag off, a populated record changes nothing', () => {
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    assertEquals(run(c, OFF, POPULATED_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS), run(c, OFF, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS), c.name)
   }
 })
 

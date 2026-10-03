@@ -44,7 +44,12 @@ import { resolveAllowlistFlag } from './flags.ts'
 // retired, ④'s worsening card floor, and the reversed-in-time control on the food and post-meal
 // lanes (detection.ts `EN11_CONFIG`). The Signal AND the vet report read it. NOT SEEDED, like en3:
 // absent reads as off. It goes live after the 1.2.0 App Review (the demo pet's beef card is Early).
-export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en4', 'engines_v3_en10', 'engines_v3_en11'] as const
+// engines_v3_en9: EN-9, the care state (Engines v3 PR-23, CUL-1417): the shell reads the owner's
+// answers, and each concern gains `careState`; a watched concern stops asking and ranks below
+// every other safety finding. It changes a card's sentence and rank, so it is a SIGNAL key. NOT
+// SEEDED, like en3: absent reads as off. It goes live after PR-16's combined 5% line holds on a
+// corpus with null diarrhea, lethargy and refused or picked ratings (CUL-1417, PM 10/02).
+export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en4', 'engines_v3_en9', 'engines_v3_en10', 'engines_v3_en11'] as const
 export type EngineKey = typeof ENGINE_KEYS[number]
 
 // The keys the SIGNAL engine (generate-signal) reads that can change WHAT IT DETECTS. A Signal
@@ -55,7 +60,10 @@ export type EngineKey = typeof ENGINE_KEYS[number]
 // these (standDownMintAllowed, below): a key that cannot change what the Signal detects
 // cannot make a finding vanish, so flipping it must not cost an owner a stand-down
 // (adversarial review, PR-11a).
-export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = ['engines_v3_en11']
+// EN-9 (engines_v3_en9, PR-23) is the second: it changes a concern's sentence and its rank. It
+// removes no finding, but a stand-down across its flip would compare two different engines'
+// sentences, so it is gated like EN-11.
+export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = ['engines_v3_en9', 'engines_v3_en11']
 
 // The keys the Signal reads that only DECORATE a finding it already made: they add a field,
 // and change no finding's presence, rank or sentence. Proven per key by the corpus guard
