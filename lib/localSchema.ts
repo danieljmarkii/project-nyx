@@ -372,6 +372,41 @@ export const BASE_SCHEMA_SQL = `
       ON vet_appointments(pet_id, scheduled_at DESC)
       WHERE deleted_at IS NULL;
 
+    -- care_acknowledgements — the owner's "my vet knows" facts, one sign per row
+    -- (Engines v3 PR-35, CUL-1418; docs/nyx-care-state-requirements.md §3.2, §8.1).
+    -- Mirrors supabase/migrations/082_care_record.sql, minus nothing the push needs.
+    --
+    -- INSERT-ONLY, like the two attachment tables: the server table is append-only by
+    -- RLS (no UPDATE grant), and an Undo is a NEW row whose retracts names the old
+    -- one. So there is no updated_at here, and none is needed to guard the push
+    -- (CUL-691): a row that cannot change cannot change under its push.
+    --
+    -- The local copy exists for the queue (local-first, mock 3e) and nothing reads it
+    -- to decide a state: the care state is the server's, so a phone never quiets a
+    -- card on its own (§3.3). No local FK on any link (the vet_documents precedent):
+    -- the drain holds a row until its parents have landed, which is the real order
+    -- that matters, because 082's same-pet guard answers a missing parent with a
+    -- TERMINAL 23514 before the FK can answer 23503.
+    CREATE TABLE IF NOT EXISTS care_acknowledgements (
+      id            TEXT PRIMARY KEY,
+      pet_id        TEXT NOT NULL,
+      symptom_type  TEXT NOT NULL,
+      source        TEXT NOT NULL,
+      anchor_on     TEXT NOT NULL,
+      vet_visit_id  TEXT,
+      diet_trial_id TEXT,
+      medication_id TEXT,
+      retracts      TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      synced        INTEGER NOT NULL DEFAULT 0,
+      sync_attempts INTEGER NOT NULL DEFAULT 0,
+      sync_error    TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_care_acknowledgements_unsynced
+      ON care_acknowledgements(synced)
+      WHERE synced = 0;
+
     -- feeding_arrangements — pet↔food standing fact ("always available / free-fed").
     -- B-040 R1 (PR 2). Mirrors supabase/migrations/018_feeding_arrangements.sql.
     -- A STANDING FACT, not a per-nibble log: one row per (pet, food) free-choice
