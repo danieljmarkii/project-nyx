@@ -80,6 +80,10 @@ export const WEIGHT_RULES = {
   /** W6: a plan with no recheck date lapses after this, and its cumulative line when it names no target. */
   planLapseDays: 84,
   plannedDefaultTargetFrac: 0.1,
+  plannedTargetMin: 0.02,
+  plannedTargetMax: 0.3,
+  /** DISPLAY only: two readings further apart than this never support each other. */
+  agreeMaxDays: 60,
   /**
    * DISPLAY only (no row depends on it): a home reading is "one reading" in the sentence unless a
    * neighbouring home reading sits within this share of the band of it. Half the band, so a lone
@@ -216,54 +220,71 @@ function point(x: Indexed, confirmed: boolean): WeightPoint {
 function runningPlan(plans: readonly WeightPlan[], nowMs: number): { plan: WeightPlan; startMs: number } | null {
   let best: { plan: WeightPlan; startMs: number } | null = null
   for (const plan of plans) {
-    const startMs = Date.parse(plan.startedAt)
-    if (!Number.isFinite(startMs) || startMs > nowMs) continue
-    if (planEndMs(plan, startMs) <= nowMs) continue
+    const startMs = validPlanStart(plan, nowMs)
+    if (startMs === null || planEndMs(plan, startMs) <= nowMs) continue
     if (best === null || startMs > best.startMs) best = { plan, startMs }
   }
   return best
 }
 
 /**
- * The anchor floor: readings at or before it never anchor a decision.
- *   • A running plan: readings before the plan's start never anchor (attack 12).
+ * The anchor floor and the boundary's ONE anchor. Readings at or before the floor never enter the
+ * decision; the record's level at the boundary survives as a single anchor value that may stand
+ * only as a confirmed HIGH level, never as a raw reading for W2 or W1's fix (adversarial pass 2:
+ * keeping the boundary's readings let a stood-down drop re-raise itself on the next regen).
+ *   • A running plan: readings before its start never anchor (attack 12); a weigh-in in the day
+ *     before the plan was set is the plan's start level (the visit weighs, then sets the plan).
  *   • A finished plan (ended, or lapsed at its recheck / 12 weeks): the loss is measured from
- *     the plan's END level (ruling sheet W6, counterexample 1): the confirmed level the record
- *     stood at when it ended anchors, nothing earlier, and never anything before the plan's start.
- *   • A stand-down: the same, at the stand-down. Its own level anchors the next finding, so a
- *     relapse after "she's gained it back" is measured from the weight she regained (adversarial
- *     pass on PR-19: the spec's "its readings stop anchoring", read literally, left it silent),
- *     while the drop the owner stood down never re-raises itself.
+ *     the plan's END level (ruling sheet W6, counterexample 1), never its start.
+ *   • A stand-down: the same, at the stand-down. A relapse after "she's gained it back" is
+ *     measured from the regained weight, and the drop the owner stood down never re-raises itself.
+ * The level at a boundary is the LOWER of the last two readings before it (PMD-9's high-level
+ * rule), or the one reading there is: after a drop it is the dropped weight, after a spike it is
+ * the reading beside the spike.
  */
-function anchorFloorMs(input: WeightStoryInput, counted: readonly Indexed[]): number {
+interface Boundary {
+  floor: number
+  anchor: Indexed | null
+}
+
+function boundaryAt(counted: readonly Indexed[], t: number, notBefore: number): Boundary {
+  const before = counted.filter((x) => x.ms <= t && x.ms >= notBefore)
+  if (before.length === 0) return { floor: t, anchor: null }
+  const last = before[before.length - 1]
+  const prev = before.length >= 2 ? before[before.length - 2] : null
+  return { floor: t, anchor: prev !== null && prev.r.kg < last.r.kg ? prev : last }
+}
+
+function anchorBoundary(input: WeightStoryInput, counted: readonly Indexed[]): Boundary {
   const { nowMs } = input
-  // Just before the confirmed level the record stood at, at `t`: the latest low level among the
-  // readings at or before `t`, kept with its pair partner so it can stand as a high level after.
-  // Everything earlier stops anchoring. With no level (one reading, or copies), nothing before `t`.
-  const keepLevelAt = (t: number): number => {
-    const before = counted.filter((x) => x.ms <= t)
-    const { lows } = levels(before)
-    const level = lows.reduce<Level | null>((acc, l) => (acc === null || l.end >= acc.end ? l : acc), null)
-    if (level === null) return t
-    const standsAlone = level.reading === before[level.end] && level.reading.r.source === 'clinic'
-    return before[standsAlone ? level.end : level.end - 1].ms - 1
+  let best: Boundary = { floor: -Infinity, anchor: null }
+  const take = (b: Boundary) => {
+    if (b.floor > best.floor) best = b
   }
-  let floor = -Infinity
   for (const sd of input.standDowns ?? []) {
     const ms = Date.parse(sd)
-    if (Number.isFinite(ms) && ms <= nowMs) floor = Math.max(floor, keepLevelAt(ms))
+    if (Number.isFinite(ms) && ms <= nowMs) take(boundaryAt(counted, ms, -Infinity))
   }
   for (const p of input.plans ?? []) {
-    const startMs = Date.parse(p.startedAt)
-    if (!Number.isFinite(startMs) || startMs > nowMs) continue
+    const startMs = validPlanStart(p, nowMs)
+    if (startMs === null) continue
     const end = planEndMs(p, startMs)
     if (end > nowMs) {
-      floor = Math.max(floor, startMs - 1)
+      take({ floor: startMs - 1, anchor: boundaryAt(counted, startMs - 1, startMs - MS_PER_DAY).anchor })
     } else {
-      floor = Math.max(floor, startMs - 1, keepLevelAt(end))
+      take(boundaryAt(counted, end, startMs - MS_PER_DAY))
     }
   }
-  return floor
+  return best
+}
+
+/** A plan's start, or null for one not yet started, unreadable, or ending before it starts. */
+function validPlanStart(plan: WeightPlan, nowMs: number): number | null {
+  const startMs = Date.parse(plan.startedAt)
+  if (!Number.isFinite(startMs) || startMs > nowMs) return null
+  const endMs = plan.endedAt ? Date.parse(plan.endedAt) : NaN
+  if (Number.isFinite(endMs) && endMs < startMs) return null
+  return startMs
 }
 
 /** When a plan stops quieting the lines: its end, else its recheck date, else 12 weeks on. */
@@ -320,7 +341,13 @@ function lines(
     // W6: while a plan runs the soft line is off and the firm line is the CUMULATIVE line, the
     // plan's target (else 10%) from its start level. A target above 10% is honoured: a cat losing
     // what she was asked to lose is not "further than the plan allows".
-    const target = plan.targetLossFrac != null && plan.targetLossFrac > 0 ? plan.targetLossFrac : WEIGHT_RULES.plannedDefaultTargetFrac
+    // Clamped (adversarial pass 2): 1% would fire inside the noise band; 100%, or a percent typed
+    // as 10, would switch the cumulative line off. PR-37's writer validates too.
+    const raw = plan.targetLossFrac
+    const target =
+      raw != null && Number.isFinite(raw) && raw > 0
+        ? Math.min(WEIGHT_RULES.plannedTargetMax, Math.max(WEIGHT_RULES.plannedTargetMin, raw))
+        : WEIGHT_RULES.plannedDefaultTargetFrac
     return { softKg: null, softStrict: false, firmKg: target * highKg + margin }
   }
   const firmKg = WEIGHT_RULES.firmLossFrac * highKg + margin
@@ -388,6 +415,7 @@ export function weightStory(input: WeightStoryInput): WeightStory {
       y !== undefined &&
       y.r.source === 'home_scale' &&
       !isExactCopy(x.r, y.r) &&
+      Math.abs(x.ms - y.ms) <= WEIGHT_RULES.agreeMaxDays * MS_PER_DAY &&
       Math.abs(x.r.kg - y.r.kg) <= WEIGHT_RULES.agreeBandShare * noiseBandKg(Math.max(x.r.kg, y.r.kg)) + EPS
     return agrees(within[k - 1]) || agrees(within[k + 1])
   }
@@ -407,16 +435,19 @@ export function weightStory(input: WeightStoryInput): WeightStory {
   const highBefore = point(hb, confirmedHigh(hb))
 
   // ── The decision, over readings after the anchor floor ─────────────────────
-  const floor = anchorFloorMs(input, counted)
-  const set = counted.filter((x) => x.ms > floor)
+  const boundary = anchorBoundary(input, counted)
+  const set = counted.filter((x) => x.ms > boundary.floor)
+  // The boundary's anchor stands only as a confirmed HIGH level, before everything in `set`.
+  const anchorHigh: Level[] = boundary.anchor ? [{ kg: boundary.anchor.r.kg, reading: boundary.anchor, end: -1 }] : []
   const juvenile = isJuvenile(input.dateOfBirth, nowMs)
   const plan = runningPlan(input.plans ?? [], nowMs)
   const planned = plan !== null
   const planPlan = plan?.plan ?? null
 
   let row: WeightRow | null = null
-  if (set.length >= 2) {
-    const { highs, lows } = levels(set)
+  if (set.length + anchorHigh.length >= 2 && set.length >= 1) {
+    const { highs: setHighs, lows } = levels(set)
+    const highs = [...anchorHigh, ...setHighs]
     // The confirmed low: the most recent low level (spec §5.3).
     const low = lows.reduce<Level | null>((acc, l) => (acc === null || l.end >= acc.end ? l : acc), null)
 
@@ -507,9 +538,15 @@ export function weightStory(input: WeightStoryInput): WeightStory {
 
   if (row !== null) {
     // The row names the readings the decision may use: the latest, and the highest after the floor.
-    let shb = set[0]
-    for (let k = 1; k < set.length - 1; k++) if (set[k].r.kg > shb.r.kg) shb = set[k]
-    row = { ...row, says: { latest, highBefore: point(shb, supported(shb, set)) } }
+    let shb: Indexed | null = boundary.anchor
+    let shbSupported = true // the anchor is a level, never one reading
+    for (let k = 0; k < set.length - 1; k++) {
+      if (shb === null || set[k].r.kg > shb.r.kg) {
+        shb = set[k]
+        shbSupported = supported(set[k], set)
+      }
+    }
+    if (shb !== null) row = { ...row, says: { latest, highBefore: point(shb, shbSupported) } }
     return { state: row.tier === 'firm' ? 'drop_firm' : 'drop_confirmed', latest, highBefore, row, notCounted }
   }
 
@@ -518,8 +555,9 @@ export function weightStory(input: WeightStoryInput): WeightStory {
   if (diff <= EPS) return { state: 'level_or_up', latest, highBefore, row: null, notCounted }
 
   // A confirmed level, then one reading below it past the line (CUL-1390 W5's plain row).
-  if (set.length >= 2 && set[set.length - 1] === last) {
-    const { highs, lows } = levels(set)
+  if (set.length + anchorHigh.length >= 2 && set[set.length - 1] === last) {
+    const { highs: setHighs, lows } = levels(set)
+    const highs = [...anchorHigh, ...setHighs]
     const lastK = set.length - 1
     if (!lows.some((l) => l.reading === last)) {
       for (const h of highs.filter((h) => h.end < lastK)) {
@@ -537,7 +575,10 @@ export function weightStory(input: WeightStoryInput): WeightStory {
   // A change the last two readings agree on never carries it, whatever its size (attack 5): both
   // sit below the high, so the caveat cannot sit over a slow, steady loss.
   const prev = counted[counted.length - 2]
-  const lastTwoAgree = prev !== hb && prev.r.kg < hb.r.kg - EPS
+  const lastTwoAgree =
+    prev !== hb &&
+    prev.r.kg < hb.r.kg - EPS &&
+    Math.abs(prev.r.kg - last.r.kg) <= WEIGHT_RULES.agreeBandShare * noiseBandKg(prev.r.kg) + EPS
   if (inBand && !clinicToClinic && !lastTwoAgree && (!latest.confirmed || !highBefore.confirmed)) {
     return { state: 'within_noise', latest, highBefore, row: null, notCounted }
   }

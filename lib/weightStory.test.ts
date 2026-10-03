@@ -208,6 +208,32 @@ describe('ruling sheet §2.3 counterexamples', () => {
     expect(story(past, { plans: [plan] }).row).toMatchObject({ tier: 'firm', planned: true });
   });
 
+  it('W6 · a plan that ends right after a single reading never re-raises its own loss (adversarial pass 2)', () => {
+    const plan = { startedAt: '2026-08-01T00:00:00Z', recheckAt: '2026-12-01T00:00:00Z', endedAt: '2026-09-10T12:00:00Z', targetLossFrac: 0.15 };
+    const readings = [home(5.0, '2026-08-01'), home(5.02, '2026-08-08'), home(4.4, '2026-09-10'), home(4.38, '2026-09-30')];
+    expect(story(readings, { plans: [plan] }).row).toBeNull();
+  });
+
+  it('W6 · the visit\'s weigh-in just before the plan was set is its start level', () => {
+    const plan = { startedAt: '2026-07-01T10:00:00Z', recheckAt: '2026-12-01T00:00:00Z' };
+    const before = { kg: 5.0, occurredAt: '2026-07-01T09:40:00Z', source: 'clinic' as const };
+    expect(story([before, clinic(4.3, '2026-08-30')], { plans: [plan] }).row).toMatchObject({ tier: 'firm', high: { kg: 5.0 } });
+    // A reading days before the plan is not its start level.
+    expect(story([clinic(5.0, '2026-06-20'), clinic(4.3, '2026-08-30')], { plans: [plan] }).row).toBeNull();
+  });
+
+  it('W6 · a target is clamped, and a plan that ends before it starts is ignored', () => {
+    const readings = [home(5.0, '2026-08-02'), home(5.1, '2026-08-09'), home(4.9, '2026-09-20'), home(4.94, '2026-09-27')];
+    // 1% would fire inside the noise band; the 2% floor keeps it quiet.
+    expect(story(readings, { plans: [{ startedAt: '2026-08-01T00:00:00Z', recheckAt: '2026-12-01T00:00:00Z', targetLossFrac: 0.01 }] }).row).toBeNull();
+    // 100% (or a percent typed as 10) would switch the cumulative line off; capped at 30%.
+    const big = [home(5.0, '2026-07-02'), home(5.01, '2026-07-03'), home(3.4, '2026-09-27'), home(3.41, '2026-09-28')];
+    expect(story(big, { plans: [{ startedAt: '2026-07-01T00:00:00Z', recheckAt: '2026-12-01T00:00:00Z', targetLossFrac: 10 }] }).row?.tier).toBe('firm');
+    const broken = { startedAt: '2026-08-01T00:00:00Z', endedAt: '2026-07-01T00:00:00Z' };
+    const loss = [home(5.0, '2026-06-01'), home(5.02, '2026-06-08'), home(4.4, '2026-09-20'), home(4.42, '2026-09-27')];
+    expect(story(loss, { plans: [broken] }).row?.tier).toBe('firm');
+  });
+
   it('W6 · a plan that ended at its goal: the cat holding there raises nothing (counterexample 1)', () => {
     const readings = [home(7.0, '2026-03-02'), home(7.01, '2026-03-09'), home(6.3, '2026-06-20'), home(6.31, '2026-06-27'), home(6.3, '2026-09-01'), home(6.31, '2026-09-20')];
     expect(story(readings, { plans: [{ startedAt: '2026-03-01T00:00:00Z', recheckAt: '2026-07-15T00:00:00Z', endedAt: '2026-06-30T00:00:00Z' }] }).row).toBeNull();
@@ -259,8 +285,26 @@ describe('stand-downs (spec §5.5, attack 11)', () => {
     ];
     const s = story(readings, { standDowns: ['2026-07-10T00:00:00Z'] });
     expect(s.row).toMatchObject({ tier: 'soft' });
-    // The row names readings the decision still uses, never the March high before the stand-down.
-    expect(s.row?.says.highBefore.occurredAt.startsWith('2026-07-01')).toBe(true);
+    // The row names the level the stand-down kept (the lower of the regained pair), never the
+    // March high before it.
+    expect(s.row?.says.highBefore).toMatchObject({ kg: 4.49, confirmed: true });
+  });
+
+  // Adversarial pass 2: a row raised on a single low reading, then stood down, came straight back.
+  it('a stood-down drop on a single low reading stays down, home pair or clinic + home', () => {
+    const homeDrop = [home(5.0, '2026-08-01'), home(5.02, '2026-08-08'), home(4.4, '2026-08-15')];
+    expect(story(homeDrop).row?.tier).toBe('firm');
+    expect(story(homeDrop, { standDowns: ['2026-08-15T12:00:00Z'] }).row).toBeNull();
+    expect(story([...homeDrop, home(4.38, '2026-08-22')], { standDowns: ['2026-08-15T12:00:00Z'] }).row).toBeNull();
+    expect(
+      story([...homeDrop, home(4.38, '2026-08-22')], { standDowns: ['2026-08-15T12:00:00Z', '2026-08-20T00:00:00Z'] }).row,
+    ).toBeNull();
+    const mixed = [clinic(5.0, '2026-08-01'), home(4.4, '2026-08-08')];
+    expect(story(mixed).row).not.toBeNull();
+    expect(story(mixed, { standDowns: ['2026-08-08T12:00:00Z'] }).row).toBeNull();
+    // …and a further real loss from the stood-down weight still raises a new row.
+    const further = [...homeDrop, home(3.95, '2026-09-20'), home(3.96, '2026-09-27')];
+    expect(story(further, { standDowns: ['2026-08-15T12:00:00Z'] }).row).toMatchObject({ high: { kg: 4.4 } });
   });
 });
 
@@ -271,6 +315,16 @@ describe('the caveat and the sentence (adversarial pass)', () => {
       const readings = kg.slice(0, n).map((k, i) => home(k, `2026-07-${String(i + 1).padStart(2, '0')}`));
       expect(story(readings).state).not.toBe('within_noise');
     }
+  });
+
+  it('a single dip after two agreeing readings keeps its caveat (adversarial pass 2)', () => {
+    expect(story([home(4.0, '2026-08-01'), home(3.99, '2026-08-08'), home(3.81, '2026-08-15')]).state).toBe('within_noise');
+  });
+
+  it('two readings ten months apart never support each other', () => {
+    const s = story([home(4.0, '2025-11-10'), home(3.91, '2026-09-10')]);
+    expect(s.highBefore?.confirmed).toBe(false);
+    expect(s.latest?.confirmed).toBe(false);
   });
 
   it('a paired high is not "one reading"; a lone latest reading is', () => {
