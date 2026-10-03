@@ -32,6 +32,7 @@ import {
   readFoldEntries,
   reconcileFolds,
   setFactsFor,
+  sharedFoldIdentities,
   subscribeFoldStore,
   writeFoldEntries,
   type BackBecauseReason,
@@ -100,6 +101,13 @@ export function useSignalFold({
   );
   const latestFindings = useRef(findings);
   latestFindings.current = findings;
+  // CUL-1213: a key two cards share renders open on both, with no Back-because line, and
+  // cannot be folded — whichever card the owner acted on, the other would answer.
+  const shared = useMemo(
+    () => sharedFoldIdentities(latestFindings.current.map((f) => f.finding)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [findingsKey],
+  );
   // The record's witness is content too: a new local episode moves it without any regen.
   const recordKey = useMemo(() => JSON.stringify(lastEpisodes), [lastEpisodes]);
   const latestRecord = useRef(lastEpisodes);
@@ -161,30 +169,35 @@ export function useSignalFold({
   const stateOf = useCallback(
     (finding: SignalFinding): FoldState => {
       if (!canFold(finding)) return 'open';
-      return entries[foldIdentity(finding)]?.state === 'folded' ? 'folded' : 'open';
+      const key = foldIdentity(finding);
+      if (shared.has(key)) return 'open';
+      return entries[key]?.state === 'folded' ? 'folded' : 'open';
     },
-    [entries],
+    [entries, shared],
   );
 
   const backBecauseOf = useCallback(
     (finding: SignalFinding): BackBecauseReason | null => {
-      const entry = entries[foldIdentity(finding)];
+      const key = foldIdentity(finding);
+      if (shared.has(key)) return null;
+      const entry = entries[key];
       return entry?.state === 'reopened' ? entry.reason : null;
     },
-    [entries],
+    [entries, shared],
   );
 
   const fold = useCallback(
     (finding: SignalFinding) => {
       if (!canFold(finding)) return;
       const key = foldIdentity(finding);
+      if (shared.has(key)) return;
       const nowIso = new Date().toISOString();
       // The set's facts (the cough↔vomit pair, CUL-1273) as of the fold, from the same
       // settled set the reconcile reads.
       const set = setFactsFor(finding, latestFindings.current.map((f) => f.finding));
       commit((prev) => ({ ...prev, [key]: foldedEntry(finding, nowIso, recordOf(finding), set) }));
     },
-    [commit, recordOf],
+    [commit, recordOf, shared],
   );
 
   const remove = useCallback(

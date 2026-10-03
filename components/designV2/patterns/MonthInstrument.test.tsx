@@ -186,7 +186,7 @@ describe('MonthInstrument', () => {
   it('the legend includes left-some; a layer\'s key appears with the layer, with its count', async () => {
     const { getByTestId, getByText, queryByTestId } = mount();
     await waitFor(() => expect(getByTestId('month-legend')).toBeTruthy());
-    expect(getByText('vomit day, count in the corner')).toBeTruthy();
+    expect(getByText('vomit day, count where a bout began')).toBeTruthy();
     expect(getByText('logged')).toBeTruthy();
     expect(getByText('left some')).toBeTruthy();
     expect(getByText('nothing logged')).toBeTruthy();
@@ -448,14 +448,16 @@ describe('MonthInstrument', () => {
     await waitFor(() => expect(getByText('Vomit logged 3 times · everything this day:')).toBeTruthy(), { timeout: 4000 });
   });
 
-  it('a day a bout continues into is spoken as holding vomiting, and keeps the episode\'s box (CUL-1226)', async () => {
+  it('a day a bout continues into is spoken as holding vomiting, and drawn rose with no count (CUL-1226, CUL-1530)', async () => {
     const { getByTestId, getAllByTestId } = mount(jest.fn(async () => facts({ continuationDays: [{ day: '2026-09-06', from: '2026-09-05' }] })));
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
     const sep6 = getAllByTestId('daymark')[7];
     expect(sep6.props.accessibilityLabel).toContain('September 6');
     expect(sep6.props.accessibilityLabel).toContain('vomiting logged, part of the bout that began');
     expect(sep6.props.accessibilityLabel).not.toContain('no vomiting');
-    // The rose and the corner stay the episode's: Sep 6 draws no count.
+    // Every day holding a vomit is rose (CUL-1530); the corner count stays on the day the
+    // bout began, so Sep 6 draws no number.
+    expect(flat(sep6.props.style).backgroundColor).toBe(theme.colorEventSymptom);
     expect(within(sep6).queryByTestId('daymark-count')).toBeNull();
     // And the neighbour with no continuation still reads as it did.
     expect(getAllByTestId('daymark')[5].props.accessibilityLabel).toContain('logged, no vomiting'); // Sep 4

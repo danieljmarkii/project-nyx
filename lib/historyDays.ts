@@ -32,11 +32,9 @@
 
 import { EVENT_TYPES, SYMPTOM_TYPES, type EventTypeKey } from '../constants/eventTypes';
 import { isFinishedMeal, qualifyingIntakeMeals, type AnalyticsMeal } from './analytics';
-import { episodeDaysOf } from './chartModels';
 import { attributeDoses, type AttributableDose, type DoseAdherence, type RegimenWindow } from './medications';
 import type { MedicationCourse } from './medicationHistory';
 import { symptomOccurrenceLabel } from './metricDetail';
-import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import type { HistoryVisitRow } from './vetVisits';
 import type { BoundaryMarker } from './feedingArrangements';
 import { collapseSameMinute } from './sameMinuteDuplicates';
@@ -185,12 +183,6 @@ export interface DayFacts {
   noted: number;
   /** A look was answered this day. Shown as a date under Noticed; never counted. */
   looked: boolean;
-  /** A vomiting EPISODE began this day: the Patterns month's own mark (`episodeDaysOf`,
-   *  re-logs inside the engine's gap are one episode, dated by its first row). A bout that
-   *  starts at 23:10 and is logged again at 00:40 marks the first day only, so the strip,
-   *  which marks what the month marks under All types (§3.4), can never disagree with it.
-   *  The day's rows still count on the day they were logged (`byType`). */
-  vomitEpisode: boolean;
 }
 
 export function emptyDayFacts(day: string): DayFacts {
@@ -203,7 +195,6 @@ export function emptyDayFacts(day: string): DayFacts {
     photographed: 0,
     noted: 0,
     looked: false,
-    vomitEpisode: false,
   };
 }
 
@@ -344,14 +335,6 @@ export function buildDayFacts(input: DayFactsInput): Map<string, DayFacts> {
   }
   for (const day of lookDays) {
     if (isDayKey(day) && inRange(day, range)) factsOf(day).looked = true;
-  }
-  // Episodes over every row read, the slack included, exactly as the month reads them: a
-  // bout that began before the window marks no day inside it.
-  const vomits = rows
-    .filter((r) => r.eventType === TIMING_SYMPTOM_TYPE)
-    .map((r) => ({ ms: Date.parse(r.occurredAt) }));
-  for (const day of episodeDaysOf(vomits, (ms) => toLocalDayKey(new Date(ms)))) {
-    if (inRange(day, range)) factsOf(day).vomitEpisode = true;
   }
   return out;
 }

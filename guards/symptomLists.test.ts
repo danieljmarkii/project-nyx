@@ -69,6 +69,8 @@ const REGISTERED: Record<string, string> = {
   'supabase/functions/generate-signal/phrasing.ts': 'server SYMPTOM_LABEL — engine owner copy (cough lands with 3b)',
   'supabase/functions/generate-signal/careContext.ts':
     'trialCovers — which signs a trial\'s indication covers (gi → vomit, diarrhea; skin → itch, scratch), so a trial line is DRAWN beside them (CUL-1420). Placement only, never what is counted. Its drug table moved to lib/maskingSpans.ts (CUL-1440); this entry was the file\'s registration before the move and still covers this membership',
+  'supabase/functions/generate-signal/careState.ts':
+    'coSignsFor — EN-9\'s C1a co-signs (CUL-1417, ruled 2026-10-02): which OTHER sign returns a watched concern (diarrhea ↔ vomiting, lethargy for either). Presence only, never a count on the concern\'s row; its walk row is in constants/eventTypes.membership.test.ts',
   'lib/maskingSpans.ts':
     'MaskSign + ALL_SIGNS + DRUG_CLASS_EFFECTS — EN-10\'s drug table, shared by the server lines and the app\'s charts (CUL-1420, lifted here by CUL-1440): which signs a course is shown beside and may mask. Decides where a context line is DRAWN and when a zero is withheld, never what is counted; its walk row is in constants/eventTypes.membership.test.ts',
   'supabase/functions/generate-report/report.ts': 'REPORT_SYMPTOM_TYPES — the report frequency section (3b co-work)',

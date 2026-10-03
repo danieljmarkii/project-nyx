@@ -43,12 +43,12 @@ export type Wave = 'EN-9' | 'EN-8' | 'EN-3/4/7' | 'EN-11'
  * leaves the flag-on rows equal to flag off's, and the wave then passes by construction: with
  * `engines_v3_en3` on, the rows were byte-identical and EN-3/4/7 read "pass" (fourth adversarial
  * pass), because that key changes the per-incident read (analyze-vomit, analyze-stool), which the
- * observer does not run until CUL-1439. EN-9 is false while the observer passes an empty care
- * record (observer.ts `NO_CARE`); PR-23 flips it in the PR that maps the corpus's answers onto it.
+ * observer does not run until CUL-1439. EN-9 is true since PR-23 (CUL-1417), which maps the corpus's
+ * answers and concern-carrying visits onto the care record behind `engines_v3_en9` (observer.ts).
  * A wave not observed reads `incomparable` against any flag-on arm.
  */
 export const HARNESS_OBSERVES: Readonly<Record<Wave, boolean>> = {
-  'EN-9': false,
+  'EN-9': true,
   // False until rowsAt (syntheticRows.ts) feeds weights: today the engine gets none, so a weight
   // lane would read zero false cards by construction (fifth adversarial pass).
   'EN-8': false,
@@ -111,8 +111,8 @@ export const PASS_LINES: readonly PassLine[] = [
     aggregate: 'worst',
     comparison: 'absolute',
     direction: 'at_most',
-    value: null,
-    valueSource: "EN-9's re-raise tolerance: a 'now' item on the ruling sheet (E-6, CUL-583), unruled. The drafted 1.5x trigger raised 59% to 75% of stable cats (BRK-4).",
+    value: 0.05,
+    valueSource: "EN-9's re-raise tolerance, ruled A on 2026-09-28 (care-state spec §0.3): at most 5% of stable pets asked again within eight weeks; set here by N2 (ruling sheet §2.2, ruled 2026-10-02). The drafted 1.5x trigger's rate on stable cats is cited two ways (59–75% here before, 64–81% in BRK-4); PR-23 removes that trigger, so the figure is re-measured by this line on the next scorecard run, not picked.",
     pairedWith: 'EN-9.doubling',
   },
   {
@@ -181,8 +181,8 @@ export const PASS_LINES: readonly PassLine[] = [
     aggregate: 'worst',
     comparison: 'absolute',
     direction: 'at_most',
-    value: null,
-    valueSource: "EN-9's re-raise tolerance on the ruling sheet (E-6, CUL-583), unruled; the same ruling as EN-9.reRaise, held over the whole run.",
+    value: 0.05,
+    valueSource: "EN-9's re-raise tolerance (ruled A, 2026-09-28; N2, 2026-10-02), the same ruling as EN-9.reRaise, held over the whole run.",
     pairedWith: 'EN-9.doubling',
   },
   {
@@ -218,8 +218,8 @@ export const PASS_LINES: readonly PassLine[] = [
     aggregate: 'each',
     comparison: 'flag_on_vs_flag_off',
     direction: 'at_most',
-    value: null,
-    valueSource: 'A tolerance in pets, unruled (CUL-583), for the same count-noise reason as EN-11.eligible.',
+    value: 0,
+    valueSource: 'N1, ruled 0 on 2026-10-02 (ruling sheet §2.2): whether and when a cat is acknowledged is decided before EN-9 acts, by the pre-EN-9 ask in both arms, so the two counts should be identical; any difference is EN-9 reaching behaviour it must not touch.',
     pairedWith: 'EN-9.doubling',
   },
   {

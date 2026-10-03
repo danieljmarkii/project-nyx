@@ -3,6 +3,7 @@ import Svg, { Line } from 'react-native-svg';
 import { theme } from '../../constants/theme';
 import { dayMarkA11yLabel, type DayMarkCoverage, type DayMarkPhoto } from '../../lib/chartCopy';
 import { isCallDisplay } from '../../lib/incidentTierWords';
+import { holdsVomit } from '../../lib/monthModel';
 import { ThemedText } from '../ui/ThemedText';
 
 // DayMark — one day of the month, to the §05 standard (CUL-1064; design authority
@@ -225,8 +226,9 @@ export interface DayMarkProps {
   dayOfMonth: number;
   /** Episodes on the day. A zero is a day with none, not a missing number. */
   count: number;
-  /** The day a bout began, when this day holds its rows and no bout of its own — spoken
-   *  only (CUL-1226): the box stays the episode's. */
+  /** The day a bout began, when this day holds its rows and no bout of its own. The box is
+   *  rose (CUL-1530: every day holding a vomit is) and carries no corner count, which stays
+   *  on the day the bout began; the label names that day (CUL-1226). */
   continuesFrom?: string | null;
   coverage: DayMarkCoverage;
   /** The symptom layer is showing (default on). */
@@ -258,7 +260,7 @@ export function DayMark({
 }: DayMarkProps) {
   const ahead = coverage === 'ahead';
   const unlogged = coverage === 'unlogged';
-  const symptomDay = symptomLayer && count > 0 && !ahead && !unlogged;
+  const symptomDay = symptomLayer && holdsVomit({ count, continuesFrom }) && !ahead && !unlogged;
   const label = dayMarkA11yLabel({ dayKey, count, continuesFrom, coverage, medication, photo, symptomLayer, today, selected }, noun);
   const box: DayMarkBox = ahead ? 'outlined' : unlogged ? 'grey' : symptomDay ? 'rose' : 'white';
   const line: DayMarkLineKind = coverage === 'logged' ? 'solid' : coverage === 'left_some' ? 'broken' : 'none';

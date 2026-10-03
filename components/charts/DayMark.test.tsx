@@ -48,13 +48,18 @@ describe('DayMark — the §05 row', () => {
     expect(getByTestId('daymark').props.accessibilityLabel).not.toContain('no vomiting');
   });
 
-  it('a day a bout continues into: SAID as holding vomiting, drawn as the episode\'s day — no rose, no count (CUL-1226)', () => {
+  it('a day a bout continues into: SAID as holding vomiting, drawn rose with no count (CUL-1226, CUL-1530)', () => {
     const { getByTestId, queryByTestId } = render(<DayMark {...base} count={0} coverage="logged" continuesFrom="2026-09-18" />);
     const label = String(getByTestId('daymark').props.accessibilityLabel);
     expect(label).toContain('part of the bout that began');
     expect(label).not.toContain('no ');
+    // Every day holding a vomit is rose; the corner count stays on the day the bout began.
+    expect(flat(getByTestId('daymark').props.style).backgroundColor).toBe(theme.colorEventSymptom);
     expect(queryByTestId('daymark-count')).toBeNull();
     expect(getByTestId('daymark-line-solid')).toBeTruthy();
+    // The symptom layer off takes the rose off it too: a layer off is not "clear".
+    const off = render(<DayMark {...base} count={0} coverage="logged" continuesFrom="2026-09-18" symptomLayer={false} />);
+    expect(flat(off.getByTestId('daymark').props.style).backgroundColor).not.toBe(theme.colorEventSymptom);
   });
 
   it('the coverage line: whole when logged, BROKEN for a meal left unfinished, none on an unlogged day', () => {

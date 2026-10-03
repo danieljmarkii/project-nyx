@@ -804,6 +804,29 @@ describe('the commit haptic (CUL-604 §5.6)', () => {
     expect(commitSymptom).not.toHaveBeenCalled();
   });
 
+  // CUL-894 — the intake door reveals the meal card with the owner's refusal lit.
+  // Congratulating that with the success double-tap is the med-strip §N3 failure on
+  // the food side; both decline arms take the soft tap.
+  it.each(['refused', 'picked'] as const)('a meal REVEALED %s takes the soft tap', (rating) => {
+    useMomentStore.getState().showMeal(mealPayload({ intakeRating: rating }));
+    expect(commitSymptom).toHaveBeenCalledTimes(1);
+    expect(commitRoutine).not.toHaveBeenCalled();
+  });
+
+  it.each(['some', 'most', 'all'] as const)('a meal revealed %s stays a routine commit', (rating) => {
+    useMomentStore.getState().showMeal(mealPayload({ intakeRating: rating }));
+    expect(commitRoutine).toHaveBeenCalledTimes(1);
+    expect(commitSymptom).not.toHaveBeenCalled();
+  });
+
+  it('a refusal chosen AFTER the reveal plays no second haptic', () => {
+    // The beat belongs to the commit. A chip tap is a correction, not a second log.
+    useMomentStore.getState().showMeal(mealPayload({ intakeRating: null }));
+    useMomentStore.getState().patchIntakeRating('refused');
+    expect(commitRoutine).toHaveBeenCalledTimes(1);
+    expect(commitSymptom).not.toHaveBeenCalled();
+  });
+
   it('fires with the REVEAL, not the call, on a deferred card', () => {
     // The picker path defers the reveal ~450ms behind the dismissing /log modal. A
     // buzz half a second ahead of its own card reads as a stray one.

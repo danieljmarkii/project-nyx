@@ -560,15 +560,16 @@ const READ_BY_SIGNAL = ['engines_v3_en0']
 const gated = (prior: PriorEntry[], priorFlags: unknown, current: EngineFlags, signalKeys: readonly string[]) =>
   resolve(priorForStandDowns(prior, standDownMintAllowed(priorFlags, current, signalKeys)), stoodDownInput())
 
-Deno.test('EN-F — the real key set: a flip of a key the Signal never reads mints as shipped; EN-11\'s does not', () => {
+Deno.test('EN-F — the real key set: a flip of a key the Signal never reads mints as shipped; EN-9\'s and EN-11\'s do not', () => {
   const prior = [priorChronicity('vomit', 'firm')]
   const shipped = resolve(prior, stoodDownInput())
   assert.equal(shipped.length, 1, 'fixture premise: the golden shape mints')
-  assert.deepEqual([...SIGNAL_ENGINE_KEYS], ['engines_v3_en11'], 'a Signal key was added or removed: restate this test')
+  assert.deepEqual([...SIGNAL_ENGINE_KEYS], ['engines_v3_en9', 'engines_v3_en11'], 'a Signal key was added or removed: restate this test')
   // engines_v3_en0 changes the vomit read, never the Signal, so its flip still mints.
   for (const [priorFlags, current] of [
     [[], FLAGS_OFF], [null, FLAGS_OFF], [[], FLAGS_ON], [['engines_v3_en0'], FLAGS_OFF],
     [['engines_v3_en11'], { on: ['engines_v3_en11'], readOk: true }],
+    [['engines_v3_en9'], { on: ['engines_v3_en9'], readOk: true }],
   ] as [unknown, EngineFlags][]) {
     assert.deepEqual(gated(prior, priorFlags, current, SIGNAL_ENGINE_KEYS), shipped, JSON.stringify([priorFlags, current]))
   }
@@ -576,6 +577,7 @@ Deno.test('EN-F — the real key set: a flip of a key the Signal never reads min
   for (const [priorFlags, current] of [
     [[], { on: ['engines_v3_en11'], readOk: true }], [null, { on: ['engines_v3_en11'], readOk: true }],
     [['engines_v3_en11'], FLAGS_OFF], [[], { on: [], readOk: false }],
+    [[], { on: ['engines_v3_en9'], readOk: true }], [['engines_v3_en9'], FLAGS_OFF],
   ] as [unknown, EngineFlags][]) {
     assert.deepEqual(gated(prior, priorFlags, current, SIGNAL_ENGINE_KEYS), [], JSON.stringify([priorFlags, current]))
   }

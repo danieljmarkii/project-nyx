@@ -207,10 +207,17 @@ describe('the bars over the rows (AC 1)', () => {
     expect(byKey.get('2026-09-11')).toMatchObject({ count: 2, continuesFrom: null });
     expect(byKey.get('2026-09-20')).toMatchObject({ coverage: 'ahead', continuesFrom: null });
     expect(byKey.get('2026-09-04')?.continuesFrom).toBeNull();
-    // The rose, the corners, the bars and the line stay the episode's.
+    // The corners and the bars stay the episode's; the rose is every day holding a vomit
+    // (CUL-1530), so Sep 1 and Sep 3 fill and the line's days become the rose days.
     expect(m.count).toBe(base.count);
     expect(m.episodeDayCount).toBe(base.episodeDayCount);
-    expect(m.line).toBe(base.line);
+    expect(byKey.get('2026-09-03')?.rose).toBe(true);
+    expect(byKey.get('2026-09-01')?.rose).toBe(true);
+    expect(byKey.get('2026-09-20')?.rose).toBe(false);
+    expect(byKey.get('2026-09-04')?.rose).toBe(false);
+    expect(m.vomitDayCount).toBe(base.vomitDayCount + 2);
+    expect(m.line).not.toBe(base.line);
+    expect(m.line).toContain(`vomiting logged on ${base.vomitDayCount + 2} days`);
     expect(m.weekly.weeks.map((w) => w.count)).toEqual(base.weekly.weeks.map((w) => w.count));
     expect(m.days.map((d) => d.count)).toEqual(base.days.map((d) => d.count));
     expect(() => septModel({ continuationDays: [{ day: '2026-09-03', from: 'Sep 2' }] })).toThrow(/day key/);
@@ -300,9 +307,14 @@ describe('the line (AC 5, C-3)', () => {
   });
 
   it('buildLine pluralises and orders its clauses; without the count it is the window and its coverage', () => {
-    const base = { noun: 'vomiting', count: 1, episodeDayCount: 1, aheadCount: 2, unloggedDays: 1, beforeRecordDays: 1, isAhead: false, recordEmpty: false, allBeforeRecord: false, lastDrawnKey: '2026-09-17' };
+    const base = { noun: 'vomiting', rowNoun: 'vomit', count: 1, episodeDayCount: 1, vomitDayCount: 1, aheadCount: 2, unloggedDays: 1, beforeRecordDays: 1, isAhead: false, recordEmpty: false, allBeforeRecord: false, lastDrawnKey: '2026-09-17' };
     expect(buildLine(base)).toBe('Vomiting 1 time on 1 day · through Sep 17 · 1 day unlogged · 1 day before the record · 2 dated ahead, not drawn');
     expect(buildLine(base, { withCount: false })).toBe('Through Sep 17 · 1 day unlogged · 1 day before the record');
+    // CUL-1530: a bout running past its first day splits the times (episodes, the corners)
+    // from the days (every rose day), each clause naming its own population.
+    expect(buildLine({ ...base, vomitDayCount: 4 })).toBe('Vomiting 1 time · vomit logged on 4 days · through Sep 17 · 1 day unlogged · 1 day before the record · 2 dated ahead, not drawn');
+    expect(buildLine({ ...base, count: 0, episodeDayCount: 0, vomitDayCount: 1 })).toBe('Vomit logged on 1 day · through Sep 17 · 1 day unlogged · 1 day before the record · 2 dated ahead, not drawn');
+    expect(buildLine({ ...base, count: 0, episodeDayCount: 0, vomitDayCount: 0 })).toBe('No vomiting logged · through Sep 17 · 1 day unlogged · 1 day before the record · 2 dated ahead, not drawn');
   });
 
   it('the coverage line drops the count and keeps the coverage — the layer leaves, the coverage never does', () => {

@@ -1121,7 +1121,11 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   const pets = usePetStore.getState().pets;
   const petName = resolveRecordPetName(pets, petId);
   const row = await readSignalCache(petId);
-  const cached = row?.findings.find((f) => foldIdentity(f.finding) === identity) ?? null;
+  // CUL-1213: two findings answering to one identity is a route that cannot say which it
+  // meant, so the screen refuses to pick rather than drawing one card's evidence under the
+  // other's title.
+  const matches = row?.findings.filter((f) => foldIdentity(f.finding) === identity) ?? [];
+  const cached = matches.length === 1 ? matches[0] : null;
   if (!cached) return { status: 'missing', petName };
   if (!hasSignalTitleRule(cached.finding)) return { status: 'unsupported', petName };
 

@@ -21,6 +21,7 @@ import {
   pruneFoldStore,
   readFoldEntries,
   reconcileFolds,
+  sharedFoldIdentities,
   setFactsFor,
   specPaths,
   writeFoldEntries,
@@ -282,22 +283,26 @@ describe('foldIdentity — the finding key, never rank', () => {
     expect(foldIdentity(postprandial)).toBe('postprandial_timing:vomit');
     expect(foldIdentity({ ...reflection, symptomType: 'itch' })).toBe('reflection:itch');
   });
-  it('keys a correlation on its sorted cluster — a member joining is a new identity', () => {
-    expect(foldIdentity(correlation)).toBe('food_symptom_correlation:chicken');
+  it('keys a correlation on its symptom and sorted cluster — a member joining is a new identity', () => {
+    expect(foldIdentity(correlation)).toBe('food_symptom_correlation:vomit:chicken');
     const joint = { ...correlation, protein: 'duck and chicken', proteins: ['duck', 'chicken'], jointCandidate: true };
-    expect(foldIdentity(joint)).toBe('food_symptom_correlation:chicken+duck');
+    expect(foldIdentity(joint)).toBe('food_symptom_correlation:vomit:chicken+duck');
     expect(foldIdentity(joint)).not.toBe(foldIdentity(correlation));
   });
   it('falls back to the single label for a pre-slice-6 cached row (no `proteins`)', () => {
     const legacy = { ...correlation, proteins: undefined };
-    expect(foldIdentity(legacy)).toBe('food_symptom_correlation:chicken');
+    expect(foldIdentity(legacy)).toBe('food_symptom_correlation:vomit:chicken');
+  });
+  it('CUL-1213: one protein, two symptoms, two identities', () => {
+    expect(foldIdentity({ ...correlation, symptomType: 'itch' })).not.toBe(foldIdentity(correlation));
   });
   it('a vomit red flag never covers a stool red flag', () => {
     expect(foldIdentity(redFlag)).not.toBe(foldIdentity({ ...redFlag, incidentType: 'stool' }));
   });
-  it('trial_response and intake_decline are one per pet', () => {
+  it('trial_response is one per pet; intake_decline is one per trigger (CUL-1213)', () => {
     expect(foldIdentity(trial)).toBe('trial_response');
-    expect(foldIdentity(intake)).toBe('intake_decline');
+    expect(foldIdentity(intake)).toBe('intake_decline:consecutive_low');
+    expect(foldIdentity({ ...intake, trigger: 'refused_normal_food' })).toBe('intake_decline:refused_normal_food');
   });
   it('a lone postprandial that becomes a timing_story is a NEW identity', () => {
     expect(foldIdentity(postprandial)).not.toBe(foldIdentity(story));
@@ -1026,5 +1031,71 @@ describe('materialChange — the chronicity compare (CUL-787) never re-opens a f
     expect(materialChange(foldFingerprint(base), foldFingerprint(fell))).toBeNull();
     expect(materialChange(foldFingerprint(base), foldFingerprint(rose))).toBeNull();
     expect(foldFingerprint(base)).not.toHaveProperty('compare');
+  });
+});
+
+// ── CUL-1213 — two findings, one identity ─────────────────────────────────────
+// The issue's counterexamples, at the store. Each of these was red on the key that carried no
+// symptom and no trigger (proven by reverting lib/findingIdentity.ts on this branch).
+describe('CUL-1213 — a fold is one finding’s, never its twin’s', () => {
+  const NOW_ISO = '2026-09-20T09:00:00.000Z';
+  // An Established itch correlation (7 of 7) and an Early vomit one (3 of 3), both on chicken.
+  const itch: CorrelationFinding = {
+    ...correlation,
+    symptomType: 'itch',
+    tier: 'established',
+    matchedPairs: 7,
+    symptomEventCount: 7,
+    correlationWindowHours: 72,
+  };
+  const vomit: CorrelationFinding = { ...correlation, tier: 'early', matchedPairs: 3, symptomEventCount: 3 };
+
+  it('counterexample 1: folding the Early vomit card leaves the Established itch card open, and neither comes back', () => {
+    const entries = { [foldIdentity(vomit)]: foldedEntry(vomit, NOW_ISO) };
+    // The engine ranks the itch card after the vomit one; the reconcile used to judge the
+    // vomit fold against whichever card came last under the shared key, and the itch card's
+    // tier read as a promotion: "Back because this pattern is now established".
+    const { entries: next } = reconcileFolds(entries, [vomit, itch], NOW_ISO);
+    expect(next[foldIdentity(vomit)]).toMatchObject({ state: 'folded' });
+    expect(next[foldIdentity(itch)]).toBeUndefined();
+    expect(foldIdentity(itch)).not.toBe(foldIdentity(vomit));
+  });
+
+  it('counterexample 1, the other half: a new itch episode re-opens the itch card and leaves the vomit fold alone', () => {
+    const entries = {
+      [foldIdentity(vomit)]: foldedEntry(vomit, NOW_ISO),
+      [foldIdentity(itch)]: foldedEntry(itch, NOW_ISO),
+    };
+    const { entries: next } = reconcileFolds(entries, [vomit, { ...itch, matchedPairs: 8, symptomEventCount: 8 }], NOW_ISO);
+    expect(next[foldIdentity(itch)]).toMatchObject({ state: 'reopened', reason: 'new_episode' });
+    expect(next[foldIdentity(vomit)]).toMatchObject({ state: 'folded' });
+  });
+
+  it('a decline and a refusal on one run are two folds', () => {
+    const refusal: IntakeDeclineFinding = { ...intake, trigger: 'refused_normal_food', daysBelowBaseline: 0, refusedFoodLabel: 'the turkey pâté' };
+    expect(sharedFoldIdentities([intake, refusal]).size).toBe(0);
+  });
+
+  // The floor: a payload missing the field the key needs (here, two correlations without a
+  // symptom) puts two findings under one key. Neither may fold or wear the other's line.
+  it('a key more than one finding claims is released, never judged', () => {
+    const legacyA = { ...vomit, symptomType: undefined } as unknown as CorrelationFinding;
+    const legacyB = { ...itch, symptomType: undefined } as unknown as CorrelationFinding;
+    const key = foldIdentity(legacyA);
+    expect(foldIdentity(legacyB)).toBe(key);
+    expect([...sharedFoldIdentities([legacyA, legacyB])]).toEqual([key]);
+    const folded = reconcileFolds({ [key]: foldedEntry(legacyA, NOW_ISO) }, [legacyA, legacyB], NOW_ISO);
+    expect(folded.entries[key]).toBeUndefined();
+    expect(folded.changed).toBe(true);
+    const reopened = reconcileFolds(
+      { [key]: { state: 'reopened', reason: 'tier_established', fingerprint: foldFingerprint(legacyB), atIso: NOW_ISO } },
+      [legacyA, legacyB],
+      NOW_ISO,
+    );
+    expect(reopened.entries[key]).toBeUndefined();
+  });
+
+  it('a set where every key is its own shares nothing', () => {
+    expect(sharedFoldIdentities([vomit, itch, intake, chronicity]).size).toBe(0);
   });
 });

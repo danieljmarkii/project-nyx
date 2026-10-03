@@ -10,6 +10,7 @@
 import { assert, assertEquals, assertNotEquals, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import type { Finding } from '../detection.ts'
 import { runSignalPipeline } from '../pipeline.ts'
+import { EMPTY_CARE_RECORD } from '../careState.ts'
 import { scenarioById, simulate } from '../../_shared/engineCorpus/trajectory/index.ts'
 import type { Observer, ShownCard } from '../../_shared/engineCorpus/trajectory/index.ts'
 import { FLAG_OFF, makeSignalObserver, registerOfAsk, type ScoredCard } from './observer.ts'
@@ -73,7 +74,7 @@ Deno.test('the observer shows what the shipped pipeline returns for the same row
         prior: null,
         nowMs: T,
         engineFlags: FLAG_OFF,
-        careRecord: { ownerAnswers: [], appointments: [] },
+        careRecord: EMPTY_CARE_RECORD,
         careContextFacts: null,
       })
       // The prior only mints stand-down markers, which are not cards; the cards must agree.

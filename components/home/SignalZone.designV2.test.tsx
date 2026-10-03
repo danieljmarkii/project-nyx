@@ -292,7 +292,7 @@ describe('flag-on', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].props.accessibilityHint).toBe(DOOR_A11Y_HINT);
     fireEvent.press(rows[0]);
-    expect(router.push).toHaveBeenCalledWith('/signal/food_symptom_correlation%3Achicken?pet=pet-1');
+    expect(router.push).toHaveBeenCalledWith('/signal/food_symptom_correlation%3Avomit%3Achicken?pet=pet-1');
     // No shipped face, no control row, no per-card sentence on Home.
     expect(view.queryByTestId('insight-face')).toBeNull();
     expect(view.queryByTestId('insight-evidence-control')).toBeNull();

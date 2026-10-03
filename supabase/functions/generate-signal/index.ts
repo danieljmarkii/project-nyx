@@ -43,6 +43,16 @@ import {
 // Engines v3 PR-11b (CUL-1267): every step between the reads and the phrasing, pure. This
 // file reads, phrases and writes; ./pipeline.ts decides what the Signal says.
 import {
+  CARE_HISTORY_MAX_DAYS,
+  CARE_STATE_CONFIG,
+  careStateText,
+  EMPTY_CARE_RECORD,
+  type AckFact,
+  type AckSource,
+  type CareHistory,
+  type CareRecord,
+} from './careState.ts'
+import {
   assembleSignal,
   runSignalPipeline,
   templateSummary,
@@ -60,7 +70,7 @@ import {
 // degrades safely — it just stops a hung upstream from holding the function open.
 import { fetchWithTimeout } from '../_shared/http.ts'
 // CUL-989 — CUL-975's paged reader, shared with generate-report and ask.
-import { fetchAll, incompletePullNames } from '../_shared/pull.ts'
+import { fetchAll, incompletePullNames, type Pull } from '../_shared/pull.ts'
 import {
   templateForFinding,
   validatePhrasing,
@@ -118,7 +128,7 @@ const PHRASING_MODEL = 'claude-haiku-4-5'
 // DEFAULT_CONFIG, the phrasing model and the Engines flags; engineStamps.ts). Bump it with
 // any change to detection, curation, decoration or phrasing that can change what a pet's
 // Signal says: the fingerprint cannot see a code change this number does not record.
-export const SIGNAL_ENGINE_VERSION = 'signal.6' // signal.6: PR-32 (CUL-1141), EN-11 behind engines_v3_en11 (flag off unchanged). signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
+export const SIGNAL_ENGINE_VERSION = 'signal.7' // signal.7: PR-23 (CUL-1417), EN-9's care state behind engines_v3_en9 (flag off unchanged). signal.6: PR-32 (CUL-1141), EN-11 behind engines_v3_en11 (flag off unchanged). signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
 
 const MS_PER_DAY = 86_400_000
 
@@ -137,6 +147,11 @@ interface ClaudeToolResponse {
 // Phrase one finding. Returns the model sentence if it passes validation,
 // otherwise the deterministic template — so this never throws and never blanks.
 async function phraseFinding(finding: Finding, petName: string, phrasingEnabled = true): Promise<string> {
+  // EN-9 (PR-23): a care state's sentence is template-only (AC 8). It names the owner's answer
+  // and its date beside a count; a model given "with your vet" is one paraphrase away from
+  // "under control" (BRK-13), so it never sees one.
+  const careText = careStateText(finding)
+  if (careText !== null) return careText
   const fallback = templateForFinding(finding, petName)
   // T2-3 (§5.3): ai_signal_phrasing_enabled off ⇒ template-only phrasing (the
   // existing invisible degradation). Detection is untouched — the flag never gates
@@ -675,7 +690,10 @@ const handler = async (req: Request): Promise<Response> => {
     // 1d. EN-10 (PR-22, CUL-1420): the two facts the context lines need, read ONLY while the
     //     key is on, so flag-off makes neither read. `readCareContextFacts` carries the rules;
     //     null (any failure, or an incomplete logging pull) means no lines, never a wrong one.
-    const careContextFacts: CareContextFacts | null = isEngineKeyOn(engineFlags, 'engines_v3_en10')
+    // EN-9 (PR-23) counts over the same logging, so the facts are read while either key is on;
+    // each step re-checks its own key.
+    const en9On = isEngineKeyOn(engineFlags, 'engines_v3_en9')
+    const careContextFacts: CareContextFacts | null = isEngineKeyOn(engineFlags, 'engines_v3_en10') || en9On
       ? await readCareContextFacts(
         supabase,
         petId,
@@ -683,6 +701,13 @@ const handler = async (req: Request): Promise<Response> => {
         dayKeyFromIndex(localDayIndex(nowMs, (profileRes.data as { timezone: string | null } | null)?.timezone ?? undefined)),
       )
       : null
+    // 1e. EN-9 (PR-23, CUL-1417): the owner's answers, the trial or course each names, and
+    //     lethargy instants, read ONLY while the key is on and the facts above answered, so
+    //     flag-off makes none of these reads. A failed read is EMPTY_CARE_RECORD: every concern
+    //     stays raised (the louder direction), logged.
+    const careRecord: CareRecord = en9On && careContextFacts !== null
+      ? await readCareRecord(supabase, petId, lookbackIso, nowMs)
+      : EMPTY_CARE_RECORD
     const fingerprint = await engineFingerprint({
       engine: 'generate-signal',
       version: SIGNAL_ENGINE_VERSION,
@@ -717,8 +742,8 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     // 2–3. Detect, curate, decorate, build the summary packet and resolve the stand-downs:
-    //      the pure pipeline (./pipeline.ts), over exactly the rows read above. The care
-    //      record is reserved for EN-9 (PR-23) and read by nothing yet, so no read feeds it.
+    //      the pure pipeline (./pipeline.ts), over exactly the rows read above, the care
+    //      record included (empty flag-off).
     const result = runSignalPipeline({
       rows: {
         pet: { name: pet.name, species: pet.species },
@@ -735,7 +760,7 @@ const handler = async (req: Request): Promise<Response> => {
       prior,
       nowMs,
       engineFlags,
-      careRecord: { ownerAnswers: [], appointments: [] },
+      careRecord,
       careContextFacts,
     })
     // 4. Phrase — one sentence per finding, in parallel, each falling back to
@@ -839,6 +864,12 @@ const handler = async (req: Request): Promise<Response> => {
 //
 // Fails toward NO LINES: a failed read or an incomplete logging pull returns null, logged. A
 // line with a wrong window, or a coverage count that is a floor, is worse than no line.
+// The one place the engine names the daily look's parent event, and only to keep it OUT of every
+// "something logged" read (a look never enters another surface's coverage line). Both logging
+// pulls (EN-10's and EN-9's history) exclude it by this name; constants/eventTypes.membership
+// .test.ts pins this as the only occurrence under generate-signal/ and every use as a `.neq`.
+const DAILY_LOOK_EVENT_TYPE = 'check_in'
+
 export async function readCareContextFacts(
   supabase: SupabaseClient,
   petId: string,
@@ -862,7 +893,7 @@ export async function readCareContextFacts(
           .from('events')
           .select('id, occurred_at', { count: 'exact' })
           .eq('pet_id', petId)
-          .neq('event_type', 'check_in')
+          .neq('event_type', DAILY_LOOK_EVENT_TYPE)
           .is('deleted_at', null)
           .gte('occurred_at', lookbackIso)
           .order('occurred_at', { ascending: false })
@@ -886,6 +917,186 @@ export async function readCareContextFacts(
     }
   } catch (err) {
     console.warn('generate-signal: context-line reads failed, no context lines:', err instanceof Error ? err.message : String(err))
+    return null
+  }
+}
+
+// ── EN-9's reads (Engines v3 PR-23, CUL-1417) ──────────────────────────────────
+//
+// Behind `engines_v3_en9`. Every read names its columns (guards/careRecord.test.ts): the owner's
+// answers (never a visit id, a clinic or a note: the answer's ANCHOR is the date it names), the
+// trial or course an answer is scoped to (dates, status and whether it has a target), the newest
+// given or partial dose of each such course, and the lethargy rows in the lookback (C1a source
+// 2). No appointment is read: whether one is ABOUT a sign needs its reason or questions, which
+// AC 10 as amended keeps from every engine (CUL-1531). Caller's JWT, so RLS scopes every read.
+//
+// Fails toward RAISED: any failure returns EMPTY_CARE_RECORD, so no answer quiets a concern on a
+// read that did not answer.
+const ACK_SOURCES: ReadonlySet<string> = new Set<AckSource>(['at_vet_tick', 'visit_answer', 'my_vet_knows', 'vet_started_trial', 'vet_started_course'])
+
+type AckRow = { id: string; symptom_type: string; source: string; anchor_on: string; diet_trial_id: string | null; medication_id: string | null; retracts: string | null; created_at: string }
+type AckTrialRow = { id: string; started_at: string; ended_at: string | null; target_duration_days: number | null; target_duration_days_initial: number | null }
+type AckMedRow = { id: string; drug_name: string | null; started_at: string | null; ended_at: string | null; status: string | null; target_duration_days: number | null; target_duration_doses: number | null }
+type AckDoseRow = { id: string; occurred_at: string; medication_administrations: { medication_id: string | null } | { medication_id: string | null }[] | null }
+
+export async function readCareRecord(supabase: SupabaseClient, petId: string, lookbackIso: string, nowMs: number): Promise<CareRecord> {
+  try {
+    // Every read pages to the end (CUL-975): a capped read could drop the newest retraction and
+    // leave the answer it takes back live. An incomplete one is refused, below.
+    const [ackPull, lethargyPull] = await Promise.all([
+      fetchAll<AckRow>('care_acknowledgements', (r) => r.id, (from, to) =>
+        supabase
+          .from('care_acknowledgements')
+          .select('id, symptom_type, source, anchor_on, diet_trial_id, medication_id, retracts, created_at', { count: 'exact' })
+          .eq('pet_id', petId)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)),
+      fetchAll<{ id: string; occurred_at: string }>('events', (r) => r.id, (from, to) =>
+        supabase
+          .from('events')
+          .select('id, occurred_at', { count: 'exact' })
+          .eq('pet_id', petId)
+          .eq('event_type', 'lethargy')
+          .is('deleted_at', null)
+          .gte('occurred_at', lookbackIso)
+          .order('occurred_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)),
+    ])
+    const rows = ackPull.rows
+    const trialIds = [...new Set(rows.map((r) => r.diet_trial_id).filter((x): x is string => typeof x === 'string'))]
+    const medIds = [...new Set(rows.map((r) => r.medication_id).filter((x): x is string => typeof x === 'string'))]
+    // No answer names a trial or a course: nothing to read, and an empty read is complete.
+    const none = <T>(): Promise<Pull<T>> => Promise.resolve({ rows: [], complete: true })
+    const [trialPull, medPull, dosePull] = await Promise.all([
+      trialIds.length === 0 ? none<AckTrialRow>() : fetchAll<AckTrialRow>('diet_trials', (r) => r.id, (from, to) =>
+        supabase
+          .from('diet_trials')
+          .select('id, started_at, ended_at, target_duration_days, target_duration_days_initial', { count: 'exact' })
+          .eq('pet_id', petId)
+          .in('id', trialIds)
+          .order('started_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)),
+      medIds.length === 0 ? none<AckMedRow>() : fetchAll<AckMedRow>('medications', (r) => r.id, (from, to) =>
+        supabase
+          .from('medications')
+          .select('id, drug_name, started_at, ended_at, status, target_duration_days, target_duration_doses', { count: 'exact' })
+          .eq('pet_id', petId)
+          .in('id', medIds)
+          .order('started_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)),
+      // The given or partial doses of each such course in the lookback, newest first: a last
+      // dose older than the lookback is past its 14 days anyway.
+      medIds.length === 0 ? none<AckDoseRow>() : fetchAll<AckDoseRow>('events', (r) => r.id, (from, to) =>
+        supabase
+          .from('events')
+          .select('id, occurred_at, medication_administrations!medication_administrations_event_id_fkey!inner(medication_id)', { count: 'exact' })
+          .eq('pet_id', petId)
+          .eq('event_type', 'medication')
+          .is('deleted_at', null)
+          .gte('occurred_at', lookbackIso)
+          .in('medication_administrations.medication_id', medIds)
+          .in('medication_administrations.adherence', ['given', 'partial'])
+          .order('occurred_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)),
+    ])
+    const short = incompletePullNames({ acknowledgements: ackPull, lethargy: lethargyPull, trials: trialPull, medications: medPull, doses: dosePull })
+    if (short.length > 0) {
+      console.warn('generate-signal: the care-record reads were incomplete, every concern stays raised:', petId, short.join(', '))
+      return EMPTY_CARE_RECORD
+    }
+    const trials = new Map(trialPull.rows.map((t) => [t.id, t]))
+    const meds = new Map(medPull.rows.map((m) => [m.id, m]))
+    const lastDose = new Map<string, string>()
+    for (const d of dosePull.rows) {
+      const admins = Array.isArray(d.medication_administrations) ? d.medication_administrations : d.medication_administrations ? [d.medication_administrations] : []
+      for (const a of admins) {
+        if (a.medication_id && !lastDose.has(a.medication_id)) lastDose.set(a.medication_id, d.occurred_at)
+      }
+    }
+    const acknowledgements: AckFact[] = []
+    for (const r of rows) {
+      if (!ACK_SOURCES.has(r.source)) continue
+      const t = r.diet_trial_id ? trials.get(r.diet_trial_id) : undefined
+      const m = r.medication_id ? meds.get(r.medication_id) : undefined
+      acknowledgements.push({
+        id: r.id,
+        sign: r.symptom_type as AckFact['sign'],
+        source: r.source as AckSource,
+        anchorOn: r.anchor_on,
+        createdAt: r.created_at,
+        retracts: r.retracts,
+        // A scope the read could not find leaves the answer without one, and lapseReason
+        // refuses it (scope_missing): the louder reading.
+        trial: t ? { startedOn: t.started_at, endedOn: t.ended_at, initialTargetDays: t.target_duration_days_initial ?? t.target_duration_days } : null,
+        course: m
+          ? {
+            drugLabel: m.drug_name,
+            startedOn: m.started_at,
+            endedOn: m.ended_at,
+            status: m.status,
+            hasTarget: m.target_duration_days != null || m.target_duration_doses != null,
+            lastDoseAt: lastDose.get(m.id) ?? null,
+          }
+          : null,
+      })
+    }
+    const history = await readCareHistory(supabase, petId, lookbackIso, nowMs, acknowledgements)
+    return { acknowledgements, appointments: [], lethargyAt: lethargyPull.rows.map((r) => r.occurred_at), history }
+  } catch (err) {
+    console.warn('generate-signal: care-record reads failed, every concern stays raised:', err instanceof Error ? err.message : String(err))
+    return EMPTY_CARE_RECORD
+  }
+}
+
+// The record BEHIND the lookback, for §4.2's reference (adversarial D7): every non-deleted event
+// (but the look's `check_in`) from the earliest answer's anchor less the reference window (a day of
+// slack for the zone), back no further than CARE_HISTORY_MAX_DAYS, up to the lookback. Ids, types
+// and instants only. Null when no answer needs it, and on any failure or a short read: the
+// answers whose reference it would have rebuilt then lapse (careState.ts), the louder reading.
+async function readCareHistory(
+  supabase: SupabaseClient,
+  petId: string,
+  lookbackIso: string,
+  nowMs: number,
+  acks: readonly AckFact[],
+): Promise<CareHistory | null> {
+  const anchors = acks.filter((a) => !a.retracts).map((a) => Date.parse(`${a.anchorOn}T00:00:00Z`)).filter((ms) => Number.isFinite(ms))
+  if (anchors.length === 0) return null
+  const wanted = Math.min(...anchors) - (CARE_STATE_CONFIG.referenceDays + 2) * MS_PER_DAY
+  const since = Math.max(wanted, nowMs - CARE_HISTORY_MAX_DAYS * MS_PER_DAY)
+  if (since >= Date.parse(lookbackIso)) return null
+  const sinceIso = new Date(since).toISOString()
+  try {
+    const pull = await fetchAll<{ id: string; event_type: string; occurred_at: string }>('events', (r) => r.id, (from, to) =>
+      supabase
+        .from('events')
+        .select('id, event_type, occurred_at', { count: 'exact' })
+        .eq('pet_id', petId)
+        .neq('event_type', DAILY_LOOK_EVENT_TYPE)
+        .is('deleted_at', null)
+        .gte('occurred_at', sinceIso)
+        .lt('occurred_at', lookbackIso)
+        .order('occurred_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to))
+    if (incompletePullNames({ history: pull }).length > 0) {
+      console.warn('generate-signal: the care history read was incomplete, old answers lapse:', petId)
+      return null
+    }
+    const symptomTypes: ReadonlySet<string> = new Set(CORRELATION_SYMPTOM_TYPES)
+    return {
+      sinceIso,
+      symptoms: pull.rows.filter((r) => symptomTypes.has(r.event_type)).map((r) => ({ id: r.id, type: r.event_type as AckFact['sign'], occurredAt: r.occurred_at })),
+      loggedAt: pull.rows.map((r) => r.occurred_at),
+      lethargyAt: pull.rows.filter((r) => r.event_type === 'lethargy').map((r) => r.occurred_at),
+    }
+  } catch (err) {
+    console.warn('generate-signal: the care history read failed, old answers lapse:', err instanceof Error ? err.message : String(err))
     return null
   }
 }

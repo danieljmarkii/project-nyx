@@ -88,6 +88,7 @@ const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
 const GRID_GAP = theme.space0_5;
 
 const NOUN = 'vomiting';
+const ROW_NOUN = 'vomit';
 const DRILL_LABEL = 'Vomit';
 
 // The drill-in's category tint (the shipped DayEventsSheet's, verbatim: symptom rose, meal
@@ -193,6 +194,7 @@ export function MonthInstrument({
             recordEmpty: facts.recordStart == null,
             episodeDays: facts.episodeDays,
             continuationDays: facts.continuationDays,
+            rowNoun: ROW_NOUN,
             loggedDays: facts.loggedDays,
             leftSomeDays: facts.leftSomeDays,
             dosedDays: facts.dosedDays,
@@ -435,6 +437,8 @@ function GridDay({
   // A neighbouring month's day in the first or last row is DRAWN, dimmed, with its
   // date and its mark: the row is the seven days its bar counts, so a bar of 3 over a
   // row never sits above one rose square and two blanks. It is not in the month's line.
+  // The bar counts the row's CORNERS (episodes); since CUL-1530 a row can also hold rose
+  // days with no corner, the days a bout continues into, which the bar does not count.
   if (day.outsideMonth) {
     return (
       <View style={styles.outsideMonth} testID="month-outside-day">
@@ -611,7 +615,7 @@ function Legend({ model, layers }: { model: MonthModel; layers: MonthLayers }) {
     <View style={styles.legend} testID="month-legend">
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchVomit]} />
-        <ThemedText style={styles.legendText}>vomit day, count in the corner</ThemedText>
+        <ThemedText style={styles.legendText}>vomit day, count where a bout began</ThemedText>
       </View>
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchLogged]}>
