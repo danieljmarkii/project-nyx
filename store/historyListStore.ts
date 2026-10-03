@@ -17,6 +17,7 @@ import {
   readDayPage,
   readHistoryCourses,
   readHistoryFacts,
+  readLookRows,
   readWholeDays,
   type DayPage,
   type DayPageCursor,
@@ -118,6 +119,10 @@ export interface HistorySnapshot {
   /** Every row of each shown day, whatever the filter (R-2). Empty under Noticed, whose
    *  looks are drawn straight from the page. */
   wholeDays: ReadonlyMap<string, readonly HistoryRow[]>;
+  /** Under All types with no search, the answered looks on the loaded days, by `local_day`
+   *  (CUL-1244: drawn as rows, never counted); empty otherwise. Apart from `pages` and
+   *  `wholeDays`, which stay the population, so a look never becomes a node or a count. */
+  looks: ReadonlyMap<string, readonly HistoryRow[]>;
   timing: HistoryTiming;
   /** The phone's copy of the reads, for the loaded rows a read can sit on (HV-5). */
   analysis: ReadonlyMap<string, SpineAnalysisRow>;
@@ -268,6 +273,20 @@ async function wholeDaysFor(
     petId,
     days.map((d) => d.day),
   );
+}
+
+const NO_LOOKS: ReadonlyMap<string, readonly HistoryRow[]> = new Map();
+
+/** The looks drawn beside the page (CUL-1244, PM-ruled (b)): under All types only, never
+ *  under a search (it finds named rows, R-2) or another filter (Noticed's looks ARE its page). */
+async function looksFor(
+  petId: string,
+  span: DayRange | null,
+  filter: HistoryFilter,
+  search: string | null,
+): Promise<ReadonlyMap<string, readonly HistoryRow[]>> {
+  if (filter.kind !== 'all' || search !== null || span === null) return NO_LOOKS;
+  return readLookRows(petId, span);
 }
 
 /** The timing lane's inputs over the loaded span: the feedings inside the lookback before
@@ -428,6 +447,7 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
         answer = joinAnswers(answer, addedAnswer);
         if (myId !== loadSeq || !stillActive(pet.id)) return 'superseded';
       }
+      const looks = await looksFor(pet.id, pages.span, scope.filter, search);
       if (myId !== loadSeq || !stillActive(pet.id)) return 'superseded';
       // The reads are laid over the ones on screen NOW (a same-scope snapshot), and an answer
       // older than one already applied does not overwrite it.
@@ -455,6 +475,7 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
           arrangements,
           pages,
           wholeDays,
+          looks,
           timing,
           analysis: reads.analysis,
           answered: reads.answered,
@@ -486,9 +507,10 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
         const page = await readDayPage(snap.petId, pageScope, cursor);
         const added = await wholeDaysFor(snap.petId, page.days, snap.filter, snap.search);
         const pages = mergePages(snap.pages, page);
-        const [timing, addedAnswer] = await Promise.all([
+        const [timing, addedAnswer, addedLooks] = await Promise.all([
           snap.filter.kind === 'noticed' ? Promise.resolve(EMPTY_TIMING) : readTiming(snap.petId, pages.span),
           readAnalysis(added),
+          looksFor(snap.petId, page.span, snap.filter, snap.search),
         ]);
         // Only onto the pages it was read for: a load that replaced them (a refresh, a new
         // scope, a switch) owns the list now, and its own cursor pages it. A read landing in
@@ -496,8 +518,9 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
         const now = get().snapshot;
         if (!now || now.pages !== of || !stillActive(now.petId)) return;
         const wholeDays = new Map([...now.wholeDays, ...added]);
+        const looks = addedLooks.size === 0 ? now.looks : new Map([...now.looks, ...addedLooks]);
         set({
-          snapshot: { ...now, pages, wholeDays, timing, ...settleReads(now, addedAnswer, wholeDays) },
+          snapshot: { ...now, pages, wholeDays, looks, timing, ...settleReads(now, addedAnswer, wholeDays) },
           more: null,
         });
       } catch (e) {

@@ -40,6 +40,7 @@ import {
   gapLineText,
   historyCourseOf,
   listSectionsOf,
+  mealSplitParts,
   notGivenInFullText,
   notInFullOf,
   typeSheetCountsOf,
@@ -193,8 +194,26 @@ const FILTERS: HistoryFilter[] = [
 /** The number a count line leads with, read back off its words. */
 function countLineNumber(line: CountLine): number {
   if (line.kind !== 'count') throw new Error(`not a count form: ${line.kind}`);
-  const m = /^([\d,]+) /.exec(line.line1.strong);
-  return m ? Number(m[1].replace(/,/g, '')) : 0;
+  // Meal speaks its count as two kinds, "30 meals and 12 treats on 20 days" (CUL-1243): the
+  // number is their sum, so it still agrees with every other count of the filter.
+  let n = 0;
+  for (const part of line.line1.strong.split(' on ')[0].split(' and ')) {
+    const m = /^([\d,]+) /.exec(part);
+    if (m) n += Number(m[1].replace(/,/g, ''));
+  }
+  return n;
+}
+
+/** A day header's filtered count: the leading parts before the day's total, summed (Meal
+ *  names meals and treats apart, CUL-1243; every other filter leads with one number). */
+function headerCountOf(parts: readonly { text: string; tone: string }[]): number {
+  let n = 0;
+  for (const p of parts) {
+    if (p.tone === 'dayTotal' || p.tone === 'unfinished') break;
+    const m = /^([\d,]+) /.exec(p.text);
+    if (m) n += Number(m[1].replace(/,/g, ''));
+  }
+  return n;
 }
 
 function typeSheetCountFor(counts: ReturnType<typeof typeSheetCountsOf>, filter: HistoryFilter): number {
@@ -444,9 +463,13 @@ describe('AC 1 — the count line, the type sheet and every day header agree, ev
     // Every day header under the filter leads with the same day count.
     for (const f of facts.days.values()) {
       const n = dayCountFor(f, filter) ?? 0;
-      const [lead] = dayHeaderOf(f, filter);
-      if (f.total === 0) expect(lead.text).toBe('nothing logged');
+      const parts = dayHeaderOf(f, filter);
+      const [lead] = parts;
+      // A look-only day under All types is a card drawing its looks: the date alone (CUL-1244).
+      if (f.total === 0 && filter.kind === 'all' && f.looked) expect(parts).toEqual([]);
+      else if (f.total === 0) expect(lead.text).toBe('nothing logged');
       else if (filter.kind === 'all') expect(lead.text).toBe(`${n} logged`);
+      else if (filter.kind === 'type' && filter.type === 'meal' && n > 0) expect(headerCountOf(parts)).toBe(n);
       else if (n > 0) expect(lead.text.startsWith(`${n} `)).toBe(true);
       else expect(lead.text).toBe(absenceText(filter));
     }
@@ -472,7 +495,11 @@ describe('AC 1 — the count line, the type sheet and every day header agree, ev
       if (n === 0) expect(mark.state).toBe('quiet');
       else {
         expect(mark.state).not.toBe('quiet');
-        expect(mark.label).toMatch(new RegExp(`, ${n} [^,]*logged`));
+        // Meal speaks the header's own split (CUL-1243): its parts sum to the day's count.
+        if (filter.kind === 'type' && filter.type === 'meal') {
+          const spokenParts = mealSplitParts(n, f.treats).join(' and ');
+          expect(mark.label).toContain(`, ${spokenParts} logged`);
+        } else expect(mark.label).toMatch(new RegExp(`, ${n} [^,]*logged`));
       }
     }
     if (window.range.toDay >= '2026-09-02' && window.range.fromDay <= TODAY && facts.days.size > 0) expect(spoken).toBeGreaterThan(0);
@@ -940,7 +967,10 @@ describe('the day header (rule C)', () => {
 
   it('under Meal the meals not finished stay: a refusal never reads as routine (§1, H-2)', () => {
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-03'), { kind: 'type', type: 'meal' })).toEqual([
-      { text: '2 meals', tone: 'neutral' },
+      // One meal and one treat: named apart, so the number over the rows is the rows'
+      // (CUL-1243, PM-ruled (a)); "not finished" still counts the meal alone (H-2).
+      { text: '1 meal', tone: 'neutral' },
+      { text: '1 treat', tone: 'neutral' },
       { text: '3 in all', tone: 'dayTotal' },
       { text: '1 meal not finished', tone: 'unfinished' },
     ]);
@@ -983,14 +1013,18 @@ describe('AC 10 / AC 11 — the list\'s sections', () => {
       { kind: 'day', day: '2026-09-20' },
       { kind: 'unlogged', fromDay: '2026-09-16', toDay: '2026-09-19', days: 4 },
       { kind: 'day', day: '2026-09-15' },
-      { kind: 'unlogged', fromDay: '2026-09-11', toDay: '2026-09-14', days: 4 },
+      { kind: 'unlogged', fromDay: '2026-09-13', toDay: '2026-09-14', days: 2 },
+      // A look-only day is a card drawing its look, never "nothing logged" (CUL-1244, PM-ruled
+      // (b)), though coverage still counts it unlogged (R-1).
+      { kind: 'day', day: '2026-09-12' },
+      { kind: 'unlogged', fromDay: '2026-09-11', toDay: '2026-09-11', days: 1 },
       { kind: 'day', day: '2026-09-10' },
       { kind: 'day', day: '2026-09-09' },
       { kind: 'unlogged', fromDay: '2026-09-08', toDay: '2026-09-08', days: 1 },
       // A visit-only day is a day (§3.5), though coverage still counts it unlogged.
       { kind: 'day', day: '2026-09-07' },
       { kind: 'day', day: '2026-09-06' },
-      { kind: 'unlogged', fromDay: '2026-09-05', toDay: '2026-09-05', days: 1 },
+      { kind: 'day', day: '2026-09-05' },
       { kind: 'day', day: '2026-09-04' },
       { kind: 'day', day: '2026-09-03' },
       { kind: 'unlogged', fromDay: '2026-09-02', toDay: '2026-09-02', days: 1 },
@@ -1141,5 +1175,145 @@ describe('AC 10 / AC 11 — the list\'s sections', () => {
   it('a record with no events lays out nothing (the new-account state)', () => {
     const empty: HistoryFacts = { petId: PET, range: WINDOWS.all.range, days: new Map(), firsts: firstDaysOf([], null), duplicates: { total: 0, byType: {} } };
     expect(listSectionsOf({ span: WINDOWS.all.range, facts: empty, filter: { kind: 'all' }, course: null, itemDays, today: TODAY })).toEqual([]);
+  });
+});
+
+// ── CUL-1243 — under Meal, meals and treats are named apart ─────────────────────
+
+describe('CUL-1243 (PM-ruled (a)) — Meal names meals and treats apart, in the header and the count line', () => {
+  const MEAL: HistoryFilter = { kind: 'type', type: 'meal' };
+  // Round 5's own Jun 18 (the pm-feature-review walk): two meals rated Some, eight treats.
+  const jun18 = [
+    meal('a', '2026-09-18', '08:00', 'kibble', 'some'),
+    meal('b', '2026-09-18', '18:00', 'kibble', 'some'),
+    ...Array.from({ length: 8 }, (_, i) => meal(`t${i}`, '2026-09-18', `${10 + i}:00`, 'cookie', null, 'treat')),
+  ];
+  const range: DayRange = { fromDay: '2026-09-18', toDay: '2026-09-18' };
+  const facts = (rows: readonly PopulationRow[]): HistoryFacts => ({
+    petId: PET,
+    range,
+    days: buildDayFacts({ rows, lookDays: [], range, freeFedFoodIds: new Set(), regimens: [] }),
+    firsts: firstsFrom(rows, []),
+    duplicates: { total: 0, byType: {} },
+  });
+  const window: CountLineWindow = { longName: 'Sep 18', anchorDay: null, isAllTime: false, isTrial: false, recordFrom: null, pastPlannedEnd: false, range };
+  const strongOf = (rows: readonly PopulationRow[]): string => {
+    const line = countLineOf({ filter: MEAL, search: null, window, facts: facts(rows), course: null, trialRange: null, today: TODAY, dates: DATES });
+    return line.kind === 'count' ? line.line1.strong : '';
+  };
+
+  it('the day header: "2 meals · 8 treats · 10 in all · 2 meals not finished", every number the rows\'', () => {
+    const f = dayFactsOn(facts(jun18).days, '2026-09-18');
+    expect(f.treats).toBe(8);
+    expect(dayHeaderOf(f, MEAL).map((p) => p.text)).toEqual(['2 meals', '8 treats', '10 in all', '2 meals not finished']);
+    // Never "10 meals" over two meals and eight treats.
+    expect(dayHeaderOf(f, MEAL).some((p) => p.text === '10 meals')).toBe(false);
+  });
+
+  it('the count line names the two kinds and their days', () => {
+    expect(strongOf(jun18)).toBe('2 meals and 8 treats on 1 day');
+    expect(strongOf(jun18.filter((r) => r.foodType !== 'treat'))).toBe('2 meals on 1 day');
+    expect(strongOf(jun18.filter((r) => r.foodType === 'treat'))).toBe('8 treats on 1 day');
+  });
+
+  it('a treat-only day says treats, and "not finished" never counts a treat (H-2)', () => {
+    const treats = [meal('t', '2026-09-18', '09:00', 'cookie', 'refused', 'treat')];
+    expect(dayHeaderOf(dayFactsOn(facts(treats).days, '2026-09-18'), MEAL).map((p) => p.text)).toEqual(['1 treat', '1 in all']);
+  });
+
+  it('a meal with no food, or a food typed other, is a meal: the row says Meal (`mealRowLabel`)', () => {
+    const rows = [meal('x', '2026-09-18', '09:00', 'kibble', null, 'other'), row('y', '2026-09-18', '10:00', 'meal')];
+    expect(dayHeaderOf(dayFactsOn(facts(rows).days, '2026-09-18'), MEAL)[0].text).toBe('2 meals');
+  });
+
+  it('only Meal splits: All types and other filters keep their words', () => {
+    const f = dayFactsOn(facts(jun18).days, '2026-09-18');
+    expect(dayHeaderOf(f, { kind: 'all' })[0].text).toBe('10 logged');
+    expect(dayHeaderOf(f, { kind: 'photographed' })[0].text).toBe('no photo logged');
+  });
+
+  it('mealSplitParts: zeros drop, singulars read singular, grouping holds', () => {
+    expect(mealSplitParts(0, 0)).toEqual([]);
+    expect(mealSplitParts(1, 0)).toEqual(['1 meal']);
+    expect(mealSplitParts(1, 1)).toEqual(['1 treat']);
+    expect(mealSplitParts(1095, 1)).toEqual(['1,094 meals', '1 treat']);
+  });
+});
+
+// ── CUL-1244 — an answered look is drawn under All types, never counted ──────────
+
+describe('CUL-1244 (PM-ruled (b)) — a look-only day is a card whose header is the date alone', () => {
+  const facts = factsFor(WINDOWS.all.range);
+
+  it('the look-only day\'s header drops "nothing logged", today included', () => {
+    const lookOnly = dayFactsOn(facts.days, '2026-09-12');
+    expect(lookOnly.looked).toBe(true);
+    expect(lookOnly.total).toBe(0);
+    expect(dayHeaderOf(lookOnly, { kind: 'all' })).toEqual([]);
+    expect(dayHeaderOf(lookOnly, { kind: 'all' }, { isToday: true })).toEqual([]);
+    // A day with nothing at all still says so.
+    expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-13'), { kind: 'all' })).toEqual([{ text: 'nothing logged', tone: 'neutral' }]);
+  });
+
+  it('a look is never counted: coverage still calls the look-only days unlogged (R-1)', () => {
+    const unlogged = unloggedDaysOf({ days: facts.days, range: WINDOWS.all.range, recordStartDay: '2026-09-01', today: TODAY });
+    expect(unlogged).toContain('2026-09-12');
+    expect(unlogged).toContain('2026-09-05');
+    expect(windowTotalOf(facts.days, { kind: 'all' })?.count).toBe(ROWS.length);
+  });
+
+  it('under a filter a look-only day is still held by the gap lines, never a card (looks show under All types only)', () => {
+    const out = listSectionsOf({ span: WINDOWS.all.range, facts, filter: { kind: 'type', type: 'cough' }, course: null, itemDays: new Set(), today: TODAY });
+    expect(out.some((s) => s.kind === 'day' && s.day === '2026-09-12')).toBe(false);
+  });
+
+  it('today with only a look is a card under All types, not today\'s open line', () => {
+    const quiet = buildDayFacts({
+      rows: ROWS.filter((r) => r.id !== 'm-0921' && r.id !== 'v-0921'),
+      lookDays: [TODAY],
+      range: WINDOWS.all.range,
+      freeFedFoodIds: FREE_FED,
+      regimens: REGIMENS,
+    });
+    const out = listSectionsOf({
+      span: WINDOWS.last7.range,
+      facts: { ...facts, days: quiet },
+      filter: { kind: 'all' },
+      course: null,
+      itemDays: new Set(),
+      today: TODAY,
+    });
+    expect(out[0]).toEqual({ kind: 'day', day: TODAY });
+    expect(dayHeaderOf(dayFactsOn(quiet, TODAY), { kind: 'all' }, { isToday: true })).toEqual([]);
+  });
+});
+
+describe('CUL-1244 — the week strip agrees with the list about a look-only day', () => {
+  const facts = factsFor(WINDOWS.all.range);
+  const strip = (filter: HistoryFilter): StripWindow => ({
+    fromDay: WINDOWS.all.range.fromDay,
+    toDay: WINDOWS.all.range.toDay,
+    recordStart: facts.firsts.record,
+    petName: 'Nyx',
+    courseName: null,
+    claimsFrom: claimsFromOf(facts.firsts, filter, null),
+  });
+
+  it('under All types its cell is a door to the card, and still says what coverage says (nothing logged)', () => {
+    const lookOnly = dayFactsOn(facts.days, '2026-09-12');
+    const all: HistoryFilter = { kind: 'all' };
+    const sections = listSectionsOf({ span: WINDOWS.all.range, facts, filter: all, course: null, itemDays: new Set(), today: TODAY });
+    expect(sections).toContainEqual({ kind: 'day', day: '2026-09-12' });
+    const mark = stripMarkOf(lookOnly, all, strip(all), TODAY);
+    expect(mark.tappable).toBe(true);
+    expect(mark.label).toContain('nothing logged');
+  });
+
+  it('a look-only TODAY under All types is a door too, where the open day otherwise is not one before the claims', () => {
+    const today = { ...dayFactsOn(facts.days, TODAY), total: 0, byType: {}, looked: true };
+    const all: HistoryFilter = { kind: 'all' };
+    const early: StripWindow = { ...strip(all), claimsFrom: null };
+    expect(stripMarkOf(today, all, early, TODAY).tappable).toBe(true);
+    expect(stripMarkOf({ ...today, looked: false }, all, early, TODAY).tappable).toBe(false);
   });
 });

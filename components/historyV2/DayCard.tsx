@@ -26,6 +26,9 @@
 //     item: the row's time column and rail (their widths are the row's), the hollow bead a
 //     look wears on every spine (`nodeDotColors`), and the shared describer's words
 //     (`describeDayEvent`). It is not a row frame, which only the row may draw.
+//   • Under All types the day's answered looks are the same line, placed among the rows by
+//     their time (CUL-1244, PM-ruled (b)): drawn, never counted, so a day the owner only
+//     checked in is a card whose header says the date alone, not *nothing logged*.
 //
 // ── MOTION AND FOCUS (HV-10 / CUL-1167; spec §4) ─────────────────────────────────
 //   • The rows lie on `ThreadDraw` (`components/motion/`): the first paint draws the day's
@@ -287,6 +290,9 @@ export interface DayCardBodyProps {
   /** The page's rows for the day: what the filter shows (under Noticed, the looks). */
   shownRows: readonly HistoryRow[];
   noticed: boolean;
+  /** Under All types, the day's answered looks (`HistorySnapshot.looks`), drawn among the
+   *  rows by time. Ignored under Noticed, whose looks are `shownRows`. */
+  looks?: readonly HistoryRow[];
   /** Runs open in place, by node id (per mount, never the record's). */
   openRuns: ReadonlySet<string>;
   onToggleRun: (id: string) => void;
@@ -310,6 +316,30 @@ const CARD_THREAD: ThreadGeometry = {
   color: SPINE_THREAD.dayColor,
 };
 const NO_CLAIM = () => false;
+const NO_LOOKS: readonly HistoryRow[] = [];
+
+/** A row's or a look's instant, for placing a look among the rows morning to night. */
+function msOf(iso: string): number {
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+type BodyEntry = { kind: 'node'; node: DayNode } | { kind: 'look'; row: HistoryRow };
+
+/** The nodes and the looks as one morning-to-night thread. A node keeps its pipeline order
+ *  (never re-sorted); a look goes before the first node that is later than it. */
+function threadOf(nodes: readonly DayNode[], looks: readonly HistoryRow[]): BodyEntry[] {
+  if (looks.length === 0) return nodes.map((node) => ({ kind: 'node', node }));
+  const pending = [...looks].sort((a, b) => msOf(a.occurred_at) - msOf(b.occurred_at));
+  const out: BodyEntry[] = [];
+  let li = 0;
+  for (const node of nodes) {
+    while (li < pending.length && msOf(pending[li].occurred_at) < node.timeMs) out.push({ kind: 'look', row: pending[li++] });
+    out.push({ kind: 'node', node });
+  }
+  while (li < pending.length) out.push({ kind: 'look', row: pending[li++] });
+  return out;
+}
 const NO_LEAVING: ReadonlySet<string> = new Set();
 
 export function DayCardBody({
@@ -318,6 +348,7 @@ export function DayCardBody({
   nodes: dayNodes,
   shownRows,
   noticed,
+  looks: dayLooks = NO_LOOKS,
   openRuns,
   onToggleRun,
   onOpenVisit,
@@ -329,8 +360,8 @@ export function DayCardBody({
 }: DayCardBodyProps) {
   // A filter only hides (R-2): the day's nodes were built over the whole day.
   const nodes = noticed ? [] : visibleNodesOf(dayNodes, new Set(shownRows.map((r) => r.id)));
-  const looks = noticed ? shownRows : [];
-  const threadLength = items.length + nodes.length + looks.length;
+  const entries = threadOf(nodes, noticed ? shownRows : dayLooks);
+  const threadLength = items.length + entries.length;
   const rows: ThreadRow[] = [
     ...items.map((item, i) => ({
       key: `${item.kind}:${item.kind === 'course-start' ? item.courseKey : item.id}`,
@@ -338,23 +369,25 @@ export function DayCardBody({
         <DateOnlyItemRow item={item} isFirst={i === 0} isLast={i === threadLength - 1} onOpenVisit={onOpenVisit} />
       ),
     })),
-    ...nodes.map((node, i) => ({
-      key: node.id,
-      node: (
-        <DayNodeRow
-          node={node}
-          isFirst={items.length + i === 0}
-          isLast={items.length + i === threadLength - 1}
-          expanded={openRuns.has(node.id)}
-          onToggle={onToggleRun}
-          openInPlace
-        />
-      ),
-    })),
-    ...looks.map((row, i) => ({
-      key: row.id,
-      node: <LookLine row={row} isFirst={items.length + i === 0} isLast={items.length + i === threadLength - 1} />,
-    })),
+    ...entries.map((entry, i) => {
+      const isFirst = items.length + i === 0;
+      const isLast = items.length + i === threadLength - 1;
+      return entry.kind === 'node'
+        ? {
+            key: entry.node.id,
+            node: (
+              <DayNodeRow
+                node={entry.node}
+                isFirst={isFirst}
+                isLast={isLast}
+                expanded={openRuns.has(entry.node.id)}
+                onToggle={onToggleRun}
+                openInPlace
+              />
+            ),
+          }
+        : { key: entry.row.id, node: <LookLine row={entry.row} isFirst={isFirst} isLast={isLast} /> };
+    }),
   ];
   return (
     <View style={styles.bodyCell}>

@@ -521,3 +521,47 @@ describe('the shared day', () => {
     expect(before.snapshot).toBe(store().snapshot);
   });
 });
+
+// ── CUL-1244 — the answered looks, drawn beside the All-types page ──────────────
+
+function insertLook(eventId: string, n: number, pet = PET_A.id) {
+  insertEvent(eventId, at(n, 21), 'check_in', pet);
+  mockRaw
+    .prepare(`INSERT INTO looks (id, event_id, pet_id, outcome, local_day) VALUES (?, ?, ?, 'observed', ?)`)
+    .run(`look-${eventId}`, eventId, pet, dayAgo(n));
+}
+
+describe('CUL-1244 — looks under All types: read beside the page, never into it', () => {
+  it('All types carries the look-only day\'s look, apart from the pages and the whole days', async () => {
+    insertEvent('c0', at(0, 8), 'cough');
+    insertEvent('c2', at(2, 8), 'cough');
+    insertLook('l1', 1);
+    await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY });
+    const snap = store().snapshot!;
+    expect([...snap.looks.keys()]).toEqual([dayAgo(1)]);
+    expect(snap.looks.get(dayAgo(1))!.map((r) => r.id)).toEqual(['l1']);
+    const rows = [...snap.pages.days.flatMap((d) => d.rows), ...[...snap.wholeDays.values()].flat()];
+    expect(rows.some((r) => r.event_type === 'check_in')).toBe(false);
+    // Never counted: the look-only day holds nothing in the population, and is marked looked.
+    expect(snap.facts.days.get(dayAgo(1))).toMatchObject({ total: 0, looked: true });
+  });
+
+  it('another filter or a search reads no looks', async () => {
+    insertEvent('c0', at(0, 8), 'cough');
+    insertLook('l1', 1);
+    await store().load({ pet: PET_A, scope: scopeFor(PET_A.id, { filter: { kind: 'type', type: 'cough' } }), today: TODAY });
+    expect(store().snapshot!.looks.size).toBe(0);
+    await store().load({ pet: PET_A, scope: scopeFor(PET_A.id, { searchOpen: true, searchText: 'cough' }), today: TODAY });
+    expect(store().snapshot!.looks.size).toBe(0);
+  });
+
+  it('the next page brings its days\' looks, and keeps the ones already read', async () => {
+    seedDays(12, 10);
+    insertLook('l-new', 0);
+    insertLook('l-old', 11);
+    await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY });
+    expect([...store().snapshot!.looks.keys()]).toEqual([TODAY]);
+    for (let guard = 0; store().snapshot!.pages.next && guard < 10; guard++) await store().loadMore();
+    expect([...store().snapshot!.looks.keys()].sort()).toEqual([dayAgo(11), TODAY].sort());
+  });
+});

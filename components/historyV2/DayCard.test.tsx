@@ -159,6 +159,31 @@ describe('DayCardBody', () => {
     expect(router.push).toHaveBeenCalledWith({ pathname: '/event/[id]', params: { id: 'lk' } });
   });
 
+  it('All types (CUL-1244): a look sits among the rows by its time, on the hollow bead, and builds no node', () => {
+    const rows = [row('m1', 'meal', 8), row('v1', 'vomit', 20)];
+    const look = row('lk', 'check_in', 12, { look_outcome: 'observed', look_words: null, look_note: null } as Partial<HistoryRow>);
+    render(
+      <DayCardBody {...bodyProps} day="2026-09-17" items={[]} nodes={nodesOf(rows)} shownRows={rows} looks={[look]} noticed={false} />,
+    );
+    const body = screen.getByTestId('history-day-body-2026-09-17');
+    const order = (body as unknown as { findAll: (p: (n: { props: { testID?: string } }) => boolean) => { props: { testID: string } }[] })
+      .findAll((n) => typeof n.props.testID === 'string' && /^(spine-node|history-look)-/.test(n.props.testID))
+      .map((n) => n.props.testID);
+    expect(order.filter((id, i) => order.indexOf(id) === i)).toEqual(['spine-node-m1', 'history-look-lk', 'spine-node-v1']);
+    expect(screen.queryByTestId('spine-node-lk')).toBeNull();
+  });
+
+  it('All types (CUL-1244): a look-only day draws its look, and its header is the date alone', () => {
+    const look = row('lk', 'check_in', 21, { look_outcome: 'observed', look_words: null, look_note: null } as Partial<HistoryRow>);
+    render(<DayCardBody {...bodyProps} day="2026-09-17" items={[]} nodes={[]} shownRows={[]} looks={[look]} noticed={false} />);
+    expect(screen.getByTestId('history-look-lk')).toBeTruthy();
+    render(
+      <DayCardHeader day="2026-09-17" today={TODAY} facts={facts({ looked: true })} filter={{ kind: 'all' }} search={false} landed={false} />,
+    );
+    expect(text('history-day-header-2026-09-17')).toBe('Thu, Sep 17');
+    expect(screen.queryByText(/nothing logged/)).toBeNull();
+  });
+
   it('today with nothing yet: the one line', () => {
     render(
       <DayCardBody {...bodyProps} day={TODAY} items={[]} nodes={[]} shownRows={[]} noticed={false} emptyLine={TODAY_NOTHING_YET} />,

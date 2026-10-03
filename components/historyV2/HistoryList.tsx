@@ -544,6 +544,16 @@ export function HistoryList() {
       ),
     [snapshot, gone],
   );
+  // Under All types, the day's answered looks (CUL-1244), less any a removal folded away.
+  const lookRows = useMemo(
+    () =>
+      new Map(
+        snapshot
+          ? [...snapshot.looks].map(([day, rows]) => [day, gone.size === 0 ? rows : rows.filter((r) => !gone.has(r.id))] as const)
+          : [],
+      ),
+    [snapshot, gone],
+  );
   // A new read has answered: the rows a fold took out are the record's to show or not now.
   useEffect(() => setGone(NO_OPEN), [rawSnapshot]);
 
@@ -784,6 +794,7 @@ export function HistoryList() {
               nodes={nodesByDay.get(m.day) ?? NO_NODES}
               shownRows={pageRows.get(m.day) ?? NO_ROWS}
               noticed={snapshot.filter.kind === 'noticed'}
+              looks={lookRows.get(m.day) ?? NO_ROWS}
               openRuns={openRuns}
               onToggleRun={toggleRun}
               onOpenVisit={openVisit}
@@ -822,7 +833,7 @@ export function HistoryList() {
     },
     // `landDraw` re-renders the cells when a landing asks its day to draw (the ledger is a
     // ref, so its answer changes without a render of its own).
-    [snapshot, pageRows, nodesByDay, openRuns, toggleRun, openVisit, landedDay, dates, courseName, ledger, leaving, focusRefFor, landDraw],
+    [snapshot, pageRows, lookRows, nodesByDay, openRuns, toggleRun, openVisit, landedDay, dates, courseName, ledger, leaving, focusRefFor, landDraw],
   );
 
   const header = headerSnap ? (
