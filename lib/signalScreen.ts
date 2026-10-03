@@ -1140,7 +1140,11 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   const petName = resolveRecordPetName(pets, petId);
   // Offline, the last row this process read stands in, and says when it was written
   // (CUL-1219): the episodes, photos and days below are all the phone's own.
-  const { row, fromLast } = await readSignalCacheOrLast(petId);
+  const read = await readSignalCacheOrLast(petId);
+  // The kept row speaks only for a pet this account's list holds: a link carrying another
+  // pet's id never opens from memory (rls-privacy-reviewer, CUL-1219). Online, RLS decides.
+  if (read.fromLast && !pets.some((p) => p.id === petId)) throw new Error('offline, and the pet is not in this account’s list');
+  const { row, fromLast } = read;
   // CUL-1213: two findings answering to one identity is a route that cannot say which it
   // meant, so the screen refuses to pick rather than drawing one card's evidence under the
   // other's title.

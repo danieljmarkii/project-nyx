@@ -953,6 +953,17 @@ describe('loadSignalScreen', () => {
     }
   });
 
+  it('offline, the kept row never opens a pet this account’s list does not hold (rls-privacy-reviewer)', async () => {
+    mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(chronicity())], generatedAt: new Date().toISOString() });
+    mockGetAllAsync.mockResolvedValue([]);
+    mockFromLast = true;
+    try {
+      await expect(loadSignalScreen('someone-elses-pet', 'symptom_chronicity:vomit')).rejects.toBeTruthy();
+    } finally {
+      mockFromLast = false;
+    }
+  });
+
   it('a trial that is not running today gives no trial window, and a failed trial read does not fail the screen', async () => {
     mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(chronicity())] });
     mockLoadDietTrialFacts.mockResolvedValue({

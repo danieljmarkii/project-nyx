@@ -149,6 +149,19 @@ describe('readSignalCacheOrLast — the offline open (CUL-1219, GAP-7)', () => {
     await expect(readSignalCacheOrLast('B')).rejects.toBeTruthy();
   });
 
+  it('a read in flight across sign-out keeps nothing: the late answer never refills the map (rls-privacy-reviewer)', async () => {
+    let release: ((v: CacheResult) => void) | null = null;
+    mockedFrom.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle: () => new Promise((r) => (release = r)) }) }) }) }),
+    }));
+    const inFlight = readSignalCacheOrLast('PET_A');
+    cancelPendingSignalRegens();
+    release!({ data: row({ signal_text: 'A secret finding' }), error: null });
+    await inFlight;
+    installCaches({ PET_A: { data: null, error: { message: 'offline' } } });
+    await expect(readSignalCacheOrLast('PET_A')).rejects.toBeTruthy();
+  });
+
   it('sign-out (`cancelPendingSignalRegens`, from wipeLocalSession) drops every kept row', async () => {
     installCaches({ P: { data: row(), error: null } });
     await readSignalCacheOrLast('P');

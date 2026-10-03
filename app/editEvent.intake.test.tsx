@@ -32,10 +32,11 @@ jest.mock('../lib/sync', () => ({
 
 const mockGetMealForEvent = jest.fn();
 const mockGetAllAsync = jest.fn().mockResolvedValue([]);
+const mockGetFirstAsync = jest.fn().mockResolvedValue({ pet_id: 'pet-cat' });
 jest.mock('../lib/db', () => ({
   getDb: () => ({
     getAllAsync: (...a: unknown[]) => mockGetAllAsync(...a),
-    getFirstAsync: jest.fn().mockResolvedValue({ pet_id: 'pet-cat' }),
+    getFirstAsync: (...a: unknown[]) => mockGetFirstAsync(...a),
     runAsync: jest.fn(),
   }),
   updateEvent: jest.fn().mockResolvedValue(undefined),
@@ -97,6 +98,7 @@ let alertSpy: jest.SpyInstance;
 beforeEach(() => {
   jest.clearAllMocks();
   mockGetAllAsync.mockResolvedValue([]);
+  mockGetFirstAsync.mockResolvedValue({ pet_id: 'pet-cat' });
   alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 });
 afterEach(() => alertSpy.mockRestore());
@@ -197,5 +199,21 @@ describe('the Signal refresh on an edit (CUL-1219)', () => {
     fireEvent.press(getByText('Turkey'));
     await act(async () => { fireEvent.press(getByText('Save')); });
     expect(mockTriggerRegen).toHaveBeenCalledWith('pet-cat');
+  });
+
+  it('a failed pet lookup skips the refresh and never fails a save that already landed', async () => {
+    mockGetMealForEvent.mockResolvedValue(meal('most'));
+    mockGetAllAsync.mockResolvedValue([{ id: 'food-2', brand: 'Hill’s', product_name: 'Turkey', format: 'dry' }]);
+    mockGetFirstAsync.mockRejectedValue(new Error('sqlite busy'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { getByText } = await open();
+    fireEvent.press(getByText('Pate'));
+    await waitFor(() => expect(getByText('Turkey')).toBeTruthy());
+    fireEvent.press(getByText('Turkey'));
+    await act(async () => { fireEvent.press(getByText('Save')); });
+    expect(mockTriggerRegen).not.toHaveBeenCalled();
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(jest.requireMock('expo-router').router.back).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

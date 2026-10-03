@@ -699,6 +699,9 @@ export interface SignalCacheRow {
 // The Edge Function does delete-then-insert per pet, so there is at most one row;
 // we still order by freshness and take one defensively.
 export async function readSignalCache(petId: string): Promise<SignalCacheRow | null> {
+  // A read already in flight at sign-out must not write the outgoing account's row back
+  // into the kept map after the wipe cleared it (rls-privacy-reviewer, CUL-1219).
+  const epoch = keptEpoch;
   const { data, error } = await supabase
     .from('ai_signals')
     .select('signal_text, is_building, findings, coverage, generated_at, expires_at, engine_flags')
@@ -708,7 +711,7 @@ export async function readSignalCache(petId: string): Promise<SignalCacheRow | n
     .maybeSingle();
   if (error) throw error;
   if (!data) {
-    lastAnsweredRows.set(petId, null);
+    if (epoch === keptEpoch) lastAnsweredRows.set(petId, null);
     return null;
   }
   const row: SignalCacheRow = {
@@ -720,7 +723,7 @@ export async function readSignalCache(petId: string): Promise<SignalCacheRow | n
     expiresAt: data.expires_at as string,
     engineFlags: (data as { engine_flags?: unknown }).engine_flags ?? null,
   };
-  lastAnsweredRows.set(petId, row);
+  if (epoch === keptEpoch) lastAnsweredRows.set(petId, row);
   return row;
 }
 
@@ -735,6 +738,8 @@ export async function readSignalCache(petId: string): Promise<SignalCacheRow | n
 // `cancelPendingSignalRegens` (called from `wipeLocalSession`). Memory only, on purpose:
 // a copy on disk would be a new place health data rests, which is a Trust & Safety call.
 const lastAnsweredRows = new Map<string, SignalCacheRow | null>();
+/** Bumped by every wipe: a read that started under an earlier epoch keeps nothing. */
+let keptEpoch = 0;
 
 export interface SignalCacheRead {
   row: SignalCacheRow | null;
@@ -953,6 +958,7 @@ export function cancelPendingSignalRegens(): void {
   regenTrailing.clear();
   // The kept rows are the signing-out account's findings (CUL-1219).
   lastAnsweredRows.clear();
+  keptEpoch += 1;
   useSyncStore.setState({ signalAcknowledging: {} });
 }
 

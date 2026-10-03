@@ -192,6 +192,8 @@ describe('event detail — adding a photo to a record', () => {
     expect(runCalls(INSERT)).toHaveLength(1);
     expect(runCalls(MARK_SYNCED)).toHaveLength(0);
     expect(mockTriggerVomit).not.toHaveBeenCalled();
+    // Nothing reached the server, so no rebuild is spent on it (CUL-1087's cap, CUL-1219).
+    expect(mockTriggerRegen).not.toHaveBeenCalled();
     // FALSE, so a section waiting on this chain triggers its own read rather than
     // watching for a row nothing is going to write.
     expect(mockSettle).toHaveBeenCalledWith(false);

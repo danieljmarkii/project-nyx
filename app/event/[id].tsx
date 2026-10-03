@@ -631,6 +631,7 @@ export default function EventDetailScreen() {
       const isReadable = hasPerIncidentRead(event.event_type);
       const readClaim = isReadable ? claimAnalysisChain(event.id) : null;
       let readInvoked = false;
+      let landed = false;
       // Fire-and-forget upload; sync retries on reconnect if it fails
       uploadPhoto('nyx-event-attachments', storagePath, uploadUri)
         .then(async () => {
@@ -642,6 +643,7 @@ export default function EventDetailScreen() {
           // synced when the row truly landed, else leave it for the retry queue.
           if (error) { console.warn('[event-detail] attachment upsert failed:', error.message); return; }
           await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
+          landed = true;
           // Re-analyze a vomit / stool event whose photo just changed (e.g. adding a
           // photo to a photoless event, or replacing an oversized historic photo
           // with a compressed one) — the per-incident section triggers on mount, but
@@ -670,8 +672,10 @@ export default function EventDetailScreen() {
         .finally(() => {
           readClaim?.settle(readInvoked);
           // CUL-1219 (BRK-44): a new or replaced photo (and its read) changes what the
-          // Signal counted, so it refreshes once the read has had its turn.
-          triggerSignalRegenDebounced(event.pet_id);
+          // Signal counted, so it refreshes once the read has had its turn. Only when the
+          // photo reached the server: a rebuild counts against the daily cap (CUL-1087), and
+          // a failed upload changed nothing the engine reads; the retry queue's own path lands it.
+          if (landed && (readInvoked || !isReadable)) triggerSignalRegenDebounced(event.pet_id);
         });
       // Detach the rows this capture replaced — after the replacement is stored
       // AND its upload is in flight. Order matters twice over: removing first

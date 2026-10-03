@@ -677,14 +677,22 @@ export default function EditEventModal() {
       // Only then: a rebuild counts toward generate-signal's daily cap (CUL-1087), so a
       // peek-and-save spends none (a changed rating already rebuilt through `rateMealIntake`;
       // the debounce folds the two). A look never enters the engine (T-5), so its edit does not.
+      const openedMs = occurredAtParam ? new Date(occurredAtParam).getTime() : NaN;
       const engineInputMoved =
-        new Date(occurredAtIso).getTime() !== new Date(occurredAtParam).getTime() ||
+        (Number.isFinite(openedMs) && new Date(occurredAtIso).getTime() !== openedMs) ||
         confidence != null ||
         newAttachmentUri != null ||
+        // A food cleared to none writes nothing (`updateMealFood` is skipped above), so only
+        // a food set to another one counts.
         (config.hasFood && currentFoodId != null && currentFoodId !== loadedFoodRef.current);
       if (!isLook && engineInputMoved) {
-        const owner = await getDb().getFirstAsync<{ pet_id: string }>('SELECT pet_id FROM events WHERE id = ?', [id]);
-        if (owner) triggerSignalRegenDebounced(owner.pet_id);
+        // Best effort, after the edit is stored: a failed lookup never reports the save failed.
+        try {
+          const owner = await getDb().getFirstAsync<{ pet_id: string }>('SELECT pet_id FROM events WHERE id = ?', [id]);
+          if (owner) triggerSignalRegenDebounced(owner.pet_id);
+        } catch (e) {
+          console.warn('[edit-event] Signal refresh skipped:', e);
+        }
       }
 
       // Attachments are handled above with their own direct upload + retry-on-reconnect pattern.
