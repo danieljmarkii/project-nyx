@@ -253,7 +253,7 @@ Single source of truth for every secret the project uses. Update this table inli
 - **CI runs on every PR (B-390, `.github/workflows/ci.yml`):** `App (typecheck + jest)` and `Edge Functions (deno test)` are required checks on an Active `main` ruleset with an empty bypass list (plus `App (jest, non-UTC timezones)`; making it required is CUL-586), so a red check blocks the merge. The Deno job's `npm ci` and its `--allow-read=supabase/functions` are load-bearing, not cruft; actions are SHA-pinned (bump the SHA and its version comment together); never fix a red run by weakening the check (`--no-check`, `continue-on-error`, dropping a suite) without saying so in the PR.
 - Schema changes always get their own PR — never bundle a schema change with UI work.
 - Squash merge to keep `main` history clean and linear.
-- **Branches (CUL-1497):** merge `main` in only when a branch conflicts, never rebase a pushed branch, never take one side of a file wholesale; `/wrap` runs `scripts/steward/merge-check.sh` and `/wrap and merge` is the only self-merge path. Rules: `.claude/skills/steward/SKILL.md` _(account: `docs/engineering-lessons.md` §P-15)_
+- **Branches (CUL-1497):** merge `main` in only when a branch conflicts or needs code from it; never rebase a pushed branch (a stack you created is the one exception) or take one side of a file wholesale. A self-merge needs the PM's word (`/wrap and merge`) or `/dispatch`'s standing yes, and one gate that runs `scripts/steward/merge-check.sh`: `.claude/skills/steward/SKILL.md` §7 _(account: `docs/engineering-lessons.md` §P-15)_
 - Do not merge a PR if the issue's QA criteria are not yet met.
 - **One PR per session.** The end-of-session `docs/sessions/` record (and any STATUS.md / CLAUDE.md / doc edits) ride in the session's *existing* work PR — committed to its branch before merge — not a separate "record the merge" PR afterward. Write the session record's outcome as `shipped via #<n>` (the PR number is assigned at creation, drafts included), never as `merged to main (#<n>)` — the post-merge phrasing is what forces the second PR. **Exception:** if the work PR was already merged mid-session, the status update is a small standalone follow-up. (Mechanics in `/wrap`.)
 
@@ -261,7 +261,7 @@ Single source of truth for every secret the project uses. Update this table inli
 
 - **Arm at most one check-in, ~90 minutes out, and only while sibling sessions are actively landing on `main`.** If nothing is in flight, arm nothing — there is no event to catch.
 - **Stop after one check-in that finds nothing.** Do not re-arm on a no-op. A chain that re-arms unconditionally can only terminate on merge, and PRs here sit open for weeks.
-- **Never arm one at `/wrap`**, and never leave one armed overnight: merges happen only on the PM's word, so `main` does not move while they sleep and an overnight check-in finds nothing.
+- **Never arm one at `/wrap`**, and never leave one armed overnight: a merge conflict wakes the PR's own subscription, so a timer adds nothing.
 - **Never poll on an interval shorter than ~90 minutes.** An hourly cadence lands past the prompt-cache TTL, so every wake re-sends the session's entire context at full price to learn nothing.
 
 **Merge → Linear status — reference `CUL-NNN` in every PR (instituted 2026-08-16).** Linear (team Culprit) owns issue status, and the native GitHub↔Linear integration moves an issue Todo/Backlog → In Progress → Done automatically **when a PR references it**. So:
