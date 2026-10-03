@@ -431,6 +431,9 @@ function Body({
         {/* EN-9's answers (PR-35): only where the server wrote a care state that takes one. */}
         {care ? (
           <CareAnswers
+            // Keyed on the state: a state change starts the answers afresh, so a confirmation
+            // (and its Undo) given on a raised concern can never stand over one that came back.
+            key={care.state}
             petId={petId}
             petName={petName}
             view={care}
