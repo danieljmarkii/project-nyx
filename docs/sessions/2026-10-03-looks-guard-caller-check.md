@@ -3,7 +3,7 @@
 **Date:** 2026-10-03
 **One thing:** T3 L1 — A migration is code until someone applies it · check: pending
 
-Dispatched session (`/dispatch`, PR-18), BUILD. Shipped via #1029, a draft holding migration 083. **Not merged and not applied:** applying is its own PM-approved step, and this PR waits on it.
+Dispatched session (`/dispatch`, PR-18), BUILD. Shipped via #1029, holding migration 083. The dispatch prompt left the apply and the merge to the PM. The PM then ruled in this session ("apply 083 and merge"). 083 was already live when that ruling arrived, recorded as `looks_guard_caller_check` at 21:06 UTC, so it was verified rather than applied again (see After the apply).
 
 ## What shipped
 
@@ -50,7 +50,22 @@ Three header claims were corrected:
 ## Residuals
 
 - **The class.** Other DEFINER same-pet guards (023 / 041 / 045 / 066 / 067) sit on tables where anon still holds INSERT, so their disclosed membership oracle is reachable without an account. That is recorded on CUL-1059, whose broad anon revoke is the fix, not folded in here.
-- **The apply.** 083 needs `apply_migration` and then `get_advisors`. Once it is applied, the PR can merge.
+
+## After the apply
+
+083 was already recorded live when the PM said "apply and merge", so this session did not run it a second time. The live database was read instead:
+- The deployed function body is 083's (the caller arm before the events read).
+- DEFINER, `search_path = ''`, and no anon/authenticated EXECUTE.
+- `trg_looks_same_pet` is bound and enabled.
+- anon holds no INSERT, UPDATE or SELECT on `looks`; authenticated keeps INSERT.
+- The applied statements include the anon revoke.
+
+**The live after-probe** ran in one DO block that RAISEs at the end, so it rolled back. It used the newest real `check_in`, days −3 to +3:
+- a zero-pet JWT got 23514 on all seven days;
+- anon got 42501 on all seven days;
+- no message held the parent's date.
+
+**`get_advisors`:** security shows the same two existing findings (`record_ai_usage` kept on purpose, and leaked-password protection). Performance is unchanged: `auth_rls_initplan` 27, unindexed FKs 9.
 
 ## Teach
 
@@ -64,8 +79,8 @@ The app's cloud database has a shape: its tables, its rules, its guard functions
 ```
 REVOKE ALL ON TABLE public.looks FROM anon;   -- take every permission on looks away from the not-signed-in role
 ```
-The live database still lets anon write to `looks` tonight. That line fixes it only once 083 is applied.
+When this was written, the live database still let anon write to `looks`. That line fixed it only when 083 was applied, not when the PR was written or merged.
 
 **Why it matters to you as PM:** "the fix merged" and "the fix is live" are two separate events with two separate approvals. This PR deliberately waits for your apply, so the merge cannot claim a protection the database does not have yet.
 
-**Check:** if someone merged #1029 before 083 was applied, would an anon caller still be able to read the date through the error code tonight, and why?
+**Check:** if #1029 had merged before 083 was applied, could an anon caller still have read the date through the error code, and why?
