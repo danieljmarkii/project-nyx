@@ -1,5 +1,5 @@
 ---
-description: End-of-session wrap-up — run the DoD, write the session record, reconcile the touched Linear issues, emit the Session Summary, and always finish with a paste-ready Next Session Kickoff prompt.
+description: End-of-session wrap-up — run the DoD, write the session record, check the branch against main, reconcile the touched Linear issues, emit the Session Summary, and always finish with a paste-ready Next Session Kickoff prompt. `/wrap and merge` also merges the PR through the steward skill's sequence.
 ---
 
 # /wrap — End-of-session wrap-up
@@ -38,6 +38,10 @@ CLAUDE.md (the stable operating manual) is the source of truth for the formats r
 
    **Commit this update onto the same branch as the session's work — never a fresh branch — so it lands in the session's *existing* PR instead of spawning a second status-only PR.** Make sure that PR exists first (create the draft PR now if it doesn't; GitHub assigns the number on creation, drafts included), then write the session record's PR reference as the session's **outcome referencing that number** — `shipped via #112` — **not** as a post-merge record — `merged to main (#105)`. The post-merge phrasing is exactly what forces the annoying second PR: you can't write "merged" until after the merge, so it lands as its own commit afterward. The "shipped via #N" entry only reaches `main` when this PR merges, which is precisely when it becomes true — so it can't lie, and there's no second PR. (See the **One PR per session** rule below.)
 
+   **(3d) Check the branch against `main`; merge only if the PM asked.** Once everything is committed and pushed, run `scripts/steward/merge-check.sh` with the head branches of the other open PRs updated in the last 7 days (`list_pull_requests`), and act on its verdict by the **`steward`** skill: `CONFLICT` means merge `origin/main` in, resolve by its §4, prove by §6, push, and run the check again; `REVIEW` means read every line it lists and clear it in writing (§5). A branch that is only behind `main` is left alone. The Session Summary's What Was Built ends with the verdict line (`MERGE CHECK: …`) and any open PR the check says this branch collides with.
+
+   **`/wrap and merge`** (any `$ARGUMENTS` asking to merge) then runs the steward skill's §7 sequence: the required checks green on the final head commit, the PR marked ready and squash merged, and the post-merge line naming each open PR that now conflicts with `main`. Step 4's read-back then runs against the merged PR, and step 6's handoff checks out `main` rather than the branch. If any part of the sequence fails, nothing merges and the summary says so first. Plain `/wrap` never merges.
+
 4. **Reconcile the Linear issues this session touched.** Linear (team Culprit) is the source of truth for backlog status, and `docs/backlog.md` is frozen — so there are no markdown rows to edit and no `B-ID` collisions to chase. For **each `CUL-NNN` this session advanced**:
 
    - **Bring its status current.** While the work is landing this session the issue should read `In Progress`; once its PR is open, `In Review`. Merging moves every issue the PR's title or body names to `Done` (CLAUDE.md § Git Workflow → "Merge → Linear status"), so **the PR names only the issues it finishes**:
@@ -64,7 +68,7 @@ CLAUDE.md (the stable operating manual) is the source of truth for the formats r
 
 ## Rules
 
-- If work was pushed but no PR exists yet, create a **draft** PR before wrapping (per repo policy), and reference it in the summary. Before merging anything, confirm the branch isn't diverged from a freshly-fetched `main` (parallel sessions happen) — if it conflicts, stop and surface it rather than force-resolving.
+- If work was pushed but no PR exists yet, create a **draft** PR before wrapping (per repo policy), and reference it in the summary. Merge only on the PM's word in this session (`/wrap and merge` is that word) and only through step 3d. A conflict where both sides changed the same logic stops the merge and goes to the PM as a decision brief; every other conflict is resolved by the steward skill's rules, never by taking one side of a file wholesale.
 - **One PR per session.** The wrap's session record (and any STATUS.md / CLAUDE.md / doc edits) ride in the session's *existing* work PR — committed to its branch before merge — so a session ships as a single PR. Do **not** open a separate "record the merge" status PR afterward; writing the session record's PR reference post-merge is what spawns it (see Step 3). **The one legitimate exception:** if the session's work PR was already merged mid-session (e.g. you merged it yourself to unblock something), the branch is gone, so the status update is a small standalone follow-up PR. That's the exception, not the default. (This does not relax the separate rule that *schema* changes get their own PR — STATUS.md is not schema.)
 - **Do not arm a scheduled PR check-in at wrap.** See CLAUDE.md § Git Workflow → "PR check-ins". Wrapping is precisely when a session is *finished*; a check-in armed here polls an idle repo until morning at full context cost. If the session genuinely ended with sibling PRs still landing on `main`, arm **one** check-in ~90 minutes out and let it stop itself.
 - If nothing was pushed, say so plainly in the handoff and still produce the session record + Next Session Kickoff.
