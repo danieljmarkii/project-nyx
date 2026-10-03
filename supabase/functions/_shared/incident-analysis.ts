@@ -517,6 +517,10 @@ export interface StoredAnalysis {
   presentFlags: string[]
   // dismissed_at is set: the owner's hide is on the row (CUL-1323). A hold clears it.
   hidden: boolean
+  // `error` is set: an earlier run failed over this row and the error-only write noted it
+  // (buildFailureWrite). The record reads it as "the latest read hit a problem" beside a
+  // held call (CUL-819), so a hold, which is a run that finished, clears it (CUL-1509).
+  errored: boolean
 }
 
 export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
@@ -531,6 +535,7 @@ export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, T
     edited: !!row.edited_at,
     presentFlags: descriptor.presentFlagsFromStructured(row),
     hidden: !!row.dismissed_at,
+    errored: !!row.error,
   }
 }
 
@@ -540,6 +545,15 @@ export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, T
 // so the row takes this run's status ('completed', or 'uncertain' for a read that
 // could not say) and drops the stale error. Left 'failed', the row would disable Edit,
 // and Ask's A8 would re-run a live read, and spend a unit, on every question about it.
+//
+// It drops the stale error on a FINISHED row too (CUL-1509). A run that failed over a call
+// writes the error only and leaves status 'completed' (buildFailureWrite), and the record
+// says "The latest read hit a problem. This call stands." (CUL-819). A later run that
+// finishes calmer is held; without this, `error` outlived it and the line stood over a read
+// that finished. The error clears and nothing else moves: the words, the flags and the
+// status are the call's. Only a run that read every photo clears it (`readComplete`): a
+// photo it could not open, or a partial read it collapsed, is a read that hit a problem
+// too, so the error stands and so does the line, even as a failed row settles its status.
 //
 // And it clears the owner's hide (CUL-1323): a hold is a new read, and the ruling is
 // that every new read clears it. "Those are the words the owner hid" is true only of a
@@ -633,15 +647,23 @@ export function resolveReanalysisWrite<TFlag extends string>(params: {
   // EN-4's floor-only write (CUL-1134): it read no photo, so it has no structured values of
   // its own and writes the read columns alone, whatever the row. Absent, today's decision.
   readFieldsOnly?: boolean
+  // This run read every photo on the event (none unreadable, no partial-read collapse), or
+  // the event has none. Only such a run may clear an earlier failure's `error` under a
+  // hold: an unreadable or half-read photo is itself a read that hit a problem, and the
+  // record's CUL-819 line must keep saying so (adversarial pass on CUL-1509). Required, no
+  // default: a default here would decide what the line says for the caller (C-37).
+  readComplete: boolean
 }): ReanalysisWrite {
   const { stored, readFields } = params
   if (stored && holdsOver(stored, readFields)) {
     const settle = stored.status !== 'completed' && stored.status !== 'uncertain'
-    if (!settle && !stored.hidden) return { mode: 'hold', values: null }
+    const clearError = params.readComplete && (settle || stored.errored)
+    if (!settle && !clearError && !stored.hidden) return { mode: 'hold', values: null }
     return {
       mode: 'hold',
       values: {
-        ...(settle ? { status: readFields.status, error: null } : {}),
+        ...(settle ? { status: readFields.status } : {}),
+        ...(clearError ? { error: null } : {}),
         ...(stored.hidden ? { dismissed_at: null } : {}),
       },
     }
@@ -858,6 +880,12 @@ export function withRescueTier<TFlag extends string>(
 export function buildFailureWrite(params: {
   existing: Pick<StoredAnalysis, 'recommendation' | 'presentFlags'> & { tier?: string | null } | null
   existingReadFailed: boolean
+  // The run was EN-4's floor-only mode (a refloor's per-vomit runs included). It reads no
+  // photo, so its failure is not "the latest read hit a problem": noting `error` would put
+  // CUL-819's line, and "From the earlier read", over a photo read that finished, and no
+  // later non-raising floor run would clear it (adversarial pass on CUL-1509). Such a run
+  // never writes the error-only shape; the row keeps what it holds. Required (C-37).
+  floorOnly: boolean
   eventId: string
   petId: string | null
   incidentType: string | null
@@ -883,10 +911,11 @@ export function buildFailureWrite(params: {
   // exactly isEscalationVerdict(recommendation); a tier written under the key protects too.
   if (params.existing && effectiveTierRank(params.existing) !== TIER_RANK.quiet) {
     // Record the error alongside for observability; leave status, recommendation
-    // and read_text exactly as the record earned them. A later successful read
-    // clears `error` via readFields (error: null). A rescue would only swap one
+    // and read_text exactly as the record earned them. A later read that finishes
+    // clears `error`: a louder or equal one via readFields (error: null), a calmer one
+    // through the hold (resolveReanalysisWrite, CUL-1509). A rescue would only swap one
     // escalation's words for another's, so the stored one stands.
-    return { mode: 'error-only', values: { error: params.message } }
+    return params.floorOnly ? { mode: 'skip' } : { mode: 'error-only', values: { error: params.message } }
   }
 
   if (params.rescue) {
@@ -923,7 +952,7 @@ export function buildFailureWrite(params: {
     // hides the observation grid, so "Couldn't finish reading this one" would stand
     // over "Blood: fresh red" on the record. Presence carries: keep the row, note the
     // error (CUL-532's class, on this write path).
-    return { mode: 'error-only', values: { error: params.message } }
+    return params.floorOnly ? { mode: 'skip' } : { mode: 'error-only', values: { error: params.message } }
   }
 
   return {
@@ -1444,6 +1473,8 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
     stored,
     eventId: p.eventId,
     petId: p.petId,
+    // A floor-only run reads no photo, so it never clears a photo read's error.
+    readComplete: false,
     incidentType: p.incidentType,
     structuredValues: {},
     nextPresentFlags: stored?.presentFlags ?? [],
@@ -1609,7 +1640,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // dismissed_at: a hold clears the owner's hide, so it has to know one is there (CUL-1323).
   // tier: every guard reads the louder of it and `recommendation` (EN-3, lib/incidentTier.ts).
   const storedColumns = [
-    'id', 'pet_id', 'edited_at', 'status', 'recommendation', 'tier', 'dismissed_at',
+    'id', 'pet_id', 'edited_at', 'status', 'recommendation', 'tier', 'dismissed_at', 'error',
     ...descriptor.redFlagColumns, ...(descriptor.afterReadColumns ?? []),
   ].join(', ')
   const readStoredRow = async (): Promise<StoredRow | null> =>
@@ -1987,7 +2018,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //     flag the photos surfaced, the model's own call, or a contextual flag
     //     computed from the record) is always kept: the floor at step 7 runs FIRST, so
     //     presence has already escalated before this guard inspects the verdict.
-    if (shouldCollapsePartialRead({ usableCount: usableReadCount, totalCount: photoPaths.length, recommendation })) {
+    const partialReadCollapsed = shouldCollapsePartialRead({ usableCount: usableReadCount, totalCount: photoPaths.length, recommendation })
+    if (partialReadCollapsed) {
       analysis = null
       visualFlags = []
       recommendation = 'not_enough_to_say'
@@ -2062,6 +2094,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       petId,
       incidentType,
       structuredValues,
+      readComplete: !photoUnreadable && !partialReadCollapsed,
       nextPresentFlags: descriptor.presentFlagsFromStructured(structuredValues),
       readFields,
     })
@@ -2126,6 +2159,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     const failureWrite = buildFailureWrite({
       existing: latest,
       existingReadFailed: latestReadFailed,
+      floorOnly,
       eventId,
       petId: petIdForFailure,
       incidentType: incidentTypeForFailure,

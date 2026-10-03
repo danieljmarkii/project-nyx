@@ -37,6 +37,9 @@ interface World {
   rows: Map<string, Row> // event_ai_analysis by event_id
   calls: { storage: number; model: number; usage: number }
   writes: number
+  // When > 0, that many event_ai_analysis UPDATEs match no row (a write the database refused),
+  // so the run throws into its catch. Only for the CUL-1509 failure test.
+  failUpdates?: number
   // Only for the tests about a photo read: when set, Storage, the counter and the model answer,
   // and `during` runs inside the model call (a log landing mid-read).
   photoRead?: { analysis: VomitAnalysis; during?: (w: World) => void }
@@ -106,6 +109,7 @@ class FakeQuery {
     w.writes++
     if (this.mode === 'update') {
       if (!row) return { data: [], error: null }
+      if ((w.failUpdates ?? 0) > 0) { w.failUpdates! -= 1; return { data: [], error: null } }
       Object.assign(row, this.values)
       return { data: [{ id: row.id }], error: null }
     }
@@ -275,6 +279,26 @@ Deno.test('floor · a floor-only run never lowers: nothing louder to say writes 
   assertEquals(r.json.skipped, 'nothing_raised')
   assertStrictEquals(w.writes, 0)
   assertEquals(w.rows.get('v3'), stored)
+})
+
+Deno.test('floor · CUL-1509: a floor-only run that fails over a call writes no error (it read no photo)', async () => {
+  // A photographed call whose photo read finished; the refloor's floor run then fails on its
+  // own write. Noting `error` here would put "The latest read hit a problem" and "From the
+  // earlier read" over a photo read that finished, and no later non-raising floor run would
+  // clear it (adversarial pass on CUL-1509). The catch writes nothing; the call stands.
+  const w = world({ events: photolessTriple().map((e) => (e.id === 'v3' ? { ...e, photo: true } : e)) })
+  const stored = {
+    id: 'a-v3', event_id: 'v3', pet_id: PET_ID, status: 'completed', recommendation: 'worth_a_call', tier: 'call_today',
+    read_text: 'earlier words', visual_flags: ['blood'], contextual_flags: [], blood_present: 'fresh_red',
+    edited_at: null, dismissed_at: null, error: null,
+  }
+  w.rows.set('v3', { ...stored })
+  w.failUpdates = 1
+  const r = await call(w, { event_id: 'v3', mode: 'floor' })
+  assertStrictEquals(r.status, 500)
+  assertStrictEquals(w.failUpdates, 0) // the floor's raise was attempted, and refused
+  assertEquals(w.rows.get('v3'), stored)
+  noPhotoPathTouched(w)
 })
 
 Deno.test('floor · the 24 h re-run: lethargy raises every vomit before it, with no photo, model or cap unit', async () => {

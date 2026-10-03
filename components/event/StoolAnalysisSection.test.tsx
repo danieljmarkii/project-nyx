@@ -88,6 +88,7 @@ import { StoolAnalysisSection } from './StoolAnalysisSection';
 import { theme } from '../../constants/theme';
 import { flat } from '../../testUtils/tree';
 import { readLandedCopy } from './useReadLandingAnnouncement';
+import { EARLIER_READ_LABEL, HELD_CALL_DISCLOSURE } from '../../lib/incidentTierWords';
 import { watchAnalysisRow, awaitAnalysisChain, triggerStoolAnalysis, deriveEditedStoolFields } from '../../lib/analysis';
 import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
 
@@ -1095,6 +1096,33 @@ describe('StoolAnalysisSection — the tier (EN-3)', () => {
     const earlier = render(<StoolAnalysisSection eventId="s2" petId="pet-1" petName="Rex" hasPhoto />);
     await earlier.findByText('Worth a call');
     expect(flat(earlier.getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
+  });
+
+  it('CUL-819 (a): a new-rule call whose latest run did not finish says so, and its facts are the earlier read\'s (CUL-1509)', async () => {
+    for (const [i, over] of [{ status: 'completed', error: 'timeout' }, { status: 'failed', error: 'Claude API error 529' }].entries()) {
+      mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3, stool_consistency: 'type_6_mushy', ...over });
+      const view = render(<StoolAnalysisSection eventId={`h${i}`} petId="pet-1" petName="Rex" hasPhoto />);
+      await view.findByText('Call your vet today');
+      expect(view.getByTestId('incident-read-disclosure').props.children).toBe(HELD_CALL_DISCLOSURE);
+      expect(view.queryByText(EARLIER_READ_LABEL)).toBeTruthy();
+      expect(view.queryByText("What's visible")).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it('CUL-819 (a) says nothing once the error is cleared, on an earlier-rule call, or on a quiet read', async () => {
+    for (const [i, over] of [
+      { recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3, error: null },
+      { recommendation: 'worth_a_call', error: 'timeout' },
+      { recommendation: 'monitor', tier: 'logged', engine_flags: EN3, error: 'timeout' },
+    ].entries()) {
+      mockRow = row({ stool_consistency: 'type_6_mushy', ...over });
+      const view = render(<StoolAnalysisSection eventId={`n${i}`} petId="pet-1" petName="Rex" hasPhoto />);
+      await view.findByText("What's visible");
+      expect(view.queryByTestId('incident-read-disclosure')).toBeNull();
+      expect(view.queryByText(EARLIER_READ_LABEL)).toBeNull();
+      view.unmount();
+    }
   });
 
   it('a new-rule calm read is "Keep an eye out", in the neutral card', async () => {

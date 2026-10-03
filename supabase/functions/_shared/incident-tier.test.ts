@@ -32,7 +32,7 @@ const FIELDS: AnalysisReadFields = {
 }
 
 const stored = (o: Partial<StoredAnalysis> = {}): StoredAnalysis => ({
-  recommendation: 'worth_a_call', tier: null, status: 'completed', edited: false, presentFlags: [], hidden: false, ...o,
+  recommendation: 'worth_a_call', tier: null, status: 'completed', edited: false, presentFlags: [], hidden: false, errored: false, ...o,
 })
 
 // ── tieredReadFields: the map, and nothing flag-off ─────────────────────────────────
@@ -109,7 +109,7 @@ Deno.test('EN-3 never-lower — a stored call tier beside a lowered verdict stil
 
 Deno.test('EN-3 never-lower — resolveReanalysisWrite writes a call today over a stored call now, at call now', () => {
   const w = resolveReanalysisWrite({
-    stored: stored({ tier: 'call_now' }), eventId: 'e', petId: 'p', incidentType: 'vomit', structuredValues: { blood_col: 'yes' },
+    stored: stored({ tier: 'call_now' }), eventId: 'e', petId: 'p', incidentType: 'vomit', readComplete: true, structuredValues: { blood_col: 'yes' },
     nextPresentFlags: ['blood'], readFields: tieredReadFields({ ...FIELDS, recommendation: 'worth_a_call' }, true),
   }) as { mode: string; values: Record<string, unknown> }
   assertStrictEquals(w.mode, 'upsert')
@@ -117,7 +117,7 @@ Deno.test('EN-3 never-lower — resolveReanalysisWrite writes a call today over 
   assertStrictEquals(w.values.blood_col, 'yes') // the new finding lands
   // Flag-off: the column is left alone (the stored call now stays on the row).
   const off = resolveReanalysisWrite({
-    stored: stored({ tier: 'call_now' }), eventId: 'e', petId: 'p', incidentType: 'vomit', structuredValues: {},
+    stored: stored({ tier: 'call_now' }), eventId: 'e', petId: 'p', incidentType: 'vomit', readComplete: true, structuredValues: {},
     nextPresentFlags: [], readFields: { ...FIELDS, recommendation: 'worth_a_call' },
   }) as { mode: string; values: Record<string, unknown> }
   assertStrictEquals(off.mode, 'upsert')
@@ -132,13 +132,13 @@ Deno.test('EN-3 — the rescue carries a tier only under the key, from the same 
   assertStrictEquals(withRescueTier(rescue, false), rescue)
   assertStrictEquals(withRescueTier(null, true), null)
   const on = buildFailureWrite({
-    existing: null, existingReadFailed: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'x',
+    existing: null, existingReadFailed: false, floorOnly: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'x',
     rescue: withRescueTier(rescue, true), stamps: null,
   })
   assertStrictEquals(on.mode, 'rescue')
   assertStrictEquals((on as { values: Record<string, unknown> }).values.tier, 'call_today')
   const off = buildFailureWrite({
-    existing: null, existingReadFailed: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'x',
+    existing: null, existingReadFailed: false, floorOnly: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'x',
     rescue, stamps: null,
   })
   assertStrictEquals('tier' in (off as { values: Record<string, unknown> }).values, false)
@@ -147,13 +147,13 @@ Deno.test('EN-3 — the rescue carries a tier only under the key, from the same 
 Deno.test('EN-3 — a stored call tier survives a failed run even beside a lowered verdict', () => {
   const w = buildFailureWrite({
     existing: { recommendation: 'monitor', tier: 'call_today', presentFlags: [] },
-    existingReadFailed: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'boom', rescue: null, stamps: null,
+    existingReadFailed: false, floorOnly: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'boom', rescue: null, stamps: null,
   })
   assertEquals(w, { mode: 'error-only', values: { error: 'boom' } })
   // Untiered, today's rule exactly: a calm stored row falls to the retry frame.
   const untiered = buildFailureWrite({
     existing: { recommendation: 'monitor', tier: null, presentFlags: [] },
-    existingReadFailed: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'boom', rescue: null, stamps: null,
+    existingReadFailed: false, floorOnly: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'boom', rescue: null, stamps: null,
   })
   assertStrictEquals(untiered.mode, 'upsert')
 })

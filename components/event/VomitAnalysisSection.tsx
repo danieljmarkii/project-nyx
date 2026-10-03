@@ -47,6 +47,7 @@ import {
 import { isQuietVerdict } from '../../lib/incidentVerdict';
 import {
   EARLIER_READ_LABEL,
+  heldCallDisclosureOf,
   isCallRow,
   isTieredRow,
   TIER_WORDS,
@@ -577,12 +578,11 @@ export function VomitAnalysisSection(
   // tone/action (it keeps today's card), never null for a call.
   const tiered = isTieredRow(row);
   const display = tiered ? tierDisplayOf(row) : null;
-  // CUL-819 (a) is WITHHELD for now: the phone cannot tell a held call whose latest run
-  // failed from one whose later run finished calm and was held, because the server's hold
-  // writes nothing and leaves the old `error` standing (CUL-1432 item 8). A line known to be
-  // false in that case is not shipped; `heldCallDisclosureOf` (tested) is wired here when
-  // the server clears `error` on a hold. The call itself draws the same either way.
-  const heldDisclosure: string | null = null;
+  // CUL-819 (a): a call whose latest run did not finish says so beside the verdict, never
+  // reverted. True only since the server's hold clears a stale `error` (CUL-1509): before
+  // that, a later run that finished calm and was held left the old error standing, and the
+  // line would have outlived a read that worked.
+  const heldDisclosure = heldCallDisclosureOf(row);
 
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');

@@ -358,6 +358,49 @@ Deno.test('pipeline CUL-1201 — a rescued contextual escalation is held after t
   assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
 })
 
+Deno.test('pipeline CUL-1509 — a failed re-read then a calm one: the call stands and its error clears', async () => {
+  // The CUL-819 line's whole life on one row. A call stands; a re-read fails over it (the
+  // error-only write notes it, status stays completed: "the latest read hit a problem");
+  // a later re-read finishes calm and is held. The second run finished, so the error goes,
+  // and nothing else on the row moves. Drives the real select, so a stored-row read that
+  // forgot the `error` column would leave it standing here.
+  const w = makeWorld({
+    row: { id: 'a1', recommendation: 'worth_a_call', status: 'completed', visual_flags: ['blood'], read_text: 'MODEL: blood', blood_col: 'yes' },
+    vision: overloaded,
+  })
+  await run(w)
+  assertEquals(w.writes, [{ mode: 'update', values: { error: 'Claude API error 529: overloaded' } }])
+  assertStrictEquals(w.row?.status, 'completed')
+  w.vision = () => CLEAN
+  w.writes = []
+  const r = await run(w)
+  assertStrictEquals(r.body.held, true)
+  assertEquals(w.writes, [{ mode: 'update', values: { error: null } }])
+  assertStrictEquals(w.row?.error, null)
+  assertStrictEquals(w.row?.status, 'completed')
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.read_text, 'MODEL: blood')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+})
+
+Deno.test('pipeline CUL-1509 — a re-read that could not open the photo keeps the error: that read hit a problem too', async () => {
+  // A call stands; a re-read fails (529) and the line shows; the retry's photo comes back
+  // undecodable (Claude 400 → photoUnreadable → not_enough_to_say → held). Nothing read the
+  // photo, so "The latest read hit a problem" stays (adversarial pass on CUL-1509).
+  const w = makeWorld({
+    row: { id: 'a1', recommendation: 'worth_a_call', status: 'completed', visual_flags: ['blood'], read_text: 'MODEL: blood', blood_col: 'yes' },
+    vision: overloaded,
+  })
+  await run(w)
+  w.vision = () => { throw new Error('Claude API error 400: could not process image') }
+  w.writes = []
+  const r = await run(w)
+  assertStrictEquals(r.body.held, true)
+  assertEquals(w.writes, [])
+  assertStrictEquals(w.row?.error, 'Claude API error 529: overloaded')
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+})
+
 Deno.test('pipeline CUL-1201 × CUL-1277 — a stored verdict this build does not know is held too', async () => {
   const w = makeWorld({
     row: { recommendation: 'call_now', status: 'completed', blood_col: 'no' },
