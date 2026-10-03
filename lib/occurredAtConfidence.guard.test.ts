@@ -57,12 +57,6 @@ const ALLOWED: Record<string, string> = {
     'the SOURCE distinguishes those two (`now` vs `manual`, C-10), never the confidence. ' +
     'A look is also the one row here whose confidence a vet never reads as a claim about an ' +
     'incident: the report prints the day it was answered, not a witnessed sighting.',
-  'lib/lookDevSeed.ts':
-    'The dev-only Noticed seed (__DEV__ only, refused otherwise). It writes its looks THROUGH ' +
-    'insertLook, so this literal is only on the vomit rows it seeds beside them — back-dated ' +
-    'instants a developer chose, which is the same claim the back-dating escape hatch makes on ' +
-    'lib/weight.ts. Every seeded row also carries SEED_MARKER in its notes, so a seeded record ' +
-    'can never be mistaken for an owner\u2019s on a device.',
   'lib/captureInbox.ts':
     'Widget/App-Intent ingest. occurred_at is the TAP time carried in the capture record, ' +
     'not the drain time — the owner pressed the button at the moment they fed the pet.',

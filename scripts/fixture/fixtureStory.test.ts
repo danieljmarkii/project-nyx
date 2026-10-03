@@ -13,6 +13,7 @@
 
 jest.mock('../../lib/sync', () => ({ syncPendingEvents: jest.fn(), syncPendingLooks: jest.fn() }));
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
+jest.mock('../../lib/simpleEvent', () => ({ insertSimpleEvent: jest.fn() }));
 
 import {
   computeTrialFacts,

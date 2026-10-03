@@ -20,23 +20,31 @@
 //     computing wrongly. Seeded WITH the vomit rows so the pairing is real, not
 //     asserted.
 //
-// WHAT IT REFUSES. It never runs outside `__DEV__` (a release binary reaches the
-// guard and returns), and it writes only through `insertLook`, so every row it makes
-// is a row the app could have made — same validation, same day key, same NULL parent
-// note. A seed that writes rows the write path could not produce is a seed that tests
-// a record the product cannot create.
+// WHAT IT REFUSES (rebuilt at CUL-1222 after BRK-48). It never runs outside `__DEV__`,
+// never on an account that is not the device-pass fixture account (lib/deviceFixture.ts),
+// and never on a pet that account does not own; the species is read off the pet record.
+// It writes only through the shipped write paths (`insertLook`, `insertSimpleEvent`), so
+// every row it makes is a row the app could have made — same validation, same day key,
+// same push and regen. A seed that writes rows the write path could not produce is a
+// seed that tests a record the product cannot create.
 //
 // It is NOT wired to a button. `app/_layout.tsx` hangs it on `globalThis` under
 // `__DEV__`, so it is called once from the Metro / debugger console:
 //
-//     await __seedNoticed('<petId>')
+//     await __seedNoticed('Pepper')     // a pet name or id
 //
-// which keeps a shipped, designed screen (the beta shelf, Home) free of a control
-// that would have to be hidden from real owners on every one of them.
+// against the fixture account's Pepper (scripts/fixture/fixtureStory.ts, whose Deno test
+// certifies Pepper's Signal WITH the vomits this writes). Keeping it on the console keeps
+// a shipped, designed screen (the beta shelf, Home) free of a control that would have to
+// be hidden from real owners on every one of them.
 
 import { getDb } from './db';
-import { insertLook } from './looks';
-import { uuid } from './utils';
+import { insertLook, loadLookDays, localDayForLook } from './looks';
+import { insertSimpleEvent } from './simpleEvent';
+import { FIXTURE_EMAIL_TAG, isFixtureEmail } from './deviceFixture';
+import { useAuthStore } from '../store/authStore';
+import { usePetStore } from '../store/petStore';
+import { useSyncStore } from '../store/syncStore';
 import { LOOK_WORDS, lookSpeciesOf, type LookSpecies } from '../constants/lookWords';
 
 /** One seeded day: how many days back it sits, its outcome, and its words. */
@@ -101,57 +109,127 @@ export function buildLookSeed(species: LookSpecies): SeedDay[] {
  *  for a real one when the device pass finds something odd. */
 export const SEED_MARKER = 'dev seed (CUL-868)';
 
-/**
- * Seed one pet's Noticed record. Dev-only, and it says so by returning rather than
- * throwing: a release binary that somehow reaches this has nothing useful to do, and
- * a throw on a screen an owner is looking at would be worse than a no-op.
- */
-export async function seedNoticedLooks(petId: string, species: string): Promise<number> {
-  if (!__DEV__) {
-    console.warn('[lookDevSeed] refused: dev-only');
-    return 0;
-  }
-  const resolved = lookSpeciesOf(species);
-  if (!resolved) {
-    console.warn(`[lookDevSeed] refused: no look vocabulary for species "${species}"`);
-    return 0;
-  }
+/** The hour the seeded looks sit at — constant, so a seeded day is obvious at a glance
+ *  (the hour prints on every entry, §5.4). Vomits sit three hours before it. */
+export const SEED_LOOK_HOUR = 19;
+export const SEED_LOOK_MINUTE = 4;
+export const SEED_VOMIT_LEAD_MS = 3 * 60 * 60 * 1000;
 
-  const db = getDb();
-  const now = Date.now();
+/**
+ * Where one seeded look sits, in device-local time: 7:04 PM on its day, and TODAY never
+ * later than a minute ago nor earlier than today's local midnight (CUL-1222, BRK-48). The
+ * old seed set 7:04 PM on today too, so a morning seed wrote a FUTURE look that outranked
+ * the PM's own 10:05 tap and failed the step it existed to feed. Built from local date
+ * components rather than by subtracting 24h multiples, so a DST change inside the window
+ * cannot move a seeded day onto its neighbour.
+ */
+export function seedLookInstant(daysAgo: number, nowMs: number): Date {
+  const now = new Date(nowMs);
+  const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysAgo, SEED_LOOK_HOUR, SEED_LOOK_MINUTE, 0, 0);
+  if (daysAgo > 0) return at;
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  return new Date(Math.max(midnight.getTime(), Math.min(at.getTime(), nowMs - 60_000)));
+}
+
+/** Why a seed run wrote nothing, or `null` when it may proceed. */
+export function seedRefusal(args: {
+  isDev: boolean;
+  email: string | null | undefined;
+  pet: { id: string; species: string } | undefined;
+}): string | null {
+  if (!args.isDev) return 'dev-only';
+  // The fixture account and nothing else (CUL-1222, MFU-10): every row this writes is a
+  // made-up health record, and on any other account it lands in a real pet's history.
+  if (!isFixtureEmail(args.email)) return `fixture account only (an email ending ${FIXTURE_EMAIL_TAG}@…)`;
+  // The pet is the signed-in account's own, and its species is the RECORD's, never a
+  // caller's argument: the old seed took both on trust and would write dog words to a cat.
+  if (!args.pet) return 'no such pet on this account';
+  if (!lookSpeciesOf(args.pet.species)) return `no look vocabulary for species "${args.pet.species}"`;
+  return null;
+}
+
+/**
+ * Seed one fixture pet's Noticed record: `await __seedNoticed('Pepper')` (a name or an
+ * id) from the Metro console, signed in as the fixture account (docs/device-pass-fixture-runbook.md).
+ *
+ * Every row goes through a write path the app ships — looks through `insertLook`, vomits
+ * through `insertSimpleEvent` (which queues the push and the Signal regen the old raw
+ * INSERT skipped). And it is IDEMPOTENT BY DAY rather than by id: a day that already holds
+ * a look keeps it, and a day that already holds a seeded vomit gets no second one, so a
+ * re-run fills only what is missing and never doubles a count the sitting is judging. Ids
+ * stay the write paths' own; a seed that minted its own ids would need a parameter on two
+ * production writers that only it would ever pass.
+ */
+export async function seedNoticedLooks(petIdOrName: string): Promise<number> {
+  const email = useAuthStore.getState().session?.user?.email;
+  // By id, or by name (`__seedNoticed('Pepper')`) so the console call needs no lookup —
+  // either way only among the signed-in account's own pets.
+  const wanted = petIdOrName.trim().toLowerCase();
+  const pet = usePetStore
+    .getState()
+    .pets.find((p) => p.id === petIdOrName || p.name.trim().toLowerCase() === wanted);
+  const refusal = seedRefusal({ isDev: __DEV__, email, pet });
+  if (refusal || !pet) {
+    console.warn(`[lookDevSeed] refused: ${refusal}`);
+    return 0;
+  }
+  const species = lookSpeciesOf(pet.species) as LookSpecies;
+  const petId = pet.id;
+
+  const nowMs = Date.now();
+  const answered = new Set((await loadLookDays(petId)).map((r) => r.localDay));
+  const vomitDays = await seededVomitDays(petId);
   let written = 0;
 
-  for (const day of buildLookSeed(resolved)) {
-    // 7:04 PM local, the same hour every day — the hour prints on every entry (§5.4),
-    // and a constant one makes a seeded day obvious at a glance.
-    const at = new Date(now - day.daysAgo * 86_400_000);
-    at.setHours(19, 4, 0, 0);
+  for (const day of buildLookSeed(species)) {
+    const at = seedLookInstant(day.daysAgo, nowMs);
+    const key = localDayForLook(at);
 
-    await insertLook({
-      petId,
-      species: resolved,
-      outcome: day.outcome,
-      words: day.words,
-      occurredAt: at,
-      // 'manual': the point was chosen, not seeded from the clock (C-10 — a defaulted
-      // timestamp is the app's claim, and this one is not the app's).
-      occurredAtSource: 'manual',
-    });
-    written += 1;
+    if (!answered.has(key)) {
+      await insertLook({
+        petId,
+        species,
+        outcome: day.outcome,
+        words: day.words,
+        occurredAt: at,
+        // 'manual': the point was chosen, not seeded from the clock (C-10 — a defaulted
+        // timestamp is the app's claim, and this one is not the app's).
+        occurredAtSource: 'manual',
+      });
+      answered.add(key);
+      written += 1;
+    }
 
-    if (day.vomit) {
-      const vomitAt = new Date(at.getTime() - 3 * 60 * 60 * 1000);
-      const iso = new Date().toISOString();
-      await db.runAsync(
-        `INSERT INTO events
-           (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source,
-            occurred_at_confidence, created_at, updated_at, synced)
-         VALUES (?, ?, 'vomit', ?, NULL, ?, 'manual', 'manual', 'witnessed', ?, ?, 0)`,
-        [uuid(), petId, vomitAt.toISOString(), SEED_MARKER, iso, iso],
-      );
+    // A seeded vomit is never today's (buildLookSeed's rule, pinned by its test), so it is
+    // always in the past and always on its look's day.
+    if (day.vomit && !vomitDays.has(key)) {
+      const vomitAt = new Date(at.getTime() - SEED_VOMIT_LEAD_MS);
+      await insertSimpleEvent({
+        petId,
+        eventType: 'vomit',
+        confidence: 'witnessed',
+        occurredAt: vomitAt,
+        earliest: null,
+        latest: null,
+        source: 'manual',
+        notes: SEED_MARKER,
+      });
+      vomitDays.add(key);
     }
   }
 
-  console.log(`[lookDevSeed] wrote ${written} looks for ${petId}`);
+  // Screens re-read what just landed locally, as they do after a hydration.
+  useSyncStore.getState().bumpHydrationTick();
+  console.log(`[lookDevSeed] wrote ${written} looks for ${pet.name}`);
   return written;
+}
+
+/** The local days that already hold a vomit this seed wrote (its SEED_MARKER note). */
+async function seededVomitDays(petId: string): Promise<Set<string>> {
+  const rows = await getDb().getAllAsync<{ occurred_at: string }>(
+    `SELECT occurred_at FROM events
+      WHERE pet_id = ? AND event_type = 'vomit' AND notes = ? AND deleted_at IS NULL`,
+    [petId, SEED_MARKER],
+  );
+  return new Set(rows.map((r) => localDayForLook(new Date(r.occurred_at))));
 }
