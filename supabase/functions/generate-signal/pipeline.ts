@@ -78,6 +78,7 @@ import {
 // (photoComposition.test.ts); attaches retained-food/hair/bile counts (present-only, tristate) onto
 // the vomit timing findings AFTER detection, so the engine's output is untouched.
 import { computePhotoComposition, type PhotoAnalysisInput } from './photoComposition.ts'
+import { findingIdentity } from '../../../lib/findingIdentity.ts'
 // B-422's effective end, from the ONE module that owns it. Imported across the
 // function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
 // — a second copy of `start + target + grace` living here is the failure mode.
@@ -971,8 +972,11 @@ export function canonicalRows(rows: SignalRows): SignalRows {
 const TIER_RANK: Record<string, number> = { soft: 0, standard: 1, firm: 2 }
 const BURDEN_TIER_RANK: Record<string, number> = { soon: 0, today: 1 }
 
-const safetyKey = (f: { type: string; symptomType?: unknown; incidentType?: unknown }): string =>
-  `${f.type}:${String(f.symptomType ?? f.incidentType ?? '')}`
+// A card's lane key is its finding identity (CUL-1213): the same derivation the phone folds on
+// and the shown log writes, so the carry can never treat two findings as one. A hand-rolled
+// `type:symptom|incident` key made a consecutive-low decline and a refusal one card, and over an
+// incomplete read that reproduced only the refusal the eating-less card was dropped as "shown".
+const safetyKey = (f: Finding): string => findingIdentity(f)
 
 /** The lanes whose card may be held or carried: the five safety lanes, by name. A prior row is
  *  written by the engine but readable and writable by its owner (ai_signals_owner), so a card of

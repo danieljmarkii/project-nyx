@@ -100,6 +100,26 @@ export function foldIdentity(finding: SignalFinding): string {
   return findingIdentity(finding);
 }
 
+/**
+ * Every identity more than one finding in the set claims (CUL-1213). The engine's findings
+ * are unique by construction (`findingIdentity.engine.test.ts` drives the real pipeline), and
+ * cached payloads already carry the symptom and the trigger, so this is empty on every set the
+ * phone holds today. It is the floor under a future lane that emits two findings about one
+ * noun (or a payload missing the field the key needs): a key two cards share is never folded
+ * or re-opened, and its screen loads `missing` rather than drawing the other card's evidence,
+ * because whichever card the reader acted on, the other would answer.
+ */
+export function sharedFoldIdentities(findings: readonly SignalFinding[]): ReadonlySet<string> {
+  const seen = new Set<string>();
+  const shared = new Set<string>();
+  for (const f of findings) {
+    const key = foldIdentity(f);
+    if (seen.has(key)) shared.add(key);
+    else seen.add(key);
+  }
+  return shared;
+}
+
 // ── The material-change table (§5.3) ──────────────────────────────────────────
 //
 // The rule: a field the sentence or the ask is built from, moving THE WAY THE PET MOVED
@@ -300,6 +320,9 @@ export const MATERIAL_FIELDS: Record<InsightType, MaterialSpec> = {
     arrivesWithPair: [],
     promoteOnly: [],
     laterInstant: [],
+    // `trigger` is in the identity since CUL-1213, so a trigger change is a new key and renders
+    // open: this entry can no longer fire, and stays only as the §5.3 table states it until the
+    // spec edit lands. `refusedFoodLabel` still moves under one key (a different food refused).
     anyChange: ['trigger', 'refusedFoodLabel'],
     reason: (_field, kind) => (kind === 'increase' ? 'intake_day' : 'ask_changed'),
   },
@@ -477,6 +500,8 @@ function sameFingerprint(a: FoldFingerprint, b: FoldFingerprint): boolean {
  *      read that did not answer never erases the witness a fold already holds.
  *   6. The set's facts (`set.*`, CUL-1273) are read from `findings` itself, so every card's
  *      fingerprint carries the pair it belongs to.
+ *   7. An entry whose key more than one finding in the set claims is deleted (CUL-1213), so
+ *      neither card renders folded or wears the other's Back-because line.
  *
  * `nowIso` is passed in, never read here: the only clock this function touches is the
  * timestamp it STAMPS on a release, and the decision never depends on it. Returns the
@@ -492,11 +517,14 @@ export function reconcileFolds(
 ): { entries: PetFoldEntries; changed: boolean } {
   const byKey = new Map<string, SignalFinding>();
   for (const f of findings) byKey.set(foldIdentity(f), f);
+  const shared = sharedFoldIdentities(findings);
   let changed = false;
   const next: PetFoldEntries = { ...entries };
   for (const [key, entry] of Object.entries(entries)) {
     const finding = byKey.get(key);
-    if (!finding) {
+    // 7. A key two findings claim is released (CUL-1213): its fingerprint is one card's and
+    //    the set holds two, so any verdict here would be about the wrong one.
+    if (!finding || shared.has(key)) {
       delete next[key];
       changed = true;
       continue;
