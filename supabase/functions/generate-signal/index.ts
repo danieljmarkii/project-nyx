@@ -39,7 +39,9 @@ import {
   CORRELATION_SYMPTOM_TYPES,
   RED_FLAG_INCIDENT_TYPES,
   type Finding,
+  type WeightLaneInput,
 } from './detection.ts'
+import { WEIGHT_RULES } from '../../../lib/weightStory.ts'
 // Engines v3 PR-11b (CUL-1267): every step between the reads and the phrasing, pure. This
 // file reads, phrases and writes; ./pipeline.ts decides what the Signal says.
 import {
@@ -64,6 +66,8 @@ import {
   type PriorSignal,
   type RegimenRow,
   type SymptomRow,
+  mapWeightCheckRows,
+  type WeightCheckRow,
 } from './pipeline.ts'
 // Abort the Claude phrasing/summary calls after a bounded timeout (CUL-258). Both
 // callers already fall back to the deterministic template on any throw, so a timeout
@@ -128,7 +132,7 @@ const PHRASING_MODEL = 'claude-haiku-4-5'
 // DEFAULT_CONFIG, the phrasing model and the Engines flags; engineStamps.ts). Bump it with
 // any change to detection, curation, decoration or phrasing that can change what a pet's
 // Signal says: the fingerprint cannot see a code change this number does not record.
-export const SIGNAL_ENGINE_VERSION = 'signal.7' // signal.7: PR-23 (CUL-1417), EN-9's care state behind engines_v3_en9 (flag off unchanged). signal.6: PR-32 (CUL-1141), EN-11 behind engines_v3_en11 (flag off unchanged). signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
+export const SIGNAL_ENGINE_VERSION = 'signal.8' // signal.8: PR-19 (CUL-1413), EN-8's weight lane behind engines_v3_en8 (flag off unchanged). signal.7: PR-23 (CUL-1417), EN-9's care state behind engines_v3_en9 (flag off unchanged). signal.6: PR-32 (CUL-1141), EN-11 behind engines_v3_en11 (flag off unchanged). signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
 
 const MS_PER_DAY = 86_400_000
 
@@ -187,7 +191,10 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
     finding.type === 'timeofday_clustering' ||
     // B-340 — a SAFETY finding naming what a photo VISIBLY showed, routed to the vet. Template-only
     // (no LLM) is itself a structural never-reassure guarantee, matching the other safety templates.
-    finding.type === 'incident_red_flag'
+    finding.type === 'incident_red_flag' ||
+    // Engines v3 PR-19 (EN-8, CUL-1413) — the weight row: two readings, their sources and the
+    // tier's ask. Template-only, which also saves the call (validatePhrasing refuses it anyway).
+    finding.type === 'weight_loss'
   ) {
     return fallback
   }
@@ -660,7 +667,7 @@ const handler = async (req: Request): Promise<Response> => {
     // pipeline, which withholds every reassuring or resolving entry and states counts as floors.
     // The dose pull counts only while the engine reads it: an unread pull cannot make this
     // run's record incomplete, and counting it would change output the dark gate holds still.
-    const incompletePulls = incompletePullNames({
+    const readPulls = incompletePullNames({
       symptoms: symptomsPull,
       meals: mealsPull,
       arrangements: arrangementsPull,
@@ -668,9 +675,9 @@ const handler = async (req: Request): Promise<Response> => {
       ...(SIGNAL_DOSE_LANES_ON ? { doseEvents: doseEventsPull } : {}),
       incidentAnalyses: incidentAnalysesPull,
     })
-    if (incompletePulls.length > 0) {
+    if (readPulls.length > 0) {
       // Error level on purpose: this is the line whose absence let CUL-975 run for a week.
-      console.error('generate-signal incomplete pulls:', petId, incompletePulls.join(', '))
+      console.error('generate-signal incomplete pulls:', petId, readPulls.join(', '))
     }
 
     const pet = petRes.data as { id: string; name: string; species: string; user_id: string | null } | null
@@ -705,6 +712,15 @@ const handler = async (req: Request): Promise<Response> => {
     const careRecord: CareRecord = en9On && careContextFacts !== null
       ? await readCareRecord(supabase, petId, lookbackIso, nowMs)
       : EMPTY_CARE_RECORD
+    // 1f. EN-8 (PR-19, CUL-1413): the weigh-ins and the birthday, read ONLY while the key is on,
+    //     so flag-off makes neither read. Null (a failed or partial read) means no weight card.
+    const en8On = isEngineKeyOn(engineFlags, 'engines_v3_en8')
+    const weightFacts: WeightLaneInput | null = en8On ? await readWeightFacts(supabase, petId, nowMs) : null
+    // A weight read that did not answer in full, under the key, makes this run's record
+    // incomplete (CUL-989): a weight card the owner already saw is CARRIED, dated, and the row
+    // takes the short lifetime, rather than vanishing without a word (final adversarial pass).
+    // Flag off adds nothing, so the list is the one from before the lane.
+    const incompletePulls = en8On && weightFacts === null ? [...readPulls, 'weights'] : readPulls
     const fingerprint = await engineFingerprint({
       engine: 'generate-signal',
       version: SIGNAL_ENGINE_VERSION,
@@ -759,6 +775,7 @@ const handler = async (req: Request): Promise<Response> => {
       engineFlags,
       careRecord,
       careContextFacts,
+      weightFacts,
     })
     // 4. Phrase — one sentence per finding, in parallel, each falling back to
     //    its template independently. The set is never blank because the LLM
@@ -935,6 +952,43 @@ type AckRow = { id: string; symptom_type: string; source: string; anchor_on: str
 type AckTrialRow = { id: string; started_at: string; ended_at: string | null; target_duration_days: number | null; target_duration_days_initial: number | null }
 type AckMedRow = { id: string; drug_name: string | null; started_at: string | null; ended_at: string | null; status: string | null; target_duration_days: number | null; target_duration_doses: number | null }
 type AckDoseRow = { id: string; occurred_at: string; medication_administrations: { medication_id: string | null } | { medication_id: string | null }[] | null }
+
+// EN-8 (PR-19, CUL-1413): the weight lane's facts. Every weigh-in in the predicate's window
+// (lib/weightStory.ts WEIGHT_RULES.windowDays, plus a day for the zone) whose parent event is not
+// soft-deleted, with its source, and the pet's birthday (unknown reads young, W5). Paged to the end
+// (CUL-975). A failed or partial read is null: no weight card this run, logged, never a card built
+// on part of the record (a missing June reading could hide the high, or invent one).
+export async function readWeightFacts(supabase: SupabaseClient, petId: string, nowMs: number): Promise<WeightLaneInput | null> {
+  try {
+    const sinceIso = new Date(nowMs - (WEIGHT_RULES.windowDays + 1) * 86_400_000).toISOString()
+    const [petRes, weightPull] = await Promise.all([
+      supabase.from('pets').select('date_of_birth').eq('id', petId).maybeSingle(),
+      fetchAll<WeightCheckRow>('weight_checks', (r) => r.id, (from, to) =>
+        supabase
+          .from('weight_checks')
+          .select('id, weight_kg, source, source_basis, events!inner(occurred_at)', { count: 'exact' })
+          .eq('pet_id', petId)
+          .is('events.deleted_at', null)
+          .gte('events.occurred_at', sinceIso)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)),
+    ])
+    if (petRes.error) {
+      console.warn('generate-signal: pets date_of_birth read failed, no weight lane:', petRes.error.message)
+      return null
+    }
+    if (incompletePullNames({ weights: weightPull }).length > 0) {
+      console.warn('generate-signal: the weight pull was incomplete, no weight lane:', petId)
+      return null
+    }
+    const dob = (petRes.data as { date_of_birth: string | null } | null)?.date_of_birth ?? null
+    return { readings: mapWeightCheckRows(weightPull.rows), dateOfBirth: dob }
+  } catch (err) {
+    console.warn('generate-signal: weight read failed, no weight lane:', err instanceof Error ? err.message : String(err))
+    return null
+  }
+}
 
 export async function readCareRecord(supabase: SupabaseClient, petId: string, lookbackIso: string, nowMs: number): Promise<CareRecord> {
   try {

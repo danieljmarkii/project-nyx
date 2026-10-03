@@ -280,7 +280,7 @@ function fakeClient(answer: (c: Call) => { data: unknown; error: unknown; count?
       const call: Call = { table, ops: [] }
       calls.push(call)
       const builder: Record<string, unknown> = {}
-      for (const op of ['select', 'eq', 'neq', 'is', 'lt', 'lte', 'gte', 'order', 'limit', 'range', 'in']) {
+      for (const op of ['select', 'eq', 'neq', 'is', 'lt', 'lte', 'gte', 'order', 'limit', 'range', 'in', 'maybeSingle']) {
         builder[op] = (...args: unknown[]) => {
           call.ops.push([op, args])
           return builder
@@ -346,6 +346,52 @@ Deno.test('EN-10 reads — no visit on record is an answer; a failed visit read 
   assertStrictEquals(thrown, null)
 })
 
+Deno.test('EN-8 reads — every weigh-in in the window with its source, and the birthday; a failed or partial read is no lane', async () => {
+  const { readWeightFacts } = await import('./index.ts')
+  const NOW = Date.parse('2026-10-03T12:00:00.000Z')
+  const ROWS = [
+    { id: 'w2', weight_kg: 3.73, source: 'clinic', source_basis: 'owner', events: { occurred_at: '2026-09-16T22:51:00.000Z' } },
+    { id: 'w1', weight_kg: '4.40', source: 'home_scale', source_basis: 'legacy', events: { occurred_at: '2026-06-15T09:00:00.000Z' } },
+    // Dropped, never guessed: an unknown source, a non-positive weight, a missing parent.
+    { id: 'w0', weight_kg: 4.1, source: 'scale', source_basis: 'entry', events: { occurred_at: '2026-06-01T09:00:00.000Z' } },
+    { id: 'wz', weight_kg: 0, source: 'home_scale', source_basis: 'entry', events: { occurred_at: '2026-06-02T09:00:00.000Z' } },
+    { id: 'wn', weight_kg: 4.2, source: 'home_scale', source_basis: 'entry', events: null },
+  ]
+  const { client, calls } = fakeClient((c) =>
+    c.table === 'pets' ? { data: { date_of_birth: '2023-09-01' }, error: null } : { data: ROWS, error: null, count: ROWS.length },
+  )
+  const facts = await readWeightFacts(client, 'pet-1', NOW)
+  assertEquals(facts, {
+    readings: [
+      { kg: 3.73, occurredAt: '2026-09-16T22:51:00.000Z', source: 'clinic', sourceBasis: 'owner' },
+      { kg: 4.4, occurredAt: '2026-06-15T09:00:00.000Z', source: 'home_scale', sourceBasis: 'legacy' },
+    ],
+    dateOfBirth: '2023-09-01',
+  })
+  const w = calls.find((c) => c.table === 'weight_checks')!
+  assertEquals(w.ops.filter(([op]) => op !== 'range'), [
+    ['select', ['id, weight_kg, source, source_basis, events!inner(occurred_at)', { count: 'exact' }]],
+    ['eq', ['pet_id', 'pet-1']],
+    ['is', ['events.deleted_at', null]],
+    ['gte', ['events.occurred_at', '2025-10-02T12:00:00.000Z']],
+    ['order', ['created_at', { ascending: false }]],
+    ['order', ['id', { ascending: false }]],
+  ])
+  // A partial pull (the count says more rows exist) and a failed read are no lane, never part of one.
+  const partial = await readWeightFacts(
+    fakeClient((c) => (c.table === 'pets' ? { data: { date_of_birth: null }, error: null } : { data: ROWS.slice(0, 1), error: null, count: 9 })).client,
+    'pet-1', NOW,
+  )
+  assertStrictEquals(partial, null)
+  const failed = await readWeightFacts(
+    fakeClient((c) => (c.table === 'pets' ? { data: null, error: { message: 'x' } } : { data: ROWS, error: null, count: ROWS.length })).client,
+    'pet-1', NOW,
+  )
+  assertStrictEquals(failed, null)
+  const thrown = await readWeightFacts(fakeClient(() => { throw new Error('network') }).client, 'pet-1', NOW)
+  assertStrictEquals(thrown, null)
+})
+
 Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the pipeline', async () => {
   const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
   const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
@@ -367,6 +413,21 @@ Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the
   const call = src.slice(src.indexOf('runSignalPipeline({'), src.indexOf('})', src.indexOf('runSignalPipeline({')))
   assertStrictEquals(/\bcareContextFacts,/.test(call), true, 'the shell no longer hands the pipeline its EN-10 facts')
   assertStrictEquals(/\bcareRecord,/.test(call), true, 'the shell no longer hands the pipeline its care record')
+  // EN-8 (PR-19, CUL-1413): the weigh-ins are read behind their key, once, and handed in.
+  assertStrictEquals(
+    /const en8On = isEngineKeyOn\(engineFlags, 'engines_v3_en8'\)/.test(src) && /en8On \? await readWeightFacts\(/.test(src),
+    true,
+    'the weight reads are no longer behind engines_v3_en8',
+  )
+  assertStrictEquals(src.split('readWeightFacts(').length - 1, 2, 'readWeightFacts is defined once and called once')
+  assertStrictEquals(src.split(".from('weight_checks')").length - 1, 1, 'weight_checks is read outside readWeightFacts')
+  assertStrictEquals(/\bweightFacts,/.test(call), true, 'the shell no longer hands the pipeline its weight facts')
+  // A failed weight read under the key makes the run incomplete, so a shown card is carried.
+  assertStrictEquals(
+    /const incompletePulls = en8On && weightFacts === null \? \[\.\.\.readPulls, 'weights'\] : readPulls/.test(src),
+    true,
+    'a failed weight read no longer marks the run incomplete',
+  )
   // EN-11 (PR-32, CUL-1141): the fingerprint hashes the config the pipeline detects with, chosen
   // on the same literal key pipeline.ts reads (a second site the pipeline guard cannot see).
   assertStrictEquals(
