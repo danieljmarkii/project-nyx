@@ -201,3 +201,64 @@ describe('the trial card names the local trial, as its screen does', () => {
     expect(mockLoadSignalRowTrial).not.toHaveBeenCalled();
   });
 });
+
+// ── EN-9's care state on Home (Engines v3 PR-35, CUL-1418; mock round 3 §01, D6) ──────────
+describe('a concern with a care state', () => {
+  const chronic = SAFETY[0] as Extract<SignalFinding, { type: 'symptom_chronicity' }>;
+  const withState = (state: string, text: string | null): CachedFinding =>
+    cached({ ...chronic, careState: { state, text } } as unknown as SignalFinding);
+
+  it('"Your vet knows": the tag, the sign, the server’s sentence and what the state does, with no ask', () => {
+    const r = render(
+      <SignalRow
+        cached={withState('with_vet', "Biscuit's vomiting, your vet knows. You said Biscuit's vet started the trial for it. Since Sep 1, 30 days: 9 episodes, with something logged on 29 of 30.")}
+        petId="p1"
+        onOpen={() => {}}
+        generatedAt={null}
+      />,
+    );
+    expect(r.getByTestId('signal-row-care-tag').props.children).toBe('Your vet knows');
+    expect(r.getByTestId('signal-row-headline').props.children).toBe('Vomiting');
+    expect(r.getByTestId('signal-row-care-body').props.children).toBe(
+      "You said Biscuit's vet started the trial for it. Since Sep 1, 30 days: 9 episodes, with something logged on 29 of 30.",
+    );
+    expect(r.getByTestId('signal-row-care-line').props.children).toBe('Not asking you to book. Back here if it comes more often.');
+    expect(r.queryByTestId('signal-row-ask')).toBeNull();
+    // One sentence, read whole, and never the words §7 forbids.
+    const label = r.getByTestId('signal-row').props.accessibilityLabel as string;
+    expect(label.startsWith('Vomiting, your vet knows. You said')).toBe(true);
+    expect(label).not.toMatch(/\b(seen|acknowledged|resolved|watching|stood down)\b/i);
+  });
+
+  it('a booked recheck names its date and drops the "comes back" line', () => {
+    const r = render(
+      <SignalRow cached={withState('recheck_booked', "Biscuit's vomiting, your vet knows. You said on Sep 30 Biscuit's vet knows. Recheck booked for Oct 27.")} petId="p1" onOpen={() => {}} generatedAt={null} />,
+    );
+    expect(r.getByTestId('signal-row-care-body').props.children).toBe("You said on Sep 30 Biscuit's vet knows. Recheck booked for Oct 27.");
+    expect(r.queryByTestId('signal-row-care-line')).toBeNull();
+  });
+
+  it('back on a tested change: the "Back because" line above the shipped headline, and the ask intact', () => {
+    const r = render(
+      <SignalRow cached={withState('raised_again', 'Back because the vomiting is coming more often. Lane sentence.')} petId="p1" onOpen={() => {}} generatedAt={null} />,
+    );
+    expect(r.getByTestId('signal-row-back').props.children).toBe('Back because the vomiting is coming more often.');
+    expect(r.getByTestId('signal-row-ask')).toBeTruthy();
+    expect(r.queryByTestId('signal-row-care-tag')).toBeNull();
+  });
+
+  it('raised, or no state at all, is today’s row exactly (flag-off is byte-identical)', () => {
+    const plain = render(<SignalRow cached={cached(chronic)} petId="p1" onOpen={() => {}} generatedAt={null} />).toJSON();
+    const raised = render(<SignalRow cached={withState('raised', null)} petId="p1" onOpen={() => {}} generatedAt={null} />).toJSON();
+    // Serialized: the handlers are fresh closures per render, the tree is what is compared.
+    expect(JSON.stringify(raised)).toBe(JSON.stringify(plain));
+    expect(JSON.stringify(plain)).toContain('worth booking a vet visit');
+  });
+
+  it('opens its own finding, and writes nothing', () => {
+    const onOpen = jest.fn();
+    const r = render(<SignalRow cached={withState('with_vet', "Biscuit's vomiting, your vet knows. You said on Sep 30 Biscuit's vet knows.")} petId="p1" onOpen={onOpen} generatedAt={null} />);
+    fireEvent.press(r.getByTestId('signal-row'));
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ type: 'symptom_chronicity' }));
+  });
+});
