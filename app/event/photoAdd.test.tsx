@@ -47,6 +47,8 @@ jest.mock('../../lib/analysis', () => ({
   awaitAnalysisChain: (...a: unknown[]) => mockAwaitChain(...a),
 }));
 jest.mock('../../lib/haptics', () => ({ destructiveConfirm: jest.fn() }));
+const mockTriggerRegen = jest.fn();
+jest.mock('../../lib/signal', () => ({ triggerSignalRegenDebounced: (...a: unknown[]) => mockTriggerRegen(...a) }));
 jest.mock('../../components/event/VomitAnalysisSection', () => ({ VomitAnalysisSection: () => null }));
 jest.mock('../../components/event/StoolAnalysisSection', () => ({ StoolAnalysisSection: () => null }));
 jest.mock('react-native-safe-area-context', () => {
@@ -177,6 +179,9 @@ describe('event detail — adding a photo to a record', () => {
     expect(mockTriggerVomit).toHaveBeenCalledWith('evt-1');
     // The chain settles TRUE only because its read was actually made.
     expect(mockSettle).toHaveBeenCalledWith(true);
+    // CUL-1219 (BRK-44): the new photo and its read reach the Signal, once the read had its turn.
+    expect(mockTriggerRegen).toHaveBeenCalledWith('pet-A');
+    expect(mockTriggerRegen.mock.invocationCallOrder[0]).toBeGreaterThan(mockTriggerVomit.mock.invocationCallOrder[0]);
   });
 
   it('an upsert error leaves the row for the retry queue: not synced, no read, claim settled false', async () => {
@@ -187,6 +192,8 @@ describe('event detail — adding a photo to a record', () => {
     expect(runCalls(INSERT)).toHaveLength(1);
     expect(runCalls(MARK_SYNCED)).toHaveLength(0);
     expect(mockTriggerVomit).not.toHaveBeenCalled();
+    // Nothing reached the server, so no rebuild is spent on it (CUL-1087's cap, CUL-1219).
+    expect(mockTriggerRegen).not.toHaveBeenCalled();
     // FALSE, so a section waiting on this chain triggers its own read rather than
     // watching for a row nothing is going to write.
     expect(mockSettle).toHaveBeenCalledWith(false);

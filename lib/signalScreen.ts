@@ -48,7 +48,7 @@ import { loadDietTrialFacts, loadTrialPredicateFacts } from './dietTrialFacts';
 import { classifyEpisodeSet, collapseEpisodes, DEFAULT_MEAL_TIMING_CONFIG, type OnsetConfidence } from './mealTiming';
 import { drugDisplayName } from './medications';
 import { CORRELATION_SYMPTOM_TYPES, readFeedingRows, readFreeFedSpans, TIMING_SYMPTOM_TYPE } from './patternsTiming';
-import { readSignalCache, type CachedFinding, type SignalFinding } from './signal';
+import { readSignalCacheOrLast, type CachedFinding, type SignalFinding } from './signal';
 import { careContextLinesOf } from './careContext';
 import {
   engineCompareMode,
@@ -126,6 +126,10 @@ export interface SignalScreenEpisode {
   /** Minutes since the preceding logged meal where the engine could time it; null where not. */
   minutesSinceMeal: number | null;
   photo: SignalScreenPhoto | null;
+  /** When the row `eventId` names was logged, where that is not the bout's onset — the
+   *  re-log that holds the photo (CUL-1219, BRK-8). A tile speaks the time of the record it
+   *  opens; every count still keys on the bout's `dayKey`. Absent reads as `occurredAt`. */
+  openedAt?: string;
   /** Every logged row the engine's re-log collapse folded into this episode, the tile's
    *  own row among them. The loader reads the bout's verdicts from it; the builder never
    *  does. Absent reads as the one row `eventId` names. */
@@ -281,11 +285,15 @@ function galleryOf(inWeeks: readonly SignalScreenEpisode[], verdicts: SignalScre
     .filter((e): e is SignalScreenEpisode & { photo: SignalScreenPhoto } => e.photo != null)
     .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt));
   const tiles: GalleryTile[] = photographed.map((e) => {
-    const d = new Date(e.occurredAt);
+    // The tile names the record it opens (BRK-8): a bout whose photo sits on its re-log
+    // says the re-log's time, which is the time that record's screen shows.
+    const opened = e.openedAt ?? e.occurredAt;
+    const d = new Date(opened);
+    const day = Number.isNaN(d.getTime()) ? e.dayKey : toLocalDayKey(d);
     return {
       eventId: e.eventId,
-      occurredAt: e.occurredAt,
-      dateWord: formatCalendarDate(e.dayKey) ?? e.dayKey,
+      occurredAt: opened,
+      dateWord: formatCalendarDate(day) ?? day,
       timeWord: Number.isNaN(d.getTime()) ? '' : formatTime(d),
       verdict: verdicts[e.eventId] ?? null,
       photo: e.photo,
@@ -785,7 +793,15 @@ function scriptMaskingOf(input: SignalScreenInput): PhoneScriptMasking | null {
 // ── The loader ────────────────────────────────────────────────────────────────
 
 export type SignalScreenLoad =
-  | { status: 'ready'; model: SignalScreenModel; petName: string }
+  | {
+      status: 'ready';
+      model: SignalScreenModel;
+      petName: string;
+      /** Set when the finding came from the last row this process read because the network
+       *  read failed (CUL-1219, GAP-7): the line that says how old the sentence is. Null on
+       *  a live read. */
+      asOfLine: string | null;
+    }
   /** No cache row for this pet, or the finding is no longer in it. */
   | { status: 'missing'; petName: string }
   /** The finding is in the cache and this build has no title rule for its type (CUL-1218,
@@ -866,6 +882,7 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
   // The bout's photo, and the ROW that holds it — the tile opens that record and the
   // verdict is read for that row, since the read is keyed on the photographed event.
   const photoByEpisode = new Map<string, { eventId: string; photo: SignalScreenPhoto }>();
+  const occurredAtById = new Map(stamped.map((r) => [r.id, r.occurred_at]));
   for (const e of episodes) {
     for (const id of members.get(e.id) ?? [e.id]) {
       const photo = photoByRow.get(id);
@@ -895,6 +912,7 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
       dayKey: toLocalDayKey(new Date(e.ms)),
       minutesSinceMeal: minutesByOnset.get(e.ms) ?? null,
       photo: held ? held.photo : null,
+      ...(held && held.eventId !== e.id ? { openedAt: occurredAtById.get(held.eventId) ?? e.occurred_at } : {}),
       boutIds: members.get(e.id) ?? [e.id],
     };
   });
@@ -1120,7 +1138,13 @@ export function tileVerdictOf(
 export async function loadSignalScreen(petId: string, identity: string, nowMs: number = Date.now()): Promise<SignalScreenLoad> {
   const pets = usePetStore.getState().pets;
   const petName = resolveRecordPetName(pets, petId);
-  const row = await readSignalCache(petId);
+  // Offline, the last row this process read stands in, and says when it was written
+  // (CUL-1219): the episodes, photos and days below are all the phone's own.
+  const read = await readSignalCacheOrLast(petId);
+  // The kept row speaks only for a pet this account's list holds: a link carrying another
+  // pet's id never opens from memory (rls-privacy-reviewer, CUL-1219). Online, RLS decides.
+  if (read.fromLast && !pets.some((p) => p.id === petId)) throw new Error('offline, and the pet is not in this account’s list');
+  const { row, fromLast } = read;
   // CUL-1213: two findings answering to one identity is a route that cannot say which it
   // meant, so the screen refuses to pick rather than drawing one card's evidence under the
   // other's title.
@@ -1249,7 +1273,17 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     masking,
     generatedOn,
   });
-  return { status: 'ready', model, petName };
+  return { status: 'ready', model, petName, asOfLine: fromLast ? asOfLineOf(row?.generatedAt ?? null, nowMs) : null };
+}
+
+/** The offline line (CUL-1219): when the engine wrote the sentence the screen is showing.
+ *  Says it could not check, never that nothing changed. */
+export function asOfLineOf(generatedAt: string | null, nowMs: number): string {
+  const d = generatedAt ? new Date(generatedAt) : null;
+  if (!d || Number.isNaN(d.getTime())) return "Couldn't refresh just now. This is the last picture I had.";
+  const day = toLocalDayKey(d);
+  const when = day === toLocalDayKey(new Date(nowMs)) ? `today at ${formatTime(d)}` : `${formatCalendarDate(day) ?? day} at ${formatTime(d)}`;
+  return `Couldn't refresh just now. Last updated ${when}.`;
 }
 
 /** The set-aside screen's words: what is on board, why the comparison is set aside, the vet.
