@@ -11,6 +11,7 @@ import { useEventStore } from '../store/eventStore';
 import { useSnackbarStore } from '../store/snackbarStore';
 import { useAskStore } from '../store/askStore';
 import { useHistoryListStore } from '../store/historyListStore';
+import { useSyncStore } from '../store/syncStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 import { clearCachedAppConfig } from './appConfig';
 import { clearBetaOptIns } from './betaFeatures';
@@ -196,6 +197,10 @@ export async function wipeLocalSession(): Promise<void> {
   // Pre-existing, and named here because this issue added `previousSnapshotKg` — a
   // second health value — to that payload. Same FR-9 parity rule as the App Group and
   // notification wipes above: wipe every place account data rests, not just SQLite.
+  // CUL-1255 (rls-privacy-reviewer): `hide()` first, for its timers, not its state. A card
+  // presented with `delayMs` (the picker path's ~450ms) holds a pending reveal that would
+  // otherwise fire after this line and paint the previous owner's record back up.
+  useMomentStore.getState().hide();
   useMomentStore.setState({ visible: false, payload: null, removed: false });
   // The same leak through the root-mounted SHEETS. The log sheet and the intake door
   // each open on a request in the UI store and mount in the root layout, so a sign-out
@@ -228,6 +233,11 @@ export async function wipeLocalSession(): Promise<void> {
       useAskStore.getState().startNew();
     }],
     ['history', () => useHistoryListStore.getState().reset()],
+    // CUL-1255: the queue counts behind the sync banner. An owner who signed out past
+    // the "entries still on this phone" warning left them here, and the next account's
+    // banner said its entries were waiting until its own first cycle finished. The
+    // wipe above emptied the queue, so zero is the truth.
+    ['sync counts', () => useSyncStore.getState().setPendingStatus(0, null, 0)],
   ];
   for (const [what, clear] of inMemory) {
     try {
