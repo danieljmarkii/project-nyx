@@ -509,8 +509,8 @@ const WALK: WalkRow[] = [
     sneeze: { now: true, decision: 'YES — typed and nameable at W1 though not fetched (§9). Same reading as cough.' },
     check_in: {
       now: true,
-      decision: 'YES, AS AN EXCLUSION ONLY (CUL-1420, Engines v3 PR-22) — exactly one occurrence, '
-        + '`.neq(\'event_type\', \'check_in\')` in index.ts readCareContextFacts, which keeps a look OUT '
+      decision: 'YES, AS AN EXCLUSION ONLY (CUL-1420, Engines v3 PR-22; named by CUL-1417, PR-23) — exactly one occurrence, '
+        + 'the constant DAILY_LOOK_EVENT_TYPE in index.ts, used only as `.neq(\'event_type\', …)` by the two logging pulls (EN-10\'s and EN-9\'s history), which keeps a look OUT '
         + 'of EN-10\'s "something logged on k of n" (a look never enters another surface\'s coverage '
         + 'line). Pinned below to that one occurrence. The ruling it replaced, kept for the record: '
         + 'NO — ZERO OCCURRENCES, which is a stronger claim than any single list can make and '
@@ -991,6 +991,15 @@ describe('the engine names the daily look only to exclude it (CUL-1420)', () => 
           .filter((line) => line.includes('check_in'))
           .map((line) => `${f}: ${line.trim()}`),
       );
-    expect(hits).toEqual(["index.ts: .neq('event_type', 'check_in')"]);
+    // EN-9 (PR-23, CUL-1417): a second logging pull (the care history behind the lookback) made
+    // the exclusion a named constant, so the value still occurs exactly once…
+    expect(hits).toEqual(["index.ts: const DAILY_LOOK_EVENT_TYPE = 'check_in'"]);
+  });
+
+  it('…and every use of that name is the logging pulls\u2019 exclusion, never a read of a look', () => {
+    const src = blankComments(readFileSync(join(ROOT, 'supabase/functions/generate-signal/index.ts'), 'utf8'));
+    const uses = src.split('\n').filter((line) => line.includes('DAILY_LOOK_EVENT_TYPE')).map((line) => line.trim());
+    expect(uses[0]).toBe("const DAILY_LOOK_EVENT_TYPE = 'check_in'");
+    expect(uses.slice(1)).toEqual([".neq('event_type', DAILY_LOOK_EVENT_TYPE)", ".neq('event_type', DAILY_LOOK_EVENT_TYPE)"]);
   });
 });

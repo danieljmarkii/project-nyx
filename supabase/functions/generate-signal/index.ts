@@ -861,6 +861,12 @@ const handler = async (req: Request): Promise<Response> => {
 //
 // Fails toward NO LINES: a failed read or an incomplete logging pull returns null, logged. A
 // line with a wrong window, or a coverage count that is a floor, is worse than no line.
+// The one place the engine names the daily look's parent event, and only to keep it OUT of every
+// "something logged" read (a look never enters another surface's coverage line). Both logging
+// pulls (EN-10's and EN-9's history) exclude it by this name; constants/eventTypes.membership
+// .test.ts pins this as the only occurrence under generate-signal/ and every use as a `.neq`.
+const DAILY_LOOK_EVENT_TYPE = 'check_in'
+
 export async function readCareContextFacts(
   supabase: SupabaseClient,
   petId: string,
@@ -884,7 +890,7 @@ export async function readCareContextFacts(
           .from('events')
           .select('id, occurred_at', { count: 'exact' })
           .eq('pet_id', petId)
-          .neq('event_type', 'check_in')
+          .neq('event_type', DAILY_LOOK_EVENT_TYPE)
           .is('deleted_at', null)
           .gte('occurred_at', lookbackIso)
           .order('occurred_at', { ascending: false })
@@ -1068,7 +1074,7 @@ async function readCareHistory(
         .from('events')
         .select('id, event_type, occurred_at', { count: 'exact' })
         .eq('pet_id', petId)
-        .neq('event_type', 'check_in')
+        .neq('event_type', DAILY_LOOK_EVENT_TYPE)
         .is('deleted_at', null)
         .gte('occurred_at', sinceIso)
         .lt('occurred_at', lookbackIso)
