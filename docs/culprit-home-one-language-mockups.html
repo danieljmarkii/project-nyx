@@ -2,7 +2,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
 <style>
   /* ============================================================
-     One Home Language, ROUND 1 (CUL-1519, from the CUL-1496 critique,
+     One Home Language, ROUND 2 (CUL-1519; round 1 is commit 5d64bcb, from the CUL-1496 critique,
      docs/home-design-language-critique-2026-10.md).
      Layout: the house mock page (paper, serif section heads, phone frames
      in wrapping rows). Frames render the app's REAL light tokens
@@ -192,153 +192,125 @@
   .pil { display: inline-block; font-size: var(--xs); letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; border-radius: 999px; padding: 1px 6px; }
   .cov { display: flex; align-items: center; gap: 10px; font-size: var(--md); }
   .cov span { flex: 1; min-width: 0; }
+  /* round 2: the reaction ledger */
+  .ledger { display: grid; gap: 8px; margin: 22px 0 8px; max-width: 92ch; }
+  .ledger div { display: grid; grid-template-columns: 190px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  @media (max-width: 640px) { .ledger div { grid-template-columns: 1fr; gap: 4px; } }
+  .ledger b { font-size: 13px; color: var(--ink); padding-top: 2px; }
+  .ledger q { font-style: italic; quotes: "\201C" "\201D"; }
+  .pill { display: inline-flex; align-items: center; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
 </style>
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 1</span><span>CUL-1519 · from the CUL-1496 critique</span><span>Design v2 · Step 3b</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 2</span><span>CUL-1519 · from the CUL-1496 critique</span><span>Design v2 · Step 3b</span></p>
     <h1>One Home Language</h1>
-    <p class="standfirst">You said Home feels like it speaks <strong>different design languages</strong>, and the critique agreed. This page draws the fix on Nyx's real Friday, Oct 2: three safety cards, one pattern, a rabbit trial on day 69, prednisone with breakfast, a cough at 11:06. <strong>Five decisions,</strong> each drawn side by side.</p>
+    <p class="standfirst">Round 2 draws your reactions as <strong>one proposal</strong> on Nyx's real Friday, Oct 2. Three decisions are ruled. <strong>Two are left:</strong> what colour means "you can tap this" (now with your indigo idea drawn), and whether the patterns fold under a safety card.</p>
+    <div class="ledger" aria-label="What your reactions ruled">
+      <div><b>R-1 · Card and door mark</b><span><q>I like your A recommendation.</q> <span class="pill">ruled A</span> One soft-shadow surface for every card, rails in the gutter so text starts at one edge, a plain › on every door, the circle on the Signal's lead only. Drawn in every frame.</span></div>
+      <div><b>R-2 · The trial card</b><span><q>Love adding the end date. I find myself constantly thinking, when is this over.</q> <span class="pill">ruled B, end date always</span> The card is its title, a neutral bar and one line that <em>always starts with the end date</em>, then the off-diet count when there is one: <em>Ends Oct 17 · 3 off-diet feedings logged.</em> Coverage and the vomiting pair move to the trial screen.</span></div>
+      <div><b>R-3 · Beside a safety card</b><span><q>I still like at least the date appearing.</q> <span class="pill">ruled B</span> Under a safety card the card keeps the end date and the off-diet count; nothing that reads as good news. With R-2's line that is the same card on every day, so the rule costs nothing to see. Dr. Chen's read is below the frames.</span></div>
+      <div><b>R-4 · What teal means</b><span><q>Not sure. Should we work in more of the dark blue/purple? It's not really anywhere in the app.</q> <span class="pill open">open, redrawn</span> Your indigo idea is drawn as option C in §02, beside A and B. It needs a brand rule changed, so it comes as a brief.</span></div>
+      <div><b>R-5 · Patterns fold</b><span>No reaction yet. <span class="pill open">open, carried</span> Unchanged in §03.</span></div>
+    </div>
     <div class="howto">
-      <b>How to read it.</b>
-      <ul>
-        <li><span class="tag cur" style="margin:0 4px 0 0">current</span> frames are the proposal: every team recommendation applied.</li>
-        <li><span class="tag opt" style="margin:0 4px 0 0">option</span> frames sit in dashed boxes. They are drawn for a decision, not proposed.</li>
-        <li><span class="tag built" style="margin:0 4px 0 0">as shipped</span> is today's build, redrawn from your screenshots.</li>
-        <li>Each section ends with a <b>React</b> line. One answer per decision is enough; the build issues get filed from your answers.</li>
-      </ul>
+      <b>How to read it.</b> <span class="tag cur" style="margin:0 4px 0 0">current</span> is the proposal. <span class="tag opt" style="margin:0 4px 0 0">option</span> boxes are still real choices. Round 1's G1, G2 and G3 option frames have left the page; the round 1 version is in git (commit <code>5d64bcb</code>).
     </div>
   </header>
 
   <section id="s1">
-    <div class="sec-head"><span class="sec-id">§01</span><h2>Home today, and Home with every recommendation</h2></div>
+    <div class="sec-head"><span class="sec-id">§01</span><h2>Home today, and Home with your rulings</h2></div>
     <div class="col">
-      <p>Scroll inside each phone. Both frames are cut at a real phone height, so the bottom edge is the first screenful. On the left, the two card surfaces, the jumping text edge and the mixed door marks are the language problem. On the right, one surface, one text edge, one door mark, and a trial card that says one thing.</p>
+      <p>Scroll inside each phone; the bottom edge is the first screenful. The colour toggle switches between the three answers to R-4. The proposal starts on C, the team's pick (§02).</p>
     </div>
     <div class="frames">
       <div class="slot"><span class="tag built">as shipped</span><div id="f-ship"></div>
-        <p class="cap"><b>Today's build</b>The Signal floats on a shadow; the others are outlined. Text starts in two places. The trial card holds seven lines and five numbers. "Left her food" is the last chip.</p></div>
+        <p class="cap"><b>Today's build</b>Two card surfaces, two text edges, three door marks, a seven-line trial card.</p></div>
       <div class="slot"><span class="tag cur">current</span>
         <div class="controls">
-          <span>Teal means</span>
-          <span class="seg" role="group" aria-label="Teal means"><button type="button" id="b-act" aria-pressed="true">you can act</button><button type="button" id="b-fact" aria-pressed="false">a good fact</button></span>
+          <span class="seg" role="group" aria-label="What the tap colour is"><button type="button" id="b-indigo" aria-pressed="true">C · indigo</button><button type="button" id="b-act" aria-pressed="false">A · teal acts</button><button type="button" id="b-fact" aria-pressed="false">B · teal is good</button></span>
           <span class="seg" role="group" aria-label="Text size"><button type="button" id="b-k1" aria-pressed="true">Default text</button><button type="button" id="b-k2" aria-pressed="false">Largest</button></span>
         </div>
         <div id="f-prop"></div>
-        <p class="cap"><b>The proposal</b>One surface. Rails sit in the gutter, so every card's text starts at one edge. A plain › on every door, the circle on the Signal's lead only. The pattern folds into a counted foot while a safety card leads. The trial card is its title, a neutral bar and the one line that could worry you. Teal has no recommendation (§05), so try both.</p></div>
+        <p class="cap"><b>The proposal</b>R-1, R-2 and R-3 applied. The trial card answers "when is this over" in its first words. The pattern row is folded per G6 (B), still open in §03.</p></div>
     </div>
   </section>
 
   <section id="s2">
-    <div class="sec-head"><span class="sec-id">§02 · G1</span><h2>One card surface, and one way to say "this opens"</h2></div>
+    <div class="sec-head"><span class="sec-id">§02 · G4</span><h2>What colour says "you can tap this"</h2></div>
     <div class="brief">
-      <p><strong>Deciding:</strong> the surface, inset and door mark every Home card uses.</p>
-      <p><strong>(A) One soft-shadow surface, rails in the gutter, a plain › on every card and row door; the circle stays on the Signal's lead only.</strong> <span class="rec">Recommended:</span> all three Design v2 mocks drew one surface, and the Signal's chevrons came from your own reaction on device (CUL-1270).</p>
-      <p>(B) The same surface, but rows in a list of doors carry no mark; the lead keeps its circle and a single-card door keeps its ›. Mobile IA's dissent: it frees the 22pt column that makes the asks wrap.</p>
-      <p><strong>Consequence:</strong> either one builds a shared <code>HomeCard</code> under the Design v2 namespace and retires the trial card's circle, which amends the TS-5 frame.</p>
+      <p><strong>Better than the rule.</strong> In-app brand rule 3 (Aug 2026, amended Sep 26 for the + button, CUL-322) says teal is the only colour for things you tap, and indigo is only ever a background. It protects against two accent colours fighting, and it kept the Signal off a dark ground (D8). Making indigo the action colour was parked as CUL-1279 until you had judged the indigo + button on your phone. You have it now.</p>
+      <p><strong>Deciding:</strong> which colour means "you can tap this" on Home, and so what teal is left to mean.</p>
+      <p>(A) Teal means "you can act". Links and the + glyph stay teal; MOST and GIVEN go grey. The Designer's and Data Viz's position.</p>
+      <p>(B) Teal means "a good fact". Meals, MOST and GIVEN stay teal; links go to ink. Jordan's position.</p>
+      <p><strong>(C) Indigo means "you can act", teal means "a good fact".</strong> <span class="rec">Recommended:</span> it settles the A-or-B split by giving each side its own colour, and puts the brand colour you said is missing into every door. The protection rule 3 kept still holds: indigo never becomes a ground behind the record, and the Signal stays light.</p>
+      <p><strong>Consequence:</strong> C is an app-wide change, not a Home one. Home alone in indigo would be a new inconsistency with History, Foods and the trial screen, the exact problem this milestone fixes. So C opens CUL-1279 as its own short round across screens, with a new action token, a rewrite of brand rule 3 and a full contrast check. Home's G1 to G3 build does not wait for it; only the colour of links does.</p>
     </div>
     <div class="frames">
-      <div class="slot"><span class="tag cur">current · A</span><div id="f-g1a"></div><p class="cap"><b>A: › on every door</b>Every row says it opens. The circle marks the one row that leads.</p></div>
-      <div class="optbox"><span class="tag opt">option · B</span><div id="f-g1b"></div><p class="cap"><b>B: no mark on list rows</b>Quieter, and the asks wrap less. The rows rely on looking like rows to read as tappable.</p></div>
-    </div>
-    <p class="react"><b>React R-1</b>A or B? And does the shared surface feel calmer than the shadow and outline mix in §01?</p>
-  </section>
-
-  <section id="s3">
-    <div class="sec-head"><span class="sec-id">§03 · G2</span><h2>The trial card, in the Signal's grammar</h2></div>
-    <div class="brief">
-      <p><strong>Deciding:</strong> whether the trial card keeps TS-5's lines or becomes a title, a bar and one line.</p>
-      <p>(A) TS-5 as drawn, without the food name it never had: coverage, off-diet count, the vomiting pair.</p>
-      <p><strong>(B) Title, neutral bar, one line chosen accusing-first: the off-diet count when there is one, otherwise the end date. Everything else moves to the trial screen.</strong> <span class="rec">Recommended:</span> five numbers become one, about 95pt of the first screen comes back, and the two counts that could not name their window leave Home.</p>
-      <p>(C) B, plus the vomiting sentence whenever the safety and steroid gates allow it. Jordan's preference. Before the line leaves Home, Dr. Chen and the Data Scientist confirm the Signal still catches a smaller rise during a trial.</p>
-      <p><strong>Consequence:</strong> B makes CUL-1374's one-line card the everyday card and settles most of G3 by construction.</p>
-    </div>
-    <p class="col" style="font-size:14.5px;color:var(--ink-2)">Drawn on a calm day (no safety card, no masking drug), so every line each option allows is visible. On Nyx's real Oct 2 the vomiting pair is hidden in every option, because prednisone masks it (CUL-1443).</p>
-    <div class="frames">
-      <div class="optbox"><span class="tag opt">option · A</span><div id="f-g2a"></div><p class="cap"><b>A: TS-5's lines</b>Coverage now names its window (CUL-1498). Still three numbers and a pair.</p></div>
-      <div class="slot"><span class="tag cur">current · B</span><div id="f-g2b"></div><p class="cap"><b>B: one line</b>On a trial with nothing off-diet the line reads "Ends Oct 17".</p></div>
-      <div class="optbox"><span class="tag opt">option · C</span><div id="f-g2c"></div><p class="cap"><b>C: one line, plus the pair when allowed</b>The pair would vanish on any day a safety card or a masking drug is live.</p></div>
-    </div>
-    <p class="react"><b>React R-2</b>A, B or C? If B, is "3 off-diet feedings logged" the right one thing to keep?</p>
-  </section>
-
-  <section id="s4">
-    <div class="sec-head"><span class="sec-id">§04 · G3</span><h2>What the trial card may say while a safety card is up</h2></div>
-    <div class="brief">
-      <p><strong>Deciding:</strong> what the trial card prints when a safety card leads the Signal. A clinical call: you and Dr. Chen.</p>
-      <p>(A) Title and bar only, under any safety card. The Designer's preference.</p>
-      <p><strong>(B) Drop every line that reads as good news (the coverage ratio, a falling vomiting pair) and keep the off-diet count.</strong> <span class="rec">Recommended:</span> it extends your Sep 27 ruling (the lane hides under a safety card) from the lane to the words, and keeps the slip the vet needs to hear about.</p>
-      <p>(C) Only when the safety card is about the same sign: the pair drops to the trial's own count. Jordan's preference.</p>
-      <p>(D) As shipped.</p>
-      <p><strong>Consequence:</strong> one predicate the trial screen inherits. If you take G2 (B), the card already prints only the accusing line, so this decision only bites on G2 (A) or (C). That is why these four are drawn on A's lines.</p>
-    </div>
-    <p class="col" style="font-size:14.5px;color:var(--ink-2)">Nyx's real lead: a photo read of a vomit, "Possible foreign material", worth a call. The pair is drawn as it would print without the steroid, so the four rules are visible.</p>
-    <div class="frames">
-      <div class="optbox"><span class="tag opt">option · A</span><div id="f-g3a"></div><p class="cap"><b>A: title and bar</b>Nothing that could read as reassurance, and nothing that accuses either.</p></div>
-      <div class="slot"><span class="tag cur">current · B</span><div id="f-g3b"></div><p class="cap"><b>B: keep the slip, drop the comfort</b>The end date and the off-diet count stay.</p></div>
-      <div class="optbox"><span class="tag opt">option · C</span><div id="f-g3c"></div><p class="cap"><b>C: same sign only</b>The lead is about vomiting, so the pair drops to the trial's own count. The ratio stays.</p></div>
-      <div class="optbox"><span class="tag opt">option · D</span><div id="f-g3d"></div><p class="cap"><b>D: as shipped</b>"Fewer on the diet" sits two cards under "worth a call".</p></div>
-    </div>
-    <p class="react"><b>React R-3</b>A, B, C or D? This one goes to Dr. Chen with your answer.</p>
-  </section>
-
-  <section id="s5">
-    <div class="sec-head"><span class="sec-id">§05 · G4</span><h2>What teal means on Home</h2></div>
-    <div class="conflict">
-      <p><strong>Designer and Data Viz:</strong> teal means "you can act": links, a pressed chip, the + button. The meal dot keeps its teal as the one named exception.</p>
-      <p><strong>Jordan:</strong> owners already read teal as "a good fact": meals, ate most, given. Links are found by their ›, so they go to ink.</p>
-      <p><strong>PM decision needed:</strong> which one. Both sides agree the pattern's rail, the timing band and the trial bar leave teal, and rose stays the safety colour only. There is no team recommendation.</p>
-    </div>
-    <div class="frames">
-      <div class="optbox"><span class="tag opt">option · A</span><div id="f-g4a"></div><p class="cap"><b>A: teal is "you can act"</b>Links and the + are teal. MOST and GIVEN go grey.</p></div>
-      <div class="optbox"><span class="tag opt">option · B</span><div id="f-g4b"></div><p class="cap"><b>B: teal is "a good fact"</b>MOST and GIVEN stay teal. Links go to ink, the + to white.</p></div>
+      <div class="slot"><span class="tag cur">current · C</span><div id="f-g4c"></div><p class="cap"><b>C: indigo acts, teal is good</b>Links, the Ask dot and the + in indigo. Meals, MOST and GIVEN in teal.</p></div>
+      <div class="optbox"><span class="tag opt">option · A</span><div id="f-g4a"></div><p class="cap"><b>A: teal acts</b>Links and the + glyph teal; MOST and GIVEN grey.</p></div>
+      <div class="optbox"><span class="tag opt">option · B</span><div id="f-g4b"></div><p class="cap"><b>B: teal is good</b>MOST and GIVEN teal; links in ink.</p></div>
     </div>
     <div class="tscroll">
       <table class="t">
-        <thead><tr><th>Mark on Home</th><th>As shipped</th><th>A · act</th><th>B · good fact</th></tr></thead>
+        <thead><tr><th>Mark on Home</th><th>As shipped</th><th>A · teal acts</th><th>B · teal is good</th><th>C · indigo acts</th></tr></thead>
         <tbody>
-          <tr><td>Safety rail, ask text</td><td><span class="sw" style="background:#F43F5E"></span>rose</td><td><span class="sw" style="background:#F43F5E"></span>rose</td><td><span class="sw" style="background:#F43F5E"></span>rose</td></tr>
-          <tr><td>Pattern (insight) rail</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td>none</td><td>none</td></tr>
-          <tr><td>Timing band and bars</td><td><span class="sw" style="background:#E0FBF7"></span>teal wash</td><td><span class="sw" style="background:#737373"></span>grey</td><td><span class="sw" style="background:#737373"></span>grey</td></tr>
-          <tr><td>Trial progress bar</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#737373"></span>grey</td><td><span class="sw" style="background:#737373"></span>grey</td></tr>
-          <tr><td>Meal dot on the day</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#00C2A8"></span>teal (named exception, CUL-1279)</td><td><span class="sw" style="background:#00C2A8"></span>teal</td></tr>
-          <tr><td>MOST, GIVEN pills</td><td><span class="sw" style="background:#E0FBF7"></span>teal</td><td><span class="sw" style="background:#F0F0F0"></span>grey</td><td><span class="sw" style="background:#E0FBF7"></span>teal</td></tr>
-          <tr><td>Links ("Patterns ›", "More…")</td><td><span class="sw" style="background:#0B7B6C"></span>teal ink</td><td><span class="sw" style="background:#0B7B6C"></span>teal ink</td><td><span class="sw" style="background:#0A0A0A"></span>ink</td></tr>
-          <tr><td>The + button's glyph</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#FFFFFF"></span>white</td></tr>
+          <tr><td>Safety rail, ask text</td><td><span class="sw" style="background:#F43F5E"></span>rose</td><td><span class="sw" style="background:#F43F5E"></span>rose</td><td><span class="sw" style="background:#F43F5E"></span>rose</td><td><span class="sw" style="background:#F43F5E"></span>rose</td></tr>
+          <tr><td>Pattern rail, timing bars, trial bar</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#737373"></span>grey</td><td><span class="sw" style="background:#737373"></span>grey</td><td><span class="sw" style="background:#737373"></span>grey</td></tr>
+          <tr><td>Meal dot on the day</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#00C2A8"></span>teal (exception)</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#00C2A8"></span>teal</td></tr>
+          <tr><td>MOST, GIVEN</td><td><span class="sw" style="background:#E0FBF7"></span>teal</td><td><span class="sw" style="background:#F0F0F0"></span>grey</td><td><span class="sw" style="background:#E0FBF7"></span>teal</td><td><span class="sw" style="background:#E0FBF7"></span>teal</td></tr>
+          <tr><td>Links, "More…", the Ask dot</td><td><span class="sw" style="background:#0B7B6C"></span>teal</td><td><span class="sw" style="background:#0B7B6C"></span>teal</td><td><span class="sw" style="background:#0A0A0A"></span>ink</td><td><span class="sw" style="background:#3F35A0"></span>indigo</td></tr>
+          <tr><td>The + button</td><td><span class="sw" style="background:#251F57"></span>indigo, teal +</td><td><span class="sw" style="background:#251F57"></span>indigo, teal +</td><td><span class="sw" style="background:#251F57"></span>indigo, white +</td><td><span class="sw" style="background:#251F57"></span>indigo, white +</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="react"><b>React R-4</b>A or B?</p>
+    <p class="col" style="font-size:14px;color:var(--ink-3)">The action indigo drawn here (<code>#3F35A0</code>, about 9:1 on white) is a proposed new token, one step lighter than the + button's disc so a link never reads as plain black text. CUL-1279 would set the final value.</p>
+    <p class="react"><b>React R-4</b>C, A or B? If C: open CUL-1279 now as a short round across History, Foods and the trial screen?</p>
   </section>
 
-  <section id="s6">
-    <div class="sec-head"><span class="sec-id">§06 · G6</span><h2>The first screen, and a Signal that folds its patterns</h2></div>
+  <section id="s3">
+    <div class="sec-head"><span class="sec-id">§03 · G6</span><h2>Patterns fold while a safety card leads</h2></div>
     <div class="brief">
-      <p><strong>Better than the rule.</strong> CUL-1285 (Sep 26) retired the Signal's fold because every card is already a row. It protected Home from a stored per-card state, a "Keep it compact" control, and "seen, never resolved".</p>
-      <p><strong>Deciding:</strong> whether, while a safety card leads, the pattern rows fold into the Signal's foot as a count.</p>
+      <p><strong>Better than the rule.</strong> CUL-1285 (Sep 26) retired the Signal's fold, protecting Home from a stored per-card state, a "Keep it compact" control and "seen, never resolved".</p>
+      <p><strong>Deciding:</strong> whether, while a safety card leads, pattern rows fold into the Signal's foot as a count.</p>
       <p>(A) Every row open, as shipped.</p>
-      <p><strong>(B) Safety rows open; pattern rows fold into "1 more pattern · Patterns ›" while a safety card leads. Nothing is stored and there is no control, so every protection CUL-1285 kept still holds.</strong> <span class="rec">Recommended:</span> about 107pt back on this record, about 300pt on a busy one. When no safety card leads, the top pattern leads, open, as today.</p>
-      <p><strong>Consequence:</strong> lets the Principles v2.0 edit say "only safety cards may push the look below the first screen". On Oct 2 the look question starts more than a screen down.</p>
+      <p><strong>(B) Pattern rows fold into "1 more pattern · Patterns ›" while a safety card leads. Nothing stored, no control.</strong> <span class="rec">Recommended:</span> about 107pt back on this record, about 300pt on a busy one, and every CUL-1285 protection holds.</p>
     </div>
     <div class="frames">
-      <div class="optbox"><span class="tag opt">option · A</span><div id="f-g6a"></div><p class="cap"><b>A: all open</b>The pattern draws the timing as two counted bars (CUL-1499), so even open it is honest about its times.</p></div>
-      <div class="slot"><span class="tag cur">current · B</span><div id="f-g6b"></div><p class="cap"><b>B: patterns fold under a safety lead</b>One line, counted, and the door is the same one the foot already had.</p></div>
+      <div class="optbox"><span class="tag opt">option · A</span><div id="f-g6a"></div><p class="cap"><b>A: all open</b>The pattern draws its timing as two counted bars (CUL-1499).</p></div>
+      <div class="slot"><span class="tag cur">current · B</span><div id="f-g6b"></div><p class="cap"><b>B: folded under a safety lead</b>One counted line; the same door the foot already had.</p></div>
     </div>
     <p class="react"><b>React R-5</b>A or B?</p>
   </section>
 
-  <section id="s7">
-    <div class="sec-head"><span class="sec-id">§07</span><h2>Decided by the team, yours to veto</h2></div>
+  <section id="s4">
+    <div class="sec-head"><span class="sec-id">§04</span><h2>The trial card, as ruled</h2></div>
+    <div class="col">
+      <p>R-2 and R-3 together: the line always opens with the end date, then the off-diet count. Below are the three days the card has to survive.</p>
+    </div>
+    <div class="frames">
+      <div class="slot"><span class="tag cur">current</span><div id="f-t1"></div><p class="cap"><b>Nyx's Oct 2, under a safety card</b>The same card as any other day: the date, the slip.</p></div>
+      <div class="slot"><span class="tag cur">current</span><div id="f-t2"></div><p class="cap"><b>A clean trial</b>Nothing off-diet, so the line is the date alone.</p></div>
+      <div class="slot"><span class="tag cur">current</span><div id="f-t3"></div><p class="cap"><b>Past its end</b>The trial ran past its window and nobody ended it. The line says the window ended; how the title names an overrun day follows CUL-1181.</p></div>
+    </div>
+    <div class="conflict" style="border-left-color:var(--teal)">
+      <p><strong>Dr. Chen (R-3 is clinical):</strong> concur. An end date is a calendar fact with no direction, so it cannot reassure. The off-diet count is the fact I would ask about first at a recheck. Dropping the coverage ratio and a falling vomiting pair under a safety card removes the two lines that read as "the diet is working".</p>
+      <p><strong>Still owed, outside this card:</strong> the trial screen keeps the vomiting pair and must still hide it beside a steroid (CUL-1443), and the trial card in the app still prints an unscoped coverage ratio on an extended trial (CUL-1498).</p>
+    </div>
+  </section>
+
+  <section id="s5">
+    <div class="sec-head"><span class="sec-id">§05</span><h2>Decided by the team, yours to veto</h2></div>
     <div class="col">
       <ul style="font-size:15px;color:var(--ink-2)">
         <li><strong style="color:var(--ink)">Every count names its window.</strong> "12 episodes in these 8 weeks", never "since August" (CUL-1217).</li>
         <li><strong style="color:var(--ink)">The coverage card says which days it counts:</strong> "October, before today · logged 1 of 1 day".</li>
         <li><strong style="color:var(--ink)">One name per destination:</strong> "Patterns ›" in both places (CUL-1502).</li>
         <li><strong style="color:var(--ink)">The refusal door comes first</strong> and looks like a door, not like a chip that writes (CUL-1501).</li>
-        <li><strong style="color:var(--ink)">The day's thread is one step darker</strong> so the spine reads as a line, pending the device pass (CUL-1070).</li>
-        <li><strong style="color:var(--ink)">One spacing for zone labels;</strong> small caps for labels and eyebrows only.</li>
+        <li><strong style="color:var(--ink)">The day's thread is one step darker</strong>, pending the device pass (CUL-1070).</li>
       </ul>
-      <p style="font-size:14px;color:var(--ink-3)">Not drawn here: dark mode and a real phone. Both are on the device pass, CUL-1070. Copy on this page has not had its <code>nyx-voice</code> pass.</p>
+      <p style="font-size:14px;color:var(--ink-3)">Not drawn: dark mode and a real phone (CUL-1070). Copy has not had its <code>nyx-voice</code> pass.</p>
     </div>
   </section>
 </div>
@@ -347,19 +319,20 @@
 (function () {
   // ── Nyx, Fri Oct 2 (from the PM's device and the record) ──
   var CHEV = '›';
+  var INDIGO = '#3F35A0';
   var PLUS = function (c) { return '<svg viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'; };
 
-  // Teal modes. 'ship' is today's build.
+  // Colour modes. 'ship' is today's build; act / fact / indigo are R-4's A, B, C.
   function T(mode) {
-    var act = mode === 'act', fact = mode === 'fact';
+    var linkColor = { ship: '#0B7B6C', act: '#0B7B6C', fact: '#0A0A0A', indigo: INDIGO }[mode];
     return {
       insightRail: mode === 'ship',
-      band: mode === 'ship',
       trialBar: mode === 'ship' ? '#00C2A8' : '#737373',
       meal: '#00C2A8',
       pill: mode === 'act' ? { bg: '#F0F0F0', fg: '#525252' } : { bg: '#E0FBF7', fg: '#0B7B6C' },
-      link: fact ? 'inkl' : 'teal',
-      fab: fact ? '#FFFFFF' : '#00C2A8',
+      link: linkColor,
+      fab: (mode === 'fact' || mode === 'indigo') ? '#FFFFFF' : '#00C2A8',
+      askDot: mode === 'indigo' ? INDIGO : '#00C2A8',
       cmpFill: '#737373'
     };
   }
@@ -367,7 +340,7 @@
   function phone(inner, o) {
     o = o || {};
     var cls = 'phone' + (o.crop ? ' crop' : ' vp') + (o.big ? ' big' : '');
-    var head = o.crop ? '' : '<div class="p-head"><span class="p-ava"></span><span class="p-name">Nyx</span><span class="p-chev">⌄</span><span class="p-sp"></span><span class="p-date">Fri, Oct 2</span><span class="p-ask"><i></i>Ask</span><span class="p-me">D</span></div>';
+    var head = o.crop ? '' : '<div class="p-head"><span class="p-ava"></span><span class="p-name">Nyx</span><span class="p-chev">⌄</span><span class="p-sp"></span><span class="p-date">Fri, Oct 2</span><span class="p-ask"><i style="background:' + (o.askDot || '#00C2A8') + '"></i>Ask</span><span class="p-me">D</span></div>';
     var chrome = o.crop ? '' : '<div class="p-fab">' + PLUS(o.fab || '#00C2A8') + '</div><div class="p-tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div>';
     return '<div class="' + cls + '" style="' + (o.thread ? '--thread:' + o.thread : '') + '">' + head + '<div class="p-scroll">' + inner + '</div>' + chrome + '</div>';
   }
@@ -377,72 +350,57 @@
     if (kind === 'bare') return '<span class="gl" aria-hidden="true">' + CHEV + '</span>';
     return '';
   }
+  function link(t, label) { return '<span class="lnk" style="color:' + t.link + '">' + label + ' ' + CHEV + '</span>'; }
 
-  // o: surface (elev|bord|one), rail (in|g), glyphs (ship|every|ruleD), insight (lane|cmp|fold|none), t (teal mode), count ('since'|'these'), link label, lead (true)
+  // o: surface (elev|bord|one), rail (in|g), insight (lane|cmp|fold|none), t, count ('since'|'these'), linkLabel, leadOnly
   function signal(o) {
-    var rail = function (color, show) {
-      if (!show) return '';
-      return '<span class="rail ' + color + (o.rail === 'g' ? ' g' : '') + '"></span>';
-    };
-    var rowGlyph = o.glyphs === 'ruleD' ? '' : 'bare';
+    var rail = function (color, show) { return show ? '<span class="rail ' + color + (o.rail === 'g' ? ' g' : '') + '"></span>' : ''; };
     var html = '<div class="c ' + o.surface + '">';
     html += '<div class="zl ' + (o.surface === 'elev' ? 'rec gapbig' : 'gap') + '">Signal</div>';
-    // safety lead
     html += '<div class="rw">' + rail('rose', true) + '<div class="rb"><span class="eb">Photo read · Sep 22</span><span class="hl-lead">Possible foreign material in a vomit photo</span><span class="sub ask">Worth a call to your vet</span></div>' + glyph('well') + '</div>';
     if (!o.leadOnly) {
       var cnt = function (n) { return o.count === 'since' ? n + ' episodes since August' : n + ' episodes in these 8 weeks'; };
-      html += '<div class="rw">' + rail('rose', true) + '<div class="rb"><span class="hl">Coughing in 7 of the last 8 weeks</span><span class="sub">' + cnt(19) + ' · <span class="ask">worth booking a vet visit</span></span></div>' + glyph(rowGlyph) + '</div>';
-      html += '<div class="rw">' + rail('rose', true) + '<div class="rb"><span class="hl">Vomiting in 5 of the last 8 weeks</span><span class="sub">' + cnt(12) + ' · <span class="ask">worth booking a vet visit</span></span></div>' + glyph(rowGlyph) + '</div>';
+      html += '<div class="rw">' + rail('rose', true) + '<div class="rb"><span class="hl">Coughing in 7 of the last 8 weeks</span><span class="sub">' + cnt(19) + ' · <span class="ask">worth booking a vet visit</span></span></div>' + glyph('bare') + '</div>';
+      html += '<div class="rw">' + rail('rose', true) + '<div class="rb"><span class="hl">Vomiting in 5 of the last 8 weeks</span><span class="sub">' + cnt(12) + ' · <span class="ask">worth booking a vet visit</span></span></div>' + glyph('bare') + '</div>';
       if (o.insight === 'lane') {
         var dots = '';
         for (var i = 0; i < 8; i++) dots += '<span class="d" style="left:' + (2.2 + i * 2.8) + '%"></span>';
         dots += '<span class="d out" style="left:62%"></span>';
         html += '<div class="rw">' + rail('teal', o.t.insightRail) + '<div class="rb"><span class="hl">Vomiting soon after meals</span><div class="lane"><span class="band"></span>' + dots + '</div><div class="axis"><span>ate</span><span>30m</span><span>2h+</span></div><span class="sub">8 of 9 timed episodes within 30 min of eating</span></div>' + glyph('bare') + '</div>';
       } else if (o.insight === 'cmp') {
-        html += '<div class="rw">' + rail('teal', o.t.insightRail) + '<div class="rb"><span class="hl">Vomiting soon after meals</span><div class="cmp"><span>Within 30 min of eating</span><span class="tr"><span class="fl" style="display:block;width:100%;background:' + o.t.cmpFill + '"></span></span><span class="n">8</span><span>Timed, but later</span><span class="tr"><span class="fl" style="display:block;width:12.5%;background:' + o.t.cmpFill + '"></span></span><span class="n">1</span></div><span class="sub">Timed episodes in the last 60 days</span></div>' + glyph(rowGlyph) + '</div>';
+        html += '<div class="rw">' + rail('teal', o.t.insightRail) + '<div class="rb"><span class="hl">Vomiting soon after meals</span><div class="cmp"><span>Within 30 min of eating</span><span class="tr"><span class="fl" style="display:block;width:100%;background:' + o.t.cmpFill + '"></span></span><span class="n">8</span><span>Timed, but later</span><span class="tr"><span class="fl" style="display:block;width:12.5%;background:' + o.t.cmpFill + '"></span></span><span class="n">1</span></div><span class="sub">Timed episodes in the last 60 days</span></div>' + glyph('bare') + '</div>';
       }
     }
     if (o.insight === 'fold') {
-      html += '<div class="foot"><span class="fold">1 more pattern</span><span class="lnk ' + o.t.link + '">' + o.linkLabel + ' ' + CHEV + '</span></div><div class="disc" style="margin-top:4px">A read of Nyx’s logs, not a diagnosis.</div>';
+      html += '<div class="foot"><span class="fold">1 more pattern</span>' + link(o.t, o.linkLabel) + '</div><div class="disc" style="margin-top:4px">A read of Nyx’s logs, not a diagnosis.</div>';
     } else if (!o.leadOnly) {
-      html += '<div class="foot"><span class="disc">A read of Nyx’s logs, not a diagnosis.</span><span class="lnk ' + o.t.link + '">' + o.linkLabel + ' ' + CHEV + '</span></div>';
+      html += '<div class="foot"><span class="disc">A read of Nyx’s logs, not a diagnosis.</span>' + link(o.t, o.linkLabel) + '</div>';
     }
     return html + '</div>';
   }
 
-  // o: surface, grammar (ship|A|B|C), g3 (none|A|B|C|D), t, glyph (well|bare), ghostPair
+  // o: surface, grammar (ship|ruled), t, glyph, title, line, pct
   function trial(o) {
-    var pair = 'Vomiting: 15 in the trial’s 69 days · 19 in the 49 days before.';
-    var line = '', third = '';
+    var title = o.title || 'Rabbit trial · day 69 of 84';
+    var h = '<div class="c ' + o.surface + '"><div class="th"><span class="hl">' + title + '</span>' + glyph(o.glyph) + '</div>';
+    h += '<div class="bar"><i style="background:' + o.t.trialBar + ';width:' + (o.pct || 82.1) + '%"></i></div>';
     if (o.grammar === 'ship') {
-      line = 'Royal Canin Selected Protein PR, Dry · ends Oct 17 · meals logged on 56 of 56 days · 3 outside the trial diet';
-      third = pair;
-    } else if (o.grammar === 'A') {
-      var ratio = 'meals logged on 56 of the original 56 days';
-      var g3 = o.g3 || 'none';
-      if (g3 === 'A') { line = ''; third = ''; }
-      else if (g3 === 'B') { line = 'Ends Oct 17 · 3 off-diet feedings logged'; third = ''; }
-      else if (g3 === 'C') { line = 'Ends Oct 17 · ' + ratio + ' · 3 off-diet feedings logged'; third = 'Vomiting: 15 in the trial’s 69 days.'; }
-      else { line = 'Ends Oct 17 · ' + ratio + ' · 3 off-diet feedings logged'; third = pair; }
+      h += '<div class="tl">Royal Canin Selected Protein PR, Dry · ends Oct 17 · meals logged on 56 of 56 days · 3 outside the trial diet</div>';
+      h += '<div class="tl3">Vomiting: 15 in the trial’s 69 days · 19 in the 49 days before.</div>';
     } else {
-      line = '3 off-diet feedings logged';
-      if (o.grammar === 'C') third = pair;
+      h += '<div class="tl">' + (o.line || 'Ends Oct 17 · 3 off-diet feedings logged') + '</div>';
     }
-    var h = '<div class="c ' + o.surface + '"><div class="th"><span class="hl">Rabbit trial · day 69 of 84</span>' + glyph(o.glyph) + '</div>';
-    h += '<div class="bar"><i style="background:' + o.t.trialBar + '"></i></div>';
-    if (line) h += '<div class="tl">' + line + '</div>';
-    if (third) h += '<div class="tl3">' + third + '</div>';
     return h + '</div>';
   }
 
-  // o: surface, order (ship|first), t, spine (bool), short (only header rows)
+  // o: surface, order (ship|first), t, spine
   function today(o) {
     var words = ['Off', 'Sleeping more', 'Hiding', 'Not grooming', 'Lip-licking', 'Outside the box', 'Lively', 'Played', 'Nothing unusual'];
     var chips = '';
     if (o.order === 'first') chips += '<span class="chip door">Left her food ' + CHEV + '</span>';
     words.forEach(function (w) { chips += '<span class="chip">' + w + '</span>'; });
     if (o.order !== 'first') chips += '<span class="chip">Left her food ' + CHEV + '</span>';
-    chips += '<span class="more" style="color:' + (o.t.link === 'teal' ? '#0B7B6C' : '#0A0A0A') + '">More…</span>';
+    chips += '<span class="more" style="color:' + o.t.link + '">More…</span>';
     var h = '<div class="c ' + o.surface + '"><div class="zl gap">Today</div><div class="q">How does Nyx seem today?</div><div class="chips">' + chips + '</div>';
     if (o.spine) {
       var pill = function (txt) { return '<span class="pil" style="background:' + o.t.pill.bg + ';color:' + o.t.pill.fg + '">' + txt + '</span>'; };
@@ -458,98 +416,85 @@
 
   function coverage(o) {
     var label = o.proposed ? 'October, before today · logged 1 of 1 day' : 'October · logged 1 of 1 day';
-    return '<div class="c ' + o.surface + '"><div class="cov"><span>' + label + '</span><span class="lnk ' + o.t.link + '">Patterns ' + CHEV + '</span></div></div>';
+    return '<div class="c ' + o.surface + '"><div class="cov"><span>' + label + '</span>' + link(o.t, 'Patterns') + '</div></div>';
   }
 
   // ── Compositions ──
   function shipped() {
     var t = T('ship');
     return phone(
-      signal({ surface: 'elev', rail: 'in', glyphs: 'ship', insight: 'lane', t: t, count: 'since', linkLabel: 'All patterns' }) +
+      signal({ surface: 'elev', rail: 'in', insight: 'lane', t: t, count: 'since', linkLabel: 'All patterns' }) +
       trial({ surface: 'bord', grammar: 'ship', t: t, glyph: 'well' }) +
       today({ surface: 'bord', order: 'ship', t: t, spine: true }) +
       coverage({ surface: 'bord', t: t }),
-      { fab: t.fab }
+      { fab: t.fab, askDot: t.askDot }
     );
   }
 
   function proposal(mode, big) {
     var t = T(mode);
     return phone(
-      signal({ surface: 'one', rail: 'g', glyphs: 'every', insight: 'fold', t: t, count: 'these', linkLabel: 'Patterns' }) +
-      trial({ surface: 'one', grammar: 'B', t: t, glyph: 'bare' }) +
+      signal({ surface: 'one', rail: 'g', insight: 'fold', t: t, count: 'these', linkLabel: 'Patterns' }) +
+      trial({ surface: 'one', grammar: 'ruled', t: t, glyph: 'bare' }) +
       today({ surface: 'one', order: 'first', t: t, spine: true }) +
       coverage({ surface: 'one', t: t, proposed: true }),
-      { fab: t.fab, big: big, thread: '#D4D4D4' }
-    );
-  }
-
-  function g1(rule) {
-    var t = T('act');
-    return phone(
-      signal({ surface: 'one', rail: 'g', glyphs: rule, insight: 'cmp', t: t, count: 'these', linkLabel: 'Patterns' }) +
-      trial({ surface: 'one', grammar: 'B', t: t, glyph: 'bare' }) +
-      today({ surface: 'one', order: 'first', t: t, spine: false }),
-      { crop: true }
-    );
-  }
-
-  function g2(grammar) {
-    var t = T('act');
-    return phone(trial({ surface: 'one', grammar: grammar, t: t, glyph: 'bare' }), { crop: true });
-  }
-
-  function g3(rule) {
-    var t = T('act');
-    return phone(
-      signal({ surface: 'one', rail: 'g', glyphs: 'every', insight: 'none', leadOnly: true, t: t }) +
-      trial({ surface: 'one', grammar: 'A', g3: rule, t: t, glyph: 'bare' }),
-      { crop: true }
+      { fab: t.fab, askDot: t.askDot, big: big, thread: '#D4D4D4' }
     );
   }
 
   function g4(mode) {
     var t = T(mode);
     return phone(
-      signal({ surface: 'one', rail: 'g', glyphs: 'every', insight: 'cmp', t: t, count: 'these', linkLabel: 'Patterns' }) +
-      trial({ surface: 'one', grammar: 'B', t: t, glyph: 'bare' }) +
+      signal({ surface: 'one', rail: 'g', insight: 'fold', t: t, count: 'these', linkLabel: 'Patterns' }) +
+      trial({ surface: 'one', grammar: 'ruled', t: t, glyph: 'bare' }) +
       today({ surface: 'one', order: 'first', t: t, spine: true }),
-      { crop: true, fab: t.fab, thread: '#D4D4D4' }
+      { crop: true, thread: '#D4D4D4' }
     );
   }
 
   function g6(fold) {
-    var t = T('act');
-    return phone(signal({ surface: 'one', rail: 'g', glyphs: 'every', insight: fold ? 'fold' : 'cmp', t: t, count: 'these', linkLabel: 'Patterns' }), { crop: true });
+    var t = T('indigo');
+    return phone(signal({ surface: 'one', rail: 'g', insight: fold ? 'fold' : 'cmp', t: t, count: 'these', linkLabel: 'Patterns' }), { crop: true });
+  }
+
+  function trialDay(kind) {
+    var t = T('indigo');
+    if (kind === 'safety') {
+      return phone(signal({ surface: 'one', rail: 'g', insight: 'none', leadOnly: true, t: t }) + trial({ surface: 'one', grammar: 'ruled', t: t, glyph: 'bare' }), { crop: true });
+    }
+    if (kind === 'clean') {
+      return phone(trial({ surface: 'one', grammar: 'ruled', t: t, glyph: 'bare', title: 'Turkey trial · day 23 of 56', line: 'Ends Nov 3', pct: 41 }), { crop: true });
+    }
+    return phone(trial({ surface: 'one', grammar: 'ruled', t: t, glyph: 'bare', title: 'Rabbit trial · day 90', line: 'Window ended Oct 17 · 3 off-diet feedings logged', pct: 100 }), { crop: true });
   }
 
   function put(id, html) { var el = document.getElementById(id); if (el) el.innerHTML = html; }
 
-  var state = { mode: 'act', big: false };
+  var state = { mode: 'indigo', big: false };
   function renderProp() { put('f-prop', proposal(state.mode, state.big)); }
 
   put('f-ship', shipped());
   renderProp();
-  put('f-g1a', g1('every'));
-  put('f-g1b', g1('ruleD'));
-  put('f-g2a', g2('A'));
-  put('f-g2b', g2('B'));
-  put('f-g2c', g2('C'));
-  put('f-g3a', g3('A'));
-  put('f-g3b', g3('B'));
-  put('f-g3c', g3('C'));
-  put('f-g3d', g3('D'));
+  put('f-g4c', g4('indigo'));
   put('f-g4a', g4('act'));
   put('f-g4b', g4('fact'));
   put('f-g6a', g6(false));
   put('f-g6b', g6(true));
+  put('f-t1', trialDay('safety'));
+  put('f-t2', trialDay('clean'));
+  put('f-t3', trialDay('over'));
 
-  function bindSeg(aId, bId, onA, onB) {
-    var a = document.getElementById(aId), b = document.getElementById(bId);
-    a.addEventListener('click', function () { a.setAttribute('aria-pressed', 'true'); b.setAttribute('aria-pressed', 'false'); onA(); renderProp(); });
-    b.addEventListener('click', function () { b.setAttribute('aria-pressed', 'true'); a.setAttribute('aria-pressed', 'false'); onB(); renderProp(); });
+  function bindGroup(ids, onPick) {
+    var els = ids.map(function (id) { return document.getElementById(id); });
+    els.forEach(function (el, i) {
+      el.addEventListener('click', function () {
+        els.forEach(function (e) { e.setAttribute('aria-pressed', e === el ? 'true' : 'false'); });
+        onPick(i);
+        renderProp();
+      });
+    });
   }
-  bindSeg('b-act', 'b-fact', function () { state.mode = 'act'; }, function () { state.mode = 'fact'; });
-  bindSeg('b-k1', 'b-k2', function () { state.big = false; }, function () { state.big = true; });
+  bindGroup(['b-indigo', 'b-act', 'b-fact'], function (i) { state.mode = ['indigo', 'act', 'fact'][i]; });
+  bindGroup(['b-k1', 'b-k2'], function (i) { state.big = i === 1; });
 })();
 </script>
