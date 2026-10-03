@@ -76,3 +76,33 @@ Evidence: ten `**/dispatch run**` status updates on Engines v3 (9/28 to 10/2), t
 ## Persona sign-off
 
 Product Owner ✓ (the board-hygiene failures are now proposals the PM can apply in one reply). Dir. Eng ✓ (no line anchors; a single range replace under the patch limit; the pre-push suite passed). Trust & Safety ✓ (`--watch` writes nothing; page text stays inside the fence; `auto` needs the PM's own marker). Designer N/A. Data N/A. Dr. Chen N/A, though kind *e* now refuses clinically gated rows.
+
+## v1.3: rebuilt on top of #1009 (PM ruling "A, auto", 2026-10-03)
+
+While #1010 waited for its merge, another session merged its own v1.2 of the same file (#1009, CUL-1503 to CUL-1507). It keeps the dispatcher alive: each child wakes it on merge, and it prints a round digest, keeps a ruling index, offers `add`/`skip` for rowless issues, and widens the standing yes. Both PRs changed the same logic, so the steward rule stopped the merge and put a decision brief to the PM.
+
+The PM ruled **A** (rebuild #1010 on top of #1009) and **`auto`** (an explicit marker replaces CUL-1504's widened text test).
+
+What changed from the build described above:
+- **Kept from #1009, whole:** the wake loop, the digest, the teach row, the ruling index, `add`/`skip`, the daytime rule and the never-line.
+- **Dropped from #1010:** `--watch`, with its routine (CUL-1518, canceled), because the wake loop replaces it; and Unblock kind *a*, because #1009's `add` does that job. Its title-number and dependency rules folded into `add`'s proposal.
+- **Layered on:**
+  - issue-free branches, now with `<hhmm>` so a relaunch never reuses a dead child's branch;
+  - the lookup, `date -u`, the 14-day read and archiving;
+  - `--row`, now woken like a row;
+  - Unblock kinds 0 and b to f;
+  - the Board, with the index written first so the Board can name it;
+  - `auto`.
+
+A second cold review of the combined file found two severe gaps, both fixed:
+- Re-reading 14 days of updates could re-release a relaunched row's live claim and launch it twice. Release now requires the newest claim to name that launch's branch.
+- `auto` is text on the page, so any editor, a child included, could launch a row unasked. A marker now counts only once a typed `fix` or `go` has recorded it on the status update's `Auto:` line. An unrecorded one waits for a `go`.
+
+The same review also fixed these:
+- `--row` wakes were dropped.
+- U0 would have erased Wave 0's only merge evidence. It now keeps it as `✓ #<n>` in the PR cell.
+- Archiving could cut off a child doing its read-back after auto merge.
+- The close-out order now matches `/wrap --dispatched`.
+- Replies to a stale brief are refused, and U lines can be dismissed.
+
+"Standing yes" is renamed in the steward skill and CLAUDE.md.
