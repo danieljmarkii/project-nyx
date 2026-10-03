@@ -65,6 +65,7 @@ Deno.test('the Nyx record raises the firm row, both readings named with their so
   // The sentence says June was one home reading (spec §8); W2's 0.67 kg is what confirmed it.
   assert.deepEqual(f.highBefore, { ...f.high, confirmed: false })
   assert.deepEqual(f.latest, f.low)
+  assert.equal(f.latestDay, '2026-09-16')
   assert.equal(f.associationalOnly, true)
 })
 
@@ -103,7 +104,7 @@ const nyxFinding = (): WeightLossFinding =>
 
 Deno.test('the template: pounds, dates and sources; the firm ask; no percentage and no difference (WG-4)', () => {
   const t = templateWeightLoss(nyxFinding(), 'Nyx')
-  assert.equal(t, 'Nyx weighed 8.2 lb on September 16 at the vet, down from 9.7 lb on June 15 on a home scale, a single reading — worth booking a vet visit.')
+  assert.equal(t, 'Nyx weighed 8.2 lb on September 16, 2026 at the vet, down from 9.7 lb on June 15, 2026 on a home scale, a single reading — worth booking a vet visit.')
   assert.equal(templateForFinding(nyxFinding(), 'Nyx'), t)
   assert.ok(!/%|percent/.test(t))
 })
@@ -120,8 +121,21 @@ Deno.test('the template: a single-reading high says so, and the soft ask', () =>
   assert.equal(f.basis, 'single_high')
   assert.equal(
     templateWeightLoss(f, 'Miso'),
-    'Miso weighed 8.2 lb on September 3 on a home scale, down from 9.3 lb on June 3 on a home scale, a single reading — worth raising with your vet.',
+    'Miso weighed 8.2 lb on September 3, 2026 on a home scale, down from 9.3 lb on June 3, 2026 on a home scale, a single reading — worth raising with your vet.',
   )
+})
+
+Deno.test("the template dates a reading on the owner's day, not UTC's, and always with its year", () => {
+  // 20:00 PDT on Sep 16 is 03:00 UTC on Sep 17.
+  const late = [home(4.4, '2026-06-15'), { kg: 3.73, occurredAt: '2026-09-17T03:00:00Z', source: 'clinic' as const }]
+  const [la] = detectWeightLoss(input({ timezone: 'America/Los_Angeles', weight: { readings: late, dateOfBirth: '2023-09-01' } }))
+  assert.equal(la.latestDay, '2026-09-16')
+  assert.ok(templateWeightLoss(la, 'Nyx').includes('on September 16, 2026 at the vet'))
+  const [utc] = detectWeightLoss(input({ weight: { readings: late, dateOfBirth: '2023-09-01' } }))
+  assert.equal(utc.latestDay, '2026-09-17')
+  // Last October's reading carries its year (the window is twelve months).
+  const [old] = detectWeightLoss(input({ weight: { readings: [clinic(5.0, '2025-10-10'), clinic(4.4, '2026-09-16')], dateOfBirth: '2020-01-01' } }))
+  assert.ok(templateWeightLoss(old, 'Nyx').includes('11.0 lb on October 10, 2025 at the vet'))
 })
 
 Deno.test('the template never carries a verdict word or a cause', () => {
@@ -148,7 +162,7 @@ Deno.test('a carried weight card renders with its tier ask, and only its exact t
   assert.equal(canRenderCarried(f), true)
   assert.equal(canRenderCarried({ type: 'weight_loss', tier: 'loud' }), false)
   const line = templateCarried(f, 'Nyx', carriedFrom)
-  assert.ok(line.includes('a drop in weight between two weigh-ins — worth booking a vet visit.'))
+  assert.ok(line.includes('a drop in weight between two weight readings — worth booking a vet visit.'))
   assert.equal(validatePhrasing(line, f), true)
   assert.equal(validatePhrasing(line.replace('booking a vet visit', 'raising with your vet'), f), false)
   const soft = { ...f, tier: 'soft' as const }

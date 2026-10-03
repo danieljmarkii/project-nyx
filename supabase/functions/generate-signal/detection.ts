@@ -1295,6 +1295,9 @@ export interface WeightLossFinding extends FindingBase {
    */
   latest: WeightRow['low']
   highBefore: WeightRow['high']
+  /** Each sentence reading's LOCAL calendar day ('YYYY-MM-DD', the owner's zone; UTC without one). */
+  latestDay: string
+  highBeforeDay: string
   /** What the decision COMPARED: the confirmed (or W1-fix single) high and the confirmed low. */
   high: WeightRow['high']
   low: WeightRow['low']
@@ -4881,6 +4884,17 @@ export function detectBurden(
 // RAISED row emits (drop_confirmed / drop_firm); CUL-1390 W5's plain row for a single low reading
 // is a client decision still open, so `drop_unconfirmed` emits nothing here.
 
+/** The owner's calendar day for an instant, so the card's date matches the record's (UTC without a zone). */
+function localIsoDay(iso: string, timeZone: string | undefined): string {
+  const ms = Date.parse(iso)
+  if (isValidTimeZone(timeZone)) {
+    const parts = dateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(ms))
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ''
+    return `${get('year')}-${get('month')}-${get('day')}`
+  }
+  return new Date(ms).toISOString().slice(0, 10)
+}
+
 export function detectWeightLoss(input: DetectionInput): WeightLossFinding[] {
   if (!input.weight) return []
   const nowMs = Date.parse(input.now)
@@ -4893,16 +4907,17 @@ export function detectWeightLoss(input: DetectionInput): WeightLossFinding[] {
     standDowns: input.weight.standDowns ?? [],
   })
   const row = story.row
-  // A raised row implies two counted readings, so both sentence ends exist; the guard narrows.
-  if (row === null || story.latest === null || story.highBefore === null) return []
+  if (row === null) return []
   return [
     {
       type: 'weight_loss',
       priorityClass: 'safety',
       tier: row.tier,
       basis: row.basis,
-      latest: story.latest,
-      highBefore: story.highBefore,
+      latest: row.says.latest,
+      highBefore: row.says.highBefore,
+      latestDay: localIsoDay(row.says.latest.occurredAt, input.timezone),
+      highBeforeDay: localIsoDay(row.says.highBefore.occurredAt, input.timezone),
       high: row.high,
       low: row.low,
       mixedInstruments: row.mixedInstruments,

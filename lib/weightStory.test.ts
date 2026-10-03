@@ -183,10 +183,34 @@ describe('ruling sheet §2.3 counterexamples', () => {
     expect(story(long, { plans: [plan] }).row).toMatchObject({ tier: 'firm', planned: true });
   });
 
-  it('W6 · a plan lapses at its recheck date, or 12 weeks after it was set', () => {
+  it('W6 · a plan lapses at its recheck date, or 12 weeks after it was set; then the loss is measured from its END level', () => {
     const slow = [home(5.0, '2026-08-02'), home(5.01, '2026-08-09'), home(4.7, '2026-09-20'), home(4.71, '2026-09-27')];
-    expect(story(slow, { plans: [{ startedAt: '2026-08-01T00:00:00Z', recheckAt: '2026-09-30T00:00:00Z' }] }).row?.planned).toBe(false);
-    expect(story(slow, { plans: [{ startedAt: '2026-07-01T00:00:00Z' }] }).row?.planned).toBe(false);
+    // Lapsed Sep 30: the 6% the plan asked for is never measured against the pre-plan weight.
+    expect(story(slow, { plans: [{ startedAt: '2026-08-01T00:00:00Z', recheckAt: '2026-09-30T00:00:00Z' }] }).row).toBeNull();
+    // A further loss after the lapse, from the end level (4.71), is an ordinary soft row.
+    const after = [...slow, home(4.45, '2026-10-01'), home(4.46, '2026-10-02')];
+    expect(story(after, { plans: [{ startedAt: '2026-08-01T00:00:00Z', recheckAt: '2026-09-30T00:00:00Z' }] }).row).toMatchObject({
+      tier: 'soft',
+      planned: false,
+      high: { kg: 4.7 },
+    });
+    // No recheck date: lapses 12 weeks on (Jul 1 → Sep 23), and the same rule applies.
+    expect(story(slow, { plans: [{ startedAt: '2026-07-01T00:00:00Z' }] }).row).toBeNull();
+  });
+
+  it('W6 · a target above 10% is honoured: losing what the plan asked is not a card (adversarial pass)', () => {
+    const plan = { startedAt: '2026-07-01T00:00:00Z', recheckAt: '2026-12-01T00:00:00Z', targetLossFrac: 0.15 };
+    // 4.2 → 3.75 kg (10.7%) over eleven weeks, about 1% a week.
+    const onPlan = [home(4.2, '2026-07-02'), home(4.21, '2026-07-09'), home(3.75, '2026-09-17'), home(3.76, '2026-09-24')];
+    expect(story(onPlan, { plans: [plan] }).row).toBeNull();
+    // Past the plan's own 15%: firm.
+    const past = [home(4.2, '2026-07-02'), home(4.21, '2026-07-09'), home(3.5, '2026-09-24'), home(3.51, '2026-10-01')];
+    expect(story(past, { plans: [plan] }).row).toMatchObject({ tier: 'firm', planned: true });
+  });
+
+  it('W6 · a plan that ended at its goal: the cat holding there raises nothing (counterexample 1)', () => {
+    const readings = [home(7.0, '2026-03-02'), home(7.01, '2026-03-09'), home(6.3, '2026-06-20'), home(6.31, '2026-06-27'), home(6.3, '2026-09-01'), home(6.31, '2026-09-20')];
+    expect(story(readings, { plans: [{ startedAt: '2026-03-01T00:00:00Z', recheckAt: '2026-07-15T00:00:00Z', endedAt: '2026-06-30T00:00:00Z' }] }).row).toBeNull();
   });
 
   it('W6 · pre-plan readings never anchor again, during the plan or after it ends (attack 12)', () => {
@@ -218,13 +242,46 @@ describe('estimates (WG-3, attack 6)', () => {
 });
 
 describe('stand-downs (spec §5.5, attack 11)', () => {
-  it('readings at or before the latest stand-down never anchor again', () => {
+  it('the drop the owner stood down never re-raises itself; a further loss after it does', () => {
     const readings = [clinic(4.4, '2026-06-15'), clinic(3.73, '2026-09-16')];
     expect(story(readings).row).not.toBeNull();
     expect(story(readings, { standDowns: ['2026-09-20T00:00:00Z'] }).row).toBeNull();
-    // A new loss after the stand-down is measured from the levels after it.
     const after = [...readings, clinic(3.9, '2026-09-25'), clinic(3.5, '2026-10-01')];
     expect(story(after, { standDowns: ['2026-09-20T00:00:00Z'] }).row).toMatchObject({ tier: 'firm', high: { kg: 3.9 } });
+  });
+
+  it('a relapse after "she\'s gained it back" is measured from the weight she regained (adversarial pass)', () => {
+    const readings = [
+      home(4.5, '2026-03-01'), home(4.48, '2026-03-08'),
+      home(4.0, '2026-05-01'), home(4.02, '2026-05-08'),
+      home(4.5, '2026-07-01'), home(4.49, '2026-07-08'),
+      home(4.2, '2026-08-01'), home(4.21, '2026-08-15'), home(4.21, '2026-09-01'), home(4.19, '2026-09-15'),
+    ];
+    const s = story(readings, { standDowns: ['2026-07-10T00:00:00Z'] });
+    expect(s.row).toMatchObject({ tier: 'soft' });
+    // The row names readings the decision still uses, never the March high before the stand-down.
+    expect(s.row?.says.highBefore.occurredAt.startsWith('2026-07-01')).toBe(true);
+  });
+});
+
+describe('the caveat and the sentence (adversarial pass)', () => {
+  it('a slow, steady home-scale decline never carries the noise caveat (attack 5)', () => {
+    const kg = [4.0, 3.98, 3.96, 3.94, 3.92, 3.9, 3.88, 3.86, 3.84, 3.82, 3.81];
+    for (let n = 3; n <= kg.length; n++) {
+      const readings = kg.slice(0, n).map((k, i) => home(k, `2026-07-${String(i + 1).padStart(2, '0')}`));
+      expect(story(readings).state).not.toBe('within_noise');
+    }
+  });
+
+  it('a paired high is not "one reading"; a lone latest reading is', () => {
+    const s = story([home(4.5, '2026-06-01'), home(4.48, '2026-06-08'), home(4.2, '2026-08-01'), home(4.22, '2026-08-08'), home(3.95, '2026-09-20')]);
+    expect(s.highBefore).toMatchObject({ kg: 4.5, confirmed: true });
+    expect(s.latest).toMatchObject({ kg: 3.95, confirmed: false });
+  });
+
+  it('a reading a few minutes ahead of the server clock still counts (the weigh-in\'s own regen)', () => {
+    const soon = new Date(NOW + 5 * 60_000).toISOString();
+    expect(story([clinic(4.4, '2026-06-15'), { kg: 3.73, occurredAt: soon, source: 'clinic' }]).row).not.toBeNull();
   });
 });
 

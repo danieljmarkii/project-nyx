@@ -186,18 +186,28 @@ const WEIGHT_SOURCE_WORDS: Record<WeightLossFinding['low']['source'], string> = 
   home_scale: 'on a home scale',
 }
 
-function weightReadingPhrase(p: WeightLossFinding['low']): string {
-  return `${kgToLbsNum(p.kg)} lb on ${onsetDay(p.occurredAt)} ${WEIGHT_SOURCE_WORDS[p.source]}`
+// The reading's LOCAL day with its year: the window is twelve months, so a date without a year
+// is ambiguous (C-19), and every date on the card carries one. Pounds always to one decimal.
+function weightDay(isoDay: string): string {
+  const [y, m, d] = isoDay.split('-').map(Number)
+  if (!y || !m || !d) return 'a recent day'
+  return `${MONTH_NAMES[m - 1]} ${d}, ${y}`
+}
+
+function weightReadingPhrase(p: WeightLossFinding['low'], isoDay: string, single: boolean): string {
+  const one = single ? ', a single reading' : ''
+  return `${kgToLbsNum(p.kg).toFixed(1)} lb on ${weightDay(isoDay)} ${WEIGHT_SOURCE_WORDS[p.source]}${one}`
 }
 
 export function templateWeightLoss(f: WeightLossFinding, petName: string): string {
   // The sentence's two readings (spec §5.2), never the decision's levels: the owner reads the
   // latest weigh-in they logged, and the highest before it, as on every other weight surface.
-  const hb = f.highBefore
-  const high = hb.confirmed ? weightReadingPhrase(hb) : `${weightReadingPhrase(hb)}, a single reading`
+  // Either end that rests on one reading says so (§5.2).
+  const latest = weightReadingPhrase(f.latest, f.latestDay, !f.latest.confirmed)
+  const high = weightReadingPhrase(f.highBefore, f.highBeforeDay, !f.highBefore.confirmed)
   const ask = f.tier === 'firm' ? 'worth booking a vet visit' : 'worth raising with your vet'
   const plan = f.planned ? ', faster or further than the weight plan allows' : ''
-  return `${petName} weighed ${weightReadingPhrase(f.latest)}, down from ${high}${plan} — ${ask}.`
+  return `${petName} weighed ${latest}, down from ${high}${plan} — ${ask}.`
 }
 
 export function templateWorsening(f: SymptomWorseningFinding, petName: string): string {
@@ -572,7 +582,7 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
         : f.type === 'symptom_burden'
           ? `${SYMPTOM_LABEL[f.symptomType]} on several days close together`
         : f.type === 'weight_loss'
-          ? 'a drop in weight between two weigh-ins'
+          ? 'a drop in weight between two weight readings'
         : f.type === 'intake_decline'
           ? f.trigger === 'refused_normal_food'
             ? 'turning down a food they usually eat'
