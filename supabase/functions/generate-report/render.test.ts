@@ -345,7 +345,7 @@ function med(over: Partial<MedicationAdherence>): MedicationAdherence {
     adherenceState: 'tracked',
     elapsedDaysInWindow: 45,
     daysWithDose: 41,
-    courseDaysNoDoseLogged: 0,
+    courseDays: { given: 41, loggedNotGiven: 0, nothingLogged: 4, givenDosesOutsideCourse: 0 },
     doseDays: [],
     prescribedDoses: 90,
     lifetimeDosesLogged: 82,
@@ -7050,15 +7050,17 @@ Deno.test('R-13 item 7 — a populated appendix D still gets its table', () => {
   assert.ok(/<table>/.test(section) && /Doses given \(incl\. partial\)/.test(section), 'the table is untouched where there is data')
 })
 
-// ── CUL-1550 (CUL-1209 2(a)) — "logged" means every dose row, on the phone and on paper ──
+// ── CUL-1550 (CUL-1209 2(a), then ruling (a′)) — "given", and the course days split three ways ──
 //
 // History counts every dose row as "logged" (GAP-26, CUL-1193). The report's two medication
 // tables and Appendix D's day phrase used the same word for given + partial only, so the phone
-// and the paper could say "logged" over different numbers for one drug. The PM ruled the report
-// changes its words. Fixture: 3 given, 1 partial, 1 refused, 1 unconfirmed, 1 missed — every
-// kind of row the word "logged" would have hidden is in it.
-Deno.test('CUL-1550 — the report names the given + partial count "given", never "logged"', () => {
-  const html = renderReport(
+// and the paper could say "logged" over different numbers for one drug: the report now says
+// "given". And a ratio of given days alone reads as "withheld on the rest", so page 1 and
+// Appendix D both state the course days as ONE partition (given / logged but not as given /
+// nothing logged) through one phrase. Fixture: 3 given, 1 partial, 1 refused, 1 unconfirmed,
+// 1 missed, and a course day with nothing at all.
+function cul1550Html(courseDays: MedicationAdherence['courseDays'], over: Partial<MedicationAdherence> = {}): string {
+  return renderReport(
     base({
       medications: [
         med({
@@ -7066,47 +7068,65 @@ Deno.test('CUL-1550 — the report names the given + partial count "given", neve
           windowDosesTotal: 7,
           daysWithDose: 4,
           elapsedDaysInWindow: 10,
-          courseDaysNoDoseLogged: 3,
+          courseDays,
           givenDoses: 3,
           partialDoses: 1,
           refusedDoses: 1,
           unconfirmedDoses: 1,
           missedDoses: 1,
+          ...over,
         }),
       ],
       medicationHistory: mhTable([mhEntry({ drugName: 'Metronidazole', dosesLogged: 4 })], '2026-04-01'),
     }),
   )
-  const appD = html.slice(html.indexOf('Appendix D — Medication log'), html.indexOf('</table>', html.indexOf('Appendix D — Medication log')))
+}
+const appDOf = (html: string): string =>
+  html.slice(html.indexOf('Appendix D — Medication log'), html.indexOf('</table>', html.indexOf('Appendix D — Medication log')))
+const page1MedOf = (html: string): string => {
+  const t = plain(html)
+  const i = t.indexOf('In this window: ')
+  return i < 0 ? '' : t.slice(i, t.indexOf('Doses:', i) + 200)
+}
+
+Deno.test('CUL-1550 — the report names the given + partial count "given", never "logged"', () => {
+  const html = cul1550Html({ given: 4, loggedNotGiven: 3, nothingLogged: 3, givenDosesOutsideCourse: 0 })
+  const appD = appDOf(html)
   const hist = html.slice(html.indexOf('>Medication history</p>'), html.indexOf('</table>', html.indexOf('>Medication history</p>')))
   assert.ok(appD.length > 0 && hist.length > 0, 'both tables rendered — the checks below are over something')
   for (const [name, t] of [['appendix D', appD], ['the lifetime table', hist]] as const) {
     assert.ok(/<th[^>]*>Doses given \(incl\. partial\)<\/th>/.test(t), `${name}'s count column is headed by what it counts`)
     assert.ok(!/<th[^>]*>Doses logged<\/th>/.test(t), `${name} no longer calls it "logged"`)
   }
-  const appDText = plain(appD)
-  // Ruling (a): the remainder is stated, so "given on 4 of 10" never reads as "withheld on 6"
-  // when 3 of those days hold no row at all.
-  assert.ok(
-    /Given on 4 of 10 days of the course in this window; no dose logged on 3\./.test(appDText),
-    'the day phrase says given, over the administered days, and names the days with no row',
-  )
-  assert.ok(!/Logged on \d/.test(appDText), 'and never "Logged on" for that population')
-  // The words that DO mean every row stay: the unconfirmed and refused rows are still named.
-  assert.ok(/1 unconfirmed\./.test(appDText) && /1 refused\./.test(appDText))
-  // Every non-given row is named, so 10 − 4 − 3 = 3 days are placed by the counts after the
-  // clause; a dropped "missed" leaves one day the reader cannot account for.
-  assert.ok(/1 missed\./.test(appDText), 'the missed dose is named beside the other non-given rows')
+  assert.ok(!/Logged on \d/.test(plain(appD)), 'and never "Logged on" for that population')
 })
 
-Deno.test('CUL-1550 — every course day carries a row: the remainder clause is absent, never "on 0"', () => {
-  const html = renderReport(
-    base({ medications: [med({ daysWithDose: 6, elapsedDaysInWindow: 7, courseDaysNoDoseLogged: 0, refusedDoses: 1 })] }),
-  )
-  const start = html.indexOf('Appendix D — Medication log')
-  const t = plain(html.slice(start, html.indexOf('</table>', start)))
-  assert.ok(/Given on 6 of 7 days of the course in this window\./.test(t), 'the sentence ends at the ratio')
-  assert.ok(!/no dose logged on/.test(t), 'and states no zero')
+Deno.test('CUL-1550 — page 1 and appendix D state the same three-way split of the course days', () => {
+  const html = cul1550Html({ given: 4, loggedNotGiven: 3, nothingLogged: 3, givenDosesOutsideCourse: 0 })
+  const appD = plain(appDOf(html))
+  const p1 = page1MedOf(html)
+  assert.ok(p1.length > 0, 'page 1 carries the window clause — the checks below are over something')
+  const split = 'of 10 days of the course(?: in this window)?; logged but not as given on 3; nothing logged on 3\\.'
+  assert.ok(new RegExp(`Given on 4 ${split}`).test(appD), `appendix D states the split: ${appD}`)
+  assert.ok(new RegExp(`In this window: 4 doses given on 4 ${split}`).test(p1), `page 1 states the same split: ${p1}`)
+  // The counts after the split are DOSES and say so, so they are never read as filling days.
+  assert.ok(/Doses in this window: 1 unconfirmed, 1 refused, 1 missed\./.test(appD))
+  assert.ok(/Doses: 1 partial, 1 unconfirmed, 1 refused, 1 missed\./.test(p1))
+})
+
+Deno.test('CUL-1550 — a zero part is omitted, never "on 0", on both pages', () => {
+  const html = cul1550Html({ given: 7, loggedNotGiven: 3, nothingLogged: 0, givenDosesOutsideCourse: 0 })
+  const both = plain(appDOf(html)) + ' ' + page1MedOf(html)
+  assert.ok(/7 of 10 days of the course in this window; logged but not as given on 3\./.test(both))
+  assert.ok(!/on 0\b/.test(both), 'no part states a zero')
+  assert.ok(!/nothing logged on/.test(both), 'and the empty part is absent')
+})
+
+Deno.test('CUL-1550 — a given dose dated outside the course is disclosed, never folded into the days', () => {
+  const html = cul1550Html({ given: 2, loggedNotGiven: 0, nothingLogged: 6, givenDosesOutsideCourse: 1 }, { elapsedDaysInWindow: 8 })
+  const appD = plain(appDOf(html))
+  assert.ok(/Given on 2 of 8 days of the course in this window; nothing logged on 6\. 1 given dose is dated outside the course's dates\./.test(appD), appD)
+  assert.ok(/1 given dose is dated outside the course's dates\./.test(page1MedOf(html)), 'page 1 discloses it too')
 })
 
 Deno.test('R-13 item 8 — the divider says where the un-lettered lifetime table sits', () => {

@@ -15,6 +15,7 @@
 import { strict as assert } from 'node:assert'
 import {
   assembleReport,
+  partitionCourseDays,
   buildDetectionInput,
   dedupeEvents,
   drawsStopMark,
@@ -1086,7 +1087,7 @@ Deno.test('medication adherence — a co-started drug is a concurrent change; a 
 // refusal day inside "no dose logged" or invents silence. Each fixture row is placed on a seam:
 // two rows on one day (counted once), a row of every non-given kind, and a linked row inside the
 // window but BEFORE the course started (outside M's days, so it must not shrink K).
-Deno.test('CUL-1550 — courseDaysNoDoseLogged partitions the course days in the window', () => {
+Deno.test('CUL-1550 — courseDays partitions the course days in the window, by precedence', () => {
   const meds: ReportMedicationInput[] = [
     {
       id: 'reg-apo', medicationItemId: 'mi-apo', drugName: 'Apoquel', doseAmount: '16 mg', route: 'oral',
@@ -1100,7 +1101,7 @@ Deno.test('CUL-1550 — courseDaysNoDoseLogged partitions the course days in the
     adherence, doseAmount: '16 mg', pairedEventId: null,
   })
   const doses: ReportDoseInput[] = [
-    dose('2026-06-05', 'refused'), // in the window, before the course — not one of its days
+    dose('2026-06-05', 'given'), // in the window, before the course — not one of its days (adversarial #1)
     dose('2026-06-10', 'given'),
     dose('2026-06-11', 'given'),
     dose('2026-06-12', 'given'),
@@ -1114,10 +1115,42 @@ Deno.test('CUL-1550 — courseDaysNoDoseLogged partitions the course days in the
   ]
   const snap = assembleReport(baseInput({ medications: meds, doses }))
   const apo = snap.medications.find((m) => m.regimenId === 'reg-apo')!
-  assert.equal(apo.refusedDoses, 3, 'the pre-course refusal is inside the window, so the seam is exercised')
+  assert.equal(apo.givenDoses, 5, 'the pre-course dose is inside the window, so the seam is exercised')
   assert.equal(apo.elapsedDaysInWindow, 10)
-  assert.equal(apo.daysWithDose, 5, 'given or partial days: Jun 10–14')
-  assert.equal(apo.courseDaysNoDoseLogged, 2, 'only Jun 18 and 19 hold no row; refusal, unconfirmed and missed days are not silence')
+  assert.deepEqual(apo.courseDays, {
+    given: 5, // Jun 10–14; Jun 13's refusal loses to its given dose, Jun 14 is partial
+    loggedNotGiven: 3, // Jun 15 refused, 16 unconfirmed, 17 missed
+    nothingLogged: 2, // Jun 18, 19 — 5 + 3 + 2 = the 10 course days
+    givenDosesOutsideCourse: 1, // Jun 5: disclosed, never a course day
+  })
+})
+
+// The partition holds for ANY record, not just the fixture above: the three parts sum to the
+// course days, none is negative, `given` never exceeds what the rows could put there, and every
+// administered row is either on a given course day or counted as outside the course.
+Deno.test('CUL-1550 — partitionCourseDays: a partition of the course days for every random record', () => {
+  let seed = 1550
+  const rand = (n: number): number => {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return seed % n
+  }
+  for (let trial = 0; trial < 2000; trial++) {
+    const spanStart = 100 + rand(20)
+    const spanEnd = spanStart + rand(40) - 2 // includes empty and one-day spans
+    const rows = Array.from({ length: rand(30) }, () => ({
+      day: rand(12) === 0 ? null : spanStart - 5 + rand(50),
+      administered: rand(2) === 0,
+    }))
+    const p = partitionCourseDays(rows, spanStart, spanEnd)
+    const courseDays = Math.max(0, spanEnd - spanStart + 1)
+    const ctx = JSON.stringify({ spanStart, spanEnd, rows, p })
+    assert.equal(p.given + p.loggedNotGiven + p.nothingLogged, courseDays, ctx)
+    for (const v of Object.values(p)) assert.ok(v >= 0, ctx)
+    const inSpan = (d: number | null) => d !== null && d >= spanStart && d <= spanEnd
+    const adminInSpanDays = new Set(rows.filter((r) => r.administered && inSpan(r.day)).map((r) => r.day))
+    assert.equal(p.given, adminInSpanDays.size, ctx)
+    assert.equal(p.givenDosesOutsideCourse, rows.filter((r) => r.administered && r.day !== null && !inSpan(r.day)).length, ctx)
+  }
 })
 
 Deno.test('§3.8 orphan-dose — ad-hoc/OTC doses with no regimen surface as an unlinkedMedications group', () => {

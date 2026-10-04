@@ -6386,7 +6386,9 @@ function medicationLine(m: MedicationAdherence): string {
   //     Saying "no doses logged" there would contradict the refusal printed in the same sentence,
   //     and bury the most clinically loaded rows on the page under a phrase that reads as
   //     nothing-to-see. A refused dose of a critical drug is the opposite of nothing to see.
-  //   • Otherwise the administered count and its day denominator, as before.
+  //   • Otherwise the administered count and the course-day split (CUL-1550, ruling (a′)): the
+  //     same `courseDaySplit` Appendix D states, so the two pages cannot divide one course's
+  //     days differently, and a ratio of given days never sits beside an unstated remainder.
   const windowClause =
     m.windowDosesTotal === 0
       ? `No doses logged in this report's window.`
@@ -6394,7 +6396,7 @@ function medicationLine(m: MedicationAdherence): string {
         ? `In this window: no doses administered; ${extras.join(', ')}.`
         : `In this window: ${num(m.windowDosesLogged)} dose${
             m.windowDosesLogged === 1 ? '' : 's'
-          } on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days of the course; ${extras.join(', ')}.`
+          } given on ${courseDaySplit(m, false)}.${outsideCourseNote(m)} Doses: ${extras.join(', ')}.`
 
   return `${regimen}. ${adherenceClaim(m)}${dosingSpan(m)} ${windowClause}`
 }
@@ -6514,6 +6516,37 @@ function fmtSpanFromTo(a: string, b: string): string {
 function dosingDaysFor(n: number, perDay: number): number {
   const perDayHundredths = Math.round(perDay * 100)
   return Math.floor(((n - 1) * 100) / perDayHundredths) + 1
+}
+
+/**
+ * The course-day split both page 1 and Appendix D state (CUL-1550, PM ruling (a′)) — ONE phrase
+ * over ONE partition (`partitionCourseDays`), so inverting it moves both pages (C-4).
+ *
+ * "12 of 46 days of the course in this window; logged but not as given on 3; nothing logged on
+ * 31". A ratio of given days alone reads as "withheld on 34"; the parts say which of those days
+ * held a row that was not a given dose and which held nothing at all. A part that is zero is
+ * omitted, never "on 0" (C-3). "Not AS given", never "not given": the middle bucket includes
+ * unconfirmed doses, which are unknown rather than withheld.
+ */
+function courseDaySplit(m: MedicationAdherence, sayWindow: boolean): string {
+  const p = m.courseDays
+  const parts = [
+    `${num(p.given)} of ${num(m.elapsedDaysInWindow)} days of the course${sayWindow ? ' in this window' : ''}`,
+  ]
+  if (p.loggedNotGiven > 0) parts.push(`logged but not as given on ${num(p.loggedNotGiven)}`)
+  if (p.nothingLogged > 0) parts.push(`nothing logged on ${num(p.nothingLogged)}`)
+  return parts.join('; ')
+}
+
+/**
+ * The administered doses the split cannot hold: in the window, but dated outside the course's own
+ * dates (a backdated dose, an edited start date). Counted in the dose totals and disclosed here,
+ * so the day split never exceeds its denominator and nothing given is silently dropped.
+ */
+function outsideCourseNote(m: MedicationAdherence): string {
+  const n = m.courseDays.givenDosesOutsideCourse
+  if (n === 0) return ''
+  return ` ${num(n)} given dose${n === 1 ? ' is' : 's are'} dated outside the course&rsquo;s dates.`
 }
 
 /**
@@ -8673,27 +8706,22 @@ function medicationAppendix(snap: ReportSnapshot): string {
       // nothing. Page 1's register was added in the same change and this sibling was not — the
       // C-4 rule 1 shape, with the accusing side left broken.
       //
-      // "GIVEN on N days", never "Logged on" (CUL-1209 2(a), PM). `daysWithDose` counts days
-      // with a given or partial dose only, and History uses "logged" for every dose row, so the
-      // old word let the phone and this page say "logged" over different numbers for one drug.
-      // The two "Doses given (incl. partial)" headers below are the same ruling. And the
-      // REMAINDER is stated (ruling (a)): unstated, "given on 12 of 46" reads as withheld on 34,
-      // when most of those days hold no row at all. Nothing when every course day has a row (C-3).
-      // Missed is named here too, as page 1 already does: once the remainder is stated, the days
-      // between "given" and "no dose logged" are accounted for only by the non-given rows named
-      // after it, and a missed row left out of that list is a day the arithmetic cannot place.
+      // "GIVEN on N days", never "Logged on" (CUL-1209 2(a), PM): History uses "logged" for every
+      // dose row, and this count is given + partial only. The two "Doses given (incl. partial)"
+      // headers below are the same ruling. The day split and its out-of-course disclosure come
+      // from `courseDaySplit`, the one phrasing page 1 states too (ruling (a′)); the counts after
+      // it are DOSES, labelled as such, so they are never read as filling the leftover days.
+      const doseCounts = [
+        m.unconfirmedDoses ? `${num(m.unconfirmedDoses)} unconfirmed` : null,
+        m.refusedDoses ? `${num(m.refusedDoses)} refused` : 'none recorded as refused',
+        m.missedDoses ? `${num(m.missedDoses)} missed` : null,
+      ].filter(Boolean)
       const adherence =
         m.adherenceState === 'not_tracked'
           ? '<b>Adherence not tracked</b> — no doses logged against this regimen; never read as given.'
           : m.windowDosesTotal === 0
             ? 'No doses logged in this window; this drug&rsquo;s doses fall outside it (the lifetime table above carries them).'
-            : `Given on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days of the course in this window${
-                m.courseDaysNoDoseLogged > 0 ? `; no dose logged on ${num(m.courseDaysNoDoseLogged)}` : ''
-              }.${
-                m.unconfirmedDoses ? ` ${num(m.unconfirmedDoses)} unconfirmed.` : ''
-              }${m.refusedDoses ? ` ${num(m.refusedDoses)} refused.` : ' None recorded as refused.'}${
-                m.missedDoses ? ` ${num(m.missedDoses)} missed.` : ''
-              }`
+            : `Given on ${courseDaySplit(m, true)}.${outsideCourseNote(m)} Doses in this window: ${doseCounts.join(', ')}.`
       return `<tr><td>${h(m.drugName)}${m.strength ? ` ${h(m.strength)}` : ''}</td><td>${regimen}${
         m.indication ? ` — for ${h(m.indication)}` : ''
       } &middot; ${regimenDates(m)}</td><td class="c num">${logged}</td><td class="num">${doseDatesCell(
