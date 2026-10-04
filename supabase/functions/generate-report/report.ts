@@ -5438,8 +5438,8 @@ function buildMedicationPass(
  * on that line (2026-10-04).
  *
  * Rows of this course dated OUTSIDE its span (a backdated dose, an edited start date) cannot be
- * course days, so they are disclosed with their dates — the given AND the not-given ones (C-37:
- * reach for the accusing number too).
+ * course days, so they are disclosed with their dates, each kind with its own — the given AND
+ * the not-given ones (C-37: reach for the accusing number too, and say which date it fell on).
  */
 export interface CourseDayPartition {
   given: number
@@ -5448,8 +5448,9 @@ export interface CourseDayPartition {
   /** This course's in-window rows dated outside its span, by kind. Doses, not days. */
   outsideCourseGiven: number
   outsideCourseNotGiven: number
-  /** The local day keys of those rows, ascending and distinct, so the render can date them. */
-  outsideCourseDays: string[]
+  /** Their local day keys, ascending and distinct, PER KIND, so the render can date each kind. */
+  outsideCourseGivenDays: string[]
+  outsideCourseNotGivenDays: string[]
 }
 
 export interface PartitionRow {
@@ -5463,15 +5464,20 @@ export interface PartitionRow {
 export function partitionCourseDays(rows: readonly PartitionRow[], spanStart: number, spanEnd: number): CourseDayPartition {
   const givenDays = new Set<number>()
   const loggedDays = new Set<number>()
-  const outsideDays = new Set<string>()
+  const outsideGivenDays = new Set<string>()
+  const outsideNotGivenDays = new Set<string>()
   let outsideCourseGiven = 0
   let outsideCourseNotGiven = 0
   for (const r of rows) {
     if (r.day === null) continue
     if (r.day < spanStart || r.day > spanEnd) {
-      if (r.administered) outsideCourseGiven++
-      else outsideCourseNotGiven++
-      if (r.dayKey !== null) outsideDays.add(r.dayKey)
+      if (r.administered) {
+        outsideCourseGiven++
+        if (r.dayKey !== null) outsideGivenDays.add(r.dayKey)
+      } else {
+        outsideCourseNotGiven++
+        if (r.dayKey !== null) outsideNotGivenDays.add(r.dayKey)
+      }
       continue
     }
     loggedDays.add(r.day)
@@ -5484,7 +5490,8 @@ export function partitionCourseDays(rows: readonly PartitionRow[], spanStart: nu
     nothingLogged: courseDays - loggedDays.size,
     outsideCourseGiven,
     outsideCourseNotGiven,
-    outsideCourseDays: [...outsideDays].sort(),
+    outsideCourseGivenDays: [...outsideGivenDays].sort(),
+    outsideCourseNotGivenDays: [...outsideNotGivenDays].sort(),
   }
 }
 
@@ -5612,7 +5619,15 @@ function buildMedicationAdherence(
     daysWithDose: doseDayNums.size,
     courseDays: overlapsWindow
       ? partitionCourseDays(windowRows, spanStart, spanEnd)
-      : { given: 0, loggedNotGiven: 0, nothingLogged: 0, outsideCourseGiven: 0, outsideCourseNotGiven: 0, outsideCourseDays: [] },
+      : {
+          given: 0,
+          loggedNotGiven: 0,
+          nothingLogged: 0,
+          outsideCourseGiven: 0,
+          outsideCourseNotGiven: 0,
+          outsideCourseGivenDays: [],
+          outsideCourseNotGivenDays: [],
+        },
     doseDays: [...doseDayKeys].sort(),
     // The ONE denominator on this document — the prescription, read from the shared course
     // derivation rather than re-derived here, so page 1 and the §4.4 table cannot disagree.

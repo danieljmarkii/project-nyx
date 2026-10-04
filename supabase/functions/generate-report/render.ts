@@ -6396,14 +6396,16 @@ function medicationLine(m: MedicationAdherence): string {
     m.windowDosesTotal === 0
       ? `No doses logged in this report's window.`
       : m.windowDosesLogged === 0
-        ? `In this window: no doses given on ${
-            m.elapsedDaysInWindow === 1 ? 'the 1 day' : `any of the ${num(m.elapsedDaysInWindow)} days`
-          } of the course${courseDaysTail(
-            m,
-          )}.${outsideCourseNote(m)} Doses: ${extras.join(', ')}.`
+        ? `In this window: ${courseDaysNoneGiven(m)}${courseDaysTail(m)}.${outsideCourseNote(m)} Doses in this window: ${extras.join(
+            ', ',
+          )}.`
         : `In this window: ${num(m.windowDosesLogged)} dose${m.windowDosesLogged === 1 ? '' : 's'} given${
             m.partialDoses ? ` (${num(m.partialDoses)} partial)` : ''
-          }, on ${courseDaysGiven(m, false)}${courseDaysTail(m)}.${outsideCourseNote(m)} Doses: ${extras.join(', ')}.`
+          }${
+            // Every given dose dated outside the course: the head would read "on 0 of N days", so it
+            // takes the scoped zero form and the disclosure beside it says where the doses fell.
+            m.courseDays.given > 0 ? `, on ${courseDaysGiven(m, false)}` : `; ${courseDaysNoneGiven(m)}`
+          }${courseDaysTail(m)}.${outsideCourseNote(m)} Doses in this window: ${extras.join(', ')}.`
 
   return `${regimen}. ${adherenceClaim(m)}${dosingSpan(m)} ${windowClause}`
 }
@@ -6541,43 +6543,75 @@ function dosingDaysFor(n: number, perDay: number): number {
 function courseDaysGiven(m: MedicationAdherence, sayWindow: boolean): string {
   const g = m.courseDays.given
   const total = m.elapsedDaysInWindow
-  const head =
-    g > 0
-      ? `${num(g)} of ${num(total)} day${total === 1 ? '' : 's'} of the course`
-      : `none of the ${num(total)} day${total === 1 ? '' : 's'} of the course`
-  return `${head}${sayWindow ? ' in this window' : ''}`
+  return `${num(g)} of ${num(total)} day${total === 1 ? '' : 's'} of the course${sayWindow ? ' in this window' : ''}`
+}
+/**
+ * The ZERO head, scoped to the course (adversarial pass 5). "No doses given on any of the 3 days"
+ * is a claim about the animal, and it is false when a dose of the same drug sits on another line
+ * that day (the CUL-991 seam orphans one; a brand/generic pair splits one). The record cannot
+ * always join them, so the claim is made about the only thing it can see: this course's rows.
+ */
+function courseDaysNoneGiven(m: MedicationAdherence): string {
+  const total = m.elapsedDaysInWindow
+  return `no dose given against this course on ${total === 1 ? 'its 1 day' : `any of its ${num(total)} days`}`
 }
 function courseDaysTail(m: MedicationAdherence): string {
   const p = m.courseDays
   const parts: string[] = []
   if (p.loggedNotGiven > 0) parts.push(`a dose logged but not as given on ${num(p.loggedNotGiven)}`)
-  if (p.nothingLogged > 0) {
-    const cadence =
-      m.dosesPerDay == null ? ' (an as-needed course)' : m.dosesPerDay < 1 ? ` (a ${m.dosesPerDay}×/day course)` : ''
-    parts.push(`no dose logged against this course on ${num(p.nothingLogged)}${cadence}`)
-  }
+  if (p.nothingLogged > 0) parts.push(`no dose logged against this course on ${num(p.nothingLogged)}${cadenceNote(m.dosesPerDay)}`)
   return parts.map((x) => `; ${x}`).join('')
+}
+
+/**
+ * Below once a day, the empty part says the cadence, so days a dose was never due are not read
+ * as gaps (cold read 4). Written the way a clinician writes a schedule — "every other day", "every
+ * 3 days", "once a week" — when the rate is one dose every whole number of days, else the rate
+ * itself. Nothing at or above once a day, and nothing for a rate the record cannot mean (≤ 0;
+ * the column has no CHECK), the same guard `dosingSpan` holds.
+ */
+function cadenceNote(dosesPerDay: number | null): string {
+  if (dosesPerDay == null) return ' (dosed as needed)'
+  if (!(dosesPerDay > 0) || dosesPerDay >= 1) return ''
+  const every = Math.round(1 / dosesPerDay)
+  if (Math.abs(every * dosesPerDay - 1) > 0.05) return ` (dosed ${dosesPerDay}×/day)`
+  return every === 2 ? ' (dosed every other day)' : every === 7 ? ' (dosed once a week)' : ` (dosed every ${every} days)`
+}
+
+/**
+ * A list of local day keys, dated so a reader can place them: up to four listed, the year stamped
+ * once when they share one and on each when they do not (C-19: a year-less date is safe only
+ * inside a bounded range, and a since-visit window can run past a year); past four, the span.
+ */
+function datedDays(days: readonly string[]): string {
+  if (days.length === 0) return ''
+  if (days.length > 4) return h(fmtRange(days[0], days[days.length - 1]))
+  const years = new Set(days.map((d) => d.slice(0, 4)))
+  if (years.size > 1) return days.map((d) => h(fmtDayYear(d))).join(', ')
+  return `${days.map((d) => h(fmtDay(d))).join(', ')}, ${h(days[0].slice(0, 4))}`
 }
 
 /**
  * This course's rows the split cannot hold: in the window, but dated outside the course's own
  * dates (a backdated dose, an edited start date). They are in the dose counts, so they are
- * disclosed WITH THEIR DATES — given AND not given, since a refusal outside the course would
- * otherwise read as falling on a course day (C-37: reach for the accusing number too).
+ * disclosed with their dates, each kind with its own — given AND not given, since a refusal
+ * outside the course would otherwise read as falling on a course day (C-37), and a date the
+ * reader cannot pair with its kind places neither (adversarial pass 5).
  */
 function outsideCourseNote(m: MedicationAdherence): string {
   const p = m.courseDays
-  const g = p.outsideCourseGiven
-  const total = g + p.outsideCourseNotGiven
-  if (total === 0) return ''
-  const dates = p.outsideCourseDays.length <= 4 ? ` (${p.outsideCourseDays.map((d) => h(fmtDay(d))).join(', ')})` : ''
-  if (total === 1) {
-    return g === 1
-      ? ` 1 given dose${dates} is dated outside the course&rsquo;s dates.`
-      : ` 1 dose${dates}, not recorded as given, is dated outside the course&rsquo;s dates.`
+  const kinds: string[] = []
+  if (p.outsideCourseGiven > 0) {
+    const n = p.outsideCourseGiven
+    kinds.push(`${num(n)} given dose${n === 1 ? '' : 's'} (${datedDays(p.outsideCourseGivenDays)})`)
   }
-  const which = g === 0 ? 'none of them given' : g === total ? (total === 2 ? 'both given' : 'all given') : `${num(g)} of them given`
-  return ` ${num(total)} doses in this window${dates} are dated outside the course&rsquo;s dates, ${which}.`
+  if (p.outsideCourseNotGiven > 0) {
+    const n = p.outsideCourseNotGiven
+    kinds.push(`${num(n)} dose${n === 1 ? '' : 's'} not recorded as given (${datedDays(p.outsideCourseNotGivenDays)})`)
+  }
+  if (kinds.length === 0) return ''
+  const plural = p.outsideCourseGiven + p.outsideCourseNotGiven > 1
+  return ` ${kinds.join(' and ')} ${plural ? 'are' : 'is'} dated outside the course&rsquo;s dates.`
 }
 
 /**
@@ -8752,7 +8786,11 @@ function medicationAppendix(snap: ReportSnapshot): string {
           ? '<b>Adherence not tracked</b> — no doses logged against this regimen; never read as given.'
           : m.windowDosesTotal === 0
             ? 'No doses logged in this window; this drug&rsquo;s doses fall outside it (the lifetime table above carries them).'
-            : `Given on ${courseDaysGiven(m, true)}${courseDaysTail(m)}.${outsideCourseNote(m)} Doses in this window: ${doseCounts.join(', ')}.`
+            : `${
+                m.courseDays.given > 0
+                  ? `Given on ${courseDaysGiven(m, true)}`
+                  : `In this window, ${courseDaysNoneGiven(m)}`
+              }${courseDaysTail(m)}.${outsideCourseNote(m)} Doses in this window: ${doseCounts.join(', ')}.`
       return `<tr><td>${h(m.drugName)}${m.strength ? ` ${h(m.strength)}` : ''}</td><td>${regimen}${
         m.indication ? ` — for ${h(m.indication)}` : ''
       } &middot; ${regimenDates(m)}</td><td class="c num">${logged}</td><td class="num">${doseDatesCell(

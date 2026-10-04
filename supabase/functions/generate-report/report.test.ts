@@ -1117,7 +1117,8 @@ Deno.test('CUL-1550 — courseDays partitions the course days in the window, by 
     apoDose('2026-06-17', 'missed'),
     // Jun 18 and 19: nothing at all.
   ]
-  const snap = assembleReport(baseInput({ medications: [apoCourse()], doses }))
+  // Reversed: production pulls rows newest-first (CUL-975), so nothing may lean on arrival order.
+  const snap = assembleReport(baseInput({ medications: [apoCourse()], doses: [...doses].reverse() }))
   const apo = snap.medications.find((m) => m.regimenId === 'reg-apo')!
   assert.equal(apo.elapsedDaysInWindow, 10)
   assert.deepEqual(apo.courseDays, {
@@ -1126,8 +1127,13 @@ Deno.test('CUL-1550 — courseDays partitions the course days in the window, by 
     nothingLogged: 2, // Jun 18, 19 — 5 + 3 + 2 = the 10 course days
     outsideCourseGiven: 1, // Jun 5
     outsideCourseNotGiven: 1, // Jun 6
-    outsideCourseDays: ['2026-06-05', '2026-06-06'],
+    outsideCourseGivenDays: ['2026-06-05'],
+    outsideCourseNotGivenDays: ['2026-06-06'],
   })
+  const twoOutside = assembleReport(
+    baseInput({ medications: [apoCourse()], doses: [apoDose('2026-06-07', 'given'), apoDose('2026-06-05', 'given'), apoDose('2026-06-10', 'given')] }),
+  ).medications.find((m) => m.regimenId === 'reg-apo')!
+  assert.deepEqual(twoOutside.courseDays.outsideCourseGivenDays, ['2026-06-05', '2026-06-07'], 'dates ascend whatever order rows arrive in')
 })
 
 Deno.test('CUL-1550 — the split counts THIS course\'s rows; a sibling course\'s dose stays on its own line', () => {
@@ -1166,6 +1172,11 @@ Deno.test('CUL-1550 — the split reads LOCAL days (America/New_York)', () => {
   const apo = assembleReport(baseInput({ medications: [apoCourse()], doses })).medications.find((m) => m.regimenId === 'reg-apo')!
   assert.equal(apo.courseDays.given, 4, 'Jun 19 local is a given course day')
   assert.equal(apo.courseDays.outsideCourseGiven, 0, 'and not "dated outside the course"')
+  // And an out-of-course row is DATED by its local day: 23:00 Jun 9 New York is Jun 10 in UTC,
+  // the course's first day, so a UTC key would print a false "outside" date.
+  const seam = assembleReport(baseInput({ medications: [apoCourse()], doses: [...doses, apoDose('2026-06-10', 'given', { time: '03:00:00' })] }))
+  const s2 = seam.medications.find((m) => m.regimenId === 'reg-apo')!
+  assert.deepEqual(s2.courseDays.outsideCourseGivenDays, ['2026-06-09'])
 })
 
 Deno.test('CUL-1550 — a linked dose outside the report window is neither a course day nor disclosed', () => {
@@ -1213,7 +1224,9 @@ Deno.test('CUL-1550 — partitionCourseDays: properties over random records', ()
     assert.equal(partitionCourseDays([], spanStart, spanEnd).nothingLogged, courseDays)
     const outside = rows.filter((r) => r.day !== null && (r.day < spanStart || r.day > spanEnd))
     assert.equal(p.outsideCourseGiven + p.outsideCourseNotGiven, outside.length, ctx)
-    assert.deepEqual(new Set(p.outsideCourseDays), new Set(outside.map((r) => r.dayKey)), ctx)
+    const keysOf = (administered: boolean) => [...new Set(outside.filter((r) => r.administered === administered).map((r) => r.dayKey!))].sort()
+    assert.deepEqual(p.outsideCourseGivenDays, keysOf(true), `each kind dated, ascending ${ctx}`)
+    assert.deepEqual(p.outsideCourseNotGivenDays, keysOf(false), ctx)
     const inSpan = rows.filter((r) => r.day !== null && r.day >= spanStart && r.day <= spanEnd)
     notGivenInSpan += inSpan.filter((r) => !r.administered).length
     const givenDay = inSpan.find((r) => r.administered)?.day
@@ -4001,7 +4014,7 @@ Deno.test('CUL-976 — a window holding ONLY missed/refused doses never reads "n
   // absence-as-fact this file's own "none recorded as refused" comment forbids, eleven lines up.
   assert.ok(!/No doses logged in this report's window/.test(line), 'refusals are dose events; the window is not empty')
   // CUL-1550: the honest form names the course days too, through the shared split.
-  assert.ok(/no doses given on any of the \d+ days of the course; a dose logged but not as given on 1/.test(plainText(line)), line)
+  assert.ok(/no dose given against this course on any of its \d+ days; a dose logged but not as given on 1/.test(plainText(line)), line)
   assert.ok(/2 refused/.test(line), 'and the refusals stay visible')
 })
 
