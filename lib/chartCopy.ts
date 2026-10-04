@@ -342,8 +342,9 @@ export function weightDeltaLine(
     moveG < Math.round(gate.noiseAbs * 1000) &&
     // And the line never prints the caveat beside a percentage that READS as 5 %: a 4.75 %
     // loss displays "(5%)", the number a vet reads as a cat's workup trigger. This caps the
-    // caveat under 4.5 %, so it subsumes the strict 5 % bound above; both stay, the bound
-    // stating the ruling and this the display's promise.
+    // caveat at moves that DISPLAY under 5 % (about 4.5 %; an exact 4.5 % rounds down in
+    // binary and shows "(4%)"), so it subsumes the strict 5 % bound above; both stay, the
+    // bound stating the ruling and this the display's promise.
     pct < Math.round(HOME_SCALE_NOISE_FRAC * 100);
   // Two readings only (see the docstring: the scatter branch is withheld, CUL-1557).
   const caveat = sameReadings && inNoise && g.points.length === 2;
