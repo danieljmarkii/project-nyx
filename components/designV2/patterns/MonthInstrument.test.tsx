@@ -533,6 +533,24 @@ describe('MonthInstrument — the care surfaces (CUL-1553)', () => {
     expect(getByText('itching day, count in the corner')).toBeTruthy();
   });
 
+  // CUL-1565 (CUL-1557 ruling 2b): the default is read-wide, so a month the trial is
+  // working — no itching in it — still opens on the dog's own sign, not on a vomit.
+  it('a month with no itching in it still opens on itching when the read holds more itching days', async () => {
+    const { getByTestId, getByLabelText } = mount(
+      jest.fn(async () =>
+        facts({
+          episodeDays: ['2026-09-10'],
+          symptomEntryDays: { itch: ['2026-07-28', '2026-08-03', '2026-08-11', '2026-08-19', '2026-08-25', '2026-08-30'] },
+        }),
+      ),
+    );
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    const radios = within(getByLabelText('Symptom')).getAllByRole('radio');
+    expect(radios.map((r) => r.props.accessibilityState?.selected ?? r.props.accessibilityState?.checked)).toEqual([true, false]);
+    expect(within(radios[0]).getByText('Itching')).toBeTruthy();
+    expect(within(getByTestId('month-layers')).getByText('Itching')).toBeTruthy();
+  });
+
   it('the owner\'s lens holds: tapping Vomiting redraws the month on vomiting', async () => {
     const { getByTestId, getByLabelText } = mount(jest.fn(async () => itchy()));
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
