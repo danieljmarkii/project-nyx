@@ -225,6 +225,8 @@ function input(over: Partial<WorthRaisingInput> = {}): WorthRaisingInput {
     // No trial anchor: the cache's stamp and the running trial are unknown (CUL-1364's
     // cases set both).
     signalAnchor: { generatedAt: null, trial: null },
+    // The redesign off: no Signal screen to quote (CUL-1570's cases set it).
+    screenSentences: new Map(),
     trialStrip: null,
     trialScreen: null,
     // No oral-route read answered (CUL-1342's lane is `trialRecheck.test.ts`'s to prove).

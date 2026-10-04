@@ -304,6 +304,14 @@ describe('the phone script names the window the sentence named (CUL-1570)', () =
     expect(said(model)).not.toMatch(/Recent \d+ weeks/);
   });
 
+  it('…and the script keeps the rule itself when handed the engine’s finding with a composed counting', () => {
+    const compare = { halfDays: 28, recentCount: 4, priorCount: 5, recentLoggingDays: 28, priorLoggingDays: 28, comparable: true } as const;
+    const counting = { kind: 'composed', firstLoggedDay: null, lookbackStart: shift(TODAY, -55), lookbackWeeks: 8 } as const;
+    const labels = (phoneScript(chronicity({ compare }), 'Nyx', false, null, counting) ?? []).map((x) => x.label);
+    expect(labels).toEqual(['Sign', 'How often', 'Most recent']);
+    expect((phoneScript(chronicity({ compare }), 'Nyx', false, null, null) ?? []).map((x) => x.label)).toContain('Recent 4 weeks');
+  });
+
   it('a composed chronicity’s "First logged" is the earliest of the phone and the engine, with its year, and says when it is before the weeks counted', () => {
     // The engine's onset is the first episode inside its lookback (Aug 5); the phone holds a
     // backfilled one from May, so the course has run longer than the engine's month says.

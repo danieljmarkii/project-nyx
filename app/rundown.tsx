@@ -22,6 +22,8 @@ import { buildTrialScreenModel } from '../lib/trialScreenModel';
 import { UNKNOWN_ALLOWED_SET } from '../lib/trialAllowedSet';
 import { NO_LEDGER_FACTS, recheckFactsState } from '../lib/trialRecheck';
 import { useTrialScreen } from '../hooks/useTrialScreen';
+import { useDesignV2 } from '../hooks/useDesignV2';
+import { readScreenSentences } from '../lib/getReadySignal';
 import { RecheckQuestions } from '../components/trialScreen/RecheckQuestions';
 import {
   loadDietTrialFacts,
@@ -168,6 +170,12 @@ export default function RundownScreen() {
   // reading it. A flip lands on the next focus; until then the row is today's (fail closed).
   const trialScreenRef = useRef(trialScreen);
   trialScreenRef.current = trialScreen;
+  // CUL-1570 (GC-4 PR 3): under Design v2, Worth raising quotes each counted finding's sentence
+  // as its Signal screen states it. Read through a ref for the same reason as the trial gate.
+  // The gate decides a source and draws nothing of the redesign; flag off, no screen is read.
+  const designV2 = useDesignV2();
+  const designV2Ref = useRef(designV2);
+  designV2Ref.current = designV2;
   const [getReady, setGetReady] = useState<GetReadyState | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -235,6 +243,7 @@ export default function RundownScreen() {
         myId,
         loadIdRef,
         trialScreenRef.current,
+        designV2Ref.current,
       );
       if (loadIdRef.current !== myId) return;
       setGetReady({
@@ -550,6 +559,8 @@ async function buildForAppointment(
   myId: number,
   loadIdRef: { current: number },
   trialScreenLive: boolean,
+  /** The redesign's gate (CUL-1570): quote the Signal screen's own sentences. */
+  screenCountsLive: boolean,
 ): Promise<WorthRaising> {
   // ONE snapshot, read once. Two `getState()` calls here were not a race — both are
   // synchronous with no await between them — but a reader has to prove that each time.
@@ -647,6 +658,10 @@ async function buildForAppointment(
         generatedOn,
       )
     : null;
+  // The screen's own sentence for each counted finding, for the rows that survived the masking
+  // above (CUL-1570). Flag off it is empty and nothing is read: today's page, byte for byte.
+  const screenSentences =
+    screenCountsLive && findings ? await readScreenSentences(subjectId, findings, nowMs) : new Map<string, string>();
   if (loadIdRef.current !== myId) {
     return { rows: [], signalUnavailable: false };
   }
@@ -658,6 +673,7 @@ async function buildForAppointment(
       generatedAt: signalRow ? signalRow.generatedAt : null,
       trial: trialInput?.trial ? signalTrialWindowOf(trialInput.trial, nowMs) : null,
     },
+    screenSentences,
     // The same fail-closed rule Home applies (B-789): absence of a refusal fact
     // during a failed load is not evidence of eating, so an unloadable trial
     // suppresses the reassuring trial_response row rather than letting it through.
