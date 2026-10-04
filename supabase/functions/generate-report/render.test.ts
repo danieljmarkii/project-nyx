@@ -345,6 +345,7 @@ function med(over: Partial<MedicationAdherence>): MedicationAdherence {
     adherenceState: 'tracked',
     elapsedDaysInWindow: 45,
     daysWithDose: 41,
+    courseDaysNoDoseLogged: 0,
     doseDays: [],
     prescribedDoses: 90,
     lifetimeDosesLogged: 82,
@@ -7064,7 +7065,8 @@ Deno.test('CUL-1550 — the report names the given + partial count "given", neve
           windowDosesLogged: 4,
           windowDosesTotal: 7,
           daysWithDose: 4,
-          elapsedDaysInWindow: 7,
+          elapsedDaysInWindow: 10,
+          courseDaysNoDoseLogged: 3,
           givenDoses: 3,
           partialDoses: 1,
           refusedDoses: 1,
@@ -7083,10 +7085,28 @@ Deno.test('CUL-1550 — the report names the given + partial count "given", neve
     assert.ok(!/<th[^>]*>Doses logged<\/th>/.test(t), `${name} no longer calls it "logged"`)
   }
   const appDText = plain(appD)
-  assert.ok(/Given on 4 of 7 days of the course in this window\./.test(appDText), 'the day phrase says given, over the administered days')
+  // Ruling (a): the remainder is stated, so "given on 4 of 10" never reads as "withheld on 6"
+  // when 3 of those days hold no row at all.
+  assert.ok(
+    /Given on 4 of 10 days of the course in this window; no dose logged on 3\./.test(appDText),
+    'the day phrase says given, over the administered days, and names the days with no row',
+  )
   assert.ok(!/Logged on \d/.test(appDText), 'and never "Logged on" for that population')
   // The words that DO mean every row stay: the unconfirmed and refused rows are still named.
   assert.ok(/1 unconfirmed\./.test(appDText) && /1 refused\./.test(appDText))
+  // Every non-given row is named, so 10 − 4 − 3 = 3 days are placed by the counts after the
+  // clause; a dropped "missed" leaves one day the reader cannot account for.
+  assert.ok(/1 missed\./.test(appDText), 'the missed dose is named beside the other non-given rows')
+})
+
+Deno.test('CUL-1550 — every course day carries a row: the remainder clause is absent, never "on 0"', () => {
+  const html = renderReport(
+    base({ medications: [med({ daysWithDose: 6, elapsedDaysInWindow: 7, courseDaysNoDoseLogged: 0, refusedDoses: 1 })] }),
+  )
+  const start = html.indexOf('Appendix D — Medication log')
+  const t = plain(html.slice(start, html.indexOf('</table>', start)))
+  assert.ok(/Given on 6 of 7 days of the course in this window\./.test(t), 'the sentence ends at the ratio')
+  assert.ok(!/no dose logged on/.test(t), 'and states no zero')
 })
 
 Deno.test('R-13 item 8 — the divider says where the un-lettered lifetime table sits', () => {

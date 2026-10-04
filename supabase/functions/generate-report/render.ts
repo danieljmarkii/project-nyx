@@ -8676,15 +8676,24 @@ function medicationAppendix(snap: ReportSnapshot): string {
       // "GIVEN on N days", never "Logged on" (CUL-1209 2(a), PM). `daysWithDose` counts days
       // with a given or partial dose only, and History uses "logged" for every dose row, so the
       // old word let the phone and this page say "logged" over different numbers for one drug.
-      // The two "Doses given (incl. partial)" headers below are the same ruling.
+      // The two "Doses given (incl. partial)" headers below are the same ruling. And the
+      // REMAINDER is stated (ruling (a)): unstated, "given on 12 of 46" reads as withheld on 34,
+      // when most of those days hold no row at all. Nothing when every course day has a row (C-3).
+      // Missed is named here too, as page 1 already does: once the remainder is stated, the days
+      // between "given" and "no dose logged" are accounted for only by the non-given rows named
+      // after it, and a missed row left out of that list is a day the arithmetic cannot place.
       const adherence =
         m.adherenceState === 'not_tracked'
           ? '<b>Adherence not tracked</b> — no doses logged against this regimen; never read as given.'
           : m.windowDosesTotal === 0
             ? 'No doses logged in this window; this drug&rsquo;s doses fall outside it (the lifetime table above carries them).'
-            : `Given on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days of the course in this window.${
+            : `Given on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days of the course in this window${
+                m.courseDaysNoDoseLogged > 0 ? `; no dose logged on ${num(m.courseDaysNoDoseLogged)}` : ''
+              }.${
                 m.unconfirmedDoses ? ` ${num(m.unconfirmedDoses)} unconfirmed.` : ''
-              }${m.refusedDoses ? ` ${num(m.refusedDoses)} refused.` : ' None recorded as refused.'}`
+              }${m.refusedDoses ? ` ${num(m.refusedDoses)} refused.` : ' None recorded as refused.'}${
+                m.missedDoses ? ` ${num(m.missedDoses)} missed.` : ''
+              }`
       return `<tr><td>${h(m.drugName)}${m.strength ? ` ${h(m.strength)}` : ''}</td><td>${regimen}${
         m.indication ? ` — for ${h(m.indication)}` : ''
       } &middot; ${regimenDates(m)}</td><td class="c num">${logged}</td><td class="num">${doseDatesCell(

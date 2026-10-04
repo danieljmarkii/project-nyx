@@ -1964,6 +1964,18 @@ export interface MedicationAdherence {
   elapsedDaysInWindow: number
   daysWithDose: number
   /**
+   * Days of the course inside the window that carry NO dose row of any kind — given, partial,
+   * missed, refused or unconfirmed (CUL-1550, PM ruling (a)).
+   *
+   * Appendix D says "Given on N of M days", and with the remainder unstated a vet reads M − N
+   * as days the drug was withheld: on the cold read's Apoquel sample, 26% adherence, when 31 of
+   * those 34 days had no row at all. The page cannot settle what happened on a day nothing was
+   * logged, so it says nothing was logged rather than letting the ratio imply "not given".
+   * Counted over the course's own days in the window (the `elapsedDaysInWindow` population),
+   * so it partitions that denominator with the days that do carry a row and is never negative.
+   */
+  courseDaysNoDoseLogged: number
+  /**
    * The local days an ADMINISTERED dose (given | partial) was logged, ascending (B-532).
    *
    * Appendix D had a dose COUNT and no dose DATES, which on a derm trial is the difference
@@ -5443,6 +5455,9 @@ function buildMedicationAdherence(
   let refused = 0
   let unconfirmed = 0
   const doseDayNums = new Set<number>()
+  // Course days in the window with a dose row of ANY adherence — the complement of
+  // `courseDaysNoDoseLogged`. Bounded to the span so it partitions `elapsedDaysInWindow`.
+  const anyRowDayNums = new Set<number>()
   // The same days as `doseDayNums`, as local day KEYS — Appendix D renders dates, and a day
   // number is only meaningful next to the scope that produced it (B-532).
   const doseDayKeys = new Set<string>()
@@ -5471,6 +5486,8 @@ function buildMedicationAdherence(
       }
     }
     if (!inWindow(d)) continue
+    const rowDay = eventDayNumber(d.occurredAt, tz)
+    if (rowDay !== null && rowDay >= spanStart && rowDay <= spanEnd) anyRowDayNums.add(rowDay)
     switch (d.adherence) {
       case 'given':
         given++
@@ -5526,6 +5543,7 @@ function buildMedicationAdherence(
     adherenceState,
     elapsedDaysInWindow,
     daysWithDose: doseDayNums.size,
+    courseDaysNoDoseLogged: elapsedDaysInWindow - anyRowDayNums.size,
     doseDays: [...doseDayKeys].sort(),
     // The ONE denominator on this document — the prescription, read from the shared course
     // derivation rather than re-derived here, so page 1 and the §4.4 table cannot disagree.

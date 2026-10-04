@@ -1081,6 +1081,45 @@ Deno.test('medication adherence — a co-started drug is a concurrent change; a 
   assert.equal(pro.givenDoses, 0)
 })
 
+// CUL-1550 (ruling (a)) — Appendix D states "Given on N of M days; no dose logged on K". K must
+// partition M with the days that DO carry a row, of any adherence, or the sentence either hides a
+// refusal day inside "no dose logged" or invents silence. Each fixture row is placed on a seam:
+// two rows on one day (counted once), a row of every non-given kind, and a linked row inside the
+// window but BEFORE the course started (outside M's days, so it must not shrink K).
+Deno.test('CUL-1550 — courseDaysNoDoseLogged partitions the course days in the window', () => {
+  const meds: ReportMedicationInput[] = [
+    {
+      id: 'reg-apo', medicationItemId: 'mi-apo', drugName: 'Apoquel', doseAmount: '16 mg', route: 'oral',
+      dosesPerDay: 1, scheduleNotes: null, indication: 'pruritus', prescribedBy: null,
+      startedAt: '2026-06-10', targetDurationDays: 10, status: 'completed', endedAt: '2026-06-19',
+      isPrescription: true, strength: '16 mg',
+    },
+  ]
+  const dose = (d: string, adherence: string | null, time = '14:00:00'): ReportDoseInput => ({
+    eventId: nextId('dose'), occurredAt: at(d, time), medicationId: 'reg-apo', medicationItemId: 'mi-apo',
+    adherence, doseAmount: '16 mg', pairedEventId: null,
+  })
+  const doses: ReportDoseInput[] = [
+    dose('2026-06-05', 'refused'), // in the window, before the course — not one of its days
+    dose('2026-06-10', 'given'),
+    dose('2026-06-11', 'given'),
+    dose('2026-06-12', 'given'),
+    dose('2026-06-13', 'given'),
+    dose('2026-06-13', 'refused', '20:00:00'), // a second row on a day already counted
+    dose('2026-06-14', 'partial'),
+    dose('2026-06-15', 'refused'),
+    dose('2026-06-16', null), // unconfirmed
+    dose('2026-06-17', 'missed'),
+    // Jun 18 and Jun 19: nothing at all.
+  ]
+  const snap = assembleReport(baseInput({ medications: meds, doses }))
+  const apo = snap.medications.find((m) => m.regimenId === 'reg-apo')!
+  assert.equal(apo.refusedDoses, 3, 'the pre-course refusal is inside the window, so the seam is exercised')
+  assert.equal(apo.elapsedDaysInWindow, 10)
+  assert.equal(apo.daysWithDose, 5, 'given or partial days: Jun 10–14')
+  assert.equal(apo.courseDaysNoDoseLogged, 2, 'only Jun 18 and 19 hold no row; refusal, unconfirmed and missed days are not silence')
+})
+
 Deno.test('§3.8 orphan-dose — ad-hoc/OTC doses with no regimen surface as an unlinkedMedications group', () => {
   // A real owner dosed an OTC antihistamine 3× via the one-tap path but never configured a regimen,
   // so `medicationId` is null on every dose and the regimen table is empty — the doses vanished from
