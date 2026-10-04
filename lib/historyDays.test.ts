@@ -21,6 +21,7 @@ import { deriveMedicationCourses, type MedicationHistoryRegimen } from './medica
 import type { AttributableDose } from './medications';
 import type { HistoryVisitRow } from './vetVisits';
 import { stripMarkOf, type StripWindow } from './stripMarks';
+import { filterLabelOf } from './historyControls';
 import {
   HISTORY_TYPE_KEYS,
   absenceText,
@@ -414,7 +415,7 @@ describe('AC 30 — the course counts key on the vet report\'s course grain', ()
     expect(Object.keys(dayFactsOn(facts.days, '2026-09-06').doses)).toHaveLength(3);
     const medication: HistoryFilter = { kind: 'type', type: 'medication' };
     expect(notInFullOf(facts.days, medication)).toBe(short);
-    const line = countLineOf({ filter: medication, search: null, window: WINDOWS.all, facts, course: null, trialRange: null, today: TODAY, dates: DATES });
+    const line = countLineOf({ filter: medication, filterLabel: 'Not read without a search', search: null, window: WINDOWS.all, facts, course: null, trialRange: null, today: TODAY, dates: DATES });
     expect(line).toMatchObject({ kind: 'count', line1: { strong: '4 logged on 1 day' } });
     expect(line.kind === 'count' ? line.line2 : null).toMatch(/^3 not given in full( · |$)/);
   });
@@ -467,7 +468,7 @@ describe('AC 1 — the count line, the type sheet and every day header agree, ev
     const perDay = [...facts.days.values()].map((f) => dayCountFor(f, filter) ?? 0);
     const summed = perDay.reduce((a, b) => a + b, 0);
     const course = filter.kind === 'course' ? { name: 'Course', days: { fromDay: '2026-09-01', toDay: null } } : null;
-    const line = countLineOf({ filter, search: null, window, facts, course, trialRange: null, today: TODAY, dates: DATES });
+    const line = countLineOf({ filter, filterLabel: 'Not read without a search', search: null, window, facts, course, trialRange: null, today: TODAY, dates: DATES });
 
     expect(countLineNumber(line)).toBe(summed);
     expect(windowTotalOf(facts.days, filter)?.count).toBe(summed);
@@ -540,7 +541,7 @@ describe('AC 1 — the count line, the type sheet and every day header agree, ev
     expect(windowTotalOf(facts.days, { kind: 'noticed' })).toBeNull();
     expect(dayHeaderOf(dayFactsOn(facts.days, '2026-09-05'), { kind: 'noticed' })).toEqual([]);
     expect(
-      countLineOf({ filter: { kind: 'noticed' }, search: null, window: WINDOWS.all, facts, course: null, trialRange: null, today: TODAY, dates: DATES }),
+      countLineOf({ filter: { kind: 'noticed' }, filterLabel: 'Not read without a search', search: null, window: WINDOWS.all, facts, course: null, trialRange: null, today: TODAY, dates: DATES }),
     ).toEqual({ kind: 'noticed', door: { key: 'noticed-patterns', label: 'What you noticed is on Patterns ›' } });
   });
 });
@@ -577,7 +578,7 @@ describe('AC 2 — "N days unlogged": on or after the record, before today, only
     const unlogged = unloggedDaysOf({ days: facts.days, range: { fromDay: '2026-09-20', toDay: TODAY }, recordStartDay: '2026-09-01', today: TODAY });
     expect(unlogged).toEqual([]);
     const line = countLineOf({
-      filter: { kind: 'all' }, search: null, facts, course: null, trialRange: null, today: TODAY, dates: DATES,
+      filter: { kind: 'all' }, filterLabel: 'Not read without a search', search: null, facts, course: null, trialRange: null, today: TODAY, dates: DATES,
       window: { longName: 'Last 2 days', anchorDay: null, isAllTime: false, isTrial: false, recordFrom: null, pastPlannedEnd: false, range: { fromDay: '2026-09-20', toDay: TODAY } },
     });
     // Coverage says nothing; the other clause still speaks (the pair across midnight).
@@ -602,7 +603,7 @@ describe('AC 2 — "N days unlogged": on or after the record, before today, only
 
 describe('AC 3 — the count line, form by form (§3.2)', () => {
   const lineFor = (window: CountLineWindow, filter: HistoryFilter, extra: Partial<Parameters<typeof countLineOf>[0]> = {}) =>
-    countLineOf({ filter, search: null, window, facts: factsFor(window.range), course: null, trialRange: null, today: TODAY, dates: DATES, ...extra });
+    countLineOf({ filter, filterLabel: filterLabelOf(filter, []), search: null, window, facts: factsFor(window.range), course: null, trialRange: null, today: TODAY, dates: DATES, ...extra });
 
   it('All types, All time: the total, the record\'s start, coverage and duplicates', () => {
     expect(lineFor(WINDOWS.all, { kind: 'all' })).toEqual({
@@ -748,7 +749,7 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
   it('a stale read never prints under a new window\'s name: pending until the facts answer it', () => {
     const facts = factsFor(WINDOWS.all.range);
     expect(
-      countLineOf({ filter: { kind: 'all' }, search: null, window: WINDOWS.last7, facts, course: null, trialRange: null, today: TODAY, dates: DATES }),
+      countLineOf({ filter: { kind: 'all' }, filterLabel: 'Not read without a search', search: null, window: WINDOWS.last7, facts, course: null, trialRange: null, today: TODAY, dates: DATES }),
     ).toEqual({ kind: 'pending' });
   });
 
@@ -832,7 +833,7 @@ describe('AC 3 — the count line, form by form (§3.2)', () => {
     const facts: HistoryFacts = {
       petId: PET, range: WINDOWS.all.range, days: new Map(), firsts: firstDaysOf([], null), duplicates: { total: 0, byType: {} },
     };
-    expect(countLineOf({ filter: { kind: 'all' }, search: null, window: WINDOWS.all, facts, course: null, trialRange: null, today: TODAY, dates: DATES }))
+    expect(countLineOf({ filter: { kind: 'all' }, filterLabel: 'Not read without a search', search: null, window: WINDOWS.all, facts, course: null, trialRange: null, today: TODAY, dates: DATES }))
       .toEqual({ kind: 'none' });
   });
 
@@ -1222,7 +1223,7 @@ describe('CUL-1243 (PM-ruled (a)) — Meal names meals and treats apart, in the 
   });
   const window: CountLineWindow = { longName: 'Sep 18', anchorDay: null, isAllTime: false, isTrial: false, recordFrom: null, pastPlannedEnd: false, range };
   const strongOf = (rows: readonly PopulationRow[]): string => {
-    const line = countLineOf({ filter: MEAL, search: null, window, facts: facts(rows), course: null, trialRange: null, today: TODAY, dates: DATES });
+    const line = countLineOf({ filter: MEAL, filterLabel: 'Not read without a search', search: null, window, facts: facts(rows), course: null, trialRange: null, today: TODAY, dates: DATES });
     return line.kind === 'count' ? line.line1.strong : '';
   };
 

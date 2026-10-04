@@ -506,6 +506,28 @@ describe('AC 7 — under search: the date only, and the search form of the line'
     expect(text('history-no-search-match')).toContain('Nothing matches “insulin”');
     expect(text('history-no-search-match')).toContain('Search looks in food and medicine names.');
   });
+
+  it('a search inside a filter names the filter, says it is on, and offers the rest (CUL-1532, call 4a)', async () => {
+    seedWeek();
+    insertFood('rabbit', 'Instinct', 'Limited Ingredient Rabbit', 'wet_canned');
+    insertMeal('rab', at(1, 13), 'rabbit', 'all');
+    setScope({ filter: { kind: 'type', type: 'vomit' }, searchOpen: true, searchText: 'rabbit' });
+    await renderList();
+    expect(text('history-count-line-1')).toBe('Searching for “rabbit” · Vomit · All time');
+    expect(screen.queryByTestId('history-no-search-match')).toBeNull();
+    const miss = text('history-no-search-match-in-filter');
+    expect(miss).toContain('No vomits mention “rabbit”');
+    expect(miss).toContain('The Vomit filter is on, so this search looked only at vomits.');
+    expect(screen.queryByTestId('spine-node-rab')).toBeNull();
+
+    // One tap keeps the words and drops the filter, and the meal the filter hid appears.
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Search all types'));
+    });
+    expect(useHistoryScopeStore.getState()).toMatchObject({ filter: { kind: 'all' }, searchOpen: true, searchText: 'rabbit' });
+    await waitFor(() => expect(screen.getByTestId('spine-node-rab')).toBeTruthy());
+    expect(text('history-count-line-1')).toBe('Searching for “rabbit” · All time');
+  });
 });
 
 // ── AC 10 / AC 11: gap lines and date-only items ───────────────────────────────

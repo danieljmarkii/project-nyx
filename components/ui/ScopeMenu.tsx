@@ -76,6 +76,10 @@ interface Props {
   // indicator so the rows past the fold read as there, never as the end of the list
   // (B-146's hidden option, turned vertical). Off by default. (HV-9)
   openAtSelected?: boolean;
+  // One quiet line under the sheet label saying what the rows' numbers count ('Logged
+  // since the trial started, Jul 26'). The scope sits where the reader meets the number
+  // (C-3). Absent, the sheet renders as it always has. (CUL-1532)
+  caption?: string | null;
 }
 
 // How much of the list above the selected row stays in view when a sheet opens at it:
@@ -84,7 +88,7 @@ const SELECTED_ROW_PEEK = 48;
 
 export function ScopeMenu({
   options, value, onChange, sheetLabel, accessibilityPrefix, overrideLabel,
-  pillLabel: pillText, pillCount, pillAccessibilityLabel, openAtSelected,
+  pillLabel: pillText, pillCount, pillAccessibilityLabel, openAtSelected, caption,
 }: Props) {
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
@@ -159,6 +163,7 @@ export function ScopeMenu({
           <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}>
             <View style={styles.grabber} />
             <SectionLabel label={sheetLabel} header style={styles.sheetLabel} />
+            {caption ? <ThemedText style={styles.sheetCaption}>{caption}</ThemedText> : null}
             {/* Longer sets (the 10-row event-type lens) can outgrow a small
                 screen; the sheet caps its height and the rows scroll INSIDE it
                 with the native indicator visible — never a hidden overflow. */}
@@ -314,6 +319,12 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sheetLabel: {
+    marginBottom: theme.space1,
+  },
+  sheetCaption: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextSecondary,
     marginBottom: theme.space1,
   },
   optionScroll: {

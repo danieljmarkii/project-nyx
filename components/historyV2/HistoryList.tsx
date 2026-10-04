@@ -97,6 +97,7 @@ import {
   type HistorySection,
 } from '../../lib/historyDays';
 import { SEARCH_READS_NOTES, type HistoryRow } from '../../lib/historyQueries';
+import { SEARCH_ALL_TYPES_LABEL, filterLabelOf, searchInFilterMissOf } from '../../lib/historyControls';
 import {
   BOWL_LINE_LEAD,
   LANDING_ITEM_INDEX,
@@ -590,6 +591,7 @@ export function HistoryList() {
     const c = courseOf(headerSnap, filter);
     return countLineOf({
       filter,
+      filterLabel: filterLabelOf(filter, headerSnap.courses),
       search: shownSearch,
       window: countLineWindowOf(headerSnap.resolved, headerSnap.windowFacts),
       facts: headerSnap.facts,
@@ -860,6 +862,7 @@ export function HistoryList() {
     </View>
   ) : null;
 
+  const searchMiss = snapshot && search !== null ? searchInFilterMissOf(snapshot.filter, search, snapshot.courses) : null;
   const empty = !activePet ? (
     // No pet, so no read to wait for: the first-log line, never a silhouette that never ends.
     <EmptyState title={HISTORY_EMPTY_TITLE} body={historyEmptyBody(petName)} testID="history-empty" />
@@ -878,7 +881,21 @@ export function HistoryList() {
   ) : snapshot.facts.firsts.record === null && !noticed ? (
     <EmptyState title={HISTORY_EMPTY_TITLE} body={historyEmptyBody(petName)} testID="history-empty" />
   ) : search !== null ? (
-    <EmptyState title={historyNoSearchMatchTitle(search)} body={HISTORY_SEARCH_LOOKS} testID="history-no-search-match" />
+    searchMiss !== null ? (
+      // A search inside a filter found nothing among the filter's rows (CUL-1532, call 4a):
+      // say the filter is on, and offer the rest of the record with the words kept.
+      <EmptyState
+        title={searchMiss.title}
+        body={searchMiss.body}
+        action={{
+          label: SEARCH_ALL_TYPES_LABEL,
+          onPress: () => useHistoryScopeStore.getState().setFilter(snapshot.petId, { kind: 'all' }),
+        }}
+        testID="history-no-search-match-in-filter"
+      />
+    ) : (
+      <EmptyState title={historyNoSearchMatchTitle(search)} body={HISTORY_SEARCH_LOOKS} testID="history-no-search-match" />
+    )
   ) : (
     <EmptyState {...filterQuietStateFor(snapshot)} testID="history-no-match" />
   );

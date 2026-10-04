@@ -29,12 +29,13 @@ jest.mock('../../lib/historyWindowFacts', () => ({ readHistoryRecord: jest.fn() 
 
 import { Keyboard, StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
+import { ChevronDown } from 'lucide-react-native';
 import { PinnedRow } from './PinnedRow';
 import { SEARCH_WRITE_DELAY_MS } from './SearchField';
 import { __resetAppConfigForTest } from '../../hooks/useAppConfig';
 import { ALLOWLIST_FLAGS_UNSET, APP_CONFIG_DEFAULTS } from '../../lib/appConfig';
 import { useBetaOptInStore } from '../../lib/betaFeatures';
-import { buildDayFacts, historyCourseOf, type PopulationRow } from '../../lib/historyDays';
+import { SEARCH_COUNTS_NOTHING, buildDayFacts, historyCourseOf, type PopulationRow } from '../../lib/historyDays';
 import { windowTrialOf, type WindowFacts } from '../../lib/historyWindows';
 import { readHistoryRecord, type HistoryRecordData } from '../../lib/historyWindowFacts';
 import { deriveMedicationCourses, type MedicationHistoryRegimen } from '../../lib/medicationHistory';
@@ -205,7 +206,8 @@ afterAll(() => {
 describe('the pinned row (§3.1)', () => {
   it('names whose record it is, and the default scope: All types, All time, no count', async () => {
     const view = await renderAnswered();
-    expect(view.getByRole('header').props.children).toBe('Nyx');
+    expect(view.getByLabelText('Switch pet — Nyx active')).toBeTruthy();
+    expect(view.getByText('Nyx')).toBeTruthy();
     expect(view.getByLabelText('Filter: All types')).toBeTruthy();
     expect(view.getByLabelText('Date range: All time')).toBeTruthy();
     expect(view.getByLabelText('Search Nyx\'s record').props.accessibilityState).toMatchObject({ expanded: false });
@@ -233,6 +235,54 @@ describe('the pinned row (§3.1)', () => {
     const view = await renderAnswered();
     expect(view.getByLabelText('Filter: Noticed')).toBeTruthy();
     expect(view.queryByText(/^· /)).toBeNull();
+  });
+});
+
+/** The chevrons drawn inside a host node (lucide's icon drops a testID on the way down). */
+function chevronsIn(node: ReturnType<ReturnType<typeof render>['getByTestId']>): number {
+  return node.findAllByType(ChevronDown).length;
+}
+
+describe('the pet name opens "Your pets" (CUL-1532, call 2a)', () => {
+  it('opens the shipped switcher, as Home’s name does, with a chevron for a second pet', async () => {
+    const view = await renderAnswered();
+    expect(chevronsIn(view.getByTestId('history-v2-pet-door'))).toBe(1);
+    expect(view.queryByText('Your pets')).toBeNull();
+    fireEvent.press(view.getByLabelText('Switch pet — Nyx active'));
+    expect(view.getByText('Your pets')).toBeTruthy();
+    expect(view.getByText('Rex')).toBeTruthy();
+  });
+
+  it('a one-pet household sees no chevron, and the name still opens the sheet (its Add a pet door)', async () => {
+    act(() => usePetStore.setState({ pets: [NYX] }));
+    const view = await renderAnswered();
+    expect(chevronsIn(view.getByTestId('history-v2-pet-door'))).toBe(0);
+    fireEvent.press(view.getByLabelText('Nyx — your pets'));
+    expect(view.getByText('Your pets')).toBeTruthy();
+  });
+
+  it('reaches the 44pt floor by its box, with no slop to reach the type pill (C-5)', async () => {
+    const view = await renderAnswered();
+    const door = view.getByTestId('history-v2-pet-door');
+    expect(StyleSheet.flatten(door.props.style).minHeight).toBeGreaterThanOrEqual(44);
+    expect(door.props.hitSlop).toBeUndefined();
+  });
+});
+
+describe('the sheets say what their numbers count (CUL-1532, call 1a)', () => {
+  it('the type sheet names the window; the window sheet names the filter', async () => {
+    act(() => {
+      store().setFilter('p1', { kind: 'type', type: 'vomit' });
+    });
+    const view = await renderAnswered();
+    fireEvent.press(view.getByLabelText('Filter: Vomit, 3 logged'));
+    expect(view.getByText('Logged since May 14')).toBeTruthy();
+    fireEvent.press(view.getByLabelText('Close'));
+    fireEvent.press(view.getByLabelText('Date range: All time'));
+    expect(view.getByText('Vomits logged in each window')).toBeTruthy();
+    fireEvent.press(view.getByLabelText(/^Since the trial started, Jul 26/));
+    fireEvent.press(view.getByLabelText(/^Filter: Vomit/));
+    expect(view.getByText('Logged since the trial started, Jul 26')).toBeTruthy();
   });
 });
 
@@ -332,6 +382,13 @@ describe('search (§3.7, AC 7)', () => {
     // Search finds; it never counts (C-3): the pill drops its number.
     expect(view.queryByText('· 3')).toBeNull();
     expect(view.getByLabelText('Filter: Vomit')).toBeTruthy();
+    // Both sheets say why there is no number, in the count line's own words (CUL-1532).
+    fireEvent.press(view.getByLabelText('Filter: Vomit'));
+    expect(view.getByText(SEARCH_COUNTS_NOTHING)).toBeTruthy();
+    fireEvent.press(view.getByLabelText('Close'));
+    fireEvent.press(view.getByLabelText('Date range: All time'));
+    expect(view.getByText(SEARCH_COUNTS_NOTHING)).toBeTruthy();
+    fireEvent.press(view.getByLabelText('Close'));
 
     fireEvent.press(view.getByText('Cancel'));
     expect(store()).toMatchObject({ searchOpen: false, searchText: '' });
@@ -373,7 +430,7 @@ describe('a pet switch (AC 13)', () => {
 
     act(() => usePetStore.setState({ activePet: REX }));
     expect(view.queryByText('Show only')).toBeNull();
-    expect(view.getByRole('header').props.children).toBe('Rex');
+    expect(view.getByLabelText('Switch pet — Rex active')).toBeTruthy();
     expect(view.getByLabelText('Filter: All types')).toBeTruthy();
     await settle();
     expect(mockRead).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'p2' }), false, expect.any(Number));
@@ -427,6 +484,8 @@ describe('no number it cannot stand behind (C-12)', () => {
     expect(view.getByLabelText('All types')).toBeTruthy();
     expect(view.getByLabelText('Photographed')).toBeTruthy();
     expect(view.queryByText(/^\d/)).toBeNull();
+    // No numbers, so no caption scoping them (CUL-1532).
+    expect(view.queryByText(/^Logged /)).toBeNull();
     fireEvent.press(view.getByLabelText('Close'));
     fireEvent.press(view.getByLabelText('Date range: All time'));
     expect(view.getByLabelText('Last 7 days')).toBeTruthy();

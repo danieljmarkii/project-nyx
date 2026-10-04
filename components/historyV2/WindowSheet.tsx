@@ -16,6 +16,8 @@ interface Props {
   petId: string;
   /** The window the list shows: the applied one, or the store's while its facts load. */
   current: HistoryWindowKey;
+  /** What the rows' numbers count, or null when they show none (CUL-1532). */
+  caption: string | null;
   rows: readonly SheetRow<HistoryWindowKey>[];
   /** The pill's words (the short name, *Since Jul 26*) and what VoiceOver reads for it
    *  (the long name and its date). */
@@ -27,7 +29,7 @@ function keyOf(window: HistoryWindowKey): string | null {
   return window.kind === 'all' ? null : windowParam(window);
 }
 
-export function WindowSheet({ petId, current, rows, pill }: Props) {
+export function WindowSheet({ petId, current, rows, pill, caption }: Props) {
   const { options, byKey } = useMemo(() => {
     const map = new Map<string | null, HistoryWindowKey>();
     const opts: ScopeMenuOption[] = rows.map((row) => {
@@ -59,6 +61,7 @@ export function WindowSheet({ petId, current, rows, pill }: Props) {
       pillLabel={pill.label}
       pillAccessibilityLabel={pill.accessibilityLabel}
       openAtSelected
+      caption={caption}
     />
   );
 }

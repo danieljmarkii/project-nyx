@@ -50,9 +50,11 @@ beforeEach(() => {
 
 describe('TypeSheet', () => {
   it('draws every row it is handed, and marks the filter on screen selected', () => {
-    const view = render(<TypeSheet petId="p1" filter={{ kind: 'course', courseKey: 'reg-cet' }} rows={ROWS} pill={{ ...PILL, label: 'Cetirizine HCl', count: '3', accessibilityLabel: 'Filter: Cetirizine HCl, 3 logged' }} />);
+    const view = render(<TypeSheet petId="p1" filter={{ kind: 'course', courseKey: 'reg-cet' }} rows={ROWS} pill={{ ...PILL, label: 'Cetirizine HCl', count: '3', accessibilityLabel: 'Filter: Cetirizine HCl, 3 logged' }} caption="Logged since May 14" />);
     fireEvent.press(view.getByLabelText('Filter: Cetirizine HCl, 3 logged'));
     expect(view.getByText('Show only')).toBeTruthy();
+    // The caption says which window the numbers count (CUL-1532, call 1a).
+    expect(view.getByText('Logged since May 14')).toBeTruthy();
     for (const r of ROWS) expect(view.getByLabelText(r.accessibilityLabel)).toBeTruthy();
     expect(view.getByLabelText('Cetirizine HCl, 3 logged').props.accessibilityState.selected).toBe(true);
     expect(view.getByLabelText('All types, 12 logged').props.accessibilityState.selected).toBe(false);
@@ -62,7 +64,7 @@ describe('TypeSheet', () => {
   });
 
   it('a pick writes the filter the row stands for, for the pet it was made for', () => {
-    const view = render(<TypeSheet petId="p1" filter={{ kind: 'all' }} rows={ROWS} pill={PILL} />);
+    const view = render(<TypeSheet petId="p1" filter={{ kind: 'all' }} rows={ROWS} pill={PILL} caption={null} />);
     fireEvent.press(view.getByLabelText('Filter: All types'));
     fireEvent.press(view.getByLabelText('Cetirizine HCl, 3 logged'));
     expect(useHistoryScopeStore.getState().filter).toEqual({ kind: 'course', courseKey: 'reg-cet' });
@@ -72,7 +74,7 @@ describe('TypeSheet', () => {
   });
 
   it('a sheet opened for one pet never writes into another’s scope', () => {
-    const view = render(<TypeSheet petId="p1" filter={{ kind: 'all' }} rows={ROWS} pill={PILL} />);
+    const view = render(<TypeSheet petId="p1" filter={{ kind: 'all' }} rows={ROWS} pill={PILL} caption={null} />);
     fireEvent.press(view.getByLabelText('Filter: All types'));
     // The store moves on underneath the open sheet (a widget link, say) before the tap.
     act(() => usePetStore.setState({ activePet: pet('p2', 'Rex') }));
@@ -81,10 +83,12 @@ describe('TypeSheet', () => {
   });
 
   it('closes when the pet changes: the menu is keyed on the pet (AC 13)', () => {
-    const view = render(<TypeSheet petId="p1" filter={{ kind: 'all' }} rows={ROWS} pill={PILL} />);
+    const view = render(<TypeSheet petId="p1" filter={{ kind: 'all' }} rows={ROWS} pill={PILL} caption={null} />);
     fireEvent.press(view.getByLabelText('Filter: All types'));
     expect(view.getByText('Show only')).toBeTruthy();
-    view.rerender(<TypeSheet petId="p2" filter={{ kind: 'all' }} rows={ROWS} pill={PILL} />);
+    // No caption handed, none drawn: the sheet stays as it was.
+    expect(view.queryByText(/^Logged /)).toBeNull();
+    view.rerender(<TypeSheet petId="p2" filter={{ kind: 'all' }} rows={ROWS} pill={PILL} caption={null} />);
     expect(view.queryByText('Show only')).toBeNull();
   });
 });
