@@ -974,6 +974,17 @@ describe('state 6 — overrun, with the bowl in force (CUL-1554)', () => {
     ]);
   });
 
+  it('keeps the unnamed-feedings disclosure the record register gave it', () => {
+    const m = resolveTrialCard({
+      ...input,
+      freeFed: { loggedFeedings: 3 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 3, offDiet: 0, unclassifiable: 20 },
+    });
+    expect(textOf(m, 'fact')).toContain(
+      '20 more logged feedings don’t name a food, so they can’t be checked against the trial diet.',
+    );
+  });
+
   it('teaches no rating over a bowl that cannot be rated', () => {
     expect(textOf(model, 'teach')).toEqual([]);
     // …while the same record WITHOUT the bowl still teaches, so the fixture was armed.
@@ -1315,6 +1326,32 @@ describe('replacement 9 — free-fed', () => {
     // withhold the exposure.
     expect(textOf(m, 'fact')).toEqual([
       '22 bowl top-ups and wet meals logged so far; 4 were not the trial diet.',
+    ]);
+    // §5.2: the floor is said ON the claim, as the record register says it (CUL-1554).
+    expect(textOf(m, 'qualifier')).toEqual([
+      `${BLIND_SPOT_QUALIFIER} The 4 are what’s been logged, not a total.`,
+    ]);
+  });
+
+  // CUL-1554 (adversarial pass): the classified count leaves out feedings that name no
+  // food, so the bowl said "0 … logged so far" over a record holding twenty.
+  it('says the feedings that name no food, and never a zero over them', () => {
+    const allUnnamed = resolveTrialCard(activeInput({
+      petName: 'Mochi',
+      freeFed: { loggedFeedings: 0 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 0, offDiet: 0, unclassifiable: 20 },
+    }));
+    expect(textOf(allUnnamed, 'fact')).toEqual([
+      '20 logged feedings don’t name a food, so they can’t be checked against the trial diet.',
+    ]);
+    const mixed = resolveTrialCard(activeInput({
+      petName: 'Mochi',
+      freeFed: { loggedFeedings: 3 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 3, offDiet: 0, unclassifiable: 20 },
+    }));
+    expect(textOf(mixed, 'fact')).toEqual([
+      '3 bowl top-ups and wet meals logged so far.',
+      '20 more logged feedings don’t name a food, so they can’t be checked against the trial diet.',
     ]);
   });
 

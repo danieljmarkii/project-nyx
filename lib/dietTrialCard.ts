@@ -1638,15 +1638,32 @@ function pushRegisterBody(
       const n = freeFed.loggedFeedings;
       const ex = input.exposures;
       const noun = n === 1 ? 'bowl top-up or wet meal' : 'bowl top-ups and wet meals';
+      // THE FEEDINGS THAT NAME NO FOOD (CUL-1338), said here too (CUL-1554). `n` is the
+      // classified total, so it leaves them out, and this body never said so: a bowl
+      // with 20 unnamed feedings read "0 bowl top-ups and wet meals logged so far."
+      // over a record holding 20. That was a hole on the `free_fed` state already; the
+      // overrun reaching this register would have taken the record register's
+      // disclosure away from a second state. The zero is withheld when the unnamed
+      // line is the whole of the record, as `exposureLine` does on its own zero.
+      const unnamed = ex ? unclassifiableLine(ex, n > 0) : null;
+      if (n > 0 || !unnamed) {
+        lines.push({
+          role: 'fact',
+          text:
+            ex && ex.offDiet > 0
+              ? `${n} ${noun} logged so far; ${ex.offDiet} ${ex.offDiet === 1 ? 'was' : 'were'} ` +
+                'not the trial diet.'
+              : `${n} ${noun} logged so far.`,
+        });
+      }
+      if (unnamed) lines.push({ role: 'fact', text: unnamed });
+      // §5.2's "a floor, never a total", on the claim, exactly as the record register
+      // words it (and under the same can't-match predicate, so "at least N" is never
+      // welded to "maybe fewer"). The bowl's count carried it nowhere.
       lines.push({
-        role: 'fact',
-        text:
-          ex && ex.offDiet > 0
-            ? `${n} ${noun} logged so far; ${ex.offDiet} ${ex.offDiet === 1 ? 'was' : 'were'} not ` +
-              'the trial diet.'
-            : `${n} ${noun} logged so far.`,
+        role: 'qualifier',
+        text: BLIND_SPOT_QUALIFIER + (ex && ex.offDiet > 0 && !caveat ? floorSuffix(ex.offDiet) : ''),
       });
-      lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
       return;
     }
 
