@@ -3709,6 +3709,9 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // sections deliberately do NOT use this: attribution must see every dose a drug ever had, or a
   // course configured after dosing began loses its early doses — the CUL-976 defect.
   const windowLookbackDoses = input.doses.filter((d) => !droppedEventIds.has(d.eventId))
+  // Every pass dose, so a course's day split can see a dose of the SAME drug filed elsewhere (a
+  // sibling course, or the orphan bucket) and never call that day silent (CUL-1550).
+  const allPassDoses = [...[...medPass.byRegimen.values()].flat(), ...medPass.unattributed]
   const medications = input.medications.map((m) =>
     buildMedicationAdherence(
       m,
@@ -3716,6 +3719,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       medPass.courseByRegimen.get(m.id) ?? null,
       scope,
       tz,
+      m.medicationItemId === null
+        ? []
+        : allPassDoses.filter(
+            (d) => d.medicationItemId === m.medicationItemId && !(medPass.byRegimen.get(m.id) ?? []).includes(d),
+          ),
     ),
   )
   // Ad-hoc / OTC doses that belong to no configured regimen — surfaced separately so a drug the
@@ -5419,51 +5427,71 @@ function buildMedicationPass(
  *
  * "Given on 12 of 46 days" with the other 34 unstated reads to a vet as "withheld on 34", when
  * on the cold read's sample 31 of them held no row at all. Stating a remainder beside the ratio
- * is only honest if the parts are ONE partition of ONE population, so every course day lands in
- * exactly one bucket, by precedence (C-4: the accusing reading loses to the record):
+ * is only honest if the parts are ONE partition of ONE population, so every course day in the
+ * window lands in exactly one bucket, by precedence (C-4: the accusing reading loses to the
+ * record):
  *
- *   • given            — any given or partial dose that day, whatever else was logged;
- *   • loggedNotGiven   — rows that day, none of them given or partial (refused, missed, or
- *                        unconfirmed — which is why the bucket says "not as given", never
- *                        "not given": an unconfirmed dose is unknown, not withheld);
- *   • nothingLogged    — no row at all. The page cannot say what happened; it says so.
+ *   • given            — any given or partial dose of THIS course that day;
+ *   • loggedNotGiven   — rows of this course that day, none given or partial (refused, missed,
+ *                        or unconfirmed — so the bucket says "not as given", never "not given":
+ *                        an unconfirmed dose is unknown, not withheld);
+ *   • loggedElsewhere  — no row of this course, but a dose of the SAME DRUG filed elsewhere: a
+ *                        sibling course (a taper) or the orphan bucket (the CUL-991 UTC-day
+ *                        attribution seam). Without this bucket the page said "nothing logged"
+ *                        on a day the next line showed a dose of the drug (adversarial, 2026-10-04);
+ *   • nothingLogged    — no row of the drug at all. The page cannot say what happened; it says so.
  *
- * The three sum to the course days by construction. The days are the course's own span inside
- * the window, so an administered dose dated OUTSIDE the course (a backdated dose, an edited start
- * date, an attribution seam) can never inflate `given` past the denominator — it is counted in
- * `givenDosesOutsideCourse` and disclosed rather than dropped (adversarial review, 2026-10-04).
+ * The four sum to the course days by construction. Rows of this course dated OUTSIDE its span
+ * (a backdated dose, an edited start date) cannot be course days, so they are counted by kind
+ * and disclosed — the given AND the not-given ones (C-37: reach for the accusing number too).
  */
 export interface CourseDayPartition {
   given: number
   loggedNotGiven: number
+  loggedElsewhere: number
   nothingLogged: number
-  /** Administered doses in the window whose day falls outside the course's span. Doses, not days. */
-  givenDosesOutsideCourse: number
+  /** This course's in-window rows dated outside its span, by kind. Doses, not days. */
+  outsideCourseGiven: number
+  outsideCourseNotGiven: number
+}
+
+export interface PartitionRow {
+  /** The row's LOCAL day number (`eventDayNumber`), the same numbering as the span bounds. */
+  day: number | null
+  administered: boolean
 }
 
 export function partitionCourseDays(
-  rows: readonly { day: number | null; administered: boolean }[],
+  ownRows: readonly PartitionRow[],
+  sameDrugElsewhereRows: readonly PartitionRow[],
   spanStart: number,
   spanEnd: number,
 ): CourseDayPartition {
+  const inSpan = (d: number | null): d is number => d !== null && d >= spanStart && d <= spanEnd
   const givenDays = new Set<number>()
-  const loggedDays = new Set<number>()
-  let givenDosesOutsideCourse = 0
-  for (const r of rows) {
+  const ownDays = new Set<number>()
+  let outsideCourseGiven = 0
+  let outsideCourseNotGiven = 0
+  for (const r of ownRows) {
     if (r.day === null) continue
-    if (r.day < spanStart || r.day > spanEnd) {
-      if (r.administered) givenDosesOutsideCourse++
+    if (!inSpan(r.day)) {
+      if (r.administered) outsideCourseGiven++
+      else outsideCourseNotGiven++
       continue
     }
-    loggedDays.add(r.day)
+    ownDays.add(r.day)
     if (r.administered) givenDays.add(r.day)
   }
+  const elsewhereDays = new Set<number>()
+  for (const r of sameDrugElsewhereRows) if (inSpan(r.day) && !ownDays.has(r.day)) elsewhereDays.add(r.day)
   const courseDays = Math.max(0, spanEnd - spanStart + 1)
   return {
     given: givenDays.size,
-    loggedNotGiven: loggedDays.size - givenDays.size,
-    nothingLogged: courseDays - loggedDays.size,
-    givenDosesOutsideCourse,
+    loggedNotGiven: ownDays.size - givenDays.size,
+    loggedElsewhere: elsewhereDays.size,
+    nothingLogged: courseDays - ownDays.size - elsewhereDays.size,
+    outsideCourseGiven,
+    outsideCourseNotGiven,
   }
 }
 
@@ -5482,6 +5510,7 @@ function buildMedicationAdherence(
   course: MedicationCourse | null,
   scope: ReportScope,
   tz: string | null,
+  sameDrugElsewhere: readonly ReportDoseInput[],
 ): MedicationAdherence {
   const startNum = dayNumber(m.startedAt)
   const endNum = m.endedAt ? dayNumber(m.endedAt) : null
@@ -5504,7 +5533,7 @@ function buildMedicationAdherence(
   const doseDayNums = new Set<number>()
   // Every in-window row's local day and whether it delivered therapy — the input to the ONE
   // course-day partition both page 1 and Appendix D state (CUL-1550).
-  const windowRows: { day: number | null; administered: boolean }[] = []
+  const windowRows: PartitionRow[] = []
   // The same days as `doseDayNums`, as local day KEYS — Appendix D renders dates, and a day
   // number is only meaningful next to the scope that produced it (B-532).
   const doseDayKeys = new Set<string>()
@@ -5590,8 +5619,15 @@ function buildMedicationAdherence(
     elapsedDaysInWindow,
     daysWithDose: doseDayNums.size,
     courseDays: overlapsWindow
-      ? partitionCourseDays(windowRows, spanStart, spanEnd)
-      : { given: 0, loggedNotGiven: 0, nothingLogged: 0, givenDosesOutsideCourse: 0 },
+      ? partitionCourseDays(
+          windowRows,
+          sameDrugElsewhere
+            .filter(inWindow)
+            .map((d) => ({ day: eventDayNumber(d.occurredAt, tz), administered: d.adherence === 'given' || d.adherence === 'partial' })),
+          spanStart,
+          spanEnd,
+        )
+      : { given: 0, loggedNotGiven: 0, loggedElsewhere: 0, nothingLogged: 0, outsideCourseGiven: 0, outsideCourseNotGiven: 0 },
     doseDays: [...doseDayKeys].sort(),
     // The ONE denominator on this document — the prescription, read from the shared course
     // derivation rather than re-derived here, so page 1 and the §4.4 table cannot disagree.

@@ -345,7 +345,7 @@ function med(over: Partial<MedicationAdherence>): MedicationAdherence {
     adherenceState: 'tracked',
     elapsedDaysInWindow: 45,
     daysWithDose: 41,
-    courseDays: { given: 41, loggedNotGiven: 0, nothingLogged: 4, givenDosesOutsideCourse: 0 },
+    courseDays: { given: 41, loggedNotGiven: 0, loggedElsewhere: 0, nothingLogged: 4, outsideCourseGiven: 0, outsideCourseNotGiven: 0 },
     doseDays: [],
     prescribedDoses: 90,
     lifetimeDosesLogged: 82,
@@ -7086,11 +7086,15 @@ const appDOf = (html: string): string =>
 const page1MedOf = (html: string): string => {
   const t = plain(html)
   const i = t.indexOf('In this window: ')
-  return i < 0 ? '' : t.slice(i, t.indexOf('Doses:', i) + 200)
+  return i < 0 ? '' : t.slice(i, t.indexOf('Doses:', i) + 60)
 }
 
+const split = (o: Partial<MedicationAdherence['courseDays']>): MedicationAdherence['courseDays'] => ({
+  given: 0, loggedNotGiven: 0, loggedElsewhere: 0, nothingLogged: 0, outsideCourseGiven: 0, outsideCourseNotGiven: 0, ...o,
+})
+
 Deno.test('CUL-1550 — the report names the given + partial count "given", never "logged"', () => {
-  const html = cul1550Html({ given: 4, loggedNotGiven: 3, nothingLogged: 3, givenDosesOutsideCourse: 0 })
+  const html = cul1550Html(split({ given: 4, loggedNotGiven: 3, nothingLogged: 3 }))
   const appD = appDOf(html)
   const hist = html.slice(html.indexOf('>Medication history</p>'), html.indexOf('</table>', html.indexOf('>Medication history</p>')))
   assert.ok(appD.length > 0 && hist.length > 0, 'both tables rendered — the checks below are over something')
@@ -7101,32 +7105,45 @@ Deno.test('CUL-1550 — the report names the given + partial count "given", neve
   assert.ok(!/Logged on \d/.test(plain(appD)), 'and never "Logged on" for that population')
 })
 
-Deno.test('CUL-1550 — page 1 and appendix D state the same three-way split of the course days', () => {
-  const html = cul1550Html({ given: 4, loggedNotGiven: 3, nothingLogged: 3, givenDosesOutsideCourse: 0 })
+Deno.test('CUL-1550 — page 1 and appendix D state the same split of the course days', () => {
+  const html = cul1550Html(split({ given: 4, loggedNotGiven: 2, loggedElsewhere: 1, nothingLogged: 3 }))
   const appD = plain(appDOf(html))
   const p1 = page1MedOf(html)
   assert.ok(p1.length > 0, 'page 1 carries the window clause — the checks below are over something')
-  const split = 'of 10 days of the course(?: in this window)?; logged but not as given on 3; nothing logged on 3\\.'
-  assert.ok(new RegExp(`Given on 4 ${split}`).test(appD), `appendix D states the split: ${appD}`)
-  assert.ok(new RegExp(`In this window: 4 doses given on 4 ${split}`).test(p1), `page 1 states the same split: ${p1}`)
-  // The counts after the split are DOSES and say so, so they are never read as filling days.
-  assert.ok(/Doses in this window: 1 unconfirmed, 1 refused, 1 missed\./.test(appD))
-  assert.ok(/Doses: 1 partial, 1 unconfirmed, 1 refused, 1 missed\./.test(p1))
+  const tail = 'a dose logged but not as given on 2; a dose of it logged under another entry on 1; no dose logged on 3\\.'
+  assert.ok(new RegExp(`Given on 4 of 10 days of the course in this window; ${tail}`).test(appD), appD)
+  assert.ok(new RegExp(`In this window: 4 doses given \\(1 partial\\), on 4 of 10 days of the course; ${tail}`).test(p1), p1)
+  // The counts after the split are DOSES and say so; partial rides the given count, never this list.
+  assert.ok(/Doses in this window: 1 unconfirmed, 1 refused, 1 missed\./.test(appD), appD)
+  assert.ok(/Doses: 1 unconfirmed, 1 refused, 1 missed\./.test(p1), p1)
+  // "nothing logged" means a day with no entry of ANY kind elsewhere on the report; never here.
+  assert.ok(!/nothing logged/.test(appD + p1))
 })
 
 Deno.test('CUL-1550 — a zero part is omitted, never "on 0", on both pages', () => {
-  const html = cul1550Html({ given: 7, loggedNotGiven: 3, nothingLogged: 0, givenDosesOutsideCourse: 0 })
+  const html = cul1550Html(split({ given: 7, loggedNotGiven: 3 }))
   const both = plain(appDOf(html)) + ' ' + page1MedOf(html)
-  assert.ok(/7 of 10 days of the course in this window; logged but not as given on 3\./.test(both))
-  assert.ok(!/on 0\b/.test(both), 'no part states a zero')
-  assert.ok(!/nothing logged on/.test(both), 'and the empty part is absent')
+  assert.ok(/7 of 10 days of the course in this window; a dose logged but not as given on 3\./.test(both), both)
+  assert.ok(!/\bon 0\b/.test(both), 'no part states a zero')
+  assert.ok(!/no dose logged on|another entry/.test(both), 'and the empty parts are absent')
 })
 
-Deno.test('CUL-1550 — a given dose dated outside the course is disclosed, never folded into the days', () => {
-  const html = cul1550Html({ given: 2, loggedNotGiven: 0, nothingLogged: 6, givenDosesOutsideCourse: 1 }, { elapsedDaysInWindow: 8 })
-  const appD = plain(appDOf(html))
-  assert.ok(/Given on 2 of 8 days of the course in this window; nothing logged on 6\. 1 given dose is dated outside the course's dates\./.test(appD), appD)
-  assert.ok(/1 given dose is dated outside the course's dates\./.test(page1MedOf(html)), 'page 1 discloses it too')
+Deno.test('CUL-1550 — doses dated outside the course are disclosed, given AND not given', () => {
+  const one = cul1550Html(split({ given: 2, nothingLogged: 6, outsideCourseGiven: 1 }), { elapsedDaysInWindow: 8 })
+  assert.ok(/Given on 2 of 8 days of the course in this window; no dose logged on 6\. 1 given dose is dated outside the course's dates\./.test(plain(appDOf(one))))
+  assert.ok(/1 given dose is dated outside the course's dates\./.test(page1MedOf(one)), 'page 1 discloses it too')
+  const refused = cul1550Html(split({ nothingLogged: 8, outsideCourseNotGiven: 1 }), { elapsedDaysInWindow: 8, windowDosesLogged: 0 })
+  const t = plain(appDOf(refused)) + ' ' + plain(refused)
+  assert.ok(/Given on none of the 8 days of the course in this window; no dose logged on 8\. 1 dose, not recorded as given, is dated outside the course's dates\./.test(t), t)
+  const many = cul1550Html(split({ given: 1, nothingLogged: 7, outsideCourseGiven: 1, outsideCourseNotGiven: 2 }), { elapsedDaysInWindow: 8 })
+  assert.ok(/3 doses in this window are dated outside the course's dates, 1 of them given\./.test(plain(appDOf(many))))
+})
+
+Deno.test('CUL-1550 — page 1 with no dose given in the window still states the split', () => {
+  const html = cul1550Html(split({ loggedNotGiven: 3, nothingLogged: 7 }), { windowDosesLogged: 0, givenDoses: 0, partialDoses: 0 })
+  const t = plain(html)
+  assert.ok(/In this window: no doses given on any of the 10 days of the course; a dose logged but not as given on 3; no dose logged on 7\./.test(t), t)
+  assert.ok(/Given on none of the 10 days of the course in this window; a dose logged but not as given on 3; no dose logged on 7\./.test(plain(appDOf(html))))
 })
 
 Deno.test('R-13 item 8 — the divider says where the un-lettered lifetime table sits', () => {
