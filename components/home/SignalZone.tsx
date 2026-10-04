@@ -409,50 +409,73 @@ function useArrivalMoment({
  * concern), and this says the concern itself instead, with no haptic (C-16: the one haptic
  * exemption in this file stays gated off the safety path, and this adds no verb).
  *
- * AN ARRIVAL IS A NEW IDENTITY IN A SETTLED SET, for one pet, in this mount. The first set
- * the cache read answers for a pet is the baseline and says nothing: a concern already in
- * the record when the owner opened Home is simply there, on the card and in its label (the
- * same rule the spine's rows keep for a read that was already in the record). After that,
- * each regen or re-read that brings a safety identity this mount has not held is an
- * arrival. Every identity is remembered once it is seen, spoken or not, so a re-render, a
- * re-rank or a re-read never says it twice, and a finding that landed while another screen
- * covered Home is not announced later over a screen the owner has since been reading.
+ * WHAT COUNTS AS AN ARRIVAL. Per pet, `held` is the set of safety identities the owner has
+ * either already been told about or found standing when Home first read the record. The
+ * first set the cache read answers for a pet seeds it and says nothing: a concern already in
+ * the record when Home opened is simply there, on the card and in its label. After that, a
+ * safety identity in an answered set and not in `held` is an arrival.
+ *  • An arrival is spoken only when Home may speak (`useRowSpeech().mayAnnounce`: focused,
+ *    app in front). One that lands while it may not is NOT consumed: it waits, and is said
+ *    once when Home is next in front with the finding still standing. In production the read
+ *    itself only lands on a focused Home (`useSignal` re-reads on focus and cancels on blur),
+ *    so the usual path is: log on another screen, come back, the regen lands, it is spoken.
+ *    `appActive` is a dependency so a set that landed while the app was in the background is
+ *    said on return to the foreground.
+ *  • An identity that leaves an answered set leaves `held` (adversarial pass: an only-growing
+ *    set made a cat's intake decline that cleared and fired again silent for the life of the
+ *    process). A concern that comes back is a new arrival, and so is a quieted concern raised
+ *    again, since `speakableSafety` drops a quieted one from the set.
+ *  • It reads the set the stack RENDERS (`visibleFindings`, the caller's), so it never speaks
+ *    a finding the owner cannot find on the card (G5 parity).
  *
- * WHETHER HOME MAY SPEAK is asked of the screen at the moment of speaking
- * (`useRowSpeech().mayAnnounce`: focused and the app in front). With no provider the zone
- * says nothing on its own. No live region: `announceQueued` is the one carrier on both
- * platforms, so nothing else speaks it and C-44 has no pair to make.
+ * SCOPE, stated so it is not read as coverage: an escalation INSIDE one identity is not an
+ * arrival. A concern whose ask firms up (chronicity "a word with your vet" → "booking a
+ * visit"), an intake decline whose day count grows, a second red-flag photo of the same
+ * incident type while the first still stands: each keeps its identity and is not re-spoken.
+ * The spoken sentence is the server's (`cached.text`); under Design v2 a counted row may show
+ * a count re-composed from a fresher local record, so the spoken number can trail the row's
+ * (never above it, never softer). Both are filed as follow-up, not built here.
+ *
+ * No live region: `announceQueued` is the one carrier on both platforms, so nothing else
+ * speaks it and C-44 has no pair to make. With no RowSpeech provider the zone says nothing.
  */
 function useSafetyArrivalSpeech({
   petId,
   petName,
   answered,
-  findings,
+  rendered,
 }: {
   petId: string | null;
   petName: string;
   answered: boolean;
-  findings: CachedFinding[];
+  /** The findings the stack renders, in the caller's `visibleFindings` order. */
+  rendered: CachedFinding[];
 }): void {
   const speech = useRowSpeech();
-  const seen = useRef<{ petId: string | null; ids: Set<string> | null }>({ petId: null, ids: null });
+  const appActive = useAppActive();
+  const held = useRef<{ petId: string | null; ids: Set<string> | null }>({ petId: null, ids: null });
   useEffect(() => {
-    if (seen.current.petId !== petId) seen.current = { petId, ids: null };
+    if (held.current.petId !== petId) held.current = { petId, ids: null };
     // C-12: only a set the read actually answered is a baseline or an arrival.
     if (!petId || !answered) return;
-    const safety = speakableSafety(findings);
-    const ids = seen.current.ids;
-    if (ids === null) {
-      seen.current.ids = new Set(safety.map(safetySpeechIdentity));
+    const safety = speakableSafety(rendered);
+    const present = new Set(safety.map(safetySpeechIdentity));
+    const prior = held.current.ids;
+    if (prior === null) {
+      held.current.ids = present;
       return;
     }
+    // Forget what has left the set, so a concern that comes back arrives again.
+    const ids = new Set([...prior].filter((id) => present.has(id)));
+    held.current.ids = ids;
     const arriving = safety.filter((f) => !ids.has(safetySpeechIdentity(f)));
     if (arriving.length === 0) return;
+    // Not in front: leave the arrival unconsumed, to be said when Home is.
+    if (!appActive || !speech.mayAnnounce()) return;
     for (const f of arriving) ids.add(safetySpeechIdentity(f));
-    if (!speech.mayAnnounce()) return;
     const spoken = safetyArrivalSpoken(petName, arriving);
     if (spoken) announceQueued(spoken);
-  }, [petId, petName, answered, findings, speech]);
+  }, [petId, petName, answered, rendered, speech, appActive]);
 }
 
 /**
@@ -759,11 +782,14 @@ export function SignalZone({
     signalTrial && petId && signalTrial.petId === petId
       ? { generatedAt, trial: signalTrial.trial ? signalTrialWindowOf(signalTrial.trial, signalTrial.nowMs) : null }
       : null;
-  const renderableCount = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor).filter(
-    (f) => !isStoodDown(f.finding),
-  ).length;
+  // A fresh array each render, so the speech effect below re-checks on every render; its work
+  // is a set difference over a handful of findings, and an arrival held while Home was not
+  // in front is said on the first render after it is.
+  const rendered = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor);
+  const renderableCount = rendered.filter((f) => !isStoodDown(f.finding)).length;
 
-  useSafetyArrivalSpeech({ petId, petName, answered, findings });
+  // GAP-13 (CUL-1566) — a safety finding that arrives on a focused Home is spoken.
+  useSafetyArrivalSpeech({ petId, petName, answered, rendered });
 
   const { playing: arriving, moment } = useArrivalMoment({
     petId,

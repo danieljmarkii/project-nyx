@@ -22,7 +22,8 @@ jest.mock('../../hooks/useWatchingRows', () => ({
   useWatchingRowsRead: () => ({ rows: [], answered: true }),
 }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
-jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
+let mockAppActive = true;
+jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => mockAppActive }));
 jest.mock('../../lib/signalArrival', () => ({
   hasPlayedArrival: async () => false,
   markArrivalPlayed: async () => {},
@@ -145,6 +146,7 @@ async function landOn(first: Partial<SignalState>, next: Partial<SignalState>, p
 beforeEach(() => {
   jest.clearAllMocks();
   focused = true;
+  mockAppActive = true;
   queued = jest.spyOn(AccessibilityInfo, 'announceForAccessibilityWithOptions').mockImplementation(() => {});
   plain = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
 });
@@ -170,6 +172,13 @@ describe('SignalZone — a safety arrival is spoken on a focused Home (GAP-13)',
       });
       expect(mockInsightArrival).not.toHaveBeenCalled();
       expect(safetySpoken()).toHaveLength(1);
+      // Positive control: the same mock does fire for a benign first arrival, so the
+      // silence above is the gate, not an unwired mock.
+      await landOn({ petId: 'pet-9', displayState: 'building' }, { petId: 'pet-9', displayState: 'live', findings: [benign] });
+      act(() => {
+        jest.advanceTimersByTime(2000);
+      });
+      expect(mockInsightArrival).toHaveBeenCalledTimes(1);
     } finally {
       jest.useRealTimers();
     }
@@ -202,7 +211,7 @@ describe('SignalZone — a safety arrival is spoken on a focused Home (GAP-13)',
     expect(safetySpoken()).toEqual([]);
   });
 
-  it('never speaks while another screen covers Home, and not later when Home returns', async () => {
+  it('never speaks while another screen covers Home; says it once when Home is back in front', async () => {
     focused = false;
     const view = await landOn({ displayState: 'building' }, { displayState: 'live', findings: [intake] });
     expect(safetySpoken()).toEqual([]);
@@ -210,7 +219,51 @@ describe('SignalZone — a safety arrival is spoken on a focused Home (GAP-13)',
     await act(async () => {
       view.rerender(zone());
     });
+    expect(safetySpoken()).toEqual([intake.text]);
+    await act(async () => {
+      view.rerender(zone());
+    });
+    expect(safetySpoken()).toEqual([intake.text]);
+  });
+
+  it('a set that lands in the background is said on return to the foreground, once', async () => {
+    mockAppActive = false;
+    const view = await landOn({ displayState: 'building' }, { displayState: 'live', findings: [intake] });
     expect(safetySpoken()).toEqual([]);
+    mockAppActive = true;
+    await act(async () => {
+      view.rerender(zone());
+    });
+    expect(safetySpoken()).toEqual([intake.text]);
+  });
+
+  it('a concern that clears and fires again is a new arrival (the cat that stops eating twice)', async () => {
+    const view = await landOn({ displayState: 'building' }, { displayState: 'live', findings: [intake] });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [benign] }));
+    await act(async () => {
+      view.rerender(zone());
+    });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [intake, benign] }));
+    await act(async () => {
+      view.rerender(zone());
+    });
+    expect(safetySpoken()).toEqual([intake.text, intake.text]);
+  });
+
+  it('a spoken concern quieted by the vet-knows state and raised again is spoken again', async () => {
+    const raised = (state: string): CachedFinding => ({
+      ...quieted,
+      finding: { ...(quieted.finding as object), careState: { state } } as unknown as SignalFinding,
+    });
+    const view = await landOn({ displayState: 'building' }, { displayState: 'live', findings: [raised('raised')] });
+    expect(safetySpoken()).toEqual([`Nyx: ${quieted.text}`]);
+    for (const state of ['with_vet', 'raised_again']) {
+      mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [raised(state)] }));
+      await act(async () => {
+        view.rerender(zone());
+      });
+    }
+    expect(safetySpoken()).toEqual([`Nyx: ${quieted.text}`, `Nyx: ${quieted.text}`]);
   });
 
   it('never speaks twice: a re-render, a re-rank and a re-read of the same set stay quiet', async () => {

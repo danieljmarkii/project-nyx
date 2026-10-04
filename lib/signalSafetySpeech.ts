@@ -12,9 +12,14 @@ import { foldIdentity } from './signalFold';
 // is said. When and whether Home may speak is the screen's (`components/dayRow/rowSpeech.ts`).
 //
 // THE WORDS ARE THE FINDING'S OWN. The spoken string is the pet's name and the phrased
-// sentence (`cached.text`, the sentence the shipped card prints and the Design v2 screen
-// opens on), verbatim: no "new", no "good news", no softening, nothing the record did not
-// already say (clinical-guardrails: the speech never reassures and never adds to the card).
+// sentence (`cached.text`, the server's sentence, which the shipped card prints), verbatim:
+// no "new", no "good news", no softening, nothing the record did not already say
+// (clinical-guardrails: the speech never reassures and never adds to the card). Under
+// Design v2 a counted row may re-compose its count from a fresher local record, so the
+// spoken number can trail the row's; it is never higher and never softer.
+//
+// A pet named like a word in its own sentence ("Vet", "Today") reads as already named and
+// gets no lead: anonymous, never the wrong pet.
 
 /**
  * The findings whose arrival is spoken: the safety class, and only while it still asks.
@@ -56,6 +61,6 @@ export function safetyArrivalSpoken(petName: string | null, arriving: CachedFind
   const name = petName?.trim() ?? '';
   const joined = sentences.map((t) => (/[.?]$/.test(t) ? t : `${t}.`)).join(' ');
   if (!name || sentences.some((t) => namesPet(t, name))) return joined;
-  // A spoken lead opens the utterance, so the 'your pet' fallback is capitalised there.
+  // A spoken lead opens the utterance, so `useSignal`'s 'your pet' fallback is capitalised.
   return `${name.charAt(0).toUpperCase()}${name.slice(1)}: ${joined}`;
 }
