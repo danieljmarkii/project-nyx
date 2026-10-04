@@ -150,6 +150,10 @@ export interface DayMarkFacts {
   coverage: DayMarkCoverage;
   medication: boolean;
   photo: DayMarkPhoto;
+  /** The loudest call any read on the day stands as, photo or not (CUL-1200, ruling (b)):
+   *  spoken whatever the layers say, because presence escalates. Absent or null: none the
+   *  phone holds, which is never spoken as an all-clear. */
+  call?: CallDisplay | null;
   /** The day a bout began, when this day holds its rows and no bout of its own
    *  (CUL-1226). Then a zero is not "no <noun>": the record holds some. */
   continuesFrom?: string | null;
@@ -208,8 +212,11 @@ export function dayMarkA11yLabel(f: DayMarkFacts, noun: string): string {
     if (f.coverage === 'left_some' && (left > 0 || refused === 0)) parts.push('a meal left unfinished');
   }
   if (f.medication) parts.push('medication');
-  if (f.photo === 'seen') parts.push('photographed');
-  if (isCallDisplay(f.photo)) parts.push(`photographed, read as ${TIER_WORDS[f.photo].readAs}`);
+  // A call is spoken on its own, photo or not (CUL-1200): "read as worth a call" never
+  // claims a photo, and "photographed" is said only where the Photos layer draws one.
+  const call = f.call ?? (isCallDisplay(f.photo) ? f.photo : null);
+  if (f.photo !== 'none') parts.push('photographed');
+  if (call) parts.push(`read as ${TIER_WORDS[call].readAs}`);
   if (f.selected) parts.push('selected');
   return parts.join(', ');
 }

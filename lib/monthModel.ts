@@ -136,6 +136,11 @@ export interface MonthDay {
   /** A medication dose the record says was delivered (given or partial — B-618 D1). */
   medication: boolean;
   photo: MonthPhoto;
+  /** The loudest call any read on the day stands as, photo or not (CUL-1200, the PM's
+   *  ruling (b), 2026-10-03): drawn on the default layers, never behind Photos, because
+   *  presence escalates and the month is where an owner looks back before a visit. Null
+   *  is "no call the phone holds", which is never drawn or spoken as an all-clear. */
+  call: CallDisplay | null;
   today: boolean;
 }
 
@@ -161,10 +166,23 @@ export interface MonthPhotoRead {
   verdict: MonthPhotoDay['verdict'];
 }
 
-/** The photo half of the month's facts, which is all `carryMonthRoses` reads. */
+/** One event, photographed or not, whose read the phone holds as a call (CUL-1200). */
+export interface MonthCallRead {
+  eventId: string;
+  day: string;
+  verdict: CallDisplay;
+}
+
+/** The read half of the month's facts, which is all `carryMonthRoses` reads. */
 interface MonthPhotoFacts {
   photoDays: MonthPhotoDay[];
   photoReads?: MonthPhotoRead[];
+  /** Every event in the month whose read is a call, photo or not. */
+  callReads?: MonthCallRead[];
+  /** Every event the read was asked about, with its day: what a carried call is checked
+   *  against, so a call on an event that left the record leaves with it (G5), and one
+   *  re-dated is drawn on its new day. */
+  readEvents?: { eventId: string; day: string }[];
   photoReadsUnanswered?: boolean;
 }
 
@@ -189,12 +207,29 @@ export function photoDaysOf(reads: readonly MonthPhotoRead[]): MonthPhotoDay[] {
  * unanswered, so the next failed look carries the same roses again.
  */
 export function carryMonthRoses<F extends MonthPhotoFacts>(prev: F | undefined, next: F): F {
-  if (!next.photoReadsUnanswered || !prev?.photoReads || !next.photoReads) return next;
-  const last = new Map<string, MonthPhotoDay['verdict']>();
-  for (const r of prev.photoReads) if (r.verdict !== 'seen') last.set(r.eventId, r.verdict);
-  if (last.size === 0) return next;
-  const photoReads = next.photoReads.map((r) => (r.verdict === 'seen' ? { ...r, verdict: last.get(r.eventId) ?? r.verdict } : r));
-  return { ...next, photoReads, photoDays: photoDaysOf(photoReads) };
+  if (!next.photoReadsUnanswered || !prev) return next;
+  let out = next;
+  if (prev.photoReads && next.photoReads) {
+    const last = new Map<string, MonthPhotoDay['verdict']>();
+    for (const r of prev.photoReads) if (r.verdict !== 'seen') last.set(r.eventId, r.verdict);
+    if (last.size > 0) {
+      const photoReads = next.photoReads.map((r) => (r.verdict === 'seen' ? { ...r, verdict: last.get(r.eventId) ?? r.verdict } : r));
+      out = { ...out, photoReads, photoDays: photoDaysOf(photoReads) };
+    }
+  }
+  // The calls with no photo (CUL-1200) are carried the same way, on an event the fresh read
+  // still found in the month: the day it is drawn on is the fresh row's, never the old one.
+  if (prev.callReads && prev.callReads.length > 0 && next.readEvents) {
+    const dayOf = new Map(next.readEvents.map((e) => [e.eventId, e.day]));
+    const have = new Set((next.callReads ?? []).map((r) => r.eventId));
+    const carried: MonthCallRead[] = [];
+    for (const r of prev.callReads) {
+      const day = dayOf.get(r.eventId);
+      if (day !== undefined && !have.has(r.eventId)) carried.push({ ...r, day });
+    }
+    if (carried.length > 0) out = { ...out, callReads: [...(next.callReads ?? []), ...carried] };
+  }
+  return out;
 }
 
 export interface MonthModelInput {
@@ -236,6 +271,10 @@ export interface MonthModelInput {
   /** Photographed days, each with the read's verdict where one exists. A day appearing
    *  twice takes the worse verdict — presence escalates, absence never reassures. */
   photoDays?: readonly MonthPhotoDay[];
+  /** Every event whose read is a call, photographed or not (CUL-1200). A day holding two
+   *  takes the louder (`louderCall`). Omitted → no call is drawn, which is never an
+   *  all-clear: the month draws no "nothing called" mark. */
+  callReads?: readonly Pick<MonthCallRead, 'day' | 'verdict'>[];
   /** The trial's start, marked on the bars at its day (kept and said when it falls off
    *  the chart — C-37). */
   trialMark?: { day: string; label: string } | null;
@@ -411,6 +450,11 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     const nextCall = isCallDisplay(p.verdict) ? p.verdict : null;
     photos.set(i, louderCall(prevCall, nextCall) ?? p.verdict);
   }
+  const calls = new Map<number, CallDisplay>();
+  for (const c of input.callReads ?? []) {
+    const i = indexOfKey(c.day, 'callReads[].day');
+    calls.set(i, louderCall(calls.get(i) ?? null, c.verdict) ?? c.verdict);
+  }
   const continues = new Map<number, string>();
   for (const c of input.continuationDays ?? []) {
     indexOfKey(c.from, 'continuationDays[].from');
@@ -457,6 +501,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
       leftSomeMeals: arrived ? (leftSomeByDay.get(i) ?? 0) : 0,
       medication: coverage !== 'ahead' && dosed.has(i),
       photo: coverage === 'ahead' ? 'none' : (photos.get(i) ?? 'none'),
+      call: coverage === 'ahead' ? null : (calls.get(i) ?? null),
       today: i === todayIdx,
     };
   };
@@ -665,8 +710,8 @@ export function monthCallDays(model: Pick<MonthModel, 'days'>): { earlier: numbe
   let earlier = 0;
   let tiered = 0;
   for (const d of model.days) {
-    if (!isCallDisplay(d.photo)) continue;
-    if (TIER_WORDS[d.photo].rule === 'earlier') earlier += 1;
+    if (d.call === null) continue;
+    if (TIER_WORDS[d.call].rule === 'earlier') earlier += 1;
     else tiered += 1;
   }
   return { earlier, tiered };
@@ -686,6 +731,11 @@ export function monthA11yLabel(
   // change says both and a steady cat never looks improved because the rule moved.
   const { earlier, tiered } = monthCallDays(model);
   const parts = [`${model.label}.`, `${model.line}.`];
+  // The calls lead, spoken whatever the layers say, photo or not (CUL-1200, ruling (b)):
+  // the grid draws them on every layer and the ear hears what the eye sees. Nothing is
+  // said when there are none: "no calls" would read as an all-clear the record cannot give.
+  if (earlier > 0) parts.push(`Read as ${TIER_WORDS.worth_a_call.readAs} on ${earlier} ${plural(earlier, 'day')}.`);
+  if (tiered > 0) parts.push(`Read as ${TIERED_CALLS_READ_AS} on ${tiered} ${plural(tiered, 'day')}.`);
   // The Meals layer's two counts over one denominator, as the legend prints them (CUL-1553).
   if (layers.meals === true && model.ratedMeals > 0 && (model.refusedMeals > 0 || model.leftSomeMeals > 0)) {
     const of = `of ${model.ratedMeals} rated ${plural(model.ratedMeals, 'meal')}`;
@@ -693,11 +743,6 @@ export function monthA11yLabel(
     parts.push(`${refused}Left some: ${model.leftSomeMeals} ${of}.`);
   }
   if (layers.meds && dosed > 0) parts.push(`Medication on ${dosed} ${plural(dosed, 'day')}.`);
-  if (layers.photos && photographed > 0) {
-    const calls =
-      (earlier > 0 ? `, ${earlier} read as ${TIER_WORDS.worth_a_call.readAs}` : '') +
-      (tiered > 0 ? `, ${tiered} read as ${TIERED_CALLS_READ_AS}` : '');
-    parts.push(`Photos on ${photographed} ${plural(photographed, 'day')}${calls}.`);
-  }
+  if (layers.photos && photographed > 0) parts.push(`Photos on ${photographed} ${plural(photographed, 'day')}.`);
   return parts.join(' ');
 }

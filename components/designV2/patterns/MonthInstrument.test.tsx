@@ -63,6 +63,13 @@ function facts(over: Partial<MonthFacts> = {}): MonthFacts {
     photoDays: [{ day: '2026-09-02', verdict: 'worth_a_call' }],
     recordStart: '2026-05-10',
     ...over,
+    // Production's shape (C-35): the read hands every called photographed event in
+    // `callReads` too, because it asks about every event in one batch (CUL-1200).
+    callReads:
+      over.callReads ??
+      (over.photoDays ?? [{ day: '2026-09-02', verdict: 'worth_a_call' as const }]).flatMap((p, i) =>
+        p.verdict === 'seen' ? [] : [{ eventId: `photo-${i}`, day: p.day, verdict: p.verdict }],
+      ),
   };
 }
 
@@ -237,11 +244,37 @@ describe('MonthInstrument', () => {
     // Off by default: no unexplained dot, no key for it.
     expect(queryByTestId('month-legend-medication')).toBeNull();
     expect(queryByTestId('month-legend-photo')).toBeNull();
+    // The call is on the default layers (CUL-1200, ruling (b)): its key is there with Photos off.
+    expect(getByText('read as worth a call · 1 day')).toBeTruthy();
     fireEvent.press(getByText('Medication'));
     expect(getByText('medication given · 1 day')).toBeTruthy();
     fireEvent.press(getByText('Photos'));
     expect(getByText('photographed · 1 day')).toBeTruthy();
-    expect(getByText('photo read as worth a call · 1 day')).toBeTruthy();
+    expect(getByText('read as worth a call · 1 day')).toBeTruthy();
+  });
+
+  it('CUL-1200 (b): a call with no photo draws its diamond on the default layers, and no layer hides it', async () => {
+    const v = mount(jest.fn(async () => facts({ photoDays: [], callReads: [{ eventId: 'cat', day: '2026-09-03', verdict: 'worth_a_call' }] })));
+    await waitFor(() => expect(v.getByTestId('month-legend')).toBeTruthy());
+    // Photos is off by default; the diamond is drawn anyway, and spoken without a photo.
+    expect(v.getAllByTestId('daymark-layer-photo-worth_a_call')).toHaveLength(1);
+    expect(v.getByLabelText(/September 3, logged, no vomiting, read as worth a call, opens the day$/)).toBeTruthy();
+    expect(v.queryByLabelText(/September 3, .*photographed/)).toBeNull();
+    expect(v.getByText('read as worth a call · 1 day')).toBeTruthy();
+    // Turning every other layer off leaves it.
+    fireEvent.press(v.getByText('Meals'));
+    expect(v.getAllByTestId('daymark-layer-photo-worth_a_call')).toHaveLength(1);
+    // Turning Photos on adds no second mark and no photo claim for a day with no photo.
+    fireEvent.press(v.getByText('Photos'));
+    expect(v.getAllByTestId('daymark-layer-photo-worth_a_call')).toHaveLength(1);
+    expect(v.queryByTestId('daymark-layer-photo-seen')).toBeNull();
+    v.unmount();
+    // A month with no call draws no diamond and no call row: absence is never a mark.
+    const quiet = mount(jest.fn(async () => facts({ photoDays: [{ day: '2026-09-05', verdict: 'seen' }] })));
+    await waitFor(() => expect(quiet.getByTestId('month-legend')).toBeTruthy());
+    expect(quiet.queryByTestId('month-legend-call')).toBeNull();
+    expect(quiet.queryByTestId('month-legend-call-tiered')).toBeNull();
+    expect(quiet.queryAllByTestId(/^daymark-layer-photo-(worth_a_call|call_now|call_today)$/)).toHaveLength(0);
   });
 
   it('EN-3: the legend counts the two rules on two lines, never one sum; a new-rule month shows one', async () => {
@@ -249,15 +282,13 @@ describe('MonthInstrument', () => {
       photoDays: [{ day: '2026-09-02', verdict: 'worth_a_call' }, { day: '2026-09-05', verdict: 'call_today' }, { day: '2026-09-11', verdict: 'call_now' }],
     })));
     await waitFor(() => expect(both.getByTestId('month-legend')).toBeTruthy());
-    fireEvent.press(both.getByText('Photos'));
-    expect(both.getByText('photo read as worth a call · 1 day')).toBeTruthy();
-    expect(both.getByText('photo read as call now or call today · 2 days')).toBeTruthy();
+    expect(both.getByText('read as worth a call · 1 day')).toBeTruthy();
+    expect(both.getByText('read as call now or call today · 2 days')).toBeTruthy();
     both.unmount();
     const tiered = mount(jest.fn(async () => facts({ photoDays: [{ day: '2026-09-05', verdict: 'call_today' }] })));
     await waitFor(() => expect(tiered.getByTestId('month-legend')).toBeTruthy());
-    fireEvent.press(tiered.getByText('Photos'));
-    expect(tiered.queryByTestId('month-legend-photo-call')).toBeNull();
-    expect(tiered.getByText('photo read as call now or call today · 1 day')).toBeTruthy();
+    expect(tiered.queryByTestId('month-legend-call')).toBeNull();
+    expect(tiered.getByText('read as call now or call today · 1 day')).toBeTruthy();
   });
 
   it('adjacent day marks never share hit area: the rendered gap clears both slops (C-5)', async () => {

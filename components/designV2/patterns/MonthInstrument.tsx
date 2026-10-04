@@ -250,6 +250,8 @@ export function MonthInstrument({
             leftSomeMealDays: facts.leftSomeMealDays,
             dosedDays: facts.dosedDays,
             photoDays: facts.photoDays,
+            // Every call, photo or not, on every lens and layer (CUL-1200, ruling (b)).
+            callReads: facts.callReads,
             trialMark,
             noun: words.noun,
           })
@@ -542,6 +544,9 @@ function GridDay({
       symptomLayer={layers.vomit}
       medication={layers.meds && day.medication}
       photo={layers.photos ? day.photo : 'none'}
+      // The call is on the default layers, photo or not (CUL-1200): presence escalates,
+      // so no toggle hides it.
+      call={day.call}
       today={day.today}
       selected={selected}
       dim={day.outsideMonth}
@@ -760,6 +765,25 @@ function Legend({
           {dayNoun} day, {episodes ? 'count where a bout began' : 'count in the corner'}
         </ThemedText>
       </View>
+      {/* The calls, photo or not, on every layer (CUL-1200, ruling (b)). A row appears only
+          when a day carries one: "read as worth a call · 0 days" would read as an
+          all-clear the record cannot give. Each rule's population is its own line (EN-3). */}
+      {calledDays > 0 ? (
+        <View style={styles.legendItem} testID="month-legend-call">
+          <View style={[styles.legendDiamond, styles.legendDotPhotoCall]} testID="month-legend-mark-call" />
+          <ThemedText style={styles.legendText}>
+            read as {TIER_WORDS.worth_a_call.readAs} · {dayWord(calledDays)}
+          </ThemedText>
+        </View>
+      ) : null}
+      {tieredDays > 0 ? (
+        <View style={styles.legendItem} testID="month-legend-call-tiered">
+          <View style={[styles.legendDiamond, styles.legendDotPhotoCall]} testID="month-legend-mark-call" />
+          <ThemedText style={styles.legendText}>
+            read as {TIERED_CALLS_READ_AS} · {dayWord(tieredDays)}
+          </ThemedText>
+        </View>
+      ) : null}
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchLogged]}>
           <DayMarkLine kind="solid" style={styles.swatchLine} testID="month-legend-line-solid" />
@@ -795,28 +819,10 @@ function Legend({
         </View>
       )}
       {layers.photos && (
-        <>
-          <View style={styles.legendItem} testID="month-legend-photo">
-            <View style={[styles.legendDot, styles.legendDotPhoto]} />
-            <ThemedText style={styles.legendText}>photographed · {dayWord(photoDays)}</ThemedText>
-          </View>
-          {calledDays > 0 || tieredDays === 0 ? (
-            <View style={styles.legendItem} testID="month-legend-photo-call">
-              <View style={[styles.legendDiamond, styles.legendDotPhotoCall]} testID="month-legend-mark-call" />
-              <ThemedText style={styles.legendText}>
-                photo read as {TIER_WORDS.worth_a_call.readAs} · {dayWord(calledDays)}
-              </ThemedText>
-            </View>
-          ) : null}
-          {tieredDays > 0 ? (
-            <View style={styles.legendItem} testID="month-legend-photo-call-tiered">
-              <View style={[styles.legendDiamond, styles.legendDotPhotoCall]} testID="month-legend-mark-call" />
-              <ThemedText style={styles.legendText}>
-                photo read as {TIERED_CALLS_READ_AS} · {dayWord(tieredDays)}
-              </ThemedText>
-            </View>
-          ) : null}
-        </>
+        <View style={styles.legendItem} testID="month-legend-photo">
+          <View style={[styles.legendDot, styles.legendDotPhoto]} />
+          <ThemedText style={styles.legendText}>photographed · {dayWord(photoDays)}</ThemedText>
+        </View>
       )}
     </View>
   );

@@ -6,7 +6,7 @@
 // the same day in every zone, and the model must follow the key. An instant handed in
 // where a key belongs is refused, never bucketed by the runner's clock.
 
-import { buildLine, buildMonthModel, carryMonthRoses, daysInMonth, monthA11yLabel, monthOfKey, shiftMonth, MONTH_WEEKS, type MonthPhotoRead } from './monthModel';
+import { buildLine, buildMonthModel, carryMonthRoses, daysInMonth, monthA11yLabel, monthCallDays, monthOfKey, shiftMonth, MONTH_WEEKS, type MonthCallRead, type MonthPhotoRead } from './monthModel';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
 
 const idx = (key: string): number => {
@@ -128,8 +128,10 @@ describe('the grid', () => {
     // Ahead: a plain day, whatever a future-dated row claims.
     expect(byKey.get('2026-09-25')?.medication).toBe(false);
     expect(byKey.get('2026-09-25')?.photo).toBe('none');
+    // A photo verdict alone is not the call mark: the call is `callReads`' fact (CUL-1200).
+    expect(byKey.get('2026-09-02')?.call).toBeNull();
     expect(monthA11yLabel(m)).toBe(
-      'September 2026. Vomiting 6 times on 4 days · through Sep 17 · 2 days unlogged. Medication on 1 day. Photos on 2 days, 1 read as worth a call.',
+      'September 2026. Vomiting 6 times on 4 days · through Sep 17 · 2 days unlogged. Medication on 1 day. Photos on 2 days.',
     );
     // The label speaks only the layers that are ON — the ear and the eye agree.
     expect(monthA11yLabel(m, { meds: false, photos: false })).toBe('September 2026. Vomiting 6 times on 4 days · through Sep 17 · 2 days unlogged.');
@@ -396,36 +398,69 @@ describe('timezone-honest (C-29)', () => {
 
 describe('EN-3: the two rules\' calls, never one number (spec §5)', () => {
   it('a day takes its louder call; the sentence counts each rule apart', () => {
-    const m = septModel({
-      photoDays: [
-        { day: '2026-09-02', verdict: 'worth_a_call' },
-        { day: '2026-09-02', verdict: 'call_now' },
-        { day: '2026-09-03', verdict: 'call_today' },
-        { day: '2026-09-03', verdict: 'worth_a_call' },
-        { day: '2026-09-04', verdict: 'worth_a_call' },
-        { day: '2026-09-05', verdict: 'seen' },
-      ],
-    });
+    const calls = [
+      { day: '2026-09-02', verdict: 'worth_a_call' as const },
+      { day: '2026-09-02', verdict: 'call_now' as const },
+      { day: '2026-09-03', verdict: 'call_today' as const },
+      { day: '2026-09-03', verdict: 'worth_a_call' as const },
+      { day: '2026-09-04', verdict: 'worth_a_call' as const },
+    ];
+    const m = septModel({ photoDays: [...calls, { day: '2026-09-05', verdict: 'seen' }], callReads: calls });
     const byKey = new Map(m.days.map((d) => [d.key, d]));
     expect(byKey.get('2026-09-02')?.photo).toBe('call_now');
     expect(byKey.get('2026-09-03')?.photo).toBe('call_today');
     expect(byKey.get('2026-09-04')?.photo).toBe('worth_a_call');
+    expect(byKey.get('2026-09-02')?.call).toBe('call_now');
+    expect(byKey.get('2026-09-03')?.call).toBe('call_today');
+    expect(byKey.get('2026-09-04')?.call).toBe('worth_a_call');
     // Never downgraded by order: the louder call arrives first or last, it wins.
-    const reversed = septModel({ photoDays: [{ day: '2026-09-02', verdict: 'call_now' }, { day: '2026-09-02', verdict: 'worth_a_call' }] });
-    expect(reversed.days.find((d) => d.key === '2026-09-02')?.photo).toBe('call_now');
-    expect(monthA11yLabel(m)).toMatch(/Photos on 4 days, 1 read as worth a call, 2 read as call now or call today\.$/);
+    const reversed = septModel({ callReads: [{ day: '2026-09-02', verdict: 'call_now' }, { day: '2026-09-02', verdict: 'worth_a_call' }] });
+    expect(reversed.days.find((d) => d.key === '2026-09-02')?.call).toBe('call_now');
+    const reversedPhoto = septModel({ photoDays: [{ day: '2026-09-02', verdict: 'call_now' }, { day: '2026-09-02', verdict: 'worth_a_call' }] });
+    expect(reversedPhoto.days.find((d) => d.key === '2026-09-02')?.photo).toBe('call_now');
+    // The calls lead, each rule apart, whatever the layers (CUL-1200).
+    const lead = 'September 2026. Vomiting 6 times on 4 days · through Sep 17 · 2 days unlogged. Read as worth a call on 1 day. Read as call now or call today on 2 days.';
+    expect(monthA11yLabel(m)).toBe(`${lead} Photos on 4 days.`);
+    expect(monthA11yLabel(m, { meds: false, photos: false })).toBe(lead);
   });
 
   it('a month wholly under the new rule says one line, and never "worth a call"', () => {
-    const m = septModel({ photoDays: [{ day: '2026-09-03', verdict: 'call_today' }] });
-    expect(monthA11yLabel(m)).toMatch(/Photos on 1 day, 1 read as call now or call today\.$/);
+    const m = septModel({ callReads: [{ day: '2026-09-03', verdict: 'call_today' }] });
+    expect(monthA11yLabel(m, { meds: false, photos: false })).toMatch(/Read as call now or call today on 1 day\.$/);
     expect(monthA11yLabel(m)).not.toMatch(/worth a call/);
   });
 });
 
-// CUL-1074 brief 2 (PM, 2026-10-03): a day is logged for the grey square and the unlogged
-// count when it holds any non-look event, but only a day holding a feeding or a symptom
-// entry may be spoken as "no vomiting".
+describe('CUL-1200 (b): a call with no photo reaches the month', () => {
+  it('draws on its day with no photo; never on a day ahead; a quiet month says nothing about calls', () => {
+    const m = septModel({
+      photoDays: [{ day: '2026-09-05', verdict: 'seen' }],
+      callReads: [
+        { day: '2026-09-03', verdict: 'worth_a_call' },
+        { day: '2026-09-25', verdict: 'call_now' },
+      ],
+    });
+    const byKey = new Map(m.days.map((d) => [d.key, d]));
+    expect(byKey.get('2026-09-03')?.call).toBe('worth_a_call');
+    expect(byKey.get('2026-09-03')?.photo).toBe('none');
+    expect(byKey.get('2026-09-05')?.call).toBeNull();
+    expect(byKey.get('2026-09-25')?.call).toBeNull();
+    expect(monthCallDays(m)).toEqual({ earlier: 1, tiered: 0 });
+    expect(monthA11yLabel(m, { meds: false, photos: false })).toContain('Read as worth a call on 1 day.');
+    // No call at all: no "no calls", no zero. Absence never reassures.
+    const quiet = septModel({ photoDays: [{ day: '2026-09-05', verdict: 'seen' }] });
+    expect(monthA11yLabel(quiet)).not.toMatch(/read as|call/i);
+  });
+
+  it("a neighbouring month's day carries its call in the edge row, and is not in the month's count", () => {
+    const m = septModel({ callReads: [{ day: '2026-08-31', verdict: 'worth_a_call' }] });
+    const edge = m.rows.flat().find((d) => d.key === '2026-08-31');
+    expect(edge?.outsideMonth).toBe(true);
+    expect(edge?.call).toBe('worth_a_call');
+    expect(monthCallDays(m)).toEqual({ earlier: 0, tiered: 0 });
+  });
+});
+
 describe('logged is not answered (CUL-1074 brief 2)', () => {
   const logged = range('2026-09-01', TODAY);
 
@@ -565,5 +600,35 @@ describe('carryMonthRoses — a failed look never takes a drawn rose away (CUL-1
   it('a first read has nothing to carry', () => {
     const next = facts([{ eventId: 'rose', day: '2026-09-02', verdict: 'seen' }], true);
     expect(carryMonthRoses(undefined, next)).toBe(next);
+  });
+});
+
+describe('carryMonthRoses — a call with no photo is carried the same way (CUL-1200)', () => {
+  type Facts = Parameters<typeof carryMonthRoses<{ photoDays: []; photoReads: []; callReads: MonthCallRead[]; readEvents: { eventId: string; day: string }[]; photoReadsUnanswered?: boolean }>>[1];
+  const prev: Facts = {
+    photoDays: [],
+    photoReads: [],
+    callReads: [
+      { eventId: 'cat-vomit', day: '2026-09-03', verdict: 'worth_a_call' as const },
+      { eventId: 'gone', day: '2026-09-06', verdict: 'call_now' as const },
+    ],
+    readEvents: [
+      { eventId: 'cat-vomit', day: '2026-09-03' },
+      { eventId: 'gone', day: '2026-09-06' },
+    ],
+  };
+
+  it('an unanswered re-read keeps the call on an event still in the month, on its CURRENT day; one that left leaves with it', () => {
+    const next: Facts = { photoDays: [], photoReads: [], callReads: [], readEvents: [{ eventId: 'cat-vomit', day: '2026-09-04' }], photoReadsUnanswered: true };
+    const laid = carryMonthRoses(prev, next);
+    expect(laid.callReads).toEqual([{ eventId: 'cat-vomit', day: '2026-09-04', verdict: 'worth_a_call' }]);
+    expect(laid.photoReadsUnanswered).toBe(true);
+    // The next failed look carries it again.
+    expect(carryMonthRoses(laid, next).callReads).toEqual(laid.callReads);
+  });
+
+  it('an ANSWERED re-read stands whole: a call the record no longer holds is gone', () => {
+    const next: Facts = { photoDays: [], photoReads: [], callReads: [], readEvents: [{ eventId: 'cat-vomit', day: '2026-09-03' }] };
+    expect(carryMonthRoses(prev, next)).toBe(next);
   });
 });

@@ -115,7 +115,7 @@ import {
 import { analysisChainOutstanding } from './analysisChain';
 import { readCopies } from './readCopy';
 import { readVerdictOf, type ReadCopyRow } from './readState';
-import { isCallDisplay, louderCall, type CallDisplay, type TierDisplay } from './incidentTierWords';
+import { isCallDisplay, louderCall, TIER_WORDS, TIERED_CALLS_READ_AS, type CallDisplay, type TierDisplay } from './incidentTierWords';
 import { dayKeyFromIndex, formatCalendarDate, formatTime, localDayIndexOf, toLocalDayKey } from './utils';
 import { resolveRecordPetName, usePetStore } from '../store/petStore';
 
@@ -228,14 +228,29 @@ export interface GalleryTile {
   boutIds?: readonly string[];
 }
 
+/** An episode in the drawn weeks with no photo, and its bout's call where the read is one
+ *  (CUL-1200, the PM's ruling (b)): never a tile, named in the count line instead. */
+export interface PhotolessEpisode {
+  eventId: string;
+  /** Its bout's rows, sorted and joined: what `carryTileRoses` checks before keeping a call. */
+  boutKey: string;
+  /** The loudest call on any row of its bout, else null. Null is never spoken as calm. */
+  call: CallDisplay | null;
+}
+
 export interface SignalScreenEpisodes {
   /** Every episode in the drawn weeks. */
   total: number;
   photographedCount: number;
-  /** "21, nine photographed" — the count line beside the section's title. */
+  /** How many weeks are drawn: the count line's window. */
+  weeks: number;
+  /** "21, nine photographed" — the count line beside the section's title, plus the
+   *  episodes with no photo whose read is a call (CUL-1200). */
   countLine: string;
   /** Newest first. */
   tiles: GalleryTile[];
+  /** The episodes with no photo, each with its call: the count line's second clause. */
+  photoless: PhotolessEpisode[];
 }
 
 export interface SignalScreenModel {
@@ -343,13 +358,44 @@ function galleryOf(inWeeks: readonly SignalScreenEpisode[], verdicts: SignalScre
       ...(e.boutIds ? { boutIds: [...e.boutIds] } : {}),
     };
   });
+  const photoless: PhotolessEpisode[] = inWeeks
+    .filter((e) => e.photo == null)
+    .map((e) => {
+      const v = verdicts[e.eventId] ?? null;
+      return { eventId: e.eventId, boutKey: boutKeyOf(e.eventId, e.boutIds), call: isCallDisplay(v) ? v : null };
+    });
   const total = inWeeks.length;
   const n = photographed.length;
+  return { total, photographedCount: n, weeks, countLine: galleryCountLine(total, weeks, n, photoless), tiles, photoless };
+}
+
+/** A bout's rows as one key, the tile's own row among them. */
+function boutKeyOf(eventId: string, boutIds: readonly string[] | undefined): string {
+  return [...new Set([eventId, ...(boutIds ?? [])])].sort().join('|');
+}
+
+/**
+ * "22 in these 8 weeks, nine photographed" and, where an episode with no photo was read as
+ * a call, the escalations without a photo after it (CUL-1200, the PM's ruling (b)): the
+ * gallery stays photos, and the line says what it cannot show. Each rule's calls are their
+ * own clause, never summed (EN-3). Nothing is said when there are none: "none read as a
+ * call" would be an all-clear the record cannot give (n=1 never reassures).
+ */
+export function galleryCountLine(total: number, weeks: number, photographedCount: number, photoless: readonly Pick<PhotolessEpisode, 'call'>[]): string {
   // The count names its window (CUL-223: a display-window count spoken as a record fact
   // is the anti-pattern; adversarial pass, B8): these are the drawn weeks' episodes.
   const scope = `${total} in these ${weeks} ${plural(weeks, 'week')}`;
-  const countLine = n === 0 ? `${scope}, none photographed` : `${scope}, ${smallNumber(n)} photographed`;
-  return { total, photographedCount: n, countLine, tiles };
+  const parts = [photographedCount === 0 ? `${scope}, none photographed` : `${scope}, ${smallNumber(photographedCount)} photographed`];
+  let earlier = 0;
+  let tiered = 0;
+  for (const p of photoless) {
+    if (p.call === null) continue;
+    if (TIER_WORDS[p.call].rule === 'earlier') earlier += 1;
+    else tiered += 1;
+  }
+  if (earlier > 0) parts.push(`${smallNumber(earlier)} read as ${TIER_WORDS.worth_a_call.readAs} with no photo`);
+  if (tiered > 0) parts.push(`${smallNumber(tiered)} read as ${TIERED_CALLS_READ_AS} with no photo`);
+  return parts.join(', ');
 }
 
 // ── Why this is a Signal ──────────────────────────────────────────────────────
@@ -1396,10 +1442,11 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   const fromIso = new Date((indexOf(before.startDay) - 1) * 86_400_000).toISOString();
   const doses = await readDoseDays(petId, fromIso).catch(() => [] as SignalDoseDay[]);
 
-  const photographed = episodes.filter((e) => e.photo != null);
   // Every episode is the finding's symptom (`readSignalEpisodes` reads one type), so the
-  // symptom is every bout row's type.
-  const tileVerdicts = photographed.length > 0 && symptom ? await readTileVerdicts(photographed, symptom) : {};
+  // symptom is every bout row's type. Every episode is asked about, photographed or not
+  // (CUL-1200, the PM's ruling (b)): a call with no photo is never a tile, and the count line
+  // names it.
+  const tileVerdicts = episodes.length > 0 && symptom ? await readTileVerdicts(episodes, symptom) : {};
   // A copy that could not be read draws every tile "No read yet" here; the screen lays the
   // roses it already drew back over them (`carryTileRoses`, CUL-1198).
   const verdicts = tileVerdicts ?? {};
@@ -1457,12 +1504,26 @@ export function carryTileRoses(
   const calls = new Map<string, { verdict: CallDisplay; bout: string }>();
   for (const t of before) if (isCallDisplay(t.verdict)) calls.set(t.eventId, { verdict: t.verdict, bout: boutKey(t) });
   const episodes = next.model.episodes;
-  if (calls.size === 0 || !episodes) return next;
+  // The calls with no photo the count line named (CUL-1200) are kept the same way: on an
+  // episode still in the window, still photoless, over the same bout.
+  const lastPhotoless = new Map<string, PhotolessEpisode>();
+  for (const p of prev.model.episodes?.photoless ?? []) if (p.call !== null) lastPhotoless.set(p.eventId, p);
+  if ((calls.size === 0 && lastPhotoless.size === 0) || !episodes) return next;
   const tiles = episodes.tiles.map((t) => {
     const call = calls.get(t.eventId);
     return t.verdict === null && call && call.bout === boutKey(t) ? { ...t, verdict: call.verdict } : t;
   });
-  return { ...next, model: { ...next.model, episodes: { ...episodes, tiles } } };
+  // Kept while every row the call could have been read off is still in the bout: a bout that
+  // GREW keeps it (a re-log joined), a bout that lost a row drops it, because the call may have
+  // been that row's (G5; the adversarial pass on CUL-1200).
+  const photoless = (episodes.photoless ?? []).map((p) => {
+    const last = lastPhotoless.get(p.eventId);
+    if (p.call !== null || !last) return p;
+    const now = new Set(p.boutKey.split('|'));
+    return last.boutKey.split('|').every((id) => now.has(id)) ? { ...p, call: last.call } : p;
+  });
+  const countLine = galleryCountLine(episodes.total, episodes.weeks, episodes.photographedCount, photoless);
+  return { ...next, model: { ...next.model, episodes: { ...episodes, tiles, photoless, countLine } } };
 }
 
 /** The offline line (CUL-1219): when the engine wrote the sentence the screen is showing.
