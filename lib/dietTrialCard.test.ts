@@ -3812,6 +3812,15 @@ describe('the Design v2 trial line (CUL-1526)', () => {
     }
   });
 
+  it('the clean-gate property is not vacuous: the list holds a not-clean zero with no flag', () => {
+    const reached = everyState.filter(([, i]) =>
+      resolveTrialStrip(i)?.cardLine &&
+      !i.allowedSetUnavailable && !i.antigenArmDark &&
+      i.exposures && i.exposures.offDiet === 0 && !i.exposures.mayStateRecordClean,
+    );
+    expect(reached.length).toBeGreaterThanOrEqual(1);
+  });
+
   it('the property is not vacuous: active states reach a line', () => {
     const reached = everyState.filter(([, i]) => resolveTrialStrip(i)?.cardLine);
     expect(reached.length).toBeGreaterThanOrEqual(3);
