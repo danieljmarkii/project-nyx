@@ -59,6 +59,7 @@ import {
   type PopulationRow,
   type TypeFirsts,
 } from './historyDays';
+import type { FreeFedIntakeSpan } from './freeFedIntake';
 
 // ── The fixture record ─────────────────────────────────────────────────────────
 
@@ -126,7 +127,7 @@ const ROWS: PopulationRow[] = [
 ];
 
 const LOOK_DAYS = ['2026-09-05', '2026-09-12'];
-const FREE_FED = new Set(['bowl-food']);
+const FREE_FED: FreeFedIntakeSpan[] = [{ foodItemId: 'bowl-food', fromMs: -Infinity, untilMs: Infinity }];
 const REGIMENS: MedicationHistoryRegimen[] = [
   {
     id: 'reg-pred', medication_item_id: 'item-pred', drug_name: 'Prednisone', dose_amount: null, route: null,
@@ -158,7 +159,7 @@ function factsFor(range: DayRange, rows: readonly PopulationRow[] = ROWS): Histo
   return {
     petId: PET,
     range,
-    days: buildDayFacts({ rows, lookDays: LOOK_DAYS, range, freeFedFoodIds: FREE_FED, regimens: REGIMENS }),
+    days: buildDayFacts({ rows, lookDays: LOOK_DAYS, range, freeFedSpans: FREE_FED, regimens: REGIMENS }),
     firsts: firstsFrom(rows, LOOK_DAYS),
     duplicates: duplicateCountsOf(rows, range),
   };
@@ -287,18 +288,18 @@ describe('buildDayFacts — one day, one population', () => {
       row('n3', TODAY, '02:15', 'vomit'),
       row('n4', TODAY, '19:00', 'vomit'),
     ];
-    const f = buildDayFacts({ rows, lookDays: [], range: WINDOWS.all.range, freeFedFoodIds: new Set(), regimens: [] });
+    const f = buildDayFacts({ rows, lookDays: [], range: WINDOWS.all.range, freeFedSpans: [], regimens: [] });
     expect(dayFactsOn(f, '2026-09-20').byType.vomit).toBe(1);
     expect(dayFactsOn(f, TODAY).byType.vomit).toBe(3);
     // A bout that began before the window still counts its rows inside it.
-    const inside = buildDayFacts({ rows: rows.slice(0, 3), lookDays: [], range: { fromDay: TODAY, toDay: TODAY }, freeFedFoodIds: new Set(), regimens: [] });
+    const inside = buildDayFacts({ rows: rows.slice(0, 3), lookDays: [], range: { fromDay: TODAY, toDay: TODAY }, freeFedSpans: [], regimens: [] });
     expect(dayFactsOn(inside, TODAY).byType.vomit).toBe(2);
   });
 
   it('a stored type this build does not know counts in the total only (the §8 contract)', () => {
     const f = buildDayFacts({
       rows: [row('future', '2026-09-02', '09:00', 'a_future_leaf')],
-      lookDays: [], range: WINDOWS.all.range, freeFedFoodIds: new Set(), regimens: [],
+      lookDays: [], range: WINDOWS.all.range, freeFedSpans: [], regimens: [],
     });
     expect(dayFactsOn(f, '2026-09-02')).toMatchObject({ total: 1, byType: {} });
   });
@@ -306,7 +307,7 @@ describe('buildDayFacts — one day, one population', () => {
   it('an instant that does not parse sits on no day and is counted nowhere', () => {
     const f = buildDayFacts({
       rows: [{ ...row('bad', '2026-09-02', '09:00', 'vomit'), occurredAt: 'not a date' }],
-      lookDays: [], range: WINDOWS.all.range, freeFedFoodIds: new Set(), regimens: [],
+      lookDays: [], range: WINDOWS.all.range, freeFedSpans: [], regimens: [],
     });
     expect(f.size).toBe(0);
   });
@@ -373,7 +374,7 @@ describe('AC 30 — the course counts key on the vet report\'s course grain', ()
     const chips = ['given', 'partial', 'missed', 'refused', null] as const;
     const rows = chips.map((adherence, i) =>
       dose(`chip-${i}`, '2026-09-04', `0${i + 1}:00`, { medicationId: 'reg-pred', medicationItemId: 'item-pred', adherence }));
-    const days = buildDayFacts({ rows, lookDays: [], range: WINDOWS.all.range, freeFedFoodIds: new Set(), regimens: REGIMENS });
+    const days = buildDayFacts({ rows, lookDays: [], range: WINDOWS.all.range, freeFedSpans: [], regimens: REGIMENS });
     const tally = deriveMedicationCourses({
       regimens: REGIMENS,
       doses: rows.map((r) => ({
@@ -1216,7 +1217,7 @@ describe('CUL-1243 (PM-ruled (a)) — Meal names meals and treats apart, in the 
   const facts = (rows: readonly PopulationRow[]): HistoryFacts => ({
     petId: PET,
     range,
-    days: buildDayFacts({ rows, lookDays: [], range, freeFedFoodIds: new Set(), regimens: [] }),
+    days: buildDayFacts({ rows, lookDays: [], range, freeFedSpans: [], regimens: [] }),
     firsts: firstsFrom(rows, []),
     duplicates: { total: 0, byType: {} },
   });
@@ -1296,7 +1297,7 @@ describe('CUL-1244 (PM-ruled (b)) — a look-only day is a card whose header is 
       rows: ROWS.filter((r) => r.id !== 'm-0921' && r.id !== 'v-0921'),
       lookDays: [TODAY],
       range: WINDOWS.all.range,
-      freeFedFoodIds: FREE_FED,
+      freeFedSpans: FREE_FED,
       regimens: REGIMENS,
     });
     const out = listSectionsOf({

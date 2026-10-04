@@ -205,7 +205,7 @@ function mockFacts(): HistoryFacts {
       ],
       lookDays: [],
       range,
-      freeFedFoodIds: new Set(),
+      freeFedSpans: [],
       regimens: [],
     }),
     firsts: firstDaysOf([{ eventType: 'meal', firstMs: Date.parse(MEAL_AT), firstPhotoMs: null, firstNoteMs: null }], null),
@@ -225,7 +225,7 @@ function answeringHistoryRecord(): HistoryRecordData {
     petId: 'p1',
     windowFacts: { petId: 'p1', today: '2026-09-25', firstRecordDay: '2026-09-20', trial: null, sinceVisit: null },
     range,
-    recordDays: buildDayFacts({ rows: [meal], lookDays: [], range, freeFedFoodIds: new Set(), regimens: [] }),
+    recordDays: buildDayFacts({ rows: [meal], lookDays: [], range, freeFedSpans: [], regimens: [] }),
     courses: [],
     notReadDays: new Map(),
   };

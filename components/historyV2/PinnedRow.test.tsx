@@ -153,7 +153,7 @@ function recordFor(forPet: Pet): HistoryRecordData {
     petId: forPet.id,
     windowFacts: facts,
     range,
-    recordDays: buildDayFacts({ rows: ROWS, lookDays: [], range, freeFedFoodIds: new Set(), regimens: REGIMENS }),
+    recordDays: buildDayFacts({ rows: ROWS, lookDays: [], range, freeFedSpans: [], regimens: REGIMENS }),
     courses,
     notReadDays: new Map([['2026-09-18', 1]]),
   };

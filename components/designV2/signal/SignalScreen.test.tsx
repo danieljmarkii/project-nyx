@@ -34,6 +34,8 @@ jest.mock('expo-router', () => ({
   router: { back: (...a: unknown[]) => mockRouter.back(...a), push: (...a: unknown[]) => mockRouter.push(...a) },
   Stack: { Screen: (props: unknown) => mockStackScreen(props) },
   useLocalSearchParams: () => mockParams,
+  // A mounted screen is focused: the effect runs as an effect, re-running on its deps.
+  useFocusEffect: (cb: () => void | (() => void)) => require('react').useEffect(cb, [cb]),
 }));
 const mockFocus = jest.fn((..._a: unknown[]) => true);
 jest.mock('../../../lib/a11yFocus', () => ({ focusAccessibility: (...a: unknown[]) => mockFocus(...a) }));
@@ -74,6 +76,7 @@ import { SIGNAL_OPEN_MOTION } from '../../motion/signalOpenMotion';
 import { FLIGHT_MOTION, abortFlight, getFlightState, landFlight, setHeroReady, settleOutbound, stageFlight } from '../../motion/flightMotion';
 import { createElement } from 'react';
 import { usePetStore } from '../../../store/petStore';
+import { useSyncStore } from '../../../store/syncStore';
 import { dayKeyFromIndex, localDayIndexOf } from '../../../lib/utils';
 
 const shift = (key: string, d: number) => dayKeyFromIndex((localDayIndexOf(key) as number) + d);
@@ -167,6 +170,7 @@ const ready = (cached: CachedFinding, over: Partial<SignalScreenInput> = {}) => 
   status: 'ready' as const,
   model: buildSignalScreenModel(input(cached, over)),
   petName: 'Nyx',
+  asOfLine: null as string | null,
 });
 // Off a trial, where the screen draws its compare (CUL-1216: a running trial's before/during
 // statement is the strip's sentence, and nothing is drawn).
@@ -729,5 +733,131 @@ describe('the flight’s landing (D2-6 · CUL-1069)', () => {
     expect(getFlightState().phase).toBe('idle');
     const last = (mockStackScreen.mock.calls[mockStackScreen.mock.calls.length - 1][0] as unknown as { options: Record<string, unknown> }).options;
     expect(last.animation).toBe('fade');
+  });
+});
+
+// ── CUL-1219 — the screen re-reads, opens offline, and never leaves a clone over a failure ──
+describe('the re-read (CUL-1219, GC-10)', () => {
+  // The record after the Sep-17-style removal: the newest photographed episode soft-deleted.
+  const removedOne = () => {
+    const base = input(benign, noTrial);
+    // The gallery's newest tile — an episode inside the drawn weeks.
+    const shown = buildSignalScreenModel(base).episodes!.tiles[0].eventId;
+    const gone = base.episodes.find((e) => e.eventId === shown)!;
+    return { gone, model: buildSignalScreenModel({ ...base, episodes: base.episodes.filter((e) => e !== gone) }) };
+  };
+  const tick = (key: 'hydrationTick' | 'signalTick') =>
+    act(async () => {
+      useSyncStore.setState((st) => ({ [key]: st[key] + 1 }) as never);
+    });
+
+  beforeEach(() => abortFlight());
+  afterEach(() => {
+    useSyncStore.setState({ signalAcknowledging: {} });
+    abortFlight();
+  });
+
+  it('a soft delete under the mounted screen: the hydration tick re-reads and swaps the model in place — no blank, the body and its scroll kept, focus to the gallery header', async () => {
+    const first = ready(benign, noTrial);
+    mockLoadSignalScreen.mockResolvedValue(first);
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    const body = view.getByTestId('signal-screen-body');
+    const before = view.getByTestId('episode-count-line').props.children;
+    const tilesBefore = first.model.episodes!.tiles.length;
+
+    const { gone, model } = removedOne();
+    // The re-read is in flight: the screen does not blank to its silhouette.
+    let answer: ((v: unknown) => void) | null = null;
+    mockLoadSignalScreen.mockReturnValue(new Promise((r) => (answer = r)));
+    const calls = mockLoadSignalScreen.mock.calls.length;
+    mockFocus.mockClear();
+    await tick('hydrationTick');
+    expect(mockLoadSignalScreen.mock.calls.length).toBe(calls + 1);
+    expect(view.getByTestId('signal-screen-body')).toBe(body);
+    expect(view.queryByTestId('signal-silhouette')).toBeNull();
+
+    await act(async () => answer!({ ...first, model }));
+    // Same host node: the ScrollView (and so its offset) was never unmounted.
+    expect(view.getByTestId('signal-screen-body')).toBe(body);
+    expect(view.getByTestId('episode-count-line').props.children).not.toBe(before);
+    expect(model.episodes!.tiles.length).toBe(tilesBefore - 1);
+    expect(model.episodes!.tiles.some((t) => t.eventId === gone.eventId)).toBe(false);
+    // The landing is not re-armed: the title focus asked once on arrival, the header now.
+    const focused = mockFocus.mock.calls.map((c) => c[0]);
+    expect(focused).toHaveLength(1);
+    expect((focused[0] as { props?: { children?: unknown } } | null)?.props?.children).toBe('The episodes');
+  });
+
+  it('the Signal tick and a focus re-read too; a failed re-read keeps the model on screen', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(benign, noTrial));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    mockLoadSignalScreen.mockRejectedValue(new Error('sqlite busy'));
+    const calls = mockLoadSignalScreen.mock.calls.length;
+    await tick('signalTick');
+    expect(mockLoadSignalScreen.mock.calls.length).toBe(calls + 1);
+    expect(view.getByTestId('signal-screen-body')).toBeTruthy();
+    expect(view.queryByText("I couldn't open this signal just now.")).toBeNull();
+    warn.mockRestore();
+  });
+
+  it('a first read that fails is still the Try again screen (only a settled screen is kept)', async () => {
+    mockLoadSignalScreen.mockRejectedValue(new Error('offline, nothing kept'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByText('Try again')).toBeTruthy());
+    warn.mockRestore();
+  });
+
+  it('offline: the kept finding draws, with the line that says when it was last updated', async () => {
+    mockLoadSignalScreen.mockResolvedValue({ ...ready(benign, noTrial), asOfLine: "Couldn't refresh just now. Last updated today at 9:12 AM." });
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-as-of-line')).toBeTruthy());
+    expect(view.getByText("Couldn't refresh just now. Last updated today at 9:12 AM.")).toBeTruthy();
+  });
+
+  it('while the route’s pet’s regen runs, Home’s "updating" line sits over the sentence; another pet’s does not', async () => {
+    mockLoadSignalScreen.mockResolvedValue(ready(benign, noTrial));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(view.queryByTestId('signal-updating-line')).toBeNull();
+    await act(async () => useSyncStore.setState({ signalAcknowledging: { 'pet-2': true } }));
+    expect(view.queryByTestId('signal-updating-line')).toBeNull();
+    await act(async () => useSyncStore.setState({ signalAcknowledging: { 'pet-1': true } }));
+    expect(view.getByText('Noted — updating Nyx’s picture…'.replace('’', "'"))).toBeTruthy();
+  });
+
+  // BRK-15: the clone that flew in never hangs over an answer with nothing to land on.
+  const SOURCE = { x: 67, y: 300, width: 300, height: 130 };
+  const stage = (identity: string) => stageFlight({ identity, title: 'A title', source: SOURCE, element: createElement('View') });
+
+  it('a failed open with a staged flight aborts it', async () => {
+    stage('reflection:vomit');
+    mockLoadSignalScreen.mockRejectedValue(new Error('offline'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByText('Try again')).toBeTruthy());
+    expect(getFlightState().flight).toBeNull();
+    warn.mockRestore();
+  });
+
+  it('a ready finding with no weekly chart (an intake decline) aborts the flight: no hero, nothing to land on', async () => {
+    const intake: IntakeDeclineFinding = { type: 'intake_decline', priorityClass: 'safety', trigger: 'consecutive_low', species: 'cat', daysBelowBaseline: 3, refusedFoodLabel: null, ratedMealsConsidered: 9 };
+    stage('intake_decline');
+    mockLoadSignalScreen.mockResolvedValue(ready({ rank: 0, text: 'Nyx has eaten less than usual for 3 days. Call your vet today.', finding: intake }));
+    const view = render(<SignalScreen petId="pet-1" identity="intake_decline" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(view.queryByTestId('signal-hero')).toBeNull();
+    expect(getFlightState().flight).toBeNull();
+  });
+
+  it('a ready finding WITH a hero keeps its flight (the landing is the hero’s)', async () => {
+    stage('reflection:vomit');
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(getFlightState().flight?.identity).toBe('reflection:vomit');
   });
 });

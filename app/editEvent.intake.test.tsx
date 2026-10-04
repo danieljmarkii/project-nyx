@@ -31,8 +31,14 @@ jest.mock('../lib/sync', () => ({
 }));
 
 const mockGetMealForEvent = jest.fn();
+const mockGetAllAsync = jest.fn().mockResolvedValue([]);
+const mockGetFirstAsync = jest.fn().mockResolvedValue({ pet_id: 'pet-cat' });
 jest.mock('../lib/db', () => ({
-  getDb: () => ({ getAllAsync: jest.fn().mockResolvedValue([]), getFirstAsync: jest.fn().mockResolvedValue(null), runAsync: jest.fn() }),
+  getDb: () => ({
+    getAllAsync: (...a: unknown[]) => mockGetAllAsync(...a),
+    getFirstAsync: (...a: unknown[]) => mockGetFirstAsync(...a),
+    runAsync: jest.fn(),
+  }),
   updateEvent: jest.fn().mockResolvedValue(undefined),
   updateMealFood: jest.fn().mockResolvedValue(undefined),
   getMealForEvent: (...a: unknown[]) => mockGetMealForEvent(...a),
@@ -54,6 +60,9 @@ const mockRateMealIntake = jest.fn().mockResolvedValue(undefined);
 jest.mock('../lib/meals', () => ({
   rateMealIntake: (...a: unknown[]) => mockRateMealIntake(...a),
 }));
+
+const mockTriggerRegen = jest.fn();
+jest.mock('../lib/signal', () => ({ triggerSignalRegenDebounced: (...a: unknown[]) => mockTriggerRegen(...a) }));
 
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), back: jest.fn() },
@@ -88,6 +97,8 @@ function meal(intake: string | null) {
 let alertSpy: jest.SpyInstance;
 beforeEach(() => {
   jest.clearAllMocks();
+  mockGetAllAsync.mockResolvedValue([]);
+  mockGetFirstAsync.mockResolvedValue({ pet_id: 'pet-cat' });
   alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 });
 afterEach(() => alertSpy.mockRestore());
@@ -165,5 +176,44 @@ describe('a Save before the meal read answers (CUL-1087)', () => {
     fireEvent.press(getByText('Refused'));
     await act(async () => { fireEvent.press(getByText('Save')); });
     expect(mockRateMealIntake).toHaveBeenCalledWith('evt-1', 'refused');
+  });
+});
+
+// CUL-1219 (BRK-44): an edit that moves what the engine counted refreshes the Signal; a
+// peek-and-save spends no rebuild against the daily cap (CUL-1087's reason, above).
+describe('the Signal refresh on an edit (CUL-1219)', () => {
+  it('an untouched save asks for no rebuild', async () => {
+    mockGetMealForEvent.mockResolvedValue(meal('most'));
+    const { getByText } = await open();
+    await act(async () => { fireEvent.press(getByText('Save')); });
+    expect(mockTriggerRegen).not.toHaveBeenCalled();
+  });
+
+  it('a changed food rebuilds the record’s pet’s Signal', async () => {
+    mockGetMealForEvent.mockResolvedValue(meal('most'));
+    mockGetAllAsync.mockResolvedValue([{ id: 'food-2', brand: 'Hill’s', product_name: 'Turkey', format: 'dry' }]);
+    const { getByText } = await open();
+    // The food row's own "Change" (the time row carries one too): the one beside the food.
+    fireEvent.press(getByText('Pate'));
+    await waitFor(() => expect(getByText('Turkey')).toBeTruthy());
+    fireEvent.press(getByText('Turkey'));
+    await act(async () => { fireEvent.press(getByText('Save')); });
+    expect(mockTriggerRegen).toHaveBeenCalledWith('pet-cat');
+  });
+
+  it('a failed pet lookup skips the refresh and never fails a save that already landed', async () => {
+    mockGetMealForEvent.mockResolvedValue(meal('most'));
+    mockGetAllAsync.mockResolvedValue([{ id: 'food-2', brand: 'Hill’s', product_name: 'Turkey', format: 'dry' }]);
+    mockGetFirstAsync.mockRejectedValue(new Error('sqlite busy'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { getByText } = await open();
+    fireEvent.press(getByText('Pate'));
+    await waitFor(() => expect(getByText('Turkey')).toBeTruthy());
+    fireEvent.press(getByText('Turkey'));
+    await act(async () => { fireEvent.press(getByText('Save')); });
+    expect(mockTriggerRegen).not.toHaveBeenCalled();
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(jest.requireMock('expo-router').router.back).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

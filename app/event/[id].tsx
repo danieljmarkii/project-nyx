@@ -20,6 +20,7 @@ import {
   getDoubleDoseFlag,
   TimelineRow,
 } from '../../lib/db';
+import { triggerSignalRegenDebounced } from '../../lib/signal';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
 import { detachEventAttachment, detachOtherEventAttachments } from '../../lib/attachments';
 import { resolveEventPhotoDisplay, addPhotoHeroCopy, EVENT_HERO_HEIGHT } from '../../lib/eventPhoto';
@@ -563,6 +564,8 @@ export default function EventDetailScreen() {
               // with the replace path so "detach a photo" has one implementation
               // (B-105) — the replace used to skip this cleanup entirely.
               await detachEventAttachment(att);
+              // CUL-1219 (BRK-44): the photo was part of what the Signal read.
+              if (event) triggerSignalRegenDebounced(event.pet_id);
             } catch (e) {
               console.error('[event-detail] remove photo failed:', e);
               setAttachment(att);
@@ -628,6 +631,7 @@ export default function EventDetailScreen() {
       const isReadable = hasPerIncidentRead(event.event_type);
       const readClaim = isReadable ? claimAnalysisChain(event.id) : null;
       let readInvoked = false;
+      let landed = false;
       // Fire-and-forget upload; sync retries on reconnect if it fails
       uploadPhoto('nyx-event-attachments', storagePath, uploadUri)
         .then(async () => {
@@ -639,6 +643,7 @@ export default function EventDetailScreen() {
           // synced when the row truly landed, else leave it for the retry queue.
           if (error) { console.warn('[event-detail] attachment upsert failed:', error.message); return; }
           await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
+          landed = true;
           // Re-analyze a vomit / stool event whose photo just changed (e.g. adding a
           // photo to a photoless event, or replacing an oversized historic photo
           // with a compressed one) — the per-incident section triggers on mount, but
@@ -664,7 +669,14 @@ export default function EventDetailScreen() {
         // Settles on every exit — the upsert early-return and a rejected upload
         // included. A chain that died before its read settles FALSE, so a waiting
         // section triggers its own instead of watching for a row nothing writes.
-        .finally(() => readClaim?.settle(readInvoked));
+        .finally(() => {
+          readClaim?.settle(readInvoked);
+          // CUL-1219 (BRK-44): a new or replaced photo (and its read) changes what the
+          // Signal counted, so it refreshes once the read has had its turn. Only when the
+          // photo reached the server: a rebuild counts against the daily cap (CUL-1087), and
+          // a failed upload changed nothing the engine reads; the retry queue's own path lands it.
+          if (landed && (readInvoked || !isReadable)) triggerSignalRegenDebounced(event.pet_id);
+        });
       // Detach the rows this capture replaced — after the replacement is stored
       // AND its upload is in flight. Order matters twice over: removing first
       // would turn a failed insert into an event with no photo at all, and

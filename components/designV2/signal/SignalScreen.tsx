@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
-import { router } from 'expo-router';
+import { Animated, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent, type Text } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import { useAppActive } from '../../../hooks/useAppActive';
+import { useLiveRegionAnnouncement } from '../../../hooks/useLiveRegionAnnouncement';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { focusAccessibility } from '../../../lib/a11yFocus';
 import { measureNodeInWindow, type WindowRect } from '../../../lib/measureNode';
 import { CARE_CONTEXT_TITLE } from '../../../lib/careContext';
 import { CARE_WATCHED_LINE, CARE_WATCHED_TAG, careStateViewOf } from '../../../lib/careState';
-import { symptomWord } from '../../../lib/signalCopy';
+import { ackUpdatingCopy, symptomWord } from '../../../lib/signalCopy';
 import { loadSignalScreen, screenLeadsWithLanes, UNSUPPORTED_LINE, withheldLines, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
 import { usePetStore } from '../../../store/petStore';
+import { useSyncStore } from '../../../store/syncStore';
 import { SignalSilhouette } from '../waits/SignalSilhouette';
 import { CompareBars } from '../../charts/CompareBars';
 import { TimingLanes } from '../../charts/TimingLanes';
@@ -86,6 +88,19 @@ import { leadChartWidth } from './SignalLeadCard';
 // can snap), and it does not draw in: it arrived by flying. Back reverses the flight
 // before the pop; unmounting mid-flight aborts it. A deep link stages nothing — the rise.
 //
+// THE RE-READ (CUL-1219, GC-10): the screen reads again on every focus, `signalTick` (a
+// regen landed) and `hydrationTick` (the local record moved), so a removed vomit leaves it
+// and an edit reaches it. Only the FIRST read blanks the screen; a re-read swaps the model
+// in place, and only when it changed, so the body stays mounted — its scroll, its draw
+// (identity-keyed, `useDrawIn`) and its landing (`arrived` never falls back) are never
+// re-armed. A failed re-read keeps what is on screen. When an episode leaves, VoiceOver
+// focus moves to the gallery header (or the title, if the gallery went with it). While
+// the pet's regen runs, Home's "updating" line sits over the sentence.
+//
+// OFFLINE (GAP-7): the finding comes from the last row this process read when the network
+// read fails (`readSignalCacheOrLast`), labelled with when the engine wrote it; everything
+// else on the screen is already the phone's own.
+//
 // C-9: the pet is the route's pet, named by `loadSignalScreen` through
 // `resolveRecordPetName`; `activePet` is never read here.
 //
@@ -129,29 +144,45 @@ export function SignalScreen({ petId, identity }: Props) {
   // register cannot answer; the load re-runs once the pets arrive (TS-9 · CUL-1305).
   const petsLoaded = usePetStore((s) => s.pets.length > 0);
 
+  // Ticks that say the record or the Signal moved; each re-reads while the screen is focused.
+  const signalTick = useSyncStore((st) => st.signalTick);
+  const hydrationTick = useSyncStore((st) => st.hydrationTick);
+  const updating = useSyncStore((st) => st.signalAcknowledging[petId] ?? false);
+
+  const loadRef = useRef(load);
+  loadRef.current = load;
   const run = useCallback(async () => {
     const my = ++loadId.current;
-    setLoad({ status: 'loading' });
+    // Blank only before an answer: a re-read over a settled screen keeps it up.
+    const cur = loadRef.current.status;
+    if (cur === 'failed') setLoad({ status: 'loading' });
     try {
       const next = await loadSignalScreen(petId, identity);
-      if (loadId.current === my) setLoad(next);
+      if (loadId.current !== my) return;
+      setLoad((prev) => (sameLoad(prev, next) ? prev : next));
     } catch (e) {
       console.warn('[signal-screen] load failed:', e);
-      if (loadId.current === my) setLoad({ status: 'failed' });
+      if (loadId.current !== my) return;
+      // A failed RE-read keeps what the screen already answered.
+      setLoad((prev) => (prev.status === 'loading' || prev.status === 'failed' ? { status: 'failed' } : prev));
     }
   }, [petId, identity, petsLoaded]);
 
-  useEffect(() => {
-    void run();
-  }, [run]);
+  useFocusEffect(
+    useCallback(() => {
+      void run();
+    }, [run, signalTick, hydrationTick]),
+  );
 
-  // A load that settles to anything but the finding abandons a flown-in chart, so a card's
-  // clone never stays painted over a withheld, missing or failed answer (TS-9 · CUL-1305).
+  // A load that settles to anything but a drawn hero abandons a flown-in chart, so a card's
+  // clone never stays painted over a withheld, missing or failed answer (TS-9 · CUL-1305),
+  // nor over a finding whose screen has no weekly chart to land on (BRK-15, CUL-1219).
+  const heroless = load.status === 'ready' && !(load.model.weekly && load.model.noun);
   useEffect(() => {
-    if (load.status === 'loading' || load.status === 'ready') return;
+    if (load.status === 'loading' || (load.status === 'ready' && !heroless)) return;
     const s = getFlightState();
     if (s.flight?.identity === identity) abortFlight();
-  }, [load.status, identity]);
+  }, [load.status, heroless, identity]);
 
   const model = load.status === 'ready' ? load.model : null;
   const arrived = model != null;
@@ -164,6 +195,22 @@ export function SignalScreen({ petId, identity }: Props) {
     if (!arrived) return;
     focusAccessibility(titleRef.current);
   }, [arrived, identity]);
+
+  // An episode left (a removal from its record): focus the gallery header, or the title if
+  // the gallery went with it — never left on a tile that no longer exists.
+  const galleryHeaderRef = useRef<Text>(null);
+  const episodeTotal = model?.episodes?.total ?? null;
+  const lastTotal = useRef<number | null>(null);
+  useEffect(() => {
+    const prev = lastTotal.current;
+    lastTotal.current = episodeTotal;
+    if (prev == null || !arrived) return;
+    if (episodeTotal == null) focusAccessibility(titleRef.current);
+    else if (episodeTotal < prev) focusAccessibility(galleryHeaderRef.current);
+  }, [episodeTotal, arrived]);
+
+  const updatingLine = updating && arrived ? ackUpdatingCopy(load.status === 'ready' ? load.petName : '') : null;
+  useLiveRegionAnnouncement(updatingLine);
 
   const back = () => {
     // The reverse flight, then the pop: the clone flies home over the fading screen.
@@ -212,6 +259,9 @@ export function SignalScreen({ petId, identity }: Props) {
           petId={petId}
           model={load.model}
           petName={load.petName}
+          asOfLine={load.asOfLine}
+          updatingLine={updatingLine}
+          galleryHeaderRef={galleryHeaderRef}
           landStyle={landStyle}
           titleRef={titleRef}
           flight={flight}
@@ -338,6 +388,9 @@ function Body({
   petId,
   model,
   petName,
+  asOfLine,
+  updatingLine,
+  galleryHeaderRef,
   landStyle,
   titleRef,
   flight,
@@ -348,6 +401,11 @@ function Body({
   petId: string;
   model: SignalScreenModel;
   petName: string;
+  /** The offline line: how old the sentence is, when the network read failed. */
+  asOfLine: string | null;
+  /** Home's "updating" line, while the pet's regen runs. */
+  updatingLine: string | null;
+  galleryHeaderRef: React.RefObject<Text | null>;
   landStyle: ReturnType<typeof useSignalOpen>;
   titleRef: React.RefObject<View | null>;
   flight: FlightRecord | null;
@@ -413,12 +471,23 @@ function Body({
 
       {/* 3 + 4 · the sentence and the compare land together */}
       <Animated.View style={[styles.section, landStyle]} testID="signal-section-sentence">
+        {updatingLine ? (
+          <View style={styles.ackLine} accessibilityLiveRegion="polite" testID="signal-updating-line">
+            <View style={styles.ackDot} />
+            <ThemedText style={styles.ackText}>{updatingLine}</ThemedText>
+          </View>
+        ) : null}
         {watched ? (
           <ThemedText style={styles.careTag} testID="signal-care-tag">
             {CARE_WATCHED_TAG}
           </ThemedText>
         ) : null}
         <ThemedText style={styles.sentence}>{model.sentence}</ThemedText>
+        {asOfLine ? (
+          <ThemedText style={styles.careLine} testID="signal-as-of-line">
+            {asOfLine}
+          </ThemedText>
+        ) : null}
         {care?.state === 'with_vet' ? (
           <ThemedText style={styles.careLine} testID="signal-care-line">
             {CARE_WATCHED_LINE}
@@ -487,7 +556,7 @@ function Body({
       {/* 6 · the episodes */}
       {model.episodes ? (
         <View style={styles.section} testID="signal-section-episodes">
-          <EpisodeGallery episodes={model.episodes} />
+          <EpisodeGallery episodes={model.episodes} headerRef={galleryHeaderRef} />
         </View>
       ) : null}
 
@@ -504,6 +573,16 @@ function Body({
       </View>
     </ScrollView>
   );
+}
+
+/** Two loads that would draw the same screen (CUL-1219): a re-read swaps only on change. */
+function sameLoad(a: { status: string }, b: { status: string }): boolean {
+  if (a === b) return true;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
 }
 
 // The beats, re-exported beside the screen so a reader of this file sees them without
@@ -587,6 +666,24 @@ const styles = StyleSheet.create({
   },
   compare: {
     marginTop: theme.space1,
+  },
+  // Home's acknowledgment line (SignalZone's AckLine), the same dot and register.
+  ackLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    marginBottom: theme.space1,
+  },
+  ackDot: {
+    width: theme.space1,
+    height: theme.space1,
+    borderRadius: theme.space1,
+    backgroundColor: theme.colorAccent,
+  },
+  ackText: {
+    fontSize: theme.textXS,
+    lineHeight: theme.lineHeightXS,
+    color: theme.colorAccentInk,
   },
   contextRow: {
     flexDirection: 'row',
