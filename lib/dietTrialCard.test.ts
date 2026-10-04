@@ -3689,3 +3689,87 @@ describe('B-704 card + strip render the protein identity', () => {
     expect(resolveTrialCard(withProtein()).foodLabel).toBe(FOOD);
   });
 });
+
+// ── CUL-1526 — Design v2's one trial line (G2 B + G3 B, CUL-1519 round 2 §04) ───
+//
+// The line ALWAYS opens with the end date, then the off-diet floor when there is one.
+// Nothing else: no food label, no coverage ratio, no vomiting pair (those live on
+// `/trial`). Asserted per state over the real resolver, then as a property over every
+// state the card can reach, with the two lines that read as "the diet is working" armed.
+describe('the Design v2 trial line (CUL-1526)', () => {
+  const offDiet = (n: number) => ({ mayStateRecordClean: false, totalFeedings: 68, offDiet: n });
+
+  it('running, off-diet > 0: the end date, then the off-diet floor', () => {
+    expect(resolveTrialStrip(activeInput({ exposures: offDiet(3) }))!.cardLine).toBe(
+      'Ends Aug 27 · 3 off-diet feedings logged',
+    );
+  });
+
+  it('one off-diet feeding takes the singular noun', () => {
+    expect(resolveTrialStrip(activeInput({ exposures: offDiet(1) }))!.cardLine).toBe(
+      'Ends Aug 27 · 1 off-diet feeding logged',
+    );
+  });
+
+  it('running, off-diet = 0: the end date alone', () => {
+    expect(resolveTrialStrip(activeInput())!.cardLine).toBe('Ends Aug 27');
+  });
+
+  it('past the window, not ended: "Window ended", then the off-diet clause', () => {
+    const over = activeInput({ nowMs: localNoon(2026, 9, 1), exposures: offDiet(3) });
+    const strip = resolveTrialStrip(over)!;
+    expect(strip.cardLine).toBe('Window ended Aug 27 · 3 off-diet feedings logged');
+    expect(resolveTrialStrip({ ...over, exposures: offDiet(0) })!.cardLine).toBe('Window ended Aug 27');
+  });
+
+  it('a live intake decline keeps its shipped early return: no line, header only', () => {
+    const strip = resolveTrialStrip(activeInput({
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+      exposures: offDiet(3),
+    }))!;
+    expect(strip.cardLine).toBeNull();
+    expect(strip.line).toBeNull();
+  });
+
+  it('a live trial-diet refusal keeps the date and the floor (neither has a direction)', () => {
+    expect(resolveTrialStrip(activeInput({
+      trialDietRefusal: REFUSING_NOW, exposures: offDiet(2),
+    }))!.cardLine).toBe('Ends Aug 27 · 2 off-diet feedings logged');
+  });
+
+  it('an unusable permit set withholds the count, as the shipped line does (one source)', () => {
+    expect(resolveTrialStrip(activeInput({
+      allowedSetUnavailable: true, exposures: offDiet(68),
+    }))!.cardLine).toBe('Ends Aug 27');
+  });
+
+  it('leaves the shipped line untouched (flag-off byte-identical)', () => {
+    expect(resolveTrialStrip(activeInput({ exposures: offDiet(3) }))!.line).toBe(
+      'Zignature Kangaroo Formula · ends Aug 27 · meals logged on 22 of 23 days · 3 outside the trial diet',
+    );
+  });
+
+  // The property: in no reachable state does the card line carry a ratio, a vomiting
+  // count, a meals-logged phrase or the food label — armed with a full coverage ratio and
+  // a falling vomiting pair, the two lines G3 moved off Home, so an absence is a rule
+  // and not an empty fixture.
+  it.each(everyState)('carries no ratio and no vomiting count — %s', (_name, base) => {
+    const armed: TrialCardInput = {
+      ...base,
+      coverage: base.coverage ?? { daysLogged: 23, daysElapsed: 23 },
+      trialResponse: counts({ trialCount: 0, baselineCount: 20 }),
+    };
+    const strip = resolveTrialStrip(armed);
+    if (!strip || strip.cardLine === null) return;
+    expect(strip.cardLine).toMatch(/^(Ends|Window ended) [A-Z][a-z]{2} \d{1,2}( · \d+ off-diet feedings? logged)?$/);
+    expect(strip.cardLine).not.toMatch(/\d+ of \d+/);
+    expect(strip.cardLine).not.toMatch(/vomit/i);
+    expect(strip.cardLine).not.toMatch(/meals logged/i);
+    if (armed.trial?.foodLabel) expect(strip.cardLine).not.toContain(armed.trial.foodLabel);
+  });
+
+  it('the property is not vacuous: active states reach a line', () => {
+    const reached = everyState.filter(([, i]) => resolveTrialStrip(i)?.cardLine);
+    expect(reached.length).toBeGreaterThanOrEqual(3);
+  });
+});

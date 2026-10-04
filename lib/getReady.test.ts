@@ -303,6 +303,7 @@ describe('a row is a QUOTE, never a new claim', () => {
       line: 'Hydrolyzed · ends Oct 12 · 41 of 48 meals finished',
       progressFraction: 0.41,
       trialResponseLine: null,
+      cardLine: null,
     };
     const { rows } = buildWorthRaising(input({ trialStrip: strip }));
     expect(rows[0].text).toBe(strip.header);
@@ -387,6 +388,7 @@ describe('a safety finding leads, and is never capped away', () => {
       line: null,
       progressFraction: 0.41,
       trialResponseLine: null,
+      cardLine: null,
     };
     const { rows } = buildWorthRaising(input({ findings: benign, trialStrip: strip }));
     expect(rows.map((r) => r.source)).toContain('trial');
@@ -487,6 +489,7 @@ describe('a quiet record gets NO section — and a failed read is not a quiet re
       line: null,
       progressFraction: 0.41,
       trialResponseLine: null,
+      cardLine: null,
     };
     const { rows, signalUnavailable } = buildWorthRaising(input({ findings: null, trialStrip: strip }));
     expect(signalUnavailable).toBe(true);
@@ -649,6 +652,7 @@ describe('the ordering keeps the Signal band above the two weakest rows', () => 
           line: 'Royal Canin HP · ends Oct 12 · meals logged on 20 of 23 days',
           progressFraction: 0.41,
           trialResponseLine: null,
+          cardLine: null,
         },
         rundown: rundown({
           facts: {
@@ -769,6 +773,7 @@ describe('the screen no longer deletes a denominator', () => {
           line,
           progressFraction: 0.41,
           trialResponseLine: null,
+          cardLine: null,
         },
       }),
     );
@@ -841,6 +846,7 @@ describe('the device’s OWN intake decline is a row, and survives with no netwo
           line: null,
           progressFraction: 0.28,
           trialResponseLine: null,
+          cardLine: null,
         },
       }),
     );
@@ -915,6 +921,7 @@ describe('at most ONE stand-down marker', () => {
           line: null,
           progressFraction: 0.41,
           trialResponseLine: null,
+          cardLine: null,
         },
       }),
     );
@@ -1412,6 +1419,7 @@ const RUNNING_STRIP: TrialStripModel = {
   line: 'Royal Canin Rabbit · ends Aug 27 · meals logged on 21 of 23 days',
   progressFraction: 0.41,
   trialResponseLine: null,
+  cardLine: null,
 };
 
 describe('TS-8 — the trial row asks the recheck questions (behind trial_screen)', () => {
