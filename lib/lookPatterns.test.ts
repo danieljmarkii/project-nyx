@@ -23,7 +23,7 @@ import {
   NOTICED_POSITIVE_GROUP,
 } from './lookPatterns';
 import { LOOK_COVERAGE_FLOOR_DAYS, LOOK_COVERAGE_WINDOW_DAYS } from './lookCoverage';
-import { LOOK_PAIRING_DISCLOSURE } from './lookPairing';
+import { cardPairing, LOOK_PAIRING_DISCLOSURE, LOOK_PAIRING_ON_PATTERNS } from './lookPairing';
 import { LOOK_OPENING_CHIP_KEY, LOOK_WORDS, LOOK_VOCAB_VERSION } from '../constants/lookWords';
 import { localDayIndex, dayKeyFromIndex } from './utils';
 import { lookDatedWithYear } from './lookReceipts';
@@ -55,6 +55,29 @@ const MOCHI = {
   withheld: false,
   vomitLocalDays: [] as string[],
 };
+
+/**
+ * The card with CUL-914's hold LIFTED. The pairing is held out of v1 by one switch, and the
+ * module, its floors and the card's wiring of it stay so that lifting the hold is one line —
+ * which is only true while the wiring is still tested. So the suites that were written for
+ * the pairing keep running against this builder (a module re-loaded with the switch on),
+ * and the hold itself is asserted against the real one. `doMock` reaches an import, never a
+ * module's own constant, which is why the switch lives in `lib/lookPairing.ts`.
+ */
+function loadBuildWithPairingOn(): typeof buildNoticedCard {
+  let build: typeof buildNoticedCard | undefined;
+  jest.isolateModules(() => {
+    jest.doMock('./lookPairing', () => ({
+      ...jest.requireActual('./lookPairing'),
+      LOOK_PAIRING_ON_PATTERNS: true,
+    }));
+    build = (jest.requireActual('./lookPatterns') as typeof import('./lookPatterns')).buildNoticedCard;
+  });
+  jest.dontMock('./lookPairing');
+  if (!build) throw new Error('lookPatterns did not load with the pairing switch on');
+  return build;
+}
+const buildWithPairingOn = loadBuildWithPairingOn();
 
 /** `n` consecutive answered days ending today, each carrying `words(daysAgo)`. */
 function days(n: number, words: (daysAgo: number) => string[] = () => []): LookDayRow[] {
@@ -285,7 +308,46 @@ describe('the activity positives (§6.6 gap 10)', () => {
   });
 });
 
-describe('the card’s one pairing (§6.11, L-17)', () => {
+describe('CUL-914 (c) — the Patterns card prints no pairing in v1', () => {
+  // The fixture is one that EARNS a pairing — an absence proves a gate only when the thing
+  // gated was available to leak (C-41) — so it is checked against `cardPairing` itself and
+  // against the card with the hold lifted before the held card is read.
+  const vomitDays = [day(1), day(2), day(3)];
+  const record = days(24, (d) => (d === 1 || d === 2 || d === 10 ? ['lip_licking'] : []));
+  const input = { ...MOCHI, vomitLocalDays: vomitDays };
+
+  it('the switch is off', () => {
+    expect(LOOK_PAIRING_ON_PATTERNS).toBe(false);
+  });
+
+  it('the fixture earns one — from the module and from the card with the hold lifted', () => {
+    expect(cardPairing(record, { vomitLocalDays: vomitDays, species: 'cat', words: ['lip_licking'] }))
+      .not.toBeNull();
+    expect(buildWithPairingOn(record, input).pairing?.word).toBe('lip_licking');
+  });
+
+  it('and the shipped card prints none of it — no field, no line, no disclosure', () => {
+    const card = buildNoticedCard(record, input);
+    expect(card.pairing).toBeNull();
+    const printed = card.rows.flatMap((r) => r.detail).join(' ');
+    expect(printed).not.toContain('vomit days you answered');
+    expect(printed).not.toContain(LOOK_PAIRING_DISCLOSURE);
+  });
+
+  it('the rest of the card is untouched — the row still counts its days', () => {
+    const held = buildNoticedCard(record, input);
+    const lifted = buildWithPairingOn(record, input);
+    expect(held.coverageLine).toBe(lifted.coverageLine);
+    expect(held.rows.map((r) => [r.key, r.days, r.denominator])).toEqual(
+      lifted.rows.map((r) => [r.key, r.days, r.denominator]),
+    );
+  });
+});
+
+// The pairing's own wiring, with the hold LIFTED (see `loadBuildWithPairingOn`). Kept so
+// that turning the switch back on is a ruling, not a rebuild.
+describe('the card’s one pairing (§6.11, L-17) — with CUL-914’s hold lifted', () => {
+  const buildNoticedCard = buildWithPairingOn;
   const vomitDays = [day(1), day(2), day(3)];
   const record = days(24, (d) => {
     if (d >= 1 && d <= 2) return ['lip_licking'];
@@ -442,8 +504,11 @@ describe('the withheld state (item 12, T-20)', () => {
   });
 
   it('drops the pairing — its two denominators SUM to the refused number', () => {
-    expect(card.pairing).toBeNull();
-    expect(card.rows.flatMap((r) => r.detail).join(' ')).not.toContain('vomit days you answered');
+    // Read with CUL-914's hold lifted: under the hold every card drops it, and the test
+    // would pass over a withheld branch that had stopped dropping it.
+    const lifted = buildWithPairingOn(record, { ...MOCHI, withheld: true, vomitLocalDays: [day(1), day(2), day(3)] });
+    expect(lifted.pairing).toBeNull();
+    expect(lifted.rows.flatMap((r) => r.detail).join(' ')).not.toContain('vomit days you answered');
   });
 
   it('drops the comparison pair as well', () => {
@@ -489,7 +554,9 @@ describe('§7’s Never list — the greyscale test, enforced on the model', () 
     ...days(24, (d) => (d < 6 ? ['subdued', 'played'] : [])),
     ...Array.from({ length: 24 }, (_, i) => look(28 + i, i < 1 ? ['subdued'] : [])),
   ];
-  const card = buildNoticedCard(record, { ...MOCHI, vomitLocalDays: [day(1), day(2), day(3)] });
+  // With CUL-914's hold lifted, so the pairing's string stays under the greyscale test for
+  // the day the hold is.
+  const card = buildWithPairingOn(record, { ...MOCHI, vomitLocalDays: [day(1), day(2), day(3)] });
 
   it('prints no average, slope, score, percentage, streak or "usual"', () => {
     const everything = [
