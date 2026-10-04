@@ -25,7 +25,16 @@ A BUILD session that `/dispatch` sent out as PR-29 of the Out of beta run order.
 
 ## Falsification
 
-`adversarial-reviewer` found one break: **the implicit zero**. Because the clause appears only above zero, three unknown-count states rendered "Ends Aug 27", identical to a clean trial. This is fixed here under the absence ≠ wellness invariant, with the paused clause. Everything else held: a refusal, a decline, a live safety card, an overrun trial, the floor wording, and a pet switch (mis-attribution only, the same hole the shipped strip has). The sparse-record case (3 of 30 days logged) re-opens G3, so it went to the PM as a decision brief on CUL-1526 (recommendation: keep G3 B).
+`adversarial-reviewer` ran three passes and ended with **HELD**.
+- **Pass 1** broke on **the implicit zero.** The off-diet clause appears only above zero, so three states where the count was unknown all rendered "Ends Aug 27", exactly like a clean trial.
+- **Pass 2** found that the first fix covered only three flags. It missed the full card's own `mayStateRecordClean`: a thin record, a refusal, a bowl, or an unclassifiable feeding at zero still showed the bare date.
+- **The final rule:** at zero, the card's clean-record gate decides. Where it refuses, the line adds `off-diet check incomplete`. The word is "incomplete", not "paused", because it has to be true in week one and while the record is loading.
+- **What held throughout:** a refusal, a decline, a live safety card, an overrun trial, the floor wording, and a pet switch (mis-attribution only, the same hole the shipped strip has).
+- **The sparse-record case** (3 of 30 days logged) reopened G3, so it went to the PM as a brief. **The PM ruled A (2026-10-04): ship as built.**
+
+## The lesson
+
+A clause that appears only when a value is non-zero teaches the reader that its absence means zero. So the clause's absence has to be earned by the same gate the full surface uses to say "clean". Mirroring three of the gate's inputs is not enough (C-34: mirror the question, not the value).
 
 ## Persona sign-off
 
@@ -33,5 +42,4 @@ Designer ✓ (the ruled three things, neutral bar, G1 A chevron) — Engineer �
 
 ## Residuals
 
-- A PM brief on CUL-1526 covers the sparse-record clause, recommended A (no change).
-- The added `off-diet check incomplete` clause is new owner copy beyond the mock's three drawn lines. It is a team call under the safety invariant, and the PM can reverse it on the issue.
+- None open. The PM's A ruling covered the added `off-diet check incomplete` clause as well ("ships as built").
