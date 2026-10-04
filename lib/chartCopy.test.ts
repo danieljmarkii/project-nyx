@@ -227,8 +227,9 @@ describe('weightDeltaLine (D2-5)', () => {
       expect(line(series([4.5, 4.55, 4.6]))).toBe('Up 0.1 kg (2%) since 07-03');
     });
 
-    it('readings that move both ways, with no run at the end, keep the caveat inside both bounds', () => {
-      expect(line(series([4.6, 4.66, 4.54, 4.66, 4.54]))).toBe(`Down 0.1 kg (1%) since 07-03 · ${HOME_SCALE_CAVEAT}`);
+    it('three or more readings never get the caveat, even a true scatter: the scatter branch is withheld (CUL-1557)', () => {
+      // Five adversarial rounds each walked a scatter heuristic around a sustained cat loss.
+      expect(line(series([4.6, 4.66, 4.54, 4.66, 4.54]))).toBe('Down 0.1 kg (1%) since 07-03');
       // Ending low with no reading back above the start since the middle is not a scatter (round 3).
       expect(line(series([4.6, 4.65, 4.55, 4.6, 4.5]))).not.toContain('home scale');
     });
@@ -264,10 +265,8 @@ describe('weightDeltaLine (D2-5)', () => {
       expect(line(series([5.0, 4.95, 5.02, 4.97, 4.93, 4.89, 4.9]))).not.toContain('home scale');
     });
 
-    it('round 2: a real scatter around the start keeps the caveat — material on both sides, neither side most of them', () => {
-      expect(line(series([4.6, 4.7, 4.5, 4.65, 4.55]))).toContain(HOME_SCALE_CAVEAT);
-      // Balanced but trivial above the start: two readings 10 g and 20 g over, two well under.
-      // Only the materiality bound withholds the caveat here.
+    it('round 2: scatters, balanced or padded, never get the caveat past two readings', () => {
+      expect(line(series([4.6, 4.7, 4.5, 4.65, 4.55]))).not.toContain('home scale');
       expect(line(series([4.6, 4.61, 4.5, 4.62, 4.55]))).not.toContain('home scale');
       // Material on both sides but five of six below: a loss with one high reading, no caveat.
       expect(line(series([4.6, 4.7, 4.58, 4.56, 4.57, 4.55, 4.56]))).not.toContain('home scale');
@@ -311,8 +310,19 @@ describe('weightDeltaLine (D2-5)', () => {
       ]) {
         expect(line(weekly(vals))).not.toContain('home scale');
       }
-      // A true scatter that is still scattering at the end keeps it.
-      expect(line(weekly([4.0, 4.08, 3.93, 4.06, 3.94, 4.07, 3.92, 4.05, 3.95]))).toContain(HOME_SCALE_CAVEAT);
+    });
+
+    it('round 5: a long sub-edge hold with one blip near the end never gets the caveat', () => {
+      const weekly = (vals: number[]) => vals.map((v, i) => r(v, `2026-${String(7 + Math.floor(i / 4)).padStart(2, '0')}-${String(1 + (i % 4) * 7).padStart(2, '0')}T08:00:00Z`));
+      for (const vals of [
+        [4.0, 3.96, 3.96, 3.96, 3.96, 3.96, 3.96, 3.96, 3.96, 4.06, 3.83, 3.84],
+        [4.0, 3.96, 3.96, 3.96, 3.96, 4.06, 3.85, 3.86],
+        [4.0, 3.96, 3.96, 3.96, 3.96, 3.94, 4.06, 3.83],
+        [2.5, 2.46, 2.46, 2.46, 2.46, 2.56, 2.4, 2.41],
+        [4.0, 3.96, 3.96, 3.96, 4.06, 3.85, 4.01, 3.84],
+      ]) {
+        expect(line(weekly(vals))).not.toContain('home scale');
+      }
     });
 
     it('round 3: the 5 % bound is strict in whole grams — an exact 5 % pair never gets the caveat', () => {

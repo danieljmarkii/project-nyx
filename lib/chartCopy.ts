@@ -256,52 +256,6 @@ export function trailingWeightRun(model: WeightBandModel): { steps: number; dir:
   return { steps, dir };
 }
 
-/** A reading counts as being on one side of the start only past this share of the
- *  scale's own wobble: 10 g is the stored resolution, and one 10 g reading is not evidence
- *  of a 200 g wobble (round 2 of the adversarial pass on CUL-1553). */
-export const WEIGHT_SIDE_MIN_FRAC_OF_NOISE = 0.25;
-
-/** No side may hold more than this share of the readings that sit off the start: a series
- *  with one reading above and six below is a loss with a blip, not a scatter. */
-export const WEIGHT_SIDE_MAX_SHARE = 2 / 3;
-
-/** How many of the latest readings must themselves sit on both sides of the start (or on it)
- *  for a series to read as a scale's wobble. */
-export const WEIGHT_TAIL_READINGS = 3;
-
-/** The readings disagree in direction: they scatter around the FIRST reading, with a
- *  material reading on each side, neither side holding most of them, the later half of
- *  the series still on both sides, and the last three readings back at the start or on
- *  both sides of it. Judged against
- *  the start and across the whole series, never step by step and never on one reading: a
- *  steady loss with a 10 g up-tick (round 1) or a 10 g reading above the start (round 2)
- *  handed a step-wise or single-reading test the caveat. Values in thousandths of the
- *  stored unit, so a float subtraction never decides an edge. */
-export function weightDisagrees(model: WeightBandModel, noiseAbs: number): boolean {
-  const first = model.points[0]?.value;
-  if (first == null) return false;
-  const edge = Math.round(noiseAbs * WEIGHT_SIDE_MIN_FRAC_OF_NOISE * 1000);
-  const offsets = model.points.slice(1).map((p) => Math.round((p.value - first) * 1000));
-  // Shares count MATERIAL readings only: four readings 10 g over the start must not dilute
-  // a four-reading loss into "balanced" (round 4).
-  const above = offsets.filter((d) => d >= edge).length;
-  const below = offsets.filter((d) => d <= -edge).length;
-  const off = above + below;
-  if (off === 0) return false;
-  const straddles = (ds: number[]) => ds.some((d) => d >= edge) && ds.some((d) => d <= -edge);
-  // And the scatter must still be going on: the LATER half of the readings straddles the
-  // start too. Order-blind counts let a step-down (three readings at the start, three
-  // that never came back) read as scatter (round 3); a wobble is still wobbling at the end.
-  const later = offsets.slice(Math.floor(offsets.length / 2));
-  // Finally the END decides: one of the last three readings sits at or above the start and
-  // one at or below it. A loss that holds its lower level at the end is never a wobble,
-  // however the readings before it are padded (round 4: a spike at the half's boundary and
-  // +10 g padding each defeated a count). A series that came back to its start is one a
-  // scale can explain.
-  const tail = offsets.slice(-WEIGHT_TAIL_READINGS);
-  const tailBothSides = tail.some((d) => d >= 0) && tail.some((d) => d <= 0);
-  return straddles(offsets) && straddles(later) && tailBothSides && above / off <= WEIGHT_SIDE_MAX_SHARE && below / off <= WEIGHT_SIDE_MAX_SHARE;
-}
 
 /**
  * "Down 0.2 kg (4%) since Jul 3 · a home scale moves about that much on its own" — the
@@ -310,18 +264,20 @@ export function weightDisagrees(model: WeightBandModel, noiseAbs: number): boole
  * and up is not "gained"; a flat line is "no change", never "steady".
  *
  * The caveat is GATED, not decorative (PMD-3 as GC-7 ruled it, CUL-1553). It prints only
- * when ALL hold:
- *   • the move is strictly inside both of a scale's bounds — under `HOME_SCALE_NOISE_FRAC`
- *     of the first reading AND under `gate.noiseAbs`, the scale's own wobble — measured on
- *     the STORED readings (`gate.model`, kilograms on the app's surfaces), never on the
- *     rounded display unit, where 5 % of a rounded pound sat on the inclusive edge;
- *   • no run is stated: a series whose last `WEIGHT_RUN_MIN_STEPS`+ steps all fell (or all
- *     rose, beside an overall rise) is a direction, and the line says so instead ("lower
- *     at each of the last 6 readings") — six readings falling in strict order is 1 in 720
- *     under noise. A run against the overall change is joined with "but";
- *   • the readings are a pair, or they scatter around the first reading — a material
- *     reading on each side, neither side holding most of them (`weightDisagrees`). A series
- *     that never came back to where it began never reads as a scale's wobble.
+ * at EXACTLY TWO readings, and only when the move is strictly inside both of a scale's
+ * bounds — under `HOME_SCALE_NOISE_FRAC` of the first reading and under `gate.noiseAbs`,
+ * in whole thousandths of the STORED readings (`gate.model`, grams on the app's
+ * kilograms), never the rounded display unit — and never beside a percentage that reads
+ * as 5 %.
+ *
+ * The ruling also allowed it "when readings disagree in direction". That branch is
+ * WITHHELD here: five adversarial rounds each built a sustained 3–4.9 % cat loss that a
+ * scatter heuristic over three or more readings called a wobble (an end up-tick, a 10 g
+ * reading over the start, a step-down plateau, padding, sub-edge holds). A softener on
+ * the one danger sign weight has is safe only when it cannot be walked around, so it is
+ * withheld until a real statistical test (a sign or slope test) earns it back — put to
+ * the PM as a better-than-the-rule brief on CUL-1557. With three or more readings, a
+ * fall at the end is stated instead ("lower at each of the last 6 readings").
  * A 5 % unintentional loss in a cat is a workup trigger; a 3.5 kg drop in a dog is not a
  * scale wobble at any percentage — neither gets the sentence written to soften a wobble.
  *
@@ -389,6 +345,7 @@ export function weightDeltaLine(
     // caveat under 4.5 %, so it subsumes the strict 5 % bound above; both stay, the bound
     // stating the ruling and this the display's promise.
     pct < Math.round(HOME_SCALE_NOISE_FRAC * 100);
-  const caveat = sameReadings && inNoise && !runStated && (g.points.length === 2 || weightDisagrees(g, gate.noiseAbs));
+  // Two readings only (see the docstring: the scatter branch is withheld, CUL-1557).
+  const caveat = sameReadings && inNoise && g.points.length === 2;
   return `${head}${runTail}${caveat ? ` · ${HOME_SCALE_CAVEAT}` : ''}${clippedTail}`;
 }

@@ -128,10 +128,10 @@ describe('WeightCard (Design v2)', () => {
     expect(queryByTestId('weight-card-delta')).toBeNull();
   });
 
-  it('a home-scale wobble keeps its caveat when the readings move both ways (inside both bounds, on the kilograms)', () => {
+  it('past two readings the caveat is withheld, even on a scatter around the start (CUL-1557)', () => {
     const wobble = [r(4.6, at(2026, 7, 3)), r(4.66, at(2026, 7, 20)), r(4.54, at(2026, 8, 4)), r(4.66, at(2026, 8, 18)), r(4.54, at(2026, 9, 1))];
     const { getByTestId } = measured(<WeightCard readings={wobble} readingCount={5} petId="p1" />);
-    expect(getByTestId('weight-card-delta').props.children).toBe(`Down 0.1 lbs (1%) since Jul 3 · ${HOME_SCALE_CAVEAT}`);
+    expect(getByTestId('weight-card-delta').props.children).toBe('Down 0.1 lbs (1%) since Jul 3');
   });
 
   it('a steady fall states its run and never prints the caveat', () => {
