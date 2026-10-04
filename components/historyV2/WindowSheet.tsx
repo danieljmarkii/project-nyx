@@ -7,7 +7,7 @@
 //
 // A pet switch closes the sheet: the menu is keyed on the pet (AC 13).
 import { useMemo } from 'react';
-import { ScopeMenu, type ScopeMenuOption } from '../ui/ScopeMenu';
+import { ScopeMenu, type ScopeMenuNotice, type ScopeMenuOption } from '../ui/ScopeMenu';
 import { WINDOW_PILL_PREFIX, WINDOW_SHEET_LABEL, type SheetRow } from '../../lib/historyControls';
 import { windowParam, type HistoryWindowKey } from '../../lib/historyWindows';
 import { useHistoryScopeStore } from '../../store/historyScopeStore';
@@ -18,6 +18,8 @@ interface Props {
   current: HistoryWindowKey;
   /** What the rows' numbers count, or null when they show none (CUL-1532). */
   caption: string | null;
+  /** The record's read failed: what the sheet says about it, and the retry (CUL-1238). */
+  notice: ScopeMenuNotice | null;
   rows: readonly SheetRow<HistoryWindowKey>[];
   /** The pill's words (the short name, *Since Jul 26*) and what VoiceOver reads for it
    *  (the long name and its date). */
@@ -29,7 +31,7 @@ function keyOf(window: HistoryWindowKey): string | null {
   return window.kind === 'all' ? null : windowParam(window);
 }
 
-export function WindowSheet({ petId, current, rows, pill, caption }: Props) {
+export function WindowSheet({ petId, current, rows, pill, caption, notice }: Props) {
   const { options, byKey } = useMemo(() => {
     const map = new Map<string | null, HistoryWindowKey>();
     const opts: ScopeMenuOption[] = rows.map((row) => {
@@ -62,6 +64,7 @@ export function WindowSheet({ petId, current, rows, pill, caption }: Props) {
       pillAccessibilityLabel={pill.accessibilityLabel}
       openAtSelected
       caption={caption}
+      notice={notice}
     />
   );
 }

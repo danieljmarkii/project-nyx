@@ -50,7 +50,7 @@ beforeEach(() => {
 
 describe('WindowSheet', () => {
   it('names the pill by the short name, with the window’s own row still selected', () => {
-    const view = render(<WindowSheet petId="p1" current={{ kind: 'trial' }} rows={ROWS} pill={{ label: 'Since Jul 26', accessibilityLabel: 'Date range: Since the trial started, Jul 26' }} caption="Vomits logged in each window" />);
+    const view = render(<WindowSheet petId="p1" current={{ kind: 'trial' }} rows={ROWS} pill={{ label: 'Since Jul 26', accessibilityLabel: 'Date range: Since the trial started, Jul 26' }} caption="Vomits logged in each window" notice={null} />);
     fireEvent.press(view.getByLabelText('Date range: Since the trial started, Jul 26'));
     expect(view.getByText('Since Jul 26')).toBeTruthy();
     expect(view.getByText('Date range')).toBeTruthy();
@@ -63,7 +63,7 @@ describe('WindowSheet', () => {
   });
 
   it('a pick writes the window the row stands for: a rolling window, a month, All time', () => {
-    const view = render(<WindowSheet petId="p1" current={{ kind: 'all' }} rows={ROWS} pill={{ label: 'All time', accessibilityLabel: 'Date range: All time' }} caption={null} />);
+    const view = render(<WindowSheet petId="p1" current={{ kind: 'all' }} rows={ROWS} pill={{ label: 'All time', accessibilityLabel: 'Date range: All time' }} caption={null} notice={null} />);
     fireEvent.press(view.getByLabelText('Date range: All time'));
     fireEvent.press(view.getByLabelText('Last 14 days, 92 logged'));
     expect(useHistoryScopeStore.getState().window).toEqual({ kind: 'last', days: 14 });
@@ -76,9 +76,9 @@ describe('WindowSheet', () => {
   });
 
   it('closes when the pet changes: the menu is keyed on the pet (AC 13)', () => {
-    const view = render(<WindowSheet petId="p1" current={{ kind: 'all' }} rows={ROWS} pill={{ label: 'All time', accessibilityLabel: 'Date range: All time' }} caption={null} />);
+    const view = render(<WindowSheet petId="p1" current={{ kind: 'all' }} rows={ROWS} pill={{ label: 'All time', accessibilityLabel: 'Date range: All time' }} caption={null} notice={null} />);
     fireEvent.press(view.getByLabelText('Date range: All time'));
-    view.rerender(<WindowSheet petId="p2" current={{ kind: 'all' }} rows={ROWS} pill={{ label: 'All time', accessibilityLabel: 'Date range: All time' }} caption={null} />);
+    view.rerender(<WindowSheet petId="p2" current={{ kind: 'all' }} rows={ROWS} pill={{ label: 'All time', accessibilityLabel: 'Date range: All time' }} caption={null} notice={null} />);
     expect(view.queryByText('Date range')).toBeNull();
   });
 });

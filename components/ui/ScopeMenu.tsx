@@ -80,6 +80,19 @@ interface Props {
   // since the trial started, Jul 26'). The scope sits where the reader meets the number
   // (C-3). Absent, the sheet renders as it always has. (CUL-1532)
   caption?: string | null;
+  // A line saying the rows are not what they should be, with the one thing that fixes it:
+  // History v2's sheets over a record read that failed ('Couldn't load Nyx's record, …' /
+  // 'Try again'). Drawn under the sheet label in the caption's place, since a sheet whose
+  // read failed has no numbers for a caption to scope. Absent, the sheet renders as it
+  // always has. (CUL-1238)
+  notice?: ScopeMenuNotice | null;
+}
+
+export interface ScopeMenuNotice {
+  text: string;
+  actionLabel: string;
+  // The sheet stays open: what the action fetches fills the rows in where the owner is.
+  onAction: () => void;
 }
 
 // How much of the list above the selected row stays in view when a sheet opens at it:
@@ -88,7 +101,7 @@ const SELECTED_ROW_PEEK = 48;
 
 export function ScopeMenu({
   options, value, onChange, sheetLabel, accessibilityPrefix, overrideLabel,
-  pillLabel: pillText, pillCount, pillAccessibilityLabel, openAtSelected, caption,
+  pillLabel: pillText, pillCount, pillAccessibilityLabel, openAtSelected, caption, notice,
 }: Props) {
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
@@ -163,7 +176,21 @@ export function ScopeMenu({
           <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}>
             <View style={styles.grabber} />
             <SectionLabel label={sheetLabel} header style={styles.sheetLabel} />
-            {caption ? <ThemedText style={styles.sheetCaption}>{caption}</ThemedText> : null}
+            {notice ? (
+              <View style={styles.notice}>
+                <ThemedText style={styles.sheetCaption}>{notice.text}</ThemedText>
+                <TouchableOpacity
+                  style={styles.noticeAction}
+                  onPress={notice.onAction}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                >
+                  <ThemedText style={styles.noticeActionLabel}>{notice.actionLabel}</ThemedText>
+                </TouchableOpacity>
+              </View>
+            ) : caption ? (
+              <ThemedText style={styles.sheetCaption}>{caption}</ThemedText>
+            ) : null}
             {/* Longer sets (the 10-row event-type lens) can outgrow a small
                 screen; the sheet caps its height and the rows scroll INSIDE it
                 with the native indicator visible — never a hidden overflow. */}
@@ -326,6 +353,21 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightSM,
     color: theme.colorTextSecondary,
     marginBottom: theme.space1,
+  },
+  notice: {
+    marginBottom: theme.space1,
+  },
+  // A text link at the 44pt floor by its box, with no slop: the first row sits directly
+  // under it, so slop would reach into that row (C-5).
+  noticeAction: {
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  noticeActionLabel: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorAccentInk,
   },
   optionScroll: {
     flexGrow: 0,

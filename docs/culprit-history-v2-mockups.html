@@ -492,6 +492,21 @@
   .c1530-h b { font-weight: 600; }
   .c1530-h .sym { color: #9F1239; }
 
+  /* ── §15 · CUL-1238: a failed record read, said on the sheets ── */
+  .c1238 { position: relative; height: 470px; overflow: hidden; }
+  .c1238 .c1238-bg { opacity: 0.55; }
+  .c1238 .c1238-row { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; padding: 0 2px; }
+  .c1238 .c1238-row .pl { font-size: 11px; color: #525252; border: 1px solid #D4D4D4; border-radius: 999px; padding: 4px 9px; background: #FFFFFF; }
+  .c1238 .c1238-row .pl:first-of-type { margin-left: auto; }
+  .c1238 .c1238-err { text-align: center; margin-top: 64px; }
+  .c1238 .c1238-err b { display: block; font-size: 14px; }
+  .c1238 .c1238-err span { display: block; font-size: 12px; color: #525252; margin-top: 4px; }
+  .c1238 .c1238-err i { display: block; font-style: normal; color: #0B7B6C; font-weight: 600; font-size: 12.5px; margin-top: 8px; }
+  .c1238 .c1238-scrim { position: absolute; inset: 0; background: rgba(10,10,10,0.35); border-radius: 34px; }
+  .c1238 .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: #FFFFFF; border-radius: 24px 24px 34px 34px; padding: 10px 22px 18px; }
+  .sheet .c1238-note { font-size: 11.5px; color: #525252; line-height: 1.4; margin: 2px 0 0; }
+  .sheet .c1238-retry { display: inline-flex; align-items: center; min-height: 32px; font-size: 12.5px; font-weight: 600; color: #0B7B6C; margin-bottom: 2px; }
+  .c1238-new { background: #FFF6D6; border-radius: 4px; padding: 0 2px; }
   /* ── §14 · CUL-1200: a call with no photo on the month, the gallery's count line ── */
   .dm .cd { position: absolute; left: 5px; top: 5px; width: 7px; height: 7px; transform: rotate(45deg); background: #9F1239; border-radius: 1px; box-sizing: border-box; }
   .dm.sym .cd { border: 1px solid #FFFFFF; }
@@ -545,8 +560,9 @@
     <div class="r"><b>CUL-1193 · "(b)" (2026-09-25, after round 5)</b><span><i class="d">ruled</i>A dose count reads "logged". Under a course or Medication the count line says "16 logged on 16 days", and its second line names the doses recorded Partial, Missed or Refused: "Cetirizine HCl · Jul 1 – Sep 5 · 4 not given in full". A course's row on the type sheet names them after its span, the way Photographed names "not read". "16 doses" read as sixteen given. <a href="#s06">§06</a></span></div>
     <div class="r"><b>CUL-1530 · "Go option a" (2026-10-03)</b><span><i class="d">ruled</i>Every day that holds a vomit is rose under All types, on the strip and the month. The month's corner stays on the day a bout began, a continuing day is rose with no number, and the line counts the rose days: "Vomiting 3 times · vomit logged on 6 days". Option (b) has left the page. <a href="#s13">§13</a></span></div>
     <div class="r"><b>CUL-1200 · "(b)" (2026-10-03, CUL-1520 item 8)</b><span><i class="d">ruled</i>A worth-a-call with no photo reaches the Patterns month: every called day carries the diamond on the default layers, photo or not, and no layer hides it. The Signal gallery stays photos, and its count line names the episodes with no photo read as a call. <a href="#s14">§14</a></span></div>
+    <div class="r"><b>CUL-1238 · a failed record read (2026-10-04)</b><span><i class="d">built</i>On a failed read the window and type sheets say the record could not be loaded and offer Try again, which re-reads the one shared read the list uses. The window sheet no longer drops the trial and visit rows in silence. <a href="#s15">§15</a></span></div>
   </div>
-  <div class="howto"><b>How to read this page.</b> §01 is the whole screen with every demo. §02 to §07 are the rulings, one per section, each drawn once. §08 is the quiet states, §09 the motion inventory, §10 the rules a build carries, §11 the rulings in one list. §12 holds the four open calls from the HV-9 build, options beside current frames; §13 and §14 are the later rulings, CUL-1530 and CUL-1200, each drawn as built beside as ruled. Round 4, with the options side by side, is in git at <code>b0479342</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>.</div>
+  <div class="howto"><b>How to read this page.</b> §01 is the whole screen with every demo. §02 to §07 are the rulings, one per section, each drawn once. §08 is the quiet states, §09 the motion inventory, §10 the rules a build carries, §11 the rulings in one list. §12 holds the four open calls from the HV-9 build, options beside current frames; §13 and §14 are the later rulings, CUL-1530 and CUL-1200, each drawn as built beside as ruled; §15 is CUL-1238, a failed record read said on the sheets. Round 4, with the options side by side, is in git at <code>b0479342</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>.</div>
   <div class="howto" style="margin-top:14px;border-left:3px solid var(--gold)"><b>The record, not a fixture.</b> Times, types, food and drug names, ratings, doses, photo presence and each read's verdict come from a service-role read scoped to Nyx's id paired with her owner's account. Note <em>text</em> was never read: where a note's words appear they are the Designer's and are marked <span class="illus">illustrative</span>, as are the vet visit's reason and clinic.</div>
 </header>
 
@@ -1058,7 +1074,38 @@
 </section>
 
 
-<footer class="foot">Round 5 of the History v2 page, 2026-09-24, CUL-1108: the ruled design. Republished over round 4 at the same URL. Round 4 (the options side by side) is in git at <code>b0479342</code>, round 3 at <code>ab20698c</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>. Every demo on this page was driven in a headless browser, pressed twice, with and without Reduce Motion, before it was published. §12 added 2026-09-25 (HV-9, CUL-1166; briefs on CUL-1247): four open calls drawn as options, and the search now keeps only rows both the filter and the words keep (R-2), which no earlier frame exercised. §12's two demos were pressed once each, with and without Reduce Motion. §01 to §11 are unchanged.</footer>
+<section id="s15">
+  <div class="sec-head"><span class="sec-num">§15</span><h2>A failed record read is said on the sheets (CUL-1238)</h2></div>
+  <div class="col">
+    <p>When the phone cannot read the pet's record, the list says so (§08: <i>Couldn't load history</i>, <b>Try again</b>). The two sheets did not. The window sheet quietly listed five windows instead of seven, so <i>Since the trial started</i> and <i>Since the last vet visit</i> were simply missing, which reads as "there is no trial". The type sheet lost every count and every medicine course, which reads like a sheet still loading.</p>
+    <p><b>The fix:</b> on a failed read, each sheet says the record could not be loaded, under its label, and offers <b>Try again</b>. The words never say a trial or a visit exists, since the read that would know failed. <b>Try again</b> re-reads the one shared record read, the same one the list's own <b>Try again</b> makes (CUL-1228), so the list and both pills fill in together; the sheet stays open and its rows arrive when the read lands. While a read is simply in flight, the sheet draws as before and says nothing: a wait is not a failure. <span class="illus">illustrative: Nyx's read fails while her trial runs; yellow marks what is new</span></p>
+  </div>
+
+  <h3>The window sheet</h3>
+  <div class="optrow">
+    <div class="frame-slot">
+      <span class="tag built">As built</span>
+      <div class="phone c1238"><div class="notch"></div><div class="c1238-bg"><div class="c1238-row">Nyx<span class="pl">All types</span><span class="pl">All time</span></div><div class="c1238-err"><b>Couldn't load history</b><span>Something went wrong loading Nyx's history.</span><i>Try again</i></div></div><div class="c1238-scrim" aria-hidden="true"></div><div class="sheet"><div class="grab"></div><div class="sl">Date range</div><div class="opt sel">All time<span class="ck">✓</span></div><div class="opt">Today</div><div class="opt">Last 7 days</div><div class="opt">Last 14 days</div><div class="opt">Last 30 days</div></div></div>
+      <p class="frame-cap"><b>Two windows gone, no word why.</b> Nyx is on a diet trial, and nothing here says its row is missing because the read failed.</p>
+    </div>
+    <div class="frame-slot">
+      <span class="tag cur">CUL-1238</span>
+      <div class="phone c1238"><div class="notch"></div><div class="c1238-bg"><div class="c1238-row">Nyx<span class="pl">All types</span><span class="pl">All time</span></div><div class="c1238-err"><b>Couldn't load history</b><span>Something went wrong loading Nyx's history.</span><i>Try again</i></div></div><div class="c1238-scrim" aria-hidden="true"></div><div class="sheet"><div class="grab"></div><div class="sl">Date range</div><p class="c1238-note"><span class="c1238-new">Couldn't load Nyx's record, so windows from a trial or a vet visit can't be listed yet.</span></p><span class="c1238-retry"><span class="c1238-new">Try again</span></span><div class="opt sel">All time<span class="ck">✓</span></div><div class="opt">Today</div><div class="opt">Last 7 days</div><div class="opt">Last 14 days</div><div class="opt">Last 30 days</div></div></div>
+      <p class="frame-cap"><b>"Couldn't load Nyx's record."</b> The line takes the caption's place (there are no numbers for a caption to scope). It names the two kinds of window that need the record without claiming either exists. "Try again" is a text link at the 44pt floor.</p>
+    </div>
+  </div>
+
+  <h3>The type sheet</h3>
+  <div class="optrow">
+    <div class="frame-slot">
+      <span class="tag cur">CUL-1238</span>
+      <div class="phone c1238"><div class="notch"></div><div class="c1238-bg"><div class="c1238-row">Nyx<span class="pl">All types</span><span class="pl">All time</span></div><div class="c1238-err"><b>Couldn't load history</b><span>Something went wrong loading Nyx's history.</span><i>Try again</i></div></div><div class="c1238-scrim" aria-hidden="true"></div><div class="sheet"><div class="grab"></div><div class="sl">Show only</div><p class="c1238-note"><span class="c1238-new">Couldn't load Nyx's record, so nothing here is counted yet.</span></p><span class="c1238-retry"><span class="c1238-new">Try again</span></span><div class="opt sel">All types<span class="ck">✓</span></div><div class="opt">Meal</div><div class="opt">Vomit</div><div class="opt">Loose stool</div><div class="opt">Medication</div><div class="opt">Photographed</div></div></div>
+      <p class="frame-cap"><b>No number, and now a reason.</b> The rows that need no record stay, uncounted; the courses under Medication come back with the read. With a search open the line still shows, ahead of search's own caption: the failure is the bigger fact.</p>
+    </div>
+  </div>
+</section>
+
+<footer class="foot">Round 5 of the History v2 page, 2026-09-24, CUL-1108: the ruled design. Republished over round 4 at the same URL. Round 4 (the options side by side) is in git at <code>b0479342</code>, round 3 at <code>ab20698c</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>. Every demo on this page was driven in a headless browser, pressed twice, with and without Reduce Motion, before it was published. §12 added 2026-09-25 (HV-9, CUL-1166; briefs on CUL-1247): four open calls drawn as options, and the search now keeps only rows both the filter and the words keep (R-2), which no earlier frame exercised. §12's two demos were pressed once each, with and without Reduce Motion. §01 to §11 are unchanged. §15 added 2026-10-04 (CUL-1238): static frames, no demo.</footer>
 </div>
 
 <script>
