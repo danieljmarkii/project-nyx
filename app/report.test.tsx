@@ -282,4 +282,20 @@ describe('Noticed notes in the build (CUL-876)', () => {
     fireEvent(getByLabelText('Include your Noticed notes in the report'), 'valueChange', false);
     await waitFor(() => expect(sent()).toEqual([true, false]));
   });
+
+  // The retired CUL-1464 bug was a build issued under a HIDDEN switch. The switch and the
+  // build share one condition today (a resolved pet); this pins it, so a refactor that
+  // moves the switch under a range, species or design_v2 gate reds here.
+  it.each([
+    ['the active pet', {}],
+    ['?pet= another pet the account holds', { pet: 'p2' }],
+  ])('a build for %s is always issued under a visible switch, and sends its value', async (_name, params) => {
+    mockParams = params;
+    mockedGenerate.mockResolvedValue(report());
+    const { findByText, getByLabelText } = render(<ReportScreen />);
+    await findByText('Send to vet');
+    expect(mockedGenerate).toHaveBeenCalled();
+    expect(getByLabelText('Include your Noticed notes in the report').props.value).toBe(true);
+    expect(sent().every((v) => v === true)).toBe(true);
+  });
 });

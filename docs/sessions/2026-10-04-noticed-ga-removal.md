@@ -53,6 +53,13 @@ This was a dispatched session (Out of beta — Noticed, Design v2, History v2, t
 - **Secrets:** none.
 - **Personas:** Engineer ✓ (the one predicate kept; no dead code); Designer ✓ (Principle 5, so species `other` still sees the shipped nudge rather than a silence); Trust & Safety ✓ (the report switch is visible with an explicit boolean; the share-link exclusion is untouched); Product Owner ✓ (CUL-1589 filed). Data N/A. Dr. Chen N/A.
 - **Adversarial review:** N/A. A rollout gate is removed, and no detection, clinical or statistical logic changed. `code-reviewer` called it ship-ready with no blockers. Of its three nits, two were fixed and one (the species gate on the report switch) is answered above.
+- **Privacy:** at the dispatcher's request, `rls-privacy-reviewer` ran on the report change and returned HOLDS. Its attacks:
+  - A build under a hidden switch, across default, custom range, `?pet=`, unknown pet and the design_v2 waits. The switch and the build share one `petId` condition.
+  - Notes on a shared link. No share route exists, and the `shared_link` audience has no notes field.
+  - A caller that omits `includeNotes`. The field is required, and there is one caller.
+  - Species `other`, and the pet list still loading. Neither reads the species, and an unknown pet builds nothing.
+
+  Its follow-up 1 is taken here: new tests in `app/report.test.tsx` and `app/report.range.test.tsx` pin "every build is issued under the visible switch, carrying its value". They are proven by mutation: moving the switch under `rangeMode === 'custom'` turns 3 tests red. Its consent note (an owner who opted out of the beta now meets notes defaulting on, behind a visible switch) went to CUL-1548.
 - **Future self:** no new pattern. This is the CUL-547 / CUL-548 / CUL-905 retirement shape.
 
 ## Teach

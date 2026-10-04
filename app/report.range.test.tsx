@@ -87,6 +87,15 @@ describe('the custom window settles before the report regenerates (CUL-371)', ()
     expect(mockedGenerate.mock.calls[1][0]).toMatchObject({ petId: 'p1', startDate: expect.any(String) });
   });
 
+  it('a Custom build is issued under the visible notes switch and carries its value (CUL-876)', async () => {
+    const { findByText, getByLabelText } = render(<ReportScreen />);
+    await findByText('Send to vet');
+    fireEvent.press(await findByText('Custom…'));
+    await waitFor(() => expect(mockedGenerate).toHaveBeenCalledTimes(2));
+    expect(getByLabelText('Include your Noticed notes in the report').props.value).toBe(true);
+    expect(mockedGenerate.mock.calls[1][0]).toMatchObject({ includeNotes: true });
+  });
+
   it('From then To inside Custom is ONE build, carrying the window both taps made', async () => {
     const { findByText, findByLabelText, findByTestId } = render(<ReportScreen />);
     await findByText('Send to vet');
