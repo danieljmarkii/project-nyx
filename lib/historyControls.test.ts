@@ -759,6 +759,16 @@ describe('call 3a: Meal names its meals not finished', () => {
     expect(row.accessibilityLabel).toBe(`Meal, ${summed} not finished, ${row.count} logged`);
   });
 
+  it('a refused treat never counts, a refused meal does (Sam’s cat, spec §1)', () => {
+    const day = '2026-09-10';
+    const range = { fromDay: day, toDay: day };
+    const factsWith = (extra: PopulationRow[]) =>
+      typeSheetCountsOf(buildDayFacts({ rows: extra, lookDays: [], range, freeFedFoodIds: new Set(), regimens: REGIMENS }));
+    const treat = row('t-0910', day, '12:00', 'meal', { foodItemId: 'cookie', foodType: 'treat', intakeRating: 'refused' });
+    expect(mealRow(typeInput({ counts: factsWith([treat]) })).detail).toBeNull();
+    expect(mealRow(typeInput({ counts: factsWith([treat, meal('m-0910', day, 'refused')]) })).detail).toBe('1 not finished');
+  });
+
   it('says nothing at zero: a window holding only the finished May 14 meal', () => {
     const may = daysIn(RECORD, { fromDay: RECORD_START, toDay: '2026-05-31' });
     expect(mealRow(typeInput({ counts: typeSheetCountsOf(may) })).detail).toBeNull();
@@ -879,6 +889,7 @@ describe('call 4a: a search inside a filter says the filter is on', () => {
       [{ kind: 'course', courseKey: motozol().key }, 'No doses mention “chicken”', 'The Motozol filter is on, so this search looked only at doses.'],
       [{ kind: 'photographed' }, 'Nothing with a photo mentions “chicken”', 'The Photographed filter is on, so this search looked only at what has a photo.'],
       [{ kind: 'noted' }, 'Nothing with a note mentions “chicken”', 'The With a note filter is on, so this search looked only at what has a note.'],
+      [{ kind: 'noticed' }, 'Nothing you noticed mentions “chicken”', 'The Noticed filter is on, so this search looked only at what you noticed.'],
     ];
     for (const [filter, title, body] of cases) {
       expect([filter, searchInFilterMissOf(filter, 'chicken', COURSES)]).toEqual([filter, { title, body }]);

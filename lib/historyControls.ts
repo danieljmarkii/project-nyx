@@ -152,7 +152,8 @@ export function typeSheetCaptionOf(resolved: ResolvedWindow): string {
   const { key, label } = resolved;
   switch (key.kind) {
     case 'all':
-      return label.sheetSub === null ? 'Logged in all time' : `Logged ${label.sheetSub}`;
+      // No record start means no numbers, so this fallback has nothing to scope in practice.
+      return label.sheetSub === null ? 'Everything logged' : `Logged ${label.sheetSub}`;
     case 'today':
       return 'Logged today';
     case 'last':
