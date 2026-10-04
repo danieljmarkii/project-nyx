@@ -44,7 +44,7 @@ export function ColdStartOverlay() {
   if (!petName) return null;
 
   if (designV2) {
-    return <ColdStartSilhouette hydrating={coldStartHydrating} tabBarHeight={TAB_HEIGHT} />;
+    return <ColdStartSilhouette hydrating={coldStartHydrating} tabBarHeight={TAB_HEIGHT} petName={petName} />;
   }
 
   return (
