@@ -54,8 +54,6 @@ import { TimingPanelCard } from '../../components/dashboard/TimingPanelCard';
 import { TrialSoFarCard } from '../../components/dashboard/TrialSoFarCard';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { WhatYouNoticedCard } from '../../components/dashboard/WhatYouNoticedCard';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { isAnimalNotEating } from '../../lib/dietTrialCard';
 import { lookCardLive } from '../../lib/lookCard';
@@ -139,13 +137,7 @@ export default function PatternsScreen() {
   // same helper so the two surfaces cannot drift on eligibility. Off any of the three,
   // `noticed` stays null and `buildDashboardCards` emits nothing — Patterns off the flag
   // is byte-identical.
-  const lookEligible = useAllowlistFlag('daily_look');
-  const lookOptedIn = useBetaOptIn('daily_look');
-  const noticedLive = lookCardLive({
-    eligible: lookEligible,
-    optedIn: lookOptedIn,
-    species: activePet?.species,
-  });
+  const noticedLive = lookCardLive({ species: activePet?.species });
   // Design v2 (D2-5 / CUL-1067; `docs/culprit-design-v4-mockups.html` §04): flag-on the
   // page is the month first, then the weight as dots by date, then the "what Nyx ate"
   // cards and the shipped Timing / Trial / What you noticed panels unchanged; the

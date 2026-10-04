@@ -13,8 +13,6 @@ import { Tick } from '../components/designV2/waits/Tick';
 import { useDesignV2 } from '../hooks/useDesignV2';
 import { ChipGroup } from '../components/ui/ChipGroup';
 import { usePetStore } from '../store/petStore';
-import { useAllowlistFlag } from '../hooks/useAppConfig';
-import { useBetaOptIn } from '../lib/betaFeatures';
 import { toLocalDayKey } from '../lib/utils';
 import { readVetLibrary } from '../lib/vetDocumentLibrary';
 import { VET_FILES_ENTRY_ENABLED } from '../lib/vetFilesEntry';
@@ -112,14 +110,6 @@ export default function ReportScreen() {
   // when the record was current; otherwise rendered next to the send action.
   const [staleLine, setStaleLine] = useState<string | null>(null);
 
-  // The option ships DARK with the rest of Noticed. Both gates, never one: eligibility
-  // (the allowlist) and the owner's own opt-in are two separate questions. Showing the
-  // control outside them would leak the feature onto every report screen before GA
-  // (CUL-876).
-  const lookEligible = useAllowlistFlag('daily_look');
-  const lookOptedIn = useBetaOptIn('daily_look');
-  const showNotesOption = lookEligible && lookOptedIn;
-
   const [rangeMode, setRangeMode] = useState<RangeMode>('default');
   // CUL-875 — *Include your Noticed notes* (T-22, §9 rule 4). Default ON: it is the
   // owner's own PDF, made to be handed to a vet, and the note is the context the report
@@ -151,16 +141,13 @@ export default function ReportScreen() {
     // the window, and leaving it off the default branch would make the option silently
     // inert for every owner who never opens "Custom…".
     //
-    // CUL-1464 — a HIDDEN switch sends false, never the state's default. "No gate, no
-    // look rows" is false: an owner who used Noticed and then opted out (or lost
-    // eligibility) still has look rows, and `generate-report` prints the appendix
-    // whenever rows exist, without reading the flag. Their notes would print under a
-    // control they cannot see. A hidden control is the private choice. Always an
-    // explicit boolean: the server reads an absent value as ON.
-    const base = { petId, includeNotes: showNotesOption && includeNotes };
+    // Always an explicit boolean: the server reads an absent value as ON. (Noticed is GA,
+    // CUL-876, so the switch is always on screen; CUL-1464's hidden-switch-sends-false
+    // rule went with the flag that could hide it.)
+    const base = { petId, includeNotes };
     if (rangeMode === 'default') return base;
     return { ...base, startDate: customStartKey, endDate: customEndKey };
-  }, [petId, rangeMode, customStartKey, customEndKey, includeNotes, showNotesOption]);
+  }, [petId, rangeMode, customStartKey, customEndKey, includeNotes]);
 
   // CUL-371 — the params the report is actually BUILT from. An edit of the custom
   // window already on screen (From, then To) settles for CUSTOM_RANGE_SETTLE_MS before
@@ -423,28 +410,26 @@ export default function ReportScreen() {
             />
           )}
 
-          {showNotesOption && (
-            <View style={styles.notesOption}>
-              <View style={styles.notesOptionText}>
-                <Text style={styles.notesOptionLabel}>Include your Noticed notes</Text>
-                {/* Two facts, and the second one is CUL-848's gap said out loud rather
-                    than left for the owner to discover on the document. A control named
-                    "your notes" that governs one of two note fields has to say which, or
-                    turning it off reads as a promise the report does not keep. */}
-                <Text style={styles.notesOptionHint}>
-                  What you wrote on your daily looks, printed in the report’s Noticed appendix. Notes you
-                  add to a meal or a symptom are always included.
-                </Text>
-              </View>
-              <Switch
-                value={includeNotes}
-                onValueChange={setIncludeNotes}
-                trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
-                ios_backgroundColor={theme.colorBorderStrong}
-                accessibilityLabel="Include your Noticed notes in the report"
-              />
+          <View style={styles.notesOption}>
+            <View style={styles.notesOptionText}>
+              <Text style={styles.notesOptionLabel}>Include your Noticed notes</Text>
+              {/* Two facts, and the second one is CUL-848's gap said out loud rather
+                  than left for the owner to discover on the document. A control named
+                  "your notes" that governs one of two note fields has to say which, or
+                  turning it off reads as a promise the report does not keep. */}
+              <Text style={styles.notesOptionHint}>
+                What you wrote on your daily looks, printed in the report’s Noticed appendix. Notes you
+                add to a meal or a symptom are always included.
+              </Text>
             </View>
-          )}
+            <Switch
+              value={includeNotes}
+              onValueChange={setIncludeNotes}
+              trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+              ios_backgroundColor={theme.colorBorderStrong}
+              accessibilityLabel="Include your Noticed notes in the report"
+            />
+          </View>
 
           {resolvedLabel && <Text style={styles.rangeResolved}>{resolvedLabel}</Text>}
         </View>

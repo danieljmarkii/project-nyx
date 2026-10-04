@@ -28,9 +28,7 @@ import { ThemedText } from '../ui/ThemedText';
 import { SearchField } from './SearchField';
 import { TypeSheet } from './TypeSheet';
 import { WindowSheet } from './WindowSheet';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useHistoryRecordFacts } from '../../hooks/useHistoryRecordFacts';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { HEADER_CHEVRON_GAP, HEADER_CHEVRON_SIZE, headerSwitcherLabel } from '../../lib/headerName';
 import {
   PHOTO_READING_OFF,
@@ -59,8 +57,6 @@ export function PinnedRow() {
   const searchText = useHistoryScopeStore((s) => s.searchText);
   const record = useHistoryRecordFacts();
   const today = useHistoryToday();
-  const lookEligible = useAllowlistFlag('daily_look');
-  const lookOptedIn = useBetaOptIn('daily_look');
   const [focusTick, setFocusTick] = useState(0);
   const species = activePet?.species;
 
@@ -71,11 +67,11 @@ export function PinnedRow() {
         filter,
         window: windowKey,
         search: effectiveSearch({ searchOpen, searchText }),
-        lookLive: lookCardLive({ eligible: lookEligible, optedIn: lookOptedIn, species }),
+        lookLive: lookCardLive({ species }),
         readingOff: PHOTO_READING_OFF,
         today,
       }),
-    [record, filter, windowKey, searchOpen, searchText, lookEligible, lookOptedIn, species, today],
+    [record, filter, windowKey, searchOpen, searchText, species, today],
   );
 
   // A failed read retried from either sheet re-reads the ONE record read the list draws

@@ -259,14 +259,10 @@ export function lookUndoNoteBody(note: string): string {
 // app asking twice. So the gate is HERE and both call it — the diet-trial §5.3 lesson,
 // applied before there were two readers rather than after.
 
-/** Eligible × opted in × the pet has a vocabulary. The B-712 two-gate shape plus the
- *  CUL-864 species ruling; the callers own the hook reads, this owns the rule. */
-export function lookCardLive(params: {
-  eligible: boolean;
-  optedIn: boolean;
-  species: string | null | undefined;
-}): boolean {
-  return params.eligible && params.optedIn && lookSpeciesOf(params.species) !== null;
+/** The pet has a vocabulary (the CUL-864 species ruling: cat and dog). Noticed is GA for
+ *  every account (spec §10 R1, CUL-876), so the species is the whole gate. */
+export function lookCardLive(params: { species: string | null | undefined }): boolean {
+  return lookSpeciesOf(params.species) !== null;
 }
 
 /** What TodayZone's empty-state row says, if anything. */

@@ -51,16 +51,6 @@ export type AppConfigKey = keyof AppConfigValues;
 // separate Phase-2 gate that never lives here (spec §2 — the two gates stay split so
 // the future Premium swap is one line).
 //
-// `daily_look` is the Noticed (daily look) rollout flag (Home v2 — the redesign
-// / Noticed, migration 063 — N-0) — same shape, same fail-closed resolution. It
-// gates the Noticed CLIENT surfaces (the Home card N-4a, the Patterns pairing
-// N-5, the report line) AND-ed with the beta-shelf opt-in. It is a ROLLOUT gate
-// only — GA is every account (spec §10 R1); no eligibility predicate references
-// a trial or a watch. Client-render-only: Noticed's writes (the `check_in`
-// value + the `looks` child, N-1) are account-agnostic and land for everyone,
-// and a look never enters the engine or any coverage line, so there is no
-// server-side registration of this key. Nothing consumes it yet (N-0).
-//
 // `design_v2` is the Design v2 rollout flag (Design v2 — the whole day,
 // migration 070 — D2-0 / CUL-1062) — same shape, same fail-closed resolution.
 // It gates the redesign's CLIENT surfaces (the Signal card + route D2-3, Home on
@@ -99,7 +89,7 @@ export type AppConfigKey = keyof AppConfigValues;
 // server-side registration of it. Nothing consumes it yet (TS-0; TS-4 lands the
 // first consumer).
 //
-// Five keys that once lived here have GRADUATED to GA and been retired client-side.
+// Six keys that once lived here have GRADUATED to GA and been retired client-side.
 // `signal_design_v2` (the Signal/Home design uplift, migration 055) and `signals_v2`
 // (the Signals-v2 lanes, migration 057) went first (CUL-546 Phase 1 / CUL-547 +
 // CUL-548): the uplift + the v2 lanes now render unconditionally. Their `app_config`
@@ -115,12 +105,15 @@ export type AppConfigKey = keyof AppConfigValues;
 // ready and the History row render for every account, and the old write-only visit
 // form went with it. Its row was flipped to `{"enabled": true}` (CUL-1081) and is
 // deleted by CUL-1082 once the GA build is installed — it too was never read
-// server-side. None of the five belongs in this client-side union any more.
+// server-side. Noticed's `daily_look` (migration 063) followed (CUL-876): the look on
+// Home, its Patterns card, its History filter and the report's notes switch render for
+// every account whose pet the look has words for (cat and dog). Its row is deleted by a
+// data-only migration once this client no longer reads it; it was never read
+// server-side. None of the six belongs in this client-side union any more.
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',
   'widget_enabled',
-  'daily_look',
   'design_v2',
   'history_v2',
   'trial_screen',
@@ -139,7 +132,6 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   ask_enabled: undefined,
   ask_general_enabled: undefined,
   widget_enabled: undefined,
-  daily_look: undefined,
   design_v2: undefined,
   history_v2: undefined,
   trial_screen: undefined,

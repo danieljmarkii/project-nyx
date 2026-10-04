@@ -47,10 +47,8 @@ import {
   notHerselfLabel,
   type LookSpecies,
 } from '../../../constants/lookWords';
-import { useAllowlistFlag } from '../../../hooks/useAppConfig';
 import { useAppActive } from '../../../hooks/useAppActive';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
-import { useBetaOptIn } from '../../../lib/betaFeatures';
 import { useEvents } from '../../../hooks/useEvents';
 import { selectChip, openMenu } from '../../../lib/haptics';
 import {
@@ -150,8 +148,6 @@ interface Resting {
 export function LookHeader({ trialNotEating = null, onLayout }: Props) {
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
-  const eligible = useAllowlistFlag('daily_look');
-  const optedIn = useBetaOptIn('daily_look');
   const { todayEvents, prependEvent } = useEvents();
   const removeFromToday = useEventStore((s) => s.removeFromToday);
   const showLook = useMomentStore((s) => s.showLook);
@@ -169,7 +165,7 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
 
   const species: LookSpecies | null = lookSpeciesOf(activePet?.species);
-  const live = lookCardLive({ eligible, optedIn, species: activePet?.species }) && activePet !== null;
+  const live = lookCardLive({ species: activePet?.species }) && activePet !== null;
   const sex = activePet?.sex ?? 'unknown';
   const petName = activePet?.name ?? '';
   const petId = activePet?.id ?? null;

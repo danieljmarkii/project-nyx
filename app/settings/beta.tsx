@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Eye, FlaskConical, Info, LayoutGrid, Palette, ScrollText } from 'lucide-react-native';
+import { FlaskConical, Info, LayoutGrid, Palette, ScrollText } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -71,12 +71,6 @@ function presentationFor(
         onHint:
           'It’s on. If it isn’t on your home screen yet, touch and hold an empty area, tap +, then find Culprit and add it.',
       };
-    case 'daily_look':
-      // No on-state hint: Noticed appears as a once-a-day card on Home the moment
-      // it's on — nothing to place or do (unlike the widget), and at N-0 no
-      // consumer renders behind it yet. An "eye" glyph reads as noticing/looking,
-      // distinct from the widget grid, the picker pen and the taxonomy shapes.
-      return { Icon: Eye };
     case 'design_v2':
       // The on-state hint. Three lanes landed the same day, each writing it for the
       // surface it shipped (D2-4 / CUL-1066 Home's Today; D2-5 / CUL-1067 the month on
@@ -84,11 +78,11 @@ function presentationFor(
       // and nothing more (the VV-0 lesson: a hint that says "nothing to see yet" is true
       // the day it ships and false the day after). A palette reads as "how the app
       // looks", distinct from the widget grid, the picker pen, the taxonomy shapes,
-      // Noticed's eye and the vet's stethoscope.
+      // and the vet's stethoscope.
       //
-      // The daily look's clause rides only when the look is on for this account
-      // (CUL-1220, BRK-21): `design_v2` does not widen the `daily_look` rollout, so an
-      // account outside Noticed's cohort has no look at the top of Today to be told about.
+      // The daily look's clause rides only when the look is on for the active pet
+      // (CUL-1220, BRK-21): Noticed is GA (CUL-876), but a pet the look has no vocabulary
+      // for has no look at the top of Today to be told about.
       return {
         Icon: Palette,
         onHint: ctx.dailyLookOn
@@ -100,7 +94,7 @@ function presentationFor(
       // what it shipped and nothing more (the VV-0 lesson): the day cards, the lines
       // between them and the count line. The strip (HV-8) and the pinned row (HV-9) add
       // their own clause when they land. A scroll of text reads as "the record you can
-      // read", distinct from the widget grid, Noticed's eye and the redesign's palette.
+      // read", distinct from the widget grid, and the redesign's palette.
       return {
         Icon: ScrollText,
         onHint:
@@ -115,13 +109,10 @@ function BetaFeatureCard({ feature }: { feature: BetaFeature }) {
   const eligible = useAllowlistFlag(feature.key);
   const optedIn = useBetaOptIn(feature.key);
   const setOptIn = useBetaOptInStore((s) => s.setOptIn);
-  // Both hooks run every render (never short-circuited): the daily look's own two gates.
-  const dailyLookEligible = useAllowlistFlag('daily_look');
-  const dailyLookOptedIn = useBetaOptIn('daily_look');
-  // The header's own predicate, species included (the code review; C-34): a pet the look
-  // has no vocabulary for gets no header, so the hint must not promise one.
+  // The header's own predicate (the code review; C-34): a pet the look has no vocabulary
+  // for gets no header, so the hint must not promise one.
   const activeSpecies = usePetStore((s) => s.activePet?.species);
-  const dailyLookOn = lookCardLive({ eligible: dailyLookEligible, optedIn: dailyLookOptedIn, species: activeSpecies });
+  const dailyLookOn = lookCardLive({ species: activeSpecies });
 
   // Gate 1: no card for a beta the account isn't in the cohort for (belt-and-braces
   // with the eligibility-gated Settings row that pushes this screen).
