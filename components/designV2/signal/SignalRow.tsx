@@ -103,7 +103,7 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
   // The answer is KEYED to the finding it answers (the code review): a re-ranked row, a regen or
   // a pet switch renders a frame before the effect re-reads, and an unkeyed answer would pair
   // the new finding's ask with the old finding's numbers for that frame.
-  const [answer, setAnswer] = useState<{ key: string; screen: SignalRowScreen | null } | null>(null);
+  const [answer, setAnswer] = useState<{ key: string; screen: SignalRowScreen } | null>(null);
   const readsScreen = rowReadsScreen(finding);
   const identity = foldIdentity(finding);
   const readKey = `${petId}|${identity}|${generatedAt ?? ''}`;
@@ -123,24 +123,28 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
       cancelled = true;
     };
   }, [readsScreen, readKey, hydrationTick, signalTick]);
-  const screen: SignalRowScreen | null | undefined = !readsScreen ? null : answer?.key === readKey ? answer.screen : undefined;
+  const screen: SignalRowScreen | undefined = answer?.key === readKey ? answer.screen : undefined;
 
   // A trial finding counted over a trial since replaced speaks in its own day (CUL-1360).
   const base = signalHomeLine(finding, signalTrialWindowFor(finding, { generatedAt, trial }));
   if (!base) return null;
-  // While the screen's read is in flight a safety row keeps the finding's own words (the ask
-  // never waits on a read); an insight row holds its count back rather than print a number
-  // that may change under the owner's eye a moment later (C-12). A screen that SETS THE
-  // FINDING ASIDE (a masking span beside a compared window, CUL-1440) states no count, so the
-  // row states none either — the headline and the ask stay. Home has no masking rule of its
-  // own, so this is the only place the row can learn it (the adversarial pass on #1053). A read
-  // that answers with no screen at all keeps the finding's own words, as before this PR.
-  const pending = screen === undefined;
-  const setAside = screen != null && screen.setAside;
-  const line =
-    screen && !screen.setAside
-      ? signalHomeLineFromScreen(finding, base, screen)
-      : setAside || (pending && finding.priorityClass !== 'safety')
+  // While the screen's read is in flight, or when it did not answer, a safety row keeps the
+  // finding's own words (the ask never waits on a read, and no safety type is ever set aside);
+  // an insight row holds its count and pair back — in flight, because the number may change
+  // under the owner's eye (C-12); unanswered, because the masking rule fails closed and the row
+  // cannot know a falling pair is safe to print. A screen that SETS THE FINDING ASIDE (a
+  // masking span beside a compared window, CUL-1440) states no comparing count, so the row
+  // states none either, keeping only a risen trial's count the screen keeps. Home has no
+  // masking rule of its own, so this is the only place the row learns it (the adversarial
+  // passes on #1053).
+  const ready = readsScreen && screen?.kind === 'ready' ? screen : null;
+  const quietInsight = readsScreen && (screen === undefined || screen.kind === 'unanswered') && finding.priorityClass !== 'safety';
+  const setAside = readsScreen && screen?.kind === 'set_aside' ? screen : null;
+  const line = ready
+    ? signalHomeLineFromScreen(finding, base, ready)
+    : setAside
+      ? { ...base, count: setAside.keptLine }
+      : quietInsight
         ? { ...base, count: null }
         : base;
 
@@ -154,7 +158,7 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
 
   const safety = finding.priorityClass === 'safety';
   // A frequency row whose pair renders prints its counts in the pair, not twice (S10).
-  const pair = finding.type === 'reflection' && !pending && !setAside ? rowPairOf(finding, screen && !screen.setAside ? screen : null) : null;
+  const pair = finding.type === 'reflection' && !quietInsight && !setAside ? rowPairOf(finding, ready) : null;
   const subCount = pair ? null : line.count;
   const thumbnail = safety ? null : <Thumbnail finding={finding} pair={pair} />;
 
@@ -299,7 +303,7 @@ function Thumbnail({ finding, pair }: { finding: SignalFinding; pair: CompareRow
  * earlier window out — else the finding's own pair (`weekPairOf`), as the engine's sentence
  * on that screen states it.
  */
-export function rowPairOf(finding: ReflectionFinding, screen: Extract<SignalRowScreen, { setAside: false }> | null): CompareRow[] | null {
+export function rowPairOf(finding: ReflectionFinding, screen: Extract<SignalRowScreen, { kind: 'ready' }> | null): CompareRow[] | null {
   if (screen?.composed) {
     const p = countedHomePair(screen.composed.counts, screen.composed.priorStated);
     return p

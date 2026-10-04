@@ -300,27 +300,33 @@ describe('loadSignalRowScreen', () => {
     mockLoadSignalScreen.mockResolvedValueOnce(ready(chronicity));
     const got = await loadSignalRowScreen('pet-9', chronicity, 123);
     expect(mockLoadSignalScreen).toHaveBeenCalledWith('pet-9', foldIdentity(chronicity), 123);
-    expect(got).toEqual({ setAside: false, title: 'Vomiting in 6 of the last 8 weeks', composed: null, trialLineShown: null });
+    expect(got).toEqual({ kind: 'ready', title: 'Vomiting in 6 of the last 8 weeks', composed: null, trialLineShown: null });
   });
 
   it('a set-aside screen (a masking span) says so, so the row states no count either', async () => {
     mockLoadSignalScreen.mockResolvedValueOnce({ status: 'set_aside', petName: 'Nyx', lines: [] });
-    expect(await loadSignalRowScreen('pet-1', chronicity)).toEqual({ setAside: true });
+    expect(await loadSignalRowScreen('pet-1', chronicity)).toEqual({ kind: 'set_aside', keptLine: null });
+  });
+
+  it('a trial that ROSE over a masked baseline zero keeps the count the screen keeps (C-37: never drop the accusing number)', async () => {
+    const trial = { type: 'trial_response', priorityClass: 'insight', trialDayNumber: 20, targetDurationDays: 56, trialLoggedDays: 20, baselineLoggedDays: 40, baselineWindowDays: 49, pooledTrialCount: 5, pooledBaselineCount: 0, rapid: { trial: 2, baseline: 0 }, long: { trial: 0, baseline: 0 }, rapidWindowMinutes: 30, longGapHours: 6, treatShare: { trial: null, baseline: null }, mealsPerDay: { trial: null, baseline: null }, comparisonDirection: 'more_during_trial', trialWindowDays: 20 } as CachedFinding['finding'];
+    mockLoadSignalScreen.mockResolvedValueOnce({ status: 'set_aside', petName: 'Nyx', lines: ['Maropitant is on board.', "5 episodes of vomiting in the trial's 20 days. The weeks before the trial aren't compared here.", 'vet'] });
+    expect(await loadSignalRowScreen('pet-1', trial)).toEqual({ kind: 'set_aside', keptLine: "5 episodes of vomiting in the trial's 20 days" });
   });
 
   it.each(['missing', 'withheld', 'unsupported'])('a %s screen gives the row nothing to restate', async (status) => {
     mockLoadSignalScreen.mockResolvedValueOnce({ status, petName: 'Nyx', lines: [] });
-    expect(await loadSignalRowScreen('pet-1', chronicity)).toBeNull();
+    expect(await loadSignalRowScreen('pet-1', chronicity)).toEqual({ kind: 'unanswered' });
   });
 
   it('a screen that answers for another type is not this row’s', async () => {
     mockLoadSignalScreen.mockResolvedValueOnce(ready({ ...(chronicity as object), type: 'symptom_worsening' } as CachedFinding['finding']));
-    expect(await loadSignalRowScreen('pet-1', chronicity)).toBeNull();
+    expect(await loadSignalRowScreen('pet-1', chronicity)).toEqual({ kind: 'unanswered' });
   });
 
   it('a failed read resolves null, never rejects', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockLoadSignalScreen.mockRejectedValueOnce(new Error('offline'));
-    await expect(loadSignalRowScreen('pet-1', chronicity)).resolves.toBeNull();
+    await expect(loadSignalRowScreen('pet-1', chronicity)).resolves.toEqual({ kind: 'unanswered' });
   });
 });

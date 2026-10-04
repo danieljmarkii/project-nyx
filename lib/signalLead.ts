@@ -10,6 +10,7 @@
 import { loadSignalScreen, readGateLoggedDays, readSignalEpisodes, readLoggedDays, readSignalTrial, type SignalScreenModel } from './signalScreen';
 import type { SignalFinding } from './signal';
 import { foldIdentity } from './signalFold';
+import { riseKeptSentence } from './screenMasking';
 import type { CachedFinding } from './signal';
 import { symptomWord } from './signalCopy';
 import { signalTitle } from './signalTitle';
@@ -98,33 +99,42 @@ export async function loadSignalRowTrial(petId: string, nowMs: number = Date.now
   });
 }
 
-/** What a Signal row takes from its screen (CUL-1569): the title and counts of a ready screen,
- *  or that the screen SETS THE FINDING ASIDE (a masking span beside a compared window, CUL-1440).
- *  A set-aside screen states no count, so neither does its row: Home never draws the falling
- *  pair the screen it opens refuses to (the adversarial pass on #1053). */
+/** What a Signal row takes from its screen (CUL-1569):
+ *  - `ready`: the title and counts the screen states;
+ *  - `set_aside`: the screen sets the finding aside (a masking span beside a compared window,
+ *    CUL-1440) and states no comparing count, so neither does its row — except a trial that
+ *    ROSE over a masked baseline zero, whose trial count the screen keeps (`riseKeptSentence`),
+ *    and the row keeps it too (the accusing number is never the one dropped, C-37);
+ *  - `unanswered`: the read failed, or the screen had nothing to show for this finding. The
+ *    masking rule fails CLOSED on a failed read (`screenMasking.ts`), so the row cannot know a
+ *    falling pair is safe to print and an insight row prints none (the adversarial passes on
+ *    #1053). Home never draws a falling pair the screen it opens would refuse to. */
 export type SignalRowScreen =
-  | ({ setAside: false } & Pick<SignalScreenModel, 'title' | 'composed' | 'trialLineShown'>)
-  | { setAside: true };
+  | ({ kind: 'ready' } & Pick<SignalScreenModel, 'title' | 'composed' | 'trialLineShown'>)
+  | { kind: 'set_aside'; keptLine: string | null }
+  | { kind: 'unanswered' };
 
 /**
  * The screen's own model for a Signal row (CUL-1569, GC-4 PR 2): the SAME loader the door
  * opens (`loadSignalScreen`), for the same pet, identity and clock, so the row's numbers are
- * the screen's by construction rather than by a second count that could drift. Null when the
- * screen is missing, withheld or unsupported (Home's own predicates drop those rows), or the
- * read failed — the row then keeps the finding's own words, which is what it drew before the
- * read answered. Never rejects.
+ * the screen's by construction rather than by a second count that could drift. Never rejects.
  */
-export async function loadSignalRowScreen(petId: string, finding: SignalFinding, nowMs: number = Date.now()): Promise<SignalRowScreen | null> {
+export async function loadSignalRowScreen(petId: string, finding: SignalFinding, nowMs: number = Date.now()): Promise<SignalRowScreen> {
   try {
     const load = await loadSignalScreen(petId, foldIdentity(finding), nowMs);
-    if (load.status === 'set_aside') return { setAside: true };
-    if (load.status !== 'ready') return null;
+    if (load.status === 'set_aside') {
+      const kept = finding.type === 'trial_response' ? riseKeptSentence(finding, symptomWord('vomit')) : null;
+      // The kept count is the sentence's first clause, verbatim ("5 episodes of vomiting in the
+      // trial's 20 days"); the second says the weeks before are not compared.
+      return { kind: 'set_aside', keptLine: kept && load.lines.includes(kept) ? kept.split('. ')[0] : null };
+    }
+    if (load.status !== 'ready') return { kind: 'unanswered' };
     // The loader finds the finding by identity in the pet's cache, which may have been
     // rewritten since the zone read it: a row only takes words for the finding it draws.
-    if (load.model.finding.type !== finding.type) return null;
-    return { setAside: false, title: load.model.title, composed: load.model.composed, trialLineShown: load.model.trialLineShown };
+    if (load.model.finding.type !== finding.type) return { kind: 'unanswered' };
+    return { kind: 'ready', title: load.model.title, composed: load.model.composed, trialLineShown: load.model.trialLineShown };
   } catch (e) {
     console.warn('[signal-row] screen read failed:', e);
-    return null;
+    return { kind: 'unanswered' };
   }
 }

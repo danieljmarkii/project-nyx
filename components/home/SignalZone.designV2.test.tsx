@@ -17,7 +17,7 @@ const mockLoadSignalLead = jest.fn();
 jest.mock('../../lib/signalLead', () => ({
   loadSignalLead: (...a: unknown[]) => mockLoadSignalLead(...a),
   loadSignalRowTrial: async () => null,
-  loadSignalRowScreen: async () => null,
+  loadSignalRowScreen: async () => ({ kind: 'unanswered' }),
 }));
 // The fold is the reader's device-local memory; a test states it rather than seeding a store.
 const mockFolded = new Set<string>();

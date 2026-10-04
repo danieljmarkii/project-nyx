@@ -16,7 +16,7 @@ const mockLoadSignalLead = jest.fn();
 jest.mock('../../../lib/signalLead', () => ({
   loadSignalLead: (...a: unknown[]) => mockLoadSignalLead(...a),
   loadSignalRowTrial: async () => null,
-  loadSignalRowScreen: async () => null,
+  loadSignalRowScreen: async () => ({ kind: 'unanswered' }),
 }));
 jest.mock('../../../lib/measureNode', () => ({
   measureNodeInWindow: (_node: unknown, cb: (r: unknown) => void) => cb({ x: 67, y: 300, width: 278, height: 130 }),
