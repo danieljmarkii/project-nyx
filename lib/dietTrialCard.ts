@@ -343,6 +343,14 @@ export interface TrialCardInput {
    *  the cause — and B-474's un-nulling is what made that state reachable. */
   freeFedOverlap?: boolean;
   /**
+   * CUL-1572 — `lib/dietTrial.TrialFacts.intakeNotDirectlyObservedThroughout`: a bowl
+   * was down on EVERY day the coverage ratio counts. The ratio then counts nothing a
+   * meal-by-meal record could have held, so no surface may print it, whether or not
+   * the bowl is still down. `freeFed` is the present-tense half and drives the copy;
+   * this one only takes the ratio away (`resolveTrialCard`, `withholdingReasons`).
+   */
+  freeFedThroughout?: boolean;
+  /**
    * `lib/dietTrial.TrialFacts.allowedSetUnavailable` — the trial has nothing
    * usable to define the diet with, so "off-diet" stops being a measurement.
    *
@@ -775,6 +783,7 @@ export type TrialCardWithholding =
   | 'trial_diet_refusal'
   | 'range_refusal'
   | 'free_fed'
+  | 'bowl_throughout'
   | 'allowed_set_unavailable'
   | 'antigen_arm_dark'
   | 'untracked_head'
@@ -791,6 +800,12 @@ export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[
   if (input.trialDietRefusal) reasons.push('trial_diet_refusal');
   if (input.rangeRefusal) reasons.push('range_refusal');
   if (input.freeFed) reasons.push('free_fed');
+  // CUL-1572 — a bowl gone NOW that was down on every counted day. `free_fed` asks
+  // "is a bowl down now", so a bowl removed two days past the window left this list
+  // empty and Home printed "meals logged on 56 of 56 days" over 56 bowl days with no
+  // caveat at all. Its own reason, not `free_fed` widened: `free_fed` drives the
+  // present-tense "grazes from a bowl" copy, which is false once the bowl is gone.
+  if (input.freeFedThroughout) reasons.push('bowl_throughout');
   if (input.allowedSetUnavailable) reasons.push('allowed_set_unavailable');
   // B-597 — the dark antigen arm, the forgotten sibling of `allowed_set_unavailable`
   // above. The report withholds the clean claim AND discloses on this (§7.2 caveat +
@@ -1275,7 +1290,10 @@ export interface TrialCardPlan {
 /** The composition layer's answer without rendering a string — so a test can
  *  assert the two halves directly, and so `everyState` can be CHECKED for
  *  register coverage rather than trusted to be exhaustive. */
-export function planTrialCard(input: TrialCardInput): TrialCardPlan {
+export function planTrialCard(rawInput: TrialCardInput): TrialCardPlan {
+  // The same projection `resolveTrialCard` renders over, so the plan and the card
+  // cannot name different registers; the withheld list reads the raw record.
+  const input = withoutBowlRatio(rawInput);
   const ctx = trialContext(input);
   const state = ctx ? stateFor(input, ctx) : degenerateStateFor(input.trial);
   const register = ctx ? registerFor(state, input, ctx.trial) : 'none';
@@ -1283,7 +1301,7 @@ export function planTrialCard(input: TrialCardInput): TrialCardPlan {
     state,
     register,
     disclosures: TRIAL_CARD_DISCLOSURES[register],
-    withheld: withholdingReasons(input),
+    withheld: withholdingReasons(rawInput),
   };
 }
 
@@ -1444,7 +1462,8 @@ export function viewAllowedFoodsAction(petName: string): TrialCardAction {
   return { id: 'view_allowed_foods', label: `What ${petName} can eat`, emphasis: 'link' };
 }
 
-export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
+export function resolveTrialCard(rawInput: TrialCardInput): TrialCardModel {
+  const input = withoutBowlRatio(rawInput);
   const { trial, petName } = input;
 
   if (!trial) return noTrialCard(petName, input.petObjectPronoun ?? 'them');
@@ -1478,6 +1497,28 @@ export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
   if (state === 'abandoned') return abandonedCard(input, ctx, register);
 
   return withWindowMovedLine(activeCard(input, ctx, state, register), input, ctx);
+}
+
+/**
+ * CUL-1572 — A BOWL THAT HELD EVERY COUNTED DAY LEAVES NO RATIO TO PRINT.
+ *
+ * Projected once, at the card's one entry, rather than per register, because the
+ * ratio prints from four bodies (`record`, `so_far`, `refusal_withheld`,
+ * `coverage_only`) across the running and terminal branches, and a per-register
+ * guard is how the fifth would ship without it. The trial screen's not-eating
+ * projection (`lib/trialScreenModel.screenCardInput`) is the precedent: every
+ * register already has a no-coverage form, the off-diet floor and the counts stay,
+ * and neither the state nor the register reads `coverage` (`recordRegisterFor`
+ * reads `exposures` first). The untracked head goes with the ratio it qualifies.
+ *
+ * The counts stay because they are floors and a floor only moves toward disclosing
+ * more (§5.2); the ratio goes because its denominator is days a bowl held.
+ * `withholdingReasons` still reads the RAW input, so the strip's list keeps every
+ * reason, the head included.
+ */
+function withoutBowlRatio(input: TrialCardInput): TrialCardInput {
+  if (!input.freeFedThroughout) return input;
+  return { ...input, coverage: null, untrackedDaysBeforeFirstLog: 0 };
 }
 
 /**
@@ -2230,6 +2271,18 @@ function pushFloorSentence(
  *  three bowl days as the explanation for thirty missing ones. */
 function pushPastBowlCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
   if (!input.freeFedOverlap || input.freeFed) return;
+  // CUL-1572 — "part" was false when the bowl held every day the trial counts (a
+  // bowl taken away after the window ends, since coverage clips at the target end).
+  // The ratio is gone on that record (`withoutBowlRatio`); this line says why.
+  if (input.freeFedThroughout) {
+    lines.push({
+      role: 'qualifier',
+      text:
+        `${input.petName} had a bowl that was topped up on every day this trial counts, ` +
+        'so there’s no meal-by-meal count of those days to show.',
+    });
+    return;
+  }
   lines.push({
     role: 'qualifier',
     text:

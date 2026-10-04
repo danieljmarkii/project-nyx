@@ -615,6 +615,9 @@ export async function loadDietTrialFacts(args: {
     // the app itself cannot observe. The disclosure ships with the state that
     // needs it, not with the register.
     freeFedOverlap: readable?.intakeNotDirectlyObserved ?? false,
+    // CUL-1572 — the bowl held every day the ratio counts, in force now or not. The
+    // card and the strip both stop printing the ratio on it; see the field.
+    freeFedThroughout: readable?.intakeNotDirectlyObservedThroughout ?? false,
     freeFed: readable?.intakeNotDirectlyObservedNow
       ? { loggedFeedings: readable.exposures.totalFeedings }
       : null,
