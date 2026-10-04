@@ -549,6 +549,12 @@ export const BLIND_SPOT_QUALIFIER =
 export const RECORD_AND_CONTINUE =
   'Keep going with the trial diet. Your vet will want to see this at the recheck.';
 
+/** Day 1's absence line (CUL-1564). It counts feedings only, so it names meals:
+ *  a look, a symptom or a weight is a logged row, and "Nothing logged" beside
+ *  one is false (the daily-look spec's ruling, and the mock's "No meals logged
+ *  yet"). */
+export const DAY_ONE_NO_MEALS_LINE = 'No meals logged yet today.';
+
 /** The decision's ids are owned by `dietTrialCompletion` (the sheet reads them
  *  too); the card's action ids are its own namespace. One map, so the milestone's
  *  buttons and the sheet's choices can never drift into two vocabularies. */
@@ -1950,12 +1956,18 @@ function activeCard(
     //
     // Same for a feeding that names no food (CUL-1338): it is on the record and in
     // neither count. Day 1 takes no reading, so the line is simply not said.
+    //
+    // AND THE WORDS NAME THE POPULATION THE GATE READS (CUL-1564). Every input
+    // above is a feeding count, so "Nothing logged yet today." claimed the whole
+    // day over a logged look, vomit or weight. The sentence says meals because
+    // meals are what it counted; the gate stays on all three so a logged treat
+    // still keeps it off the card beside the exposure count.
     if (
       (input.coverage?.daysLogged ?? 0) === 0 &&
       (input.exposures?.totalFeedings ?? 0) === 0 &&
       (input.exposures?.unclassifiable ?? 0) === 0
     ) {
-      lines.push({ role: 'fact', text: 'Nothing logged yet today.' });
+      lines.push({ role: 'fact', text: DAY_ONE_NO_MEALS_LINE });
     }
     lines.push({
       role: 'forward',
