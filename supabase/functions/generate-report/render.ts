@@ -8672,12 +8672,17 @@ function medicationAppendix(snap: ReportSnapshot): string {
       // takes the not_tracked branch, so it fell through to extras counted over a window holding
       // nothing. Page 1's register was added in the same change and this sibling was not — the
       // C-4 rule 1 shape, with the accusing side left broken.
+      //
+      // "GIVEN on N days", never "Logged on" (CUL-1209 2(a), PM). `daysWithDose` counts days
+      // with a given or partial dose only, and History uses "logged" for every dose row, so the
+      // old word let the phone and this page say "logged" over different numbers for one drug.
+      // The two "Doses given (incl. partial)" headers below are the same ruling.
       const adherence =
         m.adherenceState === 'not_tracked'
           ? '<b>Adherence not tracked</b> — no doses logged against this regimen; never read as given.'
           : m.windowDosesTotal === 0
             ? 'No doses logged in this window; this drug&rsquo;s doses fall outside it (the lifetime table above carries them).'
-            : `Logged on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days of the course in this window.${
+            : `Given on ${num(m.daysWithDose)} of ${num(m.elapsedDaysInWindow)} days of the course in this window.${
                 m.unconfirmedDoses ? ` ${num(m.unconfirmedDoses)} unconfirmed.` : ''
               }${m.refusedDoses ? ` ${num(m.refusedDoses)} refused.` : ' None recorded as refused.'}`
       return `<tr><td>${h(m.drugName)}${m.strength ? ` ${h(m.strength)}` : ''}</td><td>${regimen}${
@@ -8733,7 +8738,7 @@ function medicationAppendix(snap: ReportSnapshot): string {
   const table = hasAny
     ? `
   <table>
-    <thead><tr><th>Medication</th><th style="width:150px">Regimen</th><th class="c" style="width:74px">Doses logged</th><th style="width:132px">Dose dates</th><th>Adherence</th></tr></thead>
+    <thead><tr><th>Medication</th><th style="width:150px">Regimen</th><th class="c" style="width:118px">Doses given (incl. partial)</th><th style="width:132px">Dose dates</th><th>Adherence</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`
     : ''
@@ -8767,7 +8772,7 @@ function doseDatesCell(doseDays: readonly string[]): string {
 
 // ── §4.4 (D2) — the lifetime "Medication history" table ──────────────────────────────
 // Window-IGNORING, sits directly above Appendix D. Four terse columns a vet scans in
-// seconds (mock §05): Drug · Dates · Course · Doses logged. The snapshot carries the
+// seconds (mock §05): Drug · Dates · Course · Doses given (incl. partial). The snapshot carries the
 // FACTS (buildMedicationHistory); these helpers own only the clinical phrasing.
 
 /**
@@ -8820,7 +8825,7 @@ function medHistoryDates(e: MedicationHistoryEntry): string {
 function medHistoryCourse(e: MedicationHistoryEntry): string {
   if (e.source !== 'regimen') return e.singleDay ? 'Single logged dose' : 'No regimen recorded'
   // Raw numbers in this descriptive cell (the Appendix-D regimen-cell convention); the
-  // right-aligned Doses-logged column is where num() tabular figures belong.
+  // right-aligned Doses-given column is where num() tabular figures belong.
   const spec: string[] = []
   if (e.targetDurationDoses != null) {
     spec.push(`${e.targetDurationDoses} dose${e.targetDurationDoses === 1 ? '' : 's'} planned`)
@@ -8860,7 +8865,7 @@ function statesPrescriptionRatio(x: {
   return x.courseEnded && x.plannedDoses != null && x.dosesLogged <= x.plannedDoses
 }
 
-/** The Doses-logged cell. H4: the count is `dosesLogged` (given + partial), never re-summed. */
+/** The Doses-given cell. H4: the count is `dosesLogged` (given + partial), never re-summed. */
 function medHistoryDoses(e: MedicationHistoryEntry): string {
   return statesPrescriptionRatio({
     courseEnded: e.ended,
@@ -8894,7 +8899,7 @@ function medicationHistoryTable(snap: ReportSnapshot): string {
   <p class="appx-title serif" style="margin-top:22px">Medication history</p>
   <p class="appx-sub">Lifetime of the record${since} — the medications logged in Culprit, including courses that ended before this report&rsquo;s window; dose-level detail for the report window is in appendix&nbsp;D below. Dates are each course&rsquo;s span: a regimen&rsquo;s own start and end where one was recorded, otherwise the first and last logged dose. A course shown with no end date is one whose end the owner never recorded &mdash; not one still under way. <b>This lists only what the owner entered in Culprit</b> — a medication prescribed or given elsewhere and never logged does not appear here, and its absence is not evidence it was not given.</p>
   <table>
-    <thead><tr><th>Medication</th><th style="width:118px">Dates</th><th style="width:186px">Course</th><th class="c" style="width:84px">Doses logged</th></tr></thead>
+    <thead><tr><th>Medication</th><th style="width:118px">Dates</th><th style="width:186px">Course</th><th class="c" style="width:118px">Doses given (incl. partial)</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`
 }

@@ -7046,7 +7046,46 @@ Deno.test('R-13 item 7 — a populated appendix D still gets its table', () => {
   const html = renderReport(base({ medications: [med({})] }))
   const start = html.indexOf('Appendix D — Medication log')
   const section = html.slice(start, html.indexOf('</section>', start))
-  assert.ok(/<table>/.test(section) && /Doses logged/.test(section), 'the table is untouched where there is data')
+  assert.ok(/<table>/.test(section) && /Doses given \(incl\. partial\)/.test(section), 'the table is untouched where there is data')
+})
+
+// ── CUL-1550 (CUL-1209 2(a)) — "logged" means every dose row, on the phone and on paper ──
+//
+// History counts every dose row as "logged" (GAP-26, CUL-1193). The report's two medication
+// tables and Appendix D's day phrase used the same word for given + partial only, so the phone
+// and the paper could say "logged" over different numbers for one drug. The PM ruled the report
+// changes its words. Fixture: 3 given, 1 partial, 1 refused, 1 unconfirmed — every row the
+// word "logged" would have hidden is in it, so a revert to "logged" reds the count-vs-word check.
+Deno.test('CUL-1550 — the report names the given + partial count "given", never "logged"', () => {
+  const html = renderReport(
+    base({
+      medications: [
+        med({
+          windowDosesLogged: 4,
+          windowDosesTotal: 6,
+          daysWithDose: 4,
+          elapsedDaysInWindow: 6,
+          givenDoses: 3,
+          partialDoses: 1,
+          refusedDoses: 1,
+          unconfirmedDoses: 1,
+        }),
+      ],
+      medicationHistory: mhTable([mhEntry({ drugName: 'Metronidazole', dosesLogged: 4 })], '2026-04-01'),
+    }),
+  )
+  const appD = html.slice(html.indexOf('Appendix D — Medication log'), html.indexOf('</table>', html.indexOf('Appendix D — Medication log')))
+  const hist = html.slice(html.indexOf('>Medication history</p>'), html.indexOf('</table>', html.indexOf('>Medication history</p>')))
+  assert.ok(appD.length > 0 && hist.length > 0, 'both tables rendered — the checks below are over something')
+  for (const [name, t] of [['appendix D', appD], ['the lifetime table', hist]] as const) {
+    assert.ok(/<th[^>]*>Doses given \(incl\. partial\)<\/th>/.test(t), `${name}'s count column is headed by what it counts`)
+    assert.ok(!/<th[^>]*>Doses logged<\/th>/.test(t), `${name} no longer calls it "logged"`)
+  }
+  const appDText = plain(appD)
+  assert.ok(/Given on 4 of 6 days of the course in this window\./.test(appDText), 'the day phrase says given, over the administered days')
+  assert.ok(!/Logged on \d/.test(appDText), 'and never "Logged on" for that population')
+  // The words that DO mean every row stay: the unconfirmed and refused rows are still named.
+  assert.ok(/1 unconfirmed\./.test(appDText) && /1 refused\./.test(appDText))
 })
 
 Deno.test('R-13 item 8 — the divider says where the un-lettered lifetime table sits', () => {
