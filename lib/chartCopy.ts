@@ -150,6 +150,14 @@ export interface DayMarkFacts {
   /** The day a bout began, when this day holds its rows and no bout of its own
    *  (CUL-1226). Then a zero is not "no <noun>": the record holds some. */
   continuesFrom?: string | null;
+  /** The day holds a feeding or a symptom entry, so a zero may be spoken as "no <noun>".
+   *  Required: a logged day that answers nothing (a dose, a weigh-in) says "logged" and no
+   *  more (CUL-1074 brief 2, PM 2026-10-03). */
+  answers: boolean;
+  /** Qualifying meals refused on the day (the Meals layer; 0 with the layer off). */
+  refusedMeals?: number;
+  /** Qualifying meals left unfinished but not refused on the day (0 with the layer off). */
+  leftSomeMeals?: number;
   /** The symptom layer is showing. Off, the count is not spoken — and the day is still
    *  not "clear": the coverage is spoken either way. */
   symptomLayer: boolean;
@@ -182,9 +190,14 @@ export function dayMarkA11yLabel(f: DayMarkFacts, noun: string): string {
   else {
     if (f.symptomLayer && f.count > 0) parts.push(`${noun} logged ${f.count} ${pluralize(f.count, 'time')}`);
     else if (f.symptomLayer && f.continuesFrom) parts.push(`${noun} logged, part of the bout that began ${dateWord(f.continuesFrom)}`);
-    else if (f.symptomLayer) parts.push(`logged, no ${noun}`);
+    else if (f.symptomLayer && f.answers) parts.push(`logged, no ${noun}`);
     else parts.push('logged');
-    if (f.coverage === 'left_some') parts.push('a meal left unfinished');
+    // A refusal is named and counted, never folded into "left unfinished" (CUL-1553). A
+    // caller that does not split the meals (refused 0, left 0) keeps the coverage's word.
+    const refused = f.refusedMeals ?? 0;
+    const left = f.leftSomeMeals ?? 0;
+    if (refused > 0) parts.push(`${refused} ${pluralize(refused, 'meal')} refused`);
+    if (f.coverage === 'left_some' && (left > 0 || refused === 0)) parts.push('a meal left unfinished');
   }
   if (f.medication) parts.push('medication');
   if (f.photo === 'seen') parts.push('photographed');
@@ -211,8 +224,8 @@ export function weightDotsA11yLabel(model: WeightBandModel, unit: string, dateOf
 
 // ── The weight's spoken delta (D2-5 · CUL-1067) ───────────────────────────────
 
-/** The home-scale caveat needs TWO gates, and this is the first: the move as a fraction
- *  of the first reading. On its own it is C-34 verbatim — a percentage inherits the
+/** The home-scale caveat needs TWO bounds, and this is the first: the move as a fraction
+ *  of the first reading, strictly under it. On its own it is C-34 verbatim — a percentage inherits the
  *  pet's mass, a scale's noise does not, so a 5 % bound alone printed the caveat beside a
  *  3.5 kg loss on a 70 kg dog (the adversarial pass on CUL-1067). */
 export const HOME_SCALE_NOISE_FRAC = 0.05;
@@ -220,16 +233,52 @@ export const HOME_SCALE_NOISE_FRAC = 0.05;
 /** The caveat, verbatim from the design authority (§04). */
 export const HOME_SCALE_CAVEAT = 'a home scale moves about that much on its own';
 
+/** A run is stated from this many steps: each of the last N readings moved the same
+ *  way as the one before it. Two steps is three readings — the smallest series in which a
+ *  direction can repeat (PMD-3 as GC-7 ruled it: "runs stated"). */
+export const WEIGHT_RUN_MIN_STEPS = 2;
+
+/** The run at the END of the readings: how many of the last steps moved the same way,
+ *  strictly (a flat step ends it — a reading equal to the one before is not lower), and
+ *  which way. `steps: 0` when fewer than two readings. Read off the STORED values, never
+ *  the display's rounding. */
+export function trailingWeightRun(model: WeightBandModel): { steps: number; dir: 'down' | 'up' | null } {
+  const v = model.points.map((p) => p.value);
+  let steps = 0;
+  let dir: 'down' | 'up' | null = null;
+  for (let i = v.length - 1; i > 0; i--) {
+    const d = v[i] - v[i - 1];
+    const here = d < 0 ? 'down' : d > 0 ? 'up' : null;
+    if (here == null || (dir != null && here !== dir)) break;
+    dir = here;
+    steps += 1;
+  }
+  return { steps, dir };
+}
+
+
 /**
  * "Down 0.2 kg (4%) since Jul 3 · a home scale moves about that much on its own" — the
  * delta spoken beside its caveat, or "No change since Jul 3". Null below two readings
  * (the number is the chart). Direction words only, never a verdict: down is not "lost"
  * and up is not "gained"; a flat line is "no change", never "steady".
  *
- * The caveat is GATED, not decorative, and by BOTH of a scale's bounds: the move must be
- * inside `HOME_SCALE_NOISE_FRAC` of the first reading AND inside `noiseAbs`, the scale's
- * own wobble in the caller's display unit (WeightCard: 0.2 kg ≈ 0.5 lbs). A 5 %
- * unintentional loss in a cat is a workup trigger; a 3.5 kg drop in a dog is not a
+ * The caveat is GATED, not decorative (PMD-3 as GC-7 ruled it, CUL-1553). It prints only
+ * at EXACTLY TWO readings, and only when the move is strictly inside both of a scale's
+ * bounds — under `HOME_SCALE_NOISE_FRAC` of the first reading and under `gate.noiseAbs`,
+ * in whole thousandths of the STORED readings (`gate.model`, grams on the app's
+ * kilograms), never the rounded display unit — and never beside a percentage that reads
+ * as 5 %.
+ *
+ * The ruling also allowed it "when readings disagree in direction". That branch is
+ * WITHHELD here: five adversarial rounds each built a sustained 3–4.9 % cat loss that a
+ * scatter heuristic over three or more readings called a wobble (an end up-tick, a 10 g
+ * reading over the start, a step-down plateau, padding, sub-edge holds). A softener on
+ * the one danger sign weight has is safe only when it cannot be walked around, so it is
+ * withheld until a real statistical test (a sign or slope test) earns it back — put to
+ * the PM as a better-than-the-rule brief on CUL-1557. With three or more readings, a
+ * fall at the end is stated instead ("lower at each of the last 6 readings").
+ * A 5 % unintentional loss in a cat is a workup trigger; a 3.5 kg drop in a dog is not a
  * scale wobble at any percentage — neither gets the sentence written to soften a wobble.
  *
  * "No change" is decided by the FACT (`delta === 0`), never by the display rounding: a
@@ -246,21 +295,58 @@ export function weightDeltaLine(
   model: WeightBandModel,
   unit: string,
   dateOf: (iso: string) => string,
-  noiseAbs: number,
+  /** The same readings in the STORED unit, and a scale's wobble in that unit. */
+  gate: { model: WeightBandModel; noiseAbs: number },
 ): string | null {
   if (model.delta == null || model.deltaFrac == null || !model.first) return null;
   const since = `since ${dateOf(model.first.occurredAt)}`;
   // Interior readings only: the last reading's distance is what the delta itself says.
-  // Interior readings only: the last reading's distance is what the delta itself says.
   const clipped = model.points.filter((p, i) => p.clipped && i !== model.points.length - 1).length;
   const clippedTail = clipped > 0 ? ` · ${clipped} ${pluralize(clipped, 'reading')} outside the band` : '';
-  if (model.delta === 0) return `No change ${since}${clippedTail}`;
+  // The gate must describe the SAME readings the line does: a reading the display drops
+  // (a stored 0.01 kg rounds to 0.0 lbs) would otherwise set the direction and the
+  // percentage from a dot that is not drawn (round 2). Unequal sets fall back to the
+  // display's readings and never print the caveat.
+  const sameReadings = gate.model.points.length === model.points.length;
+  const g = sameReadings ? gate.model : model;
+  // The FACT decides no-change, direction and percentage: the stored readings, never the
+  // display's rounding (a 20 g move rounds to 0.0 lbs and is still a move).
+  const factDelta = g.delta ?? model.delta;
+  const factFrac = g.deltaFrac ?? model.deltaFrac;
+  const run = trailingWeightRun(g);
+  // A run is stated when it ACCUSES or agrees: a fall always (beside a gain it is the
+  // half the reader must not miss), a rise only beside an overall rise. A rise of a few
+  // grams beside a 24 % loss reads as recovery, and a rising line is not wellness (B-186;
+  // the adversarial pass on CUL-1553).
+  // A rise is stated only beside an overall rise at least a scale's own wobble: a few grams
+  // up after a dip is not a recovery to announce (round 2).
+  const realRise = sameReadings && Math.round(factDelta * 1000) >= Math.round(gate.noiseAbs * 1000);
+  const runStated = run.steps >= WEIGHT_RUN_MIN_STEPS && (run.dir === 'down' || (run.dir === 'up' && realRise));
+  const against = runStated && ((run.dir === 'down' && factDelta >= 0) || (run.dir === 'up' && factDelta < 0));
+  const runTail = runStated ? ` · ${against ? 'but ' : ''}${run.dir === 'down' ? 'lower' : 'higher'} at each of the last ${run.steps} readings` : '';
+  if (factDelta === 0) return `No change ${since}${runTail}${clippedTail}`;
   const abs = Math.abs(model.delta);
   const shown = Math.round(abs * 10) / 10;
-  const pct = Math.round(Math.abs(model.deltaFrac) * 100);
-  const dir = model.delta < 0 ? 'Down' : 'Up';
+  const pct = Math.round(Math.abs(factFrac) * 100);
+  const dir = factDelta < 0 ? 'Down' : 'Up';
   const amount = shown === 0 ? `less than 0.1 ${unit}` : `${shown.toFixed(1)} ${unit}`;
   const head = `${dir} ${amount}${pct > 0 ? ` (${pct}%)` : ''} ${since}`;
-  const inNoise = Math.abs(model.deltaFrac) <= HOME_SCALE_NOISE_FRAC && abs <= noiseAbs;
-  return `${head}${inNoise ? ` · ${HOME_SCALE_CAVEAT}` : ''}${clippedTail}`;
+  // Both bounds in thousandths of the stored unit (grams on the app's kilograms): a float
+  // must not decide a strict edge — 4.6 − 4.4 is 0.19999999999999973, and 0.15 / 3.0 is
+  // 0.04999999999999997, which handed an exact 5 % loss the caveat (round 3).
+  const moveG = Math.round(Math.abs(factDelta) * 1000);
+  const firstG = g.first ? Math.round(g.first.value * 1000) : 0;
+  const inNoise =
+    firstG > 0 &&
+    moveG * Math.round(1 / HOME_SCALE_NOISE_FRAC) < firstG &&
+    moveG < Math.round(gate.noiseAbs * 1000) &&
+    // And the line never prints the caveat beside a percentage that READS as 5 %: a 4.75 %
+    // loss displays "(5%)", the number a vet reads as a cat's workup trigger. This caps the
+    // caveat at moves that DISPLAY under 5 % (about 4.5 %; an exact 4.5 % rounds down in
+    // binary and shows "(4%)"), so it subsumes the strict 5 % bound above; both stay, the
+    // bound stating the ruling and this the display's promise.
+    pct < Math.round(HOME_SCALE_NOISE_FRAC * 100);
+  // Two readings only (see the docstring: the scatter branch is withheld, CUL-1557).
+  const caveat = sameReadings && inNoise && g.points.length === 2;
+  return `${head}${runTail}${caveat ? ` · ${HOME_SCALE_CAVEAT}` : ''}${clippedTail}`;
 }

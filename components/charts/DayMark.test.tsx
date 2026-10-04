@@ -13,7 +13,7 @@ import { theme } from '../../constants/theme';
 // shipped lane's pattern), so the queries below opt into hidden elements to reach them.
 configure({ defaultIncludeHiddenElements: true });
 
-const base = { dayKey: '2026-09-19', dayOfMonth: 19, noun: 'vomiting' };
+const base = { dayKey: '2026-09-19', dayOfMonth: 19, noun: 'vomiting', answers: true };
 const flat = (style: unknown): Record<string, unknown> => StyleSheet.flatten(style as never) as Record<string, unknown>;
 
 describe('DayMark — the §05 row', () => {
@@ -250,5 +250,29 @@ describe('DayMarkFace: the drawing History’s week strip shares with the month'
     expect(flat(today.getByTestId('daymark').props.style)).toMatchObject({ borderWidth: 1.5, borderColor: theme.colorTextPrimary });
     const landed = render(<DayMarkFace {...faceBase} box="white" line="solid" selected />);
     expect(flat(landed.getByTestId('daymark').props.style)).toMatchObject({ borderWidth: 2, borderColor: theme.colorAccentInk });
+  });
+});
+
+describe('DayMark — the refused ring (CUL-1553)', () => {
+  it('a refused meal draws an OPEN ring, told apart from the filled dots by shape, never by an alarm colour', () => {
+    const { getByTestId } = render(<DayMark {...base} count={0} coverage="left_some" refusedMeals={1} />);
+    const ring = flat(getByTestId('daymark-layer-refused').props.style);
+    expect(ring.backgroundColor).toBe('transparent');
+    expect(ring.borderColor).toBe(theme.colorTextSecondary);
+    expect(ring.borderColor).not.toBe(theme.colorEventSymptom);
+    expect(getByTestId('daymark').props.accessibilityLabel).toMatch(/1 meal refused/);
+  });
+
+  it('white on the rose, and absent with no refusal, on an unlogged day, or on a day ahead', () => {
+    const rose = render(<DayMark {...base} count={1} coverage="left_some" refusedMeals={1} />);
+    expect(flat(rose.getByTestId('daymark-layer-refused').props.style).borderColor).toBe(theme.colorTextOnDark);
+    expect(render(<DayMark {...base} count={0} coverage="left_some" />).queryByTestId('daymark-layer-refused')).toBeNull();
+    expect(render(<DayMark {...base} count={0} coverage="unlogged" refusedMeals={1} />).queryByTestId('daymark-layer-refused')).toBeNull();
+    expect(render(<DayMark {...base} count={0} coverage="ahead" refusedMeals={1} />).queryByTestId('daymark-layer-refused')).toBeNull();
+  });
+
+  it('a day that answers nothing never says "no vomiting" (CUL-1074 brief 2)', () => {
+    const { getByTestId } = render(<DayMark {...base} answers={false} count={0} coverage="logged" medication />);
+    expect(getByTestId('daymark').props.accessibilityLabel).not.toMatch(/no vomiting/);
   });
 });

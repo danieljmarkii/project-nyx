@@ -84,6 +84,8 @@ function monthOf(rows: readonly PopulationRow[]) {
     episodeDays: episodeDaysOf(vomits, keyOf),
     continuationDays: continuationDaysOf(vomits, keyOf),
     loggedDays: rows.map((r) => keyOf(Date.parse(r.occurredAt))),
+    // Vomit rows answer the question by themselves; every row here is a symptom or a meal.
+    answeringDays: rows.map((r) => keyOf(Date.parse(r.occurredAt))),
     noun: 'vomiting',
     rowNoun: 'vomit', // as `MonthInstrument` passes it
   });

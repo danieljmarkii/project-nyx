@@ -33,6 +33,19 @@
 //   • A LEFT-SOME day is a qualifying meal (`qualifyingIntakeMeals`: rated, non-treat,
 //     not logged while its food's bowl was down — by date, CUL-1237) that was not finished (`isFinishedMeal`) — the intake lens's own
 //     definition, so the paler hairline and the Meals calendar count the same meals.
+//   • A REFUSED meal is a qualifying meal rated `refused`; a LEFT-SOME meal is one rated
+//     below finished and above refused (`picked` / `some`). Each is listed once per MEAL,
+//     beside every qualifying meal (`ratedMealDays`), so the legend counts both over one
+//     denominator and never folds a refusal into the lighter word (CUL-1553, GC-7 item 2;
+//     intake is not preference). `leftSomeDays` stays the DAY set of either, for coverage.
+//   • A SYMPTOM ENTRY is a row of any `SYMPTOM_EVENT_TYPES` member other than vomit, listed
+//     once per row under its type: the month's lens counts entries for every symptom but
+//     vomiting, which keeps its re-log collapse (CUL-1553, GC-7 item 1, the trial's sign).
+//   • An ANSWERING day holds a feeding (a meal row) or a symptom entry of any type, vomit
+//     included: the only days on which the month may say "no vomiting" (CUL-1074 brief 2,
+//     PM 2026-10-03). A dose-, weight-, stool- or other-only day is LOGGED and answers
+//     nothing about vomiting. It is a SUBSET of the logged days by construction (both
+//     read the same rows; a look is neither).
 //   • A DOSED day is a delivered dose — `given` or `partial`, the therapy-delivered
 //     count B-618 D1 ratified — never a missed or refused one.
 //   • A PHOTOGRAPHED day is any surviving attachment on a surviving event; its VERDICT
@@ -53,7 +66,7 @@ import { getDb, getTimeline, type TimelineRow } from './db';
 import { episodeDaysOf } from './chartModels';
 import { collapseEpisodes, DEFAULT_MEAL_TIMING_CONFIG, type MealTimingConfig } from './mealTiming';
 import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
-import { isFinishedMeal, qualifyingIntakeMeals, readFreeFedIntakeSpans, type AnalyticsMeal } from './analytics';
+import { isFinishedMeal, qualifyingIntakeMeals, readFreeFedIntakeSpans, SYMPTOM_EVENT_TYPES, type AnalyticsMeal } from './analytics';
 import { readCopies } from './readCopy';
 import { isWorthACall } from './readState';
 import { dayKeyToLocalDate, toLocalDayKey } from './utils';
@@ -64,7 +77,18 @@ export interface MonthFacts {
   /** Days holding a vomit row but no episode start, each with the day its bout began. */
   continuationDays: MonthContinuationDay[];
   loggedDays: string[];
+  /** Days holding a feeding or a symptom entry: a subset of `loggedDays`. */
+  answeringDays: string[];
+  /** Days holding an unfinished qualifying meal (refused, picked or some): coverage. */
   leftSomeDays: string[];
+  /** One entry per qualifying meal: the refusal counts' denominator. */
+  ratedMealDays: string[];
+  /** One entry per qualifying meal rated `refused`. */
+  refusedMealDays: string[];
+  /** One entry per qualifying meal left unfinished but not refused (`picked`, `some`). */
+  leftSomeMealDays: string[];
+  /** Every symptom but vomit: one entry per row, keyed by event type. Absent types are absent. */
+  symptomEntryDays: Record<string, string[]>;
   dosedDays: string[];
   photoDays: MonthPhotoDay[];
   /** The record's first day, or null for a pet with no events at all. */
@@ -83,6 +107,11 @@ const MS_PER_DAY = 86_400_000;
 const UNIX_EPOCH_JULIAN_DAY = 2_440_587.5;
 /** The daily look's event type — the one row that is never coverage (§5.6, T-5). */
 export const LOOK_EVENT_TYPE = 'check_in';
+/** The rating a refusal carries (`INTAKE_SCORE` in `lib/analytics.ts`). */
+const REFUSED_RATING = 'refused';
+/** A feeding: the one event type a meal row hangs off. */
+const FEEDING_EVENT_TYPE = 'meal';
+const SYMPTOM_TYPE_SET: ReadonlySet<string> = new Set(SYMPTOM_EVENT_TYPES);
 /** Delivered doses — B-618 D1's therapy-delivered count. */
 const DELIVERED_ADHERENCE = ['given', 'partial'] as const;
 
@@ -216,12 +245,20 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
   const continuationDays = continuationDaysOf(vomitRows, keyOf).filter((c) => inRange(c.day, range));
 
   // Logged: any surviving event that is not a look (the coverage question, see the header).
+  // Answering: a feeding or a symptom entry — the days that may say "no vomiting".
   const loggedSet = new Set<string>();
+  const answeringSet = new Set<string>();
+  const symptomEntryDays: Record<string, string[]> = {};
   for (const r of eventRows) {
     if (r.event_type === LOOK_EVENT_TYPE) continue;
     const k = keyOfIso(r.occurred_at);
-    if (k && inRange(k, range)) loggedSet.add(k);
+    if (!k || !inRange(k, range)) continue;
+    loggedSet.add(k);
+    const symptom = SYMPTOM_TYPE_SET.has(r.event_type);
+    if (symptom || r.event_type === FEEDING_EVENT_TYPE) answeringSet.add(k);
+    if (symptom && r.event_type !== TIMING_SYMPTOM_TYPE) (symptomEntryDays[r.event_type] ??= []).push(k);
   }
+  for (const days of Object.values(symptomEntryDays)) days.sort();
 
   // Left some: an unfinished qualifying meal, by the intake lens's own definition.
   const meals: AnalyticsMeal[] = mealRows
@@ -235,10 +272,18 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     }))
     .filter((m) => Number.isFinite(m.ms));
   const leftSomeSet = new Set<string>();
+  const ratedMealDays: string[] = [];
+  const refusedMealDays: string[] = [];
+  const leftSomeMealDays: string[] = [];
   for (const m of qualifyingIntakeMeals(meals, freeFedSpans)) {
-    if (isFinishedMeal(m)) continue;
     const k = keyOf(m.ms);
-    if (inRange(k, range)) leftSomeSet.add(k);
+    if (!inRange(k, range)) continue;
+    ratedMealDays.push(k);
+    if (isFinishedMeal(m)) continue;
+    leftSomeSet.add(k);
+    // A meal is counted once, refused first: the accusing word is never the lighter one.
+    if (m.intakeRating === REFUSED_RATING) refusedMealDays.push(k);
+    else leftSomeMealDays.push(k);
   }
 
   const dosedSet = new Set<string>();
@@ -265,7 +310,12 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     episodeDays,
     continuationDays,
     loggedDays: [...loggedSet].sort(),
+    answeringDays: [...answeringSet].sort(),
     leftSomeDays: [...leftSomeSet].sort(),
+    ratedMealDays: ratedMealDays.sort(),
+    refusedMealDays: refusedMealDays.sort(),
+    leftSomeMealDays: leftSomeMealDays.sort(),
+    symptomEntryDays,
     dosedDays: [...dosedSet].sort(),
     photoDays,
     recordStart: firstMs === null ? null : keyOf(firstMs),
