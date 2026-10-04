@@ -488,7 +488,9 @@ export function showsRecordStart(args: {
  * that stops short never jumps past its own start; under a course filter only from the
  * course's first day, as the rest of that list stays inside the course; never under search,
  * which lists matched days and nothing else (R-2). With nothing logged yet, every one shows,
- * under every filter but Noticed (whose quiet state the screen keeps).
+ * under every filter but Noticed (whose quiet state the screen keeps), a course filter's floor
+ * included: the items are then the whole record, and "Nothing logged yet" over them is the
+ * one sentence the screen must never say (CUL-575).
  */
 export function preRecordLinesOf(args: {
   preRecord: readonly PreRecordDay[];
