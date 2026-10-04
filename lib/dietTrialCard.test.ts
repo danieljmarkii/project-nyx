@@ -1193,9 +1193,24 @@ describe('replacement 9 — free-fed', () => {
     expect(model.state).toBe('free_fed');
     expect(textOf(model, 'lead')).toEqual([
       'Mochi grazes from a bowl that’s topped up, so there’s no day-by-day count of ' +
-      'what was eaten.',
+      'what was eaten. The bowl also can’t tell you if Mochi stops eating. That part is ' +
+      'yours to watch.',
     ]);
     expect(allStrings(model).join(' ')).not.toMatch(/Meals logged on \d+ of \d+ days/);
+  });
+
+  // CUL-1339 #3 (PM, 2026-10-03). The disclosure runs in the escalating direction only:
+  // it names what the bowl cannot see and hands the watching to the owner. It must never
+  // turn into a verdict about her eating (clinical-guardrails Pattern 8), and it stays in
+  // voice (no `!`).
+  it('says the bowl cannot see her stop, and never reassures', () => {
+    const lead = textOf(model, 'lead').join(' ');
+    expect(lead).toContain('can’t tell you if Mochi stops eating');
+    expect(lead).toContain('That part is yours to watch.');
+    expect(lead).not.toMatch(
+      /\b(fine|okay|ok|healthy|normal|unremarkable|all clear|eating well|nothing (?:to worry|concerning|alarming))\b/i,
+    );
+    expect(lead).not.toContain('!');
   });
 
   // ── THE FLIPPED LOCK (round 5 ①; this test used to assert the forbidden

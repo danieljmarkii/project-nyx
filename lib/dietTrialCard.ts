@@ -1425,7 +1425,7 @@ function trialManageVerb(state: TrialCardState): string {
  *  the milestone prompt) — where a food-list link would dilute the decision. Drawn
  *  only when the allowed set is hydrated (the handler in profile.tsx is
  *  conditional), so it degrades to nothing offline. */
-function viewAllowedFoodsAction(petName: string): TrialCardAction {
+export function viewAllowedFoodsAction(petName: string): TrialCardAction {
   return { id: 'view_allowed_foods', label: `What ${petName} can eat`, emphasis: 'link' };
 }
 
@@ -1608,7 +1608,15 @@ function pushRegisterBody(
         role: 'lead',
         text:
           `${input.petName} grazes from a bowl that’s topped up, so there’s no day-by-day ` +
-          'count of what was eaten.',
+          'count of what was eaten. ' +
+          // CUL-1339 #3 (PM, 2026-10-03): the bowl's blind spot said in the escalating
+          // direction, in the lead, so the card and the trial screen say it together. A
+          // topped-up bowl rates no feedings and `detectIntakeDecline` excludes free-fed
+          // foods (invariant #6), so the bowl itself can never show the pet stopping (rated
+          // wet meals still feed the refusal lane, which outranks this state). It names the
+          // owner's job; it never says the bowl going down means the pet is eating.
+          `The bowl also can’t tell you if ${input.petName} stops eating. ` +
+          'That part is yours to watch.',
       });
       // THE COUNT STAYS, THE CLAIM GOES (round 5 ①). "all N were the trial diet"
       // is the exact sentence `mayStateRecordClean` refuses under

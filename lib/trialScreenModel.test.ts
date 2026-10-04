@@ -389,6 +389,26 @@ describe('a trial refusal (§3.2, §0.3, §12 findings 2 and 3)', () => {
     expect(m.subline).toBe('Royal Canin Rabbit · since Jul 3');
   });
 
+  // CUL-1339 #1 (PM, 2026-10-03, option (a)): at the window the refusal face keeps the
+  // card's own *Tell Culprit what's next*, as the shipped card does, though the sheet it opens
+  // holds *Stopped early*. A trial with no ending reads to the vet as still going; the durable
+  // fix for the call-today an ending drops is CUL-1337's. Pinned so a later "safety face
+  // carries no Stopped early" reading of §0.3 cannot silently take the door away.
+  it('at the window keeps the card’s own “Tell Culprit what’s next”, and no food door', async () => {
+    const days = Array.from({ length: 10 }, (_, i) => i + 49);
+    const l = await load({ target: 56, mealDays: days, rating: 'refused', nowDay: 58 });
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    const card = resolveTrialCard(l.input);
+    expect(m.state).toBe('trial_refusal');
+    expect(card.actions.map((a) => a.id)).toContain('milestone');
+    expect(m.actions.map((a) => a.id)).toEqual(
+      card.actions.map((a) => a.id).filter((id) => id !== 'view_exposures'),
+    );
+    expect(m.actions.find((a) => a.id === 'milestone')!.label).toBe('Tell Culprit what’s next');
+    expect(m.decision).toBeNull();
+    expect(m.allowedFoods).toBeNull();
+  });
+
   it('withholds coverage and the ledger after the card’s register has stood down (S7)', async () => {
     const l = await load(REFUSING);
     expect(l.facts!.rangeRefusal).not.toBeNull();
@@ -465,6 +485,8 @@ describe('the milestone (§0.3, §3.9, §12 finding 6)', () => {
     expect(m.subline).toBe('Royal Canin Rabbit · since Jul 3');
     // No fourth control beside the decision (§3.9, round 2).
     expect(m.manage).toBeNull();
+    // CUL-1339 #4: the food list stays off the stop decision itself.
+    expect(m.allowedFoods).toBeNull();
   });
 });
 
@@ -483,6 +505,21 @@ describe('overrun', () => {
     expect(m.ledger!.rows.at(-1)!.days.at(-1)!.trialDay).toBe(56);
     expect(m.manage).toBe('Manage the trial');
   });
+
+  // CUL-1339 #4 (PM, 2026-10-03): an overrun can run on for weeks, so the screen carries
+  // *What {pet} can eat* under the decision block. The CARD keeps it off (its one action is
+  // the milestone prompt), so the Pet tab is unchanged and the label is the card's own.
+  it('carries “What {pet} can eat” under the decision; the card itself does not', async () => {
+    const all = Array.from({ length: 58 }, (_, i) => i + 1);
+    const l = await load({ target: 56, mealDays: all, nowDay: 58 });
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(m.allowedFoods).not.toBeNull();
+    expect(m.allowedFoods!.label).toBe('What Mochi can eat');
+    // Not repeated as an action, and the decision block is untouched.
+    expect(m.actions).toEqual([]);
+    expect(m.decision!.actions.map((a) => a.id)).toEqual(['milestone']);
+    expect(resolveTrialCard(l.input).actions.map((a) => a.id)).toEqual(['milestone']);
+  });
 });
 
 // ── Free-fed and the terminal trials ──────────────────────────────────────────
@@ -494,7 +531,9 @@ describe('free-fed', () => {
     expect(m.state).toBe('free_fed');
     expect(m.facts[0]).toEqual({
       role: 'lead',
-      text: 'Mochi grazes from a bowl that’s topped up, so there’s no day-by-day count of what was eaten.',
+      text:
+        'Mochi grazes from a bowl that’s topped up, so there’s no day-by-day count of what was eaten. ' +
+        'The bowl also can’t tell you if Mochi stops eating. That part is yours to watch.',
     });
     expect(m.ledger).toBeNull();
   });

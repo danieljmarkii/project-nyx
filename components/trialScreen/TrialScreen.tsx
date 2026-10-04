@@ -36,7 +36,7 @@ import {
   buildTrialScreenModel,
   noTrialLine,
   TO_HOME,
-  TO_THE_PET_TAB,
+  toPetTab,
   TRIAL_SCREEN_HEADER,
   TRY_AGAIN,
   UNKNOWN_PET_LINE,
@@ -183,7 +183,7 @@ export function TrialScreen({ petId }: { petId: string }) {
         <StateBody
           testID="trial-screen-no-trial"
           line={noTrialLine(model.petName)}
-          action={TO_THE_PET_TAB}
+          action={toPetTab(model.petName)}
           onAction={() =>
             router.push({ pathname: PROFILE_ROUTE, params: { pet: petId, ts: String(Date.now()) } })
           }

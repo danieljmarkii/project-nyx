@@ -28,10 +28,12 @@ import { ThemedText } from '../../components/ui/ThemedText';
 // reversed, natively (C-30: lift the constant, never restate it). Reduced motion: `none`.
 
 export const OFF_TITLE = 'Nothing to show here';
-export const OFF_BODY = "This screen isn't on for this account yet. The trial is on the Pet tab.";
+// No tab is labelled "Pet": the bar draws the active pet's NAME there (CUL-1339 voice pass,
+// 2026-10-03). This screen knows no pet, so it says "your pet's tab".
+export const OFF_BODY = "This screen isn't on for this account yet. The trial is on your pet's tab.";
 /** The flag is on but the link names no pet (a corrupted deep link): not "not on yet". */
-export const BAD_LINK_BODY = "This link doesn't name a pet. The trial is on the Pet tab.";
-export const OFF_ACTION = 'Open the Pet tab';
+export const BAD_LINK_BODY = "This link doesn't name a pet. The trial is on your pet's tab.";
+export const OFF_ACTION = "Open your pet's tab";
 
 export default function TrialRoute() {
   const live = useTrialScreen();

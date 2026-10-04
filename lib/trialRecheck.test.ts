@@ -534,7 +534,8 @@ describe('a pet that may not be eating', () => {
     const { screen, recheck } = recheckFor(l, l.input);
     expect(screen.state).toBe('free_fed');
     expect(answersOf(recheck!, 'eating')).toEqual([
-      'Mochi grazes from a bowl that’s topped up, so there’s no day-by-day count of what was eaten.',
+      'Mochi grazes from a bowl that’s topped up, so there’s no day-by-day count of what was eaten. ' +
+        'The bowl also can’t tell you if Mochi stops eating. That part is yours to watch.',
     ]);
     expect(recheck!.isSafety).toBe(false);
   });
