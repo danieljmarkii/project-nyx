@@ -103,6 +103,8 @@ interface Rec {
   freeChoice?: boolean;
   /** The day the free-choice bowl came up (`active_until`); open when absent. */
   freeChoiceUntilDay?: number;
+  /** The day the bowl went down (`active_from`); the trial's start when absent. */
+  freeChoiceFromDay?: number;
   /** Extra permitted foods on the allowed list. */
   extras?: number;
   /** Logged doses (CUL-1363), in `readDoses`' row shape: a chewable form, or a food vehicle. */
@@ -174,7 +176,8 @@ function seed(rec: Rec) {
     vehicle_food_item_id: null, vehicle_brand: null, vehicle_product_name: null,
   }));
   mockDb.arrangements = rec.freeChoice
-    ? [{ food_item_id: 'f1', active_from: START_KEY,
+    ? [{ food_item_id: 'f1',
+      active_from: rec.freeChoiceFromDay != null ? dayKey(rec.freeChoiceFromDay) : START_KEY,
       active_until: rec.freeChoiceUntilDay != null ? dayKey(rec.freeChoiceUntilDay) : null,
       brand: 'Royal Canin', product_name: 'Rabbit' }]
     : [];
@@ -590,15 +593,41 @@ describe('free-fed', () => {
       expect(withholdingReasons(l.input)).toContain('bowl_throughout');
     });
 
-    it('a bowl that held only part of the window keeps the ratio and the "part" caveat', async () => {
-      // The armed control: the same record with the bowl up on day 30 prints the ratio,
-      // so the test above is not green over a record that never prints one.
+    it('a bowl that held only part of the window drops the ratio too, and keeps the "part" caveat (CUL-1578)', async () => {
+      // The real-loader cases from the issue: the bowl up on day 30 with meals logged
+      // daily (56 of 56 over 30 bowl days), and meals every other day around a bowl
+      // on days 20–30 (the eleven bowl days read as missed logging).
       const l = await load({ target: 56, mealDays: all, freeChoice: true, freeChoiceUntilDay: 30, nowDay: 60 });
       expect(l.input.freeFedThroughout).toBeNull();
-      const card = resolveTrialCard(l.input);
-      const lines = card.lines.map((x) => x.text);
-      expect(lines).toContain('Meals logged on 56 of 56 days.');
+      expect(l.input.freeFedOverlap).toBe(true);
+      const lines = resolveTrialCard(l.input).lines.map((x) => x.text);
+      expect(lines.join(' ')).not.toMatch(/Meals logged on \d+ of \d+ days/);
       expect(lines.some((t) => t.startsWith('For part of this trial Mochi had a bowl'))).toBe(true);
+      expect(withholdingReasons(l.input)).toContain('bowl_part');
+      expect(resolveTrialStrip(l.input)!.line ?? '').not.toMatch(/meals logged on/);
+
+      // Armed: the same record with no bowl prints the ratio on both surfaces.
+      const plain = await load({ target: 56, mealDays: all, nowDay: 60 });
+      expect(resolveTrialCard(plain.input).lines.map((x) => x.text)).toContain('Meals logged on 56 of 56 days.');
+    });
+
+    it('the issue’s case: a bowl on days 20–30, meals every other day, read on day 50', async () => {
+      const everyOther = Array.from({ length: 25 }, (_, i) => i * 2 + 1);
+      const l = await load({
+        target: 56, mealDays: everyOther, freeChoice: true, freeChoiceFromDay: 20, freeChoiceUntilDay: 30,
+        nowDay: 50,
+      });
+      expect(l.input.freeFed).toBeNull();
+      expect(l.input.freeFedOverlap).toBe(true);
+      expect(l.input.freeFedThroughout).toBeNull();
+      expect(withholdingReasons(l.input)).toEqual(['bowl_part']);
+      expect(resolveTrialStrip(l.input)!.line ?? '').not.toMatch(/meals logged on/);
+      const card = resolveTrialCard(l.input).lines.map((x) => x.text);
+      expect(card.join(' ')).not.toMatch(/Meals logged on \d+ of \d+ days/);
+      expect(card.some((t) => t.startsWith('For part of this trial Mochi had a bowl'))).toBe(true);
+      // Armed: without the bowl, the strip states the ratio over the same meals.
+      const plain = await load({ target: 56, mealDays: everyOther, nowDay: 50 });
+      expect(resolveTrialStrip(plain.input)!.line).toMatch(/meals logged on \d+ of \d+ days/);
     });
 
     it('stays withheld for the rest of the overrun, however late the read', async () => {

@@ -789,6 +789,7 @@ export type TrialCardWithholding =
   | 'range_refusal'
   | 'free_fed'
   | 'bowl_throughout'
+  | 'bowl_part'
   | 'allowed_set_unavailable'
   | 'antigen_arm_dark'
   | 'untracked_head'
@@ -811,6 +812,15 @@ export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[
   // caveat at all. Its own reason, not `free_fed` widened: `free_fed` drives the
   // present-tense "grazes from a bowl" copy, which is false once the bowl is gone.
   if (input.freeFedThroughout) reasons.push('bowl_throughout');
+  // CUL-1578 — the third bowl case: down for PART of the counted range, gone now.
+  // The ratio's denominator still holds the bowl days, which no meal-by-meal record
+  // could have filled, so it understates an owner who logged around the bowl (39 of
+  // 50, the 11 "missing" days exactly the bowl days) and flatters one who logged a
+  // wet meal on top of it (56 of 56 over 55 bowl days). The card says why in its
+  // "For part of this trial…" qualifier; the strip has nowhere to, so it withholds.
+  // Disjoint from the two above by construction: `free_fed` owns a bowl down now
+  // and `bowl_throughout` a bowl that held every counted day.
+  if (pastPartialBowl(input)) reasons.push('bowl_part');
   if (input.allowedSetUnavailable) reasons.push('allowed_set_unavailable');
   // B-597 — the dark antigen arm, the forgotten sibling of `allowed_set_unavailable`
   // above. The report withholds the clean claim AND discloses on this (§7.2 caveat +
@@ -1526,8 +1536,26 @@ export function resolveTrialCard(rawInput: TrialCardInput): TrialCardModel {
  * reason, the head included.
  */
 function withoutBowlRatio(input: TrialCardInput): TrialCardInput {
-  if (!input.freeFedThroughout) return input;
+  if (!input.freeFedThroughout && !pastPartialBowl(input)) return input;
   return { ...input, coverage: null };
+}
+
+/**
+ * CUL-1578 — A BOWL THAT HELD PART OF THE COUNTED RANGE TAKES THE RATIO TOO, on the
+ * card and the strip alike. The ratio is days logged over days counted, and a bowl
+ * day is counted while being a day no meal-by-meal record can hold, so the number
+ * mixes two kinds of day it cannot tell apart: it read 39 of 50 for an owner who
+ * missed nothing (the eleven "gaps" were the bowl), and 56 of 56 beside "For part of
+ * this trial…" when 55 of the 56 days were bowl days. A ratio over the non-bowl days
+ * alone would need the bowl's dates per day, which the card input does not carry;
+ * until it does, the honest number is none, with the qualifier saying why.
+ *
+ * Keyed on the past bowl only (`!freeFed`): a bowl down now routes the running card
+ * to the `free_fed` register, which replaces the ratio already, and the strip
+ * withholds on `free_fed` itself.
+ */
+function pastPartialBowl(input: TrialCardInput): boolean {
+  return !!input.freeFedOverlap && !input.freeFed && !input.freeFedThroughout;
 }
 
 /**
