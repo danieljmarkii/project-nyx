@@ -6562,11 +6562,21 @@ function courseDaysNoneGiven(m: MedicationAdherence, sayWindow: boolean): string
  * explains it (pass 6).
  */
 function givenCountNote(m: MedicationAdherence): string {
-  const parts: string[] = []
-  if (m.partialDoses) parts.push(`${num(m.partialDoses)} partial`)
+  const partial = m.partialDoses
   const out = m.courseDays.outsideCourseGiven
-  if (out) parts.push(`${num(out)} dated outside the course`)
-  return parts.length ? ` (${parts.join('; ')})` : ''
+  // Two OVERLAPPING subsets of the same count (a partial dose can be dated outside the course), so
+  // never written as a breakdown that sums: "(1 partial; 4 dated outside the course)" read as the
+  // one course dose being the partial, and two partials summed to 6 of 5 (pass 7, D2). Each subset
+  // names the whole it is drawn from.
+  if (!out) return partial ? ` (${num(partial)} partial)` : ''
+  const total = m.windowDosesLogged
+  const outPart =
+    out === total
+      ? total === 1
+        ? 'dated outside the course'
+        : `all ${num(total)} dated outside the course`
+      : `${num(out)} of the ${num(total)} dated outside the course`
+  return partial ? ` (${num(partial)} of the ${num(total)} partial; ${outPart})` : ` (${outPart})`
 }
 function courseDaysTail(m: MedicationAdherence): string {
   const p = m.courseDays
@@ -6579,16 +6589,22 @@ function courseDaysTail(m: MedicationAdherence): string {
 /**
  * Below once a day, the empty part names the SCHEDULE, so days a dose was never due are not read
  * as gaps (cold read 4) — as a schedule noun, never "dosed every other day", which beside "no dose
- * given" reads as delivery (pass 6). An interval when the rate is one dose every whole number of
- * days (two or more, to the column's two decimals), else the rate. Nothing at or above once a day,
+ * given" reads as delivery (pass 6). An interval when exactly one whole-day interval stores to the
+ * rate, else the rate. Nothing at or above once a day,
  * and nothing for a rate the record cannot mean (≤ 0, NaN; the column has no CHECK), the guard
  * `dosingSpan` holds.
  */
 function cadenceNote(dosesPerDay: number | null): string {
   if (dosesPerDay == null) return ' (on an as-needed schedule)'
   if (!(dosesPerDay > 0) || dosesPerDay >= 1) return ''
-  const every = Math.round(1 / dosesPerDay)
-  if (every < 2 || Math.abs(every * dosesPerDay - 1) > 0.025) return ` (on a ${dosesPerDay}×/day schedule)`
+  // An interval only when exactly ONE whole-day interval stores to this value at the column's two
+  // decimals (NUMERIC(4,2)): 0.03 is every 29–40 days, so a monthly drug must not read "every 33"
+  // (pass 7). Ambiguous or no match → the rate itself.
+  const stored = Math.round(dosesPerDay * 100)
+  const matches: number[] = []
+  for (let n = 2; n <= 400; n++) if (Math.round(100 / n) === stored) matches.push(n)
+  if (matches.length !== 1) return ` (on a ${dosesPerDay}×/day schedule)`
+  const every = matches[0]
   return every === 2
     ? ' (on an every-other-day schedule)'
     : every === 7
@@ -6620,19 +6636,24 @@ function datedDays(days: readonly string[]): string {
 function outsideCourseNote(m: MedicationAdherence): string {
   const p = m.courseDays
   const start = m.startedAt.slice(0, 10)
-  const sentence = (n: number, noun: string, days: readonly string[]): string => {
+  // "Recorded end" only where the report SHOWS one (`regimenDates`' rule): the span is clipped at
+  // any `endedAt`, but a course whose status is not ended reads "since <start>" (pass 7, D3).
+  const endShown = m.endedAt !== null && (m.status === 'completed' || m.status === 'stopped')
+  const sentence = (n: number, noun: (plural: boolean) => string, days: readonly string[]): string => {
     if (n === 0) return ''
     const before = days.filter((d) => d < start)
     const after = days.filter((d) => d >= start)
     const sides = [
       before.length ? `before its start (${datedDays(before)})` : null,
-      after.length ? `after its recorded end (${datedDays(after)})` : null,
+      after.length ? `${endShown ? 'after its recorded end' : 'after its end date'} (${datedDays(after)})` : null,
     ].filter(Boolean)
-    return ` ${num(n)} ${noun}${n === 1 ? '' : 's'} ${n === 1 ? 'is' : 'are'} dated outside the course&rsquo;s dates: ${sides.join(' and ')}.`
+    return ` ${num(n)} ${noun(n !== 1)} ${n === 1 ? 'is' : 'are'} dated outside the course&rsquo;s dates: ${sides.join(' and ')}.`
   }
+  // "Not recorded as given", never "not-given": the bucket holds unconfirmed doses, which are
+  // unknown rather than withheld (pass 7, D1 — the partition's own rule).
   return (
-    sentence(p.outsideCourseGiven, 'given dose', p.outsideCourseGivenDays) +
-    sentence(p.outsideCourseNotGiven, 'not-given dose', p.outsideCourseNotGivenDays)
+    sentence(p.outsideCourseGiven, (pl) => `given dose${pl ? 's' : ''}`, p.outsideCourseGivenDays) +
+    sentence(p.outsideCourseNotGiven, (pl) => `dose${pl ? 's' : ''} not recorded as given`, p.outsideCourseNotGivenDays)
   )
 }
 

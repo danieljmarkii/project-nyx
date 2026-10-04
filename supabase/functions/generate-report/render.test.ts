@@ -7143,6 +7143,9 @@ Deno.test('CUL-1550 — below once a day, the empty part names the schedule, nev
     [0.33, ' (on a schedule of a dose every 3 days).'],
     [0.14, ' (on a once-a-week schedule).'],
     [0.17, ' (on a schedule of a dose every 6 days).'],
+    [0.13, ' (on a schedule of a dose every 8 days).'], // the one interval that stores to 0.13
+    [0.03, ' (on a 0.03×/day schedule).'], // every 29–40 days all store as 0.03: never "every 33"
+    [0.01, ' (on a 0.01×/day schedule).'],
     [0.4, ' (on a 0.4×/day schedule).'],
     [0.48, ' (on a 0.48×/day schedule).'], // not within the column's precision of every other day
     [0.75, ' (on a 0.75×/day schedule).'],
@@ -7161,19 +7164,22 @@ Deno.test('CUL-1550 — below once a day, the empty part names the schedule, nev
 
 Deno.test('CUL-1550 — doses dated outside the course are disclosed by kind and side, with their dates and year', () => {
   const at = (o: Partial<MedicationAdherence['courseDays']>, over: Partial<MedicationAdherence> = {}) =>
-    plain(appDOf(cul1550Html(split(o), { elapsedDaysInWindow: 8, startedAt: '2026-06-10', endedAt: '2026-06-17', ...over })))
+    plain(appDOf(cul1550Html(split(o), { elapsedDaysInWindow: 8, startedAt: '2026-06-10', endedAt: '2026-06-17', status: 'completed', ...over })))
   const one = cul1550Html(split({ given: 2, nothingLogged: 6, outsideCourseGiven: 1, outsideCourseGivenDays: ['2026-06-27'] }), {
-    elapsedDaysInWindow: 8, startedAt: '2026-06-10', endedAt: '2026-06-17',
+    elapsedDaysInWindow: 8, startedAt: '2026-06-10', endedAt: '2026-06-17', status: 'completed',
   })
   const oneD = plain(appDOf(one))
   assert.ok(/Given on 2 of 8 days of the course in this window; no dose logged against this course on 6\. 1 given dose is dated outside the course's dates: after its recorded end \(Jun 27, 2026\)\./.test(oneD), oneD)
   assert.ok(/1 given dose is dated outside the course's dates: after its recorded end \(Jun 27, 2026\)\./.test(page1MedOf(one)), 'page 1 discloses it too')
   // Each kind in its own sentence with its own dates, so the refusal can be placed (C-37).
   const mixed = at({ given: 1, nothingLogged: 7, outsideCourseGiven: 1, outsideCourseNotGiven: 2, outsideCourseGivenDays: ['2026-06-06'], outsideCourseNotGivenDays: ['2026-06-05'] })
-  assert.ok(/1 given dose is dated outside the course's dates: before its start \(Jun 6, 2026\)\. 2 not-given doses are dated outside the course's dates: before its start \(Jun 5, 2026\)\./.test(mixed), mixed)
+  assert.ok(/1 given dose is dated outside the course's dates: before its start \(Jun 6, 2026\)\. 2 doses not recorded as given are dated outside the course's dates: before its start \(Jun 5, 2026\)\./.test(mixed), mixed)
   // Both sides named, never one span that contains the course.
   const sides = at({ given: 8, outsideCourseGiven: 6, outsideCourseGivenDays: ['2026-06-01', '2026-06-02', '2026-06-03', '2026-06-25', '2026-06-26', '2026-06-27'] })
   assert.ok(/6 given doses are dated outside the course's dates: before its start \(Jun 1, Jun 2, Jun 3, 2026\) and after its recorded end \(Jun 25, Jun 26, Jun 27, 2026\)\./.test(sides), sides)
+  // "Recorded end" only where the report shows one: an active course reads "since <start>".
+  const active = at({ given: 8, outsideCourseGiven: 1, outsideCourseGivenDays: ['2026-06-25'] }, { status: 'active' })
+  assert.ok(/after its end date \(Jun 25, 2026\)/.test(active) && !/recorded end/.test(active), active)
   // Exactly four: listed. Five: the span AND the day count, never a silent first four.
   const four = at({ given: 8, outsideCourseGiven: 4, outsideCourseGivenDays: ['2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23'] })
   assert.ok(/after its recorded end \(Jun 20, Jun 21, Jun 22, Jun 23, 2026\)/.test(four), four)
@@ -7194,7 +7200,16 @@ Deno.test('CUL-1550 — page 1 counts out-of-course given doses inside its given
     windowDosesLogged: 5, givenDoses: 4, partialDoses: 1, elapsedDaysInWindow: 13, startedAt: '2026-06-20', endedAt: null,
   })
   const p1 = page1MedOf(html)
-  assert.ok(/In this window: 5 doses given \(1 partial; 4 dated outside the course\), on 1 of 13 days of the course;/.test(p1), p1)
+  assert.ok(/In this window: 5 doses given \(1 of the 5 partial; 4 of the 5 dated outside the course\), on 1 of 13 days of the course;/.test(p1), p1)
+  // Never a breakdown that sums: two partials among four outside doses is not "6 of 5".
+  const two = cul1550Html(split({ given: 1, nothingLogged: 12, outsideCourseGiven: 4, outsideCourseGivenDays: ['2026-06-14', '2026-06-15', '2026-06-16', '2026-06-17'] }), {
+    windowDosesLogged: 5, givenDoses: 3, partialDoses: 2, elapsedDaysInWindow: 13, startedAt: '2026-06-20', endedAt: null,
+  })
+  assert.ok(/5 doses given \(2 of the 5 partial; 4 of the 5 dated outside the course\)/.test(page1MedOf(two)), page1MedOf(two))
+  const onlyOut = cul1550Html(split({ given: 1, nothingLogged: 12, outsideCourseGiven: 1, outsideCourseGivenDays: ['2026-06-14'] }), {
+    windowDosesLogged: 2, givenDoses: 2, partialDoses: 0, elapsedDaysInWindow: 13, startedAt: '2026-06-20', endedAt: null,
+  })
+  assert.ok(/2 doses given \(1 of the 2 dated outside the course\), on 1 of 13 days/.test(page1MedOf(onlyOut)), page1MedOf(onlyOut))
 })
 
 Deno.test('CUL-1550 — with no dose given against the course, the zero claim is scoped to the course on both pages', () => {
@@ -7203,7 +7218,7 @@ Deno.test('CUL-1550 — with no dose given against the course, the zero claim is
   })
   const p1 = page1MedOf(html)
   const appD = plain(appDOf(html))
-  const tail = 'a dose logged but not as given on 3; no dose logged against this course on 7\\. 1 not-given dose is dated outside the course\'s dates: before its start \\(Jun 6, 2026\\)\\.'
+  const tail = 'a dose logged but not as given on 3; no dose logged against this course on 7\\. 1 dose not recorded as given is dated outside the course\'s dates: before its start \\(Jun 6, 2026\\)\\.'
   assert.ok(new RegExp(`In this window: no dose given against this course on any of its 10 days; ${tail}`).test(p1), p1)
   assert.ok(new RegExp(`No dose given against this course on any of its 10 days in this window; ${tail}`).test(appD), appD)
   // Never an unscoped claim about the animal: a dose of the drug may sit on another line.
@@ -7214,7 +7229,7 @@ Deno.test('CUL-1550 — with no dose given against the course, the zero claim is
   })
   const a1 = page1MedOf(allOutside)
   const aD = plain(appDOf(allOutside))
-  assert.ok(/In this window: 1 dose given \(1 dated outside the course\); no dose given against this course on any of its 10 days; no dose logged against this course on 10\. 1 given dose is dated outside the course's dates: before its start \(Jun 6, 2026\)\./.test(a1), a1)
+  assert.ok(/In this window: 1 dose given \(dated outside the course\); no dose given against this course on any of its 10 days; no dose logged against this course on 10\. 1 given dose is dated outside the course's dates: before its start \(Jun 6, 2026\)\./.test(a1), a1)
   assert.ok(/No dose given against this course on any of its 10 days in this window; no dose logged against this course on 10\./.test(aD), aD)
   assert.ok(!/\bon 0 of\b/.test(a1 + aD), 'never "on 0 of N"')
 })
