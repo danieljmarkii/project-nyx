@@ -36,17 +36,20 @@
 //      sent, it hit the day's cap, the phone holds no copy, OR it finished saying
 //      `not_enough_to_say` (status `uncertain`, migration 013: "the photo is unclear or
 //      does not appear to show vomit"). Never calm, because absence is never wellness
-//      (the n=1 rule); the shared day row draws it as a grey *Photo not read*.
+//      (the n=1 rule); the shared day row draws it as the grey mark, worded *No read yet*,
+//      or *Not enough to say yet* for the finished unclear read (CUL-1234).
 //
 // ── `not_enough_to_say` IS NOT CALM (PM ruling, 2026-09-25, HV-6 / CUL-1163) ─────
 // HV-5 shipped the unclear read as calm, which the day row draws as NOTHING, exactly what
 // it draws for a photo that was read and found nothing to flag. So an unreadable photo
 // looked like a read one, which is the one thing H-4b forbids. It is now `unread` on a row
 // whose photo this phone holds, and nothing on one that has none (a photoless stool's
-// contextual read collapses to `not_enough_to_say` too, and "Photo not read" under a row
-// with no photo would be false). The finished verdict still RIDES on `verdict`, so a
-// surface that speaks the record's words (the Signal gallery) keeps saying *Not enough
-// to say yet* rather than *No read yet*: each surface says the most specific true thing.
+// contextual read collapses to `not_enough_to_say` too, and a not-read mark under a row
+// with no photo would be false). The finished verdict still RIDES on `verdict`, so every
+// surface says *Not enough to say yet*, the record's own words, rather than *No read yet*:
+// the row and the gallery alike since the PM's 2026-10-03 ruling (a) on CUL-1234, so the
+// row no longer contradicts the record it opens. Each surface says the most specific true
+// thing.
 //
 // ── A READ OF PHOTOS THAT ARE GONE (Engines v3 PR-12, CUL-1267 / CUL-1201 part 1) ─
 // Since migration 075 the server stamps each read with the photos present when its words
@@ -54,9 +57,9 @@
 // this phone shows is not among them: the owner replaced or added the photo and no read of
 // it has landed (it failed, hit the cap, or has not run yet). The
 // stored words describe an image that is gone, so a QUIET verdict on them stops standing:
-// a calm read becomes `unread` (the grey *Photo not read*), and a stale verdict never rides
-// on `verdict` either, so the Signal gallery stops saying *keep an eye on* about a photo
-// nothing read. It is a demotion only. The rose is decided first and never reads the flag,
+// a calm read becomes `unread` (the grey *No read yet*), and a stale verdict never rides
+// on `verdict` either, so the Signal gallery says *No read yet* rather than drawing a calm
+// read over a photo nothing read. It is a demotion only. The rose is decided first and never reads the flag,
 // because an escalation stands across photo swaps (CUL-1201 part 2): presence carries
 // across, and absence on a later photo is not wellness. A read in flight still outranks it.
 //

@@ -209,7 +209,7 @@ describe('the read slot claims only once the copy answered (HV-6, TodayCard\'s r
     return node && node.kind === 'event' ? node : null;
   };
 
-  it('a photographed vomit whose copy answered with no read: the photo, and Photo not read', () => {
+  it('a photographed vomit whose copy answered with no read: the photo, and No read yet', () => {
     expect(v2(READS)?.photo).toBe(true);
     expect(v2(READS)?.read.state).toBe('unread');
   });

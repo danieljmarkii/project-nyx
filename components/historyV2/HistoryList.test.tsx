@@ -1080,7 +1080,7 @@ describe('the reads a row can carry', () => {
       .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('v2', 'completed', 'worth_a_call', ?)`)
       .run(at(2, 8, 20));
     // The chain settles while its re-read is held: the row keeps the tick, never a frame of
-    // "Photo not read" or of nothing before the rose (HV-6's second adversarial pass).
+    // "No read yet" or of nothing before the rose (HV-6's second adversarial pass).
     const release = holdReads();
     await act(async () => claim?.settle(true));
     await settle();

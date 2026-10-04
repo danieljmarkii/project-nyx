@@ -7,19 +7,27 @@ import { EVENT_ATTACHMENT_BUCKET } from '../../../lib/attachments';
 import { getSignedUrl } from '../../../lib/storage';
 import { localFileExists } from '../../../lib/localFile';
 import { resolveTilePhoto, tileNeedsRemote, TILE_PHOTO_FAILED_LABEL, type TileSource } from '../../../lib/tilePhoto';
-import { TIER_WORDS } from '../../../lib/incidentTierWords';
+import { isCalmDisplay, NO_READ_WORDS, TIER_WORDS } from '../../../lib/incidentTierWords';
 import { ThemedText } from '../../ui/ThemedText';
 
 // EpisodeGallery — the photographed episodes on the Signal's screen (D2-3 · CUL-1065;
 // design authority `docs/culprit-design-v4-mockups.html` §03 "The episodes · 21, nine
 // photographed").
 //
-// EACH TILE CARRIES ITS OWN READ, IN THE SHIPPED WORDS. `INCIDENT_REC_LABEL` is the one
-// map the per-incident read and Home's spine node share (`lib/incidentReadState.ts`),
-// never restated, so "Keep an eye out" here is the same "Keep an eye out" on the record. There is no summary line, no "the other
-// three": Dr. Chen's round-3 finding is that an aggregate over reads reassures, and the
-// model has no field to put one in. A tile with no read says "No read yet" — the absence
-// of a verdict is never wellness.
+// EACH TILE CARRIES ITS OWN READ, IN THE RECORD'S WORDS, EXCEPT A CALM ONE. The words come
+// from the one tier-word map the record's card reads, never restated. There is no summary
+// line, no "the other three": Dr. Chen's round-3 finding is that an aggregate over reads
+// reassures, and the model has no field to put one in.
+//   • A call says its call ("Call now", "Worth a call"), in the symptom ink.
+//   • A read that finished unable to say says "Not enough to say yet", as its record does.
+//   • Any other photo with no completed read says "No read yet" (`NO_READ_WORDS`, the same
+//     phrase Home and History's row use, CUL-1234): the absence of a verdict is never
+//     wellness, so it is said.
+//   • A CALM read draws NO WORD (PM ruling (a), 2026-10-03, CUL-1233), the rule Home and
+//     History's row already keep (§3.6 rule 7): "Keep an eye out" under one photo is a calm
+//     word on a list, and n=1 never reassures. The silence is decodable because every
+//     other state is said: a tile with nothing under its date is a photo that was read and
+//     flagged nothing. The record keeps its words one tap in.
 //
 // A tile is a door to its record (`app/event/[id]`), where the photo is the hero and the
 // read is in full — the incident spec's D1: a photographed episode lands on its record.
@@ -31,8 +39,9 @@ import { ThemedText } from '../../ui/ThemedText';
 // lives in `lib/tilePhoto.ts`; a tile whose every source fails says so (CUL-1269).
 //
 // The spoken label is the whole tile in one sentence — "Sep 17, 5:11 PM, photographed,
-// read as Keep an eye out" — so VoiceOver hears the date, the time and the read (§06,
-// Trust & Safety: gallery tiles need spoken labels).
+// read as Call your vet today" — so VoiceOver hears the date, the time and the read (§06,
+// Trust & Safety: gallery tiles need spoken labels). A calm tile's sentence stops at
+// "photographed", as the row's does: the ear gets no calm word the eye does not.
 //
 // A haptic never belongs here: this file paints `worth_a_call`, and it is named in
 // `guards/haptics.test.ts`'s ALWAYS_SCANNED (proven by mutation on CUL-1065).
@@ -50,20 +59,21 @@ const TILE_TRANSFORM = { width: 320, height: 320, resize: 'cover' as const };
 // narrow, so a call takes the map's short chip ("Call now"); its sentence for a screen
 // reader takes the full phrase. An earlier-rule read's short form IS its label, so those
 // tiles say exactly what they said before.
-/** "No read yet" — an episode whose photo has no verdict on the record (pending, failed,
- *  or never read). Said, never blank: a missing word under a photo reads as "nothing found". */
-export const NO_READ_LABEL = 'No read yet';
 
-export function verdictWord(verdict: GalleryTile['verdict']): string {
-  return verdict ? TIER_WORDS[verdict].short : NO_READ_LABEL;
+/** The word under a tile, or null for a calm read, which draws none (CUL-1233). A tile with
+ *  no verdict on the record (in flight, failed, capped, never read) says `NO_READ_WORDS`. */
+export function verdictWord(verdict: GalleryTile['verdict']): string | null {
+  if (isCalmDisplay(verdict)) return null;
+  return verdict ? TIER_WORDS[verdict].short : NO_READ_WORDS;
 }
 
 /** The tile in one sentence, for the screen reader. */
 export function tileA11yLabel(tile: GalleryTile): string {
   const when = tile.timeWord ? `${tile.dateWord}, ${tile.timeWord}` : tile.dateWord;
+  if (isCalmDisplay(tile.verdict)) return `${when}, photographed`;
   return tile.verdict
     ? `${when}, photographed, read as ${TIER_WORDS[tile.verdict].label}`
-    : `${when}, photographed, ${NO_READ_LABEL.toLowerCase()}`;
+    : `${when}, photographed, ${NO_READ_WORDS.toLowerCase()}`;
 }
 
 interface Props {
@@ -134,6 +144,7 @@ function Tile({ tile }: { tile: GalleryTile }) {
   }, [needsRemote, storagePath]);
 
   const photo = resolveTilePhoto({ local, transform, raw }, failed);
+  const word = verdictWord(tile.verdict);
   const markFailed = (uri: string) => setFailed((prev) => (prev.has(uri) ? prev : new Set(prev).add(uri)));
 
   return (
@@ -167,14 +178,17 @@ function Tile({ tile }: { tile: GalleryTile }) {
       <ThemedText style={styles.date}>
         {tile.dateWord}
       </ThemedText>
-      {/* The read, in the record's own words. `worth_a_call` takes the symptom INK — text
-          on a light ground (C-1), never the bright glyph tint. */}
-      <ThemedText
-        style={[styles.verdict, tile.verdict && TIER_WORDS[tile.verdict].call ? styles.verdictCall : null]}
-        testID={`episode-verdict-${tile.eventId}`}
-      >
-        {verdictWord(tile.verdict)}
-      </ThemedText>
+      {/* The read, in the record's own words; nothing at all for a calm one (CUL-1233). A
+          call takes the symptom INK — text on a light ground (C-1), never the bright glyph
+          tint. */}
+      {word !== null ? (
+        <ThemedText
+          style={[styles.verdict, tile.verdict && TIER_WORDS[tile.verdict].call ? styles.verdictCall : null]}
+          testID={`episode-verdict-${tile.eventId}`}
+        >
+          {word}
+        </ThemedText>
+      ) : null}
     </Pressable>
   );
 }

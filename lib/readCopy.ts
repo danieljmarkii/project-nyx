@@ -191,7 +191,7 @@ const PHOTO_SET_HASH = /^[0-9a-f]{64}$/;
  * PR-12): the sets need not converge. A replace made offline leaves the old row on the
  * server for good (the remote delete in `detachEventAttachment` is best-effort and never
  * retried), and a replace made on another phone leaves the old row on this one (the
- * attachment pull is insert-only). A set compare marked such an event *Photo not read*
+ * attachment pull is insert-only). A set compare marked such an event *No read yet*
  * forever over a photo that was read, and on two phones the mark moved between them each
  * time one re-pushed its rows. The owner's question is only whether the photo in front of
  * them was read, and the app shows one photo per event.

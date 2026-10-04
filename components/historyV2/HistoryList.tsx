@@ -472,7 +472,7 @@ export function HistoryList() {
         if (cancelled) return;
         // Re-read FIRST, then drop the working fact (C-30, HV-6's second adversarial pass):
         // dropped first, the row spends the re-read's round trip on the copy from before the
-        // read landed, a frame of "Photo not read" with its tick gone, and the rose then
+        // read landed, a frame of "No read yet" with its tick gone, and the rose then
         // arrives on a new rail with no announcement.
         await useHistoryListStore.getState().refreshReads();
         if (cancelled) return;

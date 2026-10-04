@@ -878,9 +878,13 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
   const attachments = await db.getAllAsync<AttachmentRow>(
     `SELECT event_id, local_uri, storage_path FROM event_attachments
      WHERE pet_id = ? AND event_id IN (${placeholders})
-     ORDER BY sort_order ASC, created_at DESC`,
+     ORDER BY sort_order ASC, created_at DESC, id DESC`,
     [petId, ...allIds],
   );
+  // `id DESC` is `readCopies`' own tiebreak (lib/readCopy.ts): the tile must show the photo
+  // the stale check tested, or a calm read could stand silent over an image no read saw
+  // (CUL-1233's adversarial pass, R2: since a calm tile draws no word, the two orders must
+  // agree on a tie of `created_at`).
   const photoByRow = new Map<string, SignalScreenPhoto>();
   for (const a of attachments) {
     if (!photoByRow.has(a.event_id)) photoByRow.set(a.event_id, { localUri: a.local_uri, storagePath: a.storage_path });
@@ -1099,7 +1103,7 @@ export async function readVerdicts(
  * One verdict per photographed tile, read across its WHOLE bout (the adversarial pass's
  * F3 on #912). A tile shows one photo, but its bout may hold a second photographed row,
  * or a photoless row whose contextual read escalated (a cat that has not eaten, a second
- * vomit that hour); reading the tile's row alone put "Keep an eye out", or "no read yet",
+ * vomit that hour); reading the tile's row alone put a calm word, or "no read yet",
  * over a rose sitting one row away. So the rose on ANY row of the bout is the tile's
  * (presence escalates: the month's own "the worse verdict wins"), and anything calmer
  * stays the tile's own row's, because a calm or missing read of another row says nothing

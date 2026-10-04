@@ -206,22 +206,23 @@ describe('with the network off, the spine shows the rose (HV-5 / CUL-1162, AC 21
     await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
   });
 
-  it('a photographed vomit whose read the phone does not hold is never drawn calm: it says "Photo not read"', async () => {
+  it('a photographed vomit whose read the phone does not hold is never drawn calm: it says "No read yet"', async () => {
     mockDesignV2 = true;
     mockCopyRows = [];
     const t = render(<HomeScreen />);
     await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
-    await waitFor(() => expect(t.getByText('Photo not read')).toBeTruthy());
+    await waitFor(() => expect(t.getByText('No read yet')).toBeTruthy());
     expect(t.queryByTestId('spine-verdict-v1')).toBeNull();
     expect(mockFrom).not.toHaveBeenCalled();
   });
 
-  it('an unclear read (not enough to say) is never drawn calm either: "Photo not read" (the PM’s 2026-09-25 ruling)', async () => {
+  it('an unclear read (not enough to say) is never drawn calm either: the grey mark, in its record’s words (2026-09-25; CUL-1234 (a))', async () => {
     mockDesignV2 = true;
     mockCopyRows = [copyRow('not_enough_to_say', 'uncertain')];
     const t = render(<HomeScreen />);
     await waitFor(() => expect(copyReads().length).toBeGreaterThan(0));
-    await waitFor(() => expect(t.getByText('Photo not read')).toBeTruthy());
+    await waitFor(() => expect(t.getByText('Not enough to say yet')).toBeTruthy());
+    expect(t.queryByText('No read yet')).toBeNull();
   });
 });
 
