@@ -223,6 +223,38 @@ describe('the second pass — every stated number at least as alarming as the en
   });
 });
 
+describe('the third pass — the earlier window follows the axis that rose', () => {
+  it('a firm worsening that fired on more episodes over flat days never states a flat days pair', () => {
+    // Engine: 6 episodes on 5 days, up from 5 on 5 (firm by density, trigger more_episodes).
+    const f = worsening({ tier: 'firm', trigger: 'more_episodes', currentCount: 6, currentDays: 5, priorCount: 5, priorDays: 5 });
+    const recent = days(-1, -1, -2, -3, -4, -5).map((e, i) => ({ ...e, eventId: `r${i}` }));
+    const prior = days(-7, -8, -9, -10, -11).map((e, i) => ({ ...e, eventId: `p${i}` }));
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(f), episodes: [...recent, ...prior] }));
+    expect(model.sentence).toBe('Nyx has had vomiting on 5 of the last 7 days (6 episodes), and 5 episodes in the 7 before — worth booking a vet visit soon.');
+    const said = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking) ?? []).map((x) => `${x.label}: ${x.value}`).join(' | ');
+    expect(said).toContain('This week: 6 episodes on 5 days');
+    expect(said).toContain('Week before: 5 episodes');
+    expect(model.sentence).not.toMatch(/on 5 of the 7 before/);
+  });
+
+  it('a flat pair on the risen axis is not stated under a safety card, in the sentence or the script', () => {
+    const f = worsening({ tier: 'standard', trigger: 'more_episodes', currentCount: 3, currentDays: 3, priorCount: 3, priorDays: 3 });
+    const model = buildSignalScreenModel(
+      inputOf({ cached: cachedOf(f), episodes: [...days(-1, -2, -3).map((e, i) => ({ ...e, eventId: `r${i}` })), ...days(-8, -9, -10).map((e, i) => ({ ...e, eventId: `p${i}` }))] }),
+    );
+    expect(model.sentence).toBe('Nyx has had 3 episodes of vomiting in the last 7 days — worth a word with your vet.');
+    const said = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking) ?? []).map((x) => x.label).join(' | ');
+    expect(said).not.toMatch(/Week before/);
+  });
+
+  it('a finding the engine counted over an incomplete read (CUL-989) keeps the engine’s "at least" words', () => {
+    const f = { ...worsening(), countIsFloor: true } as SymptomWorseningFinding;
+    const recent = days(-1, -1, -2, -3, -4, -5).map((e, i) => ({ ...e, eventId: `r${i}` }));
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(f), episodes: recent }));
+    expect(model.sentence).toBe(ENGINE_TEXT);
+  });
+});
+
 describe('countsMayCompose', () => {
   it('needs every stated number to be at least the engine’s, and something to state', () => {
     const f = worsening({ currentCount: 2, currentDays: 2 });

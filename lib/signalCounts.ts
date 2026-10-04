@@ -146,6 +146,10 @@ export function countsMayCompose(
   },
 ): boolean {
   if (context.maskTouched) return false;
+  // CUL-989: over an incomplete read the engine states every count as a floor ("at least N")
+  // and drops its week-over-week clause. The client mirror carries no field for it, so the
+  // payload is read for the marker directly; a floor finding keeps the engine's words.
+  if ((finding as { countIsFloor?: unknown }).countIsFloor === true) return false;
   switch (finding.type) {
     case 'symptom_chronicity': {
       // The newest episode may be no staler than the engine's newest, aged by the days since it
@@ -213,7 +217,7 @@ export function countedScriptFinding(finding: CountedFinding, c: SignalCounts): 
 export function countedPriorStated(finding: CountedFinding, c: SignalCounts, withheld: boolean): boolean {
   if (finding.type === 'symptom_chronicity') return false;
   const safety = finding.priorityClass === 'safety';
-  if (finding.type === 'symptom_worsening' && (finding.tier === 'firm' || finding.tier === 'soft')) {
+  if (finding.type === 'symptom_worsening' && worseningPriorAxis(finding) === 'days') {
     return priorMayPrint(c.recent.days, c.prior?.days ?? null, finding.priorDays, safety, withheld);
   }
   return priorMayPrint(c.recent.episodes, c.prior?.episodes ?? null, finding.priorCount, safety, withheld);
@@ -246,7 +250,22 @@ function recencyPhrase(daysSince: number): string {
  */
 function priorMayPrint(recent: number, prior: number | null, enginePrior: number, safety: boolean, withheld: boolean): prior is number {
   if (prior == null || prior === 0 || withheld || prior > enginePrior) return false;
-  return safety ? prior <= recent : true;
+  // Under a safety card the pair is stated only while it still RISES (the third pass): a flat
+  // "5, and 5 before" under a worsening reads calmer than the engine's "up from".
+  return safety ? prior < recent : true;
+}
+
+/**
+ * The axis a worsening's earlier window is stated on: the axis that ROSE, as the engine's own
+ * sentence and the phone script choose it (`templateWorsening`, `phoneScriptFacts`) — by the
+ * TRIGGER, never the tier. A firm card that fired on more episodes over flat days compares
+ * episodes; stating its flat days ("on 5, and on 5 before") would read calmer than the card
+ * and contradict the script beside it (the third adversarial pass).
+ */
+function worseningPriorAxis(finding: SymptomWorseningFinding): 'days' | 'episodes' {
+  // The engine pairs `standard` with `more_episodes` only (`resolveWorseningTier`); a standard
+  // sentence leads with episodes, so its pair stays on episodes whatever a payload says.
+  return finding.tier !== 'standard' && finding.trigger === 'more_days' ? 'days' : 'episodes';
 }
 
 /** The screen's title for a counted finding, in the chart's own numbers. */
@@ -311,8 +330,18 @@ export function countedSentence(
     case 'symptom_worsening': {
       const ask = worseningAsk(finding.tier);
       if (finding.tier === 'firm' || finding.tier === 'soft') {
+        // The lead is the day density (the tier's axis); the earlier window is stated on the
+        // axis that rose (the trigger's).
         const pd = c.prior?.days ?? null;
-        const prior = priorMayPrint(c.recent.days, pd, finding.priorDays, safety, withheld) ? `, and on ${pd} of the 7 before` : '';
+        const pe = c.prior?.episodes ?? null;
+        const prior =
+          worseningPriorAxis(finding) === 'days'
+            ? priorMayPrint(c.recent.days, pd, finding.priorDays, safety, withheld)
+              ? `, and on ${pd} of the 7 before`
+              : ''
+            : priorMayPrint(c.recent.episodes, pe, finding.priorCount, safety, withheld)
+              ? `, and ${count(pe as number, 'episode', 'episodes')} in the 7 before`
+              : '';
         return (
           `${petName} has had ${symptom} on ${c.recent.days} of the last 7 days ` +
           `(${count(c.recent.episodes, 'episode', 'episodes')})${prior} — ${ask}.`

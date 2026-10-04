@@ -158,7 +158,13 @@ describe('GC-4 — PROPERTY: every stated number is the chart’s count under it
         pick < 0.4
           ? chronicity({ tier: rnd() < 0.5 ? 'firm' : 'standard', windowDays: 7 * (1 + Math.floor(rnd() * 12)) })
           : pick < 0.75
-            ? worsening({ tier: tiers[Math.floor(rnd() * 3)] })
+            ? (() => {
+                // Engine-shaped (`resolveWorseningTier`): standard ⇔ more_episodes, soft ⇔ more_days,
+                // firm either (C-35: no fixture the engine cannot emit).
+                const tier = tiers[Math.floor(rnd() * 3)];
+                const trigger = tier === 'standard' ? 'more_episodes' : tier === 'soft' ? 'more_days' : rnd() < 0.5 ? 'more_days' : 'more_episodes';
+                return worsening({ tier, trigger });
+              })()
             : reflection({ direction: rnd() < 0.5 ? 'flat' : 'improving' });
       const episodeDays: string[] = [];
       const n = Math.floor(rnd() * 40);
@@ -190,14 +196,16 @@ describe('GC-4 — PROPERTY: every stated number is the chart’s count under it
 
       // A safety finding never prints a fall; an insight prints the pair only where the gates let it.
       const priorSaid = /the 7 before/.test(sentence);
+      // The axis is the trigger's (the third pass): the one that rose, as the engine and the script say it.
+      const axis = finding.type === 'symptom_worsening' && finding.tier !== 'standard' && finding.trigger === 'more_days' ? 'days' : 'episodes';
       if (priorSaid && finding.priorityClass === 'safety') {
-        const axis = finding.type === 'symptom_worsening' && finding.tier !== 'standard' ? 'days' : 'episodes';
-        expect((c.prior as { days: number; episodes: number })[axis]).toBeLessThanOrEqual(c.recent[axis]);
+        // Strictly below: a flat pair under a safety card reads calmer than "up from".
+        expect((c.prior as { days: number; episodes: number })[axis]).toBeLessThan(c.recent[axis]);
       }
       if (priorSaid && finding.priorityClass === 'insight') expect(withheld).toBeNull();
       // And never above the engine's own earlier count on that axis (the second pass).
       if (priorSaid) {
-        const engineDays = finding.type === 'symptom_worsening' && finding.tier !== 'standard';
+        const engineDays = axis === 'days';
         const stated = engineDays ? (c.prior as { days: number }).days : (c.prior as { episodes: number }).episodes;
         const bound = finding.type === 'symptom_worsening' ? (engineDays ? finding.priorDays : finding.priorCount) : finding.type === 'reflection' ? finding.priorCount : -1;
         expect(stated).toBeLessThanOrEqual(bound);
