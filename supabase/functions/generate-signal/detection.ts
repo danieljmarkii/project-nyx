@@ -72,6 +72,7 @@ import { canonicalizeProtein, readProteinSet } from './protein.ts'
 import {
   classifyEpisodeSet,
   collapseEpisodes,
+  compareOnsets,
   feedingIsEatingAnchor,
   timedEligibleFeedings,
   type FeedingInput,
@@ -5347,16 +5348,19 @@ function toConfidenceEpisodes(
   gapHours: number,
 ): ConfidenceEpisode[] {
   if (events.length === 0) return []
-  const sorted = [...events].sort((a, b) => a.ms - b.ms)
+  // CUL-1230 — the shared order, so ⑥ opens a same-instant episode on the same row ⑤'s
+  // `collapseEpisodes` does (least certain first). On `a.ms - b.ms` alone the tie went to
+  // input order, and ⑥ could time an episode ⑤ called untimed, which breaks the
+  // episode-set rule by which ⑤ suppresses ⑥.
+  const sorted = [...events].sort(compareOnsets)
   // B-067/CUL-372 — re-based onto the ONE shared collapse. This used to re-spell the
   // chaining loop verbatim so it could carry each episode's confidence through, which
   // made it a SECOND implementation inside the very file that owns the first. It now
   // asks the shared predicate for the onset instants and maps each back to its onset
   // EVENT (§2: "the onset event's confidence is the episode's confidence").
   //
-  // `Array.prototype.sort` is stable, so the first event at an onset instant is the
-  // same element the old loop selected — behaviour-preserving, including for two
-  // events sharing a millisecond.
+  // The first event at an onset instant in `sorted` is the onset event, so the walk below
+  // picks the row `compareOnsets` puts first at a tie (CUL-1230).
   const onsetMsList = collapseToEpisodeOnsets(sorted.map((e) => e.ms), gapHours)
   const episodes: ConfidenceEpisode[] = []
   let cursor = 0

@@ -3178,6 +3178,24 @@ Deno.test('detectTimeOfDayClustering — §7#1 golden: DST-crossing set converts
   assert.equal(findings[0].eligibleCount, 8)
 })
 
+Deno.test('detectTimeOfDayClustering — CUL-1230: a seen vomit tied with a found one at the same instant is untimed, in either input order', () => {
+  // The golden's first clustered onset (May 20, local 4am) gains a "found it" row at the SAME
+  // instant. A window's instant is its latest edge, so the found vomit happened at or before the
+  // seen one: the episode opens on it and is untimed. Before the shared order the tie went to
+  // input order, so ⑥ timed this episode when the seen row came first and ⑤ might not.
+  // A sixth clustered onset (May 28, local 6am) keeps the finding firing once the tie is untimed,
+  // so the counts are read off a finding rather than off silence.
+  const golden = [...todGolden(), wVomit(28, 10)]
+  const found: SymptomEvent = { ...symptom('vomit', golden[0].occurredAt), occurredAtConfidence: 'window' }
+  const foundFirst = detectTimeOfDayClustering(input({ symptomEvents: [found, ...golden], timezone: NY }))
+  const seenFirst = detectTimeOfDayClustering(input({ symptomEvents: [...golden, found], timezone: NY }))
+  assert.deepEqual(seenFirst, foundFirst, 'the answer does not depend on which row arrived first')
+  assert.equal(foundFirst.length, 1)
+  assert.equal(foundFirst[0].totalEpisodes, 9, 'the tie moves no episode count')
+  assert.equal(foundFirst[0].eligibleCount, 8, 'the tied episode is not timed')
+  assert.equal(foundFirst[0].clusterCount, 5)
+})
+
 Deno.test('detectTimeOfDayClustering — §7#3: a MISSING timezone is silent (never guess UTC)', () => {
   assert.equal(detectTimeOfDayClustering(input({ symptomEvents: todGolden() })).length, 0)
 })

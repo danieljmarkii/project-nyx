@@ -19,6 +19,7 @@ import {
   classifyEpisodeTiming,
   classifyGapMinutes,
   collapseEpisodes,
+  compareOnsets,
   feedingIsTimeEligible,
   isFreeFedNear,
   nearestPrecedingFeeding,
@@ -28,6 +29,7 @@ import {
   type FeedingInput,
   type IntakeRating,
   type MealTimingConfig,
+  type OnsetConfidence,
 } from './mealTiming';
 
 // A fixed UTC anchor; all fixtures are offsets from it. `Z` pins it to the epoch,
@@ -157,6 +159,78 @@ describe('mealTiming — collapseEpisodes (the re-log guard)', () => {
       const a = collapseEpisodes(base, 3).map((e) => e.ms);
       const b = collapseEpisodes(shuffled, 3).map((e) => e.ms);
       expect(b).toEqual(a);
+    }
+  });
+});
+
+describe('mealTiming — a same-instant tie opens on the LEAST certain onset (CUL-1230)', () => {
+  /** Every ordering of a list. */
+  const orders = <T,>(xs: readonly T[]): T[][] =>
+    xs.length <= 1 ? [[...xs]] : xs.flatMap((x, i) => orders([...xs.slice(0, i), ...xs.slice(i + 1)]).map((rest) => [x, ...rest]));
+  const onset = (id: string, confidence: OnsetConfidence | null, ms = at(6 * HOUR)) => ({ id, ms, confidence });
+
+  it('window, then estimated, then unclassified, then witnessed: the same opener across all 24 orders', () => {
+    const tied = [onset('w', 'witnessed'), onset('e', 'estimated'), onset('n', null), onset('f', 'window')];
+    for (const ordered of orders(tied)) {
+      expect([...ordered].sort(compareOnsets).map((o) => o.id)).toEqual(['f', 'e', 'n', 'w']);
+      expect(collapseEpisodes(ordered, 3).map((o) => o.id)).toEqual(['f']);
+    }
+  });
+
+  it.each([
+    ['a window (found, "no later than")', 'window'],
+    ['an estimate', 'estimated'],
+    ['an unclassified legacy row', null],
+  ] as const)('seen tied with %s: the episode is untimed in either order, and a line is never printed', (_name, other) => {
+    // 18:00 meal, 18:12 seen vomit, and a second row at 18:12 the owner did not see.
+    const feedings: FeedingInput[] = [{ id: 'meal', ms: at(6 * HOUR), confidence: 'witnessed', intakeRating: 'all' }];
+    const seen = onset('seen', 'witnessed', at(6 * HOUR + 12 * MIN));
+    const unseen = onset('unseen', other, at(6 * HOUR + 12 * MIN));
+    for (const ordered of [[seen, unseen], [unseen, seen]]) {
+      const episodes = collapseEpisodes(ordered, 3);
+      expect(episodes.map((e) => e.id)).toEqual(['unseen']);
+      const dist = classifyEpisodeSet(episodes.map((e) => ({ onsetMs: e.ms, confidence: e.confidence })), feedings, []);
+      expect(dist.eligible).toEqual([]);
+    }
+  });
+
+  it('continuity: the tie answers as the found row one millisecond earlier already does', () => {
+    const seen = onset('seen', 'witnessed', at(6 * HOUR));
+    const earlier = collapseEpisodes([seen, onset('found', 'window', at(6 * HOUR) - 1)], 3);
+    const tied = collapseEpisodes([seen, onset('found', 'window', at(6 * HOUR))], 3);
+    expect(earlier.map((e) => e.id)).toEqual(['found']);
+    expect(tied.map((e) => e.id)).toEqual(['found']);
+  });
+
+  it('one confidence: the row id decides, and an id-less onset (before the day) opens first', () => {
+    for (const ordered of orders([onset('b', 'witnessed'), onset('a', 'witnessed'), { ms: at(6 * HOUR), confidence: 'witnessed' as const, id: null }])) {
+      expect(collapseEpisodes(ordered, 3)[0].id).toBeNull();
+    }
+    expect(collapseEpisodes([onset('b', 'witnessed'), onset('a', 'witnessed')], 3)[0].id).toBe('a');
+  });
+
+  it('an unknown confidence string (a cast SQLite row) ranks as unclassified, never as seen', () => {
+    const bogus = { id: 'x', ms: at(0), confidence: 'seen-ish' as unknown as OnsetConfidence };
+    expect(collapseEpisodes([onset('w', 'witnessed', at(0)), bogus], 3)[0].id).toBe('x');
+    expect(collapseEpisodes([onset('e', 'estimated', at(0)), bogus], 3)[0].id).toBe('e');
+  });
+
+  it('PROPERTY: a tie never moves an episode COUNT, only which row opens it', () => {
+    const rng = makeRng(1230);
+    const confs: (OnsetConfidence | null)[] = ['witnessed', 'estimated', 'window', null];
+    for (let trial = 0; trial < 300; trial++) {
+      const n = 1 + Math.floor(rng() * 10);
+      const rows: { id: string; ms: number; confidence: OnsetConfidence | null }[] = [];
+      let cursor = 0;
+      for (let i = 0; i < n; i++) {
+        if (rng() > 0.4) cursor += Math.floor(rng() * 5) * HOUR; // ~40% land on the previous instant
+        rows.push({ id: `r${i}`, ms: at(cursor), confidence: confs[Math.floor(rng() * confs.length)] });
+      }
+      const instantsOnly = collapseEpisodes(rows.map((r) => ({ ms: r.ms })), 3).map((e) => e.ms);
+      const reversed = collapseEpisodes([...rows].reverse(), 3);
+      const forward = collapseEpisodes(rows, 3);
+      expect(forward.map((e) => e.ms)).toEqual(instantsOnly);
+      expect(reversed.map((e) => e.id)).toEqual(forward.map((e) => e.id));
     }
   });
 });

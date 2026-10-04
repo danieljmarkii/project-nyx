@@ -747,6 +747,9 @@ describe('two vomits at one instant resolve the same way in every order (rule H;
     expect(answers.size).toBe(1);
     // Non-vacuity: the witnessed case really does draw a line, so "one answer" is not "no answer".
     if (vb.occurred_at_confidence === 'witnessed') expect([...answers][0]).toContain('after eating');
+    // CUL-1230: the found row opens a same-instant episode (it happened at or before the seen
+    // one), so the pair is untimed. Before the rule the id decided, and `va` < `vb` drew a line.
+    if (vb.occurred_at_confidence === 'window') expect([...answers][0]).not.toContain('after eating');
   });
 });
 
