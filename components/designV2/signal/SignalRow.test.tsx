@@ -180,6 +180,20 @@ describe('the row states the screen’s counts (CUL-1569, GC-4 PR 2)', () => {
     expect(held.queryByTestId('signal-row-thumb-pair')).toBeNull();
   });
 
+  it('a row handed another finding never shows the first finding’s numbers while it re-reads (keyed answer)', async () => {
+    const vomit = reflection as SignalFinding;
+    const cough = { ...(reflection as object), symptomType: 'cough' } as SignalFinding;
+    mockLoadSignalRowScreen.mockResolvedValueOnce({ title: 'Vomiting, week over week', composed: { finding: vomit, counts, priorStated: false }, trialLineShown: null });
+    const view = render(<SignalRow cached={cached(vomit)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
+    expect((await view.findByTestId('signal-row-sub')).props.children).toBe('6 in the last 7 days');
+    // The cough's read never answers: the row must hold, never print the vomit's 6.
+    mockLoadSignalRowScreen.mockImplementationOnce(() => new Promise(() => {}));
+    view.rerender(<SignalRow cached={cached(cough)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
+    expect(view.getByTestId('signal-row-headline').props.children).toBe('Coughing, week over week');
+    expect(view.queryByTestId('signal-row-sub')).toBeNull();
+    expect(view.getByTestId('signal-row').props.accessibilityLabel).not.toMatch(/\b6\b/);
+  });
+
   it('a row the screen does not restate (timing) never asks for the screen', () => {
     render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     expect(mockLoadSignalRowScreen).not.toHaveBeenCalled();

@@ -99,31 +99,40 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
   // GC-4 PR 2 (CUL-1569): a row whose screen restates the finding from the record reads that
   // screen's own model — the loader the door opens — so the row and the screen state one count.
   // `undefined` while the read is in flight, null when it answered with no screen to match.
+  // The answer is KEYED to the read it answers (the code review): a re-ranked row, a regen or
+  // a pet switch renders a frame before the effect re-reads, and an unkeyed answer would pair
+  // the new finding's ask with the old finding's numbers for that frame.
   type RowScreen = Awaited<ReturnType<typeof loadSignalRowScreen>>;
-  const [screen, setScreen] = useState<RowScreen | undefined>(undefined);
+  const [answer, setAnswer] = useState<{ key: string; screen: RowScreen } | null>(null);
   const readsScreen = rowReadsScreen(finding);
   const identity = foldIdentity(finding);
+  const readKey = `${petId}|${identity}|${generatedAt ?? ''}`;
   useEffect(() => {
     if (!readsScreen) return;
     let cancelled = false;
-    setScreen(undefined);
     // `loadSignalRowScreen` never rejects: a failed read resolves null and is logged there.
     void loadSignalRowScreen(petId, finding).then((m) => {
-      if (!cancelled) setScreen(m);
+      if (!cancelled) setAnswer({ key: readKey, screen: m });
     });
     return () => {
       cancelled = true;
     };
-    // The finding is re-read by identity; a regen (a new `generatedAt`) re-reads it.
-  }, [readsScreen, petId, identity, generatedAt]);
+    // The finding is re-read by identity; a regen (a new `generatedAt`) re-reads it. A log that
+    // does not regen the cache is not re-read until Home remounts the row: the screen counts it
+    // the moment it opens, so the two may differ by that log until then.
+  }, [readsScreen, readKey]);
+  const screen: RowScreen | undefined = !readsScreen ? null : answer?.key === readKey ? answer.screen : undefined;
 
   // A trial finding counted over a trial since replaced speaks in its own day (CUL-1360).
   const base = signalHomeLine(finding, signalTrialWindowFor(finding, { generatedAt, trial }));
   if (!base) return null;
   // While the screen's read is in flight a safety row keeps the finding's own words (the ask
   // never waits on a read); an insight row holds its count back rather than print a number
-  // that may change under the owner's eye a moment later (C-12).
-  const pending = readsScreen && screen === undefined;
+  // that may change under the owner's eye a moment later (C-12). A read that answers with no
+  // ready screen (offline with nothing kept, a set-aside finding) keeps the finding's own
+  // words: the same words the zone drew before this PR, and never a number the zone withholds,
+  // since a finding the screen withholds is one `visibleFindings` drops from Home too.
+  const pending = screen === undefined;
   const line = screen
     ? signalHomeLineFromScreen(base, screen)
     : pending && finding.priorityClass !== 'safety'
