@@ -240,3 +240,36 @@ describe('and on a DARK ground the pairing INVERTS — which is why the sweep wa
     expect(contrastRatio(theme.colorAccentInk, theme.colorBrandNightElevated)).toBeCloseTo(2.88, 2);
   });
 });
+
+// ── The month and the weekly chart's day marks (CUL-1224; BRK-32, GAP-5) ──────────────
+// CUL-1074 brief 3 was settled by measurement, not by a ruling: text on the rose clears
+// 4.5:1. Both halves are pinned, so a later "back to the authority's white" fails here.
+describe('CUL-1224 — the day mark at the accessibility floor', () => {
+  it('text on the rose takes the primary ink, which clears AA; the white it replaced does not', () => {
+    expect(contrastRatio(theme.colorTextPrimary, theme.colorEventSymptom)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+    expect(contrastRatio(theme.colorTextPrimary, theme.colorEventSymptom)).toBeCloseTo(5.39, 2);
+    expect(contrastRatio(theme.colorTextOnDark, theme.colorEventSymptom)).toBeLessThan(AA_NORMAL_TEXT);
+  });
+
+  it('a grey day, a day ahead and a day before the record have readable dates; the idle grey was not', () => {
+    expect(contrastRatio(theme.colorTextSecondary, theme.colorSurfaceSubtle)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+    expect(contrastRatio(theme.colorTextTertiary, theme.colorSurface)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+    // The tertiary ink is NOT enough on the grey day's ground, which is why that date is
+    // the secondary one.
+    expect(contrastRatio(theme.colorTextTertiary, theme.colorSurfaceSubtle)).toBeLessThan(AA_NORMAL_TEXT);
+    expect(contrastRatio(theme.colorTickIdle, theme.colorSurface)).toBeCloseTo(1.66, 2);
+  });
+
+  it('a logged tick differs from an unlogged one in lightness, not only hue', () => {
+    // A non-text pair that must be told apart; the soft teal was 1.01:1 from the idle grey.
+    expect(contrastRatio(theme.colorAccentSoft, theme.colorTickIdle)).toBeLessThan(1.1);
+    expect(contrastRatio(theme.colorAccentGlyph, theme.colorTickIdle)).toBeGreaterThan(1.9);
+    expect(contrastRatio(theme.colorAccentGlyph, theme.colorSurface)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('the layer marks fail on the rose by colour alone, which is why they carry a white edge and a shape', () => {
+    expect(contrastRatio(theme.colorEventMedication, theme.colorEventSymptom)).toBeLessThan(1.5);
+    expect(contrastRatio(theme.colorEventSymptomInk, theme.colorEventSymptom)).toBeLessThan(3);
+    expect(contrastRatio(theme.colorTextOnDark, theme.colorEventSymptom)).toBeGreaterThanOrEqual(3);
+  });
+});

@@ -52,9 +52,21 @@ import { ThemedText } from '../ui/ThemedText';
 // this file paints a `worth_a_call` and is named in `guards/haptics.test.ts`'s
 // ALWAYS_SCANNED (C-16).
 //
-// White text on the symptom rose: the design authority's choice for a symptom day, and
-// it measures 3.7:1, under the 4.5:1 text floor. Raised as a Designer flag on CUL-1064
-// for the month's build (D2-5), not resolved here by drifting from the ruled frame.
+// TEXT CLEARS 4.5:1 ON EVERY BOX (CUL-1224, BRK-32; CUL-1074 brief 3, settled by
+// measurement). White on the rose was the design authority's and measured 3.67:1; the date
+// and the count on the rose take the primary ink (5.39:1). A grey day's date is the
+// secondary ink (7.17:1 on the grey), a day ahead or before the record the tertiary
+// (4.74:1 on the card's white), where the idle grey was 1.66:1. A neighbouring month's day
+// (`dim`) recedes by a lighter date and no edge, never by opacity: at the 0.45 it shipped
+// with, its date fell to 2.14:1. The date and the count are fixed to the box's size
+// (`maxFontSizeMultiplier` 1): a 9pt count and a two-digit date overlapped at AX1 in a
+// 38.6pt square, and the label speaks both at any size. All pinned in
+// `constants/theme.contrast.test.ts`.
+//
+// THE LAYER MARKS ARE THREE SHAPES (CUL-1224, GAP-5): a dose is a square, a photo a dot,
+// a photo read as worth a call a diamond. On the rose each carries a white edge, so it
+// separates from the fill by lightness (the dose's blue measured 1.21:1 on the rose, the
+// call's ink 2.18:1).
 
 /** The box a day is drawn in. */
 export type DayMarkBox =
@@ -62,7 +74,7 @@ export type DayMarkBox =
   | 'white'
   /** Nothing logged. */
   | 'grey'
-  /** A symptom day: the rose fill, the date white. */
+  /** A symptom day: the rose fill, the date in the primary ink. */
   | 'rose'
   /** A day ahead: an outline, the date faint. */
   | 'outlined'
@@ -134,6 +146,9 @@ export interface DayMarkFaceProps {
   photo?: DayMarkPhoto;
   today?: boolean;
   selected?: boolean;
+  /** A neighbouring month's day, drawn so the month's own days lead: no edge, a lighter
+   *  date, never an opacity (CUL-1224). The month only. */
+  dim?: boolean;
   /** The spoken label, whole. The caller writes it: the month through `dayMarkA11yLabel`,
    *  the strip through `stripMarkOf`. */
   label: string;
@@ -154,6 +169,7 @@ export function DayMarkFace({
   photo = 'none',
   today = false,
   selected = false,
+  dim = false,
   label,
   accessibilityHint,
   onPress,
@@ -166,14 +182,15 @@ export function DayMarkFace({
           styles.date,
           rose && styles.dateOnRose,
           box === 'grey' && styles.dateUnlogged,
-          (box === 'outlined' || box === 'none') && styles.dateFaint,
+          (box === 'outlined' || box === 'none' || (dim && box === 'white')) && styles.dateFaint,
         ]}
+        maxFontSizeMultiplier={1}
         testID="daymark-date"
       >
         {dayOfMonth}
       </ThemedText>
       {rose && count != null && count > 0 && (
-        <ThemedText style={styles.count} testID="daymark-count">
+        <ThemedText style={styles.count} maxFontSizeMultiplier={1} testID="daymark-count">
           {count}
         </ThemedText>
       )}
@@ -181,10 +198,14 @@ export function DayMarkFace({
       {(refused || medication || photo !== 'none') && (
         <View style={styles.layers}>
           {refused && <View style={[styles.refusedRing, rose && styles.refusedRingOnRose]} testID="daymark-layer-refused" />}
-          {medication && <View style={[styles.layerDot, styles.layerMedication]} testID="daymark-layer-medication" />}
+          {medication && <View style={[styles.layerSquare, styles.layerMedication, rose && styles.layerOnRose]} testID="daymark-layer-medication" />}
           {photo !== 'none' && (
             <View
-              style={[styles.layerDot, isCallDisplay(photo) ? styles.layerPhotoCall : styles.layerPhoto]}
+              style={
+                isCallDisplay(photo)
+                  ? [styles.layerDiamond, styles.layerPhotoCall, rose && styles.layerOnRose]
+                  : [styles.layerDot, styles.layerPhoto, rose && styles.layerOnRose]
+              }
               testID={`daymark-layer-photo-${photo}`}
             />
           )}
@@ -199,6 +220,7 @@ export function DayMarkFace({
     box === 'outlined' && styles.boxAhead,
     box === 'none' && styles.boxNone,
     rose && styles.boxSymptom,
+    dim && styles.boxDim,
     today && styles.boxToday,
     selected && styles.boxSelected,
   ];
@@ -250,6 +272,8 @@ export interface DayMarkProps {
   photo?: DayMarkPhoto;
   today?: boolean;
   selected?: boolean;
+  /** A neighbouring month's day (see `DayMarkFace`'s `dim`). */
+  dim?: boolean;
   /** What is counted, lower-case ("vomiting") — for the label. */
   noun: string;
   /** Present → the day opens (a button). Absent → a plain, accessible square. */
@@ -271,6 +295,7 @@ export function DayMark({
   photo = 'none',
   today = false,
   selected = false,
+  dim = false,
   noun,
   onPress,
 }: DayMarkProps) {
@@ -295,6 +320,7 @@ export function DayMark({
       photo={photo}
       today={today}
       selected={selected}
+      dim={dim}
       label={opens ? `${label}, opens the day` : label}
       onPress={opens ? onPress : undefined}
     />
@@ -327,8 +353,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderColor: 'transparent',
   },
-  // The rose as a fill — a glyph tint (C-1). The count and the date on it are the
-  // design authority's white (see the header).
+  // The rose as a fill — a glyph tint (C-1). The count and the date on it take the
+  // primary ink (see the header).
   boxSymptom: {
     backgroundColor: theme.colorEventSymptom,
     borderColor: 'transparent',
@@ -341,6 +367,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: theme.colorAccentInk,
   },
+  // A neighbouring month's day: no edge, so the month's own squares carry the grid.
+  boxDim: {
+    borderColor: 'transparent',
+  },
   boxPressed: {
     opacity: 0.8,
   },
@@ -350,14 +380,14 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   dateOnRose: {
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
     fontWeight: theme.weightSemibold,
   },
   dateUnlogged: {
-    color: theme.colorTextTertiary,
+    color: theme.colorTextSecondary,
   },
   dateFaint: {
-    color: theme.colorTickIdle,
+    color: theme.colorTextTertiary,
   },
   count: {
     position: 'absolute',
@@ -366,7 +396,7 @@ const styles = StyleSheet.create({
     fontSize: 9,
     lineHeight: 10,
     fontWeight: theme.weightSemibold,
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
     fontVariant: ['tabular-nums'],
   },
   line: {
@@ -401,8 +431,28 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
   },
+  // A dose: a square, the one mark with corners.
+  layerSquare: {
+    width: 4,
+    height: 4,
+    borderRadius: 0.5,
+  },
+  // A photo read as worth a call: a diamond, a square on its point, a little larger so the
+  // point reads.
+  layerDiamond: {
+    width: 4.5,
+    height: 4.5,
+    borderRadius: 0.5,
+    transform: [{ rotate: '45deg' }],
+  },
   layerMedication: {
     backgroundColor: theme.colorEventMedication,
+  },
+  // On the rose every filled mark takes a white edge, so lightness, not hue, separates it
+  // from the fill (GAP-5).
+  layerOnRose: {
+    borderWidth: 1,
+    borderColor: theme.colorTextOnDark,
   },
   // A refused meal: a hollow ring, the one OPEN layer mark, so shape tells it from the
   // filled dots; neutral ink, never an alarm colour (§04, Sam). White on the rose.
@@ -420,10 +470,8 @@ const styles = StyleSheet.create({
   layerPhoto: {
     backgroundColor: theme.colorTextTertiary,
   },
-  // A photo the read called worth a call: the rose, paired with the spoken words.
+  // A photo the read called worth a call: the symptom ink, paired with the spoken words.
   layerPhotoCall: {
     backgroundColor: theme.colorEventSymptomInk,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colorSurface,
   },
 });

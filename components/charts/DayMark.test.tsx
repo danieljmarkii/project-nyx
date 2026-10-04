@@ -8,6 +8,7 @@ import { configure, fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { DAY_MARK_DASH, DayMark, DayMarkFace, DayMarkLine } from './DayMark';
 import { theme } from '../../constants/theme';
+import { contrastRatio } from '../../constants/theme.contrast.test';
 
 // The charts' internals are hidden from assistive tech behind ONE spoken label (the
 // shipped lane's pattern), so the queries below opt into hidden elements to reach them.
@@ -225,7 +226,8 @@ describe('DayMarkFace: the drawing History’s week strip shares with the month'
     const style = flat(node.props.style);
     expect(style.backgroundColor).toBe('transparent');
     expect(style.borderColor).toBe('transparent');
-    expect(flat(getByTestId('daymark-date').props.style).color).toBe(theme.colorTickIdle);
+    // The tertiary ink, 4.74:1 on the card's white (CUL-1224); the idle grey was 1.66:1.
+    expect(flat(getByTestId('daymark-date').props.style).color).toBe(theme.colorTextTertiary);
     expect(node.props.accessibilityRole).toBeUndefined();
     expect(node.props.onClick).toBeUndefined();
     expect(node.props.onResponderGrant).toBeUndefined();
@@ -274,5 +276,61 @@ describe('DayMark — the refused ring (CUL-1553)', () => {
   it('a day that answers nothing never says "no vomiting" (CUL-1074 brief 2)', () => {
     const { getByTestId } = render(<DayMark {...base} answers={false} count={0} coverage="logged" medication />);
     expect(getByTestId('daymark').props.accessibilityLabel).not.toMatch(/no vomiting/);
+  });
+});
+
+describe('CUL-1224: the accessibility floor on the day', () => {
+  const textOn = (box: 'white' | 'grey' | 'rose' | 'outlined' | 'none', dim = false) => {
+    const t = render(<DayMarkFace {...faceBase} box={box} line="none" count={box === 'rose' ? 3 : null} dim={dim} />);
+    return t;
+  };
+  const groundOf = (box: string): string =>
+    box === 'rose' ? theme.colorEventSymptom : box === 'grey' ? theme.colorSurfaceSubtle : theme.colorSurface;
+
+  it('every date and count clears 4.5:1 on its own box, a neighbouring day included (BRK-32)', () => {
+    for (const box of ['white', 'grey', 'rose', 'outlined', 'none'] as const) {
+      for (const dim of [false, true]) {
+        const t = textOn(box, dim);
+        const date = flat(t.getByTestId('daymark-date').props.style);
+        expect(contrastRatio(date.color as string, groundOf(box))).toBeGreaterThanOrEqual(4.5);
+        // No opacity anywhere on the day: a dimmed date is a lighter INK, never a faded one.
+        expect(flat(t.getByTestId('daymark').props.style).opacity).toBeUndefined();
+        if (box === 'rose') {
+          const count = flat(t.getByTestId('daymark-count').props.style);
+          expect(contrastRatio(count.color as string, theme.colorEventSymptom)).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+  });
+
+  it('a neighbouring day recedes by its edge and its ink, and the date and count never outgrow the square', () => {
+    const own = render(<DayMarkFace {...faceBase} box="white" line="none" />);
+    const dim = render(<DayMarkFace {...faceBase} box="white" line="none" dim />);
+    expect(flat(dim.getByTestId('daymark').props.style).borderColor).toBe('transparent');
+    expect(flat(own.getByTestId('daymark').props.style).borderColor).not.toBe('transparent');
+    expect(flat(dim.getByTestId('daymark-date').props.style).color).toBe(theme.colorTextTertiary);
+    expect(flat(own.getByTestId('daymark-date').props.style).color).toBe(theme.colorTextSecondary);
+    const rose = textOn('rose');
+    expect(rose.getByTestId('daymark-date').props.maxFontSizeMultiplier).toBe(1);
+    expect(rose.getByTestId('daymark-count').props.maxFontSizeMultiplier).toBe(1);
+  });
+
+  it('the layer marks are three shapes, and on the rose each takes a white edge (GAP-5)', () => {
+    const t = render(<DayMark {...base} count={2} coverage="logged" medication photo="worth_a_call" />);
+    const med = flat(t.getByTestId('daymark-layer-medication').props.style);
+    const call = flat(t.getByTestId('daymark-layer-photo-worth_a_call').props.style);
+    const seen = flat(render(<DayMark {...base} count={2} coverage="logged" photo="seen" />).getByTestId('daymark-layer-photo-seen').props.style);
+    // Square (corners), diamond (a square on its point), dot (round).
+    expect(med.borderRadius).toBeLessThan(1);
+    expect(med.transform).toBeUndefined();
+    expect(call.transform).toEqual([{ rotate: '45deg' }]);
+    expect(seen.borderRadius).toBe((seen.width as number) / 2);
+    for (const mark of [med, call, seen]) {
+      expect(mark.borderColor).toBe(theme.colorTextOnDark);
+      expect(mark.borderWidth).toBeGreaterThanOrEqual(1);
+    }
+    // Off the rose no edge is drawn.
+    const plain = render(<DayMark {...base} count={0} coverage="logged" medication />);
+    expect(flat(plain.getByTestId('daymark-layer-medication').props.style).borderWidth).toBeUndefined();
   });
 });

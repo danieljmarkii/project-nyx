@@ -536,11 +536,13 @@ function GridDay({
       photo={layers.photos ? day.photo : 'none'}
       today={day.today}
       selected={selected}
+      dim={day.outsideMonth}
       noun={noun}
       onPress={day.coverage === 'ahead' ? undefined : onPress}
     />
   );
-  // A neighbouring month's day in the first or last row is DRAWN, dimmed, with its
+  // A neighbouring month's day in the first or last row is DRAWN, receded (DayMark's `dim`:
+  // no edge and a lighter date, never an opacity, CUL-1224), with its
   // date and its mark: the row is the seven days its bar counts, so a bar of 3 over a
   // row never sits above one rose square and two blanks. It is not in the month's line.
   // The bar counts the row's CORNERS (episodes); since CUL-1530 a row can also hold rose
@@ -779,7 +781,7 @@ function Legend({
       </View>
       {layers.meds && (
         <View style={styles.legendItem} testID="month-legend-medication">
-          <View style={[styles.legendDot, styles.legendDotMedication]} />
+          <View style={[styles.legendSquare, styles.legendDotMedication]} testID="month-legend-mark-medication" />
           <ThemedText style={styles.legendText}>medication given · {dayWord(dosedDays)}</ThemedText>
         </View>
       )}
@@ -791,7 +793,7 @@ function Legend({
           </View>
           {calledDays > 0 || tieredDays === 0 ? (
             <View style={styles.legendItem} testID="month-legend-photo-call">
-              <View style={[styles.legendDot, styles.legendDotPhotoCall]} />
+              <View style={[styles.legendDiamond, styles.legendDotPhotoCall]} testID="month-legend-mark-call" />
               <ThemedText style={styles.legendText}>
                 photo read as {TIER_WORDS.worth_a_call.readAs} · {dayWord(calledDays)}
               </ThemedText>
@@ -799,7 +801,7 @@ function Legend({
           ) : null}
           {tieredDays > 0 ? (
             <View style={styles.legendItem} testID="month-legend-photo-call-tiered">
-              <View style={[styles.legendDot, styles.legendDotPhotoCall]} />
+              <View style={[styles.legendDiamond, styles.legendDotPhotoCall]} testID="month-legend-mark-call" />
               <ThemedText style={styles.legendText}>
                 photo read as {TIERED_CALLS_READ_AS} · {dayWord(tieredDays)}
               </ThemedText>
@@ -878,10 +880,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: GRID_GAP,
   },
-  // A neighbouring month's day: drawn at half strength so the month's own days lead.
+  // A neighbouring month's day: its wrapper only. It recedes through DayMark's `dim`, not
+  // an opacity, which took its date to 2.14:1 (CUL-1224, BRK-32).
   outsideMonth: {
     flex: 1,
-    opacity: 0.45,
   },
   beforeRecord: {
     flex: 1,
@@ -895,7 +897,8 @@ const styles = StyleSheet.create({
   },
   beforeRecordDate: {
     fontSize: theme.textXS,
-    color: theme.colorTickIdle,
+    // The tertiary ink, 4.74:1 on the card's white; the idle grey was 1.66:1 (CUL-1224).
+    color: theme.colorTextTertiary,
     fontVariant: ['tabular-nums'],
   },
   slot: {
@@ -1049,8 +1052,21 @@ const styles = StyleSheet.create({
   },
   legendDotPhotoCall: {
     backgroundColor: theme.colorEventSymptomInk,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colorSurface,
+  },
+  // DayMark's three shapes at legend size (CUL-1224, GAP-5): a dose is a square, a photo
+  // read as worth a call a diamond, so the key tells them apart without colour.
+  legendSquare: {
+    width: 6,
+    height: 6,
+    borderRadius: 1,
+    marginHorizontal: 3,
+  },
+  legendDiamond: {
+    width: 6,
+    height: 6,
+    borderRadius: 1,
+    marginHorizontal: 3,
+    transform: [{ rotate: '45deg' }],
   },
   stateBox: {
     gap: theme.space1,

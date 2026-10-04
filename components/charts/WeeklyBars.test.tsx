@@ -5,6 +5,7 @@
 import { configure, fireEvent, render } from '@testing-library/react-native';
 import { Animated, StyleSheet } from 'react-native';
 import { WeeklyBars } from './WeeklyBars';
+import { theme } from '../../constants/theme';
 import { weeklyBuckets } from '../../lib/chartModels';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
@@ -131,6 +132,14 @@ describe('WeeklyBars — the §05 row', () => {
     // The middle's neighbours stay undated, so its three slots are free.
     expect(queryByTestId('weekly-date-3')).toBeNull();
     expect(queryByTestId('weekly-date-5')).toBeNull();
+  });
+
+  it('a logged tick is the glyph teal, darker than the hollow grey (CUL-1224, GAP-5)', () => {
+    const { getAllByTestId } = render(<WeeklyBars model={model} noun="vomiting" />);
+    const logged = StyleSheet.flatten(getAllByTestId(/^weekly-tick-0-\d-logged$/)[0].props.style);
+    const unlogged = StyleSheet.flatten(getAllByTestId(/^weekly-tick-0-\d-unlogged$/)[0].props.style);
+    expect(logged.backgroundColor).toBe(theme.colorAccentGlyph);
+    expect(unlogged.borderColor).toBe(theme.colorTickIdle);
   });
 
   it('speaks the counts, the coverage and the disclosure in one label', () => {
