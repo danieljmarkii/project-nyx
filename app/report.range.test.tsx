@@ -33,8 +33,6 @@ jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null 
 jest.mock('../components/designV2/waits/ReportSilhouette', () => ({ ReportSilhouette: () => null }));
 jest.mock('../components/designV2/waits/Tick', () => ({ Tick: () => null }));
 jest.mock('../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
-jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
-jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
 jest.mock('../store/petStore', () => {
   const pet = { id: 'p1', name: 'Mochi' };
   const state = { activePet: pet, pets: [pet] };

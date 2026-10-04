@@ -19,7 +19,7 @@
 // concern entry of the day stays drawn (BRK-20, §3.3 floor 5). The families and the
 // emergency door (§3.7, T-4) are behind *More…*; where the intake router (a navigation,
 // T-3) and the absence chip sit is GC-6, see `REFUSAL_DOORS_IN_COMPACT_SET`. The gate is
-// `lookCardLive` — the `daily_look` rollout is NOT widened by `design_v2` (CUL-891).
+// `lookCardLive` — a species with a vocabulary (Noticed is GA, CUL-876).
 //
 // What changes: ONE TAP IS ONE WORD IS ONE LOOK. The card collected several words and a
 // Done bar; the page rules the chip itself is the save ("tap a chip and it becomes a

@@ -83,9 +83,9 @@ afterEach(() => {
 describe('Settings — the Early-access row gate (B-747)', () => {
   it('shows the row for an account eligible ONLY for a non-widget beta', () => {
     // The B-747 regression case: a non-widget beta allowlisted, widget dark. (The
-    // original case used the log-picker beta, retired with CUL-962; Noticed is the
+    // original case used the log-picker beta, retired with CUL-962; Design v2 is the
     // same shape.) Pre-fix, this account had no row and therefore no path to the shelf.
-    setAllowlist({ daily_look: gatedToPm });
+    setAllowlist({ design_v2: gatedToPm });
     const { getByText } = render(<SettingsScreen />);
     expect(getByText('Early access')).toBeTruthy();
   });
@@ -96,8 +96,8 @@ describe('Settings — the Early-access row gate (B-747)', () => {
   });
 
   it('counts every eligible+opted-in beta in the "N on" note, not just the widget', () => {
-    setAllowlist({ widget_enabled: gatedToPm, daily_look: gatedToPm });
-    useBetaOptInStore.getState().setOptIn('daily_look', true);
+    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm });
+    useBetaOptInStore.getState().setOptIn('design_v2', true);
     const { getByText, rerender, queryByText } = render(<SettingsScreen />);
     // Pre-fix, a non-widget opt-in was invisible to the count.
     expect(getByText('1 on')).toBeTruthy();

@@ -19,18 +19,12 @@ jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 // `useDesignV2` is false and nothing behind it mounts or reads; the stub exists for the
 // import edge only. The flag-on wiring and the async flag-off proof are app/insights/
 // designV2.test.tsx.
-// This suite flips EVERY allowlist flag on (`mockFlagOn`), which would also turn the
-// Design v2 gate on and swap the page for the month; the redesign is not under test
-// here, so its one gate is pinned off at the hook (the file the guard names).
+// The redesign is not under test here, so its one gate is pinned off at the hook (the
+// file the guard names).
 jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
 jest.mock('../../lib/monthReads', () => ({ readMonthFacts: jest.fn(), readDayRows: jest.fn() }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
-// The three gates, mutable per test.
-let mockFlagOn = true;
-let mockOptedIn = true;
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => mockFlagOn }));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => mockOptedIn }));
 jest.mock('../../hooks/useDietTrial', () => ({
   useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForPet: false }),
 }));
@@ -148,8 +142,6 @@ function record() {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockFlagOn = true;
-  mockOptedIn = true;
   setPairingOn(false);
   mockWithheldFacts = {
     petId: 'p1', serverIntakeDecline: false, trialNotEating: false, recentQualifyingMeals: [],
@@ -168,25 +160,10 @@ beforeEach(() => {
   A.getMealTreatComposition.mockResolvedValue({ meal: 4, treat: 0, other: 0, unclassified: 0, total: 4 });
 });
 
-describe('the card appears when, and only when, all three gates hold', () => {
-  it('renders with the flag, the opt-in and a species that has a vocabulary', async () => {
+describe('the card appears for every cat and dog, and only for them (Noticed GA, CUL-876)', () => {
+  it('renders for a species that has a vocabulary, with no flag or opt-in', async () => {
     const { findByTestId } = render(<PatternsScreen />);
     await findByTestId('what-you-noticed-card');
-  });
-
-  it('is absent off the FLAG, and the look record is never even read', async () => {
-    mockFlagOn = false;
-    const { queryByTestId, findByText } = render(<PatternsScreen />);
-    await findByText('Meals finished');
-    expect(queryByTestId('what-you-noticed-card')).toBeNull();
-    expect(mockLoadLookDays).not.toHaveBeenCalled();
-  });
-
-  it('is absent without the OPT-IN', async () => {
-    mockOptedIn = false;
-    const { queryByTestId, findByText } = render(<PatternsScreen />);
-    await findByText('Meals finished');
-    expect(queryByTestId('what-you-noticed-card')).toBeNull();
   });
 
   it('is absent for a pet of species `other` — there is no vocabulary to read back', async () => {

@@ -224,9 +224,9 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
                   visible text.
 
                 · The wrapping row is CONDITIONAL, so a row with no note renders exactly
-                  the tree it rendered before this change. The look ships dark behind
-                  `daily_look`, and an extra View around every event's timestamp is a
-                  change to a shipped surface even when it draws the same pixels. */}
+                  the tree it rendered before this change. Most rows carry no note, and an
+                  extra View around every event's timestamp is a change to a shipped
+                  surface even when it draws the same pixels. */}
             {lookHasNote ? (
               <View style={styles.timeLine}>
                 <ThemedText style={styles.noteMark} accessibilityLabel="Has a note">❞</ThemedText>

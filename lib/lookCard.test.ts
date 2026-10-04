@@ -86,18 +86,16 @@ describe('the Done bar’s sentence', () => {
   });
 });
 
-describe('the live gate — one predicate, two surfaces', () => {
-  it('needs eligibility AND opt-in AND a species with a vocabulary', () => {
-    expect(lookCardLive({ eligible: true, optedIn: true, species: 'cat' })).toBe(true);
-    expect(lookCardLive({ eligible: true, optedIn: true, species: 'dog' })).toBe(true);
-    expect(lookCardLive({ eligible: false, optedIn: true, species: 'cat' })).toBe(false);
-    expect(lookCardLive({ eligible: true, optedIn: false, species: 'cat' })).toBe(false);
+describe('the live gate — one predicate, every surface', () => {
+  it('is TRUE for a cat or a dog — Noticed is GA for every account (CUL-876)', () => {
+    expect(lookCardLive({ species: 'cat' })).toBe(true);
+    expect(lookCardLive({ species: 'dog' })).toBe(true);
   });
 
   it('is FALSE for a pet of species other — the PM’s CUL-864 ruling, in code', () => {
-    expect(lookCardLive({ eligible: true, optedIn: true, species: 'other' })).toBe(false);
-    expect(lookCardLive({ eligible: true, optedIn: true, species: null })).toBe(false);
-    expect(lookCardLive({ eligible: true, optedIn: true, species: undefined })).toBe(false);
+    expect(lookCardLive({ species: 'other' })).toBe(false);
+    expect(lookCardLive({ species: null })).toBe(false);
+    expect(lookCardLive({ species: undefined })).toBe(false);
   });
 });
 

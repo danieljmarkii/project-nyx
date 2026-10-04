@@ -5,8 +5,9 @@
 // while the screen is focused (the note in `app/(tabs)/history.test.tsx`). The trial
 // loader used to read on every open and every pet switch whatever the flags, and its
 // answer flipped `trialNotEating` null → false a beat after the first load, re-running
-// all eleven local reads for EVERY account. Its only readers are dark: Noticed's
-// withheld predicate (`daily_look`) and the month's trial mark (`design_v2`).
+// all eleven local reads for EVERY account. Its readers are Noticed's withheld
+// predicate (live for a cat or a dog since CUL-876) and the month's trial mark
+// (`design_v2`).
 //
 // So this suite runs the REAL `useDietTrial` — only its read, `loadDietTrialFacts`, is
 // stubbed, and it answers a beat late as the real one does — under a focus mock that
@@ -23,12 +24,9 @@ jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/monthReads', () => ({ readMonthFacts: jest.fn(), readDayRows: jest.fn() }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
-// The gates, mutable per test: `mockLookOn` turns the daily look's two gates on, and
-// the pet below is a cat, so Noticed is live exactly when it is set.
-let mockLookOn = false;
+// The gates, mutable per test. Noticed is GA (CUL-876), so it is live exactly when the
+// active pet is a cat or a dog: the default pet below is a cat, `OTHER` is not.
 let mockDesignV2 = false;
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => mockLookOn }));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => mockLookOn }));
 jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2 }));
 // Design v2's month is drawn by its own suites; here it only reports the trial mark it
 // was handed, which is the one thing it reads from the trial loader.
@@ -113,6 +111,7 @@ const PET = {
   id: 'p1', name: 'Mochi', species: 'cat' as const, breed: null, date_of_birth: null,
   date_of_birth_precision: 'exact' as const, sex: 'female' as const, weight_kg: null, photo_path: null,
 };
+const OTHER = { ...PET, species: 'other' as const };
 
 /** A pet on a trial that is eating — `isAnimalNotEating` reads false once it answers. */
 const TRIAL_INPUT = {
@@ -132,7 +131,6 @@ async function settle(): Promise<void> {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockLookOn = false;
   mockDesignV2 = false;
   mockTrialMarks.length = 0;
   usePetStore.setState({ pets: [PET], activePet: PET, isOnboarded: true });
@@ -154,7 +152,8 @@ beforeEach(() => {
 });
 
 describe('Patterns — one load per focus', () => {
-  it('with every flag off: one load, and the trial loader never reads', async () => {
+  it('with no reader live (design_v2 off, a pet with no look): one load, and the trial loader never reads', async () => {
+    usePetStore.setState({ pets: [OTHER], activePet: OTHER });
     render(<PatternsScreen />);
     await settle();
     expect(A.getSymptomCounts).toHaveBeenCalledTimes(1);
@@ -165,6 +164,7 @@ describe('Patterns — one load per focus', () => {
     // The month's trial mark is the loader's other reader, so the read must survive
     // here — and its answer must not re-key the dashboard's load on the way.
     mockDesignV2 = true;
+    usePetStore.setState({ pets: [OTHER], activePet: OTHER });
     render(<PatternsScreen />);
     await settle();
     expect(mockLoadTrialFacts).toHaveBeenCalled();
@@ -177,7 +177,6 @@ describe('Patterns — one load per focus', () => {
   it('with Noticed live, the withheld predicate is re-read once the trial answers', async () => {
     // The one reader of `trialNotEating`: until the trial answers it is ignorance and
     // the card fails closed, so the answer must reach it on this visit, not the next.
-    mockLookOn = true;
     render(<PatternsScreen />);
     await settle();
     expect(mockLoadTrialFacts).toHaveBeenCalled();

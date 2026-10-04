@@ -278,8 +278,8 @@ export type TodayNudgeKind = 'none' | 'general' | 'meal';
  *
  * The three states, in the order they are decided:
  *   • Something else is in the day → the strip speaks; no nudge (today's behaviour).
- *   • The look is not live for this account → the shipped general nudge, unchanged, so
- *     Home is byte-identical off the flag.
+ *   • The look is not live for this pet (no vocabulary for its species) → the shipped
+ *     general nudge, unchanged.
  *   • The look IS live and today holds none → NOTHING: the Noticed card one row above
  *     is asking this exact question, and asking it twice is not warmer, it is nagging
  *     (Principle 4).
