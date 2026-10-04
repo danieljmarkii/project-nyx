@@ -647,6 +647,43 @@ describe('MonthInstrument — the care surfaces (CUL-1553)', () => {
     expect(getByTestId('month-legend-left-some').props.children).toBe('left some');
   });
 
+  // CUL-1373 item 3: a day that carried a worth-a-call read is marked whatever the owner
+  // picks. The CUL-1200 test above turns Meals off and Photos on; this one turns the symptom
+  // layer off and moves the lens, the two toggles that test leaves alone. Proven by mutation:
+  // gating `call` on `layers.vomit`, handing the model calls only under the vomit lens, or
+  // gating the legend's call row on the symptom layer each reds this test; the first two
+  // left the whole suite green before it.
+  it('a call stays marked with the symptom layer off and under any lens', async () => {
+    const callAt = (v: ReturnType<typeof mount>) => {
+      expect(v.getAllByTestId('daymark-layer-photo-worth_a_call')).toHaveLength(1);
+      expect(v.getByText('read as worth a call · 1 day')).toBeTruthy();
+    };
+    const v = mount(
+      jest.fn(async () =>
+        facts({
+          ...itchy(),
+          photoDays: [],
+          callReads: [{ eventId: 'cat', day: '2026-09-03', verdict: 'worth_a_call' }],
+        }),
+      ),
+    );
+    await waitFor(() => expect(v.getByTestId('month-grid')).toBeTruthy());
+    // The month opens on itching, the dog's own sign: the call is there.
+    expect(within(v.getByTestId('month-layers')).getByText('Itching')).toBeTruthy();
+    callAt(v);
+    // The symptom layer off, and every other layer flipped: still there.
+    fireEvent.press(within(v.getByTestId('month-layers')).getByText('Itching'));
+    fireEvent.press(within(v.getByTestId('month-layers')).getByText('Meals'));
+    fireEvent.press(within(v.getByTestId('month-layers')).getByText('Medication'));
+    callAt(v);
+    // The other lens: still there.
+    fireEvent.press(within(v.getByLabelText('Symptom')).getByText('Vomiting'));
+    await waitFor(() => expect(within(v.getByTestId('month-layers')).getByText('Vomiting')).toBeTruthy());
+    callAt(v);
+    fireEvent.press(within(v.getByTestId('month-layers')).getByText('Vomiting'));
+    callAt(v);
+  });
+
   it('the two rows carry the mock\'s visible labels, and only when the lens row is drawn', async () => {
     const itchyApi = mount(jest.fn(async () => itchy()));
     await waitFor(() => expect(itchyApi.getByTestId('month-grid')).toBeTruthy());
