@@ -35,6 +35,20 @@ jest.mock('../../hooks/useDietTrial', () => ({
   useDietTrial: () => ({ input: null, isLoading: false, reload: jest.fn(), inputIsForPet: false }),
 }));
 
+// CUL-914 (c): the pairing is held, and the vomit-day read exists only for it. The mock is
+// the module object both the screen and `lib/lookPatterns` read the switch off, so a test
+// lifts the hold by writing to it (`setPairingOn`). `__esModule` is load-bearing: spread
+// drops the actual module's non-enumerable flag, and without it Babel's interop hands each
+// importer a copy taken at import time, so a lifted hold would never reach the screen.
+jest.mock('../../lib/lookPairing', () => ({
+  ...jest.requireActual('../../lib/lookPairing'),
+  __esModule: true,
+  LOOK_PAIRING_ON_PATTERNS: false,
+}));
+function setPairingOn(on: boolean): void {
+  (jest.requireMock('../../lib/lookPairing') as { LOOK_PAIRING_ON_PATTERNS: boolean }).LOOK_PAIRING_ON_PATTERNS = on;
+}
+
 const mockLoadLookDays = jest.fn();
 const mockLoadVomitDays = jest.fn();
 jest.mock('../../lib/looks', () => ({
@@ -136,6 +150,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockFlagOn = true;
   mockOptedIn = true;
+  setPairingOn(false);
   mockWithheldFacts = {
     petId: 'p1', serverIntakeDecline: false, trialNotEating: false, recentQualifyingMeals: [],
   };
@@ -293,7 +308,17 @@ describe('the read’s window', () => {
     expect(mockLoadLookDays.mock.calls[0][1]).toBeUndefined();
   });
 
-  it('reads EIGHT weeks of vomit days, so the pairing’s read is not narrower than the compare’s', async () => {
+  it('makes NO vomit-day read while the pairing is held — and a read that would fail cannot blank the card', async () => {
+    // The fixture would answer if asked, and would fail if asked: an absence proves the
+    // gate only when the thing gated was available (C-41).
+    mockLoadVomitDays.mockRejectedValue(new Error('vomit read failed'));
+    const { findByTestId } = render(<PatternsScreen />);
+    await findByTestId('what-you-noticed-card');
+    expect(mockLoadVomitDays).not.toHaveBeenCalled();
+  });
+
+  it('with the hold lifted, reads EIGHT weeks of vomit days, so the pairing’s read is not narrower than the compare’s', async () => {
+    setPairingOn(true);
     const { findByTestId } = render(<PatternsScreen />);
     await findByTestId('what-you-noticed-card');
     expect(mockLoadVomitDays.mock.calls[0][1]).toBe(dayKeyFromIndex(TODAY - 55));
