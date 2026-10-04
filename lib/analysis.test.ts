@@ -33,12 +33,18 @@ jest.mock('./supabase', () => {
     },
   };
 });
-jest.mock('./sync', () => ({
-  syncPendingEvents: jest.fn().mockResolvedValue(undefined),
-  ensureEventAttachmentsSynced: jest.fn().mockResolvedValue(undefined),
+jest.mock('./sync', () => {
   // HV-5 (CUL-1162): the landed read's save to the phone's copy; true when it changed it.
-  refreshReadCopy: jest.fn().mockResolvedValue(false),
-}));
+  const refreshReadCopy = jest.fn().mockResolvedValue(false);
+  return {
+    syncPendingEvents: jest.fn().mockResolvedValue(undefined),
+    ensureEventAttachmentsSynced: jest.fn().mockResolvedValue(undefined),
+    refreshReadCopy,
+    // The outcome the module reads (CUL-1198), derived from the boolean stub so every
+    // HV-5 case above keeps driving it; the copy-watch cases override it per call.
+    refreshReadCopyOutcome: jest.fn(async (id: string) => ((await refreshReadCopy(id)) ? 'changed' : 'unchanged')),
+  };
+});
 
 import {
   EDITABLE_VOMIT_FIELDS,
@@ -64,7 +70,7 @@ import {
 } from './analysis';
 import { onAnalysisChainClaimed } from './analysisChain';
 import { supabase } from './supabase';
-import { refreshReadCopy } from './sync';
+import { refreshReadCopy, refreshReadCopyOutcome } from './sync';
 import { useSyncStore } from '../store/syncStore';
 
 // Grab a typed handle to the mocked invoke AFTER import (referencing it inside
@@ -1004,5 +1010,88 @@ describe('watchAnalysisRow — realtime watch (CUL-171)', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+// ── A landed read the save could not copy is watched until it is (CUL-1198 item 2) ──
+// Before, the chain settled, Home reread a copy that did not hold the read, and the read
+// arrived only on the next sync cycle: hours, with the app open. Now a FAILED save after
+// an invoke that ran starts a watch whose ticks save again and tell Home when the copy moved.
+describe('a landed read that failed to copy is watched until it lands (CUL-1198 item 2)', () => {
+  const outcome = refreshReadCopyOutcome as jest.Mock;
+  const chans = () => (supabase as unknown as { __channels: { name: string }[] }).__channels;
+  const watchesFor = (id: string) => chans().filter((c) => c.name === `event_ai_analysis:${id}`).length;
+  const hydration = () => useSyncStore.getState().hydrationTick;
+  // Each call answers the next queued outcome; once the queue is empty, `unchanged`.
+  const answers = (...queue: string[]) => outcome.mockImplementation(async () => queue.shift() ?? 'unchanged');
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    chans().length = 0;
+    mockInvoke.mockReset().mockResolvedValue({ error: null });
+  });
+  afterEach(() => {
+    cancelAllAnalysisWatches();
+    jest.useRealTimers();
+    outcome.mockReset().mockImplementation(async (id: string) => ((await mockRefreshReadCopy(id)) ? 'changed' : 'unchanged'));
+  });
+
+  it('an invoked read whose save FAILED is watched; the first save that lands tells Home and ends the watch', async () => {
+    // The chain's save fails; the first fallback tick's save lands.
+    answers('failed', 'changed');
+    await triggerVomitAnalysis('ev-copy-lost');
+    expect(watchesFor('ev-copy-lost')).toBe(1);
+    const before = hydration();
+    await jest.advanceTimersByTimeAsync(ANALYSIS_WATCH_FALLBACK_DELAYS_MS[0]);
+    // Home heard the read land, within the first fallback, not at the next sync cycle.
+    expect(hydration()).toBe(before + 1);
+    const asked = outcome.mock.calls.length;
+    await jest.advanceTimersByTimeAsync(ANALYSIS_WATCH_FALLBACK_DELAYS_MS.at(-1)!);
+    // Answered: no further tick asks again.
+    expect(outcome.mock.calls.length).toBe(asked);
+  });
+
+  it('keeps asking while the save keeps failing, then gives up silently to the next sync cycle', async () => {
+    outcome.mockImplementation(async () => 'failed');
+    await triggerStoolAnalysis('ev-copy-down');
+    await jest.advanceTimersByTimeAsync(ANALYSIS_WATCH_FALLBACK_DELAYS_MS.at(-1)!);
+    // The chain's save, then a save and a check per fallback tick.
+    expect(outcome.mock.calls.length).toBe(1 + 2 * ANALYSIS_WATCH_FALLBACK_DELAYS_MS.length);
+    // Given up: a later landing of the same read may watch again.
+    await triggerStoolAnalysis('ev-copy-down');
+    expect(watchesFor('ev-copy-down')).toBe(2);
+  });
+
+  it.each([
+    ['a save that answered with nothing new', 'unchanged', true],
+    ['a save that changed the copy', 'changed', true],
+    ['no session (or a sign-out mid-save)', 'skipped', true],
+    ['a refused invoke: no read was written to wait for', 'failed', false],
+  ])('no watch after %s', async (_label, answer, invokeOk) => {
+    answers(answer);
+    mockInvoke.mockReset().mockResolvedValue({ error: invokeOk ? null : { message: 'capped' } });
+    await triggerVomitAnalysis(`ev-copy-${answer}-${String(invokeOk)}`);
+    expect(watchesFor(`ev-copy-${answer}-${String(invokeOk)}`)).toBe(0);
+  });
+
+  it('an invoke that THREW in transit may still have been written: a failed save is watched', async () => {
+    answers('failed');
+    mockInvoke.mockReset().mockRejectedValue(new Error('network request failed'));
+    await expect(triggerVomitAnalysis('ev-copy-threw')).resolves.toEqual({ error: 'network request failed' });
+    expect(watchesFor('ev-copy-threw')).toBe(1);
+  });
+
+  it('two landings of one read start one watch, and a sign-out clears it', async () => {
+    outcome.mockImplementation(async () => 'failed');
+    await triggerVomitAnalysis('ev-copy-twice');
+    await triggerVomitAnalysis('ev-copy-twice');
+    expect(watchesFor('ev-copy-twice')).toBe(1);
+    cancelAllAnalysisWatches();
+    const asked = outcome.mock.calls.length;
+    await jest.advanceTimersByTimeAsync(ANALYSIS_WATCH_FALLBACK_DELAYS_MS.at(-1)!);
+    expect(outcome.mock.calls.length).toBe(asked);
+    // The cleared id is free for the next landing.
+    await triggerVomitAnalysis('ev-copy-twice');
+    expect(watchesFor('ev-copy-twice')).toBe(2);
   });
 });

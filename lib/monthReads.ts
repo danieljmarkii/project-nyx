@@ -70,7 +70,7 @@ import { isFinishedMeal, qualifyingIntakeMeals, readFreeFedIntakeSpans, SYMPTOM_
 import { readCopies } from './readCopy';
 import { isWorthACall } from './readState';
 import { dayKeyToLocalDate, toLocalDayKey } from './utils';
-import type { MonthContinuationDay, MonthPhotoDay } from './monthModel';
+import { photoDaysOf, type MonthContinuationDay, type MonthPhotoDay, type MonthPhotoRead } from './monthModel';
 
 export interface MonthFacts {
   episodeDays: string[];
@@ -91,6 +91,12 @@ export interface MonthFacts {
   symptomEntryDays: Record<string, string[]>;
   dosedDays: string[];
   photoDays: MonthPhotoDay[];
+  /** The same photographed events, one per event with its id: what `carryMonthRoses` keys
+   *  the last answer on. Optional only so a hand-built fixture may leave it out. */
+  photoReads?: MonthPhotoRead[];
+  /** Set when the phone's copy could not be read (CUL-1198): every verdict is `seen`
+   *  because nobody could look, not because nothing was found. */
+  photoReadsUnanswered?: boolean;
   /** The record's first day, or null for a pet with no events at all. */
   recordStart: string | null;
 }
@@ -299,11 +305,11 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     if (k && inRange(k, range)) photoEvents.push({ eventId: r.event_id, key: k });
   }
   const called = await readCallWords(photoEvents.map((p) => p.eventId));
-  const callRank = (v: MonthPhotoDay['verdict']) => (v === 'call_now' ? 0 : v === 'call_today' ? 1 : v === 'worth_a_call' ? 2 : 3);
-  const photoDays: MonthPhotoDay[] = photoEvents
-    .map((p): MonthPhotoDay => ({ day: p.key, verdict: called.get(p.eventId) ?? 'seen' }))
-    // Ordered by day, then the loudest call first: a DISTINCT read has no order of its own.
-    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : callRank(a.verdict) - callRank(b.verdict)));
+  const photoReads: MonthPhotoRead[] = photoEvents.map((p) => ({
+    eventId: p.eventId,
+    day: p.key,
+    verdict: called?.get(p.eventId) ?? 'seen',
+  }));
 
   const firstMs = msOfJulianDay(firstRow?.first_jd);
   return {
@@ -317,7 +323,9 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     leftSomeMealDays: leftSomeMealDays.sort(),
     symptomEntryDays,
     dosedDays: [...dosedSet].sort(),
-    photoDays,
+    photoDays: photoDaysOf(photoReads),
+    photoReads,
+    ...(called === null ? { photoReadsUnanswered: true } : {}),
     recordStart: firstMs === null ? null : keyOf(firstMs),
   };
 }
@@ -328,10 +336,11 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
  * `isWorthACall`, the rose branch `readStateOf` is built on, so the month and every
  * other surface agree by construction: `worth_a_call` at any status (a failed re-read
  * never takes a live one away, CUL-812), and a verdict the app does not recognise.
- * Hide is no input. On a local failure it answers EMPTY, which the caller draws as
- * `seen`: a verdict the app could not read is not a benign verdict.
+ * Hide is no input. On a local failure it answers NULL, never an empty set (CUL-1198):
+ * "the phone holds no rose for these" and "the phone could not look" are two answers, and
+ * only the first may turn a rose the month already drew back into `seen`.
  */
-export async function readWorthACall(eventIds: readonly string[]): Promise<Set<string>> {
+export async function readWorthACall(eventIds: readonly string[]): Promise<Set<string> | null> {
   const out = new Set<string>();
   if (eventIds.length === 0) return out;
   try {
@@ -341,6 +350,7 @@ export async function readWorthACall(eventIds: readonly string[]): Promise<Set<s
     }
   } catch (e) {
     console.warn('[month] read copy failed:', e);
+    return null;
   }
   return out;
 }
@@ -349,9 +359,10 @@ export async function readWorthACall(eventIds: readonly string[]): Promise<Set<s
  * The call each event's read stands as, in the tier-word map's key (EN-3): `call_now` /
  * `call_today` on a new-rule read, `worth_a_call` on an earlier-rule one or a value this
  * build does not know. Exactly the events `readWorthACall` returns, so the rose is decided
- * by the same predicate; only the words it is spoken in are added.
+ * by the same predicate; only the words it is spoken in are added. NULL on a local
+ * failure, as `readWorthACall`.
  */
-export async function readCallWords(eventIds: readonly string[]): Promise<Map<string, CallDisplay>> {
+export async function readCallWords(eventIds: readonly string[]): Promise<Map<string, CallDisplay> | null> {
   const out = new Map<string, CallDisplay>();
   if (eventIds.length === 0) return out;
   try {
@@ -363,6 +374,7 @@ export async function readCallWords(eventIds: readonly string[]): Promise<Map<st
     }
   } catch (e) {
     console.warn('[month] read copy failed:', e);
+    return null;
   }
   return out;
 }

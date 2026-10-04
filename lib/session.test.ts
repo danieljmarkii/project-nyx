@@ -14,7 +14,7 @@ jest.mock('./sync', () => ({
   // (HV-5). Stubbed so the CUL-1127 teardown test can run a REAL watch and observe
   // whether a tick reaches the wire after the wipe.
   ensureEventAttachmentsSynced: jest.fn().mockResolvedValue(undefined),
-  refreshReadCopy: jest.fn().mockResolvedValue(false),
+  refreshReadCopyOutcome: jest.fn().mockResolvedValue('unchanged'),
 }));
 jest.mock('./db', () => ({
   clearLocalData: jest.fn().mockResolvedValue(undefined),
@@ -73,7 +73,7 @@ import { readFoldEntries, writeFoldEntries } from './signalFold';
 import { readObservationFold, setObservationFold } from './observationFold';
 import { triggerSignalRegenDebounced } from './signal';
 import { watchAnalysisRow, ANALYSIS_WATCH_FALLBACK_DELAYS_MS } from './analysis';
-import { refreshReadCopy } from './sync';
+import { refreshReadCopyOutcome } from './sync';
 import { supabase } from './supabase';
 import { isHistoryDoorTapSpent, isWidgetPetTapSpent, spendHistoryDoorTap, spendWidgetPetTap } from './spentTaps';
 import { useSyncStore } from '../store/syncStore';
@@ -450,7 +450,7 @@ describe('wipeLocalSession closes realtime and stops every analysis watch (CUL-1
   // next session. RLS refuses the rows; it does not refuse the identifier.
   //
   // Observed at the wire, with a control, as the regen test above is: the watch's tick
-  // calls `refreshReadCopy` (its save to the phone's copy) before its check, so a tick
+  // calls `refreshReadCopyOutcome` (its save to the phone's copy) before its check, so a tick
   // that fires after the wipe is a call to that function.
   afterEach(() => {
     jest.clearAllTimers();
@@ -466,7 +466,7 @@ describe('wipeLocalSession closes realtime and stops every analysis watch (CUL-1
 
   it('a live watch cannot tick, check or give up after the wipe, and its channel is removed', async () => {
     jest.useFakeTimers();
-    const read = refreshReadCopy as jest.Mock;
+    const read = refreshReadCopyOutcome as jest.Mock;
     read.mockClear();
     const check = jest.fn().mockResolvedValue(false);
     const onGiveUp = jest.fn();
@@ -485,7 +485,7 @@ describe('wipeLocalSession closes realtime and stops every analysis watch (CUL-1
 
   it('the SAME watch DOES tick without the wipe — the control', async () => {
     jest.useFakeTimers();
-    const read = refreshReadCopy as jest.Mock;
+    const read = refreshReadCopyOutcome as jest.Mock;
     read.mockClear();
     const check = jest.fn().mockResolvedValue(false);
     const teardown = watchAnalysisRow('event-of-account-a', check, jest.fn());
@@ -500,7 +500,7 @@ describe('wipeLocalSession closes realtime and stops every analysis watch (CUL-1
     // The Signal-timer ordering rule: a tick that fires while `clearLocalData` is still
     // running would re-read mid-teardown. Hold the wipe open across a fallback delay.
     jest.useFakeTimers();
-    const read = refreshReadCopy as jest.Mock;
+    const read = refreshReadCopyOutcome as jest.Mock;
     read.mockClear();
     let release: () => void = () => {};
     (clearLocalData as jest.Mock).mockImplementationOnce(

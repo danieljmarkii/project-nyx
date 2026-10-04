@@ -485,10 +485,12 @@ export async function pullReadCopies(db: ReadCopyDb, stale: () => boolean): Prom
 /**
  * One event's verdict, pulled into the copy the moment its read lands on this device
  * (the chain's settle and the realtime watch). Returns how many rows it changed (0 or
- * 1). Moves no watermark: the incremental pull still owes every row its own watermark
- * says it has not seen, and this write cannot change which rows those are.
+ * 1), or NULL when the server could not be asked (CUL-1198 item 2): "nothing new" and "a
+ * read landed and could not be copied" are two answers, and only the second is worth
+ * watching for. Moves no watermark: the incremental pull still owes every row its own
+ * watermark says it has not seen, and this write cannot change which rows those are.
  */
-export async function pullReadCopyFor(db: ReadCopyDb, eventId: string, stale: () => boolean): Promise<number> {
+export async function pullReadCopyFor(db: ReadCopyDb, eventId: string, stale: () => boolean): Promise<number | null> {
   const { data, error } = await supabase
     .from('event_ai_analysis')
     .select(READ_COPY_COLUMNS)
@@ -496,7 +498,7 @@ export async function pullReadCopyFor(db: ReadCopyDb, eventId: string, stale: ()
     .maybeSingle();
   if (error) {
     console.warn('[read-copy] landed read not copied:', error.message);
-    return 0;
+    return null;
   }
   if (!data || stale()) return 0;
   return writeCopies(db, [data as unknown as ServerVerdictRow], stale);

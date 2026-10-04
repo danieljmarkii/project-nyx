@@ -9,6 +9,7 @@ import { dayMarkDateWord } from '../../../lib/chartCopy';
 import { TIER_WORDS, TIERED_CALLS_READ_AS } from '../../../lib/incidentTierWords';
 import {
   buildMonthModel,
+  carryMonthRoses,
   compareMonths,
   daysInMonth,
   monthA11yLabel,
@@ -183,8 +184,10 @@ export function MonthInstrument({
       try {
         const facts = await readFacts(petId, monthReadRange(m, today));
         if (loadIds.current.get(key) !== myId) return;
-        // Keyed write: a fetch lands on ITS month, never over another.
-        setCache((prev) => new Map(prev).set(key, facts));
+        // Keyed write: a fetch lands on ITS month, never over another. A re-read whose
+        // look at the phone's copy failed keeps the roses this month already drew
+        // (CUL-1198): a failed local read is not an answer.
+        setCache((prev) => new Map(prev).set(key, carryMonthRoses(prev.get(key), facts)));
       } catch (e) {
         if (loadIds.current.get(key) !== myId) return;
         console.error('[month] load failed:', e);
