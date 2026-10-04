@@ -2,7 +2,7 @@
 //
 // Pinned here: rule D (a run carries a chevron, a single row none); the chips in the
 // shipped vocabularies and their inks (C-1); the dose row and the meal's "with"; the time
-// tag; the read's states as drawn (the rose word in the rose INK, the grey *Photo not read*,
+// tag; the read's states as drawn (the rose word in the rose INK, the grey *No read yet*,
 // the tick, NOTHING for a calm read); no image node for any state; the read arriving on ONE
 // node (the rail's identity before, during and after), the trigger being the model's fact,
 // reduced motion, the breath; AC 24's resting half (an arrival ends in exactly the row a
@@ -31,7 +31,6 @@ import { TICK_BREATH } from '../motion/arrivalMotion';
 import type { NodeRead, SpineCompactNode, SpineDose, SpineEventNode } from '../../lib/spineNode';
 import {
   PHOTOGRAPHED_LABEL,
-  PHOTO_NOT_READ_LABEL,
   SPINE_READ_PENDING_LABEL,
   SPINE_TICK_HEIGHT,
   SpineCompactRow,
@@ -44,6 +43,9 @@ import { RowSpeechContext, readLandedSpoken, type RowSpeech } from './rowSpeech'
 
 const FRAME_MS = 20;
 const ROSE: NodeRead = { state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' };
+/** The two words the grey mark carries (CUL-1234 (a)). */
+const NOT_READ: NodeRead = { state: 'unread', label: 'No read yet' };
+const UNCLEAR: NodeRead = { state: 'unread', label: 'Not enough to say yet' };
 
 function vomit(read: NodeRead, over: Partial<SpineEventNode> = {}): SpineEventNode {
   return {
@@ -280,10 +282,11 @@ describe('the read on a row: the rose, the grey mark, the tick, nothing for calm
     expect(styleOf(word).color).not.toBe(theme.colorEventSymptom);
   });
 
-  it('unread: a grey "Photo not read", never rose, and no rail', () => {
-    const t = render(<SpineEventRow node={vomit({ state: 'unread' })} isFirst isLast onOpen={jest.fn()} />);
-    const text = t.getByText(PHOTO_NOT_READ_LABEL);
+  it.each([NOT_READ.label, UNCLEAR.label])('unread: a grey mark and "%s", never rose, and no rail', (label) => {
+    const t = render(<SpineEventRow node={vomit({ state: 'unread', label })} isFirst isLast onOpen={jest.fn()} />);
+    const text = t.getByText(label);
     expect(styleOf(text).color).toBe(theme.colorTextSecondary);
+    expect(t.getByTestId('spine-unread-mark-v2')).toBeTruthy();
     expect(t.queryByTestId('spine-verdict-v2')).toBeNull();
     expect(t.queryByTestId('spine-read-rail-v2')).toBeNull();
   });
@@ -294,7 +297,7 @@ describe('the read on a row: the rose, the grey mark, the tick, nothing for calm
     expect(t.queryByText(/keep an eye out|not enough to say|looks fine/i)).toBeNull();
   });
 
-  it.each([ROSE, { state: 'calm' as const }, { state: 'unread' as const }, { state: 'pending' as const }])(
+  it.each([ROSE, { state: 'calm' as const }, NOT_READ, { state: 'pending' as const }])(
     'no Image node exists in the tree for a %p read (R4-2 option A)',
     (read) => {
       const types = typesIn(render(<SpineEventRow node={vomit(read)} isFirst isLast onOpen={jest.fn()} />).toJSON());
@@ -330,9 +333,10 @@ describe('VoiceOver hears each row as one sentence, in reading order', () => {
     );
   });
 
-  it('an unread one says so; a calm one says nothing about its read', () => {
-    expect(eventRowLabel(vomit({ state: 'unread' }))).toBe(
-      `Vomit, 4 min after eating, ${PHOTOGRAPHED_LABEL}, 5:11 PM. ${PHOTO_NOT_READ_LABEL}. Opens details`,
+  it('an unread one says so in its own words; a calm one says nothing about its read', () => {
+    expect(eventRowLabel(vomit(NOT_READ))).toBe(`Vomit, 4 min after eating, ${PHOTOGRAPHED_LABEL}, 5:11 PM. No read yet. Opens details`);
+    expect(eventRowLabel(vomit(UNCLEAR))).toBe(
+      `Vomit, 4 min after eating, ${PHOTOGRAPHED_LABEL}, 5:11 PM. Not enough to say yet. Opens details`,
     );
     expect(eventRowLabel(vomit({ state: 'calm' }))).toBe(`Vomit, 4 min after eating, ${PHOTOGRAPHED_LABEL}, 5:11 PM. Opens details`);
   });
@@ -521,7 +525,7 @@ describe('the read arrives on ONE node', () => {
   const ENDS: [NodeRead, string | null][] = [
     [ROSE, 'spine-verdict-v2'],
     [{ state: 'calm' }, null],
-    [{ state: 'unread' }, 'spine-unread-v2'],
+    [NOT_READ, 'spine-unread-v2'],
   ];
 
   it('the floor: a waiting row is not any resting row', () => {

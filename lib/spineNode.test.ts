@@ -385,8 +385,9 @@ describe('the read on a node — nodeReadOf', () => {
   });
   it('an unclear read (not_enough_to_say) is never calm: on a photographed row it is unread (the PM’s 2026-09-25 ruling)', () => {
     const photographedVomit = { eventType: 'vomit', hasPhoto: true };
-    expect(nodeReadOf(landed('v', 'not_enough_to_say', 'uncertain'), false, photographedVomit)).toEqual({ state: 'unread' });
-    // No photo on this phone (a photoless stool's contextual read): nothing, never "Photo not read" under no photo.
+    // …worded as its record words it (CUL-1234 (a)), so the row and the record agree on tap-through.
+    expect(nodeReadOf(landed('v', 'not_enough_to_say', 'uncertain'), false, photographedVomit)).toEqual({ state: 'unread', label: 'Not enough to say yet' });
+    // No photo on this phone (a photoless stool's contextual read): nothing, never a not-read mark under no photo.
     expect(nodeReadOf(landed('v', 'not_enough_to_say', 'uncertain'), false, { eventType: 'stool_normal', hasPhoto: false })).toEqual({
       state: 'none',
     });
@@ -400,7 +401,7 @@ describe('the read on a node — nodeReadOf', () => {
     const photographedVomit = { eventType: 'vomit', hasPhoto: true };
     for (const status of ['failed', 'capped', 'read_disabled']) {
       // With the event known, the read that was expected and never landed is UNREAD…
-      expect(nodeReadOf(landed('v', null, status), false, photographedVomit)).toEqual({ state: 'unread' });
+      expect(nodeReadOf(landed('v', null, status), false, photographedVomit)).toEqual({ state: 'unread', label: 'No read yet' });
       // …and a two-argument caller, which cannot tell it from no photo, says nothing.
       expect(nodeReadOf(landed('v', null, status), false)).toEqual({ state: 'none' });
     }
@@ -411,6 +412,7 @@ describe('the read on a node — nodeReadOf', () => {
     expect(nodeReadOf(landed('v', 'monitor', 'failed'), false)).toEqual({ state: 'none' });
     expect(nodeReadOf(landed('v', 'monitor', 'failed'), false, { eventType: 'vomit', hasPhoto: true })).toEqual({
       state: 'unread',
+      label: 'No read yet',
     });
   });
   it('Hide never silences the rose here: the copy has no hide stamp, and one handed in is ignored (H-4a)', () => {
@@ -424,8 +426,8 @@ describe('the read on a node — nodeReadOf', () => {
     expect(nodeReadOf(landed('v', 'looks_fine_to_me'), false)).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
   });
   it('a photographed vomit whose read the phone does not hold is UNREAD, never nothing (AC 21, the model half)', () => {
-    expect(nodeReadOf(undefined, false, { eventType: 'vomit', hasPhoto: true })).toEqual({ state: 'unread' });
-    expect(nodeReadOf(undefined, false, { eventType: 'diarrhea', hasPhoto: true })).toEqual({ state: 'unread' });
+    expect(nodeReadOf(undefined, false, { eventType: 'vomit', hasPhoto: true })).toEqual({ state: 'unread', label: 'No read yet' });
+    expect(nodeReadOf(undefined, false, { eventType: 'diarrhea', hasPhoto: true })).toEqual({ state: 'unread', label: 'No read yet' });
     // No read is expected: an unphotographed vomit, a photographed cough.
     expect(nodeReadOf(undefined, false, { eventType: 'vomit', hasPhoto: false })).toEqual({ state: 'none' });
     expect(nodeReadOf(undefined, false, { eventType: 'cough', hasPhoto: true })).toEqual({ state: 'none' });
@@ -447,7 +449,7 @@ describe('the read on a node — nodeReadOf', () => {
     const model = buildSpine(input({ photographed: new Set(['v1']) }));
     const v1 = model.nodes.find((n) => n.id === 'v1');
     const v2 = model.nodes.find((n) => n.id === 'v2');
-    expect(v1?.kind === 'event' && v1.read).toEqual({ state: 'unread' });
+    expect(v1?.kind === 'event' && v1.read).toEqual({ state: 'unread', label: 'No read yet' });
     expect(v2?.kind === 'event' && v2.read).toEqual({ state: 'none' });
   });
 
@@ -480,7 +482,7 @@ describe('the read on a node — nodeReadOf', () => {
     const byId = new Map(eventsOf(model).map((n) => [n.id, n]));
     expect(byId.get('s1')?.category).toBe('other');
     expect(byId.get('s1')?.read).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
-    expect(byId.get('s2')?.read).toEqual({ state: 'unread' });
+    expect(byId.get('s2')?.read).toEqual({ state: 'unread', label: 'No read yet' });
   });
 
   it('a row re-typed after its read landed keeps the rose (the predicate stands it on any type)', () => {

@@ -4,7 +4,7 @@
 // input this file can build. AC 22: Hide never stands the rose down, and an unknown or
 // failed verdict never renders calm. Since the PM's 2026-09-25 ruling (HV-6 / CUL-1163),
 // a finished `not_enough_to_say` is never calm either: on a photographed row it is
-// `unread`, the grey *Photo not read*.
+// `unread`, the grey *No read yet*.
 
 import {
   isWorthACall,
@@ -120,7 +120,7 @@ describe('precedence: the edges the header names', () => {
     expect(readStateOf(base({ eventType: 'stool_normal', hasPhoto: false, copy: copy('completed', 'monitor') }))).toBe('calm');
   });
 
-  it('an unclear read on a row with no photo here is nothing, never "Photo not read" under no photo', () => {
+  it('an unclear read on a row with no photo here is nothing, never "No read yet" under no photo', () => {
     // A photoless stool's contextual read collapses to not_enough_to_say too.
     expect(readVerdictOf(base({ eventType: 'stool_normal', hasPhoto: false, copy: copy('uncertain', 'not_enough_to_say') }))).toEqual({
       state: 'none',

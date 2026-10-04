@@ -98,12 +98,42 @@ describe('EN-3: the tile speaks the tier-word map', () => {
     const { verdictWord, tileA11yLabel } = jest.requireActual('./EpisodeGallery') as typeof import('./EpisodeGallery');
     expect(verdictWord('call_now')).toBe('Call now');
     expect(verdictWord('call_today')).toBe('Call today');
-    expect(verdictWord('logged')).toBe('Keep an eye out');
-    // An earlier-rule tile says exactly what it said before.
+    // An earlier-rule call says exactly what it said before.
     expect(verdictWord('worth_a_call')).toBe('Worth a call');
-    expect(verdictWord('monitor')).toBe('Keep an eye out');
     const tile = { eventId: 'e', dateWord: 'Oct 22', timeWord: '1:30 AM', verdict: 'call_now' } as unknown as GalleryTile;
     expect(tileA11yLabel(tile)).toBe('Oct 22, 1:30 AM, photographed, read as Call your vet now');
+  });
+});
+
+describe('the read words: a calm read draws none (CUL-1233), an unclear one says its record\'s (CUL-1234)', () => {
+  const { verdictWord, tileA11yLabel } = jest.requireActual('./EpisodeGallery') as typeof import('./EpisodeGallery');
+  const at = (verdict: GalleryTile['verdict']) =>
+    ({ eventId: 'e', dateWord: 'Oct 22', timeWord: '1:30 AM', verdict }) as unknown as GalleryTile;
+
+  it('a calm read, under either rule, draws no word and speaks none', () => {
+    for (const calm of ['logged', 'monitor'] as const) {
+      expect(verdictWord(calm)).toBeNull();
+      expect(tileA11yLabel(at(calm))).toBe('Oct 22, 1:30 AM, photographed');
+    }
+  });
+
+  it('an unclear read says "Not enough to say yet"; no completed read says "No read yet"', () => {
+    expect(verdictWord('not_enough_to_say')).toBe('Not enough to say yet');
+    expect(tileA11yLabel(at('not_enough_to_say'))).toBe('Oct 22, 1:30 AM, photographed, read as Not enough to say yet');
+    expect(verdictWord(null)).toBe('No read yet');
+    expect(tileA11yLabel(at(null))).toBe('Oct 22, 1:30 AM, photographed, no read yet');
+  });
+
+  it('a rendered calm tile carries its photo and date and no verdict node', () => {
+    const calm: SignalScreenEpisodes = {
+      ...episodes('file:///cache/a.jpg'),
+      tiles: [{ ...episodes('file:///cache/a.jpg').tiles[0], verdict: 'monitor' }],
+    };
+    const view = render(<EpisodeGallery episodes={calm} />);
+    expect(view.getByTestId('episode-photo-ev-1')).toBeTruthy();
+    expect(view.getByText('Sep 22')).toBeTruthy();
+    expect(view.queryByTestId('episode-verdict-ev-1')).toBeNull();
+    expect(view.queryByText('Keep an eye out')).toBeNull();
   });
 });
 

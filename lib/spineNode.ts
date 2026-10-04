@@ -49,9 +49,10 @@
 //
 // ── WHAT A READ MAY SAY ───────────────────────────────────────────────────────────
 // The row draws the predicate's STATE and speaks no verdict words but the rose's: *Worth a
-// call* in rose, a grey *Photo not read* when a read was expected and no check happened
-// (it failed, was never sent, hit the cap, the phone holds no copy, or it finished unable
-// to say: the PM's 2026-09-25 ruling), the breathing tick while one is produced, and
+// call* in rose, a grey mark when a read was expected and no check happened (it failed,
+// was never sent, hit the cap, the phone holds no copy, or it finished unable to say: the
+// PM's 2026-09-25 ruling) worded *No read yet*, or *Not enough to say yet* for the last
+// case, as its record words it (CUL-1234), the breathing tick while one is produced, and
 // NOTHING for a calm read, because "nothing was found" is not a thing one photo can say
 // (clinical-guardrails, Pattern 1; §3.6 rule 7). The calm state is kept on the node, not
 // dropped, so the arrival (HV-10) knows the read it waited on ended quiet.
@@ -72,7 +73,7 @@ import type { TimelineRow } from './db';
 import { asDoseAdherence, doseDrugLabel } from './doseDisplay';
 import { FORMAT_LABEL, foodFormatTag, mealRowLabel } from './food';
 import { type IncidentRecommendation } from './incidentReadState';
-import { TIER_WORDS } from './incidentTierWords';
+import { NO_READ_WORDS, TIER_WORDS } from './incidentTierWords';
 import { isComboDoseInDoubt, vehicleLabel } from './medications';
 import { readVerdictOf, type ReadCopyRow } from './readState';
 import { intakeChipTone, type RowChipTone } from './rowChips';
@@ -168,8 +169,11 @@ export type NodeRead =
   /** The server was asked (C-30), or the row itself is still `pending`: the tick. */
   | { state: 'pending' }
   /** A read was expected and no check happened: failed, never sent, capped, no copy on
-   *  this phone, or finished unable to say. The grey *Photo not read* (H-4b). */
-  | { state: 'unread' }
+   *  this phone, or finished unable to say. The grey mark (H-4b), and its words: the
+   *  record's own *Not enough to say yet* for a read that finished unable to say, so the
+   *  row and the record agree on tap-through, and *No read yet* for every other case
+   *  (PM ruling (a), 2026-10-03, CUL-1234). Grey either way, never calm, never rose. */
+  | { state: 'unread'; label: string }
   /** The rose, whatever the row's status (CUL-812), an unknown verdict included. `label`
    *  is the narrow row's chip from the tier-word map (EN-3: *Call now* / *Call today* on a
    *  new-rule read, *Worth a call* on an earlier-rule one); `spoken` is the full phrase a
@@ -277,7 +281,7 @@ export function nodeReadOf(
   working: boolean,
   expect?: NodeReadExpectation,
 ): NodeRead {
-  const { state, display } = readVerdictOf({
+  const { state, verdict, display } = readVerdictOf({
     eventType: expect?.eventType ?? null,
     hasPhoto: expect?.hasPhoto ?? false,
     copy: row,
@@ -295,7 +299,9 @@ export function nodeReadOf(
     case 'pending':
       return { state: 'pending' };
     case 'unread':
-      return { state: 'unread' };
+      // `verdict` carries the finished not-enough read on an unread state (and only that):
+      // a stale photo set or an unfinished read leaves it null.
+      return { state: 'unread', label: verdict === 'not_enough_to_say' ? TIER_WORDS.not_enough_to_say.short : NO_READ_WORDS };
     case 'off':
     case 'none':
       return { state: 'none' };

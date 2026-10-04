@@ -13,7 +13,8 @@
 //     and a dose's adherence in the shipped vocabulary (Given teal; Partial, Missed and
 //     Refused rose; *Unconfirmed* in rose only for a dose in doubt). Static tags, never
 //     controls: the row is the one door.
-//   • The read: *Worth a call* in rose, a grey *Photo not read*, the breathing tick, and
+//   • The read: *Worth a call* in rose, the grey mark with *No read yet* or *Not enough to
+//     say yet* (its record's words, CUL-1234), the breathing tick, and
 //     NOTHING for a calm read (a calm verdict is never a word on a list; n=1 never
 //     reassures).
 //   • Open in place: every member of an opened run is a full row, the same row a single
@@ -73,8 +74,6 @@ export const SPINE_RAIL_WIDTH = 3;
 export const SPINE_TICK_HEIGHT = 16;
 /** The read slot's copy while the server works — the incident card's own line. */
 export const SPINE_READ_PENDING_LABEL = 'Reading the photo…';
-/** H-4b: a read was expected and no check happened. Grey, never rose. */
-export const PHOTO_NOT_READ_LABEL = 'Photo not read';
 /** The photo glyph's spoken word. */
 export const PHOTOGRAPHED_LABEL = 'photographed';
 /** The words under a time the owner did not witness (B-010), drawn in small caps. */
@@ -180,7 +179,7 @@ function readSpoken(read: NodeRead): string {
     case 'worth_a_call':
       return `. ${read.spoken}`;
     case 'unread':
-      return `. ${PHOTO_NOT_READ_LABEL}`;
+      return `. ${read.label}`;
     case 'pending':
       return `. ${SPINE_READ_PENDING_LABEL}`;
     case 'calm':
@@ -296,7 +295,7 @@ export function SpineEventRow({
           {read.state === 'pending' || read.state === 'worth_a_call' ? (
             <ReadSlot node={node} read={read} />
           ) : read.state === 'unread' ? (
-            <UnreadMark nodeId={node.id} />
+            <UnreadMark nodeId={node.id} label={read.label} />
           ) : null}
         </SpineRowFrame>
       )}
@@ -404,8 +403,10 @@ function ReadSlot({
 }
 
 /** H-4b: a read was expected and no check happened. Grey and quiet, never the rose: it is
- *  the absence of a check, not a finding, and it never looks like a calm read either. */
-function UnreadMark({ nodeId }: { nodeId: string }) {
+ *  the absence of a check, not a finding, and it never looks like a calm read either. The
+ *  words are the node's (`nodeReadOf`): *No read yet*, or the record's *Not enough to say
+ *  yet* for a read that finished unable to say. */
+function UnreadMark({ nodeId, label }: { nodeId: string; label: string }) {
   return (
     <View style={styles.unread} testID={`spine-unread-${nodeId}`}>
       {/* Hatched, as round 5 draws it: a filled-in "missing", where a plain ring read as an
@@ -425,7 +426,7 @@ function UnreadMark({ nodeId }: { nodeId: string }) {
           fill="none"
         />
       </Svg>
-      <ThemedText style={styles.unreadText}>{PHOTO_NOT_READ_LABEL}</ThemedText>
+      <ThemedText style={styles.unreadText}>{label}</ThemedText>
     </View>
   );
 }
@@ -673,7 +674,7 @@ const styles = StyleSheet.create({
     color: theme.colorEventSymptomInk,
   },
 
-  // Photo not read: a hollow grey mark and grey words. Never rose.
+  // No read yet / Not enough to say yet: a hatched grey mark and grey words. Never rose.
   unread: {
     flexDirection: 'row',
     alignItems: 'center',

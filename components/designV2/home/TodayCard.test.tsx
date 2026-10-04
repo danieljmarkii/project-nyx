@@ -270,7 +270,7 @@ describe('the ten-event day', () => {
     expect(dayStart.getTime() - since).toBe(3 * 3_600_000);
   });
 
-  it('a calm read draws nothing on its node; a photographed one with no read on the phone says "Photo not read"', async () => {
+  it('a calm read draws nothing on its node; a photographed one with no read on the phone says "No read yet"', async () => {
     mockReadAnalysis.mockResolvedValue(
       new Map([['v1', { event_id: 'v1', status: 'completed', recommendation: 'monitor', updated_at: '2026-09-25T00:00:00Z' }]]),
     );
@@ -282,7 +282,7 @@ describe('the ten-event day', () => {
     expect(t.queryByText(/keep an eye out/i)).toBeNull();
   });
 
-  it('draws no "Photo not read" and no photo before the phone’s copy has answered, then the grey mark (C-12)', async () => {
+  it('draws no "No read yet" and no photo before the phone’s copy has answered, then the grey mark (C-12)', async () => {
     // The production order: the facts read (the photo set) lands, the copy read has not.
     // Since H-4b every read slot is a claim, so the row claims nothing until it can.
     let answer: (rows: Map<string, unknown>) => void = () => {};
@@ -314,7 +314,7 @@ describe('the ten-event day', () => {
     expect(t.queryByTestId('spine-photo-v1', { includeHiddenElements: true })).toBeNull();
   });
 
-  it('a failed look answers nothing: no "Photo not read" for a row it never answered for', async () => {
+  it('a failed look answers nothing: no "No read yet" for a row it never answered for', async () => {
     // `readAnalysisCopy`'s failure is a `null`, never a throw and never an empty map.
     mockReadAnalysis.mockResolvedValue(null);
     const t = render(<TodayCard />);
@@ -360,7 +360,7 @@ describe('the ten-event day', () => {
     await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
   });
 
-  it('a read that lands while Home watches keeps its node: no "Photo not read" frame, the same rail, one announcement (C-30)', async () => {
+  it('a read that lands while Home watches keeps its node: no "No read yet" frame, the same rail, one announcement (C-30)', async () => {
     // The HV-6 second adversarial pass (1): the settle dropped the working fact BEFORE its
     // re-read answered, so for that round trip the node read the copy from before the read
     // landed. Held open here, as a real SQLite round trip is.
@@ -409,7 +409,7 @@ describe('the ten-event day', () => {
     await waitFor(() => expect(t.getByTestId('spine-read-rail-v2')).toBeTruthy());
     expect(t.getByText('Reading the photo…')).toBeTruthy();
     // Only the node whose chain is outstanding waits. v1, photographed with no read on
-    // the phone, is UNREAD: the grey "Photo not read", never the tick.
+    // the phone, is UNREAD: the grey "No read yet", never the tick.
     expect(t.getAllByText('Reading the photo…')).toHaveLength(1);
     await waitFor(() => expect(t.getByTestId('spine-unread-v1')).toBeTruthy());
     mockReadAnalysis.mockResolvedValue(

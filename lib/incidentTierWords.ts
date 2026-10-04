@@ -169,6 +169,24 @@ export function louderCall(a: CallDisplay | null, b: CallDisplay | null): CallDi
   return rank(b) > rank(a) ? b : a;
 }
 
+/** A finished read that looked and flagged nothing: `logged` on a new-rule read, `monitor` on
+ *  an earlier-rule one. NO SURFACE DRAWS A WORD FOR IT on a list or a tile (PM ruling (a),
+ *  2026-10-03, CUL-1233): one photo cannot say a pet is fine (n=1 never reassures), and since
+ *  H-4b marks every photo nothing checked, a photo with no word under it already says "read,
+ *  nothing flagged". The record's own card keeps its words; the list and the tile do not. */
+export function isCalmDisplay(display: TierDisplay | null | undefined): display is 'logged' | 'monitor' {
+  return display === 'logged' || display === 'monitor';
+}
+
+/** The one phrase for a photo with no completed read, on Home, History and the Signal
+ *  gallery alike (PM ruling (a), 2026-10-03, CUL-1234): a read in flight, failed, capped,
+ *  never sent, over a photo since replaced, or with no copy on this phone. A read that
+ *  FINISHED unable to say is not this: it says `TIER_WORDS.not_enough_to_say`, the words its
+ *  record shows on tap-through. "No read yet" over "Photo not read" because the gallery
+ *  draws a read in flight with these same words, and "not read" of a photo being read is
+ *  false; "yet" is true of every case, since each can still be read. */
+export const NO_READ_WORDS = 'No read yet';
+
 /** The new rule's calls, read together, for a count that holds both (the month's legend and
  *  its sentence): "call now or call today". Built from the map's own words. */
 export const TIERED_CALLS_READ_AS = `${TIER_WORDS.call_now.readAs} or ${TIER_WORDS.call_today.readAs}`;

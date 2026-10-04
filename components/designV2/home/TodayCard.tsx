@@ -19,7 +19,7 @@
 //     meals and doses alone issues no read at all, which is also what the flag-off proof
 //     measures (C-41: no row AND no read). A row that can carry a read gets its photo
 //     handed to the pipeline only once this read has ANSWERED for it (C-12): since H-4b
-//     every read slot is a claim, so before the copy lands a grey "Photo not read" says no
+//     every read slot is a claim, so before the copy lands a grey "No read yet" says no
 //     check happened and a glyph over nothing says it was calm. Until then the row is drawn
 //     as one with no photo, which claims neither; a failed read answers nothing, and the
 //     card keeps the last answer it had (a rose it drew stays drawn, CUL-1198 item 1).

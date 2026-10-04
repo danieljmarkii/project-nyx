@@ -67,7 +67,7 @@ import { act, configure, fireEvent, render, waitFor } from '@testing-library/rea
 import { Animated, Dimensions, StyleSheet } from 'react-native';
 import { SignalScreen, SCRIPT_TITLE, WHY_TITLE } from './SignalScreen';
 import { CARE_CONTEXT_TITLE } from '../../../lib/careContext';
-import { NO_READ_LABEL } from './EpisodeGallery';
+import { isCalmDisplay, NO_READ_WORDS } from '../../../lib/incidentTierWords';
 import SignalRoute, { OFF_TITLE } from '../../../app/signal/[id]';
 import { TIER_WORDS } from '../../../lib/incidentTierWords';
 import { buildSignalScreenModel, screenLeadsWithLanes, type SignalScreenEpisode, type SignalScreenInput } from '../../../lib/signalScreen';
@@ -282,19 +282,29 @@ describe('SignalScreen — the sections, in the ruled order', () => {
     expect(text).not.toMatch(/\bfair/);
   });
 
-  it('every photographed episode carries its OWN read in the shipped words; no aggregate verdict anywhere', async () => {
+  it('every photographed episode carries its OWN read in the shipped words, a calm one none; no aggregate verdict anywhere', async () => {
     mockLoadSignalScreen.mockResolvedValue(ready(benign));
     const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
     await waitFor(() => expect(view.getByTestId('episode-gallery')).toBeTruthy());
     const model = ready(benign).model;
     const tiles = model.episodes?.tiles ?? [];
     expect(tiles).toHaveLength(9);
+    // The fixture holds every kind of tile, so no branch below is checked over nothing.
+    const kinds = new Set(tiles.map((t) => (t.verdict === null ? 'none' : isCalmDisplay(t.verdict) ? 'calm' : t.verdict)));
+    expect([...kinds].sort()).toEqual(['calm', 'none', 'not_enough_to_say', 'worth_a_call']);
     for (const tile of tiles) {
-      const verdict = view.getByTestId(`episode-verdict-${tile.eventId}`);
-      expect(verdict.props.children).toBe(tile.verdict ? TIER_WORDS[tile.verdict].short : NO_READ_LABEL);
       const door = view.getByTestId(`episode-tile-${tile.eventId}`);
+      if (isCalmDisplay(tile.verdict)) {
+        // CUL-1233 (a): a calm read draws no word, and its sentence carries none either.
+        expect(view.queryByTestId(`episode-verdict-${tile.eventId}`)).toBeNull();
+        expect(door.props.accessibilityLabel).toMatch(/photographed$/);
+        continue;
+      }
+      const verdict = view.getByTestId(`episode-verdict-${tile.eventId}`);
+      expect(verdict.props.children).toBe(tile.verdict ? TIER_WORDS[tile.verdict].short : NO_READ_WORDS);
       expect(door.props.accessibilityLabel).toMatch(tile.verdict ? new RegExp(`photographed, read as ${TIER_WORDS[tile.verdict].label}$`) : /photographed, no read yet$/);
     }
+    expect(allText(view.toJSON()).join(' ')).not.toContain(TIER_WORDS.monitor.short);
     expect(view.getByTestId('episode-count-line').props.children).toBe(model.episodes?.countLine);
     const text = allText(view.toJSON()).join(' ').toLowerCase();
     expect(text).not.toContain('the other');
