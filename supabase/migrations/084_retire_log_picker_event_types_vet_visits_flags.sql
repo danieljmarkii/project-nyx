@@ -1,0 +1,51 @@
+-- ============================================================
+-- Retire three beta flags: delete the app_config rows
+-- (GA-3 / CUL-963 + GA-V3 / CUL-1082; closes CUL-960 Phase 3)
+-- See: docs/nyx-more-events-picker-requirements.md §2 (FL-4 retirement record),
+--      docs/nyx-event-taxonomy-requirements.md §12 (the D12 GA gate, met),
+--      docs/nyx-vet-visits-requirements.md G0 (the rollout flag, retired),
+--      docs/nyx-beta-features-requirements.md §4.3.1 (graduations three to five).
+-- ============================================================
+-- The PM called GA for three betas: the log-sheet picker (`log_picker_v2`,
+-- B-745, seeded in migration 056), the event-taxonomy expansion
+-- (`event_types_v2`, B-756, seeded in migration 061) and the vet-visit companion
+-- (`vet_visits`, seeded in migration 065). This is the last step of each
+-- retirement: the rows go only once nothing reads them.
+--
+-- WHY THE DELETION IS SAFE NOW:
+--   1. Client: the flag reads are gone. #891 (CUL-962) removed both picker gates,
+--      #893 (CUL-905) removed the vet-visits gate; none of the three keys is in
+--      `ALLOWLIST_FLAG_KEYS` (`lib/appConfig.ts`) or anywhere else in the client.
+--   2. Server: no Edge Function ever read any of the three (`_shared/flags.ts`
+--      callers checked; the `vet_visits` hits in `generate-signal` /
+--      `generate-report` are the TABLE, not the flag).
+--   3. Installed builds: `resolveAllowlistFlag` FAILS CLOSED on a missing row, so a
+--      build that still read a key would revert to its flag-off path. This applies
+--      only once the GA build (1.2.0, CUL-559) is the installed build, which is the
+--      merge gate on this PR.
+--
+-- The beta MECHANISM is untouched: `resolveAllowlistFlag`, the opt-in store,
+-- `_shared/flags.ts` and `BETA_REGISTRY` remain for the live betas. This removes
+-- exactly three `app_config` keys, never the primitive.
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  y  (deletes three existing config rows from app_config. No column,
+--                     type, table or policy is dropped or altered; three data rows
+--                     are removed, none of them user data.)
+--   Rollback:     re-insert the three rows (post-GA all are enabled-for-everyone):
+--                   INSERT INTO app_config (key, value) VALUES
+--                     ('log_picker_v2',  '{"enabled": true}'::jsonb),
+--                     ('event_types_v2', '{"enabled": true}'::jsonb),
+--                     ('vet_visits',     '{"enabled": true}'::jsonb)
+--                   ON CONFLICT (key) DO NOTHING;
+--                 A rollback means something only if the client gates are also
+--                 restored; with the GA client live, nobody reads the rows.
+--   Backfill:     N/A (deletion only).
+--   Affected table: app_config (DELETE only). Row-count check before applying:
+--                   SELECT count(*) FROM app_config
+--                     WHERE key IN ('log_picker_v2','event_types_v2','vet_visits');
+--                   -- expect: 3 before, 0 after.
+-- ============================================================
+
+DELETE FROM app_config
+  WHERE key IN ('log_picker_v2', 'event_types_v2', 'vet_visits');
