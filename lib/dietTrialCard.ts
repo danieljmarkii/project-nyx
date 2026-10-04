@@ -3096,11 +3096,21 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // CUL-1526 — the ruled one line reads the SAME withheld-or-not off-diet count as `line`
   // (one source, so the two can never disagree about the floor), and carries no ratio: the
   // withholding reasons above gate a number this line never states.
+  //
+  // THE MISSING CLAUSE IS NOT A ZERO (adversarial-reviewer, CUL-1526). The clause shows
+  // only when the count is above zero, so an owner who reads the card daily learns that
+  // "Ends Aug 27" alone means "nothing off-diet". Where the app could not check — no
+  // usable permit set, an unread classification, a paused antigen arm — that zero would
+  // be the app's own ignorance printed as a clean record (absence ≠ wellness), so the
+  // line says the check is paused instead. The count, when there is one, still leads it.
+  const offDietUnknown =
+    !!input.allowedSetUnavailable || !input.exposures || !!input.antigenArmDark;
   const cardLine =
     (overrunDays > 0 ? `Window ended ${endDate}` : `Ends ${endDate}`) +
     (stripOffDiet > 0
       ? ` · ${stripOffDiet} off-diet ${stripOffDiet === 1 ? 'feeding' : 'feedings'} logged`
-      : '');
+      : '') +
+    (offDietUnknown ? ' · off-diet check paused' : '');
   return {
     header,
     line: parts.length > 0 ? parts.join(' · ') : null,

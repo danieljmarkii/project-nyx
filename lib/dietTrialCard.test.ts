@@ -3737,10 +3737,37 @@ describe('the Design v2 trial line (CUL-1526)', () => {
     }))!.cardLine).toBe('Ends Aug 27 · 2 off-diet feedings logged');
   });
 
-  it('an unusable permit set withholds the count, as the shipped line does (one source)', () => {
+  it('an unusable permit set withholds the count and says the check is paused, never a bare date', () => {
     expect(resolveTrialStrip(activeInput({
       allowedSetUnavailable: true, exposures: offDiet(68),
-    }))!.cardLine).toBe('Ends Aug 27');
+    }))!.cardLine).toBe('Ends Aug 27 · off-diet check paused');
+  });
+
+  it('an unread classification is not a clean record', () => {
+    expect(resolveTrialStrip(activeInput({ exposures: null }))!.cardLine).toBe(
+      'Ends Aug 27 · off-diet check paused',
+    );
+  });
+
+  it('a dark antigen arm keeps the floor and says the check is paused', () => {
+    expect(resolveTrialStrip(activeInput({ antigenArmDark: true }))!.cardLine).toBe(
+      'Ends Aug 27 · off-diet check paused',
+    );
+    expect(resolveTrialStrip(activeInput({ antigenArmDark: true, exposures: offDiet(2) }))!.cardLine).toBe(
+      'Ends Aug 27 · 2 off-diet feedings logged · off-diet check paused',
+    );
+  });
+
+  // The reviewer's property: an unknown count and a clean count never render alike.
+  it('unknown and clean never produce the same line', () => {
+    const clean = resolveTrialStrip(activeInput())!.cardLine;
+    for (const unknown of [
+      activeInput({ exposures: null }),
+      activeInput({ allowedSetUnavailable: true }),
+      activeInput({ antigenArmDark: true }),
+    ]) {
+      expect(resolveTrialStrip(unknown)!.cardLine).not.toBe(clean);
+    }
   });
 
   it('leaves the shipped line untouched (flag-off byte-identical)', () => {
@@ -3761,7 +3788,9 @@ describe('the Design v2 trial line (CUL-1526)', () => {
     };
     const strip = resolveTrialStrip(armed);
     if (!strip || strip.cardLine === null) return;
-    expect(strip.cardLine).toMatch(/^(Ends|Window ended) [A-Z][a-z]{2} \d{1,2}( · \d+ off-diet feedings? logged)?$/);
+    expect(strip.cardLine).toMatch(
+      /^(Ends|Window ended) [A-Z][a-z]{2} \d{1,2}( · \d+ off-diet feedings? logged)?( · off-diet check paused)?$/,
+    );
     expect(strip.cardLine).not.toMatch(/\d+ of \d+/);
     expect(strip.cardLine).not.toMatch(/vomit/i);
     expect(strip.cardLine).not.toMatch(/meals logged/i);
