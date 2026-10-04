@@ -835,6 +835,53 @@ describe('the quiet states (§3.12, C-12)', () => {
     expect(screen.queryByTestId('history-record-start')).toBeNull();
   });
 
+  // CUL-1242, ruled (b): a visit, course start or bowl dated before the first log is drawn
+  // after the list's end, never counted; a record of only such items never reads empty.
+  it('a visit-only record never reads "Nothing logged yet": the visit sits under the first-log line', async () => {
+    insertVisit('visit-0', dayAgo(2), 'Diet trial start', 'Riverside Clinic');
+    await renderList();
+    expect(screen.queryByTestId('history-empty')).toBeNull();
+    expect(screen.queryByText('Nothing logged yet')).toBeNull();
+    expect(text('history-record-start')).toBe("Nyx's record starts with the first log");
+    expect(text(`history-pre-record-${dayAgo(2)}`)).toBe(`${recordWeekday(dayAgo(2), TODAY)} · Vet visit, Diet trial start`);
+    expect(screen.queryByTestId('history-count-line')).toBeNull();
+  });
+
+  it('a visit before the first log: below the record\'s start, and the count line never moves', async () => {
+    seedWeek();
+    insertVisit('visit-early', dayAgo(10), 'Recheck', 'Riverside Clinic');
+    await renderList();
+    expect(text('history-record-start')).toBe(`Nyx's record starts here · ${recordWeekday(dayAgo(4), TODAY)}`);
+    expect(text(`history-pre-record-${dayAgo(10)}`)).toBe(`${recordWeekday(dayAgo(10), TODAY)} · Vet visit, Recheck`);
+    // All time still starts at the first log (GAP-24): the visit moves no number.
+    expect(text('history-count-line-1')).toBe(`All time · 7 logged since ${recordDay(dayAgo(4), TODAY)}`);
+  });
+
+  it('a window that stops short of the record\'s start, or a search, draws no pre-record item', async () => {
+    seedWeek();
+    insertVisit('visit-early', dayAgo(10), 'Recheck', 'Riverside Clinic');
+    // The control: All time draws it, so each absence below is the rule's, never the data's.
+    await renderList();
+    expect(screen.getByTestId(`history-pre-record-${dayAgo(10)}`)).toBeTruthy();
+    screen.unmount();
+    setScope({ window: { kind: 'today' } });
+    await renderList();
+    expect(screen.queryByTestId(`history-pre-record-${dayAgo(10)}`)).toBeNull();
+    screen.unmount();
+    setScope({ window: { kind: 'all' }, searchOpen: true, searchText: 'protein' });
+    await renderList();
+    expect(screen.queryByTestId(`history-pre-record-${dayAgo(10)}`)).toBeNull();
+  });
+
+  it('under a filter the item follows the filter\'s rows, still with no "record starts here"', async () => {
+    seedWeek();
+    insertVisit('visit-early', dayAgo(10), 'Recheck', 'Riverside Clinic');
+    setScope({ filter: { kind: 'type', type: 'vomit' } });
+    await renderList();
+    expect(screen.queryByTestId('history-record-start')).toBeNull();
+    expect(text(`history-pre-record-${dayAgo(10)}`)).toBe(`${recordWeekday(dayAgo(10), TODAY)} · Vet visit, Recheck`);
+  });
+
   it('no pet at all: the first-log line, never a silhouette that never ends', async () => {
     act(() => {
       usePetStore.setState({ pets: [], activePet: null });

@@ -1269,6 +1269,37 @@ export function dateOnlyItemsOf(input: DateOnlyItemsInput): Map<string, DateOnly
   return out;
 }
 
+/** One day's date-only items dated before the record's first day (CUL-1242). */
+export interface PreRecordDay {
+  day: string;
+  items: DateOnlyItem[];
+}
+
+/**
+ * The date-only items dated before the pet's first log (CUL-1242, PM-ruled (b)): a visit,
+ * a course start or a bowl change the owner entered for a day the record does not reach.
+ * Every window starts at the first log (GAP-24), so no window holds them; the list draws
+ * them after its end, below the record's start, and nothing counts them. Read over the
+ * whole record, never a window. A record with no log yet holds every item up to today
+ * (one dated after today is not history). Newest day first, as the list reads.
+ */
+export function preRecordItemsOf(input: {
+  visits: readonly HistoryVisitRow[];
+  courses: readonly HistoryCourse[];
+  bowls: readonly BoundaryMarker[];
+  /** The record's first day (`FirstDays.record`), or null when nothing is logged yet. */
+  recordStart: string | null;
+  today: string;
+}): PreRecordDay[] {
+  const { recordStart, today } = input;
+  const toDay = recordStart !== null && recordStart < today ? recordStart : today;
+  const byDay = dateOnlyItemsOf({ ...input, range: { fromDay: '0000-01-01', toDay } });
+  return [...byDay]
+    .filter(([day]) => recordStart === null || day < recordStart)
+    .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
+    .map(([day, items]) => ({ day, items }));
+}
+
 // ── The list's sections: day cards and gap lines (§3.5, R-1) ────────────────────
 
 export type HistorySection =

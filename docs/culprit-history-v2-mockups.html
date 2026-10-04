@@ -507,6 +507,12 @@
   .sheet .c1238-note { font-size: 11.5px; color: #525252; line-height: 1.4; margin: 2px 0 0; }
   .sheet .c1238-retry { display: inline-flex; align-items: center; min-height: 32px; font-size: 12.5px; font-weight: 600; color: #0B7B6C; margin-bottom: 2px; }
   .c1238-new { background: #FFF6D6; border-radius: 4px; padding: 0 2px; }
+  .c1242 { height: 290px; overflow: hidden; }
+  .c1242 .c1238-row { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; padding: 0 2px; margin-bottom: 10px; }
+  .c1242 .c1238-row .pl { font-size: 11px; color: #525252; border: 1px solid #D4D4D4; border-radius: 999px; padding: 4px 9px; background: #FFFFFF; }
+  .c1242 .c1238-row .pl:first-of-type { margin-left: auto; }
+  .c1242 .gap.mkline { padding: 10px 12px; }
+  .c1242 .c1242-new { background: #FFF6D6; border-radius: 8px; }
   /* ── §14 · CUL-1200: a call with no photo on the month, the gallery's count line ── */
   .dm .cd { position: absolute; left: 5px; top: 5px; width: 7px; height: 7px; transform: rotate(45deg); background: #9F1239; border-radius: 1px; box-sizing: border-box; }
   .dm.sym .cd { border: 1px solid #FFFFFF; }
@@ -561,6 +567,7 @@
     <div class="r"><b>CUL-1530 · "Go option a" (2026-10-03)</b><span><i class="d">ruled</i>Every day that holds a vomit is rose under All types, on the strip and the month. The month's corner stays on the day a bout began, a continuing day is rose with no number, and the line counts the rose days: "Vomiting 3 times · vomit logged on 6 days". Option (b) has left the page. <a href="#s13">§13</a></span></div>
     <div class="r"><b>CUL-1200 · "(b)" (2026-10-03, CUL-1520 item 8)</b><span><i class="d">ruled</i>A worth-a-call with no photo reaches the Patterns month: every called day carries the diamond on the default layers, photo or not, and no layer hides it. The Signal gallery stays photos, and its count line names the episodes with no photo read as a call. <a href="#s14">§14</a></span></div>
     <div class="r"><b>CUL-1238 · a failed record read (2026-10-04)</b><span><i class="d">built</i>On a failed read the window and type sheets say the record could not be loaded and offer Try again, which re-reads the one shared read the list uses. The window sheet no longer drops the trial and visit rows in silence. <a href="#s15">§15</a></span></div>
+    <div class="r"><b>CUL-1242 · "(b)" (2026-10-03, CUL-1520 item 9)</b><span><i class="d">built</i>A visit, a medicine start or a bowl change dated before the pet's first log is drawn after the list's end, below "Nyx's record starts here", never counted and never moving coverage. A record holding only such items shows them under a first-log line, never "Nothing logged yet". <a href="#s16">§16</a></span></div>
   </div>
   <div class="howto"><b>How to read this page.</b> §01 is the whole screen with every demo. §02 to §07 are the rulings, one per section, each drawn once. §08 is the quiet states, §09 the motion inventory, §10 the rules a build carries, §11 the rulings in one list. §12 holds the four open calls from the HV-9 build, options beside current frames; §13 and §14 are the later rulings, CUL-1530 and CUL-1200, each drawn as built beside as ruled; §15 is CUL-1238, a failed record read said on the sheets. Round 4, with the options side by side, is in git at <code>b0479342</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>.</div>
   <div class="howto" style="margin-top:14px;border-left:3px solid var(--gold)"><b>The record, not a fixture.</b> Times, types, food and drug names, ratings, doses, photo presence and each read's verdict come from a service-role read scoped to Nyx's id paired with her owner's account. Note <em>text</em> was never read: where a note's words appear they are the Designer's and are marked <span class="illus">illustrative</span>, as are the vet visit's reason and clinic.</div>
@@ -1101,6 +1108,42 @@
       <span class="tag cur">CUL-1238</span>
       <div class="phone c1238"><div class="notch"></div><div class="c1238-bg"><div class="c1238-row">Nyx<span class="pl">All types</span><span class="pl">All time</span></div><div class="c1238-err"><b>Couldn't load history</b><span>Something went wrong loading Nyx's history.</span><i>Try again</i></div></div><div class="c1238-scrim" aria-hidden="true"></div><div class="sheet"><div class="grab"></div><div class="sl">Show only</div><p class="c1238-note"><span class="c1238-new">Couldn't load Nyx's record, so nothing here is counted yet.</span></p><span class="c1238-retry"><span class="c1238-new">Try again</span></span><div class="opt sel">All types<span class="ck">✓</span></div><div class="opt">Meal</div><div class="opt">Vomit</div><div class="opt">Loose stool</div><div class="opt">Medication</div><div class="opt">Photographed</div></div></div>
       <p class="frame-cap"><b>No number, and now a reason.</b> The rows that need no record stay, uncounted; the courses under Medication come back with the read. With a search open the line still shows, ahead of search's own caption: the failure is the bigger fact.</p>
+    </div>
+  </div>
+</section>
+
+<section id="s16">
+  <div class="sec-head"><span class="sec-num">§16</span><h2>What came before the first log (CUL-1242, ruled (b) 2026-10-03)</h2></div>
+  <div class="col">
+    <p>Every window starts on the day of the pet's first log, which keeps the "days with nothing logged" count honest (GAP-24). A vet visit, a medicine start or a bowl change the owner dated before that day sat outside every window, so it never showed, and a pet whose record so far was only a visit read <i>Nothing logged yet</i>. That is day one for the wedge: Jordan enters the visit that sent them home before logging anything.</p>
+    <p><b>The ruling:</b> those items draw after the list's end, newest first, one line per day as a filter's item line reads (<i>Tue, Sep 1 · Vet visit, Diet trial start</i>; a visit's line opens it). They are never a day card, never counted, never a gap and never a strip door, and the count line keeps <i>since</i> the first log. Under a filter they follow the filter's rows, since "record starts here" would be false there; under search, and in a window that stops short of the first log, they do not show. <span class="illus">illustrative: Nyx's visit on Sep 1, her first log on Sep 4; yellow marks what is new</span></p>
+  </div>
+
+  <h3>A record that is only a visit</h3>
+  <div class="optrow">
+    <div class="frame-slot">
+      <span class="tag built">As built</span>
+      <div class="phone c1242"><div class="notch"></div><div class="c1238-row">Nyx<span class="pl">All types</span><span class="pl">All time</span></div><div class="emptyst big"><b>Nothing logged yet</b>Tap + anywhere to log Nyx's first food or symptom. Everything you log builds up here.</div></div>
+      <p class="frame-cap"><b>The visit Jordan just entered, gone.</b> The record holds it; the screen says the record is empty.</p>
+    </div>
+    <div class="frame-slot">
+      <span class="tag cur">CUL-1242</span>
+      <div class="phone c1242"><div class="notch"></div><div class="c1238-row">Nyx<span class="pl">All types</span><span class="pl">All time</span></div><div class="recend"><i></i>Nyx's record starts with the first log</div><div class="c1242-new"><div class="gap mkline"><i class="sq"></i>Tue, Sep 1 · Vet visit, Diet trial start</div></div></div>
+      <p class="frame-cap"><b>The visit, under the first-log line.</b> No count line, since nothing is logged to count. The line says where the record will begin without calling the visit a log.</p>
+    </div>
+  </div>
+
+  <h3>The list's end, once there are logs</h3>
+  <div class="optrow">
+    <div class="frame-slot">
+      <span class="tag built">As built</span>
+      <div class="phone c1242"><div class="notch"></div><div class="c1238-row">Nyx<span class="pl">All types</span><span class="pl">All time</span></div><div class="dayc"><div class="dayhdr"><span class="dn">Fri, Sep 4</span><span class="dc">2 logged</span></div></div><div class="recend"><i></i>Nyx's record starts here · Fri, Sep 4</div></div>
+      <p class="frame-cap"><b>The list ends at the first log.</b> The Sep 1 visit and the Prednisone started Aug 28 are nowhere on History.</p>
+    </div>
+    <div class="frame-slot">
+      <span class="tag cur">CUL-1242</span>
+      <div class="phone c1242"><div class="notch"></div><div class="c1238-row">Nyx<span class="pl">All types</span><span class="pl">All time</span></div><div class="dayc"><div class="dayhdr"><span class="dn">Fri, Sep 4</span><span class="dc">2 logged</span></div></div><div class="recend"><i></i>Nyx's record starts here · Fri, Sep 4</div><div class="c1242-new"><div class="gap mkline"><i class="sq"></i>Tue, Sep 1 · Vet visit, Diet trial start</div><div class="gap mkline"><i class="sq" style="width:10px;border-radius:3px;height:3px;box-shadow:none;background:#5B7A9E"></i>Fri, Aug 28 · Prednisone started</div></div></div>
+      <p class="frame-cap"><b>Below the record's start, never inside it.</b> The count line still reads <i>since Sep 4</i>, and no line between Aug 28 and Sep 4 says "nothing logged": those days were never watched.</p>
     </div>
   </div>
 </section>
