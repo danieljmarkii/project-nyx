@@ -59,7 +59,9 @@ import { usePetStore, type Pet } from './petStore';
 // the day headers, the strip AND the pinned row's pills and sheets (`useHistoryRecordFacts`)
 // can never come from two reads, not even for the length of one read after a write. A
 // re-read replaces the whole snapshot at once; a removal, a write, a sync tick and a pull
-// all re-derive together.
+// all re-derive together. The cost of one answer: a re-read that fails keeps the last
+// snapshot, its record included, so the pills keep the counts the list keeps, and the list
+// says the refresh failed.
 //
 // ── THE RECORD IS READ ONCE PER REFRESH, NOT ONCE PER SCOPE (CUL-1228) ──────────
 // A two-year record costs a few hundred milliseconds of JS to read. A load that only changes
@@ -379,7 +381,8 @@ function stillActive(petId: string): boolean {
 
 let loadSeq = 0;
 /** The latest record read, keyed on everything it was read for (the header). Released by
- *  identity when it fails, never a bare clear (C-24). */
+ *  identity when it fails, or answers without the courses the list needs, never a bare
+ *  clear (C-24): a record that cannot draw the list is never handed to the next scope. */
 let recordRead: { key: string; run: Promise<HistoryRecordData> } | null = null;
 
 /** The record for `pet` on `today`: the latest read for the same pet and day when `reuse`
@@ -393,9 +396,12 @@ function recordFor(pet: HistoryListPet, today: string, reuse: boolean): Promise<
   const run = readHistoryRecord(pet, PHOTO_READING_OFF, instantOnDay(today, Date.now()));
   const entry = { key, run };
   recordRead = entry;
-  run.catch(() => {
+  const release = () => {
     if (recordRead === entry) recordRead = null;
-  });
+  };
+  run.then((r) => {
+    if (r.courses === null) release();
+  }, release);
   return run;
 }
 
@@ -428,9 +434,10 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
     if (scope.petId !== pet.id) return 'superseded';
     const request = historyRequestKey(today, scope);
     const myId = ++loadSeq;
-    // A retry starts clean: a load that succeeds takes the failure down, one that fails puts
-    // it back (v1's rule, per attempt, not per mount).
-    if (get().failedRequest === request) set({ failedRequest: null });
+    // Every load starts clean: a load that succeeds takes the failure down, one that fails
+    // puts it back (v1's rule, per attempt, not per mount). A failure for an earlier request
+    // goes too, so nothing (the pinned row included) reads it as this request's.
+    if (get().failedRequest !== null) set({ failedRequest: null });
     try {
       const record = await recordFor(pet, today, reuseRecord);
       // The list cannot name a course it could not read (the pinned row can go without).

@@ -28,8 +28,8 @@ import { usePetStore } from '../store/petStore';
 export type HistoryRecordState =
   /** No answer for this pet yet: draw no number (C-12). */
   | { status: 'loading' }
-  /** The list's read failed with nothing for this pet and day to draw: still no number,
-   *  and never a zero standing in for one. */
+  /** The list's latest load failed with nothing for this pet and day to draw: still no
+   *  number, and never a zero standing in for one. A new load clears it. */
   | { status: 'error' }
   | { status: 'ready'; data: HistoryRecordData };
 

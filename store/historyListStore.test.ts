@@ -197,6 +197,40 @@ describe('the record: one read behind the count line and the pills', () => {
     }
   });
 
+  it('a record whose courses could not be read is never reused: the next scope reads them again', async () => {
+    seedDays(2, 2);
+    const spy = reads();
+    // The module jest serves (the suite's partial mock), not an import namespace's copy of it.
+    const served = jest.requireMock<typeof import('../lib/historyQueries')>('../lib/historyQueries');
+    const courses = jest.spyOn(served, 'readHistoryCourses').mockRejectedValueOnce(new Error('locked'));
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY })).toBe('failed');
+      expect(await store().load({ pet: PET_A, scope: vomitScope(), today: TODAY, reuseRecord: true })).toBe('drawn');
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+      courses.mockRestore();
+      errors.mockRestore();
+    }
+  });
+
+  it('a load for a new request takes an earlier request\'s failure down', async () => {
+    seedDays(2, 2);
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockFail = true;
+      expect(await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY })).toBe('failed');
+      expect(store().failedRequest).not.toBeNull();
+      mockFail = false;
+      const pending = store().load({ pet: PET_A, scope: vomitScope(), today: TODAY });
+      expect(store().failedRequest).toBeNull();
+      expect(await pending).toBe('drawn');
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
   it('a record read for another day or another version of the pet is not reused', async () => {
     seedDays(2, 2);
     const spy = reads();

@@ -1,7 +1,8 @@
 // What History v2 reads of the whole record (HV-9 / CUL-1166, CUL-1228; spec §3.8, §3.9,
 // §5.2): the window table's facts, the record's numbers over All time, the pet's courses
-// and the photos whose read has not landed. The list and the pinned row share this one read. Every read here is one another module already owns; this
-// file only assembles them for one pet and one `today`.
+// and the photos whose read has not landed. The list and the pinned row share this one
+// read. Every read here is one another module already owns; this file only assembles them
+// for one pet and one `today`.
 //
 // ── ONE `today` FOR THE WHOLE ASSEMBLY ──────────────────────────────────────────────
 // `WindowFacts` must be derived for a single day (HV-3, `lib/historyWindows.ts`): the
@@ -101,7 +102,8 @@ export interface HistoryRecordData {
   /** The record's facts over All time: the ONE read every number on the screen is a slice
    *  of (`historyFactsFor`), the list's count line, day headers and strip included (CUL-1228). */
   facts: RecordFacts;
-  /** `facts.days`: each day's facts over All time, which the pills slice per window (`daysIn`). */
+  /** `facts.days`, the same map under the pinned row's name (an alias, never a second
+   *  read): each day's facts over All time, which the pills slice per window (`daysIn`). */
   recordDays: ReadonlyMap<string, DayFacts>;
   /** The pet's courses in the derivation's order, or null when they could not be read. */
   courses: readonly HistoryCourse[] | null;

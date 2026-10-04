@@ -410,7 +410,9 @@ describe('the sweep parses each instant once (CUL-1228)', () => {
       id: `m-${i}`,
       type: 'meal',
       // Every third pair 20s apart (a repeat), in both spellings, in a scrambled order.
-      occurredAt: new Date(base + ((i * 7_919) % 5_000) * 3_600_000 + (i % 3 === 0 ? 20_000 : 0)).toISOString(),
+      occurredAt: ((iso: string) => (i % 2 === 0 ? iso : iso.replace(/\.\d{3}Z$/, '+00:00')))(
+        new Date(base + ((i * 7_919) % 5_000) * 3_600_000 + (i % 3 === 0 ? 20_000 : 0)).toISOString(),
+      ),
       foodItemId: 'one-food',
     }));
     const spy = jest.spyOn(Date, 'parse');
