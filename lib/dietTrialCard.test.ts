@@ -412,7 +412,7 @@ describe('state 1 — day one', () => {
   });
 
   it('makes no claim in EITHER direction — the forward line is the whole card', () => {
-    expect(textOf(model, 'fact')).toEqual(['Nothing logged yet today.']);
+    expect(textOf(model, 'fact')).toEqual(['No meals logged yet today.']);
     expect(textOf(model, 'forward')).toEqual([
       'From here, every meal and treat you log builds the record your vet reads.',
     ]);
@@ -1993,7 +1993,7 @@ describe('B-533 PR A — the fixes’ own regressions', () => {
     expect(m.state).toBe('day_one');
     const joined = allStrings(m).join(' ');
     expect(joined).toContain('2 logged feedings were outside the trial diet');
-    expect(joined).not.toContain('Nothing logged yet today.');
+    expect(joined).not.toMatch(/logged yet today/);
   });
 
   // …and a genuinely empty day 1 still says so.
@@ -2003,7 +2003,7 @@ describe('B-533 PR A — the fixes’ own regressions', () => {
       coverage: { daysLogged: 0, daysElapsed: 1 },
       exposures: { mayStateRecordClean: true, totalFeedings: 0, offDiet: 0 },
     }));
-    expect(textOf(m, 'fact')).toContain('Nothing logged yet today.');
+    expect(textOf(m, 'fact')).toContain('No meals logged yet today.');
   });
 
   // GATE 5. The two states that took the floor as a DECLARED deviation silently

@@ -9,6 +9,7 @@ jest.mock('./feedingArrangements', () => ({
 }));
 
 import {
+  DAY_ONE_NO_MEALS_LINE,
   resolveTrialCard,
   type TrialCardInput,
   type TrialCardLineRole,
@@ -273,14 +274,36 @@ describe('CUL-1338: the terminal refusal sentence', () => {
 });
 
 describe('CUL-1338: day 1', () => {
-  it('does not say "Nothing logged yet today." over a feeding that names no food', () => {
+  it('does not say "No meals logged yet today." over a feeding that names no food', () => {
     const m = resolveTrialCard(activeInput({
       nowMs: localNoon(2026, 7, 3),
       coverage: { daysLogged: 0, daysElapsed: 1 },
       exposures: { mayStateRecordClean: false, totalFeedings: 0, offDiet: 0, unclassifiable: 1 },
     }));
     expect(m.state).toBe('day_one');
-    expect(allText(m)).not.toContain('Nothing logged yet today.');
+    expect(allText(m)).not.toMatch(/logged yet today/);
+  });
+});
+
+// CUL-1564. Every input the day-1 gate reads is a feeding count, so the sentence
+// it writes may claim only feedings. A look, a vomit or a weight logged on day 1
+// never reaches this card's input, which is exactly why "Nothing logged yet today."
+// was false beside one: the card cannot see them, so its words must not cover them.
+describe('CUL-1564: day 1 names the population it counted', () => {
+  const empty = resolveTrialCard(activeInput({
+    nowMs: localNoon(2026, 7, 3),
+    coverage: { daysLogged: 0, daysElapsed: 1 },
+    exposures: { mayStateRecordClean: true, totalFeedings: 0, offDiet: 0 },
+  }));
+
+  it('says meals, from the one constant', () => {
+    expect(empty.state).toBe('day_one');
+    expect(textOf(empty, 'fact')).toEqual([DAY_ONE_NO_MEALS_LINE]);
+    expect(DAY_ONE_NO_MEALS_LINE).toBe('No meals logged yet today.');
+  });
+
+  it('never claims the whole day', () => {
+    expect(allText(empty)).not.toMatch(/nothing logged/i);
   });
 });
 
