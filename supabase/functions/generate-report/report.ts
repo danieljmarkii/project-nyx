@@ -1964,6 +1964,12 @@ export interface MedicationAdherence {
   elapsedDaysInWindow: number
   daysWithDose: number
   /**
+   * The course's days inside the window, split three ways by PRECEDENCE (CUL-1550, PM ruling
+   * (a′)) — see `partitionCourseDays`. Page 1 and Appendix D both state this split and nothing
+   * else, so a ratio of given days never sits beside an unstated remainder.
+   */
+  courseDays: CourseDayPartition
+  /**
    * The local days an ADMINISTERED dose (given | partial) was logged, ascending (B-532).
    *
    * Appendix D had a dose COUNT and no dose DATES, which on a derm trial is the difference
@@ -5409,6 +5415,87 @@ function buildMedicationPass(
 }
 
 /**
+ * How a course's days inside the report window divide (CUL-1550, PM ruling (a′)).
+ *
+ * "Given on 12 of 46 days" with the other 34 unstated reads to a vet as "withheld on 34", when
+ * on the cold read's sample 31 of them held no row at all. Stating a remainder beside the ratio
+ * is only honest if the parts are ONE partition of ONE population, so every course day in the
+ * window lands in exactly one bucket, by precedence (C-4: the accusing reading loses to the
+ * record):
+ *
+ *   • given            — any given or partial dose of THIS course that day;
+ *   • loggedNotGiven   — rows of this course that day, none given or partial (refused, missed,
+ *                        or unconfirmed — so the bucket says "not as given", never "not given":
+ *                        an unconfirmed dose is unknown, not withheld);
+ *   • nothingLogged    — no row of this course that day.
+ *
+ * Every bucket is scoped to THIS course's rows, and the render says so ("against this course").
+ * A draft also counted same-drug doses filed elsewhere (a sibling course, an orphan of the
+ * CUL-991 UTC-day seam); two adversarial passes broke it every way — a refused dose elsewhere
+ * read as given, a free-text sibling was invisible, a brand/generic pair could not be matched —
+ * because "is this the same drug, and was it given" is a question the record cannot always
+ * settle. A course-scoped claim is always true, and the dose on the other line stays visible
+ * on that line (2026-10-04).
+ *
+ * Rows of this course dated OUTSIDE its span (a backdated dose, an edited start date) cannot be
+ * course days, so they are disclosed with their dates, each kind with its own — the given AND
+ * the not-given ones (C-37: reach for the accusing number too, and say which date it fell on).
+ */
+export interface CourseDayPartition {
+  given: number
+  loggedNotGiven: number
+  nothingLogged: number
+  /** This course's in-window rows dated outside its span, by kind. Doses, not days. */
+  outsideCourseGiven: number
+  outsideCourseNotGiven: number
+  /** Their local day keys, ascending and distinct, PER KIND, so the render can date each kind. */
+  outsideCourseGivenDays: string[]
+  outsideCourseNotGivenDays: string[]
+}
+
+export interface PartitionRow {
+  /** The row's LOCAL day number (`eventDayNumber`), the same numbering as the span bounds. */
+  day: number | null
+  /** The same day as a local 'YYYY-MM-DD' key, for dating an out-of-course row. */
+  dayKey: string | null
+  administered: boolean
+}
+
+export function partitionCourseDays(rows: readonly PartitionRow[], spanStart: number, spanEnd: number): CourseDayPartition {
+  const givenDays = new Set<number>()
+  const loggedDays = new Set<number>()
+  const outsideGivenDays = new Set<string>()
+  const outsideNotGivenDays = new Set<string>()
+  let outsideCourseGiven = 0
+  let outsideCourseNotGiven = 0
+  for (const r of rows) {
+    if (r.day === null) continue
+    if (r.day < spanStart || r.day > spanEnd) {
+      if (r.administered) {
+        outsideCourseGiven++
+        if (r.dayKey !== null) outsideGivenDays.add(r.dayKey)
+      } else {
+        outsideCourseNotGiven++
+        if (r.dayKey !== null) outsideNotGivenDays.add(r.dayKey)
+      }
+      continue
+    }
+    loggedDays.add(r.day)
+    if (r.administered) givenDays.add(r.day)
+  }
+  const courseDays = Math.max(0, spanEnd - spanStart + 1)
+  return {
+    given: givenDays.size,
+    loggedNotGiven: loggedDays.size - givenDays.size,
+    nothingLogged: courseDays - loggedDays.size,
+    outsideCourseGiven,
+    outsideCourseNotGiven,
+    outsideCourseGivenDays: [...outsideGivenDays].sort(),
+    outsideCourseNotGivenDays: [...outsideNotGivenDays].sort(),
+  }
+}
+
+/**
  * Page 1 + Appendix D's per-regimen medication facts (§3.8, B-117 §7).
  *
  * `attributedDoses` are the doses the ONE shared attribution pass assigned to THIS regimen —
@@ -5443,6 +5530,9 @@ function buildMedicationAdherence(
   let refused = 0
   let unconfirmed = 0
   const doseDayNums = new Set<number>()
+  // Every in-window row's local day and whether it delivered therapy — the input to the ONE
+  // course-day partition both page 1 and Appendix D state (CUL-1550).
+  const windowRows: PartitionRow[] = []
   // The same days as `doseDayNums`, as local day KEYS — Appendix D renders dates, and a day
   // number is only meaningful next to the scope that produced it (B-532).
   const doseDayKeys = new Set<string>()
@@ -5471,6 +5561,7 @@ function buildMedicationAdherence(
       }
     }
     if (!inWindow(d)) continue
+    windowRows.push({ day: eventDayNumber(d.occurredAt, tz), dayKey: localDayKey(d.occurredAt, tz), administered })
     switch (d.adherence) {
       case 'given':
         given++
@@ -5526,6 +5617,17 @@ function buildMedicationAdherence(
     adherenceState,
     elapsedDaysInWindow,
     daysWithDose: doseDayNums.size,
+    courseDays: overlapsWindow
+      ? partitionCourseDays(windowRows, spanStart, spanEnd)
+      : {
+          given: 0,
+          loggedNotGiven: 0,
+          nothingLogged: 0,
+          outsideCourseGiven: 0,
+          outsideCourseNotGiven: 0,
+          outsideCourseGivenDays: [],
+          outsideCourseNotGivenDays: [],
+        },
     doseDays: [...doseDayKeys].sort(),
     // The ONE denominator on this document — the prescription, read from the shared course
     // derivation rather than re-derived here, so page 1 and the §4.4 table cannot disagree.

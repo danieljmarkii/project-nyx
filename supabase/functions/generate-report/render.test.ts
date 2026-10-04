@@ -345,6 +345,7 @@ function med(over: Partial<MedicationAdherence>): MedicationAdherence {
     adherenceState: 'tracked',
     elapsedDaysInWindow: 45,
     daysWithDose: 41,
+    courseDays: { given: 41, loggedNotGiven: 0, nothingLogged: 4, outsideCourseGiven: 0, outsideCourseNotGiven: 0, outsideCourseGivenDays: [], outsideCourseNotGivenDays: [] },
     doseDays: [],
     prescribedDoses: 90,
     lifetimeDosesLogged: 82,
@@ -7046,7 +7047,220 @@ Deno.test('R-13 item 7 — a populated appendix D still gets its table', () => {
   const html = renderReport(base({ medications: [med({})] }))
   const start = html.indexOf('Appendix D — Medication log')
   const section = html.slice(start, html.indexOf('</section>', start))
-  assert.ok(/<table>/.test(section) && /Doses logged/.test(section), 'the table is untouched where there is data')
+  assert.ok(/<table>/.test(section) && /Doses given \(incl\. partial\)/.test(section), 'the table is untouched where there is data')
+})
+
+// ── CUL-1550 (CUL-1209 2(a), then ruling (a′)) — "given", and the course days split three ways ──
+//
+// History counts every dose row as "logged" (GAP-26, CUL-1193). The report's two medication
+// tables and Appendix D's day phrase used the same word for given + partial only, so the phone
+// and the paper could say "logged" over different numbers for one drug: the report now says
+// "given". And a ratio of given days alone reads as "withheld on the rest", so page 1 and
+// Appendix D both state the course days as ONE partition (given / logged but not as given /
+// nothing logged) through one phrase. Fixture: 3 given, 1 partial, 1 refused, 1 unconfirmed,
+// 1 missed, and a course day with nothing at all.
+function cul1550Html(courseDays: MedicationAdherence['courseDays'], over: Partial<MedicationAdherence> = {}): string {
+  return renderReport(
+    base({
+      medications: [
+        med({
+          windowDosesLogged: 4,
+          windowDosesTotal: 7,
+          daysWithDose: 4,
+          elapsedDaysInWindow: 10,
+          courseDays,
+          givenDoses: 3,
+          partialDoses: 1,
+          refusedDoses: 1,
+          unconfirmedDoses: 1,
+          missedDoses: 1,
+          ...over,
+        }),
+      ],
+      medicationHistory: mhTable([mhEntry({ drugName: 'Metronidazole', dosesLogged: 4 })], '2026-04-01'),
+    }),
+  )
+}
+const appDOf = (html: string): string =>
+  html.slice(html.indexOf('Appendix D — Medication log'), html.indexOf('</table>', html.indexOf('Appendix D — Medication log')))
+const page1MedOf = (html: string): string => {
+  const t = plain(html)
+  const i = t.indexOf('In this window: ')
+  // Bounded at the line's own dose list, so a check can never be satisfied by appendix D's text.
+  const end = t.indexOf('Other doses against this course', i)
+  const next = t.indexOf('Appendix', i)
+  // A line whose list label went missing must not borrow appendix D's: no end before the
+  // appendices means no line.
+  return i < 0 || end < 0 || (next >= 0 && end > next) ? '' : t.slice(i, end + 100)
+}
+
+const split = (o: Partial<MedicationAdherence['courseDays']>): MedicationAdherence['courseDays'] => ({
+  given: 0, loggedNotGiven: 0, nothingLogged: 0, outsideCourseGiven: 0, outsideCourseNotGiven: 0, outsideCourseGivenDays: [], outsideCourseNotGivenDays: [], ...o,
+})
+
+Deno.test('CUL-1550 — the report names the given + partial count "given", never "logged"', () => {
+  const html = cul1550Html(split({ given: 4, loggedNotGiven: 3, nothingLogged: 3 }))
+  const appD = appDOf(html)
+  const hist = html.slice(html.indexOf('>Medication history</p>'), html.indexOf('</table>', html.indexOf('>Medication history</p>')))
+  assert.ok(appD.length > 0 && hist.length > 0, 'both tables rendered — the checks below are over something')
+  for (const [name, t] of [['appendix D', appD], ['the lifetime table', hist]] as const) {
+    assert.ok(/<th[^>]*>Doses given \(incl\. partial\)<\/th>/.test(t), `${name}'s count column is headed by what it counts`)
+    assert.ok(!/<th[^>]*>Doses logged<\/th>/.test(t), `${name} no longer calls it "logged"`)
+  }
+  assert.ok(!/Logged on \d/.test(plain(appD)), 'and never "Logged on" for that population')
+})
+
+Deno.test('CUL-1550 — page 1 and appendix D state the same split of the course days', () => {
+  const html = cul1550Html(split({ given: 4, loggedNotGiven: 3, nothingLogged: 3 }))
+  const appD = plain(appDOf(html))
+  const p1 = page1MedOf(html)
+  assert.ok(p1.length > 0, 'page 1 carries the window clause — the checks below are over something')
+  const tail = 'a dose logged but not as given on 3; no dose logged against this course on 3\\.'
+  assert.ok(new RegExp(`Given on 4 of 10 days of the course in this window; ${tail}`).test(appD), appD)
+  assert.ok(new RegExp(`In this window: 4 doses given \\(1 partial\\), on 4 of 10 days of the course; ${tail}`).test(p1), p1)
+  // The counts after the split are DOSES, scoped to the course and the window on both pages (a dose
+  // of the drug on another line is not among them); partial rides the given count, never this list.
+  const list = /Other doses against this course in this window: 1 unconfirmed, 1 refused, 1 missed\./
+  assert.ok(list.test(appD), appD)
+  assert.ok(list.test(p1), p1)
+  // "nothing logged" means a day with no entry of ANY kind elsewhere on the report; never here.
+  assert.ok(!/nothing logged/.test(appD + p1))
+})
+
+Deno.test('CUL-1550 — a zero part is omitted, never "on 0", on both pages', () => {
+  const html = cul1550Html(split({ given: 7, loggedNotGiven: 3 }))
+  const both = plain(appDOf(html)) + ' ' + page1MedOf(html)
+  assert.ok(/7 of 10 days of the course in this window; a dose logged but not as given on 3\./.test(both), both)
+  assert.ok(!/\bon 0\b/.test(both), 'no part states a zero')
+  assert.ok(!/no dose logged against this course/.test(both), 'and the empty part is absent')
+})
+
+Deno.test('CUL-1550 — below once a day, the empty part names the schedule, never a delivery verb', () => {
+  const tailFor = (dosesPerDay: number | null) =>
+    plain(appDOf(cul1550Html(split({ given: 2, nothingLogged: 7 }), { elapsedDaysInWindow: 9, dosesPerDay })))
+  const cases: [number | null, string][] = [
+    [0.5, ' (on an every-other-day schedule).'],
+    [0.33, ' (on a schedule of a dose every 3 days).'],
+    [0.14, ' (on a once-a-week schedule).'],
+    [0.17, ' (on a schedule of a dose every 6 days).'],
+    [0.13, ' (on a schedule of a dose every 8 days).'], // the one interval that stores to 0.13
+    [0.25, ' (on a schedule of a dose every 4 days).'],
+    [0.09, ' (on a schedule of a dose every 11 days).'],
+    [0.12, ' (on a 0.12×/day schedule).'], // no whole-day interval stores as 0.12 (8 → 0.13, 9 → 0.11)
+    [0.08, ' (on a 0.08×/day schedule).'], // every 12 or 13 days
+    [0.07, ' (on a 0.07×/day schedule).'], // every 14 or 15 days
+    [0.06, ' (on a 0.06×/day schedule).'], // every 16–18 days
+    [0.05, ' (on a 0.05×/day schedule).'], // every 19–22 days
+    [0.04, ' (on a 0.04×/day schedule).'], // every 23–28 days
+    [0.03, ' (on a 0.03×/day schedule).'], // every 29–40 days all store as 0.03: never "every 33"
+    [0.01, ' (on a 0.01×/day schedule).'],
+    [0.4, ' (on a 0.4×/day schedule).'],
+    [0.48, ' (on a 0.48×/day schedule).'], // not within the column's precision of every other day
+    [0.75, ' (on a 0.75×/day schedule).'],
+    [0.99, ' (on a 0.99×/day schedule).'], // never "every 1 days"
+    [null, ' (on an as-needed schedule).'],
+    [1, '.'],
+    [2, '.'],
+    [0, '.'], // a rate the record cannot mean says nothing
+    [-0.5, '.'],
+  ]
+  for (const [rate, end] of cases) {
+    const t = tailFor(rate)
+    assert.ok(t.includes(`no dose logged against this course on 7${end}`), `${rate}: ${t}`)
+  }
+})
+
+Deno.test('CUL-1550 — doses dated outside the course are disclosed by kind and side, with their dates and year', () => {
+  const at = (o: Partial<MedicationAdherence['courseDays']>, over: Partial<MedicationAdherence> = {}) =>
+    plain(appDOf(cul1550Html(split(o), { elapsedDaysInWindow: 8, startedAt: '2026-06-10', endedAt: '2026-06-17', status: 'completed', ...over })))
+  const one = cul1550Html(split({ given: 2, nothingLogged: 6, outsideCourseGiven: 1, outsideCourseGivenDays: ['2026-06-27'] }), {
+    elapsedDaysInWindow: 8, startedAt: '2026-06-10', endedAt: '2026-06-17', status: 'completed',
+  })
+  const oneD = plain(appDOf(one))
+  assert.ok(/Given on 2 of 8 days of the course in this window; no dose logged against this course on 6\. 1 given dose is dated outside the course's dates: after its recorded end \(Jun 27, 2026\)\./.test(oneD), oneD)
+  assert.ok(/1 given dose is dated outside the course's dates: after its recorded end \(Jun 27, 2026\)\./.test(page1MedOf(one)), 'page 1 discloses it too')
+  // Each kind in its own sentence with its own dates, so the refusal can be placed (C-37).
+  const mixed = at({ given: 1, nothingLogged: 7, outsideCourseGiven: 1, outsideCourseNotGiven: 2, outsideCourseGivenDays: ['2026-06-06'], outsideCourseNotGivenDays: ['2026-06-05'] })
+  assert.ok(/1 given dose is dated outside the course's dates: before its start \(Jun 6, 2026\)\. 2 doses not recorded as given are dated outside the course's dates: before its start \(Jun 5, 2026\)\./.test(mixed), mixed)
+  // Both sides named, never one span that contains the course.
+  const sides = at({ given: 8, outsideCourseGiven: 6, outsideCourseGivenDays: ['2026-06-01', '2026-06-02', '2026-06-03', '2026-06-25', '2026-06-26', '2026-06-27'] })
+  assert.ok(/6 given doses are dated outside the course's dates: before its start \(Jun 1, Jun 2, Jun 3, 2026\) and after its recorded end \(Jun 25, Jun 26, Jun 27, 2026\)\./.test(sides), sides)
+  // "Recorded end" only where the report shows one: an active course reads "since <start>".
+  const active = at({ given: 8, outsideCourseGiven: 1, outsideCourseGivenDays: ['2026-06-25'] }, { status: 'active' })
+  assert.ok(/after its end date, Jun 17, 2026, \(Jun 25, 2026\)/.test(active) && !/recorded end/.test(active), active)
+  const stopped = at({ given: 8, outsideCourseGiven: 1, outsideCourseGivenDays: ['2026-06-25'] }, { status: 'stopped' })
+  assert.ok(/after its recorded end \(Jun 25, 2026\)/.test(stopped), stopped)
+  // Exactly four: listed. Five: the span AND the day count, never a silent first four.
+  const four = at({ given: 8, outsideCourseGiven: 4, outsideCourseGivenDays: ['2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23'] })
+  assert.ok(/after its recorded end \(Jun 20, Jun 21, Jun 22, Jun 23, 2026\)/.test(four), four)
+  const five = at({ given: 8, outsideCourseGiven: 5, outsideCourseGivenDays: ['2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24'] })
+  assert.ok(/after its recorded end \(Jun 20 – Jun 24, 2026, on 5 days\)\./.test(five), five)
+  // Across a year boundary every date, and both ends of a span, carry their year (C-19).
+  const yearsList = at({ given: 8, outsideCourseGiven: 2, outsideCourseGivenDays: ['2025-12-31', '2026-01-02'] }, { startedAt: '2026-01-10', endedAt: '2026-01-17' })
+  assert.ok(/before its start \(Dec 31, 2025, Jan 2, 2026\)/.test(yearsList), yearsList)
+  const yearsSpan = at(
+    { given: 8, outsideCourseGiven: 5, outsideCourseGivenDays: ['2025-12-29', '2025-12-30', '2025-12-31', '2026-01-01', '2026-01-02'] },
+    { startedAt: '2026-01-10', endedAt: '2026-01-17' },
+  )
+  assert.ok(/before its start \(Dec 29, 2025 – Jan 2, 2026, on 5 days\)/.test(yearsSpan), yearsSpan)
+})
+
+Deno.test('CUL-1550 — page 1 counts out-of-course given doses inside its given count', () => {
+  const html = cul1550Html(split({ given: 1, nothingLogged: 12, outsideCourseGiven: 4, outsideCourseGivenDays: ['2026-06-14', '2026-06-15', '2026-06-16', '2026-06-17'] }), {
+    windowDosesLogged: 5, givenDoses: 4, partialDoses: 1, elapsedDaysInWindow: 13, startedAt: '2026-06-20', endedAt: null,
+  })
+  const p1 = page1MedOf(html)
+  assert.ok(/In this window: 5 doses given \(1 of the 5 partial; 4 of the 5 dated outside the course\), on 1 of 13 days of the course;/.test(p1), p1)
+  // Never a breakdown that sums: two partials among four outside doses is not "6 of 5".
+  const two = cul1550Html(split({ given: 1, nothingLogged: 12, outsideCourseGiven: 4, outsideCourseGivenDays: ['2026-06-14', '2026-06-15', '2026-06-16', '2026-06-17'] }), {
+    windowDosesLogged: 5, givenDoses: 3, partialDoses: 2, elapsedDaysInWindow: 13, startedAt: '2026-06-20', endedAt: null,
+  })
+  assert.ok(/5 doses given \(2 of the 5 partial; 4 of the 5 dated outside the course\)/.test(page1MedOf(two)), page1MedOf(two))
+  const onlyOut = cul1550Html(split({ given: 1, nothingLogged: 12, outsideCourseGiven: 1, outsideCourseGivenDays: ['2026-06-14'] }), {
+    windowDosesLogged: 2, givenDoses: 2, partialDoses: 0, elapsedDaysInWindow: 13, startedAt: '2026-06-20', endedAt: null,
+  })
+  assert.ok(/2 doses given \(1 of the 2 dated outside the course\), on 1 of 13 days/.test(page1MedOf(onlyOut)), page1MedOf(onlyOut))
+  // When a subset IS the whole: bare for one dose, "both" for two, "all N" above — never "1 of the 1".
+  const p1For = (o: Partial<MedicationAdherence['courseDays']>, over: Partial<MedicationAdherence>) =>
+    page1MedOf(cul1550Html(split({ nothingLogged: 13, ...o }), { elapsedDaysInWindow: 13, startedAt: '2026-06-20', endedAt: null, ...over }))
+  const oneP = p1For({ outsideCourseGiven: 1, outsideCourseGivenDays: ['2026-06-14'] }, { windowDosesLogged: 1, givenDoses: 0, partialDoses: 1 })
+  assert.ok(/1 dose given \(partial; dated outside the course\);/.test(oneP), oneP)
+  const both = p1For({ outsideCourseGiven: 2, outsideCourseGivenDays: ['2026-06-14', '2026-06-15'] }, { windowDosesLogged: 2, givenDoses: 1, partialDoses: 1 })
+  assert.ok(/2 doses given \(1 of the 2 partial; both dated outside the course\);/.test(both), both)
+  const all = p1For({ outsideCourseGiven: 3, outsideCourseGivenDays: ['2026-06-14', '2026-06-15', '2026-06-16'] }, { windowDosesLogged: 3, givenDoses: 0, partialDoses: 3 })
+  assert.ok(/3 doses given \(all 3 partial; all 3 dated outside the course\);/.test(all), all)
+})
+
+Deno.test('CUL-1550 — with no dose given against the course, the zero claim is scoped to the course on both pages', () => {
+  const html = cul1550Html(split({ loggedNotGiven: 3, nothingLogged: 7, outsideCourseNotGiven: 1, outsideCourseNotGivenDays: ['2026-06-06'] }), {
+    windowDosesLogged: 0, givenDoses: 0, partialDoses: 0, startedAt: '2026-06-10', endedAt: '2026-06-19',
+  })
+  const p1 = page1MedOf(html)
+  const appD = plain(appDOf(html))
+  const tail = 'a dose logged but not as given on 3; no dose logged against this course on 7\\. 1 dose not recorded as given is dated outside the course\'s dates: before its start \\(Jun 6, 2026\\)\\.'
+  assert.ok(new RegExp(`In this window: no dose given against this course on any of its 10 days; ${tail}`).test(p1), p1)
+  assert.ok(new RegExp(`No dose given against this course on any of its 10 days in this window; ${tail}`).test(appD), appD)
+  // Never an unscoped claim about the animal: a dose of the drug may sit on another line.
+  assert.ok(!/no doses? given on any/i.test(p1 + appD))
+  // Every given dose dated outside the course: neither page says "on 0 of N days".
+  const allOutside = cul1550Html(split({ nothingLogged: 10, outsideCourseGiven: 1, outsideCourseGivenDays: ['2026-06-06'] }), {
+    windowDosesLogged: 1, givenDoses: 1, partialDoses: 0, startedAt: '2026-06-10', endedAt: '2026-06-19',
+  })
+  const a1 = page1MedOf(allOutside)
+  const aD = plain(appDOf(allOutside))
+  assert.ok(/In this window: 1 dose given \(dated outside the course\); no dose given against this course on any of its 10 days; no dose logged against this course on 10\. 1 given dose is dated outside the course's dates: before its start \(Jun 6, 2026\)\./.test(a1), a1)
+  assert.ok(/No dose given against this course on any of its 10 days in this window; no dose logged against this course on 10\./.test(aD), aD)
+  assert.ok(!/\bon 0 of\b/.test(a1 + aD), 'never "on 0 of N"')
+})
+
+Deno.test('CUL-1550 — a one-day course reads in the singular', () => {
+  const html = cul1550Html(split({ loggedNotGiven: 1 }), { elapsedDaysInWindow: 1, windowDosesLogged: 0, givenDoses: 0, partialDoses: 0 })
+  const t = plain(appDOf(html)) + ' ' + page1MedOf(html)
+  assert.ok(!/\b1 days\b/.test(t), t)
+  assert.ok(/no dose given against this course on its 1 day;/.test(t) && /No dose given against this course on its 1 day in this window/.test(t), t)
+  const given = cul1550Html(split({ given: 1 }), { elapsedDaysInWindow: 1, windowDosesLogged: 1, givenDoses: 1, partialDoses: 0 })
+  const g = plain(appDOf(given)) + ' ' + page1MedOf(given)
+  assert.ok(/Given on 1 of 1 day of the course in this window\./.test(g) && !/\b1 days\b/.test(g), g)
 })
 
 Deno.test('R-13 item 8 — the divider says where the un-lettered lifetime table sits', () => {
