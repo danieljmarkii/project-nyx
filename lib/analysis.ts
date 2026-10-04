@@ -57,7 +57,7 @@ onAnalysisChainClaimed(tellHomeTheReadMoved);
 /** A trigger's landing, saved to the copy before its claim (if it holds one) settles.
  *  With no claim and no chain outstanding, nothing will release Home to reread, so the
  *  landing tells Home itself. */
-async function landChain(eventId: string, claim: AnalysisChainClaim | null, invoked: boolean): Promise<void> {
+async function landChain(eventId: string, claim: AnalysisChainClaim | null, invoked: boolean, threw = false): Promise<void> {
   const outcome = await copyLandedReadOutcome(eventId);
   if (outcome === 'changed' && claim === null && !analysisChainOutstanding(eventId)) tellHomeTheReadMoved();
   claim?.settle(invoked);
@@ -66,8 +66,12 @@ async function landChain(eventId: string, claim: AnalysisChainClaim | null, invo
   // here before the next sync cycle, which can be hours with the app open. So it is
   // watched until a save answers: each tick saves first and tells Home when the copy moved.
   // Started synchronously after the outcome, so no sign-out can fall between the two (a
-  // failure after one is `skipped`, `refreshReadCopyOutcome`).
-  if (invoked && outcome === 'failed') watchUntilCopied(eventId);
+  // failure after one is `skipped`, `refreshReadCopyOutcome`). An invoke that THREW in
+  // transit may have reached the server and been written all the same, and that is the
+  // likeliest moment for the save to fail too, so it is watched as well; a refused invoke
+  // (the server answered with an error) wrote no read to wait for. The settle keeps
+  // `invoked` alone: a waiter still retries a thrown invoke, as before.
+  if ((invoked || threw) && outcome === 'failed') watchUntilCopied(eventId);
 }
 
 // The events a copy watch is running for, so two landings of one read start one watch.
@@ -124,6 +128,7 @@ export async function triggerVomitAnalysis(eventId: string): Promise<{ error: st
   // awaiting is the double-invoke this whole module exists to stop.
   const claim = claimAnalysisChain(eventId);
   let invoked = false;
+  let threw = false;
   try {
     await syncPendingEvents().catch(() => {});
     await ensureEventAttachmentsSynced(eventId).catch(() => {});
@@ -135,11 +140,12 @@ export async function triggerVomitAnalysis(eventId: string): Promise<{ error: st
     invoked = !error;
     return { error: error ? error.message : null };
   } catch (e) {
+    threw = true;
     return { error: e instanceof Error ? e.message : String(e) };
   } finally {
     // The copy hears about this read before anyone waiting on the chain does (HV-5):
     // Home rereads the verdict on the settle, from the copy.
-    await landChain(eventId, claim, invoked);
+    await landChain(eventId, claim, invoked, threw);
   }
 }
 
@@ -166,6 +172,7 @@ export async function triggerStoolAnalysis(eventId: string): Promise<{ error: st
   // awaiting is the double-invoke this whole module exists to stop.
   const claim = claimAnalysisChain(eventId);
   let invoked = false;
+  let threw = false;
   try {
     await syncPendingEvents().catch(() => {});
     await ensureEventAttachmentsSynced(eventId).catch(() => {});
@@ -177,11 +184,12 @@ export async function triggerStoolAnalysis(eventId: string): Promise<{ error: st
     invoked = !error;
     return { error: error ? error.message : null };
   } catch (e) {
+    threw = true;
     return { error: e instanceof Error ? e.message : String(e) };
   } finally {
     // The copy hears about this read before anyone waiting on the chain does (HV-5):
     // Home rereads the verdict on the settle, from the copy.
-    await landChain(eventId, claim, invoked);
+    await landChain(eventId, claim, invoked, threw);
   }
 }
 

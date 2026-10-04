@@ -223,6 +223,9 @@ export interface GalleryTile {
   /** This episode's OWN read, or null when the record holds none yet. */
   verdict: EpisodeVerdict | null;
   photo: SignalScreenPhoto;
+  /** The bout's rows the verdict was read across (`readTileVerdicts`), as the loader read
+   *  them: what `carryTileRoses` checks before keeping a rose that may be another row's. */
+  boutIds?: readonly string[];
 }
 
 export interface SignalScreenEpisodes {
@@ -333,6 +336,7 @@ function galleryOf(inWeeks: readonly SignalScreenEpisode[], verdicts: SignalScre
       timeWord: Number.isNaN(d.getTime()) ? '' : formatTime(d),
       verdict: verdicts[e.eventId] ?? null,
       photo: e.photo,
+      ...(e.boutIds ? { boutIds: [...e.boutIds] } : {}),
     };
   });
   const total = inWeeks.length;
@@ -1393,8 +1397,10 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
  * carried, never a calm word: a calm read may since have been replaced by a rose the
  * failed look could not see, and "No read yet" claims nothing, where a stale calm would
  * stand in front of an escalation (CUL-812's class; n=1 never reassures). A tile that left
- * the gallery leaves with its rose. The result stays marked unanswered, so the next failed
- * look carries the same roses again.
+ * the gallery leaves with its rose, and so does a tile whose BOUT changed: its call may have
+ * been read off another row of the bout (`tileVerdictOf`), and a row that left the record
+ * takes its rose with it (G5; the adversarial pass on this PR). The result stays marked
+ * unanswered, so the next failed look carries the same roses again.
  */
 export function carryTileRoses(
   prev: SignalScreenLoad | { status: 'loading' } | { status: 'failed' },
@@ -1402,11 +1408,15 @@ export function carryTileRoses(
 ): SignalScreenLoad {
   if (next.status !== 'ready' || !next.verdictsUnanswered || prev.status !== 'ready') return next;
   const before = prev.model.episodes?.tiles ?? [];
-  const calls = new Map<string, CallDisplay>();
-  for (const t of before) if (isCallDisplay(t.verdict)) calls.set(t.eventId, t.verdict);
+  const boutKey = (t: GalleryTile) => [t.eventId, ...(t.boutIds ?? [])].sort().join('|');
+  const calls = new Map<string, { verdict: CallDisplay; bout: string }>();
+  for (const t of before) if (isCallDisplay(t.verdict)) calls.set(t.eventId, { verdict: t.verdict, bout: boutKey(t) });
   const episodes = next.model.episodes;
   if (calls.size === 0 || !episodes) return next;
-  const tiles = episodes.tiles.map((t) => (t.verdict === null && calls.has(t.eventId) ? { ...t, verdict: calls.get(t.eventId) ?? null } : t));
+  const tiles = episodes.tiles.map((t) => {
+    const call = calls.get(t.eventId);
+    return t.verdict === null && call && call.bout === boutKey(t) ? { ...t, verdict: call.verdict } : t;
+  });
   return { ...next, model: { ...next.model, episodes: { ...episodes, tiles } } };
 }
 

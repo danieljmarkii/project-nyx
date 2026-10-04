@@ -1074,6 +1074,13 @@ describe('a landed read that failed to copy is watched until it lands (CUL-1198 
     expect(watchesFor(`ev-copy-${answer}-${String(invokeOk)}`)).toBe(0);
   });
 
+  it('an invoke that THREW in transit may still have been written: a failed save is watched', async () => {
+    answers('failed');
+    mockInvoke.mockReset().mockRejectedValue(new Error('network request failed'));
+    await expect(triggerVomitAnalysis('ev-copy-threw')).resolves.toEqual({ error: 'network request failed' });
+    expect(watchesFor('ev-copy-threw')).toBe(1);
+  });
+
   it('two landings of one read start one watch, and a sign-out clears it', async () => {
     outcome.mockImplementation(async () => 'failed');
     await triggerVomitAnalysis('ev-copy-twice');

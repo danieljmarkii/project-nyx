@@ -699,6 +699,15 @@ describe('carryTileRoses — a failed look never takes a drawn rose away (CUL-11
     expect(tilesOf(carryTileRoses(laid, load([tile('rose', null)], true)))).toEqual([['rose', 'call_today']]);
   });
 
+  it('a tile whose bout lost a row does not keep a rose that row may have carried (G5)', () => {
+    const relogged = { ...tile('bout', 'call_now'), boutIds: ['bout', 'relog'] };
+    const before = load([relogged]);
+    // The re-log was removed and the next look failed: the bout is the tile's row alone.
+    expect(tilesOf(carryTileRoses(before, load([{ ...tile('bout', null), boutIds: ['bout'] }], true)))).toEqual([['bout', null]]);
+    // The same bout, read again and unanswered, keeps it.
+    expect(tilesOf(carryTileRoses(before, load([{ ...tile('bout', null), boutIds: ['relog', 'bout'] }], true)))).toEqual([['bout', 'call_now']]);
+  });
+
   it('an answered re-read stands whole; a first read or a failed screen has nothing to carry', () => {
     const answered = load([tile('rose', null)]);
     expect(carryTileRoses(prev, answered)).toBe(answered);
