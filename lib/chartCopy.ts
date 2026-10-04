@@ -256,16 +256,33 @@ export function trailingWeightRun(model: WeightBandModel): { steps: number; dir:
   return { steps, dir };
 }
 
-/** The readings disagree in direction: some sit ABOVE the first reading and some BELOW
- *  it. Judged against the start, never step by step: a steady loss that ends in one 10 g
- *  up-tick has a step up and steps down, yet never comes back to where it began, and a
- *  step-wise test handed it the caveat (the adversarial pass on CUL-1553). A scale's
- *  wobble scatters around the start; a loss leaves it. */
-export function weightDisagrees(model: WeightBandModel): boolean {
+/** A reading counts as being on one side of the start only past this share of the
+ *  scale's own wobble: 10 g is the stored resolution, and one 10 g reading is not evidence
+ *  of a 200 g wobble (round 2 of the adversarial pass on CUL-1553). */
+export const WEIGHT_SIDE_MIN_FRAC_OF_NOISE = 0.25;
+
+/** No side may hold more than this share of the readings that sit off the start: a series
+ *  with one reading above and six below is a loss with a blip, not a scatter. */
+export const WEIGHT_SIDE_MAX_SHARE = 2 / 3;
+
+/** The readings disagree in direction: they scatter around the FIRST reading, with a
+ *  material reading on each side and neither side holding most of them. Judged against
+ *  the start and across the whole series, never step by step and never on one reading: a
+ *  steady loss with a 10 g up-tick (round 1) or a 10 g reading above the start (round 2)
+ *  handed a step-wise or single-reading test the caveat. Values in thousandths of the
+ *  stored unit, so a float subtraction never decides an edge. */
+export function weightDisagrees(model: WeightBandModel, noiseAbs: number): boolean {
   const first = model.points[0]?.value;
   if (first == null) return false;
-  const rest = model.points.slice(1).map((p) => p.value);
-  return rest.some((v) => v > first) && rest.some((v) => v < first);
+  const edge = Math.round(noiseAbs * WEIGHT_SIDE_MIN_FRAC_OF_NOISE * 1000);
+  const offsets = model.points.slice(1).map((p) => Math.round((p.value - first) * 1000));
+  const above = offsets.filter((d) => d > 0).length;
+  const below = offsets.filter((d) => d < 0).length;
+  const off = above + below;
+  if (off === 0) return false;
+  const materialAbove = offsets.some((d) => d >= edge);
+  const materialBelow = offsets.some((d) => d <= -edge);
+  return materialAbove && materialBelow && above / off <= WEIGHT_SIDE_MAX_SHARE && below / off <= WEIGHT_SIDE_MAX_SHARE;
 }
 
 /**
@@ -284,9 +301,9 @@ export function weightDisagrees(model: WeightBandModel): boolean {
  *     rose, beside an overall rise) is a direction, and the line says so instead ("lower
  *     at each of the last 6 readings") — six readings falling in strict order is 1 in 720
  *     under noise. A run against the overall change is joined with "but";
- *   • the readings are a pair, or they sit on both sides of the first reading
- *     (`weightDisagrees`). A series that never came back to where it began never reads
- *     as a scale's wobble.
+ *   • the readings are a pair, or they scatter around the first reading — a material
+ *     reading on each side, neither side holding most of them (`weightDisagrees`). A series
+ *     that never came back to where it began never reads as a scale's wobble.
  * A 5 % unintentional loss in a cat is a workup trigger; a 3.5 kg drop in a dog is not a
  * scale wobble at any percentage — neither gets the sentence written to soften a wobble.
  *
@@ -312,7 +329,12 @@ export function weightDeltaLine(
   // Interior readings only: the last reading's distance is what the delta itself says.
   const clipped = model.points.filter((p, i) => p.clipped && i !== model.points.length - 1).length;
   const clippedTail = clipped > 0 ? ` · ${clipped} ${pluralize(clipped, 'reading')} outside the band` : '';
-  const g = gate.model;
+  // The gate must describe the SAME readings the line does: a reading the display drops
+  // (a stored 0.01 kg rounds to 0.0 lbs) would otherwise set the direction and the
+  // percentage from a dot that is not drawn (round 2). Unequal sets fall back to the
+  // display's readings and never print the caveat.
+  const sameReadings = gate.model.points.length === model.points.length;
+  const g = sameReadings ? gate.model : model;
   // The FACT decides no-change, direction and percentage: the stored readings, never the
   // display's rounding (a 20 g move rounds to 0.0 lbs and is still a move).
   const factDelta = g.delta ?? model.delta;
@@ -322,7 +344,10 @@ export function weightDeltaLine(
   // half the reader must not miss), a rise only beside an overall rise. A rise of a few
   // grams beside a 24 % loss reads as recovery, and a rising line is not wellness (B-186;
   // the adversarial pass on CUL-1553).
-  const runStated = run.steps >= WEIGHT_RUN_MIN_STEPS && (run.dir === 'down' || (run.dir === 'up' && factDelta > 0));
+  // A rise is stated only beside an overall rise at least a scale's own wobble: a few grams
+  // up after a dip is not a recovery to announce (round 2).
+  const realRise = sameReadings && Math.round(factDelta * 1000) >= Math.round(gate.noiseAbs * 1000);
+  const runStated = run.steps >= WEIGHT_RUN_MIN_STEPS && (run.dir === 'down' || (run.dir === 'up' && realRise));
   const against = runStated && ((run.dir === 'down' && factDelta >= 0) || (run.dir === 'up' && factDelta < 0));
   const runTail = runStated ? ` · ${against ? 'but ' : ''}${run.dir === 'down' ? 'lower' : 'higher'} at each of the last ${run.steps} readings` : '';
   if (factDelta === 0) return `No change ${since}${runTail}${clippedTail}`;
@@ -339,6 +364,6 @@ export function weightDeltaLine(
     // In thousandths of the stored unit (grams on the app's kilograms): a float subtraction
     // must not decide a strict edge, and 4.6 − 4.4 is 0.19999999999999973 in binary.
     Math.round(Math.abs(g.delta) * 1000) < Math.round(gate.noiseAbs * 1000);
-  const caveat = inNoise && !runStated && (g.points.length === 2 || weightDisagrees(g));
+  const caveat = sameReadings && inNoise && !runStated && (g.points.length === 2 || weightDisagrees(g, gate.noiseAbs));
   return `${head}${runTail}${caveat ? ` · ${HOME_SCALE_CAVEAT}` : ''}${clippedTail}`;
 }

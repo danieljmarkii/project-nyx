@@ -222,7 +222,9 @@ describe('weightDeltaLine (D2-5)', () => {
     });
 
     it('a run upward is stated the same way', () => {
-      expect(line(series([4.5, 4.55, 4.6]))).toBe('Up 0.1 kg (2%) since 07-03 · higher at each of the last 2 readings');
+      expect(line(series([4.4, 4.55, 4.7]))).toBe('Up 0.3 kg (7%) since 07-03 · higher at each of the last 2 readings');
+      // Under a scale's own wobble overall, a rise is not announced (round 2).
+      expect(line(series([4.5, 4.55, 4.6]))).toBe('Up 0.1 kg (2%) since 07-03');
     });
 
     it('readings that move both ways, with no run at the end, keep the caveat inside both bounds', () => {
@@ -251,6 +253,33 @@ describe('weightDeltaLine (D2-5)', () => {
     it('the adversarial pass: a few grams of rise beside a large loss is never stated as a run', () => {
       // "up at each of the last 2 readings" beside a 24 % loss reads as recovery.
       expect(line(series([6.0, 4.5, 4.51, 4.52]))).toBe('Down 1.5 kg (25%) since 07-03 · 2 readings outside the band');
+    });
+
+    it('round 2: one 10 g reading above the start is not a scatter; the caveat stays off a steady loss', () => {
+      expect(line(series([4.6, 4.62, 4.5, 4.45, 4.46]))).not.toContain('home scale');
+      const seven = [5.0, 5.01, 4.96, 4.92, 4.88, 4.84, 4.83, 4.84].map((v, i) => r(v, `2026-${String(7 + Math.floor(i / 4)).padStart(2, '0')}-${String(1 + (i % 4) * 7).padStart(2, '0')}T08:00:00Z`));
+      expect(line(seven)).not.toContain('home scale');
+      expect(line(series([5.0, 4.95, 5.02, 4.97, 4.93, 4.89, 4.9]))).not.toContain('home scale');
+    });
+
+    it('round 2: a real scatter around the start keeps the caveat — material on both sides, neither side most of them', () => {
+      expect(line(series([4.6, 4.7, 4.5, 4.65, 4.55]))).toContain(HOME_SCALE_CAVEAT);
+      // Balanced but trivial above the start: two readings 10 g and 20 g over, two well under.
+      // Only the materiality bound withholds the caveat here.
+      expect(line(series([4.6, 4.61, 4.5, 4.62, 4.55]))).not.toContain('home scale');
+      // Material on both sides but five of six below: a loss with one high reading, no caveat.
+      expect(line(series([4.6, 4.7, 4.58, 4.56, 4.57, 4.55, 4.56]))).not.toContain('home scale');
+    });
+
+    it('round 2: a rise of a few grams after a dip is never stated as a run', () => {
+      expect(line(series([4.0, 3.7, 3.8, 3.9, 4.01]))).not.toContain('higher at each');
+    });
+
+    it('round 2: when the stored readings and the drawn ones differ, the line never prints the caveat', () => {
+      const shown = weightBand([r(8.8, '2026-07-04T08:00:00Z'), r(8.6, '2026-09-12T08:00:00Z')]);
+      const stored = weightBand([r(0.01, '2026-07-03T08:00:00Z'), r(4.0, '2026-07-04T08:00:00Z'), r(3.9, '2026-09-12T08:00:00Z')]);
+      const out = weightDeltaLine(shown, 'lbs', fmt, { model: stored, noiseAbs: 0.2 }) as string;
+      expect(out).toBe('Down 0.2 lbs (2%) since 07-04');
     });
 
     it('a fall against an overall rise is stated, joined with "but"; it is the accusing half', () => {

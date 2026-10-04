@@ -65,8 +65,11 @@ export function weightHeader(drawn: number, total: number): string {
 
 export function WeightCard({ readings, readingCount, petName, petId, drawIn = false }: Props) {
   const name = petNameOrYours(petName);
-  const model = weightBand(readings.map((r) => ({ value: kgToLbsNum(r.weightKg), occurredAt: r.occurredAt })));
-  const modelKg = weightBand(readings.map((r) => ({ value: r.weightKg, occurredAt: r.occurredAt })));
+  // One set of readings for both models: a stored weight that rounds to 0.0 lbs is not
+  // drawn, so it must not set the line's direction from the kilograms either.
+  const drawable = readings.filter((r) => kgToLbsNum(r.weightKg) > 0);
+  const model = weightBand(drawable.map((r) => ({ value: kgToLbsNum(r.weightKg), occurredAt: r.occurredAt })));
+  const modelKg = weightBand(drawable.map((r) => ({ value: r.weightKg, occurredAt: r.occurredAt })));
   const count = Math.max(readingCount, model.points.length);
   const delta = weightDeltaLine(model, UNIT, formatWeightDate, { model: modelKg, noiseAbs: HOME_SCALE_NOISE_KG });
 
