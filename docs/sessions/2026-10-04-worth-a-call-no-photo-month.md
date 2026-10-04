@@ -3,7 +3,7 @@
 **Date:** 2026-10-04
 **One thing:** D3 L1 — Reading a test: a test proves only what it asserts · check: pending
 
-Dispatched session (Out of beta — Noticed, Design v2, History v2, the trial screen · PR-35). Shipped via #1059, left open for the PM: the §5.4 / AC 22 spec edit waits on their confirmation, as the plan required.
+Dispatched session (Out of beta — Noticed, Design v2, History v2, the trial screen · PR-35). Shipped via #1059. The session stopped before merging to ask the PM about the §5.4 / AC 22 spec edit, as the plan required; the PM approved it ("approve 35", recorded on CUL-1200 by the dispatcher) and the edit is written in this PR (spec v1.13).
 
 ## What shipped
 
@@ -16,7 +16,7 @@ The PM ruled (b) on CUL-1200 (2026-10-03, CUL-1520 item 8). The read can escalat
 ## Decisions
 
 - Decided on the fly, logged on CUL-1200 for the PM to reverse: the diamond shows on every lens, not only under Vomiting. Presence escalates.
-- The Tier-2 spec edit (§5.4 ⚠ RULED line, AC 22 rewording, v1.13 row) is proposed in the PR body and asked on CUL-1200. Not written.
+- The Tier-2 spec edit (§5.4 ⚠ RULED line, AC 22 rewording, v1.13 row): proposed in the PR body, asked on CUL-1200, approved by the PM ("approve 35") and written. The every-lens diamond stands.
 
 ## Falsification
 
