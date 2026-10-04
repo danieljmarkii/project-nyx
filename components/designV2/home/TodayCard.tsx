@@ -54,6 +54,7 @@ import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '
 import { DEFAULT_MEAL_TIMING_CONFIG } from '../../../lib/mealTiming';
 import { countLine, mayCarryRead, type SpineAnalysisRow } from '../../../lib/spineNode';
 import { buildDay } from '../../../lib/dayNodes';
+import { carryRosesAcrossFailedLook } from '../../../lib/readState';
 import {
   readAnalysisCopy,
   readAnalysisRows,
@@ -216,9 +217,14 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
     // newer read that then fails must not have thrown away an older answer that carried the
     // rose (the HV-6 second adversarial pass). A read for the previous pet never lands.
     if (seq < copyApplied.current || activePetIdRef.current !== petId) return;
-    // A failed look answers nothing: the card keeps its last answer, so a rose it had stays
-    // drawn and a row it never answered for claims no photo (CUL-1198 item 1, Home's half).
-    if (rows === null) return;
+    // A failed look answers nothing: a rose the card had stays drawn (CUL-1198 item 1, Home's
+    // half), and every other row it asked about goes back to unanswered, as a row it never
+    // answered for is: no photo claimed, and never a calm kept over a photo the owner may have
+    // replaced since (CUL-1585). It moves no applied mark, so an older answer still lands.
+    if (rows === null) {
+      setCopy((prev) => carryRosesAcrossFailedLook(prev, ids));
+      return;
+    }
     copyApplied.current = seq;
     setCopy({ answered: new Set(ids), rows });
   }, [petId]);

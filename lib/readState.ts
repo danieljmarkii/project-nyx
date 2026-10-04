@@ -227,3 +227,34 @@ export function readVerdictOf(input: ReadStateInput): ReadVerdict {
 export function readStateOf(input: ReadStateInput): ReadState {
   return readVerdictOf(input).state;
 }
+
+/** What a surface's last look at the copy left on screen: the ids it answered for and the
+ *  rows it found. */
+export interface ReadsOnScreen<R extends ReadCopy> {
+  answered: ReadonlySet<string>;
+  rows: ReadonlyMap<string, R>;
+}
+
+/**
+ * The reads a surface keeps when a look at the copy FAILS for `failed` (CUL-1585): the rose
+ * stays, and every other row it had answered for goes back to unanswered, exactly what a row
+ * it never answered for shows (C-12: no photo claimed, no mark). A calm kept across a failed
+ * look may describe a photo the owner has since replaced, whose read came back a call, and
+ * standing it in front of that read is reassurance nothing checked (n=1: absence is never
+ * wellness). The rose survives because presence escalates (CUL-1198 item 1). The same rule
+ * the Signal screen and the month run (`carryTileRoses`, `carryMonthRoses`), for the two
+ * surfaces that draw the day's rows: Home and History. Ids outside `failed` are untouched.
+ */
+export function carryRosesAcrossFailedLook<R extends ReadCopy>(
+  prev: ReadsOnScreen<R>,
+  failed: Iterable<string>,
+): { answered: Set<string>; rows: Map<string, R> } {
+  const answered = new Set(prev.answered);
+  const rows = new Map(prev.rows);
+  for (const id of failed) {
+    if (isWorthACall(prev.rows.get(id))) continue;
+    answered.delete(id);
+    rows.delete(id);
+  }
+  return { answered, rows };
+}

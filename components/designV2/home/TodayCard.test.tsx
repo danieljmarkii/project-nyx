@@ -342,6 +342,30 @@ describe('the ten-event day', () => {
     expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call');
   });
 
+  it('a failed look keeps only the rose: a calm the card had goes back to unanswered (CUL-1585)', async () => {
+    // The owner replaced v1's photo and its re-read came back a call; the look after the settle
+    // fails. A kept calm would stand in front of that read; unanswered claims nothing.
+    const ROSE_V1 = { event_id: 'v1', status: 'completed', recommendation: 'worth_a_call', updated_at: '2026-09-25T00:00:00Z' };
+    const CALM_V2 = { event_id: 'v2', status: 'completed', recommendation: 'monitor', updated_at: '2026-09-25T00:00:00Z' };
+    mockReadPhotographed.mockResolvedValue(new Set(['v1', 'v2']));
+    mockOutstanding.mockImplementation((id: string) => id === 'v2');
+    mockReadAnalysis.mockResolvedValue(new Map([['v1', ROSE_V1], ['v2', CALM_V2]]));
+    const t = render(<TodayCard />);
+    await waitFor(() => expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call'));
+    await waitFor(() => expect(t.getByTestId('spine-photo-v2', { includeHiddenElements: true })).toBeTruthy());
+    mockReadAnalysis.mockResolvedValue(null);
+    const calls = mockReadAnalysis.mock.calls.length;
+    await act(async () => {
+      settleChain?.();
+    });
+    await waitFor(() => expect(mockReadAnalysis.mock.calls.length).toBeGreaterThan(calls));
+    await waitFor(() => expect(t.queryByTestId('spine-photo-v2', { includeHiddenElements: true })).toBeNull());
+    expect(t.queryByTestId('spine-unread-v2')).toBeNull();
+    expect(t.queryByTestId('spine-verdict-v2')).toBeNull();
+    expect(t.getByTestId('spine-verdict-v1').props.children).toBe('Worth a call');
+    expect(t.getByTestId('spine-photo-v1', { includeHiddenElements: true })).toBeTruthy();
+  });
+
   it('an older answer that carried the rose lands even when the newer read then fails', async () => {
     // The HV-6 second adversarial pass (5): an answer yields only to a NEWER one already
     // APPLIED. Keeping merely the newest ISSUED read threw the rose away when that read failed.

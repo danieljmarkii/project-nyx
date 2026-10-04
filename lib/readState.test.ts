@@ -7,6 +7,7 @@
 // `unread`, the grey *No read yet*.
 
 import {
+  carryRosesAcrossFailedLook,
   isWorthACall,
   readStateOf,
   readVerdictOf,
@@ -335,5 +336,34 @@ describe('the tier (EN-3): the louder column, status ahead of tier, words by rul
         }
       }
     }
+  });
+});
+
+describe('carryRosesAcrossFailedLook — a failed look keeps the rose and nothing else (CUL-1585)', () => {
+  const rows = new Map<string, ReadCopy>([
+    ['rose', { status: 'completed', recommendation: 'worth_a_call' }],
+    ['failedRose', { status: 'failed', recommendation: 'worth_a_call' }],
+    ['unknown', { status: 'completed', recommendation: 'call_the_vet_now' }],
+    ['calm', { status: 'completed', recommendation: 'monitor' }],
+    ['unclear', { status: 'uncertain', recommendation: 'not_enough_to_say' }],
+    ['outside', { status: 'completed', recommendation: 'monitor' }],
+  ]);
+  const prev = { answered: new Set([...rows.keys(), 'noRead']), rows };
+
+  it('keeps every row the rose predicate calls a call, and unanswers every other row it asked about', () => {
+    const kept = carryRosesAcrossFailedLook(prev, ['rose', 'failedRose', 'unknown', 'calm', 'unclear', 'noRead']);
+    expect([...kept.answered].sort()).toEqual(['failedRose', 'outside', 'rose', 'unknown']);
+    expect([...kept.rows.keys()].sort()).toEqual(['failedRose', 'outside', 'rose', 'unknown']);
+    // The same predicate the surfaces draw the rose from, so the two cannot disagree.
+    for (const [id, copy] of rows) if (isWorthACall(copy)) expect(kept.rows.has(id)).toBe(true);
+  });
+
+  it('leaves an id the look did not ask about alone, and never mutates what it was handed', () => {
+    const kept = carryRosesAcrossFailedLook(prev, []);
+    expect(kept.answered).toEqual(prev.answered);
+    expect(kept.rows).toEqual(prev.rows);
+    expect(kept.rows).not.toBe(prev.rows);
+    carryRosesAcrossFailedLook(prev, ['calm']);
+    expect(prev.rows.has('calm')).toBe(true);
   });
 });
