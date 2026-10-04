@@ -7144,6 +7144,14 @@ Deno.test('CUL-1550 — below once a day, the empty part names the schedule, nev
     [0.14, ' (on a once-a-week schedule).'],
     [0.17, ' (on a schedule of a dose every 6 days).'],
     [0.13, ' (on a schedule of a dose every 8 days).'], // the one interval that stores to 0.13
+    [0.25, ' (on a schedule of a dose every 4 days).'],
+    [0.09, ' (on a schedule of a dose every 11 days).'],
+    [0.12, ' (on a 0.12×/day schedule).'], // no whole-day interval stores as 0.12 (8 → 0.13, 9 → 0.11)
+    [0.08, ' (on a 0.08×/day schedule).'], // every 12 or 13 days
+    [0.07, ' (on a 0.07×/day schedule).'], // every 14 or 15 days
+    [0.06, ' (on a 0.06×/day schedule).'], // every 16–18 days
+    [0.05, ' (on a 0.05×/day schedule).'], // every 19–22 days
+    [0.04, ' (on a 0.04×/day schedule).'], // every 23–28 days
     [0.03, ' (on a 0.03×/day schedule).'], // every 29–40 days all store as 0.03: never "every 33"
     [0.01, ' (on a 0.01×/day schedule).'],
     [0.4, ' (on a 0.4×/day schedule).'],
@@ -7179,7 +7187,9 @@ Deno.test('CUL-1550 — doses dated outside the course are disclosed by kind and
   assert.ok(/6 given doses are dated outside the course's dates: before its start \(Jun 1, Jun 2, Jun 3, 2026\) and after its recorded end \(Jun 25, Jun 26, Jun 27, 2026\)\./.test(sides), sides)
   // "Recorded end" only where the report shows one: an active course reads "since <start>".
   const active = at({ given: 8, outsideCourseGiven: 1, outsideCourseGivenDays: ['2026-06-25'] }, { status: 'active' })
-  assert.ok(/after its end date \(Jun 25, 2026\)/.test(active) && !/recorded end/.test(active), active)
+  assert.ok(/after its end date, Jun 17, 2026, \(Jun 25, 2026\)/.test(active) && !/recorded end/.test(active), active)
+  const stopped = at({ given: 8, outsideCourseGiven: 1, outsideCourseGivenDays: ['2026-06-25'] }, { status: 'stopped' })
+  assert.ok(/after its recorded end \(Jun 25, 2026\)/.test(stopped), stopped)
   // Exactly four: listed. Five: the span AND the day count, never a silent first four.
   const four = at({ given: 8, outsideCourseGiven: 4, outsideCourseGivenDays: ['2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23'] })
   assert.ok(/after its recorded end \(Jun 20, Jun 21, Jun 22, Jun 23, 2026\)/.test(four), four)
@@ -7210,6 +7220,15 @@ Deno.test('CUL-1550 — page 1 counts out-of-course given doses inside its given
     windowDosesLogged: 2, givenDoses: 2, partialDoses: 0, elapsedDaysInWindow: 13, startedAt: '2026-06-20', endedAt: null,
   })
   assert.ok(/2 doses given \(1 of the 2 dated outside the course\), on 1 of 13 days/.test(page1MedOf(onlyOut)), page1MedOf(onlyOut))
+  // When a subset IS the whole: bare for one dose, "both" for two, "all N" above — never "1 of the 1".
+  const p1For = (o: Partial<MedicationAdherence['courseDays']>, over: Partial<MedicationAdherence>) =>
+    page1MedOf(cul1550Html(split({ nothingLogged: 13, ...o }), { elapsedDaysInWindow: 13, startedAt: '2026-06-20', endedAt: null, ...over }))
+  const oneP = p1For({ outsideCourseGiven: 1, outsideCourseGivenDays: ['2026-06-14'] }, { windowDosesLogged: 1, givenDoses: 0, partialDoses: 1 })
+  assert.ok(/1 dose given \(partial; dated outside the course\);/.test(oneP), oneP)
+  const both = p1For({ outsideCourseGiven: 2, outsideCourseGivenDays: ['2026-06-14', '2026-06-15'] }, { windowDosesLogged: 2, givenDoses: 1, partialDoses: 1 })
+  assert.ok(/2 doses given \(1 of the 2 partial; both dated outside the course\);/.test(both), both)
+  const all = p1For({ outsideCourseGiven: 3, outsideCourseGivenDays: ['2026-06-14', '2026-06-15', '2026-06-16'] }, { windowDosesLogged: 3, givenDoses: 0, partialDoses: 3 })
+  assert.ok(/3 doses given \(all 3 partial; all 3 dated outside the course\);/.test(all), all)
 })
 
 Deno.test('CUL-1550 — with no dose given against the course, the zero claim is scoped to the course on both pages', () => {

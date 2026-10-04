@@ -6570,13 +6570,11 @@ function givenCountNote(m: MedicationAdherence): string {
   // names the whole it is drawn from.
   if (!out) return partial ? ` (${num(partial)} partial)` : ''
   const total = m.windowDosesLogged
-  const outPart =
-    out === total
-      ? total === 1
-        ? 'dated outside the course'
-        : `all ${num(total)} dated outside the course`
-      : `${num(out)} of the ${num(total)} dated outside the course`
-  return partial ? ` (${num(partial)} of the ${num(total)} partial; ${outPart})` : ` (${outPart})`
+  // "of the N" for a proper subset; "both" / "all N" / bare when the subset IS the whole.
+  const subset = (k: number, what: string): string =>
+    k < total ? `${num(k)} of the ${num(total)} ${what}` : total === 1 ? what : total === 2 ? `both ${what}` : `all ${num(total)} ${what}`
+  const parts = [partial ? subset(partial, 'partial') : null, subset(out, 'dated outside the course')].filter(Boolean)
+  return ` (${parts.join('; ')})`
 }
 function courseDaysTail(m: MedicationAdherence): string {
   const p = m.courseDays
@@ -6645,7 +6643,9 @@ function outsideCourseNote(m: MedicationAdherence): string {
     const after = days.filter((d) => d >= start)
     const sides = [
       before.length ? `before its start (${datedDays(before)})` : null,
-      after.length ? `${endShown ? 'after its recorded end' : 'after its end date'} (${datedDays(after)})` : null,
+      after.length
+        ? `${endShown ? 'after its recorded end' : `after its end date, ${fmtDayYear(m.endedAt)},`} (${datedDays(after)})`
+        : null,
     ].filter(Boolean)
     return ` ${num(n)} ${noun(n !== 1)} ${n === 1 ? 'is' : 'are'} dated outside the course&rsquo;s dates: ${sides.join(' and ')}.`
   }
