@@ -54,8 +54,6 @@ import { TimingPanelCard } from '../../components/dashboard/TimingPanelCard';
 import { TrialSoFarCard } from '../../components/dashboard/TrialSoFarCard';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { WhatYouNoticedCard } from '../../components/dashboard/WhatYouNoticedCard';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { isAnimalNotEating } from '../../lib/dietTrialCard';
 import { lookCardLive } from '../../lib/lookCard';
@@ -134,18 +132,11 @@ export default function PatternsScreen() {
     scrollRef.current?.scrollTo({ y: cardsY.current, animated: !reducedMotionNow() });
   }, []);
 
-  // Noticed (CUL-874 / N-5) — the SAME three gates Home's card takes (`lookCardLive`:
-  // the allowlist flag ∧ the beta opt-in ∧ a species with a vocabulary), read through the
-  // same helper so the two surfaces cannot drift on eligibility. Off any of the three,
-  // `noticed` stays null and `buildDashboardCards` emits nothing — Patterns off the flag
-  // is byte-identical.
-  const lookEligible = useAllowlistFlag('daily_look');
-  const lookOptedIn = useBetaOptIn('daily_look');
-  const noticedLive = lookCardLive({
-    eligible: lookEligible,
-    optedIn: lookOptedIn,
-    species: activePet?.species,
-  });
+  // Noticed (CUL-874 / N-5) — the SAME gate Home's card takes (`lookCardLive`: a species
+  // with a vocabulary; Noticed is GA since CUL-876), read through the same helper so the
+  // two surfaces cannot drift. Off it, `noticed` stays null and `buildDashboardCards`
+  // emits nothing.
+  const noticedLive = lookCardLive({ species: activePet?.species });
   // Design v2 (D2-5 / CUL-1067; `docs/culprit-design-v4-mockups.html` §04): flag-on the
   // page is the month first, then the weight as dots by date, then the "what Nyx ate"
   // cards and the shipped Timing / Trial / What you noticed panels unchanged; the

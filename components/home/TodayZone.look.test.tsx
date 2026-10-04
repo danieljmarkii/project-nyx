@@ -15,11 +15,6 @@ jest.mock('../../hooks/useEvents', () => ({ useEvents: () => mockUseEvents() }))
 const mockUsePetStore = jest.fn();
 jest.mock('../../store/petStore', () => ({ usePetStore: () => mockUsePetStore() }));
 
-let mockFlagOn = true;
-let mockOptedIn = true;
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => mockFlagOn }));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => mockOptedIn }));
-
 import { render } from '@testing-library/react-native';
 import { TodayZone } from './TodayZone';
 import type { NyxEvent } from '../../store/eventStore';
@@ -38,8 +33,6 @@ const look = (id: string) =>
   ev(id, 'check_in', { look_outcome: 'observed', look_words: '["subdued"]' } as Partial<NyxEvent>);
 
 beforeEach(() => {
-  mockFlagOn = true;
-  mockOptedIn = true;
   mockUseEvents.mockReset();
   mockUsePetStore.mockReturnValue({
     activePet: { id: 'p1', name: 'Biscuit', species: 'dog', sex: 'male' },
@@ -120,14 +113,7 @@ describe('the nudge and the look', () => {
     expect(t.getByText('3 more events today')).toBeTruthy();
   });
 
-  it('OFF THE FLAG the shipped nudge is unchanged on an empty day', () => {
-    mockFlagOn = false;
-    mockUseEvents.mockReturnValue({ todayEvents: [] });
-    const t = render(<TodayZone />);
-    expect(t.getByText("Nothing logged yet — how's Biscuit doing?")).toBeTruthy();
-  });
-
-  it('and a pet with no vocabulary keeps the shipped nudge too (species other)', () => {
+  it('a pet with no vocabulary keeps the shipped nudge (species other)', () => {
     // There is no Noticed card to yield to for an Other pet (CUL-864 brief 2), so
     // yielding would leave the owner with neither.
     mockUsePetStore.mockReturnValue({

@@ -176,9 +176,9 @@ describe('every other row is untouched', () => {
 
 // ── The flag-off AC, proven rather than asserted ─────────────────────────────
 //
-// Noticed ships dark behind `daily_look`, so on the shipped binary no look rows
-// exist and every History row is one of the existing types. "No byte change to the
-// shipped surfaces" is therefore a claim about the RENDER TREE of those rows — and
+// Noticed shipped dark behind `daily_look` (GA since CUL-876), so when this landed no
+// look rows existed and every History row was one of the existing types. "No byte change
+// to the shipped surfaces" is therefore a claim about the RENDER TREE of those rows — and
 // it is a claim worth testing, because the obvious way to place the ❞ marker (wrap
 // the timestamp in a flex row) changes the tree of every event in the app to draw
 // the same pixels. That version passed every test above.

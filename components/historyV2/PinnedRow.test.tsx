@@ -63,9 +63,6 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 import { ChevronDown } from 'lucide-react-native';
 import { PinnedRow } from './PinnedRow';
 import { SEARCH_WRITE_DELAY_MS } from './SearchField';
-import { __resetAppConfigForTest } from '../../hooks/useAppConfig';
-import { ALLOWLIST_FLAGS_UNSET, APP_CONFIG_DEFAULTS } from '../../lib/appConfig';
-import { useBetaOptInStore } from '../../lib/betaFeatures';
 import { RECORD_RETRY, typeSheetFailedOf, windowSheetFailedOf } from '../../lib/historyControls';
 import { SEARCH_COUNTS_NOTHING, buildDayFacts, historyCourseOf, type PopulationRow } from '../../lib/historyDays';
 import { windowTrialOf, type WindowFacts } from '../../lib/historyWindows';
@@ -200,15 +197,6 @@ function recordFor(forPet: Pet): PinnedRecordData {
 
 // ── Harness ──────────────────────────────────────────────────────────────────────
 
-function liveLook(on: boolean): void {
-  __resetAppConfigForTest({
-    values: APP_CONFIG_DEFAULTS,
-    allowlist: { ...ALLOWLIST_FLAGS_UNSET, daily_look: { enabled: false, allowlist: on ? ['u1'] : [] } },
-  });
-  useBetaOptInStore.getState().reset();
-  if (on) useBetaOptInStore.getState().setOptIn('daily_look', true);
-}
-
 async function settle(): Promise<void> {
   await act(async () => {
     await new Promise((r) => setTimeout(r, 0));
@@ -227,17 +215,11 @@ const store = () => useHistoryScopeStore.getState();
 beforeEach(() => {
   jest.clearAllMocks();
   useAuthStore.setState({ user: { id: 'u1' } } as never);
-  liveLook(true);
   // Through no pet and back, so the scope store's own subscription starts every test
   // from Nyx's defaults (the store is module state and outlives a render).
   act(() => usePetStore.setState({ activePet: null, pets: [] }));
   act(() => usePetStore.setState({ activePet: NYX, pets: [NYX, REX] }));
   mockRead.mockImplementation(async (p) => recordFor(p.id === NYX.id ? NYX : REX));
-});
-
-afterAll(() => {
-  __resetAppConfigForTest();
-  useBetaOptInStore.getState().reset();
 });
 
 // ── The row ──────────────────────────────────────────────────────────────────────
@@ -338,8 +320,9 @@ describe('the type sheet (§3.8)', () => {
     expect(view.getByText('The daily look')).toBeTruthy();
   });
 
-  it('Noticed is not offered where the look is not live for the account', async () => {
-    liveLook(false);
+  it('Noticed is not offered for a pet the look has no words for (CUL-864)', async () => {
+    const other: Pet = { ...NYX, species: 'other' };
+    act(() => usePetStore.setState({ activePet: other, pets: [other, REX] }));
     const view = await renderAnswered();
     fireEvent.press(view.getByLabelText('Filter: All types'));
     expect(view.queryByLabelText('Noticed')).toBeNull();

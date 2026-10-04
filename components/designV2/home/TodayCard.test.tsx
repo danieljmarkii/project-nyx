@@ -55,12 +55,6 @@ let mockSpecies = 'cat';
 jest.mock('../../../store/petStore', () => ({
   usePetStore: (sel: (s: any) => unknown) => sel({ activePet: { id: 'p1', name: 'Nyx', species: mockSpecies } }),
 }));
-// The look header's two flag reads, driven so the quiet line meets the REAL gate
-// (`lookCardLive`, BRK-21) rather than a species check.
-let mockLookEligible = true;
-let mockLookOptedIn = true;
-jest.mock('../../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => mockLookEligible }));
-jest.mock('../../../lib/betaFeatures', () => ({ useBetaOptIn: () => mockLookOptedIn }));
 jest.mock('../../../store/syncStore', () => ({
   useSyncStore: (sel: (s: { hydrationTick: number }) => unknown) => sel({ hydrationTick: 0 }),
 }));
@@ -118,8 +112,6 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockHistoryV2 = false;
   mockSpecies = 'cat';
-  mockLookEligible = true;
-  mockLookOptedIn = true;
   mockClaims.length = 0;
   settleChain = null;
   mockOutstanding.mockReturnValue(false);
@@ -193,17 +185,6 @@ describe('the three states below "has rows" (C-12)', () => {
     expect(t.queryByText(TODAY_EMPTY_LOOK_LINE, { exact: false })).toBeNull();
     expect(empty.props.children).toBe(`${todayMealNudge('Nyx')} ${TODAY_MEAL_TAIL}`);
     expect(empty.props.children).not.toMatch(/!/);
-  });
-
-  it('off the daily_look rollout the quiet line never points at a header that is not there', () => {
-    useEventStore.setState({ todayRead: { petId: 'p1', state: 'ready' } });
-    for (const [eligible, optedIn] of [[false, true], [true, false]]) {
-      mockLookEligible = eligible;
-      mockLookOptedIn = optedIn;
-      const t = render(<TodayCard />);
-      expect(t.getByTestId('today-empty').props.children).toBe(TODAY_EMPTY_LINE);
-      t.unmount();
-    }
   });
 
   it('a pet of species other has no look, so no pointer to one', () => {

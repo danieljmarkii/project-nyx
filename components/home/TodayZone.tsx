@@ -15,8 +15,6 @@ import { buildTodayLane, type DayCountChip } from '../../lib/todayLane';
 import { useEvents } from '../../hooks/useEvents';
 import { usePetStore } from '../../store/petStore';
 import { useUiStore } from '../../store/uiStore';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { isLookRow } from '../../lib/lookDisplay';
 import { lookCardLive, todayGeneralNudge, todayMealNudge, todayNudgeKind } from '../../lib/lookCard';
 
@@ -88,13 +86,7 @@ export function TodayZone() {
   // same question one row above) or comes back pointed at the bowl. `todayNudgeKind`
   // owns that decision; the same `lookCardLive` gate the card renders behind decides
   // whether there is a card to yield to at all, so the two can never disagree.
-  const lookEligible = useAllowlistFlag('daily_look');
-  const lookOptedIn = useBetaOptIn('daily_look');
-  const lookLive = lookCardLive({
-    eligible: lookEligible,
-    optedIn: lookOptedIn,
-    species: activePet?.species,
-  });
+  const lookLive = lookCardLive({ species: activePet?.species });
   const nudge = todayNudgeKind({
     hasNonLookEvents: eventsToday.some((e) => !isLookRow(e)),
     lookLive,

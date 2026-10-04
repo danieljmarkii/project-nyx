@@ -45,10 +45,6 @@ jest.mock('../../../lib/haptics', () => ({
   commitRoutine: jest.fn(),
   commitSymptom: jest.fn(),
 }));
-let mockFlagOn = true;
-let mockOptedIn = true;
-jest.mock('../../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => mockFlagOn }));
-jest.mock('../../../lib/betaFeatures', () => ({ useBetaOptIn: () => mockOptedIn }));
 jest.mock('../../../hooks/useEvents', () => ({
   useEvents: () => ({
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -102,8 +98,6 @@ const quiet = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockFlagOn = true;
-  mockOptedIn = true;
   mockPetState = { activePet: NYX, pets: [NYX] };
   mockInsertLook.mockResolvedValue(WRITTEN);
   mockLoadWithheldFacts.mockResolvedValue(quiet);
@@ -118,9 +112,8 @@ afterEach(() => {
 });
 
 describe('who sees it', () => {
-  it('renders nothing off the daily_look flag — design_v2 does not widen the rollout (CUL-891)', () => {
-    mockFlagOn = false;
-    expect(render(<LookHeader />).queryByTestId('look-header')).toBeNull();
+  it('renders for every account with a cat or a dog: Noticed is GA (CUL-876)', () => {
+    expect(render(<LookHeader />).queryByTestId('look-header')).not.toBeNull();
   });
   it('renders nothing for a pet of species other', () => {
     mockPetState = { activePet: { ...NYX, species: 'other' }, pets: [] };

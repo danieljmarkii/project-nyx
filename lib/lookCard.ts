@@ -259,14 +259,10 @@ export function lookUndoNoteBody(note: string): string {
 // app asking twice. So the gate is HERE and both call it — the diet-trial §5.3 lesson,
 // applied before there were two readers rather than after.
 
-/** Eligible × opted in × the pet has a vocabulary. The B-712 two-gate shape plus the
- *  CUL-864 species ruling; the callers own the hook reads, this owns the rule. */
-export function lookCardLive(params: {
-  eligible: boolean;
-  optedIn: boolean;
-  species: string | null | undefined;
-}): boolean {
-  return params.eligible && params.optedIn && lookSpeciesOf(params.species) !== null;
+/** The pet has a vocabulary (the CUL-864 species ruling: cat and dog). Noticed is GA for
+ *  every account (spec §10 R1, CUL-876), so the species is the whole gate. */
+export function lookCardLive(params: { species: string | null | undefined }): boolean {
+  return lookSpeciesOf(params.species) !== null;
 }
 
 /** What TodayZone's empty-state row says, if anything. */
@@ -282,8 +278,8 @@ export type TodayNudgeKind = 'none' | 'general' | 'meal';
  *
  * The three states, in the order they are decided:
  *   • Something else is in the day → the strip speaks; no nudge (today's behaviour).
- *   • The look is not live for this account → the shipped general nudge, unchanged, so
- *     Home is byte-identical off the flag.
+ *   • The look is not live for this pet (no vocabulary for its species) → the shipped
+ *     general nudge, unchanged.
  *   • The look IS live and today holds none → NOTHING: the Noticed card one row above
  *     is asking this exact question, and asking it twice is not warmer, it is nagging
  *     (Principle 4).

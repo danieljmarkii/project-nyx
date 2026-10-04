@@ -46,8 +46,6 @@ import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import { useEvents } from '../../../hooks/useEvents';
 import { useHistoryV2 } from '../../../hooks/useHistoryV2';
-import { useAllowlistFlag } from '../../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../../lib/betaFeatures';
 import { lookCardLive, todayMealNudge, todayNudgeKind } from '../../../lib/lookCard';
 import { isLookRow } from '../../../lib/lookDisplay';
 import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '../../../lib/analysis';
@@ -318,9 +316,7 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
   const historyV2 = useHistoryV2();
   // The look header's gate, read here too so the quiet line can never point at a header
   // that is not drawn (BRK-21; `lookCardLive` is the one predicate, never restated).
-  const lookEligible = useAllowlistFlag('daily_look');
-  const lookOptedIn = useBetaOptIn('daily_look');
-  const lookLive = lookCardLive({ eligible: lookEligible, optedIn: lookOptedIn, species: activePet?.species });
+  const lookLive = lookCardLive({ species: activePet?.species });
   const ledger = useRef(createPaintLedger()).current;
   const dayKey = useMemo(() => toLocalDayKey(new Date(dayStartMs)), [dayStartMs]);
   if (historyV2 && readState === 'ready' && petId) ledger.open(JSON.stringify([petId, dayKey]));

@@ -73,10 +73,6 @@ jest.mock('../../lib/haptics', () => ({
   destructiveConfirm: (...a: unknown[]) => mockHaptics.destructiveConfirm(...a),
 }));
 
-let mockFlagOn = true;
-let mockOptedIn = true;
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => mockFlagOn }));
-jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => mockOptedIn }));
 
 // The card reads today's rows through `useEvents`; wiring the mock to the REAL event
 // store is what lets the arrival and the Undo be observed rather than asserted about.
@@ -122,8 +118,6 @@ const WRITTEN = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockFlagOn = true;
-  mockOptedIn = true;
   mockPetState = { activePet: MOCHI, pets: [MOCHI, JUNIPER] };
   mockInsertLook.mockResolvedValue(WRITTEN);
   mockLoadFacts.mockResolvedValue({
@@ -157,14 +151,8 @@ afterEach(() => {
 });
 
 describe('who sees it', () => {
-  it('renders nothing off the flag — Home is byte-identical', () => {
-    mockFlagOn = false;
-    expect(render(<LookCard safety={quiet()} />).queryByTestId('look-card')).toBeNull();
-  });
-
-  it('renders nothing for an account that is eligible but has not opted in', () => {
-    mockOptedIn = false;
-    expect(render(<LookCard safety={quiet()} />).queryByTestId('look-card')).toBeNull();
+  it('renders for every account with a cat or a dog: Noticed is GA (CUL-876)', () => {
+    expect(render(<LookCard safety={quiet()} />).queryByTestId('look-card')).not.toBeNull();
   });
 
   it('renders nothing for a pet of species OTHER (CUL-864 brief 2)', () => {

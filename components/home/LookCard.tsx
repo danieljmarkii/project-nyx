@@ -72,8 +72,6 @@ import { SectionLabel } from '../ui/SectionLabel';
 import { ThemedText } from '../ui/ThemedText';
 import { CHIP_VERTICAL_REACH, LookChip } from './LookChip';
 import { LookEmergencySheet } from './LookEmergencySheet';
-import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useBetaOptIn } from '../../lib/betaFeatures';
 import { useEvents } from '../../hooks/useEvents';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
@@ -145,6 +143,7 @@ import {
   LOOK_UNDO,
   LOOK_UNDO_NOTE_TITLE,
   intakeDoorLabel,
+  lookCardLive,
   lookDoneSummary,
   lookFirstLookLine,
   lookFoldedAsk,
@@ -246,10 +245,6 @@ interface Props {
 export function LookCard({ trialNotEating = false, safety, onLayout }: Props) {
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
-  // The B-712 two-gate shape, both hooks called unconditionally then combined: server
-  // allowlist (eligibility) × local opt-in. Being in the cohort turns nothing on.
-  const eligible = useAllowlistFlag('daily_look');
-  const optedIn = useBetaOptIn('daily_look');
   const { todayEvents } = useEvents();
   const prependEvent = useEventStore((s) => s.prependEvent);
   const patchInToday = useEventStore((s) => s.patchInToday);
@@ -297,7 +292,7 @@ export function LookCard({ trialNotEating = false, safety, onLayout }: Props) {
   const [noteSaving, setNoteSaving] = useState(false);
 
   const species = lookSpeciesOf(activePet?.species);
-  const live = eligible && optedIn && species !== null && activePet !== null;
+  const live = lookCardLive({ species: activePet?.species }) && activePet !== null;
   const sex = activePet?.sex ?? 'unknown';
   const petName = activePet?.name ?? '';
 

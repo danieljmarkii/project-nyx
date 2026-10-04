@@ -56,11 +56,6 @@ jest.mock('../components/designV2/waits/Tick', () => {
 });
 const mockUseDesignV2 = jest.fn(() => false);
 jest.mock('../hooks/useDesignV2', () => ({ useDesignV2: () => mockUseDesignV2() }));
-// Noticed's toggle stays off except in the CUL-1464 cases, which open both gates.
-const mockLookEligible = jest.fn(() => false);
-const mockLookOptedIn = jest.fn(() => false);
-jest.mock('../hooks/useAppConfig', () => ({ useAllowlistFlag: () => mockLookEligible() }));
-jest.mock('../lib/betaFeatures', () => ({ useBetaOptIn: () => mockLookOptedIn() }));
 jest.mock('../store/petStore', () => {
   // Two pets, Mochi active. Biscuit is the one a `?pet=` names; `p-archived` is in
   // neither list, as an archived pet or a stale link is (the list holds non-archived pets).
@@ -241,7 +236,7 @@ describe('whose report: /report?pet= (CUL-1334)', () => {
     mockedGenerate.mockResolvedValue(report());
     const { findByText } = render(<ReportScreen />);
     await findByText('Send to vet');
-    expect(mockedGenerate).toHaveBeenCalledWith({ petId: 'p1', includeNotes: false });
+    expect(mockedGenerate).toHaveBeenCalledWith({ petId: 'p1', includeNotes: true });
     expect(mockedLibrary).toHaveBeenCalledWith('p1');
   });
 
@@ -274,53 +269,33 @@ describe('whose report: /report?pet= (CUL-1334)', () => {
   });
 });
 
-// CUL-1464 — a hidden notes switch sends `includeNotes: false`. The hidden cases are
-// GUARDS: the pre-fix tree sent the state's default (true) whatever the gates said, so
-// an owner who opted out of Noticed with old notes on record had them printed under a
-// control they could not see. The visible cases are refactor-safety (green before and
-// after): with both gates open the switch still governs the build.
-describe('Noticed notes in the build (CUL-1464)', () => {
+// Noticed is GA (CUL-876): the notes switch is on every report screen, defaults on,
+// and governs the build. (CUL-1464's hidden-switch cases went with the flag that hid it.)
+describe('Noticed notes in the build (CUL-876)', () => {
   const sent = () => mockedGenerate.mock.calls.map(([p]) => p.includeNotes);
 
-  afterEach(() => {
-    mockLookEligible.mockReturnValue(false);
-    mockLookOptedIn.mockReturnValue(false);
-  });
-
-  it('neither gate: no switch, and the build sends false', async () => {
-    mockedGenerate.mockResolvedValue(report());
-    const { findByText, queryByText } = render(<ReportScreen />);
-    await findByText('Send to vet');
-    expect(queryByText('Include your Noticed notes')).toBeNull();
-    expect(sent()).toEqual([false]);
-  });
-
-  it('eligible but opted out (the owner who used it and left): no switch, false', async () => {
-    mockLookEligible.mockReturnValue(true);
-    mockedGenerate.mockResolvedValue(report());
-    const { findByText, queryByText } = render(<ReportScreen />);
-    await findByText('Send to vet');
-    expect(queryByText('Include your Noticed notes')).toBeNull();
-    expect(sent()).toEqual([false]);
-  });
-
-  it('opted in but no longer eligible: no switch, false', async () => {
-    mockLookOptedIn.mockReturnValue(true);
-    mockedGenerate.mockResolvedValue(report());
-    const { findByText, queryByText } = render(<ReportScreen />);
-    await findByText('Send to vet');
-    expect(queryByText('Include your Noticed notes')).toBeNull();
-    expect(sent()).toEqual([false]);
-  });
-
-  it('both gates: the switch shows, defaults on, and turning it off rebuilds with false', async () => {
-    mockLookEligible.mockReturnValue(true);
-    mockLookOptedIn.mockReturnValue(true);
+  it('the switch shows, defaults on, and turning it off rebuilds with false', async () => {
     mockedGenerate.mockResolvedValue(report());
     const { findByText, getByLabelText } = render(<ReportScreen />);
     await findByText('Send to vet');
     expect(sent()).toEqual([true]);
     fireEvent(getByLabelText('Include your Noticed notes in the report'), 'valueChange', false);
     await waitFor(() => expect(sent()).toEqual([true, false]));
+  });
+
+  // The retired CUL-1464 bug was a build issued under a HIDDEN switch. The switch and the
+  // build share one condition today (a resolved pet); this pins it, so a refactor that
+  // moves the switch under a range, species or design_v2 gate reds here.
+  it.each([
+    ['the active pet', {}],
+    ['?pet= another pet the account holds', { pet: 'p2' }],
+  ])('a build for %s is always issued under a visible switch, and sends its value', async (_name, params) => {
+    mockParams = params;
+    mockedGenerate.mockResolvedValue(report());
+    const { findByText, getByLabelText } = render(<ReportScreen />);
+    await findByText('Send to vet');
+    expect(mockedGenerate).toHaveBeenCalled();
+    expect(getByLabelText('Include your Noticed notes in the report').props.value).toBe(true);
+    expect(sent().every((v) => v === true)).toBe(true);
   });
 });
