@@ -281,12 +281,17 @@ export default function HomeScreen() {
               belongs to a DIFFERENT pet; renders nothing for single-pet households
               or when no other pet has a cached safety finding. */}
           <CrossPetSafetyBanner />
-          <SignalZone
-            trialRunning={trialRunning}
-            withholdFallingVomit={withholdFallingVomit}
-            onSafetyLive={setSignalSafety}
-            signalTrial={signalTrial}
-          />
+          {/* GAP-13 (CUL-1566): the zone speaks a safety finding that arrives while Home is
+              in front, through the same focus check the spine's rows ask. The zone names
+              its own pet; it reads only `mayAnnounce` from this. */}
+          <RowSpeechContext.Provider value={rowSpeech}>
+            <SignalZone
+              trialRunning={trialRunning}
+              withholdFallingVomit={withholdFallingVomit}
+              onSafetyLive={setSignalSafety}
+              signalTrial={signalTrial}
+            />
+          </RowSpeechContext.Provider>
           {/* B-417 §4.2 — a running trial gets a compact strip here, BELOW Signal
               and ABOVE Today. Deliberate: Principle 3 says safety insights always
               lead, and a trial is context, not an insight. `resolveTrialStrip`

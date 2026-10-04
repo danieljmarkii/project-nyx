@@ -1039,7 +1039,10 @@ describe('SignalZone — the arrival moment', () => {
     // The bypass is not a visual rule that a11y is exempt from. §4 draws nothing for a
     // safety-led first finding deliberately, and an announcement would be a celebration
     // of a concern arriving through the one channel that cannot see it was withheld.
-    // Whether that owner should get a line at all is CUL-638, a PM copy round.
+    // Whether that owner should get a line at all is CUL-638, a PM copy round. The concern
+    // ITSELF is spoken on a focused Home since PMD-21 (CUL-1566), through Home's focus check;
+    // this zone is mounted with no provider, so the celebration's silence is what is pinned
+    // here (`SignalZone.safetySpeech.test.tsx` holds the spoken half).
     const announce = spyAnnounce();
     await arrive([liveFinding]);
     act(() => {
