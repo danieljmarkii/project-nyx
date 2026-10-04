@@ -15,7 +15,7 @@ jest.mock('./sync', () => ({
 
 import { buildDayNodes, type DayNode } from './dayNodes';
 import { computeTrialFacts } from './dietTrial';
-import type { DateOnlyItem, HistoryFilter, HistorySection } from './historyDays';
+import type { DateOnlyItem, HistoryCourse, HistoryFilter, HistorySection, PreRecordDay } from './historyDays';
 import type { HistoryRow } from './historyQueries';
 import {
   BOWL_LINE_LEAD,
@@ -41,6 +41,7 @@ import {
   sectionIndexFor,
   sectionKeyOf,
   showsBowlLine,
+  preRecordLinesOf,
   showsRecordStart,
   trialRangeOf,
   visibleNodesOf,
@@ -481,6 +482,41 @@ describe('filterQuietStateOf: a filter that shows nothing names the record, neve
         }
       }
     }
+  });
+});
+
+describe('preRecordLinesOf (CUL-1242)', () => {
+  const visit = (day: string): PreRecordDay => ({ day, items: [{ kind: 'visit', day, id: `v-${day}`, reason: null, where: '' }] });
+  const preRecord = [visit('2026-05-10'), visit('2026-05-01')];
+  const base = {
+    preRecord,
+    recordStart: '2026-05-14',
+    windowFromDay: '2026-05-14',
+    allLoaded: true,
+    searching: false,
+    filter: { kind: 'all' } as HistoryFilter,
+    course: null as HistoryCourse | null,
+  };
+
+  it('every one, once the window reaches the record\'s first day and every page is loaded', () => {
+    expect(preRecordLinesOf(base)).toEqual(preRecord);
+    expect(preRecordLinesOf({ ...base, filter: { kind: 'type', type: 'vomit' } })).toEqual(preRecord);
+    expect(preRecordLinesOf({ ...base, allLoaded: false })).toEqual([]);
+    expect(preRecordLinesOf({ ...base, windowFromDay: '2026-09-01' })).toEqual([]);
+    expect(preRecordLinesOf({ ...base, searching: true })).toEqual([]);
+  });
+
+  it('a course filter only from the course\'s first day, and nothing while it loads', () => {
+    const course = { days: { fromDay: '2026-05-05', toDay: null } } as unknown as HistoryCourse;
+    const filter: HistoryFilter = { kind: 'course', courseKey: 'reg' };
+    expect(preRecordLinesOf({ ...base, filter, course })).toEqual([visit('2026-05-10')]);
+    expect(preRecordLinesOf({ ...base, filter, course: null })).toEqual([]);
+  });
+
+  it('nothing logged yet: every one, whatever the window or the pages, but never under search', () => {
+    const empty = { ...base, recordStart: null, windowFromDay: '2026-10-04', allLoaded: false };
+    expect(preRecordLinesOf(empty)).toEqual(preRecord);
+    expect(preRecordLinesOf({ ...empty, searching: true })).toEqual([]);
   });
 });
 

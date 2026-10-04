@@ -97,6 +97,7 @@ import {
   type HistoryCourse,
   type HistoryFilter,
   type HistorySection,
+  type PreRecordDay,
 } from '../../lib/historyDays';
 import { SEARCH_READS_NOTES, type HistoryRow } from '../../lib/historyQueries';
 import { SEARCH_ALL_TYPES_LABEL, filterLabelOf, searchInFilterMissOf } from '../../lib/historyControls';
@@ -119,6 +120,7 @@ import {
   sectionIndexFor,
   sectionKeyOf,
   showsBowlLine,
+  preRecordLinesOf,
   showsRecordStart,
   trialRangeOf,
   type QuietState,
@@ -168,6 +170,9 @@ export const HISTORY_SEARCH_LOOKS = SEARCH_READS_NOTES
 export const historyMoreFailed = (pet: string) => `Couldn't load more of ${pet}'s history.`;
 export const HISTORY_REFRESH_FAILED = "Couldn't refresh history.";
 export const recordStartText = (pet: string, day: string) => `${pet}'s record starts here · ${day}`;
+/** A record with no log yet but a date-only item (CUL-1242): the first-log line the items sit
+ *  under, never *Nothing logged yet* over a visit the owner entered (v1's CUL-575 guard). */
+export const recordStartsWithFirstLogText = (pet: string) => `${pet}'s record starts with the first log`;
 
 /** A list section: one HV-4 section, drawn as a header cell (day cards) and one body cell. */
 interface ListSection {
@@ -875,6 +880,19 @@ export function HistoryList() {
     </View>
   ) : null;
 
+  // The items dated before the record (CUL-1242): footer lines, never sections, so no count,
+  // coverage line, run or strip door ever sees them.
+  const preRecordLines = snapshot
+    ? preRecordLinesOf({
+        preRecord: snapshot.preRecord,
+        recordStart: snapshot.facts.firsts.record,
+        windowFromDay: snapshot.resolved.bounds.fromDay,
+        allLoaded: snapshot.pages.next === null,
+        searching: snapshot.search !== null,
+        filter: snapshot.filter,
+        course,
+      })
+    : [];
   const searchMiss = snapshot && search !== null ? searchInFilterMissOf(snapshot.filter, search, snapshot.courses) : null;
   const empty = !activePet ? (
     // No pet, so no read to wait for: the first-log line, never a silhouette that never ends.
@@ -891,7 +909,15 @@ export function HistoryList() {
       // Under a header that stayed (a filter or search change), only the days wait.
       <ListSkeleton daysOnly={headerSnap !== null} />
     )
-  ) : snapshot.facts.firsts.record === null && !noticed ? (
+  ) : snapshot.facts.firsts.record === null && !noticed && preRecordLines.length > 0 ? (
+    // Nothing logged yet, and the owner has entered a visit, a course or a bowl (CUL-1242,
+    // ruled (b)): the items under the first-log line, never "Nothing logged yet" over them.
+    <View testID="history-items-before-first-log">
+      <RecordStartLine text={recordStartsWithFirstLogText(petName)} />
+      <PreRecordLines days={preRecordLines} filter={snapshot.filter} dates={dates} courseName={courseName} onOpenVisit={openVisit} />
+    </View>
+  ) : snapshot.facts.firsts.record === null && !noticed && (search === null || snapshot.preRecord.length === 0) ? (
+    // A search over a record holding only items falls through to its no-match state.
     <EmptyState title={HISTORY_EMPTY_TITLE} body={historyEmptyBody(petName)} testID="history-empty" />
   ) : search !== null ? (
     searchMiss !== null ? (
@@ -932,13 +958,20 @@ export function HistoryList() {
     <View style={styles.nextPage} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" testID="history-next-page">
       <Skeleton height={NEXT_PAGE_ROW} radius={theme.radiusMedium} />
     </View>
-  ) : showsRecordStart({
-      recordStart: snapshot.facts.firsts.record,
-      lastSectionFromDay: sectionFromDay(sections[sections.length - 1].model),
-      allLoaded: snapshot.pages.next === null,
-    }) && snapshot.facts.firsts.record !== null ? (
-    <RecordStartLine text={recordStartText(petName, recordWeekday(snapshot.facts.firsts.record, today) ?? snapshot.facts.firsts.record)} />
-  ) : null;
+  ) : (
+    <>
+      {showsRecordStart({
+        recordStart: snapshot.facts.firsts.record,
+        lastSectionFromDay: sectionFromDay(sections[sections.length - 1].model),
+        allLoaded: snapshot.pages.next === null,
+      }) && snapshot.facts.firsts.record !== null ? (
+        <RecordStartLine text={recordStartText(petName, recordWeekday(snapshot.facts.firsts.record, today) ?? snapshot.facts.firsts.record)} />
+      ) : null}
+      {preRecordLines.length > 0 ? (
+        <PreRecordLines days={preRecordLines} filter={snapshot.filter} dates={dates} courseName={courseName} onOpenVisit={openVisit} />
+      ) : null}
+    </>
+  );
 
   return (
     <CellLaidOut.Provider value={onCellLaidOut}>
@@ -975,6 +1008,38 @@ export function HistoryList() {
         testID="history-list"
       />
     </CellLaidOut.Provider>
+  );
+}
+
+/** The items dated before the record, one line per day, newest first (CUL-1242): the item
+ *  line a filter leaves for an items-only day, with no absence (no day before the record is
+ *  one the owner watched). A visit's line opens the visit (§3.10). */
+function PreRecordLines({
+  days,
+  filter,
+  dates,
+  courseName,
+  onOpenVisit,
+}: {
+  days: readonly PreRecordDay[];
+  filter: HistoryFilter;
+  dates: ReturnType<typeof historyDatesFor>;
+  courseName: string | null;
+  onOpenVisit: (visitId: string) => void;
+}) {
+  return (
+    <>
+      {days.map(({ day, items }) => (
+        <ItemsLine
+          key={day}
+          text={itemsOnlyLineText({ kind: 'items-only', day, statesAbsence: false }, items, filter, dates, courseName)}
+          items={items}
+          landed={false}
+          onOpenVisit={onOpenVisit}
+          testID={`history-pre-record-${day}`}
+        />
+      ))}
+    </>
   );
 }
 

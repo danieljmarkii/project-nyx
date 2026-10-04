@@ -31,6 +31,7 @@ import {
   courseDaysOf,
   courseKeysOf,
   dateOnlyItemsOf,
+  preRecordItemsOf,
   dayCountFor,
   dayFactsOn,
   dayHeaderOf,
@@ -1030,6 +1031,27 @@ describe('AC 10 / AC 11 — the list\'s sections', () => {
       ['2026-09-06', [{ kind: 'bowl', day: '2026-09-06', id: 'bowl-1:start', change: 'started', foodLabel: 'Royal Canin · SO', toFoodLabel: null }]],
       ['2026-09-07', [{ kind: 'visit', day: '2026-09-07', id: 'visit-1', reason: 'Recheck', where: 'Riverside' }]],
     ]);
+  });
+
+  it('before the record (CUL-1242): only the days strictly before its first day, newest first', () => {
+    // The record's first day is the visit's: its own card holds it, so only the earlier days
+    // are the list's foot, the Aug 1 regimen start no window holds included.
+    expect(preRecordItemsOf({ visits, courses, bowls, recordStart: '2026-09-07', today: TODAY }).map((d) => d.day)).toEqual([
+      '2026-09-06',
+      '2026-09-04',
+      '2026-08-01',
+    ]);
+    expect(preRecordItemsOf({ visits, courses, bowls, recordStart: '2026-09-04', today: TODAY }).map((d) => d.day)).toEqual([
+      '2026-08-01',
+    ]);
+    expect(items.has('2026-08-01')).toBe(false);
+  });
+
+  it('before the record, with nothing logged yet: every item up to today, never one after it', () => {
+    const later: HistoryVisitRow = { id: 'visit-next', petId: PET, visitedAt: '2099-01-02', sortMs: 0, reason: null, where: '' };
+    const all = preRecordItemsOf({ visits: [...visits, later], courses, bowls, recordStart: null, today: TODAY });
+    expect(all.map((d) => d.day)).toEqual(['2026-09-07', '2026-09-06', '2026-09-04', '2026-08-01']);
+    expect(all[0].items).toEqual([{ kind: 'visit', day: '2026-09-07', id: 'visit-1', reason: 'Recheck', where: 'Riverside' }]);
   });
 
   it('All types: cards for logged or item days, runs of nothing logged, today\'s own card', () => {

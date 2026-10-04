@@ -7,7 +7,9 @@ import {
 } from '../lib/feedingArrangements';
 import {
   dateOnlyItemsOf,
+  preRecordItemsOf,
   type DateOnlyItem,
+  type PreRecordDay,
   type DayRange,
   type HistoryCourse,
   type HistoryFacts,
@@ -130,6 +132,10 @@ export interface HistorySnapshot {
   courses: readonly HistoryCourse[];
   /** Date-only items by day, over the window (`dateOnlyItemsOf`). */
   items: ReadonlyMap<string, DateOnlyItem[]>;
+  /** The date-only items dated before the record's first day, read over the whole record,
+   *  newest first (`preRecordItemsOf`, CUL-1242): drawn below the record's start, counted
+   *  nowhere. */
+  preRecord: readonly PreRecordDay[];
   /** The bowls down now: the bowl's line (§3.3). */
   arrangements: readonly ActiveArrangementView[];
   pages: HistoryPages;
@@ -518,6 +524,7 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
           facts,
           courses,
           items: dateOnlyItemsOf({ visits, courses, bowls, range: resolved.bounds }),
+          preRecord: preRecordItemsOf({ visits, courses, bowls, recordStart: record.facts.firsts.record, today }),
           arrangements,
           pages,
           wholeDays,

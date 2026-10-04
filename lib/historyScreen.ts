@@ -29,8 +29,10 @@ import {
   type DateOnlyItem,
   type DayRange,
   type HistoryDateFormat,
+  type HistoryCourse,
   type HistoryFilter,
   type HistorySection,
+  type PreRecordDay,
 } from './historyDays';
 import type { ResolvedWindow, WindowFacts } from './historyWindows';
 import { foodFormatWord } from './foodFormat';
@@ -475,6 +477,38 @@ export function showsRecordStart(args: {
   allLoaded: boolean;
 }): boolean {
   return args.allLoaded && args.recordStart !== null && args.lastSectionFromDay === args.recordStart;
+}
+
+/**
+ * The items dated before the record that the list's foot draws (CUL-1242, ruled (b)), newest
+ * first. They follow the list's last section: under All types that is *{pet}'s record starts
+ * here*, and under a filter they follow the filter's rows as its other item lines do (AC 11:
+ * a day's items stay under every filter, before the filter's first row included). Drawn only
+ * once every page is loaded and where the window reaches the record's first day, so a window
+ * that stops short never jumps past its own start; under a course filter only from the
+ * course's first day, as the rest of that list stays inside the course; never under search,
+ * which lists matched days and nothing else (R-2). With nothing logged yet, every one shows,
+ * under every filter but Noticed (whose quiet state the screen keeps).
+ */
+export function preRecordLinesOf(args: {
+  preRecord: readonly PreRecordDay[];
+  recordStart: string | null;
+  windowFromDay: string;
+  allLoaded: boolean;
+  searching: boolean;
+  filter: HistoryFilter;
+  /** The course a course filter shows, or null while it loads. */
+  course: HistoryCourse | null;
+}): readonly PreRecordDay[] {
+  const { preRecord, recordStart, filter, course } = args;
+  if (preRecord.length === 0 || args.searching) return [];
+  // Nothing logged yet: no page to wait for and no window to stop short, so every item shows
+  // (the list's only content, never "Nothing logged yet" over a visit, CUL-575).
+  if (recordStart === null) return preRecord;
+  if (!args.allLoaded || args.windowFromDay > recordStart) return [];
+  if (filter.kind !== 'course') return preRecord;
+  const floor = course?.days.fromDay ?? null;
+  return floor === null ? [] : preRecord.filter((d) => d.day >= floor);
 }
 
 /** The earliest day a section holds: its day, or its run's first day. */
