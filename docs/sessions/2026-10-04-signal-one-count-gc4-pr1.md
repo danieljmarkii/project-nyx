@@ -30,7 +30,7 @@ Shipped via #1050 (draft). BUILD session on CUL-1217's GC-4 body. The work split
   - Bars become rolling 7-day blocks.
   - "This week" becomes "the last 7 days".
   - The chronicity title counts its non-empty bars. The engine's greedy `activeWeeks` stays as the trigger.
-- **Burden keeps the engine's sentence.** It counts rows by design, so a recount in episodes would deflate a safety card. Its unit is a PM question.
+- **Burden keeps the engine's sentence.** It counts rows by design, so a recount in episodes would deflate a safety card. The PM ruled CUL-1576 (a) in this session: keep counting each logged vomit and name the unit on the burden screen. The copy edit rides CUL-1570.
 - **The PR names only CUL-1568.** Every other `CUL-NNN` was stripped from the body and from commit messages, and one unpushed commit was reworded before its push. Every token a merge reads closes its issue (CUL-1397).
 
 ## Falsification
@@ -82,5 +82,5 @@ Full jest suite green (13,922), plus UTC+14, +12:45 and −10 on the touched sui
   - A composed chronicity script drops the engine's halves row, and its "First logged" still reads the engine's onset.
   - Get ready relays `f.text`.
 - **CUL-1575 (filed, pre-existing).** The phone script prints "Week before" on a worsening the engine counted over an incomplete read, a comparison its own sentence drops.
-- **Burden's unit is open.** It counts rows, while every other Signal count is in episodes.
+- **Burden names its unit (CUL-1576, ruled (a)).** It counts each logged vomit while the bars count episodes. Until CUL-1570 names the unit on the burden screen, the two sit side by side unlabelled.
 - **The fallback is a dated mismatch.** When the gate falls back, the engine's sentence sits over local bars that may differ. The line under it says so. It is honest, but it is a mismatch.
