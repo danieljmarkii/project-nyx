@@ -40,6 +40,6 @@ Both of its follow-ups are fixed here: the greyscale non-vacuity assertion and t
 
 ## Residuals
 
-- The Tier-2 spec note (§6.11, §7, the §0.2 L-17 row, the header) is **proposed in #1041, not written**. The ruling says it is written on the PM's confirmation.
+- The Tier-2 spec note was confirmed by the PM in session ("write it") and written into `docs/nyx-daily-look-requirements.md` v1.4: the header, the §0.2 L-17 row, §6.11 and §7, each marked **⚠ HELD 2026-10-03**.
 - `components/dashboard/WhatYouNoticedCard.test.tsx` still feeds a pairing string through a hand-built model to prove the renderer cannot split the fraction from its disclosure. This is deliberate: it guards the renderer for the day the hold lifts, and production cannot reach it while the switch is off.
 - Lifting the hold is a PM ruling that has to answer CUL-914's null-rate table, not a cleanup.
