@@ -23,6 +23,8 @@ _Moved here from `STATUS.md` → Runtime in Use (2026-08-22), because it is read
 
 **Installed TestFlight build: 1.1.0 (35), 2026-07-25.** The first binary since SDK 57, the first carrying the widget + App Group, the first iPhone-only, min iOS 16.4. Previous: 1.0.0 (34), 2026-07-18.
 
+**The GA build: 1.2.0 (CUL-559), not yet cut** (`app.json` already reads 1.2.0). It is the first binary without the `log_picker_v2`, `event_types_v2` and `vet_visits` flag reads, so migration 084 (CUL-963 + CUL-1082), which deletes those rows, applies only after it is installed on the PM's devices. Update both lines when it is.
+
 **OTA to the installed build:** `eas update --branch production` — the build's channel is `production`, **not** `preview`.
 
 ### Traps — each of these cost a session; do not repeat them

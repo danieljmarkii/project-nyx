@@ -1,5 +1,5 @@
 # More Events / Log Event Picker Redesign — Requirements (B-745)
-**Version:** 1.0 — design-locked | **Date:** 2026-08-13 | **Status:** BUILD-READY (F1 confirmed)
+**Version:** 1.1 — GA'd | **Date:** 2026-08-13 | **Last Updated:** 2026-10-04 | **Status:** GA'd. The flag is retired (§2 FL-4); every account has the grouped picker.
 
 The build contract for the FAB → "More events" redesign: the event-type picker rebuilt as a grouped, category-tinted grid that rises as a bottom sheet, with simple events completing on one surface in the daylight confirm register. Product of four same-URL mock rounds, 2026-08-12/13.
 
@@ -39,10 +39,11 @@ Ships dark behind the two-gate beta pattern, exactly as `signal_design_v2`:
 - **FL-2 seed-first:** the flag seed + client registration + shelf row land before any consumer (PR 0).
 - **FL-3 the old picker survives** until GA: the flag switches between the shipped type grid and the new experience at one seam.
 - **FL-4 retirement is a GA call only:** when the PM calls GA, a removal PR deletes the flag, the old grid, and the shelf row (the FR-FLAG-5 shape).
+- **FL-4 retirement record (2026-10-04, CUL-960):** the PM called GA. `log_picker_v2` was flipped to enabled-for-everyone (CUL-961); #891 (CUL-962) removed the gate, the old flat grid and the shelf row, together with `event_types_v2` (a client-only pair with a host dependency GAs as one PR); migration 084 (CUL-963) deletes the `app_config` row, applied at merge once the GA build is installed. The two-gate shape above is the history of how it shipped, not a live contract.
 
 ## §3 The two ruled ACs (the F1 riders)
 
-**AC-CHIP — the Saw it / Found it chips never wrap.** The mock's known render flaw is a build requirement, not a hope: chip labels are fixed-intrinsic-width (`flexShrink: 0`, `numberOfLines={1}`, no percentage widths). When the time row cannot hold label + chips at the current font scale, the chip pair drops to its own line below the label as a whole — a chip never squeezes, truncates, or wraps mid-label. **Verify at 320pt width and at the largest iOS accessibility text size**; both states in the component test.
+**AC-CHIP — the Saw it / Found it chips never wrap.** The mock's known render flaw is a build requirement, not a hope: chip labels are fixed-intrinsic-width (`flexShrink: 0`, `numberOfLines={1}`, no percentage widths). When the time row cannot hold label + chips at the current font scale, the chip pair drops to its own line below the label as a whole — a chip never squeezes, truncates, or wraps mid-label. And where the pair alone is wider than the line it just dropped onto (from AX2 at a 320pt-class width, AX4 at 390pt), the chips stack one per row rather than overflowing the sheet — a chip is never clipped, which is worse than all three states above forbid. **Verify at 320pt width and at the largest iOS accessibility text size**; all three states in the component test. _(Third state added 2026-10-04, CUL-760: CUL-756 was a defect in it; the derivation is in `docs/sessions/2026-08-30-ac-chip-accessibility-overflow.md`.)_
 
 **AC-FOUND — Found it carries its full state set in-sheet.** Found-it is not one state; the one-surface confirm must carry everything the pushed screen carries today:
 - The **window modes**: open-ended ("sometime since {last-known-OK / this morning}") and bounded ("between {earliest} and {latest}") — the existing B-010/B-448 model, no new semantics.
