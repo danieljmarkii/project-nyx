@@ -3,7 +3,7 @@
 **Date:** 2026-10-04
 **Branch:** `claude/eloquent-cray-n8r5my`
 
-Shipped via #PR_NUMBER (draft; CUL-991).
+Shipped via #1052 (draft; CUL-991).
 
 ## What shipped
 
