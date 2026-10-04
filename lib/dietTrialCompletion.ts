@@ -392,11 +392,11 @@ export const OUTCOME_QUESTION_NOTE_NO_COUNTS =
   'on the report in your name. Answering is optional — the record goes on the ' +
   'report either way.';
 
-/** The fact line for a sheet with no symptom rows in either stretch while either stretch
- *  holds a daily look (CUL-1483). It names the looks as what the counts leave out and
- *  claims no absence: the plain line's "No symptoms are on the record" is true of the
- *  log, and still reads as an all-clear beside weeks of "Off" or "Hunched or tucked up"
- *  the owner chose and this sheet never reads (daily-look spec §5.1 row 1b / Q-17: an
+/** The fact line for a sheet whose stretches hold a daily look (CUL-1483): alone where no
+ *  symptom row exists, beneath the counts where some do. It names the looks as what the
+ *  counts leave out and claims no absence: the plain line's "No symptoms are on the
+ *  record" is true of the log, and still reads as an all-clear beside weeks of "Off" or
+ *  "Hunched or tucked up" the owner chose and this sheet never reads (daily-look spec §5.1 row 1b / Q-17: an
  *  absence claim beside the owner's contrary observation is reassurance by construction). */
 export const OUTCOME_LOOKS_FACT_LINE =
   'What you noticed on your daily looks isn’t counted here. Only the symptoms you log are.';
@@ -503,12 +503,22 @@ function spanPhrase(days: number): string {
  * and an owner reading a flattering number is exactly the person who stops a diet
  * early.
  */
+/** Either stretch holds a daily look and neither holds a symptom row, so the sheet has no
+ *  counts on screen and every sentence that points at them loses its referent (CUL-1483). */
+function looksWithoutCounts(facts: TrialOutcomeFacts): boolean {
+  return (
+    facts.symptoms.length === 0 &&
+    (facts.beforeHasLooks === true || facts.duringHasLooks === true)
+  );
+}
+
 export function densityLine(facts: TrialOutcomeFacts, petName: string): string {
   const { before, during } = facts.meals;
-  const tail =
-    `That’s how much got logged, not how ${petName} was — read it alongside the ` +
-    'counts above. Culprit doesn’t judge whether a change in one explains a ' +
-    'change in the other.';
+  const tail = looksWithoutCounts(facts)
+    ? `That’s how much got logged, not how ${petName} was.`
+    : `That’s how much got logged, not how ${petName} was — read it alongside the ` +
+      'counts above. Culprit doesn’t judge whether a change in one explains a ' +
+      'change in the other.';
 
   // THE BEFORE-HALF IS DROPPED WHEN THERE IS NO BEFORE-STRETCH TO REPORT ON, and
   // this branch is a bug fix, not a refinement. Without it the sheet contradicted
@@ -570,13 +580,17 @@ export function buildOutcomeSheet(args: {
   // Looks are never counted below, so where the stretch holds any, each absence clause
   // names them as what the owner did log, rather than saying nothing was logged.
   const noticed = facts.beforeHasLooks === true;
+  // No counts to point at: every sentence that names them would land on the looks line
+  // instead, so the title, the comparison, the density tail and the question all take
+  // their referent-free forms (the question's pair is the one the decline branch uses).
+  const noCounts = looksWithoutCounts(facts);
   const comparisonLine = !facts.beforeTracked
     ? // Named as untracked, never counted as zero. The owner is told plainly that
       // the comparison cannot be made, rather than shown a number that implies it
       // was made and came out well.
       `${noticed ? 'Apart from what you noticed, nothing' : 'Nothing'} was logged in the ` +
       `${spanPhrase(facts.beforeDays)} before the trial started, so there’s nothing to ` +
-      'compare these with.'
+      `compare ${noCounts ? 'with' : 'these with'}.`
     : isSparseBefore(facts)
       ? // The middle case, and the one that flatters. The stretch is named by the
         // days it can actually see rather than by its calendar length, so a
@@ -592,11 +606,17 @@ export function buildOutcomeSheet(args: {
   // Either stretch, not only the before one: a well-logged before-stretch with looks only
   // during the trial is the same all-clear over the owner's own words.
   const looksInEither = noticed || facts.duringHasLooks === true;
-  // No counts to point at: the plain question's "that" and its note's "these counts"
-  // would land on the looks line, so the sheet takes the referent-free pair the decline
-  // branch uses for the same reason.
-  const noCounts = facts.symptoms.length === 0 && looksInEither;
 
+  const countLines = facts.symptoms.map((s) =>
+    facts.beforeTracked
+      ? `${s.label}: ${s.before} before · ${s.during} during.`
+      : `${s.label}: ${s.during} during the trial.`,
+  );
+  // THE LOOKS LINE RIDES UNDER THE COUNTS TOO. A per-type zero is the same absence claim
+  // one level down: 14 itch logged before, none during, and a month of "Scratching more"
+  // on the looks prints "Itch/Scratch: 14 before · 0 during." above "Does that match
+  // what you've seen?" — the flattering direction, on the screen that ends the trial
+  // (adversarial-reviewer on CUL-1483). The looks stay out of the counts; the line says so.
   const factLines =
     facts.symptoms.length === 0
       ? noCounts
@@ -604,18 +624,16 @@ export function buildOutcomeSheet(args: {
         : // RECORD-FORM, deliberately. "No symptoms" would be a claim about the
           // world; this is a claim about the log, which is all Culprit can see.
           ['No symptoms are on the record for either stretch.']
-      : facts.symptoms.map((s) =>
-          facts.beforeTracked
-            ? `${s.label}: ${s.before} before · ${s.during} during.`
-            : `${s.label}: ${s.during} during the trial.`,
-        );
+      : looksInEither
+        ? [...countLines, OUTCOME_LOOKS_FACT_LINE]
+        : countLines;
 
   const declineLead = args.intakeDeclineHeadline ?? null;
 
   return {
     // With the counts suppressed there is no span being reported on, so the
     // title stops promising one.
-    title: declineLead
+    title: declineLead || noCounts
       ? 'Before you close this trial'
       : `What changed over the ${spanPhrase(facts.duringDays)}`,
     continuationNote: milestoneNote(args.indication),

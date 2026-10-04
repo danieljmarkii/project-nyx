@@ -363,7 +363,8 @@ describe('a daily look is not observability', () => {
     expect(sheet.comparisonLine).toBe(
       'Apart from what you noticed, nothing was logged in the 2 weeks before the trial started, so there’s nothing to compare these with.',
     );
-    expect(sheet.factLines).toEqual(['Itch/Scratch: 1 during the trial.']);
+    // The count, then the line saying the looks are not in it (CUL-1483).
+    expect(sheet.factLines).toEqual(['Itch/Scratch: 1 during the trial.', OUTCOME_LOOKS_FACT_LINE]);
   });
 
   it('a thin stretch beside looks counts its logged days without them, and says so', async () => {
@@ -436,7 +437,7 @@ describe('a daily look is not observability', () => {
 // either stretch." over weeks of looks it never reads the words of, an all-clear above "Does
 // that match what you've seen?". Both shapes the adversarial pass reproduced, over the real
 // loader: looks in both stretches, and a well-logged before-stretch with looks only during.
-describe('CUL-1483 — no absence claim over the owner’s looks', () => {
+describe('CUL-1483 — the sheet says the owner’s looks are not counted wherever a count or its absence is shown', () => {
   const PLAIN = 'No symptoms are on the record for either stretch.';
 
   it('looks in both stretches and no symptom rows: the looks are named, absence is not claimed', async () => {
@@ -444,10 +445,15 @@ describe('CUL-1483 — no absence claim over the owner’s looks', () => {
     expect([facts!.beforeHasLooks, facts!.duringHasLooks, facts!.symptoms]).toEqual([true, true, []]);
     const sheet = buildOutcomeSheet({ facts: facts!, petName: 'Mochi' });
     expect(sheet.factLines).toEqual([OUTCOME_LOOKS_FACT_LINE]);
-    // No counts are on screen, so neither sentence below may point at them.
+    // No counts are on screen, so no sentence may point at them or promise a change.
     expect([sheet.question, sheet.questionNote]).toEqual([OUTCOME_QUESTION_NO_COUNTS, OUTCOME_QUESTION_NOTE_NO_COUNTS]);
+    expect(sheet.title).toBe('Before you close this trial');
+    expect(sheet.comparisonLine).toBe(
+      'Apart from what you noticed, nothing was logged in the 2 weeks before the trial started, so there’s nothing to compare with.',
+    );
+    expect(sheet.densityLine).toMatch(/not how Mochi was\.$/);
     const everyString = [sheet.title, sheet.comparisonLine, ...sheet.factLines, sheet.densityLine, sheet.question, sheet.questionNote].join(' ');
-    expect(everyString).not.toMatch(/No symptoms/i);
+    expect(everyString).not.toMatch(/No symptoms|counts above|these with|What changed/i);
   });
 
   it('a well-logged before-stretch with looks only during the trial: the during look alone carries it', async () => {
@@ -468,10 +474,23 @@ describe('CUL-1483 — no absence claim over the owner’s looks', () => {
     expect(sheet.question).toBe(OUTCOME_QUESTION);
   });
 
-  it('with symptom rows the counts render as before, looks or not: the flag only replaces the absence line', async () => {
-    const facts = await load([ev('check_in', at(2026, 7, 3)), ev('meal', at(2026, 7, 4)), ev('itch', at(2026, 7, 20))]);
+  // The adversarial re-read's counterexample: itch logged before, none during, the looks
+  // carrying it instead. The per-type zero is the same absence claim one level down, in the
+  // flattering direction, so the looks line rides under the counts too.
+  it('a per-type zero beside looks carries the looks line under the counts', async () => {
+    const facts = await load([
+      ...[2, 4, 6, 8].map((d) => ev('itch', at(2026, 7, d))),
+      ...[16, 18, 20, 22].map((d) => ev('check_in', at(2026, 7, d))),
+    ]);
     const sheet = buildOutcomeSheet({ facts: facts!, petName: 'Mochi' });
-    expect(sheet.factLines).toEqual(['Itch/Scratch: 0 before · 1 during.']);
-    expect(sheet.question).toBe(OUTCOME_QUESTION);
+    expect(sheet.factLines).toEqual(['Itch/Scratch: 4 before · 0 during.', OUTCOME_LOOKS_FACT_LINE]);
+    // The counts are on screen, so the plain sentences that point at them stay.
+    expect([sheet.title, sheet.question]).toEqual(['What changed over the 2 weeks', OUTCOME_QUESTION]);
+    expect(sheet.densityLine).toMatch(/read it alongside the counts above/);
+  });
+
+  it('without looks the counts stand alone', async () => {
+    const facts = await load([ev('meal', at(2026, 7, 4)), ev('itch', at(2026, 7, 20))]);
+    expect(buildOutcomeSheet({ facts: facts!, petName: 'Mochi' }).factLines).toEqual(['Itch/Scratch: 0 before · 1 during.']);
   });
 });

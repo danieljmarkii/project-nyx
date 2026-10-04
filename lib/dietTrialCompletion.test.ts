@@ -281,10 +281,15 @@ describe('the outcome sheet — the data leads, the question follows', () => {
     // The replacement claims no absence and points at no counts.
     expect(OUTCOME_LOOKS_FACT_LINE).not.toMatch(/\bno\b|nothing|none/i);
     expect(OUTCOME_LOOKS_FACT_LINE).not.toMatch(/!/);
-    // With symptom rows the counts are the facts, and the plain question points at them.
-    const counted = buildOutcomeSheet({ facts: facts({ duringHasLooks: true }), petName: 'Biscuit' });
-    expect(counted.factLines[0]).toBe('Itch/Scratch: 14 before · 3 during.');
-    expect(counted.question).toBe(OUTCOME_QUESTION);
+    // With symptom rows the counts lead, the looks line follows them, and the plain
+    // sentences that point at the counts stay.
+    for (const looks of [{ beforeHasLooks: true }, { duringHasLooks: true }]) {
+      const counted = buildOutcomeSheet({ facts: facts(looks), petName: 'Biscuit' });
+      expect([looks, counted.factLines]).toEqual([looks, [
+        'Itch/Scratch: 14 before · 3 during.', 'Skin reaction: 4 before · 1 during.', OUTCOME_LOOKS_FACT_LINE,
+      ]]);
+      expect([looks, counted.title, counted.question]).toEqual([looks, 'What changed over the 8 weeks', OUTCOME_QUESTION]);
+    }
   });
 
   it('names an untracked before-stretch instead of rendering it as zero', () => {
