@@ -399,3 +399,27 @@ describe('it IS the report\'s rule — the report\'s live dedupeEvents, evaluate
     expect(neverGrouped).toBeGreaterThan(500);
   });
 });
+
+// CUL-1228: the sweep's cost on a long record. Every meal of one food is one group (half a
+// two-year record), and a comparator that parsed both sides of every comparison cost
+// hundreds of thousands of `Date.parse` calls there. Each instant is parsed exactly once.
+describe('the sweep parses each instant once (CUL-1228)', () => {
+  it('one parse per event, however large the group', () => {
+    const base = Date.UTC(2026, 8, 1);
+    const events: SameMinuteEvent[] = Array.from({ length: 5_000 }, (_, i) => ({
+      id: `m-${i}`,
+      type: 'meal',
+      // Every third pair 20s apart (a repeat), in both spellings, in a scrambled order.
+      occurredAt: new Date(base + ((i * 7_919) % 5_000) * 3_600_000 + (i % 3 === 0 ? 20_000 : 0)).toISOString(),
+      foodItemId: 'one-food',
+    }));
+    const spy = jest.spyOn(Date, 'parse');
+    try {
+      const { clusters } = collapseSameMinute(events, { isInWindow: () => true, isPreferred: () => false });
+      expect(clusters.length).toBeGreaterThan(0);
+      expect(spy.mock.calls.length).toBeLessThanOrEqual(events.length);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

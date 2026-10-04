@@ -24,9 +24,11 @@
 //
 // ── WHAT RE-DERIVES THE COUNTS (AC 5) ────────────────────────────────────────────
 // One reload, whole: on focus (a removal on the record screen lands here), on the sync tick
-// (another device, and a per-incident read claimed or landed, `lib/analysis.ts`), on a write
-// through the Today store while History is on screen (a log, an Undo), and on a pull. A
-// reload of the same scope keeps the depth the owner scrolled to.
+// while History is in view (another device, and a per-incident read claimed or landed,
+// `lib/analysis.ts`; out of view, the return's reload reads it), on a write through the
+// Today store while History is on screen (a log, an Undo), and on a pull. Each of these
+// reads the whole record fresh; a scope change reuses it (CUL-1228). A reload of the same
+// scope keeps the depth the owner scrolled to.
 //
 // ── MOVING THE VIEWPORT (§3.1, §4) ───────────────────────────────────────────────
 //   • A landing (a strip tap, a doorway) is consumed from the scope store in ONE step and
@@ -277,10 +279,12 @@ export function HistoryList() {
 
   const latest = useRef({ activePet, scope, today });
   latest.current = { activePet, scope, today };
-  const reload = useCallback((): Promise<HistoryLoadOutcome> => {
+  // `reuseRecord`: only the scope changed, so the record read for this pet and day stands
+  // (CUL-1228). Every other reload reads the record fresh.
+  const reload = useCallback((reuseRecord = false): Promise<HistoryLoadOutcome> => {
     const { activePet: pet, scope: sc, today: day } = latest.current;
     if (!pet || sc.petId !== pet.id) return Promise.resolve('superseded');
-    return useHistoryListStore.getState().load({ pet, scope: sc, today: day });
+    return useHistoryListStore.getState().load({ pet, scope: sc, today: day, reuseRecord });
   }, []);
 
   const listRef = useRef<SectionList<HistorySection, ListSection>>(null);
@@ -348,6 +352,10 @@ export function HistoryList() {
 
   // A new scope: read it, close every run, and start at the top without a glide (§4).
   const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(NO_OPEN);
+  // The mount's request reads the record fresh; a later one is a new scope, a new day or a
+  // new pet, and only a new scope can find a record to reuse (the store keys it on the pet
+  // and the day, and a switch drops it).
+  const requestedOnce = useRef(false);
   useEffect(() => {
     setOpenRuns(NO_OPEN);
     // Nothing from the old list carries over: no fold half done, no focus waiting on a
@@ -361,7 +369,8 @@ export function HistoryList() {
     // viewport"). Midnight is one: every window moves with the day, and the list waits for
     // the new day's read as the silhouette, so there is no place to leave the owner in.
     listRef.current?.getScrollResponder()?.scrollTo({ y: 0, animated: false });
-    void reload();
+    void reload(requestedOnce.current);
+    requestedOnce.current = true;
   }, [request, reload, cancelFold]);
 
   // Focus: a removal or an edit on the record screen lands here. The mount's own focus is
@@ -413,7 +422,16 @@ export function HistoryList() {
     }, [reload, refreshToday, foldAway]),
   );
 
-  // The sync tick: another device's rows, and a per-incident read claimed or landed.
+  // The navigator is read through a ref: a write or a sync must reload once, not once per
+  // render of whatever identity the navigation object has this time.
+  const navigation = useNavigation() as unknown as TabPressNavigation;
+  const navigationRef = useRef(navigation);
+  navigationRef.current = navigation;
+
+  // The sync tick: another device's rows, and a per-incident read claimed or landed. Only
+  // while History is in view: a tab stays mounted behind the others, and the return's own
+  // reload (above) reads whatever a sync landed meanwhile, so a sync on Home never pays for
+  // a whole-record read nobody sees (CUL-1228).
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   const firstTick = useRef(true);
   useEffect(() => {
@@ -421,17 +439,13 @@ export function HistoryList() {
       firstTick.current = false;
       return;
     }
+    if (!navigationRef.current.isFocused()) return;
     refreshToday();
     void reload();
   }, [hydrationTick, reload, refreshToday]);
 
   // A write through the Today store while History is on screen: a log from the + button,
   // an Undo on its card. Off screen, the focus reload covers it.
-  // The navigator is read through a ref: a write must reload once, not once per render of
-  // whatever identity the navigation object has this time.
-  const navigation = useNavigation() as unknown as TabPressNavigation;
-  const navigationRef = useRef(navigation);
-  navigationRef.current = navigation;
   const todayEvents = useEventStore((s) => s.todayEvents);
   const firstEvents = useRef(true);
   useEffect(() => {
@@ -451,8 +465,7 @@ export function HistoryList() {
     } catch (e) {
       console.warn('[history] manual sync failed:', e);
     }
-    // The pinned row's counts re-read with the list (AC 5): the pull moved no sync tick.
-    useHistoryListStore.getState().bumpPullTick();
+    // The pinned row's counts come from the same snapshot (AC 5, CUL-1228).
     refreshToday();
     const outcome = await reload();
     setRefreshing(false);

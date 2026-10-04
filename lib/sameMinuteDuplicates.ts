@@ -116,13 +116,23 @@ function parseMs(iso: string | null | undefined): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
+/** An event with its instant parsed once (CUL-1228). The sweep's order, the anchor test,
+ *  the representative's rank and the survivors' order all read `ms`, never the string: a
+ *  comparator that parsed both sides cost hundreds of thousands of `Date.parse` calls on a
+ *  two-year record, where every meal of one food falls into one group. */
+interface Parsed<E> {
+  e: E;
+  /** Epoch ms, or +Infinity when the instant does not parse (it sorts last). */
+  ms: number;
+  /** Whether the instant parsed: an unparseable one is never "near" anything. */
+  parsed: boolean;
+}
+
 /** Instant ascending, then id: the sweep's order and the survivors' order. An unparseable
  *  instant sorts last. */
-function byInstantThenId(a: SameMinuteEvent, b: SameMinuteEvent): number {
-  const am = parseMs(a.occurredAt) ?? Number.POSITIVE_INFINITY;
-  const bm = parseMs(b.occurredAt) ?? Number.POSITIVE_INFINITY;
-  if (am !== bm) return am - bm;
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+function byInstantThenId<E extends SameMinuteEvent>(a: Parsed<E>, b: Parsed<E>): number {
+  if (a.ms !== b.ms) return a.ms < b.ms ? -1 : 1;
+  return a.e.id < b.e.id ? -1 : a.e.id > b.e.id ? 1 : 0;
 }
 
 /**
@@ -143,68 +153,67 @@ export function collapseSameMinute<E extends SameMinuteEvent>(
 
   // The representative's rank: in-window first, then preferred, then earliest, then id.
   // Compared element by element, so it is a total order over distinct ids.
-  const rank = (e: E): [number, number, number, string] => [
-    isInWindow(e) ? 0 : 1,
-    isPreferred(e) ? 0 : 1,
-    parseMs(e.occurredAt) ?? Number.POSITIVE_INFINITY,
-    e.id,
-  ];
-  const rankLess = (a: E, b: E): boolean => {
-    const ra = rank(a);
-    const rb = rank(b);
-    for (let i = 0; i < 4; i++) {
-      if (ra[i] !== rb[i]) return ra[i] < rb[i];
-    }
-    return false;
+  const rankLess = (a: Parsed<E>, b: Parsed<E>): boolean => {
+    const wa = isInWindow(a.e) ? 0 : 1;
+    const wb = isInWindow(b.e) ? 0 : 1;
+    if (wa !== wb) return wa < wb;
+    const pa = isPreferred(a.e) ? 0 : 1;
+    const pb = isPreferred(b.e) ? 0 : 1;
+    if (pa !== pb) return pa < pb;
+    if (a.ms !== b.ms) return a.ms < b.ms;
+    return a.e.id < b.e.id;
   };
 
-  const byGroup = new Map<string, E[]>();
+  // Each instant parsed exactly once, here.
+  const byGroup = new Map<string, Parsed<E>[]>();
   for (const e of events) {
+    const ms = parseMs(e.occurredAt);
+    const p: Parsed<E> = { e, ms: ms ?? Number.POSITIVE_INFINITY, parsed: ms !== null };
     const k = sameMinuteGroupKey(e);
     const arr = byGroup.get(k);
-    if (arr) arr.push(e);
-    else byGroup.set(k, [e]);
+    if (arr) arr.push(p);
+    else byGroup.set(k, [p]);
   }
 
-  const clusters: SameMinuteCluster<E>[] = [];
+  const parsedClusters: { representative: Parsed<E>; members: Parsed<E>[] }[] = [];
   const droppedEventIds = new Set<string>();
 
   for (const group of byGroup.values()) {
-    const sorted = [...group].sort(byInstantThenId);
-    let cluster: E[] = [];
+    group.sort(byInstantThenId);
+    let cluster: Parsed<E>[] = [];
     const flush = () => {
       if (cluster.length === 0) return;
       let representative = cluster[0];
-      for (const e of cluster) if (rankLess(e, representative)) representative = e;
-      for (const e of cluster) if (e.id !== representative.id) droppedEventIds.add(e.id);
-      clusters.push({
-        representative,
-        members: cluster,
-        memberEventIds: cluster.map((e) => e.id).sort(),
-      });
+      for (const p of cluster) if (rankLess(p, representative)) representative = p;
+      for (const p of cluster) if (p.e.id !== representative.e.id) droppedEventIds.add(p.e.id);
+      parsedClusters.push({ representative, members: cluster });
       cluster = [];
     };
-    let anchorMs: number | null = null;
-    for (const e of sorted) {
-      const ms = parseMs(e.occurredAt);
-      if (cluster.length === 0) {
-        cluster = [e];
-        anchorMs = ms;
+    let anchor: Parsed<E> | null = null;
+    for (const p of group) {
+      if (cluster.length === 0 || anchor === null) {
+        cluster = [p];
+        anchor = p;
         continue;
       }
       // Within one window of the cluster's FIRST member, inclusive. The anchor never moves
       // for the cluster's life, so no cluster spans more than one window.
-      if (ms !== null && anchorMs !== null && ms - anchorMs <= SAME_MINUTE_WINDOW_MS) {
-        cluster.push(e);
+      if (p.parsed && anchor.parsed && p.ms - anchor.ms <= SAME_MINUTE_WINDOW_MS) {
+        cluster.push(p);
       } else {
         flush();
-        cluster = [e];
-        anchorMs = ms;
+        cluster = [p];
+        anchor = p;
       }
     }
     flush();
   }
 
-  clusters.sort((a, b) => byInstantThenId(a.representative, b.representative));
+  parsedClusters.sort((a, b) => byInstantThenId(a.representative, b.representative));
+  const clusters: SameMinuteCluster<E>[] = parsedClusters.map((c) => ({
+    representative: c.representative.e,
+    members: c.members.map((p) => p.e),
+    memberEventIds: c.members.map((p) => p.e.id).sort(),
+  }));
   return { clusters, droppedEventIds };
 }

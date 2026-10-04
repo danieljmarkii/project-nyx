@@ -151,6 +151,7 @@ import { syncNow } from '../../lib/sync';
 import { usePetStore, type Pet } from '../../store/petStore';
 import { defaultHistoryScope, useHistoryScopeStore } from '../../store/historyScopeStore';
 import { useHistoryListStore } from '../../store/historyListStore';
+import * as historyWindowFacts from '../../lib/historyWindowFacts';
 import { useEventStore } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
 import { recordDay, recordWeekday } from '../../lib/recordDates';
@@ -409,6 +410,15 @@ describe('one read behind every number on screen (AC 1, R-1)', () => {
 
 // ── AC 5: every count re-derives together ───────────────────────────────────────
 
+/** Every row the pinned row's record counts: the record on the list's own snapshot. */
+function recordTotal(): number | null {
+  const record = useHistoryListStore.getState().snapshot?.record;
+  if (!record) return null;
+  let n = 0;
+  for (const f of record.recordDays.values()) n += f.total;
+  return n;
+}
+
 describe('AC 5 — a write, a removal, a sync tick and a pull each re-derive every count', () => {
   const total = () => text('history-count-line-1');
 
@@ -448,7 +458,6 @@ describe('AC 5 — a write, a removal, a sync tick and a pull each re-derive eve
     seedWeek();
     await renderList();
     insertMeal('pulled', at(3, 10), 'rc', 'all');
-    const before = useHistoryListStore.getState().pullTick;
     const list = screen.getByTestId('history-list');
     await act(async () => {
       await list.props.refreshControl.props.onRefresh();
@@ -456,9 +465,66 @@ describe('AC 5 — a write, a removal, a sync tick and a pull each re-derive eve
     await settle();
     expect(syncNow).toHaveBeenCalledTimes(1);
     expect(total()).toContain('8 logged');
-    // The pinned row's record read re-reads on this tick (`useHistoryRecordFacts`): a pull
-    // moves no hydration tick, so without it the pills kept the old counts (HV-12, AC 5).
-    expect(useHistoryListStore.getState().pullTick).toBe(before + 1);
+    // The pinned row counts from the same snapshot (`useHistoryRecordFacts`, CUL-1228), so
+    // the pull that moved the count line moved the pills' record with it (HV-12, AC 5).
+    expect(recordTotal()).toBe(8);
+  });
+
+  it('a sync tick while History is out of view reads nothing until the return, which reads it', async () => {
+    seedWeek();
+    await renderList();
+    const read = jest.spyOn(historyWindowFacts, 'readHistoryRecord');
+    try {
+      mockNavigation.focused = false;
+      insertMeal('synced-away', at(3, 10), 'rc', 'all');
+      act(() => useSyncStore.getState().bumpHydrationTick());
+      await settle();
+      expect(read).not.toHaveBeenCalled();
+      mockNavigation.focused = true;
+      act(() => mockFocusCallbacks.forEach((cb) => cb()));
+      await settle();
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(total()).toContain('8 logged');
+      expect(recordTotal()).toBe(8);
+    } finally {
+      read.mockRestore();
+    }
+  });
+});
+
+// ── CUL-1228: one read of the record behind the count line and the pills ────────
+
+describe('CUL-1228 — the record is read once per refresh, and a scope change reuses it', () => {
+  it('a filter change slices the record already read; a write reads it fresh', async () => {
+    seedWeek();
+    const read = jest.spyOn(historyWindowFacts, 'readHistoryRecord');
+    try {
+      await renderList();
+      expect(read).toHaveBeenCalledTimes(1);
+      act(() => useHistoryScopeStore.getState().setFilter(PET_A.id, { kind: 'type', type: 'vomit' }));
+      await settle();
+      expect(read).toHaveBeenCalledTimes(1);
+      const snap = useHistoryListStore.getState().snapshot;
+      expect(snap?.filter).toEqual({ kind: 'type', type: 'vomit' });
+      insertMeal('m0c', at(0, 0, 20), 'rc', 'all');
+      act(() => useEventStore.setState({ todayEvents: [{ id: 'm0c' } as never] }));
+      await settle();
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(recordTotal()).toBe(8);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it('the window\'s facts are a slice of the record on the same snapshot', async () => {
+    seedWeek();
+    await renderList();
+    const snap = useHistoryListStore.getState().snapshot;
+    expect(snap).not.toBeNull();
+    if (!snap) return;
+    expect(snap.record.petId).toBe(snap.petId);
+    expect(snap.record.windowFacts.today).toBe(snap.today);
+    for (const [day, f] of snap.facts.days) expect(snap.record.recordDays.get(day)).toBe(f);
   });
 });
 

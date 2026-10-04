@@ -57,6 +57,7 @@ import {
   type DayFacts,
   type DayFactsInput,
   type DayRange,
+  type FirstDays,
   type HistoryCourse,
   type HistoryFacts,
   type HistoryFilter,
@@ -232,7 +233,7 @@ function toPopulationRow(r: RawPopulationRow): PopulationRow {
 
 /** The reads every day's facts are built from (R-1): the population over the range with a
  *  day of slack each side, the looks' days, the regimens and the bowl spans. The one
- *  place both `readHistoryFacts` and `readRecordDays` read them, so their days agree. */
+ *  place the record's facts are read from (`readRecordFacts`). */
 async function readDayFactsInput(
   db: ReturnType<typeof getDb>,
   petId: string,
@@ -259,12 +260,27 @@ async function readDayFactsInput(
 }
 
 /**
- * Every number History shows for one window: each day's facts, the record's first days,
- * and the same-minute duplicates. One population read feeds all of it (R-1), so the count
- * line, the type sheet, the day headers and the strip agree by construction. Rejects on a
- * failed read: the screen shows its error state, never an empty record (C-12).
+ * The record's facts over one range, read ONCE (CUL-1228): each day's facts, the record's
+ * first days, and the population rows the days were built from. History reads this over
+ * All time and every window on screen is a slice of it (`historyFactsFor`), so the count
+ * line, the pills, both sheets and the strip count one answer, and a two-year record is
+ * read once per refresh rather than once per surface.
  */
-export async function readHistoryFacts(petId: string, range: DayRange): Promise<HistoryFacts> {
+export interface RecordFacts {
+  petId: string;
+  range: DayRange;
+  days: ReadonlyMap<string, DayFacts>;
+  firsts: FirstDays;
+  /** The population over `range` plus a day of slack each side: what a window's
+   *  same-minute duplicates are swept over (`historyFactsFor`). */
+  population: readonly PopulationRow[];
+}
+
+/**
+ * The record's facts over `range`. One population read feeds every number (R-1). Rejects on
+ * a failed read: the screen shows its error state, never an empty record (C-12).
+ */
+export async function readRecordFacts(petId: string, range: DayRange): Promise<RecordFacts> {
   const db = getDb();
   const [{ population, input }, typeFirsts, firstLook] = await Promise.all([
     readDayFactsInput(db, petId, range),
@@ -276,20 +292,54 @@ export async function readHistoryFacts(petId: string, range: DayRange): Promise<
     range,
     days: buildDayFacts(input),
     firsts: firstDaysOf(typeFirstsOf(typeFirsts), firstLook?.local_day ?? null),
-    duplicates: duplicateCountsOf(population, range),
+    population,
   };
 }
 
 /**
- * Each day's facts over `range` and nothing else: the days `readHistoryFacts` builds, from
- * the same reads (`readDayFactsInput`), without the first days and the same-minute
- * duplicates only a count line reads. The pinned row counts every window from these (HV-9),
- * and the duplicate sweep is most of the cost of a long record (CUL-1228). Rejects on a
- * failed read.
+ * Every number History shows for one window, as a slice of the record's facts: the window's
+ * days, the record's first days, and the same-minute duplicates swept over the window and a
+ * day of slack each side ONLY (the count line is their one reader, and the sweep is the
+ * read's dearest step on a long record). The slack is decided on the PARSED instant (C-40),
+ * the same day each side the window's own read would take. Throws for a window the record
+ * does not cover: a slice of a shorter read would count days it never read as empty.
  */
-export async function readRecordDays(petId: string, range: DayRange): Promise<Map<string, DayFacts>> {
-  const { input } = await readDayFactsInput(getDb(), petId, range);
-  return buildDayFacts(input);
+export function historyFactsFor(record: RecordFacts, window: DayRange): HistoryFacts {
+  if (!inRange(window.fromDay, record.range) || !inRange(window.toDay, record.range) || window.fromDay > window.toDay) {
+    throw new Error(
+      `historyQueries: ${window.fromDay}..${window.toDay} is not inside ${record.range.fromDay}..${record.range.toDay}`,
+    );
+  }
+  const whole = window.fromDay === record.range.fromDay && window.toDay === record.range.toDay;
+  let days: ReadonlyMap<string, DayFacts> = record.days;
+  if (!whole) {
+    const sliced = new Map<string, DayFacts>();
+    for (const [day, f] of record.days) if (inRange(day, window)) sliced.set(day, f);
+    days = sliced;
+  }
+  const bounds = slackBounds(window);
+  const afterMs = Date.parse(bounds.after);
+  const beforeMs = Date.parse(bounds.before);
+  const near = record.population.filter((r) => {
+    const ms = Date.parse(r.occurredAt);
+    return ms >= afterMs && ms < beforeMs;
+  });
+  return {
+    petId: record.petId,
+    range: window,
+    days,
+    firsts: record.firsts,
+    duplicates: duplicateCountsOf(near, window),
+  };
+}
+
+/**
+ * Every number History shows for one window: `historyFactsFor` over a read of exactly that
+ * window. The screen slices one All-time read instead (`readHistoryRecord`); this stays the
+ * window-scoped read the two are held equal against. Rejects on a failed read (C-12).
+ */
+export async function readHistoryFacts(petId: string, range: DayRange): Promise<HistoryFacts> {
+  return historyFactsFor(await readRecordFacts(petId, range), range);
 }
 
 // ── Courses ──────────────────────────────────────────────────────────────────────
