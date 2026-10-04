@@ -334,7 +334,7 @@ describe('readMonthFacts against the production DDL', () => {
     const m = buildMonthModel({
       year: 2026, month: 8, today: '2026-09-06', noun: 'vomiting',
       recordStart: facts.recordStart, recordEmpty: facts.recordStart == null,
-      episodeDays: facts.episodeDays, loggedDays: facts.loggedDays,
+      episodeDays: facts.episodeDays, loggedDays: facts.loggedDays, answeringDays: facts.answeringDays,
     });
     expect(m.days.slice(0, 3).map((d) => d.coverage)).toEqual(['before_record', 'before_record', 'before_record']);
     expect(m.days[3].coverage).toBe('logged');

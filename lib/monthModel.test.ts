@@ -27,12 +27,15 @@ const SEPT = { year: 2026, month: 8 };
 const TODAY = '2026-09-17';
 
 function septModel(over: Partial<Parameters<typeof buildMonthModel>[0]> = {}) {
+  const loggedDays = over.loggedDays ?? range('2026-07-01', TODAY).filter((k) => k !== '2026-09-08' && k !== '2026-09-09');
   return buildMonthModel({
     ...SEPT,
     today: TODAY,
     noun: 'vomiting',
     episodeDays: ['2026-09-02', '2026-09-02', '2026-09-05', '2026-09-11', '2026-09-11', '2026-09-16'],
-    loggedDays: range('2026-07-01', TODAY).filter((k) => k !== '2026-09-08' && k !== '2026-09-09'),
+    loggedDays,
+    // Every logged day answers unless a test says otherwise (a meal or a symptom on it).
+    answeringDays: loggedDays,
     ...over,
   });
 }
@@ -185,7 +188,7 @@ describe('the bars over the rows (AC 1)', () => {
   });
 
   it('an episode on the month\'s LAST day is counted and drawn (mutant M3)', () => {
-    const m = buildMonthModel({ year: 2026, month: 7, today: TODAY, noun: 'vomiting', episodeDays: ['2026-08-31'], loggedDays: range('2026-08-01', '2026-08-31') });
+    const m = buildMonthModel({ year: 2026, month: 7, today: TODAY, noun: 'vomiting', episodeDays: ['2026-08-31'], loggedDays: range('2026-08-01', '2026-08-31'), answeringDays: range('2026-08-01', '2026-08-31') });
     expect(m.count).toBe(1);
     expect(m.days[30].count).toBe(1);
     expect(m.line).toBe('Vomiting 1 time on 1 day · through Aug 31');
@@ -239,6 +242,7 @@ describe('the bars over the rows (AC 1)', () => {
       noun: 'vomiting',
       episodeDays: ['2026-08-03'],
       loggedDays: range('2026-08-01', '2026-08-31'),
+      answeringDays: range('2026-08-01', '2026-08-31'),
     });
     expect(m.isCurrent).toBe(false);
     expect(m.lastDrawnKey).toBe('2026-08-31');
@@ -300,14 +304,14 @@ describe('the line (AC 5, C-3)', () => {
   it('a month wholly before the record, and a month wholly ahead, say only that', () => {
     const before = septModel({ recordStart: '2026-10-01', loggedDays: [], episodeDays: [] });
     expect(before.line).toBe('Before the record began');
-    const ahead = buildMonthModel({ year: 2026, month: 9, today: TODAY, noun: 'vomiting', episodeDays: [], loggedDays: [] });
+    const ahead = buildMonthModel({ year: 2026, month: 9, today: TODAY, noun: 'vomiting', episodeDays: [], loggedDays: [], answeringDays: [] });
     expect(ahead.isAhead).toBe(true);
     expect(ahead.line).toBe('Nothing yet · this month has not started');
     expect(ahead.barIndexOfRow.every((b) => b == null)).toBe(true);
   });
 
   it('buildLine pluralises and orders its clauses; without the count it is the window and its coverage', () => {
-    const base = { noun: 'vomiting', rowNoun: 'vomit', count: 1, episodeDayCount: 1, vomitDayCount: 1, aheadCount: 2, unloggedDays: 1, beforeRecordDays: 1, isAhead: false, recordEmpty: false, allBeforeRecord: false, lastDrawnKey: '2026-09-17' };
+    const base = { noun: 'vomiting', rowNoun: 'vomit', count: 1, episodeDayCount: 1, vomitDayCount: 1, aheadCount: 2, unloggedDays: 1, answeringDayCount: 1, beforeRecordDays: 1, isAhead: false, recordEmpty: false, allBeforeRecord: false, lastDrawnKey: '2026-09-17' };
     expect(buildLine(base)).toBe('Vomiting 1 time on 1 day · through Sep 17 · 1 day unlogged · 1 day before the record · 2 dated ahead, not drawn');
     expect(buildLine(base, { withCount: false })).toBe('Through Sep 17 · 1 day unlogged · 1 day before the record');
     // CUL-1530: a bout running past its first day splits the times (episodes, the corners)
@@ -324,7 +328,7 @@ describe('the line (AC 5, C-3)', () => {
   });
 
   it('a pet with no record at all: an invitation, never weeks of "unlogged" on a first screen (Principle 5)', () => {
-    const m = septModel({ recordStart: null, recordEmpty: true, episodeDays: [], loggedDays: [] });
+    const m = septModel({ recordStart: null, recordEmpty: true, episodeDays: [], loggedDays: [], answeringDays: [] });
     expect(m.recordEmpty).toBe(true);
     expect(m.unloggedDays).toBe(0);
     expect(m.line).toBe('Nothing logged yet · the month fills in from the first entry');
@@ -334,7 +338,7 @@ describe('the line (AC 5, C-3)', () => {
     expect(m.rows.flat().filter((d) => d.outsideMonth).every((d) => d.coverage === 'before_record' || d.coverage === 'ahead')).toBe(true);
     // Without the flag, a missing record start still means every arrived day counts —
     // the caller says which it is.
-    expect(septModel({ recordStart: null, episodeDays: [], loggedDays: [] }).unloggedDays).toBe(17);
+    expect(septModel({ recordStart: null, episodeDays: [], loggedDays: [], answeringDays: [] }).unloggedDays).toBe(17);
   });
 });
 
@@ -356,18 +360,18 @@ describe('timezone-honest (C-29)', () => {
     // as the month's last day — today's row is the month's last row, nothing ahead.
     const today = toLocalDayKey(new Date(2026, 8, 30, 23, 30));
     expect(today).toBe('2026-09-30');
-    const m = buildMonthModel({ ...SEPT, today, noun: 'vomiting', episodeDays: [], loggedDays: [] });
+    const m = buildMonthModel({ ...SEPT, today, noun: 'vomiting', episodeDays: [], loggedDays: [], answeringDays: [] });
     expect(m.aheadDays).toBe(0);
     expect(m.isCurrent).toBe(true);
     expect(m.barIndexOfRow[4]).toBe(8);
     // And 00:30 local on the first of October is October, not September's 30th.
     const next = toLocalDayKey(new Date(2026, 9, 1, 0, 30));
     expect(next).toBe('2026-10-01');
-    expect(buildMonthModel({ ...SEPT, today: next, noun: 'vomiting', episodeDays: [], loggedDays: [] }).isCurrent).toBe(false);
+    expect(buildMonthModel({ ...SEPT, today: next, noun: 'vomiting', episodeDays: [], loggedDays: [], answeringDays: [] }).isCurrent).toBe(false);
   });
 
   it('refuses an instant where a key belongs, rather than bucketing it by the runner clock', () => {
-    expect(() => buildMonthModel({ ...SEPT, today: '2026-09-17T23:30:00.000Z', noun: 'vomiting', episodeDays: [], loggedDays: [] })).toThrow(/day key/);
+    expect(() => buildMonthModel({ ...SEPT, today: '2026-09-17T23:30:00.000Z', noun: 'vomiting', episodeDays: [], loggedDays: [], answeringDays: [] })).toThrow(/day key/);
     expect(() => septModel({ episodeDays: ['2026-09-02T04:00:00Z'] })).toThrow(/day key/);
     expect(() => septModel({ loggedDays: ['2026-09-02T04:00:00Z'] })).toThrow(/day key/);
   });
@@ -379,7 +383,7 @@ describe('timezone-honest (C-29)', () => {
     expect(daysInMonth(2028, 1)).toBe(29);
     expect(daysInMonth(2026, 1)).toBe(28);
     // A leap February's rows: Feb 1 2028 is a Tuesday; 29 days → 5 rows.
-    expect(buildMonthModel({ year: 2028, month: 1, today: '2028-03-01', noun: 'vomiting', episodeDays: [], loggedDays: [] }).rows).toHaveLength(5);
+    expect(buildMonthModel({ year: 2028, month: 1, today: '2028-03-01', noun: 'vomiting', episodeDays: [], loggedDays: [], answeringDays: [] }).rows).toHaveLength(5);
   });
 });
 

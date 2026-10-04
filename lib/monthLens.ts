@@ -1,0 +1,75 @@
+// The month's SYMPTOM LENS (CUL-1553 · GC-7 item 1, "the trial's sign"). Flag-on Patterns
+// drew vomiting only, so a diet-trial dog whose sign is itching had no symptom surface on
+// the page GA keeps (CUL-1074 brief 1; the critique's PMD-6). The lens puts every symptom
+// the read holds on offer and opens the month on the one with the most days in the shown
+// month, vomiting on a tie (PM, 2026-10-04): the itchy dog lands on itching without a
+// stored "trial symptom", which `diet_trials` does not have.
+//
+// ── TWO COUNTING RULES, NAMED ──────────────────────────────────────────────────
+// Vomiting keeps the engine's re-log collapse (`episodeDaysOf`) and the days a bout
+// continues into (CUL-1226 / CUL-1530): its days are the rose days. Every other symptom
+// is counted in ENTRIES, one per row, and its days are the days holding one. The words
+// follow: "Vomiting 3 times" counts episodes, "Itching 3 times" counts entries.
+//
+// ── WHICH SYMPTOMS ARE ON OFFER ───────────────────────────────────────────────
+// Vomiting always (the shipped month's own subject, so a vomit-only record keeps today's
+// page); every other `SYMPTOM_EVENT_TYPES` member that has at least one entry in the read.
+// The read spans the nine weeks of bars and the whole grid, so a symptom drawn on a bar
+// is always one the reader can choose. The order is the default's: most days in the shown
+// month first, vomiting first among equals, then the list's own order — a total order, so
+// the same record always opens on the same lens.
+//
+// Pure: no database, no clock. The day counts are over the month's own ARRIVED days (the
+// first through `lastDrawnKey`), the population the line speaks.
+
+import { SYMPTOM_EVENT_TYPES } from './analytics';
+import type { MonthContinuationDay } from './monthModel';
+
+export const VOMIT_LENS = 'vomit';
+
+export interface SymptomLensInput {
+  /** The shown month's first day and its last ARRIVED day, as keys. */
+  firstKey: string;
+  lastDrawnKey: string;
+  episodeDays: readonly string[];
+  continuationDays?: readonly MonthContinuationDay[];
+  /** Every symptom but vomit, one entry per row (`MonthFacts.symptomEntryDays`). */
+  symptomEntryDays?: Readonly<Record<string, readonly string[]>>;
+}
+
+export interface SymptomLens {
+  /** The event type. */
+  type: string;
+  /** Days holding the symptom among the shown month's arrived days. */
+  days: number;
+}
+
+/** The lenses on offer, the default first. Never empty: vomiting is always offered. */
+export function symptomLenses(input: SymptomLensInput): SymptomLens[] {
+  const inMonth = (k: string) => k >= input.firstKey && k <= input.lastDrawnKey;
+  const vomitDays = new Set<string>([...input.episodeDays, ...(input.continuationDays ?? []).map((c) => c.day)].filter(inMonth));
+  const lenses: SymptomLens[] = [{ type: VOMIT_LENS, days: vomitDays.size }];
+  const entries = input.symptomEntryDays ?? {};
+  for (const type of SYMPTOM_EVENT_TYPES) {
+    if (type === VOMIT_LENS) continue;
+    const rows = entries[type];
+    if (!rows || rows.length === 0) continue;
+    lenses.push({ type, days: new Set(rows.filter(inMonth)).size });
+  }
+  const order = (t: string) => SYMPTOM_EVENT_TYPES.indexOf(t as (typeof SYMPTOM_EVENT_TYPES)[number]);
+  return lenses.sort((a, b) => b.days - a.days || order(a.type) - order(b.type));
+}
+
+/** The lens the month draws: the owner's choice while it is on offer, else the default. */
+export function resolveLens(lenses: readonly SymptomLens[], chosen: string | null): string {
+  if (chosen != null && lenses.some((l) => l.type === chosen)) return chosen;
+  return lenses[0]?.type ?? VOMIT_LENS;
+}
+
+/** The day list the model counts for a lens: episodes for vomiting, entries otherwise. */
+export function lensEpisodeDays(
+  type: string,
+  facts: { episodeDays: readonly string[]; symptomEntryDays?: Readonly<Record<string, readonly string[]>> },
+): readonly string[] {
+  return type === VOMIT_LENS ? facts.episodeDays : (facts.symptomEntryDays?.[type] ?? []);
+}

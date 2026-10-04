@@ -106,6 +106,7 @@ describe('dayMarkA11yLabel', () => {
     dayKey: '2026-09-19',
     count: 0,
     coverage: 'logged',
+    answers: true,
     medication: false,
     photo: 'none',
     symptomLayer: true,
@@ -195,13 +196,72 @@ describe('weightDeltaLine (D2-5)', () => {
   const r = (value: number, occurredAt: string) => ({ value, occurredAt });
   /** The caller's absolute gate, in the readings' unit: 0.2 kg here (the card passes 0.5 lbs). */
   const NOISE = 0.2;
-  const line = (readings: { value: number; occurredAt: string }[], unit = 'kg') => weightDeltaLine(weightBand(readings), unit, fmt, NOISE);
+  const line = (readings: { value: number; occurredAt: string }[], unit = 'kg') => weightDeltaLine(weightBand(readings), unit, fmt, { model: weightBand(readings), noiseAbs: NOISE });
 
   it('speaks the delta with its percentage and the caveat inside BOTH of a home scale\'s bounds', () => {
-    expect(line([r(4.6, '2026-07-03T08:00:00Z'), r(4.5, '2026-08-03T08:00:00Z'), r(4.4, '2026-09-12T08:00:00Z')])).toBe(
-      `Down 0.2 kg (4%) since 07-03 · ${HOME_SCALE_CAVEAT}`,
-    );
+    expect(line([r(4.6, '2026-07-03T08:00:00Z'), r(4.5, '2026-09-12T08:00:00Z')])).toBe(`Down 0.1 kg (2%) since 07-03 · ${HOME_SCALE_CAVEAT}`);
     expect(line([r(4.6, '2026-07-03T08:00:00Z'), r(4.7, '2026-09-12T08:00:00Z')])).toBe(`Up 0.1 kg (2%) since 07-03 · ${HOME_SCALE_CAVEAT}`);
+  });
+
+  // PMD-3 as GC-7 ruled it (CUL-1553): the caveat only at two readings or when readings
+  // disagree in direction; runs stated; a strict bound on the stored unit.
+  describe('the caveat never shrugs off a run (PMD-3, GC-7 item 4)', () => {
+    const days = ['2026-07-03', '2026-07-17', '2026-07-31', '2026-08-14', '2026-08-28', '2026-09-11', '2026-09-25'];
+    const series = (vals: number[]) => vals.map((v, i) => r(v, `${days[i]}T08:00:00Z`));
+
+    it('three readings falling in order: the run is stated and the caveat is withheld, inside both bounds', () => {
+      const run = line(series([4.6, 4.55, 4.5]));
+      expect(run).toBe('Down 0.1 kg (2%) since 07-03 · down at each of the last 2 readings');
+      expect(run).not.toContain('home scale');
+    });
+
+    it('the critique\'s counterexample: six readings falling in strict order never read as scale noise', () => {
+      const six = line(series([4.6, 4.58, 4.56, 4.54, 4.52, 4.5]));
+      expect(six).toBe('Down 0.1 kg (2%) since 07-03 · down at each of the last 5 readings');
+      expect(six).not.toContain('home scale');
+    });
+
+    it('a run upward is stated the same way', () => {
+      expect(line(series([4.5, 4.55, 4.6]))).toBe('Up 0.1 kg (2%) since 07-03 · up at each of the last 2 readings');
+    });
+
+    it('readings that move both ways, with no run at the end, keep the caveat inside both bounds', () => {
+      expect(line(series([4.6, 4.65, 4.55, 4.6, 4.5]))).toBe(`Down 0.1 kg (2%) since 07-03 · ${HOME_SCALE_CAVEAT}`);
+    });
+
+    it('a run at the end of a series that once moved the other way is still stated, and still no caveat', () => {
+      const tail = line(series([4.6, 4.65, 4.6, 4.55, 4.5]));
+      expect(tail).toBe('Down 0.1 kg (2%) since 07-03 · down at each of the last 3 readings');
+      expect(tail).not.toContain('home scale');
+    });
+
+    it('a series that only ever moved one way gets no caveat even when a flat step ends the run', () => {
+      // The shipped §04 fixture: 4.6, 4.6, 4.5, 4.5, 4.4, 4.4. No step up, so it never reads as wobble.
+      const stairs = line(series([4.6, 4.6, 4.5, 4.5, 4.4, 4.4]));
+      expect(stairs).toBe('Down 0.2 kg (4%) since 07-03');
+    });
+
+    it('a flat step ends a run: equal is not lower', () => {
+      expect(line(series([4.7, 4.6, 4.6]))).not.toContain('at each of the last');
+    });
+
+    it('the absolute bound is STRICT and read in thousandths: exactly 0.2 kg is not under 0.2 kg', () => {
+      // 4.6 − 4.4 is 0.19999999999999973 in binary; the edge is decided in grams.
+      expect(line([r(4.6, '2026-07-03T08:00:00Z'), r(4.4, '2026-09-12T08:00:00Z')])).toBe('Down 0.2 kg (4%) since 07-03');
+      expect(line([r(4.6, '2026-07-03T08:00:00Z'), r(4.401, '2026-09-12T08:00:00Z')])).toContain(HOME_SCALE_CAVEAT);
+    });
+
+    it('the fractional bound is STRICT: a move of exactly 5 % is not under 5 %', () => {
+      // 2.0 → 1.9 kg is 0.1 kg (inside the absolute bound) and exactly 5 %.
+      expect(line([r(2.0, '2026-07-03T08:00:00Z'), r(1.9, '2026-09-12T08:00:00Z')])).toBe('Down 0.1 kg (5%) since 07-03');
+    });
+
+    it('the gate reads the STORED readings, not the display\'s: a display move inside the bound cannot open it', () => {
+      const lbs = weightBand([r(10.1, '2026-07-03T08:00:00Z'), r(9.7, '2026-09-12T08:00:00Z')]);
+      const kg = weightBand([r(4.6, '2026-07-03T08:00:00Z'), r(4.4, '2026-09-12T08:00:00Z')]);
+      // A generous display-unit bound would have let 0.4 lbs through; the kilograms decide.
+      expect(weightDeltaLine(lbs, 'lbs', fmt, { model: kg, noiseAbs: 0.2 })).toBe('Down 0.4 lbs (4%) since 07-03');
+    });
   });
 
   it('the fractional gate: past the noise bound a loss prints alone, with nothing that softens it (Dr. Chen)', () => {

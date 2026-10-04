@@ -45,6 +45,29 @@
 // Every event type includes vomit, so an episode day is a logged day by construction of
 // the READ, not by inference here — this module never infers "logged" from "had an
 // episode" and never infers "unlogged" from "no episode".
+//
+// ── LOGGED IS NOT ANSWERED (CUL-1074 brief 2, PM 2026-10-03) ────────────────────
+// A logged day says the owner logged something; it does not say the day was free of the
+// symptom. Only a day holding a feeding or a symptom entry (`answeringDays`) may be
+// spoken as "logged, no vomiting", and the month's "No vomiting logged" needs at least
+// one such day among the drawn ones. A dose- or weight-only day stays logged (the grey
+// square and the unlogged count are unchanged) and says only what it holds. The rule is
+// applied under every lens: "no itching" asks the same of the day.
+//
+// ── THE LENS (CUL-1553, GC-7 item 1, the trial's sign) ─────────────────────────
+// The month draws ONE symptom at a time. Vomiting is counted in episodes (the engine's
+// re-log collapse) with the days a bout continues into; every other symptom is counted
+// in entries, one per row, with no continuation. `symptomLenses` decides which symptoms
+// are on offer and which one the month opens on (the most days in the shown month,
+// vomiting on a tie — PM 2026-10-04; `lib/monthLens.ts`). The model itself is symptom-blind: it takes the
+// day lists and the words.
+//
+// ── A REFUSAL IS COUNTED, NEVER FOLDED (CUL-1553, GC-7 item 2) ──────────────────
+// The paler hairline is coverage (`left_some`: any unfinished qualifying meal). On top of
+// it each day carries its refused meals and its left-some meals apart, and the month
+// counts both over one denominator, the rated meals on its drawn days. A meal is one or
+// the other, refused first (the read decides), so the two counts partition the unfinished
+// meals and the accusing word is never the lighter one (C-4).
 
 import { isCallDisplay, louderCall, TIER_WORDS, TIERED_CALLS_READ_AS, type CallDisplay } from './incidentTierWords';
 import { dayKeyFromIndex, localDayIndexOf, MONTHS } from './utils';
@@ -102,6 +125,14 @@ export interface MonthDay {
    *  strip roses the same days under All types (`lib/stripMarks.ts`). */
   rose: boolean;
   coverage: MonthCoverage;
+  /** The day holds a feeding or a symptom entry, so its words may say "no <noun>". A
+   *  logged day without one says only "logged" (CUL-1074 brief 2). False on a day ahead,
+   *  before the record or unlogged. */
+  answers: boolean;
+  /** Qualifying meals rated `refused` on the day. Zero on a day ahead or before the record. */
+  refusedMeals: number;
+  /** Qualifying meals left unfinished but not refused on the day. */
+  leftSomeMeals: number;
   /** A medication dose the record says was delivered (given or partial — B-618 D1). */
   medication: boolean;
   photo: MonthPhoto;
@@ -145,9 +176,18 @@ export interface MonthModelInput {
   continuationDays?: readonly MonthContinuationDay[];
   /** Days with any logging under the caller's predicate. Duplicates are fine. */
   loggedDays: readonly string[];
+  /** Days holding a feeding or a symptom entry (`lib/monthReads.ts`). Required: a caller
+   *  that forgot it would otherwise have every logged day say "no vomiting". */
+  answeringDays: readonly string[];
   /** Days on which a rated meal was left unfinished. A subset of `loggedDays` in any
    *  honest read (a rated meal is a feeding); treated as logged regardless. */
   leftSomeDays?: readonly string[];
+  /** One entry per qualifying meal, the refusal counts' denominator. */
+  ratedMealDays?: readonly string[];
+  /** One entry per qualifying meal rated `refused`. */
+  refusedMealDays?: readonly string[];
+  /** One entry per qualifying meal left unfinished but not refused. */
+  leftSomeMealDays?: readonly string[];
   /** Days with a delivered dose. */
   dosedDays?: readonly string[];
   /** Photographed days, each with the read's verdict where one exists. A day appearing
@@ -197,6 +237,15 @@ export interface MonthModel {
   aheadCount: number;
   /** Arrived days with nothing logged (before-record days excluded). */
   unloggedDays: number;
+  /** Drawn days of the month that hold a feeding or a symptom entry. */
+  answeringDayCount: number;
+  /** Qualifying meals on the month's drawn days — the denominator of the two below. */
+  ratedMeals: number;
+  /** Of `ratedMeals`, the ones refused, and the days they fell on. */
+  refusedMeals: number;
+  refusedDays: number;
+  /** Of `ratedMeals`, the ones left unfinished but not refused. */
+  leftSomeMeals: number;
   beforeRecordDays: number;
   aheadDays: number;
   /** The line above the grid — "Vomiting 6 times on 4 days · through Sep 17 · 2 days
@@ -291,6 +340,18 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     return s;
   };
   const logged = toSet(input.loggedDays, 'loggedDays[]');
+  const answering = toSet(input.answeringDays, 'answeringDays[]');
+  const tally = (keys: readonly string[] | undefined, what: string): Map<number, number> => {
+    const m = new Map<number, number>();
+    for (const k of keys ?? []) {
+      const i = indexOfKey(k, what);
+      m.set(i, (m.get(i) ?? 0) + 1);
+    }
+    return m;
+  };
+  const ratedByDay = tally(input.ratedMealDays, 'ratedMealDays[]');
+  const refusedByDay = tally(input.refusedMealDays, 'refusedMealDays[]');
+  const leftSomeByDay = tally(input.leftSomeMealDays, 'leftSomeMealDays[]');
   const leftSome = toSet(input.leftSomeDays, 'leftSomeDays[]');
   const dosed = toSet(input.dosedDays, 'dosedDays[]');
   const photos = new Map<number, MonthPhoto>();
@@ -329,6 +390,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     else if (leftSome.has(i)) coverage = 'left_some';
     else if (logged.has(i)) coverage = 'logged';
     else coverage = 'unlogged';
+    const arrived = coverage !== 'ahead' && coverage !== 'before_record';
     return {
       key: dayKeyFromIndex(i),
       dayOfMonth: Number(dayKeyFromIndex(i).slice(8, 10)),
@@ -343,6 +405,9 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
       // began), and stated so the count cannot drift from the drawing if that ever changes.
       rose: coverage !== 'ahead' && coverage !== 'unlogged' && coverage !== 'before_record' && holdsVomit({ count, continuesFrom: continues.get(i) ?? null }),
       coverage,
+      answers: arrived && coverage !== 'unlogged' && answering.has(i),
+      refusedMeals: arrived ? (refusedByDay.get(i) ?? 0) : 0,
+      leftSomeMeals: arrived ? (leftSomeByDay.get(i) ?? 0) : 0,
       medication: coverage !== 'ahead' && dosed.has(i),
       photo: coverage === 'ahead' ? 'none' : (photos.get(i) ?? 'none'),
       today: i === todayIdx,
@@ -354,6 +419,11 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
   let episodeDayCount = 0;
   let vomitDayCount = 0;
   let unloggedDays = 0;
+  let answeringDayCount = 0;
+  let ratedMeals = 0;
+  let refusedMeals = 0;
+  let refusedDays = 0;
+  let leftSomeMeals = 0;
   let beforeRecordDays = 0;
   let aheadDays = 0;
   for (let d = 0; d < n; d++) {
@@ -366,6 +436,11 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
       episodeDayCount += 1;
     }
     if (day.rose) vomitDayCount += 1;
+    if (day.answers) answeringDayCount += 1;
+    if (day.coverage !== 'ahead' && day.coverage !== 'before_record') ratedMeals += ratedByDay.get(firstIdx + d) ?? 0;
+    refusedMeals += day.refusedMeals;
+    if (day.refusedMeals > 0) refusedDays += 1;
+    leftSomeMeals += day.leftSomeMeals;
     days.push(day);
   }
 
@@ -409,6 +484,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     vomitDayCount,
     aheadCount,
     unloggedDays,
+    answeringDayCount,
     beforeRecordDays,
     isAhead,
     recordEmpty,
@@ -436,6 +512,11 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     vomitDayCount,
     aheadCount,
     unloggedDays,
+    answeringDayCount,
+    ratedMeals,
+    refusedMeals,
+    refusedDays,
+    leftSomeMeals,
     beforeRecordDays,
     aheadDays,
     line,
@@ -453,6 +534,8 @@ interface LineFacts {
   vomitDayCount: number;
   aheadCount: number;
   unloggedDays: number;
+  /** Drawn days holding a feeding or a symptom entry: "No <noun> logged" needs one. */
+  answeringDayCount: number;
   beforeRecordDays: number;
   isAhead: boolean;
   recordEmpty: boolean;
@@ -481,6 +564,9 @@ export function buildLine(f: LineFacts, opts: { withCount?: boolean } = {}): str
   if (f.allBeforeRecord) return 'Before the record began';
   const parts: string[] = [];
   if (!withCount) parts.push(`Through ${dateWord(f.lastDrawnKey)}`);
+  // CUL-1074 brief 2: an absence is spoken only over days that could answer it. A month
+  // whose logged days are all doses or weigh-ins names its window and its coverage only.
+  else if (f.count === 0 && f.vomitDayCount === 0 && f.answeringDayCount === 0) parts.push(`Through ${dateWord(f.lastDrawnKey)}`);
   else if (f.count === 0 && f.vomitDayCount === 0) parts.push(`No ${f.noun} logged`, `through ${dateWord(f.lastDrawnKey)}`);
   else if (f.vomitDayCount === f.episodeDayCount) {
     // No bout runs past its first day: the episode days ARE the rose days, one number.
@@ -521,7 +607,10 @@ export function monthCallDays(model: Pick<MonthModel, 'days'>): { earlier: numbe
 /** The month in one sentence for a screen reader: the line, then the totals of the
  *  layers that are ON — the eye and the ear hear the same layers (DayMark's own rule; a
  *  layer-blind label spoke medication days the grid did not draw). */
-export function monthA11yLabel(model: MonthModel, layers: { meds: boolean; photos: boolean } = { meds: true, photos: true }): string {
+export function monthA11yLabel(
+  model: MonthModel,
+  layers: { meds: boolean; photos: boolean; meals?: boolean } = { meds: true, photos: true },
+): string {
   const dosed = model.days.filter((d) => d.medication).length;
   const photographed = model.days.filter((d) => d.photo !== 'none').length;
   // The two rules' calls are counted apart and never added (EN-3, spec §5): an earlier
@@ -529,6 +618,12 @@ export function monthA11yLabel(model: MonthModel, layers: { meds: boolean; photo
   // change says both and a steady cat never looks improved because the rule moved.
   const { earlier, tiered } = monthCallDays(model);
   const parts = [`${model.label}.`, `${model.line}.`];
+  // The Meals layer's two counts over one denominator, as the legend prints them (CUL-1553).
+  if (layers.meals === true && model.ratedMeals > 0 && (model.refusedMeals > 0 || model.leftSomeMeals > 0)) {
+    const of = `of ${model.ratedMeals} rated ${plural(model.ratedMeals, 'meal')}`;
+    const refused = model.refusedMeals > 0 ? `Refused ${model.refusedMeals} ${of}, on ${model.refusedDays} ${plural(model.refusedDays, 'day')}. ` : '';
+    parts.push(`${refused}Left some: ${model.leftSomeMeals} ${of}.`);
+  }
   if (layers.meds && dosed > 0) parts.push(`Medication on ${dosed} ${plural(dosed, 'day')}.`);
   if (layers.photos && photographed > 0) {
     const calls =

@@ -69,7 +69,7 @@ describe('WeightCard (Design v2)', () => {
     jest.useRealTimers();
   });
 
-  it('six readings: dots by date, the band, the delta spoken beside the caveat, the record count in the header', () => {
+  it('six readings: dots by date, the band, the delta spoken, the drawn count in the header', () => {
     const { getByTestId, getByText } = measured(<WeightCard readings={SIX} readingCount={6} petName="Nyx" petId="p1" />);
     expect(getByTestId('weight-card-header').props.children).toBe('Weight · 6 readings');
     // x BY DATE, not by index: Jul 3 → Jul 20 is 17 of 71 days, so the second dot sits at
@@ -85,9 +85,10 @@ describe('WeightCard (Design v2)', () => {
     // The band's edges are drawn and labelled.
     expect(getByTestId('weight-edge-hi').props.children).toBe('+10%');
     expect(getByTestId('weight-edge-lo').props.children).toBe('−10%');
-    // The delta, in the display unit, with the caveat (a 4 % move is inside a home
-    // scale's noise).
-    expect(getByTestId('weight-card-delta').props.children).toBe(`Down 0.4 lbs (4%) since Jul 3 · ${HOME_SCALE_CAVEAT}`);
+    // The delta, in the display unit, and NO caveat (PMD-3 as GC-7 ruled it, CUL-1553):
+    // these readings only ever fell, so the move is a direction, never a scale's wobble —
+    // and 0.2 kg is not strictly under the scale's 0.2 kg either.
+    expect(getByTestId('weight-card-delta').props.children).toBe('Down 0.4 lbs (4%) since Jul 3');
     expect(getByText('Log a weigh-in')).toBeTruthy();
   });
 
@@ -127,6 +128,20 @@ describe('WeightCard (Design v2)', () => {
     expect(queryByTestId('weight-card-delta')).toBeNull();
   });
 
+  it('a home-scale wobble keeps its caveat when the readings move both ways (inside both bounds, on the kilograms)', () => {
+    const wobble = [r(4.6, at(2026, 7, 3)), r(4.65, at(2026, 7, 20)), r(4.55, at(2026, 8, 4)), r(4.6, at(2026, 8, 18)), r(4.5, at(2026, 9, 1))];
+    const { getByTestId } = measured(<WeightCard readings={wobble} readingCount={5} petId="p1" />);
+    expect(getByTestId('weight-card-delta').props.children).toBe(`Down 0.2 lbs (2%) since Jul 3 · ${HOME_SCALE_CAVEAT}`);
+  });
+
+  it('a steady fall states its run and never prints the caveat', () => {
+    const fall = [r(4.6, at(2026, 7, 3)), r(4.58, at(2026, 7, 20)), r(4.56, at(2026, 8, 4)), r(4.54, at(2026, 8, 18)), r(4.52, at(2026, 9, 1))];
+    const { getByTestId } = measured(<WeightCard readings={fall} readingCount={5} petId="p1" />);
+    const line = getByTestId('weight-card-delta').props.children as string;
+    expect(line).toMatch(/· down at each of the last 4 readings$/);
+    expect(line).not.toContain('home scale');
+  });
+
   it('n = 2: the pair on the same fixed band, the delta spoken', () => {
     const { getByTestId } = measured(
       <WeightCard readings={[r(4.6, at(2026, 8, 26)), r(4.5, at(2026, 9, 12))]} readingCount={2} petId="p1" />,
@@ -147,7 +162,7 @@ describe('WeightCard (Design v2)', () => {
     expect(line).not.toContain('home scale');
   });
 
-  it('the caveat has an ABSOLUTE gate in pounds: a 70 kg dog down 5 % is 7.7 lbs, and no scale wobbles that', () => {
+  it('the caveat has an ABSOLUTE bound on the stored kilograms: a 70 kg dog down 5 % is 7.7 lbs, and no scale wobbles that', () => {
     const { getByTestId } = measured(<WeightCard readings={[r(70, at(2026, 7, 3)), r(66.5, at(2026, 9, 12))]} readingCount={2} petId="p1" />);
     const line = getByTestId('weight-card-delta').props.children as string;
     expect(line).toBe('Down 7.7 lbs (5%) since Jul 3');
@@ -180,9 +195,10 @@ describe('WeightCard (Design v2)', () => {
     expect(getByText('Log a weigh-in')).toBeTruthy();
   });
 
-  it('the header speaks the RECORD count, and the door opens the history scoped to the card\'s pet (CUL-223, CUL-574)', () => {
+  it('one population: the header counts the drawn readings and names the record beside them; the door opens the history scoped to the card\'s pet (GC-7, CUL-223, CUL-574)', () => {
     const { getByTestId } = measured(<WeightCard readings={SIX} readingCount={20} petId="pet-x" />);
-    expect(getByTestId('weight-card-header').props.children).toBe('Weight · 20 readings');
+    expect(getByTestId('weight-card-header').props.children).toBe('Weight · last 6 of 20 readings');
+    expect(getByTestId('weight-card-door').props.accessibilityLabel).toBe('All 20 readings');
     fireEvent.press(getByTestId('weight-card-door'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/weight-history', params: { petId: 'pet-x' } });
   });

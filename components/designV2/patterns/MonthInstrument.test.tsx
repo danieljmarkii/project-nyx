@@ -47,11 +47,18 @@ const range = (from: string, to: string): string[] => {
 const TODAY = '2026-09-17';
 
 function facts(over: Partial<MonthFacts> = {}): MonthFacts {
+  const loggedDays = over.loggedDays ?? range('2026-07-01', TODAY).filter((k) => k !== '2026-09-08' && k !== '2026-09-09');
   return {
     episodeDays: ['2026-09-02', '2026-09-02', '2026-09-05', '2026-09-11', '2026-09-11', '2026-09-16'],
     continuationDays: [],
-    loggedDays: range('2026-07-01', TODAY).filter((k) => k !== '2026-09-08' && k !== '2026-09-09'),
+    loggedDays,
+    // Every logged day answers unless a test says otherwise (a meal or a symptom on it).
+    answeringDays: loggedDays,
     leftSomeDays: ['2026-09-04'],
+    ratedMealDays: [],
+    refusedMealDays: [],
+    leftSomeMealDays: [],
+    symptomEntryDays: {},
     dosedDays: ['2026-09-03'],
     photoDays: [{ day: '2026-09-02', verdict: 'worth_a_call' }],
     recordStart: '2026-05-10',

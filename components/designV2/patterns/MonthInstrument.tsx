@@ -10,6 +10,7 @@ import { TIER_WORDS, TIERED_CALLS_READ_AS } from '../../../lib/incidentTierWords
 import {
   buildMonthModel,
   compareMonths,
+  daysInMonth,
   monthA11yLabel,
   monthCallDays,
   monthOfKey,
@@ -19,8 +20,9 @@ import {
   type MonthModel,
 } from '../../../lib/monthModel';
 import { readDayRows, readMonthFacts, type MonthFacts } from '../../../lib/monthReads';
+import { lensEpisodeDays, resolveLens, symptomLenses, VOMIT_LENS, type SymptomLens } from '../../../lib/monthLens';
+import { symptomLabel, symptomOccurrenceLabel } from '../../../lib/metricDetail';
 import { historyDayHref, historyDayLabel } from '../../../lib/historyDateFilter';
-import { TIMING_SYMPTOM_TYPE } from '../../../lib/patternsTiming';
 import { describeDayEventDoors, daySheetSubtitle } from '../../../lib/dayEvents';
 import type { EventTintCategory } from '../../../lib/dayEvents';
 import type { TimelineRow } from '../../../lib/db';
@@ -28,6 +30,8 @@ import { WeeklyBars } from '../../charts/WeeklyBars';
 import { DayMark, DayMarkLine } from '../../charts/DayMark';
 import { EventIcon } from '../../event/EventIcon';
 import { FilterChip } from '../../ui/FilterChip';
+import { ChipGroup } from '../../ui/ChipGroup';
+import { ScopeMenu } from '../../ui/ScopeMenu';
 import { Line, SilhouetteFrame, Surface } from '../waits/Silhouette';
 import { ThemedText } from '../../ui/ThemedText';
 import { useOpenInPlace } from '../../motion/openInPlaceMotion';
@@ -41,7 +45,12 @@ import { useOpenInPlace } from '../../motion/openInPlaceMotion';
 //                        in its label (C-7)
 //   the bars ........... `WeeklyBars` (D2-1) over the nine Sunday-start weeks ending with
 //                        the row holding today, so every bar is a grid row you can point at
-//   the layers ......... four independent toggles — Vomiting · Meals · Medication · Photos.
+//   the lens ........... which symptom the month draws (CUL-1553, GC-7 item 1, the trial's
+//                        sign): single-select, present only when the read holds two or
+//                        more symptoms, opening on the one with the most days this month
+//                        (`lib/monthLens.ts`). Chips up to five, a `ScopeMenu` past that
+//                        (the filter-UX rule); a vomit-only record sees no row at all
+//   the layers ......... four independent toggles — <the lens> · Meals · Medication · Photos.
 //                        `FilterChip`s in `ChipGroup`'s wrap geometry with CHECKBOX
 //                        semantics, because `ChipGroup` is a single-select radiogroup and
 //                        a layer is not a choice among four; the mock's per-chip
@@ -74,22 +83,35 @@ export interface MonthLayers {
 
 export const DEFAULT_LAYERS: MonthLayers = { vomit: true, meals: true, meds: false, photos: false };
 
-const LAYER_CHIPS: { key: keyof MonthLayers; label: string }[] = [
-  { key: 'vomit', label: 'Vomiting' },
+/** The layer chips after the first, which names the lens. */
+const OTHER_LAYER_CHIPS: { key: keyof MonthLayers; label: string }[] = [
   { key: 'meals', label: 'Meals' },
   { key: 'meds', label: 'Medication' },
   { key: 'photos', label: 'Photos' },
 ];
+
+/** Up to this many symptoms the lens is visible chips; past it, a `ScopeMenu` pill (the
+ *  filter-UX rule: ≤5 short options on a hot path → chips). */
+const LENS_CHIP_MAX = 5;
+
+/** The words one lens is spoken in: the occurrence noun ("itching") for the line and the
+ *  labels, the row noun ("itch/scratch") for the rose-day clause and the legend, the chip
+ *  ("Itching") and the drill-in's label ("Itch/Scratch"), each from the one place the
+ *  flag-off page names a symptom (`lib/metricDetail.ts`). */
+function lensWords(type: string): { noun: string; rowNoun: string; chip: string; drill: string } {
+  return {
+    noun: symptomOccurrenceLabel(type).toLowerCase(),
+    rowNoun: symptomLabel(type).toLowerCase(),
+    chip: symptomOccurrenceLabel(type),
+    drill: symptomLabel(type),
+  };
+}
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
 
 /** DayMark's `hitSlop` is 2 on every side, so two adjacent marks need a gap ≥ 4 (C-5).
  *  `space0_5` is exactly that floor; the test pins the rendered gap off the style. */
 const GRID_GAP = theme.space0_5;
-
-const NOUN = 'vomiting';
-const ROW_NOUN = 'vomit';
-const DRILL_LABEL = 'Vomit';
 
 // The drill-in's category tint (the shipped DayEventsSheet's, verbatim: symptom rose, meal
 // teal, medication slate; weight and a look neutral — a look's identity is "the owner
@@ -134,6 +156,9 @@ export function MonthInstrument({
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const [failedKey, setFailedKey] = useState<string | null>(null);
   const [layers, setLayers] = useState<MonthLayers>(DEFAULT_LAYERS);
+  // The owner's lens, held across page turns while the shown month offers it; null is
+  // "the default" (the most days in the shown month).
+  const [chosenLens, setChosenLens] = useState<string | null>(null);
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [dayLoads, setDayLoads] = useState<Map<string, DayLoad>>(new Map());
   const [drawTick, setDrawTick] = useState(0);
@@ -184,6 +209,23 @@ export function MonthInstrument({
   }, [refreshTick]);
 
   const facts = cache.get(shownKey) ?? null;
+  const lenses: SymptomLens[] = useMemo(() => {
+    if (!facts) return [{ type: VOMIT_LENS, days: 0 }];
+    const mm = String(shown.month + 1).padStart(2, '0');
+    const firstKey = `${shown.year}-${mm}-01`;
+    const lastKey = `${shown.year}-${mm}-${String(daysInMonth(shown.year, shown.month)).padStart(2, '0')}`;
+    // Fixed-width day keys: a lexical compare IS a calendar compare.
+    const lastDrawnKey = today < lastKey ? today : lastKey;
+    return symptomLenses({
+      firstKey,
+      lastDrawnKey,
+      episodeDays: facts.episodeDays,
+      continuationDays: facts.continuationDays,
+      symptomEntryDays: facts.symptomEntryDays,
+    });
+  }, [facts, shown, today]);
+  const lens = resolveLens(lenses, chosenLens);
+  const words = lensWords(lens);
   const model: MonthModel | null = useMemo(
     () =>
       facts
@@ -192,18 +234,23 @@ export function MonthInstrument({
             today,
             recordStart: facts.recordStart,
             recordEmpty: facts.recordStart == null,
-            episodeDays: facts.episodeDays,
-            continuationDays: facts.continuationDays,
-            rowNoun: ROW_NOUN,
+            episodeDays: lensEpisodeDays(lens, facts),
+            // A bout that runs past midnight is vomiting's rule; other symptoms count entries.
+            continuationDays: lens === VOMIT_LENS ? facts.continuationDays : [],
+            rowNoun: words.rowNoun,
             loggedDays: facts.loggedDays,
+            answeringDays: facts.answeringDays,
             leftSomeDays: facts.leftSomeDays,
+            ratedMealDays: facts.ratedMealDays,
+            refusedMealDays: facts.refusedMealDays,
+            leftSomeMealDays: facts.leftSomeMealDays,
             dosedDays: facts.dosedDays,
             photoDays: facts.photoDays,
             trialMark,
-            noun: NOUN,
+            noun: words.noun,
           })
         : null,
-    [facts, shown, today, trialMark],
+    [facts, shown, today, trialMark, lens, words.noun, words.rowNoun],
   );
 
   // The record's first month bounds paging backward; without a record there is nowhere
@@ -324,12 +371,44 @@ export function MonthInstrument({
               draws on first show and on every page turn (CUL-1223, BRK-12); a refresh keeps
               the cached month mounted, so it never replays. */}
           {layers.vomit && (
-            <WeeklyBars model={model.weekly} noun={NOUN} drawIn identity={`${shownKey}:${drawTick}`} />
+            <WeeklyBars model={model.weekly} noun={words.noun} drawIn identity={`${shownKey}:${lens}:${drawTick}`} />
           )}
+
+          {/* The lens: which symptom the month draws. Absent on a record with one symptom,
+              so a vomit-only month is the shipped month. */}
+          {lenses.length >= 2 &&
+            (lenses.length <= LENS_CHIP_MAX ? (
+              <ChipGroup
+                options={lenses.map((l) => ({ value: l.type, label: lensWords(l.type).chip }))}
+                value={lens}
+                onChange={(next) => {
+                  if (next == null) return;
+                  setChosenLens(next);
+                  setOpenDay(null);
+                }}
+                accessibilityLabel="Symptom"
+              />
+            ) : (
+              <ScopeMenu
+                options={lenses.map((l) => ({
+                  key: l.type,
+                  label: lensWords(l.type).chip,
+                  count: `${l.days} ${l.days === 1 ? 'day' : 'days'}`,
+                }))}
+                value={lens}
+                onChange={(next) => {
+                  if (next == null) return;
+                  setChosenLens(next);
+                  setOpenDay(null);
+                }}
+                sheetLabel="Symptom"
+                accessibilityPrefix="Symptom"
+              />
+            ))}
 
           {/* The layers: four independent toggles, wrapping, each announcing its checked state. */}
           <View style={styles.chips} accessibilityLabel="Layers" testID="month-layers">
-            {LAYER_CHIPS.map((c) => (
+            {[{ key: 'vomit' as const, label: words.chip }, ...OTHER_LAYER_CHIPS].map((c) => (
               <FilterChip
                 key={c.key}
                 label={c.label}
@@ -365,6 +444,7 @@ export function MonthInstrument({
                         day={day}
                         layers={layers}
                         recordEmpty={model.recordEmpty}
+                        noun={words.noun}
                         selected={openDay === day.key}
                         onPress={() => void openDayInPlace(day.key)}
                       />
@@ -374,6 +454,8 @@ export function MonthInstrument({
                     shown={openInRow}
                     dayKey={openInRow ? (openDay as string) : null}
                     load={openInRow ? (dayLoads.get(openDay as string) ?? null) : null}
+                    lens={lens}
+                    drillLabel={words.drill}
                     onRetry={() => openDay && void openDayInPlace(openDay)}
                     onOpenInHistory={openInHistory}
                     onOpenEvent={openEvent}
@@ -383,7 +465,7 @@ export function MonthInstrument({
             })}
           </View>
 
-          <Legend model={model} layers={layers} />
+          <Legend model={model} layers={layers} rowNoun={words.rowNoun} episodes={lens === VOMIT_LENS} />
         </>
       )}
     </View>
@@ -397,12 +479,14 @@ function GridDay({
   day,
   layers,
   recordEmpty,
+  noun,
   selected,
   onPress,
 }: {
   day: MonthDay;
   layers: MonthLayers;
   recordEmpty: boolean;
+  noun: string;
   selected: boolean;
   onPress: () => void;
 }) {
@@ -429,12 +513,15 @@ function GridDay({
       count={day.count}
       continuesFrom={day.continuesFrom}
       coverage={coverage}
+      answers={day.answers}
+      refusedMeals={layers.meals ? day.refusedMeals : 0}
+      leftSomeMeals={layers.meals ? day.leftSomeMeals : 0}
       symptomLayer={layers.vomit}
       medication={layers.meds && day.medication}
       photo={layers.photos ? day.photo : 'none'}
       today={day.today}
       selected={selected}
-      noun={NOUN}
+      noun={noun}
       onPress={day.coverage === 'ahead' ? undefined : onPress}
     />
   );
@@ -458,6 +545,8 @@ function DaySlot({
   shown,
   dayKey,
   load,
+  lens,
+  drillLabel,
   onRetry,
   onOpenInHistory,
   onOpenEvent,
@@ -465,6 +554,9 @@ function DaySlot({
   shown: boolean;
   dayKey: string | null;
   load: DayLoad;
+  /** The lens's event type, whose rows the subtitle counts, and its label. */
+  lens: string;
+  drillLabel: string;
   onRetry: () => void;
   onOpenInHistory: (dayKey: string) => void;
   onOpenEvent: (eventId: string) => void;
@@ -519,7 +611,7 @@ function DaySlot({
                   twelve rows of one bout would print "No vomit logged" or "1 time" above
                   the very rows it lists (CUL-62's class). The two units are stated here. */}
               <ThemedText style={styles.daySubtitle}>
-                {daySheetSubtitle(DRILL_LABEL, items.filter((it) => it.eventType === TIMING_SYMPTOM_TYPE).length, items.length)}
+                {daySheetSubtitle(drillLabel, items.filter((it) => it.eventType === lens).length, items.length)}
               </ThemedText>
               {/* CUL-320: every row is a door to its record, as on Home's spine and in
                   History — the owner who spots the refused bowl taps it. Rows stack flush
@@ -608,18 +700,35 @@ function RowsStage({
  *  put an unexplained dot on the page. "nothing logged" is literally true: a grey square
  *  is a day the owner logged nothing about the pet (every event type but a look —
  *  `lib/monthReads.ts`), so a dosed-only or stool-only day is never grey. */
-function Legend({ model, layers }: { model: MonthModel; layers: MonthLayers }) {
+function Legend({
+  model,
+  layers,
+  rowNoun,
+  episodes,
+}: {
+  model: MonthModel;
+  layers: MonthLayers;
+  rowNoun: string;
+  /** The lens counts episodes (vomiting: the count sits where a bout began). */
+  episodes: boolean;
+}) {
   const dosedDays = model.days.filter((d) => d.medication).length;
   const photoDays = model.days.filter((d) => d.photo !== 'none').length;
   // The two rules' calls are two lines, never one sum (EN-3, spec §5). The earlier rule's
   // line is today's line, drawn as it always was unless the month holds only new-rule calls.
   const { earlier: calledDays, tiered: tieredDays } = monthCallDays(model);
   const dayWord = (n: number) => `${n} ${n === 1 ? 'day' : 'days'}`;
+  const mealsOf = (n: number) => `${n} of ${model.ratedMeals} rated ${model.ratedMeals === 1 ? 'meal' : 'meals'}`;
+  // The two meal counts ride the Meals layer and share one denominator (CUL-1553): a
+  // refusal is named and counted, never folded into "left some".
+  const mealCounts = layers.meals && model.ratedMeals > 0;
   return (
     <View style={styles.legend} testID="month-legend">
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchVomit]} />
-        <ThemedText style={styles.legendText}>vomit day, count where a bout began</ThemedText>
+        <ThemedText style={styles.legendText}>
+          {rowNoun} day, {episodes ? 'count where a bout began' : 'count in the corner'}
+        </ThemedText>
       </View>
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchLogged]}>
@@ -631,8 +740,18 @@ function Legend({ model, layers }: { model: MonthModel; layers: MonthLayers }) {
         <View style={[styles.swatch, styles.swatchLogged]}>
           <DayMarkLine kind="broken" style={styles.swatchLine} testID="month-legend-line-broken" />
         </View>
-        <ThemedText style={styles.legendText}>left some</ThemedText>
+        <ThemedText style={styles.legendText} testID="month-legend-left-some">
+          {mealCounts ? `left some · ${mealsOf(model.leftSomeMeals)}` : 'left some'}
+        </ThemedText>
       </View>
+      {mealCounts && model.refusedMeals > 0 && (
+        <View style={styles.legendItem} testID="month-legend-refused">
+          <View style={styles.legendRing} />
+          <ThemedText style={styles.legendText}>
+            refused · {mealsOf(model.refusedMeals)}, on {dayWord(model.refusedDays)}
+          </ThemedText>
+        </View>
+      )}
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchUnlogged]} />
         <ThemedText style={styles.legendText}>nothing logged</ThemedText>
@@ -884,6 +1003,15 @@ const styles = StyleSheet.create({
   },
   legendDotMedication: {
     backgroundColor: theme.colorEventMedication,
+  },
+  // DayMark's refused ring at legend size: open, neutral ink.
+  legendRing: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    borderWidth: 1.5,
+    borderColor: theme.colorTextSecondary,
+    marginHorizontal: 2.5,
   },
   legendDotPhoto: {
     backgroundColor: theme.colorTextTertiary,

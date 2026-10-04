@@ -24,12 +24,19 @@ import { ThemedText } from '../../ui/ThemedText';
 // trend NEVER reassures. Loss is the danger signal and a rising or flat line is not
 // wellness, so the dots are neutral grey (`WeightDots`), the words carry direction and
 // never a verdict (`weightDeltaLine`), and the home-scale caveat is GATED to a home
-// scale's own noise — beside a 15 % loss it would be reassurance, so it is absent there.
+// scale's own noise — beside a 15 % loss it would be reassurance, so it is absent there,
+// and beside a run that only ever moved one way the run is stated instead (PMD-3 as GC-7
+// ruled it, CUL-1553). The gate reads the STORED kilograms, never the rounded pounds.
 //
 // Values are converted to the display unit here (the app shows pounds over a kg column,
 // `kgToLbsNum`) so the chart's numbers, the delta and the history screen agree; the
-// band is a ratio and does not care. The COUNT spoken in the header is the whole record
-// (`readingCount`), never the drawn window's length (CUL-223).
+// band is a ratio and does not care.
+//
+// ONE POPULATION (GC-7 item 4): the header counts the readings the dots draw and the
+// words describe, "Weight · last 12 of 30 readings", so a number in the header never
+// describes a different set of readings from the line under it. The record's total is
+// named beside the window and labels the door, "All 30" (CUL-223: the window may index,
+// only the total is spoken as the total).
 
 interface Props {
   /** The readings drawn, oldest first — the caller's window. */
@@ -43,22 +50,31 @@ interface Props {
 }
 
 const UNIT = 'lbs';
-/** A home scale's own wobble, in the display unit: about 0.2 kg on a bathroom or pet
- *  scale, 0.44 lbs — rounded to the display's one decimal. The caveat's ABSOLUTE gate
- *  (`weightDeltaLine`); the fractional one is `HOME_SCALE_NOISE_FRAC`. */
-const HOME_SCALE_NOISE_LBS = 0.5;
+/** A home scale's own wobble, in the STORED unit: about 0.2 kg on a bathroom or pet
+ *  scale. The caveat's ABSOLUTE bound, strict (`weightDeltaLine`); the fractional one is
+ *  `HOME_SCALE_NOISE_FRAC`. */
+export const HOME_SCALE_NOISE_KG = 0.2;
+
+/** "Weight · 6 readings", or "Weight · last 12 of 30 readings" when the dots draw a
+ *  window of the record. */
+export function weightHeader(drawn: number, total: number): string {
+  if (total <= 0 && drawn <= 0) return 'Weight';
+  if (drawn >= total || drawn === 0) return `Weight · ${Math.max(drawn, total)} ${pluralize(Math.max(drawn, total), 'reading')}`;
+  return `Weight · last ${drawn} of ${total} readings`;
+}
 
 export function WeightCard({ readings, readingCount, petName, petId, drawIn = false }: Props) {
   const name = petNameOrYours(petName);
   const model = weightBand(readings.map((r) => ({ value: kgToLbsNum(r.weightKg), occurredAt: r.occurredAt })));
+  const modelKg = weightBand(readings.map((r) => ({ value: r.weightKg, occurredAt: r.occurredAt })));
   const count = Math.max(readingCount, model.points.length);
-  const delta = weightDeltaLine(model, UNIT, formatWeightDate, HOME_SCALE_NOISE_LBS);
+  const delta = weightDeltaLine(model, UNIT, formatWeightDate, { model: modelKg, noiseAbs: HOME_SCALE_NOISE_KG });
 
   return (
     <View style={styles.card} testID="weight-card-v2">
       <View style={styles.headerRow}>
         <ThemedText style={styles.label} testID="weight-card-header">
-          {count > 0 ? `Weight · ${count} ${pluralize(count, 'reading')}` : 'Weight'}
+          {weightHeader(model.points.length, count)}
         </ThemedText>
         {count > 0 && (
           // The header's door: "All ›" into the readings list — except at ONE reading,

@@ -13,7 +13,7 @@ import { theme } from '../../constants/theme';
 // shipped lane's pattern), so the queries below opt into hidden elements to reach them.
 configure({ defaultIncludeHiddenElements: true });
 
-const base = { dayKey: '2026-09-19', dayOfMonth: 19, noun: 'vomiting' };
+const base = { dayKey: '2026-09-19', dayOfMonth: 19, noun: 'vomiting', answers: true };
 const flat = (style: unknown): Record<string, unknown> => StyleSheet.flatten(style as never) as Record<string, unknown>;
 
 describe('DayMark — the §05 row', () => {
