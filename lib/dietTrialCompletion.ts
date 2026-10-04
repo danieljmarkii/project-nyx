@@ -591,6 +591,11 @@ export function buildOutcomeSheet(args: {
       `${noticed ? 'Apart from what you noticed, nothing' : 'Nothing'} was logged in the ` +
       `${spanPhrase(facts.beforeDays)} before the trial started, so there’s nothing to ` +
       `compare ${noCounts ? 'with' : 'these with'}.`
+    : noCounts
+      ? // A scope line, not a comparison: with no counts on screen, "Compared with…"
+        // promises one that is not drawn and reads as "no difference". The sparse
+        // disclosure goes with it, since it qualifies a comparison and none is made.
+        `Looking at the trial and the ${spanPhrase(facts.beforeDays)} before it started.`
     : isSparseBefore(facts)
       ? // The middle case, and the one that flatters. The stretch is named by the
         // days it can actually see rather than by its calendar length, so a

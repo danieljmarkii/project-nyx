@@ -278,6 +278,17 @@ describe('the outcome sheet — the data leads, the question follows', () => {
         [looks, OUTCOME_QUESTION_NO_COUNTS, OUTCOME_QUESTION_NOTE_NO_COUNTS],
       );
     }
+    // A tracked before-stretch, full or sparse, gets a scope line rather than a comparison
+    // that is not drawn; the sparse "than it looks" would also land beside the looks line.
+    for (const beforeLoggedDays of [48, 4]) {
+      const sheet = buildOutcomeSheet({
+        facts: facts({ symptoms: [], duringHasLooks: true, beforeLoggedDays }),
+        petName: 'Biscuit',
+      });
+      expect([beforeLoggedDays, sheet.comparisonLine]).toEqual(
+        [beforeLoggedDays, 'Looking at the trial and the 8 weeks before it started.'],
+      );
+    }
     // The replacement claims no absence and points at no counts.
     expect(OUTCOME_LOOKS_FACT_LINE).not.toMatch(/\bno\b|nothing|none/i);
     expect(OUTCOME_LOOKS_FACT_LINE).not.toMatch(/!/);

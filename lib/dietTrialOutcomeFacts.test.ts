@@ -461,7 +461,8 @@ describe('CUL-1483 — the sheet says the owner’s looks are not counted wherev
     const facts = await load([...before, ev('meal', at(2026, 7, 18)), ev('check_in', at(2026, 7, 20))]);
     expect([facts!.beforeHasLooks, facts!.duringHasLooks, facts!.beforeLoggedDays]).toEqual([false, true, 14]);
     const sheet = buildOutcomeSheet({ facts: facts!, petName: 'Mochi' });
-    expect(sheet.comparisonLine).toBe('Compared with the 2 weeks before it started.');
+    // No counts, so a scope line rather than a comparison that is not drawn.
+    expect(sheet.comparisonLine).toBe('Looking at the trial and the 2 weeks before it started.');
     expect(sheet.factLines).toEqual([OUTCOME_LOOKS_FACT_LINE]);
     expect(sheet.question).toBe(OUTCOME_QUESTION_NO_COUNTS);
   });
