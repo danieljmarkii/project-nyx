@@ -8,6 +8,7 @@ import type { CachedFinding, PriorityClass, SignalFinding } from '../../../lib/s
 import { foldIdentity } from '../../../lib/signalFold';
 import { loadSignalLead, type SignalLeadModel } from '../../../lib/signalLead';
 import { hasSignalTitleRule } from '../../../lib/signalTitle';
+import { leadTakesChartCard } from '../../../lib/signalWindows';
 import { weeklyBarsA11yLabel } from '../../../lib/chartCopy';
 import { WeeklyBars } from '../../charts/WeeklyBars';
 import { RAIL_WIDTH } from '../../home/InsightCard';
@@ -30,7 +31,12 @@ import { DOOR_A11Y_HINT, SignalRow } from './SignalRow';
 //
 // S1 HOLDS: a SAFETY finding does not take this canvas. It renders the Signal row
 // (`SignalRow`, CUL-1270) — the headline and the ask in words, no chart — with the same
-// door, so as the benign lead gains a chart, plainness stays the severity signal. The rail
+// door, so as the benign lead gains a chart, plainness stays the severity signal.
+//
+// THE BARS ARE A FREQUENCY FINDING'S EVIDENCE ONLY (CUL-1218, GC-5 ruled (a) on CUL-1225).
+// A timing lead's claim is a time from a meal, and a correlation's population is its matched
+// episodes; neither is "every episode, by the week". Those leads take the row's face too —
+// its own receipt drawn from the finding, or words (`leadTakesChartCard`). The rail
 // here is the class colour as on every Signal row; this component never paints a verdict
 // word. The zone routes a safety lead to the row directly; this branch is the backstop.
 //
@@ -93,7 +99,10 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, ge
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   const signalTick = useSyncStore((s) => s.signalTick);
   const identity = foldIdentity(cached.finding);
-  const safety = cached.finding.priorityClass === 'safety';
+  // S1, and GC-5 (CUL-1218): a safety finding, and a timing or correlation finding whose
+  // evidence is not the weekly bars, take the row's face. The zone routes both first; this
+  // is the backstop, and it reads nothing for them.
+  const safety = cached.finding.priorityClass === 'safety' || !leadTakesChartCard(cached.finding);
   const titled = hasSignalTitleRule(cached.finding);
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const reducedMotion = useReducedMotion();
@@ -152,7 +161,8 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, ge
   // unknown type the same way (`InsightCard`'s registry guard).
   if (!titled) return null;
 
-  // S1: a safety lead is the plain row, with the door. The fallback is the same.
+  // S1: a safety lead is the plain row, with the door; so is a lead the bars would miscount
+  // (GC-5). The fallback is the same.
   if (safety || load.status === 'failed') {
     return <SignalRow cached={cached} petId={petId} onOpen={onOpen} isLead generatedAt={generatedAt} />;
   }
