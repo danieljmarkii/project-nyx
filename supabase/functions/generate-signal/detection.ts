@@ -5346,26 +5346,12 @@ function toConfidenceEpisodes(
   events: { ms: number; confidence: OccurredAtConfidence | null }[],
   gapHours: number,
 ): ConfidenceEpisode[] {
-  if (events.length === 0) return []
-  const sorted = [...events].sort((a, b) => a.ms - b.ms)
-  // B-067/CUL-372 — re-based onto the ONE shared collapse. This used to re-spell the
-  // chaining loop verbatim so it could carry each episode's confidence through, which
-  // made it a SECOND implementation inside the very file that owns the first. It now
-  // asks the shared predicate for the onset instants and maps each back to its onset
-  // EVENT (§2: "the onset event's confidence is the episode's confidence").
-  //
-  // `Array.prototype.sort` is stable, so the first event at an onset instant is the
-  // same element the old loop selected — behaviour-preserving, including for two
-  // events sharing a millisecond.
-  const onsetMsList = collapseToEpisodeOnsets(sorted.map((e) => e.ms), gapHours)
-  const episodes: ConfidenceEpisode[] = []
-  let cursor = 0
-  for (const onsetMs of onsetMsList) {
-    while (cursor < sorted.length && sorted[cursor].ms !== onsetMs) cursor++
-    if (cursor >= sorted.length) break
-    episodes.push({ onsetMs, confidence: sorted[cursor].confidence })
-  }
-  return episodes
+  // B-067/CUL-372, CUL-1230 — the ONE shared collapse, onset event and all. This used to
+  // re-spell the chaining loop, then to sort on the instant alone and walk back to the first
+  // event at each onset: at a same-instant tie that was input order, so ⑥ could time an
+  // episode ⑤'s `collapseEpisodes` called untimed and break the episode-set rule by which ⑤
+  // suppresses ⑥. Delegating outright leaves no second order to drift.
+  return collapseEpisodes(events, gapHours).map((e) => ({ onsetMs: e.ms, confidence: e.confidence }))
 }
 
 function median(values: number[]): number {

@@ -45,7 +45,7 @@ import { LOOK_EVENT_TYPE } from './monthReads';
 import { isAnimalNotEating, resolveTrialStrip, trialIdentityLabel, type TrialCardTrial } from './dietTrialCard';
 import { isTrialRunning } from './dietTrial';
 import { loadDietTrialFacts, loadTrialPredicateFacts } from './dietTrialFacts';
-import { classifyEpisodeSet, collapseEpisodes, DEFAULT_MEAL_TIMING_CONFIG, type OnsetConfidence } from './mealTiming';
+import { classifyEpisodeSet, collapseEpisodes, compareOnsets, DEFAULT_MEAL_TIMING_CONFIG, type OnsetConfidence } from './mealTiming';
 import { drugDisplayName } from './medications';
 import { CORRELATION_SYMPTOM_TYPES, readFeedingRows, readFreeFedSpans, TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import { readSignalCacheOrLast, type CachedFinding, type SignalFinding } from './signal';
@@ -855,8 +855,14 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
      WHERE pet_id = ? AND event_type = ? AND deleted_at IS NULL`,
     [petId, symptomType],
   );
+  // `confidence` is the key `compareOnsets` reads, so a same-instant seen + found pair
+  // opens on the found row here as it does on Home and in the engine (CUL-1230).
   const stamped = rows
-    .map((r) => ({ ...r, ms: Date.parse(r.occurred_at) }))
+    .map((r) => ({
+      ...r,
+      ms: Date.parse(r.occurred_at),
+      confidence: (r.occurred_at_confidence as OnsetConfidence | null) ?? null,
+    }))
     .filter((r) => Number.isFinite(r.ms));
   const episodes = collapseEpisodes(stamped, DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours);
   if (episodes.length === 0) return [];
@@ -897,7 +903,7 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
   if (symptomType === TIMING_SYMPTOM_TYPE) {
     const [feedings, freeFedSpans] = await Promise.all([readFeedingRows(petId), readFreeFedSpans(petId)]);
     const timing = classifyEpisodeSet(
-      episodes.map((e) => ({ onsetMs: e.ms, confidence: (e.occurred_at_confidence as OnsetConfidence | null) ?? null })),
+      episodes.map((e) => ({ onsetMs: e.ms, confidence: e.confidence })),
       feedings,
       freeFedSpans,
     );
@@ -919,14 +925,16 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
 }
 
 /** Representative id → every member id of its bout, walking the collapse's own chained
- *  gap rule over the same sorted rows, so the two can never disagree about a boundary. */
-export function boutMembers<T extends { id: string; ms: number }>(
+ *  gap rule over the rows in the collapse's own ORDER (`compareOnsets`), so the two can
+ *  never disagree about a boundary. On the instant alone a same-instant member could sort
+ *  ahead of its representative, open a bout of its own and take its photo off the tile. */
+export function boutMembers<T extends { id: string; ms: number; confidence?: OnsetConfidence | null }>(
   rows: readonly T[],
   representatives: readonly T[],
   gapHours: number,
 ): Map<string, string[]> {
   const out = new Map<string, string[]>();
-  const sorted = [...rows].sort((a, b) => a.ms - b.ms);
+  const sorted = [...rows].sort(compareOnsets);
   const repIds = new Set(representatives.map((r) => r.id));
   const gapMs = gapHours * 3_600_000;
   let current: string | null = null;

@@ -78,6 +78,7 @@ import { LOOK_EVENT_TYPE } from './monthReads';
 import { dayKeyFromIndex, formatCalendarDate, formatTime, localDayIndexOf, toLocalDayKey } from './utils';
 import { usePetStore } from '../store/petStore';
 import { foldIdentity } from './signalFold';
+import { collapseEpisodes } from './mealTiming';
 import { isAnimalNotEating, type TrialCardInput } from './dietTrialCard';
 import { claimAnalysisChain } from './analysisChain';
 
@@ -755,6 +756,41 @@ describe('the local reads', () => {
     const m = boutMembers(rows, reps, 6);
     expect(m.get('r1')).toEqual(['r1', 'r2', 'r3']);
     expect(m.get('r4')).toEqual(['r4']);
+  });
+
+  it('boutMembers keeps a same-instant pair in ONE bout, whatever order the rows arrive in (CUL-1230)', () => {
+    // The collapse opens the tie on the found row; on the instant alone the seen row could sort
+    // ahead of it, open a bout of its own and take its photo off the tile.
+    const seen = { id: 'a-seen', ms: 0, confidence: 'witnessed' as const };
+    const found = { id: 'b-found', ms: 0, confidence: 'window' as const };
+    for (const rows of [[seen, found], [found, seen]]) {
+      const reps = collapseEpisodes(rows, 6);
+      expect(reps.map((r) => r.id)).toEqual(['b-found']);
+      const m = boutMembers(rows, reps, 6);
+      expect([...m.keys()]).toEqual(['b-found']);
+      expect(m.get('b-found')).toEqual(['b-found', 'a-seen']);
+    }
+  });
+
+  it('readSignalEpisodes: a seen vomit tied with a found one is untimed, as on Home and in the engine (CUL-1230)', async () => {
+    // The seen row's id sorts FIRST, so only the confidence wiring (`occurred_at_confidence` →
+    // the key `compareOnsets` reads) can open the episode on the found row.
+    const tied = noon(2026, 9, 17, 18, 12);
+    for (const rows of [
+      [{ id: 'a-seen', occurred_at: tied, occurred_at_confidence: 'witnessed' }, { id: 'b-found', occurred_at: tied, occurred_at_confidence: 'window' }],
+      [{ id: 'b-found', occurred_at: tied, occurred_at_confidence: 'window' }, { id: 'a-seen', occurred_at: tied, occurred_at_confidence: 'witnessed' }],
+    ]) {
+      mockGetAllAsync.mockReset();
+      mockGetAllAsync.mockResolvedValueOnce(rows).mockResolvedValueOnce([]);
+      mockReadFeedingRows.mockResolvedValue([
+        { ms: Date.parse(noon(2026, 9, 17, 18, 0)), confidence: 'witnessed', form: 'kibble', foodType: 'meal' },
+      ]);
+      mockReadFreeFedSpans.mockResolvedValue([]);
+      const episodes = await readSignalEpisodes('pet-1', 'vomit');
+      expect(episodes).toHaveLength(1);
+      expect(episodes[0].minutesSinceMeal).toBeNull();
+      expect(episodes[0].boutIds).toEqual(['b-found', 'a-seen']);
+    }
   });
 
   it('readSignalEpisodes: a cough is never timed — the feeding read is not issued', async () => {
