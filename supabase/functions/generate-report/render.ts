@@ -6396,7 +6396,9 @@ function medicationLine(m: MedicationAdherence): string {
     m.windowDosesTotal === 0
       ? `No doses logged in this report's window.`
       : m.windowDosesLogged === 0
-        ? `In this window: no doses given on any of the ${num(m.elapsedDaysInWindow)} days of the course${courseDaysTail(
+        ? `In this window: no doses given on ${
+            m.elapsedDaysInWindow === 1 ? 'the 1 day' : `any of the ${num(m.elapsedDaysInWindow)} days`
+          } of the course${courseDaysTail(
             m,
           )}.${outsideCourseNote(m)} Doses: ${extras.join(', ')}.`
         : `In this window: ${num(m.windowDosesLogged)} dose${m.windowDosesLogged === 1 ? '' : 's'} given${
@@ -6527,45 +6529,55 @@ function dosingDaysFor(n: number, perDay: number): number {
  * The course-day split both page 1 and Appendix D state (CUL-1550, PM ruling (a′)) — ONE phrasing
  * over ONE partition (`partitionCourseDays`), so inverting it moves both pages (C-4).
  *
- * `courseDaysGiven` is the head ("12 of 46 days of the course", or "none of the 46 days …"),
- * `courseDaysTail` the remainder ("; a dose logged but not as given on 3; no dose logged on
- * 31"). A ratio of given days alone reads as "withheld on 34"; the tail says which of those days
- * held a row of the drug and which held none. A zero part is omitted, never "on 0" (C-3). "No
- * DOSE logged", never "nothing logged": the report already uses "nothing logged" for a day with
- * no entry of any kind, and on most of these days the owner logged other things (cold read 3).
+ * `courseDaysGiven` is the head ("12 of 46 days of the course"), `courseDaysTail` the remainder
+ * ("; a dose logged but not as given on 3; no dose logged against this course on 31"). A ratio of
+ * given days alone reads as "withheld on 34"; the tail says which of those days held a row of
+ * the course and which held none. A zero part is omitted, never "on 0" (C-3). The empty part is
+ * scoped "against this course", never a bare "nothing logged": the report already uses that for a
+ * day with no entry of any kind, and a dose of the drug can sit on another line (a sibling course,
+ * an ad-hoc dose) that this course's rows cannot see. Below once a day, the empty part says the
+ * cadence, so days a dose was never due are not read as gaps (cold read 4).
  */
 function courseDaysGiven(m: MedicationAdherence, sayWindow: boolean): string {
   const g = m.courseDays.given
-  const days = `${g > 0 ? `${num(g)} of` : 'none of the'} ${num(m.elapsedDaysInWindow)} days of the course`
-  return `${days}${sayWindow ? ' in this window' : ''}`
+  const total = m.elapsedDaysInWindow
+  const head =
+    g > 0
+      ? `${num(g)} of ${num(total)} day${total === 1 ? '' : 's'} of the course`
+      : `none of the ${num(total)} day${total === 1 ? '' : 's'} of the course`
+  return `${head}${sayWindow ? ' in this window' : ''}`
 }
 function courseDaysTail(m: MedicationAdherence): string {
   const p = m.courseDays
   const parts: string[] = []
   if (p.loggedNotGiven > 0) parts.push(`a dose logged but not as given on ${num(p.loggedNotGiven)}`)
-  if (p.loggedElsewhere > 0) parts.push(`a dose of it logged under another entry on ${num(p.loggedElsewhere)}`)
-  if (p.nothingLogged > 0) parts.push(`no dose logged on ${num(p.nothingLogged)}`)
+  if (p.nothingLogged > 0) {
+    const cadence =
+      m.dosesPerDay == null ? ' (an as-needed course)' : m.dosesPerDay < 1 ? ` (a ${m.dosesPerDay}×/day course)` : ''
+    parts.push(`no dose logged against this course on ${num(p.nothingLogged)}${cadence}`)
+  }
   return parts.map((x) => `; ${x}`).join('')
 }
 
 /**
  * This course's rows the split cannot hold: in the window, but dated outside the course's own
  * dates (a backdated dose, an edited start date). They are in the dose counts, so they are
- * disclosed — given AND not given, since a refusal outside the course would otherwise read as
- * falling on a course day (C-37: reach for the accusing number too).
+ * disclosed WITH THEIR DATES — given AND not given, since a refusal outside the course would
+ * otherwise read as falling on a course day (C-37: reach for the accusing number too).
  */
 function outsideCourseNote(m: MedicationAdherence): string {
-  const g = m.courseDays.outsideCourseGiven
-  const total = g + m.courseDays.outsideCourseNotGiven
+  const p = m.courseDays
+  const g = p.outsideCourseGiven
+  const total = g + p.outsideCourseNotGiven
   if (total === 0) return ''
+  const dates = p.outsideCourseDays.length <= 4 ? ` (${p.outsideCourseDays.map((d) => h(fmtDay(d))).join(', ')})` : ''
   if (total === 1) {
     return g === 1
-      ? ' 1 given dose is dated outside the course&rsquo;s dates.'
-      : ' 1 dose, not recorded as given, is dated outside the course&rsquo;s dates.'
+      ? ` 1 given dose${dates} is dated outside the course&rsquo;s dates.`
+      : ` 1 dose${dates}, not recorded as given, is dated outside the course&rsquo;s dates.`
   }
-  return ` ${num(total)} doses in this window are dated outside the course&rsquo;s dates, ${
-    g === 0 ? 'none' : num(g)
-  } of them given.`
+  const which = g === 0 ? 'none of them given' : g === total ? (total === 2 ? 'both given' : 'all given') : `${num(g)} of them given`
+  return ` ${num(total)} doses in this window${dates} are dated outside the course&rsquo;s dates, ${which}.`
 }
 
 /**

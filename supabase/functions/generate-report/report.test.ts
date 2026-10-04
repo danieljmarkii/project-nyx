@@ -16,6 +16,7 @@ import { strict as assert } from 'node:assert'
 import {
   assembleReport,
   partitionCourseDays,
+  type PartitionRow,
   buildDetectionInput,
   dedupeEvents,
   drawsStopMark,
@@ -1085,10 +1086,10 @@ Deno.test('medication adherence — a co-started drug is a concurrent change; a 
 // ── CUL-1550 (PM ruling (a′)) — the course days split one way, for page 1 and Appendix D ──
 //
 // Every course day in the window lands in one bucket by precedence: given > logged but not as
-// given > a dose of the same drug filed elsewhere > no dose logged. These fixtures sit on the
-// seams the adversarial passes broke earlier drafts on: two rows on one day, a row of every
-// not-given kind, linked rows before the course (given AND refused), a dose filed under a sibling
-// course, a dose orphaned by the UTC-day attribution seam (CUL-991), and a dose outside the window.
+// given > no dose logged against this course. These fixtures sit on the seams the adversarial
+// passes broke earlier drafts on: two rows on one day, a row of every not-given kind, linked rows
+// before the course (given AND refused), a dose filed under a sibling course, a local-day seam,
+// and a dose outside the window.
 const apoCourse = (over: Partial<ReportMedicationInput> = {}): ReportMedicationInput => ({
   id: 'reg-apo', medicationItemId: 'mi-apo', drugName: 'Apoquel', doseAmount: '16 mg', route: 'oral',
   dosesPerDay: 1, scheduleNotes: null, indication: 'pruritus', prescribedBy: null,
@@ -1122,16 +1123,17 @@ Deno.test('CUL-1550 — courseDays partitions the course days in the window, by 
   assert.deepEqual(apo.courseDays, {
     given: 5, // Jun 10–14; Jun 13's refusal loses to its given dose, Jun 14 is partial
     loggedNotGiven: 3, // Jun 15 refused, 16 unconfirmed, 17 missed
-    loggedElsewhere: 0,
-    nothingLogged: 2, // Jun 18, 19 — 5 + 3 + 0 + 2 = the 10 course days
+    nothingLogged: 2, // Jun 18, 19 — 5 + 3 + 2 = the 10 course days
     outsideCourseGiven: 1, // Jun 5
     outsideCourseNotGiven: 1, // Jun 6
+    outsideCourseDays: ['2026-06-05', '2026-06-06'],
   })
 })
 
-Deno.test('CUL-1550 — a dose of the drug filed under a sibling course is never "no dose logged"', () => {
+Deno.test('CUL-1550 — the split counts THIS course\'s rows; a sibling course\'s dose stays on its own line', () => {
   // A taper: the first course ends Jun 19 and the second starts Jun 19, and the Jun 19 dose is
-  // attributed to the second. On the first course's line, Jun 19 is not silence.
+  // attributed to the second. The first course's split is about its own rows, and the render says
+  // "against this course", so Jun 19 is not claimed as a silent day for the drug.
   const doses: ReportDoseInput[] = [
     ...['2026-06-10', '2026-06-11', '2026-06-12', '2026-06-13', '2026-06-14', '2026-06-15', '2026-06-16', '2026-06-17', '2026-06-18'].map((d) =>
       apoDose(d, 'given'),
@@ -1145,28 +1147,25 @@ Deno.test('CUL-1550 — a dose of the drug filed under a sibling course is never
     }),
   )
   const first = snap.medications.find((m) => m.regimenId === 'reg-apo')!
+  const second = snap.medications.find((m) => m.regimenId === 'reg-apo-2')!
   assert.equal(first.courseDays.given, 9)
-  assert.equal(first.courseDays.loggedElsewhere, 1, 'Jun 19 holds a dose of the drug, under the other course')
-  assert.equal(first.courseDays.nothingLogged, 0)
+  assert.equal(first.courseDays.nothingLogged, 1)
+  assert.equal(second.courseDays.given, 1, 'the Jun 19 dose is counted once, on its own course')
+  const text = plainText(renderReport(snap))
+  assert.ok(/no dose logged against this course on 1 ?\./.test(text), 'the empty part is scoped to the course')
+  assert.ok(!/no dose logged on \d/.test(text), 'never a bare claim about the drug')
 })
 
-Deno.test('CUL-1550 — the split reads LOCAL days, and an orphaned same-drug dose still counts as logged', () => {
-  // America/New_York. A dose at 21:30 local on Jun 19 (the course's last day) is Jun 20 in UTC.
-  // Linked: it is a Jun 19 course day (the local key, not the UTC one). Unlinked: the attribution
-  // pass's UTC-day match (CUL-991) files it as an orphan, and the course line must still not call
-  // Jun 19 silent.
-  const late = (regimen: string | null) => apoDose('2026-06-20', 'given', { time: '01:30:00', regimen })
-  const early = ['2026-06-10', '2026-06-11', '2026-06-12'].map((d) => apoDose(d, 'given'))
-
-  const linked = assembleReport(baseInput({ medications: [apoCourse()], doses: [...early, late('reg-apo')] }))
-  const l = linked.medications.find((m) => m.regimenId === 'reg-apo')!
-  assert.equal(l.courseDays.given, 4, 'Jun 19 local is a given course day')
-  assert.equal(l.courseDays.outsideCourseGiven, 0, 'and not "dated outside the course"')
-
-  const orphaned = assembleReport(baseInput({ medications: [apoCourse()], doses: [...early.map((d) => ({ ...d, medicationId: null })), late(null)] }))
-  const o = orphaned.medications.find((m) => m.regimenId === 'reg-apo')!
-  assert.equal(o.courseDays.given + o.courseDays.loggedElsewhere, 4, 'Jun 19 is given or logged elsewhere, never silent')
-  assert.equal(o.courseDays.nothingLogged, 6)
+Deno.test('CUL-1550 — the split reads LOCAL days (America/New_York)', () => {
+  // A dose at 21:30 local on Jun 19, the course's last day, is Jun 20 in UTC. It is a Jun 19
+  // course day, never "dated outside the course".
+  const doses = [
+    ...['2026-06-10', '2026-06-11', '2026-06-12'].map((d) => apoDose(d, 'given')),
+    apoDose('2026-06-20', 'given', { time: '01:30:00' }),
+  ]
+  const apo = assembleReport(baseInput({ medications: [apoCourse()], doses })).medications.find((m) => m.regimenId === 'reg-apo')!
+  assert.equal(apo.courseDays.given, 4, 'Jun 19 local is a given course day')
+  assert.equal(apo.courseDays.outsideCourseGiven, 0, 'and not "dated outside the course"')
 })
 
 Deno.test('CUL-1550 — a linked dose outside the report window is neither a course day nor disclosed', () => {
@@ -1181,63 +1180,67 @@ Deno.test('CUL-1550 — a linked dose outside the report window is neither a cou
 })
 
 // PROPERTY, not re-derivation (C-34): the rule is checked by what must hold for EVERY record —
-// the parts sum to the course days, adding a not-given row to a given day changes nothing,
-// adding a given row to a not-given day moves exactly one day, a same-drug row elsewhere on a
-// silent day moves exactly one day out of silence, and dropping every row leaves only silence.
-// The generator uses integer-safe arithmetic (an earlier draft's float LCG lost its low bits and
-// produced almost no not-given rows), and a coverage floor proves the seams were generated.
+// the parts are non-negative and sum to the course days, adding a not-given row to a given day
+// changes nothing, adding a given row to a not-given day moves exactly one day, adding any row to
+// a silent day moves exactly one day out of silence, and every out-of-span row is disclosed.
+// Integer-safe generator (an earlier draft's float LCG lost its low bits and produced almost no
+// not-given rows), and a coverage floor proves the seams were actually generated.
 Deno.test('CUL-1550 — partitionCourseDays: properties over random records', () => {
   let seed = 1550
   const rand = (n: number): number => {
     seed = (Math.imul(seed, 1103515245) + 12345) >>> 0
     return (seed >>> 8) % n
   }
+  const key = (d: number) => `k${d}`
   let mixedDays = 0
   let notGivenInSpan = 0
-  let elsewhereMoves = 0
+  let silentMoves = 0
   for (let trial = 0; trial < 3000; trial++) {
     const spanStart = 100 + rand(20)
     const spanEnd = spanStart + rand(25) - 2 // includes empty and one-day spans
     const courseDays = Math.max(0, spanEnd - spanStart + 1)
-    const row = () => ({ day: rand(15) === 0 ? null : spanStart - 4 + rand(courseDays + 8), administered: rand(2) === 0 })
-    const own = Array.from({ length: rand(20) }, row)
-    const other = Array.from({ length: rand(6) }, row)
-    const p = partitionCourseDays(own, other, spanStart, spanEnd)
-    const ctx = JSON.stringify({ spanStart, spanEnd, own, other, p })
-    assert.equal(p.given + p.loggedNotGiven + p.loggedElsewhere + p.nothingLogged, courseDays, ctx)
-    for (const v of Object.values(p)) assert.ok(Number.isInteger(v) && v >= 0, ctx)
-    assert.deepEqual(partitionCourseDays([], [], spanStart, spanEnd).nothingLogged, courseDays)
-    assert.equal(
-      p.outsideCourseGiven + p.outsideCourseNotGiven,
-      own.filter((r) => r.day !== null && (r.day < spanStart || r.day > spanEnd)).length,
-      ctx,
-    )
-    const inSpan = own.filter((r) => r.day !== null && r.day >= spanStart && r.day <= spanEnd)
+    const row = (): PartitionRow => {
+      const day = rand(15) === 0 ? null : spanStart - 4 + rand(courseDays + 8)
+      return { day, dayKey: day === null ? null : key(day), administered: rand(2) === 0 }
+    }
+    const rows = Array.from({ length: rand(20) }, row)
+    const p = partitionCourseDays(rows, spanStart, spanEnd)
+    const ctx = JSON.stringify({ spanStart, spanEnd, rows, p })
+    for (const v of [p.given, p.loggedNotGiven, p.nothingLogged, p.outsideCourseGiven, p.outsideCourseNotGiven]) {
+      assert.ok(Number.isInteger(v) && v >= 0, ctx)
+    }
+    assert.equal(p.given + p.loggedNotGiven + p.nothingLogged, courseDays, ctx)
+    assert.equal(partitionCourseDays([], spanStart, spanEnd).nothingLogged, courseDays)
+    const outside = rows.filter((r) => r.day !== null && (r.day < spanStart || r.day > spanEnd))
+    assert.equal(p.outsideCourseGiven + p.outsideCourseNotGiven, outside.length, ctx)
+    assert.deepEqual(new Set(p.outsideCourseDays), new Set(outside.map((r) => r.dayKey)), ctx)
+    const inSpan = rows.filter((r) => r.day !== null && r.day >= spanStart && r.day <= spanEnd)
     notGivenInSpan += inSpan.filter((r) => !r.administered).length
     const givenDay = inSpan.find((r) => r.administered)?.day
     if (givenDay != null) {
       if (inSpan.some((r) => r.day === givenDay && !r.administered)) mixedDays++
-      // A not-given row on a given day: the day stays given (precedence).
-      assert.deepEqual(partitionCourseDays([...own, { day: givenDay, administered: false }], other, spanStart, spanEnd), p, ctx)
+      const q = partitionCourseDays([...rows, { day: givenDay, dayKey: key(givenDay), administered: false }], spanStart, spanEnd)
+      assert.deepEqual(q, p, `precedence: a not-given row never demotes a given day ${ctx}`)
     }
     const notGivenOnlyDay = inSpan.find((r) => !r.administered && !inSpan.some((x) => x.day === r.day && x.administered))?.day
     if (notGivenOnlyDay != null) {
-      const q = partitionCourseDays([...own, { day: notGivenOnlyDay, administered: true }], other, spanStart, spanEnd)
+      const q = partitionCourseDays([...rows, { day: notGivenOnlyDay, dayKey: key(notGivenOnlyDay), administered: true }], spanStart, spanEnd)
       assert.equal(q.given, p.given + 1, ctx)
       assert.equal(q.loggedNotGiven, p.loggedNotGiven - 1, ctx)
     }
-    const covered = new Set([...own, ...other].map((r) => r.day))
+    const covered = new Set(rows.map((r) => r.day))
     let silent: number | null = null
     for (let d = spanStart; d <= spanEnd; d++) if (!covered.has(d)) { silent = d; break }
     if (silent !== null) {
-      const q = partitionCourseDays(own, [...other, { day: silent, administered: rand(2) === 0 }], spanStart, spanEnd)
-      assert.equal(q.loggedElsewhere, p.loggedElsewhere + 1, ctx)
+      const administered = rand(2) === 0
+      const q = partitionCourseDays([...rows, { day: silent, dayKey: key(silent), administered }], spanStart, spanEnd)
       assert.equal(q.nothingLogged, p.nothingLogged - 1, ctx)
-      elsewhereMoves++
+      assert.equal(administered ? q.given - p.given : q.loggedNotGiven - p.loggedNotGiven, 1, ctx)
+      silentMoves++
     }
   }
   // Non-vacuity floor: the seams the properties are about were actually generated.
-  assert.ok(mixedDays > 200 && notGivenInSpan > 2000 && elsewhereMoves > 500, JSON.stringify({ mixedDays, notGivenInSpan, elsewhereMoves }))
+  assert.ok(mixedDays > 200 && notGivenInSpan > 2000 && silentMoves > 500, JSON.stringify({ mixedDays, notGivenInSpan, silentMoves }))
 })
 
 Deno.test('§3.8 orphan-dose — ad-hoc/OTC doses with no regimen surface as an unlinkedMedications group', () => {
