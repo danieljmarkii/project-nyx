@@ -19,6 +19,11 @@
 // week's lane, the tap into `/trial/{pet}`). With it off, everything below the gate is
 // the shipped strip to the byte, still opening the Pet tab (CUL-170). The three props
 // the door needs are ignored off the flag.
+//
+// ── CUL-1526: UNDER `design_v2` TOO, THE RULED CARD ──────────────────────────────
+// With both flags on, the drawing is `components/designV2/home/TrialCard` (title, a
+// neutral bar, the one end-date line). Home passes its one `useDesignV2()` read down as
+// `designV2`, so the redesign gains no second consumer of the gate (C-36).
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
@@ -28,6 +33,7 @@ import type { TrialStripSafety } from '../../lib/trialStripDoor';
 import { Card } from '../ui/Card';
 import { ThemedText } from '../ui/ThemedText';
 import { TrialStripDoor } from '../trialScreen/TrialStripDoor';
+import { TrialCard } from '../designV2/home/TrialCard';
 import type { TrialCardInput, TrialStripModel } from '../../lib/dietTrialCard';
 
 interface Props {
@@ -42,14 +48,25 @@ interface Props {
   inputFresh?: boolean;
   /** TS-5 — what the Signal zone reports about safety-class cards for its pet. */
   safety?: TrialStripSafety | null;
+  /** CUL-1526 — Home's `useDesignV2()` read, handed down. */
+  designV2?: boolean;
 }
 
-export function TrialStrip({ model, onPress, petId = null, input = null, inputFresh = false, safety = null }: Props) {
+export function TrialStrip({
+  model,
+  onPress,
+  petId = null,
+  input = null,
+  inputFresh = false,
+  safety = null,
+  designV2 = false,
+}: Props) {
   const trialScreen = useTrialScreen();
   if (!model) return null;
 
   // No pet to open means no door: the shipped strip, rather than a door to nowhere.
   if (trialScreen && petId) {
+    if (designV2) return <TrialCard model={model} petId={petId} onPress={onPress} />;
     return (
       <TrialStripDoor
         model={model}

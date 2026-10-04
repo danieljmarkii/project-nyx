@@ -314,6 +314,7 @@ export default function HomeScreen() {
             input={trialInput}
             inputFresh={trialFactsFresh}
             safety={signalSafety}
+            designV2={designV2}
           />
           {/* B-614 §8/D9 — one compact strip PER active/recent medication, BELOW
               the trial strip and ABOVE Today. The trial is the wedge's primary

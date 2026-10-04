@@ -32,6 +32,7 @@ jest.mock('../../hooks/useTrialFacts', () => ({
 
 import { fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
+import { theme } from '../../constants/theme';
 import { router } from 'expo-router';
 import { TrialStrip } from './TrialStrip';
 import { resolveTrialStrip, type TrialCardInput } from '../../lib/dietTrialCard';
@@ -234,3 +235,70 @@ describe('TrialStrip: the trial_screen gate', () => {
   });
 });
 
+
+// ── CUL-1526: under design_v2 + trial_screen, the ruled card ─────────────────────
+describe('TrialStrip: the design_v2 card (CUL-1526)', () => {
+  const door = { petId: 'pet-1', inputFresh: true, safety: { petId: 'pet-1', live: false } };
+  const withOffDiet = () =>
+    input({ exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 3 } });
+
+  beforeEach(() => {
+    mockTrialScreen = false;
+    mockUseTrialFacts.mockClear();
+    (router.push as jest.Mock).mockClear();
+  });
+
+  it('both flags on: title, a neutral bar and the one end-date line; no ratio, no lane, no ledger read', () => {
+    mockTrialScreen = true;
+    const i = withOffDiet();
+    const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} designV2 />);
+    expect(tree.queryByTestId('trial-strip-door')).toBeNull();
+    expect(tree.getByText('Diet trial · day 23 of 56')).toBeTruthy();
+    expect(tree.getByText('Ends Aug 27 · 3 off-diet feedings logged')).toBeTruthy();
+    expect(tree.queryByText(/meals logged on/)).toBeNull();
+    expect(tree.queryByText(/Vomiting/)).toBeNull();
+    expect(tree.queryByTestId('trial-lane', { includeHiddenElements: true })).toBeNull();
+    expect(mockUseTrialFacts).not.toHaveBeenCalled();
+    const fill = StyleSheet.flatten(tree.getByTestId('trial-card-v2-fill').props.style);
+    expect(fill.backgroundColor).toBe(theme.colorTextTertiary);
+    expect(fill.width).toBe(`${(23 / 56) * 100}%`);
+  });
+
+  it('the spoken label is exactly the visible lines (C-8), and the tap opens the trial once', () => {
+    mockTrialScreen = true;
+    const i = withOffDiet();
+    const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} designV2 />);
+    const card = tree.getByTestId('trial-card-v2');
+    expect(card.props.accessibilityLabel).toBe(
+      'Diet trial · day 23 of 56. Ends Aug 27 · 3 off-diet feedings logged.',
+    );
+    fireEvent.press(card);
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith('/trial/pet-1');
+  });
+
+  it('identical under a live safety-class Signal card (G3 B)', () => {
+    mockTrialScreen = true;
+    const i = withOffDiet();
+    const clear = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} designV2 />).toJSON();
+    const live = render(
+      <TrialStrip model={resolveTrialStrip(i)} input={i} {...door} safety={{ petId: 'pet-1', live: true }} designV2 />,
+    ).toJSON();
+    expect(JSON.stringify(live)).toBe(JSON.stringify(clear));
+  });
+
+  it('design_v2 without trial_screen: the shipped strip, unchanged', () => {
+    const i = withOffDiet();
+    const shipped = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />).toJSON();
+    const v2Only = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} designV2 />).toJSON();
+    expect(JSON.stringify(v2Only)).toBe(JSON.stringify(shipped));
+  });
+
+  it('trial_screen without design_v2: the shipped door', () => {
+    mockTrialScreen = true;
+    const i = withOffDiet();
+    const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />);
+    expect(tree.getByTestId('trial-strip-door')).toBeTruthy();
+    expect(tree.queryByTestId('trial-card-v2')).toBeNull();
+  });
+});

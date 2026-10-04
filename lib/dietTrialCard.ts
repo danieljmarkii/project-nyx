@@ -2911,6 +2911,17 @@ export interface TrialStripModel {
    * DESCRIPTION, never a control (§4.2 second-door rule intact).
    */
   trialResponseLine: string | null;
+  /**
+   * CUL-1526 (G2 B + G3 B, the CUL-1519 mock round 2 §04) — Design v2's ONE line, drawn by
+   * `components/designV2/home/TrialCard` under `design_v2` + `trial_screen`: the end date
+   * ALWAYS leads ("Ends Oct 17" | "Window ended Oct 17"), then the off-diet floor when there is
+   * one ("· 3 off-diet feedings logged"). Nothing else: the food label, the coverage ratio and
+   * the vomiting pair live on `/trial`. An end date has no direction, so it cannot reassure;
+   * the off-diet count is the accusing fact. Null exactly where `line` is withheld for a live
+   * decline (the shipped early return is kept, never flattened into this line). A field beside
+   * `line` rather than a mode, so every flag-off reader of the model is untouched.
+   */
+  cardLine: string | null;
 }
 
 /**
@@ -3025,17 +3036,14 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
     // A live safety flag suppresses the strip's record lines — the vomit-count line included (CUL-13):
     // a two-sided count next to "the pet stopped eating" is exactly the reassuring-summary composition
     // this branch exists to withhold. Header only; the record is one tap away on the Pet tab.
-    return { header, line: null, progressFraction: progress.fraction, trialResponseLine: null };
+    return { header, line: null, progressFraction: progress.fraction, trialResponseLine: null, cardLine: null };
   }
 
   const parts: string[] = [];
   if (trial.foodLabel) parts.push(trial.foodLabel);
   const endIndex = trialEndDayIndex(startIndex, trial.targetDurationDays);
-  parts.push(
-    overrunDays > 0
-      ? `window ended ${formatTrialDate(endIndex, toLocalDayKey(new Date(input.nowMs)))}`
-      : `ends ${formatTrialDate(endIndex, toLocalDayKey(new Date(input.nowMs)))}`,
-  );
+  const endDate = formatTrialDate(endIndex, toLocalDayKey(new Date(input.nowMs)));
+  parts.push(overrunDays > 0 ? `window ended ${endDate}` : `ends ${endDate}`);
   // THE STRIP IS STRICTER THAN THE CARD, DELIBERATELY — AND ITS RULE IS NOW ONE
   // SENTENCE: Home states the ratio only when the record carries NONE of the
   // withholding reasons.
@@ -3085,9 +3093,38 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // NOT-EATING reasons only: a broken off-diet comparator, a free-fed arrangement, or a thin record
   // does NOT make the vomit count dishonest, so those must not drop an otherwise-valid vomiting finding.
   const animalNotEating = isAnimalNotEating(input);
+  // CUL-1526 — the ruled one line reads the SAME withheld-or-not off-diet count as `line`
+  // (one source, so the two can never disagree about the floor), and carries no ratio: the
+  // withholding reasons above gate a number this line never states.
+  //
+  // THE MISSING CLAUSE IS NOT A ZERO (adversarial-reviewer, CUL-1526). The clause shows
+  // only when the count is above zero, so an owner who reads the card daily learns that
+  // "Ends Aug 27" alone means "nothing off-diet". Where the app could not check — no
+  // usable permit set, an unread classification, a paused antigen arm — that zero would
+  // be the app's own ignorance printed as a clean record (absence ≠ wellness), so the
+  // line says the check is incomplete instead. The count, when there is one, still leads.
+  //
+  // At zero the gate is the full card's own `mayStateRecordClean` (re-check of the same
+  // pass): the card refuses "all N matched" over a thin record, a refusal, a bowl or an
+  // unclassifiable feeding, so a bare date — which a daily reader learns means exactly
+  // that — may not say it either. One gate for both surfaces. The word is "incomplete",
+  // not "paused", because it must be true in week one and while the read loads too.
+  const ex = input.exposures;
+  const offDietUnknown =
+    !!input.allowedSetUnavailable ||
+    !ex ||
+    !!input.antigenArmDark ||
+    (stripOffDiet === 0 && !ex.mayStateRecordClean);
+  const cardLine =
+    (overrunDays > 0 ? `Window ended ${endDate}` : `Ends ${endDate}`) +
+    (stripOffDiet > 0
+      ? ` · ${stripOffDiet} off-diet ${stripOffDiet === 1 ? 'feeding' : 'feedings'} logged`
+      : '') +
+    (offDietUnknown ? ' · off-diet check incomplete' : '');
   return {
     header,
     line: parts.length > 0 ? parts.join(' · ') : null,
+    cardLine,
     progressFraction: progress.fraction,
     // CUL-13 — the standing vomit-count line, a SECOND line below the coverage line. Null unless
     // `signals_v2` is on (the loader only computes `input.trialResponse` then), so the strip is
