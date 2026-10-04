@@ -12,7 +12,7 @@ jest.mock('./supabase', () => ({ supabase: { from: jest.fn() } }));
 import { buildSignalScreenModel, type SignalScreenEpisode, type SignalScreenInput } from './signalScreen';
 import type { CachedFinding, ReflectionFinding, SymptomChronicityFinding, SymptomWorseningFinding } from './signal';
 import { screenMaskingOf } from './screenMasking';
-import { phoneScript } from './signalCopy';
+import { chronicityCompareExtras, phoneScript } from './signalCopy';
 import { countsMayCompose, signalCountsOf } from './signalCounts';
 import { signalWeeks } from './signalWindows';
 import { dayKeyFromIndex, localDayIndexOf } from './utils';
@@ -153,11 +153,11 @@ describe('one count on one safety screen — the script reads the sentence’s n
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(worsening()), episodes: [...recent, ...prior] }));
     expect(model.title).toBe('Vomiting on 5 of the last 7 days');
     expect(model.sentence).toBe('Nyx has had vomiting on 5 of the last 7 days (6 episodes) — worth booking a vet visit soon.');
-    const script = phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking) ?? [];
+    const script = phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking, model.scriptCounting) ?? [];
     const said = script.map((f) => `${f.label}: ${f.value}`).join(' | ');
-    expect(said).toContain('This week: 5 days with vomiting');
+    expect(said).toContain('Last 7 days: 5 days with vomiting');
     // The 7 before held more: a fall under a safety card is not read aloud either (GC-3).
-    expect(said).not.toMatch(/Week before/);
+    expect(said).not.toMatch(/Week before|The 7 before/);
   });
 
   it('a composed worsening whose earlier window held less keeps the pair in both places', () => {
@@ -165,9 +165,9 @@ describe('one count on one safety screen — the script reads the sentence’s n
     const prior = days(-9).map((e, i) => ({ ...e, eventId: `p${i}` }));
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(worsening()), episodes: [...recent, ...prior] }));
     expect(model.sentence).toBe('Nyx has had vomiting on 5 of the last 7 days (5 episodes), and on 1 of the 7 before — worth booking a vet visit soon.');
-    const said = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking) ?? []).map((f) => `${f.label}: ${f.value}`).join(' | ');
-    expect(said).toContain('This week: 5 days with vomiting');
-    expect(said).toContain('Week before: 1 day');
+    const said = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking, model.scriptCounting) ?? []).map((f) => `${f.label}: ${f.value}`).join(' | ');
+    expect(said).toContain('Last 7 days: 5 days with vomiting');
+    expect(said).toContain('The 7 before: 1 day');
   });
 
   it('a composed chronicity: the script’s "How often" is the title’s weeks and the sentence’s episodes', () => {
@@ -175,7 +175,7 @@ describe('one count on one safety screen — the script reads the sentence’s n
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicity()), episodes: eps }));
     expect(model.title).toBe('Vomiting in 8 of the last 8 weeks');
     expect(model.sentence).toMatch(/— 9 episodes in those weeks, the most recent yesterday\./);
-    const said = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking) ?? []).map((f) => `${f.label}: ${f.value}`).join(' | ');
+    const said = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking, model.scriptCounting) ?? []).map((f) => `${f.label}: ${f.value}`).join(' | ');
     expect(said).toContain('How often: 9 episodes across 8 of 8 weeks');
     expect(said).toContain('Most recent: yesterday');
   });
@@ -189,8 +189,8 @@ describe('the second pass — every stated number at least as alarming as the en
       inputOf({ cached: cachedOf(worsening({ currentCount: 4, currentDays: 4, priorCount: 1, priorDays: 1 })), episodes: [...recent, ...prior] }),
     );
     expect(model.sentence).toBe('Nyx has had vomiting on 4 of the last 7 days (4 episodes) — worth booking a vet visit soon.');
-    const said = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking) ?? []).map((f) => `${f.label}: ${f.value}`).join(' | ');
-    expect(said).not.toMatch(/Week before/);
+    const said = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking, model.scriptCounting) ?? []).map((f) => `${f.label}: ${f.value}`).join(' | ');
+    expect(said).not.toMatch(/Week before|The 7 before/);
   });
 
   it('F: a chronicity whose newest episode on the phone is staler than the engine’s keeps the engine’s words', () => {
@@ -231,9 +231,9 @@ describe('the third pass — the earlier window follows the axis that rose', () 
     const prior = days(-7, -8, -9, -10, -11).map((e, i) => ({ ...e, eventId: `p${i}` }));
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(f), episodes: [...recent, ...prior] }));
     expect(model.sentence).toBe('Nyx has had vomiting on 5 of the last 7 days (6 episodes), and 5 episodes in the 7 before — worth booking a vet visit soon.');
-    const said = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking) ?? []).map((x) => `${x.label}: ${x.value}`).join(' | ');
-    expect(said).toContain('This week: 6 episodes on 5 days');
-    expect(said).toContain('Week before: 5 episodes');
+    const said = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking, model.scriptCounting) ?? []).map((x) => `${x.label}: ${x.value}`).join(' | ');
+    expect(said).toContain('Last 7 days: 6 episodes on 5 days');
+    expect(said).toContain('The 7 before: 5 episodes');
     expect(model.sentence).not.toMatch(/on 5 of the 7 before/);
   });
 
@@ -243,8 +243,8 @@ describe('the third pass — the earlier window follows the axis that rose', () 
       inputOf({ cached: cachedOf(f), episodes: [...days(-1, -2, -3).map((e, i) => ({ ...e, eventId: `r${i}` })), ...days(-8, -9, -10).map((e, i) => ({ ...e, eventId: `p${i}` }))] }),
     );
     expect(model.sentence).toBe('Nyx has had 3 episodes of vomiting in the last 7 days — worth a word with your vet.');
-    const said = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking) ?? []).map((x) => x.label).join(' | ');
-    expect(said).not.toMatch(/Week before/);
+    const said = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking, model.scriptCounting) ?? []).map((x) => x.label).join(' | ');
+    expect(said).not.toMatch(/Week before|The 7 before/);
   });
 
   it('a finding the engine counted over an incomplete read (CUL-989) keeps the engine’s "at least" words', () => {
@@ -265,5 +265,114 @@ describe('countsMayCompose', () => {
     expect(countsMayCompose(f, at([shift(TODAY, -1), shift(TODAY, -2)]), { maskTouched: true, elapsedDays: 0 })).toBe(false); // masked
     const zero = worsening({ currentCount: 0, currentDays: 0 });
     expect(countsMayCompose(zero, signalCountsOf(zero, weekly([]), [], TODAY), { maskTouched: false, elapsedDays: 0 })).toBe(false);
+  });
+});
+
+// GC-4 PR 3 (CUL-1570): the phone script reads the sentence's windows in its words, dates an
+// engine-worded script, keeps the halves out of a composed one, and follows the floor (CUL-1575).
+describe('the phone script names the window the sentence named (CUL-1570)', () => {
+  const said = (model: ReturnType<typeof buildSignalScreenModel>): string =>
+    (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking, model.scriptCounting) ?? []).map((x) => `${x.label}: ${x.value}`).join(' | ');
+
+  it('a composed worsening says "Last 7 days" and "The 7 before", never "This week", and drops the restating "Watched over"', () => {
+    const recent = days(-1, -2, -3, -4, -5).map((e, i) => ({ ...e, eventId: `r${i}` }));
+    const prior = days(-9).map((e, i) => ({ ...e, eventId: `p${i}` }));
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(worsening()), episodes: [...recent, ...prior] }));
+    expect(model.scriptCounting?.kind).toBe('composed');
+    expect(said(model)).toBe('Sign: vomiting | Last 7 days: 5 days with vomiting | The 7 before: 1 day');
+  });
+
+  it('an engine-worded worsening keeps its labels and dates its numbers to when the card was raised', () => {
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(worsening()), episodes: days(-8, -9, -10, -11, -12) }));
+    expect(model.sentence).toBe(ENGINE_TEXT);
+    expect(model.scriptCounting).toEqual({ kind: 'engine', raisedOn: TODAY });
+    expect(said(model)).toBe(
+      'Sign: vomiting | This week: 4 days with vomiting | Week before: 1 day | Watched over: the last 7 days | Counted: September 27, 2026, when this was raised',
+    );
+  });
+
+  it('an engine-worded script with no raised time still says the numbers are the raised card’s', () => {
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(worsening()), episodes: [], generatedAtMs: null }));
+    expect(said(model)).toMatch(/\| Counted: when this was raised$/);
+  });
+
+  it('a composed chronicity: no halves row, even when the engine’s finding carries them', () => {
+    const eps = days(-1, -9, -16, -23, -30, -37, -44, -51, -52).map((e, i) => ({ ...e, eventId: `c${i}` }));
+    const compare = { halfDays: 28, recentCount: 4, priorCount: 5, recentLoggingDays: 28, priorLoggingDays: 28, comparable: true } as const;
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicity({ compare })), episodes: eps }));
+    expect(model.scriptCounting?.kind).toBe('composed');
+    expect(said(model)).not.toMatch(/Recent \d+ weeks/);
+  });
+
+  it('a composed chronicity’s "First logged" is the earliest of the phone and the engine, with its year, and says when it is before the weeks counted', () => {
+    // The engine's onset is the first episode inside its lookback (Aug 5); the phone holds a
+    // backfilled one from May, so the course has run longer than the engine's month says.
+    const eps = [episode('2026-05-12'), ...days(-1, -9, -16, -23, -30, -37, -44, -51, -52)].map((e, i) => ({ ...e, eventId: `c${i}` }));
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicity()), episodes: eps }));
+    expect(said(model)).toContain('First logged: May 12, 2026, before these 8 weeks');
+  });
+
+  it('…and never later than the engine’s onset, so a phone missing the oldest rows cannot make the course younger', () => {
+    // The phone's oldest is inside the drawn weeks; the engine's onset is earlier still and wins.
+    const eps = days(-1, -9, -16, -23, -30, -37, -44, -51, -52).map((e, i) => ({ ...e, eventId: `c${i}` }));
+    const engineFirst = new Date(2026, 6, 20, 12).toISOString(); // July 20, before every phone episode
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicity({ firstOnsetIso: engineFirst })), episodes: eps }));
+    expect(said(model)).toContain('First logged: July 20, 2026, before these 8 weeks');
+  });
+
+  it('…and inside the weeks counted it is a date alone', () => {
+    const eps = days(-1, -9, -16, -23, -30, -37, -44, -51, -52).map((e, i) => ({ ...e, eventId: `c${i}` }));
+    const engineFirst = new Date(2026, 8, 20, 12).toISOString(); // later than the phone's oldest
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicity({ firstOnsetIso: engineFirst })), episodes: eps }));
+    // The phone's oldest: 52 days before Sept 27 = Aug 6, inside the 8 drawn weeks.
+    expect(said(model)).toContain(`First logged: August 6, 2026 | How often`);
+  });
+
+  it('the burden screen names both units in *Why*, and its script stays the shipped one (CUL-1576 (a))', () => {
+    const burden = {
+      type: 'symptom_burden',
+      priorityClass: 'safety',
+      symptomType: 'vomit',
+      count: 5,
+      days: 2,
+      runDays: 2,
+      daysSinceRunEnd: 0,
+      countArm: true,
+      persistenceArm: false,
+      tier: 'soon',
+      windowDays: 7,
+    } as const;
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(burden), episodes: days(-1, -2) }));
+    expect(model.why).toContain('This card counts each vomit logged. The bars count episodes: vomits logged within 3 hours of each other count as one.');
+    expect(model.scriptCounting).toBeNull();
+    expect(said(model)).toContain('This week: 5 vomits on 2 days');
+  });
+});
+
+describe('a floor read (CUL-989) leaves the comparing rows out of the script, as the sentence does (CUL-1575)', () => {
+  it('a worsening: no "Week before", and "at least" on what stays — on the shipped card and on the screen', () => {
+    const f = { ...worsening({ trigger: 'more_episodes', tier: 'standard' }), countIsFloor: true } as SymptomWorseningFinding;
+    const card = (phoneScript(f, 'Nyx', false, null, null) ?? []).map((x) => `${x.label}: ${x.value}`).join(' | ');
+    expect(card).toBe('Sign: vomiting | This week: at least 5 episodes on at least 4 days | Watched over: the last 7 days');
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(f), episodes: days(-1, -2, -3, -4, -5, -6) }));
+    const screen = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking, model.scriptCounting) ?? []).map((x) => x.label);
+    expect(screen).not.toContain('Week before');
+    expect(screen).not.toContain('The 7 before');
+  });
+
+  it('a chronicity: no halves (row or box), no onset month, and "at least" on the weeks and episodes', () => {
+    const compare = { halfDays: 28, recentCount: 4, priorCount: 5, recentLoggingDays: 28, priorLoggingDays: 28, comparable: true } as const;
+    const f = { ...chronicity({ compare }), countIsFloor: true } as SymptomChronicityFinding;
+    const facts = phoneScript(f, 'Nyx', false, null, null) ?? [];
+    expect(facts.map((x) => x.label)).toEqual(['Sign', 'How often', 'Most recent']);
+    expect(facts[1].value).toBe('at least 8 episodes across at least 5 of 8 weeks');
+    expect(chronicityCompareExtras(f, false)).toBeNull();
+    // The masking path's recent-half row is the engine's count too: withheld over a floor.
+    const masked = phoneScript(f, 'Nyx', false, { rows: [], withholdCompare: true, recentOnly: true }, null) ?? [];
+    expect(masked.some((x) => x.label.startsWith('Recent '))).toBe(false);
+    // Without the floor the same finding keeps both (the guard is the floor, not the fixture).
+    const { countIsFloor: _drop, ...whole } = f;
+    expect(chronicityCompareExtras(whole, false)).not.toBeNull();
+    expect((phoneScript(whole, 'Nyx', false, null, null) ?? []).some((x) => x.label.startsWith('Recent '))).toBe(true);
   });
 });

@@ -147,8 +147,9 @@ export function countsMayCompose(
 ): boolean {
   if (context.maskTouched) return false;
   // CUL-989: over an incomplete read the engine states every count as a floor ("at least N")
-  // and drops its week-over-week clause. The client mirror carries no field for it, so the
-  // payload is read for the marker directly; a floor finding keeps the engine's words.
+  // and drops its week-over-week clause; a floor finding keeps the engine's words. The worsening
+  // and chronicity mirrors carry the field (CUL-1575); the reflection mirror does not, so the
+  // payload is read for the marker directly.
   if ((finding as { countIsFloor?: unknown }).countIsFloor === true) return false;
   switch (finding.type) {
     case 'symptom_chronicity': {
@@ -184,8 +185,8 @@ export function composedWindowStart(finding: CountedFinding, weekly: WeeklyBucke
  * The finding the safety phone script reads when the sentence is composed (CUL-1568): the same
  * numbers, so the script an owner reads aloud never contradicts the sentence above it. The
  * chronicity halves (`compare`) are the engine's instant windows, a second population on one
- * screen, so a composed script carries none — the halves row returns with CUL-1570, which owns
- * the script. `withholdPrior` is true when the sentence left the earlier window out (a fall
+ * screen, so a composed script carries none (CUL-1570 kept it out by ruling: the bars beneath
+ * draw every week the sentence counts). `withholdPrior` is true when the sentence left the earlier window out (a fall
  * under a safety card, a zero, a withheld pair): the script then drops its "Week before" row too.
  */
 export function countedScriptFinding(finding: CountedFinding, c: SignalCounts): CountedFinding {

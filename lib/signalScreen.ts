@@ -68,7 +68,7 @@ import {
   type PhoneScriptMasking,
   type ScreenMasking,
 } from './screenMasking';
-import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, reflectionExpandedExtras, symptomWord } from './signalCopy';
+import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, reflectionExpandedExtras, symptomWord, type PhoneScriptCounting } from './signalCopy';
 import { isFallingVomitPair, signalSaysNotEating, visibleFindings } from './signalVisible';
 import {
   compareGateCounts,
@@ -250,6 +250,10 @@ export interface SignalScreenModel {
   /** The finding the safety phone script reads: the composed sentence's numbers where it is
    *  composed (one count on one screen, CUL-1568), else the cached finding itself. */
   scriptFinding: SignalFinding;
+  /** Whose numbers the phone script reads (CUL-1570): the composed sentence's, in its words for
+   *  its windows, or the engine's, dated to when the card was raised. Null on every type the
+   *  screen never recounts, whose script is the shipped one. */
+  scriptCounting: PhoneScriptCounting | null;
   /** The lower-case noun every chart takes ("vomiting"), or null for a finding that counts none. */
   noun: string | null;
   weekly: WeeklyBucketsModel | null;
@@ -528,6 +532,10 @@ export function whyLines(
   // whole read, which the payload does not carry and nothing else on the screen states. No
   // chart sits under it to disagree — a correlation draws none (`signalChartSymptomOf`).
   if (finding.type === 'food_symptom_correlation') lines.push(correlationWindowLine(input.petName));
+  // CUL-1576, ruled (a): the burden card counts each logged vomit (a run of five in an afternoon
+  // is what it exists to catch), while the bars on its screen count 3-hour episodes. Each count
+  // names its unit (C-3), so the two numbers are never read as one.
+  if (finding.type === 'symptom_burden') lines.push(burdenUnitLine());
   // A falling reflection's own extras (SR-5), which the shipped card draws in its expand and
   // this screen had dropped: the engine's density line (disclosure or withheld) and, on a
   // running trial, the adjacency line. Falling-only, as on the card.
@@ -581,6 +589,12 @@ export function whyLines(
   return lines.filter((l) => l.trim().length > 0 && !hasBannedSignalVocabulary(l));
 }
 
+/** The burden screen's two units, in words (CUL-1576 (a)). */
+export function burdenUnitLine(): string {
+  const h = DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours;
+  return `This card counts each vomit logged. The bars count episodes: vomits logged within ${h} hours of each other count as one.`;
+}
+
 /** Where a correlation's matched days come from: the engine's read (`CORRELATION_LOOKBACK_DAYS`). */
 export function correlationWindowLine(petName: string): string {
   return `The pattern comes from the last ${CORRELATION_LOOKBACK_DAYS} days of ${petName}'s logs.`;
@@ -622,6 +636,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
       sentence: input.cached.text,
       countedAt: null,
       scriptFinding: finding,
+      scriptCounting: null,
       noun,
       weekly: null,
       weekLine: null,
@@ -736,6 +751,11 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
         ? engineCountedAtLine(input.generatedAtMs, input.countedAtMs)
         : null,
     scriptFinding: composed ? countedScriptFinding(composed.finding, composed.counts) : finding,
+    scriptCounting: composed
+      ? composedScriptCounting(composed.finding, composed.counts, weekly, episodeDays)
+      : counted
+        ? { kind: 'engine', raisedOn: input.generatedAtMs != null && Number.isFinite(input.generatedAtMs) ? toLocalDayKey(new Date(input.generatedAtMs)) : null }
+        : null,
     noun,
     weekly,
     weekLine: weekLine(weekly, lineWithheld != null),
@@ -762,6 +782,31 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     composed: composed ? { ...composed, priorStated } : null,
     trialLineShown: input.trialVomitingLine != null && why.includes(input.trialVomitingLine) ? input.trialVomitingLine : null,
   };
+}
+
+/**
+ * The composed script's counting (CUL-1570 · GC-4 PR 3). *First logged* is the earlier of the
+ * phone's first episode of this sign and the engine's onset: the engine's onset is the first
+ * episode inside its own lookback, so on its own it understates how long a course has run when
+ * there is backfill before it; the phone alone may not yet hold another device's oldest rows.
+ * The earlier of the two can only make the course older, never younger (escalate-only, as the
+ * counts are). The engine stamps its onset on a UTC day; read on a local day it can move a day
+ * earlier, which is the same direction.
+ */
+function composedScriptCounting(
+  finding: CountedFinding,
+  counts: SignalCounts,
+  weekly: WeeklyBucketsModel,
+  episodeDays: readonly string[],
+): PhoneScriptCounting {
+  let first: string | null = null;
+  for (const k of episodeDays) if (first == null || indexOf(k) < indexOf(first)) first = k;
+  if (finding.type === 'symptom_chronicity') {
+    const onset = new Date(finding.firstOnsetIso);
+    const onsetDay = Number.isNaN(onset.getTime()) ? null : toLocalDayKey(onset);
+    if (onsetDay && (first == null || indexOf(onsetDay) < indexOf(first))) first = onsetDay;
+  }
+  return { kind: 'composed', firstLoggedDay: first, lookbackStart: composedWindowStart(finding, weekly), lookbackWeeks: counts.lookbackWeeks };
 }
 
 // ── The masking (CUL-1440) ────────────────────────────────────────────────────

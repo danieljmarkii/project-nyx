@@ -546,6 +546,7 @@ function Body({
             trialRunning={false}
             withholdFallingVomit={model.withholdFallingVomit}
             masking={model.scriptMasking}
+            counting={model.scriptCounting}
           />
         </View>
       ) : null}

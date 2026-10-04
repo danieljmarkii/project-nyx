@@ -1203,7 +1203,9 @@ export function chronicityCompareExtras(
   withholdFallingVomit: boolean,
 ): ChronicityCompareExpanded | null {
   const c = f.compare;
-  if (!c || chronicityCompareWithheld(f, withholdFallingVomit)) return null;
+  // CUL-1575: over an incomplete read the halves are floors and the engine's sentence states
+  // none of them, so the box is withheld with the script's row.
+  if (!c || f.countIsFloor === true || chronicityCompareWithheld(f, withholdFallingVomit)) return null;
   return {
     rows: chronicityCompareRows(c),
     densityLine: chronicityCompareDensityLine(c),
@@ -1956,6 +1958,27 @@ export interface PhoneScriptFact {
   value: string;
 }
 
+/**
+ * Whose numbers the script reads, on the Design v2 Signal screen (CUL-1570 · GC-4 PR 3). The
+ * shipped card passes null: its script is exactly as it always was.
+ *
+ * - `composed`: the screen's sentence was composed from its own bars (`lib/signalCounts.ts`),
+ *   and the finding handed in already carries those counts (`countedScriptFinding`). The rows
+ *   then take the sentence's words for its windows ("Last 7 days", "The 7 before"), so a vet
+ *   hears the window the owner just read rather than a "this week" that means a calendar week
+ *   on the bars beneath. `firstLoggedDay` is the local day *First logged* names on a chronicity
+ *   course: the earlier of the phone's first episode and the engine's onset, so it can only make
+ *   the course older, never younger. `lookbackStart` / `lookbackWeeks` are the drawn weeks the
+ *   sentence counts, so a date before them says so (C-37).
+ * - `engine`: the gate kept the engine's sentence (`countsMayCompose` said no), and the script
+ *   reads the engine's numbers with it. A *Counted* row dates them to when the card was raised,
+ *   as the line under the sentence does, so the bars below (the record as it is now) are never
+ *   mistaken for what the script states.
+ */
+export type PhoneScriptCounting =
+  | { kind: 'composed'; firstLoggedDay: string | null; lookbackStart: string; lookbackWeeks: number }
+  | { kind: 'engine'; raisedOn: string | null };
+
 // UTC short date for a recency fact ("August 6") — matches onsetMonth's UTC bucketing
 // (the engine days-bucket in UTC), so it stays pinnable in a fixture per B-514.
 function shortDateUTC(iso: string): string {
@@ -1978,13 +2001,17 @@ export function phoneScript(
    *  window a span touches). Null where the screen is not under EN-10's rule, which is the
    *  script as it always was. Required — a default here would be the decision (C-37). */
   masking: { rows: readonly PhoneScriptFact[]; withholdCompare: boolean; recentOnly: boolean } | null,
+  /** Whose numbers the script reads on the Design v2 screen (`PhoneScriptCounting`); null on the
+   *  shipped card. Required — a default here would be the decision (C-37). */
+  counting: PhoneScriptCounting | null,
 ): PhoneScriptFact[] | null {
-  const facts = phoneScriptFacts(finding, petName, withholdFallingVomit, masking?.withholdCompare === true);
+  const facts = phoneScriptFacts(finding, petName, withholdFallingVomit, masking?.withholdCompare === true, counting);
   if (!facts || !masking) return facts;
   // A rise over a masked zero keeps its recent count (the escalation direction) without the zero
-  // beside it: the chronicity compare row, recent half only.
+  // beside it: the chronicity compare row, recent half only. Never over a floor read (CUL-1575):
+  // the halves are the engine's counts too, and the engine's sentence states none of them.
   const withRecent =
-    masking.recentOnly && finding.type === 'symptom_chronicity' && finding.compare
+    masking.recentOnly && finding.type === 'symptom_chronicity' && finding.compare && finding.countIsFloor !== true
       ? insertBefore(facts, 'Most recent', chronicityRecentOnlyFact(finding.compare))
       : facts;
   // Only the scripts that read a sign's count aloud carry the drug beside it.
@@ -2008,12 +2035,28 @@ export function chronicityRecentOnlyFact(c: ChronicityCompare): PhoneScriptFact 
   };
 }
 
+/** "August 5, 2026" from a local day key — the year always, because *First logged* can reach
+ *  back past any window the screen draws (C-19). Locale-independent, read aloud to a vet. */
+function dayWithYear(dayKey: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+  if (!m) return null;
+  return `${MONTH_NAMES[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}`;
+}
+
+/** The *Counted* row of an engine-worded script on the Design v2 screen (`PhoneScriptCounting`). */
+function countedWhenFact(raisedOn: string | null): PhoneScriptFact {
+  const day = raisedOn ? dayWithYear(raisedOn) : null;
+  return { label: 'Counted', value: day ? `${day}, when this was raised` : 'when this was raised' };
+}
+
 function phoneScriptFacts(
   finding: SignalFinding,
   petName: string,
   withholdFallingVomit: boolean,
   withholdCompare: boolean,
+  counting: PhoneScriptCounting | null,
 ): PhoneScriptFact[] | null {
+  const counted = counting?.kind === 'engine' ? [countedWhenFact(counting.raisedOn)] : [];
   if (finding.type === 'symptom_burden') {
     return [
       { label: 'Sign', value: symptomWord(finding.symptomType) },
@@ -2024,23 +2067,49 @@ function phoneScriptFacts(
   }
   if (finding.type === 'symptom_worsening') {
     const symptom = symptomWord(finding.symptomType);
+    // CUL-989 / CUL-1575: over an incomplete read every count is a floor. The engine's sentence
+    // says "at least" and drops its "up from N" clause, because the earlier week is a floor too
+    // and could name a rise the full record does not have; the script read aloud does the same.
+    const floor = finding.countIsFloor === true;
+    const atLeast = floor ? 'at least ' : '';
     const thisWeek =
       finding.trigger === 'more_days'
-        ? `${count(finding.currentDays, 'day', 'days')} with ${symptom}`
-        : `${count(finding.currentCount, 'episode', 'episodes')} on ${count(finding.currentDays, 'day', 'days')}`;
+        ? `${atLeast}${count(finding.currentDays, 'day', 'days')} with ${symptom}`
+        : `${atLeast}${count(finding.currentCount, 'episode', 'episodes')} on ${atLeast}${count(finding.currentDays, 'day', 'days')}`;
     const weekBefore =
       finding.trigger === 'more_days'
         ? count(finding.priorDays, 'day', 'days')
         : count(finding.priorCount, 'episode', 'episodes');
+    // Composed (GC-4 PR 3): the sentence's own windows, in its words — "the last 7 days" and
+    // "the 7 before" — and no *Watched over* row, which would restate the label.
+    const composed = counting?.kind === 'composed';
     return [
       { label: 'Sign', value: symptom },
-      { label: 'This week', value: thisWeek },
-      ...(withholdCompare ? [] : [{ label: 'Week before', value: weekBefore }]),
-      { label: 'Watched over', value: `the last ${finding.windowDays} days` },
+      { label: composed ? 'Last 7 days' : 'This week', value: thisWeek },
+      ...(withholdCompare || floor ? [] : [{ label: composed ? 'The 7 before' : 'Week before', value: weekBefore }]),
+      ...(composed ? [] : [{ label: 'Watched over', value: `the last ${finding.windowDays} days` }]),
+      ...counted,
     ];
   }
   if (finding.type === 'symptom_chronicity') {
     const weeks = Math.round(finding.windowDays / 7);
+    // CUL-989 / CUL-1575: over an incomplete read the weeks and the count are floors, and the
+    // onset is the one date a read missing the OLDEST rows gets wrong in the calming direction,
+    // so the engine's sentence drops it and the halves; the script follows.
+    const floor = finding.countIsFloor === true;
+    const atLeast = floor ? 'at least ' : '';
+    const composed = counting?.kind === 'composed' ? counting : null;
+    // Composed (GC-4 PR 3): the first logged day off the phone's record and the engine's onset,
+    // whichever is earlier, with its year. Outside the drawn weeks it says so, so a long-ago
+    // first entry is never read as the start of the count beneath it (C-37).
+    const composedFirst = composed?.firstLoggedDay ? dayWithYear(composed.firstLoggedDay) : null;
+    const firstLogged = composed
+      ? composedFirst
+        ? `${composedFirst}${(composed.firstLoggedDay as string) < composed.lookbackStart ? `, before these ${composed.lookbackWeeks} weeks` : ''}`
+        : null
+      : floor
+        ? null
+        : onsetMonth(finding.firstOnsetIso);
     return [
       { label: 'Sign', value: symptomWord(finding.symptomType) },
       // "First logged", not "Ongoing since" (CUL-687, adversarial pass 2026-08-28). This row
@@ -2048,17 +2117,22 @@ function phoneScriptFacts(
       // state and then dated its last observation a month back. Cough's widened recency floor
       // makes that pairing reachable, and this is the script an owner reads ALOUD to their
       // vet — the one surface where an internal contradiction costs the most credibility.
-      { label: 'First logged', value: onsetMonth(finding.firstOnsetIso) },
+      ...(firstLogged ? [{ label: 'First logged', value: firstLogged }] : []),
       {
         label: 'How often',
-        value: `${count(finding.episodeCount, 'episode', 'episodes')} across ${finding.activeWeeks} of ${weeks} weeks`,
+        value: `${atLeast}${count(finding.episodeCount, 'episode', 'episodes')} across ${atLeast}${finding.activeWeeks} of ${weeks} weeks`,
       },
       // v1.1-b (CUL-787): the counted halves as ONE two-sided row, only when the cache carries
       // them (an old cache renders the pre-v1.1-b script). Sits between the total and the
       // most-recent date so the script still reads oldest-fact → newest-fact.
       // CUL-1216 (BRK-6): withheld when it falls, counts vomiting, and the pet is not known
       // to be eating — the ask and every other row stay.
-      ...(finding.compare && !withholdCompare && !chronicityCompareWithheld(finding, withholdFallingVomit)
+      // GC-4 PR 3 (team call, logged on CUL-1570): a composed script carries no halves. The
+      // halves are the engine's instant windows; the composed sentence and the eight bars under it
+      // count rolling local weeks, and two populations on one screen are the problem the ruling
+      // removed. `countedScriptFinding` already drops `compare`; the check here keeps the rule
+      // even if a caller hands the engine's finding with a composed counting.
+      ...(finding.compare && !composed && !floor && !withholdCompare && !chronicityCompareWithheld(finding, withholdFallingVomit)
         ? [chronicityComparePhoneScriptFact(finding.compare)]
         : []),
       { label: 'Most recent', value: recencyPhrase(finding.daysSinceLastEpisode) },
@@ -2077,6 +2151,7 @@ function phoneScriptFacts(
             },
           ]
         : []),
+      ...counted,
     ];
   }
   if (finding.type === 'incident_red_flag') {

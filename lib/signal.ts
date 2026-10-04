@@ -246,6 +246,10 @@ export interface SymptomWorseningFinding {
   trigger: WorseningTrigger;
   tier: WorseningTier;
   windowDays: number;
+  /** CUL-989 / CUL-1575 — the engine read an incomplete record, so every count here is a floor
+   *  ("at least N") and the engine's sentence drops its comparing clause. Absent on a complete
+   *  read. Mirrors detection.ts FindingBase.countIsFloor. */
+  countIsFloor?: true;
 }
 
 // Absolute symptom burden (Engines v3 PR-14d, CUL-1410; the critique's GAP-5) — the SAFETY card
@@ -306,6 +310,10 @@ export interface SymptomChronicityFinding {
   compare?: ChronicityCompare;
   /** EN-10 (PR-38) — the visit, trial and course lines; absent otherwise (flag off / old cache / none apply). */
   careContext?: CareContextLine[];
+  /** CUL-989 / CUL-1575 — the engine read an incomplete record, so every count here is a floor
+   *  ("at least N") and the engine's sentence drops its comparing clause. Absent on a complete
+   *  read. Mirrors detection.ts FindingBase.countIsFloor. */
+  countIsFloor?: true;
 }
 
 // The labeled stand-down (CUL-786 — Signal fold v1.1-a; spec §0 DF-9(a)). NOT a finding: a
