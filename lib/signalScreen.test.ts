@@ -772,6 +772,27 @@ describe('the local reads', () => {
     }
   });
 
+  it('readSignalEpisodes: a seen vomit tied with a found one is untimed, as on Home and in the engine (CUL-1230)', async () => {
+    // The seen row's id sorts FIRST, so only the confidence wiring (`occurred_at_confidence` →
+    // the key `compareOnsets` reads) can open the episode on the found row.
+    const tied = noon(2026, 9, 17, 18, 12);
+    for (const rows of [
+      [{ id: 'a-seen', occurred_at: tied, occurred_at_confidence: 'witnessed' }, { id: 'b-found', occurred_at: tied, occurred_at_confidence: 'window' }],
+      [{ id: 'b-found', occurred_at: tied, occurred_at_confidence: 'window' }, { id: 'a-seen', occurred_at: tied, occurred_at_confidence: 'witnessed' }],
+    ]) {
+      mockGetAllAsync.mockReset();
+      mockGetAllAsync.mockResolvedValueOnce(rows).mockResolvedValueOnce([]);
+      mockReadFeedingRows.mockResolvedValue([
+        { ms: Date.parse(noon(2026, 9, 17, 18, 0)), confidence: 'witnessed', form: 'kibble', foodType: 'meal' },
+      ]);
+      mockReadFreeFedSpans.mockResolvedValue([]);
+      const episodes = await readSignalEpisodes('pet-1', 'vomit');
+      expect(episodes).toHaveLength(1);
+      expect(episodes[0].minutesSinceMeal).toBeNull();
+      expect(episodes[0].boutIds).toEqual(['b-found', 'a-seen']);
+    }
+  });
+
   it('readSignalEpisodes: a cough is never timed — the feeding read is not issued', async () => {
     mockGetAllAsync.mockResolvedValueOnce([{ id: 'k', occurred_at: noon(2026, 9, 17), occurred_at_confidence: null }]).mockResolvedValueOnce([]);
     const episodes = await readSignalEpisodes('pet-1', 'cough');

@@ -302,8 +302,9 @@ function onsetTieRank(c: OnsetConfidence | null | undefined): number {
  * one share an instant, the found one opens the episode and the episode is untimed.
  *
  * Why least certain, not most (CUL-1230): a `window` row's instant is its LATEST edge
- * (`deriveOccurredAt`, "no later than"), so a tie proves the found vomit happened at or
- * BEFORE the seen one, and one millisecond earlier it already opens the episode. Seen-
+ * (`deriveOccurredAt`, "no later than"; only a degenerate earliest-only window stores
+ * otherwise), so a tie shows the found vomit happened at or BEFORE the seen one, and one
+ * millisecond earlier it already opens the episode. Seen-
  * first would print "12 min after eating" for a bout that began earlier, unseen; found-
  * first can only lose a timed data point (a duplicate Saw it + Found it log), never
  * claim one. An estimated or unclassified time is a guess either side of the seen one,
@@ -311,8 +312,8 @@ function onsetTieRank(c: OnsetConfidence | null | undefined): number {
  * timing eligibility move: where episodes split depends on the instants alone.
  *
  * The id makes a tie of one confidence deterministic (rule H, HV-6): SQLite hands rows
- * over in no promised order. An absent id sorts first, so an id-less onset from before
- * the day absorbs a same-instant row of today's. Not for the incident floor, whose tie
+ * over in no promised order. At one confidence an absent id sorts first, so an id-less
+ * onset from before the day absorbs a same-instant row of today's. Not for the incident floor, whose tie
  * asks a different question (CUL-1555).
  */
 export function compareOnsets(a: OnsetOrderKey, b: OnsetOrderKey): number {
@@ -330,8 +331,8 @@ export function compareOnsets(a: OnsetOrderKey, b: OnsetOrderKey): number {
  *
  * Generic over the event shape so the caller keeps whatever fields it needs on the
  * onset (a symptom's confidence, a feeding's form): the returned objects are the
- * original onset events, not a lossy `{ms}` projection. This is the same 3h-gap
- * chaining as `detection.ts`'s `toConfidenceEpisodes` / `toEpisodeOnsets`, unified.
+ * original onset events, not a lossy `{ms}` projection. `detection.ts`'s
+ * `toConfidenceEpisodes` / `toEpisodeOnsets` delegate here.
  *
  * CHAINED, not windowed: `prev` advances on EVERY event, so a slow drip of events
  * each ≤gap after the last stays one episode however long it runs; a new episode

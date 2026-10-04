@@ -3182,7 +3182,7 @@ Deno.test('detectTimeOfDayClustering — CUL-1230: a seen vomit tied with a foun
   // The golden's first clustered onset (May 20, local 4am) gains a "found it" row at the SAME
   // instant. A window's instant is its latest edge, so the found vomit happened at or before the
   // seen one: the episode opens on it and is untimed. Before the shared order the tie went to
-  // input order, so ⑥ timed this episode when the seen row came first and ⑤ might not.
+  // input order, so ⑥ timed this episode only when the seen row came first.
   // A sixth clustered onset (May 28, local 6am) keeps the finding firing once the tie is untimed,
   // so the counts are read off a finding rather than off silence.
   const golden = [...todGolden(), wVomit(28, 10)]
