@@ -54,7 +54,7 @@ import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '
 import { DEFAULT_MEAL_TIMING_CONFIG } from '../../../lib/mealTiming';
 import { countLine, mayCarryRead, type SpineAnalysisRow } from '../../../lib/spineNode';
 import { buildDay } from '../../../lib/dayNodes';
-import { carryRosesAcrossFailedLook } from '../../../lib/readState';
+import { carryRosesAcrossFailedLook, type ReadsOnScreen } from '../../../lib/readState';
 import {
   readAnalysisCopy,
   readAnalysisRows,
@@ -161,7 +161,7 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
 
   const [facts, setFacts] = useState<Facts | null>(null);
   // The phone's copy of the reads, and the ids that read has ANSWERED for (header).
-  const [copy, setCopy] = useState<{ answered: ReadonlySet<string>; rows: Map<string, SpineAnalysisRow> }>(
+  const [copy, setCopy] = useState<ReadsOnScreen<SpineAnalysisRow>>(
     () => ({ answered: new Set(), rows: new Map() }),
   );
   // The last read issued, and the last one whose answer was applied.

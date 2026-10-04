@@ -346,16 +346,22 @@ describe('a load: one snapshot, every read together', () => {
     );
     verdict.run('ro', 'worth_a_call', at(1, 9, 30));
     verdict.run('ca', 'monitor', at(1, 10, 30));
+    // A row the server left pending stays too: its watch (HistoryList's pendingKey) draws the rose.
+    insertEvent('pe', at(1, 12), 'vomit');
+    mockRaw
+      .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('pe', 'pending', NULL, ?)`)
+      .run(at(1, 12, 30));
     const req = { pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY };
     await store().load(req);
     expect(store().snapshot!.analysis.get('ca')?.recommendation).toBe('monitor');
-    expect([...store().snapshot!.answered].sort()).toEqual(['ca', 'nr', 'ro']);
+    expect([...store().snapshot!.answered].sort()).toEqual(['ca', 'nr', 'pe', 'ro']);
     const warned = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockRaw.exec('ALTER TABLE event_ai_verdicts RENAME TO event_ai_verdicts_gone');
     // Through a read landing (the settle after a re-read) …
     await store().refreshReads();
     expect(store().snapshot!.analysis.get('ro')?.recommendation).toBe('worth_a_call');
-    expect([...store().snapshot!.answered]).toEqual(['ro']);
+    expect([...store().snapshot!.answered].sort()).toEqual(['pe', 'ro']);
+    expect(store().snapshot!.analysis.get('pe')?.status).toBe('pending');
     expect(store().snapshot!.analysis.has('ca')).toBe(false);
     // … and through a load.
     mockRaw.exec('ALTER TABLE event_ai_verdicts_gone RENAME TO event_ai_verdicts');
@@ -363,7 +369,7 @@ describe('a load: one snapshot, every read together', () => {
     expect(store().snapshot!.analysis.get('ca')?.recommendation).toBe('monitor');
     mockRaw.exec('ALTER TABLE event_ai_verdicts RENAME TO event_ai_verdicts_gone');
     await store().load(req);
-    expect([...store().snapshot!.answered]).toEqual(['ro']);
+    expect([...store().snapshot!.answered].sort()).toEqual(['pe', 'ro']);
     expect(store().snapshot!.analysis.has('ca')).toBe(false);
     warned.mockRestore();
   });

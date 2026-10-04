@@ -366,6 +366,39 @@ describe('the ten-event day', () => {
     expect(t.getByTestId('spine-photo-v1', { includeHiddenElements: true })).toBeTruthy();
   });
 
+  it('a failed look keeps a row the server left pending, and its watch stays armed (CUL-1585 adversarial pass)', async () => {
+    // Pending outranks calm, so it is no reassurance; and its watch is what draws a rose that
+    // lands later. Demoted, the watch was torn down and the rose waited for the next foreground.
+    const PENDING_V1 = { event_id: 'v1', status: 'pending', recommendation: null as string | null, updated_at: '2026-09-25T00:00:00Z' };
+    const watch = jest.requireMock('../../../lib/analysis').watchAnalysisRow as jest.Mock;
+    const teardowns: jest.Mock[] = [];
+    watch.mockImplementation(() => {
+      const t = jest.fn();
+      teardowns.push(t);
+      return t;
+    });
+    mockOutstanding.mockImplementation((id: string) => id === 'v2');
+    // Every other readable row a rose, so the failed look has nothing to send back and the
+    // copy is untouched.
+    const rose = (id: string) => ({ event_id: id, status: 'completed', recommendation: 'worth_a_call', updated_at: '2026-09-25T00:00:00Z' });
+    mockReadAnalysis.mockResolvedValue(new Map([['v1', PENDING_V1], ['v2', rose('v2')], ['c1', rose('c1')]]));
+    const t = render(<TodayCard />);
+    await waitFor(() => expect(watch).toHaveBeenCalled());
+    await waitFor(() => expect(t.getAllByText(/after eating/).length).toBeGreaterThan(0));
+    const armed = watch.mock.calls.length;
+    expect(teardowns[armed - 1]).not.toHaveBeenCalled();
+    mockReadAnalysis.mockResolvedValue(null);
+    const calls = mockReadAnalysis.mock.calls.length;
+    await act(async () => {
+      settleChain?.();
+    });
+    await waitFor(() => expect(mockReadAnalysis.mock.calls.length).toBeGreaterThan(calls));
+    // Neither torn down nor re-armed: a failed look that changes nothing hands back the same copy.
+    expect(teardowns[armed - 1]).not.toHaveBeenCalled();
+    expect(watch).toHaveBeenCalledTimes(armed);
+    watch.mockImplementation(() => () => {});
+  });
+
   it('an older answer that carried the rose lands even when the newer read then fails', async () => {
     // The HV-6 second adversarial pass (5): an answer yields only to a NEWER one already
     // APPLIED. Keeping merely the newest ISSUED read threw the rose away when that read failed.

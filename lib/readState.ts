@@ -241,18 +241,27 @@ export interface ReadsOnScreen<R extends ReadCopy> {
  * it never answered for shows (C-12: no photo claimed, no mark). A calm kept across a failed
  * look may describe a photo the owner has since replaced, whose read came back a call, and
  * standing it in front of that read is reassurance nothing checked (n=1: absence is never
- * wellness). The rose survives because presence escalates (CUL-1198 item 1). The same rule
- * the Signal screen and the month run (`carryTileRoses`, `carryMonthRoses`), for the two
- * surfaces that draw the day's rows: Home and History. Ids outside `failed` are untouched.
+ * wellness). The rose survives because presence escalates (CUL-1198 item 1). A row the server
+ * left `pending` stays too: it is no reassurance (pending outranks calm), and it is what keeps
+ * the surface watching for the read to land, so dropping it would leave a rose that lands
+ * later undrawn (the CUL-1585 adversarial pass). The same rule the Signal screen and the month
+ * run (`carryTileRoses`, `carryMonthRoses`), for the two surfaces that draw the day's rows:
+ * Home and History. Ids outside `failed` are untouched, and when nothing goes back the SAME
+ * object is returned, so a failed look that changes nothing re-arms no watch.
  */
 export function carryRosesAcrossFailedLook<R extends ReadCopy>(
   prev: ReadsOnScreen<R>,
   failed: Iterable<string>,
-): { answered: Set<string>; rows: Map<string, R> } {
+): ReadsOnScreen<R> {
+  const drop = [...failed].filter((id) => {
+    if (!prev.answered.has(id) && !prev.rows.has(id)) return false;
+    const row = prev.rows.get(id);
+    return !isWorthACall(row) && row?.status !== 'pending';
+  });
+  if (drop.length === 0) return prev;
   const answered = new Set(prev.answered);
   const rows = new Map(prev.rows);
-  for (const id of failed) {
-    if (isWorthACall(prev.rows.get(id))) continue;
+  for (const id of drop) {
     answered.delete(id);
     rows.delete(id);
   }
