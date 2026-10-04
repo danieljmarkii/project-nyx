@@ -228,7 +228,9 @@ describe('weightDeltaLine (D2-5)', () => {
     });
 
     it('readings that move both ways, with no run at the end, keep the caveat inside both bounds', () => {
-      expect(line(series([4.6, 4.65, 4.55, 4.6, 4.5]))).toBe(`Down 0.1 kg (2%) since 07-03 · ${HOME_SCALE_CAVEAT}`);
+      expect(line(series([4.6, 4.66, 4.54, 4.66, 4.54]))).toBe(`Down 0.1 kg (1%) since 07-03 · ${HOME_SCALE_CAVEAT}`);
+      // Ending low with no reading back above the start since the middle is not a scatter (round 3).
+      expect(line(series([4.6, 4.65, 4.55, 4.6, 4.5]))).not.toContain('home scale');
     });
 
     it('a run at the end of a series that once moved the other way is still stated, and still no caveat', () => {
@@ -282,6 +284,34 @@ describe('weightDeltaLine (D2-5)', () => {
       expect(out).toBe('Down 0.2 lbs (2%) since 07-04');
     });
 
+    it('round 3: a step-down loss is not a scatter, whatever its last step does', () => {
+      // Three readings at the start, then three lower that never come back.
+      for (const vals of [
+        [4.0, 4.05, 4.01, 3.88, 3.84, 3.84],
+        [4.0, 4.05, 4.02, 3.9, 3.84, 3.86],
+        [4.0, 4.06, 4.03, 4.01, 3.9, 3.86, 3.84, 3.84],
+        [6.5, 6.56, 6.52, 6.4, 6.32, 6.31, 6.32],
+        [4.0, 4.05, 4.04, 3.95, 3.85, 3.85],
+        [4.0, 4.05, 3.85, 3.85],
+      ]) {
+        const days7 = vals.map((v, i) => r(v, `2026-${String(7 + Math.floor(i / 4)).padStart(2, '0')}-${String(1 + (i % 4) * 7).padStart(2, '0')}T08:00:00Z`));
+        expect(line(days7)).not.toContain('home scale');
+      }
+    });
+
+    it('round 3: the 5 % bound is strict in whole grams — an exact 5 % pair never gets the caveat', () => {
+      // 0.15 / 3.0 is 0.04999999999999997 in binary; a float compare let it through.
+      for (const [a, b] of [[1.4, 1.33], [2.6, 2.47], [2.8, 2.66], [3.0, 2.85], [3.4, 3.23], [3.8, 3.61]]) {
+        expect(line([r(a, '2026-07-03T08:00:00Z'), r(b, '2026-09-12T08:00:00Z')])).not.toContain('home scale');
+      }
+    });
+
+    it('round 3: the caveat never sits beside a percentage that reads as 5 %', () => {
+      // 4.75 % is under the bound and displays "(5%)", a cat's workup number.
+      expect(line([r(4.0, '2026-07-03T08:00:00Z'), r(3.81, '2026-09-12T08:00:00Z')])).toBe('Down 0.2 kg (5%) since 07-03');
+      expect(line([r(4.0, '2026-07-03T08:00:00Z'), r(3.83, '2026-09-12T08:00:00Z')])).toContain(HOME_SCALE_CAVEAT);
+    });
+
     it('a fall against an overall rise is stated, joined with "but"; it is the accusing half', () => {
       expect(line(series([4.0, 5.0, 4.8, 4.7]))).toBe('Up 0.7 kg (18%) since 07-03 · but lower at each of the last 2 readings · 2 readings outside the band');
     });
@@ -320,7 +350,7 @@ describe('weightDeltaLine (D2-5)', () => {
     expect(loss).toBe('Down 1.5 kg (15%) since 07-03');
     expect(loss).not.toContain('home scale');
     // Just inside the fractional bound on a pet where both gates agree: the caveat prints.
-    const inside = line([r(4, '2026-07-03T08:00:00Z'), r(4 * (1 - HOME_SCALE_NOISE_FRAC) + 0.02, '2026-09-12T08:00:00Z')]);
+    const inside = line([r(4, '2026-07-03T08:00:00Z'), r(4 * (1 - HOME_SCALE_NOISE_FRAC) + 0.04, '2026-09-12T08:00:00Z')]);
     expect(inside).toContain(HOME_SCALE_CAVEAT);
   });
 

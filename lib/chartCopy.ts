@@ -266,7 +266,8 @@ export const WEIGHT_SIDE_MIN_FRAC_OF_NOISE = 0.25;
 export const WEIGHT_SIDE_MAX_SHARE = 2 / 3;
 
 /** The readings disagree in direction: they scatter around the FIRST reading, with a
- *  material reading on each side and neither side holding most of them. Judged against
+ *  material reading on each side, neither side holding most of them, and the later half
+ *  of the series still on both sides. Judged against
  *  the start and across the whole series, never step by step and never on one reading: a
  *  steady loss with a 10 g up-tick (round 1) or a 10 g reading above the start (round 2)
  *  handed a step-wise or single-reading test the caveat. Values in thousandths of the
@@ -280,9 +281,12 @@ export function weightDisagrees(model: WeightBandModel, noiseAbs: number): boole
   const below = offsets.filter((d) => d < 0).length;
   const off = above + below;
   if (off === 0) return false;
-  const materialAbove = offsets.some((d) => d >= edge);
-  const materialBelow = offsets.some((d) => d <= -edge);
-  return materialAbove && materialBelow && above / off <= WEIGHT_SIDE_MAX_SHARE && below / off <= WEIGHT_SIDE_MAX_SHARE;
+  const straddles = (ds: number[]) => ds.some((d) => d >= edge) && ds.some((d) => d <= -edge);
+  // And the scatter must still be going on: the LATER half of the readings straddles the
+  // start too. Order-blind counts let a step-down (three readings at the start, three
+  // that never came back) read as scatter (round 3); a wobble is still wobbling at the end.
+  const later = offsets.slice(Math.floor(offsets.length / 2));
+  return straddles(offsets) && straddles(later) && above / off <= WEIGHT_SIDE_MAX_SHARE && below / off <= WEIGHT_SIDE_MAX_SHARE;
 }
 
 /**
@@ -357,13 +361,20 @@ export function weightDeltaLine(
   const dir = factDelta < 0 ? 'Down' : 'Up';
   const amount = shown === 0 ? `less than 0.1 ${unit}` : `${shown.toFixed(1)} ${unit}`;
   const head = `${dir} ${amount}${pct > 0 ? ` (${pct}%)` : ''} ${since}`;
+  // Both bounds in thousandths of the stored unit (grams on the app's kilograms): a float
+  // must not decide a strict edge — 4.6 − 4.4 is 0.19999999999999973, and 0.15 / 3.0 is
+  // 0.04999999999999997, which handed an exact 5 % loss the caveat (round 3).
+  const moveG = Math.round(Math.abs(factDelta) * 1000);
+  const firstG = g.first ? Math.round(g.first.value * 1000) : 0;
   const inNoise =
-    g.delta != null &&
-    g.deltaFrac != null &&
-    Math.abs(g.deltaFrac) < HOME_SCALE_NOISE_FRAC &&
-    // In thousandths of the stored unit (grams on the app's kilograms): a float subtraction
-    // must not decide a strict edge, and 4.6 − 4.4 is 0.19999999999999973 in binary.
-    Math.round(Math.abs(g.delta) * 1000) < Math.round(gate.noiseAbs * 1000);
+    firstG > 0 &&
+    moveG * Math.round(1 / HOME_SCALE_NOISE_FRAC) < firstG &&
+    moveG < Math.round(gate.noiseAbs * 1000) &&
+    // And the line never prints the caveat beside a percentage that READS as 5 %: a 4.75 %
+    // loss displays "(5%)", the number a vet reads as a cat's workup trigger. This caps the
+    // caveat under 4.5 %, so it subsumes the strict 5 % bound above; both stay, the bound
+    // stating the ruling and this the display's promise.
+    pct < Math.round(HOME_SCALE_NOISE_FRAC * 100);
   const caveat = sameReadings && inNoise && !runStated && (g.points.length === 2 || weightDisagrees(g, gate.noiseAbs));
   return `${head}${runTail}${caveat ? ` · ${HOME_SCALE_CAVEAT}` : ''}${clippedTail}`;
 }
