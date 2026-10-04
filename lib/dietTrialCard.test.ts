@@ -1147,6 +1147,36 @@ describe('a bowl that held every counted day, gone now (CUL-1572)', () => {
     expect(line).toMatch(/2 outside the trial diet/);
   });
 
+  it.each(['completed', 'abandoned'] as const)(
+    'a %s trial whose bowl was still down at the end, but went down mid-trial, prints no ratio and names the bowl',
+    (status) => {
+      const model = resolveTrialCard(activeInput({
+        trial: {
+          status, startedAt: '2026-07-03', endedAt: '2026-08-27',
+          targetDurationDays: 56, foodLabel: FOOD, outcome: status === 'completed' ? 'improved' : null,
+        },
+        nowMs: localNoon(2026, 9, 1),
+        coverage: { daysLogged: 30, daysElapsed: 56 },
+        exposures: { mayStateRecordClean: false, totalFeedings: 60, offDiet: 0 },
+        freeFed: { loggedFeedings: 30 },
+        freeFedOverlap: true,
+        freeFedThroughout: null,
+      }));
+      expect(model.state).toBe(status);
+      const joined = allStrings(model).join(' ');
+      expect(joined).not.toMatch(RATIO);
+      expect(joined).toMatch(/For part of this trial Biscuit had a bowl/);
+    },
+  );
+
+  it('the running card with a bowl down now keeps its own lead, never the "part" line', () => {
+    const joined = allStrings(resolveTrialCard(activeInput({
+      freeFed: { loggedFeedings: 4 }, freeFedOverlap: true,
+    }))).join(' ');
+    expect(joined).toMatch(/grazes from a bowl/);
+    expect(joined).not.toMatch(/For part of this trial/);
+  });
+
   it('the completed card drops the ratio after a partial past bowl too', () => {
     const model = resolveTrialCard(activeInput({
       trial: {

@@ -1536,7 +1536,7 @@ export function resolveTrialCard(rawInput: TrialCardInput): TrialCardModel {
  * reason, the head included.
  */
 function withoutBowlRatio(input: TrialCardInput): TrialCardInput {
-  if (!input.freeFedThroughout && !pastPartialBowl(input)) return input;
+  if (!input.freeFedThroughout && !partialBowlOnCard(input)) return input;
   return { ...input, coverage: null };
 }
 
@@ -1556,6 +1556,24 @@ function withoutBowlRatio(input: TrialCardInput): TrialCardInput {
  */
 function pastPartialBowl(input: TrialCardInput): boolean {
   return !!input.freeFedOverlap && !input.freeFed && !input.freeFedThroughout;
+}
+
+/**
+ * The CARD's half of the same rule, which is wider by one case: a FINISHED trial
+ * whose bowl was still down on its last day. `freeFed` is set there, but only the
+ * running states route to the `free_fed` register, so a terminal card falls to the
+ * record register and printed "Meals logged on 30 of 56 days" over a bowl that went
+ * down in week five, with no bowl line at all (`adversarial-reviewer`). The strip
+ * never sees that record (it renders only while a trial is active), so the reason
+ * list stays disjoint and this predicate lives beside it rather than inside it.
+ */
+function partialBowlOnCard(input: TrialCardInput): boolean {
+  if (pastPartialBowl(input)) return true;
+  return !!input.freeFedOverlap && !!input.freeFed && !input.freeFedThroughout && isTerminalTrial(input);
+}
+
+function isTerminalTrial(input: TrialCardInput): boolean {
+  return input.trial?.status === 'completed' || input.trial?.status === 'abandoned';
 }
 
 /**
@@ -2332,7 +2350,9 @@ function pushPastBowlCaveat(lines: TrialCardLine[], input: TrialCardInput): void
     });
     return;
   }
-  if (!input.freeFedOverlap || input.freeFed) return;
+  // A bowl down NOW leads the running card in its own register, so the line would
+  // repeat it; a finished card has no such register and needs the line (CUL-1578).
+  if (!input.freeFedOverlap || (input.freeFed && !isTerminalTrial(input))) return;
   lines.push({
     role: 'qualifier',
     text:
