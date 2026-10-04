@@ -5388,8 +5388,16 @@ function buildMedicationPass(
   // ONE attribution, ONE derivation, over the SAME two arrays — `deriveMedicationCourses`
   // delegates to `attributeDoses` internally, so the partition below and the course facts are
   // the same decision by construction, not two that happen to agree today.
-  const attribution: DoseAttribution = attributeDoses(regimens, attributable)
-  const courses = deriveMedicationCourses({ regimens, doses: attributable, timeZone: tz ?? undefined })
+  //
+  // Both take ONE zone, and it is the zone `localDayKey` prints every dose day in, UTC fallback
+  // included: a dose is attributed to a course on the same calendar day the report says it fell
+  // on (CUL-991). Without the zone the attribution read the instant's UTC day, so a 21:00 New
+  // York dose on a course's last day left its course and printed as a phantom orphan line.
+  // `||`, not `??`: an empty zone prints in UTC too, and `localDayIndex` would read '' as the
+  // device zone instead.
+  const zone = tz || 'UTC'
+  const attribution: DoseAttribution = attributeDoses(regimens, attributable, zone)
+  const courses = deriveMedicationCourses({ regimens, doses: attributable, timeZone: zone })
 
   const toSrc = (list: readonly AttributableDose[]): ReportDoseInput[] => {
     const out: ReportDoseInput[] = []

@@ -76,6 +76,10 @@ import {
   type NearbyDose,
 } from './medications';
 
+// The tally accessor under a second name, so a describe can shadow `attributeDosesToRegimens`
+// with a zone-pinned wrapper and still reach the real one (CUL-991).
+const attributeDosesToRegimensIn = attributeDosesToRegimens;
+
 // No-flag tally helper — every dose cleanly given unless a test says otherwise.
 function tally(over: Partial<AdherenceTally> = {}): AdherenceTally {
   return { given: 0, partial: 0, missed: 0, refused: 0, unrated: 0, ...over };
@@ -578,6 +582,14 @@ describe('attributeDosesToRegimens — dose→regimen counting (B-135 item+windo
     medication_id: null, medication_item_id: 'item-pred', adherence: 'given', deleted_at: null,
     occurred_at: '2026-06-12T08:00:00+00:00', ...over,
   });
+  // These cases are about the bounds, not the zone, and their instants are written in UTC, so
+  // they state UTC (B-514: never inherit the process zone). Omitting it reads the DEVICE zone,
+  // which the non-UTC CI job sets to UTC+14 / −10, and every boundary moves a day. The zone
+  // cases are their own describe below (CUL-991).
+  const attributeDosesToRegimens = (
+    regimens: RegimenWindow[],
+    doses: AttributableDose[],
+  ): ReturnType<typeof attributeDosesToRegimensIn> => attributeDosesToRegimensIn(regimens, doses, 'UTC');
 
   it('counts doses by medication_item_id even when medication_id is NULL (the bug)', () => {
     // The whole point: one-tap doses are regimen-unlinked (medication_id NULL); the
@@ -656,6 +668,100 @@ describe('attributeDosesToRegimens — dose→regimen counting (B-135 item+windo
       dose({ adherence: 'refused' }), dose({ adherence: null }),
     ]);
     expect(t.get('reg-1')).toEqual({ given: 1, partial: 1, missed: 1, refused: 1, unrated: 1 });
+  });
+});
+
+// ── CUL-991: the window is compared on the OWNER'S calendar day ─────────────────────────
+//
+// `occurred_at` is a UTC instant and the bounds are the owner's DATEs. Every fixture here is an
+// instant whose UTC day differs from its local day, under an explicit zone: a process-clock
+// change cannot reach this function (it consults only the zone it is handed, or the device
+// one), so a fixture that passes in every zone would be measuring nothing about zones (C-35).
+describe('attributeDoses — the window is the owner\'s calendar days (CUL-991)', () => {
+  const NY = 'America/New_York';
+  const AKL = 'Pacific/Auckland';
+  const reg = (over: Partial<RegimenWindow> = {}): RegimenWindow => ({
+    id: 'r', medication_item_id: 'item-amox', started_at: '2026-06-10', ended_at: '2026-06-15', ...over,
+  });
+  const dose = (occurred_at: string, over: Partial<AttributableDose> = {}): AttributableDose => ({
+    medication_id: null, medication_item_id: 'item-amox', adherence: 'given', deleted_at: null, occurred_at, ...over,
+  });
+
+  it('keeps a New York evening dose on the LAST day in its course (UTC reads it as the next day)', () => {
+    const d = dose('2026-06-16T01:30:00+00:00'); // 21:30 Jun 15 in New York
+    const a = attributeDoses([reg()], [d], NY);
+    expect(a.grouped.get('r')).toEqual([d]);
+    expect(a.unattributed).toEqual([]);
+  });
+
+  it('keeps an Auckland morning dose on the FIRST day in its course (UTC reads it as the day before)', () => {
+    const d = dose('2026-06-09T19:00:00+00:00'); // 07:00 Jun 10 in Auckland
+    const a = attributeDoses([reg()], [d], AKL);
+    expect(a.grouped.get('r')).toEqual([d]);
+    expect(a.unattributed).toEqual([]);
+  });
+
+  it('evicts the doses that really fall outside, by the same frame', () => {
+    const afterEnd = dose('2026-06-16T04:30:00+00:00'); // 00:30 Jun 16 in New York
+    expect(attributeDoses([reg()], [afterEnd], NY).unattributed).toEqual([afterEnd]);
+    const beforeStart = dose('2026-06-09T11:30:00+00:00'); // 23:30 Jun 9 in Auckland
+    expect(attributeDoses([reg()], [beforeStart], AKL).unattributed).toEqual([beforeStart]);
+  });
+
+  it('a perfect bedtime course reads 14 of 14 with no orphan line (the issue\'s report shape)', () => {
+    // Amoxicillin, Jul 26 – Aug 8, one dose every night at 21:00 New York time (01:00 UTC next day).
+    const course = reg({ started_at: '2026-07-26', ended_at: '2026-08-08' });
+    const doses: AttributableDose[] = [];
+    for (let i = 0; i < 14; i++) {
+      const utc = new Date(Date.UTC(2026, 6, 27 + i, 1, 0, 0)).toISOString(); // Jul 26 + i, 21:00 EDT
+      doses.push(dose(utc));
+    }
+    const a = attributeDoses([course], doses, NY);
+    expect(a.tallies.get('r')?.given).toBe(14);
+    expect(a.unattributed).toEqual([]);
+    // The pre-fix frame, stated so the contrast is pinned rather than remembered: in UTC the
+    // first night is Jul 27 (still in) and the last is Aug 9 (out), so 13 and an orphan.
+    const utc = attributeDoses([course], doses, 'UTC');
+    expect(utc.tallies.get('r')?.given).toBe(13);
+    expect(utc.unattributed).toHaveLength(1);
+  });
+
+  it('a seam between two courses of one drug files the dose by the owner\'s day', () => {
+    // Course A ends Jun 15, course B starts Jun 16. A 21:00 New York dose on Jun 15 is A's.
+    const a1 = reg({ id: 'a', started_at: '2026-06-10', ended_at: '2026-06-15' });
+    const b1 = reg({ id: 'b', started_at: '2026-06-16', ended_at: null });
+    const d = dose('2026-06-16T01:00:00+00:00');
+    const res = attributeDoses([a1, b1], [d], NY);
+    expect(res.grouped.get('a')).toEqual([d]);
+    expect(res.grouped.get('b')).toEqual([]);
+  });
+
+  it('holds across a DST change (a 23h local day keeps both of its edges)', () => {
+    // US spring-forward, Sun Mar 8 2026: the local day is 23 hours long.
+    const course = reg({ started_at: '2026-03-08', ended_at: '2026-03-08' });
+    const early = dose('2026-03-08T05:30:00+00:00'); // 00:30 EST Mar 8
+    const late = dose('2026-03-09T03:30:00+00:00'); // 23:30 EDT Mar 8
+    const a = attributeDoses([course], [early, late], NY);
+    expect(a.grouped.get('r')).toEqual([early, late]);
+  });
+
+  it('an absent or unparseable instant matches no window and is surfaced, never dropped', () => {
+    const blank = dose('');
+    const junk = dose('not-a-date');
+    const a = attributeDoses([reg()], [blank, junk], NY);
+    expect(a.unattributed).toEqual([blank, junk]);
+  });
+
+  it('the explicit link still wins whatever the frame says', () => {
+    const d = dose('2026-06-20T01:00:00+00:00', { medication_id: 'r' }); // days after the end
+    const a = attributeDoses([reg()], [d], NY);
+    expect(a.grouped.get('r')).toEqual([d]);
+  });
+
+  it('the tally accessor takes the same zone', () => {
+    const d = dose('2026-06-16T01:30:00+00:00');
+    expect(attributeDosesToRegimensIn([reg()], [d], NY).get('r')?.given).toBe(1);
+    expect(attributeDosesToRegimensIn([reg()], [d], 'UTC').get('r')?.given).toBe(0);
   });
 });
 

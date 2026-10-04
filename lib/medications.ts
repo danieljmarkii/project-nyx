@@ -1385,41 +1385,32 @@ export function mapDoseRowsToAttributable(rows: DoseEmbedRow[] | null | undefine
   });
 }
 
-// A dose instant's calendar-day prefix, for comparison against a regimen's DATE bounds.
-//
-// Both window bounds are Postgres DATE columns ('YYYY-MM-DD'); `occurred_at` is a full ISO
-// instant. Comparing them raw compares strings of different WIDTHS, which is right at the
-// lower bound by accident (a longer string sharing a prefix sorts after the bare date, so a
-// dose on the start day counts) and WRONG at the upper bound for the same reason: every dose
-// on the final day sorts after `ended_at` and was dropped (CUL-976). Slicing to the day makes
-// both bounds fixed-width and inclusive, so the two are symmetric rather than accidentally
-// opposite.
-//
-// Fixed-width day keys are also the one text comparison C-40 permits: the `+00:00` vs `.000Z`
-// spellings that break a lexical BOUND differ only from index 10 onward, so they cannot reach
-// this prefix. An absent instant ('' — an unreachable missing embed) sorts below every date and
-// stays unattributed, exactly as before.
-//
-// ── KNOWN BLIND SPOT: this is the UTC day, and the bounds are LOCAL dates (CUL-991) ──────
+// A dose's calendar day and a regimen's DATE bounds, as epoch-day indexes in ONE frame.
 //
 // `occurred_at` is a UTC instant; `started_at` / `ended_at` are Postgres DATEs standing for the
-// OWNER'S calendar days. Slicing the instant yields its UTC day, so for any owner not at UTC+0
-// the two disagree near midnight: behind UTC an evening dose reads one day LATE (a 21:00
-// New York dose on the final day is evicted from its own course), ahead of UTC a morning dose
-// reads one day EARLY. Measured: a once-daily bedtime pill with perfect adherence renders as a
-// short course PLUS a phantom "no regimen configured" line for the same drug.
+// OWNER'S calendar days. The comparison has to happen in the owner's frame, so the dose is
+// indexed by the day it falls on in `timeZone` and each bound is indexed verbatim
+// (`localDayIndexOf` reads a 'YYYY-MM-DD' as the calendar day it names, never as UTC midnight).
 //
-// That predates this function and is NOT what the day-prefix change fixed — the prefix fixed a
-// string-WIDTH bug that dropped the final day in every zone, UTC included. The zone fix needs a
-// `timeZone` parameter threaded through `attributeDoses`, which moves dose counts on every
-// on-device surface for every non-UTC owner, so it is CUL-991 rather than a rider here.
+// Two bugs lived here, one inside the other:
+//   • CUL-976, a string-WIDTH bug: `occurred_at > ended_at` compared a full instant against a bare
+//     date, so every dose on a course's final day sorted after the end and was dropped, in every
+//     zone. Indexing both sides makes the bounds symmetric and inclusive.
+//   • CUL-991, a FRAME bug: the CUL-976 fix sliced the instant's first ten characters, which is
+//     its UTC day. Behind UTC an evening dose read one day LATE (a 21:00 New York dose on the
+//     final day left its own course and surfaced as a phantom "no regimen configured" line);
+//     ahead of UTC a morning dose read one day EARLY.
 //
-// Note for whoever takes it: the B-514 non-UTC CI job CANNOT catch this. This function consults
-// no zone at all, so its results are byte-identical under every `TZ`. The fixtures it needs are
-// instants whose UTC day differs from their local day (a 21:30-in-New-York dose), not a different
-// process clock.
-function doseDayPrefix(occurredAt: string): string {
-  return occurredAt.slice(0, 10);
+// `timeZone` follows `localDayIndex`: OMIT IT in the app, where the device's zone is the owner's
+// midnight and every other day key on screen is device-local; an Edge Function has no device
+// clock and passes the zone its own day keys use (`user_profiles.timezone`, UTC fallback). The
+// B-514 non-UTC jest job cannot see this class on its own — the fixtures that do are instants
+// whose UTC day differs from their local day, under an explicit zone (`medications.test.ts`).
+//
+// Null means "no usable day": an absent or unparseable instant, or a malformed bound. A dose
+// with no day matches no window and stays unattributed, exactly as the empty-string instant did.
+function doseDayIndex(occurredAt: string, timeZone: string | undefined): number | null {
+  return occurredAt ? localDayIndexOf(occurredAt, timeZone) : null;
 }
 
 function bucketAdherence(t: AdherenceTally, adherence: string | null): void {
@@ -1462,9 +1453,8 @@ export function tallyDoses(doses: readonly { adherence: string | null }[]): Adhe
 //
 //   2. ITEM + WINDOW FALLBACK (legacy/unlinked one-tap doses, pre-B-153). Attribute
 //      to the regimen for the SAME drug (medication_item_id) that was in effect when
-//      it occurred: started on/before it, not past its end. ISO date/timestamp
-//      strings compare correctly lexicographically, so a date-only started_at vs a
-//      full occurred_at works (a dose on the start date counts). With the usual
+//      it occurred: started on/before it, not past its end, both bounds inclusive and
+//      compared on the owner's calendar day (`doseDayIndex`, CUL-976 / CUL-991). With the usual
 //      one-active-regimen-per-drug this is a direct match; if two regimens share a
 //      drug, the most-recently-started in-window one wins, so a dose is never
 //      double-counted. An ad-hoc dose with no item id and no link never matches.
@@ -1497,10 +1487,17 @@ export interface DoseAttribution {
 export function attributeDoses(
   regimens: RegimenWindow[],
   doses: AttributableDose[],
+  timeZone?: string,
 ): DoseAttribution {
   const tallies = new Map<string, AdherenceTally>(regimens.map((r) => [r.id, emptyTally()]));
   const grouped = new Map<string, AttributableDose[]>(regimens.map((r) => [r.id, []]));
   const unattributed: AttributableDose[] = [];
+  // Each window's bounds as day indexes, once. A bound that will not index (a malformed DATE, or
+  // Ask's absent start) is `null` and its regimen holds no window; an explicit link still reaches it.
+  const bounds = new Map(regimens.map((r) => [r.id, {
+    start: localDayIndexOf(r.started_at, timeZone),
+    end: r.ended_at ? localDayIndexOf(r.ended_at, timeZone) : undefined,
+  }]));
 
   for (const d of doses) {
     if (d.deleted_at) continue; // soft-deleted dose — its event is gone
@@ -1526,13 +1523,22 @@ export function attributeDoses(
       unattributed.push(d); // ad-hoc dose, no drug identity to match → its own group
       continue;
     }
+    const doseDay = doseDayIndex(d.occurred_at, timeZone);
+    if (doseDay === null) {
+      unattributed.push(d); // no usable day → no window can hold it; surfaced, never dropped
+      continue;
+    }
     let best: RegimenWindow | null = null;
-    const doseDay = doseDayPrefix(d.occurred_at);
+    let bestStart = -Infinity;
     for (const reg of regimens) {
       if (reg.medication_item_id !== d.medication_item_id) continue;
-      if (doseDay < reg.started_at) continue;               // before this regimen began
-      if (reg.ended_at && doseDay > reg.ended_at) continue; // after it ended (INCLUSIVE of the end day)
-      if (!best || reg.started_at > best.started_at) best = reg;
+      const { start, end } = bounds.get(reg.id)!;
+      if (start === null || doseDay < start) continue;                // before this regimen began
+      if (end !== undefined && (end === null || doseDay > end)) continue; // after it ended (INCLUSIVE)
+      if (!best || start > bestStart) {
+        best = reg;
+        bestStart = start;
+      }
     }
     if (!best) {
       unattributed.push(d); // no regimen for this drug in-window → orphan
@@ -1553,8 +1559,9 @@ export function attributeDoses(
 export function attributeDosesToRegimens(
   regimens: RegimenWindow[],
   doses: AttributableDose[],
+  timeZone?: string,
 ): Map<string, AdherenceTally> {
-  return attributeDoses(regimens, doses).tallies;
+  return attributeDoses(regimens, doses, timeZone).tallies;
 }
 
 // Headline adherence line for a regimen card. FACTUAL only — counts and a plain
