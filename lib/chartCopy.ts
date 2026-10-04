@@ -265,9 +265,14 @@ export const WEIGHT_SIDE_MIN_FRAC_OF_NOISE = 0.25;
  *  with one reading above and six below is a loss with a blip, not a scatter. */
 export const WEIGHT_SIDE_MAX_SHARE = 2 / 3;
 
+/** How many of the latest readings must themselves sit on both sides of the start (or on it)
+ *  for a series to read as a scale's wobble. */
+export const WEIGHT_TAIL_READINGS = 3;
+
 /** The readings disagree in direction: they scatter around the FIRST reading, with a
- *  material reading on each side, neither side holding most of them, and the later half
- *  of the series still on both sides. Judged against
+ *  material reading on each side, neither side holding most of them, the later half of
+ *  the series still on both sides, and the last three readings back at the start or on
+ *  both sides of it. Judged against
  *  the start and across the whole series, never step by step and never on one reading: a
  *  steady loss with a 10 g up-tick (round 1) or a 10 g reading above the start (round 2)
  *  handed a step-wise or single-reading test the caveat. Values in thousandths of the
@@ -277,8 +282,10 @@ export function weightDisagrees(model: WeightBandModel, noiseAbs: number): boole
   if (first == null) return false;
   const edge = Math.round(noiseAbs * WEIGHT_SIDE_MIN_FRAC_OF_NOISE * 1000);
   const offsets = model.points.slice(1).map((p) => Math.round((p.value - first) * 1000));
-  const above = offsets.filter((d) => d > 0).length;
-  const below = offsets.filter((d) => d < 0).length;
+  // Shares count MATERIAL readings only: four readings 10 g over the start must not dilute
+  // a four-reading loss into "balanced" (round 4).
+  const above = offsets.filter((d) => d >= edge).length;
+  const below = offsets.filter((d) => d <= -edge).length;
   const off = above + below;
   if (off === 0) return false;
   const straddles = (ds: number[]) => ds.some((d) => d >= edge) && ds.some((d) => d <= -edge);
@@ -286,7 +293,14 @@ export function weightDisagrees(model: WeightBandModel, noiseAbs: number): boole
   // start too. Order-blind counts let a step-down (three readings at the start, three
   // that never came back) read as scatter (round 3); a wobble is still wobbling at the end.
   const later = offsets.slice(Math.floor(offsets.length / 2));
-  return straddles(offsets) && straddles(later) && above / off <= WEIGHT_SIDE_MAX_SHARE && below / off <= WEIGHT_SIDE_MAX_SHARE;
+  // Finally the END decides: one of the last three readings sits at or above the start and
+  // one at or below it. A loss that holds its lower level at the end is never a wobble,
+  // however the readings before it are padded (round 4: a spike at the half's boundary and
+  // +10 g padding each defeated a count). A series that came back to its start is one a
+  // scale can explain.
+  const tail = offsets.slice(-WEIGHT_TAIL_READINGS);
+  const tailBothSides = tail.some((d) => d >= 0) && tail.some((d) => d <= 0);
+  return straddles(offsets) && straddles(later) && tailBothSides && above / off <= WEIGHT_SIDE_MAX_SHARE && below / off <= WEIGHT_SIDE_MAX_SHARE;
 }
 
 /**

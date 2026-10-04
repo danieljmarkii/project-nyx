@@ -299,6 +299,22 @@ describe('weightDeltaLine (D2-5)', () => {
       }
     });
 
+    it('round 4: a step-down that holds its lower level at the end never reads as wobble, however it is padded', () => {
+      const weekly = (vals: number[]) => vals.map((v, i) => r(v, `2026-${String(7 + Math.floor(i / 4)).padStart(2, '0')}-${String(1 + (i % 4) * 7).padStart(2, '0')}T08:00:00Z`));
+      for (const vals of [
+        [3.0, 3.01, 3.01, 3.01, 3.01, 3.06, 2.88, 2.87, 2.86, 2.87],
+        [4.0, 4.01, 4.01, 4.01, 4.01, 4.06, 3.87, 3.86, 3.85, 3.86],
+        [3.0, 3.01, 3.01, 3.01, 3.01, 3.01, 3.06, 2.88, 2.87, 2.88, 2.87, 2.88],
+        [3.0, 3.01, 3.01, 3.01, 3.01, 3.06, 2.93, 2.9, 2.88, 2.89],
+        [3.0, 3.01, 2.94, 3.06, 2.87, 2.88],
+        [3.0, 3.06, 2.94, 3.06, 2.94, 3.06, 2.88, 2.87, 2.88],
+      ]) {
+        expect(line(weekly(vals))).not.toContain('home scale');
+      }
+      // A true scatter that is still scattering at the end keeps it.
+      expect(line(weekly([4.0, 4.08, 3.93, 4.06, 3.94, 4.07, 3.92, 4.05, 3.95]))).toContain(HOME_SCALE_CAVEAT);
+    });
+
     it('round 3: the 5 % bound is strict in whole grams — an exact 5 % pair never gets the caveat', () => {
       // 0.15 / 3.0 is 0.04999999999999997 in binary; a float compare let it through.
       for (const [a, b] of [[1.4, 1.33], [2.6, 2.47], [2.8, 2.66], [3.0, 2.85], [3.4, 3.23], [3.8, 3.61]]) {
