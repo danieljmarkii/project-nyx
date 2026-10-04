@@ -28,7 +28,12 @@ First `adversarial-reviewer` pass: FAIL. Every path through `resolveTrialCard` /
 4. The first cut's caveat, "on every day this trial counts", read false on an extended trial (the count is the designed window) and a head-clipped one, and the projection had dropped the head line. **Fixed:** the caveat names dates; the head line stays.
 5. A completed trial with the bowl down on its last day lost its ratio and named no cause. **Fixed:** the dated caveat fires there.
 
-Second pass on the corrections: see the outcome comment on CUL-1572.
+Second pass on the corrections: **PASS**, run on the real loader with 13 scenarios across three timezones.
+- The dated caveat never stacks on the live "grazes from a bowl" lead: overrun, running and day-1 bowl trials all use the `free_fed` register, whose `pastBowl` is false.
+- The caveat never renders on `refusal_withheld`, `decline`, `trial_refusal` or `floor_only`.
+- `so_far` cannot be reached with a bowl that held every counted day: that needs the overrun, and `stateFor` resolves it first.
+- The dates are right across a head clip (Jul 6), an extension (the frozen window), UTC+14 / −10 / +5:45, and a 2027 read.
+- Two mutation proofs: moving the span check below the `freeFed` return reds both suites, and dropping the widget's every-day condition reds `widgetSnapshot.test.ts`.
 
 ## Persona sign-off
 
@@ -37,7 +42,13 @@ Designer ✓ (Principle 5 and the voice pass on the rewritten caveat: specific, 
 ## Residuals
 
 - CUL-1577 (report) and CUL-1578 (partial bowl on Home) as above.
-- The widget gates only on the bowl, not on the strip's whole withholding list. That is wider than this issue; the strip's other reasons (decline, refusal, untracked head) are not mirrored on the widget's trial strip.
+- **CUL-1580** (two problems, one issue):
+  - the widget's trial strip still ignores Home's other withholding reasons, refusal included;
+  - with the ratio withheld, the widget drops the whole trial band, "Day N of M" included. That band is design-locked, so keeping it is a design call.
+- CUL-1578 now also carries the card's partial-window case: a bowl up on day 55 still prints 56 of 56 beside "For part of this trial".
+- `refusal_withheld` loses the ratio on this record without naming the bowl: the existing B-560 hole (`pastBowl: false`), not new.
+- The caveat stamps the year on each date when the span is in an earlier year ("Jul 3, 2026 to Aug 27, 2026"). That is clumsy but never ambiguous.
+- A stray full copy of the repo at `/nyx`, made by the second review agent's shell slip. A safety check blocked deleting it from the session; it is inert.
 
 ## Teach
 
