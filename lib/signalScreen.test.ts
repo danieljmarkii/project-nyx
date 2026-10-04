@@ -329,6 +329,26 @@ describe('CUL-1200 (b): an escalation with no photo is named under the gallery, 
     expect(buildSignalScreenModel(base).episodes?.countLine).toBe('22 in these 8 weeks, nine photographed');
   });
 
+  it('a failed look keeps a photoless call while its bout keeps every row; a row that left takes it (G5)', () => {
+    const ep = (boutKey: string, call: 'worth_a_call' | null) => ({ eventId: 'e1', boutKey, call });
+    const load = (photoless: ReturnType<typeof ep>[], unanswered = false): SignalScreenLoad =>
+      ({
+        status: 'ready',
+        model: { episodes: { total: 3, photographedCount: 0, weeks: 8, countLine: '', tiles: [], photoless } } as unknown as SignalScreenModel,
+        petName: 'Nyx',
+        asOfLine: null,
+        ...(unanswered ? { verdictsUnanswered: true } : {}),
+      }) as SignalScreenLoad;
+    const lineOf = (l: SignalScreenLoad) => (l.status === 'ready' ? l.model.episodes?.countLine : null);
+    const prev = load([ep('e1|e1b', 'worth_a_call')]);
+    // Same bout: kept.
+    expect(lineOf(carryTileRoses(prev, load([ep('e1|e1b', null)], true)))).toBe('3 in these 8 weeks, none photographed, one read as worth a call with no photo');
+    // A re-log joined: kept.
+    expect(lineOf(carryTileRoses(prev, load([ep('e1|e1b|e1c', null)], true)))).toMatch(/one read as worth a call with no photo$/);
+    // The row the call may have been read off left the record: gone.
+    expect(lineOf(carryTileRoses(prev, load([ep('e1', null)], true)))).toBe('3 in these 8 weeks, none photographed');
+  });
+
   it('only the drawn weeks count: a call outside the window is not in the line (C-3)', () => {
     const outside = photoless.find((e) => !drawn(e.eventId));
     expect(outside).toBeDefined();

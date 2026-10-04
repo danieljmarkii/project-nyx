@@ -1513,9 +1513,14 @@ export function carryTileRoses(
     const call = calls.get(t.eventId);
     return t.verdict === null && call && call.bout === boutKey(t) ? { ...t, verdict: call.verdict } : t;
   });
+  // Kept while every row the call could have been read off is still in the bout: a bout that
+  // GREW keeps it (a re-log joined), a bout that lost a row drops it, because the call may have
+  // been that row's (G5; the adversarial pass on CUL-1200).
   const photoless = (episodes.photoless ?? []).map((p) => {
     const last = lastPhotoless.get(p.eventId);
-    return p.call === null && last && last.boutKey === p.boutKey ? { ...p, call: last.call } : p;
+    if (p.call !== null || !last) return p;
+    const now = new Set(p.boutKey.split('|'));
+    return last.boutKey.split('|').every((id) => now.has(id)) ? { ...p, call: last.call } : p;
   });
   const countLine = galleryCountLine(episodes.total, episodes.weeks, episodes.photographedCount, photoless);
   return { ...next, model: { ...next.model, episodes: { ...episodes, tiles, photoless, countLine } } };
