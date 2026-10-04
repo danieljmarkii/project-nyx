@@ -11,6 +11,7 @@ import { loadSignalScreen, readGateLoggedDays, readSignalEpisodes, readLoggedDay
 import type { SignalFinding } from './signal';
 import { foldIdentity } from './signalFold';
 import { riseKeptSentence } from './screenMasking';
+import { trialSoFarClause } from './signalHomeLine';
 import type { CachedFinding } from './signal';
 import { symptomWord } from './signalCopy';
 import { signalTitle } from './signalTitle';
@@ -124,9 +125,7 @@ export async function loadSignalRowScreen(petId: string, finding: SignalFinding,
     const load = await loadSignalScreen(petId, foldIdentity(finding), nowMs);
     if (load.status === 'set_aside') {
       const kept = finding.type === 'trial_response' ? riseKeptSentence(finding, symptomWord('vomit')) : null;
-      // The kept count is the sentence's first clause, verbatim ("5 episodes of vomiting in the
-      // trial's 20 days"); the second says the weeks before are not compared.
-      return { kind: 'set_aside', keptLine: kept && load.lines.includes(kept) ? kept.split('. ')[0] : null };
+      return { kind: 'set_aside', keptLine: kept && load.lines.includes(kept) ? trialSoFarClause(finding) : null };
     }
     if (load.status !== 'ready') return { kind: 'unanswered' };
     // The loader finds the finding by identity in the pet's cache, which may have been
@@ -138,3 +137,4 @@ export async function loadSignalRowScreen(petId: string, finding: SignalFinding,
     return { kind: 'unanswered' };
   }
 }
+

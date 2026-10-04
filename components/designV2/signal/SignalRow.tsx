@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../../constants/theme';
 import type { CachedFinding, PriorityClass, ReflectionFinding, SignalFinding } from '../../../lib/signal';
 import { type CompareRow, dotLaneModel, isTimingFinding, symptomWord, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
-import { askStandalone, rowReadsScreen, signalHomeLabel, signalHomeLine, signalHomeLineFromScreen } from '../../../lib/signalHomeLine';
+import { askStandalone, rowReadsScreen, signalHomeLabel, trialSoFarClause, signalHomeLine, signalHomeLineFromScreen } from '../../../lib/signalHomeLine';
 import { countedHomePair } from '../../../lib/signalCounts';
 import { foldIdentity } from '../../../lib/signalFold';
 import { CARE_WATCHED_LINE, CARE_WATCHED_TAG, careBackLine, careStateBody, careStateViewOf, type CareStateView } from '../../../lib/careState';
@@ -145,7 +145,16 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
     : setAside
       ? { ...base, count: setAside.keptLine }
       : quietInsight
-        ? { ...base, count: null }
+        ? {
+            ...base,
+            // A rising trial card keeps its trial count on a read that did not answer: the
+            // masking rule keeps a rise over any record, and the card reached Home because the
+            // contrast moved — a bare "day 14 of 56" would read as routine (C-37).
+            count:
+              screen?.kind === 'unanswered' && finding.type === 'trial_response' && finding.comparisonDirection === 'more_during_trial'
+                ? trialSoFarClause(finding)
+                : null,
+          }
         : base;
 
   // EN-9 (PR-35): a concern the owner answered is drawn as what it now is. Display only:

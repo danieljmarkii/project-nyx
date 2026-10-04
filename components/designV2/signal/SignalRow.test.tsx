@@ -237,6 +237,17 @@ describe('the row states the screen’s counts (CUL-1569, GC-4 PR 2)', () => {
     expect((await view.findByTestId('signal-row-sub')).props.children).toBe("5 episodes of vomiting in the trial's 20 days");
   });
 
+  it('a RISING trial card on a read that did not answer keeps its trial count, never the engine’s pair (third adversarial pass)', async () => {
+    const rising = { type: 'trial_response', priorityClass: 'insight', trialDayNumber: 14, targetDurationDays: 56, trialLoggedDays: 14, baselineLoggedDays: 40, baselineWindowDays: 49, pooledTrialCount: 8, pooledBaselineCount: 2, rapid: { trial: 2, baseline: 0 }, long: { trial: 0, baseline: 0 }, rapidWindowMinutes: 30, longGapHours: 6, treatShare: { trial: null, baseline: null }, mealsPerDay: { trial: null, baseline: null }, comparisonDirection: 'more_during_trial', trialWindowDays: 14 } as SignalFinding;
+    const view = render(<SignalRow cached={cached(rising)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
+    expect((await view.findByTestId('signal-row-sub')).props.children).toBe("8 episodes of vomiting in the trial's 14 days");
+    // A falling one in the same state prints nothing (the masking rule fails closed on a fall).
+    const falling = { ...(rising as object), pooledTrialCount: 2, pooledBaselineCount: 8, comparisonDirection: 'fewer_during_trial' } as SignalFinding;
+    const quiet = render(<SignalRow cached={cached(falling)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
+    await act(async () => {});
+    expect(quiet.queryByTestId('signal-row-sub')).toBeNull();
+  });
+
   it('a log or a sync re-reads the screen (the lead card’s ticks)', async () => {
     const { useSyncStore } = jest.requireActual('../../../store/syncStore');
     render(<SignalRow cached={cached(SAFETY[0])} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);

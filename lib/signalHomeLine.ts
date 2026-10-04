@@ -26,7 +26,8 @@
 import { careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
-import { stripDayUTC } from './signalCopy';
+import { stripDayUTC, symptomWord } from './signalCopy';
+import { riseKeptSentence } from './screenMasking';
 import type { SignalScreenModel } from './signalScreen';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
 import type { SignalTrialWindow } from './signalWindows';
@@ -245,4 +246,17 @@ export function signalHomeLabel(line: SignalHomeLine): string {
   if (line.count) parts.push(line.count);
   if (line.ask) parts.push(askStandalone(line.ask));
   return `${parts.join('. ')}.`;
+}
+
+/**
+ * A trial card's trial-so-far count, the first clause of the screen's `riseKeptSentence`
+ * ("5 episodes of vomiting in the trial's 20 days"), verbatim. Null for any other finding.
+ * Also what a RISING trial card keeps when its screen read does not answer (the third
+ * adversarial pass on #1053): the masking rule keeps a rise even over an unreadable record,
+ * so the accusing count is never the one a failed read drops (C-37). Never the engine's pair,
+ * whose earlier window may be a masked zero.
+ */
+export function trialSoFarClause(finding: SignalFinding): string | null {
+  if (finding.type !== 'trial_response') return null;
+  return riseKeptSentence(finding, symptomWord('vomit')).split('. ')[0];
 }
