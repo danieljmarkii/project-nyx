@@ -41,6 +41,7 @@ import {
   type TrialCardState,
 } from './dietTrialCard';
 import { getDietTrialProgress } from './analytics';
+import { localDayIndexOf } from './utils';
 import { REFUSAL_WINDOW_DAYS } from './dietTrial';
 import { milestoneNote } from './dietTrialCompletion';
 import type { TrialResponseCounts } from './trialResponseCounts';
@@ -1000,6 +1001,127 @@ describe('state 6 — overrun, with the bowl in force (CUL-1554)', () => {
     const milestone = resolveTrialCard({ ...input, nowMs: localNoon(2026, 8, 27) });
     expect(milestone.state).toBe('milestone');
     expect(allStrings(milestone).join(' ')).not.toMatch(/Meals logged on \d+ of \d+ days/);
+  });
+});
+
+describe('a bowl that held every counted day, gone now (CUL-1572)', () => {
+  // The bowl came up after the window ended: `freeFed` null, the overlap true, and the
+  // overlap covered the whole clipped range. No register may print the ratio.
+  const span = { startDayIndex: localDayIndexOf('2026-07-03')!, endDayIndex: localDayIndexOf('2026-08-27')! };
+  const bowl = { freeFed: null, freeFedOverlap: true, freeFedThroughout: span };
+  const RATIO = /(Meals logged on|meals on|meals offered on) \d+ of \d+ days/;
+  const THROUGHOUT =
+    'Biscuit had a bowl that was topped up every day from Jul 3 to Aug 27, so those days ' +
+    'can’t have a meal-by-meal count.';
+
+  it('the overrun: no ratio, the counts kept, and the caveat says every day, not part', () => {
+    const input = activeInput({
+      nowMs: localNoon(2026, 9, 1),
+      coverage: { daysLogged: 56, daysElapsed: 56 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 112, offDiet: 3 },
+      ...bowl,
+    });
+    const model = resolveTrialCard(input);
+    expect(model.state).toBe('overrun');
+    expect(planTrialCard(input).register).toBe('record');
+    const joined = allStrings(model).join(' ');
+    expect(joined).not.toMatch(RATIO);
+    expect(joined).not.toMatch(/For part of this trial/);
+    expect(textOf(model, 'qualifier')).toContain(THROUGHOUT);
+    expect(joined).toMatch(/112 feedings in total/);
+    expect(planTrialCard(input).withheld).toContain('bowl_throughout');
+  });
+
+  it('the completed card states no ratio either', () => {
+    const model = resolveTrialCard(activeInput({
+      trial: {
+        status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+        targetDurationDays: 56, foodLabel: FOOD, outcome: 'improved',
+      },
+      nowMs: localNoon(2026, 9, 1),
+      coverage: { daysLogged: 54, daysElapsed: 56 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 182, offDiet: 6 },
+      ...bowl,
+    }));
+    expect(model.state).toBe('completed');
+    expect(allStrings(model).join(' ')).not.toMatch(RATIO);
+  });
+
+  it('the sub-floor paragraph drops its "meals on N of N days" and keeps the feeding total', () => {
+    const model = resolveTrialCard(activeInput({
+      coverage: { daysLogged: 5, daysElapsed: 23 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 9, offDiet: 0 },
+      belowCoverageFloor: true,
+      ...bowl,
+    }));
+    expect(model.state).toBe('below_floor');
+    const joined = allStrings(model).join(' ');
+    expect(joined).not.toMatch(RATIO);
+    expect(joined).toMatch(/9 feedings in total/);
+  });
+
+  it('the untracked head stays: the bowl caveat must not be the only account of those days', () => {
+    // Head-clipped: the count starts at the first log (Jul 7), so days 1–4 had no bowl
+    // and nothing logged. The dated caveat says Jul 7, and the head line covers the rest.
+    const input = activeInput({
+      untrackedDaysBeforeFirstLog: 4,
+      ...bowl,
+      freeFedThroughout: { startDayIndex: span.startDayIndex + 4, endDayIndex: localDayIndexOf('2026-07-25')! },
+    });
+    const qualifiers = textOf(resolveTrialCard(input), 'qualifier');
+    expect(qualifiers).toContain(
+      'The first 4 days of the trial aren’t counted here — no meals were logged against them yet.',
+    );
+    expect(qualifiers.join(' ')).toMatch(/every day from Jul 7 to Jul 25/);
+    expect(withholdingReasons(input)).toEqual(expect.arrayContaining(['bowl_throughout', 'untracked_head']));
+  });
+
+  it('an extended trial names the counted dates, not "this trial", beside a day line past them', () => {
+    const model = resolveTrialCard(activeInput({
+      trial: { status: 'active', startedAt: '2026-07-03', targetDurationDays: 84, foodLabel: FOOD },
+      nowMs: localNoon(2026, 9, 1),
+      coverage: { daysLogged: 56, daysElapsed: 56 },
+      ...bowl,
+    }));
+    expect(model.dayLine).toMatch(/^Day 61 of 84/);
+    expect(textOf(model, 'qualifier')).toContain(THROUGHOUT);
+    expect(allStrings(model).join(' ')).not.toMatch(/this trial counts/);
+  });
+
+  it('a completed trial whose bowl was down on its last day names the bowl as the reason', () => {
+    const model = resolveTrialCard(activeInput({
+      trial: {
+        status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-11',
+        targetDurationDays: 56, foodLabel: FOOD, outcome: 'improved',
+      },
+      nowMs: localNoon(2026, 8, 20),
+      coverage: { daysLogged: 40, daysElapsed: 40 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 40, offDiet: 0 },
+      freeFed: { loggedFeedings: 40 },
+      freeFedOverlap: true,
+      freeFedThroughout: { startDayIndex: span.startDayIndex, endDayIndex: localDayIndexOf('2026-08-11')! },
+    }));
+    expect(model.state).toBe('completed');
+    const joined = allStrings(model).join(' ');
+    expect(joined).not.toMatch(RATIO);
+    expect(textOf(model, 'qualifier')).toContain(
+      'Biscuit had a bowl that was topped up every day from Jul 3 to Aug 11, so those days ' +
+      'can’t have a meal-by-meal count.',
+    );
+  });
+
+  it('the strip prints no ratio, and the same record without the flag does (armed)', () => {
+    const input = activeInput(bowl);
+    expect(resolveTrialStrip(input)!.line ?? '').not.toMatch(/meals logged on/);
+    expect(resolveTrialStrip({ ...input, freeFedOverlap: false, freeFedThroughout: null })!.line)
+      .toMatch(/meals logged on 22 of 23 days/);
+  });
+
+  it('a past bowl that held only part of the window keeps the ratio and the "part" line', () => {
+    const model = resolveTrialCard(activeInput({ freeFed: null, freeFedOverlap: true }));
+    const joined = allStrings(model).join(' ');
+    expect(joined).toMatch(/Meals logged on 22 of 23 days/);
+    expect(joined).toMatch(/For part of this trial Biscuit had a bowl/);
   });
 });
 

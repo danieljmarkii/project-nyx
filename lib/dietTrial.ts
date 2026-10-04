@@ -1891,6 +1891,24 @@ export interface TrialFacts {
    * meals as bowl top-ups and deleting her coverage ratio.
    */
   intakeNotDirectlyObservedNow: boolean;
+  /**
+   * CUL-1572 — a free-choice arrangement was in force on EVERY day of the coverage
+   * `range`, so not one day the ratio counts could have had a meal-by-meal record.
+   *
+   * THE THIRD QUESTION, and neither sibling answers it. `intakeNotDirectlyObserved`
+   * is "any overlap" and `intakeNotDirectlyObservedNow` is "in force at the evidence
+   * end". A bowl down on days 1–58 of a 56-day trial read on day 60 is overlap-true
+   * and now-false, so the card dropped back to the record register and printed
+   * "Meals logged on 56 of 56 days" over 56 bowl days, under a caveat saying "for
+   * part of this trial". The coverage range clips at the target end, so a bowl that
+   * outlives the window covers the whole of what is counted, not part of it.
+   *
+   * Asked of `range`, not `exposureRange`: the claim it gates is the coverage ratio,
+   * and a gate's window is the window of the claim it gates (C-35). End day
+   * inclusive, as `intakeNotDirectlyObservedNow` reads it. False wherever there is
+   * no range to cover.
+   */
+  intakeNotDirectlyObservedThroughout: boolean;
   /** §10 S3 — days between `started_at` and the first logged feeding. Reported
    *  as UNTRACKED, never counted as failure, and excluded from the range. */
   untrackedDaysBeforeFirstLog: number;
@@ -2312,6 +2330,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // present-tense flag falls back to the same answer. Those paths render no
     // free-fed copy anyway (there is no day line to hang it on).
     intakeNotDirectlyObservedNow: (input.arrangements ?? []).length > 0,
+    // No range, so no counted day for a bowl to cover. These paths print no ratio.
+    intakeNotDirectlyObservedThroughout: false,
   };
   if (ctx.startDayIndex === null) return base;
 
@@ -3009,7 +3029,40 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
       const end = a.endedAt ? localDayIndexOf(a.endedAt, input.timeZone) : null;
       return end === null || end >= evidenceEnd;
     }),
+    intakeNotDirectlyObservedThroughout: arrangementsCoverRange(
+      input.arrangements ?? [],
+      range,
+      input.timeZone,
+    ),
   };
+}
+
+/**
+ * CUL-1572 — does the union of the arrangements' spans hold every day of `range`?
+ * An arrangement whose start cannot be placed covers nothing (it cannot be shown
+ * to cover a day); an open one runs on past the range.
+ */
+export function arrangementsCoverRange(
+  arrangements: readonly TrialArrangement[],
+  range: { startDayIndex: number; endDayIndex: number },
+  timeZone?: string,
+): boolean {
+  if (range.endDayIndex < range.startDayIndex) return false;
+  const spans: Array<[number, number]> = [];
+  for (const a of arrangements) {
+    const start = localDayIndexOf(a.startedAt, timeZone);
+    if (start === null) continue;
+    // An unreadable end reads as open, as `intakeNotDirectlyObservedNow` reads it:
+    // the guess lands on withholding the ratio, the direction a coverage claim may
+    // err in, never on printing one over days a bowl may have held.
+    const end = a.endedAt ? localDayIndexOf(a.endedAt, timeZone) : null;
+    spans.push([start, end ?? Number.POSITIVE_INFINITY]);
+  }
+  if (spans.length === 0) return false;
+  for (let d = range.startDayIndex; d <= range.endDayIndex; d += 1) {
+    if (!spans.some(([s, e]) => d >= s && d <= e)) return false;
+  }
+  return true;
 }
 
 // ── §5.5's named counterexample: exposure ↔ symptom juxtaposition ─────────────

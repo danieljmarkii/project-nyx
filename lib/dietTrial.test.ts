@@ -10,6 +10,7 @@
 // (the multi-food case that broke B-351 slice 4) and one vet-permitted treat.
 import {
   CHALLENGE_WINDOW_DAYS,
+  arrangementsCoverRange,
   COVERAGE_FLOOR,
   MIN_INTERPRETABLE_DAYS,
   buildTrialContext,
@@ -2583,5 +2584,77 @@ describe('coveredDayIndices', () => {
     });
     expect(facts.coveredDayIndices).toEqual([]);
     expect(facts.coverage).toBeNull();
+  });
+});
+
+// ── CUL-1572 — a bowl that held every counted day ────────────────────────────
+
+describe('arrangementsCoverRange (CUL-1572)', () => {
+  const tz = 'America/New_York';
+  const day = (key: string) => localDayIndexOf(key, tz)!;
+  const range = { startDayIndex: day('2026-07-03'), endDayIndex: day('2026-08-27') };
+  const bowl = (startedAt: string, endedAt: string | null) => ({
+    foodItemId: 'f1', foodKey: null, label: 'Rabbit', startedAt, endedAt,
+  });
+
+  it('true for a bowl that outlived the window (the reported record)', () => {
+    expect(arrangementsCoverRange([bowl('2026-07-03', '2026-08-29')], range, tz)).toBe(true);
+  });
+
+  it('true for an open bowl, and for one ending on the last counted day (inclusive)', () => {
+    expect(arrangementsCoverRange([bowl('2026-07-01', null)], range, tz)).toBe(true);
+    expect(arrangementsCoverRange([bowl('2026-07-03', '2026-08-27')], range, tz)).toBe(true);
+  });
+
+  it('false when one counted day falls outside every bowl', () => {
+    expect(arrangementsCoverRange([bowl('2026-07-03', '2026-08-26')], range, tz)).toBe(false);
+    expect(arrangementsCoverRange([bowl('2026-07-04', null)], range, tz)).toBe(false);
+    // Two bowls with a one-day gap between them.
+    expect(arrangementsCoverRange(
+      [bowl('2026-07-03', '2026-07-20'), bowl('2026-07-22', null)], range, tz,
+    )).toBe(false);
+  });
+
+  it('true when back-to-back bowls leave no gap', () => {
+    expect(arrangementsCoverRange(
+      [bowl('2026-07-03', '2026-07-20'), bowl('2026-07-21', null)], range, tz,
+    )).toBe(true);
+  });
+
+  it('false with no bowl, an unplaceable start, or an empty range', () => {
+    expect(arrangementsCoverRange([], range, tz)).toBe(false);
+    expect(arrangementsCoverRange([bowl('not a date', null)], range, tz)).toBe(false);
+    expect(arrangementsCoverRange(
+      [bowl('2026-07-01', null)], { startDayIndex: range.endDayIndex, endDayIndex: range.startDayIndex }, tz,
+    )).toBe(false);
+  });
+
+  it('an unreadable end reads as open, the withholding direction', () => {
+    expect(arrangementsCoverRange([bowl('2026-07-03', 'not a date')], range, tz)).toBe(true);
+  });
+
+  it('computeTrialFacts asks it of the CLIPPED coverage range, not the evidence range', () => {
+    const trial: TrialSpec = { id: 't1', startedAt: '2026-07-03', endedAt: null, targetDurationDays: 56 };
+    const facts = computeTrialFacts({
+      trial,
+      allowedFoods: [],
+      feedings: [],
+      arrangements: [bowl('2026-07-03', '2026-08-29')],
+      nowMs: new Date('2026-08-31T16:00:00Z').getTime(),
+      timeZone: tz,
+    });
+    // Down through day 58, read on day 60: gone now, and every counted day was a bowl day.
+    expect(facts.intakeNotDirectlyObservedNow).toBe(false);
+    expect(facts.intakeNotDirectlyObserved).toBe(true);
+    expect(facts.intakeNotDirectlyObservedThroughout).toBe(true);
+    const partial = computeTrialFacts({
+      trial,
+      allowedFoods: [],
+      feedings: [],
+      arrangements: [bowl('2026-07-03', '2026-08-01')],
+      nowMs: new Date('2026-08-31T16:00:00Z').getTime(),
+      timeZone: tz,
+    });
+    expect(partial.intakeNotDirectlyObservedThroughout).toBe(false);
   });
 });

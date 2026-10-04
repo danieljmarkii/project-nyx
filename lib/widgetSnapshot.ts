@@ -28,7 +28,7 @@
 import { File } from 'expo-file-system';
 import { SYMPTOM_EVENT_TYPES } from './analytics';
 import { getDb } from './db';
-import { isTrialRunning } from './dietTrial';
+import { isTrialRunning, type TrialFacts } from './dietTrial';
 import { loadTrialPredicateFacts } from './dietTrialFacts';
 import { ACTIVE_DIET_TRIAL_QUERY } from './dietTrialMirror';
 import { drugDisplayName } from './medications';
@@ -569,12 +569,10 @@ async function readSnapshotInputs(pet: SnapshotPet, now: Date) {
         { id: pet.id, name: pet.name, species: pet.species },
         now.getTime(),
       );
-      if (predicate?.facts?.coverage) {
-        trialCoverage = {
-          daysLogged: predicate.facts.coverage.daysLogged,
-          daysElapsed: predicate.facts.coverage.daysElapsed,
-        };
-        trialCoveredDayIndices = predicate.facts.coveredDayIndices;
+      const widgetCoverage = widgetTrialCoverage(predicate?.facts ?? null);
+      if (widgetCoverage) {
+        trialCoverage = widgetCoverage.coverage;
+        trialCoveredDayIndices = widgetCoverage.coveredDayIndices;
       }
     } catch (e) {
       console.warn('[widgetSnapshot] trial facts read failed:', e);
@@ -631,6 +629,31 @@ function readPreviousSlotIndex(dir: { list(): { name: string; textSync?(): strin
 // just wrote — one set of facts reaches the snapshot files and the widget's
 // props, so the two can never disagree. Returns nulls/empties when the
 // container is unavailable, which the caller treats as "no widget to update".
+/**
+ * The trial strip's coverage, or null when the widget must not state one.
+ *
+ * CUL-1572 — A BOWL'S DAYS HAVE NO RATIO. The widget prints "N of M trial days
+ * logged" off `coverage`, and read it with no bowl check at all, so a topped-up bowl
+ * that held every counted day still got a ratio (or "0 of 23" over a bowl-only
+ * record). The Home strip withholds on the same two facts (`free_fed`,
+ * `bowl_throughout` in `withholdingReasons`), so the widget follows it: a bowl down
+ * now, or one that held every counted day, leaves the strip out and the band falls
+ * back to the pips. Silence, never a ratio over days no meal could be logged on.
+ */
+export function widgetTrialCoverage(
+  facts: Pick<
+    TrialFacts,
+    'coverage' | 'coveredDayIndices' | 'intakeNotDirectlyObservedNow' | 'intakeNotDirectlyObservedThroughout'
+  > | null,
+): { coverage: { daysLogged: number; daysElapsed: number }; coveredDayIndices: number[] } | null {
+  if (!facts?.coverage) return null;
+  if (facts.intakeNotDirectlyObservedNow || facts.intakeNotDirectlyObservedThroughout) return null;
+  return {
+    coverage: { daysLogged: facts.coverage.daysLogged, daysElapsed: facts.coverage.daysElapsed },
+    coveredDayIndices: facts.coveredDayIndices,
+  };
+}
+
 export async function publishWidgetSnapshots(
   pets: SnapshotPet[],
 ): Promise<{ snapshots: WidgetSnapshot[]; index: PetSlotIndex | null }> {

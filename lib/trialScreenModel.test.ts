@@ -50,6 +50,7 @@ import {
   resolveTrialCard,
   resolveTrialStrip,
   type TrialCardInput,
+  withholdingReasons,
 } from './dietTrialCard';
 import { loadTrialAllowedSet, type TrialAllowedSet } from './trialAllowedSet';
 import type { TrialResponseCounts } from './trialResponseCounts';
@@ -100,6 +101,8 @@ interface Rec {
   treatDays?: number[];
   rating?: string | null;
   freeChoice?: boolean;
+  /** The day the free-choice bowl came up (`active_until`); open when absent. */
+  freeChoiceUntilDay?: number;
   /** Extra permitted foods on the allowed list. */
   extras?: number;
   /** Logged doses (CUL-1363), in `readDoses`' row shape: a chewable form, or a food vehicle. */
@@ -171,7 +174,9 @@ function seed(rec: Rec) {
     vehicle_food_item_id: null, vehicle_brand: null, vehicle_product_name: null,
   }));
   mockDb.arrangements = rec.freeChoice
-    ? [{ food_item_id: 'f1', active_from: START_KEY, active_until: null, brand: 'Royal Canin', product_name: 'Rabbit' }]
+    ? [{ food_item_id: 'f1', active_from: START_KEY,
+      active_until: rec.freeChoiceUntilDay != null ? dayKey(rec.freeChoiceUntilDay) : null,
+      brand: 'Royal Canin', product_name: 'Rabbit' }]
     : [];
 }
 
@@ -553,6 +558,55 @@ describe('free-fed', () => {
     expect(texts(m).some((t) => /^Meals logged on \d+ of \d+ days/.test(t))).toBe(false);
     expect(m.ledger).toBeNull();
     expect(m.manage).toBe('Manage the trial');
+  });
+
+  // CUL-1572: the bowl came up on day 58 of a 56-day trial, read on day 60. It is gone
+  // now, so the register is not the bowl's, but it held every day coverage counts (the
+  // range clips at day 56). No surface may print the ratio over those days: not the
+  // screen, not the strip the Home row and Get ready quote.
+  describe('a bowl taken away after the window ends (CUL-1572)', () => {
+    const all = Array.from({ length: 58 }, (_, i) => i + 1);
+
+    it('prints no meals-logged ratio on the screen or the strip, and says the bowl held every counted day', async () => {
+      const l = await load({ target: 56, mealDays: all, freeChoice: true, freeChoiceUntilDay: 58, nowDay: 60 });
+      expect(l.facts!.intakeNotDirectlyObservedNow).toBe(false);
+      expect(l.facts!.intakeNotDirectlyObservedThroughout).toBe(true);
+      expect(l.input.freeFed).toBeNull();
+      expect(l.input.freeFedThroughout).not.toBeNull();
+      const m = trialModel(buildTrialScreenModel(argsFor(l)));
+      expect(m.state).toBe('overrun');
+      expect(texts(m).some((t) => /Meals logged on \d+ of \d+ days/.test(t))).toBe(false);
+      expect(texts(m).some((t) => t.startsWith('For part of this trial'))).toBe(false);
+      // The counted span by date (days 1–56), never "this trial": day 60 is past it.
+      expect(texts(m)).toContain(
+        'Mochi had a bowl that was topped up every day from Jul 3 to Aug 27, so those days ' +
+        'can’t have a meal-by-meal count.',
+      );
+      // The counts stay: a floor only moves toward disclosing more.
+      expect(texts(m).some((t) => /^\d+ feedings in total/.test(t))).toBe(true);
+      const card = resolveTrialCard(l.input);
+      expect(card.lines.map((x) => x.text).join(' ')).not.toMatch(/Meals logged on \d+ of \d+ days/);
+      expect(resolveTrialStrip(l.input)!.line ?? '').not.toMatch(/meals logged on/);
+      expect(withholdingReasons(l.input)).toContain('bowl_throughout');
+    });
+
+    it('a bowl that held only part of the window keeps the ratio and the "part" caveat', async () => {
+      // The armed control: the same record with the bowl up on day 30 prints the ratio,
+      // so the test above is not green over a record that never prints one.
+      const l = await load({ target: 56, mealDays: all, freeChoice: true, freeChoiceUntilDay: 30, nowDay: 60 });
+      expect(l.input.freeFedThroughout).toBeNull();
+      const card = resolveTrialCard(l.input);
+      const lines = card.lines.map((x) => x.text);
+      expect(lines).toContain('Meals logged on 56 of 56 days.');
+      expect(lines.some((t) => t.startsWith('For part of this trial Mochi had a bowl'))).toBe(true);
+    });
+
+    it('stays withheld for the rest of the overrun, however late the read', async () => {
+      const l = await load({ target: 56, mealDays: all, freeChoice: true, freeChoiceUntilDay: 58, nowDay: 90 });
+      const card = resolveTrialCard(l.input);
+      expect(card.lines.map((x) => x.text).join(' ')).not.toMatch(/Meals logged on \d+ of \d+ days/);
+      expect(resolveTrialStrip(l.input)!.line ?? '').not.toMatch(/meals logged on/);
+    });
   });
 
   it('is false wherever the bowl is not the register', async () => {
