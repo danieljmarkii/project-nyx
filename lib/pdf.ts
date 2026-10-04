@@ -27,9 +27,10 @@ export interface VetReportParams {
    * sentences the owner wrote on her daily looks are printed in the report's Noticed
    * appendix.
    *
-   * REQUIRED (CUL-1464): the server reads an absent value as ON, so an optional field
-   * hands every new caller the notes for writing nothing (C-37). The screen sends false
-   * whenever the switch is hidden.
+   * REQUIRED (CUL-1464): an optional field lets a caller decide by writing nothing (C-37).
+   * The server reads an absent value as OFF since CUL-1548, so an omission now drops the
+   * notes the owner asked for rather than printing ones they never chose; neither is a
+   * caller's to decide by silence.
    *
    * IT GOVERNS THE LOOK NOTE AND NOTHING ELSE TODAY. The older `events.notes` field —
    * the 300-character box on every symptom and meal — has printed verbatim in appendix A

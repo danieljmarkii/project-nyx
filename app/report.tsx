@@ -141,7 +141,8 @@ export default function ReportScreen() {
     // the window, and leaving it off the default branch would make the option silently
     // inert for every owner who never opens "Custom…".
     //
-    // Always an explicit boolean: the server reads an absent value as ON. (Noticed is GA,
+    // Always an explicit boolean: the server reads an absent value as OFF (CUL-1548), so
+    // dropping the field would silently drop notes the owner switched on. (Noticed is GA,
     // CUL-876, so the switch is always on screen; CUL-1464's hidden-switch-sends-false
     // rule went with the flag that could hide it.)
     const base = { petId, includeNotes };
