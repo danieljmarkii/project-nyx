@@ -22,7 +22,7 @@ import { DOOR_A11Y_HINT, SignalRow } from './SignalRow';
 //
 //   Vomiting, day 55 of the rabbit trial       ← the title names the thing and the window
 //   [ the weekly bars, a count on every week ]  ← `WeeklyBars`, over `signalWeeks`
-//   2 this week so far · 3 last week            ← `weekLine`, read off the same buckets
+//   2 in the last 7 days · 3 in the 7 before    ← `weekLine`, read off the same buckets
 //
 // THE FACE IS A DOOR. One `Pressable`, one verb: it opens the Signal's own screen and
 // never expands. No control row; the chevron sits beside the title (CUL-1270). There is no

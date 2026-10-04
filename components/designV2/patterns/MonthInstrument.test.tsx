@@ -132,7 +132,7 @@ describe('MonthInstrument', () => {
     }
     expect(getByTestId('weekly-count-6').props.children).toBe(3);
     expect(getByTestId('weekly-count-8').props.children).toBe(1);
-    expect(getByTestId('month-line').props.children).toBe('Vomiting 6 times on 4 days · through Sep 17 · 2 days unlogged');
+    expect(getByTestId('month-line').props.children).toBe('6 episodes of vomiting on 4 days · through Sep 17 · 2 days unlogged');
     expect(getByTestId('weekly-mark-label').props.children).toBe('trial · Jul 25');
   });
 
@@ -155,7 +155,7 @@ describe('MonthInstrument', () => {
     expect(getByTestId('month-line').props.children).toBe('Through Sep 17 · 2 days unlogged');
     fireEvent.press(getByText('Vomiting'));
     expect(getByTestId('weekly-bars')).toBeTruthy();
-    expect(getByTestId('month-line').props.children).toBe('Vomiting 6 times on 4 days · through Sep 17 · 2 days unlogged');
+    expect(getByTestId('month-line').props.children).toBe('6 episodes of vomiting on 4 days · through Sep 17 · 2 days unlogged');
     fireEvent.press(getByText('Vomiting'));
     expect(getAllByTestId('daymark-date')).toHaveLength(35);
     expect(() => getAllByTestId('daymark-count')).toThrow();
@@ -289,7 +289,7 @@ describe('MonthInstrument', () => {
     await act(async () => pending.get('2026-09-05')!(facts({ episodeDays: ['2026-08-03'] })));
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
     expect(getByTestId('month-label').props.children).toBe('August 2026');
-    expect(getByTestId('month-line').props.children).toMatch(/^Vomiting 1 time on 1 day · through Aug 31/);
+    expect(getByTestId('month-line').props.children).toMatch(/^1 episode of vomiting on 1 day · through Aug 31/);
     // And the refreshed September lands too, without touching August's slot.
     await act(async () => pending.get('2026-10-03')!(facts()));
     fireEvent.press(getByTestId('month-next'));
@@ -450,7 +450,7 @@ describe('MonthInstrument', () => {
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
     const sep5 = getAllByTestId('daymark')[6];
     expect(sep5.props.accessibilityLabel).toContain('September 5');
-    expect(sep5.props.accessibilityLabel).toContain('vomiting logged 1 time');
+    expect(sep5.props.accessibilityLabel).toContain('1 episode of vomiting logged');
     fireEvent.press(sep5);
     await waitFor(() => expect(getByText('Vomit logged 3 times · everything this day:')).toBeTruthy(), { timeout: 4000 });
   });
@@ -537,10 +537,10 @@ describe('MonthInstrument — the care surfaces (CUL-1553)', () => {
     const { getByTestId, getByLabelText } = mount(jest.fn(async () => itchy()));
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
     fireEvent.press(within(getByLabelText('Symptom')).getByText('Vomiting'));
-    await waitFor(() => expect(getByTestId('month-line').props.children).toBe('Vomiting 2 times on 2 days · through Sep 17 · 2 days unlogged'));
+    await waitFor(() => expect(getByTestId('month-line').props.children).toBe('2 episodes of vomiting on 2 days · through Sep 17 · 2 days unlogged'));
     // Tapping the selected lens again keeps it: a lens is never "none".
     fireEvent.press(within(getByLabelText('Symptom')).getByText('Vomiting'));
-    expect(getByTestId('month-line').props.children).toBe('Vomiting 2 times on 2 days · through Sep 17 · 2 days unlogged');
+    expect(getByTestId('month-line').props.children).toBe('2 episodes of vomiting on 2 days · through Sep 17 · 2 days unlogged');
   });
 
   it('the Meals layer names and counts a refusal over the rated meals, apart from "left some"', async () => {
@@ -584,7 +584,7 @@ describe('MonthInstrument — the care surfaces (CUL-1553)', () => {
     expect(queryByTestId('weekly-bars')).toBeNull();
     fireEvent.press(within(getByLabelText('Symptom')).getByText('Vomiting'));
     await waitFor(() => expect(getByTestId('weekly-bars')).toBeTruthy());
-    expect(getByTestId('month-line').props.children).toBe('Vomiting 2 times on 2 days · through Sep 17 · 2 days unlogged');
+    expect(getByTestId('month-line').props.children).toBe('2 episodes of vomiting on 2 days · through Sep 17 · 2 days unlogged');
   });
 
   it('an itch-only dog is offered itching alone: no Symptom row, the layer chip names itching', async () => {

@@ -79,6 +79,7 @@ import {
 } from './signalWithhold';
 import { TRIAL_RESPONSE_COUNTS_DEFAULTS } from './trialResponseCounts';
 import { foldIdentity } from './signalFold';
+import { countedAtLine, countedSentence, countedTitle, countedUnitLine, isCountedFinding, signalCountsOf } from './signalCounts';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
 import { isOtherTrialReassurance, signalTrialWindowFor } from './signalTrialAnchor';
 import {
@@ -190,6 +191,9 @@ export interface SignalScreenInput {
   /** The day the engine counted (the cache row's `generated_at`, local), the end of the windows
    *  a safety script's compare row states. Null: today stands in, widened by a day. */
   generatedOn: string | null;
+  /** When the screen read the record its counts come from (CUL-1217, GC-4: "with an as-of
+   *  time"). Required: the composed sentence is only as true as this moment. */
+  countedAtMs: number;
 }
 
 export interface GalleryTile {
@@ -219,8 +223,11 @@ export interface SignalScreenModel {
   identity: string;
   finding: SignalFinding;
   title: string;
-  /** The count-anchored sentence, phrased server-side (`CachedFinding.text`). */
+  /** The count-anchored sentence: composed from the drawn chart's counts for a counted finding
+   *  (`lib/signalCounts.ts`, CUL-1217 GC-4), else phrased server-side (`CachedFinding.text`). */
   sentence: string;
+  /** "Counted at 9:14 AM." under a composed sentence; null under the server's own. */
+  countedAt: string | null;
   /** The lower-case noun every chart takes ("vomiting"), or null for a finding that counts none. */
   noun: string | null;
   weekly: WeeklyBucketsModel | null;
@@ -482,7 +489,10 @@ export function whyLines(
   compareMask: { masked: [boolean, boolean]; caption: string | null } | null = null,
 ): string[] {
   const { finding } = input.cached;
-  const lines: string[] = [evidenceText(finding, input.petName)];
+  // A counted finding's numbers are in its sentence, from the chart (GC-4); the server's
+  // evidence restated them over the engine's windows, so *Why* says instead what a bar and
+  // an episode are.
+  const lines: string[] = [isCountedFinding(finding) ? countedUnitLine() : evidenceText(finding, input.petName)];
   // A correlation's own window (CUL-1218): the matched days above come from the engine's
   // whole read, which the payload does not carry and nothing else on the screen states. No
   // chart sits under it to disagree — a correlation draws none (`signalChartSymptomOf`).
@@ -579,6 +589,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
       finding,
       title,
       sentence: input.cached.text,
+      countedAt: null,
       noun,
       weekly: null,
       weekLine: null,
@@ -660,12 +671,17 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     ? signalLanes({ finding, today: input.today, trial: input.trial, episodes: laneEpisodes, undivided: true, laneMasked: laneMasking.laneMasked })
     : split;
   const inWeeks = episodesInWeeks(input.episodes, weekly, input.today);
+  // GC-4 (CUL-1217): a frequency claim's title and sentence are the chart's own numbers, read
+  // off the bars just built, so the two cannot disagree. Every other type keeps the server's.
+  const counts = isCountedFinding(finding) ? signalCountsOf(finding, weekly, episodeDays, input.today) : null;
 
   return {
     identity,
     finding,
-    title,
-    sentence: input.cached.text,
+    title: counts && isCountedFinding(finding) ? countedTitle(finding, counts) : title,
+    sentence:
+      counts && isCountedFinding(finding) ? countedSentence(finding, counts, input.petName, lineWithheld != null) : input.cached.text,
+    countedAt: counts ? countedAtLine(input.countedAtMs) : null,
     noun,
     weekly,
     weekLine: weekLine(weekly, lineWithheld != null),
@@ -1280,6 +1296,7 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     trialUnanswered: pet != null && trialFacts == null,
     masking,
     generatedOn,
+    countedAtMs: nowMs,
   });
   return { status: 'ready', model, petName, asOfLine: fromLast ? asOfLineOf(row?.generatedAt ?? null, nowMs) : null };
 }

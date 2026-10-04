@@ -190,6 +190,7 @@ function mockInput(over: Partial<SignalScreenInput> = {}): SignalScreenInput {
     trialUnanswered: false,
     masking: null,
     generatedOn: null,
+    countedAtMs: new Date(2026, 8, 17, 9, 14).getTime(),
     ...over,
   };
 }
@@ -207,22 +208,27 @@ describe('buildSignalScreenModel — the mock’s Thursday', () => {
   const model = buildSignalScreenModel(mockInput());
 
   it('the title, the sentence, the noun', () => {
-    // D2 (CUL-1270): the title names the claim, from the fields the sentence is built from.
-    expect(model.title).toBe('Vomiting in 7 of the last 8 weeks');
-    expect(model.sentence).toMatch(/^Nyx has vomited 21 times/);
+    // GC-4 (CUL-1217): the title and the sentence are the drawn bars' own numbers — every
+    // one of the eight blocks holds an episode, 22 in all — never the cached payload's 7 of 8.
+    expect(model.title).toBe('Vomiting in 8 of the last 8 weeks');
+    expect(model.sentence).toMatch(/^We've logged vomiting for Nyx in 8 of the last 8 weeks — 22 episodes in those weeks, the most recent /);
+    expect(model.sentence).not.toBe(mockInput().cached.text);
+    expect(model.countedAt).toMatch(/^Counted at .+\.$/);
     expect(model.noun).toBe('vomiting');
     expect(model.safety).toBe(true);
     expect(model.identity).toBe('symptom_chronicity:vomit');
   });
 
   it('the weekly bars cover the trial, and the line reads the last two bars', () => {
-    expect(model.weekly?.weeks).toHaveLength(9);
-    expect(model.weekly?.firstKey).toBe('2026-07-19');
-    expect(model.weekly?.mark?.slot).toBeCloseTo(6 / 7, 6);
+    // Eight seven-day blocks ending today (CUL-1217): the trial's 55 days sit inside 56.
+    expect(model.weekly?.weeks).toHaveLength(8);
+    expect(model.weekly?.firstKey).toBe('2026-07-24');
+    expect(model.weekly?.lastKey).toBe(THURSDAY);
+    expect(model.weekly?.mark?.slot).toBeCloseTo(1 / 7, 6);
     const weeks = model.weekly?.weeks ?? [];
     const last = weeks[weeks.length - 1];
     const prev = weeks[weeks.length - 2];
-    expect(model.weekLine).toBe(`${last.count} this week so far · ${prev.count} last week`);
+    expect(model.weekLine).toBe(`${last.count} in the last 7 days · ${prev.count} in the 7 before`);
   });
 
   // CUL-1216 (BRK-39 / BRK-5): a safety screen's one compare is the engine's, in its phone
@@ -252,10 +258,10 @@ describe('buildSignalScreenModel — the mock’s Thursday', () => {
     // The gallery's population is the chart's: the episodes inside the drawn weeks (the
     // trial's 21 plus the days of the first drawn week before it), never the whole record.
     const drawn = model.weekly?.total ?? 0;
-    expect(drawn).toBe(24);
+    expect(drawn).toBe(22);
     expect(model.episodes?.total).toBe(drawn);
     expect(model.episodes?.photographedCount).toBe(9);
-    expect(model.episodes?.countLine).toBe('24 in these 9 weeks, nine photographed');
+    expect(model.episodes?.countLine).toBe('22 in these 8 weeks, nine photographed');
     const tiles = model.episodes?.tiles ?? [];
     expect(tiles).toHaveLength(9);
     for (let i = 1; i < tiles.length; i++) {
@@ -285,11 +291,11 @@ describe('buildSignalScreenModel — the mock’s Thursday', () => {
 
   it('a photographed count of zero says so; a count past twelve is a numeral', () => {
     const none = buildSignalScreenModel(mockInput({ episodes: mockInput().episodes.map((e) => ({ ...e, photo: null })) }));
-    expect(none.episodes?.countLine).toBe('24 in these 9 weeks, none photographed');
+    expect(none.episodes?.countLine).toBe('22 in these 8 weeks, none photographed');
     const all = buildSignalScreenModel(
       mockInput({ episodes: mockInput().episodes.map((e) => ({ ...e, photo: { localUri: null, storagePath: 'p' } })) }),
     );
-    expect(all.episodes?.countLine).toBe('24 in these 9 weeks, 24 photographed');
+    expect(all.episodes?.countLine).toBe('22 in these 8 weeks, 22 photographed');
     expect(all.episodes?.tiles.map((t) => t.verdict).filter((v) => v != null)).toHaveLength(4);
   });
 });
@@ -380,7 +386,7 @@ describe('the diet line', () => {
   it('a trial under the floor: no compare, one lane, and the floor said in Why (B1 — never two one-day bars)', () => {
     const young = trial({ dayCounter: 1, startDay: THURSDAY });
     const model = buildSignalScreenModel(mockInput({ trial: young }));
-    expect(model.title).toBe('Vomiting in 7 of the last 8 weeks');
+    expect(model.title).toBe('Vomiting in 8 of the last 8 weeks');
     expect(model.compare).toBeNull();
     expect(model.lanes?.lanes.map((l) => l.label)).toEqual(['The last 56 days']);
     expect(model.why).toContain('Day 1 of the rabbit trial — fewer than 7 days in, so there is no before-and-during compare yet.');
@@ -399,7 +405,7 @@ describe('the diet line', () => {
 
   it('is absent without a trial, and so is the diet-change sentence; the compare is the two halves', () => {
     const model = buildSignalScreenModel(mockInput({ trial: null }));
-    expect(model.title).toBe('Vomiting in 7 of the last 8 weeks');
+    expect(model.title).toBe('Vomiting in 8 of the last 8 weeks');
     expect(model.weekly?.mark ?? null).toBeNull();
     expect(model.why.join(' ')).not.toMatch(/Day \d+|diet change/);
     // A safety finding draws no local compare (BRK-39); a benign one draws the two halves.
@@ -902,13 +908,14 @@ describe('loadSignalScreen', () => {
     expect(out.status).toBe('ready');
     if (out.status !== 'ready') return;
     expect(out.petName).toBe('Nyx');
-    expect(out.model.title).toBe('Vomiting in 7 of the last 8 weeks');
+    // GC-4: the title counts the phone's record — one episode, today — not the cached 7 of 8.
+    expect(out.model.title).toBe('Vomiting in 1 of the last 8 weeks');
     // The running trial reached the model (the title no longer names it — D2): its start marks the bars.
     expect(out.model.weekly?.mark).toBeTruthy();
     expect(out.model.episodes?.tiles[0]).toMatchObject({ eventId: 'v1', verdict: 'monitor' });
     // The verdict came off the phone: the screen made no server read at all (HV-5).
     expect(mockFrom).not.toHaveBeenCalled();
-    expect(out.model.weekLine).toMatch(/^1 this week/);
+    expect(out.model.weekLine).toMatch(/^1 in the last 7 days/);
     expect(out.model.why.some((l) => l.startsWith(`Cerenia was given ${expect.anything() && ''}`) || /^Cerenia was given/.test(l))).toBe(true);
     expect(out.model.why[out.model.why.length - 1]).toMatch(/on Rabbit & Pea\.$/);
     // Doses are read from a day before the earlier window's first day, delivered only.
@@ -1008,7 +1015,8 @@ describe('loadSignalScreen', () => {
     });
     mockGetAllAsync.mockResolvedValue([]);
     const ended = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');
-    expect(ended.status === 'ready' && ended.model.title).toBe('Vomiting in 7 of the last 8 weeks');
+    // No episode on the phone: the count says so; the card is still drawn (the engine owns that).
+    expect(ended.status === 'ready' && ended.model.title).toBe('Vomiting in 0 of the last 8 weeks');
     expect(ended.status === 'ready' && (ended.model.weekly?.mark ?? null)).toBeNull();
 
     mockLoadDietTrialFacts.mockRejectedValue(new Error('sqlite'));
@@ -1154,11 +1162,12 @@ describe('CUL-1216 — a falling pair on the screen carries its gates', () => {
   });
 
   it('the week line takes the same gate: a falling vomit week pair beside a not-eating record prints this week alone', () => {
-    const lastWeek = [-5, -6, -7].map((d) => episode(shift(THURSDAY, d), 9)); // Thursday Sep 17: Sun Sep 13..Thu is this week
+    // Three in the 7 days before the last 7 (rolling, CUL-1217), none since: a falling pair.
+    const lastWeek = [-7, -8, -9].map((d) => episode(shift(THURSDAY, d), 9));
     const m = buildSignalScreenModel(benign({ episodes: lastWeek, notEating: true }));
-    expect(m.weekLine).not.toMatch(/last week/);
+    expect(m.weekLine).not.toMatch(/the 7 before/);
     const eating = buildSignalScreenModel(benign({ episodes: lastWeek, notEating: false }));
-    expect(eating.weekLine).toMatch(/· 3 last week$/);
+    expect(eating.weekLine).toMatch(/· 3 in the 7 before$/);
   });
 
   it('a RISE is never withheld, not even beside a not-eating record (escalation is the safe direction)', () => {
@@ -1260,15 +1269,14 @@ describe('CUL-1216 — the loader reads the not-eating register for the ROUTE’
     // A COUGH finding: the not-eating gate is vomit-only, so only the unanswered trial can withhold.
     mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(chronicity({ symptomType: 'cough' }))] });
     mockLoadDietTrialFacts.mockRejectedValue(new Error('sqlite'));
-    // A pinned Thursday (C-29): five arrived days this week clear the gate's floor, so the
-    // only thing that can withhold the falling cough line is the unanswered trial.
+    // A pinned Thursday (C-29): every day a meal clears the gate's floor, so the only thing
+    // that can withhold the falling cough line is the unanswered trial.
     const NOW = new Date(2026, 8, 17, 12).getTime();
     const today = toLocalDayKey(new Date(NOW));
-    const dow = new Date(NOW).getDay();
     mockGetAllAsync.mockImplementation((sql: string) => {
-      // Three coughs last week, none this week, every day a meal: a falling week pair.
+      // Three coughs 7 to 9 days ago, none in the last 7 (rolling, CUL-1217): a falling pair.
       if (/FROM events\s+WHERE pet_id = \? AND event_type = \?/.test(sql))
-        return Promise.resolve([1, 2, 3].map((d) => ({ id: `v${d}`, occurred_at: new Date(NOW - (dow + d) * 86_400_000).toISOString(), occurred_at_confidence: null })));
+        return Promise.resolve([7, 8, 9].map((d) => ({ id: `v${d}`, occurred_at: new Date(NOW - d * 86_400_000).toISOString(), occurred_at_confidence: null })));
       if (/event_type IN/.test(sql) || /SELECT occurred_at FROM events WHERE pet_id = \? AND deleted_at IS NULL$/.test(sql))
         return Promise.resolve(Array.from({ length: 30 }, (_, i) => ({ occurred_at: new Date(NOW - i * 86_400_000).toISOString() })));
       return Promise.resolve([]);
@@ -1276,7 +1284,7 @@ describe('CUL-1216 — the loader reads the not-eating register for the ROUTE’
     const out = await loadSignalScreen('pet-1', 'symptom_chronicity:cough', NOW);
     if (out.status !== 'ready') throw new Error(out.status);
     expect(today).toBe('2026-09-17');
-    expect(out.model.weekLine).toMatch(/^0 this week so far$/);
+    expect(out.model.weekLine).toMatch(/^0 in the last 7 days$/);
   });
 
   it('a failed facts read is "not answered": the register withholds', async () => {

@@ -163,11 +163,16 @@ describe('signalWindowDays / signalSymptomOf', () => {
 });
 
 describe('signalWeekCount — enough weeks for the lookback, the trial, never past the cap', () => {
-  it('draws every Sunday-start week the lookback touches: 56 days on a Thursday is 9, 14 days is 3', () => {
-    // The mock's chart: Jul 19 through the partial week of Sep 13 — nine bars.
-    expect(signalWeekCount(chronicity(), THURSDAY, null)).toBe(9);
-    expect(signalWeeks({ finding: chronicity(), today: THURSDAY, trial: null, episodeDays: [], loggedDays: [] }).firstKey).toBe('2026-07-19');
-    expect(signalWeekCount(worsening(), THURSDAY, null)).toBe(3);
+  it('draws seven-day blocks ending today: 56 days is 8 on any weekday, 14 days is 2 (CUL-1217, WBC-1)', () => {
+    // "The last 8 weeks" is eight bars, never nine: the engine's rolling weeks, ending today.
+    expect(signalWeekCount(chronicity(), THURSDAY, null)).toBe(8);
+    expect(signalWeekCount(chronicity(), SUNDAY, null)).toBe(8);
+    const m = signalWeeks({ finding: chronicity(), today: THURSDAY, trial: null, episodeDays: [], loggedDays: [] });
+    expect(m.firstKey).toBe(shift(THURSDAY, -55));
+    expect(m.lastKey).toBe(THURSDAY);
+    expect(m.endAligned).toBe(true);
+    expect(m.weeks.some((w) => w.partial)).toBe(false);
+    expect(signalWeekCount(worsening(), THURSDAY, null)).toBe(2);
     // A one-week lookback on a Sunday is one week — the floor holds it at two; so is a
     // one-DAY lookback (the floor's own case, pinned so the floor is not decorative).
     expect(signalWeekCount(worsening({ windowDays: 7 }), SUNDAY, null)).toBe(MIN_WEEKS);
@@ -191,14 +196,14 @@ describe('signalWeekCount — enough weeks for the lookback, the trial, never pa
   });
 
   it('widens to a trial longer than the lookback, so the mark is on the chart', () => {
-    // A two-week finding on day 55 of a trial: the trial's nine weeks, the mark inside them
-    // at the mock's 6/7 (a Saturday start).
+    // A two-week finding on day 55 of a trial: eight blocks cover its 55 days (56 drawn), the
+    // mark on the first block's second day.
     const trial = trialFor(THURSDAY);
-    expect(signalWeekCount(worsening(), THURSDAY, trial)).toBe(9);
+    expect(signalWeekCount(worsening(), THURSDAY, trial)).toBe(8);
     const m = signalWeeks({ finding: worsening(), today: THURSDAY, trial, episodeDays: [], loggedDays: [] });
     expect(m.mark?.outside).toBeNull();
     expect(m.mark?.day).toBe(trial.startDay);
-    expect(m.mark?.slot).toBeCloseTo(6 / 7, 6);
+    expect(m.mark?.slot).toBeCloseTo(1 / 7, 6);
   });
 
   it('caps at MAX_WEEKS; a longer trial’s mark is placed in words, never dropped (C-37)', () => {
@@ -211,7 +216,7 @@ describe('signalWeekCount — enough weeks for the lookback, the trial, never pa
 });
 
 describe('the week line reads the buckets the bars draw (C-4)', () => {
-  it('“2 this week so far · 3 last week” on the mock’s Thursday', () => {
+  it('“3 in the last 7 days · 2 in the 7 before” on the mock’s Thursday — the engine’s rolling week', () => {
     const m = signalWeeks({
       finding: chronicity(),
       today: THURSDAY,
@@ -219,15 +224,18 @@ describe('the week line reads the buckets the bars draw (C-4)', () => {
       episodeDays: [shift(THURSDAY, -1), THURSDAY, shift(THURSDAY, -6), shift(THURSDAY, -7), shift(THURSDAY, -8)],
       loggedDays: [],
     });
-    // The Thursday's week starts Sunday the 13th; last week the 6th.
-    expect(m.weeks[m.weeks.length - 1].startKey).toBe('2026-09-13');
-    expect(weekLine(m)).toBe('2 this week so far · 3 last week');
+    // The last block is the Friday before through today; the one before, the seven before it.
+    expect(m.weeks[m.weeks.length - 1].startKey).toBe(shift(THURSDAY, -6));
+    expect(weekLine(m)).toBe('3 in the last 7 days · 2 in the 7 before');
   });
 
-  it('drops “so far” once the week is over (a Saturday), and “last week” with a single bucket', () => {
-    const saturday = shift(SUNDAY, 6);
-    const m = signalWeeks({ finding: chronicity(), today: saturday, trial: null, episodeDays: [saturday], loggedDays: [] });
-    expect(weekLine(m)).toBe('1 this week · 0 last week');
+  it('BRK-3: a Tuesday-to-Saturday run read on Monday is "the last 7 days", never "last week"', () => {
+    // The issue's counterexample: five episodes Tuesday to Saturday, two the week before.
+    const monday = shift(SUNDAY, 1);
+    const run = [-6, -5, -4, -3, -2].map((d) => shift(monday, d));
+    const before = [shift(monday, -9), shift(monday, -11)];
+    const m = signalWeeks({ finding: worsening({ windowDays: 7 }), today: monday, trial: null, episodeDays: [...run, ...before], loggedDays: [] });
+    expect(weekLine(m)).toBe('5 in the last 7 days · 2 in the 7 before');
   });
 
   it('PROPERTY: the line’s two numbers are exactly the last two bars, over random records', () => {
@@ -244,11 +252,12 @@ describe('the week line reads the buckets the bars draw (C-4)', () => {
       const { thisWeek, lastWeek, soFar } = weekLineNumbers(m);
       const last = m.weeks[m.weeks.length - 1];
       const prev = m.weeks[m.weeks.length - 2];
-      // Summing the bars: the last bar IS "this week", the one before IS "last week".
+      // Summing the bars: the last bar IS "the last 7 days", the one before IS "the 7 before".
       expect(thisWeek).toBe(last.count);
       expect(lastWeek).toBe(prev.count);
-      expect(soFar).toBe(last.partial);
-      expect(weekLine(m)).toBe(`${last.count} this week${last.partial ? ' so far' : ''} · ${prev.count} last week`);
+      expect(soFar).toBe(false);
+      expect(last.endKey).toBe(today);
+      expect(weekLine(m)).toBe(`${last.count} in the last 7 days · ${prev.count} in the 7 before`);
       // And the bars hold every episode inside the drawn weeks: total = Σ counts.
       expect(m.total).toBe(m.weeks.reduce((a, w) => a + w.count, 0));
       expect(m.total + m.before + m.after).toBe(episodeDays.length);
@@ -407,12 +416,12 @@ describe('the lanes — before the trial · in it, or one lane over the lookback
     expect(m.axis.config.rapidWindowMinutes).toBe(30);
   });
 
-  it('a trial mark mid-week sits at its fractional slot (a Wednesday is 3/7)', () => {
-    // The mock's Thursday; the trial starting the Wednesday before it.
+  it('a trial mark sits at its fractional slot (yesterday is 5/7 into the last block)', () => {
+    // The mock's Thursday; the trial starting the day before it.
     const trial: SignalTrialWindow = { ...trialFor(THURSDAY, 2), startDay: shift(THURSDAY, -1) };
     const m = signalWeeks({ finding: worsening(), today: THURSDAY, trial, episodeDays: [], loggedDays: [] });
     const weeks = m.weeks.length;
-    expect(m.mark?.slot).toBeCloseTo(weeks - 1 + 3 / 7, 6);
+    expect(m.mark?.slot).toBeCloseTo(weeks - 1 + 5 / 7, 6);
   });
 });
 

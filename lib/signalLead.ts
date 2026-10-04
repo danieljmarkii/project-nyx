@@ -23,7 +23,7 @@ export interface SignalLeadModel {
   /** Null for a finding that counts no symptom (the card then carries the title alone). */
   weekly: WeeklyBucketsModel | null;
   line: string | null;
-  /** Why the line dropped last week's count, or null when it prints the pair (CUL-1216). */
+  /** Why the line dropped the earlier window's count, or null when it prints the pair (CUL-1216). */
   lineWithheld: WeekLineWithheld | null;
   noun: string | null;
   trial: SignalTrialWindow | null;

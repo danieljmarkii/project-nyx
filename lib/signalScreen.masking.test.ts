@@ -56,6 +56,7 @@ function inputOf(over: Partial<SignalScreenInput> & Pick<SignalScreenInput, 'cac
     trialUnanswered: false,
     masking: null,
     generatedOn: null,
+    countedAtMs: new Date(2026, 8, 17, 9, 14).getTime(),
     ...over,
   };
 }
@@ -94,10 +95,10 @@ describe('CUL-1440 · 1 · the weekly bars beside prednisone', () => {
     expect(model.weeklyMask!.caption).toBe("Prednisone from Sep 21 can hide coughing, so a quiet week there isn't a sign it has settled.");
   });
 
-  it('leaves a zero week that touches no span alone (the Sep 7 week keeps its 0)', () => {
+  it('leaves a zero week that touches no span alone (the Sep 7–13 block keeps its 0)', () => {
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicityCough()), today, episodes, masking }));
     const weeks = model.weekly!.weeks;
-    const sep6 = weeks.findIndex((w) => w.startKey === '2026-09-06');
+    const sep6 = weeks.findIndex((w) => w.startKey === '2026-09-07');
     expect(sep6).toBeGreaterThanOrEqual(0);
     expect(weeks[sep6].count).toBe(0);
     expect(model.weeklyMask!.masked[sep6]).toBe(false);
@@ -113,7 +114,7 @@ describe('CUL-1440 · 1 · the weekly bars beside prednisone', () => {
     });
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicityCough()), today, episodes, masking: withVisit }));
     const weeks = model.weekly!.weeks;
-    const sep6 = weeks.findIndex((w) => w.startKey === '2026-09-06');
+    const sep6 = weeks.findIndex((w) => w.startKey === '2026-09-07');
     expect(model.weeklyMask!.masked[sep6]).toBe(true);
     expect(model.weeklyMask!.caption).toContain("Anything given at the Sep 10 visit isn't in the record");
   });
@@ -242,7 +243,7 @@ describe('CUL-1440 · the adversarial pass · zeros that are not a bar\'s numera
       inputOf({ cached: cachedOf(chronicityCough()), today: '2026-09-30', episodes: [episode('2026-07-05', 9)], masking }),
     );
     const weeks = model.weekly!.weeks;
-    const aug9 = weeks.findIndex((w) => w.startKey === '2026-08-09');
+    const aug9 = weeks.findIndex((w) => w.startKey === '2026-08-06'); // the block holding Aug 9
     expect(aug9).toBeGreaterThanOrEqual(0);
     expect(weeks[aug9].count).toBe(0);
     expect(model.weeklyMask!.masked[aug9]).toBe(true);

@@ -276,6 +276,8 @@ export interface DayMarkProps {
   dim?: boolean;
   /** What is counted, lower-case ("vomiting") — for the label. */
   noun: string;
+  /** The count is episodes, not entries (CUL-1217): the label says "2 episodes of vomiting". */
+  episodes?: boolean;
   /** Present → the day opens (a button). Absent → a plain, accessible square. */
   onPress?: () => void;
 }
@@ -297,13 +299,14 @@ export function DayMark({
   selected = false,
   dim = false,
   noun,
+  episodes = false,
   onPress,
 }: DayMarkProps) {
   const ahead = coverage === 'ahead';
   const unlogged = coverage === 'unlogged';
   const symptomDay = symptomLayer && holdsVomit({ count, continuesFrom }) && !ahead && !unlogged;
   const label = dayMarkA11yLabel(
-    { dayKey, count, continuesFrom, coverage, answers, refusedMeals, leftSomeMeals, medication, photo, symptomLayer, today, selected },
+    { dayKey, count, continuesFrom, coverage, answers, refusedMeals, leftSomeMeals, medication, photo, symptomLayer, today, selected, episodes },
     noun,
   );
   const box: DayMarkBox = ahead ? 'outlined' : unlogged ? 'grey' : symptomDay ? 'rose' : 'white';

@@ -168,6 +168,14 @@ export interface WeeklyBucketsInput {
    *  `before_record`: no tick, not in any denominator. Omitted → every arrived day counts,
    *  which inflates the denominator for a window older than the pet (C-19's anchor). */
   recordStart?: string;
+  /**
+   * Seven-day blocks that END on `weeksEnding`, instead of Sunday-start calendar weeks
+   * (CUL-1217, GC-4): the Signal counts the engine's rolling windows, so its last bar is
+   * "the last 7 days" and the one before it "the 7 before", whatever the weekday. Omitted →
+   * calendar weeks (the Patterns month). A block's `days` then run from its first day to its
+   * last, not Sunday to Saturday.
+   */
+  endAligned?: boolean;
 }
 
 export interface WeeklyBucketsModel {
@@ -186,6 +194,9 @@ export interface WeeklyBucketsModel {
   /** The first drawn week's Sunday and the last one's — the window, named. */
   firstKey: string;
   lastKey: string;
+  /** Present (true) only for end-aligned blocks (`WeeklyBucketsInput.endAligned`), so the
+   *  words can say what a bar is; absent on calendar weeks. */
+  endAligned?: true;
 }
 
 /**
@@ -202,7 +213,7 @@ export function weeklyBuckets(input: WeeklyBucketsInput): WeeklyBucketsModel {
   const endIdx = indexOfKey(input.weeksEnding, 'weeksEnding');
   const todayIdx = indexOfKey(input.today, 'today');
   const recordIdx = input.recordStart != null ? indexOfKey(input.recordStart, 'recordStart') : null;
-  const lastStart = weekStartIndex(endIdx);
+  const lastStart = input.endAligned === true ? endIdx - 6 : weekStartIndex(endIdx);
   const firstStart = lastStart - 7 * (weeks - 1);
 
   const loggedSet = new Set<number>();
@@ -275,6 +286,7 @@ export function weeklyBuckets(input: WeeklyBucketsInput): WeeklyBucketsModel {
     mark,
     firstKey: dayKeyFromIndex(firstStart),
     lastKey: dayKeyFromIndex(lastStart + 6),
+    ...(input.endAligned === true ? { endAligned: true as const } : {}),
   };
 }
 

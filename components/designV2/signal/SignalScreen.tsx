@@ -483,6 +483,12 @@ function Body({
           </ThemedText>
         ) : null}
         <ThemedText style={styles.sentence}>{model.sentence}</ThemedText>
+        {/* GC-4 (CUL-1217): a sentence composed from the charts says when it counted them. */}
+        {model.countedAt ? (
+          <ThemedText style={styles.careLine} testID="signal-counted-at">
+            {model.countedAt}
+          </ThemedText>
+        ) : null}
         {asOfLine ? (
           <ThemedText style={styles.careLine} testID="signal-as-of-line">
             {asOfLine}

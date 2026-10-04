@@ -135,7 +135,7 @@ function loggingReason(
 }
 
 /**
- * The lead card's week line ("1 this week so far · 4 last week"), and the screen's: withheld
+ * The lead card's week line ("1 in the last 7 days · 4 in the 7 before"), and the screen's: withheld
  * when it FALLS and any reason above holds. Null when the pair may print. `trial` is the
  * running trial, or null.
  */
