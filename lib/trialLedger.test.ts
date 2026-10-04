@@ -57,6 +57,24 @@ function onDay(n: number, hour = 12, minute = 0): Date {
   return new Date(START.y, START.m, START.d + n - 1, hour, minute);
 }
 
+/**
+ * What an extra bowl was logged against (CUL-1348): the trial diet (default), a
+ * re-photographed bag of it (a new `food_item_id` and product name, so food identity
+ * misses), a rival meal, a treat, or no food at all. `trialTypedTreat` is the trial
+ * diet's own row typed `treat` in the library: narrow by role, outside the wide
+ * population by type, which is the one shape the union exists for.
+ */
+type ExtraFood = 'trial' | 'trialTypedTreat' | 'rephoto' | 'rival' | 'treat' | 'none';
+
+const EXTRA_FOOD: Record<ExtraFood, Record<string, unknown>> = {
+  trial: { food_item_id: 'f1', brand: 'Royal Canin', product_name: 'Rabbit', food_type: 'meal', proteins: '["rabbit"]' },
+  trialTypedTreat: { food_item_id: 'f1', brand: 'Royal Canin', product_name: 'Rabbit', food_type: 'treat', proteins: '["rabbit"]' },
+  rephoto: { food_item_id: 'f2', brand: 'Royal Canin', product_name: 'Selected Protein Adult PR', food_type: 'meal', proteins: null },
+  rival: { food_item_id: 'fz', brand: 'Acme', product_name: 'Salmon Dinner', food_type: 'meal', proteins: '["salmon"]' },
+  treat: { food_item_id: 'fx', brand: 'Acme', product_name: 'Chicken Jerky', food_type: 'treat', proteins: '["chicken"]' },
+  none: { food_item_id: null, brand: null, product_name: null, food_type: null, proteins: null },
+};
+
 interface Rec {
   target: number;
   targetInitial?: number | null;
@@ -73,7 +91,7 @@ interface Rec {
   noAllowedSet?: boolean;
   freeChoice?: boolean;
   /** Extra trial-diet bowls, each with its own day, hour and rating (CUL-1344). */
-  extraMeals?: Array<{ day: number; hour: number; rating: string | null }>;
+  extraMeals?: Array<{ day: number; hour: number; rating: string | null; food?: ExtraFood }>;
   nowDay: number;
   nowHour?: number;
 }
@@ -120,8 +138,8 @@ function seed(rec: Rec) {
   }
   for (const m of rec.extraMeals ?? []) {
     feedings.push({
-      event_id: `x${m.day}-${m.hour}`, occurred_at: onDay(m.day, m.hour).toISOString(), food_item_id: 'f1',
-      brand: 'Royal Canin', product_name: 'Rabbit', food_type: 'meal', proteins: '["rabbit"]',
+      event_id: `x${m.day}-${m.hour}`, occurred_at: onDay(m.day, m.hour).toISOString(),
+      ...EXTRA_FOOD[m.food ?? 'trial'],
       intake_rating: m.rating,
     });
   }
@@ -654,6 +672,78 @@ describe('an unfinished bowl in the current trial week, below the refusal floor'
     const r = await load({ ...clean, extraMeals: [{ day: 3, hour: 13, rating: 'refused' }] });
     expect(r.facts!.trialDietRefusal).toBeNull();
     expect(r.facts!.unfinishedDayIndices).toEqual([idx(3)]);
+    expect(r.ledger).not.toBeNull();
+    assertInvariants(r.ledger!, r.facts!, r.input);
+  });
+
+  // CUL-1348 (PM ruling 2026-10-03, 1(a)): the withhold reads the WIDE population,
+  // every rated non-treat meal. The adversarial pass on CUL-1344 executed the case:
+  // two refused bowls logged against a re-photographed bag, or against no food, never
+  // reached the narrow set, and the lane drew "1 of 1 so far".
+  it.each(['rephoto', 'none'] as const)(
+    'the day-1 cat whose 2 refused bowls were logged against %s: no fact fires, and no ledger or lane draws',
+    async (food) => {
+      const { input, facts, ledger } = await load({
+        target: 56,
+        mealDays: [],
+        extraMeals: [
+          { day: 1, hour: 8, rating: 'refused', food },
+          { day: 1, hour: 18, rating: 'refused', food },
+        ],
+        nowDay: 1,
+        nowHour: 20,
+      });
+      // The premise, asserted: the narrow set misses these rows and no fact fired.
+      expect(facts!.trialDietRefusal).toBeNull();
+      expect(facts!.rangeRefusal).toBeNull();
+      expect(withholdingReasons(input)).toEqual([]);
+      expect(facts!.unfinishedDayIndices).toEqual([]);
+      expect(facts!.coveredDayIndices).toEqual([idx(1)]); // the day WOULD draw filled
+      expect(facts!.unfinishedMealDayIndices).toEqual([idx(1)]);
+      expect(ledger).toBeNull();
+      expect(thisWeekLane(ledger, input)).toBeNull();
+    },
+  );
+
+  it('a refused rival meal withholds the week too (the ruled cost: withholding only)', async () => {
+    const r = await load({ ...clean, extraMeals: [{ day: 10, hour: 13, rating: 'refused', food: 'rival' }] });
+    expect(r.facts!.unfinishedDayIndices).toEqual([]);
+    expect(r.facts!.unfinishedMealDayIndices).toEqual([idx(10)]);
+    expect(r.facts!.trialDietRefusal).toBeNull();
+    expect(r.ledger).toBeNull();
+  });
+
+  it('a refused TREAT never withholds: the wide population excludes treats, as the fill does', async () => {
+    const r = await load({ ...clean, extraMeals: [{ day: 10, hour: 19, rating: 'refused', food: 'treat' }] });
+    expect(r.facts!.unfinishedMealDayIndices).toEqual([]);
+    expect(r.ledger).not.toBeNull();
+  });
+
+  it('the wide set is a superset of the narrow one, so the move can only withhold more', async () => {
+    const r = await load({
+      ...clean,
+      extraMeals: [
+        { day: 3, hour: 13, rating: 'refused' },
+        { day: 5, hour: 13, rating: 'picked', food: 'none' },
+        { day: 9, hour: 13, rating: 'some', food: 'rephoto' },
+      ],
+    });
+    expect(r.facts!.unfinishedDayIndices).toEqual([idx(3)]);
+    expect(r.facts!.unfinishedMealDayIndices).toEqual([idx(3), idx(5), idx(9)]);
+    for (const d of r.facts!.unfinishedDayIndices) expect(r.facts!.unfinishedMealDayIndices).toContain(d);
+    expect(r.ledger).toBeNull(); // day 9 is the current week (day 10)
+  });
+
+  it('the union: a trial-diet bowl typed treat is narrow-only, and still withholds', async () => {
+    const r = await load({ ...clean, extraMeals: [{ day: 10, hour: 13, rating: 'refused', food: 'trialTypedTreat' }] });
+    expect(r.facts!.unfinishedDayIndices).toEqual([idx(10)]);
+    expect(r.facts!.unfinishedMealDayIndices).toEqual([idx(10)]);
+    expect(r.ledger).toBeNull();
+  });
+
+  it('an unfinished unmatched bowl in an EARLIER trial week does not withhold this week (the boundary stays as ruled)', async () => {
+    const r = await load({ ...clean, extraMeals: [{ day: 7, hour: 13, rating: 'refused', food: 'none' }] });
+    expect(r.facts!.unfinishedMealDayIndices).toEqual([idx(7)]);
     expect(r.ledger).not.toBeNull();
     assertInvariants(r.ledger!, r.facts!, r.input);
   });

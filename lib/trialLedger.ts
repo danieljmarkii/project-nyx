@@ -259,16 +259,18 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
       ? rowOf(todayIndex)
       : null;
 
-  // CUL-1344 (PM ruling 2026-09-27): a rated, UNFINISHED bowl of the refusal lane's
-  // population anywhere in the current trial week withholds the ledger, BELOW the
-  // refusal fact's floors. A refused bowl still counts as a logged day, so the day
-  // would draw filled; the floors exist to decide when to SPEAK a refusal, and this
-  // only withholds (S3). The WHOLE ledger, not the one row: a grid missing its current
+  // CUL-1344 (PM ruling 2026-09-27): a rated, UNFINISHED bowl anywhere in the current
+  // trial week withholds the ledger, BELOW the refusal fact's floors. CUL-1348 (PM
+  // ruling 2026-10-03) widened the bowls to every rated non-treat meal
+  // (`unfinishedMealDayIndices`), the same rows the fill is painted from, so a refused
+  // bowl logged against a re-photographed bag or no food at all withholds too. A
+  // refused bowl still counts as a logged day, so the day would draw filled; the
+  // floors exist to decide when to SPEAK a refusal, and this only withholds (S3). The WHOLE ledger, not the one row: a grid missing its current
   // row breaks S5 (every row carries its count) and the rows' partition of the caption
   // (C-3). Home's lane is this row, so it goes with it.
   if (currentRowIndex !== null) {
     const weekStart = startIndex + currentRowIndex * 7;
-    if (facts.unfinishedDayIndices.some((d) => d >= weekStart && d <= todayIndex)) return null;
+    if (facts.unfinishedMealDayIndices.some((d) => d >= weekStart && d <= todayIndex)) return null;
   }
 
   const drawn = rows.flatMap((r) => r.days);

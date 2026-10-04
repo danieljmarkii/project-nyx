@@ -1721,6 +1721,31 @@ export interface TrialFacts {
    */
   unfinishedDayIndices: number[];
   /**
+   * The WIDE twin of `unfinishedDayIndices` (CUL-1348, PM ruling 2026-10-03): the
+   * local-day indices carrying a RATED, UNFINISHED feeding of the whole non-treat
+   * meal record (B-530's `meal_record` population, counted from the clipped head),
+   * united with `unfinishedDayIndices`, ascending. Same predicate
+   * (`feedingWasFinished`), same evidence-window bound, no floors.
+   *
+   * WHY A SECOND SET. The narrow set only sees bowls that classified as the trial
+   * diet, so two refused bowls logged against a re-photographed bag (a new
+   * `food_item_id`) or against no food at all never reached it, and the ledger
+   * painted that day filled. B-530 keeps the refusal FACT narrow because the fact
+   * SPEAKS ("the trial diet"), and naming the trial diet over rows that are not is a
+   * false claim. A withhold says nothing, so it has no false-claim risk, and the
+   * ledger's fill is painted from these same wide rows: any day it would paint
+   * filled over an unfinished rated meal is withheld. The cost is that a refused
+   * rival food also withholds the week, which is withholding only.
+   *
+   * A SUPERSET OF `unfinishedDayIndices` BY CONSTRUCTION (the union), so moving a
+   * consumer from the narrow set to this one can only withhold MORE, never draw
+   * where the narrow set withheld. The refusal facts never read it.
+   *
+   * WITHHOLD-ONLY: no surface may speak from it, and an empty list says nothing
+   * about eating.
+   */
+  unfinishedMealDayIndices: number[];
+  /**
    * Feedings inside the RECENCY window that were actually FINISHED — direct
    * evidence the diet is being eaten now.
    *
@@ -2258,6 +2283,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     rangeRefusal: null,
     rangeRefusalSpansEpisodes: false,
     unfinishedDayIndices: [],
+    unfinishedMealDayIndices: [],
     recentFinishedFeedings: 0,
     recentRatedFeedings: 0,
     // Null, not a zeroed object — "nothing in range to have rated" and "nothing
@@ -2913,6 +2939,10 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     rangeRefusalSpansEpisodes: spanMsOf(pop.rangeStamps) >= REFUSAL_MIN_SPAN_MS,
     // The range fact's own day set, below its floors (CUL-1344): withheld on, never spoken.
     unfinishedDayIndices: [...pop.rangeDays].sort((a, b) => a - b),
+    // The wide twin (CUL-1348): every rated, unfinished non-treat meal's day, united
+    // with the narrow set so it is a superset whichever population spoke. Withheld on,
+    // never spoken; the refusal facts above stay on `pop`.
+    unfinishedMealDayIndices: [...new Set([...wide.rangeDays, ...pop.rangeDays])].sort((a, b) => a - b),
     recentFinishedFeedings: pop.recentFinished,
     // The same window and the same rows as `recentFinishedFeedings` — they are a
     // ratio, so a denominator drawn from anywhere else would be a silent lie.
