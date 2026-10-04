@@ -96,6 +96,7 @@ import { AccessibilityInfo, LayoutAnimation } from 'react-native';
 import { useEventStore } from '../../../store/eventStore';
 import { useReducedMotionStore } from '../../../store/reducedMotionStore';
 import { TODAY_EMPTY_LINE, TODAY_EMPTY_LOOK_LINE, TODAY_FAILED_LINE, TODAY_MEAL_TAIL, TodayCard } from './TodayCard';
+import { RowSpeechContext } from '../../dayRow/rowSpeech';
 import { todayMealNudge } from '../../../lib/lookCard';
 
 const at = (h: number, m: number): string => {
@@ -138,6 +139,12 @@ beforeEach(() => {
   mockReadAnalysis.mockResolvedValue(new Map());
   useEventStore.setState({ todayEvents: [], todayRead: null });
 });
+
+
+/** Home as the screen in front: the provider `app/(tabs)/index.tsx` wraps TodayCard in. */
+function homeFocused({ children }: { children: React.ReactNode }) {
+  return <RowSpeechContext.Provider value={{ petName: 'Biscuit', mayAnnounce: () => true }}>{children}</RowSpeechContext.Provider>;
+}
 
 describe('the three states below "has rows" (C-12)', () => {
   it('a read that has not answered is a skeleton, never an empty record', () => {
@@ -357,9 +364,9 @@ describe('the ten-event day', () => {
     // The HV-6 second adversarial pass (1): the settle dropped the working fact BEFORE its
     // re-read answered, so for that round trip the node read the copy from before the read
     // landed. Held open here, as a real SQLite round trip is.
-    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibilityWithOptions').mockImplementation(() => {});
     mockOutstanding.mockImplementation((id: string) => id === 'v2');
-    const t = render(<TodayCard />);
+    const t = render(<TodayCard />, { wrapper: homeFocused });
     await waitFor(() => expect(t.getByTestId('spine-read-rail-v2')).toBeTruthy());
     const railWhileReading = t.getByTestId('spine-read-rail-v2');
     let answer: (rows: Map<string, unknown>) => void = () => {};
@@ -375,7 +382,10 @@ describe('the ten-event day', () => {
     );
     await waitFor(() => expect(t.getByTestId('spine-verdict-v2').props.children).toBe('Worth a call'));
     expect(t.getByTestId('spine-read-rail-v2')).toBe(railWhileReading);
-    expect(announce).toHaveBeenCalledWith('Worth a call');
+    // Said once, queued, with its subject, because Home says it is the screen in front
+    // (CUL-1224, BRK-28; `rowSpeech.ts`).
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith(expect.stringMatching(/^Biscuit’s vomit at .+, photo read: Worth a call\.$/), { queue: true });
     announce.mockRestore();
   });
 
@@ -497,11 +507,11 @@ describe('under history_v2: Home\'s first paint and open in place', () => {
   });
 
   it('a read that lands while Home watches keeps its node through the thread\'s wrapper: the same rail, one announcement', async () => {
-    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibilityWithOptions').mockImplementation(() => {});
     mockHistoryV2 = true;
     ready(SEP_17);
     mockOutstanding.mockImplementation((id: string) => id === 'v2');
-    const t = render(<TodayCard />);
+    const t = render(<TodayCard />, { wrapper: homeFocused });
     await waitFor(() => expect(t.getByTestId('spine-read-rail-v2')).toBeTruthy());
     const railWhileReading = t.getByTestId('spine-read-rail-v2');
     mockReadAnalysis.mockResolvedValue(
@@ -512,7 +522,10 @@ describe('under history_v2: Home\'s first paint and open in place', () => {
     });
     await waitFor(() => expect(t.getByTestId('spine-verdict-v2').props.children).toBe('Worth a call'));
     expect(t.getByTestId('spine-read-rail-v2')).toBe(railWhileReading);
-    expect(announce).toHaveBeenCalledWith('Worth a call');
+    // Said once, queued, with its subject, because Home says it is the screen in front
+    // (CUL-1224, BRK-28; `rowSpeech.ts`).
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith(expect.stringMatching(/^Biscuit’s vomit at .+, photo read: Worth a call\.$/), { queue: true });
     announce.mockRestore();
   });
 });

@@ -34,6 +34,12 @@ interface Props {
   model: WeeklyBucketsModel;
   /** What is counted, lower-case ("vomiting") — for the label a screen reader hears. */
   noun: string;
+  /**
+   * Whether the chart is its own accessible element, speaking `weeklyBarsA11yLabel`. False
+   * when a caller's button speaks that label itself (the Home lead card, CUL-1224 BRK-29):
+   * a node nested in a button is unreachable on iOS and read twice on Android.
+   */
+  spoken?: boolean;
   /** This chart just arrived for this reader (C-30). Default false: the static frame. */
   drawIn?: boolean;
   /** What is drawn; a change re-arms the draw while `drawIn` holds. */
@@ -58,7 +64,7 @@ const MIN_BAR_HEIGHT = 4;
 const ZERO_STUB_HEIGHT = 2;
 const MAX_BAR_WIDTH = 26;
 
-export function WeeklyBars({ model, noun, drawIn = false, identity = 'weekly', plotHeight = DEFAULT_PLOT_HEIGHT, masked, maskCaption = null }: Props) {
+export function WeeklyBars({ model, noun, spoken = true, drawIn = false, identity = 'weekly', plotHeight = DEFAULT_PLOT_HEIGHT, masked, maskCaption = null }: Props) {
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
   const { markStyle, labelStyle } = useDrawIn({
@@ -81,7 +87,11 @@ export function WeeklyBars({ model, noun, drawIn = false, identity = 'weekly', p
   const middle = n >= 5 && n % 2 === 1 ? Math.floor(n / 2) : -1;
 
   return (
-    <View accessible accessibilityLabel={weeklyBarsA11yLabel(model, noun, masked, maskCaption)} testID="weekly-bars">
+    <View
+      accessible={spoken}
+      accessibilityLabel={spoken ? weeklyBarsA11yLabel(model, noun, masked, maskCaption) : undefined}
+      testID="weekly-bars"
+    >
       <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
         {/* The header line: the mark's words at the left, the partial week's at the right. */}
         <Animated.View style={[styles.headerRow, labelStyle]}>
@@ -155,17 +165,25 @@ export function WeeklyBars({ model, noun, drawIn = false, identity = 'weekly', p
           </Animated.View>
         )}
 
-        {/* The window, named: the first and last week dated (and the middle one on a long run). */}
-        <Animated.View style={[styles.datesRow, labelStyle]}>
+        {/* The window, named: the first and last week dated (and the middle one on a long run).
+            A label is placed off the measured plot, never clipped to its week's slot
+            (CUL-1224, BRK-27): at 390pt nine slots are 30.6pt and "Sep 13" is 33.5pt, so a
+            slot-bound label rendered "Sep…" at the default size. The first hangs from the
+            left edge, the last from the right, the middle centres over three slots (its
+            neighbours are never dated); the invisible strut gives the row its scaled height. */}
+        <Animated.View style={[styles.datesRow, labelStyle]} testID="weekly-dates">
+          <ThemedText style={[styles.date, styles.dateStrut]}> </ThemedText>
           {model.weeks.map((week, i) => {
             const dated = i === 0 || i === n - 1 || i === middle;
+            // The middle waits for the measured plot: at width 0 its box is 0 wide.
+            if (!dated || (i === middle && width === 0)) return null;
+            const place =
+              i === 0 ? styles.dateFirst : i === n - 1 ? styles.dateLast : { left: (i - 1) * slot, width: 3 * slot, alignItems: 'center' as const };
             return (
-              <View key={week.startKey} style={[styles.column, i === 0 && styles.dateFirst, i === n - 1 && styles.dateLast]}>
-                {dated && (
-                  <ThemedText style={styles.date} numberOfLines={1} testID={`weekly-date-${i}`}>
-                    {dateWord(week.startKey)}
-                  </ThemedText>
-                )}
+              <View key={week.startKey} style={[styles.datePlace, place]} testID={`weekly-date-place-${i}`}>
+                <ThemedText style={[styles.date, i === n - 1 && i !== 0 && styles.dateRight]} numberOfLines={1} testID={`weekly-date-${i}`}>
+                  {dateWord(week.startKey)}
+                </ThemedText>
               </View>
             );
           })}
@@ -256,14 +274,25 @@ const styles = StyleSheet.create({
     marginTop: theme.space0_5,
   },
   datesRow: {
-    flexDirection: 'row',
+    position: 'relative',
     marginTop: theme.space0_5,
   },
+  // Holds the row's height at any text size; never seen, never spoken (the subtree is hidden).
+  dateStrut: {
+    opacity: 0,
+  },
+  datePlace: {
+    position: 'absolute',
+    top: 0,
+  },
   dateFirst: {
-    alignItems: 'flex-start',
+    left: 0,
   },
   dateLast: {
-    alignItems: 'flex-end',
+    right: 0,
+  },
+  dateRight: {
+    textAlign: 'right',
   },
   date: {
     fontSize: theme.textXS,

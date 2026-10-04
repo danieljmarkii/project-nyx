@@ -5,6 +5,7 @@
 import { configure, fireEvent, render } from '@testing-library/react-native';
 import { Animated, StyleSheet } from 'react-native';
 import { WeeklyBars } from './WeeklyBars';
+import { theme } from '../../constants/theme';
 import { weeklyBuckets } from '../../lib/chartModels';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
@@ -114,6 +115,31 @@ describe('WeeklyBars — the §05 row', () => {
     expect(getByTestId('weekly-date-0').props.children).toBe('Sep 6');
     expect(getByTestId('weekly-date-2').props.children).toBe('Sep 20');
     expect(queryByTestId('weekly-date-1')).toBeNull();
+  });
+
+  it('a week label is never bound to its slot: the ends hang from the edges, the middle spans three slots (CUL-1224, BRK-27)', () => {
+    const nine = weeklyBuckets({ episodeDays: [], loggedDays: [], weeksEnding: '2026-09-22', today: '2026-09-22', weeks: 9 });
+    const { getByTestId, queryByTestId } = render(<WeeklyBars model={nine} noun="vomiting" />);
+    // 275pt over nine weeks is 30.6pt a slot, narrower than "Sep 13" in Geist at 11pt.
+    fireEvent(getByTestId('weekly-plot'), 'layout', { nativeEvent: { layout: { width: 275, height: 64 } } });
+    const placeOf = (i: number) => StyleSheet.flatten(getByTestId(`weekly-date-place-${i}`).props.style);
+    expect(placeOf(0)).toMatchObject({ position: 'absolute', left: 0 });
+    expect(placeOf(0).width).toBeUndefined(); // sized to its words, not to a slot
+    expect(placeOf(8)).toMatchObject({ position: 'absolute', right: 0 });
+    expect(placeOf(8).width).toBeUndefined();
+    expect(placeOf(4).left).toBeCloseTo(3 * (275 / 9), 6);
+    expect(placeOf(4).width).toBeCloseTo(3 * (275 / 9), 6);
+    // The middle's neighbours stay undated, so its three slots are free.
+    expect(queryByTestId('weekly-date-3')).toBeNull();
+    expect(queryByTestId('weekly-date-5')).toBeNull();
+  });
+
+  it('a logged tick is the glyph teal, darker than the hollow grey (CUL-1224, GAP-5)', () => {
+    const { getAllByTestId } = render(<WeeklyBars model={model} noun="vomiting" />);
+    const logged = StyleSheet.flatten(getAllByTestId(/^weekly-tick-0-\d-logged$/)[0].props.style);
+    const unlogged = StyleSheet.flatten(getAllByTestId(/^weekly-tick-0-\d-unlogged$/)[0].props.style);
+    expect(logged.backgroundColor).toBe(theme.colorAccentGlyph);
+    expect(unlogged.borderColor).toBe(theme.colorTickIdle);
   });
 
   it('speaks the counts, the coverage and the disclosure in one label', () => {

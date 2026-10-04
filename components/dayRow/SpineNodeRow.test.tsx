@@ -40,6 +40,7 @@ import {
   eventRowLabel,
 } from './SpineNodeRow';
 import { RAIL_W, TIME_W } from '../recap/DaySpine';
+import { RowSpeechContext, readLandedSpoken, type RowSpeech } from './rowSpeech';
 
 const FRAME_MS = 20;
 const ROSE: NodeRead = { state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' };
@@ -375,9 +376,13 @@ describe('a found or estimated time carries its tag under the time, uncut', () =
 // ── The read arrives on ONE node ──────────────────────────────────────────────
 
 describe('the read arrives on ONE node', () => {
-  function arrive(opts: { reduced?: boolean } = {}) {
+  function arrive(opts: { reduced?: boolean; speech?: RowSpeech } = {}) {
     mockUseReducedMotion.mockReturnValue(!!opts.reduced);
-    const t = render(<SpineEventRow node={vomit({ state: 'pending' })} isFirst isLast onOpen={jest.fn()} />);
+    const speech = opts.speech;
+    const wrapper = speech
+      ? ({ children }: { children: React.ReactNode }) => <RowSpeechContext.Provider value={speech}>{children}</RowSpeechContext.Provider>
+      : undefined;
+    const t = render(<SpineEventRow node={vomit({ state: 'pending' })} isFirst isLast onOpen={jest.fn()} />, { wrapper });
     const railBefore = t.getByTestId('spine-read-rail-v2');
     // The waiting line measured (the tick's box), as the real row reports it.
     act(() => layout(t.getByTestId('spine-read-v2').children[1] as never, 20));
@@ -419,10 +424,43 @@ describe('the read arrives on ONE node', () => {
     expect(t.getByTestId('spine-verdict-v2').props.children).toBe('Worth a call');
   });
 
-  it('the rose’s arrival is announced politely, once, in its words', () => {
-    arrive();
-    expect(announce).toHaveBeenCalledTimes(1);
-    expect(announce).toHaveBeenCalledWith('Worth a call');
+  it('CUL-1224 (BRK-28): the rose’s arrival is said once, queued, with its pet, its row and its words', () => {
+    const queued = jest.fn();
+    const withOptions = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibilityWithOptions')
+      .mockImplementation(queued as never);
+    try {
+      const t = arrive({ speech: { petName: 'Nyx', mayAnnounce: () => true } }).t;
+      expect(queued).toHaveBeenCalledTimes(1);
+      expect(queued).toHaveBeenCalledWith('Nyx’s vomit at 5:11 PM, photo read: Worth a call.', { queue: true });
+      // No second voice: nothing interrupts, and the slot carries no live region (Android
+      // spoke it twice: the region and the announcement).
+      expect(announce).not.toHaveBeenCalled();
+      expect(t.getByTestId('spine-read-v2').props.accessibilityLiveRegion).toBeUndefined();
+    } finally {
+      withOptions.mockRestore();
+    }
+  });
+
+  it('CUL-1224 (BRK-28): no screen asking (no provider), or a screen out of focus, says nothing', () => {
+    const queued = jest.spyOn(AccessibilityInfo, 'announceForAccessibilityWithOptions').mockImplementation(() => {});
+    try {
+      arrive();
+      arrive({ speech: { petName: 'Nyx', mayAnnounce: () => false } });
+      expect(queued).not.toHaveBeenCalled();
+      expect(announce).not.toHaveBeenCalled();
+    } finally {
+      queued.mockRestore();
+    }
+  });
+
+  it('CUL-1224: the spoken read names its subject, and falls back to the row without a name', () => {
+    expect(readLandedSpoken({ petName: 'Nyx', title: 'Vomit', time: '5:11 PM', verdict: 'Call your vet now' })).toBe(
+      'Nyx’s vomit at 5:11 PM, photo read: Call your vet now.',
+    );
+    expect(readLandedSpoken({ petName: '  ', title: 'Stool', time: '7:02 AM', verdict: 'Call today' })).toBe(
+      'Stool at 7:02 AM, photo read: Call today.',
+    );
   });
 
   it('the trigger is the FACT: a rose replacing nothing (no pending) never arrives, and is not announced', () => {

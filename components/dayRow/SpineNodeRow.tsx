@@ -49,7 +49,7 @@
 // rose's arrival is announced politely, never assertively: a verdict is not an alert.
 
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
-import { AccessibilityInfo, Animated, LayoutAnimation, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, LayoutAnimation, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
 import { router } from 'expo-router';
 import { Camera, ChevronDown, ChevronUp } from 'lucide-react-native';
@@ -57,6 +57,7 @@ import { theme } from '../../constants/theme';
 import { SPINE_THREAD, SpineRowFrame } from '../recap/DaySpine';
 import { ThemedText } from '../ui/ThemedText';
 import { useNodeArrival } from '../motion/arrivalMotion';
+import { announceQueued, readLandedSpoken, useRowSpeech } from './rowSpeech';
 import { FOLD_LAYOUT, UNFOLD_LAYOUT } from '../motion/foldMotion';
 import { useOpenInPlace } from '../motion/openInPlaceMotion';
 import { useAppActive } from '../../hooks/useAppActive';
@@ -293,7 +294,7 @@ export function SpineEventRow({
             </ThemedText>
           ) : null}
           {read.state === 'pending' || read.state === 'worth_a_call' ? (
-            <ReadSlot nodeId={node.id} read={read} />
+            <ReadSlot node={node} read={read} />
           ) : read.state === 'unread' ? (
             <UnreadMark nodeId={node.id} />
           ) : null}
@@ -306,12 +307,14 @@ export function SpineEventRow({
 // ── The read slot: the tick, then the rose ───────────────────────────────────────
 
 function ReadSlot({
-  nodeId,
+  node,
   read,
 }: {
-  nodeId: string;
+  node: SpineEventNode;
   read: Extract<NodeRead, { state: 'pending' } | { state: 'worth_a_call' }>;
 }) {
+  const nodeId = node.id;
+  const speech = useRowSpeech();
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
   const pending = read.state === 'pending';
@@ -326,14 +329,19 @@ function ReadSlot({
   });
   const { values, heldHeight, railHeight, inFlight, breathing } = arrival;
 
-  // The rose that lands while the owner watches is announced once, politely; a read that
-  // was already in the record when the row mounted is simply there.
+  // The rose that lands while the owner watches is announced once; a read that was
+  // already in the record when the row mounted is simply there. CUL-1224 (BRK-28): it is
+  // said with its subject (the pet, the row, the time), queued behind what VoiceOver is
+  // reading, and only when the screen the row sits on says so (focused, app in front:
+  // `rowSpeech.ts`). The slot carries no live region, so it is said once on Android too.
   const wasPending = useRef(pending);
   useLayoutEffect(() => {
     const was = wasPending.current;
     wasPending.current = pending;
-    if (was && !pending && landed) AccessibilityInfo.announceForAccessibility(read.spoken);
-  }, [pending, landed, read]);
+    if (was && !pending && landed && appActive && speech.mayAnnounce()) {
+      announceQueued(readLandedSpoken({ petName: speech.petName, title: node.title, time: node.time, verdict: read.spoken }));
+    }
+  }, [pending, landed, read, appActive, speech, node.title, node.time]);
 
   const railOut = railHeight != null;
   return (
@@ -344,7 +352,6 @@ function ReadSlot({
         inFlight ? styles.readSlotClip : null,
       ]}
       testID={`spine-read-${nodeId}`}
-      accessibilityLiveRegion="polite"
     >
       {/* THE ONE NODE. Same element in every state (the identity test pins it). Its style
           changes; its key does not. */}

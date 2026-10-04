@@ -106,3 +106,11 @@ describe('EN-3: the tile speaks the tier-word map', () => {
     expect(tileA11yLabel(tile)).toBe('Oct 22, 1:30 AM, photographed, read as Call your vet now');
   });
 });
+
+describe('CUL-1224 (BRK-27): a tile never cuts its words', () => {
+  it('the date and the verdict wrap at any text size; neither carries a line cap', () => {
+    const view = render(<EpisodeGallery episodes={episodes('file:///cache/a.jpg')} />);
+    expect(view.getByTestId('episode-verdict-ev-1').props.numberOfLines).toBeUndefined();
+    expect(view.getByText('Sep 22').props.numberOfLines).toBeUndefined();
+  });
+});

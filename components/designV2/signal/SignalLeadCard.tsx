@@ -8,6 +8,7 @@ import type { CachedFinding, PriorityClass, SignalFinding } from '../../../lib/s
 import { foldIdentity } from '../../../lib/signalFold';
 import { loadSignalLead, type SignalLeadModel } from '../../../lib/signalLead';
 import { hasSignalTitleRule } from '../../../lib/signalTitle';
+import { weeklyBarsA11yLabel } from '../../../lib/chartCopy';
 import { WeeklyBars } from '../../charts/WeeklyBars';
 import { RAIL_WIDTH } from '../../home/InsightCard';
 import { useColdStartDrawFact } from '../../motion/coldStartDraw';
@@ -172,16 +173,21 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, ge
   }
 
   const { model } = load;
-  const label = model.line ? `${model.title}. ${model.line}.` : `${model.title}.`;
+  // The door speaks its chart (CUL-1224, BRK-29): the bars' own label sits inside this one
+  // button, where VoiceOver can never reach it, so the button says it — title, then every
+  // week's count and coverage, then the line. The chart is drawn unspoken (`spoken={false}`)
+  // so TalkBack, which can focus a nested node, does not read it twice.
+  const chartLabel = model.weekly && model.noun ? weeklyBarsA11yLabel(model.weekly, model.noun) : null;
+  const label = [`${model.title}.`, chartLabel, model.line ? `${model.line}.` : null].filter(Boolean).join(' ');
   // The draw in (CUL-1223, BRK-12): on the chart's first mount, or — on a cold start — as
   // the silhouette gives way (`useColdStartDrawFact`). The flight's clone is its own mount
   // and must not draw in (it IS the chart already drawn), so it is staged with the static
   // element.
   const chart =
     model.weekly && model.noun ? (
-      <WeeklyBars model={model.weekly} noun={model.noun} drawIn={drawFact.armed} identity={`${identity}:${drawFact.key}`} />
+      <WeeklyBars model={model.weekly} noun={model.noun} spoken={false} drawIn={drawFact.armed} identity={`${identity}:${drawFact.key}`} />
     ) : null;
-  const flightChart = model.weekly && model.noun ? <WeeklyBars model={model.weekly} noun={model.noun} identity={identity} /> : null;
+  const flightChart = model.weekly && model.noun ? <WeeklyBars model={model.weekly} noun={model.noun} spoken={false} identity={identity} /> : null;
   const open = () => onOpen(cached.finding);
   const press = () => {
     if (!FLIGHT_ENABLED || reducedMotion || !chart || !flightChart) {

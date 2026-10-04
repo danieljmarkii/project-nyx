@@ -18,7 +18,7 @@
 // crossfade after the store hydrates. Pinned in ColdStartSilhouette.test.tsx: exactly
 // one bump per true → false edge, none when the silhouette never showed.
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../../constants/theme';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
@@ -30,13 +30,25 @@ export const COLD_START_CROSSFADE_MS = 320;
 
 export const COLD_START_SILHOUETTE_TEST_ID = 'design-v2-cold-start';
 
+/**
+ * The wait's one spoken line (CUL-1224, BRK-30). The silhouette is a shape, so a screen
+ * reader met nothing at all, and the empty Home behind it was reachable ("Nothing logged
+ * yet today…", the data-loss read B-054 exists to prevent). The night moment's words, the
+ * flag-off wait's, without its ellipsis.
+ */
+export function coldStartSpokenLine(petName: string): string {
+  return `Catching up on ${petName}’s history.`;
+}
+
 export interface ColdStartSilhouetteProps {
   hydrating: boolean;
   /** The tab bar's height (`TAB_HEIGHT`), from the host — see `HomeSilhouette`. */
   tabBarHeight: number;
+  /** Whose record is arriving: the host's active pet (the only pet a cold start reads). */
+  petName: string;
 }
 
-export function ColdStartSilhouette({ hydrating, tabBarHeight }: ColdStartSilhouetteProps) {
+export function ColdStartSilhouette({ hydrating, tabBarHeight, petName }: ColdStartSilhouetteProps) {
   const reduced = useReducedMotion();
   const insets = useSafeAreaInsets();
   const bumpColdStartHandoff = useSyncStore((s) => s.bumpColdStartHandoff);
@@ -73,6 +85,22 @@ export function ColdStartSilhouette({ hydrating, tabBarHeight }: ColdStartSilhou
     return () => fade.stop();
   }, [hydrating, reduced, opacity, bumpColdStartHandoff]);
 
+  // Said once as the wait opens, on both platforms (there is no live region to pair with:
+  // the node is new, and VoiceOver does not read a view it was not moved to).
+  // Once per wait: a ref, so an effect that runs again (a re-render with a new name, a
+  // development double-invoke) never says it twice.
+  const spoken = coldStartSpokenLine(petName);
+  const said = useRef(false);
+  useEffect(() => {
+    if (!hydrating) {
+      said.current = false;
+      return;
+    }
+    if (said.current) return;
+    said.current = true;
+    AccessibilityInfo.announceForAccessibility(spoken);
+  }, [hydrating, spoken]);
+
   if (!mounted) return null;
 
   return (
@@ -80,6 +108,13 @@ export function ColdStartSilhouette({ hydrating, tabBarHeight }: ColdStartSilhou
       testID={COLD_START_SILHOUETTE_TEST_ID}
       style={[styles.fill, { opacity }]}
       pointerEvents={hydrating ? 'auto' : 'none'}
+      // While it is the wait, the wait is the screen: one element, one line, and VoiceOver
+      // cannot reach the empty Home behind it. On the way out it lets go of both, so the
+      // crossfade never traps focus over the Home it is revealing.
+      accessible={hydrating}
+      accessibilityLabel={hydrating ? spoken : undefined}
+      accessibilityViewIsModal={hydrating}
+      importantForAccessibility={hydrating ? 'yes' : 'no-hide-descendants'}
     >
       <HomeSilhouette topInset={insets.top} tabBarHeight={tabBarHeight} />
     </Animated.View>

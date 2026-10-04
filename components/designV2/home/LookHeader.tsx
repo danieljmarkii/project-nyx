@@ -35,7 +35,7 @@
 // second helper reached from here reds the build.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { AccessibilityInfo, Alert, Animated, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import {
@@ -87,10 +87,26 @@ import { LookEmergencySheet } from '../../home/LookEmergencySheet';
 import { LookWithheldEntry, LookWithheldReasonLine, WITHHELD_UNDO_FADE_MS } from '../../home/LookWithheldEntry';
 import { useGridDisclosure, useLookArrival } from '../../motion/lookMotion';
 import { ThemedText } from '../../ui/ThemedText';
+import { announceQueued } from '../../dayRow/rowSpeech';
 import { Line, SilhouetteFrame } from '../waits/Silhouette';
 
 /** The header's own copy. */
 export const LOOK_MORE = 'More…';
+/**
+ * The beat's length under a screen reader (CUL-1224, GAP-6). One accidental double-tap
+ * writes a look; with VoiceOver on, five seconds is not long enough to hear that it
+ * happened, find Undo and use it (WCAG 2.2.1: a time limit the reader can live with).
+ * The write moves focus to Undo and says what was written, and the dwell is this long.
+ */
+export const LOOK_DWELL_SCREEN_READER_MS = 30_000;
+/** How long the write waits on the OS's screen-reader answer before reading "off". */
+const SCREEN_READER_READ_BOUND_MS = 250;
+
+/** What a look write says aloud, after focus lands on its Undo. */
+export function lookWrittenSpoken(head: string, time: string): string {
+  return `${head}, noted at ${time}.`;
+}
+
 /** The ask-again control (BRK-20). A second tap writes a second look, never an edit of
  *  the first (T-14), so the control says so — it was *Change*, which it never did. */
 export const LOOK_ADD = 'Add a look';
@@ -163,6 +179,8 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
   const [askOpen, setAskOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [justWritten, setJustWritten] = useState<string | null>(null);
+  // The write happened under a screen reader: the beat runs long and its Undo takes focus.
+  const [spokenWrite, setSpokenWrite] = useState(false);
   const [resting, setResting] = useState<Resting | null>(null);
   const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [emergencyRead, setEmergencyRead] = useState<EmergencyRead>({ status: 'loading' });
@@ -266,6 +284,16 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
       if (!subject || !subjectSpecies || submitting) return;
       selectChip();
       setSubmitting(true);
+      // Asked alongside the write, so the answer is in hand when the beat opens. A failed
+      // read is "no screen reader": the shipped five seconds, never a stall.
+      // Raced against a short bound so a native read that never answers can never hold
+      // the beat (or `submitting`) open.
+      const screenReader = Promise.race([
+        Promise.resolve()
+          .then(() => AccessibilityInfo.isScreenReaderEnabled())
+          .catch(() => false),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), SCREEN_READER_READ_BOUND_MS)),
+      ]);
       try {
         const occurredAt = new Date();
         const result = await insertLook({
@@ -298,13 +326,18 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
           look_words: wordsToLocalText([...words]),
           look_note: null,
         } as NyxEvent);
-        showLook({
-          eventId: result.eventId,
-          petId: subject.id,
-          occurredAt: result.occurredAtIso,
-          outcome,
-          words,
-        });
+        const spoken = (await screenReader) === true;
+        showLook(
+          {
+            eventId: result.eventId,
+            petId: subject.id,
+            occurredAt: result.occurredAtIso,
+            outcome,
+            words,
+          },
+          spoken ? { durationMs: LOOK_DWELL_SCREEN_READER_MS } : undefined,
+        );
+        setSpokenWrite(spoken);
         setJustWritten(result.eventId);
         setAskOpen(false);
         if (gridOpen) closeGrid();
@@ -428,7 +461,7 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
                   petName={petName}
                   sex={sex}
                   undoLive={beatLive && row.id === justWritten}
-                  dwellMs={LOOK_DWELL_MS}
+                  dwellMs={spokenWrite ? LOOK_DWELL_SCREEN_READER_MS : LOOK_DWELL_MS}
                   onUndo={() => onUndo(row.id)}
                   onOpenRecord={() => router.push(`/event/${row.id}` as never)}
                   testID="look-header-withheld"
@@ -453,6 +486,8 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
                 sex={sex}
                 arrival={row.id === justWritten ? arrival : null}
                 undoLive={beatLive && row.id === justWritten}
+                dwellMs={spokenWrite ? LOOK_DWELL_SCREEN_READER_MS : LOOK_DWELL_MS}
+                takeFocus={spokenWrite && row.id === justWritten}
                 onUndo={() => onUndo(row.id)}
               />
             ),
@@ -625,6 +660,8 @@ function AnsweredRow({
   sex,
   arrival,
   undoLive,
+  dwellMs,
+  takeFocus,
   onUndo,
 }: {
   row: NyxEvent;
@@ -632,6 +669,12 @@ function AnsweredRow({
   sex: 'male' | 'female' | 'unknown';
   arrival: ReturnType<typeof useLookArrival> | null;
   undoLive: boolean;
+  /** The register's beat for this write: the fade starts this long, less the fade, after. */
+  dwellMs: number;
+  /** A screen reader is on and this row was just written: Undo takes focus, then the
+   *  write is said (CUL-1224, GAP-6). The chip that was tapped has unmounted, so without
+   *  this VoiceOver's focus falls to the top of the screen and the write is never heard. */
+  takeFocus: boolean;
   onUndo: () => void;
 }) {
   const described = describeLook(row, { species, sex });
@@ -641,9 +684,17 @@ function AnsweredRow({
   const gloss = described.kind === 'observed' && described.words.length === 1 ? described.words[0].gloss : null;
   const time = formatTime(new Date(row.occurred_at));
   const undoOpacity = useRef(new Animated.Value(1)).current;
+  const undoRef = useRef<View>(null);
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!undoLive || !takeFocus || focused.current) return;
+    focused.current = true;
+    if (undoRef.current) AccessibilityInfo.sendAccessibilityEvent(undoRef.current, 'focus');
+    announceQueued(lookWrittenSpoken(head, time));
+  }, [undoLive, takeFocus, head, time]);
   useEffect(() => {
     if (!undoLive) return;
-    const at = Math.max(0, LOOK_DWELL_MS - WITHHELD_UNDO_FADE_MS);
+    const at = Math.max(0, dwellMs - WITHHELD_UNDO_FADE_MS);
     const timer = setTimeout(() => {
       Animated.timing(undoOpacity, { toValue: 0.35, duration: WITHHELD_UNDO_FADE_MS, useNativeDriver: true }).start();
     }, at);
@@ -651,7 +702,7 @@ function AnsweredRow({
       clearTimeout(timer);
       undoOpacity.setValue(1);
     };
-  }, [undoLive, undoOpacity]);
+  }, [undoLive, undoOpacity, dwellMs]);
   return (
     <View style={styles.answered} testID="look-header-answered">
       <Animated.View style={[styles.rail, arrival?.ringStyle]} />
@@ -671,6 +722,7 @@ function AnsweredRow({
       {undoLive ? (
         <Animated.View style={{ opacity: undoOpacity }}>
           <Pressable
+            ref={undoRef}
             onPress={onUndo}
             hitSlop={HITSLOP_ACTION_SOLO}
             // The floor is the BOX's (HITSLOP_ACTION_SOLO's contract): the slop is reach,

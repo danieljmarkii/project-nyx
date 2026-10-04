@@ -9,7 +9,8 @@ import { theme } from '../../constants/theme';
 // bars (seven per week) and the compare (one per window day), so the two strips can
 // never disagree about what a filled tick means.
 //
-// Colour is never the only carrier here: the strip's sibling text says "logged N of M"
+// Lightness, not hue, tells a filled tick from a hollow one (CUL-1224), and colour is
+// never the only carrier here either: the strip's sibling text says "logged N of M"
 // and the chart's accessibility label speaks the same numbers. The tick is the shape of
 // that sentence, not a second source of it.
 //
@@ -57,8 +58,11 @@ const styles = StyleSheet.create({
     borderRadius: 1,
     minWidth: 1,
   },
+  // The glyph teal (CUL-1224, GAP-5): logged and unlogged differ in LIGHTNESS, not hue.
+  // The soft teal it replaced and the idle grey's outline were 1.01:1 apart, ΔE2000 3.9
+  // under deuteranopia; the glyph teal is 1.97:1 from the grey and 3.27:1 on white.
   logged: {
-    backgroundColor: theme.colorAccentSoft,
+    backgroundColor: theme.colorAccentGlyph,
   },
   unlogged: {
     borderWidth: StyleSheet.hairlineWidth * 2,
