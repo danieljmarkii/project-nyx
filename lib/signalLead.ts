@@ -98,26 +98,31 @@ export async function loadSignalRowTrial(petId: string, nowMs: number = Date.now
   });
 }
 
+/** What a Signal row takes from its screen (CUL-1569): the title and counts of a ready screen,
+ *  or that the screen SETS THE FINDING ASIDE (a masking span beside a compared window, CUL-1440).
+ *  A set-aside screen states no count, so neither does its row: Home never draws the falling
+ *  pair the screen it opens refuses to (the adversarial pass on #1053). */
+export type SignalRowScreen =
+  | ({ setAside: false } & Pick<SignalScreenModel, 'title' | 'composed' | 'trialLineShown'>)
+  | { setAside: true };
+
 /**
  * The screen's own model for a Signal row (CUL-1569, GC-4 PR 2): the SAME loader the door
  * opens (`loadSignalScreen`), for the same pet, identity and clock, so the row's numbers are
  * the screen's by construction rather than by a second count that could drift. Null when the
- * screen would not draw the finding as a ready screen (missing, withheld, set aside) or the
+ * screen is missing, withheld or unsupported (Home's own predicates drop those rows), or the
  * read failed — the row then keeps the finding's own words, which is what it drew before the
  * read answered. Never rejects.
  */
-export async function loadSignalRowScreen(
-  petId: string,
-  finding: SignalFinding,
-  nowMs: number = Date.now(),
-): Promise<Pick<SignalScreenModel, 'title' | 'composed' | 'trialLineShown'> | null> {
+export async function loadSignalRowScreen(petId: string, finding: SignalFinding, nowMs: number = Date.now()): Promise<SignalRowScreen | null> {
   try {
     const load = await loadSignalScreen(petId, foldIdentity(finding), nowMs);
+    if (load.status === 'set_aside') return { setAside: true };
     if (load.status !== 'ready') return null;
     // The loader finds the finding by identity in the pet's cache, which may have been
     // rewritten since the zone read it: a row only takes words for the finding it draws.
     if (load.model.finding.type !== finding.type) return null;
-    return { title: load.model.title, composed: load.model.composed, trialLineShown: load.model.trialLineShown };
+    return { setAside: false, title: load.model.title, composed: load.model.composed, trialLineShown: load.model.trialLineShown };
   } catch (e) {
     console.warn('[signal-row] screen read failed:', e);
     return null;

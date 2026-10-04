@@ -300,10 +300,15 @@ describe('loadSignalRowScreen', () => {
     mockLoadSignalScreen.mockResolvedValueOnce(ready(chronicity));
     const got = await loadSignalRowScreen('pet-9', chronicity, 123);
     expect(mockLoadSignalScreen).toHaveBeenCalledWith('pet-9', foldIdentity(chronicity), 123);
-    expect(got).toEqual({ title: 'Vomiting in 6 of the last 8 weeks', composed: null, trialLineShown: null });
+    expect(got).toEqual({ setAside: false, title: 'Vomiting in 6 of the last 8 weeks', composed: null, trialLineShown: null });
   });
 
-  it.each(['missing', 'withheld', 'set_aside', 'unsupported'])('a %s screen gives the row nothing to restate', async (status) => {
+  it('a set-aside screen (a masking span) says so, so the row states no count either', async () => {
+    mockLoadSignalScreen.mockResolvedValueOnce({ status: 'set_aside', petName: 'Nyx', lines: [] });
+    expect(await loadSignalRowScreen('pet-1', chronicity)).toEqual({ setAside: true });
+  });
+
+  it.each(['missing', 'withheld', 'unsupported'])('a %s screen gives the row nothing to restate', async (status) => {
     mockLoadSignalScreen.mockResolvedValueOnce({ status, petName: 'Nyx', lines: [] });
     expect(await loadSignalRowScreen('pet-1', chronicity)).toBeNull();
   });

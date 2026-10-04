@@ -210,12 +210,18 @@ export function rowReadsScreen(finding: SignalFinding): boolean {
  * it. Everything else (the eyebrow, the ask) is the finding's, unchanged: a recount never
  * changes what the owner is asked to do.
  */
-export function signalHomeLineFromScreen(base: SignalHomeLine, model: Pick<SignalScreenModel, 'title' | 'composed' | 'trialLineShown'>): SignalHomeLine {
+export function signalHomeLineFromScreen(
+  finding: SignalFinding,
+  base: SignalHomeLine,
+  model: Pick<SignalScreenModel, 'title' | 'composed' | 'trialLineShown'>,
+): SignalHomeLine {
   if (model.composed) {
     const { finding, counts, priorStated } = model.composed;
     return { ...base, headline: model.title, count: countedHomeCount(finding, counts, priorStated) };
   }
-  if (model.trialLineShown) {
+  // The trial card only: on another vomiting insight the strip's sentence is the screen's
+  // *Why*, a second population beside the row's own claim (the adversarial pass on #1053).
+  if (finding.type === 'trial_response' && model.trialLineShown) {
     // Verbatim, its full stop dropped (a row line carries none): cut or re-worded it would be
     // a second sentence about the same counts (C-28).
     return { ...base, headline: model.title, count: model.trialLineShown.replace(/\.$/, '') };

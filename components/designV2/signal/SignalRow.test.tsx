@@ -154,6 +154,7 @@ describe('the row states the screen’s counts (CUL-1569, GC-4 PR 2)', () => {
   it('a safety row draws the finding’s words at once — the ask never waits — then the screen’s title and count', async () => {
     const f = SAFETY[0];
     mockLoadSignalRowScreen.mockResolvedValueOnce({
+      setAside: false,
       title: 'Vomiting in 6 of the last 8 weeks',
       composed: { finding: f, counts, priorStated: false },
       trialLineShown: null,
@@ -168,13 +169,13 @@ describe('the row states the screen’s counts (CUL-1569, GC-4 PR 2)', () => {
 
   it('a reflection row draws the composed pair, the last 7 days then the 7 before, and none where the sentence held the prior back', async () => {
     const f = reflection as SignalFinding;
-    mockLoadSignalRowScreen.mockResolvedValueOnce({ title: 'Vomiting, week over week', composed: { finding: f, counts, priorStated: true }, trialLineShown: null });
+    mockLoadSignalRowScreen.mockResolvedValueOnce({ setAside: false, title: 'Vomiting, week over week', composed: { finding: f, counts, priorStated: true }, trialLineShown: null });
     const view = render(<SignalRow cached={cached(f)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     expect(await view.findByText('Last 7 days')).toBeTruthy();
     expect(view.getByText('7 before')).toBeTruthy();
     expect(view.getByTestId('signal-row').props.accessibilityLabel).toBe('Vomiting, week over week. 6 in the last 7 days, 2 in the 7 before.');
 
-    mockLoadSignalRowScreen.mockResolvedValueOnce({ title: 'Vomiting, week over week', composed: { finding: f, counts, priorStated: false }, trialLineShown: null });
+    mockLoadSignalRowScreen.mockResolvedValueOnce({ setAside: false, title: 'Vomiting, week over week', composed: { finding: f, counts, priorStated: false }, trialLineShown: null });
     const held = render(<SignalRow cached={cached(f)} petId="pet-2" onOpen={jest.fn()} generatedAt={null} />);
     expect((await held.findByTestId('signal-row-sub')).props.children).toBe('6 in the last 7 days');
     expect(held.queryByTestId('signal-row-thumb-pair')).toBeNull();
@@ -183,7 +184,7 @@ describe('the row states the screen’s counts (CUL-1569, GC-4 PR 2)', () => {
   it('a row handed another finding never shows the first finding’s numbers while it re-reads (keyed answer)', async () => {
     const vomit = reflection as SignalFinding;
     const cough = { ...(reflection as object), symptomType: 'cough' } as SignalFinding;
-    mockLoadSignalRowScreen.mockResolvedValueOnce({ title: 'Vomiting, week over week', composed: { finding: vomit, counts, priorStated: false }, trialLineShown: null });
+    mockLoadSignalRowScreen.mockResolvedValueOnce({ setAside: false, title: 'Vomiting, week over week', composed: { finding: vomit, counts, priorStated: false }, trialLineShown: null });
     const view = render(<SignalRow cached={cached(vomit)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
     expect((await view.findByTestId('signal-row-sub')).props.children).toBe('6 in the last 7 days');
     // The cough's read never answers: the row must hold, never print the vomit's 6.
@@ -192,6 +193,33 @@ describe('the row states the screen’s counts (CUL-1569, GC-4 PR 2)', () => {
     expect(view.getByTestId('signal-row-headline').props.children).toBe('Coughing, week over week');
     expect(view.queryByTestId('signal-row-sub')).toBeNull();
     expect(view.getByTestId('signal-row').props.accessibilityLabel).not.toMatch(/\b6\b/);
+  });
+
+  it('a screen that sets the finding aside (a masking course) leaves the row no count and no pair — never the engine’s falling pair', async () => {
+    const falling = { ...(reflection as object), currentCount: 0, priorCount: 5 } as SignalFinding;
+    mockLoadSignalRowScreen.mockResolvedValueOnce({ setAside: true });
+    const view = render(<SignalRow cached={cached(falling)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
+    await waitFor(() => expect(mockLoadSignalRowScreen).toHaveBeenCalled());
+    await act(async () => {});
+    expect(view.queryByTestId('signal-row-thumb-pair')).toBeNull();
+    expect(view.queryByTestId('signal-row-sub')).toBeNull();
+    expect(view.getByTestId('signal-row').props.accessibilityLabel).toBe('Vomiting, week over week.');
+
+    // A safety row keeps its headline and its ask; only the count goes.
+    mockLoadSignalRowScreen.mockResolvedValueOnce({ setAside: true });
+    const safety = render(<SignalRow cached={cached(SAFETY[1])} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
+    await waitFor(() => expect(safety.queryByTestId('signal-row-sub')).toBeNull());
+    expect(safety.getByTestId('signal-row-ask')).toBeTruthy();
+  });
+
+  it('a log or a sync re-reads the screen (the lead card’s ticks)', async () => {
+    const { useSyncStore } = jest.requireActual('../../../store/syncStore');
+    render(<SignalRow cached={cached(SAFETY[0])} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
+    await waitFor(() => expect(mockLoadSignalRowScreen).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      useSyncStore.setState((st: { hydrationTick: number }) => ({ hydrationTick: st.hydrationTick + 1 }));
+    });
+    await waitFor(() => expect(mockLoadSignalRowScreen).toHaveBeenCalledTimes(2));
   });
 
   it('a row the screen does not restate (timing) never asks for the screen', () => {

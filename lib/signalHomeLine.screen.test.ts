@@ -66,7 +66,7 @@ function inputOf(over: Partial<SignalScreenInput> & Pick<SignalScreenInput, 'cac
 /** The row as SignalRow draws it once the screen's read has answered. */
 function rowOf(model: ReturnType<typeof buildSignalScreenModel>): SignalHomeLine {
   const base = signalHomeLine(model.finding, null) as SignalHomeLine;
-  return signalHomeLineFromScreen(base, model);
+  return signalHomeLineFromScreen(model.finding, base, model);
 }
 
 const numbersIn = (s: string): number[] => (s.match(/\d+/g) ?? []).map(Number);
@@ -206,6 +206,16 @@ describe('PARITY — the row states the screen’s counts (CUL-1569)', () => {
 });
 
 describe('the trial row reads the strip’s counts, where the screen does (CUL-1569)', () => {
+  it('only the trial card takes the strip’s sentence: a vomiting reflection on a trial keeps its own count line', () => {
+    const today = MONDAY;
+    const line = "Vomiting: 4 in the trial's 30 days.";
+    const f = reflection({ currentCount: 2, priorCount: 2 });
+    const model = buildSignalScreenModel(
+      inputOf({ cached: cachedOf(f), today, trial: { startDay: shift(today, -29), identity: 'Rabbit trial', dayCounter: 30, targetDays: 56, foodLabel: null }, episodes: [], trialVomitingLine: line }),
+    );
+    expect(rowOf(model).count ?? '').not.toContain('trial');
+  });
+
   const trialWindow = (today: string): SignalTrialWindow => ({ startDay: shift(today, -29), identity: 'Rabbit trial', dayCounter: 30, targetDays: 56, foodLabel: null });
   const trialCard: TrialResponseFinding = {
     type: 'trial_response',
