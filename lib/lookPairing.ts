@@ -56,7 +56,8 @@
 // first, so it names the selection and says nothing about the chance. Sharpening the
 // sentence and adding a floor were weighed and not taken; the line does not ship in v1.
 // The module, its floors and its tests stay, and `LOOK_PAIRING_ON_PATTERNS` is the one
-// switch the Patterns card reads. Turning it back on is a PM ruling that answers CUL-914's
+// switch: the card's model reads it, and so does the Patterns screen, which skips the
+// vomit-day read the pairing alone consumes. Turning it back on is a PM ruling that answers CUL-914's
 // table, never a cleanup.
 
 import { lookWordKind, type LookSpecies } from '../constants/lookWords';

@@ -60,6 +60,7 @@ import { useDietTrial } from '../../hooks/useDietTrial';
 import { isAnimalNotEating } from '../../lib/dietTrialCard';
 import { lookCardLive } from '../../lib/lookCard';
 import { loadLookDays, loadVomitLocalDays } from '../../lib/looks';
+import { LOOK_PAIRING_ON_PATTERNS } from '../../lib/lookPairing';
 import { loadLookWithheldFacts, lookWithheld } from '../../lib/lookWithheld';
 import {
   buildNoticedCard,
@@ -487,7 +488,10 @@ async function loadNoticed(
       // bounded inside `buildNoticedCard` regardless, so the wider read widens no
       // denominator (C-3). Found by the product read (CUL-874).
       loadLookDays(pet.id),
-      loadVomitLocalDays(pet.id, sinceDay),
+      // Only the pairing consumes vomit days, and it is held out of v1 (CUL-914 (c)). Read
+      // while held, this was a scan nothing used whose failure still blanked the card through
+      // the catch below, so it is not made until the hold is lifted.
+      LOOK_PAIRING_ON_PATTERNS ? loadVomitLocalDays(pet.id, sinceDay) : Promise.resolve<string[]>([]),
       loadLookWithheldFacts({ id: pet.id, species: pet.species }, trialNotEating, nowMs),
     ]);
     return {

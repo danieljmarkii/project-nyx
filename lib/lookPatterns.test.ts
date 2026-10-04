@@ -558,6 +558,10 @@ describe('§7’s Never list — the greyscale test, enforced on the model', () 
   // the day the hold is.
   const card = buildWithPairingOn(record, { ...MOCHI, vomitLocalDays: [day(1), day(2), day(3)] });
 
+  it('the fixture carries a pairing, so its string is under the test below', () => {
+    expect(card.pairing).not.toBeNull();
+  });
+
   it('prints no average, slope, score, percentage, streak or "usual"', () => {
     const everything = [
       card.coverageLine,
