@@ -39,6 +39,15 @@ jest.mock('../hooks/useHistoryV2', () => ({ useHistoryV2: () => mockHistoryV2.on
 // TS-8: the trial screen's gate. Off unless a test turns it on.
 const mockTrialScreen = { on: false };
 jest.mock('../hooks/useTrialScreen', () => ({ useTrialScreen: () => mockTrialScreen.on }));
+// CUL-1570: the redesign's gate. Off unless a test turns it on.
+const mockDesignV2 = { on: false };
+jest.mock('../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2.on }));
+// CUL-1570: the Signal screen's loader, the one source Get ready may quote a recount from.
+// Only the loader is replaced; every pure helper the page imports stays the real one (C-34).
+jest.mock('../lib/signalScreen', () => {
+  const actual = jest.requireActual('../lib/signalScreen');
+  return { ...actual, loadSignalScreen: jest.fn() };
+});
 jest.mock('../store/petStore', () => {
   const pet = { id: 'p1', name: 'Mochi', species: 'cat', sex: 'female' };
   const state = { activePet: pet, pets: [pet] };
@@ -187,6 +196,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockHistoryV2.on = false;
   mockTrialScreen.on = false;
+  mockDesignV2.on = false;
   params.current = {};
   mockAppointment.questions = null;
   mockTrialGate.holdNext = false;
@@ -928,5 +938,121 @@ describe('CUL-1364 — an older trial’s pair on Get ready', () => {
     const r = await open();
     expect(r.getByText(text)).toBeTruthy();
     expect(r.getByText('Diet trial, day 21 of 56')).toBeTruthy();
+  });
+});
+
+describe('CUL-1570 — Worth raising quotes the Signal screen’s own sentence under Design v2', () => {
+  const ENGINE = 'Mochi has had vomiting on 4 of the last 7 days, up from 1 the week before — worth booking a vet visit soon.';
+  const COMPOSED = 'Mochi has had vomiting on 5 of the last 7 days (6 episodes) — worth booking a vet visit soon.';
+  const finding = {
+    type: 'symptom_worsening',
+    priorityClass: 'safety',
+    symptomType: 'vomit',
+    currentCount: 5,
+    priorCount: 1,
+    currentDays: 4,
+    priorDays: 1,
+    trigger: 'more_days',
+    tier: 'firm',
+    windowDays: 7,
+  };
+  const cache = () => {
+    const { supabase: client } = jest.requireMock('../lib/supabase') as { supabase: { from: jest.Mock } };
+    const chain = client.from('ai_signals') as unknown as { maybeSingle: jest.Mock };
+    chain.maybeSingle.mockResolvedValueOnce({
+      data: {
+        signal_text: null,
+        is_building: false,
+        coverage: [],
+        generated_at: new Date(Date.now() - 3_600_000).toISOString(),
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+        findings: [{ rank: 0, text: ENGINE, finding }],
+      },
+      error: null,
+    });
+  };
+  const loader = () => (jest.requireMock('../lib/signalScreen') as { loadSignalScreen: jest.Mock }).loadSignalScreen;
+  const screenSays = (over: { composed?: boolean; finding?: unknown } = {}) =>
+    loader().mockResolvedValue({
+      status: 'ready',
+      model: {
+        finding: over.finding ?? finding,
+        sentence: over.composed === false ? ENGINE : COMPOSED,
+        composed: over.composed === false ? null : { finding, counts: {}, priorStated: false },
+      },
+    });
+  const open = async () => {
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText('Worth raising')).toBeTruthy());
+    return r;
+  };
+
+  it('flag off: the cached sentence, and no screen read, over a screen that would answer', async () => {
+    cache();
+    screenSays();
+    const r = await open();
+    expect(r.getByText(ENGINE)).toBeTruthy();
+    expect(r.queryByText(COMPOSED)).toBeNull();
+    expect(loader()).not.toHaveBeenCalled();
+  });
+
+  it('flag on: the screen’s composed sentence, read for the appointment’s pet, in place of the cached one', async () => {
+    mockDesignV2.on = true;
+    cache();
+    screenSays();
+    const r = await open();
+    expect(r.getByText(COMPOSED)).toBeTruthy();
+    expect(r.queryByText(ENGINE)).toBeNull();
+    expect(loader()).toHaveBeenCalledWith('p1', expect.any(String), expect.any(Number));
+  });
+
+  it('flag on, the screen kept the engine’s words: the cached sentence', async () => {
+    mockDesignV2.on = true;
+    cache();
+    screenSays({ composed: false });
+    const r = await open();
+    expect(r.getByText(ENGINE)).toBeTruthy();
+  });
+
+  it('flag on, the screen answered for a regenerated cache: never another finding’s numbers', async () => {
+    mockDesignV2.on = true;
+    cache();
+    screenSays({ finding: { ...finding, currentDays: 6 } });
+    const r = await open();
+    expect(r.getByText(ENGINE)).toBeTruthy();
+    expect(r.queryByText(COMPOSED)).toBeNull();
+  });
+
+  it('flag on, a screen read that stalls costs the composed sentence, never the page (F7, the adversarial pass)', async () => {
+    mockDesignV2.on = true;
+    cache();
+    loader().mockImplementation(() => new Promise(() => {}));
+    jest.useFakeTimers();
+    try {
+      params.current = { appointmentId: 'appt-1' };
+      const r = render(<RundownScreen />);
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(3_999);
+      });
+      expect(r.queryByText(ENGINE)).toBeNull();
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1);
+      });
+      expect(r.getByText(ENGINE)).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('flag on, a screen read that throws: the cached sentence, never an empty row (C-12)', async () => {
+    mockDesignV2.on = true;
+    cache();
+    loader().mockRejectedValue(new Error('db closed'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const r = await open();
+    expect(r.getByText(ENGINE)).toBeTruthy();
+    warn.mockRestore();
   });
 });

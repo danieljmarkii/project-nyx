@@ -179,6 +179,18 @@ export interface WorthRaisingInput {
    * default here would hand over a safety fact by writing nothing (C-37).
    */
   intakeDecline: readonly LocalIntakeDecline[];
+  /**
+   * The Signal screen's composed sentence for each finding whose screen recounts it from the
+   * record (GC-4 PR 3, CUL-1570), keyed by `screenSentenceKey` of the cached finding it was
+   * composed from. Under Design v2 the screen states a counted finding (chronicity, worsening,
+   * reflection) in its own bars' numbers, and Home's row already carries those (CUL-1569); this
+   * page quotes the same sentence so the number an owner carries into the exam room is one
+   * number. A finding with no entry quotes the cached sentence, as it always did: the screen
+   * kept the engine's words (the escalate-only gate, a masking span), its read failed, or the
+   * screen answered for a different generation of the cache. EMPTY with the redesign off, which
+   * is today's page byte for byte. REQUIRED, never defaulted (C-37).
+   */
+  screenSentences: ReadonlyMap<string, string>;
   /** The rundown built for this same screen — quoted, and the source of `facts`. */
   rundown: Rundown;
   nowMs: number;
@@ -375,8 +387,10 @@ function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
       finding: f.finding,
       row: {
         id: `signal-${i}`,
-        // VERBATIM. The Change Contract's phrased, count-anchored sentence is the unit.
-        text: f.text,
+        // VERBATIM. The Change Contract's phrased, count-anchored sentence is the unit: the
+        // Signal screen's own sentence where it composed one from the same cached finding
+        // (CUL-1570), else the cached sentence. Quoted, never recounted here (G6).
+        text: input.screenSentences.get(screenSentenceKey(f.finding)) ?? f.text,
         // CUL-1364: a rising trial pair counted over a trial since replaced says "in the
         // trial's 22 days" under a trial row reading day 1. It is named by its own day, the
         // title Home gives it ("Diet trial, day 22 of 56"); every other row has no detail.
@@ -393,6 +407,16 @@ function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
         isSafety: f.finding.priorityClass === 'safety',
       },
     }));
+}
+
+/**
+ * The key a screen's sentence is quoted under: the whole cached finding, so a sentence the
+ * screen composed is quoted only beside the very finding it was composed from. A cache that
+ * regenerated between this page's read and the screen's makes the two differ, and the row
+ * quotes its own cached sentence instead (the safe direction: the engine's words).
+ */
+export function screenSentenceKey(finding: SignalFinding): string {
+  return JSON.stringify(finding);
 }
 
 /** EN-10's lines as one quoted detail, or null when the finding carries none. */

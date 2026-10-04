@@ -169,7 +169,7 @@ describe('CUL-1440 · 4 and 5 · the phone script', () => {
   it('4 · names the drug beside "Most recent", so the date is read with the drug in view', () => {
     const masking = screenMaskingOf({ sign: 'cough', signWord: 'coughing', courses: [course('Prednisone', '2026-09-21')], visitsOn: [], today });
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicityCough()), today, episodes, masking }));
-    const facts = phoneScript(model.finding, 'Nyx', false, model.scriptMasking);
+    const facts = phoneScript(model.finding, 'Nyx', false, model.scriptMasking, null);
     expect(facts).not.toBeNull();
     const labels = facts!.map((f) => f.label);
     expect(labels).toContain('Most recent');
@@ -187,12 +187,12 @@ describe('CUL-1440 · 4 and 5 · the phone script', () => {
     expect(model.scriptMasking?.withholdCompare).toBe(true);
     // 0 → 5 is a rise: the recent count stays (the escalation direction); the zero beside it goes.
     expect(model.scriptMasking?.recentOnly).toBe(true);
-    const facts = phoneScript(model.finding, 'Nyx', false, model.scriptMasking)!;
+    const facts = phoneScript(model.finding, 'Nyx', false, model.scriptMasking, null)!;
     expect(facts).toContainEqual({ label: 'Recent 4 weeks', value: '5 · logged on 27 of the recent 28 days' });
     expect(facts.map((f) => f.value).join(' ')).not.toMatch(/before: 0/);
     expect(facts).toContainEqual({ label: 'Last visit', value: "Aug 20. Anything given there isn't in the record." });
     // The same row with no masking still prints (flag off is unchanged).
-    expect(phoneScript(finding, 'Nyx', false, null)!.some((f) => f.label.startsWith('Recent '))).toBe(true);
+    expect(phoneScript(finding, 'Nyx', false, null, null)!.some((f) => f.label.startsWith('Recent '))).toBe(true);
   });
 
   it('5 · a rise with no zero in a touched half keeps its row (the escalation direction)', () => {
@@ -211,7 +211,7 @@ describe('CUL-1440 · 4 and 5 · the phone script', () => {
     const masking = screenMaskingOf({ sign: 'cough', signWord: 'coughing', courses: [course('Prednisone', '2026-09-21')], visitsOn: [], today });
     const model = buildSignalScreenModel(inputOf({ cached: cachedOf(finding), today, episodes, masking, generatedOn: today }));
     expect(model.scriptMasking).toMatchObject({ withholdCompare: true, recentOnly: false });
-    expect(phoneScript(model.finding, 'Nyx', false, model.scriptMasking)!.some((f) => f.label.startsWith('Recent '))).toBe(false);
+    expect(phoneScript(model.finding, 'Nyx', false, model.scriptMasking, null)!.some((f) => f.label.startsWith('Recent '))).toBe(false);
   });
 
   it('worsening: the engine\'s windows are each `windowDays` long, so a visit span ending Sep 21 touches the week before', () => {
@@ -233,7 +233,7 @@ describe('CUL-1440 · 4 and 5 · the phone script', () => {
       inputOf({ cached: cachedOf(worsening as unknown as CachedFinding['finding']), today: '2026-09-30', episodes: [episode('2026-09-28', 9)], masking, generatedOn: '2026-09-30' }),
     );
     expect(model.scriptMasking?.withholdCompare).toBe(true);
-    expect(phoneScript(model.finding, 'Nyx', false, model.scriptMasking)!.some((f) => f.label === 'Week before')).toBe(false);
+    expect(phoneScript(model.finding, 'Nyx', false, model.scriptMasking, null)!.some((f) => f.label === 'Week before')).toBe(false);
   });
 });
 

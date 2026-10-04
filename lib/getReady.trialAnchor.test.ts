@@ -82,6 +82,7 @@ const input = (findings: CachedFinding[], signalAnchor: SignalTrialAnchor): Wort
   findings,
   withholdFallingVomit: false,
   signalAnchor,
+  screenSentences: new Map(),
   trialStrip: null,
   trialScreen: null,
   trialFacts: { status: 'unknown' },

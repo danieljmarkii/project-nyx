@@ -486,6 +486,10 @@ const SURFACES: ReadonlyArray<Surface> = [
   },
   { name: 'Report', rel: 'app/report.tsx', load: () => require('../app/report').default },
   { name: 'Event', rel: 'app/event/[id].tsx', load: () => require('../app/event/[id]').default },
+  // CUL-1570: Get ready reads the gate to choose which sentence a Signal row quotes; it draws
+  // nothing of the redesign. Its async half (flag off, no screen read) is proved in
+  // `app/rundown.getready.test.tsx` — this comparison sees the first frame only (C-41).
+  { name: 'Get ready', rel: 'app/rundown.tsx', load: () => require('../app/rundown').default },
 ];
 
 /** Rendered nodes in a normalized tree — the non-vacuity measure below. */
@@ -526,7 +530,7 @@ describe('D2-0 — flag-off is byte-identical to an app without the redesign', (
     // C-38: a floor that iterates the list under test is green when an entry is
     // removed from it. The surface set is pinned by NAME here (the two the spec
     // names), and each name is checked against the repository.
-    expect(SURFACES.map((s) => s.name)).toEqual(['Home', 'Patterns', 'the Signal route', 'Cold start', 'Report', 'Event']);
+    expect(SURFACES.map((s) => s.name)).toEqual(['Home', 'Patterns', 'the Signal route', 'Cold start', 'Report', 'Event', 'Get ready']);
     for (const s of SURFACES) expect(fs.existsSync(path.join(REPO_ROOT, s.rel))).toBe(true);
   });
 
@@ -631,6 +635,11 @@ const DRAWS_ELSEWHERE_OK: Record<string, string> = {
   // of the redesign renders from it, and the no-read-when-off half is proved in
   // `components/trialScreen/TrialScreen.test.tsx`.
   'hooks/useTrialSignalDoor.ts': 'decides a door on a non-redesign screen; draws nothing of the redesign',
+  // CUL-1570 (GC-4 PR 3): Get ready reads the gate to decide which sentence a Signal row quotes,
+  // the Signal screen's composed one or the cached one. The row is Get ready's own text row; no
+  // node of the redesign renders from it. Flag off, no screen is read and the input is empty,
+  // proved in `app/rundown.getready.test.tsx`.
+  'app/rundown.tsx': 'decides which sentence Worth raising quotes; draws nothing of the redesign',
 };
 
 /** The directories both detectors read. Checked against the repository below. */
@@ -728,6 +737,8 @@ describe('the redesign has one gate, and its consumers stay inside the namespace
       'app/event/[id].tsx',
       'app/insights/index.tsx',
       'app/report.tsx',
+      // CUL-1570: Get ready's Signal rows quote the screen's composed sentence under the gate.
+      'app/rundown.tsx',
       'app/signal/[id].tsx',
       'components/ColdStartOverlay.tsx',
       'components/event/IncidentReadCard.tsx',

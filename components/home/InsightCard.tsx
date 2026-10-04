@@ -71,6 +71,7 @@ import {
   trialResponseSampleLine,
   trialResponseTimedReconciliationLine,
   worseningNewSampleLine,
+  type PhoneScriptCounting,
 } from '../../lib/signalCopy';
 import type { PhoneScriptMasking } from '../../lib/screenMasking';
 import { DotLane, EvidenceBox, PhoneScript, StackedCompare } from './SignalReceipts';
@@ -339,6 +340,7 @@ export function ExpandedReceipts({
   trialRunning,
   withholdFallingVomit,
   masking,
+  counting,
 }: {
   finding: SignalFinding;
   petName: string;
@@ -350,6 +352,10 @@ export function ExpandedReceipts({
    *  `withholdCompare` drops the counted halves, box and row alike. Null off the Signal screen's
    *  EN-10 rule (Home's expand), the receipts as they always were. Required (C-37). */
   masking: PhoneScriptMasking | null;
+  /** Whose numbers the phone script reads on the Signal screen (CUL-1570): the screen's composed
+   *  counts, or the engine's dated to when the card was raised. Null on Home's expand, the script
+   *  as it always was. Required (C-37). */
+  counting: PhoneScriptCounting | null;
 }) {
   if (isTimingFinding(finding)) {
     const disclosure = timingControlDisclosure(finding);
@@ -383,7 +389,7 @@ export function ExpandedReceipts({
       </EvidenceBox>
     );
   }
-  const facts = phoneScript(finding, petName, withholdFallingVomit, masking);
+  const facts = phoneScript(finding, petName, withholdFallingVomit, masking, counting);
   if (facts) {
     // v1.1-b (CUL-787): a chronicity finding whose cache carries the counted 4-week halves
     // draws them ABOVE the script, in the same "Counted honestly" box the reflection lane
@@ -837,6 +843,7 @@ export function InsightCard({
                   // Home's expand is not under EN-10's screen rule (CUL-1440 covers the Signal
                   // screen and Get ready; Home's trial strip is CUL-1443).
                   masking={null}
+                  counting={null}
                 />
               )}
             </>
