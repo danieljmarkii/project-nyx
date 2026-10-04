@@ -65,6 +65,7 @@ import { dayKeyToLocalDate, toLocalDayKey } from '../lib/utils';
 import { usePetStore, type Pet } from './petStore';
 import { defaultHistoryScope, type HistoryScope } from './historyScopeStore';
 import { historyRequestKey, mergePages, snapshotForScope, useHistoryListStore } from './historyListStore';
+import * as historyWindowFacts from '../lib/historyWindowFacts';
 
 const TODAY = toLocalDayKey(new Date());
 const dayAgo = (n: number) => shiftDay(TODAY, -n);
@@ -119,6 +120,130 @@ beforeEach(async () => {
   });
   usePetStore.setState({ pets: [PET_A, PET_B], activePet: PET_A });
   store().reset();
+});
+
+// CUL-1228: the record is read once per refresh. A scope change reuses the read for the same
+// pet and day; every other load reads it fresh; a failed read is never reused.
+describe('the record: one read behind the count line and the pills', () => {
+  const reads = () => jest.spyOn(historyWindowFacts, 'readHistoryRecord');
+  const vomitScope = () => scopeFor(PET_A.id, { filter: { kind: 'type', type: 'vomit' } });
+  const total = (days: ReadonlyMap<string, { total: number }>) => [...days.values()].reduce((n, f) => n + f.total, 0);
+
+  it('the snapshot carries the record its facts were sliced from', async () => {
+    seedDays(3, 2);
+    await store().load({ pet: PET_A, scope: scopeFor(PET_A.id, { window: { kind: 'today' } }), today: TODAY });
+    const snap = store().snapshot!;
+    expect(snap.record.petId).toBe(PET_A.id);
+    expect(snap.record.windowFacts).toBe(snap.windowFacts);
+    expect(total(snap.record.recordDays)).toBe(6);
+    // Today's window is a slice: its two rows, out of the record's six.
+    expect(total(snap.facts.days)).toBe(2);
+    for (const [day, f] of snap.facts.days) expect(snap.record.recordDays.get(day)).toBe(f);
+  });
+
+  it('a scope change reuses the record; a fresh load reads what was written since', async () => {
+    seedDays(2, 2);
+    const spy = reads();
+    try {
+      await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY });
+      const first = store().snapshot!.record;
+      insertEvent('late', at(0, 9), 'vomit');
+      await store().load({ pet: PET_A, scope: vomitScope(), today: TODAY, reuseRecord: true });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(store().snapshot!.record).toBe(first);
+      await store().load({ pet: PET_A, scope: vomitScope(), today: TODAY });
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(total(store().snapshot!.record.recordDays)).toBe(5);
+      expect(total(store().snapshot!.facts.days)).toBe(5);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a scope change joins a record read still in flight', async () => {
+    seedDays(2, 2);
+    const spy = reads();
+    try {
+      let open!: () => void;
+      mockGate = new Promise<void>((r) => (open = r));
+      const a = store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY });
+      const b = store().load({ pet: PET_A, scope: vomitScope(), today: TODAY, reuseRecord: true });
+      mockGate = null;
+      open();
+      expect(await a).toBe('superseded');
+      expect(await b).toBe('drawn');
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a failed record read is never reused, and a reset drops the last one', async () => {
+    seedDays(2, 2);
+    const spy = reads();
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockFail = true;
+      expect(await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY })).toBe('failed');
+      mockFail = false;
+      expect(await store().load({ pet: PET_A, scope: vomitScope(), today: TODAY, reuseRecord: true })).toBe('drawn');
+      expect(spy).toHaveBeenCalledTimes(2);
+      store().reset();
+      await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY, reuseRecord: true });
+      expect(spy).toHaveBeenCalledTimes(3);
+    } finally {
+      spy.mockRestore();
+      errors.mockRestore();
+    }
+  });
+
+  it('a record whose courses could not be read is never reused: the next scope reads them again', async () => {
+    seedDays(2, 2);
+    const spy = reads();
+    // The module jest serves (the suite's partial mock), not an import namespace's copy of it.
+    const served = jest.requireMock<typeof import('../lib/historyQueries')>('../lib/historyQueries');
+    const courses = jest.spyOn(served, 'readHistoryCourses').mockRejectedValueOnce(new Error('locked'));
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY })).toBe('failed');
+      expect(await store().load({ pet: PET_A, scope: vomitScope(), today: TODAY, reuseRecord: true })).toBe('drawn');
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+      courses.mockRestore();
+      errors.mockRestore();
+    }
+  });
+
+  it('a load for a new request takes an earlier request\'s failure down', async () => {
+    seedDays(2, 2);
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      mockFail = true;
+      expect(await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY })).toBe('failed');
+      expect(store().failedRequest).not.toBeNull();
+      mockFail = false;
+      const pending = store().load({ pet: PET_A, scope: vomitScope(), today: TODAY });
+      expect(store().failedRequest).toBeNull();
+      expect(await pending).toBe('drawn');
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it('a record read for another day or another version of the pet is not reused', async () => {
+    seedDays(2, 2);
+    const spy = reads();
+    try {
+      await store().load({ pet: PET_A, scope: scopeFor(PET_A.id), today: TODAY });
+      await store().load({ pet: { ...PET_A, sex: 'male' }, scope: vomitScope(), today: TODAY, reuseRecord: true });
+      expect(spy).toHaveBeenCalledTimes(2);
+      await store().load({ pet: { ...PET_A, sex: 'male' }, scope: scopeFor(PET_A.id), today: dayAgo(1), reuseRecord: true });
+      expect(spy).toHaveBeenCalledTimes(3);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe('a load: one snapshot, every read together', () => {

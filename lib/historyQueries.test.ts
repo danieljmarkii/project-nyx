@@ -41,7 +41,7 @@ jest.mock('expo-sqlite', () => ({
 import { getTimeline, type TimelineRow } from './db';
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
-import { dayCountFor, dayFactsOn, notInFullOf, shiftDay, unconfirmedOf, type DayRange, type HistoryFilter } from './historyDays';
+import { dayCountFor, dayFactsOn, duplicateCountsOf, notInFullOf, shiftDay, unconfirmedOf, type DayRange, type HistoryFilter } from './historyDays';
 import {
   DAY_PAGE_MIN_ROWS,
   SEARCHED_FIELDS,
@@ -51,7 +51,8 @@ import {
   readHistoryCourses,
   readHistoryFacts,
   readLookRows,
-  readRecordDays,
+  readRecordFacts,
+  historyFactsFor,
   readRecordStartDay,
   readWholeDays,
   searchCondition,
@@ -593,25 +594,111 @@ describe('the facts — flags, looks, firsts, duplicates', () => {
   });
 });
 
-// HV-9's pinned row reads only the days (CUL-1228: the duplicates pass is most of the
-// whole-record read's cost, and the row never shows them). The two reads must never
-// disagree about a day, or the pill and the count line would print two numbers.
-describe('readRecordDays — the facts\' days, and nothing else', () => {
-  it('reads exactly the days readHistoryFacts reads, over any window', async () => {
+// CUL-1228: the screen reads the record ONCE, over All time, and every window on screen is
+// a slice of it (`historyFactsFor`). A slice must be exactly what a read of that window alone
+// would answer, days, firsts and duplicates alike, or the pill (which slices the record) and
+// the count line (which used to read the window) would print two numbers for one window.
+describe('historyFactsFor — a window sliced from the record is the window read alone', () => {
+  /** The rich seed, plus same-minute pairs at every edge a window below has: a pair
+   *  straddling a window's start (the anchor outside it), a pair inside it in both
+   *  spellings, and a pair straddling a window's end. */
+  function seedEdges() {
     seedRich();
-    insertEvent('before', localAt(9, 23, 59, 50).toISOString(), 'cough');
-    insertEvent('seam', hydrated(localAt(10, 0, 0, 40)), 'cough');
-    const windows: DayRange[] = [RANGE, { fromDay: '2026-09-10', toDay: '2026-09-21' }, { fromDay: '2026-09-05', toDay: '2026-09-05' }];
-    for (const range of windows) {
-      const [days, facts] = await Promise.all([readRecordDays(PET, range), readHistoryFacts(PET, range)]);
-      expect(days.size).toBeGreaterThan(0);
-      expect([range, days]).toEqual([range, facts.days]);
+    insertEvent('pre-10', localAt(9, 23, 59, 50).toISOString(), 'cough');
+    insertEvent('seam-10', hydrated(localAt(10, 0, 0, 40)), 'cough');
+    insertEvent('in-12a', localAt(12, 14, 0, 0).toISOString(), 'vomit');
+    insertEvent('in-12b', hydrated(localAt(12, 14, 0, 30)), 'vomit');
+    insertEvent('end-21', localAt(21, 23, 59, 40).toISOString(), 'diarrhea');
+    insertEvent('post-21', hydrated(localAt(22, 0, 0, 10)), 'diarrhea');
+    insertMeal('meal-15a', localAt(15, 8, 0, 0).toISOString(), 'rc');
+    insertMeal('meal-15b', hydrated(localAt(15, 8, 0, 20)), 'rc');
+  }
+
+  const WINDOWS: DayRange[] = [
+    RANGE,
+    { fromDay: '2026-09-10', toDay: '2026-09-21' },
+    { fromDay: '2026-09-10', toDay: '2026-09-12' },
+    { fromDay: '2026-09-05', toDay: '2026-09-05' },
+    { fromDay: '2026-09-12', toDay: '2026-09-12' },
+    { fromDay: '2026-09-15', toDay: '2026-09-21' },
+  ];
+  const ALL_TIME_RANGE: DayRange = { fromDay: '2026-08-01', toDay: '2026-09-30' };
+
+  it('every window: the slice of one All-time read equals the window\'s own read, duplicates included', async () => {
+    seedEdges();
+    const record = await readRecordFacts(PET, ALL_TIME_RANGE);
+    let duplicatesSeen = 0;
+    for (const range of WINDOWS) {
+      const direct = await readHistoryFacts(PET, range);
+      const sliced = historyFactsFor(record, range);
+      expect(direct.days.size).toBeGreaterThan(0);
+      expect([range, sliced]).toEqual([range, direct]);
+      duplicatesSeen += sliced.duplicates.total;
     }
+    // Non-vacuity: the edges above produce duplicates in some window, and the start-straddle
+    // produces none inside the window it straddles.
+    expect(duplicatesSeen).toBeGreaterThan(0);
+    expect(historyFactsFor(record, { fromDay: '2026-09-10', toDay: '2026-09-10' }).duplicates.total).toBe(0);
+    expect(historyFactsFor(record, { fromDay: '2026-09-12', toDay: '2026-09-12' }).duplicates.byType.vomit).toBe(1);
+  });
+
+  // The adversarial pass's counterexample (CUL-1228). A row spelled `+00:00` EXACTLY on the
+  // duplicates' lower slack bound (local midnight the day before the window), anchoring an
+  // unbroken 40s chain into the window: the window read's SQL prefilter compared text and
+  // dropped it (C-40), the slice kept it, and the two counted 44 and 45. The parsed instant
+  // decides both now. No real log makes a 24-hour chain; the rule is pinned anyway.
+  const W: DayRange = { fromDay: '2026-09-10', toDay: '2026-09-10' };
+  const WIDE: DayRange = { fromDay: '2026-08-01', toDay: '2026-09-30' };
+  /** A vomit every 40s from `fromMs` through 00:59:20 on the window's day, spelled both
+   *  ways: 90 rows inside the window, an even count, so the chain's phase decides whether
+   *  the window's first row pairs inside it or with the row before it. */
+  function seedChain(fromMs: number) {
+    const end = localAt(10, 0, 59, 20).getTime();
+    for (let t = fromMs, i = 0; t <= end; t += 40_000, i++) {
+      const d = new Date(t);
+      insertEvent(`chain-${i}`, i % 2 === 0 ? hydrated(d) : d.toISOString(), 'vomit');
+    }
+  }
+
+  it('a row exactly on the slack\'s lower bound counts the same in the slice and in the window\'s own read', async () => {
+    seedChain(localAt(9, 0, 0, 0).getTime());
+    const direct = await readHistoryFacts(PET, W);
+    const sliced = historyFactsFor(await readRecordFacts(PET, WIDE), W);
+    expect(direct.duplicates.total).toBeGreaterThan(0);
+    expect(sliced.duplicates).toEqual(direct.duplicates);
+  });
+
+  it('the slice sweeps the window\'s slack, never the whole record: a row before the slack moves nothing', async () => {
+    // The chain starts 40s before the slack: swept, that first row re-pairs the whole chain
+    // (the anchor rule) and the window's count moves (45 → 44); left out, nothing moves.
+    seedChain(localAt(9, 0, 0, 0).getTime() - 40_000);
+    const record = await readRecordFacts(PET, WIDE);
+    const sliced = historyFactsFor(record, W);
+    expect(sliced.duplicates).toEqual((await readHistoryFacts(PET, W)).duplicates);
+    // Non-vacuity: sweeping the whole record WOULD count differently here.
+    expect(duplicateCountsOf(record.population, W).total).not.toBe(sliced.duplicates.total);
+  });
+
+  it('the whole record is its own window: the days are not copied, only the duplicates swept', async () => {
+    seedEdges();
+    const record = await readRecordFacts(PET, RANGE);
+    const facts = historyFactsFor(record, RANGE);
+    expect(facts.days).toBe(record.days);
+    expect(facts.firsts).toBe(record.firsts);
+    expect(facts).toEqual(await readHistoryFacts(PET, RANGE));
+  });
+
+  it('a window the record does not cover is refused, never sliced into empty days', async () => {
+    seedEdges();
+    const record = await readRecordFacts(PET, { fromDay: '2026-09-10', toDay: '2026-09-21' });
+    expect(() => historyFactsFor(record, RANGE)).toThrow();
+    expect(() => historyFactsFor(record, { fromDay: '2026-09-15', toDay: '2026-09-22' })).toThrow();
+    expect(() => historyFactsFor(record, { fromDay: '2026-09-15', toDay: '2026-09-14' })).toThrow();
   });
 
   it('the record\'s first day is the facts\' first day (the window table\'s All time)', async () => {
     seedRich();
-    expect(await readRecordStartDay(PET)).toBe((await readHistoryFacts(PET, RANGE)).firsts.record);
+    expect(await readRecordStartDay(PET)).toBe((await readRecordFacts(PET, RANGE)).firsts.record);
     expect(await readRecordStartDay(OTHER_PET)).toBeNull();
   });
 });

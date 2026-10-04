@@ -62,7 +62,7 @@ import {
   type WindowFacts,
 } from './historyWindows';
 import { historyDateFormatFor } from './historyDateFormat';
-import type { HistoryRecordData } from './historyWindowFacts';
+import type { PinnedRecordData } from './historyWindowFacts';
 import { recordMonth } from './recordDates';
 
 // ── The words ─────────────────────────────────────────────────────────────────────
@@ -518,7 +518,7 @@ export function windowPillSpokenOf(resolved: ResolvedWindow | null, key: History
 export interface PinnedRowInput {
   /** The record's answer for the pet on screen, or null while it loads or after it failed:
    *  either way there is nothing to count, and no row may carry a number (C-12). */
-  record: HistoryRecordData | null;
+  record: PinnedRecordData | null;
   /** The filter on screen. */
   filter: HistoryFilter;
   /** The window the store holds: the owner's choice, applied only when it is offered. */

@@ -1,7 +1,8 @@
-// What History v2's controls read (HV-9 / CUL-1166; spec §3.8, §3.9, §5.2): the window
-// table's facts, the record's numbers over All time, the pet's courses and the photos
-// whose read has not landed. Every read here is one another module already owns; this
-// file only assembles them for one pet and one `today`.
+// What History v2 reads of the whole record (HV-9 / CUL-1166, CUL-1228; spec §3.8, §3.9,
+// §5.2): the window table's facts, the record's numbers over All time, the pet's courses
+// and the photos whose read has not landed. The list and the pinned row share this one
+// read. Every read here is one another module already owns; this file only assembles them
+// for one pet and one `today`.
 //
 // ── ONE `today` FOR THE WHOLE ASSEMBLY ──────────────────────────────────────────────
 // `WindowFacts` must be derived for a single day (HV-3, `lib/historyWindows.ts`): the
@@ -34,7 +35,7 @@ import { analysisChainOutstanding } from './analysisChain';
 import { getDb } from './db';
 import { loadTrialPredicateFacts, type DietTrialFactsPet } from './dietTrialFacts';
 import type { DayFacts, DayRange, HistoryCourse } from './historyDays';
-import { readDayPage, readHistoryCourses, readRecordDays, readRecordStartDay } from './historyQueries';
+import { readDayPage, readHistoryCourses, readRecordFacts, readRecordStartDay, type RecordFacts } from './historyQueries';
 import { ALL_TIME, resolveWindow, windowTrialOf, type WindowFacts } from './historyWindows';
 import { readCopies } from './readCopy';
 import { readStateOf } from './readState';
@@ -90,15 +91,19 @@ export async function readNotReadDays(
   return out;
 }
 
-/** Everything the pinned row counts, for one pet, as of one instant. */
+/** Everything History counts, for one pet, as of one instant: the pinned row's pills and
+ *  sheets, and the list's facts for the window on screen (`historyListStore`). */
 export interface HistoryRecordData {
   petId: string;
   /** The window table's facts (`today` is theirs). */
   windowFacts: WindowFacts;
   /** All time's days (`resolveWindow(ALL_TIME, windowFacts).bounds`). */
   range: DayRange;
-  /** Each day's facts over All time: every window's numbers are a slice of these days
-   *  (`daysIn`), from the population read the count line's facts are built from. */
+  /** The record's facts over All time: the ONE read every number on the screen is a slice
+   *  of (`historyFactsFor`), the list's count line, day headers and strip included (CUL-1228). */
+  facts: RecordFacts;
+  /** `facts.days`, the same map under the pinned row's name (an alias, never a second
+   *  read): each day's facts over All time, which the pills slice per window (`daysIn`). */
   recordDays: ReadonlyMap<string, DayFacts>;
   /** The pet's courses in the derivation's order, or null when they could not be read. */
   courses: readonly HistoryCourse[] | null;
@@ -106,10 +111,16 @@ export interface HistoryRecordData {
   notReadDays: ReadonlyMap<string, number> | null;
 }
 
+/** What the pinned row's pills and sheets count from: the record less the population the
+ *  list's duplicates are swept over, which the row never shows. */
+export type PinnedRecordData = Omit<HistoryRecordData, 'facts'>;
+
 /**
- * One read of everything the pinned row shows: the window facts, then the record's facts
- * over the All time window they give, the courses and the read states. Rejects when the
- * window facts or the record's facts cannot be read (the header).
+ * One read of the whole record for History's screen: the window facts, then the record's
+ * facts over the All time window they give, the courses and the read states. The list store
+ * reads it once per refresh and publishes it beside the window it slices, so the pinned row
+ * and the count line never come from two reads (CUL-1228). Rejects when the window facts or
+ * the record's facts cannot be read (the header).
  */
 export async function readHistoryRecord(
   pet: DietTrialFactsPet,
@@ -118,8 +129,8 @@ export async function readHistoryRecord(
 ): Promise<HistoryRecordData> {
   const windowFacts = await readWindowFacts(pet, nowMs);
   const allTime = resolveWindow(ALL_TIME, windowFacts).bounds;
-  const [recordDays, courses, notReadDays] = await Promise.all([
-    readRecordDays(pet.id, allTime),
+  const [facts, courses, notReadDays] = await Promise.all([
+    readRecordFacts(pet.id, allTime),
     readHistoryCourses(pet.id).catch((e: unknown) => {
       console.error('[historyWindowFacts] reading the courses failed:', e);
       return null;
@@ -129,5 +140,5 @@ export async function readHistoryRecord(
       return null;
     }),
   ]);
-  return { petId: pet.id, windowFacts, range: allTime, recordDays, courses, notReadDays };
+  return { petId: pet.id, windowFacts, range: allTime, facts, recordDays: facts.days, courses, notReadDays };
 }

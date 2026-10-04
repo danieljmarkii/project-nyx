@@ -54,14 +54,14 @@ jest.mock('../../lib/db', () => ({
   getDb: jest.fn(() => ({})),
 }));
 jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn(() => Promise.resolve()) }));
-// The pinned row's one read (HV-9): stubbed to a record that ANSWERS, so its absence
-// flag-off proves the gate rather than an empty fixture (C-41). The rest of the module
-// stays real: the list assembles its window facts through `readWindowFacts`, over the
-// reads stubbed below, and a mock narrower than that would hide the dependency (C-39).
-jest.mock('../../lib/historyWindowFacts', () => ({
-  ...jest.requireActual('../../lib/historyWindowFacts'),
-  readHistoryRecord: jest.fn(),
-}));
+// The screen's one record read (HV-9, CUL-1228): REAL, wrapped only so a test can count it.
+// The list assembles the record through it over the reads stubbed below, each of which
+// ANSWERS, so its absence flag-off proves the gate rather than an empty fixture (C-41); a
+// mock narrower than the module would hide the dependency (C-39).
+jest.mock('../../lib/historyWindowFacts', () => {
+  const actual = jest.requireActual('../../lib/historyWindowFacts');
+  return { ...actual, readHistoryRecord: jest.fn((...a: unknown[]) => actual.readHistoryRecord(...a)) };
+});
 jest.mock('../../store/petStore', () => {
   const pet = { id: 'p1', name: 'Rex', species: 'dog', sex: 'male' };
   const state = { activePet: pet, pets: [pet] };
@@ -77,7 +77,7 @@ jest.mock('../../lib/vetVisits', () => ({
 jest.mock('../../lib/historyQueries', () => ({
   ...jest.requireActual('../../lib/historyQueries'),
   readRecordStartDay: jest.fn(async () => '2026-09-20'),
-  readHistoryFacts: jest.fn(async () => mockFacts()),
+  readRecordFacts: jest.fn(async (_petId: string, range: DayRange) => mockRecordFacts(range)),
   readDayPage: jest.fn(async () => mockPage()),
   readWholeDays: jest.fn(async () => new Map()),
   readLookRows: jest.fn(async () => new Map()),
@@ -122,15 +122,16 @@ import { getTimeline } from '../../lib/db';
 import {
   readDayPage,
   readHistoryCourses,
-  readHistoryFacts,
+  readRecordFacts,
   readRecordStartDay,
   readWholeDays,
   type DayPage,
   type HistoryRow,
+  type RecordFacts,
 } from '../../lib/historyQueries';
-import { buildDayFacts, firstDaysOf, type HistoryFacts } from '../../lib/historyDays';
+import { buildDayFacts, firstDaysOf, type DayRange, type PopulationRow } from '../../lib/historyDays';
 import { loadTrialPredicateFacts } from '../../lib/dietTrialFacts';
-import { readHistoryRecord, type HistoryRecordData } from '../../lib/historyWindowFacts';
+import { readHistoryRecord } from '../../lib/historyWindowFacts';
 import { readLatestVisitBefore } from '../../lib/visitWindow';
 import { toLocalDayKey } from '../../lib/utils';
 import { __resetAppConfigForTest } from '../../hooks/useAppConfig';
@@ -141,13 +142,13 @@ import { useEventStore } from '../../store/eventStore';
 import { useHistoryListStore } from '../../store/historyListStore';
 
 const mockGetTimeline = getTimeline as jest.Mock;
-const mockReadRecord = readHistoryRecord as jest.MockedFunction<typeof readHistoryRecord>;
+const mockReadRecord = readHistoryRecord as jest.Mock;
 const V2_ROOT = 'history-v2-screen';
 
 /** Every read v2 makes that v1 never does: the gate's async half is their absence. */
 const V2_READS: ReadonlyArray<[string, jest.Mock]> = [
   ['readRecordStartDay', readRecordStartDay as jest.Mock],
-  ['readHistoryFacts', readHistoryFacts as jest.Mock],
+  ['readRecordFacts', readRecordFacts as jest.Mock],
   ['readDayPage', readDayPage as jest.Mock],
   ['readWholeDays', readWholeDays as jest.Mock],
   ['readHistoryCourses', readHistoryCourses as jest.Mock],
@@ -189,45 +190,20 @@ function mockPage(): DayPage {
   return { days: [{ day: TODAY, rows: [mealRow()] }], span: { fromDay: TODAY, toDay: TODAY }, next: null };
 }
 
-/** The facts through the REAL builders, over the same row: the shape the read returns. */
-function mockFacts(): HistoryFacts {
-  const range = { fromDay: TODAY, toDay: TODAY };
+/** The record's facts through the REAL builders, over the same row: the shape the read
+ *  returns, for whatever range the screen asks (its All time). */
+function mockRecordFacts(range: DayRange): RecordFacts {
+  const meal: PopulationRow = {
+    id: 'e1', eventType: 'meal', occurredAt: MEAL_AT, foodItemId: null, foodType: null, intakeRating: null,
+    isDose: false, medicationId: null, medicationItemId: null, adherence: null, hasPhoto: false, hasNote: false,
+  };
   return {
     // The pet every row here belongs to (the mocked pet store's).
     petId: 'p1',
     range,
-    days: buildDayFacts({
-      rows: [
-        {
-          id: 'e1', eventType: 'meal', occurredAt: MEAL_AT, foodItemId: null, foodType: null, intakeRating: null,
-          isDose: false, medicationId: null, medicationItemId: null, adherence: null, hasPhoto: false, hasNote: false,
-        },
-      ],
-      lookDays: [],
-      range,
-      freeFedSpans: [],
-      regimens: [],
-    }),
+    days: buildDayFacts({ rows: [meal], lookDays: [], range, freeFedSpans: [], regimens: [] }),
     firsts: firstDaysOf([{ eventType: 'meal', firstMs: Date.parse(MEAL_AT), firstPhotoMs: null, firstNoteMs: null }], null),
-    duplicates: { total: 0, byType: {} },
-  };
-}
-
-/** What the pinned row's read answers: one meal on the day the page read holds. */
-function answeringHistoryRecord(): HistoryRecordData {
-  const range = { fromDay: '2026-09-20', toDay: '2026-09-25' };
-  const meal = {
-    id: 'e1', eventType: 'meal', occurredAt: '2026-09-20T09:00:00Z', foodItemId: null, foodType: 'meal',
-    intakeRating: null, isDose: false, medicationId: null, medicationItemId: null, adherence: null,
-    hasPhoto: false, hasNote: false,
-  };
-  return {
-    petId: 'p1',
-    windowFacts: { petId: 'p1', today: '2026-09-25', firstRecordDay: '2026-09-20', trial: null, sinceVisit: null },
-    range,
-    recordDays: buildDayFacts({ rows: [meal], lookDays: [], range, freeFedSpans: [], regimens: [] }),
-    courses: [],
-    notReadDays: new Map(),
+    population: [meal],
   };
 }
 
@@ -278,7 +254,6 @@ beforeEach(() => {
   useEventStore.setState({ todayEvents: [] });
   useHistoryListStore.getState().reset();
   answeringRecord();
-  mockReadRecord.mockResolvedValue(answeringHistoryRecord());
 });
 
 afterAll(() => {

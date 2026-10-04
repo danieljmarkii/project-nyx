@@ -1,7 +1,9 @@
 // The pinned row, rendered over the REAL scope store and the REAL pet store (HV-9 /
-// CUL-1166; spec §7 AC 6, 7, 13, 30 and CUL-488). The record's read is the one thing
-// stood in for (`readHistoryRecord`), and what it answers is built by HV-4's and HV-3's
-// real builders from population rows, the shape production hands over (C-35). Every rule
+// CUL-1166; spec §7 AC 6, 7, 13, 30 and CUL-488). The record is the one thing stood in
+// for: since CUL-1228 the row draws the record the list's load published
+// (`useHistoryRecordFacts`, proven in its own suite and the list's), and here a small hook
+// reads it for the pet on screen through `mockRead`. What it answers is built by HV-4's
+// and HV-3's real builders from population rows, the shape production hands over (C-35). Every rule
 // the row draws is `lib/historyControls.ts`'s and is table-tested there; this file proves
 // the wiring: that the pills and the sheets show those rules' answers, that a tap writes
 // the store, and that a pet switch closes everything and names the new pet.
@@ -25,7 +27,32 @@ jest.mock('../../lib/sync', () => ({
   syncPendingEvents: jest.fn(),
   ensureEventAttachmentsSynced: jest.fn(),
 }));
-jest.mock('../../lib/historyWindowFacts', () => ({ readHistoryRecord: jest.fn() }));
+// The list's load, stood in: one read of the record for the pet on screen, drawn only for
+// that pet (`useHistoryRecordFacts`' contract), loading until it lands, an error if it fails.
+jest.mock('../../hooks/useHistoryRecordFacts', () => {
+  const React = require('react');
+  const { usePetStore: petStore } = require('../../store/petStore');
+  return {
+    useHistoryRecordFacts: () => {
+      const activePet = petStore((st: { activePet: Pet | null }) => st.activePet);
+      const petId = activePet?.id ?? null;
+      const [answer, setAnswer] = React.useState(null as { petId: string; state: unknown } | null);
+      React.useEffect(() => {
+        if (!activePet) return undefined;
+        let cancelled = false;
+        const { id, name, species, sex } = activePet;
+        mockRead({ id, name, species, sex }, false, Date.now()).then(
+          (data: PinnedRecordData) => !cancelled && setAnswer({ petId: id, state: { status: 'ready', data } }),
+          () => !cancelled && setAnswer({ petId: id, state: { status: 'error' } }),
+        );
+        return () => {
+          cancelled = true;
+        };
+      }, [petId]);
+      return answer !== null && answer.petId === petId ? answer.state : { status: 'loading' };
+    },
+  };
+});
 
 import { Keyboard, StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
@@ -37,7 +64,8 @@ import { ALLOWLIST_FLAGS_UNSET, APP_CONFIG_DEFAULTS } from '../../lib/appConfig'
 import { useBetaOptInStore } from '../../lib/betaFeatures';
 import { SEARCH_COUNTS_NOTHING, buildDayFacts, historyCourseOf, type PopulationRow } from '../../lib/historyDays';
 import { windowTrialOf, type WindowFacts } from '../../lib/historyWindows';
-import { readHistoryRecord, type HistoryRecordData } from '../../lib/historyWindowFacts';
+import type { PinnedRecordData } from '../../lib/historyWindowFacts';
+import type { DietTrialFactsPet } from '../../lib/dietTrialFacts';
 import { deriveMedicationCourses, type MedicationHistoryRegimen } from '../../lib/medicationHistory';
 import { localDayIndexOf } from '../../lib/utils';
 import { latestVisitBefore } from '../../lib/visitWindow';
@@ -45,7 +73,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useHistoryScopeStore } from '../../store/historyScopeStore';
 import { usePetStore, type Pet } from '../../store/petStore';
 
-const mockRead = readHistoryRecord as jest.MockedFunction<typeof readHistoryRecord>;
+const mockRead: jest.Mock<Promise<PinnedRecordData>, [DietTrialFactsPet, boolean, number]> = jest.fn();
 
 // ── The record ───────────────────────────────────────────────────────────────────
 
@@ -121,7 +149,7 @@ const ROWS: PopulationRow[] = [
   row('o-0924', '2026-09-24', 'other', { hasNote: true }),
 ];
 
-function recordFor(forPet: Pet): HistoryRecordData {
+function recordFor(forPet: Pet): PinnedRecordData {
   const facts: WindowFacts = {
     petId: forPet.id,
     today: TODAY,
@@ -214,7 +242,7 @@ describe('the pinned row (§3.1)', () => {
   });
 
   it('the type pill carries the count line’s number for its filter, once the record has answered', async () => {
-    let answer!: (d: HistoryRecordData) => void;
+    let answer!: (d: PinnedRecordData) => void;
     mockRead.mockImplementationOnce(() => new Promise((r) => (answer = r)));
     act(() => {
       store().setFilter('p1', { kind: 'type', type: 'vomit' });

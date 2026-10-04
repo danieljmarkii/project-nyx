@@ -70,7 +70,7 @@ import {
   type HistoryWindowKey,
   type WindowFacts,
 } from './historyWindows';
-import type { HistoryRecordData } from './historyWindowFacts';
+import type { PinnedRecordData } from './historyWindowFacts';
 import { deriveMedicationCourses, type MedicationHistoryRegimen } from './medicationHistory';
 import type { AttributableDose } from './medications';
 import { localDayIndexOf } from './utils';
@@ -616,7 +616,7 @@ describe('pinnedRowViewOf: everything the row draws, from one answer', () => {
     ['2026-06-01', 1],
     ['2026-09-18', 1],
   ]);
-  const ANSWER: HistoryRecordData = {
+  const ANSWER: PinnedRecordData = {
     petId: PET,
     windowFacts: FACTS,
     range: ALL_RANGE,
@@ -680,7 +680,7 @@ describe('pinnedRowViewOf: everything the row draws, from one answer', () => {
   });
 
   it('a record with nothing in it carries no number: a column of zeros is not an empty state', () => {
-    const empty: HistoryRecordData = {
+    const empty: PinnedRecordData = {
       petId: PET,
       windowFacts: emptyWindowFacts(PET, TODAY),
       range: { fromDay: TODAY, toDay: TODAY },
@@ -822,7 +822,7 @@ describe('call 1a: each sheet says what its numbers count', () => {
   });
 
   describe('through pinnedRowViewOf', () => {
-    const ANSWER: HistoryRecordData = {
+    const ANSWER: PinnedRecordData = {
       petId: PET,
       windowFacts: FACTS,
       range: ALL_RANGE,

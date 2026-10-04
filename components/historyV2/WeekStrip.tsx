@@ -82,7 +82,7 @@ import { ThemedText } from '../ui/ThemedText';
 import { Skeleton } from '../ui/Skeleton';
 
 export interface WeekStripProps {
-  /** `readHistoryFacts`' answer for the window on screen, or null while the first read is
+  /** The window's facts (`historyFactsFor`, the list's slice of the record), or null while the first read is
    *  in flight. A day it holds nothing for is a day with nothing logged. */
   facts: HistoryFacts | null;
   /** `resolveWindow(store.window, windowFacts)`: the window the facts were read for. */

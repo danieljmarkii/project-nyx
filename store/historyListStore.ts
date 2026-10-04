@@ -13,10 +13,10 @@ import {
   type HistoryFacts,
   type HistoryFilter,
 } from '../lib/historyDays';
+import { PHOTO_READING_OFF } from '../lib/historyControls';
 import {
+  historyFactsFor,
   readDayPage,
-  readHistoryCourses,
-  readHistoryFacts,
   readLookRows,
   readWholeDays,
   type DayPage,
@@ -26,7 +26,7 @@ import {
   type HistoryRow,
 } from '../lib/historyQueries';
 import { dayStartMs, instantOnDay, needsWholeDays, type HistoryDayTiming } from '../lib/historyScreen';
-import { readWindowFacts } from '../lib/historyWindowFacts';
+import { readHistoryRecord, type HistoryRecordData } from '../lib/historyWindowFacts';
 import { resolveWindow, windowParam, type ResolvedWindow, type WindowFacts } from '../lib/historyWindows';
 import { DEFAULT_MEAL_TIMING_CONFIG } from '../lib/mealTiming';
 import { mayCarryRead, type SpineAnalysisRow } from '../lib/spineNode';
@@ -49,14 +49,27 @@ import { usePetStore, type Pet } from './petStore';
 // What History v2's list has read for the scope on screen (CUL-1164 / HV-7;
 // docs/nyx-history-v2-requirements.md §3.2–3.5, §3.12, §5.2).
 //
-// ── ONE READ BEHIND EVERY NUMBER (R-1, AC 1, AC 5) ──────────────────────────────
-// A load reads, in order: the window's facts (the record's first day, the trial, the last
-// visit), the window those resolve to (HV-3), then everything the screen draws for it: the
-// facts every count sums (HV-4), the date-only items, the bowl, the first page, the whole
-// days behind a filtered page, and the timing lane's and the reads' inputs. It lands as ONE
-// snapshot, so the count line, the day headers and the strip can never come from two reads
-// (and the pinned row's counts, HV-9, can read the same snapshot). A re-read replaces the
-// whole snapshot at once; a removal, a write, a sync tick and a pull all re-derive together.
+// ── ONE READ BEHIND EVERY NUMBER (R-1, AC 1, AC 5, CUL-1228) ────────────────────
+// A load reads, in order: the whole record (`readHistoryRecord`: the window's facts, the
+// record's facts over All time, the courses, the read states), the window those resolve to
+// (HV-3), then everything the screen draws for it: the window's facts as a SLICE of the
+// record's (`historyFactsFor`, duplicates swept over the window only), the date-only items,
+// the bowl, the first page, the whole days behind a filtered page, and the timing lane's and
+// the reads' inputs. It lands as ONE snapshot carrying the record too, so the count line,
+// the day headers, the strip AND the pinned row's pills and sheets (`useHistoryRecordFacts`)
+// can never come from two reads, not even for the length of one read after a write. A
+// re-read replaces the whole snapshot at once; a removal, a write, a sync tick and a pull
+// all re-derive together. The cost of one answer: a re-read that fails keeps the last
+// snapshot, its record included, so the pills keep the counts the list keeps, and the list
+// says the refresh failed.
+//
+// ── THE RECORD IS READ ONCE PER REFRESH, NOT ONCE PER SCOPE (CUL-1228) ──────────
+// A two-year record costs a few hundred milliseconds of JS to read. A load that only changes
+// the scope (a filter, a window, a search) reuses the record read for the same pet and day
+// (`reuseRecord`), joining it while it is still in flight; every other load (the first
+// mount, a write, a sync, a pull, a return to the tab, midnight) reads it fresh, so a reused
+// record is never older than the last thing that could have changed it. A failed read is
+// never reused, and `reset()` drops it with the snapshot.
 //
 // ── A READ THAT ANSWERS FOR ANOTHER PET OR SCOPE IS DROPPED (CUL-1120, AC 12) ───
 // Two checks, protecting different things, as v1's loaders hold them: a monotonic load id
@@ -109,6 +122,9 @@ export interface HistorySnapshot {
   search: string | null;
   windowFacts: WindowFacts;
   resolved: ResolvedWindow;
+  /** The whole record this snapshot was sliced from: the pinned row counts from it, so the
+   *  pills and the count line are one read (`useHistoryRecordFacts`, CUL-1228). */
+  record: HistoryRecordData;
   facts: HistoryFacts;
   courses: readonly HistoryCourse[];
   /** Date-only items by day, over the window (`dateOnlyItemsOf`). */
@@ -139,6 +155,9 @@ export interface HistoryLoadRequest {
   scope: HistoryScope;
   /** `toLocalDayKey(new Date())`, derived once by the caller for the whole load. */
   today: string;
+  /** Only the scope changed since the last load: the record read for this pet and day may be
+   *  reused (the header). Default false: read the record fresh. */
+  reuseRecord?: boolean;
 }
 
 /** How a load ended: it drew, it failed (said on screen, C-12), or a newer one replaced it. */
@@ -156,15 +175,8 @@ interface HistoryListState {
    *  on the PAGES, not the snapshot object: a read landing mid-page replaces the snapshot and
    *  keeps its pages, and must neither drop the page nor orphan this state. */
   more: { of: HistoryPages; state: 'loading' | 'failed' } | null;
-  /** Moves once per pull to refresh, after its sync. The list re-reads by its own `load`;
-   *  the pinned row's record read (`useHistoryRecordFacts`) re-reads on this, so the pills
-   *  and sheets never keep a count the list just replaced (AC 5, GAP-18). A pull calls
-   *  `syncNow` directly, which moves no `hydrationTick`. */
-  pullTick: number;
 
   setToday: (today: string) => void;
-  /** A pull to refresh finished its sync. */
-  bumpPullTick: () => void;
   load: (request: HistoryLoadRequest) => Promise<HistoryLoadOutcome>;
   /** The next page of the snapshot on screen. Joins a page already in flight. */
   loadMore: () => Promise<void>;
@@ -368,6 +380,31 @@ function stillActive(petId: string): boolean {
 // ── The store ───────────────────────────────────────────────────────────────────
 
 let loadSeq = 0;
+/** The latest record read, keyed on everything it was read for (the header). Released by
+ *  identity when it fails, or answers without the courses the list needs, never a bare
+ *  clear (C-24): a record that cannot draw the list is never handed to the next scope. */
+let recordRead: { key: string; run: Promise<HistoryRecordData> } | null = null;
+
+/** The record for `pet` on `today`: the latest read for the same pet and day when `reuse`
+ *  allows it (joined while in flight), else a fresh read that becomes the latest. */
+function recordFor(pet: HistoryListPet, today: string, reuse: boolean): Promise<HistoryRecordData> {
+  // The pet's fields are in the key: the trial's predicate reads its species and sex.
+  const key = JSON.stringify([pet.id, today, pet.name, pet.species, pet.sex ?? null]);
+  if (reuse && recordRead !== null && recordRead.key === key) return recordRead.run;
+  // Read at an instant on the request's own day so every field belongs to `today`
+  // (`instantOnDay`): the one `WindowFacts` assembly, the pinned row's too (HV-9).
+  const run = readHistoryRecord(pet, PHOTO_READING_OFF, instantOnDay(today, Date.now()));
+  const entry = { key, run };
+  recordRead = entry;
+  const release = () => {
+    if (recordRead === entry) recordRead = null;
+  };
+  run.then((r) => {
+    if (r.courses === null) release();
+  }, release);
+  return run;
+}
+
 /** Looks at the phone's copy, issued and applied. An answer yields only to a NEWER one
  *  already applied, never to one merely issued: a newer look that then fails must not throw
  *  away an older answer that carried the rose (`TodayCard`, HV-6's second adversarial pass). */
@@ -386,27 +423,26 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
   snapshot: null,
   failedRequest: null,
   more: null,
-  pullTick: 0,
 
   setToday: (today) => {
     if (get().today !== today) set({ today });
   },
 
-  bumpPullTick: () => set((s) => ({ pullTick: s.pullTick + 1 })),
-
-  load: async ({ pet, scope, today }) => {
+  load: async ({ pet, scope, today, reuseRecord = false }) => {
     // A scope that is not this pet's is a caller's race (the pet store moved first); the
     // load it would make is for nobody on screen.
     if (scope.petId !== pet.id) return 'superseded';
     const request = historyRequestKey(today, scope);
     const myId = ++loadSeq;
-    // A retry starts clean: a load that succeeds takes the failure down, one that fails puts
-    // it back (v1's rule, per attempt, not per mount).
-    if (get().failedRequest === request) set({ failedRequest: null });
+    // Every load starts clean: a load that succeeds takes the failure down, one that fails
+    // puts it back (v1's rule, per attempt, not per mount). A failure for an earlier request
+    // goes too, so nothing (the pinned row included) reads it as this request's.
+    if (get().failedRequest !== null) set({ failedRequest: null });
     try {
-      // The one `WindowFacts` assembly, the pinned row's too (HV-9), read at an instant on
-      // the request's own day so every field belongs to `today` (`instantOnDay`).
-      const windowFacts = await readWindowFacts(pet, instantOnDay(today, Date.now()));
+      const record = await recordFor(pet, today, reuseRecord);
+      // The list cannot name a course it could not read (the pinned row can go without).
+      if (record.courses === null) throw new Error('historyListStore: medication courses could not be read');
+      const { windowFacts, courses } = record;
       const resolved = resolveWindow(scope.window, windowFacts);
       const key = historyScopeKey(scope, resolved);
       const search = effectiveSearch(scope);
@@ -416,9 +452,9 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
       const prior = get().snapshot;
       const same = prior !== null && prior.key === key && prior.petId === pet.id ? prior : null;
       const keepTo = same && same.pages.span ? same.pages.span.fromDay : null;
-      const [facts, courses, visits, bowls, arrangements, firstPages] = await Promise.all([
-        readHistoryFacts(pet.id, resolved.bounds),
-        readHistoryCourses(pet.id),
+      // Every window is clipped to All time (`resolveWindow`), so it is a slice of the record.
+      const facts = historyFactsFor(record.facts, resolved.bounds);
+      const [visits, bowls, arrangements, firstPages] = await Promise.all([
         readVisitsForHistory(pet.id),
         getBoundaryMarkers(pet.id),
         getActiveArrangementsForPet(pet.id),
@@ -469,6 +505,7 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
           search,
           windowFacts,
           resolved,
+          record,
           facts,
           courses,
           items: dateOnlyItemsOf({ visits, courses, bowls, range: resolved.bounds }),
@@ -570,6 +607,7 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
   reset: () => {
     loadSeq += 1;
     moreInFlight = null;
+    recordRead = null;
     set({ snapshot: null, failedRequest: null, more: null });
   },
 }));
