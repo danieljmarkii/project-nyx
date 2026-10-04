@@ -347,9 +347,14 @@ export interface TrialCardInput {
    * was down on EVERY day the coverage ratio counts. The ratio then counts nothing a
    * meal-by-meal record could have held, so no surface may print it, whether or not
    * the bowl is still down. `freeFed` is the present-tense half and drives the copy;
-   * this one only takes the ratio away (`resolveTrialCard`, `withholdingReasons`).
+   * this one takes the ratio away (`resolveTrialCard`, `withholdingReasons`).
+   *
+   * THE SPAN, NOT A BOOLEAN: the counted range is not "the trial". An extended trial
+   * counts its designed window while the day line climbs past it, and a head clip
+   * starts the count at the first log, so "every day this trial counts" read false
+   * on both (`adversarial-reviewer`). The caveat names these dates instead.
    */
-  freeFedThroughout?: boolean;
+  freeFedThroughout?: { startDayIndex: number; endDayIndex: number } | null;
   /**
    * `lib/dietTrial.TrialFacts.allowedSetUnavailable` — the trial has nothing
    * usable to define the diet with, so "off-diet" stops being a measurement.
@@ -1509,7 +1514,11 @@ export function resolveTrialCard(rawInput: TrialCardInput): TrialCardModel {
  * projection (`lib/trialScreenModel.screenCardInput`) is the precedent: every
  * register already has a no-coverage form, the off-diet floor and the counts stay,
  * and neither the state nor the register reads `coverage` (`recordRegisterFor`
- * reads `exposures` first). The untracked head goes with the ratio it qualifies.
+ * reads `exposures` first).
+ *
+ * THE UNTRACKED HEAD STAYS. It reads "the first N days aren't counted here", which
+ * is still true without a ratio, and dropping it left the bowl caveat as the only
+ * account of the head — so days with no bowl and nothing logged read as bowl days.
  *
  * The counts stay because they are floors and a floor only moves toward disclosing
  * more (§5.2); the ratio goes because its denominator is days a bowl held.
@@ -1518,7 +1527,7 @@ export function resolveTrialCard(rawInput: TrialCardInput): TrialCardModel {
  */
 function withoutBowlRatio(input: TrialCardInput): TrialCardInput {
   if (!input.freeFedThroughout) return input;
-  return { ...input, coverage: null, untrackedDaysBeforeFirstLog: 0 };
+  return { ...input, coverage: null };
 }
 
 /**
@@ -2270,19 +2279,32 @@ function pushFloorSentence(
  *  earlier draft closed with "aren't a gap in what you logged", which offered
  *  three bowl days as the explanation for thirty missing ones. */
 function pushPastBowlCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
-  if (!input.freeFedOverlap || input.freeFed) return;
-  // CUL-1572 — "part" was false when the bowl held every day the trial counts (a
-  // bowl taken away after the window ends, since coverage clips at the target end).
-  // The ratio is gone on that record (`withoutBowlRatio`); this line says why.
-  if (input.freeFedThroughout) {
+  // CUL-1572 — "part" was false when the bowl held every counted day (a bowl taken
+  // away after the window ends, since coverage clips at the target end). The ratio
+  // is gone on that record (`withoutBowlRatio`); this line says why, by date.
+  //
+  // ABOVE the `freeFed` return, deliberately: a completed trial whose bowl was still
+  // down on its last day has `freeFed` set and no bowl register (only the running
+  // states route to `free_fed`), so without this the card lost its ratio and named
+  // no cause. The running bowl register never reaches here (its row's `pastBowl` is
+  // false), so this cannot stack on the "grazes from a bowl" lead.
+  const span = input.freeFedThroughout;
+  if (span) {
+    const today = toLocalDayKey(new Date(input.nowMs));
+    const from = formatTrialDate(span.startDayIndex, today);
+    const to = formatTrialDate(span.endDayIndex, today);
     lines.push({
       role: 'qualifier',
       text:
-        `${input.petName} had a bowl that was topped up on every day this trial counts, ` +
-        'so there’s no meal-by-meal count of those days to show.',
+        span.startDayIndex === span.endDayIndex
+          ? `${input.petName} had a bowl that was topped up on ${from}, so that day can’t ` +
+            'have a meal-by-meal count.'
+          : `${input.petName} had a bowl that was topped up every day from ${from} to ${to}, ` +
+            'so those days can’t have a meal-by-meal count.',
     });
     return;
   }
+  if (!input.freeFedOverlap || input.freeFed) return;
   lines.push({
     role: 'qualifier',
     text:

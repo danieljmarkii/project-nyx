@@ -572,14 +572,15 @@ describe('free-fed', () => {
       expect(l.facts!.intakeNotDirectlyObservedNow).toBe(false);
       expect(l.facts!.intakeNotDirectlyObservedThroughout).toBe(true);
       expect(l.input.freeFed).toBeNull();
-      expect(l.input.freeFedThroughout).toBe(true);
+      expect(l.input.freeFedThroughout).not.toBeNull();
       const m = trialModel(buildTrialScreenModel(argsFor(l)));
       expect(m.state).toBe('overrun');
       expect(texts(m).some((t) => /Meals logged on \d+ of \d+ days/.test(t))).toBe(false);
       expect(texts(m).some((t) => t.startsWith('For part of this trial'))).toBe(false);
+      // The counted span by date (days 1–56), never "this trial": day 60 is past it.
       expect(texts(m)).toContain(
-        'Mochi had a bowl that was topped up on every day this trial counts, so there’s no ' +
-        'meal-by-meal count of those days to show.',
+        'Mochi had a bowl that was topped up every day from Jul 3 to Aug 27, so those days ' +
+        'can’t have a meal-by-meal count.',
       );
       // The counts stay: a floor only moves toward disclosing more.
       expect(texts(m).some((t) => /^\d+ feedings in total/.test(t))).toBe(true);
@@ -593,7 +594,7 @@ describe('free-fed', () => {
       // The armed control: the same record with the bowl up on day 30 prints the ratio,
       // so the test above is not green over a record that never prints one.
       const l = await load({ target: 56, mealDays: all, freeChoice: true, freeChoiceUntilDay: 30, nowDay: 60 });
-      expect(l.input.freeFedThroughout).toBe(false);
+      expect(l.input.freeFedThroughout).toBeNull();
       const card = resolveTrialCard(l.input);
       const lines = card.lines.map((x) => x.text);
       expect(lines).toContain('Meals logged on 56 of 56 days.');

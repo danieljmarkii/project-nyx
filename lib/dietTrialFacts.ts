@@ -617,7 +617,11 @@ export async function loadDietTrialFacts(args: {
     freeFedOverlap: readable?.intakeNotDirectlyObserved ?? false,
     // CUL-1572 — the bowl held every day the ratio counts, in force now or not. The
     // card and the strip both stop printing the ratio on it; see the field.
-    freeFedThroughout: readable?.intakeNotDirectlyObservedThroughout ?? false,
+    // Carries the counted span so the card can name it by date rather than as "this
+    // trial", which an extension or a head clip makes false.
+    freeFedThroughout: readable?.intakeNotDirectlyObservedThroughout && readable.range
+      ? { startDayIndex: readable.range.startDayIndex, endDayIndex: readable.range.endDayIndex }
+      : null,
     freeFed: readable?.intakeNotDirectlyObservedNow
       ? { loggedFeedings: readable.exposures.totalFeedings }
       : null,

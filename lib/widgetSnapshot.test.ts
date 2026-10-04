@@ -35,6 +35,7 @@ import {
   WIDGET_SNAPSHOT_SCHEMA_VERSION,
   type SnapshotMealRow,
   type SnapshotPet,
+  widgetTrialCoverage,
 } from './widgetSnapshot';
 import { getDb } from './db';
 import { getSnapshotDirectory } from './appGroup';
@@ -445,5 +446,33 @@ describe('publishWidgetSnapshots — the 7-day pips over the real coverage read'
     const { snapshots } = await publishWidgetSnapshots([PET]);
 
     expect(snapshots[0].lookOnlyToday).toBe(false);
+  });
+});
+
+// ── CUL-1572 — no ratio over a bowl's days ───────────────────────────────────
+
+describe('widgetTrialCoverage (CUL-1572)', () => {
+  const base = {
+    coverage: { daysLogged: 56, daysElapsed: 56, fraction: 1 },
+    coveredDayIndices: [1, 2, 3],
+    intakeNotDirectlyObservedNow: false,
+    intakeNotDirectlyObservedThroughout: false,
+  };
+
+  it('passes the coverage through on an ordinary record', () => {
+    expect(widgetTrialCoverage(base)).toEqual({
+      coverage: { daysLogged: 56, daysElapsed: 56 },
+      coveredDayIndices: [1, 2, 3],
+    });
+  });
+
+  it('states nothing over a bowl that held every counted day, or a bowl down now', () => {
+    expect(widgetTrialCoverage({ ...base, intakeNotDirectlyObservedThroughout: true })).toBeNull();
+    expect(widgetTrialCoverage({ ...base, intakeNotDirectlyObservedNow: true })).toBeNull();
+  });
+
+  it('states nothing with no facts or no coverage', () => {
+    expect(widgetTrialCoverage(null)).toBeNull();
+    expect(widgetTrialCoverage({ ...base, coverage: null })).toBeNull();
   });
 });
