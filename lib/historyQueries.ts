@@ -107,17 +107,17 @@ function msOfJulianDay(jd: number | null): number | null {
   return jd === null || !Number.isFinite(jd) ? null : Math.round((jd - UNIX_EPOCH_JULIAN_DAY) * MS_PER_DAY);
 }
 
-/** `[after, before)` ISO bounds with a day of slack each side of the local days: the
+/** `[after, before)` ISO bounds with `pad` days of slack each side of the local days: the
  *  coarse prefilter. The parsed instant decides membership. */
-function slackBounds(range: DayRange): { after: string; before: string } {
+function slackBounds(range: DayRange, pad = 1): { after: string; before: string } {
   const from = dayKeyToLocalDate(range.fromDay);
   const to = dayKeyToLocalDate(range.toDay);
   if (!from || !to || !isDayKey(range.fromDay) || !isDayKey(range.toDay)) {
     throw new Error(`historyQueries: not a day range: ${range.fromDay}..${range.toDay}`);
   }
   return {
-    after: new Date(from.getTime() - MS_PER_DAY).toISOString(),
-    before: new Date(to.getTime() + 2 * MS_PER_DAY).toISOString(),
+    after: new Date(from.getTime() - pad * MS_PER_DAY).toISOString(),
+    before: new Date(to.getTime() + (pad + 1) * MS_PER_DAY).toISOString(),
   };
 }
 
@@ -142,8 +142,8 @@ interface RawPopulationRow {
   has_note: number;
 }
 
-/** The population over a window's days plus a day of slack each side (the duplicates'
- *  context). Parameters: pet, LOOK_EVENT_TYPE, after, before. */
+/** The population over a window's days plus two days of slack each side, wider than the
+ *  duplicates' parsed slack (`readDayFactsInput`). Parameters: pet, LOOK_EVENT_TYPE, after, before. */
 export const POPULATION_SQL = `
   SELECT e.id, e.event_type, e.occurred_at,
          m.food_item_id, f.food_type, m.intake_rating,
@@ -239,7 +239,11 @@ async function readDayFactsInput(
   petId: string,
   range: DayRange,
 ): Promise<{ population: PopulationRow[]; input: DayFactsInput }> {
-  const bounds = slackBounds(range);
+  // A day WIDER than the duplicates' slack: the text compare here may drop a row spelled
+  // `+00:00` exactly on its bound (C-40), and a row exactly on the slack's own bound can
+  // anchor a cluster. So SQL never decides the slack's edge; `historyFactsFor` does, on the
+  // parsed instant (CUL-1228's adversarial pass). The days ignore rows outside the range.
+  const bounds = slackBounds(range, 2);
   const [rows, lookRows, regimens, freeFedSpans] = await Promise.all([
     db.getAllAsync<RawPopulationRow>(POPULATION_SQL, [petId, LOOK_EVENT_TYPE, bounds.after, bounds.before]),
     db.getAllAsync<{ local_day: string }>(LOOK_DAYS_SQL, [petId, range.fromDay, range.toDay]),
@@ -271,7 +275,7 @@ export interface RecordFacts {
   range: DayRange;
   days: ReadonlyMap<string, DayFacts>;
   firsts: FirstDays;
-  /** The population over `range` plus a day of slack each side: what a window's
+  /** The population over `range` plus at least a day of slack each side: what a window's
    *  same-minute duplicates are swept over (`historyFactsFor`). */
   population: readonly PopulationRow[];
 }

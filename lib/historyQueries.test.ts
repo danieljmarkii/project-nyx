@@ -41,7 +41,7 @@ jest.mock('expo-sqlite', () => ({
 import { getTimeline, type TimelineRow } from './db';
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
-import { dayCountFor, dayFactsOn, notInFullOf, shiftDay, unconfirmedOf, type DayRange, type HistoryFilter } from './historyDays';
+import { dayCountFor, dayFactsOn, duplicateCountsOf, notInFullOf, shiftDay, unconfirmedOf, type DayRange, type HistoryFilter } from './historyDays';
 import {
   DAY_PAGE_MIN_ROWS,
   SEARCHED_FIELDS,
@@ -640,6 +640,43 @@ describe('historyFactsFor — a window sliced from the record is the window read
     expect(duplicatesSeen).toBeGreaterThan(0);
     expect(historyFactsFor(record, { fromDay: '2026-09-10', toDay: '2026-09-10' }).duplicates.total).toBe(0);
     expect(historyFactsFor(record, { fromDay: '2026-09-12', toDay: '2026-09-12' }).duplicates.byType.vomit).toBe(1);
+  });
+
+  // The adversarial pass's counterexample (CUL-1228). A row spelled `+00:00` EXACTLY on the
+  // duplicates' lower slack bound (local midnight the day before the window), anchoring an
+  // unbroken 40s chain into the window: the window read's SQL prefilter compared text and
+  // dropped it (C-40), the slice kept it, and the two counted 44 and 45. The parsed instant
+  // decides both now. No real log makes a 24-hour chain; the rule is pinned anyway.
+  const W: DayRange = { fromDay: '2026-09-10', toDay: '2026-09-10' };
+  const WIDE: DayRange = { fromDay: '2026-08-01', toDay: '2026-09-30' };
+  /** A vomit every 40s from `fromMs` through 00:59:20 on the window's day, spelled both
+   *  ways: 90 rows inside the window, an even count, so the chain's phase decides whether
+   *  the window's first row pairs inside it or with the row before it. */
+  function seedChain(fromMs: number) {
+    const end = localAt(10, 0, 59, 20).getTime();
+    for (let t = fromMs, i = 0; t <= end; t += 40_000, i++) {
+      const d = new Date(t);
+      insertEvent(`chain-${i}`, i % 2 === 0 ? hydrated(d) : d.toISOString(), 'vomit');
+    }
+  }
+
+  it('a row exactly on the slack\'s lower bound counts the same in the slice and in the window\'s own read', async () => {
+    seedChain(localAt(9, 0, 0, 0).getTime());
+    const direct = await readHistoryFacts(PET, W);
+    const sliced = historyFactsFor(await readRecordFacts(PET, WIDE), W);
+    expect(direct.duplicates.total).toBeGreaterThan(0);
+    expect(sliced.duplicates).toEqual(direct.duplicates);
+  });
+
+  it('the slice sweeps the window\'s slack, never the whole record: a row before the slack moves nothing', async () => {
+    // The chain starts 40s before the slack: swept, that first row re-pairs the whole chain
+    // (the anchor rule) and the window's count moves (45 → 44); left out, nothing moves.
+    seedChain(localAt(9, 0, 0, 0).getTime() - 40_000);
+    const record = await readRecordFacts(PET, WIDE);
+    const sliced = historyFactsFor(record, W);
+    expect(sliced.duplicates).toEqual((await readHistoryFacts(PET, W)).duplicates);
+    // Non-vacuity: sweeping the whole record WOULD count differently here.
+    expect(duplicateCountsOf(record.population, W).total).not.toBe(sliced.duplicates.total);
   });
 
   it('the whole record is its own window: the days are not copied, only the duplicates swept', async () => {
