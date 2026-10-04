@@ -20,6 +20,7 @@ const mockLoadSignalLead = jest.fn();
 jest.mock('../../lib/signalLead', () => ({
   loadSignalLead: (...a: unknown[]) => mockLoadSignalLead(...a),
   loadSignalRowTrial: async () => null,
+  loadSignalRowScreen: async () => null,
 }));
 jest.mock('../../hooks/useSignalFold', () => ({
   useSignalFold: () => ({ stateOf: () => 'open', backBecauseOf: () => null, fold: jest.fn(), unfold: jest.fn(), touch: jest.fn() }),

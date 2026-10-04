@@ -17,6 +17,7 @@ const mockLoadSignalLead = jest.fn();
 jest.mock('../../lib/signalLead', () => ({
   loadSignalLead: (...a: unknown[]) => mockLoadSignalLead(...a),
   loadSignalRowTrial: async () => null,
+  loadSignalRowScreen: async () => null,
 }));
 // The fold is the reader's device-local memory; a test states it rather than seeding a store.
 const mockFolded = new Set<string>();
@@ -357,8 +358,8 @@ describe('flag-on', () => {
     const rows = view.getAllByTestId('signal-row');
     expect(rows).toHaveLength(3);
     // The folded chronicity card is its full row: headline, count, ask.
-    expect(rows[1].props.accessibilityLabel).toBe('Vomiting in 5 of the last 8 weeks. 14 episodes since August. Worth a word with your vet.');
-    expect(view.getByText(/14 episodes since August/)).toBeTruthy();
+    expect(rows[1].props.accessibilityLabel).toBe('Vomiting in 5 of the last 8 weeks. 14 episodes in those weeks. Worth a word with your vet.');
+    expect(view.getByText(/14 episodes in those weeks/)).toBeTruthy();
     // No shipped strip, no "Back because" line (the fold's re-open reason is the fold's).
     expect(view.queryByTestId('insight-folded-strip')).toBeNull();
     expect(view.queryByText(/Back because/)).toBeNull();

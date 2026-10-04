@@ -4,7 +4,11 @@
 // there is no fold under Design v2 (CUL-1285).
 
 const mockLoadSignalRowTrial = jest.fn(async (..._a: unknown[]) => null as unknown);
-jest.mock('../../../lib/signalLead', () => ({ loadSignalRowTrial: (...a: unknown[]) => mockLoadSignalRowTrial(...a) }));
+const mockLoadSignalRowScreen = jest.fn(async (..._a: unknown[]) => null as unknown);
+jest.mock('../../../lib/signalLead', () => ({
+  loadSignalRowTrial: (...a: unknown[]) => mockLoadSignalRowTrial(...a),
+  loadSignalRowScreen: (...a: unknown[]) => mockLoadSignalRowScreen(...a),
+}));
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from '../../../lib/utils';
@@ -87,13 +91,16 @@ describe('the thumbnail — insight rows, drawn from the finding', () => {
     expect(view.queryByTestId('signal-row-ask')).toBeNull();
   });
 
-  it('the frequency comparison is the shipped Shape C pair, this week then last, both counts printed — and not printed twice', () => {
+  it('the frequency comparison is the shipped Shape C pair, this week then last, both counts printed — and not printed twice', async () => {
     expect(weekPairOf(reflection as never)).toEqual([
       { label: 'This week', count: 3, tone: 'concern' },
       { label: 'Last week', count: 5, tone: 'muted' },
     ]);
     const view = render(<SignalRow cached={cached(reflection)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
-    expect(view.getByTestId('signal-row-thumb-pair')).toBeTruthy();
+    // Held back while the screen's read is in flight (CUL-1569); the read here answers with no
+    // screen, so the finding's own pair stands.
+    expect(view.queryByTestId('signal-row-thumb-pair')).toBeNull();
+    expect(await view.findByTestId('signal-row-thumb-pair')).toBeTruthy();
     expect(view.getByText('This week')).toBeTruthy();
     expect(view.getByText('Last week')).toBeTruthy();
     expect(view.queryByTestId('signal-row-sub')).toBeNull();
@@ -101,13 +108,13 @@ describe('the thumbnail — insight rows, drawn from the finding', () => {
     expect(view.getByTestId('signal-row').props.accessibilityLabel).toBe('Vomiting, week over week. 3 this week, 5 last week.');
   });
 
-  it('S2: a withheld prior draws no pair — never a lone numerator bar', () => {
+  it('S2: a withheld prior draws no pair — never a lone numerator bar', async () => {
     const withheld = { ...reflection, density: { comparable: false, currentLoggingDays: 2, priorLoggingDays: 6 } } as SignalFinding;
     expect(weekPairOf(withheld as never)).toBeNull();
     const view = render(<SignalRow cached={cached(withheld)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
-    expect(view.queryByTestId('signal-row-thumb-pair')).toBeNull();
     // With no pair, the count line says what the sentence says: this week alone.
-    expect(view.getByTestId('signal-row-sub').props.children).toBe('3 this week');
+    expect((await view.findByTestId('signal-row-sub')).props.children).toBe('3 this week');
+    expect(view.queryByTestId('signal-row-thumb-pair')).toBeNull();
   });
 
   it('every other type is words only', () => {
@@ -129,7 +136,7 @@ describe('the door', () => {
     const row = view.getByTestId('signal-row');
     expect(row.props.accessibilityRole).toBe('button');
     expect(row.props.accessibilityHint).toBe(DOOR_A11Y_HINT);
-    expect(row.props.accessibilityLabel).toBe('Vomiting in 5 of the last 8 weeks. 14 episodes since August. Worth booking a vet visit.');
+    expect(row.props.accessibilityLabel).toBe('Vomiting in 5 of the last 8 weeks. 14 episodes in those weeks. Worth booking a vet visit.');
   });
 
   it('C-5: the row’s own box is the target — no slop to share with its neighbours, and a 44pt floor', () => {
@@ -138,6 +145,44 @@ describe('the door', () => {
     expect(row.props.hitSlop).toBeUndefined();
     expect(StyleSheet.flatten(row.props.style).minHeight).toBe(ROW_MIN_HEIGHT);
     expect(ROW_MIN_HEIGHT).toBeGreaterThanOrEqual(44);
+  });
+});
+
+describe('the row states the screen’s counts (CUL-1569, GC-4 PR 2)', () => {
+  const counts = { recent: { episodes: 6, days: 4 }, prior: { episodes: 2, days: 2 }, lookbackWeeks: 8, activeWeeks: 6, lookbackEpisodes: 17, daysSinceLast: 0 };
+
+  it('a safety row draws the finding’s words at once — the ask never waits — then the screen’s title and count', async () => {
+    const f = SAFETY[0];
+    mockLoadSignalRowScreen.mockResolvedValueOnce({
+      title: 'Vomiting in 6 of the last 8 weeks',
+      composed: { finding: f, counts, priorStated: false },
+      trialLineShown: null,
+    });
+    const view = render(<SignalRow cached={cached(f)} petId="pet-7" onOpen={jest.fn()} generatedAt={null} />);
+    expect(view.getByTestId('signal-row-headline').props.children).toBe('Vomiting in 5 of the last 8 weeks');
+    expect(view.getByTestId('signal-row-ask')).toBeTruthy();
+    await waitFor(() => expect(view.getByTestId('signal-row-headline').props.children).toBe('Vomiting in 6 of the last 8 weeks'));
+    expect(mockLoadSignalRowScreen).toHaveBeenCalledWith('pet-7', f);
+    expect(view.getByTestId('signal-row').props.accessibilityLabel).toBe('Vomiting in 6 of the last 8 weeks. 17 episodes in those weeks. Worth booking a vet visit.');
+  });
+
+  it('a reflection row draws the composed pair, the last 7 days then the 7 before, and none where the sentence held the prior back', async () => {
+    const f = reflection as SignalFinding;
+    mockLoadSignalRowScreen.mockResolvedValueOnce({ title: 'Vomiting, week over week', composed: { finding: f, counts, priorStated: true }, trialLineShown: null });
+    const view = render(<SignalRow cached={cached(f)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
+    expect(await view.findByText('Last 7 days')).toBeTruthy();
+    expect(view.getByText('7 before')).toBeTruthy();
+    expect(view.getByTestId('signal-row').props.accessibilityLabel).toBe('Vomiting, week over week. 6 in the last 7 days, 2 in the 7 before.');
+
+    mockLoadSignalRowScreen.mockResolvedValueOnce({ title: 'Vomiting, week over week', composed: { finding: f, counts, priorStated: false }, trialLineShown: null });
+    const held = render(<SignalRow cached={cached(f)} petId="pet-2" onOpen={jest.fn()} generatedAt={null} />);
+    expect((await held.findByTestId('signal-row-sub')).props.children).toBe('6 in the last 7 days');
+    expect(held.queryByTestId('signal-row-thumb-pair')).toBeNull();
+  });
+
+  it('a row the screen does not restate (timing) never asks for the screen', () => {
+    render(<SignalRow cached={cached(timing)} petId="pet-1" onOpen={jest.fn()} generatedAt={null} />);
+    expect(mockLoadSignalRowScreen).not.toHaveBeenCalled();
   });
 });
 

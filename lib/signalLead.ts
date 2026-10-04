@@ -7,7 +7,9 @@
 // doses the card never shows. Nothing here reads the active pet: the zone hands the pet
 // the findings belong to.
 
-import { readGateLoggedDays, readSignalEpisodes, readLoggedDays, readSignalTrial } from './signalScreen';
+import { loadSignalScreen, readGateLoggedDays, readSignalEpisodes, readLoggedDays, readSignalTrial, type SignalScreenModel } from './signalScreen';
+import type { SignalFinding } from './signal';
+import { foldIdentity } from './signalFold';
 import type { CachedFinding } from './signal';
 import { symptomWord } from './signalCopy';
 import { signalTitle } from './signalTitle';
@@ -94,4 +96,30 @@ export async function loadSignalRowTrial(petId: string, nowMs: number = Date.now
     console.warn('[signal-row] trial read failed:', e);
     return null;
   });
+}
+
+/**
+ * The screen's own model for a Signal row (CUL-1569, GC-4 PR 2): the SAME loader the door
+ * opens (`loadSignalScreen`), for the same pet, identity and clock, so the row's numbers are
+ * the screen's by construction rather than by a second count that could drift. Null when the
+ * screen would not draw the finding as a ready screen (missing, withheld, set aside) or the
+ * read failed — the row then keeps the finding's own words, which is what it drew before the
+ * read answered. Never rejects.
+ */
+export async function loadSignalRowScreen(
+  petId: string,
+  finding: SignalFinding,
+  nowMs: number = Date.now(),
+): Promise<Pick<SignalScreenModel, 'title' | 'composed' | 'trialLineShown'> | null> {
+  try {
+    const load = await loadSignalScreen(petId, foldIdentity(finding), nowMs);
+    if (load.status !== 'ready') return null;
+    // The loader finds the finding by identity in the pet's cache, which may have been
+    // rewritten since the zone read it: a row only takes words for the finding it draws.
+    if (load.model.finding.type !== finding.type) return null;
+    return { title: load.model.title, composed: load.model.composed, trialLineShown: load.model.trialLineShown };
+  } catch (e) {
+    console.warn('[signal-row] screen read failed:', e);
+    return null;
+  }
 }

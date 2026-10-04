@@ -25,7 +25,9 @@
 
 import { careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
-import { onsetMonth, stripDayUTC } from './signalCopy';
+import { countedHomeCount, isCountedFinding } from './signalCounts';
+import { stripDayUTC } from './signalCopy';
+import type { SignalScreenModel } from './signalScreen';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
 import type { SignalTrialWindow } from './signalWindows';
 
@@ -91,8 +93,11 @@ function countLine(finding: SignalFinding): string | null {
       // "{n} times this week" and the row carries it. Every other form's headline holds its number.
       return finding.tier === 'today' && finding.persistenceArm && finding.countArm ? `${finding.count} times this week` : null;
     case 'symptom_chronicity':
-      // "— 14 episodes since August" (the onset month is UTC, the engine's day-bucketing).
-      return `${plural(finding.episodeCount, 'episode', 'episodes')} since ${onsetMonth(finding.firstOnsetIso)}`;
+      // The episodes inside the weeks the headline names, never "since <month>" (CUL-1217,
+      // BRK-3): the engine counts its 56-day lookback, and a first onset inside it is not the
+      // first one the record holds, so "since August" undercounted a safety row and shrank as
+      // the window slid. The row composed from the screen's counts says the same words.
+      return `${plural(finding.episodeCount, 'episode', 'episodes')} in those weeks`;
     case 'symptom_worsening':
       // The other half of the time-ordered pair, on the axis the headline counted (S5: both
       // counts, never a direction word). The headline holds this week's number.
@@ -188,6 +193,34 @@ export function signalHomeLine(finding: SignalFinding, trial: SignalTrialWindow 
     // change brings it back (`raised_again` keeps the lane's ask word for word).
     ask: finding.priorityClass === 'safety' && !careStateQuietsAsk(finding) ? signalHomeAsk(finding) : null,
   };
+}
+
+/** The row types whose words the screen restates from the record (CUL-1569): the counted
+ *  frequency claims, and the trial card, whose screen prints the strip's own sentence. */
+export function rowReadsScreen(finding: SignalFinding): boolean {
+  return isCountedFinding(finding) || finding.type === 'trial_response';
+}
+
+/**
+ * The row once the screen's own read has answered (CUL-1569, GC-4 PR 2): the headline is the
+ * screen's title and the count line is composed from the counts the screen's sentence was
+ * (`model.composed`), so the door and the screen it opens are one count by construction —
+ * the escalate-only gate, the masking and the withhold rules included, because they are the
+ * screen's. The trial card's line is the strip's sentence wherever the screen's *Why* prints
+ * it. Everything else (the eyebrow, the ask) is the finding's, unchanged: a recount never
+ * changes what the owner is asked to do.
+ */
+export function signalHomeLineFromScreen(base: SignalHomeLine, model: Pick<SignalScreenModel, 'title' | 'composed' | 'trialLineShown'>): SignalHomeLine {
+  if (model.composed) {
+    const { finding, counts, priorStated } = model.composed;
+    return { ...base, headline: model.title, count: countedHomeCount(finding, counts, priorStated) };
+  }
+  if (model.trialLineShown) {
+    // Verbatim, its full stop dropped (a row line carries none): cut or re-worded it would be
+    // a second sentence about the same counts (C-28).
+    return { ...base, headline: model.title, count: model.trialLineShown.replace(/\.$/, '') };
+  }
+  return { ...base, headline: model.title };
 }
 
 /** "Worth a call to your vet" — the ask standing on its own line. */

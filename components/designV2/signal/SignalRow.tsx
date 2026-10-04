@@ -3,9 +3,11 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../../constants/theme';
 import type { CachedFinding, PriorityClass, ReflectionFinding, SignalFinding } from '../../../lib/signal';
 import { type CompareRow, dotLaneModel, isTimingFinding, symptomWord, timingCompareRows, timingReceiptDegrades } from '../../../lib/signalCopy';
-import { askStandalone, signalHomeLabel, signalHomeLine } from '../../../lib/signalHomeLine';
+import { askStandalone, rowReadsScreen, signalHomeLabel, signalHomeLine, signalHomeLineFromScreen } from '../../../lib/signalHomeLine';
+import { countedHomePair } from '../../../lib/signalCounts';
+import { foldIdentity } from '../../../lib/signalFold';
 import { CARE_WATCHED_LINE, CARE_WATCHED_TAG, careBackLine, careStateBody, careStateViewOf, type CareStateView } from '../../../lib/careState';
-import { loadSignalRowTrial } from '../../../lib/signalLead';
+import { loadSignalRowScreen, loadSignalRowTrial } from '../../../lib/signalLead';
 import { signalTrialWindowFor } from '../../../lib/signalTrialAnchor';
 import type { SignalTrialWindow } from '../../../lib/signalWindows';
 import { DotLane, StackedCompare } from '../../home/SignalReceipts';
@@ -94,9 +96,39 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
     };
   }, [namesTrial, petId]);
 
+  // GC-4 PR 2 (CUL-1569): a row whose screen restates the finding from the record reads that
+  // screen's own model — the loader the door opens — so the row and the screen state one count.
+  // `undefined` while the read is in flight, null when it answered with no screen to match.
+  type RowScreen = Awaited<ReturnType<typeof loadSignalRowScreen>>;
+  const [screen, setScreen] = useState<RowScreen | undefined>(undefined);
+  const readsScreen = rowReadsScreen(finding);
+  const identity = foldIdentity(finding);
+  useEffect(() => {
+    if (!readsScreen) return;
+    let cancelled = false;
+    setScreen(undefined);
+    // `loadSignalRowScreen` never rejects: a failed read resolves null and is logged there.
+    void loadSignalRowScreen(petId, finding).then((m) => {
+      if (!cancelled) setScreen(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // The finding is re-read by identity; a regen (a new `generatedAt`) re-reads it.
+  }, [readsScreen, petId, identity, generatedAt]);
+
   // A trial finding counted over a trial since replaced speaks in its own day (CUL-1360).
-  const line = signalHomeLine(finding, signalTrialWindowFor(finding, { generatedAt, trial }));
-  if (!line) return null;
+  const base = signalHomeLine(finding, signalTrialWindowFor(finding, { generatedAt, trial }));
+  if (!base) return null;
+  // While the screen's read is in flight a safety row keeps the finding's own words (the ask
+  // never waits on a read); an insight row holds its count back rather than print a number
+  // that may change under the owner's eye a moment later (C-12).
+  const pending = readsScreen && screen === undefined;
+  const line = screen
+    ? signalHomeLineFromScreen(base, screen)
+    : pending && finding.priorityClass !== 'safety'
+      ? { ...base, count: null }
+      : base;
 
   // EN-9 (PR-35): a concern the owner answered is drawn as what it now is. Display only:
   // the row stays one door and writes nothing (Home's three write classes, C-33).
@@ -108,9 +140,9 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
 
   const safety = finding.priorityClass === 'safety';
   // A frequency row whose pair renders prints its counts in the pair, not twice (S10).
-  const pairDrawn = finding.type === 'reflection' && weekPairOf(finding) != null;
-  const subCount = pairDrawn ? null : line.count;
-  const thumbnail = safety ? null : <Thumbnail finding={finding} />;
+  const pair = finding.type === 'reflection' && !pending ? rowPairOf(finding, screen ?? null) : null;
+  const subCount = pair ? null : line.count;
+  const thumbnail = safety ? null : <Thumbnail finding={finding} pair={pair} />;
 
   return (
     <Pressable
@@ -234,7 +266,7 @@ function SubLine({ count, ask }: { count: string | null; ask: string | null }) {
 // The insight row's miniature of the evidence its screen draws. Decorative in context:
 // the row is one accessible button whose label already says every number, so the picture
 // never self-labels (a label here would be swallowed by the Pressable — SignalReceipts).
-function Thumbnail({ finding }: { finding: SignalFinding }) {
+function Thumbnail({ finding, pair }: { finding: SignalFinding; pair: CompareRow[] | null }) {
   if (finding.priorityClass !== 'insight') return null;
   if (isTimingFinding(finding)) {
     return (
@@ -243,8 +275,27 @@ function Thumbnail({ finding }: { finding: SignalFinding }) {
       </View>
     );
   }
-  if (finding.type === 'reflection') return <WeekPair finding={finding} />;
+  if (finding.type === 'reflection') return <WeekPair rows={pair} />;
   return null;
+}
+
+/**
+ * The reflection row's pair: the screen's composed counts where its sentence was composed
+ * (CUL-1569) — the last 7 days and the 7 before, absent wherever the sentence left the
+ * earlier window out — else the finding's own pair (`weekPairOf`), as the engine's sentence
+ * on that screen states it.
+ */
+export function rowPairOf(finding: ReflectionFinding, screen: Awaited<ReturnType<typeof loadSignalRowScreen>>): CompareRow[] | null {
+  if (screen?.composed) {
+    const p = countedHomePair(screen.composed.counts, screen.composed.priorStated);
+    return p
+      ? [
+          { label: 'Last 7 days', count: p.recent, tone: 'concern' },
+          { label: '7 before', count: p.prior, tone: 'muted' },
+        ]
+      : null;
+  }
+  return weekPairOf(finding);
 }
 
 /**
@@ -264,8 +315,7 @@ export function weekPairOf(finding: ReflectionFinding): CompareRow[] | null {
 // The pair is the shipped Shape C stacked compare (§4 — Shapes A and C only; both counts
 // printed), not a new receipt shape. It prints the counts, so the row does not print them
 // again beside it (S10) — they stay in the row's spoken label.
-function WeekPair({ finding }: { finding: ReflectionFinding }) {
-  const rows = weekPairOf(finding);
+function WeekPair({ rows }: { rows: CompareRow[] | null }) {
   if (!rows) return null;
   return (
     <View style={styles.thumb} testID="signal-row-thumb-pair" accessible={false}>

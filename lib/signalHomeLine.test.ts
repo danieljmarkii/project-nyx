@@ -335,10 +335,13 @@ describe('PARITY: the Home row counts from the sentence’s own fields (the scre
     }
   });
 
-  it('the recurrence names the sentence’s UTC onset month, in every zone the suite runs in', () => {
-    const f = chronicities('vomit').find((c) => c.firstOnsetIso === '2026-08-31T23:50:00Z') as SymptomChronicityFinding;
-    expect(line(f).count).toBe('1 episode since August');
-    expect(sentence(f)).toContain('since August');
+  it('the recurrence counts the weeks its headline names, never "since <month>" (CUL-1217, BRK-3)', () => {
+    // The engine's onset month is the first onset INSIDE its 56-day lookback, not the record's
+    // first: "since August" undercounted a safety row and shrank as the window slid.
+    for (const f of chronicities('vomit')) {
+      expect(line(f).count).not.toMatch(/\bsince\b/);
+      expect(line(f).count).toBe(`${f.episodeCount} ${f.episodeCount === 1 ? 'episode' : 'episodes'} in those weeks`);
+    }
   });
 });
 
@@ -358,7 +361,7 @@ describe('ROLES: with every field distinct, each number comes from the field its
     [
       { type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'vomit', episodeCount: 14, spanDays: 40, activeWeeks: 5, symptomDays: 12, daysSinceLastEpisode: 1, firstOnsetIso: '2026-08-03T12:00:00Z', tier: 'firm', windowDays: 56 },
       'Vomiting in 5 of the last 8 weeks',
-      '14 episodes since August',
+      '14 episodes in those weeks',
     ],
     [{ type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 3, priorCount: 5, direction: 'improving', windowDays: 14 }, 'Vomiting, week over week', '3 this week, 5 last week'],
     [timings('vomit')[0], 'Vomiting soon after meals', '9 of 10 timed episodes within 30 min of eating'],
@@ -397,7 +400,7 @@ describe('the row’s words', () => {
     expect(line(vomiting)).toEqual({
       eyebrow: null,
       headline: 'Vomiting in 5 of the last 8 weeks',
-      count: '14 episodes since August',
+      count: '14 episodes in those weeks',
       ask: 'worth booking a vet visit',
     });
     expect(line(timings('vomit')[0])).toEqual({
