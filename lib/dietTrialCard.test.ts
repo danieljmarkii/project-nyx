@@ -3697,7 +3697,8 @@ describe('B-704 card + strip render the protein identity', () => {
 // `/trial`). Asserted per state over the real resolver, then as a property over every
 // state the card can reach, with the two lines that read as "the diet is working" armed.
 describe('the Design v2 trial line (CUL-1526)', () => {
-  const offDiet = (n: number) => ({ mayStateRecordClean: false, totalFeedings: 68, offDiet: n });
+  // A record the card may call clean at zero; above zero the flag is moot (the count leads).
+  const offDiet = (n: number) => ({ mayStateRecordClean: n === 0, totalFeedings: 68, offDiet: n });
 
   it('running, off-diet > 0: the end date, then the off-diet floor', () => {
     expect(resolveTrialStrip(activeInput({ exposures: offDiet(3) }))!.cardLine).toBe(
@@ -3740,21 +3741,21 @@ describe('the Design v2 trial line (CUL-1526)', () => {
   it('an unusable permit set withholds the count and says the check is paused, never a bare date', () => {
     expect(resolveTrialStrip(activeInput({
       allowedSetUnavailable: true, exposures: offDiet(68),
-    }))!.cardLine).toBe('Ends Aug 27 · off-diet check paused');
+    }))!.cardLine).toBe('Ends Aug 27 · off-diet check incomplete');
   });
 
   it('an unread classification is not a clean record', () => {
     expect(resolveTrialStrip(activeInput({ exposures: null }))!.cardLine).toBe(
-      'Ends Aug 27 · off-diet check paused',
+      'Ends Aug 27 · off-diet check incomplete',
     );
   });
 
   it('a dark antigen arm keeps the floor and says the check is paused', () => {
     expect(resolveTrialStrip(activeInput({ antigenArmDark: true }))!.cardLine).toBe(
-      'Ends Aug 27 · off-diet check paused',
+      'Ends Aug 27 · off-diet check incomplete',
     );
     expect(resolveTrialStrip(activeInput({ antigenArmDark: true, exposures: offDiet(2) }))!.cardLine).toBe(
-      'Ends Aug 27 · 2 off-diet feedings logged · off-diet check paused',
+      'Ends Aug 27 · 2 off-diet feedings logged · off-diet check incomplete',
     );
   });
 
@@ -3765,6 +3766,9 @@ describe('the Design v2 trial line (CUL-1526)', () => {
       activeInput({ exposures: null }),
       activeInput({ allowedSetUnavailable: true }),
       activeInput({ antigenArmDark: true }),
+      activeInput({ exposures: { mayStateRecordClean: false, totalFeedings: 9, offDiet: 0 } }),
+      activeInput({ freeFed: { loggedFeedings: 12 }, exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 0 } }),
+      activeInput({ trialDietRefusal: REFUSING_NOW, exposures: { mayStateRecordClean: false, totalFeedings: 22, offDiet: 0 } }),
     ]) {
       expect(resolveTrialStrip(unknown)!.cardLine).not.toBe(clean);
     }
@@ -3789,12 +3793,23 @@ describe('the Design v2 trial line (CUL-1526)', () => {
     const strip = resolveTrialStrip(armed);
     if (!strip || strip.cardLine === null) return;
     expect(strip.cardLine).toMatch(
-      /^(Ends|Window ended) [A-Z][a-z]{2} \d{1,2}( · \d+ off-diet feedings? logged)?( · off-diet check paused)?$/,
+      /^(Ends|Window ended) [A-Z][a-z]{2} \d{1,2}( · \d+ off-diet feedings? logged)?( · off-diet check incomplete)?$/,
     );
     expect(strip.cardLine).not.toMatch(/\d+ of \d+/);
     expect(strip.cardLine).not.toMatch(/vomit/i);
     expect(strip.cardLine).not.toMatch(/meals logged/i);
     if (armed.trial?.foodLabel) expect(strip.cardLine).not.toContain(armed.trial.foodLabel);
+  });
+
+  // The gate at zero is the card's: wherever the card may not call the record clean,
+  // the bare date — which reads as clean — is never the line.
+  it.each(everyState)('a record the card will not call clean never gets the bare date — %s', (_name, input) => {
+    const strip = resolveTrialStrip(input);
+    if (!strip?.cardLine) return;
+    const clean = !input.allowedSetUnavailable && !input.antigenArmDark && input.exposures?.mayStateRecordClean === true;
+    if (!clean && (input.exposures?.offDiet ?? 0) === 0) {
+      expect(strip.cardLine).toMatch(/ · off-diet check incomplete$/);
+    }
   });
 
   it('the property is not vacuous: active states reach a line', () => {

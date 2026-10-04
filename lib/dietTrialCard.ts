@@ -3102,15 +3102,25 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // "Ends Aug 27" alone means "nothing off-diet". Where the app could not check — no
   // usable permit set, an unread classification, a paused antigen arm — that zero would
   // be the app's own ignorance printed as a clean record (absence ≠ wellness), so the
-  // line says the check is paused instead. The count, when there is one, still leads it.
+  // line says the check is incomplete instead. The count, when there is one, still leads.
+  //
+  // At zero the gate is the full card's own `mayStateRecordClean` (re-check of the same
+  // pass): the card refuses "all N matched" over a thin record, a refusal, a bowl or an
+  // unclassifiable feeding, so a bare date — which a daily reader learns means exactly
+  // that — may not say it either. One gate for both surfaces. The word is "incomplete",
+  // not "paused", because it must be true in week one and while the read loads too.
+  const ex = input.exposures;
   const offDietUnknown =
-    !!input.allowedSetUnavailable || !input.exposures || !!input.antigenArmDark;
+    !!input.allowedSetUnavailable ||
+    !ex ||
+    !!input.antigenArmDark ||
+    (stripOffDiet === 0 && !ex.mayStateRecordClean);
   const cardLine =
     (overrunDays > 0 ? `Window ended ${endDate}` : `Ends ${endDate}`) +
     (stripOffDiet > 0
       ? ` · ${stripOffDiet} off-diet ${stripOffDiet === 1 ? 'feeding' : 'feedings'} logged`
       : '') +
-    (offDietUnknown ? ' · off-diet check paused' : '');
+    (offDietUnknown ? ' · off-diet check incomplete' : '');
   return {
     header,
     line: parts.length > 0 ? parts.join(' · ') : null,

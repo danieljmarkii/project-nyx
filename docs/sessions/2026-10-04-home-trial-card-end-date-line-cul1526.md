@@ -8,7 +8,7 @@ A BUILD session that `/dispatch` sent out as PR-29 of the Out of beta run order.
 ## What shipped
 
 - **`lib/dietTrialCard.ts`:** `TrialStripModel` gains `cardLine`.
-  - It opens with `Ends {date}`, or `Window ended {date}` when the trial is overrun. Then `· {n} off-diet feeding(s) logged` when n > 0. Then `· off-diet check paused` when the count could not be checked (no usable permit set, an unread classification, or a dark antigen arm).
+  - It opens with `Ends {date}`, or `Window ended {date}` when the trial is overrun. Then `· {n} off-diet feeding(s) logged` when n > 0. Then `· off-diet check incomplete` when the count could not be checked (no usable permit set, an unread classification, a dark antigen arm, or, at zero, any record the full card will not call clean: thin, refused, a bowl, an unclassifiable feeding).
   - It carries no food label, no ratio and no vomiting pair.
   - The shipped `line` is untouched, so every flag-off reader (the strip, the door, Get ready, the rundown) is byte-identical.
   - On a live intake decline the early return keeps `cardLine: null`.
@@ -34,4 +34,4 @@ Designer ✓ (the ruled three things, neutral bar, G1 A chevron) — Engineer �
 ## Residuals
 
 - A PM brief on CUL-1526 covers the sparse-record clause, recommended A (no change).
-- The added `off-diet check paused` clause is new owner copy beyond the mock's three drawn lines. It is a team call under the safety invariant, and the PM can reverse it on the issue.
+- The added `off-diet check incomplete` clause is new owner copy beyond the mock's three drawn lines. It is a team call under the safety invariant, and the PM can reverse it on the issue.
