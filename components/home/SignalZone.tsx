@@ -27,6 +27,8 @@ import { useWatchingRowsRead } from '../../hooks/useWatchingRows';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
 import { hasPlayedArrival, markArrivalPlayed } from '../../lib/signalArrival';
+import { safetyArrivalSpoken, safetySpeechIdentity, speakableSafety } from '../../lib/signalSafetySpeech';
+import { announceQueued, useRowSpeech } from '../dayRow/rowSpeech';
 // CUL-601 §4's arrival tap, and the codebase's only exemption from the D7 scan. This
 // file IS a safety surface, and the silence-on-safety rule is intact here BY GATE
 // rather than by intention: the arrival is unreachable whenever the finding set
@@ -400,6 +402,60 @@ function useArrivalMoment({
 }
 
 /**
+ * GAP-13 (CUL-1566; PMD-21 ruled (a)) — a safety finding that ARRIVES while Home is in front
+ * is spoken once, queued behind whatever VoiceOver is reading. It is the safety path's
+ * counterpart to the arrival's sentence: `useArrivalMoment` returns before its tap and its
+ * `arrivalAnnouncementCopy` on a safety finding (CUL-601 §4, rightly: no celebration over a
+ * concern), and this says the concern itself instead, with no haptic (C-16: the one haptic
+ * exemption in this file stays gated off the safety path, and this adds no verb).
+ *
+ * AN ARRIVAL IS A NEW IDENTITY IN A SETTLED SET, for one pet, in this mount. The first set
+ * the cache read answers for a pet is the baseline and says nothing: a concern already in
+ * the record when the owner opened Home is simply there, on the card and in its label (the
+ * same rule the spine's rows keep for a read that was already in the record). After that,
+ * each regen or re-read that brings a safety identity this mount has not held is an
+ * arrival. Every identity is remembered once it is seen, spoken or not, so a re-render, a
+ * re-rank or a re-read never says it twice, and a finding that landed while another screen
+ * covered Home is not announced later over a screen the owner has since been reading.
+ *
+ * WHETHER HOME MAY SPEAK is asked of the screen at the moment of speaking
+ * (`useRowSpeech().mayAnnounce`: focused and the app in front). With no provider the zone
+ * says nothing on its own. No live region: `announceQueued` is the one carrier on both
+ * platforms, so nothing else speaks it and C-44 has no pair to make.
+ */
+function useSafetyArrivalSpeech({
+  petId,
+  petName,
+  answered,
+  findings,
+}: {
+  petId: string | null;
+  petName: string;
+  answered: boolean;
+  findings: CachedFinding[];
+}): void {
+  const speech = useRowSpeech();
+  const seen = useRef<{ petId: string | null; ids: Set<string> | null }>({ petId: null, ids: null });
+  useEffect(() => {
+    if (seen.current.petId !== petId) seen.current = { petId, ids: null };
+    // C-12: only a set the read actually answered is a baseline or an arrival.
+    if (!petId || !answered) return;
+    const safety = speakableSafety(findings);
+    const ids = seen.current.ids;
+    if (ids === null) {
+      seen.current.ids = new Set(safety.map(safetySpeechIdentity));
+      return;
+    }
+    const arriving = safety.filter((f) => !ids.has(safetySpeechIdentity(f)));
+    if (arriving.length === 0) return;
+    for (const f of arriving) ids.add(safetySpeechIdentity(f));
+    if (!speech.mayAnnounce()) return;
+    const spoken = safetyArrivalSpoken(petName, arriving);
+    if (spoken) announceQueued(spoken);
+  }, [petId, petName, answered, findings, speech]);
+}
+
+/**
  * The wash — one gradient band the width of the card, travelling left to right BEHIND
  * the content (it is the Card's first child, so every sibling paints over it). Painting
  * it behind rather than over is what keeps a celebration from dimming a word of the
@@ -706,6 +762,8 @@ export function SignalZone({
   const renderableCount = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor).filter(
     (f) => !isStoodDown(f.finding),
   ).length;
+
+  useSafetyArrivalSpeech({ petId, petName, answered, findings });
 
   const { playing: arriving, moment } = useArrivalMoment({
     petId,

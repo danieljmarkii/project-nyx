@@ -10,6 +10,8 @@ import { AccessibilityInfo, Platform } from 'react-native';
 // with the record's pet name and a live check of whether it is the screen in front of the
 // owner; without a provider a row says nothing on its own (its label still carries the
 // read when focused). Today only Home provides it, the issue's "only on a focused Home".
+// Home's Signal zone asks the same `mayAnnounce` for a safety finding that arrives there
+// (CUL-1566, GAP-13; `lib/signalSafetySpeech.ts`), so the two speak under one focus rule.
 //
 // A context, not a prop: the row sits three components below the screen (TodayCard →
 // Spine → DayNodeRow → SpineEventRow), past the two-level drilling limit.
