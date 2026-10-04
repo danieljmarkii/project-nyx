@@ -10,6 +10,7 @@ const mockLoadSignalLead = jest.fn();
 jest.mock('../../../lib/signalLead', () => ({
   loadSignalLead: (...a: unknown[]) => mockLoadSignalLead(...a),
   loadSignalRowTrial: async () => null,
+  loadSignalRowScreen: async () => ({ kind: 'unanswered' }),
 }));
 // The measurement is the platform's; the suite plays it (D2-6). Default: a real rect.
 let mockRect: { x: number; y: number; width: number; height: number } | null = { x: 67, y: 300, width: 278, height: 130 };

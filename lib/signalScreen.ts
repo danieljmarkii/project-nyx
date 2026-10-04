@@ -91,6 +91,8 @@ import {
   engineCountedAtLine,
   isCountedFinding,
   signalCountsOf,
+  type CountedFinding,
+  type SignalCounts,
 } from './signalCounts';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
 import { isOtherTrialReassurance, signalTrialWindowFor } from './signalTrialAnchor';
@@ -275,6 +277,13 @@ export interface SignalScreenModel {
   lanesMaskCaption: string | null;
   /** The safety phone script's masking rows and compare gate (D3); null off EN-10's rule. */
   scriptMasking: PhoneScriptMasking | null;
+  /** The counts the title and sentence were composed from, and whether the sentence stated the
+   *  earlier window — null where the engine's words stand. Home's row reads THESE, never a
+   *  second count (CUL-1569), so the door and the screen it opens state one number. */
+  composed: { finding: CountedFinding; counts: SignalCounts; priorStated: boolean } | null;
+  /** The strip's vomiting sentence exactly where *Why* prints it, else null (CUL-1569: the
+   *  trial row's count line is the screen's, never the engine's 49-day pair beside it). */
+  trialLineShown: string | null;
 }
 
 function plural(n: number, one: string, many = `${one}s`): string {
@@ -628,6 +637,8 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
       compareMask: null,
       lanesMaskCaption: null,
       scriptMasking: scriptMaskingOf(input),
+      composed: null,
+      trialLineShown: null,
     };
   }
 
@@ -712,6 +723,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
       : null;
   const scriptMasking = scriptMaskingOf(input);
   const priorStated = composed ? countedPriorStated(composed.finding, composed.counts, lineWithheld != null) : true;
+  const why = whyLines(input, compare, withheld, compare ? compareMaskOf(input.masking, compare, specs) : null, composed != null);
 
   return {
     identity,
@@ -733,7 +745,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     // A masked record with nothing in the drawn weeks prints no "0 in these 5 weeks" (CUL-1440,
     // the adversarial pass): the gallery's count line is a count over those weeks too.
     episodes: inWeeks.length === 0 && weeklyMaskOf(input.masking, weekly, input.today) ? null : galleryOf(inWeeks, input.verdicts, weekly.weeks.length),
-    why: whyLines(input, compare, withheld, compare ? compareMaskOf(input.masking, compare, specs) : null, composed != null),
+    why,
     context: careContextLinesOf(finding),
     safety,
     withholdFallingVomit: input.notEating !== false,
@@ -747,6 +759,8 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
       composed && !priorStated
         ? { rows: scriptMasking?.rows ?? [], withholdCompare: true, recentOnly: false }
         : scriptMasking,
+    composed: composed ? { ...composed, priorStated } : null,
+    trialLineShown: input.trialVomitingLine != null && why.includes(input.trialVomitingLine) ? input.trialVomitingLine : null,
   };
 }
 

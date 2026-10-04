@@ -386,3 +386,38 @@ export function engineCountedAtLine(generatedAtMs: number | null, nowMs: number)
   const when = day === toLocalDayKey(new Date(nowMs)) ? `today at ${formatTime(d)}` : `${formatCalendarDate(day) ?? day} at ${formatTime(d)}`;
   return `This was counted when it was raised, ${when}. ${tail}`;
 }
+
+/**
+ * Home's row count line for a composed finding (CUL-1569): the screen's numbers, in the
+ * sentence's own fragments, so the door and the screen it opens state one count. Every number
+ * here is one `countedSentence` states from the same `SignalCounts`, and the earlier window
+ * appears only where the sentence stated it (`priorStated`, the screen's own verdict), so a row
+ * can never print a fall, a zero or a pair its screen held back. Null when the headline
+ * (`countedTitle`) already carries every number the row has.
+ */
+export function countedHomeCount(finding: CountedFinding, c: SignalCounts, priorStated: boolean): string | null {
+  switch (finding.type) {
+    case 'symptom_chronicity':
+      return `${count(c.lookbackEpisodes, 'episode', 'episodes')} in those weeks`;
+    case 'symptom_worsening': {
+      if (finding.tier === 'firm' || finding.tier === 'soft') {
+        const episodes = count(c.recent.episodes, 'episode', 'episodes');
+        if (!priorStated || c.prior == null) return episodes;
+        return worseningPriorAxis(finding) === 'days'
+          ? `${episodes}, and on ${c.prior.days} of the 7 before`
+          : `${episodes}, and ${count(c.prior.episodes, 'episode', 'episodes')} in the 7 before`;
+      }
+      return priorStated && c.prior != null ? `${c.prior.episodes} in the 7 before` : null;
+    }
+    case 'reflection':
+      return priorStated && c.prior != null
+        ? `${c.recent.episodes} in the last 7 days, ${c.prior.episodes} in the 7 before`
+        : `${c.recent.episodes} in the last 7 days`;
+  }
+}
+
+/** The reflection row's drawn pair over the same counts, in the sentence's order and words;
+ *  null where the sentence did not state the earlier window (S2: never a lone bar). */
+export function countedHomePair(c: SignalCounts, priorStated: boolean): { recent: number; prior: number } | null {
+  return priorStated && c.prior != null ? { recent: c.recent.episodes, prior: c.prior.episodes } : null;
+}

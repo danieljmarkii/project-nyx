@@ -7,7 +7,11 @@
 // doses the card never shows. Nothing here reads the active pet: the zone hands the pet
 // the findings belong to.
 
-import { readGateLoggedDays, readSignalEpisodes, readLoggedDays, readSignalTrial } from './signalScreen';
+import { loadSignalScreen, readGateLoggedDays, readSignalEpisodes, readLoggedDays, readSignalTrial, type SignalScreenModel } from './signalScreen';
+import type { SignalFinding } from './signal';
+import { foldIdentity } from './signalFold';
+import { riseKeptSentence } from './screenMasking';
+import { trialSoFarClause } from './signalHomeLine';
 import type { CachedFinding } from './signal';
 import { symptomWord } from './signalCopy';
 import { signalTitle } from './signalTitle';
@@ -95,3 +99,42 @@ export async function loadSignalRowTrial(petId: string, nowMs: number = Date.now
     return null;
   });
 }
+
+/** What a Signal row takes from its screen (CUL-1569):
+ *  - `ready`: the title and counts the screen states;
+ *  - `set_aside`: the screen sets the finding aside (a masking span beside a compared window,
+ *    CUL-1440) and states no comparing count, so neither does its row — except a trial that
+ *    ROSE over a masked baseline zero, whose trial count the screen keeps (`riseKeptSentence`),
+ *    and the row keeps it too (the accusing number is never the one dropped, C-37);
+ *  - `unanswered`: the read failed, or the screen had nothing to show for this finding. The
+ *    masking rule fails CLOSED on a failed read (`screenMasking.ts`), so the row cannot know a
+ *    falling pair is safe to print and an insight row prints none (the adversarial passes on
+ *    #1053). Home never draws a falling pair the screen it opens would refuse to. */
+export type SignalRowScreen =
+  | ({ kind: 'ready' } & Pick<SignalScreenModel, 'title' | 'composed' | 'trialLineShown'>)
+  | { kind: 'set_aside'; keptLine: string | null }
+  | { kind: 'unanswered' };
+
+/**
+ * The screen's own model for a Signal row (CUL-1569, GC-4 PR 2): the SAME loader the door
+ * opens (`loadSignalScreen`), for the same pet, identity and clock, so the row's numbers are
+ * the screen's by construction rather than by a second count that could drift. Never rejects.
+ */
+export async function loadSignalRowScreen(petId: string, finding: SignalFinding, nowMs: number = Date.now()): Promise<SignalRowScreen> {
+  try {
+    const load = await loadSignalScreen(petId, foldIdentity(finding), nowMs);
+    if (load.status === 'set_aside') {
+      const kept = finding.type === 'trial_response' ? riseKeptSentence(finding, symptomWord('vomit')) : null;
+      return { kind: 'set_aside', keptLine: kept && load.lines.includes(kept) ? trialSoFarClause(finding) : null };
+    }
+    if (load.status !== 'ready') return { kind: 'unanswered' };
+    // The loader finds the finding by identity in the pet's cache, which may have been
+    // rewritten since the zone read it: a row only takes words for the finding it draws.
+    if (load.model.finding.type !== finding.type) return { kind: 'unanswered' };
+    return { kind: 'ready', title: load.model.title, composed: load.model.composed, trialLineShown: load.model.trialLineShown };
+  } catch (e) {
+    console.warn('[signal-row] screen read failed:', e);
+    return { kind: 'unanswered' };
+  }
+}
+
