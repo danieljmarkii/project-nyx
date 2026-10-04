@@ -1,0 +1,492 @@
+<title>One Home Language</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     One Home Language, ROUND 2 (CUL-1519; round 1 is commit 5d64bcb, from the CUL-1496 critique,
+     docs/home-design-language-critique-2026-10.md).
+     Layout: the house mock page (paper, serif section heads, phone frames
+     in wrapping rows). Frames render the app's REAL light tokens
+     (constants/theme.ts) on Nyx's record for Fri Oct 2, event for event.
+     Every frame is built by the script at the foot from one set of
+     component functions, so an option differs from its neighbour only in
+     the rule it is drawing.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --gold-ink: #6B4A0E; --gold-wash: #FDF6E3;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --gold-ink: #F5D38A; --gold-wash: rgba(251,191,36,0.14);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BD;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --gold-ink: #F5D38A; --gold-wash: rgba(251,191,36,0.14);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 8px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  .roundtag { display: inline-flex; align-items: center; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  a { color: var(--teal-ink); }
+  .howto { margin-top: 22px; border: 1px solid var(--rule); background: var(--paper-2); border-radius: 3px; padding: 14px 18px; font-size: 14.5px; color: var(--ink-2); max-width: 78ch; }
+  .howto b { color: var(--ink); }
+  .howto ul { margin: 6px 0 0; padding-left: 18px; }
+  .howto li { margin-bottom: 3px; }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-id { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  p { margin: 0 0 14px; }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .brief { margin: 18px 0 8px; padding: 18px 22px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; max-width: 78ch; }
+  .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .brief p:last-child { margin-bottom: 0; }
+  .brief strong { color: var(--ink); }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+  .conflict { border-left: 2px solid var(--rose); padding: 2px 0 2px 18px; margin: 18px 0; font-size: 14.5px; color: var(--ink-2); max-width: 78ch; }
+  .conflict p { margin: 0 0 8px; }
+  .conflict strong { color: var(--ink); }
+  .react { margin-top: 26px; border-top: 1px dashed var(--rule); padding-top: 12px; font-size: 14.5px; color: var(--ink-2); max-width: 78ch; }
+  .react b { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--teal-ink); margin-right: 8px; }
+  table.t { border-collapse: collapse; width: 100%; font-size: 14px; margin: 14px 0 6px; min-width: 560px; }
+  table.t th { text-align: left; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule); }
+  table.t td { padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; color: var(--ink-2); }
+  table.t td:first-child { color: var(--ink); font-weight: 500; }
+  .tscroll { overflow-x: auto; max-width: 860px; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; border: 1px solid rgba(0,0,0,0.08); }
+
+  /* ── Frame rows ─────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 28px; align-items: flex-start; }
+  .slot { width: 316px; max-width: 100%; min-width: 0; }
+  .optbox { border: 1px dashed var(--rule); border-radius: 6px; padding: 12px; width: 342px; max-width: 100%; }
+  .cap { margin: 12px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .tag { display: inline-block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; border-radius: 999px; padding: 2px 8px; margin-bottom: 8px; }
+  .tag.built { color: var(--ink-2); background: var(--rule-soft); }
+  .tag.cur { color: var(--teal-ink); background: var(--teal-wash); }
+  .tag.opt { color: var(--gold-ink); background: var(--gold-wash); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 12px; font-size: 13px; color: var(--ink-2); align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; background: var(--paper-2); }
+  .seg button { font: inherit; font-size: 12.5px; border: 0; background: transparent; color: var(--ink-2); padding: 5px 11px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--teal-wash); color: var(--teal-ink); font-weight: 600; }
+  .seg button:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+
+  /* ── The phone (the app's light tokens, literal: this is a picture of the app) ── */
+  .phone { --k: 1; --xs: calc(var(--k) * 9px); --sm: calc(var(--k) * 10.6px); --md: calc(var(--k) * 12.2px); --lg: calc(var(--k) * 13.8px); --lead: calc(var(--k) * 15.4px); --q: calc(var(--k) * 16px);
+    width: 316px; max-width: 100%; background: #FAFAFA; border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); color: #0A0A0A; font-family: var(--sans); font-variant-numeric: tabular-nums; line-height: 1.35; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+  .phone.vp { height: 684px; }
+  .phone.crop { border-radius: 22px; }
+  .phone.big { --k: 1.45; }
+  .p-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 10px 96px; display: flex; flex-direction: column; gap: 10px; scrollbar-width: none; }
+  .p-scroll::-webkit-scrollbar { display: none; }
+  .phone.crop .p-scroll { padding-bottom: 12px; overflow: visible; }
+  .p-head { background: #FFFFFF; border-bottom: 1px solid #EAEAEA; display: flex; align-items: center; gap: 7px; padding: 30px 12px 9px; flex-shrink: 0; }
+  .p-ava { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #8C7B6B, #3B3029 70%); flex-shrink: 0; }
+  .p-name { font-size: var(--lg); font-weight: 600; }
+  .p-chev { color: #525252; font-size: var(--sm); }
+  .p-sp { flex: 1; }
+  .p-date { font-size: var(--sm); color: #525252; white-space: nowrap; }
+  .p-ask { border: 1px solid #D4D4D4; border-radius: 999px; padding: 3px 9px; font-size: var(--sm); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .p-ask i { width: 6px; height: 6px; border-radius: 50%; background: #00C2A8; display: inline-block; }
+  .p-me { width: 24px; height: 24px; border-radius: 50%; background: #0A0A0A; color: #FFFFFF; font-size: var(--sm); font-weight: 600; display: grid; place-items: center; flex-shrink: 0; }
+  .p-tabs { position: absolute; left: 0; right: 0; bottom: 0; background: #FFFFFF; border-top: 1px solid #EAEAEA; display: grid; grid-template-columns: repeat(4, 1fr); padding: 7px 0 16px; font-size: var(--xs); color: #737373; text-align: center; z-index: 2; }
+  .p-tabs b { color: #0A0A0A; font-weight: 600; position: relative; }
+  .p-tabs b::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: #00C2A8; }
+  .p-fab { position: absolute; right: 14px; bottom: 58px; width: 44px; height: 44px; border-radius: 50%; background: #251F57; display: grid; place-items: center; z-index: 3; box-shadow: 0 6px 16px rgba(19,17,46,0.28); }
+  .p-fab svg { width: 20px; height: 20px; }
+
+  /* cards */
+  .c { background: #FFFFFF; border-radius: 13px; }
+  .c.elev { box-shadow: 0 2px 10px rgba(0,0,0,0.10); padding: 17px 17px 14px; }
+  .c.bord { border: 1px solid #EAEAEA; padding: 17px; }
+  .c.one { box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.045); padding: 13px; }
+  .zl { font-size: var(--xs); letter-spacing: 0.09em; text-transform: uppercase; color: #737373; font-weight: 500; }
+  .zl.rec { color: #A3A3A3; }
+  .zl.gapbig { margin-bottom: 12px; }
+  .zl.gap { margin-bottom: 4px; }
+
+  /* signal rows */
+  .rw { display: flex; align-items: center; gap: 8px; padding: 9px 0; position: relative; }
+  .rw + .rw { border-top: 1px solid #EAEAEA; }
+  .rail { width: 2.5px; border-radius: 2px; align-self: stretch; flex-shrink: 0; }
+  .rail.g { position: absolute; left: -8px; top: 9px; bottom: 9px; }
+  .rail.rose { background: #F43F5E; }
+  .rail.teal { background: #00C2A8; }
+  .rb { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .eb { font-size: var(--xs); letter-spacing: 0.07em; text-transform: uppercase; color: #737373; }
+  .hl-lead { font-family: var(--serif); font-size: var(--lead); line-height: 1.22; letter-spacing: -0.005em; }
+  .hl { font-size: var(--md); font-weight: 600; line-height: 1.3; }
+  .sub { font-size: var(--sm); color: #525252; line-height: 1.4; }
+  .ask { color: #9F1239; font-weight: 500; }
+  .gl { font-size: var(--lg); color: #737373; width: 16px; text-align: center; flex-shrink: 0; line-height: 1; }
+  .well { width: 22px; height: 22px; border-radius: 50%; background: #F5F5F5; display: grid; place-items: center; color: #737373; font-size: var(--md); flex-shrink: 0; }
+  .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+  .disc { font-size: var(--xs); color: #737373; flex: 1; }
+  .lnk { font-size: var(--sm); font-weight: 500; white-space: nowrap; }
+  .lnk.teal { color: #0B7B6C; }
+  .lnk.inkl { color: #0A0A0A; }
+  .fold { font-size: var(--sm); color: #525252; }
+
+  /* receipts */
+  .lane { position: relative; height: 15px; background: #FAFAFA; border: 1px solid #EAEAEA; border-radius: 3px; margin-top: 4px; }
+  .lane .band { position: absolute; left: 0; top: 0; bottom: 0; width: 25%; background: #E0FBF7; border-right: 1px dashed #00C2A8; border-radius: 3px 0 0 3px; }
+  .lane .d { position: absolute; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: #F43F5E; }
+  .lane .d.out { background: #A3A3A3; }
+  .axis { display: flex; justify-content: space-between; font-size: var(--xs); color: #737373; margin-top: 2px; }
+  .cmp { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 6px; align-items: center; margin-top: 4px; font-size: var(--xs); color: #525252; }
+  .cmp .tr { height: 6px; background: #F0F0F0; border-radius: 3px; overflow: hidden; }
+  .cmp .fl { height: 100%; border-radius: 3px; }
+  .cmp .n { font-weight: 600; color: #0A0A0A; text-align: right; }
+
+  /* trial door */
+  .th { display: flex; align-items: center; gap: 8px; }
+  .th .hl { flex: 1; }
+  .bar { height: 3.5px; border-radius: 2px; background: #F0F0F0; overflow: hidden; margin-top: 6px; }
+  .bar i { display: block; height: 100%; width: 82.1%; border-radius: 2px; }
+  .tl { font-size: var(--sm); color: #525252; margin-top: 6px; line-height: 1.4; }
+  .tl3 { font-size: var(--sm); color: #737373; margin-top: 2px; line-height: 1.4; }
+  .ghost { border: 1px dashed #D4D4D4; border-radius: 6px; padding: 3px 6px; color: #A3A3A3; }
+
+  /* today */
+  .q { font-family: var(--serif); font-size: var(--q); line-height: 1.2; margin: 1px 0 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px 5px; }
+  .chip { border: 1px solid #D4D4D4; border-radius: 999px; padding: 4px 8px; font-size: var(--sm); line-height: 1.2; white-space: nowrap; }
+  .chip.door { border-color: transparent; background: #F0F0F0; font-weight: 500; }
+  .more { font-size: var(--sm); font-weight: 500; padding: 4px 3px; }
+  .cnt { font-size: var(--sm); color: #525252; border-top: 1px solid #EAEAEA; margin-top: 10px; padding-top: 9px; }
+  .cnt b { color: #0A0A0A; font-weight: 600; }
+  .spine { margin-top: 8px; display: flex; flex-direction: column; }
+  .sp { display: grid; grid-template-columns: 44px 12px 1fr; gap: 0 7px; position: relative; padding-bottom: 9px; }
+  .sp .tm { font-size: var(--xs); color: #737373; text-align: right; padding-top: 1px; white-space: nowrap; }
+  .sp .dt { position: relative; display: flex; justify-content: center; }
+  .sp .dt::before { content: ""; position: absolute; top: 0; bottom: -9px; left: 50%; width: 1.6px; margin-left: -0.8px; background: var(--thread, #EAEAEA); }
+  .sp:last-child .dt::before { bottom: 50%; }
+  .sp .dt i { width: 6px; height: 6px; border-radius: 50%; margin-top: 4px; position: relative; z-index: 1; box-shadow: 0 0 0 2px #FFFFFF; }
+  .sp .ct { font-size: var(--sm); color: #525252; line-height: 1.35; min-width: 0; }
+  .sp .ct b { color: #0A0A0A; font-weight: 500; }
+  .fm { font-size: var(--xs); letter-spacing: 0.06em; text-transform: uppercase; color: #737373; margin-right: 4px; }
+  .pil { display: inline-block; font-size: var(--xs); letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; border-radius: 999px; padding: 1px 6px; }
+  .cov { display: flex; align-items: center; gap: 10px; font-size: var(--md); }
+  .cov span { flex: 1; min-width: 0; }
+  /* round 2: the reaction ledger */
+  .ledger { display: grid; gap: 8px; margin: 22px 0 8px; max-width: 92ch; }
+  .ledger div { display: grid; grid-template-columns: 190px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  @media (max-width: 640px) { .ledger div { grid-template-columns: 1fr; gap: 4px; } }
+  .ledger b { font-size: 13px; color: var(--ink); padding-top: 2px; }
+  .ledger q { font-style: italic; quotes: "\201C" "\201D"; }
+  .pill { display: inline-flex; align-items: center; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 2 · all ruled</span><span>CUL-1519 · from the CUL-1496 critique</span><span>Design v2 · Step 3b</span></p>
+    <h1>One Home Language</h1>
+    <p class="standfirst">Round 2 draws your reactions as <strong>one proposal</strong> on Nyx's real Friday, Oct 2. <strong>All five decisions are ruled.</strong> You ruled three directly and deferred the last two to the product team's recommendation (Oct 3).</p>
+    <div class="ledger" aria-label="What your reactions ruled">
+      <div><b>R-1 · Card and door mark</b><span><q>I like your A recommendation.</q> <span class="pill">ruled A</span> One soft-shadow surface for every card, rails in the gutter so text starts at one edge, a plain › on every door, the circle on the Signal's lead only. Drawn in every frame.</span></div>
+      <div><b>R-2 · The trial card</b><span><q>Love adding the end date. I find myself constantly thinking, when is this over.</q> <span class="pill">ruled B, end date always</span> The card is its title, a neutral bar and one line that <em>always starts with the end date</em>, then the off-diet count when there is one: <em>Ends Oct 17 · 3 off-diet feedings logged.</em> Coverage and the vomiting pair move to the trial screen.</span></div>
+      <div><b>R-3 · Beside a safety card</b><span><q>I still like at least the date appearing.</q> <span class="pill">ruled B</span> Under a safety card the card keeps the end date and the off-diet count; nothing that reads as good news. With R-2's line that is the same card on every day, so the rule costs nothing to see. Dr. Chen's read is below the frames.</span></div>
+      <div><b>R-4 · What teal means</b><span><q>Not sure. Should we work in more of the dark blue/purple? It's not really anywhere in the app.</q> <span class="pill">ruled C, deferred to the team</span> Indigo means "you can act", teal means "a good fact". It changes brand rule 3, so it runs as its own short round across every screen (CUL-1279) before Home adopts it.</span></div>
+      <div><b>R-5 · Patterns fold</b><span><q>I'll defer to the recommendation of the product team.</q> <span class="pill">ruled B, deferred to the team</span> Pattern rows fold into a counted line while a safety card leads.</span></div>
+    </div>
+    <div class="howto">
+      <b>How to read it.</b> Every frame tagged <span class="tag cur" style="margin:0 4px 0 0">current</span> is ruled. The retired options have left the page; round 1 is commit <code>5d64bcb</code> and round 2 with its open options is commit <code>7bf7154</code>.
+    </div>
+  </header>
+
+  <section id="s1">
+    <div class="sec-head"><span class="sec-id">§01</span><h2>Home today, and Home with your rulings</h2></div>
+    <div class="col">
+      <p>Scroll inside each phone; the bottom edge is the first screenful. The colour is R-4's ruling, C. The text-size toggle shows the largest setting.</p>
+    </div>
+    <div class="frames">
+      <div class="slot"><span class="tag built">as shipped</span><div id="f-ship"></div>
+        <p class="cap"><b>Today's build</b>Two card surfaces, two text edges, three door marks, a seven-line trial card.</p></div>
+      <div class="slot"><span class="tag cur">current</span>
+        <div class="controls">
+          <span class="seg" role="group" aria-label="Text size"><button type="button" id="b-k1" aria-pressed="true">Default text</button><button type="button" id="b-k2" aria-pressed="false">Largest</button></span>
+        </div>
+        <div id="f-prop"></div>
+        <p class="cap"><b>The proposal</b>R-1, R-2 and R-3 applied. The trial card answers "when is this over" in its first words. The pattern row folds into a counted line while a safety card leads (R-5).</p></div>
+    </div>
+  </section>
+
+  <section id="s2">
+    <div class="sec-head"><span class="sec-id">§02 · G4</span><h2>What colour says "you can tap this": indigo</h2></div>
+    <div class="brief">
+      <p><strong>Better than the rule.</strong> In-app brand rule 3 (Aug 2026, amended Sep 26 for the + button, CUL-322) says teal is the only colour for things you tap, and indigo is only ever a background. It protects against two accent colours fighting, and it kept the Signal off a dark ground (D8). Making indigo the action colour was parked as CUL-1279 until you had judged the indigo + button on your phone. You have it now.</p>
+      <p><strong>Deciding:</strong> which colour means "you can tap this" on Home, and so what teal is left to mean.</p>
+      <p>(A) Teal means "you can act". Links and the + glyph stay teal; MOST and GIVEN go grey. The Designer's and Data Viz's position.</p>
+      <p>(B) Teal means "a good fact". Meals, MOST and GIVEN stay teal; links go to ink. Jordan's position.</p>
+      <p><strong>(C) Indigo means "you can act", teal means "a good fact".</strong> <span class="rec">Recommended:</span> it settles the A-or-B split by giving each side its own colour, and puts the brand colour you said is missing into every door. The protection rule 3 kept still holds: indigo never becomes a ground behind the record, and the Signal stays light.</p>
+      <p><strong>Consequence:</strong> C is an app-wide change, not a Home one. Home alone in indigo would be a new inconsistency with History, Foods and the trial screen, the exact problem this milestone fixes. So C opens CUL-1279 as its own short round across screens, with a new action token, a rewrite of brand rule 3 and a full contrast check. Home's G1 to G3 build does not wait for it; only the colour of links does.</p>
+    </div>
+    <div class="frames">
+      <div class="slot"><span class="tag cur">current · ruled C</span><div id="f-g4c"></div><p class="cap"><b>C: indigo acts, teal is good</b>Links, the Ask dot and the + in indigo. Meals, MOST and GIVEN in teal.</p></div>
+    </div>
+    <div class="tscroll">
+      <table class="t">
+        <thead><tr><th>Mark on Home</th><th>As shipped</th><th>A · teal acts</th><th>B · teal is good</th><th>C · indigo acts</th></tr></thead>
+        <tbody>
+          <tr><td>Safety rail, ask text</td><td><span class="sw" style="background:#F43F5E"></span>rose</td><td><span class="sw" style="background:#F43F5E"></span>rose</td><td><span class="sw" style="background:#F43F5E"></span>rose</td><td><span class="sw" style="background:#F43F5E"></span>rose</td></tr>
+          <tr><td>Pattern rail, timing bars, trial bar</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#737373"></span>grey</td><td><span class="sw" style="background:#737373"></span>grey</td><td><span class="sw" style="background:#737373"></span>grey</td></tr>
+          <tr><td>Meal dot on the day</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#00C2A8"></span>teal (exception)</td><td><span class="sw" style="background:#00C2A8"></span>teal</td><td><span class="sw" style="background:#00C2A8"></span>teal</td></tr>
+          <tr><td>MOST, GIVEN</td><td><span class="sw" style="background:#E0FBF7"></span>teal</td><td><span class="sw" style="background:#F0F0F0"></span>grey</td><td><span class="sw" style="background:#E0FBF7"></span>teal</td><td><span class="sw" style="background:#E0FBF7"></span>teal</td></tr>
+          <tr><td>Links, "More…", the Ask dot</td><td><span class="sw" style="background:#0B7B6C"></span>teal</td><td><span class="sw" style="background:#0B7B6C"></span>teal</td><td><span class="sw" style="background:#0A0A0A"></span>ink</td><td><span class="sw" style="background:#3F35A0"></span>indigo</td></tr>
+          <tr><td>The + button</td><td><span class="sw" style="background:#251F57"></span>indigo, teal +</td><td><span class="sw" style="background:#251F57"></span>indigo, teal +</td><td><span class="sw" style="background:#251F57"></span>indigo, white +</td><td><span class="sw" style="background:#251F57"></span>indigo, white +</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="col" style="font-size:14px;color:var(--ink-3)">The action indigo drawn here (<code>#3F35A0</code>, about 9:1 on white) is a proposed new token, one step lighter than the + button's disc so a link never reads as plain black text. CUL-1279 would set the final value.</p>
+    <p class="react"><b>Ruled R-4</b>C. Next: CUL-1279, one short round across History, Foods and the trial screen, then the brand-rule rewrite and the contrast check. Home builds its links in the shipped teal until then.</p>
+  </section>
+
+  <section id="s3">
+    <div class="sec-head"><span class="sec-id">§03 · G6</span><h2>Patterns fold while a safety card leads: yes</h2></div>
+    <div class="brief">
+      <p><strong>Better than the rule.</strong> CUL-1285 (Sep 26) retired the Signal's fold, protecting Home from a stored per-card state, a "Keep it compact" control and "seen, never resolved".</p>
+      <p><strong>Deciding:</strong> whether, while a safety card leads, pattern rows fold into the Signal's foot as a count.</p>
+      <p>(A) Every row open, as shipped.</p>
+      <p><strong>(B) Pattern rows fold into "1 more pattern · Patterns ›" while a safety card leads. Nothing stored, no control.</strong> <span class="rec">Recommended:</span> about 107pt back on this record, about 300pt on a busy one, and every CUL-1285 protection holds.</p>
+    </div>
+    <div class="frames">
+      <div class="slot"><span class="tag cur">current · ruled B</span><div id="f-g6b"></div><p class="cap"><b>B: folded under a safety lead</b>One counted line; the same door the foot already had.</p></div>
+    </div>
+    <p class="react"><b>Ruled R-5</b>B. Build: the Signal's counted foot.</p>
+  </section>
+
+  <section id="s4">
+    <div class="sec-head"><span class="sec-id">§04</span><h2>The trial card, as ruled</h2></div>
+    <div class="col">
+      <p>R-2 and R-3 together: the line always opens with the end date, then the off-diet count. Below are the three days the card has to survive.</p>
+    </div>
+    <div class="frames">
+      <div class="slot"><span class="tag cur">current</span><div id="f-t1"></div><p class="cap"><b>Nyx's Oct 2, under a safety card</b>The same card as any other day: the date, the slip.</p></div>
+      <div class="slot"><span class="tag cur">current</span><div id="f-t2"></div><p class="cap"><b>A clean trial</b>Nothing off-diet, so the line is the date alone.</p></div>
+      <div class="slot"><span class="tag cur">current</span><div id="f-t3"></div><p class="cap"><b>Past its end</b>The trial ran past its window and nobody ended it. The line says the window ended; how the title names an overrun day follows CUL-1181.</p></div>
+    </div>
+    <div class="conflict" style="border-left-color:var(--teal)">
+      <p><strong>Dr. Chen (R-3 is clinical):</strong> concur. An end date is a calendar fact with no direction, so it cannot reassure. The off-diet count is the fact I would ask about first at a recheck. Dropping the coverage ratio and a falling vomiting pair under a safety card removes the two lines that read as "the diet is working".</p>
+      <p><strong>Still owed, outside this card:</strong> the trial screen keeps the vomiting pair and must still hide it beside a steroid (CUL-1443), and the trial card in the app still prints an unscoped coverage ratio on an extended trial (CUL-1498).</p>
+    </div>
+  </section>
+
+  <section id="s5">
+    <div class="sec-head"><span class="sec-id">§05</span><h2>Decided by the team, yours to veto</h2></div>
+    <div class="col">
+      <ul style="font-size:15px;color:var(--ink-2)">
+        <li><strong style="color:var(--ink)">Every count names its window.</strong> "12 episodes in these 8 weeks", never "since August" (CUL-1217).</li>
+        <li><strong style="color:var(--ink)">The coverage card says which days it counts:</strong> "October, before today · logged 1 of 1 day".</li>
+        <li><strong style="color:var(--ink)">One name per destination:</strong> "Patterns ›" in both places (CUL-1502).</li>
+        <li><strong style="color:var(--ink)">The refusal door comes first</strong> and looks like a door, not like a chip that writes (CUL-1501).</li>
+        <li><strong style="color:var(--ink)">The day's thread is one step darker</strong>, pending the device pass (CUL-1070).</li>
+      </ul>
+      <p style="font-size:14px;color:var(--ink-3)">Not drawn: dark mode and a real phone (CUL-1070). Copy has not had its <code>nyx-voice</code> pass.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  // ── Nyx, Fri Oct 2 (from the PM's device and the record) ──
+  var CHEV = '›';
+  var INDIGO = '#3F35A0';
+  var PLUS = function (c) { return '<svg viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'; };
+
+  // Colour modes. 'ship' is today's build; act / fact / indigo are R-4's A, B, C.
+  function T(mode) {
+    var linkColor = { ship: '#0B7B6C', act: '#0B7B6C', fact: '#0A0A0A', indigo: INDIGO }[mode];
+    return {
+      insightRail: mode === 'ship',
+      trialBar: mode === 'ship' ? '#00C2A8' : '#737373',
+      meal: '#00C2A8',
+      pill: mode === 'act' ? { bg: '#F0F0F0', fg: '#525252' } : { bg: '#E0FBF7', fg: '#0B7B6C' },
+      link: linkColor,
+      fab: (mode === 'fact' || mode === 'indigo') ? '#FFFFFF' : '#00C2A8',
+      askDot: mode === 'indigo' ? INDIGO : '#00C2A8',
+      cmpFill: '#737373'
+    };
+  }
+
+  function phone(inner, o) {
+    o = o || {};
+    var cls = 'phone' + (o.crop ? ' crop' : ' vp') + (o.big ? ' big' : '');
+    var head = o.crop ? '' : '<div class="p-head"><span class="p-ava"></span><span class="p-name">Nyx</span><span class="p-chev">⌄</span><span class="p-sp"></span><span class="p-date">Fri, Oct 2</span><span class="p-ask"><i style="background:' + (o.askDot || '#00C2A8') + '"></i>Ask</span><span class="p-me">D</span></div>';
+    var chrome = o.crop ? '' : '<div class="p-fab">' + PLUS(o.fab || '#00C2A8') + '</div><div class="p-tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div>';
+    return '<div class="' + cls + '" style="' + (o.thread ? '--thread:' + o.thread : '') + '">' + head + '<div class="p-scroll">' + inner + '</div>' + chrome + '</div>';
+  }
+
+  function glyph(kind) {
+    if (kind === 'well') return '<span class="well" aria-hidden="true">' + CHEV + '</span>';
+    if (kind === 'bare') return '<span class="gl" aria-hidden="true">' + CHEV + '</span>';
+    return '';
+  }
+  function link(t, label) { return '<span class="lnk" style="color:' + t.link + '">' + label + ' ' + CHEV + '</span>'; }
+
+  // o: surface (elev|bord|one), rail (in|g), insight (lane|cmp|fold|none), t, count ('since'|'these'), linkLabel, leadOnly
+  function signal(o) {
+    var rail = function (color, show) { return show ? '<span class="rail ' + color + (o.rail === 'g' ? ' g' : '') + '"></span>' : ''; };
+    var html = '<div class="c ' + o.surface + '">';
+    html += '<div class="zl ' + (o.surface === 'elev' ? 'rec gapbig' : 'gap') + '">Signal</div>';
+    html += '<div class="rw">' + rail('rose', true) + '<div class="rb"><span class="eb">Photo read · Sep 22</span><span class="hl-lead">Possible foreign material in a vomit photo</span><span class="sub ask">Worth a call to your vet</span></div>' + glyph('well') + '</div>';
+    if (!o.leadOnly) {
+      var cnt = function (n) { return o.count === 'since' ? n + ' episodes since August' : n + ' episodes in these 8 weeks'; };
+      html += '<div class="rw">' + rail('rose', true) + '<div class="rb"><span class="hl">Coughing in 7 of the last 8 weeks</span><span class="sub">' + cnt(19) + ' · <span class="ask">worth booking a vet visit</span></span></div>' + glyph('bare') + '</div>';
+      html += '<div class="rw">' + rail('rose', true) + '<div class="rb"><span class="hl">Vomiting in 5 of the last 8 weeks</span><span class="sub">' + cnt(12) + ' · <span class="ask">worth booking a vet visit</span></span></div>' + glyph('bare') + '</div>';
+      if (o.insight === 'lane') {
+        var dots = '';
+        for (var i = 0; i < 8; i++) dots += '<span class="d" style="left:' + (2.2 + i * 2.8) + '%"></span>';
+        dots += '<span class="d out" style="left:62%"></span>';
+        html += '<div class="rw">' + rail('teal', o.t.insightRail) + '<div class="rb"><span class="hl">Vomiting soon after meals</span><div class="lane"><span class="band"></span>' + dots + '</div><div class="axis"><span>ate</span><span>30m</span><span>2h+</span></div><span class="sub">8 of 9 timed episodes within 30 min of eating</span></div>' + glyph('bare') + '</div>';
+      } else if (o.insight === 'cmp') {
+        html += '<div class="rw">' + rail('teal', o.t.insightRail) + '<div class="rb"><span class="hl">Vomiting soon after meals</span><div class="cmp"><span>Within 30 min of eating</span><span class="tr"><span class="fl" style="display:block;width:100%;background:' + o.t.cmpFill + '"></span></span><span class="n">8</span><span>Timed, but later</span><span class="tr"><span class="fl" style="display:block;width:12.5%;background:' + o.t.cmpFill + '"></span></span><span class="n">1</span></div><span class="sub">Timed episodes in the last 60 days</span></div>' + glyph('bare') + '</div>';
+      }
+    }
+    if (o.insight === 'fold') {
+      html += '<div class="foot"><span class="fold">1 more pattern</span>' + link(o.t, o.linkLabel) + '</div><div class="disc" style="margin-top:4px">A read of Nyx’s logs, not a diagnosis.</div>';
+    } else if (!o.leadOnly) {
+      html += '<div class="foot"><span class="disc">A read of Nyx’s logs, not a diagnosis.</span>' + link(o.t, o.linkLabel) + '</div>';
+    }
+    return html + '</div>';
+  }
+
+  // o: surface, grammar (ship|ruled), t, glyph, title, line, pct
+  function trial(o) {
+    var title = o.title || 'Rabbit trial · day 69 of 84';
+    var h = '<div class="c ' + o.surface + '"><div class="th"><span class="hl">' + title + '</span>' + glyph(o.glyph) + '</div>';
+    h += '<div class="bar"><i style="background:' + o.t.trialBar + ';width:' + (o.pct || 82.1) + '%"></i></div>';
+    if (o.grammar === 'ship') {
+      h += '<div class="tl">Royal Canin Selected Protein PR, Dry · ends Oct 17 · meals logged on 56 of 56 days · 3 outside the trial diet</div>';
+      h += '<div class="tl3">Vomiting: 15 in the trial’s 69 days · 19 in the 49 days before.</div>';
+    } else {
+      h += '<div class="tl">' + (o.line || 'Ends Oct 17 · 3 off-diet feedings logged') + '</div>';
+    }
+    return h + '</div>';
+  }
+
+  // o: surface, order (ship|first), t, spine
+  function today(o) {
+    var words = ['Off', 'Sleeping more', 'Hiding', 'Not grooming', 'Lip-licking', 'Outside the box', 'Lively', 'Played', 'Nothing unusual'];
+    var chips = '';
+    if (o.order === 'first') chips += '<span class="chip door">Left her food ' + CHEV + '</span>';
+    words.forEach(function (w) { chips += '<span class="chip">' + w + '</span>'; });
+    if (o.order !== 'first') chips += '<span class="chip">Left her food ' + CHEV + '</span>';
+    chips += '<span class="more" style="color:' + o.t.link + '">More…</span>';
+    var h = '<div class="c ' + o.surface + '"><div class="zl gap">Today</div><div class="q">How does Nyx seem today?</div><div class="chips">' + chips + '</div>';
+    if (o.spine) {
+      var pill = function (txt) { return '<span class="pil" style="background:' + o.t.pill.bg + ';color:' + o.t.pill.fg + '">' + txt + '</span>'; };
+      h += '<div class="cnt"><b>4</b> logged · 1 cough · 2 meals · 1 dose</div><div class="spine">';
+      h += '<div class="sp"><span class="tm">2:14 AM</span><span class="dt"><i style="background:' + o.t.meal + '"></i></span><span class="ct"><b>Meal</b> · Royal Canin · Selected Protein PR<br><span class="fm">Dry</span></span></div>';
+      h += '<div class="sp"><span class="tm">7:15 AM</span><span class="dt"><i style="background:' + o.t.meal + '"></i></span><span class="ct"><b>Meal</b> · Royal Canin · Selected Protein PR<br><span class="fm">Wet</span>' + pill('Most') + '<br>with Prednisone</span></div>';
+      h += '<div class="sp"><span class="tm">7:15 AM</span><span class="dt"><i style="background:#5B7A9E"></i></span><span class="ct"><b>Prednisone</b> · in the 7:15 AM meal<br>' + pill('Given') + '</span></div>';
+      h += '<div class="sp"><span class="tm">11:06 AM</span><span class="dt"><i style="background:#F43F5E"></i></span><span class="ct"><b>Cough</b></span></div>';
+      h += '</div>';
+    }
+    return h + '</div>';
+  }
+
+  function coverage(o) {
+    var label = o.proposed ? 'October, before today · logged 1 of 1 day' : 'October · logged 1 of 1 day';
+    return '<div class="c ' + o.surface + '"><div class="cov"><span>' + label + '</span>' + link(o.t, 'Patterns') + '</div></div>';
+  }
+
+  // ── Compositions ──
+  function shipped() {
+    var t = T('ship');
+    return phone(
+      signal({ surface: 'elev', rail: 'in', insight: 'lane', t: t, count: 'since', linkLabel: 'All patterns' }) +
+      trial({ surface: 'bord', grammar: 'ship', t: t, glyph: 'well' }) +
+      today({ surface: 'bord', order: 'ship', t: t, spine: true }) +
+      coverage({ surface: 'bord', t: t }),
+      { fab: t.fab, askDot: t.askDot }
+    );
+  }
+
+  function proposal(mode, big) {
+    var t = T(mode);
+    return phone(
+      signal({ surface: 'one', rail: 'g', insight: 'fold', t: t, count: 'these', linkLabel: 'Patterns' }) +
+      trial({ surface: 'one', grammar: 'ruled', t: t, glyph: 'bare' }) +
+      today({ surface: 'one', order: 'first', t: t, spine: true }) +
+      coverage({ surface: 'one', t: t, proposed: true }),
+      { fab: t.fab, askDot: t.askDot, big: big, thread: '#D4D4D4' }
+    );
+  }
+
+  function g4(mode) {
+    var t = T(mode);
+    return phone(
+      signal({ surface: 'one', rail: 'g', insight: 'fold', t: t, count: 'these', linkLabel: 'Patterns' }) +
+      trial({ surface: 'one', grammar: 'ruled', t: t, glyph: 'bare' }) +
+      today({ surface: 'one', order: 'first', t: t, spine: true }),
+      { crop: true, thread: '#D4D4D4' }
+    );
+  }
+
+  function g6(fold) {
+    var t = T('indigo');
+    return phone(signal({ surface: 'one', rail: 'g', insight: fold ? 'fold' : 'cmp', t: t, count: 'these', linkLabel: 'Patterns' }), { crop: true });
+  }
+
+  function trialDay(kind) {
+    var t = T('indigo');
+    if (kind === 'safety') {
+      return phone(signal({ surface: 'one', rail: 'g', insight: 'none', leadOnly: true, t: t }) + trial({ surface: 'one', grammar: 'ruled', t: t, glyph: 'bare' }), { crop: true });
+    }
+    if (kind === 'clean') {
+      return phone(trial({ surface: 'one', grammar: 'ruled', t: t, glyph: 'bare', title: 'Turkey trial · day 23 of 56', line: 'Ends Nov 3', pct: 41 }), { crop: true });
+    }
+    return phone(trial({ surface: 'one', grammar: 'ruled', t: t, glyph: 'bare', title: 'Rabbit trial · day 90', line: 'Window ended Oct 17 · 3 off-diet feedings logged', pct: 100 }), { crop: true });
+  }
+
+  function put(id, html) { var el = document.getElementById(id); if (el) el.innerHTML = html; }
+
+  var state = { mode: 'indigo', big: false };
+  function renderProp() { put('f-prop', proposal(state.mode, state.big)); }
+
+  put('f-ship', shipped());
+  renderProp();
+  put('f-g4c', g4('indigo'));
+  put('f-g6b', g6(true));
+  put('f-t1', trialDay('safety'));
+  put('f-t2', trialDay('clean'));
+  put('f-t3', trialDay('over'));
+
+  function bindGroup(ids, onPick) {
+    var els = ids.map(function (id) { return document.getElementById(id); });
+    els.forEach(function (el, i) {
+      el.addEventListener('click', function () {
+        els.forEach(function (e) { e.setAttribute('aria-pressed', e === el ? 'true' : 'false'); });
+        onPick(i);
+        renderProp();
+      });
+    });
+  }
+  bindGroup(['b-k1', 'b-k2'], function (i) { state.big = i === 1; });
+})();
+</script>
