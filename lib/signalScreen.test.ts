@@ -297,12 +297,43 @@ describe('buildSignalScreenModel — the mock’s Thursday', () => {
 
   it('a photographed count of zero says so; a count past twelve is a numeral', () => {
     const none = buildSignalScreenModel(mockInput({ episodes: mockInput().episodes.map((e) => ({ ...e, photo: null })) }));
-    expect(none.episodes?.countLine).toBe('22 in these 8 weeks, none photographed');
+    // The fixture's one call is now an episode with no photo, so the line names it (CUL-1200).
+    expect(none.episodes?.countLine).toBe('22 in these 8 weeks, none photographed, one read as worth a call with no photo');
+    expect(none.episodes?.tiles).toEqual([]);
     const all = buildSignalScreenModel(
       mockInput({ episodes: mockInput().episodes.map((e) => ({ ...e, photo: { localUri: null, storagePath: 'p' } })) }),
     );
     expect(all.episodes?.countLine).toBe('22 in these 8 weeks, 22 photographed');
     expect(all.episodes?.tiles.map((t) => t.verdict).filter((v) => v != null)).toHaveLength(4);
+  });
+});
+
+describe('CUL-1200 (b): an escalation with no photo is named under the gallery, never a tile', () => {
+  const base = mockInput();
+  const photoless = base.episodes.filter((e) => e.photo == null);
+  const drawn = (id: string) => buildSignalScreenModel(base).episodes?.photoless.some((p) => p.eventId === id);
+
+  it('each rule counted apart, never summed; a calm or missing read says nothing', () => {
+    const [a, b, c, d] = photoless.filter((e) => drawn(e.eventId));
+    const m = buildSignalScreenModel({
+      ...base,
+      verdicts: { ...base.verdicts, [a.eventId]: 'worth_a_call', [b.eventId]: 'call_today', [c.eventId]: 'call_now', [d.eventId]: 'monitor' },
+    });
+    expect(m.episodes?.countLine).toBe(
+      '22 in these 8 weeks, nine photographed, one read as worth a call with no photo, two read as call now or call today with no photo',
+    );
+    // The gallery stays photos.
+    expect(m.episodes?.tiles).toHaveLength(9);
+    expect(m.episodes?.tiles.some((t) => t.eventId === a.eventId)).toBe(false);
+    // Nothing called with no photo: the line is the shipped one, no "none read as".
+    expect(buildSignalScreenModel(base).episodes?.countLine).toBe('22 in these 8 weeks, nine photographed');
+  });
+
+  it('only the drawn weeks count: a call outside the window is not in the line (C-3)', () => {
+    const outside = photoless.find((e) => !drawn(e.eventId));
+    expect(outside).toBeDefined();
+    const m = buildSignalScreenModel({ ...base, verdicts: { ...base.verdicts, [outside!.eventId]: 'worth_a_call' } });
+    expect(m.episodes?.countLine).toBe('22 in these 8 weeks, nine photographed');
   });
 });
 
@@ -578,7 +609,8 @@ describe('what the screen may never say', () => {
 
   it('the model has no field for a summary verdict — the type is one read per tile', () => {
     const m = buildSignalScreenModel(mockInput());
-    expect(Object.keys(m.episodes ?? {}).sort()).toEqual(['countLine', 'photographedCount', 'tiles', 'total']);
+    // `photoless` holds one call per episode with no photo (CUL-1200), never a summary.
+    expect(Object.keys(m.episodes ?? {}).sort()).toEqual(['countLine', 'photographedCount', 'photoless', 'tiles', 'total', 'weeks']);
   });
 });
 
@@ -1056,6 +1088,41 @@ describe('loadSignalScreen', () => {
     // The fixture is only a fixture if the two times say different words.
     expect(formatTime(onset)).not.toBe(formatTime(relog));
     expect(out.asOfLine).toBeNull();
+  });
+
+  // CUL-1200 (b): the loader asks the copy about the episodes with no photo, and a failed
+  // look keeps the clause the screen already drew.
+  it('a photoless episode read as a call reaches the count line; a failed look keeps it', async () => {
+    mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(chronicity())] });
+    let copyFails = false;
+    mockGetAllAsync.mockImplementation((sql: string, params: unknown[] = []) => {
+      if (/FROM events\s+WHERE pet_id = \? AND event_type/.test(sql))
+        return Promise.resolve([{ id: 'v0', occurred_at: new Date(Date.now() - 2 * 86_400_000).toISOString(), occurred_at_confidence: 'witnessed' }]);
+      if (/FROM event_ai_verdicts/.test(sql)) {
+        if (copyFails) return Promise.reject(new Error('no such table: event_ai_verdicts'));
+        return Promise.resolve(params.includes('v0') ? [verdictRow('v0', 'completed', 'worth_a_call')] : []);
+      }
+      return Promise.resolve([]);
+    });
+    const out = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');
+    if (out.status !== 'ready') throw new Error(out.status);
+    expect(out.model.episodes?.tiles).toEqual([]);
+    expect(out.model.episodes?.countLine).toMatch(/, none photographed, one read as worth a call with no photo$/);
+    copyFails = true;
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const again = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');
+      if (again.status !== 'ready') throw new Error(again.status);
+      expect(again.verdictsUnanswered).toBe(true);
+      expect(again.model.episodes?.countLine).toMatch(/, none photographed$/);
+      const laid = carryTileRoses(out, again);
+      expect(laid.status === 'ready' && laid.model.episodes?.countLine).toMatch(/, one read as worth a call with no photo$/);
+      // An episode that left the window leaves with its call.
+      const gone = { ...again, model: { ...again.model, episodes: again.model.episodes && { ...again.model.episodes, photoless: [] } } } as SignalScreenLoad;
+      expect(carryTileRoses(out, gone).status === 'ready' && (carryTileRoses(out, gone) as { model: SignalScreenModel }).model.episodes?.countLine).not.toMatch(/with no photo/);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   // CUL-1219 (GAP-7): offline, the finding is the last row the process read, and the screen
