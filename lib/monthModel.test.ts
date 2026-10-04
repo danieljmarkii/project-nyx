@@ -415,3 +415,94 @@ describe('EN-3: the two rules\' calls, never one number (spec §5)', () => {
     expect(monthA11yLabel(m)).not.toMatch(/worth a call/);
   });
 });
+
+// CUL-1074 brief 2 (PM, 2026-10-03): a day is logged for the grey square and the unlogged
+// count when it holds any non-look event, but only a day holding a feeding or a symptom
+// entry may be spoken as "no vomiting".
+describe('logged is not answered (CUL-1074 brief 2)', () => {
+  const logged = range('2026-09-01', TODAY);
+
+  it('a dose-only day stays logged and does not answer; the coverage is unchanged', () => {
+    const all = septModel({ loggedDays: logged, answeringDays: logged });
+    const doseOnly = septModel({ loggedDays: logged, answeringDays: logged.filter((k) => k !== '2026-09-03') });
+    const day = doseOnly.days[2];
+    expect(day.key).toBe('2026-09-03');
+    expect(day.coverage).toBe('logged');
+    expect(day.answers).toBe(false);
+    expect(all.days[2].answers).toBe(true);
+    expect(doseOnly.unloggedDays).toBe(all.unloggedDays);
+    expect(doseOnly.answeringDayCount).toBe(all.answeringDayCount - 1);
+  });
+
+  it('a month whose logged days are all doses or weigh-ins never says "No vomiting logged"', () => {
+    const m = septModel({ episodeDays: [], loggedDays: ['2026-09-03', '2026-09-10'], answeringDays: [] });
+    expect(m.line).toBe('Through Sep 17 · 15 days unlogged');
+    expect(m.line).not.toMatch(/no vomiting/i);
+    expect(m.answeringDayCount).toBe(0);
+  });
+
+  it('one answering day is enough for the absence to be spoken over the month', () => {
+    const m = septModel({ episodeDays: [], loggedDays: ['2026-09-03', '2026-09-10'], answeringDays: ['2026-09-10'] });
+    expect(m.line).toBe('No vomiting logged · through Sep 17 · 15 days unlogged');
+  });
+
+  it('an answering day outside the drawn month (a neighbour\'s, or ahead) does not license the month\'s absence', () => {
+    const m = septModel({ episodeDays: [], loggedDays: ['2026-08-31', '2026-09-03'], answeringDays: ['2026-08-31', '2026-09-20'] });
+    expect(m.answeringDayCount).toBe(0);
+    expect(m.line).not.toMatch(/no vomiting/i);
+  });
+
+  it('answers is false on a day that is unlogged, ahead or before the record, whatever the list says', () => {
+    const m = septModel({ recordStart: '2026-09-05', loggedDays: ['2026-09-06'], answeringDays: ['2026-09-02', '2026-09-07', '2026-09-20'] });
+    const at = (k: string) => m.days.find((d) => d.key === k);
+    expect(at('2026-09-02')?.answers).toBe(false); // before the record
+    expect(at('2026-09-07')?.answers).toBe(false); // unlogged
+    expect(at('2026-09-20')?.answers).toBe(false); // ahead
+  });
+});
+
+// CUL-1553, GC-7 item 2: a refusal is named and counted, over the rated meals.
+describe('a refusal is counted, never folded', () => {
+  const meals = {
+    // Two meals on Sep 4, one each on Sep 5, 6, 7; one on Aug 31 (a neighbour's day) and one ahead.
+    ratedMealDays: ['2026-08-31', '2026-09-04', '2026-09-04', '2026-09-05', '2026-09-06', '2026-09-07', '2026-09-20'],
+    refusedMealDays: ['2026-08-31', '2026-09-04', '2026-09-06'],
+    leftSomeMealDays: ['2026-09-04'],
+    leftSomeDays: ['2026-08-31', '2026-09-04', '2026-09-06'],
+  };
+
+  it('counts refused and left-some meals apart over the rated meals of the drawn month', () => {
+    const m = septModel(meals);
+    expect(m.ratedMeals).toBe(5);
+    expect(m.refusedMeals).toBe(2);
+    expect(m.refusedDays).toBe(2);
+    expect(m.leftSomeMeals).toBe(1);
+    // The two counts partition the unfinished meals and never exceed the denominator.
+    expect(m.refusedMeals + m.leftSomeMeals).toBeLessThanOrEqual(m.ratedMeals);
+  });
+
+  it('each day carries its own refused and left-some meals; the coverage keeps the broken line', () => {
+    const m = septModel(meals);
+    const sep4 = m.days[3];
+    expect(sep4.key).toBe('2026-09-04');
+    expect(sep4.refusedMeals).toBe(1);
+    expect(sep4.leftSomeMeals).toBe(1);
+    expect(sep4.coverage).toBe('left_some');
+    expect(m.days[5].refusedMeals).toBe(1);
+    expect(m.days[5].leftSomeMeals).toBe(0);
+  });
+
+  it('a neighbour\'s day keeps its marks in the grid and stays out of the month\'s counts', () => {
+    const m = septModel(meals);
+    const aug31 = m.rows[0][1];
+    expect(aug31.key).toBe('2026-08-31');
+    expect(aug31.outsideMonth).toBe(true);
+    expect(aug31.refusedMeals).toBe(1);
+  });
+
+  it('the spoken month carries both counts with the Meals layer on, and neither with it off', () => {
+    const m = septModel(meals);
+    expect(monthA11yLabel(m, { meds: false, photos: false, meals: true })).toContain('Refused 2 of 5 rated meals, on 2 days. Left some: 1 of 5 rated meals.');
+    expect(monthA11yLabel(m, { meds: false, photos: false, meals: false })).not.toMatch(/Refused|Left some/);
+  });
+});

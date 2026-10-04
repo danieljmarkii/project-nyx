@@ -316,3 +316,36 @@ describe('weightDeltaLine (D2-5)', () => {
     expect(weightBand([r(-1, '2026-07-03T08:00:00Z')]).state).toBe('empty');
   });
 });
+
+describe('dayMarkA11yLabel — logged is not answered, and a refusal is named (CUL-1553)', () => {
+  const facts = (over: Partial<DayMarkFacts>): DayMarkFacts => ({
+    dayKey: '2026-09-19',
+    count: 0,
+    coverage: 'logged',
+    answers: true,
+    medication: false,
+    photo: 'none',
+    symptomLayer: true,
+    today: false,
+    selected: false,
+    ...over,
+  });
+  const date = dayMarkDateWord('2026-09-19');
+
+  it('a logged day that answers nothing says "logged" and never "no <noun>" (CUL-1074 brief 2)', () => {
+    expect(dayMarkA11yLabel(facts({ answers: false, medication: true }), 'vomiting')).toBe(`${date}, logged, medication`);
+    expect(dayMarkA11yLabel(facts({ answers: false }), 'itching')).not.toMatch(/\bno itching\b/);
+    // A count is still spoken on a day that holds the symptom: the row answers for itself.
+    expect(dayMarkA11yLabel(facts({ answers: false, count: 2 }), 'vomiting')).toBe(`${date}, vomiting logged 2 times`);
+  });
+
+  it('a refused meal is counted in the words, and the lighter word is kept only for another meal', () => {
+    expect(dayMarkA11yLabel(facts({ coverage: 'left_some', refusedMeals: 2 }), 'vomiting')).toBe(`${date}, logged, no vomiting, 2 meals refused`);
+    expect(dayMarkA11yLabel(facts({ coverage: 'left_some', refusedMeals: 1, leftSomeMeals: 1 }), 'vomiting')).toBe(
+      `${date}, logged, no vomiting, 1 meal refused, a meal left unfinished`,
+    );
+    expect(dayMarkA11yLabel(facts({ coverage: 'left_some', leftSomeMeals: 1 }), 'vomiting')).toBe(`${date}, logged, no vomiting, a meal left unfinished`);
+    // With the Meals layer off the caller passes no split: the coverage's word stands.
+    expect(dayMarkA11yLabel(facts({ coverage: 'left_some' }), 'vomiting')).toBe(`${date}, logged, no vomiting, a meal left unfinished`);
+  });
+});

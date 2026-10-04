@@ -502,3 +502,77 @@ describe('MonthInstrument', () => {
     expect((api.UNSAFE_getByType(WeeklyBars).props as { identity?: string }).identity).toBe(first.identity);
   });
 });
+
+// CUL-1553 — the care surfaces: the trial's sign (the lens), the counted refusal, and the
+// dose-only day that never reads "no vomiting".
+describe('MonthInstrument — the care surfaces (CUL-1553)', () => {
+  const itchy = () =>
+    facts({
+      episodeDays: ['2026-09-02', '2026-09-11'],
+      symptomEntryDays: { itch: ['2026-09-01', '2026-09-01', '2026-09-03', '2026-09-06', '2026-09-14'] },
+    });
+
+  it('a vomit-only record draws no lens row: the shipped month', async () => {
+    const { getByTestId, queryByLabelText } = mount();
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    expect(queryByLabelText('Symptom')).toBeNull();
+  });
+
+  it('the itchy trial dog\'s month opens on itching: the lens, the line, the bars, the first layer and the legend follow it', async () => {
+    const { getByTestId, getByLabelText, UNSAFE_getByType, getByText } = mount(jest.fn(async () => itchy()));
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    const lens = getByLabelText('Symptom');
+    const radios = within(lens).getAllByRole('radio');
+    expect(radios.map((r) => r.props.accessibilityState?.selected ?? r.props.accessibilityState?.checked)).toEqual([true, false]);
+    expect(within(lens).getByText('Itching')).toBeTruthy();
+    expect(within(lens).getByText('Vomiting')).toBeTruthy();
+    // Entries, not episodes: two itch rows on Sep 1 count twice, over four days.
+    expect(getByTestId('month-line').props.children).toBe('Itching 5 times on 4 days · through Sep 17 · 2 days unlogged');
+    expect((UNSAFE_getByType(WeeklyBars).props as { noun: string }).noun).toBe('itching');
+    expect(within(getByTestId('month-layers')).getByText('Itching')).toBeTruthy();
+    expect(getByText('itch/scratch day, count in the corner')).toBeTruthy();
+  });
+
+  it('the owner\'s lens holds: tapping Vomiting redraws the month on vomiting', async () => {
+    const { getByTestId, getByLabelText } = mount(jest.fn(async () => itchy()));
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    fireEvent.press(within(getByLabelText('Symptom')).getByText('Vomiting'));
+    await waitFor(() => expect(getByTestId('month-line').props.children).toBe('Vomiting 2 times on 2 days · through Sep 17 · 2 days unlogged'));
+    // Tapping the selected lens again keeps it: a lens is never "none".
+    fireEvent.press(within(getByLabelText('Symptom')).getByText('Vomiting'));
+    expect(getByTestId('month-line').props.children).toBe('Vomiting 2 times on 2 days · through Sep 17 · 2 days unlogged');
+  });
+
+  it('the Meals layer names and counts a refusal over the rated meals, apart from "left some"', async () => {
+    const { getByTestId, queryByTestId, getAllByTestId } = mount(
+      jest.fn(async () =>
+        facts({
+          leftSomeDays: ['2026-09-04', '2026-09-05'],
+          ratedMealDays: ['2026-09-04', '2026-09-04', '2026-09-05', '2026-09-06'],
+          refusedMealDays: ['2026-09-04', '2026-09-04'],
+          leftSomeMealDays: ['2026-09-05'],
+        }),
+      ),
+    );
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    expect(within(getByTestId('month-legend-refused')).getByText('refused · 2 of 4 rated meals, on 1 day')).toBeTruthy();
+    expect(getByTestId('month-legend-left-some').props.children).toBe('left some · 1 of 4 rated meals');
+    expect(getAllByTestId('daymark-layer-refused')).toHaveLength(1);
+    // The Meals layer off: no ring, no counts, the coverage word alone.
+    fireEvent.press(within(getByTestId('month-layers')).getByText('Meals'));
+    expect(queryByTestId('month-legend-refused')).toBeNull();
+    expect(queryByTestId('daymark-layer-refused')).toBeNull();
+    expect(getByTestId('month-legend-left-some').props.children).toBe('left some');
+  });
+
+  it('a dose-only day is logged and never "no vomiting" (CUL-1074 brief 2)', async () => {
+    const { getByTestId, getAllByTestId } = mount(
+      jest.fn(async () => facts({ answeringDays: facts().loggedDays.filter((k) => k !== '2026-09-03') })),
+    );
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    const sep3 = getAllByTestId('daymark').find((d) => /September 3\b/.test(d.props.accessibilityLabel as string));
+    // The Medication layer is off by default, so the day says only what is drawn.
+    expect(sep3?.props.accessibilityLabel).toMatch(/September 3, logged, opens the day$/);
+    expect(sep3?.props.accessibilityLabel).not.toMatch(/no vomiting/);
+  });
+});

@@ -381,6 +381,7 @@ export function MonthInstrument({
               <ChipGroup
                 options={lenses.map((l) => ({ value: l.type, label: lensWords(l.type).chip }))}
                 value={lens}
+                allowDeselect={false}
                 onChange={(next) => {
                   if (next == null) return;
                   setChosenLens(next);

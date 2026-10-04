@@ -469,3 +469,64 @@ describe('readDayRows — one LOCAL day, bounds parsed', () => {
     await expect(readDayRows('pet-1', 'yesterday')).rejects.toThrow(/day key/);
   });
 });
+
+// CUL-1553 — the facts the care surfaces need, on the production DDL.
+describe('readMonthFacts — the care surfaces (CUL-1553)', () => {
+  it('answering days hold a feeding or a symptom entry; a dose, a weigh-in, a stool, an other or a look answers nothing (CUL-1074 brief 2)', async () => {
+    meal(at('2026-09-03'), 'all');
+    ev('vomit', at('2026-09-04'));
+    ev('itch', at('2026-09-05'));
+    ev('cough', at('2026-09-06'));
+    dose(at('2026-09-07'), 'given');
+    ev('weight_check', at('2026-09-08'));
+    ev('stool_normal', at('2026-09-09'));
+    ev('other', at('2026-09-10'));
+    ev('check_in', at('2026-09-11'));
+    ev('lethargy', at('2026-09-12'));
+    ev('meal', at('2026-09-13'), { deleted: true });
+    const facts = await readMonthFacts(PET, RANGE);
+    expect(facts.answeringDays).toEqual(['2026-09-03', '2026-09-04', '2026-09-05', '2026-09-06', '2026-09-12']);
+    // A subset of the logged days, by construction: the dose, the weigh-in, the stool and
+    // the other are LOGGED (the grey square is unchanged) and answer nothing.
+    for (const k of facts.answeringDays) expect(facts.loggedDays).toContain(k);
+    expect(facts.loggedDays).toEqual(expect.arrayContaining(['2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10']));
+  });
+
+  it('symptom entries: every symptom but vomit, one per row, keyed by type; a look and a deletion are not entries', async () => {
+    ev('itch', at('2026-09-03', 8));
+    ev('itch', at('2026-09-03', 20));
+    ev('itch', at('2026-09-05'), { deleted: true });
+    ev('diarrhea', at('2026-09-06'));
+    ev('vomit', at('2026-09-07'));
+    ev('itch', at('2026-09-08'), { pet: 'pet-2' });
+    const facts = await readMonthFacts(PET, RANGE);
+    expect(facts.symptomEntryDays).toEqual({ itch: ['2026-09-03', '2026-09-03'], diarrhea: ['2026-09-06'] });
+    expect(facts.episodeDays).toEqual(['2026-09-07']);
+  });
+
+  it('refused and left-some meals are listed per MEAL over the rated meals; a meal is counted once, refused first', async () => {
+    meal(at('2026-09-03', 8), 'refused');
+    meal(at('2026-09-03', 18), 'refused');
+    meal(at('2026-09-04'), 'picked');
+    meal(at('2026-09-05'), 'some');
+    meal(at('2026-09-06'), 'most');
+    meal(at('2026-09-07'), 'all');
+    meal(at('2026-09-08'), null); // unrated: not in the denominator
+    meal(at('2026-09-09'), 'refused', 'treat-1'); // a treat: not a qualifying meal
+    const facts = await readMonthFacts(PET, RANGE);
+    expect(facts.ratedMealDays).toEqual(['2026-09-03', '2026-09-03', '2026-09-04', '2026-09-05', '2026-09-06', '2026-09-07']);
+    expect(facts.refusedMealDays).toEqual(['2026-09-03', '2026-09-03']);
+    expect(facts.leftSomeMealDays).toEqual(['2026-09-04', '2026-09-05']);
+    // The two lists partition the unfinished meals, and the coverage day set is their union.
+    expect(facts.leftSomeDays).toEqual(['2026-09-03', '2026-09-04', '2026-09-05']);
+  });
+
+  it('a refusal while a free-fed bowl was down is not a qualifying meal (the intake lens\'s own definition)', async () => {
+    food('free-2', 'meal');
+    bowl('fa2', 'free-2', at('2026-09-01'));
+    meal(at('2026-09-04'), 'refused', 'free-2');
+    const facts = await readMonthFacts(PET, RANGE);
+    expect(facts.refusedMealDays).toEqual([]);
+    expect(facts.ratedMealDays).toEqual([]);
+  });
+});
