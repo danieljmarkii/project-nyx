@@ -1025,6 +1025,27 @@ describe('CUL-1570 — Worth raising quotes the Signal screen’s own sentence u
     expect(r.queryByText(COMPOSED)).toBeNull();
   });
 
+  it('flag on, a screen read that stalls costs the composed sentence, never the page (F7, the adversarial pass)', async () => {
+    mockDesignV2.on = true;
+    cache();
+    loader().mockImplementation(() => new Promise(() => {}));
+    jest.useFakeTimers();
+    try {
+      params.current = { appointmentId: 'appt-1' };
+      const r = render(<RundownScreen />);
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(3_999);
+      });
+      expect(r.queryByText(ENGINE)).toBeNull();
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1);
+      });
+      expect(r.getByText(ENGINE)).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('flag on, a screen read that throws: the cached sentence, never an empty row (C-12)', async () => {
     mockDesignV2.on = true;
     cache();

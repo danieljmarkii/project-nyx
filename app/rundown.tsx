@@ -660,8 +660,11 @@ async function buildForAppointment(
     : null;
   // The screen's own sentence for each counted finding, for the rows that survived the masking
   // above (CUL-1570). Flag off it is empty and nothing is read: today's page, byte for byte.
+  // Bounded like the cache read (F7): the screen's loader reads the network again, and a stall
+  // there costs the rows their composed sentence (each quotes its cached one), never the page.
   const screenSentences =
-    screenCountsLive && findings ? await readScreenSentences(subjectId, findings, nowMs) : new Map<string, string>();
+    (screenCountsLive && findings ? await answeredWithin(readScreenSentences(subjectId, findings, nowMs), SIGNAL_CACHE_WAIT_MS) : null) ??
+    new Map<string, string>();
   if (loadIdRef.current !== myId) {
     return { rows: [], signalUnavailable: false };
   }

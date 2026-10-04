@@ -833,31 +833,33 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // Engines v3 PR-14d (CUL-1410). Why this card speaks with no earlier week to compare to: the
     // count or the run is the finding. Counts and days only — no cause, no severity word, and the
     // ask the server's tier chose, in the server's own words.
+    // CUL-1575: over an incomplete read the count and the run are floors, as the engine says.
+    const atLeast = finding.countIsFloor === true ? 'at least ' : '';
     if (finding.tier === 'today' && !finding.persistenceArm) {
       // A 'today' held over an incomplete read (the server's holdPriorTier) with no qualifying run
       // in what loaded: the count, never a run the record did not show.
       return (
-        `We've logged ${count(finding.count, 'vomit', 'vomits')} for ${petName} this week. An earlier update ` +
+        `We've logged ${atLeast}${count(finding.count, 'vomit', 'vomits')} for ${petName} this week. An earlier update ` +
         `asked for a call to your vet today, and part of the record didn't load for this one — a read of ` +
         `your logs, not a diagnosis.`
       );
     }
     if (finding.tier === 'today') {
       return (
-        `${petName} has vomited on ${count(finding.runDays, 'day', 'days')} in a row. Vomiting that comes back day ` +
+        `${petName} has vomited on ${atLeast}${count(finding.runDays, 'day', 'days')} in a row. Vomiting that comes back day ` +
         `after day is worth a call to your vet today, whatever the week before looked like — a read of your logs, ` +
         `not a diagnosis.`
       );
     }
     if (finding.countArm) {
       return (
-        `We've logged ${count(finding.count, 'vomit', 'vomits')} for ${petName} in the last ${finding.windowDays} ` +
-        `days, on ${count(finding.days, 'day', 'days')}. That many in a week is worth booking a vet visit soon, ` +
+        `We've logged ${atLeast}${count(finding.count, 'vomit', 'vomits')} for ${petName} in the last ${finding.windowDays} ` +
+        `days, on ${atLeast}${count(finding.days, 'day', 'days')}. That many in a week is worth booking a vet visit soon, ` +
         `whatever the week before looked like — a read of your logs, not a diagnosis.`
       );
     }
     return (
-      `${petName} vomited on ${count(finding.runDays, 'day', 'days')} in a row earlier this week. A run like that is ` +
+      `${petName} vomited on ${atLeast}${count(finding.runDays, 'day', 'days')} in a row earlier this week. A run like that is ` +
       `worth booking a vet visit soon — a read of your logs, not a diagnosis.`
     );
   }
@@ -876,6 +878,21 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // the New chip also shows (S10: one carrier). The server card sentence retires
     // its own "after none" with the GA-3 redeploy — its replacement must keep a
     // week-scope cue too (recorded on CUL-550).
+    // CUL-989 / CUL-1575 (the adversarial pass on #1055): over an incomplete read every count is
+    // a floor, and the week before is a floor too, so the comparison goes (the engine's floor
+    // sentence drops it) and so does the New arm's "first in over a week". This expand sits
+    // directly above the phone script, which already says "at least"; the two must agree.
+    if (finding.countIsFloor === true) {
+      const ask =
+        finding.tier === 'firm'
+          ? 'Symptoms on most days is a pattern worth a vet visit soon — a read of your logs, not a diagnosis.'
+          : "It's a pattern in your logs, not a diagnosis — worth a word with your vet, and keeping an eye on whether it carries on.";
+      return (
+        `We've logged at least ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} ` +
+        `on at least ${count(finding.currentDays, 'day', 'days')} this week. Not all of ${petName}'s record could be ` +
+        `read, so these are the fewest there were, and last week isn't compared. ${ask}`
+      );
+    }
     const isNew = finding.priorCount === 0;
     const priorPhrase = `up from ${count(finding.priorCount, 'episode', 'episodes')} the week before`;
     // Firm tier — symptoms on most days. Phrase the rise on the axis that actually rose
@@ -934,10 +951,18 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     const symptom = symptomWord(finding.symptomType);
     const weeks = Math.round(finding.windowDays / 7);
     const vetAsk = finding.tier === 'firm' ? 'booking a vet visit' : 'a word with your vet';
+    // CUL-989 / CUL-1575 (the adversarial pass on #1055): over an incomplete read the counts are
+    // floors and the onset month is the one date that reads younger than the course, so the floor
+    // arm drops the month and says "at least", as the engine's sentence and the script below do.
     const lead =
-      `Since ${onsetMonth(finding.firstOnsetIso)}, we've logged ${count(finding.episodeCount, 'episode', 'episodes')} of ` +
-      `${symptom} for ${petName} across ${finding.activeWeeks} of the last ${weeks} weeks, the most recent ` +
-      `${recencyPhrase(finding.daysSinceLastEpisode)}. A symptom that keeps recurring over weeks is worth ${vetAsk}`;
+      finding.countIsFloor === true
+        ? `We've logged at least ${count(finding.episodeCount, 'episode', 'episodes')} of ${symptom} for ${petName} ` +
+          `across at least ${finding.activeWeeks} of the last ${weeks} weeks, the most recent ` +
+          `${recencyPhrase(finding.daysSinceLastEpisode)}. Not all of ${petName}'s record could be read, so these are ` +
+          `the fewest there were. A symptom that keeps recurring over weeks is worth ${vetAsk}`
+        : `Since ${onsetMonth(finding.firstOnsetIso)}, we've logged ${count(finding.episodeCount, 'episode', 'episodes')} of ` +
+          `${symptom} for ${petName} across ${finding.activeWeeks} of the last ${weeks} weeks, the most recent ` +
+          `${recencyPhrase(finding.daysSinceLastEpisode)}. A symptom that keeps recurring over weeks is worth ${vetAsk}`;
     // §9 adjacency (CUL-676). The card face carries the server-composed sentence, but the
     // EXPAND is composed here — so without this the disclosure vanished exactly where an
     // owner goes for more detail (adversarial pass, 2026-08-28). Names misattribution, not
@@ -2058,10 +2083,12 @@ function phoneScriptFacts(
 ): PhoneScriptFact[] | null {
   const counted = counting?.kind === 'engine' ? [countedWhenFact(counting.raisedOn)] : [];
   if (finding.type === 'symptom_burden') {
+    // CUL-1575: over an incomplete read the count and the run are floors, as the engine says.
+    const atLeast = finding.countIsFloor === true ? 'at least ' : '';
     return [
       { label: 'Sign', value: symptomWord(finding.symptomType) },
-      { label: 'This week', value: `${count(finding.count, 'vomit', 'vomits')} on ${count(finding.days, 'day', 'days')}` },
-      ...(finding.persistenceArm ? [{ label: 'Days in a row', value: String(finding.runDays) }] : []),
+      { label: 'This week', value: `${atLeast}${count(finding.count, 'vomit', 'vomits')} on ${atLeast}${count(finding.days, 'day', 'days')}` },
+      ...(finding.persistenceArm ? [{ label: 'Days in a row', value: `${atLeast}${finding.runDays}` }] : []),
       { label: 'Watched over', value: `the last ${finding.windowDays} days` },
     ];
   }

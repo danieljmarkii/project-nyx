@@ -12,7 +12,7 @@ jest.mock('./supabase', () => ({ supabase: { from: jest.fn() } }));
 import { buildSignalScreenModel, type SignalScreenEpisode, type SignalScreenInput } from './signalScreen';
 import type { CachedFinding, ReflectionFinding, SymptomChronicityFinding, SymptomWorseningFinding } from './signal';
 import { screenMaskingOf } from './screenMasking';
-import { chronicityCompareExtras, phoneScript } from './signalCopy';
+import { chronicityCompareExtras, evidenceText, phoneScript } from './signalCopy';
 import { countsMayCompose, signalCountsOf } from './signalCounts';
 import { signalWeeks } from './signalWindows';
 import { dayKeyFromIndex, localDayIndexOf } from './utils';
@@ -382,5 +382,55 @@ describe('a floor read (CUL-989) leaves the comparing rows out of the script, as
     const { countIsFloor: _drop, ...whole } = f;
     expect(chronicityCompareExtras(whole, false)).not.toBeNull();
     expect((phoneScript(whole, 'Nyx', false, null, null) ?? []).some((x) => x.label.startsWith('Recent '))).toBe(true);
+  });
+});
+
+describe('the expand above the script says the floor too (CUL-1575, the adversarial pass on #1055)', () => {
+  it('a floor worsening’s evidence drops "up from" and the New arm, and says "at least"', () => {
+    for (const over of [
+      { tier: 'firm' as const, trigger: 'more_episodes' as const, currentCount: 5, priorCount: 2, currentDays: 3 },
+      { tier: 'firm' as const, trigger: 'more_days' as const },
+      { tier: 'standard' as const, trigger: 'more_episodes' as const, priorCount: 0 },
+    ]) {
+      const f = { ...worsening(over), countIsFloor: true } as SymptomWorseningFinding;
+      const text = evidenceText(f, 'Nyx');
+      expect(text).not.toMatch(/up from|week before|first in over a week|New this week/);
+      expect(text).toMatch(/at least \d+ episodes? of vomiting for Nyx on at least \d+ days?/);
+      // Without the floor the comparison is back: the guard is the floor, not the fixture.
+      const { countIsFloor: _f, ...whole } = f;
+      expect(evidenceText(whole, 'Nyx')).toMatch(/up from|New this week/);
+    }
+  });
+
+  it('a floor chronicity’s evidence drops the onset month and says "at least"', () => {
+    const f = { ...chronicity({ episodeCount: 6, activeWeeks: 4, firstOnsetIso: '2026-08-20T09:00:00Z' }), countIsFloor: true } as SymptomChronicityFinding;
+    const text = evidenceText(f, 'Nyx');
+    expect(text).not.toMatch(/Since /);
+    expect(text).toMatch(/at least 6 episodes of vomiting for Nyx across at least 4 of the last 8 weeks/);
+    const { countIsFloor: _f, ...whole } = f;
+    expect(evidenceText(whole, 'Nyx')).toMatch(/^Since August/);
+  });
+
+  it('a floor burden says "at least" in its script and its evidence', () => {
+    const burden = {
+      type: 'symptom_burden',
+      priorityClass: 'safety',
+      symptomType: 'vomit',
+      count: 4,
+      days: 2,
+      runDays: 2,
+      daysSinceRunEnd: 0,
+      countArm: true,
+      persistenceArm: true,
+      tier: 'soon',
+      windowDays: 7,
+      countIsFloor: true,
+    } as const;
+    const said = (phoneScript(burden, 'Nyx', false, null, null) ?? []).map((x) => `${x.label}: ${x.value}`).join(' | ');
+    expect(said).toContain('This week: at least 4 vomits on at least 2 days');
+    expect(said).toContain('Days in a row: at least 2');
+    expect(evidenceText(burden, 'Nyx')).toMatch(/at least 4 vomits .* on at least 2 days/);
+    const { countIsFloor: _f, ...whole } = burden;
+    expect((phoneScript(whole, 'Nyx', false, null, null) ?? []).map((x) => x.value).join(' ')).not.toMatch(/at least/);
   });
 });

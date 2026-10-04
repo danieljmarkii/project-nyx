@@ -790,8 +790,8 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
  * episode inside its own lookback, so on its own it understates how long a course has run when
  * there is backfill before it; the phone alone may not yet hold another device's oldest rows.
  * The earlier of the two can only make the course older, never younger (escalate-only, as the
- * counts are). The engine stamps its onset on a UTC day; read on a local day it can move a day
- * earlier, which is the same direction.
+ * counts are). The engine's onset is an instant (the first episode's time); the phone holds the
+ * same row, so both read on the same local day.
  */
 function composedScriptCounting(
   finding: CountedFinding,

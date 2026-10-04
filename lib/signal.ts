@@ -277,6 +277,9 @@ export interface SymptomBurdenFinding {
   persistenceArm: boolean;
   tier: BurdenTier;
   windowDays: number;
+  /** CUL-989 / CUL-1575 — the engine read an incomplete record: the count and the run are floors
+   *  ("at least N", as the engine's sentence says). Mirrors detection.ts FindingBase.countIsFloor. */
+  countIsFloor?: true;
 }
 
 // Symptom chronicity / persistence (⑦, B-182) — the SAFETY-class lane that fires on

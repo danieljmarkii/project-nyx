@@ -26,7 +26,14 @@ export async function readScreenSentences(
       .map(async (f) => {
         try {
           const load = await loadSignalScreen(petId, foldIdentity(f.finding), nowMs);
-          if (load.status !== 'ready' || load.model.composed == null) return;
+          // A screen that is not ready quotes the cached sentence. Said, so a page whose number
+          // differs from the screen's is never silent about why (C-12, the code review); a
+          // composed-less ready screen is the engine's words on both, and stays quiet.
+          if (load.status !== 'ready') {
+            console.warn(`[Get ready] Signal screen not ready (${load.status}); quoting the cached sentence`);
+            return;
+          }
+          if (load.model.composed == null) return;
           // The loader finds the finding by identity in its own read of the cache; a sentence is
           // quoted only beside the very finding it was composed from.
           const key = screenSentenceKey(f.finding);
