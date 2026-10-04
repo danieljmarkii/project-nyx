@@ -987,8 +987,17 @@ function registerFor(
       return 'floor_only';
     case 'clean':
     case 'exposures':
-    case 'overrun':
       return recordRegisterFor(input);
+    case 'overrun':
+      // A BOWL STILL IN FORCE PAST THE WINDOW IS STILL A BOWL (CUL-1554). `stateFor`
+      // resolves `overrun` above `free_fed`, because past the window the decision is
+      // the card's job and the state owns it. But that order said nothing about the
+      // record region, which then spoke the ordinary `record` register over a
+      // topped-up bowl: "Meals logged on 56 of 56 days", the ratio `free_fed` exists
+      // to replace, with the watch line gone. And an overrun can run for weeks on the
+      // vet's say-so (CUL-1339 #4), so this was not a one-day face. The STATE keeps
+      // the decision (its day line, note and action); the REGISTER follows the bowl.
+      return input.freeFed ? 'free_fed' : recordRegisterFor(input);
     case 'completed':
     case 'abandoned':
       // THE LIVE CARD DELIBERATELY DOES NOT READ `rangeRefusal`, AND THAT IS A
@@ -1635,15 +1644,32 @@ function pushRegisterBody(
       const n = freeFed.loggedFeedings;
       const ex = input.exposures;
       const noun = n === 1 ? 'bowl top-up or wet meal' : 'bowl top-ups and wet meals';
+      // THE FEEDINGS THAT NAME NO FOOD (CUL-1338), said here too (CUL-1554). `n` is the
+      // classified total, so it leaves them out, and this body never said so: a bowl
+      // with 20 unnamed feedings read "0 bowl top-ups and wet meals logged so far."
+      // over a record holding 20. That was a hole on the `free_fed` state already; the
+      // overrun reaching this register would have taken the record register's
+      // disclosure away from a second state. The zero is withheld when the unnamed
+      // line is the whole of the record, as `exposureLine` does on its own zero.
+      const unnamed = ex ? unclassifiableLine(ex, n > 0) : null;
+      if (n > 0 || !unnamed) {
+        lines.push({
+          role: 'fact',
+          text:
+            ex && ex.offDiet > 0
+              ? `${n} ${noun} logged so far; ${ex.offDiet} ${ex.offDiet === 1 ? 'was' : 'were'} ` +
+                'not the trial diet.'
+              : `${n} ${noun} logged so far.`,
+        });
+      }
+      if (unnamed) lines.push({ role: 'fact', text: unnamed });
+      // §5.2's "a floor, never a total", on the claim, exactly as the record register
+      // words it (and under the same can't-match predicate, so "at least N" is never
+      // welded to "maybe fewer"). The bowl's count carried it nowhere.
       lines.push({
-        role: 'fact',
-        text:
-          ex && ex.offDiet > 0
-            ? `${n} ${noun} logged so far; ${ex.offDiet} ${ex.offDiet === 1 ? 'was' : 'were'} not ` +
-              'the trial diet.'
-            : `${n} ${noun} logged so far.`,
+        role: 'qualifier',
+        text: BLIND_SPOT_QUALIFIER + (ex && ex.offDiet > 0 && !caveat ? floorSuffix(ex.offDiet) : ''),
       });
-      lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
       return;
     }
 
@@ -2040,7 +2066,12 @@ function activeCard(
   // decides whether they finish six weeks); a teaching aside underneath it
   // competes for the same slot and dilutes the one message that state exists for.
   // Every other state in this body has that slot free.
-  if (state !== 'exposures') pushTeachLine(lines, input);
+  //
+  // Nor under the bowl (CUL-1554): an overrun with a bowl in force speaks the
+  // `free_fed` register, and that register never teaches, because a top-up has no
+  // portion to rate. "One tap makes these readable" over it asks for a tap that
+  // cannot exist, and the `free_fed` state draws no teach line for the same reason.
+  if (state !== 'exposures' && register !== 'free_fed') pushTeachLine(lines, input);
 
   if (state === 'overrun') {
     // §4.2 state 6: "Day 61 — 5 days past", NEVER "Day 61 of 56" (a PR 7

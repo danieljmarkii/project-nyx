@@ -244,11 +244,14 @@ export function buildTrialRecheck(args: TrialRecheckArgs): TrialRecheck | null {
   //   • `teach` — "Most of Mochi's logged meals don't yet say how much was eaten" is the
   //     record saying it cannot answer *is she eating it*, which is the honest answer;
   //   • a free-fed trial's `lead` — the topped-up bowl, so "there's no day-by-day count
-  //     of what was eaten". The same answer, for Sam's cat.
+  //     of what was eaten". The same answer, for Sam's cat. Keyed on the REGISTER
+  //     (`screen.freeFed`), never on the state: past the window the state is `overrun`
+  //     and the bowl's lead is the same line, and keying on `free_fed` dropped *is she
+  //     eating it* from exactly that page (CUL-1554).
   // Everything else (coverage, the exposure sentence, the forward line after a slip, the
   // caveats) is the record of what went in.
   for (const line of screen.facts) {
-    if (line.role === 'teach' || (screen.state === 'free_fed' && line.role === 'lead')) {
+    if (line.role === 'teach' || (screen.freeFed && line.role === 'lead')) {
       eating.push({ text: line.text, label: null, role: 'fact' });
     } else if (line.role === 'qualifier' || line.role === 'caveat') {
       byMouth.push({ text: line.text, label: null, role: 'quiet' });

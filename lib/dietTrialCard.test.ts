@@ -152,6 +152,14 @@ const everyState: Array<[string, TrialCardInput]> = [
     intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
   })],
   ['9 free-fed', activeInput({ freeFed: { loggedFeedings: 22 } })],
+  // CUL-1554: the second state that reaches the `free_fed` register. Without it every
+  // cross-state rule below walked the bowl on one state only, and the overrun's
+  // "Meals logged on 22 of 23 days." over a topped-up bowl was green under all of them.
+  ['6 overrun, free-fed', activeInput({
+    nowMs: localNoon(2026, 9, 1),
+    freeFed: { loggedFeedings: 22 },
+    exposures: { mayStateRecordClean: false, totalFeedings: 22, offDiet: 0 },
+  })],
   ['10 multi-pet caveat', activeInput({ otherPetNames: ['Mochi'] })],
   // The two TERMINAL decline branches. Every other decline entry here is an
   // ACTIVE trial, which is exactly why the property test could not see them
@@ -913,6 +921,88 @@ describe('state 6 — overrun', () => {
   });
 });
 
+describe('state 6 — overrun, with the bowl in force (CUL-1554)', () => {
+  // Sam's cat on day 60 of 56: the window passed, the vet said keep going, and the
+  // topped-up bowl is still down. The state is the overrun's (the decision is still the
+  // card's job); the record region is the bowl's.
+  const input = activeInput({
+    petName: 'Mochi',
+    nowMs: localNoon(2026, 9, 1),
+    freeFed: { loggedFeedings: 61 },
+    exposures: { mayStateRecordClean: false, totalFeedings: 61, offDiet: 0 },
+    // A rated wet meal or two under the teach floor's share, so the teach line WOULD
+    // fire on the record register. It must not fire here: a top-up has no portion.
+    intakeRating: { feedings: 61, rated: 2, primaryFeedings: 61, primaryRated: 2 },
+  });
+  const model = resolveTrialCard(input);
+
+  it('keeps the overrun decision: its day line, its note, its one action', () => {
+    expect(model.state).toBe('overrun');
+    expect(planTrialCard(input).register).toBe('free_fed');
+    expect(model.dayLine).toBe('Day 61 — 5 days past the window you set');
+    expect(textOf(model, 'note')).toEqual([
+      'Still running. Plenty of trials run past their window on the vet’s say-so. ' +
+      'When you know what’s next, tell Culprit — a trial with no ending reads to ' +
+      'your vet as one that’s still going.',
+    ]);
+    expect(model.actions).toEqual([
+      { id: 'milestone', label: 'Tell Culprit what’s next', emphasis: 'link' },
+    ]);
+  });
+
+  it('prints no meals-logged ratio over the bowl', () => {
+    expect(allStrings(model).join(' ')).not.toMatch(/Meals logged on \d+ of \d+ days/);
+  });
+
+  it('keeps the bowl’s lead, the watch line included', () => {
+    expect(textOf(model, 'lead')).toEqual([
+      'Mochi grazes from a bowl that’s topped up, so there’s no day-by-day count of ' +
+      'what was eaten. The bowl also can’t tell you if Mochi stops eating. That part is ' +
+      'yours to watch.',
+    ]);
+  });
+
+  it('reports the count, keeps the off-diet floor, and makes no claim about what matched', () => {
+    expect(textOf(model, 'fact')).toEqual(['61 bowl top-ups and wet meals logged so far.']);
+    expect(textOf(model, 'qualifier')).toEqual([BLIND_SPOT_QUALIFIER]);
+    const slipped = resolveTrialCard({
+      ...input,
+      exposures: { mayStateRecordClean: false, totalFeedings: 61, offDiet: 4 },
+    });
+    expect(textOf(slipped, 'fact')).toEqual([
+      '61 bowl top-ups and wet meals logged so far; 4 were not the trial diet.',
+    ]);
+  });
+
+  it('keeps the unnamed-feedings disclosure the record register gave it', () => {
+    const m = resolveTrialCard({
+      ...input,
+      freeFed: { loggedFeedings: 3 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 3, offDiet: 0, unclassifiable: 20 },
+    });
+    expect(textOf(m, 'fact')).toContain(
+      '20 more logged feedings don’t name a food, so they can’t be checked against the trial diet.',
+    );
+  });
+
+  it('teaches no rating over a bowl that cannot be rated', () => {
+    expect(textOf(model, 'teach')).toEqual([]);
+    // …while the same record WITHOUT the bowl still teaches, so the fixture was armed.
+    const unbowled = resolveTrialCard({
+      ...input,
+      freeFed: null,
+      exposures: { mayStateRecordClean: true, totalFeedings: 61, offDiet: 0 },
+    });
+    expect(textOf(unbowled, 'teach')).toHaveLength(1);
+  });
+
+  it('the milestone (day = target) stays the decision day, with no record reading', () => {
+    const milestone = resolveTrialCard({ ...input, nowMs: localNoon(2026, 8, 27) });
+    expect(milestone.state).toBe('milestone');
+    expect(allStrings(milestone).join(' ')).not.toMatch(/Meals logged on \d+ of \d+ days/);
+  });
+});
+
 describe('state 7a — completed', () => {
   const model = resolveTrialCard(activeInput({
     trial: {
@@ -1236,6 +1326,32 @@ describe('replacement 9 — free-fed', () => {
     // withhold the exposure.
     expect(textOf(m, 'fact')).toEqual([
       '22 bowl top-ups and wet meals logged so far; 4 were not the trial diet.',
+    ]);
+    // §5.2: the floor is said ON the claim, as the record register says it (CUL-1554).
+    expect(textOf(m, 'qualifier')).toEqual([
+      `${BLIND_SPOT_QUALIFIER} The 4 are what’s been logged, not a total.`,
+    ]);
+  });
+
+  // CUL-1554 (adversarial pass): the classified count leaves out feedings that name no
+  // food, so the bowl said "0 … logged so far" over a record holding twenty.
+  it('says the feedings that name no food, and never a zero over them', () => {
+    const allUnnamed = resolveTrialCard(activeInput({
+      petName: 'Mochi',
+      freeFed: { loggedFeedings: 0 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 0, offDiet: 0, unclassifiable: 20 },
+    }));
+    expect(textOf(allUnnamed, 'fact')).toEqual([
+      '20 logged feedings don’t name a food, so they can’t be checked against the trial diet.',
+    ]);
+    const mixed = resolveTrialCard(activeInput({
+      petName: 'Mochi',
+      freeFed: { loggedFeedings: 3 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 3, offDiet: 0, unclassifiable: 20 },
+    }));
+    expect(textOf(mixed, 'fact')).toEqual([
+      '3 bowl top-ups and wet meals logged so far.',
+      '20 more logged feedings don’t name a food, so they can’t be checked against the trial diet.',
     ]);
   });
 

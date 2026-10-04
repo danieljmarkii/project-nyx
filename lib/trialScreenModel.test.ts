@@ -536,6 +536,29 @@ describe('free-fed', () => {
         'The bowl also can’t tell you if Mochi stops eating. That part is yours to watch.',
     });
     expect(m.ledger).toBeNull();
+    expect(m.freeFed).toBe(true);
+  });
+
+  // CUL-1554: day 60 of 56 with the bowl still down. The overrun keeps its decision block;
+  // the record under it is the bowl's, and no meals-logged ratio reaches the screen.
+  it('past the window: the overrun’s decision over the bowl’s record, and no ratio', async () => {
+    const l = await load({ target: 56, mealDays: [1, 2, 3], freeChoice: true, nowDay: 60 });
+    const m = trialModel(buildTrialScreenModel(argsFor(l)));
+    expect(m.state).toBe('overrun');
+    expect(m.freeFed).toBe(true);
+    expect(m.decision!.actions.map((a) => a.label)).toEqual(['Tell Culprit what’s next']);
+    expect(m.decision!.notes[0]).toMatch(/^Still running\./);
+    expect(m.facts[0].role).toBe('lead');
+    expect(m.facts[0].text).toContain('That part is yours to watch.');
+    expect(texts(m).some((t) => /^Meals logged on \d+ of \d+ days/.test(t))).toBe(false);
+    expect(m.ledger).toBeNull();
+    expect(m.manage).toBe('Manage the trial');
+  });
+
+  it('is false wherever the bowl is not the register', async () => {
+    const all = Array.from({ length: 58 }, (_, i) => i + 1);
+    const l = await load({ target: 56, mealDays: all, nowDay: 58 });
+    expect(trialModel(buildTrialScreenModel(argsFor(l))).freeFed).toBe(false);
   });
 });
 
