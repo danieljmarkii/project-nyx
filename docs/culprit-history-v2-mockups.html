@@ -491,6 +491,29 @@
   .c1530-h { display: flex; justify-content: space-between; font-size: 11px; background: #FFFFFF; border-radius: 10px; padding: 7px 10px; }
   .c1530-h b { font-weight: 600; }
   .c1530-h .sym { color: #9F1239; }
+
+  /* ── §14 · CUL-1200: a call with no photo on the month, the gallery's count line ── */
+  .dm .cd { position: absolute; left: 5px; top: 5px; width: 7px; height: 7px; transform: rotate(45deg); background: #9F1239; border-radius: 1px; box-sizing: border-box; }
+  .dm.sym .cd { border: 1px solid #FFFFFF; }
+  .c1200-legend { display: grid; gap: 5px; margin: 10px 2px 0; font-size: 10.5px; color: #525252; }
+  .c1200-legend span { display: flex; align-items: center; gap: 7px; }
+  .c1200-legend .k { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; box-sizing: border-box; position: relative; }
+  .c1200-legend .k.v { background: #F43F5E; }
+  .c1200-legend .k.l { background: #FFFFFF; border: 1px solid #EAEAEA; }
+  .c1200-legend .k.u { background: #F5F5F5; }
+  .c1200-legend .k.c { width: 8px; height: 8px; margin: 0 2px; transform: rotate(45deg); background: #9F1239; border-radius: 1px; }
+  .c1200-legend .chips { display: flex; gap: 5px; margin-bottom: 2px; }
+  .c1200-legend .chip { font-size: 10px; padding: 2px 8px; border-radius: 999px; border: 1px solid #EAEAEA; color: #737373; }
+  .c1200-legend .chip.on { background: #E6F4F1; border-color: transparent; color: #0B7B6C; font-weight: 600; }
+  .c1200-g-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 0 2px 8px; }
+  .c1200-g-head b { font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .c1200-g-head span { font-size: 10.5px; color: #525252; text-align: right; line-height: 1.35; }
+  .c1200-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .c1200-tile .well { aspect-ratio: 1 / 1; border-radius: 10px; background: linear-gradient(135deg, #D9C9B4, #B9A58E); }
+  .c1200-tile .well.b { background: linear-gradient(135deg, #CFC3B3, #A8977F); }
+  .c1200-tile .d { font-size: 11px; margin-top: 5px; color: #0A0A0A; }
+  .c1200-tile .v { font-size: 11px; color: #B4123B; font-weight: 600; }
+  .c1200-new { background: #FFE4E6; color: #9F1239; border-radius: 4px; padding: 0 3px; }
 </style>
 </head>
 <body>
@@ -521,8 +544,9 @@
     <div class="r"><b>HV-9 · four calls from the build (2026-09-25, open)</b><span><i class="o">open</i>The pinned row's build and review raised four questions round 5 does not answer: what the two menus' numbers count, the pet's name as the switcher, Meal's meals not finished, and search while a filter is on. Each is drawn beside the frame it would change; the briefs are on CUL-1247. <a href="#s12">§12</a></span></div>
     <div class="r"><b>CUL-1193 · "(b)" (2026-09-25, after round 5)</b><span><i class="d">ruled</i>A dose count reads "logged". Under a course or Medication the count line says "16 logged on 16 days", and its second line names the doses recorded Partial, Missed or Refused: "Cetirizine HCl · Jul 1 – Sep 5 · 4 not given in full". A course's row on the type sheet names them after its span, the way Photographed names "not read". "16 doses" read as sixteen given. <a href="#s06">§06</a></span></div>
     <div class="r"><b>CUL-1530 · "Go option a" (2026-10-03)</b><span><i class="d">ruled</i>Every day that holds a vomit is rose under All types, on the strip and the month. The month's corner stays on the day a bout began, a continuing day is rose with no number, and the line counts the rose days: "Vomiting 3 times · vomit logged on 6 days". Option (b) has left the page. <a href="#s13">§13</a></span></div>
+    <div class="r"><b>CUL-1200 · "(b)" (2026-10-03, CUL-1520 item 8)</b><span><i class="d">ruled</i>A worth-a-call with no photo reaches the Patterns month: every called day carries the diamond on the default layers, photo or not, and no layer hides it. The Signal gallery stays photos, and its count line names the episodes with no photo read as a call. <a href="#s14">§14</a></span></div>
   </div>
-  <div class="howto"><b>How to read this page.</b> §01 is the whole screen with every demo. §02 to §07 are the rulings, one per section, each drawn once. §08 is the quiet states, §09 the motion inventory, §10 the rules a build carries, §11 the rulings in one list. §12 holds the four open calls from the HV-9 build, options beside current frames. Round 4, with the options side by side, is in git at <code>b0479342</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>.</div>
+  <div class="howto"><b>How to read this page.</b> §01 is the whole screen with every demo. §02 to §07 are the rulings, one per section, each drawn once. §08 is the quiet states, §09 the motion inventory, §10 the rules a build carries, §11 the rulings in one list. §12 holds the four open calls from the HV-9 build, options beside current frames; §13 and §14 are the later rulings, CUL-1530 and CUL-1200, each drawn as built beside as ruled. Round 4, with the options side by side, is in git at <code>b0479342</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>.</div>
   <div class="howto" style="margin-top:14px;border-left:3px solid var(--gold)"><b>The record, not a fixture.</b> Times, types, food and drug names, ratings, doses, photo presence and each read's verdict come from a service-role read scoped to Nyx's id paired with her owner's account. Note <em>text</em> was never read: where a note's words appear they are the Designer's and are marked <span class="illus">illustrative</span>, as are the vet visit's reason and clinic.</div>
 </header>
 
@@ -995,6 +1019,44 @@
   </div>
   <div class="col"><div class="callout"><strong>Ruled (CUL-1530, 2026-10-03): option (a).</strong> The corner keeps the episode count on the day a bout began; a continuing day is rose with no number; the line counts the rose days. Option (b), every rose day carrying its own vomit count, has left the page: it is in git at <code>c9cf137</code>. The strip is the same either way.</div></div>
 </section>
+
+<section id="s14">
+  <div class="sec-head"><span class="sec-num">§14</span><h2>A call with no photo reaches the month (CUL-1200, ruled (b) 2026-10-03)</h2></div>
+  <div class="col">
+    <p>The read can say "Worth a call" with no photo, from the rest of the record: a cat that has barely eaten since she vomited, a third loose stool today. Home and the record already show it. The Patterns month and the Signal screen's gallery did not, because both only asked about photographed incidents, and the month's mark sat behind the Photos layer, which is off until asked for.</p>
+    <p><b>The fix, as you ruled it:</b> the month marks every worth-a-call day on its default layers, photo or not, and no layer hides it. The gallery stays a gallery of photos; its count line names the escalations it cannot show. <span class="illus">illustrative: vomits on Sep 5 (no photo, read as worth a call: barely eaten since), Sep 9 (photographed, calm) and Sep 16 (photographed, worth a call); a loose stool on Sep 12 (no photo, worth a call: the third today)</span></p>
+  </div>
+
+  <h3>The month, Photos off (the default)</h3>
+  <div class="optrow">
+    <div class="frame-slot">
+      <span class="tag built">As built</span>
+      <div class="phone c1530"><div class="c1530-t">September 2026</div><div class="c1530-line">Vomiting 3 times on 3 days · through Sep 21 · 2 days unlogged</div><div class="wdrow"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div><div class="dmrow"><div class="dm before" aria-hidden="true"><span class="dd">30</span></div><div class="dm before" aria-hidden="true"><span class="dd">31</span></div><div class="dm"><span class="dd">1</span><i class="hl"></i></div><div class="dm un"><span class="dd">2</span></div><div class="dm"><span class="dd">3</span><i class="hl"></i></div><div class="dm"><span class="dd">4</span><i class="hl"></i></div><div class="dm sym"><span class="dd">5</span><i class="hl"></i><span class="dcnt">1</span></div></div><div class="dmrow"><div class="dm"><span class="dd">6</span><i class="hl"></i></div><div class="dm"><span class="dd">7</span><i class="hl ls"></i></div><div class="dm"><span class="dd">8</span><i class="hl"></i></div><div class="dm sym"><span class="dd">9</span><i class="hl"></i><span class="dcnt">1</span></div><div class="dm"><span class="dd">10</span><i class="hl"></i></div><div class="dm un"><span class="dd">11</span></div><div class="dm"><span class="dd">12</span><i class="hl"></i></div></div><div class="dmrow"><div class="dm"><span class="dd">13</span><i class="hl"></i></div><div class="dm"><span class="dd">14</span><i class="hl ls"></i></div><div class="dm"><span class="dd">15</span><i class="hl"></i></div><div class="dm sym"><span class="dd">16</span><i class="hl"></i><span class="dcnt">1</span></div><div class="dm"><span class="dd">17</span><i class="hl"></i></div><div class="dm"><span class="dd">18</span><i class="hl"></i></div><div class="dm"><span class="dd">19</span><i class="hl"></i></div></div><div class="dmrow"><div class="dm"><span class="dd">20</span><i class="hl"></i></div><div class="dm today"><span class="dd">21</span><i class="hl"></i></div><div class="dm ahead"><span class="dd">22</span></div><div class="dm ahead"><span class="dd">23</span></div><div class="dm ahead"><span class="dd">24</span></div><div class="dm ahead"><span class="dd">25</span></div><div class="dm ahead"><span class="dd">26</span></div></div><div class="dmrow"><div class="dm ahead"><span class="dd">27</span></div><div class="dm ahead"><span class="dd">28</span></div><div class="dm ahead"><span class="dd">29</span></div><div class="dm ahead"><span class="dd">30</span></div><div class="dm before" aria-hidden="true"><span class="dd">1</span></div><div class="dm before" aria-hidden="true"><span class="dd">2</span></div><div class="dm before" aria-hidden="true"><span class="dd">3</span></div></div><div class="c1200-legend"><div class="chips"><span class="chip on">Vomiting</span><span class="chip on">Meals</span><span class="chip">Medication</span><span class="chip">Photos</span></div><span><i class="k v"></i>vomit day, count where a bout began</span><span><i class="k l"></i>logged</span><span><i class="k u"></i>nothing logged</span></div></div>
+      <p class="frame-cap"><b>Three calls on the record, none on the month.</b> Sep 5's and Sep 12's calls had no photo, so the month never asked about them; Sep 16's waited behind Photos.</p>
+    </div>
+    <div class="frame-slot">
+      <span class="tag cur">Ruled (b)</span>
+      <div class="phone c1530"><div class="c1530-t">September 2026</div><div class="c1530-line">Vomiting 3 times on 3 days · through Sep 21 · 2 days unlogged</div><div class="wdrow"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div><div class="dmrow"><div class="dm before" aria-hidden="true"><span class="dd">30</span></div><div class="dm before" aria-hidden="true"><span class="dd">31</span></div><div class="dm"><span class="dd">1</span><i class="hl"></i></div><div class="dm un"><span class="dd">2</span></div><div class="dm"><span class="dd">3</span><i class="hl"></i></div><div class="dm"><span class="dd">4</span><i class="hl"></i></div><div class="dm sym"><span class="dd">5</span><i class="cd"></i><i class="hl"></i><span class="dcnt">1</span></div></div><div class="dmrow"><div class="dm"><span class="dd">6</span><i class="hl"></i></div><div class="dm"><span class="dd">7</span><i class="hl ls"></i></div><div class="dm"><span class="dd">8</span><i class="hl"></i></div><div class="dm sym"><span class="dd">9</span><i class="hl"></i><span class="dcnt">1</span></div><div class="dm"><span class="dd">10</span><i class="hl"></i></div><div class="dm un"><span class="dd">11</span></div><div class="dm"><span class="dd">12</span><i class="cd"></i><i class="hl"></i></div></div><div class="dmrow"><div class="dm"><span class="dd">13</span><i class="hl"></i></div><div class="dm"><span class="dd">14</span><i class="hl ls"></i></div><div class="dm"><span class="dd">15</span><i class="hl"></i></div><div class="dm sym"><span class="dd">16</span><i class="cd"></i><i class="hl"></i><span class="dcnt">1</span></div><div class="dm"><span class="dd">17</span><i class="hl"></i></div><div class="dm"><span class="dd">18</span><i class="hl"></i></div><div class="dm"><span class="dd">19</span><i class="hl"></i></div></div><div class="dmrow"><div class="dm"><span class="dd">20</span><i class="hl"></i></div><div class="dm today"><span class="dd">21</span><i class="hl"></i></div><div class="dm ahead"><span class="dd">22</span></div><div class="dm ahead"><span class="dd">23</span></div><div class="dm ahead"><span class="dd">24</span></div><div class="dm ahead"><span class="dd">25</span></div><div class="dm ahead"><span class="dd">26</span></div></div><div class="dmrow"><div class="dm ahead"><span class="dd">27</span></div><div class="dm ahead"><span class="dd">28</span></div><div class="dm ahead"><span class="dd">29</span></div><div class="dm ahead"><span class="dd">30</span></div><div class="dm before" aria-hidden="true"><span class="dd">1</span></div><div class="dm before" aria-hidden="true"><span class="dd">2</span></div><div class="dm before" aria-hidden="true"><span class="dd">3</span></div></div><div class="c1200-legend"><div class="chips"><span class="chip on">Vomiting</span><span class="chip on">Meals</span><span class="chip">Medication</span><span class="chip">Photos</span></div><span><i class="k v"></i>vomit day, count where a bout began</span><span><i class="k c"></i>read as worth a call · 3 days</span><span><i class="k l"></i>logged</span><span><i class="k u"></i>nothing logged</span></div></div>
+      <p class="frame-cap"><b>The diamond is the call, on every layer.</b> Sep 5 and Sep 16 carry it on the rose with a white edge; Sep 12, a stool day, on white. The legend's row appears only when a day carries one: there is never a "0 days" row, because no call on the phone is not an all-clear. Photos on adds the dot for a photographed day without a call and never a second mark. Two rules' calls stay two rows (call now or call today is its own line, EN-3).</p>
+    </div>
+  </div>
+
+  <h3>The Signal screen's gallery: vomiting, the drawn weeks</h3>
+  <div class="optrow">
+    <div class="frame-slot">
+      <span class="tag built">As built</span>
+      <div class="phone c1530"><div class="c1200-g-head"><b>The episodes</b><span>3 in these 8 weeks, two photographed</span></div><div class="c1200-tiles"><div class="c1200-tile"><div class="well"></div><div class="d">Sep 16 · 8:40 PM</div><div class="v">Worth a call</div></div><div class="c1200-tile"><div class="well b"></div><div class="d">Sep 9 · 7:15 AM</div></div></div></div>
+      <p class="frame-cap"><b>Sep 5's call is in no tile and no number.</b> It has no photo, so it has no tile, and the line counted only photographs.</p>
+    </div>
+    <div class="frame-slot">
+      <span class="tag cur">Ruled (b)</span>
+      <div class="phone c1530"><div class="c1200-g-head"><b>The episodes</b><span>3 in these 8 weeks, two photographed, <span class="c1200-new">one read as worth a call with no photo</span></span></div><div class="c1200-tiles"><div class="c1200-tile"><div class="well"></div><div class="d">Sep 16 · 8:40 PM</div><div class="v">Worth a call</div></div><div class="c1200-tile"><div class="well b"></div><div class="d">Sep 9 · 7:15 AM</div></div></div></div>
+      <p class="frame-cap"><b>The gallery stays photos; the line says what it cannot show.</b> The clause appears only when an episode with no photo was read as a call, inside the drawn weeks the line already names. Sep 9's calm read shows the photo and its date alone (CUL-1233). The stool on Sep 12 is not vomiting, so it is in the month and not in this gallery.</p>
+    </div>
+  </div>
+  <div class="col"><div class="callout"><strong>Ruled (CUL-1200, 2026-10-03, CUL-1520 docket item 8): option (b).</strong> Option (a), keeping the call a Photos-layer mark, and option (c), photoless tiles in the gallery, are not drawn: (c) carried the Designer's dissent that a tile with no photo is not a gallery item. The spec edit to §5.4 and AC 22 is proposed on the PR and written on the PM's confirmation.</div></div>
+</section>
+
 
 <footer class="foot">Round 5 of the History v2 page, 2026-09-24, CUL-1108: the ruled design. Republished over round 4 at the same URL. Round 4 (the options side by side) is in git at <code>b0479342</code>, round 3 at <code>ab20698c</code>; the critique is <code>docs/history-v2-round3-critique-2026-09.md</code>. Every demo on this page was driven in a headless browser, pressed twice, with and without Reduce Motion, before it was published. §12 added 2026-09-25 (HV-9, CUL-1166; briefs on CUL-1247): four open calls drawn as options, and the search now keeps only rows both the filter and the words keep (R-2), which no earlier frame exercised. §12's two demos were pressed once each, with and without Reduce Motion. §01 to §11 are unchanged.</footer>
 </div>
