@@ -128,6 +128,25 @@ export function notFinishedText(n: number): string | null {
   return n > 0 ? `${formatCount(n)} not finished` : null;
 }
 
+// ── A failed record read, said on the sheets (CUL-1238; §3.12's voice) ────────────
+// The record's read throws rather than answer "no trial" or "no visit" (C-12), and the list
+// says so (*Couldn't load history*). The sheets drop what needs the record, the trial and
+// visit windows, every count and every course, so each says why and offers the retry. The
+// words never say a trial or a visit exists: the read that would know is the one that failed.
+
+/** The window sheet's line on a failed read: the windows that need the record, by kind. */
+export function windowSheetFailedOf(petName: string): string {
+  return `Couldn't load ${petName}'s record, so windows from a trial or a vet visit can't be listed yet.`;
+}
+
+/** The type sheet's line on a failed read: no row carries a number. */
+export function typeSheetFailedOf(petName: string): string {
+  return `Couldn't load ${petName}'s record, so nothing here is counted yet.`;
+}
+
+/** The sheets' retry: the list's own word for the same read (§3.12). */
+export const RECORD_RETRY = 'Try again';
+
 // ── The sheets' captions (CUL-1532, call 1a) ─────────────────────────────────────
 // One line under each sheet's label saying what its numbers count, because the scope goes
 // where the reader meets the number (C-3): a "Loose stool 0" is a fact about a window only

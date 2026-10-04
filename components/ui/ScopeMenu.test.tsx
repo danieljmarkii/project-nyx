@@ -280,3 +280,40 @@ describe('ScopeMenu — openAtSelected (HV-9)', () => {
     expect(UNSAFE_getByType(ScrollView).props.onLayout).toBeUndefined();
   });
 });
+
+describe('ScopeMenu notice (CUL-1238)', () => {
+  const notice = (onAction = jest.fn()) => ({ text: "Couldn't load Nyx's record, so nothing here is counted yet.", actionLabel: 'Try again', onAction });
+
+  it('draws the line and its action under the sheet label, in the caption’s place', () => {
+    const { getByText, getByLabelText, queryByText } = renderMenu({ notice: notice(), caption: 'Logged since May 14' });
+    fireEvent.press(getByLabelText('Event type: All types'));
+    expect(getByText("Couldn't load Nyx's record, so nothing here is counted yet.")).toBeTruthy();
+    expect(getByText('Try again')).toBeTruthy();
+    expect(queryByText('Logged since May 14')).toBeNull();
+  });
+
+  it('the action runs and the sheet stays open, so the rows fill in where the owner is', () => {
+    const onAction = jest.fn();
+    const { getByText, getByLabelText, onChange } = renderMenu({ notice: notice(onAction) });
+    fireEvent.press(getByLabelText('Event type: All types'));
+    fireEvent.press(getByText('Try again'));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(getByText('Show only')).toBeTruthy();
+  });
+
+  it('the action is a button at the 44pt floor by its box, with no slop into the first row (C-5)', () => {
+    const { getByLabelText, getByRole } = renderMenu({ notice: notice() });
+    fireEvent.press(getByLabelText('Event type: All types'));
+    const button = getByRole('button', { name: 'Try again' });
+    expect(StyleSheet.flatten(button.props.style).minHeight).toBeGreaterThanOrEqual(44);
+    expect(button.props.hitSlop).toBeUndefined();
+  });
+
+  it('absent, the sheet is the one it always was', () => {
+    const { getByLabelText, queryByText } = renderMenu({ caption: 'Logged since May 14' });
+    fireEvent.press(getByLabelText('Event type: All types'));
+    expect(queryByText('Logged since May 14')).toBeTruthy();
+    expect(queryByText('Try again')).toBeNull();
+  });
+});

@@ -31,12 +31,16 @@ jest.mock('../../lib/sync', () => ({
 // that pet (`useHistoryRecordFacts`' contract), loading until it lands, an error if it fails.
 jest.mock('../../hooks/useHistoryRecordFacts', () => {
   const React = require('react');
+  const { create } = require('zustand');
+  mockLoadTick = create(() => ({ n: 0 }));
   const { usePetStore: petStore } = require('../../store/petStore');
   return {
     useHistoryRecordFacts: () => {
       const activePet = petStore((st: { activePet: Pet | null }) => st.activePet);
       const petId = activePet?.id ?? null;
       const [answer, setAnswer] = React.useState(null as { petId: string; state: unknown } | null);
+      // A load of the shared read (the sheets' retry, CUL-1238) reads the record again.
+      const reads = mockLoadTick((st: { n: number }) => st.n);
       React.useEffect(() => {
         if (!activePet) return undefined;
         let cancelled = false;
@@ -48,7 +52,7 @@ jest.mock('../../hooks/useHistoryRecordFacts', () => {
         return () => {
           cancelled = true;
         };
-      }, [petId]);
+      }, [petId, reads]);
       return answer !== null && answer.petId === petId ? answer.state : { status: 'loading' };
     },
   };
@@ -62,6 +66,7 @@ import { SEARCH_WRITE_DELAY_MS } from './SearchField';
 import { __resetAppConfigForTest } from '../../hooks/useAppConfig';
 import { ALLOWLIST_FLAGS_UNSET, APP_CONFIG_DEFAULTS } from '../../lib/appConfig';
 import { useBetaOptInStore } from '../../lib/betaFeatures';
+import { RECORD_RETRY, typeSheetFailedOf, windowSheetFailedOf } from '../../lib/historyControls';
 import { SEARCH_COUNTS_NOTHING, buildDayFacts, historyCourseOf, type PopulationRow } from '../../lib/historyDays';
 import { windowTrialOf, type WindowFacts } from '../../lib/historyWindows';
 import type { PinnedRecordData } from '../../lib/historyWindowFacts';
@@ -69,9 +74,15 @@ import type { DietTrialFactsPet } from '../../lib/dietTrialFacts';
 import { deriveMedicationCourses, type MedicationHistoryRegimen } from '../../lib/medicationHistory';
 import { localDayIndexOf } from '../../lib/utils';
 import { latestVisitBefore } from '../../lib/visitWindow';
+import type { StoreApi, UseBoundStore } from 'zustand';
 import { useAuthStore } from '../../store/authStore';
+import { useHistoryListStore } from '../../store/historyListStore';
 import { useHistoryScopeStore } from '../../store/historyScopeStore';
 import { usePetStore, type Pet } from '../../store/petStore';
+
+// Bumped by the stood-in shared load; read by the stood-in hook above (hoisted, so `var`).
+// eslint-disable-next-line no-var
+var mockLoadTick: UseBoundStore<StoreApi<{ n: number }>>;
 
 const mockRead: jest.Mock<Promise<PinnedRecordData>, [DietTrialFactsPet, boolean, number]> = jest.fn();
 
@@ -518,8 +529,8 @@ describe('no number it cannot stand behind (C-12)', () => {
     fireEvent.press(view.getByLabelText('Date range: All time'));
     expect(view.getByLabelText('Last 7 days')).toBeTruthy();
     expect(view.queryByText(/^\d/)).toBeNull();
-    // The trial and visit rows are off with no word why: CUL-1238's gap, stated here so
-    // the fix reds this line on purpose.
+    // The trial and visit rows need the record, so they are off, and the sheet says why
+    // rather than shrinking in silence (CUL-1238, the next block).
     expect(view.queryByLabelText(/^Since the trial started/)).toBeNull();
     errors.mockRestore();
   });
@@ -542,6 +553,66 @@ describe('no number it cannot stand behind (C-12)', () => {
     fireEvent.press(view.getByLabelText('Filter: Vomit'));
     expect(view.getByLabelText('Loose stool')).toBeTruthy();
     expect(view.queryByText('0')).toBeNull();
+  });
+});
+
+describe('a failed read is said on the sheets (CUL-1238)', () => {
+  const realLoad = useHistoryListStore.getState().load;
+  const load = jest.fn(async () => {
+    mockLoadTick.setState((st) => ({ n: st.n + 1 }));
+    return 'drawn' as const;
+  });
+  beforeEach(() => useHistoryListStore.setState({ load }));
+  afterAll(() => useHistoryListStore.setState({ load: realLoad }));
+
+  it('each sheet says the record could not be loaded and offers Try again; never a claim that a trial exists', async () => {
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockRead.mockRejectedValue(new Error('database is locked'));
+    const view = await renderAnswered();
+    fireEvent.press(view.getByLabelText('Date range: All time'));
+    expect(view.getByText(windowSheetFailedOf('Nyx'))).toBeTruthy();
+    expect(view.getByText(RECORD_RETRY)).toBeTruthy();
+    expect(view.queryByLabelText(/^Since the trial started/)).toBeNull();
+    fireEvent.press(view.getByLabelText('Close'));
+    fireEvent.press(view.getByLabelText('Filter: All types'));
+    expect(view.getByText(typeSheetFailedOf('Nyx'))).toBeTruthy();
+    expect(view.getByText(RECORD_RETRY)).toBeTruthy();
+    errors.mockRestore();
+  });
+
+  it('a read in flight says nothing: a wait is not a failure', async () => {
+    mockRead.mockImplementation(() => new Promise<PinnedRecordData>(() => {}));
+    const view = await renderAnswered();
+    fireEvent.press(view.getByLabelText('Date range: All time'));
+    expect(view.queryByText(windowSheetFailedOf('Nyx'))).toBeNull();
+    expect(view.queryByText(RECORD_RETRY)).toBeNull();
+  });
+
+  it('Try again re-reads the one shared read for the pet, scope and day on screen; the sheet stays open and fills in', async () => {
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockRead.mockRejectedValueOnce(new Error('database is locked'));
+    act(() => {
+      store().setFilter('p1', { kind: 'type', type: 'vomit' });
+    });
+    const view = await renderAnswered();
+    fireEvent.press(view.getByLabelText('Date range: All time'));
+    await act(async () => {
+      fireEvent.press(view.getByText(RECORD_RETRY));
+    });
+    await settle();
+    expect(load).toHaveBeenCalledTimes(1);
+    const [request] = load.mock.calls[0] as unknown as [{ pet: Pet; scope: { petId: string; filter: unknown }; today: string; reuseRecord?: boolean }];
+    expect(request.pet.id).toBe('p1');
+    expect(request.scope.petId).toBe('p1');
+    expect(request.scope.filter).toEqual({ kind: 'type', type: 'vomit' });
+    expect(typeof request.today).toBe('string');
+    // A fresh read of the record, never the failed one reused.
+    expect(request.reuseRecord).toBeUndefined();
+    // Still open, the notice gone, and the trial window back with its count.
+    expect(view.getByText('Date range')).toBeTruthy();
+    expect(view.queryByText(windowSheetFailedOf('Nyx'))).toBeNull();
+    expect(view.getByLabelText(/^Since the trial started/)).toBeTruthy();
+    errors.mockRestore();
   });
 });
 

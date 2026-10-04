@@ -5,7 +5,7 @@
 // A pet switch closes the sheet: the menu is keyed on the pet, so the switch remounts it
 // in the same render and no frame shows one pet's sheet over another's record (AC 13).
 import { useMemo } from 'react';
-import { ScopeMenu, type ScopeMenuOption } from '../ui/ScopeMenu';
+import { ScopeMenu, type ScopeMenuNotice, type ScopeMenuOption } from '../ui/ScopeMenu';
 import type { HistoryFilter } from '../../lib/historyDays';
 import { TYPE_PILL_PREFIX, TYPE_SHEET_LABEL, type SheetRow, type TypePill } from '../../lib/historyControls';
 import { filterId, useHistoryScopeStore } from '../../store/historyScopeStore';
@@ -16,6 +16,8 @@ interface Props {
   filter: HistoryFilter;
   /** What the rows' numbers count, or null when they show none (CUL-1532). */
   caption: string | null;
+  /** The record's read failed: what the sheet says about it, and the retry (CUL-1238). */
+  notice: ScopeMenuNotice | null;
   rows: readonly SheetRow<HistoryFilter>[];
   pill: TypePill;
 }
@@ -25,7 +27,7 @@ function keyOf(filter: HistoryFilter): string | null {
   return filter.kind === 'all' ? null : filterId(filter);
 }
 
-export function TypeSheet({ petId, filter, rows, pill, caption }: Props) {
+export function TypeSheet({ petId, filter, rows, pill, caption, notice }: Props) {
   const { options, byKey } = useMemo(() => {
     const map = new Map<string | null, HistoryFilter>();
     const opts: ScopeMenuOption[] = rows.map((row) => {
@@ -60,6 +62,7 @@ export function TypeSheet({ petId, filter, rows, pill, caption }: Props) {
       pillAccessibilityLabel={pill.accessibilityLabel}
       openAtSelected
       caption={caption}
+      notice={notice}
     />
   );
 }

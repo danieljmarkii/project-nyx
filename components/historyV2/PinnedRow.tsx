@@ -19,7 +19,7 @@
 // "Your pets" sheet, with a chevron only when there is a second pet to switch to. The sheet
 // is also the household's "Add a pet" door, so the name stays tappable for a one-pet
 // household, exactly as on Home.
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Keyboard, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ChevronDown, Search } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
@@ -32,10 +32,17 @@ import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useHistoryRecordFacts } from '../../hooks/useHistoryRecordFacts';
 import { useBetaOptIn } from '../../lib/betaFeatures';
 import { HEADER_CHEVRON_GAP, HEADER_CHEVRON_SIZE, headerSwitcherLabel } from '../../lib/headerName';
-import { PHOTO_READING_OFF, pinnedRowViewOf, searchLabelOf } from '../../lib/historyControls';
+import {
+  PHOTO_READING_OFF,
+  RECORD_RETRY,
+  pinnedRowViewOf,
+  searchLabelOf,
+  typeSheetFailedOf,
+  windowSheetFailedOf,
+} from '../../lib/historyControls';
 import { lookCardLive } from '../../lib/lookCard';
-import { useHistoryToday } from '../../store/historyListStore';
-import { effectiveSearch, useHistoryScopeStore } from '../../store/historyScopeStore';
+import { useHistoryListStore, useHistoryToday } from '../../store/historyListStore';
+import { effectiveSearch, historyScopeOf, useHistoryScopeStore } from '../../store/historyScopeStore';
 import { usePetStore } from '../../store/petStore';
 
 /** The 44pt touch floor: the row's height, and the search button's box. */
@@ -69,6 +76,30 @@ export function PinnedRow() {
         today,
       }),
     [record, filter, windowKey, searchOpen, searchText, lookEligible, lookOptedIn, species, today],
+  );
+
+  // A failed read retried from either sheet re-reads the ONE record read the list draws
+  // from, exactly as the list's own *Try again* does (CUL-1228): the pet, the scope and the
+  // day on screen, the record read fresh. The sheet stays open and its rows fill in when the
+  // read lands; a load already under way for the same request is superseded by this one,
+  // never doubled on screen (the store's own sequence). (CUL-1238)
+  const retry = useCallback(() => {
+    const pet = usePetStore.getState().activePet;
+    const scope = historyScopeOf(useHistoryScopeStore.getState());
+    if (!pet || scope.petId !== pet.id) return;
+    void useHistoryListStore.getState().load({ pet, scope, today });
+  }, [today]);
+  const failed = record.status === 'error';
+  const petName = activePet?.name?.trim() || 'your pet';
+  const notices = useMemo(
+    () =>
+      failed
+        ? {
+            type: { text: typeSheetFailedOf(petName), actionLabel: RECORD_RETRY, onAction: retry },
+            window: { text: windowSheetFailedOf(petName), actionLabel: RECORD_RETRY, onAction: retry },
+          }
+        : null,
+    [failed, petName, retry],
   );
 
   if (!activePet) return null;
@@ -111,6 +142,7 @@ export function PinnedRow() {
               rows={view.typeRows}
               pill={view.typePill}
               caption={view.typeCaption}
+              notice={notices?.type ?? null}
             />
           </View>
           <View style={styles.windowPill} onTouchStart={Keyboard.dismiss} testID="history-v2-window-pill">
@@ -120,6 +152,7 @@ export function PinnedRow() {
               rows={view.windowRows}
               pill={view.windowPill}
               caption={view.windowCaption}
+              notice={notices?.window ?? null}
             />
           </View>
           <TouchableOpacity
