@@ -1,6 +1,8 @@
 # A timing or correlation lead takes the row's face — CUL-1218, PR-28
 
-**Mode:** BUILD (dispatched, PR-28 of *Out of beta — Noticed, Design v2, History v2, the trial screen*). Outcome: shipped via the PR-28 PR.
+**One thing:** none — dispatched session, not this round's teach row
+
+**Mode:** BUILD (dispatched, PR-28 of *Out of beta — Noticed, Design v2, History v2, the trial screen*). Outcome: shipped via #1054.
 
 ## What was left
 
