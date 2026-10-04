@@ -6,7 +6,7 @@ import { lensEpisodeDays, resolveLens, symptomLenses, VOMIT_LENS } from './month
 const SEPT = { firstKey: '2026-09-01', lastDrawnKey: '2026-09-21' };
 
 describe('symptomLenses', () => {
-  it('a vomit-only record offers vomiting alone, so the month draws no lens row', () => {
+  it('a vomit-only record (or an empty one) offers vomiting alone, so the month draws no lens row', () => {
     expect(symptomLenses({ ...SEPT, episodeDays: ['2026-09-02', '2026-09-02'] })).toEqual([{ type: 'vomit', days: 1 }]);
     expect(symptomLenses({ ...SEPT, episodeDays: [] })).toEqual([{ type: 'vomit', days: 0 }]);
   });
@@ -48,10 +48,15 @@ describe('symptomLenses', () => {
       // Aug 20 is on the bars, Sep 25 is after today: neither is a day of the shown month so far.
       symptomEntryDays: { itch: ['2026-08-20', '2026-09-25'] },
     });
-    expect(lenses).toEqual([
-      { type: 'vomit', days: 0 },
-      { type: 'itch', days: 0 },
-    ]);
+    expect(lenses).toEqual([{ type: 'itch', days: 0 }]);
+  });
+
+  it('an itch-only dog is never offered vomiting; vomiting stands in only for an empty read (the product read)', () => {
+    expect(symptomLenses({ ...SEPT, episodeDays: [], symptomEntryDays: { itch: ['2026-09-04'] } })).toEqual([{ type: 'itch', days: 1 }]);
+    // A bout continuing in from before the read still puts vomiting on offer.
+    expect(
+      symptomLenses({ ...SEPT, episodeDays: [], continuationDays: [{ day: '2026-09-02', from: '2026-09-01' }], symptomEntryDays: { itch: ['2026-09-04'] } }).map((l) => l.type),
+    ).toEqual(['vomit', 'itch']);
   });
 
   it('an empty entry list is no lens; vomit in the entries map is ignored (it has its own rule)', () => {

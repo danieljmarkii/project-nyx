@@ -93,7 +93,7 @@ export function WeightCard({ readings, readingCount, petName, petId, drawIn = fa
             accessibilityLabel={count === 1 ? 'Add a second reading' : `All ${count} ${pluralize(count, 'reading')}`}
             testID="weight-card-door"
           >
-            <ThemedText style={styles.doorText}>{count === 1 ? 'Add' : 'All'}</ThemedText>
+            <ThemedText style={styles.doorText}>{count === 1 ? 'Add' : `All ${count}`}</ThemedText>
             <ChevronRight size={14} color={theme.colorTextTertiary} strokeWidth={2} />
           </Pressable>
         )}

@@ -420,6 +420,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
   let vomitDayCount = 0;
   let unloggedDays = 0;
   let answeringDayCount = 0;
+  let loggedDayCount = 0;
   let ratedMeals = 0;
   let refusedMeals = 0;
   let refusedDays = 0;
@@ -437,6 +438,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     }
     if (day.rose) vomitDayCount += 1;
     if (day.answers) answeringDayCount += 1;
+    if (day.coverage === 'logged' || day.coverage === 'left_some') loggedDayCount += 1;
     if (day.coverage !== 'ahead' && day.coverage !== 'before_record') ratedMeals += ratedByDay.get(firstIdx + d) ?? 0;
     refusedMeals += day.refusedMeals;
     if (day.refusedMeals > 0) refusedDays += 1;
@@ -485,6 +487,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
     aheadCount,
     unloggedDays,
     answeringDayCount,
+    loggedDayCount,
     beforeRecordDays,
     isAhead,
     recordEmpty,
@@ -536,6 +539,9 @@ interface LineFacts {
   unloggedDays: number;
   /** Drawn days holding a feeding or a symptom entry: "No <noun> logged" needs one. */
   answeringDayCount: number;
+  /** Drawn days logged at all. When it exceeds `answeringDayCount`, the absence names the
+   *  days it stands on. */
+  loggedDayCount: number;
   beforeRecordDays: number;
   isAhead: boolean;
   recordEmpty: boolean;
@@ -567,7 +573,15 @@ export function buildLine(f: LineFacts, opts: { withCount?: boolean } = {}): str
   // CUL-1074 brief 2: an absence is spoken only over days that could answer it. A month
   // whose logged days are all doses or weigh-ins names its window and its coverage only.
   else if (f.count === 0 && f.vomitDayCount === 0 && f.answeringDayCount === 0) parts.push(`Through ${dateWord(f.lastDrawnKey)}`);
-  else if (f.count === 0 && f.vomitDayCount === 0) parts.push(`No ${f.noun} logged`, `through ${dateWord(f.lastDrawnKey)}`);
+  // And when only SOME logged days could answer, the absence names the days it stands on:
+  // one meal among 29 dose-only days is not a month without vomiting (the adversarial pass
+  // on CUL-1553; C-3, the scope where the reader meets the claim).
+  else if (f.count === 0 && f.vomitDayCount === 0 && f.answeringDayCount < f.loggedDayCount) {
+    parts.push(
+      `No ${f.noun} logged on ${f.answeringDayCount} ${plural(f.answeringDayCount, 'day')} with a meal or symptom`,
+      `through ${dateWord(f.lastDrawnKey)}`,
+    );
+  } else if (f.count === 0 && f.vomitDayCount === 0) parts.push(`No ${f.noun} logged`, `through ${dateWord(f.lastDrawnKey)}`);
   else if (f.vomitDayCount === f.episodeDayCount) {
     // No bout runs past its first day: the episode days ARE the rose days, one number.
     parts.push(

@@ -256,16 +256,16 @@ export function trailingWeightRun(model: WeightBandModel): { steps: number; dir:
   return { steps, dir };
 }
 
-/** The readings move both ways somewhere in the series (a step up and a step down). */
+/** The readings disagree in direction: some sit ABOVE the first reading and some BELOW
+ *  it. Judged against the start, never step by step: a steady loss that ends in one 10 g
+ *  up-tick has a step up and steps down, yet never comes back to where it began, and a
+ *  step-wise test handed it the caveat (the adversarial pass on CUL-1553). A scale's
+ *  wobble scatters around the start; a loss leaves it. */
 export function weightDisagrees(model: WeightBandModel): boolean {
-  let up = false;
-  let down = false;
-  for (let i = 1; i < model.points.length; i++) {
-    const d = model.points[i].value - model.points[i - 1].value;
-    if (d > 0) up = true;
-    if (d < 0) down = true;
-  }
-  return up && down;
+  const first = model.points[0]?.value;
+  if (first == null) return false;
+  const rest = model.points.slice(1).map((p) => p.value);
+  return rest.some((v) => v > first) && rest.some((v) => v < first);
 }
 
 /**
@@ -281,10 +281,12 @@ export function weightDisagrees(model: WeightBandModel): boolean {
  *     the STORED readings (`gate.model`, kilograms on the app's surfaces), never on the
  *     rounded display unit, where 5 % of a rounded pound sat on the inclusive edge;
  *   • no run is stated: a series whose last `WEIGHT_RUN_MIN_STEPS`+ steps all fell (or all
- *     rose) is a direction, and the line says so instead ("down at each of the last 6
- *     readings") — six readings falling in strict order is 1 in 720 under noise;
- *   • the readings are a pair, or they move both ways somewhere in the series. A series
- *     that only ever moved one way never reads as a scale's wobble.
+ *     rose, beside an overall rise) is a direction, and the line says so instead ("lower
+ *     at each of the last 6 readings") — six readings falling in strict order is 1 in 720
+ *     under noise. A run against the overall change is joined with "but";
+ *   • the readings are a pair, or they sit on both sides of the first reading
+ *     (`weightDisagrees`). A series that never came back to where it began never reads
+ *     as a scale's wobble.
  * A 5 % unintentional loss in a cat is a workup trigger; a 3.5 kg drop in a dog is not a
  * scale wobble at any percentage — neither gets the sentence written to soften a wobble.
  *
@@ -310,17 +312,26 @@ export function weightDeltaLine(
   // Interior readings only: the last reading's distance is what the delta itself says.
   const clipped = model.points.filter((p, i) => p.clipped && i !== model.points.length - 1).length;
   const clippedTail = clipped > 0 ? ` · ${clipped} ${pluralize(clipped, 'reading')} outside the band` : '';
-  const run = trailingWeightRun(gate.model);
-  const runStated = run.steps >= WEIGHT_RUN_MIN_STEPS && run.dir != null;
-  const runTail = runStated ? ` · ${run.dir} at each of the last ${run.steps} readings` : '';
-  if (model.delta === 0) return `No change ${since}${runTail}${clippedTail}`;
+  const g = gate.model;
+  // The FACT decides no-change, direction and percentage: the stored readings, never the
+  // display's rounding (a 20 g move rounds to 0.0 lbs and is still a move).
+  const factDelta = g.delta ?? model.delta;
+  const factFrac = g.deltaFrac ?? model.deltaFrac;
+  const run = trailingWeightRun(g);
+  // A run is stated when it ACCUSES or agrees: a fall always (beside a gain it is the
+  // half the reader must not miss), a rise only beside an overall rise. A rise of a few
+  // grams beside a 24 % loss reads as recovery, and a rising line is not wellness (B-186;
+  // the adversarial pass on CUL-1553).
+  const runStated = run.steps >= WEIGHT_RUN_MIN_STEPS && (run.dir === 'down' || (run.dir === 'up' && factDelta > 0));
+  const against = runStated && ((run.dir === 'down' && factDelta >= 0) || (run.dir === 'up' && factDelta < 0));
+  const runTail = runStated ? ` · ${against ? 'but ' : ''}${run.dir === 'down' ? 'lower' : 'higher'} at each of the last ${run.steps} readings` : '';
+  if (factDelta === 0) return `No change ${since}${runTail}${clippedTail}`;
   const abs = Math.abs(model.delta);
   const shown = Math.round(abs * 10) / 10;
-  const pct = Math.round(Math.abs(model.deltaFrac) * 100);
-  const dir = model.delta < 0 ? 'Down' : 'Up';
+  const pct = Math.round(Math.abs(factFrac) * 100);
+  const dir = factDelta < 0 ? 'Down' : 'Up';
   const amount = shown === 0 ? `less than 0.1 ${unit}` : `${shown.toFixed(1)} ${unit}`;
   const head = `${dir} ${amount}${pct > 0 ? ` (${pct}%)` : ''} ${since}`;
-  const g = gate.model;
   const inNoise =
     g.delta != null &&
     g.deltaFrac != null &&

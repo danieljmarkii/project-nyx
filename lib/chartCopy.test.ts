@@ -211,18 +211,18 @@ describe('weightDeltaLine (D2-5)', () => {
 
     it('three readings falling in order: the run is stated and the caveat is withheld, inside both bounds', () => {
       const run = line(series([4.6, 4.55, 4.5]));
-      expect(run).toBe('Down 0.1 kg (2%) since 07-03 · down at each of the last 2 readings');
+      expect(run).toBe('Down 0.1 kg (2%) since 07-03 · lower at each of the last 2 readings');
       expect(run).not.toContain('home scale');
     });
 
     it('the critique\'s counterexample: six readings falling in strict order never read as scale noise', () => {
       const six = line(series([4.6, 4.58, 4.56, 4.54, 4.52, 4.5]));
-      expect(six).toBe('Down 0.1 kg (2%) since 07-03 · down at each of the last 5 readings');
+      expect(six).toBe('Down 0.1 kg (2%) since 07-03 · lower at each of the last 5 readings');
       expect(six).not.toContain('home scale');
     });
 
     it('a run upward is stated the same way', () => {
-      expect(line(series([4.5, 4.55, 4.6]))).toBe('Up 0.1 kg (2%) since 07-03 · up at each of the last 2 readings');
+      expect(line(series([4.5, 4.55, 4.6]))).toBe('Up 0.1 kg (2%) since 07-03 · higher at each of the last 2 readings');
     });
 
     it('readings that move both ways, with no run at the end, keep the caveat inside both bounds', () => {
@@ -231,7 +231,7 @@ describe('weightDeltaLine (D2-5)', () => {
 
     it('a run at the end of a series that once moved the other way is still stated, and still no caveat', () => {
       const tail = line(series([4.6, 4.65, 4.6, 4.55, 4.5]));
-      expect(tail).toBe('Down 0.1 kg (2%) since 07-03 · down at each of the last 3 readings');
+      expect(tail).toBe('Down 0.1 kg (2%) since 07-03 · lower at each of the last 3 readings');
       expect(tail).not.toContain('home scale');
     });
 
@@ -239,6 +239,28 @@ describe('weightDeltaLine (D2-5)', () => {
       // The shipped §04 fixture: 4.6, 4.6, 4.5, 4.5, 4.4, 4.4. No step up, so it never reads as wobble.
       const stairs = line(series([4.6, 4.6, 4.5, 4.5, 4.4, 4.4]));
       expect(stairs).toBe('Down 0.2 kg (4%) since 07-03');
+    });
+
+    it('the adversarial pass: a steady loss ending in one 10 g up-tick never regains the caveat', () => {
+      // A step-wise "both ways" test handed this the caveat; it never comes back to its start.
+      expect(line(series([4.6, 4.55, 4.5, 4.45, 4.41, 4.42]))).toBe('Down 0.2 kg (4%) since 07-03');
+      expect(line(series([4.6, 4.5, 4.42, 4.43, 4.42, 4.43]))).not.toContain('home scale');
+      expect(line(series([5.0, 4.85, 4.9, 4.82]))).not.toContain('home scale');
+    });
+
+    it('the adversarial pass: a few grams of rise beside a large loss is never stated as a run', () => {
+      // "up at each of the last 2 readings" beside a 24 % loss reads as recovery.
+      expect(line(series([6.0, 4.5, 4.51, 4.52]))).toBe('Down 1.5 kg (25%) since 07-03 · 2 readings outside the band');
+    });
+
+    it('a fall against an overall rise is stated, joined with "but"; it is the accusing half', () => {
+      expect(line(series([4.0, 5.0, 4.8, 4.7]))).toBe('Up 0.7 kg (18%) since 07-03 · but lower at each of the last 2 readings · 2 readings outside the band');
+    });
+
+    it('"No change" is the stored fact, never the display\'s rounding', () => {
+      const lbs = weightBand([r(9.9, '2026-07-03T08:00:00Z'), r(9.9, '2026-09-12T08:00:00Z')]);
+      const kg = weightBand([r(4.49, '2026-07-03T08:00:00Z'), r(4.47, '2026-09-12T08:00:00Z')]);
+      expect(weightDeltaLine(lbs, 'lbs', fmt, { model: kg, noiseAbs: 0.2 })).toBe(`Down less than 0.1 lbs since 07-03 · ${HOME_SCALE_CAVEAT}`);
     });
 
     it('a flat step ends a run: equal is not lower', () => {

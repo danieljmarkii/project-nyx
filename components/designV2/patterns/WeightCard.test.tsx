@@ -138,7 +138,7 @@ describe('WeightCard (Design v2)', () => {
     const fall = [r(4.6, at(2026, 7, 3)), r(4.58, at(2026, 7, 20)), r(4.56, at(2026, 8, 4)), r(4.54, at(2026, 8, 18)), r(4.52, at(2026, 9, 1))];
     const { getByTestId } = measured(<WeightCard readings={fall} readingCount={5} petId="p1" />);
     const line = getByTestId('weight-card-delta').props.children as string;
-    expect(line).toMatch(/· down at each of the last 4 readings$/);
+    expect(line).toMatch(/· lower at each of the last 4 readings$/);
     expect(line).not.toContain('home scale');
   });
 
@@ -158,7 +158,7 @@ describe('WeightCard (Design v2)', () => {
     );
     const line = getByTestId('weight-card-delta').props.children as string;
     // 5.0 kg → 11.0 lbs, 4.2 kg → 9.3 lbs: the delta is over the DISPLAYED numbers.
-    expect(line).toMatch(/^Down 1\.7 lbs \(15%\) since Jul 3$/);
+    expect(line).toMatch(/^Down 1\.7 lbs \(16%\) since Jul 3$/);
     expect(line).not.toContain('home scale');
   });
 
@@ -170,13 +170,14 @@ describe('WeightCard (Design v2)', () => {
   });
 
   it('a 300 g kitten down 20 g is spoken as a loss with its percentage, never "No change", never the caveat', () => {
-    // The app rounds pounds to 0.1 upstream (`kgToLbsNum`: 0.7 → 0.6 lbs here), so the
+    // The percentage is the STORED move (20 g of 300 g, 7 %), never the rounded pounds' (0.7 → 0.6
+    // lbs read 14 %). The app rounds pounds to 0.1 upstream, so the
     // move survives display precision on this path; the sub-precision branch is pinned in
     // lib/chartCopy.test.ts. What the card must never do is print "No change" or the
-    // scale caveat beside a 14 % loss in a fading kitten.
+    // scale caveat beside a 7 % loss in a fading kitten.
     const { getByTestId } = measured(<WeightCard readings={[r(0.3, at(2026, 7, 3)), r(0.28, at(2026, 9, 12))]} readingCount={2} petId="p1" />);
     const line = getByTestId('weight-card-delta').props.children as string;
-    expect(line).toMatch(/^Down 0\.1 lbs \(14%\) since Jul 3$/);
+    expect(line).toMatch(/^Down 0\.1 lbs \(7%\) since Jul 3$/);
     expect(line).not.toContain('No change');
     expect(line).not.toContain('home scale');
   });

@@ -530,7 +530,7 @@ describe('MonthInstrument — the care surfaces (CUL-1553)', () => {
     expect(getByTestId('month-line').props.children).toBe('Itching 5 times on 4 days · through Sep 17 · 2 days unlogged');
     expect((UNSAFE_getByType(WeeklyBars).props as { noun: string }).noun).toBe('itching');
     expect(within(getByTestId('month-layers')).getByText('Itching')).toBeTruthy();
-    expect(getByText('itch/scratch day, count in the corner')).toBeTruthy();
+    expect(getByText('itching day, count in the corner')).toBeTruthy();
   });
 
   it('the owner\'s lens holds: tapping Vomiting redraws the month on vomiting', async () => {
@@ -555,14 +555,46 @@ describe('MonthInstrument — the care surfaces (CUL-1553)', () => {
       ),
     );
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
-    expect(within(getByTestId('month-legend-refused')).getByText('refused · 2 of 4 rated meals, on 1 day')).toBeTruthy();
-    expect(getByTestId('month-legend-left-some').props.children).toBe('left some · 1 of 4 rated meals');
+    expect(within(getByTestId('month-legend-refused')).getByText('refused · 2 of 4 meals with an amount logged, on 1 day')).toBeTruthy();
+    expect(getByTestId('month-legend-left-some').props.children).toBe('left some · 1 of 4 meals with an amount logged');
     expect(getAllByTestId('daymark-layer-refused')).toHaveLength(1);
     // The Meals layer off: no ring, no counts, the coverage word alone.
     fireEvent.press(within(getByTestId('month-layers')).getByText('Meals'));
     expect(queryByTestId('month-legend-refused')).toBeNull();
     expect(queryByTestId('daymark-layer-refused')).toBeNull();
     expect(getByTestId('month-legend-left-some').props.children).toBe('left some');
+  });
+
+  it('the two rows carry the mock\'s visible labels, and only when the lens row is drawn', async () => {
+    const itchyApi = mount(jest.fn(async () => itchy()));
+    await waitFor(() => expect(itchyApi.getByTestId('month-grid')).toBeTruthy());
+    expect(itchyApi.getByTestId('month-lens-label').props.children).toBe('Symptom');
+    expect(itchyApi.getByTestId('month-layers-label').props.children).toBe('Layers');
+    itchyApi.unmount();
+    const plain = mount();
+    await waitFor(() => expect(plain.getByTestId('month-grid')).toBeTruthy());
+    expect(plain.queryByTestId('month-lens-label')).toBeNull();
+    expect(plain.queryByTestId('month-layers-label')).toBeNull();
+  });
+
+  it('picking a symptom with the symptom layer off turns it back on, so the tap is never a dead one', async () => {
+    const { getByTestId, getByLabelText, queryByTestId } = mount(jest.fn(async () => itchy()));
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    fireEvent.press(within(getByTestId('month-layers')).getByText('Itching'));
+    expect(queryByTestId('weekly-bars')).toBeNull();
+    fireEvent.press(within(getByLabelText('Symptom')).getByText('Vomiting'));
+    await waitFor(() => expect(getByTestId('weekly-bars')).toBeTruthy());
+    expect(getByTestId('month-line').props.children).toBe('Vomiting 2 times on 2 days · through Sep 17 · 2 days unlogged');
+  });
+
+  it('an itch-only dog is offered itching alone: no Symptom row, the layer chip names itching', async () => {
+    const { getByTestId, queryByLabelText } = mount(
+      jest.fn(async () => facts({ episodeDays: [], symptomEntryDays: { itch: ['2026-09-01', '2026-09-03'] } })),
+    );
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    expect(queryByLabelText('Symptom')).toBeNull();
+    expect(within(getByTestId('month-layers')).getByText('Itching')).toBeTruthy();
+    expect(getByTestId('month-line').props.children).toBe('Itching 2 times on 2 days · through Sep 17 · 2 days unlogged');
   });
 
   it('a dose-only day is logged and never "no vomiting" (CUL-1074 brief 2)', async () => {

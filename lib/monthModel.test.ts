@@ -311,7 +311,7 @@ describe('the line (AC 5, C-3)', () => {
   });
 
   it('buildLine pluralises and orders its clauses; without the count it is the window and its coverage', () => {
-    const base = { noun: 'vomiting', rowNoun: 'vomit', count: 1, episodeDayCount: 1, vomitDayCount: 1, aheadCount: 2, unloggedDays: 1, answeringDayCount: 1, beforeRecordDays: 1, isAhead: false, recordEmpty: false, allBeforeRecord: false, lastDrawnKey: '2026-09-17' };
+    const base = { noun: 'vomiting', rowNoun: 'vomit', count: 1, episodeDayCount: 1, vomitDayCount: 1, aheadCount: 2, unloggedDays: 1, answeringDayCount: 1, loggedDayCount: 1, beforeRecordDays: 1, isAhead: false, recordEmpty: false, allBeforeRecord: false, lastDrawnKey: '2026-09-17' };
     expect(buildLine(base)).toBe('Vomiting 1 time on 1 day · through Sep 17 · 1 day unlogged · 1 day before the record · 2 dated ahead, not drawn');
     expect(buildLine(base, { withCount: false })).toBe('Through Sep 17 · 1 day unlogged · 1 day before the record');
     // CUL-1530: a bout running past its first day splits the times (episodes, the corners)
@@ -441,8 +441,16 @@ describe('logged is not answered (CUL-1074 brief 2)', () => {
     expect(m.answeringDayCount).toBe(0);
   });
 
-  it('one answering day is enough for the absence to be spoken over the month', () => {
+  it('when only some logged days could answer, the absence names the days it stands on (the adversarial pass)', () => {
+    // One meal among dose-only days is not a month without vomiting.
     const m = septModel({ episodeDays: [], loggedDays: ['2026-09-03', '2026-09-10'], answeringDays: ['2026-09-10'] });
+    expect(m.line).toBe('No vomiting logged on 1 day with a meal or symptom · through Sep 17 · 15 days unlogged');
+    const twelve = septModel({ episodeDays: [], loggedDays: range('2026-09-01', '2026-09-15'), answeringDays: range('2026-09-01', '2026-09-12') });
+    expect(twelve.line).toBe('No vomiting logged on 12 days with a meal or symptom · through Sep 17 · 2 days unlogged');
+  });
+
+  it('when every logged day answers, the absence is the plain line', () => {
+    const m = septModel({ episodeDays: [], loggedDays: ['2026-09-03', '2026-09-10'], answeringDays: ['2026-09-03', '2026-09-10'] });
     expect(m.line).toBe('No vomiting logged · through Sep 17 · 15 days unlogged');
   });
 

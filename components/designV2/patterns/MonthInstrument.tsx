@@ -302,6 +302,14 @@ export function MonthInstrument({
     router.push({ pathname: '/event/[id]', params: { id: eventId } });
   }, []);
 
+  // Picking a symptom is asking to see it: the symptom layer comes back on, or the tap
+  // would change nothing on screen but the off chip's text (the product read on CUL-1553).
+  const pickLens = useCallback((next: string) => {
+    setChosenLens(next);
+    setOpenDay(null);
+    setLayers((l) => (l.vomit ? l : { ...l, vomit: true }));
+  }, []);
+
   const toggleLayer = useCallback((key: keyof MonthLayers) => {
     setLayers((l) => ({ ...l, [key]: !l[key] }));
   }, []);
@@ -376,6 +384,11 @@ export function MonthInstrument({
 
           {/* The lens: which symptom the month draws. Absent on a record with one symptom,
               so a vomit-only month is the shipped month. */}
+          {lenses.length >= 2 && (
+            <ThemedText style={styles.rowLabel} testID="month-lens-label">
+              Symptom
+            </ThemedText>
+          )}
           {lenses.length >= 2 &&
             (lenses.length <= LENS_CHIP_MAX ? (
               <ChipGroup
@@ -383,9 +396,7 @@ export function MonthInstrument({
                 value={lens}
                 allowDeselect={false}
                 onChange={(next) => {
-                  if (next == null) return;
-                  setChosenLens(next);
-                  setOpenDay(null);
+                  if (next != null) pickLens(next);
                 }}
                 accessibilityLabel="Symptom"
               />
@@ -398,15 +409,18 @@ export function MonthInstrument({
                 }))}
                 value={lens}
                 onChange={(next) => {
-                  if (next == null) return;
-                  setChosenLens(next);
-                  setOpenDay(null);
+                  if (next != null) pickLens(next);
                 }}
                 sheetLabel="Symptom"
                 accessibilityPrefix="Symptom"
               />
             ))}
 
+          {lenses.length >= 2 && (
+            <ThemedText style={styles.rowLabel} testID="month-layers-label">
+              Layers
+            </ThemedText>
+          )}
           {/* The layers: four independent toggles, wrapping, each announcing its checked state. */}
           <View style={styles.chips} accessibilityLabel="Layers" testID="month-layers">
             {[{ key: 'vomit' as const, label: words.chip }, ...OTHER_LAYER_CHIPS].map((c) => (
@@ -466,7 +480,7 @@ export function MonthInstrument({
             })}
           </View>
 
-          <Legend model={model} layers={layers} rowNoun={words.rowNoun} episodes={lens === VOMIT_LENS} />
+          <Legend model={model} layers={layers} dayNoun={lens === VOMIT_LENS ? words.rowNoun : words.noun} episodes={lens === VOMIT_LENS} />
         </>
       )}
     </View>
@@ -704,12 +718,14 @@ function RowsStage({
 function Legend({
   model,
   layers,
-  rowNoun,
+  dayNoun,
   episodes,
 }: {
   model: MonthModel;
   layers: MonthLayers;
-  rowNoun: string;
+  /** What a rose day is called: "vomit day", "itching day" — the chip's word, not the
+   *  log's "itch/scratch". */
+  dayNoun: string;
   /** The lens counts episodes (vomiting: the count sits where a bout began). */
   episodes: boolean;
 }) {
@@ -719,7 +735,9 @@ function Legend({
   // line is today's line, drawn as it always was unless the month holds only new-rule calls.
   const { earlier: calledDays, tiered: tieredDays } = monthCallDays(model);
   const dayWord = (n: number) => `${n} ${n === 1 ? 'day' : 'days'}`;
-  const mealsOf = (n: number) => `${n} of ${model.ratedMeals} rated ${model.ratedMeals === 1 ? 'meal' : 'meals'}`;
+  // "with an amount logged": the owner never "rates" a meal, they say how much was eaten
+  // (the intake chips), and the words say which meals the count is over (C-3).
+  const mealsOf = (n: number) => `${n} of ${model.ratedMeals} ${model.ratedMeals === 1 ? 'meal' : 'meals'} with an amount logged`;
   // The two meal counts ride the Meals layer and share one denominator (CUL-1553): a
   // refusal is named and counted, never folded into "left some".
   const mealCounts = layers.meals && model.ratedMeals > 0;
@@ -728,7 +746,7 @@ function Legend({
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchVomit]} />
         <ThemedText style={styles.legendText}>
-          {rowNoun} day, {episodes ? 'count where a bout began' : 'count in the corner'}
+          {dayNoun} day, {episodes ? 'count where a bout began' : 'count in the corner'}
         </ThemedText>
       </View>
       <View style={styles.legendItem}>
@@ -737,14 +755,7 @@ function Legend({
         </View>
         <ThemedText style={styles.legendText}>logged</ThemedText>
       </View>
-      <View style={styles.legendItem}>
-        <View style={[styles.swatch, styles.swatchLogged]}>
-          <DayMarkLine kind="broken" style={styles.swatchLine} testID="month-legend-line-broken" />
-        </View>
-        <ThemedText style={styles.legendText} testID="month-legend-left-some">
-          {mealCounts ? `left some · ${mealsOf(model.leftSomeMeals)}` : 'left some'}
-        </ThemedText>
-      </View>
+      {/* The refusal leads the meal rows: the accusing count is never below the lighter one. */}
       {mealCounts && model.refusedMeals > 0 && (
         <View style={styles.legendItem} testID="month-legend-refused">
           <View style={styles.legendRing} />
@@ -753,6 +764,15 @@ function Legend({
           </ThemedText>
         </View>
       )}
+      <View style={styles.legendItem}>
+        <View style={[styles.swatch, styles.swatchLogged]}>
+          <DayMarkLine kind="broken" style={styles.swatchLine} testID="month-legend-line-broken" />
+        </View>
+        <ThemedText style={styles.legendText} testID="month-legend-left-some">
+          {mealCounts ? `left some · ${mealsOf(model.leftSomeMeals)}` : 'left some'}
+        </ThemedText>
+      </View>
+
       <View style={styles.legendItem}>
         <View style={[styles.swatch, styles.swatchUnlogged]} />
         <ThemedText style={styles.legendText}>nothing logged</ThemedText>
@@ -825,6 +845,16 @@ const styles = StyleSheet.create({
     // ChipGroup's own geometry: the rowGap clears FilterChip's 6pt vertical hitSlop.
     columnGap: theme.space1,
     rowGap: theme.space2,
+  },
+  // The mock's row labels: what the chips below are, so a radio row and a checkbox row
+  // never read as one cloud of chips.
+  rowLabel: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextSecondary,
+    letterSpacing: theme.trackingWide,
+    textTransform: 'uppercase',
+    marginBottom: -theme.space1,
   },
   line: {
     fontSize: theme.textSM,

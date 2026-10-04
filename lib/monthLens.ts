@@ -12,8 +12,10 @@
 // follow: "Vomiting 3 times" counts episodes, "Itching 3 times" counts entries.
 //
 // ── WHICH SYMPTOMS ARE ON OFFER ───────────────────────────────────────────────
-// Vomiting always (the shipped month's own subject, so a vomit-only record keeps today's
-// page); every other `SYMPTOM_EVENT_TYPES` member that has at least one entry in the read.
+// Every `SYMPTOM_EVENT_TYPES` member with at least one entry in the read, so the row is
+// this pet's record: an itch-only dog is never offered a symptom it has never had (the
+// product read on CUL-1553). Vomiting stands in when nothing else is on offer, so an
+// empty record and a vomit-only one keep the shipped month and draw no row.
 // The read spans the nine weeks of bars and the whole grid, so a symptom drawn on a bar
 // is always one the reader can choose. The order is the default's: most days in the shown
 // month first, vomiting first among equals, then the list's own order — a total order, so
@@ -44,11 +46,12 @@ export interface SymptomLens {
   days: number;
 }
 
-/** The lenses on offer, the default first. Never empty: vomiting is always offered. */
+/** The lenses on offer, the default first. Never empty: vomiting stands in for an empty read. */
 export function symptomLenses(input: SymptomLensInput): SymptomLens[] {
   const inMonth = (k: string) => k >= input.firstKey && k <= input.lastDrawnKey;
   const vomitDays = new Set<string>([...input.episodeDays, ...(input.continuationDays ?? []).map((c) => c.day)].filter(inMonth));
-  const lenses: SymptomLens[] = [{ type: VOMIT_LENS, days: vomitDays.size }];
+  const vomitInRead = input.episodeDays.length > 0 || (input.continuationDays ?? []).length > 0;
+  const lenses: SymptomLens[] = vomitInRead ? [{ type: VOMIT_LENS, days: vomitDays.size }] : [];
   const entries = input.symptomEntryDays ?? {};
   for (const type of SYMPTOM_EVENT_TYPES) {
     if (type === VOMIT_LENS) continue;
@@ -56,6 +59,7 @@ export function symptomLenses(input: SymptomLensInput): SymptomLens[] {
     if (!rows || rows.length === 0) continue;
     lenses.push({ type, days: new Set(rows.filter(inMonth)).size });
   }
+  if (lenses.length === 0) lenses.push({ type: VOMIT_LENS, days: 0 });
   const order = (t: string) => SYMPTOM_EVENT_TYPES.indexOf(t as (typeof SYMPTOM_EVENT_TYPES)[number]);
   return lenses.sort((a, b) => b.days - a.days || order(a.type) - order(b.type));
 }
