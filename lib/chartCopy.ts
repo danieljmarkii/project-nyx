@@ -67,8 +67,11 @@ export function weeklyBarsA11yLabel(
 ): string {
   const n = model.weeks.length;
   const parts: string[] = [];
+  // What one bar is: a calendar week, or (the Signal, CUL-1217) seven days ending on the last
+  // drawn day, so "this week" is never a word the bars do not draw.
+  const span = model.endAligned === true ? `each 7 days, the last ending ${dateWord(model.lastKey)}` : 'weeks starting Sunday';
   parts.push(
-    `${capitalize(noun)} by week, ${n} ${pluralize(n, 'week')} from ${dateWord(model.firstKey)} to ${dateWord(model.lastKey)}, weeks starting Sunday.`,
+    `${capitalize(noun)} by week, ${n} ${pluralize(n, 'week')} from ${dateWord(model.firstKey)} to ${dateWord(model.lastKey)}, ${span}.`,
   );
   parts.push(
     // A total of 0 over shaded weeks is the zero again, spoken (the adversarial pass): unsaid.
@@ -158,6 +161,9 @@ export interface DayMarkFacts {
   refusedMeals?: number;
   /** Qualifying meals left unfinished but not refused on the day (0 with the layer off). */
   leftSomeMeals?: number;
+  /** The count is episodes (vomiting's 3-hour collapse), spoken as "2 episodes of vomiting",
+   *  never "logged 2 times" over a count that is not two rows (CUL-1217, GC-3). */
+  episodes?: boolean;
   /** The symptom layer is showing. Off, the count is not spoken — and the day is still
    *  not "clear": the coverage is spoken either way. */
   symptomLayer: boolean;
@@ -188,7 +194,9 @@ export function dayMarkA11yLabel(f: DayMarkFacts, noun: string): string {
   if (f.coverage === 'ahead') parts.push('ahead');
   else if (f.coverage === 'unlogged') parts.push('nothing logged');
   else {
-    if (f.symptomLayer && f.count > 0) parts.push(`${noun} logged ${f.count} ${pluralize(f.count, 'time')}`);
+    if (f.symptomLayer && f.count > 0) {
+      parts.push(f.episodes === true ? `${f.count} ${pluralize(f.count, 'episode')} of ${noun} logged` : `${noun} logged ${f.count} ${pluralize(f.count, 'time')}`);
+    }
     else if (f.symptomLayer && f.continuesFrom) parts.push(`${noun} logged, part of the bout that began ${dateWord(f.continuesFrom)}`);
     else if (f.symptomLayer && f.answers) parts.push(`logged, no ${noun}`);
     else parts.push('logged');

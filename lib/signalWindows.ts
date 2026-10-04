@@ -14,11 +14,16 @@
 // where a re-logged bout collapses to one episode. This module never reads a clock, a
 // store or the database.
 //
-// THE WEEKS. Sunday-start weeks ending with the week that holds `today` — enough of them
-// to cover the finding's own lookback (`windowDays`), and the running trial when it is
-// longer, capped so a long overrun still draws a readable chart (the mark then says
-// "before these weeks", C-37, never drops). The last bucket is "this week", the one before
-// it "last week": the line reads those two buckets and nothing else.
+// THE WEEKS. Seven-day blocks ENDING TODAY, not Sunday-start weeks (CUL-1217, GC-4 ruled
+// (a) on CUL-1225: named episodes over the engine's windows, on local days). The engine
+// counts a rolling week — `[now − 7d, now)` — and a 56-day lookback is eight of them, so
+// the bars draw exactly those: the last bar is "the last 7 days", the one before it "the 7
+// before", and "the last 8 weeks" is eight bars, never nine (WBC-1). Calendar weeks put a
+// Tuesday-to-Saturday run in "last week" on a Monday while the sentence said "this week"
+// (BRK-3). Enough blocks to cover the finding's lookback (`windowDays`), and the running
+// trial when it is longer, capped so a long overrun still draws a readable chart (the mark
+// then says "before these weeks", C-37, never drops). The line reads the last two blocks
+// and nothing else, and `lib/signalCounts.ts` states every other number off the same model.
 //
 // THE COMPARE. Two windows of EQUAL length that never overlap. On a running trial they are
 // the trial's own days (day 1 through today — the day counter) and the same number of
@@ -41,7 +46,6 @@ import {
   laneDots,
   timingLanesAxis,
   weeklyBuckets,
-  weekStartIndex,
   type CompareWindowsModel,
   type LaneAxis,
   type LaneInput,
@@ -70,7 +74,7 @@ export const CORRELATION_LOOKBACK_DAYS = 180;
 export const MIN_COMPARE_HALF_DAYS = 7;
 /** The most weeks the chart draws; a longer trial's mark is placed in words (C-37). */
 export const MAX_WEEKS = 12;
-/** The fewest: a two-week finding still gets "this week · last week". */
+/** The fewest: a one-week finding still gets "the last 7 days · the 7 before". */
 export const MIN_WEEKS = 2;
 /**
  * The compare's floor on a trial: below this many days on the diet there is no
@@ -179,17 +183,16 @@ function indexOf(key: string, what: string): number {
 }
 
 /**
- * The number of weeks the card and the screen draw for this finding on this day: every
- * Sunday-start week the lookback touches, through the week holding today — and the
- * running trial's first week when it began earlier. A 56-day lookback on a Thursday is
- * nine weeks (eight whole ones and the partial), the mock's own count; a longer run is
+ * The number of seven-day blocks the card and the screen draw for this finding on this day:
+ * enough to cover the lookback, ending today — and the running trial's first day when it
+ * began earlier. A 56-day lookback is eight blocks, whatever the weekday; a longer run is
  * capped, and the mark then says so in words (C-37).
  */
 export function signalWeekCount(finding: SignalFinding, today: string, trial: SignalTrialWindow | null): number {
   const todayIdx = indexOf(today, 'today');
   let earliest = todayIdx - signalWindowDays(finding) + 1;
   if (trial) earliest = Math.min(earliest, indexOf(trial.startDay, 'trial.startDay'));
-  const weeks = (weekStartIndex(todayIdx) - weekStartIndex(earliest)) / 7 + 1;
+  const weeks = Math.ceil((todayIdx - earliest + 1) / 7);
   return Math.min(MAX_WEEKS, Math.max(MIN_WEEKS, weeks));
 }
 
@@ -217,6 +220,7 @@ export function signalWeeks(input: SignalWeeksInput): WeeklyBucketsModel {
     weeks,
     mark: input.trial ? { day: input.trial.startDay, label: `${lowerFirst(input.trial.identity)} started` } : undefined,
     recordStart: input.recordStart ?? undefined,
+    endAligned: true,
   });
 }
 
@@ -228,14 +232,16 @@ export function weekLineNumbers(model: WeeklyBucketsModel): { thisWeek: number; 
   return { thisWeek: last.count, lastWeek: prev ? prev.count : null, soFar: last.partial };
 }
 
-/** "2 this week so far · 3 last week" — the card's one line. "So far" only while the week
- *  is not over; a count, never a direction word. `withholdPrior` drops last week's count
- *  when the pair may not be printed (`lib/signalWithhold.ts`, CUL-1216) — this week's
- *  count alone, the shipped face's density swap. */
+/** "2 in the last 7 days · 3 in the 7 before" — the card's one line, read off the last two
+ *  blocks the bars draw (CUL-1217: the engine's rolling week, never a calendar week, so the
+ *  line and the sentence on the screen it opens name one window). A count, never a direction
+ *  word. `withholdPrior` drops the earlier count when the pair may not be printed
+ *  (`lib/signalWithhold.ts`, CUL-1216) — the recent count alone, the shipped face's density
+ *  swap. */
 export function weekLine(model: WeeklyBucketsModel, withholdPrior: boolean = false): string {
-  const { thisWeek, lastWeek, soFar } = weekLineNumbers(model);
-  const head = `${thisWeek} this week${soFar ? ' so far' : ''}`;
-  return lastWeek == null || withholdPrior ? head : `${head} · ${lastWeek} last week`;
+  const { thisWeek, lastWeek } = weekLineNumbers(model);
+  const head = `${thisWeek} in the last 7 days`;
+  return lastWeek == null || withholdPrior ? head : `${head} · ${lastWeek} in the 7 before`;
 }
 
 /** One compare window, before its episodes are counted. */

@@ -16,7 +16,6 @@ import { loadSignalLead } from './signalLead';
 import type { CachedFinding } from './signal';
 import { usePetStore } from '../store/petStore';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
-import { weekStartIndex } from './chartModels';
 
 const shift = (key: string, d: number) => dayKeyFromIndex((localDayIndexOf(key) as number) + d);
 const today = toLocalDayKey(new Date());
@@ -61,7 +60,7 @@ describe('loadSignalLead', () => {
     expect(model.noun).toBe('vomiting');
     expect(model.weekly?.total).toBe(2);
     const weeks = model.weekly?.weeks ?? [];
-    expect(model.line).toBe(`${weeks[weeks.length - 1].count} this week${weeks[weeks.length - 1].partial ? ' so far' : ''} · ${weeks[weeks.length - 2].count} last week`);
+    expect(model.line).toBe(`${weeks[weeks.length - 1].count} in the last 7 days · ${weeks[weeks.length - 2].count} in the 7 before`);
   });
 
   it('a running trial marks the chart; the title is the claim, the same on a trial day (D2, CUL-1270)', async () => {
@@ -116,18 +115,18 @@ describe('loadSignalLead', () => {
 // CUL-1216 (BRK-4 / BRK-6): the lead line's falling pair carries its gates — the zone's
 // not-eating register, the engine's density verdict, and the two drawn weeks' logging.
 describe('loadSignalLead — the falling week pair is withheld where the shipped card withheld it', () => {
-  // A pinned Thursday (C-29 / CUL-831): "this week so far" then holds five arrived days,
-  // enough to clear the gate's floor, on every calendar day the suite runs.
+  // A pinned Thursday (C-29 / CUL-831). The two drawn windows are the engine's rolling
+  // weeks (CUL-1217): the last 7 days, today included, and the 7 before them.
   const NOW = new Date(2026, 8, 17, 12).getTime();
   const today = '2026-09-17';
   const todayIdx = localDayIndexOf(today) as number;
-  const thisSunday = weekStartIndex(todayIdx);
-  const lastWeekDays = [1, 2, 3, 4, 5, 6, 7].map((d) => dayKeyFromIndex(thisSunday - d));
-  const thisWeekDays = Array.from({ length: todayIdx - thisSunday + 1 }, (_, i) => dayKeyFromIndex(thisSunday + i));
+  const recentStart = todayIdx - 6;
+  const lastWeekDays = [1, 2, 3, 4, 5, 6, 7].map((d) => dayKeyFromIndex(recentStart - d));
+  const thisWeekDays = Array.from({ length: 7 }, (_, i) => dayKeyFromIndex(recentStart + i));
   const episodesLastWeek = [1, 3, 5].map((d) => ({
     eventId: `e${d}`,
     occurredAt: '',
-    dayKey: dayKeyFromIndex(thisSunday - d),
+    dayKey: dayKeyFromIndex(recentStart - d),
     minutesSinceMeal: null,
     photo: null,
   }));
@@ -141,8 +140,8 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
     mockReadLoggedDays.mockResolvedValue({ loggedDays: [...lastWeekDays, ...thisWeekDays], recordStart: shift(today, -100) });
     const model = await loadSignalLead('pet-1', falling, true, null, NOW);
     expect(model.lineWithheld).toBe('not_eating');
-    expect(model.line).not.toMatch(/last week/);
-    expect(model.line).toMatch(/^0 this week/);
+    expect(model.line).not.toMatch(/the 7 before/);
+    expect(model.line).toMatch(/^0 in the last 7 days$/);
   });
 
   it('the same record with the pet eating prints the pair (the gate withholds only what it must)', async () => {
@@ -150,16 +149,16 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
     mockReadLoggedDays.mockResolvedValue({ loggedDays: [...lastWeekDays, ...thisWeekDays], recordStart: shift(today, -100) });
     const model = await loadSignalLead('pet-1', falling, false, null, NOW);
     expect(model.lineWithheld).toBeNull();
-    expect(model.line).toMatch(/· 3 last week$/);
+    expect(model.line).toMatch(/· 3 in the 7 before$/);
   });
 
   it('a falling pair whose drawn weeks were not logged alike prints this week alone (the counterexample: 4 of 7 days)', async () => {
     mockReadSignalEpisodes.mockResolvedValue(episodesLastWeek);
-    // Last week fully logged; nothing logged this week so far.
+    // The 7 before fully logged; nothing logged in the last 7 days.
     mockReadLoggedDays.mockResolvedValue({ loggedDays: lastWeekDays, recordStart: shift(today, -100) });
     const model = await loadSignalLead('pet-1', falling, false, null, NOW);
     expect(model.lineWithheld).toBe('thin');
-    expect(model.line).not.toMatch(/last week/);
+    expect(model.line).not.toMatch(/the 7 before/);
   });
 
   it('the engine’s own density verdict withholds the pair even where the drawn weeks look alike', async () => {
@@ -171,7 +170,7 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
     };
     const model = await loadSignalLead('pet-1', engineWithheld, false, null, NOW);
     expect(model.lineWithheld).toBe('density');
-    expect(model.line).not.toMatch(/last week/);
+    expect(model.line).not.toMatch(/the 7 before/);
   });
 
   it('a RISE is never withheld, not even beside a not-eating record', async () => {
@@ -179,7 +178,7 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
     mockReadLoggedDays.mockResolvedValue({ loggedDays: thisWeekDays, recordStart: shift(today, -100) });
     const model = await loadSignalLead('pet-1', reflection, true, null, NOW);
     expect(model.lineWithheld).toBeNull();
-    expect(model.line).toMatch(/· 0 last week$/);
+    expect(model.line).toMatch(/· 0 in the 7 before$/);
   });
 
   // Adversarial pass F3: a dose confirm or a look keeps the day count up while vomit logging
@@ -190,7 +189,7 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
     mockReadGateLoggedDays.mockResolvedValue([...lastWeekDays, thisWeekDays[0]]);
     const model = await loadSignalLead('pet-1', falling, false, null, NOW);
     expect(model.lineWithheld).toBe('thin');
-    expect(model.line).not.toMatch(/last week/);
+    expect(model.line).not.toMatch(/the 7 before/);
   });
 
   // Adversarial pass F1: "this week · last week" across a trial's start is a before/during
@@ -199,12 +198,12 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
   it('a falling week pair drawn across a running trial’s start is withheld', async () => {
     mockReadSignalEpisodes.mockResolvedValue(episodesLastWeek);
     mockReadLoggedDays.mockResolvedValue({ loggedDays: [...lastWeekDays, ...thisWeekDays], recordStart: shift(today, -100) });
-    mockReadSignalTrial.mockResolvedValue({ startDay: dayKeyFromIndex(thisSunday), identity: 'Rabbit trial', dayCounter: todayIdx - thisSunday + 1, targetDays: 56, foodLabel: null });
+    mockReadSignalTrial.mockResolvedValue({ startDay: dayKeyFromIndex(recentStart), identity: 'Rabbit trial', dayCounter: 7, targetDays: 56, foodLabel: null });
     const model = await loadSignalLead('pet-1', falling, false, null, NOW);
     expect(model.lineWithheld).toBe('trial_start');
-    expect(model.line).not.toMatch(/last week/);
+    expect(model.line).not.toMatch(/the 7 before/);
     // Both weeks inside the trial: a week-over-week pair within it, under the other gates.
-    mockReadSignalTrial.mockResolvedValue({ startDay: dayKeyFromIndex(thisSunday - 14), identity: 'Rabbit trial', dayCounter: todayIdx - thisSunday + 15, targetDays: 56, foodLabel: null });
+    mockReadSignalTrial.mockResolvedValue({ startDay: dayKeyFromIndex(recentStart - 14), identity: 'Rabbit trial', dayCounter: 21, targetDays: 56, foodLabel: null });
     const inside = await loadSignalLead('pet-1', falling, false, null, NOW);
     expect(inside.lineWithheld).toBeNull();
   });
@@ -219,7 +218,7 @@ describe('loadSignalLead — the falling week pair is withheld where the shipped
     const model = await loadSignalLead('pet-1', cough, false, null, NOW);
     expect(model.trial).toBeNull();
     expect(model.lineWithheld).toBe('trial_start');
-    expect(model.line).not.toMatch(/last week/);
+    expect(model.line).not.toMatch(/the 7 before/);
   });
 });
 

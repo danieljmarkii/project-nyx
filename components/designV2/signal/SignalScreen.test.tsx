@@ -162,6 +162,8 @@ function input(cached: CachedFinding, over: Partial<SignalScreenInput> = {}): Si
     trialUnanswered: false,
     masking: null,
     generatedOn: null,
+    countedAtMs: new Date(2026, 8, 17, 9, 14).getTime(),
+    generatedAtMs: null,
     ...over,
   };
 }

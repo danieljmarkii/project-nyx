@@ -311,7 +311,7 @@ describe('the line (AC 5, C-3)', () => {
   });
 
   it('buildLine pluralises and orders its clauses; without the count it is the window and its coverage', () => {
-    const base = { noun: 'vomiting', rowNoun: 'vomit', count: 1, episodeDayCount: 1, vomitDayCount: 1, aheadCount: 2, unloggedDays: 1, answeringDayCount: 1, loggedDayCount: 1, beforeRecordDays: 1, isAhead: false, recordEmpty: false, allBeforeRecord: false, lastDrawnKey: '2026-09-17' };
+    const base = { noun: 'vomiting', rowNoun: 'vomit', episodes: false, count: 1, episodeDayCount: 1, vomitDayCount: 1, aheadCount: 2, unloggedDays: 1, answeringDayCount: 1, loggedDayCount: 1, beforeRecordDays: 1, isAhead: false, recordEmpty: false, allBeforeRecord: false, lastDrawnKey: '2026-09-17' };
     expect(buildLine(base)).toBe('Vomiting 1 time on 1 day · through Sep 17 · 1 day unlogged · 1 day before the record · 2 dated ahead, not drawn');
     expect(buildLine(base, { withCount: false })).toBe('Through Sep 17 · 1 day unlogged · 1 day before the record');
     // CUL-1530: a bout running past its first day splits the times (episodes, the corners)
@@ -319,6 +319,13 @@ describe('the line (AC 5, C-3)', () => {
     expect(buildLine({ ...base, vomitDayCount: 4 })).toBe('Vomiting 1 time · vomit logged on 4 days · through Sep 17 · 1 day unlogged · 1 day before the record · 2 dated ahead, not drawn');
     expect(buildLine({ ...base, count: 0, episodeDayCount: 0, vomitDayCount: 1 })).toBe('Vomit logged on 1 day · through Sep 17 · 1 day unlogged · 1 day before the record · 2 dated ahead, not drawn');
     expect(buildLine({ ...base, count: 0, episodeDayCount: 0, vomitDayCount: 0 })).toBe('No vomiting logged · through Sep 17 · 1 day unlogged · 1 day before the record · 2 dated ahead, not drawn');
+ 
+    // CUL-1217 (GC-3): an episode count is never spoken as "times" — the count is not that many rows.
+    const episodes = { ...base, episodes: true, count: 3, episodeDayCount: 2, vomitDayCount: 2 };
+    expect(buildLine(episodes)).toBe('3 episodes of vomiting on 2 days · through Sep 17 · 1 day unlogged · 1 day before the record · 2 dated ahead, not drawn');
+    expect(buildLine({ ...episodes, vomitDayCount: 4 })).toBe('3 episodes of vomiting · vomit logged on 4 days · through Sep 17 · 1 day unlogged · 1 day before the record · 2 dated ahead, not drawn');
+    expect(buildLine({ ...episodes, count: 1, episodeDayCount: 1, vomitDayCount: 1 })).toMatch(/^1 episode of vomiting on 1 day/);
+    expect(buildLine(episodes)).not.toMatch(/\btimes?\b/);
   });
 
   it('the coverage line drops the count and keeps the coverage — the layer leaves, the coverage never does', () => {

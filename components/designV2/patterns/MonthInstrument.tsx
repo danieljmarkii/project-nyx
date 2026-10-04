@@ -238,6 +238,7 @@ export function MonthInstrument({
             // A bout that runs past midnight is vomiting's rule; other symptoms count entries.
             continuationDays: lens === VOMIT_LENS ? facts.continuationDays : [],
             rowNoun: words.rowNoun,
+            episodes: lens === VOMIT_LENS,
             loggedDays: facts.loggedDays,
             answeringDays: facts.answeringDays,
             leftSomeDays: facts.leftSomeDays,
@@ -460,6 +461,7 @@ export function MonthInstrument({
                         layers={layers}
                         recordEmpty={model.recordEmpty}
                         noun={words.noun}
+                        episodes={lens === VOMIT_LENS}
                         selected={openDay === day.key}
                         onPress={() => void openDayInPlace(day.key)}
                       />
@@ -495,6 +497,7 @@ function GridDay({
   layers,
   recordEmpty,
   noun,
+  episodes,
   selected,
   onPress,
 }: {
@@ -502,6 +505,8 @@ function GridDay({
   layers: MonthLayers;
   recordEmpty: boolean;
   noun: string;
+  /** Vomiting counts episodes; every other lens counts entries (CUL-1217, GC-3). */
+  episodes: boolean;
   selected: boolean;
   onPress: () => void;
 }) {
@@ -538,6 +543,7 @@ function GridDay({
       selected={selected}
       dim={day.outsideMonth}
       noun={noun}
+      episodes={episodes}
       onPress={day.coverage === 'ahead' ? undefined : onPress}
     />
   );

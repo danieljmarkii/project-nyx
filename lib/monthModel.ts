@@ -201,6 +201,10 @@ export interface MonthModelInput {
   /** What one row is, lower-case ("vomit"), for the line's rose-day clause: "vomit logged
    *  on 6 days". Defaults to `noun`. */
   rowNoun?: string;
+  /** The count is EPISODES (vomiting's 3-hour re-log collapse), not entries: the line says
+   *  "3 episodes of vomiting", never "vomiting 3 times" over a count that is not three rows
+   *  (CUL-1217, GC-3). Omitted → entries, spoken as "times". */
+  episodes?: boolean;
 }
 
 export interface MonthModel {
@@ -481,6 +485,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
   const lineFacts: LineFacts = {
     noun,
     rowNoun: input.rowNoun ?? noun,
+    episodes: input.episodes === true,
     count,
     episodeDayCount,
     vomitDayCount,
@@ -529,9 +534,15 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
   };
 }
 
+/** "3 episodes of vomiting" over an episode count, "Itching 3 times" over entries (GC-3). */
+function countPhrase(f: Pick<LineFacts, 'noun' | 'count' | 'episodes'>): string {
+  return f.episodes ? `${f.count} ${plural(f.count, 'episode')} of ${f.noun}` : `${capitalize(f.noun)} ${f.count} ${plural(f.count, 'time')}`;
+}
+
 interface LineFacts {
   noun: string;
   rowNoun: string;
+  episodes: boolean;
   count: number;
   episodeDayCount: number;
   vomitDayCount: number;
@@ -585,7 +596,7 @@ export function buildLine(f: LineFacts, opts: { withCount?: boolean } = {}): str
   else if (f.vomitDayCount === f.episodeDayCount) {
     // No bout runs past its first day: the episode days ARE the rose days, one number.
     parts.push(
-      `${capitalize(f.noun)} ${f.count} ${plural(f.count, 'time')} on ${f.episodeDayCount} ${plural(f.episodeDayCount, 'day')}`,
+      `${countPhrase(f)} on ${f.episodeDayCount} ${plural(f.episodeDayCount, 'day')}`,
       `through ${dateWord(f.lastDrawnKey)}`,
     );
   } else {
@@ -594,7 +605,7 @@ export function buildLine(f: LineFacts, opts: { withCount?: boolean } = {}): str
     // from the month before has no corner and says so without claiming an absence.
     const days = `${f.rowNoun} logged on ${f.vomitDayCount} ${plural(f.vomitDayCount, 'day')}`;
     if (f.count === 0) parts.push(capitalize(days));
-    else parts.push(`${capitalize(f.noun)} ${f.count} ${plural(f.count, 'time')}`, days);
+    else parts.push(countPhrase(f), days);
     parts.push(`through ${dateWord(f.lastDrawnKey)}`);
   }
   if (f.unloggedDays > 0) parts.push(`${f.unloggedDays} ${plural(f.unloggedDays, 'day')} unlogged`);

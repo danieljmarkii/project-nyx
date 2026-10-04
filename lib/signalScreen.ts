@@ -79,6 +79,19 @@ import {
 } from './signalWithhold';
 import { TRIAL_RESPONSE_COUNTS_DEFAULTS } from './trialResponseCounts';
 import { foldIdentity } from './signalFold';
+import {
+  composedWindowStart,
+  countedAtLine,
+  countedPriorStated,
+  countedScriptFinding,
+  countedSentence,
+  countedTitle,
+  countedUnitLine,
+  countsMayCompose,
+  engineCountedAtLine,
+  isCountedFinding,
+  signalCountsOf,
+} from './signalCounts';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
 import { isOtherTrialReassurance, signalTrialWindowFor } from './signalTrialAnchor';
 import {
@@ -190,6 +203,12 @@ export interface SignalScreenInput {
   /** The day the engine counted (the cache row's `generated_at`, local), the end of the windows
    *  a safety script's compare row states. Null: today stands in, widened by a day. */
   generatedOn: string | null;
+  /** When the screen read the record its counts come from (CUL-1217, GC-4: "with an as-of
+   *  time"). Required: the composed sentence is only as true as this moment. */
+  countedAtMs: number;
+  /** When the engine wrote the cached sentence (the row's `generated_at`), for the line under
+   *  it where the screen keeps the engine's words (`countsMayCompose`). Null: unknown. */
+  generatedAtMs: number | null;
 }
 
 export interface GalleryTile {
@@ -219,8 +238,16 @@ export interface SignalScreenModel {
   identity: string;
   finding: SignalFinding;
   title: string;
-  /** The count-anchored sentence, phrased server-side (`CachedFinding.text`). */
+  /** The count-anchored sentence: composed from the drawn chart's counts for a counted finding
+   *  (`lib/signalCounts.ts`, CUL-1217 GC-4), else phrased server-side (`CachedFinding.text`). */
   sentence: string;
+  /** When the sentence's numbers were counted: "Counted at 9:14 AM." under a composed one, or
+   *  the engine's moment beside "the bars count what is logged now" where a counted type keeps
+   *  the server's words; null on every other type. */
+  countedAt: string | null;
+  /** The finding the safety phone script reads: the composed sentence's numbers where it is
+   *  composed (one count on one screen, CUL-1568), else the cached finding itself. */
+  scriptFinding: SignalFinding;
   /** The lower-case noun every chart takes ("vomiting"), or null for a finding that counts none. */
   noun: string | null;
   weekly: WeeklyBucketsModel | null;
@@ -480,9 +507,14 @@ export function whyLines(
   /** The drawn compare's masking (CUL-1440): its caption replaces "Compared as counts", because
    *  two windows beside a drug that can hide the sign are not a before and after (D2). */
   compareMask: { masked: [boolean, boolean]; caption: string | null } | null = null,
+  /** The sentence was composed from the chart (`countsMayCompose`). */
+  composed: boolean = false,
 ): string[] {
   const { finding } = input.cached;
-  const lines: string[] = [evidenceText(finding, input.petName)];
+  // A composed sentence carries the chart's numbers (GC-4); the server's evidence restated the
+  // engine's, so *Why* says instead what a bar and an episode are. Where the engine's sentence
+  // stands, its own evidence stands with it.
+  const lines: string[] = [composed ? countedUnitLine() : evidenceText(finding, input.petName)];
   // A correlation's own window (CUL-1218): the matched days above come from the engine's
   // whole read, which the payload does not carry and nothing else on the screen states. No
   // chart sits under it to disagree — a correlation draws none (`signalChartSymptomOf`).
@@ -579,6 +611,8 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
       finding,
       title,
       sentence: input.cached.text,
+      countedAt: null,
+      scriptFinding: finding,
       noun,
       weekly: null,
       weekLine: null,
@@ -660,12 +694,36 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     ? signalLanes({ finding, today: input.today, trial: input.trial, episodes: laneEpisodes, undivided: true, laneMasked: laneMasking.laneMasked })
     : split;
   const inWeeks = episodesInWeeks(input.episodes, weekly, input.today);
+  // GC-4 (CUL-1217): a frequency claim's title and sentence are the chart's own numbers, read
+  // off the bars just built, so the two cannot disagree. Every other type keeps the server's.
+  // Escalate-only (`countsMayCompose`): the chart's numbers speak only where none is lower than
+  // the engine's and no masking span touches their windows; otherwise the engine's sentence
+  // stands, dated, and the line under it says the bars count the record as it is now.
+  const counted = isCountedFinding(finding) ? finding : null;
+  const counts = counted ? signalCountsOf(counted, weekly, episodeDays, input.today) : null;
+  const composed =
+    counted &&
+    counts &&
+    countsMayCompose(counted, counts, {
+      maskTouched: touches(input.masking, composedWindowStart(counted, weekly), input.today),
+      elapsedDays: input.generatedOn ? Math.max(0, indexOf(input.today) - indexOf(input.generatedOn)) : 0,
+    })
+      ? { finding: counted, counts }
+      : null;
+  const scriptMasking = scriptMaskingOf(input);
+  const priorStated = composed ? countedPriorStated(composed.finding, composed.counts, lineWithheld != null) : true;
 
   return {
     identity,
     finding,
-    title,
-    sentence: input.cached.text,
+    title: composed ? countedTitle(composed.finding, composed.counts) : title,
+    sentence: composed ? countedSentence(composed.finding, composed.counts, input.petName, lineWithheld != null) : input.cached.text,
+    countedAt: composed
+      ? countedAtLine(input.countedAtMs)
+      : counted
+        ? engineCountedAtLine(input.generatedAtMs, input.countedAtMs)
+        : null,
+    scriptFinding: composed ? countedScriptFinding(composed.finding, composed.counts) : finding,
     noun,
     weekly,
     weekLine: weekLine(weekly, lineWithheld != null),
@@ -675,14 +733,20 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     // A masked record with nothing in the drawn weeks prints no "0 in these 5 weeks" (CUL-1440,
     // the adversarial pass): the gallery's count line is a count over those weeks too.
     episodes: inWeeks.length === 0 && weeklyMaskOf(input.masking, weekly, input.today) ? null : galleryOf(inWeeks, input.verdicts, weekly.weeks.length),
-    why: whyLines(input, compare, withheld, compare ? compareMaskOf(input.masking, compare, specs) : null),
+    why: whyLines(input, compare, withheld, compare ? compareMaskOf(input.masking, compare, specs) : null, composed != null),
     context: careContextLinesOf(finding),
     safety,
     withholdFallingVomit: input.notEating !== false,
     weeklyMask: weeklyMaskOf(input.masking, weekly, input.today),
     compareMask: compare ? compareMaskOf(input.masking, compare, specs) : null,
     lanesMaskCaption: lanesMaskCaptionOf(input.masking, lanes, input.today),
-    scriptMasking: scriptMaskingOf(input),
+    // A composed script drops its earlier-window row wherever the sentence did (a fall under a
+    // safety card, a zero, a withheld pair), so the script read aloud never prints a fall the
+    // sentence above it held back.
+    scriptMasking:
+      composed && !priorStated
+        ? { rows: scriptMasking?.rows ?? [], withholdCompare: true, recentOnly: false }
+        : scriptMasking,
   };
 }
 
@@ -1284,6 +1348,8 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     trialUnanswered: pet != null && trialFacts == null,
     masking,
     generatedOn,
+    countedAtMs: nowMs,
+    generatedAtMs: row?.generatedAt ? Date.parse(row.generatedAt) : null,
   });
   return { status: 'ready', model, petName, asOfLine: fromLast ? asOfLineOf(row?.generatedAt ?? null, nowMs) : null };
 }

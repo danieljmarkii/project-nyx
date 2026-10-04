@@ -117,6 +117,13 @@ describe('WeeklyBars — the §05 row', () => {
     expect(queryByTestId('weekly-date-1')).toBeNull();
   });
 
+  it('end-aligned blocks (the Signal, CUL-1217): the last bar is dated by its last day, today, never a week back', () => {
+    const rolling = weeklyBuckets({ episodeDays: [], loggedDays: [], weeksEnding: '2026-09-17', today: '2026-09-17', weeks: 3, endAligned: true });
+    const { getByTestId } = render(<WeeklyBars model={rolling} noun="vomiting" />);
+    expect(getByTestId('weekly-date-0').props.children).toBe('Aug 28');
+    expect(getByTestId('weekly-date-2').props.children).toBe('Sep 17');
+  });
+
   it('a week label is never bound to its slot: the ends hang from the edges, the middle spans three slots (CUL-1224, BRK-27)', () => {
     const nine = weeklyBuckets({ episodeDays: [], loggedDays: [], weeksEnding: '2026-09-22', today: '2026-09-22', weeks: 9 });
     const { getByTestId, queryByTestId } = render(<WeeklyBars model={nine} noun="vomiting" />);
