@@ -349,7 +349,7 @@ export interface TypeSheetInput {
   notRead: number | null;
   /** The owner turned photo reading off (`PHOTO_READING_OFF` until HV-18). */
   readingOff: boolean;
-  /** The daily look is live for this account and pet (`lookCardLive`). */
+  /** The daily look is live for this pet (`lookCardLive`: a cat or a dog). */
   lookLive: boolean;
   /** The filter on screen. */
   current: HistoryFilter;
@@ -544,7 +544,7 @@ export interface PinnedRowInput {
   window: HistoryWindowKey;
   /** The search the list's query takes (`effectiveSearch`), or null. */
   search: string | null;
-  /** The daily look is live for this account and pet (`lookCardLive`). */
+  /** The daily look is live for this pet (`lookCardLive`: a cat or a dog). */
   lookLive: boolean;
   /** The owner turned photo reading off (`PHOTO_READING_OFF` until HV-18). */
   readingOff: boolean;

@@ -143,6 +143,7 @@ import {
   LOOK_UNDO,
   LOOK_UNDO_NOTE_TITLE,
   intakeDoorLabel,
+  lookCardLive,
   lookDoneSummary,
   lookFirstLookLine,
   lookFoldedAsk,
@@ -291,7 +292,7 @@ export function LookCard({ trialNotEating = false, safety, onLayout }: Props) {
   const [noteSaving, setNoteSaving] = useState(false);
 
   const species = lookSpeciesOf(activePet?.species);
-  const live = species !== null && activePet !== null;
+  const live = lookCardLive({ species: activePet?.species }) && activePet !== null;
   const sex = activePet?.sex ?? 'unknown';
   const petName = activePet?.name ?? '';
 
