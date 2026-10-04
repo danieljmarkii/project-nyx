@@ -7054,21 +7054,22 @@ Deno.test('R-13 item 7 — a populated appendix D still gets its table', () => {
 // History counts every dose row as "logged" (GAP-26, CUL-1193). The report's two medication
 // tables and Appendix D's day phrase used the same word for given + partial only, so the phone
 // and the paper could say "logged" over different numbers for one drug. The PM ruled the report
-// changes its words. Fixture: 3 given, 1 partial, 1 refused, 1 unconfirmed — every row the
-// word "logged" would have hidden is in it, so a revert to "logged" reds the count-vs-word check.
+// changes its words. Fixture: 3 given, 1 partial, 1 refused, 1 unconfirmed, 1 missed — every
+// kind of row the word "logged" would have hidden is in it.
 Deno.test('CUL-1550 — the report names the given + partial count "given", never "logged"', () => {
   const html = renderReport(
     base({
       medications: [
         med({
           windowDosesLogged: 4,
-          windowDosesTotal: 6,
+          windowDosesTotal: 7,
           daysWithDose: 4,
-          elapsedDaysInWindow: 6,
+          elapsedDaysInWindow: 7,
           givenDoses: 3,
           partialDoses: 1,
           refusedDoses: 1,
           unconfirmedDoses: 1,
+          missedDoses: 1,
         }),
       ],
       medicationHistory: mhTable([mhEntry({ drugName: 'Metronidazole', dosesLogged: 4 })], '2026-04-01'),
@@ -7082,7 +7083,7 @@ Deno.test('CUL-1550 — the report names the given + partial count "given", neve
     assert.ok(!/<th[^>]*>Doses logged<\/th>/.test(t), `${name} no longer calls it "logged"`)
   }
   const appDText = plain(appD)
-  assert.ok(/Given on 4 of 6 days of the course in this window\./.test(appDText), 'the day phrase says given, over the administered days')
+  assert.ok(/Given on 4 of 7 days of the course in this window\./.test(appDText), 'the day phrase says given, over the administered days')
   assert.ok(!/Logged on \d/.test(appDText), 'and never "Logged on" for that population')
   // The words that DO mean every row stay: the unconfirmed and refused rows are still named.
   assert.ok(/1 unconfirmed\./.test(appDText) && /1 refused\./.test(appDText))
