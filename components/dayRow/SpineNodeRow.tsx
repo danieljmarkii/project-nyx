@@ -682,6 +682,9 @@ const styles = StyleSheet.create({
     marginTop: theme.space0_5,
   },
   unreadText: {
+    // Up to "Not enough to say yet" (CUL-1234): wraps beside the mark at large text,
+    // never overflows the row.
+    flexShrink: 1,
     fontSize: theme.textXS,
     color: theme.colorTextSecondary,
   },

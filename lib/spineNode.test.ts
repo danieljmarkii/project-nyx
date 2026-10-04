@@ -392,6 +392,13 @@ describe('the read on a node — nodeReadOf', () => {
       state: 'none',
     });
   });
+  it('a stale photo set says "No read yet", never the unclear words, whatever the old verdict (CUL-1234)', () => {
+    const photographedVomit = { eventType: 'vomit', hasPhoto: true };
+    for (const verdict of ['monitor', 'not_enough_to_say']) {
+      const stale = { ...landed('v', verdict, 'uncertain'), photoSetStale: true } as SpineAnalysisRow;
+      expect(nodeReadOf(stale, false, photographedVomit)).toEqual({ state: 'unread', label: 'No read yet' });
+    }
+  });
   it('an escalation SURVIVES a failed or capped row — escalate on presence', () => {
     for (const status of ['failed', 'capped', 'read_disabled']) {
       expect(nodeReadOf(landed('v', 'worth_a_call', status), false)).toEqual({ state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call' });
