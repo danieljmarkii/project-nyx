@@ -162,14 +162,15 @@ function Tile({ tile }: { tile: GalleryTile }) {
           </ThemedText>
         ) : null}
       </View>
-      <ThemedText style={styles.date} numberOfLines={1}>
+      {/* Both lines wrap, never cut (CUL-1224, BRK-27): at AX3 a quarter-width tile cut
+          "Worth a call" to "Worth a…", and the verdict is the one word the tile exists for. */}
+      <ThemedText style={styles.date}>
         {tile.dateWord}
       </ThemedText>
       {/* The read, in the record's own words. `worth_a_call` takes the symptom INK — text
           on a light ground (C-1), never the bright glyph tint. */}
       <ThemedText
         style={[styles.verdict, tile.verdict && TIER_WORDS[tile.verdict].call ? styles.verdictCall : null]}
-        numberOfLines={2}
         testID={`episode-verdict-${tile.eventId}`}
       >
         {verdictWord(tile.verdict)}

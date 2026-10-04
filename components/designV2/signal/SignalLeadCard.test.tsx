@@ -29,6 +29,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { CachedFinding, IntakeDeclineFinding, SymptomChronicityFinding } from '../../../lib/signal';
 import { signalWeeks, weekLine } from '../../../lib/signalWindows';
+import { weeklyBarsA11yLabel } from '../../../lib/chartCopy';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from '../../../lib/utils';
 
 const shift = (key: string, d: number) => dayKeyFromIndex((localDayIndexOf(key) as number) + d);
@@ -92,13 +93,20 @@ describe('SignalLeadCard — a benign lead', () => {
     expect(mockLoadSignalLead).toHaveBeenCalledWith('pet-1', reflection, false, null);
   });
 
-  it('the face is ONE door: it opens, never folds, never expands; the label is the title and the line', async () => {
+  it('the face is ONE door: it opens, never folds, never expands; the label is the title, the chart and the line', async () => {
     const onOpen = jest.fn();
     const view = render(<SignalLeadCard cached={reflection} petId="pet-1" onOpen={onOpen} withholdFallingVomit={false} generatedAt={null} />);
     await waitFor(() => expect(view.getByTestId('signal-lead-face')).toBeTruthy());
     const face = view.getByTestId('signal-lead-face');
     expect(face.props.accessibilityHint).toBe(DOOR_A11Y_HINT);
-    expect(face.props.accessibilityLabel).toBe(`Vomiting, the last 2 weeks. ${weekLine(leadModel().weekly)}.`);
+    // CUL-1224 (BRK-29): the chart's own label sits inside this button, so the button
+    // speaks it, between the title and the line, and the chart's own node is unspoken.
+    expect(face.props.accessibilityLabel).toBe(
+      `Vomiting, the last 2 weeks. ${weeklyBarsA11yLabel(leadModel().weekly, 'vomiting')} ${weekLine(leadModel().weekly)}.`,
+    );
+    expect(face.props.accessibilityLabel).toContain('Counts by week:');
+    expect(view.getByTestId('weekly-bars').props.accessible).toBe(false);
+    expect(view.getByTestId('weekly-bars').props.accessibilityLabel).toBeUndefined();
     fireEvent.press(face);
     // The door measures first (D2-6) — the platform's answer, or the grace, then the open.
     await waitFor(() => expect(onOpen).toHaveBeenCalledWith(reflection.finding));

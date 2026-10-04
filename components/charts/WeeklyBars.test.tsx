@@ -116,6 +116,23 @@ describe('WeeklyBars — the §05 row', () => {
     expect(queryByTestId('weekly-date-1')).toBeNull();
   });
 
+  it('a week label is never bound to its slot: the ends hang from the edges, the middle spans three slots (CUL-1224, BRK-27)', () => {
+    const nine = weeklyBuckets({ episodeDays: [], loggedDays: [], weeksEnding: '2026-09-22', today: '2026-09-22', weeks: 9 });
+    const { getByTestId, queryByTestId } = render(<WeeklyBars model={nine} noun="vomiting" />);
+    // 275pt over nine weeks is 30.6pt a slot, narrower than "Sep 13" in Geist at 11pt.
+    fireEvent(getByTestId('weekly-plot'), 'layout', { nativeEvent: { layout: { width: 275, height: 64 } } });
+    const placeOf = (i: number) => StyleSheet.flatten(getByTestId(`weekly-date-place-${i}`).props.style);
+    expect(placeOf(0)).toMatchObject({ position: 'absolute', left: 0 });
+    expect(placeOf(0).width).toBeUndefined(); // sized to its words, not to a slot
+    expect(placeOf(8)).toMatchObject({ position: 'absolute', right: 0 });
+    expect(placeOf(8).width).toBeUndefined();
+    expect(placeOf(4).left).toBeCloseTo(3 * (275 / 9), 6);
+    expect(placeOf(4).width).toBeCloseTo(3 * (275 / 9), 6);
+    // The middle's neighbours stay undated, so its three slots are free.
+    expect(queryByTestId('weekly-date-3')).toBeNull();
+    expect(queryByTestId('weekly-date-5')).toBeNull();
+  });
+
   it('speaks the counts, the coverage and the disclosure in one label', () => {
     const { getByTestId } = render(<WeeklyBars model={model} noun="vomiting" />);
     const label = getByTestId('weekly-bars').props.accessibilityLabel as string;
