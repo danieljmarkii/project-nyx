@@ -316,6 +316,7 @@ describe('every trial answer is the trial screen’s own line (§11 TS-8)', () =
     ['the milestone', { target: 56, mealDays: Array.from({ length: 56 }, (_, i) => i + 1), nowDay: 56 }],
     ['overrun', { target: 56, mealDays: Array.from({ length: 58 }, (_, i) => i + 1), nowDay: 58 }],
     ['free-fed', { target: 56, mealDays: [1, 2, 3], freeChoice: true, nowDay: 10 }],
+    ['free-fed, past the window', { target: 56, mealDays: [1, 2, 3], freeChoice: true, nowDay: 60 }],
     ['below the floor', { target: 56, mealDays: [1, 5], treatDays: [3], nowDay: 20 }],
   ];
 
@@ -537,6 +538,22 @@ describe('a pet that may not be eating', () => {
       'Mochi grazes from a bowl that’s topped up, so there’s no day-by-day count of what was eaten. ' +
         'The bowl also can’t tell you if Mochi stops eating. That part is yours to watch.',
     ]);
+    expect(recheck!.isSafety).toBe(false);
+  });
+
+  // CUL-1554: day 60 of 56, the bowl still down. The state is `overrun`, the record is the
+  // bowl's, and the answer is the same bowl line, never a meals-logged ratio under "by mouth".
+  it('a free-fed trial past its window keeps the bowl under *is she eating it*', async () => {
+    const l = await load({ target: 56, mealDays: [1, 2, 3], freeChoice: true, nowDay: 60 });
+    const { screen, recheck } = recheckFor(l, l.input);
+    expect(screen.state).toBe('overrun');
+    expect(answersOf(recheck!, 'eating')).toEqual([
+      'Mochi grazes from a bowl that’s topped up, so there’s no day-by-day count of what was eaten. ' +
+        'The bowl also can’t tell you if Mochi stops eating. That part is yours to watch.',
+    ]);
+    const byMouth = answersOf(recheck!, 'by_mouth') ?? [];
+    expect(byMouth.some((t) => /Meals logged on \d+ of \d+ days/.test(t))).toBe(false);
+    expect(byMouth.some((t) => t.includes('grazes from a bowl'))).toBe(false);
     expect(recheck!.isSafety).toBe(false);
   });
 

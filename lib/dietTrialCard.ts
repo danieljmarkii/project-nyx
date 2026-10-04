@@ -981,8 +981,17 @@ function registerFor(
       return 'floor_only';
     case 'clean':
     case 'exposures':
-    case 'overrun':
       return recordRegisterFor(input);
+    case 'overrun':
+      // A BOWL STILL IN FORCE PAST THE WINDOW IS STILL A BOWL (CUL-1554). `stateFor`
+      // resolves `overrun` above `free_fed`, because past the window the decision is
+      // the card's job and the state owns it. But that order said nothing about the
+      // record region, which then spoke the ordinary `record` register over a
+      // topped-up bowl: "Meals logged on 56 of 56 days", the ratio `free_fed` exists
+      // to replace, with the watch line gone. And an overrun can run for weeks on the
+      // vet's say-so (CUL-1339 #4), so this was not a one-day face. The STATE keeps
+      // the decision (its day line, note and action); the REGISTER follows the bowl.
+      return input.freeFed ? 'free_fed' : recordRegisterFor(input);
     case 'completed':
     case 'abandoned':
       // THE LIVE CARD DELIBERATELY DOES NOT READ `rangeRefusal`, AND THAT IS A
@@ -2028,7 +2037,12 @@ function activeCard(
   // decides whether they finish six weeks); a teaching aside underneath it
   // competes for the same slot and dilutes the one message that state exists for.
   // Every other state in this body has that slot free.
-  if (state !== 'exposures') pushTeachLine(lines, input);
+  //
+  // Nor under the bowl (CUL-1554): an overrun with a bowl in force speaks the
+  // `free_fed` register, and that register never teaches, because a top-up has no
+  // portion to rate. "One tap makes these readable" over it asks for a tap that
+  // cannot exist, and the `free_fed` state draws no teach line for the same reason.
+  if (state !== 'exposures' && register !== 'free_fed') pushTeachLine(lines, input);
 
   if (state === 'overrun') {
     // §4.2 state 6: "Day 61 — 5 days past", NEVER "Day 61 of 56" (a PR 7

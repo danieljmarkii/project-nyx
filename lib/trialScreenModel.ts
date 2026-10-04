@@ -30,6 +30,7 @@ import {
   BLIND_SPOT_QUALIFIER,
   formatTrialDate,
   isAnimalNotEating,
+  planTrialCard,
   resolveTrialCard,
   resolveTrialStrip,
   trialEndDayIndex,
@@ -131,6 +132,12 @@ export interface TrialScreenTrial {
   facts: TrialCardLine[];
   /** §3.7 — `resolveTrialStrip(input).trialResponseLine`, verbatim. */
   vomiting: string | null;
+  /** The card's record region is the `free_fed` register: a topped-up bowl in force now,
+   *  whose lead says the bowl cannot show the pet stopping. Keyed on the REGISTER, never
+   *  the state, because more than one state reaches it (`free_fed`, and `overrun` with the
+   *  bowl in force, CUL-1554). Get ready reads it to route that lead under *is she eating
+   *  it*. */
+  freeFed: boolean;
   /** `isAnimalNotEating(input)`: the register Home feeds `visibleFindings`, handed to the
    *  Signal door (TS-9) so the door and Home's card can never disagree about a falling pair. */
   notEating: boolean;
@@ -376,6 +383,7 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
     ledgerUnreadable,
     facts: factLines,
     vomiting: strip?.trialResponseLine ?? null,
+    freeFed: planTrialCard(screenCardInput(input)).register === 'free_fed',
     notEating,
     qualifier,
     standingMeta: card.standingMeta,
@@ -398,10 +406,15 @@ export function buildTrialScreenModel(args: TrialScreenModelArgs): TrialScreenMo
  * whether something is wrong.
  */
 export function trialScreenCard(input: TrialCardInput): TrialCardModel {
+  return resolveTrialCard(screenCardInput(input));
+}
+
+/** The input the screen's card is resolved over: coverage projected away while a running
+ *  trial's pet may not be eating (S7). One function, so the card and the plan the model
+ *  reads its register from (`freeFed`) are resolved over the same input. */
+function screenCardInput(input: TrialCardInput): TrialCardInput {
   const projected = isAnimalNotEating(input) && input.trial?.status === 'active';
-  return resolveTrialCard(
-    projected ? { ...input, coverage: null, untrackedDaysBeforeFirstLog: 0 } : input,
-  );
+  return projected ? { ...input, coverage: null, untrackedDaysBeforeFirstLog: 0 } : input;
 }
 
 /** The card's register lines (role `flag`), in the card's order: the screen's safety face
