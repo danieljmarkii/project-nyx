@@ -58,8 +58,8 @@
 // The month draws ONE symptom at a time. Vomiting is counted in episodes (the engine's
 // re-log collapse) with the days a bout continues into; every other symptom is counted
 // in entries, one per row, with no continuation. `symptomLenses` decides which symptoms
-// are on offer and which one the month opens on (the most days in the shown month,
-// vomiting on a tie — PM 2026-10-04; `lib/monthLens.ts`). The model itself is symptom-blind: it takes the
+// are on offer and which one the month opens on (the most days in the read,
+// vomiting on a tie — PM 2026-10-04, scope CUL-1565; `lib/monthLens.ts`). The model itself is symptom-blind: it takes the
 // day lists and the words.
 //
 // ── A REFUSAL IS COUNTED, NEVER FOLDED (CUL-1553, GC-7 item 2) ──────────────────

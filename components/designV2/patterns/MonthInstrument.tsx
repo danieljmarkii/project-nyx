@@ -47,7 +47,7 @@ import { useOpenInPlace } from '../../motion/openInPlaceMotion';
 //                        the row holding today, so every bar is a grid row you can point at
 //   the lens ........... which symptom the month draws (CUL-1553, GC-7 item 1, the trial's
 //                        sign): single-select, present only when the read holds two or
-//                        more symptoms, opening on the one with the most days this month
+//                        more symptoms, opening on the one with the most days in the read
 //                        (`lib/monthLens.ts`). Chips up to five, a `ScopeMenu` past that
 //                        (the filter-UX rule); a vomit-only record sees no row at all
 //   the layers ......... four independent toggles — <the lens> · Meals · Medication · Photos.
@@ -157,7 +157,7 @@ export function MonthInstrument({
   const [failedKey, setFailedKey] = useState<string | null>(null);
   const [layers, setLayers] = useState<MonthLayers>(DEFAULT_LAYERS);
   // The owner's lens, held across page turns while the shown month offers it; null is
-  // "the default" (the most days in the shown month).
+  // "the default" (the most days in the nine-week read, CUL-1565).
   const [chosenLens, setChosenLens] = useState<string | null>(null);
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [dayLoads, setDayLoads] = useState<Map<string, DayLoad>>(new Map());
@@ -210,7 +210,7 @@ export function MonthInstrument({
 
   const facts = cache.get(shownKey) ?? null;
   const lenses: SymptomLens[] = useMemo(() => {
-    if (!facts) return [{ type: VOMIT_LENS, days: 0 }];
+    if (!facts) return [{ type: VOMIT_LENS, days: 0, readDays: 0 }];
     const mm = String(shown.month + 1).padStart(2, '0');
     const firstKey = `${shown.year}-${mm}-01`;
     const lastKey = `${shown.year}-${mm}-${String(daysInMonth(shown.year, shown.month)).padStart(2, '0')}`;
