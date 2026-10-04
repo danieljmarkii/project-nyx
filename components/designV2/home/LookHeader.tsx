@@ -87,6 +87,7 @@ import { LookEmergencySheet } from '../../home/LookEmergencySheet';
 import { LookWithheldEntry, LookWithheldReasonLine, WITHHELD_UNDO_FADE_MS } from '../../home/LookWithheldEntry';
 import { useGridDisclosure, useLookArrival } from '../../motion/lookMotion';
 import { ThemedText } from '../../ui/ThemedText';
+import { announceQueued } from '../../dayRow/rowSpeech';
 import { Line, SilhouetteFrame } from '../waits/Silhouette';
 
 /** The header's own copy. */
@@ -98,6 +99,8 @@ export const LOOK_MORE = 'More…';
  * The write moves focus to Undo and says what was written, and the dwell is this long.
  */
 export const LOOK_DWELL_SCREEN_READER_MS = 30_000;
+/** How long the write waits on the OS's screen-reader answer before reading "off". */
+const SCREEN_READER_READ_BOUND_MS = 250;
 
 /** What a look write says aloud, after focus lands on its Undo. */
 export function lookWrittenSpoken(head: string, time: string): string {
@@ -283,9 +286,14 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
       setSubmitting(true);
       // Asked alongside the write, so the answer is in hand when the beat opens. A failed
       // read is "no screen reader": the shipped five seconds, never a stall.
-      const screenReader = Promise.resolve()
-        .then(() => AccessibilityInfo.isScreenReaderEnabled())
-        .catch(() => false);
+      // Raced against a short bound so a native read that never answers can never hold
+      // the beat (or `submitting`) open.
+      const screenReader = Promise.race([
+        Promise.resolve()
+          .then(() => AccessibilityInfo.isScreenReaderEnabled())
+          .catch(() => false),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), SCREEN_READER_READ_BOUND_MS)),
+      ]);
       try {
         const occurredAt = new Date();
         const result = await insertLook({
@@ -682,12 +690,7 @@ function AnsweredRow({
     if (!undoLive || !takeFocus || focused.current) return;
     focused.current = true;
     if (undoRef.current) AccessibilityInfo.sendAccessibilityEvent(undoRef.current, 'focus');
-    const message = lookWrittenSpoken(head, time);
-    if (typeof AccessibilityInfo.announceForAccessibilityWithOptions === 'function') {
-      AccessibilityInfo.announceForAccessibilityWithOptions(message, { queue: true });
-    } else {
-      AccessibilityInfo.announceForAccessibility(message);
-    }
+    announceQueued(lookWrittenSpoken(head, time));
   }, [undoLive, takeFocus, head, time]);
   useEffect(() => {
     if (!undoLive) return;

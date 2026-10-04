@@ -175,7 +175,8 @@ export function WeeklyBars({ model, noun, spoken = true, drawIn = false, identit
           <ThemedText style={[styles.date, styles.dateStrut]}> </ThemedText>
           {model.weeks.map((week, i) => {
             const dated = i === 0 || i === n - 1 || i === middle;
-            if (!dated) return null;
+            // The middle waits for the measured plot: at width 0 its box is 0 wide.
+            if (!dated || (i === middle && width === 0)) return null;
             const place =
               i === 0 ? styles.dateFirst : i === n - 1 ? styles.dateLast : { left: (i - 1) * slot, width: 3 * slot, alignItems: 'center' as const };
             return (
