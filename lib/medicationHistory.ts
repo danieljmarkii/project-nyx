@@ -223,7 +223,9 @@ export function deriveMedicationCourses(input: MedicationHistoryInput): Medicati
 
   // ONE attribution pass — its tallies (counts), grouping (per-regimen doses for
   // first/last), and leftovers (the orphans) are an exact partition of every live dose.
-  const { tallies, grouped, unattributed } = attributeDoses(regimens, doses);
+  // It takes the same `timeZone` the day keys below use, so a dose's course and the day
+  // it is said to fall on are decided in one frame (CUL-991).
+  const { tallies, grouped, unattributed } = attributeDoses(regimens, doses, timeZone);
 
   const courses: MedicationCourse[] = [];
 

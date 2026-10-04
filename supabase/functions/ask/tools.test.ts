@@ -1196,3 +1196,40 @@ Deno.test('lastSymptom — none logged ⇒ null (never a wellness verdict)', () 
   const events = [ev({ type: 'diarrhea', occurredAt: '2026-07-14T08:00:00Z' })]
   assert.equal(lastSymptom(events, [], { symptomType: 'vomit' }).event, null)
 })
+
+// ── CUL-991: Ask attributes through the shared pass, in the owner's frame ───────────────
+//
+// Ask once carried its own port of the attribution. It kept two bugs after the shared pass had
+// fixed them: a raw `occurredAt > endedAt` that dropped every dose on a course's LAST day in any
+// zone (CUL-976), and the UTC-day frame (CUL-991). Both cases are pinned here against Ask's own
+// tool, so re-introducing a private rule reds this file, not only medications.test.ts.
+Deno.test('medications — a dose on the course\'s LAST day stays on its regimen (CUL-976 in Ask)', () => {
+  const regimens = [
+    { id: 'r1', medicationItemId: 'item-amox', drugLabel: 'Amoxicillin', status: 'ended', startedAt: '2026-07-01', endedAt: '2026-07-10', doseAmount: null, deletedAt: null },
+  ]
+  const doses = [
+    { id: 'd1', medicationId: null, medicationItemId: 'item-amox', drugLabel: 'Amoxicillin', occurredAt: '2026-07-10T08:00:00Z', adherence: 'given', deletedAt: null },
+  ]
+  const r = medications(regimens, doses, { window: '30d', nowMs: NOW_MS, timezone: 'UTC' })
+  assert.equal(r.medications.length, 1) // no second, regimen-less "Amoxicillin" line
+  assert.equal(r.medications[0].medicationId, 'r1')
+  assert.equal(r.medications[0].dosesGiven, 1)
+})
+
+Deno.test('medications — a New York evening dose on the last day is its course\'s, not an orphan (CUL-991)', () => {
+  const regimens = [
+    { id: 'r1', medicationItemId: 'item-amox', drugLabel: 'Amoxicillin', status: 'ended', startedAt: '2026-07-01', endedAt: '2026-07-10', doseAmount: null, deletedAt: null },
+  ]
+  // 21:30 Jul 10 in New York is 01:30 Jul 11 UTC (inside the suite's 30-day window to NOW).
+  const doses = [
+    { id: 'd1', medicationId: null, medicationItemId: 'item-amox', drugLabel: 'Amoxicillin', occurredAt: '2026-07-11T01:30:00Z', adherence: 'given', deletedAt: null },
+  ]
+  const ny = medications(regimens, doses, { window: '30d', nowMs: NOW_MS, timezone: 'America/New_York' })
+  assert.equal(ny.medications.length, 1)
+  assert.equal(ny.medications[0].medicationId, 'r1')
+  assert.equal(ny.medications[0].dosesGiven, 1)
+  // Same instant, read in UTC: Jul 11, after the end, so it is the drug's regimen-less line.
+  const utc = medications(regimens, doses, { window: '30d', nowMs: NOW_MS, timezone: 'UTC' })
+  assert.equal(utc.medications.find((m) => m.medicationId === 'r1')?.dosesGiven, 0)
+  assert.equal(utc.medications.find((m) => m.medicationId === null)?.dosesGiven, 1)
+})

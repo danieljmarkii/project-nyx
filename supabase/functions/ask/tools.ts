@@ -56,11 +56,15 @@
 //     a live photo read persisting through the analyze-vomit machinery — is A8, and
 //     lives in the Edge Function, never here.
 //
-// The one shared dependency is the protein canonicalizer, imported from the Signal's
-// re-export so Ask, the dashboard, and the correlation engine key proteins identically
-// (esbuild inlines it into the deploy bundle, keeping the artifact self-contained).
+// Two dependencies are shared rather than ported. The protein canonicalizer is imported from
+// the Signal's re-export so Ask, the dashboard, and the correlation engine key proteins
+// identically; dose→regimen attribution is imported from lib/medications.ts, the one pass the
+// profile card, History, the rundown and the vet report read (CUL-991 retired the port that
+// had drifted from it). esbuild inlines both into the deploy bundle, keeping the artifact
+// self-contained.
 
 import { canonicalizeProtein, readProteinSet } from '../generate-signal/protein.ts'
+import { attributeDoses, type AttributableDose } from '../../../lib/medications.ts'
 
 // ── Shared constants ────────────────────────────────────────────────────────────
 
@@ -1487,19 +1491,15 @@ export function medications(
   const liveRegimens = liveEvents(regimens)
   const windowDoses = liveEvents(doses).filter((d) => inSpan(d.occurredAt, w))
 
-  // Attribute each in-window dose to a regimen with the SAME two-pass precedence as the
-  // client's attributeDosesToRegimens (lib/medications.ts) — so Ask attributes a dose to the
-  // same regimen the pet-profile "Current medications" card does, and its given-only count
-  // mirrors the card's administeredDoses (G5). The old code
-  // matched ONLY on medicationId, which the one-tap path leaves null (B-135): so a real
-  // ad-hoc dose both undercounted its regimen AND (since index.ts didn't resolve its name)
-  // collapsed into a single unnamed "a medication" bucket — merging every different drug's
-  // ad-hoc doses together (the motozol bug). Keep this in lockstep with the client helper.
-  const regimenIdByDoseId = new Map<string, string>()
-  for (const d of windowDoses) {
-    const regId = attributeDoseToRegimen(d, liveRegimens)
-    if (regId) regimenIdByDoseId.set(d.id, regId)
-  }
+  // Attribute each in-window dose to a regimen through THE attribution pass
+  // (lib/medications.ts `attributeDoses`) — so Ask files a dose under the same regimen the
+  // pet-profile "Current medications" card, History and the vet report do, and its given-only
+  // count mirrors the card's administeredDoses (G5). An older version matched ONLY on
+  // medicationId, which the one-tap path leaves null (B-135): a real ad-hoc dose both
+  // undercounted its regimen AND collapsed into a single unnamed "a medication" bucket (the
+  // motozol bug). The port that replaced it then drifted twice: it kept the CUL-976 final-day
+  // drop and the CUL-991 UTC-day frame after both were fixed in the shared pass.
+  const regimenIdByDoseId = attributeAskDoses(windowDoses, liveRegimens, params.timezone)
 
   const entries: MedicationEntry[] = []
   for (const reg of liveRegimens) {
@@ -1531,34 +1531,48 @@ export function medications(
 }
 
 /**
- * Attribute one dose to a regimen id, or null when it belongs to none — the two-pass
- * precedence PORTED from lib/medications.ts attributeDosesToRegimens (KEEP IN LOCKSTEP):
+ * Each dose's regimen id, by dose id; a dose that belongs to no regimen is absent. A thin
+ * adapter onto `attributeDoses` (two precedences: an explicit `medicationId` link wins outright,
+ * else the same drug inside the regimen's window, the most recently started winning), so Ask
+ * cannot hold a rule of its own. The window is compared on the owner's calendar day, which is
+ * why the zone rides in; without one it is UTC, the same fallback the vet report prints in.
  *
- *   1. EXPLICIT LINK (B-153/B-154). A dose carrying a medicationId is attributed straight
- *      to that regimen and NEVER re-matched by drug/window. A link to a regimen not in the
- *      live set falls through to ad-hoc (index.ts fetches every regimen for the pet, so in
- *      practice this can't happen; treating it as named-ad-hoc is safer than dropping it).
- *   2. ITEM + WINDOW FALLBACK (the legacy/one-tap unlinked dose, the dominant shape). Match
- *      the regimen for the SAME drug (medicationItemId) whose lifespan contains the dose:
- *      started on/before it, not past its end. ISO date/timestamp strings compare correctly
- *      lexicographically (a DATE-only startedAt vs a full occurredAt works). If two regimens
- *      share a drug, the most-recently-started in-window one wins, so a dose is never double-
- *      counted. An ad-hoc dose with no item id (and no link) matches nothing.
+ * Deletion stays Ask's: both lists arrive through `liveEvents()`, so the adapter passes
+ * `deleted_at: null`. A regimen with no start date can still be linked to explicitly but holds
+ * no window (`attributeDoses` reads an unusable bound as no match).
  */
-function attributeDoseToRegimen(dose: AskDoseRow, regimens: AskRegimenRow[]): string | null {
-  if (dose.medicationId) {
-    return regimens.some((r) => r.id === dose.medicationId) ? dose.medicationId : null
+function attributeAskDoses(
+  doses: AskDoseRow[],
+  regimens: AskRegimenRow[],
+  timezone: string | null | undefined,
+): Map<string, string> {
+  const idOf = new Map<AttributableDose, string>()
+  const attributable = doses.map((d) => {
+    const a: AttributableDose = {
+      medication_id: d.medicationId,
+      medication_item_id: d.medicationItemId ?? null,
+      adherence: d.adherence,
+      deleted_at: null,
+      occurred_at: d.occurredAt,
+    }
+    idOf.set(a, d.id)
+    return a
+  })
+  const windows = regimens.map((r) => ({
+    id: r.id,
+    medication_item_id: r.medicationItemId ?? null,
+    started_at: r.startedAt ?? '',
+    ended_at: r.endedAt,
+  }))
+  const { grouped } = attributeDoses(windows, attributable, timezone ?? 'UTC')
+  const out = new Map<string, string>()
+  for (const [regimenId, list] of grouped) {
+    for (const a of list) {
+      const id = idOf.get(a)
+      if (id !== undefined) out.set(id, regimenId)
+    }
   }
-  if (!dose.medicationItemId) return null
-  let best: AskRegimenRow | null = null
-  for (const reg of regimens) {
-    if ((reg.medicationItemId ?? null) !== dose.medicationItemId) continue
-    if (reg.startedAt == null) continue
-    if (dose.occurredAt < reg.startedAt) continue // before this regimen began
-    if (reg.endedAt && dose.occurredAt > reg.endedAt) continue // after it ended
-    if (!best || (best.startedAt != null && reg.startedAt > best.startedAt)) best = reg
-  }
-  return best ? best.id : null
+  return out
 }
 
 function buildMedicationEntry(

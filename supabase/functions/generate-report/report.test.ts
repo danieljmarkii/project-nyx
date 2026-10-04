@@ -3832,6 +3832,57 @@ Deno.test('CUL-976 — the same dose is never counted twice across the partition
 })
 
 /**
+ * CUL-991 — the issue's own record: a once-nightly course, given perfectly at 21:00 New York time,
+ * every dose one-tap logged (`medication_id = NULL`, so attribution is by drug and window). 21:00
+ * EDT is 01:00 UTC the NEXT day, so a UTC-day frame moved the last night past `ended_at` and the
+ * report printed a 13-of-14 course plus a phantom "no regimen configured" line for the same drug.
+ */
+function bedtimeCourse(): { medications: ReportMedicationInput[]; doses: ReportDoseInput[]; medicationItems: ReportMedicationItemInput[] } {
+  const doses: ReportDoseInput[] = []
+  for (let d = 0; d < 14; d++) {
+    // The night of (Jul 20 + d) in New York, stored as 01:00Z on the following UTC day.
+    doses.push({
+      eventId: nextId('dose'), occurredAt: at(addDayKey('2026-07-21', d), '01:00:00'),
+      medicationId: null, medicationItemId: 'mi-amox', adherence: 'given', doseAmount: null, pairedEventId: null,
+    })
+  }
+  return {
+    medications: [{
+      id: 'reg-amox', medicationItemId: 'mi-amox', drugName: 'Amoxicillin', doseAmount: '250 mg', route: 'oral',
+      dosesPerDay: 1, scheduleNotes: null, indication: null, prescribedBy: null,
+      startedAt: '2026-07-20', targetDurationDays: null, targetDurationDoses: 14,
+      status: 'completed', endedAt: '2026-08-02', isPrescription: true, strength: null,
+    }],
+    doses,
+    medicationItems: [
+      { id: 'mi-amox', genericName: 'Amoxicillin', brandName: null, strength: null, route: 'oral', isPrescription: true },
+    ],
+  }
+}
+
+Deno.test('CUL-991 — a perfect bedtime course in New York reads 14 of 14 with no orphan line', () => {
+  const rec = bedtimeCourse()
+  const snap = assembleReport(baseInput({ now: MED_NOW, timezone: 'America/New_York', ...rec }))
+  const amox = snap.medications.find((m) => m.drugName === 'Amoxicillin')!
+  assert.equal(amox.lifetimeDosesLogged, 14, 'every night counts toward its own course')
+  assert.equal(snap.unlinkedMedications.length, 0, 'no regimen-less line for a drug whose doses all sit in its course')
+  assert.equal(snap.medicationHistory!.entries.filter((e) => e.drugName === 'Amoxicillin').length, 1, 'one lifetime row, not two')
+  const html = renderReport(snap)
+  assert.ok(!plainText(html).includes('no regimen configured'), 'the phantom line is gone from the rendered report')
+})
+
+Deno.test('CUL-991 — the same record in UTC is still read in UTC (the fallback frame is the print frame)', () => {
+  // With no profile zone the report prints days in UTC, so attribution reads UTC too: the last
+  // night (01:00Z Aug 3) falls after the Aug 2 end in that frame, and the report says so on the
+  // orphan line rather than silently moving it. Pins that the fallback is UTC on both halves.
+  const rec = bedtimeCourse()
+  const snap = assembleReport(baseInput({ now: MED_NOW, timezone: null, ...rec }))
+  const amox = snap.medications.find((m) => m.drugName === 'Amoxicillin')!
+  assert.equal(amox.lifetimeDosesLogged, 13)
+  assert.equal(snap.unlinkedMedications.reduce((n, u) => n + u.totalDoses, 0), 1)
+})
+
+/**
  * The page-1 medication line for one drug, SLICED OUT of the document before matching.
  *
  * C-4's testing rule: never match across the document. A guard containing `.*` is not a guard —

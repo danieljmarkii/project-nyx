@@ -6546,7 +6546,7 @@ function courseDaysGiven(m: MedicationAdherence, sayWindow: boolean): string {
 /**
  * The ZERO head, scoped to the course (adversarial pass 5). "No doses given on any of the 3 days"
  * is a claim about the animal, and it is false when a dose of the same drug sits on another line
- * that day (the CUL-991 seam orphans one; a brand/generic pair splits one). The record cannot
+ * that day (a brand/generic pair splits one; until CUL-991 a UTC-day seam orphaned one). The record cannot
  * always join them, so the claim is made about the only thing it can see: this course's rows.
  * The day count is the course's days IN THE WINDOW, and says so where no prefix does (pass 6).
  */

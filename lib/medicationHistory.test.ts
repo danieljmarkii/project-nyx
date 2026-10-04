@@ -516,3 +516,25 @@ describe('deriveMedicationCourses — the mock scenario end to end', () => {
     expect(courses.map((c) => c.key)).toEqual(['moto', 'item:mi-zyrtec', 'metro', 'item:mi-cerenia']);
   });
 });
+
+// ── CUL-991: the course grain attributes in the zone its day keys use ─────────────────────
+//
+// `deriveMedicationCourses` prints first/last dose days in `timeZone`; its attribution must
+// decide course membership in the same frame, or a 21:00 New York dose on a course's last day
+// becomes a second, dose-derived course of the same drug. Fixtures are instants whose UTC day
+// differs from their New York day, under an explicit zone (C-35).
+describe('deriveMedicationCourses — attribution shares the day keys\' zone (CUL-991)', () => {
+  const NY = 'America/New_York';
+
+  it('a nightly course in New York stays one course, every dose on it', () => {
+    const course = reg({ started_at: '2026-07-26', ended_at: '2026-08-08', status: 'ended', doses_per_day: 1 });
+    // One dose a night at 21:00 EDT, Jul 26 – Aug 8 (01:00 UTC the next day).
+    const doses = Array.from({ length: 14 }, (_, i) =>
+      dose({ occurred_at: new Date(Date.UTC(2026, 6, 27 + i, 1, 0, 0)).toISOString() }),
+    );
+    const courses = deriveMedicationCourses({ regimens: [course], doses, timeZone: NY });
+    expect(courses.map((c) => c.source)).toEqual(['regimen']);
+    expect(courses[0].dosesLogged).toBe(14);
+    expect(courses[0].lastDoseDay).toBe('2026-08-08');
+  });
+});
