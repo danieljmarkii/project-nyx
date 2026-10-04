@@ -248,8 +248,16 @@ export interface DayRowKind {
  * what keeps the 1b form's own claim, *nothing else logged yet*, true: a look beside
  * a weight or a walk is not a look-only day, and this returns false there.
  *
- * Local-day honest by the same `localDayIndexOf` the pips use, so a 23:30 look is
- * today's and a 00:10 look is tomorrow's.
+ * Local-day honest by the same `localDayIndexOf` the pips and `todayByClass` use, so
+ * a 23:30 look is today's and a 00:10 look is tomorrow's. The day is the WIDGET's
+ * day (`occurred_at` in the device zone, like every other row this line sits
+ * beside), not the look's stored `looks.local_day`: the two differ only for a look
+ * whose point was moved across a zone change, and the line must agree with the
+ * empty branch's own day, which is this one.
+ *
+ * Known gap: a look beside a row the four tiles never show (a weight, a normal
+ * stool) is not look-only, so the widget keeps its plain line there, which is
+ * false beside both. That is CUL-1563, the widget's non-class rows.
  */
 export function buildLookOnlyToday(input: { rows: DayRowKind[]; nowMs: number; timeZone?: string }): boolean {
   const todayIndex = localDayIndex(input.nowMs, input.timeZone);

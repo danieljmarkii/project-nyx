@@ -3,7 +3,7 @@
 **Date:** 2026-10-04
 **One thing:** D4 L1 — Guards: tests that scan the code itself, proven by breaking it · check: pending
 
-Shipped via #PRNUM. BUILD, one PR, no schema change.
+Shipped via #1043. BUILD, one PR, no schema change.
 
 ## What shipped
 
@@ -24,6 +24,7 @@ Two surfaces still claimed an empty record over a record the owner had been answ
 - The snapshot's field allowlist test (`D9 by construction`) failed on the new key, as it should; the key was added with its ruling, plus a test that the snapshot carries the look as one boolean and nothing else.
 - Eight mutants, each killed: the every-row rule removed, an empty day marked, the today filter removed, the publisher marking every row a look, props dropping the flag, the layout ignoring it, Ask's presence dropping looks, Ask's screen ignoring `hasLooks`.
 - `tsc --noEmit` clean; full jest 614 suites / 13,741 passed; the touched suites pass under UTC+14, UTC+12:45 and UTC−10.
+- `code-reviewer` (isolated): ship-ready, nothing blocking. Its finding, a look beside a weight still showing the plain line, is the residual below, folded into CUL-1563. Its two nits applied: a comment naming the widget's day (not `looks.local_day`) and the known gap, and a weak regex assertion dropped in favour of the key list.
 
 ## Filed, not folded
 
@@ -31,6 +32,8 @@ Two surfaces still claimed an empty record over a record the owner had been answ
 - **CUL-1564**: the trial card's day-1 line *Nothing logged yet today.* renders beside a logged look, symptom or weight; it is keyed on feedings only.
 
 ## Residuals
+
+- **A look beside a weight or a normal stool** still shows *Nothing logged yet today* on the widget: `lookOnlyToday` is rightly false (the weight is not a look), and the plain line was already false beside the weight before this PR. CUL-1563 carries it, widened to the look case; naming the look there would be a second look-derived snapshot fact, so it comes back as a brief.
 
 - The widget's look bit buckets by `occurred_at` in the device zone, like every other row the widget reads, not by `looks.local_day`. The two differ only after the owner changes time zone between making a look and the publish; the widget's other facts share the same clock, so the line stays consistent with them.
 - The widget line is longer than the plain one; it fits a systemMedium widget (the only family shipped, V2-5), unconfirmed on a device.

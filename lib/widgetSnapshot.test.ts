@@ -297,7 +297,7 @@ describe('the v2 block', () => {
     });
     expect(snap.lookOnlyToday).toBe(true); // non-vacuity: the bit is set
     expect(typeof snap.lookOnlyToday).toBe('boolean');
-    expect(JSON.stringify(snap)).not.toMatch(/check_in|looks?\b|words|notes/i);
+    // The key list above is what keeps any other look-bearing field out.
   });
 });
 
@@ -420,7 +420,8 @@ describe('publishWidgetSnapshots — the 7-day pips over the real coverage read'
 
   it('does not mark a look beside a weight, which the four tiles never show', async () => {
     // The case the "every row" rule exists for: the empty-day branch fires (no meal,
-    // dose, treat or symptom), and "nothing else logged yet" would be false.
+    // dose, treat or symptom), and "nothing else logged yet" would be false. The plain
+    // line it falls back to is false beside the weight too; that is CUL-1563.
     insertEvent('look-today', 'check_in', localNoon(0));
     insertEvent('weight-today', 'weight_check', localNoon(0));
 
