@@ -6396,16 +6396,14 @@ function medicationLine(m: MedicationAdherence): string {
     m.windowDosesTotal === 0
       ? `No doses logged in this report's window.`
       : m.windowDosesLogged === 0
-        ? `In this window: ${courseDaysNoneGiven(m)}${courseDaysTail(m)}.${outsideCourseNote(m)} Doses in this window: ${extras.join(
+        ? `In this window: ${courseDaysNoneGiven(m, false)}${courseDaysTail(m)}.${outsideCourseNote(m)} Other doses against this course in this window: ${extras.join(
             ', ',
           )}.`
-        : `In this window: ${num(m.windowDosesLogged)} dose${m.windowDosesLogged === 1 ? '' : 's'} given${
-            m.partialDoses ? ` (${num(m.partialDoses)} partial)` : ''
-          }${
+        : `In this window: ${num(m.windowDosesLogged)} dose${m.windowDosesLogged === 1 ? '' : 's'} given${givenCountNote(m)}${
             // Every given dose dated outside the course: the head would read "on 0 of N days", so it
             // takes the scoped zero form and the disclosure beside it says where the doses fell.
-            m.courseDays.given > 0 ? `, on ${courseDaysGiven(m, false)}` : `; ${courseDaysNoneGiven(m)}`
-          }${courseDaysTail(m)}.${outsideCourseNote(m)} Doses in this window: ${extras.join(', ')}.`
+            m.courseDays.given > 0 ? `, on ${courseDaysGiven(m, false)}` : `; ${courseDaysNoneGiven(m, false)}`
+          }${courseDaysTail(m)}.${outsideCourseNote(m)} Other doses against this course in this window: ${extras.join(', ')}.`
 
   return `${regimen}. ${adherenceClaim(m)}${dosingSpan(m)} ${windowClause}`
 }
@@ -6550,10 +6548,25 @@ function courseDaysGiven(m: MedicationAdherence, sayWindow: boolean): string {
  * is a claim about the animal, and it is false when a dose of the same drug sits on another line
  * that day (the CUL-991 seam orphans one; a brand/generic pair splits one). The record cannot
  * always join them, so the claim is made about the only thing it can see: this course's rows.
+ * The day count is the course's days IN THE WINDOW, and says so where no prefix does (pass 6).
  */
-function courseDaysNoneGiven(m: MedicationAdherence): string {
+function courseDaysNoneGiven(m: MedicationAdherence, sayWindow: boolean): string {
   const total = m.elapsedDaysInWindow
-  return `no dose given against this course on ${total === 1 ? 'its 1 day' : `any of its ${num(total)} days`}`
+  const days = total === 1 ? 'its 1 day' : `any of its ${num(total)} days`
+  return `no dose given against this course on ${days}${sayWindow ? ' in this window' : ''}`
+}
+/**
+ * What page 1's given count holds besides course days: the partial doses (inside it, so they ride
+ * here rather than the not-given list — cold read 3), and any given dose dated OUTSIDE the course,
+ * so "5 doses given, on 1 of 13 days" never reads as five doses on one day before the disclosure
+ * explains it (pass 6).
+ */
+function givenCountNote(m: MedicationAdherence): string {
+  const parts: string[] = []
+  if (m.partialDoses) parts.push(`${num(m.partialDoses)} partial`)
+  const out = m.courseDays.outsideCourseGiven
+  if (out) parts.push(`${num(out)} dated outside the course`)
+  return parts.length ? ` (${parts.join('; ')})` : ''
 }
 function courseDaysTail(m: MedicationAdherence): string {
   const p = m.courseDays
@@ -6564,54 +6577,63 @@ function courseDaysTail(m: MedicationAdherence): string {
 }
 
 /**
- * Below once a day, the empty part says the cadence, so days a dose was never due are not read
- * as gaps (cold read 4). Written the way a clinician writes a schedule — "every other day", "every
- * 3 days", "once a week" — when the rate is one dose every whole number of days, else the rate
- * itself. Nothing at or above once a day, and nothing for a rate the record cannot mean (≤ 0;
- * the column has no CHECK), the same guard `dosingSpan` holds.
+ * Below once a day, the empty part names the SCHEDULE, so days a dose was never due are not read
+ * as gaps (cold read 4) — as a schedule noun, never "dosed every other day", which beside "no dose
+ * given" reads as delivery (pass 6). An interval when the rate is one dose every whole number of
+ * days (two or more, to the column's two decimals), else the rate. Nothing at or above once a day,
+ * and nothing for a rate the record cannot mean (≤ 0, NaN; the column has no CHECK), the guard
+ * `dosingSpan` holds.
  */
 function cadenceNote(dosesPerDay: number | null): string {
-  if (dosesPerDay == null) return ' (dosed as needed)'
+  if (dosesPerDay == null) return ' (on an as-needed schedule)'
   if (!(dosesPerDay > 0) || dosesPerDay >= 1) return ''
   const every = Math.round(1 / dosesPerDay)
-  if (Math.abs(every * dosesPerDay - 1) > 0.05) return ` (dosed ${dosesPerDay}×/day)`
-  return every === 2 ? ' (dosed every other day)' : every === 7 ? ' (dosed once a week)' : ` (dosed every ${every} days)`
+  if (every < 2 || Math.abs(every * dosesPerDay - 1) > 0.025) return ` (on a ${dosesPerDay}×/day schedule)`
+  return every === 2
+    ? ' (on an every-other-day schedule)'
+    : every === 7
+      ? ' (on a once-a-week schedule)'
+      : ` (on a schedule of a dose every ${every} days)`
 }
 
 /**
  * A list of local day keys, dated so a reader can place them: up to four listed, the year stamped
  * once when they share one and on each when they do not (C-19: a year-less date is safe only
- * inside a bounded range, and a since-visit window can run past a year); past four, the span.
+ * inside a bounded range, and a since-visit window can run past a year); past four, the span AND
+ * the day count, so a range is never read as continuous (the `doseDatesCell` rule).
  */
 function datedDays(days: readonly string[]): string {
-  if (days.length === 0) return ''
-  if (days.length > 4) return h(fmtRange(days[0], days[days.length - 1]))
+  if (days.length > 4) return `${h(fmtRange(days[0], days[days.length - 1]))}, on ${num(days.length)} days`
   const years = new Set(days.map((d) => d.slice(0, 4)))
-  if (years.size > 1) return days.map((d) => h(fmtDayYear(d))).join(', ')
-  return `${days.map((d) => h(fmtDay(d))).join(', ')}, ${h(days[0].slice(0, 4))}`
+  if (years.size > 1) return days.map((d) => fmtDayYear(d)).join(', ')
+  return `${days.map((d) => fmtDay(d)).join(', ')}, ${h(days[0].slice(0, 4))}`
 }
 
 /**
  * This course's rows the split cannot hold: in the window, but dated outside the course's own
  * dates (a backdated dose, an edited start date). They are in the dose counts, so they are
- * disclosed with their dates, each kind with its own — given AND not given, since a refusal
- * outside the course would otherwise read as falling on a course day (C-37), and a date the
- * reader cannot pair with its kind places neither (adversarial pass 5).
+ * disclosed with their dates, each kind in its own sentence and each SIDE named — a dose before
+ * the start (pre-treatment) and one after the recorded end (a trial confounder) mean different
+ * things, and one span across both would contain the course itself (pass 6). Given AND not given
+ * (C-37), each with its own dates so the refusal can be placed (pass 5).
  */
 function outsideCourseNote(m: MedicationAdherence): string {
   const p = m.courseDays
-  const kinds: string[] = []
-  if (p.outsideCourseGiven > 0) {
-    const n = p.outsideCourseGiven
-    kinds.push(`${num(n)} given dose${n === 1 ? '' : 's'} (${datedDays(p.outsideCourseGivenDays)})`)
+  const start = m.startedAt.slice(0, 10)
+  const sentence = (n: number, noun: string, days: readonly string[]): string => {
+    if (n === 0) return ''
+    const before = days.filter((d) => d < start)
+    const after = days.filter((d) => d >= start)
+    const sides = [
+      before.length ? `before its start (${datedDays(before)})` : null,
+      after.length ? `after its recorded end (${datedDays(after)})` : null,
+    ].filter(Boolean)
+    return ` ${num(n)} ${noun}${n === 1 ? '' : 's'} ${n === 1 ? 'is' : 'are'} dated outside the course&rsquo;s dates: ${sides.join(' and ')}.`
   }
-  if (p.outsideCourseNotGiven > 0) {
-    const n = p.outsideCourseNotGiven
-    kinds.push(`${num(n)} dose${n === 1 ? '' : 's'} not recorded as given (${datedDays(p.outsideCourseNotGivenDays)})`)
-  }
-  if (kinds.length === 0) return ''
-  const plural = p.outsideCourseGiven + p.outsideCourseNotGiven > 1
-  return ` ${kinds.join(' and ')} ${plural ? 'are' : 'is'} dated outside the course&rsquo;s dates.`
+  return (
+    sentence(p.outsideCourseGiven, 'given dose', p.outsideCourseGivenDays) +
+    sentence(p.outsideCourseNotGiven, 'not-given dose', p.outsideCourseNotGivenDays)
+  )
 }
 
 /**
@@ -8789,8 +8811,10 @@ function medicationAppendix(snap: ReportSnapshot): string {
             : `${
                 m.courseDays.given > 0
                   ? `Given on ${courseDaysGiven(m, true)}`
-                  : `In this window, ${courseDaysNoneGiven(m)}`
-              }${courseDaysTail(m)}.${outsideCourseNote(m)} Doses in this window: ${doseCounts.join(', ')}.`
+                  : `No dose given against this course on ${
+                      m.elapsedDaysInWindow === 1 ? 'its 1 day' : `any of its ${num(m.elapsedDaysInWindow)} days`
+                    } in this window`
+              }${courseDaysTail(m)}.${outsideCourseNote(m)} Other doses against this course in this window: ${doseCounts.join(', ')}.`
       return `<tr><td>${h(m.drugName)}${m.strength ? ` ${h(m.strength)}` : ''}</td><td>${regimen}${
         m.indication ? ` — for ${h(m.indication)}` : ''
       } &middot; ${regimenDates(m)}</td><td class="c num">${logged}</td><td class="num">${doseDatesCell(
