@@ -1612,7 +1612,8 @@ function pushRegisterBody(
           // CUL-1339 #3 (PM, 2026-10-03): the bowl's blind spot said in the escalating
           // direction, in the lead, so the card and the trial screen say it together. A
           // topped-up bowl rates no feedings and `detectIntakeDecline` excludes free-fed
-          // foods (invariant #6), so nothing in the app can see the pet stop. It names the
+          // foods (invariant #6), so the bowl itself can never show the pet stopping (rated
+          // wet meals still feed the refusal lane, which outranks this state). It names the
           // owner's job; it never says the bowl going down means the pet is eating.
           `The bowl also can’t tell you if ${input.petName} stops eating. ` +
           'That part is yours to watch.',
