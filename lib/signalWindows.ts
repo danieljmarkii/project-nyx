@@ -172,10 +172,12 @@ export function leadTakesChartCard(finding: SignalFinding): boolean {
   switch (finding.type) {
     case 'reflection':
     case 'trial_response':
+      return true;
+    // Safety types never reach the card (S1), and the client does not check a cache row's
+    // class against its type: false fails SAFE on a mis-classed row (the row keeps its ask).
     case 'symptom_chronicity':
     case 'symptom_worsening':
     case 'symptom_burden':
-      return true;
     case 'postprandial_timing':
     case 'timeofday_clustering':
     case 'empty_stomach_timing':

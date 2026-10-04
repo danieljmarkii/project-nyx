@@ -18,4 +18,14 @@
 
 ## Persona sign-off
 
-Designer ✓ (CUL-1270 face, S1, Principle 3 untouched) · Data ✓ (no count on a timing/correlation lead that its finding did not make) · Dr. Chen N/A · Engineer ✓ (tsc, touched suites). Adversarial pass: see the PR.
+Designer ✓ (CUL-1270 face, S1, Principle 3 untouched) · Data ✓ (no count on a timing/correlation lead that its finding did not make) · Dr. Chen N/A · Engineer ✓ (tsc, touched suites). Adversarial pass (isolated reviewer): PASS. It tried four cases, and each held:
+- a postprandial lead with later local logs: the row and the screen sentence state the engine's counts;
+- a correlation lead: the line names the compared days, and no local chart is drawn;
+- an intake decline over a timing finding: the safety card still leads with its ask;
+- an untitled type at rank 0: it is filtered before the lead is chosen.
+
+Taken from the review: chronicity, worsening and burden now return false, which fails safe on a cache row mis-classed as insight.
+
+Residuals (non-blocking, already true of the rows):
+- the Home lane is a schematic of the engine's `eligibleCount`, while the screen's lanes are a local recount;
+- a time-of-day lead draws a clock lane, while its screen opens on the bars.

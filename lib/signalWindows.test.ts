@@ -486,7 +486,7 @@ describe('CUL-1217 GC-3 · CUL-1359 · CUL-1218 — what the compare and the cha
 describe('leadTakesChartCard — the bars only where they are the finding’s evidence', () => {
   const of = (type: string) => leadTakesChartCard({ type, priorityClass: 'insight', symptomType: 'vomit' } as never);
   it.each(['reflection', 'trial_response'])('%s keeps the chart card', (t) => expect(of(t)).toBe(true));
-  it.each(['postprandial_timing', 'timeofday_clustering', 'empty_stomach_timing', 'timing_story', 'food_symptom_correlation'])(
+  it.each(['symptom_chronicity', 'symptom_worsening', 'symptom_burden', 'postprandial_timing', 'timeofday_clustering', 'empty_stomach_timing', 'timing_story', 'food_symptom_correlation'])(
     '%s takes the row',
     (t) => expect(of(t)).toBe(false),
   );
