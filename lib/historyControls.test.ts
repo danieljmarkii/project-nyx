@@ -763,7 +763,7 @@ describe('call 3a: Meal names its meals not finished', () => {
     const day = '2026-09-10';
     const range = { fromDay: day, toDay: day };
     const factsWith = (extra: PopulationRow[]) =>
-      typeSheetCountsOf(buildDayFacts({ rows: extra, lookDays: [], range, freeFedFoodIds: new Set(), regimens: REGIMENS }));
+      typeSheetCountsOf(buildDayFacts({ rows: extra, lookDays: [], range, freeFedSpans: [], regimens: REGIMENS }));
     const treat = row('t-0910', day, '12:00', 'meal', { foodItemId: 'cookie', foodType: 'treat', intakeRating: 'refused' });
     expect(mealRow(typeInput({ counts: factsWith([treat]) })).detail).toBeNull();
     expect(mealRow(typeInput({ counts: factsWith([treat, meal('m-0910', day, 'refused')]) })).detail).toBe('1 not finished');
