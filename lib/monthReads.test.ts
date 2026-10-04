@@ -280,6 +280,38 @@ describe('readMonthFacts against the production DDL', () => {
     ]);
   });
 
+  it('CUL-1200 (b): a call with NO photo reaches the month, through the same copy and predicate', async () => {
+    // The issue's two reproductions: an unphotographed cat vomit read as reduced intake, and
+    // a photoless loose stool read as repeated; plus a calm photoless read and a look.
+    const cat = ev('vomit', at('2026-09-03', 8));
+    const stool = ev('diarrhea', at('2026-09-07', 18));
+    const calm = ev('vomit', at('2026-09-09', 8));
+    const look = ev('check_in', at('2026-09-10', 8));
+    verdict(cat, 'worth_a_call');
+    verdict(stool, 'worth_a_call');
+    verdict(calm, 'monitor');
+    verdict(look, 'worth_a_call');
+    const facts = await readMonthFacts(PET, RANGE);
+    expect(facts.callReads).toEqual([
+      { eventId: cat, day: '2026-09-03', verdict: 'worth_a_call' },
+      { eventId: stool, day: '2026-09-07', verdict: 'worth_a_call' },
+    ]);
+    // No photo layer fact is invented for them: the gallery and the Photos layer stay photos.
+    expect(facts.photoDays).toEqual([]);
+    // Every non-look event was asked about, so a carried call can be checked against it.
+    expect(facts.readEvents?.map((e) => e.eventId).sort()).toEqual([cat, stool, calm].sort());
+  });
+
+  it('CUL-1200: a photographed call is in callReads too, from the one batch', async () => {
+    const a = ev('vomit', at('2026-09-02', 7));
+    photo(a);
+    verdict(a, 'worth_a_call');
+    const facts = await readMonthFacts(PET, RANGE);
+    expect(facts.callReads).toEqual([{ eventId: a, day: '2026-09-02', verdict: 'worth_a_call' }]);
+    expect(facts.photoDays).toEqual([{ day: '2026-09-02', verdict: 'worth_a_call' }]);
+    expect(mockSqlLog.filter((q) => /FROM event_ai_verdicts/.test(q))).toHaveLength(1);
+  });
+
   it('a verdict the phone does not hold, or cannot read, is `seen`, never a colour', async () => {
     const a = ev('vomit', at('2026-09-02'));
     photo(a);

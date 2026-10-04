@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'rea
 import Svg, { Line } from 'react-native-svg';
 import { theme } from '../../constants/theme';
 import { dayMarkA11yLabel, type DayMarkCoverage, type DayMarkPhoto } from '../../lib/chartCopy';
-import { isCallDisplay } from '../../lib/incidentTierWords';
+import { isCallDisplay, type CallDisplay } from '../../lib/incidentTierWords';
 import { holdsVomit } from '../../lib/monthModel';
 import { ThemedText } from '../ui/ThemedText';
 
@@ -270,6 +270,9 @@ export interface DayMarkProps {
   symptomLayer?: boolean;
   medication?: boolean;
   photo?: DayMarkPhoto;
+  /** The loudest call on the day, photo or not (CUL-1200): drawn as the call diamond
+   *  whatever the photo layer says, because presence escalates. */
+  call?: CallDisplay | null;
   today?: boolean;
   selected?: boolean;
   /** A neighbouring month's day (see `DayMarkFace`'s `dim`). */
@@ -295,6 +298,7 @@ export function DayMark({
   symptomLayer = true,
   medication = false,
   photo = 'none',
+  call = null,
   today = false,
   selected = false,
   dim = false,
@@ -306,7 +310,7 @@ export function DayMark({
   const unlogged = coverage === 'unlogged';
   const symptomDay = symptomLayer && holdsVomit({ count, continuesFrom }) && !ahead && !unlogged;
   const label = dayMarkA11yLabel(
-    { dayKey, count, continuesFrom, coverage, answers, refusedMeals, leftSomeMeals, medication, photo, symptomLayer, today, selected, episodes },
+    { dayKey, count, continuesFrom, coverage, answers, refusedMeals, leftSomeMeals, medication, photo, call, symptomLayer, today, selected, episodes },
     noun,
   );
   const box: DayMarkBox = ahead ? 'outlined' : unlogged ? 'grey' : symptomDay ? 'rose' : 'white';
@@ -320,7 +324,9 @@ export function DayMark({
       count={symptomDay ? count : null}
       medication={medication}
       refused={!ahead && !unlogged && refusedMeals > 0}
-      photo={photo}
+      // The call is the diamond whether or not the day was photographed; with no call the
+      // photo layer's own mark stands (a dot, or nothing).
+      photo={!ahead && call ? call : photo}
       today={today}
       selected={selected}
       dim={dim}

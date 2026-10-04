@@ -48,6 +48,10 @@
 //     read the same rows; a look is neither).
 //   • A DOSED day is a delivered dose — `given` or `partial`, the therapy-delivered
 //     count B-618 D1 ratified — never a missed or refused one.
+//   • A CALLED day holds any surviving event, photographed or not, whose read the phone
+//     holds as a call (CUL-1200, the PM's ruling (b), 2026-10-03): the read can escalate
+//     with no photo, from the rest of the record, and presence escalates wherever it was
+//     found. Same copy, same predicate as the photographed day below, in one batch.
 //   • A PHOTOGRAPHED day is any surviving attachment on a surviving event; its VERDICT
 //     is the per-incident read's rose, read from the PHONE'S COPY (`lib/readCopy.ts`)
 //     through the one read predicate every surface shares (`isWorthACall`,
@@ -70,7 +74,7 @@ import { isFinishedMeal, qualifyingIntakeMeals, readFreeFedIntakeSpans, SYMPTOM_
 import { readCopies } from './readCopy';
 import { isWorthACall } from './readState';
 import { dayKeyToLocalDate, toLocalDayKey } from './utils';
-import { photoDaysOf, type MonthContinuationDay, type MonthPhotoDay, type MonthPhotoRead } from './monthModel';
+import { photoDaysOf, type MonthCallRead, type MonthContinuationDay, type MonthPhotoDay, type MonthPhotoRead } from './monthModel';
 
 export interface MonthFacts {
   episodeDays: string[];
@@ -94,6 +98,13 @@ export interface MonthFacts {
   /** The same photographed events, one per event with its id: what `carryMonthRoses` keys
    *  the last answer on. Optional only so a hand-built fixture may leave it out. */
   photoReads?: MonthPhotoRead[];
+  /** Every event in the range whose read is a call, photographed or not (CUL-1200): what
+   *  the month's call mark is drawn from, on the default layers. Optional only so a
+   *  hand-built fixture may leave it out. */
+  callReads?: MonthCallRead[];
+  /** Every event the read was asked about, with its local day: what `carryMonthRoses`
+   *  checks a carried call against. */
+  readEvents?: { eventId: string; day: string }[];
   /** Set when the phone's copy could not be read (CUL-1198): every verdict is `seen`
    *  because nobody could look, not because nothing was found. */
   photoReadsUnanswered?: boolean;
@@ -194,8 +205,8 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
   const keyOf = (ms: number) => toLocalDayKey(new Date(ms));
 
   const [eventRows, mealRows, doseRows, photoRows, firstRow, freeFedSpans] = await Promise.all([
-    db.getAllAsync<{ event_type: string; occurred_at: string }>(
-      `SELECT event_type, occurred_at FROM events
+    db.getAllAsync<{ id: string; event_type: string; occurred_at: string }>(
+      `SELECT id, event_type, occurred_at FROM events
         WHERE pet_id = ? AND deleted_at IS NULL
           AND occurred_at >= ? AND occurred_at < ?`,
       [petId, bounds.after, bounds.before],
@@ -298,18 +309,35 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     if (k && inRange(k, range)) dosedSet.add(k);
   }
 
-  // Photographed days, with the verdict read in one batch and degraded to `seen`.
+  // Every event the read is asked about (CUL-1200, the PM's ruling (b)): any surviving
+  // event in the range, photographed or not, so a call computed with no photo (a cat that
+  // has barely eaten since, a third loose stool) reaches the month. A look carries no read.
+  // One batch, one predicate: the photographed days' verdicts come out of the same answer.
+  const readEvents = new Map<string, string>();
+  for (const r of eventRows) {
+    if (r.event_type === LOOK_EVENT_TYPE) continue;
+    const k = keyOfIso(r.occurred_at);
+    if (k && inRange(k, range)) readEvents.set(r.id, k);
+  }
   const photoEvents: { eventId: string; key: string }[] = [];
   for (const r of photoRows) {
     const k = keyOfIso(r.occurred_at);
-    if (k && inRange(k, range)) photoEvents.push({ eventId: r.event_id, key: k });
+    if (!k || !inRange(k, range)) continue;
+    photoEvents.push({ eventId: r.event_id, key: k });
+    readEvents.set(r.event_id, k);
   }
-  const called = await readCallWords(photoEvents.map((p) => p.eventId));
+  const called = await readCallWords([...readEvents.keys()]);
   const photoReads: MonthPhotoRead[] = photoEvents.map((p) => ({
     eventId: p.eventId,
     day: p.key,
     verdict: called?.get(p.eventId) ?? 'seen',
   }));
+  const callReads: MonthCallRead[] = [];
+  for (const [eventId, verdict] of called ?? []) {
+    const day = readEvents.get(eventId);
+    if (day !== undefined) callReads.push({ eventId, day, verdict });
+  }
+  callReads.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
 
   const firstMs = msOfJulianDay(firstRow?.first_jd);
   return {
@@ -325,6 +353,8 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     dosedDays: [...dosedSet].sort(),
     photoDays: photoDaysOf(photoReads),
     photoReads,
+    callReads,
+    readEvents: [...readEvents].map(([eventId, day]) => ({ eventId, day })),
     ...(called === null ? { photoReadsUnanswered: true } : {}),
     recordStart: firstMs === null ? null : keyOf(firstMs),
   };
