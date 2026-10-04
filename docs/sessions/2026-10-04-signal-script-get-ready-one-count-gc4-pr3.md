@@ -3,7 +3,7 @@
 **Date:** 2026-10-04
 **One thing:** S3 L1 — A flag that is off must leave the app as it was, including what it reads · check: pending
 
-Shipped via #1055. A BUILD session dispatched by `/dispatch` (row PR-27c) on CUL-1570, the last of GC-4's three PRs (CUL-1568 #1050 and CUL-1569 #1053 merged before it). It also carries CUL-1575 and the CUL-1576 (a) ruling. Left open for the PM, because the two Tier-2 spec edits need approval in the PR before it merges.
+Shipped via #1055. A BUILD session dispatched by `/dispatch` (row PR-27c) on CUL-1570, the last of GC-4's three PRs (CUL-1568 #1050 and CUL-1569 #1053 merged before it). It also carries CUL-1575 and the CUL-1576 (a) ruling. The session stopped for the two Tier-2 spec edits. The PM approved both ("approve 27c", recorded on CUL-1570 at 17:16Z by the dispatcher), and the PR then merged under the dispatch gate.
 
 ## What shipped
 
@@ -19,7 +19,7 @@ Shipped via #1055. A BUILD session dispatched by `/dispatch` (row PR-27c) on CUL
   - The read is bounded at 4 s.
   - Flag off: no read, and the page is today's.
   - `app/rundown.tsx` joins the flag-off guard as a decide-only consumer.
-- **Tier-2 edits (pending PM approval):**
+- **Tier-2 edits (PM-approved 2026-10-04):**
   - vet-visits spec v1.4: the G6 amendment, the §4.1 B1 note and AC 5;
   - signal-home spec v1.5: §3.6 (the Change Contract under Design v2) and the §3.2 chronicity row.
 
@@ -75,7 +75,6 @@ Mutation proofs (each red):
 - **CUL-1583:** the burden title (`lib/signalTitle.ts`, PR-28's file, off-limits) and the engine's sentence template still say "times".
 - **CUL-1584:** Home's row count line and the cross-pet banner over a floor.
 - **Read fan-out.** Get ready reads one screen per counted finding (CUL-1581 covers the same fan-out on Home).
-- **Merge hold.** The code already quotes the recount, so the PR must not merge before the G6 amendment is approved.
 
 ## Teach
 
