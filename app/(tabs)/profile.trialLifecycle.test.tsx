@@ -87,6 +87,8 @@ jest.mock('../../components/profile/DietTrialCard', () => {
 jest.mock('../../lib/dietTrialCard', () => ({
   resolveTrialCard: () => ({ kicker: 'Diet trial' }),
   trialManageTarget: () => 'manage',
+  // The real line (C-34): the unreadable card's copy is asserted verbatim below.
+  trialCardUnreadableLine: jest.requireActual('../../lib/dietTrialCard').trialCardUnreadableLine,
 }));
 
 // The real sheets, spied. `mockSheetProps` holds each one's latest props.
@@ -177,14 +179,16 @@ const mockTrialInput = {
   nowMs: Date.now(),
   intakeDeclineHeadline: null,
 };
+// Mutable so a test can stand the read in a failed state (CUL-1458); reset in `beforeEach`.
+const LOADED_TRIAL = {
+  input: mockTrialInput as typeof mockTrialInput | null,
+  status: 'loaded' as 'loaded' | 'unreadable',
+  isLoading: false,
+  inputIsForPet: true,
+};
+const mockTrialState = { ...LOADED_TRIAL };
 jest.mock('../../hooks/useDietTrial', () => ({
-  useDietTrial: () => ({
-    input: mockTrialInput,
-    status: 'loaded',
-    isLoading: false,
-    reload: mockReload,
-    inputIsForPet: true,
-  }),
+  useDietTrial: () => ({ ...mockTrialState, reload: mockReload }),
 }));
 jest.mock('../../hooks/useTrialAllowedSet', () => ({ useTrialAllowedSet: () => ({ status: 'unknown' }) }));
 jest.mock('../../hooks/useWidgetSlotLabel', () => ({ useWidgetSlotLabel: () => null }));
@@ -251,6 +255,7 @@ async function renderSettled(): Promise<Rendered> {
 let alertSpy: jest.SpyInstance;
 beforeEach(() => {
   jest.clearAllMocks();
+  Object.assign(mockTrialState, LOADED_TRIAL);
   delete mockSheetProps.completion;
   delete mockSheetProps.manage;
   mockExtend.mockImplementation(() => Promise.resolve());
@@ -504,5 +509,50 @@ describe('one Modal at a time (C-14)', () => {
     expect(visibleModals(r)).toBe(1);
     act(() => { mockSheetProps.manage.onClose(); });
     expect(visibleModals(r)).toBe(0);
+  });
+});
+
+describe('a trial read that failed (CUL-1458)', () => {
+  // The cold-load failure shape `useDietTrial` produces: no input for this pet, status
+  // `unreadable` (a same-pet reload failure keeps the last good input and stays `loaded`).
+  function failRead(overrides: Partial<typeof LOADED_TRIAL> = {}): void {
+    Object.assign(mockTrialState, { input: null, status: 'unreadable', inputIsForPet: false, ...overrides });
+  }
+
+  it('says so in the trial slot and offers a retry that re-reads', async () => {
+    failRead();
+    const r = await renderSettled();
+    expect(r.getByTestId('trial-card-unreadable')).toBeTruthy();
+    expect(r.getByText('I couldn’t check on Mochi’s diet trial just now.')).toBeTruthy();
+    fireEvent.press(r.getByTestId('trial-card-unreadable-action'));
+    expect(mockReload).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws no Start and no trial card: whether a trial runs is what the read could not say', async () => {
+    failRead();
+    const r = await renderSettled();
+    // The card stand-in draws every action it is handed plus its header door.
+    expect(r.queryByTestId('action-start_trial')).toBeNull();
+    expect(r.queryByTestId('card-manage')).toBeNull();
+  });
+
+  it('wins over a stale input from another pet still held by the hook', async () => {
+    failRead({ input: mockTrialInput });
+    const r = await renderSettled();
+    expect(r.getByTestId('trial-card-unreadable')).toBeTruthy();
+    expect(r.queryByTestId('card-manage')).toBeNull();
+  });
+
+  it('stays up while the retry is in flight, with the button working', async () => {
+    failRead({ isLoading: true });
+    const r = await renderSettled();
+    const button = r.getByTestId('trial-card-unreadable-action');
+    expect(button.props.accessibilityState).toMatchObject({ busy: true });
+  });
+
+  it('a loaded read draws the trial card, not the retry', async () => {
+    const r = await renderSettled();
+    expect(r.queryByTestId('trial-card-unreadable')).toBeNull();
+    expect(r.getByTestId('card-manage')).toBeTruthy();
   });
 });

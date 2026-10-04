@@ -45,6 +45,7 @@ import { endRegimen } from '../../lib/medicationSetup';
 import { StartTrialModal } from '../../components/profile/StartTrialModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
 import { DietTrialCard } from '../../components/profile/DietTrialCard';
+import { DietTrialUnreadableCard } from '../../components/profile/DietTrialUnreadableCard';
 import { TrialLifecycleSheets } from '../../components/trial/TrialLifecycleSheets';
 import { TrialDoorRow } from '../../components/trialScreen/TrialDoorRow';
 import { useTrialScreen } from '../../hooks/useTrialScreen';
@@ -254,7 +255,7 @@ export default function ProfileScreen() {
   // lie told by a failed network read.
   const {
     input: trialInput, isLoading: trialLoading, reload: reloadTrial,
-    inputIsForPet: trialInputIsForActivePet,
+    inputIsForPet: trialInputIsForActivePet, status: trialStatus,
   } = useDietTrial(activePet?.id ?? null);
   // B-616 FR-5 — the card's door into "What {pet} can eat". Read here rather than
   // inside the screen so R2 is enforced at the ENTRY: an allowed set that has not
@@ -1547,7 +1548,20 @@ export default function ProfileScreen() {
             TS-6 (CUL-1302): under `trial_screen` the slot is `TrialDoorRow` instead,
             while a trial runs or is in its grace, and every action above lives on the
             trial's own screen (S8). With no trial the card, and the start entry, stay. */}
-        {!trialLoading && trialDoor ? (
+        {trialStatus === 'unreadable' ? (
+          // CUL-1458 — the read for THIS pet threw (a same-pet reload error keeps the
+          // last good input and stays `loaded`). C-12: say so and offer the retry, rather
+          // than the empty slot TS-1 left (no card, no Start) or the no-trial card. Ahead
+          // of the door and the card, and not gated on `trialLoading`, so a retry in
+          // flight keeps the card up with a working button instead of blinking it out.
+          <DietTrialUnreadableCard
+            petName={activePet.name}
+            onRetry={reloadTrial}
+            retrying={trialLoading}
+            style={styles.sectionGap}
+            onLayout={handleTrialAnchorLayout}
+          />
+        ) : !trialLoading && trialDoor ? (
           <TrialDoorRow
             model={trialDoor}
             style={styles.sectionGap}

@@ -1706,6 +1706,23 @@ function pushRegisterBody(
   }
 }
 
+// ── The read that did not answer (CUL-1458) ─────────────────────────────────
+
+/**
+ * The Pet tab's trial slot when the local trial read THREW (`useDietTrial` status
+ * `unreadable`). C-12: a failed read is an error with a retry, never a silent absence
+ * and never the no-trial card (whose Start would invite a second trial over one the
+ * read simply could not see).
+ *
+ * Deliberately not the trial screen's `unreadableLine` ("I couldn’t pull {pet}’s trial
+ * just now"): that screen is only reached through a door that implies a trial, while
+ * this slot is shown to every pet, most of them with no trial at all. "Pull {pet}’s
+ * trial" asserts one exists; "check on" stays true whether or not it does.
+ */
+export function trialCardUnreadableLine(petName: string): string {
+  return `I couldn’t check on ${petName}’s diet trial just now.`;
+}
+
 // ── State 0 ──────────────────────────────────────────────────────────────────
 
 function noTrialCard(petName: string, objectPronoun: string): TrialCardModel {
