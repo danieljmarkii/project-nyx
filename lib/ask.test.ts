@@ -344,7 +344,7 @@ describe('loadAskSuggestions — local SQLite read', () => {
       throw new Error('db closed');
     });
     const s = loadAskSuggestions('p1', 'Pixel');
-    expect(s).toEqual({ total: 0, chips: [] });
+    expect(s).toEqual({ total: 0, chips: [], hasLooks: false });
   });
 });
 
@@ -391,10 +391,18 @@ describe('loadAskSuggestions — the presence read leaves looks out of the total
     jest.clearAllMocks();
   });
 
-  it('a record holding only looks is an empty record to Ask', () => {
+  it('a record holding only looks is an empty record to Ask, which knows the looks exist', () => {
     insertEvent('l1', 'check_in');
     insertEvent('l2', 'check_in');
-    expect(loadAskSuggestions('p1', 'Pixel')).toEqual({ total: 0, chips: [] });
+    // `hasLooks` picks the empty record's look form (CUL-1475); `total` and the chips
+    // stay blind to looks.
+    expect(loadAskSuggestions('p1', 'Pixel')).toEqual({ total: 0, chips: [], hasLooks: true });
+  });
+
+  it('does not count a look taken back, or another pet\'s look (CUL-1475)', () => {
+    insertEvent('l1', 'check_in', { deleted: true });
+    insertEvent('l2', 'check_in', { pet: 'p2' });
+    expect(loadAskSuggestions('p1', 'Pixel')).toEqual({ total: 0, chips: [], hasLooks: false });
   });
 
   it('counts every other row beside a look, and builds the chips from them', () => {
@@ -412,6 +420,7 @@ describe('loadAskSuggestions — the presence read leaves looks out of the total
     expect(s.chips).toEqual(
       buildSuggestionChips({ total: 4, hasVomit: true, hasStool: true, hasMeal: true, hasWeight: true }, 'Pixel'),
     );
+    expect(s.hasLooks).toBe(true);
   });
 });
 

@@ -54,6 +54,7 @@ import {
 import {
   buildWidgetSnapshotV2,
   WIDGET_SEVEN_DAYS,
+  type DayRowKind,
   type SevenDayEventRow,
   type TodayEventRow,
   type WidgetSevenDay,
@@ -173,6 +174,10 @@ export interface WidgetSnapshot {
   /** The trial-day strip (§2.5): {day,target,daysLogged,daysElapsed,stripDays},
    *  numbers from the shared lib/dietTrial helpers so it agrees with the card. */
   trial?: WidgetTrialSnapshot | null;
+  /** Today's only rows are daily looks (CUL-1475) — the empty-day line's 1b form.
+   *  Existence only: never a word, a note or a count (the PM's amendment to the
+   *  daily-look spec §5.5 row). Absent reads as false. */
+  lookOnlyToday?: boolean;
 }
 
 // One row of the publisher's meal query (the resolution lib's input shape —
@@ -227,6 +232,9 @@ export function buildWidgetSnapshot(
     symptomEvents?: { label: string; occurredAt: string }[];
     /** Coverage events over the 7-day pip window (occurredAt + isSymptom). */
     sevenDayEvents?: SevenDayEventRow[];
+    /** Every row over the same window, looks included, reduced to one bit each —
+     *  the input to `lookOnlyToday`. */
+    dayRows?: DayRowKind[];
     /** `computeTrialFacts().coverage` for the active trial, or null. The strip's
      *  numbers come from here so it agrees with the trial card (AC 5). */
     trialCoverage?: { daysLogged: number; daysElapsed: number } | null;
@@ -313,6 +321,7 @@ export function buildWidgetSnapshot(
     medExpectedToday: input.medExpectedToday ?? null,
     slots: slotRows,
     sevenDayEvents: input.sevenDayEvents ?? [],
+    dayRows: input.dayRows ?? [],
     trial,
     trialCoverage: input.trialCoverage ?? null,
     trialCoveredDayIndices: input.trialCoveredDayIndices ?? [],
@@ -336,6 +345,7 @@ export function buildWidgetSnapshot(
     upNext: v2.upNext,
     sevenDays: v2.sevenDays,
     trial: v2.trial,
+    lookOnlyToday: v2.lookOnlyToday,
   };
 
   return snapshot;
@@ -527,6 +537,12 @@ async function readSnapshotInputs(pet: SnapshotPet, now: Date) {
       occurredAt: r.occurred_at,
       isSymptom: SYMPTOM_EVENT_SET.has(r.event_type),
     }));
+  // The same rows, looks kept, one bit each — `lookOnlyToday` asks whether today's
+  // ONLY rows are looks, so it needs to see the looks the pips skip (CUL-1475).
+  const dayRows: DayRowKind[] = coverageRows.map((r) => ({
+    occurredAt: r.occurred_at,
+    isLook: isLookRow(r),
+  }));
 
   // The trial's COVERAGE numbers + the covered-day set the strip paints, from the
   // shared predicate — the SAME five reads + `computeTrialFacts` the trial card
@@ -575,6 +591,7 @@ async function readSnapshotInputs(pet: SnapshotPet, now: Date) {
     medExpectedToday,
     symptomEvents,
     sevenDayEvents,
+    dayRows,
     trialCoverage,
     trialCoveredDayIndices,
   };

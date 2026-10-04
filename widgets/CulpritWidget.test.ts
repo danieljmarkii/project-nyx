@@ -145,6 +145,7 @@ function panel(overrides: Partial<WidgetPetPanel> = {}): WidgetPetPanel {
     upNext: { label: 'Dinner', approxTime: '~5p' },
     trialRecord: tile({ kind: 'trialRecord', label: 'Trial record', value: '12', unit: 'of 12 days', sub: 'every day logged so far' }),
     hasTodayEvents: true,
+    lookOnlyToday: false,
     band: TRIAL_BAND,
     ...overrides,
   };
@@ -300,6 +301,41 @@ describe('empty day (§2.6.2)', () => {
     const out = texts(render(props({ pets: { slot1: empty } }), ENV));
     expect(out).toContain('Nothing logged yet today');
     expect(out).toContain('opens Culprit ›');
+  });
+});
+
+describe('a day whose only rows are daily looks (CUL-1475)', () => {
+  // The daily-look spec rules "nothing logged" false beside a logged look (T-9), so
+  // the empty day takes Home's §5.1 1b line. Evaluated through the emitted string,
+  // so a helper or constant the layout reached outside itself would fail here.
+  it('names the look instead of saying nothing was logged', () => {
+    const lookOnly = panel({ hasTodayEvents: false, classTiles: [], upNext: null, lookOnlyToday: true });
+    const out = texts(render(props({ pets: { slot1: lookOnly } }), ENV));
+    expect(out).toContain('Noticed today · nothing else logged yet');
+    expect(out).not.toContain('Nothing logged yet today');
+    // The rest of the empty day is unchanged: the door, and the record in the band.
+    expect(out).toContain('opens Culprit ›');
+    expect(out).toContain('11 of 12 trial days logged');
+  });
+
+  it('keeps the plain line on an empty day with no look', () => {
+    const empty = panel({ hasTodayEvents: false, classTiles: [], upNext: null, lookOnlyToday: false });
+    const out = texts(render(props({ pets: { slot1: empty } }), ENV));
+    expect(out).toContain('Nothing logged yet today');
+    expect(out).not.toContain('Noticed today');
+  });
+
+  it('never carries the look across midnight — a stale render says the plain line', () => {
+    const lookOnly = panel({ hasTodayEvents: false, classTiles: [], upNext: null, lookOnlyToday: true });
+    const out = texts(render(props({ pets: { slot1: lookOnly } }), { ...ENV, date: new Date(2026, 6, 25, 9, 0) }));
+    expect(out).toContain('Nothing logged yet today');
+    expect(out).not.toContain('Noticed today');
+  });
+
+  it('reads an absent flag (a snapshot from before the field) as no look', () => {
+    const { lookOnlyToday: _omitted, ...older } = panel({ hasTodayEvents: false, classTiles: [], upNext: null });
+    const out = texts(render(props({ pets: { slot1: older as WidgetPetPanel } }), ENV));
+    expect(out).toContain('Nothing logged yet today');
   });
 });
 

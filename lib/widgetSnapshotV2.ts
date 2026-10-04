@@ -20,6 +20,8 @@
 //   • trial        — the trial-day strip: { day, target, daysLogged, daysElapsed,
 //                    stripDays[] }, every number from the shared lib/dietTrial
 //                    helpers so the strip AGREES with the trial card (AC 5).
+//   • lookOnlyToday — one boolean: today's only rows are daily looks (CUL-1475),
+//                    so the empty-day line never says "nothing logged" beside one.
 //
 // This PR ships the builders + types ADDITIVELY (spec §7 V2-PR-1): they sit
 // alongside the v1 snapshot fields, nothing consumes them yet, and build-35
@@ -225,6 +227,41 @@ export function buildSevenDays(input: {
   return days;
 }
 
+// ── lookOnlyToday (CUL-1475) ─────────────────────────────────────────────────
+
+/** One of the day's rows as the look-only predicate needs it: when, and whether it
+ *  is a look. Nothing else — no word, no note, no type beyond the one bit. */
+export interface DayRowKind {
+  occurredAt: string;
+  isLook: boolean;
+}
+
+/**
+ * True when today holds at least one row and EVERY row today is a look — the one
+ * look-derived fact the snapshot carries (PM ruling on CUL-1475, amending the
+ * daily-look spec §5.5 row "the widget snapshot never carries a look" to "never a
+ * word, note or count; existence only, for the absence line").
+ *
+ * It exists for one sentence: on an empty day the widget says *Nothing logged yet
+ * today*, which is false beside a logged look (daily-look spec T-9), so a look-only
+ * day reads Home's §5.1 1b form instead. "Every row" rather than "a look exists" is
+ * what keeps the 1b form's own claim, *nothing else logged yet*, true: a look beside
+ * a weight or a walk is not a look-only day, and this returns false there.
+ *
+ * Local-day honest by the same `localDayIndexOf` the pips use, so a 23:30 look is
+ * today's and a 00:10 look is tomorrow's.
+ */
+export function buildLookOnlyToday(input: { rows: DayRowKind[]; nowMs: number; timeZone?: string }): boolean {
+  const todayIndex = localDayIndex(input.nowMs, input.timeZone);
+  let sawLook = false;
+  for (const r of input.rows) {
+    if (localDayIndexOf(r.occurredAt, input.timeZone) !== todayIndex) continue;
+    if (!r.isLook) return false;
+    sawLook = true;
+  }
+  return sawLook;
+}
+
 // ── trial (§2.5 strip / §3) ──────────────────────────────────────────────────
 
 /** One trial-day dot in the ground-band strip: filled when that day carries a
@@ -305,6 +342,8 @@ export interface WidgetSnapshotV2 {
   upNext: WidgetUpNext | null;
   sevenDays: WidgetSevenDay[];
   trial: WidgetTrialSnapshot | null;
+  /** Today's only rows are looks (`buildLookOnlyToday`) — existence, never a count. */
+  lookOnlyToday: boolean;
 }
 
 /** Re-export the coverage shape the trial builder consumes, so a caller wiring the
@@ -322,6 +361,8 @@ export interface WidgetSnapshotV2Input {
   medExpectedToday?: number | null;
   slots: WidgetSlotRow[];
   sevenDayEvents: SevenDayEventRow[];
+  /** Every row of the recent days (looks INCLUDED), for `lookOnlyToday`. */
+  dayRows?: DayRowKind[];
   trial: ActiveTrialInfo | null;
   trialCoverage: WidgetTrialCoverage | null;
   trialCoveredDayIndices?: number[];
@@ -349,6 +390,11 @@ export function buildWidgetSnapshotV2(input: WidgetSnapshotV2Input): WidgetSnaps
       timeZone: input.timeZone,
       coverage: input.trialCoverage,
       coveredDayIndices: input.trialCoveredDayIndices,
+    }),
+    lookOnlyToday: buildLookOnlyToday({
+      rows: input.dayRows ?? [],
+      nowMs: input.nowMs,
+      timeZone: input.timeZone,
     }),
   };
 }

@@ -1,6 +1,6 @@
 # Culprit Home Screen Widget — Requirements
 
-**Version:** 2.0 (build-ready) | **Date:** 2026-08-02 | **Status:** PM-ratified 2026-08-02 (ideation rounds 4–7 on the round-3 shipped widget; R7-1 "confirm for build" given)
+**Version:** 2.0 (build-ready) | **Date:** 2026-08-02 · **Last Updated:** 2026-10-04 (CUL-1475: the look-only empty-day line, §2.6 / §2.7) | **Status:** PM-ratified 2026-08-02 (ideation rounds 4–7 on the round-3 shipped widget; R7-1 "confirm for build" given)
 **Supersedes:** v1.0, preserved verbatim at **`docs/nyx-widget-requirements-v1-frozen.md`** 🧊 (the as-built record of the build-35 capture widget). This file is the living spec; header-versioned per the 2026-07-19 doc-versioning rule.
 **Pairs with:** `docs/culprit-widget-mockups.html` (the design-locked **round-7** mock — the geometry the build copies, screenshot-verified) · `docs/sessions/2026-08-02-widget-redesign-ideation.md` (the full round 4→7 reaction record) · backlog **B-664** (the rebuild track) · B-481 (the on-device pass it absorbs)
 
@@ -69,7 +69,7 @@ Full-width footer under a hairline, present in **every** state:
 
 ### 2.6 States
 1. **Resting** (Day-A/Day-B frames) — grid + band as above.
-2. **Empty day** — headline line `Nothing logged yet today` + single-row grid (Up-next tile if a window is ahead + door tile) + band. A designed state (Principle 5), never a nag, never "all quiet."
+2. **Empty day** — headline line `Nothing logged yet today` (**⚠ 2026-10-04, CUL-1475:** on a day whose only rows are daily looks, `Noticed today · nothing else logged yet` — the daily-look spec's §5.1 1b form, PM-ruled) + single-row grid (Up-next tile if a window is ahead + door tile) + band. A designed state (Principle 5), never a nag, never "all quiet."
 3. **Complete evening** — no window ahead → no Up-next; the slot self-heals (trial-record tile or door). Reads complete as a *record*, never as praise.
 4. **Doors** (carried verbatim from v1): signed out / unbound slot / tombstoned pet — whole-widget message states, always a Link into the app.
 5. **Midnight/stale:** the `dayKey` staleness rule carries — a render on a later local day than the snapshot describes shows an empty day (no carried ticks, counts, or tiles) and drops the context line. Timeline = now + next local midnight entries, `.atEnd`, same as v1.
@@ -79,6 +79,7 @@ Full-width footer under a hairline, present in **every** state:
 | Surface | String |
 |---|---|
 | Empty headline | `Nothing logged yet today` |
+| Empty headline, look-only day (CUL-1475) | `Noticed today · nothing else logged yet` |
 | Up next sub | `usually ~{time} · not logged yet` (future window: `usually ~{time}`) |
 | Trial caption | `{n} of {m} trial days logged` |
 | Pips caption | `last 7 days` |

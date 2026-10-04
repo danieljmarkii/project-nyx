@@ -458,6 +458,10 @@ export interface AskSuggestions {
   total: number;
   /** Up to ~4 suggested QUESTIONS (never claims), only for data the pet actually has. */
   chips: string[];
+  /** The pet has at least one daily look (CUL-1475). Existence only — never a count,
+   *  never a word — so the empty record can stop saying nothing is logged over a record
+   *  the owner has been answering. Ask's tools stay blind to looks (daily-look spec §9). */
+  hasLooks: boolean;
 }
 
 // Presence booleans read from local SQLite in one pass. `has*` reflect all-time
@@ -469,7 +473,12 @@ interface LocalPresence {
   hasStool: boolean; // diarrhea OR stool_normal
   hasMeal: boolean;
   hasWeight: boolean;
+  hasLooks: boolean;
 }
+
+/** The presence facts the chips read. Looks are not among them: a chip is a question
+ *  Ask can answer, and Ask cannot read a look. */
+type ChipPresence = Omit<LocalPresence, 'hasLooks'>;
 
 function readLocalPresence(petId: string): LocalPresence {
   try {
@@ -477,7 +486,8 @@ function readLocalPresence(petId: string): LocalPresence {
     // daily look out through the shared row predicate (`isLookRow`). A look is the
     // owner's answer to a question, never a count (daily-look spec §2 item 5), and Ask
     // is blind to looks in v1 — so a record holding only looks is still the designed
-    // empty record here, not a fresh state with nothing to suggest.
+    // empty record here, not a fresh state with nothing to suggest. `hasLooks` tells the
+    // empty record which of its two forms to say (CUL-1475), and nothing else.
     const rows = getDb().getAllSync<{ event_type: string; n: number }>(
       `SELECT event_type, COUNT(*) AS n
        FROM events WHERE pet_id = ? AND deleted_at IS NULL
@@ -492,10 +502,11 @@ function readLocalPresence(petId: string): LocalPresence {
       hasStool: countOf((type) => type === 'diarrhea' || type === 'stool_normal') > 0,
       hasMeal: countOf((type) => type === 'meal') > 0,
       hasWeight: countOf((type) => type === 'weight_check') > 0,
+      hasLooks: countOf((type) => isLookRow({ event_type: type })) > 0,
     };
   } catch {
     // Local DB unreadable — no chips (the input still works; empty ≠ error).
-    return { total: 0, hasVomit: false, hasStool: false, hasMeal: false, hasWeight: false };
+    return { total: 0, hasVomit: false, hasStool: false, hasMeal: false, hasWeight: false, hasLooks: false };
   }
 }
 
@@ -503,7 +514,7 @@ function readLocalPresence(petId: string): LocalPresence {
  *  the presence booleans (exported split so the query and the copy can be tested apart).
  *  Order = the mock's priority: appetite, last-vomit, weight, foods, stool — capped at
  *  four so the fresh state stays chips-first, never a wall. */
-export function buildSuggestionChips(presence: LocalPresence, petName: string): string[] {
+export function buildSuggestionChips(presence: ChipPresence, petName: string): string[] {
   const p = petName?.trim() || 'your pet';
   const chips: string[] = [];
   if (presence.hasMeal) chips.push(`How's ${p}'s appetite this month?`);
@@ -516,5 +527,5 @@ export function buildSuggestionChips(presence: LocalPresence, petName: string): 
 
 export function loadAskSuggestions(petId: string, petName: string): AskSuggestions {
   const presence = readLocalPresence(petId);
-  return { total: presence.total, chips: buildSuggestionChips(presence, petName) };
+  return { total: presence.total, chips: buildSuggestionChips(presence, petName), hasLooks: presence.hasLooks };
 }

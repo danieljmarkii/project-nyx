@@ -200,6 +200,12 @@ describe('buildPetPanel — the tiles (§2.3)', () => {
     expect(panelFor(today()).hasTodayEvents).toBe(false);
   });
 
+  it('carries lookOnlyToday from the snapshot, an absent field reading as false (CUL-1475)', () => {
+    expect(panelFor(today(), { lookOnlyToday: true }).lookOnlyToday).toBe(true);
+    expect(panelFor(today(), { lookOnlyToday: false }).lookOnlyToday).toBe(false);
+    expect(panelFor(today()).lookOnlyToday).toBe(false);
+  });
+
   it('carries the up-next facts and the trial-record tile from the v2 block', () => {
     const p = panelFor(today(), {
       upNext: { label: 'Dinner', approxTime: '~5p' },
@@ -301,7 +307,9 @@ describe('buildWidgetProps', () => {
     const slot = props.pets.slot1;
     expect(slot.active).toBe(false);
     expect(slot.petName).toBe('Pixel');
-    expect(slot).toMatchObject({ classTiles: [], upNext: null, trialRecord: null, band: null, contextLine: '' });
+    expect(slot).toMatchObject({
+      classTiles: [], upNext: null, trialRecord: null, band: null, contextLine: '', lookOnlyToday: false,
+    });
   });
 
   it('treats an assigned-but-unsnapshotted pet as inactive rather than half-rendered', () => {
