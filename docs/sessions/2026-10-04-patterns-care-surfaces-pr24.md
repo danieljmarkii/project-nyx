@@ -1,0 +1,32 @@
+# Patterns care surfaces: the trial's sign, a counted refusal, an honest weight line (PR-24)
+
+**Date:** 2026-10-04
+**One thing:** none — dispatched session, not this round's teach row
+
+Row PR-24 of *Out of beta — Noticed, Design v2, History v2, the trial screen*; issue CUL-1553 (a sub-issue of CUL-1373, which stays open for item 3, worth-a-call on the month, PR-24b). Shipped via #1037. A `/dispatch` child, mode BUILD; the plan was posted to the issue and the PM ruled it 2026-10-04: **1a** (the lens opens on the symptom with the most days in the shown month, vomiting on a tie), **2a** (this PR may touch `lib/monthReads.ts`; PR-34 and PR-24b start after it merges), **3a** (the mock is its own page).
+
+## What shipped (behind `design_v2`; flag-off untouched)
+
+- **The trial's sign: a symptom lens on the month.** `lib/monthLens.ts` (new) offers every symptom the read holds (vomiting only when the read holds vomit, or as the stand-in for an empty read), defaulting to the most days in the shown month. Vomiting keeps its re-log collapse and bout continuation; every other symptom counts entries. `MonthInstrument` draws a single-select **Symptom** row (chips up to five, a `ScopeMenu` past that) with the mock's visible **Symptom** / **Layers** labels; the first layer chip names the lens; picking a lens turns the symptom layer back on. A vomit-only record sees the shipped month.
+- **A named and counted refusal.** `lib/monthReads.ts` lists refused, left-some and all qualifying meals per meal; the model counts them over the month's drawn days; `DayMark` draws an open ring (shape, never an alarm colour) and the label says "2 meals refused"; the legend leads with "refused · N of M meals with an amount logged, on D days".
+- **An honest weight line** (PMD-3 as GC-7 ruled it). The caveat prints only at exactly two readings, on strict bounds in whole grams of the stored kilograms, and never beside a percentage that displays as 5 %; the scatter branch is withheld (below). A fall at the end is stated ("lower at each of the last N readings"), joined with "but" against an overall rise; a rise is stated only beside an overall rise of at least a scale's wobble. The header counts the drawn readings ("Weight · last 12 of 30 readings"); the door reads "All 30".
+- **A dose-only day never reads "no vomiting"** (CUL-1074 brief 2, PM 2026-10-03). `answeringDays` (a feeding or a symptom entry) gate the day's "no <noun>" and the month's "No <noun> logged", which names the days it stands on when only some logged days could answer. Applied under every lens; the extension is put to the PM on CUL-1557.
+- Mock: `docs/culprit-patterns-care-surfaces-mockups.html`, round 1 revised after review (published as an Artifact, same URL).
+
+## The reviews
+
+- **nyx-voice:** pass; "rated meals" replaced with "meals with an amount logged" after the product read.
+- **pm-feature-review:** weight and dose-only day ship-shaped; the lens and the refusal needed work. Fixed in the PR: the missing row labels, the dead lens tap with the layer off, "rated meals", the legend order, the vomiting chip on an itch-only dog, one name per symptom, the opposite-direction weight wording, "All 30". Put to the PM (CUL-1557): the default-lens window (it opens on vomiting on the 1st and in a zero-itch month).
+- **adversarial-reviewer, four rounds on the weight caveat and the month line.** Each round broke the caveat on a near-steady cat loss and each break became a test: round 1, an end up-tick and one meal licensing the month's absence; round 2, a +10 g reading above the start and a rise of grams stated beside a 24 % loss; round 3, a step-down plateau (order-blind scatter test) and an exact 5 % pair let through by a float. Round 4, a step-down padded with +10 g readings or a spike at the half's boundary; fixed by counting only material readings and requiring the last three readings back at the start or on both sides of it. Round 5, a long sub-edge hold with one blip near the end. The month line and the lens held from round 2 on. After five rounds the scatter branch of the ruling ("when readings disagree in direction") is **withheld**: the caveat prints only at exactly two readings, the half of the ruling no series can walk around. Put to the PM as a better-than-the-rule brief (CUL-1557, call 3); it returns only with a real statistical test. **Round 6 PASSED** on the final rule: 20,000 random three-to-seven-reading series printed no caveat, and an exhaustive sweep of two-decimal pairs from 0.5 to 15 kg found none at or past 200 g or 5 %, none beside "(5%)", and no misstated direction or run. Two low notes stand: a stored row too small to draw (0.01 kg shows as 0.0 lbs) leaves a pair that may carry the caveat, with the header saying "last 2 of 3"; and an exact 4.5 % move rounds to "(4%)" (the code comment now says so).
+
+Every new guard was proven by mutation; one survivor is stated: with the "never beside (5%)" rule, the strict 5 % bound is subsumed (the comment in `weightDeltaLine` says so).
+
+## Lesson
+
+A gate that softens a health signal (the home-scale caveat) is a heuristic an adversary can always walk around one probe at a time; each round's counterexample was a real cat. What converged was not a cleverer test: five rounds of cleverer tests each fell to a new real cat. What converged was withholding the softener wherever it could be walked around, and stating the display's promise ("never beside 5 %") as its own guard. The safe direction for a softener is to withhold it.
+
+## Filed
+
+- CUL-1557 — the two PM calls on the lens (Waiting on PM).
+- CUL-1558 — a grazing cat's refusals are invisible on the Meals layer.
+- CUL-1559 — History's week strip still calls a refused meal "left unfinished".

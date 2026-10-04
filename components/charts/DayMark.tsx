@@ -127,6 +127,10 @@ export interface DayMarkFaceProps {
    *  strip, which draws the mark without counts (H-2). */
   count?: number | null;
   medication?: boolean;
+  /** A meal was refused on the day: a hollow ring, told apart by SHAPE from the filled
+   *  layer dots and never by an alarm colour (CUL-1553; §04's "left some" rule, Sam). The
+   *  month's Meals layer only; History's strip never passes it. */
+  refused?: boolean;
   photo?: DayMarkPhoto;
   today?: boolean;
   selected?: boolean;
@@ -146,6 +150,7 @@ export function DayMarkFace({
   line,
   count = null,
   medication = false,
+  refused = false,
   photo = 'none',
   today = false,
   selected = false,
@@ -173,8 +178,9 @@ export function DayMarkFace({
         </ThemedText>
       )}
       {line !== 'none' && <DayMarkLine kind={line} onRose={rose} style={styles.linePosition} testID={`daymark-line-${line}`} />}
-      {(medication || photo !== 'none') && (
+      {(refused || medication || photo !== 'none') && (
         <View style={styles.layers}>
+          {refused && <View style={[styles.refusedRing, rose && styles.refusedRingOnRose]} testID="daymark-layer-refused" />}
           {medication && <View style={[styles.layerDot, styles.layerMedication]} testID="daymark-layer-medication" />}
           {photo !== 'none' && (
             <View
@@ -231,6 +237,13 @@ export interface DayMarkProps {
    *  on the day the bout began; the label names that day (CUL-1226). */
   continuesFrom?: string | null;
   coverage: DayMarkCoverage;
+  /** The day holds a feeding or a symptom entry: only then may a zero be spoken as
+   *  "no <noun>" (CUL-1074 brief 2). Required, so no caller claims an absence by default. */
+  answers: boolean;
+  /** Refused meals and meals left unfinished but not refused, on the Meals layer (0 when
+   *  the layer is off). A refused meal draws the ring and is named in the label. */
+  refusedMeals?: number;
+  leftSomeMeals?: number;
   /** The symptom layer is showing (default on). */
   symptomLayer?: boolean;
   medication?: boolean;
@@ -250,6 +263,9 @@ export function DayMark({
   count,
   continuesFrom = null,
   coverage,
+  answers,
+  refusedMeals = 0,
+  leftSomeMeals = 0,
   symptomLayer = true,
   medication = false,
   photo = 'none',
@@ -261,7 +277,10 @@ export function DayMark({
   const ahead = coverage === 'ahead';
   const unlogged = coverage === 'unlogged';
   const symptomDay = symptomLayer && holdsVomit({ count, continuesFrom }) && !ahead && !unlogged;
-  const label = dayMarkA11yLabel({ dayKey, count, continuesFrom, coverage, medication, photo, symptomLayer, today, selected }, noun);
+  const label = dayMarkA11yLabel(
+    { dayKey, count, continuesFrom, coverage, answers, refusedMeals, leftSomeMeals, medication, photo, symptomLayer, today, selected },
+    noun,
+  );
   const box: DayMarkBox = ahead ? 'outlined' : unlogged ? 'grey' : symptomDay ? 'rose' : 'white';
   const line: DayMarkLineKind = coverage === 'logged' ? 'solid' : coverage === 'left_some' ? 'broken' : 'none';
   const opens = onPress !== undefined && !ahead;
@@ -272,6 +291,7 @@ export function DayMark({
       line={line}
       count={symptomDay ? count : null}
       medication={medication}
+      refused={!ahead && !unlogged && refusedMeals > 0}
       photo={photo}
       today={today}
       selected={selected}
@@ -383,6 +403,19 @@ const styles = StyleSheet.create({
   },
   layerMedication: {
     backgroundColor: theme.colorEventMedication,
+  },
+  // A refused meal: a hollow ring, the one OPEN layer mark, so shape tells it from the
+  // filled dots; neutral ink, never an alarm colour (§04, Sam). White on the rose.
+  refusedRing: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    borderWidth: 1.25,
+    borderColor: theme.colorTextSecondary,
+    backgroundColor: 'transparent',
+  },
+  refusedRingOnRose: {
+    borderColor: theme.colorTextOnDark,
   },
   layerPhoto: {
     backgroundColor: theme.colorTextTertiary,

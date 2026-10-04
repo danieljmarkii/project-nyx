@@ -61,7 +61,7 @@ import {
 } from '../constants/lookWords';
 import { LOOK_COVERAGE_FLOOR_DAYS, LOOK_COVERAGE_WINDOW_DAYS } from './lookCoverage';
 import { compareWord, comparisonClause, type LookComparison } from './lookComparison';
-import { cardPairing, type LookPairing } from './lookPairing';
+import { cardPairing, LOOK_PAIRING_ON_PATTERNS, type LookPairing } from './lookPairing';
 import { resolveWord, type LookPetContext } from './lookDisplay';
 import { localDayIndex, localDayIndexOf, formatCalendarDate, petPronouns } from './utils';
 // The year-stamped form lives with the receipts, NOT in `lib/utils` — three Edge
@@ -171,7 +171,8 @@ export interface NoticedCardModel {
    *  state, the room behind a door that exists from day 1. */
   empty: boolean;
   /** The card's one pairing (L-17), already attached to its row's `detail`. Surfaced so a
-   *  test can assert "at most one" without re-parsing strings. */
+   *  test can assert "at most one" without re-parsing strings. Always `null` in v1 —
+   *  held by `LOOK_PAIRING_ON_PATTERNS` (CUL-914). */
   pairing: LookPairing | null;
   /** Per-word answered-day counts over THIS card's window. The card's own numerators,
    *  exposed for a test; CUL-845 gate 2 does NOT read them — see `lookWordDaysOver`. */
@@ -390,7 +391,10 @@ export function buildNoticedCard(
   // answered so far* and an association about the same thirteen days, on one card. A
   // surface that has just said it cannot speak yet does not then speak (the adversarial
   // pass, CUL-874).
-  const pairing = belowFloor
+  //
+  // NO PAIRING IN V1 AT ALL (CUL-914, ruled (c) 2026-10-03): measured, the line printed on
+  // 22–77% of pure-noise records for the wedge owner, so it is held — see `lib/lookPairing.ts`.
+  const pairing = belowFloor || !LOOK_PAIRING_ON_PATTERNS
     ? null
     : cardPairing(inWindow, {
         vomitLocalDays: vomitDaysInWindow,

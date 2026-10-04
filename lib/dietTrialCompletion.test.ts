@@ -14,7 +14,8 @@
 import {
   buildOutcomeSheet, densityLine, extensionDays, extensionPhrase, milestoneNote,
   nextTargetDays, stopReasonNote, trialDecisionChoices, trialStopReasons,
-  OUTCOME_OPTIONS, OUTCOME_QUESTION, OUTCOME_QUESTION_NOTE,
+  OUTCOME_LOOKS_FACT_LINE, OUTCOME_OPTIONS, OUTCOME_QUESTION, OUTCOME_QUESTION_NOTE,
+  OUTCOME_QUESTION_NO_COUNTS, OUTCOME_QUESTION_NOTE_NO_COUNTS,
   STOPPED_SHEET_INTRO, STOPPED_SHEET_TITLE,
   type TrialOutcomeFacts,
 } from './dietTrialCompletion';
@@ -264,6 +265,42 @@ describe('the outcome sheet — the data leads, the question follows', () => {
     // below the floor Culprit may neither reassure NOR alarm on absence).
     expect(empty.factLines).toEqual(['No symptoms are on the record for either stretch.']);
     expect(empty.factLines[0]).not.toMatch(/^No symptoms\./);
+  });
+
+  // CUL-1483: the record-form line is still an all-clear beside the owner's daily looks,
+  // whose words the sheet never reads. Either stretch's look replaces it; each flag alone
+  // must, so a mutant dropping either half of the OR reds here.
+  it('names the looks instead of claiming absence when either stretch holds one', () => {
+    for (const looks of [{ beforeHasLooks: true }, { duringHasLooks: true }]) {
+      const sheet = buildOutcomeSheet({ facts: facts({ symptoms: [], ...looks }), petName: 'Biscuit' });
+      expect([looks, sheet.factLines]).toEqual([looks, [OUTCOME_LOOKS_FACT_LINE]]);
+      expect([looks, sheet.question, sheet.questionNote]).toEqual(
+        [looks, OUTCOME_QUESTION_NO_COUNTS, OUTCOME_QUESTION_NOTE_NO_COUNTS],
+      );
+    }
+    // A tracked before-stretch, full or sparse, gets a scope line rather than a comparison
+    // that is not drawn; the sparse "than it looks" would also land beside the looks line.
+    for (const beforeLoggedDays of [48, 4]) {
+      const sheet = buildOutcomeSheet({
+        facts: facts({ symptoms: [], duringHasLooks: true, beforeLoggedDays }),
+        petName: 'Biscuit',
+      });
+      expect([beforeLoggedDays, sheet.comparisonLine]).toEqual(
+        [beforeLoggedDays, 'Looking at the trial and the 8 weeks before it started.'],
+      );
+    }
+    // The replacement claims no absence and points at no counts.
+    expect(OUTCOME_LOOKS_FACT_LINE).not.toMatch(/\bno\b|nothing|none/i);
+    expect(OUTCOME_LOOKS_FACT_LINE).not.toMatch(/!/);
+    // With symptom rows the counts lead, the looks line follows them, and the plain
+    // sentences that point at the counts stay.
+    for (const looks of [{ beforeHasLooks: true }, { duringHasLooks: true }]) {
+      const counted = buildOutcomeSheet({ facts: facts(looks), petName: 'Biscuit' });
+      expect([looks, counted.factLines]).toEqual([looks, [
+        'Itch/Scratch: 14 before · 3 during.', 'Skin reaction: 4 before · 1 during.', OUTCOME_LOOKS_FACT_LINE,
+      ]]);
+      expect([looks, counted.title, counted.question]).toEqual([looks, 'What changed over the 8 weeks', OUTCOME_QUESTION]);
+    }
   });
 
   it('names an untracked before-stretch instead of rendering it as zero', () => {

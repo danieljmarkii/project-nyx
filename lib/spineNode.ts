@@ -336,23 +336,6 @@ function feedingsInStableOrder(feedings: readonly FeedingInput[]): FeedingInput[
   return [...feedings].sort((a, b) => a.ms - b.ms || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
-/** The onsets in one order before the lane collapses them, for the same reason as the bowls
- *  above: `collapseEpisodes` sorts on the instant alone, so of two vomits logged at one
- *  instant the one that ARRIVED first opened the episode, and the store's order is not
- *  SQLite's. The line jumped between the two rows, and where one was found rather than
- *  seen, the timed meal (and so a run) came and went (the HV-6 adversarial pass, B3). Ties
- *  go to the row id (rule H); the onsets before the day carry none and tie on their
- *  confidence's spelling. Which confidence SHOULD open a same-instant episode is the
- *  lane's question, not this order's (CUL-1230). */
-function onsetsInStableOrder<T extends { id: string | null; ms: number; confidence: OnsetConfidence | null }>(
-  onsets: readonly T[],
-): T[] {
-  const text = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-  return [...onsets].sort(
-    (a, b) => a.ms - b.ms || text(a.id ?? '', b.id ?? '') || text(a.confidence ?? '', b.confidence ?? ''),
-  );
-}
-
 /**
  * The lane's timings for the day's vomit rows, keyed by the row that opened each
  * episode. Runs the lane's exact sequence (collapse at the episode gap, then the
@@ -379,7 +362,10 @@ export function timingsByRow(
   const prior = priorOnsets
     .filter((o) => Number.isFinite(o.ms))
     .map((o) => ({ id: null as string | null, ms: o.ms, confidence: o.confidence ?? null }));
-  const episodes = collapseEpisodes(onsetsInStableOrder([...prior, ...todays]), config.episodeGapHours);
+  // The collapse orders a same-instant tie itself (`compareOnsets`: least certain first,
+  // then the row id), so the store's order never decides which row opens an episode, and
+  // a seen vomit tied with a found one is never timed (HV-6 B3; CUL-1230).
+  const episodes = collapseEpisodes([...prior, ...todays], config.episodeGapHours);
   const dist = classifyEpisodeSet(
     episodes.map((e) => ({ onsetMs: e.ms, confidence: e.confidence })),
     feedingsInStableOrder(feedings),

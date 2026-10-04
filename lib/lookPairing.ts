@@ -47,8 +47,27 @@
 // formatted fraction on this module's surface at all: the counts are exported as raw
 // numbers for the report and the tests, and the only renderable is `text`.
 
+//
+// ── HELD OUT OF V1 (CUL-914, ruled (c) by the PM 2026-10-03) ──────────────────
+// The N-5 adversarial pass ran this function against records where 23 concern words were
+// marked independently of vomiting — no association of any kind — and a pairing printed on
+// 22–77% of them at the wedge owner's marking rate (one or two words on the days she marks
+// anything). The disclosure above is TRUE under the null, because some word always ranks
+// first, so it names the selection and says nothing about the chance. Sharpening the
+// sentence and adding a floor were weighed and not taken; the line does not ship in v1.
+// The module, its floors and its tests stay, and `LOOK_PAIRING_ON_PATTERNS` is the one
+// switch: the card's model reads it, and so does the Patterns screen, which skips the
+// vomit-day read the pairing alone consumes. Turning it back on is a PM ruling that answers CUL-914's
+// table, never a cleanup.
+
 import { lookWordKind, type LookSpecies } from '../constants/lookWords';
 import { answeredDaySet, wordDaySet, type LookDayRow } from './lookDayCounts';
+
+/** CUL-914 (c) — whether the Patterns card prints its pairing. `false` in v1: see the
+ *  header. Exported from HERE rather than declared in `lib/lookPatterns.ts` so the card's
+ *  suite can still drive the gated path with the switch on (`jest.doMock` reaches an
+ *  import, never a module's own constant) without widening `buildNoticedCard`'s input. */
+export const LOOK_PAIRING_ON_PATTERNS: boolean = false;
 
 /** §6.11 — answered days holding at least one vomit, below which nothing renders. */
 export const LOOK_PAIRING_MIN_VOMIT_DAYS = 3;

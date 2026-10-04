@@ -102,6 +102,7 @@ export async function loadTrialOutcomeFacts(args: {
     const duringAnyDays = new Set<string>();
 
     let beforeHasLooks = false;
+    let duringHasLooks = false;
     for (const r of rows) {
       const ms = Date.parse(r.occurred_at);
       if (!Number.isFinite(ms)) continue;
@@ -117,6 +118,7 @@ export async function loadTrialOutcomeFacts(args: {
       // PRESENCE is kept, so the sheet never says nothing was logged over the looks.
       if (isLookRow(r)) {
         if (inBefore) beforeHasLooks = true;
+        else duringHasLooks = true;
         continue;
       }
 
@@ -154,6 +156,7 @@ export async function loadTrialOutcomeFacts(args: {
       beforeDays,
       beforeTracked: beforeAnyDays.size > 0,
       beforeHasLooks,
+      duringHasLooks,
       beforeLoggedDays: beforeAnyDays.size,
       duringLoggedDays: duringAnyDays.size,
       symptoms,

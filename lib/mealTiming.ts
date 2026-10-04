@@ -273,28 +273,81 @@ export function classifyGapMinutes(
 
 // ── Episode collapse (§2 L1 / the engine's re-log guard) ─────────────────────
 
+/** What `compareOnsets` reads. `confidence` and `id` are optional so an `{ ms }`-only
+ *  caller (a count that never asks which row opened an episode) still collapses. */
+export interface OnsetOrderKey {
+  ms: number;
+  confidence?: OnsetConfidence | null;
+  id?: string | null;
+}
+
+/** Same-instant rank, least certain first (CUL-1230, PM-ruled 2026-10-04). A value the
+ *  type does not know (a cast row from SQLite) ranks as unclassified, never as seen. */
+function onsetTieRank(c: OnsetConfidence | null | undefined): number {
+  switch (c) {
+    case 'window':
+      return 0;
+    case 'estimated':
+      return 1;
+    case 'witnessed':
+      return 3;
+    default:
+      return 2;
+  }
+}
+
+/**
+ * The ONE order every episode collapse sorts on: the instant, then, at a same-instant
+ * tie, the LEAST certain onset first, then the row id. So when a found vomit and a seen
+ * one share an instant, the found one opens the episode and the episode is untimed.
+ *
+ * Why least certain, not most (CUL-1230): a `window` row's instant is its LATEST edge
+ * (`deriveOccurredAt`, "no later than"; only a degenerate earliest-only window stores
+ * otherwise), so a tie shows the found vomit happened at or BEFORE the seen one, and one
+ * millisecond earlier it already opens the episode. Seen-
+ * first would print "12 min after eating" for a bout that began earlier, unseen; found-
+ * first can only lose a timed data point (a duplicate Saw it + Found it log), never
+ * claim one. An estimated or unclassified time is a guess either side of the seen one,
+ * so it too says "can't tell", which is untimed. Only the opener's identity and its
+ * timing eligibility move: where episodes split depends on the instants alone.
+ *
+ * The id makes a tie of one confidence deterministic (rule H, HV-6): SQLite hands rows
+ * over in no promised order. At one confidence an absent id sorts first, so an id-less
+ * onset from before the day absorbs a same-instant row of today's. Not for the incident floor, whose tie
+ * asks a different question (CUL-1555).
+ */
+export function compareOnsets(a: OnsetOrderKey, b: OnsetOrderKey): number {
+  if (a.ms !== b.ms) return a.ms - b.ms;
+  const rank = onsetTieRank(a.confidence) - onsetTieRank(b.confidence);
+  if (rank !== 0) return rank;
+  const ai = a.id ?? '';
+  const bi = b.id ?? '';
+  return ai < bi ? -1 : ai > bi ? 1 : 0;
+}
+
 /**
  * Collapse same-type events into episodes, keeping the ONSET event of each — a bout
  * logged five times (a double-tap, a sync replay, a re-log) becomes ONE episode.
  *
  * Generic over the event shape so the caller keeps whatever fields it needs on the
  * onset (a symptom's confidence, a feeding's form): the returned objects are the
- * original onset events, not a lossy `{ms}` projection. This is the same 3h-gap
- * chaining as `detection.ts`'s `toConfidenceEpisodes` / `toEpisodeOnsets`, unified.
+ * original onset events, not a lossy `{ms}` projection. `detection.ts`'s
+ * `toConfidenceEpisodes` / `toEpisodeOnsets` delegate here.
  *
  * CHAINED, not windowed: `prev` advances on EVERY event, so a slow drip of events
  * each ≤gap after the last stays one episode however long it runs; a new episode
  * starts only when an event lands >gap after its immediate predecessor. Ordering of
- * the input does not matter — the events are sorted by `ms` first — which is a
- * property the tests pin (shuffling the input yields the same episode onsets).
+ * the input does not matter — the events are sorted by `compareOnsets` first — which
+ * is a property the tests pin (shuffling the input yields the same episode onsets,
+ * and the same onset EVENT at a same-instant tie).
  */
-export function collapseEpisodes<T extends { ms: number }>(
+export function collapseEpisodes<T extends OnsetOrderKey>(
   events: readonly T[],
   gapHours: number,
 ): T[] {
   if (events.length === 0) return [];
   const gapMs = gapHours * MS_PER_HOUR;
-  const sorted = [...events].sort((a, b) => a.ms - b.ms);
+  const sorted = [...events].sort(compareOnsets);
   const episodes: T[] = [sorted[0]];
   let prev = sorted[0].ms;
   for (let i = 1; i < sorted.length; i++) {
