@@ -64,7 +64,7 @@ jest.mock('../../../store/petStore', () => ({
 }));
 
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { AccessibilityInfo, StyleSheet } from 'react-native';
 import { LOOK_HEAD_WORDS } from '../../../constants/lookWords';
 import { wordsToLocalText } from '../../../lib/lookWordsCodec';
 import { useEventStore } from '../../../store/eventStore';
@@ -75,6 +75,7 @@ import {
   HEADER_CHIP_ROW_GAP,
   LINE_CLEARANCE,
   LOOK_ADD,
+  LOOK_DWELL_SCREEN_READER_MS,
   LOOK_MORE,
   LookHeader,
   REFUSAL_DOORS_IN_COMPACT_SET,
@@ -179,6 +180,60 @@ describe('a tap is a fact with a time', () => {
     expect(t.queryByTestId('look-header-chips')).toBeNull();
     // Undo, while the register holds the dwell.
     expect(t.getByTestId('look-header-undo')).toBeTruthy();
+  });
+
+  it('CUL-1224 (GAP-6): under a screen reader the write takes Undo into focus, says itself, and holds the beat long', async () => {
+    const sr = jest.spyOn(AccessibilityInfo, 'isScreenReaderEnabled').mockResolvedValue(true);
+    const focus = jest.spyOn(AccessibilityInfo, 'sendAccessibilityEvent').mockImplementation(() => {});
+    const said = jest.spyOn(AccessibilityInfo, 'announceForAccessibilityWithOptions').mockImplementation(() => {});
+    focus.mockClear();
+    said.mockClear();
+    // Swapped in and out by hand: a jest spy on the state object is copied into every
+    // later state by zustand's merge, and outlives its own restore.
+    const original = useMomentStore.getState().showLook;
+    const show = jest.fn((...args: Parameters<typeof original>) => original(...args));
+    useMomentStore.setState({ showLook: show });
+    try {
+      const t = render(<LookHeader />);
+      await act(async () => {
+        fireEvent.press(t.getByTestId('look-header-chip-subdued'));
+      });
+      expect(t.getByTestId('look-header-undo')).toBeTruthy();
+      expect(focus).toHaveBeenCalledTimes(1);
+      expect(focus).toHaveBeenCalledWith(expect.anything(), 'focus');
+      expect(said).toHaveBeenCalledTimes(1);
+      expect(said).toHaveBeenCalledWith(expect.stringMatching(/^Off, noted at .+\.$/), { queue: true });
+      expect(show).toHaveBeenCalledWith(expect.objectContaining({ eventId: 'e1' }), { durationMs: LOOK_DWELL_SCREEN_READER_MS });
+    } finally {
+      useMomentStore.setState({ showLook: original });
+      sr.mockRestore();
+      focus.mockRestore();
+      said.mockRestore();
+    }
+  });
+
+  it('CUL-1224: without a screen reader the beat is the shipped five seconds, and focus is left alone', async () => {
+    const sr = jest.spyOn(AccessibilityInfo, 'isScreenReaderEnabled').mockResolvedValue(false);
+    const focus = jest.spyOn(AccessibilityInfo, 'sendAccessibilityEvent').mockImplementation(() => {});
+    focus.mockClear();
+    // Swapped in and out by hand: a jest spy on the state object is copied into every
+    // later state by zustand's merge, and outlives its own restore.
+    const original = useMomentStore.getState().showLook;
+    const show = jest.fn((...args: Parameters<typeof original>) => original(...args));
+    useMomentStore.setState({ showLook: show });
+    try {
+      const t = render(<LookHeader />);
+      await act(async () => {
+        fireEvent.press(t.getByTestId('look-header-chip-subdued'));
+      });
+      expect(t.getByTestId('look-header-undo')).toBeTruthy();
+      expect(focus).not.toHaveBeenCalled();
+      expect(show).toHaveBeenCalledWith(expect.objectContaining({ eventId: 'e1' }), undefined);
+    } finally {
+      useMomentStore.setState({ showLook: original });
+      sr.mockRestore();
+      focus.mockRestore();
+    }
   });
 
   it('Undo and Add a look never share hit area — the line sits a full reach below (C-5)', async () => {
