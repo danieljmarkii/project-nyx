@@ -883,14 +883,17 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // sentence drops it) and so does the New arm's "first in over a week". This expand sits
     // directly above the phone script, which already says "at least"; the two must agree.
     if (finding.countIsFloor === true) {
+      // The tier's own ask, in the order the card face states it (the second adversarial pass).
       const ask =
         finding.tier === 'firm'
           ? 'Symptoms on most days is a pattern worth a vet visit soon — a read of your logs, not a diagnosis.'
-          : "It's a pattern in your logs, not a diagnosis — worth a word with your vet, and keeping an eye on whether it carries on.";
+          : finding.tier === 'soft'
+            ? "It's a pattern in your logs, not a diagnosis — worth keeping an eye on, and a word with your vet if it carries on."
+            : "It's a pattern in your logs, not a diagnosis — worth a word with your vet, and keeping an eye on whether it carries on.";
       return (
         `We've logged at least ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} ` +
-        `on at least ${count(finding.currentDays, 'day', 'days')} this week. Not all of ${petName}'s record could be ` +
-        `read, so these are the fewest there were, and last week isn't compared. ${ask}`
+        `on at least ${count(finding.currentDays, 'day', 'days')} this week. Part of ${petName}'s record didn't load, ` +
+        `so the real numbers may be higher, and last week isn't compared. ${ask}`
       );
     }
     const isNew = finding.priorCount === 0;
@@ -958,8 +961,8 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
       finding.countIsFloor === true
         ? `We've logged at least ${count(finding.episodeCount, 'episode', 'episodes')} of ${symptom} for ${petName} ` +
           `across at least ${finding.activeWeeks} of the last ${weeks} weeks, the most recent ` +
-          `${recencyPhrase(finding.daysSinceLastEpisode)}. Not all of ${petName}'s record could be read, so these are ` +
-          `the fewest there were. A symptom that keeps recurring over weeks is worth ${vetAsk}`
+          `${recencyPhrase(finding.daysSinceLastEpisode)}. Part of ${petName}'s record didn't load, so the real numbers ` +
+          `may be higher. A symptom that keeps recurring over weeks is worth ${vetAsk}`
         : `Since ${onsetMonth(finding.firstOnsetIso)}, we've logged ${count(finding.episodeCount, 'episode', 'episodes')} of ` +
           `${symptom} for ${petName} across ${finding.activeWeeks} of the last ${weeks} weeks, the most recent ` +
           `${recencyPhrase(finding.daysSinceLastEpisode)}. A symptom that keeps recurring over weeks is worth ${vetAsk}`;

@@ -402,6 +402,12 @@ describe('the expand above the script says the floor too (CUL-1575, the adversar
     }
   });
 
+  it('a floor worsening keeps its tier’s own ask, in the face’s order (the second pass)', () => {
+    const soft = { ...worsening({ tier: 'soft', trigger: 'more_days' }), countIsFloor: true } as SymptomWorseningFinding;
+    expect(evidenceText(soft, 'Nyx')).toMatch(/worth keeping an eye on, and a word with your vet if it carries on\.$/);
+    expect(evidenceText(soft, 'Nyx')).toMatch(/real numbers may be higher/);
+  });
+
   it('a floor chronicity’s evidence drops the onset month and says "at least"', () => {
     const f = { ...chronicity({ episodeCount: 6, activeWeeks: 4, firstOnsetIso: '2026-08-20T09:00:00Z' }), countIsFloor: true } as SymptomChronicityFinding;
     const text = evidenceText(f, 'Nyx');

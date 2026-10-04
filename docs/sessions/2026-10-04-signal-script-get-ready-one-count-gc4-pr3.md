@@ -48,7 +48,15 @@ Counterexamples that held:
 - a falling pair under a safety card;
 - UTC, +14, +12:45 and −10.
 
-Pass 2: see the outcome comment on CUL-1570.
+Pass 2: **PASS.**
+- Every pass-1 fix held a concrete counterexample, and five of five mutations went red.
+- Two nits applied:
+  - a soft-tier worsening's floor expand now carries the soft ask, in the face's order;
+  - the floor sentence was re-voiced after the adversarial rewrite (C-28): "Part of Nyx's record didn't load, so the real numbers may be higher."
+- Residuals, all pre-existing:
+  - the cross-pet banner still says "since <month>" and states burden counts without "at least" over a floor (added to CUL-1584);
+  - `careVisitConcerns` reads a floored onset as a lower bound, which keeps the ask live (the escalation direction);
+  - one UTC run failed once and did not reproduce in nine re-runs. CI is the arbiter.
 
 `code-reviewer`: minor. The not-ready screen read is now logged, and the shipped-card floor change is documented in the PR.
 
@@ -65,7 +73,7 @@ Mutation proofs (each red):
 ## Residuals
 
 - **CUL-1583:** the burden title (`lib/signalTitle.ts`, PR-28's file, off-limits) and the engine's sentence template still say "times".
-- **CUL-1584:** Home's row count line over a floor.
+- **CUL-1584:** Home's row count line and the cross-pet banner over a floor.
 - **Read fan-out.** Get ready reads one screen per counted finding (CUL-1581 covers the same fan-out on Home).
 - **Merge hold.** The code already quotes the recount, so the PR must not merge before the G6 amendment is approved.
 
