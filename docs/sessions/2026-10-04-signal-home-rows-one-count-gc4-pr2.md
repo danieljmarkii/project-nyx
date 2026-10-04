@@ -27,7 +27,7 @@ Shipped via #1053. A BUILD session dispatched by `/dispatch` (row PR-27b) on CUL
 
 ## Falsification
 
-`adversarial-reviewer`: three passes. Each failed on a new path the previous fix exposed or left open; every fix is pinned and mutation-proven.
+`adversarial-reviewer`: four passes. The first three each failed on a new path the previous fix exposed or left open; every fix is pinned and mutation-proven.
 
 1. **First pass: FAIL.**
    - A screen that sets the finding aside (an antiemetic course beside a falling reflection or a falling trial pair) left Home drawing the engine's falling pair.
@@ -41,6 +41,8 @@ Shipped via #1053. A BUILD session dispatched by `/dispatch` (row PR-27b) on CUL
    - a safety worsening on a failed read never prints a falling pair (the tier and trigger guarantee current above prior);
    - a set-aside safety headline carries no count;
    - the tick and key race never pairs old numbers with a new finding.
+
+4. **Fourth pass: PASS.** The fix holds, and mutating it out turns its test red. A falling card in the same state stays quiet. A rising card from an older trial names one day in its headline and its count. A zero pooled count is unreachable, because the rate gate never passes 0 against 2. The new import reaches no Edge Function and forms no cycle. Two non-blocking notes were applied: a test now pins the in-flight hold, and a comment that overstated "the masking rule keeps a rise over any record" was corrected.
 
 `code-reviewer` found:
 - a one-frame stale answer across an identity change, fixed by the keyed answer;

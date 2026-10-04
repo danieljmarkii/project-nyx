@@ -147,9 +147,11 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
       : quietInsight
         ? {
             ...base,
-            // A rising trial card keeps its trial count on a read that did not answer: the
-            // masking rule keeps a rise over any record, and the card reached Home because the
-            // contrast moved — a bare "day 14 of 56" would read as routine (C-37).
+            // A rising trial card keeps its trial count on a read that did not answer: the card
+            // reached Home because the contrast moved, and a bare "day 14 of 56" would read as
+            // routine (C-37). The count is trial-only and compares nothing, so it stays true even
+            // where the screen, had it answered, would have set the pair aside (a masked trial
+            // whose calendar-day rate sits under the baseline's). In flight it waits (C-12).
             count:
               screen?.kind === 'unanswered' && finding.type === 'trial_response' && finding.comparisonDirection === 'more_during_trial'
                 ? trialSoFarClause(finding)
