@@ -29,6 +29,7 @@ import { dayStartMs, instantOnDay, needsWholeDays, type HistoryDayTiming } from 
 import { readHistoryRecord, type HistoryRecordData } from '../lib/historyWindowFacts';
 import { resolveWindow, windowParam, type ResolvedWindow, type WindowFacts } from '../lib/historyWindows';
 import { DEFAULT_MEAL_TIMING_CONFIG } from '../lib/mealTiming';
+import { carryRosesAcrossFailedLook } from '../lib/readState';
 import { mayCarryRead, type SpineAnalysisRow } from '../lib/spineNode';
 import {
   readAnalysisCopy,
@@ -333,26 +334,32 @@ function readableIdsIn(days: ReadonlyMap<string, readonly HistoryRow[]>): Set<st
 interface ReadAnswer {
   answered: ReadonlySet<string>;
   rows: ReadonlyMap<string, SpineAnalysisRow>;
+  /** The ids a FAILED look asked about: on screen they keep only a rose (CUL-1585). */
+  failed: ReadonlySet<string>;
 }
-
-const NO_ANSWER: ReadAnswer = { answered: new Set(), rows: new Map() };
 
 async function readAnalysis(days: ReadonlyMap<string, readonly HistoryRow[]>): Promise<ReadAnswer> {
   const asked = readableIdsIn(days);
   const rows = await readAnalysisCopy([...asked]);
-  return rows === null ? NO_ANSWER : { answered: asked, rows };
+  return rows === null
+    ? { answered: new Set(), rows: new Map(), failed: asked }
+    : { answered: asked, rows, failed: new Set() };
 }
 
-/** Two answers as one: the later one's rows win for the ids it answered. */
+/** Two answers as one: the later one's rows win for the ids it answered, and an id either
+ *  one answered is not failed. */
 function joinAnswers(a: ReadAnswer, b: ReadAnswer): ReadAnswer {
-  return { answered: new Set([...a.answered, ...b.answered]), rows: new Map([...a.rows, ...b.rows]) };
+  const answered = new Set([...a.answered, ...b.answered]);
+  const failed = new Set([...a.failed, ...b.failed].filter((id) => !answered.has(id)));
+  return { answered, rows: new Map([...a.rows, ...b.rows]), failed };
 }
 
 /**
  * A look's answer laid over the reads on screen, `TodayCard`'s rule (HV-6): the ids the look
- * answered take its answer (a missing row means "no read on this phone"); every other loaded
- * row keeps its last answer, so a look that failed changes nothing and a rose already drawn
- * stays drawn (CUL-1198). A read for a row no longer loaded (removed meanwhile) leaves.
+ * answered take its answer (a missing row means "no read on this phone"); an id a FAILED look
+ * asked about keeps a rose already drawn (CUL-1198) and nothing else, going back to unanswered
+ * (`carryRosesAcrossFailedLook`, CUL-1585); every other loaded row keeps its last answer. A
+ * read for a row no longer loaded (removed meanwhile) leaves.
  */
 function settleReads(
   prev: Pick<HistorySnapshot, 'analysis' | 'answered'> | null,
@@ -364,8 +371,9 @@ function settleReads(
   const analysis = new Map<string, SpineAnalysisRow>();
   const answered = new Set<string>();
   if (prev) {
-    for (const id of prev.answered) if (present.has(id) && !answer.answered.has(id)) answered.add(id);
-    for (const [id, row] of prev.analysis) if (present.has(id) && !answer.answered.has(id)) analysis.set(id, row);
+    const kept = carryRosesAcrossFailedLook({ answered: prev.answered, rows: prev.analysis }, answer.failed);
+    for (const id of kept.answered) if (present.has(id) && !answer.answered.has(id)) answered.add(id);
+    for (const [id, row] of kept.rows) if (present.has(id) && !answer.answered.has(id)) analysis.set(id, row);
   }
   for (const id of answer.answered) if (present.has(id)) answered.add(id);
   for (const [id, row] of answer.rows) if (present.has(id)) analysis.set(id, row);
@@ -489,8 +497,9 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
       // older than one already applied does not overwrite it.
       const onScreen = get().snapshot;
       const shown = onScreen && onScreen.key === key && onScreen.petId === pet.id ? onScreen : null;
+      // An older look yields to the newer one applied, its failure included: it demotes nothing.
       const current = readSeq < readsApplied && shown
-        ? { answered: new Set([...answer.answered].filter((id) => !shown.answered.has(id))), rows: answer.rows }
+        ? { answered: new Set([...answer.answered].filter((id) => !shown.answered.has(id))), rows: answer.rows, failed: new Set<string>() }
         : answer;
       if (answer.answered.size > 0) readsApplied = Math.max(readsApplied, readSeq);
       const reads = settleReads(shown, current, wholeDays);
@@ -594,13 +603,15 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
     if (!snap) return;
     const seq = ++readsIssued;
     const answer = await readAnalysis(snap.wholeDays);
-    // A failed look answers nothing, and an answer older than one applied yields to it.
-    if (answer.answered.size === 0 || seq < readsApplied) return;
+    // An answer older than one applied yields to it, and a look that asked about nothing
+    // changes nothing. A failed look still lands: it keeps the roses and nothing else
+    // (CUL-1585), and moves no applied mark, so an older answer still lands after it.
+    if ((answer.answered.size === 0 && answer.failed.size === 0) || seq < readsApplied) return;
     const now = get().snapshot;
     // Laid over whatever the snapshot on screen holds now (a page may have landed since,
     // whose reads this did not ask about), as long as it is still the same scope's.
     if (!now || now.key !== snap.key || now.petId !== snap.petId) return;
-    readsApplied = seq;
+    if (answer.answered.size > 0) readsApplied = seq;
     set({ snapshot: { ...now, ...settleReads(now, answer, now.wholeDays) } });
   },
 

@@ -7,6 +7,7 @@
 // `unread`, the grey *No read yet*.
 
 import {
+  carryRosesAcrossFailedLook,
   isWorthACall,
   readStateOf,
   readVerdictOf,
@@ -335,5 +336,35 @@ describe('the tier (EN-3): the louder column, status ahead of tier, words by rul
         }
       }
     }
+  });
+});
+
+describe('carryRosesAcrossFailedLook — a failed look keeps the rose and nothing else (CUL-1585)', () => {
+  const rows = new Map<string, ReadCopy>([
+    ['rose', { status: 'completed', recommendation: 'worth_a_call' }],
+    ['failedRose', { status: 'failed', recommendation: 'worth_a_call' }],
+    ['unknown', { status: 'completed', recommendation: 'call_the_vet_now' }],
+    ['calm', { status: 'completed', recommendation: 'monitor' }],
+    ['unclear', { status: 'uncertain', recommendation: 'not_enough_to_say' }],
+    ['outside', { status: 'completed', recommendation: 'monitor' }],
+    ['pending', { status: 'pending', recommendation: null }],
+  ]);
+  const prev = { answered: new Set([...rows.keys(), 'noRead']), rows };
+
+  it('keeps every row the rose predicate calls a call, and unanswers every other row it asked about', () => {
+    const kept = carryRosesAcrossFailedLook(prev, ['rose', 'failedRose', 'unknown', 'calm', 'unclear', 'noRead', 'pending']);
+    // A row the server left pending stays: no reassurance, and it keeps the surface watching.
+    expect([...kept.answered].sort()).toEqual(['failedRose', 'outside', 'pending', 'rose', 'unknown']);
+    expect([...kept.rows.keys()].sort()).toEqual(['failedRose', 'outside', 'pending', 'rose', 'unknown']);
+    // The same predicate the surfaces draw the rose from, so the two cannot disagree.
+    for (const [id, copy] of rows) if (isWorthACall(copy)) expect(kept.rows.has(id)).toBe(true);
+  });
+
+  it('hands back the same object when nothing goes back, and never mutates what it was handed', () => {
+    // Nothing goes back: the same object, so a failed look re-arms no watch.
+    expect(carryRosesAcrossFailedLook(prev, [])).toBe(prev);
+    expect(carryRosesAcrossFailedLook(prev, ['rose', 'pending', 'neverSeen'])).toBe(prev);
+    carryRosesAcrossFailedLook(prev, ['calm']);
+    expect(prev.rows.has('calm')).toBe(true);
   });
 });
