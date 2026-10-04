@@ -337,6 +337,12 @@ export interface TrialOutcomeFacts {
    * named as the act, never counted as the day). Absent reads as no looks.
    */
   beforeHasLooks?: boolean;
+  /**
+   * The same presence flag for the trial stretch. Together the two say whether EITHER
+   * stretch holds a look, which is what decides the empty-symptom fact line (CUL-1483).
+   * Absent reads as no looks.
+   */
+  duringHasLooks?: boolean;
   /** Every symptom type with activity in either stretch, most-during first. */
   symptoms: TrialSymptomDelta[];
   meals: { before: TrialMealDensity; during: TrialMealDensity };
@@ -385,6 +391,15 @@ export const OUTCOME_QUESTION_NOTE_NO_COUNTS =
   'Culprit reports what happened; your vet decides what it means. Your read goes ' +
   'on the report in your name. Answering is optional — the record goes on the ' +
   'report either way.';
+
+/** The fact line for a sheet with no symptom rows in either stretch while either stretch
+ *  holds a daily look (CUL-1483). It names the looks as what the counts leave out and
+ *  claims no absence: the plain line's "No symptoms are on the record" is true of the
+ *  log, and still reads as an all-clear beside weeks of "Off" or "Hunched or tucked up"
+ *  the owner chose and this sheet never reads (daily-look spec §5.1 row 1b / Q-17: an
+ *  absence claim beside the owner's contrary observation is reassurance by construction). */
+export const OUTCOME_LOOKS_FACT_LINE =
+  'What you noticed on your daily looks isn’t counted here. Only the symptoms you log are.';
 
 export const OUTCOME_NOTES_PLACEHOLDER = 'Anything you want your vet to know (optional)';
 
@@ -574,11 +589,21 @@ export function buildOutcomeSheet(args: {
         'with than it looks.'
       : `Compared with the ${spanPhrase(facts.beforeDays)} before it started.`;
 
+  // Either stretch, not only the before one: a well-logged before-stretch with looks only
+  // during the trial is the same all-clear over the owner's own words.
+  const looksInEither = noticed || facts.duringHasLooks === true;
+  // No counts to point at: the plain question's "that" and its note's "these counts"
+  // would land on the looks line, so the sheet takes the referent-free pair the decline
+  // branch uses for the same reason.
+  const noCounts = facts.symptoms.length === 0 && looksInEither;
+
   const factLines =
     facts.symptoms.length === 0
-      ? // RECORD-FORM, deliberately. "No symptoms" would be a claim about the
-        // world; this is a claim about the log, which is all Culprit can see.
-        ['No symptoms are on the record for either stretch.']
+      ? noCounts
+        ? [OUTCOME_LOOKS_FACT_LINE]
+        : // RECORD-FORM, deliberately. "No symptoms" would be a claim about the
+          // world; this is a claim about the log, which is all Culprit can see.
+          ['No symptoms are on the record for either stretch.']
       : facts.symptoms.map((s) =>
           facts.beforeTracked
             ? `${s.label}: ${s.before} before · ${s.during} during.`
@@ -599,8 +624,9 @@ export function buildOutcomeSheet(args: {
     densityLine: densityLine(facts, petName),
     // The referent-free variants when the decline branch has removed the counts
     // these two sentences otherwise point at.
-    question: declineLead ? OUTCOME_QUESTION_NO_COUNTS : OUTCOME_QUESTION,
-    questionNote: declineLead ? OUTCOME_QUESTION_NOTE_NO_COUNTS : OUTCOME_QUESTION_NOTE,
+    question: declineLead || noCounts ? OUTCOME_QUESTION_NO_COUNTS : OUTCOME_QUESTION,
+    questionNote:
+      declineLead || noCounts ? OUTCOME_QUESTION_NOTE_NO_COUNTS : OUTCOME_QUESTION_NOTE,
     options: OUTCOME_OPTIONS,
     notesPlaceholder: OUTCOME_NOTES_PLACEHOLDER,
     saveLabel: 'Save',

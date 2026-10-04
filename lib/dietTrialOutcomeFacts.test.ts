@@ -23,7 +23,10 @@ jest.mock('./feedingArrangements', () => ({
 }));
 
 import { loadTrialOutcomeFacts } from './dietTrialOutcomeFacts';
-import { buildOutcomeSheet } from './dietTrialCompletion';
+import {
+  buildOutcomeSheet, OUTCOME_LOOKS_FACT_LINE, OUTCOME_QUESTION, OUTCOME_QUESTION_NO_COUNTS,
+  OUTCOME_QUESTION_NOTE_NO_COUNTS,
+} from './dietTrialCompletion';
 
 /** Local noon on a calendar date, so no fixture sits on a day boundary — the
  *  boundary is LOCAL midnight and that is precisely what is under test. */
@@ -426,5 +429,49 @@ describe('a daily look is not observability', () => {
     expect(buildOutcomeSheet({ facts: facts!, petName: 'Mochi' }).comparisonLine).toContain(
       'only 1 of those 14 days has anything logged besides what you noticed',
     );
+  });
+});
+
+// CUL-1483. With no symptom rows the sheet used to print "No symptoms are on the record for
+// either stretch." over weeks of looks it never reads the words of, an all-clear above "Does
+// that match what you've seen?". Both shapes the adversarial pass reproduced, over the real
+// loader: looks in both stretches, and a well-logged before-stretch with looks only during.
+describe('CUL-1483 — no absence claim over the owner’s looks', () => {
+  const PLAIN = 'No symptoms are on the record for either stretch.';
+
+  it('looks in both stretches and no symptom rows: the looks are named, absence is not claimed', async () => {
+    const facts = await load([ev('check_in', at(2026, 7, 3)), ev('check_in', at(2026, 7, 20))]);
+    expect([facts!.beforeHasLooks, facts!.duringHasLooks, facts!.symptoms]).toEqual([true, true, []]);
+    const sheet = buildOutcomeSheet({ facts: facts!, petName: 'Mochi' });
+    expect(sheet.factLines).toEqual([OUTCOME_LOOKS_FACT_LINE]);
+    // No counts are on screen, so neither sentence below may point at them.
+    expect([sheet.question, sheet.questionNote]).toEqual([OUTCOME_QUESTION_NO_COUNTS, OUTCOME_QUESTION_NOTE_NO_COUNTS]);
+    const everyString = [sheet.title, sheet.comparisonLine, ...sheet.factLines, sheet.densityLine, sheet.question, sheet.questionNote].join(' ');
+    expect(everyString).not.toMatch(/No symptoms/i);
+  });
+
+  it('a well-logged before-stretch with looks only during the trial: the during look alone carries it', async () => {
+    const before = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((d) => ev('meal', at(2026, 7, d)));
+    const facts = await load([...before, ev('meal', at(2026, 7, 18)), ev('check_in', at(2026, 7, 20))]);
+    expect([facts!.beforeHasLooks, facts!.duringHasLooks, facts!.beforeLoggedDays]).toEqual([false, true, 14]);
+    const sheet = buildOutcomeSheet({ facts: facts!, petName: 'Mochi' });
+    expect(sheet.comparisonLine).toBe('Compared with the 2 weeks before it started.');
+    expect(sheet.factLines).toEqual([OUTCOME_LOOKS_FACT_LINE]);
+    expect(sheet.question).toBe(OUTCOME_QUESTION_NO_COUNTS);
+  });
+
+  it('a look on the pad day is outside both stretches, so the plain line stands', async () => {
+    const facts = await load([ev('check_in', at(2026, 6, 30)), ev('meal', at(2026, 7, 4)), ev('meal', at(2026, 7, 20))]);
+    expect([facts!.beforeHasLooks, facts!.duringHasLooks]).toEqual([false, false]);
+    const sheet = buildOutcomeSheet({ facts: facts!, petName: 'Mochi' });
+    expect(sheet.factLines).toEqual([PLAIN]);
+    expect(sheet.question).toBe(OUTCOME_QUESTION);
+  });
+
+  it('with symptom rows the counts render as before, looks or not: the flag only replaces the absence line', async () => {
+    const facts = await load([ev('check_in', at(2026, 7, 3)), ev('meal', at(2026, 7, 4)), ev('itch', at(2026, 7, 20))]);
+    const sheet = buildOutcomeSheet({ facts: facts!, petName: 'Mochi' });
+    expect(sheet.factLines).toEqual(['Itch/Scratch: 0 before · 1 during.']);
+    expect(sheet.question).toBe(OUTCOME_QUESTION);
   });
 });
