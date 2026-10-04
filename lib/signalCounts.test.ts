@@ -195,6 +195,13 @@ describe('GC-4 — PROPERTY: every stated number is the chart’s count under it
         expect((c.prior as { days: number; episodes: number })[axis]).toBeLessThanOrEqual(c.recent[axis]);
       }
       if (priorSaid && finding.priorityClass === 'insight') expect(withheld).toBeNull();
+      // And never above the engine's own earlier count on that axis (the second pass).
+      if (priorSaid) {
+        const engineDays = finding.type === 'symptom_worsening' && finding.tier !== 'standard';
+        const stated = engineDays ? (c.prior as { days: number }).days : (c.prior as { episodes: number }).episodes;
+        const bound = finding.type === 'symptom_worsening' ? (engineDays ? finding.priorDays : finding.priorCount) : finding.type === 'reflection' ? finding.priorCount : -1;
+        expect(stated).toBeLessThanOrEqual(bound);
+      }
 
       // The voice: no "times" over an episode count, no "this week", nothing the vocabulary bans.
       expect(`${title} ${sentence}`).not.toMatch(/\btimes?\b|this week|last week|since|!/);

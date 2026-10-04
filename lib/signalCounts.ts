@@ -135,15 +135,32 @@ export function signalCountsOf(
  * then the one `findingMaskVerdict` has already judged, and a local zero or fall beside the
  * drug's caption is never minted here.
  */
-export function countsMayCompose(finding: CountedFinding, c: SignalCounts, maskTouched: boolean): boolean {
-  if (maskTouched) return false;
+export function countsMayCompose(
+  finding: CountedFinding,
+  c: SignalCounts,
+  context: {
+    maskTouched: boolean;
+    /** Local days since the engine counted (today − the cache row's day), 0 when unknown —
+     *  the most a "most recent" may have aged honestly since then. */
+    elapsedDays: number;
+  },
+): boolean {
+  if (context.maskTouched) return false;
   switch (finding.type) {
-    case 'symptom_chronicity':
-      return c.activeWeeks >= finding.activeWeeks && c.lookbackEpisodes >= finding.episodeCount && c.lookbackEpisodes > 0;
+    case 'symptom_chronicity': {
+      // The newest episode may be no staler than the engine's newest, aged by the days since it
+      // counted: a phone holding older backfill but not another device's latest log would
+      // otherwise print "the most recent 20 days ago" under a course that is still going.
+      const freshEnough =
+        c.daysSinceLast != null && c.daysSinceLast <= finding.daysSinceLastEpisode + Math.max(0, Math.floor(context.elapsedDays));
+      return c.activeWeeks >= finding.activeWeeks && c.lookbackEpisodes >= finding.episodeCount && c.lookbackEpisodes > 0 && freshEnough;
+    }
     case 'symptom_worsening':
       return c.recent.episodes >= finding.currentCount && c.recent.days >= finding.currentDays && c.recent.episodes > 0;
     case 'reflection':
-      return c.recent.episodes >= finding.currentCount;
+      // A rise is not a reflection's to state: the engine routes a rise to a worsening, with an
+      // ask; drawn in the insight register it would read a tripled count as a calm note.
+      return c.recent.episodes >= finding.currentCount && (c.prior == null || c.recent.episodes <= c.prior.episodes);
   }
 }
 
@@ -197,9 +214,9 @@ export function countedPriorStated(finding: CountedFinding, c: SignalCounts, wit
   if (finding.type === 'symptom_chronicity') return false;
   const safety = finding.priorityClass === 'safety';
   if (finding.type === 'symptom_worsening' && (finding.tier === 'firm' || finding.tier === 'soft')) {
-    return priorMayPrint(c.recent.days, c.prior?.days ?? null, safety, withheld);
+    return priorMayPrint(c.recent.days, c.prior?.days ?? null, finding.priorDays, safety, withheld);
   }
-  return priorMayPrint(c.recent.episodes, c.prior?.episodes ?? null, safety, withheld);
+  return priorMayPrint(c.recent.episodes, c.prior?.episodes ?? null, finding.priorCount, safety, withheld);
 }
 
 function count(n: number, one: string, many: string): string {
@@ -221,10 +238,14 @@ function recencyPhrase(daysSince: number): string {
  * reader may not see: never under a safety finding (GC-3: a worsening is never drawn as a
  * fall), and under an insight only when the shipped withhold rules let the pair print. A
  * zero earlier week is never paired either — 0 → N is the New chip's fact, not a trend
- * (B-727).
+ * (B-727). And never above the ENGINE's earlier count for the same axis (the second
+ * adversarial pass): a prior that grew since the engine counted — a days-old cache whose
+ * week is now the local "7 before", backfill, a second device's sync — would flatten a
+ * worsening ("4, and 4 before" under a 4-vs-1 card) or steepen a reflection's fall. Every
+ * stated number is at least as alarming as the engine's, or it is not stated.
  */
-function priorMayPrint(recent: number, prior: number | null, safety: boolean, withheld: boolean): prior is number {
-  if (prior == null || prior === 0 || withheld) return false;
+function priorMayPrint(recent: number, prior: number | null, enginePrior: number, safety: boolean, withheld: boolean): prior is number {
+  if (prior == null || prior === 0 || withheld || prior > enginePrior) return false;
   return safety ? prior <= recent : true;
 }
 
@@ -291,19 +312,19 @@ export function countedSentence(
       const ask = worseningAsk(finding.tier);
       if (finding.tier === 'firm' || finding.tier === 'soft') {
         const pd = c.prior?.days ?? null;
-        const prior = priorMayPrint(c.recent.days, pd, safety, withheld) ? `, and on ${pd} of the 7 before` : '';
+        const prior = priorMayPrint(c.recent.days, pd, finding.priorDays, safety, withheld) ? `, and on ${pd} of the 7 before` : '';
         return (
           `${petName} has had ${symptom} on ${c.recent.days} of the last 7 days ` +
           `(${count(c.recent.episodes, 'episode', 'episodes')})${prior} — ${ask}.`
         );
       }
       const p = c.prior?.episodes ?? null;
-      const prior = priorMayPrint(c.recent.episodes, p, safety, withheld) ? `, and ${p} in the 7 before` : '';
+      const prior = priorMayPrint(c.recent.episodes, p, finding.priorCount, safety, withheld) ? `, and ${p} in the 7 before` : '';
       return `${petName} has had ${count(c.recent.episodes, 'episode', 'episodes')} of ${symptom} in the last 7 days${prior} — ${ask}.`;
     }
     case 'reflection': {
       const p = c.prior?.episodes ?? null;
-      const prior = priorMayPrint(c.recent.episodes, p, safety, withheld) ? `, and ${p} in the 7 before` : '';
+      const prior = priorMayPrint(c.recent.episodes, p, finding.priorCount, safety, withheld) ? `, and ${p} in the 7 before` : '';
       return (
         `We've logged ${count(c.recent.episodes, 'episode', 'episodes')} of ${symptom} for ${petName} in the last 7 days${prior}. ` +
         `This is a count we're tracking with you — not a diagnosis, and not a verdict on how ${petName} is doing.`

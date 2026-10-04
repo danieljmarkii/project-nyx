@@ -110,7 +110,9 @@ const chronicity = (over: Partial<SymptomChronicityFinding> = {}): SymptomChroni
   spanDays: 55,
   activeWeeks: 7,
   symptomDays: 18,
-  daysSinceLastEpisode: 0,
+  // The mock record's newest episode is the trial's day 53, two days before the Thursday (C-35:
+  // a payload the record could produce, so the recount's freshness rule reads a real case).
+  daysSinceLastEpisode: 2,
   firstOnsetIso: '2026-07-01T00:00:00Z',
   tier: 'firm',
   windowDays: 56,

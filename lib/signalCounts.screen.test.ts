@@ -181,15 +181,57 @@ describe('one count on one safety screen — the script reads the sentence’s n
   });
 });
 
+describe('the second pass — every stated number at least as alarming as the engine’s', () => {
+  it('B: a firm worsening (engine 4 days vs 1) whose earlier window grew on the phone never prints a flat pair', () => {
+    const recent = days(-1, -2, -3, -4).map((e, i) => ({ ...e, eventId: `r${i}` }));
+    const prior = days(-8, -9, -10, -11).map((e, i) => ({ ...e, eventId: `p${i}` }));
+    const model = buildSignalScreenModel(
+      inputOf({ cached: cachedOf(worsening({ currentCount: 4, currentDays: 4, priorCount: 1, priorDays: 1 })), episodes: [...recent, ...prior] }),
+    );
+    expect(model.sentence).toBe('Nyx has had vomiting on 4 of the last 7 days (4 episodes) — worth booking a vet visit soon.');
+    const said = (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking) ?? []).map((f) => `${f.label}: ${f.value}`).join(' | ');
+    expect(said).not.toMatch(/Week before/);
+  });
+
+  it('F: a chronicity whose newest episode on the phone is staler than the engine’s keeps the engine’s words', () => {
+    // Seven old episodes across six weeks clear the counts, but the newest is 20 days back
+    // where the engine counted one yesterday (another device's log has not arrived).
+    const eps = days(-20, -27, -34, -41, -48, -55, -54).map((e, i) => ({ ...e, eventId: `c${i}` }));
+    const f = chronicity({ episodeCount: 7, activeWeeks: 6, daysSinceLastEpisode: 1 });
+    const stale = buildSignalScreenModel(inputOf({ cached: cachedOf(f), episodes: eps }));
+    expect(stale.sentence).toBe(ENGINE_TEXT);
+    // The same record counted 19 days ago: a "most recent" 20 days back is just that day aged.
+    const aged = buildSignalScreenModel(inputOf({ cached: cachedOf(f), episodes: eps, generatedOn: shift(TODAY, -19) }));
+    expect(aged.sentence).toMatch(/the most recent 20 days ago\./);
+  });
+
+  it('A: an improving reflection whose earlier window grew prints the recent count alone, never a steeper fall', () => {
+    const recent = days(-1, -2).map((e, i) => ({ ...e, eventId: `r${i}` }));
+    const prior = days(-7, -8, -9, -10, -11, -12, -13).map((e, i) => ({ ...e, eventId: `p${i}` }));
+    const model = buildSignalScreenModel(
+      inputOf({ cached: cachedOf(reflection({ direction: 'improving', currentCount: 2, priorCount: 3 })), episodes: [...recent, ...prior] }),
+    );
+    expect(model.sentence).toMatch(/^We've logged 2 episodes of vomiting for Nyx in the last 7 days\. /);
+  });
+
+  it('G: a reflection whose count rose on the phone is not drawn in the insight register — the engine’s words stand, dated', () => {
+    const recent = days(-1, -1, -2, -3, -4, -5).map((e, i) => ({ ...e, eventId: `r${i}` }));
+    const prior = days(-8, -9).map((e, i) => ({ ...e, eventId: `p${i}` }));
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(reflection({ currentCount: 2, priorCount: 2 })), episodes: [...recent, ...prior] }));
+    expect(model.sentence).toBe(ENGINE_TEXT);
+    expect(model.countedAt).toMatch(/The bars below count what is logged now\.$/);
+  });
+});
+
 describe('countsMayCompose', () => {
   it('needs every stated number to be at least the engine’s, and something to state', () => {
     const f = worsening({ currentCount: 2, currentDays: 2 });
     const weekly = (eps: string[]) => signalWeeks({ finding: f, today: TODAY, trial: null, episodeDays: eps, loggedDays: [] });
     const at = (eps: string[]) => signalCountsOf(f, weekly(eps), eps, TODAY);
-    expect(countsMayCompose(f, at([shift(TODAY, -1), shift(TODAY, -2)]), false)).toBe(true);
-    expect(countsMayCompose(f, at([shift(TODAY, -1), shift(TODAY, -1)]), false)).toBe(false); // 2 episodes, 1 day
-    expect(countsMayCompose(f, at([shift(TODAY, -1), shift(TODAY, -2)]), true)).toBe(false); // masked
+    expect(countsMayCompose(f, at([shift(TODAY, -1), shift(TODAY, -2)]), { maskTouched: false, elapsedDays: 0 })).toBe(true);
+    expect(countsMayCompose(f, at([shift(TODAY, -1), shift(TODAY, -1)]), { maskTouched: false, elapsedDays: 0 })).toBe(false); // 2 episodes, 1 day
+    expect(countsMayCompose(f, at([shift(TODAY, -1), shift(TODAY, -2)]), { maskTouched: true, elapsedDays: 0 })).toBe(false); // masked
     const zero = worsening({ currentCount: 0, currentDays: 0 });
-    expect(countsMayCompose(zero, signalCountsOf(zero, weekly([]), [], TODAY), false)).toBe(false);
+    expect(countsMayCompose(zero, signalCountsOf(zero, weekly([]), [], TODAY), { maskTouched: false, elapsedDays: 0 })).toBe(false);
   });
 });

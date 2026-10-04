@@ -702,7 +702,12 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
   const counted = isCountedFinding(finding) ? finding : null;
   const counts = counted ? signalCountsOf(counted, weekly, episodeDays, input.today) : null;
   const composed =
-    counted && counts && countsMayCompose(counted, counts, touches(input.masking, composedWindowStart(counted, weekly), input.today))
+    counted &&
+    counts &&
+    countsMayCompose(counted, counts, {
+      maskTouched: touches(input.masking, composedWindowStart(counted, weekly), input.today),
+      elapsedDays: input.generatedOn ? Math.max(0, indexOf(input.today) - indexOf(input.generatedOn)) : 0,
+    })
       ? { finding: counted, counts }
       : null;
   const scriptMasking = scriptMaskingOf(input);
