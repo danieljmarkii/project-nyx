@@ -639,15 +639,29 @@ function readPreviousSlotIndex(dir: { list(): { name: string; textSync?(): strin
  * `bowl_throughout` in `withholdingReasons`), so the widget follows it: a bowl down
  * now, or one that held every counted day, leaves the strip out and the band falls
  * back to the pips. Silence, never a ratio over days no meal could be logged on.
+ *
+ * CUL-1578 — and a bowl that held only PART of the counted range, gone now. The strip
+ * withholds on that too (`bowl_part`), because the bowl days still sit in the
+ * denominator; `intakeNotDirectlyObserved` is the any-overlap fact all three ride on.
  */
 export function widgetTrialCoverage(
   facts: Pick<
     TrialFacts,
-    'coverage' | 'coveredDayIndices' | 'intakeNotDirectlyObservedNow' | 'intakeNotDirectlyObservedThroughout'
+    | 'coverage'
+    | 'coveredDayIndices'
+    | 'intakeNotDirectlyObserved'
+    | 'intakeNotDirectlyObservedNow'
+    | 'intakeNotDirectlyObservedThroughout'
   > | null,
 ): { coverage: { daysLogged: number; daysElapsed: number }; coveredDayIndices: number[] } | null {
   if (!facts?.coverage) return null;
-  if (facts.intakeNotDirectlyObservedNow || facts.intakeNotDirectlyObservedThroughout) return null;
+  if (
+    facts.intakeNotDirectlyObserved ||
+    facts.intakeNotDirectlyObservedNow ||
+    facts.intakeNotDirectlyObservedThroughout
+  ) {
+    return null;
+  }
   return {
     coverage: { daysLogged: facts.coverage.daysLogged, daysElapsed: facts.coverage.daysElapsed },
     coveredDayIndices: facts.coveredDayIndices,

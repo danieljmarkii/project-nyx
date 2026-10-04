@@ -1117,10 +1117,81 @@ describe('a bowl that held every counted day, gone now (CUL-1572)', () => {
       .toMatch(/meals logged on 22 of 23 days/);
   });
 
-  it('a past bowl that held only part of the window keeps the ratio and the "part" line', () => {
-    const model = resolveTrialCard(activeInput({ freeFed: null, freeFedOverlap: true }));
+  it('a past bowl that held only part of the window drops the ratio and keeps the "part" line (CUL-1578)', () => {
+    const input = activeInput({
+      freeFed: null,
+      freeFedOverlap: true,
+      exposures: { mayStateRecordClean: false, totalFeedings: 40, offDiet: 2 },
+    });
+    const model = resolveTrialCard(input);
     const joined = allStrings(model).join(' ');
-    expect(joined).toMatch(/Meals logged on 22 of 23 days/);
+    expect(joined).not.toMatch(RATIO);
+    expect(joined).toMatch(/For part of this trial Biscuit had a bowl/);
+    // The counts are floors and stay (§5.2).
+    expect(joined).toMatch(/40 feedings in total/);
+    expect(withholdingReasons(input)).toEqual(['bowl_part']);
+    // Armed: the same record without the bowl prints the ratio on both surfaces.
+    const unbowled = { ...input, freeFedOverlap: false };
+    expect(allStrings(resolveTrialCard(unbowled)).join(' ')).toMatch(/Meals logged on 22 of 23 days/);
+    expect(resolveTrialStrip(unbowled)!.line).toMatch(/meals logged on 22 of 23 days/);
+  });
+
+  it('the strip withholds the ratio after a partial past bowl, and still states the off-diet floor', () => {
+    const input = activeInput({
+      freeFed: null,
+      freeFedOverlap: true,
+      exposures: { mayStateRecordClean: false, totalFeedings: 40, offDiet: 2 },
+    });
+    const line = resolveTrialStrip(input)!.line ?? '';
+    expect(line).not.toMatch(/meals logged on/);
+    expect(line).toMatch(/2 outside the trial diet/);
+  });
+
+  it.each(['completed', 'abandoned'] as const)(
+    'a %s trial whose bowl was still down at the end, but went down mid-trial, prints no ratio and names the bowl',
+    (status) => {
+      const model = resolveTrialCard(activeInput({
+        trial: {
+          status, startedAt: '2026-07-03', endedAt: '2026-08-27',
+          targetDurationDays: 56, foodLabel: FOOD, outcome: status === 'completed' ? 'improved' : null,
+        },
+        nowMs: localNoon(2026, 9, 1),
+        coverage: { daysLogged: 30, daysElapsed: 56 },
+        exposures: { mayStateRecordClean: false, totalFeedings: 60, offDiet: 0 },
+        freeFed: { loggedFeedings: 30 },
+        freeFedOverlap: true,
+        freeFedThroughout: null,
+      }));
+      expect(model.state).toBe(status);
+      const joined = allStrings(model).join(' ');
+      expect(joined).not.toMatch(RATIO);
+      expect(joined).toMatch(/For part of this trial Biscuit had a bowl/);
+    },
+  );
+
+  it('the running card with a bowl down now keeps its own lead, never the "part" line', () => {
+    const joined = allStrings(resolveTrialCard(activeInput({
+      freeFed: { loggedFeedings: 4 }, freeFedOverlap: true,
+    }))).join(' ');
+    expect(joined).toMatch(/grazes from a bowl/);
+    expect(joined).not.toMatch(/For part of this trial/);
+  });
+
+  it('the completed card drops the ratio after a partial past bowl too', () => {
+    const model = resolveTrialCard(activeInput({
+      trial: {
+        status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+        targetDurationDays: 56, foodLabel: FOOD, outcome: 'improved',
+      },
+      nowMs: localNoon(2026, 9, 1),
+      coverage: { daysLogged: 56, daysElapsed: 56 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 112, offDiet: 0 },
+      freeFed: null,
+      freeFedOverlap: true,
+    }));
+    expect(model.state).toBe('completed');
+    const joined = allStrings(model).join(' ');
+    expect(joined).not.toMatch(RATIO);
     expect(joined).toMatch(/For part of this trial Biscuit had a bowl/);
   });
 });
@@ -2842,8 +2913,10 @@ describe('the composition layer (B-559)', () => {
       coverage: { daysLogged: 9, daysElapsed: 23 },
       exposures: { mayStateRecordClean: false, totalFeedings: 40, offDiet: 40 },
     }));
+    // One fact, not two: the past bowl takes the ratio (CUL-1578), so only the
+    // feeding total is left above the qualifiers that explain the record.
     expect(model.lines.map((l) => l.role)).toEqual([
-      'fact', 'fact', 'qualifier', 'qualifier', 'qualifier', 'qualifier', 'caveat', 'note',
+      'fact', 'qualifier', 'qualifier', 'qualifier', 'qualifier', 'caveat', 'note',
     ]);
     expect(textOf(model, 'qualifier').map((t) => (
       t.includes('only sees what') ? 'blind-spot'
@@ -2881,6 +2954,9 @@ describe('the composition layer (B-559)', () => {
     && !input.trialDietRefusal
     && !input.rangeRefusal
     && !input.freeFed
+    // Any bowl in the counted range, gone or not (CUL-1572 / CUL-1578).
+    && !input.freeFedOverlap
+    && !input.freeFedThroughout
     && !input.allowedSetUnavailable
     && !input.antigenArmDark
     && !input.belowCoverageFloor

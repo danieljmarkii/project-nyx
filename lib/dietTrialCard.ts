@@ -789,6 +789,7 @@ export type TrialCardWithholding =
   | 'range_refusal'
   | 'free_fed'
   | 'bowl_throughout'
+  | 'bowl_part'
   | 'allowed_set_unavailable'
   | 'antigen_arm_dark'
   | 'untracked_head'
@@ -811,6 +812,15 @@ export function withholdingReasons(input: TrialCardInput): TrialCardWithholding[
   // caveat at all. Its own reason, not `free_fed` widened: `free_fed` drives the
   // present-tense "grazes from a bowl" copy, which is false once the bowl is gone.
   if (input.freeFedThroughout) reasons.push('bowl_throughout');
+  // CUL-1578 — the third bowl case: down for PART of the counted range, gone now.
+  // The ratio's denominator still holds the bowl days, which no meal-by-meal record
+  // could have filled, so it understates an owner who logged around the bowl (39 of
+  // 50, the 11 "missing" days exactly the bowl days) and flatters one who logged a
+  // wet meal on top of it (56 of 56 over 55 bowl days). The card says why in its
+  // "For part of this trial…" qualifier; the strip has nowhere to, so it withholds.
+  // Disjoint from the two above by construction: `free_fed` owns a bowl down now
+  // and `bowl_throughout` a bowl that held every counted day.
+  if (pastPartialBowl(input)) reasons.push('bowl_part');
   if (input.allowedSetUnavailable) reasons.push('allowed_set_unavailable');
   // B-597 — the dark antigen arm, the forgotten sibling of `allowed_set_unavailable`
   // above. The report withholds the clean claim AND discloses on this (§7.2 caveat +
@@ -1526,8 +1536,44 @@ export function resolveTrialCard(rawInput: TrialCardInput): TrialCardModel {
  * reason, the head included.
  */
 function withoutBowlRatio(input: TrialCardInput): TrialCardInput {
-  if (!input.freeFedThroughout) return input;
+  if (!input.freeFedThroughout && !partialBowlOnCard(input)) return input;
   return { ...input, coverage: null };
+}
+
+/**
+ * CUL-1578 — A BOWL THAT HELD PART OF THE COUNTED RANGE TAKES THE RATIO TOO, on the
+ * card and the strip alike. The ratio is days logged over days counted, and a bowl
+ * day is counted while being a day no meal-by-meal record can hold, so the number
+ * mixes two kinds of day it cannot tell apart: it read 39 of 50 for an owner who
+ * missed nothing (the eleven "gaps" were the bowl), and 56 of 56 beside "For part of
+ * this trial…" when 55 of the 56 days were bowl days. A ratio over the non-bowl days
+ * alone would need the bowl's dates per day, which the card input does not carry;
+ * until it does, the honest number is none, with the qualifier saying why.
+ *
+ * Keyed on the past bowl only (`!freeFed`): a bowl down now routes the running card
+ * to the `free_fed` register, which replaces the ratio already, and the strip
+ * withholds on `free_fed` itself.
+ */
+function pastPartialBowl(input: TrialCardInput): boolean {
+  return !!input.freeFedOverlap && !input.freeFed && !input.freeFedThroughout;
+}
+
+/**
+ * The CARD's half of the same rule, which is wider by one case: a FINISHED trial
+ * whose bowl was still down on its last day. `freeFed` is set there, but only the
+ * running states route to the `free_fed` register, so a terminal card falls to the
+ * record register and printed "Meals logged on 30 of 56 days" over a bowl that went
+ * down in week five, with no bowl line at all (`adversarial-reviewer`). The strip
+ * never sees that record (it renders only while a trial is active), so the reason
+ * list stays disjoint and this predicate lives beside it rather than inside it.
+ */
+function partialBowlOnCard(input: TrialCardInput): boolean {
+  if (pastPartialBowl(input)) return true;
+  return !!input.freeFedOverlap && !!input.freeFed && !input.freeFedThroughout && isTerminalTrial(input);
+}
+
+function isTerminalTrial(input: TrialCardInput): boolean {
+  return input.trial?.status === 'completed' || input.trial?.status === 'abandoned';
 }
 
 /**
@@ -2304,7 +2350,9 @@ function pushPastBowlCaveat(lines: TrialCardLine[], input: TrialCardInput): void
     });
     return;
   }
-  if (!input.freeFedOverlap || input.freeFed) return;
+  // A bowl down NOW leads the running card in its own register, so the line would
+  // repeat it; a finished card has no such register and needs the line (CUL-1578).
+  if (!input.freeFedOverlap || (input.freeFed && !isTerminalTrial(input))) return;
   lines.push({
     role: 'qualifier',
     text:

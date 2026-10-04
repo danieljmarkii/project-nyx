@@ -455,6 +455,7 @@ describe('widgetTrialCoverage (CUL-1572)', () => {
   const base = {
     coverage: { daysLogged: 56, daysElapsed: 56, fraction: 1 },
     coveredDayIndices: [1, 2, 3],
+    intakeNotDirectlyObserved: false,
     intakeNotDirectlyObservedNow: false,
     intakeNotDirectlyObservedThroughout: false,
   };
@@ -469,6 +470,10 @@ describe('widgetTrialCoverage (CUL-1572)', () => {
   it('states nothing over a bowl that held every counted day, or a bowl down now', () => {
     expect(widgetTrialCoverage({ ...base, intakeNotDirectlyObservedThroughout: true })).toBeNull();
     expect(widgetTrialCoverage({ ...base, intakeNotDirectlyObservedNow: true })).toBeNull();
+  });
+
+  it('states nothing after a bowl that held only part of the counted range (CUL-1578)', () => {
+    expect(widgetTrialCoverage({ ...base, intakeNotDirectlyObserved: true })).toBeNull();
   });
 
   it('states nothing with no facts or no coverage', () => {
