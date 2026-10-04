@@ -197,7 +197,6 @@ export function carryMonthRoses<F extends MonthPhotoFacts>(prev: F | undefined, 
   return { ...next, photoReads, photoDays: photoDaysOf(photoReads) };
 }
 
-
 export interface MonthModelInput {
   /** The shown month. `month` is 0-based, as `Date` counts it. */
   year: number;

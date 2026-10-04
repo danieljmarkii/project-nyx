@@ -72,7 +72,6 @@ import { isWorthACall } from './readState';
 import { dayKeyToLocalDate, toLocalDayKey } from './utils';
 import { photoDaysOf, type MonthContinuationDay, type MonthPhotoDay, type MonthPhotoRead } from './monthModel';
 
-
 export interface MonthFacts {
   episodeDays: string[];
   /** Days holding a vomit row but no episode start, each with the day its bout began. */

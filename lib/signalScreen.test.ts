@@ -1004,6 +1004,27 @@ describe('loadSignalScreen', () => {
     expect(mockFrom).not.toHaveBeenCalled();
   });
 
+  it('a copy that cannot be read loads the screen with every tile unread and SAYS it could not look (CUL-1198)', async () => {
+    mockReadSignalCache.mockResolvedValue({ findings: [cachedOf(chronicity())] });
+    const at = new Date().toISOString();
+    mockGetAllAsync.mockImplementation((sql: string) => {
+      if (/FROM events\s+WHERE pet_id = \? AND event_type/.test(sql))
+        return Promise.resolve([{ id: 'v1', occurred_at: at, occurred_at_confidence: 'witnessed' }]);
+      if (/event_attachments/.test(sql)) return Promise.resolve([{ event_id: 'v1', local_uri: null, storage_path: 'p/v1.jpg' }]);
+      if (/FROM event_ai_verdicts/.test(sql)) return Promise.reject(new Error('SQLITE_BUSY'));
+      return Promise.resolve([]);
+    });
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const out = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');
+      if (out.status !== 'ready') throw new Error(out.status);
+      expect(out.model.episodes?.tiles[0]).toMatchObject({ eventId: 'v1', verdict: null });
+      expect(out.verdictsUnanswered).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   // CUL-1219 (BRK-8): the tile opens the re-log that holds the photo, so it says the re-log's
   // time, the time that record's own screen shows; the bout still counts on its onset day.
   it('a tile states the time of the record it opens, not the bout’s onset', async () => {
