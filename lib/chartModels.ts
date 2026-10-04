@@ -117,9 +117,9 @@ export function episodeDaysOf(
 export type DayCoverage = 'logged' | 'unlogged' | 'ahead' | 'before_record';
 
 export interface WeekBucket {
-  /** The week's Sunday, as a day key. */
+  /** The week's first day (its Sunday, or an end-aligned block's first day), as a day key. */
   startKey: string;
-  /** The week's Saturday, as a day key. */
+  /** The week's last day (its Saturday, or an end-aligned block's last day), as a day key. */
   endKey: string;
   /** Episodes whose day fell in this week. Always a number — a zero is a fact. */
   count: number;
@@ -191,7 +191,8 @@ export interface WeeklyBucketsModel {
   /** The tallest bar, for the renderer's scale (≥ 1 so a chart of zeros still has a scale). */
   max: number;
   mark: WeeklyMark | null;
-  /** The first drawn week's Sunday and the last one's — the window, named. */
+  /** The first drawn week's first day and the last one's last day — the window, named
+   *  (a Sunday and a Saturday for calendar weeks; today for end-aligned blocks). */
   firstKey: string;
   lastKey: string;
   /** Present (true) only for end-aligned blocks (`WeeklyBucketsInput.endAligned`), so the
@@ -200,7 +201,8 @@ export interface WeeklyBucketsModel {
 }
 
 /**
- * Sunday-start weekly buckets ending with the week that holds `weeksEnding`.
+ * Weekly buckets ending with the week that holds `weeksEnding`: Sunday-start calendar weeks,
+ * or seven-day blocks ending on `weeksEnding` itself when `endAligned` (the Signal, CUL-1217).
  *
  * The seven ticks under a bar are the week's days in coverage terms; the bar is the
  * week's episode count; the two come from different inputs and never from each other.

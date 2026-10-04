@@ -541,7 +541,7 @@ function Body({
             {SCRIPT_TITLE}
           </ThemedText>
           <ExpandedReceipts
-            finding={model.finding}
+            finding={model.scriptFinding}
             petName={petName}
             trialRunning={false}
             withholdFallingVomit={model.withholdFallingVomit}

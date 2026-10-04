@@ -191,6 +191,7 @@ function mockInput(over: Partial<SignalScreenInput> = {}): SignalScreenInput {
     masking: null,
     generatedOn: null,
     countedAtMs: new Date(2026, 8, 17, 9, 14).getTime(),
+    generatedAtMs: null,
     ...over,
   };
 }
@@ -908,8 +909,11 @@ describe('loadSignalScreen', () => {
     expect(out.status).toBe('ready');
     if (out.status !== 'ready') return;
     expect(out.petName).toBe('Nyx');
-    // GC-4: the title counts the phone's record — one episode, today — not the cached 7 of 8.
-    expect(out.model.title).toBe('Vomiting in 1 of the last 8 weeks');
+    // GC-4's escalate-only gate: the phone holds one episode where the engine counted 7 of 8
+    // weeks, so a recount would read calmer than the card that fired — the engine's words stand,
+    // dated, and the line says the bars count what is logged now.
+    expect(out.model.title).toBe('Vomiting in 7 of the last 8 weeks');
+    expect(out.model.countedAt).toMatch(/^This was counted when it was raised.*The bars below count what is logged now\.$/);
     // The running trial reached the model (the title no longer names it — D2): its start marks the bars.
     expect(out.model.weekly?.mark).toBeTruthy();
     expect(out.model.episodes?.tiles[0]).toMatchObject({ eventId: 'v1', verdict: 'monitor' });
@@ -1015,8 +1019,9 @@ describe('loadSignalScreen', () => {
     });
     mockGetAllAsync.mockResolvedValue([]);
     const ended = await loadSignalScreen('pet-1', 'symptom_chronicity:vomit');
-    // No episode on the phone: the count says so; the card is still drawn (the engine owns that).
-    expect(ended.status === 'ready' && ended.model.title).toBe('Vomiting in 0 of the last 8 weeks');
+    // No episode on the phone (an unhydrated read is not an empty record, C-12): never a zero
+    // under a firing card — the engine's title stands.
+    expect(ended.status === 'ready' && ended.model.title).toBe('Vomiting in 7 of the last 8 weeks');
     expect(ended.status === 'ready' && (ended.model.weekly?.mark ?? null)).toBeNull();
 
     mockLoadDietTrialFacts.mockRejectedValue(new Error('sqlite'));

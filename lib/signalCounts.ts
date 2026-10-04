@@ -33,7 +33,7 @@ import type { WeeklyBucketsModel } from './chartModels';
 import { DEFAULT_MEAL_TIMING_CONFIG } from './mealTiming';
 import type { SignalFinding, SymptomChronicityFinding, SymptomWorseningFinding, ReflectionFinding } from './signal';
 import { symptomWord } from './signalCopy';
-import { formatTime, localDayIndexOf } from './utils';
+import { formatCalendarDate, formatTime, localDayIndexOf, toLocalDayKey } from './utils';
 
 /** The finding types whose title and sentence the screen composes from its own counts. */
 export type CountedFinding = SymptomChronicityFinding | SymptomWorseningFinding | ReflectionFinding;
@@ -97,7 +97,10 @@ export function signalCountsOf(
     const b = weekly.weeks[w];
     return { episodes: b.count, days: daysIn(b.startKey, b.endKey) };
   };
-  const lookbackWeeks = Math.max(1, Math.min(n, Math.round(finding.windowDays / 7)));
+  // `ceil`, the bars' own rule (`signalWeekCount`): a lookback that is not whole weeks still
+  // counts every bar its days fall in, so the sentence never leaves the oldest bar out. The
+  // engine pins chronicity at 56 and the pair at 7, where the two agree.
+  const lookbackWeeks = Math.max(1, Math.min(n, Math.ceil(finding.windowDays / 7)));
   const lookback = weekly.weeks.slice(n - lookbackWeeks);
   const from = indexOf(lookback[0].startKey);
   let newest: number | null = null;
@@ -113,6 +116,90 @@ export function signalCountsOf(
     lookbackEpisodes: lookback.reduce((a, b) => a + b.count, 0),
     daysSinceLast: newest == null ? null : todayIdx - newest,
   };
+}
+
+/**
+ * Whether the screen may state the chart's numbers in place of the engine's (the escalate-only
+ * gate; the adversarial pass on CUL-1568). A recount can come out LOWER than the engine's count:
+ * an episode aged out of the rolling window since the engine ran, the engine's instant window
+ * reaching a few hours further back than the local bar, or a phone whose record has not
+ * finished arriving (a new install, a second household device — a read that has not answered
+ * is not an empty record, C-12). Stated, any of those leads a firing safety card with a zero
+ * ("on 0 of the last 7 days … worth booking a vet visit") or prints a calmer pair than the one
+ * that fired. So a recount speaks only where every number it states is at least the engine's
+ * for the same claim — new logs may raise it, nothing may lower it (n=1 never reassures; an
+ * escalation is never quieted by a recount). Otherwise the engine's sentence stands, dated.
+ *
+ * `maskTouched` is true when a masking span (a drug that can hide the sign, a recent visit;
+ * CUL-1440) touches any window the composed sentence would name: the engine's sentence is
+ * then the one `findingMaskVerdict` has already judged, and a local zero or fall beside the
+ * drug's caption is never minted here.
+ */
+export function countsMayCompose(finding: CountedFinding, c: SignalCounts, maskTouched: boolean): boolean {
+  if (maskTouched) return false;
+  switch (finding.type) {
+    case 'symptom_chronicity':
+      return c.activeWeeks >= finding.activeWeeks && c.lookbackEpisodes >= finding.episodeCount && c.lookbackEpisodes > 0;
+    case 'symptom_worsening':
+      return c.recent.episodes >= finding.currentCount && c.recent.days >= finding.currentDays && c.recent.episodes > 0;
+    case 'reflection':
+      return c.recent.episodes >= finding.currentCount;
+  }
+}
+
+/** The first day any window the composed sentence names begins on: the lookback for
+ *  chronicity, the earlier of the two blocks for the pair. The caller asks masking from here
+ *  to today. */
+export function composedWindowStart(finding: CountedFinding, weekly: WeeklyBucketsModel): string {
+  const n = weekly.weeks.length;
+  if (finding.type === 'symptom_chronicity') {
+    const weeks = Math.max(1, Math.min(n, Math.ceil(finding.windowDays / 7)));
+    return weekly.weeks[n - weeks].startKey;
+  }
+  return weekly.weeks[Math.max(0, n - 2)].startKey;
+}
+
+/**
+ * The finding the safety phone script reads when the sentence is composed (CUL-1568): the same
+ * numbers, so the script an owner reads aloud never contradicts the sentence above it. The
+ * chronicity halves (`compare`) are the engine's instant windows, a second population on one
+ * screen, so a composed script carries none — the halves row returns with CUL-1570, which owns
+ * the script. `withholdPrior` is true when the sentence left the earlier window out (a fall
+ * under a safety card, a zero, a withheld pair): the script then drops its "Week before" row too.
+ */
+export function countedScriptFinding(finding: CountedFinding, c: SignalCounts): CountedFinding {
+  switch (finding.type) {
+    case 'symptom_chronicity':
+      return {
+        ...finding,
+        episodeCount: c.lookbackEpisodes,
+        activeWeeks: c.activeWeeks,
+        windowDays: c.lookbackWeeks * 7,
+        daysSinceLastEpisode: c.daysSinceLast ?? finding.daysSinceLastEpisode,
+        compare: undefined,
+      };
+    case 'symptom_worsening':
+      return {
+        ...finding,
+        currentCount: c.recent.episodes,
+        currentDays: c.recent.days,
+        priorCount: c.prior?.episodes ?? 0,
+        priorDays: c.prior?.days ?? 0,
+        windowDays: 7,
+      };
+    case 'reflection':
+      return finding;
+  }
+}
+
+/** True when the composed sentence states the earlier window (the script follows it). */
+export function countedPriorStated(finding: CountedFinding, c: SignalCounts, withheld: boolean): boolean {
+  if (finding.type === 'symptom_chronicity') return false;
+  const safety = finding.priorityClass === 'safety';
+  if (finding.type === 'symptom_worsening' && (finding.tier === 'firm' || finding.tier === 'soft')) {
+    return priorMayPrint(c.recent.days, c.prior?.days ?? null, safety, withheld);
+  }
+  return priorMayPrint(c.recent.episodes, c.prior?.episodes ?? null, safety, withheld);
 }
 
 function count(n: number, one: string, many: string): string {
@@ -234,4 +321,18 @@ export function countedUnitLine(): string {
 /** "Counted at 9:14 AM." — the moment the screen read the record its numbers come from. */
 export function countedAtLine(countedAtMs: number): string {
   return `Counted at ${formatTime(new Date(countedAtMs))}.`;
+}
+
+/**
+ * Under the engine's sentence on a counted type (the gate said no): when that sentence was
+ * counted, and that the bars beneath count the record as it is now — the two may differ, and
+ * the reader is told which is which rather than left to reconcile them (C-37).
+ */
+export function engineCountedAtLine(generatedAtMs: number | null, nowMs: number): string {
+  const tail = 'The bars below count what is logged now.';
+  if (generatedAtMs == null || !Number.isFinite(generatedAtMs)) return `This was counted when it was raised. ${tail}`;
+  const d = new Date(generatedAtMs);
+  const day = toLocalDayKey(d);
+  const when = day === toLocalDayKey(new Date(nowMs)) ? `today at ${formatTime(d)}` : `${formatCalendarDate(day) ?? day} at ${formatTime(d)}`;
+  return `This was counted when it was raised, ${when}. ${tail}`;
 }

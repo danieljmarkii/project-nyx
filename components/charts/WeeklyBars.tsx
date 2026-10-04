@@ -182,7 +182,9 @@ export function WeeklyBars({ model, noun, spoken = true, drawIn = false, identit
             return (
               <View key={week.startKey} style={[styles.datePlace, place]} testID={`weekly-date-place-${i}`}>
                 <ThemedText style={[styles.date, i === n - 1 && i !== 0 && styles.dateRight]} numberOfLines={1} testID={`weekly-date-${i}`}>
-                  {dateWord(week.startKey)}
+                  {/* Rolling blocks (the Signal, CUL-1217): the last bar is dated by its LAST day,
+                      today, so the chart visibly ends now, not a week ago. */}
+                  {dateWord(model.endAligned === true && i === n - 1 ? week.endKey : week.startKey)}
                 </ThemedText>
               </View>
             );

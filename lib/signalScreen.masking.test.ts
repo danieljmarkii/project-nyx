@@ -57,6 +57,7 @@ function inputOf(over: Partial<SignalScreenInput> & Pick<SignalScreenInput, 'cac
     masking: null,
     generatedOn: null,
     countedAtMs: new Date(2026, 8, 17, 9, 14).getTime(),
+    generatedAtMs: null,
     ...over,
   };
 }
