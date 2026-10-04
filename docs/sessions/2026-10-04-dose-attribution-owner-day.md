@@ -1,6 +1,7 @@
 # Dose attribution reads the owner's calendar day, not the UTC day (CUL-991)
 
 **Date:** 2026-10-04
+**One thing:** D2 L1 — Types: what TypeScript promises, and what it cannot · check: pending
 **Branch:** `claude/eloquent-cray-n8r5my`
 
 Shipped via #1052 (draft; CUL-991).
@@ -28,3 +29,7 @@ Production, before the fix (read-only aggregate): 69 live unlinked doses, all on
 ## Persona sign-off
 
 Engineer ✓ (one predicate, Ask port retired, C-26 closure sound) — Data ✓ (frame agreement across report, History, Ask) — Biostatistician ✓ (adversarial HOLDS) — Dr. Chen ✓ (the report's bedtime course reads one line, 14 of 14) — Designer N/A (no copy or UI change) — T&S N/A.
+
+## Also this session
+
+- **CUL-1550** (the vet report's "Doses given" wording) was claimed by a sibling session one minute before this one; this session stood down, removed its stale "blocked by" link and corrected its description on the PM's word. That work shipped via #1039 from the other session.
