@@ -3436,16 +3436,36 @@ export async function hydrateFromCloud(): Promise<void> {
 // the await, never before it: a getSession slow enough to span step 3 and the wipe would
 // otherwise carry a gate read from before the swap (`lib/readCopySync.test.ts` pins it).
 export async function refreshReadCopy(eventId: string): Promise<boolean> {
+  return (await refreshReadCopyOutcome(eventId)) === 'changed';
+}
+
+/** What a landed read's save to the copy came to (CUL-1198 item 2). `failed` is a read the
+ *  server could not be asked about, or a local write that threw: the one outcome a chain
+ *  that invoked a read keeps watching for, because nothing else brings that read to the
+ *  phone before the next sync cycle. `skipped` is no session, or two that disagree: never
+ *  retried, since a watch would only ask again under the same gate. */
+export type ReadCopyOutcome = 'changed' | 'unchanged' | 'failed' | 'skipped';
+
+/** `refreshReadCopy`, saying which of the four it came to. Same gates, same never-throws. */
+export async function refreshReadCopyOutcome(eventId: string): Promise<ReadCopyOutcome> {
+  // A failure is only `failed` inside the account that asked: once a sign-out moved the
+  // epoch, it is `skipped`, so nobody starts a watch carrying the previous account's
+  // event id into the next one (CUL-1127's class).
+  let epoch: number | null = null;
+  const failed = (): ReadCopyOutcome => (epoch !== null && signOutEpoch === epoch ? 'failed' : 'skipped');
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return false;
+    if (!session) return 'skipped';
     const appSession = useAuthStore.getState().session;
-    if (!appSession || appSession.user.id !== session.user.id) return false;
-    const epoch = signOutEpoch;
-    return (await pullReadCopyFor(getDb(), eventId, () => signOutEpoch !== epoch)) > 0;
+    if (!appSession || appSession.user.id !== session.user.id) return 'skipped';
+    const asked = signOutEpoch;
+    epoch = asked;
+    const changed = await pullReadCopyFor(getDb(), eventId, () => signOutEpoch !== asked);
+    if (changed === null) return failed();
+    return changed > 0 ? 'changed' : 'unchanged';
   } catch (e) {
     console.warn('[sync] read copy refresh failed:', e);
-    return false;
+    return failed();
   }
 }
 

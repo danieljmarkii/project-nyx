@@ -6,7 +6,7 @@
 // the same day in every zone, and the model must follow the key. An instant handed in
 // where a key belongs is refused, never bucketed by the runner's clock.
 
-import { buildLine, buildMonthModel, daysInMonth, monthA11yLabel, monthOfKey, shiftMonth, MONTH_WEEKS } from './monthModel';
+import { buildLine, buildMonthModel, carryMonthRoses, daysInMonth, monthA11yLabel, monthOfKey, shiftMonth, MONTH_WEEKS, type MonthPhotoRead } from './monthModel';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
 
 const idx = (key: string): number => {
@@ -519,5 +519,51 @@ describe('a refusal is counted, never folded', () => {
     const m = septModel(meals);
     expect(monthA11yLabel(m, { meds: false, photos: false, meals: true })).toContain('Refused 2 of 5 rated meals, on 2 days. Left some: 1 of 5 rated meals.');
     expect(monthA11yLabel(m, { meds: false, photos: false, meals: false })).not.toMatch(/Refused|Left some/);
+  });
+});
+
+describe('carryMonthRoses — a failed look never takes a drawn rose away (CUL-1198 item 1)', () => {
+  const facts = (photoReads: MonthPhotoRead[], unanswered = false) => ({
+    photoDays: photoReads.map((r) => ({ day: r.day, verdict: r.verdict })),
+    photoReads,
+    ...(unanswered ? { photoReadsUnanswered: true } : {}),
+  });
+  const prev = facts([
+    { eventId: 'rose', day: '2026-09-02', verdict: 'call_now' },
+    { eventId: 'calm', day: '2026-09-02', verdict: 'seen' },
+    { eventId: 'gone', day: '2026-09-04', verdict: 'worth_a_call' },
+  ]);
+
+  it('an unanswered re-read keeps each call on an event still in the month, ordered loudest first', () => {
+    const next = facts(
+      [
+        { eventId: 'calm', day: '2026-09-02', verdict: 'seen' },
+        { eventId: 'rose', day: '2026-09-02', verdict: 'seen' },
+      ],
+      true,
+    );
+    const laid = carryMonthRoses(prev, next);
+    expect(laid.photoDays).toEqual([
+      { day: '2026-09-02', verdict: 'call_now' },
+      { day: '2026-09-02', verdict: 'seen' },
+    ]);
+    // Still marked unanswered: the next failed look carries the same rose.
+    expect(laid.photoReadsUnanswered).toBe(true);
+    expect(carryMonthRoses(laid, next).photoDays[0].verdict).toBe('call_now');
+  });
+
+  it('an event that left the month leaves with its rose (G5)', () => {
+    const laid = carryMonthRoses(prev, facts([{ eventId: 'calm', day: '2026-09-02', verdict: 'seen' }], true));
+    expect(laid.photoDays).toEqual([{ day: '2026-09-02', verdict: 'seen' }]);
+  });
+
+  it('an ANSWERED re-read stands whole, a rose the record replaced included', () => {
+    const next = facts([{ eventId: 'rose', day: '2026-09-02', verdict: 'seen' }]);
+    expect(carryMonthRoses(prev, next)).toBe(next);
+  });
+
+  it('a first read has nothing to carry', () => {
+    const next = facts([{ eventId: 'rose', day: '2026-09-02', verdict: 'seen' }], true);
+    expect(carryMonthRoses(undefined, next)).toBe(next);
   });
 });

@@ -178,6 +178,39 @@ describe('MonthInstrument', () => {
     expect(getByTestId('daymark-layer-photo-worth_a_call')).toBeTruthy();
   });
 
+  it('a refresh whose look at the phone’s copy FAILED keeps the rose the month already drew (CUL-1198 item 1)', async () => {
+    const answered = facts({
+      photoDays: [{ day: '2026-09-02', verdict: 'worth_a_call' }],
+      photoReads: [{ eventId: 'v-rose', day: '2026-09-02', verdict: 'worth_a_call' }],
+    });
+    // The same photographed event, read again with the copy unreadable: `seen`, and said so.
+    const unanswered = facts({
+      photoDays: [{ day: '2026-09-02', verdict: 'seen' }],
+      photoReads: [{ eventId: 'v-rose', day: '2026-09-02', verdict: 'seen' }],
+      photoReadsUnanswered: true,
+    });
+    const readFacts = jest.fn(async () => answered);
+    const props = { petId: 'p1', today: TODAY, readFacts, readDay: jest.fn(async () => []) };
+    const { getByTestId, getByText, rerender } = render(<MonthInstrument {...props} refreshTick={0} />);
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    fireEvent.press(getByText('Photos'));
+    expect(getByTestId('daymark-layer-photo-worth_a_call')).toBeTruthy();
+
+    readFacts.mockImplementation(async () => unanswered);
+    rerender(<MonthInstrument {...props} refreshTick={1} />);
+    await waitFor(() => expect(readFacts).toHaveBeenCalledTimes(2));
+    expect(getByTestId('daymark-layer-photo-worth_a_call')).toBeTruthy();
+    // A second failed look keeps it again.
+    rerender(<MonthInstrument {...props} refreshTick={2} />);
+    await waitFor(() => expect(readFacts).toHaveBeenCalledTimes(3));
+    expect(getByTestId('daymark-layer-photo-worth_a_call')).toBeTruthy();
+
+    // An ANSWERED look that finds no rose (the read was replaced) stands whole.
+    readFacts.mockImplementation(async () => facts({ photoDays: [{ day: '2026-09-02', verdict: 'seen' }], photoReads: [{ eventId: 'v-rose', day: '2026-09-02', verdict: 'seen' }] }));
+    rerender(<MonthInstrument {...props} refreshTick={3} />);
+    await waitFor(() => expect(() => getByTestId('daymark-layer-photo-worth_a_call')).toThrow());
+  });
+
   it('the chips are checkboxes, wrapping, each announcing its checked state', async () => {
     const { getByTestId, getByText, getAllByRole } = mount();
     await waitFor(() => expect(getByTestId('month-layers')).toBeTruthy());

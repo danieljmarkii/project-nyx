@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { syncPendingEvents, ensureEventAttachmentsSynced, refreshReadCopy } from './sync';
+import { syncPendingEvents, ensureEventAttachmentsSynced, refreshReadCopyOutcome, type ReadCopyOutcome } from './sync';
 import { analysisChainOutstanding, claimAnalysisChain, onAnalysisChainClaimed, type AnalysisChainClaim } from './analysisChain';
 import { useSyncStore } from '../store/syncStore';
 
@@ -17,15 +17,19 @@ import { useSyncStore } from '../store/syncStore';
 //   • the watch: each tick saves before it runs the caller's check, for a read that
 //     lands after the chain's own call returned. Before, not after: Home's check reads
 //     the copy, so it can only see a landing the tick has already saved.
-// Both go through `refreshReadCopy`, which never throws; `copyLandedRead` catches anyway,
+// Both go through `refreshReadCopyOutcome`, which never throws; `copyLandedRead` catches anyway,
 // because a trigger that threw would break its own "never throws, returns { error }"
 // contract with every caller that awaits it. Resolves true when the copy changed.
 async function copyLandedRead(eventId: string): Promise<boolean> {
+  return (await copyLandedReadOutcome(eventId)) === 'changed';
+}
+
+async function copyLandedReadOutcome(eventId: string): Promise<ReadCopyOutcome> {
   try {
-    return await refreshReadCopy(eventId);
+    return await refreshReadCopyOutcome(eventId);
   } catch (e) {
     console.warn('[analysis] landed read not copied:', e);
-    return false;
+    return 'failed';
   }
 }
 
@@ -54,9 +58,41 @@ onAnalysisChainClaimed(tellHomeTheReadMoved);
  *  With no claim and no chain outstanding, nothing will release Home to reread, so the
  *  landing tells Home itself. */
 async function landChain(eventId: string, claim: AnalysisChainClaim | null, invoked: boolean): Promise<void> {
-  const moved = await copyLandedRead(eventId);
-  if (moved && claim === null && !analysisChainOutstanding(eventId)) tellHomeTheReadMoved();
+  const outcome = await copyLandedReadOutcome(eventId);
+  if (outcome === 'changed' && claim === null && !analysisChainOutstanding(eventId)) tellHomeTheReadMoved();
   claim?.settle(invoked);
+  // A read the server wrote that this save could not copy (CUL-1198 item 2). Settled, the
+  // chain releases Home to reread a copy that does not hold it, and nothing else brings it
+  // here before the next sync cycle, which can be hours with the app open. So it is
+  // watched until a save answers: each tick saves first and tells Home when the copy moved.
+  // Started synchronously after the outcome, so no sign-out can fall between the two (a
+  // failure after one is `skipped`, `refreshReadCopyOutcome`).
+  if (invoked && outcome === 'failed') watchUntilCopied(eventId);
+}
+
+// The events a copy watch is running for, so two landings of one read start one watch.
+const copyWatches = new Set<string>();
+
+/** Watch one event until a save to the copy is answered: changed, unchanged or skipped.
+ *  The tick saves first (it tells Home itself when that save moved the copy); the check
+ *  asks again so it knows whether the save was ANSWERED, which the tick's boolean cannot
+ *  say. Gives up silently after the last fallback: the next sync cycle's pull still owes
+ *  the row, and no surface draws calm in the meantime (the copy holds nothing new). */
+function watchUntilCopied(eventId: string): void {
+  if (copyWatches.has(eventId)) return;
+  copyWatches.add(eventId);
+  const release = () => copyWatches.delete(eventId);
+  watchAnalysisRow(
+    eventId,
+    async () => {
+      const outcome = await copyLandedReadOutcome(eventId);
+      if (outcome === 'changed') tellHomeTheReadMoved();
+      if (outcome === 'failed') return false;
+      release();
+      return true;
+    },
+    release,
+  );
 }
 
 // The analysis-chain claim (CUL-801) lives in `lib/analysisChain.ts`, which imports
@@ -201,6 +237,9 @@ const liveWatches = new Set<() => void>();
  */
 export function cancelAllAnalysisWatches(): void {
   for (const finish of [...liveWatches]) finish();
+  // A cancelled copy watch calls neither its check nor its give-up, so its id is cleared
+  // here: the set is account state too.
+  copyWatches.clear();
 }
 
 export function watchAnalysisRow(

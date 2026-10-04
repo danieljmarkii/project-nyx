@@ -51,10 +51,10 @@ jest.mock('../../lib/sync', () => ({
   syncNow: jest.fn(),
   syncPendingEvents: jest.fn(async () => {}),
   ensureEventAttachmentsSynced: jest.fn(async () => {}),
-  refreshReadCopy: jest.fn(async () => {
+  refreshReadCopyOutcome: jest.fn(async () => {
     const before = mockCopyRows[0]?.recommendation;
     mockCopyRows = [{ event_id: 'v1', status: 'completed', recommendation: mockServerVerdict, updated_at: new Date().toISOString() }];
-    return before !== mockServerVerdict;
+    return before !== mockServerVerdict ? 'changed' : 'unchanged';
   }),
 }));
 jest.mock('../../lib/signal', () => ({ regenerateSignal: jest.fn() }));

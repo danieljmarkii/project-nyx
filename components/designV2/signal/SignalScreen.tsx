@@ -10,7 +10,7 @@ import { measureNodeInWindow, type WindowRect } from '../../../lib/measureNode';
 import { CARE_CONTEXT_TITLE } from '../../../lib/careContext';
 import { CARE_WATCHED_LINE, CARE_WATCHED_TAG, careStateViewOf } from '../../../lib/careState';
 import { ackUpdatingCopy, symptomWord } from '../../../lib/signalCopy';
-import { loadSignalScreen, screenLeadsWithLanes, UNSUPPORTED_LINE, withheldLines, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
+import { carryTileRoses, loadSignalScreen, screenLeadsWithLanes, UNSUPPORTED_LINE, withheldLines, type SignalScreenLoad, type SignalScreenModel } from '../../../lib/signalScreen';
 import { usePetStore } from '../../../store/petStore';
 import { useSyncStore } from '../../../store/syncStore';
 import { SignalSilhouette } from '../waits/SignalSilhouette';
@@ -159,7 +159,11 @@ export function SignalScreen({ petId, identity }: Props) {
     try {
       const next = await loadSignalScreen(petId, identity);
       if (loadId.current !== my) return;
-      setLoad((prev) => (sameLoad(prev, next) ? prev : next));
+      // A re-read whose look at the phone's copy failed keeps the tiles' roses (CUL-1198).
+      setLoad((prev) => {
+        const laid = carryTileRoses(prev, next);
+        return sameLoad(prev, laid) ? prev : laid;
+      });
     } catch (e) {
       console.warn('[signal-screen] load failed:', e);
       if (loadId.current !== my) return;

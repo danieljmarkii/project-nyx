@@ -59,6 +59,9 @@ import {
   UNSUPPORTED_LINE,
   readSignalEpisodes,
   readTileVerdicts,
+  carryTileRoses,
+  type GalleryTile,
+  type SignalScreenLoad,
   tileVerdictOf,
   readVerdicts,
   safeLabel,
@@ -648,11 +651,12 @@ describe('readVerdicts — the phone’s copy, through the one read predicate (H
     expect(await readVerdicts(['calm'], 'vomit')).toEqual({ calm: 'monitor' });
   });
 
-  it('a copy that cannot be read answers nothing and never throws the screen', async () => {
+  it('a copy that cannot be read answers NULL (could not look, CUL-1198) and never throws the screen', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
       mockGetAllAsync.mockRejectedValue(new Error('SQLITE_BUSY'));
-      await expect(readVerdicts(['e1'], 'vomit')).resolves.toEqual({});
+      await expect(readVerdicts(['e1'], 'vomit')).resolves.toBeNull();
+      await expect(readTileVerdicts([{ eventId: 'e1' }], 'vomit')).resolves.toBeNull();
       expect(warn).toHaveBeenCalledWith('[signal-screen] read copy failed:', expect.any(Error));
     } finally {
       warn.mockRestore();
@@ -662,6 +666,45 @@ describe('readVerdicts — the phone’s copy, through the one read predicate (H
   it('asks nothing for nothing', async () => {
     expect(await readVerdicts([], 'vomit')).toEqual({});
     expect(mockGetAllAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('carryTileRoses — a failed look never takes a drawn rose away (CUL-1198 item 1)', () => {
+  const tile = (eventId: string, verdict: GalleryTile['verdict']): GalleryTile => ({
+    eventId,
+    occurredAt: '2026-09-17T17:11:00.000Z',
+    dateWord: 'Sep 17',
+    timeWord: '5:11 PM',
+    verdict,
+    photo: { localUri: null, storagePath: `pet/${eventId}/p.jpg` },
+  });
+  const load = (tiles: GalleryTile[], unanswered = false): SignalScreenLoad =>
+    ({
+      status: 'ready',
+      model: { episodes: { total: tiles.length, photographedCount: tiles.length, countLine: '', tiles } } as unknown as SignalScreenModel,
+      petName: 'Nyx',
+      asOfLine: null,
+      ...(unanswered ? { verdictsUnanswered: true } : {}),
+    }) as SignalScreenLoad;
+  const tilesOf = (l: SignalScreenLoad) => (l.status === 'ready' ? l.model.episodes?.tiles.map((t) => [t.eventId, t.verdict]) : null);
+  const prev = load([tile('rose', 'call_today'), tile('calm', 'monitor'), tile('gone', 'worth_a_call')]);
+
+  it('keeps a call on a tile still drawn, never a calm word, and drops a tile that left', () => {
+    const laid = carryTileRoses(prev, load([tile('rose', null), tile('calm', null)], true));
+    expect(tilesOf(laid)).toEqual([
+      ['rose', 'call_today'],
+      ['calm', null],
+    ]);
+    // The next failed look carries it again.
+    expect(tilesOf(carryTileRoses(laid, load([tile('rose', null)], true)))).toEqual([['rose', 'call_today']]);
+  });
+
+  it('an answered re-read stands whole; a first read or a failed screen has nothing to carry', () => {
+    const answered = load([tile('rose', null)]);
+    expect(carryTileRoses(prev, answered)).toBe(answered);
+    const unanswered = load([tile('rose', null)], true);
+    expect(carryTileRoses({ status: 'loading' }, unanswered)).toBe(unanswered);
+    expect(carryTileRoses({ status: 'failed' }, unanswered)).toBe(unanswered);
   });
 });
 

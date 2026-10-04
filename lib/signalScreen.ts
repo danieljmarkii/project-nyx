@@ -879,6 +879,10 @@ export type SignalScreenLoad =
        *  read failed (CUL-1219, GAP-7): the line that says how old the sentence is. Null on
        *  a live read. */
       asOfLine: string | null;
+      /** Set when the phone's copy of the reads could not be read (CUL-1198): every tile
+       *  says "No read yet" because nobody could look. `carryTileRoses` keeps the roses
+       *  the screen already drew. */
+      verdictsUnanswered?: boolean;
     }
   /** No cache row for this pet, or the finding is no longer in it. */
   | { status: 'missing'; petName: string }
@@ -1146,12 +1150,14 @@ export function signalTrialWindowOf(trial: TrialCardTrial, nowMs: number): Signa
  * calm verdict for a finished calm read, and null — "no read yet" — for a read in flight,
  * a read that did not finish, or no read on this phone. A calm verdict never stands in
  * front of a read in flight, since it may describe a replaced photo (CUL-812's
- * reasoning). A copy that cannot be read answers nothing and never throws the screen.
+ * reasoning). A copy that cannot be read answers NULL and never throws the screen: "no
+ * read on this phone" and "could not look" are two answers (CUL-1198), and only the first
+ * may take a rose off a tile the screen already drew (`carryTileRoses`).
  */
 export async function readVerdicts(
   eventIds: readonly string[],
   eventType: string,
-): Promise<Record<string, EpisodeVerdict | null>> {
+): Promise<Record<string, EpisodeVerdict | null> | null> {
   const out: Record<string, EpisodeVerdict | null> = {};
   if (eventIds.length === 0) return out;
   let copies: Map<string, ReadCopyRow>;
@@ -1159,7 +1165,7 @@ export async function readVerdicts(
     copies = await readCopies(eventIds);
   } catch (e) {
     console.warn('[signal-screen] read copy failed:', e);
-    return out;
+    return null;
   }
   for (const eventId of eventIds) {
     out[eventId] = readVerdictOf({
@@ -1186,14 +1192,16 @@ export async function readVerdicts(
  * (presence escalates: the month's own "the worse verdict wins"), and anything calmer
  * stays the tile's own row's, because a calm or missing read of another row says nothing
  * about this photo. A photoless row is asked about through the same predicate: its
- * verdict is null whenever it is not a finished read, whatever `hasPhoto` says.
+ * verdict is null whenever it is not a finished read, whatever `hasPhoto` says. NULL when
+ * the copy could not be read, as `readVerdicts`.
  */
 export async function readTileVerdicts(
   tiles: readonly Pick<SignalScreenEpisode, 'eventId' | 'boutIds'>[],
   eventType: string,
-): Promise<Record<string, EpisodeVerdict | null>> {
+): Promise<Record<string, EpisodeVerdict | null> | null> {
   const boutOf = (t: Pick<SignalScreenEpisode, 'eventId' | 'boutIds'>) => [t.eventId, ...(t.boutIds ?? [])];
   const each = await readVerdicts([...new Set(tiles.flatMap(boutOf))], eventType);
+  if (each === null) return null;
   const out: Record<string, EpisodeVerdict | null> = {};
   for (const tile of tiles) {
     out[tile.eventId] = tileVerdictOf(tile.eventId, boutOf(tile), each);
@@ -1342,7 +1350,10 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
   const photographed = episodes.filter((e) => e.photo != null);
   // Every episode is the finding's symptom (`readSignalEpisodes` reads one type), so the
   // symptom is every bout row's type.
-  const verdicts = photographed.length > 0 && symptom ? await readTileVerdicts(photographed, symptom) : {};
+  const tileVerdicts = photographed.length > 0 && symptom ? await readTileVerdicts(photographed, symptom) : {};
+  // A copy that could not be read draws every tile "No read yet" here; the screen lays the
+  // roses it already drew back over them (`carryTileRoses`, CUL-1198).
+  const verdicts = tileVerdicts ?? {};
 
   const model = buildSignalScreenModel({
     cached,
@@ -1365,7 +1376,38 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     countedAtMs: nowMs,
     generatedAtMs: row?.generatedAt ? Date.parse(row.generatedAt) : null,
   });
-  return { status: 'ready', model, petName, asOfLine: fromLast ? asOfLineOf(row?.generatedAt ?? null, nowMs) : null };
+  return {
+    status: 'ready',
+    model,
+    petName,
+    asOfLine: fromLast ? asOfLineOf(row?.generatedAt ?? null, nowMs) : null,
+    ...(tileVerdicts === null ? { verdictsUnanswered: true } : {}),
+  };
+}
+
+/**
+ * A re-read laid over the screen it replaces (CUL-1198 item 1). When the phone's copy
+ * answered, the fresh load stands whole. When it could not be read, every tile came back
+ * "No read yet", and a tile that was drawn with a CALL on the screen before keeps it: a
+ * rose the screen showed never blinks out because a local look failed. Only a call is
+ * carried, never a calm word: a calm read may since have been replaced by a rose the
+ * failed look could not see, and "No read yet" claims nothing, where a stale calm would
+ * stand in front of an escalation (CUL-812's class; n=1 never reassures). A tile that left
+ * the gallery leaves with its rose. The result stays marked unanswered, so the next failed
+ * look carries the same roses again.
+ */
+export function carryTileRoses(
+  prev: SignalScreenLoad | { status: 'loading' } | { status: 'failed' },
+  next: SignalScreenLoad,
+): SignalScreenLoad {
+  if (next.status !== 'ready' || !next.verdictsUnanswered || prev.status !== 'ready') return next;
+  const before = prev.model.episodes?.tiles ?? [];
+  const calls = new Map<string, CallDisplay>();
+  for (const t of before) if (isCallDisplay(t.verdict)) calls.set(t.eventId, t.verdict);
+  const episodes = next.model.episodes;
+  if (calls.size === 0 || !episodes) return next;
+  const tiles = episodes.tiles.map((t) => (t.verdict === null && calls.has(t.eventId) ? { ...t, verdict: calls.get(t.eventId) ?? null } : t));
+  return { ...next, model: { ...next.model, episodes: { ...episodes, tiles } } };
 }
 
 /** The offline line (CUL-1219): when the engine wrote the sentence the screen is showing.

@@ -769,6 +769,30 @@ describe('the re-read (CUL-1219, GC-10)', () => {
     abortFlight();
   });
 
+  it('a re-read whose look at the phone’s copy FAILED keeps the rose a tile already drew, and never a calm word (CUL-1198 item 1)', async () => {
+    const [rose, calm] = ready(benign, noTrial).model.episodes!.tiles;
+    const first = ready(benign, { ...noTrial, verdicts: { [rose.eventId]: 'worth_a_call', [calm.eventId]: 'monitor' } });
+    expect(isCalmDisplay(first.model.episodes!.tiles[1].verdict)).toBe(true);
+    mockLoadSignalScreen.mockResolvedValue(first);
+    const view = render(<SignalScreen petId="pet-1" identity="reflection:vomit" />);
+    await waitFor(() => expect(view.getByTestId(`episode-verdict-${rose.eventId}`).props.children).toBe(TIER_WORDS.worth_a_call.short));
+
+    // The re-read: the copy could not be read, so the loader answers every tile "No read yet".
+    mockLoadSignalScreen.mockResolvedValue({ ...ready(benign, { ...noTrial, verdicts: {} }), verdictsUnanswered: true });
+    await tick('hydrationTick');
+    await waitFor(() => expect(mockLoadSignalScreen).toHaveBeenCalledTimes(2));
+    // The rose stands; the calm tile (which drew no word) says only that there is no read.
+    expect(view.getByTestId(`episode-verdict-${rose.eventId}`).props.children).toBe(TIER_WORDS.worth_a_call.short);
+    expect(view.getByTestId(`episode-verdict-${calm.eventId}`).props.children).toBe(NO_READ_WORDS);
+
+    // A second failed look keeps it again; an answered look then stands whole.
+    await tick('hydrationTick');
+    expect(view.getByTestId(`episode-verdict-${rose.eventId}`).props.children).toBe(TIER_WORDS.worth_a_call.short);
+    mockLoadSignalScreen.mockResolvedValue(ready(benign, { ...noTrial, verdicts: {} }));
+    await tick('hydrationTick');
+    await waitFor(() => expect(view.getByTestId(`episode-verdict-${rose.eventId}`).props.children).toBe(NO_READ_WORDS));
+  });
+
   it('a soft delete under the mounted screen: the hydration tick re-reads and swaps the model in place — no blank, the body and its scroll kept, focus to the gallery header', async () => {
     const first = ready(benign, noTrial);
     mockLoadSignalScreen.mockResolvedValue(first);

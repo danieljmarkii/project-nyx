@@ -283,13 +283,20 @@ describe('readMonthFacts against the production DDL', () => {
   it('a verdict the phone does not hold, or cannot read, is `seen`, never a colour', async () => {
     const a = ev('vomit', at('2026-09-02'));
     photo(a);
-    // No copy row: the read never landed on this phone.
-    expect((await readMonthFacts(PET, RANGE)).photoDays).toEqual([{ day: '2026-09-02', verdict: 'seen' }]);
+    // No copy row: the read never landed on this phone. An ANSWER, never "could not look".
+    const none = await readMonthFacts(PET, RANGE);
+    expect(none.photoDays).toEqual([{ day: '2026-09-02', verdict: 'seen' }]);
+    expect(none.photoReadsUnanswered).toBeUndefined();
     // A copy that cannot be read at all degrades the same way, and says so.
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       mockDb.exec('DROP TABLE event_ai_verdicts');
-      expect((await readMonthFacts(PET, RANGE)).photoDays).toEqual([{ day: '2026-09-02', verdict: 'seen' }]);
+      const failed = await readMonthFacts(PET, RANGE);
+      expect(failed.photoDays).toEqual([{ day: '2026-09-02', verdict: 'seen' }]);
+      // …and says it could not look, so the card keeps a rose it already drew (CUL-1198).
+      expect(failed.photoReadsUnanswered).toBe(true);
+      expect(failed.photoReads).toEqual([{ eventId: a, day: '2026-09-02', verdict: 'seen' }]);
+      expect(await readWorthACall([a])).toBeNull();
       // node:sqlite's error comes from another realm, so match its message, not its class.
       expect(warn).toHaveBeenCalledWith('[month] read copy failed:', expect.objectContaining({ message: expect.stringMatching(/event_ai_verdicts/) }));
     } finally {

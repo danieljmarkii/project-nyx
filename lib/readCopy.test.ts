@@ -670,9 +670,10 @@ describe('pullReadCopyFor — a read landing on this device', () => {
     try {
       mockServer = [row('a', '2026-09-24T10:00:00+00:00', 'worth_a_call')];
       mockFail = () => 'network';
-      await pullReadCopyFor(mockAdapter, 'a', never);
+      // NULL, never 0: "could not ask" is not "nothing new" (CUL-1198 item 2).
+      await expect(pullReadCopyFor(mockAdapter, 'a', never)).resolves.toBeNull();
       mockFail = () => null;
-      await pullReadCopyFor(mockAdapter, 'nothing-here', never);
+      await expect(pullReadCopyFor(mockAdapter, 'nothing-here', never)).resolves.toBe(0);
       await pullReadCopyFor(mockAdapter, 'a', () => true);
       expect(copyRows()).toEqual([]);
     } finally {

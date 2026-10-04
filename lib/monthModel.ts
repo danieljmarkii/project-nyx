@@ -154,6 +154,50 @@ export interface MonthPhotoDay {
   verdict: 'seen' | CallDisplay;
 }
 
+/** One photographed event and the verdict the month draws for it (`lib/monthReads.ts`). */
+export interface MonthPhotoRead {
+  eventId: string;
+  day: string;
+  verdict: MonthPhotoDay['verdict'];
+}
+
+/** The photo half of the month's facts, which is all `carryMonthRoses` reads. */
+interface MonthPhotoFacts {
+  photoDays: MonthPhotoDay[];
+  photoReads?: MonthPhotoRead[];
+  photoReadsUnanswered?: boolean;
+}
+
+const callRank = (v: MonthPhotoDay['verdict']) => (v === 'call_now' ? 0 : v === 'call_today' ? 1 : v === 'worth_a_call' ? 2 : 3);
+
+/** The month's photo marks from its per-event reads: ordered by day, then the loudest call
+ *  first (a DISTINCT read has no order of its own). */
+export function photoDaysOf(reads: readonly MonthPhotoRead[]): MonthPhotoDay[] {
+  return reads
+    .map((r): MonthPhotoDay => ({ day: r.day, verdict: r.verdict }))
+    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : callRank(a.verdict) - callRank(b.verdict)));
+}
+
+/**
+ * A re-read of a month the card already drew, laid over the last answer it had (CUL-1198
+ * item 1). When the phone's copy answered, the fresh facts stand whole. When it could not
+ * be read, a call the last answer held on an event still in the month is kept: a rose the
+ * month drew never blinks out to `seen` because a local look failed. Only a CALL is
+ * carried, because `seen` is the only other thing the month draws and it is what an
+ * unanswered read already shows. An event that left the month leaves with its rose (a
+ * screen never shows a row that is no longer in the record). The result stays marked
+ * unanswered, so the next failed look carries the same roses again.
+ */
+export function carryMonthRoses<F extends MonthPhotoFacts>(prev: F | undefined, next: F): F {
+  if (!next.photoReadsUnanswered || !prev?.photoReads || !next.photoReads) return next;
+  const last = new Map<string, MonthPhotoDay['verdict']>();
+  for (const r of prev.photoReads) if (r.verdict !== 'seen') last.set(r.eventId, r.verdict);
+  if (last.size === 0) return next;
+  const photoReads = next.photoReads.map((r) => (r.verdict === 'seen' ? { ...r, verdict: last.get(r.eventId) ?? r.verdict } : r));
+  return { ...next, photoReads, photoDays: photoDaysOf(photoReads) };
+}
+
+
 export interface MonthModelInput {
   /** The shown month. `month` is 0-based, as `Date` counts it. */
   year: number;

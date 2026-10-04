@@ -7,7 +7,7 @@
 // session is the REAL store (`store/authStore.ts`), set per test, because the §6.4 case
 // below is decided by exactly the value its recovery handler writes there.
 
-const mockPullFor = jest.fn(async (..._a: unknown[]) => 1);
+const mockPullFor = jest.fn(async (..._a: unknown[]): Promise<number | null> => 1);
 const mockPullAll = jest.fn(async () => undefined);
 let mockSession: { user: { id: string } } | null = { user: { id: 'u1' } };
 /** Held open, auth-js's session read waits here: the slow getSession of the ordering case. */
@@ -58,7 +58,7 @@ jest.mock('./medications', () => ({
 
 import type { Session } from '@supabase/supabase-js';
 import { useAuthStore } from '../store/authStore';
-import { hydrateFromCloud, notifySignedOut, refreshReadCopy } from './sync';
+import { hydrateFromCloud, notifySignedOut, refreshReadCopy, refreshReadCopyOutcome } from './sync';
 
 const appSessionOf = (id: string) => ({ user: { id } }) as unknown as Session;
 
@@ -141,6 +141,46 @@ describe('refreshReadCopy — a landed read, copied at once', () => {
       mockPullFor.mockRejectedValueOnce(new Error('socket closed'));
       await expect(refreshReadCopy('ev-4')).resolves.toBe(false);
       expect(warn).toHaveBeenCalledWith('[sync] read copy refresh failed:', expect.any(Error));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('refreshReadCopyOutcome — which of the four a save came to (CUL-1198 item 2)', () => {
+  it('a pull the server could not answer is `failed`, never "nothing new"', async () => {
+    mockPullFor.mockImplementationOnce(async () => null);
+    await expect(refreshReadCopyOutcome('ev-f')).resolves.toBe('failed');
+    // …and the boolean the watch tick reads stays false.
+    mockPullFor.mockImplementationOnce(async () => null);
+    await expect(refreshReadCopy('ev-f')).resolves.toBe(false);
+  });
+
+  it('changed, unchanged and skipped keep their meanings', async () => {
+    mockPullFor.mockImplementationOnce(async () => 1);
+    await expect(refreshReadCopyOutcome('ev-o')).resolves.toBe('changed');
+    mockPullFor.mockImplementationOnce(async () => 0);
+    await expect(refreshReadCopyOutcome('ev-o')).resolves.toBe('unchanged');
+    mockSession = null;
+    await expect(refreshReadCopyOutcome('ev-o')).resolves.toBe('skipped');
+  });
+
+  it('a failure that lands after a sign-out is `skipped`, so no watch carries the old account’s id (CUL-1127)', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      mockPullFor.mockImplementationOnce(async () => {
+        notifySignedOut();
+        return null;
+      });
+      await expect(refreshReadCopyOutcome('ev-gone')).resolves.toBe('skipped');
+      mockPullFor.mockImplementationOnce(async () => {
+        notifySignedOut();
+        throw new Error('socket closed');
+      });
+      await expect(refreshReadCopyOutcome('ev-gone')).resolves.toBe('skipped');
+      // The same throw inside the account is `failed`.
+      mockPullFor.mockRejectedValueOnce(new Error('socket closed'));
+      await expect(refreshReadCopyOutcome('ev-here')).resolves.toBe('failed');
     } finally {
       warn.mockRestore();
     }
