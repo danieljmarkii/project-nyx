@@ -382,6 +382,40 @@ describe('flag-on', () => {
     mockUseDesignV2.mockReturnValue(true);
   });
 
+  // CUL-1218 (GC-5 ruled (a) on CUL-1225): a timing or correlation lead takes CUL-1270's face —
+  // the row, with its own evidence drawn from the finding — never the weekly bars, which count
+  // every episode by the week: a count neither claim made.
+  it('a timing lead is the row in the lead register, with its own lane — no bars, no lead read', async () => {
+    mockUseSignal.mockReturnValue(state([{ ...timing, rank: 0 }, benignLead]));
+    const view = render(<SignalZone />);
+    expect(view.queryByTestId('signal-lead-card')).toBeNull();
+    expect(view.queryByTestId('signal-lead-skeleton')).toBeNull();
+    expect(view.queryByTestId('weekly-bars')).toBeNull();
+    expect(mockLoadSignalLead).not.toHaveBeenCalled();
+    const rows = view.getAllByTestId('signal-row');
+    expect(rows).toHaveLength(2);
+    // The lead keeps the display face (`isLead`), and its picture is the timing lane.
+    const headlines = view.getAllByTestId('signal-row-headline');
+    expect(StyleSheet.flatten(headlines[0].props.style).fontSize).toBeGreaterThan(StyleSheet.flatten(headlines[1].props.style).fontSize);
+    expect(view.getAllByTestId('signal-row-thumb-lane')).toHaveLength(1);
+    fireEvent.press(rows[0]);
+    expect(router.push).toHaveBeenCalledWith('/signal/postprandial_timing%3Avomit?pet=pet-1');
+  });
+
+  it('a correlation lead is the row: its headline and its door, no chart and no lead read', async () => {
+    mockUseSignal.mockReturnValue(state([{ ...secondary, rank: 0 }, benignLead]));
+    const view = render(<SignalZone />);
+    expect(view.queryByTestId('signal-lead-card')).toBeNull();
+    expect(view.queryByTestId('weekly-bars')).toBeNull();
+    expect(view.queryByTestId('signal-row-thumb-lane')).toBeNull();
+    expect(view.queryByTestId('signal-row-thumb-pair')).toBeNull();
+    expect(mockLoadSignalLead).not.toHaveBeenCalled();
+    const rows = view.getAllByTestId('signal-row');
+    expect(rows).toHaveLength(2);
+    fireEvent.press(rows[0]);
+    expect(router.push).toHaveBeenCalledWith(expect.stringMatching(/^\/signal\/food_symptom_correlation/));
+  });
+
   it('a safety lead is a row (S1) — no chart, no lead read — with its own door', async () => {
     mockUseSignal.mockReturnValue(state([safetyLead, benignLead]));
     const view = render(<SignalZone />);

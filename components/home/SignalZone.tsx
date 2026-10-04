@@ -43,6 +43,7 @@ import { insightArrival } from '../../lib/haptics';
 import { useDesignV2 } from '../../hooks/useDesignV2';
 import { SignalLeadCard } from '../../components/designV2/signal/SignalLeadCard';
 import { SignalRow } from '../../components/designV2/signal/SignalRow';
+import { leadTakesChartCard } from '../../lib/signalWindows';
 import { SignalZoneFoot } from '../../components/designV2/signal/SignalZoneFoot';
 import { signalScreenHref } from '../../lib/signalRoute';
 import { foldIdentity, sharedFoldIdentities } from '../../lib/signalFold';
@@ -1052,8 +1053,10 @@ function LiveStack({
                 The canvas goes to the first card (`leadIndex`, above). */}
             {isStoodDown(f.finding) ? (
               <StoodDownLine text={f.text} />
-            ) : designV2 && onOpen && petId && i === leadIndex && f.finding.priorityClass === 'insight' ? (
-              // D2-3: the lead insight card is the title + chart + line, and a door.
+            ) : designV2 && onOpen && petId && i === leadIndex && f.finding.priorityClass === 'insight' && leadTakesChartCard(f.finding) ? (
+              // D2-3: the lead insight card is the title + chart + line, and a door — for a
+              // finding whose evidence IS the weekly bars. A timing or correlation lead takes
+              // the row's face below (CUL-1218, GC-5 (a)): its own receipt, never the bars.
               <SignalLeadCard
                 cached={f}
                 petId={petId}

@@ -152,6 +152,49 @@ export function signalChartSymptomOf(finding: SignalFinding): SignalSymptomType 
   return finding.type === 'food_symptom_correlation' ? null : signalSymptomOf(finding);
 }
 
+/**
+ * Whether a lead finding takes the chart card on Home (the title, the weekly bars and the
+ * week line) or the Signal row's face (CUL-1218, GC-5 ruled (a) on CUL-1225: a timing or
+ * correlation lead takes CUL-1270's face, a small chart of the finding's OWN evidence).
+ *
+ * The bars count every episode of the symptom by the week. That IS a frequency finding's
+ * evidence (a reflection, a trial's response), so those keep the card. It is NOT a timing
+ * finding's: its claim is a time from a meal or an hour of the day, and the row draws that
+ * claim's own receipt from the finding (the lane, `SignalRow`'s thumbnail), where the bars
+ * would put "2 in the last 7 days · 3 in the 7 before" under "Vomiting soon after meals", a
+ * count the claim never made. A correlation's population is its matched episodes, which
+ * nothing on the phone can count (`signalChartSymptomOf`), so it takes the row too: its
+ * headline, its line and its door, no chart. Safety findings never reach this question (S1:
+ * the zone routes them to the row first). Exhaustive over the union, so a new type is a
+ * typecheck failure until someone decides which face it takes.
+ */
+export function leadTakesChartCard(finding: SignalFinding): boolean {
+  switch (finding.type) {
+    case 'reflection':
+    case 'trial_response':
+      return true;
+    // Safety types never reach the card (S1), and the client does not check a cache row's
+    // class against its type: false fails SAFE on a mis-classed row (the row keeps its ask).
+    case 'symptom_chronicity':
+    case 'symptom_worsening':
+    case 'symptom_burden':
+    case 'postprandial_timing':
+    case 'timeofday_clustering':
+    case 'empty_stomach_timing':
+    case 'timing_story':
+    case 'food_symptom_correlation':
+    case 'intake_decline':
+    case 'incident_red_flag':
+    case 'stood_down':
+      return false;
+    default: {
+      const unknownType: never = finding;
+      void unknownType;
+      return false;
+    }
+  }
+}
+
 /** The finding's own lookback in days — the window its sentence counted over. */
 export function signalWindowDays(finding: SignalFinding): number {
   switch (finding.type) {

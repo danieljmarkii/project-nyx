@@ -17,6 +17,7 @@ import {
   MIN_COMPARE_DAYS,
   MIN_COMPARE_HALF_DAYS,
   CORRELATION_LOOKBACK_DAYS,
+  leadTakesChartCard,
   signalChartSymptomOf,
   signalCompareDrawable,
   MIN_WEEKS,
@@ -476,5 +477,22 @@ describe('CUL-1217 GC-3 · CUL-1359 · CUL-1218 — what the compare and the cha
     const m = src.match(/^const LOOKBACK_DAYS = (\d+)$/m);
     expect(m).not.toBeNull();
     expect(CORRELATION_LOOKBACK_DAYS).toBe(Number(m?.[1]));
+  });
+});
+
+// CUL-1218 (GC-5 ruled (a) on CUL-1225): the weekly bars are a frequency finding's evidence
+// only. Every type whose claim is a time from a meal, an hour of the day or a matched
+// population takes the row's face; the lead card's type list is exactly the frequency claims.
+describe('leadTakesChartCard — the bars only where they are the finding’s evidence', () => {
+  const of = (type: string) => leadTakesChartCard({ type, priorityClass: 'insight', symptomType: 'vomit' } as never);
+  it.each(['reflection', 'trial_response'])('%s keeps the chart card', (t) => expect(of(t)).toBe(true));
+  it.each(['symptom_chronicity', 'symptom_worsening', 'symptom_burden', 'postprandial_timing', 'timeofday_clustering', 'empty_stomach_timing', 'timing_story', 'food_symptom_correlation'])(
+    '%s takes the row',
+    (t) => expect(of(t)).toBe(false),
+  );
+  it('a correlation never takes the card: nothing on the phone counts its matched episodes', () => {
+    const f = { type: 'food_symptom_correlation', priorityClass: 'insight', symptomType: 'vomit' } as never;
+    expect(signalChartSymptomOf(f)).toBeNull();
+    expect(leadTakesChartCard(f)).toBe(false);
   });
 });

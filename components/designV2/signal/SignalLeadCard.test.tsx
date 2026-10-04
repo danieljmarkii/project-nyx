@@ -144,6 +144,53 @@ describe('SignalLeadCard — a type with no title rule is refused', () => {
   });
 });
 
+describe('SignalLeadCard — a timing or correlation lead is the row (CUL-1218, GC-5)', () => {
+  const timingLead: CachedFinding = {
+    rank: 0,
+    text: '9 of the 10 vomiting episodes we could time for Nyx happened within 30 minutes of eating.',
+    finding: {
+      type: 'postprandial_timing',
+      priorityClass: 'insight',
+      symptomType: 'vomit',
+      rapidCount: 9,
+      eligibleCount: 10,
+      totalEpisodes: 12,
+      rapidWindowMinutes: 30,
+      lastTwoEligibleRapid: false,
+      medianMinutesSinceFeeding: 12,
+      feedingFormsInEvidence: [],
+      windowDays: 60,
+    },
+  };
+  const correlationLead: CachedFinding = {
+    rank: 0,
+    text: 'Vomiting has tended to follow chicken.',
+    finding: {
+      type: 'food_symptom_correlation',
+      priorityClass: 'insight',
+      tier: 'early',
+      symptomType: 'vomit',
+      protein: 'chicken',
+      matchedPairs: 20,
+      symptomEventCount: 20,
+      correlationWindowHours: 12,
+    },
+  };
+  it.each([timingLead, correlationLead])('draws no bars and reads nothing: the row is the face and the door', async (cached) => {
+    const onOpen = jest.fn();
+    const view = render(<SignalLeadCard cached={cached} petId="pet-1" onOpen={onOpen} withholdFallingVomit={false} generatedAt={null} />);
+    expect(view.getByTestId('signal-row')).toBeTruthy();
+    expect(view.queryByTestId('signal-lead-card')).toBeNull();
+    expect(view.queryByTestId('signal-lead-skeleton')).toBeNull();
+    expect(view.queryByTestId('weekly-bars')).toBeNull();
+    expect(mockLoadSignalLead).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.press(view.getByTestId('signal-row'));
+    });
+    expect(onOpen).toHaveBeenCalledWith(cached.finding);
+  });
+});
+
 describe('SignalLeadCard — a safety lead is the plain Signal row (S1)', () => {
   it.each([safety, { rank: 0, text: 'Nyx has eaten less than usual for 3 days. Call your vet today.', finding: intake }])(
     'renders no chart, no read, the row as the door',
