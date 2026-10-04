@@ -33,7 +33,7 @@ jest.mock('../hooks/useIsOnline', () => ({ useIsOnline: () => true }));
 // answers with an empty record, which is the state under test.
 jest.mock('../lib/ask', () => ({
   ...jest.requireActual('../lib/ask'),
-  loadAskSuggestions: jest.fn(() => ({ total: 0, chips: [] })),
+  loadAskSuggestions: jest.fn(() => ({ total: 0, chips: [], hasLooks: false })),
   askQuestion: jest.fn(),
 }));
 
@@ -60,7 +60,7 @@ beforeEach(() => {
     petId: null, messages: [], thinking: false, capped: null, disabled: false,
     lastQuestion: null, lastActivityMs: 0,
   });
-  mockedSuggestions.mockImplementation(() => ({ total: 0, chips: [] }));
+  mockedSuggestions.mockImplementation(() => ({ total: 0, chips: [], hasLooks: false }));
 });
 
 describe('Ask — the empty record’s door', () => {
@@ -72,6 +72,31 @@ describe('Ask — the empty record’s door', () => {
 
     expect(useUiStore.getState().logSheet).toEqual({ initialType: null });
     expect(router.push).not.toHaveBeenCalled();
+  });
+});
+
+// CUL-1475 — a record holding only daily looks is still empty to Ask (its tools are
+// blind to looks), but the headline must not say nothing is logged over a record the
+// owner has been answering (daily-look spec T-9).
+describe('Ask — the empty record over a record of only looks', () => {
+  it('names what the owner noticed, says Ask cannot read it, and keeps the door', () => {
+    mockedSuggestions.mockImplementation(() => ({ total: 0, chips: [], hasLooks: true }));
+    render(<AskScreen />);
+
+    expect(screen.getByText("What you've noticed is on Nyx's record. Nothing else is logged yet.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Ask reads counts, trends, foods and meds, not the looks themselves. Log a meal or a symptom and I'll have something honest to say.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Once a few days are logged/)).toBeNull();
+    expect(screen.getByText('Log something for Nyx')).toBeTruthy();
+  });
+
+  it('keeps the first form on a record with no looks', () => {
+    render(<AskScreen />);
+    expect(screen.getByText("Once a few days are logged, I'll have things to answer.")).toBeTruthy();
+    expect(screen.queryByText(/What you've noticed/)).toBeNull();
   });
 });
 
@@ -93,7 +118,7 @@ describe('Ask — a log saved from the empty record’s door', () => {
     render(<AskScreen />);
     expect(screen.getByText('Log something for Nyx')).toBeTruthy();
 
-    mockedSuggestions.mockImplementation(() => ({ total: 1, chips: ['When did Nyx last vomit?'] }));
+    mockedSuggestions.mockImplementation(() => ({ total: 1, chips: ['When did Nyx last vomit?'], hasLooks: false }));
     act(() => useEventStore.getState().prependEvent(loggedRow('ev-1')));
 
     expect(screen.queryByText('Log something for Nyx')).toBeNull();

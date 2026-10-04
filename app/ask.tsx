@@ -77,7 +77,7 @@ export default function AskScreen() {
   const petName = activePet?.name ?? 'your pet';
 
   const [input, setInput] = useState('');
-  const [suggestions, setSuggestions] = useState<AskSuggestions>({ total: 0, chips: [] });
+  const [suggestions, setSuggestions] = useState<AskSuggestions>({ total: 0, chips: [], hasLooks: false });
   const scrollRef = useRef<ScrollView>(null);
 
   // On focus: re-scope the conversation to the active pet (resets on a pet switch or an
@@ -198,7 +198,7 @@ export default function AskScreen() {
           {disabled ? (
             <Text style={styles.disabledLine}>Ask isn't available on this account right now.</Text>
           ) : emptyRecord ? (
-            <EmptyRecord petName={petName} onLog={() => openLogSheet()} />
+            <EmptyRecord petName={petName} hasLooks={suggestions.hasLooks} onLog={() => openLogSheet()} />
           ) : fresh ? (
             <FreshState
               petName={petName}
@@ -317,13 +317,28 @@ function FreshState({
 }
 
 // ── Empty-record state (designed, Principle 5) ──────────────────────────────────────
-function EmptyRecord({ petName, onLog }: { petName: string; onLog: () => void }) {
+// Two forms. A record holding only daily looks is still empty to Ask (its tools are
+// blind to looks, daily-look spec §9), but "once a few days are logged" over twenty
+// answered days is false (T-9), so that form names what the owner did, says plainly
+// that Ask cannot read it, and keeps the same door (CUL-1475; copy PM-approved).
+function EmptyRecord({ petName, hasLooks, onLog }: { petName: string; hasLooks: boolean; onLog: () => void }) {
   return (
     <View style={styles.emptyWrap}>
-      <Text style={styles.emptyHeadline}>Once a few days are logged, I'll have things to answer.</Text>
-      <Text style={styles.emptyDetail}>
-        Ask reads from {petName}'s own record — counts, trends, foods, meds. Log a meal or a symptom and I'll have something honest to say.
-      </Text>
+      {hasLooks ? (
+        <>
+          <Text style={styles.emptyHeadline}>What you've noticed is on {petName}'s record. Nothing else is logged yet.</Text>
+          <Text style={styles.emptyDetail}>
+            Ask reads counts, trends, foods and meds, not the looks themselves. Log a meal or a symptom and I'll have something honest to say.
+          </Text>
+        </>
+      ) : (
+        <>
+          <Text style={styles.emptyHeadline}>Once a few days are logged, I'll have things to answer.</Text>
+          <Text style={styles.emptyDetail}>
+            Ask reads from {petName}'s own record — counts, trends, foods, meds. Log a meal or a symptom and I'll have something honest to say.
+          </Text>
+        </>
+      )}
       <AskChip label={`Log something for ${petName}`} variant="accent" onPress={onLog} />
     </View>
   );

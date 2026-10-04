@@ -18,6 +18,7 @@ import { localDayIndexOf } from './utils';
 import type { ActiveTrialInfo } from './widgetResolution';
 import type { WidgetSlotRow } from './widgetSnapshot';
 import {
+  buildLookOnlyToday,
   buildSevenDays,
   buildTodayByClass,
   buildTrialSnapshot,
@@ -231,5 +232,60 @@ describe('buildWidgetSnapshotV2', () => {
     expect(v2.sevenDays).toHaveLength(WIDGET_SEVEN_DAYS);
     expect(v2.sevenDays[6]).toMatchObject({ dayKey: '2026-07-24', logged: true, symptomLogged: true });
     expect(v2.trial).toMatchObject({ day: 12, target: 28, daysLogged: 8, daysElapsed: 12 });
+  });
+});
+
+describe('buildLookOnlyToday (CUL-1475)', () => {
+  const look = (occurredAt: string) => ({ occurredAt, isLook: true });
+  const other = (occurredAt: string) => ({ occurredAt, isLook: false });
+
+  it('is true only when today has rows and every one is a look', () => {
+    expect(buildLookOnlyToday({ rows: [look('2026-07-24T08:00:00.000Z')], nowMs: NOON_UTC, timeZone: 'UTC' })).toBe(true);
+    expect(
+      buildLookOnlyToday({
+        rows: [look('2026-07-24T08:00:00.000Z'), look('2026-07-24T11:00:00.000Z')],
+        nowMs: NOON_UTC,
+        timeZone: 'UTC',
+      }),
+    ).toBe(true);
+  });
+
+  it('is false on an empty day, and on a look beside any other row, in either order', () => {
+    expect(buildLookOnlyToday({ rows: [], nowMs: NOON_UTC, timeZone: 'UTC' })).toBe(false);
+    expect(
+      buildLookOnlyToday({ rows: [look('2026-07-24T08:00:00.000Z'), other('2026-07-24T09:00:00.000Z')], nowMs: NOON_UTC, timeZone: 'UTC' }),
+    ).toBe(false);
+    expect(
+      buildLookOnlyToday({ rows: [other('2026-07-24T07:00:00.000Z'), look('2026-07-24T08:00:00.000Z')], nowMs: NOON_UTC, timeZone: 'UTC' }),
+    ).toBe(false);
+  });
+
+  it('reads only today: a non-look yesterday does not unmark today, a look yesterday does not mark it', () => {
+    expect(
+      buildLookOnlyToday({ rows: [other('2026-07-23T08:00:00.000Z'), look('2026-07-24T08:00:00.000Z')], nowMs: NOON_UTC, timeZone: 'UTC' }),
+    ).toBe(true);
+    expect(buildLookOnlyToday({ rows: [look('2026-07-23T08:00:00.000Z')], nowMs: NOON_UTC, timeZone: 'UTC' })).toBe(false);
+  });
+
+  it('buckets by the injected zone (B-514): one instant is today in one zone and yesterday in another', () => {
+    // 2026-07-23T20:00Z is the 24th at UTC+14 (10am) and the 23rd at UTC−10 (10am).
+    const rows = [look('2026-07-23T20:00:00.000Z')];
+    expect(buildLookOnlyToday({ rows, nowMs: NOON_UTC, timeZone: PLUS_14 })).toBe(false); // now is the 25th there
+    expect(buildLookOnlyToday({ rows, nowMs: NOON_UTC, timeZone: MINUS_10 })).toBe(false); // now is the 24th there
+    expect(buildLookOnlyToday({ rows: [look('2026-07-24T20:00:00.000Z')], nowMs: NOON_UTC, timeZone: MINUS_10 })).toBe(true);
+  });
+
+  it('rides the assembled block, absent rows reading as no look', () => {
+    const base = {
+      today: [],
+      slots: [],
+      sevenDayEvents: [],
+      trial: null,
+      trialCoverage: null,
+      nowMs: NOON_UTC,
+      timeZone: 'UTC',
+    };
+    expect(buildWidgetSnapshotV2(base).lookOnlyToday).toBe(false);
+    expect(buildWidgetSnapshotV2({ ...base, dayRows: [look('2026-07-24T08:00:00.000Z')] }).lookOnlyToday).toBe(true);
   });
 });

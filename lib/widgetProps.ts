@@ -150,6 +150,11 @@ export interface WidgetPetPanel {
    *  (a class-tile-less pet with a trial still shows the resting layout, not the
    *  empty headline, so its band renders). */
   hasTodayEvents: boolean;
+  /** Today's only rows are daily looks (CUL-1475): the empty-day line reads
+   *  "Noticed today · nothing else logged yet" instead of "Nothing logged yet
+   *  today", which is false beside a logged look (daily-look spec T-9, §5.1 1b).
+   *  Existence only — never a word, a note or a count. */
+  lookOnlyToday: boolean;
   band: WidgetBand;
 }
 
@@ -403,6 +408,9 @@ export function buildPetPanel(
     upNext,
     trialRecord,
     hasTodayEvents,
+    // Strict: an absent field (a snapshot published before CUL-1475) is "no look",
+    // which renders the older line rather than claiming a look nobody read.
+    lookOnlyToday: snapshot.lookOnlyToday === true,
     band: buildBand(snapshot),
   };
 }
@@ -441,6 +449,7 @@ export function buildWidgetProps(input: {
       upNext: null,
       trialRecord: null,
       hasTodayEvents: false,
+      lookOnlyToday: false,
       band: null,
     };
   }

@@ -282,8 +282,22 @@ describe('the v2 block', () => {
         'bowlConfirmedAt', 'dayKey', 'freeFed', 'generatedAt', 'petId', 'petName',
         'schemaVersion', 'sevenDays', 'slots', 'species', 'today', 'todayByClass',
         'trial', 'trialDay', 'trialTargetDays', 'upNext',
+        // CUL-1475, PM-ruled: the one look-derived field, a boolean (pinned below).
+        'lookOnlyToday',
       ].sort(),
     );
+  });
+
+  it('carries a look as ONE boolean and nothing else — no word, note or count (CUL-1475)', () => {
+    // The PM's amendment to the daily-look spec §5.5 row: existence only, for the
+    // absence line. A look-derived field that grew a payload would fail here.
+    const snap = buildWidgetSnapshot(PET, {
+      ...base,
+      dayRows: [{ occurredAt: base.generatedAt, isLook: true }],
+    });
+    expect(snap.lookOnlyToday).toBe(true); // non-vacuity: the bit is set
+    expect(typeof snap.lookOnlyToday).toBe('boolean');
+    // The key list above is what keeps any other look-bearing field out.
   });
 });
 
@@ -390,5 +404,46 @@ describe('publishWidgetSnapshots — the 7-day pips over the real coverage read'
     for (const daysAgo of [3, 4, 5]) {
       expect([daysAgo, pip(daysAgo)]).toMatchObject([daysAgo, { logged: true, symptomLogged: false }]);
     }
+  });
+
+  // CUL-1475 — the same real read, to the one look-derived bit the snapshot carries.
+  // `lookOnlyToday` must hold only when EVERY row today is a look: the line it buys
+  // ("nothing else logged yet") is a claim about the whole day.
+  it('marks a day whose only rows are looks, and only that day', async () => {
+    insertEvent('look-today', 'check_in', localNoon(0));
+    insertEvent('meal-yday', 'meal', localNoon(1));
+
+    const { snapshots } = await publishWidgetSnapshots([PET]);
+
+    expect(snapshots[0].lookOnlyToday).toBe(true);
+  });
+
+  it('does not mark a look beside a weight, which the four tiles never show', async () => {
+    // The case the "every row" rule exists for: the empty-day branch fires (no meal,
+    // dose, treat or symptom), and "nothing else logged yet" would be false. The plain
+    // line it falls back to is false beside the weight too; that is CUL-1563.
+    insertEvent('look-today', 'check_in', localNoon(0));
+    insertEvent('weight-today', 'weight_check', localNoon(0));
+
+    const { snapshots } = await publishWidgetSnapshots([PET]);
+
+    expect(snapshots[0].lookOnlyToday).toBe(false);
+  });
+
+  it('does not mark a day with no rows, nor carry yesterday\'s look', async () => {
+    insertEvent('look-yday', 'check_in', localNoon(1));
+
+    const { snapshots } = await publishWidgetSnapshots([PET]);
+
+    expect(snapshots[0].lookOnlyToday).toBe(false);
+  });
+
+  it('ignores a look that was taken back (soft-deleted)', async () => {
+    insertEvent('look-undone', 'check_in', localNoon(0));
+    raw.prepare(`UPDATE events SET deleted_at = ? WHERE id = 'look-undone'`).run(new Date().toISOString());
+
+    const { snapshots } = await publishWidgetSnapshots([PET]);
+
+    expect(snapshots[0].lookOnlyToday).toBe(false);
   });
 });

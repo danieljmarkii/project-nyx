@@ -634,8 +634,14 @@ export function CulpritWidgetLayout(
 
   // Empty day (§2.6.2): nothing logged in any class today. A designed state — the
   // honest line, the day's next window (if one is ahead), the record still in the
-  // band. Never a nag, never "all quiet".
+  // band. Never a nag, never "all quiet". On a day whose only rows are daily looks
+  // the line names the look instead (CUL-1475; daily-look spec T-9 and §5.1 1b,
+  // Home's own lead line): "nothing logged" is false beside a logged look. Inlined,
+  // not imported — nothing outside this function exists in the widget's context.
   if (!panel.hasTodayEvents) {
+    const emptyLine = panel.lookOnlyToday === true
+      ? 'Noticed today · nothing else logged yet'
+      : 'Nothing logged yet today';
     const cells: React.JSX.Element[] = [];
     if (panel.upNext) cells.push(upNextTile(panel.upNext, '', 'upnext'));
     cells.push(doorTile('door'));
@@ -644,7 +650,7 @@ export function CulpritWidgetLayout(
       <Text
         key="empty"
         modifiers={[font({ size: 12 }), foregroundStyle(T.textSecondary), frame({ maxWidth: Infinity, alignment: 'leading' })]}>
-        Nothing logged yet today
+        {emptyLine}
       </Text>,
       singleRowGrid(cells),
       band(panel.band),
