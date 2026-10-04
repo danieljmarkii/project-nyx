@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AppState, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from 'expo-router';
 import { useEvents } from '../../hooks/useEvents';
@@ -32,6 +32,7 @@ import { CoverageDoor } from '../../components/designV2/home/CoverageDoor';
 import { HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { useUiStore } from '../../store/uiStore';
+import { RowSpeechContext, type RowSpeech } from '../../components/dayRow/rowSpeech';
 
 /**
  * The slice of the tab navigator this screen needs to hear a Home-tab re-tap.
@@ -113,6 +114,14 @@ export default function HomeScreen() {
   // Same loader as the Pet-tab card, so the two surfaces cannot disagree about
   // the same trial (B-417 PR 4). `inputIsForPet` fails closed for B-789 below.
   const activePetId = usePetStore((s) => s.activePet?.id ?? null);
+  // The spine's rows may speak a read that lands only while Home is the screen in front
+  // (CUL-1224, BRK-28; `components/dayRow/rowSpeech.ts`). Today's rows are the active
+  // pet's record (TodayCard reads that pet's day), so its name is the record's.
+  const todayPetName = usePetStore((s) => s.activePet?.name ?? null);
+  const rowSpeech = useMemo<RowSpeech>(
+    () => ({ petName: todayPetName, mayAnnounce: () => navigation.isFocused() && AppState.currentState === 'active' }),
+    [todayPetName, navigation],
+  );
   const {
     input: trialInput,
     inputIsForPet: trialFactsFresh,
@@ -338,13 +347,15 @@ export default function HomeScreen() {
             <>
               {/* BRK-16: the header measures inside the card, so its rect is composed in
                   page coordinates from both layouts (`lookRectInPage`, C-22). */}
-              <TodayCard
-                trialNotEating={trialNotEating}
-                onLayout={(e) => setTodayCardBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })}
-                onLookLayout={(e) =>
-                  setLookHeaderBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
-                }
-              />
+              <RowSpeechContext.Provider value={rowSpeech}>
+                <TodayCard
+                  trialNotEating={trialNotEating}
+                  onLayout={(e) => setTodayCardBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })}
+                  onLookLayout={(e) =>
+                    setLookHeaderBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
+                  }
+                />
+              </RowSpeechContext.Provider>
               <CoverageDoor />
             </>
           ) : (
