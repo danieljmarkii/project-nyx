@@ -119,7 +119,8 @@ export interface ReportLookInput extends LookDayRow {
 export type ReportAudience =
   | {
       kind: 'owner'
-      /** The *Include your notes* option, as the owner set it. Default on. */
+      /** The *Include your notes* option, as the owner set it. The request parser
+       *  (`parseIncludeNotes`, index.ts) reads anything but an explicit `true` as off. */
       includeLookNotes: boolean
     }
   | { kind: 'shared_link' }

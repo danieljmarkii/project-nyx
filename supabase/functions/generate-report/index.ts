@@ -917,6 +917,24 @@ export async function embedIncidentPhotos(
 }
 
 /**
+ * CUL-1548 — whether the owner asked for their Noticed notes in this report. TRUE ONLY ON AN
+ * EXPLICIT `true`; absent, `null`, `"true"`, `1` and every other shape mean OFF.
+ *
+ * The default used to be ON (CUL-875), so "an older client that sends nothing" kept the
+ * spec's default. No such client exists: every build that can show the notes switch sends
+ * the field (since #830, 2026-09-11), and every build from before it has no Noticed surface
+ * at all, so its silence means "there is no control", never "the control is on". A server
+ * that prints notes on silence prints them behind a control nobody was shown. Failing
+ * closed is the only direction a privacy toggle may fail (the `rls-privacy-reviewer`).
+ *
+ * `includeNotes` wins over the snake_case alias when both are present, as before.
+ */
+export function parseIncludeNotes(body: { includeNotes?: unknown; include_notes?: unknown }): boolean {
+  const raw = body.includeNotes ?? body.include_notes
+  return raw === true
+}
+
+/**
  * The event-pull floor: far enough back to fully cover the resolved window (even a
  * long since-visit range) plus CHERRY_PICK_LOOKBACK_DAYS of pre-window history for
  * the custom-window out-of-range disclosure, and at least BASE_LOOKBACK_DAYS.
@@ -1567,7 +1585,7 @@ const handler = async (req: Request): Promise<Response> => {
   let petId: string
   let requestedWindow: { startDate: string; endDate: string } | null = null
   let requestTimezone: string | null = null
-  let includeNotes = true
+  let includeNotes = false
   try {
     const body = (await req.json()) as {
       petId?: string
@@ -1581,9 +1599,7 @@ const handler = async (req: Request): Promise<Response> => {
       // B-443 — the caller's device IANA zone (validated in resolveIanaZone before use).
       timezone?: string
       // CUL-875 — the owner's *Include your notes* option, governing whether her daily-
-      // look notes appear in the report's Noticed appendix. Default ON, so an older
-      // client that sends nothing keeps the spec's default rather than silently
-      // dropping a column it does not know exists.
+      // look notes appear in the report's Noticed appendix. Read by `parseIncludeNotes`.
       includeNotes?: boolean
       include_notes?: boolean
     }
@@ -1592,16 +1608,7 @@ const handler = async (req: Request): Promise<Response> => {
     const end = body.endDate ?? body.end_date
     if (start && end) requestedWindow = { startDate: start, endDate: end }
     requestTimezone = typeof body.timezone === 'string' ? body.timezone : null
-    // A BOOLEAN OR THE DEFAULT — never "anything that is not false".
-    //
-    // The compatibility this needs is narrow: an older client sends nothing, and nothing
-    // must mean the spec's default (on). `rawNotes !== false` delivered that and also
-    // made `null`, `"false"`, `0` and `[]` mean ON — failing open on every malformed
-    // value when only `undefined` needed to. Unreachable from the shipped client (the
-    // control is an RN Switch), and the wrong direction for a privacy toggle regardless
-    // (the `rls-privacy-reviewer`).
-    const rawNotes = body.includeNotes ?? body.include_notes
-    includeNotes = typeof rawNotes === 'boolean' ? rawNotes : true
+    includeNotes = parseIncludeNotes(body)
   } catch {
     return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
   }

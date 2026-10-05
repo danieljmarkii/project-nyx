@@ -30,6 +30,7 @@ import {
   embedIncidentPhotos,
   computeLookbackIso,
   generateReportForPet,
+  parseIncludeNotes,
   fetchAll,
   reachedLookbackIso,
   PULL_PAGE,
@@ -1487,3 +1488,36 @@ Deno.test('generateReportForPet: a live pet of ANOTHER owner never reaches this 
   assert.ok(!JSON.stringify(res.body).includes(OTHER_PET_NAME))
 })
 
+
+// CUL-1548 — the notes option fails CLOSED. A request that does not say it wants the
+// owner's Noticed notes gets none: silence from a client means no control was shown,
+// never that one was switched on.
+Deno.test('parseIncludeNotes: only an explicit true prints notes; absent and malformed mean off', () => {
+  assert.equal(parseIncludeNotes({}), false, 'absent is off (the CUL-1548 hole)')
+  assert.equal(parseIncludeNotes({ includeNotes: true }), true)
+  assert.equal(parseIncludeNotes({ includeNotes: false }), false)
+  assert.equal(parseIncludeNotes({ include_notes: true }), true, 'the snake_case alias still reads')
+  assert.equal(parseIncludeNotes({ include_notes: false }), false)
+  // camelCase wins when both are present, as it did before.
+  assert.equal(parseIncludeNotes({ includeNotes: false, include_notes: true }), false)
+  assert.equal(parseIncludeNotes({ includeNotes: true, include_notes: false }), true)
+  for (const v of [null, undefined, 'true', 'false', 1, 0, [], {}, [true]]) {
+    assert.equal(parseIncludeNotes({ includeNotes: v }), false, `includeNotes ${JSON.stringify(v)} is off`)
+  }
+  // `null` falls through to the alias (the `??`), so an explicit snake_case true still wins.
+  assert.equal(parseIncludeNotes({ includeNotes: null, include_notes: true }), true)
+})
+
+Deno.test('the handler reads includeNotes through parseIncludeNotes and starts OFF', () => {
+  // The HTTP handler is not exported (it binds Deno.serve), so its wiring is the one part a
+  // test cannot drive: pinned by a source scan, stated as one. Without it, inlining a
+  // `: true` default back into the handler would leave the helper green and the hole open.
+  const src = Deno.readTextFileSync(new URL('./index.ts', import.meta.url))
+  const start = src.indexOf('const handler = async')
+  assert.ok(start > 0, 'the handler is where this scan expects it')
+  const handlerSrc = src.slice(start)
+  assert.match(handlerSrc, /let includeNotes = false\n/)
+  assert.match(handlerSrc, /includeNotes = parseIncludeNotes\(body\)/)
+  assert.match(handlerSrc, /kind: 'owner', includeLookNotes: includeNotes/)
+  assert.doesNotMatch(handlerSrc, /includeNotes = true/)
+})
