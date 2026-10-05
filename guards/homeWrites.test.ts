@@ -865,7 +865,7 @@ describe('§3.2 — Home carries exactly two write classes', () => {
     //
     // It fired a THIRD time on CUL-1066 (D2-4), and that one is NOT a new class: the
     // look, drawn by a second file (`components/designV2/home/LookHeader.tsx`) behind
-    // `design_v2`, reaching ONE of the look's two helpers. It passes the three tests
+    // the Design v2 flag, reaching ONE of the look's two helpers. It passes the three tests
     // above in the same words the note did — the look's own row, no new record, ruled
     // (the round-4 page §01). What the flag changes is which classes are MOUNTED: flag-on
     // the med strip is not, so live Home carries two (the look, the appointment strip);

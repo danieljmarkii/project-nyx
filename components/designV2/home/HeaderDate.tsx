@@ -3,9 +3,7 @@
 //
 // §05 names the spine's window as "today, dated in the header", and the header had no
 // date: the Today card's only label is "Today" and the coverage door speaks the month.
-// This draws the date at the head of the header's right cluster. It lives in the
-// namespace so the flag-off guard can stub it (C-36): `HomeHeader` holds the gate and
-// draws nothing here with the flag off.
+// This draws the date at the head of the header's right cluster; `HomeHeader` places it.
 //
 // Metadata, not a control: plain text, no touchable, muted and small so it never competes
 // with the pet's name (the one thing on the row an owner may need larger). The label is

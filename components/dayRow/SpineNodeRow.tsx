@@ -1,5 +1,5 @@
 // A node on the day's thread: one event, or one run of meals. The ONE row Home's spine
-// (behind `design_v2`) and History v2's day cards draw (History v2,
+// and History v2's day cards draw (History v2,
 // spec §3.6, H-1): HV-1 / CUL-1158 lifted it here, HV-6 / CUL-1163 gave it round 3's rules.
 // The contract is "node in, row out": `lib/dayNodes.ts` builds the node, `DayNodeRow` picks
 // the row, and this file draws what the node says and nothing it does not.

@@ -93,12 +93,6 @@ const CASES: DoorCase[] = [
     lands: { filter: ALL, window: ALL_TIME, landedDay: DAY },
   },
   {
-    door: 'calendar-day',
-    name: 'the flag-off calendar\'s UTC day',
-    params: { date: DAY, ts: '7' },
-    lands: { filter: ALL, window: ALL_TIME, landedDay: DAY },
-  },
-  {
     door: 'look-more-today',
     name: 'the look card\'s more today',
     params: paramsOfString(lookMoreTodayHref(7)),

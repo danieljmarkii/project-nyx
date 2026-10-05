@@ -576,7 +576,7 @@ interface SignalZoneProps {
   // B-789 (§5.2) — drop every FALLING VOMIT PAIR (`isFallingVomitPair`: the trial_response
   // `fewer` card and, since CUL-1216, a falling vomit reflection) when the active pet's record
   // carries a NOT-EATING concern (a live intake decline or a diet refusal), or its facts have not
-  // answered yet (Home fails closed). The design_v2 lead card's week line and a vomit chronicity
+  // answered yet (Home fails closed). The lead card's week line and a vomit chronicity
   // card's compare read it too. The card fires
   // from the server `trial_response` finding, which is blind to the refusal — the day-1
   // diet-refusal cat has uniform-low intake, so the relative-decline detector never fires

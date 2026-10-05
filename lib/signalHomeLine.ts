@@ -136,7 +136,7 @@ function countLine(finding: SignalFinding): string | null {
       return `${finding.clusterCount} of ${finding.eligibleCount} timed episodes`;
     case 'timing_story':
       // No count: the story's sentence names the shape and leaves its band counts to a
-      // receipt (S10) that the design_v2 screen does not draw, so any number here would be
+      // receipt (S10) that the Signal screen does not draw, so any number here would be
       // one the owner cannot find behind the door. The headline carries the claim.
       return null;
     case 'food_symptom_correlation':

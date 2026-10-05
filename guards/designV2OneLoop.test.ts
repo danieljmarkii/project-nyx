@@ -1,4 +1,4 @@
-// D2-7 — behind `design_v2`, the breathing tick is the app's ONLY looping motion
+// D2-7 — on the Design v2 surfaces, the breathing tick is the ONLY looping motion
 // (Design v2 — the whole day, CUL-1068; round 4 §07, the Principle 9 carve-out: "chrome
 // never moves on its own — except the one tick, while the app is working on the pet's
 // behalf. No other loop exists").
@@ -120,7 +120,7 @@ function walk(root: string, namespaceRel: string) {
   return { inside: inside.map(rel).sort(), written, imported };
 }
 
-describe('D2-7 — the tick is the only loop behind design_v2', () => {
+describe('D2-7 — the tick is the only loop on the Design v2 surfaces', () => {
   it('the namespace holds sources, and the tick is among them (the walk reads something)', () => {
     const { inside } = walk(REPO_ROOT, NAMESPACE_REL);
     expect(inside.length).toBeGreaterThan(1);

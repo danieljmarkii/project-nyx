@@ -384,7 +384,7 @@ describe('FAB — the Home capture overlay', () => {
     expect(view.queryByLabelText('Log event')).toBeTruthy();
   });
 
-  // CUL-1220 / BRK-18 — the design_v2 look header publishes an overlay for its pinned way
+  // CUL-1220 / BRK-18 — the look header publishes an overlay for its pinned way
   // back and never draws a Done bar. The + stays, and the FAB is mounted outside the tabs,
   // so this is also the "after a tab switch" case: nothing about the overlay hides it.
   it('stays for an overlay that draws no Done bar (the look header’s More…)', () => {

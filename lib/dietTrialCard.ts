@@ -2913,7 +2913,7 @@ export interface TrialStripModel {
   trialResponseLine: string | null;
   /**
    * CUL-1526 (G2 B + G3 B, the CUL-1519 mock round 2 §04) — Design v2's ONE line, drawn by
-   * `components/designV2/home/TrialCard` under `design_v2`: the end date
+   * `components/designV2/home/TrialCard`: the end date
    * ALWAYS leads ("Ends Oct 17" | "Window ended Oct 17"), then the off-diet floor when there is
    * one ("· 3 off-diet feedings logged"). Nothing else: the food label, the coverage ratio and
    * the vomiting pair live on `/trial`. An end date has no direction, so it cannot reassure;

@@ -43,7 +43,7 @@ export function IncidentReadSection({
   pending: boolean;
   /** A read is being PRODUCED (the section's `working || status === 'pending'`), as
    *  opposed to a local row being read — the pending tick breathes only for the first
-   *  (D2-7, behind `design_v2`). */
+   *  (D2-7). */
   working?: boolean;
   /** CUL-1275 — the host's landing announcer. The section reports what it is SHOWING, and
    *  the host speaks it only when a read the owner was waiting for lands. */

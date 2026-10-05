@@ -46,7 +46,7 @@ export interface CaptureOverlay {
   /** Commit. Null exactly when `summary` is null. */
   onDone: (() => void) | null;
   /** Can this overlay put a Done bar in the FAB's corner? The FAB steps aside ONLY then
-   *  (CUL-1220, BRK-18): an overlay that never draws one — the design_v2 look header,
+   *  (CUL-1220, BRK-18): an overlay that never draws one — the look header,
    *  whose chip is the save — leaves the + where it is, on every tab. Required, so every
    *  publisher decides; nothing defaults a corner away from the app's primary control. */
   drawsDoneBar: boolean;
