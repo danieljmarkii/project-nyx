@@ -215,7 +215,7 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
 
   // B-161 — the drug name as a subline, so a pet on two meds doesn't show two
   // identical "Medication" rows. The dose twin of the meal's food-name subline, and
-  // names by the item exactly as History's EventRow does (formatDrugLabel). History
+  // names by the item exactly as History's EventRow (retired, HV-14) does (formatDrugLabel). History
   // also falls back to the course's name; Today's read carries it since History v2 HV-6
   // (`regimen_drug_name`), and this strip deliberately does not draw it, so it draws
   // exactly what it drew before (`lib/todayEventsQuery.ts`; CUL-1184). NULL (no drug
@@ -227,7 +227,7 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
   // B-568 — the wet/dry variant. Today is the tightest of the three timeline surfaces:
   // it shows the product name ALONE (no brand), so two formats of one prescription line
   // were not merely hard to tell apart here, they rendered as the same string. Same
-  // sibling-element treatment as EventRow — the name truncates, the tag holds.
+  // sibling-element treatment as EventRow (retired, HV-14) — the name truncates, the tag holds.
   const formatTag = isMeal ? foodFormatTag(event.food_format, rowLabel) : null;
 
   // Tint the glyph to its category so meal vs. symptom vs. med reads at a glance —
@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     flexShrink: 1,
   },
-  // Matches EventRow's tag register (tracked uppercase tertiary) so a food is named
+  // Matches the retired EventRow's (HV-14) tag register (tracked uppercase tertiary) so a food is named
   // identically on Today and in History. flexShrink:0 — the name truncates, not the tag.
   formatTag: {
     fontSize: theme.textXS,

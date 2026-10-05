@@ -16,8 +16,7 @@
 //     never triggered (the issue: "an observe-only read … never a trigger"). Issued for
 //     every row whose record can hold a read, whatever its tint (CUL-1197: a photographed
 //     normal stool is not rose-tinted, and its read can be worth a call), so a day of
-//     meals and doses alone issues no read at all, which is also what the flag-off proof
-//     measures (C-41: no row AND no read). A row that can carry a read gets its photo
+//     meals and doses alone issues no read at all. A row that can carry a read gets its photo
 //     handed to the pipeline only once this read has ANSWERED for it (C-12): since H-4b
 //     every read slot is a claim, so before the copy lands a grey "No read yet" says no
 //     check happened and a glyph over nothing says it was calm. Until then the row is drawn
@@ -31,21 +30,21 @@
 // The model is pure (`buildDay`, `lib/dayNodes.ts` — the pipeline History v2 shares) and
 // the states are the card's; nothing here decides a clinical fact.
 //
-// ── UNDER `history_v2` (HV-10 / CUL-1167; spec §5.6) ─────────────────────────────
-// The spine is History v2's `HomeSpine` (its namespace draws it, C-36): the first paint and
-// the run's open in place. This card holds the gate and the PAINT LEDGER, because it is the
+// ── THE FIRST PAINT (History v2 HV-10 / CUL-1167; spec §5.6) ─────────────────────
+// The spine is History v2's `HomeSpine`: the first paint and the run's open in place. It
+// draws wherever this card does, under `design_v2` (History v2 went to every account
+// first, HV-14 / CUL-1175). This card holds the PAINT LEDGER, because it is the
 // one that knows when today's read first answered: the ledger opens for the identity (the
 // pet and the day) on the render that first has the answer and is sealed after that commit.
 // So the spine draws once when Home first shows the day, never again as rows are logged, and
 // a day that answered empty draws nothing when its first row arrives (that moment is the
-// completion card's). With the flag off, the shipped spine, byte for byte.
+// completion card's).
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../../constants/theme';
 import { useEvents } from '../../../hooks/useEvents';
-import { useHistoryV2 } from '../../../hooks/useHistoryV2';
 import { lookCardLive, todayMealNudge, todayNudgeKind } from '../../../lib/lookCard';
 import { isLookRow } from '../../../lib/lookDisplay';
 import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '../../../lib/analysis';
@@ -75,7 +74,6 @@ import { ThemedText } from '../../ui/ThemedText';
 import { HomeSpine } from '../../historyV2/HomeSpine';
 import { createPaintLedger } from '../../motion/threadMotion';
 import { LookHeader } from './LookHeader';
-import { Spine } from './Spine';
 
 /** The quiet day (Principle 5) — says what to do, without a nudge. `nyx-voice`: plain,
  *  warm, no exclamation, no claim about how she is. The last sentence rides only when
@@ -313,13 +311,12 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
 
   // History v2's first paint on Home (the header): opened by the render that first has the
   // day's answer for this pet, sealed once that commit is on screen.
-  const historyV2 = useHistoryV2();
   // The look header's gate, read here too so the quiet line can never point at a header
   // that is not drawn (BRK-21; `lookCardLive` is the one predicate, never restated).
   const lookLive = lookCardLive({ species: activePet?.species });
   const ledger = useRef(createPaintLedger()).current;
   const dayKey = useMemo(() => toLocalDayKey(new Date(dayStartMs)), [dayStartMs]);
-  if (historyV2 && readState === 'ready' && petId) ledger.open(JSON.stringify([petId, dayKey]));
+  if (readState === 'ready' && petId) ledger.open(JSON.stringify([petId, dayKey]));
   useLayoutEffect(() => {
     if (readState === 'ready') ledger.seal();
   });
@@ -360,11 +357,7 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
               {line.slice(String(model.total).length)}
             </ThemedText>
           ) : null}
-          {historyV2 ? (
-            <HomeSpine nodes={model.nodes} onOpen={onOpenEvent} drawToken={ledger.peek(dayKey)} claimDraw={ledger.claim} />
-          ) : (
-            <Spine nodes={model.nodes} onOpen={onOpenEvent} />
-          )}
+          <HomeSpine nodes={model.nodes} onOpen={onOpenEvent} drawToken={ledger.peek(dayKey)} claimDraw={ledger.claim} />
         </>
       )}
     </Card>

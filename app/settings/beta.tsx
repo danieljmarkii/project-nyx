@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { FlaskConical, Info, LayoutGrid, Palette, ScrollText } from 'lucide-react-native';
+import { FlaskConical, Info, LayoutGrid, Palette } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -88,17 +88,6 @@ function presentationFor(
         onHint: ctx.dailyLookOn
           ? 'It’s on. Home’s Signal leads with its chart — tap it for the Signal’s own screen; Today reads as one line per moment, with the daily look at the top and the month’s coverage at the foot; open Patterns to see the month with its weekly bars and the weight drawn by date.'
           : 'It’s on. Home’s Signal leads with its chart — tap it for the Signal’s own screen; Today reads as one line per moment, with the month’s coverage at the foot; open Patterns to see the month with its weekly bars and the weight drawn by date.',
-      };
-    case 'history_v2':
-      // The on-state hint, written by the lane that drew the list (HV-7, CUL-1164) for
-      // what it shipped and nothing more (the VV-0 lesson): the day cards, the lines
-      // between them and the count line. The strip (HV-8) and the pinned row (HV-9) add
-      // their own clause when they land. A scroll of text reads as "the record you can
-      // read", distinct from the widget grid, and the redesign's palette.
-      return {
-        Icon: ScrollText,
-        onHint:
-          'It’s on. Open History: each day is its own card with its counts at the top, the days with nothing logged are named between them, and the line above the days says what the counts cover.',
       };
     default:
       return { Icon: FlaskConical };

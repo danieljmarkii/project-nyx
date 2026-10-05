@@ -793,10 +793,10 @@ describe('mealRowLabel (CUL-625 — one rule for three surfaces)', () => {
     expect(mealRowLabel(undefined)).toBe('Meal');
   });
 
-  it('is the only place the word is spelled — the three row surfaces call it', () => {
+  it('is the only place the word is spelled — the row surfaces call it', () => {
     const fs = require('fs') as typeof import('fs');
     const path = require('path') as typeof import('path');
-    for (const rel of ['components/history/EventRow.tsx', 'components/home/TodayZone.tsx', 'lib/dayEvents.ts']) {
+    for (const rel of ['components/home/TodayZone.tsx', 'lib/dayEvents.ts']) {
       const src = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
       // A single-quoted literal is code; the word in prose stays double-quoted.
       expect({ file: rel, restates: /'Treat'/.test(src) }).toEqual({ file: rel, restates: false });

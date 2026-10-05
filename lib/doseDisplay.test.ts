@@ -1,5 +1,4 @@
-// CUL-1124 — what a dose row says about its dose. The row's rendering is pinned in
-// components/history/EventRow.dose.test.tsx; this pins the two rules it reads.
+// CUL-1124 — what a dose row says about its dose: the two rules the shared day row reads.
 
 import { asDoseAdherence, doseDrugLabel } from './doseDisplay';
 

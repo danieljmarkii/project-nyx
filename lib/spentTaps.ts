@@ -3,11 +3,10 @@
 //
 // A link is a one-shot request (C-22): a widget tap selects its pet once, and a door into
 // History applies its filter, window or day once, so a later choice in the app sticks. Both
-// kept that memory in a ref, which is once per MOUNT, and the History tab mounts a different
-// screen when `history_v2` flips (v1's or v2's). A flip after the owner had switched pets
-// mounted a fresh hook over the same params, which selected the widget's pet again
-// (CUL-1119's revert, one flip later); a flip off and on again re-applied an old link over
-// whatever the owner had chosen since. So a tap is remembered here, for the app's session,
+// kept that memory in a ref, which is once per MOUNT, and a fresh mount over the same params
+// (the History tab swapped screens when its rollout flag flipped, until GA retired it, HV-14)
+// selected the widget's pet again (CUL-1119's revert, one remount later) and re-applied an
+// old link over whatever the owner had chosen since. So a tap is remembered here, for the app's session,
 // by every instance at once:
 //
 //   • the widget's pet, per (pet, nonce): `useWidgetPetLink`, for a tap that carries a nonce

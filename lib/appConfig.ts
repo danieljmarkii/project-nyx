@@ -67,17 +67,7 @@ export type AppConfigKey = keyof AppConfigValues;
 // 2026-08 Signal/Home uplift, GA'd and gone from this union; this is the 2026-09
 // whole-day redesign.
 //
-// `history_v2` is the History v2 rollout flag (History v2 · the record you can
-// read, migration 071 — HV-1 / CUL-1158; spec §5.1, H-8) — same shape, same
-// fail-closed resolution. It gates the History tab's v2 screen (and, from HV-10,
-// Home's first paint under design_v2) AND-ed with the beta-shelf opt-in, through
-// ONE hook, `hooks/useHistoryV2.ts`, the only file that reads this key directly
-// (pinned by guards/historyV2FlagOff.test.tsx). A ROLLOUT gate only: GA is every
-// account and HV-14 retires the key with v1's screen. Client-render-only — v2
-// reads the local record the app already holds, no Edge Function reads the key,
-// so there is no server-side registration of it.
-//
-// Seven keys that once lived here have GRADUATED to GA and been retired client-side.
+// Eight keys that once lived here have GRADUATED to GA and been retired client-side.
 // `signal_design_v2` (the Signal/Home design uplift, migration 055) and `signals_v2`
 // (the Signals-v2 lanes, migration 057) went first (CUL-546 Phase 1 / CUL-547 +
 // CUL-548): the uplift + the v2 lanes now render unconditionally. Their `app_config`
@@ -100,14 +90,16 @@ export type AppConfigKey = keyof AppConfigValues;
 // server-side. The diet trial's own screen, `trial_screen` (migration 073), followed
 // (CUL-1307): `/trial/[pet]` and its doors (Home's strip, the Pet tab's door row, the Day
 // Summary, Get ready's recheck) render for every account. Its row goes with the same
-// data-only clean-up; it was never read server-side. None of the seven belongs in this
-// client-side union any more.
+// data-only clean-up; it was never read server-side. History v2's `history_v2` (migration
+// 071) followed (CUL-1175): the record you can read is the History tab for every account,
+// Home's first paint draws its spine wherever Design v2 does, and v1's History screen is
+// deleted. Its row goes with the same data-only clean-up; it was never read server-side.
+// None of the eight belongs in this client-side union any more.
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',
   'widget_enabled',
   'design_v2',
-  'history_v2',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -124,7 +116,6 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   ask_general_enabled: undefined,
   widget_enabled: undefined,
   design_v2: undefined,
-  history_v2: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

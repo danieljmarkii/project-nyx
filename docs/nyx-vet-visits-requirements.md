@@ -169,7 +169,7 @@ The saved moment (D2) names the pet and states the consequence honestly: **"Your
 
 **The visit afterwards (mock D3).** Notes, the plan as live links whose numbers come from the linked records (never copied), the paperwork from Vet Files, "asked N of M". ⋯ holds *Edit* and *Delete*. **Delete ships only once CUL-19 has deployed** the reader that honours `deleted_at` (VV-6's on-the-fly decision); when it ships, the confirm names two facts — the report window moves back, and the linked course and trial survive.
 
-**History.** A visit renders as its own row type in the timeline (date, clinic, reason; tap → the visit). It is **not an `events` row** and never enters the correlation engine, a count, a coverage line or Patterns (AC 10).
+**History.** A visit renders as a date-only item at the top of its day card (a square mark, *Vet visit · reason · clinic*; tap → the visit; History v2 spec §3.5 rule L). It is **not an `events` row** and never enters the correlation engine, a count, a coverage line or Patterns (AC 10).
 
 **The report.** No render change in v1. The cascade already consumes the new visit. *v1.x candidate (Dr. Chen):* a "Visits" line in the appendix — rides CUL-19.
 

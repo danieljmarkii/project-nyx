@@ -8,21 +8,16 @@ import { usePetStore } from '../store/petStore';
 import { useWidgetPetLink } from './useWidgetPetLink';
 
 // History v2's door (CUL-1164 / HV-7, CUL-1168 / HV-11; spec §5.8): every link into History
-// lands in v2 on the filter, window or day it names. The reading is `lib/historyDoorParams.ts`;
+// lands on the filter, window or day it names. The reading is `lib/historyDoorParams.ts`;
 // the senders are the rows of `lib/historyDoors.ts`; this hook applies a tap ONCE.
-//
-// It lives in `hooks/`, not in `components/historyV2/`, on purpose: the flag-off guard
-// (`guards/historyV2FlagOff.test.tsx`) wraps every function a namespace module exports into a
-// component, so a hook there would be a component under test and a hook in the app.
 //
 // ── ONCE PER TAP, ACROSS EVERY MOUNT (HV-11) ────────────────────────────────────
 // The History tab stays mounted with a link's params in place, so a tap is spent (C-22),
 // keyed by the sender's nonce (`ts`) and the request. HV-7 kept that in a ref, which is once
-// per MOUNT, and the tab mounts a fresh screen when `history_v2` flips: flipping off and on
-// again re-applied an old link over whatever the owner had chosen since. So the spent taps
-// live in `lib/spentTaps.ts`, for the app's session (wiped on sign-out), like the widget's pet.
-// The first mount after a flip still applies a tap v2 has never seen: the screen that mounts
-// lands where the link says, whichever screen the link was tapped on (AC 37).
+// per MOUNT, and a fresh mount over the same params (the rollout flag flipping, while it
+// existed) re-applied an old link over whatever the owner had chosen since. So the spent taps
+// live in `lib/spentTaps.ts`, for the app's session (wiped on sign-out), like the widget's
+// pet; a remount never re-applies a tap.
 //
 // ── FOR THE PET IT NAMES ─────────────────────────────────────────────────────────
 // The widget names its pet, and `useWidgetPetLink` switches to it once per tap (CUL-1119);
@@ -32,7 +27,7 @@ import { useWidgetPetLink } from './useWidgetPetLink';
 // the render's closure: the widget hook's effect runs first in the same flush and has
 // already switched. While the switch is still to come (the pet list loading on a cold start)
 // the request waits. Once the switch for this tap is spent and the owner is on another pet
-// (they switched away before a flag flip mounted this screen), the link is over and is
+// (they switched away before this screen mounted again), the link is over and is
 // dropped: it never lands late, on whichever pet the owner reaches next. A pet the account
 // no longer has is ignored, as the widget hook ignores it, and the request lands on the pet
 // on screen.

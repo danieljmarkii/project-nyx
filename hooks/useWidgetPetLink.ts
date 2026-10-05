@@ -33,8 +33,8 @@ import { usePetStore } from '../store/petStore';
 // once per mount, which for a modal is once per open.
 //
 // A tap WITH a nonce is spent for every instance at once (`lib/spentTaps.ts`, HV-11 /
-// CUL-1168): the History tab mounts a fresh screen when `history_v2` flips, and a ref
-// would let that screen select the widget's pet a second time. Without a nonce the ref
+// CUL-1168): a fresh mount over the same link (a remounted History tab) must not select
+// the widget's pet a second time, which a ref would let it do. Without a nonce the ref
 // is all there is (once per mount).
 //
 // STATED BLIND SPOT (C-41): the widget mints `ts` when it DRAWS, not when it is

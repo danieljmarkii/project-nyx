@@ -1,6 +1,6 @@
 // Home's read of today's rows (`hooks/useEvents.ts`, `loadTodayEvents`), as a constant so
 // a test can run the production string against the real local schema on `node:sqlite`
-// (the `lib/historyPage.test.ts` harness) rather than trusting a mocked row's shape.
+// (the `lib/monthReads.dayRows.test.ts` harness) rather than trusting a mocked row's shape.
 
 import type { SQLiteDatabase } from 'expo-sqlite';
 

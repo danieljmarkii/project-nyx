@@ -28,7 +28,7 @@
 
 import { dayKeyToLocalDate, formatUtcDayShort, toLocalDayKey } from './utils';
 
-// The date-scope presets offered by DateScopeControl. Owned here (the domain type) and
+// The date-scope presets offered by v1 History's DateScopeControl (retired, HV-14). Owned here (the domain type) and
 // re-exported by the control, so the pure logic doesn't depend on a component.
 export type DatePreset = 'today' | '7d' | '30d' | null;
 

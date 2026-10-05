@@ -401,40 +401,16 @@ describe('design_v2 — Design v2 eligibility (D2-0)', () => {
   });
 });
 
-// ── history_v2 — the History v2 rollout flag (HV-1 / CUL-1158) ───────────────────
-// Migration 071 seeds it dark ({"enabled": false, "allowlist": []}); the History tab
-// gates on `useHistoryV2()` = eligible && optedIn. Same primitive as every allowlist
-// key above, so the resolver's own cases are not re-tested here — what is pinned is
-// the registration: history_v2 is IN the client union (extracted off a SELECT,
-// carried through the cache) and fails closed while the row is unreached. These back
-// the flag-off promise (guards/historyV2FlagOff.test.tsx).
-describe('history_v2 — History v2 eligibility (HV-1)', () => {
-  it('is registered in the key list and part of the unset baseline', () => {
-    expect(ALLOWLIST_FLAG_KEYS).toContain('history_v2');
-    expect('history_v2' in ALLOWLIST_FLAGS_UNSET).toBe(true);
-    expect(ALLOWLIST_FLAGS_UNSET.history_v2).toBeUndefined();
-  });
-
-  it('extracts raw off an app_config SELECT, alongside the other allowlist keys', () => {
-    const flags = extractAllowlistFlags([
-      { key: 'design_v2', value: { enabled: false, allowlist: ['d-uid'] } },
-      { key: 'history_v2', value: { enabled: false, allowlist: ['pm-uid'] } },
-    ]);
-    expect(flags.history_v2).toEqual({ enabled: false, allowlist: ['pm-uid'] });
-    expect(flags.design_v2).toEqual({ enabled: false, allowlist: ['d-uid'] });
-  });
-
-  it('resolves fail-closed (off) while the row is unreached, and off for everyone on the dark seed', () => {
-    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).history_v2;
-    expect(unset).toBeUndefined();
-    expect(resolveAllowlistFlag(unset, 'pm-uid', false)).toBe(false);
-    expect(resolveAllowlistFlag({ enabled: false, allowlist: [] }, 'pm-uid', false)).toBe(false);
-  });
-
-  it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
-    const stored = { history_v2: { enabled: false, allowlist: ['pm-uid'] } };
-    expect(coerceAllowlistFlags(stored).history_v2).toEqual({ enabled: false, allowlist: ['pm-uid'] });
-    expect(coerceAllowlistFlags({ design_v2: true }).history_v2).toBeUndefined();
+// ── history_v2 — RETIRED (History v2 GA, CUL-1175) ───────────────────────────────
+// History v2 is the History tab for every account, so the client no longer reads the key.
+// Its `app_config` row may still exist until the data-only delete lands; a SELECT that
+// returns it must not resurrect the key in the union.
+describe('history_v2 — retired client-side (CUL-1175)', () => {
+  it('is not an allowlist key, and an app_config row for it is ignored', () => {
+    expect(ALLOWLIST_FLAG_KEYS as readonly string[]).not.toContain('history_v2');
+    expect(Object.keys(ALLOWLIST_FLAGS_UNSET)).not.toContain('history_v2');
+    const flags = extractAllowlistFlags([{ key: 'history_v2', value: { enabled: true } }]);
+    expect(Object.keys(flags)).not.toContain('history_v2');
   });
 });
 

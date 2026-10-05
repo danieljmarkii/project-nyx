@@ -349,7 +349,7 @@ export function historyNodesByDay(args: {
 
 // ── Date-only items (§3.5, rule L) ──────────────────────────────────────────────
 
-/** The words a bowl's change carries, the shipped marker row's (`BoundaryMarkerRow`), minus
+/** The words a bowl's change carries, v1's marker row's (`BoundaryMarkerRow`, retired), minus
  *  the date the day card already prints. */
 export function bowlChangeText(item: Extract<DateOnlyItem, { kind: 'bowl' }>): string {
   switch (item.change) {

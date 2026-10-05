@@ -1,19 +1,15 @@
-// Ask's provenance link, rendered: its label and its route in both `history_v2` states
-// (HV-11 / CUL-1168, CUL-498; `lib/historyDoors.ts` row `ask-provenance`).
+// Ask's provenance link, rendered: its label and its route (HV-11 / CUL-1168, CUL-498;
+// `lib/historyDoors.ts` row `ask-provenance`).
 //
 // `lib/ask.test.ts` pins the pure resolvers against a hand-built reach; this renders the
-// card, so the WIRING is what is tested: that the card reads the gate, asks for the trial
-// only when the answer needs it, and hands the resolvers the reach in the right fields (two
-// booleans type-check either way round). It is the flag-off proof the History v2 flag-off
-// guard names for this file (`DRAWS_ELSEWHERE_OK`): flag off, today's link, byte for byte.
+// card, so the WIRING is what is tested: that the card asks for the trial only when the
+// answer needs it, and hands the resolvers what History offers.
 //
-// The gate is stubbed per test; the trial read is the REAL hook over a stubbed
+// The trial read is the REAL hook over a stubbed
 // `readWindowFacts` and the real `isWindowOffered` (C-34), so "offered" is decided by the
 // window table, not by the test.
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../lib/db', () => ({ getDb: jest.fn() }));
-let mockHistoryV2 = false;
-jest.mock('../../hooks/useHistoryV2', () => ({ useHistoryV2: () => mockHistoryV2 }));
 jest.mock('../../lib/historyWindowFacts', () => ({ readWindowFacts: jest.fn() }));
 jest.mock('./AskAnswerComponent', () => ({ AskAnswerComponent: () => null }));
 
@@ -75,31 +71,15 @@ function renderCard(window: string) {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockHistoryV2 = false;
   usePetStore.setState({ pets: [PET], activePet: PET });
 });
 
-describe('flag off: today\'s link, byte for byte', () => {
-  it('Last 14 days and since the trial started open Patterns, and no trial is read', () => {
-    for (const w of ['14d', 'since_trial_start']) {
-      const { view, onTapThrough } = renderCard(w);
-      fireEvent.press(view.getByLabelText('Open in Patterns'));
-      expect(onTapThrough).toHaveBeenCalledWith({ pathname: '/insights/[metric]', params: { metric: 'vomit' } });
-      view.unmount();
-    }
-    expect(mockRead).not.toHaveBeenCalled();
-  });
-
-  it('the last 7 days opens History, as it always did', () => {
+describe('the windows History reproduces (HV-11, CUL-498)', () => {
+  it('the last 7 days opens History, with no trial read', () => {
     const { view, onTapThrough } = renderCard('7d');
     fireEvent.press(view.getByLabelText('Open in History'));
     expect(onTapThrough).toHaveBeenCalledWith({ pathname: '/(tabs)/history', params: { type: 'vomit', window: '7d' } });
-  });
-});
-
-describe('flag on (HV-11, CUL-498)', () => {
-  beforeEach(() => {
-    mockHistoryV2 = true;
+    expect(mockRead).not.toHaveBeenCalled();
   });
 
   it('Last 14 days opens History on that window, with no trial read', () => {

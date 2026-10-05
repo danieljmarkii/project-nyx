@@ -20,7 +20,7 @@ export interface DayNodeRowProps {
   /** Overridable so a test opens a row without a router. */
   onOpen?: (id: string) => void;
   /** A run opens on the shared open-in-place choreography (History v2, HV-10): History's day
-   *  cards, and Home's spine under `history_v2`. Off, the run keeps the shipped open. */
+   *  cards, and Home's spine. Off, the run opens at once. */
   openInPlace?: boolean;
 }
 

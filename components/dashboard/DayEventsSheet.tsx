@@ -33,7 +33,7 @@ const CATEGORY_TINT: Record<EventTintCategory, string> = {
 // bottom sheet — the answer to "what actually happened that day?" — listing EVERY event
 // logged (symptom, meal, med, weight), not just the symptom the calendar is scoped to,
 // each with its time. An "Open in History" link deep-links the History tab filtered to
-// that single UTC day (B-308). Sheet chrome mirrors DateScopeControl so every bottom sheet
+// that single UTC day (B-308). Sheet chrome mirrored v1 History's DateScopeControl (retired, HV-14) so every bottom sheet
 // dims + reads identically.
 
 interface Props {
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
     // the pair stays hugged left rather than spanning to the timestamp.
     flexShrink: 1,
   },
-  // Matches the EventRow / TodayZone tag register so the three timeline surfaces
+  // Matches the EventRow (retired, HV-14) / TodayZone tag register so the three timeline surfaces
   // name a food identically. flexShrink:0 — the title truncates, never the variant.
   rowFormatTag: {
     fontSize: theme.textXS,

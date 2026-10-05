@@ -54,7 +54,6 @@ const CLUSTER_GAP_CHARS = 300;
 const REGISTERED: Record<string, string> = {
   'constants/eventTypes.ts': 'EVENT_TYPES + SYMPTOM_TYPES — the two root predicates',
   'components/log/EventTypePicker.tsx': 'CATEGORY_TINT (§6 pairing) + the grid derivation',
-  'components/history/TypeScopeControl.tsx': 'TYPE_FILTER_KEYS — History’s type filter',
   'lib/analytics.ts': 'SYMPTOM_EVENT_TYPES — Patterns/calendar/trial-deltas/widget',
   'lib/trendSummary.ts': 'TREND_SYMPTOM_TYPES — the Trend surface',
   'lib/daySummary.ts': 'SYMPTOM_CHIP_ORDER + SYMPTOM_NOUN — the Day Summary',

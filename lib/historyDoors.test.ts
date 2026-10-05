@@ -1,6 +1,6 @@
 // The registry of links into History, and where each one lands in History v2 (HV-11 /
 // CUL-1168; spec §5.8, AC 37). The guard that fails on an unregistered sender is
-// `guards/historyDoorways.test.ts`; v1's landings and the flag flipping after mount are
+// `guards/historyDoorways.test.ts`; the tab applying each link on mount is
 // `app/(tabs)/history.doors.test.tsx`.
 //
 // Every case drives the SENDER'S OWN builder where it has one (C-34: a fixture that
@@ -17,7 +17,7 @@ jest.mock('./sync', () => ({ syncPendingEvents: jest.fn(), syncPendingLooks: jes
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { resolveTapThrough, ASK_HISTORY_V1, type AskHistoryReach } from './ask';
+import { resolveTapThrough, type AskHistoryReach } from './ask';
 import { historyDayHref } from './historyDateFilter';
 import { historyDoorRequestOf, type HistoryDoorParams } from './historyDoorParams';
 import { HISTORY_DOORS, historyHref, rundownHistoryHref, type HistoryDoorId } from './historyDoors';
@@ -38,7 +38,7 @@ function paramsOf(route: string | { params: Record<string, string> }): HistoryDo
   return typeof route === 'string' ? paramsOfString(route) : route.params;
 }
 
-const V2: AskHistoryReach = { historyV2: true, trialWindowOffered: true };
+const V2: AskHistoryReach = { trialWindowOffered: true };
 
 /** Ask's link as the screen pushes it: the resolver's params, plus the nonce `app/ask.tsx`
  *  adds at the tap (text-pinned below). */
@@ -141,7 +141,7 @@ const CASES: Record<HistoryDoorId, Case[]> = {
       lands: { filter: { kind: 'course', courseKey: 'item:zyr' }, window: ALL },
     },
     {
-      name: 'rundownHistoryHref, not scoped (flag off, or another pet): the bare route',
+      name: 'rundownHistoryHref, not scoped (another pet): the bare route',
       params: paramsOf(rundownHistoryHref({ scope: 'since-visit' }, false, NOW)),
       lands: null,
     },
@@ -205,14 +205,5 @@ describe('historyHref', () => {
       pathname: '/(tabs)/history',
       params: { type: 'vomit', ts: '5' },
     });
-  });
-});
-
-describe('Ask flag off keeps its v1 windows (the registry\'s flagOff column)', () => {
-  it('14 days and since the trial started open Patterns; 7 / 30 / all open History', () => {
-    const at = (w: string) => resolveTapThrough({ kind: 'filter', symptomType: 'vomit', window: w }, ASK_HISTORY_V1);
-    expect(at('14d')?.pathname).toBe('/insights/[metric]');
-    expect(at('since_trial_start')?.pathname).toBe('/insights/[metric]');
-    for (const w of ['7d', '30d', 'all']) expect(at(w)?.pathname).toBe('/(tabs)/history');
   });
 });
