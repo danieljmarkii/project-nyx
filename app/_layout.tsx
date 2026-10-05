@@ -17,6 +17,7 @@ import { wipeLocalSession } from '../lib/session';
 import {
   coldStartDecision,
   signedOutRoute,
+  navigateAfterSignOut,
   shouldAdoptSessionDuringRecovery,
 } from '../lib/authRouting';
 import { isAuthDeepLink } from '../lib/authDeepLink';
@@ -246,7 +247,8 @@ export default function RootLayout() {
         });
         if (store.deliberateSignOut) store.setDeliberateSignOut(false); // consume the one-shot
         if (route.armBanner) store.setSignedOutInvoluntarily(true);
-        router.replace(route.path);
+        // MFU-9: unwind the stack first, so no record screen stays mounted under auth.
+        navigateAfterSignOut(router, route.path);
         return;
       }
       // Only WRITE a session we actually have. A non-SIGNED_OUT event can still carry

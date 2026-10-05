@@ -75,6 +75,7 @@ import { triggerSignalRegenDebounced } from './signal';
 import { watchAnalysisRow, ANALYSIS_WATCH_FALLBACK_DELAYS_MS } from './analysis';
 import { refreshReadCopyOutcome } from './sync';
 import { supabase } from './supabase';
+import { getFlightState, landFlight, stageFlight } from '../components/motion/flightMotion';
 import { isHistoryDoorTapSpent, isWidgetPetTapSpent, spendHistoryDoorTap, spendWidgetPetTap } from './spentTaps';
 import { useSyncStore } from '../store/syncStore';
 import { useUiStore } from '../store/uiStore';
@@ -520,6 +521,29 @@ describe('wipeLocalSession closes realtime and stops every analysis watch (CUL-1
     expect(clearLocalData).toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith('[session] closing realtime channels failed:', expect.any(Error));
     warn.mockRestore();
+  });
+});
+
+describe('wipeLocalSession ends a Signal flight (MFU-9, CUL-1071)', () => {
+  // The flight's record is the previous owner's finding title and chart, painted at the
+  // root above the auth redirect. Both phases a sign-out can land in are driven: staged
+  // (inside the handoff TTL) and outbound (landed on a target).
+  const SOURCE = { x: 0, y: 0, width: 100, height: 50 };
+  const stage = () => stageFlight({ identity: 'reflection:vomit', title: 'Vomiting, the last 8 weeks', source: SOURCE, element: null as never });
+
+  it('a staged flight is idle after the wipe', async () => {
+    stage();
+    expect(getFlightState().phase).toBe('staged');
+    await wipeLocalSession();
+    expect(getFlightState()).toEqual({ phase: 'idle', flight: null });
+  });
+
+  it('an outbound flight is idle after the wipe', async () => {
+    stage();
+    landFlight('reflection:vomit', { x: 10, y: 10, width: 200, height: 100 });
+    expect(getFlightState().phase).toBe('outbound');
+    await wipeLocalSession();
+    expect(getFlightState()).toEqual({ phase: 'idle', flight: null });
   });
 });
 

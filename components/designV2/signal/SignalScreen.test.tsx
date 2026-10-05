@@ -2,8 +2,8 @@
 // over a production-shaped fixture (C-35) — the mock's Thursday, the rabbit trial, Cerenia
 // inside the window, nine photographed episodes — and the loader alone is stubbed, so the
 // sections, the words and the order are the shipped ones. The route is rendered both
-// ways: flag-off it draws the inline screen and issues no read (the flag-off guard's
-// stated async blind spot, paid here); flag-on it mounts the screen for the route's pet.
+// ways: signed out it draws the inline screen and issues no read (the sign-out fence,
+// MFU-9); signed in it mounts the screen for the route's pet.
 
 jest.mock('../../../lib/supabase', () => ({ supabase: { from: jest.fn(), functions: { invoke: jest.fn() } } }));
 const mockLoadSignalScreen = jest.fn();
@@ -43,8 +43,6 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
-const mockUseDesignV2 = jest.fn(() => false);
-jest.mock('../../../hooks/useDesignV2', () => ({ useDesignV2: () => mockUseDesignV2() }));
 // The weekly chart, real, with its props recorded — the flown chart must not draw in (D2-6).
 const mockWeeklyProps = jest.fn();
 jest.mock('../../charts/WeeklyBars', () => {
@@ -76,6 +74,8 @@ import { SIGNAL_OPEN_MOTION } from '../../motion/signalOpenMotion';
 import { FLIGHT_MOTION, abortFlight, getFlightState, landFlight, setHeroReady, settleOutbound, stageFlight } from '../../motion/flightMotion';
 import { createElement } from 'react';
 import { usePetStore } from '../../../store/petStore';
+import { useAuthStore } from '../../../store/authStore';
+import type { Session } from '@supabase/supabase-js';
 import { useSyncStore } from '../../../store/syncStore';
 import { dayKeyFromIndex, localDayIndexOf } from '../../../lib/utils';
 
@@ -211,10 +211,12 @@ function testIds(json: unknown, out: string[] = []): string[] {
 // queries here read the drawing (the chart suites' own setting).
 configure({ defaultIncludeHiddenElements: true });
 
+const signIn = () => useAuthStore.getState().setSession({ user: { id: 'owner-a' } } as unknown as Session);
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockReduced.mockReturnValue(false);
-  mockUseDesignV2.mockReturnValue(false);
+  signIn();
   mockParams = {};
 });
 
@@ -508,9 +510,9 @@ describe('SignalScreen — around this (EN-10, CUL-1421)', () => {
 });
 
 describe('the route, app/signal/[id]', () => {
-  it('flag-off: the inline screen, no namespace node, and NO read is issued (the guard’s async half)', () => {
+  it('signed out: the inline screen, no record node, and NO read is issued', () => {
     mockParams = { id: 'reflection:vomit', pet: 'pet-1' };
-    mockUseDesignV2.mockReturnValue(false);
+    useAuthStore.getState().setSession(null);
     mockLoadSignalScreen.mockResolvedValue(ready(benign));
     const view = render(<SignalRoute />);
     expect(view.getByTestId('signal-route-off')).toBeTruthy();
@@ -519,9 +521,25 @@ describe('the route, app/signal/[id]', () => {
     expect(mockLoadSignalScreen).not.toHaveBeenCalled();
   });
 
-  it('flag-on: mounts the screen for the route’s pet and identity, and rises with the fold’s physics', async () => {
+  it('the shared device (MFU-9): a sign-out over an open Signal takes the previous owner’s finding off the screen', async () => {
+    // The sequence the design_v2 gate used to cover by failing closed: owner A has the
+    // Signal open, SIGNED_OUT lands (the wipe, then the session nulled), and the screen
+    // is still mounted because nothing has unwound the stack yet. The record must go at
+    // once, before any navigation.
     mockParams = { id: 'reflection:vomit', pet: 'pet-1' };
-    mockUseDesignV2.mockReturnValue(true);
+    mockLoadSignalScreen.mockResolvedValue(ready(benign));
+    const view = render(<SignalRoute />);
+    await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
+    expect(view.queryAllByText(/Nyx/).length).toBeGreaterThan(0);
+    act(() => useAuthStore.getState().setSession(null));
+    expect(view.queryByTestId('signal-screen')).toBeNull();
+    expect(view.queryByTestId('signal-screen-body')).toBeNull();
+    expect(view.queryAllByText(/Nyx/)).toEqual([]);
+    expect(view.getByTestId('signal-route-off')).toBeTruthy();
+  });
+
+  it('signed in: mounts the screen for the route’s pet and identity, and rises with the fold’s physics', async () => {
+    mockParams = { id: 'reflection:vomit', pet: 'pet-1' };
     mockLoadSignalScreen.mockResolvedValue(ready(benign));
     const view = render(<SignalRoute />);
     await waitFor(() => expect(view.getByTestId('signal-screen-body')).toBeTruthy());
@@ -532,9 +550,8 @@ describe('the route, app/signal/[id]', () => {
     expect(options.gestureEnabled).toBe(true);
   });
 
-  it('flag-on with a malformed link falls to the inline screen; reduced motion turns the transition off', () => {
+  it('a malformed link falls to the inline screen; reduced motion turns the transition off', () => {
     mockParams = { id: 'reflection:vomit' };
-    mockUseDesignV2.mockReturnValue(true);
     mockReduced.mockReturnValue(true);
     const view = render(<SignalRoute />);
     expect(view.getByTestId('signal-route-off')).toBeTruthy();
@@ -729,7 +746,6 @@ describe('the flight’s landing (D2-6 · CUL-1069)', () => {
 
   it('the route: a staged flight suppresses the slide — a fade at the flight’s ground beat — and latches it for the pop', async () => {
     mockParams = { id: 'reflection:vomit', pet: 'pet-1' };
-    mockUseDesignV2.mockReturnValue(true);
     mockReduced.mockReturnValue(false);
     stage();
     mockLoadSignalScreen.mockResolvedValue(ready(benign));

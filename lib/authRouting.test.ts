@@ -1,5 +1,6 @@
 import {
   coldStartDecision,
+  navigateAfterSignOut,
   signedOutRoute,
   shouldAdoptSessionDuringRecovery,
 } from './authRouting';
@@ -72,5 +73,31 @@ describe('shouldAdoptSessionDuringRecovery (B-280 rls re-review)', () => {
     expect(shouldAdoptSessionDuringRecovery('USER_UPDATED', true)).toBe(false);
     // The exchange's own SIGNED_IN(B) is the one session recovery adopts.
     expect(shouldAdoptSessionDuringRecovery('SIGNED_IN', true)).toBe(true);
+  });
+});
+
+describe('navigateAfterSignOut (MFU-9, CUL-1071)', () => {
+  const nav = (canDismiss: boolean) => {
+    const calls: string[] = [];
+    return {
+      calls,
+      n: {
+        canDismiss: () => canDismiss,
+        dismissAll: () => calls.push('dismissAll'),
+        replace: (p: string) => calls.push(`replace:${p}`),
+      },
+    };
+  };
+
+  it('unwinds a pushed record screen BEFORE routing to auth', () => {
+    const { calls, n } = nav(true);
+    navigateAfterSignOut(n, '/(auth)/login');
+    expect(calls).toEqual(['dismissAll', 'replace:/(auth)/login']);
+  });
+
+  it('routes alone when there is nothing to unwind', () => {
+    const { calls, n } = nav(false);
+    navigateAfterSignOut(n, '/(auth)');
+    expect(calls).toEqual(['replace:/(auth)']);
   });
 });
