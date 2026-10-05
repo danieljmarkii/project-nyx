@@ -1,5 +1,5 @@
 # Culprit — App Polish Requirements (Aug 2026)
-**Version:** 1.1 | **Status:** BUILD-READY | **Last Updated:** 2026-09-14
+**Version:** 1.2 | **Status:** BUILD-READY | **Last Updated:** 2026-10-05
 
 The build contract for the **Aug. 2026 Design Polish** track (Linear project, team Culprit). Born from the 2026-08-22 design/UX session: a four-lens audit (Jordan capture · Sam multi-pet · Designer periphery · PO Linear reconciliation) → three mock rounds, every decision PM-ruled same day. This doc is canonical; the Linear project links it as a Resource and the repo file wins on divergence.
 
@@ -44,6 +44,7 @@ Out of scope for this track, held in round 1's appendix for their own selection:
 - **Name overflow (header edition):** 17pt semibold → 16pt → tail-ellipsis. The header has no acceptable generic fallback word (a header reading "Pet" is a downgrade, unlike a tab), and the full name is one tap away in the switcher sheet + always in the a11y label — so ellipsis is the header's floor. This deliberately differs from the tab ladder; both are written here so neither is re-derived.
 - **Ask pill:** unchanged (allowlist-gated, D5/B-228 placement rules hold).
 - **AC:** header height shrinks ≥40pt vs today (Signal rises accordingly) · no looping animation anywhere in chrome · switcher opens from the left cluster · single-pet shows no chevron · `hasUnseenSignal` no longer feeds any header UI (hook consumer removed).
+- **⚠ GA (2026-10-05, CUL-1071): the header gains the day's date.** Design v2 (CUL-1221, the critique's BRK-26) draws the local day at the **head of the right cluster**: `[Date] [Ask pill] [OwnerAvatar]`, e.g. *Thu, Sep 17* (`headerDateLabel` in `lib/headerName.ts`, built from the local day key so it names the same day every other surface keys; a malformed key draws no date). It is drawn by `components/designV2/home/HeaderDate.tsx` and placed by `HomeHeader`. It is metadata, not a control: plain text, `HEADER_DATE_FONT_SIZE` (`theme.textXS`), the secondary ink, no touchable. **Still one row:** the date's width (`headerDateWidth`) plus a `HEADER_RIGHT_GAP` is subtracted from the name's budget in `headerNameBudget`, so the name's ladder (17pt → 16pt → tail) is sized against the row that actually carries the date. The reason it joined: Design v2's Home is a day (the Today card, the spine, the coverage door), and the Today card's only label is *Today*.
 
 ## §3 Cross-cutting rule — chrome motion
 
@@ -100,6 +101,12 @@ One `lib/haptics.ts`, seven verbs, consumed at the moment stores so a new log pa
 
 iOS system haptic settings are respected automatically; `expo-haptics` (managed-workflow safe) is the one new dependency.
 
+**⚠ Shipped state at Design v2's GA (2026-10-05, CUL-1071).** `lib/haptics.ts` exports **eight** verbs, the table's six plus two added since, each its own moment: `commitVisit` (a saved vet visit, a single soft tap like a symptom, for a different reason; CUL-902) and `insightArrival` (the §4 arrival's success tap, fired only by `SignalZone`, the scan's one exemption; CUL-601). The silence rule is enforced by `guards/haptics.test.ts`, and the Design v2 spine row (`components/dayRow/SpineNodeRow.tsx`) is in its `ALWAYS_SCANNED` set: a read landing *Worth a call* on Home buzzes nothing. On Home under Design v2:
+- **The look header** (`components/designV2/home/LookHeader.tsx`) plays `selectChip` once per tap, and the tap is the save, so a look has no commit haptic (the daily-look spec's T-10). Opening *More…*, *Add a look* or the intake door plays `openMenu`.
+- **Pull-to-refresh** plays `pullThreshold` from `app/(tabs)/index.tsx`.
+- **The medication strip's confirm is gone with the strip** (deleted at GA), so the R2 beat it carried (§5) no longer appears on Home; the look header's beat is the in-place beat Home hosts, a `momentStore` presentation (`showLook`, `LOOK_DWELL_MS` 5000ms, 30s under a screen reader, CUL-1224) whose Undo reaches the shared reversal. Its dwell is the R1 five seconds, not R2's 1800ms in-sheet cap: the header is not a sheet. No ruling names which register's dwell rule the header follows; this records the code.
+- **The incident read and the report** wait on the breathing tick (`components/designV2/waits/Tick.tsx`), which carries no haptic.
+
 ## §6 DP-5 — Trend verbiage (D8; Dr. Chen-gated)
 
 `components/home/TrendZone.tsx`, copy only — the charts do not change.
@@ -141,7 +148,7 @@ Project **"Aug. 2026 Design Polish"** (team Culprit). 18 PRs, one PR = one sessi
 
 ## §10 Flagged doc edits (Tier 2 — awaiting PM approval to write)
 
-1. `docs/culprit-in-app-brand-requirements.md` §3 (the CulpritMark pulse contract): Home no longer hosts the mark (D3/D4); the pulse states retire. Proposed edit: mark placements = Landing, loading system, night surfaces; delete the Home `live` state.
+1. `docs/culprit-in-app-brand-requirements.md` §3 (the CulpritMark pulse contract): Home no longer hosts the mark (D3/D4); the pulse states retire. Proposed edit: mark placements = Landing, loading system, night surfaces; delete the Home `live` state. **⚠ Approved and written 2026-10-05 (CUL-1071, PM ruling 2a).**
 2. `docs/nyx-design-principles-v1_0.md` §Motion: append one line — "No looping animation in app chrome; content announces, chrome doesn't." (Codifies D4 as a principle-level rule.)
 
 ---
@@ -152,3 +159,4 @@ Project **"Aug. 2026 Design Polish"** (team Culprit). 18 PRs, one PR = one sessi
 |---|---|---|
 | v1.0 | 2026-08-22 | Initial build contract. All decisions PM-ruled across mock rounds 1–3 same day; session `docs/sessions/2026-08-22-design-ux-opportunities.md`. |
 | v1.1 | 2026-09-14 | §5 R2 gains Undo, and the unconditional-Undo rule is stated for both registers (CUL-964, PM-ruled 2026-09-14). Dwell exception for an in-sheet beat recorded: 1800ms, with the touch pause rather than a longer base. |
+| v1.2 | 2026-10-05 | Design v2 GA (CUL-1071, PM-approved): §2 records the date at the head of the header's right cluster (CUL-1221, `HeaderDate`, still one row, the name's budget pays for it); §5.6 records the shipped haptic state (eight verbs; the look header ticks, the med strip is gone); §10 edit 1 marked written. Inline under ⚠ GA markers. |

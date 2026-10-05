@@ -1,7 +1,8 @@
 # Culprit In-App Brand Alignment — Requirements (B-284)
 
-**Version:** 1.2 (build-ready) · **Date:** 2026-07-10 (last amended 2026-09-26) · **Owner:** Sr. Product Designer, ratified by PM through four review rounds
+**Version:** 1.3 (build-ready) · **Date:** 2026-07-10 (last amended 2026-10-05) · **Owner:** Sr. Product Designer, ratified by PM through four review rounds
 **Amendment (2026-08-08, B-721 SD-7 / §10):** §7.5 records D8 closed light (night variant unbuilt, `SIGNAL_NIGHT_GROUND` never created); N4 (§7) + N7 (§8.2) are absorbed by `docs/nyx-signal-home-requirements.md`, the now-canonical Signal/Home spec.
+**Amendment (2026-10-05, Design v2 GA, CUL-1071; PM-approved, ruling 2a):** §3 records the mark's placements without Home (the `live` state and its trigger retired with the Home header's mark, app-polish D4, CUL-600); §5 (N3) and §6 (the night moment) record that the Whorl and the night moment have left the working app's redesigned waits for Design v2's silhouettes and the breathing tick, and where they still render. Each change carries an inline **⚠ GA (2026-10-05, CUL-1071)** note.
 **Provenance:** `docs/brand/culprit-direction.html` (the brand system) → `docs/brand/culprit-in-app-direction.html` (r1) → `-r2.html` (r2) → `-r3.html` (r3) → the PM's iteration-3 reactions (2026-07-10). All four are durable records in `docs/brand/` (see its README).
 **Build plan:** §10 — PRs N1–N7. Zero new dependencies (`react-native-svg 15.12.1` + `expo-linear-gradient` already shipped).
 
@@ -49,17 +50,17 @@ The one brand-mark component. Replaces the lucide `Moon` in `AuthBrandMark` and 
 
 **Geometry.** SVG, viewBox 100×100: moon disc `cx45 cy50 r33`, carve circle `cx61 cy43 r29` applied as a **mask** (rule §1.1), Signal dot `cx66 cy53 r9`. Dot nudges to `r10.5` at rendered sizes ≤24px (the icon kit's small-size rule). Crescent fill: `colorMoonlight` on night grounds, `#211E4E` (deep indigo) on light grounds; dot always `colorAccent`.
 
-**Props.** `size` (px), `ground: 'light' | 'night'`, `live: boolean` (the pulse), `withWordmark?: boolean` (adds "Culprit" in `fontDisplay`, `trackingTight`).
+**Props.** `size` (px), `ground: 'light' | 'night'`, `withWordmark?: boolean` (adds "Culprit" in `fontDisplay`, `trackingTight`). **⚠ GA (2026-10-05, CUL-1071):** the `live: boolean` prop is struck from the contract with the Home `live` state below. It still exists in `components/brand/CulpritMark.tsx` with no caller passing it, and its own comment says to delete it when this edit lands; that is a code follow-up, not done here.
 
-**The pulse contract (locked, r2 §2).**
-- `live=true` while a fresh finding set exists in the signal cache that the owner has not viewed since it landed; flips false when the Signal zone is viewed (screen focus with the zone on-screen, or tap-through).
+**The pulse contract (locked, r2 §2; ⚠ amended at GA 2026-10-05, CUL-1071, app-polish §10 edit 1).**
+- **Placements: Landing, the loading system, night surfaces.** Home no longer hosts the mark (app-polish D3 / D4, CUL-600: the header's wordmark and mark were removed, and "no looping animation in app chrome" became a cross-cutting rule). *The Home `live` state and its trigger are deleted from this contract:* the rule that set `live=true` while an unseen finding set sat in the signal cache, and cleared it when the Signal zone was viewed, is in git at `78e21854` and earlier. "Something new" on Home is carried by content, never by the mark.
 - Motion: dot scale 1→1.12→1 at 2.6s ease-in-out + one ping ring (scale .66→2.1, opacity .9→0) per cycle. Native driver.
 - **Never used for safety escalation** — safety leads in the Signal zone itself with its rail; the pulse is a neutral "something new."
 - Reduced-motion: static dot with a soft glow (`shadowRadius` bloom), no ring, no scale.
 
-**Placements in this PR:** `HomeHeader` (wordmark row → mark + wordmark, `live` wired to signal cache state; tap scrolls to the Signal zone) and `AuthBrandMark` (glyph swap only — `compact`/`hero` sizes preserved, no pulse on auth).
+**Placements in this PR:** `HomeHeader` (wordmark row → mark + wordmark, `live` wired to signal cache state; tap scrolls to the Signal zone) and `AuthBrandMark` (glyph swap only — `compact`/`hero` sizes preserved, no pulse on auth). **⚠ GA (2026-10-05, CUL-1071): the `HomeHeader` placement is retired** (CUL-600); its jump-to-Signal tap became the Home tab's re-tap scroll to top. In code today the mark renders on the Landing hero (`app/(auth)/index.tsx`, `ground="night"`, no pulse) and through `AuthBrandMark` on login, sign-up and forgot-password (`components/onboarding/AuthBrandMark.tsx`). ⚠ Unverified as a placement: neither `WhorlSpinner` nor `NightMoment` renders the mark, so "the loading system" names a permitted placement rather than a shipped one.
 
-**AC-N2:** carve renders as a true cutout over any ground (test: place on a gradient, assert no occluding fill — snapshot on both grounds); pulse starts/stops per the contract (unit-test the state selector); a11y label "Culprit"; header tap target ≥44pt; existing auth-screen tests updated, none deleted.
+**AC-N2:** carve renders as a true cutout over any ground (test: place on a gradient, assert no occluding fill — snapshot on both grounds); pulse starts/stops per the contract (unit-test the state selector; **⚠ GA 2026-10-05: moot, no placement pulses**); a11y label "Culprit"; header tap target ≥44pt; existing auth-screen tests updated, none deleted.
 
 ---
 
@@ -83,6 +84,14 @@ PM (r3): "Genuinely genius. We need to ship this." Iteration 3: **"Perfection if
 
 **AC-N3:** no `ActivityIndicator` remains in `app/` or `components/` (grep gate) except inside `PrimaryButton`'s existing loading prop (its own shipped pattern — swap is optional polish); spinner loops pause on blur; reduced-motion shows the static Whorl frame (arcs at rest, dot static); PTR band respects safe-area; PTR copy is the §9 string verbatim or absent.
 
+**⚠ GA (2026-10-05, CUL-1071): the Whorl has left the working app's redesigned waits.** Design v2 (D2-7, CUL-1068) replaced the spinner and the night moment on the waits it redesigned with **silhouettes** (the shape of the screen that is coming) and **the breathing tick**, the one looping motion Design v2 allows, shown only while a request is outstanding (`components/designV2/waits/`):
+- **Cold start** → Home's silhouette (`ColdStartOverlay` renders `ColdStartSilhouette`), crossfading into Home when the store hydrates; no night screen.
+- **The vet report's build** → its silhouette plus the tick (`app/report.tsx`: `ReportSilhouette` while building, `Tick` while regenerating).
+- **The event screen's load** → its silhouette (`EventSilhouette` in `app/event/[id].tsx`).
+- **A pending per-incident read** → the breathing tick (`components/event/IncidentReadCard.tsx`), which grows into the read's rail when it lands.
+
+**Where the Whorl still renders:** `WhorlSpinner` remains on the older sites Design v2 did not redesign (65 uses across 49 files in `app/` and `components/` at 2026-10-05, the event screen's in-section wait among them), until **CUL-1593** sweeps them. The CLAUDE.md loading-indicator convention still governs those sites; this note records the redesigned waits, not a new rule for the rest. The pull-to-refresh sky (`components/home/PullToRefreshSky.tsx`) is unchanged by this note.
+
 ---
 
 ## 6. The night moment — PR N3 (revised by iteration 3; D7 CLOSED by this spec)
@@ -96,6 +105,8 @@ PM r2: didn't grok → r3 full-bleed: "is it too big. Maybe there's a world wher
 **Trigger rule (unchanged from r2/r3, ratified by silence + "LOVE it"):** all three must hold — full-screen blocking wait AND expected >~2s AND real work on the pet's behalf. Qualifying: cold-start hydration (`ColdStartOverlay` rebuilds onto this), vet-report generation (`app/report.tsx` build state), food/med photo extraction waits. Never: card loads (skeletons), PTR/saves/retries (spinner), anything under ~2s. Minimum hold 600ms; dissolve to the destination screen over ~700ms.
 
 **AC-N3b (rides PR N3):** plays end-to-end on cold start (night → dissolve → Home); whorl opacity/scale within spec ranges pending the device lock; one ambient loop (the whorl counts as one composition); reduced-motion = static composition, copy carries the moment; the three qualifying call sites adopted, no others.
+
+**⚠ GA (2026-10-05, CUL-1071): two of the three qualifying call sites have left the night moment.** Cold start is now Home's silhouette and the vet report's build is its silhouette plus the tick (§5's GA note); AC-N3b's "plays end-to-end on cold start" no longer describes the app. **`NightMoment` still renders on the photo-extraction waits:** `app/food-capture.tsx` and `app/medication-capture.tsx` ("Reading the label…"), until **CUL-1593**. The definition, composition and trigger rule above stand as ruled for any surface that still uses the moment.
 
 ---
 
