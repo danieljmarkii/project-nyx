@@ -2919,7 +2919,7 @@ export interface TrialStripModel {
    * the vomiting pair live on `/trial`. An end date has no direction, so it cannot reassure;
    * the off-diet count is the accusing fact. Null exactly where `line` is withheld for a live
    * decline (the shipped early return is kept, never flattened into this line). A field beside
-   * `line` rather than a mode, so every flag-off reader of the model is untouched.
+   * `line` rather than a mode, so every other reader of the model is untouched.
    */
   cardLine: string | null;
 }

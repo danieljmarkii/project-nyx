@@ -203,7 +203,10 @@ describe('no doorway params', () => {
 });
 
 describe('a retired trial doorway (TS-GA, CUL-1307)', () => {
-  it('lands nowhere: the trial is a screen of its own, and the slot is a door at the top', async () => {
+  // The vocabulary half (`'trial'` is not a focus) is pinned in `lib/profileFocus.test.ts`.
+  // This case pins the screen half: the slot forwards no anchor, so even a focus re-added
+  // to the vocabulary would have nothing here to land on.
+  it('lands nowhere: the slot passes no anchor, so no trial focus can scroll', async () => {
     setParams({ focus: 'trial', ts: '1' });
     const { scrollTo, getByTestId } = await mount();
     act(() => layout(getByTestId('trial-anchor'), 900));

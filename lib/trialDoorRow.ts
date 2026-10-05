@@ -31,8 +31,7 @@
 // ended trial with a live decline carries them too, and so does its door. The sentence is the
 // resolver's own (S2: layout, never meaning); the row writes no string about the record.
 //
-// Lives in `lib/` rather than the namespace: the flag-off guard wraps every namespace export
-// into a component.
+// Lives in `lib/` rather than the namespace: it is a pure model, and the namespace draws.
 
 import { resolveTrialStrip, type TrialCardInput } from './dietTrialCard';
 import {

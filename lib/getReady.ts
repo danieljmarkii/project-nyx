@@ -243,10 +243,9 @@ export const INTAKE_TRIGGER_ORDER: Readonly<Record<IntakeDeclineTrigger, number>
 export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
   const signal = buildSignalRows(input);
   const weight = weightRow(input.rundown);
-  // TS-8: with the gate live, the trial row is the screen's model under the vet's
-  // questions, and the weight row folds into its *Weight?* (PM ruling D2) so the page
-  // says the weight once. Null flag-off, or with no running trial on the screen's read:
-  // the row below is then today's, from the strip.
+  // TS-8: the trial row is the screen's model under the vet's questions, and the weight
+  // row folds into its *Weight?* (PM ruling D2) so the page says the weight once. With no
+  // screen model, or no running trial on the screen's read, the row below is the strip's.
   const recheck = input.trialScreen
     ? buildTrialRecheck({
         screen: input.trialScreen,

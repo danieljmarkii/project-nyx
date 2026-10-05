@@ -1,9 +1,9 @@
 // The trial's own screen and its route (TS-4 · CUL-1300; spec §2, §4, §6, §11 TS-4).
 //
 // The model's rules are asserted in `lib/trialScreenModel.test.ts` over the real loaders.
-// This suite pins what only the screen can get wrong: the gate (flag-off answers with no
-// namespace node and NO READ, over hooks that would answer if called — the async half the
-// flag-off guard states it cannot see, C-41), which pet every read and door takes (C-9),
+// This suite pins what only the screen can get wrong: a link that names no pet (no
+// namespace node and NO READ, over hooks that would answer if called), which pet every read
+// and door takes (C-9),
 // the order a safety face is drawn in, the rise, the focus, the hit areas and the hand-off.
 
 import React from 'react';

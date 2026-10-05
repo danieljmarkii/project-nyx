@@ -6,8 +6,7 @@ import { RECHECK_EYEBROW, type RecheckAnswer, type TrialRecheck } from '../../li
 
 // Get ready's trial row, as the vet's recheck questions (TS-8 · CUL-1304). Drawn inside the
 // trial's Worth raising row, under its title and sub-line. It lives in the trial screen's
-// namespace because it is behind the same gate: the flag-off guard stubs this directory, so
-// Get ready's flag-off tree is compared against the feature's absence (C-36).
+// namespace because it draws the screen's own model.
 //
 // Each question is one accessibility element ("question. answer. answer."), because the row
 // around it no longer collapses into a single sentence once it carries these.

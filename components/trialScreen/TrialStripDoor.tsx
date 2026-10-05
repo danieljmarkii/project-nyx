@@ -9,8 +9,8 @@
 //
 // THIS WEEK'S LANE draws last, and only when `trialStripLane` says every gate is open:
 // nothing withheld, facts fresh for this pet, and no safety-class Signal card live on
-// Home. The ledger's facts are read HERE, so the read exists only when this namespace
-// mounts, which is only with the flag on (C-41: the flag-off strip issues no ledger read).
+// Home. The ledger's facts are read HERE, so the read exists only when the door mounts
+// (the Design v2 card issues none).
 //
 // Every string is the resolver's (S2); this file adds layout and one door.
 import React from 'react';
