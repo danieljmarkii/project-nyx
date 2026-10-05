@@ -1,5 +1,5 @@
 # Culprit — Filter & Scope UX Pattern Language
-**Version:** 1.0 | **Last Updated:** 2026-07-24 | 🌱 Living
+**Version:** 1.0 | **Last Updated:** 2026-10-05 | 🌱 Living
 
 The app-wide answer to "which UI shape does a filter get?" — written after the History filter rework (#421) at the PM's direction ("Love the bottom sheet. Maybe that's the UX we go with app-wide for filters? I'll let the designer weigh in on that."). This is the Designer's weigh-in, grounded in a full inventory of every filter/scope surface in the app (2026-07-24).
 
@@ -29,7 +29,7 @@ The app-wide answer to "which UI shape does a filter get?" — written after the
 3. **Defaults are explicit options** ("All types", "All time", "All") — never an implicit nothing-selected state on a filter.
 4. **Accessible by role:** radio semantics with announced selected state (`ChipGroup` radiogroup, `ScopeMenu` sheet rows); segmented controls use tablist/tab.
 5. **An option that expands dependent inline UI stays visible.** The report range's "Custom…" reveals From/To date pickers in place — a sheet would sever the control from its own dependent UI. Such sets stay as visible chips.
-6. **Filter state is screen-local** (resets on remount/pet switch) unless a spec says otherwise; deep-link doorways may set it (History's registered doors, `lib/historyDoors.ts`), and a transient scope not in the option set renders as an override label on the pill with no sheet row selected (the B-308 day drill-in pattern).
+6. **Filter state is screen-local** (resets on remount/pet switch) unless a spec says otherwise; deep-link doorways may set it (History's registered doors, `lib/historyDoors.ts`), and a transient scope not in the option set renders as an override label on the pill with no sheet row selected (the B-308 day drill-in pattern). History keeps its scope across a remount and resets on a pet switch (History v2 spec §3.9).
 
 ---
 

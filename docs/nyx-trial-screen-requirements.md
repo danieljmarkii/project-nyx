@@ -279,7 +279,7 @@ Step 1 changes nothing an owner can see and may start now. Steps 2 onward wait f
 
 **TS-8.** Get ready's trial row asks Dr. Chen's questions as its headings, in his order, and every number equals the trial screen's for the same fixture. The vet-visits spec edit is in the PR.
 
-**TS-9.** The door renders only with a live `trial_response` finding, CUL-1216 merged and `design_v2` live. It opens that finding's screen for this pet. Its head equals the Signal screen's title for the same finding and window, its sub is *Vomiting, from the Signal*, and with `design_v2` off the Signal cache is never read.
+**TS-9.** The door renders only with a live `trial_response` finding, CUL-1216 merged and `design_v2` live. ⚠ *Design v2 GA'd 2026-10-05 (CUL-1071): the `design_v2` condition is gone and the door draws for every account with the finding.* It opens that finding's screen for this pet. Its head equals the Signal screen's title for the same finding and window, its sub is *Vomiting, from the Signal*, and with `design_v2` off the Signal cache is never read.
 
 **TS-GA.** Every flag-off path named in §10 is deleted, the guard is retired with its flag, and the parent spec's §4.2 reads the new routing.
 

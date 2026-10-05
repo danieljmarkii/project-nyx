@@ -164,6 +164,8 @@ The trend chart line color should carry emotional weight: green is not required,
 
 Restrained and purposeful. Transitions between log confirmation and home screen should feel satisfying — a small, fast completion animation that signals "logged" without demanding attention. No looping animations. No loading spinners on actions that should be instant. The only moment that warrants a more considered animation is the first time the AI Signal appears — the transition from "building your picture" to a real insight should feel like something arrived.
 
+> _The Signal's opening (recorded 2026-10-05, CUL-1071; PM ruling (a) on CUL-1077, 2026-10-04): tapping a Signal card whose evidence is the weekly bars FLIES its chart from Home to the top of the Signal's own screen, and Back flies it home (`components/motion/flightMotion.ts`, D2-6 / CUL-1069). It ships as built: one settle, no snap at either end, the push's slide suppressed for a crossfade under the flight. Under Reduce Motion there is no flight and no slide; a flight cut short jumps to its end state. This records the ruling; the Motion section's rewrite is the Principles v2.0 edit, proposed on CUL-1071._
+
 ### Iconography
 
 Simple, consistent, slightly rounded. The event type icons — meal, vomit, lethargy, stool, custom — must be immediately legible at small sizes in the widget. No metaphor that requires explanation.
