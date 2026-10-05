@@ -18,17 +18,22 @@
 // from a re-render, and the door would work exactly once per session.
 //
 // CUL-753 extends the same vocabulary to the vet-visit rundown's tiles: `weight`
-// is a third focus, anchored on the weight-trend card, and the rundown's meds
+// is a focus, anchored on the weight-trend card, and the rundown's meds
 // tile takes the medications section (it deliberately names no single med).
+//
+// TS-GA (CUL-1307) retired the `trial` focus: every trial door opens the trial's own
+// screen (`lib/trialRoute.ts`), and the Pet tab keeps a one-row door rather than a card
+// to scroll to. The frozen widget link still arrives here; `widgetTrialFromParams` reads
+// it, and the Pet tab forwards it to the screen.
 import { theme } from '../constants/theme';
 import { medStripKeyForRegimen } from './medStrip';
 
 /** The sections of the Pet tab a doorway can name. Deliberately a closed set: a
  *  focus that no anchor can service is a scroll to nowhere, so the screen refuses
  *  anything outside it rather than guessing. */
-export type ProfileFocus = 'trial' | 'medications' | 'weight';
+export type ProfileFocus = 'medications' | 'weight';
 
-const PROFILE_FOCUS_VALUES: readonly ProfileFocus[] = ['trial', 'medications', 'weight'];
+const PROFILE_FOCUS_VALUES: readonly ProfileFocus[] = ['medications', 'weight'];
 
 export const PROFILE_ROUTE = '/(tabs)/profile' as const;
 
@@ -44,13 +49,8 @@ export function coerceProfileFocus(raw: unknown): ProfileFocus | null {
 /**
  * The focus a link into the Pet tab asks for, and the pet it asks for it on (CUL-1292).
  *
- * An explicit `focus` wins: that is every in-app door (`profileFocusHref`). Otherwise a
- * link from the Home Screen widget that names its pet is a TRIAL tap. The widget is
- * frozen (H-7) and its only links to this tab are the trial dot band and the trial fact
- * tile (`widgets/CulpritWidget.tsx`, `petLink('profile')`), neither of which carries a
- * `focus`, so the app reads the sender instead of the parameter it cannot add.
- *
- * `petId` is the pet the widget named, or `null` for an in-app door (which always means
+ * Only an explicit `focus` is a focus: that is every in-app door (`profileFocusHref`).
+ * `petId` is the pet a widget link named, or `null` for an in-app door (which always means
  * the pet on screen). The screen lands a named request only on that pet.
  */
 export function profileFocusFromParams(params: {
@@ -58,11 +58,32 @@ export function profileFocusFromParams(params: {
   src?: unknown;
   pet?: unknown;
 }): { focus: ProfileFocus; petId: string | null } | null {
-  const pet = typeof params.pet === 'string' && params.pet !== '' ? params.pet : null;
   const explicit = coerceProfileFocus(params.focus);
-  if (explicit !== null) return { focus: explicit, petId: params.src === 'widget' ? pet : null };
-  if (params.src === 'widget' && pet !== null) return { focus: 'trial', petId: pet };
-  return null;
+  if (explicit === null) return null;
+  return { focus: explicit, petId: params.src === 'widget' ? petOf(params.pet) : null };
+}
+
+/**
+ * A Home Screen widget TRIAL tap, and the pet it names (CUL-1292; TS-GA, CUL-1307).
+ *
+ * The widget is frozen (H-7) and its only links to this tab are the trial dot band and the
+ * trial fact tile (`widgets/CulpritWidget.tsx`, `petLink('profile')`), neither of which
+ * carries a `focus`, so the app reads the sender instead of the parameter it cannot add.
+ * The Pet tab switches to that pet, then forwards the tap to the trial's own screen once
+ * (spec §5.3, C-22). A link that names an explicit focus is a focus, never this.
+ */
+export function widgetTrialFromParams(params: {
+  focus?: unknown;
+  src?: unknown;
+  pet?: unknown;
+}): { petId: string } | null {
+  if (params.src !== 'widget' || params.focus !== undefined) return null;
+  const petId = petOf(params.pet);
+  return petId === null ? null : { petId };
+}
+
+function petOf(raw: unknown): string | null {
+  return typeof raw === 'string' && raw !== '' ? raw : null;
 }
 
 export interface ProfileFocusHref {
@@ -168,7 +189,7 @@ export function medFocusScrollY(input: {
   return Math.max(0, anchor - PROFILE_FOCUS_INSET);
 }
 
-/** The scroll offset for a single-anchor doorway (the trial card, the weight card). */
+/** The scroll offset for a single-anchor doorway (the weight card). */
 export function focusScrollY(anchorY: number | null): number | null {
   if (anchorY === null) return null;
   return Math.max(0, anchorY - PROFILE_FOCUS_INSET);
@@ -188,7 +209,7 @@ export function focusScrollY(anchorY: number | null): number | null {
 // the owner was reading. The screen itself never switches the active pet (S1); the Pet
 // tab does, as the direct consequence of a tap on a screen that named the pet.
 //
-// `open` is its own parameter rather than a fourth `focus`: a focus is a SCROLL target,
+// `open` is its own parameter rather than another `focus`: a focus is a SCROLL target,
 // and this is a one-shot request to present a sheet. `ts` is the nonce every doorway here
 // carries, so a second tap is a second request.
 

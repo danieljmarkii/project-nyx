@@ -13,18 +13,12 @@ import { join } from 'path';
 jest.mock('../../lib/feedingArrangements', () => ({
   getActiveArrangementsForPet: jest.fn().mockResolvedValue([]),
 }));
-// CUL-170 — the DEFAULT press is the thing under test below. Every other press
-// assertion in this file injects `onPress`, which is exactly how the bare
-// `/(tabs)/profile` push survived: the door was never the thing being tested.
+// The DEFAULT press is the thing under test below: an injected `onPress` is how the bare
+// `/(tabs)/profile` push once survived (CUL-170), so the door's own push is asserted.
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
-// TS-5 (CUL-1301) — the strip now holds the `trial_screen` gate. The gate hook reaches
-// `lib/supabase` through the app-config read, so the client is stubbed; the gate itself
-// is stubbed to a switch, off unless a test turns it on (the trial screen suite's shape).
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
-let mockTrialScreen = false;
-jest.mock('../../hooks/useTrialScreen', () => ({ useTrialScreen: () => mockTrialScreen }));
-// The door's one read. A fixture that WOULD answer, so an absence off the flag proves the
-// gate rather than an empty record (C-41).
+// The door's one read. A fixture that WOULD answer, so an absence under the Design v2 card
+// proves the card makes no read rather than an empty record (C-41).
 const mockUseTrialFacts = jest.fn((_petId: string | null) => ({ status: 'ready' as const, facts: null }));
 jest.mock('../../hooks/useTrialFacts', () => ({
   useTrialFacts: (petId: string | null) => mockUseTrialFacts(petId),
@@ -58,11 +52,18 @@ function input(over: Partial<TrialCardInput> = {}): TrialCardInput {
   };
 }
 
+const door = { petId: 'pet-1', inputFresh: true, safety: { petId: 'pet-1', live: false } };
+
 describe('TrialStrip', () => {
+  beforeEach(() => {
+    mockUseTrialFacts.mockClear();
+    (router.push as jest.Mock).mockClear();
+  });
+
   it('renders nothing at all when there is no active trial', () => {
-    expect(render(<TrialStrip model={null} />).toJSON()).toBeNull();
+    expect(render(<TrialStrip model={null} {...door} />).toJSON()).toBeNull();
     expect(
-      render(<TrialStrip model={resolveTrialStrip({ ...input(), trial: null })} />).toJSON(),
+      render(<TrialStrip model={resolveTrialStrip({ ...input(), trial: null })} {...door} />).toJSON(),
     ).toBeNull();
     expect(
       render(<TrialStrip model={resolveTrialStrip(input({
@@ -70,74 +71,62 @@ describe('TrialStrip', () => {
           status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
           targetDurationDays: 56, foodLabel: FOOD,
         },
-      }))} />).toJSON(),
+      }))} {...door} />).toJSON(),
     ).toBeNull();
   });
 
-  it('is a day count, a day bar and one line', () => {
-    const tree = render(<TrialStrip model={resolveTrialStrip(input())} />);
+  it('renders nothing when Home names no pet: a door that cannot say whose trial it opens', () => {
+    const i = input();
+    expect(render(<TrialStrip model={resolveTrialStrip(i)} input={i} inputFresh />).toJSON()).toBeNull();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('is the door: the day count, the one line, and a bar bound to day progress, not coverage', () => {
+    const widthOf = (i: TrialCardInput) => {
+      const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />);
+      return StyleSheet.flatten(tree.getByTestId('trial-strip-door-fill').props.style).width;
+    };
+    const tree = render(<TrialStrip model={resolveTrialStrip(input())} input={input()} {...door} />);
     expect(tree.getByText('Diet trial · day 23 of 56')).toBeTruthy();
     expect(tree.getByText(
       'Zignature Kangaroo Formula · ends Aug 27 · meals logged on 22 of 23 days',
     )).toBeTruthy();
-  });
-
-  it('binds the bar to day progress, not to coverage', () => {
-    const widthOf = (i: TrialCardInput) => {
-      const tree = render(<TrialStrip model={resolveTrialStrip(i)} />);
-      const flat = StyleSheet.flatten(
-        tree.getByTestId('trial-strip-fill').props.style,
-      ) as { width: string };
-      return Number(flat.width.replace('%', ''));
-    };
-    expect(widthOf(input())).toBeCloseTo((23 / 56) * 100, 6);
+    expect(tree.queryByTestId('trial-card-v2')).toBeNull();
+    expect(widthOf(input())).toBe(`${(23 / 56) * 100}%`);
     // Same day, far worse record — identical bar.
-    expect(widthOf(input({ coverage: { daysLogged: 2, daysElapsed: 23 } })))
-      .toBeCloseTo((23 / 56) * 100, 6);
+    expect(widthOf(input({ coverage: { daysLogged: 2, daysElapsed: 23 } }))).toBe(`${(23 / 56) * 100}%`);
   });
 
   it('renders no percentage and no blended metric', () => {
-    const tree = render(<TrialStrip model={resolveTrialStrip(input())} />);
+    const tree = render(<TrialStrip model={resolveTrialStrip(input())} input={input()} {...door} />);
     expect(tree.queryByText(/%/)).toBeNull();
     expect(tree.queryByText(/compliance/i)).toBeNull();
   });
 
-  // Signals v2 (CUL-13, §4.2) — the standing vomit-count line, a second line below the coverage line.
-  const trialResponseCounts = {
-    trialDayNumber: 23,
-    trialCount: 4,
-    trialLastEpisodeDayIndex: null,
-    baselineCount: 20,
-    trialLoggedDays: 18,
-    baselineLoggedDays: 40,
-    baselineWindowDays: 49,
-    densityComparable: true,
-  };
-
-  it('renders the standing vomit-count line when signals_v2 supplied trialResponse (a second line)', () => {
-    const tree = render(<TrialStrip model={resolveTrialStrip(input({ trialResponse: trialResponseCounts }))} />);
-    // Both lines present: the coverage line AND the vomit-count line.
+  it('keeps the standing vomit-count line (CUL-13) as a second line', () => {
+    const trialResponse = {
+      trialDayNumber: 23,
+      trialCount: 4,
+      trialLastEpisodeDayIndex: null,
+      baselineCount: 20,
+      trialLoggedDays: 18,
+      baselineLoggedDays: 40,
+      baselineWindowDays: 49,
+      densityComparable: true,
+    };
+    const i = input({ trialResponse });
+    const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />);
     expect(tree.getByText(/meals logged on 22 of 23 days/)).toBeTruthy();
     expect(tree.getByText("Vomiting: 4 in the trial's 23 days · 20 in the 49 days before, a longer stretch.")).toBeTruthy();
   });
 
-  it('renders NO standing line when the flag is off (no trialResponse) — byte-identical strip', () => {
-    const tree = render(<TrialStrip model={resolveTrialStrip(input())} />);
-    expect(tree.queryByText(/^Vomiting:/)).toBeNull();
-  });
-
-  it('folds the standing line into the strip a11y label (present), leaves it verbatim when absent', () => {
-    const withLine = render(
-      <TrialStrip model={resolveTrialStrip(input({ trialResponse: trialResponseCounts }))} onPress={jest.fn()} />,
-    );
-    expect(withLine.getByTestId('trial-strip').props.accessibilityLabel).toBe(
-      "Diet trial · day 23 of 56. Vomiting: 4 in the trial's 23 days · 20 in the 49 days before, a longer stretch. Open the diet trial.",
-    );
-    // Flag-off: unchanged from the shipped label (asserted verbatim in the tap test above too).
-    const without = render(<TrialStrip model={resolveTrialStrip(input())} onPress={jest.fn()} />);
-    expect(without.getByTestId('trial-strip').props.accessibilityLabel).toBe(
-      'Diet trial · day 23 of 56. Open the diet trial.',
-    );
+  it('by default opens the strip pet’s trial screen, once, and reads its ledger facts (TS-5, TS-GA)', () => {
+    const i = input();
+    const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />);
+    fireEvent.press(tree.getByTestId('trial-strip-door'));
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith('/trial/pet-1');
+    expect(mockUseTrialFacts).toHaveBeenCalledWith('pet-1');
   });
 
   it('sits below SignalZone and above TodayZone on Home', () => {
@@ -161,95 +150,19 @@ describe('TrialStrip', () => {
     expect(signal).toBeLessThan(strip);
     expect(strip).toBeLessThan(today);
   });
-
-  it('opens the Pet tab card when tapped', () => {
-    const onPress = jest.fn();
-    const tree = render(<TrialStrip model={resolveTrialStrip(input())} onPress={onPress} />);
-    fireEvent.press(tree.getByTestId('trial-strip'));
-    expect(onPress).toHaveBeenCalledTimes(1);
-    expect(tree.getByTestId('trial-strip').props.accessibilityLabel)
-      .toBe('Diet trial · day 23 of 56. Open the diet trial.');
-  });
-
-  // CUL-170. The label has promised "Open the diet trial" since PR 4; the push
-  // behind it opened the top of the Pet tab, above the photo, the conditions and
-  // every med card. This asserts the untouched default, not an injected handler.
-  it('by default lands ON the trial card, not at the top of the Pet tab', () => {
-    (router.push as jest.Mock).mockClear();
-    const tree = render(<TrialStrip model={resolveTrialStrip(input())} />);
-    fireEvent.press(tree.getByTestId('trial-strip'));
-
-    expect(router.push).toHaveBeenCalledTimes(1);
-    const href = (router.push as jest.Mock).mock.calls[0][0];
-    expect(href.pathname).toBe('/(tabs)/profile');
-    expect(href.params.focus).toBe('trial');
-    // The nonce is what makes a SECOND tap re-fire on an already-mounted tab.
-    expect(href.params.ts).toEqual(expect.any(String));
-  });
 });
 
-// ── TS-5 (CUL-1301): the strip as the door, behind `trial_screen` ───────────────────
-describe('TrialStrip: the trial_screen gate', () => {
-  const door = { petId: 'pet-1', inputFresh: true, safety: { petId: 'pet-1', live: false } };
-
-  beforeEach(() => {
-    mockTrialScreen = false;
-    mockUseTrialFacts.mockClear();
-    (router.push as jest.Mock).mockClear();
-  });
-
-  it('flag off: the shipped strip, still the Pet tab door, and no ledger read (C-41)', () => {
-    const i = input();
-    const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />);
-    expect(tree.getByTestId('trial-strip')).toBeTruthy();
-    expect(tree.queryByTestId('trial-strip-door')).toBeNull();
-    expect(tree.queryByTestId('trial-lane', { includeHiddenElements: true })).toBeNull();
-    expect(mockUseTrialFacts).not.toHaveBeenCalled();
-    fireEvent.press(tree.getByTestId('trial-strip'));
-    expect(router.push).toHaveBeenCalledTimes(1);
-    expect((router.push as jest.Mock).mock.calls[0][0].pathname).toBe('/(tabs)/profile');
-  });
-
-  it('flag off: the new props change nothing (the tree equals the shipped call)', () => {
-    const i = input();
-    const shipped = render(<TrialStrip model={resolveTrialStrip(i)} />).toJSON();
-    const withProps = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />).toJSON();
-    // Serialized: a fresh handler closure per render is not a difference an owner sees.
-    expect(JSON.stringify(withProps)).toBe(JSON.stringify(shipped));
-  });
-
-  it('flag on: the door, opening the strip pet trial screen once', () => {
-    mockTrialScreen = true;
-    const i = input();
-    const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />);
-    expect(tree.queryByTestId('trial-strip')).toBeNull();
-    fireEvent.press(tree.getByTestId('trial-strip-door'));
-    expect(router.push).toHaveBeenCalledTimes(1);
-    expect(router.push).toHaveBeenCalledWith('/trial/pet-1');
-    expect(mockUseTrialFacts).toHaveBeenCalledWith('pet-1');
-  });
-
-  it('flag on: still nothing at all when no trial is active', () => {
-    mockTrialScreen = true;
-    expect(render(<TrialStrip model={null} {...door} />).toJSON()).toBeNull();
-  });
-});
-
-
-// ── CUL-1526: under design_v2 + trial_screen, the ruled card ─────────────────────
+// ── CUL-1526: under design_v2, the ruled card ─────────────────────
 describe('TrialStrip: the design_v2 card (CUL-1526)', () => {
-  const door = { petId: 'pet-1', inputFresh: true, safety: { petId: 'pet-1', live: false } };
   const withOffDiet = () =>
     input({ exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 3 } });
 
   beforeEach(() => {
-    mockTrialScreen = false;
     mockUseTrialFacts.mockClear();
     (router.push as jest.Mock).mockClear();
   });
 
-  it('both flags on: title, a neutral bar and the one end-date line; no ratio, no lane, no ledger read', () => {
-    mockTrialScreen = true;
+  it('title, a neutral bar and the one end-date line; no ratio, no lane, no ledger read', () => {
     const i = withOffDiet();
     const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} designV2 />);
     expect(tree.queryByTestId('trial-strip-door')).toBeNull();
@@ -265,7 +178,6 @@ describe('TrialStrip: the design_v2 card (CUL-1526)', () => {
   });
 
   it('the spoken label is exactly the visible lines (C-8), and the tap opens the trial once', () => {
-    mockTrialScreen = true;
     const i = withOffDiet();
     const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} designV2 />);
     const card = tree.getByTestId('trial-card-v2');
@@ -278,7 +190,6 @@ describe('TrialStrip: the design_v2 card (CUL-1526)', () => {
   });
 
   it('identical under a live safety-class Signal card (G3 B)', () => {
-    mockTrialScreen = true;
     const i = withOffDiet();
     const clear = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} designV2 />).toJSON();
     const live = render(
@@ -287,15 +198,7 @@ describe('TrialStrip: the design_v2 card (CUL-1526)', () => {
     expect(JSON.stringify(live)).toBe(JSON.stringify(clear));
   });
 
-  it('design_v2 without trial_screen: the shipped strip, unchanged', () => {
-    const i = withOffDiet();
-    const shipped = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />).toJSON();
-    const v2Only = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} designV2 />).toJSON();
-    expect(JSON.stringify(v2Only)).toBe(JSON.stringify(shipped));
-  });
-
-  it('trial_screen without design_v2: the shipped door', () => {
-    mockTrialScreen = true;
+  it('without design_v2: the door', () => {
     const i = withOffDiet();
     const tree = render(<TrialStrip model={resolveTrialStrip(i)} input={i} {...door} />);
     expect(tree.getByTestId('trial-strip-door')).toBeTruthy();

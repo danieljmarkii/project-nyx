@@ -1,7 +1,8 @@
-// The Home trial strip (B-417 PR 4, §4.2 — the round-3 addition).
+// The Home trial strip (B-417 PR 4, §4.2; the door since TS-5 / CUL-1301, for every
+// account since TS-GA / CUL-1307).
 //
-// A running trial gets a COMPACT STRIP on Home, not a second full card: day
-// count, day-progress bar, one line, tap through to the Pet tab's card.
+// A running trial gets a COMPACT DOOR on Home, not a second full card, and the tap opens
+// the trial's own screen, `/trial/{pet}` (`docs/nyx-trial-screen-requirements.md` §5.1).
 //
 // ── PLACEMENT IS THE DESIGN ──────────────────────────────────────────────────
 // It sits BELOW SignalZone and ABOVE TodayZone, deliberately: Principle 3 says
@@ -13,25 +14,12 @@
 // The Pet tab is not a surface the wedge owner visits daily; the trial is the
 // thing they live with for eight weeks. That gap is the whole reason this exists.
 //
-// ── TS-5 (CUL-1301): THE STRIP AS THE DOOR, behind `trial_screen` ─────────────────
-// This file holds the gate and draws nothing of the feature (C-36): with the flag on,
-// the drawing is `components/trialScreen/TrialStripDoor` (the Signal row's grammar, this
-// week's lane, the tap into `/trial/{pet}`). With it off, everything below the gate is
-// the shipped strip to the byte, still opening the Pet tab (CUL-170). The three props
-// the door needs are ignored off the flag.
-//
-// ── CUL-1526: UNDER `design_v2` TOO, THE RULED CARD ──────────────────────────────
-// With both flags on, the drawing is `components/designV2/home/TrialCard` (title, a
-// neutral bar, the one end-date line). Home passes its one `useDesignV2()` read down as
-// `designV2`, so the redesign gains no second consumer of the gate (C-36).
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
-import { theme } from '../../constants/theme';
-import { useTrialScreen } from '../../hooks/useTrialScreen';
-import { profileFocusHref } from '../../lib/profileFocus';
+// ── TWO DRAWINGS, ONE HOST ───────────────────────────────────────────────────────
+// `components/trialScreen/TrialStripDoor` (the Signal row's grammar, this week's lane) is
+// the drawing; under `design_v2` it is `components/designV2/home/TrialCard` (CUL-1526:
+// title, a neutral bar, the one end-date line). Home passes its one `useDesignV2()` read
+// down as `designV2`, so the redesign gains no second consumer of the gate (C-36).
 import type { TrialStripSafety } from '../../lib/trialStripDoor';
-import { Card } from '../ui/Card';
-import { ThemedText } from '../ui/ThemedText';
 import { TrialStripDoor } from '../trialScreen/TrialStripDoor';
 import { TrialCard } from '../designV2/home/TrialCard';
 import type { TrialCardInput, TrialStripModel } from '../../lib/dietTrialCard';
@@ -61,114 +49,18 @@ export function TrialStrip({
   safety = null,
   designV2 = false,
 }: Props) {
-  const trialScreen = useTrialScreen();
-  if (!model) return null;
-
-  // No pet to open means no door: the shipped strip, rather than a door to nowhere.
-  if (trialScreen && petId) {
-    if (designV2) return <TrialCard model={model} petId={petId} onPress={onPress} />;
-    return (
-      <TrialStripDoor
-        model={model}
-        petId={petId}
-        input={input}
-        inputFresh={inputFresh}
-        safety={safety}
-        onPress={onPress}
-      />
-    );
-  }
-
+  // No pet to open means no door. Home's model is resolved from the input loaded for
+  // `petId`, so a model without one is a frame that has nothing to name.
+  if (!model || !petId) return null;
+  if (designV2) return <TrialCard model={model} petId={petId} onPress={onPress} />;
   return (
-    <Pressable
-      // CUL-170 — the door opens ON the trial card, not at the top of the Pet tab.
-      // The strip is the only place a wedge owner meets their trial daily, so an
-      // arrival that makes them scroll past the photo and the med cards to find it
-      // spends the whole reason this strip exists.
-      onPress={
-        onPress ??
-        (() => router.push(profileFocusHref({ focus: 'trial', nowMs: Date.now() })))
-      }
-      accessibilityRole="button"
-      // The Pressable's explicit label overrides its children for VoiceOver, so the standing
-      // vomit-count line (CUL-13) is folded in when present — otherwise a screen-reader owner would
-      // miss it. Null off the flag ⇒ the label is byte-identical to the shipped strip.
-      accessibilityLabel={
-        model.trialResponseLine
-          ? `${model.header}. ${model.trialResponseLine} Open the diet trial.`
-          : `${model.header}. Open the diet trial.`
-      }
-      testID="trial-strip"
-    >
-      <Card>
-        <View style={styles.headerRow}>
-          <ThemedText style={styles.header}>{model.header}</ThemedText>
-          {/* geist-ok: Icon glyph, not copy — stays a raw <Text>. These stand in for vector glyphs
-              (the B-745 GlyphSvg migration owns them), so they keep the system face rather
-              than taking the body family a sweep would give them. CUL-364 §7. */}
-          <Text style={styles.chevron}>›</Text>
-        </View>
-
-        <View style={styles.progressTrack} testID="trial-strip-track">
-          <View
-            testID="trial-strip-fill"
-            // R2: day progress, and nothing else. There is no other fraction on
-            // `TrialStripModel` for this to accidentally bind to.
-            style={[styles.progressFill, { width: `${model.progressFraction * 100}%` }]}
-          />
-        </View>
-
-        {model.line !== null && <ThemedText style={styles.line}>{model.line}</ThemedText>}
-
-        {/* Signals v2 (CUL-13, §4.2) — the standing vomit-count line, a second line below the
-            coverage line. GA'd (CUL-548): null only when the loader's own gate says so (no trial
-            running, or an unreadable record). A DESCRIPTION of the record, not a control — the
-            whole Pressable still opens the Pet tab; nothing here opens a form (§4.2 second-door rule). */}
-        {model.trialResponseLine !== null && (
-          <ThemedText style={styles.trialResponseLine}>{model.trialResponseLine}</ThemedText>
-        )}
-      </Card>
-    </Pressable>
+    <TrialStripDoor
+      model={model}
+      petId={petId}
+      input={input}
+      inputFresh={inputFresh}
+      safety={safety}
+      onPress={onPress}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  header: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
-  chevron: {
-    fontSize: theme.textLG,
-    color: theme.colorTextSecondary,
-  },
-  progressTrack: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: theme.colorChartEmpty,
-    overflow: 'hidden',
-    marginTop: theme.space2,
-  },
-  progressFill: {
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: theme.colorAccent,
-  },
-  line: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    marginTop: theme.space1,
-  },
-  // The standing vomit-count line (CUL-13). A quieter tier than the coverage line — it's context on
-  // the trial's symptom record, not the trial's own status — so it rides the tertiary tone.
-  trialResponseLine: {
-    fontSize: theme.textSM,
-    color: theme.colorTextTertiary,
-    marginTop: theme.spaceMicro,
-  },
-});

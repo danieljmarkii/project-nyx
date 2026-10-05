@@ -21,7 +21,6 @@ import { buildWorthRaising, localIntakeDeclines, type WorthRaising } from '../li
 import { buildTrialScreenModel } from '../lib/trialScreenModel';
 import { UNKNOWN_ALLOWED_SET } from '../lib/trialAllowedSet';
 import { NO_LEDGER_FACTS, recheckFactsState } from '../lib/trialRecheck';
-import { useTrialScreen } from '../hooks/useTrialScreen';
 import { useDesignV2 } from '../hooks/useDesignV2';
 import { readScreenSentences } from '../lib/getReadySignal';
 import { RecheckQuestions } from '../components/trialScreen/RecheckQuestions';
@@ -87,12 +86,11 @@ import { reportHref } from '../lib/reportRoute';
 // one awaited pass with a staleness id, and a hook would split it across renders.)
 //
 // ── THE RECHECK (TS-8 · CUL-1304) ────────────────────────────────────────────────
-// Behind `trial_screen`, the trial row grows into the vet's recheck questions, answered
-// from the trial screen's own model (`buildTrialScreenModel`, fed the same loader output
-// the screen reads) and drawn by `components/trialScreen/RecheckQuestions`. Flag-off the
-// model is never built and the row is today's, and no read is added.
+// The trial row grows into the vet's recheck questions, answered from the trial screen's
+// own model (`buildTrialScreenModel`, fed the same loader output the screen reads) and
+// drawn by `components/trialScreen/RecheckQuestions`. Every account since TS-GA (CUL-1307).
 //
-// Flag-on, CUL-1342 adds ONE read: `loadTrialPredicateFacts`, for the oral-route lane (the
+// CUL-1342 adds ONE read: `loadTrialPredicateFacts`, for the oral-route lane (the
 // chewable and food-paired doses the feeding counts never hold). It runs beside the trial
 // read inside this same awaited pass, so it can never be "still loading" when the rows are
 // built, and a failure is its own state (`unreadable`), never an empty lane (C-12).
@@ -163,15 +161,11 @@ export default function RundownScreen() {
   // Whose record `rundown` is: the appointment's pet in Get ready, else the active pet.
   const [rundownPetId, setRundownPetId] = useState<string | null>(null);
   const historyV2 = useHistoryV2();
-  const trialScreen = useTrialScreen();
-  // Read by `load` through a ref, never as a dependency: the gate hydrates asynchronously
-  // (app config on foreground and sign-in, the opt-in from storage), and a dependency would
-  // reload the whole page, spinner and all, the moment it flipped under an owner already
-  // reading it. A flip lands on the next focus; until then the row is today's (fail closed).
-  const trialScreenRef = useRef(trialScreen);
-  trialScreenRef.current = trialScreen;
   // CUL-1570 (GC-4 PR 3): under Design v2, Worth raising quotes each counted finding's sentence
-  // as its Signal screen states it. Read through a ref for the same reason as the trial gate.
+  // as its Signal screen states it. Read by `load` through a ref, never as a dependency: the
+  // gate hydrates asynchronously (app config on foreground and sign-in, the opt-in from
+  // storage), and a dependency would reload the whole page, spinner and all, the moment it
+  // flipped under an owner already reading it.
   // The gate decides a source and draws nothing of the redesign; flag off, no screen is read.
   const designV2 = useDesignV2();
   const designV2Ref = useRef(designV2);
@@ -242,7 +236,6 @@ export default function RundownScreen() {
         subjectId,
         myId,
         loadIdRef,
-        trialScreenRef.current,
         designV2Ref.current,
       );
       if (loadIdRef.current !== myId) return;
@@ -558,7 +551,6 @@ async function buildForAppointment(
   subjectId: string,
   myId: number,
   loadIdRef: { current: number },
-  trialScreenLive: boolean,
   /** The redesign's gate (CUL-1570): quote the Signal screen's own sentences. */
   screenCountsLive: boolean,
 ): Promise<WorthRaising> {
@@ -600,8 +592,8 @@ async function buildForAppointment(
           nowMs,
         }).catch(() => null)
       : Promise.resolve(null),
-    // Flag-on only, and for the appointment's pet (C-9).
-    trialScreenLive && pet ? readRecheckFacts(pet, nowMs) : Promise.resolve('unreadable' as const),
+    // For the appointment's pet (C-9).
+    pet ? readRecheckFacts(pet, nowMs) : Promise.resolve('unreadable' as const),
   ]);
 
   if (loadIdRef.current !== myId) {
@@ -612,7 +604,7 @@ async function buildForAppointment(
   // An unloadable trial is the screen's own `unreadable` state, which the recheck renders
   // nothing for, and the row falls back to the strip's, which is null too: no row.
   const trialScreenModel =
-    trialScreenLive && pet
+    pet
       ? buildTrialScreenModel({
           petId: pet.id,
           pet: { id: pet.id, name: pet.name },

@@ -49,8 +49,6 @@ jest.mock('react-native-safe-area-context', () => {
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
 });
 
-const mockLive = jest.fn(() => true);
-jest.mock('../../hooks/useTrialScreen', () => ({ useTrialScreen: () => mockLive() }));
 const mockReduced = jest.fn(() => false);
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => mockReduced() }));
 // TS-9: the Signal door's gate and read. Design v2 defaults OFF, so every case above the
@@ -129,7 +127,7 @@ jest.mock('../trial/TrialLifecycleSheets', () => ({
   },
 }));
 
-import TrialRoute, { BAD_LINK_BODY, OFF_BODY, OFF_TITLE } from '../../app/trial/[pet]';
+import TrialRoute, { BAD_LINK_BODY, OFF_TITLE } from '../../app/trial/[pet]';
 import { SIGNAL_OPEN_MOTION } from '../motion/signalOpenMotion';
 import { useSyncStore } from '../../store/syncStore';
 
@@ -186,7 +184,6 @@ beforeEach(() => {
   mockParams = { pet: 'pet-2' };
   mockPets = PETS;
   mockPetsLoaded = true;
-  mockLive.mockReturnValue(true);
   mockReduced.mockReturnValue(false);
   mockTrial = { input: running(), status: 'loaded', inputIsForPet: true };
   mockFacts = { status: 'ready', facts: null };
@@ -206,43 +203,23 @@ function stackOptions(): Record<string, unknown> {
   return (mockStackScreen.mock.calls.at(-1)![0] as { options: Record<string, unknown> }).options;
 }
 
-// ── The route: the gate and the rise ────────────────────────────────────────
+// ── The route: the bad link and the rise ────────────────────────────────────────
 
 describe('the route, app/trial/[pet]', () => {
-  it('flag-off: the small screen, no namespace node, and NO read is issued over reads that would answer', async () => {
-    mockLive.mockReturnValue(false);
-    mockSet = READY_SET;
-    const view = await renderRoute();
-    expect(view.getByTestId('trial-route-off')).toBeTruthy();
-    expect(view.getByText(OFF_TITLE)).toBeTruthy();
-    expect(view.queryByTestId('trial-screen')).toBeNull();
-    expect(mockUseDietTrial).not.toHaveBeenCalled();
-    expect(mockUseTrialFacts).not.toHaveBeenCalled();
-    expect(mockUseTrialAllowedSet).not.toHaveBeenCalled();
-    expect(mockReadVetVisitsHome).not.toHaveBeenCalled();
-    // …and the reads really would have answered: the same fixture flag-on draws a trial.
-    mockLive.mockReturnValue(true);
-    const on = await renderRoute();
-    expect(on.getByTestId('trial-screen-title')).toBeTruthy();
-    expect(mockUseDietTrial).toHaveBeenCalled();
-    expect(mockReadVetVisitsHome).toHaveBeenCalled();
-  });
-
-  it('flag-off, the door goes to the Pet tab’s trial card', async () => {
-    mockLive.mockReturnValue(false);
-    const view = await renderRoute();
-    fireEvent.press(view.getByTestId('trial-route-off-action'));
-    expect(mockPush).toHaveBeenCalledTimes(1);
-    expect(mockPush.mock.calls[0][0]).toMatchObject({ pathname: '/(tabs)/profile', params: { focus: 'trial' } });
-  });
-
   it('a malformed link answers with the small screen and reads nothing, and says the link is the problem', async () => {
     mockParams = {};
     const view = await renderRoute();
     expect(view.getByTestId('trial-route-off')).toBeTruthy();
+    expect(view.getByText(OFF_TITLE)).toBeTruthy();
     expect(view.getByText(BAD_LINK_BODY)).toBeTruthy();
-    expect(view.queryByText(OFF_BODY)).toBeNull();
+    expect(view.queryByTestId('trial-screen')).toBeNull();
     expect(mockUseDietTrial).not.toHaveBeenCalled();
+    expect(mockUseTrialFacts).not.toHaveBeenCalled();
+    expect(mockReadVetVisitsHome).not.toHaveBeenCalled();
+    // The way out is the pet's tab, with no focus: the trial is no longer a card to scroll to.
+    fireEvent.press(view.getByTestId('trial-route-off-action'));
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockPush.mock.calls[0][0]).toBe('/(tabs)/profile');
   });
 
   it('coming back to the screen re-reads the trial; arriving does not read twice', async () => {

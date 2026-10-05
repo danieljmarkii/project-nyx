@@ -16,13 +16,13 @@ import {
   profileStartTrialFromParams,
   profileStartTrialHref,
   resolveMedAnchorRegimenId,
+  widgetTrialFromParams,
   type FocusableRegimen,
 } from './profileFocus';
 import { medStripKeyForRegimen, resolveMedStrips, type MedStripInput } from './medStrip';
 
 describe('coerceProfileFocus', () => {
-  it('accepts the three sections a doorway can name', () => {
-    expect(coerceProfileFocus('trial')).toBe('trial');
+  it('accepts the two sections a doorway can name', () => {
     expect(coerceProfileFocus('medications')).toBe('medications');
     expect(coerceProfileFocus('weight')).toBe('weight');
   });
@@ -31,22 +31,19 @@ describe('coerceProfileFocus', () => {
     // A focus nothing can service is a scroll to nowhere; `null` is the unchanged
     // top-of-profile arrival, which is the honest degradation.
     expect(coerceProfileFocus('conditions')).toBeNull();
+    // TS-GA (CUL-1307): the trial is a screen of its own, not a card to scroll to. A
+    // leftover `focus=trial` link lands at the top of the tab, which holds its door.
+    expect(coerceProfileFocus('trial')).toBeNull();
     expect(coerceProfileFocus(undefined)).toBeNull();
     expect(coerceProfileFocus('')).toBeNull();
     // expo-router hands back string[] for a repeated param.
-    expect(coerceProfileFocus(['trial'])).toBeNull();
+    expect(coerceProfileFocus(['weight'])).toBeNull();
     expect(coerceProfileFocus(7)).toBeNull();
   });
 });
 
 describe('profileFocusFromParams (CUL-1292)', () => {
-  it('reads the widget’s trial link, which carries no focus, as a trial tap on its pet', () => {
-    // The widget is frozen (H-7): `petLink('profile')` sends `pet` and `src=widget` only.
-    expect(profileFocusFromParams({ pet: 'pet-mochi', src: 'widget' })).toEqual({ focus: 'trial', petId: 'pet-mochi' });
-  });
-
   it('keeps an in-app door on the pet on screen', () => {
-    expect(profileFocusFromParams({ focus: 'trial' })).toEqual({ focus: 'trial', petId: null });
     expect(profileFocusFromParams({ focus: 'medications', pet: 'pet-mochi' })).toEqual({ focus: 'medications', petId: null });
   });
 
@@ -54,20 +51,40 @@ describe('profileFocusFromParams (CUL-1292)', () => {
     expect(profileFocusFromParams({ focus: 'weight', src: 'widget', pet: 'pet-mochi' })).toEqual({ focus: 'weight', petId: 'pet-mochi' });
   });
 
-  it('is nothing for a plain visit, another sender, or a widget link naming no pet', () => {
+  it('is nothing for a plain visit, the widget’s trial link, or a retired trial focus', () => {
     expect(profileFocusFromParams({})).toBeNull();
     expect(profileFocusFromParams({ pet: 'pet-mochi' })).toBeNull();
-    expect(profileFocusFromParams({ src: 'widget' })).toBeNull();
-    expect(profileFocusFromParams({ src: 'widget', pet: '' })).toBeNull();
-    expect(profileFocusFromParams({ src: 'widget', pet: ['pet-mochi'] })).toBeNull();
+    // The widget's trial tap is a forward to the screen, never a scroll (TS-GA).
+    expect(profileFocusFromParams({ pet: 'pet-mochi', src: 'widget' })).toBeNull();
+    expect(profileFocusFromParams({ focus: 'trial' })).toBeNull();
+  });
+});
+
+describe('widgetTrialFromParams (CUL-1292; TS-GA, CUL-1307)', () => {
+  it('reads the widget’s trial link, which carries no focus, as a trial tap on its pet', () => {
+    // The widget is frozen (H-7): `petLink('profile')` sends `pet` and `src=widget` only.
+    expect(widgetTrialFromParams({ pet: 'pet-mochi', src: 'widget' })).toEqual({ petId: 'pet-mochi' });
+  });
+
+  it('is nothing for an explicit focus, another sender, or a widget link naming no pet', () => {
+    expect(widgetTrialFromParams({ focus: 'weight', src: 'widget', pet: 'pet-mochi' })).toBeNull();
+    expect(widgetTrialFromParams({ pet: 'pet-mochi' })).toBeNull();
+    expect(widgetTrialFromParams({})).toBeNull();
+    expect(widgetTrialFromParams({ src: 'widget' })).toBeNull();
+    expect(widgetTrialFromParams({ src: 'widget', pet: '' })).toBeNull();
+    expect(widgetTrialFromParams({ src: 'widget', pet: ['pet-mochi'] })).toBeNull();
+  });
+
+  it('never reads the trial screen’s start-form hand-off as a widget tap', () => {
+    expect(widgetTrialFromParams(profileStartTrialHref({ petId: 'pet-2', nowMs: 1 }).params)).toBeNull();
   });
 });
 
 describe('profileFocusHref', () => {
   it('names the Pet tab and carries the clock it was given as the nonce', () => {
-    const href = profileFocusHref({ focus: 'trial', nowMs: 1_700_000_000_000 });
+    const href = profileFocusHref({ focus: 'medications', nowMs: 1_700_000_000_000 });
     expect(href.pathname).toBe(PROFILE_ROUTE);
-    expect(href.params.focus).toBe('trial');
+    expect(href.params.focus).toBe('medications');
     expect(href.params.ts).toBe('1700000000000');
   });
 
@@ -78,11 +95,11 @@ describe('profileFocusHref', () => {
     });
   });
 
-  it('omits `med` entirely on a trial door — never an empty string', () => {
+  it('omits `med` entirely on a section door — never an empty string', () => {
     // An empty `med` would reach `resolveMedAnchorRegimenId` as a falsy key, which
     // is handled — but it would also show up in the URL as a med link that names
     // no med. Absent is the accurate statement.
-    expect('med' in profileFocusHref({ focus: 'trial', nowMs: 1 }).params).toBe(false);
+    expect('med' in profileFocusHref({ focus: 'weight', nowMs: 1 }).params).toBe(false);
     expect('med' in profileFocusHref({ focus: 'medications', medKey: null, nowMs: 1 }).params)
       .toBe(false);
   });
@@ -95,8 +112,8 @@ describe('profileFocusHref', () => {
   it('mints a DIFFERENT nonce for a second tap, or the door works once per session', () => {
     // The Pet tab persists across switches, so identical params on a re-push are
     // indistinguishable from a re-render. This is the whole reason the nonce exists.
-    const a = profileFocusHref({ focus: 'trial', nowMs: 1000 });
-    const b = profileFocusHref({ focus: 'trial', nowMs: 1001 });
+    const a = profileFocusHref({ focus: 'weight', nowMs: 1000 });
+    const b = profileFocusHref({ focus: 'weight', nowMs: 1001 });
     expect(a.params.ts).not.toBe(b.params.ts);
   });
 });

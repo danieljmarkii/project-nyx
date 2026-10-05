@@ -3,9 +3,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
-import { useTrialScreen } from '../../hooks/useTrialScreen';
 import { parseTrialRouteParams } from '../../lib/trialRoute';
-import { profileFocusHref } from '../../lib/profileFocus';
+import { PROFILE_ROUTE } from '../../lib/profileFocus';
 import { TrialScreen } from '../../components/trialScreen/TrialScreen';
 import { SIGNAL_OPEN_MOTION } from '../../components/motion/signalOpenMotion';
 import { Header } from '../../components/ui/Header';
@@ -16,12 +15,10 @@ import { ThemedText } from '../../components/ui/ThemedText';
 // §2 S1, S10, §6, §7). `pet` is the trial's pet: every read, door and sheet on the screen
 // takes it, never `activePet` (C-9). `lib/trialRoute.ts` builds and parses it.
 //
-// THIS FILE HOLDS THE GATE AND DRAWS NOTHING OF THE FEATURE (the Signal route's shape).
-// `useTrialScreen()` decides; `TrialScreen` (the namespace) draws. Flag-off (a stale link on
-// a device the flag is off for) renders the small screen below: no namespace node, no trial
-// read (the screen's own suite proves no read is issued over a fixture that would answer),
-// and the route still answers so the link does not dead-end. That is the tree the flag-off
-// guard compares against the namespace-absent one (`guards/trialScreenFlagOff.test.tsx`).
+// THIS FILE DRAWS NOTHING OF THE FEATURE (the Signal route's shape): `TrialScreen` draws.
+// The trial screen is on for every account since TS-GA (CUL-1307), so the only fallback
+// left is a link that names no pet (a corrupted deep link): the small screen below, with no
+// trial read, and a way to the pet's tab so the link does not dead-end.
 //
 // THE RISE is the route's own transition: `slide_from_bottom` at the Signal screen's
 // `riseMs`, so the trial rises with the Signal's physics and Back is the same curve
@@ -30,13 +27,10 @@ import { ThemedText } from '../../components/ui/ThemedText';
 export const OFF_TITLE = 'Nothing to show here';
 // No tab is labelled "Pet": the bar draws the active pet's NAME there (CUL-1339 voice pass,
 // 2026-10-03). This screen knows no pet, so it says "your pet's tab".
-export const OFF_BODY = "This screen isn't on for this account yet. The trial is on your pet's tab.";
-/** The flag is on but the link names no pet (a corrupted deep link): not "not on yet". */
 export const BAD_LINK_BODY = "This link doesn't name a pet. The trial is on your pet's tab.";
 export const OFF_ACTION = "Open your pet's tab";
 
 export default function TrialRoute() {
-  const live = useTrialScreen();
   const reducedMotion = useReducedMotion();
   const params = useLocalSearchParams<{ pet?: string }>();
   const parsed = parseTrialRouteParams(params);
@@ -52,18 +46,18 @@ export default function TrialRoute() {
           fullScreenGestureEnabled: true,
         }}
       />
-      {live && parsed ? (
+      {parsed ? (
         <TrialScreen petId={parsed.petId} />
       ) : (
         <View style={styles.off} testID="trial-route-off">
           <Header title="Diet trial" leading="back" onLeadingPress={() => router.back()} />
           <View style={styles.offBody}>
             <ThemedText style={styles.offTitle}>{OFF_TITLE}</ThemedText>
-            <ThemedText style={styles.offText}>{live ? BAD_LINK_BODY : OFF_BODY}</ThemedText>
+            <ThemedText style={styles.offText}>{BAD_LINK_BODY}</ThemedText>
             <PrimaryButton
               label={OFF_ACTION}
               variant="secondary"
-              onPress={() => router.push(profileFocusHref({ focus: 'trial', nowMs: Date.now() }))}
+              onPress={() => router.push(PROFILE_ROUTE)}
               testID="trial-route-off-action"
             />
           </View>
