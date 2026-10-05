@@ -35,6 +35,8 @@ const called = {
     anchorAt: '2026-10-03T12:00:00.000Z',
     rank: 1,
     calls: 1,
+    memberIds: ['call-1'],
+    ownCall: true,
   },
 };
 

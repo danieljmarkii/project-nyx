@@ -549,3 +549,60 @@ describe('the third adversarial pass (2026-10-05)', () => {
     expect((await readIncidentCallState('v2', T0 + 50 * H)).covering?.followUp.kind).toBe('answered');
   });
 });
+
+describe('the fourth adversarial pass (2026-10-05)', () => {
+  it('A: an earlier read whose verdict lands after the call is in the call\'s bout, not a second call', async () => {
+    event('e0', T0);
+    event('e1', T0 + 2 * H);
+    verdict('e1', 'call_today');
+    const c = await recordCall('e1', { now: T0 + 3 * H, newId });
+    verdict('e0', 'call_today'); // e0's read lands late
+    expect((await readIncidentCallState('e0', T0 + 4 * H)).covering?.call.id).toBe(c);
+    expect(await recordCall('e0', { now: T0 + 4 * H, newId })).toBe(c);
+    expect(rows('vet_call_follow_ups').filter((r) => r.status === 'owed')).toHaveLength(1);
+  });
+
+  it('A2: and after the call was answered, it shows the answer rather than asking again', async () => {
+    event('e0', T0);
+    event('e1', T0 + 2 * H);
+    verdict('e1', 'call_today');
+    const c = await recordCall('e1', { now: T0 + 3 * H, newId });
+    await answerFollowUp(c, 'could_not_reach', null, { now: T0 + 50 * H, newId });
+    verdict('e0', 'call_today');
+    expect((await readIncidentCallState('e0', T0 + 51 * H)).covering?.followUp.kind).toBe('answered');
+  });
+
+  it('C: one answer answers every call in the escalation, so no phone asks again', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    const mine = await recordCall('v1', { now: T0, newId });
+    mockDb
+      .prepare(
+        `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
+         VALUES ('theirs', ?, '2026-10-01', 'v1', NULL, NULL, 0, ?, 1)`,
+      )
+      .run(PET, new Date(T0 + H).toISOString());
+    mockDb
+      .prepare(
+        `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, due_at, expires_at, created_at, synced)
+         VALUES ('theirs-owed', ?, 'theirs', 'v1', 'called', 'owed', ?, ?, ?, 1)`,
+      )
+      .run(PET, new Date(T0 + 48 * H).toISOString(), new Date(T0 + 7 * 24 * H).toISOString(), new Date(T0 + H).toISOString());
+    await answerFollowUp(mine, 'keep_watching', null, { now: T0 + 50 * H, newId });
+    const answeredFor = rows('vet_call_follow_ups').filter((r) => r.status === 'answered').map((r) => r.vet_call_id).sort();
+    expect(answeredFor).toEqual([mine, 'theirs'].sort());
+  });
+
+  it('D: a call shown from another phone is not this phone\'s to take back', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    mockDb
+      .prepare(
+        `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
+         VALUES ('theirs', ?, '2026-10-01', 'v1', NULL, NULL, 0, ?, 1)`,
+      )
+      .run(PET, new Date(T0 + H).toISOString());
+    const v = await readCall('theirs', T0 + 2 * H);
+    expect(v?.ownCall).toBe(false);
+  });
+});

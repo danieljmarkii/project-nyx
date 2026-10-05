@@ -11,7 +11,10 @@ import {
   FOLLOW_UP_NOT_RECORDED,
   FOLLOW_UP_TITLE,
   answeredLine,
+  boutAnchorsOf,
   callCovers,
+  BOUT_LOOKBACK_MS,
+  BOUT_MS,
   callRecordsOf,
   followUpStateOf,
   incidentFamilyOf,
@@ -106,6 +109,11 @@ export interface CallView {
   rank: TierRank;
   /** How many live calls this escalation holds (two phones can each call it). */
   calls: number;
+  /** Every live call in it, so one answer answers them all (adversarial pass 4, C). */
+  memberIds: string[];
+  /** Whether the call shown was made on THIS phone (its rank is stored here). Undo is offered
+   *  only on this phone's own lone call: never another caregiver's (pass 4, D). */
+  ownCall: boolean;
 }
 
 /**
@@ -179,6 +187,8 @@ export async function readCallsForPet(petId: string, now: number = Date.now()): 
       anchorAt: anchor?.occurred_at ?? null,
       rank,
       calls: members.length,
+      memberIds: members.map((m) => m.call.id),
+      ownCall: shown.call.rankAtCall !== null,
     });
   }
   return views.sort((a, b) => (a.call.calledOn < b.call.calledOn ? 1 : a.call.calledOn > b.call.calledOn ? -1 : 0));
@@ -222,10 +232,23 @@ export async function readIncidentCallState(eventId: string, now: number = Date.
   const reads = await callTierReadsBetween(ev.pet_id, family, t, t);
   const self = reads.find((r) => r.eventId === eventId);
   if (!self) return { callTier: false, covering: null };
+  const views = await readCallsForPet(ev.pet_id, now);
+  if (views.length === 0) return { callTier: true, covering: null };
+  // A read can sit BEFORE the call's anchor and still be in its bout: its own read landed
+  // after the call (a photo read in flight), or it was back-timed (adversarial pass 4, A). So
+  // a call also covers a read when the forward walk puts both in one bout and the read is no
+  // louder than the call. The walk reads a lookback before the read and a bout after it.
+  const walk = boutAnchorsOf(
+    await callTierReadsBetween(ev.pet_id, family, t - BOUT_LOOKBACK_MS, t + BOUT_MS, true),
+  );
+  const boutOfSelf = walk.get(eventId)?.eventId ?? null;
   // EVERY escalation is tested, never one stand-in per anchor (pass 2, item 1). The loudest
   // covering one is shown.
-  const covering = (await readCallsForPet(ev.pet_id, now))
-    .filter((v) => viewCovers(v, self))
+  const covering = views
+    .filter((v) =>
+      viewCovers(v, self) ||
+      (v.family === family && self.rank <= v.rank && boutOfSelf !== null &&
+        walk.get(v.call.eventId)?.eventId === boutOfSelf))
     .sort((a, b) => b.rank - a.rank)[0] ?? null;
   return { callTier: true, covering };
 }

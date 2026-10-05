@@ -293,7 +293,9 @@ export default function VetCallScreen() {
             />
           </View>
 
-          {!answered ? (
+          {/* Only this phone's own lone call can be taken back here: never another caregiver's
+              (adversarial pass 4, D). */}
+          {!answered && view.calls === 1 && view.ownCall ? (
             <TouchableOpacity
               onPress={() => void takeBack()}
               style={styles.retry}

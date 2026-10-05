@@ -13,7 +13,7 @@ import {
   type VetCallRow,
   type WorthIt,
 } from './vetCallState';
-import { callTierReadsBetween, readCallRows, readIncidentCallState, type LocalEvent } from './vetCallReads';
+import { callTierReadsBetween, readCall, readCallRows, readIncidentCallState, type LocalEvent } from './vetCallReads';
 
 export { readCall, readCallsForPet, readIncidentCallState, type CallView, type IncidentCallState } from './vetCallReads';
 
@@ -193,16 +193,27 @@ export async function answerFollowUp(
   const state = followUpStateOf(record, ledger, now);
   if (state.kind === 'answered') return 'already_answered';
   if (record.withdrawn) throw new Error('vet call: this call was taken back');
-  if (state.kind === 'withdrawn') throw new Error('vet call: this call was taken back');
-  const owed = ledger.find((r) => r.vet_call_id === callId && r.status === 'owed');
-  const window = owed
-    ? { dueAt: owed.due_at, expiresAt: owed.expires_at }
-    : followUpWindow(new Date(root.created_at).getTime());
-  await getDb().runAsync(
-    `INSERT INTO vet_call_follow_ups
-       (id, pet_id, vet_call_id, event_id, reason, status, answer, worth_it, due_at, expires_at, created_at, synced)
-     VALUES (?, ?, ?, ?, 'called', 'answered', ?, ?, ?, ?, ?, 0)`,
-    [newId(), root.pet_id, root.id, root.event_id, answer, worthIt, window.dueAt, window.expiresAt, new Date(now).toISOString()],
-  );
+  // ONE ANSWER ANSWERS THE ESCALATION: every live call in it (two phones can each have
+  // called), so neither phone asks again (adversarial pass 4, C).
+  const view = await readCall(callId, now);
+  const members = view?.memberIds.length ? view.memberIds : [callId];
+  const createdAt = new Date(now).toISOString();
+  const db = getDb();
+  await db.withTransactionAsync(async () => {
+    for (const id of members) {
+      const member = callRecordsOf(calls).find((c) => c.id === id);
+      if (!member || followUpStateOf(member, ledger, now).kind === 'answered') continue;
+      const owed = ledger.find((r) => r.vet_call_id === id && r.status === 'owed');
+      const window = owed
+        ? { dueAt: owed.due_at, expiresAt: owed.expires_at }
+        : followUpWindow(new Date(calls.find((c) => c.id === id)?.created_at ?? root.created_at).getTime());
+      await db.runAsync(
+        `INSERT INTO vet_call_follow_ups
+           (id, pet_id, vet_call_id, event_id, reason, status, answer, worth_it, due_at, expires_at, created_at, synced)
+         VALUES (?, ?, ?, ?, 'called', 'answered', ?, ?, ?, ?, ?, 0)`,
+        [newId(), root.pet_id, id, member.eventId, answer, worthIt, window.dueAt, window.expiresAt, createdAt],
+      );
+    }
+  });
   return 'saved';
 }
