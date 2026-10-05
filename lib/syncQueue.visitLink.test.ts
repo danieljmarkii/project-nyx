@@ -43,7 +43,7 @@ async function runtimeDb(): Promise<Db> {
 
 /** A drain's row-selection statement exactly as lib/sync.ts ships it. */
 function shippedSelect(
-  table: Exclude<VisitLinkedTable, 'diet_trials'> | 'medication_administrations',
+  table: Exclude<VisitLinkedTable, 'diet_trials'> | 'medication_administrations' | 'vet_calls' | 'vet_call_follow_ups',
 ): string {
   // A drain may SELECT its named columns rather than `*`, so the anchor is the table
   // and its queue predicate; the column list ahead of it is the drain's own business.
@@ -206,6 +206,8 @@ it('every local table carrying vet_visit_id is a gated queue', async () => {
 const CHILD_PUSH_QUEUE_SQL: Record<ParentGatedQueue, () => string> = {
   diet_trial_foods: () => DIET_TRIAL_FOOD_PUSH_QUEUE_SQL,
   care_acknowledgements: () => shippedSelect('care_acknowledgements'),
+  vet_calls: () => shippedSelect('vet_calls'),
+  vet_call_follow_ups: () => shippedSelect('vet_call_follow_ups'),
 };
 
 function pickedChildren(db: Db, child: ParentGatedQueue): string[] {
@@ -322,7 +324,9 @@ it('every queue column that names another queue table\'s row is parent-gated, or
   db.close();
   // Only the `<parent>_id` gates are the convention's to find; a gate on another
   // column (care_acknowledgements.retracts, a row of its own table) is pinned above.
-  const gated = PARENT_GATES.filter(([, , , column]) => /_id$/.test(column))
+  // An `event_id` gate (the call record's, PR-36) is out of the scan's scope for the same
+  // reason the scan skips the column, and is exercised by the per-gate replay above.
+  const gated = PARENT_GATES.filter(([, , , column]) => /_id$/.test(column) && column !== 'event_id')
     .map(([, child, parent, column]) => `${child}.${column} -> ${parent}`);
   // Non-vacuity: the convention finds both the gated parent and the exempt one.
   expect(found.length).toBeGreaterThanOrEqual(2);

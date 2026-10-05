@@ -131,7 +131,9 @@ type QueueTable =
   | 'diet_trials'
   | 'diet_trial_foods'
   | 'notification_preferences'
-  | 'care_acknowledgements';
+  | 'care_acknowledgements'
+  | 'vet_calls'
+  | 'vet_call_follow_ups';
 
 // The queues whose rows CANNOT CHANGE between the moment a push reads them and the
 // moment its response lands: an attachment row is written once and never edited in
@@ -149,7 +151,13 @@ type QueueTable =
 // table is unguarded, and was blind to this list claiming it. syncQueue.test.ts now
 // pins this array against the schema-derived null set, so the two halves check each
 // other in both directions. (rls-privacy-reviewer, CUL-691.)
-export const INSERT_ONLY_QUEUE_TABLES = ['event_attachments', 'vet_visit_attachments', 'care_acknowledgements'] as const;
+export const INSERT_ONLY_QUEUE_TABLES = [
+  'event_attachments',
+  'vet_visit_attachments',
+  'care_acknowledgements',
+  'vet_calls',
+  'vet_call_follow_ups',
+] as const;
 type InsertOnlyQueueTable = (typeof INSERT_ONLY_QUEUE_TABLES)[number];
 
 // Everything else is last-write-wins: a row an owner can rewrite — edit, soft
@@ -3394,6 +3402,12 @@ export async function hydrateFromCloud(): Promise<void> {
   // contiguous and the parents-before-children reading of this list true.
   await runHydrationStep('vet_appointments', () => hydrateVetAppointments(db, stale));
   if (stale()) return;
+  // Engines v3 PR-36: the call record and its ledger. No local FK, so the order is free;
+  // the call before its ledger keeps the parents-before-children reading of this list.
+  await runHydrationStep('vet_calls', () => hydrateVetCalls(db, stale));
+  if (stale()) return;
+  await runHydrationStep('vet_call_follow_ups', () => hydrateVetCallFollowUps(db, stale));
+  if (stale()) return;
   await runHydrationStep('feeding_arrangements', () => hydrateFeedingArrangements(db, stale));
   if (stale()) return;
   // B-117: medications has no local FK; medication_administrations.event_id →
@@ -3597,6 +3611,178 @@ async function drainCareAcknowledgementsQueue(): Promise<void> {
   }
 }
 
+// ── Engines v3 PR-36: the call record and its ledger ─────────────────────────────
+
+/**
+ * Push the owner's queued calls (`vet_calls`) and then their ledger rows
+ * (`vet_call_follow_ups`), migration 082.
+ *
+ * The same contract as the care answers above: a plain INSERT of the columns 082 grants
+ * (created_at is the server's, so the server's clock orders "latest wins"), a 23505 on our
+ * own id counts as landed (the id is minted here and the only other unique index is the
+ * one-owed-per-call index, which our writer never trips: it writes one owed row per call),
+ * and a row is held until its parents have landed (`parentLandedSql`), because 082's guard
+ * refuses an unseen event or call with a TERMINAL 23514.
+ *
+ * The ledger drains after the calls in the same run, so an "I've called" written offline
+ * lands as a pair on the first sync that can reach the server.
+ *
+ * SIGN-OUT: the drain captures the sign-out epoch and marks nothing once it moves, so a
+ * response that lands after `wipeLocalSession` cannot write into the next account's store.
+ */
+export function syncPendingVetCalls(): Promise<void> {
+  return serializeQueuePush('vet_calls', drainVetCallsQueue).then(() =>
+    serializeQueuePush('vet_call_follow_ups', drainVetCallFollowUpsQueue),
+  );
+}
+
+type CallQueueTable = 'vet_calls' | 'vet_call_follow_ups';
+
+async function insertQueuedRows<T extends { id: string }>(
+  table: CallQueueTable,
+  rows: readonly T[],
+  payload: (r: T) => object,
+  epoch: number,
+): Promise<'stop' | number> {
+  const db = getDb();
+  let landed = 0;
+  for (const r of rows) {
+    const { data, error } = await supabase.from(table).insert(payload(r)).select('id');
+    if (epoch !== signOutEpoch) return 'stop';
+    if (error && error.code !== '23505') {
+      if (classifySyncFailure(error) === 'transient') {
+        console.warn(`[sync] ${table} push failed (retrying next cycle):`, error.message);
+        return 'stop';
+      }
+      await recordPushFailure(db, table, r, error);
+      continue;
+    }
+    if (!error && !((data ?? []) as { id: string }[]).some((d) => d.id === r.id)) {
+      console.warn(`[sync] ${table} row ${r.id} returned no id (RLS-blocked?) — left queued`);
+      await recordPushFailure(db, table, r, RLS_FILTERED_ERROR);
+      continue;
+    }
+    await markSyncedInsertOnly(db, table, [r.id]);
+    landed += 1;
+  }
+  return landed;
+}
+
+const CALL_QUEUE_MAX_PASSES = 5;
+
+async function drainVetCallsQueue(): Promise<void> {
+  const epoch = signOutEpoch;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+  const db = getDb();
+  // Re-selects until nothing moves: an edited note or an Undo names its call and is held
+  // behind it, so one read sends the call and the next sends what waited on it.
+  for (let pass = 0; pass < CALL_QUEUE_MAX_PASSES; pass++) {
+    if (epoch !== signOutEpoch) return;
+    const rows = await db.getAllAsync<{
+      id: string; pet_id: string; called_on: string; event_id: string; note: string | null;
+      supersedes: string | null; withdrawn: number;
+    }>(
+      `SELECT * FROM vet_calls WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+       AND ${parentLandedSql('vet_calls')}
+     ORDER BY created_at ASC, rowid ASC LIMIT 50`,
+    );
+    const landed = await insertQueuedRows('vet_calls', rows, (r) => ({
+      id: r.id, pet_id: r.pet_id, called_on: r.called_on, event_id: r.event_id,
+      note: r.note, supersedes: r.supersedes, withdrawn: r.withdrawn === 1,
+    }), epoch);
+    if (landed === 'stop' || landed === 0) return;
+  }
+}
+
+async function drainVetCallFollowUpsQueue(): Promise<void> {
+  const epoch = signOutEpoch;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+  const db = getDb();
+  for (let pass = 0; pass < CALL_QUEUE_MAX_PASSES; pass++) {
+    if (epoch !== signOutEpoch) return;
+    const rows = await db.getAllAsync<{
+      id: string; pet_id: string; vet_call_id: string | null; event_id: string; reason: string;
+      status: string; answer: string | null; worth_it: string | null; due_at: string; expires_at: string;
+    }>(
+      `SELECT * FROM vet_call_follow_ups WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+       AND ${parentLandedSql('vet_call_follow_ups')}
+     ORDER BY created_at ASC, rowid ASC LIMIT 50`,
+    );
+    const landed = await insertQueuedRows('vet_call_follow_ups', rows, (r) => ({
+      id: r.id, pet_id: r.pet_id, vet_call_id: r.vet_call_id, event_id: r.event_id,
+      reason: r.reason, status: r.status, answer: r.answer, worth_it: r.worth_it,
+      due_at: r.due_at, expires_at: r.expires_at,
+    }), epoch);
+    if (landed === 'stop' || landed === 0) return;
+  }
+}
+
+/**
+ * Pull the calls and their ledger (insert-only, so incremental on created_at with overlap,
+ * the event_attachments shape). A row already here is never overwritten: these rows never
+ * change, and the local copy of a row this phone wrote differs only in its created_at.
+ *
+ * The note is selected by name. It is the owner's own words, shown back to her (§6.4); the
+ * rule that no model reads it is the server's (guards/careRecord.test.ts), and nothing on
+ * the phone hands it to one.
+ */
+async function hydrateVetCalls(db: Db, stale: () => boolean): Promise<void> {
+  const since = await getWatermark('vet_calls');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<{
+    id: string; pet_id: string; called_on: string; event_id: string; note: string | null;
+    supersedes: string | null; withdrawn: boolean; created_at: string;
+  }>(
+    'vet_calls',
+    'id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at',
+    floor ? { column: 'created_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+  if (stale()) return;
+  for (const r of rows) {
+    await db.runAsync(
+      `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,1)
+       ON CONFLICT(id) DO NOTHING`,
+      [r.id, r.pet_id, r.called_on, r.event_id, r.note, r.supersedes, r.withdrawn ? 1 : 0, r.created_at],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.created_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('vet_calls', wm);
+}
+
+async function hydrateVetCallFollowUps(db: Db, stale: () => boolean): Promise<void> {
+  const since = await getWatermark('vet_call_follow_ups');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<{
+    id: string; pet_id: string; vet_call_id: string | null; event_id: string; reason: string;
+    status: string; answer: string | null; worth_it: string | null; due_at: string;
+    expires_at: string; created_at: string;
+  }>(
+    'vet_call_follow_ups',
+    'id, pet_id, vet_call_id, event_id, reason, status, answer, worth_it, due_at, expires_at, created_at',
+    floor ? { column: 'created_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+  if (stale()) return;
+  for (const r of rows) {
+    await db.runAsync(
+      `INSERT INTO vet_call_follow_ups
+         (id, pet_id, vet_call_id, event_id, reason, status, answer, worth_it, due_at, expires_at, created_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
+       ON CONFLICT(id) DO NOTHING`,
+      [r.id, r.pet_id, r.vet_call_id, r.event_id, r.reason, r.status, r.answer, r.worth_it,
+       r.due_at, r.expires_at, r.created_at],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.created_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('vet_call_follow_ups', wm);
+}
+
 async function pushAllQueues(): Promise<void> {
   await syncPendingEvents();
   await syncPendingMeals();
@@ -3637,6 +3823,10 @@ async function pushAllQueues(): Promise<void> {
   // answer, all pushed above. The drain holds a row whose parent has not landed
   // (082's guard refuses it with a TERMINAL 23514); this position saves it a cycle.
   await syncPendingCareAcknowledgements();
+  // Engines v3 PR-36: a call names its event, a ledger row its event and its call. Both
+  // drains hold a row whose parent has not landed (082's guard refuses it with a TERMINAL
+  // 23514); events went first above, and calls go before their ledger here.
+  await syncPendingVetCalls();
   // B-661: account-scoped, no FK to anything pushed above (v1 rows are
   // account-wide, pet_id NULL), so its position is free — last, after the
   // pet-scoped queues.
