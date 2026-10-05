@@ -91,7 +91,8 @@ export async function readCallRows(petId: string): Promise<{ calls: VetCallRow[]
   return { calls, ledger };
 }
 
-/** One call, as the screens show it: one ESCALATION, which is a stored cover (084). */
+/** One call, as the screens show it, with any calls from other phones that stored the
+ *  identical cover (084): one question between them. */
 export interface CallView {
   call: CallRecord;
   followUp: FollowUpState;
@@ -100,14 +101,14 @@ export interface CallView {
   /** The anchor's family, or null when the anchor event is not on this phone yet: such a
    *  call is listed and covers nothing until its event arrives. */
   family: CallTierRead['family'] | null;
-  /** The covers of every live call in this escalation, as stored (two phones calling one
-   *  bout can each anchor it differently; each cover is the one its phone showed). */
+  /** The stored cover, once per member (identical across members), or none when the call
+   *  carries no usable cover. */
   covers: CallCover[];
-  /** The escalation's rank as stored, or null on a call whose root carries no cover. */
+  /** The call's rank as stored, or null on a call whose root carries no cover. */
   rank: TierRank | null;
-  /** How many live calls this escalation holds (two phones can each call it). */
+  /** How many live calls share this question (two phones can each call one bout). */
   calls: number;
-  /** Every live call in it, so one answer answers them all (adversarial pass 4, C). */
+  /** Every live call sharing it, so one answer answers them all (adversarial pass 4, C). */
   memberIds: string[];
   /** Whether the call shown was made on THIS phone. Undo is offered only on this phone's
    *  own lone call: never another caregiver's (pass 4, D). */
@@ -117,12 +118,9 @@ export interface CallView {
 /**
  * Every live call for the pet, newest first, ONE per escalation.
  *
- * ONE ESCALATION = the calls whose STORED covers share a family and a rank and start within
- * one bout of the group's first cover (walked like a bout, never chained). Read off what was
- * stored at the tap, never off the reads' current tiers, so the grouping is the same on every
- * phone and never moves (the five adversarial passes on #1072 all broke on a grouping that
- * did). Two phones that called one bout are one view and one question; a louder call (a
- * raise) is a different rank, so its own escalation with its own question.
+ * ONE QUESTION PER CALL, shared only by calls whose stored covers are identical (below).
+ * Read off what was stored at the tap, never off the reads' current tiers, so the grouping
+ * is the same on every phone holding the same rows and never moves.
  *
  * An undone call is not listed, UNLESS its question was answered: an answer is final across
  * phones, so an Undo racing an answer on another phone never takes it off the record (P5).
@@ -148,60 +146,40 @@ export async function readCallsForPet(petId: string, now: number = Date.now()): 
     return { ...r, family, cover };
   });
 
-  // Grouped the way a bout is walked (§6.1), never chained: covers sorted by start (then id,
-  // so every phone groups one set of rows alike), and a cover joins the open group when it
-  // has the group's family and rank and starts within 24 hours of the group's FIRST cover.
-  // A call with no usable cover (its anchor not here, or a malformed root) stands alone and
-  // covers nothing.
-  const ordered = placed
-    .filter((p) => p.cover !== null)
-    .sort((x, y) =>
-      new Date(x.cover!.from).getTime() - new Date(y.cover!.from).getTime() ||
-      (x.call.id < y.call.id ? -1 : x.call.id > y.call.id ? 1 : 0));
+  // ONE QUESTION PER CALL (PM ruling A, 2026-10-05, CUL-1604). Calls share a question only
+  // when their stored covers are IDENTICAL: the same family, the same rank and the same
+  // start instant (parsed, C-40). Two phones that walked one bout alike write identical
+  // covers; two that anchored it differently each ask, an extra question, the spec's
+  // accepted failure. Seven adversarial passes broke every rule that merged NEAR covers (a
+  // late earlier call un-answered a question, a later bout joined an answered one), because
+  // a near-merge depends on which other rows exist. Identity depends only on the pair, so no
+  // row arriving later can split a group or join one. A call with no usable cover (its
+  // anchor not here, or a malformed root) stands alone and covers nothing.
   const groupList: (typeof placed)[] = [];
-  const open = new Map<string, { first: CallCover; members: typeof placed }>();
-  for (const p of ordered) {
-    const c = p.cover!;
-    const key = `${c.family}:${c.rank}`;
-    const g = open.get(key);
-    if (g && new Date(c.from).getTime() - new Date(g.first.from).getTime() <= BOUT_MS) {
-      g.members.push(p);
+  const byCover = new Map<string, typeof placed>();
+  for (const p of placed) {
+    if (p.cover === null) {
+      groupList.push([p]);
       continue;
     }
-    const members = [p];
-    open.set(key, { first: c, members });
-    groupList.push(members);
+    const key = `${p.cover.family}:${p.cover.rank}:${new Date(p.cover.from).getTime()}`;
+    const g = byCover.get(key);
+    if (g) g.push(p);
+    else {
+      const members = [p];
+      byCover.set(key, members);
+      groupList.push(members);
+    }
   }
-  for (const p of placed) if (p.cover === null) groupList.push([p]);
 
-  // AN ANSWER IS FOUND BY RELATION, NEVER BY GROUP (adversarial pass 6, R). The grouping
-  // above walks from each group's first cover, so a late EARLIER cover can split a later
-  // call out of a group whose question was already answered, and that call's own row is
-  // still owed. So a group with no answer of its own takes one from any answered call that
-  // ANSWERS it: the same family, at least as loud, and starting within a bout of one of its
-  // members. That relation depends only on the pair, so it only grows as rows arrive: an
-  // answer, once shown, is never un-shown by a later row on any phone. The loudest, then
-  // earliest, related answer is the one shown.
-  const answeredCalls = placed.filter((p) => p.state.kind === 'answered' && p.cover !== null);
-  const answers = (a: CallCover, x: CallCover): boolean =>
-    a.family === x.family && a.rank >= x.rank &&
-    Math.abs(new Date(a.from).getTime() - new Date(x.from).getTime()) <= BOUT_MS;
   const views: CallView[] = [];
   for (const members of groupList) {
     members.sort((a, b) => (a.call.calledOn < b.call.calledOn ? -1 : a.call.calledOn > b.call.calledOn ? 1 : a.call.id < b.call.id ? -1 : 1));
     const answered = members.find((g) => g.state.kind === 'answered');
     const shown = answered ?? members[0];
-    const related = answered
-      ? null
-      : answeredCalls
-          .filter((a) => members.some((m) => m.cover !== null && answers(a.cover!, m.cover)))
-          .sort((a, b) =>
-            b.cover!.rank - a.cover!.rank ||
-            new Date(a.cover!.from).getTime() - new Date(b.cover!.from).getTime() ||
-            (a.call.id < b.call.id ? -1 : 1))[0] ?? null;
     views.push({
       call: shown.call,
-      followUp: related ? related.state : shown.state,
+      followUp: shown.state,
       eventType: anchorOf.get(shown.call.eventId)?.event_type ?? null,
       family: shown.family,
       covers: members.map((m) => m.cover).filter((c): c is CallCover => c !== null),

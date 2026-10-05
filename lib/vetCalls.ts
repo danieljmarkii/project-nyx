@@ -108,7 +108,7 @@ export async function recordCall(
 
 async function rootCall(callId: string): Promise<VetCallRow> {
   const root = await getDb().getFirstAsync<VetCallRow>(
-    `SELECT id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at
+    `SELECT id, pet_id, called_on, event_id, note, supersedes, withdrawn, made_here, created_at
        FROM vet_calls WHERE id = ? AND supersedes IS NULL`,
     [callId],
   );
@@ -125,6 +125,9 @@ export async function undoCall(callId: string, opts: { now?: number; newId?: () 
   const now = opts.now ?? Date.now();
   const newId = opts.newId ?? uuid;
   const root = await rootCall(callId);
+  // Only the owner's own call, from the phone that made it (pass 4, D). The screens offer
+  // Undo only there; this holds the rule where the write is, not only where the button is.
+  if (root.made_here !== 1) throw new Error('vet call: only the phone that made a call can take it back');
   const db = getDb();
   // An answered call stays: its answer is final, and an Undo would only hide it here.
   const answered = await db.getFirstAsync<{ id: string }>(
@@ -201,9 +204,8 @@ export async function answerFollowUp(
   const state = followUpStateOf(record, ledger, now);
   if (state.kind === 'answered') return 'already_answered';
   if (record.withdrawn) throw new Error('vet call: this call was taken back');
-  // ONE ANSWER ANSWERS THE ESCALATION: every live call in it (two phones can each have
-  // called), so neither phone asks again (adversarial pass 4, C). An escalation already
-  // answered through a related call (pass 6, R) is not answered twice.
+  // ONE ANSWER ANSWERS THE QUESTION: every live call sharing it (two phones that stored the
+  // identical cover), so neither phone asks again (adversarial pass 4, C).
   const view = await readCall(callId, now);
   if (view?.followUp.kind === 'answered') return 'already_answered';
   const members = view?.memberIds.length ? view.memberIds : [callId];

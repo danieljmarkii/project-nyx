@@ -194,8 +194,9 @@ export function callRecordsOf(rows: readonly VetCallRow[]): CallRecord[] {
   return roots.map((root) => {
     const later = rows.filter((r) => r.supersedes === root.id);
     const withdrawn = later.some((r) => truthy(r.withdrawn));
+    // The id breaks a tie so every phone holding the same rows shows the same note.
     const edits = [root, ...later.filter((r) => !truthy(r.withdrawn))].sort(
-      (a, b) => ms(a.created_at) - ms(b.created_at),
+      (a, b) => ms(a.created_at) - ms(b.created_at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
     );
     const latest = edits[edits.length - 1];
     return {

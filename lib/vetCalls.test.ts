@@ -360,19 +360,18 @@ describe('the adversarial pass (2026-10-05)', () => {
     expect((await readIncidentCallState('v1', T0 + 4 * H)).covering?.call.id).toBe('remote');
   });
 
-  it('calls group by their stored covers like a bout: never chained, never across a rank', async () => {
+  it('calls share a question only when their stored covers are identical (ruling A)', async () => {
     event('v1', T0);
     verdict('v1', 'call_today');
     pulledCall('a', 'v1', T0 + H, { rank: 1, fromMs: T0 });
+    pulledCall('e', 'v1', T0 + 2 * H, { rank: 1, fromMs: T0 });
     pulledCall('b', 'v1', T0 + 21 * H, { rank: 1, fromMs: T0 + 20 * H });
-    pulledCall('c', 'v1', T0 + 41 * H, { rank: 1, fromMs: T0 + 40 * H });
-    pulledCall('d', 'v1', T0 + 2 * H, { rank: 2, fromMs: T0 });
+    pulledCall('d', 'v1', T0 + 3 * H, { rank: 2, fromMs: T0 });
     const groups = (await readCallsForPet(PET, T0 + 42 * H)).map((v) => v.memberIds.sort()).sort();
-    // b starts within a bout of a; c is 40 h after a, the group's FIRST cover, so it is its
-    // own question even though it is 20 h after b; d is louder, so its own escalation.
-    expect(groups).toEqual([['a', 'b'], ['c'], ['d']]);
+    // e stored a's exact cover: one question. b starts 20 h later and d is louder: each
+    // asks its own, however near.
+    expect(groups).toEqual([['a', 'e'], ['b'], ['d']]);
   });
-
   it('a call whose root carries no cover covers nothing, and is still listed', async () => {
     event('v1', T0);
     verdict('v1', 'call_today');
@@ -528,7 +527,7 @@ describe('the second adversarial pass (2026-10-05)', () => {
     }
   });
 
-  it('6: a soft-deleted first read does not start the next tap\'s bout; the two calls are one escalation', async () => {
+  it('6: a soft-deleted first read does not start the next tap\'s bout; the new call asks its own question', async () => {
     event('e0', T0);
     verdict('e0', 'call_today');
     event('e1', T0 + 10 * H);
@@ -539,13 +538,10 @@ describe('the second adversarial pass (2026-10-05)', () => {
     verdict('e2', 'call_today');
     // The tap walks LIVE reads only (CUL-1604's deleted-anchor call): e0 is gone, so e2's bout
     // starts at e1. e2 is past the first call's stored cover, so it gets its own call.
-    await recordCall('e2', { now: T0 + 31 * H, newId });
+    const c1 = await recordCall('e2', { now: T0 + 31 * H, newId });
     expect(rows('vet_calls').map((r) => r.event_id)).toEqual(['e0', 'e1']);
-    // Both covers start within a bout of each other at one rank: one escalation, one question.
-    const views = await readCallsForPet(PET, T0 + 80 * H);
-    expect(views).toHaveLength(1);
-    expect(views[0].calls).toBe(2);
-    expect((await readIncidentCallState('e2', T0 + 32 * H)).covering).not.toBeNull();
+    expect(await readCallsForPet(PET, T0 + 80 * H)).toHaveLength(2);
+    expect((await readIncidentCallState('e2', T0 + 32 * H)).covering?.call.id).toBe(c1);
   });
 });
 
@@ -600,35 +596,31 @@ describe('the third adversarial pass (2026-10-05)', () => {
 });
 
 describe('the fourth adversarial pass (2026-10-05)', () => {
-  it('A: an earlier read whose verdict lands after the call is offered its own call, and the two are one question', async () => {
+  it('A: an earlier read whose verdict lands after the call is offered its own call and question', async () => {
     event('e0', T0);
     event('e1', T0 + 2 * H);
     verdict('e1', 'call_today');
     const c = await recordCall('e1', { now: T0 + 3 * H, newId });
     verdict('e0', 'call_today'); // e0's read lands late, before the stored cover's start
-    // The stated tradeoff of a fixed cover: e0 is not covered, so "I've called" is offered.
     expect((await readIncidentCallState('e0', T0 + 4 * H)).covering).toBeNull();
     const c0 = await recordCall('e0', { now: T0 + 4 * H, newId });
     expect(c0).not.toBe(c);
-    // Its cover starts at e0 (2 h before c's) at the same rank: one escalation, one question.
-    const views = await readCallsForPet(PET, T0 + 60 * H);
-    expect(views).toHaveLength(1);
-    expect(views[0].memberIds.sort()).toEqual([c, c0].sort());
+    // A second tap is the same call, never a third.
+    expect(await recordCall('e0', { now: T0 + 5 * H, newId })).toBe(c0);
+    expect((await readCallsForPet(PET, T0 + 60 * H)).map((v) => v.memberIds)).toHaveLength(2);
   });
-
-  it('A2: after the call was answered, a late earlier read is offered once, and the tap shows the answer', async () => {
+  it('A2: an answered call stays answered when a late earlier read gets its own call', async () => {
     event('e0', T0);
     event('e1', T0 + 2 * H);
     verdict('e1', 'call_today');
     const c = await recordCall('e1', { now: T0 + 3 * H, newId });
     await answerFollowUp(c, 'could_not_reach', null, { now: T0 + 50 * H, newId });
     verdict('e0', 'call_today');
-    expect((await readIncidentCallState('e0', T0 + 51 * H)).covering).toBeNull();
-    await recordCall('e0', { now: T0 + 51 * H, newId });
-    expect((await readIncidentCallState('e0', T0 + 52 * H)).covering?.followUp.kind).toBe('answered');
-    expect((await readCallsForPet(PET, T0 + 120 * H)).map((v) => v.followUp.kind)).toEqual(['answered']);
+    const c0 = await recordCall('e0', { now: T0 + 51 * H, newId });
+    const byId = new Map((await readCallsForPet(PET, T0 + 52 * H)).map((v) => [v.call.id, v.followUp.kind]));
+    expect(byId.get(c)).toBe('answered');
+    expect(byId.get(c0)).toBe('waiting');
   });
-
   it('C: one answer answers every call in the escalation, so no phone asks again', async () => {
     event('v1', T0);
     verdict('v1', 'call_today');
@@ -651,10 +643,13 @@ describe('the fourth adversarial pass (2026-10-05)', () => {
     pulledCall('theirs', 'v1', T0 + H, { rank: 1, fromMs: T0 });
     const v = await readCall('theirs', T0 + 2 * H);
     expect(v?.ownCall).toBe(false);
+    // And the writer refuses it, whatever the screen offers.
+    await expect(undoCall('theirs', { now: T0 + 3 * H, newId })).rejects.toThrow(/only the phone that made/);
+    expect(rows('vet_calls')).toHaveLength(1);
   });
 });
 
-describe('the sixth adversarial pass (2026-10-05, on the stored cover)', () => {
+describe('the sixth and seventh adversarial passes (2026-10-05, on the stored cover)', () => {
   const owedRow = (id: string, callId: string, eventId: string, calledMs: number) =>
     mockDb
       .prepare(
@@ -663,29 +658,43 @@ describe('the sixth adversarial pass (2026-10-05, on the stored cover)', () => {
       )
       .run(id, PET, callId, eventId, new Date(calledMs + 48 * H).toISOString(), new Date(calledMs + 7 * 24 * H).toISOString(), new Date(calledMs).toISOString());
 
-  it('R: a late earlier call never un-answers an escalation another call already answered', async () => {
+  it('R: an answer, once shown, is never un-shown by calls that arrive later', async () => {
     event('e1', T0 + 10 * H);
     verdict('e1', 'call_today');
     const c1 = await recordCall('e1', { now: T0 + 11 * H, newId });
     await answerFollowUp(c1, 'keep_watching', null, { now: T0 + 60 * H, newId });
-    // Another phone's call, made without e1, pulled after the answer.
+    // Another phone's call, made without e1, pulled after the answer: its own question.
     event('e2', T0 + 30 * H);
     verdict('e2', 'call_today');
     pulledCall('c2', 'e2', T0 + 31 * H, { rank: 1, fromMs: T0 + 30 * H });
     owedRow('c2-owed', 'c2', 'e2', T0 + 31 * H);
-    expect((await readCallsForPet(PET, T0 + 90 * H)).map((v) => v.followUp.kind)).toEqual(['answered']);
-    // A late, earlier read is tapped: its call regroups c2 away from c1 (the walk is from the
-    // group's first cover), and c2 must still read as answered.
     event('e0', T0);
     verdict('e0', 'call_today');
-    await recordCall('e0', { now: T0 + 91 * H, newId });
-    const views = await readCallsForPet(PET, T0 + 92 * H);
-    expect(views.length).toBeGreaterThan(1);
-    expect(views.map((v) => v.followUp.kind)).toEqual(views.map(() => 'answered'));
-    // And it cannot be answered a second time.
-    expect(await answerFollowUp('c2', 'wants_to_see', null, { now: T0 + 93 * H, newId })).toBe('already_answered');
+    const c0 = await recordCall('e0', { now: T0 + 91 * H, newId });
+    const byId = new Map((await readCallsForPet(PET, T0 + 92 * H)).map((v) => [v.call.id, v.followUp.kind]));
+    expect(byId.get(c1)).toBe('answered');
+    expect(byId.get('c2')).toBe('due');
+    expect(byId.get(c0)).toBe('waiting');
+    // c2 can be answered: nothing borrowed c1's answer for it.
+    expect(await answerFollowUp('c2', 'wants_to_see', null, { now: T0 + 93 * H, newId })).toBe('saved');
   });
 
+  it('X1: a later call inside a louder, uncalled bout asks its own question (ruling A)', async () => {
+    event('a', T0);
+    verdict('a', 'call_today');
+    const ca = await recordCall('a', { now: T0 + H, newId });
+    event('n', T0 + 5 * H);
+    verdict('n', 'call_now');
+    await answerFollowUp(ca, 'keep_watching', null, { now: T0 + 50 * H, newId });
+    event('r', T0 + 26 * H);
+    verdict('r', 'call_today');
+    expect((await readIncidentCallState('r', T0 + 27 * H)).covering).toBeNull();
+    const cx = await recordCall('r', { now: T0 + 27 * H, newId });
+    const byId = new Map((await readCallsForPet(PET, T0 + 80 * H)).map((v) => [v.call.id, v.followUp.kind]));
+    expect(byId.get(ca)).toBe('answered');
+    expect(byId.get(cx)).toBe('due');
+    expect(await answerFollowUp(cx, 'wants_to_see', null, { now: T0 + 81 * H, newId })).toBe('saved');
+  });
   it('B: a call tapped on a call-today read never silences a call-now read in its bout', async () => {
     event('r1', T0);
     verdict('r1', 'call_now');
@@ -700,16 +709,17 @@ describe('the sixth adversarial pass (2026-10-05, on the stored cover)', () => {
     expect((await readIncidentCallState('r3', T0 + 21 * H)).covering).toBeNull();
   });
 
-  it('K: answering the louder call answers a quieter call of the same bout from another phone', async () => {
+  it('K: two phones that stored different ranks for one read each ask their own question', async () => {
     event('v1', T0);
     verdict('v1', 'call_now');
     const a = await recordCall('v1', { now: T0 + H, newId });
     pulledCall('b', 'v1', T0 + H, { rank: 1, fromMs: T0 });
     owedRow('b-owed', 'b', 'v1', T0 + H);
     await answerFollowUp(a, 'wants_to_see', 'yes', { now: T0 + 50 * H, newId });
-    expect((await readCallsForPet(PET, T0 + 51 * H)).map((v) => v.followUp.kind)).toEqual(['answered', 'answered']);
+    const byId = new Map((await readCallsForPet(PET, T0 + 51 * H)).map((v) => [v.call.id, v.followUp.kind]));
+    expect(byId.get(a)).toBe('answered');
+    expect(byId.get('b')).toBe('due');
   });
-
   it('a quieter answer never answers a louder call', async () => {
     event('v1', T0);
     verdict('v1', 'call_today');
@@ -720,6 +730,16 @@ describe('the sixth adversarial pass (2026-10-05, on the stored cover)', () => {
     const byId = new Map((await readCallsForPet(PET, T0 + 51 * H)).map((v) => [v.call.id, v.followUp.kind]));
     expect(byId.get(a)).toBe('answered');
     expect(byId.get('b')).toBe('due');
+  });
+
+  it('every phone holding the same rows shows the same note, whatever the row order', () => {
+    const at = new Date(T0).toISOString();
+    const root = { id: 'c', pet_id: PET, called_on: '2026-10-01', event_id: 'v', note: null, supersedes: null, withdrawn: 0, covers_rank: 1, covers_from: at, created_at: at };
+    const later = new Date(T0 + H).toISOString();
+    const e1 = { ...root, id: 'n1', note: 'first', supersedes: 'c', covers_rank: null, covers_from: null, created_at: later };
+    const e2 = { ...root, id: 'n2', note: 'second', supersedes: 'c', covers_rank: null, covers_from: null, created_at: later };
+    expect(callRecordsOf([root, e1, e2])[0].note).toBe('second');
+    expect(callRecordsOf([root, e2, e1])[0].note).toBe('second');
   });
 
   it('D: every phone holding the same rows shows the same answer', () => {
