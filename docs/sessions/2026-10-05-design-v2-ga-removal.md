@@ -40,6 +40,12 @@ D1 was re-ruled (b) on 2026-10-04: 1.2.0 ships with every beta on. So there was 
 
 ## Decisions
 
+- **The PM ruled the Tier-2 briefs 1a 2a 3a 4a** (2026-10-05, in session; recorded on CUL-1071).
+  - Principles v2.0 is written: Principle 3 as two jobs, Principles 8 and 9, the Motion rewrite, *Calm is not quiet*, the chart colour rule, and a fifth lens invariant.
+  - The spec edits are written.
+  - CLAUDE.md is rewritten with a net shrink: the loaders, the principles row, and the stale pointers in C-18, C-33, C-36 and C-41 and the fold row.
+  - Motion & IA joins `docs/personas.md`; the Data Viz lens folds into the Data Scientist as the chart standard.
+
 - **The Whorl and the night moment stay.** About 50 files outside the redesign still render them; widening the one-loop guard app-wide is that sweep. Filed as CUL-1593 rather than folded in.
 - **`lib/lookTwins.ts` is kept.** It has no runtime consumer now, but a clinical zero-suppression is not deleted silently. CUL-1594 checks the month and the metric detail.
 - **Export-level leftovers go to CUL-1595:** InsightCard's card and fold, the old lane helpers, and Patterns' double load.
@@ -60,10 +66,10 @@ D1 was re-ruled (b) on 2026-10-04: 1.2.0 ships with every beta on. So there was 
 - **Acceptance criteria (CUL-1071):**
   - `design_v2` gone from the client ✓
   - Retired components and the guard deleted, registries pruned ✓
-  - Tier-2 edits written on the PM's confirmation: **pending**
+  - Tier-2 edits written on the PM's confirmation ✓ (ruled 1a 2a 3a 4a, 2026-10-05; the med-strip §0.1 edit stays held for CUL-1349 D2); `claudeMdBudget` green, CLAUDE.md net −87 bytes
   - D2-9 closed by its cancellation ✓
   - CUL-635 / CUL-383 / CUL-140 reconciled in comments ✓
-  - Persona roster call: **pending**
+  - Persona roster call ✓ (4a: Motion & IA graduates; Data Viz folds into the Data Scientist)
 - **Types and tests:** `tsc --noEmit` clean; jest 587 suites, 13,529 tests green.
 - **Secrets and migrations:** none of either.
 - **Personas:**
@@ -93,6 +99,6 @@ When someone signs out, the phone still holds pieces of their pet's record in ma
 
 ## Not done here
 
-- The Tier-2 edits and the persona-roster call wait for the PM on CUL-1071.
+- The med-strip spec §0.1 edit waits on CUL-1349's D2.
 - STATUS.md: PR-60 owns it.
 - The `app_config.design_v2` row goes with the project's data-only migration.
