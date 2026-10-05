@@ -14,7 +14,7 @@ The app-wide answer to "which UI shape does a filter get?" — written after the
 | **Wrapping chip group** (capture) | `components/ui/ChipGroup` | The options **are** the screen's content — a capture/edit form field. | Medication Form/Route, food Format, pet Gender |
 | **Visible lens chips** | `components/ui/ChipGroup` (filter usage) | A lens over a list with **≤5 short options that always fit without scrolling**, on a hot path where the one-tap switch matters. | FoodPicker scope (All/Meals/Treats/Wet/Dry), report range (Default/Custom…), Calendar lens (2–4 dynamic chips) |
 | **Segmented control** | hand-rolled (tablist a11y) | Exactly **2–3 fixed, equal-weight windows** over the same data. | Metric detail Week/Month/3-Month |
-| **ScopeMenu** (pill + sheet) | `components/ui/ScopeMenu` | A lens over a list where the set is **long (≳5), growable, or long-labelled**, or header space is scarce. | History event type (10), History date scope (4 + day drill-in) |
+| **ScopeMenu** (pill + sheet) | `components/ui/ScopeMenu` | A lens over a list where the set is **long (≳5), growable, or long-labelled**, or header space is scarce. | History type sheet, History window sheet (History v2, `components/historyV2/TypeSheet` / `WindowSheet`) |
 
 **Banned everywhere, no exceptions:** the hidden-overflow horizontal option row. B-146 killed it for capture pickers; #421 deleted its last carve-out (History's edge-fade rail — the peek cue that failed a real owner looking for the Medication filter). Horizontal scrolling remains legitimate only for *browse* shelves (Recent foods/meds), never for a closed option set — and always with a visible "there's more" cue.
 
@@ -29,7 +29,7 @@ The app-wide answer to "which UI shape does a filter get?" — written after the
 3. **Defaults are explicit options** ("All types", "All time", "All") — never an implicit nothing-selected state on a filter.
 4. **Accessible by role:** radio semantics with announced selected state (`ChipGroup` radiogroup, `ScopeMenu` sheet rows); segmented controls use tablist/tab.
 5. **An option that expands dependent inline UI stays visible.** The report range's "Custom…" reveals From/To date pickers in place — a sheet would sever the control from its own dependent UI. Such sets stay as visible chips.
-6. **Filter state is screen-local** (resets on remount/pet switch) unless a spec says otherwise; deep-link doorways may set it (History `?date=…`), and a transient scope not in the option set renders as an override label on the pill with no sheet row selected (the B-308 day drill-in pattern).
+6. **Filter state is screen-local** (resets on remount/pet switch) unless a spec says otherwise; deep-link doorways may set it (History's registered doors, `lib/historyDoors.ts`), and a transient scope not in the option set renders as an override label on the pill with no sheet row selected (the B-308 day drill-in pattern).
 
 ---
 
@@ -37,7 +37,7 @@ The app-wide answer to "which UI shape does a filter get?" — written after the
 
 | Surface | Control today | Options | Verdict |
 |---|---|---|---|
-| History type + date (`app/(tabs)/history.tsx`) | ScopeMenu ×2 | 10 / 4 | **Reference implementation** (#421) |
+| History type + window (`components/historyV2/TypeSheet.tsx`, `WindowSheet.tsx`) | ScopeMenu ×2 | every type + All / All symptoms / courses / Noticed · the windows table | **Reference implementation** (#421; History v2 since GA, CUL-1175) |
 | FoodPicker scope (`components/log/FoodPicker.tsx`) | Visible lens chips | 5 short | **Keep** — hot log path; always visible; converting is a discoverability regression (D1) |
 | Calendar lens (`components/dashboard/PatternCalendar.tsx`, B-310) | Visible lens chips | 2–4, dynamic | **Keep, with a named trigger** — convert to ScopeMenu if a pet's lens set reaches ≥5 (D2, → backlog B-405) |
 | Metric detail range (`components/dashboard/MetricDetailScreen.tsx`) | Segmented | 3 fixed | **Keep** — textbook segmented case; carved out of any "app-wide" mandate |
