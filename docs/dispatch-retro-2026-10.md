@@ -6,7 +6,7 @@
 
 ## TL;DR
 
-Dispatch works. It merged 65 PRs in about a week, a median of 48 minutes from launch to merge, with no textual merge conflict among its own children and nothing reverted since. The cap of 3 is not the main thing slowing it down: during Out of beta's waking hours all three slots were full only 16% of the time and empty 37% of the time. It binds at the start of a wave, and when it did you went around it, running up to 10 sessions at once.
+Dispatch works. It merged 65 PRs in about a week, a median of 47 minutes from launch to merge, with no textual merge conflict among its own children and nothing reverted since. The cap of 3 is not the main thing slowing it down: during Out of beta's waking hours all three slots were full only 16% of the time and empty 37% of the time. It binds at the start of a wave, and when it did you went around it, running up to 10 sessions at once.
 
 **Yes, raise it to 5.** But the cap protects less than it looks like, and the three things that actually caused trouble are not the number:
 
@@ -22,13 +22,13 @@ Section 7 holds the decisions. Section 8 holds the fixes that need no decision.
 
 | Measure | Value | Source |
 |---|---|---|
-| Dispatched PRs merged | **65** (Engines v3 24, Out of beta 41), plus 13 hand launches in the same window | GitHub |
-| Launch → merge | **median 48 min** (p25 36, p75 81); Out of beta alone median 40, max 148 | sessions × PRs |
+| Dispatched PRs merged | **65** by 10/5 23:03Z (Engines v3 24, Out of beta 41), plus 14 hand launches in the same window | GitHub |
+| Launch → merge | **median 47 min** (p25 36, p75 77; 64 measured); Out of beta median 40, max 148; Engines v3 median 78, mean 141 (review rounds and overnight waits) | sessions × PRs |
 | Textual merge conflicts among dispatched children | **0** in 82 PRs (2 conflicts total, both on hand launches) | every merge replayed with `git merge-tree` |
 | Same-file pairs among PRs open at once | 17 of 185 pairs (9%); git merged all but the two above cleanly | file lists per PR |
 | Pre-dispatch baseline | Design v2's four parallel PRs (9/21) "conflicted three times in one evening" | steward skill §8 |
 | Reverts or hotfixes of dispatched work | **0** on `main` since 9/28 (caveat: the 1.2.0 device sitting was skipped) | `git log` |
-| CI | last 100 PR runs: 61 green, 39 superseded, **0 failed**; median 8.7 min | Actions |
+| CI | last 100 PR runs: 61 green, 39 cancelled by a newer push, **0 failed**; median 8.7 min. Caveat: `main` cancels its own superseded runs too, which is how the one break in section 3 hid | Actions |
 | Wakes | 48 of 48 `opened` wakes arrived; 27 child `send_message` calls, 0 failed | transcripts |
 | Your reply time to a brief | **median 3.1 min** (daytime 2.8) | transcripts |
 | Loop speed when it is tight | on 10/4 afternoon, merge → next launch in 1 to 3 minutes, via `auto` rows and a practice you invented, picking a row in advance | status updates |
