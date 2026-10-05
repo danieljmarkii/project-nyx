@@ -513,3 +513,83 @@ Deno.test('N1: the dense-day arm counts only weeks wholly after the answer', () 
   // Sustained for long enough after the answer, the floor the engine trusts still brings it back.
   assertStrictEquals(stateOf({ symptoms: sym, acks: [ack({ daysAgo: 30 })] }).reason, 'dense')
 })
+
+// ── CUL-1290 (PR-34): the vet-keyed fallback question, §4.8 ──
+
+const ASKS_ON: Partial<CareStateArgs['config']> = { recheckQuestionDays: 56 }
+function stepOn(c: Case, over: Partial<NonNullable<CareStateArgs['config']>> = {}) {
+  const findings = (c.findings ?? [chronicity()]).map((finding, rank) => ({ rank, finding }))
+  return EN9_CARE_STATE_STEP(findings, { ...args(c), config: { ...CARE_STATE_CONFIG, ...ASKS_ON, ...over } })
+}
+const questionOf = (c: Case, over: Partial<NonNullable<CareStateArgs['config']>> = {}) => careStateOf(stepOn(c, over)[0].finding)!
+
+Deno.test('CUL-1290: off is the shipped row byte for byte, and on adds only the question', () => {
+  const c: Case = { symptoms: STABLE, acks: [ack({ daysAgo: 70 })] }
+  const off = step(c)
+  assertStrictEquals(CARE_STATE_CONFIG.recheckQuestionDays, null, 'ships off until the PM rules (§4.8)')
+  assertStrictEquals('recheckQuestion' in careStateOf(off[0].finding)!, false, 'off never writes the key')
+  const on = stepOn(c)
+  const s = careStateOf(on[0].finding)!
+  assertStrictEquals(s.recheckQuestion, 'Did your vet want to see Nyx again?')
+  // Nothing else moves: the state, the sentence (count and coverage included), the rank.
+  const { recheckQuestion: _q, ...rest } = s
+  assertEquals(rest, careStateOf(off[0].finding))
+  assertEquals(on.map((r) => r.rank), off.map((r) => r.rank))
+  assertStrictEquals(s.state, 'with_vet')
+  assertStrictEquals(/worth/i.test(s.recheckQuestion!), false, 'a question, never the original ask')
+})
+
+Deno.test('CUL-1290: never before the answer is N days old (a calendar from the answer, not from today)', () => {
+  assertStrictEquals(questionOf({ symptoms: STABLE, acks: [ack({ daysAgo: 55 })] }).recheckQuestion, null)
+  assertStrictEquals(questionOf({ symptoms: STABLE, acks: [ack({ daysAgo: 56 })] }).recheckQuestion, 'Did your vet want to see Nyx again?')
+})
+
+Deno.test('CUL-1290: a tested improvement withholds the question; a zero, thin logging or no reference never does', () => {
+  // 2 a week until 57 days ago, then every 12 days (56, 44, 32, 20, 8): the vet's plan visibly
+  // helping, and still often enough that the concern stands (a gap past the recency floor would
+  // end the course and, with it, the answer, §3.2).
+  const improved = events('vomit', [...everyNth(3.5, 170, 57).map(Math.round), ...everyNth(12, 56, 0)])
+  const s = { symptoms: improved, acks: [ack({ daysAgo: 70 })] }
+  assertStrictEquals(questionOf(s).state, 'with_vet')
+  // Over the last 56 days: 5 against 8 in the 4 weeks before, P(X ≤ 5) ≈ 0.035. Withheld.
+  assertStrictEquals(questionOf(s, { improvementDays: 56 }).recheckQuestion, null)
+  // Over the last 28 days the same pet shows 2 against 8, P ≈ 0.11: no tested fall, so it asks.
+  // This is the 28-day window's weakness, and why PR-34 measures both.
+  assertStrictEquals(questionOf(s).recheckQuestion, 'Did your vet want to see Nyx again?')
+  // A zero in the window is never improvement: a lapse in logging reads exactly like it.
+  const silentWindow = events('vomit', everyNth(3.5, 170, 57).map(Math.round))
+  assertStrictEquals(questionOf({ symptoms: silentWindow, acks: [ack({ daysAgo: 70 })] }, { improvementDays: 56 }).recheckQuestion, 'Did your vet want to see Nyx again?')
+  // Thin logging in the window cannot show improvement: something logged on 19 of the last 56 days.
+  const thin = [...range(175, 56), ...everyNth(3, 55, 0)]
+  assertStrictEquals(questionOf({ ...s, loggedDaysAgo: thin }, { improvementDays: 56 }).recheckQuestion, 'Did your vet want to see Nyx again?')
+})
+
+Deno.test('CUL-1290: a recheck recorded ahead withholds it; a cancelled or past one does not', () => {
+  const appt = (over: Partial<CareRecord['appointments'][number]>) => ({ id: 'x', scheduledAt: at(-10, 10), cancelledAt: null, deletedAt: null, aboutSigns: [] as SymptomType[], ...over })
+  const q = (a: ReturnType<typeof appt>) => questionOf({ symptoms: STABLE, acks: [ack({ daysAgo: 70 })], record: { appointments: [a] } }).recheckQuestion
+  assertStrictEquals(q(appt({})), null, 'any visit ahead: the owner already has one booked')
+  assertStrictEquals(q(appt({ cancelledAt: at(1) })), 'Did your vet want to see Nyx again?')
+  assertStrictEquals(q(appt({ deletedAt: at(1) })), 'Did your vet want to see Nyx again?')
+  assertStrictEquals(q(appt({ scheduledAt: at(5) })), 'Did your vet want to see Nyx again?')
+  // A recheck about the sign is recheck_booked, which carries no question.
+  const booked = questionOf({ symptoms: STABLE, acks: [ack({ daysAgo: 70 })], record: { appointments: [appt({ aboutSigns: ['vomit'] })] } })
+  assertStrictEquals(booked.state, 'recheck_booked')
+  assertStrictEquals(booked.recheckQuestion, null)
+})
+
+Deno.test('CUL-1290: a vet-started trial or course never asks (each ends on its own rules)', () => {
+  const course = ack({
+    daysAgo: 70, source: 'vet_started_course',
+    course: { drugLabel: 'Cerenia', startedOn: dayOf(70), endedOn: null, status: 'active', hasTarget: true, lastDoseAt: at(1) },
+  })
+  const s = questionOf({ symptoms: STABLE, acks: [course] })
+  assertStrictEquals(s.state, 'with_vet')
+  assertStrictEquals(s.recheckQuestion, null)
+})
+
+Deno.test('CUL-1290: a re-raised concern carries the ask, never the question', () => {
+  const doubling = events('vomit', [...everyNth(3.5, 170, 22).map(Math.round), ...range(20, 0).filter((d) => d % 7 !== 0)])
+  const s = questionOf({ symptoms: doubling, acks: [ack({ daysAgo: 70 })] })
+  assertStrictEquals(s.state, 'raised_again')
+  assertStrictEquals(s.recheckQuestion ?? null, null)
+})

@@ -28,7 +28,8 @@
 // prior row is owner-writable (ai_signals_owner), so nothing read from it may quiet a concern:
 // a carried reference is used only when the record can no longer rebuild one.
 //
-// KNOWN GAPS, stated (C-38). A pet that never improves never re-raises in v1 (§4.1, CUL-1290).
+// KNOWN GAPS, stated (C-38). A pet that never improves never re-raises in v1 (§4.1). CUL-1290's
+// question (`recheckQuestionFor`, §4.8) is built for it and ships OFF: `recheckQuestionDays` is null.
 // `recheck_booked` needs to know an appointment is ABOUT the sign, which the shell may not read
 // under AC 10 (CUL-1531): the pure rule is here, and the shell passes no appointments. The
 // weight fact line (§4.1) is EN-8's gate and is not built here. Source 3 of C1a (the intake
@@ -73,6 +74,15 @@ export interface CareStateConfig {
   courseNoTargetCapDays: number
   /** §3.2 a vet-started course lapses this many days after its last logged dose. */
   courseAfterLastDoseDays: number
+  /** CUL-1290 (PR-34) the vet-keyed fallback: days after the answer before a watched concern with
+   *  no recheck recorded and no tested improvement asks "Did your vet want to see {name} again?".
+   *  NULL IS OFF, and off is the shipped engine byte for byte (the field is never written). It
+   *  stays off until the PM rules on the two-sided test and DF-5 (§4.8). */
+  recheckQuestionDays: number | null
+  /** CUL-1290 the improvement test's window, days ending today (PR-34's grid: {28, 56}). */
+  improvementDays: number
+  /** CUL-1290 the improvement test's one-sided significance (PR-34's grid: {0.05, 0.1}). */
+  improvementAlpha: number
 }
 
 export const CARE_STATE_CONFIG: CareStateConfig = {
@@ -92,6 +102,9 @@ export const CARE_STATE_CONFIG: CareStateConfig = {
   coSignNewDays: 28,
   courseNoTargetCapDays: 56,
   courseAfterLastDoseDays: 14,
+  recheckQuestionDays: null,
+  improvementDays: 28,
+  improvementAlpha: 0.05,
 }
 
 // ── The inputs ────────────────────────────────────────────────────────────────
@@ -231,6 +244,10 @@ export interface CareStateFact {
    *  `text`. Its own field so Home draws it without splitting a sentence that carries the
    *  pet's name ("Mr. Biggles"), PR-35's code review. Absent on every other state. */
   backLine?: string | null
+  /** CUL-1290 (PR-34): on `with_vet` only, the one question when the answer is old, no recheck is
+   *  recorded and the record shows no tested improvement. The key is ABSENT while the knob is off
+   *  (`recheckQuestionDays` null), so the cache row is byte-identical to the shipped engine. */
+  recheckQuestion?: string | null
   /** The cached sentence for this state, template-only (AC 8). Null on `raised`: the lane's own
    *  sentence stands, phrased as it always was. */
   text: string | null
@@ -303,6 +320,20 @@ export function rateTestFires(a: number, b: number, lc: number, lr: number, cfg:
   if (lc <= 0 || lr <= 0) return false
   if (a * lr < cfg.rateRatio * b * lc) return false
   return binomialUpperTail(a, a + b, lc / (lc + lr)) < cfg.alpha
+}
+
+/**
+ * CUL-1290's improvement test, the mirror of §4.2's: given n = a + b episodes over logged days Lc
+ * (the last `improvementDays`) and Lr (the frozen reference), one-sided for a FALL. Fires when
+ * P(X ≤ a) < `improvementAlpha` AND the current rate is at most the reference rate over r
+ * (a·Lr·r ≤ b·Lc). A ZERO NEVER FIRES: no episodes logged is as consistent with a lapse in logging
+ * as with a pet that got better, and absence is not wellness (n=1 never reassures). A fall here
+ * only withholds a QUESTION; it never quiets an ask, a state or a rank.
+ */
+export function improvementShown(a: number, b: number, lc: number, lr: number, cfg: CareStateConfig): boolean {
+  if (lc <= 0 || lr <= 0 || a <= 0 || b <= 0) return false
+  if (a * lr * cfg.rateRatio > b * lc) return false
+  return 1 - binomialUpperTail(a + 1, a + b, lc / (lc + lr)) < cfg.improvementAlpha
 }
 
 // ── The record, indexed by local day ──────────────────────────────────────────
@@ -897,6 +928,8 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
       text: [head, source, tail].filter((x) => x.length > 0).join(' '),
       lapsed: lapsedList,
     }
+    // CUL-1290: written only while the knob is on, so the shipped row never gains the key.
+    if (cfg.recheckQuestionDays !== null) fact.recheckQuestion = recheck ? null : recheckQuestionFor(sign, ack, reference, ix, args, cfg)
     bySign.set(sign, fact)
     return fact
   }
@@ -951,6 +984,56 @@ export function recheckFor(sign: SymptomType, ack: AckFact, args: CareStateArgs)
     .sort((a, b) => a.day - b.day)
   const first = ok[0]
   return first ? { day: first.day, on: first.a.scheduledAt } : null
+}
+
+/**
+ * CUL-1290 (PR-34), the vet-keyed fallback (§4.8): one question on a WATCHED row, "Did your vet
+ * want to see {name} again?", when all of these hold. Null otherwise. It is a question, never the
+ * original ask, and it moves nothing: the state stays `with_vet`, the rank and the ask are
+ * untouched, and the row keeps printing its count since the answer with its logging (§3.3).
+ *
+ *   · the knob is on (`recheckQuestionDays`), and the answer is at least that many days old;
+ *   · the answer is a visit, a tick or "My vet knows". A vet-started trial or course ends on its
+ *     own rules (§3.2), so it never needs a calendar backstop;
+ *   · no recheck is recorded: no appointment, not cancelled or deleted, on or after today. The
+ *     shell passes no appointments today (CUL-1531, AC 10), so in production this condition is
+ *     always met; PR-34's harness measures it that way, so its numbers are production's;
+ *   · the record shows no TESTED improvement over the last `improvementDays` against the frozen
+ *     reference (`improvementShown`). A pet the vet's plan is visibly helping is the owner asked for
+ *     nothing; a pet that failed to improve (PMD-5's cat, steady at 2 a week after "come back if it
+ *     continues") is the owner the question exists for. A zero, thin logging, or no reference
+ *     cannot show improvement, so each ASKS (the louder reading, E-6).
+ */
+export function recheckQuestionFor(
+  sign: SymptomType,
+  ack: AckFact,
+  reference: CareReference | null,
+  ix: DayIndex,
+  args: CareStateArgs,
+  cfg: CareStateConfig,
+): string | null {
+  const days = cfg.recheckQuestionDays
+  if (days === null) return null
+  if (ack.source === 'vet_started_trial' || ack.source === 'vet_started_course') return null
+  const tz = args.timezone
+  const anchor = localDayIndexOf(ack.anchorOn, tz)
+  if (anchor === null || ix.today - anchor < days) return null
+  const booked = args.record.appointments.some((a) => {
+    if (a.cancelledAt || a.deletedAt) return false
+    const ms = Date.parse(a.scheduledAt)
+    return Number.isFinite(ms) && localDayIndex(ms, tz) >= ix.today
+  })
+  if (booked) return null
+  if (reference) {
+    const w = { from: ix.today - cfg.improvementDays + 1, to: ix.today }
+    // The window must lie after the reference and inside the read, logged on the reference's floor.
+    const floor = Math.ceil((cfg.referenceFloor * cfg.improvementDays) / 28)
+    if (w.from > reference.toDay && w.from >= ix.firstFullDay) {
+      const lc = loggedIn(ix.logged, w.from, w.to)
+      if (lc >= floor && improvementShown(countIn(ix.onsets(sign), w.from, w.to), reference.episodes, lc, reference.loggedDays, cfg)) return null
+    }
+  }
+  return `Did your vet want to see ${args.petName} again?`
 }
 
 /**
