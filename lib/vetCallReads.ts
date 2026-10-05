@@ -104,22 +104,16 @@ export interface CallView {
   family: CallTierRead['family'] | null;
   anchorAt: string | null;
   rank: TierRank;
+  /** How many live calls this escalation holds (two phones can each call it). */
+  calls: number;
 }
 
 /**
  * Every live call for the pet, newest first, ONE per escalation.
  *
- * THE EFFECTIVE RANK. A call made on this phone carries the rank it was made at
- * (`rank_at_call`, §6.3 "as shown"): a later raise of its anchor never widens it (P1). A call
- * pulled from another phone carries none (082 has no such column, CUL-1602), and reads as its
- * anchor's CURRENT rank: the best the phone knows, and the reading that never asks again
- * about an escalation already called and answered (adversarial pass 2, item 2). Stated limit:
- * on the SECOND phone only, a call made at call today whose anchor was later raised reads as
- * call now. The read's ask is untouched either way.
- *
- * ONE PER ESCALATION. An escalation is (anchor, rank): two phones calling one escalation are
- * one view, and an answer to either answers it (P4, AC 10). A louder call on the same anchor
- * (made after a raise) is a DIFFERENT escalation with its own question (pass 2, item 1).
+ * ONE PER ESCALATION (below): two phones calling one escalation are one view, and an answer
+ * to either answers it (P4, AC 10). A louder call on the same anchor (made after a raise) is
+ * a different escalation with its own question.
  *
  * An undone call is not listed, UNLESS its question was answered: an answer is final across
  * phones, so an Undo racing an answer on another phone never takes it off the record (P5).
@@ -138,23 +132,44 @@ export async function readCallsForPet(petId: string, now: number = Date.now()): 
     anchorIds,
   );
   const anchorOf = new Map(anchors.map((a) => [a.id, a]));
-  const copies = await readCopies(anchorIds);
-  const effective = (c: CallRecord): TierRank =>
-    c.rankAtCall ?? callTierRankOf(copies.get(c.eventId) ?? null) ?? TIER_RANK.call_today;
 
-  const byEscalation = new Map<string, (typeof records[number] & { rank: TierRank })[]>();
+  // ONE ESCALATION = one anchor and one rank, decided from what the phone STORED, never from
+  // the anchor's current tier, which moves (the third adversarial pass: a rank read off a
+  // moving tier split one escalation across two phones the moment it was raised).
+  //   · Calls made here carry the rank they were made at; distinct stored ranks on one anchor
+  //     are distinct escalations (a louder call after a raise owes its own question).
+  //   · A call pulled from another phone carries none (082 has no column, CUL-1602). It joins
+  //     the anchor's quietest stored escalation when there is one (the two phones called the
+  //     same thing), so an answer on either is never asked again.
+  //   · An anchor with ONLY pulled calls covers as call now: every read of its bout. That can
+  //     withhold "I've called" from a louder read on a second phone (CUL-1602), and never
+  //     re-asks an escalation already called or answered. The read's ask is untouched.
+  type Rec = (typeof records)[number];
+  const byAnchor = new Map<string, Rec[]>();
   for (const r of records) {
-    const rank = effective(r.call);
-    const key = `${r.call.eventId}|${rank}`;
-    const group = byEscalation.get(key);
-    if (group) group.push({ ...r, rank });
-    else byEscalation.set(key, [{ ...r, rank }]);
+    const list = byAnchor.get(r.call.eventId);
+    if (list) list.push(r);
+    else byAnchor.set(r.call.eventId, [r]);
+  }
+  const groups: { rank: TierRank; members: Rec[] }[] = [];
+  for (const list of byAnchor.values()) {
+    const stored = [...new Set(list.map((r) => r.call.rankAtCall).filter((x): x is TierRank => x !== null))].sort();
+    if (stored.length === 0) {
+      groups.push({ rank: TIER_RANK.call_now, members: list });
+      continue;
+    }
+    for (const rank of stored) {
+      groups.push({
+        rank,
+        members: list.filter((r) => r.call.rankAtCall === rank || (r.call.rankAtCall === null && rank === stored[0])),
+      });
+    }
   }
   const views: CallView[] = [];
-  for (const group of byEscalation.values()) {
-    group.sort((a, b) => (a.call.calledOn < b.call.calledOn ? -1 : a.call.calledOn > b.call.calledOn ? 1 : a.call.id < b.call.id ? -1 : 1));
-    const answered = group.find((g) => g.state.kind === 'answered');
-    const shown = answered ?? group[0];
+  for (const { rank, members } of groups) {
+    members.sort((a, b) => (a.call.calledOn < b.call.calledOn ? -1 : a.call.calledOn > b.call.calledOn ? 1 : a.call.id < b.call.id ? -1 : 1));
+    const answered = members.find((g) => g.state.kind === 'answered');
+    const shown = answered ?? members[0];
     const anchor = anchorOf.get(shown.call.eventId);
     views.push({
       call: shown.call,
@@ -162,7 +177,8 @@ export async function readCallsForPet(petId: string, now: number = Date.now()): 
       eventType: anchor?.event_type ?? null,
       family: incidentFamilyOf(anchor?.event_type),
       anchorAt: anchor?.occurred_at ?? null,
-      rank: shown.rank,
+      rank,
+      calls: members.length,
     });
   }
   return views.sort((a, b) => (a.call.calledOn < b.call.calledOn ? 1 : a.call.calledOn > b.call.calledOn ? -1 : 0));

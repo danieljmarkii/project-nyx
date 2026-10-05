@@ -153,7 +153,10 @@ export function CallAnswers({ eventId, petName }: Props) {
         ) : null}
         <View style={styles.row}>
           <Answer label={c.note ? 'Your note' : CALL_ADD_NOTE} onPress={open} />
-          {followUp.kind !== 'answered' ? (
+          {/* Undo only while this phone's call is the escalation's one call: with another
+              caregiver's call beside it, an Undo here could not take the call back (adversarial
+              pass 3, item 8), and the other phone's call is not this phone's to withdraw. */}
+          {followUp.kind !== 'answered' && covering.calls === 1 ? (
             <Answer
               label="Undo"
               onPress={() => {

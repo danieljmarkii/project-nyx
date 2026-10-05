@@ -31,6 +31,10 @@ const called = {
     call: { id: 'call-1', petId: 'pet-a', calledOn: '2026-10-03', eventId: 'v1', note: null, withdrawn: false },
     followUp: { kind: 'waiting', dueAt: '2099-01-01T00:00:00.000Z', expiresAt: '2099-01-06T00:00:00.000Z' },
     eventType: 'vomit',
+    family: 'vomit',
+    anchorAt: '2026-10-03T12:00:00.000Z',
+    rank: 1,
+    calls: 1,
   },
 };
 

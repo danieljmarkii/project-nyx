@@ -312,7 +312,7 @@ describe('the adversarial pass (2026-10-05)', () => {
     expect((await readIncidentCallState('v1', T0 + 4 * H)).covering).toBeNull();
   });
 
-  it('a call pulled from another phone (no stored rank) reads as its anchor\'s current rank', async () => {
+  it('an anchor with only a pulled call (no stored rank) covers its whole bout, never re-offering', async () => {
     event('v1', T0);
     verdict('v1', 'call_today');
     event('v2', T0 + 2 * H);
@@ -323,9 +323,9 @@ describe('the adversarial pass (2026-10-05)', () => {
          VALUES ('remote', ?, '2026-10-01', 'v1', NULL, NULL, 0, ?, 1)`,
       )
       .run(PET, new Date(T0 + H).toISOString());
-    // At call today, the pulled call does not cover the louder read.
-    expect((await readIncidentCallState('v2', T0 + 3 * H)).covering).toBeNull();
+    // The stated CUL-1602 limit: the second phone cannot know the rank, so it never re-offers.
     expect((await readIncidentCallState('v1', T0 + 3 * H)).covering?.call.id).toBe('remote');
+    expect((await readIncidentCallState('v2', T0 + 3 * H)).covering?.call.id).toBe('remote');
   });
 
   it('P2: the anchor is the tapped read\'s own bout, walked forward, never the bout before', async () => {
@@ -492,5 +492,60 @@ describe('the second adversarial pass (2026-10-05)', () => {
     // e2 is 30 h after the bout's first read: a new bout, anchored on e2 itself.
     await recordCall('e2', { now: T0 + 31 * H, newId });
     expect(rows('vet_calls').map((r) => r.event_id)).toEqual(['e0', 'e2']);
+  });
+});
+
+describe('the third adversarial pass (2026-10-05)', () => {
+  const theirs = (answer: string | null) => {
+    mockDb
+      .prepare(
+        `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
+         VALUES ('theirs', ?, '2026-10-01', 'v1', NULL, NULL, 0, ?, 1)`,
+      )
+      .run(PET, new Date(T0 + 2 * H).toISOString());
+    mockDb
+      .prepare(
+        `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, due_at, expires_at, created_at, synced)
+         VALUES ('theirs-owed', ?, 'theirs', 'v1', 'called', 'owed', ?, ?, ?, 1)`,
+      )
+      .run(PET, new Date(T0 + 48 * H).toISOString(), new Date(T0 + 7 * 24 * H).toISOString(), new Date(T0 + 2 * H).toISOString());
+    if (answer) {
+      mockDb
+        .prepare(
+          `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, answer, due_at, expires_at, created_at, synced)
+           VALUES ('theirs-ans', ?, 'theirs', 'v1', 'called', 'answered', ?, ?, ?, ?, 1)`,
+        )
+        .run(PET, answer, new Date(T0 + 48 * H).toISOString(), new Date(T0 + 7 * 24 * H).toISOString(), new Date(T0 + 49 * H).toISOString());
+    }
+  };
+
+  it('1: two phones on one escalation stay one after the anchor is raised; the answer is never re-asked', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    await recordCall('v1', { now: T0 + H, newId });
+    theirs('keep_watching');
+    verdict('v1', 'call_now', true);
+    const views = await readCallsForPet(PET, T0 + 50 * H);
+    expect(views.map((v) => v.followUp.kind)).toEqual(['answered']);
+    expect(views[0].calls).toBe(2);
+  });
+
+  it('1b: unanswered, it is still one owed question after the raise', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    await recordCall('v1', { now: T0 + H, newId });
+    theirs(null);
+    verdict('v1', 'call_now', true);
+    expect((await readCallsForPet(PET, T0 + 50 * H)).map((v) => v.followUp.kind)).toEqual(['due']);
+  });
+
+  it('4: a pulled, answered call keeps covering its bout when its anchor is re-read lower', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_now');
+    event('v2', T0 + 2 * H);
+    verdict('v2', 'call_now');
+    theirs('wants_to_see');
+    verdict('v1', 'call_today', true);
+    expect((await readIncidentCallState('v2', T0 + 50 * H)).covering?.followUp.kind).toBe('answered');
   });
 });

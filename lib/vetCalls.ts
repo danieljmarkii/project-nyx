@@ -82,10 +82,11 @@ export async function recordCall(
       `INSERT INTO vet_calls
          (id, pet_id, called_on, event_id, note, supersedes, withdrawn, rank_at_call, created_at, synced)
        VALUES (?, ?, ?, ?, NULL, NULL, 0, ?, ?, 0)`,
-      // The escalation's rank AS SHOWN now (§6.3): the louder of the bout's first read and the
-      // read tapped, so the call covers what the owner was looking at, and a later raise of
-      // the anchor never widens it.
-      [callId, ev.pet_id, toLocalDayKey(new Date(now)), anchor.eventId, Math.max(anchor.rank, tapped.rank), createdAt],
+      // The escalation's rank AS SHOWN now (§6.3): its first read's. The walk only admits a
+      // read no louder than its bout's first, so this is always at least the tapped read's,
+      // and the call covers the bout the owner tapped into (§6.1: the escalation is the unit).
+      // Stored so a later raise of the anchor never widens the call.
+      [callId, ev.pet_id, toLocalDayKey(new Date(now)), anchor.eventId, anchor.rank, createdAt],
     );
     await db.runAsync(
       `INSERT INTO vet_call_follow_ups
