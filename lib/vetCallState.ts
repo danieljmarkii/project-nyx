@@ -26,7 +26,7 @@
 // expiry cannot outrank one.
 
 import { isStoolEvent } from '../constants/eventTypes';
-import { effectiveTierRank, TIER_RANK, type TierRank } from './incidentTier';
+import { type TierRank } from './incidentTier';
 import { formatCalendarDate } from './utils';
 
 /** How long after "I've called" the question is asked, and how long it stays asked (§6.3). */
@@ -46,24 +46,16 @@ export function incidentFamilyOf(eventType: string | null | undefined): Incident
   return null;
 }
 
-/** One read, as the phone holds it: the event's time and the louder of its two columns. */
+/** One call-tier read, as the phone holds it. `rank` comes from the one verdict reader
+ *  (`callTierRankOf`, lib/vetCalls.ts, over `isWorthACall` and the tier-word map), so this
+ *  module never reads a verdict itself (guards/readState.test.ts). */
 export interface CallTierRead {
   eventId: string;
   family: IncidentFamily;
   /** The event's `occurred_at`, ISO. */
   occurredAt: string;
-  tier: string | null;
-  recommendation: string | null;
-}
-
-export function readRank(read: Pick<CallTierRead, 'tier' | 'recommendation'>): TierRank {
-  return effectiveTierRank({ tier: read.tier, recommendation: read.recommendation });
-}
-
-/** Does this read ask for a call? Any status: a call stands at any status (the tier words'
- *  rule 2), so a failed re-read never takes "I've called" away from an escalation. */
-export function isCallTier(read: Pick<CallTierRead, 'tier' | 'recommendation'>): boolean {
-  return readRank(read) >= TIER_RANK.call_today;
+  /** TIER_RANK: call_today or call_now. A read below call_today is never a CallTierRead. */
+  rank: TierRank;
 }
 
 function ms(iso: string): number {
@@ -76,7 +68,7 @@ export function callCovers(called: CallTierRead, read: CallTierRead): boolean {
   if (called.family !== read.family) return false;
   const gap = ms(read.occurredAt) - ms(called.occurredAt);
   if (!(gap >= 0 && gap <= BOUT_MS)) return false;
-  return readRank(read) <= readRank(called);
+  return read.rank <= called.rank;
 }
 
 /**
@@ -88,7 +80,7 @@ export function callCovers(called: CallTierRead, read: CallTierRead): boolean {
 export function boutAnchorFor(tapped: CallTierRead, reads: readonly CallTierRead[]): CallTierRead {
   let anchor = tapped;
   for (const r of reads) {
-    if (!isCallTier(r) || r.eventId === tapped.eventId) continue;
+    if (r.eventId === tapped.eventId) continue;
     if (!callCovers(r, tapped)) continue;
     if (ms(r.occurredAt) < ms(anchor.occurredAt)) anchor = r;
   }

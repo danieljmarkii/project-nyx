@@ -240,6 +240,18 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'cross back up).',
   },
 
+  // ── EN-14's call record (Engines v3 PR-36, CUL-1419; care-state spec §6.3, §6.4) ──
+  'lib/vetCalls.ts': {
+    kinds: ['table'],
+    why:
+      'The call record\'s own store: writes and reads vet_calls and vet_call_follow_ups so the ' +
+      'incident screen can offer "I\'ve called", the follow-up screen can ask "What did the vet ' +
+      'say?" once, and Vet visits and History can list the call. Never a vet_visits read: a ' +
+      'call is not a visit and anchors no window. It counts nothing and feeds no coverage line, ' +
+      'day count, Patterns or engine input; the note is shown back to its owner and to nobody ' +
+      'else (no Edge Function selects it, guards/careRecord.test.ts).',
+  },
+
   // ── The shared visit bound (H-11, CUL-1160) ──
   'lib/visitWindow.ts': {
     kinds: ['table'],
