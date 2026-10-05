@@ -22,7 +22,7 @@ Draws come from streams named by (seed, scenario, pet, component, day). Every ef
 
 ## The scenarios
 
-`index.ts` holds `TRAJECTORY_CORPUS` (38 scenarios) and `REQUIRED_COVERAGE`, the PR-15 row's list as tags. Each scenario states its `rationale` (where its numbers come from), its `truth` (the answer key in words) and its `key` (the same answer key for the harness):
+`index.ts` holds `TRAJECTORY_CORPUS` (39 scenarios) and `REQUIRED_COVERAGE`, the PR-15 row's list as tags. Each scenario states its `rationale` (where its numbers come from), its `truth` (the answer key in words) and its `key` (the same answer key for the harness):
 
 * `falseCards`: a card of this lane (and sign) on this pet is false whenever it shows;
 * `detect`: what a correct engine finds, from which day, and how it may be scored.
@@ -34,7 +34,7 @@ The chronic pets in the owner and trial scenarios vomit ten times a month (about
 * **Null** (`scenarios.null.ts`): staple and rotating feeders, a grazer, one and three vomits a month, bursty and wandering rates, logging attrition, found piles, a two-cat home, a dog with garbage raids, a ferret (species "other"), a trial started at a peak, event-dependent feeding.
 * **Injected** (`scenarios.injected.ts`): chronic enteropathy onset, protein reactions at relative risk 3 (one hidden in a "duck" food), post-prandial and early-morning phenotypes, a doubling, a photo red flag, a trial responder and non-responder, a cat with a cough and vomiting, a dog's kennel-cough gags logged as vomits.
 * **Weight** (`scenarios.weight.ts`): a stable cat on a 0.1 kg and a 0.25 kg scale, 1% a week of loss at weekly and sparse cadence, clinic-only weights, and the legacy profile weight in two versions that cannot be told apart from the record (a true loss and a guess).
-* **Owner** (`scenarios.owner.ts`): "My vet knows", a visit that carried the concern with a recheck, a vaccine visit that did not, the symptom-only lapse over a flat cat and over a doubling, and a doubling after a visit both anchored to it and on a fixed day.
+* **Owner** (`scenarios.owner.ts`): "My vet knows", a visit that carried the concern with a recheck, a vaccine visit that did not, the symptom-only lapse over a flat cat and over a doubling, a doubling after a visit both anchored to it and on a fixed day, and "My vet knows" followed by the vomiting halving (CUL-1290: the improvement effect thins episodes as a trial responder does).
 
 For the grid sweep the evidence pack asks for, `withRate(scenario, sign, rate)` makes a variant with its own id (so its seeds never collide with the committed scenario's).
 

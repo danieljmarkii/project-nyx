@@ -14,6 +14,8 @@
 //   SCORECARD_OUT      also write this run's scorecard to a path (the offline check keeps its arms)
 //   SCORECARD_OFF      a flag-off scorecard file to hold this (flag-on) run against, for the pass lines
 //   SCORECARD_SCENARIOS  comma-separated scenario ids (default: the whole corpus)
+//   SCORECARD_RECHECK_QUESTION_DAYS  CUL-1290's offline arm: turn on the vet-keyed fallback question at
+//                      N days (needs engines_v3_en9 in SCORECARD_FLAGS; the arm's label names it).
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -48,7 +50,13 @@ function flagsFrom(spec: string | undefined): EngineKey[] {
 test('the engine scorecard (reported, never gating)', () => {
   const env = process.env;
   const on = flagsFrom(env.SCORECARD_FLAGS);
-  const arm = on.length === 0 ? 'flag_off' : `flag_on:${on.join('+')}`;
+  const rqDays = env.SCORECARD_RECHECK_QUESTION_DAYS ? Number(env.SCORECARD_RECHECK_QUESTION_DAYS) : null;
+  if (rqDays !== null && (!Number.isInteger(rqDays) || rqDays <= 0 || !on.includes('engines_v3_en9'))) {
+    throw new Error('SCORECARD_RECHECK_QUESTION_DAYS takes a positive whole number of days, and engines_v3_en9 on');
+  }
+  const careConfig = rqDays === null ? undefined : { recheckQuestionDays: rqDays };
+  const armKnobs = careConfig ? `+recheckQuestion:${JSON.stringify(careConfig)}` : '';
+  const arm = on.length === 0 ? 'flag_off' : `flag_on:${on.join('+')}${armKnobs}`;
   const { seeds, label } = seedsFrom(env.SCORECARD_SEEDS ?? 'ci');
   const only = env.SCORECARD_SCENARIOS?.split(',').map((s: string) => s.trim());
   const scenarios = only ? TRAJECTORY_CORPUS.filter((s) => only.includes(s.id)) : TRAJECTORY_CORPUS;
@@ -58,7 +66,7 @@ test('the engine scorecard (reported, never gating)', () => {
 
   const started = Date.now();
   const { scorecard } = runCorpus({
-    observer: () => makeSignalObserver({ askOf: (f) => signalHomeLine(f as unknown as SignalFinding)?.ask ?? null, engineFlags: { on, readOk: true } }),
+    observer: () => makeSignalObserver({ askOf: (f) => signalHomeLine(f as unknown as SignalFinding)?.ask ?? null, engineFlags: { on, readOk: true }, careConfig }),
     arm,
     flagsOn: on,
     seeds,

@@ -28,7 +28,8 @@
 // prior row is owner-writable (ai_signals_owner), so nothing read from it may quiet a concern:
 // a carried reference is used only when the record can no longer rebuild one.
 //
-// KNOWN GAPS, stated (C-38). A pet that never improves never re-raises in v1 (§4.1, CUL-1290).
+// KNOWN GAPS, stated (C-38). A pet that never improves never re-raises in v1 (§4.1). CUL-1290's
+// question (`recheckQuestionFor`, §4.8) is built for it and ships OFF: `recheckQuestionDays` is null.
 // `recheck_booked` needs to know an appointment is ABOUT the sign, which the shell may not read
 // under AC 10 (CUL-1531): the pure rule is here, and the shell passes no appointments. The
 // weight fact line (§4.1) is EN-8's gate and is not built here. Source 3 of C1a (the intake
@@ -73,6 +74,11 @@ export interface CareStateConfig {
   courseNoTargetCapDays: number
   /** §3.2 a vet-started course lapses this many days after its last logged dose. */
   courseAfterLastDoseDays: number
+  /** CUL-1290 (PR-34) the vet-keyed fallback: days after the answer before a watched concern with
+   *  no recheck recorded asks "Did your vet want to see {name} again?". NULL IS OFF, and off is
+   *  the shipped engine byte for byte (the field is never written). It stays off until the PM
+   *  rules on the two-sided test and DF-5 (§4.8). */
+  recheckQuestionDays: number | null
 }
 
 export const CARE_STATE_CONFIG: CareStateConfig = {
@@ -92,6 +98,7 @@ export const CARE_STATE_CONFIG: CareStateConfig = {
   coSignNewDays: 28,
   courseNoTargetCapDays: 56,
   courseAfterLastDoseDays: 14,
+  recheckQuestionDays: null,
 }
 
 // ── The inputs ────────────────────────────────────────────────────────────────
@@ -231,6 +238,10 @@ export interface CareStateFact {
    *  `text`. Its own field so Home draws it without splitting a sentence that carries the
    *  pet's name ("Mr. Biggles"), PR-35's code review. Absent on every other state. */
   backLine?: string | null
+  /** CUL-1290 (PR-34): on `with_vet` only, the one question when the answer is old and no recheck
+   *  is recorded. The key is ABSENT while the knob is off
+   *  (`recheckQuestionDays` null), so the cache row is byte-identical to the shipped engine. */
+  recheckQuestion?: string | null
   /** The cached sentence for this state, template-only (AC 8). Null on `raised`: the lane's own
    *  sentence stands, phrased as it always was. */
   text: string | null
@@ -897,6 +908,8 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
       text: [head, source, tail].filter((x) => x.length > 0).join(' '),
       lapsed: lapsedList,
     }
+    // CUL-1290: written only while the knob is on, so the shipped row never gains the key.
+    if (knobOn(cfg)) fact.recheckQuestion = recheck ? null : recheckQuestionFor(ack, ix, args, cfg)
     bySign.set(sign, fact)
     return fact
   }
@@ -951,6 +964,66 @@ export function recheckFor(sign: SymptomType, ack: AckFact, args: CareStateArgs)
     .sort((a, b) => a.day - b.day)
   const first = ok[0]
   return first ? { day: first.day, on: first.a.scheduledAt } : null
+}
+
+/** The knob reads as on only for a real number of days: an `undefined` from a partial config
+ *  spread is off, never "ask from day zero" (adversarial pass, P5). */
+function knobOn(cfg: CareStateConfig): cfg is CareStateConfig & { recheckQuestionDays: number } {
+  const d = cfg.recheckQuestionDays
+  return typeof d === 'number' && Number.isFinite(d) && d > 0
+}
+
+/** How far ahead a booked visit makes the question moot: the appointment strip already holds the
+ *  ask for it. A visit further out than this does not answer "did your vet want to see her?". */
+export const RECHECK_QUESTION_BOOKED_HORIZON_DAYS = 28
+
+/**
+ * CUL-1290 (PR-34), the vet-keyed fallback (§4.8): one question on a WATCHED row, "Did your vet
+ * want to see {name} again?", when all of these hold. Null otherwise. It is a question, never the
+ * original ask, and it moves nothing: the state stays `with_vet`, the rank and the ask are
+ * untouched, and the row keeps printing its count since the answer with its logging (§3.3).
+ *
+ *   · the knob is on (`recheckQuestionDays`), and the answer is at least that many days old,
+ *     counted from the later of its anchor and the day it was written, so a "My vet knows"
+ *     dated back three months does not ask the evening it is given (DF-5's nag);
+ *   · the answer is a visit, a tick or "My vet knows". A vet-started trial or course ends on its
+ *     own rules (§3.2), so it never needs a calendar backstop;
+ *   · no visit is booked in the next RECHECK_QUESTION_BOOKED_HORIZON_DAYS (one about the sign is
+ *     `recheck_booked` already). The shell passes no appointments today (CUL-1531, AC 10), so in
+ *     production this always holds; PR-34's harness measures it that way.
+ *
+ * NO IMPROVEMENT GATE. PR-34 built one (a tested fall against the frozen reference withheld the
+ * question) and the adversarial pass broke it three ways: the pre-anchor reference is taken at the
+ * flare that sent the owner to the vet, so a steady cat regressing to its own mean read as improved
+ * at every grid point; an owner logging one vomit in four while logging every meal read as improved;
+ * and a quieting test re-run nightly with no persistence withheld the question from 11 to 72% of
+ * steady cats on some evening. A gate that withholds a care prompt is a reassurance path, and E-6
+ * puts the burden of proof on the quieter change; it failed that proof, so it is gone, and the
+ * question asks every concern still watched at the line (§4.8 carries the measurement).
+ */
+export function recheckQuestionFor(
+  ack: AckFact,
+  ix: DayIndex,
+  args: CareStateArgs,
+  cfg: CareStateConfig,
+): string | null {
+  if (!knobOn(cfg)) return null
+  if (ack.source === 'vet_started_trial' || ack.source === 'vet_started_course') return null
+  const tz = args.timezone
+  const anchor = localDayIndexOf(ack.anchorOn, tz)
+  const created = Date.parse(ack.createdAt)
+  if (anchor === null || !Number.isFinite(created)) return null
+  const from = Math.max(anchor, localDayIndex(created, tz))
+  if (ix.today - from < cfg.recheckQuestionDays) return null
+  const booked = args.record.appointments.some((a) => {
+    if (a.cancelledAt || a.deletedAt) return false
+    const ms = Date.parse(a.scheduledAt)
+    if (!Number.isFinite(ms)) return false
+    const day = localDayIndex(ms, tz)
+    return day >= ix.today && day <= ix.today + RECHECK_QUESTION_BOOKED_HORIZON_DAYS
+  })
+  if (booked) return null
+  return `Did your vet want to see ${args.petName} again?`
 }
 
 /**

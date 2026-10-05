@@ -24,12 +24,14 @@
 // The observer is STATEFUL (the prior row per pet), so make one per simulation.
 
 import { runSignalPipeline, templatePayload, type SignalPayload } from '../pipeline.ts'
+import { EN10_CONTEXT_STEP } from '../careContext.ts'
+import { EN11_CONFIG } from '../detection.ts'
 import type { Finding } from '../detection.ts'
 import type { EngineFlags } from '../../_shared/engineFlags.ts'
 import type { AskRegister, Observer, ShownCard, Sign } from '../../_shared/engineCorpus/trajectory/types.ts'
 import { SIGNS } from '../../_shared/engineCorpus/trajectory/types.ts'
 import { careAt, careFactsAt, rowsAt } from './syntheticRows.ts'
-import { EMPTY_CARE_RECORD } from '../careState.ts'
+import { CARE_STATE_CONFIG, careStateOf, EMPTY_CARE_RECORD, EN9_CARE_STATE_STEP, type CareStateConfig, type CareStateStep } from '../careState.ts'
 import { isEngineKeyOn } from '../../_shared/engineFlags.ts'
 
 /** A card as the scorecard reads it: PR-15's ShownCard plus the fields detection is scored on. */
@@ -40,6 +42,10 @@ export interface ScoredCard extends ShownCard {
   proteins: string[]
   /** A reflection card's direction ('flat' / 'improving'), or null. */
   direction: string | null
+  /** EN-9's care state on a concern card ('raised', 'with_vet', …), or null. Absent on hand-built fixtures. */
+  careState?: string | null
+  /** CUL-1290: the card carries the vet-keyed fallback question. Absent on hand-built fixtures. */
+  recheckQuestion?: boolean
 }
 
 /** The flag-off arm: what every account not on an allowlist runs. */
@@ -72,6 +78,8 @@ export type AskOf = (finding: Finding) => string | null
 export interface SignalObserverOptions {
   askOf: AskOf
   engineFlags?: EngineFlags
+  /** EN-9's knobs, for an offline arm (CUL-1290: `recheckQuestionDays`). Absent: the shipped config. */
+  careConfig?: Partial<CareStateConfig>
 }
 
 function signOf(f: Finding): Sign | null {
@@ -92,6 +100,8 @@ export function cardOf(petKey: string, f: Finding, askOf: AskOf): ScoredCard {
     tier: (rec.tier ?? null) as string | null,
     proteins: f.type === 'food_symptom_correlation' ? [...f.proteins] : [],
     direction: (rec.direction ?? null) as string | null,
+    careState: careStateOf(f)?.state ?? null,
+    recheckQuestion: typeof careStateOf(f)?.recheckQuestion === 'string',
   }
 }
 
@@ -99,6 +109,10 @@ export function makeSignalObserver(opts: SignalObserverOptions): Observer {
   const flags = opts.engineFlags ?? FLAG_OFF
   const en9 = isEngineKeyOn(flags, 'engines_v3_en9')
   const prior = new Map<string, { payload: SignalPayload; generatedAt: string }>()
+  const careConfig = opts.careConfig ? { ...CARE_STATE_CONFIG, ...opts.careConfig } : null
+  const careStep: CareStateStep = careConfig
+    ? (findings, args) => EN9_CARE_STATE_STEP(findings, { ...args, config: careConfig })
+    : EN9_CARE_STATE_STEP
   return (view) => {
     const T = Date.parse(view.nowIso)
     const cards: ScoredCard[] = []
@@ -114,7 +128,7 @@ export function makeSignalObserver(opts: SignalObserverOptions): Observer {
         careContextFacts: en9 ? careFactsAt(view.record, pet.key, T) : null,
         // EN-8 (PR-19): the corpus feeds no weigh-ins yet (HARNESS_OBSERVES has no EN-8 line).
         weightFacts: null,
-      })
+      }, EN10_CONTEXT_STEP, EN11_CONFIG, careStep)
       prior.set(pet.key, { payload: templatePayload(result), generatedAt: view.nowIso })
       for (const r of result.findings) cards.push(cardOf(pet.key, r.finding, opts.askOf))
     }
