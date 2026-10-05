@@ -16,7 +16,7 @@ let mockUpdateGate: Promise<void> | null = null;
 // CUL-1510: the record around the vomit, as the floor's words read it. Null (the read has
 // not answered) unless a test sets it, so every other test draws no floor line.
 let mockFloorFacts: import('../../lib/incidentFloorFacts').IncidentFloorFacts | null = null;
-jest.mock('../../hooks/useIncidentFloorFacts', () => ({ useIncidentFloorFacts: () => mockFloorFacts }));
+jest.mock('../../hooks/useIncidentFloorFacts', () => ({ useIncidentFloorFacts: () => mockFloorFacts, useMinuteNow: () => Date.now() }));
 jest.mock('../../lib/supabase', () => ({
   supabase: {
     from: () => ({

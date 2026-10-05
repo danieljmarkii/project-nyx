@@ -13,7 +13,7 @@
 let mockRow: Record<string, unknown> | null = null;
 // CUL-1510: the record around the stool, as the floor's words read it (null = not answered).
 let mockFloorFacts: import('../../lib/incidentFloorFacts').IncidentFloorFacts | null = null;
-jest.mock('../../hooks/useIncidentFloorFacts', () => ({ useIncidentFloorFacts: () => mockFloorFacts }));
+jest.mock('../../hooks/useIncidentFloorFacts', () => ({ useIncidentFloorFacts: () => mockFloorFacts, useMinuteNow: () => Date.now() }));
 // Set to make a Hide / Show write fail, and to hold it until the test lets it answer
 // (CUL-827's R7 case: the write must fail AFTER a re-run's restore has landed).
 let mockUpdateError: { message: string } | null = null;

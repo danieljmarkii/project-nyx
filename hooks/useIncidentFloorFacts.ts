@@ -26,3 +26,15 @@ export function useIncidentFloorFacts(
   }, [eventId, petId, refreshKey]);
   return facts;
 }
+
+/** The clock the floor's words resolve against, ticked once a minute while the screen is
+ *  up, so a "by 9 PM" clause leaves the list when 9 PM passes rather than when the row
+ *  next moves, and call today's line turns to "first thing tomorrow" at the hour. */
+export function useMinuteNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}

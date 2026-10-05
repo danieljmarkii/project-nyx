@@ -138,7 +138,7 @@ function capitalised(s: string): string {
 /** "a", "a or b", "a, b, or c". */
 function orList(parts: readonly string[]): string {
   if (parts.length <= 1) return parts[0] ?? '';
-  if (parts.length === 2) return `${parts[0]}, or ${parts[1]}`;
+  if (parts.length === 2) return `${parts[0]} or ${parts[1]}`;
   return `${parts.slice(0, -1).join(', ')}, or ${parts[parts.length - 1]}`;
 }
 

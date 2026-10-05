@@ -23,6 +23,23 @@ export interface IncidentFloorFacts {
 }
 
 const HOUR = 3_600_000;
+
+/**
+ * A course on board at `atMs`, said to a vet by name. Started by then, and either ended
+ * after it or still running. `status` is the lifecycle authority (lib/medications.ts) and
+ * `ended_at` is owner-set, so a course that is no longer active with no end date cannot be
+ * placed in time: it is left out, because naming a drug the pet may have stopped is a
+ * claim the record cannot back. Every comparison is on parsed instants (C-40).
+ */
+export function onBoardAt(m: { status: string; started_at: string; ended_at: string | null }, atMs: number): boolean {
+  const start = Date.parse(m.started_at);
+  if (!Number.isFinite(start) || start > atMs) return false;
+  if (m.ended_at) {
+    const end = Date.parse(m.ended_at);
+    return Number.isFinite(end) && end > atMs;
+  }
+  return m.status === 'active';
+}
 const PAD_MS = 24 * HOUR;
 
 /**
@@ -58,22 +75,11 @@ export async function loadIncidentFloorFacts(eventId: string, petId: string): Pr
       .filter((r) => inWindow(r.occurred_at))
       .map((r) => ({ at: r.occurred_at, confidence: r.occurred_at_confidence }));
 
-    const meds = await db.getAllAsync<{ drug_name: string; started_at: string; ended_at: string | null }>(
-      'SELECT drug_name, started_at, ended_at FROM medications WHERE pet_id = ?',
+    const meds = await db.getAllAsync<{ drug_name: string; status: string; started_at: string; ended_at: string | null }>(
+      'SELECT drug_name, status, started_at, ended_at FROM medications WHERE pet_id = ?',
       [petId],
     );
-    const courses = [
-      ...new Set(
-        meds
-          .filter((m) => {
-            const start = Date.parse(m.started_at);
-            const end = m.ended_at ? Date.parse(m.ended_at) : Number.POSITIVE_INFINITY;
-            return Number.isFinite(start) && start <= a && !(end <= a);
-          })
-          .map((m) => m.drug_name.trim())
-          .filter((n) => n.length > 0),
-      ),
-    ];
+    const courses = [...new Set(meds.filter((m) => onBoardAt(m, a)).map((m) => m.drug_name.trim()).filter((n) => n.length > 0))];
 
     return {
       anchor: { at: own.occurred_at, confidence: own.occurred_at_confidence },

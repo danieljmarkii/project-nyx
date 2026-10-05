@@ -67,7 +67,7 @@ import {
   stoolFindings,
   tellThem,
 } from '../../lib/incidentFloorWords';
-import { useIncidentFloorFacts } from '../../hooks/useIncidentFloorFacts';
+import { useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
 import { StoolFieldsEditor } from './StoolFieldsEditor';
 import { stoolCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -182,6 +182,7 @@ export function StoolAnalysisSection(
   // CUL-1510: the record around this stool (the vomits beside it, the courses on board),
   // for "What to tell them" under a call. Re-read when the row moves.
   const floorFacts = useIncidentFloorFacts(eventId, petId, row?.updated_at ?? row?.status ?? null);
+  const clockNow = useMinuteNow();
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
   // the grid so a re-render of the block never resets what the owner folded, and fed the
@@ -634,7 +635,7 @@ export function StoolAnalysisSection(
   // line would have outlived a read that worked.
   const heldDisclosure = heldCallDisclosureOf(row);
   // CUL-1510: the floor's words under a new-rule call (spec §2 rules 1 and 2).
-  const nowMs = Date.now();
+  const nowMs = clockNow;
   const findings = stoolFindings(row);
   const isCall = display === 'call_now' || display === 'call_today';
   const action =

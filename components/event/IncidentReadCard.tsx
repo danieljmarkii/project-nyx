@@ -193,7 +193,7 @@ export function IncidentReadCard({
         {/* The list never sits under a call: a call's own ask is the action line, and a
             "call now if" under "call today" would read as the condition for the call above. */}
         {!attn && watchFor ? (
-          <View testID="incident-read-watch-for" style={styles.watchFor}>
+          <View testID="incident-read-watch-for" accessible style={styles.watchFor}>
             <ThemedText style={styles.watchForLead}>{WATCH_FOR_LEAD}</ThemedText>
             {watchFor.emergency ? <ThemedText style={styles.watchForLine}>{watchFor.emergency}</ThemedText> : null}
             {watchFor.lines.map((line) => (

@@ -156,8 +156,8 @@ describe('the watch-for list', () => {
     expect(list?.emergency).toBe(bloatLine('Mochi'));
     expect(list?.emergency).not.toMatch(/GDV/);
     expect(list?.lines).toEqual([
-      'Call your vet now if you see Mochi vomit twice more by 1 AM tomorrow, with more than half an hour between each, or Mochi is low on energy by 9 PM tomorrow.',
-      'Call your vet today if Mochi vomits again by 9 PM tomorrow, or Mochi vomits on each of the next two days.',
+      'Call your vet now if you see Mochi vomit twice more by 1 AM tomorrow, with more than half an hour between each or Mochi is low on energy by 9 PM tomorrow.',
+      'Call your vet today if Mochi vomits again by 9 PM tomorrow or Mochi vomits on each of the next two days.',
     ]);
   });
 

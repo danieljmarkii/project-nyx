@@ -61,7 +61,7 @@ import {
   vomitFindings,
   watchForList,
 } from '../../lib/incidentFloorWords';
-import { useIncidentFloorFacts } from '../../hooks/useIncidentFloorFacts';
+import { useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
 import { usePetStore } from '../../store/petStore';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
 import { vomitCapCopy } from '../../constants/monetizationCopy';
@@ -176,6 +176,7 @@ export function VomitAnalysisSection(
   const floorFacts = useIncidentFloorFacts(eventId, petId, row?.updated_at ?? row?.status ?? null);
   // The RECORD's pet (C-9): species and birthday decide which clauses its list carries.
   const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
+  const clockNow = useMinuteNow();
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
   // the grid so a re-render of the block never resets what the owner folded, and fed the
@@ -574,7 +575,7 @@ export function VomitAnalysisSection(
             birthDate: recordPet.date_of_birth,
             anchor: floorFacts.anchor,
             vomits: floorFacts.vomits,
-            nowMs: Date.now(),
+            nowMs: clockNow,
           })
         : null;
     if (!row || !photolessList) return null;
@@ -649,7 +650,7 @@ export function VomitAnalysisSection(
   const heldDisclosure = heldCallDisclosureOf(row);
   // CUL-1510: the floor's words. Each is a new-rule surface only (`display` is null on an
   // earlier-rule read, which keeps today's card to the byte).
-  const nowMs = Date.now();
+  const nowMs = clockNow;
   const findings = vomitFindings(row);
   const isCall = display === 'call_now' || display === 'call_today';
   const action =
