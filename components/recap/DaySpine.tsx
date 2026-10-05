@@ -297,7 +297,7 @@ function SpineRow({
             </ThemedText>
             {/* B-568 — the wet/dry variant, a sibling of the truncating title (never
                 appended to it) so it survives a long prescription product name. Matches
-                the drill-in (DayEventsSheet) / History (EventRow) register: one mapper,
+                the drill-in (DayEventsSheet) / History (EventRow (retired, HV-14)) register: one mapper,
                 all surfaces name a food identically. */}
             {row.formatTag ? (
               <ThemedText style={[styles.formatTag, { color: g.detail }]} numberOfLines={1}>
@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   // B-568 — the wet/dry variant tag. Same tracked-uppercase register as the drill-in
-  // (DayEventsSheet) / History (EventRow), so a food is named identically across the
+  // (DayEventsSheet) / History (EventRow (retired, HV-14)), so a food is named identically across the
   // three timeline surfaces. Muted (7.6:1), NOT faint — it is small INFORMATIONAL text
   // (it tells two identical-looking rows apart), so it must clear night AA like the
   // time and sub-line. flexShrink:0 holds its width so the title is what truncates.

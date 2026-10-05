@@ -156,7 +156,7 @@ export type EventTypeKey = keyof typeof EVENT_TYPES;
 
 // The event types treated as symptoms (vs. meal / stool_normal / other). Drives
 // the rose category tint on row surfaces AND the soft-impact commit haptic (a
-// symptom commit is acknowledged, never congratulated). Shared here so EventRow,
+// symptom commit is acknowledged, never congratulated). Shared here so EventRow (retired, HV-14),
 // TodayZone and the log surfaces can't drift to different definitions of "is this
 // a symptom?". §6 pairing rule: a new symptom leaf joins this AND the picker's
 // CATEGORY_TINT in the same PR; stool_normal remains the one documented

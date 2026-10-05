@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   // The withholding fact (§6). `colorEventSymptom` is the app's established
-  // concern-text token — every other safety/concern line uses it (EventRow,
+  // concern-text token — every other safety/concern line uses it (EventRow (retired, HV-14),
   // TodayZone, Badge). The mock's #B4123B is a print-legibility choice for paper;
   // the shipped surface uses the token, per the theme-tokens-only convention. The
   // exact register locks at M5 behind `clinical-guardrails`.

@@ -246,7 +246,6 @@ describe('BetaFeaturesScreen — says early access, never beta (CUL-70)', () => 
     expect(getAllByRole('switch').map((sw) => sw.props.accessibilityLabel)).toEqual([
       'Home screen widget',
       'Design v2',
-      'History v2',
     ]);
   });
 });

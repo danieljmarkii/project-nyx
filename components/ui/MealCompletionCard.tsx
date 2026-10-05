@@ -383,7 +383,7 @@ export function MealCompletionCard() {
   // CUL-614 — the nameless-food fallback says "Food logged", never a bare "Logged":
   // §5's sentence rule is that a beat names the record, and a card that has lost the
   // food's name still knows it wrote food. Deliberately NOT "Meal logged" / "Treat
-  // logged" — that rule already has two implementations (EventRow, lib/dayEvents) and
+  // logged" — that rule already has two implementations (EventRow (retired, HV-14), lib/dayEvents) and
   // this is not the place to mint a third; "Food" is true for all four foodType values,
   // including the 'other' and null ones neither of those covers.
   //

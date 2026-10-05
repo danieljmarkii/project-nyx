@@ -684,7 +684,9 @@ describe('membership walk (HR-6) — every list decided, current state == decide
     // +1 (CUL-1415 / PR-21): the care_acknowledgements sign CHECK (migration 082).
     // +1 (CUL-1417 / PR-23): EN-9's C1a co-signs (careState.ts coSignsFor).
     // +1 (CUL-1418 / PR-35): the client's CARE_SIGNS, the answers it offers.
-    expect(WALK).toHaveLength(27);
+    // −1 (CUL-1175 / HV-14): v1 History's TYPE_FILTER_KEYS, deleted with its screen. History
+    // v2's type sheet derives from EVENT_TYPES and enumerates no symptom leaf.
+    expect(WALK).toHaveLength(26);
   });
 });
 
