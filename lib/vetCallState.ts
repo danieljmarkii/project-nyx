@@ -14,7 +14,7 @@
 // never its findings (event_ai_verdicts' four columns, by design), so a bloody read inside a
 // called bout at the same rung shows "You called on …" rather than offering the call again.
 // Its ask is untouched either way: a call never lowers or rewords an escalation (§6.1), so
-// what this costs is a second follow-up, never a quieter screen. Filed on CUL-1419.
+// what this costs is a second follow-up, never a quieter screen. Filed as CUL-1599.
 //
 // ── THE FOLLOW-UP (§6.3) ─────────────────────────────────────────────────────────
 // One per call, due 48 hours after "I've called", expiring 7 days after it, silently. The

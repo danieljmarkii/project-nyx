@@ -33,7 +33,7 @@ import { toLocalDayKey } from '../../lib/utils';
 // own words, rail and tier are drawn by the section above, word for word, before and after a
 // call (§6.1, mock 4b). A call adds a dated fact; it removes nothing.
 //
-// "NOT YET" WRITES NOTHING (TD-5, provisional; decision brief on CUL-1419). The PM decision
+// "NOT YET" WRITES NOTHING (TD-5, provisional; the ruling is CUL-1597). The PM decision
 // left to this PR is whether a call-now "Not yet" is asked once more that evening (Dr. Chen)
 // or behaves as today (Jordan). Until it is ruled, it behaves as today: nothing is written,
 // nothing is re-asked, and the read's ask stays exactly as it was. Neither option notifies.

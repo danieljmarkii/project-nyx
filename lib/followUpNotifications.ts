@@ -20,7 +20,7 @@
 // `follow_ups` there is a migration, which is its own PR, so this PR keeps the switch on the
 // phone (AsyncStorage, cleared in `wipeLocalSession`). What that costs: a reinstall or a
 // second phone starts with it off, the safe direction (G6). The move to the server table is
-// filed as its own issue.
+// filed as CUL-1598.
 //
 // IDENTIFIERS live outside the category registry's `nyx.notif.` prefix, so the daily
 // summary's reconcile (`computeReconcileActions`) never sees, keeps or cancels one, and this
