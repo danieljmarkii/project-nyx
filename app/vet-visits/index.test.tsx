@@ -70,6 +70,30 @@ jest.mock('../../lib/vetVisits', () => {
   };
 });
 
+// Engines v3 PR-36: EN-14's gate and the call read. Off by default, so every test above the
+// calls block runs the flag-off screen, which reads no call.
+let mockEn14 = false;
+const mockReadCalls = jest.fn();
+jest.mock('../../hooks/useFollowUps', () => ({ useEn14: () => mockEn14 }));
+jest.mock('../../lib/vetCallReads', () => {
+  const actual = jest.requireActual('../../lib/vetCallState');
+  const visits = jest.requireActual('../../lib/vetVisits');
+  return {
+    readCallsForPet: (petId: string) => mockReadCalls(petId),
+    // The real row builder, inlined here because the module's own import of the DB is what
+    // this mock replaces.
+    callListRowOf: (v: { call: { id: string; petId: string; calledOn: string; note: string | null }; followUp: { kind: string; answer?: string } }, p: string) => ({
+      id: v.call.id,
+      petId: v.call.petId,
+      visitedAt: v.call.calledOn,
+      stamp: visits.dayStampFromDate(v.call.calledOn),
+      title: 'Called the vet about the vomiting',
+      where: v.followUp.kind === 'due' ? actual.FOLLOW_UP_TITLE : '',
+      tags: [],
+    }),
+  };
+});
+
 // A real store, so switching the active pet exercises the real mutator rather
 // than a hand-rolled stand-in that cannot reproduce the hydration path.
 const PET_A = { id: 'pet-a', name: 'Nyx' };
@@ -92,6 +116,34 @@ beforeEach(() => {
   mockHome = { next: null, later: [], awaiting: [], visits: [] };
   mockDetail = null;
   mockStoreState = { pets: [PET_A, PET_B], activePet: PET_A };
+  mockEn14 = false;
+  mockReadCalls.mockImplementation(async () => []);
+});
+
+describe('Engines v3 PR-36 — the call record in Vet visits', () => {
+  const call = {
+    call: { id: 'call-1', petId: 'pet-a', calledOn: '2026-10-03', eventId: 'v1', note: null, withdrawn: false },
+    followUp: { kind: 'due', dueAt: '2026-10-05T15:00:00.000Z', expiresAt: '2026-10-10T15:00:00.000Z' },
+    eventType: 'vomit',
+  };
+
+  it('flag off: reads no call and lists none', async () => {
+    mockReadCalls.mockImplementation(async () => [call]);
+    render(<VetVisitsScreen />);
+    await screen.findByText('Add the next visit');
+    expect(mockReadCalls).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('vet-visits-calls')).toBeNull();
+  });
+
+  it('flag on: lists the pet\'s calls under their own heading, each a door to its record', async () => {
+    mockEn14 = true;
+    mockReadCalls.mockImplementation(async () => [call]);
+    render(<VetVisitsScreen />);
+    await screen.findByTestId('vet-visits-calls');
+    expect(mockReadCalls).toHaveBeenCalledWith('pet-a');
+    expect(screen.getByText('Called the vet about the vomiting')).toBeTruthy();
+    expect(screen.getByText('What did the vet say?')).toBeTruthy();
+  });
 });
 
 describe('AC 11 — the screen writes under the pet it was opened for', () => {

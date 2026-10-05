@@ -9,6 +9,9 @@ import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { AppointmentBlock } from '../../components/vetvisits/AppointmentBlock';
 import { AppointmentActions } from '../../components/vetvisits/AppointmentActions';
 import { VisitRow } from '../../components/vetvisits/VisitRow';
+import { useEn14 } from '../../hooks/useFollowUps';
+import { callListRowOf, readCallsForPet, type CallView } from '../../lib/vetCallReads';
+import { petPronouns } from '../../lib/utils';
 import { VetVisitsEmptyState } from '../../components/vetvisits/VetVisitsEmptyState';
 import { BookVisitSheet, type BookVisitSubmit, type VisitMode } from '../../components/vetvisits/BookVisitSheet';
 import { resolveRecordPetName, usePetStore } from '../../store/petStore';
@@ -77,6 +80,9 @@ export default function VetVisitsScreen() {
   const petName = resolveRecordPetName(pets, petId);
 
   const [home, setHome] = useState<VetVisitsHome>(EMPTY_VET_VISITS_HOME);
+  const en14 = useEn14();
+  const [calls, setCalls] = useState<CallView[]>([]);
+  const pronoun = petPronouns(pets.find((p) => p.id === petId)?.sex ?? 'unknown').object;
   const [prefill, setPrefill] = useState<VisitPrefill>(NO_PREFILL);
   // `loading` alone cannot carry the three states: the first frame is
   // `visits=[] && !loading`, which would flash the designed empty state at an
@@ -114,9 +120,15 @@ export default function VetVisitsScreen() {
       return;
     }
     try {
-      const [next, pre] = await Promise.all([readVetVisitsHome(petId), readVisitPrefill(petId)]);
+      // Engines v3 PR-36: the pet's calls, read only while EN-14 is on (flag-off reads nothing).
+      const [next, pre, callViews] = await Promise.all([
+        readVetVisitsHome(petId),
+        readVisitPrefill(petId),
+        en14 ? readCallsForPet(petId) : Promise.resolve([] as CallView[]),
+      ]);
       setHome(next);
       setPrefill(pre);
+      setCalls(callViews);
       setFailed(false);
       setLoaded(true);
     } catch (err) {
@@ -125,7 +137,7 @@ export default function VetVisitsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [petId]);
+  }, [petId, en14]);
 
   useFocusEffect(
     useCallback(() => {
@@ -292,7 +304,7 @@ export default function VetVisitsScreen() {
   // still something the owner put here, and the designed empty state would bury
   // the only surface that shows it.
   const isEmpty =
-    loaded && home.visits.length === 0 && home.next === null && home.awaiting.length === 0;
+    loaded && home.visits.length === 0 && home.next === null && home.awaiting.length === 0 && calls.length === 0;
   const otherPets = pets
     .filter((p) => p.id !== petId)
     .map((p) => ({ id: p.id, name: p.name }));
@@ -483,6 +495,24 @@ export default function VetVisitsScreen() {
                     key={row.id}
                     row={row}
                     onPress={() => router.push(`/vet-visits/${row.id}`)}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {/* Engines v3 PR-36 (CUL-1419; spec §6.4, mock 4d): the pet's calls, each a door to
+              its own record and question. Their own section, below the visits: a call is not
+              a visit, and never anchors anything a visit does (082's header). */}
+          {calls.length > 0 ? (
+            <View style={styles.section} testID="vet-visits-calls">
+              <SectionLabel label="Calls" header />
+              <View style={styles.list}>
+                {calls.map((v) => (
+                  <VisitRow
+                    key={v.call.id}
+                    row={callListRowOf(v, pronoun)}
+                    onPress={() => router.push({ pathname: '/vet-call/[id]', params: { id: v.call.id } })}
                   />
                 ))}
               </View>

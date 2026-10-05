@@ -3,8 +3,13 @@ import { readCopies } from './readCopy';
 import { isWorthACall } from './readState';
 import { tierDisplayOf } from './incidentTierWords';
 import { TIER_RANK, type TierRank } from './incidentTier';
+import { dayStampFromDate, type VisitListRow } from './vetVisits';
 import {
   BOUT_MS,
+  FOLLOW_UP_ADD_IT,
+  FOLLOW_UP_NOT_RECORDED,
+  FOLLOW_UP_TITLE,
+  answeredLine,
   callCovers,
   callRecordsOf,
   followUpStateOf,
@@ -167,4 +172,33 @@ export async function readWaitingFollowUps(
 export async function readDueFollowUp(petId: string, now: number = Date.now()): Promise<CallView | null> {
   const due = (await readCallsForPet(petId, now)).filter((v) => v.followUp.kind === 'due');
   return due.length === 0 ? null : due[due.length - 1];
+}
+
+/**
+ * One call as a Vet visits row (mock 2c, 4d), in VisitRow's shape so the list draws calls and
+ * visits alike: the day, what it was about, and where its question stands. A row, never a
+ * count: the list is the record of what the owner did, beside the visits she made.
+ */
+export function callListRowOf(view: CallView, pronoun: string): VisitListRow {
+  const about = view.eventType === 'vomit' ? 'vomiting' : 'stool';
+  const f = view.followUp;
+  const where =
+    f.kind === 'answered'
+      ? answeredLine(f.answer, pronoun)
+      : f.kind === 'due'
+        ? FOLLOW_UP_TITLE
+        : f.kind === 'expired'
+          ? `${FOLLOW_UP_NOT_RECORDED} ${FOLLOW_UP_ADD_IT}`
+          : view.call.note
+            ? 'Your note is on it.'
+            : '';
+  return {
+    id: view.call.id,
+    petId: view.call.petId,
+    visitedAt: view.call.calledOn,
+    stamp: dayStampFromDate(view.call.calledOn),
+    title: `Called the vet about the ${about}`,
+    where,
+    tags: [],
+  };
 }
