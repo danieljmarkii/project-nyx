@@ -1,6 +1,10 @@
 # Nyx — Analytics Dashboard Requirements
 
 **Status:** DRAFT — design session 2026-06-13; **PM design review 2026-06-14** (clickable mocks: `docs/mockups/analytics-dashboard-mockup.html` + `-v2.html`) resolved the **layout direction (summary-led)**, the **Home doorways / no-4th-tab**, **detail-screen range control**, the **meals-only finished-rate**, and **Meals & treats as a v1 card** — all folded into the sections below. Both build gates are now **RESOLVED** (2026-06-14): the colour-as-wellness ruling (§13 #6, at the PR 2 build) and the user-facing name (§13 #1 = **"Patterns"**).
+**Version:** 1.1 · **Last Updated:** 2026-10-05 · v1.1 (2026-10-05, CUL-1071, PM-approved Tier-2 edit at Design v2's GA): the card taxonomy becomes layers on the month; the KPI column, the AI summary, the Calendar card and the old weight card are retired; weight is drawn as dots by date on a fixed ±10% band; the page order as shipped is recorded (§5); E-13's ordering question and CUL-845 gate 2's lost consumer are open on CUL-1594. v1.0 is the 2026-06-13/14 draft below, kept as the record of what was ruled.
+
+> **⚠ GA (2026-10-05, CUL-1071).** Patterns now draws Design v2's page for every account (D2-5, CUL-1067; design authority `docs/culprit-design-v4-mockups.html` §04). Where a section below describes a card the GA deleted, it carries its own ⚠ GA note naming what replaced it. The page as shipped is in §5.
+
 **Working name:** "analytics dashboard" (internal). **User-facing name = "Patterns"** (§13 #1, PM 2026-06-14); **never "Analytics"** (engineer jargon, fails `nyx-voice`).
 **Anchor backlog item:** B-023 (this doc is the build-ready expansion of it). Composes with B-069, B-046, B-053, B-004.
 **Build phase:** Post-MVP. Sequenced **after Step 9 (vet report)** — see §14. This is design-ahead.
@@ -158,6 +162,12 @@ Sources: [Tableau Pulse insight types](https://help.tableau.com/current/online/e
 
 ## 5. Card taxonomy & visual language
 
+> **⚠ GA (2026-10-05, CUL-1071): the card taxonomy becomes layers on the month.** Design v2 replaced the column of separate symptom cards with one instrument, the month (`components/designV2/patterns/MonthInstrument.tsx`): a month nav, the weekly bars over the nine weeks ending with today's row, a symptom lens (present when the read holds two or more symptoms), four independent layer toggles (the lens symptom, Meals, Medication, Photos), a count line, the day grid and a legend; a day opens in place with a door into History on the same local day. Every count is computed in `lib/monthModel.ts`. **Retired with the flag:** the KPI column (the four-layer count cards per symptom, §5 #1 and §6 A, and the *Meals finished* card, §6 B's finished-rate), the AI summary card (§7, and its `ComingSoonSummary` precursor), the Calendar card (§5 #4, §6 A's frequency calendar, now the month's grid) and the old weight card. **Weight** is drawn as dots by date on a fixed ±10% band, with no fill and the delta spoken (`components/designV2/patterns/WeightCard.tsx`): neutral grey dots, words that carry direction and never a verdict, and a header that counts the readings the dots draw ("Weight · last 12 of 30 readings"). The ranking cards (§5 #3), the composition card (§5 #6) and the pattern panels survive. The Top food card still prints each food's "% finished" beside its share (§11 #1 still governs that rate); only the standalone finished-rate card left.
+>
+> **Page order as shipped (`app/insights/index.tsx`):** (1) the cold-start empty state, only when the record is empty (`DashboardEmptyState`), with the month following it; (2) the month; (3) the weight; (4) Top food, Top protein, meals vs treats; (5) the Timing panel and the Trial panel, each only when it has a model; (6) *What you noticed*, last.
+>
+> **⚠ Open on CUL-1594: E-13's ordering.** The builder, `lib/dashboardScreen.ts`, still ranks *What you noticed* (its own `observation` rank, per the daily-look spec's E-13) above the descriptive cards, but the page filters it out of that list and draws it last, after the panels. The builder's order and the drawn order disagree, and which one E-13 should now govern is the open question on CUL-1594. **Also open there:** CUL-845 gate 2 (the zero suppression in `lib/lookTwins.ts`: no surface may print a zero for a symptom whose look-word twin is non-zero in the same window) lost its consumer when the symptom count cards were retired. The module is kept, with no runtime consumer, while CUL-1594 checks whether the month or the metric detail can print such a zero.
+
 **The card is the atom of the dashboard.** Every card is a server- or locally-computed **finished result** — never a query the owner composes.
 
 **Card types (v1):**
@@ -181,6 +191,8 @@ Sources: [Tableau Pulse insight types](https://help.tableau.com/current/online/e
 Curated, in priority order. Safety-class cards always lead (Principle 3). Each maps to existing data.
 
 ### A. "Is Nyx okay / getting better?" — health trajectory
+
+> **⚠ GA (2026-10-05, CUL-1071):** the symptom count cards and the symptom frequency calendar below are retired; the symptoms are layers on the month (§5). Diet-trial progress is the Trial panel. The guardrail stands.
 - **Symptom counts** — vomit, stool (by consistency), lethargy, etc.: count card, WoW/MoM delta, **color inverted** (rising = concern). *(local: `events`)*
 - **Symptom frequency calendar** — month heat-grid per symptom ("how often"). *(local: `events`)*
 - **Diet-trial progress** — day counter / milestone toward the trial, anchored on `diet_trials.started_at`. *(local)*
@@ -190,7 +202,7 @@ Curated, in priority order. Safety-class cards always lead (Principle 3). Each m
 - **Top food** — most-logged / most-eaten food (your #3). Inarguable, descriptive. *(local: `meals` × `food_items`)*
 - **Top protein** — most-consumed `primary_protein` (your #3.1). The card Nyx is **uniquely positioned** to show. *(local, via `canonicalizeProtein`)*
 - **Meals & treats composition** *(added PM review 2026-06-14, ships v1)* — the month's split of logged **meals vs treats**, as a proportion bar + counts (composition card, §5 #6). Descriptive (what was logged), never a judgment on the owner; it ties to the meal-type-collapse coverage signal when a stretch goes treats-only ("worth sharing with your vet," framed as coverage, never blame). *(local: `meals` × `food_items.food_type`)*
-- **Intake / finished-rate (MEALS ONLY)** — share of **meals** rated `most`/`all` over N samples. **Treats are excluded from the denominator** *(PM review 2026-06-14)*: pets finish treats at a ceiling rate, so blending them in inflates the number and **masks a meal refusal** — the clinically load-bearing decline signal (§11 #1). *(local: `meals.intake_rating` where `food_type != 'treat'`)*
+- **Intake / finished-rate (MEALS ONLY)** _(⚠ GA 2026-10-05, CUL-1071: the standalone *Meals finished* card is retired with the KPI column; the per-food "% finished" on Top food remains, §5)_ — share of **meals** rated `most`/`all` over N samples. **Treats are excluded from the denominator** *(PM review 2026-06-14)*: pets finish treats at a ceiling rate, so blending them in inflates the number and **masks a meal refusal** — the clinically load-bearing decline signal (§11 #1). *(local: `meals.intake_rating` where `food_type != 'treat'`)*
 - **Guardrails (non-negotiable, §11):** this is *intake*, never relabeled "preference." A food Nyx has **started refusing** surfaces as a **health watch, not "picky."** Free-fed foods carry "intake not directly observed" and are never read as "didn't eat."
 
 ### C. "What's connected?" — patterns & links
@@ -203,6 +215,8 @@ Curated, in priority order. Safety-class cards always lead (Principle 3). Each m
 ---
 
 ## 7. The AI summary (the AI-forward centerpiece)
+
+> **⚠ GA (2026-10-05, CUL-1071): retired.** The AI summary card and its `ComingSoonSummary` precursor are deleted, and the summary-led layout below is superseded: the page leads with the month (§5). Nothing on Patterns calls a model. This section stays as the record of what was ruled, and its guardrails (LLM as Phraser, never reassure on absence, `validateSummary`) bind any summary that returns.
 
 **What it is:** a short, warm narrative at the **top of the dashboard** that synthesizes the already-computed cards into 2–4 sentences — "Here's what I'm seeing for Nyx this month." **Static narrative, NOT a chat** (the "keyhole effect" — chat is the wrong shape for "what changed"; and every chat-based health AI in the research is where the safety incidents cluster).
 
