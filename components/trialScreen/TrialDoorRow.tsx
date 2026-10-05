@@ -6,10 +6,7 @@ import type { TrialDoorRowModel } from '../../lib/trialDoorRow';
 
 // The Pet tab's door to the trial's own screen (TS-6 · CUL-1302; spec §5.2, R-3, S8). One
 // 44pt row, no buttons: the eyebrow, the title, the day bar, the sub-line, a chevron. It
-// draws `lib/trialDoorRow.ts` and decides nothing; the Pet tab holds the gate and the push.
-//
-// In the namespace so the flag-off guard can stub it: flag-off, the Pet tab's tree must equal
-// the tree with this file absent (`guards/trialScreenFlagOff.test.tsx`, C-36).
+// draws `lib/trialDoorRow.ts` and decides nothing; the Pet tab holds the push.
 //
 // On a safety face (ruling (a′), both sentences) the row carries the screen's fact and ask
 // on a rose rail, and no bar and no end date.

@@ -89,9 +89,8 @@ export interface WorthRaisingRow {
   /** True for a Signal finding whose own priority class is safety. Never capped away. */
   isSafety: boolean;
   /**
-   * The trial row grown into the vet's recheck questions (TS-8), on the trial row only
-   * and only while the `trial_screen` gate is live. Absent on every other row, and on
-   * the trial row flag-off, which keeps today's header + line.
+   * The trial row grown into the vet's recheck questions (TS-8), on the trial row only.
+   * Absent on every other row, and where `trialScreen` is null (the strip's header + line).
    */
   recheck?: TrialRecheck;
 }
@@ -146,9 +145,8 @@ export interface WorthRaisingInput {
   /** `resolveTrialStrip`'s model for this pet, or null when no trial is running. */
   trialStrip: TrialStripModel | null;
   /**
-   * The trial screen's own model for this pet (`buildTrialScreenModel`) when the
-   * `trial_screen` gate is live, else null — and null is today's trial row, byte for
-   * byte. REQUIRED, never defaulted (C-37): on a refusing cat this is what carries the
+   * The trial screen's own model for this pet (`buildTrialScreenModel`), or null when the
+   * host has no pet to build it for — and null is the strip's trial row. REQUIRED, never defaulted (C-37): on a refusing cat this is what carries the
    * refusal onto the page, and a default would drop it by writing nothing.
    */
   trialScreen: TrialScreenModel | null;

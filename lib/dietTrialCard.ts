@@ -2913,7 +2913,7 @@ export interface TrialStripModel {
   trialResponseLine: string | null;
   /**
    * CUL-1526 (G2 B + G3 B, the CUL-1519 mock round 2 §04) — Design v2's ONE line, drawn by
-   * `components/designV2/home/TrialCard` under `design_v2` + `trial_screen`: the end date
+   * `components/designV2/home/TrialCard` under `design_v2`: the end date
    * ALWAYS leads ("Ends Oct 17" | "Window ended Oct 17"), then the off-diet floor when there is
    * one ("· 3 off-diet feedings logged"). Nothing else: the food label, the coverage ratio and
    * the vomiting pair live on `/trial`. An end date has no direction, so it cannot reassure;
@@ -3026,9 +3026,8 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // forbids on the card for the same reason.
   //
   // R1 puts the refusal fact on the same footing. The strip has no room for the
-  // register itself — that lives on the Pet tab's card (under `trial_screen`: on the
-  // trial's own screen, with its first sentence on the Pet tab's door, TS-6 ruling
-  // (a′)) — but it must not do the one thing it could do wrong here, which is render
+  // register itself — that lives on the trial's own screen, with its two sentences on
+  // the Pet tab's door (TS-6 ruling (a′)) — but it must not do the one thing it could do wrong here, which is render
   // a tidy coverage line as if the trial were proceeding normally. Silence on Home,
   // the register one tap away; never a reassuring summary of a trial the record says
   // isn't running.

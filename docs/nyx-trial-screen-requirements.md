@@ -1,6 +1,6 @@
 # The trial's own screen — Requirements
 
-**Version:** 1.1 · BUILD-READY (v1.0 failed its adversarial pass; v1.1 carries the fixes, §12) | **Last Updated:** 2026-10-03 (CUL-1339 #1, #3, #4 inline in §0.3, §3.4, §3.9, §4; earlier: 2026-09-27 §0.3, §3.3, §3.7, §3.9, §5.1, §5.2 rulings) | **Issue:** CUL-1291 (discovery) · the Linear project **Diet trial — its own screen**
+**Version:** 1.1 · **GA** (`trial_screen` retired 2026-10-05, CUL-1307: every account, no flag, the flag-off paths deleted; the "flag-off" sentences below are history) · BUILD-READY (v1.0 failed its adversarial pass; v1.1 carries the fixes, §12) | **Last Updated:** 2026-10-05 (TS-GA); 2026-10-03 (CUL-1339 #1, #3, #4 inline in §0.3, §3.4, §3.9, §4; earlier: 2026-09-27 §0.3, §3.3, §3.7, §3.9, §5.1, §5.2 rulings) | **Issue:** CUL-1291 (discovery) · the Linear project **Diet trial — its own screen**
 **Design authority:** `docs/culprit-trial-screen-mockups.html` round 2 (one proposal), published at https://claude.ai/artifact/5AHCdRG9jXj2q48vC2o6cA
 **Evidence:** `docs/sessions/2026-09-26-trial-screen-brainstorm.md` (five isolated reads). The August pass at the same idea is draft PR #631 (T2, the `/trial` room); this spec supersedes its T2 and T3.
 **Parent spec:** `docs/nyx-diet-trial-requirements.md`. Every trial rule in it binds here (§5.2 the permitted statements, §5.3 one predicate, B-422 belief versus evidence). This spec adds a host, not a meaning.
@@ -173,17 +173,17 @@ Under the flag, the strip keeps its placement (below the Signal, above Today) an
 
 **This week's lane:** the ledger's current row, seven marks in the ledger's own cell vocabulary, with its count (*Week 4 · 1 of 2 so far*). ⚠ **RULED 2026-09-27 (PM, on CUL-1343):** on Home the lane has no legend, so its label names what it counts: *Week 4 · meals logged 1 of 2 so far* (spoken: *Week 4 of the trial: meals logged on 1 of 2 days so far.*). The ledger's rows on the screen keep the bare count beside their legend. **It renders only when `withholdingReasons(input)` is empty, the trial facts are fresh for the strip's pet (`trialFactsFresh`), and no safety-class Signal card (`intake_decline`, `incident_red_flag`) is live above the strip on Home.** ⚠ **RULED 2026-09-27 (PM, on CUL-1301):** "safety-class" is the whole class, `priorityClass === 'safety'` (also `symptom_worsening` and `symptom_chronicity`), not the two named here: a tidy meal lane under a worsening-vomiting card is the same inversion. The Signal's escalate-only gap row (*gaps between vomiting episodes are getting shorter*, no `priorityClass`) hides it too (PM confirmed 2026-09-27, from TS-5's adversarial pass). The Signal answers asynchronously, so the lane fails closed until both its cache read and its watching read have answered for the strip's pet. Built in `lib/trialStripDoor.ts` and `SignalZone`'s `onSafetyLive`. Any withholding reason means the strip is holding back its own ratio, and the lane is that ratio drawn (a refusing cat would otherwise get *Week 6 · 7 of 7 so far* in seven filled marks, with nothing on Home escalating; §12 finding 1). A chart under a plain safety row inverts S1. The lane and the ledger come from the same `lib/trialLedger.ts` call, so they cannot disagree.
 
-Flag-off, the strip is byte-identical and still opens the Pet tab (CUL-170's `focus: 'trial'`).
+Flag-off, the strip is byte-identical and still opens the Pet tab (CUL-170's `focus: 'trial'`). ⚠ **Retired at TS-GA (CUL-1307):** the shipped strip and the `'trial'` focus are deleted; the strip is the door for every account.
 
 ### 5.2 The Pet tab's door (TS-6)
 
-Under the flag, while a trial is active or inside its 30-day grace, the Pet tab's trial slot renders one row: *Diet trial* eyebrow, the strip's header, the day bar, `{food} · ends {date}`, a chevron, no buttons. It opens `/trial/{pet}`. With no trial, the start card and `StartTrialModal` are unchanged. Flag-off, the full card is byte-identical.
+Under the flag, while a trial is active or inside its 30-day grace, the Pet tab's trial slot renders one row: *Diet trial* eyebrow, the strip's header, the day bar, `{food} · ends {date}`, a chevron, no buttons. It opens `/trial/{pet}`. With no trial, the start card and `StartTrialModal` are unchanged. Flag-off, the full card is byte-identical. ⚠ **Retired at TS-GA (CUL-1307):** the full running-trial card and the Pet tab's lifecycle host are deleted; the slot is the retry (CUL-1458), the door, or the start card.
 
 ⚠ **RULED 2026-09-27 (PM, on CUL-1302: (a), then (a′), then "both"):** wherever the screen leads with its safety block, decided the screen's way (the card's register lines, `trialSafetyLines(trialScreenCard(input))`, never the state), the row draws **no bar and no end date**, and carries the screen's **two** safety sentences verbatim on its rose rail: the fact, then the ask in the screen's ask ink. (a) alone rested on "the ask stays on Home's Signal card", which the adversarial pass falsified for a trial refusal: the Signal cannot see a cat refusing from day 1 (B-789), and Home's strip is silent on a refusal because the Pet tab's card held the register. The first sentence alone escalated without saying to call; the call lives in the second. An ended trial with a live decline carries them too. Built in `lib/trialDoorRow.ts` (TS-6); the frame is in the round-2 mock, §06.
 
 ### 5.3 The other senders (TS-6)
 
-| Sender | Today | Under the flag |
+| Sender | Before TS-GA | Since TS-GA (every account) |
 |---|---|---|
 | Day Summary recap strip (`app/day-summary.tsx:115`) | Pet tab, `focus: 'trial'` | `/trial/{pet}` (the recap's pet) |
 | Widget trial dot band and fact tile (`widgets/CulpritWidget.tsx:545, :669`) | `nyx:///profile?pet=…&src=widget` (frozen, H-7) | unchanged link. The Pet tab switches to the widget's pet (CUL-1292), then forwards a `src=widget` trial tap to `/trial/{pet}` once (C-22) |
@@ -204,7 +204,7 @@ A sender the app registers carries the pet in the href. A new sender added later
 
 ## 7. Engineering
 
-- **Flag:** `app_config.trial_screen` (`{"enabled": false, "allowlist": []}`), resolved by `hooks/useTrialScreen.ts` as `useAllowlistFlag('trial_screen') && useBetaOptIn('trial_screen')`, the only file allowed to read the key (the `useHistoryV2` shape). A Beta shelf row (`lib/betaFeatures.ts`), client-render-only, `serverCost: false`. Guard `guards/trialScreenFlagOff.test.tsx` on the C-36 template (`guards/historyV2FlagOff.test.tsx`), with a non-vacuity floor, a stated async blind spot (C-41), and SURFACES for the route, Home's strip, the Pet tab and the Day Summary.
+- **Flag (retired at TS-GA, CUL-1307: the hook, the guard and the shelf row are deleted; the `app_config` row goes with the data-only clean-up):** `app_config.trial_screen` (`{"enabled": false, "allowlist": []}`), resolved by `hooks/useTrialScreen.ts` as `useAllowlistFlag('trial_screen') && useBetaOptIn('trial_screen')`, the only file allowed to read the key (the `useHistoryV2` shape). A Beta shelf row (`lib/betaFeatures.ts`), client-render-only, `serverCost: false`. Guard `guards/trialScreenFlagOff.test.tsx` on the C-36 template (`guards/historyV2FlagOff.test.tsx`), with a non-vacuity floor, a stated async blind spot (C-41), and SURFACES for the route, Home's strip, the Pet tab and the Day Summary.
 - **The reads take a pet (TS-1):** `useDietTrial`, `useTrialFacts`, `useTrialAllowedSet`, `/trial-foods` and `/trial-exposures` read `activePet` today. They take a `petId` (the list screens a `?pet=` param, falling back to the active pet when absent so every current door keeps working). `useDietTrial` gains a status that tells loading, unreadable and loaded apart (C-12; CUL-400 is this defect on the two list screens today). One loader stays one loader: keyed by pet, never a second loader keyed by trial (B-421).
 - **The lifecycle host (TS-3):** the extend and window writes, the `TrialWindowRefused` handling, the completion and manage sheets and the Replace hand-off move out of `app/(tabs)/profile.tsx` (about 250 lines) into `hooks/useTrialLifecycle.ts` and `components/trial/TrialLifecycleSheets.tsx`, mounted by the Pet tab (flag-off) and by the screen (flag-on). A pushed stack screen is not a Modal, so it can present them (C-14 holds: one Modal at a time, asserted). A write refused because the trial ended on another device re-reads and redraws the screen's state, never leaves a live milestone on screen.
 - **Namespace:** `components/trialScreen/` holds the drawing. The route holds the gate and draws nothing of the feature (the Signal route's shape).
@@ -217,7 +217,7 @@ A sender the app registers carries the pet in the href. A new sender added later
 
 - **`docs/nyx-diet-trial-requirements.md` §4.2:** the routing sentence and the six-screen count carry an inline ⚠ RULED 2026-09-26 pointer to this spec (T-5). §4.1 is unchanged.
 - **`docs/nyx-vet-visits-requirements.md`:** TS-8 writes Get ready's grown trial row into that spec in its own PR (T-3 is the ruling).
-- **At GA (TS-GA):** the parent spec's §4.2 is rewritten to the new routing, and the ⚠ pointer is retired.
+- **At GA (TS-GA):** the parent spec's §4.2 is rewritten to the new routing, and the ⚠ pointer is retired. ✓ Done 2026-10-05 (CUL-1307).
 
 ---
 

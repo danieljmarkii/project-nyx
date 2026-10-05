@@ -492,7 +492,7 @@ describe('G1 — no mid-trial route to trial_extend, in any state (CUL-156 §0.1
       .flatMap((d) => walk(path.join(REPO_ROOT, d), []));
     // Non-vacuity: the walk reaches the host and the lifecycle hook it is about.
     const rels = files.map((f) => path.relative(REPO_ROOT, f));
-    expect(rels).toContain('app/(tabs)/profile.tsx');
+    expect(rels).toContain('components/trialScreen/TrialScreen.tsx');
     expect(rels).toContain('hooks/useTrialLifecycle.ts');
     const callSites = files.flatMap((f) => {
       const src = blankComments(fs.readFileSync(f, 'utf8'));
@@ -506,8 +506,8 @@ describe('G1 — no mid-trial route to trial_extend, in any state (CUL-156 §0.1
     // the Pet tab does: the handler for the card's `milestone` action, which the
     // resolver declares only at or past the window (overrun, and a safety state at the
     // window). No mid-trial route is added; the rule this counts still holds per host.
+    // TS-GA (CUL-1307) removed the Pet tab as a host: the screen is the only one left.
     expect(callSites.map((c) => c.rel)).toEqual([
-      'app/(tabs)/profile.tsx',
       'components/trialScreen/TrialScreen.tsx',
     ]);
     // …and each is the card's `milestone` action, not something else that grew into

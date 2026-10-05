@@ -1,7 +1,7 @@
 // The Pet tab's door to the trial's own screen (TS-6 · CUL-1302; `docs/nyx-trial-screen-requirements.md`
 // §5.2, R-3, S8). Pure: `components/trialScreen/TrialDoorRow.tsx` draws this and decides nothing.
 //
-// Under `trial_screen`, while a trial is active or inside its 30-day grace, the Pet tab's
+// While a trial is active or inside its 30-day grace (every account since TS-GA), the Pet tab's
 // trial slot is ONE ROW that opens `/trial/{pet}`: the *Diet trial* eyebrow, the strip's
 // header, the day bar, `{food} · ends {date}`, a chevron, no buttons (S8: every lifecycle
 // action lives on the screen, and the Pet tab carries a door, never a second set). With no

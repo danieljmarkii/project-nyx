@@ -1422,8 +1422,8 @@ const RUNNING_STRIP: TrialStripModel = {
   cardLine: null,
 };
 
-describe('TS-8 — the trial row asks the recheck questions (behind trial_screen)', () => {
-  it('flag-off (trialScreen null) the trial row is today’s, from the strip, with no recheck', () => {
+describe('TS-8 — the trial row asks the recheck questions', () => {
+  it('with no screen model (trialScreen null) the trial row is the strip’s, from the strip, with no recheck', () => {
     const { rows } = buildWorthRaising(input({ trialStrip: RUNNING_STRIP, trialScreen: null }));
     expect(rows[0]).toEqual({
       id: 'trial',
@@ -1436,7 +1436,7 @@ describe('TS-8 — the trial row asks the recheck questions (behind trial_screen
     expect('recheck' in rows[0]).toBe(false);
   });
 
-  it('flag-on the trial row carries the questions, under the screen’s title and sub-line', () => {
+  it('with the screen model the trial row carries the questions, under the screen’s title and sub-line', () => {
     const { rows } = buildWorthRaising(input({ trialStrip: RUNNING_STRIP, trialScreen: screenTrial() }));
     const trial = rows.find((r) => r.id === 'trial')!;
     expect(trial.text).toBe('Rabbit trial · day 23 of 56');
