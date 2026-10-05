@@ -999,8 +999,8 @@ export function recheckFor(sign: SymptomType, ack: AckFact, args: CareStateArgs)
  *     shell passes no appointments today (CUL-1531, AC 10), so in production this condition is
  *     always met; PR-34's harness measures it that way, so its numbers are production's;
  *   · the record shows no TESTED improvement over the last `improvementDays` against the frozen
- *     reference (`improvementShown`). A pet the vet's plan is visibly helping is the owner asked for
- *     nothing; a pet that failed to improve (PMD-5's cat, steady at 2 a week after "come back if it
+ *     reference (`improvementShown`), outside any masking span or a visit's 42 days. A pet the
+ *     vet's plan is visibly helping is the owner asked for nothing; a pet that failed to improve (PMD-5's cat, steady at 2 a week after "come back if it
  *     continues") is the owner the question exists for. A zero, thin logging, or no reference
  *     cannot show improvement, so each ASKS (the louder reading, E-6).
  */
@@ -1028,7 +1028,13 @@ export function recheckQuestionFor(
     const w = { from: ix.today - cfg.improvementDays + 1, to: ix.today }
     // The window must lie after the reference and inside the read, logged on the reference's floor.
     const floor = Math.ceil((cfg.referenceFloor * cfg.improvementDays) / 28)
-    if (w.from > reference.toDay && w.from >= ix.firstFullDay) {
+    // A fall beside a drug that can mask the sign, or within 42 days of a visit (an injection the
+    // record may not hold), is the drug's, not the pet's: PR-22's ruling for the row's zero, applied
+    // to the fall that would withhold the question.
+    const visits = [args.lastVisitOn, ack.source === 'at_vet_tick' || ack.source === 'visit_answer' ? ack.anchorOn : null]
+      .filter((v): v is string => typeof v === 'string')
+    const spans = maskingSpansFor(sign as Parameters<typeof maskingSpansFor>[0], { courses: args.courses, visitsOn: visits, todayIndex: ix.today, timeZone: tz })
+    if (w.from > reference.toDay && w.from >= ix.firstFullDay && !windowTouchesSpan(spans, w.from, w.to)) {
       const lc = loggedIn(ix.logged, w.from, w.to)
       if (lc >= floor && improvementShown(countIn(ix.onsets(sign), w.from, w.to), reference.episodes, lc, reference.loggedDays, cfg)) return null
     }

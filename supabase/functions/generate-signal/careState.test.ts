@@ -564,6 +564,17 @@ Deno.test('CUL-1290: a tested improvement withholds the question; a zero, thin l
   assertStrictEquals(questionOf({ ...s, loggedDaysAgo: thin }, { improvementDays: 56 }).recheckQuestion, 'Did your vet want to see Nyx again?')
 })
 
+Deno.test('CUL-1290: a fall beside a masking drug or within 42 days of a visit is never improvement', () => {
+  const improved = events('vomit', [...everyNth(3.5, 170, 57).map(Math.round), ...everyNth(12, 56, 0)])
+  const base: Case = { symptoms: improved, acks: [ack({ daysAgo: 70 })] }
+  assertStrictEquals(questionOf(base, { improvementDays: 56 }).recheckQuestion, null, 'the control: a tested fall withholds it')
+  // Cerenia across the window: the fall may be the drug's, so it asks.
+  const cerenia = { drugLabel: 'Cerenia', names: ['Cerenia', 'maropitant'], startedOn: dayOf(40), endedOn: null, status: 'active' }
+  assertStrictEquals(questionOf({ ...base, courses: [cerenia] }, { improvementDays: 56 }).recheckQuestion, 'Did your vet want to see Nyx again?')
+  // A visit 20 days ago (an injection the record may not hold): it asks.
+  assertStrictEquals(questionOf({ ...base, lastVisitOn: dayOf(20) }, { improvementDays: 56 }).recheckQuestion, 'Did your vet want to see Nyx again?')
+})
+
 Deno.test('CUL-1290: a recheck recorded ahead withholds it; a cancelled or past one does not', () => {
   const appt = (over: Partial<CareRecord['appointments'][number]>) => ({ id: 'x', scheduledAt: at(-10, 10), cancelledAt: null, deletedAt: null, aboutSigns: [] as SymptomType[], ...over })
   const q = (a: ReturnType<typeof appt>) => questionOf({ symptoms: STABLE, acks: [ack({ daysAgo: 70 })], record: { appointments: [a] } }).recheckQuestion
