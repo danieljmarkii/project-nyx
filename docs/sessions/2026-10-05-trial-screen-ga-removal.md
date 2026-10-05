@@ -1,9 +1,9 @@
 # PR-51 — The trial screen for every account (CUL-1307, TS-GA)
 
 **Date:** 2026-10-05
-**One thing:** S3 L1 — A removal PR moves coverage, it does not delete it · check: pending
+**One thing:** none — dispatched session, not this round's teach row
 
-This was a dispatched session (Out of beta — Noticed, Design v2, History v2, the trial screen · PR-51). It shipped via the PR this record rides in. D1 was re-ruled (b) on 2026-10-04, so 1.2.0 ships with all four betas on: no cut gate, no flip. TS-DP (CUL-1306) was canceled the same day; the PM tests in production. PR-50 (#1066) is the precedent for the shape.
+This was a dispatched session (Out of beta — Noticed, Design v2, History v2, the trial screen · PR-51). It shipped via #1068. D1 was re-ruled (b) on 2026-10-04, so 1.2.0 ships with all four betas on: no cut gate, no flip. TS-DP (CUL-1306) was canceled the same day; the PM tests in production. PR-50 (#1066) is the precedent for the shape.
 
 ## What shipped
 
@@ -30,6 +30,21 @@ This was a dispatched session (Out of beta — Noticed, Design v2, History v2, t
 **The widget forward is its own arrival, not a focus.** Deleting the `'trial'` focus arm meant the widget's link needed a reader of its own. A separate one-shot keeps "a focus is a scroll target" true and stops a leftover `focus=trial` link from doing anything but landing at the top of the tab, where the door is.
 
 **`DietTrialCard` keeps its running-state branches.** The screen still resolves the same card model; the component simply never receives a running state on the Pet tab now. Trimming it is not this PR's removal.
+
+## Review
+
+**code-reviewer (isolated):** no blocking findings. It tried a double push, a wrong-pet push, the screen's `{pet, ts}` way-back link and the `?open=start_trial` hand-off against the widget forward, and a running trial falling through to the start card across a pet switch; each held. Its cleanup findings were taken: seven comments that still described the deleted flag-off guard were reworded (C-38), and the profile-level "retired trial focus" test was retitled to say what it proves (the vocabulary half is pinned in `lib/profileFocus.test.ts`).
+
+**Adversarial review:** N/A. No detection, escalation or report logic changed; the safety sentences on the door row (TS-6 (a′)) are untouched and now reach every account.
+
+## Definition of Done
+
+- Acceptance criteria (CUL-1307 + spec §11 TS-GA): every flag-off path named in §10 deleted ✓; the guard retired with its flag ✓; §4.2 rewritten, ⚠ pointer retired ✓; shelf row retired ✓; CLAUDE.md row ✓; C-32 registries ✓ (none named the deleted files).
+- Anti-patterns: none introduced (C-9 live-store pet check and C-22 one-shot ref on the widget forward).
+- Types: `tsc --noEmit` clean. Tests: full jest suite green (619 suites), run by the pre-push hook on every push.
+- Secrets: none. Migration: none.
+- Personas: Engineer ✓ (the forward, the slot, coverage re-hosted) · Designer ✓ (Principle 3 placement unchanged; the Pet tab carries a door, never a second set of buttons, S8) · Data N/A · Dr. Chen N/A · QA ✓ (criteria above).
+- Future self: the widget forward is a second one-shot beside the start-form hand-off; CUL-1177 (the per-tap signal) is where both would fold.
 
 ## Not done here
 
