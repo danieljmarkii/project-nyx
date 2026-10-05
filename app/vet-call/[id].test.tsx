@@ -5,7 +5,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 const mockPush = jest.fn();
 let mockView: unknown = null;
 const mockAnswer = jest.fn(async () => 'saved');
-const mockUndo = jest.fn(async () => undefined);
+const mockUndo = jest.fn(async (_id: string) => undefined);
 
 jest.mock('expo-router', () => {
   const React = require('react');

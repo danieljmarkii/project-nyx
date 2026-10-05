@@ -5,8 +5,8 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 let mockFlag = false;
 let mockState: { callTier: boolean; covering: unknown } = { callTier: true, covering: null };
 const mockRead = jest.fn();
-const mockRecord = jest.fn(async () => 'call-1');
-const mockUndo = jest.fn(async () => undefined);
+const mockRecord = jest.fn(async (_id: string) => 'call-1');
+const mockUndo = jest.fn(async (_id: string) => undefined);
 const mockPush = jest.fn();
 
 jest.mock('expo-router', () => ({ router: { push: (...a: unknown[]) => mockPush(...a) } }));
