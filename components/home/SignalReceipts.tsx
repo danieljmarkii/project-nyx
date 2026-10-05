@@ -1,6 +1,6 @@
 // Signal receipts (SR-1, B-721) — the evidence strips for the Signal/Home design
 // uplift (docs/nyx-signal-home-requirements.md §4; GA'd via CUL-547, no longer flag-
-// gated). Hand-rolled Views, no chart library on Home (Dir. of Eng — matches TrendZone;
+// gated). Hand-rolled Views, no chart library on Home (Dir. of Eng — matched the retired TrendZone;
 // zero new dependencies). Two shapes ship:
 //
 //   Shape A — dot lane: one dot per timeable episode, split by the named window, the

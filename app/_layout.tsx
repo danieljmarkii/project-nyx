@@ -234,6 +234,8 @@ export default function RootLayout() {
         // gate release — so here we run ONLY the teardown, then defer. Routing or
         // releasing the gate here would race the handler. (The FR-7 wipe at step 4
         // fires NO event — it nulls the store directly — so it never reaches here.)
+        // MFU-9: this path does not unwind the stack; the Signal route's session fence
+        // still draws nothing of the record once the session is null.
         if (store.recoveryInProgress) return;
         // FR-20 (§7.2.4): tell an INVOLUNTARY sign-out (a revoked refresh token — the
         // FR-18 eviction on another device) apart from a deliberate one, and land the

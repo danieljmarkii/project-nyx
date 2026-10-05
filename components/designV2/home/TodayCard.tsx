@@ -129,7 +129,7 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
   const todayRead = useEventStore((s) => s.todayRead);
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
 
-  // The local day's start, once per mount (TodayZone's guard against a backdated row
+  // The local day's start, once per mount (the retired TodayZone's guard against a backdated row
   // the optimistic prepend put in the store).
   const dayStartMs = useMemo(() => {
     const d = new Date();

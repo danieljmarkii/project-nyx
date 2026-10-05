@@ -12,7 +12,7 @@
 //     none of them: it is copy over a deterministic predicate. It nonetheless renders
 //     beside *Call your vet today*, and a buzz here would be the phone acknowledging bad
 //     news. So it is named in `ALWAYS_SCANNED` by hand, exactly as N-4a named
-//     `LookEmergencySheet.tsx`. Its sibling `LookCard.tsx` is deliberately NOT scanned:
+//     `LookEmergencySheet.tsx`. Its sibling, the look itself (`LookHeader.tsx` since `LookCard.tsx` retired), is deliberately NOT scanned:
 //     the chip grid ticks on every tap (`selectChip`) and is not a safety surface. The
 //     split by file IS the enforcement — C-16's own lesson that a scan set tracks where
 //     the words are, and the words moved here.

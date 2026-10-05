@@ -5,7 +5,7 @@
 // the trial's own screen, `/trial/{pet}` (`docs/nyx-trial-screen-requirements.md` §5.1).
 //
 // ── PLACEMENT IS THE DESIGN ──────────────────────────────────────────────────
-// It sits BELOW SignalZone and ABOVE TodayZone, deliberately: Principle 3 says
+// It sits BELOW SignalZone and ABOVE the Today card, deliberately: Principle 3 says
 // safety insights always lead, and a trial is CONTEXT, not an insight. And it
 // renders ONLY while a trial is active — Home gains nothing when there isn't
 // one, which is `resolveTrialStrip` returning null rather than a prop this
