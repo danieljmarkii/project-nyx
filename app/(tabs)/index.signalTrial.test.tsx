@@ -18,6 +18,8 @@ const marker = (name: string) => {
   return () => React.createElement(View, { testID: `zone-${name}` });
 };
 const mockZoneProps: { current: Record<string, unknown> | null } = { current: null };
+// Engines v3 PR-36: the follow-up line is dark behind EN-14 and has its own suite.
+jest.mock('../../components/home/FollowUpLine', () => ({ FollowUpLine: () => null }));
 jest.mock('../../components/home/SignalZone', () => ({
   SignalZone: (props: Record<string, unknown>) => {
     mockZoneProps.current = props;
