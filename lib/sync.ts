@@ -3681,7 +3681,7 @@ async function drainVetCallsQueue(): Promise<void> {
     if (epoch !== signOutEpoch) return;
     const rows = await db.getAllAsync<{
       id: string; pet_id: string; called_on: string; event_id: string; note: string | null;
-      supersedes: string | null; withdrawn: number;
+      supersedes: string | null; withdrawn: number; covers_rank: number | null; covers_from: string | null;
     }>(
       `SELECT * FROM vet_calls WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
        AND ${parentLandedSql('vet_calls')}
@@ -3690,6 +3690,10 @@ async function drainVetCallsQueue(): Promise<void> {
     const landed = await insertQueuedRows('vet_calls', rows, (r) => ({
       id: r.id, pet_id: r.pet_id, called_on: r.called_on, event_id: r.event_id,
       note: r.note, supersedes: r.supersedes, withdrawn: r.withdrawn === 1,
+      // The cover rides the root call only; 084's CHECK refuses it on a correction and
+      // refuses a root without it, so a row written by an earlier build of this branch is
+      // terminal there, never silently coverless.
+      covers_rank: r.covers_rank, covers_from: r.covers_from,
     }), epoch);
     if (landed === 'stop' || landed === 0) return;
   }
@@ -3733,10 +3737,11 @@ async function hydrateVetCalls(db: Db, stale: () => boolean): Promise<void> {
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<{
     id: string; pet_id: string; called_on: string; event_id: string; note: string | null;
-    supersedes: string | null; withdrawn: boolean; created_at: string;
+    supersedes: string | null; withdrawn: boolean; covers_rank: number | null;
+    covers_from: string | null; created_at: string;
   }>(
     'vet_calls',
-    'id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at',
+    'id, pet_id, called_on, event_id, note, supersedes, withdrawn, covers_rank, covers_from, created_at',
     floor ? { column: 'created_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -3746,10 +3751,14 @@ async function hydrateVetCalls(db: Db, stale: () => boolean): Promise<void> {
     // of the previous account's calls, notes included, into the wiped store.
     if (stale()) return;
     await db.runAsync(
-      `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
-       VALUES (?,?,?,?,?,?,?,?,1)
+      `INSERT INTO vet_calls
+         (id, pet_id, called_on, event_id, note, supersedes, withdrawn, covers_rank, covers_from, created_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO NOTHING`,
-      [r.id, r.pet_id, r.called_on, r.event_id, r.note, r.supersedes, r.withdrawn ? 1 : 0, r.created_at],
+      [
+        r.id, r.pet_id, r.called_on, r.event_id, r.note, r.supersedes, r.withdrawn ? 1 : 0,
+        r.covers_rank, r.covers_from, r.created_at,
+      ],
     );
   }
   const wm = advanceWatermark(rows.map((r) => r.created_at), since);

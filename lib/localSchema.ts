@@ -433,11 +433,15 @@ export const BASE_SCHEMA_SQL = `
       note          TEXT,
       supersedes    TEXT,
       withdrawn     INTEGER NOT NULL DEFAULT 0,
-      -- LOCAL ONLY (no server column): the escalation's rank as shown when "I've called"
-      -- was tapped (§6.3, GAP-34), so a later raise of the called read never stretches the
-      -- call over a louder escalation. NULL on a row pulled from another phone, read as
-      -- call today. Never pushed.
-      rank_at_call  INTEGER,
+      -- The call's COVER (084, CUL-1602), set on the root row only and never on a
+      -- correction: the loudest rank it answers and its bout's start, both as shown when
+      -- "I've called" was tapped (§6.1, §6.3). Pushed and pulled, so every phone reads the
+      -- same cover and it never moves afterwards.
+      covers_rank   INTEGER,
+      covers_from   TEXT,
+      -- LOCAL ONLY: 1 on a call this phone wrote, NULL on one pulled from another. Undo is
+      -- offered only on the owner's own call from her own phone. Never pushed.
+      made_here     INTEGER,
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       synced        INTEGER NOT NULL DEFAULT 0,
       sync_attempts INTEGER NOT NULL DEFAULT 0,
@@ -689,9 +693,11 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   { table: 'event_ai_verdicts', column: 'rule_version', type: 'TEXT' },
   { table: 'event_ai_verdicts', column: 'engine_flags', type: 'TEXT' },
   { table: 'event_ai_verdicts', column: 'tier', type: 'TEXT' },
-  // Engines v3 PR-36: the call's rank as shown, local only. The table is new in the same PR,
-  // so only a phone that ran an earlier build of that branch lacks it; this keeps it whole.
-  { table: 'vet_calls', column: 'rank_at_call', type: 'INTEGER' },
+  // Engines v3 PR-36: the call's cover (084) and the local made_here flag. The table is new
+  // in the same PR, so only a phone that ran an earlier build of that branch lacks them.
+  { table: 'vet_calls', column: 'covers_rank', type: 'INTEGER' },
+  { table: 'vet_calls', column: 'covers_from', type: 'TEXT' },
+  { table: 'vet_calls', column: 'made_here', type: 'INTEGER' },
   // Engines v3 PR-18 (CUL-1412) / migration 081 — each weight reading's source. The table
   // shipped in B-186 without them, so only this path reaches an installed phone. The constant
   // defaults are the server's backfill (W2: home_scale, 'legacy'), true for every row an

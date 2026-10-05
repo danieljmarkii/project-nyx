@@ -64,8 +64,10 @@ export async function recordCall(
   if (!ev || !family) throw new Error('vet call: no such incident');
   const t = new Date(ev.occurred_at).getTime();
   // The forward walk needs the reads before the bout too: where a bout starts depends on
-  // them (adversarial P2), so it reads the lookback, not just the 24 hours.
-  const reads = await callTierReadsBetween(ev.pet_id, family, t - BOUT_LOOKBACK_MS, t, true);
+  // them (adversarial P2), so it reads the lookback, not just the 24 hours. Live reads only
+  // (CUL-1604's deleted-anchor call, recommended): a removed call-now duplicate never sets
+  // this call's rank. The walk runs once, here, and its answer is stored as the cover.
+  const reads = await callTierReadsBetween(ev.pet_id, family, t - BOUT_LOOKBACK_MS, t);
   const tapped = reads.find((r) => r.eventId === eventId);
   if (!tapped) throw new Error('vet call: this read does not ask for a call');
   const anchor = boutAnchorFor(tapped, reads);
@@ -80,13 +82,17 @@ export async function recordCall(
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `INSERT INTO vet_calls
-         (id, pet_id, called_on, event_id, note, supersedes, withdrawn, rank_at_call, created_at, synced)
-       VALUES (?, ?, ?, ?, NULL, NULL, 0, ?, ?, 0)`,
-      // The escalation's rank AS SHOWN now (§6.3): its first read's. The walk only admits a
-      // read no louder than its bout's first, so this is always at least the tapped read's,
-      // and the call covers the bout the owner tapped into (§6.1: the escalation is the unit).
-      // Stored so a later raise of the anchor never widens the call.
-      [callId, ev.pet_id, toLocalDayKey(new Date(now)), anchor.eventId, anchor.rank, createdAt],
+         (id, pet_id, called_on, event_id, note, supersedes, withdrawn,
+          covers_rank, covers_from, made_here, created_at, synced)
+       VALUES (?, ?, ?, ?, NULL, NULL, 0, ?, ?, 1, ?, 0)`,
+      // The COVER, as shown now (§6.1, §6.3; 084): the bout's first read's time and rank.
+      // The walk only admits a read no louder than its bout's first, so the rank is always at
+      // least the tapped read's, and the call covers the bout the owner tapped into. Stored,
+      // pushed and never recomputed, so a later raise, re-read or late read never moves it.
+      [
+        callId, ev.pet_id, toLocalDayKey(new Date(now)), anchor.eventId,
+        anchor.rank, anchor.occurredAt, createdAt,
+      ],
     );
     await db.runAsync(
       `INSERT INTO vet_call_follow_ups

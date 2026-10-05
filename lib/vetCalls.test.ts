@@ -98,6 +98,17 @@ function rows(table: string): Record<string, unknown>[] {
   return mockDb.prepare(`SELECT * FROM ${table} ORDER BY created_at, rowid`).all();
 }
 
+/** A call pulled from another phone, carrying the cover that phone stored at its tap (084). */
+function pulledCall(id: string, eventId: string, atMs: number, cover: { rank: 1 | 2; fromMs: number }): void {
+  mockDb
+    .prepare(
+      `INSERT INTO vet_calls
+         (id, pet_id, called_on, event_id, note, supersedes, withdrawn, covers_rank, covers_from, created_at, synced)
+       VALUES (?, ?, '2026-10-01', ?, NULL, NULL, 0, ?, ?, ?, 1)`,
+    )
+    .run(id, PET, eventId, cover.rank, new Date(cover.fromMs).toISOString(), new Date(atMs).toISOString());
+}
+
 beforeEach(async () => {
   mockDb = new DatabaseSync(':memory:');
   for (const sql of [BASE_SCHEMA_SQL, MEDICATION_SCHEMA_SQL, DIET_TRIAL_SCHEMA_SQL]) mockDb.exec(sql);
@@ -276,14 +287,29 @@ describe('the push (082)', () => {
     await pushVetCalls();
     expect(mockInserts.map((i) => i.table)).toEqual(['vet_calls', 'vet_call_follow_ups', 'vet_call_follow_ups']);
     expect(Object.keys(mockInserts[0].row).sort()).toEqual(
-      ['called_on', 'event_id', 'id', 'note', 'pet_id', 'supersedes', 'withdrawn'].sort(),
+      ['called_on', 'covers_from', 'covers_rank', 'event_id', 'id', 'note', 'pet_id', 'supersedes', 'withdrawn'].sort(),
     );
     expect(mockInserts[0].row.withdrawn).toBe(false);
+    // The cover is the bout's first read's, as shown at the tap; made_here stays on the phone.
+    expect(mockInserts[0].row).toMatchObject({ covers_rank: 1, covers_from: new Date(T0).toISOString() });
     expect(Object.keys(mockInserts[1].row).sort()).toEqual(
       ['answer', 'due_at', 'event_id', 'expires_at', 'id', 'pet_id', 'reason', 'status', 'vet_call_id', 'worth_it'].sort(),
     );
     expect(rows('vet_calls').every((r) => r.synced === 1)).toBe(true);
     expect(rows('vet_call_follow_ups').every((r) => r.synced === 1)).toBe(true);
+  });
+
+  it('pushes the cover on the call only: a note edit and an Undo carry none (084\'s CHECK)', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    const callId = await recordCall('v1', { now: T0, newId });
+    await saveCallNote(callId, 'She said to bring him in', { now: T0 + H, newId });
+    await undoCall(callId, { now: T0 + 2 * H, newId });
+    await pushVetCalls();
+    const calls = mockInserts.filter((i) => i.table === 'vet_calls').map((i) => i.row);
+    expect(calls).toHaveLength(3);
+    expect(calls[0]).toMatchObject({ supersedes: null, covers_rank: 1 });
+    for (const c of calls.slice(1)) expect(c).toMatchObject({ supersedes: callId, covers_rank: null, covers_from: null });
   });
 
   it('holds a call and its ledger while the event it names is still waiting to land', async () => {
@@ -312,20 +338,50 @@ describe('the adversarial pass (2026-10-05)', () => {
     expect((await readIncidentCallState('v1', T0 + 4 * H)).covering).toBeNull();
   });
 
-  it('an anchor with only a pulled call (no stored rank) covers its whole bout, never re-offering', async () => {
+  it('a pulled call covers exactly its stored cover: never a louder read, never past the bout', async () => {
     event('v1', T0);
     verdict('v1', 'call_today');
     event('v2', T0 + 2 * H);
     verdict('v2', 'call_now');
+    event('v3', T0 + 25 * H);
+    verdict('v3', 'call_today');
+    pulledCall('remote', 'v1', T0 + H, { rank: 1, fromMs: T0 });
+    expect((await readIncidentCallState('v1', T0 + 3 * H)).covering?.call.id).toBe('remote');
+    // Louder than the cover: its own escalation, offered here.
+    expect((await readIncidentCallState('v2', T0 + 3 * H)).covering).toBeNull();
+    // Past the cover's 24 hours: offered.
+    expect((await readIncidentCallState('v3', T0 + 26 * H)).covering).toBeNull();
+    // The cover never moves with the anchor's tier: a raise of v1 leaves the call where it was.
+    verdict('v1', 'call_now', true);
+    expect((await readIncidentCallState('v1', T0 + 4 * H)).covering).toBeNull();
+    verdict('v1', 'call_today', true);
+    expect((await readIncidentCallState('v1', T0 + 4 * H)).covering?.call.id).toBe('remote');
+  });
+
+  it('calls group by their stored covers like a bout: never chained, never across a rank', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    pulledCall('a', 'v1', T0 + H, { rank: 1, fromMs: T0 });
+    pulledCall('b', 'v1', T0 + 21 * H, { rank: 1, fromMs: T0 + 20 * H });
+    pulledCall('c', 'v1', T0 + 41 * H, { rank: 1, fromMs: T0 + 40 * H });
+    pulledCall('d', 'v1', T0 + 2 * H, { rank: 2, fromMs: T0 });
+    const groups = (await readCallsForPet(PET, T0 + 42 * H)).map((v) => v.memberIds.sort()).sort();
+    // b starts within a bout of a; c is 40 h after a, the group's FIRST cover, so it is its
+    // own question even though it is 20 h after b; d is louder, so its own escalation.
+    expect(groups).toEqual([['a', 'b'], ['c'], ['d']]);
+  });
+
+  it('a call whose root carries no cover covers nothing, and is still listed', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
     mockDb
       .prepare(
         `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
-         VALUES ('remote', ?, '2026-10-01', 'v1', NULL, NULL, 0, ?, 1)`,
+         VALUES ('bare', ?, '2026-10-01', 'v1', NULL, NULL, 0, ?, 1)`,
       )
       .run(PET, new Date(T0 + H).toISOString());
-    // The stated CUL-1602 limit: the second phone cannot know the rank, so it never re-offers.
-    expect((await readIncidentCallState('v1', T0 + 3 * H)).covering?.call.id).toBe('remote');
-    expect((await readIncidentCallState('v2', T0 + 3 * H)).covering?.call.id).toBe('remote');
+    expect((await readIncidentCallState('v1', T0 + 2 * H)).covering).toBeNull();
+    expect((await readCallsForPet(PET, T0 + 2 * H)).map((v) => [v.call.id, v.rank])).toEqual([['bare', null]]);
   });
 
   it('P2: the anchor is the tapped read\'s own bout, walked forward, never the bout before', async () => {
@@ -357,12 +413,7 @@ describe('the adversarial pass (2026-10-05)', () => {
     verdict('v1', 'call_today');
     const mine = await recordCall('v1', { now: T0, newId });
     // The other phone's call and owed row, pulled.
-    mockDb
-      .prepare(
-        `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
-         VALUES ('theirs', ?, ?, 'v1', NULL, NULL, 0, ?, 1)`,
-      )
-      .run(PET, rows('vet_calls')[0].called_on, new Date(T0 + 1000).toISOString());
+    pulledCall('theirs', 'v1', T0 + 1000, { rank: 1, fromMs: T0 });
     mockDb
       .prepare(
         `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, due_at, expires_at, created_at, synced)
@@ -424,12 +475,7 @@ describe('the adversarial pass (2026-10-05)', () => {
 
 describe('the second adversarial pass (2026-10-05)', () => {
   const pulled = (id: string, eventId: string, atMs: number) =>
-    mockDb
-      .prepare(
-        `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
-         VALUES (?, ?, '2026-10-01', ?, NULL, NULL, 0, ?, 1)`,
-      )
-      .run(id, PET, eventId, new Date(atMs).toISOString());
+    pulledCall(id, eventId, atMs, { rank: 2, fromMs: T0 });
   const pulledLedger = (id: string, callId: string, eventId: string, status: string, answer: string | null, atMs: number) =>
     mockDb
       .prepare(
@@ -457,7 +503,7 @@ describe('the second adversarial pass (2026-10-05)', () => {
     expect(views.map((v) => [v.call.id, v.followUp.kind]).sort()).toEqual([[c1, 'answered'], [c2, 'due']].sort());
   });
 
-  it('2: an answered call-now call pulled with no rank is never offered again', async () => {
+  it('2: an answered call-now call pulled from another phone is never offered again', async () => {
     event('e1', T0);
     verdict('e1', 'call_now');
     pulled('remote', 'e1', T0 + H);
@@ -480,7 +526,7 @@ describe('the second adversarial pass (2026-10-05)', () => {
     }
   });
 
-  it('6: a soft-deleted first read still starts the bout the new tap belongs to', async () => {
+  it('6: a soft-deleted first read does not start the next tap\'s bout; the two calls are one escalation', async () => {
     event('e0', T0);
     verdict('e0', 'call_today');
     event('e1', T0 + 10 * H);
@@ -489,20 +535,21 @@ describe('the second adversarial pass (2026-10-05)', () => {
     mockDb.prepare(`UPDATE events SET deleted_at = ? WHERE id = 'e0'`).run(new Date(T0 + 11 * H).toISOString());
     event('e2', T0 + 30 * H);
     verdict('e2', 'call_today');
-    // e2 is 30 h after the bout's first read: a new bout, anchored on e2 itself.
+    // The tap walks LIVE reads only (CUL-1604's deleted-anchor call): e0 is gone, so e2's bout
+    // starts at e1. e2 is past the first call's stored cover, so it gets its own call.
     await recordCall('e2', { now: T0 + 31 * H, newId });
-    expect(rows('vet_calls').map((r) => r.event_id)).toEqual(['e0', 'e2']);
+    expect(rows('vet_calls').map((r) => r.event_id)).toEqual(['e0', 'e1']);
+    // Both covers start within a bout of each other at one rank: one escalation, one question.
+    const views = await readCallsForPet(PET, T0 + 80 * H);
+    expect(views).toHaveLength(1);
+    expect(views[0].calls).toBe(2);
+    expect((await readIncidentCallState('e2', T0 + 32 * H)).covering).not.toBeNull();
   });
 });
 
 describe('the third adversarial pass (2026-10-05)', () => {
-  const theirs = (answer: string | null) => {
-    mockDb
-      .prepare(
-        `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
-         VALUES ('theirs', ?, '2026-10-01', 'v1', NULL, NULL, 0, ?, 1)`,
-      )
-      .run(PET, new Date(T0 + 2 * H).toISOString());
+  const theirs = (answer: string | null, rank: 1 | 2 = 1) => {
+    pulledCall('theirs', 'v1', T0 + 2 * H, { rank, fromMs: T0 });
     mockDb
       .prepare(
         `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, due_at, expires_at, created_at, synced)
@@ -544,44 +591,47 @@ describe('the third adversarial pass (2026-10-05)', () => {
     verdict('v1', 'call_now');
     event('v2', T0 + 2 * H);
     verdict('v2', 'call_now');
-    theirs('wants_to_see');
+    theirs('wants_to_see', 2);
     verdict('v1', 'call_today', true);
     expect((await readIncidentCallState('v2', T0 + 50 * H)).covering?.followUp.kind).toBe('answered');
   });
 });
 
 describe('the fourth adversarial pass (2026-10-05)', () => {
-  it('A: an earlier read whose verdict lands after the call is in the call\'s bout, not a second call', async () => {
+  it('A: an earlier read whose verdict lands after the call is offered its own call, and the two are one question', async () => {
     event('e0', T0);
     event('e1', T0 + 2 * H);
     verdict('e1', 'call_today');
     const c = await recordCall('e1', { now: T0 + 3 * H, newId });
-    verdict('e0', 'call_today'); // e0's read lands late
-    expect((await readIncidentCallState('e0', T0 + 4 * H)).covering?.call.id).toBe(c);
-    expect(await recordCall('e0', { now: T0 + 4 * H, newId })).toBe(c);
-    expect(rows('vet_call_follow_ups').filter((r) => r.status === 'owed')).toHaveLength(1);
+    verdict('e0', 'call_today'); // e0's read lands late, before the stored cover's start
+    // The stated tradeoff of a fixed cover: e0 is not covered, so "I've called" is offered.
+    expect((await readIncidentCallState('e0', T0 + 4 * H)).covering).toBeNull();
+    const c0 = await recordCall('e0', { now: T0 + 4 * H, newId });
+    expect(c0).not.toBe(c);
+    // Its cover starts at e0 (2 h before c's) at the same rank: one escalation, one question.
+    const views = await readCallsForPet(PET, T0 + 60 * H);
+    expect(views).toHaveLength(1);
+    expect(views[0].memberIds.sort()).toEqual([c, c0].sort());
   });
 
-  it('A2: and after the call was answered, it shows the answer rather than asking again', async () => {
+  it('A2: after the call was answered, a late earlier read is offered once, and the tap shows the answer', async () => {
     event('e0', T0);
     event('e1', T0 + 2 * H);
     verdict('e1', 'call_today');
     const c = await recordCall('e1', { now: T0 + 3 * H, newId });
     await answerFollowUp(c, 'could_not_reach', null, { now: T0 + 50 * H, newId });
     verdict('e0', 'call_today');
-    expect((await readIncidentCallState('e0', T0 + 51 * H)).covering?.followUp.kind).toBe('answered');
+    expect((await readIncidentCallState('e0', T0 + 51 * H)).covering).toBeNull();
+    await recordCall('e0', { now: T0 + 51 * H, newId });
+    expect((await readIncidentCallState('e0', T0 + 52 * H)).covering?.followUp.kind).toBe('answered');
+    expect((await readCallsForPet(PET, T0 + 120 * H)).map((v) => v.followUp.kind)).toEqual(['answered']);
   });
 
   it('C: one answer answers every call in the escalation, so no phone asks again', async () => {
     event('v1', T0);
     verdict('v1', 'call_today');
     const mine = await recordCall('v1', { now: T0, newId });
-    mockDb
-      .prepare(
-        `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
-         VALUES ('theirs', ?, '2026-10-01', 'v1', NULL, NULL, 0, ?, 1)`,
-      )
-      .run(PET, new Date(T0 + H).toISOString());
+    pulledCall('theirs', 'v1', T0 + H, { rank: 1, fromMs: T0 });
     mockDb
       .prepare(
         `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, due_at, expires_at, created_at, synced)
@@ -596,12 +646,7 @@ describe('the fourth adversarial pass (2026-10-05)', () => {
   it('D: a call shown from another phone is not this phone\'s to take back', async () => {
     event('v1', T0);
     verdict('v1', 'call_today');
-    mockDb
-      .prepare(
-        `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
-         VALUES ('theirs', ?, '2026-10-01', 'v1', NULL, NULL, 0, ?, 1)`,
-      )
-      .run(PET, new Date(T0 + H).toISOString());
+    pulledCall('theirs', 'v1', T0 + H, { rank: 1, fromMs: T0 });
     const v = await readCall('theirs', T0 + 2 * H);
     expect(v?.ownCall).toBe(false);
   });

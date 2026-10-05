@@ -5,9 +5,11 @@
 // ── THE ESCALATION IS THE UNIT (§6.1) ────────────────────────────────────────────
 // Until EN-4 builds the escalation record, a call attaches to the first call-tier read of a
 // BOUT: the same pet and incident family (vomit, stool) within 24 hours of the bout's first
-// read, never chained from the previous read. A read at a higher rung opens a new bout. So a
-// later read is covered by a call when it falls inside the 24 hours that follow the called
-// read and is no louder than it; three reads of one bout owe one follow-up (AC 10).
+// read, never chained from the previous read. A read at a higher rung opens a new bout. The
+// bout is walked ONCE, at the tap, and stored on the call as its cover (084: the bout's start
+// and its rank). From then on a read is covered when it falls inside the 24 hours from the
+// cover's start and is no louder than its rank; three reads of one bout owe one follow-up
+// (AC 10). Every phone reads the same stored cover, so coverage never moves afterwards.
 //
 // STATED LIMIT (C-38): §6.1's second opener, a NEW REASON CLASS (blood, foreign material) at
 // the same rung, is not seen here. The phone's copy of a read holds its tier and verdict and
@@ -62,22 +64,38 @@ function ms(iso: string): number {
   return new Date(iso).getTime();
 }
 
-/** Does a call made about `called` cover `read`? The same family, inside the 24 hours that
- *  follow the called read, and no louder than the call was AS SHOWN when it was made (§6.3,
- *  GAP-34): the caller passes the rank stored on the call, never the called read's current
- *  one, so a later re-floor that raises the called read cannot stretch an old call over a
- *  new, louder escalation (adversarial P1). */
-export function callCovers(called: CallTierRead, read: CallTierRead): boolean {
-  if (called.family !== read.family) return false;
-  const gap = ms(read.occurredAt) - ms(called.occurredAt);
-  if (!(gap >= 0 && gap <= BOUT_MS)) return false;
-  return read.rank <= called.rank;
+/** What a call answers (§6.1, §6.3): reads of one family timed in the 24 hours from `from`,
+ *  no louder than `rank`. A call's cover is STORED on it at the tap (084) and read back,
+ *  never recomputed from the reads, whose tiers keep moving: that recomputation is what
+ *  failed PR-36's five adversarial passes. The bout walk below uses the same rule, with a
+ *  read standing in as the cover of the bout it opens. */
+export interface CallCover {
+  family: IncidentFamily;
+  /** The bout's first read's `occurred_at`, ISO. */
+  from: string;
+  rank: TierRank;
 }
 
-/** How far back the partition reads. A bout is 24 hours, but where one STARTS depends on the
- *  reads before it, so the walk starts a week back. Stated limit (C-38): a run of call-tier
- *  reads unbroken for more than a week could place a boundary differently from a walk over
- *  the whole record. Its cost is an extra or a missing follow-up, never a hidden ask. */
+/** The cover a bout opened by `read` would have. */
+export function coverOf(read: CallTierRead): CallCover {
+  return { family: read.family, from: read.occurredAt, rank: read.rank };
+}
+
+/** Does `cover` cover `read`? The same family, inside the 24 hours from the cover's start,
+ *  and no louder than the cover's rank (§6.3, GAP-34: a later re-floor that raises a read
+ *  cannot stretch an old call over a new, louder escalation). */
+export function covers(cover: CallCover, read: CallTierRead): boolean {
+  if (cover.family !== read.family) return false;
+  const gap = ms(read.occurredAt) - ms(cover.from);
+  if (!(gap >= 0 && gap <= BOUT_MS)) return false;
+  return read.rank <= cover.rank;
+}
+
+/** How far back the tap's walk reads. A bout is 24 hours, but where one STARTS depends on
+ *  the reads before it, so the walk starts a week back. Stated limit (C-38): a run of
+ *  call-tier reads unbroken for more than a week could place a boundary differently from a
+ *  walk over the whole record. The walk runs once, at the tap, and its answer is stored, so
+ *  its cost is where one cover starts, never a cover that moves. */
 export const BOUT_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
@@ -91,14 +109,15 @@ export function boutAnchorsOf(reads: readonly CallTierRead[]): Map<string, CallT
   const out = new Map<string, CallTierRead>();
   let anchor: CallTierRead | null = null;
   for (const r of sorted) {
-    if (anchor === null || !callCovers(anchor, r)) anchor = r;
+    if (anchor === null || !covers(coverOf(anchor), r)) anchor = r;
     out.set(r.eventId, anchor);
   }
   return out;
 }
 
 /** The read "I've called" attaches to when the owner taps it on `tapped`: the first read of
- *  `tapped`'s bout, from the forward walk over `reads` (which should hold the lookback). */
+ *  `tapped`'s bout, from the forward walk over `reads` (which should hold the lookback). Its
+ *  time and rank become the call's stored cover. */
 export function boutAnchorFor(tapped: CallTierRead, reads: readonly CallTierRead[]): CallTierRead {
   const all = reads.some((r) => r.eventId === tapped.eventId) ? reads : [...reads, tapped];
   return boutAnchorsOf(all).get(tapped.eventId) ?? tapped;
@@ -115,9 +134,11 @@ export interface VetCallRow {
   note: string | null;
   supersedes: string | null;
   withdrawn: number | boolean;
-  /** LOCAL ONLY: the rank of the escalation as shown when "I've called" was tapped (§6.3).
-   *  Not a server column (082 has none); a row pulled from another phone holds NULL. */
-  rank_at_call?: number | null;
+  /** The cover (084): set on the root call, NULL on a correction. */
+  covers_rank?: number | null;
+  covers_from?: string | null;
+  /** LOCAL ONLY: 1 on a call this phone wrote, NULL on one pulled from another. */
+  made_here?: number | null;
   created_at: string;
 }
 
@@ -146,13 +167,26 @@ export interface CallRecord {
   eventId: string;
   note: string | null;
   withdrawn: boolean;
-  /** The rank the call was made at, or null when the phone does not know it (a call pulled
-   *  from another phone; 082 has no column). The reads decide what null means. */
-  rankAtCall: TierRank | null;
+  /** The stored cover's start and rank, or null on a root that carries none (084's CHECK
+   *  refuses one on the server, so only a malformed local row): such a call covers nothing
+   *  and is not listed, rather than covering a guess. The family comes from the anchor. */
+  cover: { from: string; rank: TierRank } | null;
+  /** Written on this phone (Undo is offered only on the owner's own call, from it). */
+  madeHere: boolean;
 }
 
 function truthy(v: number | boolean): boolean {
   return v === true || v === 1;
+}
+
+function coverRowOf(root: VetCallRow): CallRecord['cover'] {
+  const rank =
+    root.covers_rank === TIER_RANK.call_now ? TIER_RANK.call_now
+    : root.covers_rank === TIER_RANK.call_today ? TIER_RANK.call_today
+    : null;
+  const from = root.covers_from ?? null;
+  if (rank === null || from === null || Number.isNaN(ms(from))) return null;
+  return { from, rank };
 }
 
 export function callRecordsOf(rows: readonly VetCallRow[]): CallRecord[] {
@@ -171,10 +205,8 @@ export function callRecordsOf(rows: readonly VetCallRow[]): CallRecord[] {
       eventId: root.event_id,
       note: latest.note,
       withdrawn,
-      rankAtCall:
-        root.rank_at_call === TIER_RANK.call_now ? TIER_RANK.call_now
-        : root.rank_at_call === TIER_RANK.call_today ? TIER_RANK.call_today
-        : null,
+      cover: coverRowOf(root),
+      madeHere: root.made_here === 1,
     };
   });
 }
