@@ -630,8 +630,8 @@ function drawsThroughNamespace(rel: string, src: string): boolean {
 const DRAWS_ELSEWHERE_OK: Record<string, string> = {
   // TS-9 (CUL-1305): the trial screen's door to the Signal's trial finding. It reads the
   // gate to decide whether a door to `app/signal/[id]` may exist (and whether to read the
-  // Signal cache at all); the row it feeds is the trial screen's own `DoorRow`, drawn under
-  // the `trial_screen` flag and its own guard (`guards/trialScreenFlagOff.test.tsx`). Nothing
+  // Signal cache at all); the row it feeds is the trial screen's own `DoorRow` (the trial
+  // screen is on for every account since TS-GA, CUL-1307). Nothing
   // of the redesign renders from it, and the no-read-when-off half is proved in
   // `components/trialScreen/TrialScreen.test.tsx`.
   'hooks/useTrialSignalDoor.ts': 'decides a door on a non-redesign screen; draws nothing of the redesign',

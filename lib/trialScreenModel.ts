@@ -7,7 +7,7 @@
 // `resolveTrialCard`; the title and the vomiting sentence from `resolveTrialStrip`; the
 // ledger from `buildTrialLedger`. What this file owns is WHERE each of those goes, and
 // what the screen WITHHOLDS on top of them. It lives in `lib/` rather than in the
-// namespace because the flag-off guard wraps every namespace export into a component.
+// namespace because it is a pure model, and the namespace draws.
 //
 // THE WITHHOLDING, IN ONE PLACE (S3, S4, S7; v1.1 §12 findings 2, 3, 6, 7):
 //   • a safety face (`intake_decline`, `trial_refusal`) draws the card's flag lines first,

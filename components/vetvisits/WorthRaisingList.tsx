@@ -36,9 +36,9 @@ interface Props {
   onRemove: (questionId: string) => void;
   petName: string;
   /**
-   * Draws a trial row's recheck questions (TS-8). Passed by the host only while the
-   * `trial_screen` gate is live, and the drawing lives in `components/trialScreen/` so the
-   * flag-off guard can stub it. Absent, a row's recheck is never drawn.
+   * Draws a trial row's recheck questions (TS-8). The drawing lives in
+   * `components/trialScreen/`, with the screen it quotes. Absent, a row's recheck is never
+   * drawn.
    */
   renderRecheck?: (recheck: TrialRecheck) => ReactNode;
 }

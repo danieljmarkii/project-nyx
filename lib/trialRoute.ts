@@ -1,9 +1,7 @@
 // The trial's own screen, as a route (TS-4 · CUL-1300; `docs/nyx-trial-screen-requirements.md`
 // §2 S1, §7): `app/trial/[pet]`, where `pet` is the trial's pet. The pet comes from the
 // route and never from `activePet` (C-9), so the one parameter IS the subject. A helper,
-// not a component, so it lives in `lib/`: a non-component export inside
-// `components/trialScreen/` would be wrapped into a component by the flag-off guard's
-// switch (`guards/trialScreenFlagOff.test.tsx`).
+// not a component, so it lives in `lib/` beside the other route builders.
 
 export const TRIAL_ROUTE_PREFIX = '/trial/';
 

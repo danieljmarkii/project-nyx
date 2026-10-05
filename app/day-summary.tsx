@@ -35,7 +35,6 @@ import { useDailyRecapOffer } from '../hooks/useDailyRecapOffer';
 import { isNotificationArrival } from '../lib/dailyRecapOffer';
 import { profileFocusHref } from '../lib/profileFocus';
 import { trialScreenHref } from '../lib/trialRoute';
-import { useTrialScreen } from '../hooks/useTrialScreen';
 import { useSyncStore } from '../store/syncStore';
 import { useUiStore } from '../store/uiStore';
 import {
@@ -114,20 +113,10 @@ export default function DaySummaryScreen() {
   // Same doorway the Home strips use, from the same builder, so the two surfaces
   // cannot drift into naming different targets for the same strip.
   //
-  // TS-6 (CUL-1302, spec §5.3) — under `trial_screen` the trial strip opens the trial's own
-  // screen for the RECAP's pet, carried in the href (the recap's rich strips render for a
-  // single-pet account only, so that pet is the one section). A decider, not a drawer: it
-  // changes where the link lands and draws nothing, so flag-off the push is today's.
-  const trialScreenLive = useTrialScreen();
-  const openTrial = useCallback(
-    (petId: string) =>
-      router.push(
-        trialScreenLive
-          ? trialScreenHref(petId)
-          : profileFocusHref({ focus: 'trial', nowMs: Date.now() }),
-      ),
-    [trialScreenLive],
-  );
+  // TS-6 (CUL-1302, spec §5.3; every account since TS-GA, CUL-1307) — the trial strip opens
+  // the trial's own screen for the RECAP's pet, carried in the href (the recap's rich strips
+  // render for a single-pet account only, so that pet is the one section).
+  const openTrial = useCallback((petId: string) => router.push(trialScreenHref(petId)), []);
   const openMed = useCallback(
     (medKey: string) =>
       router.push(profileFocusHref({ focus: 'medications', medKey, nowMs: Date.now() })),

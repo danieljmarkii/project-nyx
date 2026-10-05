@@ -131,7 +131,7 @@ describe('BetaFeaturesScreen — eligible account', () => {
   it('shows no Noticed card for any account: Noticed graduated (CUL-876)', () => {
     // Every remaining beta allowlisted, so a Noticed card would have every chance to
     // render; its absence is the registry row's removal, not a gate.
-    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm, history_v2: gatedToPm, trial_screen: gatedToPm });
+    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm, history_v2: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);
 
     expect(getByText('Design v2')).toBeTruthy();

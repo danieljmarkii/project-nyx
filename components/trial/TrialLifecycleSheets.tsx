@@ -1,7 +1,7 @@
 // The diet trial's lifecycle SHEETS, drawn from `useTrialLifecycle` — CUL-1299 (TS-3).
 //
-// One host, mounted by whichever surface carries the trial's buttons: the Pet tab
-// today, the trial's own screen behind `trial_screen` (spec §7 "The lifecycle host").
+// One host, mounted by the surface that carries the trial's buttons: the trial's own
+// screen (spec §7 "The lifecycle host"; the Pet tab carried it until TS-GA, CUL-1307).
 // It draws the two Modals the card's actions open and nothing else. A pushed stack
 // screen is not a Modal, so it can present them; the rule that holds is C-14's, one
 // Modal at a time, which the sequencing below keeps (`onDismissed`, never the row's

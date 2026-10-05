@@ -37,8 +37,6 @@ jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null 
 const mockHistoryV2 = { on: false };
 jest.mock('../hooks/useHistoryV2', () => ({ useHistoryV2: () => mockHistoryV2.on }));
 // TS-8: the trial screen's gate. Off unless a test turns it on.
-const mockTrialScreen = { on: false };
-jest.mock('../hooks/useTrialScreen', () => ({ useTrialScreen: () => mockTrialScreen.on }));
 // CUL-1570: the redesign's gate. Off unless a test turns it on.
 const mockDesignV2 = { on: false };
 jest.mock('../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2.on }));
@@ -195,7 +193,6 @@ const FIXTURE = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockHistoryV2.on = false;
-  mockTrialScreen.on = false;
   mockDesignV2.on = false;
   params.current = {};
   mockAppointment.questions = null;
@@ -698,14 +695,9 @@ describe('the History doors land on the pet on screen, or not at all (HV-11 / CU
 });
 
 
-// ── TS-8 (CUL-1304): the recheck, behind trial_screen ───────────────────────────
-//
-// The async half the flag-off guard cannot see (its comparison is the first frame, and the
-// recheck renders only after this page's load answers — C-41). Proven here over a RUNNING
-// trial the load really returns, so the absence flag-off is an absence of something that was
-// available to leak: the same fixture, flag-on, draws the questions.
+// ── TS-8 (CUL-1304): the recheck, for every account since TS-GA (CUL-1307) ──────
 
-describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
+describe('TS-8 — Get ready’s trial row grows the recheck', () => {
   function runningTrial() {
     const started = new Date(Date.now() - 22 * 86_400_000);
     return {
@@ -745,8 +737,7 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
     };
   }
 
-  async function getReadyWith(on: boolean) {
-    mockTrialScreen.on = on;
+  async function getReady() {
     mockTrialInput.current = runningTrial();
     mockTrialFacts.current = mockTrialFacts.current ?? chewableFacts();
     params.current = { appointmentId: 'appt-1' };
@@ -756,41 +747,8 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
     return r;
   }
 
-  it('flag-off: the strip’s row, and no recheck node, over a trial that would answer', async () => {
-    const r = await getReadyWith(false);
-    expect(r.getByText(/day 23 of 56/)).toBeTruthy();
-    expect(r.getByText(/meals logged on 21 of 23 days/)).toBeTruthy();
-    expect(r.queryByTestId('recheck-questions')).toBeNull();
-    expect(r.queryByText(/What the vet will ask/)).toBeNull();
-    // No read is added for the feature: the page's one trial read, and nothing else.
-    const { loadDietTrialFacts, loadTrialPredicateFacts } = require('../lib/dietTrialFacts');
-    expect(loadDietTrialFacts).toHaveBeenCalledTimes(1);
-    // …and the recheck's facts read (CUL-1342) is flag-on only, over a fixture that would
-    // answer with a chewable if called.
-    expect(loadTrialPredicateFacts).not.toHaveBeenCalled();
-  });
-
-  it('a gate that flips after mount does not reload the page under the owner (code review)', async () => {
-    const r = await getReadyWith(false);
-    const reads = (buildRundown as jest.Mock).mock.calls.length;
-    mockTrialScreen.on = true;
-    r.rerender(<RundownScreen />);
-    await act(async () => {});
-    expect((buildRundown as jest.Mock).mock.calls.length).toBe(reads);
-    expect(r.getByText('Worth raising')).toBeTruthy();
-  });
-
-  it('a gate revoked while the page is open keeps the rows it built drawn in full (adversarial pass)', async () => {
-    const r = await getReadyWith(true);
-    await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
-    mockTrialScreen.on = false;
-    r.rerender(<RundownScreen />);
-    await act(async () => {});
-    expect(r.getByTestId('recheck-questions')).toBeTruthy();
-  });
-
-  it('flag-on: the same fixture draws the vet’s questions, naming the logged chewable (CUL-1342)', async () => {
-    const r = await getReadyWith(true);
+  it('draws the vet’s questions, naming the logged chewable (CUL-1342)', async () => {
+    const r = await getReady();
     await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
     expect(r.getByText('Has Mochi had anything besides the trial diet, chewable medicine included?')).toBeTruthy();
     expect(r.getByText('Meals logged on 21 of 23 days.')).toBeTruthy();
@@ -804,7 +762,7 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
     expect((loadTrialPredicateFacts as jest.Mock).mock.calls[0][1]).toBe(
       (loadDietTrialFacts as jest.Mock).mock.calls[0][0].nowMs,
     );
-    // Zero model calls still (AC 4), with the gate on.
+    // Zero model calls still (AC 4).
     expect(invoke).not.toHaveBeenCalled();
   });
   it('past the cap, the door opens the APPOINTMENT’s pet’s dose list (CUL-1342)', async () => {
@@ -821,7 +779,7 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
         })),
       },
     };
-    const r = await getReadyWith(true);
+    const r = await getReady();
     await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
     expect(r.getAllByText(/^Rimadyl · .* · flavoured chewable$/)).toHaveLength(3);
     (router.push as jest.Mock).mockClear();
@@ -833,7 +791,7 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
 
   it('a facts read that throws keeps the food-only heading and names no dose (C-12)', async () => {
     mockTrialFacts.fail = true;
-    const r = await getReadyWith(true);
+    const r = await getReady();
     await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
     // The page still builds (the read's failure is its own state, not the page's error).
     expect(r.getByText('Has Mochi had anything besides the trial diet?')).toBeTruthy();
@@ -843,7 +801,7 @@ describe('TS-8 — Get ready’s trial row, flag-off and flag-on', () => {
 
   it('a facts read that answered for a different trial is not quoted', async () => {
     mockTrialFacts.current = chewableFacts('t-other');
-    const r = await getReadyWith(true);
+    const r = await getReady();
     await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
     expect(r.getByText('Has Mochi had anything besides the trial diet?')).toBeTruthy();
     expect(r.queryByText(/Rimadyl/)).toBeNull();

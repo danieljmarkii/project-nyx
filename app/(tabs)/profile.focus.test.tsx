@@ -81,8 +81,8 @@ jest.mock('../../components/profile/ArchivePetSheet', () => ({ ArchivePetSheet: 
 jest.mock('../../components/profile/TrialCompletionSheet', () => ({ TrialCompletionSheet: () => null }));
 jest.mock('../../components/profile/PastMedicationsSection', () => ({ PastMedicationsSection: () => null }));
 
-// A stub that FORWARDS the anchor, so this file asserts the screen's wiring while
-// `DietTrialCard.test.tsx` asserts that the real card lands it on its own Card.
+// The no-trial start card. It still FORWARDS an anchor, so a trial focus re-wired onto the
+// card (retired at TS-GA) would land and red the retired-doorway case below.
 jest.mock('../../components/profile/DietTrialCard', () => {
   const { View } = require('react-native');
   return {
@@ -95,9 +95,8 @@ jest.mock('../../lib/dietTrialCard', () => ({ resolveTrialCard: () => ({ kicker:
 
 let mockTrialLoading = false;
 jest.mock('../../hooks/useDietTrial', () => ({
-  useDietTrial: () => ({ input: { trial: null }, isLoading: mockTrialLoading, reload: jest.fn() }),
+  useDietTrial: () => ({ input: { trial: null }, isLoading: mockTrialLoading, reload: jest.fn(), inputIsForPet: true }),
 }));
-jest.mock('../../hooks/useTrialAllowedSet', () => ({ useTrialAllowedSet: () => ({ status: 'unknown' }) }));
 jest.mock('../../hooks/useWidgetSlotLabel', () => ({ useWidgetSlotLabel: () => null }));
 
 let mockReducedMotion = false;
@@ -188,7 +187,8 @@ describe('no doorway params', () => {
   it('does not scroll — an ordinary tab visit is left exactly where it was', async () => {
     mockTables.medications = [AMOX];
     const { scrollTo, getByTestId } = await mount();
-    act(() => layout(getByTestId('trial-anchor'), 900));
+    act(() => layout(getByTestId('weight-anchor'), 120));
+    act(() => layout(getByTestId('med-section'), 600));
     expect(scrollTo).not.toHaveBeenCalled();
   });
 
@@ -196,42 +196,27 @@ describe('no doorway params', () => {
     setParams({ focus: 'conditions', ts: '1' });
     mockTables.medications = [AMOX];
     const { scrollTo, getByTestId } = await mount();
-    act(() => layout(getByTestId('trial-anchor'), 900));
+    act(() => layout(getByTestId('weight-anchor'), 120));
+    act(() => layout(getByTestId('med-section'), 600));
     expect(scrollTo).not.toHaveBeenCalled();
   });
 });
 
-describe('the trial doorway', () => {
-  it('lands on the trial card', async () => {
+describe('a retired trial doorway (TS-GA, CUL-1307)', () => {
+  // The vocabulary half (`'trial'` is not a focus) is pinned in `lib/profileFocus.test.ts`.
+  // This case pins the screen half: the slot forwards no anchor, so even a focus re-added
+  // to the vocabulary would have nothing here to land on.
+  it('lands nowhere: the slot passes no anchor, so no trial focus can scroll', async () => {
     setParams({ focus: 'trial', ts: '1' });
     const { scrollTo, getByTestId } = await mount();
     act(() => layout(getByTestId('trial-anchor'), 900));
-    expect(scrollTo).toHaveBeenCalledWith({ y: 900 - PROFILE_FOCUS_INSET, animated: true });
-  });
-
-  it('fires once, then leaves the owner alone', async () => {
-    // A later re-layout — a section above finishing, a hydration tick — must never
-    // yank the screen back to a doorway the owner has already arrived at and
-    // scrolled away from.
-    setParams({ focus: 'trial', ts: '1' });
-    const { scrollTo, getByTestId } = await mount();
-    act(() => layout(getByTestId('trial-anchor'), 900));
-    act(() => layout(getByTestId('trial-anchor'), 950));
-    expect(scrollTo).toHaveBeenCalledTimes(1);
-  });
-
-  it('honours reduced motion', async () => {
-    mockReducedMotion = true;
-    setParams({ focus: 'trial', ts: '1' });
-    const { scrollTo, getByTestId } = await mount();
-    act(() => layout(getByTestId('trial-anchor'), 900));
-    expect(scrollTo).toHaveBeenCalledWith({ y: 900 - PROFILE_FOCUS_INSET, animated: false });
+    act(() => layout(getByTestId('weight-anchor'), 120));
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 });
 
 describe('the weight doorway (CUL-753)', () => {
-  // The vet-visit rundown's weight tile. Same single-anchor shape as the trial
-  // card; what is new is that the screen knows the focus at all — before this,
+  // The vet-visit rundown's weight tile, a single anchor; what is new is that the screen knows the focus at all — before this,
   // `focus=weight` coerced to null and the tile landed at the top of the profile.
   it('lands on the weight card', async () => {
     setParams({ focus: 'weight', ts: '1' });
@@ -317,12 +302,12 @@ describe('the nonce', () => {
   it('re-fires on a second tap of the same strip, on an already-mounted tab', async () => {
     // The tab persists across switches, so a repeat tap re-pushes identical params.
     // Without the nonce the door would work exactly once per session.
-    setParams({ focus: 'trial', ts: '1' });
+    setParams({ focus: 'weight', ts: '1' });
     const { scrollTo, getByTestId, rerender } = await mount();
-    act(() => layout(getByTestId('trial-anchor'), 900));
+    act(() => layout(getByTestId('weight-anchor'), 120));
     expect(scrollTo).toHaveBeenCalledTimes(1);
 
-    setParams({ focus: 'trial', ts: '2' });
+    setParams({ focus: 'weight', ts: '2' });
     rerender(<ProfileScreen />);
     // No new layout pass — the tab was already mounted and measured.
     await waitFor(() => expect(scrollTo).toHaveBeenCalledTimes(2));
@@ -333,9 +318,9 @@ describe('the nonce', () => {
     // The "already applied" marker starts as `undefined` for exactly this case:
     // seeded to `null` it would compare equal to a missing nonce on the very first
     // arrival and the link would silently do nothing.
-    setParams({ focus: 'trial' });
+    setParams({ focus: 'weight' });
     const { scrollTo, getByTestId } = await mount();
-    act(() => layout(getByTestId('trial-anchor'), 900));
+    act(() => layout(getByTestId('weight-anchor'), 120));
     expect(scrollTo).toHaveBeenCalledTimes(1);
   });
 
@@ -344,12 +329,12 @@ describe('the nonce', () => {
     // over a deleted guard: re-rendering does not re-run the params effect at all,
     // so it was pinning the dependency array rather than the "already applied"
     // marker. Changing a param the effect DOES watch is what reaches the marker.
-    setParams({ focus: 'trial', ts: '1' });
+    setParams({ focus: 'weight', ts: '1' });
     const { scrollTo, getByTestId, rerender } = await mount();
-    act(() => layout(getByTestId('trial-anchor'), 900));
+    act(() => layout(getByTestId('weight-anchor'), 120));
     expect(scrollTo).toHaveBeenCalledTimes(1);
 
-    setParams({ focus: 'trial', med: 'item-amox', ts: '1' });
+    setParams({ focus: 'weight', med: 'item-amox', ts: '1' });
     rerender(<ProfileScreen />);
     await act(async () => {});
     expect(scrollTo).toHaveBeenCalledTimes(1);
