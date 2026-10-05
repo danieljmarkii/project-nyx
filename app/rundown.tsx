@@ -20,7 +20,6 @@ import { buildWorthRaising, localIntakeDeclines, type WorthRaising } from '../li
 import { buildTrialScreenModel } from '../lib/trialScreenModel';
 import { UNKNOWN_ALLOWED_SET } from '../lib/trialAllowedSet';
 import { NO_LEDGER_FACTS, recheckFactsState } from '../lib/trialRecheck';
-import { useDesignV2 } from '../hooks/useDesignV2';
 import { readScreenSentences } from '../lib/getReadySignal';
 import { RecheckQuestions } from '../components/trialScreen/RecheckQuestions';
 import {
@@ -158,15 +157,6 @@ export default function RundownScreen() {
   const [rundown, setRundown] = useState<Rundown | null>(null);
   // Whose record `rundown` is: the appointment's pet in Get ready, else the active pet.
   const [rundownPetId, setRundownPetId] = useState<string | null>(null);
-  // CUL-1570 (GC-4 PR 3): under Design v2, Worth raising quotes each counted finding's sentence
-  // as its Signal screen states it. Read by `load` through a ref, never as a dependency: the
-  // gate hydrates asynchronously (app config on foreground and sign-in, the opt-in from
-  // storage), and a dependency would reload the whole page, spinner and all, the moment it
-  // flipped under an owner already reading it.
-  // The gate decides a source and draws nothing of the redesign; flag off, no screen is read.
-  const designV2 = useDesignV2();
-  const designV2Ref = useRef(designV2);
-  designV2Ref.current = designV2;
   const [getReady, setGetReady] = useState<GetReadyState | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -233,7 +223,6 @@ export default function RundownScreen() {
         subjectId,
         myId,
         loadIdRef,
-        designV2Ref.current,
       );
       if (loadIdRef.current !== myId) return;
       setGetReady({
@@ -548,8 +537,6 @@ async function buildForAppointment(
   subjectId: string,
   myId: number,
   loadIdRef: { current: number },
-  /** The redesign's gate (CUL-1570): quote the Signal screen's own sentences. */
-  screenCountsLive: boolean,
 ): Promise<WorthRaising> {
   // ONE snapshot, read once. Two `getState()` calls here were not a race — both are
   // synchronous with no await between them — but a reader has to prove that each time.
@@ -648,11 +635,11 @@ async function buildForAppointment(
       )
     : null;
   // The screen's own sentence for each counted finding, for the rows that survived the masking
-  // above (CUL-1570). Flag off it is empty and nothing is read: today's page, byte for byte.
+  // above (CUL-1570).
   // Bounded like the cache read (F7): the screen's loader reads the network again, and a stall
   // there costs the rows their composed sentence (each quotes its cached one), never the page.
   const screenSentences =
-    (screenCountsLive && findings ? await answeredWithin(readScreenSentences(subjectId, findings, nowMs), SIGNAL_CACHE_WAIT_MS) : null) ??
+    (findings ? await answeredWithin(readScreenSentences(subjectId, findings, nowMs), SIGNAL_CACHE_WAIT_MS) : null) ??
     new Map<string, string>();
   if (loadIdRef.current !== myId) {
     return { rows: [], signalUnavailable: false };

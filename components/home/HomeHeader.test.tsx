@@ -50,10 +50,7 @@ jest.mock('../../hooks/useAppConfig', () => ({
   useAllowlistFlag: () => mockAskEnabled,
 }));
 
-// Design v2's gate and the day. Off by default, so every suite above the date's own
-// describe pins the FLAG-OFF row exactly as it shipped; the date's describe turns it on.
-let mockDesignV2 = false;
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2 }));
+// The day the header dates (CUL-1221), pinned.
 jest.mock('../../hooks/useTodayKey', () => ({ useTodayKey: () => '2026-09-17' }));
 
 // jest-expo's default window is 750pt — a frame no supported phone has, on which
@@ -95,7 +92,6 @@ function allText(node: any): string[] {
 }
 
 beforeEach(() => {
-  mockDesignV2 = false;
   mockAskEnabled = true;
   setWindowWidth(NARROWEST);
   useAuthStore.setState({ user: { email: 'dan@example.test' } } as never);
@@ -167,13 +163,13 @@ describe('what D3/D4 removed stays removed', () => {
     } as never);
     const text = allText(render(<HomeHeader />).toJSON());
     expect(text.some((t) => t.includes('Beagle'))).toBe(false);
-    // Exactly four strings survive on the row, in order: the avatar's initial, the
-    // pet's name, the Ask pill's word, and the owner monogram. Asserted as the whole
-    // set rather than as an absence, so a future addition to this row has to be a
-    // deliberate edit here — and this IS that edit: the initial joined the row when
-    // it became the layer under the photo rather than its replacement (CUL-617).
-    // It is drawn, not spoken; the disc is hidden from assistive tech.
-    expect(text).toEqual(['B', 'Biscuit', 'Ask', 'D']);
+    // Exactly five strings survive on the row, in order: the avatar's initial, the
+    // pet's name, the day (CUL-1221), the Ask pill's word, and the owner monogram.
+    // Asserted as the whole set rather than as an absence, so a future addition to this
+    // row has to be a deliberate edit here. The initial joined the row when it became
+    // the layer under the photo rather than its replacement (CUL-617); it is drawn, not
+    // spoken; the disc is hidden from assistive tech.
+    expect(text).toEqual(['B', 'Biscuit', 'Thu, Sep 17', 'Ask', 'D']);
   });
 
   it('takes no onPressMark — the jump-to-Signal tap retired with the mark', () => {
@@ -243,7 +239,9 @@ describe('the name ladder, as the header renders it', () => {
   }
 
   it('renders an ordinary name at the top rung on the narrowest phone', () => {
-    expect(renderedName('Biscuit').fontSize).toBe(HEADER_NAME_RUNGS[0]);
+    // A two-pet row on the narrowest frame, with the day on it (CUL-1221): a short name
+    // keeps the top rung. "Biscuit" no longer does here; the date's own test pins why.
+    expect(renderedName('Mochi').fontSize).toBe(HEADER_NAME_RUNGS[0]);
   });
 
   it('drops to the tight rung rather than tailing a name that just overruns', () => {
@@ -333,15 +331,8 @@ describe('the right cluster is unchanged (B-228 D5 placement)', () => {
   });
 });
 
-describe('the day, named — Design v2 only (CUL-1221, the critique’s BRK-26)', () => {
-  it('flag-off draws no date: the row is the four strings it shipped with', () => {
-    const { queryByTestId, toJSON } = render(<HomeHeader />);
-    expect(queryByTestId('home-header-date')).toBeNull();
-    expect(allText(toJSON())).toEqual(['B', 'Biscuit', 'Ask', 'D']);
-  });
-
-  it('flag-on dates the day at the head of the right cluster, as the round-4 frame draws it', () => {
-    mockDesignV2 = true;
+describe('the day, named (CUL-1221, the critique’s BRK-26)', () => {
+  it('dates the day at the head of the right cluster, as the round-4 frame draws it', () => {
     const { getByTestId, toJSON } = render(<HomeHeader />);
     expect(getByTestId('home-header-date').props.children).toBe('Thu, Sep 17');
     // Still one row: the date sits between the name and the Ask pill, and adds no line.
@@ -350,7 +341,6 @@ describe('the day, named — Design v2 only (CUL-1221, the critique’s BRK-26)'
   });
 
   it('is metadata, not a control: no ancestor responds to a press (C-6: walk UP, never press)', () => {
-    mockDesignV2 = true;
     const date = render(<HomeHeader />).getByTestId('home-header-date');
     for (let n: any = date.parent; n; n = n.parent) {
       expect(n.props?.onPress).toBeUndefined();
@@ -359,7 +349,6 @@ describe('the day, named — Design v2 only (CUL-1221, the critique’s BRK-26)'
   });
 
   it('the name is sized against the row WITH the date on it', () => {
-    mockDesignV2 = true;
     // A name that fits the top rung without the date and not with it, on the narrowest
     // frame — so the assertion would red if the budget ignored the date.
     const withDate = headerNameBudget({ windowWidth: NARROWEST, multiPet: false, askEnabled: true, dateLabel: 'Thu, Sep 17' });

@@ -146,6 +146,8 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Letting a **single-incident (n=1) AI read reassure** an owner. Per-incident AI analysis (B-013/B-027) reads one sample — it may **escalate on the *presence* of a visible red flag** (blood, foreign material, repeated vomiting in a short window) → "worth a call to your vet," never a diagnosis; it must **never reassure on the *absence* of one** ("nothing visibly alarming in this one" is honest; "your pet is probably fine" is not — absence of a visible flag ≠ wellness; the clear-foam-once-but-not-eaten-36h cat is the feline 48hr hepatic-lipidosis case). Reassurance, if ever, comes only from a *cross-incident, multi-sample* read, carefully. Same single-sample discipline as the `intake_rating` rule above.
 - *(Append new anti-patterns here as they are discovered in the codebase)*
 
+**The chart standard** (folded in from the Design v2 Data Visualization lens, PM ruling 4a on CUL-1071, 2026-10-05): every chart is evidence the reader can check without a legend (Principle 8). The bar is the shipped "Vomiting, timed from meals" lane: an axis you can read, a mark per fact, the counts beside the marks, the denominator in view, and the disclosure of what is NOT on the chart. Reviews for a mark that says more than its number (a line through counts, a smoothed curve), a chart with no denominator, colour standing in for a claim below the established floor, and a form chosen by taste rather than by the number (count → bars; continuous → area; rate → the counted thing drawn; timing → the lane). Prevents the sparkline with no ground, a dual axis, a legend the chart needs, and any strip under ~20pt per mark on a phone. Design v2 round 4 §05 is the table a new chart joins before it ships.
+
 ---
 
 ## Veterinarian — Dr. Alex Chen
@@ -301,24 +303,19 @@ The PM owns product vision, roadmap, and all final calls. When something require
 
 ---
 
-## Specialist lenses — seated for the Design v2 rounds (PM directive, 2026-09-18)
+## Motion & IA
 
-The PM asked that the Sr. Product Designer get help from specialists for the design-system rethink ("data vis experts, etc."). Three lenses are seated for that project's mock rounds and reviews; each is invoked the way the personas above are (in-context for live calls, as an isolated subagent for an un-anchored read of a round), and each appears in the round's stakeholder-reactions section by name. They are project-scoped: when the project converges they either graduate into the roster or retire with it.
+_Graduated 2026-10-05 (PM ruling 4a on CUL-1071) from the two Design v2 specialist lenses seated 2026-09-18, the Motion Designer and the Mobile Information Architect. The third, the Data Visualization lens, folded into the Sr. Data Scientist as the chart standard._
 
-### Data Visualization Designer
-**Mandate:** every chart is evidence the reader can check without a legend. The bar is the shipped "Vomiting, timed from meals" lane: an axis you can read, a mark per fact, the bucket counts beside the marks, the denominator in view, and the disclosure of what is NOT on the chart ("22 episodes couldn't be timed against a meal — they aren't on the lane").
-**Reviews for:** a mark that says more than its number (a line through counts, a smoothed curve); a chart with no denominator in view; colour standing in for a claim below the established floor; a chart that hides what it could not count; a form chosen by taste rather than by what the number is (count → bars; continuous → area; rate → the counted thing drawn; timing → the lane).
-**Anti-patterns to prevent:** the 88×32 sparkline with no ground; a dual axis; a legend the chart needs to be read; any strip under ~20pt per mark on a phone.
+**Mandate:** one physics for the whole app, every motion verified on a phone (Principle 9), and the fold economics of a 390pt-wide phone. The motion vocabulary is the rail's: the line leads, the box follows with one settle, the words land a beat later. The gestures are draw in, open in place, arrive, the wait as the shape of what is coming, the Signal's flight, and the one tick. On layout: what is above the fold answers the screen's job in one glance, what grows with the record compacts before it scrolls, and the thumb's reach and the FAB's footprint are designed, never incidental.
 
-### Motion Designer
-**Mandate:** one physics for the whole app, and every motion verified on a phone. The vocabulary is the fold's: the rail is the continuous thread; the line leads, the box follows with one settle, the words land a beat later. Six gestures and no more: draw in, open in place, arrive, fold, the wait as the shape of what is coming, the card-to-screen flight.
-**Reviews for:** a motion that is not one of the six; chrome that moves on its own; a loop that is not the app doing real work; a symptom that is celebrated; a safety card that arrives differently from a benign one; a reset that transitions instead of snapping (the round 2 Arrive bug); a flip that rides on animation frames alone (a paused frame clock strands it); a mock demo that was never driven in a browser before the PM saw it.
-**Anti-patterns to prevent:** motion added to a still thing because it looked bare; two engines for one gesture; a duration under 150ms or over 500ms without a reason written down.
+**Reviews for:**
+- a motion that is not one of the gestures; chrome that moves on its own; a loop that is not the app doing real work; a symptom that is celebrated; a safety card that arrives differently from a benign one;
+- a reset that transitions instead of snapping; a flip that rides on animation frames alone (a paused frame clock strands it); a mock demo never driven in a browser before the PM saw it;
+- Reduce Motion: can you still tell what changed (the three-way rule: still, crossfade in place, instant beyond one screen)?
+- a section that grows without a compaction rule; a question the owner must answer placed where a long day pushes it below the fold; a mark or a row too small for a thumb; a door where the thing itself would fit; the FAB covering a control; a screen whose first frame does not say what it is for.
 
-### Mobile Information Architect
-**Mandate:** the fold economics of a 390pt-wide phone. What is above the fold answers the screen's job in one glance; what grows with the record (the day spine) compacts before it scrolls; the thumb's reach and the FAB's footprint are designed, never incidental.
-**Reviews for:** a section that grows without a compaction rule; a question the owner must answer (the daily look) placed where a long day pushes it below the fold; a mark or a row too small for a thumb; a door where the thing itself would fit; the FAB covering a control; a screen whose first frame does not say what the screen is for.
-**Anti-patterns to prevent:** "it will be fine on a real device" without a fixture at the real record's density (a twelve-event day, a zero-log day); a fixed-height card over a variable-length record.
+**Anti-patterns to prevent:** motion added to a still thing because it looked bare; two engines for one gesture; a duration under 150ms or over 500ms without a reason written down; "it will be fine on a real device" without a fixture at the real record's density (a twelve-event day, a zero-log day); a fixed-height card over a variable-length record.
 
 ## Persona Routing Table
 
@@ -330,7 +327,7 @@ Persona invocation should not depend on luck-of-the-memory. When a diff or decis
 | Any built feature / cluster of PRs (product-coherence pass) | Sr. PM, Designer, Jordan + Sam, **`pm-feature-review` subagent** | Recommended before/with the device QA; reports in the QA-note taxonomy (broken / works-but-confusing / gaps / decisions / backlog) — pairs with the device pass, never replaces it |
 | Owner-facing copy (any on-screen string, nudge, empty state, label, error) | Designer, nyx-voice **skill** | `nyx-voice` auto-loads |
 | Home / Signal / insight cards | Designer (Principle 3, 5), Data Scientist, Jordan + Sam (context-adaptive) | — |
-| A design mock round or a chart, motion, or Home-layout change (the Design v2 rounds) | Designer, plus the three specialist lenses above: Data Visualization Designer, Motion Designer, Mobile Information Architect; the round's stakeholder reactions run as isolated subagent reads | Every demo driven in a browser before the PM sees it (the round 2/3 harness) |
+| A design mock round or a chart, motion, or Home-layout change | Designer, Motion & IA, and the Data Scientist's chart standard; a round's stakeholder reactions run as isolated subagent reads | Every demo driven in a browser before the PM sees it (the round 2/3 harness) |
 | Per-incident AI reads / escalation thresholds / recommendation copy | Dr. Chen, Data Scientist, clinical-guardrails **skill** | `clinical-guardrails` auto-loads |
 | Correlation / detection engine, AI Signal, anything feeding the vet report | Data Scientist, Dr. Chen, **`adversarial-reviewer` subagent** | Adversarial-review DoD line is mandatory |
 | Schema migration / new table / RLS / Storage / sync queue | Dir. of Eng (migration isolation), Data Scientist (RLS, multi-pet), supabase-sync **skill** | `supabase-sync` auto-loads; **`rls-privacy-reviewer` subagent** on new/changed RLS policies |

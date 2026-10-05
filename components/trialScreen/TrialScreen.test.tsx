@@ -51,10 +51,8 @@ jest.mock('react-native-safe-area-context', () => {
 
 const mockReduced = jest.fn(() => false);
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => mockReduced() }));
-// TS-9: the Signal door's gate and read. Design v2 defaults OFF, so every case above the
-// Signal door block renders the screen as it was before the door existed.
-const mockDesignV2 = jest.fn(() => false);
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2() }));
+// TS-9: the Signal door's read. The cache answers nothing by default, so every case above
+// the Signal door block renders the screen without a door.
 const mockReadSignalCache = jest.fn(async (_petId: string): Promise<unknown> => null);
 jest.mock('../../lib/signal', () => ({
   ...jest.requireActual('../../lib/signal'),
@@ -586,21 +584,7 @@ describe('the Signal door (TS-9)', () => {
     mockReadSignalCache.mockImplementation(async () => cacheWith('fewer_during_trial'));
   });
 
-  it('Design v2 off: no door, and the Signal cache is never read, over a cache that would answer', async () => {
-    mockTrial = { input: running({ trialResponse: VOMITING }), status: 'loaded', inputIsForPet: true };
-    const off = await renderRoute();
-    expect(off.getByTestId('trial-record-card')).toBeTruthy();
-    expect(off.queryByTestId('trial-door-signal')).toBeNull();
-    expect(mockReadSignalCache).not.toHaveBeenCalled();
-    // …and it would have answered: the same fixture with the gate on draws the door.
-    mockDesignV2.mockReturnValue(true);
-    const on = await renderRoute();
-    expect(on.getByTestId('trial-door-signal')).toBeTruthy();
-    mockDesignV2.mockReturnValue(false);
-  });
-
-  it('Design v2 on: the door names the Signal screen, sits under the facts card, and pushes the route’s pet once', async () => {
-    mockDesignV2.mockReturnValue(true);
+  it('the door names the Signal screen, sits under the facts card, and pushes the route’s pet once', async () => {
     mockTrial = { input: running({ trialResponse: VOMITING }), status: 'loaded', inputIsForPet: true };
     const view = await renderRoute();
     expect(mockReadSignalCache.mock.calls.every(([id]) => id === 'pet-2')).toBe(true);
@@ -615,11 +599,9 @@ describe('the Signal door (TS-9)', () => {
     fireEvent.press(row);
     expect(mockPush).toHaveBeenCalledTimes(1);
     expect(mockPush).toHaveBeenCalledWith('/signal/trial_response?pet=pet-2');
-    mockDesignV2.mockReturnValue(false);
   });
 
   it('a falling pair over a refusing pet has no door (Home draws no card); a rising one keeps it on the safety face', async () => {
-    mockDesignV2.mockReturnValue(true);
     mockTrial = {
       input: running({ petName: 'Biscuit', trialDietRefusal: REFUSAL, trialResponse: VOMITING }),
       status: 'loaded',
@@ -634,13 +616,11 @@ describe('the Signal door (TS-9)', () => {
     const rising = await renderRoute();
     expect(rising.getByTestId('trial-safety')).toBeTruthy();
     expect(rising.getByTestId('trial-door-signal')).toBeTruthy();
-    mockDesignV2.mockReturnValue(false);
   });
 
   // The adversarial pass's counterexample: a regen that flips the pair's direction while this
   // screen is open must move the door with Home, which re-reads on the signal tick.
   it('a regen that lands while the screen is open re-reads: a door Home drops goes, one it adds comes', async () => {
-    mockDesignV2.mockReturnValue(true);
     mockTrial = {
       input: running({ petName: 'Biscuit', trialDietRefusal: REFUSAL, trialResponse: VOMITING }),
       status: 'loaded',
@@ -661,11 +641,9 @@ describe('the Signal door (TS-9)', () => {
       useSyncStore.getState().bumpSignalTick();
     });
     expect(view.getByTestId('trial-door-signal')).toBeTruthy();
-    mockDesignV2.mockReturnValue(false);
   });
 
   it('a failed cache read draws no door and leaves the screen whole', async () => {
-    mockDesignV2.mockReturnValue(true);
     mockReadSignalCache.mockImplementation(async () => {
       throw new Error('offline');
     });
@@ -675,6 +653,5 @@ describe('the Signal door (TS-9)', () => {
     expect(view.queryByTestId('trial-door-signal')).toBeNull();
     expect(view.getByTestId('trial-vomiting')).toBeTruthy();
     warn.mockRestore();
-    mockDesignV2.mockReturnValue(false);
   });
 });

@@ -114,18 +114,6 @@ const COLLAPSE_OWNERS = [
 // all three real ones arrived; it is not a proof of uniqueness.
 
 describe('the symptom-episode collapse has one implementation (B-067)', () => {
-  it('the Home Trend hook delegates and carries no collapse of its own', () => {
-    const src = readCode('hooks/useTrend.ts');
-    // The hook now delegates the whole derivation to `lib/trendSummary`, which itself
-    // delegates the collapse — so the hook carries neither.
-    expect(src).toMatch(/summarizeSymptomTrend\(/);
-    expect(src).toMatch(/from '\.\.\/lib\/trendSummary'/);
-    expect(readCode('lib/trendSummary.ts')).toMatch(/from '\.\/symptomEpisodes'/);
-    // The whole derivation is absent, which is stronger than "it delegates": there is
-    // nothing left here to drift.
-    expect(reimplementsCollapse(src)).toBe(false);
-  });
-
   it('the Signal engine reads the collapse through the shared predicate', () => {
     const src = read('supabase/functions/generate-signal/detection.ts');
     expect(src).toMatch(/from '\.\.\/\.\.\/\.\.\/lib\/symptomEpisodes\.ts'/);
@@ -189,49 +177,5 @@ describe('the symptom-episode collapse has one implementation (B-067)', () => {
   });
 });
 
-/** Just the `SymptomChart` component's source.
- *
- *  Scoped deliberately: `FeedingChart` in the same file still renders "↑ from N days
- *  last week" and "Every day this week" over MEAL-LOGGING days. Whether that is a
- *  parallel bypass is CUL-568's call, not this PR's, so this guard must not quietly
- *  pre-empt it — nor let the symptom chart's copy hide behind it. */
-function symptomChartSource(): string {
-  const src = readCode('components/home/TrendZone.tsx');
-  const start = src.indexOf('function SymptomChart');
-  const end = src.indexOf('function FeedingChart');
-  expect(start).toBeGreaterThan(-1);
-  expect(end).toBeGreaterThan(start);
-  return src.slice(start, end);
-}
-
-describe('the Trend card states no week-over-week verdict (B-067)', () => {
-  // The safety half of the fix. `TrendZone.test.tsx` asserts the rendered absence;
-  // this asserts the strings are gone from the source, so they cannot come back via a
-  // branch the render tests do not happen to exercise.
-  it('carries no direction copy for the symptom chart', () => {
-    const src = symptomChartSource();
-    // Case-INSENSITIVE on the copy strings. The first draft used /improving/ and
-    // passed only because `chartSubLabelImproving` happens to capitalise the I —
-    // i.e. it would not have caught the word coming back in a capitalised sentence.
-    expect(src).not.toMatch(/improving/i);
-    expect(src).not.toMatch(/↓ from|↑ from/);
-    expect(src).not.toMatch(/last week/i);
-    expect(src).not.toMatch(/same as last/i);
-  });
-
-  it('reserves the "improving" accent for the FEEDING chart until CUL-568 rules', () => {
-    // The style token itself cannot be banned file-wide yet — FeedingChart still uses
-    // it for "Every day this week", which is CUL-568's call, not this PR's. So pin the
-    // COUNT: exactly one use, and it is not the symptom chart's.
-    expect(symptomChartSource()).not.toMatch(/chartSubLabelImproving/);
-    const uses = readCode('components/home/TrendZone.tsx').match(/chartSubLabelImproving/g) ?? [];
-    expect(uses).toHaveLength(2); // the style definition + the one FeedingChart use
-  });
-
-  it('does not read the prior-window symptom count at all', () => {
-    // The field is retained in `TrendData` as data for CUL-383, but this card
-    // rendering it is the bypass. Not destructured here, not referenced here.
-    expect(symptomChartSource()).not.toMatch(/lastWeekSymptomCount/);
-    expect(readCode('components/home/TrendZone.tsx')).not.toMatch(/lastWeekSymptomCount/);
-  });
-});
+// The Home Trend card (`components/home/TrendZone.tsx`, `hooks/useTrend.ts`) and its
+// "no week-over-week verdict" pins were deleted with it by CUL-1071 (Design v2 GA).

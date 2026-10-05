@@ -9,18 +9,21 @@ jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
-// Design v2 (D2-5): the screen imports the month's reads, which reach lib/supabase at
-// import time; this suite never turns the redesign on, so the stub is for the import
-// edge only (app/insights/designV2.test.tsx covers the flag-on wiring).
+// The month (Design v2, GA by CUL-1071) draws and reads on its own — its wiring is
+// app/insights/designV2.test.tsx — so here it is a placeholder, and its reads (which
+// reach lib/supabase at import time) are stubbed for the import edge only.
 jest.mock('../../lib/monthReads', () => ({ readMonthFacts: jest.fn(), readDayRows: jest.fn() }));
+jest.mock('../../components/designV2/patterns/MonthInstrument', () => {
+  const { View } = require('react-native');
+  return { MonthInstrument: () => <View testID="month-instrument" /> };
+});
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
-// Noticed (CUL-874 / N-5). This suite is the FLAG-OFF path: `useAllowlistFlag`
-// returns false, so `lookCardLive` is false, `loadNoticed` returns null before any read,
-// and Patterns renders exactly what it rendered before N-5. The mocks exist because the
-// screen's new imports reach `lib/appConfig` → `lib/supabase`, which throws under jest
-// without env — not because any behaviour here is being stubbed away.
+// Noticed (CUL-874 / N-5) is GA and live for this suite's cat; its reads are stubbed to
+// an empty record (its wiring is app/insights/noticed.test.tsx). The config mocks exist
+// because the screen's imports reach `lib/appConfig` → `lib/supabase`, which throws under
+// jest without env.
 jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
 jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
 jest.mock('../../hooks/useDietTrial', () => ({
@@ -35,9 +38,6 @@ jest.mock('../../lib/lookWithheld', () => ({
   lookWithheld: () => true,
 }));
 
-jest.mock('../../hooks/useSummary', () => ({
-  useSummary: () => ({ summary: null, displayState: 'building', petName: 'Nyx', isLoading: false }),
-}));
 jest.mock('expo-router', () => {
   const React = require('react');
   return {
@@ -53,11 +53,6 @@ jest.mock('../../lib/analytics', () => {
   return {
     ...actual,
     getSymptomCounts: jest.fn(),
-    getSymptomFrequencyByDay: jest.fn(),
-    getSymptomFrequencyByMonth: jest.fn(),
-    getIntakeDeclineByMonth: jest.fn(),
-    getEarliestEventMonth: jest.fn(),
-    getIntakeRateWithPrior: jest.fn(),
     getTopFoods: jest.fn(),
     getTopProteins: jest.fn(),
     getMealTreatComposition: jest.fn(),
@@ -125,15 +120,10 @@ const trialModel = buildTrialSoFar({
 beforeEach(() => {
   jest.clearAllMocks();
   setActivePet();
-  A.getSymptomFrequencyByMonth.mockResolvedValue([]);
-  A.getIntakeDeclineByMonth.mockResolvedValue([]);
-  A.getEarliestEventMonth.mockResolvedValue(null);
   // A non-empty dashboard (a vomit + composition) so the screen reaches the ready branch.
   const counts: SymptomCount[] = [{ symptomType: 'vomit', current: 3, prior: 1, delta: 2 }];
   const composition: MealTreatComposition = { meal: 8, treat: 2, other: 0, unclassified: 0, total: 10 };
   A.getSymptomCounts.mockResolvedValue(counts);
-  A.getSymptomFrequencyByDay.mockResolvedValue([{ date: '2026-05-01', total: 1, byType: { vomit: 1 } }]);
-  A.getIntakeRateWithPrior.mockResolvedValue({ current: notEnoughData(2, 4), prior: notEnoughData(0, 4) });
   A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
   A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
   A.getMealTreatComposition.mockResolvedValue(composition);
@@ -188,7 +178,7 @@ describe('PatternsScreen — Signals v2 panels (GA)', () => {
     (getTimingPanel as jest.Mock).mockResolvedValue(null);
     (getTrialPanel as jest.Mock).mockResolvedValue(null);
     const { queryByText, getByText } = render(<PatternsScreen />);
-    await waitFor(() => expect(getByText('Calendar')).toBeTruthy());
+    await waitFor(() => expect(getByText('Top food')).toBeTruthy());
     expect(queryByText('Vomiting, timed from meals')).toBeNull();
     expect(queryByText('The trial so far')).toBeNull();
   });

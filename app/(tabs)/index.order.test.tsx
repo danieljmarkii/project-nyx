@@ -5,10 +5,8 @@
 // safety and concern insights the lead, and an appointment is context — a visit three
 // days out must never sit above a card saying the cat has finished 2 of 8 meals.
 //
-// Nothing checked it. The strip's own suite can only prove what the strip draws, and
-// the flag-off guard compares two renders of the SAME tree, so it moves with a
-// reordering rather than catching one. This file is the missing half: every zone is
-// replaced by a marker and the ORDER of the markers is asserted.
+// The strip's own suite can only prove what the strip draws. This file is the other
+// half: every zone is replaced by a marker and the ORDER of the markers is asserted.
 //
 // It deliberately pins the whole sequence and not just the strip's neighbours. A
 // reorder that moved the strip above the Signal would almost certainly arrive as a
@@ -41,21 +39,15 @@ jest.mock('../../components/vetvisits/AppointmentStrip', () => ({
   AppointmentStrip: marker('appointment'),
 }));
 jest.mock('../../components/home/TrialStrip', () => ({ TrialStrip: marker('trial') }));
-jest.mock('../../components/home/MedStrip', () => ({ MedStrip: marker('med') }));
-jest.mock('../../components/home/LookCard', () => ({ LookCard: marker('look') }));
 jest.mock('../../components/home/LookExits', () => ({
   LookExits: marker('look-exits'),
   exitVisibility: () => ({}),
   lookRectInPage: () => null,
 }));
-jest.mock('../../components/home/TodayZone', () => ({ TodayZone: marker('today') }));
-jest.mock('../../components/home/TrendZone', () => ({ TrendZone: marker('trend') }));
 // D2-4 (CUL-1066) — the gate, OFF here: this file pins the shipped order. The Design
 // v2 surfaces are markers too, so a flag-on order can be pinned beside it below without
 // mounting the spine's reads. The hook is mocked at the module boundary because its
 // real import reaches `lib/supabase`, which throws at import with no env.
-let mockDesignV2 = false;
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2 }));
 jest.mock('../../components/designV2/home/TodayCard', () => ({ TodayCard: marker('today-v2') }));
 jest.mock('../../components/designV2/home/CoverageDoor', () => ({
   CoverageDoor: marker('coverage-door'),
@@ -70,8 +62,6 @@ jest.mock('../../hooks/useDietTrial', () => ({
 // One med strip, so the order below exercises the real sequence rather than a Home
 // with a hole in it: `resolveMedStrips` returns an empty array for a pet with no
 // courses, and an absent row proves nothing about where it would have gone.
-jest.mock('../../hooks/useMedStrips', () => ({ useMedStrips: () => ({ input: {} }) }));
-jest.mock('../../lib/medStrip', () => ({ resolveMedStrips: () => [{ key: 'm1' }] }));
 jest.mock('../../lib/sync', () => ({ syncNow: jest.fn() }));
 jest.mock('../../lib/signal', () => ({ regenerateSignal: jest.fn() }));
 jest.mock('../../store/syncStore', () => {
@@ -112,10 +102,6 @@ function zoneOrder(tree: unknown, out: string[] = []): string[] {
 }
 
 describe('AC 3 — the appointment strip sits under the Signal, in the context register', () => {
-  beforeEach(() => {
-    mockDesignV2 = false;
-  });
-
   it('renders the zones in the ruled order', () => {
     const order = zoneOrder(render(<HomeScreen />).toJSON());
 
@@ -134,10 +120,12 @@ describe('AC 3 — the appointment strip sits under the Signal, in the context r
       // CUL-903 — context, never an insight.
       'appointment',
       'trial',
-      'med',
-      'look',
-      'today',
-      'trend',
+      // D2-4 (GA by CUL-1071): Today is the spine with the look as its header inside the
+      // card; the medication strip's write is retired (a dose is a fact on the spine once
+      // logged), the Trend card is retired, and the coverage door is the last row
+      // (left-aligned, C-5).
+      'today-v2',
+      'coverage-door',
       'look-exits',
     ]);
   });
@@ -150,28 +138,5 @@ describe('AC 3 — the appointment strip sits under the Signal, in the context r
     expect(order.indexOf('appointment')).toBeGreaterThan(order.indexOf('signal'));
     expect(order.indexOf('appointment')).toBeLessThan(order.indexOf('trial'));
     expect(order.indexOf('appointment')).toBeGreaterThan(order.indexOf('cross-pet-safety'));
-  });
-
-  it('flag-on (D2-4): the Signal and the strips lead, Today is the spine, the door closes the feed — no med strip, no look card, no trend', () => {
-    // The same list, under `design_v2`: the medication strip's write is retired (a dose
-    // is a fact on the spine once logged), the look is Today's header inside the card,
-    // and the coverage door is the last row (left-aligned, C-5). The Signal's card is
-    // the SHIPPED one until D2-3 merges — the composition does not wait on lane 1.
-    mockDesignV2 = true;
-    const order = zoneOrder(render(<HomeScreen />).toJSON());
-    expect(order).toEqual([
-      'header',
-      'sky',
-      'cross-pet-safety',
-      'signal',
-      'appointment',
-      'trial',
-      'today-v2',
-      'coverage-door',
-      'look-exits',
-    ]);
-    expect(order).not.toContain('med');
-    expect(order).not.toContain('trend');
-    expect(order).not.toContain('look');
   });
 });

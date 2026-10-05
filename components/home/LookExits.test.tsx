@@ -51,7 +51,7 @@ describe('exitVisibility — an exit appears only once its own row is out of rea
   });
 });
 
-// CUL-1220 / BRK-16 — the design_v2 header reports a CARD-LOCAL y; the pin compares with
+// CUL-1220 / BRK-16 — the look header reports a CARD-LOCAL y; the pin compares with
 // the page's scrollY. Composed at both boundaries, through the real `exitVisibility`.
 describe('lookRectInPage — the header’s rect in page coordinates', () => {
   const card = { y: 620, height: 900 };

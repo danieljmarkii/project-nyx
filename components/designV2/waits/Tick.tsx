@@ -1,4 +1,4 @@
-// The breathing tick — the app's ONE looping motion behind `design_v2` (Design v2 — the
+// The breathing tick — the ONE looping motion of the Design v2 surfaces (Design v2 — the
 // whole day, D2-7 / CUL-1068; design authority `docs/culprit-design-v4-mockups.html` §07,
 // the Principle 9 carve-out; drawn in the round-2 archive §06).
 //

@@ -11,8 +11,8 @@ import { ThemedText } from '../../ui/ThemedText';
 
 // WeightCard (Design v2) — readings as dots by DATE on a fixed ±10 % band (D2-5 ·
 // CUL-1067; design authority `docs/culprit-design-v4-mockups.html` §04 option A, ruled
-// R4-4: "dots by date on a fixed ±10% band with no fill and the delta spoken"). Behind
-// `design_v2`; the flag-off page keeps `components/dashboard/WeightCard.tsx`.
+// R4-4: "dots by date on a fixed ±10% band with no fill and the delta spoken"). The only
+// weight card on Patterns since Design v2's GA (CUL-1071) deleted the old one.
 //
 //   six readings ... the dots where their dates are, the band's edges labelled, the delta
 //                    spoken beside its caveat

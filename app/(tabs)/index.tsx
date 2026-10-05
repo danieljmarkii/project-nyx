@@ -13,20 +13,11 @@ import { PullToRefreshSky } from '../../components/home/PullToRefreshSky';
 import { CrossPetSafetyBanner } from '../../components/home/CrossPetSafetyBanner';
 import { SignalZone } from '../../components/home/SignalZone';
 import { TrialStrip } from '../../components/home/TrialStrip';
-import { MedStrip } from '../../components/home/MedStrip';
 import { AppointmentStrip } from '../../components/vetvisits/AppointmentStrip';
-import { LookCard } from '../../components/home/LookCard';
 import { LookExits, exitVisibility, lookRectInPage, type LayoutBox } from '../../components/home/LookExits';
-import { TodayZone } from '../../components/home/TodayZone';
-import { TrendZone } from '../../components/home/TrendZone';
 import { pullThreshold } from '../../lib/haptics';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { resolveTrialStrip, isAnimalNotEating } from '../../lib/dietTrialCard';
-import type { TrialStripSafety } from '../../lib/trialStripDoor';
-import { isTrialRunning } from '../../lib/dietTrial';
-import { useMedStrips } from '../../hooks/useMedStrips';
-import { resolveMedStrips } from '../../lib/medStrip';
-import { useDesignV2 } from '../../hooks/useDesignV2';
 import { TodayCard } from '../../components/designV2/home/TodayCard';
 import { CoverageDoor } from '../../components/designV2/home/CoverageDoor';
 import { HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
@@ -61,16 +52,12 @@ export default function HomeScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const [refreshing, setRefreshing] = useState(false);
   // The Noticed grid's pinned exits (CUL-871, T-21) need three numbers Home is the only
-  // one that has: where the card sits in the scroll content, how far the feed is
+  // one that has: where the look header sits in the scroll content, how far the feed is
   // scrolled, and how tall the viewport is. They are held here rather than in the card
   // because the card cannot see two of them — and drawn by `LookExits`, which decides
-  // from them (`exitVisibility`) rather than being told.
-  //
-  // Kept as ONE object so a paint can never mix a fresh height with a stale top; and
-  // written only from `onLayout`, which fires when the grid opens and closes.
-  const [lookRect, setLookRect] = useState<{ top: number; height: number } | null>(null);
-  // design_v2 only: the Today card's box in the scroll content and the look header's box
-  // inside the card, composed below (CUL-1220, BRK-16).
+  // from them (`exitVisibility`) rather than being told. The header measures inside the
+  // Today card, so its rect is the card's box in the scroll content composed with the
+  // header's box inside the card (CUL-1220, BRK-16).
   const [todayCardBox, setTodayCardBox] = useState<LayoutBox | null>(null);
   const [lookHeaderBox, setLookHeaderBox] = useState<LayoutBox | null>(null);
   // The scroll offset lives in a ref, and reaches state (re-rendering the whole feed)
@@ -127,18 +114,8 @@ export default function HomeScreen() {
     inputIsForPet: trialFactsFresh,
     loadedPetId: trialPetId,
   } = useDietTrial(activePetId);
-  // TS-5 (CUL-1301) — what the Signal zone last reported about safety-class cards for its
-  // pet, handed to the trial strip so this week's lane never draws under one, and to the
-  // look card so its coverage footer never does either (CUL-909). Null until the
-  // zone reports; the strip fails closed on null and on a report for another pet.
-  const [signalSafety, setSignalSafety] = useState<TrialStripSafety | null>(null);
-  // B-721 SR-5 (§3.4) — is a trial running for the active pet? Computed here from the
-  // trial input Home already loads (no second read) and passed to SignalZone, where a
-  // falling reflection's expanded state appends the mid-trial adjacency line. `isTrialRunning`
-  // is the one trial predicate (lib/dietTrial), read on the trial's own clock (`nowMs`).
-  const trialRunning = trialInput?.trial ? isTrialRunning(trialInput.trial, trialInput.nowMs) : false;
   // B-789 (§5.2) — withhold every falling vomit pair on the Signal (the event-driven trial_response
-  // `fewer` card, and since CUL-1216 a falling vomit reflection, the design_v2 lead card's week line
+  // `fewer` card, and since CUL-1216 a falling vomit reflection, the lead card's week line
   // and a vomit chronicity card's compare) whenever the active pet's
   // record carries a NOT-EATING concern (a live intake decline or a diet refusal). The card fires
   // from the server `trial_response` finding, which is blind to the refusal: a diet-trial cat
@@ -190,18 +167,11 @@ export default function HomeScreen() {
   const rawTrialStrip = trialInput ? resolveTrialStrip(trialInput) : null;
   const trialStripModel =
     rawTrialStrip && !trialFactsFresh ? { ...rawTrialStrip, trialResponseLine: null } : rawTrialStrip;
-  // The medication strip's input (B-614 PR M2) — resolved inline below, exactly
-  // like the trial strip, so the resolver call and the placement stay on-screen.
-  const { input: medInput } = useMedStrips();
-  // Design v2 — the whole day (D2-4 / CUL-1066). ONE gate, read once; the drawing behind
-  // it lives in `components/designV2/` (C-36: the flag-off guard stubs that namespace and
-  // requires this screen's flag-off tree to be unchanged by it). Flag-on, Today is the
-  // spine with the look as its header, the medication strip's one-tap write is retired
-  // (a dose is a fact on the spine once logged; Q1 ruled "that's the FAB's job"), the
-  // Trend card is retired, and the coverage door closes the feed. Flag-off is today's
-  // Home, untouched.
-  const designV2 = useDesignV2();
-  const pinnedRect = designV2 ? lookRectInPage(todayCardBox, lookHeaderBox) : lookRect;
+  // Design v2 — the whole day (D2-4 / CUL-1066; GA by CUL-1071). Today is the spine with
+  // the look as its header, the medication strip's one-tap write is retired (a dose is a
+  // fact on the spine once logged; Q1 ruled "that's the FAB's job"), the Trend card is
+  // retired, and the coverage door closes the feed.
+  const pinnedRect = lookRectInPage(todayCardBox, lookHeaderBox);
 
   useEffect(() => {
     loadTodayEvents();
@@ -227,8 +197,8 @@ export default function HomeScreen() {
           : Promise.resolve(),
       ]);
       // syncNow() is called directly here (not via the useSync wrapper), so it never
-      // bumps the hydration tick that TodayZone + TrendZone re-read on. Bump it so a pull
-      // refreshes Today/Trend too — not just the Signal, which regenerateSignal ticks itself.
+      // bumps the hydration tick the Today card re-reads on. Bump it so a pull refreshes
+      // Today too — not just the Signal, which regenerateSignal ticks itself.
       useSyncStore.getState().bumpHydrationTick();
     } finally {
       const elapsed = Date.now() - started;
@@ -257,7 +227,7 @@ export default function HomeScreen() {
         <PullToRefreshSky active={refreshing} />
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={[styles.scroll, designV2 && styles.scrollV2]}
+          contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
           onScroll={(e) => {
             scrollYRef.current = e.nativeEvent.contentOffset.y;
@@ -286,9 +256,7 @@ export default function HomeScreen() {
               its own pet; it reads only `mayAnnounce` from this. */}
           <RowSpeechContext.Provider value={rowSpeech}>
             <SignalZone
-              trialRunning={trialRunning}
               withholdFallingVomit={withholdFallingVomit}
-              onSafetyLive={setSignalSafety}
               signalTrial={signalTrial}
             />
           </RowSpeechContext.Provider>
@@ -304,79 +272,31 @@ export default function HomeScreen() {
               intact. Nothing here changes, dates or re-phrases a Signal string because
               an appointment exists, and the strip never gains urgency styling.
 
-              It draws nothing unless the account is allowlisted AND opted in AND this
-              pet has a booking inside the five-day window (or one whose day just
-              passed, asked once) — so Home is byte-identical off the flag.
+              It draws nothing unless this pet has a booking inside the five-day window
+              (or one whose day just passed, asked once).
 
               It carries ONE write: *It didn't* → `cancelled_at`. That is Home's third
               write class and a Tier-2 amendment to `docs/nyx-med-strip-requirements.md`
               §0.1, PM-approved 2026-09-11 as one CONFIRMATION and no form — see the
               component header and `guards/homeWrites.test.ts`. */}
           <AppointmentStrip />
-          <TrialStrip
-            model={trialStripModel}
-            petId={trialPetId}
-            input={trialInput}
-            inputFresh={trialFactsFresh}
-            safety={signalSafety}
-            designV2={designV2}
-          />
-          {/* B-614 §8/D9 — one compact strip PER active/recent medication, BELOW
-              the trial strip and ABOVE Today. The trial is the wedge's primary
-              object (8–12 weeks); a 14-day course is the shorter-lived guest. A
-              fixed order, not a ranking. `resolveMedStrips` returns an empty array
-              when there is nothing to show, so Home draws no hole for a pet with
-              no meds (§8, AC #3). The card self-contains its one-tap confirm (M3),
-              which writes local-first and bumps the hydration tick above to settle. */}
-          {designV2
-            ? null
-            : (medInput ? resolveMedStrips(medInput) : []).map((m) => (
-                <MedStrip key={m.key} model={m} />
-              ))}
-          {/* Noticed — the daily look (CUL-871 / N-4a), in the slot the PM ruled on
-              CUL-864: after the medication strip, before Today. Safety cards and the
-              standing strips lead (Principle 3); the look is the owner's own
-              observation, not an insight, so it sits with the context rather than
-              above it — and T-9's nudge interplay is directly beneath it.
-
-              It renders nothing unless the account is allowlisted AND opted in AND the
-              pet has a vocabulary, so Home is byte-identical off the flag.
-
-              `trialNotEating` is the trial's own refusal register, THREE-STATE (CUL-873):
-              the emergency door takes it as a positive fact or nothing, and the withheld
-              predicate takes `null` as unanswered and fails closed. See its declaration
-              above for why one fact carries two readings. */}
-          {designV2 ? (
-            // D2-4 — Today as a spine with the look as its header, then the coverage
-            // door (the one door to Patterns on Home; left-aligned, C-5). The header's
-            // rect feeds the same pinned exits the card fed (T-21).
-            <>
-              {/* BRK-16: the header measures inside the card, so its rect is composed in
-                  page coordinates from both layouts (`lookRectInPage`, C-22). */}
-              <RowSpeechContext.Provider value={rowSpeech}>
-                <TodayCard
-                  trialNotEating={trialNotEating}
-                  onLayout={(e) => setTodayCardBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })}
-                  onLookLayout={(e) =>
-                    setLookHeaderBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
-                  }
-                />
-              </RowSpeechContext.Provider>
-              <CoverageDoor />
-            </>
-          ) : (
-            <>
-              <LookCard
-                trialNotEating={trialNotEating}
-                safety={signalSafety}
-                onLayout={(e) =>
-                  setLookRect({ top: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
-                }
-              />
-              <TodayZone />
-              <TrendZone />
-            </>
-          )}
+          <TrialStrip model={trialStripModel} petId={trialPetId} />
+          {/* D2-4 — Today as a spine with the look as its header (the slot CUL-864 ruled
+              for the look, after the standing strips and before Today: the look is the
+              owner's own observation, not an insight), then the coverage door (the one
+              door to Patterns on Home; left-aligned, C-5). The header's rect feeds the
+              pinned exits (T-21). `trialNotEating` is the trial's own refusal register,
+              THREE-STATE (CUL-873); see its declaration above. */}
+          <RowSpeechContext.Provider value={rowSpeech}>
+            <TodayCard
+              trialNotEating={trialNotEating}
+              onLayout={(e) => setTodayCardBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })}
+              onLookLayout={(e) =>
+                setLookHeaderBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
+              }
+            />
+          </RowSpeechContext.Provider>
+          <CoverageDoor />
         </ScrollView>
         {/* The second absolute layer (the first is the night band above). It draws
             nothing at all unless the Noticed grid is open — `LookExits` reads the card's
@@ -397,9 +317,8 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colorNeutralLight },
   body: { flex: 1 },
-  scroll: { padding: theme.space3, gap: theme.space3, paddingBottom: 100 },
-  // paddingBottom gives the FAB clearance over the last card
-  // D2-4 — the page's inset, written once in lib/fabFootprint.ts and asserted ≥ the
-  // FAB's floor there (C-5). The last row's control is left-aligned for the other half.
-  scrollV2: { paddingBottom: HOME_V2_SCROLL_INSET },
+  // D2-4 — paddingBottom is the page's inset, written once in lib/fabFootprint.ts and
+  // asserted ≥ the FAB's floor there (C-5). The last row's control is left-aligned for
+  // the other half.
+  scroll: { padding: theme.space3, gap: theme.space3, paddingBottom: HOME_V2_SCROLL_INSET },
 });

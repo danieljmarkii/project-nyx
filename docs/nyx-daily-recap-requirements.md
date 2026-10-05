@@ -1,5 +1,5 @@
 # Nyx — The Daily Recap
-**Version:** 1.0 — BUILD-READY (2026-08-15; every decision PM-ruled or PM-delegated same day) | **Track:** B-762 (the daily-recap chunk) | **Linear:** project **"The Daily Recap"** (team Culprit) — DR-0=CUL-20 · DR-1=CUL-23 · DR-2=CUL-25 · DR-3=CUL-26 · DR-4=CUL-21 · DR-5=CUL-22 · DR-6=CUL-24 · DR-7=CUL-27, blocking relations set (DR-0→DR-1→{DR-2,DR-3}; DR-5→DR-6; all→DR-7; DR-4 parallel-safe); repo file canonical, project description mirrors it.
+**Version:** 1.1 — BUILD-READY (2026-08-15; every decision PM-ruled or PM-delegated same day) · **Last Updated 2026-10-05** (v1.1: §3 records Design v2's GA, CUL-1071, PM-approved; the compact lane on Home is now the day's spine, inline under a ⚠ GA marker) | **Track:** B-762 (the daily-recap chunk) | **Linear:** project **"The Daily Recap"** (team Culprit) — DR-0=CUL-20 · DR-1=CUL-23 · DR-2=CUL-25 · DR-3=CUL-26 · DR-4=CUL-21 · DR-5=CUL-22 · DR-6=CUL-24 · DR-7=CUL-27, blocking relations set (DR-0→DR-1→{DR-2,DR-3}; DR-5→DR-6; all→DR-7; DR-4 parallel-safe); repo file canonical, project description mirrors it.
 
 **Design authority:** `docs/culprit-daily-recap-mockups.html` (the current-proposal page 🌙 — frames replace in place; it is the design lock for every surface here). Deliberation record: `docs/culprit-notifications-mockups.html` (archive, rounds 1–5). Umbrella spec: `docs/nyx-notifications-v2-requirements.md` (the portfolio iteration + NV-G8/NV-G9 live there; this file owns the recap build). Foundation: `docs/nyx-notification-foundation-requirements.md` (Part 1 — shipped; its G1–G6 spine and D1–D4 rulings bind every surface below).
 
@@ -59,6 +59,14 @@ The zone keeps its job and gains the recap band where its header sat:
 - The old header door (`openHistoryToday`) is replaced by the band's `Full day ›`; History remains one tab away.
 - **Zero-log:** the lane renders empty beside TodayZone's existing empty nudge — nothing manufactured.
 - **Principle 3 audit line (for the PR):** the Signal still leads Home; the band is facts + one door; no badge, no verdicts, no new card.
+
+**⚠ GA (2026-10-05, CUL-1071): the band above is superseded on Home; the compact lane became the spine.** Design v2 went to every account and deleted `TodayZone` with the rest of the pre-redesign Home. What Home does now, verified in code:
+- **The spine, not a lane.** The Today card (`components/designV2/home/TodayCard.tsx`) draws the day as a vertical spine under the look header: History v2's `HomeSpine` over the one node model (`lib/dayNodes.ts` → `lib/spineNode.ts`), each row from `components/dayRow/` and framed by the recap's own `SpineRowFrame` (`components/recap/DaySpine.tsx`) on the day ground. There is no horizontal 6a→12a lane on Home.
+- **`nodeTints.ts` stays the one tint map.** The spine's node dots take `NODE_TINT_DAY` from `components/recap/nodeTints.ts` through `SpineRowFrame`, and the recap's night spine takes `NODE_TINT_NIGHT` from the same file, so §2's "the two sizes cannot drift" still holds with the spine in the lane's place.
+- **The count line follows `buildCountChips`' order, symptoms first** (`lib/daySummary.ts`: the symptom chips in a fixed GI-first order, `vomit · diarrhea · cough · sneeze · lethargy · itch`, then any other symptom type, then meals, then doses, then other types; a look is never counted). Home prints it as one line led by the day's total (`countLine` in `lib/spineNode.ts`), so the mock's *7 meals · 2 vomits* reads on Home as *9 logged · 2 vomits · 7 meals*. The mock's order is not built.
+- **No `Full day ›` door on Home.** The Today card's only navigation is a row's tap to `/event/[id]`; the recap is reached from its notification (`lib/notifications.ts` routes to `/day-summary`). Whether Home regains a door to the recap is open, not ruled.
+- **The quiet day** is the card's own line (`todayQuietLine`), not an empty lane beside a nudge; see `docs/nyx-daily-look-requirements.md` T-9's GA note for its three forms.
+- **The Principle 3 audit line still holds:** the Signal leads Home; the Today card is facts, no badge and no verdict.
 
 ## 4. The offer (DR-3)
 

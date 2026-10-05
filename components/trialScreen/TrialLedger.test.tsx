@@ -14,8 +14,7 @@ import { theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { computeTrialFacts, type TrialFeeding } from '../../lib/dietTrial';
 import type { TrialCardInput } from '../../lib/dietTrialCard';
-import { buildTrialLedger, thisWeekLane, type TrialLedger as Model } from '../../lib/trialLedger';
-import { ThisWeekLane } from './ThisWeekLane';
+import { buildTrialLedger, type TrialLedger as Model } from '../../lib/trialLedger';
 import { TrialLedger } from './TrialLedger';
 
 const START_KEY = '2026-07-03';
@@ -125,23 +124,5 @@ describe('TrialLedger', () => {
     (useReducedMotion as jest.Mock).mockReturnValueOnce(true);
     render(<TrialLedger ledger={mochi().ledger} />);
     expect(flat(screen.getByTestId('trial-ledger')).opacity).toBe(1);
-  });
-});
-
-describe('ThisWeekLane', () => {
-  it("draws the ledger's current row, cell for cell, with its count", () => {
-    const { ledger, input } = mochi();
-    const lane = thisWeekLane(ledger, input)!;
-    expect(lane.row).toBe(ledger.rows[ledger.currentRowIndex!]);
-    render(<ThisWeekLane lane={lane} />);
-    expect(screen.getByText('Week 4 · meals logged 1 of 2 so far')).toBeTruthy();
-    const image = screen.getByRole('image');
-    expect(image.props.accessibilityLabel).toBe('Week 4 of the trial: meals logged on 1 of 2 days so far');
-    // Days 22–28: logged, today open, then five not reached.
-    const fills = lane.row.days.map((d) => flat(screen.getByTestId(`trial-lane-day-${d.trialDay}`)));
-    expect(fills).toHaveLength(7);
-    expect(fills[0].backgroundColor).toBe(theme.colorAccent);
-    expect(fills[1].borderStyle).toBe('dashed');
-    fills.slice(2).forEach((f) => expect(f.backgroundColor).toBe(theme.colorSurfaceSubtle));
   });
 });

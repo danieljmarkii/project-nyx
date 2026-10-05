@@ -30,10 +30,9 @@ import { ThemedText } from '../../ui/ThemedText';
 // never expands. The chevron is what makes a lower card LOOK like a door — the PM's device
 // reaction was that nothing below the lead did.
 //
-// THERE IS NO FOLD UNDER DESIGN V2 (CUL-1285, PM-ruled 2026-09-26): every card is already a
-// row, so "Keep it compact" had almost nothing left to compact and no mark on Home to say it
-// had. A fold stored by the shipped surface is ignored here; the flag-off fold is untouched
-// until the design_v2 GA deletes it.
+// THERE IS NO FOLD ON HOME (CUL-1285, PM-ruled 2026-09-26): every card is already a row,
+// so "Keep it compact" had almost nothing left to compact and no mark on Home to say it
+// had. Home's fold was deleted with the pre-redesign surface at Design v2's GA (CUL-1071).
 //
 // S1 HOLDS, AND IS STRUCTURAL HERE: a safety row never draws a thumbnail — the branch that
 // draws one is guarded on `priorityClass === 'insight'` and `SignalRow.test.tsx` asserts no

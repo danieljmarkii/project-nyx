@@ -84,3 +84,19 @@ export function signedOutRoute(input: {
   // Deliberate, or the flag-off default: the Landing, no banner (today's behaviour).
   return { path: '/(auth)', armBanner: false };
 }
+
+// MFU-9 (CUL-1071): a sign-out lands on auth with NOTHING of the previous owner's stack
+// left mounted under it. `router.replace` swaps only the top route, so a record screen
+// pushed over the tabs (the Signal screen, an event, the trial) stayed mounted beneath
+// the auth screen, still holding what it had read. Unwind first, then route. The
+// navigator is a parameter so the order is testable without a router.
+export interface SignOutNavigator {
+  canDismiss: () => boolean;
+  dismissAll: () => void;
+  replace: (path: SignedOutRoute['path']) => void;
+}
+
+export function navigateAfterSignOut(nav: SignOutNavigator, path: SignedOutRoute['path']): void {
+  if (nav.canDismiss()) nav.dismissAll();
+  nav.replace(path);
+}

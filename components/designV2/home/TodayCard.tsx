@@ -32,8 +32,8 @@
 //
 // ── THE FIRST PAINT (History v2 HV-10 / CUL-1167; spec §5.6) ─────────────────────
 // The spine is History v2's `HomeSpine`: the first paint and the run's open in place. It
-// draws wherever this card does, under `design_v2` (History v2 went to every account
-// first, HV-14 / CUL-1175). This card holds the PAINT LEDGER, because it is the
+// draws wherever this card does (History v2 went to every account first, HV-14 /
+// CUL-1175; Design v2 followed, CUL-1071). This card holds the PAINT LEDGER, because it is the
 // one that knows when today's read first answered: the ledger opens for the identity (the
 // pet and the day) on the render that first has the answer and is sealed after that commit.
 // So the spine draws once when Home first shows the day, never again as rows are logged, and
@@ -129,7 +129,7 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
   const todayRead = useEventStore((s) => s.todayRead);
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
 
-  // The local day's start, once per mount (TodayZone's guard against a backdated row
+  // The local day's start, once per mount (the retired TodayZone's guard against a backdated row
   // the optimistic prepend put in the store).
   const dayStartMs = useMemo(() => {
     const d = new Date();

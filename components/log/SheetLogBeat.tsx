@@ -36,7 +36,7 @@ import type { MomentTone } from '../../store/momentStore';
 // single route to `reverseLoggedEvent` (C-20, `guards/reversePath.test.ts`), and it
 // refuses on `!payload` — so reaching it means BEING a presentation of that store
 // rather than a component that reimplements it. The beat therefore paints off
-// `payload` + `removed` exactly as `LookCard` does (C-33: what varies is who paints
+// `payload` + `removed` exactly as the retired `LookCard` did (C-33: what varies is who paints
 // the beat, never who owns the reversal), and inherits four rules it was previously
 // re-deriving or missing: the dwell clock, the touch pause, the staleness guard on
 // the undo target, and the §5.6 commit haptic.

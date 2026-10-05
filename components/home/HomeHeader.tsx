@@ -11,7 +11,6 @@ import { PetAvatar } from '../pet/PetAvatar';
 import { OwnerAvatar } from '../settings/OwnerAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
-import { useDesignV2 } from '../../hooks/useDesignV2';
 import { useTodayKey } from '../../hooks/useTodayKey';
 import { HeaderDate } from '../designV2/home/HeaderDate';
 import {
@@ -61,13 +60,12 @@ import {
 // households — they just see no chevron, and therefore no multi-pet chrome at all).
 // The Ask pill and the owner-avatar doorway are unchanged (B-228 D5 placement).
 //
-// What joined, behind `design_v2` only (CUL-1221, the critique's BRK-26): the DATE, at
+// What joined with Design v2 (CUL-1221, the critique's BRK-26; GA by CUL-1071): the DATE, at
 // the head of the right cluster — "Thu, Sep 17", as the round-4 frame draws it. Design
 // v2's Home is a day (the spine, "Today", the coverage door), and §05 names that window
 // as "today, dated in the header". Still one row: the date is small, muted, never a
 // control, and its width comes out of the name's budget like everything else here. It
-// is drawn in `components/designV2/home/HeaderDate` so the flag-off header stays the
-// code's absence (C-36); the flag-off row is unchanged.
+// is drawn in `components/designV2/home/HeaderDate`.
 
 /** Vertical padding, per side. The row is deliberately tight — it is chrome. */
 const HEADER_PADDING_Y = 6;
@@ -102,10 +100,9 @@ export function HomeHeader() {
   // The name's rung is a function of the ROW's width, so it re-resolves on rotation
   // and on a foldable rather than baking in the width the app happened to launch at.
   const { width } = useWindowDimensions();
-  // Design v2 dates the day; flag-off draws no date and sizes the name exactly as before.
-  const designV2 = useDesignV2();
+  // Design v2 dates the day (CUL-1221).
   const todayKey = useTodayKey();
-  const dateLabel = designV2 ? headerDateLabel(todayKey) : null;
+  const dateLabel = headerDateLabel(todayKey);
 
   const [switcherVisible, setSwitcherVisible] = useState(false);
 

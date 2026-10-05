@@ -1,36 +1,25 @@
 // Dashboard screen assembly logic — the "Patterns" surface (B-023 PR 3).
 //
-// PURE, React-free, theme-free. This is the DoD-required test surface for PR 3: it
-// turns the PR 1 analytics aggregates into an ORDERED set of card descriptors the
-// screen (app/insights/index.tsx) renders, and it owns the two safety-critical
-// decisions:
-//   • orderDashboardCards   — safety always leads, never dropped (Principle 3 / §6).
-//   • buildDashboardCards    — derives each card's `established` flag from the analytics
-//                              result (counts → isEstablishedCount; rates → "not the
-//                              notEnoughData sentinel"), so a single observation (n=1)
-//                              can NEVER earn a verdict colour via the real-data path.
+// PURE, React-free, theme-free. It turns the analytics aggregates into an ORDERED set of
+// card descriptors the screen (app/insights/index.tsx) renders; `orderDashboardCards`
+// keeps the order engine-decided, never owner-configured (Principle 3 / §6).
 //
-// That `established` derivation is the PR-2 adversarial-review INSUFFICIENT note made
-// good: PR 2's cards trust a caller-supplied `established`; PR 3 is that caller, and it
-// must compute the flag honestly here rather than hand the cards a hopeful `true`.
+// Design v2 (D2-5 / CUL-1067; GA by CUL-1071) retired the KPI column: the symptom count
+// cards, the Calendar card, the Meals-finished card and the old weight card. The month
+// (`components/designV2/patterns/MonthInstrument`) carries the symptoms as layers and the
+// weight is drawn as dots by date, both read on their own. What this module still builds
+// is the Noticed card and the three descriptive cards.
 
 import {
-  isNotEnoughData,
   type NotEnoughData,
   type SymptomCount,
   type DayFrequencyBucket,
-  type CalendarMonth,
-  type IntakeRate,
   type RankedFood,
   type RankedProtein,
   type MealTreatComposition,
 } from './analytics';
-import { isEstablishedCount, selectCardState, type CardDisplayState } from './dashboardCards';
-// Type-only: keeps this pure module free of lib/weight's runtime deps (db/sync). The
-// screen computes the trend (getWeightHistory → computeWeightTrend) and passes it in.
-import type { WeightTrend } from './weight';
+import { selectCardState, type CardDisplayState } from './dashboardCards';
 import type { NoticedCardModel } from './lookPatterns';
-import { leafZeroContradictsLooks } from './lookTwins';
 
 // ── Priority classes (Principle 3 — safety leads) ────────────────────────────────
 //
@@ -61,70 +50,6 @@ const PRIORITY_RANK: Record<DashboardCardPriority, number> = {
 // label) from existing tested helpers — keeping THIS module free of theme/RN and the
 // established-derivation unit-testable in isolation.
 
-export interface SymptomCountCard {
-  kind: 'symptomCount';
-  key: string;
-  priority: 'safety';
-  symptomType: string;
-  current: number;
-  prior: number;
-  delta: number;
-  /** §13 #6 verdict-colour gate for a COUNT: isEstablishedCount(current, prior). A
-   *  single observation (max(current, prior) < 2) is NOT established → its delta stays
-   *  neutral, both directions (n=1 never alarms AND never reassures). */
-  established: boolean;
-  /** Daily series for this symptom across the window — the sparkline shape. */
-  sparkData: number[];
-}
-
-/** One selectable lens in the Calendar card (B-310). Data-only — the screen resolves each
- *  lens's chip label / copy noun / definition from symptomLabel + the dashboardCards helpers,
- *  keeping this module free of theme + nyx-voice strings (the established pure-descriptor
- *  contract). A symptom lens charts one symptom type; the single intake lens charts the daily
- *  count of unfinished meals (Sam's intake-is-not-preference signal). */
-export interface CalendarViewDescriptor {
-  key: string;
-  kind: 'symptom' | 'intake';
-  /** Set for kind === 'symptom' — which symptom's per-day count to chart. */
-  symptomType?: string;
-}
-
-export interface CalendarCard {
-  kind: 'calendar';
-  key: string;
-  priority: 'safety';
-  /** ≥1 lens, ordered; views[0] is the default (the dominant active symptom, else intake).
-   *  Multiple lenses fixes the invisible-second-symptom gap + earns the "Calendar" rebrand. */
-  views: CalendarViewDescriptor[];
-  /** Current calendar month's SYMPTOM buckets (all types) — the symptom lenses' first paint;
-   *  the PatternCalendar container fetches other months on page (B-309 / Calendar v3 N5b). */
-  monthBuckets: DayFrequencyBucket[];
-  /** Current calendar month's intake-decline buckets — the "Meals" lens's first paint (B-310).
-   *  [] when there's no intake lens. */
-  intakeDeclineMonthBuckets: DayFrequencyBucket[];
-  /** Today's UTC calendar month — the calendar's initial view + forward-paging bound. */
-  currentMonth: CalendarMonth;
-  /** The pet's earliest-event month — the backward-paging bound (null → no history). */
-  earliestMonth: CalendarMonth | null;
-}
-
-export interface IntakeRateCard {
-  kind: 'intakeRate';
-  key: 'intakeRate';
-  priority: 'intake';
-  result: IntakeRate | NotEnoughData;
-  /** §13 #6 verdict-colour gate for a RATE: the result is NOT the notEnoughData
-   *  sentinel. Below the §11 #5 floor the card renders the calibration state (no
-   *  number), so a thin rate can never carry a verdict. */
-  established: boolean;
-  state: CardDisplayState;
-  /** Prior comparable window's finished-rate, for the "vs last {window}" delta (B-098).
-   *  notEnoughData → the card omits the delta line (never a fabricated baseline). The
-   *  proportion bar (the card's shape, so it's never a bare big number) is drawn from
-   *  the current `result.rate` in the screen. */
-  prior: IntakeRate | NotEnoughData;
-}
-
 export interface TopFoodCard {
   kind: 'topFood';
   key: 'topFood';
@@ -148,18 +73,6 @@ export interface CompositionCardDescriptor {
   composition: MealTreatComposition;
 }
 
-export interface WeightTrendCardDescriptor {
-  kind: 'weightTrend';
-  key: 'weightTrend';
-  /** Ordering only — the card always renders NEUTRAL (no verdict colour). Placement is
-   *  reading-count-aware: a populated trend is a health-trajectory vital sign so it leads
-   *  ('safety' cluster, after the symptom cards, above food); an empty card is only a
-   *  logging nudge, so it sits in the 'descriptive' cluster instead of out-ranking live
-   *  safety/intake answers. Never 'intake'. See buildDashboardCards for the rationale. */
-  priority: 'safety' | 'descriptive';
-  trend: WeightTrend;
-}
-
 /**
  * *What you noticed* — the daily look's read-back (CUL-874 / N-5, spec §7).
  *
@@ -176,14 +89,10 @@ export interface WhatYouNoticedCardDescriptor {
 }
 
 export type DashboardCard =
-  | SymptomCountCard
   | WhatYouNoticedCardDescriptor
-  | CalendarCard
-  | IntakeRateCard
   | TopFoodCard
   | TopProteinCard
-  | CompositionCardDescriptor
-  | WeightTrendCardDescriptor;
+  | CompositionCardDescriptor;
 
 /**
  * Order cards so safety leads, then intake, then descriptive (§6 / Principle 3).
@@ -201,159 +110,26 @@ export function sparkFromBuckets(buckets: DayFrequencyBucket[], symptomType: str
 }
 
 export interface BuildDashboardInput {
-  /** Per-symptom current/prior counts (analytics: ranked by current desc). */
-  symptomCounts: SymptomCount[];
-  /** One bucket per calendar day in the trailing window (analytics) — drives the count
-   *  cards' sparklines (sparkFromBuckets). Distinct from monthBuckets below, which is the
-   *  calendar's calendar-month view. */
-  frequencyBuckets: DayFrequencyBucket[];
-  /** Current CALENDAR month's symptom buckets (all types) — the frequency calendar's
-   *  flash-free first paint (the container pages/fetches other months). */
-  monthBuckets: DayFrequencyBucket[];
-  /** Current CALENDAR month's intake-decline buckets — the "Meals" lens's flash-free first
-   *  paint AND the trigger for whether the intake lens appears at all (B-310). */
-  intakeDeclineMonthBuckets: DayFrequencyBucket[];
-  /** Today's UTC calendar month — the calendar's initial view + forward-paging bound. */
-  currentMonth: CalendarMonth;
-  /** The pet's earliest-event month — the calendar's backward-paging bound. */
-  earliestMonth: CalendarMonth | null;
-  intakeRate: IntakeRate | NotEnoughData;
-  /** Prior comparable window's finished-rate — the intake card's "vs last {window}" delta (B-098). */
-  intakeRatePrior: IntakeRate | NotEnoughData;
   topFoods: RankedFood[] | NotEnoughData;
   topProteins: RankedProtein[] | NotEnoughData;
   composition: MealTreatComposition;
-  /** The pet's weight trend (computeWeightTrend over the last N readings) — the
-   *  health-trajectory weight card. Always present; an empty trend renders the card's
-   *  forward-looking nudge state (the weight-logging habit this card exists to start). */
-  weightTrend: WeightTrend;
   /**
    * *What you noticed* (CUL-874 / N-5) — the pre-decided card model, or `null`/absent
-   * when Noticed is not live for this pet (the flag, the opt-in, or a species with no
-   * vocabulary).
-   *
-   * OPTIONAL, and that is the flag-off contract: with the field absent NOTHING here
-   * changes. No card is emitted, the zero-count gate below reads an empty map and
-   * suppresses nothing, and `PRIORITY_RANK`'s descriptive shift from 2 to 3 is invisible
-   * because no rank-2 card exists to slot between them — the ordering is a stable sort on
-   * relative rank, so a gap in the sequence reorders nothing. Patterns off the flag is
-   * byte-identical.
+   * when Noticed is not live for this pet (a species with no vocabulary). Absent, no card
+   * is emitted.
    */
   noticed?: NoticedCardModel | null;
-  /**
-   * CUL-845 gate 2's read — per-look-word answered-day counts over **this dashboard's**
-   * window, not the Noticed card's.
-   *
-   * Its own field rather than a field on `noticed`, because the window belongs to the
-   * ZERO being suppressed and the zero is a symptom card's: those count a 30-day month
-   * while the Noticed card counts 28, and reading the card's map left a two-day hole
-   * through which `Itch · 0` still printed over an owner tapping *Scratching more*
-   * (the adversarial pass, CUL-874). Absent off the flag, and the gate then suppresses
-   * nothing.
-   */
-  lookWordDaysForZeroGate?: ReadonlyMap<string, number> | null;
 }
 
 /**
- * Assemble the ordered, seeded dashboard card set from the PR 1 analytics results.
- * Safety (adverse symptom counts + ONE "Calendar" card whose lenses cover every active
- * symptom AND, when there's a decline this month, intake — B-310) → intake (meals-only
- * finished-rate) → descriptive (top food / top protein / meals-vs-treats). Each
- * verdict-colour card derives `established` honestly here.
+ * Assemble the ordered card set: the Noticed card (observation), then top food / top
+ * protein / meals-vs-treats (descriptive). Each ranking card derives its display state
+ * honestly here.
  */
 export function buildDashboardCards(input: BuildDashboardInput): DashboardCard[] {
   const cards: DashboardCard[] = [];
 
-  // ── Safety (Principle 3 — leads, never dropped) ──────────────────────────────
-  // A count card per symptom active in either window. Counts are never floored (a
-  // count of 1 is an honest fact), so these always render populated — but the verdict
-  // COLOUR on the delta is gated on isEstablishedCount, the adversarial fix for n=1.
-  for (const sc of input.symptomCounts) {
-    // ── CUL-845 gate 2 — a zero is never printed over the owner's own words ────
-    // An owner who taps *Scratching more* daily and never opens the + menu would
-    // otherwise read `Itch/Scratch · 0` here: reassurance produced by the boundary
-    // between the two surfaces rather than by the record. The WHOLE card goes, not just
-    // its number — its delta line ("5 fewer than last month") is the same claim in
-    // another grammar — and the leaf's history stays one tap away in the metric detail.
-    // Only a ZERO is suppressed: a real count stands beside the word, which is the
-    // report's own rule (§8 rule 12 — the disagreement said, not hidden).
-    if (
-      sc.current === 0 &&
-      input.lookWordDaysForZeroGate &&
-      leafZeroContradictsLooks(sc.symptomType, input.lookWordDaysForZeroGate)
-    ) {
-      continue;
-    }
-    cards.push({
-      kind: 'symptomCount',
-      key: `symptom:${sc.symptomType}`,
-      priority: 'safety',
-      symptomType: sc.symptomType,
-      current: sc.current,
-      prior: sc.prior,
-      delta: sc.delta,
-      established: isEstablishedCount(sc.current, sc.prior),
-      sparkData: sparkFromBuckets(input.frequencyBuckets, sc.symptomType),
-    });
-  }
-  // ONE "Calendar" card with a lens per active signal (B-310) — replacing the old single
-  // auto-picked "dominant symptom" grid that made a two-symptom diet-trial dog's second
-  // symptom invisible. Lenses, in order:
-  //   • one per ACTIVE symptom (current > 0), ranked by current desc — symptomCounts is
-  //     already in that order, so views[0] is the dominant symptom (the default lens). A
-  //     resolved symptom (current 0) gets its count card but no lens (an all-empty grid
-  //     would manufacture a symptom view for a quiet month).
-  //   • the intake-decline ("Meals") lens, IFF the current month actually carries an
-  //     unfinished meal. Gating on a real decline (not merely "has meals") keeps the lens an
-  //     ADVERSE-signal surface that only appears when there's something to see — it never
-  //     presents a clean month as a reassuring green field (§11 #2 absence ≠ wellness), and
-  //     it aligns with intake-is-not-preference (surface the decline, §11 #1).
-  const views: CalendarViewDescriptor[] = input.symptomCounts
-    .filter((s) => s.current > 0)
-    .map((s) => ({ key: `symptom:${s.symptomType}`, kind: 'symptom' as const, symptomType: s.symptomType }));
-  const hasIntakeDecline = input.intakeDeclineMonthBuckets.some((b) => b.total > 0);
-  if (hasIntakeDecline) {
-    views.push({ key: 'intake', kind: 'intake' });
-  }
-  if (views.length > 0) {
-    cards.push({
-      kind: 'calendar',
-      key: 'calendar',
-      priority: 'safety',
-      views,
-      monthBuckets: input.monthBuckets,
-      intakeDeclineMonthBuckets: input.intakeDeclineMonthBuckets,
-      currentMonth: input.currentMonth,
-      earliestMonth: input.earliestMonth,
-    });
-  }
-  // Weight — the health-trajectory vital sign (spec §6 group A: "Is {pet} okay /
-  // getting better?"), the vet council's #1 missing datum. Placement is reading-count
-  // aware (product-team review, 2026-06-26): a POPULATED trend LEADS here in the safety
-  // cluster (after the symptom cards, above food/intake) because a real weight trend is
-  // a vital sign worth scanning first. An EMPTY card (no readings yet) is only a logging
-  // nudge — it would cost glance-time in the highest-value zone without answering "is
-  // {pet} okay?", so it's emitted lower, at the head of the descriptive cluster (below),
-  // still present to start the habit. Either way it renders NEUTRAL — priority is
-  // PROMINENCE ONLY (the dashboard is uncapped, nothing drops; never a verdict colour).
-  // Always emitted (here or below), so the logging nudge is never silently absent.
-  const weightLeads = input.weightTrend.readingCount > 0;
-  if (weightLeads) {
-    cards.push({ kind: 'weightTrend', key: 'weightTrend', priority: 'safety', trend: input.weightTrend });
-  }
-
-  // ── Intake (descriptive intake, §6.B — meals-only finished-rate) ─────────────
-  cards.push({
-    kind: 'intakeRate',
-    key: 'intakeRate',
-    priority: 'intake',
-    result: input.intakeRate,
-    prior: input.intakeRatePrior,
-    established: !isNotEnoughData(input.intakeRate),
-    state: selectCardState(input.intakeRate),
-  });
-
-  // ── Observation (the daily look's read-back — after intake, above descriptive) ──
+  // ── Observation (the daily look's read-back) ─────────────────────────────────
   // Emitted whenever Noticed is live for this pet, INCLUDING its empty and withheld
   // states: §7 draws the empty state on purpose ("the door exists from day 1, so the room
   // behind it must"), so a card that renders one calibration line is the designed state
@@ -368,11 +144,6 @@ export function buildDashboardCards(input: BuildDashboardInput): DashboardCard[]
   }
 
   // ── Descriptive (rankings + composition — never a verdict colour, §11 #1) ────
-  // An empty weight card (no readings) leads the descriptive cluster — present and
-  // discoverable as a logging nudge, but not out-ranking the safety/intake answers above.
-  if (!weightLeads) {
-    cards.push({ kind: 'weightTrend', key: 'weightTrend', priority: 'descriptive', trend: input.weightTrend });
-  }
   cards.push({
     kind: 'topFood',
     key: 'topFood',

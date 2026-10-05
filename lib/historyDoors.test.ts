@@ -72,13 +72,6 @@ const CASES: Record<HistoryDoorId, Case[]> = {
       lands: { filter: ALL, window: ALL, landOn: '2026-09-17' },
     },
   ],
-  'calendar-day': [
-    {
-      name: 'inline: `{ date: dayKey, ts }` (text-pinned below)',
-      params: { date: '2026-09-17', ts: '1' },
-      lands: { filter: ALL, window: ALL, landOn: '2026-09-17' },
-    },
-  ],
   'look-more-today': [
     {
       name: 'lookMoreTodayHref',
@@ -183,11 +176,6 @@ describe('each in-app link carries a nonce, so a second tap on a mounted tab app
 
 describe('the inline senders still send what their case says (text pins; the component owns the tap)', () => {
   const src = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf8');
-  it('the flag-off calendar sends its day as `date`, with a nonce', () => {
-    expect(src('components/dashboard/PatternCalendar.tsx')).toMatch(
-      /pathname: '\/\(tabs\)\/history', params: \{ date: dayKey, ts: String\(Date\.now\(\)\) \}/,
-    );
-  });
   it('Ask\'s answer link is pushed with a nonce added at the tap', () => {
     expect(src('app/ask.tsx')).toMatch(/params: \{ \.\.\.nav\.params, ts: String\(Date\.now\(\)\) \}/);
   });

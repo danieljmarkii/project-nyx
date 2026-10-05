@@ -1,5 +1,5 @@
 # Project Nyx — Design Principles
-**Version:** 1.1 | **Status:** Stable | **Last Updated:** 2026-08-08
+**Version:** 2.0 | **Status:** Stable | **Last Updated:** 2026-10-05
 
 ---
 
@@ -22,6 +22,8 @@ It is not a component library. It is not a style guide. It is the set of princip
 Nyx holds a tremendous amount of complexity — longitudinal health data, food libraries, AI correlation engines, clinical export formats — and Jordan should feel none of it. Every interaction should feel like the app already knew what Jordan needed. The complexity lives in the system. The surface is always calm.
 
 This is not simplicity for its own sake. It is restraint in service of trust. A pet owner in the middle of a health scare does not need a feature-rich dashboard. They need one clear signal: *is my pet getting better?*
+
+Calm is not quiet. Where the pet is, the app is alive.
 
 ### The App Earns Its Place
 
@@ -70,16 +72,11 @@ Jordan opens the app to understand, not to scroll. The home screen answers the q
 
 _Revised 2026-05-30 (PM-approved): the Signal evolves from a single daily sentence into a **curated, prioritized set of insight cards**. The home is open-ended in the *types* of insight it can surface (symptom correlations, food/treat preferences, and future weight / activity / over-feeding, …) and in their *presentation* (a card may be a sentence, a stat, or a small graph — whichever suits the data). The discipline is unchanged: informative, never busy. See `docs/nyx-ai-signal-requirements.md` for the full spec._
 
-**The home screen:**
+**Home has two jobs, not a list of zones.** Home answers *is she okay* and *what happened today*, in that order, and carries nothing that answers neither. Safety leads and is never dropped for a layout. What appears is decided by the record and the wedge, never by the principle: a running trial earns a place, a quiet record earns a question. Home carries no form; its writes are the look and a one-tap confirmation of something the app already described, and nothing else.
 
-**Zone 1 — The Signal** (dominant, top)
-A curated, prioritized stack of AI-generated insight cards, refreshed daily. Each card is warm, confident, specific — "Vomiting is down 60% since you switched to turkey" — and may render as a sentence, a single stat, or a small graph. **Safety/concern insights always lead and are never dropped to honor a layout cap** (the visible-card cap governs only the low/medium-priority nice-to-knows). Cards are tappable to reveal the evidence behind them. In the empty state (first few days): an honest, warm message about what's being built. Never a placeholder. Never generic. Never a firehose.
+**The test:** cover the Signal card. Does the rest of Home still tell you what happened today? Cover Today. Does the Signal still tell you whether she is okay? Anything left over is not Home's.
 
-**Zone 2 — Today** (middle)
-A simple visual of what's been logged today — icon-based, scannable in two seconds. If nothing logged: a single, warm nudge. Not a notification badge. Not a red dot. A sentence. "Nothing logged yet — how's Luna doing?" One tap opens the quick-log. The nudge vanishes the moment anything is logged.
-
-**Zone 3 — The Trend** (bottom)
-One chart. The most clinically relevant metric for this pet right now. Symptom frequency for a pet on a diet trial. Feeding consistency for a pet in maintenance mode. Readable in three seconds. No axis labels required to understand the direction.
+_Revised 2026-10-05 (v2.0, Design v2 GA; PM-approved on CUL-1071, round 4 §07). This replaces the three mandated zones of 2026-05 (the Signal, Today, the Trend). As shipped: the Signal leads, each card a door to its own screen; a running trial's card and the appointment strip follow as context; Today is the day's spine with the daily look as its header; the coverage door closes the feed. The Trend card is retired._
 
 **What is not on the home screen:** a log feed, a settings shortcut, a feature menu, an upsell.
 
@@ -107,7 +104,7 @@ Every empty state — first open, no logs today, no data for this time range —
 
 **What this means in practice:**
 - First open: "We're getting to know Luna. Keep logging and patterns start appearing in about a week." Not: "No data yet."
-- No logs today: the Zone 2 nudge, not a blank space
+- No logs today: Today's quiet-day line, not a blank space
 - Insufficient data for a trend: "A few more days of logs and we'll be able to show you Luna's pattern." Not: a broken chart or a hidden zone
 
 _Added 2026-08-07 (Signal/Home uplift B-721, spine rule S6; PM-approved). A surface that renders cards only when they carry information must label its quiet — one explicit line — never shorten silently._
@@ -142,6 +139,39 @@ Every design decision about what is free and what is paid must pass a single tes
 
 ---
 
+### 8. The Data Is the Delight
+
+The app reads an ingredient list off a photo and a verdict off a vomit. The display has to be as magical as the capture, or the magic is wasted. So every number owns a shape, every shape reads in three seconds without a legend, and a shape draws itself the first time you see it. The most beautiful object in Culprit is the pet's own record, drawn well.
+
+What it forbids, so it stays inside the clinical spine: a shape never says more than its number. No smoothing a count into a curve, no colour below the established floor, and coverage always drawn beside occurrence, so a quiet day and an unlogged day never look alike.
+
+**A chart is evidence the reader can check without a legend.** Five things are in view on every chart: a mark per fact; a count on every mark; the denominator; the uncounted, disclosed; the window, named. The shipped timing lane is the reference, and the Design v2 chart table (round 4 §05) is the table a new chart is added to before it ships. A cell that is not a yes is a defect.
+
+**The tests:** Would Jordan screenshot this and send it to their partner? Hand the chart to Dr. Chen with the caption covered: can she say what was counted, over what, and what was left out?
+
+---
+
+### 9. Motion Is the Record Moving
+
+One physics for the whole app: the rail is the continuous thread, the line leads, the box follows with one settle, the sentence lands a beat later. Motion happens when the record changes state and nowhere else. The gestures, as shipped:
+
+- **Draw in:** a chart draws itself the first time it is seen.
+- **Open in place:** a day or a run opens where it is, with the fold's physics.
+- **Arrive:** a read or a first Signal grows out of the mark that was already standing there.
+- **The wait is the shape of what is coming:** a full-screen wait is the screen's own silhouette, and the record fills it.
+- **The flight:** the Signal's opening. A card whose evidence is the weekly bars flies its chart to the top of its own screen, and Back flies it home.
+- **The tick:** the one loop (below).
+
+**Chrome never moves on its own, except the one tick, while the app is working on the pet's behalf.** The breathing tick is the app's only looping motion: 3pt wide, a 1.4s breath, only while a request is in flight, and it becomes the rail of the thing it was waiting for. Reduced motion renders it still at full opacity. If a loop is on screen, name the request it is waiting on; if you cannot, it is chrome.
+
+Never as a reward for a symptom. Touch is the same vocabulary felt: every commit reaches the hand, a symptom is acknowledged and never congratulated, and safety is silent. A motion or a haptic is verified on a phone, never in a test.
+
+**Reduce Motion.** Turn motion off: can you still tell what changed? The three-way rule: a still frame for content already on screen; a crossfade for content entering in place; instant for a viewport move beyond one screen.
+
+**The test:** cover the words. Can you tell from the motion alone that something in the record just changed, and roughly what kind of thing? If the motion could be any app's, it is chrome.
+
+---
+
 ## Visual Language
 
 ### Tone
@@ -160,9 +190,15 @@ One dominant neutral (dark or light depending on theme). One accent — used spa
 
 The trend chart line color should carry emotional weight: green is not required, but the direction of the line should be immediately readable without a legend.
 
+Chart text wears ink, never the series colour: teal at full strength is 2.2:1 on white, and the three category hues fail colourblind separation as neighbours. So a chart is never colour-alone: a shape, a label or a gap carries every distinction.
+
 ### Motion
 
-Restrained and purposeful. Transitions between log confirmation and home screen should feel satisfying — a small, fast completion animation that signals "logged" without demanding attention. No looping animations. No loading spinners on actions that should be instant. The only moment that warrants a more considered animation is the first time the AI Signal appears — the transition from "building your picture" to a real insight should feel like something arrived.
+Motion is the record moving (Principle 9). Restrained and purposeful: a commit lands with a small, fast beat that names what was written; a chart draws in once; a read arrives out of its tick; a full-screen wait is the shape of the screen to come. No looping animation in app chrome: content announces, chrome doesn't. The one loop is the tick, while a request is in flight. No spinner on an action that should be instant.
+
+> _The Signal's opening (recorded 2026-10-05, CUL-1071; PM ruling (a) on CUL-1077, 2026-10-04): tapping a Signal card whose evidence is the weekly bars FLIES its chart from Home to the top of the Signal's own screen, and Back flies it home (`components/motion/flightMotion.ts`, D2-6 / CUL-1069). It ships as built: one settle, no snap at either end, the push's slide suppressed for a crossfade under the flight. Under Reduce Motion there is no flight and no slide; a flight cut short jumps to its end state._
+
+_Rewritten 2026-10-05 (v2.0). It replaces "No looping animations… the only moment that warrants a more considered animation is the first time the AI Signal appears", and absorbs the 2026-08-22 D4 ruling CUL-635 carried ("no looping animation in app chrome; content announces, chrome doesn't")._
 
 ### Iconography
 
@@ -218,12 +254,13 @@ A filter is a *lens over content* — it changes what a list, chart, or report s
 
 (Capture-form option pickers — Form, Route, Format — are not lenses; they wrap via `ChipGroup` per the B-146 rule and are covered under the quick-log principles.)
 
-Four invariants bind every shape:
+Five invariants bind every shape:
 
 1. **No option ever hides.** Wrap, segment, or sheet — never a hidden horizontal overflow. A sheet's options scroll *visibly inside it*. This rule has no carve-outs: the one exception ever granted (History's edge-fade rail) failed a real owner and was revoked (#421).
 2. **Filtering is always legible at the control.** Any non-default scope shows a visible active cue — a tinted pill, a filled chip, a raised segment. "Why is my list short?" must be answerable without opening anything.
 3. **Defaults are explicit options** ("All types", "All time") — never an implicit nothing-selected state.
 4. **An option that expands dependent inline UI stays visible** — a sheet would sever the control from its own dependent controls (the report range's "Custom…" date fields).
+5. **Scope resets on a pet switch, and no scope re-anchors across pets.** A pet-anchored scope (since the trial, since the last visit, a drug) carried to another pet states a false window. History keeps its scope across a remount (`nyx-filter-ux-requirements.md` §2 rule 6). _Added 2026-10-05 (v2.0); the lens-shapes lift had dropped rule 6._
 
 > _Added 2026-07-24 (PM-approved, F3 of `nyx-filter-ux-requirements.md`). Why not bottom sheets for every filter: a sheet costs a tap, and earns it only by making a long set un-hideable. For a small set that already fits, the sheet removes at-a-glance visibility on a hot path — a regression dressed as consistency. Shape follows set size. The full pattern language, per-surface inventory, and conversion criteria live in `docs/nyx-filter-ux-requirements.md`._
 
@@ -256,5 +293,6 @@ These are intentionally deferred — answers belong in a future design sprint in
 
 | Version | Date | Summary |
 |---------|------|---------|
+| v2.0 | 2026-10-05 | Design v2 GA (CUL-1071; PM-approved 1a). Principle 3 revised: Home has two jobs, not a list of zones. Two principles added: 8, the data is the delight (with the five things every chart shows), and 9, motion is the record moving (the gestures as shipped, the tick's carve-out, Reduce Motion's three-way rule). The Motion section rewritten in that vocabulary (absorbing CUL-635's D4 line, and recording the Signal's flight, CUL-1077 (a)). Philosophy gains *Calm is not quiet*; Color gains the never-colour-alone chart rule; the lens shapes gain a fifth invariant (scope resets on a pet switch). Principles 1, 2 and 4 to 7 unchanged. |
 | v1.1 | 2026-08-08 | Two Tier-2 additions from the Signal/Home design uplift (B-721, spec §10 — PM-approved). Principle 3 gains the S1 register-drop rule (richer evidence lives on the insight lane only; safety cards stay deliberately plain so plainness signals severity). Principle 5 gains the S6 quiet-is-labeled rule (a presence-gated surface labels its quiet in one explicit line, never shortens silently). No principle revised; both are additions. |
 | v1.0 | May 2026 | Initial document. Core philosophy, seven design principles, visual language, copy principles, interaction principles. Based on product trio design session May 2026. |

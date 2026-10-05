@@ -1,7 +1,3 @@
-// The Design v2 gate (D2-7): off by default, flipped per test below. Mocked because the
-// real hook reaches the Supabase client, and because the gate is a FACT this suite sets.
-const mockUseDesignV2 = jest.fn(() => false);
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockUseDesignV2() }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 
@@ -105,7 +101,7 @@ describe('IncidentReadCard — the rail is the severity signal (§5.2, G4)', () 
 });
 
 describe('IncidentReadPending (§5.2)', () => {
-  it('says it is reading the PHOTO, and stands a 16pt tick of rail beside the whorl', () => {
+  it('says it is reading the PHOTO, and stands a 16pt tick of rail beside the words', () => {
     const { getByText, UNSAFE_root } = render(<IncidentReadPending />);
     expect(getByText(INCIDENT_READ_PENDING_LABEL)).toBeTruthy();
     const { StyleSheet, View } = require('react-native');
@@ -119,12 +115,10 @@ describe('IncidentReadPending (§5.2)', () => {
     expect(tick.backgroundColor).toBe(theme.colorBorderStrong);
   });
 
-  // D2-7 (CUL-1068) — behind `design_v2` the whorl goes and the tick itself breathes,
-  // in the same slot, only while a read is being PRODUCED.
-  describe('behind design_v2', () => {
+  // D2-7 (CUL-1068; GA by CUL-1071) — the whorl is gone and the tick itself breathes, in
+  // the same slot, only while a read is being PRODUCED.
+  describe('the breathing tick (D2-7)', () => {
     const hidden = { includeHiddenElements: true };
-    beforeEach(() => mockUseDesignV2.mockReturnValue(true));
-    afterEach(() => mockUseDesignV2.mockReturnValue(false));
 
     it('a read being produced: the breathing tick, no whorl, the same 3×16 mark', () => {
       const { getByText, queryByTestId, UNSAFE_root } = render(<IncidentReadPending working />);

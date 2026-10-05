@@ -3,7 +3,7 @@
 // the sentence, and the compare block, in the order `SignalScreen`'s body draws them.
 // It replaces the `WhorlSpinner` the route first shipped with (lane 1), because a
 // sub-second local read is a silhouette's wait, never a spinner's, and the whorl was a
-// second loop behind `design_v2` (`guards/designV2OneLoop.test.ts`).
+// second loop on the Design v2 surfaces (`guards/designV2OneLoop.test.ts`).
 //
 // Two shapes, one module: the full screen for a cold open, and the lower half alone
 // (`withHead={false}`) when the card's flight has already handed over the real title and

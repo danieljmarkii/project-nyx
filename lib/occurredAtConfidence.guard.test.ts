@@ -111,16 +111,9 @@ const ALLOWED: Record<string, string> = {
     're-assertion moves no number anywhere. What this path must never become is an ' +
     'INFERRED confidence: nothing here reads a clock the owner did not see, and no ' +
     'metadata is consulted.',
-  'components/home/LookCard.tsx':
-    'Noticed (CUL-871). prependEvent mirroring the row insertLook just wrote, at the clock ' +
-    'instant of the tap. The claim is lib/looks.ts\u2019s and is restated here rather than ' +
-    'derived: a look is a PERCEPTION at a moment the owner was present for, so the B-010 ' +
-    'found/window path can never apply to one. The mirror matters because the card renders ' +
-    'the arrival from this in-memory row before Home re-reads the record, so a mirror that ' +
-    'disagreed with the insert would show a confidence the database does not hold.',
   'components/designV2/home/LookHeader.tsx':
-    'The look as Today\u2019s header behind design_v2 (D2-4 / CUL-1066). The SAME mirror ' +
-    'LookCard makes, for the same reason: prependEvent restates the row insertLook just ' +
+    'The look as Today\u2019s header (D2-4 / CUL-1066). The mirror the retired LookCard ' +
+    'made, for the same reason: prependEvent restates the row insertLook just ' +
     'wrote, at the clock instant of the tap, so the answered row draws from the in-memory ' +
     'row before Home re-reads the record. A look is a perception at a moment the owner was ' +
     'present for; nothing here reads a clock the owner did not see and no metadata is ' +

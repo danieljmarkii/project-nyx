@@ -796,7 +796,8 @@ describe('mealRowLabel (CUL-625 — one rule for three surfaces)', () => {
   it('is the only place the word is spelled — the row surfaces call it', () => {
     const fs = require('fs') as typeof import('fs');
     const path = require('path') as typeof import('path');
-    for (const rel of ['components/home/TodayZone.tsx', 'lib/dayEvents.ts']) {
+    // `components/home/TodayZone.tsx` was the other row surface until CUL-1071 deleted it.
+    for (const rel of ['lib/dayEvents.ts']) {
       const src = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
       // A single-quoted literal is code; the word in prose stays double-quoted.
       expect({ file: rel, restates: /'Treat'/.test(src) }).toEqual({ file: rel, restates: false });

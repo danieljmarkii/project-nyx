@@ -5,9 +5,9 @@
 // while the screen is focused (the note in `app/(tabs)/history.test.tsx`). The trial
 // loader used to read on every open and every pet switch whatever the flags, and its
 // answer flipped `trialNotEating` null → false a beat after the first load, re-running
-// all eleven local reads for EVERY account. Its readers are Noticed's withheld
-// predicate (live for a cat or a dog since CUL-876) and the month's trial mark
-// (`design_v2`).
+// every local read for EVERY account. Its readers are Noticed's withheld predicate (live
+// for a cat or a dog since CUL-876) and the month's trial mark (Design v2, GA by
+// CUL-1071 — so the loader now reads on every open).
 //
 // So this suite runs the REAL `useDietTrial` — only its read, `loadDietTrialFacts`, is
 // stubbed, and it answers a beat late as the real one does — under a focus mock that
@@ -24,10 +24,8 @@ jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/monthReads', () => ({ readMonthFacts: jest.fn(), readDayRows: jest.fn() }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
-// The gates, mutable per test. Noticed is GA (CUL-876), so it is live exactly when the
-// active pet is a cat or a dog: the default pet below is a cat, `OTHER` is not.
-let mockDesignV2 = false;
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2 }));
+// Noticed is GA (CUL-876), so it is live exactly when the active pet is a cat or a dog:
+// the default pet below is a cat, `OTHER` is not.
 // Design v2's month is drawn by its own suites; here it only reports the trial mark it
 // was handed, which is the one thing it reads from the trial loader.
 const mockTrialMarks: unknown[] = [];
@@ -63,9 +61,6 @@ jest.mock('../../lib/patternsTrial', () => ({
   ...jest.requireActual('../../lib/patternsTrial'),
   getTrialPanel: jest.fn().mockResolvedValue(null),
 }));
-jest.mock('../../hooks/useSummary', () => ({
-  useSummary: () => ({ summary: null, displayState: 'building', petName: 'Mochi', isLoading: false }),
-}));
 jest.mock('expo-router', () => {
   const React = require('react');
   return {
@@ -81,11 +76,6 @@ jest.mock('expo-router', () => {
 jest.mock('../../lib/analytics', () => ({
   ...jest.requireActual('../../lib/analytics'),
   getSymptomCounts: jest.fn(),
-  getSymptomFrequencyByDay: jest.fn(),
-  getSymptomFrequencyByMonth: jest.fn(),
-  getIntakeDeclineByMonth: jest.fn(),
-  getEarliestEventMonth: jest.fn(),
-  getIntakeRateWithPrior: jest.fn(),
   getTopFoods: jest.fn(),
   getTopProteins: jest.fn(),
   getMealTreatComposition: jest.fn(),
@@ -131,7 +121,6 @@ async function settle(): Promise<void> {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockDesignV2 = false;
   mockTrialMarks.length = 0;
   usePetStore.setState({ pets: [PET], activePet: PET, isOnboarded: true });
   // The loader answers a beat after it is asked, as the real local read does: after
@@ -141,29 +130,15 @@ beforeEach(() => {
   );
   mockLoadWithheldFacts.mockResolvedValue(null);
   A.getSymptomCounts.mockResolvedValue([]);
-  A.getSymptomFrequencyByDay.mockResolvedValue([]);
-  A.getSymptomFrequencyByMonth.mockResolvedValue([]);
-  A.getIntakeDeclineByMonth.mockResolvedValue([]);
-  A.getEarliestEventMonth.mockResolvedValue(null);
-  A.getIntakeRateWithPrior.mockResolvedValue({ current: notEnoughData(0, 4), prior: notEnoughData(0, 4) });
   A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
   A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
   A.getMealTreatComposition.mockResolvedValue({ meal: 0, treat: 0, other: 0, unclassified: 0, total: 0 });
 });
 
 describe('Patterns — one load per focus', () => {
-  it('with no reader live (design_v2 off, a pet with no look): one load, and the trial loader never reads', async () => {
-    usePetStore.setState({ pets: [OTHER], activePet: OTHER });
-    render(<PatternsScreen />);
-    await settle();
-    expect(A.getSymptomCounts).toHaveBeenCalledTimes(1);
-    expect(mockLoadTrialFacts).not.toHaveBeenCalled();
-  });
-
-  it('under design_v2 alone: the trial still reaches the month, and still one load', async () => {
+  it('with Noticed not live (a pet with no look): the trial still reaches the month, and still one load', async () => {
     // The month's trial mark is the loader's other reader, so the read must survive
     // here — and its answer must not re-key the dashboard's load on the way.
-    mockDesignV2 = true;
     usePetStore.setState({ pets: [OTHER], activePet: OTHER });
     render(<PatternsScreen />);
     await settle();
@@ -172,6 +147,7 @@ describe('Patterns — one load per focus', () => {
       expect.objectContaining({ day: '2026-07-25' }),
     );
     expect(A.getSymptomCounts).toHaveBeenCalledTimes(1);
+    expect(A.getTopFoods).toHaveBeenCalledTimes(1);
   });
 
   it('with Noticed live, the withheld predicate is re-read once the trial answers', async () => {

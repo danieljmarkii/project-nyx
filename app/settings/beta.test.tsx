@@ -1,5 +1,4 @@
 import { act, render } from '@testing-library/react-native';
-import { usePetStore } from '../../store/petStore';
 import BetaFeaturesScreen from './beta';
 import { __resetAppConfigForTest } from '../../hooks/useAppConfig';
 import {
@@ -79,11 +78,10 @@ describe('BetaFeaturesScreen — zero eligible betas (B-729)', () => {
 
 describe('BetaFeaturesScreen — eligible account', () => {
   it('renders a card per eligible beta and no empty state', () => {
-    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm });
+    setAllowlist({ widget_enabled: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);
 
     expect(getByText('Home screen widget')).toBeTruthy();
-    expect(getByText('Design v2')).toBeTruthy();
     expect(getByText(/Switch one on to try it early/)).toBeTruthy();
     expect(queryByText('Nothing to try right now')).toBeNull();
   });
@@ -111,85 +109,27 @@ describe('BetaFeaturesScreen — eligible account', () => {
     // THROUGH (the case first used the log picker, retired with CUL-962, then Noticed,
     // retired with CUL-876) — so the note may promise only what holds for every beta:
     // switching one on rewrites nothing already logged.
-    setAllowlist({ design_v2: gatedToPm });
+    setAllowlist({ widget_enabled: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);
 
-    expect(getByText('Design v2')).toBeTruthy();
+    expect(getByText('Home screen widget')).toBeTruthy();
     expect(getByText(/Turning one on doesn’t change anything already in your records\./)).toBeTruthy();
     expect(queryByText(/won’t affect your records/)).toBeNull();
   });
 
-  it('a non-eligible beta’s card still self-gates away while others render', () => {
-    setAllowlist({ design_v2: gatedToPm });
-    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
+  it('shows no card for a graduated beta: Noticed (CUL-876), History v2 (CUL-1175) and Design v2 (CUL-1071)', () => {
+    // Every remaining beta allowlisted, so a graduated card would have every chance to
+    // render; its absence is the registry row's removal, not a gate. An allowlist row for
+    // a graduated key is ignored by the client union (`lib/appConfig.test.ts`).
+    setAllowlist({ widget_enabled: gatedToPm });
+    const { getByText, queryByText, getAllByRole } = render(<BetaFeaturesScreen />);
 
-    expect(getByText('Design v2')).toBeTruthy();
-    expect(queryByText('Home screen widget')).toBeNull();
+    expect(getByText('Home screen widget')).toBeTruthy();
+    expect(getAllByRole('switch')).toHaveLength(1);
     expect(queryByText('Noticed')).toBeNull();
-  });
-
-  it('shows no Noticed card for any account: Noticed graduated (CUL-876)', () => {
-    // Every remaining beta allowlisted, so a Noticed card would have every chance to
-    // render; its absence is the registry row's removal, not a gate.
-    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm });
-    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
-
-    expect(getByText('Design v2')).toBeTruthy();
-    expect(queryByText('Noticed')).toBeNull();
-    expect(queryByText(/once-a-day note of how they seemed/)).toBeNull();
-  });
-
-  it('renders the Design v2 card for an allowlisted account, opt-in default off (CUL-1062)', () => {
-    // D2-0 AC: the Beta shelf shows the Design v2 row ONLY for eligible accounts;
-    // opt-in is default off; being eligible turns nothing on. Allowlisted for
-    // design_v2 → the card renders (title + the PM-ruled blurb) with its switch
-    // OFF; the betas this account isn't allowlisted for stay gated away. The
-    // zero-eligible case (dark seed reaches nobody → no card) is the B-729 test
-    // above.
-    setAllowlist({ design_v2: gatedToPm });
-    const { getByText, queryByText, getByRole } = render(<BetaFeaturesScreen />);
-
-    expect(getByText('Design v2')).toBeTruthy();
-    expect(getByText(/Switch it off and the app is exactly as it was/)).toBeTruthy();
-    expect(getByRole('switch').props.value).toBe(false);
-    expect(queryByText('Home screen widget')).toBeNull();
-    expect(queryByText('Noticed')).toBeNull();
-  });
-
-  it('shows no History v2 card for any account: History v2 graduated (CUL-1175)', () => {
-    // Every remaining beta allowlisted: the card's absence is the registry row's removal.
-    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm });
-    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
-
-    expect(getByText('Design v2')).toBeTruthy();
     expect(queryByText('History v2')).toBeNull();
-    expect(queryByText(/Switch it off and History is exactly as it was/)).toBeNull();
-  });
-
-  // CUL-1220 / BRK-21 — the hint names the look at the top of Today only when the look
-  // draws there: Noticed is GA (CUL-876), so that is a pet the look has words for.
-  it('the Design v2 hint names the daily look only when the active pet has the look', () => {
-    setAllowlist({ design_v2: gatedToPm });
-    const off = render(<BetaFeaturesScreen />);
-    act(() => useBetaOptInStore.getState().setOptIn('design_v2', true));
-    expect(off.getByText(/^It’s on\. Home’s Signal/)).toBeTruthy();
-    expect(off.queryByText(/daily look/)).toBeNull();
-    off.unmount();
-
-    usePetStore.setState({ activePet: { id: 'p1', name: 'Mochi', species: 'cat' } as never });
-    const on = render(<BetaFeaturesScreen />);
-    expect(on.getByText(/with the daily look at the top/)).toBeTruthy();
-    usePetStore.setState({ activePet: null });
-  });
-
-  it('…and not for a pet the look has no vocabulary for (species other: the header never draws)', () => {
-    usePetStore.setState({ activePet: { id: 'p9', name: 'Kiwi', species: 'other' } as never });
-    setAllowlist({ design_v2: gatedToPm });
-    act(() => useBetaOptInStore.getState().setOptIn('design_v2', true));
-    const t = render(<BetaFeaturesScreen />);
-    expect(t.getByText(/^It’s on\. Home’s Signal/)).toBeTruthy();
-    expect(t.queryByText(/daily look at the top/)).toBeNull();
-    usePetStore.setState({ activePet: null });
+    expect(queryByText('Design v2')).toBeNull();
+    expect(queryByText(/Switch it off and the app is exactly as it was/)).toBeNull();
   });
 });
 
@@ -214,7 +154,7 @@ const BETA_WORD = /\bbetas?\b/i;
 
 describe('BetaFeaturesScreen — says early access, never beta (CUL-70)', () => {
   it('shows and speaks no "beta" with every card up and a hint open', () => {
-    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm });
+    setAllowlist({ widget_enabled: gatedToPm });
     useBetaOptInStore.getState().setOptIn('widget_enabled', true);
     const { toJSON } = render(<BetaFeaturesScreen />);
     const strings = shownOrSpoken(toJSON());
@@ -240,12 +180,9 @@ describe('BetaFeaturesScreen — says early access, never beta (CUL-70)', () => 
   it('labels each switch with its feature’s title and nothing else', () => {
     // The pill is gone, so the label no longer carries a ", beta" to stand in for it:
     // VoiceOver says the title the owner reads, then "switch", then its state.
-    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm });
+    setAllowlist({ widget_enabled: gatedToPm });
     const { getAllByRole } = render(<BetaFeaturesScreen />);
 
-    expect(getAllByRole('switch').map((sw) => sw.props.accessibilityLabel)).toEqual([
-      'Home screen widget',
-      'Design v2',
-    ]);
+    expect(getAllByRole('switch').map((sw) => sw.props.accessibilityLabel)).toEqual(['Home screen widget']);
   });
 });

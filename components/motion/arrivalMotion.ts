@@ -514,7 +514,7 @@ export const TICK_BREATH = {
 } as const;
 
 /**
- * The breath, implemented ONCE (CUL-1075). Behind `design_v2` this is the app's only
+ * The breath, implemented ONCE (CUL-1075). On the Design v2 surfaces this is the only
  * `Animated.loop`: the node's waiting tick (below) and the standalone `Tick`
  * (`components/designV2/waits/Tick.tsx`) both call it, each on the value its own view
  * binds, so the carve-out has one spelling and `guards/designV2OneLoop.test.ts` finds it

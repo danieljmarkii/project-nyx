@@ -7,10 +7,16 @@ jest.mock('expo-router', () => ({
   router: { push: jest.fn() },
   useFocusEffect: (cb: () => void | (() => void)) => require('react').useEffect(cb, [cb]),
 }));
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
 jest.mock('../../lib/supabase', () => ({ supabase: { from: jest.fn(), functions: { invoke: jest.fn() } } }));
 jest.mock('../../lib/db', () => ({
   getDb: () => ({ getAllSync: () => [{ last: null }] }),
+}));
+
+// The rows' own reads never answer here: this suite is about what is SPOKEN, not drawn.
+jest.mock('../../lib/signalLead', () => ({
+  loadSignalLead: () => new Promise<never>(() => {}),
+  loadSignalRowTrial: () => new Promise<never>(() => {}),
+  loadSignalRowScreen: () => new Promise<never>(() => {}),
 }));
 
 const mockUseSignal = jest.fn();

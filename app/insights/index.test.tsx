@@ -1,16 +1,16 @@
-// Smoke test for the Patterns dashboard screen (B-023 PR 3). The load-bearing logic
-// (ordering, the n=1 establishment gate, cold-start selection) is unit-tested in
-// lib/dashboardScreen.test.ts; this verifies the screen WIRING — the cold-start empty
-// branch vs the summary-led ready branch, and that the seeded cards render.
+// Smoke test for the Patterns dashboard screen (B-023 PR 3; Design v2 by CUL-1071). The
+// load-bearing logic (ordering, cold-start selection) is unit-tested in
+// lib/dashboardScreen.test.ts; the month and the weight-by-date wiring are
+// app/insights/designV2.test.tsx. This verifies the remaining screen WIRING — the
+// cold-start empty branch vs the ready branch, that the seeded descriptive cards render,
+// and the warm error + retry.
 //
-// Mocks mirror the PR-2 component tests: gifted-charts (the native chart path), ./db +
-// ./feedingArrangements (the expo-sqlite/supabase chain dragged via analytics). The
-// six analytics getters are mocked over the real module (requireActual keeps the
-// sentinel helpers + types the screen and dashboardScreen rely on); expo-router's Stack
-// is a no-op and useFocusEffect fires its callback once on mount.
+// Mocks: gifted-charts (the native chart path), ./db + ./feedingArrangements (the
+// expo-sqlite/supabase chain dragged via analytics). The analytics getters the screen
+// reads are mocked over the real module (requireActual keeps the sentinel helpers + types
+// the screen and dashboardScreen rely on); expo-router's Stack is a no-op and
+// useFocusEffect fires its callback once on mount.
 jest.mock('react-native-gifted-charts', () => ({ LineChart: () => null }));
-// The frequency calendar's day drill-in sheet (DayEventsSheet) uses useSafeAreaInsets,
-// which needs a provider jest-expo doesn't stand up by default — stub the module.
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return {
@@ -19,20 +19,19 @@ jest.mock('react-native-safe-area-context', () => {
   };
 });
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
-// Design v2 (D2-5): the screen now imports the month's reads, which reach lib/supabase
-// at import time. This suite is the FLAG-OFF path — `useAllowlistFlag` is false above, so
-// `useDesignV2` is false and nothing behind it mounts or reads; the stub exists for the
-// import edge only. The flag-on wiring and the async flag-off proof are app/insights/
-// designV2.test.tsx.
+// The month draws and reads on its own (app/insights/designV2.test.tsx and its own
+// suite); here it is a placeholder so this suite stays on the dashboard read.
 jest.mock('../../lib/monthReads', () => ({ readMonthFacts: jest.fn(), readDayRows: jest.fn() }));
+jest.mock('../../components/designV2/patterns/MonthInstrument', () => {
+  const { View } = require('react-native');
+  return { MonthInstrument: () => <View testID="month-instrument" /> };
+});
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
-// Noticed (CUL-874 / N-5). This suite is the FLAG-OFF path: `useAllowlistFlag` returns
-// false, so `lookCardLive` is false, `loadNoticed` returns null before any read, and
-// Patterns renders exactly what it rendered before N-5. The mocks exist because the
-// screen's new imports reach `lib/appConfig` → `lib/supabase`, which throws under jest
-// without env — not because any behaviour here is being stubbed away. The flag-ON wiring
-// has its own suite, app/insights/noticed.test.tsx.
+// Noticed (CUL-874 / N-5) is GA and live for this suite's cat; its reads are stubbed to
+// an empty record (the card's wiring is app/insights/noticed.test.tsx). The config mocks
+// exist because the screen's imports reach `lib/appConfig` → `lib/supabase`, which throws
+// under jest without env.
 jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
 jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
 jest.mock('../../hooks/useDietTrial', () => ({
@@ -61,13 +60,6 @@ jest.mock('../../lib/patternsTrial', () => {
   const actual = jest.requireActual('../../lib/patternsTrial');
   return { ...actual, getTrialPanel: jest.fn().mockResolvedValue(null) };
 });
-// The AI summary (PR 4) is cache-only network I/O via useSummary → lib/summary → supabase.
-// Mock the hook so this screen-wiring test stays on the local-SQLite card path (the summary's
-// own logic is tested in lib/summaryCopy.test.ts + supabase/functions/.../summary.test.ts).
-jest.mock('../../hooks/useSummary', () => ({
-  useSummary: () => ({ summary: null, displayState: 'building', petName: 'Nyx', isLoading: false }),
-}));
-
 jest.mock('expo-router', () => {
   const React = require('react');
   return {
@@ -84,20 +76,13 @@ jest.mock('../../lib/analytics', () => {
   return {
     ...actual,
     getSymptomCounts: jest.fn(),
-    getSymptomFrequencyByDay: jest.fn(),
-    // Calendar v3 N5b + B-310 — the calendar's month + paging-bound + intake-decline reads
-    // (real impls hit the mocked DB, so stub them like the other getters).
-    getSymptomFrequencyByMonth: jest.fn(),
-    getIntakeDeclineByMonth: jest.fn(),
-    getEarliestEventMonth: jest.fn(),
-    getIntakeRateWithPrior: jest.fn(),
     getTopFoods: jest.fn(),
     getTopProteins: jest.fn(),
     getMealTreatComposition: jest.fn(),
   };
 });
 
-// The screen now reads the weight trend on the same load (getWeightHistory →
+// The screen reads the weight series on the same load (getWeightHistory →
 // computeWeightTrend). lib/weight imports ./sync → ./supabase, which throws on unset env
 // at import time — so mock it here like ./db / ./feedingArrangements. Default: no
 // readings, so every test renders the weight card's nudge state. The card's real trend
@@ -115,13 +100,11 @@ jest.mock('../../lib/weight', () => ({
 }));
 
 import { render, waitFor, fireEvent } from '@testing-library/react-native';
-import { router } from 'expo-router';
 import PatternsScreen from './index';
 import { usePetStore } from '../../store/petStore';
 import {
   notEnoughData,
   type SymptomCount,
-  type DayFrequencyBucket,
   type MealTreatComposition,
 } from '../../lib/analytics';
 import * as analytics from '../../lib/analytics';
@@ -143,114 +126,62 @@ function emptyComposition(): MealTreatComposition {
 beforeEach(() => {
   jest.clearAllMocks();
   setActivePet();
-  // Calendar defaults (overridden per-test where the buckets matter). clearAllMocks wipes
-  // resolved values, so seed them here so every test's load() resolves both reads.
-  A.getSymptomFrequencyByMonth.mockResolvedValue([]);
-  A.getIntakeDeclineByMonth.mockResolvedValue([]);
-  A.getEarliestEventMonth.mockResolvedValue(null);
 });
 
 describe('PatternsScreen', () => {
-  it('cold-start (no symptoms, no feedings) → the designed empty state, no summary slot', async () => {
+  it('cold-start (no symptoms, no feedings, no weight) → the designed empty state leads the month', async () => {
     A.getSymptomCounts.mockResolvedValue([]);
-    A.getSymptomFrequencyByDay.mockResolvedValue([]);
-    A.getIntakeRateWithPrior.mockResolvedValue({ current: notEnoughData(0, 4), prior: notEnoughData(0, 4) });
     A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
     A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
     A.getMealTreatComposition.mockResolvedValue(emptyComposition());
 
-    const { getByText, queryByText } = render(<PatternsScreen />);
+    const { getByText, getByTestId, toJSON } = render(<PatternsScreen />);
 
     // Match within a single text segment ({name} interpolation splits the node).
     await waitFor(() => expect(getByText(/still getting to know/i)).toBeTruthy());
-    // The summary slot (AiSummaryCard) is not rendered in the empty state — its building
-    // copy says "still gathering", which must be absent when the whole dashboard is empty.
-    expect(queryByText(/still gathering/i)).toBeNull();
+    expect(getByTestId('month-instrument')).toBeTruthy();
+    const json = JSON.stringify(toJSON());
+    expect(json.indexOf('still getting to know')).toBeLessThan(json.indexOf('month-instrument'));
   });
 
-  it('with data → summary-led: the AI summary slot leads, the safety symptom card renders', async () => {
+  it('with data → not the cold start; the month, the weight nudge and the descriptive cards render', async () => {
     const counts: SymptomCount[] = [{ symptomType: 'vomit', current: 3, prior: 1, delta: 2 }];
-    const buckets: DayFrequencyBucket[] = [
-      { date: '2026-05-01', total: 1, byType: { vomit: 1 } },
-      { date: '2026-05-02', total: 2, byType: { vomit: 2 } },
-    ];
     const composition: MealTreatComposition = { meal: 8, treat: 2, other: 0, unclassified: 0, total: 10 };
     A.getSymptomCounts.mockResolvedValue(counts);
-    A.getSymptomFrequencyByDay.mockResolvedValue(buckets);
-    A.getIntakeRateWithPrior.mockResolvedValue({ current: notEnoughData(2, 4), prior: notEnoughData(0, 4) });
     A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
     A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
     A.getMealTreatComposition.mockResolvedValue(composition);
 
-    const { getByText, getAllByText, queryByText } = render(<PatternsScreen />);
+    const { getByText, getByTestId, queryByText } = render(<PatternsScreen />);
 
-    // useSummary is mocked to the building state, so the slot leads with its "still
-    // gathering" copy (the summary's own ready/text rendering is covered in AiSummaryCard.test).
-    await waitFor(() => expect(getByText(/still gathering/i)).toBeTruthy());
-    // Safety symptom count card: big number + honest delta phrase (no verdict word).
-    expect(getByText('3')).toBeTruthy();
-    expect(getByText(/2 more than the previous 30 days/i)).toBeTruthy();
-    // B-313: the count card carries an explicit trailing-window frame so it never
-    // reads as contradicting the calendar-month grid under the same symptom.
-    expect(getByText('Last 30 days')).toBeTruthy();
-    // "Vomit" appears as the count-card label (the calendar is now titled "Calendar" —
-    // B-310 rebrand — and names the symptom in its summary line instead of its header).
-    expect(getAllByText('Vomit').length).toBeGreaterThanOrEqual(1);
-    expect(getByText('Calendar')).toBeTruthy();
+    await waitFor(() => expect(getByText('Top food')).toBeTruthy());
+    expect(getByTestId('month-instrument')).toBeTruthy();
+    expect(getByText('Top protein')).toBeTruthy();
     // With both panel loaders stubbed to null, neither v2 panel renders (CUL-548 GA — the
-    // panels now key on model presence, not a flag); the flag-on render is in signalsV2Panels.test.
+    // panels key on model presence, not a flag); their render is in signalsV2Panels.test.
     expect(queryByText('The trial so far')).toBeNull();
     expect(queryByText('Vomiting, timed from meals')).toBeNull();
-    // The health-trajectory weight card is wired into the ready branch — with no readings
-    // it renders its forward-looking logging nudge + action (never reassures).
+    // The weight card is wired into the ready branch — with no readings it renders its
+    // forward-looking logging nudge + action (never reassures).
     expect(getByText(/no weigh-ins logged yet/i)).toBeTruthy();
     expect(getByText('Log a weigh-in')).toBeTruthy();
     // Not the cold-start state.
     expect(queryByText(/still getting to know/i)).toBeNull();
   });
 
-  it('intake card: the rate, a proportion bar, and the "vs last month" delta (B-098 "Both")', async () => {
-    A.getSymptomCounts.mockResolvedValue([]); // no symptom cards → the only MetricCard is intake
-    A.getSymptomFrequencyByDay.mockResolvedValue([]);
-    A.getIntakeRateWithPrior.mockResolvedValue({
-      current: { rate: 0.29, finishedMeals: 2, ratedMeals: 7, freeFedExcluded: 0, intakeNotDirectlyObserved: false },
-      prior: { rate: 0.41, finishedMeals: 7, ratedMeals: 17, freeFedExcluded: 0, intakeNotDirectlyObserved: false },
-    });
+  it('a failed read is a warm error with a retry, never a wrong number; the retry reads again', async () => {
+    A.getSymptomCounts.mockRejectedValueOnce(new Error('disk')).mockResolvedValue([]);
     A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
     A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
-    A.getMealTreatComposition.mockResolvedValue({ meal: 7, treat: 20, other: 0, unclassified: 0, total: 27 });
+    A.getMealTreatComposition.mockResolvedValue({ meal: 1, treat: 0, other: 0, unclassified: 0, total: 1 });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    const { getByText, getByTestId } = render(<PatternsScreen />);
+    const { getByText, getByLabelText } = render(<PatternsScreen />);
 
-    await waitFor(() => expect(getByText('29%')).toBeTruthy());
-    // The shape (proportion bar) — never a bare big number.
-    expect(getByTestId('metric-progress')).toBeTruthy();
-    // The factual "vs the previous 30 days" read (a drop on a positive metric → neutral,
-    // not alarmed). Trailing-window wording, not "last month" (B-313).
-    expect(getByText('Down from 41% the previous 30 days')).toBeTruthy();
-  });
-
-  it('tapping a symptom count card opens its trend detail (B-093 doorway)', async () => {
-    const counts: SymptomCount[] = [{ symptomType: 'vomit', current: 3, prior: 1, delta: 2 }];
-    const buckets: DayFrequencyBucket[] = [
-      { date: '2026-05-01', total: 1, byType: { vomit: 1 } },
-      { date: '2026-05-02', total: 2, byType: { vomit: 2 } },
-    ];
-    A.getSymptomCounts.mockResolvedValue(counts);
-    A.getSymptomFrequencyByDay.mockResolvedValue(buckets);
-    A.getIntakeRateWithPrior.mockResolvedValue({ current: notEnoughData(2, 4), prior: notEnoughData(0, 4) });
-    A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
-    A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
-    A.getMealTreatComposition.mockResolvedValue(emptyComposition());
-
-    const { getByLabelText } = render(<PatternsScreen />);
-    // The symptom COUNT card is the only tappable card (a button); its a11y label carries
-    // the window caption + value + delta. The frequency calendar and intake card stay display-only.
-    await waitFor(() => expect(getByLabelText(/Vomit, Last 30 days: 3/)).toBeTruthy());
-    fireEvent.press(getByLabelText(/Vomit, Last 30 days: 3/));
-    expect(router.push).toHaveBeenCalledWith({
-      pathname: '/insights/[metric]',
-      params: { metric: 'vomit' },
-    });
+    await waitFor(() => expect(getByText(/couldn't pull Nyx's patterns/i)).toBeTruthy());
+    fireEvent.press(getByLabelText('Try again'));
+    await waitFor(() => expect(getByText('Top food')).toBeTruthy());
+    expect(A.getSymptomCounts).toHaveBeenCalledTimes(2);
+    errorSpy.mockRestore();
   });
 });

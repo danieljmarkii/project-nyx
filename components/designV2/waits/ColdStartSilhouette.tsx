@@ -1,7 +1,7 @@
-// The cold start behind `design_v2` (D2-7 / CUL-1068): Home's silhouette, then Home.
+// The cold start (D2-7 / CUL-1068; GA by CUL-1071): Home's silhouette, then Home.
 //
 // Shown by `ColdStartOverlay` under the same trigger discipline as the night moment it
-// replaces flag-on (B-054 §6: only the first hydration of an EMPTY local store, only
+// replaced (B-054 §6: only the first hydration of an EMPTY local store, only
 // once a pet exists so it can never sit over onboarding). What differs is the exit:
 // no minimum hold and no dissolve to black — the silhouette IS the screen's shape, so
 // it crossfades into the real Home over `COLD_START_CROSSFADE_MS` (the round-2 archive's
@@ -34,7 +34,7 @@ export const COLD_START_SILHOUETTE_TEST_ID = 'design-v2-cold-start';
  * The wait's one spoken line (CUL-1224, BRK-30). The silhouette is a shape, so a screen
  * reader met nothing at all, and the empty Home behind it was reachable ("Nothing logged
  * yet today…", the data-loss read B-054 exists to prevent). The night moment's words, the
- * flag-off wait's, without its ellipsis.
+ * retired wait's, without its ellipsis.
  */
 export function coldStartSpokenLine(petName: string): string {
   return `Catching up on ${petName}’s history.`;

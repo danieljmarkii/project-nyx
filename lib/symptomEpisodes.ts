@@ -11,7 +11,7 @@
  * So the collapse lives here, once, and is imported by BOTH consumers:
  *   • `supabase/functions/generate-signal/detection.ts` (the engine — detectors
  *     ③/④/⑤/⑦ and the correlation lanes)
- *   • `hooks/useTrend.ts` (the Home Trend chart)
+ *   • `hooks/useTrend.ts` (the Home Trend chart; deleted with the card by CUL-1071)
  *
  * `lib/symptomEpisodes.guard.test.ts` fails the build if either re-spells it.
  * This is the diet-trial §5.3 lesson ("there is ONE off-diet predicate") applied

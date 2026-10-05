@@ -51,23 +51,7 @@ export type AppConfigKey = keyof AppConfigValues;
 // separate Phase-2 gate that never lives here (spec §2 — the two gates stay split so
 // the future Premium swap is one line).
 //
-// `design_v2` is the Design v2 rollout flag (Design v2 — the whole day,
-// migration 070 — D2-0 / CUL-1062) — same shape, same fail-closed resolution.
-// It gates the redesign's CLIENT surfaces (the Signal card + route D2-3, Home on
-// a real day D2-4, the month on Patterns D2-5, the waits D2-7) AND-ed with the
-// beta-shelf opt-in — through ONE hook, `hooks/useDesignV2.ts`, which is the
-// only file that reads this key directly. A ROLLOUT gate only (PM, 2026-09-19:
-// "behind a beta toggle too"): GA is every account — the redesign is the app's
-// own surfaces, never a Premium gate — and D2-8 retires the flag and deletes
-// the old surfaces. Client-render-only: nothing in the redesign changes a
-// write path, a row or the engine (the same record, drawn differently), and no
-// Edge Function reads the key, so there is no server-side registration of it.
-// Nothing consumes it yet (D2-0 — pinned by guards/designV2FlagOff.test.tsx).
-// Not to be confused with the RETIRED `signal_design_v2` below: that was the
-// 2026-08 Signal/Home uplift, GA'd and gone from this union; this is the 2026-09
-// whole-day redesign.
-//
-// Eight keys that once lived here have GRADUATED to GA and been retired client-side.
+// Nine keys that once lived here have GRADUATED to GA and been retired client-side.
 // `signal_design_v2` (the Signal/Home design uplift, migration 055) and `signals_v2`
 // (the Signals-v2 lanes, migration 057) went first (CUL-546 Phase 1 / CUL-547 +
 // CUL-548): the uplift + the v2 lanes now render unconditionally. Their `app_config`
@@ -94,12 +78,16 @@ export type AppConfigKey = keyof AppConfigValues;
 // 071) followed (CUL-1175): the record you can read is the History tab for every account,
 // Home's first paint draws its spine wherever Design v2 does, and v1's History screen is
 // deleted. Its row goes with the same data-only clean-up; it was never read server-side.
-// None of the eight belongs in this client-side union any more.
+// Design v2's `design_v2` (migration 070) went last (CUL-1071): the new Home, the Signal's
+// own screen, the month on Patterns and the waits are the app for every account, and the
+// old surfaces are deleted. Its row stays for builds that still read it and goes with the
+// same data-only clean-up; it was never read server-side. Not to be confused with
+// `signal_design_v2` above, the 2026-08 uplift. None of the nine belongs in this
+// client-side union any more.
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',
   'widget_enabled',
-  'design_v2',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -115,7 +103,6 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   ask_enabled: undefined,
   ask_general_enabled: undefined,
   widget_enabled: undefined,
-  design_v2: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

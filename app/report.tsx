@@ -6,11 +6,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../constants/theme';
 import { Header, PrimaryButton, SectionLabel, ThemedText } from '../components/ui';
-import { NightMoment } from '../components/brand/NightMoment';
-import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { ReportSilhouette } from '../components/designV2/waits/ReportSilhouette';
 import { Tick } from '../components/designV2/waits/Tick';
-import { useDesignV2 } from '../hooks/useDesignV2';
 import { ChipGroup } from '../components/ui/ChipGroup';
 import { usePetStore } from '../store/petStore';
 import { toLocalDayKey } from '../lib/utils';
@@ -285,11 +282,9 @@ export default function ReportScreen() {
   // The full spinner is reserved for the very first load, when there's nothing yet.
   const regenerating = status === 'loading' && report !== null;
 
-  // D2-7 (CUL-1068): behind `design_v2` the first build's wait is the report's own
+  // D2-7 (CUL-1068; GA by CUL-1071): the first build's wait is the report's own
   // silhouette with the tick beside "Writing {pet}'s report…", and the soft-refresh
-  // pill's whorl is the tick. Flag-off is the night moment and the whorl, untouched.
-  // The screen holds the gate; `components/designV2/waits/` draws.
-  const designV2 = useDesignV2();
+  // pill carries the tick.
   const building = status === 'loading' && !report;
 
   // A `?pet=` naming a pet the account does not hold (a stale link, an archived pet):
@@ -465,7 +460,7 @@ export default function ReportScreen() {
               // pointerEvents=none so the report stays scrollable underneath.
               <View style={styles.updatingOverlay} pointerEvents="none">
                 <View style={styles.updatingPill}>
-                  {designV2 ? <Tick working={regenerating} /> : <WhorlSpinner size="sm" ground="day" />}
+                  <Tick working={regenerating} />
                   <Text style={styles.updatingText}>Updating…</Text>
                 </View>
               </View>
@@ -535,19 +530,9 @@ export default function ReportScreen() {
           </View>
         </>
       )}
-      {/* First build — a full-screen wait with nothing to show yet → the night moment
-          (§6). Real work on the pet's behalf, expected >~2s. Flag-on, the report's own
-          silhouette in the same slot: it is mounted only while building, since it has
-          no dissolve of its own — the report's blocks become the page. */}
-      {designV2 ? (
-        building && <ReportSilhouette petName={petName} working={building} />
-      ) : (
-        <NightMoment
-          visible={building}
-          title={petName ? `Building ${petName}’s report…` : 'Building the report…'}
-          subtitle="Pulling together the full record."
-        />
-      )}
+      {/* First build: the report's own silhouette, mounted only while building, since it
+          has no dissolve of its own — the report's blocks become the page. */}
+      {building && <ReportSilhouette petName={petName} working={building} />}
       </View>
     </SafeAreaView>
   );

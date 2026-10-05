@@ -291,7 +291,7 @@ export function IntakeFirstMealPanel({
           // file only claimed it was: it logged, released the guard and left the sheet
           // sitting there unchanged, which is indistinguishable from "still thinking" on
           // the one surface where the owner has just reported a refusal. The `pm-review`
-          // caught it against this feature's own sibling, `LookCard.handleDone`, whose
+          // caught it against this feature's own sibling, `LookCard.handleDone` (retired by CUL-1071), whose
           // alert this now matches word for word. Never the error itself (the copy guard):
           // calm, no code, pointing at the one thing she can do — the arms are still live
           // underneath, so the retry is one tap.

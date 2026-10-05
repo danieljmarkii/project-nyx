@@ -24,8 +24,8 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('react-native-webview', () => ({ WebView: () => null }));
 jest.mock('@react-native-community/datetimepicker', () => () => null);
-// The two shipped waits and the two Design v2 ones, each a marker: the D2-7 cases below
-// assert the SWAP behind the gate, and the send-moment cases never see any of them.
+// The two retired waits and the two Design v2 ones, each a marker: the D2-7 cases below
+// assert the retired ones never come back, and the send-moment cases never see any of them.
 jest.mock('../components/brand/NightMoment', () => {
   const { Text } = require('react-native');
   const React = require('react');
@@ -54,8 +54,6 @@ jest.mock('../components/designV2/waits/Tick', () => {
     Tick: ({ working }: { working: boolean }) => React.createElement(Text, { testID: 'tick' }, String(working)),
   };
 });
-const mockUseDesignV2 = jest.fn(() => false);
-jest.mock('../hooks/useDesignV2', () => ({ useDesignV2: () => mockUseDesignV2() }));
 jest.mock('../store/petStore', () => {
   // Two pets, Mochi active. Biscuit is the one a `?pet=` names; `p-archived` is in
   // neither list, as an archived pet or a stale link is (the list holds non-archived pets).
@@ -106,28 +104,12 @@ const DOCS_LINE = 'Your saved vet documents aren’t part of this report. Share 
 beforeEach(() => {
   jest.clearAllMocks();
   mockParams = {};
-  mockUseDesignV2.mockReturnValue(false);
   mockedLibrary.mockResolvedValue([]);
 });
 
-// D2-7 (CUL-1068) — the report's waits behind `design_v2`. The guard covers the first
-// frame; the soft-refresh pill is the async half, proven here.
-describe('the waits behind design_v2 (D2-7)', () => {
-  it('flag-off: the first build is the night moment, and a refresh is the whorl', async () => {
-    mockedGenerate.mockResolvedValue(report());
-    const { getByTestId, queryByTestId, findByText } = render(<ReportScreen />);
-    expect(getByTestId('night-moment')).toBeTruthy();
-    expect(queryByTestId('report-silhouette')).toBeNull();
-    await findByText('Send to vet');
-    // A range change regenerates in place under the pill.
-    mockedGenerate.mockReturnValue(new Promise(() => {}));
-    fireEvent.press(await findByText('Custom…'));
-    expect(await screenFind(getByTestId, 'whorl')).toBeTruthy();
-    expect(queryByTestId('tick')).toBeNull();
-  });
-
-  it('flag-on: the first build is the silhouette naming the pet with the tick working; no night moment', () => {
-    mockUseDesignV2.mockReturnValue(true);
+// D2-7 (CUL-1068; GA by CUL-1071) — the report's waits: its own silhouette and the tick.
+describe('the waits (D2-7)', () => {
+  it('the first build is the silhouette naming the pet with the tick working; no night moment', () => {
     mockedGenerate.mockReturnValue(new Promise(() => {}));
     const { getByTestId, queryByTestId } = render(<ReportScreen />);
     expect(getByTestId('report-silhouette').props.children).toBe('Mochi true');
@@ -135,8 +117,7 @@ describe('the waits behind design_v2 (D2-7)', () => {
     expect(queryByTestId('whorl')).toBeNull();
   });
 
-  it('flag-on: the silhouette leaves when the report lands, and a refresh is the tick, not the whorl', async () => {
-    mockUseDesignV2.mockReturnValue(true);
+  it('the silhouette leaves when the report lands, and a refresh is the tick, not the whorl', async () => {
     mockedGenerate.mockResolvedValue(report());
     const { getByTestId, queryByTestId, findByText } = render(<ReportScreen />);
     await findByText('Send to vet');
@@ -242,7 +223,6 @@ describe('whose report: /report?pet= (CUL-1334)', () => {
 
   it('?pet= a pet that is not the active one: every read takes THAT pet, and the wait names it', async () => {
     mockParams = { pet: 'p2' };
-    mockUseDesignV2.mockReturnValue(true);
     mockedGenerate.mockReturnValue(new Promise(() => {}));
     const { getByTestId } = render(<ReportScreen />);
     // The wait names the report's pet, never the active one (C-9).
@@ -285,7 +265,7 @@ describe('Noticed notes in the build (CUL-876)', () => {
 
   // The retired CUL-1464 bug was a build issued under a HIDDEN switch. The switch and the
   // build share one condition today (a resolved pet); this pins it, so a refactor that
-  // moves the switch under a range, species or design_v2 gate reds here.
+  // moves the switch under a range or species gate reds here.
   it.each([
     ['the active pet', {}],
     ['?pet= another pet the account holds', { pet: 'p2' }],

@@ -1,4 +1,4 @@
-// D2-7 — behind `design_v2`, the breathing tick is the app's ONLY looping motion
+// D2-7 — on the Design v2 surfaces, the breathing tick is the ONLY looping motion
 // (Design v2 — the whole day, CUL-1068; round 4 §07, the Principle 9 carve-out: "chrome
 // never moves on its own — except the one tick, while the app is working on the pet's
 // behalf. No other loop exists").
@@ -22,10 +22,10 @@
 // STATED BLIND SPOTS (C-38: undocumented ones read as coverage). A loop composed by
 // hand — a `timing` whose completion callback restarts it, a `setInterval` driving
 // `setValue` — has no spelling this scan reads; and a loop reached through a HOST's
-// import (the report screen's `PrimaryButton` spinner, say) is on the flag-on tree and
-// outside both walks, because the host is not the namespace. The first is refused by
-// review; the second is D2-8's sweep, and the CLAUDE.md § Loading indicators rewrite
-// that lands with it.
+// import (the report screen's `PrimaryButton` spinner, say) is on screen and outside both
+// walks, because the host is not the namespace. The first is refused by review; the second
+// is CUL-1593 (the app-wide Whorl sweep and this guard's widening, after Design v2's GA,
+// CUL-1071), with the CLAUDE.md § Loading indicators rewrite.
 //
 // THE REGISTRY IS AN EXEMPTION (C-32), and it is EMPTY — its goal state, reached by
 // CUL-1075. It existed because step 2's four lanes were built in parallel: lanes 1–3
@@ -120,7 +120,7 @@ function walk(root: string, namespaceRel: string) {
   return { inside: inside.map(rel).sort(), written, imported };
 }
 
-describe('D2-7 — the tick is the only loop behind design_v2', () => {
+describe('D2-7 — the tick is the only loop on the Design v2 surfaces', () => {
   it('the namespace holds sources, and the tick is among them (the walk reads something)', () => {
     const { inside } = walk(REPO_ROOT, NAMESPACE_REL);
     expect(inside.length).toBeGreaterThan(1);

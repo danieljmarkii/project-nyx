@@ -20,9 +20,6 @@ const mockUseAppActive = jest.fn(() => true);
 jest.mock('../../hooks/useAppActive', () => ({
   useAppActive: () => mockUseAppActive(),
 }));
-jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
-// The Design v2 gate is not this suite's subject; off, the pending tick is the shipped View.
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
 
 import { type ReactNode } from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';

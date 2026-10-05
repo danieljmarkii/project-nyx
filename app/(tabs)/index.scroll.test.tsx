@@ -7,9 +7,10 @@
 // the exits follow the scroll exactly as before; and a grid opened after a scroll
 // opens at the real offset, never the one state last held.
 //
-// Every zone is a marker (the `index.order.test.tsx` shape). The look card's marker
-// passes its `onLayout` through, so the card can be "measured"; `LookExits` records
-// the props Home hands it, computed by the REAL `exitVisibility`.
+// Every zone is a marker (the `index.order.test.tsx` shape). The Today card's marker
+// passes its `onLayout` and the look header's `onLookLayout` through, so both can be
+// "measured" (the header's rect is composed in page coordinates, CUL-1220); `LookExits`
+// records the props Home hands it, computed by the REAL `exitVisibility`.
 
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
@@ -32,24 +33,19 @@ jest.mock('../../components/home/CrossPetSafetyBanner', () => ({
 jest.mock('../../components/home/SignalZone', () => ({ SignalZone: marker('signal') }));
 jest.mock('../../components/vetvisits/AppointmentStrip', () => ({ AppointmentStrip: marker('appointment') }));
 jest.mock('../../components/home/TrialStrip', () => ({ TrialStrip: marker('trial') }));
-jest.mock('../../components/home/MedStrip', () => ({ MedStrip: marker('med') }));
-jest.mock('../../components/home/TrendZone', () => ({ TrendZone: marker('trend') }));
-jest.mock('../../components/home/LookCard', () => {
-  const { View } = require('react-native');
-  const React = require('react');
-  return {
-    LookCard: ({ onLayout }: { onLayout?: unknown }) => React.createElement(View, { testID: 'zone-look', onLayout }),
-  };
-});
 // Counts Home's renders: an unmemoized child re-renders every time its parent does.
 let mockTodayRenders = 0;
-jest.mock('../../components/home/TodayZone', () => {
+jest.mock('../../components/designV2/home/TodayCard', () => {
   const { View } = require('react-native');
   const React = require('react');
   return {
-    TodayZone: () => {
+    TodayCard: ({ onLayout, onLookLayout }: { onLayout?: unknown; onLookLayout?: unknown }) => {
       mockTodayRenders += 1;
-      return React.createElement(View, { testID: 'zone-today' });
+      return React.createElement(
+        View,
+        { testID: 'zone-today-v2', onLayout },
+        React.createElement(View, { testID: 'zone-look', onLayout: onLookLayout }),
+      );
     },
   };
 });
@@ -62,8 +58,6 @@ jest.mock('../../components/home/LookExits', () => ({
     return null;
   },
 }));
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
-jest.mock('../../components/designV2/home/TodayCard', () => ({ TodayCard: marker('today-v2') }));
 jest.mock('../../components/designV2/home/CoverageDoor', () => ({ CoverageDoor: marker('coverage-door') }));
 jest.mock('../../hooks/useEvents', () => ({
   useEvents: () => ({ todayEvents: [], loadTodayEvents: mockLoadTodayEvents }),
@@ -72,8 +66,6 @@ const mockLoadTodayEvents = jest.fn();
 jest.mock('../../hooks/useDietTrial', () => ({
   useDietTrial: () => ({ input: null, inputIsForPet: true }),
 }));
-jest.mock('../../hooks/useMedStrips', () => ({ useMedStrips: () => ({ input: null }) }));
-jest.mock('../../lib/medStrip', () => ({ resolveMedStrips: () => [] }));
 jest.mock('../../lib/sync', () => ({ syncNow: jest.fn() }));
 jest.mock('../../lib/signal', () => ({ regenerateSignal: jest.fn() }));
 jest.mock('../../store/syncStore', () => {
@@ -110,17 +102,19 @@ const OVERLAY: CaptureOverlay = {
   drawsDoneBar: true,
 };
 
-// The card sits 300pt down the feed and is 900pt tall once its grid is open; the
-// viewport is 700pt. So at offset 0 only the Done bar pins, at 400 both do, and at
+// The look header sits 300pt down the feed (the Today card at 260, the header 40pt into
+// it) and is 900pt tall once its grid is open; the viewport is 700pt. So at offset 0 only the Done bar pins, at 400 both do, and at
 // 600 only the way back does — three answers that each need the real offset.
-const CARD = { y: 300, height: 900 };
+const CARD = { y: 260, height: 1400 };
+const HEADER = { y: 40, height: 900 };
 const VIEWPORT = 700;
 
 function renderHome() {
   const view = render(<HomeScreen />);
   // The body's onLayout is the nearest handler above the sky marker.
   fireEvent(view.getByTestId('zone-sky'), 'layout', { nativeEvent: { layout: { height: VIEWPORT } } });
-  fireEvent(view.getByTestId('zone-look'), 'layout', { nativeEvent: { layout: CARD } });
+  fireEvent(view.getByTestId('zone-today-v2'), 'layout', { nativeEvent: { layout: CARD } });
+  fireEvent(view.getByTestId('zone-look'), 'layout', { nativeEvent: { layout: HEADER } });
   const scroll = (y: number) =>
     fireEvent.scroll(view.UNSAFE_getByType(ScrollView), { nativeEvent: { contentOffset: { y } } });
   return { ...view, scroll };

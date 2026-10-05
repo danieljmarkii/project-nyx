@@ -6,17 +6,10 @@ import { theme } from '../../constants/theme';
 import { usePetStore } from '../../store/petStore';
 import {
   getSymptomCounts,
-  getSymptomFrequencyByDay,
-  getSymptomFrequencyByMonth,
-  getIntakeDeclineByMonth,
-  getEarliestEventMonth,
-  utcMonthOf,
-  getIntakeRateWithPrior,
   getTopFoods,
   getTopProteins,
   getMealTreatComposition,
   isNotEnoughData,
-  WINDOW_DAYS,
   type AnalyticsWindow,
 } from '../../lib/analytics';
 import {
@@ -27,27 +20,14 @@ import {
 } from '../../lib/dashboardScreen';
 import { computeWeightTrend, getWeightHistory, getWeightReadingCount } from '../../lib/weight';
 import {
-  describeCountDelta,
-  describeRateDelta,
-  intakeNotObservedNote,
-  intakeRateDefinition,
-  intakeDeclineDefinition,
-  symptomCountDefinition,
-  symptomFrequencyDefinition,
   topFoodDefinition,
   topProteinDefinition,
   compositionDefinition,
 } from '../../lib/dashboardCards';
-import { symptomLabel, symptomOccurrenceLabel } from '../../lib/metricDetail';
-import { MetricCard } from '../../components/dashboard/MetricCard';
 import { SkeletonCard } from '../../components/ui/Skeleton';
 import { RankingCard } from '../../components/dashboard/RankingCard';
-import { PatternCalendar, type CalendarView } from '../../components/dashboard/PatternCalendar';
 import { CompositionCard } from '../../components/dashboard/CompositionCard';
-import { WeightCard } from '../../components/dashboard/WeightCard';
-import { AiSummaryCard } from '../../components/dashboard/AiSummaryCard';
 import { DashboardEmptyState } from '../../components/dashboard/DashboardEmptyState';
-import { useSummary } from '../../hooks/useSummary';
 import { getTimingPanel, type TimingPanelModel } from '../../lib/patternsTiming';
 import { getTrialPanel, type TrialSoFarModel } from '../../lib/patternsTrial';
 import { TimingPanelCard } from '../../components/dashboard/TimingPanelCard';
@@ -60,32 +40,24 @@ import { lookCardLive } from '../../lib/lookCard';
 import { loadLookDays, loadVomitLocalDays } from '../../lib/looks';
 import { LOOK_PAIRING_ON_PATTERNS } from '../../lib/lookPairing';
 import { loadLookWithheldFacts, lookWithheld } from '../../lib/lookWithheld';
-import {
-  buildNoticedCard,
-  lookWordDaysOver,
-  noticedCardHref,
-  type NoticedCardModel,
-} from '../../lib/lookPatterns';
+import { buildNoticedCard, noticedCardHref, type NoticedCardModel } from '../../lib/lookPatterns';
 import { localDayIndex, dayKeyFromIndex, toLocalDayKey } from '../../lib/utils';
-import { reducedMotionNow } from '../../store/reducedMotionStore';
-import { useDesignV2 } from '../../hooks/useDesignV2';
 import { MonthInstrument } from '../../components/designV2/patterns/MonthInstrument';
-import { WeightCard as WeightCardV2 } from '../../components/designV2/patterns/WeightCard';
+import { WeightCard } from '../../components/designV2/patterns/WeightCard';
 import { trialStartDayKey } from '../../lib/trialWindowDates';
 import { dateWord } from '../../lib/chartCopy';
 import type { WeightReading } from '../../lib/weight';
 
 // The "Patterns" dashboard (B-023 PR 3/4) — tier 2 of the intelligence ladder (§2): the
-// full story on demand. Summary-led layout (§7): the AI summary (AiSummaryCard, cache-only,
-// PR 4) leads, then the seeded card set in priority order — safety always first
-// (§6 / Principle 3). Per active pet (multi-pet switcher-aware). Range-free glance: the
-// dashboard is fixed to the MONTH window (§13 #2); the Week/3-Month control lives on the
-// detail screen only, which is a follow-up (see STATUS / backlog).
+// full story on demand. Design v2's page (D2-5 / CUL-1067; `docs/culprit-design-v4-
+// mockups.html` §04; GA by CUL-1071): the month first, then the weight as dots by date,
+// then the "what Nyx ate" cards, the Timing / Trial panels and *What you noticed*. The AI
+// summary, the KPI column, the old calendar and the old weight card retired with the flag.
+// Per active pet (multi-pet switcher-aware). The descriptive cards are fixed to the MONTH
+// window (§13 #2).
 //
-// Every metric is a deterministic local-SQLite aggregate from PR 1 (lib/analytics.ts);
-// the screen never computes a number — it formats already-true facts. The cards' verdict
-// colour is gated on `established`, derived in buildDashboardCards from the analytics
-// result so a single observation (n=1) can never colour (the PR-2 adversarial fix).
+// Every metric is a deterministic local-SQLite aggregate (lib/analytics.ts); the screen
+// never computes a number — it formats already-true facts.
 
 const WINDOW: AnalyticsWindow = 'month';
 
@@ -106,10 +78,6 @@ export default function PatternsScreen() {
   const { activePet } = usePetStore();
   const petName = activePet?.name ?? 'your pet';
 
-  // The AI summary (§7) is cache-only, on the Signal's regen cadence — its own hook so the
-  // cards' local-SQLite load and the summary's network read stay independent.
-  const { summary } = useSummary();
-
   // Signals v2 (B-755 PR 9, CUL-11) — the two additive Patterns panels (Timing + The
   // trial so far). GA'd (CUL-548): the client no longer gates them, so they load
   // whenever there's an active pet and render whenever their model has data (a pet with
@@ -123,34 +91,14 @@ export default function PatternsScreen() {
   // guards with a keyed remount (code-reviewer #2).
   const panelPetRef = useRef<string | null>(null);
 
-  // Scroll-to for the summary's grounding affordance ("Based on the cards below ↓"): a real,
-  // honest "take me to the evidence" action without faking card→detail navigation (B-093).
-  // Under Reduce Motion it jumps (CUL-1123), read at the tap.
-  const scrollRef = useRef<ScrollView>(null);
-  const cardsY = useRef(0);
-  const jumpToCards = useCallback(() => {
-    scrollRef.current?.scrollTo({ y: cardsY.current, animated: !reducedMotionNow() });
-  }, []);
-
   // Noticed (CUL-874 / N-5) — the SAME gate Home's card takes (`lookCardLive`: a species
   // with a vocabulary; Noticed is GA since CUL-876), read through the same helper so the
   // two surfaces cannot drift. Off it, `noticed` stays null and `buildDashboardCards`
   // emits nothing.
   const noticedLive = lookCardLive({ species: activePet?.species });
-  // Design v2 (D2-5 / CUL-1067; `docs/culprit-design-v4-mockups.html` §04): flag-on the
-  // page is the month first, then the weight as dots by date, then the "what Nyx ate"
-  // cards and the shipped Timing / Trial / What you noticed panels unchanged; the
-  // MetricCard column, the old calendar and the old weight card are absent. Flag-off is
-  // today's page to the byte (guards/designV2FlagOff.test.tsx). Every v2 read runs only
-  // behind the gate: the month instrument mounts flag-on only, and the weight series is
-  // the same read the old card already makes.
-  const designV2 = useDesignV2();
-  // The trial loader has two readers, and both are dark: Noticed's withheld predicate
-  // (below) and design_v2's trial mark on the month (`trialMark`). With neither live it
-  // reads nothing — a null id is the loader's `no_pet`, whose `input` stays null.
-  const { input: trialInput, inputIsForPet: trialFactsFresh } = useDietTrial(
-    noticedLive || designV2 ? (activePet?.id ?? null) : null,
-  );
+  // The trial loader has two readers: Noticed's withheld predicate (below) and the trial
+  // mark on the month (`trialMark`).
+  const { input: trialInput, inputIsForPet: trialFactsFresh } = useDietTrial(activePet?.id ?? null);
   // Arm 2 of the withheld predicate. The SAME loader Home uses (`useDietTrial`), and the
   // same fail-closed read: `input` is retained across a pet switch, so a non-null input is
   // not proof it belongs to this pet, and an unconfirmed record is `null` — ignorance, which
@@ -167,11 +115,11 @@ export default function PatternsScreen() {
   const [dashState, setDashState] = useState<DashboardState>('empty');
 
   const [weightSeries, setWeightSeries] = useState<{ readings: WeightReading[]; count: number }>({ readings: [], count: 0 });
-  // Bumped on every focus load while the flag is on: the month re-reads the current
-  // month, and "today" is re-derived — a screen left open across midnight moves on.
-  const [v2Tick, setV2Tick] = useState(0);
+  // Bumped on every focus load: the month re-reads the current month, and "today" is
+  // re-derived — a screen left open across midnight moves on.
+  const [monthTick, setMonthTick] = useState(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const todayKey = useMemo(() => toLocalDayKey(new Date()), [v2Tick]);
+  const todayKey = useMemo(() => toLocalDayKey(new Date()), [monthTick]);
   // Show the loading state only on the first read for a pet; later focuses refresh
   // silently so the surface doesn't flash empty on every return (the useSignal pattern).
   const loadedPetRef = useRef<string | null>(null);
@@ -187,41 +135,24 @@ export default function PatternsScreen() {
     const myId = ++loadIdRef.current;
     const nowMs = Date.now();
     if (showLoading) setStatus('loading');
-    // The frequency calendar pages by CALENDAR month (Calendar v3 N5b), so its first paint
-    // is today's calendar month (not the trailing WINDOW the other cards use). Loaded here
-    // alongside everything else so the card paints fully-formed — no mount flash; the
-    // container only shows a loading dim when paging to an un-cached prior month (B-309).
-    const currentMonth = utcMonthOf(Date.now());
     try {
       const [
         symptomCounts,
-        frequencyBuckets,
-        monthBuckets,
-        intakeDeclineMonthBuckets,
-        earliestMonth,
-        intakeComparison,
         topFoods,
         topProteins,
         composition,
         weightReadings,
         weightReadingTotal,
       ] = await Promise.all([
+        // The cold-start gate's symptom half (`selectDashboardState`, §10).
         getSymptomCounts(pet.id, WINDOW),
-        getSymptomFrequencyByDay(pet.id, WINDOW),
-        getSymptomFrequencyByMonth(pet.id, currentMonth),
-        // The "Meals" calendar lens's flash-free first paint — same calendar month as the
-        // symptom lenses (B-310); the container pages/fetches other months on demand.
-        getIntakeDeclineByMonth(pet.id, currentMonth),
-        getEarliestEventMonth(pet.id),
-        getIntakeRateWithPrior(pet.id, WINDOW),
         getTopFoods(pet.id, WINDOW),
         getTopProteins(pet.id, WINDOW),
         getMealTreatComposition(pet.id, WINDOW),
         getWeightHistory(pet.id, WEIGHT_SERIES_LIMIT),
-        // The COUNT is the whole record, not the 12-reading sparkline window it sits
-        // beside: the card speaks it as a fact and it labels the tap-through to every
-        // reading, so a window-derived count read "12 readings" to a 20-weigh-in pet
-        // (CUL-223).
+        // The COUNT is the whole record, not the 12-reading window it sits beside: the
+        // card speaks it as a fact and it labels the tap-through to every reading, so a
+        // window-derived count read "12 readings" to a 20-weigh-in pet (CUL-223).
         getWeightReadingCount(pet.id),
       ]);
       if (loadIdRef.current !== myId) return; // superseded by a newer load — drop these results
@@ -234,20 +165,10 @@ export default function PatternsScreen() {
       );
       setCards(
         buildDashboardCards({
-          symptomCounts,
-          frequencyBuckets,
-          monthBuckets,
-          intakeDeclineMonthBuckets,
-          currentMonth,
-          earliestMonth,
-          intakeRate: intakeComparison.current,
-          intakeRatePrior: intakeComparison.prior,
           topFoods,
           topProteins,
           composition,
-          weightTrend,
-          noticed: noticed?.model ?? null,
-          lookWordDaysForZeroGate: noticed?.zeroGateWordDays ?? null,
+          noticed,
         }),
       );
       setStatus('ready');
@@ -265,8 +186,8 @@ export default function PatternsScreen() {
       const firstForPet = loadedPetRef.current !== activePet.id;
       loadedPetRef.current = activePet.id;
       load(firstForPet);
-      if (designV2) setV2Tick((t) => t + 1);
-    }, [activePet?.id, load, designV2]),
+      setMonthTick((t) => t + 1);
+    }, [activePet?.id, load]),
   );
 
   // The v2 panels load on their own (independent of the seeded-card read above), so a
@@ -320,10 +241,10 @@ export default function PatternsScreen() {
   // loader Home uses and gated on the same freshness flag — a stale pet's trial is never
   // drawn on the active pet's month.
   const trialMark = useMemo(() => {
-    if (!designV2 || !trialFactsFresh || !trialInput?.trial) return null;
+    if (!trialFactsFresh || !trialInput?.trial) return null;
     const day = trialStartDayKey(trialInput.trial.startedAt);
     return { day, label: `trial · ${dateWord(day)}` };
-  }, [designV2, trialFactsFresh, trialInput]);
+  }, [trialFactsFresh, trialInput]);
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
@@ -361,78 +282,42 @@ export default function PatternsScreen() {
         </View>
       ) : (
         <ScrollView
-          ref={scrollRef}
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          {designV2 ? (
-            <>
-              {/* The cold-start moment stays reachable flag-on (Principle 5): on a record
-                  with nothing to chart the warm invitation leads, and the month follows
-                  it — an empty month is itself a designed state ("nothing logged yet"),
-                  never weeks of "unlogged" on an account that is minutes old. */}
-              {dashState === 'empty' && <DashboardEmptyState petName={petName} />}
-              <MonthInstrument
-                key={`month:${activePet.id}`}
-                petId={activePet.id}
-                today={todayKey}
-                trialMark={trialMark}
-                refreshTick={v2Tick}
-              />
-              <WeightCardV2
-                readings={weightSeries.readings}
-                readingCount={weightSeries.count}
-                petName={activePet.name}
-                petId={activePet.id}
-                drawIn
-              />
-              {cards
-                .filter((c) => c.kind === 'topFood' || c.kind === 'topProtein' || c.kind === 'composition')
-                .map((card) => renderCard(card, activePet.id, activePet.name))}
-              {timingModel != null && (
-                <TimingPanelCard
-                  model={timingModel}
-                  petName={activePet.name}
-                  onPress={() => router.push('/insights/timing')}
-                />
-              )}
-              {trialModel != null && (
-                <TrialSoFarCard model={trialModel} onPress={() => router.push('/insights/trial')} />
-              )}
-              {cards.filter((c) => c.kind === 'whatYouNoticed').map((card) => renderCard(card, activePet.id, activePet.name))}
-            </>
-          ) : dashState === 'empty' ? (
-            <DashboardEmptyState petName={petName} />
-          ) : (
-            <>
-              {/* Summary-led (§7): the AI summary leads, the safety cards immediately below. */}
-              <AiSummaryCard summary={summary} petName={petName} onJumpToCards={jumpToCards} />
-              <View
-                style={styles.cards}
-                onLayout={(e) => {
-                  cardsY.current = e.nativeEvent.layout.y;
-                }}
-              >
-                {/* Pass the RAW name (not the 'your pet'-resolved petName) so each card's
-                    definition/calibration copy owns its OWN nyx-voice fallback. petId is
-                    needed by the frequency calendar (paging + drill-in fetch). */}
-                {cards.map((card) => renderCard(card, activePet.id, activePet.name))}
-              </View>
-              {/* Signals v2 panels (GA'd, CUL-548) — additive, below the seeded cards.
-                  Each renders only when its model has data (a pet with no vomiting / no
-                  trial simply shows neither). */}
-              {timingModel != null && (
-                <TimingPanelCard
-                  model={timingModel}
-                  petName={activePet.name}
-                  onPress={() => router.push('/insights/timing')}
-                />
-              )}
-              {trialModel != null && (
-                <TrialSoFarCard model={trialModel} onPress={() => router.push('/insights/trial')} />
-              )}
-            </>
+          {/* The cold-start moment stays reachable (Principle 5): on a record with nothing
+              to chart the warm invitation leads, and the month follows it — an empty month
+              is itself a designed state ("nothing logged yet"), never weeks of "unlogged" on
+              an account that is minutes old. */}
+          {dashState === 'empty' && <DashboardEmptyState petName={petName} />}
+          <MonthInstrument
+            key={`month:${activePet.id}`}
+            petId={activePet.id}
+            today={todayKey}
+            trialMark={trialMark}
+            refreshTick={monthTick}
+          />
+          <WeightCard
+            readings={weightSeries.readings}
+            readingCount={weightSeries.count}
+            petName={activePet.name}
+            petId={activePet.id}
+            drawIn
+          />
+          {cards
+            .filter((c) => c.kind !== 'whatYouNoticed')
+            .map((card) => renderCard(card, activePet.name))}
+          {timingModel != null && (
+            <TimingPanelCard
+              model={timingModel}
+              petName={activePet.name}
+              onPress={() => router.push('/insights/timing')}
+            />
           )}
+          {trialModel != null && (
+            <TrialSoFarCard model={trialModel} onPress={() => router.push('/insights/trial')} />
+          )}
+          {cards.filter((c) => c.kind === 'whatYouNoticed').map((card) => renderCard(card, activePet.name))}
           <View style={styles.bottomPad} />
         </ScrollView>
       )}
@@ -440,18 +325,12 @@ export default function PatternsScreen() {
   );
 }
 
-/** What one Noticed load produces: the card, and CUL-845 gate 2's own read. */
-interface NoticedLoad {
-  model: NoticedCardModel;
-  zeroGateWordDays: ReadonlyMap<string, number>;
-}
-
 /**
  * Noticed's three reads, or `null` when the surface is not live for this pet.
  *
- * `null` — never an empty model — is what keeps the flag-off path byte-identical: an
- * empty model would still emit the card (§7 draws the empty state on purpose), and this
- * is the one place that distinction is made.
+ * `null` — never an empty model — is what keeps a pet with no vocabulary free of the card:
+ * an empty model would still emit it (§7 draws the empty state on purpose), and this is
+ * the one place that distinction is made.
  *
  * A FAILED READ IS ALSO `null`, and that is the fail-closed direction: this card's whole
  * content is counts about an animal, so the honest response to "the record did not
@@ -464,17 +343,15 @@ async function loadNoticed(
   trialNotEating: boolean | null,
   live: boolean,
   nowMs: number,
-): Promise<NoticedLoad | null> {
+): Promise<NoticedCardModel | null> {
   if (!live) return null;
   try {
     const sinceDay = dayKeyFromIndex(localDayIndex(nowMs) - (NOTICED_VOMIT_READ_DAYS - 1));
     const [record, vomitLocalDays, withheldFacts] = await Promise.all([
-      // THE WHOLE RECORD, UNBOUNDED — the same read Home makes (`components/home/
-      // LookCard.tsx`). A symptom row prints *first {date}*, and that is a claim about
-      // the record and not about a window: bounded to eight weeks it would name the
-      // horizon's first day, so Home would say *first Jun 2* while Patterns said *first
-      // Sep 3* for the same word one tap apart, and the report — which anchors to the
-      // record server-side — would agree with Home against this card, in front of a vet.
+      // THE WHOLE RECORD, UNBOUNDED. A symptom row prints *first {date}*, and that is a
+      // claim about the record and not about a window: bounded to eight weeks it would
+      // name the horizon's first day, and the report — which anchors to the record
+      // server-side — would disagree with this card in front of a vet.
       // Under-stating an onset is also the wrong direction to be wrong in. Every COUNT is
       // bounded inside `buildNoticedCard` regardless, so the wider read widens no
       // denominator (C-3). Found by the product read (CUL-874).
@@ -485,21 +362,16 @@ async function loadNoticed(
       LOOK_PAIRING_ON_PATTERNS ? loadVomitLocalDays(pet.id, sinceDay) : Promise.resolve<string[]>([]),
       loadLookWithheldFacts({ id: pet.id, species: pet.species }, trialNotEating, nowMs),
     ]);
-    return {
-      model: buildNoticedCard(record, {
-        petName: pet.name,
-        pet: { species: pet.species, sex: pet.sex },
-        nowMs,
+    return buildNoticedCard(record, {
+      petName: pet.name,
+      pet: { species: pet.species, sex: pet.sex },
+      nowMs,
       // The SHARED predicate, not a second opinion: Home and Patterns must never disagree
       // one tap apart (T-20). `lookWithheld` is the fail-closed reading — unloaded facts
       // withhold — which is the right one for a surface that answers today.
-        withheld: lookWithheld({ id: pet.id }, withheldFacts),
-        vomitLocalDays,
-      }),
-      // CUL-845 gate 2's read, at the SYMPTOM CARDS' window rather than the look card's
-      // — the zero it suppresses is theirs, and the two windows are 30 and 28 days.
-      zeroGateWordDays: lookWordDaysOver(record, { nowMs, days: WINDOW_DAYS[WINDOW] }),
-    };
+      withheld: lookWithheld({ id: pet.id }, withheldFacts),
+      vomitLocalDays,
+    });
   } catch (e) {
     console.error('[patterns] Noticed load failed:', e);
     return null;
@@ -511,38 +383,11 @@ function displayProtein(protein: string): string {
   return protein.charAt(0).toUpperCase() + protein.slice(1);
 }
 
-// Maps an ordered descriptor to its PR-2 card. Display strings come from the tested
-// dashboardCards helpers; the safety-critical fields (established / state) ride on the
-// descriptor straight from buildDashboardCards. The symptom COUNT card is a "doorway"
-// (§5 #2) — tapping it opens /insights/[metric], the Week/Month/3-Month trend detail
-// (B-093). The other cards stay display-only for now (a rate/ranking/composition detail
-// is its own follow-up — B-093 row); a card with no onPress hides its chevron.
-function renderCard(card: DashboardCard, petId: string, petName?: string) {
+// Maps an ordered descriptor to its card. Display strings come from the tested
+// dashboardCards helpers; the state rides on the descriptor straight from
+// buildDashboardCards.
+function renderCard(card: DashboardCard, petName?: string) {
   switch (card.kind) {
-    case 'symptomCount': {
-      const label = symptomLabel(card.symptomType);
-      return (
-        <MetricCard
-          key={card.key}
-          label={label}
-          // Explicit trailing-window frame so the count never contradicts the
-          // calendar-month grid under the same title (B-313).
-          caption="Last 30 days"
-          value={String(card.current)}
-          polarity="adverse"
-          established={card.established}
-          delta={card.delta}
-          deltaLabel={describeCountDelta(card.current, card.prior, WINDOW)}
-          sparkData={card.sparkData}
-          definition={symptomCountDefinition(label.toLowerCase(), petName)}
-          petName={petName}
-          onPress={() =>
-            router.push({ pathname: '/insights/[metric]', params: { metric: card.symptomType } })
-          }
-          accessibilityHint={`Opens ${label}'s full trend`}
-        />
-      );
-    }
     case 'whatYouNoticed': {
       return (
         <WhatYouNoticedCard
@@ -552,95 +397,6 @@ function renderCard(card: DashboardCard, petId: string, petName?: string) {
           // spine filtered to looks — a real room behind a real door, rather than a
           // chevron that opens a stub.
           onPress={() => router.push(noticedCardHref())}
-        />
-      );
-    }
-    case 'calendar': {
-      // Resolve each pure lens descriptor into a display lens (chip label + nyx-voice copy).
-      // Kept here (not in the pure builder) so dashboardScreen.ts stays theme/voice-free.
-      const views: CalendarView[] = card.views.map((v) =>
-        v.kind === 'symptom'
-          ? {
-              key: v.key,
-              kind: 'symptom',
-              symptomType: v.symptomType,
-              chipLabel: symptomLabel(v.symptomType as string),
-              // B-314: the summary/empty/a11y sentence gets the occurrence form
-              // ("Vomiting on 5 days"); the chip + drill-in stay on the terse
-              // cross-surface label ("Vomit"), matching History.
-              noun: symptomOccurrenceLabel(v.symptomType as string),
-              unit: 'time',
-              definition: symptomFrequencyDefinition(
-                symptomLabel(v.symptomType as string).toLowerCase(),
-                petName,
-              ),
-              drillLabel: symptomLabel(v.symptomType as string),
-            }
-          : {
-              key: v.key,
-              kind: 'intake',
-              // "Meals" reads naturally alongside the symptom chips; the copy noun
-              // "Unfinished meals" carries the precise, non-reassuring meaning (B-310).
-              chipLabel: 'Meals',
-              noun: 'Unfinished meals',
-              unit: 'meal',
-              definition: intakeDeclineDefinition(petName),
-              drillLabel: 'Unfinished meals',
-            },
-      );
-      return (
-        // Keyed on petId so a pet switch REMOUNTS the calendar fresh — seeded from the new
-        // pet's month/bounds + reset to its default lens — instead of carrying one pet's
-        // paging cache / lens selection into another (the multi-pet stale-state trap).
-        <PatternCalendar
-          key={`calendar:${petId}`}
-          petId={petId}
-          title="Calendar"
-          views={views}
-          currentMonth={card.currentMonth}
-          earliestMonth={card.earliestMonth}
-          initialSymptomBuckets={card.monthBuckets}
-          initialIntakeBuckets={card.intakeDeclineMonthBuckets}
-        />
-      );
-    }
-    case 'intakeRate': {
-      const r = card.result;
-      // Narrow via the sentinel guard (no `as`): read the rate only when it's real.
-      let value = '';
-      let progress: number | undefined;
-      let note: string | undefined;
-      let delta: number | undefined;
-      let deltaLabel: string | undefined;
-      if (!isNotEnoughData(r)) {
-        value = `${Math.round(r.rate * 100)}%`;
-        progress = r.rate; // the proportion bar — the card's shape (B-098), never a bare number
-        note = r.intakeNotDirectlyObserved ? intakeNotObservedNote() : undefined;
-        // "vs last month" only when the PRIOR window is itself established (never a
-        // fabricated baseline). delta is whole percentage points so its sign matches the
-        // phrase exactly; MetricCard resolves the tone — a positive-metric DROP stays
-        // neutral (§13 #6), the floored decline detector owns escalation, not this card.
-        const p = card.prior;
-        if (!isNotEnoughData(p)) {
-          delta = Math.round(r.rate * 100) - Math.round(p.rate * 100);
-          deltaLabel = describeRateDelta(r.rate, p.rate, WINDOW);
-        }
-      }
-      return (
-        <MetricCard
-          key={card.key}
-          label="Meals finished"
-          value={value}
-          polarity="positive"
-          established={card.established}
-          state={card.state}
-          progress={progress}
-          delta={delta}
-          deltaLabel={deltaLabel}
-          calibrationUnit="meal"
-          note={note}
-          definition={intakeRateDefinition(petName)}
-          petName={petName}
         />
       );
     }
@@ -704,12 +460,6 @@ function renderCard(card: DashboardCard, petId: string, petName?: string) {
           definition={compositionDefinition(petName)}
         />
       );
-    case 'weightTrend':
-      // Health-trajectory card — neutral by construction (no verdict colour, factual
-      // delta). Its "N readings" line opens the per-reading history (CUL-223); petId is
-      // passed so that list is scoped to this card's pet rather than re-derived from the
-      // selection on the far side of the navigation (CUL-574).
-      return <WeightCard key={card.key} trend={card.trend} petName={petName} petId={petId} />;
     default: {
       // Exhaustiveness: a new card kind must add a case above, not silently render
       // nothing. This fails to compile if DashboardCard gains a member unhandled here.
@@ -726,11 +476,6 @@ const styles = StyleSheet.create({
   },
   scroll: {
     padding: theme.space3,
-    gap: theme.space3,
-  },
-  // Wraps the card list so its top y can be measured for the summary's "jump to cards"
-  // affordance; carries the inter-card gap the scroll container gave the cards before.
-  cards: {
     gap: theme.space3,
   },
   centered: {

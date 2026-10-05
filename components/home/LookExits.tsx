@@ -83,7 +83,7 @@ export interface LayoutBox {
 }
 
 /**
- * The design_v2 look header's rect in the SCROLL CONTENT's coordinates (CUL-1220, BRK-16;
+ * The look header's rect in the SCROLL CONTENT's coordinates (CUL-1220, BRK-16;
  * C-22: anchors in different coordinate spaces compose in one tested helper).
  *
  * The header is a child of the Today card, so its `onLayout` y is card-local (about 39pt);

@@ -51,31 +51,21 @@ describe('BETA_REGISTRY', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('ships the widget + Design v2 betas, all client-only (no server cost)', () => {
+  it('ships the widget beta alone, client-only (no server cost)', () => {
     // The two Signal betas (signal_design_v2 / signals_v2) graduated to GA and were
     // retired from the shelf (CUL-547 + CUL-548), the two capture betas (the log
     // screen redesign, B-745, and more event types, B-756) followed (CUL-962), and
     // then Vet visits, the appointment companion (CUL-905), Noticed, the daily look
-    // (CUL-876), and the diet trial's own screen (CUL-1307).
+    // (CUL-876), the diet trial's own screen (CUL-1307), History v2 (CUL-1175) and
+    // Design v2 (CUL-1071).
     const widget = BETA_REGISTRY.find((b) => b.key === 'widget_enabled');
     expect(widget).toBeDefined();
     expect((widget as BetaFeature).serverCost).toBe(false);
 
-    // Design v2 (CUL-1062 / D2-0) joined the shelf seed-first. Client-render only —
-    // the redesign draws the same record differently and no Edge Function reads the
-    // key — so no server gate is owed here either. The blurb is the PM-ruled round-4
-    // string, and its second sentence is the flag-off promise the guard keeps.
-    const designV2 = BETA_REGISTRY.find((b) => b.key === 'design_v2');
-    expect(designV2).toBeDefined();
-    expect((designV2 as BetaFeature).serverCost).toBe(false);
-    expect((designV2 as BetaFeature).blurb).toBe(
-      'The new Home, the Signal’s own screen and the month on Patterns. Switch it off and the app is exactly as it was.',
-    );
-
-    // The eight graduated keys (History v2 last, CUL-1175) are no longer in the AllowlistFlagKey union, so a
-    // `.key === '…'` check for them won't type-check — the length assertion + the
-    // missing shelf cards are what pin their removal.
-    expect(BETA_REGISTRY).toHaveLength(2);
+    // The nine graduated keys (Design v2 last, CUL-1071) are no longer in the
+    // AllowlistFlagKey union, so a `.key === '…'` check for them won't type-check — the
+    // length assertion + the missing shelf cards are what pin their removal.
+    expect(BETA_REGISTRY).toHaveLength(1);
   });
 });
 
@@ -83,7 +73,9 @@ describe('BETA_REGISTRY', () => {
 // The pure derivation both app/settings.tsx (the Beta row + "N on" count) and
 // app/settings/beta.tsx (cards vs. the B-729 empty state) read through
 // hooks/useBetaShelf. The headline contract is the B-747 regression: eligibility
-// is an OR over EVERY registry key, never one hard-coded flag.
+// is an OR over EVERY registry key, never one hard-coded flag. With the widget the
+// one beta left on the shelf (Design v2 graduated, CUL-1071), the OR has one term;
+// the derivation is unchanged and the cases below hold for whatever joins next.
 
 describe('deriveBetaShelf (B-747)', () => {
   const gatedTo = (uid: string) => ({ enabled: false, allowlist: [uid] });
@@ -93,16 +85,9 @@ describe('deriveBetaShelf (B-747)', () => {
     ...over,
   });
 
-  it('B-747: an account eligible ONLY for a non-widget beta still gets the shelf', () => {
-    // The shipped bug: the Settings row gated on widget_enabled alone, so an account
-    // allowlisted for a non-widget beta (the log-picker beta, then; Design v2 here,
-    // since that beta retired with CUL-962 and Noticed with CUL-876) had no way to reach the shelf and opt in.
-    const shelf = deriveBetaShelf(
-      allow({ widget_enabled: dark, design_v2: gatedTo('uid-1') }),
-      'uid-1',
-      {},
-    );
-    expect(shelf.eligible.map((b) => b.key)).toEqual(['design_v2']);
+  it('an eligible account gets the shelf, and eligibility turns nothing on', () => {
+    const shelf = deriveBetaShelf(allow({ widget_enabled: gatedTo('uid-1') }), 'uid-1', {});
+    expect(shelf.eligible.map((b) => b.key)).toEqual(['widget_enabled']);
     expect(shelf.activeCount).toBe(0); // eligible turns nothing on (Gate 2 untouched)
   });
 
@@ -114,43 +99,30 @@ describe('deriveBetaShelf (B-747)', () => {
   });
 
   it('activeCount counts only betas that are eligible AND opted in', () => {
-    const allowlist = allow({
-      widget_enabled: gatedTo('uid-1'),
-      design_v2: gatedTo('uid-1'),
-    });
-    expect(deriveBetaShelf(allowlist, 'uid-1', { design_v2: true }).activeCount).toBe(1);
-    expect(
-      deriveBetaShelf(allowlist, 'uid-1', { widget_enabled: true, design_v2: true })
-        .activeCount,
-    ).toBe(2);
+    const allowlist = allow({ widget_enabled: gatedTo('uid-1') });
+    expect(deriveBetaShelf(allowlist, 'uid-1', {}).activeCount).toBe(0);
+    expect(deriveBetaShelf(allowlist, 'uid-1', { widget_enabled: true }).activeCount).toBe(1);
   });
 
   it('an opted-in but no-longer-eligible beta (a killed flag) is not counted as on', () => {
     // The widget path has already stopped rendering for this account, so telling
     // the owner it's "on" would claim something the app isn't doing.
-    const shelf = deriveBetaShelf(
-      allow({ widget_enabled: dark, design_v2: gatedTo('uid-1') }),
-      'uid-1',
-      { widget_enabled: true },
-    );
-    expect(shelf.eligible.map((b) => b.key)).toEqual(['design_v2']);
+    const shelf = deriveBetaShelf(allow({ widget_enabled: dark }), 'uid-1', { widget_enabled: true });
+    expect(shelf.eligible).toEqual([]);
     expect(shelf.activeCount).toBe(0);
   });
 
   it('enabled:true (a GA’d flag) is eligible for everyone, allowlist ignored', () => {
     const shelf = deriveBetaShelf(
-      allow({ design_v2: { enabled: true, allowlist: [] } }),
+      allow({ widget_enabled: { enabled: true, allowlist: [] } }),
       'anyone',
       {},
     );
-    expect(shelf.eligible.map((b) => b.key)).toEqual(['design_v2']);
+    expect(shelf.eligible.map((b) => b.key)).toEqual(['widget_enabled']);
   });
 
   it('eligible preserves registry order (the shelf renders in registry order)', () => {
-    const everything = allow({
-      widget_enabled: gatedTo('uid-1'),
-      design_v2: gatedTo('uid-1'),
-    });
+    const everything = allow({ widget_enabled: gatedTo('uid-1') });
     expect(deriveBetaShelf(everything, 'uid-1', {}).eligible.map((b) => b.key)).toEqual(
       BETA_REGISTRY.map((b) => b.key),
     );
@@ -220,6 +192,7 @@ describe('parseBetaOptIns — tolerant decode', () => {
       widget_enabled: true,
       ask_enabled: false,
       not_a_flag: true, // unknown key — dropped
+      design_v2: true, // a graduated beta's persisted opt-in self-cleans (CUL-1071)
       ask_general_enabled: 'yes', // non-boolean — dropped
     });
     expect(parseBetaOptIns(raw)).toEqual({ widget_enabled: true, ask_enabled: false });

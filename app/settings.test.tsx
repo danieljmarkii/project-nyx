@@ -81,11 +81,11 @@ afterEach(() => {
 });
 
 describe('Settings — the Early-access row gate (B-747)', () => {
-  it('shows the row for an account eligible ONLY for a non-widget beta', () => {
-    // The B-747 regression case: a non-widget beta allowlisted, widget dark. (The
-    // original case used the log-picker beta, retired with CUL-962; Design v2 is the
-    // same shape.) Pre-fix, this account had no row and therefore no path to the shelf.
-    setAllowlist({ design_v2: gatedToPm });
+  it('shows the row for an account eligible for a beta', () => {
+    // The B-747 regression was a non-widget beta allowlisted with the widget dark; with
+    // the widget the one beta left on the shelf (Design v2 graduated, CUL-1071) the row
+    // is shown by the same OR over the registry (`lib/betaFeatures.test.ts`).
+    setAllowlist({ widget_enabled: gatedToPm });
     const { getByText } = render(<SettingsScreen />);
     expect(getByText('Early access')).toBeTruthy();
   });
@@ -95,18 +95,15 @@ describe('Settings — the Early-access row gate (B-747)', () => {
     expect(queryByText('Early access')).toBeNull();
   });
 
-  it('counts every eligible+opted-in beta in the "N on" note, not just the widget', () => {
-    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm });
-    useBetaOptInStore.getState().setOptIn('design_v2', true);
+  it('counts every eligible+opted-in beta in the "N on" note', () => {
+    setAllowlist({ widget_enabled: gatedToPm });
     const { getByText, rerender, queryByText } = render(<SettingsScreen />);
-    // Pre-fix, a non-widget opt-in was invisible to the count.
-    expect(getByText('1 on')).toBeTruthy();
+    expect(queryByText('1 on')).toBeNull();
 
     // A store write after mount re-renders the subscribed screen — wrap it.
     act(() => useBetaOptInStore.getState().setOptIn('widget_enabled', true));
     rerender(<SettingsScreen />);
-    expect(getByText('2 on')).toBeTruthy();
-    expect(queryByText('1 on')).toBeNull();
+    expect(getByText('1 on')).toBeTruthy();
   });
 
   it('says early access, never beta, in what it shows and speaks (CUL-70)', () => {

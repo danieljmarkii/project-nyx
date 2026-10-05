@@ -276,7 +276,7 @@ export default function ProfileScreen() {
   );
   // ── CUL-170 — the strips' doorways land ON their card ────────────────────────
   //
-  // The Home `TrialStrip`/`MedStrip` and the Daily Recap's mirrors of them are
+  // The Home `TrialStrip` (and the retired `MedStrip`) and the Daily Recap's mirrors of them are
   // doors: "Amoxicillin · day 5 of 14" is meant to open that med. They all pushed
   // the bare route, which arrives at the top of this screen — photo, conditions,
   // trial card, every other med — so the tap ended in a scroll hunt. The href is

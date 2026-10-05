@@ -97,9 +97,10 @@ const ALWAYS_SCANNED = [
   // the phone rewarding the owner for bad news — the exact D7 row — so its silence is
   // pinned by name rather than left to a heuristic that cannot see it.
   //
-  // Its sibling `components/home/LookCard.tsx` is deliberately NOT here: the card ticks
-  // on every chip tap (`selectChip`, T-10) and is not a safety surface. The door is the
-  // half that escalates, and the split is the point.
+  // Its sibling, the look itself (`components/designV2/home/LookHeader.tsx` since
+  // CUL-1071 retired `LookCard.tsx`), is deliberately NOT here: it ticks on every chip tap
+  // (`selectChip`, T-10) and is not a safety surface. The door is the half that
+  // escalates, and the split is the point.
   'components/home/LookEmergencySheet.tsx',
   // CUL-873 (N-4b) — the daily look's WITHHELD entry, named here for the same reason and
   // by the same rule (T-10's own sentence: "the withheld entry, which renders beside a
@@ -108,9 +109,9 @@ const ALWAYS_SCANNED = [
   // the surface that renders while a live intake concern holds, which is precisely where a
   // buzz would read as the phone acknowledging that the pet has stopped eating.
   //
-  // The split from `LookCard.tsx` is what makes this enforceable rather than remembered:
-  // the card ticks on every chip tap and must stay unscanned, so the withheld half had to
-  // leave it. Proven by mutation — a `selectChip` import here reds the build.
+  // The split from the look's own file is what makes this enforceable rather than
+  // remembered: the look ticks on every chip tap and must stay unscanned, so the withheld
+  // half had to leave it. Proven by mutation — a `selectChip` import here reds the build.
   'components/home/LookWithheldEntry.tsx',
   // CUL-1064 (D2-1) — the month's day mark. It paints a photo dot in the rose when the
   // per-incident read said `worth_a_call`, and carries none of the MARKERS (it is a

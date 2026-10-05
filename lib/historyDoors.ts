@@ -51,7 +51,6 @@ export interface HistoryDoor {
 export type HistoryDoorId =
   | 'widget-day'
   | 'month-day'
-  | 'calendar-day'
   | 'look-more-today'
   | 'noticed-card'
   | 'ask-provenance'
@@ -77,17 +76,9 @@ export const HISTORY_DOORS: readonly HistoryDoor[] = [
     frozen: false,
   },
   {
-    id: 'calendar-day',
-    senders: ['components/dashboard/PatternCalendar.tsx'],
-    builder: null,
-    sends: '`date` (a UTC day, its own sheet\'s), `ts`; drawn only with design_v2 off, retired at D2-8',
-    lands: 'lands on the local day with the same date: v2 hides no row, so the UTC day\'s entries are all on screen around it',
-    frozen: false,
-  },
-  {
     id: 'look-more-today',
-    // The design_v2 look header folds the day's quiet looks behind the same door (CUL-1220).
-    senders: ['components/home/LookCard.tsx', 'components/designV2/home/LookHeader.tsx'],
+    // The look header folds the day's quiet looks behind this door (CUL-1220).
+    senders: ['components/designV2/home/LookHeader.tsx'],
     builder: { file: 'lib/lookCard.ts', fn: 'lookMoreTodayHref' },
     sends: '`type=check_in`, `window=today`, `ts`',
     lands: 'Noticed, Today',

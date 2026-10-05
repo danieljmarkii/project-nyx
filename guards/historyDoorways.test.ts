@@ -231,10 +231,13 @@ describe('every link into History is a registered door (AC 36)', () => {
     // reads every directory the repository has, not because they are listed here.
     const dirs = scannedDirs(REPO_ROOT);
     const found = new Set(routeFiles(sources).map((rel) => rel.split('/')[0]));
-    for (const d of ['app', 'components', 'lib', 'widgets']) {
+    for (const d of ['app', 'lib', 'widgets']) {
       expect({ d, scanned: dirs.includes(d), found: found.has(d) }).toEqual({ d, scanned: true, found: true });
     }
-    // And the hop reaches a real builder's callers.
+    // `components/` is scanned, and since CUL-1071 deleted the old Patterns calendar (the
+    // last component that spelled the route inline) every component reaches History
+    // through a builder. The hop is what reaches it there: a real builder's caller.
+    expect(dirs).toContain('components');
     expect(sources.get('components/designV2/patterns/MonthInstrument.tsx')).toMatch(/\bhistoryDayHref\b/);
   });
 

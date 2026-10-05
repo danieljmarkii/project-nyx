@@ -39,7 +39,7 @@ import { useOpenInPlace } from '../../motion/openInPlaceMotion';
 
 // MonthInstrument — the Patterns page's month (Design v2 — the whole day, D2-5 ·
 // CUL-1067; design authority `docs/culprit-design-v4-mockups.html` §04, the frame the
-// PM ruled "LOVE"). Behind `design_v2`; the flag-off page never imports this file.
+// PM ruled "LOVE"). For every account since Design v2's GA (CUL-1071).
 //
 //   the nav ............ ‹ September 2026 › — the next month disabled at the current one,
 //                        the previous at the record's first month, each with its reason
@@ -98,7 +98,7 @@ const LENS_CHIP_MAX = 5;
 /** The words one lens is spoken in: the occurrence noun ("itching") for the line and the
  *  labels, the row noun ("itch/scratch") for the rose-day clause and the legend, the chip
  *  ("Itching") and the drill-in's label ("Itch/Scratch"), each from the one place the
- *  flag-off page names a symptom (`lib/metricDetail.ts`). */
+ *  app names a symptom (`lib/metricDetail.ts`). */
 function lensWords(type: string): { noun: string; rowNoun: string; chip: string; drill: string } {
   return {
     noun: symptomOccurrenceLabel(type).toLowerCase(),

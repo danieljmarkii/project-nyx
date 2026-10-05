@@ -1,5 +1,5 @@
 // When a Signal surface may print a FALLING PAIR — the one place the Design v2 card and
-// screen ask (CUL-1216, BRK-4 / BRK-5 / BRK-6; design_v2).
+// screen ask (CUL-1216, BRK-4 / BRK-5 / BRK-6).
 //
 // ── WHY THIS MODULE EXISTS ──────────────────────────────────────────────────────
 // The shipped card knew when to hold back: the reflection's density gate swapped its face,

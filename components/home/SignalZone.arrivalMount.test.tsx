@@ -1,4 +1,4 @@
-// CUL-1223 (BRK-49) — the first-pattern arrival under Design v2 mounts the stack ONCE.
+// CUL-1223 (BRK-49) — the first-pattern arrival mounts the stack ONCE.
 //
 // The shipped zone swapped `<ArrivalStage>` for a bare `<LiveStack>` at both edges of the
 // moment, and each row from `View` to `Animated.View`: a change of component in one slot is
@@ -12,8 +12,6 @@ jest.mock('expo-router', () => ({
   router: { push: jest.fn() },
   useFocusEffect: (cb: () => void | (() => void)) => require('react').useEffect(cb, [cb]),
 }));
-const mockUseDesignV2 = jest.fn(() => true);
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockUseDesignV2() }));
 jest.mock('../../lib/supabase', () => ({ supabase: { from: jest.fn(), functions: { invoke: jest.fn() } } }));
 jest.mock('../../lib/db', () => ({ getDb: () => ({ getAllSync: () => [{ last: null }] }) }));
 const mockLoadSignalLead = jest.fn();
@@ -21,9 +19,6 @@ jest.mock('../../lib/signalLead', () => ({
   loadSignalLead: (...a: unknown[]) => mockLoadSignalLead(...a),
   loadSignalRowTrial: async () => null,
   loadSignalRowScreen: async () => ({ kind: 'unanswered' }),
-}));
-jest.mock('../../hooks/useSignalFold', () => ({
-  useSignalFold: () => ({ stateOf: () => 'open', backBecauseOf: () => null, fold: jest.fn(), unfold: jest.fn(), touch: jest.fn() }),
 }));
 const mockUseSignal = jest.fn();
 jest.mock('../../hooks/useSignal', () => ({ useSignal: () => mockUseSignal() }));
@@ -94,8 +89,7 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-async function arriveAndFinish(designV2: boolean) {
-  mockUseDesignV2.mockReturnValue(designV2);
+async function arriveAndFinish() {
   mockUseSignal.mockReturnValue(state({ displayState: 'building' }));
   const view = render(<SignalZone />);
   await flush();
@@ -113,9 +107,9 @@ async function arriveAndFinish(designV2: boolean) {
   return { view, washDuring };
 }
 
-describe('the first-pattern arrival under Design v2 (CUL-1223, BRK-49)', () => {
+describe('the first-pattern arrival (CUL-1223, BRK-49)', () => {
   it('the moment plays, and the lead card mounts once across both of its edges', async () => {
-    const { view, washDuring } = await arriveAndFinish(true);
+    const { view, washDuring } = await arriveAndFinish();
     // Non-vacuity: the moment really played, so there WERE edges to cross.
     expect(washDuring).toBe(true);
     expect(view.queryByTestId('signal-arrival-wash')).toBeNull();

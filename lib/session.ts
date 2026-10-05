@@ -28,6 +28,7 @@ import { cancelPendingSignalRegens } from './signal';
 import { clearSpentTaps } from './spentTaps';
 import { clearRemovalNotices } from './removalNotice';
 import { cancelAllAnalysisWatches } from './analysis';
+import { abortFlight } from '../components/motion/flightMotion';
 import { supabase } from './supabase';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 
@@ -162,6 +163,12 @@ export async function wipeLocalSession(): Promise<void> {
   // mounted under another route can finish afterwards and OPEN a new watch; fencing that
   // open is CUL-1256.
   cancelAllAnalysisWatches();
+  // MFU-9 (CUL-1071): the Signal flight is account state resting in JS memory too. Its
+  // record carries the finding's title and the chart element, painted at the ROOT by
+  // `FlightHost`, above the auth redirect; a sign-out landing mid-flight (or inside the
+  // staged TTL) would leave the previous owner's chart over the next person's login.
+  // Synchronous, before the first await, like the timers above.
+  abortFlight();
   supabase.removeAllChannels().catch((e: unknown) =>
     console.warn('[session] closing realtime channels failed:', e));
   await clearLocalData().catch((e) => console.warn('[session] local wipe failed:', e));

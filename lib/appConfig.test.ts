@@ -335,69 +335,23 @@ describe('daily_look — retired client-side (CUL-876)', () => {
   });
 });
 
-// ── design_v2 — the Design v2 rollout flag (D2-0 / CUL-1062) ─────────────────────
-// D2-0 is schema-only for consumption (migration 070 seeds it dark: {"enabled":
-// false, "allowlist": []}); nothing renders behind it until the Signal lane (D2-3)
-// gates on `useDesignV2()` = eligible && optedIn. The flag rides the SAME primitive
-// as the Ask + widget + log-picker + event-types + Noticed + vet-visits keys. The
-// contract pinned here is the same two properties every later Design v2 lane
-// depends on: design_v2 is EXTRACTED off an app_config SELECT and resolves
-// FAIL-CLOSED (off) for both ship-dark cases — the seed unreached (undefined ⇒
-// fallback) and a signed-out caller against the dark seed. These back the
-// byte-identical-off promise (guards/designV2FlagOff.test.tsx) and seed-first
-// (D2-0 before any consumer). The GA case pins the PM ruling — the redesign's GA is
-// EVERY account, a rollout gate only and never a Premium gate.
-describe('design_v2 — Design v2 eligibility (D2-0)', () => {
-  it('is part of the unset baseline (undefined until the row is fetched)', () => {
-    expect(ALLOWLIST_FLAGS_UNSET.design_v2).toBeUndefined();
-  });
-
-  it('extracts raw off an app_config SELECT, alongside the other allowlist keys', () => {
-    const rows = [
-      { key: 'widget_enabled', value: { enabled: false, allowlist: ['w-uid'] } },
-      { key: 'design_v2', value: { enabled: false, allowlist: ['pm-uid'] } },
-      // The RETIRED Signal-uplift key shares a suffix with this one and may still be
-      // in the SELECT for old builds (its row survives until GA-4). It is not in the
-      // client union, so it must neither be picked nor be mistaken for design_v2.
+// ── design_v2 — RETIRED (Design v2 GA, CUL-1071) ─────────────────────────────────
+// The new Home, the Signal's own screen, the month on Patterns and the waits are the app for
+// every account, so the client no longer reads the key. Its `app_config` row may still exist
+// until the data-only delete lands; a SELECT that returns it must not resurrect the key in
+// the union. The RETIRED Signal-uplift key shares a suffix and is ignored the same way.
+describe('design_v2 — retired client-side (CUL-1071)', () => {
+  it('is not an allowlist key, and an app_config row for it is ignored', () => {
+    expect(ALLOWLIST_FLAG_KEYS as readonly string[]).not.toContain('design_v2');
+    expect(Object.keys(ALLOWLIST_FLAGS_UNSET)).not.toContain('design_v2');
+    const flags = extractAllowlistFlags([
+      { key: 'design_v2', value: { enabled: true } },
       { key: 'signal_design_v2', value: { enabled: true, allowlist: [] } },
-    ];
-    const flags = extractAllowlistFlags(rows);
-    expect(flags.design_v2).toEqual({ enabled: false, allowlist: ['pm-uid'] });
+      { key: 'widget_enabled', value: { enabled: false, allowlist: ['w-uid'] } },
+    ]);
+    expect(Object.keys(flags)).not.toContain('design_v2');
+    expect(Object.keys(flags)).not.toContain('signal_design_v2');
     expect(flags.widget_enabled).toEqual({ enabled: false, allowlist: ['w-uid'] });
-    expect('signal_design_v2' in flags).toBe(false);
-  });
-
-  it('resolves fail-closed (off) when unset — seed unreached / row absent', () => {
-    const unset = extractAllowlistFlags([{ key: 'ask_enabled', value: false }]).design_v2;
-    expect(unset).toBeUndefined();
-    expect(resolveAllowlistFlag(unset, 'pm-uid', false)).toBe(false);
-  });
-
-  it('the shipped-dark seed {enabled:false, allowlist:[]} is off for everyone', () => {
-    const darkSeed = { enabled: false, allowlist: [] };
-    expect(resolveAllowlistFlag(darkSeed, 'pm-uid', false)).toBe(false);
-    expect(resolveAllowlistFlag(darkSeed, null, true)).toBe(false);
-  });
-
-  it('an allow-listed uid resolves on; other + signed-out callers stay off', () => {
-    const gated = { enabled: false, allowlist: ['pm-uid'] };
-    expect(resolveAllowlistFlag(gated, 'pm-uid', false)).toBe(true);
-    expect(resolveAllowlistFlag(gated, 'someone-else', false)).toBe(false);
-    expect(resolveAllowlistFlag(gated, null, false)).toBe(false);
-  });
-
-  it('GA (enabled:true) is on for every account — a rollout gate only', () => {
-    expect(resolveAllowlistFlag({ enabled: true, allowlist: [] }, 'anyone', false)).toBe(true);
-    expect(resolveAllowlistFlag({ enabled: true }, null, false)).toBe(true);
-  });
-
-  it('survives the cache round-trip; a cache lacking it decodes to undefined', () => {
-    const stored = { design_v2: { enabled: false, allowlist: ['pm-uid'] } };
-    expect(coerceAllowlistFlags(stored).design_v2).toEqual({
-      enabled: false,
-      allowlist: ['pm-uid'],
-    });
-    expect(coerceAllowlistFlags({ ask_enabled: true }).design_v2).toBeUndefined();
   });
 });
 

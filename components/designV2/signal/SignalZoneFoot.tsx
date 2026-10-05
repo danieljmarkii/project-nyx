@@ -12,8 +12,8 @@ import { ThemedText } from '../../ui/ThemedText';
 // It renders only when the zone is showing findings: an empty state reads no logs as a
 // finding, so there is nothing for the line to qualify.
 //
-// "All patterns ›" is the zone's door to Patterns, in the place the shipped footer's
-// "See all of {pet}'s patterns →" held (the flag-off footer is untouched).
+// "All patterns ›" is the zone's door to Patterns, in the place the pre-redesign footer's
+// "See all of {pet}'s patterns →" held (retired with it at Design v2's GA, CUL-1071).
 
 export const PATTERNS_DOOR_LABEL = 'All patterns';
 

@@ -69,7 +69,7 @@ const RULES = [
     // added after the first caller is a guard added after the bug.
     //
     // CUL-871 (N-4a) is that first caller, and the tripwire fired exactly as designed:
-    // wiring `components/home/LookCard.tsx` reddened the zero-call-sites assertion,
+    // wiring `components/home/LookCard.tsx` (retired by CUL-1071) reddened the zero-call-sites assertion,
     // which is what forced `showLook` to be built in the same PR rather than noticed in
     // review. The field is deleted with the caller that invalidated it; the ordinary
     // rule below has taken over, and it now has a real call site to check.
@@ -115,14 +115,11 @@ const LIVE_RULES = RULES.filter((r) => !('firstCallerLands' in r));
  * ruled decision, not an oversight, and each states which register it uses instead —
  * so the exemption reads as the argument it is.
  */
-const EXEMPT: Record<string, string> = {
-  // R2, not R1: the MedStrip's one-tap confirm is a commit INSIDE a surface that is
-  // already describing the course, so it answers in place rather than covering Home
-  // with a card about the row the owner is looking at (§5 R2). Its sentence + mark +
-  // haptic are CUL-614's.
-  'components/home/MedStrip.tsx':
-    'R2 in-place beat by design (§5); the sentence/mark/haptic upgrade is CUL-614',
-};
+//
+// EMPTY since CUL-1071: its one entry, `components/home/MedStrip.tsx` (an R2 in-place
+// beat by design, §5), was deleted with the flag-off Home. An entry for a file that no
+// longer exists is an exemption for nothing (C-32).
+const EXEMPT: Record<string, string> = {};
 
 /** The helper's own module never counts as a call site. */
 const DEFINITIONS = ['lib/meals.ts', 'lib/medicationDose.ts', 'lib/looks.ts', 'lib/vetVisits.ts'];

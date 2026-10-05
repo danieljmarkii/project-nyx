@@ -23,8 +23,8 @@ import {
 jest.mock('./useAppActive', () => ({ useAppActive: () => true }));
 
 // The Signal route, reduced to what its transition depends on: the options it hands the
-// stack. Flag-off (`useDesignV2` false) so the route draws its small inline screen and
-// reads nothing, since the transition is decided by the route itself either way.
+// stack. No session is set, so the route draws its small inline screen and reads nothing
+// (the sign-out fence), since the transition is decided by the route itself either way.
 const mockScreenOptions: { animation?: string }[] = [];
 jest.mock('expo-router', () => ({
   router: { back: jest.fn() },
@@ -36,9 +36,8 @@ jest.mock('expo-router', () => ({
     },
   },
 }));
-jest.mock('./useDesignV2', () => ({ useDesignV2: () => false }));
-// The redesign's namespace is never drawn flag-off; stubbed so its read graph (which
-// reaches lib/supabase's import-time env guard) is not loaded at all.
+// The screen is never drawn without a session; stubbed so its read graph (which reaches
+// lib/supabase's import-time env guard) is not loaded at all.
 jest.mock('../components/designV2/signal/SignalScreen', () => ({ SignalScreen: () => null }));
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
