@@ -22,17 +22,22 @@
 // the daily run would have evaluated it, and the persistence rule (fire at t and again within
 // t+7..t+14, no evening between below the coverage floor) is applied over those evenings. A run
 // that missed an evening therefore changes nothing. Two things the record cannot always rebuild
-// are carried from the previous cache row, and only in the LOUDER direction: the latch (a prior
-// `raised_again` for the same answer stays) and the frozen reference (§4.2: stored once,
+// are carried from the previous cache row, and only in the LOUDER direction: the latch (the
+// instant a run first said the concern was back, `raisedAgainAt`, held until a live answer is
+// written after it about a day on or after it, CUL-1545) and the frozen reference (§4.2: stored once,
 // disclosed, never re-derived, so a relabelled cat is compared against what was frozen). The
 // prior row is owner-writable (ai_signals_owner), so nothing read from it may quiet a concern:
 // a carried reference is used only when the record can no longer rebuild one.
 //
-// KNOWN GAPS, stated (C-38). A pet that never improves never re-raises in v1 (§4.1, CUL-1290).
+// KNOWN GAPS, stated (C-38). A pet that never improves never re-raises in v1 (§4.1). CUL-1290's
+// question (`recheckQuestionFor`, §4.8) is built for it and ships OFF: `recheckQuestionDays` is null.
 // `recheck_booked` needs to know an appointment is ABOUT the sign, which the shell may not read
 // under AC 10 (CUL-1531): the pure rule is here, and the shell passes no appointments. The
 // weight fact line (§4.1) is EN-8's gate and is not built here. Source 3 of C1a (the intake
-// predicate) waits on GAP-28's shared module.
+// predicate) waits on GAP-28's shared module. The latch's instant lives only in the cache row, so
+// a row written without the step (an incomplete read) drops it; the D4 rule then lapses every
+// older answer and the concern is `raised`, asking, but the next answer is judged as a first one
+// (CUL-1600).
 
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 import { localDayIndex, localDayIndexOf } from '../../../lib/utils.ts'
@@ -73,6 +78,11 @@ export interface CareStateConfig {
   courseNoTargetCapDays: number
   /** §3.2 a vet-started course lapses this many days after its last logged dose. */
   courseAfterLastDoseDays: number
+  /** CUL-1290 (PR-34) the vet-keyed fallback: days after the answer before a watched concern with
+   *  no recheck recorded asks "Did your vet want to see {name} again?". NULL IS OFF, and off is
+   *  the shipped engine byte for byte (the field is never written). It stays off until the PM
+   *  rules on the two-sided test and DF-5 (§4.8). */
+  recheckQuestionDays: number | null
 }
 
 export const CARE_STATE_CONFIG: CareStateConfig = {
@@ -92,6 +102,7 @@ export const CARE_STATE_CONFIG: CareStateConfig = {
   coSignNewDays: 28,
   courseNoTargetCapDays: 56,
   courseAfterLastDoseDays: 14,
+  recheckQuestionDays: null,
 }
 
 // ── The inputs ────────────────────────────────────────────────────────────────
@@ -227,10 +238,19 @@ export interface CareStateFact {
   reason: ReRaiseReason | null
   /** Set on `recheck_booked`: the appointment's day. */
   recheckOn: string | null
+  /** CUL-1545: when a run first said this concern was back (an ISO instant). Kept on every later
+   *  state while the concern stays in the set, so the latch (§4.5) holds until a live answer
+   *  written after it, about a day on or after it, exists, and comes back if that answer is
+   *  retracted or lapses. Replaced only by a fresh re-raise. Absent on a concern never re-raised. */
+  raisedAgainAt?: string
   /** Set on `raised_again`: the "Back because …" sentence on its own (DF-8), which also opens
    *  `text`. Its own field so Home draws it without splitting a sentence that carries the
    *  pet's name ("Mr. Biggles"), PR-35's code review. Absent on every other state. */
   backLine?: string | null
+  /** CUL-1290 (PR-34): on `with_vet` only, the one question when the answer is old and no recheck
+   *  is recorded. The key is ABSENT while the knob is off
+   *  (`recheckQuestionDays` null), so the cache row is byte-identical to the shipped engine. */
+  recheckQuestion?: string | null
   /** The cached sentence for this state, template-only (AC 8). Null on `raised`: the lane's own
    *  sentence stands, phrased as it always was. */
   text: string | null
@@ -451,14 +471,31 @@ export function lapseReason(ack: AckFact, args: CareStateArgs, retracted: Readon
 
 /** The newest live answer for the sign, or null (the only one lapsed ⇒ raised). */
 export function liveAck(sign: SymptomType, args: CareStateArgs, cfg: CareStateConfig, lapsed: ReadonlySet<string> = new Set()): AckFact | null {
+  return liveAcks(sign, args, cfg, lapsed)[0] ?? null
+}
+
+/** Every live answer about `sign`, newest written first (unretracted, unlapsed). */
+function liveAcks(sign: SymptomType, args: CareStateArgs, cfg: CareStateConfig, lapsed: ReadonlySet<string>): AckFact[] {
   const acks = args.record.acknowledgements
   const retracted = new Set([...acks.filter((a) => a.retracts).map((a) => a.retracts as string), ...lapsed])
   const start = courseStartMs(args, sign)
-  const live = acks
+  return acks
     .filter((a) => a.sign === sign && !a.retracts)
     .filter((a) => lapseReason(a, args, retracted, start, cfg) === null)
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || (a.id < b.id ? 1 : -1))
-  return live[0] ?? null
+}
+
+/**
+ * §4.5 (CUL-1545): whether an answer is one "dated after the re-raise". Both halves: WRITTEN after
+ * the run that said the concern was back (so the answer the re-raise was tested against never
+ * counts), and ABOUT a day on or after that run's day (`anchor_on`: the visit, the trial or course
+ * start, the tap day). A visit, trial or course from before the concern came back is an answer
+ * about the old concern, however late it is written.
+ */
+export function answersReRaise(ack: AckFact, raisedAgainMs: number, tz: string | undefined): boolean {
+  const created = Date.parse(ack.createdAt)
+  const anchor = localDayIndexOf(ack.anchorOn, tz)
+  return Number.isFinite(created) && created > raisedAgainMs && anchor !== null && anchor >= localDayIndex(raisedAgainMs, tz)
 }
 
 // ── The reference (§4.2) ──────────────────────────────────────────────────────
@@ -677,6 +714,8 @@ interface PriorCare {
   ackId: string | null
   reason: ReRaiseReason | null
   lapsed: string[]
+  /** The carried re-raise instant (CUL-1545), or null when the row carries none. */
+  raisedAgainMs: number | null
 }
 
 /** The prior row's care state per sign, tolerant of any shape (a malformed entry reads as none). */
@@ -692,10 +731,15 @@ export function readPriorCare(raw: unknown): Map<string, PriorCare> {
     const state = c.state
     if (state !== 'raised' && state !== 'with_vet' && state !== 'recheck_booked' && state !== 'raised_again') continue
     const lapsed = Array.isArray(c.lapsed) ? (c.lapsed as unknown[]).filter((x): x is string => typeof x === 'string') : []
+    const at = typeof c.raisedAgainAt === 'string' ? Date.parse(c.raisedAgainAt) : NaN
+    const marker = Number.isFinite(at) ? at : null
     const prev = out.get(f.symptomType)
+    // The later marker is the louder one (fewer answers postdate it).
+    const pooledMarker = prev && prev.raisedAgainMs !== null && (marker === null || prev.raisedAgainMs > marker) ? prev.raisedAgainMs : marker
     // Loudest wins when two lanes of one sign disagree; the lapsed lists are pooled (louder too).
     if (prev && loud[prev.state] >= loud[state]) {
       prev.lapsed = [...new Set([...prev.lapsed, ...lapsed])]
+      prev.raisedAgainMs = pooledMarker
       continue
     }
     out.set(f.symptomType, {
@@ -703,6 +747,7 @@ export function readPriorCare(raw: unknown): Map<string, PriorCare> {
       ackId: typeof c.ackId === 'string' ? c.ackId : null,
       reason: c.reason === 'rate' || c.reason === 'dense' || c.reason === 'co_sign' || c.reason === 'pair' ? c.reason : null,
       lapsed: [...new Set([...(prev?.lapsed ?? []), ...lapsed])],
+      raisedAgainMs: pooledMarker,
     })
   }
   return out
@@ -846,9 +891,16 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
       }
     }
     const lapsedList = [...lapsed].sort()
-    const ack = liveAck(sign, args, cfg, lapsed)
+    const live = liveAcks(sign, args, cfg, lapsed)
+    const ack = live[0] ?? null
+    // §4.5 the latch (CUL-1545): the instant a run first said this concern was back, carried on
+    // every state since while the concern stayed in the set. A row from before the marker existed
+    // that said raised_again stands on its own generation time, which is no earlier than the true
+    // re-raise (the louder reading); with no generation time, on now.
+    const carried = p === null ? null : p.raisedAgainMs ?? (p.state === 'raised_again' ? priorGen ?? args.nowMs : null)
+    const keep = carried === null ? {} : { raisedAgainAt: new Date(carried).toISOString() }
     if (!ack) {
-      const raised: CareStateFact = { state: 'raised', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null, text: null, lapsed: lapsedList }
+      const raised: CareStateFact = { state: 'raised', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null, text: null, lapsed: lapsedList, ...keep }
       bySign.set(sign, raised)
       return raised
     }
@@ -861,10 +913,12 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     const pairChronicAtAnswer = pairSign && pairOnsetIso && args.wasChronicAt ? args.wasChronicAt(pairSign, createdMs) : null
     const pairCourseStartMs = pairSign && pairOnsetIso ? courseStartMs(args, pairSign) : null
     const rr = findReRaise({ sign, ack, reference, ix, args, cfg, pairOnsetIso, pairChronicAtAnswer, pairCourseStartMs })
-    // §4.5 the latch: the previous row said raised_again, and this answer is no newer than that
-    // row. Keyed on time, never on the answer's id (adversarial D5): a newer answer lapsing must
-    // not hand the concern back to an older one, quietly.
-    const latched = p?.state === 'raised_again' && priorGen !== null && createdMs <= priorGen
+    // §4.5 the latch: it holds until SOME live answer is dated after the re-raise (written after
+    // it, about a day on or after it). Not only the newest: an answer about an older visit added
+    // after a qualifying one must not bring the concern back on its own. Keyed on time, never on
+    // the answer's id (adversarial D5), and on the live set, so a retracted or lapsed answer
+    // hands the concern back to the latch, never to an older answer, quietly (CUL-1545 N2).
+    const latched = carried !== null && !live.some((a) => answersReRaise(a, carried, tz))
     const drug = ack.source === 'vet_started_course' ? courseLabelFor(ack) : null
     const source = sourceSentence(ack, args.petName, ix.today, tz, drug)
     if (rr || latched) {
@@ -878,6 +932,9 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
         text: [back, LANE_TOKEN, pair, source].filter((x): x is string => !!x).join(' '),
         backLine: back,
         lapsed: lapsedList,
+        // A held latch keeps its first instant; a fresh re-raise (nothing carried, or the carried
+        // one answered) starts a new one at this run.
+        raisedAgainAt: new Date(latched ? (carried as number) : args.nowMs).toISOString(),
       }
       bySign.set(sign, fact)
       return fact
@@ -896,7 +953,10 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
       recheckOn: recheck ? recheck.on : null,
       text: [head, source, tail].filter((x) => x.length > 0).join(' '),
       lapsed: lapsedList,
+      ...keep,
     }
+    // CUL-1290: written only while the knob is on, so the shipped row never gains the key.
+    if (knobOn(cfg)) fact.recheckQuestion = recheck ? null : recheckQuestionFor(ack, ix, args, cfg)
     bySign.set(sign, fact)
     return fact
   }
@@ -951,6 +1011,66 @@ export function recheckFor(sign: SymptomType, ack: AckFact, args: CareStateArgs)
     .sort((a, b) => a.day - b.day)
   const first = ok[0]
   return first ? { day: first.day, on: first.a.scheduledAt } : null
+}
+
+/** The knob reads as on only for a real number of days: an `undefined` from a partial config
+ *  spread is off, never "ask from day zero" (adversarial pass, P5). */
+function knobOn(cfg: CareStateConfig): cfg is CareStateConfig & { recheckQuestionDays: number } {
+  const d = cfg.recheckQuestionDays
+  return typeof d === 'number' && Number.isFinite(d) && d > 0
+}
+
+/** How far ahead a booked visit makes the question moot: the appointment strip already holds the
+ *  ask for it. A visit further out than this does not answer "did your vet want to see her?". */
+export const RECHECK_QUESTION_BOOKED_HORIZON_DAYS = 28
+
+/**
+ * CUL-1290 (PR-34), the vet-keyed fallback (§4.8): one question on a WATCHED row, "Did your vet
+ * want to see {name} again?", when all of these hold. Null otherwise. It is a question, never the
+ * original ask, and it moves nothing: the state stays `with_vet`, the rank and the ask are
+ * untouched, and the row keeps printing its count since the answer with its logging (§3.3).
+ *
+ *   · the knob is on (`recheckQuestionDays`), and the answer is at least that many days old,
+ *     counted from the later of its anchor and the day it was written, so a "My vet knows"
+ *     dated back three months does not ask the evening it is given (DF-5's nag);
+ *   · the answer is a visit, a tick or "My vet knows". A vet-started trial or course ends on its
+ *     own rules (§3.2), so it never needs a calendar backstop;
+ *   · no visit is booked in the next RECHECK_QUESTION_BOOKED_HORIZON_DAYS (one about the sign is
+ *     `recheck_booked` already). The shell passes no appointments today (CUL-1531, AC 10), so in
+ *     production this always holds; PR-34's harness measures it that way.
+ *
+ * NO IMPROVEMENT GATE. PR-34 built one (a tested fall against the frozen reference withheld the
+ * question) and the adversarial pass broke it three ways: the pre-anchor reference is taken at the
+ * flare that sent the owner to the vet, so a steady cat regressing to its own mean read as improved
+ * at every grid point; an owner logging one vomit in four while logging every meal read as improved;
+ * and a quieting test re-run nightly with no persistence withheld the question from 11 to 72% of
+ * steady cats on some evening. A gate that withholds a care prompt is a reassurance path, and E-6
+ * puts the burden of proof on the quieter change; it failed that proof, so it is gone, and the
+ * question asks every concern still watched at the line (§4.8 carries the measurement).
+ */
+export function recheckQuestionFor(
+  ack: AckFact,
+  ix: DayIndex,
+  args: CareStateArgs,
+  cfg: CareStateConfig,
+): string | null {
+  if (!knobOn(cfg)) return null
+  if (ack.source === 'vet_started_trial' || ack.source === 'vet_started_course') return null
+  const tz = args.timezone
+  const anchor = localDayIndexOf(ack.anchorOn, tz)
+  const created = Date.parse(ack.createdAt)
+  if (anchor === null || !Number.isFinite(created)) return null
+  const from = Math.max(anchor, localDayIndex(created, tz))
+  if (ix.today - from < cfg.recheckQuestionDays) return null
+  const booked = args.record.appointments.some((a) => {
+    if (a.cancelledAt || a.deletedAt) return false
+    const ms = Date.parse(a.scheduledAt)
+    if (!Number.isFinite(ms)) return false
+    const day = localDayIndex(ms, tz)
+    return day >= ix.today && day <= ix.today + RECHECK_QUESTION_BOOKED_HORIZON_DAYS
+  })
+  if (booked) return null
+  return `Did your vet want to see ${args.petName} again?`
 }
 
 /**

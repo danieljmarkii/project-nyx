@@ -1,6 +1,6 @@
 # Nyx Care State and Outcome Loop — Requirements (EN-9 + EN-14)
 
-**Version:** 1.2 — **BUILD-READY** (PMD-4, the tolerance and AC 10 ruled 2026-09-28; D6's vocabulary 2026-10-01) | **Date:** 2026-10-03 | **Issues:** CUL-1139 (EN-9, the care state), CUL-1144 (EN-14, the outcome loop); project *Engines v3: the accountable engine*, Wave 3, PR-20 | **Status:** every ruling the build rests on is in §0.1 and §0.3. The one conflict left, TD-5, is decided at PR-36. Design authority: `docs/culprit-engines-v3-mockups.html` **round 3** (published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY; the repo file wins on divergence). Everything an owner sees ships dark behind the Engines v3 flag (EN-F, CUL-1267).
+**Version:** 1.3 — **BUILD-READY** (PMD-4, the tolerance and AC 10 ruled 2026-09-28; D6's vocabulary 2026-10-01) | **Date:** 2026-10-05 | **Issues:** CUL-1139 (EN-9, the care state), CUL-1144 (EN-14, the outcome loop); project *Engines v3: the accountable engine*, Wave 3, PR-20 | **Status:** every ruling the build rests on is in §0.1 and §0.3. The one conflict left, TD-5, is decided at PR-36. Design authority: `docs/culprit-engines-v3-mockups.html` **round 3** (published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY; the repo file wins on divergence). Everything an owner sees ships dark behind the Engines v3 flag (EN-F, CUL-1267).
 
 **Read with:** `docs/engines-v3-critique-2026-09.md` (R-2, BRK-4, GAP-15/16/17/19/23/27/29/32/33, MFU-3, PMD-4/5/6) · `docs/nyx-vet-visits-requirements.md` (AC 10, §5.6, "How did it go?") · `docs/nyx-signal-fold-requirements.md` (DF-5, DF-8, FS-3, FS-10, §3.3, §5.3, §7) · `docs/nyx-notification-foundation-requirements.md` (D2, D3, G1–G6) · `docs/nyx-diet-trial-requirements.md` · `supabase/migrations/075_engines_v3_stamps.sql` (the shown log).
 
@@ -151,7 +151,7 @@ Always **"you said"**, never "your vet saw" (the app knows only what the owner s
 
 Only a **tested change in the record**: the rate test (§4.2), the dense-day arm (§4.3), or the **other sign of the cough/vomit pair turning chronic** while this one is `with_vet` (GAP-29's seventh trigger; either count may hold the other's events). Also the **end of an acknowledgement** (§3.2 lapse rules). Never a calendar, never one bad day, never time since the answer (DF-5 stands; the calendar question is CUL-1290).
 
-**Known gap, stated:** a pet that simply fails to improve (steady at 2/week for months after "come back if it continues") **never re-raises in v1**. That is PMD-5's case and it belongs to CUL-1290, behind EN-1's measurement. The row keeps printing its count and its logging, so the non-improvement is visible, but no ask returns.
+**Known gap, stated:** a pet that simply fails to improve (steady at 2/week for months after "come back if it continues") **never re-raises in v1**. That is PMD-5's case and it belongs to CUL-1290, behind EN-1's measurement. The row keeps printing its count and its logging, so the non-improvement is visible, but no ask returns. ⚠ **CUL-1290 (PR-34, 2026-10-05):** the eight-week question is built and measured, and ships off (§4.8).
 
 **Weight:** a watched GI concern never waits for EN-8. Until EN-8 is live, the `with_vet` Home row carries the record fact "Last weighed {Mon d}." whenever the newest weigh-in predates the acknowledgement's anchor (§5.3). It is a fact line, not a door. PR-23 does not go live for a species until either EN-8 is live for it or this line ships with it.
 
@@ -209,6 +209,26 @@ A `vet_appointments` row for the pet moves `with_vet` to `recheck_booked` only w
   - the owner answered the finding screen's one question "Is the {date} visit about his vomiting?" with Yes.
 
 A dental booked four months out never quiets vomiting. The row names the date and asks nothing, and the appointment strip holds the one ask, as shipped (five-day window; after the day, "Did {day}'s visit happen?" once). After the appointment's day passes, the concern returns to `with_vet` until "How did it go?" is answered. Its *What Home was raising* re-asks for every raised or with-vet concern. Any §4.2–§4.3 trigger re-raises straight through a booked recheck.
+
+### 4.8 The vet-keyed eight-week question (CUL-1290, PR-34; built off, ruling pending)
+
+**What it is.** On a `with_vet` row whose answer was a visit, a tick or "My vet knows", once that answer is eight weeks old (counted from the later of its date and the day it was written), with no visit booked in the next 28 days: one question, **"Did your vet want to see {name} again?"**. It is a door; the answer opens the booking form (the Home half is not built). It is never the original ask, and it changes no state, rank, ask or sentence; the row keeps its count since the answer with its logging. A vet-started trial or course never asks (each ends on its own, §3.2). Code: `recheckQuestionFor` in `careState.ts`, behind `CARE_STATE_CONFIG.recheckQuestionDays`, which is **null (off)**; off writes no key, so the cached row is the shipped one byte for byte.
+
+**No improvement gate.** PR-34 first withheld the question when a one-sided test showed the rate had fallen against the frozen reference. The adversarial pass broke it three ways: the reference is taken at the flare that sent the owner to the vet, so a steady cat regressing to its own mean read as improved at every grid point (16 against a long-run 8 per 28 days: withheld 45–59% of evenings); an owner logging one vomit in four while logging every meal read as improved (withheld 27%); and a quieting test re-run nightly with no persistence took the question away from 11–72% of steady cats on some evening. A test that withholds a care prompt is a reassurance path, and E-6 puts the proof on the quieter change. It failed, so it was removed. The question cannot tell a pet the vet's plan is helping from one it is not.
+
+**The two-sided test** (offline, `engines_v3_en9` on, the question at 56 days, 300 synthetic cats per scenario, seeds 10000–10299):
+
+| Scenario (key) | Cats still watched at eight weeks | Asked, of those | Asked, of all answered |
+|---|---|---|---|
+| `own-answers-vet-knows`: steady after "My vet knows" (**wanted**) | 9.7% | 100% | 9.7% |
+| `own-vet-knows-improves`: halved two weeks after the answer (**asks for nothing**) | 6.3% | 100% | 6.3% |
+| `own-lapse-flat`: steady, symptom logging stops (**wanted**, the record cannot show it) | 0% | n/a | 0% |
+
+Two readings. **(1)** Among the cats it can reach, it asks the improver exactly as often as the unimproved cat: it has no discrimination, by construction. **(2)** It reaches almost nobody in the harness. Answered cats were raised again within eight weeks in 91–100% of runs per shard, because the corpus owner answers once and EN-9 lapses an answer the night its card drops (§3.2) or re-raises on the burden card (CUL-1537). A real owner answers again, so production reach is higher and unmeasured. The harness cannot measure what the question would cost in production until CUL-1537 lands and the corpus owner can answer twice.
+
+**Brief against DF-5** (no time-based re-open, 2026-09-03, Dr. Chen). DF-5 protected owners from a timer that re-opens with nothing true to say, and it rested on "the detector is the timer: an ongoing course re-opens on its own next episode". `with_vet` breaks that premise: by design, the next episode no longer brings the ask back. The question does not re-open the ask. It states a record fact (the count since the answer, with its coverage) and asks one thing the record cannot answer: did the vet plan to look again. So DF-5's protection holds, provided the question stays a single door that never repeats the original ask. The fold DF-5 governed was retired at GA (CUL-1071).
+
+**Ruling needed (CUL-1290 comment, decision brief):** keep it off as secondary (recommended), or turn it on and accept that it asks partly improved pets too.
 
 ---
 
@@ -462,6 +482,7 @@ This spec's Read-These row in CLAUDE.md lands with PR-21 (CLAUDE.md is at its by
 
 | Version | Date | Change |
 |---|---|---|
+| 1.3 | 2026-10-05 | §4.8: CUL-1290's eight-week question, built off (PR-34). The improvement gate was removed after the adversarial pass; the two-sided measurement and the DF-5 brief are recorded; the ruling is pending. §4.1's known gap points at it. |
 | 1.2 | 2026-10-03 | D6 (PM, 2026-10-01 on CUL-1440): the tag reads **Your vet knows**, with one line on what it does (§0.2 call 1, §3.3, §7); the server's cached sentence opens "…, your vet knows." Written with PR-35 (CUL-1418). |
 | 1.1 | 2026-09-28 | PM rulings: PMD-4 A, tolerance A, AC 10 approved (§0.3); the AC 10 text written into the vet visits spec. |
 | 1.0 | 2026-09-28 | First draft (PR-20, CUL-1139 + CUL-1144), amended the same day after the adversarial pass (§10.1). Mock round 3. |

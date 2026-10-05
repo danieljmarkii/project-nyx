@@ -23,7 +23,7 @@
 //   · stool reads (analyze-stool), and any symptom beyond vomit, diarrhoea and cough.
 
 import { between, chance, gamma, intBetween, mintId, normal, pickWeighted, poisson, stream, type Rng } from './rng.ts'
-import type { Effect, FoodSpec, PetSpec, ScenarioSpec, SignSpec } from './spec.ts'
+import type { Effect, EffectStart, FoodSpec, PetSpec, ScenarioSpec, SignSpec } from './spec.ts'
 import { addDays, DAY_MS, HOUR_MS, iso, localHour, MINUTE_MS, wallToUtcMs } from './time.ts'
 import { SIGNS } from './types.ts'
 import type {
@@ -312,10 +312,13 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
   }
 
   // ── The truth for one pet-day ──
+  function startReached(state: PetState, sign: Sign, from: EffectStart, day: number): boolean {
+    if ('day' in from) return day >= from.day
+    const ack = state.ackDay[sign]
+    return ack !== undefined && day >= ack + from.afterAck
+  }
   function effectActive(state: PetState, e: Extract<Effect, { kind: 'rate_step' }>, day: number): boolean {
-    if ('day' in e.from) return day >= e.from.day
-    const ack = state.ackDay[e.sign]
-    return ack !== undefined && day >= ack + e.from.afterAck
+    return startReached(state, e.sign, e.from, day)
   }
 
   /** The null process's rate for the day: base, weekly dispersion, wander. No effect is in it. */
@@ -438,7 +441,12 @@ export function simulate(scenario: ScenarioSpec, seed: number, observer: Observe
     const kept = responding
       ? out.filter((ep) => ep.sign !== 'vomit' || chance(S(pk, 'trial-keep', day, ep.key), (t!.response as { residual: number }).residual))
       : out
-    return kept.sort((a, b) => a.atMs - b.atMs || (a.key < b.key ? -1 : 1))
+    // The vet's plan working (CUL-1290): the same thinning, from the effect's start.
+    const improvements = (spec.effects ?? []).filter((e): e is Extract<Effect, { kind: 'improvement' }> => e.kind === 'improvement' && startReached(state, e.sign, e.from, day))
+    const survivors = improvements.length === 0
+      ? kept
+      : kept.filter((ep) => improvements.every((e) => ep.sign !== e.sign || chance(S(pk, 'improve-keep', day, ep.key), e.residual)))
+    return survivors.sort((a, b) => a.atMs - b.atMs || (a.key < b.key ? -1 : 1))
   }
 
   // ── Logging: what the owner writes ──

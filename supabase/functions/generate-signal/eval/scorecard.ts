@@ -242,6 +242,29 @@ export interface ScenarioScore {
   redFlags: { injected: number; atShippedTier: number; below: number } | null
   /** EN-9's baseline, where the owner acknowledged a concern about an unchanged sign. */
   care: CareScore | null
+  /** CUL-1290's two-sided test, on scenarios whose key names the question's truth. */
+  recheckQuestion: RecheckQuestionScore | null
+}
+
+/**
+ * CUL-1290 (PR-34): the vet-keyed fallback question, scored against the key's truth. On a
+ * `for_nothing` pet (the vet's plan visibly worked) `asked` is how often it asks the owner for
+ * nothing; on a `wanted` pet (no improvement) it is how often it catches the pet. Conditioned on
+ * this arm's own acknowledgements, like `care`.
+ */
+export interface RecheckQuestionScore {
+  truth: 'wanted' | 'for_nothing'
+  acknowledged: number
+  neverAcknowledged: number
+  /** Of the acknowledged pet-runs, the share shown the question on any evening after the answer. */
+  asked: number | null
+  /** Median days from the answer to the first evening with the question. */
+  medianDaysFromAck: number | null
+  /** Of the acknowledged pet-runs, the share whose concern was still watched on the evening the
+   *  answer turned eight weeks old: the population the question can reach at all. */
+  watchedAt8Weeks: number | null
+  /** Of those still watched at eight weeks, the share ever asked: what the rule itself decides. */
+  askedWhenWatched: number | null
 }
 
 export interface CareScore {
@@ -338,6 +361,8 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
   const reRaiseSigns = sc.key.falseCards.filter((f) => f.lane === 're_raise')
   const falseLanes = [...new Set(sc.key.falseCards.map((f) => f.lane).filter((l) => l !== 're_raise'))]
   const care = { neverAcknowledged: 0, acknowledged: 0, reRaised: 0, reRaisedEver: 0, askEvenings: 0, silent: 0, postAck: 0, longest: [] as number[] }
+  const rqKey = sc.key.recheckQuestion ?? null
+  const rq = { acknowledged: 0, neverAcknowledged: 0, asked: 0, days: [] as number[], watched: 0, askedWhenWatched: 0 }
 
   for (const run of runs) {
     const evenings = cardsOf(run.result)
@@ -497,6 +522,26 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
         }
         care.longest.push(longest)
       }
+
+      // CUL-1290: the question, over every evening after the answer.
+      if (rqKey && rqKey.petKey === petKey) {
+        const ack = truth.acks.find((a) => a.petKey === petKey && a.sign === rqKey.sign)
+        if (!ack) rq.neverAcknowledged++
+        else {
+          rq.acknowledged++
+          const onSign = (ev: (typeof evenings)[number]) => ev.cards.filter((c) => c.petKey === petKey && c.sign === rqKey.sign)
+          const first = evenings.find((ev) => ev.day > ack.day && onSign(ev).some((c) => c.recheckQuestion === true))
+          if (first) {
+            rq.asked++
+            rq.days.push(first.day - ack.day)
+          }
+          const at8 = evenings.find((ev) => ev.day === ack.day + RE_RAISE_WINDOW_DAYS)
+          if (at8 && onSign(at8).some((c) => c.careState === 'with_vet')) {
+            rq.watched++
+            if (first) rq.askedWhenWatched++
+          }
+        }
+      }
     }
   }
 
@@ -558,6 +603,17 @@ export function scoreScenario(runs: readonly ScenarioRun[]): ScenarioScore {
           askPerPetMonthAfterAck: care.postAck === 0 ? null : round(care.askEvenings / (care.postAck / DAYS_PER_MONTH)),
           silentEveningShare: care.postAck === 0 ? null : round(care.silent / care.postAck),
           medianLongestSilentRun: median(care.longest),
+        },
+    recheckQuestion: rqKey === null
+      ? null
+      : {
+          truth: rqKey.truth,
+          acknowledged: rq.acknowledged,
+          neverAcknowledged: rq.neverAcknowledged,
+          asked: rq.acknowledged === 0 ? null : round(rq.asked / rq.acknowledged),
+          medianDaysFromAck: median(rq.days),
+          watchedAt8Weeks: rq.acknowledged === 0 ? null : round(rq.watched / rq.acknowledged),
+          askedWhenWatched: rq.watched === 0 ? null : round(rq.askedWhenWatched / rq.watched),
         },
   }
 }
@@ -653,6 +709,16 @@ export function buildScorecard(scores: readonly ScenarioScore[], meta: Scorecard
       rows[`${p}/care/askPerPetMonthAfterAck`] = s.care.askPerPetMonthAfterAck
       rows[`${p}/care/silentEveningShare`] = s.care.silentEveningShare
       rows[`${p}/care/medianLongestSilentRun`] = s.care.medianLongestSilentRun
+    }
+    if (s.recheckQuestion) {
+      // The truth rides in the key (`wanted` or `forNothing`), so a row can never be read as the other side.
+      const q = `${p}/recheckQuestion/${s.recheckQuestion.truth === 'wanted' ? 'wanted' : 'forNothing'}`
+      rows[`${q}/acknowledged`] = s.recheckQuestion.acknowledged
+      rows[`${q}/neverAcknowledged`] = s.recheckQuestion.neverAcknowledged
+      rows[`${q}/asked`] = s.recheckQuestion.asked
+      rows[`${q}/medianDaysFromAck`] = s.recheckQuestion.medianDaysFromAck
+      rows[`${q}/watchedAt8Weeks`] = s.recheckQuestion.watchedAt8Weeks
+      rows[`${q}/askedWhenWatched`] = s.recheckQuestion.askedWhenWatched
     }
   }
   wholeEngineRows(scores, rows)

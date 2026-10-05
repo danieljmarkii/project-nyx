@@ -71,6 +71,10 @@ export type Effect =
   | { kind: 'rate_step'; sign: Sign; multiplier: number; from: EffectStart }
   /** On a day the pet ate `protein`, the sign's rate is multiplied by `rr`, timed after that meal. */
   | { kind: 'protein_reaction'; sign: Sign; protein: string; rr: number }
+  /** The vet's plan working (CUL-1290): from its start, each episode of the sign is kept with
+   *  probability `residual`, decided per episode from its own stream, so the survivors are a
+   *  subset of the same draw (the trial responder's mechanism, outside a trial). */
+  | { kind: 'improvement'; sign: Sign; residual: number; from: EffectStart }
   /** A self-limiting flare: the rate times `multiplier` for `days`, then back to baseline. */
   | { kind: 'flare'; sign: Sign; multiplier: number; fromDay: number; days: number }
   /** Garbage raids: on a raid day, 2 to 3 vomits and a diarrhoea inside 12 hours. */
@@ -223,6 +227,7 @@ export type CoverageTag =
   | 'recheck_date'
   | 'symptom_only_lapse'
   | 'doubling_behind_lapse'
+  | 'improves_after_ack'
 
 /** The engine's lanes, as the answer key names them. */
 export type Lane =
@@ -251,6 +256,13 @@ export type Lane =
 export interface TruthKey {
   falseCards: { petKey: string; lane: Lane; sign?: Sign }[]
   detect: { petKey: string; lane: Lane; sign?: Sign; protein?: string; from: EffectStart; scoring: 'paired' | 'both_acknowledged' }[]
+  /**
+   * CUL-1290's two-sided test, on an acknowledged pet with no recheck recorded: `wanted` when the
+   * sign failed to improve after the answer (PMD-5's cat: asking "Did your vet want to see her
+   * again?" is the point), `for_nothing` when the vet's plan visibly worked (the question asks the
+   * owner for nothing). Absent where neither is clean (a re-raise, a recheck, no answer).
+   */
+  recheckQuestion?: { petKey: string; sign: Sign; truth: 'wanted' | 'for_nothing' }
 }
 
 export interface ScenarioSpec {

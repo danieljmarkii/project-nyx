@@ -38,4 +38,5 @@ export const PINS: Record<string, string> = {
   'own-lapse-doubling': 'a4562536acd0baa0b7fdd0010a9cdbad7fc5bbc8672cb26019ef512e60974753',
   'own-visit-then-doubling': '05bcb2763989ba647f815d510257789a41ed0bd3c44983c4fb12ceb9a38c643f',
   'own-visit-doubling-fixed': '20c963fb72e0ffb14413cacfe1a98e69694c3848b98dcc3c29515fe657533547',
+  'own-vet-knows-improves': 'f473eb7295964998f70a4e916b32451bb52351e977edef389da9f3f2b9fc0524',
 }
