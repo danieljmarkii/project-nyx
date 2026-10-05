@@ -338,7 +338,8 @@ Deno.test('CUL-1290: the question is scored on its own side of the key, and only
 })
 
 Deno.test('CUL-1290: the shipped engine never asks the question; the offline knob does, on a watched concern', () => {
-  const sc = scenarioById('own-answers-vet-knows')
+  // A visit that carried the concern, then its recheck, then nothing booked: asked at CI seed 1.
+  const sc = scenarioById('own-visit-with-recheck')
   const seed = sc.ciSeeds[0]
   const en9 = { on: ['engines_v3_en9' as const], readOk: true }
   const shipped = simulate(sc, seed, makeSignalObserver({ askOf: standInAsk, engineFlags: en9 }))
@@ -347,7 +348,7 @@ Deno.test('CUL-1290: the shipped engine never asks the question; the offline kno
   const asked = on.shown.filter((ev) => ev.cards.some((c) => (c as ScoredCard).recheckQuestion === true))
   assert(asked.length > 0, 'non-vacuous: the knob asks on this seed')
   for (const ev of asked) {
-    for (const c of ev.cards as ScoredCard[]) if (c.recheckQuestion) assertEquals([c.careState, c.ask], ['with_vet', 'none'])
+    for (const c of ev.cards as ScoredCard[]) if (c.recheckQuestion) assertEquals(c.careState, 'with_vet')
   }
   // The question moves no ask: every evening's registers are the shipped arm's.
   assertEquals(on.shown.map((ev) => ev.cards.map((c) => c.ask)), shipped.shown.map((ev) => ev.cards.map((c) => c.ask)))

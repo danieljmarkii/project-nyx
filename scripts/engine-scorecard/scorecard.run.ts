@@ -15,8 +15,7 @@
 //   SCORECARD_OFF      a flag-off scorecard file to hold this (flag-on) run against, for the pass lines
 //   SCORECARD_SCENARIOS  comma-separated scenario ids (default: the whole corpus)
 //   SCORECARD_RECHECK_QUESTION_DAYS  CUL-1290's offline arm: turn on the vet-keyed fallback question at
-//                      N days (needs engines_v3_en9 in SCORECARD_FLAGS; the arm's label names it). Also
-//                      SCORECARD_IMPROVEMENT_DAYS / SCORECARD_IMPROVEMENT_ALPHA for its grid.
+//                      N days (needs engines_v3_en9 in SCORECARD_FLAGS; the arm's label names it).
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -55,11 +54,7 @@ test('the engine scorecard (reported, never gating)', () => {
   if (rqDays !== null && (!Number.isInteger(rqDays) || rqDays <= 0 || !on.includes('engines_v3_en9'))) {
     throw new Error('SCORECARD_RECHECK_QUESTION_DAYS takes a positive whole number of days, and engines_v3_en9 on');
   }
-  const careConfig = rqDays === null ? undefined : {
-    recheckQuestionDays: rqDays,
-    ...(env.SCORECARD_IMPROVEMENT_DAYS ? { improvementDays: Number(env.SCORECARD_IMPROVEMENT_DAYS) } : {}),
-    ...(env.SCORECARD_IMPROVEMENT_ALPHA ? { improvementAlpha: Number(env.SCORECARD_IMPROVEMENT_ALPHA) } : {}),
-  };
+  const careConfig = rqDays === null ? undefined : { recheckQuestionDays: rqDays };
   const armKnobs = careConfig ? `+recheckQuestion:${JSON.stringify(careConfig)}` : '';
   const arm = on.length === 0 ? 'flag_off' : `flag_on:${on.join('+')}${armKnobs}`;
   const { seeds, label } = seedsFrom(env.SCORECARD_SEEDS ?? 'ci');
