@@ -61,6 +61,13 @@ import {
   tierDisplayOf,
 } from '../../lib/incidentTierWords';
 import { needsEn7Recheck } from '../../lib/stoolForm';
+import {
+  callFromRecordOnly,
+  callTodayAction,
+  stoolFindings,
+  tellThem,
+} from '../../lib/incidentFloorWords';
+import { useIncidentFloorFacts } from '../../hooks/useIncidentFloorFacts';
 import { StoolFieldsEditor } from './StoolFieldsEditor';
 import { stoolCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -123,6 +130,8 @@ interface AnalysisRow {
    *  were selected carries neither, and then no re-check fires. */
   engine_flags?: string[] | null;
   contextual_flags?: string[] | null;
+  /** CUL-1510: a call carrying a photo finding never gives leave to wait. */
+  visual_flags?: string[] | null;
 }
 
 /** Two copies of the row hold the same READ: the same state, verdict and words. The
@@ -151,7 +160,7 @@ const SELECT_COLS =
   'status, recommendation, read_text, description, stool_consistency, stool_colour, ' +
   'stool_content, stool_blood_present, stool_blood_type, stool_mucus_present, ' +
   'foreign_material_present, foreign_material_note, ai_raw_payload, edited_at, dismissed_at, ' +
-  'updated_at, error, engine_flags, contextual_flags, tier';
+  'updated_at, error, engine_flags, contextual_flags, tier, visual_flags';
 
 export function StoolAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -170,6 +179,9 @@ export function StoolAnalysisSection(
   const latestRow = useRef<AnalysisRow | null | undefined>(undefined);
   latestRow.current = row;
   const watchTeardown = useRef<(() => void) | null>(null);
+  // CUL-1510: the record around this stool (the vomits beside it, the courses on board),
+  // for "What to tell them" under a call. Re-read when the row moves.
+  const floorFacts = useIncidentFloorFacts(eventId, petId, row?.updated_at ?? row?.status ?? null);
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
   // the grid so a re-render of the block never resets what the owner folded, and fed the
@@ -621,6 +633,44 @@ export function StoolAnalysisSection(
   // that, a later run that finished calm and was held left the old error standing, and the
   // line would have outlived a read that worked.
   const heldDisclosure = heldCallDisclosureOf(row);
+  // CUL-1510: the floor's words under a new-rule call (spec §2 rules 1 and 2).
+  const nowMs = Date.now();
+  const findings = stoolFindings(row);
+  const isCall = display === 'call_now' || display === 'call_today';
+  const action =
+    display === 'call_today'
+      ? callTodayAction({
+          petName,
+          nowMs,
+          recordOnly: callFromRecordOnly({
+            contextual_flags: row.contextual_flags,
+            visual_flags: row.visual_flags,
+            // A red-flag finding, present or unclear, takes the wait away. Texture alone
+            // does not: a loose stool is the call-today rows' own subject (S1, S2).
+            photoFinding:
+              row.stool_blood_present === 'yes' ||
+              row.foreign_material_present === 'yes' ||
+              row.stool_blood_present === 'unsure' ||
+              row.foreign_material_present === 'unsure' ||
+              row.stool_colour === 'black_tarry' ||
+              row.stool_colour === 'red_streaked',
+          }),
+        })
+      : display
+        ? TIER_WORDS[display].action
+        : null;
+  const tellThemLine =
+    isCall && floorFacts?.anchor
+      ? tellThem({
+          petName,
+          kind: 'stool',
+          anchor: floorFacts.anchor,
+          vomits: floorFacts.vomits,
+          findings,
+          courses: floorFacts.courses,
+          nowMs,
+        })
+      : null;
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
   const editedSet = new Set<EditableStoolField>(
@@ -657,7 +707,8 @@ export function StoolAnalysisSection(
           // EN-3: the tier's tone and action line from the map; both absent on an
           // earlier-rule read, which draws today's card.
           tone={display ? TIER_WORDS[display].tone : undefined}
-          action={display ? TIER_WORDS[display].action : null}
+          action={action}
+          tellThem={tellThemLine}
           disclosure={heldDisclosure}
           readText={row.read_text}
           onHide={() => setDismissed(true)}

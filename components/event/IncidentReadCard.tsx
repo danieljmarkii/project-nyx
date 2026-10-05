@@ -24,6 +24,7 @@ import { Tick } from '../designV2/waits/Tick';
 import { ThemedText } from '../ui/ThemedText';
 import { isQuietVerdict } from '../../lib/incidentVerdict';
 import { type TierTone } from '../../lib/incidentTierWords';
+import { TELL_THEM_HEADING, WATCH_FOR_LEAD, type WatchForList } from '../../lib/incidentFloorWords';
 
 /** The verdict the record holds, named here only to pick a tone. Text, not the shipped
  *  three-value union: a server may hold a verdict this build has never seen (CUL-1277),
@@ -97,6 +98,8 @@ export function IncidentReadCard({
   tone,
   action,
   disclosure,
+  tellThem,
+  watchFor,
   readText,
   onHide,
   arrival,
@@ -113,6 +116,10 @@ export function IncidentReadCard({
   action?: string | null;
   /** CUL-819 (a): the latest read did not finish, said beside the call it left standing. */
   disclosure?: string | null;
+  /** Under a call: what to tell the vet, from enum fields only (spec §2 rule 2). */
+  tellThem?: string | null;
+  /** Under a quiet read: what would change it, one clause per floor row (spec §3). */
+  watchFor?: WatchForList | null;
   readText?: string | null;
   onHide: () => void;
   /** Beat 1 of the arrival (CUL-804), while it is running; null every other moment —
@@ -176,7 +183,25 @@ export function IncidentReadCard({
           {label}
         </ThemedText>
         {attn && action ? <ThemedText style={styles.action}>{action}</ThemedText> : null}
+        {attn && tellThem ? (
+          <View testID="incident-read-tell-them" accessible style={styles.tellThem}>
+            <ThemedText style={styles.tellThemHeading}>{TELL_THEM_HEADING}</ThemedText>
+            <ThemedText style={styles.tellThemText}>{tellThem}</ThemedText>
+          </View>
+        ) : null}
         {readText ? <ThemedText style={styles.readText}>{readText}</ThemedText> : null}
+        {/* The list never sits under a call: a call's own ask is the action line, and a
+            "call now if" under "call today" would read as the condition for the call above. */}
+        {!attn && watchFor ? (
+          <View testID="incident-read-watch-for" style={styles.watchFor}>
+            <ThemedText style={styles.watchForLead}>{WATCH_FOR_LEAD}</ThemedText>
+            {watchFor.emergency ? <ThemedText style={styles.watchForLine}>{watchFor.emergency}</ThemedText> : null}
+            {watchFor.lines.map((line) => (
+              <ThemedText key={line} style={styles.watchForLine}>{line}</ThemedText>
+            ))}
+            {watchFor.ageNote ? <ThemedText style={styles.watchForNote}>{watchFor.ageNote}</ThemedText> : null}
+          </View>
+        ) : null}
         {attn && disclosure ? (
           <ThemedText testID="incident-read-disclosure" style={styles.disclosure}>{disclosure}</ThemedText>
         ) : null}
@@ -261,6 +286,37 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightBody,
+  },
+  tellThem: {
+    gap: theme.spaceMicro,
+  },
+  tellThemHeading: {
+    fontSize: theme.textSM,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorTextPrimary,
+  },
+  tellThemText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightBody,
+  },
+  watchFor: {
+    gap: theme.space0_5,
+  },
+  watchForLead: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightBody,
+  },
+  watchForLine: {
+    fontSize: theme.textMD,
+    color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightBody,
+  },
+  watchForNote: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightBody,
   },
   disclosure: {

@@ -37,8 +37,9 @@
 // It never decides which tier a finding earns (the floor's job, server-side), and it has
 // no wellness word (clinical-guardrails Pattern 1): the lowest tier is "Keep an eye out",
 // which is today's `monitor` wording. The watch-for list that tier carries, the call's
-// "what to tell them" line and the pet's call-now signs are generated from the floor's rows
-// and land with EN-4 (PR-28), never hand-written here (spec §3, BRK-3).
+// "what to tell them" line and call today's action line with the pet's call-now signs are
+// generated from the floor's rows in `lib/incidentFloorWords.ts` (CUL-1510), never
+// hand-written here (spec §3, BRK-3).
 
 import { effectiveTierRank, isIncidentTier, TIER_RANK } from './incidentTier';
 import { isQuietVerdict } from './incidentVerdict';
@@ -103,12 +104,11 @@ export const TIER_WORDS: Readonly<Record<TierDisplay, TierWords>> = {
     label: 'Call your vet today',
     short: 'Call today',
     readAs: 'call today',
-    // No action line yet. The spec's line gives leave to wait ("if they're closed, first
-    // thing tomorrow") only beside its exception ("or an emergency clinic tonight if
-    // {this pet's call-now signs}"), and those signs come from EN-4's rows (PR-28). Until
-    // they exist every call the engine writes is call today, a photo of digested blood
-    // included, so the leave to wait would be calmer than today's "Worth a call"
-    // (adversarial pass on PR-27). CUL-1432 carries the line.
+    // No fixed line: it resolves against the clock and against where the call came from,
+    // so it lives in `callTodayAction` (lib/incidentFloorWords.ts, CUL-1510). The leave to
+    // wait ("first thing tomorrow") is given only beside its exception (the pet's call-now
+    // signs) and only over a call the record alone raised: every call written today is
+    // call today, a photo of digested blood included (adversarial pass on PR-27).
     action: null,
     tone: 'call_outline',
     call: true,

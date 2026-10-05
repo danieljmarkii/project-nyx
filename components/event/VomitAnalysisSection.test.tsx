@@ -13,6 +13,10 @@ let mockRow: Record<string, unknown> | null = null;
 // (CUL-827's R7 case: the write must fail AFTER a re-run's restore has landed).
 let mockUpdateError: { message: string } | null = null;
 let mockUpdateGate: Promise<void> | null = null;
+// CUL-1510: the record around the vomit, as the floor's words read it. Null (the read has
+// not answered) unless a test sets it, so every other test draws no floor line.
+let mockFloorFacts: import('../../lib/incidentFloorFacts').IncidentFloorFacts | null = null;
+jest.mock('../../hooks/useIncidentFloorFacts', () => ({ useIncidentFloorFacts: () => mockFloorFacts }));
 jest.mock('../../lib/supabase', () => ({
   supabase: {
     from: () => ({
@@ -82,6 +86,7 @@ import { VomitAnalysisSection } from './VomitAnalysisSection';
 import { theme } from '../../constants/theme';
 import { readLandedCopy } from './useReadLandingAnnouncement';
 import { EARLIER_READ_LABEL, HELD_CALL_DISCLOSURE } from '../../lib/incidentTierWords';
+import { usePetStore } from '../../store/petStore';
 import { watchAnalysisRow, awaitAnalysisChain, triggerVomitAnalysis } from '../../lib/analysis';
 import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
 import { facing, flat, owningTouchable, touchableToken } from '../../testUtils/tree';
@@ -1535,8 +1540,10 @@ describe('VomitAnalysisSection — the tier (EN-3)', () => {
     mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3 });
     const { findByText, getByTestId, queryByText } = render(<VomitAnalysisSection eventId="t2" petId="pet-1" petName="Rex" hasPhoto />);
     await findByText('Call your vet today');
-    // No leave to wait yet (CUL-1432): the call-now signs that make it safe come with PR-28.
+    // No contextual flag on the row, so the call did not come from the record alone: no
+    // leave to wait (CUL-1510), call now's after-hours path instead.
     expect(queryByText(/first thing tomorrow/)).toBeNull();
+    expect(queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
     expect(flat(getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorSurface);
     expect(flat(getByTestId('incident-read-card')).borderColor).toBe(theme.colorEventSymptom);
   });
@@ -1616,5 +1623,88 @@ describe('VomitAnalysisSection — the tier (EN-3)', () => {
       expect(view.queryByText(EARLIER_READ_LABEL)).toBeNull();
       view.unmount();
     }
+  });
+});
+
+// ── CUL-1510: the floor's words on the record ───────────────────────────────────
+describe('VomitAnalysisSection — the floor\'s words (CUL-1510)', () => {
+  const STAMP = ['engines_v3_en3', 'engines_v3_en4'];
+  // Built from LOCAL components so the hour the line resolves against is the same in
+  // every zone the suite runs in (B-514).
+  const VOMIT = new Date(2026, 5, 10, 13, 0);
+  const NOW = new Date(2026, 5, 10, 14, 0).getTime();
+  const anchor = { at: VOMIT.toISOString(), confidence: 'witnessed' };
+  let nowSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    nowSpy = jest.spyOn(Date, 'now').mockReturnValue(NOW);
+    usePetStore.setState({
+      pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
+    });
+    mockFloorFacts = { anchor, vomits: [anchor], courses: ['prednisone'] };
+  });
+  afterEach(() => {
+    nowSpy.mockRestore();
+    mockRow = null;
+    mockFloorFacts = null;
+    usePetStore.setState({ pets: [] });
+  });
+
+  it('a call today the record alone raised: leave to wait beside the call-now signs, and what to tell them', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_vomiting'], visual_flags: [] });
+    const view = render(<VomitAnalysisSection eventId="f1" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText(/first thing tomorrow, or an emergency clinic tonight if Rex vomits three times/)).toBeTruthy();
+    expect(view.queryByText('What to tell them:')).toBeTruthy();
+    expect(view.queryByText('Rex vomited at 1 PM; on prednisone.')).toBeTruthy();
+  });
+
+  it('a call today over a photo finding gives no leave to wait, and names only the finding that is present', async () => {
+    mockRow = row({
+      recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: [], visual_flags: ['blood'],
+      blood_present: 'coffee_ground', foreign_material_present: 'unsure', foreign_material_note: 'a hair tie',
+    });
+    const view = render(<VomitAnalysisSection eventId="f2" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText(/first thing tomorrow/)).toBeNull();
+    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
+    expect(view.queryByText('Rex vomited at 1 PM; dark, gritty material in the photo that can be digested blood; on prednisone.')).toBeTruthy();
+    // The model's note never reaches the line (Pattern 10).
+    expect(view.queryByText(/hair tie/)).toBeNull();
+  });
+
+  it('a calm read the floor wrote carries the watch-for list, a dog the bloat line first', async () => {
+    mockRow = row({ recommendation: 'monitor', tier: 'logged', engine_flags: STAMP, read_text: 'One photo can’t tell you much.' });
+    const view = render(<VomitAnalysisSection eventId="f3" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Keep an eye out');
+    expect(view.getByTestId('incident-read-watch-for')).toBeTruthy();
+    expect(view.queryByText(/^Go to your vet or an emergency clinic now if Rex retches/)).toBeTruthy();
+    expect(view.queryByText(/^Call your vet now if you see Rex vomit twice more by 5 PM/)).toBeTruthy();
+    expect(view.queryByText(/^Call your vet today if Rex vomits again by 1 PM tomorrow/)).toBeTruthy();
+    expect(view.queryByText('What to tell them:')).toBeNull();
+  });
+
+  it('a photoless vomit the floor wrote: "Not enough to say yet" with its list, and no retry', async () => {
+    mockRow = row({ recommendation: 'not_enough_to_say', tier: 'not_enough_to_say', engine_flags: STAMP, read_text: 'Without a photo there’s not much I can read.' });
+    const view = render(<VomitAnalysisSection eventId="f4" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    await view.findByText('Not enough to say yet');
+    expect(view.getByTestId('incident-read-watch-for')).toBeTruthy();
+    expect(view.queryByText('Try analysis')).toBeNull();
+    expect(view.queryByText('Re-run analysis')).toBeNull();
+  });
+
+  it('a photoless vomit the floor did not write keeps today\'s empty frame', async () => {
+    mockRow = row({ recommendation: 'not_enough_to_say', tier: 'not_enough_to_say', engine_flags: ['engines_v3_en3'] });
+    const view = render(<VomitAnalysisSection eventId="f5" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    await waitFor(() => expect(view.toJSON()).toBeNull());
+  });
+
+  it('an earlier-rule read draws none of the floor\'s words', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', contextual_flags: ['repeated_vomiting'], visual_flags: [] });
+    const view = render(<VomitAnalysisSection eventId="f6" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Worth a call');
+    expect(view.queryByText(/If they're closed/)).toBeNull();
+    expect(view.queryByText('What to tell them:')).toBeNull();
+    expect(view.queryByTestId('incident-read-watch-for')).toBeNull();
   });
 });
