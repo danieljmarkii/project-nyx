@@ -43,6 +43,7 @@ import {
   runSignalPipeline,
   templatePayload,
   templateTexts,
+  WATCHED_HEAD_END,
   type CareRecord,
   type PriorSignal,
   type RankedFinding,
@@ -50,7 +51,7 @@ import {
 } from '../../generate-signal/pipeline.ts'
 import { ENGINE_KEYS, SIGNAL_DECORATING_KEYS, SIGNAL_ENGINE_KEYS, type EngineFlags } from '../engineFlags.ts'
 import { EN11_CONFIG, type DetectionConfig, type WeightLaneInput } from '../../generate-signal/detection.ts'
-import { hasBannedSignalVocabulary, validatePhrasing } from '../../generate-signal/phrasing.ts'
+import { hasBannedSignalVocabulary, templateForFinding, validatePhrasing } from '../../generate-signal/phrasing.ts'
 import { EN10_CONTEXT_STEP, type CareContextFacts, type CareContextStep } from '../../generate-signal/careContext.ts'
 import { careStateOf, concernSignOf, EN9_CARE_STATE_STEP, type CareStateStep } from '../../generate-signal/careState.ts'
 import { careClaimReason } from '../../../../lib/careClaimScreens.ts'
@@ -360,6 +361,47 @@ Deno.test('(c-en9) AC-3: with every concern answered, every escalation keeps its
     for (const r of on.findings) if (concernSignOf(r.finding) !== null) assertStrictEquals(careStateOf(r.finding) !== null, true, `${c.name}: a concern with no care state`)
   }
   assertStrictEquals(concerns >= 3 && escalations >= 3, true, `only ${concerns} concerns and ${escalations} escalations: the property checks too little`)
+})
+
+// CUL-1538: the summary speaks for the cards beneath it. With every concern answered, each watched
+// card's head ("Rex's vomiting, your vet knows.") is in the summary and the lane's ask for that sign is not; every safety card
+// that still asks keeps its sentence there, so the summary routes to the vet while one asks.
+Deno.test('(c-en9) CUL-1538: the summary says what a watched card says, and still asks wherever a card asks', () => {
+  const ON: EngineFlags = { on: [EN9], readOk: true }
+  let watched = 0
+  let asking = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const off = run(c, OFF, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS)
+    const signs = [...new Set(off.findings.map((r) => concernSignOf(r.finding)).filter((s): s is NonNullable<typeof s> => s !== null))]
+    const nowMs = Date.parse(c.nowIso)
+    const record: CareRecord = {
+      ...EMPTY_CARE_RECORD,
+      acknowledgements: signs.map((sign, i) => ({
+        id: `ack-${i}`, sign, source: 'my_vet_knows' as const, anchorOn: new Date(nowMs - 86_400_000).toISOString().slice(0, 10),
+        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null,
+      })),
+    }
+    const result = run(c, ON, record, [], POPULATED_CARE_CONTEXT_FACTS)
+    const summary = templatePayload(result).summary?.text ?? ''
+    result.findings.forEach((r) => {
+      if (r.finding.priorityClass !== 'safety') return
+      const care = careStateOf(r.finding)
+      if (care?.state === 'with_vet' || care?.state === 'recheck_booked') {
+        watched++
+        // The card's head, cut from the card's own text: the step's copy and the lookup's cut agree.
+        const text = care.text as string
+        const head = text.slice(0, text.indexOf(WATCHED_HEAD_END) + WATCHED_HEAD_END.length)
+        assertStrictEquals(text.includes(WATCHED_HEAD_END) && summary.includes(head), true, `${c.name}: the watched head is missing from the summary`)
+        assertStrictEquals(summary.includes(text), text === head, `${c.name}: the card's detail leaked into the summary`)
+        assertStrictEquals(summary.includes(templateForFinding(r.finding, result.petName)), false, `${c.name}: the summary still asks about a watched ${r.finding.type}`)
+      } else {
+        asking++
+        assertStrictEquals(summary.includes(templateForFinding(r.finding, result.petName)), true, `${c.name}: an asking ${r.finding.type} lost its sentence in the summary`)
+        assertStrictEquals(/\bvet\b/i.test(summary), true, `${c.name}: a card asks and the summary does not route to the vet`)
+      }
+    })
+  }
+  assertStrictEquals(watched >= 3 && asking >= 3, true, `only ${watched} watched and ${asking} asking cards: the property checks too little`)
 })
 
 Deno.test('(c-en9) D1: a card carried over an incomplete read never carries a care state', () => {

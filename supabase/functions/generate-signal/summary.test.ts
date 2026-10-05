@@ -30,11 +30,15 @@ import {
   validateSummary,
   type SummaryFactPacket,
 } from './summary.ts'
+import { watchedSentenceLookup } from './pipeline.ts'
+import type { Finding } from './detection.ts'
 
 const NOW = '2026-06-14T12:00:00.000Z'
 const NOW_MS = Date.parse(NOW)
 const DAY = 86_400_000
 const daysAgoIso = (n: number) => new Date(NOW_MS - n * DAY).toISOString()
+// EN-9 off, or no concern watched: every safety card still asks.
+const NONE_WATCHED = (_f: Finding): string | null => null
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────────────
 
@@ -129,7 +133,7 @@ Deno.test('extractNumbers — digits and number-words, word-boundaried', () => {
 
 Deno.test('buildSummaryPacket — safety finding leads and sets hasSafety', () => {
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [worseningFinding()],
     mealEvents: ratedChickenMeals(6),
@@ -147,7 +151,7 @@ Deno.test('buildSummaryPacket — finished-rate is OMITTED alongside a safety co
   // A healthy-looking month rate must never sit next to a current concern and read as
   // reassurance. Protein (neutral) may appear; the finished-rate clause must not.
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [declineFinding()],
     mealEvents: ratedChickenMeals(8, 'all'),
@@ -166,7 +170,7 @@ Deno.test('buildSummaryPacket — finished-rate is OMITTED alongside a safety co
 
 Deno.test('buildSummaryPacket — quiet pet: descriptive intake + finished-rate, no reassurance', () => {
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [],
     mealEvents: ratedChickenMeals(10, 'all'),
@@ -190,7 +194,7 @@ Deno.test('buildSummaryPacket — a hidden SECONDARY protein can win the clause 
   // slice 6), so the summary sat above a card it disagreed with. Chicken: 5 meals; duck: 3;
   // salmon: 2 — the secondary wins outright, no tie-break involved.
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [],
     mealEvents: [
@@ -217,7 +221,7 @@ Deno.test('buildSummaryPacket — a structural tie yields NO protein clause, nev
   // alphabetical tie-break would render "Chicken was the most-logged meal protein" on a
   // duck formula, decided by 'c' < 'd'. A tied superlative is false as stated → no clause.
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [],
     mealEvents: Array.from({ length: 6 }, (_, i) =>
@@ -235,7 +239,7 @@ Deno.test('buildSummaryPacket — the protein-clause floor still counts MEALS, n
   // 3 meals × 2 proteins each = 6 instances but 3 identified meals — below the 4-meal floor,
   // so no protein clause is invented off a thin record.
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [],
     mealEvents: Array.from({ length: 3 }, (_, i) =>
@@ -251,7 +255,7 @@ Deno.test('buildSummaryPacket — the protein-clause floor still counts MEALS, n
 
 Deno.test('buildSummaryPacket — reflection drives the lead when no safety finding', () => {
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [reflectionFinding()],
     mealEvents: ratedChickenMeals(6),
@@ -267,7 +271,7 @@ Deno.test('buildSummaryPacket — reflection drives the lead when no safety find
 
 Deno.test('buildSummaryPacket — descriptive symptom fallback when symptoms logged but no finding', () => {
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [],
     mealEvents: [],
@@ -284,7 +288,7 @@ Deno.test('buildSummaryPacket — descriptive symptom fallback when symptoms log
 
 Deno.test('buildSummaryPacket — out-of-window meals/symptoms are excluded from the month', () => {
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [],
     mealEvents: ratedChickenMeals(6).map((m) => ({ ...m, occurredAt: daysAgoIso(45) })),
@@ -299,7 +303,7 @@ Deno.test('buildSummaryPacket — out-of-window meals/symptoms are excluded from
 Deno.test('buildSummaryPacket — below-floor intake never invents a ranking', () => {
   // 3 meals < MIN_MEALS_FOR_RANKING(4): no protein clause, no finished-rate clause.
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [],
     mealEvents: ratedChickenMeals(3),
@@ -316,7 +320,7 @@ Deno.test('buildSummaryPacket — free-fed meals excluded from finished-rate (§
   // 5 meals all free-fed → denominator below floor → no finished-rate clause.
   const meals = ratedChickenMeals(5).map((m) => ({ ...m, foodItemId: 'free-bowl' }))
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [],
     mealEvents: meals,
@@ -338,7 +342,7 @@ Deno.test('buildSummaryPacket — treats excluded from finished-rate denominator
     ...ratedChickenMeals(2),
   ]
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [],
     mealEvents: meals,
@@ -353,7 +357,7 @@ Deno.test('buildSummaryPacket — treats excluded from finished-rate denominator
 
 Deno.test('buildSummaryPacket — allowedNumbers covers every number in the template', () => {
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [worseningFinding({ trigger: 'more_episodes', currentCount: 6, currentDays: 4, priorCount: 2 })],
     mealEvents: ratedChickenMeals(6),
@@ -370,7 +374,7 @@ Deno.test('buildSummaryPacket — allowedNumbers covers every number in the temp
 
 Deno.test('buildSummaryPacket — capped at four sentences, safety kept first', () => {
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [declineFinding(), worseningFinding()],
     mealEvents: ratedChickenMeals(8),
@@ -390,15 +394,15 @@ Deno.test('buildSummaryPacket — capped at four sentences, safety kept first', 
 Deno.test('summaryTemplate — every emittable shape (with a typical food label) passes its own validator and never reassures', () => {
   const scenarios: SummaryFactPacket[] = [
     buildSummaryPacket({
-    risingBelowCardFloor: false, petName: 'Pixel', findings: [worseningFinding()], mealEvents: ratedChickenMeals(6), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED, petName: 'Pixel', findings: [worseningFinding()], mealEvents: ratedChickenMeals(6), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
     buildSummaryPacket({
-    risingBelowCardFloor: false, petName: 'Pixel', findings: [declineFinding({ trigger: 'consecutive_low', daysBelowBaseline: 3, refusedFoodLabel: null })], mealEvents: ratedChickenMeals(8), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED, petName: 'Pixel', findings: [declineFinding({ trigger: 'consecutive_low', daysBelowBaseline: 3, refusedFoodLabel: null })], mealEvents: ratedChickenMeals(8), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
     buildSummaryPacket({
-    risingBelowCardFloor: false, petName: 'Pixel', findings: [reflectionFinding({ direction: 'flat', currentCount: 3, priorCount: 3 })], mealEvents: ratedChickenMeals(6), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED, petName: 'Pixel', findings: [reflectionFinding({ direction: 'flat', currentCount: 3, priorCount: 3 })], mealEvents: ratedChickenMeals(6), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
     buildSummaryPacket({
-    risingBelowCardFloor: false, petName: 'Pixel', findings: [], mealEvents: ratedChickenMeals(10), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED, petName: 'Pixel', findings: [], mealEvents: ratedChickenMeals(10), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
     buildSummaryPacket({
-    risingBelowCardFloor: false, petName: 'Pixel', findings: [], mealEvents: [], symptomEvents: [symptom(), symptom()], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED, petName: 'Pixel', findings: [], mealEvents: [], symptomEvents: [symptom(), symptom()], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
   ]
   for (const packet of scenarios) {
     assert.ok(packet, 'scenario should produce a packet')
@@ -418,7 +422,7 @@ Deno.test('summaryTemplate — a screened FOOD NAME is inert in v1 but is a mode
   // reject it, so before model phrasing is ever re-enabled the food-name span must be exempted
   // (B-096). This test pins both halves of that reality so the limitation can't be forgotten.
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [declineFinding({ trigger: 'refused_normal_food', refusedFoodLabel: 'Royal Canin Recovery' })],
     mealEvents: ratedChickenMeals(6),
@@ -437,7 +441,7 @@ Deno.test('summaryTemplate — a screened FOOD NAME is inert in v1 but is a mode
 Deno.test('summaryTemplate — a safety summary always routes to the vet', () => {
   for (const f of [worseningFinding(), declineFinding(), worseningFinding({ tier: 'soft', trigger: 'more_days' })]) {
     const packet = buildSummaryPacket({
-    risingBelowCardFloor: false, petName: 'Pixel', findings: [f], mealEvents: ratedChickenMeals(6), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED, petName: 'Pixel', findings: [f], mealEvents: ratedChickenMeals(6), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!
     assert.match(summaryTemplate(packet), /\bvet\b/i)
   }
 })
@@ -446,7 +450,7 @@ Deno.test('summaryTemplate — a safety summary always routes to the vet', () =>
 
 function quietPacket(): SummaryFactPacket {
   return buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [],
     mealEvents: ratedChickenMeals(10),
@@ -458,7 +462,7 @@ function quietPacket(): SummaryFactPacket {
 
 function safetyPacket(): SummaryFactPacket {
   return buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [worseningFinding()],
     mealEvents: ratedChickenMeals(6),
@@ -615,7 +619,7 @@ Deno.test('shouldPhraseWithModel — safety & quiet are template-only; only refl
   assert.equal(shouldPhraseWithModel(safetyPacket()), false)
   assert.equal(shouldPhraseWithModel(quietPacket()), false)
   const reflective = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [reflectionFinding()],
     mealEvents: ratedChickenMeals(6),
@@ -637,7 +641,7 @@ Deno.test('validateSummary — rejects the reflection-path leaks the re-review f
   // them so the dormant guard is hardened for any future re-enable. allowedNumbers {1,4} from
   // an improving reflection packet, so the vocabulary screens (not numbers) must do the work.
   const p = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [reflectionFinding()], // "1 ... down from 4"
     mealEvents: ratedChickenMeals(6),
@@ -666,7 +670,7 @@ Deno.test('buildSummaryPacket — never drops a safety clause to honour the cap 
   // Five safety findings (more than the 4-sentence cap can hold) — all must survive, an
   // over-long safety summary beats a dropped concern (Principle 3 > the layout cap).
   const packet = buildSummaryPacket({
-    risingBelowCardFloor: false,
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [
       worseningFinding({ symptomType: 'vomit' }),
@@ -702,6 +706,7 @@ Deno.test('number-swap inversion on a safety packet is prevented by RESTRAINT, n
 // safety card, so `hasSafety` is false, and the finished-meal rate must still stay out.
 Deno.test('buildSummaryPacket — finished-rate is OMITTED while a sign rises below the EN-11 card floor', () => {
   const args = {
+    watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
     findings: [],
     mealEvents: ratedChickenMeals(8, 'all'),
@@ -712,4 +717,84 @@ Deno.test('buildSummaryPacket — finished-rate is OMITTED while a sign rises be
   const rate = (p: ReturnType<typeof buildSummaryPacket>) => p?.clauses.some((c) => /finished most or all/.test(c)) ?? false
   assert.equal(rate(buildSummaryPacket({ ...args, risingBelowCardFloor: false })), true, 'premise: a quiet pet carries the rate')
   assert.equal(rate(buildSummaryPacket({ ...args, risingBelowCardFloor: true })), false)
+})
+
+// ── EN-9 (CUL-1538): a watched concern stops asking in the summary as it does on its card ─────
+
+// The card's real shape: the head, the source, the since line (careState.ts). The summary says the head.
+const WATCHED_CARD = "Pixel's vomiting, your vet knows. You said on Jun 2 Pixel's vet knows. Since Jun 2, 12 days: 1 episode, with something logged on 12 of 12."
+const WATCHED_VOMIT = "Pixel's vomiting, your vet knows."
+// A finding as the care-state step leaves it: the lane's finding plus its `careState`.
+const withCare = (f: Finding, state: string, text: string | null): Finding =>
+  ({ ...f, careState: { state, ackId: 'a', source: 'my_vet_knows', anchorOn: null, reference: null, reason: null, recheckOn: null, text, lapsed: [] } }) as unknown as Finding
+
+function packetFor(findings: Finding[], decorated: Finding[]) {
+  return buildSummaryPacket({
+    petName: 'Pixel',
+    findings,
+    mealEvents: ratedChickenMeals(8, 'all'),
+    symptomEvents: [],
+    freeFedFoodIds: new Set(),
+    nowMs: NOW_MS,
+    risingBelowCardFloor: false,
+    watchedSentenceFor: watchedSentenceLookup(decorated.map((finding) => ({ finding }))),
+  })!
+}
+
+Deno.test('EN-9: the only safety card is watched → the summary says the card sentence, not "talk to your vet"', () => {
+  const w = worseningFinding()
+  const asking = summaryTemplate(packetFor([w], [w]))
+  assert.match(asking, /vet/i, 'premise: the raised card routes to the vet')
+  const p = packetFor([w], [withCare(w, 'with_vet', WATCHED_CARD)])
+  assert.equal(p.clauses[0], WATCHED_VOMIT)
+  assert.equal(p.clauses.includes(packetFor([w], [w]).clauses[0]), false, 'the lane sentence is gone')
+  // Still a concern: the rate stays out, the model stays off, and the vet check holds.
+  assert.equal(p.hasSafety, true)
+  assert.equal(p.clauses.some((c) => /finished most or all/.test(c)), false)
+  assert.equal(shouldPhraseWithModel(p), false)
+  assert.equal(validateSummary(summaryTemplate(p), p), true)
+})
+
+Deno.test('EN-9: recheck_booked is watched too; raised and raised_again keep the lane sentence', () => {
+  const w = worseningFinding()
+  const lane = packetFor([w], [w]).clauses[0]
+  assert.equal(packetFor([w], [withCare(w, 'recheck_booked', "Pixel's vomiting, your vet knows. Recheck booked for Jun 20.")]).clauses[0], WATCHED_VOMIT)
+  // A text without the head is said whole: still the card's words, still not an ask.
+  assert.equal(packetFor([w], [withCare(w, 'with_vet', 'Watched.')]).clauses[0], 'Watched.')
+  assert.equal(packetFor([w], [withCare(w, 'raised', null)]).clauses[0], lane)
+  assert.equal(packetFor([w], [withCare(w, 'raised_again', 'Back because it changed. ' + lane)]).clauses[0], lane)
+})
+
+Deno.test('EN-9: an escalation beside a watched concern still leads and still routes to the vet', () => {
+  const d = declineFinding()
+  const w = worseningFinding()
+  const p = packetFor([w, d], [d, withCare(w, 'with_vet', WATCHED_CARD)])
+  assert.equal(p.clauses[0], packetFor([d], [d]).clauses[0], 'the asking card leads, as on Home')
+  assert.equal(p.clauses[1], WATCHED_VOMIT)
+  assert.match(p.clauses[0], /vet/i)
+})
+
+Deno.test('EN-9: a watched sign never quiets a DIFFERENT sign that still asks', () => {
+  const vomit = worseningFinding()
+  const cough = worseningFinding({ symptomType: 'cough' })
+  const p = packetFor([vomit, cough], [withCare(vomit, 'with_vet', WATCHED_CARD), cough])
+  assert.deepEqual(p.clauses.slice(0, 2), [packetFor([cough], [cough]).clauses[0], WATCHED_VOMIT])
+})
+
+Deno.test('EN-9: chronicity and worsening for one watched sign say the sentence once', () => {
+  const w = worseningFinding()
+  const c = { type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'vomit' } as unknown as Finding
+  const p = packetFor([c, w], [withCare(c, 'with_vet', WATCHED_CARD), withCare(w, 'with_vet', WATCHED_CARD)])
+  assert.equal(p.clauses.filter((x) => x === WATCHED_VOMIT).length, 1)
+  assert.equal(p.clauses.length, 2, 'the sentence once, then the protein clause')
+})
+
+Deno.test('EN-9: several watched signs stay inside the sentence cap (adversarial pass, CUL-1538)', () => {
+  const signs = ['vomit', 'diarrhea', 'cough'] as const
+  const fs = signs.map((symptomType) => worseningFinding({ symptomType }))
+  const label = { vomit: 'vomiting', diarrhea: 'diarrhea', cough: 'coughing' }
+  const decorated = fs.map((f, i) => withCare(f, 'with_vet', `Pixel's ${label[signs[i]]}, your vet knows. You said on Jun 2 Pixel's vet knows. Since Jun 2, 12 days: 1 episode, with something logged on 12 of 12.`))
+  const p = packetFor(fs, decorated)
+  assert.deepEqual(p.clauses.slice(0, 3), signs.map((x) => `Pixel's ${label[x]}, your vet knows.`))
+  assert.equal(validateSummary(summaryTemplate(p), p), true, summaryTemplate(p))
 })
