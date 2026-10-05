@@ -247,7 +247,7 @@ export function calledOnLine(day: string, today: string): string {
 export function callConfirmation(input: { notificationsOn: boolean }): string {
   return input.notificationsOn
     ? "Saved. We'll send a reminder in a couple of days to ask what the vet said."
-    : "Saved. In a couple of days, this screen and Vet visits will ask what the vet said.";
+    : 'Saved. In a couple of days, Home will ask what the vet said.';
 }
 
 /** The Home / screen navigation line once the follow-up is due (§6.3, mock 4b). */

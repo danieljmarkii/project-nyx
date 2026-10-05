@@ -7,18 +7,14 @@
 // screen itself does not gate: a call that exists was made under the flag, and its owner may
 // always read it back.
 import { useEffect } from 'react';
-import { useAllowlistFlag } from './useAppConfig';
+import { useEn14 } from './useEn14';
 import { useAppActive } from './useAppActive';
 import { useSyncStore } from '../store/syncStore';
 import { usePetStore } from '../store/petStore';
 import { syncFollowUpNotifications } from '../lib/followUpNotifications';
 import { readUsePetName } from '../lib/notificationSettings';
 
-export const EN14_FLAG = 'engines_v3_en14' as const;
-
-export function useEn14(): boolean {
-  return useAllowlistFlag(EN14_FLAG);
-}
+export { EN14_FLAG, useEn14 } from './useEn14';
 
 /** Reconcile the follow-up notifications now, from a write (an answer, a call, an Undo) or the
  *  Settings switch. Names come from the store at call time, never a closure. */
