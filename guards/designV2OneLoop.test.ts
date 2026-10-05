@@ -22,10 +22,10 @@
 // STATED BLIND SPOTS (C-38: undocumented ones read as coverage). A loop composed by
 // hand — a `timing` whose completion callback restarts it, a `setInterval` driving
 // `setValue` — has no spelling this scan reads; and a loop reached through a HOST's
-// import (the report screen's `PrimaryButton` spinner, say) is on the flag-on tree and
-// outside both walks, because the host is not the namespace. The first is refused by
-// review; the second is D2-8's sweep, and the CLAUDE.md § Loading indicators rewrite
-// that lands with it.
+// import (the report screen's `PrimaryButton` spinner, say) is on screen and outside both
+// walks, because the host is not the namespace. The first is refused by review; the second
+// is CUL-1593 (the app-wide Whorl sweep and this guard's widening, after Design v2's GA,
+// CUL-1071), with the CLAUDE.md § Loading indicators rewrite.
 //
 // THE REGISTRY IS AN EXEMPTION (C-32), and it is EMPTY — its goal state, reached by
 // CUL-1075. It existed because step 2's four lanes were built in parallel: lanes 1–3
