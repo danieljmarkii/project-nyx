@@ -58,6 +58,7 @@ export const REQUIRED_COVERAGE: readonly CoverageTag[] = [
   'recheck_date',
   'symptom_only_lapse',
   'doubling_behind_lapse',
+  'improves_after_ack',
 ]
 
 export function scenarioById(id: string): ScenarioSpec {

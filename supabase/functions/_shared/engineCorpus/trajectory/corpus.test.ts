@@ -716,7 +716,23 @@ const EXHIBITS: Record<CoverageTag, Exhibit> = {
     return r.record.events.filter((e) => e.ty === 'vomit' && after(e.at)).length === 0 && r.record.meals.some((m) => after(m.at))
   },
   doubling_behind_lapse: (r) => r.responses.some((x) => x.action === 'lapse_started') && r.truth.episodes.some((e) => e.cause === 'rate_step' && e.loggedEventIds.length === 0),
+  improves_after_ack: (r, sc) => r.truth.acks.length > 0 && improvementRatio(sc) < 0.75,
 }
+
+/** The vomit rate from 14 days after the acknowledgement over the rate before anyone asked. */
+function improvementRatio(sc: ScenarioSpec): number {
+  const ack = (r: SimulationResult) => r.truth.acks[0]?.day ?? null
+  return ratePerDay(sc, 'vomit', SEEDS(40), 14, sc.days, 'ask20', ack) / ratePerDay(sc, 'vomit', SEEDS(40), 0, 20, 'ask20')
+}
+
+Deno.test("CUL-1290: the vet's plan working keeps its stated share of episodes, and only after the answer", () => {
+  const sc = scenarioById('own-vet-knows-improves')
+  const e = sc.pets[0].effects!.find((x) => x.kind === 'improvement')!
+  assert(e.kind === 'improvement')
+  within(improvementRatio(sc), e.residual * 0.9, e.residual * 1.1, 'rate after the improvement over the rate before')
+  // Under the null observer nobody asks, so nobody answers, and nothing improves.
+  within(ratePerDay(sc, 'vomit', SEEDS(40), 60, sc.days) / ratePerDay(sc, 'vomit', SEEDS(40), 0, 20), 0.85, 1.15, 'no answer, no improvement')
+})
 
 Deno.test('the answer key is consistent with the effects, and says how each detection may be scored', () => {
   for (const sc of TRAJECTORY_CORPUS) {
@@ -736,6 +752,14 @@ Deno.test('the answer key is consistent with the effects, and says how each dete
       assert(sc.key.detect.length > 0 || sc.key.falseCards.length > 0, `${sc.id}: scored somehow`)
     }
     if (sc.category === 'injected') assert(sc.key.detect.some((d) => d.scoring === 'paired'), `${sc.id}: an injected pet has a paired detection`)
+    // CUL-1290: the two-sided test is keyed only on an owner who answers.
+    const rq = sc.key.recheckQuestion
+    if (rq) {
+      const pet = sc.pets.find((p) => p.key === rq.petKey)
+      assert(pet && (pet.owner ?? []).some((o) => o.kind === 'answer_vet_knows' || (o.kind === 'book_visit' && o.carriesConcern)), `${sc.id}: the recheck question is keyed on a pet whose owner answers`)
+      const improves = (pet!.effects ?? []).some((x) => x.kind === 'improvement' && x.sign === rq.sign)
+      assertEquals(rq.truth, improves ? 'for_nothing' : 'wanted', `${sc.id}: the question asks for nothing exactly when the sign improves`)
+    }
     // Every effect that starts after day 0 is named by a detection starting on its day.
     for (const pet of sc.pets) {
       const starts: EffectStart[] = []

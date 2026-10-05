@@ -306,3 +306,49 @@ Deno.test('stapleNamed counts evenings whose food cards name a staple feeder\'s 
   assert((scoreScenario(runs([staple!])).stapleNamedEveningsPerPetMonth as number) > 29)
   assertEquals(scoreScenario(runs(['lamb'])).stapleNamedEveningsPerPetMonth, 0)
 })
+
+Deno.test('CUL-1290: the question is scored on its own side of the key, and only after the answer', () => {
+  const card = (q: boolean, state = 'with_vet') => ({ petKey: 'a', findingType: 'symptom_chronicity', sign: 'vomit' as const, ask: 'none' as const, priorityClass: 'safety', tier: 'firm', proteins: [], direction: null, careState: state, recheckQuestion: q })
+  const ackDay = 20
+  const score = (id: string, shown: (day: number) => ScoredCard[]) => {
+    const sc = scenarioById(id)
+    const runs = sc.ciSeeds.map((seed) => {
+      const result = simulate(sc, seed, () => [])
+      result.shown = result.shown.map((ev) => ({ ...ev, cards: shown(ev.day) }))
+      result.truth.acks = [{ petKey: 'a', sign: 'vomit', day: ackDay, via: 'answer' }]
+      return { scenario: sc, seed, result }
+    })
+    return scoreScenario(runs).recheckQuestion!
+  }
+  // Watched throughout; asked from eight weeks on.
+  const asks = (day: number) => (day > ackDay ? [card(day >= ackDay + 56)] : [])
+  const improver = score('own-vet-knows-improves', asks)
+  assertEquals([improver.truth, improver.asked, improver.medianDaysFromAck, improver.watchedAt8Weeks, improver.askedWhenWatched], ['for_nothing', 1, 56, 1, 1])
+  const flat = score('own-answers-vet-knows', asks)
+  assertEquals([flat.truth, flat.asked], ['wanted', 1])
+  // A question shown only BEFORE the answer is not a question about it.
+  assertEquals(score('own-answers-vet-knows', (day) => (day <= ackDay ? [card(true)] : [card(false)])).asked, 0)
+  // A concern gone by eight weeks is outside what the rule decides, and says so.
+  const gone = score('own-answers-vet-knows', (day) => (day > ackDay && day < ackDay + 40 ? [card(false)] : []))
+  assertEquals([gone.asked, gone.watchedAt8Weeks, gone.askedWhenWatched], [0, 0, null])
+  // The rows carry the side in their key.
+  const rows = buildScorecard([scoreScenario(scenarioById('own-vet-knows-improves').ciSeeds.map((seed) => ({ scenario: scenarioById('own-vet-knows-improves'), seed, result: simulate(scenarioById('own-vet-knows-improves'), seed, () => []) })))], { arm: 'flag_off', seeds: 'ci', horizons: [180], scenarios: 1, scenarioIds: ['own-vet-knows-improves'], flagsOn: [] }).rows
+  assert('own-vet-knows-improves/recheckQuestion/forNothing/asked' in rows)
+  assert(!Object.keys(rows).some((k) => k.includes('recheckQuestion/wanted')))
+})
+
+Deno.test('CUL-1290: the shipped engine never asks the question; the offline knob does, on a watched concern', () => {
+  const sc = scenarioById('own-answers-vet-knows')
+  const seed = sc.ciSeeds[0]
+  const en9 = { on: ['engines_v3_en9' as const], readOk: true }
+  const shipped = simulate(sc, seed, makeSignalObserver({ askOf: standInAsk, engineFlags: en9 }))
+  assert(shipped.shown.every((ev) => ev.cards.every((c) => (c as ScoredCard).recheckQuestion !== true)))
+  const on = simulate(sc, seed, makeSignalObserver({ askOf: standInAsk, engineFlags: en9, careConfig: { recheckQuestionDays: 56 } }))
+  const asked = on.shown.filter((ev) => ev.cards.some((c) => (c as ScoredCard).recheckQuestion === true))
+  assert(asked.length > 0, 'non-vacuous: the knob asks on this seed')
+  for (const ev of asked) {
+    for (const c of ev.cards as ScoredCard[]) if (c.recheckQuestion) assertEquals([c.careState, c.ask], ['with_vet', 'none'])
+  }
+  // The question moves no ask: every evening's registers are the shipped arm's.
+  assertEquals(on.shown.map((ev) => ev.cards.map((c) => c.ask)), shipped.shown.map((ev) => ev.cards.map((c) => c.ask)))
+})

@@ -43,6 +43,7 @@ export const OWNER_SCENARIOS: ScenarioSpec[] = [
       detect: [
         { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
       ],
+      recheckQuestion: { petKey: 'a', sign: 'vomit', truth: 'wanted' },
     },
   },
   {
@@ -129,7 +130,9 @@ export const OWNER_SCENARIOS: ScenarioSpec[] = [
       ],
       detect: [
         { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
-      ],
+      ],      // No engine can see these vomits; the concern usually stands down, and a miss is the honest
+      // outcome. Keyed so the scorecard says so rather than leaving the lapse out of the trade.
+      recheckQuestion: { petKey: 'a', sign: 'vomit', truth: 'wanted' },
     },
   },
   {
@@ -229,6 +232,38 @@ export const OWNER_SCENARIOS: ScenarioSpec[] = [
         { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
         { petKey: 'a', lane: 're_raise', sign: 'vomit', from: { day: 90 }, scoring: 'paired' },
       ],
+    },
+  },
+  {
+    id: 'own-vet-knows-improves',
+    title: 'The owner answers "My vet knows", and two weeks later the vomiting halves',
+    category: 'owner',
+    rationale:
+      'The other side of CUL-1290\'s two-sided test. The vet\'s plan works in part: from 14 days after the answer each vomit happens with probability one half (ten a month to about five, still often enough that the concern usually stands). No recheck is recorded, so the vet-keyed fallback would ask "Did your vet want to see her again?" at eight weeks; to this owner it asks for nothing. Paired with own-answers-vet-knows (the same owner, no improvement), whose question is the one the fallback exists for (PMD-5).',
+    covers: ['answers_vet_knows', 'improves_after_ack'],
+    tz: 'America/Chicago',
+    startDate: START,
+    days: 180,
+    pets: [
+      {
+        ...cat('Juniper'),
+        feeding: stapleFeeding(),
+        signs: chronic,
+        effects: [{ kind: 'improvement', sign: 'vomit', residual: 0.5, from: { afterAck: 14 } }],
+        owner: [{ kind: 'answer_vet_knows', afterEvenings: 3 }],
+        logging: logging(),
+      },
+    ],
+    ciSeeds: CI_SEEDS,
+    truth: 'Chronic vomiting at ten a month, halved from 14 days after the answer and staying there. A re-raise is false; the fallback question at eight weeks asks for nothing.',
+    key: {
+      falseCards: [
+        { petKey: 'a', lane: 're_raise', sign: 'vomit' },
+      ],
+      detect: [
+        { petKey: 'a', lane: 'chronic', sign: 'vomit', from: { day: 0 }, scoring: 'paired' },
+      ],
+      recheckQuestion: { petKey: 'a', sign: 'vomit', truth: 'for_nothing' },
     },
   },
 ]
