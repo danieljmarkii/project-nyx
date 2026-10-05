@@ -932,16 +932,23 @@ function chronicAsOf(input: DetectionInput, config: DetectionConfig): (sign: Sym
 
 // EN-9 (CUL-1538): what the summary says for a concern the owner has told the vet about. The
 // card shows the care state's sentence (`with_vet`, `recheck_booked`) and stops asking, so the
-// summary says that same sentence rather than the lane's "talk to your vet". Keyed on the SIGN,
-// since the state is one per sign and `curated` holds the undecorated finding. Null for every
-// other finding, `raised` and `raised_again` included: those cards still ask, and so does the
-// summary. Flag off, no finding carries a care state, so this is null for all of them.
+// summary says that card's HEAD ("Rex's vomiting, your vet knows.") rather than the lane's "talk
+// to your vet". The head only: the card's own sentence runs to three (the source and the since
+// line), and two watched signs would then overrun the summary's cap (adversarial pass); the
+// detail stays on the card. The head is cut from the card's text, never re-spelled here, and a
+// text without it is said whole (still not an ask). Keyed on the SIGN, since the state is one
+// per sign and `curated` holds the undecorated finding. Null for every other finding, `raised`
+// and `raised_again` included: those cards still ask, and so does the summary. Flag off, no
+// finding carries a care state, so this is null for all of them.
+export const WATCHED_HEAD_END = ', your vet knows.'
 export function watchedSentenceLookup(rows: { finding: Finding }[]): (f: Finding) => string | null {
   const bySign = new Map<SymptomType, string>()
   for (const r of rows) {
     const sign = concernSignOf(r.finding)
     const care = careStateOf(r.finding)
-    if (sign !== null && care !== null && isWatched(care.state) && care.text) bySign.set(sign, care.text)
+    if (sign === null || care === null || !isWatched(care.state) || !care.text) continue
+    const end = care.text.indexOf(WATCHED_HEAD_END)
+    bySign.set(sign, end < 0 ? care.text : care.text.slice(0, end + WATCHED_HEAD_END.length))
   }
   return (f) => {
     const sign = concernSignOf(f)

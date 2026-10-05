@@ -43,6 +43,7 @@ import {
   runSignalPipeline,
   templatePayload,
   templateTexts,
+  WATCHED_HEAD_END,
   type CareRecord,
   type PriorSignal,
   type RankedFinding,
@@ -363,7 +364,7 @@ Deno.test('(c-en9) AC-3: with every concern answered, every escalation keeps its
 })
 
 // CUL-1538: the summary speaks for the cards beneath it. With every concern answered, each watched
-// card's own sentence is in the summary and the lane's ask for that sign is not; every safety card
+// card's head ("Rex's vomiting, your vet knows.") is in the summary and the lane's ask for that sign is not; every safety card
 // that still asks keeps its sentence there, so the summary routes to the vet while one asks.
 Deno.test('(c-en9) CUL-1538: the summary says what a watched card says, and still asks wherever a card asks', () => {
   const ON: EngineFlags = { on: [EN9], readOk: true }
@@ -387,7 +388,11 @@ Deno.test('(c-en9) CUL-1538: the summary says what a watched card says, and stil
       const care = careStateOf(r.finding)
       if (care?.state === 'with_vet' || care?.state === 'recheck_booked') {
         watched++
-        assertStrictEquals(summary.includes(care.text as string), true, `${c.name}: the watched sentence is missing from the summary`)
+        // The card's head, cut from the card's own text: the step's copy and the lookup's cut agree.
+        const text = care.text as string
+        const head = text.slice(0, text.indexOf(WATCHED_HEAD_END) + WATCHED_HEAD_END.length)
+        assertStrictEquals(text.includes(WATCHED_HEAD_END) && summary.includes(head), true, `${c.name}: the watched head is missing from the summary`)
+        assertStrictEquals(summary.includes(text), text === head, `${c.name}: the card's detail leaked into the summary`)
         assertStrictEquals(summary.includes(templateForFinding(r.finding, result.petName)), false, `${c.name}: the summary still asks about a watched ${r.finding.type}`)
       } else {
         asking++

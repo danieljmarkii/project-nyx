@@ -386,9 +386,9 @@ export interface BuildSummaryArgs {
    */
   risingBelowCardFloor: boolean
   /**
-   * EN-9 (CUL-1538): the sentence a safety card shows while its concern is watched (the owner
-   * said the vet knows), or null when the card still asks. A watched concern's clause is that
-   * sentence, never the lane's "talk to your vet", so the summary stops asking where the card
+   * EN-9 (CUL-1538): the head of the sentence a safety card shows while its concern is watched
+   * (the owner said the vet knows), or null when the card still asks. A watched concern's clause
+   * is that head, never the lane's "talk to your vet", so the summary stops asking where the card
    * has. It is still a concern: `hasSafety` stays true (the finished-meal rate stays out, the
    * model stays off, and the sentence itself names the vet). Every finding that still asks keeps
    * its own template and leads. Always null with `engines_v3_en9` off. Required (C-37).

@@ -721,7 +721,9 @@ Deno.test('buildSummaryPacket — finished-rate is OMITTED while a sign rises be
 
 // ── EN-9 (CUL-1538): a watched concern stops asking in the summary as it does on its card ─────
 
-const WATCHED_VOMIT = "Pixel's vomiting, your vet knows. You said so on Jun 2."
+// The card's real shape: the head, the source, the since line (careState.ts). The summary says the head.
+const WATCHED_CARD = "Pixel's vomiting, your vet knows. You said on Jun 2 Pixel's vet knows. Since Jun 2, 12 days: 1 episode, with something logged on 12 of 12."
+const WATCHED_VOMIT = "Pixel's vomiting, your vet knows."
 // A finding as the care-state step leaves it: the lane's finding plus its `careState`.
 const withCare = (f: Finding, state: string, text: string | null): Finding =>
   ({ ...f, careState: { state, ackId: 'a', source: 'my_vet_knows', anchorOn: null, reference: null, reason: null, recheckOn: null, text, lapsed: [] } }) as unknown as Finding
@@ -743,7 +745,7 @@ Deno.test('EN-9: the only safety card is watched → the summary says the card s
   const w = worseningFinding()
   const asking = summaryTemplate(packetFor([w], [w]))
   assert.match(asking, /vet/i, 'premise: the raised card routes to the vet')
-  const p = packetFor([w], [withCare(w, 'with_vet', WATCHED_VOMIT)])
+  const p = packetFor([w], [withCare(w, 'with_vet', WATCHED_CARD)])
   assert.equal(p.clauses[0], WATCHED_VOMIT)
   assert.equal(p.clauses.includes(packetFor([w], [w]).clauses[0]), false, 'the lane sentence is gone')
   // Still a concern: the rate stays out, the model stays off, and the vet check holds.
@@ -756,7 +758,9 @@ Deno.test('EN-9: the only safety card is watched → the summary says the card s
 Deno.test('EN-9: recheck_booked is watched too; raised and raised_again keep the lane sentence', () => {
   const w = worseningFinding()
   const lane = packetFor([w], [w]).clauses[0]
-  assert.equal(packetFor([w], [withCare(w, 'recheck_booked', 'Booked.')]).clauses[0], 'Booked.')
+  assert.equal(packetFor([w], [withCare(w, 'recheck_booked', "Pixel's vomiting, your vet knows. Recheck booked for Jun 20.")]).clauses[0], WATCHED_VOMIT)
+  // A text without the head is said whole: still the card's words, still not an ask.
+  assert.equal(packetFor([w], [withCare(w, 'with_vet', 'Watched.')]).clauses[0], 'Watched.')
   assert.equal(packetFor([w], [withCare(w, 'raised', null)]).clauses[0], lane)
   assert.equal(packetFor([w], [withCare(w, 'raised_again', 'Back because it changed. ' + lane)]).clauses[0], lane)
 })
@@ -764,7 +768,7 @@ Deno.test('EN-9: recheck_booked is watched too; raised and raised_again keep the
 Deno.test('EN-9: an escalation beside a watched concern still leads and still routes to the vet', () => {
   const d = declineFinding()
   const w = worseningFinding()
-  const p = packetFor([w, d], [d, withCare(w, 'with_vet', WATCHED_VOMIT)])
+  const p = packetFor([w, d], [d, withCare(w, 'with_vet', WATCHED_CARD)])
   assert.equal(p.clauses[0], packetFor([d], [d]).clauses[0], 'the asking card leads, as on Home')
   assert.equal(p.clauses[1], WATCHED_VOMIT)
   assert.match(p.clauses[0], /vet/i)
@@ -773,14 +777,24 @@ Deno.test('EN-9: an escalation beside a watched concern still leads and still ro
 Deno.test('EN-9: a watched sign never quiets a DIFFERENT sign that still asks', () => {
   const vomit = worseningFinding()
   const cough = worseningFinding({ symptomType: 'cough' })
-  const p = packetFor([vomit, cough], [withCare(vomit, 'with_vet', WATCHED_VOMIT), cough])
+  const p = packetFor([vomit, cough], [withCare(vomit, 'with_vet', WATCHED_CARD), cough])
   assert.deepEqual(p.clauses.slice(0, 2), [packetFor([cough], [cough]).clauses[0], WATCHED_VOMIT])
 })
 
 Deno.test('EN-9: chronicity and worsening for one watched sign say the sentence once', () => {
   const w = worseningFinding()
   const c = { type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'vomit' } as unknown as Finding
-  const p = packetFor([c, w], [withCare(c, 'with_vet', WATCHED_VOMIT), withCare(w, 'with_vet', WATCHED_VOMIT)])
+  const p = packetFor([c, w], [withCare(c, 'with_vet', WATCHED_CARD), withCare(w, 'with_vet', WATCHED_CARD)])
   assert.equal(p.clauses.filter((x) => x === WATCHED_VOMIT).length, 1)
   assert.equal(p.clauses.length, 2, 'the sentence once, then the protein clause')
+})
+
+Deno.test('EN-9: several watched signs stay inside the sentence cap (adversarial pass, CUL-1538)', () => {
+  const signs = ['vomit', 'diarrhea', 'cough'] as const
+  const fs = signs.map((symptomType) => worseningFinding({ symptomType }))
+  const label = { vomit: 'vomiting', diarrhea: 'diarrhea', cough: 'coughing' }
+  const decorated = fs.map((f, i) => withCare(f, 'with_vet', `Pixel's ${label[signs[i]]}, your vet knows. You said on Jun 2 Pixel's vet knows. Since Jun 2, 12 days: 1 episode, with something logged on 12 of 12.`))
+  const p = packetFor(fs, decorated)
+  assert.deepEqual(p.clauses.slice(0, 3), signs.map((x) => `Pixel's ${label[x]}, your vet knows.`))
+  assert.equal(validateSummary(summaryTemplate(p), p), true, summaryTemplate(p))
 })
