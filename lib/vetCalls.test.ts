@@ -845,4 +845,48 @@ describe('the eighth adversarial pass (2026-10-05, one question per call)', () =
     };
     expect(await pick(['A', 'C'])).toEqual(await pick(['C', 'A']));
   });
+
+  it('PA: the owner\'s own call (and its note) is the one shown, whichever phone speaks', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    const mine = await recordCall('v1', { now: T0 + H, newId });
+    await saveCallNote(mine, 'bring a sample', { now: T0 + 2 * H, newId });
+    // Another phone's call with the identical cover and a lower id, same day, same state.
+    pulledCall('aa-B', 'v1', T0 + H, { rank: 1, fromMs: T0 });
+    mockDb.prepare(`UPDATE vet_calls SET called_on = ? WHERE id = 'aa-B'`).run(rows('vet_calls')[0].called_on);
+    owed('aa-B-owed', 'aa-B', T0 + H);
+    const v = (await readCallsForPet(PET, T0 + 3 * H))[0];
+    expect(v).toMatchObject({ calls: 2, ownCall: true });
+    expect(v.call).toMatchObject({ id: mine, note: 'bring a sample' });
+  });
+
+  it('PC: the day a group shows never moves as its members change state', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    pulledCall('c1', 'v1', T0 + H, { rank: 1, fromMs: T0 });
+    owed('c1-owed', 'c1', T0 + H);
+    pulledCall('c2', 'v1', T0 + 6 * 24 * H, { rank: 1, fromMs: T0 });
+    mockDb.prepare(`UPDATE vet_calls SET called_on = '2026-10-07' WHERE id = 'c2'`).run();
+    owed('c2-owed', 'c2', T0 + 6 * 24 * H);
+    const days = new Set<string>();
+    for (const h of [50, 170, 194, 400]) {
+      const [v] = await readCallsForPet(PET, T0 + h * H);
+      days.add(v.call.calledOn);
+    }
+    expect([...days]).toEqual(['2026-10-01']);
+  });
+
+  // Refactor-safety, not a guard: the group already fell back to the same state before the
+  // predicate was shared (a mutation restoring the old filter stays green).
+  it('PE: an answer key this build cannot name reads the same for the call and its group', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    pulledCall('c1', 'v1', T0 + H, { rank: 1, fromMs: T0 });
+    owed('c1-owed', 'c1', T0 + H);
+    answer('c1-ans', 'c1', 'future_key', T0 + 50 * H);
+    const [v] = await readCallsForPet(PET, T0 + 51 * H);
+    const call = callRecordsOf(rows('vet_calls') as never)[0];
+    expect(v.followUp.kind).toBe(followUpStateOf(call, rows('vet_call_follow_ups') as never, T0 + 51 * H).kind);
+  });
 });
+

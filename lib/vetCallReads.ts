@@ -16,6 +16,7 @@ import {
   callRecordsOf,
   followUpStateOf,
   incidentFamilyOf,
+  isAnswer,
   type CallCover,
   type CallRecord,
   type CallTierRead,
@@ -149,7 +150,10 @@ export async function readCallsForPet(petId: string, now: number = Date.now()): 
   // read off the anchor event's type. Nothing in the app re-types an event, and the one
   // re-type in the repo (scripts/w1-other-row-swap) moves `other` rows to cough or sneeze, so
   // a stored cover's family never moves today. A cross-family edit would need the family
-  // stored on the call (pass 8, 4).
+  // stored on the call (pass 8, 4). The same read costs one transient case: a call whose
+  // anchor event has not arrived (an events pull that failed this cycle) has no cover, stands
+  // alone, and may ask its question until the event lands and it rejoins its group (pass 9,
+  // PF). An extra question, healed by the next sync.
 
   // ONE QUESTION PER CALL (PM ruling A, 2026-10-05, CUL-1604). Calls share a question only
   // when their stored covers are IDENTICAL: the same family, the same rank and the same
@@ -192,7 +196,7 @@ export async function readCallsForPet(petId: string, now: number = Date.now()): 
   for (const members of groupList) {
     const ids = new Set(members.map((m) => m.call.id));
     const firstAnswer = ledger
-      .filter((r) => r.vet_call_id !== null && ids.has(r.vet_call_id) && r.status === 'answered' && r.answer !== null)
+      .filter((r) => r.vet_call_id !== null && ids.has(r.vet_call_id) && r.status === 'answered' && isAnswer(r.answer))
       .sort((a, b) => ms(a.created_at) - ms(b.created_at) || byId(a.id, b.id))[0];
     const answeredMember = firstAnswer
       ? members.find((m) => m.call.id === firstAnswer.vet_call_id && m.state.kind === 'answered')
@@ -203,17 +207,23 @@ export async function readCallsForPet(petId: string, now: number = Date.now()): 
         STATE_ORDER[a.state.kind] - STATE_ORDER[b.state.kind] ||
         (a.call.calledOn < b.call.calledOn ? -1 : a.call.calledOn > b.call.calledOn ? 1 : 0) ||
         byId(a.call.id, b.call.id))[0];
-    members.sort((a, b) => byId(a.call.id, b.call.id));
+    // The member SHOWN is fixed apart from the one that speaks for the question (pass 9, PA,
+    // PC): this phone's own call when it holds one (its note, its Undo), else the earliest
+    // call, so the row's day, the note and the owner's own words never move as members change
+    // state. Only the follow-up comes from the member that speaks.
+    members.sort((a, b) =>
+      (a.call.calledOn < b.call.calledOn ? -1 : a.call.calledOn > b.call.calledOn ? 1 : 0) || byId(a.call.id, b.call.id));
+    const presented = members.find((m) => m.call.madeHere) ?? members[0];
     views.push({
-      call: shown.call,
+      call: presented.call,
       followUp: shown.state,
-      eventType: anchorOf.get(shown.call.eventId)?.event_type ?? null,
-      family: shown.family,
+      eventType: anchorOf.get(presented.call.eventId)?.event_type ?? null,
+      family: presented.family,
       covers: members.map((m) => m.cover).filter((c): c is CallCover => c !== null),
-      rank: shown.cover?.rank ?? null,
+      rank: presented.cover?.rank ?? null,
       calls: members.length,
-      memberIds: members.map((m) => m.call.id),
-      ownCall: shown.call.madeHere,
+      memberIds: members.map((m) => m.call.id).sort(byId),
+      ownCall: presented.call.madeHere,
     });
   }
   // A total order (pass 8, 3): newest day first, then louder, then the later cover, then id,

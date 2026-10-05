@@ -232,7 +232,10 @@ export type FollowUpState =
   | { kind: 'due'; dueAt: string; expiresAt: string }
   | { kind: 'expired'; expiresAt: string };
 
-function isAnswer(v: string | null): v is FollowUpAnswer {
+/** A recorded answer this build can name. The one predicate the call and the group read
+ *  (pass 9, PE): an answer key a later build adds reads as no answer on both, never as an
+ *  answer on one and a question on the other. */
+export function isAnswer(v: string | null): v is FollowUpAnswer {
   return v !== null && (FOLLOW_UP_ANSWERS as readonly string[]).includes(v);
 }
 function isWorthIt(v: string | null): v is WorthIt {
