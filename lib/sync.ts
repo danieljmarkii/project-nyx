@@ -3725,8 +3725,11 @@ async function drainVetCallFollowUpsQueue(): Promise<void> {
 
 /**
  * Pull the calls and their ledger (insert-only, so incremental on created_at with overlap,
- * the event_attachments shape). A row already here is never overwritten: these rows never
- * change, and the local copy of a row this phone wrote differs only in its created_at.
+ * the event_attachments shape). A row already here keeps every field but one: these rows
+ * never change, and the local copy of a row this phone wrote differs only in its created_at,
+ * which is ADOPTED from the server. The answer's precedence and the latest note are ordered
+ * by created_at, so a phone keeping its own clock's stamp would order two caregivers'
+ * offline answers differently from every other phone, forever (adversarial pass 6, D).
  *
  * The note is selected by name. It is the owner's own words, shown back to her (§6.4); the
  * rule that no model reads it is the server's (guards/careRecord.test.ts), and nothing on
@@ -3754,7 +3757,8 @@ async function hydrateVetCalls(db: Db, stale: () => boolean): Promise<void> {
       `INSERT INTO vet_calls
          (id, pet_id, called_on, event_id, note, supersedes, withdrawn, covers_rank, covers_from, created_at, synced)
        VALUES (?,?,?,?,?,?,?,?,?,?,1)
-       ON CONFLICT(id) DO NOTHING`,
+       ON CONFLICT(id) DO UPDATE SET created_at = excluded.created_at
+         WHERE vet_calls.created_at IS NOT excluded.created_at`,
       [
         r.id, r.pet_id, r.called_on, r.event_id, r.note, r.supersedes, r.withdrawn ? 1 : 0,
         r.covers_rank, r.covers_from, r.created_at,
@@ -3786,7 +3790,8 @@ async function hydrateVetCallFollowUps(db: Db, stale: () => boolean): Promise<vo
       `INSERT INTO vet_call_follow_ups
          (id, pet_id, vet_call_id, event_id, reason, status, answer, worth_it, due_at, expires_at, created_at, synced)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
-       ON CONFLICT(id) DO NOTHING`,
+       ON CONFLICT(id) DO UPDATE SET created_at = excluded.created_at
+         WHERE vet_call_follow_ups.created_at IS NOT excluded.created_at`,
       [r.id, r.pet_id, r.vet_call_id, r.event_id, r.reason, r.status, r.answer, r.worth_it,
        r.due_at, r.expires_at, r.created_at],
     );

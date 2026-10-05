@@ -174,14 +174,34 @@ export async function readCallsForPet(petId: string, now: number = Date.now()): 
   }
   for (const p of placed) if (p.cover === null) groupList.push([p]);
 
+  // AN ANSWER IS FOUND BY RELATION, NEVER BY GROUP (adversarial pass 6, R). The grouping
+  // above walks from each group's first cover, so a late EARLIER cover can split a later
+  // call out of a group whose question was already answered, and that call's own row is
+  // still owed. So a group with no answer of its own takes one from any answered call that
+  // ANSWERS it: the same family, at least as loud, and starting within a bout of one of its
+  // members. That relation depends only on the pair, so it only grows as rows arrive: an
+  // answer, once shown, is never un-shown by a later row on any phone. The loudest, then
+  // earliest, related answer is the one shown.
+  const answeredCalls = placed.filter((p) => p.state.kind === 'answered' && p.cover !== null);
+  const answers = (a: CallCover, x: CallCover): boolean =>
+    a.family === x.family && a.rank >= x.rank &&
+    Math.abs(new Date(a.from).getTime() - new Date(x.from).getTime()) <= BOUT_MS;
   const views: CallView[] = [];
   for (const members of groupList) {
     members.sort((a, b) => (a.call.calledOn < b.call.calledOn ? -1 : a.call.calledOn > b.call.calledOn ? 1 : a.call.id < b.call.id ? -1 : 1));
     const answered = members.find((g) => g.state.kind === 'answered');
     const shown = answered ?? members[0];
+    const related = answered
+      ? null
+      : answeredCalls
+          .filter((a) => members.some((m) => m.cover !== null && answers(a.cover!, m.cover)))
+          .sort((a, b) =>
+            b.cover!.rank - a.cover!.rank ||
+            new Date(a.cover!.from).getTime() - new Date(b.cover!.from).getTime() ||
+            (a.call.id < b.call.id ? -1 : 1))[0] ?? null;
     views.push({
       call: shown.call,
-      followUp: shown.state,
+      followUp: related ? related.state : shown.state,
       eventType: anchorOf.get(shown.call.eventId)?.event_type ?? null,
       family: shown.family,
       covers: members.map((m) => m.cover).filter((c): c is CallCover => c !== null),

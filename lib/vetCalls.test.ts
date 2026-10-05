@@ -66,7 +66,9 @@ import {
   saveCallNote,
   undoCall,
 } from './vetCalls';
-import { CALL_NOTE_MAX, FOLLOW_UP_DUE_MS, FOLLOW_UP_EXPIRES_MS } from './vetCallState';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { CALL_NOTE_MAX, FOLLOW_UP_DUE_MS, FOLLOW_UP_EXPIRES_MS, callRecordsOf, followUpStateOf } from './vetCallState';
 
 const PET = 'pet-a';
 const H = 60 * 60 * 1000;
@@ -649,5 +651,117 @@ describe('the fourth adversarial pass (2026-10-05)', () => {
     pulledCall('theirs', 'v1', T0 + H, { rank: 1, fromMs: T0 });
     const v = await readCall('theirs', T0 + 2 * H);
     expect(v?.ownCall).toBe(false);
+  });
+});
+
+describe('the sixth adversarial pass (2026-10-05, on the stored cover)', () => {
+  const owedRow = (id: string, callId: string, eventId: string, calledMs: number) =>
+    mockDb
+      .prepare(
+        `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, due_at, expires_at, created_at, synced)
+         VALUES (?, ?, ?, ?, 'called', 'owed', ?, ?, ?, 1)`,
+      )
+      .run(id, PET, callId, eventId, new Date(calledMs + 48 * H).toISOString(), new Date(calledMs + 7 * 24 * H).toISOString(), new Date(calledMs).toISOString());
+
+  it('R: a late earlier call never un-answers an escalation another call already answered', async () => {
+    event('e1', T0 + 10 * H);
+    verdict('e1', 'call_today');
+    const c1 = await recordCall('e1', { now: T0 + 11 * H, newId });
+    await answerFollowUp(c1, 'keep_watching', null, { now: T0 + 60 * H, newId });
+    // Another phone's call, made without e1, pulled after the answer.
+    event('e2', T0 + 30 * H);
+    verdict('e2', 'call_today');
+    pulledCall('c2', 'e2', T0 + 31 * H, { rank: 1, fromMs: T0 + 30 * H });
+    owedRow('c2-owed', 'c2', 'e2', T0 + 31 * H);
+    expect((await readCallsForPet(PET, T0 + 90 * H)).map((v) => v.followUp.kind)).toEqual(['answered']);
+    // A late, earlier read is tapped: its call regroups c2 away from c1 (the walk is from the
+    // group's first cover), and c2 must still read as answered.
+    event('e0', T0);
+    verdict('e0', 'call_today');
+    await recordCall('e0', { now: T0 + 91 * H, newId });
+    const views = await readCallsForPet(PET, T0 + 92 * H);
+    expect(views.length).toBeGreaterThan(1);
+    expect(views.map((v) => v.followUp.kind)).toEqual(views.map(() => 'answered'));
+    // And it cannot be answered a second time.
+    expect(await answerFollowUp('c2', 'wants_to_see', null, { now: T0 + 93 * H, newId })).toBe('already_answered');
+  });
+
+  it('B: a call tapped on a call-today read never silences a call-now read in its bout', async () => {
+    event('r1', T0);
+    verdict('r1', 'call_now');
+    event('r2', T0 + 5 * H);
+    verdict('r2', 'call_today');
+    await recordCall('r2', { now: T0 + 6 * H, newId });
+    expect(rows('vet_calls')[0]).toMatchObject({ event_id: 'r1', covers_rank: 1 });
+    expect((await readIncidentCallState('r2', T0 + 7 * H)).covering).not.toBeNull();
+    expect((await readIncidentCallState('r1', T0 + 7 * H)).covering).toBeNull();
+    event('r3', T0 + 20 * H);
+    verdict('r3', 'call_now');
+    expect((await readIncidentCallState('r3', T0 + 21 * H)).covering).toBeNull();
+  });
+
+  it('K: answering the louder call answers a quieter call of the same bout from another phone', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_now');
+    const a = await recordCall('v1', { now: T0 + H, newId });
+    pulledCall('b', 'v1', T0 + H, { rank: 1, fromMs: T0 });
+    owedRow('b-owed', 'b', 'v1', T0 + H);
+    await answerFollowUp(a, 'wants_to_see', 'yes', { now: T0 + 50 * H, newId });
+    expect((await readCallsForPet(PET, T0 + 51 * H)).map((v) => v.followUp.kind)).toEqual(['answered', 'answered']);
+  });
+
+  it('a quieter answer never answers a louder call', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    const a = await recordCall('v1', { now: T0 + H, newId });
+    pulledCall('b', 'v1', T0 + 2 * H, { rank: 2, fromMs: T0 });
+    owedRow('b-owed', 'b', 'v1', T0 + 2 * H);
+    await answerFollowUp(a, 'keep_watching', null, { now: T0 + 50 * H, newId });
+    const byId = new Map((await readCallsForPet(PET, T0 + 51 * H)).map((v) => [v.call.id, v.followUp.kind]));
+    expect(byId.get(a)).toBe('answered');
+    expect(byId.get('b')).toBe('due');
+  });
+
+  it('D: every phone holding the same rows shows the same answer', () => {
+    const call = callRecordsOf([{
+      id: 'c', pet_id: PET, called_on: '2026-10-01', event_id: 'v', note: null, supersedes: null, withdrawn: 0,
+      covers_rank: 1, covers_from: new Date(T0).toISOString(), created_at: new Date(T0).toISOString(),
+    }])[0];
+    const base = { pet_id: PET, vet_call_id: 'c', event_id: 'v', reason: 'called', status: 'answered', worth_it: null, due_at: '', expires_at: '' };
+    const same = '2026-10-03T10:11:00.000Z';
+    const rowsAB = [
+      { ...base, id: 'rb', answer: 'wants_to_see', created_at: same },
+      { ...base, id: 'ra', answer: 'keep_watching', created_at: same },
+    ];
+    const one = followUpStateOf(call, rowsAB, T0 + 100 * H);
+    expect(followUpStateOf(call, [...rowsAB].reverse(), T0 + 100 * H)).toEqual(one);
+    expect(one).toMatchObject({ kind: 'answered', answer: 'keep_watching' });
+  });
+
+  it('D: the pull adopts the server created_at on this phone\'s own rows and changes nothing else', () => {
+    const src = readFileSync(join(__dirname, 'sync.ts'), 'utf8');
+    for (const table of ['vet_calls', 'vet_call_follow_ups'] as const) {
+      const at = src.indexOf(`\`INSERT INTO ${table}\n         (id, pet_id,`);
+      expect(at).toBeGreaterThan(-1);
+      const sql = src.slice(at + 1, src.indexOf('`', at + 1));
+      expect(sql).toMatch(/ON CONFLICT\(id\) DO UPDATE SET created_at = excluded\.created_at/);
+      expect(sql).not.toMatch(/SET[^`]*,/);
+    }
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    const local = '2026-10-03T10:00:00.000Z';
+    mockDb
+      .prepare(
+        `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, answer, due_at, expires_at, created_at, synced)
+         VALUES ('mine', ?, 'c', 'v1', 'called', 'answered', 'keep_watching', 'd', 'e', ?, 0)`,
+      )
+      .run(PET, local);
+    const at = src.indexOf('`INSERT INTO vet_call_follow_ups\n         (id, pet_id, vet_call_id');
+    const sql = src.slice(at + 1, src.indexOf('`', at + 1));
+    // The server's copy, as pulled: the same row with the server's stamp.
+    mockDb.prepare(sql).run('mine', PET, 'c', 'v1', 'called', 'answered', 'wants_to_see', null, 'd', 'e', '2026-10-03T10:30:00+00:00');
+    expect(rows('vet_call_follow_ups')[0]).toMatchObject({
+      created_at: '2026-10-03T10:30:00+00:00', answer: 'keep_watching', synced: 0,
+    });
   });
 });

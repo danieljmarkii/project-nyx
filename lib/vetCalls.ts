@@ -85,13 +85,15 @@ export async function recordCall(
          (id, pet_id, called_on, event_id, note, supersedes, withdrawn,
           covers_rank, covers_from, made_here, created_at, synced)
        VALUES (?, ?, ?, ?, NULL, NULL, 0, ?, ?, 1, ?, 0)`,
-      // The COVER, as shown now (§6.1, §6.3; 084): the bout's first read's time and rank.
-      // The walk only admits a read no louder than its bout's first, so the rank is always at
-      // least the tapped read's, and the call covers the bout the owner tapped into. Stored,
-      // pushed and never recomputed, so a later raise, re-read or late read never moves it.
+      // The COVER, as shown now (§6.1, §6.3; 084): from the bout's first read, at the rank
+      // of the read the owner TAPPED, which is what she was shown when she said she called.
+      // Never the anchor's rank: a call made from a call-today screen must not silence a
+      // call-now read she was never shown (adversarial pass 6, B; the safe reading of §6.3,
+      // whose worst case is an extra offer on that louder read). Stored, pushed and never
+      // recomputed, so a later raise, re-read or late read never moves it.
       [
         callId, ev.pet_id, toLocalDayKey(new Date(now)), anchor.eventId,
-        anchor.rank, anchor.occurredAt, createdAt,
+        tapped.rank, anchor.occurredAt, createdAt,
       ],
     );
     await db.runAsync(
@@ -200,8 +202,10 @@ export async function answerFollowUp(
   if (state.kind === 'answered') return 'already_answered';
   if (record.withdrawn) throw new Error('vet call: this call was taken back');
   // ONE ANSWER ANSWERS THE ESCALATION: every live call in it (two phones can each have
-  // called), so neither phone asks again (adversarial pass 4, C).
+  // called), so neither phone asks again (adversarial pass 4, C). An escalation already
+  // answered through a related call (pass 6, R) is not answered twice.
   const view = await readCall(callId, now);
+  if (view?.followUp.kind === 'answered') return 'already_answered';
   const members = view?.memberIds.length ? view.memberIds : [callId];
   const createdAt = new Date(now).toISOString();
   const db = getDb();

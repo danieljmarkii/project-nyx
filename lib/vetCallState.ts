@@ -247,7 +247,10 @@ export function followUpStateOf(
   const mine = rows.filter((r) => r.vet_call_id === call.id);
   const answered = mine
     .filter((r) => r.status === 'answered' && isAnswer(r.answer))
-    .sort((a, b) => ms(a.created_at) - ms(b.created_at));
+    // The id breaks a tie so every phone holding the same rows picks the same answer. Each
+    // phone adopts the server's created_at when it pulls its own rows back (lib/sync.ts), so
+    // two caregivers answering offline converge on the one the server recorded first (pass 6, D).
+    .sort((a, b) => ms(a.created_at) - ms(b.created_at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   if (answered.length > 0) {
     const first = answered[0];
     return { kind: 'answered', answer: first.answer as FollowUpAnswer, worthIt: isWorthIt(first.worth_it) ? first.worth_it : null };
