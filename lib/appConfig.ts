@@ -84,10 +84,18 @@ export type AppConfigKey = keyof AppConfigValues;
 // same data-only clean-up; it was never read server-side. Not to be confused with
 // `signal_design_v2` above, the 2026-08 uplift. None of the nine belongs in this
 // client-side union any more.
+//
+// `engines_v3_en14` (Engines v3 PR-36, CUL-1419) is EN-14's client half: "I've called" on a
+// call-tier read, the call record in Vet visits and History, the follow-up and its
+// notification. EN-F's own keys are resolved server-side (`_shared/engineFlags.ts`); this one
+// is read on the phone because nothing in EN-14 runs on the server. The same value shape and
+// the same fail-closed resolution, so the PM's allowlist step is one row. NOT SEEDED: absent
+// reads as off. PMD-12 (CUL-1313) keeps it to the PM's account until the published purpose.
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',
   'widget_enabled',
+  'engines_v3_en14',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -103,6 +111,7 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   ask_enabled: undefined,
   ask_general_enabled: undefined,
   widget_enabled: undefined,
+  engines_v3_en14: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

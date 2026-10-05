@@ -94,6 +94,12 @@ export function useAllowlistFlagsRaw(): AllowlistFlagValues {
 // (the auth store) through the pure resolver. Fail-CLOSED: an unset / unreachable /
 // malformed value, or a signed-out caller, resolves to false — the affordance hides
 // rather than half-enabling. Render-only; the server re-checks authoritatively.
+/** The same resolution, read once, for code outside React (a store's load). Not reactive: a
+ *  caller that must follow a flip re-reads on its own next load. */
+export function allowlistFlagNow(key: AllowlistFlagKey): boolean {
+  return resolveAllowlistFlag(currentAllowlist[key], useAuthStore.getState().user?.id ?? null, false);
+}
+
 export function useAllowlistFlag(key: AllowlistFlagKey): boolean {
   const raw = useSyncExternalStore(
     subscribe,

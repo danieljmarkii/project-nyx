@@ -45,6 +45,9 @@ jest.mock('../../store/petStore', () => ({
 }));
 // Off the native SVG/animation path — the loader is not what this test pins.
 jest.mock('../../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
+// Engines v3 PR-36: the follow-up's row is its own component with its own suite
+// (components/settings/FollowUpNotificationRow.test.tsx); here it is inert.
+jest.mock('../../components/settings/FollowUpNotificationRow', () => ({ FollowUpNotificationRow: () => null }));
 // The primer now reads its copy from the category registry (DR-4), so the mock must
 // expose the real NOTIFICATION_CATEGORIES (descriptor + copy) alongside the stubbed
 // permission I/O the test drives.

@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import { allowlistFlagNow } from '../hooks/useAppConfig';
+import { readCallsForHistory, type HistoryCallRow } from '../lib/vetCallReads';
 import {
   getActiveArrangementsForPet,
   getBoundaryMarkers,
@@ -468,11 +470,13 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
       const keepTo = same && same.pages.span ? same.pages.span.fromDay : null;
       // Every window is clipped to All time (`resolveWindow`), so it is a slice of the record.
       const facts = historyFactsFor(record.facts, resolved.bounds);
-      const [visits, bowls, arrangements, firstPages] = await Promise.all([
+      const [visits, bowls, arrangements, firstPages, calls] = await Promise.all([
         readVisitsForHistory(pet.id),
         getBoundaryMarkers(pet.id),
         getActiveArrangementsForPet(pet.id),
         readPagesThrough(pet.id, pageScope, keepTo),
+        // Engines v3 PR-36: the pet's calls, read only while EN-14 is on (flag-off reads none).
+        allowlistFlagNow('engines_v3_en14') ? readCallsForHistory(pet.id) : Promise.resolve([] as HistoryCallRow[]),
       ]);
       let pages = firstPages;
       let wholeDays = await wholeDaysFor(pet.id, pages.days, scope.filter, search);
@@ -523,8 +527,8 @@ export const useHistoryListStore = create<HistoryListState>((set, get) => ({
           record,
           facts,
           courses,
-          items: dateOnlyItemsOf({ visits, courses, bowls, range: resolved.bounds }),
-          preRecord: preRecordItemsOf({ visits, courses, bowls, recordStart: record.facts.firsts.record, today }),
+          items: dateOnlyItemsOf({ visits, courses, bowls, calls, range: resolved.bounds }),
+          preRecord: preRecordItemsOf({ visits, courses, bowls, calls, recordStart: record.facts.firsts.record, today }),
           arrangements,
           pages,
           wholeDays,

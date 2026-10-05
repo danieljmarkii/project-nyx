@@ -29,6 +29,7 @@ import { useSync } from '../hooks/useSync';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
 import { useWidgetSnapshots } from '../hooks/useWidgetSnapshots';
 import { useNotificationScheduling } from '../hooks/useNotificationScheduling';
+import { useFollowUpNotificationSync } from '../hooks/useFollowUps';
 import { useAppActive } from '../hooks/useAppActive';
 import { initAppConfig, refreshAppConfig } from '../hooks/useAppConfig';
 import { hydrateBetaOptIns } from '../lib/betaFeatures';
@@ -77,6 +78,9 @@ export default function RootLayout() {
   // (behind the auth gate). Inert until PR 3 ships the toggle — nothing is enabled,
   // so it only ever cancels a stray schedule (a second sign-out-leak backstop).
   useNotificationScheduling();
+  // Engines v3 PR-36: the follow-up's question after "I've called", reconciled the same way
+  // (each foreground and hydration tick). Off unless engines_v3_en14 and the owner's switch.
+  useFollowUpNotificationSync();
 
   // B-329: load the server-flippable app_config flags on start, then refresh on
   // every foreground (a PM flag flip reaches the client without a reinstall). Values

@@ -12,6 +12,7 @@ import { HomeHeader } from '../../components/home/HomeHeader';
 import { PullToRefreshSky } from '../../components/home/PullToRefreshSky';
 import { CrossPetSafetyBanner } from '../../components/home/CrossPetSafetyBanner';
 import { SignalZone } from '../../components/home/SignalZone';
+import { FollowUpLine } from '../../components/home/FollowUpLine';
 import { TrialStrip } from '../../components/home/TrialStrip';
 import { AppointmentStrip } from '../../components/vetvisits/AppointmentStrip';
 import { LookExits, exitVisibility, lookRectInPage, type LayoutBox } from '../../components/home/LookExits';
@@ -260,6 +261,10 @@ export default function HomeScreen() {
               signalTrial={signalTrial}
             />
           </RowSpeechContext.Provider>
+          {/* Engines v3 PR-36 (CUL-1419) — "What did the vet say?" once a call's question
+              is due: one navigation line under the Signal, never a card or a control (C-33).
+              Dark behind engines_v3_en14. */}
+          <FollowUpLine />
           {/* B-417 §4.2 — a running trial gets a compact strip here, BELOW Signal
               and ABOVE Today. Deliberate: Principle 3 says safety insights always
               lead, and a trial is context, not an insight. `resolveTrialStrip`

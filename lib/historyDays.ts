@@ -38,6 +38,7 @@ import { attributeDoses, type AttributableDose, type DoseAdherence, type Regimen
 import type { MedicationCourse } from './medicationHistory';
 import { symptomOccurrenceLabel } from './metricDetail';
 import type { HistoryVisitRow } from './vetVisits';
+import type { HistoryCallRow } from './vetCallReads';
 import type { BoundaryMarker } from './feedingArrangements';
 import { collapseSameMinute } from './sameMinuteDuplicates';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
@@ -1207,6 +1208,8 @@ export function dayHeaderOf(
 export type DateOnlyItem =
   | { kind: 'visit'; day: string; id: string; reason: string | null; where: string }
   | { kind: 'course-start'; day: string; courseKey: string; name: string }
+  /** Engines v3 PR-36: "I've called" on an escalation (§6.4), a door to the call's record. */
+  | { kind: 'call'; day: string; id: string; about: 'vomiting' | 'stool' | null }
   | {
       kind: 'bowl';
       day: string;
@@ -1221,10 +1224,12 @@ export interface DateOnlyItemsInput {
   visits: readonly HistoryVisitRow[];
   courses: readonly HistoryCourse[];
   bowls: readonly BoundaryMarker[];
+  /** EN-14's calls (Engines v3 PR-36). Absent where EN-14 is off: the store reads none then. */
+  calls?: readonly HistoryCallRow[];
   range: DayRange;
 }
 
-const ITEM_ORDER: Record<DateOnlyItem['kind'], number> = { visit: 0, 'course-start': 1, bowl: 2 };
+const ITEM_ORDER: Record<DateOnlyItem['kind'], number> = { visit: 0, call: 1, 'course-start': 2, bowl: 3 };
 
 function itemSortKey(item: DateOnlyItem): string {
   return item.kind === 'course-start' ? `${item.name}|${item.courseKey}` : item.id;
@@ -1239,6 +1244,10 @@ function itemSortKey(item: DateOnlyItem): string {
 export function dateOnlyItemsOf(input: DateOnlyItemsInput): Map<string, DateOnlyItem[]> {
   const { visits, courses, bowls, range } = input;
   const items: DateOnlyItem[] = [];
+  for (const c of input.calls ?? []) {
+    const day = dayOfStored(c.calledOn);
+    if (day !== null && inRange(day, range)) items.push({ kind: 'call', day, id: c.id, about: c.about });
+  }
   for (const v of visits) {
     const day = dayOfStored(v.visitedAt);
     if (day !== null && inRange(day, range)) items.push({ kind: 'visit', day, id: v.id, reason: v.reason, where: v.where });
@@ -1287,6 +1296,7 @@ export function preRecordItemsOf(input: {
   visits: readonly HistoryVisitRow[];
   courses: readonly HistoryCourse[];
   bowls: readonly BoundaryMarker[];
+  calls?: readonly HistoryCallRow[];
   /** The record's first day (`FirstDays.record`), or null when nothing is logged yet. */
   recordStart: string | null;
   today: string;

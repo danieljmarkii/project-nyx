@@ -280,6 +280,14 @@ export const LOCAL_WIPE_TABLES = [
   // named household's animal has a recurring sign a vet knows about. It must not
   // survive a sign-out onto a device now in someone else's hands.
   'care_acknowledgements',
+  // Engines v3 PR-36 the call record and its ledger (children first: a ledger row names its
+  // call). Both name an event (no local FK, see localSchema.ts), so they lead 'events'.
+  //
+  // A TRUST & SAFETY REQUIREMENT, not bookkeeping: a call row is a dated statement that a
+  // named household phoned a vet about its animal, and its note is the owner's own words
+  // about what the vet said. Neither may survive a sign-out onto someone else's phone.
+  'vet_call_follow_ups',
+  'vet_calls',
   'vet_visit_attachments',
   // B-117 medication mirror (children-first). medication_administrations
   // FK→events ON DELETE CASCADE locally, so it MUST precede events. medications

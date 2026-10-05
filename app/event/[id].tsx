@@ -47,6 +47,7 @@ import {
 } from '../../lib/medications';
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
 import { StoolAnalysisSection } from '../../components/event/StoolAnalysisSection';
+import { CallAnswers } from '../../components/event/CallAnswers';
 import { destructiveConfirm } from '../../lib/haptics';
 import { EmptyState, Header, PhotoViewer } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
@@ -946,6 +947,14 @@ export default function EventDetailScreen() {
               petName={eventPetName}
               hasPhoto={!!attachment}
             />
+          ) : null}
+
+          {/* Engines v3 PR-36 (CUL-1419): "I've called · Not yet" below a call-tier read, and
+              the call's line once one covers it. Below the read, never in it: the read's ask is
+              drawn above word for word, before and after a call. Dark behind engines_v3_en14,
+              and absent on any read that does not ask for a call. */}
+          {event.event_type === 'vomit' || isStoolEvent(event.event_type) ? (
+            <CallAnswers eventId={event.id} petName={eventPetName} />
           ) : null}
 
           {foodLabel && (foodLabel.brand || foodLabel.product) ? (

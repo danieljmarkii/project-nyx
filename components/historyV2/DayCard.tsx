@@ -178,7 +178,8 @@ const SQUARE_RADIUS = 3;
 const SQUARE_RING = 1.5;
 
 function ItemMark({ item }: { item: DateOnlyItem }) {
-  if (item.kind === 'visit') return <View style={[styles.mark, styles.markSquare]} />;
+  // A call takes the visit's square: both are the vet family, told apart by their words.
+  if (item.kind === 'visit' || item.kind === 'call') return <View style={[styles.mark, styles.markSquare]} />;
   return (
     <View
       style={[
@@ -204,7 +205,7 @@ function DateOnlyItemRow({
   const { title, detail } = dateOnlyItemText(item);
   const label = detail ? `${title}, ${detail}` : title;
   const row = (
-    <View style={[styles.itemRow, isLast ? styles.itemRowLast : styles.itemRowGap, item.kind === 'visit' && styles.itemRowFill]}>
+    <View style={[styles.itemRow, isLast ? styles.itemRowLast : styles.itemRowGap, (item.kind === 'visit' || item.kind === 'call') && styles.itemRowFill]}>
       <View style={styles.itemTime} />
       <View style={styles.rail}>
         {!isFirst ? <View style={[styles.thread, styles.threadTop]} /> : null}
@@ -212,7 +213,7 @@ function DateOnlyItemRow({
         <ItemMark item={item} />
       </View>
       <View style={styles.itemBody}>
-        {item.kind === 'visit' ? (
+        {item.kind === 'visit' || item.kind === 'call' ? (
           <ThemedText style={styles.visitTitle}>
             {title}
             {detail ? <ThemedText style={styles.visitDetail}>{` · ${detail}`}</ThemedText> : null}
@@ -223,6 +224,20 @@ function DateOnlyItemRow({
       </View>
     </View>
   );
+  if (item.kind === 'call') {
+    // Engines v3 PR-36: a call is a door to its own record (§6.4), the visit's 44pt floor.
+    return (
+      <Pressable
+        onPress={() => router.push({ pathname: '/vet-call/[id]', params: { id: item.id } })}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}. Opens the call`}
+        style={({ pressed }) => [styles.visitDoor, pressed && styles.pressed]}
+        testID={`history-item-call-${item.id}`}
+      >
+        {row}
+      </Pressable>
+    );
+  }
   if (item.kind !== 'visit') {
     return (
       <View accessible accessibilityLabel={label} testID={`history-item-${item.kind}-${item.day}`}>

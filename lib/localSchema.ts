@@ -407,6 +407,76 @@ export const BASE_SCHEMA_SQL = `
       ON care_acknowledgements(synced)
       WHERE synced = 0;
 
+    -- vet_calls + vet_call_follow_ups — "I've called" on an escalation, its note, and the
+    -- ledger behind "What did the vet say?" (Engines v3 PR-36, CUL-1419;
+    -- docs/nyx-care-state-requirements.md §6.3, §6.4, §8.2, §8.3). Mirrors
+    -- supabase/migrations/082_care_record.sql.
+    --
+    -- INSERT-ONLY, like care_acknowledgements: the server tables are append-only by RLS, so
+    -- an edited note or an Undo is a NEW row naming the call in supersedes, and an answer is
+    -- a new ledger row. No updated_at, for the same reason (CUL-691).
+    --
+    -- UNLIKE care_acknowledgements, these ARE READ on the phone: the call record is listed
+    -- in Vet visits and History, and the follow-up is asked here. They are PULLED too, so a
+    -- call made on one phone is listed on the other and an answer given on either is never
+    -- asked again (§6.3, "answered once, across phones"). The note is the owner's own words
+    -- and no model reads it; it lives on her phone and in her row, nowhere else.
+    --
+    -- No local FK (the care_acknowledgements reasoning): the drains hold a row until its
+    -- event and its call have landed, because 082's guard answers an unseen parent with a
+    -- TERMINAL 23514.
+    CREATE TABLE IF NOT EXISTS vet_calls (
+      id            TEXT PRIMARY KEY,
+      pet_id        TEXT NOT NULL,
+      called_on     TEXT NOT NULL,
+      event_id      TEXT NOT NULL,
+      note          TEXT,
+      supersedes    TEXT,
+      withdrawn     INTEGER NOT NULL DEFAULT 0,
+      -- The call's COVER (084, CUL-1602), set on the root row only and never on a
+      -- correction: the loudest rank it answers and its bout's start, both as shown when
+      -- "I've called" was tapped (§6.1, §6.3). Pushed and pulled, so every phone reads the
+      -- same cover and it never moves afterwards.
+      covers_rank   INTEGER,
+      covers_from   TEXT,
+      -- LOCAL ONLY: 1 on a call this phone wrote, NULL on one pulled from another. Undo is
+      -- offered only on the owner's own call from her own phone. Never pushed.
+      made_here     INTEGER,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      synced        INTEGER NOT NULL DEFAULT 0,
+      sync_attempts INTEGER NOT NULL DEFAULT 0,
+      sync_error    TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_vet_calls_pet
+      ON vet_calls(pet_id, called_on DESC);
+    CREATE INDEX IF NOT EXISTS idx_vet_calls_unsynced
+      ON vet_calls(synced)
+      WHERE synced = 0;
+
+    CREATE TABLE IF NOT EXISTS vet_call_follow_ups (
+      id            TEXT PRIMARY KEY,
+      pet_id        TEXT NOT NULL,
+      vet_call_id   TEXT,
+      event_id      TEXT NOT NULL,
+      reason        TEXT NOT NULL,
+      status        TEXT NOT NULL,
+      answer        TEXT,
+      worth_it      TEXT,
+      due_at        TEXT NOT NULL,
+      expires_at    TEXT NOT NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      synced        INTEGER NOT NULL DEFAULT 0,
+      sync_attempts INTEGER NOT NULL DEFAULT 0,
+      sync_error    TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_vet_call_follow_ups_call
+      ON vet_call_follow_ups(vet_call_id);
+    CREATE INDEX IF NOT EXISTS idx_vet_call_follow_ups_unsynced
+      ON vet_call_follow_ups(synced)
+      WHERE synced = 0;
+
     -- feeding_arrangements — pet↔food standing fact ("always available / free-fed").
     -- B-040 R1 (PR 2). Mirrors supabase/migrations/018_feeding_arrangements.sql.
     -- A STANDING FACT, not a per-nibble log: one row per (pet, food) free-choice
@@ -623,6 +693,11 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   { table: 'event_ai_verdicts', column: 'rule_version', type: 'TEXT' },
   { table: 'event_ai_verdicts', column: 'engine_flags', type: 'TEXT' },
   { table: 'event_ai_verdicts', column: 'tier', type: 'TEXT' },
+  // Engines v3 PR-36: the call's cover (084) and the local made_here flag. The table is new
+  // in the same PR, so only a phone that ran an earlier build of that branch lacks them.
+  { table: 'vet_calls', column: 'covers_rank', type: 'INTEGER' },
+  { table: 'vet_calls', column: 'covers_from', type: 'TEXT' },
+  { table: 'vet_calls', column: 'made_here', type: 'INTEGER' },
   // Engines v3 PR-18 (CUL-1412) / migration 081 — each weight reading's source. The table
   // shipped in B-186 without them, so only this path reaches an installed phone. The constant
   // defaults are the server's backfill (W2: home_scale, 'legacy'), true for every row an

@@ -369,6 +369,8 @@ export function dateOnlyItemText(item: DateOnlyItem): { title: string; detail: s
       const parts = [item.reason, item.where].filter((s): s is string => !!s && s.trim().length > 0);
       return { title: 'Vet visit', detail: parts.length > 0 ? parts.join(' · ') : null };
     }
+    case 'call':
+      return { title: 'Called the vet', detail: item.about ? `about the ${item.about}` : null };
     case 'course-start':
       return { title: `${item.name} started`, detail: null };
     case 'bowl':
@@ -381,6 +383,8 @@ function itemPhrase(item: DateOnlyItem): string {
   switch (item.kind) {
     case 'visit':
       return item.reason && item.reason.trim() ? `Vet visit, ${item.reason.trim()}` : 'Vet visit';
+    case 'call':
+      return item.about ? `Called the vet about the ${item.about}` : 'Called the vet';
     case 'course-start':
       return `${item.name} started`;
     case 'bowl':

@@ -8,6 +8,7 @@ import { AlertTriangle } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { SettingsRow } from '../../components/settings/SettingsRow';
+import { FollowUpNotificationRow } from '../../components/settings/FollowUpNotificationRow';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { NotificationPrimer } from '../../components/notifications/NotificationPrimer';
 import { ensurePermission, type NotificationPermission } from '../../lib/notifications';
@@ -369,6 +370,10 @@ export default function NotificationsScreen() {
             />
           )}
         </Card>
+
+        {/* Engines v3 PR-36: the follow-up's question after "I've called". Dark behind
+            engines_v3_en14 (the row renders nothing flag-off). */}
+        {!loading ? <FollowUpNotificationRow denied={denied} /> : null}
 
         {/* The lock-screen privacy promise, RELOCATED here from the primer (DR-4,
             spec §5): stated where an owner examines the feature, no longer part of

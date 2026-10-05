@@ -345,6 +345,11 @@ export const SYNC_QUEUES: readonly SyncQueue[] = [
   // drainCareAcknowledgementsQueue holds a row until its visit, trial, course and
   // retracted answer have landed.
   { table: 'care_acknowledgements', pendingSince: 'created_at' },
+  // Engines v3 PR-36 — the call record and its ledger. Insert-only (082 grants no UPDATE;
+  // a note edit, an Undo and an answer are each a new row), so created_at is the age.
+  // PARENT-GATED: a call waits on its event, a ledger row on its event and its call.
+  { table: 'vet_calls', pendingSince: 'created_at' },
+  { table: 'vet_call_follow_ups', pendingSince: 'created_at' },
 ];
 
 /**
@@ -484,6 +489,18 @@ export const PARENT_GATED_QUEUES = {
     { parent: 'diet_trials', column: 'diet_trial_id' },
     { parent: 'medications', column: 'medication_id' },
     { parent: 'care_acknowledgements', column: 'retracts' },
+  ],
+  // • vet_calls / vet_call_follow_ups (Engines v3 PR-36) → the event the call is about, the
+  //   call a note edit or an Undo names, and the call a ledger row belongs to. 082's
+  //   same-pet guard runs BEFORE the foreign keys, so an "I've called" on a vomit logged a
+  //   minute ago offline would otherwise be refused with a TERMINAL 23514.
+  vet_calls: [
+    { parent: 'events', column: 'event_id' },
+    { parent: 'vet_calls', column: 'supersedes' },
+  ],
+  vet_call_follow_ups: [
+    { parent: 'events', column: 'event_id' },
+    { parent: 'vet_calls', column: 'vet_call_id' },
   ],
 } as const satisfies Record<string, readonly { parent: string; column: string }[]>;
 export type ParentGatedQueue = keyof typeof PARENT_GATED_QUEUES;

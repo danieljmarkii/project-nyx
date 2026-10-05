@@ -30,6 +30,8 @@ jest.mock('../../components/home/PullToRefreshSky', () => ({ PullToRefreshSky: m
 jest.mock('../../components/home/CrossPetSafetyBanner', () => ({
   CrossPetSafetyBanner: marker('cross-pet-safety'),
 }));
+// Engines v3 PR-36: the follow-up line is dark behind EN-14 and has its own suite.
+jest.mock('../../components/home/FollowUpLine', () => ({ FollowUpLine: () => null }));
 jest.mock('../../components/home/SignalZone', () => ({ SignalZone: marker('signal') }));
 jest.mock('../../components/vetvisits/AppointmentStrip', () => ({ AppointmentStrip: marker('appointment') }));
 jest.mock('../../components/home/TrialStrip', () => ({ TrialStrip: marker('trial') }));
