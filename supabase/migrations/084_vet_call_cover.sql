@@ -5,6 +5,12 @@
 -- the moment 'I've called' was tapped, never its current tier"). PM ruling 2026-10-05 on
 -- CUL-1604 (A: hold PR-36, store the cover on the server, rebuild the client on it).
 --
+-- APPLIED to production 2026-10-05 via the Supabase MCP on the PM's word, live version
+-- 20261005201950, name vet_call_cover. The statements that ran are this file's with the
+-- comments stripped; comments added after the apply change no statement. The table held 0
+-- rows at apply time, the VERIFY block below passed on the live database, and get_advisors
+-- (security, performance) reported nothing new for vet_calls.
+--
 -- WHY. A call answers ONE escalation: the reads of one bout of one incident family, up to
 -- the rank the owner was shown when she tapped "I've called". 082 stored only the call's
 -- anchor event, so every phone had to RECOMPUTE what a call covered from per-incident reads
