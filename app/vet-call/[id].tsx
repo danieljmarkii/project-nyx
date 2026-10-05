@@ -23,6 +23,7 @@ import {
   WORTH_IT_ANSWERS,
   WORTH_IT_LABEL,
   answeredLine,
+  callAboutOf,
   calledOnLine,
   type FollowUpAnswer,
   type WorthIt,
@@ -58,11 +59,6 @@ import { petPronouns, toLocalDayKey } from '../../lib/utils';
 // NOT GATED by engines_v3_en14: a call that exists was made under it, and its owner may
 // always read it back and answer it. The doors into this screen are gated.
 
-const NOUN: Record<string, string> = { vomit: 'vomiting' };
-function nounFor(eventType: string | null): string {
-  if (!eventType) return 'the sign';
-  return NOUN[eventType] ?? 'stool';
-}
 
 export default function VetCallScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -80,12 +76,18 @@ export default function VetCallScreen() {
   const inFlight = useRef(false);
   useLiveRegionAnnouncement(said, said);
 
+  // The note as last saved, so a re-read (a save, a return from the booking form) seeds the
+  // field only while the owner has not typed over it: a draft is never wiped (code review).
+  const savedNote = useRef<string | null>(null);
+
   const load = useCallback(async () => {
     if (!id) return;
     try {
       const v = await readCall(id);
       setView(v);
-      setNote(v?.call.note ?? '');
+      const next = v?.call.note ?? '';
+      setNote((draft) => (savedNote.current === null || draft === savedNote.current ? next : draft));
+      savedNote.current = next;
       setFailed(false);
     } catch (e) {
       console.warn('[vet-call] read failed:', e);
@@ -108,7 +110,7 @@ export default function VetCallScreen() {
   const petName = resolveRecordPetName(pets, petId);
   const pet = pets.find((p) => p.id === petId);
   const pronoun = petPronouns(pet?.sex ?? 'unknown').object;
-  const noun = nounFor(view?.eventType ?? null);
+  const about = callAboutOf(view?.eventType ?? null);
 
   const run = async (what: () => Promise<void>, failMessage = 'Try that again in a moment.') => {
     if (inFlight.current) return;
@@ -130,7 +132,7 @@ export default function VetCallScreen() {
       if (!view || !answer) return;
       const result = await answerFollowUp(view.call.id, answer, worthIt);
       await cancelFollowUpNotification(view.call.id);
-      await pushVetCalls();
+      void pushVetCalls();
       await refreshFollowUpNotifications(flagOn);
       await load();
       setSaid(result === 'saved' ? `Saved. ${answeredLine(answer, pronoun)}` : 'An answer was already saved for this call.');
@@ -138,7 +140,11 @@ export default function VetCallScreen() {
       if (answer === 'wants_to_see') {
         router.push({
           pathname: '/vet-visits',
-          params: { add: 'booked', pet: petId, reason: `After the call about ${petName ? `${petName}’s ` : 'the '}${noun}` },
+          params: {
+            add: 'booked',
+            pet: petId,
+            reason: about ? `After the call about ${petName ? `${petName}’s ` : 'the '}${about}` : 'After the call to the vet',
+          },
         });
       } else if (answer === 'started_treatment') {
         setMedOpen(true);
@@ -149,20 +155,33 @@ export default function VetCallScreen() {
     run(async () => {
       if (!view) return;
       await saveCallNote(view.call.id, note);
-      await pushVetCalls();
+      void pushVetCalls();
       await load();
       setSaid(note.trim() ? 'Note saved.' : 'Note cleared.');
     });
 
-  const takeBack = () =>
+  const takeBackNow = () =>
     run(async () => {
       if (!view) return;
       await undoCall(view.call.id);
       await cancelFollowUpNotification(view.call.id);
-      await pushVetCalls();
+      void pushVetCalls();
       await refreshFollowUpNotifications(flagOn);
       back();
     });
+
+  // ONE safety net (C-21): a call is recreatable, so taking it back needs no confirm; a note
+  // is the owner's own words and is not, so with one the confirm comes first and names it.
+  const takeBack = () => {
+    if (!view?.call.note) {
+      void takeBackNow();
+      return;
+    }
+    Alert.alert('Take back this call?', 'Your note about it goes too.', [
+      { text: 'Keep it', style: 'cancel' },
+      { text: 'Take it back', style: 'destructive', onPress: () => void takeBackNow() },
+    ]);
+  };
 
   if (!loaded) {
     return (
@@ -175,7 +194,8 @@ export default function VetCallScreen() {
     );
   }
 
-  if (failed || !view) {
+  // A re-read that fails over a call already on screen keeps the call (code review).
+  if (!view) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
         <Header leading="back" onLeadingPress={back} />
@@ -203,7 +223,7 @@ export default function VetCallScreen() {
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <ThemedText style={styles.title} accessibilityRole="header">
             {calledOnLine(call.calledOn, today).replace(/\.$/, '')}
-            {` about ${petName ? `${petName}’s` : 'the'} ${noun}.`}
+            {about ? ` about ${petName ? `${petName}’s` : 'the'} ${about}.` : '.'}
           </ThemedText>
 
           {answered ? (

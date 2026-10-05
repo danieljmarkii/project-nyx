@@ -47,3 +47,10 @@ describe('the call as a History item', () => {
     });
   });
 });
+
+it('a call whose event is not on this phone yet names no sign', () => {
+  expect(dateOnlyItemText({ kind: 'call', day: '2026-10-03', id: 'c1', about: null })).toEqual({
+    title: 'Called the vet',
+    detail: null,
+  });
+});

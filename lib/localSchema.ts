@@ -433,6 +433,11 @@ export const BASE_SCHEMA_SQL = `
       note          TEXT,
       supersedes    TEXT,
       withdrawn     INTEGER NOT NULL DEFAULT 0,
+      -- LOCAL ONLY (no server column): the escalation's rank as shown when "I've called"
+      -- was tapped (§6.3, GAP-34), so a later raise of the called read never stretches the
+      -- call over a louder escalation. NULL on a row pulled from another phone, read as
+      -- call today. Never pushed.
+      rank_at_call  INTEGER,
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       synced        INTEGER NOT NULL DEFAULT 0,
       sync_attempts INTEGER NOT NULL DEFAULT 0,

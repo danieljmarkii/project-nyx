@@ -3742,6 +3742,9 @@ async function hydrateVetCalls(db: Db, stale: () => boolean): Promise<void> {
   if (!rows || rows.length === 0) return;
   if (stale()) return;
   for (const r of rows) {
+    // Per row, not once (rls-privacy-reviewer): a sign-out mid-loop must not write the rest
+    // of the previous account's calls, notes included, into the wiped store.
+    if (stale()) return;
     await db.runAsync(
       `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
        VALUES (?,?,?,?,?,?,?,?,1)
@@ -3769,6 +3772,7 @@ async function hydrateVetCallFollowUps(db: Db, stale: () => boolean): Promise<vo
   if (!rows || rows.length === 0) return;
   if (stale()) return;
   for (const r of rows) {
+    if (stale()) return;
     await db.runAsync(
       `INSERT INTO vet_call_follow_ups
          (id, pet_id, vet_call_id, event_id, reason, status, answer, worth_it, due_at, expires_at, created_at, synced)

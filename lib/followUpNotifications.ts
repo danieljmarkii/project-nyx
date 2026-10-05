@@ -39,6 +39,15 @@ export const FOLLOW_UP_CHANNEL_ID = 'follow_ups';
 /** The tap's payload kind, read by `lib/notificationRouting.ts`. */
 export const FOLLOW_UP_TAP_KIND = 'follow_up';
 
+// The sign-out fence (rls-privacy-reviewer). A reconcile already reading when the account
+// signs out could otherwise schedule the previous owner's question AFTER the wipe's
+// cancel-all. `wipeLocalSession` moves the epoch first; a reconcile that began under an older
+// epoch schedules nothing.
+let followUpEpoch = 0;
+export function fenceFollowUpNotifications(): void {
+  followUpEpoch += 1;
+}
+
 export function followUpIdentifier(callId: string): string {
   return `${FOLLOW_UP_IDENTIFIER_PREFIX}${callId}`;
 }
@@ -124,6 +133,7 @@ export async function reconcileFollowUpNotifications(input: {
   wanted: readonly SchedulableFollowUp[];
   now?: number;
 }): Promise<void> {
+  const epoch = followUpEpoch;
   try {
     const [on, permission, scheduled] = await Promise.all([
       followUpNotificationsOn(),
@@ -136,11 +146,13 @@ export async function reconcileFollowUpNotifications(input: {
       scheduledCallIds: scheduled,
       now: input.now ?? Date.now(),
     });
+    if (epoch !== followUpEpoch) return;
     for (const id of actions.cancel) {
       await Notifications.cancelScheduledNotificationAsync(followUpIdentifier(id));
     }
     if (actions.schedule.length > 0) await ensureChannel();
     for (const w of actions.schedule) {
+      if (epoch !== followUpEpoch) return;
       await Notifications.scheduleNotificationAsync({
         identifier: followUpIdentifier(w.callId),
         content: {
@@ -175,8 +187,10 @@ export async function syncFollowUpNotifications(input: {
   flagOn: boolean;
   petNames: ReadonlyMap<string, string>;
 }): Promise<void> {
+  const epoch = followUpEpoch;
   try {
     const waiting = input.flagOn ? await readWaitingFollowUps() : [];
+    if (epoch !== followUpEpoch) return;
     await reconcileFollowUpNotifications({
       flagOn: input.flagOn,
       wanted: waiting.map((w) => ({ callId: w.callId, dueAt: w.dueAt, petName: input.petNames.get(w.petId) ?? null })),

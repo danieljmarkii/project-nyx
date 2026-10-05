@@ -31,7 +31,7 @@ import { cancelAllAnalysisWatches } from './analysis';
 import { abortFlight } from '../components/motion/flightMotion';
 import { supabase } from './supabase';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
-import { setFollowUpNotificationsOn } from './followUpNotifications';
+import { fenceFollowUpNotifications, setFollowUpNotificationsOn } from './followUpNotifications';
 
 /**
  * B-430 — the pre-sign-out drain. Push everything that can still be pushed, then
@@ -192,6 +192,13 @@ export async function wipeLocalSession(): Promise<void> {
   // then clear the interaction ledger (AsyncStorage, also outside SQLite — the
   // previous owner's per-category notification-interaction history). Both are
   // internally best-effort (never throw), so teardown always continues.
+  // Engines v3 PR-36: fence the follow-up reconcile BEFORE the cancel-all, so one already
+  // reading cannot schedule this account's question after it, and drop the device-local
+  // switch beside it (the next account starts off, G6). A failure is logged, never thrown.
+  fenceFollowUpNotifications();
+  await setFollowUpNotificationsOn(false).catch((e) =>
+    console.warn('[session] follow-up switch clear failed:', e),
+  );
   await cancelAllScheduledNotifications();
   await clearNotificationInteractions();
   // Device-local active-pet selection is account state too — wipe it and the
@@ -368,10 +375,4 @@ export async function wipeLocalSession(): Promise<void> {
   // …and the in-room ticks on Home's concerns (`lib/careVisitConcerns.ts`), keyed by the
   // previous owner's appointment ids.
   await clearCareVisitTicks();
-  // Engines v3 PR-36 — the follow-up notification's switch (`lib/followUpNotifications.ts`),
-  // device-local until the preference moves to notification_preferences. The next account
-  // starts with it off (G6). The scheduled questions themselves went with
-  // cancelAllScheduledNotifications above, so no follow-up about this account's call can
-  // reach the next one.
-  await setFollowUpNotificationsOn(false);
 }

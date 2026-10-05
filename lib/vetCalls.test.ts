@@ -22,6 +22,17 @@ jest.mock('./db', () => ({
     runAsync: jest.fn(async (sql: string, params: unknown[] = []) => mockDb.prepare(sql).run(...(params as never[]))),
     getAllAsync: jest.fn(async (sql: string, params: unknown[] = []) => mockDb.prepare(sql).all(...(params as never[]))),
     getFirstAsync: jest.fn(async (sql: string, params: unknown[] = []) => mockDb.prepare(sql).get(...(params as never[])) ?? null),
+    // The real expo-sqlite shape: BEGIN, the callback, COMMIT, and ROLLBACK on a throw.
+    withTransactionAsync: jest.fn(async (fn: () => Promise<void>) => {
+      mockDb.exec('BEGIN');
+      try {
+        await fn();
+        mockDb.exec('COMMIT');
+      } catch (e) {
+        mockDb.exec('ROLLBACK');
+        throw e;
+      }
+    }),
   }),
   getWatermark: jest.fn(),
   setWatermark: jest.fn(),
@@ -70,7 +81,8 @@ function event(id: string, atMs: number, opts: { type?: string; pet?: string; sy
 }
 
 /** The phone's copy of a read. `call_now` is a new-rule row (stamped with the EN-3 key). */
-function verdict(eventId: string, kind: 'call_today' | 'call_now' | 'calm'): void {
+function verdict(eventId: string, kind: 'call_today' | 'call_now' | 'calm', replace = false): void {
+  if (replace) mockDb.prepare(`DELETE FROM event_ai_verdicts WHERE event_id = ?`).run(eventId);
   const rec = kind === 'calm' ? 'monitor' : 'worth_a_call';
   const tier = kind === 'call_now' ? 'call_now' : null;
   const flags = kind === 'call_now' ? JSON.stringify(['engines_v3_en3']) : null;
@@ -283,5 +295,127 @@ describe('the push (082)', () => {
     mockDb.prepare(`UPDATE events SET synced = 1 WHERE id = 'v1'`).run();
     await pushVetCalls();
     expect(mockInserts.map((i) => i.table)).toEqual(['vet_calls', 'vet_call_follow_ups']);
+  });
+});
+
+describe('the adversarial pass (2026-10-05)', () => {
+  it('P1: a later raise of the called read never stretches the call over a new call-now read', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    event('v2', T0 + 3 * H);
+    verdict('v2', 'call_now');
+    await recordCall('v1', { now: T0 + H, newId });
+    // The 24 h re-floor raises v1 to call now after the call was made.
+    verdict('v1', 'call_now', true);
+    expect((await readIncidentCallState('v2', T0 + 4 * H)).covering).toBeNull();
+    // v1 itself now asks louder than the call was made at: offered again.
+    expect((await readIncidentCallState('v1', T0 + 4 * H)).covering).toBeNull();
+  });
+
+  it('a call pulled from another phone (no stored rank) covers call today, never call now', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_now');
+    event('v2', T0 + 2 * H);
+    verdict('v2', 'call_now');
+    mockDb
+      .prepare(
+        `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
+         VALUES ('remote', ?, '2026-10-01', 'v1', NULL, NULL, 0, ?, 1)`,
+      )
+      .run(PET, new Date(T0 + H).toISOString());
+    expect((await readIncidentCallState('v2', T0 + 3 * H)).covering).toBeNull();
+  });
+
+  it('P2: the anchor is the tapped read\'s own bout, walked forward, never the bout before', async () => {
+    for (const [id, h] of [['r1', 0], ['r2', 20], ['r3', 30], ['r4', 50]] as const) {
+      event(id, T0 + h * H);
+      verdict(id, 'call_today');
+    }
+    await recordCall('r3', { now: T0 + 31 * H, newId });
+    // r3 opens bout 2 (30 h after r1), so the call anchors on r3 and covers r4 (20 h later).
+    expect(rows('vet_calls')[0].event_id).toBe('r3');
+    expect((await readIncidentCallState('r4', T0 + 51 * H)).covering).not.toBeNull();
+    expect((await readIncidentCallState('r2', T0 + 51 * H)).covering).toBeNull();
+  });
+
+  it('P3: a soft-deleted anchor still bounds its bout', async () => {
+    event('a', T0);
+    verdict('a', 'call_today');
+    event('b', T0 + 2 * H);
+    verdict('b', 'call_today');
+    await recordCall('a', { now: T0 + H, newId });
+    mockDb.prepare(`UPDATE events SET deleted_at = ? WHERE id = 'a'`).run(new Date(T0 + 3 * H).toISOString());
+    expect((await readIncidentCallState('b', T0 + 4 * H)).covering).not.toBeNull();
+    expect(await recordCall('b', { now: T0 + 4 * H, newId })).toBe(rows('vet_calls')[0].id);
+    expect(rows('vet_calls')).toHaveLength(1);
+  });
+
+  it('P4: two phones calling one bout are one escalation, and an answer to either is never re-asked', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    const mine = await recordCall('v1', { now: T0, newId });
+    // The other phone's call and owed row, pulled.
+    mockDb
+      .prepare(
+        `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
+         VALUES ('theirs', ?, ?, 'v1', NULL, NULL, 0, ?, 1)`,
+      )
+      .run(PET, rows('vet_calls')[0].called_on, new Date(T0 + 1000).toISOString());
+    mockDb
+      .prepare(
+        `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, due_at, expires_at, created_at, synced)
+         VALUES ('theirs-owed', ?, 'theirs', 'v1', 'called', 'owed', ?, ?, ?, 1)`,
+      )
+      .run(PET, new Date(T0 + 48 * H).toISOString(), new Date(T0 + 7 * 24 * H).toISOString(), new Date(T0).toISOString());
+    expect(await readCallsForPet(PET, T0 + 50 * H)).toHaveLength(1);
+    mockDb
+      .prepare(
+        `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, answer, due_at, expires_at, created_at, synced)
+         VALUES ('theirs-ans', ?, 'theirs', 'v1', 'called', 'answered', 'keep_watching', ?, ?, ?, 1)`,
+      )
+      .run(PET, new Date(T0 + 48 * H).toISOString(), new Date(T0 + 7 * 24 * H).toISOString(), new Date(T0 + 49 * H).toISOString());
+    const views = await readCallsForPet(PET, T0 + 50 * H);
+    expect(views).toHaveLength(1);
+    expect(views[0].followUp.kind).toBe('answered');
+    expect((await readCall(mine, T0 + 50 * H))?.followUp.kind).toBe('answered');
+  });
+
+  it('P5: an Undo racing an answer from another phone never takes the answer off the record', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    const callId = await recordCall('v1', { now: T0, newId });
+    await undoCall(callId, { now: T0 + 50 * H, newId });
+    mockDb
+      .prepare(
+        `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, answer, due_at, expires_at, created_at, synced)
+         VALUES ('other-ans', ?, ?, 'v1', 'called', 'answered', 'wants_to_see', ?, ?, ?, 1)`,
+      )
+      .run(PET, callId, new Date(T0 + 48 * H).toISOString(), new Date(T0 + 7 * 24 * H).toISOString(), new Date(T0 + 49 * H).toISOString());
+    const views = await readCallsForPet(PET, T0 + 51 * H);
+    expect(views.map((v) => v.followUp.kind)).toEqual(['answered']);
+    expect((await readIncidentCallState('v1', T0 + 51 * H)).covering?.call.id).toBe(callId);
+  });
+
+  it('refuses to take back an answered call on this phone', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    const callId = await recordCall('v1', { now: T0, newId });
+    await answerFollowUp(callId, 'keep_watching', null, { now: T0 + 50 * H, newId });
+    await expect(undoCall(callId, { now: T0 + 51 * H, newId })).rejects.toThrow(/answered/);
+  });
+
+  it('writes the call and its owed row together, or neither', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    // A ledger id that collides with an existing row makes the second insert fail.
+    let n = 0;
+    mockDb
+      .prepare(
+        `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, due_at, expires_at, created_at, synced)
+         VALUES ('dup', ?, NULL, 'v1', 'sampled', 'owed', 'x', 'y', 'z', 1)`,
+      )
+      .run(PET);
+    await expect(recordCall('v1', { now: T0, newId: () => (++n === 1 ? 'call-x' : 'dup') })).rejects.toThrow();
+    expect(rows('vet_calls')).toHaveLength(0);
   });
 });

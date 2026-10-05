@@ -26,7 +26,7 @@
 // expiry cannot outrank one.
 
 import { isStoolEvent } from '../constants/eventTypes';
-import { type TierRank } from './incidentTier';
+import { TIER_RANK, type TierRank } from './incidentTier';
 import { formatCalendarDate } from './utils';
 
 /** How long after "I've called" the question is asked, and how long it stays asked (§6.3). */
@@ -63,7 +63,10 @@ function ms(iso: string): number {
 }
 
 /** Does a call made about `called` cover `read`? The same family, inside the 24 hours that
- *  follow the called read, and no louder than it (a louder read is a new bout, §6.1). */
+ *  follow the called read, and no louder than the call was AS SHOWN when it was made (§6.3,
+ *  GAP-34): the caller passes the rank stored on the call, never the called read's current
+ *  one, so a later re-floor that raises the called read cannot stretch an old call over a
+ *  new, louder escalation (adversarial P1). */
 export function callCovers(called: CallTierRead, read: CallTierRead): boolean {
   if (called.family !== read.family) return false;
   const gap = ms(read.occurredAt) - ms(called.occurredAt);
@@ -71,20 +74,34 @@ export function callCovers(called: CallTierRead, read: CallTierRead): boolean {
   return read.rank <= called.rank;
 }
 
+/** How far back the partition reads. A bout is 24 hours, but where one STARTS depends on the
+ *  reads before it, so the walk starts a week back. Stated limit (C-38): a run of call-tier
+ *  reads unbroken for more than a week could place a boundary differently from a walk over
+ *  the whole record. Its cost is an extra or a missing follow-up, never a hidden ask. */
+export const BOUT_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
- * The read "I've called" attaches to when the owner taps it on `tapped`: the earliest
- * call-tier read of the same family in the 24 hours before it that is at least as loud
- * (so the call covers `tapped` by `callCovers`), or `tapped` itself. Measured from the
- * tapped read only, so nothing chains.
+ * The bouts of one pet and family, walked forward from the earliest read (§6.1): a read
+ * opens a new bout when it falls more than 24 hours after the current bout's FIRST read, or
+ * is louder than that first read; otherwise it joins it. Never chained from the previous
+ * read. Returns each read's bout anchor.
  */
-export function boutAnchorFor(tapped: CallTierRead, reads: readonly CallTierRead[]): CallTierRead {
-  let anchor = tapped;
-  for (const r of reads) {
-    if (r.eventId === tapped.eventId) continue;
-    if (!callCovers(r, tapped)) continue;
-    if (ms(r.occurredAt) < ms(anchor.occurredAt)) anchor = r;
+export function boutAnchorsOf(reads: readonly CallTierRead[]): Map<string, CallTierRead> {
+  const sorted = [...reads].sort((a, b) => ms(a.occurredAt) - ms(b.occurredAt) || (a.eventId < b.eventId ? -1 : 1));
+  const out = new Map<string, CallTierRead>();
+  let anchor: CallTierRead | null = null;
+  for (const r of sorted) {
+    if (anchor === null || !callCovers(anchor, r)) anchor = r;
+    out.set(r.eventId, anchor);
   }
-  return anchor;
+  return out;
+}
+
+/** The read "I've called" attaches to when the owner taps it on `tapped`: the first read of
+ *  `tapped`'s bout, from the forward walk over `reads` (which should hold the lookback). */
+export function boutAnchorFor(tapped: CallTierRead, reads: readonly CallTierRead[]): CallTierRead {
+  const all = reads.some((r) => r.eventId === tapped.eventId) ? reads : [...reads, tapped];
+  return boutAnchorsOf(all).get(tapped.eventId) ?? tapped;
 }
 
 // ── The call record ─────────────────────────────────────────────────────────────
@@ -98,6 +115,9 @@ export interface VetCallRow {
   note: string | null;
   supersedes: string | null;
   withdrawn: number | boolean;
+  /** LOCAL ONLY: the rank of the escalation as shown when "I've called" was tapped (§6.3).
+   *  Not a server column (082 has none); a row pulled from another phone holds NULL. */
+  rank_at_call?: number | null;
   created_at: string;
 }
 
@@ -126,6 +146,9 @@ export interface CallRecord {
   eventId: string;
   note: string | null;
   withdrawn: boolean;
+  /** The rank the call covers up to. Unknown (a call pulled from another phone) reads as call
+   *  today, so a call-now read is never covered by a call of unknown rank. */
+  rankAtCall: TierRank;
 }
 
 function truthy(v: number | boolean): boolean {
@@ -148,6 +171,7 @@ export function callRecordsOf(rows: readonly VetCallRow[]): CallRecord[] {
       eventId: root.event_id,
       note: latest.note,
       withdrawn,
+      rankAtCall: root.rank_at_call === TIER_RANK.call_now ? TIER_RANK.call_now : TIER_RANK.call_today,
     };
   });
 }
@@ -274,4 +298,13 @@ export const WORTH_IT_LABEL: Record<WorthIt, string> = {
 /** The recorded answer, as the call record states it. A fact the owner gave, in her words. */
 export function answeredLine(answer: FollowUpAnswer, pronoun: string): string {
   return `You said: ${FOLLOW_UP_ANSWER_LABEL[answer](pronoun)}.`;
+}
+
+export type CallAbout = 'vomiting' | 'stool';
+
+/** The one noun every call surface uses for what the call was about, or null when the event
+ *  is not on this phone (a call pulled before its event): never a guessed sign. */
+export function callAboutOf(eventType: string | null): CallAbout | null {
+  const fam = incidentFamilyOf(eventType);
+  return fam === 'vomit' ? 'vomiting' : fam === 'stool' ? 'stool' : null;
 }

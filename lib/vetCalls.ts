@@ -2,7 +2,7 @@ import { getDb } from './db';
 import { syncPendingVetCalls } from './sync';
 import { toLocalDayKey, uuid } from './utils';
 import {
-  BOUT_MS,
+  BOUT_LOOKBACK_MS,
   CALL_NOTE_MAX,
   boutAnchorFor,
   callRecordsOf,
@@ -63,7 +63,9 @@ export async function recordCall(
   const family = incidentFamilyOf(ev?.event_type);
   if (!ev || !family) throw new Error('vet call: no such incident');
   const t = new Date(ev.occurred_at).getTime();
-  const reads = await callTierReadsBetween(ev.pet_id, family, t - BOUT_MS, t);
+  // The forward walk needs the reads before the bout too: where a bout starts depends on
+  // them (adversarial P2), so it reads the lookback, not just the 24 hours.
+  const reads = await callTierReadsBetween(ev.pet_id, family, t - BOUT_LOOKBACK_MS, t);
   const tapped = reads.find((r) => r.eventId === eventId);
   if (!tapped) throw new Error('vet call: this read does not ask for a call');
   const anchor = boutAnchorFor(tapped, reads);
@@ -73,17 +75,23 @@ export async function recordCall(
   const createdAt = new Date(now).toISOString();
   const { dueAt, expiresAt } = followUpWindow(now);
   const db = getDb();
-  await db.runAsync(
-    `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
-     VALUES (?, ?, ?, ?, NULL, NULL, 0, ?, 0)`,
-    [callId, ev.pet_id, toLocalDayKey(new Date(now)), anchor.eventId, createdAt],
-  );
-  await db.runAsync(
-    `INSERT INTO vet_call_follow_ups
-       (id, pet_id, vet_call_id, event_id, reason, status, answer, worth_it, due_at, expires_at, created_at, synced)
-     VALUES (?, ?, ?, ?, 'called', 'owed', NULL, NULL, ?, ?, ?, 0)`,
-    [ledgerId, ev.pet_id, callId, anchor.eventId, dueAt, expiresAt, createdAt],
-  );
+  // ONE transaction: a call with no owed row would cover the read (no second "I've called")
+  // and never ask its question (code review). Both land or neither does.
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `INSERT INTO vet_calls
+         (id, pet_id, called_on, event_id, note, supersedes, withdrawn, rank_at_call, created_at, synced)
+       VALUES (?, ?, ?, ?, NULL, NULL, 0, ?, ?, 0)`,
+      // The bout's rank AS SHOWN now (§6.3): a later raise of the anchor never widens the call.
+      [callId, ev.pet_id, toLocalDayKey(new Date(now)), anchor.eventId, anchor.rank, createdAt],
+    );
+    await db.runAsync(
+      `INSERT INTO vet_call_follow_ups
+         (id, pet_id, vet_call_id, event_id, reason, status, answer, worth_it, due_at, expires_at, created_at, synced)
+       VALUES (?, ?, ?, ?, 'called', 'owed', NULL, NULL, ?, ?, ?, 0)`,
+      [ledgerId, ev.pet_id, callId, anchor.eventId, dueAt, expiresAt, createdAt],
+    );
+  });
   return callId;
 }
 
@@ -107,28 +115,34 @@ export async function undoCall(callId: string, opts: { now?: number; newId?: () 
   const newId = opts.newId ?? uuid;
   const root = await rootCall(callId);
   const db = getDb();
+  // An answered call stays: its answer is final, and an Undo would only hide it here.
+  const answered = await db.getFirstAsync<{ id: string }>(
+    `SELECT id FROM vet_call_follow_ups WHERE vet_call_id = ? AND status = 'answered' LIMIT 1`,
+    [callId],
+  );
+  if (answered) throw new Error('vet call: an answered call cannot be taken back');
   const owed = await db.getFirstAsync<{ due_at: string; expires_at: string }>(
     `SELECT due_at, expires_at FROM vet_call_follow_ups WHERE vet_call_id = ? AND status = 'owed' LIMIT 1`,
     [callId],
   );
   const createdAt = new Date(now).toISOString();
-  await db.runAsync(
-    `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
-     VALUES (?, ?, ?, ?, NULL, ?, 1, ?, 0)`,
-    [newId(), root.pet_id, root.called_on, root.event_id, root.id, createdAt],
-  );
   const window = owed
     ? { dueAt: owed.due_at, expiresAt: owed.expires_at }
     : followUpWindow(new Date(root.created_at).getTime());
-  await db.runAsync(
-    `INSERT INTO vet_call_follow_ups
-       (id, pet_id, vet_call_id, event_id, reason, status, answer, worth_it, due_at, expires_at, created_at, synced)
-     VALUES (?, ?, ?, ?, 'called', 'withdrawn', NULL, NULL, ?, ?, ?, 0)`,
-    [
-      newId(), root.pet_id, root.id, root.event_id, window.dueAt, window.expiresAt,
-      createdAt,
-    ],
-  );
+  // ONE transaction (code review): half an Undo would leave the call live or its question owed.
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `INSERT INTO vet_calls (id, pet_id, called_on, event_id, note, supersedes, withdrawn, created_at, synced)
+       VALUES (?, ?, ?, ?, NULL, ?, 1, ?, 0)`,
+      [newId(), root.pet_id, root.called_on, root.event_id, root.id, createdAt],
+    );
+    await db.runAsync(
+      `INSERT INTO vet_call_follow_ups
+         (id, pet_id, vet_call_id, event_id, reason, status, answer, worth_it, due_at, expires_at, created_at, synced)
+       VALUES (?, ?, ?, ?, 'called', 'withdrawn', NULL, NULL, ?, ?, ?, 0)`,
+      [newId(), root.pet_id, root.id, root.event_id, window.dueAt, window.expiresAt, createdAt],
+    );
+  });
 }
 
 /** Bound and tidy a note the way the field does, or null when it is empty. */

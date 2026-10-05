@@ -8,6 +8,7 @@ import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement
 import { useSyncStore } from '../../store/syncStore';
 import { pushVetCalls, readIncidentCallState, recordCall, undoCall, type IncidentCallState } from '../../lib/vetCalls';
 import { followUpNotificationsOn } from '../../lib/followUpNotifications';
+import { analysisChainOutstanding, awaitAnalysisChain } from '../../lib/analysisChain';
 import {
   CALL_ADD_NOTE,
   CALL_ANSWER_CALLED,
@@ -72,6 +73,13 @@ export function CallAnswers({ eventId, petName }: Props) {
   const load = useCallback(async () => {
     try {
       setState(await readIncidentCallState(eventId));
+      // The record usually opens while its read is still on the way (the log path claims the
+      // chain), and a landing inside a claimed chain bumps no tick. So wait for that chain and
+      // read again, or "I've called" would never draw under the read that just arrived.
+      if (analysisChainOutstanding(eventId)) {
+        await awaitAnalysisChain(eventId);
+        setState(await readIncidentCallState(eventId));
+      }
     } catch (e) {
       // Nothing drawn: the read above carries the ask whatever happens here.
       console.warn('[call-answers] read failed:', e);
@@ -96,7 +104,8 @@ export function CallAnswers({ eventId, petName }: Props) {
     setPhase({ kind: 'saving' });
     try {
       await recordCall(eventId);
-      await pushVetCalls();
+      // Local-first: the push never holds the confirmation (it never rejects either).
+      void pushVetCalls();
       const notificationsOn = await followUpNotificationsOn();
       await refreshFollowUpNotifications(true);
       await load();
@@ -115,7 +124,7 @@ export function CallAnswers({ eventId, petName }: Props) {
     inFlight.current = true;
     try {
       await undoCall(callId);
-      await pushVetCalls();
+      void pushVetCalls();
       await refreshFollowUpNotifications(true);
       await load();
       setPhase({ kind: 'taken_back' });
@@ -144,7 +153,23 @@ export function CallAnswers({ eventId, petName }: Props) {
         ) : null}
         <View style={styles.row}>
           <Answer label={c.note ? 'Your note' : CALL_ADD_NOTE} onPress={open} />
-          {followUp.kind !== 'answered' ? <Answer label="Undo" onPress={() => void undo(c.id)} /> : null}
+          {followUp.kind !== 'answered' ? (
+            <Answer
+              label="Undo"
+              onPress={() => {
+                // ONE safety net (C-21): a call is recreatable, so Undo needs no confirm, but
+                // a note is the owner's own words and is not. With a note, confirm and name it.
+                if (!c.note) {
+                  void undo(c.id);
+                  return;
+                }
+                Alert.alert('Take back this call?', 'Your note about it goes too.', [
+                  { text: 'Keep it', style: 'cancel' },
+                  { text: 'Take it back', style: 'destructive', onPress: () => void undo(c.id) },
+                ]);
+              }}
+            />
+          ) : null}
         </View>
       </View>
     );

@@ -89,3 +89,20 @@ it('an answered call states the answer and never asks again', async () => {
   expect(screen.getByText("You said: Couldn't reach them.")).toBeTruthy();
   expect(screen.queryByTestId('vet-call-take-back')).toBeNull();
 });
+
+it('a note being typed survives the re-read after saving the answer (code review)', async () => {
+  render(<VetCallScreen />);
+  await screen.findByTestId('vet-call-question');
+  fireEvent.changeText(screen.getByTestId('vet-call-note'), 'She said bring a sample');
+  fireEvent.press(screen.getByText('Keep an eye on him'));
+  await act(async () => {
+    fireEvent.press(screen.getByTestId('vet-call-save'));
+  });
+  expect(screen.getByTestId('vet-call-note').props.value).toBe('She said bring a sample');
+});
+
+it('a call whose event is not on this phone names no sign', async () => {
+  mockView = { ...base, eventType: null };
+  render(<VetCallScreen />);
+  expect(await screen.findByText('You called on Oct 3.')).toBeTruthy();
+});

@@ -1209,7 +1209,7 @@ export type DateOnlyItem =
   | { kind: 'visit'; day: string; id: string; reason: string | null; where: string }
   | { kind: 'course-start'; day: string; courseKey: string; name: string }
   /** Engines v3 PR-36: "I've called" on an escalation (§6.4), a door to the call's record. */
-  | { kind: 'call'; day: string; id: string; about: 'vomiting' | 'stool' }
+  | { kind: 'call'; day: string; id: string; about: 'vomiting' | 'stool' | null }
   | {
       kind: 'bowl';
       day: string;
