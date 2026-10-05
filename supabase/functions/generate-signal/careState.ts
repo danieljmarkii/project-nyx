@@ -36,7 +36,8 @@
 // weight fact line (§4.1) is EN-8's gate and is not built here. Source 3 of C1a (the intake
 // predicate) waits on GAP-28's shared module. The latch's instant lives only in the cache row, so
 // a row written without the step (an incomplete read) drops it; the D4 rule then lapses every
-// older answer and the concern is `raised`, asking, but the next answer is judged as a first one.
+// older answer and the concern is `raised`, asking, but the next answer is judged as a first one
+// (CUL-1600).
 
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 import { localDayIndex, localDayIndexOf } from '../../../lib/utils.ts'
