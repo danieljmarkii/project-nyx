@@ -145,6 +145,11 @@ export async function readCallsForPet(petId: string, now: number = Date.now()): 
       family !== null && r.call.cover !== null ? { family, ...r.call.cover } : null;
     return { ...r, family, cover };
   });
+  // STATED LIMIT (C-38): 084 stores the cover's rank and start, not its family; the family is
+  // read off the anchor event's type. Nothing in the app re-types an event, and the one
+  // re-type in the repo (scripts/w1-other-row-swap) moves `other` rows to cough or sneeze, so
+  // a stored cover's family never moves today. A cross-family edit would need the family
+  // stored on the call (pass 8, 4).
 
   // ONE QUESTION PER CALL (PM ruling A, 2026-10-05, CUL-1604). Calls share a question only
   // when their stored covers are IDENTICAL: the same family, the same rank and the same
@@ -172,11 +177,33 @@ export async function readCallsForPet(petId: string, now: number = Date.now()): 
     }
   }
 
+  // WHICH MEMBER SPEAKS FOR THE GROUP (adversarial pass 8). Decided over every member's rows,
+  // never by the first member in list order: a member whose owed row has not landed yet reads
+  // `none` and must not hide the owed question another member holds (pass 8, 1), and the
+  // answer shown is the one the server recorded first across the group, so a later answer
+  // from another phone never replaces it (pass 8, 2). Ties fall to the call id, so every
+  // phone holding the same rows shows the same member.
+  const ms = (iso: string): number => new Date(iso).getTime();
+  const byId = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  const STATE_ORDER: Record<FollowUpState['kind'], number> = {
+    answered: 0, due: 1, waiting: 2, expired: 3, withdrawn: 4, none: 5,
+  };
   const views: CallView[] = [];
   for (const members of groupList) {
-    members.sort((a, b) => (a.call.calledOn < b.call.calledOn ? -1 : a.call.calledOn > b.call.calledOn ? 1 : a.call.id < b.call.id ? -1 : 1));
-    const answered = members.find((g) => g.state.kind === 'answered');
-    const shown = answered ?? members[0];
+    const ids = new Set(members.map((m) => m.call.id));
+    const firstAnswer = ledger
+      .filter((r) => r.vet_call_id !== null && ids.has(r.vet_call_id) && r.status === 'answered' && r.answer !== null)
+      .sort((a, b) => ms(a.created_at) - ms(b.created_at) || byId(a.id, b.id))[0];
+    const answeredMember = firstAnswer
+      ? members.find((m) => m.call.id === firstAnswer.vet_call_id && m.state.kind === 'answered')
+      : undefined;
+    const shown =
+      answeredMember ??
+      [...members].sort((a, b) =>
+        STATE_ORDER[a.state.kind] - STATE_ORDER[b.state.kind] ||
+        (a.call.calledOn < b.call.calledOn ? -1 : a.call.calledOn > b.call.calledOn ? 1 : 0) ||
+        byId(a.call.id, b.call.id))[0];
+    members.sort((a, b) => byId(a.call.id, b.call.id));
     views.push({
       call: shown.call,
       followUp: shown.state,
@@ -189,7 +216,24 @@ export async function readCallsForPet(petId: string, now: number = Date.now()): 
       ownCall: shown.call.madeHere,
     });
   }
-  return views.sort((a, b) => (a.call.calledOn < b.call.calledOn ? 1 : a.call.calledOn > b.call.calledOn ? -1 : 0));
+  // A total order (pass 8, 3): newest day first, then louder, then the later cover, then id,
+  // so the list, Home's one line and the incident screen never depend on row order.
+  return views.sort(viewOrder);
+}
+
+function viewOrder(a: CallView, b: CallView): number {
+  if (a.call.calledOn !== b.call.calledOn) return a.call.calledOn < b.call.calledOn ? 1 : -1;
+  return loudestFirst(a, b);
+}
+
+/** Louder first, then the later cover, then the id: a total order on calls. */
+function loudestFirst(a: CallView, b: CallView): number {
+  const rank = (b.rank ?? 0) - (a.rank ?? 0);
+  if (rank !== 0) return rank;
+  const from = (v: CallView): number => (v.covers[0] ? new Date(v.covers[0].from).getTime() : 0);
+  const f = from(b) - from(a);
+  if (f !== 0) return f;
+  return a.call.id < b.call.id ? -1 : a.call.id > b.call.id ? 1 : 0;
 }
 
 /** Does this escalation's call cover the read? Only its stored covers decide (`covers`). */
@@ -235,7 +279,9 @@ export async function readIncidentCallState(eventId: string, now: number = Date.
   // the loudest covering one is shown.
   const covering = (await readCallsForPet(ev.pet_id, now))
     .filter((v) => viewCovers(v, self))
-    .sort((a, b) => (b.rank ?? 0) - (a.rank ?? 0))[0] ?? null;
+    // The loudest covering call; among equals, the cover nearest the read (the later start),
+    // then the id: the same pick on every phone holding the same rows (pass 8, 3).
+    .sort(loudestFirst)[0] ?? null;
   return { callTier: true, covering };
 }
 

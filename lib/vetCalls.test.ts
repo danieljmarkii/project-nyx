@@ -66,6 +66,7 @@ import {
   saveCallNote,
   undoCall,
 } from './vetCalls';
+import { readDueFollowUp } from './vetCallReads';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { CALL_NOTE_MAX, FOLLOW_UP_DUE_MS, FOLLOW_UP_EXPIRES_MS, callRecordsOf, followUpStateOf } from './vetCallState';
@@ -783,5 +784,65 @@ describe('the sixth and seventh adversarial passes (2026-10-05, on the stored co
     expect(rows('vet_call_follow_ups')[0]).toMatchObject({
       created_at: '2026-10-03T10:30:00+00:00', answer: 'keep_watching', synced: 0,
     });
+  });
+});
+
+describe('the eighth adversarial pass (2026-10-05, one question per call)', () => {
+  const owed = (id: string, callId: string, calledMs: number) =>
+    mockDb
+      .prepare(
+        `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, due_at, expires_at, created_at, synced)
+         VALUES (?, ?, ?, 'v1', 'called', 'owed', ?, ?, ?, 1)`,
+      )
+      .run(id, PET, callId, new Date(calledMs + 48 * H).toISOString(), new Date(calledMs + 7 * 24 * H).toISOString(), new Date(calledMs).toISOString());
+  const answer = (id: string, callId: string, ans: string, atMs: number) =>
+    mockDb
+      .prepare(
+        `INSERT INTO vet_call_follow_ups (id, pet_id, vet_call_id, event_id, reason, status, answer, due_at, expires_at, created_at, synced)
+         VALUES (?, ?, ?, 'v1', 'called', 'answered', ?, ?, ?, ?, 1)`,
+      )
+      .run(id, PET, callId, ans, new Date(T0 + 48 * H).toISOString(), new Date(T0 + 7 * 24 * H).toISOString(), new Date(atMs).toISOString());
+
+  it('1: a member whose owed row has not landed never hides the question another member owes', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    // a-C first, so neither row order nor id order can stand in for the rule.
+    pulledCall('a-C', 'v1', T0 + H, { rank: 1, fromMs: T0 }); // its owed row still in flight
+    pulledCall('z-A', 'v1', T0 + H, { rank: 1, fromMs: T0 });
+    owed('z-A-owed', 'z-A', T0 + H);
+    const views = await readCallsForPet(PET, T0 + 50 * H);
+    expect(views).toHaveLength(1);
+    expect(views[0].followUp.kind).toBe('due');
+    expect((await readDueFollowUp(PET, T0 + 50 * H))?.memberIds).toEqual(['a-C', 'z-A']);
+  });
+
+  it('2: the answer shown is the one recorded first across the group, never a later one by id', async () => {
+    event('v1', T0);
+    verdict('v1', 'call_today');
+    pulledCall('a-C', 'v1', T0 + H, { rank: 1, fromMs: T0 });
+    pulledCall('z-A', 'v1', T0 + H, { rank: 1, fromMs: T0 });
+    answer('z-A-ans', 'z-A', 'wants_to_see', T0 + 50 * H);
+    expect((await readCallsForPet(PET, T0 + 51 * H))[0].followUp).toMatchObject({ answer: 'wants_to_see' });
+    answer('a-C-ans', 'a-C', 'keep_watching', T0 + 55 * H);
+    expect((await readCallsForPet(PET, T0 + 56 * H))[0].followUp).toMatchObject({ answer: 'wants_to_see' });
+  });
+
+  it('3: the incident screen and Home pick the same call whatever order the rows arrived in', async () => {
+    const pick = async (order: string[]) => {
+      mockDb.exec('DELETE FROM vet_calls; DELETE FROM vet_call_follow_ups; DELETE FROM events; DELETE FROM event_ai_verdicts;');
+      event('v1', T0);
+      verdict('v1', 'call_today');
+      event('v3', T0 + 3 * H);
+      verdict('v3', 'call_today');
+      for (const id of order) {
+        pulledCall(id, 'v1', T0 + H, { rank: 1, fromMs: id === 'A' ? T0 : T0 + 2 * H });
+        owed(`${id}-owed`, id, T0 + H);
+      }
+      answer('A-ans', 'A', 'keep_watching', T0 + 50 * H);
+      const s = await readIncidentCallState('v3', T0 + 51 * H);
+      const list = (await readCallsForPet(PET, T0 + 51 * H)).map((v) => v.call.id);
+      return { covering: s.covering?.call.id, list };
+    };
+    expect(await pick(['A', 'C'])).toEqual(await pick(['C', 'A']));
   });
 });
