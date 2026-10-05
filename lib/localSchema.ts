@@ -689,6 +689,9 @@ export const COLUMN_UPGRADES: readonly ColumnUpgrade[] = [
   { table: 'event_ai_verdicts', column: 'rule_version', type: 'TEXT' },
   { table: 'event_ai_verdicts', column: 'engine_flags', type: 'TEXT' },
   { table: 'event_ai_verdicts', column: 'tier', type: 'TEXT' },
+  // Engines v3 PR-36: the call's rank as shown, local only. The table is new in the same PR,
+  // so only a phone that ran an earlier build of that branch lacks it; this keeps it whole.
+  { table: 'vet_calls', column: 'rank_at_call', type: 'INTEGER' },
   // Engines v3 PR-18 (CUL-1412) / migration 081 — each weight reading's source. The table
   // shipped in B-186 without them, so only this path reaches an installed phone. The constant
   // defaults are the server's backfill (W2: home_scale, 'legacy'), true for every row an

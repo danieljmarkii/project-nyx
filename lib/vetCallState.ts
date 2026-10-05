@@ -146,9 +146,9 @@ export interface CallRecord {
   eventId: string;
   note: string | null;
   withdrawn: boolean;
-  /** The rank the call covers up to. Unknown (a call pulled from another phone) reads as call
-   *  today, so a call-now read is never covered by a call of unknown rank. */
-  rankAtCall: TierRank;
+  /** The rank the call was made at, or null when the phone does not know it (a call pulled
+   *  from another phone; 082 has no column). The reads decide what null means. */
+  rankAtCall: TierRank | null;
 }
 
 function truthy(v: number | boolean): boolean {
@@ -171,7 +171,10 @@ export function callRecordsOf(rows: readonly VetCallRow[]): CallRecord[] {
       eventId: root.event_id,
       note: latest.note,
       withdrawn,
-      rankAtCall: root.rank_at_call === TIER_RANK.call_now ? TIER_RANK.call_now : TIER_RANK.call_today,
+      rankAtCall:
+        root.rank_at_call === TIER_RANK.call_now ? TIER_RANK.call_now
+        : root.rank_at_call === TIER_RANK.call_today ? TIER_RANK.call_today
+        : null,
     };
   });
 }

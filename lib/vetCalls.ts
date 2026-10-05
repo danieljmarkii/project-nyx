@@ -65,7 +65,7 @@ export async function recordCall(
   const t = new Date(ev.occurred_at).getTime();
   // The forward walk needs the reads before the bout too: where a bout starts depends on
   // them (adversarial P2), so it reads the lookback, not just the 24 hours.
-  const reads = await callTierReadsBetween(ev.pet_id, family, t - BOUT_LOOKBACK_MS, t);
+  const reads = await callTierReadsBetween(ev.pet_id, family, t - BOUT_LOOKBACK_MS, t, true);
   const tapped = reads.find((r) => r.eventId === eventId);
   if (!tapped) throw new Error('vet call: this read does not ask for a call');
   const anchor = boutAnchorFor(tapped, reads);
@@ -82,8 +82,10 @@ export async function recordCall(
       `INSERT INTO vet_calls
          (id, pet_id, called_on, event_id, note, supersedes, withdrawn, rank_at_call, created_at, synced)
        VALUES (?, ?, ?, ?, NULL, NULL, 0, ?, ?, 0)`,
-      // The bout's rank AS SHOWN now (§6.3): a later raise of the anchor never widens the call.
-      [callId, ev.pet_id, toLocalDayKey(new Date(now)), anchor.eventId, anchor.rank, createdAt],
+      // The escalation's rank AS SHOWN now (§6.3): the louder of the bout's first read and the
+      // read tapped, so the call covers what the owner was looking at, and a later raise of
+      // the anchor never widens it.
+      [callId, ev.pet_id, toLocalDayKey(new Date(now)), anchor.eventId, Math.max(anchor.rank, tapped.rank), createdAt],
     );
     await db.runAsync(
       `INSERT INTO vet_call_follow_ups
@@ -186,9 +188,10 @@ export async function answerFollowUp(
   const root = await rootCall(callId);
   const { calls, ledger } = await readCallRows(root.pet_id);
   const record = callRecordsOf(calls).find((c) => c.id === callId);
-  if (!record || record.withdrawn) throw new Error('vet call: this call was taken back');
+  if (!record) throw new Error('vet call: no such call on this phone');
   const state = followUpStateOf(record, ledger, now);
   if (state.kind === 'answered') return 'already_answered';
+  if (record.withdrawn) throw new Error('vet call: this call was taken back');
   if (state.kind === 'withdrawn') throw new Error('vet call: this call was taken back');
   const owed = ledger.find((r) => r.vet_call_id === callId && r.status === 'owed');
   const window = owed
