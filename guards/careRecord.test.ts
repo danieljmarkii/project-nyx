@@ -362,6 +362,17 @@ describe('AC 12 — append-only by RLS alone (migration 082 and everything after
     expect(sql).not.toMatch(new RegExp(`ALTER TABLE (?:ONLY\\s+)?public\\.${t}\\s+DISABLE TRIGGER`, 'i'));
   });
 
+  it('vet_calls.supersedes stays ON DELETE CASCADE, and nothing later re-declares it (084)', () => {
+    // 084's CHECK puts the cover on the root call only. Were `supersedes` ever SET NULL,
+    // deleting a root would turn its corrections into coverless roots and the CHECK would
+    // abort the delete, and with it account deletion (rls-privacy-reviewer on #1074,
+    // reproduced on a PG16 replay). So this one FK must cascade, not merely cascade-or-null.
+    expect(tableDdl(sql, 'vet_calls')).toMatch(/supersedes\s+UUID\s+REFERENCES public\.vet_calls\(id\) ON DELETE CASCADE/);
+    // The FK rule below reads CREATE TABLE only; a later ALTER touching the column is a
+    // re-declaration this guard would not otherwise see.
+    expect(statements(sql, /^ALTER TABLE\b/i).filter((x) => /\bvet_calls\b/.test(x) && /\bsupersedes\b/.test(x) && /\b(REFERENCES|FOREIGN KEY|DROP CONSTRAINT)\b/i.test(x))).toEqual([]);
+  });
+
   it('every FK in the three tables cascades or nulls, so no parent delete is blocked', () => {
     for (const t of TABLES) {
       for (const ref of tableDdl(sql, t).matchAll(/REFERENCES\s+public\.\w+\(id\)([^,\n]*)/g)) {
