@@ -16,7 +16,6 @@ import { WorthRaisingList } from '../components/vetvisits/WorthRaisingList';
 import { resolveRecordPetName, usePetStore, type Pet } from '../store/petStore';
 import { buildRundown, rundownToPlainText, type Rundown, type RundownTap } from '../lib/rundown';
 import { rundownHistoryHref } from '../lib/historyDoors';
-import { useHistoryV2 } from '../hooks/useHistoryV2';
 import { buildWorthRaising, localIntakeDeclines, type WorthRaising } from '../lib/getReady';
 import { buildTrialScreenModel } from '../lib/trialScreenModel';
 import { UNKNOWN_ALLOWED_SET } from '../lib/trialAllowedSet';
@@ -101,12 +100,11 @@ type Status = 'loading' | 'ready' | 'error';
 // in lib/rundown) so the pure layer stays route-agnostic and testable; the
 // mapping itself is pinned by `rundown.test.tsx`.
 //
-// The History tiles are registered doors (`lib/historyDoors.ts`, HV-11 / CUL-1168): under
-// `history_v2` each lands on the scope its claim is about, but only when this rundown is
-// about the pet on screen, because History shows the active pet and a scoped door onto
-// another pet's record would be confidently wrong (C-9; the pet itself is CUL-1252). Flag
-// off, or for another pet, the bare route as before. This screen reads the gate for that
-// one decision and draws nothing of History v2.
+// The History tiles are registered doors (`lib/historyDoors.ts`, HV-11 / CUL-1168): each
+// lands on the scope its claim is about, but only when this rundown is about the pet on
+// screen, because History shows the active pet and a scoped door onto another pet's record
+// would be confidently wrong (C-9; the pet itself is CUL-1252). For another pet, the bare
+// route.
 //
 // The weight and meds tiles are DOORS onto the Pet tab and go through
 // `profileFocusHref` — the CUL-170 vocabulary — never the bare tab route, which
@@ -160,7 +158,6 @@ export default function RundownScreen() {
   const [rundown, setRundown] = useState<Rundown | null>(null);
   // Whose record `rundown` is: the appointment's pet in Get ready, else the active pet.
   const [rundownPetId, setRundownPetId] = useState<string | null>(null);
-  const historyV2 = useHistoryV2();
   // CUL-1570 (GC-4 PR 3): under Design v2, Worth raising quotes each counted finding's sentence
   // as its Signal screen states it. Read by `load` through a ref, never as a dependency: the
   // gate hydrates asynchronously (app config on foreground and sign-in, the opt-in from
@@ -415,7 +412,7 @@ export default function RundownScreen() {
             <RundownBlock
               rundown={rundown}
               petName={rundown.petName}
-              onTap={(tap) => navigateTo(tap, historyV2 && rundownPetId !== null && rundownPetId === petId)}
+              onTap={(tap) => navigateTo(tap, rundownPetId !== null && rundownPetId === petId)}
             />
           </ScrollView>
 

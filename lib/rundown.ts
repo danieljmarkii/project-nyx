@@ -50,8 +50,8 @@ import { drugDisplayName, type AttributableDose } from './medications';
 // Semantic (route-agnostic) so the pure layer stays testable; the screen maps
 // each to an expo-router destination. Every tile that has a source carries one.
 // Which History a tile's claim is about (HV-11 / CUL-1168). The route is the screen's to
-// build (`rundownHistoryHref`, `lib/historyDoors.ts`): under `history_v2` each lands on its
-// own scope, flag off all three keep the bare route.
+// build (`rundownHistoryHref`, `lib/historyDoors.ts`): each lands on its own scope when the
+// rundown is about the pet on screen, the bare route otherwise.
 export type RundownHistoryDoor =
   | { scope: 'since-visit' } //                  the since-visit tile, nothing new logged
   | { scope: 'symptoms-30d' } //                 *None logged in 30 days*

@@ -424,7 +424,7 @@ const DAY_ROW_LIMIT = 200;
  * parsed instant decides membership. The day's door into History sends `?day=`, which
  * History reads as this same local day (`lib/historyDateFilter.ts`, CUL-1073); a bare
  * `?date=` is still the flag-off calendar's UTC day, a different set of events.
- * `lib/historyPage.test.ts` drives both reads over one table and holds them equal.
+ * `lib/monthReads.dayRows.test.ts` drives it over the real query.
  */
 export async function readDayRows(petId: string, dayKey: string): Promise<TimelineRow[]> {
   const bounds = slackBounds({ fromKey: dayKey, toKey: dayKey });

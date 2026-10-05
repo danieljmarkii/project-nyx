@@ -11,7 +11,7 @@ import { fireEvent, render } from '@testing-library/react-native';
 import type { DayEventNode, DayNode, DayRunNode } from '../../lib/dayNodes';
 import { DayNodeRow } from './DayNodeRow';
 import { SpineCompactRow, SpineEventRow } from './SpineNodeRow';
-import { Spine } from '../designV2/home/Spine';
+import { HomeSpine } from '../historyV2/HomeSpine';
 
 const meal = (id: string, time: string): DayEventNode => ({
   kind: 'event',
@@ -105,33 +105,11 @@ describe('DayNodeRow picks the row and adds nothing', () => {
 });
 
 describe('Home’s spine draws every node through DayNodeRow', () => {
-  it('the spine is the rows, in order, first and last marked — nothing else between them', () => {
-    const nodes: DayNode[] = [run, vomit];
-    const onOpen = jest.fn();
-    const spine = render(<Spine nodes={nodes} onOpen={onOpen} />);
-    const rows = render(
-      <>
-        {nodes.map((node, i) => (
-          <DayNodeRow
-            key={node.id}
-            node={node}
-            isFirst={i === 0}
-            isLast={i === nodes.length - 1}
-            expanded={false}
-            onToggle={jest.fn()}
-            onOpen={onOpen}
-          />
-        ))}
-      </>,
-    );
-    const spineTree = spine.toJSON() as { children: unknown[] };
-    expect(seen(spineTree.children)).toEqual(seen(rows.toJSON()));
-  });
-
   it('the spine owns the open set: a tap on a run opens it in place', () => {
-    const t = render(<Spine nodes={[run]} />);
+    const t = render(<HomeSpine nodes={[run]} drawToken={null} claimDraw={() => false} />);
     expect(t.queryByTestId('spine-members-compact:m1')).toBeNull();
     fireEvent.press(t.getByTestId('spine-node-compact:m1'));
     expect(t.getByTestId('spine-members-compact:m1')).toBeTruthy();
+    t.unmount(); // the open-in-place timers settle after the test otherwise
   });
 });

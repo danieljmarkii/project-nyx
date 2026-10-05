@@ -33,9 +33,6 @@ jest.mock('expo-router', () => ({
 }));
 const focusCb: { current: null | (() => void | (() => void))} = { current: null };
 jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
-// The History doors read the gate (HV-11). On for the one suite that asks.
-const mockHistoryV2 = { on: false };
-jest.mock('../hooks/useHistoryV2', () => ({ useHistoryV2: () => mockHistoryV2.on }));
 // TS-8: the trial screen's gate. Off unless a test turns it on.
 // CUL-1570: the redesign's gate. Off unless a test turns it on.
 const mockDesignV2 = { on: false };
@@ -192,7 +189,6 @@ const FIXTURE = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockHistoryV2.on = false;
   mockDesignV2.on = false;
   params.current = {};
   mockAppointment.questions = null;
@@ -677,7 +673,6 @@ describe('the History doors land on the pet on screen, or not at all (HV-11 / CU
   // appointment would put that pet's claim over this pet's record, so it keeps the bare
   // route (the pet itself is CUL-1252).
   it('Get ready for the pet on screen: the tile lands on its scope', async () => {
-    mockHistoryV2.on = true;
     params.current = { appointmentId: 'appt-1' };
     const r = render(<RundownScreen />);
     fireEvent.press(await r.findByLabelText(/^Vomiting:/));
@@ -685,7 +680,6 @@ describe('the History doors land on the pet on screen, or not at all (HV-11 / CU
   });
 
   it('Get ready for ANOTHER pet: the bare route, never a scope over the wrong record', async () => {
-    mockHistoryV2.on = true;
     mockAppointments['appt-2'] = { ...mockAppointment, id: 'appt-2', pet_id: 'p2' };
     params.current = { appointmentId: 'appt-2' };
     const r = render(<RundownScreen />);

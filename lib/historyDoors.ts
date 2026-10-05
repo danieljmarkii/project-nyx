@@ -5,29 +5,23 @@
 // count Ask spoke, the day the month showed, the course the medication screen described. Nine
 // places make one. This file lists them, and `guards/historyDoorways.test.ts` fails the build
 // on a route to History found anywhere in the repository that no row here accounts for, so a
-// tenth cannot ship without saying where it lands in both flag states.
+// tenth cannot ship without saying where it lands.
 //
 // ── THE RULE A ROW FOLLOWS (H-7) ─────────────────────────────────────────────────
 //
 //   • The widget is FROZEN: it runs on the owner's home screen and does not update with the
 //     app, so History reads what it sends (`dayScopeFromParams`, CUL-1073) and it is never
 //     edited to suit History.
-//   • Every other sender may change, and a flag-on sender may say more than v1 can read. A
-//     parameter v1 does NOT read (`course`) may be sent in both flag states: v1 lands exactly
-//     as before. A parameter v1 DOES read (`type`, `window`, `date`, `day`) takes a new value
-//     only under `history_v2`, because v1 would read the new value its own way (v1 reads
-//     `window=trial` as All time, a superset of the count it was sent to audit).
-//   • A flag-on sender reads the gate (`useHistoryV2()`) where it decides the link, and draws
-//     nothing of v2: those files are the deciders in `guards/historyV2FlagOff.test.tsx`.
+//   • Every other sender may change with the app. The rollout flag and v1's screen retired
+//     at GA (HV-14 / CUL-1175), so a link is written for History v2 alone.
 //
 // ── WHERE A LINK LANDS (§5.8, AC 37) ─────────────────────────────────────────────
 //
-// v1 filters its list: a day link shows that one day. v2 keeps the list and applies the link
-// to its scope in one update (`applyDoor`): the filter and the window it names, and a day it
-// names is LANDED ON (the day card, or the gap line that holds it, outlined; the strip on its
-// week), under All types and All time so the day is always in the window. The reading is
-// `lib/historyDoorParams.ts`; `hooks/useHistoryDoor.ts` applies each tap once, across the
-// screen swap a flag flip causes.
+// History keeps its list and applies the link to its scope in one update (`applyDoor`): the
+// filter and the window it names, and a day it names is LANDED ON (the day card, or the gap
+// line that holds it, outlined; the strip on its week), under All types and All time so the
+// day is always in the window. The reading is `lib/historyDoorParams.ts`;
+// `hooks/useHistoryDoor.ts` applies each tap once.
 //
 // What the rows below do not promise is written on the row: Ask's server count is UTC days
 // until CUL-1251; the rundown lands on the ACTIVE pet (CUL-1252), so its scoped doors apply
@@ -48,10 +42,8 @@ export interface HistoryDoor {
   builder: { file: string; fn: string } | null;
   /** What the link carries. */
   sends: string;
-  /** Where it lands with `history_v2` off (v1's screen). */
-  flagOff: string;
-  /** Where it lands with `history_v2` on (v2's screen). */
-  flagOn: string;
+  /** Where it lands. */
+  lands: string;
   /** The sender cannot ship with the app (the widget alone, H-7). */
   frozen: boolean;
 }
@@ -73,8 +65,7 @@ export const HISTORY_DOORS: readonly HistoryDoor[] = [
     senders: ['widgets/CulpritWidget.tsx'],
     builder: null,
     sends: '`date` (a LOCAL day), `pet`, `src=widget`, `ts` (minted when the widget draws, CUL-1177)',
-    flagOff: 'that local day, on the widget\'s pet (switched once per tap, CUL-1119)',
-    flagOn: 'lands on that day under All types and All time, on the widget\'s pet (switched once per tap, never again after a flag flip)',
+    lands: 'lands on that day under All types and All time, on the widget\'s pet (switched once per tap, CUL-1119)',
     frozen: true,
   },
   {
@@ -82,8 +73,7 @@ export const HISTORY_DOORS: readonly HistoryDoor[] = [
     senders: ['components/designV2/patterns/MonthInstrument.tsx'],
     builder: { file: 'lib/historyDateFilter.ts', fn: 'historyDayHref' },
     sends: '`day` (a LOCAL day, the month\'s own), `ts`',
-    flagOff: 'that local day (CUL-1073)',
-    flagOn: 'lands on that day under All types and All time',
+    lands: 'lands on that day under All types and All time',
     frozen: false,
   },
   {
@@ -91,8 +81,7 @@ export const HISTORY_DOORS: readonly HistoryDoor[] = [
     senders: ['components/dashboard/PatternCalendar.tsx'],
     builder: null,
     sends: '`date` (a UTC day, its own sheet\'s), `ts`; drawn only with design_v2 off, retired at D2-8',
-    flagOff: 'that UTC day',
-    flagOn: 'lands on the local day with the same date: v2 hides no row, so the UTC day\'s entries are all on screen around it',
+    lands: 'lands on the local day with the same date: v2 hides no row, so the UTC day\'s entries are all on screen around it',
     frozen: false,
   },
   {
@@ -101,8 +90,7 @@ export const HISTORY_DOORS: readonly HistoryDoor[] = [
     senders: ['components/home/LookCard.tsx', 'components/designV2/home/LookHeader.tsx'],
     builder: { file: 'lib/lookCard.ts', fn: 'lookMoreTodayHref' },
     sends: '`type=check_in`, `window=today`, `ts`',
-    flagOff: 'Check-in, Today',
-    flagOn: 'Noticed, Today',
+    lands: 'Noticed, Today',
     frozen: false,
   },
   {
@@ -110,17 +98,15 @@ export const HISTORY_DOORS: readonly HistoryDoor[] = [
     senders: ['app/insights/index.tsx'],
     builder: { file: 'lib/lookPatterns.ts', fn: 'noticedCardHref' },
     sends: '`type=check_in`, `ts`',
-    flagOff: 'Check-in, All time',
-    flagOn: 'Noticed, All time',
+    lands: 'Noticed, All time',
     frozen: false,
   },
   {
     id: 'ask-provenance',
     senders: ['components/ask/AskAnswerCard.tsx', 'app/ask.tsx'],
     builder: { file: 'lib/ask.ts', fn: 'resolveTapThrough' },
-    sends: '`type` (a History symptom), `window` (7d / 30d, absent for all time; 14d and trial under the flag), `ts`',
-    flagOff: 'that symptom over v1\'s 7 or 30 days (now minus N × 24 hours) or all time; 14 days and since the trial started open Patterns',
-    flagOn:
+    sends: '`type` (a History symptom), `window` (7d / 14d / 30d / trial, absent for all time), `ts`',
+    lands:
       'that symptom over the window table\'s Last 7 / 14 / 30 days (local days), All time, or Since the trial started ' +
       'while History offers it for this pet today (else Patterns: CUL-498). Ask\'s server still counts 7 / 14 / 30 as UTC days (CUL-1251)',
     frozen: false,
@@ -130,26 +116,23 @@ export const HISTORY_DOORS: readonly HistoryDoor[] = [
     senders: ['app/ask.tsx'],
     builder: null,
     sends: '`date=today`, `ts` (the capped state\'s *History* chip)',
-    flagOff: 'Today',
-    flagOn: 'All types, Today',
+    lands: 'All types, Today',
     frozen: false,
   },
   {
     id: 'medication-course',
     senders: ['app/medication/[id].tsx'],
     builder: { file: 'lib/historyDoors.ts', fn: 'historyHref' },
-    sends: '`type=medication`, `course` (the past course\'s key), `ts`: `course` in both flag states (v1 does not read it)',
-    flagOff: 'Medication, All time (as before)',
-    flagOn: 'that course, All time (CUL-488\'s per-course lens)',
+    sends: '`type=medication`, `course` (the past course\'s key), `ts`',
+    lands: 'that course, All time (CUL-488\'s per-course lens)',
     frozen: false,
   },
   {
     id: 'rundown',
     senders: ['app/rundown.tsx'],
     builder: { file: 'lib/historyDoors.ts', fn: 'rundownHistoryHref' },
-    sends: 'nothing flag off; under the flag, per tile: `window=visit` · `type=symptoms&window=30d` · `course`, with `ts`',
-    flagOff: 'the bare route: History as the owner left it',
-    flagOn:
+    sends: 'per tile: `window=visit` · `type=symptoms&window=30d` · `course`, with `ts`; nothing for another pet\'s appointment',
+    lands:
       'since the last visit → Since the last vet visit; *None logged in 30 days* → All symptoms, Last 30 days; a past course ' +
       'with no regimen → that course, All time. Only when the rundown is about the pet on screen; for another pet\'s ' +
       'appointment, the bare route (CUL-1252)',
@@ -161,8 +144,8 @@ export const HISTORY_DOORS: readonly HistoryDoor[] = [
 
 const HISTORY_PATHNAME = '/(tabs)/history';
 
-/** The `?type=` value for All symptoms. Not an event type, so v1 would read it as All types;
- *  only a flag-on sender sends it, and `lib/historyDoorParams.ts` reads it. */
+/** The `?type=` value for All symptoms. Not an event type; `lib/historyDoorParams.ts`
+ *  reads it. */
 export const SYMPTOMS_TYPE_PARAM = 'symptoms';
 
 /** The parameters an in-app sender builds; the nonce is `historyHref`'s to add. */
@@ -186,9 +169,9 @@ export function historyHref(params: HistoryLinkParams, nowMs: number = Date.now(
 }
 
 /**
- * A rundown tile's door into History (D2, PM 2026-09-25 on CUL-1168). Flag off, or when the
- * rundown is about a pet other than the one on screen, the bare route as before: History as
- * the owner left it. Under the flag, each tile lands on the scope its claim is about:
+ * A rundown tile's door into History (D2, PM 2026-09-25 on CUL-1168). When the rundown is
+ * about a pet other than the one on screen, the bare route: History as the owner left it.
+ * Otherwise each tile lands on the scope its claim is about:
  *   • since the last visit ........ Since the last vet visit (§5.8; the report's bound, H-11)
  *   • *None logged in 30 days* .... All symptoms, Last 30 days. The tile claims an absence, so
  *                                   History can only show more than it, never less; the

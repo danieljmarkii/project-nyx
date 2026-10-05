@@ -294,21 +294,6 @@ const WALK: WalkRow[] = [
     },
   },
   {
-    list: 'TYPE_FILTER_KEYS (components/history/TypeScopeControl.tsx)',
-    governs: 'History’s type filter — the quietest miss: rows visible but unfilterable',
-    read: () => scan('components/history/TypeScopeControl.tsx', 'const TYPE_FILTER_KEYS', '];'),
-    cough: { now: true, decision: 'YES — landed in PR-3a (un-gated on purpose — §12: reads are never flag-gated)' },
-    sneeze: { now: true, decision: 'YES — landed in PR-3a' },
-    check_in: {
-      now: true,
-      decision: 'YES — the ONE yes on this table, and it is a lens, not a membership. History must be '
-        + 'able to show only the looks (`/history?type=check_in`), which is the doorway Patterns\' '
-        + '*What you noticed* card points at (N-5). Filtering a type is not calling it a symptom: '
-        + 'this list is keyed on EVENT_TYPES, not on SYMPTOM_TYPES, and the row surface still tints '
-        + 'a look neutral. Un-gated on purpose (§12: reads are never flag-gated).',
-    },
-  },
-  {
     list: 'SignalSymptomType + SYMPTOM_LABEL (lib/signal.ts / lib/signalCopy.ts)',
     governs: 'the Signal client mirrors — the cross-pet safety banner + what-to-tell-the-vet copy (§8b)',
     read: () => {

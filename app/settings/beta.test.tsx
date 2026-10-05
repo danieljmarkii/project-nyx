@@ -131,7 +131,7 @@ describe('BetaFeaturesScreen — eligible account', () => {
   it('shows no Noticed card for any account: Noticed graduated (CUL-876)', () => {
     // Every remaining beta allowlisted, so a Noticed card would have every chance to
     // render; its absence is the registry row's removal, not a gate.
-    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm, history_v2: gatedToPm });
+    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);
 
     expect(getByText('Design v2')).toBeTruthy();
@@ -156,25 +156,14 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(queryByText('Noticed')).toBeNull();
   });
 
-  it('renders the History v2 card for an allowlisted account only, opt-in default off (CUL-1158)', () => {
-    // HV-1 AC: the shelf lists History v2 for an eligible account only. Allowlisted
-    // for history_v2 → the card renders (title + blurb) with its switch OFF. The
-    // zero-eligible case (the dark seed reaches nobody → no card) is the B-729 test above.
-    setAllowlist({ history_v2: gatedToPm });
-    const { getByText, queryByText, getByRole } = render(<BetaFeaturesScreen />);
+  it('shows no History v2 card for any account: History v2 graduated (CUL-1175)', () => {
+    // Every remaining beta allowlisted: the card's absence is the registry row's removal.
+    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm });
+    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
 
-    expect(getByText('History v2')).toBeTruthy();
-    expect(getByText(/Switch it off and History is exactly as it was/)).toBeTruthy();
-    expect(getByRole('switch').props.value).toBe(false);
-    expect(queryByText('Design v2')).toBeNull();
-    expect(queryByText('Noticed')).toBeNull();
-
-    // Off, no hint; opted in, the hint names what HV-7 drew (CUL-1164) and nothing it
-    // did not: no strip, no filter, no search yet.
-    expect(queryByText(/^It’s on\./)).toBeNull();
-    act(() => useBetaOptInStore.getState().setOptIn('history_v2', true));
-    expect(getByRole('switch').props.value).toBe(true);
-    expect(getByText(/^It’s on\. Open History: each day is its own card/)).toBeTruthy();
+    expect(getByText('Design v2')).toBeTruthy();
+    expect(queryByText('History v2')).toBeNull();
+    expect(queryByText(/Switch it off and History is exactly as it was/)).toBeNull();
   });
 
   // CUL-1220 / BRK-21 — the hint names the look at the top of Today only when the look
@@ -202,14 +191,6 @@ describe('BetaFeaturesScreen — eligible account', () => {
     expect(t.queryByText(/daily look at the top/)).toBeNull();
     usePetStore.setState({ activePet: null });
   });
-
-  it('a different account is not shown the History v2 card', () => {
-    setAllowlist({ history_v2: { enabled: false, allowlist: ['someone-else'] } });
-    const { getByText, queryByText } = render(<BetaFeaturesScreen />);
-
-    expect(queryByText('History v2')).toBeNull();
-    expect(getByText('Nothing to try right now')).toBeTruthy();
-  });
 });
 
 // CUL-70 (D8, ruled 2026-08-20): owner-facing, the shelf is "Early access". "Beta"
@@ -233,7 +214,7 @@ const BETA_WORD = /\bbetas?\b/i;
 
 describe('BetaFeaturesScreen — says early access, never beta (CUL-70)', () => {
   it('shows and speaks no "beta" with every card up and a hint open', () => {
-    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm, history_v2: gatedToPm });
+    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm });
     useBetaOptInStore.getState().setOptIn('widget_enabled', true);
     const { toJSON } = render(<BetaFeaturesScreen />);
     const strings = shownOrSpoken(toJSON());
@@ -259,7 +240,7 @@ describe('BetaFeaturesScreen — says early access, never beta (CUL-70)', () => 
   it('labels each switch with its feature’s title and nothing else', () => {
     // The pill is gone, so the label no longer carries a ", beta" to stand in for it:
     // VoiceOver says the title the owner reads, then "switch", then its state.
-    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm, history_v2: gatedToPm });
+    setAllowlist({ widget_enabled: gatedToPm, design_v2: gatedToPm });
     const { getAllByRole } = render(<BetaFeaturesScreen />);
 
     expect(getAllByRole('switch').map((sw) => sw.props.accessibilityLabel)).toEqual([

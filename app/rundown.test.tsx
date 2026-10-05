@@ -24,9 +24,6 @@ jest.mock('expo-router', () => ({
 }));
 const focusCb: { current: null | (() => void | (() => void))} = { current: null };
 jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
-// The History doors read the gate (HV-11); flipped per test.
-let mockHistoryV2 = false;
-jest.mock('../hooks/useHistoryV2', () => ({ useHistoryV2: () => mockHistoryV2 }));
 // The env boundary. `lib/supabase` throws at IMPORT when the anon key is unset, and
 // this screen now reaches it (the Signal cache read Get ready quotes, and the trial
 // facts). Nothing here calls it — no appointment rides the route, so this is the
@@ -60,7 +57,6 @@ const tile = (key: RundownTile['key'], label: string, tap: RundownTap): RundownT
 });
 
 beforeEach(() => {
-  mockHistoryV2 = false;
   jest.clearAllMocks();
   (buildRundown as jest.Mock).mockResolvedValue({
     petName: 'Mochi',
@@ -129,17 +125,7 @@ describe('the History doors (HV-11 / CUL-1168: registered in lib/historyDoors.ts
     });
   }
 
-  it('flag off: every History tile pushes the bare route, as before', async () => {
-    withHistoryTiles();
-    const { findByLabelText } = render(<RundownScreen />);
-    for (const label of [/^Since the last vet visit:/, /^Symptoms:/, /^Zyrtec:/]) {
-      fireEvent.press(await findByLabelText(label));
-    }
-    expect((router.push as jest.Mock).mock.calls).toEqual([['/(tabs)/history'], ['/(tabs)/history'], ['/(tabs)/history']]);
-  });
-
-  it('flag on: each tile lands on the scope its claim is about', async () => {
-    mockHistoryV2 = true;
+  it('each tile lands on the scope its claim is about', async () => {
     withHistoryTiles();
     const { findByLabelText } = render(<RundownScreen />);
     fireEvent.press(await findByLabelText(/^Since the last vet visit:/));

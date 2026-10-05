@@ -135,12 +135,12 @@ describe('useWidgetPetLink — once per tap (CUL-1119)', () => {
     expect(active()).toBe(nyx.id);
   });
 
-  it('a tap spent by one mount is spent for the next: the History tab swaps screens when history_v2 flips (HV-11)', () => {
+  it('a tap spent by one mount is spent for the next: a remounted History screen re-applies nothing (HV-11)', () => {
     const first = mount({ pet: mochi.id, ts: 'T1' });
     expect(active()).toBe(mochi.id);
     first.unmount();
     switchTo(nyx.id);
-    // The other screen mounts over the same link.
+    // A fresh screen mounts over the same link.
     mount({ pet: mochi.id, ts: 'T1' });
     expect(active()).toBe(nyx.id);
   });

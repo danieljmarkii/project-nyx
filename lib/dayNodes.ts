@@ -2,8 +2,7 @@
 // the record you can read, HV-1 / CUL-1158; spec §5.5, R-3 "import what the app
 // already computes").
 //
-// Home's spine (`TodayCard`, behind `design_v2`) and History v2's day cards (behind
-// `history_v2`) both call THIS, so a meal, a run, a timing line and a read are the same
+// Home's spine (`TodayCard`, behind `design_v2`) and History v2's day cards both call THIS, so a meal, a run, a timing line and a read are the same
 // node on both surfaces. The contract is "node in, row out", fixed here so the step-2
 // lanes can run in parallel (spec §8): HV-6 changes what the pipeline RETURNS (the run
 // rule, the dose row, the read's states), never its signature; HV-7 renders whatever it

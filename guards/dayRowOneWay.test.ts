@@ -33,9 +33,6 @@
 //   • A THIRD surface, a screen outside both directories that draws a day (a future
 //     day-summary on the spine, say), is not scanned at all: the rule covers the two
 //     surfaces AC 15 names. Such a screen adds its directory to `SURFACE_DIRS` the PR it lands.
-//   • History v1 (`components/history/`, the flag-off tab) draws its own `EventRow` and is
-//     out of scope by design: it is deleted at GA (HV-14), and until then flag-off is
-//     byte-identical to today (C-36), which this rule must not disturb.
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -54,7 +51,9 @@ const SURFACE_DIRS = {
 /** A surface's pure half outside its directory, scanned as the surface's own (never a way
  *  around the rule: it is held to the same imports). */
 const SURFACE_FILES = {
-  home: [] as string[],
+  // Home's spine lives in History v2's directory (HV-10) and is Home's day: scanned with
+  // both surfaces, held to the same imports either way.
+  home: ['components/historyV2/HomeSpine.tsx'] as string[],
   history: ['lib/historyScreen.ts'],
 } as const;
 
@@ -218,15 +217,14 @@ describe('one row, one way: Home and History draw a day only through the pipelin
 
   it('Home draws its day through DayNodeRow over the pipeline (a real call site on each side)', () => {
     const home = callersIn(ROOT, homeFiles);
-    expect(home.draws).toEqual(['components/designV2/home/Spine.tsx']);
+    expect(home.draws).toEqual(['components/historyV2/HomeSpine.tsx']);
     expect(home.builds).toEqual(['components/designV2/home/TodayCard.tsx']);
   });
 
   it('History draws its day through DayNodeRow over the pipeline (a real call site on each side)', () => {
     const history = callersIn(ROOT, historyFiles);
-    // `HomeSpine` is Home's spine under `history_v2` (HV-10, CUL-1167), drawn from History
-    // v2's namespace because the flag's rendering lives there (C-36). It is Home's day, and
-    // it is scanned with History's directory, held to the same imports either way.
+    // `HomeSpine` is Home's spine (HV-10, CUL-1167), drawn from History v2's directory. It
+    // is Home's day, and it is scanned with History's directory too.
     expect(history.draws).toEqual(['components/historyV2/DayCard.tsx', 'components/historyV2/HomeSpine.tsx']);
     expect(history.builds).toEqual(['lib/historyScreen.ts']);
   });

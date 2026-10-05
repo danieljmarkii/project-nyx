@@ -1,5 +1,5 @@
 // A node on the day's thread: one event, or one run of meals. The ONE row Home's spine
-// (behind `design_v2`) and History v2's day cards (behind `history_v2`) draw (History v2,
+// (behind `design_v2`) and History v2's day cards draw (History v2,
 // spec §3.6, H-1): HV-1 / CUL-1158 lifted it here, HV-6 / CUL-1163 gave it round 3's rules.
 // The contract is "node in, row out": `lib/dayNodes.ts` builds the node, `DayNodeRow` picks
 // the row, and this file draws what the node says and nothing it does not.
@@ -19,7 +19,7 @@
 //     reassures).
 //   • Open in place: every member of an opened run is a full row, the same row a single
 //     event draws, with every fact and the 44pt floor (GAP-8). Where the host asks for it
-//     (`openInPlace`: History v2's day cards, and Home's spine under `history_v2`), the run
+//     (`openInPlace`: History v2's day cards, and Home's spine), the run
 //     opens on the ONE open-in-place choreography the month's day uses (`useOpenInPlace`,
 //     HV-10 / CUL-1167): the run's rail leads along the thread, the box follows, the members
 //     land; under Reduce Motion the box is there at once and the members fade in over
@@ -620,7 +620,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
   },
 
-  // The chips: the app's small-caps tag register (IntakeBadge's geometry), three inks.
+  // The chips: the app's small-caps tag register (the retired IntakeBadge's geometry), three inks.
   chip: {
     paddingHorizontal: theme.space1,
     paddingVertical: theme.spaceMicro,

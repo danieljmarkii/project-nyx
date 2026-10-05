@@ -1,6 +1,6 @@
 // History v2's reads (CUL-1161 / HV-4; docs/nyx-history-v2-requirements.md §5.2, §3.7).
 // The one file that knows the tables behind History v2's list and numbers; everything it
-// returns is shaped by the pure `lib/historyDays.ts`. `getTimeline` stays v1's until GA.
+// returns is shaped by the pure `lib/historyDays.ts`. `getTimeline` is the other screens' read, not this one's.
 //
 // ── WHOLE-DAY PAGES ON A TOTAL ORDER ─────────────────────────────────────────────
 // `readDayPage` returns whole LOCAL days, newest first, until a page holds at least

@@ -11,7 +11,6 @@ import {
   type AskNav,
 } from '../../lib/ask';
 import { useHistoryTrialOffered } from '../../hooks/useHistoryTrialOffered';
-import { useHistoryV2 } from '../../hooks/useHistoryV2';
 
 // One assistant answer (mock §2–§4). Answer-first anatomy (D6), top to bottom:
 //   1. safetyLead — a live engine SAFETY finding, relayed verbatim, LEADING the answer
@@ -27,10 +26,8 @@ import { useHistoryV2 } from '../../hooks/useHistoryV2';
 // computes one. The tap-through is the D6 interaction the whole conversation lifetime is
 // built to survive (D8) — it's just an in-app navigation, so the store keeps context.
 //
-// The tap-through is a registered door into History (`lib/historyDoors.ts`, HV-11). This
-// card reads `history_v2` for one decision only, which windows History can reproduce
-// exactly (`AskHistoryReach`): it draws nothing of History v2, and flag off its route and
-// label are today's (`lib/ask.test.ts`).
+// The tap-through is a registered door into History (`lib/historyDoors.ts`, HV-11): which
+// windows History can reproduce exactly is `AskHistoryReach` (`lib/ask.test.ts`).
 interface Props {
   body: AskAnswerBody;
   petName: string;
@@ -42,9 +39,8 @@ interface Props {
 
 export function AskAnswerCard({ body, petName, onAsk, onTapThrough }: Props) {
   const prov = body.provenance;
-  const historyV2 = useHistoryV2();
-  const trialWindowOffered = useHistoryTrialOffered(tapThroughNeedsTrialWindow(prov?.tapThrough, historyV2));
-  const reach: AskHistoryReach = { historyV2, trialWindowOffered };
+  const trialWindowOffered = useHistoryTrialOffered(tapThroughNeedsTrialWindow(prov?.tapThrough));
+  const reach: AskHistoryReach = { trialWindowOffered };
   const nav = resolveTapThrough(prov?.tapThrough, reach);
   const goLabel = tapThroughLabel(prov?.tapThrough, reach);
 

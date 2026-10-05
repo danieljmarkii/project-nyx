@@ -9,7 +9,7 @@ export type RowChipTone = 'ok' | 'mid' | 'attn';
 
 /**
  * A meal's intake chip tone (§3.6): All and Most in teal, Some in grey, Picked at and
- * Refused in rose. Three tiers where History v1's `IntakeBadge` draws two, on purpose and
+ * Refused in rose. Three tiers where History v1's `IntakeBadge` drew two (retired, HV-14), on purpose and
  * by the round-5 ruling: Some is not finished (it breaks a run and the day header names
  * it) and it is not a concern either, so it is neither the teal of a finished bowl nor the
  * rose of a refusal. An unknown rating fails toward the rose, never toward teal.

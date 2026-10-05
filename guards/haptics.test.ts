@@ -173,7 +173,7 @@ const ALWAYS_SCANNED = [
   // HV-10 (CUL-1167) — the first paint and a removal's fold. The thread module and its
   // renderer land every row of a day, a photographed vomit's `worth_a_call` among them, and
   // fade a removed one out: "the day drew in" and "the row is gone" are two beats a buzz
-  // would read as natural for, on vomit days. Home's spine under `history_v2` paints the
+  // would read as natural for, on vomit days. Home's spine (`HomeSpine`) paints the
   // same rows and hosts the read's arrival on its node, the case `SpineNodeRow.tsx` is
   // named for above. None carries the MARKERS, so all three are named the PR they ship
   // (C-16). Proven by mutation on CUL-1167: a `commitSymptom` import in each reds the build.

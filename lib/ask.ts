@@ -246,7 +246,7 @@ export type AskNav =
   | { pathname: '/insights/[metric]'; params: { metric: string } }
   | { pathname: '/insights' }
   // B-378 — the filtered History list a symptom count was drawn from. `window` is History's own
-  // vocabulary (today/7d/30d, plus 14d/trial under `history_v2`, HV-11); absent = all time.
+  // vocabulary (today/7d/14d/30d/trial, HV-11); absent = all time.
   // The screen adds a `ts` nonce at nav time so the filter re-applies even when the History
   // tab is already mounted.
   | { pathname: '/(tabs)/history'; params: { type: string; window?: string } };
@@ -257,8 +257,8 @@ export type AskNav =
 const SYMPTOM_METRICS = new Set(['vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze']);
 
 // B-378 — the symptoms History can render as a `?type=` filter: the intersection of
-// SYMPTOM_METRICS and the event types exposed in the History TypeScopeControl. `scratch` and
-// `skin_reaction` are valid schema values with a Patterns detail but NO History filter chip, so
+// SYMPTOM_METRICS and the event types on History's type sheet. `scratch` and
+// `skin_reaction` are valid schema values with a Patterns detail but NO History filter row, so
 // they stay on the Patterns route. Typed EventTypeKey so a typo here fails the type-check
 // rather than silently degrading to an unfiltered History list.
 const HISTORY_SYMPTOM_TYPES = new Set<EventTypeKey>(['vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch', 'cough', 'sneeze']);
@@ -273,19 +273,13 @@ function historySymptomType(symptomType: string | undefined): EventTypeKey | nul
 /**
  * What History can show for Ask's link, decided by the screen that renders the link
  * (HV-11 / CUL-1168; spec §3.9, §5.8, BRK-5). Required on both resolvers, never defaulted:
- * a caller that forgot it would quietly keep the flag-off route under the flag.
+ * a caller that forgot it would quietly offer a window History may not show.
  */
 export interface AskHistoryReach {
-  /** `history_v2` is on for this owner: the link opens History v2, whose window table has
-   *  *Last 14 days* and *Since the trial started* (CUL-498). */
-  historyV2: boolean;
-  /** History v2 offers *Since the trial started* for this pet today (`isWindowOffered` over
+  /** History offers *Since the trial started* for this pet today (`isWindowOffered` over
    *  the same facts History reads). False while that is still being read. */
   trialWindowOffered: boolean;
 }
-
-/** The reach with `history_v2` off: today's History, v1's three presets. */
-export const ASK_HISTORY_V1: AskHistoryReach = { historyV2: false, trialWindowOffered: false };
 
 /** The History `?window=` params for an Ask window History can represent EXACTLY, or null when
  *  it can't, in which case the caller keeps the window-agnostic Patterns route.
@@ -297,8 +291,8 @@ export const ASK_HISTORY_V1: AskHistoryReach = { historyV2: false, trialWindowOf
  *  window History can't reproduce exactly is better audited on Patterns, which makes no count
  *  promise. Returns `{}` (not `{ window: undefined }`) for all-time so the spread adds no key.
  *
- *  With `history_v2` on (HV-11) the window table reproduces two more: *Last 14 days*, and
- *  *Since the trial started*, but the latter ONLY while History offers it for this pet today.
+ *  History's window table (HV-11) reproduces *Last 14 days* too, and *Since the trial
+ *  started* ONLY while History offers it for this pet today.
  *  Ask counts `since_trial_start` over any `status = 'active'` trial, and History offers the
  *  window only while `isTrialRunning` says the trial runs (§3.9, B-422): a trial nobody closed
  *  is still Ask's trial after its grace, and History would show All time there. Both start on
@@ -307,15 +301,14 @@ export const ASK_HISTORY_V1: AskHistoryReach = { historyV2: false, trialWindowOf
  *
  *  STATED LIMIT (BRK-5, CUL-1251): History v2's 7 / 14 / 30 days are LOCAL days; the `ask`
  *  function still counts those three as UTC days. The link lands on the window table's span;
- *  an entry near UTC midnight can sit in one count and not the other until the server moves.
- *  Flag off, v1 reads `7d` / `30d` as now minus 7 / 30 × 24 hours, a third definition. */
+ *  an entry near UTC midnight can sit in one count and not the other until the server moves. */
 function historyWindow(askWindow: string | undefined, reach: AskHistoryReach): { window?: string } | null {
   switch (askWindow) {
     case '7d': return { window: '7d' };
     case '30d': return { window: '30d' };
     case 'all': return {};      // all time — an exact match, expressed as a History link with no window
-    case '14d': return reach.historyV2 ? { window: '14d' } : null;
-    case 'since_trial_start': return reach.historyV2 && reach.trialWindowOffered ? { window: 'trial' } : null;
+    case '14d': return { window: '14d' };
+    case 'since_trial_start': return reach.trialWindowOffered ? { window: 'trial' } : null;
     default: return null;       // unset → no exact History window
   }
 }
@@ -349,11 +342,10 @@ export function resolveTapThrough(tp: AskTapThrough | null | undefined, reach: A
 }
 
 /** Does this tap-through need to know whether History offers the trial window? Only a
- *  History-renderable symptom counted since the trial started, with `history_v2` on: the
- *  answer card reads the trial for that case alone. */
-export function tapThroughNeedsTrialWindow(tp: AskTapThrough | null | undefined, historyV2: boolean): boolean {
+ *  History-renderable symptom counted since the trial started: the answer card reads the
+ *  trial for that case alone. */
+export function tapThroughNeedsTrialWindow(tp: AskTapThrough | null | undefined): boolean {
   return (
-    historyV2 &&
     tp?.kind === 'filter' &&
     tp.window === 'since_trial_start' &&
     historySymptomType(tp.symptomType) !== null

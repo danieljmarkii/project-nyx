@@ -9,8 +9,8 @@ import { FilterChip } from '../ui/FilterChip';
 //      docs/backlog.md B-014
 export type IntakeRating = 'refused' | 'picked' | 'some' | 'most' | 'all';
 
-// Exported so the read-only IntakeBadge (B-035) draws its display label from the SAME
-// source — the badge and this editable row can't drift to two spellings of one rating.
+// Exported so a read-only surface draws its display label from the SAME source — it and
+// this editable row can't drift to two spellings of one rating.
 export const INTAKE_OPTIONS: { value: IntakeRating; label: string }[] = [
   { value: 'refused', label: 'Refused' },
   { value: 'picked',  label: 'Picked' },
@@ -21,8 +21,8 @@ export const INTAKE_OPTIONS: { value: IntakeRating; label: string }[] = [
 
 interface Props {
   value: IntakeRating | null;
-  // This row is the EDITABLE intake surface only. Read-only display (History) is the
-  // dedicated IntakeBadge (B-035) — the old `onChange`-omitted read-only branch that reused
+  // This row is the EDITABLE intake surface only. Read-only display is the shared day
+  // row's chip (`lib/rowChips.ts`) — the old `onChange`-omitted read-only branch that reused
   // FilterChip lived here and is gone, so a handler is now required.
   onChange: (next: IntakeRating | null) => void;
   // Optional header label. Pass null/'' to suppress (e.g. inside a toast

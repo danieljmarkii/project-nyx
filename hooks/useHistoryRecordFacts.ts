@@ -16,9 +16,6 @@
 // so a scope change keeps the pills while the list reads the new scope. A newer read for
 // the same pet and day replaces the last answer when it lands, so the numbers never blank
 // between reads.
-//
-// A hook, not a component: nothing here lives in `components/historyV2/`, whose every
-// exported function the flag-off guard wraps into a component.
 
 import { useMemo } from 'react';
 import type { HistoryRecordData } from '../lib/historyWindowFacts';
