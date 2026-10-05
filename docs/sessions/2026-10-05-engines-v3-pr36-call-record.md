@@ -55,7 +55,11 @@ Dispatched session (`/dispatch`, Engines v3 round), BUILD on CUL-1419. Shipped v
     - A: a read timed before the anchor, landing after the call.
     - B/C: cross-phone under-cover and re-ask.
     - D: Take back could withdraw the other phone's call.
-  - **Pass 5 (one phone only, on the latest fixes):** pending at the time of writing; the PR comment carries its verdict.
+  - **Pass 5 (one phone, 1,200-seed fuzz): FAIL, towards asking too often.**
+    - No dead tap, no louder read covered, and no answer lands on a withdrawn call.
+    - Breaks: the cover for a read timed before the called anchor (A) is not stable. A raise of the anchor, or a louder read landing between the two, un-covers a read that was covered and answered, so "I've called" and a second question come back (`lib/vetCallReads.ts`, the walk clause).
+    - Open for a ruling: a soft-deleted call-now first read sets the call's stored rank.
+- **Why the session stopped:** five passes, and each round of fixes opened the next round's break. The model is being patched in pieces instead of being designed once. The design it needs is (1) the rank and anchor time stored on the server (CUL-1602) and (2) a cover that latches once shown. That is a fresh build session against a ruled design, not a sixth patch. The PM decides (CUL-1604).
 - The root cause of every cross-phone failure is that 082 stores no rank on the call. Only a server column fixes it (CUL-1602, raised to High).
 
 ## Definition of Done
@@ -85,3 +89,4 @@ Dispatched session (`/dispatch`, Engines v3 round), BUILD on CUL-1419. Shipped v
 - CUL-1601: Vet visits pet-switch race.
 - CUL-1602: the server rank column. It blocks two-phone use.
 - CUL-1603: an edited anchor time splits a bout.
+- CUL-1604: the PM's call on PR-36 (merge dark, or wait for the redesign), with the pass-5 findings.
