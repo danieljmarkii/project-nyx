@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { useDesignV2 } from './useDesignV2';
 import { readSignalCache, type CachedFinding } from '../lib/signal';
 import { signalTrialWindowOf } from '../lib/signalScreen';
 import { trialSignalDoor, type TrialSignalDoor } from '../lib/trialSignalDoor';
@@ -8,14 +7,10 @@ import type { TrialCardTrial } from '../lib/dietTrialCard';
 import { useSyncStore } from '../store/syncStore';
 
 // The trial screen's door to the Signal's trial finding (TS-9 · CUL-1305). The rule is
-// `lib/trialSignalDoor.ts`; this hook holds the two things it cannot: the gate and the read.
+// `lib/trialSignalDoor.ts`; this hook holds the one thing it cannot: the read.
 //
-// THE GATE. The door opens `app/signal/[id]`, which answers with its flag-off screen unless
-// Design v2 is live for the account (spec §3.7). So the door exists only under `useDesignV2()`,
-// and with the gate off the Signal cache is NEVER READ: nothing here spends a request on a
-// door that cannot draw (proved in the trial screen's suite over a cache that would answer).
-// This file reads the gate to DECIDE; it draws nothing of the redesign, which is its entry in
-// `guards/designV2FlagOff.test.tsx`'s `DRAWS_ELSEWHERE_OK`.
+// The door opens `app/signal/[id]`, the Signal's own screen, on for every account since
+// Design v2's GA (CUL-1071).
 //
 // THE READ is the route's pet's cache (C-9), stored with the pet it answers for, so a pet
 // switch never shows the previous pet's door for a frame (`useTrialFacts`' shape). It re-reads
@@ -38,17 +33,12 @@ export interface TrialSignalDoorInput {
 }
 
 export function useTrialSignalDoor({ petId, trial, notEating, nowMs }: TrialSignalDoorInput): TrialSignalDoor | null {
-  const live = useDesignV2();
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   const signalTick = useSyncStore((s) => s.signalTick);
   const [state, setState] = useState<{ petId: string; findings: readonly CachedFinding[]; generatedAt: string | null } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      if (!live) {
-        setState(null);
-        return;
-      }
       let cancelled = false;
       readSignalCache(petId)
         .then((row) => {
@@ -61,10 +51,10 @@ export function useTrialSignalDoor({ petId, trial, notEating, nowMs }: TrialSign
       return () => {
         cancelled = true;
       };
-    }, [live, petId, hydrationTick, signalTick]),
+    }, [petId, hydrationTick, signalTick]),
   );
 
-  if (!live || !state || state.petId !== petId) return null;
+  if (!state || state.petId !== petId) return null;
   return trialSignalDoor({
     petId,
     findings: state.findings,

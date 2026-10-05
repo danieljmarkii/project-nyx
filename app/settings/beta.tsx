@@ -2,13 +2,11 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { FlaskConical, Info, LayoutGrid, Palette } from 'lucide-react-native';
+import { FlaskConical, Info, LayoutGrid } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
 import { useBetaShelf } from '../../hooks/useBetaShelf';
-import { lookCardLive } from '../../lib/lookCard';
-import { usePetStore } from '../../store/petStore';
 import {
   BETA_REGISTRY,
   useBetaOptIn,
@@ -52,10 +50,7 @@ type IconComponent = ComponentType<{ size?: number; color?: string; strokeWidth?
 // BETA_REGISTRY is UI-free data (so it unit-tests in plain jest and useWidgetSnapshots
 // can read the opt-in without a screen's import graph). A `switch` with a default
 // keeps any future key renderable without an exhaustiveness burden.
-function presentationFor(
-  key: AllowlistFlagKey,
-  ctx: { dailyLookOn: boolean },
-): { Icon: IconComponent; onHint?: string } {
+function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?: string } {
   switch (key) {
     case 'widget_enabled':
       // The hint only makes sense on the widget: iOS makes the OWNER add a widget
@@ -71,24 +66,6 @@ function presentationFor(
         onHint:
           'It’s on. If it isn’t on your home screen yet, touch and hold an empty area, tap +, then find Culprit and add it.',
       };
-    case 'design_v2':
-      // The on-state hint. Three lanes landed the same day, each writing it for the
-      // surface it shipped (D2-4 / CUL-1066 Home's Today; D2-5 / CUL-1067 the month on
-      // Patterns; D2-3 / CUL-1065 the Signal card and its screen), so it names all three
-      // and nothing more (the VV-0 lesson: a hint that says "nothing to see yet" is true
-      // the day it ships and false the day after). A palette reads as "how the app
-      // looks", distinct from the widget grid, the picker pen, the taxonomy shapes,
-      // and the vet's stethoscope.
-      //
-      // The daily look's clause rides only when the look is on for the active pet
-      // (CUL-1220, BRK-21): Noticed is GA (CUL-876), but a pet the look has no vocabulary
-      // for has no look at the top of Today to be told about.
-      return {
-        Icon: Palette,
-        onHint: ctx.dailyLookOn
-          ? 'It’s on. Home’s Signal leads with its chart — tap it for the Signal’s own screen; Today reads as one line per moment, with the daily look at the top and the month’s coverage at the foot; open Patterns to see the month with its weekly bars and the weight drawn by date.'
-          : 'It’s on. Home’s Signal leads with its chart — tap it for the Signal’s own screen; Today reads as one line per moment, with the month’s coverage at the foot; open Patterns to see the month with its weekly bars and the weight drawn by date.',
-      };
     default:
       return { Icon: FlaskConical };
   }
@@ -98,16 +75,12 @@ function BetaFeatureCard({ feature }: { feature: BetaFeature }) {
   const eligible = useAllowlistFlag(feature.key);
   const optedIn = useBetaOptIn(feature.key);
   const setOptIn = useBetaOptInStore((s) => s.setOptIn);
-  // The header's own predicate (the code review; C-34): a pet the look has no vocabulary
-  // for gets no header, so the hint must not promise one.
-  const activeSpecies = usePetStore((s) => s.activePet?.species);
-  const dailyLookOn = lookCardLive({ species: activeSpecies });
 
   // Gate 1: no card for a beta the account isn't in the cohort for (belt-and-braces
   // with the eligibility-gated Settings row that pushes this screen).
   if (!eligible) return null;
 
-  const { Icon, onHint } = presentationFor(feature.key, { dailyLookOn });
+  const { Icon, onHint } = presentationFor(feature.key);
 
   return (
     <Card style={styles.betaCard}>

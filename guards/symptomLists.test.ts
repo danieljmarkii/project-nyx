@@ -55,7 +55,6 @@ const REGISTERED: Record<string, string> = {
   'constants/eventTypes.ts': 'EVENT_TYPES + SYMPTOM_TYPES — the two root predicates',
   'components/log/EventTypePicker.tsx': 'CATEGORY_TINT (§6 pairing) + the grid derivation',
   'lib/analytics.ts': 'SYMPTOM_EVENT_TYPES — Patterns/calendar/trial-deltas/widget',
-  'lib/trendSummary.ts': 'TREND_SYMPTOM_TYPES — the Trend surface',
   'lib/daySummary.ts': 'SYMPTOM_CHIP_ORDER + SYMPTOM_NOUN — the Day Summary',
   'lib/widgetSnapshot.ts': 'WIDGET_SYMPTOM_LABELS — the widget symptom tile',
   'lib/metricDetail.ts': 'SYMPTOM_OCCURRENCE_LABELS — the calendar sentence form',

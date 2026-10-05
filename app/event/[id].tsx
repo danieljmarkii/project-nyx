@@ -5,7 +5,6 @@ import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { ChevronRight, Camera } from 'lucide-react-native';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { EventSilhouette } from '../../components/designV2/waits/EventSilhouette';
-import { useDesignV2 } from '../../hooks/useDesignV2';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
@@ -192,7 +191,6 @@ export default function EventDetailScreen() {
   const [doubleDose, setDoubleDose] = useState<DoubleDoseResult | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
   const [loading, setLoading] = useState(true);
-  const designV2 = useDesignV2();
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // The name of the pet this EVENT belongs to, not whichever pet is active
@@ -693,15 +691,11 @@ export default function EventDetailScreen() {
   }
 
   if (loading && !event) {
-    // D2-7 (CUL-1068): behind `design_v2` the local-row read is the screen's own
-    // silhouette, never a spinner; flag-off the whorl, untouched.
+    // D2-7 (CUL-1068; GA by CUL-1071): the local-row read is the screen's own
+    // silhouette, never a spinner.
     return (
       <SafeAreaView style={styles.container}>
-        {designV2 ? (
-          <EventSilhouette />
-        ) : (
-          <View style={styles.loadingState}><WhorlSpinner size="md" ground="day" /></View>
-        )}
+        <EventSilhouette />
       </SafeAreaView>
     );
   }

@@ -10,7 +10,6 @@ import {
 } from './eventTypes';
 import { CATEGORY_TINT } from '../components/log/EventTypePicker';
 import { LOOK_WORDS, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, lookWordKind } from './lookWords';
-import { TREND_SYMPTOM_TYPES } from '../lib/trendSummary';
 import { SYMPTOM_EVENT_TYPES } from '../lib/analytics';
 import { eventTintCategory, describeDayEvent } from '../lib/dayEvents';
 import { HISTORY_TYPE_KEYS, emptyDayFacts, type HistoryFilter } from '../lib/historyDays';
@@ -176,19 +175,6 @@ const WALK: WalkRow[] = [
         + '(CUL-875) gives looks their OWN page-1 line, graph and Appendix G, and lands this '
         + 'explicit exclusion beside the `detectSignals` one in the same PR (§10.5). The report '
         + 'names the word beside the tile\'s count; it never adds the word TO the count.',
-    },
-  },
-  {
-    list: 'TREND_SYMPTOM_TYPES (lib/trendSummary.ts)',
-    governs: 'the Trend surface',
-    read: inSet(TREND_SYMPTOM_TYPES),
-    cough: { now: true, decision: 'YES — landed in PR-3a (client mirrors ship first, HR-2)' },
-    sneeze: { now: true, decision: 'YES — landed in PR-3a' },
-    check_in: {
-      now: false,
-      decision: 'NO — Trend is a count of logged signs over a window. A rise in *Lively* is not a rise in '
-        + 'anything Trend measures, and a rise in *Off* is the owner\'s read, not the record\'s '
-        + 'count.',
     },
   },
   {
@@ -686,7 +672,8 @@ describe('membership walk (HR-6) — every list decided, current state == decide
     // +1 (CUL-1418 / PR-35): the client's CARE_SIGNS, the answers it offers.
     // −1 (CUL-1175 / HV-14): v1 History's TYPE_FILTER_KEYS, deleted with its screen. History
     // v2's type sheet derives from EVENT_TYPES and enumerates no symptom leaf.
-    expect(WALK).toHaveLength(26);
+    // −1 (CUL-1071 / D2-8): TREND_SYMPTOM_TYPES, deleted with Home's Trend card.
+    expect(WALK).toHaveLength(25);
   });
 });
 

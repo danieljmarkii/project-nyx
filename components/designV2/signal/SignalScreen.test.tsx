@@ -14,7 +14,6 @@ jest.mock('../../../lib/signalScreen', () => {
 const mockReduced = jest.fn(() => false);
 jest.mock('../../../hooks/useReducedMotion', () => ({ useReducedMotion: () => mockReduced() }));
 jest.mock('../../../hooks/useAppActive', () => ({ useAppActive: () => true }));
-jest.mock('../../../hooks/useLastEpisodeDates', () => ({ readLastEpisodeIso: () => '2026-09-17T22:11:00.000Z' }));
 const mockWriteFoldEntries = jest.fn(async (..._a: unknown[]) => undefined);
 const mockReadFoldEntries = jest.fn(async (..._a: unknown[]) => ({}));
 jest.mock('../../../lib/signalFold', () => {

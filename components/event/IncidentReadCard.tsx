@@ -20,8 +20,6 @@
 import { Animated, View, StyleSheet, TouchableOpacity, type LayoutChangeEvent } from 'react-native';
 import { theme } from '../../constants/theme';
 import { type ArrivalRail } from '../motion/arrivalMotion';
-import { useDesignV2 } from '../../hooks/useDesignV2';
-import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { Tick } from '../designV2/waits/Tick';
 import { ThemedText } from '../ui/ThemedText';
 import { isQuietVerdict } from '../../lib/incidentVerdict';
@@ -56,17 +54,17 @@ export const RAIL_WIDTH = 3;
 export const RAIL_TICK_HEIGHT = 16;
 
 /**
- * The pending state: a 16pt tick of rail beside the whorl and the copy. The tick is what
- * PR 3 grows into the card's rail, so the read does not arrive from nowhere — it arrives
- * from the mark that was already standing there.
+ * The pending state: a 16pt tick of rail beside the copy. The tick is what PR 3 grows
+ * into the card's rail, so the read does not arrive from nowhere — it arrives from the
+ * mark that was already standing there.
  *
- * Behind `design_v2` (D2-7 / CUL-1068) the whorl goes and the tick itself breathes —
+ * Since D2-7 (CUL-1068; GA'd by CUL-1071) the tick itself breathes —
  * "the photo is the hero, the tick breathes" (round 2 §06) — in the same 3×16 slot, so
  * the arrival grows out of exactly the mark it did before. `working` is the section's
  * own fact (the server has been asked, or the row says it is being read): the breathing
  * tick renders only then. The other pending case — a local row being READ off storage
  * when an old incident is opened — is a fetch, not a request (arrivalMotion's own
- * distinction), and keeps the still tick, flag-on and flag-off alike.
+ * distinction), and keeps the still tick.
  */
 export function IncidentReadPending({
   onLayout,
@@ -76,11 +74,9 @@ export function IncidentReadPending({
   /** A read is being produced — the section's `working || status === 'pending'`. */
   working?: boolean;
 }) {
-  const designV2 = useDesignV2();
   return (
     <View style={styles.pendingBox} onLayout={onLayout}>
-      {designV2 && working ? <Tick working={working} /> : <View style={styles.pendingTick} />}
-      {!designV2 && <WhorlSpinner size="sm" ground="day" />}
+      {working ? <Tick working={working} /> : <View style={styles.pendingTick} />}
       <ThemedText style={styles.pendingText}>{INCIDENT_READ_PENDING_LABEL}</ThemedText>
     </View>
   );
