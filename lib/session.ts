@@ -31,6 +31,7 @@ import { cancelAllAnalysisWatches } from './analysis';
 import { abortFlight } from '../components/motion/flightMotion';
 import { supabase } from './supabase';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
+import { setFollowUpNotificationsOn } from './followUpNotifications';
 
 /**
  * B-430 — the pre-sign-out drain. Push everything that can still be pushed, then
@@ -367,4 +368,10 @@ export async function wipeLocalSession(): Promise<void> {
   // …and the in-room ticks on Home's concerns (`lib/careVisitConcerns.ts`), keyed by the
   // previous owner's appointment ids.
   await clearCareVisitTicks();
+  // Engines v3 PR-36 — the follow-up notification's switch (`lib/followUpNotifications.ts`),
+  // device-local until the preference moves to notification_preferences. The next account
+  // starts with it off (G6). The scheduled questions themselves went with
+  // cancelAllScheduledNotifications above, so no follow-up about this account's call can
+  // reach the next one.
+  await setFollowUpNotificationsOn(false);
 }

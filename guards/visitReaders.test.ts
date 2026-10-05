@@ -252,6 +252,15 @@ const ALLOWED: Record<string, { kinds: readonly Kind[]; why: string }> = {
       'else (no Edge Function selects it, guards/careRecord.test.ts).',
   },
 
+  'lib/vetCallReads.ts': {
+    kinds: ['table'],
+    why:
+      'The call record\'s reads, split from its writers so Home\'s follow-up line imports no ' +
+      'write path: the pet\'s calls and their ledger rows, to list a call and to say whether ' +
+      'its question is due. The same kind of reader as lib/vetCalls.ts, and the same limits: ' +
+      'no vet_visits read, no count, no coverage line, no engine input.',
+  },
+
   // ── The shared visit bound (H-11, CUL-1160) ──
   'lib/visitWindow.ts': {
     kinds: ['table'],

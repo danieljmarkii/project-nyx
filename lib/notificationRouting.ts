@@ -28,7 +28,15 @@ const SAFE_NOTIFICATION_ROUTES = new Set<string>(
 export interface NotificationTapData {
   category?: unknown;
   route?: unknown;
+  /** Engines v3 PR-36: a follow-up's tap carries `kind: 'follow_up'` and its call id
+   *  (lib/followUpNotifications.ts), never a route string. */
+  kind?: unknown;
+  callId?: unknown;
 }
+
+// A call id as this app mints it (`uuid()`): the only shape a follow-up's tap may route on,
+// so a stale or foreign payload can never smuggle a path segment into the route.
+const CALL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface NotificationRouteDecision {
   /** Record a last-interaction for this category (the self-pruning data B-288 will
@@ -56,6 +64,12 @@ export function notificationRouteDecision(
     rawCategory && KNOWN_CATEGORIES.has(rawCategory)
       ? (rawCategory as NotificationCategory)
       : null;
+  // Engines v3 PR-36: the follow-up's question. Built here from a validated id, never read
+  // off the payload, so the route set stays closed (G5).
+  if (data?.kind === 'follow_up') {
+    const callId = typeof data.callId === 'string' && CALL_ID.test(data.callId) ? data.callId : null;
+    return { recordCategory: null, routeTo: opts.authed && callId ? `/vet-call/${callId}` : null };
+  }
   const rawRoute = typeof data?.route === 'string' ? data.route : null;
   const routeTo = opts.authed && rawRoute && SAFE_NOTIFICATION_ROUTES.has(rawRoute) ? rawRoute : null;
   return { recordCategory, routeTo };
