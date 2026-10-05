@@ -48,5 +48,5 @@ This was a dispatched session (Out of beta — Noticed, Design v2, History v2, t
 
 ## Not done here
 
-- The `app_config.trial_screen` row's deletion: PR-60 owns migration 084 and the data-only clean-up.
+- The `app_config.trial_screen` row's deletion: PR-61's data-only migration, as for `daily_look` (PR-60's 084 deletes three other rows).
 - STATUS.md: PR-60 owns it.
