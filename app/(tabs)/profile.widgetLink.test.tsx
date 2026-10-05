@@ -1,8 +1,10 @@
-// The widget's trial taps land on the WIDGET's pet and on its trial card (CUL-1292).
+// The widget's trial taps land on the WIDGET's pet and open its trial screen (CUL-1292;
+// TS-6, every account since TS-GA, CUL-1307).
 //
 // The widget sends `nyx:///profile?pet=<id>&src=widget` from its trial dot band and its
 // trial fact tile (`widgets/CulpritWidget.tsx`, frozen, H-7). The Pet tab read neither
-// parameter, so Mochi's widget opened Pixel's profile, at the top. This suite drives the
+// parameter, so Mochi's widget opened Pixel's profile, at the top. It now switches to the
+// widget's pet and forwards the tap to `/trial/{pet}` once. This suite drives the
 // REAL `useWidgetPetLink` over the REAL pet store with two pets, from the widget's exact URL
 // — `profile.focus.test.tsx` stubs the store to one pet and cannot see a switch at all.
 import type { ReactElement } from 'react';
@@ -89,15 +91,10 @@ jest.mock('../../components/profile/ArchivePetSheet', () => ({ ArchivePetSheet: 
 jest.mock('../../components/profile/TrialCompletionSheet', () => ({ TrialCompletionSheet: () => null }));
 jest.mock('../../components/profile/PastMedicationsSection', () => ({ PastMedicationsSection: () => null }));
 
-// A stub that FORWARDS the anchor, so this file asserts the screen's wiring while
-// `DietTrialCard.test.tsx` asserts that the real card lands it on its own Card.
+// The no-trial start card, as a marker: what it draws is `DietTrialCard.test.tsx`'s.
 jest.mock('../../components/profile/DietTrialCard', () => {
   const { View } = require('react-native');
-  return {
-    DietTrialCard: ({ onLayout }: { onLayout?: (e: unknown) => void }) => (
-      <View testID="trial-anchor" onLayout={onLayout} />
-    ),
-  };
+  return { DietTrialCard: () => <View testID="trial-start-card" /> };
 });
 jest.mock('../../lib/dietTrialCard', () => ({ resolveTrialCard: () => ({ kicker: 'Diet trial' }) }));
 
@@ -107,11 +104,8 @@ let mockTrialLoadedFor: string | null = null;
 // TS-6: the input the loader hands over. `{ trial: null }` is "no trial"; the TS-6 suite sets
 // a running one so the door has something to open.
 let mockTrialInput: { trial: unknown } = { trial: null };
-// TS-6: the flag, off unless a test says otherwise, so every suite above runs flag-off.
-let mockTrialScreenLive = false;
-jest.mock('../../hooks/useTrialScreen', () => ({ useTrialScreen: () => mockTrialScreenLive }));
 // TS-6: the row's model is `lib/trialDoorRow.test.ts`'s business; here it only has to exist
-// exactly when there is a trial. A jest.fn so flag-off can assert it was never asked.
+// exactly when there is a trial.
 const mockBuildTrialDoorRow = jest.fn((input: { trial: unknown } | null) =>
   input?.trial
     ? {
@@ -143,7 +137,6 @@ jest.mock('../../hooks/useDietTrial', () => {
     },
   };
 });
-jest.mock('../../hooks/useTrialAllowedSet', () => ({ useTrialAllowedSet: () => ({ status: 'unknown' }) }));
 jest.mock('../../hooks/useWidgetSlotLabel', () => ({ useWidgetSlotLabel: () => null }));
 
 let mockReducedMotion = false;
@@ -177,7 +170,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import ProfileScreen from './profile';
-import { PROFILE_FOCUS_INSET, profileStartTrialHref } from '../../lib/profileFocus';
+import { profileStartTrialHref } from '../../lib/profileFocus';
 import { usePetStore, type Pet } from '../../store/petStore';
 import { clearSpentTaps } from '../../lib/spentTaps';
 
@@ -201,15 +194,10 @@ function setParams(next: Record<string, string>) {
   Object.assign(mockParams, next);
 }
 
-function layout(node: unknown, y: number) {
-  fireEvent(node as never, 'layout', { nativeEvent: { layout: { x: 0, y, width: 320, height: 80 } } });
-}
 const active = () => usePetStore.getState().activePet?.id ?? null;
-const PIXEL_TRIAL_Y = 400;
-const MOCHI_TRIAL_Y = 700;
 
-/** The Pet tab already mounted on Pixel, every read answered and the trial card measured:
- *  the common case, since a tab stays mounted. */
+/** The Pet tab already mounted on Pixel, every read answered: the common case, since a tab
+ *  stays mounted. */
 async function mountSettledOnPixel() {
   mockTrialLoadedFor = PIXEL.id;
   const scrollTo = jest.fn();
@@ -217,7 +205,6 @@ async function mountSettledOnPixel() {
   await waitFor(() => expect(tree.queryByTestId('med-section')).not.toBeNull());
   await act(async () => {});
   tree.UNSAFE_getByType(ScrollView).instance.scrollTo = scrollTo;
-  act(() => layout(tree.getByTestId('trial-anchor'), PIXEL_TRIAL_Y));
   return { ...tree, scrollTo };
 }
 
@@ -228,12 +215,11 @@ async function tapWidget(tree: { rerender: (el: ReactElement) => void }, url = W
   await act(async () => {});
 }
 
-/** Mochi's trial read answers and the card lays out where Mochi's content puts it. */
-async function mochiTrialLands(tree: { rerender: (el: ReactElement) => void; getByTestId: (id: string) => unknown }) {
+/** Mochi's trial read answers. */
+async function mochiTrialLands(tree: { rerender: (el: ReactElement) => void }) {
   mockTrialLoadedFor = MOCHI.id;
   tree.rerender(<ProfileScreen />);
   await act(async () => {});
-  act(() => layout(tree.getByTestId('trial-anchor'), MOCHI_TRIAL_Y));
 }
 
 beforeEach(() => {
@@ -242,7 +228,6 @@ beforeEach(() => {
   mockStartTrialVisible.length = 0;
   mockTrialLoadedFor = null;
   mockTrialInput = { trial: null };
-  mockTrialScreenLive = false;
   mockReducedMotion = false;
   mockTables.medications = [];
   mockTables.medication_administrations = [];
@@ -253,8 +238,8 @@ beforeEach(() => {
 
 describe('the sender', () => {
   it('is the link this suite drives: both trial senders, pet + src=widget, no focus, no nonce', () => {
-    // If CUL-1302 re-points these senders at the trial screen, this reds and the suite
-    // moves with them.
+    // The widget is frozen (H-7), so the app forwards rather than the widget re-pointing. If
+    // these senders ever change, this reds and the suite moves with them.
     const widget = readFileSync(join(__dirname, '../../widgets/CulpritWidget.tsx'), 'utf8');
     expect(widget.match(/petLink\('profile'\)/g)).toHaveLength(2);
     expect(widget).toContain("'pet=' + panel.petId + '&'");
@@ -263,116 +248,86 @@ describe('the sender', () => {
   });
 });
 
-describe('a widget trial tap (CUL-1292)', () => {
+describe('a widget trial tap (CUL-1292; TS-6)', () => {
   it('opens the widget’s pet, not the active one', async () => {
     const tree = await mountSettledOnPixel();
     await tapWidget(tree);
     expect(active()).toBe(MOCHI.id);
   });
 
-  it('lands on that pet’s trial card, and never on the previous pet’s layout', async () => {
-    // The race: the switch lands in the tap's own flush, while every read on screen is
-    // still Pixel's and "settled". Landing then scrolls to Pixel's card position.
+  it('forwards once to the widget pet’s trial screen, waiting on none of this tab’s reads, and never scrolls', async () => {
     const tree = await mountSettledOnPixel();
     await tapWidget(tree);
-    expect(tree.scrollTo).not.toHaveBeenCalled();
-
+    // The screen reads its pet from the route: no wait on this tab's reads for Mochi.
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith('/trial/pet-mochi');
     await mochiTrialLands(tree);
-    expect(tree.scrollTo).toHaveBeenCalledTimes(1);
-    expect(tree.scrollTo).toHaveBeenCalledWith({ y: MOCHI_TRIAL_Y - PROFILE_FOCUS_INSET, animated: true });
-  });
-
-  it('does not land before the new pet’s reads have answered', async () => {
-    // A position reported for Mochi while Mochi's reads are still out (here, the trial's) is
-    // one the screen is about to move. The real card is not drawn while its own read is out,
-    // so this stands for the sections around it; the stub draws it to put a Mochi-tagged
-    // position in front of the gate, which is the only thing this case asserts.
-    const tree = await mountSettledOnPixel();
-    await tapWidget(tree);
-    act(() => layout(tree.getByTestId('trial-anchor'), MOCHI_TRIAL_Y - 50));
+    tree.rerender(<ProfileScreen />);
+    await act(async () => {});
+    // Once (C-22): a re-render with the same link and Mochi's read answering are not taps.
+    expect(router.push).toHaveBeenCalledTimes(1);
     expect(tree.scrollTo).not.toHaveBeenCalled();
   });
 
-  it('fires once, then leaves the owner alone', async () => {
-    const tree = await mountSettledOnPixel();
-    await tapWidget(tree);
-    await mochiTrialLands(tree);
-    act(() => layout(tree.getByTestId('trial-anchor'), MOCHI_TRIAL_Y + 50));
-    expect(tree.scrollTo).toHaveBeenCalledTimes(1);
-  });
-
-  it('lands on the active pet’s card when the widget’s pet is already on screen', async () => {
+  it('forwards for the active pet when the widget’s pet is already on screen', async () => {
     usePetStore.setState({ activePet: MOCHI });
     mockTrialLoadedFor = MOCHI.id;
     setParams(paramsOf(WIDGET_TRIAL_URL));
-    const scrollTo = jest.fn();
-    const tree = render(<ProfileScreen />);
-    await waitFor(() => expect(tree.queryByTestId('med-section')).not.toBeNull());
+    render(<ProfileScreen />);
     await act(async () => {});
-    tree.UNSAFE_getByType(ScrollView).instance.scrollTo = scrollTo;
-    act(() => layout(tree.getByTestId('trial-anchor'), MOCHI_TRIAL_Y));
-    expect(scrollTo).toHaveBeenCalledWith({ y: MOCHI_TRIAL_Y - PROFILE_FOCUS_INSET, animated: true });
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith('/trial/pet-mochi');
   });
 
-  it('a pet the account no longer has: no switch, no scroll onto the wrong animal', async () => {
+  it('a pet the account no longer has: no switch, no forward onto the wrong animal', async () => {
     const tree = await mountSettledOnPixel();
     await tapWidget(tree, 'nyx:///profile?pet=pet-archived&src=widget');
-    act(() => layout(tree.getByTestId('trial-anchor'), PIXEL_TRIAL_Y + 10));
     expect(active()).toBe(PIXEL.id);
+    expect(router.push).not.toHaveBeenCalled();
     expect(tree.scrollTo).not.toHaveBeenCalled();
   });
 
-  it('the owner switches away before it lands: dropped, never landed late', async () => {
-    const tree = await mountSettledOnPixel();
-    await tapWidget(tree);
-    expect(active()).toBe(MOCHI.id);
-
-    act(() => usePetStore.getState().selectPet(PIXEL.id));
-    tree.rerender(<ProfileScreen />);
-    await act(async () => {});
-    act(() => layout(tree.getByTestId('trial-anchor'), PIXEL_TRIAL_Y + 10));
-    expect(active()).toBe(PIXEL.id);
-    expect(tree.scrollTo).not.toHaveBeenCalled();
-
-    // And back to Mochi from the app, minutes later: the old tap must not wake up and
-    // scroll an owner who is now doing something else.
-    act(() => usePetStore.getState().selectPet(MOCHI.id));
-    await mochiTrialLands(tree);
-    expect(tree.scrollTo).not.toHaveBeenCalled();
-  });
-
-  it('a cold start: waits for the pet list, then switches and lands', async () => {
+  it('a cold start: waits for the pet list, then switches and forwards once', async () => {
     usePetStore.setState({ pets: [], activePet: null });
     setParams(paramsOf(WIDGET_TRIAL_URL));
-    const scrollTo = jest.fn();
     const tree = render(<ProfileScreen />);
     await act(async () => {});
+    expect(router.push).not.toHaveBeenCalled();
 
     act(() => usePetStore.getState().setPets([PIXEL, MOCHI], PIXEL.id));
     await waitFor(() => expect(tree.queryByTestId('med-section')).not.toBeNull());
     await act(async () => {});
     expect(active()).toBe(MOCHI.id);
-    tree.UNSAFE_getByType(ScrollView).instance.scrollTo = scrollTo;
-
-    await mochiTrialLands(tree);
-    expect(scrollTo).toHaveBeenCalledWith({ y: MOCHI_TRIAL_Y - PROFILE_FOCUS_INSET, animated: true });
+    expect(router.push).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith('/trial/pet-mochi');
   });
 });
 
 describe('what it leaves alone', () => {
-  it('an in-app trial door still lands on the pet on screen, with no switch', async () => {
+  it('a leftover in-app focus=trial link neither scrolls, switches nor pushes (TS-GA)', async () => {
     const tree = await mountSettledOnPixel();
     setParams({ focus: 'trial', ts: '1' });
     tree.rerender(<ProfileScreen />);
-    await waitFor(() => expect(tree.scrollTo).toHaveBeenCalledTimes(1));
-    expect(tree.scrollTo).toHaveBeenCalledWith({ y: PIXEL_TRIAL_Y - PROFILE_FOCUS_INSET, animated: true });
+    await act(async () => {});
+    expect(tree.scrollTo).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
     expect(active()).toBe(PIXEL.id);
   });
 
-  it('a plain visit neither switches nor scrolls', async () => {
+  it('a plain visit neither switches, scrolls nor pushes', async () => {
     const tree = await mountSettledOnPixel();
     expect(active()).toBe(PIXEL.id);
     expect(tree.scrollTo).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('the trial screen’s no-trial way back (pet + ts, no src) is not a widget tap', async () => {
+    const tree = await mountSettledOnPixel();
+    setParams({ pet: MOCHI.id, ts: '1' });
+    tree.rerender(<ProfileScreen />);
+    await act(async () => {});
+    expect(active()).toBe(MOCHI.id);
+    expect(router.push).not.toHaveBeenCalled();
   });
 });
 
@@ -435,11 +390,10 @@ describe('the trial screen’s start-form hand-off (TS-4)', () => {
   });
 });
 
-// ── TS-6 (CUL-1302) — under `trial_screen`, the Pet tab keeps a door ──────────────────
+// ── TS-6 (CUL-1302; every account since TS-GA) — the Pet tab keeps a door ─────────────
 //
-// Spec §5.2 / §5.3 / S8: while a trial runs or is in its grace, the trial's slot is one row
-// that opens `/trial/{pet}`; with no trial the start card stays; a widget trial tap forwards
-// to the screen once the switch to its pet has landed. Flag-off, all of it is today's tree.
+// Spec §5.2 / S8: while a trial runs or is in its grace, the trial's slot is one row that
+// opens `/trial/{pet}`; with no trial the start card stays.
 describe('the Pet tab’s door to the trial screen (TS-6)', () => {
   const RUNNING = { trial: { id: 't-1', status: 'active' } };
 
@@ -454,10 +408,9 @@ describe('the Pet tab’s door to the trial screen (TS-6)', () => {
   }
 
   it('a running trial: the door and never the card, opening this pet’s screen', async () => {
-    mockTrialScreenLive = true;
     mockTrialInput = RUNNING;
     const tree = await mountOnPixel();
-    expect(tree.queryByTestId('trial-anchor')).toBeNull();
+    expect(tree.queryByTestId('trial-start-card')).toBeNull();
     const door = tree.getByTestId('trial-door-row');
     expect(door.props.accessibilityRole).toBe('button');
     expect(tree.getByText('Rabbit trial · day 23 of 56')).toBeTruthy();
@@ -467,72 +420,22 @@ describe('the Pet tab’s door to the trial screen (TS-6)', () => {
   });
 
   it('no trial: the start card, unchanged', async () => {
-    mockTrialScreenLive = true;
     const tree = await mountOnPixel();
-    expect(tree.getByTestId('trial-anchor')).toBeTruthy();
+    expect(tree.getByTestId('trial-start-card')).toBeTruthy();
     expect(tree.queryByTestId('trial-door-row')).toBeNull();
-  });
-
-  it('flag off over a trial read that answers: the card, and the door is never built', async () => {
-    // The async half the flag-off guard cannot see (C-41): the read answered with a trial,
-    // so a door had something to leak.
-    mockTrialInput = RUNNING;
-    const tree = await mountOnPixel();
-    expect(tree.getByTestId('trial-anchor')).toBeTruthy();
-    expect(tree.queryByTestId('trial-door-row')).toBeNull();
-    expect(mockBuildTrialDoorRow).not.toHaveBeenCalled();
   });
 
   it('while the read is still the previous pet’s: neither the door nor the card', async () => {
-    mockTrialScreenLive = true;
     mockTrialInput = RUNNING;
     const tree = await mountOnPixel();
     act(() => usePetStore.getState().selectPet(MOCHI.id));
     tree.rerender(<ProfileScreen />);
     await act(async () => {});
     expect(tree.queryByTestId('trial-door-row')).toBeNull();
-    expect(tree.queryByTestId('trial-anchor')).toBeNull();
-  });
-
-  it('a widget trial tap forwards once to the widget pet’s screen, and never scrolls', async () => {
-    mockTrialScreenLive = true;
-    mockTrialInput = RUNNING;
-    const tree = await mountOnPixel();
-    await tapWidget(tree);
-    expect(active()).toBe(MOCHI.id);
-    // The screen reads its pet from the route: no wait on this tab's reads for Mochi.
-    expect(router.push).toHaveBeenCalledTimes(1);
-    expect(router.push).toHaveBeenCalledWith('/trial/pet-mochi');
-    await mochiReadAnswers(tree);
-    tree.rerender(<ProfileScreen />);
-    await act(async () => {});
-    expect(router.push).toHaveBeenCalledTimes(1);
-    expect(tree.scrollTo).not.toHaveBeenCalled();
-  });
-
-  it('a widget tap for a pet the account no longer has: no switch, no forward', async () => {
-    mockTrialScreenLive = true;
-    mockTrialInput = RUNNING;
-    const tree = await mountOnPixel();
-    await tapWidget(tree, 'nyx:///profile?pet=pet-archived&src=widget');
-    expect(active()).toBe(PIXEL.id);
-    expect(router.push).not.toHaveBeenCalled();
-  });
-
-  it('an in-app trial door lands on the door row (a leftover focus=trial link)', async () => {
-    mockTrialScreenLive = true;
-    mockTrialInput = RUNNING;
-    const tree = await mountOnPixel();
-    act(() => layout(tree.getByTestId('trial-door-row'), PIXEL_TRIAL_Y));
-    setParams({ focus: 'trial', ts: '1' });
-    tree.rerender(<ProfileScreen />);
-    await waitFor(() => expect(tree.scrollTo).toHaveBeenCalledTimes(1));
-    expect(tree.scrollTo).toHaveBeenCalledWith({ y: PIXEL_TRIAL_Y - PROFILE_FOCUS_INSET, animated: true });
-    expect(router.push).not.toHaveBeenCalled();
+    expect(tree.queryByTestId('trial-start-card')).toBeNull();
   });
 
   it('Replace / Start from the screen opens the start form here exactly once', async () => {
-    mockTrialScreenLive = true;
     mockTrialInput = RUNNING;
     const tree = await mountOnPixel();
     setParams(profileStartTrialHref({ petId: PIXEL.id, nowMs: 1 }).params);
@@ -543,11 +446,4 @@ describe('the Pet tab’s door to the trial screen (TS-6)', () => {
     const opens = mockStartTrialVisible.filter((v, i) => v && !(mockStartTrialVisible[i - 1] ?? false)).length;
     expect(opens).toBe(1);
   });
-
-  /** Mochi's read answers (the door row is what lays out under the flag). */
-  async function mochiReadAnswers(tree: { rerender: (el: ReactElement) => void }) {
-    mockTrialLoadedFor = MOCHI.id;
-    tree.rerender(<ProfileScreen />);
-    await act(async () => {});
-  }
 });

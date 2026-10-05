@@ -1,17 +1,13 @@
-// The Pet tab's trial LIFECYCLE, driven through the Pet tab — CUL-1299 (TS-3).
+// The trial's LIFECYCLE: `useTrialLifecycle` + `TrialLifecycleSheets` (TS-3 · CUL-1299).
 //
-// TS-3 moves the extend and window writes, the refusal handling, both sheets and the
-// Replace hand-off out of this screen into `hooks/useTrialLifecycle.ts` and
-// `components/trial/TrialLifecycleSheets.tsx`, byte-identical. This file is the
-// REFACTOR-SAFETY half of that: it was written against the screen BEFORE the move, run
-// green there, and must stay green after it. It asserts behaviour an owner can reach —
-// what each of the card's buttons writes, what a refusal does, which sheet opens over
-// which trial — and nothing about where the code lives, so the move cannot change it.
-//
-// The card is a stub that exposes its `actions` as buttons: this file asserts the
-// screen's WIRING, and `DietTrialCard.test.tsx` asserts which actions the real card
-// draws. The two sheets are the REAL components with a prop spy around them, so the
-// Modal count (C-14) is counted over real Modals rather than stand-ins.
+// Written against the Pet tab BEFORE TS-3 moved these writes out of it, as that move's
+// refactor-safety half, and re-hosted here at TS-GA (CUL-1307), when the Pet tab stopped
+// carrying a running trial's card: the trial's own screen is now the only host. It asserts
+// behaviour an owner can reach — what each of the card's buttons writes, what a refusal
+// does, which sheet opens over which trial — through a minimal host that wires the card's
+// actions exactly as `components/trialScreen/TrialScreen.tsx` does (whose own suite asserts
+// that wiring and which actions it draws). The two sheets are the REAL components with a
+// prop spy around them, so the Modal count (C-14) is counted over real Modals.
 
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
@@ -27,69 +23,7 @@ jest.mock('expo-router', () => {
     },
   };
 });
-jest.mock('expo-image-picker', () => ({
-  launchImageLibraryAsync: jest.fn(),
-  requestMediaLibraryPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true })),
-  MediaTypeOptions: { Images: 'Images' },
-}));
-jest.mock('../../lib/supabase', () => {
-  const result = Promise.resolve({ data: [], error: null });
-  const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'eq', 'is', 'in', 'or', 'order', 'limit', 'gte', 'lte', 'neq']) {
-    chain[m] = jest.fn(() => chain);
-  }
-  Object.assign(chain, { then: result.then.bind(result), catch: result.catch.bind(result) });
-  return { supabase: { from: jest.fn(() => chain), auth: { getUser: jest.fn(() => Promise.resolve({ data: { user: { id: 'u1' } } })) } } };
-});
-jest.mock('../../lib/storage', () => ({
-  uploadPhoto: jest.fn(),
-  compressForUpload: jest.fn(),
-  getPublicUrl: () => 'https://example.test/photo.jpg',
-  getSignedUrls: jest.fn(() => Promise.resolve(new Map())),
-}));
 jest.mock('../../lib/haptics', () => ({ destructiveConfirm: jest.fn() }));
-
-jest.mock('../../components/vetfiles/VetFilesCard', () => ({ VetFilesCard: () => null }));
-jest.mock('../../components/profile/WeightTrendCard', () => ({ WeightTrendCard: () => null }));
-jest.mock('../../components/profile/EditPetModal', () => ({ EditPetModal: () => null }));
-jest.mock('../../components/profile/AddConditionModal', () => ({ AddConditionModal: () => null }));
-jest.mock('../../components/profile/AddMedicationModal', () => ({ AddMedicationModal: () => null }));
-jest.mock('../../components/profile/ArchivePetSheet', () => ({ ArchivePetSheet: () => null }));
-jest.mock('../../components/profile/PastMedicationsSection', () => ({ PastMedicationsSection: () => null }));
-
-// The start form stays on the Pet tab (B-535). A stub that reports whether it is
-// presented, since Replace's whole contract is WHEN it is.
-jest.mock('../../components/profile/StartTrialModal', () => {
-  const { View } = require('react-native');
-  return {
-    StartTrialModal: ({ visible }: { visible: boolean }) =>
-      visible ? <View testID="start-trial-open" /> : null,
-  };
-});
-
-// The card, as a row of its own actions.
-jest.mock('../../components/profile/DietTrialCard', () => {
-  const { Pressable, Text, View } = require('react-native');
-  return {
-    DietTrialCard: ({
-      actions, onManage, busyAction,
-    }: { actions: Record<string, () => void>; onManage: () => void; busyAction: string | null }) => (
-      <View>
-        {Object.entries(actions).map(([id, fn]) => (
-          <Pressable key={id} testID={`action-${id}`} onPress={fn}><Text>{id}</Text></Pressable>
-        ))}
-        <Pressable testID="card-manage" onPress={onManage}><Text>Manage</Text></Pressable>
-        <Text testID="busy">{busyAction ?? 'idle'}</Text>
-      </View>
-    ),
-  };
-});
-jest.mock('../../lib/dietTrialCard', () => ({
-  resolveTrialCard: () => ({ kicker: 'Diet trial' }),
-  trialManageTarget: () => 'manage',
-  // The real line (C-34): the unreadable card's copy is asserted verbatim below.
-  trialCardUnreadableLine: jest.requireActual('../../lib/dietTrialCard').trialCardUnreadableLine,
-}));
 
 // The real sheets, spied. `mockSheetProps` holds each one's latest props.
 const mockSheetProps: { completion?: any; manage?: any } = {};
@@ -179,44 +113,6 @@ const mockTrialInput = {
   nowMs: Date.now(),
   intakeDeclineHeadline: null,
 };
-// Mutable so a test can stand the read in a failed state (CUL-1458); reset in `beforeEach`.
-const LOADED_TRIAL = {
-  input: mockTrialInput as typeof mockTrialInput | null,
-  status: 'loaded' as 'loaded' | 'unreadable',
-  isLoading: false,
-  inputIsForPet: true,
-};
-const mockTrialState = { ...LOADED_TRIAL };
-jest.mock('../../hooks/useDietTrial', () => ({
-  useDietTrial: () => ({ ...mockTrialState, reload: mockReload }),
-}));
-jest.mock('../../hooks/useTrialAllowedSet', () => ({ useTrialAllowedSet: () => ({ status: 'unknown' }) }));
-jest.mock('../../hooks/useWidgetSlotLabel', () => ({ useWidgetSlotLabel: () => null }));
-jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => true }));
-jest.mock('../../lib/vetFilesEntry', () => ({ VET_FILES_ENTRY_ENABLED: false }));
-jest.mock('../../lib/vetDocumentLibrary', () => ({
-  readVetLibrary: jest.fn(() => Promise.resolve([])),
-  buildVetFilesCardModel: () => ({}),
-  VET_DOCUMENT_SIGNED_URL_TTL_SEC: 60,
-}));
-jest.mock('../../store/momentStore', () => {
-  const state = { removedEventId: null, showMedication: jest.fn() };
-  return {
-    useMomentStore: Object.assign(
-      (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state),
-      { getState: () => state },
-    ),
-  };
-});
-jest.mock('../../store/authStore', () => {
-  const state = { user: { id: 'u1', email: 'd@example.test' } };
-  return {
-    useAuthStore: Object.assign(
-      (selector?: (s: typeof state) => unknown) => (selector ? selector(state) : state),
-      { getState: () => state },
-    ),
-  };
-});
 const MOCHI = { id: 'p1', name: 'Mochi', species: 'cat', sex: 'female', photo_path: 'a.jpg', weight_kg: 4.1 };
 const mockPetState = { activePet: MOCHI, pets: [MOCHI], updatePet: jest.fn() };
 jest.mock('../../store/petStore', () => ({
@@ -226,9 +122,12 @@ jest.mock('../../store/petStore', () => ({
   ),
 }));
 
+import { useState } from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { Alert, Modal } from 'react-native';
-import ProfileScreen from './profile';
+import { Alert, Modal, Pressable, Text, View } from 'react-native';
+import { useTrialLifecycle } from '../../hooks/useTrialLifecycle';
+import { TrialLifecycleSheets } from './TrialLifecycleSheets';
+import type { TrialCardInput } from '../../lib/dietTrialCard';
 import {
   changeTrialWindow, endActiveTrial, extendTrial, TrialEndRefused, TrialWindowRefused,
 } from '../../lib/dietTrialSetup';
@@ -243,11 +142,40 @@ function visibleModals(r: Rendered): number {
   return r.UNSAFE_queryAllByType(Modal).filter((m) => m.props.visible !== false).length;
 }
 
-/** Let the screen's mount-time reads settle, so each test starts from a quiet tree. */
+/** The card, as a row of its own actions, wired the way the trial screen wires them; the
+ *  start form's presence stands in for the screen's hand-off to the Pet tab. */
+function Host() {
+  const lifecycle = useTrialLifecycle({
+    petId: MOCHI.id,
+    input: mockTrialInput as unknown as TrialCardInput,
+    reload: mockReload,
+  });
+  const [startOpen, setStartOpen] = useState(false);
+  const actions: Record<string, () => void> = {
+    trial_manage: lifecycle.openManage,
+    milestone: () => lifecycle.openCompletion('decision'),
+    trial_extend: () => {
+      void lifecycle.extend();
+    },
+    trial_complete: () => lifecycle.openCompletion('complete'),
+    trial_stopped_early: () => lifecycle.openCompletion('stopped_early'),
+  };
+  return (
+    <View>
+      {Object.entries(actions).map(([id, fn]) => (
+        <Pressable key={id} testID={`action-${id}`} onPress={fn}><Text>{id}</Text></Pressable>
+      ))}
+      <Pressable testID="card-manage" onPress={lifecycle.openManage}><Text>Manage</Text></Pressable>
+      <Text testID="busy">{lifecycle.extending ? 'trial_extend' : 'idle'}</Text>
+      {startOpen ? <View testID="start-trial-open" /> : null}
+      <TrialLifecycleSheets lifecycle={lifecycle} onReplaceTrial={() => setStartOpen(true)} />
+    </View>
+  );
+}
+
 async function renderSettled(): Promise<Rendered> {
-  const r = render(<ProfileScreen />);
+  const r = render(<Host />);
   await act(async () => {});
-  // The screen re-reads the trial on focus; count only what the actions cause.
   mockReload.mockClear();
   return r;
 }
@@ -255,7 +183,6 @@ async function renderSettled(): Promise<Rendered> {
 let alertSpy: jest.SpyInstance;
 beforeEach(() => {
   jest.clearAllMocks();
-  Object.assign(mockTrialState, LOADED_TRIAL);
   delete mockSheetProps.completion;
   delete mockSheetProps.manage;
   mockExtend.mockImplementation(() => Promise.resolve());
@@ -509,50 +436,5 @@ describe('one Modal at a time (C-14)', () => {
     expect(visibleModals(r)).toBe(1);
     act(() => { mockSheetProps.manage.onClose(); });
     expect(visibleModals(r)).toBe(0);
-  });
-});
-
-describe('a trial read that failed (CUL-1458)', () => {
-  // The cold-load failure shape `useDietTrial` produces: no input for this pet, status
-  // `unreadable` (a same-pet reload failure keeps the last good input and stays `loaded`).
-  function failRead(overrides: Partial<typeof LOADED_TRIAL> = {}): void {
-    Object.assign(mockTrialState, { input: null, status: 'unreadable', inputIsForPet: false, ...overrides });
-  }
-
-  it('says so in the trial slot and offers a retry that re-reads', async () => {
-    failRead();
-    const r = await renderSettled();
-    expect(r.getByTestId('trial-card-unreadable')).toBeTruthy();
-    expect(r.getByText('I couldn’t check on Mochi’s diet trial just now.')).toBeTruthy();
-    fireEvent.press(r.getByTestId('trial-card-unreadable-action'));
-    expect(mockReload).toHaveBeenCalledTimes(1);
-  });
-
-  it('draws no Start and no trial card: whether a trial runs is what the read could not say', async () => {
-    failRead();
-    const r = await renderSettled();
-    // The card stand-in draws every action it is handed plus its header door.
-    expect(r.queryByTestId('action-start_trial')).toBeNull();
-    expect(r.queryByTestId('card-manage')).toBeNull();
-  });
-
-  it('wins over a stale input from another pet still held by the hook', async () => {
-    failRead({ input: mockTrialInput });
-    const r = await renderSettled();
-    expect(r.getByTestId('trial-card-unreadable')).toBeTruthy();
-    expect(r.queryByTestId('card-manage')).toBeNull();
-  });
-
-  it('stays up while the retry is in flight, with the button working', async () => {
-    failRead({ isLoading: true });
-    const r = await renderSettled();
-    const button = r.getByTestId('trial-card-unreadable-action');
-    expect(button.props.accessibilityState).toMatchObject({ busy: true });
-  });
-
-  it('a loaded read draws the trial card, not the retry', async () => {
-    const r = await renderSettled();
-    expect(r.queryByTestId('trial-card-unreadable')).toBeNull();
-    expect(r.getByTestId('card-manage')).toBeTruthy();
   });
 });
