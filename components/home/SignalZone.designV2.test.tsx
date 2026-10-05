@@ -1,16 +1,12 @@
-// SignalZone under Design v2 (D2-3 · CUL-1065; CUL-1270 · D1 = B): the lead insight card is
-// the title + chart + line and a door; every other card — a safety lead, every lower card,
-// every folded card — is a row (headline, ask, chevron) and a door to ITS OWN screen; the
-// header's "Open ›" is gone; "not a diagnosis" is said once, at the zone's foot. And the
-// flag-off half the guard cannot see: with the gate off, no lead read is issued and no door
-// exists — over a fixture that would answer.
+// SignalZone's live stack (D2-3 · CUL-1065; CUL-1270 · D1 = B; GA'd CUL-1071): the lead insight
+// card is the title + chart + line and a door; every other card — a safety lead, every lower
+// card — is a row (headline, ask, chevron) and a door to ITS OWN screen; the header's "Open ›"
+// is gone; "not a diagnosis" is said once, at the zone's foot.
 
 jest.mock('expo-router', () => ({
   router: { push: jest.fn() },
   useFocusEffect: (cb: () => void | (() => void)) => require('react').useEffect(cb, [cb]),
 }));
-const mockUseDesignV2 = jest.fn(() => false);
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockUseDesignV2() }));
 jest.mock('../../lib/supabase', () => ({ supabase: { from: jest.fn(), functions: { invoke: jest.fn() } } }));
 jest.mock('../../lib/db', () => ({ getDb: () => ({ getAllSync: () => [{ last: null }] }) }));
 const mockLoadSignalLead = jest.fn();
@@ -19,20 +15,6 @@ jest.mock('../../lib/signalLead', () => ({
   loadSignalRowTrial: async () => null,
   loadSignalRowScreen: async () => ({ kind: 'unanswered' }),
 }));
-// The fold is the reader's device-local memory; a test states it rather than seeding a store.
-const mockFolded = new Set<string>();
-jest.mock('../../hooks/useSignalFold', () => {
-  const { foldIdentity } = jest.requireActual('../../lib/signalFold');
-  return {
-    useSignalFold: () => ({
-      stateOf: (f: never) => (mockFolded.has(foldIdentity(f)) ? 'folded' : 'open'),
-      backBecauseOf: (f: never) => (mockFolded.has(`back:${foldIdentity(f)}`) ? 'new_episode' : null),
-      fold: jest.fn(),
-      unfold: jest.fn(),
-      touch: jest.fn(),
-    }),
-  };
-});
 const mockUseSignal = jest.fn();
 jest.mock('../../hooks/useSignal', () => ({ useSignal: () => mockUseSignal() }));
 jest.mock('../../hooks/useWatchingRows', () => ({
@@ -153,13 +135,10 @@ const chronicityRow: CachedFinding = { ...safetyLead, rank: 1 };
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockFolded.clear();
   mockLoadSignalLead.mockResolvedValue(leadModel());
 });
 
-describe('flag-on', () => {
-  beforeEach(() => mockUseDesignV2.mockReturnValue(true));
-
+describe('the Signal stack on Home', () => {
   it('the lead insight card is the title + chart + line; its face opens the Signal route for THIS pet', async () => {
     mockUseSignal.mockReturnValue(state([benignLead, secondary]));
     const view = render(<SignalZone />);
@@ -350,36 +329,18 @@ describe('flag-on', () => {
     expect(gap).toBeGreaterThanOrEqual((link.props.hitSlop as { top: number }).top + 0);
   });
 
-  it('there is no fold under Design v2 (CUL-1285): a stored fold is ignored and the card renders in full', async () => {
-    mockFolded.add('symptom_chronicity:vomit');
-    mockFolded.add('back:postprandial_timing:vomit');
+  it('there is no fold on Home (CUL-1285): every card renders as its full row', async () => {
     mockUseSignal.mockReturnValue(state([redFlag, chronicityRow, timing]));
     const view = render(<SignalZone />);
     const rows = view.getAllByTestId('signal-row');
     expect(rows).toHaveLength(3);
-    // The folded chronicity card is its full row: headline, count, ask.
+    // The chronicity card is its full row: headline, count, ask.
     expect(rows[1].props.accessibilityLabel).toBe('Vomiting in 5 of the last 8 weeks. 14 episodes in those weeks. Worth a word with your vet.');
     expect(view.getByText(/14 episodes in those weeks/)).toBeTruthy();
     // No shipped strip, no "Back because" line (the fold's re-open reason is the fold's).
     expect(view.queryByTestId('insight-folded-strip')).toBeNull();
     expect(view.queryByText(/Back because/)).toBeNull();
     expect(rows[2].props.accessibilityLabel).not.toMatch(/Back because/);
-  });
-
-  it('a stored fold on the benign lead does not demote it: it keeps the lead card', async () => {
-    mockFolded.add('reflection:vomit');
-    mockUseSignal.mockReturnValue(state([benignLead, secondary]));
-    const view = render(<SignalZone />);
-    await waitFor(() => expect(view.getByTestId('signal-lead-card')).toBeTruthy());
-  });
-
-  it('flag-off, the shipped fold still works: a stored fold draws the shipped strip', () => {
-    mockUseDesignV2.mockReturnValue(false);
-    mockFolded.add('symptom_chronicity:vomit');
-    mockUseSignal.mockReturnValue(state([redFlag, chronicityRow, timing]));
-    const view = render(<SignalZone />);
-    expect(view.getByTestId('insight-folded-strip')).toBeTruthy();
-    mockUseDesignV2.mockReturnValue(true);
   });
 
   // CUL-1218 (GC-5 ruled (a) on CUL-1225): a timing or correlation lead takes CUL-1270's face —
@@ -427,23 +388,5 @@ describe('flag-on', () => {
     fireEvent.press(rows[0]);
     expect(router.push).toHaveBeenCalledWith('/signal/symptom_chronicity%3Avomit?pet=pet-1');
     expect(view.queryByTestId('signal-row-thumb-lane')).toBeNull();
-  });
-});
-
-describe('flag-off (the guard’s async half)', () => {
-  it('issues no lead read and draws no door, over a fixture that would answer', async () => {
-    mockUseDesignV2.mockReturnValue(false);
-    mockUseSignal.mockReturnValue(state([benignLead, secondary]));
-    const view = render(<SignalZone />);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(mockLoadSignalLead).not.toHaveBeenCalled();
-    expect(view.queryByTestId('signal-lead-card')).toBeNull();
-    expect(view.queryByTestId('signal-lead-skeleton')).toBeNull();
-    expect(view.queryByTestId('signal-row')).toBeNull();
-    expect(view.queryByTestId('signal-zone-foot')).toBeNull();
-    expect(view.getByText("See all of Nyx's patterns →")).toBeTruthy();
-    for (const face of view.getAllByTestId('insight-face')) expect(face.props.accessibilityHint).not.toBe(DOOR_A11Y_HINT);
-    fireEvent.press(view.getAllByTestId('insight-face')[0]);
-    expect(router.push).not.toHaveBeenCalled();
   });
 });

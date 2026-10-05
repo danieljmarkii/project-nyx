@@ -33,10 +33,6 @@ jest.mock('expo-router', () => ({
 }));
 const focusCb: { current: null | (() => void | (() => void))} = { current: null };
 jest.mock('../components/brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
-// TS-8: the trial screen's gate. Off unless a test turns it on.
-// CUL-1570: the redesign's gate. Off unless a test turns it on.
-const mockDesignV2 = { on: false };
-jest.mock('../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2.on }));
 // CUL-1570: the Signal screen's loader, the one source Get ready may quote a recount from.
 // Only the loader is replaced; every pure helper the page imports stays the real one (C-34).
 jest.mock('../lib/signalScreen', () => {
@@ -189,7 +185,6 @@ const FIXTURE = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockDesignV2.on = false;
   params.current = {};
   mockAppointment.questions = null;
   mockTrialGate.holdNext = false;
@@ -893,7 +888,7 @@ describe('CUL-1364 — an older trial’s pair on Get ready', () => {
   });
 });
 
-describe('CUL-1570 — Worth raising quotes the Signal screen’s own sentence under Design v2', () => {
+describe('CUL-1570 — Worth raising quotes the Signal screen’s own sentence', () => {
   const ENGINE = 'Mochi has had vomiting on 4 of the last 7 days, up from 1 the week before — worth booking a vet visit soon.';
   const COMPOSED = 'Mochi has had vomiting on 5 of the last 7 days (6 episodes) — worth booking a vet visit soon.';
   const finding = {
@@ -941,17 +936,7 @@ describe('CUL-1570 — Worth raising quotes the Signal screen’s own sentence u
     return r;
   };
 
-  it('flag off: the cached sentence, and no screen read, over a screen that would answer', async () => {
-    cache();
-    screenSays();
-    const r = await open();
-    expect(r.getByText(ENGINE)).toBeTruthy();
-    expect(r.queryByText(COMPOSED)).toBeNull();
-    expect(loader()).not.toHaveBeenCalled();
-  });
-
-  it('flag on: the screen’s composed sentence, read for the appointment’s pet, in place of the cached one', async () => {
-    mockDesignV2.on = true;
+  it('the screen’s composed sentence, read for the appointment’s pet, in place of the cached one', async () => {
     cache();
     screenSays();
     const r = await open();
@@ -960,16 +945,14 @@ describe('CUL-1570 — Worth raising quotes the Signal screen’s own sentence u
     expect(loader()).toHaveBeenCalledWith('p1', expect.any(String), expect.any(Number));
   });
 
-  it('flag on, the screen kept the engine’s words: the cached sentence', async () => {
-    mockDesignV2.on = true;
+  it('the screen kept the engine’s words: the cached sentence', async () => {
     cache();
     screenSays({ composed: false });
     const r = await open();
     expect(r.getByText(ENGINE)).toBeTruthy();
   });
 
-  it('flag on, the screen answered for a regenerated cache: never another finding’s numbers', async () => {
-    mockDesignV2.on = true;
+  it('the screen answered for a regenerated cache: never another finding’s numbers', async () => {
     cache();
     screenSays({ finding: { ...finding, currentDays: 6 } });
     const r = await open();
@@ -977,8 +960,7 @@ describe('CUL-1570 — Worth raising quotes the Signal screen’s own sentence u
     expect(r.queryByText(COMPOSED)).toBeNull();
   });
 
-  it('flag on, a screen read that stalls costs the composed sentence, never the page (F7, the adversarial pass)', async () => {
-    mockDesignV2.on = true;
+  it('a screen read that stalls costs the composed sentence, never the page (F7, the adversarial pass)', async () => {
     cache();
     loader().mockImplementation(() => new Promise(() => {}));
     jest.useFakeTimers();
@@ -998,8 +980,7 @@ describe('CUL-1570 — Worth raising quotes the Signal screen’s own sentence u
     }
   });
 
-  it('flag on, a screen read that throws: the cached sentence, never an empty row (C-12)', async () => {
-    mockDesignV2.on = true;
+  it('a screen read that throws: the cached sentence, never an empty row (C-12)', async () => {
     cache();
     loader().mockRejectedValue(new Error('db closed'));
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});

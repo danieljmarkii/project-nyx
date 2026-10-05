@@ -9,15 +9,20 @@ jest.mock('expo-router', () => ({
   router: { push: jest.fn() },
   useFocusEffect: (cb: () => void | (() => void)) => require('react').useEffect(cb, [cb]),
 }));
-// CUL-785: the last-episode date read (useLastEpisodeDates) — an empty record here.
-// D2-3 (CUL-1065): the zone reads the Design v2 gate and imports the namespace, whose
-// loader reaches `lib/supabase`. This suite is the SHIPPED (flag-off) surface: the gate
-// answers false and the client is never constructed. The flag-on surface has its own
-// suite (`SignalZone.designV2.test.tsx`).
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
+// The Signal rows' loader reaches `lib/supabase`; the client is never constructed here.
 jest.mock('../../lib/supabase', () => ({ supabase: { from: jest.fn(), functions: { invoke: jest.fn() } } }));
 jest.mock('../../lib/db', () => ({
   getDb: () => ({ getAllSync: () => [{ last: null }] }),
+}));
+
+// The lead card's and the rows' own reads; the argument the lead card is handed says which
+// finding took the lead canvas. The lead read never answers here, so the card holds its
+// skeleton (its drawn face is `SignalZone.designV2.test.tsx`'s).
+const mockLoadSignalLead = jest.fn((..._a: unknown[]) => new Promise<never>(() => {}));
+jest.mock('../../lib/signalLead', () => ({
+  loadSignalLead: (...a: unknown[]) => mockLoadSignalLead(...a),
+  loadSignalRowTrial: () => new Promise<never>(() => {}),
+  loadSignalRowScreen: () => new Promise<never>(() => {}),
 }));
 
 const mockUseSignal = jest.fn();
@@ -56,7 +61,7 @@ jest.mock('../../lib/signalArrival', () => ({
 const mockInsightArrival = jest.fn();
 jest.mock('../../lib/haptics', () => ({ insightArrival: () => mockInsightArrival() }));
 
-import { act, render } from '@testing-library/react-native';
+import { act, render, within } from '@testing-library/react-native';
 import { AccessibilityInfo, Platform, StyleSheet } from 'react-native';
 import { SignalZone } from './SignalZone';
 import { theme } from '../../constants/theme';
@@ -123,6 +128,16 @@ const rateMeals: CoverageDiagnostic = {
 };
 
 const EM_DASH = '—';
+
+/** The row headlines on Home, in rank order. A row's face is its headline, never the
+ *  finding's sentence (that lives on the finding's own screen). */
+function headlines(view: ReturnType<typeof render>): unknown[] {
+  return view.queryAllByTestId('signal-row-headline').map((h) => h.props.children);
+}
+/** The finding the lead card was handed (the lead canvas), or undefined. */
+function leadCardFinding(): unknown {
+  return mockLoadSignalLead.mock.calls.at(-1)?.[1];
+}
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -353,7 +368,7 @@ describe('SignalZone — SR-3 acknowledgment line (§5.3)', () => {
     const on = render(<SignalZone />);
     expect(on.getByText(ackUpdatingCopy('Nyx'))).toBeTruthy();
     // The findings stay readable throughout (never blanked / replaced by a spinner).
-    expect(on.getByText('A live finding sentence.')).toBeTruthy();
+    expect(headlines(on)).toEqual(['Eating less than usual']);
   });
 
   it('does not render the ack line when nothing is in flight (not acknowledging)', () => {
@@ -397,15 +412,6 @@ describe('SignalZone — SR-3 receded chrome (§5.2)', () => {
     mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
     expect(render(<SignalZone />).getByText('Signal')).toHaveStyle({ color: theme.colorTextSecondary });
   });
-
-  it('recedes the footer doorway to the tertiary tier (AA-safe recede)', () => {
-    // The mock dims the footer to a lighter teal, but that fails AA on white (~1.6:1) —
-    // so the doorway recedes to the same grey tier as the label (≥4.5:1).
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
-    expect(render(<SignalZone />).getByText(/See all of Nyx's patterns/)).toHaveStyle({
-      color: theme.colorTextTertiary,
-    });
-  });
 });
 
 // ── CUL-12/13 (Signals v2) — the v2 cards render in the LiveStack (no client gate) ──
@@ -443,8 +449,13 @@ describe('SignalZone — v2 cards in the LiveStack', () => {
       signalState({ displayState: 'live', findings: [liveFinding, storyFinding] }),
     );
     const view = render(<SignalZone />);
-    expect(view.queryByText('Timing pattern')).toBeTruthy();
-    expect(view.queryByText('A live finding sentence.')).toBeTruthy();
+    // Safety leads; the story card is a row below it.
+    expect(headlines(view)).toEqual(['Eating less than usual', 'Vomiting soon or long after meals']);
+    // S1: the safety row stays words, with its ask on Home (the lane-drawing positive
+    // control is the device case in `SignalZone.designV2.test.tsx`).
+    const safetyRow = within(view.getAllByTestId('signal-row')[0]);
+    expect(safetyRow.queryAllByTestId(/^signal-row-thumb/)).toHaveLength(0);
+    expect(safetyRow.getByTestId('signal-row-ask')).toBeTruthy();
   });
 
   const trialFinding: CachedFinding = {
@@ -484,8 +495,8 @@ describe('SignalZone — v2 cards in the LiveStack', () => {
   it('renders the trial card in the stack alongside the other findings', () => {
     mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [coFinding, trialFinding] }));
     const view = render(<SignalZone />);
-    expect(view.queryByText('Day 20 of 56')).toBeTruthy();
-    expect(view.queryByText('A live finding sentence.')).toBeTruthy();
+    expect(headlines(view)).toEqual(['Diet trial, day 20 of 56']);
+    expect(leadCardFinding()).toBe(coFinding);
   });
 
   // ── B-789 (§5.2) — the not-eating suppression of the reassuring trial_response card ──
@@ -499,10 +510,11 @@ describe('SignalZone — v2 cards in the LiveStack', () => {
         signalState({ displayState: 'live', findings: [coFinding, trialFinding] }),
       );
       const view = render(<SignalZone withholdFallingVomit />);
-      // The trial card is gone (its "Day 20 of 56" face is not rendered)…
-      expect(view.queryByText('Day 20 of 56')).toBeNull();
-      // …but the co-finding still renders — no stray gap where the card was.
-      expect(view.queryByText('A live finding sentence.')).toBeTruthy();
+      // The trial row is gone…
+      expect(headlines(view)).toEqual([]);
+      expect(view.queryByText('Diet trial, day 20 of 56')).toBeNull();
+      // …but the co-finding still renders, and still leads — no stray gap where the card was.
+      expect(leadCardFinding()).toBe(coFinding);
     });
 
     it('renders the trial card when withholdFallingVomit is false (the eating trial)', () => {
@@ -510,8 +522,8 @@ describe('SignalZone — v2 cards in the LiveStack', () => {
         signalState({ displayState: 'live', findings: [coFinding, trialFinding] }),
       );
       const view = render(<SignalZone withholdFallingVomit={false} />);
-      expect(view.queryByText('Day 20 of 56')).toBeTruthy();
-      expect(view.queryByText('A live finding sentence.')).toBeTruthy();
+      expect(headlines(view)).toEqual(['Diet trial, day 20 of 56']);
+      expect(leadCardFinding()).toBe(coFinding);
     });
 
     // CUL-1216 (BRK-6): the Signal's own intake decline withholds on its own — a pet with no
@@ -524,16 +536,17 @@ describe('SignalZone — v2 cards in the LiveStack', () => {
       };
       mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding, trialFinding, fallingWeek] }));
       const view = render(<SignalZone withholdFallingVomit={false} />);
-      expect(view.queryByText('Day 20 of 56')).toBeNull();
-      expect(view.queryByText(fallingWeek.text)).toBeNull();
-      expect(view.queryByText('A live finding sentence.')).toBeTruthy();
+      // Only the intake decline is left: no trial row, no falling week (row or lead card).
+      expect(headlines(view)).toEqual(['Eating less than usual']);
+      expect(view.getAllByTestId('signal-row')).toHaveLength(1);
+      expect(mockLoadSignalLead).not.toHaveBeenCalled();
     });
 
     it('defaults to not suppressing — a non-Home caller (no prop) renders the card', () => {
       mockUseSignal.mockReturnValue(
         signalState({ displayState: 'live', findings: [coFinding, trialFinding] }),
       );
-      expect(render(<SignalZone />).queryByText('Day 20 of 56')).toBeTruthy();
+      expect(headlines(render(<SignalZone />))).toEqual(['Diet trial, day 20 of 56']);
     });
 
     // Direction-aware (adversarial-reviewer): only the REASSURING `fewer_during_trial` card is the
@@ -552,8 +565,8 @@ describe('SignalZone — v2 cards in the LiveStack', () => {
         signalState({ displayState: 'live', findings: [coFinding, moreTrialFinding] }),
       );
       const view = render(<SignalZone withholdFallingVomit />);
-      expect(view.queryByText('Day 20 of 56')).toBeTruthy();
-      expect(view.queryByText('A live finding sentence.')).toBeTruthy();
+      expect(headlines(view)).toEqual(['Diet trial, day 20 of 56']);
+      expect(leadCardFinding()).toBe(coFinding);
     });
   });
 });
@@ -776,7 +789,7 @@ describe('SignalZone — the arrival moment', () => {
   it('reduced motion: the card still renders its live content (the static frame is the card)', async () => {
     mockUseReducedMotion.mockReturnValue(true);
     const view = await arrive([benignFinding]);
-    expect(view.queryByText('Timing pattern')).toBeTruthy();
+    expect(headlines(view)).toEqual(['Vomiting soon or long after meals']);
   });
 
   // ── What is NOT an arrival ─────────────────────────────────────────────────────
@@ -1180,12 +1193,14 @@ describe('SignalZone — the labeled stand-down line (CUL-786)', () => {
     mockUseSignal.mockReturnValue(
       signalState({ displayState: 'live', findings: [benignBelow, stoodDownEntry()] }),
     );
-    const { getByText, getByLabelText, toJSON } = render(<SignalZone />);
+    const view = render(<SignalZone />);
+    const { getByText, getByLabelText, toJSON } = view;
     expect(getByText(STOOD_DOWN_TEXT)).toBeTruthy();
-    expect(getByText(benignBelow.text)).toBeTruthy();
+    expect(headlines(view)).toEqual(['Vomiting soon after meals']);
     // Order = rank: the line (rank 0) precedes the benign card (rank 1) in the tree.
     const serialized = JSON.stringify(toJSON());
-    expect(serialized.indexOf(STOOD_DOWN_TEXT)).toBeLessThan(serialized.indexOf(benignBelow.text));
+    expect(serialized.indexOf(STOOD_DOWN_TEXT)).toBeGreaterThanOrEqual(0);
+    expect(serialized.indexOf(STOOD_DOWN_TEXT)).toBeLessThan(serialized.indexOf('Vomiting soon after meals'));
     // Announced as one plain sentence — not a button, nothing to expand.
     const line = getByLabelText(STOOD_DOWN_TEXT);
     expect(line.props.accessibilityRole).toBe('text');
@@ -1214,9 +1229,9 @@ describe('SignalZone — the labeled stand-down line (CUL-786)', () => {
     mockUseSignal.mockReturnValue(
       signalState({ displayState: 'live', findings: [stoodDownEntry({}, 7), benignBelow] }),
     );
-    const { queryByText, getByText } = render(<SignalZone />);
-    expect(queryByText(STOOD_DOWN_TEXT)).toBeNull();
-    expect(getByText(benignBelow.text)).toBeTruthy();
+    const view = render(<SignalZone />);
+    expect(view.queryByText(STOOD_DOWN_TEXT)).toBeNull();
+    expect(headlines(view)).toEqual(['Vomiting soon after meals']);
   });
 
   it('the day before expiry, it is still there', () => {
@@ -1230,78 +1245,22 @@ describe('SignalZone — the labeled stand-down line (CUL-786)', () => {
     // The engine splices a marker below every safety finding, so the only card a line can
     // precede is a benign one that would have led the moment the concern went. Binding the
     // canvas to the array index demoted that card to compact for a week (adversarial pass,
-    // 2026-09-03). Distinct from a fold (DF-7): a folded card still holds its rank as a strip.
+    // 2026-09-03).
     mockUseSignal.mockReturnValue(
       signalState({ displayState: 'live', findings: [stoodDownEntry(), benignBelow] }),
     );
-    const { getByText, getByLabelText } = render(<SignalZone />);
-    const sentence = getByText(benignBelow.text);
-    const flat = StyleSheet.flatten(sentence.props.style) as { fontFamily?: string; fontSize?: number };
+    const { getByText, getByLabelText, getByTestId } = render(<SignalZone />);
+    // The benign card is a row (a timing lead takes the row face, CUL-1218) in the LEAD
+    // register: its headline wears the display face.
+    const headline = getByTestId('signal-row-headline');
+    expect(headline.props.children).toBe('Vomiting soon after meals');
+    const flat = StyleSheet.flatten(headline.props.style) as { fontFamily?: string; fontSize?: number };
     expect(flat.fontFamily).toBe(theme.fontDisplay);
-    expect(flat.fontSize).toBe(theme.textSignal);
     // …and the line itself is plain secondary type, never the display face.
     const line = getByText(STOOD_DOWN_TEXT);
     const lineFlat = StyleSheet.flatten(line.props.style) as { fontFamily?: string; fontSize?: number };
     expect(lineFlat.fontSize).toBe(theme.textSM);
     expect(lineFlat.fontFamily).not.toBe(theme.fontDisplay);
     expect(getByLabelText(STOOD_DOWN_TEXT)).toBeTruthy();
-  });
-});
-
-// ── TS-5 (CUL-1301): the safety report Home's trial strip reads ─────────────────────
-describe('SignalZone — onSafetyLive (TS-5, the week lane never draws under a safety card)', () => {
-  const lastReport = (fn: jest.Mock) => fn.mock.calls[fn.mock.calls.length - 1][0];
-
-  it('reports null until the read has answered: an unread set is never an all-clear (C-12)', async () => {
-    mockUseSignal.mockReturnValue(signalState({ answered: false, isLoading: true }));
-    const onSafetyLive = jest.fn();
-    render(<SignalZone onSafetyLive={onSafetyLive} />);
-    await act(async () => {});
-    expect(lastReport(onSafetyLive)).toEqual({ petId: 'pet-1', live: null });
-  });
-
-  it('reports live with a safety-class card in the settled set, and clear without one', async () => {
-    const onSafetyLive = jest.fn();
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
-    const view = render(<SignalZone onSafetyLive={onSafetyLive} />);
-    await act(async () => {});
-    expect(lastReport(onSafetyLive)).toEqual({ petId: 'pet-1', live: true });
-
-    mockUseSignal.mockReturnValue(signalState({ findings: [] }));
-    view.rerender(<SignalZone onSafetyLive={onSafetyLive} />);
-    await act(async () => {});
-    expect(lastReport(onSafetyLive)).toEqual({ petId: 'pet-1', live: false });
-  });
-
-  // Adversarial pass on TS-5: the escalate-only gap row is a concern with no priorityClass.
-  const shortening: WatchingRow = { key: 'gap', text: watchingGapRow('vomiting', '6 days, then 3, then 2') };
-
-  it('reports live under the escalate-only gap row, which carries no priorityClass', async () => {
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'building', findings: [] }));
-    mockUseWatchingRows.mockReturnValue([shortening]);
-    const onSafetyLive = jest.fn();
-    render(<SignalZone onSafetyLive={onSafetyLive} />);
-    await act(async () => {});
-    expect(lastReport(onSafetyLive)).toEqual({ petId: 'pet-1', live: true });
-  });
-
-  it('reports null while the watching read that carries the gap row has not answered', async () => {
-    mockUseSignal.mockReturnValue(signalState({ displayState: 'building', findings: [] }));
-    mockWatchingAnswered = false;
-    const onSafetyLive = jest.fn();
-    render(<SignalZone onSafetyLive={onSafetyLive} />);
-    await act(async () => {});
-    expect(lastReport(onSafetyLive)).toEqual({ petId: 'pet-1', live: null });
-  });
-
-  it('a pet switch reports the NEW pet as unanswered, never the old pet all-clear', async () => {
-    const onSafetyLive = jest.fn();
-    mockUseSignal.mockReturnValue(signalState({ findings: [] }));
-    const view = render(<SignalZone onSafetyLive={onSafetyLive} />);
-    await act(async () => {});
-    mockUseSignal.mockReturnValue(signalState({ petId: 'pet-2', answered: false, isLoading: true }));
-    view.rerender(<SignalZone onSafetyLive={onSafetyLive} />);
-    await act(async () => {});
-    expect(lastReport(onSafetyLive)).toEqual({ petId: 'pet-2', live: null });
   });
 });

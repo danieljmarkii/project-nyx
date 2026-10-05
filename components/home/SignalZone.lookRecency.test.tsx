@@ -15,7 +15,6 @@ jest.mock('expo-router', () => ({
   router: { push: jest.fn() },
   useFocusEffect: (cb: () => void | (() => void)) => require('react').useEffect(cb, [cb]),
 }));
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
 jest.mock('../../lib/supabase', () => ({ supabase: { from: jest.fn(), functions: { invoke: jest.fn() } } }));
 type Params = (string | number | null)[];
 let mockDb: InstanceType<typeof DatabaseSync>;
@@ -39,7 +38,7 @@ jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 jest.mock('../../lib/signalArrival', () => ({ hasPlayedArrival: async () => true, markArrivalPlayed: async () => {} }));
 jest.mock('../../lib/haptics', () => ({ insightArrival: () => {} }));
 
-import { render, screen, waitFor } from '@testing-library/react-native';
+import { render, screen } from '@testing-library/react-native';
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from '../../lib/localSchema';
 import { usePetStore } from '../../store/petStore';
 import { staleIntro } from '../../lib/signalCopy';
@@ -63,11 +62,8 @@ function acceleratingRun() {
   for (const d of [26, 14, 7, 4]) log('vomit', d * DAY);
 }
 
-async function renderZone() {
-  const reports: { live: boolean | null }[] = [];
-  render(<SignalZone onSafetyLive={(r) => reports.push(r)} />);
-  await waitFor(() => expect(reports.at(-1)?.live ?? null).not.toBeNull());
-  return reports;
+function renderZone() {
+  render(<SignalZone />);
 }
 
 async function freshWorld() {
@@ -94,18 +90,16 @@ it('an owner answering the look every day keeps the shortening-gaps row on scree
   acceleratingRun();
   for (let k = 1; k <= 25; k++) log(LOOK, k * DAY - 3_600_000);
   log(LOOK, 60_000);
-  const reports = await renderZone();
+  renderZone();
   expect(await screen.findByText(GAP_ROW)).toBeTruthy();
   expect(screen.queryByText(staleIntro('Pixel'))).toBeNull();
-  expect(reports.at(-1)?.live).toBe(true);
 });
 
 // Non-vacuity, and the hole that remains: the same record with no look goes stale and
 // drops the row (pre-existing; CUL-1468 owns it). So the look is what keeps it above.
 it('without a look the same record goes stale and drops the row (CUL-1468)', async () => {
   acceleratingRun();
-  const reports = await renderZone();
+  renderZone();
   expect(await screen.findByText(staleIntro('Pixel'))).toBeTruthy();
   expect(screen.queryByText(GAP_ROW)).toBeNull();
-  expect(reports.at(-1)?.live).toBe(false);
 });

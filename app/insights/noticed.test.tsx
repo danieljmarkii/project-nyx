@@ -1,8 +1,6 @@
-// Patterns × Noticed — the screen wiring, FLAG ON (CUL-874 / N-5).
+// Patterns × Noticed — the screen wiring (CUL-874 / N-5; GA by CUL-876).
 //
-// The sibling suite `app/insights/index.test.tsx` runs the flag-OFF path and asserts
-// Patterns is unchanged. This one runs the three gates ON and asserts the four things
-// only the SCREEN can get wrong: that the card appears, where it appears, that the shared
+// This suite asserts the four things only the SCREEN can get wrong: that the card appears, where it appears, that the shared
 // withheld predicate reaches it, and that a failed look read costs the dashboard nothing.
 //
 // The card's own model is `lib/lookPatterns.test.ts`'s and its render is
@@ -14,15 +12,14 @@ jest.mock('react-native-safe-area-context', () => {
   return { SafeAreaView: View, useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
 });
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
-// Design v2 (D2-5): the screen now imports the month's reads, which reach lib/supabase
-// at import time. This suite is the FLAG-OFF path — `useAllowlistFlag` is false above, so
-// `useDesignV2` is false and nothing behind it mounts or reads; the stub exists for the
-// import edge only. The flag-on wiring and the async flag-off proof are app/insights/
-// designV2.test.tsx.
-// The redesign is not under test here, so its one gate is pinned off at the hook (the
-// file the guard names).
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
+// The month (Design v2, GA by CUL-1071) draws and reads on its own — its wiring is
+// app/insights/designV2.test.tsx — so here it is a placeholder, and its reads (which
+// reach lib/supabase at import time) are stubbed for the import edge only.
 jest.mock('../../lib/monthReads', () => ({ readMonthFacts: jest.fn(), readDayRows: jest.fn() }));
+jest.mock('../../components/designV2/patterns/MonthInstrument', () => {
+  const { View } = require('react-native');
+  return { MonthInstrument: () => <View testID="month-instrument" /> };
+});
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
 jest.mock('../../hooks/useDietTrial', () => ({
@@ -72,9 +69,6 @@ jest.mock('../../lib/patternsTrial', () => {
   const actual = jest.requireActual('../../lib/patternsTrial');
   return { ...actual, getTrialPanel: jest.fn().mockResolvedValue(null) };
 });
-jest.mock('../../hooks/useSummary', () => ({
-  useSummary: () => ({ summary: null, displayState: 'building', petName: 'Nyx', isLoading: false }),
-}));
 jest.mock('expo-router', () => {
   const React = require('react');
   return {
@@ -90,11 +84,6 @@ jest.mock('../../lib/analytics', () => {
   return {
     ...actual,
     getSymptomCounts: jest.fn(),
-    getSymptomFrequencyByDay: jest.fn(),
-    getSymptomFrequencyByMonth: jest.fn(),
-    getIntakeDeclineByMonth: jest.fn(),
-    getEarliestEventMonth: jest.fn(),
-    getIntakeRateWithPrior: jest.fn(),
     getTopFoods: jest.fn(),
     getTopProteins: jest.fn(),
     getMealTreatComposition: jest.fn(),
@@ -150,11 +139,6 @@ beforeEach(() => {
   mockLoadVomitDays.mockResolvedValue([]);
   usePetStore.setState({ pets: [PET], activePet: PET, isOnboarded: true });
   A.getSymptomCounts.mockResolvedValue([{ symptomType: 'vomit', current: 3, prior: 1, delta: 2 }]);
-  A.getSymptomFrequencyByDay.mockResolvedValue([]);
-  A.getSymptomFrequencyByMonth.mockResolvedValue([]);
-  A.getIntakeDeclineByMonth.mockResolvedValue([]);
-  A.getEarliestEventMonth.mockResolvedValue(null);
-  A.getIntakeRateWithPrior.mockResolvedValue({ current: notEnoughData(0, 4), prior: notEnoughData(0, 4) });
   A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
   A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
   A.getMealTreatComposition.mockResolvedValue({ meal: 4, treat: 0, other: 0, unclassified: 0, total: 4 });
@@ -170,30 +154,25 @@ describe('the card appears for every cat and dog, and only for them (Noticed GA,
     const other = { ...PET, species: 'other' as const };
     usePetStore.setState({ pets: [other], activePet: other });
     const { queryByTestId, findByText } = render(<PatternsScreen />);
-    await findByText('Meals finished');
+    await findByText('Top food');
     expect(queryByTestId('what-you-noticed-card')).toBeNull();
     expect(mockLoadLookDays).not.toHaveBeenCalled();
   });
 });
 
 describe('where it lands', () => {
-  it('sits below the symptom card and above the food rankings (E-13)', async () => {
-    const { findByTestId, getByText, UNSAFE_root } = render(<PatternsScreen />);
+  it('sits last — after the month, the weight and the food rankings (Design v2 page order)', async () => {
+    const { findByTestId, getByText, toJSON } = render(<PatternsScreen />);
     await findByTestId('what-you-noticed-card');
-    // Order by the rendered text's position in the tree's flattened string content.
-    const texts: string[] = [];
-    const walk = (node: { children?: unknown[] }) => {
-      for (const child of node.children ?? []) {
-        if (typeof child === 'string') texts.push(child);
-        else walk(child as { children?: unknown[] });
-      }
-    };
-    walk(UNSAFE_root as unknown as { children?: unknown[] });
-    const joined = texts.join(' ');
     getByText('What you noticed');
-    expect(joined.indexOf('Vomit')).toBeLessThan(joined.indexOf('What you noticed'));
-    expect(joined.indexOf('Meals finished')).toBeLessThan(joined.indexOf('What you noticed'));
-    expect(joined.indexOf('What you noticed')).toBeLessThan(joined.indexOf('Top food'));
+    const json = JSON.stringify(toJSON());
+    const at = json.indexOf('what-you-noticed-card');
+    expect(json.indexOf('month-instrument')).toBeGreaterThan(-1);
+    expect(json.indexOf('month-instrument')).toBeLessThan(at);
+    expect(json.indexOf('weight-card-v2')).toBeGreaterThan(-1);
+    expect(json.indexOf('weight-card-v2')).toBeLessThan(at);
+    expect(json.indexOf('Top food')).toBeGreaterThan(-1);
+    expect(json.indexOf('Top food')).toBeLessThan(at);
   });
 
   it('its door opens the record filtered to looks, not an unbuilt metric detail', async () => {
@@ -239,37 +218,12 @@ describe('the shared withheld predicate reaches the card (T-20)', () => {
   });
 });
 
-describe('CUL-845 gate 2 reads the SYMPTOM CARDS’ window, not the card’s', () => {
-  it('a look word marked only on days 29 and 30 still suppresses the zero', () => {
-    // The adversarial pass's fixture. The Noticed card counts 28 days; the symptom cards
-    // count a 30-day month and say so in their caption. Reading the card's window left a
-    // two-day hole through which `Itch · 0` printed over an owner tapping *Scratching
-    // more*, in exactly the case CUL-845 gate 2 exists for.
-    mockLoadLookDays.mockResolvedValue([
-      ...record(),
-      ...[28, 29].map((d) => ({
-        eventId: `e-late-${d}`,
-        localDay: dayKeyFromIndex(TODAY - d),
-        createdAt: new Date(NOW - d * 86_400_000).toISOString(),
-        outcome: 'observed' as const,
-        words: ['scratching_more'],
-        vocabVersion: LOOK_VOCAB_VERSION,
-      })),
-    ]);
-    A.getSymptomCounts.mockResolvedValue([{ symptomType: 'itch', current: 0, prior: 4, delta: -4 }]);
-    const { findByTestId, queryByText } = render(<PatternsScreen />);
-    return findByTestId('what-you-noticed-card').then(() => {
-      expect(queryByText('Itch/Scratch')).toBeNull();
-    });
-  });
-});
-
 describe('a failed look read costs the dashboard nothing', () => {
   it('drops the card and leaves every other card standing — never a whole-screen error', async () => {
     mockLoadLookDays.mockRejectedValue(new Error('local read failed'));
     jest.spyOn(console, 'error').mockImplementation(() => {});
     const { queryByTestId, findByText } = render(<PatternsScreen />);
-    await findByText('Meals finished');
+    await findByText('Top food');
     expect(queryByTestId('what-you-noticed-card')).toBeNull();
     await waitFor(() => expect(console.error).toHaveBeenCalled());
   });

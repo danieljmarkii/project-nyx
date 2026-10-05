@@ -10,20 +10,17 @@ import {
   selectDashboardState,
   sparkFromBuckets,
   type DashboardCardPriority,
-  type SymptomCountCard,
-  type IntakeRateCard,
-  type CalendarCard,
+  type TopFoodCard,
+  type TopProteinCard,
 } from './dashboardScreen';
 import {
   notEnoughData,
   type SymptomCount,
   type DayFrequencyBucket,
-  type IntakeRate,
   type RankedFood,
   type RankedProtein,
   type MealTreatComposition,
 } from './analytics';
-import type { WeightTrend } from './weight';
 import type { NoticedCardModel } from './lookPatterns';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────────
@@ -34,22 +31,6 @@ function sc(symptomType: string, current: number, prior: number): SymptomCount {
 
 function emptyComposition(): MealTreatComposition {
   return { meal: 0, treat: 0, other: 0, unclassified: 0, total: 0 };
-}
-
-function emptyWeightTrend(): WeightTrend {
-  return {
-    readingCount: 0, seriesLbs: [], latestLbs: null,
-    latestOccurredAt: null, earliestOccurredAt: null, deltaLbs: null, direction: null,
-  };
-}
-
-function populatedWeightTrend(): WeightTrend {
-  return {
-    readingCount: 3, seriesLbs: [10.4, 9.9, 9.5], latestLbs: 9.5,
-    latestOccurredAt: '2026-06-20T08:00:00.000Z',
-    earliestOccurredAt: '2026-06-01T08:00:00.000Z',
-    deltaLbs: -0.9, direction: 'down',
-  };
 }
 
 function buckets(perDay: number[], type = 'vomit'): DayFrequencyBucket[] {
@@ -65,25 +46,32 @@ const NO_PROTEINS = notEnoughData(0, 4);
 
 function baseInput(over: Partial<Parameters<typeof buildDashboardCards>[0]> = {}) {
   return {
-    symptomCounts: [],
-    frequencyBuckets: [],
-    // Calendar v3 N5b — the frequency card's month-paging inputs. Defaults suffice for
-    // these ordering/gating tests (they assert on symptomType/presence, not the calendar).
-    monthBuckets: [],
-    // B-310: current-month intake-decline buckets. Default empty → no "Meals" lens unless a
-    // test supplies a day with an unfinished meal.
-    intakeDeclineMonthBuckets: [] as DayFrequencyBucket[],
-    currentMonth: { year: 2026, month: 4 }, // May 2026 (0-indexed month)
-    earliestMonth: null,
-    intakeRate: notEnoughData(0, 4) as IntakeRate | ReturnType<typeof notEnoughData>,
-    intakeRatePrior: notEnoughData(0, 4) as IntakeRate | ReturnType<typeof notEnoughData>,
     topFoods: NO_FOODS as RankedFood[] | ReturnType<typeof notEnoughData>,
     topProteins: NO_PROTEINS as RankedProtein[] | ReturnType<typeof notEnoughData>,
     composition: emptyComposition(),
-    weightTrend: emptyWeightTrend(),
     ...over,
   };
 }
+
+const FOOD: RankedFood = {
+  foodItemId: 'food-1',
+  label: 'Salmon kibble',
+  foodType: 'meal',
+  count: 6,
+  shareOfDiet: 0.75,
+  finishedRate: 0.8,
+  ratedMeals: 5,
+  isTreat: false,
+};
+
+const PROTEIN: RankedProtein = {
+  protein: 'salmon',
+  count: 6,
+  shareOfDiet: 0.75,
+  finishedRate: 0.8,
+  ratedMeals: 5,
+  isTreat: false,
+};
 
 // ── orderDashboardCards — safety leads (Principle 3 / §6) ─────────────────────────
 
@@ -135,202 +123,48 @@ describe('orderDashboardCards — safety leads, stable within class', () => {
   });
 });
 
-// ── buildDashboardCards — the adversarial fix: n=1 never earns a verdict colour ────
+// ── buildDashboardCards — the descriptive set (Design v2; CUL-1071) ──────────────────
+//
+// The KPI column (symptom counts, calendar, Meals finished, the old weight card) retired
+// with the flag; the month and the v2 weight card read on their own. What the builder
+// still owns is the three descriptive cards and their honestly derived display state.
 
-describe('buildDashboardCards — n=1 establishment gate (PR-2 INSUFFICIENT note)', () => {
-  it('a single observation (1 vs 0) is NOT established → its count card stays neutral', () => {
-    const cards = buildDashboardCards(baseInput({ symptomCounts: [sc('vomit', 1, 0)] }));
-    const card = cards.find((c) => c.kind === 'symptomCount') as SymptomCountCard;
-    expect(card.established).toBe(false);
+describe('buildDashboardCards — the descriptive cards', () => {
+  it('always emits top food, top protein and composition, in that order', () => {
+    expect(buildDashboardCards(baseInput()).map((c) => c.key)).toEqual([
+      'topFood',
+      'topProtein',
+      'composition',
+    ]);
+    expect(buildDashboardCards(baseInput()).every((c) => c.priority === 'descriptive')).toBe(true);
   });
 
-  it('a single PRIOR observation (0 vs 1) is also NOT established', () => {
-    const cards = buildDashboardCards(baseInput({ symptomCounts: [sc('vomit', 0, 1)] }));
-    const card = cards.find((c) => c.kind === 'symptomCount') as SymptomCountCard;
-    expect(card.established).toBe(false);
-  });
-
-  it('two or more in either window IS established (a real trend can colour)', () => {
-    const rising = buildDashboardCards(baseInput({ symptomCounts: [sc('vomit', 2, 0)] }));
-    const falling = buildDashboardCards(baseInput({ symptomCounts: [sc('vomit', 0, 3)] }));
-    expect((rising.find((c) => c.kind === 'symptomCount') as SymptomCountCard).established).toBe(true);
-    expect((falling.find((c) => c.kind === 'symptomCount') as SymptomCountCard).established).toBe(true);
-  });
-
-  it('a RATE below the floor is the notEnoughData sentinel → NOT established, calibrating', () => {
-    const cards = buildDashboardCards(baseInput({ intakeRate: notEnoughData(2, 4) }));
-    const card = cards.find((c) => c.kind === 'intakeRate') as IntakeRateCard;
-    expect(card.established).toBe(false);
-    expect(card.state.kind).toBe('calibrating');
-  });
-
-  it('a RATE at/above the floor is established and populated', () => {
-    const rate: IntakeRate = {
-      rate: 0.8,
-      finishedMeals: 8,
-      ratedMeals: 10,
-      freeFedExcluded: 0,
-      intakeNotDirectlyObserved: false,
-    };
-    const cards = buildDashboardCards(baseInput({ intakeRate: rate }));
-    const card = cards.find((c) => c.kind === 'intakeRate') as IntakeRateCard;
-    expect(card.established).toBe(true);
-    expect(card.state.kind).toBe('populated');
-  });
-
-  it('carries the prior-window rate through for the "vs last month" delta (B-098)', () => {
-    const rate: IntakeRate = {
-      rate: 0.29,
-      finishedMeals: 2,
-      ratedMeals: 7,
-      freeFedExcluded: 0,
-      intakeNotDirectlyObserved: false,
-    };
-    const prior: IntakeRate = {
-      rate: 0.41,
-      finishedMeals: 7,
-      ratedMeals: 17,
-      freeFedExcluded: 0,
-      intakeNotDirectlyObserved: false,
-    };
-    const cards = buildDashboardCards(baseInput({ intakeRate: rate, intakeRatePrior: prior }));
-    const card = cards.find((c) => c.kind === 'intakeRate') as IntakeRateCard;
-    expect(card.prior).toBe(prior);
-  });
-});
-
-describe('buildDashboardCards — ordering & frequency lead', () => {
-  it('emits safety cards before intake before descriptive', () => {
+  it('a ranking below its floor is the notEnoughData sentinel → calibrating, with what remains', () => {
     const cards = buildDashboardCards(
-      baseInput({
-        symptomCounts: [sc('vomit', 3, 1), sc('diarrhea', 2, 2)],
-        frequencyBuckets: buckets([0, 1, 2]),
-      }),
+      baseInput({ topFoods: notEnoughData(1, 4), topProteins: notEnoughData(3, 4) }),
     );
-    const priorities = cards.map((c) => c.priority);
-    const firstIntake = priorities.indexOf('intake');
-    const firstDescriptive = priorities.indexOf('descriptive');
-    const lastSafety = priorities.lastIndexOf('safety');
-    expect(lastSafety).toBeLessThan(firstIntake);
-    expect(firstIntake).toBeLessThan(firstDescriptive);
+    const food = cards.find((c) => c.kind === 'topFood') as TopFoodCard;
+    const protein = cards.find((c) => c.kind === 'topProtein') as TopProteinCard;
+    expect(food.state).toEqual({ kind: 'calibrating', samples: 1, needed: 4, remaining: 3 });
+    expect(protein.state).toEqual({ kind: 'calibrating', samples: 3, needed: 4, remaining: 1 });
   });
 
-  it('adds ONE calendar card with a lens per ACTIVE symptom, dominant first (B-310)', () => {
-    const cards = buildDashboardCards(
-      baseInput({
-        symptomCounts: [sc('vomit', 4, 0), sc('diarrhea', 1, 0)],
-        frequencyBuckets: buckets([0, 2, 2]),
-      }),
-    );
-    const cal = cards.filter((c) => c.kind === 'calendar');
-    expect(cal).toHaveLength(1);
-    const card = cal[0] as CalendarCard;
-    // BOTH active symptoms are viewable now (the fix for the invisible-second-symptom gap),
-    // dominant (higher current) first — views[0] is the default lens.
-    expect(card.views.map((v) => v.symptomType)).toEqual(['vomit', 'diarrhea']);
-    expect(card.views.every((v) => v.kind === 'symptom')).toBe(true);
+  it('a ranking at/above its floor is populated and carries the result through untouched', () => {
+    const foods = [FOOD];
+    const proteins = [PROTEIN];
+    const cards = buildDashboardCards(baseInput({ topFoods: foods, topProteins: proteins }));
+    const food = cards.find((c) => c.kind === 'topFood') as TopFoodCard;
+    const protein = cards.find((c) => c.kind === 'topProtein') as TopProteinCard;
+    expect(food.state.kind).toBe('populated');
+    expect(food.result).toBe(foods);
+    expect(protein.state.kind).toBe('populated');
+    expect(protein.result).toBe(proteins);
   });
 
-  it('a RESOLVED symptom (current 0) gets its count card but NO calendar lens', () => {
-    const cards = buildDashboardCards(
-      baseInput({ symptomCounts: [sc('vomit', 3, 0), sc('diarrhea', 0, 4)] }),
-    );
-    const card = cards.find((c) => c.kind === 'calendar') as CalendarCard;
-    expect(card.views.map((v) => v.symptomType)).toEqual(['vomit']); // diarrhea is resolved → no lens
-  });
-
-  it('adds NO calendar when every symptom is resolved AND there is no intake decline', () => {
-    const cards = buildDashboardCards(baseInput({ symptomCounts: [sc('vomit', 0, 3)] }));
-    expect(cards.some((c) => c.kind === 'calendar')).toBe(false);
-  });
-
-  // ── B-310: the intake ("Meals") lens ────────────────────────────────────────────
-  it('adds a "Meals" (intake) lens AFTER the symptom lenses when the month has a decline', () => {
-    const cards = buildDashboardCards(
-      baseInput({
-        symptomCounts: [sc('vomit', 3, 0)],
-        intakeDeclineMonthBuckets: buckets([0, 1, 0]), // one unfinished-meal day this month
-      }),
-    );
-    const card = cards.find((c) => c.kind === 'calendar') as CalendarCard;
-    expect(card.views.map((v) => v.kind)).toEqual(['symptom', 'intake']);
-    // The intake lens carries the seeded intake buckets for a flash-free first paint.
-    expect(card.intakeDeclineMonthBuckets).toHaveLength(3);
-  });
-
-  it('emits a calendar with ONLY the intake lens for a pet with a decline but no active symptom (Sam)', () => {
-    const cards = buildDashboardCards(
-      baseInput({ intakeDeclineMonthBuckets: buckets([0, 2]) }), // grazing cat, meals left, no vomiting
-    );
-    const card = cards.find((c) => c.kind === 'calendar') as CalendarCard;
-    expect(card).toBeTruthy();
-    expect(card.views).toEqual([{ key: 'intake', kind: 'intake' }]);
-  });
-
-  it('does NOT add the intake lens when the current month is clean (never a reassuring empty field)', () => {
-    const cards = buildDashboardCards(
-      baseInput({
-        symptomCounts: [sc('vomit', 3, 0)],
-        intakeDeclineMonthBuckets: buckets([0, 0, 0]), // meals all finished this month
-      }),
-    );
-    const card = cards.find((c) => c.kind === 'calendar') as CalendarCard;
-    expect(card.views.some((v) => v.kind === 'intake')).toBe(false);
-  });
-
-  it('always emits the intake + descriptive cards (the seeded set)', () => {
-    const kinds = buildDashboardCards(baseInput()).map((c) => c.kind);
-    expect(kinds).toEqual(
-      expect.arrayContaining(['intakeRate', 'topFood', 'topProtein', 'composition']),
-    );
-  });
-
-  it('always emits the weight card (a populated trend OR the empty logging nudge)', () => {
-    expect(buildDashboardCards(baseInput()).some((c) => c.kind === 'weightTrend')).toBe(true);
-    expect(
-      buildDashboardCards(baseInput({ weightTrend: populatedWeightTrend() })).some(
-        (c) => c.kind === 'weightTrend',
-      ),
-    ).toBe(true);
-  });
-
-  it('a POPULATED weight trend leads the safety cluster — after the symptom cards, above intake/food', () => {
-    const cards = buildDashboardCards(
-      baseInput({
-        symptomCounts: [sc('vomit', 3, 1), sc('diarrhea', 2, 2)],
-        frequencyBuckets: buckets([0, 1, 2]),
-        weightTrend: populatedWeightTrend(),
-      }),
-    );
-    const weight = cards.find((c) => c.kind === 'weightTrend');
-    expect(weight?.priority).toBe('safety');
-    const kinds = cards.map((c) => c.kind);
-    const weightAt = kinds.indexOf('weightTrend');
-    // After every symptom card (counts + the calendar)…
-    expect(weightAt).toBeGreaterThan(kinds.lastIndexOf('symptomCount'));
-    expect(weightAt).toBeGreaterThan(kinds.indexOf('calendar'));
-    // …and above intake + the descriptive food cards.
-    expect(weightAt).toBeLessThan(kinds.indexOf('intakeRate'));
-    expect(weightAt).toBeLessThan(kinds.indexOf('topFood'));
-  });
-
-  it('an EMPTY weight card is a nudge — it heads the descriptive cluster, never the safety slot', () => {
-    const cards = buildDashboardCards(
-      baseInput({
-        symptomCounts: [sc('vomit', 3, 1)],
-        frequencyBuckets: buckets([0, 1, 2]),
-        weightTrend: emptyWeightTrend(),
-      }),
-    );
-    const weight = cards.find((c) => c.kind === 'weightTrend');
-    expect(weight?.priority).toBe('descriptive');
-    const kinds = cards.map((c) => c.kind);
-    const weightAt = kinds.indexOf('weightTrend');
-    // Below the live safety + intake answers it would otherwise crowd…
-    expect(weightAt).toBeGreaterThan(kinds.lastIndexOf('symptomCount'));
-    expect(weightAt).toBeGreaterThan(kinds.indexOf('intakeRate'));
-    // …but leading the descriptive cards (still present + discoverable).
-    expect(weightAt).toBeLessThan(kinds.indexOf('topFood'));
+  it('carries the composition through as given', () => {
+    const composition: MealTreatComposition = { meal: 5, treat: 1, other: 0, unclassified: 0, total: 6 };
+    const card = buildDashboardCards(baseInput({ composition })).find((c) => c.kind === 'composition');
+    expect(card).toEqual({ kind: 'composition', key: 'composition', priority: 'descriptive', composition });
   });
 });
 
@@ -382,9 +216,8 @@ describe('sparkFromBuckets', () => {
 
 // ── Noticed: *What you noticed* (CUL-874 / N-5) ───────────────────────────────────
 //
-// The card's own model is tested in lib/lookPatterns.test.ts; these are the two things
-// only the BUILDER can be wrong about — where the card lands, and whether Patterns off
-// the flag is byte-identical.
+// The card's own model is tested in lib/lookPatterns.test.ts; these are the things only
+// the BUILDER can be wrong about — whether the card is emitted, and where it lands.
 
 describe('buildDashboardCards — the Noticed card', () => {
   const model: NoticedCardModel = {
@@ -399,111 +232,25 @@ describe('buildDashboardCards — the Noticed card', () => {
     wordDaysInWindow: new Map(),
   };
 
-  it('lands after the intake card and above every descriptive one', () => {
-    const cards = buildDashboardCards(baseInput({ symptomCounts: [sc('vomit', 3, 1)], noticed: model }));
+  it('lands above every descriptive card (the observation class, E-13)', () => {
+    const cards = buildDashboardCards(baseInput({ topFoods: [FOOD], noticed: model }));
     const keys = cards.map((c) => c.key);
-    expect(keys.indexOf('whatYouNoticed')).toBeGreaterThan(keys.indexOf('intakeRate'));
-    expect(keys.indexOf('whatYouNoticed')).toBeLessThan(keys.indexOf('topFood'));
-    expect(keys.indexOf('whatYouNoticed')).toBeLessThan(keys.indexOf('composition'));
-  });
-
-  it('never leads a symptom count card — it must not sit over the evidence it can seem to argue with', () => {
-    const cards = buildDashboardCards(baseInput({ symptomCounts: [sc('vomit', 3, 1)], noticed: model }));
-    const keys = cards.map((c) => c.key);
-    expect(keys.indexOf('symptom:vomit')).toBeLessThan(keys.indexOf('whatYouNoticed'));
+    expect(keys).toEqual(['whatYouNoticed', 'topFood', 'topProtein', 'composition']);
+    expect(cards[0].priority).toBe('observation');
   });
 
   it('is emitted in its EMPTY state too — §7 draws the room behind the door on purpose', () => {
     const cards = buildDashboardCards(baseInput({ noticed: model }));
-    expect(cards.some((c) => c.kind === 'whatYouNoticed')).toBe(true);
+    const card = cards.find((c) => c.kind === 'whatYouNoticed');
+    expect(card).toEqual({ kind: 'whatYouNoticed', key: 'whatYouNoticed', priority: 'observation', model });
   });
 
-  it('FLAG OFF: the card is absent and every other card is byte-identical', () => {
-    const off = buildDashboardCards(baseInput({ symptomCounts: [sc('vomit', 3, 1), sc('itch', 0, 4)] }));
-    const withNull = buildDashboardCards(
-      baseInput({ symptomCounts: [sc('vomit', 3, 1), sc('itch', 0, 4)], noticed: null }),
-    );
-    expect(off.some((c) => c.kind === 'whatYouNoticed')).toBe(false);
-    // The rank shift (descriptive 2 → 3) reorders nothing, because the ordering is a
-    // stable sort on RELATIVE rank and there is no rank-2 card to slot between them.
-    expect(withNull).toEqual(off);
-    expect(off.map((c) => c.key)).toEqual([
-      'symptom:vomit', 'symptom:itch', 'calendar', 'intakeRate',
-      'weightTrend', 'topFood', 'topProtein', 'composition',
-    ]);
-  });
-});
-
-describe('buildDashboardCards — CUL-845 gate 2, the zero-count audit', () => {
-  /** CUL-845 gate 2 reads its OWN input at the DASHBOARD's window, not the Noticed
-   *  card's — the 30-vs-28-day hole the adversarial pass walked through (a word marked
-   *  only on days 29 and 30 left the gate blind while the zero it should suppress was
-   *  still on screen). These fixtures drive `lookWordDaysForZeroGate`, and pass a card
-   *  model with an EMPTY per-word map alongside, so a regression that re-pointed the
-   *  gate at the card would red every case below. */
-  const cardModel: NoticedCardModel = {
-    coverageLine: null,
-    rows: [],
-    withheldLine: null,
-    withheldSpanLine: null,
-    calibrationLine: null,
-    multiSelectNote: null,
-    empty: false,
-    pairing: null,
-    wordDaysInWindow: new Map(),
-  };
-  function gateWith(words: [string, number][]): ReadonlyMap<string, number> {
-    return new Map(words);
-  }
-
-  it('30 days of Scratching more and no itch rows renders NO itch card — not even at zero', () => {
-    const cards = buildDashboardCards(
-      baseInput({
-        symptomCounts: [sc('vomit', 2, 1), sc('itch', 0, 5)],
-        lookWordDaysForZeroGate: gateWith([['scratching_more', 30]]), noticed: cardModel,
-      }),
-    );
-    expect(cards.some((c) => c.key === 'symptom:itch')).toBe(false);
-    // And nothing else moved: the honest cards are all still there.
-    expect(cards.some((c) => c.key === 'symptom:vomit')).toBe(true);
-  });
-
-  it('a NON-zero itch count stands beside the word — the disagreement is said, not hidden', () => {
-    const cards = buildDashboardCards(
-      baseInput({
-        symptomCounts: [sc('itch', 2, 5)],
-        lookWordDaysForZeroGate: gateWith([['scratching_more', 30]]), noticed: cardModel,
-      }),
-    );
-    expect(cards.some((c) => c.key === 'symptom:itch')).toBe(true);
-  });
-
-  it('a zero with NO contradicting word still renders — an honest zero is not suppressed', () => {
-    const cards = buildDashboardCards(
-      baseInput({ symptomCounts: [sc('itch', 0, 5)], lookWordDaysForZeroGate: gateWith([['lip_licking', 9]]), noticed: cardModel }),
-    );
-    expect(cards.some((c) => c.key === 'symptom:itch')).toBe(true);
-  });
-
-  it('lethargy is suppressed by EITHER of its two words', () => {
-    for (const word of ['subdued', 'sleeping_more']) {
-      const cards = buildDashboardCards(
-        baseInput({ symptomCounts: [sc('lethargy', 0, 3)], lookWordDaysForZeroGate: gateWith([[word, 6]]), noticed: cardModel }),
-      );
-      expect(cards.some((c) => c.key === 'symptom:lethargy')).toBe(false);
-    }
-  });
-
-  it('a suppressed leaf also loses its CALENDAR lens — a lens needs current > 0 anyway', () => {
-    const cards = buildDashboardCards(
-      baseInput({ symptomCounts: [sc('itch', 0, 5)], lookWordDaysForZeroGate: gateWith([['scratching_more', 30]]), noticed: cardModel }),
-    );
-    const calendar = cards.find((c) => c.kind === 'calendar') as CalendarCard | undefined;
-    expect(calendar?.views.some((v) => v.symptomType === 'itch')).not.toBe(true);
-  });
-
-  it('OFF THE FLAG the zero renders as it always did — no suppression without a look record', () => {
-    const cards = buildDashboardCards(baseInput({ symptomCounts: [sc('itch', 0, 5)] }));
-    expect(cards.some((c) => c.key === 'symptom:itch')).toBe(true);
+  it('absent or null model (Noticed not live for this pet): no card, and the rest is identical', () => {
+    const absent = buildDashboardCards(baseInput());
+    const withNull = buildDashboardCards(baseInput({ noticed: null }));
+    expect(absent.some((c) => c.kind === 'whatYouNoticed')).toBe(false);
+    expect(withNull).toEqual(absent);
+    const withCard = buildDashboardCards(baseInput({ noticed: model }));
+    expect(withCard.filter((c) => c.kind !== 'whatYouNoticed')).toEqual(absent);
   });
 });

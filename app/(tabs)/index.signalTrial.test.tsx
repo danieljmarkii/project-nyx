@@ -29,12 +29,7 @@ jest.mock('../../components/home/PullToRefreshSky', () => ({ PullToRefreshSky: m
 jest.mock('../../components/home/CrossPetSafetyBanner', () => ({ CrossPetSafetyBanner: marker('cross') }));
 jest.mock('../../components/vetvisits/AppointmentStrip', () => ({ AppointmentStrip: marker('appointment') }));
 jest.mock('../../components/home/TrialStrip', () => ({ TrialStrip: marker('trial') }));
-jest.mock('../../components/home/MedStrip', () => ({ MedStrip: marker('med') }));
-jest.mock('../../components/home/LookCard', () => ({ LookCard: marker('look') }));
-jest.mock('../../components/home/LookExits', () => ({ LookExits: marker('look-exits'), exitVisibility: () => ({}) }));
-jest.mock('../../components/home/TodayZone', () => ({ TodayZone: marker('today') }));
-jest.mock('../../components/home/TrendZone', () => ({ TrendZone: marker('trend') }));
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => false }));
+jest.mock('../../components/home/LookExits', () => ({ LookExits: marker('look-exits'), exitVisibility: () => ({}), lookRectInPage: () => null }));
 jest.mock('../../components/designV2/home/TodayCard', () => ({ TodayCard: marker('today-v2') }));
 jest.mock('../../components/designV2/home/CoverageDoor', () => ({ CoverageDoor: marker('coverage-door') }));
 jest.mock('../../hooks/useEvents', () => ({
@@ -45,8 +40,6 @@ const mockDietTrial: { current: { input: unknown; inputIsForPet: boolean; loaded
   current: { input: null, inputIsForPet: false, loadedPetId: null },
 };
 jest.mock('../../hooks/useDietTrial', () => ({ useDietTrial: () => mockDietTrial.current }));
-jest.mock('../../hooks/useMedStrips', () => ({ useMedStrips: () => ({ input: {} }) }));
-jest.mock('../../lib/medStrip', () => ({ resolveMedStrips: () => [] }));
 jest.mock('../../lib/sync', () => ({ syncNow: jest.fn() }));
 jest.mock('../../lib/signal', () => ({ regenerateSignal: jest.fn() }));
 jest.mock('../../store/syncStore', () => {

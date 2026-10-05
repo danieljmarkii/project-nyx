@@ -1,16 +1,9 @@
-// Patterns × Design v2 — the screen wiring, both ways (D2-5 / CUL-1067).
+// Patterns × Design v2 — the screen wiring (D2-5 / CUL-1067; GA by CUL-1071).
 //
-// The sibling suite `app/insights/index.test.tsx` runs the flag-OFF path against its
-// existing expectations. This suite proves the two halves only the SCREEN can get wrong:
-//
-//   FLAG ON — the month instrument leads, then the weight as dots by date, then the
-//   "what Nyx ate" cards and the shipped panels; the MetricCard column, the old calendar
-//   and the old weight card are ABSENT.
-//
-//   FLAG OFF — the async half of the flag-off guard (guards/designV2FlagOff.test.tsx
-//   states this blind spot and hands it here): the page renders no redesign node AND
-//   ISSUES NO REDESIGN READ, over a fixture that WOULD answer if called. An absence
-//   proves a gate only when the thing gated was available to leak (C-41).
+// Design v2 is the only Patterns page now, so this suite proves what only the SCREEN can
+// get wrong: the month instrument leads, then the weight as dots by date, then the
+// "what Nyx ate" cards and the shipped panels; the retired MetricCard column, the old
+// calendar and the old weight card do not come back.
 
 jest.mock('react-native-gifted-charts', () => ({ LineChart: () => null }));
 jest.mock('react-native-safe-area-context', () => {
@@ -31,11 +24,6 @@ jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 
-// THE gate, mutable per test. Mocked at the hook (the one file that reads the key), so
-// the daily-look flags stay off and only the redesign toggles.
-let mockDesignV2 = false;
-jest.mock('../../hooks/useDesignV2', () => ({ useDesignV2: () => mockDesignV2 }));
-
 jest.mock('../../hooks/useDietTrial', () => ({
   useDietTrial: () => ({
     input: { trial: { status: 'active', startedAt: '2026-07-25', targetDurationDays: 56 }, nowMs: 0, petName: 'Nyx' },
@@ -54,9 +42,6 @@ jest.mock('../../lib/patternsTrial', () => {
   const actual = jest.requireActual('../../lib/patternsTrial');
   return { ...actual, getTrialPanel: jest.fn().mockResolvedValue(null) };
 });
-jest.mock('../../hooks/useSummary', () => ({
-  useSummary: () => ({ summary: null, displayState: 'building', petName: 'Nyx', isLoading: false }),
-}));
 jest.mock('expo-router', () => {
   const React = require('react');
   return {
@@ -72,11 +57,6 @@ jest.mock('../../lib/analytics', () => {
   return {
     ...actual,
     getSymptomCounts: jest.fn(),
-    getSymptomFrequencyByDay: jest.fn(),
-    getSymptomFrequencyByMonth: jest.fn(),
-    getIntakeDeclineByMonth: jest.fn(),
-    getEarliestEventMonth: jest.fn(),
-    getIntakeRateWithPrior: jest.fn(),
     getTopFoods: jest.fn(),
     getTopProteins: jest.fn(),
     getMealTreatComposition: jest.fn(),
@@ -131,11 +111,6 @@ function seed() {
   usePetStore.setState({ pets: [pet], activePet: pet, isOnboarded: true });
   const counts: SymptomCount[] = [{ symptomType: 'vomit', current: 3, prior: 1, delta: 2 }];
   A.getSymptomCounts.mockResolvedValue(counts);
-  A.getSymptomFrequencyByDay.mockResolvedValue([{ date: '2026-09-02', total: 1, byType: { vomit: 1 } }]);
-  A.getSymptomFrequencyByMonth.mockResolvedValue([]);
-  A.getIntakeDeclineByMonth.mockResolvedValue([]);
-  A.getEarliestEventMonth.mockResolvedValue(null);
-  A.getIntakeRateWithPrior.mockResolvedValue({ current: notEnoughData(2, 4), prior: notEnoughData(0, 4) });
   A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
   A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
   A.getMealTreatComposition.mockResolvedValue({ meal: 8, treat: 2, other: 0, unclassified: 0, total: 10 });
@@ -148,8 +123,7 @@ beforeEach(() => {
 });
 
 describe('Patterns × Design v2', () => {
-  it('flag ON: the month leads, then the weight by date; the KPI column, the old calendar and the old weight card are absent', async () => {
-    mockDesignV2 = true;
+  it('the month leads, then the weight by date; the KPI column, the old calendar and the old weight card are absent', async () => {
     const { getByTestId, queryByText, queryByTestId, getByText, toJSON } = render(<PatternsScreen />);
     await waitFor(() => expect(getByTestId('month-instrument')).toBeTruthy());
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
@@ -174,10 +148,8 @@ describe('Patterns × Design v2', () => {
     expect(getByText('Log a weigh-in')).toBeTruthy();
   });
 
-  it('flag ON, cold start: the warm invitation leads and the month follows it (Principle 5)', async () => {
-    mockDesignV2 = true;
+  it('cold start: the warm invitation leads and the month follows it (Principle 5)', async () => {
     A.getSymptomCounts.mockResolvedValue([]);
-    A.getSymptomFrequencyByDay.mockResolvedValue([]);
     A.getMealTreatComposition.mockResolvedValue({ meal: 0, treat: 0, other: 0, unclassified: 0, total: 0 });
     const weight = jest.requireMock('../../lib/weight') as { getWeightHistory: jest.Mock; getWeightReadingCount: jest.Mock };
     weight.getWeightHistory.mockResolvedValueOnce([]);
@@ -190,17 +162,5 @@ describe('Patterns × Design v2', () => {
     expect(getByTestId('month-line').props.children).toBe('Nothing logged yet · the month fills in from the first entry');
     const json = JSON.stringify(toJSON());
     expect(json.indexOf('still getting to know')).toBeLessThan(json.indexOf('month-instrument'));
-  });
-
-  it('flag OFF: no redesign node AND no redesign read, over a fixture that would answer (the async half of the guard)', async () => {
-    mockDesignV2 = false;
-    const { queryByTestId, getByText } = render(<PatternsScreen />);
-    await waitFor(() => expect(getByText('Last 30 days')).toBeTruthy());
-    expect(getByText('Calendar')).toBeTruthy();
-    expect(queryByTestId('month-instrument')).toBeNull();
-    expect(queryByTestId('weight-card-v2')).toBeNull();
-    // The gate held at the READ, not just at the draw: the month's fixture was ready to
-    // answer and was never asked.
-    expect(mockReadMonthFacts).not.toHaveBeenCalled();
   });
 });

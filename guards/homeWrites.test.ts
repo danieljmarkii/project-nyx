@@ -195,22 +195,7 @@ const RAW_MUTATION =
  * the value is a list of the exact helpers that file may reach, not a boolean.
  */
 const ALLOW: Record<string, readonly string[]> = {
-  'components/home/MedStrip.tsx': ['insertMedicationDose'],
-  // `updateLookNote` is INSIDE the look's own class, not a third one, and the distinction
-  // is worth stating because the note opens a field and D1's forbidden shape is "a control
-  // that opens a form" (CUL-873, T-22 / R16, PM-ruled on round 4).
-  //
-  // What makes it the same class: it writes to the look's OWN row, on the entry the owner
-  // has just this second made, creating no record the app did not already hold and
-  // touching no other table. D1's second door is a control that starts a NEW record from
-  // Home; this one annotates the one that just landed, after the save, and never before it
-  // (Principle 1: nothing on the way IN asks for typing).
-  //
-  // It is named rather than assumed because the value is a list of exact helpers and not a
-  // boolean — the third adversarial pass's own reason: an allow-set that said "LookCard
-  // may write" would also permit `insertSimpleEvent('itch')`.
-  'components/home/LookCard.tsx': ['insertLook', 'updateLookNote'],
-  // CUL-903 — THE THIRD CLASS, and it is a Tier-2 amendment rather than a marker:
+  // CUL-903 — the appointment strip's class, and it was a Tier-2 amendment rather than a marker:
   // `docs/nyx-med-strip-requirements.md` §0.1 now names it, PM-approved 2026-09-11.
   //
   // What it is: the appointment strip's *It didn't*, the owner answering the ask the
@@ -225,14 +210,14 @@ const ALLOW: Record<string, readonly string[]> = {
   // coverage line, Patterns or an engine input. The two guards compose: that one
   // bounds what a visit may influence, this one bounds what Home may write.
   'components/vetvisits/AppointmentStrip.tsx': ['cancelVetAppointment'],
-  // CUL-1066 (D2-4) — THE LOOK, AS TODAY'S HEADER behind `design_v2`. The same class as
-  // `LookCard` (the carve-out §0.1 opened for the look on 2026-09-10), reached through a
-  // second file because flag-on Home draws the look here and not there; it is not a
-  // fourth class. Exactly `insertLook`: the header has no note field (the note stays on
-  // the record screen, T-22), so `updateLookNote` is NOT allowed here — a helper this
-  // file does not reach is a hole the allow-set would be pre-authorising (C-32). Flag-on,
-  // `MedStrip`'s confirm is not mounted, so Home's live write classes under the flag are
-  // two: this look and the appointment strip's resolution.
+  // CUL-1066 (D2-4) — THE LOOK, AS TODAY'S HEADER. The carve-out §0.1 opened for the look
+  // on 2026-09-10, drawn here since Design v2 (GA by CUL-1071, which deleted the old
+  // `LookCard` and `MedStrip` and with them their entries). Exactly `insertLook`: the
+  // header has no note field (the note stays on the record screen, T-22), so
+  // `updateLookNote` is NOT allowed here — a helper this file does not reach is a hole the
+  // allow-set would be pre-authorising (C-32). The med strip's one-tap confirm retired
+  // with its file, so Home carries two write classes: this look and the appointment
+  // strip's resolution.
   'components/designV2/home/LookHeader.tsx': ['insertLook'],
 };
 
@@ -827,8 +812,8 @@ describe('§3.2 — Home carries exactly two write classes', () => {
     // the same floor `haptics.test.ts` and `completionCard.test.ts` pin.
     const files = scannedFiles(ROOT);
     expect(files).toContain(ENTRY_FILE);
-    expect(files).toContain('components/home/LookCard.tsx');
-    expect(files).toContain('components/home/MedStrip.tsx');
+    expect(files).toContain('components/designV2/home/LookHeader.tsx');
+    expect(files).toContain('components/vetvisits/AppointmentStrip.tsx');
     expect(files.length).toBeGreaterThan(20);
   });
 
@@ -844,8 +829,8 @@ describe('§3.2 — Home carries exactly two write classes', () => {
   it('finds no write outside the allow-set', () => {
     const findings = scan(ROOT).map(
       (f) =>
-        `${f.file}:${f.line} — ${f.what} is a THIRD Home write class. Home carries the med ` +
-        `confirm and the look, and a third is a Tier-2 amendment to ` +
+        `${f.file}:${f.line} — ${f.what} is a THIRD Home write class. Home carries the look ` +
+        `and the appointment strip's resolution, and a third is a Tier-2 amendment to ` +
         `docs/nyx-med-strip-requirements.md §0.1 (§3.2) — not a marker. If it genuinely ` +
         `belongs, add // home-write-ok: <reason> within ten lines above.`,
     );
@@ -884,11 +869,13 @@ describe('§3.2 — Home carries exactly two write classes', () => {
     // above in the same words the note did — the look's own row, no new record, ruled
     // (the round-4 page §01). What the flag changes is which classes are MOUNTED: flag-on
     // the med strip is not, so live Home carries two (the look, the appointment strip);
-    // the allow-set still names the med strip because the file still exists, still
-    // writes, and is still mounted flag-off — the closure walks files, not flags.
+    // the allow-set still named the med strip because the file still existed, still
+    // wrote, and was still mounted flag-off — the closure walks files, not flags.
+    //
+    // It changed a FOURTH time on CUL-1071 (Design v2 GA), and narrowed: `MedStrip` and
+    // `LookCard` were deleted with the flag-off Home, so their entries went (an entry for
+    // a file that no longer exists is an exemption for nothing, C-32). Two classes remain.
     expect(ALLOW).toEqual({
-      'components/home/MedStrip.tsx': ['insertMedicationDose'],
-      'components/home/LookCard.tsx': ['insertLook', 'updateLookNote'],
       'components/vetvisits/AppointmentStrip.tsx': ['cancelVetAppointment'],
       'components/designV2/home/LookHeader.tsx': ['insertLook'],
     });
@@ -1082,7 +1069,7 @@ describe('the detector itself', () => {
 
   it('lets an allowed file make ONLY its own write', () => {
     const src = 'await insertLook({ petId });\nawait insertSimpleEvent({ type: "itch" });\n';
-    const findings = findWrites('components/home/LookCard.tsx', src);
+    const findings = findWrites('components/designV2/home/LookHeader.tsx', src);
     // The third adversarial pass's mutant: the look's own write passes, the prompted
     // symptom row does not.
     expect(findings.map((f) => f.what)).toEqual(['insertSimpleEvent(']);

@@ -93,18 +93,8 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(src).not.toMatch(MANUAL_MIDNIGHT);
   });
 
-  it('the Home trend zone no longer derives a trial day count AT ALL', () => {
-    // Before B-417 PR 4 this file computed its own trial-coverage ratio and
-    // rendered it as "% food compliance" — a second, unlisted metric with the
-    // same unfiltered defect as the card's, on a chart it also displaced. The
-    // whole derivation is gone, which is a stronger guarantee than "it delegates":
-    // there is nothing left here to drift.
-    const src = readCode('hooks/useTrend.ts');
-    expect(src).not.toMatch(DAY_DIVISION);
-    expect(src).not.toMatch(/getDietTrialProgress/);
-    expect(src).not.toMatch(/trialDaysElapsed|trialCompliantDays|trialTargetDays/);
-    expect(src).not.toMatch(/compliance/i);
-  });
+  // `hooks/useTrend.ts` (the Home trend zone) had its derivation deleted by B-417 PR 4 and
+  // the file itself by CUL-1071 (Design v2 GA retired the Trend card); its case went with it.
 
   // B-442 (the day-counter row) is CLOSED by B-417 PR 7, and this test is now the
   // guard rather than the record of the divergence.
