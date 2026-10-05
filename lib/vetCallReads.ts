@@ -202,3 +202,19 @@ export function callListRowOf(view: CallView, pronoun: string): VisitListRow {
     tags: [],
   };
 }
+
+/** A call as History's date-only item needs it (§6.4: "its own row type in History on the
+ *  call's day"). Undone calls are not listed. */
+export interface HistoryCallRow {
+  id: string;
+  calledOn: string;
+  about: 'vomiting' | 'stool';
+}
+
+export async function readCallsForHistory(petId: string): Promise<HistoryCallRow[]> {
+  return (await readCallsForPet(petId)).map((v) => ({
+    id: v.call.id,
+    calledOn: v.call.calledOn,
+    about: v.eventType === 'vomit' ? 'vomiting' : 'stool',
+  }));
+}
