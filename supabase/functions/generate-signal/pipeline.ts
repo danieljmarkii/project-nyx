@@ -108,7 +108,10 @@ import { isEngineKeyOn, SIGNAL_ENGINE_KEYS, standDownMintAllowed, type EngineFla
 // EN-10 (PR-22): the context lines. Pure; the visit reaches it as a DATE only (AC 10 amended).
 import {
   EN9_CARE_STATE_STEP,
+  careStateOf,
   careStateText,
+  concernSignOf,
+  isWatched,
   type CareRecord,
   type CareStateStep,
 } from './careState.ts'
@@ -818,6 +821,8 @@ export function runSignalPipeline(
   //     the cards' data, so it is grounded in what the dashboard shows.
   // CUL-989: no packet over an incomplete read. Its clauses are counts and a finished-meal rate
   // over the partial set, and its quiet path is the reassuring shape; the disclosure replaces it.
+  // EN-9 (CUL-1538): the packet still reads `curated` (so EN-10's lines and the decoration stay
+  // out of it), and takes from 3d only the one thing the card shows: a watched concern's sentence.
   const summaryPacket = readIncomplete ? null : buildSummaryPacket({
     petName,
     findings: curated.map((r) => r.finding),
@@ -826,6 +831,7 @@ export function runSignalPipeline(
     freeFedFoodIds,
     nowMs,
     risingBelowCardFloor: risingBelowCardFloor(input, config),
+    watchedSentenceFor: watchedSentenceLookup(decorated),
   })
 
   // 5. Cache. Empty findings = building/stale (§3.3), NEVER an all-clear (§9).
@@ -921,6 +927,25 @@ function chronicAsOf(input: DetectionInput, config: DetectionConfig): (sign: Sym
     const was = detectSignals(then, config).some((r) => r.finding.type === 'symptom_chronicity' && r.finding.symptomType === sign)
     memo.set(key, was)
     return was
+  }
+}
+
+// EN-9 (CUL-1538): what the summary says for a concern the owner has told the vet about. The
+// card shows the care state's sentence (`with_vet`, `recheck_booked`) and stops asking, so the
+// summary says that same sentence rather than the lane's "talk to your vet". Keyed on the SIGN,
+// since the state is one per sign and `curated` holds the undecorated finding. Null for every
+// other finding, `raised` and `raised_again` included: those cards still ask, and so does the
+// summary. Flag off, no finding carries a care state, so this is null for all of them.
+export function watchedSentenceLookup(rows: { finding: Finding }[]): (f: Finding) => string | null {
+  const bySign = new Map<SymptomType, string>()
+  for (const r of rows) {
+    const sign = concernSignOf(r.finding)
+    const care = careStateOf(r.finding)
+    if (sign !== null && care !== null && isWatched(care.state) && care.text) bySign.set(sign, care.text)
+  }
+  return (f) => {
+    const sign = concernSignOf(f)
+    return sign === null ? null : bySign.get(sign) ?? null
   }
 }
 

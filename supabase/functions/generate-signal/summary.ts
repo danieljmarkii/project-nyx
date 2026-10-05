@@ -385,6 +385,15 @@ export interface BuildSummaryArgs {
    * (`risingBelowCardFloor`). Required, never defaulted (C-37).
    */
   risingBelowCardFloor: boolean
+  /**
+   * EN-9 (CUL-1538): the sentence a safety card shows while its concern is watched (the owner
+   * said the vet knows), or null when the card still asks. A watched concern's clause is that
+   * sentence, never the lane's "talk to your vet", so the summary stops asking where the card
+   * has. It is still a concern: `hasSafety` stays true (the finished-meal rate stays out, the
+   * model stays off, and the sentence itself names the vet). Every finding that still asks keeps
+   * its own template and leads. Always null with `engines_v3_en9` off. Required (C-37).
+   */
+  watchedSentenceFor: (f: Finding) => string | null
 }
 
 /**
@@ -400,7 +409,7 @@ export interface BuildSummaryArgs {
  *      as a summary.
  */
 export function buildSummaryPacket(args: BuildSummaryArgs): SummaryFactPacket | null {
-  const { petName, findings, mealEvents, symptomEvents, freeFedFoodIds, nowMs, risingBelowCardFloor } = args
+  const { petName, findings, mealEvents, symptomEvents, freeFedFoodIds, nowMs, risingBelowCardFloor, watchedSentenceFor } = args
   const { startMs, endMs } = monthWindowBounds(nowMs)
 
   const clauses: string[] = []
@@ -410,13 +419,20 @@ export function buildSummaryPacket(args: BuildSummaryArgs): SummaryFactPacket | 
 
   // 1. Safety findings — verbatim from the deterministic, guardrail-safe templates. In
   //    ranked order (the engine already ranks decline above worsening). Never dropped.
+  //    EN-9 (CUL-1538): a watched concern says the card's own sentence and follows every
+  //    finding that still asks, as its card does (rankWatchedLast); chronicity and worsening
+  //    for one sign share that sentence, so it is said once.
+  const watched: string[] = []
   for (const f of findings) {
     if (f.priorityClass !== 'safety') continue
-    clauses.push(templateForFinding(f, petName))
+    const known = watchedSentenceFor(f)
+    if (known === null) clauses.push(templateForFinding(f, petName))
+    else if (!watched.includes(known)) watched.push(known)
     hasSafety = true
     hasSymptomClause = true
     evidence.add(f.type === 'intake_decline' ? 'intake' : 'symptom')
   }
+  clauses.push(...watched)
   // Safety clauses are pushed first; this count lets the cap below never drop one (it only
   // trims trailing intake) — the invariant holds by construction, not by relying on the
   // engine's current ≤3-safety-findings emit count (adversarial review, latent cap finding).
