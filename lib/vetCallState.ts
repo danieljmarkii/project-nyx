@@ -222,9 +222,12 @@ export const CALL_EDIT_NOTE = 'Edit the note';
 export const CALL_NOTE_HINT = 'Only you see this. Nothing in the app reads it.';
 export const FOLLOW_UP_NOT_RECORDED = 'Not recorded.';
 export const FOLLOW_UP_ADD_IT = 'Add it';
-/** The notification's body names no record fact (G1/D3, AC 11). */
+/** The notification's body names no record fact (G1/D3, AC 11): not the sign, the call or
+ *  the vet. The pet's name appears only when the owner chose names on the lock screen (DR-6's
+ *  opt-in, the daily summary's switch): the spec's "A question about {pet}" takes the
+ *  foundation's T&S default, so with names off it is neutral. */
 export function followUpNotificationBody(petName: string | null): string {
-  return petName ? `A question about ${petName}` : 'A question about your pet';
+  return petName ? `A question about ${petName}` : 'A question for you';
 }
 /** The notification's title. Neutral: the body carries the pet, never the sign or the call. */
 export const FOLLOW_UP_NOTIFICATION_TITLE = 'Culprit';

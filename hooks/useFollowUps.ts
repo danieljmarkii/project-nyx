@@ -12,6 +12,7 @@ import { useAppActive } from './useAppActive';
 import { useSyncStore } from '../store/syncStore';
 import { usePetStore } from '../store/petStore';
 import { syncFollowUpNotifications } from '../lib/followUpNotifications';
+import { readUsePetName } from '../lib/notificationSettings';
 
 export const EN14_FLAG = 'engines_v3_en14' as const;
 
@@ -21,8 +22,10 @@ export function useEn14(): boolean {
 
 /** Reconcile the follow-up notifications now, from a write (an answer, a call, an Undo) or the
  *  Settings switch. Names come from the store at call time, never a closure. */
-export function refreshFollowUpNotifications(flagOn: boolean): Promise<void> {
-  const names = new Map(usePetStore.getState().pets.map((p) => [p.id, p.name]));
+export async function refreshFollowUpNotifications(flagOn: boolean): Promise<void> {
+  // A pet's name reaches a lock screen only under the owner's own opt-in (DR-6).
+  const named = await readUsePetName().catch(() => false);
+  const names = new Map(named ? usePetStore.getState().pets.map((p) => [p.id, p.name] as const) : []);
   return syncFollowUpNotifications({ flagOn, petNames: names });
 }
 

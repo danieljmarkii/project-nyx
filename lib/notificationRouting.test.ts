@@ -166,3 +166,17 @@ describe('notificationRouteParams', () => {
     expect(notificationRouteParams(null)).toEqual({ source: 'notification' });
   });
 });
+
+describe('Engines v3 PR-36 — the follow-up tap', () => {
+  const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  it('routes to the call\'s own screen, built from a validated id', () => {
+    expect(notificationRouteDecision({ kind: 'follow_up', callId: ID }, { authed: true })).toEqual({
+      recordCategory: null,
+      routeTo: `/vet-call/${ID}`,
+    });
+  });
+  it('drops a malformed id and every tap before sign-in (G5)', () => {
+    expect(notificationRouteDecision({ kind: 'follow_up', callId: '../settings' }, { authed: true }).routeTo).toBeNull();
+    expect(notificationRouteDecision({ kind: 'follow_up', callId: ID }, { authed: false }).routeTo).toBeNull();
+  });
+});
