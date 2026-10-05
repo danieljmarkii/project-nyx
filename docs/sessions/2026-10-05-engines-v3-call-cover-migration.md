@@ -3,7 +3,7 @@
 **Date:** 2026-10-05
 **One thing:** none — continuation of the PR-36 session, no new teach row
 
-The same session as `2026-10-05-engines-v3-pr36-call-record.md`, after the PM ruled A on CUL-1604: hold PR-36 (#1072), store the cover on the server, and rebuild the client on it. BUILD on CUL-1605 (a sub-issue of CUL-1602). Shipped via #PR_NUMBER, **not applied**: the PM applies it on his word.
+The same session as `2026-10-05-engines-v3-pr36-call-record.md`, after the PM ruled A on CUL-1604: hold PR-36 (#1072), store the cover on the server, and rebuild the client on it. BUILD on CUL-1605 (a sub-issue of CUL-1602). Shipped via #1074, **not applied**: the PM applies it on his word.
 
 ## What it is
 
