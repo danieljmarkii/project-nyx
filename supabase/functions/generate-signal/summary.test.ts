@@ -848,6 +848,9 @@ Deno.test('CUL-1618: every template shape with a safety clause passes its own va
   // A line break between sentences is not a reworded clause.
   const p = mixedPacket()
   assert.equal(validateSummary(p.clauses.join('\n'), p), true)
+  // Nor is a double space inside a food label the template carries (adversarial pass).
+  const spaced = packetFor([declineFinding({ refusedFoodLabel: 'Royal Canin  Recovery' })], [declineFinding({ refusedFoodLabel: 'Royal Canin  Recovery' })])
+  assert.equal(validateSummary(summaryTemplate(spaced), spaced), true, summaryTemplate(spaced))
 })
 
 Deno.test('CUL-1618: the adversarial pass\'s counterexamples on a mixed packet are all rejected', () => {
@@ -870,6 +873,7 @@ Deno.test('CUL-1618: the adversarial pass\'s counterexamples on a mixed packet a
     `${DECLINE_3_DAYS} ${WATCHED_VOMIT} You already had a word with your vet.`,
     `${DECLINE_3_DAYS} ${WATCHED_VOMIT} Pixel had a vet visit last week.`,
     `${DECLINE_3_DAYS} ${WATCHED_VOMIT} The vet's aware of the eating too.`,
+    `${DECLINE_3_DAYS} ${WATCHED_VOMIT} The doctor already checked Pixel.`,
   ]) assert.equal(validateSummary(t, p), false, t)
   // The lead verbatim with a rephrased, vet-free tail passes.
   assert.equal(validateSummary(`${DECLINE_3_DAYS} ${WATCHED_VOMIT} Most of Pixel's logged meals this month were chicken.`, p), true)

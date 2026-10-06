@@ -164,8 +164,9 @@ const DISEASE_RE =
 // so a vet word in the model's tail is the model's own: a negated or past ask ("no need for a
 // call to your vet", "you already had a word with your vet"), a care claim moved onto another
 // sign, or a second ask on a sign the owner has told the vet about. Whatever it says, it is
-// unbacked, so the tail may not say it. Matches "vet's" (the apostrophe is a word boundary).
-const VET_WORD_RE = /\b(?:vets?|veterinar\w*)\b/i
+// unbacked, so the tail may not say it. Matches "vet's" (the apostrophe is a word boundary), and
+// the synonyms a model reaches for once "vet" is screened ("the doctor already checked Pixel").
+const VET_WORD_RE = /\b(?:vets?|veterinar\w*|doctors?|dvm|clinics?)\b/i
 
 // ── The fact packet ────────────────────────────────────────────────────────────────────
 
@@ -617,7 +618,8 @@ export const SUMMARY_MODEL_PHRASING_ENABLED = false
  * has no safety signal to warm up so every model sentence there is pure downside. Only a
  * non-safety reflection summary is eligible. The Edge Function gates the model call on BOTH
  * this AND `SUMMARY_MODEL_PHRASING_ENABLED`, so re-enabling the model never re-opens the
- * safety/quiet paths.
+ * safety/quiet paths. CUL-1618's verbatim safety lead in validateSummary does NOT license
+ * opening the safety path here: a vet-free tail can still contradict the lead it follows.
  */
 export function shouldPhraseWithModel(packet: SummaryFactPacket): boolean {
   return !packet.hasSafety && !packet.quiet
@@ -655,7 +657,11 @@ export function validateSummary(text: string, packet: SummaryFactPacket): boolea
   // today" into "a word with your vet" and still pass. The asking templates and the watched heads
   // are deterministic, so nothing is lost by requiring them whole: the model can only rephrase
   // the non-safety tail. Leading is Principle 3's order (safety first), which the template keeps.
-  const lead = packet.safetyClauses.join(' ')
+  // NECESSARY, NOT SUFFICIENT (adversarial pass, CUL-1618): a tail can still undo the lead in
+  // meaning without a screened word ("Pixel ate everything this morning.", "Skip the appointment
+  // for now."). No keyword screen closes that, so restraint (shouldPhraseWithModel refusing every
+  // safety packet) stays the guarantee; this check is never clearance to lift it.
+  const lead = packet.safetyClauses.join(' ').replace(/\s+/g, ' ')
   if (!t.startsWith(lead)) return false
   const tail = t.slice(lead.length)
   // No non-safety clause names the vet, so a vet word in the tail is invented (VET_WORD_RE),
