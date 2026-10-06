@@ -1,25 +1,164 @@
 #!/bin/bash
-# Runs the TypeScript type check and the jest test suite before every push.
+# Runs the TypeScript type check and jest before every push.
 # Install once with: git config core.hooksPath .githooks
+#
+# Two modes (CUL-1613):
+#
+#   Off the cloud (the PM's Codespace, any local checkout): the full type check
+#   and the full jest suite, as always.
+#
+#   In a Claude Code cloud session (CLAUDE_CODE_REMOTE is set): only what the
+#   pushed files can affect. CI runs the full suite on every PR as a required
+#   check, so a full local run there was the same 3.5 to 12 minutes spent twice.
+#     - docs/** only            nothing (no file tsc or jest reads changed)
+#     - other *.md / non-code   the tests that name the file by path (CLAUDE.md
+#                               has a budget guard; workflow files have theirs)
+#     - code                    tsc, plus `jest --findRelatedTests` on the code,
+#                               plus guards/ (they scan the source tree through
+#                               the filesystem, so the import graph that
+#                               --findRelatedTests walks cannot see them; a
+#                               config file such as jest.config.js has no
+#                               dependents, so it gets tsc and guards/ only)
+#     - a deleted code file     tsc (a dangling import is a type error)
+#   Anything the hook cannot work out (no base commit, no origin/main) falls back
+#   to the full run rather than guessing.
+#
+# git hands a pre-push hook one line per pushed ref on stdin:
+#   <local ref> <local sha> <remote ref> <remote sha>
 
-echo "Running TypeScript check..."
-npx tsc --noEmit
+ZERO=0000000000000000000000000000000000000000
 
-if [ $? -ne 0 ]; then
-  echo ""
-  echo "Push blocked: TypeScript errors found above. Fix them before pushing."
-  exit 1
+run_full() {
+  echo "Running TypeScript check..."
+  if ! npx tsc --noEmit; then
+    echo ""
+    echo "Push blocked: TypeScript errors found above. Fix them before pushing."
+    exit 1
+  fi
+  echo "TypeScript check passed."
+
+  echo "Running jest test suite..."
+  if ! npm test --silent; then
+    echo ""
+    echo "Push blocked: test failures above. Fix them before pushing."
+    exit 1
+  fi
+  echo "Tests passed."
+  exit 0
+}
+
+if [ -z "$CLAUDE_CODE_REMOTE" ]; then
+  run_full
 fi
 
-echo "TypeScript check passed."
+# ── Cloud session: work out what this push changes ──────────────────────────
+changed=""
+deleted=""
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "$local_sha" ] && continue
+  [ "$local_sha" = "$ZERO" ] && continue # deleting a remote branch: nothing to check
 
-echo "Running jest test suite..."
-npm test --silent
+  base=""
+  if [ "$remote_sha" != "$ZERO" ] && git cat-file -e "${remote_sha}^{commit}" 2>/dev/null; then
+    base="$remote_sha"
+  elif git rev-parse --verify -q origin/main >/dev/null; then
+    # A new branch (or a remote tip this clone has never seen): compare with
+    # where it left main, so main's own commits are not counted as this push's.
+    base=$(git merge-base origin/main "$local_sha" 2>/dev/null)
+  fi
+  if [ -z "$base" ]; then
+    echo "pre-push: no base commit for $local_ref; running the full suite."
+    run_full
+  fi
 
-if [ $? -ne 0 ]; then
+  # quotePath off: a non-ASCII name would otherwise come back quoted and
+  # escaped, miss every case arm below, and skip the checks for a real file.
+  changed+=$(git -c core.quotePath=false diff --name-only --diff-filter=ACMR "$base" "$local_sha")$'\n'
+  deleted+=$(git -c core.quotePath=false diff --name-only --diff-filter=D "$base" "$local_sha")$'\n'
+done
+
+mapfile -t files < <(printf '%s' "$changed" | sed '/^$/d' | sort -u)
+mapfile -t gone < <(printf '%s' "$deleted" | sed '/^$/d' | sort -u)
+
+code=()
+other=()
+for f in "${files[@]}"; do
+  case "$f" in
+    docs/*) ;; # nothing reads these at build or test time
+    supabase/functions/*) other+=("$f") ;; # Deno's, not jest's; CI runs deno test
+    *.ts | *.tsx | *.js | *.jsx | *.mjs | *.cjs | *.json) code+=("$f") ;;
+    *) other+=("$f") ;;
+  esac
+done
+
+# A deleted code file can leave a dangling import, which only tsc sees (jest
+# cannot resolve a path that is gone, so it never goes to --findRelatedTests).
+# A deleted non-code file goes through the same by-name lookup as an edited one.
+need_tsc=0
+for f in "${gone[@]}"; do
+  case "$f" in
+    docs/* | supabase/functions/*) ;;
+    *.ts | *.tsx | *.js | *.jsx | *.mjs | *.cjs | *.json) need_tsc=1 ;;
+    *) other+=("$f") ;;
+  esac
+done
+[ "${#code[@]}" -gt 0 ] && need_tsc=1
+
+# Tests that name a non-code file by its repo path (a guard reading CLAUDE.md, a
+# workflow, a skill). Matched on the full path, so a common basename never
+# pulls in every suite that happens to mention it.
+named=()
+if [ "${#other[@]}" -gt 0 ]; then
+  mapfile -t test_files < <(git ls-files '*.test.ts' '*.test.tsx' '*.test.js' | grep -v '^supabase/functions/')
+  for f in "${other[@]}"; do
+    while IFS= read -r t; do
+      [ -n "$t" ] && named+=("$t")
+    done < <(grep -lF -- "$f" "${test_files[@]}" 2>/dev/null)
+  done
+fi
+
+if [ "$need_tsc" -eq 0 ] && [ "${#named[@]}" -eq 0 ]; then
+  echo "pre-push (cloud): no code or guarded file changed; nothing to run. CI runs the full suite."
+  exit 0
+fi
+
+if [ "$need_tsc" -eq 1 ]; then
+  echo "pre-push (cloud): TypeScript check..."
+  if ! npx tsc --noEmit; then
+    echo ""
+    echo "Push blocked: TypeScript errors found above. Fix them before pushing."
+    exit 1
+  fi
+  echo "TypeScript check passed."
+fi
+
+if [ "${#code[@]}" -eq 0 ] && [ "${#named[@]}" -eq 0 ]; then
+  echo "Type check passed; no tests to run. CI runs the full suite."
+  exit 0
+fi
+
+# One jest run for every selected suite, so the workers are shared.
+jest_args=(--passWithNoTests --silent)
+if [ "${#code[@]}" -gt 0 ]; then
+  jest_args+=(--findRelatedTests "${code[@]}")
+  mapfile -t guards < <(git ls-files 'guards/*.test.ts' 'guards/*.test.tsx')
+  named+=("${guards[@]}")
+fi
+if [ "${#named[@]}" -gt 0 ]; then
+  mapfile -t named < <(printf '%s\n' "${named[@]}" | sort -u)
+  if [ "${#code[@]}" -gt 0 ]; then
+    # --findRelatedTests treats every path as a source file; a test file is
+    # related to itself, so naming it there runs it.
+    jest_args+=("${named[@]}")
+  else
+    jest_args+=(--runTestsByPath "${named[@]}")
+  fi
+fi
+
+echo "pre-push (cloud): running the related tests (${#code[@]} code file(s), ${#named[@]} named or guard suite(s))..."
+if ! npx jest "${jest_args[@]}"; then
   echo ""
   echo "Push blocked: test failures above. Fix them before pushing."
   exit 1
 fi
-
-echo "Tests passed."
+echo "Related tests passed. CI runs the full suite."
