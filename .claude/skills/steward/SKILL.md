@@ -82,7 +82,9 @@ The one session that merges a PR not its own is the dispatcher, and only on the 
 - GitHub reports it mergeable with no conflict;
 - the head is the commit those checks ran on, and the commit `scripts/steward/merge-check.sh` called `CLEAN` (or whose `REVIEW` is cleared in writing, §5);
 - the issue's Definition of Done passes, adversarial review included where the issue requires it;
-- the PR holds no migration and needs none that is unapplied. A migration is applied only as CLAUDE.md's migration rule says (after the PM types its number, `apply <NNN>`, in the applying session); a migration PR then merges on the PM's word once it is applied and checked, and a dispatched child never applies or merges one.
+- the PR holds no migration that is unapplied and needs none.
+
+A migration is applied only as CLAUDE.md's migration rule says (after the PM types its number, `apply <NNN>`, in the applying session); its PR then passes the last condition and merges on the PM's word once checked. A dispatched child never applies or merges one.
 
 Anything short of that: do not merge, and say which condition failed as the first line of the summary.
 

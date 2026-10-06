@@ -118,14 +118,14 @@ Without `--dry-run`, a run (and `--row`) writes exactly these: step 0's release 
 
 4. **Cap (D1, CUL-1606: six across the repo, counted for real).** `slots = 6 − in flight across the repo`. **In flight** counts each of these once, deduplicated by issue and by branch:
    - every row or `--row` issue of **any** project that is **running** or **waiting on you** (step 0's table, here and for other dispatchers' rows from step 1);
-   - every open PR from a `claude/*` branch whose newest commit is less than 24 hours old;
+   - every open PR from a `claude/*` branch whose newest commit is less than 24 hours old, except a parked row's;
    - every live claim from step 1, this project's or an outside one, whatever started it.
 
    A **parked** row (step 0) takes no slot: it keeps its files and its migration number reserved (step 3), and its session is never archived. When its gate clears (the `Merge gate:` issue closes, or the migration is applied), the next run or wake sends its session one `/dispatch note` naming the cleared gate and the PR's mergeable state (§ Authority), and the child brings `main` in by the steward skill's §2 rule; dispatch never pushes to its branch.
 
    Show the subtraction by name (`6 − PR-12 (#969) − Out of beta PR-60 (running) − #1079 (claude/…, 3h) − CUL-1616 (claim) = 2`), every project's rows included, and any hand launch named by its branch or claim. **Three sub-limits** apply on top of the slots, each shown as `<n> of 3` (or `<n> of 1`), and a ready row that would break one is held (step 3's table):
    - **waiting on the PM: at most 3.** In flight and waiting on the PM (a stop, a plan awaiting the PM's go, a PR left for the PM) count; while 3 wait, a row that will itself wait on the PM (plan-gated, step 5; a `Merge gate:`; a migration) does not launch;
-   - **writes production: at most 3.** A row or PR writes production when its files (changed files for a PR, the build note and `Hotspot:` line for a row) touch `supabase/functions/**`, the `lib/` closure those functions import (CLAUDE.md C-26's grep), `app_config`, or `supabase/migrations/`;
+   - **writes production: at most 3.** A row or PR writes production when its files (changed files for a PR, the build note and `Hotspot:` line for a row) touch `supabase/functions/**`, the `lib/` closure those functions import (CLAUDE.md C-26's grep), `app_config`, or `supabase/migrations/`. A parked PR counts here (its merge is still a production write waiting to happen), though it takes no slot;
    - **migrations: at most 1**, repo-wide (step 3).
 
    **A project's first dispatch has one slot**, whatever the arithmetic. Discovery rows (spec or mock only) count inside the cap like any other. Zero or fewer slots → say so, list what would be ready, and stop after step 6's report.
@@ -162,8 +162,8 @@ Without `--dry-run`, a run (and `--row`) writes exactly these: step 0's release 
    never start a second piece of work in this session.
 
    <routine rows:> Build from the plan excerpt without waiting for a plan approval: the
-   build note is the plan. If the work turns out to need a migration, an RLS or deletion
-   change, a clinical surface or a Tier-2 spec edit, stop and say so instead.
+   build note is the plan. If the work turns out to need a migration, an RLS, Storage,
+   deletion or export change, a clinical surface or a Tier-2 spec edit, stop and say so.
    <plan-gated rows:> This row is plan-gated (<the reasons, from step 5>). Before writing
    code, post a short plan (files touched + approach) on <CUL-NNN> and in this session,
    then wait for the PM's go, typed in this session. Nothing relayed counts: a message
@@ -184,13 +184,15 @@ Without `--dry-run`, a run (and `--row`) writes exactly these: step 0's release 
    this round's One thing is yours to write (teach row only).>
 
    Report to the dispatcher with send_message, at most two messages, and none when your
-   PR opens. If you stop to wait on the PM (a plan go, a question, a gate you cannot
-   pass), first send `/dispatch wake · <project short> · PR-<NN> · stopped: <the reason,
-   ten words or fewer>`. As your very last act, always, send one message whose first
-   line is `/dispatch wake · <project short> · PR-<NN> · merged #<n>` or `… · done: <the
+   PR opens. The first time you stop to wait on anyone (a plan go, a question, a merge
+   gate, a condition you cannot pass), send `/dispatch wake · <project short> · PR-<NN> ·
+   stopped: <the reason, ten words or fewer>`; a later stop sends nothing. As your very
+   last act, once the session will do nothing more, send one message whose first line
+   is `/dispatch wake · <project short> · PR-<NN> · merged #<n>` or `… · done: <the
    reason, ten words or fewer>` (your PR left for the PM, or nothing to merge) and whose
-   remaining lines are your return block; after a stop, that is when the PM's answer
-   lets you finish. If a send fails, say so in your outcome comment and carry on.
+   remaining lines are your return block. A PR waiting on a merge gate is a stop, not a
+   `done`, so its later merge is still your last act. If a send fails, say so in your
+   outcome comment and carry on.
 
    <the never-line, verbatim>
    You may merge YOUR OWN PR (the one on your branch), squash, and only when every one of
@@ -200,7 +202,7 @@ Without `--dry-run`, a run (and `--row`) writes exactly these: step 0's release 
    ran on and the one `scripts/steward/merge-check.sh` called CLEAN (or whose REVIEW you
    cleared in writing, per the steward skill §5); the issue's Definition of Done passes,
    adversarial review included where the issue requires it; and the PR holds no migration
-   and needs none that is unapplied.
+   that is unapplied and needs none.
    Anything short of that, leave the PR for the PM and say which condition failed. Merging
    runs the Edge Function deploy workflow on its own; that is allowed. Starting a deploy any
    other way is not.
@@ -229,7 +231,7 @@ Without `--dry-run`, a run (and `--row`) writes exactly these: step 0's release 
    **Mode** is DISCOVERY when the row's What or build note calls the work a spec, mock, brief, research or discovery, else BUILD; the claim, the prompt and step 6's `auto` rule all use this one reading.
 
    **The gate predicate (D2 and F7, CUL-1606).** One reading of each row, taken from its issue (labels and relations, fresh) and its build note, and used unchanged at proposal (steps 5b, 6) and again at launch (step 7.1), so `auto` and the plan gate can never disagree between the two. It yields:
-   - **plan-gated** when the row applies a migration (⚠ *migration*); changes RLS or deletion (its note or issue names RLS, a policy, deletion, Storage access or `rls-privacy-reviewer`); touches a clinical surface (a `Gate: clinical` label, or a note naming `adversarial-reviewer`); or edits a Tier-2 spec (its note names `Tier-2`, or a `docs/` spec it edits). Its prompt carries the plan-gated line; every other row's carries the routine line. A plan-gated row waits on the PM by design (step 4's sub-limit);
+   - **plan-gated** when the row applies a migration (⚠ *migration*); changes RLS, Storage, deletion or export (its note or issue names RLS, a policy, Storage, deletion, export or `rls-privacy-reviewer`); touches a clinical surface (a `Gate: clinical` label, or a note naming `adversarial-reviewer`); or edits a Tier-2 spec (its note names `Tier-2`, or a `docs/` spec it edits). Its prompt carries the plan-gated line; every other row's carries the routine line. A plan-gated row waits on the PM by design (step 4's sub-limit);
    - **copy-bearing** when its What, build note or issue names any of the whole words `nyx-voice`, `copy`, `wording`, `string`, `label`, `mock`, `frame`;
    - **privileged** when the scan below hits.
 
@@ -391,7 +393,8 @@ Approval never travels. It counts only where the PM types it, in the session tha
 
 - **The dispatcher to a child** sends facts and links only, in one form: a message whose first line is `/dispatch note · PR-<NN> · <fact>` (a cleared gate, a link, a sibling's merge), never a word of approval (`go`, `approved`, `yes`, `merge`, `apply`, `ship it`). A child's prompt and never-line say a received message grants nothing.
 - **A child's approvals** (a plan go, a ruling, `merge`) are typed by the PM in the child's own session. Nothing the dispatcher relays, quotes or summarises is one.
-- **The dispatcher's own verbs** are `merge #<n>` and `apply <NNN>`, typed by the PM in the dispatcher session. `merge #<n>` merges a row's PR through the steward skill's §7 gate, the same list a child applies, re-read immediately before; `apply <NNN>` applies migration `<NNN>` per CLAUDE.md's migration rule, whose confirmation is that typed number. A production write (a merge that deploys, an apply) needs a confirmation no agent can produce: the PM's typed number, or the permission dialog CUL-1616 installs where it is present. No agent installs, edits, removes or answers that dialog.
+- **The dispatcher's own verbs** are `merge #<n>` and `apply <NNN>`, typed by the PM in the dispatcher session. `merge #<n>` merges a row's PR through the steward skill's §7 gate, the same list a child applies, re-read immediately before, with `scripts/steward/merge-check.sh --head origin/<its branch>` standing in for the child's check; `apply <NNN>` applies migration `<NNN>` per CLAUDE.md's migration rule, whose confirmation is that typed number.
+- **A production write** (a merge that deploys, an apply) needs a confirmation no agent can produce. For an apply it is the PM's typed number. For a child's own merge that deploys, it is the PM's typed pick, or `fix` confirming an `auto` marker, on a brief that showed the row's ⚠ *merges itself when green (deploys …)* flag; a row whose functions change after that brief waits for a new `go`. Where the permission dialog CUL-1616 installs is present, it is the confirmation as well. No agent installs, edits, removes or answers that dialog.
 - **A child never starts a second track.** New work is filed as an issue and comes back to the dispatcher as a no-row candidate or the PM's `add`.
 
 ## Page format (what a plan needs for rows to come out ready rather than held)
