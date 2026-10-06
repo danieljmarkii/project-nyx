@@ -154,7 +154,7 @@ Confirms automated tests pass locally. Do not push a chunk-completing PR with fa
 **Backend deploys (Edge Functions + migrations) never belong in the phone handoff.** Neither needs a PM command. The full procedure is **`docs/edge-deploy-runbook.md`**. In brief:
 
 - **Edge Function:** merging deploys it (CUL-1147: `.github/workflows/edge-deploy.yml` deploys, checks and records every function whose code changed). A change that must wait for an app build is marked `hold` in `supabase/functions/deploy-manifest.json` in the same PR.
-- **Migration:** the agent applies it via MCP `apply_migration` then runs `get_advisors`. Migration discipline is unchanged (own PR, Migration Safety Pre-flight, migrate before merging the code that needs it; `apply_migration` is a live write).
+- **Migration:** the agent applies it via MCP `apply_migration`, only after the PM types its number (`apply <NNN>`) in that session, then runs `get_advisors`. Migration discipline is unchanged (own PR, Migration Safety Pre-flight, migrate before merging the code that needs it; `apply_migration` is a live write).
 
 _Break glass (Actions or the MCP unavailable): see the runbook._
 

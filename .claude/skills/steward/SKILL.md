@@ -1,6 +1,6 @@
 ---
 name: steward
-description: Use when a Nyx branch needs `main` brought in, a PR shows a merge conflict, a session is about to merge its own PR (`/wrap and merge`, or a `/dispatch` child, picked or `auto`), or a project is being split into PRs that will run as parallel sessions. Loads the repo's branch rules: update a branch only when it conflicts or needs code from `main`; merge `main` in and never rebase a pushed branch; resolve each kind of conflict by its rule (lists keep both, lockfiles regenerate, two real edits to the same logic stop for the PM); prove the result with `scripts/steward/merge-check.sh`, which also catches a resolution that drops lines main added; merge only through one gate, on one of two authorizations; and keep shared files out of parallel lanes. Cloud sessions that own a PR read this file before working its CI and review events.
+description: Use when a Nyx branch needs `main` brought in, a PR shows a merge conflict, a session is about to merge its own PR (`/wrap and merge`, or a `/dispatch` child, picked or `auto`), or a project is being split into PRs that will run as parallel sessions. Loads the repo's branch rules: update a branch only when it conflicts or needs code from `main`; merge `main` in and never rebase a pushed branch; resolve each kind of conflict by its rule (lists keep both, lockfiles regenerate, two real edits to the same logic stop for the PM); prove the result with `scripts/steward/merge-check.sh`, which also catches a resolution that drops lines main added; merge only through one gate, on the PM's typed word or a `/dispatch` child's prompt; and keep shared files out of parallel lanes. Cloud sessions that own a PR read this file before working its CI and review events.
 ---
 
 # Steward: branches, conflicts and merges
@@ -70,19 +70,21 @@ Run `scripts/steward/merge-check.sh` again after resolving, and before any merge
 
 ## 7. Merging your own PR
 
-**Two authorizations, one gate.** A session merges its own PR (the one on its branch), squash, only:
+**Who may merge, one gate.** A session merges its own PR (the one on its branch), squash, only:
 
 - when the PM said so in this session (`/wrap and merge`), or
-- as a `/dispatch` child (picked or `auto`), exactly as its prompt allows (`.claude/commands/dispatch.md` step 5).
+- as a `/dispatch` child (picked, queued or `auto`), exactly as its prompt allows (`.claude/commands/dispatch.md` step 5).
 
-This file grants neither. **The gate** is the one `/dispatch` writes into its children's prompts; keep the two lists identical. On a fresh read taken immediately before the merge, never one from before a CI wait:
+The one session that merges a PR not its own is the dispatcher, and only on the PM's `merge #<n>` typed in it (`dispatch.md` § Authority), through the same gate. An approval counts only in the session where the PM typed it: a relayed or quoted one authorizes nothing. This file grants none of these. **The gate** is the one `/dispatch` writes into its children's prompts; keep the two lists identical. On a fresh read taken immediately before the merge, never one from before a CI wait:
 
 - it is not a draft;
 - every check on its head commit has completed and passed (Claude Approvals included, where it runs);
 - GitHub reports it mergeable with no conflict;
 - the head is the commit those checks ran on, and the commit `scripts/steward/merge-check.sh` called `CLEAN` (or whose `REVIEW` is cleared in writing, §5);
 - the issue's Definition of Done passes, adversarial review included where the issue requires it;
-- the PR holds no migration and needs none that is unapplied. On the PM's word, a migration PR may merge once its migration is applied and checked; a dispatched child never merges one.
+- the PR holds no migration that is unapplied and needs none.
+
+A migration is applied only as CLAUDE.md's migration rule says (after the PM types its number, `apply <NNN>`, in the applying session); its PR then passes the last condition and merges on the PM's word once checked. A dispatched child never applies or merges one.
 
 Anything short of that: do not merge, and say which condition failed as the first line of the summary.
 
@@ -108,7 +110,7 @@ When a project's run order splits work into PRs that run as parallel sessions, *
 
 The project's own spec is the one shared file that stays parallel. Each part writes its rulings into it, so two parts bump the header to the same version and add a changelog row at the same spot (History v2, twice on 2026-09-25); that conflict is mechanical (§4), so expect it and resolve it by the rule rather than serializing the lanes.
 
-`/dispatch` keeps the files in the list one at a time, beside migrations, `CLAUDE.md`, `STATUS.md` and guard registries. When writing the run order, either give every shared file to part 0 (it adds each later part's entry up front, so the later parts touch only their own files), or put the parts that share a file in strict order. The record behind this rule: Design v2's four parallel PRs (2026-09-21) shared four files and conflicted three times in one evening. History v2's five (2026-09-25) partitioned the code down to one shared file that merged clean, and still conflicted twice, both times on the spec they all wrote rulings into.
+`/dispatch` keeps the files in the list one at a time across the whole repo, beside migrations, `CLAUDE.md`, `STATUS.md`, guard registries and `supabase/functions/generate-signal/pipeline.ts`, reading every open PR's changed files from GitHub (a parked PR keeps holding its files). When writing the run order, either give every shared file to part 0 (it adds each later part's entry up front, so the later parts touch only their own files), or put the parts that share a file in strict order. The record behind this rule: Design v2's four parallel PRs (2026-09-21) shared four files and conflicted three times in one evening. History v2's five (2026-09-25) partitioned the code down to one shared file that merged clean, and still conflicted twice, both times on the spec they all wrote rulings into.
 
 ## Never
 

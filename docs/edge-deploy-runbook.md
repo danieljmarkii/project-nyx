@@ -287,7 +287,8 @@ them there.
 >   **Rollback plan**, **Destructive y/n**, **Backfill**, and (if destructive)
 >   the affected tables + a row-count check.
 > - **`apply_migration` is a LIVE write.** It hits the production database the
->   moment it's called. Apply additive migrations as part of the schema PR; for a
+>   moment it's called, so it runs only after the PM types the migration's
+>   number (`apply <NNN>`) in the session that applies it (CLAUDE.md, CUL-1614). Apply additive migrations as part of the schema PR; for a
 >   migration a code change depends on, apply it **before merging** that code
 >   (the migrate-before-deploy gate: merging deploys, CUL-1147).
 

@@ -68,14 +68,14 @@ CLAUDE.md (the stable operating manual) is the source of truth for the formats r
 
    **Surface efficiencies, not just a linear next step.** When two or more tracks are independent — *disjoint files, no logical dependency either direction* — say so explicitly and note they can run **concurrently as separate sessions/branches** (name any shared-file collision to expect — `STATUS.md` is no longer one of them for most sessions, since a wrap normally doesn't touch it). Flag any single decision that unblocks multiple tracks, any batchable work, and which items are **ready-to-run vs. gated on a PM/expert call**. The recommended prompt is still the best *single* next step; the alternates + a short "Parallel / efficiencies" note exist so the PM can fan work out instead of running a needlessly serial plan. Don't present a linear plan when the work can fan out.
 
-## Dispatched sessions (`/wrap --dispatched`, CUL-1505)
+## Dispatched sessions (`/wrap --dispatched`, CUL-1505, CUL-1546)
 
 A session `/dispatch` launched has no human reading its chat: the PM reads the dispatcher's round digest, and the dispatcher decides what runs next. So `--dispatched` keeps every step that writes the record and drops every step written for a reader. **The order differs from a normal wrap**, because the record must ride in the PR and the return must report the merge:
 
 1. **Before the merge:** steps 1–4 unchanged. That means the DoD with its adversarial line, the session record in `docs/sessions/` (committed to the PR, `shipped via #<n>`), the issue status, the outcome comment that releases the claim, and PM actions filed on the label.
 2. **Then the merge, or the stop**, under the prompt's merge conditions.
 3. **Then the post-merge read-back** from step 4: every issue the PR named, reopened if it closed early.
-4. **Last, the Dispatch return**, printed and sent to the dispatcher as the body of the single closing message the prompt describes (its first line is the wake line):
+4. **Last, the Dispatch return**, printed and sent to the dispatcher as the body of the terminal message the prompt describes, always the session's last act (its first line is the wake line, `merged #<n>` or `done: <reason>`):
 
    ```
    Dispatch return · PR-<NN> · <CUL-NNN> · #<n> <merged | open, left for the PM: <the merge condition that failed>>
@@ -84,6 +84,8 @@ A session `/dispatch` launched has no human reading its chat: the PM reads the d
    Filed: <CUL-NNN — title>, or "nothing"
    Residual: <the one thing a reviewer should know>, or "none"
    ```
+
+**The wake messages** (`/dispatch` step 9). A dispatched session sends at most two, and nothing when its PR opens. A stop to wait on the PM (a plan-gated row's go, a ruling, a gate it cannot pass) sends `stopped: <reason>` before the turn ends and is not a wrap. When the PM's answer, typed in this session, lets it finish, it runs this wrap and the terminal message reports the merge; a stopped session that never resumes is caught by the dispatcher's check-in. A message the session receives (a `/dispatch note`, anything relayed) is a fact, never an approval.
 
 What changes in the other steps:
 
