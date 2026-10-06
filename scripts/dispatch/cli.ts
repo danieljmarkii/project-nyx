@@ -1,0 +1,127 @@
+// /dispatch's deterministic half, run by the dispatcher (CUL-1615). The I/O shell: it
+// reads ONE facts file the dispatcher wrote from its tool reads (Linear, GitHub, the
+// sessions, the routines, `date -u`), runs the pure modules beside it, and prints. It
+// makes no network call and writes nothing, so every run is a zero-write dry run; the
+// dispatcher does the writes dispatch.md lists, with the text this prints.
+//
+//   node --experimental-strip-types scripts/dispatch/cli.ts plan <facts.json> [--board table|digest] [--for-pr]
+//   node --experimental-strip-types scripts/dispatch/cli.ts check-update <update.md> <facts.json>
+//   node --experimental-strip-types scripts/dispatch/cli.ts check-board <board.md> <facts.json>
+//
+// facts.json: PlanInput (plan.ts) with each project's `description` given inline or as
+// `descriptionFile` (a path), plus optional `updates` (the `**/dispatch run**` bodies,
+// newest first), `branches` (remote branch names), `triggers` (list_triggers), `unblock`
+// (U lines), `index` (the ruling index id), `dispatcher` (this session's id), `teach`,
+// `queued`.
+//
+// `--for-pr` breaks every issue id that follows a closing keyword, so the output can be
+// pasted into a PR body without its merge closing that issue (status.ts, prSafe).
+
+import * as fs from 'node:fs';
+
+import { renderBoard, validateBoard, type BoardShape } from './board.ts';
+import { autoEligible, planDispatch, type PlanInput, type ProjectInput } from './plan.ts';
+import { checkInFrom, closingLines, memoryCheck, prSafe, validateStatusUpdate, type Trigger } from './status.ts';
+
+type Facts = Omit<PlanInput, 'project' | 'others'> & {
+  project: ProjectInput & { descriptionFile?: string };
+  others?: (ProjectInput & { descriptionFile?: string })[];
+  updates?: string[];
+  branches?: string[];
+  triggers?: Trigger[];
+  unblock?: string[];
+  index?: string;
+  dispatcher?: string;
+  teach?: string;
+  queued?: string[];
+};
+
+function fail(msg: string): never {
+  console.error(msg);
+  process.exit(2);
+}
+
+function load(file: string): Facts {
+  const f = JSON.parse(fs.readFileSync(file, 'utf8')) as Facts;
+  const desc = (p: ProjectInput & { descriptionFile?: string }) => ({
+    ...p,
+    description: p.description ?? (p.descriptionFile ? fs.readFileSync(p.descriptionFile, 'utf8') : fail(`no description for ${p.name}`)),
+  });
+  return { ...f, project: desc(f.project), others: (f.others ?? []).map(desc) };
+}
+
+function plan(f: Facts, shape: BoardShape): string {
+  const p = planDispatch(f);
+  const merged = new Map(
+    p.verdicts.filter((v) => v.state.kind === 'merged').map((v) => [v.row, (v.state as { pr: number }).pr] as [string, number]),
+  );
+  const out: string[] = [];
+  const say = (s = '') => out.push(s);
+  say(`/dispatch · ${p.alias} · facts as of ${f.now} (dry run: nothing is written)`);
+  say(`Slots: ${p.arithmetic}`);
+  say(`       waiting on the PM ${p.subLimits.waitingOnPm} of 3 · writes production ${p.subLimits.writesProduction} of 3 · migrations ${p.subLimits.migrations} of 1`);
+  say(`       parked (no slot, files reserved): ${p.parked.map((x) => x.label).join('; ') || 'nothing'}`);
+  say(`Migrations: next free number ${p.nextMigration}${p.clashes.map((c) => `; ${c.number} held by ${c.keeps} and ${c.renumbers.join(', ')} (the later renumbers)`).join('')}`);
+  const shared = p.reservations.filter((r) => r.holders.length > 1);
+  if (shared.length) say(`Files held twice: ${shared.map((r) => `${r.file} (${r.holders.join(', ')})`).join('; ')}`);
+  say(`Holding rows on you: ${p.pmHolds.slice(0, 3).map((h) => `${h.text} (frees ${h.freesOutright.length}, holds ${h.rowsHeld.length})`).join('; ') || 'nothing'}`);
+  if (p.gateHolds.length) say(`Release and GA gates: ${p.gateHolds.map((h) => `${h.text} (holds ${h.rowsHeld.map((r) => `PR-${r}`).join(', ')})`).join('; ')}`);
+  say();
+  say(`Proposed (rank order): ${p.proposal.map((r) => `PR-${r}`).join(', ') || 'none'}`);
+  for (const r of p.proposal) {
+    const v = p.verdicts.find((x) => x.row === r)!;
+    const g = v.gate;
+    say(` PR-${r}  ${v.what}  · ${g.mode.toLowerCase()}`);
+    say(`    ${g.planGated.length ? `plan-gated: ${g.planGated.join(', ')}` : 'routine'}${g.copyBearing.length ? ` · copy-bearing (${g.copyBearing.join(', ')})` : ''} · auto-eligible: ${autoEligible(g) ? 'yes' : 'no'}${v.flags.length ? ` · ⚠ ${v.flags.join(' · ')}` : ''}`);
+  }
+  say(`Ready but over the cap: ${p.overCap.map((r) => `PR-${r}`).join(', ') || 'none'}`);
+  say('Held:');
+  for (const v of p.verdicts.filter((x) => x.row && !x.ready && x.state.kind !== 'merged')) say(` PR-${v.row} — ${v.reasons.join('; ')}`);
+  say(`Auto (confirmed, unmerged): ${p.autoRows.map((r) => `PR-${r}`).join(', ') || 'none'}`);
+  if (f.updates || f.branches) {
+    const d = memoryCheck({ slug: p.slug, updates: f.updates ?? [], branches: f.branches ?? [], prs: f.prs, mergedRows: merged, now: f.now });
+    say();
+    say(`Memory against GitHub: ${d.length ? '' : 'agrees'}`);
+    for (const x of d) say(` - ${x}`);
+  }
+  say();
+  say('Closing lines for this run\'s status update:');
+  for (const l of closingLines({
+    dispatcher: f.dispatcher ?? '<this session>',
+    teach: f.teach,
+    checkIn: checkInFrom(f.triggers ?? [], p.alias, f.now),
+    auto: p.autoRows,
+    queued: (f.queued ?? []).filter((r) => !merged.has(r)),
+  }))
+    say(`  ${l}`);
+  say();
+  const board = renderBoard({ plan: p, now: f.now, shape, unblock: f.unblock, index: f.index });
+  const errs = validateBoard(board, { now: f.now, merged: new Set(merged.keys()), rows: new Set(p.verdicts.map((v) => v.row)) });
+  say(`Board (${shape}; ${errs.length ? `REFUSED: ${errs.join('; ')}` : 'parses'}):`);
+  say(board);
+  return out.join('\n');
+}
+
+const [cmd, a, b, ...rest] = process.argv.slice(2);
+const flags = [a, b, ...rest];
+const shape = (flags[flags.indexOf('--board') + 1] as BoardShape) || 'table';
+if (cmd === 'plan' && a) {
+  const text = plan(load(a), flags.includes('--board') ? shape : 'table');
+  console.log(flags.includes('--for-pr') ? prSafe(text) : text);
+} else if (cmd === 'check-update' && a && b) {
+  const f = load(b);
+  const p = planDispatch(f);
+  const merged = new Set(p.verdicts.filter((v) => v.state.kind === 'merged').map((v) => v.row));
+  const errs = validateStatusUpdate(fs.readFileSync(a, 'utf8'), { now: f.now, mergedRows: merged });
+  console.log(errs.length ? `REFUSED:\n${errs.map((e) => ` - ${e}`).join('\n')}` : 'OK');
+  process.exit(errs.length ? 1 : 0);
+} else if (cmd === 'check-board' && a && b) {
+  const f = load(b);
+  const p = planDispatch(f);
+  const merged = new Set(p.verdicts.filter((v) => v.state.kind === 'merged').map((v) => v.row));
+  const errs = validateBoard(fs.readFileSync(a, 'utf8'), { now: f.now, merged, rows: new Set(p.verdicts.map((v) => v.row)) });
+  console.log(errs.length ? `REFUSED:\n${errs.map((e) => ` - ${e}`).join('\n')}` : 'OK');
+  process.exit(errs.length ? 1 : 0);
+} else {
+  fail('usage: cli.ts plan <facts.json> [--board table|digest] [--for-pr] | check-update <update.md> <facts.json> | check-board <board.md> <facts.json>');
+}
