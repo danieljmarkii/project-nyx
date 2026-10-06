@@ -62,17 +62,10 @@ import {
 } from '../../lib/incidentTierWords';
 import { needsEn7Recheck } from '../../lib/stoolForm';
 import {
-  callFromRecordOnly,
-  callNowSignsMet,
-  callTodayAction,
-  floorRanOn,
-  modelMadeCall,
-  readSettled,
   stoolFindings,
   tellThem,
 } from '../../lib/incidentFloorWords';
 import { FLOOR_FACTS_REFRESH_MS, useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
-import { usePetStore } from '../../store/petStore';
 import { StoolFieldsEditor } from './StoolFieldsEditor';
 import { stoolCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -135,8 +128,6 @@ interface AnalysisRow {
    *  were selected carries neither, and then no re-check fires. */
   engine_flags?: string[] | null;
   contextual_flags?: string[] | null;
-  /** CUL-1510: a call carrying a photo finding never gives leave to wait. */
-  visual_flags?: string[] | null;
 }
 
 /** Two copies of the row hold the same READ: the same state, verdict and words. The
@@ -165,7 +156,7 @@ const SELECT_COLS =
   'status, recommendation, read_text, description, stool_consistency, stool_colour, ' +
   'stool_content, stool_blood_present, stool_blood_type, stool_mucus_present, ' +
   'foreign_material_present, foreign_material_note, ai_raw_payload, edited_at, dismissed_at, ' +
-  'updated_at, error, engine_flags, contextual_flags, tier, visual_flags';
+  'updated_at, error, engine_flags, contextual_flags, tier';
 
 export function StoolAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -188,8 +179,6 @@ export function StoolAnalysisSection(
   // CUL-1510: the record around this stool (the vomits beside it, the courses on board),
   // for "What to tell them" under a call. Re-read when the row moves.
   const floorFacts = useIncidentFloorFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}|${Math.floor(clockNow / FLOOR_FACTS_REFRESH_MS)}`);
-  // The RECORD's pet (C-9): species and birthday decide which call-now signs the floor meets.
-  const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
   // the grid so a re-render of the block never resets what the owner folded, and fed the
@@ -645,42 +634,6 @@ export function StoolAnalysisSection(
   const nowMs = clockNow;
   const findings = stoolFindings(row);
   const isCall = display === 'call_now' || display === 'call_today';
-  const action =
-    display === 'call_today'
-      ? callTodayAction({
-          petName,
-          nowMs,
-          recordOnly: callFromRecordOnly({
-            kind: 'stool',
-            floorRan: floorRanOn(row),
-            settled: readSettled(row),
-            signsMet:
-              floorFacts?.anchor && recordPet
-                ? floorFacts.neighbourCallBeyondRecord || callNowSignsMet({
-                    aroundMs: Date.parse(floorFacts.anchor.at),
-                    vomits: floorFacts.vomits,
-                    lethargyAt: floorFacts.lethargyAt,
-                    species: recordPet.species,
-                    birthDate: recordPet.date_of_birth,
-                  })
-                : null,
-            modelCall: modelMadeCall(row.ai_raw_payload?.recommendation, hasPhoto),
-            contextual_flags: row.contextual_flags,
-            visual_flags: row.visual_flags,
-            // A red-flag finding, present or unclear, takes the wait away. Texture alone
-            // does not: a loose stool is the call-today rows' own subject (S1, S2).
-            photoFinding:
-              row.stool_blood_present === 'yes' ||
-              row.foreign_material_present === 'yes' ||
-              row.stool_blood_present === 'unsure' ||
-              row.foreign_material_present === 'unsure' ||
-              row.stool_colour === 'black_tarry' ||
-              row.stool_colour === 'red_streaked',
-          }),
-        })
-      : display
-        ? TIER_WORDS[display].action
-        : null;
   const tellThemLine =
     isCall && floorFacts?.anchor
       ? tellThem({
@@ -729,7 +682,7 @@ export function StoolAnalysisSection(
           // EN-3: the tier's tone and action line from the map; both absent on an
           // earlier-rule read, which draws today's card.
           tone={display ? TIER_WORDS[display].tone : undefined}
-          action={action}
+          action={display ? TIER_WORDS[display].action : null}
           tellThem={tellThemLine}
           disclosure={heldDisclosure}
           readText={row.read_text}

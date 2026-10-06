@@ -5,13 +5,8 @@
 // zone the non-UTC CI job runs (B-514), and the dates sit in June, clear of any DST change.
 import { incidentFloor, type FloorVomit } from './incidentFloor';
 import {
-  CALL_TODAY_NO_WAIT,
   bloatLine,
-  callFromRecordOnly,
-  callNowSignsMet,
-  callTodayAction,
   clockWords,
-  modelMadeCall,
   deadlineWords,
   floorRanOn,
   pastWords,
@@ -246,89 +241,6 @@ describe('the watch-for list', () => {
   });
 });
 
-describe("call today's action line (§2 rule 1)", () => {
-  const signs = 'Mochi vomits three times within a few hours, or vomits and is low on energy';
-
-  it('by day: the spec line, leave to wait only beside the call-now signs', () => {
-    expect(callTodayAction({ petName: 'Mochi', nowMs: local(10, 14), recordOnly: true })).toBe(
-      `Call your vet today. If they're closed, first thing tomorrow, or an emergency clinic tonight if ${signs}.`,
-    );
-  });
-
-  it('late in the day it resolves to first thing tomorrow, the signs still the exception', () => {
-    expect(callTodayAction({ petName: 'Mochi', nowMs: local(10, 21), recordOnly: true })).toBe(
-      `Call your vet tonight if they're open, or first thing tomorrow. Call an emergency clinic tonight if ${signs}.`,
-    );
-    expect(callTodayAction({ petName: 'Mochi', nowMs: local(10, 3), recordOnly: true })).toBe(
-      `Call your vet first thing this morning. Call an emergency clinic now if ${signs}.`,
-    );
-  });
-
-  it('never gives leave to wait over a call the record alone did not raise', () => {
-    for (const h of [3, 14, 21]) {
-      expect(callTodayAction({ petName: 'Mochi', nowMs: local(10, h), recordOnly: false })).toBe(CALL_TODAY_NO_WAIT);
-    }
-  });
-
-  it('record-only: the floor ran, allow-listed flags only, no visual flag, no photo finding, no model call', () => {
-    const ok = { kind: 'vomit' as const, floorRan: true, settled: true, contextual_flags: ['repeated_vomiting'], visual_flags: [], photoFinding: false, modelCall: false, signsMet: false as boolean | null };
-    expect(callFromRecordOnly(ok)).toBe(true);
-    expect(callFromRecordOnly({ ...ok, floorRan: false })).toBe(false);
-    expect(callFromRecordOnly({ ...ok, visual_flags: ['blood'] })).toBe(false);
-    expect(callFromRecordOnly({ ...ok, photoFinding: true })).toBe(false);
-    expect(callFromRecordOnly({ ...ok, modelCall: true })).toBe(false);
-    // A rescue, an error-only write or an owner edit leaves an origin nobody has re-read.
-    expect(callFromRecordOnly({ ...ok, settled: false })).toBe(false);
-    // A call-now sign already met around the event, or rows not yet read.
-    expect(callFromRecordOnly({ ...ok, signsMet: true })).toBe(false);
-    expect(callFromRecordOnly({ ...ok, signsMet: null })).toBe(false);
-    // A cat not eating keeps the no-wait line until Dr. Chen rules (pass 2).
-    expect(callFromRecordOnly({ ...ok, contextual_flags: ['feline_reduced_intake'] })).toBe(false);
-    // Lethargy already logged is half of a call-now sign: the exception must never be met (B1).
-    expect(callFromRecordOnly({ ...ok, contextual_flags: ['repeated_vomiting', 'concurrent_lethargy'] })).toBe(false);
-    expect(callFromRecordOnly({ ...ok, kind: 'stool', contextual_flags: ['concurrent_vomiting', 'concurrent_lethargy'] })).toBe(false);
-    expect(callFromRecordOnly({ ...ok, kind: 'stool', contextual_flags: ['concurrent_vomiting'] })).toBe(true);
-    // A flag this build does not know, and unknown lists, keep no leave to wait.
-    expect(callFromRecordOnly({ ...ok, contextual_flags: ['something_new'] })).toBe(false);
-    expect(callFromRecordOnly({ ...ok, contextual_flags: [] })).toBe(false);
-    expect(callFromRecordOnly({ ...ok, visual_flags: null })).toBe(false);
-    expect(callFromRecordOnly({ ...ok, contextual_flags: undefined })).toBe(false);
-  });
-
-  it("the model's own call is read from the payload; a photo with no verdict counts as one", () => {
-    expect(modelMadeCall('worth_a_call', true)).toBe(true);
-    expect(modelMadeCall('monitor', true)).toBe(false);
-    expect(modelMadeCall('not_enough_to_say', true)).toBe(false);
-    expect(modelMadeCall('a_value_from_later', true)).toBe(true);
-    expect(modelMadeCall(undefined, true)).toBe(true);
-    expect(modelMadeCall(undefined, false)).toBe(false);
-    // A photo removed after the model's call: the stored verdict still names the origin.
-    expect(modelMadeCall('worth_a_call', false)).toBe(true);
-  });
-
-  it('signs already met: a found pile beside a witnessed burst, and lethargy its own flags could not see', () => {
-    const t = (d: number, h: number) => ({ at: iso(local(d, h)), confidence: 'witnessed' as string | null });
-    const burst = [t(10, 18), t(10, 19), t(10, 20)];
-    const found = { at: iso(local(10, 21)), confidence: 'window' };
-    const pet = { species: 'cat', birthDate: '2020-01-01' };
-    expect(callNowSignsMet({ aroundMs: local(10, 21), vomits: [...burst, found], lethargyAt: [], ...pet })).toBe(true);
-    // A stool 30 h after lethargy, beside a vomit 6 h after it: T3 is met on the vomit.
-    expect(callNowSignsMet({ aroundMs: local(11, 22), vomits: [t(11, 10)], lethargyAt: [iso(local(10, 16))], ...pet })).toBe(true);
-    // One vomit, nothing else: nothing met.
-    expect(callNowSignsMet({ aroundMs: local(10, 21), vomits: [t(10, 21)], lethargyAt: [], ...pet })).toBe(false);
-    // A burst two days away is outside the reach.
-    expect(callNowSignsMet({ aroundMs: local(13, 21), vomits: burst, lethargyAt: [], ...pet })).toBe(false);
-  });
-
-  it('the signs it names are call now on the real floor (T2, T3)', () => {
-    const a = local(10, 14);
-    const anchor = { at: iso(a), confidence: 'witnessed' };
-    const three = [anchor, { at: iso(a + 40 * MIN), confidence: 'witnessed' }, { at: iso(a + 80 * MIN), confidence: 'witnessed' }];
-    expect(incidentFloor({ anchor, vomits: three, lethargyAt: [], species: 'cat', birthDate: '2020-01-01' }).tier).toBe('call_now');
-    expect(incidentFloor({ anchor, vomits: [anchor], lethargyAt: [iso(a + HOUR)], species: 'cat', birthDate: '2020-01-01' }).tier).toBe('call_now');
-  });
-});
-
 describe('what to tell them (§2 rule 2)', () => {
   it('a vomit: the count and span, the photo finding, the courses', () => {
     const a = local(11, 3, 12);
@@ -401,14 +313,7 @@ describe('no line asserts wellness (clinical-guardrails Pattern 1)', () => {
   const REASSURANCE = /\b(fine|okay|ok|healthy|well|normal|nothing to worry|no concern|all clear|probably|don[’']t worry|doing great|picky|safe)\b/i;
   it('holds over every template', () => {
     const a = local(10, 21);
-    const lines = [
-      ...(watchForList(input({ anchorMs: a, species: 'dog', birthDate: null }))?.lines ?? []),
-      bloatLine('Mochi'),
-      callTodayAction({ petName: 'Mochi', nowMs: local(10, 14), recordOnly: true }),
-      callTodayAction({ petName: 'Mochi', nowMs: local(10, 21), recordOnly: true }),
-      callTodayAction({ petName: 'Mochi', nowMs: local(10, 3), recordOnly: true }),
-      CALL_TODAY_NO_WAIT,
-    ];
+    const lines = [...(watchForList(input({ anchorMs: a, species: 'dog', birthDate: null }))?.lines ?? []), bloatLine('Mochi')];
     for (const line of lines) expect(line).not.toMatch(REASSURANCE);
     for (const line of lines) expect(line).not.toMatch(/!/);
   });

@@ -92,7 +92,6 @@ import { theme } from '../../constants/theme';
 import { flat } from '../../testUtils/tree';
 import { readLandedCopy } from './useReadLandingAnnouncement';
 import { EARLIER_READ_LABEL, HELD_CALL_DISCLOSURE } from '../../lib/incidentTierWords';
-import { usePetStore } from '../../store/petStore';
 import { watchAnalysisRow, awaitAnalysisChain, triggerStoolAnalysis, deriveEditedStoolFields } from '../../lib/analysis';
 import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
 
@@ -1146,34 +1145,28 @@ describe('StoolAnalysisSection — the floor\'s words (CUL-1510)', () => {
     mockFloorFacts = {
       anchor: { at: STOOL.toISOString(), confidence: 'witnessed' },
       vomits: [{ at: new Date(2026, 5, 10, 9, 0).toISOString(), confidence: 'witnessed' }],
-      lethargyAt: [],
       courses: [],
-      neighbourCallBeyondRecord: false,
     };
-    usePetStore.setState({
-      pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
-    });
   });
   afterEach(() => {
     nowSpy.mockRestore();
     mockRow = null;
     mockFloorFacts = null;
-    usePetStore.setState({ pets: [] });
   });
 
-  it('a record-only call today in the evening resolves to first thing tomorrow, signs as the exception', async () => {
-    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['concurrent_vomiting'], visual_flags: [], stool_consistency: 'type_7_watery', ai_raw_payload: { recommendation: 'monitor' } });
+  it('a call today in the evening keeps no leave to wait, and says what to tell the vet', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['concurrent_vomiting'], stool_consistency: 'type_7_watery' });
     const view = render(<StoolAnalysisSection eventId="s1" petId="pet-1" petName="Rex" hasPhoto />);
     await view.findByText('Call your vet today');
-    expect(view.queryByText(/^Call your vet tonight if they're open, or first thing tomorrow\. Call an emergency clinic tonight if Rex vomits/)).toBeTruthy();
+    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
+    expect(view.queryByText(/first thing/)).toBeNull();
     expect(view.queryByText('Stool logged at 1 PM; 1 vomit logged within a day of it; watery stool.')).toBeTruthy();
   });
 
-  it('a blood finding takes the wait away', async () => {
-    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: [], visual_flags: [], stool_blood_present: 'yes', stool_blood_type: 'dark_tarry' });
+  it('an earlier-rule call draws no floor words', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', contextual_flags: ['concurrent_vomiting'] });
     const view = render(<StoolAnalysisSection eventId="s2" petId="pet-1" petName="Rex" hasPhoto />);
-    await view.findByText('Call your vet today');
-    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
-    expect(view.queryByText(/first thing tomorrow/)).toBeNull();
+    await view.findByText('Worth a call');
+    expect(view.queryByText('What to tell them:')).toBeNull();
   });
 });

@@ -54,12 +54,7 @@ import {
   tierDisplayOf,
 } from '../../lib/incidentTierWords';
 import {
-  callFromRecordOnly,
-  callNowSignsMet,
-  callTodayAction,
   floorRanOn,
-  modelMadeCall,
-  readSettled,
   tellThem,
   vomitFindings,
   watchForList,
@@ -123,10 +118,6 @@ interface AnalysisRow {
   error: string | null;
   /** The Engines keys the read was written under: a new-rule read speaks its tier. */
   engine_flags?: string[] | null;
-  /** Where a call came from (CUL-1510): call today gives leave to wait only over a call
-   *  the record alone raised, never over a photo finding or the model's own call. */
-  contextual_flags?: string[] | null;
-  visual_flags?: string[] | null;
 }
 
 /** Two copies of the row hold the same READ: the same state, verdict and words. The
@@ -154,8 +145,7 @@ const DISMISSED_LINE = 'AI note hidden';
 const SELECT_COLS =
   'status, recommendation, read_text, description, colour, contents, consistency, ' +
   'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
-  'ai_raw_payload, edited_at, dismissed_at, updated_at, error, tier, engine_flags, ' +
-  'contextual_flags, visual_flags';
+  'ai_raw_payload, edited_at, dismissed_at, updated_at, error, tier, engine_flags';
 
 export function VomitAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -656,43 +646,6 @@ export function VomitAnalysisSection(
   const nowMs = clockNow;
   const findings = vomitFindings(row);
   const isCall = display === 'call_now' || display === 'call_today';
-  const action =
-    display === 'call_today'
-      ? callTodayAction({
-          petName,
-          nowMs,
-          recordOnly: callFromRecordOnly({
-            kind: 'vomit',
-            floorRan: floorRanOn(row),
-            settled: readSettled(row),
-            signsMet:
-              floorFacts?.anchor && recordPet
-                ? floorFacts.neighbourCallBeyondRecord || callNowSignsMet({
-                    aroundMs: Date.parse(floorFacts.anchor.at),
-                    vomits: floorFacts.vomits,
-                    lethargyAt: floorFacts.lethargyAt,
-                    species: recordPet.species,
-                    birthDate: recordPet.date_of_birth,
-                  })
-                : null,
-            contextual_flags: row.contextual_flags,
-            visual_flags: row.visual_flags,
-            // An unclear blood or foreign-material field is a photo that may hold one, and a
-            // red or black colour can be blood whatever the blood field says (T12, T15): no
-            // leave to wait over any of them.
-            photoFinding:
-              findings.length > 0 ||
-              row.blood_present === 'unsure' ||
-              row.foreign_material_present === 'unsure' ||
-              row.colour === 'pink_red' ||
-              row.colour === 'dark_red' ||
-              row.colour === 'black_coffee_ground',
-            modelCall: modelMadeCall(row.ai_raw_payload?.recommendation, hasPhoto),
-          }),
-        })
-      : display
-        ? TIER_WORDS[display].action
-        : null;
   const tellThemLine =
     isCall && floorFacts?.anchor
       ? tellThem({
@@ -753,7 +706,7 @@ export function VomitAnalysisSection(
           // EN-3: the tier's tone and action line from the map; both absent on an
           // earlier-rule read, which draws today's card.
           tone={display ? TIER_WORDS[display].tone : undefined}
-          action={action}
+          action={display ? TIER_WORDS[display].action : null}
           disclosure={heldDisclosure}
           tellThem={tellThemLine}
           watchFor={watchFor}

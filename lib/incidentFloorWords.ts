@@ -41,24 +41,20 @@
 // only when PRESENT: "Blood: none visible" is never repeated here, because a line under a
 // call that says what was not seen reads as reassurance (Pattern 1).
 //
-// ── CALL TODAY'S ACTION LINE (§2 rule 1) ─────────────────────────────────────
-// The line gives leave to wait ("first thing tomorrow") only beside its exception ("or an
-// emergency clinic tonight if {this pet's call-now signs}"), and only when the call came
-// from the RECORD ALONE (`callFromRecordOnly`): the floor ran, every contextual flag is on
-// an allow-list that keeps the exception unmet, no visual flag, no red-flag photo field,
-// and no call of the model's own.
-// PR-27's adversarial pass found that every call written today is call today, a photo of
-// digested blood included (T12 is not built), so a leave to wait over a photo finding would
-// be calmer than today's "Worth a call". A call carrying a photo finding, or the model's
-// own call, keeps call now's after-hours path: "If they're closed, call an emergency clinic."
-// The signs are the floor's call-now rows (T1/T2, T3) in plain words.
+// ── CALL TODAY'S ACTION LINE (§2 rule 1): NOT HERE ───────────────────────────
+// Call today's line is a fixed string in the tier-word map ("If they're closed, call an
+// emergency clinic"), with no leave to wait. The spec's late-day "first thing tomorrow" is
+// safe only over a call the record alone raised, with no call-now sign met anywhere around
+// it, and four adversarial passes on this PR showed the phone cannot prove that: a removed
+// photo's blood call, a neighbour's intake flag and a back-dated lethargy are all invisible
+// to it. The leave to wait moves to the server, which holds every read's flags and payload
+// (the follow-up issue on CUL-1510). Louder than the spec until then, never calmer than
+// today's "Worth a call".
 
 import {
-  incidentFloor,
   FLOOR_LETHARGY_HOURS,
   FLOOR_MERGE_MINUTES,
   FLOOR_PAIR_HOURS,
-  FLOOR_READ_HOURS,
   FLOOR_SPAN_HOURS,
   FLOOR_YOUNG_MONTHS,
   ageInMonths,
@@ -67,7 +63,6 @@ import {
   type FloorTier,
   type FloorVomit,
 } from './incidentFloor';
-import { isQuietVerdict } from './incidentVerdict';
 
 /** The key EN-4's floor runs under (`supabase/functions/_shared/engineFlags.ts`). A row
  *  stamped with it was written by a run whose floor re-runs when the record changes
@@ -312,133 +307,6 @@ export function watchForList(input: WatchForInput): WatchForList | null {
       : null;
   if (lines.length === 0 && emergency === null) return null;
   return { emergency, lines, clauses, ageNote };
-}
-
-// ── Call today's action line ───────────────────────────────────────────────────
-
-/** The pet's call-now signs, from the floor's call-now rows (T1/T2, T3). */
-export function callNowSigns(petName: string | null | undefined): string {
-  const p = named(petName);
-  return `${p} vomits three times within a few hours, or vomits and is low on energy`;
-}
-
-/** The hours a vet is taken to be open for "today": 6 AM to 6 PM local. Outside them the
- *  line resolves to the next morning (§2 rule 1), with the call-now signs as the exception. */
-export const CALL_TODAY_DAY_FROM_HOUR = 6;
-export const CALL_TODAY_DAY_UNTIL_HOUR = 18;
-
-/** Call today's line over a call that carries a photo finding or the model's own call:
- *  no leave to wait (call now's after-hours path). */
-export const CALL_TODAY_NO_WAIT = "Call your vet today. If they're closed, call an emergency clinic.";
-
-/** The contextual flags a call today may give leave to wait over, per read. An allow-list:
- *  a flag not named here (lethargy beside the sign, a flag a later server adds) keeps no
- *  leave to wait. Out on purpose:
- *   - `concurrent_lethargy`, on both reads: "vomits and is low on energy" is a call-now sign
- *     (T3), and the line's exception must never already be met (adversarial pass 1, B1);
- *   - `feline_reduced_intake`: the flag says no full meal in a day, and the fast may already
- *     be far longer; the exception names no intake sign and the list has no meal clause yet
- *     (CUL-1609), so a cat not eating keeps the no-wait line until Dr. Chen rules (pass 2). */
-export const WAIT_ALLOWED_FLAGS: Readonly<Record<'vomit' | 'stool', readonly string[]>> = {
-  vomit: ['repeated_vomiting'],
-  stool: ['repeated_loose_stool', 'concurrent_vomiting'],
-};
-
-/** Hours either side of the event within which a vomit already at call now on the real floor
- *  takes the leave to wait away: a sign met on the next record is still met on this one. The
- *  floor's whole read window, so a burst a day and a bit from a stool is seen (pass 3, #2). */
-export const SIGNS_MET_REACH_HOURS = FLOOR_READ_HOURS;
-
-/**
- * Whether a call-now sign is already met around this event, by the REAL floor over the
- * phone's own rows: some vomit within a day of it reads call now (T1/T2 on a burst a found
- * pile sits beside, T3 on lethargy the event's own flags could not see). Reads only what the
- * phone holds, so it can only find more, never fewer, than the row's own flags (pass 2, #1).
- */
-export function callNowSignsMet(input: {
-  aroundMs: number;
-  vomits: readonly FloorVomit[];
-  lethargyAt: readonly string[];
-  species: string;
-  birthDate: string | null;
-}): boolean {
-  const reach = SIGNS_MET_REACH_HOURS * HOUR;
-  return input.vomits.some((v) => {
-    const t = Date.parse(v.at);
-    if (!Number.isFinite(t) || Math.abs(t - input.aroundMs) > reach) return false;
-    return (
-      incidentFloor({ anchor: v, vomits: input.vomits, lethargyAt: input.lethargyAt, species: input.species, birthDate: input.birthDate })
-        .tier === 'call_now'
-    );
-  });
-}
-
-/**
- * Whether the call came from the record alone, so the line may give leave to wait. Every
- * condition must hold, and unknown is never record-only:
- *   - the floor ran on this row (`engines_v3_en4` in its stamp), so the call-now signs the
- *     line names as its exception are signs the app raises on;
- *   - the read is SETTLED: it finished, carries no error, and the owner has not edited its
- *     fields. A rescue or an error-only write leaves the columns and the payload of a photo
- *     nobody has read since; an owner edit freezes the payload (pass 2, #2 and #3);
- *   - at least one contextual flag, and every one of them on the allow-list above;
- *   - no visual flag, and the flag list was read (absent is unknown);
- *   - no red-flag photo field, present or unclear (`photoFinding`, the section's call);
- *   - the model did not make its own call (`modelCall`): a pill, worms or plant matter can
- *     escalate the model with every enum field quiet (T16 to T18; pass 1, B2);
- *   - no call-now sign is already met around it (`signsMet`: `callNowSignsMet` over the
- *     phone's rows, or a neighbouring read whose call is beyond the record,
- *     `IncidentFloorFacts.neighbourCallBeyondRecord`), and the phone's rows were read at all
- *     (`signsMet` is null until they are).
- */
-export function callFromRecordOnly(row: {
-  kind: 'vomit' | 'stool';
-  floorRan: boolean;
-  settled: boolean;
-  contextual_flags?: readonly string[] | null;
-  visual_flags?: readonly string[] | null;
-  photoFinding: boolean;
-  modelCall: boolean;
-  signsMet: boolean | null;
-}): boolean {
-  if (!row.floorRan || !row.settled || row.photoFinding || row.modelCall) return false;
-  if (row.signsMet !== false) return false;
-  if (!Array.isArray(row.visual_flags) || row.visual_flags.length > 0) return false;
-  const flags = row.contextual_flags;
-  if (!Array.isArray(flags) || flags.length === 0) return false;
-  return flags.every((f) => WAIT_ALLOWED_FLAGS[row.kind].includes(f));
-}
-
-/** Whether the read is settled enough to say where its call came from. */
-export function readSettled(row: { status?: string | null; error?: string | null; edited_at?: string | null }): boolean {
-  return row.status === 'completed' && !row.error && !row.edited_at;
-}
-
-/** Whether the model made its own call, handed the verdict it stored in its payload (the
- *  section reads the field, the one sanctioned reader). A stored verdict is read whenever
- *  there is one, photo or not: a photo removed after the model asked for a call leaves the
- *  call standing (never-lower), and its origin with it (pass 2, #4). With no stored verdict,
- *  a photographed read counts as one (a rescue, a failed parse); a photoless read has none. */
-export function modelMadeCall(modelVerdict: unknown, hasPhoto: boolean): boolean {
-  if (typeof modelVerdict === 'string') return !isQuietVerdict(modelVerdict);
-  return hasPhoto;
-}
-
-export function callTodayAction(input: {
-  petName: string | null | undefined;
-  nowMs: number;
-  recordOnly: boolean;
-}): string {
-  if (!input.recordOnly) return CALL_TODAY_NO_WAIT;
-  const signs = callNowSigns(input.petName);
-  const h = new Date(input.nowMs).getHours();
-  if (h >= CALL_TODAY_DAY_FROM_HOUR && h < CALL_TODAY_DAY_UNTIL_HOUR) {
-    return `Call your vet today. If they're closed, first thing tomorrow, or an emergency clinic tonight if ${signs}.`;
-  }
-  if (h >= CALL_TODAY_DAY_UNTIL_HOUR) {
-    return `Call your vet tonight if they're open, or first thing tomorrow. Call an emergency clinic tonight if ${signs}.`;
-  }
-  return `Call your vet first thing this morning. Call an emergency clinic now if ${signs}.`;
 }
 
 // ── What to tell them ──────────────────────────────────────────────────────────

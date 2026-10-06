@@ -37,9 +37,8 @@
 // It never decides which tier a finding earns (the floor's job, server-side), and it has
 // no wellness word (clinical-guardrails Pattern 1): the lowest tier is "Keep an eye out",
 // which is today's `monitor` wording. The watch-for list that tier carries, the call's
-// "what to tell them" line and call today's action line with the pet's call-now signs are
-// generated from the floor's rows in `lib/incidentFloorWords.ts` (CUL-1510), never
-// hand-written here (spec §3, BRK-3).
+// "what to tell them" line are generated from the floor's rows in
+// `lib/incidentFloorWords.ts` (CUL-1510), never hand-written here (spec §3, BRK-3).
 
 import { effectiveTierRank, isIncidentTier, TIER_RANK } from './incidentTier';
 import { isQuietVerdict } from './incidentVerdict';
@@ -104,12 +103,12 @@ export const TIER_WORDS: Readonly<Record<TierDisplay, TierWords>> = {
     label: 'Call your vet today',
     short: 'Call today',
     readAs: 'call today',
-    // No fixed line: it resolves against the clock and against where the call came from,
-    // so it lives in `callTodayAction` (lib/incidentFloorWords.ts, CUL-1510). The leave to
-    // wait ("first thing tomorrow") is given only beside its exception (the pet's call-now
-    // signs) and only over a call the record alone raised: every call written today is
-    // call today, a photo of digested blood included (adversarial pass on PR-27).
-    action: null,
+    // No leave to wait (CUL-1510): "first thing tomorrow" is safe only over a call the
+    // record alone raised, with no call-now sign met around it, and only the server can see
+    // that (four adversarial passes on PR-27b broke every client-side proof). So the line
+    // takes call now's after-hours path: louder than the spec, never calmer than "Worth a
+    // call". The late-day resolution lands server-side.
+    action: "Call your vet today. If they're closed, call an emergency clinic.",
     tone: 'call_outline',
     call: true,
     rule: 'tiered',

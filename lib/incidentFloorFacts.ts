@@ -1,5 +1,5 @@
-// What the record's floor words read from the phone: the event, the pet's vomit and
-// lethargy logs around it, and the courses on board (Engines v3 PR-27b, CUL-1510).
+// What the record's floor words read from the phone: the event, the pet's vomit logs
+// around it, and the courses on board (Engines v3 PR-27b, CUL-1510).
 //
 // SEPARATE FROM `lib/incidentFloorWords.ts` ON PURPOSE (the `lookEmergencyFacts` split):
 // that module is the copy and is pure, so the clause test can feed it rows without a
@@ -12,29 +12,14 @@
 
 import { getDb } from './db';
 import { FLOOR_READ_HOURS, type FloorVomit } from './incidentFloor';
-import { effectiveTierRank, TIER_RANK } from './incidentTier';
-import { readCopies } from './readCopy';
-import { isWorthACall } from './readState';
 
 export interface IncidentFloorFacts {
   /** The event this read is about, or null when the phone has no copy of it. */
   anchor: FloorVomit | null;
   /** Live vomit logs of the pet within the floor's read window, the anchor included. */
   vomits: FloorVomit[];
-  /** Live lethargy logs of the pet within the same window (the call-now check, T3). */
-  lethargyAt: string[];
   /** Courses on board at the event, by the names the owner entered. */
   courses: string[];
-  /**
-   * Another vomit or stool within the floor's window carries a call this phone cannot trace
-   * to the record alone: its read is at call now, or it is a call over a photo (a blood or
-   * foreign-material finding, the model's own call). A call on one record is a sign on
-   * every record beside it, so call today's leave to wait is withheld (adversarial pass 3).
-   * A photoless neighbour's call can only come from record signs, which the floor over the
-   * rows above already checks. A neighbour whose read has not reached this phone is not
-   * seen (a stated limit, like another caregiver's unsynced logs).
-   */
-  neighbourCallBeyondRecord: boolean;
 }
 
 const HOUR = 3_600_000;
@@ -58,6 +43,7 @@ export function onBoardAt(m: { status: string; started_at: string; ended_at: str
   }
   return m.status === 'active';
 }
+
 const PAD_MS = 24 * HOUR;
 
 /**
@@ -71,18 +57,16 @@ export async function loadIncidentFloorFacts(eventId: string, petId: string): Pr
       'SELECT occurred_at, occurred_at_confidence FROM events WHERE id = ? AND pet_id = ?',
       [eventId, petId],
     );
-    if (!own) return { anchor: null, vomits: [], lethargyAt: [], courses: [], neighbourCallBeyondRecord: false };
+    if (!own) return { anchor: null, vomits: [], courses: [] };
     const a = Date.parse(own.occurred_at);
-    if (!Number.isFinite(a)) return { anchor: null, vomits: [], lethargyAt: [], courses: [], neighbourCallBeyondRecord: false };
+    if (!Number.isFinite(a)) return { anchor: null, vomits: [], courses: [] };
     const reach = FLOOR_READ_HOURS * HOUR;
-    // symptom-list-ok: not a membership decision. The floor's two inputs (vomit, lethargy)
-    // and the incident-read stool types (`isStoolEvent`), read to find this event's neighbours.
-    const rows = await db.getAllAsync<{ id: string; event_type: string; occurred_at: string; occurred_at_confidence: string | null }>(
-      `SELECT id, event_type, occurred_at, occurred_at_confidence
+    const rows = await db.getAllAsync<{ occurred_at: string; occurred_at_confidence: string | null }>(
+      `SELECT occurred_at, occurred_at_confidence
          FROM events
         WHERE pet_id = ?
           AND deleted_at IS NULL
-          AND event_type IN ('vomit', 'lethargy', 'stool_normal', 'diarrhea')
+          AND event_type = 'vomit'
           AND occurred_at >= ?
           AND occurred_at <= ?`,
       [petId, new Date(a - reach - PAD_MS).toISOString(), new Date(a + reach + PAD_MS).toISOString()],
@@ -92,30 +76,8 @@ export async function loadIncidentFloorFacts(eventId: string, petId: string): Pr
       return Number.isFinite(t) && Math.abs(t - a) <= reach;
     };
     const vomits = rows
-      .filter((r) => r.event_type === 'vomit' && inWindow(r.occurred_at))
+      .filter((r) => inWindow(r.occurred_at))
       .map((r) => ({ at: r.occurred_at, confidence: r.occurred_at_confidence }));
-    const lethargyAt = rows.filter((r) => r.event_type === 'lethargy' && inWindow(r.occurred_at)).map((r) => r.occurred_at);
-
-    const neighbourIds = rows
-      .filter((r) => r.id !== eventId && r.event_type !== 'lethargy' && inWindow(r.occurred_at))
-      .map((r) => r.id);
-    let neighbourCallBeyondRecord = false;
-    if (neighbourIds.length > 0) {
-      const copies = await readCopies(neighbourIds);
-      const marks = neighbourIds.map(() => '?').join(', ');
-      const photographed = new Set(
-        (
-          await db.getAllAsync<{ event_id: string }>(
-            `SELECT DISTINCT event_id FROM event_attachments WHERE event_id IN (${marks})`,
-            neighbourIds,
-          )
-        ).map((r) => r.event_id),
-      );
-      neighbourCallBeyondRecord = [...copies.entries()].some(
-        ([id, copy]) =>
-          isWorthACall(copy) && (effectiveTierRank(copy) === TIER_RANK.call_now || photographed.has(id)),
-      );
-    }
 
     const meds = await db.getAllAsync<{ drug_name: string; status: string; started_at: string; ended_at: string | null }>(
       'SELECT drug_name, status, started_at, ended_at FROM medications WHERE pet_id = ?',
@@ -126,9 +88,7 @@ export async function loadIncidentFloorFacts(eventId: string, petId: string): Pr
     return {
       anchor: { at: own.occurred_at, confidence: own.occurred_at_confidence },
       vomits,
-      lethargyAt,
       courses,
-      neighbourCallBeyondRecord,
     };
   } catch (e) {
     console.warn('[incidentFloorFacts] read failed:', e);
