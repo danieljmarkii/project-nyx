@@ -1,0 +1,612 @@
+<title>The FAB and Its Fan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     The FAB and Its Fan. Round 2 of the FAB (round 1 is §05 and §06 of
+     docs/culprit-design-v2-device-mockups.html, ruled 2026-09-26).
+     The PM's device reactions of 2026-10-06 (CUL-1625): the plus goes
+     white (built, CUL-1626), what else could delight, who else does a
+     fan of recents, and whether the jump from the fan to the log sheet
+     is a seam. House system: round 1's tokens; frames render the app's
+     real light tokens (constants/theme.ts) at 81% of a 390pt phone.
+     Layout: one column of prose at 68ch, frames in wrapping rows.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --night: #13112E; --night-2: #251F57; --action: #3F35A0; --action-wash: #ECEAF8;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    /* The app's own light tokens, used inside the phone frames in both page themes. */
+    --app-ground: #FAFAFA; --app-card: #FFFFFF; --app-subtle: #F4F4F5; --app-ink: #0A0A0A;
+    --app-ink-2: #525252; --app-ink-3: #737373; --app-rule: #E7E5E4;
+    --app-meal: #00C2A8; --app-meal-wash: #E0FBF7; --app-sym: #F43F5E; --app-sym-wash: #FFE4E6;
+    --veil-night: rgba(19,17,46,0.34); --veil-grey: rgba(10,10,10,0.35);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --action: #B9B3F0; --action-wash: rgba(185,179,240,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --action: #B9B3F0; --action-wash: rgba(185,179,240,0.14);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  a { color: var(--teal-ink); }
+  .ledger { display: grid; gap: 8px; margin: 26px 0 8px; }
+  .ledger div { display: grid; grid-template-columns: 210px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  @media (max-width: 640px) { .ledger div { grid-template-columns: 1fr; gap: 4px; } }
+  .ledger q { font-style: italic; color: var(--ink); quotes: "\201C" "\201D"; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+  .pill.cur { color: var(--action); background: var(--action-wash); }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+
+  /* Frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 28px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 12px; width: 316px; max-width: 100%; min-width: 0; }
+  .frame-cap { display: flex; flex-direction: column; gap: 4px; }
+  .frame-cap b { font-size: 14.5px; }
+  .frame-cap span { font-size: 13.5px; color: var(--ink-2); }
+  .frame.option { border: 1px dashed var(--rule); border-radius: 18px; padding: 12px; width: 342px; }
+  .frame.option > .frame-cap::before { content: "Option, drawn for the decision"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .frame.archived { opacity: 0.72; }
+  .frame.archived > .frame-cap::before { content: "Ruled 2026-09-26, superseded today"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+
+  /* The FAB swatch stages (§01) */
+  .fab-stage { position: relative; height: 170px; background: var(--app-ground); border-radius: 24px; overflow: hidden; border: 1px solid rgba(27,26,46,0.12); }
+  .fab-stage .tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; background: var(--app-card); border-top: 1px solid var(--app-rule); display: flex; justify-content: space-around; align-items: center; font-size: 10px; color: var(--app-ink-3); }
+  .fab-stage .tabs b { color: var(--app-ink); font-weight: 600; }
+  .fab-stage .ghost { position: absolute; left: 14px; right: 84px; top: 16px; display: grid; gap: 9px; }
+  .fab-stage .ghost i { display: block; height: 9px; border-radius: 4px; background: var(--app-rule); }
+  .fab-stage .ghost i:nth-child(2) { width: 70%; } .fab-stage .ghost i:nth-child(3) { width: 84%; }
+  .fab-stage .ghost .cardghost { height: 46px; border-radius: 12px; background: var(--app-card); box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .fab-stage.veiled::after { content: ""; position: absolute; inset: 0; background: var(--veil-night); }
+  .fabdisc { position: absolute; right: 18px; bottom: 70px; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: var(--night-2); box-shadow: 0 6px 16px rgba(19,17,46,0.28); z-index: 2; }
+  .fabdisc svg { width: 20px; height: 20px; }
+  .fabdisc.x svg { transform: rotate(135deg); }
+  .contrast { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .contrast .ok { color: var(--teal-ink); }
+
+  /* ── The live phones (§03, §04) ─────────────────────────────────── */
+  .demo-row { display: flex; flex-wrap: wrap; gap: 32px 28px; margin-top: 28px; align-items: flex-start; }
+  .ph { position: relative; width: 316px; max-width: 100%; height: 640px; background: var(--app-ground); border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); overflow: hidden; color: var(--app-ink); font-family: var(--sans); font-variant-numeric: tabular-nums; font-size: 12px; line-height: 1.38; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+  .ph button { font-family: var(--sans); color: inherit; }
+  .ph-home { padding: 14px 12px 0; display: grid; gap: 10px; transform-origin: 80% 90%; transition: transform 320ms cubic-bezier(.2,.8,.2,1); }
+  .ph-bar { display: flex; align-items: center; gap: 8px; padding: 2px 2px 8px; border-bottom: 1px solid var(--app-rule); }
+  .ph-bar .pet { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; flex: 1; }
+  .ph-bar .date { font-size: 10.5px; color: var(--app-ink-2); }
+  .ph-bar .ask { font-size: 11px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 2px 9px; display: flex; align-items: center; gap: 5px; }
+  .ph-bar .ask i { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); display: inline-block; }
+  .ph-bar .me { width: 24px; height: 24px; border-radius: 50%; background: #0A0A0A; color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
+  .avatar { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #8a7a6a, #3a332c 70%); flex-shrink: 0; display: inline-block; }
+  .ph-card { background: var(--app-card); border-radius: 16px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); }
+  .ph-label { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-3); margin-bottom: 8px; }
+  .ph-row { border-left: 3px solid var(--app-sym); padding-left: 9px; }
+  .ph-row + .ph-row { margin-top: 10px; padding-top: 0; }
+  .ph-row.ins { border-left-color: var(--app-meal); }
+  .ph-row .e { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); }
+  .ph-row .h { font-family: var(--serif); font-size: 16px; line-height: 1.22; }
+  .ph-row .h.s { font-family: var(--sans); font-size: 12.5px; font-weight: 600; }
+  .ph-row .a { font-size: 11px; color: #B4123B; margin-top: 1px; }
+  .ph-row .s { font-size: 10.5px; color: var(--app-ink-2); }
+  .ph-trial .t { font-weight: 600; font-size: 13px; }
+  .ph-trial .bar { height: 5px; border-radius: 3px; background: var(--app-subtle); margin: 8px 0 6px; overflow: hidden; }
+  .ph-trial .bar i { display: block; height: 100%; width: 68%; background: #A3A3A3; border-radius: 3px; }
+  .ph-trial .l { font-size: 10.5px; color: var(--app-ink-2); }
+  .ph-tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 60px; background: var(--app-card); border-top: 1px solid var(--app-rule); display: flex; justify-content: space-around; align-items: center; font-size: 10px; color: var(--app-ink-3); padding-bottom: 6px; }
+  .ph-tabs b { color: var(--app-ink); font-weight: 600; }
+  .ph-veil { position: absolute; inset: 0; background: var(--veil-night); opacity: 0; pointer-events: none; transition: opacity 240ms ease; }
+  .ph.open .ph-veil { opacity: 1; pointer-events: auto; }
+  .ph.handoff-b .ph-veil, .ph.handoff-c .ph-veil { opacity: 1; pointer-events: auto; }
+
+  /* The disc */
+  .ph-disc { position: absolute; right: 19px; bottom: 70px; width: 46px; height: 46px; border-radius: 50%; border: 0; background: var(--night-2); display: grid; place-items: center; box-shadow: 0 6px 18px rgba(19,17,46,0.32); cursor: pointer; z-index: 4; transition: transform 180ms cubic-bezier(.3,.7,.4,1.4); }
+  .ph-disc:focus-visible { outline: 3px solid var(--action); outline-offset: 3px; }
+  .ph-disc.down { transform: scale(0.9); }
+  .ph-disc .glyph { width: 17px; height: 17px; transition: transform 380ms cubic-bezier(.34,1.56,.64,1); }
+  .ph.open .ph-disc .glyph, .ph.handoff-c .ph-disc .glyph { transform: rotate(135deg); }
+  .ph.closing .ph-disc .glyph { transition: transform 180ms ease-in; }
+  .ph-disc .ring { position: absolute; inset: -5px; border-radius: 50%; border: 2px solid #FFFFFF; box-shadow: 0 0 0 2px var(--night-2); opacity: 0; transform: scale(0.8); pointer-events: none; }
+  .ph-disc.holding .ring { animation: ring 300ms ease-out forwards; }
+  @keyframes ring { to { opacity: 1; transform: scale(1); } }
+
+  /* The fan */
+  .ph-fan { position: absolute; right: 19px; bottom: 124px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; z-index: 4; pointer-events: none; max-width: calc(100% - 38px); }
+  .ph.open .ph-fan { pointer-events: auto; }
+  .fp { display: flex; align-items: center; gap: 8px; background: var(--app-card); border-radius: 999px; padding: 6px 13px 6px 7px; min-height: 36px; max-width: 243px; font-size: 12px; font-weight: 500; text-align: left; line-height: 1.25; box-shadow: 0 4px 14px rgba(19,17,46,0.16); border: 0; cursor: pointer; opacity: 0; transform: translate(15px, 21px) scale(0.6); transform-origin: 100% 100%; transition: opacity 160ms ease, transform 300ms cubic-bezier(.34,1.4,.64,1); }
+  .ph.open .fp { opacity: 1; transform: none; }
+  .ph.closing .fp { transition: opacity 110ms ease-in, transform 110ms ease-in; }
+  .fp .g { width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; }
+  .fp .g svg { width: 13px; height: 13px; }
+  .fp .g.quiet { background: var(--app-ground); color: var(--app-ink-2); }
+  .fp .g.sym { background: var(--app-sym-wash); color: var(--app-sym); }
+  .fp .g.meal { background: var(--app-meal-wash); color: var(--app-meal); }
+  .fp.logfor { border-radius: 19px; padding: 7px 12px 7px 8px; min-width: 178px; }
+  .fp.logfor .lf { display: flex; flex-direction: column; flex: 1; }
+  .fp.logfor small { font-size: 10px; color: var(--app-ink-2); font-weight: 400; }
+  .fp.logfor b { font-size: 14px; font-weight: 500; }
+  .fp.logfor .caret { color: var(--app-ink-2); font-size: 12px; }
+  .fp.pressing { transform: scale(0.96) !important; transition: transform 90ms ease-out !important; }
+  .fp.lifted { transform: scale(1.05) !important; box-shadow: 0 8px 22px rgba(19,17,46,0.26); }
+
+  /* The log sheet (§03 option A and B) */
+  .ph-modal { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+  .ph-modal .grey { position: absolute; inset: 0; background: var(--veil-grey); }
+  .ph-modal.slide { transform: translateY(100%); transition: transform 360ms cubic-bezier(.32,.72,0,1); }
+  .ph.handoff-a .ph-modal.slide { transform: none; pointer-events: auto; }
+  .ph-sheet { position: absolute; left: 0; right: 0; bottom: 0; top: 116px; background: var(--app-card); border-radius: 22px 22px 0 0; padding: 8px 14px 0; overflow: hidden; box-shadow: 0 -8px 30px rgba(19,17,46,0.12); }
+  .ph-sheet .grab { width: 34px; height: 4px; border-radius: 2px; background: #D4D4D4; margin: 0 auto 12px; }
+  .ph-sheet .st { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; margin-bottom: 12px; }
+  .ph-sheet .st .caret { color: var(--app-ink-2); font-weight: 400; font-size: 13px; }
+  .ph-sheet .fam { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-2); margin: 12px 0 6px; }
+  .ph-sheet .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .tile { display: flex; align-items: center; gap: 8px; border: 1px solid var(--app-rule); border-radius: 13px; padding: 8px; min-height: 44px; font-size: 12.5px; font-weight: 500; background: var(--app-card); cursor: pointer; text-align: left; }
+  .tile.wide { grid-column: 1 / -1; }
+  .tile .g { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; background: var(--app-sym-wash); color: var(--app-sym); }
+  .tile .g svg { width: 14px; height: 14px; }
+  .tile .g.meal { background: var(--app-meal-wash); color: var(--app-meal); }
+  .tile .g.quiet { background: var(--app-subtle); color: var(--app-ink-2); }
+  .tile .chips { margin-left: auto; display: flex; gap: 5px; }
+  .tile .chips span { border: 1px solid var(--app-rule); border-radius: 999px; padding: 4px 10px; font-size: 11px; }
+  .sheet-in > * { transition: opacity 200ms ease; }
+
+  /* Option B: the More events pill becomes the sheet */
+  .ph-morph { position: absolute; z-index: 5; background: var(--app-card); border-radius: 999px; box-shadow: 0 4px 14px rgba(19,17,46,0.16); pointer-events: none; overflow: hidden; }
+  .ph-morph.go { transition: left 420ms cubic-bezier(.2,.9,.3,1.02), top 420ms cubic-bezier(.2,.9,.3,1.02), width 420ms cubic-bezier(.2,.9,.3,1.02), height 420ms cubic-bezier(.2,.9,.3,1.02), border-radius 420ms ease, box-shadow 420ms ease; }
+  .ph-morph .lbl { position: absolute; left: 38px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 500; white-space: nowrap; transition: opacity 120ms ease; }
+  .ph-bsheet { position: absolute; left: 0; right: 0; bottom: 0; top: 116px; z-index: 6; opacity: 0; pointer-events: none; transition: opacity 180ms ease 300ms; }
+  .ph.handoff-b .ph-bsheet { opacity: 1; pointer-events: auto; }
+  .ph-bsheet .ph-sheet { top: 0; box-shadow: none; }
+
+  /* Option C: the fan grows into the whole list, in place */
+  .ph-panel { position: absolute; right: 19px; bottom: 124px; width: calc(100% - 38px); max-height: 452px; z-index: 5; background: var(--app-card); border-radius: 20px; box-shadow: 0 10px 30px rgba(19,17,46,0.22); padding: 10px 12px 12px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; opacity: 0; transform: translateY(10px) scale(0.92); transform-origin: 100% 100%; pointer-events: none; transition: opacity 220ms ease, transform 380ms cubic-bezier(.2,.9,.3,1.02); }
+  .ph.handoff-c .ph-panel { opacity: 1; transform: none; pointer-events: auto; }
+  .ph.handoff-c .fp { opacity: 0; transform: translate(0, 12px) scale(0.9); transition: opacity 120ms ease, transform 160ms ease; }
+  .ph-panel .pt { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--app-ink-2); margin-bottom: 2px; }
+  .ph-panel .pt b { color: var(--app-ink); font-size: 13px; font-weight: 600; }
+  .ph-panel .fam { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-2); margin: 9px 0 5px; }
+  .ph-panel .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .ph-panel .tile { min-height: 40px; padding: 6px 7px; font-size: 12px; border-radius: 12px; }
+  .ph-panel .tile .g { width: 23px; height: 23px; }
+
+  /* The completion card (§04) */
+  .ph-done { position: absolute; left: 10px; right: 10px; bottom: 68px; z-index: 7; background: var(--app-card); border-radius: 16px; padding: 11px 12px; box-shadow: 0 10px 28px rgba(19,17,46,0.2); display: flex; gap: 10px; align-items: center; transform: translateY(16px); opacity: 0; pointer-events: none; transition: transform 260ms cubic-bezier(.2,.8,.2,1), opacity 200ms ease; }
+  .ph-done.show { transform: none; opacity: 1; }
+  .ph-done .tk { width: 26px; height: 26px; border-radius: 50%; background: var(--app-meal-wash); color: var(--app-meal); display: grid; place-items: center; flex-shrink: 0; }
+  .ph-done .tk svg { width: 14px; height: 14px; }
+  .ph-done b { display: block; font-size: 12.5px; font-weight: 600; }
+  .ph-done span { font-size: 11px; color: var(--app-ink-2); }
+  .ph-done .undo { margin-left: auto; font-size: 11.5px; font-weight: 600; color: var(--action); }
+  .ph-fly { position: absolute; z-index: 8; width: 23px; height: 23px; border-radius: 50%; background: var(--app-meal-wash); color: var(--app-meal); display: grid; place-items: center; pointer-events: none; transition: left 420ms cubic-bezier(.3,.1,.2,1), top 420ms cubic-bezier(.5,0,.6,1), transform 420ms ease; }
+  .ph-fly svg { width: 13px; height: 13px; }
+
+  /* Reduce Motion: one crossfade (the app's beat 8) */
+  .rm .ph-home, .rm .ph-disc, .rm .ph-disc .glyph, .rm .fp, .rm .ph-done, .rm .ph-panel, .rm .ph-morph { transition: opacity 150ms linear !important; }
+  .rm.open .ph-disc .glyph, .rm.handoff-c .ph-disc .glyph { transform: none; }
+  .rm .fp, .rm .ph-panel, .rm .ph-done { transform: none !important; }
+  @media (prefers-reduced-motion: reduce) {
+    .ph-home, .ph-disc, .ph-disc .glyph, .fp, .ph-done, .ph-panel, .ph-morph { transition: opacity 150ms linear !important; }
+    .ph.open .ph-disc .glyph, .ph.handoff-c .ph-disc .glyph { transform: none; }
+    .fp, .ph-panel, .ph-done { transform: none !important; }
+    .ph-disc.holding .ring { animation: none; opacity: 1; transform: none; }
+  }
+
+  .ctrl { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .ctrl button { font-family: var(--sans); font-size: 13px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink); border-radius: 999px; padding: 7px 14px; cursor: pointer; min-height: 36px; }
+  .ctrl button[aria-pressed="true"] { border-color: var(--action); color: var(--action); }
+  .ctrl button:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+
+  /* Tables, briefs, voices */
+  .tablewrap { overflow-x: auto; margin-top: 22px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-2); }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--rule-soft); }
+  th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+  td { color: var(--ink-2); }
+  td b { color: var(--ink); }
+  tr:last-child td { border-bottom: 0; }
+  .briefs { display: grid; gap: 18px; margin-top: 24px; }
+  .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .brief h4 { margin: 0 0 8px; font-size: 15.5px; color: var(--ink); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .brief p { margin: 0 0 6px; }
+  .brief b { color: var(--ink); }
+  .conflict { border-left: 3px solid var(--rose-ink); padding-left: 12px; margin: 8px 0; }
+  .ideas { display: grid; gap: 14px; margin-top: 22px; counter-reset: idea; }
+  .idea { display: grid; grid-template-columns: 36px 1fr; gap: 4px 12px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; font-size: 14.5px; color: var(--ink-2); }
+  .idea::before { counter-increment: idea; content: counter(idea); font-family: var(--serif); font-size: 26px; line-height: 1; color: var(--ink-3); grid-row: span 3; }
+  .idea h4 { margin: 0; font-size: 15.5px; color: var(--ink); display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+  .idea p { margin: 0; }
+  .idea.rejected { opacity: 0.85; }
+  .idea.rejected::before { content: "\00D7"; }
+  .voices { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 22px; }
+  .voice { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; font-size: 14px; color: var(--ink-2); min-width: 0; }
+  .voice b.who { display: block; color: var(--ink); font-size: 14.5px; margin-bottom: 6px; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 2 · for the PM's reaction</span><span>The FAB · CUL-1625</span><span>2026-10-06</span></p>
+    <h1>The FAB and its fan</h1>
+    <p class="standfirst">The PM's reactions after a week with the indigo FAB on a phone, and the whole team's answer. Round 1 lives at §05 and §06 of the Design v2 device page (ruled 2026-09-26); this page carries the FAB from here.</p>
+    <div class="ledger" id="ledger">
+      <div><b>1 · The plus</b><span><q>I sort of hate how plus is teal. Can we make it white instead</q> <span class="pill">built · CUL-1626 · §01</span></span></div>
+      <div><b>2 · Delight</b><span><q>Love the rotation of FAB when selected… Is there anything else that we could consider design delight wise</q> <span class="pill open">decide · §04</span></span></div>
+      <div><b>3a · Who else</b><span><q>Do any other apps offer a similar experience?</q> <span class="pill dir">answered · §02</span></span></div>
+      <div><b>3b · The seam</b><span><q>Is it strange that we go from the first fab page w bubbles to a more traditional bottom sheet</q> <span class="pill open">decide · §03</span></span></div>
+    </div>
+  </header>
+
+  <!-- §01 -->
+  <section id="plus">
+    <div class="sec-head"><span class="sec-num">01</span><h2>The plus goes white</h2></div>
+    <div class="col">
+      <p>Built in this round (CUL-1626). The indigo disc and the turn stay exactly as they are; only the glyph changes, in both its + and × positions and in the Reduce Motion crossfade. It follows the colour split already ruled on 2026-10-03 (CUL-1279, G4 C): indigo means you can act, teal means a good fact. A teal glyph on the app's primary action read against that split, which the Home one language mock had already drawn white.</p>
+    </div>
+    <div class="frames">
+      <div class="frame archived">
+        <div class="fab-stage"><div class="ghost"><i></i><i></i><i></i><div class="cardghost"></div></div><div class="fabdisc"><svg viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="2.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div></div>
+        <div class="frame-cap"><b>Teal plus on the indigo disc</b><span>CUL-322, D3 C. "The Culprit mark in miniature."</span><span class="contrast"><span>plus 6.57:1</span><span>disc 14.25:1</span></span></div>
+      </div>
+      <div class="frame">
+        <div class="fab-stage"><div class="ghost"><i></i><i></i><i></i><div class="cardghost"></div></div><div class="fabdisc"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div></div>
+        <div class="frame-cap"><b>White plus, at rest <span class="pill cur">current</span></b><span>The disc is the action; the glyph is the disc's own mark.</span><span class="contrast"><span class="ok">plus 14.87:1</span><span class="ok">disc 14.25:1</span></span></div>
+      </div>
+      <div class="frame">
+        <div class="fab-stage veiled"><div class="ghost"><i></i><i></i><i></i><div class="cardghost"></div></div><div class="fabdisc x"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div></div>
+        <div class="frame-cap"><b>White ×, the fan open <span class="pill cur">current</span></b><span>One glyph turns 135° on the spring you liked, so the × is white too.</span><span class="contrast"><span class="ok">× 14.87:1</span><span class="ok">disc over the veil 3:1+</span></span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §02 -->
+  <section id="who">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Who else does this</h2></div>
+    <div class="col" id="who-body">
+      <p><i>The research consultant's sweep lands here.</i></p>
+    </div>
+  </section>
+
+  <!-- §03 -->
+  <section id="seam">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The jump from the fan to the sheet</h2></div>
+    <div class="col" id="seam-body">
+      <p>Tap the disc, then tap <b>More events</b>, on each phone. The first is what ships today; the other two are the options the team drew for the decision.</p>
+    </div>
+    <div class="demo-row" id="seam-demos"></div>
+    <div class="ctrl"><button type="button" id="seam-rm" aria-pressed="false">Show the Reduce Motion frames</button></div>
+  </section>
+
+  <!-- §04 -->
+  <section id="delight">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Delight that is the record moving</h2></div>
+    <div class="col" id="delight-body">
+      <p><i>The panel's ranked ideas land here.</i></p>
+    </div>
+    <div class="demo-row" id="delight-demos"></div>
+  </section>
+
+  <!-- §05 -->
+  <section id="decide">
+    <div class="sec-head"><span class="sec-num">05</span><h2>What the PM is asked to rule</h2></div>
+    <div class="briefs" id="briefs"></div>
+  </section>
+
+  <!-- §06 -->
+  <section id="team">
+    <div class="sec-head"><span class="sec-num">06</span><h2>What the team said</h2></div>
+    <div class="voices" id="voices"></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  // ── Glyphs, drawn small and simple (the app's are lucide + three custom SVGs) ──
+  var SVG = {
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    white: '<svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round"><path d="M12 4v16M4 12h16"/></svg>',
+    vomit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7c2-2.5 6-2.5 8 0 2.4.3 3.6 2.6 2.5 4.6.9 2.2-.6 4.4-2.9 4.4-1.6 2-5.6 2-7.2 0C6 16 4.6 13.8 5.5 11.6 4.4 9.6 5.6 7.3 8 7z"/><path d="M3 5l1 1M20 4l-1 1.5M21 19l-1.5-1"/></svg>',
+    stool: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 18h8a3 3 0 0 0 .6-5.9A3 3 0 0 0 13.5 8a2.5 2.5 0 0 0-3-3.5c.4 1.5-.8 2.6-2 3A3 3 0 0 0 7.4 12 3 3 0 0 0 8 18z"/></svg>',
+    meal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15zm0 0 7 7M2.1 21.8l6.4-6.3M19 5l-7 7"/></svg>',
+    cough: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3"/></svg>',
+    sneeze: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12.8 19.6A2 2 0 1 0 14 16H2M17.5 8a2.5 2.5 0 1 1 2 4H2M9.8 4.4A2 2 0 1 1 11 8H2"/></svg>',
+    itch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.05Q6.5 17.5 4 17a3.5 3.5 0 0 1 1-6.84A5 5 0 0 1 9 10z"/></svg>',
+    lethargy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11v2M6 11v2"/></svg>',
+    weight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m16 16 3-8 3 8c-.9.6-1.9 1-3 1s-2.1-.4-3-1zM2 16l3-8 3 8c-.9.6-1.9 1-3 1s-2.1-.4-3-1zM7 21h10M12 3v18M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>',
+    pill: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7zM8.5 8.5l7 7"/></svg>',
+    dots: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
+  };
+
+  var FOODS = [
+    'Rayne Clinical Nutrition RABBIT - RAYNE REWARDS S.I.T.',
+    'Royal Canin Selected Protein PR, Dry',
+    'Royal Canin Selected Protein PR, Wet'
+  ];
+
+  function homeHTML() {
+    return '<div class="ph-home">' +
+      '<div class="ph-bar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="date">Mon, Oct 5</span><span class="ask"><i></i>Ask</span><span class="me">D</span></div>' +
+      '<div class="ph-card"><div class="ph-label">Signal</div>' +
+        '<div class="ph-row"><div class="e">Photo read · Sep 22</div><div class="h">Possible foreign material in a vomit photo</div><div class="a">Worth a call to your vet</div></div>' +
+        '<div class="ph-row"><div class="h s">Coughing in 6 of the last 8 weeks</div><div class="s">18 episodes since August</div></div>' +
+        '<div class="ph-row"><div class="h s">Vomiting in 4 of the last 8 weeks</div><div class="s">11 episodes since August</div></div>' +
+        '<div class="ph-row ins"><div class="h s">Vomiting soon after meals</div><div class="s">7 of 8 timed episodes within 30 min of eating</div></div>' +
+      '</div>' +
+      '<div class="ph-card ph-trial"><div class="t">Rabbit trial · day 69</div><div class="bar"><i></i></div><div class="l">Royal Canin Selected Protein PR, Dry · ends Oct 17</div></div>' +
+    '</div>';
+  }
+
+  function pill(k, gcls, glyph, label, extra) {
+    return '<button type="button" class="fp' + (extra || '') + '" data-k="' + k + '"><span class="g ' + gcls + '">' + glyph + '</span><span>' + label + '</span></button>';
+  }
+
+  function fanHTML() {
+    return '<div class="ph-fan" role="menu" aria-label="Log for Nyx">' +
+      '<button type="button" class="fp logfor" data-k="logfor"><i class="avatar"></i><span class="lf"><small>Logging for</small><b>Nyx</b></span><span class="caret">&#8964;</span></button>' +
+      pill('more', 'quiet', SVG.plus, 'More events') +
+      pill('diarrhea', 'sym', SVG.stool, 'Loose stool') +
+      pill('vomit', 'sym', SVG.vomit, 'Vomit') +
+      pill('food', 'quiet', SVG.plus, 'Log food') +
+      pill('f3', 'meal', SVG.meal, FOODS[0]) +
+      pill('f2', 'meal', SVG.meal, FOODS[1]) +
+      pill('f1', 'meal', SVG.meal, FOODS[2]) +
+    '</div>';
+  }
+
+  function tile(g, gcls, label, wide, chips) {
+    return '<button type="button" class="tile' + (wide ? ' wide' : '') + '"><span class="g ' + (gcls || '') + '">' + g + '</span><span>' + label + '</span>' +
+      (chips ? '<span class="chips"><span>Normal</span><span>Loose</span></span>' : '') + '</button>';
+  }
+
+  function catalogueHTML() {
+    return '<div class="fam">Digestion</div><div class="grid">' + tile(SVG.vomit, '', 'Vomit') + '<span></span>' + tile(SVG.stool, '', 'Stool', true, true) + '</div>' +
+      '<div class="fam">Breathing</div><div class="grid">' + tile(SVG.cough, '', 'Cough') + tile(SVG.sneeze, '', 'Sneeze') + '</div>' +
+      '<div class="fam">Skin &amp; coat</div><div class="grid">' + tile(SVG.itch, '', 'Itch/Scratch', true) + '</div>' +
+      '<div class="fam">Energy &amp; behavior</div><div class="grid">' + tile(SVG.lethargy, '', 'Lethargy', true) + '</div>' +
+      '<div class="fam">Measurements</div><div class="grid">' + tile(SVG.weight, 'quiet', 'Weight', true) + '</div>' +
+      '<div class="fam">Food &amp; care</div><div class="grid">' + tile(SVG.meal, 'meal', 'Meal') + tile(SVG.pill, 'quiet', 'Medication') + '</div>';
+  }
+
+  function sheetHTML() {
+    return '<div class="ph-sheet"><div class="grab"></div><div class="st"><i class="avatar"></i>Log for Nyx <span class="caret">&#8964;</span></div>' + catalogueHTML() + '</div>';
+  }
+
+  function panelHTML() {
+    return '<div class="ph-panel" aria-label="Every event"><div class="pt"><b>Everything else</b><span>Log for Nyx</span></div>' +
+      catalogueHTML().replace('<div class="fam">Food &amp; care</div><div class="grid">' + tile(SVG.meal, 'meal', 'Meal') + tile(SVG.pill, 'quiet', 'Medication') + '</div>', '<div class="fam">Care</div><div class="grid">' + tile(SVG.pill, 'quiet', 'Medication') + tile(SVG.dots, 'quiet', 'Other') + '</div>') +
+    '</div>';
+  }
+
+  function doneHTML() {
+    return '<div class="ph-done" role="status" aria-live="polite"><span class="tk">' + SVG.check + '</span><span><b class="dt">Royal Canin Selected Protein PR, Wet</b><span class="ds">Logged for Nyx · 5:20 PM</span></span><span class="undo">Undo</span></div>';
+  }
+
+  // ── One phone. `mode` picks what More events does and what a food pill does. ──
+  function mountPhone(host, mode) {
+    var ph = document.createElement('div');
+    ph.className = 'ph';
+    ph.setAttribute('data-mode', mode);
+    var html = homeHTML() + '<div class="ph-veil"></div>' + fanHTML() +
+      '<button type="button" class="ph-disc" aria-label="Log event" aria-expanded="false"><i class="ring"></i>' + SVG.white + '</button>' +
+      '<div class="ph-tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div>' + doneHTML();
+    if (mode === 'A') html += '<div class="ph-modal slide"><div class="grey"></div>' + sheetHTML() + '</div>';
+    if (mode === 'B') html += '<div class="ph-bsheet">' + sheetHTML() + '</div>';
+    if (mode === 'C') html += panelHTML();
+    ph.innerHTML = html;
+    host.appendChild(ph);
+
+    var disc = ph.querySelector('.ph-disc');
+    var veil = ph.querySelector('.ph-veil');
+    var pills = Array.prototype.slice.call(ph.querySelectorAll('.fp'));
+    var done = ph.querySelector('.ph-done');
+    var timers = [];
+    function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+    function clearAll() { timers.forEach(clearTimeout); timers = []; }
+    function rm() { return ph.classList.contains('rm') || window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
+    function stagger(open) {
+      pills.forEach(function (el, i) {
+        el.style.transitionDelay = open ? ((pills.length - 1 - i) * 38) + 'ms' : (i * 18) + 'ms';
+      });
+    }
+    function open() {
+      reset(true);
+      stagger(true);
+      ph.classList.add('open');
+      disc.setAttribute('aria-expanded', 'true');
+      disc.setAttribute('aria-label', 'Close menu');
+    }
+    function close() {
+      stagger(false);
+      ph.classList.add('closing');
+      ph.classList.remove('open');
+      disc.setAttribute('aria-expanded', 'false');
+      disc.setAttribute('aria-label', 'Log event');
+      later(function () { ph.classList.remove('closing'); }, 220);
+    }
+    function reset(keepDone) {
+      clearAll();
+      ph.classList.remove('open', 'closing', 'handoff-a', 'handoff-b', 'handoff-c');
+      var m = ph.querySelector('.ph-morph'); if (m) m.remove();
+      var f = ph.querySelector('.ph-fly'); if (f) f.remove();
+      if (!keepDone) done.classList.remove('show');
+      disc.setAttribute('aria-expanded', 'false');
+      disc.setAttribute('aria-label', 'Log event');
+    }
+
+    function moreEvents(src) {
+      if (mode === 'A') {
+        // As shipped: closeMenu() and openLogSheet() in one tick. The fan retracts and its
+        // indigo veil fades while the Modal slides up WITH its grey scrim, as one block.
+        close();
+        ph.classList.add('handoff-a');
+        return;
+      }
+      if (mode === 'B') {
+        // The pill becomes the sheet: the veil stays, the other pills step back, the pill's
+        // box grows to the sheet's box with one settle, and the sheet's rows land after it.
+        var r = src.getBoundingClientRect(), p = ph.getBoundingClientRect();
+        var m = document.createElement('div');
+        m.className = 'ph-morph';
+        m.style.left = (r.left - p.left) + 'px'; m.style.top = (r.top - p.top) + 'px';
+        m.style.width = r.width + 'px'; m.style.height = r.height + 'px';
+        m.innerHTML = '<span class="lbl">More events</span>';
+        ph.appendChild(m);
+        stagger(false);
+        ph.classList.add('closing');
+        ph.classList.remove('open');
+        ph.classList.add('handoff-b');
+        if (rm()) { m.remove(); return; }
+        m.getBoundingClientRect();
+        m.classList.add('go');
+        m.querySelector('.lbl').style.opacity = '0';
+        m.style.left = '0px'; m.style.top = '116px'; m.style.width = p.width + 'px'; m.style.height = (p.height - 116) + 'px';
+        m.style.borderRadius = '22px 22px 0 0';
+        later(function () { m.style.opacity = '0'; m.style.transition = 'opacity 160ms ease'; }, 480);
+        later(function () { m.remove(); ph.classList.remove('closing'); }, 680);
+        return;
+      }
+      if (mode === 'C') {
+        // In place: the pills step back and the fan grows into the whole list, anchored to
+        // the same corner, under the same veil, with the × still the way out.
+        ph.classList.add('handoff-c');
+        ph.classList.remove('open');
+        disc.setAttribute('aria-expanded', 'true');
+        disc.setAttribute('aria-label', 'Close menu');
+      }
+    }
+
+    function quickFood(src) {
+      var label = src.textContent.trim();
+      done.querySelector('.dt').textContent = label;
+      if (mode !== 'land' || rm()) {
+        close();
+        later(function () { done.classList.add('show'); }, rm() ? 0 : 120);
+        later(function () { done.classList.remove('show'); }, 3600);
+        return;
+      }
+      // The record moving: the tapped pill's own meal glyph travels to the card's mark,
+      // and the card names what was written the moment it lands.
+      var g = src.querySelector('.g').getBoundingClientRect(), p = ph.getBoundingClientRect();
+      var fly = document.createElement('div');
+      fly.className = 'ph-fly';
+      fly.innerHTML = SVG.meal;
+      fly.style.left = (g.left - p.left) + 'px'; fly.style.top = (g.top - p.top) + 'px';
+      ph.appendChild(fly);
+      src.style.visibility = 'hidden';
+      close();
+      done.classList.add('show');
+      var mark = done.querySelector('.tk');
+      mark.style.opacity = '0';
+      var t = mark.getBoundingClientRect();
+      fly.getBoundingClientRect();
+      fly.style.left = (t.left - p.left + 1.5) + 'px'; fly.style.top = (t.top - p.top + 1.5) + 'px';
+      later(function () { fly.remove(); mark.style.opacity = '1'; src.style.visibility = ''; }, 440);
+      later(function () { done.classList.remove('show'); }, 3800);
+    }
+
+    disc.addEventListener('pointerdown', function () { if (!rm()) disc.classList.add('down'); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) {
+      disc.addEventListener(ev, function () { disc.classList.remove('down'); });
+    });
+    disc.addEventListener('click', function () {
+      if (ph.classList.contains('open') || ph.classList.contains('handoff-c')) { close(); ph.classList.remove('handoff-c'); }
+      else open();
+    });
+    veil.addEventListener('click', function () { if (ph.classList.contains('handoff-b')) { reset(); return; } close(); ph.classList.remove('handoff-c'); });
+    pills.forEach(function (el) {
+      el.addEventListener('pointerdown', function () { if (mode === 'land' && !rm()) el.classList.add('pressing'); });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) {
+        el.addEventListener(ev, function () { el.classList.remove('pressing'); });
+      });
+      el.addEventListener('click', function () {
+        if (!ph.classList.contains('open')) return;
+        var k = el.getAttribute('data-k');
+        if (k === 'more') moreEvents(el);
+        else if (k.charAt(0) === 'f' && k !== 'food') quickFood(el);
+        else close();
+      });
+    });
+    var grey = ph.querySelector('.ph-modal .grey');
+    if (grey) grey.addEventListener('click', function () { reset(); });
+    var bs = ph.querySelector('.ph-bsheet');
+    if (bs) bs.addEventListener('click', function (e) { if (e.target === bs) reset(); });
+
+    return { el: ph, open: open, reset: reset, more: function () { moreEvents(ph.querySelector('[data-k="more"]')); } };
+  }
+
+  function demo(hostId, mode, title, cap, opts) {
+    var host = document.getElementById(hostId);
+    var wrap = document.createElement('div');
+    wrap.className = 'frame' + (opts && opts.option ? ' option' : '');
+    var capEl = document.createElement('div');
+    capEl.className = 'frame-cap';
+    capEl.innerHTML = '<b>' + title + '</b><span>' + cap + '</span>';
+    var slot = document.createElement('div');
+    wrap.appendChild(slot);
+    wrap.appendChild(capEl);
+    host.appendChild(wrap);
+    var p = mountPhone(slot, mode);
+    var ctrl = document.createElement('div');
+    ctrl.className = 'ctrl';
+    var play = document.createElement('button');
+    play.type = 'button';
+    play.textContent = (opts && opts.playLabel) || 'Play it';
+    play.addEventListener('click', function () {
+      p.reset();
+      p.open();
+      setTimeout(function () { (opts && opts.play ? opts.play(p) : p.more()); }, 900);
+    });
+    var rst = document.createElement('button');
+    rst.type = 'button';
+    rst.textContent = 'Reset';
+    rst.addEventListener('click', function () { p.reset(); });
+    ctrl.appendChild(play); ctrl.appendChild(rst);
+    wrap.insertBefore(ctrl, capEl);
+    return p;
+  }
+
+  var seam = [
+    demo('seam-demos', 'A', 'A · As shipped <span class="pill dir">today</span>', 'The fan retracts and its indigo veil fades while the sheet slides up from the bottom, carrying a grey veil with it.'),
+    demo('seam-demos', 'B', 'B · The pill becomes the sheet', 'The indigo veil stays. More events grows into the sheet with one settle, and the rows land after it.', { option: true }),
+    demo('seam-demos', 'C', 'C · The fan grows in place', 'No second surface. The pills step back and the whole list opens from the same corner, with the × still the way out.', { option: true })
+  ];
+  var rmBtn = document.getElementById('seam-rm');
+  rmBtn.addEventListener('click', function () {
+    var on = rmBtn.getAttribute('aria-pressed') !== 'true';
+    rmBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    seam.forEach(function (p) { p.reset(); p.el.classList.toggle('rm', on); });
+  });
+
+  window.__fab = { demo: demo, mountPhone: mountPhone };
+})();
+</script>
