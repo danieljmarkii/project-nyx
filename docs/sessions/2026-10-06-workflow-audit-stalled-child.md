@@ -1,6 +1,6 @@
 # The workflow audit: a dispatched child wakes when its CI finishes
 
-**Date:** 2026-10-06 · **Issue:** CUL-1623 · shipped via #PRNUM
+**Date:** 2026-10-06 · **Issue:** CUL-1623 · shipped via #1085
 **One thing:** G5 L1 — Protection: a required check that has not reported is not a pass · check: pending
 
 ## What happened
