@@ -40,7 +40,7 @@ export function parseLaunchLines(text: string): LaunchLine[] {
 }
 
 export function closingLine(text: string, key: string): string | undefined {
-  return new RegExp(`^${key}:\\s*(.*)$`, 'm').exec(text)?.[1]?.trim();
+  return new RegExp(`^${key}:[ \\t]*(.*)$`, 'm').exec(text)?.[1]?.trim();
 }
 
 export function rowsOf(line?: string): string[] {
@@ -56,7 +56,7 @@ export function checkInFrom(triggers: Trigger[], alias: string, now: string): st
     .filter((x) => x.enabled !== false && x.nextRunAt && new Date(x.nextRunAt).getTime() > new Date(now).getTime())
     .filter((x) => (x.prompt ?? x.message ?? '').startsWith(`/dispatch wake · ${alias} · check-in`))
     .map((x) => x.nextRunAt!)
-    .sort();
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime()); // never lexical (C-40)
   return t[0];
 }
 
@@ -171,9 +171,9 @@ export function handoffDue(contextTokens: number): boolean {
 // "close CUL-1247" and its merge closed CUL-1247. Text bound for a PR body therefore breaks
 // every id except the ones the PR finishes (`keep`) with a non-breaking hyphen, so no parser
 // reads it as a reference and a reader still does.
-const ISSUE_ID = /\b(CUL)-(\d+)\b/g;
+const ISSUE_ID = /\b(CUL)-(\d+)\b/gi;
 export function prSafe(text: string, keep: string[] = []): string {
-  return text.replace(ISSUE_ID, (m: string, k: string, n: string) => (keep.includes(m) ? m : `${k}\u2011${n}`));
+  return text.replace(ISSUE_ID, (m: string, k: string, n: string) => (keep.includes(m.toUpperCase()) ? m : `${k}\u2011${n}`));
 }
 export function issueIdsIn(text: string): string[] {
   return [...new Set([...text.matchAll(ISSUE_ID)].map((m) => m[0]))];

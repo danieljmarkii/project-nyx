@@ -62,6 +62,7 @@ function plan(f: Facts, shape: BoardShape): string {
   say(`Slots: ${p.arithmetic}`);
   say(`       waiting on the PM ${p.subLimits.waitingOnPm} of 3 · writes production ${p.subLimits.writesProduction} of 3 · migrations ${p.subLimits.migrations} of 1`);
   say(`       parked (no slot, files reserved): ${p.parked.map((x) => x.label).join('; ') || 'nothing'}`);
+  if (!f.appliedMigrations) say('       (no applied-migrations list given: every PR migration reads as unapplied, so an idle one parks)');
   say(`Migrations: next free number ${p.nextMigration}${p.clashes.map((c) => `; ${c.number} held by ${c.keeps} and ${c.renumbers.join(', ')} (the later renumbers)`).join('')}`);
   const shared = p.reservations.filter((r) => r.holders.length > 1);
   if (shared.length) say(`Files held twice: ${shared.map((r) => `${r.file} (${r.holders.join(', ')})`).join('; ')}`);

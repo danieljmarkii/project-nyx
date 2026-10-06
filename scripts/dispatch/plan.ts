@@ -311,6 +311,8 @@ export function planDispatch(input: PlanInput): Plan {
   const inFlight: InFlight[] = [];
   const seenIssue = new Set<string>();
   const seenBranch = new Set<string>();
+  // Dedup keys are each item's OWN issue and its branch, never a parent or a row's shared
+  // issue: two sub-issues of one parent are two sessions (one sub-issue per PR, CUL-1397).
   const push = (f: InFlight) => {
     if (f.issues.some((i) => seenIssue.has(i)) || (f.branch && seenBranch.has(f.branch))) return;
     f.issues.forEach((i) => seenIssue.add(i));
@@ -339,7 +341,7 @@ export function planDispatch(input: PlanInput): Plan {
     push({
       label,
       why: 'launch',
-      issues: [l.issue, ...(row?.issues ?? [])],
+      issues: [l.issue],
       branch: pr?.headRef ?? l.branch,
       waitsOnPm: waiting && !running,
       writesProduction: pf.writesProduction || (!!row && noteWritesProduction(row, lib)),
@@ -352,12 +354,11 @@ export function planDispatch(input: PlanInput): Plan {
     if (now - ms(pr.lastCommitAt ?? pr.updatedAt ?? pr.createdAt) >= DAY) continue;
     const hit = rowOfPr.get(pr.number);
     const named = [...pr.title.matchAll(/CUL-\d+/g)].map((m) => m[0]);
-    const lifted = named.map((i) => input.issues[i]?.parentId).filter((x): x is string => !!x);
     const pf = prFacts(pr);
     push({
       label: hit ? `${labelRow(hit.ctx, me, hit.row.id)} (#${pr.number})` : `#${pr.number} (${pr.headRef}, ${ageOf(now, pr.lastCommitAt ?? pr.createdAt)})`,
       why: 'open-pr',
-      issues: [...named, ...lifted, ...(hit?.row.issues ?? [])],
+      issues: named,
       branch: pr.headRef,
       waitsOnPm: true,
       ...pf,
@@ -429,13 +430,17 @@ export function planDispatch(input: PlanInput): Plan {
     return { kind: 'none' };
   };
   const states = new Map(me.page.rows.filter((r) => r.id).map((r) => [r.id, stateOf(r)]));
+  // `03 + 04` ships as one row: an order rule or a path names its parts.
+  const partsOf = (id: RowId) => id.split(' + ').map(normRow);
+  const rowOfPart = (part: RowId) => [...states.keys()].find((k) => k === part || partsOf(k).includes(part));
   const mergedRow = (id: RowId) => {
     const own = [...states.entries()].find(([k]) => k === id || k.split(' + ').map(normRow).includes(id));
     return own?.[1].kind === 'merged';
   };
-  const busy = (id: RowId) => {
-    const s = states.get(id)?.kind;
-    return s === 'open' || s === 'running' || s === 'parked' || me.page.rows.find((r) => r.id === id)?.issues.some((i) => claimByIssue.has(i));
+  const busy = (part: RowId) => {
+    const id = rowOfPart(part);
+    const s = id ? states.get(id)?.kind : undefined;
+    return s === 'open' || s === 'running' || s === 'parked' || !!me.page.rows.find((r) => r.id === id)?.issues.some((i) => claimByIssue.has(i));
   };
 
   // Files held by in-flight rows (not yet a PR): their Hotspot names.
@@ -454,8 +459,10 @@ export function planDispatch(input: PlanInput): Plan {
   const rankOf = (id: RowId) => {
     let best = Infinity;
     me.page.paths.forEach((p, i) => {
-      const at = p.steps.indexOf(id);
-      if (at >= 0) best = Math.min(best, i * 1000 + at);
+      for (const part of partsOf(id)) {
+        const at = p.steps.indexOf(part);
+        if (at >= 0) best = Math.min(best, i * 1000 + at);
+      }
     });
     return best;
   };
@@ -496,12 +503,14 @@ export function planDispatch(input: PlanInput): Plan {
     for (const a of row.after) holdFor(a, v, mergedRow, input.issues);
 
     for (const rule of me.page.order) {
-      if (!rule.rows.includes(row.id)) continue;
+      const mine = partsOf(row.id).filter((x) => rule.rows.includes(x));
+      if (!mine.length) continue;
       if (rule.kind === 'chain') {
-        const before = rule.rows.slice(0, rule.rows.indexOf(row.id)).filter((x) => !mergedRow(x));
+        const first = Math.min(...mine.map((x) => rule.rows.indexOf(x)));
+        const before = rule.rows.slice(0, first).filter((x) => !mergedRow(x));
         if (before.length) v.reasons.push(`after ${before.map((b) => `PR-${b}`).join(', ')} in "${firstWords(rule.text)}" (strictly in order)`);
       } else if (rule.kind === 'one-at-a-time') {
-        const live = rule.rows.filter((x) => x !== row.id && busy(x));
+        const live = rule.rows.filter((x) => !mine.includes(x) && busy(x));
         if (live.length) v.reasons.push(`one at a time with ${live.map((b) => `PR-${b}`).join(', ')}, which is in flight`);
       }
     }

@@ -137,3 +137,31 @@ it('a first dispatch has one slot, whatever the arithmetic', () => {
   expect(p.slots).toBe(1);
   expect(p.proposal).toEqual(['23a']);
 });
+
+describe('found by review (each red before its fix)', () => {
+  const page = (rows: string, extra = '') => ({
+    name: 'Tiny: a test page',
+    description: `| PR | Issue(s) | What it is | After | Lane |\n| -- | -- | -- | -- | -- |\n${rows}\n\n### Never at the same time\n\n${extra}\n\n## End\n`,
+  });
+  const base = (over: Partial<PlanInput>): PlanInput => ({
+    now: AT_2110, project: page('| 01 | CUL-1 | a | — | A |'), prs: [], issues: {}, claims: [], sessions: {}, launches: [], mainMigrations: [], ...over,
+  });
+
+  it('two sub-issues of one parent are two sessions in flight', () => {
+    const pr = (number: number, issue: string) => ({ number, title: `Something (${issue})`, state: 'open' as const, headRef: `claude/x-${number}`, createdAt: AT_2110, lastCommitAt: AT_2110 });
+    const p = planDispatch(base({
+      prs: [pr(3, 'CUL-20'), pr(4, 'CUL-21')],
+      issues: { 'CUL-20': { id: 'CUL-20', state: 'In Review', parentId: 'CUL-99' }, 'CUL-21': { id: 'CUL-21', state: 'In Review', parentId: 'CUL-99' } },
+    }));
+    expect(p.slots).toBe(4);
+  });
+
+  it('a combined row obeys the order rules that name its parts, and ranks by them', () => {
+    const p = planDispatch(base({
+      project: page('| 04 | CUL-4 | a | — | A |\n| 05 + 06 | CUL-5 | b | — | A |\n\n**Critical path to it:** PR-04 → PR-06', '* PR-04 → PR-05, strictly in order.'),
+    }));
+    const v = p.verdicts.find((x) => x.row === '05 + 06')!;
+    expect(v.reasons).toEqual(['after PR-04 in "PR-04 → PR-05, strictly in order" (strictly in order)']);
+    expect(v.rank).toBe(1);
+  });
+});

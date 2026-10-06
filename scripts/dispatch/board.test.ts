@@ -92,3 +92,14 @@ it.each([
   ['hotspot CLAUDE.md is held by #1064 (PR-60, parked)', '#1064 (CLAUDE.md)'],
   ['a ruling: "ruling sheet drug and age items"', 'ruling: ruling sheet drug'],
 ])('shortReason(%s)', (r, s) => expect(shortReason(r)).toBe(s));
+
+it('a row with no readable PR number still renders a Board that parses (found by review)', () => {
+  const p = planDispatch({
+    now: NOW,
+    project: { name: 'Tiny', description: '| PR | Issue(s) | What it is | After | Lane |\n| -- | -- | -- | -- | -- |\n| ? | CUL-10 | one | — | A |\n| 01 | CUL-11 | two | — | A |\n\n## End\n' },
+    prs: [], issues: {}, claims: [], sessions: {}, launches: [], mainMigrations: [],
+  });
+  const b = renderBoard({ plan: p, now: NOW, shape: 'table' });
+  expect(b).toContain('| — | CUL-10 | not a row |');
+  expect(validateBoard(b, { now: NOW, merged: new Set(), rows: new Set(['01']) })).toEqual([]);
+});

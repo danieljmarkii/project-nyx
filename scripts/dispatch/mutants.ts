@@ -24,6 +24,8 @@ const MUTANTS: Mutant[] = [
   { check: 'in flight is deduplicated by issue and branch', file: 'plan.ts', from: 'if (f.issues.some((i) => seenIssue.has(i)) || (f.branch && seenBranch.has(f.branch))) return;', to: 'if (false) return;' },
   { check: 'a stale claim is not live', file: 'plan.ts', from: 'return now - ms(c.at) < DAY || open;', to: 'return true;' },
   { check: 'a first dispatch has one slot', file: 'plan.ts', from: 'firstDispatch ? Math.min(1, rawSlots) : rawSlots', to: 'rawSlots' },
+  { check: 'two sub-issues of one parent are two in flight', file: 'plan.ts', from: '      issues: named,', to: "      issues: [...named, ...named.map((i) => input.issues[i]?.parentId ?? '')].filter(Boolean)," },
+  { check: 'a combined row obeys rules naming its parts', file: 'plan.ts', from: 'const mine = partsOf(row.id).filter', to: 'const mine = [row.id].filter' },
   // The 084 clash.
   { check: 'the lower PR (or main) keeps a clashing number', file: 'plan.ts', from: '({ number, keeps: h[0], renumbers: h.slice(1) })', to: '({ number, keeps: h[h.length - 1], renumbers: h.slice(0, -1) })' },
   { check: 'a clashing row is held', file: 'plan.ts', from: "if (r.startsWith(`#${state.pr} `) || r === `#${state.pr}`) v.reasons.push", to: 'if (false) v.reasons.push' },
@@ -38,6 +40,7 @@ const MUTANTS: Mutant[] = [
   { check: 'a live claim holds its row', file: 'plan.ts', from: "if (c && state.kind !== 'open') v.reasons.push", to: 'if (false) v.reasons.push' },
   // The Board's three defects.
   { check: 'defect 1: rows are built from parsed cells', file: 'board.ts', from: 'lines.push(`| ${cell(r.id)} | ${cell(issue)} |', to: "lines.push(`| ${r.rawLine.split('|')[1].trim()} | ${cell(issue)} |" },
+  { check: 'a row with no PR number renders a parsable line', file: 'board.ts', from: "${/^(PM|parked)$/.test(r.cell) ? r.cell : '—'}", to: "${cell(r.cell || '—')}" },
   { check: 'defect 3: a merged PR on a path carries ✓', file: 'board.ts', from: '(merged(normRow(id)) ? `${tok} ✓` : tok)', to: '(false ? `${tok} ✓` : tok)' },
   { check: 'the parse refuses "waiting on" a merged PR', file: 'board.ts', from: 'if (w && facts.merged.has(normRow(w[1])))', to: 'if (false)' },
   { check: 'the parse refuses a merged PR with no ✓', file: 'board.ts', from: 'if (facts.merged.has(id) && !m[2])', to: 'if (false)' },
@@ -52,7 +55,7 @@ const MUTANTS: Mutant[] = [
   { check: 'the check-in is read from the routines', file: 'status.ts', from: '.filter((x) => (x.prompt ?? x.message ??', to: '.filter((x) => true || (x.prompt ?? x.message ??' },
   { check: 'memory names a launch never recorded', file: 'status.ts', from: 'if (!known.has(b)) {', to: 'if (false) {' },
   { check: 'memory names a merged Auto row', file: 'status.ts', from: 'if (n) out.push(`Auto: still names', to: 'if (false) out.push(`Auto: still names' },
-  { check: 'an issue id never reaches a PR body whole', file: 'status.ts', from: '(keep.includes(m) ? m : `${k}\\u2011${n}`)', to: '(keep.includes(m) ? m : m)' },
+  { check: 'an issue id never reaches a PR body whole', file: 'status.ts', from: '(keep.includes(m.toUpperCase()) ? m : `${k}\\u2011${n}`)', to: '(keep.includes(m.toUpperCase()) ? m : m)' },
   // The reader.
   { check: 'the Board is never read back as plan', file: 'page.ts', from: 'const plain = stripTags(withoutBoard(rawLines).join', to: 'const plain = stripTags(rawLines.join' },
   { check: 'a merge gate reads past the dots in a version', file: 'page.ts', from: '/Merge gate:\\s*(.*?)(?:\\.(?=\\s|$)|$)/', to: '/Merge gate:\\s*([^.]*)/' },

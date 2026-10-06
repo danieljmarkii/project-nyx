@@ -160,7 +160,9 @@ export function renderBoard(input: BoardInput): string {
     const v = plan.verdicts.find((x) => x.row === r.id && x.issue === r.issues[0] && x.what === r.what);
     const issue = r.issues.length ? r.issues.join(' + ') : '—';
     if (!r.id) {
-      lines.push(`| ${cell(r.cell || '—')} | ${cell(issue)} | not a row |`);
+      // Only the grammar's own non-row cells are printed; anything else (`?`, an unreadable
+      // cell) is `—`, so the Board the renderer writes always parses.
+      lines.push(`| ${/^(PM|parked)$/.test(r.cell) ? r.cell : '—'} | ${cell(issue)} | not a row |`);
       continue;
     }
     lines.push(`| ${cell(r.id)} | ${cell(issue)} | ${v ? cell(stateCell(v)) : 'unread'} |`);
