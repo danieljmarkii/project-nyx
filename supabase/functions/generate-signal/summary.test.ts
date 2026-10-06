@@ -25,6 +25,8 @@ import {
   buildSummaryPacket,
   extractNumbers,
   shouldPhraseWithModel,
+  VET_ASK_RE,
+  VET_KNOWS_RE,
   SUMMARY_MODEL_PHRASING_ENABLED,
   summaryTemplate,
   validateSummary,
@@ -797,4 +799,77 @@ Deno.test('EN-9: several watched signs stay inside the sentence cap (adversarial
   const p = packetFor(fs, decorated)
   assert.deepEqual(p.clauses.slice(0, 3), signs.map((x) => `Pixel's ${label[x]}, your vet knows.`))
   assert.equal(validateSummary(summaryTemplate(p), p), true, summaryTemplate(p))
+})
+
+// ── CUL-1608: "your vet knows" is not routing — the asking clause's ask is required ────────────
+
+Deno.test('CUL-1608: asksVet is true while any safety clause asks, false when every one is watched', () => {
+  const d = declineFinding()
+  const w = worseningFinding()
+  assert.equal(packetFor([w], [w]).asksVet, true)
+  assert.equal(packetFor([w], [withCare(w, 'with_vet', WATCHED_CARD)]).asksVet, false)
+  assert.equal(packetFor([d, w], [d, withCare(w, 'with_vet', WATCHED_CARD)]).asksVet, true)
+  assert.equal(quietPacket().asksVet, false)
+  assert.equal(quietPacket().hasSafety, false)
+})
+
+Deno.test('CUL-1608: the routing regex matches every safety ask the templates write and never the watched head', () => {
+  // Each ask phrasing.ts writes on a safety card (decline, burden, weight, worsening, chronicity, red flag).
+  for (const ask of [
+    'worth keeping an eye on, and a word with your vet if it carries on.',
+    'worth a call to your vet today.',
+    'worth booking a vet visit soon.',
+    'worth raising with your vet.',
+    'worth a word with your vet.',
+    'worth a call to your vet. This is a read of your logs, not a diagnosis.',
+  ]) assert.match(`Pixel has vomited 3 times this week — ${ask}`, VET_ASK_RE, ask)
+  // Paraphrases a model may smooth an ask into still count as asking.
+  for (const ask of ['talk to your vet', 'mention it to the vet', 'call your vet', 'worth a vet appointment', 'book a visit with your vet'])
+    assert.match(`Pixel has vomited, so ${ask}.`, VET_ASK_RE, ask)
+  // The head and the acknowledgement name the vet without asking.
+  for (const said of [WATCHED_VOMIT, WATCHED_CARD, 'Since the vet visit, Pixel has vomited twice.', 'The vet said to watch it.'])
+    assert.equal(VET_ASK_RE.test(said), false, said)
+  assert.match(WATCHED_VOMIT, VET_KNOWS_RE)
+  // The head's own words: "the vet knows" is a paraphrase that loses whose vet the owner told.
+  assert.equal(VET_KNOWS_RE.test('The vet knows about the vomiting.'), false)
+})
+
+Deno.test('CUL-1608: every asking safety template still passes the tightened check', () => {
+  const findings: Finding[] = [
+    worseningFinding(),
+    worseningFinding({ tier: 'soft', trigger: 'more_days' }),
+    declineFinding(),
+    declineFinding({ trigger: 'consecutive_low', daysBelowBaseline: 3, refusedFoodLabel: 'Chicken Pate' }),
+  ]
+  for (const f of findings) {
+    const p = packetFor([f], [f])
+    assert.equal(validateSummary(summaryTemplate(p), p), true, summaryTemplate(p))
+  }
+  // Mixed: the ask leads and the head follows; the whole template passes.
+  const d = declineFinding()
+  const w = worseningFinding()
+  const mixed = packetFor([d, w], [d, withCare(w, 'with_vet', WATCHED_CARD)])
+  assert.equal(validateSummary(summaryTemplate(mixed), mixed), true, summaryTemplate(mixed))
+})
+
+Deno.test('CUL-1608: on a mixed packet a model that drops the ask and keeps the head is rejected', () => {
+  const d = declineFinding({ trigger: 'consecutive_low', daysBelowBaseline: 3, refusedFoodLabel: null })
+  const w = worseningFinding()
+  const p = packetFor([d, w], [d, withCare(w, 'with_vet', WATCHED_CARD)])
+  // The adversarial pass's counterexample: "vet" is present, nothing asks. Passed before this fix.
+  const dropped = "Pixel has eaten less than usual the last three days. Pixel's vomiting, your vet knows."
+  assert.match(dropped, /\bvet\b/i, 'premise: the bare-word check alone would pass this')
+  assert.equal(validateSummary(dropped, p), false)
+  // The same summary with the decline's ask kept passes.
+  const kept = "Pixel has eaten less than usual the last three days, worth a word with your vet if it carries on. Pixel's vomiting, your vet knows."
+  assert.equal(validateSummary(kept, p), true)
+})
+
+Deno.test('CUL-1608: a watched-only packet must keep the acknowledgement, not just the word "vet"', () => {
+  const w = worseningFinding()
+  const p = packetFor([w], [withCare(w, 'with_vet', WATCHED_CARD)])
+  assert.equal(validateSummary(summaryTemplate(p), p), true, summaryTemplate(p))
+  // "vet" survives, the acknowledgement does not: the concern's one fact about the vet is gone.
+  assert.equal(validateSummary("Pixel's vomiting came up with the vet. Chicken was Pixel's most-logged meal protein this month.", p), false)
+  assert.equal(validateSummary("Pixel's vomiting, your vet knows. Chicken was Pixel's most-logged meal protein this month.", p), true)
 })
