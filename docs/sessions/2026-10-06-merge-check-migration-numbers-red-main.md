@@ -32,12 +32,12 @@ Shipped via #1081. Dispatched session, BUILD.
 
 ## Teach
 ### One thing — Protection: a required check can look across PRs (G5, L1)
-Every PR runs its own tests against its own changes, so two PRs can each pass and still clash once both land. On 10/5 two PRs each added a database change numbered 084; each one alone was fine, and nothing compared them. A required check is a test GitHub refuses to merge without, and the new one reads every open PR at once, so the second PR to claim a number goes red before it can land.
+Every PR runs its own tests against its own changes, so two PRs can each pass and still clash once both land. On 10/5 two PRs each added a database change numbered 084; each one alone was fine, and nothing compared them. A required check is a test GitHub refuses to merge without, and the new one reads every open PR at once, so a PR goes red as soon as its run sees another open PR holding its number.
 
 **Like:** two people booking the same meeting room from different calendars. Each booking is valid on its own; only a shared room calendar sees the double booking.
 
 **In today's work:** `scripts/steward/migration-numbers.sh`
-`if [ "$other" -lt "$pr" ]; then` — when another open PR with a lower number (opened earlier) adds the same migration number, this PR is the one that fails.
+`fail=1` sits after both branches of the "who opened first" test, so the check fails whichever PR it runs on; the "who opened first" part only decides whose message says "renumber".
 
 **Why it matters to you as PM:** the check works only once it is on the required list, and adding it there is your one action from this PR.
 
