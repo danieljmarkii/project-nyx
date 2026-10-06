@@ -46,7 +46,7 @@ A merge commit, never a rebase of a pushed branch (the stack in §1 is the one e
 
 **Outside the lockfile and session record rows, never resolve a file both sides changed by taking one side wholesale** (`git checkout --ours` / `--theirs`, or "accept current" over a whole file). That is how a fix reverts merged work, and it also throws away every non-conflicting hunk `main` had in that file.
 
-Two new migrations with the same number never conflict as text, and git says nothing; the script reports it. Renumber the file that lands second. The live database keys a migration by its apply timestamp and name (`list_migrations`), never by the file's number, so renaming an unmerged file is safe even after `apply_migration` ran.
+Two new migrations with the same number never conflict as text, and git says nothing; the script reports it, against `main` and against every open PR you name, and the required `migration-numbers` CI job checks every open PR on each push (CUL-1522). Between two open PRs the one opened first holds the number, so the later one renumbers; a number already on `main` always wins. The live database keys a migration by its apply timestamp and name (`list_migrations`), never by the file's number, so renaming an unmerged file is safe even after `apply_migration` ran.
 
 ## 5. The check, and how to read it
 
@@ -54,10 +54,12 @@ Run `scripts/steward/merge-check.sh` again after resolving, and before any merge
 
 - **`CLEAN`**: proceed.
 - **`CONFLICT`**: resolve (§3, §4), then run it again.
-- **`REVIEW`**: expected after any conflict resolution. It lists every line `main` added after your fork point that the result no longer has, outright deletions first (`--all` for more than 20), plus any duplicate migration number and any conflict marker left in. Read each line:
+- **`REVIEW`**: expected after any conflict resolution. It lists every line `main` added after your fork point that the result no longer has, outright deletions first (`--all` for more than 20); every line `main` DELETED after your fork point that the result brings back (`back`); any duplicate migration number, with `main` or with an open PR you named; any conflict marker left in; and `main`'s own CI when it is red or could not be read. Read each line:
   - `deleted` (nothing stands in its place): restore it, unless you moved it to another file on purpose.
   - `replaced` (your resolution rewrote it): confirm `main`'s intent survived in the replacement. Read the line itself, never the tag: reverting `main`'s value to your branch's old one is also a replacement.
+  - `back` (main deleted it, your resolution returned it): delete it again, unless your branch needs that exact line; on the record (2026-08-23) this is how four raw `<Text>`s returned over main's `ThemedText` sweep.
   - A duplicate migration number: renumber as in §4. A conflict marker: finish the resolution.
+  - `main's CI: RED`: do not land on it. Wait for the fix, or be it: a branch that touches a file changed since `main` was last green, with its own CI passed, reads as the fix and stays `CLEAN`. A fix the check cannot see (a date-pinned test, nothing changed) is cleared in writing. `could not read` is never green: read `main`'s latest CI run with `actions_list` and say what it was.
 
   Clear a `REVIEW` in writing: the merge commit message or the PR body says which lines were rewritten or moved on purpose, one line each or one per group. On the record, careful resolutions almost never delete a line outright, so a `deleted` line is the one to doubt first.
 - **Exit 3 is never a pass.** It means the check could not run: a shallow clone (`git fetch --unshallow origin`), a file name it refuses, an unknown ref. Fix the cause and run it again.
@@ -87,7 +89,7 @@ Anything short of that: do not merge, and say which condition failed as the firs
 **The sequence:**
 
 1. Everything that rides in the PR is committed and pushed, the session record included with its learning line (`/wrap` writes both before the merge).
-2. Run the check with the head branches of the other open PRs updated in the last 7 days (`list_pull_requests`). `CONFLICT` sends you through §3 to §6 and back here.
+2. Run the check with the head branches of the other open PRs updated in the last 7 days (`list_pull_requests`); when your PR adds a migration, pass every open PR's head branch, since a parked PR still holds its number. `CONFLICT` sends you through §3 to §6 and back here.
 3. Mark the PR ready, then wait for the checks: in a cloud session, subscribe to the PR's activity and end the turn, and the CI result wakes you; elsewhere, watch the check runs with a Monitor until-loop. Never a bare sleep, never an empty commit to retrigger CI. If the repository allows auto merge, enabling it (squash) after marking ready replaces steps 3 and 4, and the merge event wakes the subscribed session for steps 5 and 6.
 4. Take the fresh read, apply the gate, squash merge, title unchanged.
 5. **Report.** Run the check again with `--head origin/main` and the same branch list, and give the PM one line naming each open PR that now conflicts with `main`. Its own session resolves it at its own wrap.

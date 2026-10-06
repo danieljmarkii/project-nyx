@@ -431,11 +431,14 @@ describe('scripts/steward/merge-check.sh', () => {
     const dup = session(fx, 'claude/dup', { 'supabase/migrations/003_branch.sql': 'create table d ();\n' });
     const ok = session(fx, 'claude/ok', { 'supabase/migrations/004_branch.sql': 'create table e ();\n' });
     landOnMain(fx, { 'supabase/migrations/003_main.sql': 'create table f ();\n' }, 'another PR lands');
+    // Cut after 003_main landed, so it carries main's file: that is main's number, not its.
+    session(fx, 'claude/later', { 'feature.txt': 'later\n' });
 
-    const a = check(dup);
+    const a = check(dup, ['claude/later']);
     expect(a.code).toBe(2);
     expect(a.out).toContain('migration numbers: landing adds a duplicate 003');
     expect(a.out).not.toMatch(/duplicate .*002/);
+    expect(a.out).not.toContain('shared with another open PR');
     expect(lastLine(a.out)).toBe('MERGE CHECK: REVIEW');
 
     const b = check(ok);
@@ -560,30 +563,31 @@ describe('scripts/steward/merge-check.sh', () => {
     expect(c.code).toBe(3);
     expect(c.out).toContain('no such ref: origin/nope');
   });
-  // RESURRECTED LINES (CUL-1522). Main deletes `delta` and rewrites `charlie`; the branch
-  // rewrote `charlie` too, so the two conflict. Taking the branch's side wholesale brings
-  // `delta` back, a line main deleted after this branch forked that no clean merge would
-  // keep, and a lone `}` main deleted with it (no letter or digit, so not reported). The
-  // careful resolution keeps both `charlie`s and moves `echo`, a line main still has, to
-  // the top: nothing comes back.
+  // RESURRECTED LINES (CUL-1522). Main deletes `delta` and a lone `}`; the branch rewrote
+  // `charlie`, the line beside them, so the two conflict. Taking the branch's side
+  // wholesale brings `delta` back, a line main deleted after this branch forked that no
+  // clean merge would keep, and loses nothing, so the resurrection is the ONLY finding
+  // (the `}` has no letter or digit and is not reported). The careful resolution keeps
+  // main's deletions and moves `echo`, a line main still has, to the top.
   it('a resolution that brings back a line main deleted after the fork is REVIEW and names it; combining is CLEAN', () => {
     const fx = fixture();
     landOnMain(fx, { 'res.txt': lines('alpha', 'bravo', 'charlie', 'delta', '}', 'echo') }, 'a file to fork from');
     const branchSide = lines('alpha', 'bravo', 'charlie (b)', 'delta', '}', 'echo');
     const careless = session(fx, 'claude/careless', { 'res.txt': branchSide });
     const careful = session(fx, 'claude/careful', { 'res.txt': branchSide });
-    landOnMain(fx, { 'res.txt': lines('alpha', 'bravo', 'charlie (m)', 'echo') }, 'main deletes delta');
+    landOnMain(fx, { 'res.txt': lines('alpha', 'bravo', 'charlie', 'echo') }, 'main deletes delta');
 
     expect(mergeMain(careless)).not.toBe(0);
     expect(mergeMain(careful)).not.toBe(0);
     git(careless, ['checkout', '--ours', '--', 'res.txt']);
     commitAll(careless, 'merge main, take ours');
-    write(careful, 'res.txt', lines('echo', 'alpha', 'bravo', 'charlie (b)', 'charlie (m)'));
-    commitAll(careful, 'merge main, keep both');
+    write(careful, 'res.txt', lines('echo', 'alpha', 'bravo', 'charlie (b)'));
+    commitAll(careful, 'merge main, keep its deletions');
 
     const a = check(careless);
     expect(a.out).toContain('resurrected lines: 1 in 1 file(s) (res.txt 1), deleted on main after this branch forked');
     expect(a.out).toContain('\n  back      res.txt: delta\n');
+    expect(a.out).toContain('lost lines: none');
     expect(a.out).not.toMatch(/back {6}res\.txt: \}/);
     expect(a.code).toBe(2);
     expect(lastLine(a.out)).toBe('MERGE CHECK: REVIEW');
