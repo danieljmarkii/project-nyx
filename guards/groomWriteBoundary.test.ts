@@ -14,9 +14,12 @@
 //      step's prose can read as an instruction once its row is gone). The report set is
 //      pinned EXACTLY too.
 //
-// CUL-1617 added exactly one writable row, step 16's `blocks` relation add, and three
+// CUL-1617 added exactly one writable row, step 16's `blocks` relation add, and two
 // report rows (step 16's prose / closed-target / label-only cases, and step 17). The
-// assertions below prove the new write is allowed AND that nothing else changed.
+// assertions below prove the new write is allowed AND that nothing else changed. The
+// write is narrow on purpose: on the 2026-10-06 board even a bare `**Blocks:** CUL-1531.`
+// meant blocked-by (CUL-1542), because the old issue contract defined the line that way,
+// so the row only fires on issues filed after the contract gives the line one direction.
 //
 // WHAT IT PARSES. The first markdown table after the `## What an unattended pass may
 // WRITE` heading: three cells per row (step · unattended · artifact). A row is WRITABLE
@@ -36,6 +39,7 @@
 //   ✗ killed — step 10's `**report**` changed to `set \`duplicateOf\`` (2 red)
 //   ✗ killed — step 17's row deleted (2 red)
 //   ✗ killed — `append-only` removed from the `blocks` row (1 red)
+//   ✗ killed — the `createdAt` contract-date condition removed from the row (1 red)
 //   ✗ killed — the section heading renamed, so no table is found (4 red)
 //
 // A writable row is not always a FIELD edit: step 12's team call and default posted
@@ -150,6 +154,8 @@ describe('backlog-groomer write boundary (CUL-1617)', () => {
     expect(row?.unattended).toMatch(/never `removeBlocks`/);
     expect(row?.artifact).toMatch(/`CUL-NNN`/);
     expect(row?.artifact).toMatch(/\*\*Blocks:\*\*/);
+    // The contract-date condition is what keeps the write off lines written both ways.
+    expect(row?.artifact).toMatch(/`createdAt` on or after the date the issue contract/);
   });
 
   it('cellsOf keeps a backticked pipe inside its cell', () => {
