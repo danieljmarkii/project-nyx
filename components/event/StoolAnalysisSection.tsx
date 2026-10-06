@@ -63,13 +63,16 @@ import {
 import { needsEn7Recheck } from '../../lib/stoolForm';
 import {
   callFromRecordOnly,
+  callNowSignsMet,
   callTodayAction,
   floorRanOn,
   modelMadeCall,
+  readSettled,
   stoolFindings,
   tellThem,
 } from '../../lib/incidentFloorWords';
 import { useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
+import { usePetStore } from '../../store/petStore';
 import { StoolFieldsEditor } from './StoolFieldsEditor';
 import { stoolCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -185,6 +188,8 @@ export function StoolAnalysisSection(
   // for "What to tell them" under a call. Re-read when the row moves.
   const floorFacts = useIncidentFloorFacts(eventId, petId, row?.updated_at ?? row?.status ?? null);
   const clockNow = useMinuteNow();
+  // The RECORD's pet (C-9): species and birthday decide which call-now signs the floor meets.
+  const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
   // the grid so a re-render of the block never resets what the owner folded, and fed the
@@ -648,6 +653,17 @@ export function StoolAnalysisSection(
           recordOnly: callFromRecordOnly({
             kind: 'stool',
             floorRan: floorRanOn(row),
+            settled: readSettled(row),
+            signsMet:
+              floorFacts?.anchor && recordPet
+                ? callNowSignsMet({
+                    aroundMs: Date.parse(floorFacts.anchor.at),
+                    vomits: floorFacts.vomits,
+                    lethargyAt: floorFacts.lethargyAt,
+                    species: recordPet.species,
+                    birthDate: recordPet.date_of_birth,
+                  })
+                : null,
             modelCall: modelMadeCall(row.ai_raw_payload?.recommendation, hasPhoto),
             contextual_flags: row.contextual_flags,
             visual_flags: row.visual_flags,

@@ -1641,7 +1641,7 @@ describe('VomitAnalysisSection — the floor\'s words (CUL-1510)', () => {
     usePetStore.setState({
       pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
     });
-    mockFloorFacts = { anchor, vomits: [anchor], courses: ['prednisone'] };
+    mockFloorFacts = { anchor, vomits: [anchor], lethargyAt: [], courses: ['prednisone'] };
   });
   afterEach(() => {
     nowSpy.mockRestore();
@@ -1657,6 +1657,23 @@ describe('VomitAnalysisSection — the floor\'s words (CUL-1510)', () => {
     expect(view.queryByText(/first thing tomorrow, or an emergency clinic tonight if Rex vomits three times/)).toBeTruthy();
     expect(view.queryByText('What to tell them:')).toBeTruthy();
     expect(view.queryByText('Rex vomited at 1 PM; on prednisone.')).toBeTruthy();
+  });
+
+  it('no leave to wait when a burst on the record is already at call now, or the read was owner-edited (pass 2)', async () => {
+    const callRow = { recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_vomiting'], visual_flags: [], ai_raw_payload: { recommendation: 'monitor' } };
+    const at = (h: number, m = 0) => ({ at: new Date(2026, 5, 10, h, m).toISOString(), confidence: 'witnessed' });
+    mockFloorFacts = { anchor, vomits: [at(11), at(12), at(12, 40), anchor], lethargyAt: [], courses: [] };
+    mockRow = row(callRow);
+    const burst = render(<VomitAnalysisSection eventId="f7" petId="pet-1" petName="Rex" hasPhoto />);
+    await burst.findByText('Call your vet today');
+    expect(burst.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
+    burst.unmount();
+
+    mockFloorFacts = { anchor, vomits: [anchor], lethargyAt: [], courses: [] };
+    mockRow = row({ ...callRow, edited_at: '2026-06-10T13:30:00.000Z' });
+    const edited = render(<VomitAnalysisSection eventId="f8" petId="pet-1" petName="Rex" hasPhoto />);
+    await edited.findByText('Call your vet today');
+    expect(edited.queryByText(/first thing tomorrow/)).toBeNull();
   });
 
   it('a call today over a photo finding gives no leave to wait, and names only the finding that is present', async () => {

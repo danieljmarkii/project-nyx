@@ -92,6 +92,7 @@ import { theme } from '../../constants/theme';
 import { flat } from '../../testUtils/tree';
 import { readLandedCopy } from './useReadLandingAnnouncement';
 import { EARLIER_READ_LABEL, HELD_CALL_DISCLOSURE } from '../../lib/incidentTierWords';
+import { usePetStore } from '../../store/petStore';
 import { watchAnalysisRow, awaitAnalysisChain, triggerStoolAnalysis, deriveEditedStoolFields } from '../../lib/analysis';
 import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
 
@@ -1145,13 +1146,18 @@ describe('StoolAnalysisSection — the floor\'s words (CUL-1510)', () => {
     mockFloorFacts = {
       anchor: { at: STOOL.toISOString(), confidence: 'witnessed' },
       vomits: [{ at: new Date(2026, 5, 10, 9, 0).toISOString(), confidence: 'witnessed' }],
+      lethargyAt: [],
       courses: [],
     };
+    usePetStore.setState({
+      pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
+    });
   });
   afterEach(() => {
     nowSpy.mockRestore();
     mockRow = null;
     mockFloorFacts = null;
+    usePetStore.setState({ pets: [] });
   });
 
   it('a record-only call today in the evening resolves to first thing tomorrow, signs as the exception', async () => {

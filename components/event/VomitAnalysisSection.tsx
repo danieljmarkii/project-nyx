@@ -55,9 +55,11 @@ import {
 } from '../../lib/incidentTierWords';
 import {
   callFromRecordOnly,
+  callNowSignsMet,
   callTodayAction,
   floorRanOn,
   modelMadeCall,
+  readSettled,
   tellThem,
   vomitFindings,
   watchForList,
@@ -662,6 +664,17 @@ export function VomitAnalysisSection(
           recordOnly: callFromRecordOnly({
             kind: 'vomit',
             floorRan: floorRanOn(row),
+            settled: readSettled(row),
+            signsMet:
+              floorFacts?.anchor && recordPet
+                ? callNowSignsMet({
+                    aroundMs: Date.parse(floorFacts.anchor.at),
+                    vomits: floorFacts.vomits,
+                    lethargyAt: floorFacts.lethargyAt,
+                    species: recordPet.species,
+                    birthDate: recordPet.date_of_birth,
+                  })
+                : null,
             contextual_flags: row.contextual_flags,
             visual_flags: row.visual_flags,
             // An unclear blood or foreign-material field is a photo that may hold one, and a
