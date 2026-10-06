@@ -29,3 +29,9 @@ The old hook ran the full suite on every push: 3.5 to 12 minutes.
 ## Residual
 
 - The "two merges within a minute each get a completed run" check needs real merges; it waits for the next pair to land close together, to be confirmed in the Actions list.
+
+## Review
+
+`code-reviewer` found no blocker; the CI expression and the guard were confirmed correct. It found two real holes in the hook, both fixed before merge:
+- A push that only deleted a code file ran nothing, so a dangling import reached CI. Deleted code paths now force tsc (they stay out of `--findRelatedTests`, which cannot resolve a missing file). Proven: deleting `lib/haptics.ts` alone now blocks the push on the two TS2307s.
+- A non-ASCII path came back quoted (`core.quotePath`), missed every case arm and skipped its checks. The diff now runs with `core.quotePath=false`.
