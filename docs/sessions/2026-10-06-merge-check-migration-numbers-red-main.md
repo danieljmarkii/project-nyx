@@ -26,9 +26,10 @@ Shipped via #1081. Dispatched session, BUILD.
 - **The CI job, live.** On today's open PRs, #1064 fails (084 is on main as `084_vet_call_cover.sql`) and #1078 passes. On this PR: a probe commit planting `084_merge_check_probe_do_not_merge.sql` made the job fail, and its revert passed (run links in the PR).
 
 ## Residuals
-- **PM action:** add `migration-numbers` to the `main` ruleset's required checks.
+- **PM action, on CUL-586** (the same ruleset edit, queue over cap): add `migration-numbers` to the `main` ruleset's required checks after this PR merges.
 - #1064 (parked) now fails `migration-numbers` on its next push. 084 is on main, so #1064 renumbers.
 - A stale PR holds its number for as long as it stays open; the oldest open PRs date from July. Today none of them adds a migration, so nothing is blocked.
+- When a clash is fixed by the other PR renumbering, this side's red stays until its check is re-run (Re-run button, or its next push). That is deliberate: fail closed.
 
 ## Teach
 ### One thing — Protection: a required check can look across PRs (G5, L1)
