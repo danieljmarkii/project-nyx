@@ -9,6 +9,10 @@
 import { useEffect, useState } from 'react';
 import { loadIncidentFloorFacts, type IncidentFloorFacts } from '../lib/incidentFloorFacts';
 
+/** How often the open record re-reads the phone's rows, so a log synced from another device
+ *  or an edit to a neighbouring event reaches the words without a reopen (pass 3, #3). */
+export const FLOOR_FACTS_REFRESH_MS = 5 * 60_000;
+
 export function useIncidentFloorFacts(
   eventId: string,
   petId: string,

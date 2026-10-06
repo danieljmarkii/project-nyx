@@ -64,7 +64,7 @@ import {
   vomitFindings,
   watchForList,
 } from '../../lib/incidentFloorWords';
-import { useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
+import { FLOOR_FACTS_REFRESH_MS, useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
 import { usePetStore } from '../../store/petStore';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
 import { vomitCapCopy } from '../../constants/monetizationCopy';
@@ -174,12 +174,12 @@ export function VomitAnalysisSection(
   const latestRow = useRef<AnalysisRow | null | undefined>(undefined);
   latestRow.current = row;
   const watchTeardown = useRef<(() => void) | null>(null);
+  const clockNow = useMinuteNow();
   // CUL-1510: the record around this vomit, for the floor's words under the read. Re-read
   // when the row moves, so a read raised by a neighbouring log counts that log.
-  const floorFacts = useIncidentFloorFacts(eventId, petId, row?.updated_at ?? row?.status ?? null);
+  const floorFacts = useIncidentFloorFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}|${Math.floor(clockNow / FLOOR_FACTS_REFRESH_MS)}`);
   // The RECORD's pet (C-9): species and birthday decide which clauses its list carries.
   const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
-  const clockNow = useMinuteNow();
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
   // the grid so a re-render of the block never resets what the owner folded, and fed the
@@ -667,7 +667,7 @@ export function VomitAnalysisSection(
             settled: readSettled(row),
             signsMet:
               floorFacts?.anchor && recordPet
-                ? callNowSignsMet({
+                ? floorFacts.neighbourCallBeyondRecord || callNowSignsMet({
                     aroundMs: Date.parse(floorFacts.anchor.at),
                     vomits: floorFacts.vomits,
                     lethargyAt: floorFacts.lethargyAt,

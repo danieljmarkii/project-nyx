@@ -71,7 +71,7 @@ import {
   stoolFindings,
   tellThem,
 } from '../../lib/incidentFloorWords';
-import { useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
+import { FLOOR_FACTS_REFRESH_MS, useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
 import { usePetStore } from '../../store/petStore';
 import { StoolFieldsEditor } from './StoolFieldsEditor';
 import { stoolCapCopy } from '../../constants/monetizationCopy';
@@ -184,10 +184,10 @@ export function StoolAnalysisSection(
   const latestRow = useRef<AnalysisRow | null | undefined>(undefined);
   latestRow.current = row;
   const watchTeardown = useRef<(() => void) | null>(null);
+  const clockNow = useMinuteNow();
   // CUL-1510: the record around this stool (the vomits beside it, the courses on board),
   // for "What to tell them" under a call. Re-read when the row moves.
-  const floorFacts = useIncidentFloorFacts(eventId, petId, row?.updated_at ?? row?.status ?? null);
-  const clockNow = useMinuteNow();
+  const floorFacts = useIncidentFloorFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}|${Math.floor(clockNow / FLOOR_FACTS_REFRESH_MS)}`);
   // The RECORD's pet (C-9): species and birthday decide which call-now signs the floor meets.
   const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
 
@@ -656,7 +656,7 @@ export function StoolAnalysisSection(
             settled: readSettled(row),
             signsMet:
               floorFacts?.anchor && recordPet
-                ? callNowSignsMet({
+                ? floorFacts.neighbourCallBeyondRecord || callNowSignsMet({
                     aroundMs: Date.parse(floorFacts.anchor.at),
                     vomits: floorFacts.vomits,
                     lethargyAt: floorFacts.lethargyAt,

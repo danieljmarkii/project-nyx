@@ -58,6 +58,7 @@ import {
   FLOOR_LETHARGY_HOURS,
   FLOOR_MERGE_MINUTES,
   FLOOR_PAIR_HOURS,
+  FLOOR_READ_HOURS,
   FLOOR_SPAN_HOURS,
   FLOOR_YOUNG_MONTHS,
   ageInMonths,
@@ -344,8 +345,9 @@ export const WAIT_ALLOWED_FLAGS: Readonly<Record<'vomit' | 'stool', readonly str
 };
 
 /** Hours either side of the event within which a vomit already at call now on the real floor
- *  takes the leave to wait away: a sign met on the next record is still met on this one. */
-export const SIGNS_MET_REACH_HOURS = 24;
+ *  takes the leave to wait away: a sign met on the next record is still met on this one. The
+ *  floor's whole read window, so a burst a day and a bit from a stool is seen (pass 3, #2). */
+export const SIGNS_MET_REACH_HOURS = FLOOR_READ_HOURS;
 
 /**
  * Whether a call-now sign is already met around this event, by the REAL floor over the
@@ -384,8 +386,10 @@ export function callNowSignsMet(input: {
  *   - no red-flag photo field, present or unclear (`photoFinding`, the section's call);
  *   - the model did not make its own call (`modelCall`): a pill, worms or plant matter can
  *     escalate the model with every enum field quiet (T16 to T18; pass 1, B2);
- *   - no call-now sign is already met around it (`signsMet`, from `callNowSignsMet`), and
- *     the phone's rows were read at all (`signsMet` is null until they are).
+ *   - no call-now sign is already met around it (`signsMet`: `callNowSignsMet` over the
+ *     phone's rows, or a neighbouring read whose call is beyond the record,
+ *     `IncidentFloorFacts.neighbourCallBeyondRecord`), and the phone's rows were read at all
+ *     (`signsMet` is null until they are).
  */
 export function callFromRecordOnly(row: {
   kind: 'vomit' | 'stool';

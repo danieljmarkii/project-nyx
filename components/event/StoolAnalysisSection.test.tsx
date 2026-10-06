@@ -1148,6 +1148,7 @@ describe('StoolAnalysisSection — the floor\'s words (CUL-1510)', () => {
       vomits: [{ at: new Date(2026, 5, 10, 9, 0).toISOString(), confidence: 'witnessed' }],
       lethargyAt: [],
       courses: [],
+      neighbourCallBeyondRecord: false,
     };
     usePetStore.setState({
       pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
