@@ -26,6 +26,12 @@ describe('onBoardAt', () => {
     expect(onBoardAt({ status: 'stopped', started_at: '2026-06-01T00:00:00.000Z', ended_at: null }, AT)).toBe(false);
   });
 
+  it('a date-only end is the last day the course ran, through its end locally', () => {
+    const at = new Date(2026, 5, 10, 21, 0).getTime();
+    expect(onBoardAt({ status: 'completed', started_at: '2026-06-01T00:00:00Z', ended_at: '2026-06-10' }, at)).toBe(true);
+    expect(onBoardAt({ status: 'completed', started_at: '2026-06-01T00:00:00Z', ended_at: '2026-06-09' }, at)).toBe(false);
+  });
+
   it('an unreadable date names nothing', () => {
     expect(onBoardAt({ status: 'active', started_at: 'not a date', ended_at: null }, AT)).toBe(false);
     expect(onBoardAt({ status: 'active', started_at: '2026-06-01T00:00:00Z', ended_at: 'garbage' }, AT)).toBe(false);

@@ -57,6 +57,7 @@ import {
   callFromRecordOnly,
   callTodayAction,
   floorRanOn,
+  modelMadeCall,
   tellThem,
   vomitFindings,
   watchForList,
@@ -659,12 +660,21 @@ export function VomitAnalysisSection(
           petName,
           nowMs,
           recordOnly: callFromRecordOnly({
+            kind: 'vomit',
+            floorRan: floorRanOn(row),
             contextual_flags: row.contextual_flags,
             visual_flags: row.visual_flags,
-            // An unclear blood or foreign-material field is a photo that may hold one: no
-            // leave to wait over it (T15, T14 are louder rows the server has not built).
+            // An unclear blood or foreign-material field is a photo that may hold one, and a
+            // red or black colour can be blood whatever the blood field says (T12, T15): no
+            // leave to wait over any of them.
             photoFinding:
-              findings.length > 0 || row.blood_present === 'unsure' || row.foreign_material_present === 'unsure',
+              findings.length > 0 ||
+              row.blood_present === 'unsure' ||
+              row.foreign_material_present === 'unsure' ||
+              row.colour === 'pink_red' ||
+              row.colour === 'dark_red' ||
+              row.colour === 'black_coffee_ground',
+            modelCall: modelMadeCall(row.ai_raw_payload?.recommendation, hasPhoto),
           }),
         })
       : display

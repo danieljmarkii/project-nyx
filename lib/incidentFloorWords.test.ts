@@ -10,6 +10,7 @@ import {
   callFromRecordOnly,
   callTodayAction,
   clockWords,
+  modelMadeCall,
   deadlineWords,
   floorRanOn,
   pastWords,
@@ -119,33 +120,80 @@ describe('every clause names a tier the real floor gives (BRK-3)', () => {
     expect(watchForClauses(input({ anchorMs: a })).map((c) => c.row)).not.toContain('T7');
   });
 
-  it('T8: a vomit on each of the next two days → call today, at any time of those days', () => {
+  it('T8: whatever the clause names, a vomit on each named day meets the real floor, any date of the year (DST weeks included)', () => {
     const r = rng(8);
-    for (let i = 0; i < 400; i++) {
-      const a = local(10, Math.floor(r() * 24), Math.floor(r() * 60));
-      const clause = watchForClauses(input({ anchorMs: a })).find((c) => c.row === 'T8');
-      expect(clause?.text).toBe('Mochi vomits on each of the next two days');
-      const d1 = local(11, Math.floor(r() * 24), Math.floor(r() * 60));
-      const d2 = local(12, Math.floor(r() * 24), Math.floor(r() * 60));
-      const anchor = { at: iso(a), confidence: 'witnessed' };
-      const vomits = [anchor, { at: iso(d1), confidence: 'window' }, { at: iso(d2), confidence: 'estimated' }];
+    let named = 0;
+    for (let i = 0; i < 3000; i++) {
+      // Any day of 2026, so the run crosses each zone's DST changes on some draws.
+      const day0 = new Date(2026, 0, 1 + Math.floor(r() * 365));
+      const at = (dayOffset: number) =>
+        new Date(day0.getFullYear(), day0.getMonth(), day0.getDate() + dayOffset, Math.floor(r() * 24), Math.floor(r() * 60)).getTime();
+      const a = at(0);
+      const prior: FloorVomit[] = [-2, -1]
+        .filter(() => r() < 0.4)
+        .map((k) => ({ at: iso(at(k)), confidence: r() < 0.5 ? 'window' : 'witnessed' }));
+      const anchor: FloorVomit = { at: iso(a), confidence: 'witnessed' };
+      const viewOffset = r() < 0.6 ? 0 : 1;
+      const nowMs = new Date(day0.getFullYear(), day0.getMonth(), day0.getDate() + viewOffset, 23, 59).getTime() - Math.floor(r() * 12) * HOUR;
+      if (nowMs < a) continue;
+      const base: WatchForInput = { petName: 'Mochi', species: 'cat', birthDate: '2020-01-01', anchor, vomits: [...prior, anchor], nowMs };
+      const clause = watchForClauses(base).find((c) => c.row === 'T8');
+      if (!clause) continue;
+      named++;
+      // Read the days the sentence names, relative to the viewing day.
+      const viewDay = viewOffset;
+      const days =
+        /each of the next two days/.test(clause.text) ? [viewDay + 1, viewDay + 2]
+        : /today and again tomorrow/.test(clause.text) ? [viewDay, viewDay + 1]
+        : /again today$/.test(clause.text) ? [viewDay]
+        : /again tomorrow$/.test(clause.text) ? [viewDay + 1]
+        : /day after tomorrow$/.test(clause.text) ? [viewDay + 2]
+        : null;
+      expect(days).not.toBeNull();
+      const added = (days ?? []).map((k) => {
+        let t = at(k);
+        if (k === viewDay && t < nowMs) t = nowMs + MIN; // "today" means later today
+        return { at: iso(t), confidence: null };
+      });
+      const floor = incidentFloor({ anchor, vomits: [...base.vomits, ...added], lethargyAt: [], species: 'cat', birthDate: '2020-01-01' });
+      if (!floor.rows.includes('T8')) {
+        throw new Error(`T8 missed: ${JSON.stringify({ vomits: [...base.vomits, ...added].map((v) => new Date(v.at).toString()), now: new Date(nowMs).toString(), text: clause.text })}`);
+      }
+    }
+    expect(named).toBeGreaterThan(500);
+  });
+
+  it('T8 is never promised across a DST change, where three local days can miss three 24-hour spans (B4)', () => {
+    // Every day of 2026 that is not 24 hours long in this zone (none in UTC; the non-UTC
+    // CI job and the zones this suite was proven in carry them).
+    for (let k = 0; k < 365; k++) {
+      const start = new Date(2026, 0, 1 + k).getTime();
+      const next = new Date(2026, 0, 2 + k).getTime();
+      if (next - start === 24 * HOUR) continue;
+      // The adversarial case: 00:05 the day before, 23:55 on the odd day, noon the day after.
+      const a = new Date(2026, 0, k, 0, 5).getTime();
+      const anchor: FloorVomit = { at: iso(a), confidence: 'witnessed' };
+      const clause = watchForClauses({ petName: 'Mochi', species: 'cat', birthDate: '2020-01-01', anchor, vomits: [anchor], nowMs: a + 5 * MIN }).find((c) => c.row === 'T8');
+      const vomits = [anchor, { at: iso(new Date(2026, 0, 1 + k, 23, 55).getTime()), confidence: null }, { at: iso(new Date(2026, 0, 2 + k, 12, 0).getTime()), confidence: null }];
       const floor = incidentFloor({ anchor, vomits, lethargyAt: [], species: 'cat', birthDate: '2020-01-01' });
-      expect(floor.rows).toContain('T8');
+      if (clause) expect(floor.rows).toContain('T8');
     }
   });
 
-  it('T8 the day after the vomit: today and again tomorrow → call today', () => {
-    const r = rng(9);
-    for (let i = 0; i < 200; i++) {
-      const a = local(10, Math.floor(r() * 24), Math.floor(r() * 60));
-      const now = local(11, 8);
-      const clause = watchForClauses(input({ anchorMs: a, nowMs: now })).find((c) => c.row === 'T8');
-      expect(clause?.text).toBe('Mochi vomits today and again tomorrow');
-      const anchor = { at: iso(a), confidence: 'witnessed' };
-      const vomits = [anchor, { at: iso(local(11, Math.floor(r() * 24))), confidence: null }, { at: iso(local(12, Math.floor(r() * 24))), confidence: null }];
-      const floor = incidentFloor({ anchor, vomits, lethargyAt: [], species: 'cat', birthDate: '2020-01-01' });
-      expect(floor.rows).toContain('T8');
-    }
+  it('T8 counts what is logged: a vomit yesterday means one more tomorrow is enough (B5)', () => {
+    const a = local(10, 20);
+    const yesterday = { at: iso(local(9, 19)), confidence: 'witnessed' };
+    const anchor = { at: iso(a), confidence: 'witnessed' };
+    const clause = watchForClauses(input({ anchorMs: a, vomits: [yesterday, anchor] })).find((c) => c.row === 'T8');
+    expect(clause?.text).toBe('Mochi vomits again tomorrow');
+    const floor = incidentFloor({ anchor, vomits: [yesterday, anchor, { at: iso(local(11, 21)), confidence: null }], lethargyAt: [], species: 'cat', birthDate: '2020-01-01' });
+    expect(floor.rows).toContain('T8');
+  });
+
+  it('T8 the day after the vomit: today and again tomorrow', () => {
+    const a = local(10, 20);
+    const clause = watchForClauses(input({ anchorMs: a, nowMs: local(11, 8) })).find((c) => c.row === 'T8');
+    expect(clause?.text).toBe('Mochi vomits today and again tomorrow');
   });
 });
 
@@ -221,14 +269,31 @@ describe("call today's action line (§2 rule 1)", () => {
     }
   });
 
-  it('record-only means a contextual flag, no visual flag, no photo finding, and nothing unknown', () => {
-    expect(callFromRecordOnly({ contextual_flags: ['repeated_vomiting'], visual_flags: [], photoFinding: false })).toBe(true);
-    expect(callFromRecordOnly({ contextual_flags: ['repeated_vomiting'], visual_flags: ['blood'], photoFinding: false })).toBe(false);
-    expect(callFromRecordOnly({ contextual_flags: ['repeated_vomiting'], visual_flags: [], photoFinding: true })).toBe(false);
-    // The model's own call, or a row read before the columns were selected: no wait.
-    expect(callFromRecordOnly({ contextual_flags: [], visual_flags: [], photoFinding: false })).toBe(false);
-    expect(callFromRecordOnly({ contextual_flags: ['repeated_vomiting'], visual_flags: null, photoFinding: false })).toBe(false);
-    expect(callFromRecordOnly({ contextual_flags: undefined, visual_flags: [], photoFinding: false })).toBe(false);
+  it('record-only: the floor ran, allow-listed flags only, no visual flag, no photo finding, no model call', () => {
+    const ok = { kind: 'vomit' as const, floorRan: true, contextual_flags: ['repeated_vomiting'], visual_flags: [], photoFinding: false, modelCall: false };
+    expect(callFromRecordOnly(ok)).toBe(true);
+    expect(callFromRecordOnly({ ...ok, floorRan: false })).toBe(false);
+    expect(callFromRecordOnly({ ...ok, visual_flags: ['blood'] })).toBe(false);
+    expect(callFromRecordOnly({ ...ok, photoFinding: true })).toBe(false);
+    expect(callFromRecordOnly({ ...ok, modelCall: true })).toBe(false);
+    // Lethargy already logged is half of a call-now sign: the exception must never be met (B1).
+    expect(callFromRecordOnly({ ...ok, contextual_flags: ['repeated_vomiting', 'concurrent_lethargy'] })).toBe(false);
+    expect(callFromRecordOnly({ ...ok, kind: 'stool', contextual_flags: ['concurrent_vomiting', 'concurrent_lethargy'] })).toBe(false);
+    expect(callFromRecordOnly({ ...ok, kind: 'stool', contextual_flags: ['concurrent_vomiting'] })).toBe(true);
+    // A flag this build does not know, and unknown lists, keep no leave to wait.
+    expect(callFromRecordOnly({ ...ok, contextual_flags: ['something_new'] })).toBe(false);
+    expect(callFromRecordOnly({ ...ok, contextual_flags: [] })).toBe(false);
+    expect(callFromRecordOnly({ ...ok, visual_flags: null })).toBe(false);
+    expect(callFromRecordOnly({ ...ok, contextual_flags: undefined })).toBe(false);
+  });
+
+  it("the model's own call is read from the payload; a photo with no verdict counts as one", () => {
+    expect(modelMadeCall('worth_a_call', true)).toBe(true);
+    expect(modelMadeCall('monitor', true)).toBe(false);
+    expect(modelMadeCall('not_enough_to_say', true)).toBe(false);
+    expect(modelMadeCall('a_value_from_later', true)).toBe(true);
+    expect(modelMadeCall(undefined, true)).toBe(true);
+    expect(modelMadeCall(undefined, false)).toBe(false);
   });
 
   it('the signs it names are call now on the real floor (T2, T3)', () => {

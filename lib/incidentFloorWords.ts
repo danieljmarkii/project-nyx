@@ -21,8 +21,9 @@
 //   T3    → call now   "{Pet} is low on energy by {anchor + 24 h}".
 //   T6/T7 → call today "{Pet} vomits again by {anchor + 24 h}" (a dog; a pet under six
 //                       months or with no birthday on file, which the list says).
-//   T8    → call today "{Pet} vomits on each of the next two days", only while both days
-//                       are still ahead (or today and tomorrow, the day after the vomit).
+//   T8    → call today the days a three-day run holding the vomit still lacks, counting
+//                       what is logged ("vomits again tomorrow", "on each of the next two
+//                       days"); never across a DST change (`persistenceClause`).
 // NOT HERE, ON PURPOSE: "you see blood" (T12/T13 are not built; a blood photo is still call
 // today, so "call now if you see blood" would name a tier the engine does not give), the
 // meal clause (T10c lives in the server's shipped flags, not the floor), and T9 (held).
@@ -43,7 +44,9 @@
 // ── CALL TODAY'S ACTION LINE (§2 rule 1) ─────────────────────────────────────
 // The line gives leave to wait ("first thing tomorrow") only beside its exception ("or an
 // emergency clinic tonight if {this pet's call-now signs}"), and only when the call came
-// from the RECORD ALONE: contextual flags set, no visual flag and no present photo finding.
+// from the RECORD ALONE (`callFromRecordOnly`): the floor ran, every contextual flag is on
+// an allow-list that keeps the exception unmet, no visual flag, no red-flag photo field,
+// and no call of the model's own.
 // PR-27's adversarial pass found that every call written today is call today, a photo of
 // digested blood included (T12 is not built), so a leave to wait over a photo finding would
 // be calmer than today's "Worth a call". A call carrying a photo finding, or the model's
@@ -62,6 +65,7 @@ import {
   type FloorTier,
   type FloorVomit,
 } from './incidentFloor';
+import { isQuietVerdict } from './incidentVerdict';
 
 /** The key EN-4's floor runs under (`supabase/functions/_shared/engineFlags.ts`). A row
  *  stamped with it was written by a run whose floor re-runs when the record changes
@@ -177,7 +181,10 @@ export interface WatchForList {
   ageNote: string | null;
 }
 
-export const WATCH_FOR_LEAD = "Here's what would change this read:";
+// Not "here's what would change this read": the list holds only the signs the floor hears,
+// so it is not every sign that matters (a cat not eating has no clause yet, CUL-1609), and
+// a lead that reads as complete would make an absent sign read as a safe one (B6).
+export const WATCH_FOR_LEAD = 'Watch for these:';
 
 /** The dog's bloat line (§3; T11 held for capture, GAP-14). Static, never "GDV". */
 export function bloatLine(petName: string | null | undefined): string {
@@ -234,18 +241,58 @@ export function watchForClauses(input: WatchForInput): WatchClause[] {
     });
   }
 
-  // T8: the anchor's local day, then the next two. Spoken only while both are ahead (the
-  // day of the vomit) or the second still is (the day after: "today and tomorrow").
-  const dayGap = localDayIndex(new Date(now)) - localDayIndex(new Date(a));
-  if (dayGap === 0 || dayGap === 1) {
-    out.push({
-      row: 'T8',
-      tier: 'call_today',
-      byMs: null,
-      text: dayGap === 0 ? `${p} vomits on each of the next two days` : `${p} vomits today and again tomorrow`,
-    });
-  }
+  const t8 = persistenceClause(input, p);
+  if (t8) out.push(t8);
   return out;
+}
+
+/**
+ * T8 in calendar days, counting what is already logged (adversarial pass on this PR, B5):
+ * the three-day runs holding the vomit's day are D-2..D, D-1..D+1 and D..D+2; the clause
+ * names the days a run still lacks, choosing the run that lacks fewest, and only when every
+ * lacking day is today or later. A vomit on each of three consecutive local days always
+ * meets the floor's three 24-hour spans (each pair of days is more than 24 h and less than
+ * 72 h apart at minute precision), EXCEPT across a DST change, where a local day is 23 or
+ * 25 hours: then the clause is dropped rather than promising a call the floor would not
+ * make (B4; the shipped repeat rule may still fire, the clause never claims it).
+ */
+function persistenceClause(input: WatchForInput, p: string): WatchClause | null {
+  const a = Date.parse(input.anchor.at);
+  const d = localDayIndex(new Date(a));
+  const today = localDayIndex(new Date(input.nowMs));
+  if (crossesDst(d - 2, d + 3, new Date(a))) return null;
+  const logged = new Set(
+    input.vomits.map((v) => Date.parse(v.at)).filter(Number.isFinite).map((t) => localDayIndex(new Date(t))),
+  );
+  logged.add(d);
+  let best: number[] | null = null;
+  for (const start of [d - 2, d - 1, d]) {
+    const lacking = [start, start + 1, start + 2].filter((day) => !logged.has(day));
+    if (lacking.length === 0 || lacking.some((day) => day < today)) continue;
+    if (best === null || lacking.length < best.length) best = lacking;
+  }
+  if (!best) return null;
+  const word = (day: number) => (day === today ? 'today' : day === today + 1 ? 'tomorrow' : 'the day after tomorrow');
+  const text =
+    best.length === 1
+      ? `${p} vomits again ${word(best[0])}`
+      : best[0] === today
+        ? `${p} vomits today and again tomorrow`
+        : best[0] === today + 1
+          ? `${p} vomits on each of the next two days`
+          : null;
+  return text ? { row: 'T8', tier: 'call_today', byMs: null, text } : null;
+}
+
+/** Whether any local day in [fromDay, toDay) is not 24 hours long, read off the zone
+ *  offset at each local midnight around `near`. */
+function crossesDst(fromDay: number, toDay: number, near: Date): boolean {
+  const base = localDayIndex(near);
+  const midnight = (day: number) =>
+    new Date(near.getFullYear(), near.getMonth(), near.getDate() + (day - base)).getTimezoneOffset();
+  const first = midnight(fromDay);
+  for (let day = fromDay + 1; day <= toDay; day++) if (midnight(day) !== first) return true;
+  return false;
 }
 
 export function watchForList(input: WatchForInput): WatchForList | null {
@@ -282,21 +329,49 @@ export const CALL_TODAY_DAY_UNTIL_HOUR = 18;
  *  no leave to wait (call now's after-hours path). */
 export const CALL_TODAY_NO_WAIT = "Call your vet today. If they're closed, call an emergency clinic.";
 
+/** The contextual flags a call today may give leave to wait over, per read. An allow-list:
+ *  a flag not named here (lethargy beside the sign, a flag a later server adds) keeps no
+ *  leave to wait. `concurrent_lethargy` is out on both reads because "vomits and is low on
+ *  energy" is a call-now sign (T3) and the line's exception must never already be met
+ *  (adversarial pass on this PR, B1). */
+export const WAIT_ALLOWED_FLAGS: Readonly<Record<'vomit' | 'stool', readonly string[]>> = {
+  vomit: ['repeated_vomiting', 'feline_reduced_intake'],
+  stool: ['repeated_loose_stool', 'concurrent_vomiting'],
+};
+
 /**
- * Whether the call came from the record alone, so the line may give leave to wait: the
- * read raised a contextual flag, raised no visual flag, and its fields hold no present
- * finding. Unknown is not record-only: an empty or absent flag list means the call came
- * from somewhere this check cannot see (the model's own call, a rescue), and the line then
- * keeps no leave to wait.
+ * Whether the call came from the record alone, so the line may give leave to wait. Every
+ * condition must hold, and unknown is never record-only:
+ *   - the floor ran on this row (`engines_v3_en4` in its stamp), so the call-now signs the
+ *     line names as its exception are signs the app raises on;
+ *   - at least one contextual flag, and every one of them on the allow-list above;
+ *   - no visual flag, and the flag list was read (absent is unknown);
+ *   - no red-flag photo field, present or unclear (`photoFinding`, the section's call);
+ *   - the model did not make its own call (`modelCall`): a pill, worms or plant matter can
+ *     escalate the model with every enum field quiet (T16 to T18), and only its own
+ *     verdict in the payload says so (B2).
  */
 export function callFromRecordOnly(row: {
+  kind: 'vomit' | 'stool';
+  floorRan: boolean;
   contextual_flags?: readonly string[] | null;
   visual_flags?: readonly string[] | null;
   photoFinding: boolean;
+  modelCall: boolean;
 }): boolean {
-  if (row.photoFinding) return false;
+  if (!row.floorRan || row.photoFinding || row.modelCall) return false;
   if (!Array.isArray(row.visual_flags) || row.visual_flags.length > 0) return false;
-  return Array.isArray(row.contextual_flags) && row.contextual_flags.length > 0;
+  const flags = row.contextual_flags;
+  if (!Array.isArray(flags) || flags.length === 0) return false;
+  return flags.every((f) => WAIT_ALLOWED_FLAGS[row.kind].includes(f));
+}
+
+/** Whether the model made its own call, handed the verdict it stored in its payload (the
+ *  section reads the field, the one sanctioned reader): true when it asked for a call, and
+ *  when a photographed read carries no verdict to check (a rescue, a failed parse). */
+export function modelMadeCall(modelVerdict: unknown, hasPhoto: boolean): boolean {
+  if (!hasPhoto) return false;
+  return typeof modelVerdict !== 'string' || !isQuietVerdict(modelVerdict);
 }
 
 export function callTodayAction(input: {
@@ -383,7 +458,8 @@ export function vomitsAround(anchor: FloorVomit, vomits: readonly FloorVomit[], 
   const times = vomits
     .map((v) => Date.parse(v.at))
     .filter((t) => Number.isFinite(t) && Math.abs(t - a) <= reach && t <= nowMs + MIN);
-  return [...new Set(times)].sort((x, y) => x - y);
+  // Two piles found at the same minute are two vomits: counted, never de-duplicated.
+  return times.sort((x, y) => x - y);
 }
 
 export function tellThem(input: TellThemInput): string | null {

@@ -1651,7 +1651,7 @@ describe('VomitAnalysisSection — the floor\'s words (CUL-1510)', () => {
   });
 
   it('a call today the record alone raised: leave to wait beside the call-now signs, and what to tell them', async () => {
-    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_vomiting'], visual_flags: [] });
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_vomiting'], visual_flags: [], ai_raw_payload: { recommendation: 'monitor' } });
     const view = render(<VomitAnalysisSection eventId="f1" petId="pet-1" petName="Rex" hasPhoto />);
     await view.findByText('Call your vet today');
     expect(view.queryByText(/first thing tomorrow, or an emergency clinic tonight if Rex vomits three times/)).toBeTruthy();

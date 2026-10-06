@@ -64,6 +64,8 @@ import { needsEn7Recheck } from '../../lib/stoolForm';
 import {
   callFromRecordOnly,
   callTodayAction,
+  floorRanOn,
+  modelMadeCall,
   stoolFindings,
   tellThem,
 } from '../../lib/incidentFloorWords';
@@ -644,6 +646,9 @@ export function StoolAnalysisSection(
           petName,
           nowMs,
           recordOnly: callFromRecordOnly({
+            kind: 'stool',
+            floorRan: floorRanOn(row),
+            modelCall: modelMadeCall(row.ai_raw_payload?.recommendation, hasPhoto),
             contextual_flags: row.contextual_flags,
             visual_flags: row.visual_flags,
             // A red-flag finding, present or unclear, takes the wait away. Texture alone

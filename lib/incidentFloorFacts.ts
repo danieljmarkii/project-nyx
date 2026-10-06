@@ -35,7 +35,10 @@ export function onBoardAt(m: { status: string; started_at: string; ended_at: str
   const start = Date.parse(m.started_at);
   if (!Number.isFinite(start) || start > atMs) return false;
   if (m.ended_at) {
-    const end = Date.parse(m.ended_at);
+    // A bare date is the owner's last day: on board through the end of it, locally. Parsed
+    // as written it would be UTC midnight and drop the course on its last day.
+    const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(m.ended_at);
+    const end = day ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]) + 1).getTime() : Date.parse(m.ended_at);
     return Number.isFinite(end) && end > atMs;
   }
   return m.status === 'active';

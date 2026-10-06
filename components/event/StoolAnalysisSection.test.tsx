@@ -1155,7 +1155,7 @@ describe('StoolAnalysisSection — the floor\'s words (CUL-1510)', () => {
   });
 
   it('a record-only call today in the evening resolves to first thing tomorrow, signs as the exception', async () => {
-    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['concurrent_vomiting'], visual_flags: [], stool_consistency: 'type_7_watery' });
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['concurrent_vomiting'], visual_flags: [], stool_consistency: 'type_7_watery', ai_raw_payload: { recommendation: 'monitor' } });
     const view = render(<StoolAnalysisSection eventId="s1" petId="pet-1" petName="Rex" hasPhoto />);
     await view.findByText('Call your vet today');
     expect(view.queryByText(/^Call your vet tonight if they're open, or first thing tomorrow\. Call an emergency clinic tonight if Rex vomits/)).toBeTruthy();
