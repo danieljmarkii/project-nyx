@@ -31,7 +31,7 @@ Dispatched ad hoc (BUILD) to build D4 of the dispatch retro: move the bookkeepin
 
 ## Open
 
-- **D4's Board question is unanswered** (the Board on the page, or the digests). Both shapes ship; `table` stays the default until the PM rules.
+- **D4's Board question is unanswered** (the Board on the page, or the digests). Both shapes ship; `table` stays the default until the PM rules on CUL-1622 (filed, `Waiting on PM`, recommendation: the digests).
 
 ## Teach
 
