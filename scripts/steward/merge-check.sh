@@ -74,8 +74,8 @@
 #   - Main's CI is the latest COMPLETED run of ci.yml on a push to the base branch that
 #     passed or failed (a cancelled run says neither). A run still in flight is not read,
 #     so a main that is about to go red reads green. "This PR is the fix" is judged by
-#     file: the branch touches a file changed between main's last green run and its red
-#     one, and its own CI passed. A fix in a file no commit changed (a date-pinned test
+#     file: the branch contains the red commit, touches a file changed between main's
+#     last green run and its red one, and its own CI passed on this head. A fix in a file no commit changed (a date-pinned test
 #     whose clock ran out) is not recognized; that REVIEW is cleared in writing.
 #   - A changed path that git still quotes with core.quotePath off (a tab, a quote or a
 #     backslash in its name) stops the check with exit 3 rather than being skipped.
@@ -220,8 +220,9 @@ short_list() {
 mig_names() {
   git ls-tree --name-only "$1" -- supabase/migrations/ | sed 's#.*/##' | grep -E '^[0-9]+_' | sort -u
 }
+# Numbers compare as numbers, printed three wide: 84_ and 084_ are one slot.
 mig_dups() {
-  mig_names "$1" | grep -oE '^[0-9]+' | sort | uniq -d
+  mig_names "$1" | grep -oE '^[0-9]+' | awk '{ printf "%03d\n", $0 + 0 }' | sort | uniq -d
 }
 # Migration files in tree $1 that tree $2 does not have, by name: what $1 adds.
 mig_added() {
@@ -230,6 +231,9 @@ mig_added() {
 
 notes=()
 mig_clash=()
+# An open PR the session named and the check could not read: never a pass, since its
+# migrations went unchecked.
+others_unread=()
 merged=0
 if [ "$fetch" -eq 1 ]; then
   for ref in "$base_ref" "$head_ref"; do
@@ -241,11 +245,13 @@ if [ "$fetch" -eq 1 ]; then
   for b in ${others[@]+"${others[@]}"}; do
     b=${b#origin/}
     git fetch --quiet origin "+refs/heads/$b:refs/remotes/origin/$b" 2>/dev/null ||
-      notes+=("could not fetch $b; it is reported from the last fetch, if any")
+      { notes+=("could not fetch $b; it is reported from the last fetch, if any"); others_unread+=("$b"); }
   done
 fi
 
 base=$(git rev-parse --verify --quiet "$base_ref^{commit}") || die "no such ref: $base_ref"
+# Every migration check compares listings; an empty base listing would read as "none".
+[ -n "$(mig_names "$base")" ] || die "no migrations listed under supabase/migrations/ on $base_ref; refusing to read that as no duplicates"
 head=$(git rev-parse --verify --quiet "$head_ref^{commit}") || die "no such ref: $head_ref"
 git merge-base "$base" "$head" >/dev/null 2>&1 ||
   die "no merge base between $base_ref and $head_ref (a shallow clone? run: git fetch --unshallow origin)"
@@ -421,6 +427,7 @@ if [ ${#others[@]} -gt 0 ]; then
     b=${b#origin/}
     rev=$(git rev-parse --verify --quiet "refs/remotes/origin/$b^{commit}") || {
       echo "  $b: not found on origin"
+      others_unread+=("$b")
       continue
     }
     if [ "$rev" = "$head" ]; then
@@ -428,6 +435,7 @@ if [ ${#others[@]} -gt 0 ]; then
     fi
     mb=$(git merge-base "$base" "$rev") || {
       echo "  $b: no merge base with $base_ref (a shallow clone?)"
+      others_unread+=("$b")
       continue
     }
     line="  $b:"
@@ -446,10 +454,10 @@ if [ ${#others[@]} -gt 0 ]; then
     if [ -n "$my_migs" ]; then
       while IFS= read -r theirs; do
         [ -n "$theirs" ] || continue
-        num=${theirs%%_*}
-        mine=$(printf '%s\n' "$my_migs" | grep -E "^${num}_" | grep -vxF "$theirs" | head -n 1)
+        num=$((10#${theirs%%_*}))
+        mine=$(printf '%s\n' "$my_migs" | awk -v n="$num" -v t="$theirs" '$0 != t && $0 ~ /^[0-9]+_/ && substr($0, 1, index($0, "_") - 1) + 0 == n' | head -n 1)
         if [ -n "$mine" ]; then
-          mig_clash+=("migration $num: this branch adds $mine and $b adds $theirs")
+          mig_clash+=("migration $(printf '%03d' "$num"): this branch adds $mine and $b adds $theirs")
         fi
       done < <(mig_added "$rev" "$base")
     fi
@@ -473,6 +481,9 @@ if [ ${#others[@]} -gt 0 ]; then
   done
 fi
 
+if [ ${#others_unread[@]} -gt 0 ]; then
+  echo "other open PRs not read: $(printf '%s\n' "${others_unread[@]}" | sort -u | paste -sd ',' - | sed 's/,/, /g'); their migration numbers went unchecked"
+fi
 if [ ${#mig_clash[@]} -gt 0 ]; then
   echo "migration numbers shared with another open PR:"
   for c in "${mig_clash[@]}"; do echo "  $c"; done
@@ -538,7 +549,10 @@ else
       if [ -n "$suspects" ] && [ "$merged" -eq 0 ]; then
         fix_files=$(comm -12 <(changed_paths "$(git merge-base "$base" "$head")" "$head" | sed '/^$/d') <(printf '%s\n' "$suspects" | sed '/^$/d'))
       fi
-      if [ -n "$fix_files" ] &&
+      # Only a branch that CONTAINS the red commit can be its fix: then its own green run
+      # tested a tree with the breakage in it. A branch cut before main went red passes
+      # its CI without ever meeting the failure.
+      if [ -n "$fix_files" ] && git merge-base --is-ancestor "$run_sha" "$head" 2>/dev/null &&
         gh api "repos/$slug/actions/workflows/$ci_workflow/runs?head_sha=$head&status=completed&per_page=30" \
           >"$tmp/own-runs.json" 2>/dev/null; then
         own_green=$(decisive_run "$tmp/own-runs.json" | awk -F'\t' '$1 == "success" { print $2 }')
@@ -565,7 +579,7 @@ if [ -n "$conflicts" ]; then
   exit 1
 fi
 if [ "$lost_total" -gt 0 ] || [ "$back_total" -gt 0 ] || [ -n "$new_dups" ] || [ ${#mig_clash[@]} -gt 0 ] ||
-  [ "$markers" -gt 0 ] || [ "$ci_red" -eq 1 ]; then
+  [ ${#others_unread[@]} -gt 0 ] || [ "$markers" -gt 0 ] || [ "$ci_red" -eq 1 ]; then
   echo "next: restore each lost line, or say in the PR why it goes; delete each resurrected line, or say why it returns; renumber a duplicate migration (the steward skill §4); remove every conflict marker; wait for main to go green, or land its fix"
   echo "MERGE CHECK: REVIEW"
   exit 2

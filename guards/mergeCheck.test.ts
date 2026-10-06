@@ -62,6 +62,10 @@
 //   ✗ a red main never moving the verdict
 //   ✗ the fix exception granted without this branch's own CI passing
 //   ✗ the suspect files taken from the red commit alone instead of since the last green
+//   ✗ the fix exception granted to a branch cut before main went red
+//   ✗ a named PR that could not be read leaving the verdict CLEAN
+//   ✗ migration numbers compared as text (3_ against 003_)
+//   ✗ an empty base migration listing read as no duplicates
 //
 // HOW MAIN'S CI IS FAKED. The script reads it with `gh api`, and every case runs with a
 // stub `gh` first on PATH (written under the fixture root) that serves a JSON file named
@@ -439,6 +443,13 @@ describe('scripts/steward/merge-check.sh', () => {
     expect(a.out).toContain('migration numbers: landing adds a duplicate 003');
     expect(a.out).not.toMatch(/duplicate .*002/);
     expect(a.out).not.toContain('shared with another open PR');
+
+    // Numbers compare as numbers: 3_ is slot 003, beside main's 003_main and o1's 003.
+    const short = session(fx, 'claude/short', { 'supabase/migrations/3_short.sql': 'create table g ();\n' });
+    const c = check(short, ['claude/dup']);
+    expect(c.out).toContain('migration numbers: landing adds a duplicate 003');
+    expect(c.out).toContain('migration 003: this branch adds 3_short.sql and claude/dup adds 003_branch.sql');
+    expect(c.code).toBe(2);
     expect(lastLine(a.out)).toBe('MERGE CHECK: REVIEW');
 
     const b = check(ok);
@@ -468,7 +479,7 @@ describe('scripts/steward/merge-check.sh', () => {
       'another PR lands',
     );
 
-    const others = ['claude/o1', 'claude/o2', 'origin/claude/o3', 'claude/part2', 'claude/gone', 'claude/s'];
+    const others = ['claude/o1', 'claude/o2', 'origin/claude/o3', 'claude/part2', 'claude/s'];
     const r = check(s, others);
     expect(r.code).toBe(0);
     expect(r.out).toContain('(1 ahead, 1 behind)');
@@ -483,10 +494,16 @@ describe('scripts/steward/merge-check.sh', () => {
     expect(r.out).toContain(
       '  claude/part2: shares 1 file(s) (list.txt); conflicts with main now: none; new conflicts if you land: list.txt',
     );
-    expect(r.out).toContain('  claude/gone: not found on origin');
     expect(r.out).not.toMatch(/ {2}claude\/s:/); // the branch itself is skipped
-    expect(r.out).toContain('note: could not fetch claude/gone');
     expect(lastLine(r.out)).toBe('MERGE CHECK: CLEAN');
+
+    // A PR the session named and the check could not read is REVIEW: its migrations went
+    // unchecked (the code review's false CLEAN).
+    const gone = check(s, [...others, 'claude/gone']);
+    expect(gone.out).toContain('  claude/gone: not found on origin');
+    expect(gone.out).toContain('note: could not fetch claude/gone');
+    expect(gone.out).toContain('other open PRs not read: claude/gone; their migration numbers went unchecked');
+    expect(gone.code).toBe(2);
 
     // o1 is rewritten and force-pushed; the next run must see the new tip, not the old one.
     // `charlie` is two lines from `alpha (s)` and two from `echo (main)`: no conflict either way.
@@ -562,6 +579,15 @@ describe('scripts/steward/merge-check.sh', () => {
     const c = check(s, ['--no-fetch', '--base', 'origin/nope']);
     expect(c.code).toBe(3);
     expect(c.out).toContain('no such ref: origin/nope');
+
+    // A base with no migration listing would read as "no duplicates": refused instead.
+    git(fx.mainClone, ['pull', '--quiet', '--ff-only', 'origin', 'main']);
+    git(fx.mainClone, ['rm', '-r', '--quiet', 'supabase/migrations']);
+    commitAll(fx.mainClone, 'no migrations');
+    git(fx.mainClone, ['push', '--quiet', 'origin', 'main']);
+    const d = check(s);
+    expect(d.code).toBe(3);
+    expect(d.out).toContain('no migrations listed under supabase/migrations/');
   });
   // RESURRECTED LINES (CUL-1522). Main deletes `delta` and a lone `}`; the branch rewrote
   // `charlie`, the line beside them, so the two conflict. Taking the branch's side
@@ -670,6 +696,19 @@ describe('scripts/steward/merge-check.sh', () => {
     const c = check(fix, [], { FAKE_GH_MAIN: redMain, FAKE_GH_OWN: ownRed });
     expect(c.out).toContain("main's CI: RED");
     expect(c.code).toBe(2);
+
+    // Touches the file and its CI passed, but it was cut BEFORE main went red: its green
+    // run never met the breakage, so it is not the fix (the code review's wrong grant).
+    const stale = cloneOf(fx, 'stale-fix');
+    git(stale, ['checkout', '--quiet', '-b', 'claude/stale-fix', green]);
+    write(stale, 'app.txt', lines('one', 'two', 'three (stale)'));
+    commitAll(stale, 'touch app.txt before main went red');
+    const staleHead = git(stale, ['rev-parse', 'HEAD']).trim();
+    const staleGreen = runsFile('stale-green', [{ id: 33, conclusion: 'success', sha: staleHead }]);
+    const e = check(stale, ['--no-fetch'], { FAKE_GH_MAIN: redMain, FAKE_GH_OWN: staleGreen });
+    expect(e.out).toContain("main's CI: RED");
+    expect(e.out).not.toContain('treated as the fix');
+    expect(e.code).not.toBe(0);
 
     // Cancelled on top of a green run is green: the cancelled run says nothing.
     const cancelledThenGreen = runsFile('cancelled-green', [

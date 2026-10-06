@@ -16,7 +16,9 @@
 //
 // MUTANTS, run against the real script 2026-10-06, every one killed:
 //
-//   ✗ the earlier PR failed instead of the later one (the order inverted)
+//   ✗ the later PR named as the holder (the order inverted)
+//   ✗ a clash with a later PR left green (the stale-green hole the code review found)
+//   ✗ numbers compared as text (84_ against 084_)
 //   ✗ a clash with the base branch not checked
 //   ✗ a modified (not added) migration counted as holding its number
 //   ✗ the same file NAME counted as a clash (a PR stacked on another)
@@ -124,7 +126,10 @@ afterAll(() => {
 
 describe('scripts/steward/migration-numbers.sh', () => {
   // The 10/5 pair: #1064 opened first with 084, #1074 opened a day later with its own 084.
-  it('the PR that took a number an earlier open PR holds fails; the earlier one passes; a renumber clears it', () => {
+  // Both sides fail: the job re-runs only on its own PR's pushes, so a green left standing
+  // on either side could merge a duplicate once the other appeared (the code review's
+  // stale-green sequence). The message names the later PR as the one that renumbers.
+  it('a number two open PRs add fails both, naming the later PR to renumber; a renumber clears it', () => {
     const repo: Repo = {
       pages: [[1064, 1074, 1078]],
       files: {
@@ -141,17 +146,21 @@ describe('scripts/steward/migration-numbers.sh', () => {
     expect(later.code).toBe(1);
 
     const earlier = run(serve(repo), 1064);
-    expect(earlier.out).toContain('note: #1074, opened after this PR, also adds migration 084 (084_vet_call_cover.sql)');
-    expect(earlier.out).toContain('migration-numbers: no clash');
-    expect(earlier.code).toBe(0);
+    expect(earlier.out).toContain(
+      '::error::migration 084 is also added by #1074 (084_vet_call_cover.sql), opened after this PR; #1074 renumbers, then re-run this check here',
+    );
+    expect(earlier.code).toBe(1);
 
     const none = run(serve(repo), 1078);
     expect(none.out).toContain('#1078 adds no migration');
     expect(none.code).toBe(0);
 
-    const renumbered = run(serve({ ...repo, files: { ...repo.files, 1074: added(mig('085_vet_call_cover.sql')) } }), 1074);
+    const after = { ...repo, files: { ...repo.files, 1074: added(mig('085_vet_call_cover.sql')) } };
+    const renumbered = run(serve(after), 1074);
     expect(renumbered.out).toContain('migration-numbers: no clash');
     expect(renumbered.code).toBe(0);
+    // The earlier PR's re-run is green again.
+    expect(run(serve(after), 1064).code).toBe(0);
   });
 
   it('a number the base branch already has in another file fails, after the PR that held it merged', () => {
@@ -194,6 +203,16 @@ describe('scripts/steward/migration-numbers.sh', () => {
     );
     // #9 is missing from the listing too (it raced its own opening), and is still checked.
     expect(r.out).toContain('::error::migration 084 is held by #7 (084_seven.sql)');
+    expect(r.code).toBe(1);
+  });
+
+  it('numbers compare as numbers: 84_ and 084_ are one slot, on the base and between PRs', () => {
+    const r = run(
+      serve({ pages: [[4, 5]], files: { 4: added(mig('084_four.sql')), 5: added(mig('84_five.sql'), mig('83_five.sql')) }, base: BASE }),
+      5,
+    );
+    expect(r.out).toContain('::error::migration 084 is held by #4 (084_four.sql)');
+    expect(r.out).toContain('::error::migration 083 is already on main as 083_looks_guard_caller_check.sql; renumber 83_five.sql');
     expect(r.code).toBe(1);
   });
 
