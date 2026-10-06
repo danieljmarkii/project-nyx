@@ -4,9 +4,9 @@
 import * as F from './fixtures/facts-2026-10-05.ts';
 import {
   checkInFrom,
-  closingHits,
   closingLines,
   handoffDue,
+  issueIdsIn,
   launchLine,
   memoryCheck,
   parseLaunchLines,
@@ -121,13 +121,12 @@ describe('memory against GitHub', () => {
   });
 });
 
-describe('the closing-keyword guard', () => {
-  it('breaks the id after a closing word, and only there', () => {
-    const text = 'Reply "close CUL-1247" or "add CUL-1608". Fixes: CUL-12 and resolves CUL-9.';
-    expect(closingHits(text)).toEqual(['close CUL-1247', 'Fixes: CUL-12', 'resolves CUL-9']);
-    const safe = prSafe(text);
-    expect(closingHits(safe)).toEqual([]);
-    expect(safe).toContain('add CUL-1608');
+describe('the PR-body guard', () => {
+  it('breaks every issue id but the ones the PR finishes', () => {
+    const text = 'Reply "close CUL-1247" or "add CUL-1608". Ships CUL-1615.';
+    expect(issueIdsIn(text)).toEqual(['CUL-1247', 'CUL-1608', 'CUL-1615']);
+    const safe = prSafe(text, ['CUL-1615']);
+    expect(issueIdsIn(safe)).toEqual(['CUL-1615']);
     expect(safe).toContain('close CUL\u20111247');
   });
 });

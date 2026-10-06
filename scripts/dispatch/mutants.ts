@@ -52,7 +52,7 @@ const MUTANTS: Mutant[] = [
   { check: 'the check-in is read from the routines', file: 'status.ts', from: '.filter((x) => (x.prompt ?? x.message ??', to: '.filter((x) => true || (x.prompt ?? x.message ??' },
   { check: 'memory names a launch never recorded', file: 'status.ts', from: 'if (!known.has(b)) {', to: 'if (false) {' },
   { check: 'memory names a merged Auto row', file: 'status.ts', from: 'if (n) out.push(`Auto: still names', to: 'if (false) out.push(`Auto: still names' },
-  { check: 'a closing keyword never reaches a PR with its id whole', file: 'status.ts', from: '`${w}${sp}${k}\\u2011${n}`', to: '`${w}${sp}${k}-${n}`' },
+  { check: 'an issue id never reaches a PR body whole', file: 'status.ts', from: '(keep.includes(m) ? m : `${k}\\u2011${n}`)', to: '(keep.includes(m) ? m : m)' },
   // The reader.
   { check: 'the Board is never read back as plan', file: 'page.ts', from: 'const plain = stripTags(withoutBoard(rawLines).join', to: 'const plain = stripTags(rawLines.join' },
   { check: 'a merge gate reads past the dots in a version', file: 'page.ts', from: '/Merge gate:\\s*(.*?)(?:\\.(?=\\s|$)|$)/', to: '/Merge gate:\\s*([^.]*)/' },

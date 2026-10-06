@@ -4,7 +4,7 @@
 // makes no network call and writes nothing, so every run is a zero-write dry run; the
 // dispatcher does the writes dispatch.md lists, with the text this prints.
 //
-//   node --experimental-strip-types scripts/dispatch/cli.ts plan <facts.json> [--board table|digest] [--for-pr]
+//   node --experimental-strip-types scripts/dispatch/cli.ts plan <facts.json> [--board table|digest] [--for-pr [CUL-NNN …]]
 //   node --experimental-strip-types scripts/dispatch/cli.ts check-update <update.md> <facts.json>
 //   node --experimental-strip-types scripts/dispatch/cli.ts check-board <board.md> <facts.json>
 //
@@ -14,8 +14,8 @@
 // (U lines), `index` (the ruling index id), `dispatcher` (this session's id), `teach`,
 // `queued`.
 //
-// `--for-pr` breaks every issue id that follows a closing keyword, so the output can be
-// pasted into a PR body without its merge closing that issue (status.ts, prSafe).
+// `--for-pr [CUL-NNN …]` breaks every issue id but the ones listed, so the output can be
+// pasted into a PR body without its merge closing them (status.ts, prSafe).
 
 import * as fs from 'node:fs';
 
@@ -108,7 +108,8 @@ const flags = [a, b, ...rest];
 const shape = (flags[flags.indexOf('--board') + 1] as BoardShape) || 'table';
 if (cmd === 'plan' && a) {
   const text = plan(load(a), flags.includes('--board') ? shape : 'table');
-  console.log(flags.includes('--for-pr') ? prSafe(text) : text);
+  const keep = flags.includes('--for-pr') ? flags.slice(flags.indexOf('--for-pr') + 1).filter((x) => /^CUL-\d+$/.test(x)) : [];
+  console.log(flags.includes('--for-pr') ? prSafe(text, keep) : text);
 } else if (cmd === 'check-update' && a && b) {
   const f = load(b);
   const p = planDispatch(f);

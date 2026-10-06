@@ -166,14 +166,15 @@ export function handoffDue(contextTokens: number): boolean {
   return contextTokens >= HANDOFF_TOKENS;
 }
 
-// A closing keyword followed by an issue id closes that issue when the text lands in a
-// merged PR (#1082's pasted dry run said "close CUL-1247" and its merge closed CUL-1247).
-// Text bound for a PR body breaks the id after such a word with a non-breaking hyphen, so
-// no parser reads it as a reference and a reader still does.
-const CLOSING = /\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?|complete[sd]?)(\s*:?\s+)(CUL)-(\d+)/gi;
-export function prSafe(text: string): string {
-  return text.replace(CLOSING, (_m, w: string, sp: string, k: string, n: string) => `${w}${sp}${k}\u2011${n}`);
+// An issue id in a PR's title or body closes that issue when the PR merges (CLAUDE.md,
+// CUL-1397, measured), and a closing word makes no difference: #1082's pasted dry run said
+// "close CUL-1247" and its merge closed CUL-1247. Text bound for a PR body therefore breaks
+// every id except the ones the PR finishes (`keep`) with a non-breaking hyphen, so no parser
+// reads it as a reference and a reader still does.
+const ISSUE_ID = /\b(CUL)-(\d+)\b/g;
+export function prSafe(text: string, keep: string[] = []): string {
+  return text.replace(ISSUE_ID, (m: string, k: string, n: string) => (keep.includes(m) ? m : `${k}\u2011${n}`));
 }
-export function closingHits(text: string): string[] {
-  return [...text.matchAll(CLOSING)].map((m) => m[0]);
+export function issueIdsIn(text: string): string[] {
+  return [...new Set([...text.matchAll(ISSUE_ID)].map((m) => m[0]))];
 }
