@@ -90,6 +90,12 @@ function plan(f: Facts, shape: BoardShape): string {
   // CUL-1623: a child idle on a green, mergeable PR never wakes on its own. Its checks are
   // read here from the raw runs, never judged by hand (one passed run is not a green PR).
   if (f.checkRuns) {
+    // Fail loudly rather than guess: runs without the sha they were read on cannot be noted
+    // once per head, and a missing wake list would make every child waiting on the PM look
+    // unheld (a fresh dispatcher re-reads the wakes from its predecessor's transcript).
+    const noSha = Object.keys(f.checkRuns).filter((n) => !f.headShas?.[n]);
+    if (noSha.length) fail(`checkRuns without headShas for #${noSha.join(', #')}: read both in the same moment`);
+    if (!f.wakes) fail('checkRuns without wakes: list every /dispatch wake received (an empty list if none)');
     const stalls = findStalls({
       now: f.now,
       alias: p.alias,
@@ -98,7 +104,7 @@ function plan(f: Facts, shape: BoardShape): string {
       sessions: f.sessions,
       parked: p.parked.map((x) => x.pr),
       wakes: f.wakes,
-      notes: f.notes,
+      notes: f.notes ?? [],
     });
     say();
     say(`Idle children: ${stalls.length ? '' : 'none'}`);

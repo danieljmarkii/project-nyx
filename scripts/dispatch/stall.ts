@@ -34,10 +34,13 @@ const PASS = new Set(['success', 'neutral', 'skipped']);
 export function checksOf(runs: CheckRun[], required: readonly string[] = REQUIRED_CHECKS): Checks {
   if (runs.some((r) => r.status === 'completed' && r.conclusion && !PASS.has(r.conclusion))) return { state: 'failure' };
   const names = new Set(runs.map((r) => r.name));
-  if (required.some((n) => !names.has(n)) || runs.some((r) => r.status !== 'completed')) return { state: 'pending' };
-  const times = runs.map((r) => r.completed_at).filter((t): t is string => !!t);
-  const doneAt = times.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]; // parsed, never lexical (C-40)
-  return { state: 'success', doneAt };
+  if (required.some((n) => !names.has(n))) return { state: 'pending' };
+  // Green is dated by the LAST completion, parsed, never lexical (C-40). A run with no
+  // readable completion time (queued, running, or a bad stamp) is pending: the PR is not
+  // done, and the grace below could not be measured from it.
+  const times = runs.map((r) => (r.completed_at ? new Date(r.completed_at).getTime() : NaN));
+  if (times.some((t) => Number.isNaN(t))) return { state: 'pending' };
+  return { state: 'success', doneAt: new Date(Math.max(...times)).toISOString().replace('.000Z', 'Z') };
 }
 
 // What a child sent the dispatcher, read from the dispatcher's own transcript.
@@ -54,8 +57,8 @@ export type StallInput = {
   prs: ChildPr[];
   sessions: Record<string, SessionBucket>;
   parked: number[]; // PR numbers the plan parked: a merge gate or a migration holds them, and they have their own note
-  wakes?: Wake[];
-  notes?: Note[];
+  wakes: Wake[]; // required: an unread wake list would make every waiting child look unheld
+  notes: Note[];
 };
 
 export type Stall = {
@@ -68,7 +71,8 @@ export type Stall = {
 };
 
 const IDLE: SessionBucket[] = ['review_ready', 'blocked', 'completed'];
-export const CI_WAIT = /\bwaiting on CI\b/i;
+// The exact reason the prompt fixes; a PM-waiting reason that merely mentions CI holds.
+export const CI_WAIT = /^waiting on CI\.?$/i;
 const ms = (t: string) => new Date(t).getTime();
 
 // The child's own word decides whether the dispatcher may touch it: a terminal wake ends it;
@@ -79,7 +83,7 @@ function heldByWake(session: string, pr: ChildPr, wakes: Wake[]): boolean {
   const last = own[0];
   if (!last) return false;
   if (last.kind !== 'stopped') return true;
-  if (CI_WAIT.test(last.reason ?? '')) return false;
+  if (CI_WAIT.test((last.reason ?? '').trim())) return false;
   return !(pr.lastCommitAt && ms(pr.lastCommitAt) > ms(last.at));
 }
 
@@ -108,15 +112,16 @@ export function findStalls(input: StallInput): Stall[] {
     const pr = input.prs.find((p) => p.state === 'open' && p.headRef === l.branch);
     if (!pr || input.parked.includes(pr.number)) continue;
     if (!IDLE.includes(input.sessions[session] ?? 'gone')) continue;
-    if (heldByWake(session, pr, input.wakes ?? [])) continue;
+    if (heldByWake(session, pr, input.wakes)) continue;
     const row = rowLabel(l);
     if (pr.checks?.state === 'pending') {
       out.push({ row, session, pr: pr.number, kind: 'ci-wait' });
       continue;
     }
-    if (pr.checks?.state !== 'success' || pr.mergeable !== true || !pr.checks.doneAt) continue;
+    // No head sha read → no once-per-head record, so nothing is sent (it would re-send every run).
+    if (pr.checks?.state !== 'success' || pr.mergeable !== true || !pr.checks.doneAt || !pr.headSha) continue;
     if (now - ms(pr.checks.doneAt) < STALL_GRACE_MIN * 60_000) continue;
-    const noted = (input.notes ?? []).find((n) => n.session === session && pr.headSha && n.sha === pr.headSha);
+    const noted = input.notes.find((n) => n.session === session && n.sha === pr.headSha);
     out.push({ row, session, pr: pr.number, kind: 'stalled', ...(noted ? { notedAt: noted.at } : { note: noteText(input.alias, row, pr) }) });
   }
   return out;

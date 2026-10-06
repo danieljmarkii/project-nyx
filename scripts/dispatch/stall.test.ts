@@ -10,6 +10,8 @@ const base = (over: Partial<StallInput>): StallInput => ({
   prs: [F.pr1084(checksOf(F.RUNS_FINAL))],
   sessions: { [F.SESSION]: 'review_ready' },
   parked: [],
+  wakes: [],
+  notes: [],
   ...over,
 });
 
@@ -25,6 +27,11 @@ describe('reading a head commit\'s checks', () => {
 
   it('green once every required check reports, done at the LAST completion', () => {
     expect(checksOf(F.RUNS_FINAL)).toEqual({ state: 'success', doneAt: '2026-10-06T17:37:37Z' });
+  });
+
+  it('a completed run with no readable completion time leaves the green undated, so pending', () => {
+    expect(checksOf([...F.RUNS_FINAL.slice(1), { ...F.RUNS_FINAL[0], completed_at: null }]).state).toBe('pending');
+    expect(checksOf([...F.RUNS_FINAL.slice(1), { ...F.RUNS_FINAL[0], completed_at: 'not a time' }]).state).toBe('pending');
   });
 
   it('one failure is red, whatever else is pending', () => {
@@ -66,6 +73,15 @@ describe('#1084, replayed', () => {
 });
 
 describe('what is not a stall', () => {
+  it('a head with no sha read: nothing to note it once by, so nothing is sent', () => {
+    expect(findStalls(base({ prs: [{ ...F.pr1084(checksOf(F.RUNS_FINAL)), headSha: undefined }] }))).toEqual([]);
+  });
+
+  it('a PM-waiting stop whose reason only mentions CI still holds', () => {
+    const wakes = [{ session: F.SESSION, kind: 'stopped' as const, reason: 'waiting on CI config ruling', at: '2026-10-06T17:28:37Z' }];
+    expect(findStalls(base({ wakes }))).toEqual([]);
+  });
+
   it('a working session', () => {
     expect(findStalls(base({ sessions: { [F.SESSION]: 'working' } }))).toEqual([]);
   });
