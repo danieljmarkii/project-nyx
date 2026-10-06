@@ -164,15 +164,19 @@ const DISEASE_RE =
 // Matches every ask the safety templates write (phrasing.ts: "a word with your vet", "a call to
 // your vet", "raising with your vet", "booking a vet visit") and close paraphrases a model may
 // smooth them into ("talk to your vet", "mention it to the vet", "call your vet", "worth a vet
-// appointment"). "A vet visit" asks; "the vet visit" (a past one) does not, so the article is
-// part of the arm. It never matches the watched head's "your vet knows", which is the point.
+// appointment"). It never matches the watched head's "your vet knows", which is the point.
+// It is LEXICAL, so it proves an ask is present, not that it is live or on the right sign: a
+// negated or past ask ("no need for a call to your vet", "had a vet visit last week") matches,
+// and on a packet with two safety clauses one ask satisfies it wherever it sits. Inert while no
+// safety summary is model-phrased; closing that is the per-clause re-enable gate (CUL-1618:
+// every safety clause verbatim), not this regex.
 export const VET_ASK_RE =
   /\b(?:(?:word|call|chat|talk|check-in) (?:with|to) (?:your|the) vet|(?:rais(?:e|ing)|mention(?:ing)?|review(?:ing)?|discuss(?:ing)?|talk(?:ing)?|speak(?:ing)?|check(?:ing)? in) (?:it |this |them |that )?(?:with|to) (?:your|the) vet|call(?:ing)? (?:your|the) vet|a vet (?:visit|appointment|check(?:-?up)?)|book(?:ing)? (?:a |in )?(?:visit|appointment) with (?:your|the) vet)\b/i
 
-// CUL-1608 — the acknowledgement a watched head carries (careState.ts: "…, your vet knows.").
-// Required on a safety packet with no asking clause, so a model cannot drop the concern's one
-// mention of the vet either.
-export const VET_KNOWS_RE = /\bvet knows\b/i
+// CUL-1608 — the acknowledgement a watched head carries (careState.ts: "…, your vet knows."),
+// in the head's own words. Required on a safety packet with no asking clause, so a model cannot
+// drop the concern's one mention of the vet either.
+export const VET_KNOWS_RE = /\byour vet knows\b/i
 
 // ── The fact packet ────────────────────────────────────────────────────────────────────
 

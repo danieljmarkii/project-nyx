@@ -830,6 +830,8 @@ Deno.test('CUL-1608: the routing regex matches every safety ask the templates wr
   for (const said of [WATCHED_VOMIT, WATCHED_CARD, 'Since the vet visit, Pixel has vomited twice.', 'The vet said to watch it.'])
     assert.equal(VET_ASK_RE.test(said), false, said)
   assert.match(WATCHED_VOMIT, VET_KNOWS_RE)
+  // The head's own words: "the vet knows" is a paraphrase that loses whose vet the owner told.
+  assert.equal(VET_KNOWS_RE.test('The vet knows about the vomiting.'), false)
 })
 
 Deno.test('CUL-1608: every asking safety template still passes the tightened check', () => {
