@@ -9,7 +9,8 @@
 //   - summaryTemplate    — the deterministic fallback passes its own validator for EVERY
 //     emittable shape (clinical-guardrails Pattern 8 — the invariant is a test, not a comment).
 //   - validateSummary    — rejects fabricated numbers, reassurance, preference framing, causal
-//     claims, disease names, "!", and the silent removal of vet-routing on a safety summary.
+//     claims, disease names, "!", and (CUL-1618) any safety summary that does not open with
+//     every safety clause verbatim, or names the vet after them.
 //   - extractNumbers     — the grounding primitive (digits + number-words, word-boundaried).
 // The DB reads and the live Claude call are I/O and are exercised by the Manual QA Script.
 
@@ -25,9 +26,8 @@ import {
   buildSummaryPacket,
   extractNumbers,
   shouldPhraseWithModel,
-  VET_ASK_RE,
-  VET_KNOWS_RE,
   SUMMARY_MODEL_PHRASING_ENABLED,
+  summaryModelPayload,
   summaryTemplate,
   validateSummary,
   type SummaryFactPacket,
@@ -417,12 +417,10 @@ Deno.test('summaryTemplate — every emittable shape (with a typical food label)
   }
 })
 
-Deno.test('summaryTemplate — a screened FOOD NAME is inert in v1 but is a model re-enable gate (B-096)', () => {
+Deno.test('summaryTemplate — a screened FOOD NAME in a safety clause no longer trips the validator (B-096, CUL-1618)', () => {
   // A real product name containing screened vocabulary ("Recovery") rides verbatim into the
-  // decline clause. The SHIPPED text is correct (it names the food the pet refused) and routes
-  // to the vet — and it ships UNVALIDATED, so this is inert today. But validateSummary WOULD
-  // reject it, so before model phrasing is ever re-enabled the food-name span must be exempted
-  // (B-096). This test pins both halves of that reality so the limitation can't be forgotten.
+  // decline clause. Until CUL-1618 validateSummary rejected it; now the safety clauses are
+  // required verbatim and the screens read only the text after them, so the true template passes.
   const packet = buildSummaryPacket({
     risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
     petName: 'Pixel',
@@ -435,9 +433,9 @@ Deno.test('summaryTemplate — a screened FOOD NAME is inert in v1 but is a mode
   const text = summaryTemplate(packet)
   assert.match(text, /Royal Canin Recovery/) // the food's own name renders correctly
   assert.match(text, /\bvet\b/i) // and the safety clause still routes to the vet
-  // The known limitation: validateSummary trips on "Recovery" — fine in v1 (template ships
-  // unvalidated), gated for re-enable.
-  assert.equal(validateSummary(text, packet), false)
+  assert.equal(validateSummary(text, packet), true)
+  // The screens still read the model's own words after the lead.
+  assert.equal(validateSummary(`${packet.safetyClauses.join(' ')} Pixel is on the road to recovery.`, packet), false)
 })
 
 Deno.test('summaryTemplate — a safety summary always routes to the vet', () => {
@@ -473,6 +471,9 @@ function safetyPacket(): SummaryFactPacket {
     nowMs: NOW_MS,
   })!
 }
+
+// The worsening template safetyPacket() leads with (phrasing.ts), word for word.
+const WORSENING_VOMIT = 'Pixel has had vomiting on 5 of the last 7 days, up from 2 the week before — worth booking a vet visit soon.'
 
 Deno.test('validateSummary — rejects a fabricated number not in the packet', () => {
   const p = quietPacket() // allows 10
@@ -522,8 +523,8 @@ Deno.test('validateSummary — a safety summary that drops the vet routing is re
   const p = safetyPacket()
   // Plausible, number-clean, but the model smoothed away the vet guidance.
   assert.equal(validateSummary('Pixel has had vomiting on 5 of the last 7 days, up from 2 the week before. I\'ll keep watching the logs with you.', p), false)
-  // The same content WITH the vet routing kept passes.
-  assert.equal(validateSummary('Pixel has had vomiting on 5 of the last 7 days, up from 2 the week before, which is worth a vet visit soon. I\'ll keep watching the logs.', p), true)
+  // The safety clause kept word for word, with a rephrased tail, passes.
+  assert.equal(validateSummary(`${WORSENING_VOMIT} I'll keep watching the logs with you.`, p), true)
 })
 
 Deno.test('validateSummary — structural: "!", length, sentence count', () => {
@@ -539,11 +540,16 @@ Deno.test('validateSummary — structural: "!", length, sentence count', () => {
   )
 })
 
-Deno.test('validateSummary — accepts a faithful model paraphrase that preserves numbers + vet', () => {
+Deno.test('validateSummary — on a safety packet only the tail is the model\'s to rephrase (CUL-1618)', () => {
   const p = safetyPacket()
-  const good =
+  // The safety clause verbatim, the protein clause smoothed: passes.
+  assert.equal(validateSummary(`${WORSENING_VOMIT} Most of Pixel's logged meals this month were chicken.`, p), true)
+  // A faithful-looking paraphrase of the safety clause itself (this test's old "accepts" case,
+  // "worth booking a vet visit soon" → "worth a vet visit soon"): rejected, because a paraphrase
+  // is exactly how an ask drifts off its sign or loses its urgency.
+  const paraphrase =
     'Pixel has had vomiting on 5 of the last 7 days, up from 2 the week before — worth a vet visit soon. Chicken was Pixel\'s most-logged meal protein this month.'
-  assert.equal(validateSummary(good, p), true)
+  assert.equal(validateSummary(paraphrase, p), false)
 })
 
 // ── PR-4 adversarial-review regression vectors (the counterexamples that BROKE the first cut) ──
@@ -692,15 +698,16 @@ Deno.test('buildSummaryPacket — never drops a safety clause to honour the cap 
   assert.ok(packet!.clauses.some((c) => /Wellness Pate/.test(c)))
 })
 
-Deno.test('number-swap inversion on a safety packet is prevented by RESTRAINT, not by grounding (Claim 4b)', () => {
+Deno.test('number-swap inversion on a safety packet is caught by the verbatim lead and by RESTRAINT, never by grounding (Claim 4b, CUL-1618)', () => {
   // The grounding number-set is fact-blind: a 5<->2 swap stays inside allowedNumbers, so
   // validateSummary alone CANNOT detect that a worsening trend was inverted to "improvement".
   const p = safetyPacket() // worsening "5 of the last 7 days, up from 2"; allows {5,7,2}
   const inverted =
     'Pixel has had vomiting on just 2 of the last 7 days, down from 5 the week before — mention it to your vet.'
-  assert.equal(validateSummary(inverted, p), true) // grounding is swap-blind by design...
-  // ...which is EXACTLY why a safety summary is NEVER sent to the model: it ships the
-  // deterministic template, so the model can never produce this inversion.
+  assert.equal(extractNumbers(inverted).size, 3, 'premise: every number is inside allowedNumbers')
+  // Grounding is swap-blind by design; since CUL-1618 the verbatim safety lead catches it...
+  assert.equal(validateSummary(inverted, p), false)
+  // ...and restraint still holds: a safety summary is never sent to the model at all.
   assert.equal(shouldPhraseWithModel(p), false)
 })
 
@@ -801,40 +808,31 @@ Deno.test('EN-9: several watched signs stay inside the sentence cap (adversarial
   assert.equal(validateSummary(summaryTemplate(p), p), true, summaryTemplate(p))
 })
 
-// ── CUL-1608: "your vet knows" is not routing — the asking clause's ask is required ────────────
+// ── CUL-1618: every safety clause verbatim, first, in order ───────────────────────────────────
+// (supersedes CUL-1608's lexical "an ask appears somewhere" check, which these counterexamples passed)
 
-Deno.test('CUL-1608: asksVet is true while any safety clause asks, false when every one is watched', () => {
-  const d = declineFinding()
+// The decline template the mixed packet leads with (phrasing.ts), word for word.
+const DECLINE_3_DAYS = 'Pixel has eaten less than usual the last three days — worth keeping an eye on, and a word with your vet if it carries on.'
+
+function mixedPacket() {
+  const d = declineFinding({ trigger: 'consecutive_low', daysBelowBaseline: 3, refusedFoodLabel: null })
   const w = worseningFinding()
-  assert.equal(packetFor([w], [w]).asksVet, true)
-  assert.equal(packetFor([w], [withCare(w, 'with_vet', WATCHED_CARD)]).asksVet, false)
-  assert.equal(packetFor([d, w], [d, withCare(w, 'with_vet', WATCHED_CARD)]).asksVet, true)
-  assert.equal(quietPacket().asksVet, false)
-  assert.equal(quietPacket().hasSafety, false)
+  return packetFor([d, w], [d, withCare(w, 'with_vet', WATCHED_CARD)])
+}
+
+Deno.test('CUL-1618: safetyClauses are the asking templates then the watched heads, and lead clauses', () => {
+  const p = mixedPacket()
+  assert.deepEqual(p.safetyClauses, [DECLINE_3_DAYS, WATCHED_VOMIT])
+  assert.deepEqual(p.clauses.slice(0, 2), p.safetyClauses)
+  assert.deepEqual(safetyPacket().safetyClauses, [WORSENING_VOMIT])
+  assert.deepEqual(quietPacket().safetyClauses, [])
+  // The model is handed them apart from the sentences it may smooth.
+  const payload = summaryModelPayload(p)
+  assert.deepEqual(payload.safety_sentences, p.safetyClauses)
+  assert.deepEqual(payload.draft_sentences, p.clauses.slice(2))
 })
 
-Deno.test('CUL-1608: the routing regex matches every safety ask the templates write and never the watched head', () => {
-  // Each ask phrasing.ts writes on a safety card (decline, burden, weight, worsening, chronicity, red flag).
-  for (const ask of [
-    'worth keeping an eye on, and a word with your vet if it carries on.',
-    'worth a call to your vet today.',
-    'worth booking a vet visit soon.',
-    'worth raising with your vet.',
-    'worth a word with your vet.',
-    'worth a call to your vet. This is a read of your logs, not a diagnosis.',
-  ]) assert.match(`Pixel has vomited 3 times this week — ${ask}`, VET_ASK_RE, ask)
-  // Paraphrases a model may smooth an ask into still count as asking.
-  for (const ask of ['talk to your vet', 'mention it to the vet', 'call your vet', 'worth a vet appointment', 'book a visit with your vet'])
-    assert.match(`Pixel has vomited, so ${ask}.`, VET_ASK_RE, ask)
-  // The head and the acknowledgement name the vet without asking.
-  for (const said of [WATCHED_VOMIT, WATCHED_CARD, 'Since the vet visit, Pixel has vomited twice.', 'The vet said to watch it.'])
-    assert.equal(VET_ASK_RE.test(said), false, said)
-  assert.match(WATCHED_VOMIT, VET_KNOWS_RE)
-  // The head's own words: "the vet knows" is a paraphrase that loses whose vet the owner told.
-  assert.equal(VET_KNOWS_RE.test('The vet knows about the vomiting.'), false)
-})
-
-Deno.test('CUL-1608: every asking safety template still passes the tightened check', () => {
+Deno.test('CUL-1618: every template shape with a safety clause passes its own validator', () => {
   const findings: Finding[] = [
     worseningFinding(),
     worseningFinding({ tier: 'soft', trigger: 'more_days' }),
@@ -845,31 +843,50 @@ Deno.test('CUL-1608: every asking safety template still passes the tightened che
     const p = packetFor([f], [f])
     assert.equal(validateSummary(summaryTemplate(p), p), true, summaryTemplate(p))
   }
-  // Mixed: the ask leads and the head follows; the whole template passes.
-  const d = declineFinding()
-  const w = worseningFinding()
-  const mixed = packetFor([d, w], [d, withCare(w, 'with_vet', WATCHED_CARD)])
-  assert.equal(validateSummary(summaryTemplate(mixed), mixed), true, summaryTemplate(mixed))
+  for (const p of [mixedPacket(), packetFor([worseningFinding()], [withCare(worseningFinding(), 'with_vet', WATCHED_CARD)])])
+    assert.equal(validateSummary(summaryTemplate(p), p), true, summaryTemplate(p))
+  // A line break between sentences is not a reworded clause.
+  const p = mixedPacket()
+  assert.equal(validateSummary(p.clauses.join('\n'), p), true)
 })
 
-Deno.test('CUL-1608: on a mixed packet a model that drops the ask and keeps the head is rejected', () => {
-  const d = declineFinding({ trigger: 'consecutive_low', daysBelowBaseline: 3, refusedFoodLabel: null })
-  const w = worseningFinding()
-  const p = packetFor([d, w], [d, withCare(w, 'with_vet', WATCHED_CARD)])
-  // The adversarial pass's counterexample: "vet" is present, nothing asks. Passed before this fix.
-  const dropped = "Pixel has eaten less than usual the last three days. Pixel's vomiting, your vet knows."
-  assert.match(dropped, /\bvet\b/i, 'premise: the bare-word check alone would pass this')
-  assert.equal(validateSummary(dropped, p), false)
-  // The same summary with the decline's ask kept passes.
-  const kept = "Pixel has eaten less than usual the last three days, worth a word with your vet if it carries on. Pixel's vomiting, your vet knows."
-  assert.equal(validateSummary(kept, p), true)
+Deno.test('CUL-1618: the adversarial pass\'s counterexamples on a mixed packet are all rejected', () => {
+  const p = mixedPacket()
+  const tail = " Chicken was Pixel's most-logged meal protein this month."
+  for (const t of [
+    // CUL-1608's case: the head kept, the decline's ask dropped.
+    "Pixel has eaten less than usual the last three days. Pixel's vomiting, your vet knows.",
+    // The care claim moves onto the decline, which loses its ask; the watched sign is nagged again.
+    "Pixel has eaten less than usual the last three days, and your vet knows. Pixel's vomiting is worth a word with your vet.",
+    // The decline is dropped (Principle 3).
+    "Pixel's vomiting is worth a word with your vet." + tail,
+    // The ask reworded ("a word with your vet if it carries on" → "a word with your vet"): the
+    // same edit that turns the burden card's "a call to your vet today" into a softer ask.
+    "Pixel has eaten less than usual the last three days — worth a word with your vet. Pixel's vomiting, your vet knows.",
+    // Reordered: the watched head may not lead the asking card.
+    `${WATCHED_VOMIT} ${DECLINE_3_DAYS}` + tail,
+    // The lead kept verbatim, then a negated, past or extra vet claim in the tail.
+    `${DECLINE_3_DAYS} ${WATCHED_VOMIT} No need for a call to your vet yet.`,
+    `${DECLINE_3_DAYS} ${WATCHED_VOMIT} You already had a word with your vet.`,
+    `${DECLINE_3_DAYS} ${WATCHED_VOMIT} Pixel had a vet visit last week.`,
+    `${DECLINE_3_DAYS} ${WATCHED_VOMIT} The vet's aware of the eating too.`,
+  ]) assert.equal(validateSummary(t, p), false, t)
+  // The lead verbatim with a rephrased, vet-free tail passes.
+  assert.equal(validateSummary(`${DECLINE_3_DAYS} ${WATCHED_VOMIT} Most of Pixel's logged meals this month were chicken.`, p), true)
 })
 
-Deno.test('CUL-1608: a watched-only packet must keep the acknowledgement, not just the word "vet"', () => {
+Deno.test('CUL-1618: a watched-only packet keeps the head verbatim, not just the word "vet"', () => {
   const w = worseningFinding()
   const p = packetFor([w], [withCare(w, 'with_vet', WATCHED_CARD)])
-  assert.equal(validateSummary(summaryTemplate(p), p), true, summaryTemplate(p))
-  // "vet" survives, the acknowledgement does not: the concern's one fact about the vet is gone.
   assert.equal(validateSummary("Pixel's vomiting came up with the vet. Chicken was Pixel's most-logged meal protein this month.", p), false)
-  assert.equal(validateSummary("Pixel's vomiting, your vet knows. Chicken was Pixel's most-logged meal protein this month.", p), true)
+  assert.equal(validateSummary("The vet knows about Pixel's vomiting. Chicken was Pixel's most-logged meal protein this month.", p), false)
+  assert.equal(validateSummary(`${WATCHED_VOMIT} Chicken was Pixel's most-logged meal protein this month.`, p), true)
+})
+
+Deno.test('CUL-1618: a non-safety summary may not name the vet either', () => {
+  // No clause on a quiet or reflection packet mentions the vet, so the model's mention is unbacked.
+  const p = quietPacket()
+  assert.equal(validateSummary("Chicken was Pixel's most-logged meal protein this month. No need to see the vet.", p), false)
+  assert.equal(validateSummary("Chicken was Pixel's most-logged meal protein this month. Pixel saw the vet last week.", p), false)
+  assert.equal(validateSummary("Chicken was Pixel's most-logged meal protein this month. Keep logging for Pixel.", p), true)
 })

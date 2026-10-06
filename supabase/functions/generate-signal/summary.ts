@@ -15,7 +15,7 @@
 //   - validateSummary    — defense-in-depth against model drift (clinical-guardrails
 //     Pattern 8): reject any number not in the packet, any reassurance (incl. on absence),
 //     any causal claim, any preference framing, any disease name, and — on a safety
-//     summary — the silent removal of the "talk to your vet" routing.
+//     summary — any text that does not open with every safety clause verbatim (CUL-1618).
 //
 // THE GROUNDING ARCHITECTURE (why this is safe). The summary's allowed-number set is
 // derived FROM the deterministic clause text itself, so:
@@ -23,10 +23,9 @@
 //       template ships UNVALIDATED anyway — validateSummary runs only on MODEL output), and
 //   (b) the model may only re-use numbers that already appear in a true clause — anything
 //       it invents falls outside the set and is rejected to the template.
-// (Caveat, adversarial review: a food NAME containing screened vocabulary — "Royal Canin
-// Recovery", "Hill's Sensitive Stomach" — rides verbatim into the decline clause and would
-// trip validateSummary. Inert in v1 because the template ships unvalidated, but a re-enable
-// gate for model phrasing: sanitize/exempt the food-name span first. See B-096.)
+// (A food NAME containing screened vocabulary — "Royal Canin Recovery" — rides verbatim into
+// the decline clause. Since CUL-1618 the screens read only the text after the verbatim safety
+// clauses, so it no longer trips validateSummary. See B-096.)
 // The model never sees a raw event log and never composes from raw fields; it smooths a
 // list of already-true sentences. This is the WHOOP-weekly-narrative shape, the safest use
 // of an LLM for this job (research §4.3), and it keeps the summary on the right side of
@@ -160,23 +159,13 @@ const CAUSAL_RE =
 const DISEASE_RE =
   /\b(pancreatitis|gastritis|gastroenteritis|enteritis|colitis|ibd|inflammatory bowel|hepatic lipidosis|lipidosis|hepatitis|cholangitis|kidney disease|renal (?:disease|failure|insufficiency)|ckd|diabet\w*|hyperthyroid\w*|hypothyroid\w*|thyroid|cancer|tumou?r|lymphoma|neoplas\w*|carcinoma|ulcer\w*|obstruction|blockage|foreign body|megaesophagus|reflux|anaemia|anemia|addison\w*|cushing\w*|parvo\w*|giardia|parasit\w*|infection|infected|gastroparesis|disease|illness|disorder|syndrome|diagnos\w*|(?:tummy|stomach|gut) (?:bug|upset|issues?|trouble|problems?)|(?:tummy|stomach) ache|upset (?:tummy|stomach)|sensitive (?:tummy|stomach)|food poisoning|gi (?:upset|issues?|problems?|trouble)|something (?:he|she|they|it) ate|hairball\w*|unwell|under the weather|off colou?r|\bsick\b|\bbug\b)\b/i
 
-// CUL-1608 — the vet ROUTING phrase a safety summary must keep while any clause still asks.
-// Matches every ask the safety templates write (phrasing.ts: "a word with your vet", "a call to
-// your vet", "raising with your vet", "booking a vet visit") and close paraphrases a model may
-// smooth them into ("talk to your vet", "mention it to the vet", "call your vet", "worth a vet
-// appointment"). It never matches the watched head's "your vet knows", which is the point.
-// It is LEXICAL, so it proves an ask is present, not that it is live or on the right sign: a
-// negated or past ask ("no need for a call to your vet", "had a vet visit last week") matches,
-// and on a packet with two safety clauses one ask satisfies it wherever it sits. Inert while no
-// safety summary is model-phrased; closing that is the per-clause re-enable gate (CUL-1618:
-// every safety clause verbatim), not this regex.
-export const VET_ASK_RE =
-  /\b(?:(?:word|call|chat|talk|check-in) (?:with|to) (?:your|the) vet|(?:rais(?:e|ing)|mention(?:ing)?|review(?:ing)?|discuss(?:ing)?|talk(?:ing)?|speak(?:ing)?|check(?:ing)? in) (?:it |this |them |that )?(?:with|to) (?:your|the) vet|call(?:ing)? (?:your|the) vet|a vet (?:visit|appointment|check(?:-?up)?)|book(?:ing)? (?:a |in )?(?:visit|appointment) with (?:your|the) vet)\b/i
-
-// CUL-1608 — the acknowledgement a watched head carries (careState.ts: "…, your vet knows."),
-// in the head's own words. Required on a safety packet with no asking clause, so a model cannot
-// drop the concern's one mention of the vet either.
-export const VET_KNOWS_RE = /\byour vet knows\b/i
+// CUL-1618 — the vet, named anywhere outside the safety clauses. No non-safety clause the packet
+// builds (reflection, descriptive count, protein, finished rate, forward tail) mentions the vet,
+// so a vet word in the model's tail is the model's own: a negated or past ask ("no need for a
+// call to your vet", "you already had a word with your vet"), a care claim moved onto another
+// sign, or a second ask on a sign the owner has told the vet about. Whatever it says, it is
+// unbacked, so the tail may not say it. Matches "vet's" (the apostrophe is a word boundary).
+const VET_WORD_RE = /\b(?:vets?|veterinar\w*)\b/i
 
 // ── The fact packet ────────────────────────────────────────────────────────────────────
 
@@ -199,12 +188,11 @@ export interface SummaryFactPacket {
    *  mandatory vet-routing check in validateSummary and the omission of any intake stat that
    *  could read as reassurance alongside a concern. */
   hasSafety: boolean
-  /** CUL-1608: at least one safety clause still ASKS (its card is not watched), so the summary
-   *  must carry a routing phrase (VET_ASK_RE), not merely the word "vet". False when every
-   *  safety clause is a watched EN-9 head ("Rex's vomiting, your vet knows."), which names the
-   *  vet without asking anything; validateSummary then requires that acknowledgement instead.
-   *  Always false when `hasSafety` is false. */
-  asksVet: boolean
+  /** CUL-1618: the safety clauses, in the order they lead `clauses` (every asking template,
+   *  then every watched EN-9 head). Deterministic and guardrail-safe by construction, so
+   *  validateSummary requires the model's text to OPEN with them verbatim: the model may only
+   *  rephrase what follows. Empty when `hasSafety` is false. */
+  safetyClauses: string[]
   /** No finding drove the summary — it is purely descriptive/intake. Tunes the model's tone. */
   quiet: boolean
 }
@@ -439,7 +427,6 @@ export function buildSummaryPacket(args: BuildSummaryArgs): SummaryFactPacket | 
   const clauses: string[] = []
   const evidence = new Set<SummaryEvidenceKind>()
   let hasSafety = false
-  let asksVet = false
   let hasSymptomClause = false
 
   // 1. Safety findings — verbatim from the deterministic, guardrail-safe templates. In
@@ -453,7 +440,6 @@ export function buildSummaryPacket(args: BuildSummaryArgs): SummaryFactPacket | 
     const known = watchedSentenceFor(f)
     if (known === null) {
       clauses.push(templateForFinding(f, petName))
-      asksVet = true
     } else if (!watched.includes(known)) watched.push(known)
     hasSafety = true
     hasSymptomClause = true
@@ -529,7 +515,7 @@ export function buildSummaryPacket(args: BuildSummaryArgs): SummaryFactPacket | 
     allowedNumbers: [...allowed],
     evidence: [...evidence],
     hasSafety,
-    asksVet,
+    safetyClauses: kept.slice(0, safetyClauseCount),
     quiet: !hasSafety && !findings.some((f) => f.type === 'reflection'),
   }
 }
@@ -545,8 +531,10 @@ export function summaryTemplate(packet: SummaryFactPacket): string {
 export function summaryModelPayload(packet: SummaryFactPacket): Record<string, unknown> {
   return {
     pet_name: packet.petName,
-    // The already-true sentences to weave together. The model rewrites for FLOW only.
-    draft_sentences: packet.clauses,
+    // CUL-1618: copied verbatim, first, in order. validateSummary rejects anything else.
+    safety_sentences: packet.safetyClauses,
+    // The already-true sentences to weave together. The model rewrites these for FLOW only.
+    draft_sentences: packet.clauses.slice(packet.safetyClauses.length),
     has_safety_concern: packet.hasSafety,
   }
 }
@@ -585,7 +573,10 @@ export const SUMMARY_SYSTEM =
   '(5) NEVER state or imply a cause, and never name a disease, condition, or diagnosis. ' +
   '(6) Intake is descriptive only — never call the pet "picky" or describe a food as a ' +
   'preference, favourite, or something the pet "likes". ' +
-  '(7) If any draft sentence mentions the vet, KEEP that guidance in your summary. ' +
+  '(7) SAFETY SENTENCES: if safety_sentences is not empty, your summary MUST begin with every one ' +
+  'of them copied EXACTLY, word for word, in the order given, separated by single spaces. Do not ' +
+  'reword, merge, shorten or reorder them. Only the draft_sentences after them are yours to smooth, ' +
+  'and those must never mention the vet. ' +
   '(8) VISITS, CARE AND TREATMENTS (Ask\'s rule 10, shared): a vet visit, a medication or a diet ' +
   'may appear only as a DATED FACT beside a COUNT that is in the draft (in the shape "Since the {date} visit, ' +
   '{n} vomiting episodes are logged."). NEVER describe a concern as handled or held: do not say it is ' +
@@ -640,37 +631,47 @@ export function shouldPhraseWithModel(packet: SummaryFactPacket): boolean {
  *   - any number not present in packet.allowedNumbers (the grounding contract — no
  *     fabricated or recomputed figure).
  *   - any reassurance (incl. on absence), preference framing, causal claim, or disease name.
- *   - on a safety summary: the silent removal of the "talk to your vet" routing.
+ *   - on a safety summary (CUL-1618): any text that does not OPEN with every safety clause
+ *     verbatim, in order, or whose remainder names the vet.
  * The deterministic template passes for a typical food label (allowedNumbers is derived from
- * it and the clauses carry none of the banned vocabulary) — verified by a test. NOTE it is NOT
- * an absolute invariant: a food NAME containing screened vocabulary ("…Recovery", "Sensitive
- * Stomach") would make this return false. That is inert in v1 (the template ships unvalidated;
- * index.ts calls this only on MODEL output), but is a re-enable gate for model phrasing — B-096.
+ * it and the clauses carry none of the banned vocabulary) — verified by a test. Because the
+ * safety clauses are required verbatim, the vocabulary screens read only the text AFTER them
+ * (the part the model wrote), so a food NAME inside a decline clause ("Royal Canin Recovery")
+ * no longer trips them, nor does a red-flag template's own "not a diagnosis". A screened food
+ * name can still only reach the summary through a safety clause, so B-096's food-name gate is
+ * closed for this surface; its fact-bound grounding gate is not (a non-safety number swap).
  */
 export function validateSummary(text: string, packet: SummaryFactPacket): boolean {
-  const t = (text ?? '').trim()
+  // Whitespace is normalised so a line break between sentences never fails the verbatim lead.
+  const t = (text ?? '').replace(/\s+/g, ' ').trim()
   if (t.length < MIN_SUMMARY_LEN || t.length > MAX_SUMMARY_LEN) return false
   if (t.includes('!')) return false // nyx-voice — no manufactured enthusiasm
   const sentences = sentenceCount(t)
   if (sentences < MIN_SUMMARY_SENTENCES || sentences > MAX_SUMMARY_SENTENCES) return false
 
-  if (REASSURANCE_RE.test(t)) return false
-  if (PREFERENCE_RE.test(t)) return false
-  if (CAUSAL_RE.test(t)) return false
-  if (DISEASE_RE.test(t)) return false
+  // CUL-1618 — every safety clause, verbatim, first, in order. A lexical "an ask appears
+  // somewhere" check (CUL-1608's) let a model move the ask onto the wrong sign, drop one of two
+  // concerns, negate the ask ("no need for a call to your vet") or soften "a call to your vet
+  // today" into "a word with your vet" and still pass. The asking templates and the watched heads
+  // are deterministic, so nothing is lost by requiring them whole: the model can only rephrase
+  // the non-safety tail. Leading is Principle 3's order (safety first), which the template keeps.
+  const lead = packet.safetyClauses.join(' ')
+  if (!t.startsWith(lead)) return false
+  const tail = t.slice(lead.length)
+  // No non-safety clause names the vet, so a vet word in the tail is invented (VET_WORD_RE),
+  // on any packet: on a reflection summary "no need to see the vet" is reassurance too.
+  if (VET_WORD_RE.test(tail)) return false
+
+  // The screens read the tail only: the lead is template text, guardrail-safe by construction,
+  // and screening it rejected true sentences (a food name, "not a diagnosis") for no gain.
+  if (REASSURANCE_RE.test(tail)) return false
+  if (PREFERENCE_RE.test(tail)) return false
+  if (CAUSAL_RE.test(tail)) return false
+  if (DISEASE_RE.test(tail)) return false
   // CUL-1271 — the shared delegation / treatment-attribution arms. This list already bans
   // "under control", "help*" and "thanks to"; the shared arms add "has it covered", "in the
   // vet's hands", "nothing more to do", "is working", "settled since" and kin.
-  if (careClaimReason(t)) return false
-
-  // A safety summary must keep routing the owner to the vet — the model may not smooth the
-  // concern into a bare observation. CUL-1608: the bare word "vet" is not routing, because a
-  // watched EN-9 head ("Rex's vomiting, your vet knows.") says it without asking. So a packet
-  // with an asking clause requires the ask itself, and a packet whose every safety clause is
-  // watched requires the acknowledgement it carries. On a mixed packet a model that drops the
-  // ask and keeps the head now fails here.
-  if (packet.asksVet && !VET_ASK_RE.test(t)) return false
-  if (packet.hasSafety && !packet.asksVet && !VET_KNOWS_RE.test(t)) return false
+  if (careClaimReason(tail)) return false
 
   // Grounding: every number in the output must trace to a true clause.
   const allowed = new Set(packet.allowedNumbers)
