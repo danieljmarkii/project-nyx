@@ -2,8 +2,10 @@
 #
 # Why this exists: until now the only gate on ~400 merges was the opt-in,
 # locally-bypassable `.githooks/pre-push`. This is the server-side floor —
-# the same two commands the hook runs, plus the Edge Function suites the hook
-# never touches, enforced where they can't be skipped.
+# the FULL type check and jest suite (the hook runs the full suite only off the
+# cloud; in a cloud session it runs the type check plus the related tests,
+# CUL-1613), plus the Edge Function suites the hook never touches, enforced
+# where they can't be skipped. This, not the hook, is the required check.
 #
 # Three jobs on purpose, run in parallel so each reports independently:
 #   app            — the RN/Expo app: `tsc --noEmit` + jest (self-contained)
@@ -17,10 +19,18 @@ on:
   push:
     branches: [main]
 
-# A re-push supersedes its own in-flight run rather than queueing behind it —
-# at the project's merge cadence the older run's verdict is already stale.
+# On a pull request a re-push supersedes its own in-flight run rather than
+# queueing behind it: the older run's verdict is already stale.
+#
+# On main it must NOT (CUL-1613). Every merge is a distinct state of main that
+# needs its own verdict. With one shared group, four merges in six minutes on
+# 2026-10-03 each cancelled the run for the merge before, so the break surfaced
+# only after all four were in and main stayed red for an hour with no run
+# naming the commit that broke it. So main's group is per-commit (github.sha),
+# which makes cancel-in-progress a no-op there; PR refs keep the shared group.
+# guards/ciConcurrency.test.ts holds this shape.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 # Read-only. Nothing here writes to the repo, posts a comment, or needs a token
