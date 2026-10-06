@@ -155,7 +155,7 @@ export type Plan = {
 // The gate predicate (dispatch.md step 5, D2 and F7). One reading, used at proposal
 // and again at launch.
 
-const PRIVILEGED = /\b(apply_migration|execute_sql|deploy\w*|merge\w*|create_session|send\w*|share\w*|secret\w*|token\w*)\b/i;
+const PRIVILEGED = /\b(apply_migration|execute_sql|(?:re)?deploy\w*|merg(?:e|es|ed|ing)|create_session|send\w*|share\w*|secret\w*|token\w*)\b/i;
 const COPY = /\b(nyx-voice|copy|wording|string|label|mock|frame)\b/i;
 
 export function gateOf(row: Pick<PageRow, 'what' | 'note' | 'migration'>, issue?: Pick<IssueFact, 'labels'>): Gate {

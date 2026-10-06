@@ -170,7 +170,7 @@ export function handoffDue(contextTokens: number): boolean {
 // no parser reads it as a reference and a reader still does.
 const CLOSING = /\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?|complete[sd]?)(\s*:?\s+)(CUL)-(\d+)/gi;
 export function prSafe(text: string): string {
-  return text.replace(CLOSING, (_m, w: string, sp: string, k: string, n: string) => `${w}${sp}${k}‑${n}`);
+  return text.replace(CLOSING, (_m, w: string, sp: string, k: string, n: string) => `${w}${sp}${k}\u2011${n}`);
 }
 export function closingHits(text: string): string[] {
   return [...text.matchAll(CLOSING)].map((m) => m[0]);
