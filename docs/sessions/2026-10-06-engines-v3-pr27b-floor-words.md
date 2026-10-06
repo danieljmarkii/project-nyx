@@ -43,6 +43,13 @@ Every break was the same shape: the evidence that says "waiting is safe" lives i
   - T8 across fall-back and spring-forward in New York, Lord Howe and Chatham;
   - T8 when a vomit was already logged the day before.
 - **Dr. Chen.** Tried the four passes' cases against leave to wait; it broke every time, and was removed.
+- **Pass 5, on the shipped diff.** All four claims held:
+  - No path renders leave to wait or anything calmer than "Worth a call".
+  - About 85k clause triggers were driven through the real floor across four zones, DST included.
+  - No wellness claim and no model free text.
+  - Earlier-rule rows are unchanged.
+
+  One wording fix: T2 now says the half-hour gap counts from this vomit ("each more than half an hour after the vomit before it").
 
 ## Residuals
 

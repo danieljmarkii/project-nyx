@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react';
 import { loadIncidentFloorFacts, type IncidentFloorFacts } from '../lib/incidentFloorFacts';
 
 /** How often the open record re-reads the phone's rows, so a log synced from another device
- *  or an edit to a neighbouring event reaches the words without a reopen (pass 3, #3). */
+ *  or an edit to a neighbouring event reaches the words without a reopen. */
 export const FLOOR_FACTS_REFRESH_MS = 5 * 60_000;
 
 export function useIncidentFloorFacts(
@@ -33,7 +33,7 @@ export function useIncidentFloorFacts(
 
 /** The clock the floor's words resolve against, ticked once a minute while the screen is
  *  up, so a "by 9 PM" clause leaves the list when 9 PM passes rather than when the row
- *  next moves, and call today's line turns to "first thing tomorrow" at the hour. */
+ *  next moves. */
 export function useMinuteNow(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

@@ -12,8 +12,8 @@
 // says exactly what that row hears, and `lib/incidentFloorWords.test.ts` drives the REAL
 // floor with each clause's trigger and asserts the tier its sentence names (BRK-3). So a
 // clause exists here only for a row the floor builds:
-//   T1/T2 → call now   "you see {Pet} vomit twice more by {t}, with more than half an hour
-//                       between each". Half an hour because witnessed logs inside 30 minutes
+//   T1/T2 → call now   "you see {Pet} vomit twice more by {t}, each more than half an hour
+//                       after the vomit before it" (this one included: the gap counts from it). Half an hour because witnessed logs inside 30 minutes
 //                       merge into one onset (§8.9), so two quick ones would not be "twice".
 //                       {t} is the anchor's ONSET plus 4 hours, the span T2 counts in.
 //                       Absent on a found pile: a found anchor is never an onset, so its own
@@ -216,7 +216,7 @@ export function watchForClauses(input: WatchForInput): WatchClause[] {
         row: 'T2',
         tier: 'call_now',
         byMs: by,
-        text: `you see ${p} vomit twice more by ${deadlineWords(by, now)}, with more than ${mergeWords()} between each`,
+        text: `you see ${p} vomit twice more by ${deadlineWords(by, now)}, each more than ${mergeWords()} after the vomit before it`,
       });
     }
   }
