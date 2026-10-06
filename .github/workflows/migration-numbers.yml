@@ -1,0 +1,44 @@
+# Culprit / Nyx — duplicate migration numbers across open PRs (CUL-1522).
+#
+# Why this exists: migrations are numbered by hand, and on 2026-10-05 two open PRs each
+# added 084 in different files. Git saw no conflict and every check passed. This job
+# lists every open PR and fails the one that took a number another open PR (opened
+# earlier) or the base branch already holds. The logic and its stated blind spots are in
+# scripts/steward/migration-numbers.sh; its guard is guards/migrationNumbers.test.ts.
+#
+# Its own file, not a job in ci.yml: it needs `pull-requests: read` to list open PRs, and
+# ci.yml's top-level read-only `permissions` is a floor no job there may widen.
+# No path filter on purpose: it is a required check, and a required check that never
+# starts blocks the merge forever.
+name: Migration numbers
+
+on:
+  pull_request:
+
+concurrency:
+  group: migration-numbers-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  migration-numbers:
+    name: migration-numbers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Pinned to the same SHA as ci.yml; bump both together.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compare this PR's migration numbers with every open PR's and the base branch's
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: bash scripts/steward/migration-numbers.sh "$REPO" "$PR" "$BASE"

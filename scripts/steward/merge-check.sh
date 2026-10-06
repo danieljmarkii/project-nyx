@@ -5,10 +5,13 @@
 #
 #   1. Does this branch land clean on main?
 #   2. If it does, would landing it drop lines that main has and this branch never saw,
-#      add a duplicate migration number, or commit a conflict marker? The first is the
-#      shape of a conflict fix that reverts someone else's merged work.
-#   3. Which other open PRs does it collide with, and which collisions would landing it
-#      cause?
+#      bring back lines main deleted after this branch forked, add a duplicate migration
+#      number, or commit a conflict marker? The first two are the shape of a conflict fix
+#      that reverts someone else's merged work.
+#   3. Which other open PRs does it collide with, which collisions would landing it
+#      cause, and does any of them add a migration with the same number as this branch?
+#   4. Is main's own CI red right now? Landing on a red main buries the failure under
+#      one more merge (2026-10-03: an hour red while children kept merging, CUL-1522).
 #
 # WHY THIS FILE EXISTS. Sessions end with `/wrap and merge`, and until this script the
 # "and merge" half was improvised. Clean merges were never the risk; the resolution is,
@@ -23,7 +26,8 @@
 #   --base      what the branch lands on (default origin/main)
 #   --head      what is checked (default HEAD). After a merge, `--head origin/main` asks
 #               only question 3: which open PRs now conflict with main.
-#   --no-fetch  skip the fetch (offline, or the refs are already current)
+#   --no-fetch  skip the fetch (offline, or the refs are already current). Main's CI is
+#               still read from GitHub; offline, that read fails and the verdict says so.
 #   --all       list every lost line, not the first 20
 #   <branch>    other open PRs' head branches as named on origin (claude/foo)
 #
@@ -32,32 +36,47 @@
 # VERDICT (the last line) and exit code:
 #   MERGE CHECK: CLEAN      0  lands clean; nothing below is reported
 #   MERGE CHECK: CONFLICT   1  conflicts with the base: merge it in, resolve, run this again
-#   MERGE CHECK: REVIEW     2  lands clean, but read the lost lines, duplicate migration
-#                              numbers or conflict markers first
+#   MERGE CHECK: REVIEW     2  lands clean, but read the lost or resurrected lines, the
+#                              duplicate migration numbers (with main or another open PR),
+#                              the conflict markers, or main's red or unread CI first
 #   (exit 3)                   could not check (usage, environment, a shallow clone, a file
 #                              name it cannot read), on stderr. Never a pass.
 #
-# Collisions with other PRs are reported and never move the verdict: they are the other
-# PR's to resolve after this one merges, and nothing on this branch can fix them. The
+# Textual collisions with other PRs are reported and never move the verdict: they are the
+# other PR's to resolve after this one merges, and nothing on this branch can fix them. A
+# shared migration NUMBER is the exception: it is REVIEW on both PRs, because git never
+# says a word about it and either side can renumber (the steward skill §4 says which). The
 # landing is simulated as the squash merge this repo uses, so a PR stacked on this one
 # shows the conflict it will meet once this one is squashed.
 #
 # STATED BLIND SPOTS, because an undocumented one reads as coverage (C-38):
-#   - Only lines main ADDED after the fork are audited. A resolution that brings back a
-#     line main DELETED after the fork is not reported.
 #   - A lost line is matched by its exact text, within its own file. A line that existed
 #     anywhere in the file at the fork point counts as seen, and one that still appears
 #     anywhere in the landed file counts as kept. So dropping a second copy of a line main
 #     added is not reported, and neither is a removal inside a binary file or a line with
 #     no ASCII letter or digit in it (a lone `}`).
+#   - A resurrected line is matched the same way, mirrored: a line landing adds that was in
+#     the file at the fork point and is nowhere in main's file now. So bringing back a line
+#     main deleted is not reported when another copy of it survives in main's file, nor
+#     when the branch had EDITED the line main deleted (its text was never at the fork).
+#     A branch that independently adds a line main deleted is reported too, and cleared in
+#     writing like a "replaced" line.
 #   - Reported and harmless, by design: a line the session rewrote after merging main in
 #     (tagged "replaced"), and a line it moved to another file (tagged "deleted"). The
 #     session reads each and says why in the PR. A "replaced" tag is not reassurance:
 #     reverting main's text to the branch's old text is also a replacement.
 #   - The fork point is read off the branch's first-parent chain, so a branch that was
 #     rebased has its fork moved up, and a rebased resolution reads as seen.
-#   - Duplicate migration numbers are checked against main only, not between open PRs;
-#     nor are other hand-numbered lists (the §C / §P entries of engineering-lessons.md).
+#   - Duplicate migration numbers are checked against main and against the open PRs
+#     NAMED on the command line, never against the ones left off it; the CI job
+#     `migration-numbers` (scripts/steward/migration-numbers.sh) checks every open PR.
+#     Other hand-numbered lists (the §C / §P entries of engineering-lessons.md) are not.
+#   - Main's CI is the latest COMPLETED run of ci.yml on a push to the base branch that
+#     passed or failed (a cancelled run says neither). A run still in flight is not read,
+#     so a main that is about to go red reads green. "This PR is the fix" is judged by
+#     file: the branch touches a file changed between main's last green run and its red
+#     one, and its own CI passed. A fix in a file no commit changed (a date-pinned test
+#     whose clock ran out) is not recognized; that REVIEW is cleared in writing.
 #   - A changed path that git still quotes with core.quotePath off (a tab, a quote or a
 #     backslash in its name) stops the check with exit 3 rather than being skipped.
 #   - The check reads commits. Uncommitted work is not checked; a note says so.
@@ -80,6 +99,9 @@ git() {
 }
 
 base_ref="origin/main"
+# Read only by the CI section, and only through `gh api`: the guard puts a stub `gh` on
+# PATH, and production uses whatever `gh` the session has.
+ci_workflow="ci.yml"
 head_ref="HEAD"
 fetch=1
 max_list=20
@@ -195,12 +217,20 @@ short_list() {
 
 # Migration files are numbered by hand, so two branches can each add the next number in
 # different files: no textual conflict, and git never says a word.
+mig_names() {
+  git ls-tree --name-only "$1" -- supabase/migrations/ | sed 's#.*/##' | grep -E '^[0-9]+_' | sort -u
+}
 mig_dups() {
-  git ls-tree --name-only "$1" -- supabase/migrations/ |
-    sed 's#.*/##' | grep -oE '^[0-9]+' | sort | uniq -d
+  mig_names "$1" | grep -oE '^[0-9]+' | sort | uniq -d
+}
+# Migration files in tree $1 that tree $2 does not have, by name: what $1 adds.
+mig_added() {
+  comm -23 <(mig_names "$1") <(mig_names "$2")
 }
 
 notes=()
+mig_clash=()
+merged=0
 if [ "$fetch" -eq 1 ]; then
   for ref in "$base_ref" "$head_ref"; do
     b=$(branch_on_origin "$ref")
@@ -250,6 +280,7 @@ fi
 # ---- 2. Would landing drop lines this branch never saw? ---------------------------------
 
 lost_total=0
+back_total=0
 new_dups=""
 markers=0
 if [ -n "$landed_tree" ]; then
@@ -272,11 +303,13 @@ if [ -n "$landed_tree" ]; then
     die "no fork point: $name's first-parent history never reaches $base_ref within this clone (a shallow clone? run: git fetch --unshallow origin)"
 
   : >"$tmp/lost"
+  : >"$tmp/back"
   : >"$tmp/markers"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     git show "$fork:$f" >"$tmp/fork" 2>/dev/null || : >"$tmp/fork"
     git show "$landed_tree:$f" >"$tmp/landed" 2>/dev/null || : >"$tmp/landed"
+    git show "$base:$f" >"$tmp/base" 2>/dev/null || : >"$tmp/base"
     # Removed lines, each tagged by its hunk: "replaced" when the hunk also adds lines
     # (a rewrite, or a revert to the branch's old text; the tag cannot tell which),
     # "deleted" when it only removes. Everything before the first hunk is the header.
@@ -297,6 +330,16 @@ if [ -n "$landed_tree" ]; then
         if (line ~ /[[:alnum:]]/ && !(line in seen) && !(line in kept))
           print kind "\t" f ": " substr(line, 1, 120) }' \
       "$tmp/fork" "$tmp/landed" "$tmp/removed" >>"$tmp/lost"
+    # The mirror: a line landing ADDS that was in the file at the fork point and that main
+    # no longer has anywhere in it. Main deleted it after this branch forked, and a clean
+    # merge would have kept it deleted, so only a resolution (or the branch writing the
+    # same line again) can bring it back. Taking a side wholesale does exactly this.
+    awk '/^@@/ { inhunk = 1; next } inhunk && /^\+/ { print substr($0, 2) }' "$tmp/diff" >"$tmp/added"
+    awk -v f="$f" 'FILENAME == ARGV[1] { seen[$0] = 1; next }
+      FILENAME == ARGV[2] { onmain[$0] = 1; next }
+      { if ($0 ~ /[[:alnum:]]/ && ($0 in seen) && !($0 in onmain) && !($0 in done)) {
+          done[$0] = 1; print f ": " substr($0, 1, 120) } }' \
+      "$tmp/fork" "$tmp/base" "$tmp/added" >>"$tmp/back"
     # A resolution committed with its conflict markers still in loses nothing (both sides
     # sit between the markers) and lands clean; only the markers say what happened.
     awk '/^@@/ { inhunk = 1; next } inhunk && /^\+(<<<<<<<|>>>>>>>)( |$)/ { n++ } END { print n + 0 }' \
@@ -320,6 +363,18 @@ if [ -n "$landed_tree" ]; then
     fi
   fi
 
+  back_total=$(count_lines "$(cat "$tmp/back")")
+  if [ "$back_total" -eq 0 ]; then
+    echo "resurrected lines: none"
+  else
+    per_file=$(awk -F': ' '{ n[$1]++ } END { for (p in n) print p " " n[p] }' "$tmp/back" | sort)
+    echo "resurrected lines: $back_total in $(count_lines "$per_file") file(s) ($(short_list "$per_file")), deleted on main after this branch forked and brought back by landing it"
+    if [ "$max_list" -gt 0 ]; then head -n "$max_list" "$tmp/back"; else cat "$tmp/back"; fi | sed 's/^/  back      /'
+    if [ "$max_list" -gt 0 ] && [ "$back_total" -gt "$max_list" ]; then
+      echo "  (+$((back_total - max_list)) more; --all lists them)"
+    fi
+  fi
+
   if [ "$markers" -gt 0 ]; then
     echo "conflict markers: landing adds $markers line(s) opening or closing a conflict"
   fi
@@ -337,9 +392,8 @@ fi
 
 # ---- 3. Other open PRs --------------------------------------------------------------------
 
+git merge-base --is-ancestor "$head" "$base" && merged=1
 if [ ${#others[@]} -gt 0 ]; then
-  merged=0
-  git merge-base --is-ancestor "$head" "$base" && merged=1
   my_files=$(changed_paths "$(git merge-base "$base" "$head")" "$head") || die "git diff failed on $name"
 
   # What main looks like after this branch lands. This repo squash merges, so the landing
@@ -354,6 +408,12 @@ if [ ${#others[@]} -gt 0 ]; then
       GIT_COMMITTER_NAME=merge-check GIT_COMMITTER_EMAIL=merge-check@example.invalid \
       git commit-tree "$landed_tree" -p "$base" -m "merge-check: simulated squash") ||
       die "could not simulate the landing"
+  fi
+
+  # The migrations this branch would add, by name; empty once it is inside main.
+  my_migs=""
+  if [ "$merged" -eq 0 ]; then
+    if [ -n "$landed_tree" ]; then my_migs=$(mig_added "$landed_tree" "$base"); else my_migs=$(mig_added "$head" "$base"); fi
   fi
 
   echo "other open PRs:"
@@ -381,6 +441,18 @@ if [ ${#others[@]} -gt 0 ]; then
         line="$line shares $(count_lines "$shared") file(s) ($(short_list "$shared"));"
       fi
     fi
+    # Same number, different file: both PRs add the next migration, and neither knows.
+    # The same file NAME is not a clash (a PR stacked on this one carries this one's).
+    if [ -n "$my_migs" ]; then
+      while IFS= read -r theirs; do
+        [ -n "$theirs" ] || continue
+        num=${theirs%%_*}
+        mine=$(printf '%s\n' "$my_migs" | grep -E "^${num}_" | grep -vxF "$theirs" | head -n 1)
+        if [ -n "$mine" ]; then
+          mig_clash+=("migration $num: this branch adds $mine and $b adds $theirs")
+        fi
+      done < <(mig_added "$rev" "$base")
+    fi
     merge_of "$base" "$rev"
     now=$mt_conflicts
     if [ -n "$now" ]; then
@@ -401,6 +473,88 @@ if [ ${#others[@]} -gt 0 ]; then
   done
 fi
 
+if [ ${#mig_clash[@]} -gt 0 ]; then
+  echo "migration numbers shared with another open PR:"
+  for c in "${mig_clash[@]}"; do echo "  $c"; done
+fi
+
+# ---- 4. Is main's CI red? -------------------------------------------------------------------
+
+# owner/repo off the origin URL: github.com:o/r.git, https://github.com/o/r, or a proxy's
+# .../git/o/r. Anything else still yields its last two path segments, which the API
+# refuses, and a refused read is reported as unread, never as green.
+repo_slug() {
+  git remote get-url origin 2>/dev/null | sed -E 's#\.git/?$##; s#/+$##; s#^.*[:/]([^/:]+/[^/:]+)$#\1#'
+}
+
+# The latest DECISIVE completed run of ci.yml in a JSON page of runs: "success" or a red
+# conclusion. Cancelled runs (main's own concurrency cancels a superseded push) and
+# skipped ones say nothing about main and are stepped over. Prints conclusion, id, head
+# sha, url, tab-separated; nothing when the page holds no decisive run.
+decisive_run() {
+  jq -r '[.workflow_runs[]? | select(.status == "completed")
+            | select(.conclusion == "success" or .conclusion == "failure"
+                     or .conclusion == "timed_out" or .conclusion == "startup_failure")][0]
+         | select(. != null) | [.conclusion, (.id | tostring), .head_sha, .html_url] | @tsv' "$1"
+}
+
+ci_red=0
+ci_line=""
+main_branch=$(branch_on_origin "$base_ref")
+if [ -z "$main_branch" ]; then
+  ci_red=1
+  ci_line="main's CI: not read ($base_ref is not a branch on origin); REVIEW until it is read"
+elif ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+  ci_red=1
+  ci_line="main's CI: could not read (needs gh and jq on PATH); read it with actions_list before merging"
+else
+  slug=$(repo_slug)
+  if ! gh api "repos/$slug/actions/workflows/$ci_workflow/runs?branch=$main_branch&event=push&status=completed&per_page=30" \
+    >"$tmp/main-runs.json" 2>"$tmp/gh.err" || ! jq -e '.workflow_runs | type == "array"' "$tmp/main-runs.json" >/dev/null 2>&1; then
+    ci_red=1
+    ci_line="main's CI: could not read ($(head -c 160 "$tmp/gh.err" | tr '\n' ' ')); read it with actions_list before merging"
+  else
+    read -r concl run_id run_sha run_url < <(decisive_run "$tmp/main-runs.json")
+    if [ -z "${concl:-}" ]; then
+      ci_red=1
+      ci_line="main's CI: could not read (no passed or failed run of $ci_workflow on $main_branch in the latest page); silence is not green"
+    elif [ "$concl" = "success" ]; then
+      ci_line="main's CI: green (run $run_id on ${run_sha:0:7})"
+    else
+      # The suspects: every file changed between main's last green run and this red one.
+      # No green run on the page, or a commit this clone lacks, leaves only the red commit.
+      # The page is newest first, so main's last green run is the first success after it.
+      green_sha=$(jq -r --arg red "$run_id" '.workflow_runs as $r
+                  | ([$r[] | .id | tostring] | index($red)) as $i
+                  | [$r[($i + 1):][] | select(.conclusion == "success")][0].head_sha // empty' "$tmp/main-runs.json")
+      suspects=""
+      if [ -n "$green_sha" ] && git cat-file -e "$green_sha^{commit}" 2>/dev/null && git cat-file -e "$run_sha^{commit}" 2>/dev/null; then
+        suspects=$(changed_paths "$green_sha" "$run_sha")
+      elif git cat-file -e "$run_sha^{commit}" 2>/dev/null; then
+        suspects=$(git diff-tree --no-commit-id --name-only -r --no-renames "$run_sha" | sort -u)
+      fi
+      fix_files=""
+      own_green=""
+      if [ -n "$suspects" ] && [ "$merged" -eq 0 ]; then
+        fix_files=$(comm -12 <(changed_paths "$(git merge-base "$base" "$head")" "$head" | sed '/^$/d') <(printf '%s\n' "$suspects" | sed '/^$/d'))
+      fi
+      if [ -n "$fix_files" ] &&
+        gh api "repos/$slug/actions/workflows/$ci_workflow/runs?head_sha=$head&status=completed&per_page=30" \
+          >"$tmp/own-runs.json" 2>/dev/null; then
+        own_green=$(decisive_run "$tmp/own-runs.json" | awk -F'\t' '$1 == "success" { print $2 }')
+      fi
+      if [ -n "$own_green" ]; then
+        ci_line="main's CI: red (run $run_url on ${run_sha:0:7}); this branch touches $(short_list "$fix_files") and its own CI passed (run $own_green): treated as the fix"
+      else
+        ci_red=1
+        ci_line="main's CI: RED (run $run_url on ${run_sha:0:7}, $concl); fix main first, or land the fix"
+        [ -n "$suspects" ] && ci_line="$ci_line; changed since main was last green: $(short_list "$suspects")"
+      fi
+    fi
+  fi
+fi
+echo "$ci_line"
+
 for n in ${notes[@]+"${notes[@]}"}; do
   echo "note: $n"
 done
@@ -410,8 +564,9 @@ if [ -n "$conflicts" ]; then
   echo "MERGE CHECK: CONFLICT"
   exit 1
 fi
-if [ "$lost_total" -gt 0 ] || [ -n "$new_dups" ] || [ "$markers" -gt 0 ]; then
-  echo "next: restore each lost line or say in the PR why it goes; renumber a duplicate migration; remove every conflict marker"
+if [ "$lost_total" -gt 0 ] || [ "$back_total" -gt 0 ] || [ -n "$new_dups" ] || [ ${#mig_clash[@]} -gt 0 ] ||
+  [ "$markers" -gt 0 ] || [ "$ci_red" -eq 1 ]; then
+  echo "next: restore each lost line, or say in the PR why it goes; delete each resurrected line, or say why it returns; renumber a duplicate migration (the steward skill §4); remove every conflict marker; wait for main to go green, or land its fix"
   echo "MERGE CHECK: REVIEW"
   exit 2
 fi
