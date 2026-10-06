@@ -160,6 +160,20 @@ const CAUSAL_RE =
 const DISEASE_RE =
   /\b(pancreatitis|gastritis|gastroenteritis|enteritis|colitis|ibd|inflammatory bowel|hepatic lipidosis|lipidosis|hepatitis|cholangitis|kidney disease|renal (?:disease|failure|insufficiency)|ckd|diabet\w*|hyperthyroid\w*|hypothyroid\w*|thyroid|cancer|tumou?r|lymphoma|neoplas\w*|carcinoma|ulcer\w*|obstruction|blockage|foreign body|megaesophagus|reflux|anaemia|anemia|addison\w*|cushing\w*|parvo\w*|giardia|parasit\w*|infection|infected|gastroparesis|disease|illness|disorder|syndrome|diagnos\w*|(?:tummy|stomach|gut) (?:bug|upset|issues?|trouble|problems?)|(?:tummy|stomach) ache|upset (?:tummy|stomach)|sensitive (?:tummy|stomach)|food poisoning|gi (?:upset|issues?|problems?|trouble)|something (?:he|she|they|it) ate|hairball\w*|unwell|under the weather|off colou?r|\bsick\b|\bbug\b)\b/i
 
+// CUL-1608 — the vet ROUTING phrase a safety summary must keep while any clause still asks.
+// Matches every ask the safety templates write (phrasing.ts: "a word with your vet", "a call to
+// your vet", "raising with your vet", "booking a vet visit") and close paraphrases a model may
+// smooth them into ("talk to your vet", "mention it to the vet", "call your vet", "worth a vet
+// appointment"). "A vet visit" asks; "the vet visit" (a past one) does not, so the article is
+// part of the arm. It never matches the watched head's "your vet knows", which is the point.
+export const VET_ASK_RE =
+  /\b(?:(?:word|call|chat|talk|check-in) (?:with|to) (?:your|the) vet|(?:rais(?:e|ing)|mention(?:ing)?|review(?:ing)?|discuss(?:ing)?|talk(?:ing)?|speak(?:ing)?|check(?:ing)? in) (?:it |this |them |that )?(?:with|to) (?:your|the) vet|call(?:ing)? (?:your|the) vet|a vet (?:visit|appointment|check(?:-?up)?)|book(?:ing)? (?:a |in )?(?:visit|appointment) with (?:your|the) vet)\b/i
+
+// CUL-1608 — the acknowledgement a watched head carries (careState.ts: "…, your vet knows.").
+// Required on a safety packet with no asking clause, so a model cannot drop the concern's one
+// mention of the vet either.
+export const VET_KNOWS_RE = /\bvet knows\b/i
+
 // ── The fact packet ────────────────────────────────────────────────────────────────────
 
 /** Which dashboard area backs a clause — lets the client render tappable "based on the
@@ -181,6 +195,12 @@ export interface SummaryFactPacket {
    *  mandatory vet-routing check in validateSummary and the omission of any intake stat that
    *  could read as reassurance alongside a concern. */
   hasSafety: boolean
+  /** CUL-1608: at least one safety clause still ASKS (its card is not watched), so the summary
+   *  must carry a routing phrase (VET_ASK_RE), not merely the word "vet". False when every
+   *  safety clause is a watched EN-9 head ("Rex's vomiting, your vet knows."), which names the
+   *  vet without asking anything; validateSummary then requires that acknowledgement instead.
+   *  Always false when `hasSafety` is false. */
+  asksVet: boolean
   /** No finding drove the summary — it is purely descriptive/intake. Tunes the model's tone. */
   quiet: boolean
 }
@@ -415,6 +435,7 @@ export function buildSummaryPacket(args: BuildSummaryArgs): SummaryFactPacket | 
   const clauses: string[] = []
   const evidence = new Set<SummaryEvidenceKind>()
   let hasSafety = false
+  let asksVet = false
   let hasSymptomClause = false
 
   // 1. Safety findings — verbatim from the deterministic, guardrail-safe templates. In
@@ -426,8 +447,10 @@ export function buildSummaryPacket(args: BuildSummaryArgs): SummaryFactPacket | 
   for (const f of findings) {
     if (f.priorityClass !== 'safety') continue
     const known = watchedSentenceFor(f)
-    if (known === null) clauses.push(templateForFinding(f, petName))
-    else if (!watched.includes(known)) watched.push(known)
+    if (known === null) {
+      clauses.push(templateForFinding(f, petName))
+      asksVet = true
+    } else if (!watched.includes(known)) watched.push(known)
     hasSafety = true
     hasSymptomClause = true
     evidence.add(f.type === 'intake_decline' ? 'intake' : 'symptom')
@@ -502,6 +525,7 @@ export function buildSummaryPacket(args: BuildSummaryArgs): SummaryFactPacket | 
     allowedNumbers: [...allowed],
     evidence: [...evidence],
     hasSafety,
+    asksVet,
     quiet: !hasSafety && !findings.some((f) => f.type === 'reflection'),
   }
 }
@@ -636,8 +660,13 @@ export function validateSummary(text: string, packet: SummaryFactPacket): boolea
   if (careClaimReason(t)) return false
 
   // A safety summary must keep routing the owner to the vet — the model may not smooth the
-  // concern into a bare observation. The template always says "vet" on a safety summary.
-  if (packet.hasSafety && !/\bvet\b/i.test(t)) return false
+  // concern into a bare observation. CUL-1608: the bare word "vet" is not routing, because a
+  // watched EN-9 head ("Rex's vomiting, your vet knows.") says it without asking. So a packet
+  // with an asking clause requires the ask itself, and a packet whose every safety clause is
+  // watched requires the acknowledgement it carries. On a mixed packet a model that drops the
+  // ask and keeps the head now fails here.
+  if (packet.asksVet && !VET_ASK_RE.test(t)) return false
+  if (packet.hasSafety && !packet.asksVet && !VET_KNOWS_RE.test(t)) return false
 
   // Grounding: every number in the output must trace to a true clause.
   const allowed = new Set(packet.allowedNumbers)
