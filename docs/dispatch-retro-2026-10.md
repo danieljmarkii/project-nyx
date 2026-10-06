@@ -41,6 +41,8 @@ Prior retros: `docs/sessions/2026-09-28-cul-1395-dispatch-v1.md`, `2026-09-29-di
 
 Section 7 holds six decisions, each with a recommendation. Section 8 holds the fixes that need none.
 
+**Ruled 2026-10-06:** the PM took all six recommendations. Section 9 records what each one set in motion.
+
 ---
 
 ## 1. What is working (keep it)
@@ -303,6 +305,8 @@ From the research digest. Every source was fetched or is marked unverified. Redd
 
 ## 7. Decisions for the PM
 
+> **Ruled 2026-10-06 by the PM: all six as recommended.** Section 9 records the rulings and the build they started.
+
 **D1. The cap.**
 - **Deciding:** how many sessions build at once, and what counts toward the limit.
 - **Options:**
@@ -397,6 +401,35 @@ They group into three themes. They would ship as dispatch v1.4, each its own sub
 16. CUL-1607, the deploy summary.
 
 **For you, one minute:** confirm the `main` ruleset is Active under GitHub → Settings → Rules. Two lenses' reads saw no active rule.
+
+## 9. Rulings (PM, 2026-10-06)
+
+The PM's words: "go with your recommendations on all six, then merge".
+
+**What each ruling set in motion:**
+- **D1, the cap:** 6 across the repo, with the sub-limits in section 7. It takes force when A1, A2 and B (below) have merged. #1024 is closed as superseded.
+- **D2, the plan gate:** retired for routine rows. B writes the stop for migration, RLS or deletion, clinical and Tier-2 rows into the prompt template itself.
+- **D3, approvals:** D builds the hooks, and first tests whether a hook's `ask` still prompts in Auto mode. B writes the rule and reconciles CLAUDE.md, `dispatch.md` and the steward skill on migrations.
+- **D4, the script:** C. D4's question (the Board or the digests) went unanswered, so C asks it before it shrinks the Board.
+- **D5, the pre-push hook:** A2.
+- **D6, before the 1.2.0 cut:**
+  - CUL-1560 and CUL-1482 now block CUL-559 as Linear relations, not sentences.
+  - CUL-1560 moved into Out of beta with `Gate: clinical`. Its fix session (`session_01Kp8EyFnqTcLA7gufHSZbot`) launched at 00:52Z on a branch that names no issue. Its prompt already carries the ruled shapes: the plan stop written in, the go typed in its own session, and the wake without `opened`.
+  - CUL-1482 gained the safety slice as checks 17 to 27. The whole pass is now about 40 minutes.
+
+**The build:** parent CUL-1612, one sub-issue per PR.
+- **Wave 1, in parallel** (disjoint files):
+  - CUL-1522 (A1): merge-check catches duplicate migration numbers across open PRs and refuses CLEAN while `main` is red; a CI job enforces the first.
+  - CUL-1613 (A2): every merge to `main` gets its own CI verdict; the pre-push hook runs only the related tests in cloud sessions.
+  - CUL-1616 (D): production writes need a confirmation no agent can produce; dispatcher messages carry facts only.
+  - CUL-1617 (E): the groomer refuses a gate written as a sentence with no `blocks` relation.
+- **Wave 2:** CUL-1614 (B), the spec. It also finishes CUL-1546, the wake.
+- **Wave 3:** CUL-1615 (C), the script, after B.
+- **Then:** CUL-1517, the port to the operating kit.
+
+**Section 8's housekeeping:** CUL-1528, the ruling index, is now High. CUL-1607, the deploy summary, stands on its own. The keyword test rides on the first v1.4 PR to merge; CUL-1612 says how.
+
+**Still open:** whether the `main` ruleset is Active (one minute, section 8).
 
 ---
 

@@ -46,24 +46,27 @@ This was a DISCOVERY session. The deliverable is `docs/dispatch-retro-2026-10.md
   - The trial outcome sheet can still say "No symptoms are on the record" after a vomit is logged (CUL-1560). It was a `GA gate`, and the graduation passed it unseen.
   - The device sitting was skipped on the premise that every feature kept its off switch. A ruling two hours later removed the switches, and the remaining device check (CUL-1482) covers none of the safety states.
 
-## Decisions surfaced (none ruled yet)
+## Decisions (ruled 2026-10-06, all six as recommended)
 
-D1 to D6 in the retro's section 7:
-- **D1:** 6 sessions across the repo, with at most 3 waiting on the PM and at most 3 writing production.
-- **D2:** retire the plan gate for routine rows; keep written-in stops for gated rows.
+The PM: "go with your recommendations on all six, then merge". D1 to D6 are in the retro's section 7; section 9 records what each set in motion.
+- **D1:** 6 sessions across the repo, with at most 3 waiting on the PM and at most 3 writing production. In force once A1, A2 and B of the v1.4 build merge.
+- **D2:** the plan gate retires for routine rows; gated rows keep a stop written into the prompt.
 - **D3:** authority never travels; production writes need a confirmation no agent can produce.
-- **D4:** script the deterministic half of dispatch.
-- **D5:** a faster pre-push hook.
-- **D6:** two safety items before the 1.2.0 cut.
+- **D4:** a tested script for the deterministic half of dispatch.
+- **D5:** a faster pre-push hook in cloud sessions.
+- **D6:** CUL-1560 and CUL-1482 block the 1.2.0 cut (CUL-559).
 
-They are filed for the PM as one issue (see the outcome comment on CUL-1606). The fixes that need no decision are listed in section 8, grouped into three themes: know what's true, count the whole repo, ask only what matters.
+The fixes that need no decision (section 8) ride in the same build, grouped into three themes: know what's true, count the whole repo, ask only what matters.
 
 ## Filed or commented this session
 
 - **CUL-1606:** this retro.
 - **CUL-1607:** the deploy summary says "Nothing changed in production" when four functions in the same run deployed.
-- **Comment on CUL-1560:** its gate was passed and the defect is still on `main`.
-- **Comment on CUL-1482:** the proposed safety slice.
+- **CUL-1612:** the v1.4 build, with one sub-issue per PR: CUL-1522 (A1), CUL-1613 (A2), CUL-1614 (B, which also finishes CUL-1546), CUL-1615 (C), CUL-1616 (D) and CUL-1617 (E). CUL-1517, the operating-kit port, follows C.
+- **CUL-1560:** now blocks CUL-559, in Out of beta with `Gate: clinical`. Its fix session launched 2026-10-06 at 00:52Z and waits for the PM's go on its plan.
+- **CUL-1482:** gained the safety slice (checks 17 to 27) and a `blocks` relation to CUL-559.
+- **CUL-1528:** priority set to High.
+- **#1024:** closed as superseded by D1.
 
 ## Corrections the review forced
 
@@ -75,10 +78,10 @@ They are filed for the PM as one issue (see the outcome comment on CUL-1606). Th
 ## Residuals
 
 - **The `main` ruleset may be inactive.** Two lenses read GitHub's rules API and saw no active rule on `main`. The PM can confirm under Settings → Rules.
-- **The permission dialog in D3 may not prompt.** Whether a hook's `ask` still prompts in Auto mode is untested; test it before relying on it.
-- **Two questions for the PM, both in the retro:**
-  - Does the PM read the Board or the digests? This decides how small the Board gets.
-  - How should a re-ruling surface the earlier rulings it unseats?
+- **The permission dialog in D3 may not prompt** in Auto mode. CUL-1616 tests it before building on it.
+- **Two open questions, each now carried by a sub-issue:**
+  - Does the PM read the Board or the digests? CUL-1615 asks before it shrinks the Board.
+  - How should a re-ruling surface the earlier rulings it unseats? CUL-1614 writes it into the decision-brief rule.
 
 ## Persona sign-off
 
