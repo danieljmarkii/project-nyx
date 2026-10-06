@@ -15,7 +15,7 @@ Dispatched session (CUL-1613, part of CUL-1612). Shipped via #1080.
 
 | Push | Time |
 |---|---|
-| docs-only (simulated, then this record's real push) | 0.01s hook |
+| docs-only (this record's real push) | 2.1s end to end (hook 0.01s) |
 | `CLAUDE.md` only | 12s (16 suites name it) |
 | this PR's code push (real) | 82s total (tsc ~50s, 44 suites) |
 
