@@ -45,9 +45,38 @@
 //   ✗ the branch listed as one of the other PRs
 //   ✗ --all ignored
 //
+// MUTANTS added with CUL-1522 (resurrected lines, migration numbers shared with an open
+// PR, a red main), run against the real script 2026-10-06, every one killed:
+//
+//   ✗ resurrected lines never moving the verdict
+//   ✗ the at-the-fork test dropped (any line landing adds that main lacks counts)
+//   ✗ the not-on-main test dropped (a line main still has, moved by the session, counts)
+//   ✗ the no-letter-or-digit filter dropped from resurrected lines (a lone `}`)
+//   ✗ a shared migration number never moving the verdict
+//   ✗ the same file NAME counted as a clash (a PR stacked on this one)
+//   ✗ this branch's migrations read off the base instead of the landing
+//   ✗ the other PR's migrations not netted against the base (a stale PR carrying main's)
+//   ✗ an unreadable main CI read as green
+//   ✗ a page of only cancelled runs read as green
+//   ✗ cancelled runs not stepped over (the newest run decides, whatever it says)
+//   ✗ a red main never moving the verdict
+//   ✗ the fix exception granted without this branch's own CI passing
+//   ✗ the suspect files taken from the red commit alone instead of since the last green
+//   ✗ the fix exception granted to a branch cut before main went red
+//   ✗ a named PR that could not be read leaving the verdict CLEAN
+//   ✗ migration numbers compared as text (3_ against 003_)
+//   ✗ an empty base migration listing read as no duplicates
+//
+// HOW MAIN'S CI IS FAKED. The script reads it with `gh api`, and every case runs with a
+// stub `gh` first on PATH (written under the fixture root) that serves a JSON file named
+// by FAKE_GH_MAIN for main's runs and FAKE_GH_OWN for this branch's, and fails like a
+// 404 when the variable is unset. The default is one green run, so the cases written
+// before CUL-1522 read main as green. The stub never touches the network.
+//
 // STATED BLIND SPOTS are in the script's header; the ones this file adds: nothing here
 // exercises a binary file, a rename, or a file name git still quotes (the script exits 3
-// on one by inspection, not by test).
+// on one by inspection, not by test), nor a machine with no `gh` or `jq` on PATH (the
+// script says so and returns REVIEW, by inspection).
 
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
@@ -107,12 +136,36 @@ interface Run {
   out: string;
 }
 
+let ghBin = '';
+let greenMain = '';
+
+interface CiRun {
+  id: number;
+  conclusion: string;
+  sha: string;
+  status?: string;
+}
+
+/** A page of ci.yml runs as the Actions API returns it, newest first; returns its path. */
+function runsFile(name: string, runs: CiRun[]): string {
+  const file = path.join(root, `${name}-${(seq += 1)}.json`);
+  const workflow_runs = runs.map((r) => ({
+    id: r.id,
+    status: r.status ?? 'completed',
+    conclusion: r.conclusion,
+    head_sha: r.sha,
+    html_url: `https://ci.example.invalid/runs/${r.id}`,
+  }));
+  fs.writeFileSync(file, JSON.stringify({ total_count: runs.length, workflow_runs }), 'utf8');
+  return file;
+}
+
 function check(cwd: string, args: string[] = [], extra: Record<string, string> = {}): Run {
   try {
     const out = execFileSync('bash', [SCRIPT, ...args], {
       cwd,
       encoding: 'utf8',
-      env: gitEnv(extra),
+      env: gitEnv({ PATH: `${ghBin}:${process.env.PATH ?? ''}`, FAKE_GH_MAIN: greenMain, ...extra }),
       stdio: 'pipe',
     });
     return { code: 0, out };
@@ -212,6 +265,26 @@ beforeAll(() => {
     throw new Error(`merge-check needs git 2.38 or newer; this runner has ${major}.${minor}`);
   }
   root = createFixtureRoot('merge-check');
+  ghBin = path.join(root, 'bin');
+  fs.mkdirSync(ghBin, { recursive: true });
+  fs.writeFileSync(
+    path.join(ghBin, 'gh'),
+    [
+      '#!/usr/bin/env bash',
+      '# A stand-in for `gh api`: main\'s runs or this branch\'s, from files the case names.',
+      'for a in "$@"; do case "$a" in repos/*) endpoint=$a ;; esac; done',
+      'case "${endpoint:-}" in',
+      '  *head_sha=*) src=${FAKE_GH_OWN:-} ;;',
+      '  *branch=*) src=${FAKE_GH_MAIN:-} ;;',
+      '  *) src= ;;',
+      'esac',
+      'if [ -z "$src" ]; then echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi',
+      'cat "$src"',
+      '',
+    ].join('\n'),
+    { encoding: 'utf8', mode: 0o755 },
+  );
+  greenMain = runsFile('green', [{ id: 11, conclusion: 'success', sha: 'a'.repeat(40) }]);
 });
 
 afterAll(() => {
@@ -362,11 +435,21 @@ describe('scripts/steward/merge-check.sh', () => {
     const dup = session(fx, 'claude/dup', { 'supabase/migrations/003_branch.sql': 'create table d ();\n' });
     const ok = session(fx, 'claude/ok', { 'supabase/migrations/004_branch.sql': 'create table e ();\n' });
     landOnMain(fx, { 'supabase/migrations/003_main.sql': 'create table f ();\n' }, 'another PR lands');
+    // Cut after 003_main landed, so it carries main's file: that is main's number, not its.
+    session(fx, 'claude/later', { 'feature.txt': 'later\n' });
 
-    const a = check(dup);
+    const a = check(dup, ['claude/later']);
     expect(a.code).toBe(2);
     expect(a.out).toContain('migration numbers: landing adds a duplicate 003');
     expect(a.out).not.toMatch(/duplicate .*002/);
+    expect(a.out).not.toContain('shared with another open PR');
+
+    // Numbers compare as numbers: 3_ is slot 003, beside main's 003_main and o1's 003.
+    const short = session(fx, 'claude/short', { 'supabase/migrations/3_short.sql': 'create table g ();\n' });
+    const c = check(short, ['claude/dup']);
+    expect(c.out).toContain('migration numbers: landing adds a duplicate 003');
+    expect(c.out).toContain('migration 003: this branch adds 3_short.sql and claude/dup adds 003_branch.sql');
+    expect(c.code).toBe(2);
     expect(lastLine(a.out)).toBe('MERGE CHECK: REVIEW');
 
     const b = check(ok);
@@ -396,7 +479,7 @@ describe('scripts/steward/merge-check.sh', () => {
       'another PR lands',
     );
 
-    const others = ['claude/o1', 'claude/o2', 'origin/claude/o3', 'claude/part2', 'claude/gone', 'claude/s'];
+    const others = ['claude/o1', 'claude/o2', 'origin/claude/o3', 'claude/part2', 'claude/s'];
     const r = check(s, others);
     expect(r.code).toBe(0);
     expect(r.out).toContain('(1 ahead, 1 behind)');
@@ -411,10 +494,16 @@ describe('scripts/steward/merge-check.sh', () => {
     expect(r.out).toContain(
       '  claude/part2: shares 1 file(s) (list.txt); conflicts with main now: none; new conflicts if you land: list.txt',
     );
-    expect(r.out).toContain('  claude/gone: not found on origin');
     expect(r.out).not.toMatch(/ {2}claude\/s:/); // the branch itself is skipped
-    expect(r.out).toContain('note: could not fetch claude/gone');
     expect(lastLine(r.out)).toBe('MERGE CHECK: CLEAN');
+
+    // A PR the session named and the check could not read is REVIEW: its migrations went
+    // unchecked (the code review's false CLEAN).
+    const gone = check(s, [...others, 'claude/gone']);
+    expect(gone.out).toContain('  claude/gone: not found on origin');
+    expect(gone.out).toContain('note: could not fetch claude/gone');
+    expect(gone.out).toContain('other open PRs not read: claude/gone; their migration numbers went unchecked');
+    expect(gone.code).toBe(2);
 
     // o1 is rewritten and force-pushed; the next run must see the new tip, not the old one.
     // `charlie` is two lines from `alpha (s)` and two from `echo (main)`: no conflict either way.
@@ -490,5 +579,164 @@ describe('scripts/steward/merge-check.sh', () => {
     const c = check(s, ['--no-fetch', '--base', 'origin/nope']);
     expect(c.code).toBe(3);
     expect(c.out).toContain('no such ref: origin/nope');
+
+    // A base with no migration listing would read as "no duplicates": refused instead.
+    git(fx.mainClone, ['pull', '--quiet', '--ff-only', 'origin', 'main']);
+    git(fx.mainClone, ['rm', '-r', '--quiet', 'supabase/migrations']);
+    commitAll(fx.mainClone, 'no migrations');
+    git(fx.mainClone, ['push', '--quiet', 'origin', 'main']);
+    const d = check(s);
+    expect(d.code).toBe(3);
+    expect(d.out).toContain('no migrations listed under supabase/migrations/');
+  });
+  // RESURRECTED LINES (CUL-1522). Main deletes `delta` and a lone `}`; the branch rewrote
+  // `charlie`, the line beside them, so the two conflict. Taking the branch's side
+  // wholesale brings `delta` back, a line main deleted after this branch forked that no
+  // clean merge would keep, and loses nothing, so the resurrection is the ONLY finding
+  // (the `}` has no letter or digit and is not reported). The careful resolution keeps
+  // main's deletions and moves `echo`, a line main still has, to the top.
+  it('a resolution that brings back a line main deleted after the fork is REVIEW and names it; combining is CLEAN', () => {
+    const fx = fixture();
+    landOnMain(fx, { 'res.txt': lines('alpha', 'bravo', 'charlie', 'delta', '}', 'echo') }, 'a file to fork from');
+    const branchSide = lines('alpha', 'bravo', 'charlie (b)', 'delta', '}', 'echo');
+    const careless = session(fx, 'claude/careless', { 'res.txt': branchSide });
+    const careful = session(fx, 'claude/careful', { 'res.txt': branchSide });
+    landOnMain(fx, { 'res.txt': lines('alpha', 'bravo', 'charlie', 'echo') }, 'main deletes delta');
+
+    expect(mergeMain(careless)).not.toBe(0);
+    expect(mergeMain(careful)).not.toBe(0);
+    git(careless, ['checkout', '--ours', '--', 'res.txt']);
+    commitAll(careless, 'merge main, take ours');
+    write(careful, 'res.txt', lines('echo', 'alpha', 'bravo', 'charlie (b)'));
+    commitAll(careful, 'merge main, keep its deletions');
+
+    const a = check(careless);
+    expect(a.out).toContain('resurrected lines: 1 in 1 file(s) (res.txt 1), deleted on main after this branch forked');
+    expect(a.out).toContain('\n  back      res.txt: delta\n');
+    expect(a.out).toContain('lost lines: none');
+    expect(a.out).not.toMatch(/back {6}res\.txt: \}/);
+    expect(a.code).toBe(2);
+    expect(lastLine(a.out)).toBe('MERGE CHECK: REVIEW');
+
+    const b = check(careful);
+    expect(b.out).toContain('resurrected lines: none');
+    expect(b.code).toBe(0);
+    expect(lastLine(b.out)).toBe('MERGE CHECK: CLEAN');
+  });
+
+  // THE 10/5 PAIR, in miniature (CUL-1522): two open PRs each add the next migration, in
+  // different files. Git sees nothing; the check names both. A PR stacked on this one
+  // carries the SAME file and is no clash, another PR's different number is none either,
+  // and a stale PR that still carries a migration main already has is not holding it.
+  // Renumbering clears it.
+  it('a migration number another open PR adds is REVIEW naming both; the same file, another number or main\'s own file is not', () => {
+    const fx = fixture();
+    session(fx, 'claude/o1', { 'supabase/migrations/003_o1.sql': 'create table o1 ();\n' });
+    session(fx, 'claude/o2', { 'supabase/migrations/004_o2.sql': 'create table o2 ();\n' });
+    session(fx, 'claude/stale', { 'supabase/migrations/005_main.sql': 'create table m ();\n' });
+    const s = session(fx, 'claude/s', { 'supabase/migrations/003_s.sql': 'create table s ();\n' });
+    const part2 = cloneOf(fx, 'part2');
+    git(part2, ['checkout', '--quiet', 'claude/s']);
+    git(part2, ['checkout', '--quiet', '-b', 'claude/part2']);
+    write(part2, 'feature.txt', 'part 2\n');
+    commitAll(part2, 'part 2');
+    git(part2, ['push', '--quiet', '-u', 'origin', 'claude/part2']);
+    landOnMain(fx, { 'supabase/migrations/005_main.sql': 'create table m ();\n' }, 'the stale PR\'s migration lands');
+
+    const others = ['claude/o1', 'claude/o2', 'claude/stale', 'claude/part2'];
+    const a = check(s, others);
+    expect(a.out).toContain('migration numbers: no new duplicates');
+    expect(a.out).toContain('migration numbers shared with another open PR:\n  migration 003: this branch adds 003_s.sql and claude/o1 adds 003_o1.sql\n');
+    expect(a.out).not.toMatch(/migration 00[45]:/);
+    expect(a.out).not.toContain('claude/part2 adds');
+    expect(a.code).toBe(2);
+    expect(lastLine(a.out)).toBe('MERGE CHECK: REVIEW');
+
+    git(s, ['mv', 'supabase/migrations/003_s.sql', 'supabase/migrations/006_s.sql']);
+    commitAll(s, 'renumber 003 -> 006');
+    const b = check(s, others);
+    expect(b.out).not.toContain('migration numbers shared with another open PR');
+    expect(b.code).toBe(0);
+    expect(lastLine(b.out)).toBe('MERGE CHECK: CLEAN');
+  });
+
+  // A RED MAIN (CUL-1522). Main went red when a PR changed app.txt, and one more PR
+  // (more.txt) landed on top of the red. Its CI is read through `gh api`, newest run
+  // first, with a cancelled run (main's concurrency cancels superseded pushes) on top.
+  it('a red main is REVIEW naming the run and the files changed since it was green, unless this branch is the fix and its CI passed', () => {
+    const fx = fixture();
+    const unrelated = session(fx, 'claude/unrelated', { 'feature.txt': 'new\n' });
+    const green = git(fx.mainClone, ['rev-parse', 'HEAD']).trim();
+    landOnMain(fx, { 'app.txt': lines('one', 'two', 'three (broken)') }, 'the PR that turned main red');
+    landOnMain(fx, { 'more.txt': 'more\n' }, 'one more PR lands on the red');
+    const red = git(fx.mainClone, ['rev-parse', 'HEAD']).trim();
+    // Cut from the red main, so the fix replaces a line it saw: nothing is lost.
+    const fix = session(fx, 'claude/fix', { 'app.txt': lines('one', 'two', 'three (fixed)') });
+    const fixHead = git(fix, ['rev-parse', 'HEAD']).trim();
+
+    const redMain = runsFile('red', [
+      { id: 23, conclusion: 'cancelled', sha: red },
+      { id: 22, conclusion: 'failure', sha: red },
+      { id: 21, conclusion: 'success', sha: green },
+    ]);
+    const ownGreen = runsFile('own-green', [{ id: 31, conclusion: 'success', sha: fixHead }]);
+    const ownRed = runsFile('own-red', [{ id: 32, conclusion: 'failure', sha: fixHead }]);
+
+    const a = check(unrelated, [], { FAKE_GH_MAIN: redMain });
+    expect(a.out).toContain(`main's CI: RED (run https://ci.example.invalid/runs/22 on ${red.slice(0, 7)}, failure)`);
+    expect(a.out).toContain('changed since main was last green: app.txt, more.txt');
+    expect(a.code).toBe(2);
+    expect(lastLine(a.out)).toBe('MERGE CHECK: REVIEW');
+
+    const b = check(fix, [], { FAKE_GH_MAIN: redMain, FAKE_GH_OWN: ownGreen });
+    expect(b.out).toContain('this branch touches app.txt and its own CI passed (run 31): treated as the fix');
+    expect(b.code).toBe(0);
+    expect(lastLine(b.out)).toBe('MERGE CHECK: CLEAN');
+
+    const c = check(fix, [], { FAKE_GH_MAIN: redMain, FAKE_GH_OWN: ownRed });
+    expect(c.out).toContain("main's CI: RED");
+    expect(c.code).toBe(2);
+
+    // Touches the file and its CI passed, but it was cut BEFORE main went red: its green
+    // run never met the breakage, so it is not the fix (the code review's wrong grant).
+    const stale = cloneOf(fx, 'stale-fix');
+    git(stale, ['checkout', '--quiet', '-b', 'claude/stale-fix', green]);
+    write(stale, 'app.txt', lines('one', 'two', 'three (stale)'));
+    commitAll(stale, 'touch app.txt before main went red');
+    const staleHead = git(stale, ['rev-parse', 'HEAD']).trim();
+    const staleGreen = runsFile('stale-green', [{ id: 33, conclusion: 'success', sha: staleHead }]);
+    const e = check(stale, ['--no-fetch'], { FAKE_GH_MAIN: redMain, FAKE_GH_OWN: staleGreen });
+    expect(e.out).toContain("main's CI: RED");
+    expect(e.out).not.toContain('treated as the fix');
+    expect(e.code).not.toBe(0);
+
+    // Cancelled on top of a green run is green: the cancelled run says nothing.
+    const cancelledThenGreen = runsFile('cancelled-green', [
+      { id: 42, conclusion: 'cancelled', sha: red },
+      { id: 41, conclusion: 'success', sha: red },
+    ]);
+    const d = check(unrelated, [], { FAKE_GH_MAIN: cancelledThenGreen });
+    expect(d.out).toContain(`main's CI: green (run 41 on ${red.slice(0, 7)})`);
+    expect(d.code).toBe(0);
+  });
+
+  // Never read silence as green: a failed read, and a page with no run that passed or
+  // failed, are both REVIEW.
+  it('main\'s CI that cannot be read is REVIEW, never CLEAN', () => {
+    const fx = fixture();
+    const s = session(fx, 'claude/feature', { 'feature.txt': 'new\n' });
+
+    const unread = check(s, [], { FAKE_GH_MAIN: '' });
+    expect(unread.out).toContain("main's CI: could not read (gh: Not Found (HTTP 404)");
+    expect(unread.code).toBe(2);
+    expect(lastLine(unread.out)).toBe('MERGE CHECK: REVIEW');
+
+    const onlyCancelled = runsFile('cancelled', [
+      { id: 51, conclusion: 'cancelled', sha: 'b'.repeat(40) },
+      { id: 50, conclusion: '', status: 'in_progress', sha: 'c'.repeat(40) },
+    ]);
+    const silent = check(s, [], { FAKE_GH_MAIN: onlyCancelled });
+    expect(silent.out).toContain('silence is not green');
+    expect(silent.code).toBe(2);
   });
 });
