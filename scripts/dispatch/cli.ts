@@ -4,7 +4,7 @@
 // makes no network call and writes nothing, so every run is a zero-write dry run; the
 // dispatcher does the writes dispatch.md lists, with the text this prints.
 //
-//   node --experimental-strip-types scripts/dispatch/cli.ts plan <facts.json> [--board table|digest] [--for-pr [CUL-NNN …]]
+//   node --experimental-strip-types scripts/dispatch/cli.ts plan <facts.json> [--board digest|table] [--for-pr [CUL-NNN …]]
 //   node --experimental-strip-types scripts/dispatch/cli.ts check-update <update.md> <facts.json>
 //   node --experimental-strip-types scripts/dispatch/cli.ts check-board <board.md> <facts.json>
 //
@@ -106,9 +106,10 @@ function plan(f: Facts, shape: BoardShape): string {
 
 const [cmd, a, b, ...rest] = process.argv.slice(2);
 const flags = [a, b, ...rest];
-const shape = (flags[flags.indexOf('--board') + 1] as BoardShape) || 'table';
+// The digest is the default Board (D4, CUL-1622): the PM reads the digests, not a table.
+const shape: BoardShape = flags.includes('--board') ? (flags[flags.indexOf('--board') + 1] as BoardShape) || 'digest' : 'digest';
 if (cmd === 'plan' && a) {
-  const text = plan(load(a), flags.includes('--board') ? shape : 'table');
+  const text = plan(load(a), shape);
   const keep = flags.includes('--for-pr') ? flags.slice(flags.indexOf('--for-pr') + 1).filter((x) => /^CUL-\d+$/.test(x)) : [];
   console.log(flags.includes('--for-pr') ? prSafe(text, keep) : text);
 } else if (cmd === 'check-update' && a && b) {
@@ -126,5 +127,5 @@ if (cmd === 'plan' && a) {
   console.log(errs.length ? `REFUSED:\n${errs.map((e) => ` - ${e}`).join('\n')}` : 'OK');
   process.exit(errs.length ? 1 : 0);
 } else {
-  fail('usage: cli.ts plan <facts.json> [--board table|digest] [--for-pr] | check-update <update.md> <facts.json> | check-board <board.md> <facts.json>');
+  fail('usage: cli.ts plan <facts.json> [--board digest|table] [--for-pr] | check-update <update.md> <facts.json> | check-board <board.md> <facts.json>');
 }

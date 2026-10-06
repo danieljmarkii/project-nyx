@@ -1,8 +1,9 @@
 // The Board dispatch writes on the plan page, and the parse that refuses a bad one
 // (CUL-1615, scope items 2 and 3). Pure.
 //
-// Two shapes, because the PM's answer to D4's question ("do you open the Board on the
-// page, or read the digests?") had not landed when this was built:
+// Two shapes. D4 ("do you open the Board on the page, or read the digests?") was ruled
+// the digests on 2026-10-06 (CUL-1622), so `digest` is the CLI's default; `table` stays
+// for a run that asks for it:
 //   - `table`: today's Board with its three 2026-10-05 defects designed out. Every line is
 //     built from parsed cells (no link tag can be split: `| 12 | </pull-request> |`);
 //     "waiting on" names only an unmerged PR or the hold itself, never a merged one (PR-61
