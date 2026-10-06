@@ -10,7 +10,7 @@
 //
 // facts.json: PlanInput (plan.ts) with each project's `description` given inline or as
 // `descriptionFile` (a path), plus optional `updates` (the `**/dispatch run**` bodies,
-// newest first), `branches` (remote branch names), `triggers` (list_triggers), `unblock`
+// newest first) with `updatesSince` (the oldest one's time), `branches` (remote branch names), `triggers` (list_triggers), `unblock`
 // (U lines), `index` (the ruling index id), `dispatcher` (this session's id), `teach`,
 // `queued`.
 //
@@ -27,6 +27,7 @@ type Facts = Omit<PlanInput, 'project' | 'others'> & {
   project: ProjectInput & { descriptionFile?: string };
   others?: (ProjectInput & { descriptionFile?: string })[];
   updates?: string[];
+  updatesSince?: string; // the oldest update's time (default: 14 days back)
   branches?: string[];
   triggers?: Trigger[];
   unblock?: string[];
@@ -79,7 +80,7 @@ function plan(f: Facts, shape: BoardShape): string {
   for (const v of p.verdicts.filter((x) => x.row && !x.ready && x.state.kind !== 'merged')) say(` PR-${v.row} — ${v.reasons.join('; ')}`);
   say(`Auto (confirmed, unmerged): ${p.autoRows.map((r) => `PR-${r}`).join(', ') || 'none'}`);
   if (f.updates || f.branches) {
-    const d = memoryCheck({ slug: p.slug, updates: f.updates ?? [], branches: f.branches ?? [], prs: f.prs, mergedRows: merged, now: f.now });
+    const d = memoryCheck({ slugs: [...new Set([p.slug, p.nameSlug])], updates: f.updates ?? [], branches: f.branches ?? [], prs: f.prs, mergedRows: merged, now: f.now, since: f.updatesSince ?? new Date(new Date(f.now).getTime() - 14 * 86_400_000).toISOString() });
     say();
     say(`Memory against GitHub: ${d.length ? '' : 'agrees'}`);
     for (const x of d) say(` - ${x}`);

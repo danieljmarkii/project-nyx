@@ -114,21 +114,23 @@ export function validateStatusUpdate(text: string, facts: { now: string; mergedR
 // Scope item 4: what the updates remember, against GitHub. Every disagreement is a
 // line in the digest; none of them is fixed silently.
 export type MemoryInput = {
-  slug: string;
+  slugs: string[]; // the alias's slug, and the full name's for pages whose branches predate the alias
   updates: string[]; // the `**/dispatch run**` bodies, newest first
   branches: string[]; // remote branches, `claude/<slug>-pr*` and `claude/<slug>-adhoc-*`
   prs: PrFact[];
   mergedRows: Map<string, number>; // row → merged PR number
   now: string;
+  since: string; // the oldest update read: a closed PR opened before it has no line to check against
 };
 
 export function memoryCheck(input: MemoryInput): string[] {
   const out: string[] = [];
   const launches = input.updates.flatMap(parseLaunchLines);
   const known = new Set(launches.map((l) => l.branch).filter(Boolean));
-  const own = new RegExp(`^claude/${input.slug}-(?:pr(\\d{2}[a-z]?)|adhoc)-\\d{8}[a-z0-9]*$`);
+  const own = new RegExp(`^claude/(?:${input.slugs.join('|')})-(?:pr(\\d{2}[a-z]?)|adhoc)-\\d{8}[a-z0-9]*$`);
   const seen = new Set<string>();
-  const heads = [...input.branches, ...input.prs.map((p) => p.headRef)];
+  const since = new Date(input.since).getTime();
+  const heads = [...input.branches, ...input.prs.filter((p) => p.state === 'open' || new Date(p.createdAt).getTime() >= since).map((p) => p.headRef)];
   for (const b of heads) {
     if (seen.has(b) || !own.test(b)) continue;
     seen.add(b);

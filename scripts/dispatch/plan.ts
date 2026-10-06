@@ -133,6 +133,7 @@ export type MigrationClash = { number: string; keeps: string; renumbers: string[
 export type Plan = {
   alias: string;
   slug: string;
+  nameSlug: string; // branches written before the alias rule use the full name's slug
   page: Page;
   verdicts: Verdict[];
   inFlight: InFlight[];
@@ -585,6 +586,7 @@ export function planDispatch(input: PlanInput): Plan {
   return {
     alias: me.alias,
     slug: me.slug,
+    nameSlug: me.nameSlug,
     page: me.page,
     verdicts,
     inFlight,

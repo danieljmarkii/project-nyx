@@ -94,12 +94,13 @@ describe('closing lines, written from facts', () => {
 describe('memory against GitHub', () => {
   it('names a launch never recorded and an Auto row that merged', () => {
     const out = memoryCheck({
-      slug: 'out-of-beta-noticed-design-v2-history-v2-the-trial-screen',
+      slugs: ['out-of-beta', 'out-of-beta-noticed-design-v2-history-v2-the-trial-screen'],
       updates: [OOB_1233],
       branches: [],
       prs: [F.PR_1064],
       mergedRows: new Map([['27b', 1053], ['28', 1054]]),
       now: '2026-10-05T12:35:00Z',
+      since: '2026-10-05T12:33:18Z',
     });
     expect(out).toEqual([
       'claude/out-of-beta-noticed-design-v2-history-v2-the-trial-screen-pr60-10042110 (#1064, open) has no launch line: a launch never recorded',
@@ -110,12 +111,12 @@ describe('memory against GitHub', () => {
 
   it('agrees when the record and GitHub agree', () => {
     expect(
-      memoryCheck({ slug: 'engines-v3', updates: [EV3_2327], branches: ['claude/engines-v3-pr23a-10052327'], prs: [], mergedRows: new Map(), now: '2026-10-05T23:40:00Z' }),
+      memoryCheck({ slugs: ['engines-v3'], updates: [EV3_2327], branches: ['claude/engines-v3-pr23a-10052327'], prs: [], mergedRows: new Map(), now: '2026-10-05T23:40:00Z', since: '2026-10-05T23:27:41Z' }),
     ).toEqual([]);
   });
 
   it('a launch whose branch never reached the remote is named after two hours', () => {
-    const out = memoryCheck({ slug: 'engines-v3', updates: [EV3_2327], branches: [], prs: [], mergedRows: new Map(), now: '2026-10-06T02:00:00Z' });
+    const out = memoryCheck({ slugs: ['engines-v3'], updates: [EV3_2327], branches: [], prs: [], mergedRows: new Map(), now: '2026-10-06T02:00:00Z', since: '2026-10-05T23:27:41Z' });
     expect(out).toEqual(['PR-23a\'s branch claude/engines-v3-pr23a-10052327 is not on the remote, 2h after its launch']);
   });
 });
