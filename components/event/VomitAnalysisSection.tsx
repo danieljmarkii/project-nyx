@@ -53,6 +53,14 @@ import {
   TIER_WORDS,
   tierDisplayOf,
 } from '../../lib/incidentTierWords';
+import {
+  floorRanOn,
+  tellThem,
+  vomitFindings,
+  watchForList,
+} from '../../lib/incidentFloorWords';
+import { FLOOR_FACTS_REFRESH_MS, useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
+import { usePetStore } from '../../store/petStore';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
 import { vomitCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -156,6 +164,12 @@ export function VomitAnalysisSection(
   const latestRow = useRef<AnalysisRow | null | undefined>(undefined);
   latestRow.current = row;
   const watchTeardown = useRef<(() => void) | null>(null);
+  const clockNow = useMinuteNow();
+  // CUL-1510: the record around this vomit, for the floor's words under the read. Re-read
+  // when the row moves, so a read raised by a neighbouring log counts that log.
+  const floorFacts = useIncidentFloorFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}|${Math.floor(clockNow / FLOOR_FACTS_REFRESH_MS)}`);
+  // The RECORD's pet (C-9): species and birthday decide which clauses its list carries.
+  const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
   // the grid so a re-render of the block never resets what the owner folded, and fed the
@@ -541,7 +555,51 @@ export function VomitAnalysisSection(
   // max every other surface reads); only a row with no call reaches these two frames.
   const callStands = isCallRow(row);
   if (!hasPhoto && !callStands && (!row?.recommendation || row.recommendation === 'not_enough_to_say' || unfinishedQuiet)) {
-    return null;
+    // CUL-1510 (spec §2, §3): under EN-4 every photoless vomit is floored, and one with no
+    // call is "Not enough to say yet" with its watch-for list. That frame carries no retry
+    // (B-363's dead loop stays gone): it is the read's words and what would change them.
+    // Earlier-rule rows, and rows the floor did not write, keep today's empty frame.
+    const photolessList =
+      row && isTieredRow(row) && floorRanOn(row) && tierDisplayOf(row) === 'not_enough_to_say' &&
+      floorFacts?.anchor && recordPet
+        ? watchForList({
+            petName,
+            species: recordPet.species,
+            birthDate: recordPet.date_of_birth,
+            anchor: floorFacts.anchor,
+            vomits: floorFacts.vomits,
+            nowMs: clockNow,
+          })
+        : null;
+    if (!row || !photolessList) return null;
+    return (
+      <IncidentReadSection
+        arrival={arrival}
+        announcer={announcer}
+        announcement={row.dismissed_at ? DISMISSED_LINE : TIER_WORDS.not_enough_to_say.label}
+        pending={false}
+      >
+        {row.dismissed_at ? (
+          <View style={styles.dismissedRow}>
+            <ThemedText style={styles.dismissedText}>{DISMISSED_LINE}</ThemedText>
+            <TouchableOpacity onPress={() => setDismissed(false)} hitSlop={16}>
+              <ThemedText style={styles.linkText}>Show</ThemedText>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <IncidentReadCard
+            verdict="not_enough_to_say"
+            label={TIER_WORDS.not_enough_to_say.label}
+            tone={TIER_WORDS.not_enough_to_say.tone}
+            readText={row.read_text}
+            watchFor={photolessList}
+            onHide={() => setDismissed(true)}
+            arrival={arrival.rail}
+            onMeasure={arrival.onContentLayout}
+          />
+        )}
+      </IncidentReadSection>
+    );
   }
 
   // No analysis and not working (e.g. gave up, or an unclear/unsynced photo). Only
@@ -583,6 +641,34 @@ export function VomitAnalysisSection(
   // that, a later run that finished calm and was held left the old error standing, and the
   // line would have outlived a read that worked.
   const heldDisclosure = heldCallDisclosureOf(row);
+  // CUL-1510: the floor's words. Each is a new-rule surface only (`display` is null on an
+  // earlier-rule read, which keeps today's card to the byte).
+  const nowMs = clockNow;
+  const findings = vomitFindings(row);
+  const isCall = display === 'call_now' || display === 'call_today';
+  const tellThemLine =
+    isCall && floorFacts?.anchor
+      ? tellThem({
+          petName,
+          kind: 'vomit',
+          anchor: floorFacts.anchor,
+          vomits: floorFacts.vomits,
+          findings,
+          courses: floorFacts.courses,
+          nowMs,
+        })
+      : null;
+  const watchFor =
+    (display === 'logged' || display === 'not_enough_to_say') && floorRanOn(row) && floorFacts?.anchor && recordPet
+      ? watchForList({
+          petName,
+          species: recordPet.species,
+          birthDate: recordPet.date_of_birth,
+          anchor: floorFacts.anchor,
+          vomits: floorFacts.vomits,
+          nowMs,
+        })
+      : null;
 
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
@@ -622,6 +708,8 @@ export function VomitAnalysisSection(
           tone={display ? TIER_WORDS[display].tone : undefined}
           action={display ? TIER_WORDS[display].action : null}
           disclosure={heldDisclosure}
+          tellThem={tellThemLine}
+          watchFor={watchFor}
           readText={row.read_text}
           onHide={() => setDismissed(true)}
           arrival={arrival.rail}

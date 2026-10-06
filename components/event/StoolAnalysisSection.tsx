@@ -61,6 +61,11 @@ import {
   tierDisplayOf,
 } from '../../lib/incidentTierWords';
 import { needsEn7Recheck } from '../../lib/stoolForm';
+import {
+  stoolFindings,
+  tellThem,
+} from '../../lib/incidentFloorWords';
+import { FLOOR_FACTS_REFRESH_MS, useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
 import { StoolFieldsEditor } from './StoolFieldsEditor';
 import { stoolCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -170,6 +175,10 @@ export function StoolAnalysisSection(
   const latestRow = useRef<AnalysisRow | null | undefined>(undefined);
   latestRow.current = row;
   const watchTeardown = useRef<(() => void) | null>(null);
+  const clockNow = useMinuteNow();
+  // CUL-1510: the record around this stool (the vomits beside it, the courses on board),
+  // for "What to tell them" under a call. Re-read when the row moves.
+  const floorFacts = useIncidentFloorFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}|${Math.floor(clockNow / FLOOR_FACTS_REFRESH_MS)}`);
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
   // the grid so a re-render of the block never resets what the owner folded, and fed the
@@ -621,6 +630,22 @@ export function StoolAnalysisSection(
   // that, a later run that finished calm and was held left the old error standing, and the
   // line would have outlived a read that worked.
   const heldDisclosure = heldCallDisclosureOf(row);
+  // CUL-1510: the floor's words under a new-rule call (spec §2 rules 1 and 2).
+  const nowMs = clockNow;
+  const findings = stoolFindings(row);
+  const isCall = display === 'call_now' || display === 'call_today';
+  const tellThemLine =
+    isCall && floorFacts?.anchor
+      ? tellThem({
+          petName,
+          kind: 'stool',
+          anchor: floorFacts.anchor,
+          vomits: floorFacts.vomits,
+          findings,
+          courses: floorFacts.courses,
+          nowMs,
+        })
+      : null;
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
   const editedSet = new Set<EditableStoolField>(
@@ -658,6 +683,7 @@ export function StoolAnalysisSection(
           // earlier-rule read, which draws today's card.
           tone={display ? TIER_WORDS[display].tone : undefined}
           action={display ? TIER_WORDS[display].action : null}
+          tellThem={tellThemLine}
           disclosure={heldDisclosure}
           readText={row.read_text}
           onHide={() => setDismissed(true)}

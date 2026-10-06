@@ -11,6 +11,9 @@
 
 // A `mock`-prefixed holder the hoisted supabase mock closes over; each test sets it.
 let mockRow: Record<string, unknown> | null = null;
+// CUL-1510: the record around the stool, as the floor's words read it (null = not answered).
+let mockFloorFacts: import('../../lib/incidentFloorFacts').IncidentFloorFacts | null = null;
+jest.mock('../../hooks/useIncidentFloorFacts', () => ({ useIncidentFloorFacts: () => mockFloorFacts, useMinuteNow: () => Date.now() }));
 // Set to make a Hide / Show write fail, and to hold it until the test lets it answer
 // (CUL-827's R7 case: the write must fail AFTER a re-run's restore has landed).
 let mockUpdateError: { message: string } | null = null;
@@ -1129,5 +1132,41 @@ describe('StoolAnalysisSection — the tier (EN-3)', () => {
     mockRow = row({ recommendation: 'monitor', tier: 'logged', engine_flags: EN3 });
     const { findByText } = render(<StoolAnalysisSection eventId="s3" petId="pet-1" petName="Rex" hasPhoto />);
     await findByText('Keep an eye out');
+  });
+});
+
+// ── CUL-1510: the floor's words under a stool call ──────────────────────────────
+describe('StoolAnalysisSection — the floor\'s words (CUL-1510)', () => {
+  const STAMP = ['engines_v3_en3', 'engines_v3_en4'];
+  const STOOL = new Date(2026, 5, 10, 13, 0);
+  let nowSpy: jest.SpyInstance;
+  beforeEach(() => {
+    nowSpy = jest.spyOn(Date, 'now').mockReturnValue(new Date(2026, 5, 10, 21, 0).getTime());
+    mockFloorFacts = {
+      anchor: { at: STOOL.toISOString(), confidence: 'witnessed' },
+      vomits: [{ at: new Date(2026, 5, 10, 9, 0).toISOString(), confidence: 'witnessed' }],
+      courses: [],
+    };
+  });
+  afterEach(() => {
+    nowSpy.mockRestore();
+    mockRow = null;
+    mockFloorFacts = null;
+  });
+
+  it('a call today in the evening keeps no leave to wait, and says what to tell the vet', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['concurrent_vomiting'], stool_consistency: 'type_7_watery' });
+    const view = render(<StoolAnalysisSection eventId="s1" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
+    expect(view.queryByText(/first thing/)).toBeNull();
+    expect(view.queryByText('Stool logged at 1 PM; 1 vomit logged within a day of it; watery stool.')).toBeTruthy();
+  });
+
+  it('an earlier-rule call draws no floor words', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', contextual_flags: ['concurrent_vomiting'] });
+    const view = render(<StoolAnalysisSection eventId="s2" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Worth a call');
+    expect(view.queryByText('What to tell them:')).toBeNull();
   });
 });

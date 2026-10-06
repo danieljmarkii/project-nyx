@@ -147,8 +147,10 @@ describe('the words (spec §2)', () => {
       expect(text).toMatch(/now/i);
     }
     expect(TIER_WORDS.call_now.action).toMatch(/emergency clinic/);
-    // No leave to wait until the call-now signs that make it safe exist (PR-28, CUL-1432).
-    expect(TIER_WORDS.call_today.action).toBeNull();
+    // No leave to wait (CUL-1510): call today takes call now's after-hours path until the
+    // server can prove a call came from the record alone.
+    expect(TIER_WORDS.call_today.action).toBe("Call your vet today. If they're closed, call an emergency clinic.");
+    expect(TIER_WORDS.call_today.action).not.toMatch(/tomorrow|morning|wait/i);
   });
 
   it('the two calls share the rose and differ by fill; colour never carries a tier alone', () => {
