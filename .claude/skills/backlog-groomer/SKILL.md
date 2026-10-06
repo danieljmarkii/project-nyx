@@ -66,7 +66,7 @@ This table binds an **unattended** run — a scheduled Routine, `scripts/groom/a
 | 14 · cancel after the window | → `Canceled` | the label, the proposal comment's timestamp, and no later comment except a pass's own |
 | 14 · engaged proposals | **report** | — a person spoke; that is a PM decision |
 | 15 · board count | **report** | — |
-| 16 · gates are relations, `blocks` **add** | add the relation with `blocks: ["CUL-NNN"]`, append-only and never `removeBlocks`, plus the one-line **Linked gate** comment | the `CUL-NNN` that is the whole of the issue's own **Blocks:** line, the issue's `createdAt` on or after the date the issue contract gave **Blocks:** one direction (none on `origin/main` yet, so no write), and the target's state category `triage`, `backlog`, `unstarted` or `started` |
+| 16 · gates are relations, `blocks` **add** | add the relation with `blocks: ["CUL-NNN"]`, append-only and never `removeBlocks`, plus the one-line **Linked gate** comment | the `CUL-NNN` that is the whole of the issue's own **Blocks:** line, the issue's `createdAt` on or after the date the issue contract gave **Blocks:** one direction (the `git log -S` date below; empty means no write), and the target's state category `triage`, `backlog`, `unstarted` or `started` |
 | 16 · prose target, closed target, `GA gate` with nothing named | **report** | — resolving a sentence to an issue is a sentence you wrote, and a relation to a closed issue gates nothing |
 | 17 · orphaned follow-ups | **report** | — which run order should offer an issue is a planning call |
 
