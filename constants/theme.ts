@@ -148,10 +148,12 @@ export const theme = {
   // never decorative" rule above survives.
   //
   // ONE EXCEPTION (CUL-322, D3 = C, PM-ruled 2026-09-26; in-app brand spec §1 rule
-  // 3): the FAB's disc is colorBrandNightElevated carrying the teal plus. The
-  // indigo is still the ground and the teal is still the live glyph on it, the
-  // Culprit mark in miniature; no other control is indigo, which is what keeps
-  // the exception from becoming a second accent (CUL-1279 parks the wider idea).
+  // 3): the FAB's disc is colorBrandNightElevated. Its glyph was the teal plus until
+  // CUL-1626 (PM, 2026-10-06) took it white (colorTextOnDark), the first piece of
+  // CUL-1279's G4 = C split: indigo is the action, teal is a good fact (ruled
+  // 2026-10-03; its app-wide round, which rewrites rule 3, is still to run). Until
+  // then no other control is indigo, which keeps the exception from becoming a
+  // second accent.
   //
   // Two dark tokens, two distinct roles (the colorSurfaceDark reconciliation —
   // resolved: KEEP BOTH): colorBrandNight is the indigo *brand* night (Culprit's

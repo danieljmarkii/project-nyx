@@ -1,0 +1,861 @@
+<title>The FAB and Its Fan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     The FAB and Its Fan. Round 2 of the FAB (round 1 is §05 and §06 of
+     docs/culprit-design-v2-device-mockups.html, ruled 2026-09-26).
+     The PM's device reactions of 2026-10-06 (CUL-1625): the plus goes
+     white (built, CUL-1626), what else could delight, who else does a
+     fan of recents, and whether the jump from the fan to the log sheet
+     is a seam. House system: round 1's tokens; frames render the app's
+     real light tokens (constants/theme.ts) at 81% of a 390pt phone.
+     Layout: one column of prose at 68ch, frames in wrapping rows.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --night: #13112E; --night-2: #251F57; --action: #3F35A0; --action-wash: #ECEAF8;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    /* The app's own light tokens, used inside the phone frames in both page themes. */
+    --app-ground: #FAFAFA; --app-card: #FFFFFF; --app-subtle: #F4F4F5; --app-ink: #0A0A0A;
+    --app-ink-2: #525252; --app-ink-3: #737373; --app-rule: #E7E5E4;
+    --app-meal: #00C2A8; --app-meal-wash: #E0FBF7; --app-sym: #F43F5E; --app-sym-wash: #FFE4E6;
+    --veil-night: rgba(19,17,46,0.34); --veil-grey: rgba(10,10,10,0.35);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --action: #B9B3F0; --action-wash: rgba(185,179,240,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --action: #B9B3F0; --action-wash: rgba(185,179,240,0.14);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 62ch; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  a { color: var(--teal-ink); }
+  .ledger { display: grid; gap: 8px; margin: 26px 0 8px; }
+  .ledger div { display: grid; grid-template-columns: 210px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  @media (max-width: 640px) { .ledger div { grid-template-columns: 1fr; gap: 4px; } }
+  .ledger q { font-style: italic; color: var(--ink); quotes: "\201C" "\201D"; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+  .pill.cur { color: var(--action); background: var(--action-wash); }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+
+  /* Frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 28px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 12px; width: 316px; max-width: 100%; min-width: 0; }
+  .frame-cap { display: flex; flex-direction: column; gap: 4px; }
+  .frame-cap b { font-size: 14.5px; }
+  .frame-cap span { font-size: 13.5px; color: var(--ink-2); }
+  .frame.option { border: 1px dashed var(--rule); border-radius: 18px; padding: 12px; width: 342px; }
+  .frame.option > .frame-cap::before { content: "Still open, drawn for the decision"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .frame.archived { opacity: 0.72; }
+  .frame.archived > .frame-cap::before { content: "Ruled 2026-09-26, superseded 2026-10-06"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+
+  /* The FAB swatch stages (§01) */
+  .fab-stage { color: var(--app-ink); position: relative; height: 170px; background: var(--app-ground); border-radius: 24px; overflow: hidden; border: 1px solid rgba(27,26,46,0.12); }
+  .fab-stage .tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; background: var(--app-card); border-top: 1px solid var(--app-rule); display: flex; justify-content: space-around; align-items: center; font-size: 10px; color: var(--app-ink-3); }
+  .fab-stage .tabs b { color: var(--app-ink); font-weight: 600; }
+  .fab-stage .ghost { position: absolute; left: 14px; right: 84px; top: 16px; display: grid; gap: 9px; }
+  .fab-stage .ghost i { display: block; height: 9px; border-radius: 4px; background: var(--app-rule); }
+  .fab-stage .ghost i:nth-child(2) { width: 70%; } .fab-stage .ghost i:nth-child(3) { width: 84%; }
+  .fab-stage .ghost .cardghost { height: 46px; border-radius: 12px; background: var(--app-card); box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .fab-stage.veiled::after { content: ""; position: absolute; inset: 0; background: var(--veil-night); }
+  .fabdisc { position: absolute; right: 18px; bottom: 70px; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; background: var(--night-2); box-shadow: 0 6px 16px rgba(19,17,46,0.28); z-index: 2; }
+  .fabdisc svg { width: 20px; height: 20px; }
+  .fabdisc.x svg { transform: rotate(135deg); }
+  .contrast { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .contrast .ok { color: var(--teal-ink); }
+
+  /* ── The live phones (§03, §04) ─────────────────────────────────── */
+  .demo-row { display: flex; flex-wrap: wrap; gap: 32px 28px; margin-top: 28px; align-items: flex-start; }
+  .ph { position: relative; width: 316px; max-width: 100%; height: 640px; background: var(--app-ground); border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); overflow: hidden; color: var(--app-ink); font-family: var(--sans); font-variant-numeric: tabular-nums; font-size: 12px; line-height: 1.38; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+  .ph button { font-family: var(--sans); color: inherit; }
+  .ph-home { padding: 14px 12px 0; display: grid; gap: 10px; transform-origin: 80% 90%; transition: transform 320ms cubic-bezier(.2,.8,.2,1); }
+  .ph-bar { display: flex; align-items: center; gap: 8px; padding: 2px 2px 8px; border-bottom: 1px solid var(--app-rule); }
+  .ph-bar .pet { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; flex: 1; }
+  .ph-bar .date { font-size: 10.5px; color: var(--app-ink-2); }
+  .ph-bar .ask { font-size: 11px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 2px 9px; display: flex; align-items: center; gap: 5px; }
+  .ph-bar .ask i { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); display: inline-block; }
+  .ph-bar .me { width: 24px; height: 24px; border-radius: 50%; background: #0A0A0A; color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
+  .avatar { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #8a7a6a, #3a332c 70%); flex-shrink: 0; display: inline-block; }
+  .ph-card { background: var(--app-card); border-radius: 16px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); }
+  .ph-label { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-3); margin-bottom: 8px; }
+  .ph-row { border-left: 3px solid var(--app-sym); padding-left: 9px; }
+  .ph-row + .ph-row { margin-top: 10px; padding-top: 0; }
+  .ph-row.ins { border-left-color: var(--app-meal); }
+  .ph-row .e { font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); }
+  .ph-row .h { font-family: var(--serif); font-size: 16px; line-height: 1.22; }
+  .ph-row .h.s { font-family: var(--sans); font-size: 12.5px; font-weight: 600; }
+  .ph-row .a { font-size: 11px; color: #B4123B; margin-top: 1px; }
+  .ph-row .s { font-size: 10.5px; color: var(--app-ink-2); }
+  .ph-trial .t { font-weight: 600; font-size: 13px; }
+  .ph-trial .bar { height: 5px; border-radius: 3px; background: var(--app-subtle); margin: 8px 0 6px; overflow: hidden; }
+  .ph-trial .bar i { display: block; height: 100%; width: 68%; background: #A3A3A3; border-radius: 3px; }
+  .ph-trial .l { font-size: 10.5px; color: var(--app-ink-2); }
+  .ph-tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 60px; background: var(--app-card); border-top: 1px solid var(--app-rule); display: flex; justify-content: space-around; align-items: center; font-size: 10px; color: var(--app-ink-3); padding-bottom: 6px; }
+  .ph-tabs b { color: var(--app-ink); font-weight: 600; }
+  .ph-veil { position: absolute; inset: 0; background: var(--veil-night); opacity: 0; pointer-events: none; transition: opacity 240ms ease; }
+  .ph.open .ph-veil { opacity: 1; pointer-events: auto; }
+  .ph.handoff-b .ph-veil, .ph.handoff-c .ph-veil { opacity: 1; pointer-events: auto; }
+
+  /* The disc */
+  .ph-disc { position: absolute; right: 19px; bottom: 70px; width: 46px; height: 46px; border-radius: 50%; border: 0; background: var(--night-2); display: grid; place-items: center; box-shadow: 0 6px 18px rgba(19,17,46,0.32); cursor: pointer; z-index: 4; transition: transform 180ms cubic-bezier(.3,.7,.4,1.4); }
+  .ph-disc:focus-visible { outline: 3px solid var(--action); outline-offset: 3px; }
+  .ph-disc.down { transform: scale(0.9); }
+  .ph-disc .glyph { width: 17px; height: 17px; transition: transform 380ms cubic-bezier(.34,1.56,.64,1); }
+  .ph.open .ph-disc .glyph, .ph.handoff-c .ph-disc .glyph { transform: rotate(135deg); }
+  .ph.closing .ph-disc .glyph { transition: transform 180ms ease-in; }
+  .ph-disc .ring { position: absolute; inset: -5px; border-radius: 50%; border: 2px solid #FFFFFF; box-shadow: 0 0 0 2px var(--night-2); opacity: 0; transform: scale(0.8); pointer-events: none; }
+  .ph-disc.holding .ring { animation: ring 300ms ease-out forwards; }
+  @keyframes ring { to { opacity: 1; transform: scale(1); } }
+
+  /* The fan */
+  .ph-fan { position: absolute; right: 19px; bottom: 124px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; z-index: 4; pointer-events: none; max-width: calc(100% - 38px); }
+  .ph.open .ph-fan { pointer-events: auto; }
+  .fp { display: flex; align-items: center; gap: 8px; background: var(--app-card); border-radius: 999px; padding: 6px 13px 6px 7px; min-height: 36px; max-width: 243px; font-size: 12px; font-weight: 500; text-align: left; line-height: 1.25; box-shadow: 0 4px 14px rgba(19,17,46,0.16); border: 0; cursor: pointer; opacity: 0; transform: translate(15px, 21px) scale(0.6); transform-origin: 100% 100%; transition: opacity 160ms ease, transform 300ms cubic-bezier(.34,1.4,.64,1); }
+  .ph.open .fp { opacity: 1; transform: none; }
+  .ph.closing .fp { transition: opacity 110ms ease-in, transform 110ms ease-in; }
+  .fp .g { width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; }
+  .fp .g svg { width: 13px; height: 13px; }
+  .fp .g.quiet { background: var(--app-ground); color: var(--app-ink-2); }
+  .fp .g.sym { background: var(--app-sym-wash); color: var(--app-sym); }
+  .fp .g.meal { background: var(--app-meal-wash); color: var(--app-meal); }
+  .fp.logfor { border-radius: 19px; padding: 7px 12px 7px 8px; min-width: 178px; }
+  .fp.logfor .lf { display: flex; flex-direction: column; flex: 1; }
+  .fp.logfor small { font-size: 10px; color: var(--app-ink-2); font-weight: 400; }
+  .fp.logfor b { font-size: 14px; font-weight: 500; }
+  .fp.logfor .caret { color: var(--app-ink-2); font-size: 12px; }
+  .fp.pressing { transform: scale(0.96) !important; transition: transform 90ms ease-out !important; }
+  .fp.lifted { transform: scale(1.05) !important; box-shadow: 0 8px 22px rgba(19,17,46,0.26); }
+
+  /* The log sheet (§03 option A and B) */
+  .ph-modal { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+  .ph-modal .grey { position: absolute; inset: 0; background: var(--veil-grey); }
+  .ph-modal.slide { transform: translateY(100%); transition: transform 360ms cubic-bezier(.32,.72,0,1); }
+  .ph.handoff-a .ph-modal.slide { transform: none; pointer-events: auto; }
+  .ph-sheet { position: absolute; left: 0; right: 0; bottom: 0; top: 116px; background: var(--app-card); border-radius: 22px 22px 0 0; padding: 8px 14px 0; overflow: hidden; box-shadow: 0 -8px 30px rgba(19,17,46,0.12); }
+  .ph-sheet .grab { width: 34px; height: 4px; border-radius: 2px; background: #D4D4D4; margin: 0 auto 12px; }
+  .ph-sheet .st { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; margin-bottom: 12px; }
+  .ph-sheet .st .caret { color: var(--app-ink-2); font-weight: 400; font-size: 13px; }
+  .ph-sheet .fam { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-2); margin: 12px 0 6px; }
+  .ph-sheet .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .tile { display: flex; align-items: center; gap: 8px; border: 1px solid var(--app-rule); border-radius: 13px; padding: 8px; min-height: 44px; font-size: 12.5px; font-weight: 500; background: var(--app-card); cursor: pointer; text-align: left; }
+  .tile.wide { grid-column: 1 / -1; }
+  .tile .g { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; background: var(--app-sym-wash); color: var(--app-sym); }
+  .tile .g svg { width: 14px; height: 14px; }
+  .tile .g.meal { background: var(--app-meal-wash); color: var(--app-meal); }
+  .tile .g.quiet { background: var(--app-subtle); color: var(--app-ink-2); }
+  .tile .chips { margin-left: auto; display: flex; gap: 5px; }
+  .tile .chips span { border: 1px solid var(--app-rule); border-radius: 999px; padding: 4px 10px; font-size: 11px; }
+  .sheet-in > * { transition: opacity 200ms ease; }
+
+  /* Option B: the More events pill becomes the sheet */
+  .ph-morph { position: absolute; z-index: 5; background: var(--app-card); border-radius: 999px; box-shadow: 0 4px 14px rgba(19,17,46,0.16); pointer-events: none; overflow: hidden; }
+  .ph-morph.go { transition: left 420ms cubic-bezier(.2,.9,.3,1.02), top 420ms cubic-bezier(.2,.9,.3,1.02), width 420ms cubic-bezier(.2,.9,.3,1.02), height 420ms cubic-bezier(.2,.9,.3,1.02), border-radius 420ms ease, box-shadow 420ms ease; }
+  .ph-morph .lbl { position: absolute; left: 38px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 500; white-space: nowrap; transition: opacity 120ms ease; }
+  .ph-bsheet { position: absolute; left: 0; right: 0; bottom: 0; top: 116px; z-index: 6; opacity: 0; pointer-events: none; transition: opacity 180ms ease 300ms; }
+  .ph.handoff-b .ph-bsheet { opacity: 1; pointer-events: auto; }
+  .ph-bsheet .ph-sheet { top: 0; box-shadow: none; }
+
+  /* Option C: the fan grows into the whole list, in place */
+  .ph-panel { position: absolute; right: 19px; bottom: 124px; width: calc(100% - 38px); max-height: 452px; z-index: 5; background: var(--app-card); border-radius: 20px; box-shadow: 0 10px 30px rgba(19,17,46,0.22); padding: 10px 12px 12px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; opacity: 0; transform: translateY(10px) scale(0.92); transform-origin: 100% 100%; pointer-events: none; transition: opacity 220ms ease, transform 380ms cubic-bezier(.2,.9,.3,1.02); }
+  .ph.handoff-c .ph-panel { opacity: 1; transform: none; pointer-events: auto; }
+  .ph.handoff-c .fp { opacity: 0; transform: translate(0, 12px) scale(0.9); transition: opacity 120ms ease, transform 160ms ease; }
+  .ph-panel .pt { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--app-ink-2); margin-bottom: 2px; }
+  .ph-panel .pt b { color: var(--app-ink); font-size: 13px; font-weight: 600; }
+  .ph-panel .fam { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-2); margin: 9px 0 5px; }
+  .ph-panel .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .ph-panel .tile { min-height: 40px; padding: 6px 7px; font-size: 12px; border-radius: 12px; }
+  .ph-panel .tile .g { width: 23px; height: 23px; }
+
+  /* The completion card (§04) */
+  .ph-done { position: absolute; left: 10px; right: 10px; bottom: 68px; z-index: 7; background: var(--app-card); border-radius: 16px; padding: 11px 12px; box-shadow: 0 10px 28px rgba(19,17,46,0.2); display: flex; gap: 10px; align-items: center; transform: translateY(16px); opacity: 0; pointer-events: none; transition: transform 260ms cubic-bezier(.2,.8,.2,1), opacity 200ms ease; }
+  .ph-done.show { transform: none; opacity: 1; }
+  .ph-done .tk { width: 26px; height: 26px; border-radius: 50%; background: var(--app-meal-wash); color: var(--app-meal); display: grid; place-items: center; flex-shrink: 0; }
+  .ph-done .tk svg { width: 14px; height: 14px; }
+  .ph-done b { display: block; font-size: 12.5px; font-weight: 600; }
+  .ph-done span { font-size: 11px; color: var(--app-ink-2); }
+  .ph-done .undo { margin-left: auto; font-size: 11.5px; font-weight: 600; color: var(--action); }
+  .ph-fly { position: absolute; z-index: 8; width: 23px; height: 23px; border-radius: 50%; background: var(--app-meal-wash); color: var(--app-meal); display: grid; place-items: center; pointer-events: none; transition: left 420ms cubic-bezier(.3,.1,.2,1), top 420ms cubic-bezier(.5,0,.6,1), transform 420ms ease; }
+  .ph-fly svg { width: 13px; height: 13px; }
+
+  /* Option D: one veil, one physics, one name */
+  .ph { --veil: var(--veil-night); }
+  .ph-veil { background: var(--veil); }
+  .ph-dsheet { position: absolute; left: 0; right: 0; bottom: 0; top: 116px; z-index: 6; transform: translateY(100%); transition: transform 420ms cubic-bezier(.22,1,.36,1) 40ms; pointer-events: none; }
+  .ph-dsheet .ph-sheet { top: 0; }
+  .ph.handoff-d .ph-dsheet { transform: none; pointer-events: auto; }
+  .ph.handoff-d .ph-veil { opacity: 1; pointer-events: auto; }
+  .ph.handoff-d .fp.chosen { opacity: 1; transform: none; transition: opacity 160ms ease 140ms; }
+  .ph.handoff-d .fp.chosen.gone { opacity: 0; }
+  .ph-sheet .st.two { align-items: center; }
+  .ph-sheet .st.two .lf { display: flex; flex-direction: column; line-height: 1.15; }
+  .ph-sheet .st.two small { font-size: 10px; font-weight: 400; color: var(--app-ink-2); }
+  .ph-sheet .st.two b { font-size: 16px; font-weight: 600; }
+
+  /* The meal card, as shipped: a dark card above the fan */
+  .ph-done { background: #0A0A0A; color: #FFFFFF; bottom: 124px; flex-direction: column; align-items: stretch; gap: 9px; padding: 11px 12px 12px; }
+  .ph-done .hr { display: flex; align-items: center; gap: 9px; }
+  .ph-done .tk { background: rgba(0,194,168,0.18); color: #00C2A8; box-shadow: 0 0 0 5px rgba(251,191,36,0.10); }
+  .ph-done .tt { flex: 1; min-width: 0; }
+  .ph-done b { color: #FFFFFF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ph-done .tt span { color: #A3A3A3; }
+  .ph-done .acts { display: flex; gap: 10px; font-size: 11px; font-weight: 600; color: #FFFFFF; flex-shrink: 0; }
+  .ph-done .acts span { color: #FFFFFF; font-size: 11px; }
+  .ph-done .q { font-size: 11px; color: #D4D4D4; }
+  .ph-done .chips { display: flex; gap: 5px; }
+  .ph-done .chips span { flex: 1; text-align: center; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; padding: 5px 0; font-size: 10.5px; color: #FFFFFF; }
+  .ph-done.rise { transform: translateY(80px); }
+  .ph-done.rise.show { transform: none; transition: transform 460ms cubic-bezier(.34,1.35,.64,1), opacity 180ms ease; }
+  .ph-done.inplace { transform: none; transition: opacity 200ms ease 60ms; }
+  .ph.landing .fp.chosen { opacity: 1; transform: none; transition: opacity 200ms ease 120ms; }
+  .ph.landing .fp.chosen.gone { opacity: 0; }
+
+  /* The proposed pill: the record's words, a format tag, doors carry a chevron */
+  .fp .lbl2 { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .fp .ftag { font-size: 8.5px; letter-spacing: 0.08em; font-weight: 600; color: var(--app-ink-2); border: 1px solid var(--app-rule); border-radius: 5px; padding: 1px 4px; flex-shrink: 0; }
+  .fp .chev { color: var(--app-ink-3); margin-left: 1px; font-size: 13px; line-height: 1; }
+  .fp.split { padding: 5px 6px 5px 7px; cursor: default; }
+  .fp.split .seg { display: flex; gap: 4px; margin-left: 4px; }
+  .fp.split .seg button { border: 1px solid var(--app-rule); background: transparent; border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 500; cursor: pointer; }
+  .fp.split .seg button:focus-visible { outline: 2px solid var(--app-ink-2); outline-offset: 1px; }
+  .ph[data-mode="today"] .fp:active { opacity: 0.7; }
+  .ph[data-mode="land"] .fp:active { transform: scale(0.97) !important; background: #F4F4F5; transition: transform 90ms ease-out, background 90ms ease-out !important; }
+  .fp.redeal { opacity: 0 !important; transform: translate(10px, 14px) scale(0.7) !important; transition: opacity 120ms ease, transform 140ms ease !important; }
+
+  /* Static pill rows (§04 frames) */
+  .pillset { color: var(--app-ink); background: var(--app-ground); border-radius: 22px; border: 1px solid rgba(27,26,46,0.12); padding: 16px 14px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; position: relative; overflow: hidden; }
+  .pillset::before { content: ""; position: absolute; inset: 0; background: var(--veil-grey); }
+  .pillset .fp { opacity: 1; transform: none; position: relative; cursor: default; }
+  .pillset .split { display: flex; align-items: center; gap: 8px; background: var(--app-card); border-radius: 999px; padding: 5px 6px 5px 7px; min-height: 36px; box-shadow: 0 4px 14px rgba(19,17,46,0.16); position: relative; font-size: 12px; font-weight: 500; color: var(--app-ink); }
+  .pillset .split .g { width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center; background: var(--app-sym-wash); color: var(--app-sym); }
+  .pillset .split .g svg { width: 13px; height: 13px; }
+  .pillset .split .seg { display: flex; gap: 4px; margin-left: 4px; }
+  .pillset .split .seg span { border: 1px solid var(--app-rule); border-radius: 999px; padding: 4px 10px; font-size: 11px; }
+
+  /* The turn, side by side */
+  .turnpair { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 22px; }
+  .tcell { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 220px; max-width: 100%; text-align: center; }
+  .tstage { width: 140px; height: 140px; border-radius: 28px; background: var(--app-ground); border: 1px solid rgba(27,26,46,0.12); display: grid; place-items: center; }
+  .tdisc { width: 64px; height: 64px; border-radius: 50%; background: var(--night-2); display: grid; place-items: center; box-shadow: 0 8px 20px rgba(19,17,46,0.3); }
+  .tdisc svg { width: 24px; height: 24px; }
+  .tdisc.today svg { transition: transform 420ms cubic-bezier(.34,1.66,.64,1); }
+  .tdisc.ruled svg { transition: transform 460ms cubic-bezier(.34,1.85,.64,1); }
+  .tdisc.on svg { transform: rotate(135deg); }
+  .tcell b { font-size: 14px; }
+  .tcell span { font-size: 13px; color: var(--ink-2); }
+
+  /* Reduce Motion: one crossfade (the app's beat 8) */
+  .rm .ph-home, .rm .ph-disc, .rm .ph-disc .glyph, .rm .fp, .rm .ph-done, .rm .ph-panel, .rm .ph-morph { transition: opacity 150ms linear !important; }
+  .rm.open .ph-disc .glyph, .rm.handoff-c .ph-disc .glyph { transform: none; }
+  .rm .fp, .rm .ph-panel, .rm .ph-done { transform: none !important; }
+  .rm .ph-dsheet { transform: none; opacity: 0; transition: opacity 150ms linear !important; }
+  .rm.handoff-d .ph-dsheet { opacity: 1; }
+  .rm .tdisc svg { transition: none !important; }
+  @media (prefers-reduced-motion: reduce) {
+    .ph-home, .ph-disc, .ph-disc .glyph, .fp, .ph-done, .ph-panel, .ph-morph { transition: opacity 150ms linear !important; }
+    .ph.open .ph-disc .glyph, .ph.handoff-c .ph-disc .glyph { transform: none; }
+    .fp, .ph-panel, .ph-done { transform: none !important; }
+    .ph-disc.holding .ring { animation: none; opacity: 1; transform: none; }
+  }
+
+  .ctrl { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .ctrl button { font-family: var(--sans); font-size: 13px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink); border-radius: 999px; padding: 7px 14px; cursor: pointer; min-height: 36px; }
+  .ctrl button[aria-pressed="true"] { border-color: var(--action); color: var(--action); }
+  .ctrl button:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+
+  /* Tables, briefs, voices */
+  .tablewrap { overflow-x: auto; margin-top: 22px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-2); }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--rule-soft); }
+  th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+  td { color: var(--ink-2); }
+  td b { color: var(--ink); }
+  tr:last-child td { border-bottom: 0; }
+  .briefs { display: grid; gap: 18px; margin-top: 24px; }
+  .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .brief h4 { margin: 0 0 8px; font-size: 15.5px; color: var(--ink); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .brief p { margin: 0 0 6px; }
+  .brief b { color: var(--ink); }
+  .conflict { border-left: 3px solid var(--rose-ink); padding-left: 12px; margin: 8px 0; }
+  .ideas { display: grid; gap: 14px; margin-top: 22px; counter-reset: idea; }
+  .idea { display: grid; grid-template-columns: 36px 1fr; gap: 4px 12px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; font-size: 14.5px; color: var(--ink-2); }
+  .idea::before { counter-increment: idea; content: counter(idea); font-family: var(--serif); font-size: 26px; line-height: 1; color: var(--ink-3); grid-row: span 3; }
+  .idea h4 { margin: 0; font-size: 15.5px; color: var(--ink); display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+  .idea p { margin: 0; }
+  .idea.rejected { opacity: 0.85; }
+  .idea.rejected::before { content: "\00D7"; }
+  .voices { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 22px; }
+  .voice { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; font-size: 14px; color: var(--ink-2); min-width: 0; }
+  .voice b.who { display: block; color: var(--ink); font-size: 14.5px; margin-bottom: 6px; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 2 · ruled 2026-10-06 and 2026-10-07 · nothing open</span><span>The FAB · CUL-1625</span><span>2026-10-07</span></p>
+    <h1>The FAB and its fan</h1>
+    <p class="standfirst">The PM's reactions after a week with the indigo FAB on a phone, the whole team's answer, and the PM's rulings on it. This page now shows one proposal: what was ruled is drawn as current, the options not chosen have left the page (commits 462aa8a and 6583200 keep them), and the last two decisions, ruled on 2026-10-07, are drawn as current too. Round 1 lives at §05 and §06 of the Design v2 device page.</p>
+    <div class="ledger" id="ledger">
+      <div><b>1 · The plus</b><span><q>if the plus is white in main then I'm just running an older build</q> A clarification, not a change: the white plus is on PR #1088 and reaches main when it merges, so today's builds still draw teal. <span class="pill">built · CUL-1626 · §01</span></span></div>
+      <div><b>2 · The hand-off</b><span><q>Let's go w.. D · One veil, one physics, one name</q> D is the current frame; B and C left the page. <span class="pill">ruled D · CUL-1642 · §03</span></span></div>
+      <div><b>3 · Delight</b><span><q>that seems like the right approach. But it's subtle.</q> So the meal mark's flight is in from the start, not held back as a second step. <span class="pill">ruled · CUL-1643 to 1646 · §04</span></span></div>
+      <div><b>4 · The pills' contrast</b><span><q>the pills you drew have a color contrast issue</q> A drawing bug: in dark mode the mock's pills took the page's light text. Fixed; the app's pills were never affected. <span class="pill">fixed · §04</span></span></div>
+      <div><b>5 · The bounce</b><span><q>Love the bounce. Can we increase it a bit</q> About 19% overshoot now, 25° past the ×, up from 18°. <span class="pill">built · CUL-1641 · §04</span></span></div>
+      <div><b>6 · The order</b><span><q>I'll defer to the design team</q> The team's call: one order for the day, from a bounded window. <span class="pill">team call · CUL-1647</span></span></div>
+      <div><b>7 · "Other"</b><span><q>Nice catch.</q> An Other log now takes the calm beat. <span class="pill">built · CUL-1632</span></span></div>
+      <div><b>8 · The phone check</b><span><q>I'm not going to do a phone check. I'll check it in production when I cut a build.</q> No phone check before a merge: the checks run on each build you cut. <span class="pill">ruled · CUL-1287</span></span></div>
+      <div><b>9 · D2, the veil</b><span><q>Grey</q> One veil for the fan and the sheet, the sheet's own grey; the fan's indigo veil goes. Phone D draws it. <span class="pill">ruled grey · CUL-1642 · §03</span></span></div>
+      <div><b>10 · D6, normal stool</b><span><q>Add a normal stool option</q> The stool pill splits into Normal and Loose, and the day each pet's fan first offered it is kept so the vet report can disclose it. <span class="pill">ruled · CUL-1655 · §04</span></span></div>
+    </div>
+  </header>
+
+  <!-- §01 -->
+  <section id="plus">
+    <div class="sec-head"><span class="sec-num">01</span><h2>The plus goes white</h2></div>
+    <div class="col">
+      <p>Built in this round (CUL-1626, on PR #1088 until it merges). The indigo disc stays exactly as it is; only the glyph changes, in both its + and × positions and in the Reduce Motion crossfade. It follows the colour split already ruled on 2026-10-03 (CUL-1279, G4 C): indigo means you can act, teal means a good fact. A teal glyph on the app's primary action read against that split, which the Home one language mock had already drawn white.</p>
+    </div>
+    <div class="frames">
+      <div class="frame archived">
+        <div class="fab-stage"><div class="ghost"><i></i><i></i><i></i><div class="cardghost"></div></div><div class="fabdisc"><svg viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="2.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div></div>
+        <div class="frame-cap"><b>Teal plus on the indigo disc</b><span>CUL-322, D3 C. "The Culprit mark in miniature."</span><span class="contrast"><span>plus 6.57:1</span><span>disc 14.25:1</span></span></div>
+      </div>
+      <div class="frame">
+        <div class="fab-stage"><div class="ghost"><i></i><i></i><i></i><div class="cardghost"></div></div><div class="fabdisc"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div></div>
+        <div class="frame-cap"><b>White plus, at rest <span class="pill cur">current</span></b><span>The disc is the action; the glyph is the disc's own mark.</span><span class="contrast"><span class="ok">plus 14.87:1</span><span class="ok">disc 14.25:1</span></span></div>
+      </div>
+      <div class="frame">
+        <div class="fab-stage veiled"><div class="ghost"><i></i><i></i><i></i><div class="cardghost"></div></div><div class="fabdisc x"><svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div></div>
+        <div class="frame-cap"><b>White ×, the fan open <span class="pill cur">current</span></b><span>One glyph turns 135° on the spring you liked, so the × is white too.</span><span class="contrast"><span class="ok">× 14.87:1</span><span class="ok">disc over the veil 3:1+</span></span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- §02 -->
+  <section id="who">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Who else does this</h2></div>
+    <div class="col" id="who-body">
+      <p><b>The shape is borrowed; what sits in it is new.</b> A + that turns to × over a staggered stack of labelled pills is almost exactly Material 3's FAB menu, and Google Calendar and Keep ship versions of it. What we could not find anywhere is an app whose own fan holds recents that write a record in one tap. The nearest relatives live in the operating system: Android shows two fixed shortcuts and then two recent ones behind an app icon, and Apple's Messages fills its quick actions with recent conversations. In logic, the closest is Slack, whose long press leads with a frequent reaction you add in one tap. So the part you found innovative is genuinely ours.</p>
+      <p><b>Changing surface for the long tail is the convention.</b> Material caps a speed dial at six actions and says to use something other than the FAB past that; WhatsApp's floating reactions and Slack's frequent reaction both hand off to a full picker. What both platforms ask for is a visible link between the two surfaces: Material's container transform exists to create "a visible connection between two UI elements", and on iOS 26 "sheets can also directly morph out of buttons that present them". So the seam you felt is not the change of surface. It is how the second surface arrives (§03).</p>
+      <p><b>One caution travels with the novelty.</b> Apple asks that recent actions "change in ways that people can predict", and a CHI 2004 study found a menu whose top items stayed put was faster than one that reordered by frequency and recency (Findlater and McGrenere). Our fan reorders after every log, and a tap on it writes a meal. The team picks this up in §04.</p>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>App or guideline</th><th>What it does</th><th>How close to our fan</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td><b>Material 3 FAB menu</b></td><td>The + turns to ×; two to six labelled items stagger out from the button. It "should replace the speed dial".</td><td><b>Same shape.</b> Ours holds up to eight, and some rows write a record instead of opening a flow.</td><td><a href="https://github.com/material-components/material-components-android/blob/master/docs/components/FloatingActionButtonMenu.md">Material components</a></td></tr>
+          <tr><td><b>Material speed dial</b></td><td>Three to six actions; "if more than six actions are needed, something other than a FAB should be used".</td><td>Says the long tail belongs on another surface.</td><td><a href="https://mui.com/material-ui/react-speed-dial/">MUI, quoting Material</a></td></tr>
+          <tr><td><b>Material container transform</b></td><td>"A visible connection between two UI elements", including a FAB opening into a page.</td><td>Guidance for the hand-off.</td><td><a href="https://github.com/material-components/material-components-android/blob/master/docs/theming/Motion.md">Material motion</a></td></tr>
+          <tr><td><b>iOS 26, Liquid Glass</b></td><td>"Sheets can also directly morph out of buttons that present them"; menus flow out of their controls.</td><td>Guidance for the hand-off; agrees with Material.</td><td><a href="https://developer.apple.com/videos/play/wwdc2025/323/">WWDC25, session 323</a></td></tr>
+          <tr><td><b>Apple quick actions</b></td><td>Touch and hold an app icon: fixed and recent actions, four in all. Messages lists your recent conversations.</td><td><b>Closest in structure.</b> Each row opens the app; none writes.</td><td><a href="https://developer.apple.com/design/human-interface-guidelines/home-screen-quick-actions">Apple HIG</a></td></tr>
+          <tr><td><b>Android app shortcuts</b></td><td>At most two fixed and two recent shortcuts, fixed first.</td><td><b>Closest in structure,</b> and in our order (fixed above recents).</td><td><a href="https://developer.android.com/guide/topics/ui/shortcuts/managing-shortcuts">Android developers</a></td></tr>
+          <tr><td><b>Google Calendar</b></td><td>The + offers Event, Task or Out of office; the editor then repeats that choice under its title.</td><td>Fixed actions only. Carries the choice across the seam.</td><td><a href="https://9to5google.com/2024/03/12/google-calendar-event-task/">9to5Google, Mar 2024</a></td></tr>
+          <tr><td><b>iMessage + menu</b></td><td>A column of apps; More, or a swipe up, shows the rest in the same layer.</td><td>Fixed actions only. The one precedent that continues in place.</td><td><a href="https://support.apple.com/104969">Apple Support</a></td></tr>
+          <tr><td><b>Slack reactions</b></td><td>A long press leads with a frequent reaction (one tap adds it); Add reaction opens the full picker.</td><td><b>Closest in logic:</b> one tap commits, then a full picker for the rest.</td><td><a href="https://slack.com/help/articles/202931348-Use-emoji-and-reactions">Slack help</a></td></tr>
+          <tr><td><b>WhatsApp</b></td><td>Six floating reactions, then + opens the full picker; a recent sticker sends in one tap.</td><td>The same change of register, and a recent that commits.</td><td><a href="https://www.androidpolice.com/how-to-use-whatsapp-message-reactions/">Android Police</a>, <a href="https://www.guidingtech.com/whatsapp-stickers/">Guiding Tech</a></td></tr>
+          <tr><td><b>WaterMinder</b></td><td>A widget logs a cup "with a single tap".</td><td>A one tap health write, from a widget rather than a menu.</td><td><a href="https://blog.waterminder.com/tips/waterminder-ios-18-update-whats-new-in-version-6-6/">WaterMinder, Sep 2024</a></td></tr>
+          <tr><td><b>Things 3, Todoist</b></td><td>Drag the + to where the new item goes.</td><td>Precedent for hold and slide (CUL-1278).</td><td><a href="https://culturedcode.com/things/support/articles/2803582/">Things</a>, <a href="https://www.todoist.com/help/articles/360008608939">Todoist</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="col" style="font-size:13.5px;color:var(--ink-3);margin-top:12px">Every row's source was opened during the sweep; nothing was tried on a device. Left out because they could not be confirmed: MyFitnessPal's current + menu, Google Fit, the baby trackers (Huckleberry, Glow Baby, Baby Daybook), Bearable, Daylio, and the pet apps (DogLog, 11pets). Their store pages say "one tap" without showing how.</p>
+  </section>
+
+  <!-- §03 -->
+  <section id="seam">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The jump from the fan to the sheet</h2></div>
+    <div class="col" id="seam-body">
+      <p><b>Ruled: D, one veil, one physics, one name</b> (CUL-1642). The change of surface stays; how the sheet arrives changes. Today the fan's indigo veil fades out while the sheet slides up carrying a grey veil inside it, a hard edge sweeping the screen, and the title changes from "Logging for Nyx" to "Log for Nyx". In D the veil never moves, and it is grey, the sheet's own (D2, ruled 2026-10-07); More events leaves last, the sheet rises on the app's own settle, and its title reads "Logging for" like the chip. Under Reduce Motion the sheet crossfades.</p>
+      <p>Tap the disc, then <b>More events</b>, on each phone. The options not chosen (the pill morphing into the sheet, the fan growing in place) have left the page.</p>
+    </div>
+    <div class="demo-row" id="seam-demos"></div>
+    <div class="ctrl"><button type="button" id="seam-rm" aria-pressed="false">Show the Reduce Motion frames</button></div>
+  </section>
+
+  <!-- §04 -->
+  <section id="delight">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Delight that is the record moving</h2></div>
+    <div class="col" id="delight-body">
+      <p><b>Ruled: the four ideas below</b> (CUL-1643 to 1646). Principle 9 asks one question of any motion: cover the words, and can you tell the record just changed? Each of these moves only when the record moves, or when the thing a tap writes to changes, and none needs a new native build.</p>
+      <p><b>The meal lands in its card.</b> Today, tapping a recent food plays the same retract as cancelling, then the card rises from below like any app's toast. On the right, the food you chose stays while the rest step back, its meal mark flies into the card's check, and the card arrives where the pill was. You found the quieter version subtle, so the flight is part of the build from the start.</p>
+    </div>
+    <div class="demo-row" id="delight-demos"></div>
+    <div class="ctrl"><button type="button" id="del-rm" aria-pressed="false">Show the Reduce Motion frames</button></div>
+    <p class="col" style="font-size:13.5px;color:var(--ink-3);margin-top:12px">On the right phone, also try the <b>Logging for</b> chip: the pet switches first, then the food pills deal again for the new pet. The right phone's pills carry the proposal's words, tags, chevrons and the split stool pill; the left phone is today's fan.</p>
+
+    <div class="ideas">
+      <div class="idea"><h4>The meal lands in its card <span class="pill">ruled · CUL-1643</span></h4><p>A choice never plays the cancel. The tapped food stays while the others retract, its meal mark flies into the card's check, the box settles around it and "Logged" lands a beat later.</p><p><b>Must hold:</b> Undo and the intake chips are live no later than today; the arrival is identical for a food outside the trial list, whose warning lands after; food pills only; no new haptic; under Reduce Motion no flight, a crossfade in place (CUL-1633 first).</p></div>
+      <div class="idea"><h4>The pills read like the record <span class="pill">ruled · CUL-1644</span></h4><p>Food pills borrow History's label and its WET or DRY tag, as its own element, so two formats of one food never look alike. Pills that open something carry a chevron; pills that write a meal do not.</p></div>
+      <div class="idea"><h4>The press answers like the disc <span class="pill">ruled · CUL-1645</span></h4><p>A pressed pill settles slightly under the finger with a pressed fill instead of fading to 70%, and the spinner on a food pill goes, since the write is near instant.</p></div>
+      <div class="idea"><h4>A pet switch deals the fan again <span class="pill">ruled · CUL-1646 · two pet homes</span></h4><p>The "Logging for" chip arrives first, with the veil, instead of last; a switch retracts the food pills and deals them again for the new pet.</p></div>
+      <div class="idea"><h4>Normal stool, one tap <span class="pill">ruled 2026-10-07 · CUL-1655</span></h4><p>The stool pill splits into Normal and Loose, like the sheet's stool tile, so the good day costs two taps instead of four. The day each pet's fan first offered it is kept, and the vet report names that date beside its stool counts, so a vet never reads more logging as fewer loose stools.</p></div>
+      <div class="idea"><h4>The bounce, a touch bigger <span class="pill">built · CUL-1641</span></h4><p>About 19% overshoot, 25° past the ×, settling in about 420ms. Motion &amp; IA preferred the app's gentler settle; you ruled for the bounce. Compare below.</p></div>
+      <div class="idea"><h4>Hold, slide, release <span class="pill dir">parked · CUL-1278</span></h4><p>Waits for the hand-off (CUL-1642), the day's fixed order (CUL-1647) and the split stool pill (CUL-1657), and takes the panel's amendments: no ring; a release on Vomit or either half of the stool pill opens the confirm and never writes; a food writes only from a pill held still on a fan that has landed; the tap path stays.</p></div>
+      <div class="idea rejected"><h4>Rejected by the panel</h4><p>A blur behind the fan and Home settling to 97% (chrome, and a native build); any glow, confetti or success haptic beyond today's check; an idle pulse on the disc; a paw or moon themed plus; a reverse flight on Undo; labels that fade in after their pill; a haptic on close.</p></div>
+    </div>
+
+    <h3>The pills, ruled</h3>
+    <div class="frames" id="pill-frames"></div>
+
+    <h3>The turn, today and ruled</h3>
+    <div class="col"><p>Today's turn springs 135° with about 13% overshoot, 18° past the ×. Ruled: about 19%, 25° past the ×, on the same disc and the same tap. Press each to compare; the curves are close approximations of the two springs, and the real one is checked on your phone.</p></div>
+    <div class="turnpair" id="turnpair"></div>
+  </section>
+
+  <!-- §05 -->
+  <section id="decide">
+    <div class="sec-head"><span class="sec-num">05</span><h2>Ruled</h2></div>
+    <div class="col"><p>Every decision is ruled: five on 2026-10-06 and the last two on 2026-10-07, each built or filed.</p></div>
+    <div class="briefs" id="briefs">
+      <div class="brief"><h4>Ruled 2026-10-07 <span class="pill">ledger</span></h4>
+        <p><b>D2 · the veil:</b> grey, the sheet's own, for the fan and the sheet alike; the fan's indigo veil goes. CUL-1642 carries it, and its merge waits on nothing.</p>
+        <p><b>D6 · normal stool in the fan:</b> add it. The stool pill splits into Normal and Loose, and the day each pet's fan first offered it is kept so the vet report can disclose the change beside its stool counts. CUL-1655, in three PRs: the record (CUL-1656), the pill (CUL-1657), the report's line (CUL-1658).</p>
+        <p><b>The phone check:</b> none before a merge; the checks run on each build the PM cuts (CUL-1287).</p>
+      </div>
+      <div class="brief"><h4>Ruled 2026-10-06 <span class="pill">ledger</span></h4>
+        <p><b>D1 · the hand-off:</b> D, one veil, one physics, one name. CUL-1642 (blocks hold and slide).</p>
+        <p><b>D3 · delight:</b> all four, with the flight in from the start because the crossfade alone read as subtle. CUL-1643 (after CUL-1633), CUL-1644, CUL-1645, CUL-1646.</p>
+        <p><b>D4 · the order of the recents:</b> deferred to the design team, which picked one order for the day from a bounded window (the Data Scientist sets the window). CUL-1647 (blocks hold and slide).</p>
+        <p><b>D5 · the bounce:</b> a touch bigger, about 19% overshoot. Built, CUL-1641. Motion &amp; IA's dissent (the app's gentler settle) is recorded.</p>
+        <p><b>D7 · "Other":</b> the calm beat. Built, CUL-1632, through one rule both log paths share.</p>
+      </div>
+      <div class="brief"><h4>Team defaults <span class="pill dir">applied unless you veto</span></h4>
+        <p><b>The white plus ships</b> (CUL-1626): pure white, not the warmer moonlight white; the stroke weight and the Reduce Motion crossfade get a look on the phone.</p>
+        <p><b>Hold and slide loses its ring</b> (the fan opening is the signal; a teal ring breaks the colour split). Designer's fallback if the hold needs a cue: a white ring.</p>
+        <p><b>The teal on the confirm stage</b> (the save pill's wash, the Saw it / Found it selection) moves with CUL-1279's round, not here.</p>
+        <p><b>No trial mark on a fan pill</b> (the shelf writes, so an unmarked pill would read as a verdict). Noted on CUL-416.</p>
+      </div>
+      <div class="brief"><h4>Filed from this round <span class="pill dir">defects, verified in code</span></h4>
+        <p>CUL-1633 the quick meal's card ignores Reduce Motion · CUL-1634 the pills jump on the first open, when the recent foods arrive late · CUL-1635 the fan can open under a meal card still showing, its Undo over the lowest pills · CUL-1636 the fan has no height budget at large text sizes · CUL-1637 the sheet's meal glyph fails contrast · CUL-1638 a quick meal's "now" time is treated as exact by the timing lanes. Carried with notes: CUL-724, CUL-365, CUL-1278, CUL-1279, CUL-1280, CUL-416. Already filed: CUL-727, CUL-1593.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- §06 -->
+  <section id="team">
+    <div class="sec-head"><span class="sec-num">06</span><h2>What the team said</h2></div>
+    <div class="col"><p>Six lenses read in isolation from one briefing and the same two screenshots, then the lead checked every claim that became an issue against the code. All six agreed on the white plus. None wanted option C.</p></div>
+    <div class="voices" id="voices">
+      <div class="voice"><b class="who">Sr. Product Designer</b>White, and pure white. The split between a fan and a sheet is right; what breaks is that nothing carries across. One veil, one physics, one name, not the morph. The card should grow out of the pill you tapped, and the pills should read the way the record does.</div>
+      <div class="voice"><b class="who">Motion &amp; IA</b>The seam is a physics problem, not a shape problem: two veils, two engines, two origins, two titles. Fix the physics first. The turn is a control answering a finger, which Principle 9 never forbade; write that rule down, and compare the bounce on a phone.</div>
+      <div class="voice"><b class="who">Owner panel (Jordan, Sam)</b>Jordan barely notices the switch; Sam finds it "like being handed to another screen". Both want one wording. The real 3am risk is the wrong food under the thumb, and Dry looking exactly like Wet. Delight at 3am is quiet certainty.</div>
+      <div class="voice"><b class="who">Dr. Chen + Data Scientist</b>The seam is not a data problem; the recent slots are. Never release to log on a symptom, never celebrate one, and remember the quick meal's time is the tap's, which the engine treats as exact (CUL-1638).</div>
+      <div class="voice"><b class="who">Engineering + QA + Accessibility</b>Every recommended idea runs on the app's current animation engine, no native build. A literal morph is not available on the native driver today. Fix the card that ignores Reduce Motion and the fan's height budget before any polish.</div>
+      <div class="voice"><b class="who">Research consultant</b>The shape is Material 3's FAB menu; the one tap recents are yours. Switching surface for the long tail is conventional. What the guidance asks for is a visible link between the two.</div>
+    </div>
+    <p class="col" style="font-size:13.5px;color:var(--ink-3);margin-top:16px">Method: one shared briefing, six isolated reads (Designer; Motion &amp; IA; Jordan and Sam through the product review agent; Dr. Chen with the Data Scientist; Engineering with QA and an outside accessibility consultant; a research consultant with web search), then the lead's pass: every claim that became an issue was checked in the code. A static read is not a device pass: the jump on first open, the card overlap and the large text cut are computed from the code and flagged for the phone.</p>
+  </section>
+</div>
+
+<script>
+(function () {
+  // ── Glyphs, drawn small and simple (the app's are lucide plus three custom SVGs) ──
+  var SVG = {
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    white: '<svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round"><path d="M12 4v16M4 12h16"/></svg>',
+    vomit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7c2-2.5 6-2.5 8 0 2.4.3 3.6 2.6 2.5 4.6.9 2.2-.6 4.4-2.9 4.4-1.6 2-5.6 2-7.2 0C6 16 4.6 13.8 5.5 11.6 4.4 9.6 5.6 7.3 8 7z"/><path d="M3 5l1 1M20 4l-1 1.5M21 19l-1.5-1"/></svg>',
+    stool: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 18h8a3 3 0 0 0 .6-5.9A3 3 0 0 0 13.5 8a2.5 2.5 0 0 0-3-3.5c.4 1.5-.8 2.6-2 3A3 3 0 0 0 7.4 12 3 3 0 0 0 8 18z"/></svg>',
+    meal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3c.7.7 2 .7 2.8 0L15 15zm0 0 7 7M2.1 21.8l6.4-6.3M19 5l-7 7"/></svg>',
+    cough: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 10v3M6 6v11M10 3v18M14 8v7M18 5v13M22 10v3"/></svg>',
+    sneeze: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12.8 19.6A2 2 0 1 0 14 16H2M17.5 8a2.5 2.5 0 1 1 2 4H2M9.8 4.4A2 2 0 1 1 11 8H2"/></svg>',
+    itch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><path d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.05Q6.5 17.5 4 17a3.5 3.5 0 0 1 1-6.84A5 5 0 0 1 9 10z"/></svg>',
+    lethargy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11v2M6 11v2"/></svg>',
+    weight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m16 16 3-8 3 8c-.9.6-1.9 1-3 1s-2.1-.4-3-1zM2 16l3-8 3 8c-.9.6-1.9 1-3 1s-2.1-.4-3-1zM7 21h10M12 3v18M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>',
+    pill: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7zM8.5 8.5l7 7"/></svg>',
+    dots: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
+  };
+  var VEILS = { night: 'rgba(19,17,46,0.34)', grey: 'rgba(10,10,10,0.35)', deep: 'rgba(10,10,10,0.5)' };
+
+  // Today's labels join brand and product (FAB.tsx:610-612); the proposal borrows the
+  // record's label and its separate format tag (lib/foodFormat.ts).
+  var PETS = {
+    Nyx: [
+      { today: 'Rayne Clinical Nutrition RABBIT - RAYNE REWARDS S.I.T.', label: 'Rayne Clinical Nutrition · RAYNE REWARDS S.I.T.', tag: 'TREAT' },
+      { today: 'Royal Canin Selected Protein PR, Dry', label: 'Royal Canin · Selected Protein PR', tag: 'DRY' },
+      { today: 'Royal Canin Selected Protein PR, Wet', label: 'Royal Canin · Selected Protein PR', tag: 'WET' }
+    ],
+    Mochi: [
+      { today: 'Greenies Pill Pockets Chicken', label: 'Greenies · Pill Pockets Chicken', tag: 'TREAT' },
+      { today: "Hill's Prescription Diet z/d, Wet", label: "Hill's · Prescription Diet z/d", tag: 'WET' },
+      { today: "Hill's Prescription Diet z/d, Dry", label: "Hill's · Prescription Diet z/d", tag: 'DRY' }
+    ]
+  };
+
+  function homeHTML() {
+    return '<div class="ph-home">' +
+      '<div class="ph-bar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="date">Mon, Oct 5</span><span class="ask"><i></i>Ask</span><span class="me">D</span></div>' +
+      '<div class="ph-card"><div class="ph-label">Signal</div>' +
+        '<div class="ph-row"><div class="e">Photo read · Sep 22</div><div class="h">Possible foreign material in a vomit photo</div><div class="a">Worth a call to your vet</div></div>' +
+        '<div class="ph-row"><div class="h s">Coughing in 6 of the last 8 weeks</div><div class="s">18 episodes since August</div></div>' +
+        '<div class="ph-row"><div class="h s">Vomiting in 4 of the last 8 weeks</div><div class="s">11 episodes since August</div></div>' +
+        '<div class="ph-row ins"><div class="h s">Vomiting soon after meals</div><div class="s">7 of 8 timed episodes within 30 min of eating</div></div>' +
+      '</div>' +
+      '<div class="ph-card ph-trial"><div class="t">Rabbit trial · day 69</div><div class="bar"><i></i></div><div class="l">Royal Canin Selected Protein PR, Dry · ends Oct 17</div></div>' +
+    '</div>';
+  }
+
+  function doorPill(k, gcls, glyph, label, proposed) {
+    return '<button type="button" class="fp" data-k="' + k + '"><span class="g ' + gcls + '">' + glyph + '</span><span>' + label + '</span>' +
+      (proposed ? '<span class="chev" aria-hidden="true">&#8250;</span>' : '') + '</button>';
+  }
+  // D6 (ruled 2026-10-07): the stool pill splits into Normal and Loose, each a door to its confirm.
+  function splitPill() {
+    return '<div class="fp split" data-k="stool" role="group" aria-label="Stool"><span class="g sym">' + SVG.stool + '</span><span>Stool</span>' +
+      '<span class="seg"><button type="button">Normal</button><button type="button">Loose</button></span></div>';
+  }
+  function foodInner(f, proposed) {
+    return '<span class="g meal">' + SVG.meal + '</span>' + (proposed
+      ? '<span class="lbl2"><span>' + f.label + '</span><span class="ftag">' + f.tag + '</span></span>'
+      : '<span>' + f.today + '</span>');
+  }
+  function fanHTML(proposed, pet) {
+    var foods = PETS[pet || 'Nyx'];
+    return '<div class="ph-fan" role="menu" aria-label="Log for Nyx">' +
+      '<button type="button" class="fp logfor" data-k="logfor"><i class="avatar"></i><span class="lf"><small>Logging for</small><b class="petname">Nyx</b></span><span class="caret">&#8964;</span></button>' +
+      doorPill('more', 'quiet', SVG.plus, 'More events', proposed) +
+      (proposed ? splitPill() : doorPill('diarrhea', 'sym', SVG.stool, 'Loose stool', proposed)) +
+      doorPill('vomit', 'sym', SVG.vomit, 'Vomit', proposed) +
+      doorPill('food', 'quiet', SVG.plus, 'Log food', proposed) +
+      foods.map(function (f, i) { return '<button type="button" class="fp food" data-k="f' + i + '">' + foodInner(f, proposed) + '</button>'; }).join('') +
+    '</div>';
+  }
+
+  function tile(g, gcls, label, wide, chips) {
+    return '<button type="button" class="tile' + (wide ? ' wide' : '') + '"><span class="g ' + (gcls || '') + '">' + g + '</span><span>' + label + '</span>' +
+      (chips ? '<span class="chips"><span>Normal</span><span>Loose</span></span>' : '') + '</button>';
+  }
+  function catalogueHTML(care) {
+    return '<div class="fam">Digestion</div><div class="grid">' + tile(SVG.vomit, '', 'Vomit') + '<span></span>' + tile(SVG.stool, '', 'Stool', true, true) + '</div>' +
+      '<div class="fam">Breathing</div><div class="grid">' + tile(SVG.cough, '', 'Cough') + tile(SVG.sneeze, '', 'Sneeze') + '</div>' +
+      '<div class="fam">Skin &amp; coat</div><div class="grid">' + tile(SVG.itch, '', 'Itch/Scratch', true) + '</div>' +
+      '<div class="fam">Energy &amp; behavior</div><div class="grid">' + tile(SVG.lethargy, '', 'Lethargy', true) + '</div>' +
+      '<div class="fam">Measurements</div><div class="grid">' + tile(SVG.weight, 'quiet', 'Weight', true) + '</div>' +
+      (care === 'panel'
+        ? '<div class="fam">Care</div><div class="grid">' + tile(SVG.pill, 'quiet', 'Medication') + tile(SVG.dots, 'quiet', 'Other') + '</div>'
+        : '<div class="fam">Food &amp; care</div><div class="grid">' + tile(SVG.meal, 'meal', 'Meal') + tile(SVG.pill, 'quiet', 'Medication') + '</div>');
+  }
+  function sheetHTML(oneName) {
+    var title = oneName
+      ? '<div class="st two"><i class="avatar"></i><span class="lf"><small>Logging for</small><b>Nyx</b></span><span class="caret">&#8964;</span></div>'
+      : '<div class="st"><i class="avatar"></i>Log for Nyx <span class="caret">&#8964;</span></div>';
+    return '<div class="ph-sheet"><div class="grab"></div>' + title + catalogueHTML() + '</div>';
+  }
+  function doneHTML() {
+    return '<div class="ph-done" role="status" aria-live="polite">' +
+      '<div class="hr"><span class="tk">' + SVG.check + '</span><span class="tt"><b class="dt">Logged · Royal Canin Selected Protein PR, Wet</b><span class="ds">5:20 PM</span></span><span class="acts"><span>Undo</span><span>Change time</span></span></div>' +
+      '<div class="q">How much did Nyx eat?</div><div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div>' +
+    '</div>';
+  }
+
+  // ── One phone. `mode` decides what More events and a food pill do. ──
+  //   A: as shipped · D: one veil, one physics, one name · B: the pill becomes the sheet
+  //   C: the fan grows in place · today: today's quick meal · land: the proposal's quick meal
+  function mountPhone(host, mode) {
+    var proposed = mode === 'land';
+    var ph = document.createElement('div');
+    ph.className = 'ph';
+    ph.setAttribute('data-mode', mode);
+    ph.style.setProperty('--veil', (mode === 'A' || mode === 'today') ? VEILS.night : VEILS.grey);
+    var handoff = (mode === 'A' || mode === 'today') ? 'A' : (mode === 'land' ? 'D' : mode);
+    var html = homeHTML() + '<div class="ph-veil"></div>' + fanHTML(proposed, 'Nyx') +
+      '<button type="button" class="ph-disc" aria-label="Log event" aria-expanded="false"><i class="ring"></i>' + SVG.white + '</button>' +
+      '<div class="ph-tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div>' + doneHTML();
+    if (handoff === 'A') html += '<div class="ph-modal slide"><div class="grey"></div>' + sheetHTML(false) + '</div>';
+    if (handoff === 'D') html += '<div class="ph-dsheet">' + sheetHTML(true) + '</div>';
+    ph.innerHTML = html;
+    host.appendChild(ph);
+
+    var disc = ph.querySelector('.ph-disc');
+    var veil = ph.querySelector('.ph-veil');
+    var done = ph.querySelector('.ph-done');
+    var pet = 'Nyx';
+    var timers = [];
+    var opts = { fly: false };
+    function pills() { return Array.prototype.slice.call(ph.querySelectorAll('.fp')); }
+    function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+    function clearAll() { timers.forEach(clearTimeout); timers = []; }
+    function rm() { return ph.classList.contains('rm') || window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
+    function stagger(open) {
+      var list = pills();
+      list.forEach(function (el, i) {
+        var d;
+        if (open) {
+          // Today the stagger is nearest first, so the pet chip lands last. The proposal
+          // lets context lead: the chip arrives with the veil, the choices after it.
+          d = (list.length - 1 - i) * 38;
+          if (proposed) d = el.classList.contains('logfor') ? 0 : 60 + (list.length - 1 - i) * 38;
+        } else {
+          d = i * 18;
+        }
+        el.style.transitionDelay = d + 'ms';
+      });
+    }
+    function setOpenAria(on) {
+      disc.setAttribute('aria-expanded', on ? 'true' : 'false');
+      disc.setAttribute('aria-label', on ? 'Close menu' : 'Log event');
+    }
+    function open() {
+      reset(true);
+      stagger(true);
+      ph.classList.add('open');
+      setOpenAria(true);
+    }
+    function close() {
+      stagger(false);
+      ph.classList.add('closing');
+      ph.classList.remove('open');
+      setOpenAria(false);
+      later(function () { ph.classList.remove('closing'); }, 240);
+    }
+    function reset(keepDone) {
+      clearAll();
+      ph.classList.remove('open', 'closing', 'handoff-a', 'handoff-b', 'handoff-c', 'handoff-d', 'landing');
+      pills().forEach(function (el) { el.classList.remove('chosen', 'gone', 'redeal'); el.style.visibility = ''; });
+      var m = ph.querySelector('.ph-morph'); if (m) m.remove();
+      var f = ph.querySelector('.ph-fly'); if (f) f.remove();
+      if (!keepDone) done.classList.remove('show', 'rise', 'inplace');
+      setOpenAria(false);
+    }
+
+    function moreEvents(src) {
+      if (handoff === 'A') {
+        // As shipped: closeMenu() and openLogSheet() in one tick. The fan retracts and its
+        // indigo veil fades while the Modal slides up WITH its grey scrim, as one block.
+        close();
+        ph.classList.add('handoff-a');
+        return;
+      }
+      if (handoff === 'D') {
+        // One veil that never moves, the chosen pill leaving last, and the sheet rising on
+        // the app's own settle. Nothing else moves, because nothing in the record did.
+        src.classList.add('chosen');
+        ph.classList.add('handoff-d');
+        close();
+        setOpenAria(true);
+        later(function () { src.classList.add('gone'); }, 120);
+        return;
+      }
+    }
+
+    function quickFood(src) {
+      var idx = Number(src.getAttribute('data-k').slice(1));
+      var f = PETS[pet][idx];
+      done.querySelector('.dt').textContent = 'Logged · ' + f.today;
+      done.querySelector('.q').textContent = 'How much did ' + pet + ' eat?';
+      if (!proposed) {
+        // Today: the same retract a cancel plays, then the card rises 80pt and settles.
+        close();
+        done.classList.remove('inplace');
+        done.classList.add('rise');
+        later(function () { done.classList.add('show'); }, rm() ? 0 : 140);
+        later(function () { done.classList.remove('show'); }, 3600);
+        return;
+      }
+      // The proposal: a choice never plays the cancel. The chosen pill stays while the
+      // rest step back, and the card arrives where it was.
+      src.classList.add('chosen');
+      ph.classList.add('landing');
+      close();
+      done.classList.remove('rise');
+      done.classList.add('inplace');
+      var flying = opts.fly && !rm();
+      var mark = done.querySelector('.tk');
+      if (flying) {
+        var g = src.querySelector('.g').getBoundingClientRect(), p = ph.getBoundingClientRect();
+        var fly = document.createElement('div');
+        fly.className = 'ph-fly';
+        fly.innerHTML = SVG.meal;
+        fly.style.left = (g.left - p.left) + 'px'; fly.style.top = (g.top - p.top) + 'px';
+        ph.appendChild(fly);
+        mark.style.opacity = '0';
+        later(function () {
+          var t = mark.getBoundingClientRect();
+          fly.style.left = (t.left - p.left + 1.5) + 'px'; fly.style.top = (t.top - p.top + 1.5) + 'px';
+        }, 160);
+        later(function () { fly.remove(); mark.style.opacity = '1'; }, 600);
+      }
+      later(function () { done.classList.add('show'); src.classList.add('gone'); }, rm() ? 0 : 160);
+      later(function () { done.classList.remove('show'); ph.classList.remove('landing'); src.classList.remove('chosen', 'gone'); }, 3800);
+    }
+
+    function switchPet(chip) {
+      pet = pet === 'Nyx' ? 'Mochi' : 'Nyx';
+      // Context leads: the chip's name changes first, in both versions.
+      chip.querySelector('.petname').textContent = pet;
+      var foods = pills().filter(function (el) { return el.classList.contains('food'); });
+      function relabel() {
+        foods.forEach(function (el) {
+          var i = Number(el.getAttribute('data-k').slice(1));
+          el.innerHTML = foodInner(PETS[pet][i], proposed);
+        });
+      }
+      if (!proposed || rm()) { relabel(); return; }
+      // The proposal: the food pills retract and deal again for the new pet.
+      foods.forEach(function (el) { el.style.transitionDelay = '0ms'; el.classList.add('redeal'); });
+      later(function () {
+        relabel();
+        foods.forEach(function (el, i) {
+          el.style.transitionDelay = ((foods.length - 1 - i) * 38) + 'ms';
+          el.classList.remove('redeal');
+        });
+      }, 170);
+    }
+
+    disc.addEventListener('pointerdown', function () { if (!rm()) disc.classList.add('down'); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) {
+      disc.addEventListener(ev, function () { disc.classList.remove('down'); });
+    });
+    disc.addEventListener('click', function () {
+      if (ph.classList.contains('open') || ph.classList.contains('handoff-c')) { close(); ph.classList.remove('handoff-c'); }
+      else open();
+    });
+    veil.addEventListener('click', function () {
+      if (ph.classList.contains('handoff-d')) { reset(); return; }
+      close(); ph.classList.remove('handoff-c');
+    });
+    ph.querySelector('.ph-fan').addEventListener('click', function (e) {
+      var el = e.target.closest ? e.target.closest('.fp') : null;
+      if (!el || !ph.classList.contains('open')) return;
+      var k = el.getAttribute('data-k');
+      if (k === 'logfor') switchPet(el);
+      else if (k === 'more') moreEvents(el);
+      else if (el.classList.contains('food')) quickFood(el);
+      else close();
+    });
+    var grey = ph.querySelector('.ph-modal .grey');
+    if (grey) grey.addEventListener('click', function () { reset(); });
+
+    return {
+      el: ph, open: open, reset: reset, opts: opts,
+      more: function () { moreEvents(ph.querySelector('[data-k="more"]')); },
+      food: function () { quickFood(ph.querySelector('[data-k="f2"]')); }
+    };
+  }
+
+  function demo(hostId, mode, title, cap, o) {
+    var host = document.getElementById(hostId);
+    var wrap = document.createElement('div');
+    wrap.className = 'frame' + (o && o.option ? ' option' : '');
+    var slot = document.createElement('div');
+    var capEl = document.createElement('div');
+    capEl.className = 'frame-cap';
+    capEl.innerHTML = '<b>' + title + '</b><span>' + cap + '</span>';
+    wrap.appendChild(slot);
+    host.appendChild(wrap);
+    var p = mountPhone(slot, mode);
+    var ctrl = document.createElement('div');
+    ctrl.className = 'ctrl';
+    var play = document.createElement('button');
+    play.type = 'button';
+    play.textContent = (o && o.playLabel) || 'Play it';
+    play.addEventListener('click', function () {
+      p.reset();
+      p.open();
+      setTimeout(function () { (o && o.play === 'food') ? p.food() : p.more(); }, 900);
+    });
+    var rst = document.createElement('button');
+    rst.type = 'button';
+    rst.textContent = 'Reset';
+    rst.addEventListener('click', function () { p.reset(); });
+    ctrl.appendChild(play); ctrl.appendChild(rst);
+    wrap.appendChild(ctrl);
+    wrap.appendChild(capEl);
+    return p;
+  }
+
+  // §03: the hand-off. D was ruled (CUL-1642); B and C left the page (commit 462aa8a).
+  var seam = [
+    demo('seam-demos', 'A', 'Today <span class="pill dir">being replaced</span>', 'The fan retracts and its indigo veil fades while the sheet slides up from the bottom, carrying a grey veil with it as one block.'),
+    demo('seam-demos', 'D', 'D · One veil, one physics, one name <span class="pill cur">ruled · current</span>', 'The veil stays put, and it is grey (D2). More events leaves last, the sheet rises on the app’s own settle, and its title says "Logging for", like the chip.')
+  ];
+  var seamRm = document.getElementById('seam-rm');
+  seamRm.addEventListener('click', function () {
+    var on = seamRm.getAttribute('aria-pressed') !== 'true';
+    seamRm.setAttribute('aria-pressed', on ? 'true' : 'false');
+    seam.forEach(function (p) { p.reset(); p.el.classList.toggle('rm', on); });
+  });
+
+  // §04: the quick meal, today and ruled. The flight is on: the PM found the crossfade
+  // alone subtle (CUL-1643).
+  var del = [
+    demo('delight-demos', 'today', 'Today <span class="pill dir">as shipped</span>', 'Tap a recent food: every pill retracts as if you had cancelled, then the card rises from below.', { play: 'food', playLabel: 'Play a quick meal' }),
+    demo('delight-demos', 'land', 'The meal lands in its card <span class="pill cur">ruled · current</span>', 'The food you chose stays while the rest step back, its meal mark flies into the card’s check, and the card arrives where it was. Doors carry a chevron; foods carry their format; the stool pill splits into Normal and Loose.', { play: 'food', playLabel: 'Play a quick meal' })
+  ];
+  del[1].opts.fly = true;
+  var delRm = document.getElementById('del-rm');
+  delRm.addEventListener('click', function () {
+    var on = delRm.getAttribute('aria-pressed') !== 'true';
+    delRm.setAttribute('aria-pressed', on ? 'true' : 'false');
+    del.forEach(function (p) { p.reset(); p.el.classList.toggle('rm', on); });
+  });
+
+  // §04: the pills, ruled (static)
+  function pillFrame(title, cap, inner, opt) {
+    var f = document.createElement('div');
+    f.className = 'frame' + (opt ? ' option' : '');
+    f.innerHTML = '<div class="pillset">' + inner + '</div><div class="frame-cap"><b>' + title + '</b><span>' + cap + '</span></div>';
+    document.getElementById('pill-frames').appendChild(f);
+  }
+  function staticPill(gcls, glyph, body) { return '<span class="fp"><span class="g ' + gcls + '">' + glyph + '</span>' + body + '</span>'; }
+  var nyx = PETS.Nyx;
+  pillFrame('Today', 'Two foods that differ only in their last word, and every pill looks like every other.',
+    staticPill('quiet', SVG.plus, '<span>More events</span>') + staticPill('sym', SVG.stool, '<span>Loose stool</span>') + staticPill('sym', SVG.vomit, '<span>Vomit</span>') +
+    staticPill('meal', SVG.meal, '<span>' + nyx[1].today + '</span>') + staticPill('meal', SVG.meal, '<span>' + nyx[2].today + '</span>'));
+  pillFrame('Ruled <span class="pill cur">current</span>', 'The record’s words and its format tag; doors carry a chevron, so a pill that writes reads differently from one that opens; the stool pill splits into Normal and Loose (D6, ruled 2026-10-07).',
+    staticPill('quiet', SVG.plus, '<span>More events</span><span class="chev">&#8250;</span>') +
+    '<span class="split"><span class="g">' + SVG.stool + '</span>Stool<span class="seg"><span>Normal</span><span>Loose</span></span></span>' +
+    staticPill('sym', SVG.vomit, '<span>Vomit</span><span class="chev">&#8250;</span>') +
+    staticPill('meal', SVG.meal, '<span class="lbl2"><span>' + nyx[1].label + '</span><span class="ftag">DRY</span></span>') +
+    staticPill('meal', SVG.meal, '<span class="lbl2"><span>' + nyx[2].label + '</span><span class="ftag">WET</span></span>'));
+  // §04: the turn, with and without its bounce
+  var tp = document.getElementById('turnpair');
+  [['today', 'Today: about 13% overshoot', '18° past the ×. Tension 90, friction 7.'],
+   ['ruled', 'Ruled: about 19% overshoot', '25° past the ×. Friction 6, built.']].forEach(function (t) {
+    var c = document.createElement('div');
+    c.className = 'tcell';
+    c.innerHTML = '<div class="tstage"><div class="tdisc ' + t[0] + '">' + SVG.white.replace('class="glyph" ', '') + '</div></div><b>' + t[1] + '</b><span>' + t[2] + '</span>';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'Turn it';
+    btn.addEventListener('click', function () { c.querySelector('.tdisc').classList.toggle('on'); });
+    var ctl = document.createElement('div');
+    ctl.className = 'ctrl';
+    ctl.appendChild(btn);
+    c.appendChild(ctl);
+    tp.appendChild(c);
+  });
+})();
+</script>
