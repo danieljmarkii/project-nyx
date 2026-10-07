@@ -34,3 +34,13 @@ Draft 1 was written from a read of `CLAUDE.md`, `docs/personas.md`, `.claude/`, 
 
 - The gauges and counts are dated 2 Oct and go stale. Rebuild from the specs when they matter; nothing refreshes them.
 - The workflow's generic drafts reached into `operating-kit/` read-only; nothing in the kit was changed.
+
+## Addendum, 2026-10-07 (same session, resumed for `/wrap and merge`)
+
+`main` had moved 95 commits, and several of those commits touched the process both pages describe. The branch was left un-updated (the steward skill: update only on a conflict or needed code, and the PR adds files only). The specs were refreshed against `main` instead:
+
+- **The open question was already answered.** The kit's queue model was ruled on 2 Oct in the queue drain session (#999): the kit keeps the `Needs PM` state and this repo keeps the label. The drift table now says "both, by your ruling" rather than "your call".
+- **The queue now has a drain.** #999 added groomer step 12 (six lanes, a 72 hour default window, a cap of 30 that `/kickoff` prints). No grooming pass has run since, so 152 stay open and five closed issues still carry the label. The leak paragraph and Your week say so.
+- **Merging changed.** The steward skill and `scripts/steward/merge-check.sh` (#1008, 3 Oct) gate every session merge, including `/wrap and merge`, and both were ported into the kit with `/dispatch` v1.6 on 6 Oct (#1087, #1090). `/dispatch` now caps six sessions across the repo. The drift table, Who decides what, the clocks and both figures were updated.
+- **Gauges remeasured on 7 Oct:** 152 waiting, 48 of 50 open PRs draft, 100 merged in 7 days at a 29 minute median, 250 sessions since the last full retro, 693 B of `CLAUDE.md` headroom; counts 6 skills, 48 guard tests, 616 records.
+- The refreshed claims were checked again by two isolated reviewers (one per page) against `origin/main`, Linear and GitHub before the merge.

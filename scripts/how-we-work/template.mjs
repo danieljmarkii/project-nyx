@@ -4,14 +4,14 @@
 export default {
   source: 'scripts/how-we-work/template.mjs',
   title: 'The Operating Kit',
-  eyebrow: 'operating-kit/ · the map · snapshot of 29 September 2026',
+  eyebrow: 'operating-kit/ · the map · checked 7 October 2026',
   h1: 'The Operating Kit',
   lede: 'One person decides, and a rotating crew of AI coding sessions does the rest, often several at once, none of them remembering the one before. The engine works because every session starts by reading a written record and ends by writing to it, and because each rule that matters lives in a file the harness loads, runs or tests. This page maps every part to its job and to the kit file that installs it. Anything in ‹angle quotes› is yours to fill.',
   stats: [
     { v: '1', l: 'human who decides' },
     { v: '5', l: 'isolated reviewers' },
     { v: '7', l: 'rituals as commands' },
-    { v: '3', l: 'skills and a template' },
+    { v: '4', l: 'skills and a template' },
     { v: '12', l: 'laws, each from a measurement' },
     { v: '~20 KB', l: 'rulebook to start' },
   ],
@@ -74,7 +74,7 @@ export default {
       { name: 'Decision briefs', lines: ['2 to 4 options,', 'a pick or dissent'] },
       { name: 'The spec', lines: ['§0 decisions to', 'kickoff prompts'] },
       { name: 'The run order', lines: ['PR by PR, on its', 'tracker project'] },
-      { name: '`/dispatch`', lines: ['proposes ready', 'rows, ≤3 in flight'] },
+      { name: '`/dispatch`', lines: ['proposes ready', 'rows under a cap'] },
       { name: 'Build sessions', lines: ['each is Fig. 1;', 'dark behind a flag'] },
     ],
     human: [
@@ -84,7 +84,7 @@ export default {
       { under: 7, name: 'You try it live', line: 'then turn it on', down: 'QA script', up: 'verdict' },
     ],
     footnote: 'Indigo boxes are you. Each pair of arrows is a handoff and its answer; your reactions turn round N into round N+1.',
-    caption: "Each track is a tracker project whose page holds the run order: which PR follows which, which may run side by side, and which never together. `/dispatch` reads that page against the code host, gives a reason for every row it holds back, and launches each ready row as its own session while fewer than three of the project's rows are in flight. A new surface ships dark behind a flag and graduates in four steps: the flip for everyone, a removal PR that deletes the gate and the old path, a release, a closeout. Kit files: `docs/templates/` (research brief, spec, mock round protocol), `.claude/commands/design-critique.md`, `.claude/commands/dispatch.md`.",
+    caption: "Each track is a tracker project whose page holds the run order: which PR follows which, which may run side by side, and which never together. `/dispatch` reads that page against the code host, gives a reason for every row it holds back, and launches each ready row as its own session under one cap for the whole repo. A new surface ships dark behind a flag and graduates in four steps: the flip for everyone, a removal PR that deletes the gate and the old path, a release, a closeout. Kit files: `docs/templates/` (research brief, spec, mock round protocol), `.claude/commands/design-critique.md`, `.claude/commands/dispatch.md`.",
     aria: 'A track runs left to right in four phases: discover, decide, specify, build and ship. Sessions produce a research brief, mock rounds, a design critique, decision briefs, the spec, the run order, dispatch proposals and the build sessions. You react to each mock round, rule on each brief, pick which rows start, and try the result live before turning it on.',
   },
 
@@ -95,9 +95,9 @@ export default {
     scale: ['Remembered', 'Enforced'],
     rungs: [
       { name: 'Persona', what: 'A lens Claude adopts in context. A routing table says which lenses each surface expects, and the Definition of Done names them: N/A is fine, silence is not.', fires: 'when remembered; the sign off line makes it hard to forget', example: '‹Primary user›: can I do this in ‹time budget› at my worst moment?', file: '`docs/personas.md` from `personas.template.md`' },
-      { name: 'Skill', what: 'Instructions in `.claude/skills/‹name›/SKILL.md`. The description lists the paths and words that matter, and Claude loads the body when the task matches.', fires: 'whenever the task matches the description', example: '`ai-output-guardrails` loads on any model output a user reads: one sample may raise a flag, never clear one.', file: '3 skills and `_skill-template`' },
+      { name: 'Skill', what: 'Instructions in `.claude/skills/‹name›/SKILL.md`. The description lists the paths and words that matter, and Claude loads the body when the task matches.', fires: 'whenever the task matches the description', example: '`ai-output-guardrails` loads on any model output a user reads: one sample may raise a flag, never clear one.', file: '4 skills and `_skill-template`' },
       { name: 'Subagent', what: 'A reviewer in `.claude/agents/`, in a fresh context: briefed, never shown the build conversation, so it cannot share its optimism. It returns a verdict.', fires: 'when invoked; the Definition of Done requires one for ‹your high stakes logic› and for access control', example: '`adversarial-reviewer` must name the counterexample it tried. A bare ✓ is not a review.', file: '5 reviewers in `dot-claude/agents/`' },
-      { name: 'Guard', what: 'A test in `guards/` that reads the source and fails the build. Where an exemption exists, it is a reasoned marker at the site or a registry entry in the guard.', fires: 'on every PR in required CI, and before each push through the git hook', example: 'A guard fails the build when raw error text can reach a screen a user reads.', file: '`claudeMdBudget`, `fixtureRoot`, `blankComments`' },
+      { name: 'Guard', what: 'A test in `guards/` that reads the source and fails the build. Where an exemption exists, it is a reasoned marker at the site or a registry entry in the guard.', fires: 'on every PR in required CI, and before each push through the git hook', example: 'A guard fails the build when raw error text can reach a screen a user reads.', file: '`claudeMdBudget`, `mergeCheck`, `fixtureRoot`, `blankComments`' },
     ],
     pathLabel: "A lesson's path, with project-nyx's example",
     path: [
@@ -117,9 +117,9 @@ export default {
       rows: [
         ['Sessions, without asking', '‹Your principles›, ‹your value rule›, the hard constraints and ‹your safety invariants›. Small calls go in as defaults you can veto.'],
         ['Sessions stop and ask', 'A non trivial BUILD plan; anything touching access control, deletion or export; a lens conflict; a spec edit; new scope.'],
-        ['Only you', 'Rulings, checks on a real device, store and console steps, and merges outside `/dispatch`.'],
+        ['Only you', 'Rulings, checks on a real device, store and console steps, and the word to merge anything `/dispatch` did not launch.'],
         ['Never, for anyone', 'Deploying except by merging. Committing to main.'],
-        ['Hand off once trusted', 'A standing yes for low risk `/dispatch` rows; a dispatched PR merging itself when every check is green; deploy on merge.'],
+        ['Hand off once trusted', 'A standing yes for low risk `/dispatch` rows; a session merging its own PR through the steward gate, on `/wrap and merge` or a dispatch prompt; deploy on merge.'],
       ],
     }],
     state: {
@@ -141,8 +141,8 @@ export default {
         ['Session start', "The start hook unshallows a cloud clone, installs, prints the manual's byte count, and says RETRO DUE when it is."],
         ['Every push', 'A git hook runs the type check and the full suite. It can be skipped; CI cannot.'],
         ['Every PR', 'Required checks on a main ruleset with an empty bypass list: types, tests, guards. The suite also runs in far time zones. A check that should only report gets its own workflow file.'],
-        ['Every merge', 'Squash. Every issue the PR names closes, so a task that spans PRs gets one sub-issue per PR. Server code deploys and writes its own record. Read back what closed.'],
-        ['Every migration', 'Its own PR with a safety preflight, applied before any code that needs it merges.'],
+        ['Every merge', 'Squash, after the merge check reads `CLEAN`. Every issue the PR names closes, so a task that spans PRs gets one sub-issue per PR. Server code deploys and writes its own record. Read back what closed.'],
+        ['Every migration', 'Its own PR with a safety preflight and a number no open PR holds, applied before any code that needs it merges.'],
         ['Every session', 'Claim, orient, work, `/wrap`: one PR, one record, the next prompt.'],
         ['After a PR opens', 'At most one scheduled check, about 90 minutes out, only while sibling sessions are landing. Never at `/wrap`, never overnight.'],
         ['Every mock round', 'Same URL each round. After you react, one proposal with a ledger mapping each reaction to what moved.'],
@@ -219,11 +219,11 @@ export default {
       { title: 'Invariants that load themselves.', detail: 'One skill per rule that must fire every time, with shipped code as the canonical example.', file: '`.claude/skills/`: `ai-output-guardrails`, `product-voice`, `backlog-groomer`' },
       { title: 'A narrow interface for you.', detail: 'Decision briefs, a mock of every visual change, a QA script per push, a paste ready prompt per session. You decide, try and merge.', file: '`CLAUDE.md`; `docs/dev-handoff-runbook.md`; `docs/templates/mock-round-protocol.md`' },
       { title: 'A retro the start hook counts.', detail: 'The hook prints RETRO DUE every ten sessions. `/retro` answers four questions with numbers and writes a dated file that resets the count.', file: '`.claude/settings.json`, `.claude/hooks/session-start.sh`, `.claude/commands/retro.md`' },
-      { title: 'A local gate and a server gate.', detail: 'Required CI on a main ruleset with an empty bypass list makes the fast checks binding. The kit has no push hook: copy project-nyx\'s.', file: '`.github/workflows/ci.yml` from `ci.yml.template`; `.githooks/pre-push`' },
+      { title: 'A local gate, a server gate, one merge gate.', detail: 'Required CI on a main ruleset with an empty bypass list makes the fast checks binding. The steward skill says when a branch updates and how a conflict resolves, and its merge check gates every merge. The kit has no push hook: copy project-nyx\'s.', file: '`ci.yml` from `ci.yml.template`; `.claude/skills/steward/`; `scripts/steward/merge-check.sh`; `.githooks/pre-push`' },
       { title: 'A lessons file, and a guard for every mistake that comes back.', detail: 'The byte ratchet first. Then a guard each time a fixed rule breaks again, proven by breaking the source on purpose.', file: '`docs/engineering-lessons.md`; `guards/` from the three `.template` files' },
-      { title: 'Orchestration, once there is work for it.', detail: '`/dispatch` turns a run order into sessions; `/design-critique` runs isolated lenses with a verifier each. Installed before there is work, they become ceremony.', file: "`dispatch.md` (take project-nyx's live copy; the kit's predates the standing yes), `design-critique.md` and its workflow" },
+      { title: 'Orchestration, once there is work for it.', detail: '`/dispatch` turns a run order into sessions; `/design-critique` runs isolated lenses with a verifier each. Installed before there is work, they become ceremony.', file: '`dispatch.md` v1.6 (it needs the steward skill and three MCP servers: kit README), `design-critique.md` and its workflow' },
     ],
   },
 
-  footer: "The map of `operating-kit/` in `danieljmarkii/project-nyx`, a snapshot of 29 September 2026, checked against the repo on 2 October. Where this page and the kit's files disagree, the files win. Culprit's own instance, and where the kit has drifted from it: [The Culprit Operating Model](https://claude.ai/artifact/NA5jBZKbkC1egBsvTZyjxK), committed as `docs/how-we-work.html`.",
+  footer: "The map of `operating-kit/` in `danieljmarkii/project-nyx`, checked against the repo on 2 October and refreshed on 7 October 2026. Where this page and the kit's files disagree, the files win. Culprit's own instance, and where the kit has drifted from it: [The Culprit Operating Model](https://claude.ai/artifact/NA5jBZKbkC1egBsvTZyjxK), committed as `docs/how-we-work.html`.",
 };

@@ -217,14 +217,14 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
 <div class="page">
 
 <header>
-  <p class="eyebrow">operating-kit/ · the map · snapshot of 29 September 2026</p>
+  <p class="eyebrow">operating-kit/ · the map · checked 7 October 2026</p>
   <h1>The Operating Kit</h1>
   <p class="lede">One person decides, and a rotating crew of AI coding sessions does the rest, often several at once, none of them remembering the one before. The engine works because every session starts by reading a written record and ends by writing to it, and because each rule that matters lives in a file the harness loads, runs or tests. This page maps every part to its job and to the kit file that installs it. Anything in ‹angle quotes› is yours to fill.</p>
   <dl class="stats">
     <div class="stat"><dt>human who decides</dt><dd>1</dd></div>
     <div class="stat"><dt>isolated reviewers</dt><dd>5</dd></div>
     <div class="stat"><dt>rituals as commands</dt><dd>7</dd></div>
-    <div class="stat"><dt>skills and a template</dt><dd>3</dd></div>
+    <div class="stat"><dt>skills and a template</dt><dd>4</dd></div>
     <div class="stat"><dt>laws, each from a measurement</dt><dd>12</dd></div>
     <div class="stat"><dt>rulebook to start</dt><dd>~20 KB</dd></div>
   </dl>
@@ -410,7 +410,7 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
 <rect class="box" x="938" y="44" width="132" height="80" rx="8"/>
 <text class="t-title" x="950" y="68"><tspan class="mono">/dispatch</tspan></text>
 <text class="t-body" x="950" y="90">proposes ready</text>
-<text class="t-body" x="950" y="106">rows, ≤3 in flight</text>
+<text class="t-body" x="950" y="106">rows under a cap</text>
 <line class="ln" x1="1073" y1="84" x2="1088" y2="84" marker-end="url(#f2-n)"/>
 <rect class="box" x="1090" y="44" width="132" height="80" rx="8"/>
 <text class="t-title" x="1102" y="68">Build sessions</text>
@@ -448,7 +448,7 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
 </svg>
     </div>
     <figcaption>
-      <span>Each track is a tracker project whose page holds the run order: which PR follows which, which may run side by side, and which never together. <code>/dispatch</code> reads that page against the code host, gives a reason for every row it holds back, and launches each ready row as its own session while fewer than three of the project's rows are in flight. A new surface ships dark behind a flag and graduates in four steps: the flip for everyone, a removal PR that deletes the gate and the old path, a release, a closeout. Kit files: <code>docs/templates/</code> (research brief, spec, mock round protocol), <code>.claude/commands/design-critique.md</code>, <code>.claude/commands/dispatch.md</code>.</span>
+      <span>Each track is a tracker project whose page holds the run order: which PR follows which, which may run side by side, and which never together. <code>/dispatch</code> reads that page against the code host, gives a reason for every row it holds back, and launches each ready row as its own session under one cap for the whole repo. A new surface ships dark behind a flag and graduates in four steps: the flip for everyone, a removal PR that deletes the gate and the old path, a release, a closeout. Kit files: <code>docs/templates/</code> (research brief, spec, mock round protocol), <code>.claude/commands/design-critique.md</code>, <code>.claude/commands/dispatch.md</code>.</span>
 
     </figcaption>
   </figure>
@@ -476,7 +476,7 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
       <div class="fires"><b>Fires</b>whenever the task matches the description</div>
       <div class="ex"><code>ai-output-guardrails</code> loads on any model output a user reads: one sample may raise a flag, never clear one.</div>
       
-      <span class="count">3 skills and <code>_skill-template</code></span>
+      <span class="count">4 skills and <code>_skill-template</code></span>
     </article>
     <article class="rung">
       <div class="rung-top"><h3>Subagent</h3><span class="meter" aria-label="hardness 3 of 4"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></div>
@@ -492,7 +492,7 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
       <div class="fires"><b>Fires</b>on every PR in required CI, and before each push through the git hook</div>
       <div class="ex">A guard fails the build when raw error text can reach a screen a user reads.</div>
       
-      <span class="count"><code>claudeMdBudget</code>, <code>fixtureRoot</code>, <code>blankComments</code></span>
+      <span class="count"><code>claudeMdBudget</code>, <code>mergeCheck</code>, <code>fixtureRoot</code>, <code>blankComments</code></span>
     </article>
   </div>
   <div class="panel">
@@ -518,9 +518,9 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
       <table class="wide">
         <tr><td>Sessions, without asking</td><td>‹Your principles›, ‹your value rule›, the hard constraints and ‹your safety invariants›. Small calls go in as defaults you can veto.</td></tr>
         <tr><td>Sessions stop and ask</td><td>A non trivial BUILD plan; anything touching access control, deletion or export; a lens conflict; a spec edit; new scope.</td></tr>
-        <tr><td>Only you</td><td>Rulings, checks on a real device, store and console steps, and merges outside <code>/dispatch</code>.</td></tr>
+        <tr><td>Only you</td><td>Rulings, checks on a real device, store and console steps, and the word to merge anything <code>/dispatch</code> did not launch.</td></tr>
         <tr><td>Never, for anyone</td><td>Deploying except by merging. Committing to main.</td></tr>
-        <tr><td>Hand off once trusted</td><td>A standing yes for low risk <code>/dispatch</code> rows; a dispatched PR merging itself when every check is green; deploy on merge.</td></tr>
+        <tr><td>Hand off once trusted</td><td>A standing yes for low risk <code>/dispatch</code> rows; a session merging its own PR through the steward gate, on <code>/wrap and merge</code> or a dispatch prompt; deploy on merge.</td></tr>
       </table>
 
       
@@ -544,8 +544,8 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
         <div><dt>Session start</dt><dd>The start hook unshallows a cloud clone, installs, prints the manual's byte count, and says RETRO DUE when it is.</dd></div>
         <div><dt>Every push</dt><dd>A git hook runs the type check and the full suite. It can be skipped; CI cannot.</dd></div>
         <div><dt>Every PR</dt><dd>Required checks on a main ruleset with an empty bypass list: types, tests, guards. The suite also runs in far time zones. A check that should only report gets its own workflow file.</dd></div>
-        <div><dt>Every merge</dt><dd>Squash. Every issue the PR names closes, so a task that spans PRs gets one sub-issue per PR. Server code deploys and writes its own record. Read back what closed.</dd></div>
-        <div><dt>Every migration</dt><dd>Its own PR with a safety preflight, applied before any code that needs it merges.</dd></div>
+        <div><dt>Every merge</dt><dd>Squash, after the merge check reads <code>CLEAN</code>. Every issue the PR names closes, so a task that spans PRs gets one sub-issue per PR. Server code deploys and writes its own record. Read back what closed.</dd></div>
+        <div><dt>Every migration</dt><dd>Its own PR with a safety preflight and a number no open PR holds, applied before any code that needs it merges.</dd></div>
         <div><dt>Every session</dt><dd>Claim, orient, work, <code>/wrap</code>: one PR, one record, the next prompt.</dd></div>
         <div><dt>After a PR opens</dt><dd>At most one scheduled check, about 90 minutes out, only while sibling sessions are landing. Never at <code>/wrap</code>, never overnight.</dd></div>
         <div><dt>Every mock round</dt><dd>Same URL each round. After you react, one proposal with a ledger mapping each reaction to what moved.</dd></div>
@@ -626,13 +626,13 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
     <li><div>Invariants that load themselves.<span>One skill per rule that must fire every time, with shipped code as the canonical example.</span><span class="file"><code>.claude/skills/</code>: <code>ai-output-guardrails</code>, <code>product-voice</code>, <code>backlog-groomer</code></span></div></li>
     <li><div>A narrow interface for you.<span>Decision briefs, a mock of every visual change, a QA script per push, a paste ready prompt per session. You decide, try and merge.</span><span class="file"><code>CLAUDE.md</code>; <code>docs/dev-handoff-runbook.md</code>; <code>docs/templates/mock-round-protocol.md</code></span></div></li>
     <li><div>A retro the start hook counts.<span>The hook prints RETRO DUE every ten sessions. <code>/retro</code> answers four questions with numbers and writes a dated file that resets the count.</span><span class="file"><code>.claude/settings.json</code>, <code>.claude/hooks/session-start.sh</code>, <code>.claude/commands/retro.md</code></span></div></li>
-    <li><div>A local gate and a server gate.<span>Required CI on a main ruleset with an empty bypass list makes the fast checks binding. The kit has no push hook: copy project-nyx's.</span><span class="file"><code>.github/workflows/ci.yml</code> from <code>ci.yml.template</code>; <code>.githooks/pre-push</code></span></div></li>
+    <li><div>A local gate, a server gate, one merge gate.<span>Required CI on a main ruleset with an empty bypass list makes the fast checks binding. The steward skill says when a branch updates and how a conflict resolves, and its merge check gates every merge. The kit has no push hook: copy project-nyx's.</span><span class="file"><code>ci.yml</code> from <code>ci.yml.template</code>; <code>.claude/skills/steward/</code>; <code>scripts/steward/merge-check.sh</code>; <code>.githooks/pre-push</code></span></div></li>
     <li><div>A lessons file, and a guard for every mistake that comes back.<span>The byte ratchet first. Then a guard each time a fixed rule breaks again, proven by breaking the source on purpose.</span><span class="file"><code>docs/engineering-lessons.md</code>; <code>guards/</code> from the three <code>.template</code> files</span></div></li>
-    <li><div>Orchestration, once there is work for it.<span><code>/dispatch</code> turns a run order into sessions; <code>/design-critique</code> runs isolated lenses with a verifier each. Installed before there is work, they become ceremony.</span><span class="file"><code>dispatch.md</code> (take project-nyx's live copy; the kit's predates the standing yes), <code>design-critique.md</code> and its workflow</span></div></li>
+    <li><div>Orchestration, once there is work for it.<span><code>/dispatch</code> turns a run order into sessions; <code>/design-critique</code> runs isolated lenses with a verifier each. Installed before there is work, they become ceremony.</span><span class="file"><code>dispatch.md</code> v1.6 (it needs the steward skill and three MCP servers: kit README), <code>design-critique.md</code> and its workflow</span></div></li>
   </ol>
 </section>
 
-<footer>The map of <code>operating-kit/</code> in <code>danieljmarkii/project-nyx</code>, a snapshot of 29 September 2026, checked against the repo on 2 October. Where this page and the kit's files disagree, the files win. Culprit's own instance, and where the kit has drifted from it: <a href="https://claude.ai/artifact/NA5jBZKbkC1egBsvTZyjxK">The Culprit Operating Model</a>, committed as <code>docs/how-we-work.html</code>.</footer>
+<footer>The map of <code>operating-kit/</code> in <code>danieljmarkii/project-nyx</code>, checked against the repo on 2 October and refreshed on 7 October 2026. Where this page and the kit's files disagree, the files win. Culprit's own instance, and where the kit has drifted from it: <a href="https://claude.ai/artifact/NA5jBZKbkC1egBsvTZyjxK">The Culprit Operating Model</a>, committed as <code>docs/how-we-work.html</code>.</footer>
 
 </div>
 </body>
