@@ -39,6 +39,8 @@ const SERVER_OWNED = [
   'intake_correction_at', // 085, CUL-1406
   'intake_correction_meals', // 085, CUL-1406
   'intake_correction_most_or_all', // 085, CUL-1406
+  'intake_correction_unrated', // 086, CUL-1406
+  'intake_read_at', // 086, CUL-1406
 ] as const;
 
 interface Replay {
