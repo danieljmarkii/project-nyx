@@ -21,14 +21,28 @@ The meal, dose and named completion cards are drawn from the app's root, after e
 - `components/log/FAB.test.tsx`: the test subscribes to both stores and records every change where the fan and a corner card are both up. It covers each corner card kind, an idle fan (the card is left alone), a reveal under an open fan, the look's beat, and the full wet-then-dry flow. The one shared frame it allows by name is the FAB's own quick meal handing over to its card during the fan's 180ms close, when every pill is already inert.
 - Mutation proof: deleting the dismiss call reds 4 tests; deleting the reveal effect reds 1.
 
+## What the code review changed
+
+An isolated `code-reviewer` pass returned fix-before-merge with four findings. All four are taken:
+
+- **A pending reveal was cancelled.** `hide()` also clears the show timer, so dismissing card A while card B's picker-path reveal was pending meant B never showed, Undo included. `dismissCornerCard` now stops only the showing card's clock. B reveals, and the FAB's effect closes the fan for it. Proven: swapping `hide()` back reds the store test.
+- **An Undo mid-write.** A card whose Undo is writing is now held, so a failed write still has a card to say so on. Once its removal line is up, it may go. Proven by mutation.
+- **A safety note.** A dose card carrying a double-dose conflict, or a meal card carrying a trial heads-up, is held: the fan stays shut until the card's own 7s dwell ends. This is the interim, and it is a persona conflict for the PM (below). Proven: removing the hold reds 2 tests.
+- **A comment overclaimed.** A tap on the disc during the fan's handover close is the owner's gesture again and dismisses the card. The comment now says so rather than claiming the card is protected.
+
+## The conflict, for the PM
+
+> **Dr. Chen:** A double-dose note has no History indicator, and a trial heads-up's one-per-trial budget is spent the moment it renders. A tap on the + must not take either away before it is read.
+> **Jordan / Engineering:** Holding the card means the + does nothing for up to 7s after a flagged log. An owner logging the second food of a meal reads that as a broken button.
+> **PM decision needed:** Which wins on a flagged card: the note's dwell (shipped as the interim), or the FAB's open?
+
 ## Residuals
 
-- A dose card carrying a double-dose note, or a meal card carrying a trial heads-up, also goes when the owner opens the fan. The 7s floor on those cards protects against a timer or a shorter reschedule, not against the owner's own gesture. Noted on CUL-1635 for the PM; nothing changed for it.
 - The device check of the overlap, before and after, is the issue's `Gate: device`, and waits for the TestFlight cut's sitting.
 
 ## Persona sign-off
 
-Engineer ✓ (tsc clean; FAB, momentStore, three card suites, guards/ green: 878 + 153) · Designer ✓ (Principle 9: no new motion, the card's existing exit plays) · QA ✓ (the AC as a store-level invariant, proven by mutation) · Data N/A · Dr. Chen N/A (no clinical logic; the safety-note residual is recorded above) · Adversarial review: not required (no clinical or statistical logic). Code review: isolated `code-reviewer` pass, see the PR.
+Engineer ✓ (tsc clean; FAB + momentStore 160 green, card suites + guards/ 878 green) · Designer ✓ (Principle 9: no new motion, the card's existing exit plays) · QA ✓ (the AC as a store-level invariant, proven by mutation) · Data N/A · Dr. Chen ✓ on the interim (a flagged card holds), conflict open above · Adversarial review: not required (no clinical or statistical logic). Code review: isolated `code-reviewer`, four findings, all taken (above).
 
 ## Teach
 
