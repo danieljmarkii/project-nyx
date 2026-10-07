@@ -38,9 +38,13 @@ const PRESS_SCALE = 0.9;
 /** Beat 2: the plus turns 135° to land on ×. A 45° turn lands on the same glyph, but
  *  135° is enough travel for the spring's overshoot to read as weight. */
 const TURN_DEGREES = 135;
-/** Underdamped on purpose: a small overshoot past × and back (the mock's
- *  cubic-bezier(.34,1.56,.64,1), ~380ms). */
-const TURN_SPRING = { tension: 90, friction: 7 } as const;
+/** Underdamped on purpose: an overshoot past × and back. The PM asked for the bounce to
+ *  be slightly more noticeable (CUL-1641, 2026-10-06): friction 7 → 6 takes the damping
+ *  ratio from 0.54 to 0.47 (RN's origami conversion: stiffness 411, damping 22 → 19), so
+ *  the overshoot grows from about 13% to 19% of the turn (18° → 25° past ×) and it settles
+ *  in about 420ms instead of 360ms. Motion & IA preferred the app's 0.7 settle; the PM
+ *  ruled for the bounce. */
+const TURN_SPRING = { tension: 90, friction: 6 } as const;
 /** Beat 4: items leave the disc nearest first, this far apart. */
 const FAN_STAGGER_MS = 38;
 /** The fan item's own spring: a lighter overshoot than the turn, so eight pills

@@ -18,8 +18,9 @@ import type { MomentTone } from '../../store/momentStore';
 // the shipped root component so the flag-off path is untouched.
 //
 // Same visual language as the named card: a mint check ring, a warm-gold glow only
-// on the 'celebrate' tone (routine/Other logs), and a plain check for 'calm' (symptom
-// logs — we never celebrate a worrying event; Principle 4 / clinical-guardrails). It
+// on the 'celebrate' tone (routine logs and a normal stool), and a plain check for
+// 'calm' (symptom logs and an unclassified Other, CUL-1632 — we never celebrate a
+// worrying event; Principle 4 / clinical-guardrails). It
 // defines a reduced-motion static frame (no spring, no bloom).
 //
 // ── WHAT CHANGED IN CUL-964, AND WHY THE STORE OWNS IT NOW ──────────────────

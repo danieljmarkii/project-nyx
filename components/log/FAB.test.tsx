@@ -570,10 +570,11 @@ describe('FAB — motion, and the Reduce Motion frame (beat 8)', () => {
       fireEvent.press(disc);
       await act(async () => {});
       expect(stagger).toHaveBeenCalledWith(38, expect.any(Array));
-      // The turn is the underdamped spring (the overshoot), not the old linear rotate.
+      // The turn is the underdamped spring (the overshoot), not the old linear rotate,
+      // at the PM's slightly bigger bounce (CUL-1641: friction 6, about 19% overshoot).
       expect(spring).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ toValue: 1, tension: 90, friction: 7 }),
+        expect.objectContaining({ toValue: 1, tension: 90, friction: 6 }),
       );
       // One glyph layer, turning — the crossfade's second (×) layer is absent.
       const rotations = discGlyphRotations(view);

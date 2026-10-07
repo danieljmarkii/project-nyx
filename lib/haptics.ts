@@ -77,7 +77,9 @@ export function commitRoutine(): void {
 }
 
 /**
- * A symptom commit landed — vomit, loose stool, lethargy, itch.
+ * A symptom commit landed (vomit, loose stool, lethargy, itch, cough, sneeze), or an
+ * unclassified Other, which is acknowledged like one (CUL-1632: `isCalmCommit` is the
+ * one rule that sends a commit here, through the beat's 'calm' tone).
  *
  * A SINGLE SOFT TAP, never the success pattern (rule 1 above). The owner gets a clear
  * "that's recorded" without the phone celebrating a worrying event. Pairs with the

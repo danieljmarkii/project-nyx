@@ -6,7 +6,7 @@ jest.mock('../lib/supabase', () => ({ supabase: { from: jest.fn() } }));
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import {
-  EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES, EVENT_FAMILIES, expandedPickerGroups,
+  EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES, EVENT_FAMILIES, expandedPickerGroups, isCalmCommit,
 } from './eventTypes';
 import { CATEGORY_TINT } from '../components/log/EventTypePicker';
 import { LOOK_WORDS, LOOK_HEAD_WORDS, LOOK_OPENING_CHIP_KEY, lookWordKind } from './lookWords';
@@ -114,7 +114,10 @@ const WALK: WalkRow[] = [
       + 'of this set and a type filter roses its own leaf exactly when the leaf is in it (through '
       + 'isSymptomFilter), so stool_normal\'s filter draws a neutral line, as its rows do. All types does '
       + 'NOT ride it: that rose is the Patterns month\'s vomiting-episode mark, so a cough day is never rose '
-      + 'there (the set equality is asserted below, over the shipped function)',
+      + 'there (the set equality is asserted below, over the shipped function). '
+      + 'The commit beat rides it too (isCalmCommit, CUL-1632): every leaf of this set, plus `other`, '
+      + 'takes the calm beat and the soft tap, so a leaf that joins the set is never celebrated '
+      + '(asserted below over every EVENT_TYPES key)',
     read: inSet(SYMPTOM_TYPES),
     cough: { now: true, decision: 'YES — joins in THIS PR (§6 pairing rule)' },
     sneeze: { now: true, decision: 'YES — joins in THIS PR (§6 pairing rule)' },
@@ -832,6 +835,20 @@ describe('§6 pairing rule — CATEGORY_TINT and SYMPTOM_TYPES move together', (
     (Object.keys(EVENT_TYPES) as EventTypeKey[]).forEach((k) => {
       expect(CATEGORY_TINT[k]).toBeDefined();
     });
+  });
+});
+
+describe('the commit beat rides SYMPTOM_TYPES, plus Other (CUL-1632)', () => {
+  it('the calm beat is exactly SYMPTOM_TYPES ∪ {other}, over every EVENT_TYPES key', () => {
+    const calm = (Object.keys(EVENT_TYPES) as EventTypeKey[]).filter((k) => isCalmCommit(k)).sort();
+    expect(calm).toEqual([...SYMPTOM_TYPES, 'other'].sort());
+  });
+
+  it('a normal stool keeps the celebrate beat, and an unknown type is never calm by accident', () => {
+    expect(isCalmCommit('stool_normal')).toBe(false);
+    expect(isCalmCommit('meal')).toBe(false);
+    expect(isCalmCommit(null)).toBe(false);
+    expect(isCalmCommit(undefined)).toBe(false);
   });
 });
 
