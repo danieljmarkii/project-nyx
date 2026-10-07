@@ -166,18 +166,6 @@ export const SYMPTOM_TYPES: ReadonlySet<EventTypeKey> = new Set([
   'vomit', 'diarrhea', 'lethargy', 'itch', 'cough', 'sneeze',
 ]);
 
-/** Does a commit of this type take the CALM beat (no gold, the soft tap) rather than
- *  the celebrate one? Every symptom, and `other` (CUL-1632, PM 2026-10-06): what an
- *  owner logs under Other is often the worrying thing ("ate a sock"), and Principle 9
- *  never rewards a symptom, so an unclassified log is acknowledged like one. It is NOT
- *  a symptom for any other purpose (tint, lanes, the report): only the beat asks this.
- *  stool_normal keeps the celebrate beat, because a normal stool is the good day in a
- *  diet trial. The one rule both commit paths ask (the log sheet and the full-screen
- *  /log flow), so the two cannot drift; a leaf that joins SYMPTOM_TYPES joins it too. */
-export function isCalmCommit(type: EventTypeKey | null | undefined): boolean {
-  return type != null && (SYMPTOM_TYPES.has(type) || type === 'other');
-}
-
 // ── The per-incident read's scope (CUL-802) ──────────────────────────────────
 
 /** The two owner-classified stool event types. They share the analyze-stool read

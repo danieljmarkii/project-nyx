@@ -23,7 +23,7 @@ import type { LoggedRecord } from '../lib/completionCard';
 //         where confirming the act of tracking is a small reward.
 //       · 'calm' — the same mark WITHOUT the festive gold, for symptom logs
 //         (every SYMPTOM_TYPES leaf), an unclassified Other (CUL-1632,
-//         `isCalmCommit`) and weight checks: we acknowledge
+//         `commitToneOf`) and weight checks: we acknowledge
 //         the log quietly and never celebrate a worrying event, and a weight is
 //         never a number to congratulate (Principle 4; the Calm/Oura bar).
 //     Rendered by <NamedCompletionCard/>.

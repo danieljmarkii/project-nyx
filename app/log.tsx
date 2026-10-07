@@ -20,7 +20,8 @@ import { insertSimpleEvent } from '../lib/simpleEvent';
 import { pickPhotoSource, type PhotoSource } from '../lib/photoSource';
 import { EventTypePicker } from '../components/log/EventTypePicker';
 import { Header } from '../components/ui/Header';
-import { EVENT_TYPES, EventTypeKey, hasPerIncidentRead, isCalmCommit } from '../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, hasPerIncidentRead } from '../constants/eventTypes';
+import { commitToneOf } from '../lib/commitTone';
 import { usePetStore, resolveRecordPetName } from '../store/petStore';
 import { useWidgetPetLink } from '../hooks/useWidgetPetLink';
 import { useSubmitGuard } from '../hooks/useSubmitGuard';
@@ -919,8 +920,8 @@ export default function LogModal() {
     if (!isMeal) {
       // Tone-aware: a symptom, or an unclassified Other (CUL-1632), gets a calm confirm
       // (never a festive gold beat over a worrying event); routine logs get the warm-gold
-      // celebrate moment. isCalmCommit is the one rule the log sheet asks too.
-      const tone = isCalmCommit(selectedType) ? 'calm' : 'celebrate';
+      // celebrate moment. commitToneOf is the one rule the log sheet asks too.
+      const tone = commitToneOf(selectedType);
       // CUL-606 — the card is handed the RECORD, not a sentence, and derives what
       // it says from the SAME confidence fields the row was just written with
       // (tf.*, above). So a "found it" vomit's card reads "found by 5:33 PM",

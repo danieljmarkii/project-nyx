@@ -11,7 +11,8 @@ import { theme } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { EmptyState } from '../ui/EmptyState';
 import { usePetStore } from '../../store/petStore';
-import { EVENT_TYPES, EventTypeKey, hasPerIncidentRead, isCalmCommit } from '../../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, hasPerIncidentRead } from '../../constants/eventTypes';
+import { commitToneOf } from '../../lib/commitTone';
 import { useMomentStore, type MomentTone } from '../../store/momentStore';
 import { GroupedEventGrid } from './EventTypePicker';
 import { SimpleEventConfirm, SHEET_HEADER_DISC } from './SimpleEventConfirm';
@@ -288,9 +289,9 @@ export function EventTypeSheet({ visible, onClose, initialType = null }: Props) 
     // sheet would be a stale flash (the reset effect already returned it to the grid).
     if (!visibleRef.current) return;
     // Tone: never a festive beat over a symptom (Principle 4 / clinical-guardrails), nor
-    // over an unclassified Other (CUL-1632). isCalmCommit is the one rule, shared with
+    // over an unclassified Other (CUL-1632). commitToneOf is the one rule, shared with
     // the full-screen /log flow; stool_normal keeps 'celebrate'.
-    const tone: MomentTone = confirm && isCalmCommit(confirm.type) ? 'calm' : 'celebrate';
+    const tone: MomentTone = commitToneOf(confirm?.type);
     setBeatTone(tone);
     // CUL-614 / §5's sentence rule — the R2 beat now speaks the record the same way
     // the R1 named card does, through the one composer (lib/completionCard →
