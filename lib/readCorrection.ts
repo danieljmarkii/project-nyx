@@ -50,7 +50,16 @@ export function intakeCorrectionOf(row: IntakeCorrectionColumns | null | undefin
   return { at, mealsLogged: meals, unrated, mostOrAll: most };
 }
 
-/** "Corrected Oct 7, 2026": the year always, because the read it sits beside can be old. */
+/** A RECORD line, not a correction (R-6, ruled O-iii by the PM, 2026-10-07): meals rated below
+ *  Most beside unrated ones, and no Most or All meal. The refusals are evidence for the words, so
+ *  the block states the record without claiming the words were wrong: no "Corrected", no "went
+ *  further". Otherwise a seventh, unrated meal would summon a correction six refusals did not. */
+export function isRecordLine(c: IntakeCorrection): boolean {
+  return c.mostOrAll === 0 && c.unrated > 0 && c.mealsLogged - c.unrated > 0;
+}
+
+/** "Corrected Oct 7, 2026", or "From the meal log, Oct 7, 2026" on a record line: the year
+ *  always, because the read it sits beside can be old. */
 export function intakeCorrectionLabel(c: IntakeCorrection, timeZone?: string): string {
   const date = new Date(c.at).toLocaleDateString('en-US', {
     month: 'short',
@@ -58,7 +67,7 @@ export function intakeCorrectionLabel(c: IntakeCorrection, timeZone?: string): s
     year: 'numeric',
     ...(timeZone ? { timeZone } : {}),
   });
-  return `Corrected ${date}`;
+  return isRecordLine(c) ? `From the meal log, ${date}` : `Corrected ${date}`;
 }
 
 // The opener NAMES the sentence it corrects (second adversarial pass, finding 1): "the words
@@ -66,6 +75,7 @@ export function intakeCorrectionLabel(c: IntakeCorrection, timeZone?: string): s
 // stored words, and read as withdrawing it.
 export const INTAKE_CORRECTION_OPENER = 'The note "hasn\'t eaten a full meal recently" went further than the record.';
 export const INTAKE_CORRECTION_CLOSER = "This correction doesn't change the call to your vet.";
+export const INTAKE_RECORD_LINE_CLOSER = "This doesn't change the call to your vet.";
 
 const SPAN = 'in the 24 hours before I read this';
 
@@ -89,7 +99,7 @@ function body(c: IntakeCorrection, pet: string): string {
     return `${INTAKE_CORRECTION_OPENER} No meals were logged for ${pet} ${SPAN}, ${cantSay}`;
   }
   // Meals rated below Most beside unrated ones: the refusals are evidence for the words, so
-  // "went further" is not said; the record is stated whole (finding 2, the conservative side).
+  // "went further" is not said; the record is stated whole, as a record line (R-6, O-iii).
   if (below > 0) {
     const verb = c.unrated === 1 ? "wasn't" : "weren't";
     return `Of the ${c.mealsLogged} meals logged for ${pet} ${SPAN}, ${below} ${below === 1 ? 'was' : 'were'} marked below Most and ${c.unrated} ${verb} rated.`;
@@ -102,7 +112,7 @@ function body(c: IntakeCorrection, pet: string): string {
 /** The correction's body, under its label. */
 export function intakeCorrectionText(c: IntakeCorrection, petName?: string | null): string {
   const pet = petName?.trim() || 'your pet';
-  return `${body(c, pet)} ${INTAKE_CORRECTION_CLOSER}`;
+  return `${body(c, pet)} ${isRecordLine(c) ? INTAKE_RECORD_LINE_CLOSER : INTAKE_CORRECTION_CLOSER}`;
 }
 
 /** Label and body as one sentence run: the relay form (Ask), and what VoiceOver reads off the

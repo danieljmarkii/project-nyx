@@ -1723,7 +1723,7 @@ describe('VomitAnalysisSection — the dated correction beside a stored read (CU
     expect(await findByText(OLD)).toBeTruthy();
     // The date is the reader's local date (lib/readCorrection.test.ts pins zones); CI runs
     // UTC+14 and −10, so only its shape is asserted here (C-29).
-    expect(getByText(/^Corrected [A-Z][a-z]{2} \d{1,2}, 2026$/)).toBeTruthy();
+    expect(getByText(/^From the meal log, [A-Z][a-z]{2} \d{1,2}, 2026$/)).toBeTruthy(); // 9/22's shape is a record line (R-6, O-iii)
     expect(getByText(/Of the 6 meals logged for Nyx in the 24 hours before I read this, 1 was marked below Most and 5 weren't rated/)).toBeTruthy();
     expect(getByText('Worth a call')).toBeTruthy();
   });
@@ -1742,6 +1742,6 @@ describe('VomitAnalysisSection — the dated correction beside a stored read (CU
     });
     const { findByText, queryByText } = render(<VomitAnalysisSection eventId="c3" petId="pet-1" petName="Nyx" hasPhoto />);
     expect(await findByText('AI note hidden')).toBeTruthy();
-    expect(queryByText(/^Corrected /)).toBeNull();
+    expect(queryByText(/^(Corrected|From the meal log)/)).toBeNull();
   });
 });
