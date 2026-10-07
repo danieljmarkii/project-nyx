@@ -319,6 +319,9 @@ interface MomentState {
   // commit haptic with it — four rules the beat was re-deriving or missing.
   showSheetBeat: (payload: Omit<SheetBeatPayload, 'kind'>, opts?: ShowOpts) => void;
   hide: () => void;
+  // CUL-1635 — dismiss a card that sits in the FAB's corner, because the owner just
+  // opened the FAB. True when it dismissed one. See isCornerCardUp for the why.
+  dismissCornerCard: () => boolean;
   // CUL-612 — reverse the log this card is announcing: soft-delete the event, drop
   // it from Today, and swap the card to its removal line for a short read.
   //
@@ -643,6 +646,25 @@ export function isIntakeDecline(rating: IntakeRating | null | undefined): boolea
   return rating === 'refused' || rating === 'picked';
 }
 
+// ── THE FAB'S CORNER (CUL-1635) ─────────────────────────────────────────────
+// The meal, medication and named cards are root siblings drawn after the Stack, so
+// they paint over the FAB's fan, and each sits just above the disc: the meal and dose
+// cards' bottom is TAB_HEIGHT + 64 (about 145pt), the fan's lowest pill reaches about
+// 144pt. A card still dwelling when the owner opens the fan for the second food of a
+// meal puts its Undo and intake chips exactly over that food's pill.
+//
+// So the fan never opens under one: the FAB's open dismisses it first. The dismissal is
+// the owner's explicit gesture, never a timer (the card's Undo window is its safety net,
+// C-21), and the meal itself stays reversible from History. The look and the sheet beat
+// are not here: neither draws a card in that corner, and hiding the look's beat would
+// take its Undo off the Noticed card for nothing.
+const CORNER_KINDS: ReadonlySet<MomentPayload['kind']> = new Set(['meal', 'medication', 'named']);
+
+/** A completion card is on screen in the FAB's corner (CUL-1635). */
+export function isCornerCardUp(s: { visible: boolean; payload: MomentPayload | null }): boolean {
+  return s.visible && s.payload !== null && CORNER_KINDS.has(s.payload.kind);
+}
+
 // Shared present/dismiss scheduling for both presentations. delayMs lets a
 // caller dismiss its modal first so the root overlay isn't briefly occluded by
 // the still-presented modal on iOS.
@@ -698,6 +720,11 @@ export const useMomentStore = create<MomentState>((set) => ({
   hide: () => {
     clearTimers();
     set({ visible: false });
+  },
+  dismissCornerCard: () => {
+    if (!isCornerCardUp(useMomentStore.getState())) return false;
+    useMomentStore.getState().hide();
+    return true;
   },
   undo: async (eventId) => {
     const before = useMomentStore.getState();

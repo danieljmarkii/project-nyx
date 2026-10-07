@@ -773,3 +773,129 @@ describe('FAB — a one-tap food whose write fails', () => {
     }
   });
 });
+
+// ── The fan never opens under a completion card (CUL-1635) ──────────────────────────
+//
+// The meal, dose and named cards are root siblings drawn after the Stack, so they paint
+// over the fan, and their bottom edge (TAB_HEIGHT + 64, about 145pt) meets the lowest
+// pill (the disc's 72 + 56 plus the fan's margin, about 144pt). The owner's own pair:
+// log the wet food from the fan, open it again inside the 5s dwell for the dry, and the
+// dry pill sits under the card's Undo. What is pinned is the invariant, not a frame: at
+// no store change are the fan and a corner card both up.
+describe('FAB — the fan never shares the corner with a completion card', () => {
+  const MEAL = {
+    eventId: 'wet', petId: 'p1', occurredAt: '2026-10-07T12:00:00.000Z', foodType: 'meal' as const,
+    foodBrand: 'Royal Canin', foodProductName: 'Wet', foodFormat: 'wet', intakeRating: null,
+  };
+  const DOSE = {
+    eventId: 'dose', petId: 'p1', medicationItemId: null, occurredAt: '2026-10-07T12:00:00.000Z',
+    drugName: 'Gabapentin', adherence: null, howGiven: null,
+  };
+  const NAMED = {
+    tone: 'calm' as const, eventId: 'v1', petId: 'p1', occurredAt: '2026-10-07T12:00:00.000Z',
+    record: { kind: 'symptom', eventType: 'vomit' },
+  };
+  /** Run the fan's ~180ms close, and stop well inside the card's 5s dwell. */
+  async function closeWithinDwell() {
+    await act(async () => { jest.advanceTimersByTime(600); });
+  }
+  let overlaps: string[];
+  let unsubs: Array<() => void>;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    overlaps = [];
+    const check = (from: string) => {
+      const m = useMomentStore.getState();
+      if (useUiStore.getState().fabMenuOpen && m.visible && m.payload?.kind !== 'look') {
+        overlaps.push(`${from}: ${m.payload?.kind}`);
+      }
+    };
+    unsubs = [
+      useMomentStore.subscribe(() => check('moment')),
+      useUiStore.subscribe(() => check('ui')),
+    ];
+  });
+  afterEach(async () => {
+    unsubs.forEach((u) => u());
+    act(() => { useMomentStore.getState().hide(); });
+    await settleAnimations();
+    jest.useRealTimers();
+  });
+
+  it.each([
+    ['meal', () => useMomentStore.getState().showMeal(MEAL)],
+    ['medication', () => useMomentStore.getState().showMedication(DOSE as never)],
+    ['named', () => useMomentStore.getState().showNamed(NAMED as never)],
+  ])('opening the fan over a showing %s card dismisses the card first', async (_kind, show) => {
+    act(() => { show(); });
+    expect(useMomentStore.getState().visible).toBe(true);
+
+    await openMenu();
+
+    expect(useUiStore.getState().fabMenuOpen).toBe(true);
+    expect(useMomentStore.getState().visible).toBe(false);
+    expect(overlaps).toEqual([]);
+  });
+
+  it('dismisses on the tap, never on a timer: an idle fan leaves the card alone', async () => {
+    act(() => { useMomentStore.getState().showMeal(MEAL); });
+    render(<FAB />);
+    await act(async () => {});
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+
+  it('a card that reveals while the fan is open closes the fan, and stays up', async () => {
+    const view = await openMenu();
+    expect(useUiStore.getState().fabMenuOpen).toBe(true);
+
+    // The picker path's deferred reveal landing under an open fan.
+    act(() => { useMomentStore.getState().showMeal(MEAL); });
+    await closeWithinDwell();
+
+    expect(useUiStore.getState().fabMenuOpen).toBe(false);
+    expect(view.queryByText('Log food')).toBeNull();
+    // The new card's Undo is a net the owner has not seen yet: it is not the one to go.
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+
+  it('the look\'s beat draws no corner card, so the fan leaves it alone', async () => {
+    act(() => {
+      useMomentStore.getState().showLook({
+        eventId: 'look1', petId: 'p1', occurredAt: '2026-10-07T12:00:00.000Z',
+        outcome: 'nothing_unusual', words: [],
+      } as never);
+    });
+    await openMenu();
+    expect(useMomentStore.getState().payload?.kind).toBe('look');
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+
+  it('the quick meal hands over to its own card without the fan reopening under it', async () => {
+    insertMeal.mockReset();
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f1', brand: 'Royal Canin', product_name: 'Wet', format: 'wet', food_type: 'meal' },
+    ]);
+    insertMeal.mockResolvedValue({
+      eventId: 'wet', occurredAtIso: MEAL.occurredAt, now: MEAL.occurredAt,
+    });
+    const view = await openMenu();
+    await act(async () => { fireEvent.press(view.getByText(/Royal Canin/)); });
+    await closeWithinDwell();
+
+    expect(useMomentStore.getState().visible).toBe(true);
+    expect(useUiStore.getState().fabMenuOpen).toBe(false);
+    // The one frame the two share by design: the card rises while the fan's ~180ms close
+    // runs, and every pill is inert from the close's first frame (`whileOpen`, pinned
+    // above), so a tap there can only reach the card. It is the hand-over, not the bug.
+    expect(overlaps).toEqual(['moment: meal']);
+    overlaps = [];
+
+    // The second food of the meal: the open takes the card down before the fan draws.
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    expect(useUiStore.getState().fabMenuOpen).toBe(true);
+    expect(useMomentStore.getState().visible).toBe(false);
+    expect(overlaps).toEqual([]);
+  });
+});
