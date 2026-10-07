@@ -11,8 +11,9 @@
 // words were true and no correction exists, so this module never has to decide that.
 //
 // This module is the ONE place those facts become words, for the incident screen and Ask's
-// relay alike. No clause concludes whether the pet ate; "went further" is said only where the
-// facts carry an unrated meal or an empty log (the adversarial pass on 085: B1).
+// relay alike. No clause concludes whether the pet ate. "Went further" is said only where every
+// meal in the window was unrated, or none was logged: never beside a meal marked below Most,
+// which is evidence for the words (adversarial passes 1 and 2: B1 and its neighbour).
 //
 // Imported by `supabase/functions/ask` (C-26): no imports here, nothing client-only.
 
@@ -60,28 +61,42 @@ export function intakeCorrectionLabel(c: IntakeCorrection, timeZone?: string): s
   return `Corrected ${date}`;
 }
 
-export const INTAKE_CORRECTION_OPENER = 'The words above went further than the record.';
+// The opener NAMES the sentence it corrects (second adversarial pass, finding 1): "the words
+// above" also covered a blood or foreign-material line that Ask's read line puts before the
+// stored words, and read as withdrawing it.
+export const INTAKE_CORRECTION_OPENER = 'The note "hasn\'t eaten a full meal recently" went further than the record.';
 export const INTAKE_CORRECTION_CLOSER = "This correction doesn't change the call to your vet.";
 
 const SPAN = 'in the 24 hours before I read this';
 
+const meals = (n: number) => (n === 1 ? '1 meal' : `${n} meals`);
+
 function body(c: IntakeCorrection, pet: string): string {
-  // A Most or All meal in the words' own window: stated plainly, no "went further" (ruling (a)).
+  const below = c.mealsLogged - c.unrated - c.mostOrAll;
+  // A Most or All meal in the words' own window: stated plainly, with every other meal there
+  // beside it, so refusals are never left out (finding 2). No "went further" (ruling (a)).
   if (c.mostOrAll > 0) {
-    const meals = c.mostOrAll === 1 ? '1 meal marked Most or All' : `${c.mostOrAll} meals marked Most or All`;
-    return `The meal log now shows ${meals} for ${pet} ${SPAN}.`;
+    if (below === 0 && c.unrated === 0) {
+      return `The meal log now shows ${meals(c.mostOrAll)} marked Most or All for ${pet} ${SPAN}.`;
+    }
+    const parts = [`${c.mostOrAll} marked Most or All`];
+    if (below > 0) parts.push(`${below} marked below Most`);
+    if (c.unrated > 0) parts.push(`${c.unrated} not rated`);
+    return `The meal log now shows ${meals(c.mealsLogged)} for ${pet} ${SPAN}: ${parts.join(', ')}.`;
   }
   const cantSay = `so the log couldn't say whether ${pet} ate a full meal.`;
   if (c.mealsLogged === 0) {
     return `${INTAKE_CORRECTION_OPENER} No meals were logged for ${pet} ${SPAN}, ${cantSay}`;
   }
-  if (c.unrated === c.mealsLogged) {
-    return c.mealsLogged === 1
-      ? `${INTAKE_CORRECTION_OPENER} The 1 meal logged for ${pet} ${SPAN} wasn't rated, ${cantSay}`
-      : `${INTAKE_CORRECTION_OPENER} None of the ${c.mealsLogged} meals logged for ${pet} ${SPAN} was rated, ${cantSay}`;
+  // Meals rated below Most beside unrated ones: the refusals are evidence for the words, so
+  // "went further" is not said; the record is stated whole (finding 2, the conservative side).
+  if (below > 0) {
+    const verb = c.unrated === 1 ? "wasn't" : "weren't";
+    return `Of the ${c.mealsLogged} meals logged for ${pet} ${SPAN}, ${below} ${below === 1 ? 'was' : 'were'} marked below Most and ${c.unrated} ${verb} rated.`;
   }
-  const verb = c.unrated === 1 ? "wasn't" : "weren't";
-  return `${INTAKE_CORRECTION_OPENER} Of the ${c.mealsLogged} meals logged for ${pet} ${SPAN}, ${c.unrated} ${verb} rated, ${cantSay}`;
+  return c.mealsLogged === 1
+    ? `${INTAKE_CORRECTION_OPENER} The 1 meal logged for ${pet} ${SPAN} wasn't rated, ${cantSay}`
+    : `${INTAKE_CORRECTION_OPENER} None of the ${c.mealsLogged} meals logged for ${pet} ${SPAN} was rated, ${cantSay}`;
 }
 
 /** The correction's body, under its label. */

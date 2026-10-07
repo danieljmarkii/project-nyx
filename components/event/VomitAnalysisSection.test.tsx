@@ -1724,7 +1724,7 @@ describe('VomitAnalysisSection — the dated correction beside a stored read (CU
     // The date is the reader's local date (lib/readCorrection.test.ts pins zones); CI runs
     // UTC+14 and −10, so only its shape is asserted here (C-29).
     expect(getByText(/^Corrected [A-Z][a-z]{2} \d{1,2}, 2026$/)).toBeTruthy();
-    expect(getByText(/Of the 6 meals logged for Nyx in the 24 hours before I read this, 5 weren't rated/)).toBeTruthy();
+    expect(getByText(/Of the 6 meals logged for Nyx in the 24 hours before I read this, 1 was marked below Most and 5 weren't rated/)).toBeTruthy();
     expect(getByText('Worth a call')).toBeTruthy();
   });
 

@@ -45,11 +45,11 @@ describe('intakeCorrectionOf', () => {
   });
 });
 
-describe('the words (layout C-A, wording ruling (a), 2026-10-07)', () => {
-  it('draws the brief\'s frame word for word', () => {
+describe('the words (layout C-A, wording ruling (a), 2026-10-07; second-pass fixes)', () => {
+  it('draws the 9/22 frame word for word', () => {
     expect(intakeCorrectionLabel(c(6, 5, 0), 'UTC')).toBe('Corrected Oct 7, 2026');
-    expect(intakeCorrectionText(c(6, 5, 0), 'Nyx')).toBe(
-      "The words above went further than the record. Of the 6 meals logged for Nyx in the 24 hours before I read this, 5 weren't rated, so the log couldn't say whether Nyx ate a full meal. This correction doesn't change the call to your vet.",
+    expect(intakeCorrectionText(c(6, 6, 0), 'Nyx')).toBe(
+      `The note "hasn't eaten a full meal recently" went further than the record. None of the 6 meals logged for Nyx in the 24 hours before I read this was rated, so the log couldn't say whether Nyx ate a full meal. This correction doesn't change the call to your vet.`,
     );
   });
 
@@ -57,16 +57,39 @@ describe('the words (layout C-A, wording ruling (a), 2026-10-07)', () => {
     [0, 0, 0, `${INTAKE_CORRECTION_OPENER} No meals were logged for Nyx in the 24 hours before I read this, so the log couldn't say whether Nyx ate a full meal.`],
     [1, 1, 0, `${INTAKE_CORRECTION_OPENER} The 1 meal logged for Nyx in the 24 hours before I read this wasn't rated, so the log couldn't say whether Nyx ate a full meal.`],
     [4, 4, 0, `${INTAKE_CORRECTION_OPENER} None of the 4 meals logged for Nyx in the 24 hours before I read this was rated, so the log couldn't say whether Nyx ate a full meal.`],
-    [3, 1, 0, `${INTAKE_CORRECTION_OPENER} Of the 3 meals logged for Nyx in the 24 hours before I read this, 1 wasn't rated, so the log couldn't say whether Nyx ate a full meal.`],
-    [4, 0, 1, 'The meal log now shows 1 meal marked Most or All for Nyx in the 24 hours before I read this.'],
-    [5, 2, 2, 'The meal log now shows 2 meals marked Most or All for Nyx in the 24 hours before I read this.'],
+    [6, 5, 0, "Of the 6 meals logged for Nyx in the 24 hours before I read this, 1 was marked below Most and 5 weren't rated."],
+    [7, 1, 0, "Of the 7 meals logged for Nyx in the 24 hours before I read this, 6 were marked below Most and 1 wasn't rated."],
+    [1, 0, 1, 'The meal log now shows 1 meal marked Most or All for Nyx in the 24 hours before I read this.'],
+    [3, 0, 1, 'The meal log now shows 3 meals for Nyx in the 24 hours before I read this: 1 marked Most or All, 2 marked below Most.'],
+    [5, 2, 2, 'The meal log now shows 5 meals for Nyx in the 24 hours before I read this: 2 marked Most or All, 1 marked below Most, 2 not rated.'],
   ])('%i meals, %i unrated, %i Most or All', (meals, unrated, most, lead) => {
     expect(intakeCorrectionText(c(meals, unrated, most), 'Nyx')).toBe(`${lead} ${INTAKE_CORRECTION_CLOSER}`);
   });
 
-  it('"went further" is said only where an unrated meal or an empty log carries it (B1)', () => {
-    expect(intakeCorrectionText(c(4, 0, 1), 'Nyx')).not.toContain(INTAKE_CORRECTION_OPENER);
-    expect(intakeCorrectionText(c(5, 2, 2), 'Nyx')).not.toContain(INTAKE_CORRECTION_OPENER);
+  // Finding 2: a meal marked below Most is evidence FOR the words, so "went further" is never
+  // said beside one, and the count of them is always stated.
+  it('never says "went further" beside a meal marked below Most, and always counts them', () => {
+    for (let meals = 1; meals <= 8; meals++) {
+      for (let unrated = 0; unrated <= meals; unrated++) {
+        for (let most = 0; most + unrated <= meals; most++) {
+          const corr = intakeCorrectionOf(cols(meals, unrated, most));
+          if (!corr) continue;
+          const below = meals - unrated - most;
+          const text = intakeCorrectionText(corr, 'Nyx');
+          if (below > 0) {
+            expect(text).not.toContain('went further');
+            expect(text).toContain(`${below} ${most > 0 ? '' : below === 1 ? 'was ' : 'were '}marked below Most`);
+          }
+          if (most > 0) expect(text).not.toContain('went further');
+        }
+      }
+    }
+  });
+
+  // Finding 1: the opener names the sentence it corrects, never "the words above".
+  it('names the sentence it corrects', () => {
+    expect(INTAKE_CORRECTION_OPENER).toContain(`"hasn't eaten a full meal recently"`);
+    expect(intakeCorrectionText(c(0, 0, 0), 'Nyx')).not.toMatch(/words above/i);
   });
 
   it("dates in the reader's zone: the same instant is Oct 6 in Honolulu", () => {
@@ -94,7 +117,8 @@ describe('the words (layout C-A, wording ruling (a), 2026-10-07)', () => {
           expect(s).not.toContain('!');
           expect(s).not.toMatch(REASSURE_VOCAB);
           // "ate" only ever inside "whether Nyx ate": the correction never says the cat ate.
-          expect(s.replace(/whether Nyx ate/g, '')).not.toMatch(/\b(ate|eaten|eating)\b/i);
+          // The quoted original is the sentence being corrected, not a claim the correction makes.
+          expect(s.replace(/whether Nyx ate/g, '').replace(`"hasn't eaten a full meal recently"`, '')).not.toMatch(/\b(ate|eaten|eating)\b/i);
           expect(s).not.toMatch(/\b(no longer|not worth|don't need|no need)\b/i);
           expect(s.endsWith(INTAKE_CORRECTION_CLOSER)).toBe(true);
         }
