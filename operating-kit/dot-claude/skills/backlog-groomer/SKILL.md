@@ -29,14 +29,14 @@ Cloud sessions arrive as a **shallow clone**, and a status reconciliation over i
    **Judge staleness by the branch tip's DATE, never by whether the branch exists.** Agent branches are never pruned, so an existence check can never fire (L7: a detector whose only evidence is the existence of a ref is not a detector).
 5. **Verify against the TREE, never the issue text.** A description is a snapshot of the day it was filed; the fix may have landed under another issue. Where reality moved, narrow the issue in a comment and say which issue took the other half.
 6. **Quick wins: read each body; titles are not enough.** Measured: 10 of 21 title-judged candidates failed on the body (a PM call embedded, an options menu instead of a fix, scope the title hides, explicitly parked). Definition: *small AND grabbable today* — one session, ~1 PR, no schema/deploy chain, no pending ruling, not `Needs PM`. Positive signal: the body names the fix shape and a precedent already in the tree. Apply with `addLabels`, **never `labels`** (which replaces the whole set).
-7. **Audit recently CLOSED issues for unfinished business.** An attachment closes an issue on merge, so an issue can go `Done` still carrying open decisions. Flag; do not re-open.
+7. **Audit recently CLOSED issues for unfinished business.** The bare issue token in a PR's title, body or head branch closes that issue on merge (deleting the attachment does not stop it), so an issue a PR merely mentioned can go `Done` still carrying open decisions. Flag; do not re-open.
 8. **Re-evaluate aged Urgent/High items:** blocked (say on what), mis-prioritized (lower with a why), or dead (flag to the PM, never silently cancel). Watch for a cluster sharing one blocker.
 9. **Enforce the issue contract:** TL;DR in plain English, **Why:**, **Blocks:**, priority, an `Area: *` label, a current state. A project is not required (no catch-all project).
 10. **De-duplicate semantically.** Prefer a relation or folding over two live issues; recommend which framing to keep.
 11. **Surface what's relevant now:** issues in live projects, stale Urgent/High, and the `Needs PM` count grouped **by sitting** (hands-on checks / copy calls / rulings / dashboard toggles), because a queue is as long as its sittings, not its rows.
 
 ## Don't re-file the last pass's open calls
-Each pass leaves one outcome issue carrying the calls it stopped short of. Read it first; comment onto it rather than minting a second (a comment, never an attachment, or the merge closes it).
+Each pass leaves one outcome issue carrying the calls it stopped short of. Read it first; comment onto it rather than minting a second (a tracker comment, never a mention in a PR, or the merge closes it).
 
 ## Write boundary
 If the evidence for an edit is a sentence you wrote, it is a report line, not an edit. State corrections backed by a merged PR, an open PR or a branch date are edits; dedup, re-prioritization and scope are reports to the PM.
