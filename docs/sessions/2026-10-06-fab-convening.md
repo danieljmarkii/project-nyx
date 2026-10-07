@@ -55,3 +55,15 @@ Still open: **D2** (the veil's colour) and **D6** (normal stool in the fan). The
 **Validation for the rulings:** `tsc --noEmit` clean; `components/log/`, `constants/`, `app/log.test.tsx`, `lib/haptics.test.ts`, `lib/commitTone.test.ts`, `store/momentStore.test.ts` and the guards, 68 suites and 1,312 tests. Each new pin was run red: Other back on celebrate reds two tests; friction back to 7 reds the motion test.
 
 **Second lesson:** check a mock in dark mode before publishing. An app frame drawn on the page inherits the page's theme unless it sets its own ink, and the viewer's theme is not the author's.
+
+## The FAB gets its own project (2026-10-07)
+
+The PM asked where this work lived in Linear and how it was organised. The honest answer was one hub issue inside *Design v2 — the whole day*, a broad and mostly finished project, four issues in no project at all, and a run order written in a comment that /dispatch cannot read. On the PM's "Let's go w/ a dedicated project":
+
+- **The FAB, round 2** holds the FAB's 19 open issues: 15 moved from *Design v2* and 4 that had no project. CUL-724 (the fan's VoiceOver gap, filed in August) joined them because it was homeless FAB work and PR-23 already carries half of it. Four milestones, one per wave: round 2 already built (#1088); a tap logs what the owner meant; the ruled builds; hold and slide.
+- **The page is in the /dispatch layout** (alias `fab`): 14 rows, a merge gate on PR-20 (D2) and on PR-30 (a device pass on a real thumb), plan gates on PR-12 and PR-30 (clinical), and *never at the same time* rules for the three parts of `components/log/FAB.tsx` the rows share. The stored page was run through `scripts/dispatch/page.ts` and the gate predicate; every row parses with its wave, After and gates.
+- **One change to the convening's order:** the rows that stop a tap logging the wrong thing lead (a pill under the meal card's Undo, the pills jumping, the wrong food under the thumb), and the jump fix (CUL-1634) now runs before the day's order (CUL-1647), because both change when the fan reads its recent foods.
+- **CUL-1287 is the project's one device sitting**, run on the first TestFlight build that carries the wave 2 rows: one sitting per cut, never one ask per PR.
+- **Stayed where they were:** CUL-1638 (the engine's meal timing, which gates hold and slide) and CUL-1279 (the app wide colour round, in *Design v2*). STATUS.md gains the track's row.
+
+**Third lesson:** Linear stores a `#NNNN` on a project page as a pull request link, and it moved that link outside the bold of the wave header that held it. The cell stopped ending in `**`, and /dispatch's parser would have read the header as a broken row. A run order's wave headers name no PR number; the parser fix is filed as CUL-1653.
