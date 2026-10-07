@@ -23,9 +23,12 @@
 --     `read` is `intake_read_at`, the moment the server last wrote those words.
 --     A held re-read never writes read_text (resolveReanalysisWrite's hold), so
 --     the stamp moves only when the sentence was really recomputed. Backfill:
---     `created_at`, the best stamp stored rows have (a later full re-read that
---     rewrote the same sentence is the case it misses; it then counts an earlier
---     24 h, which the words were also once about).
+--     the later of `created_at` and the event's newest attachment (second
+--     adversarial pass, finding 3): a row is often created before its photo
+--     lands (6/12: 13 s later), and a replaced photo means a later read wrote
+--     the words. `updated_at` cannot help (085's backfill moved it). STATED
+--     BLIND SPOT: a later re-read with no new photo (Try again) is invisible
+--     to every stamp a stored row carries; such a row is anchored early.
 --   · A correction is written only where that window shows the sentence rested
 --     on something other than rated intake, or where a Most / All meal has since
 --     landed in it:
@@ -74,7 +77,8 @@
 --       re-run 085's §5 backfill.
 --     Safe only while no client selects the two new columns (PR-13b's code half).
 --   Backfill:     §6: every stored read holding the old sentence is re-stamped
---                 (`intake_read_at := created_at`) and recounted.
+--                 (`intake_read_at := greatest(created_at, newest attachment)`)
+--                 and recounted. Live 2026-10-07: 8 rows; 1 (6/12) moves 13 s.
 --   Affected tables: event_ai_analysis (2 columns, the CHECK, the backfill);
 --                 events and meals (AFTER triggers only).
 --   Sanity checks before applying:
@@ -380,8 +384,11 @@ CREATE TRIGGER trg_events_vomit_intake_correction_upd
 -- Runs as the migration's role (the freeze exempts it; the stamp names no
 -- read_text, so §4 does not fire). Clears 085's facts first so a row whose
 -- correction is no longer due ends NULL, never with 085's counts.
-UPDATE public.event_ai_analysis
-   SET intake_read_at                = created_at,
+UPDATE public.event_ai_analysis a
+   SET intake_read_at                = GREATEST(
+                                         a.created_at,
+                                         (SELECT max(t.created_at) FROM public.event_attachments t
+                                           WHERE t.event_id = a.event_id AND t.pet_id = a.pet_id)),
        intake_correction_at          = NULL,
        intake_correction_meals       = NULL,
        intake_correction_unrated     = NULL,
