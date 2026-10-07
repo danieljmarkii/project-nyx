@@ -78,12 +78,12 @@
   .frame-cap b { font-size: 14.5px; }
   .frame-cap span { font-size: 13.5px; color: var(--ink-2); }
   .frame.option { border: 1px dashed var(--rule); border-radius: 18px; padding: 12px; width: 342px; }
-  .frame.option > .frame-cap::before { content: "Option, drawn for the decision"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .frame.option > .frame-cap::before { content: "Still open, drawn for the decision"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
   .frame.archived { opacity: 0.72; }
-  .frame.archived > .frame-cap::before { content: "Ruled 2026-09-26, superseded today"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .frame.archived > .frame-cap::before { content: "Ruled 2026-09-26, superseded 2026-10-06"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
 
   /* The FAB swatch stages (§01) */
-  .fab-stage { position: relative; height: 170px; background: var(--app-ground); border-radius: 24px; overflow: hidden; border: 1px solid rgba(27,26,46,0.12); }
+  .fab-stage { color: var(--app-ink); position: relative; height: 170px; background: var(--app-ground); border-radius: 24px; overflow: hidden; border: 1px solid rgba(27,26,46,0.12); }
   .fab-stage .tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; background: var(--app-card); border-top: 1px solid var(--app-rule); display: flex; justify-content: space-around; align-items: center; font-size: 10px; color: var(--app-ink-3); }
   .fab-stage .tabs b { color: var(--app-ink); font-weight: 600; }
   .fab-stage .ghost { position: absolute; left: 14px; right: 84px; top: 16px; display: grid; gap: 9px; }
@@ -251,7 +251,7 @@
   .fp.redeal { opacity: 0 !important; transform: translate(10px, 14px) scale(0.7) !important; transition: opacity 120ms ease, transform 140ms ease !important; }
 
   /* Static pill rows (§04 frames) */
-  .pillset { background: var(--app-ground); border-radius: 22px; border: 1px solid rgba(27,26,46,0.12); padding: 16px 14px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; position: relative; overflow: hidden; }
+  .pillset { color: var(--app-ink); background: var(--app-ground); border-radius: 22px; border: 1px solid rgba(27,26,46,0.12); padding: 16px 14px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; position: relative; overflow: hidden; }
   .pillset::before { content: ""; position: absolute; inset: 0; background: var(--veil-grey); }
   .pillset .fp { opacity: 1; transform: none; position: relative; cursor: default; }
   .pillset .split { display: flex; align-items: center; gap: 8px; background: var(--app-card); border-radius: 999px; padding: 5px 6px 5px 7px; min-height: 36px; box-shadow: 0 4px 14px rgba(19,17,46,0.16); position: relative; font-size: 12px; font-weight: 500; color: var(--app-ink); }
@@ -266,8 +266,8 @@
   .tstage { width: 140px; height: 140px; border-radius: 28px; background: var(--app-ground); border: 1px solid rgba(27,26,46,0.12); display: grid; place-items: center; }
   .tdisc { width: 64px; height: 64px; border-radius: 50%; background: var(--night-2); display: grid; place-items: center; box-shadow: 0 8px 20px rgba(19,17,46,0.3); }
   .tdisc svg { width: 24px; height: 24px; }
-  .tdisc.today svg { transition: transform 420ms cubic-bezier(.34,1.56,.64,1); }
-  .tdisc.one svg { transition: transform 420ms cubic-bezier(.25,1.12,.5,1); }
+  .tdisc.today svg { transition: transform 420ms cubic-bezier(.34,1.66,.64,1); }
+  .tdisc.ruled svg { transition: transform 460ms cubic-bezier(.34,1.85,.64,1); }
   .tdisc.on svg { transform: rotate(135deg); }
   .tcell b { font-size: 14px; }
   .tcell span { font-size: 13px; color: var(--ink-2); }
@@ -319,14 +319,18 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 2 · for the PM's reaction</span><span>The FAB · CUL-1625</span><span>2026-10-06</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 2 · ruled 2026-10-06 · D2 and D6 open</span><span>The FAB · CUL-1625</span><span>2026-10-06</span></p>
     <h1>The FAB and its fan</h1>
-    <p class="standfirst">The PM's reactions after a week with the indigo FAB on a phone, and the whole team's answer. Round 1 lives at §05 and §06 of the Design v2 device page (ruled 2026-09-26); this page carries the FAB from here.</p>
+    <p class="standfirst">The PM's reactions after a week with the indigo FAB on a phone, the whole team's answer, and the PM's rulings on it. This page now shows one proposal: what was ruled is drawn as current, the options not chosen have left the page (commit 462aa8a keeps them), and the two decisions still open sit in labelled boxes. Round 1 lives at §05 and §06 of the Design v2 device page.</p>
     <div class="ledger" id="ledger">
-      <div><b>1 · The plus</b><span><q>I sort of hate how plus is teal. Can we make it white instead</q> <span class="pill">built · CUL-1626 · §01</span></span></div>
-      <div><b>2 · Delight</b><span><q>Love the rotation of FAB when selected… Is there anything else that we could consider design delight wise</q> <span class="pill open">decide · D3, D5 · §04</span></span></div>
-      <div><b>3a · Who else</b><span><q>Do any other apps offer a similar experience?</q> <span class="pill dir">answered · §02</span></span></div>
-      <div><b>3b · The seam</b><span><q>Is it strange that we go from the first fab page w bubbles to a more traditional bottom sheet</q> <span class="pill open">decide · D1, D2 · §03</span></span></div>
+      <div><b>1 · The plus</b><span><q>if the plus is white in main then I'm just running an older build</q> A clarification, not a change: the white plus is on PR #1088 and reaches main when it merges, so today's builds still draw teal. <span class="pill">built · CUL-1626 · §01</span></span></div>
+      <div><b>2 · The hand-off</b><span><q>Let's go w.. D · One veil, one physics, one name</q> D is the current frame; B and C left the page. <span class="pill">ruled D · CUL-1642 · §03</span></span></div>
+      <div><b>3 · Delight</b><span><q>that seems like the right approach. But it's subtle.</q> So the meal mark's flight is in from the start, not held back as a second step. <span class="pill">ruled · CUL-1643 to 1646 · §04</span></span></div>
+      <div><b>4 · The pills' contrast</b><span><q>the pills you drew have a color contrast issue</q> A drawing bug: in dark mode the mock's pills took the page's light text. Fixed; the app's pills were never affected. <span class="pill">fixed · §04</span></span></div>
+      <div><b>5 · The bounce</b><span><q>Love the bounce. Can we increase it a bit</q> About 19% overshoot now, 25° past the ×, up from 18°. <span class="pill">built · CUL-1641 · §04</span></span></div>
+      <div><b>6 · The order</b><span><q>I'll defer to the design team</q> The team's call: one order for the day, from a bounded window. <span class="pill">team call · CUL-1647</span></span></div>
+      <div><b>7 · "Other"</b><span><q>Nice catch.</q> An Other log now takes the calm beat. <span class="pill">built · CUL-1632</span></span></div>
+      <div><b>Still open</b><span>D2, the veil's colour (§03), and D6, normal stool in the fan (§04). <span class="pill open">decide · §05</span></span></div>
     </div>
   </header>
 
@@ -334,7 +338,7 @@
   <section id="plus">
     <div class="sec-head"><span class="sec-num">01</span><h2>The plus goes white</h2></div>
     <div class="col">
-      <p>Built in this round (CUL-1626). The indigo disc and the turn stay exactly as they are; only the glyph changes, in both its + and × positions and in the Reduce Motion crossfade. It follows the colour split already ruled on 2026-10-03 (CUL-1279, G4 C): indigo means you can act, teal means a good fact. A teal glyph on the app's primary action read against that split, which the Home one language mock had already drawn white.</p>
+      <p>Built in this round (CUL-1626, on PR #1088 until it merges). The indigo disc stays exactly as it is; only the glyph changes, in both its + and × positions and in the Reduce Motion crossfade. It follows the colour split already ruled on 2026-10-03 (CUL-1279, G4 C): indigo means you can act, teal means a good fact. A teal glyph on the app's primary action read against that split, which the Home one language mock had already drawn white.</p>
     </div>
     <div class="frames">
       <div class="frame archived">
@@ -386,97 +390,82 @@
   <section id="seam">
     <div class="sec-head"><span class="sec-num">03</span><h2>The jump from the fan to the sheet</h2></div>
     <div class="col" id="seam-body">
-      <p><b>The team's answer: the change of surface is right, and how it arrives is the seam.</b> A fan for the handful of things logged most, then a sheet for the grouped catalogue with its confirm, is the convention (§02). What breaks is that nothing carries across. Tap <b>More events</b> today and two things happen in the same instant: the fan's indigo veil fades out, and the sheet slides up from the bottom carrying a grey veil inside it, so a hard grey edge sweeps up the screen. Over Vomit's confirm that band is about 440pt tall before any white arrives. Two veils, two motion systems (the fan's springs, then the operating system's slide, which ignores Reduce Motion), two origins, and two titles ("Logging for Nyx", then "Log for Nyx").</p>
-      <p>Tap the disc, then <b>More events</b>, on each phone. A is what ships. <b>D is the team's recommendation</b>: one veil that stays put, the sheet rising on the app's own spring, one name. B and C are drawn on D's veil so the only difference is the motion.</p>
+      <p><b>Ruled: D, one veil, one physics, one name</b> (CUL-1642). The change of surface stays; how the sheet arrives changes. Today the fan's indigo veil fades out while the sheet slides up carrying a grey veil inside it, a hard edge sweeping the screen, and the title changes from "Logging for Nyx" to "Log for Nyx". In D the veil never moves, More events leaves last, the sheet rises on the app's own settle, and its title reads "Logging for" like the chip. Under Reduce Motion the sheet crossfades.</p>
+      <p>Tap the disc, then <b>More events</b>, on each phone. The options not chosen (the pill morphing into the sheet, the fan growing in place) have left the page.</p>
     </div>
     <div class="demo-row" id="seam-demos"></div>
-    <div class="ctrl" role="group" aria-label="Veil for phone D">
-      <button type="button" class="veil-btn" data-veil="grey" aria-pressed="true">D's veil: grey, as every other overlay</button>
-      <button type="button" class="veil-btn" data-veil="deep" aria-pressed="false">Grey, deeper (50%)</button>
-      <button type="button" class="veil-btn" data-veil="night" aria-pressed="false">Indigo, the fan's today</button>
-      <button type="button" id="seam-rm" aria-pressed="false">Show the Reduce Motion frames</button>
+    <div class="frame option" style="width:auto;max-width:720px;margin-top:22px">
+      <div class="ctrl" role="group" aria-label="Veil for phone D" style="margin-top:0">
+        <button type="button" class="veil-btn" data-veil="grey" aria-pressed="true">Grey, as every other overlay (recommended)</button>
+        <button type="button" class="veil-btn" data-veil="deep" aria-pressed="false">Grey, deeper (50%)</button>
+        <button type="button" class="veil-btn" data-veil="night" aria-pressed="false">Indigo, the fan's today</button>
+      </div>
+      <div class="frame-cap"><b>D2 · The veil's colour</b><span>Try each on phone D. The structure is ruled; the colour is not. The team recommends grey: under the colour split ruled on 2026-10-03, indigo means "you can act", so an indigo veil across the whole screen dilutes the one indigo control on it.</span></div>
     </div>
+    <div class="ctrl"><button type="button" id="seam-rm" aria-pressed="false">Show the Reduce Motion frames</button></div>
   </section>
 
   <!-- §04 -->
   <section id="delight">
     <div class="sec-head"><span class="sec-num">04</span><h2>Delight that is the record moving</h2></div>
     <div class="col" id="delight-body">
-      <p>Principle 9 asks one question of any motion: cover the words, and can you tell the record just changed? The turn you love passes a version of it. It is a control answering your finger, once, to say its new state. Everything the panel ranked follows the same rule: things move when the record moves, or when the thing a tap will write to changes. All of it is buildable on the app's current animation engine, with no new native build.</p>
-      <p><b>The biggest one is already visible in today's fan.</b> Tap a recent food and every pill retracts exactly as if you had tapped away to cancel, then the card rises from below like any app's toast. With the words covered, logging a meal looks like dismissing the menu. On the right, the food you chose stays while the rest step back, and the card arrives where the pill was. Turn on the flight to see the costlier version, where the pill's meal mark travels into the card's check.</p>
+      <p><b>Ruled: the four ideas below</b> (CUL-1643 to 1646). Principle 9 asks one question of any motion: cover the words, and can you tell the record just changed? Each of these moves only when the record moves, or when the thing a tap writes to changes, and none needs a new native build.</p>
+      <p><b>The meal lands in its card.</b> Today, tapping a recent food plays the same retract as cancelling, then the card rises from below like any app's toast. On the right, the food you chose stays while the rest step back, its meal mark flies into the card's check, and the card arrives where the pill was. You found the quieter version subtle, so the flight is part of the build from the start.</p>
     </div>
     <div class="demo-row" id="delight-demos"></div>
-    <div class="ctrl"><button type="button" id="fly-toggle" aria-pressed="false">Fly the meal mark into the card (the M version)</button><button type="button" id="del-rm" aria-pressed="false">Show the Reduce Motion frames</button></div>
+    <div class="ctrl"><button type="button" id="del-rm" aria-pressed="false">Show the Reduce Motion frames</button></div>
     <p class="col" style="font-size:13.5px;color:var(--ink-3);margin-top:12px">On the right phone, also try the <b>Logging for</b> chip: the pet switches first, then the food pills deal again for the new pet. The right phone's pills carry the proposal's words, tags and chevrons; the left phone is today's fan.</p>
 
     <div class="ideas">
-      <div class="idea"><h4>The meal lands in its card <span class="pill dir">commit · S, then M</span></h4><p>A choice never plays the cancel. The tapped food stays while the others retract, and the card crossfades in where it was (S). Only if that reads flat on a phone, the pill's meal mark flies into the card's check, the box settles around it and "Logged" lands a beat later (M, lifting the app's flight motion).</p><p><b>Must hold:</b> Undo and the intake chips are live no later than today; the arrival is identical for a food outside the trial list, whose warning lands after; food pills only; no new haptic; under Reduce Motion a crossfade in place.</p></div>
-      <div class="idea"><h4>The pills read like the record <span class="pill dir">choose · S</span></h4><p>The two Royal Canin pills differ only in their last word, which wraps to the second line. The record already solved this: History names the food and carries WET or DRY as its own tag, never appended to text that can be cut off. The pills borrow it. Pills that open something (More events, Vomit, Loose stool, Log food) carry a chevron; pills that write a meal do not, so a partner's first exploratory tap cannot log Dry into the trial by surprise.</p></div>
-      <div class="idea"><h4>The press answers like the disc <span class="pill dir">choose · S</span></h4><p>Today a pressed pill fades to 70% and the veiled Signal shows through it. Instead it settles slightly under the finger with a pressed fill, the disc's own vocabulary. The spinner on a food pill goes too: the meal is a local write, near instant, and the Principles forbid a spinner on an action that should be instant (CUL-1593 already names it).</p></div>
-      <div class="idea"><h4>A pet switch deals the fan again <span class="pill dir">choose · S · two pet homes</span></h4><p>The chip is the guard against logging for the wrong pet, yet today it arrives last, farthest from the thumb, and a switch swaps the food pills in place. Proposed: the chip arrives first, with the veil, and a switch retracts the food pills and deals them again for the new pet. The record a tap will write to really changed, so the motion says so.</p></div>
-      <div class="idea"><h4>Hold, slide, release <span class="pill dir">parked · CUL-1278</span></h4><p>Still a good accelerator, and Things 3 and Todoist prove the gesture. It waits for D1 and D4, and takes the panel's amendments: no ring (the fan opening is the signal, and a teal ring breaks G4 C); a release on Vomit or Loose stool opens the confirm and never writes, because a found vomit would otherwise land as "witnessed now"; a food writes only from a pill held still on a fan that has finished landing; a release over the disc or the veil cancels; the tap path stays the way VoiceOver and Switch Control log.</p></div>
-      <div class="idea rejected"><h4>Rejected by the panel</h4><p>A blur behind the fan and Home settling to 97% (chrome, and a native build); any glow, confetti or success haptic beyond today's check; an idle pulse on the disc (chrome moving on its own); a paw or moon themed plus ("could be any app's"); a reverse flight on Undo (it would say "unchosen", which is false); labels that fade in after their pill (a fast thumb would write a meal it never read); a haptic on close (closing commits nothing and stays silent).</p></div>
+      <div class="idea"><h4>The meal lands in its card <span class="pill">ruled · CUL-1643</span></h4><p>A choice never plays the cancel. The tapped food stays while the others retract, its meal mark flies into the card's check, the box settles around it and "Logged" lands a beat later.</p><p><b>Must hold:</b> Undo and the intake chips are live no later than today; the arrival is identical for a food outside the trial list, whose warning lands after; food pills only; no new haptic; under Reduce Motion no flight, a crossfade in place (CUL-1633 first).</p></div>
+      <div class="idea"><h4>The pills read like the record <span class="pill">ruled · CUL-1644</span></h4><p>Food pills borrow History's label and its WET or DRY tag, as its own element, so two formats of one food never look alike. Pills that open something carry a chevron; pills that write a meal do not.</p></div>
+      <div class="idea"><h4>The press answers like the disc <span class="pill">ruled · CUL-1645</span></h4><p>A pressed pill settles slightly under the finger with a pressed fill instead of fading to 70%, and the spinner on a food pill goes, since the write is near instant.</p></div>
+      <div class="idea"><h4>A pet switch deals the fan again <span class="pill">ruled · CUL-1646 · two pet homes</span></h4><p>The "Logging for" chip arrives first, with the veil, instead of last; a switch retracts the food pills and deals them again for the new pet.</p></div>
+      <div class="idea"><h4>The bounce, a touch bigger <span class="pill">built · CUL-1641</span></h4><p>About 19% overshoot, 25° past the ×, settling in about 420ms. Motion &amp; IA preferred the app's gentler settle; you ruled for the bounce. Compare below.</p></div>
+      <div class="idea"><h4>Hold, slide, release <span class="pill dir">parked · CUL-1278</span></h4><p>Waits for the hand-off (CUL-1642) and the day's fixed order (CUL-1647), and takes the panel's amendments: no ring; a release on Vomit or Loose stool opens the confirm and never writes; a food writes only from a pill held still on a fan that has landed; the tap path stays.</p></div>
+      <div class="idea rejected"><h4>Rejected by the panel</h4><p>A blur behind the fan and Home settling to 97% (chrome, and a native build); any glow, confetti or success haptic beyond today's check; an idle pulse on the disc; a paw or moon themed plus; a reverse flight on Undo; labels that fade in after their pill; a haptic on close.</p></div>
     </div>
 
-    <h3>The pills, as proposed</h3>
+    <h3>The pills, ruled</h3>
     <div class="frames" id="pill-frames"></div>
 
-    <h3>The turn, with and without its bounce (D5)</h3>
-    <div class="col"><p>Today's turn springs 135° with about 13% overshoot, 18° past the ×. The app's other motion settles with about 6%. Press each to compare; the curves are close approximations of the two springs.</p></div>
+    <h3>The turn, today and ruled</h3>
+    <div class="col"><p>Today's turn springs 135° with about 13% overshoot, 18° past the ×. Ruled: about 19%, 25° past the ×, on the same disc and the same tap. Press each to compare; the curves are close approximations of the two springs, and the real one is checked on your phone.</p></div>
     <div class="turnpair" id="turnpair"></div>
   </section>
 
   <!-- §05 -->
   <section id="decide">
-    <div class="sec-head"><span class="sec-num">05</span><h2>What the PM is asked to rule</h2></div>
-    <div class="col"><p>Six decisions, each with the team's recommendation, and one found along the way. Each brief names what it changes, the real options, and what the ruling unblocks.</p></div>
+    <div class="sec-head"><span class="sec-num">05</span><h2>Ruled, and still open</h2></div>
+    <div class="col"><p>Two decisions are still open. Everything else was ruled on 2026-10-06 and is built or filed.</p></div>
     <div class="briefs" id="briefs">
-      <div class="brief"><h4>D1 · How the sheet arrives after More events <span class="pill open">decide</span></h4>
-        <p><b>Deciding:</b> the hand-off from the fan to the log sheet (the same path Vomit and Loose stool take to their confirm).</p>
-        <p><b>Options:</b> (A) as shipped: two veils and the operating system's slide. <b>(D) one veil, one physics, one name: the veil stays put, the sheet rises on the app's own spring, and its title reads "Logging for Nyx" like the chip. Recommended:</b> every lens that walked the seam found it in the delivery rather than the change of surface; D fixes the delivery at a medium cost with no native build, and closes CUL-1178 for this sheet while giving CUL-1472 a closing state it can see. (B) the More events pill becomes the sheet: what both platforms' guidance draws, but large, and a literal morph is not available on React Native's native driver today; revisit only if a phone recording of D still reads as two surfaces. (C) the fan grows in place: every lens rejects it (about 650pt of list above the disc, section labels that fail contrast on the veil, and the confirm still needs a surface).</p>
-        <p class="conflict"><b>Dissent:</b> the owner panel wants B as a second step once D is on a phone. Motion &amp; IA would block B unless D ships first and still reads as two apps.</p>
-        <p><b>Consequence:</b> one build PR on the log sheet's host; every door into the sheet (the FAB, the Home nudge, Ask, the day summary) gets the same rise. The one name reopens CUL-682's copy split of 2026-08-30, which was ruled before this seam was examined.</p>
-      </div>
-      <div class="brief"><h4>D2 · One veil: which colour <span class="pill open">decide</span></h4>
+      <div class="brief"><h4>D2 · The veil's colour <span class="pill open">open</span></h4>
         <p><b>Deciding:</b> the single veil the fan and the sheet share (try all three on phone D in §03).</p>
-        <p><b>Options:</b> (a) the fan's indigo, as drawn in round 1. <b>(b) neutral grey, the sheet's and every other overlay's. Recommended:</b> under G4 C indigo means "you can act", so a full screen indigo veil dilutes the one indigo control on screen, and the app already shares one grey across its overlays. (c) grey, deeper (about 50%): two lenses found Home's Signal headlines outranking the 15pt pills through today's 34%; the disc still clears 3:1 at 55% (computed).</p>
-        <p><b>Consequence:</b> (b) or (c) retires the indigo veil from round 1 §06 (CUL-322). Density is checked on the phone at the D1 build; CUL-1279's app wide round inherits the token for every other sheet.</p>
+        <p><b>Options:</b> (a) the fan's indigo, as drawn in round 1. <b>(b) neutral grey, the sheet's and every other overlay's. Recommended:</b> under the colour split indigo means "you can act", so an indigo veil across the whole screen dilutes the one indigo control on it, and the app already shares one grey across its overlays. (c) grey, deeper (about 50%): two lenses found Home's Signal headlines outranking the pills through today's 34%.</p>
+        <p><b>Consequence:</b> CUL-1642 takes the answer as its veil token; (b) or (c) retires round 1's indigo veil, and the density is checked on the phone at that build.</p>
       </div>
-      <div class="brief"><h4>D3 · Delight: what gets built <span class="pill open">decide</span></h4>
-        <p><b>Deciding:</b> which of the panel's ideas (§04) become build issues.</p>
-        <p><b>Options:</b> <b>(a) four, in order: the meal lands in its card (small first, the mark's flight only if that reads flat); the pills read like the record (the format tag, chevrons on doors); the press answers like the disc (and no spinner on a local write); a pet switch deals the fan again, chip first. Recommended:</b> each moves only when the record or its target moves, none needs a native build, and all but the flight are small. (b) the four plus hold and slide now. (c) none yet.</p>
-        <p><b>Consequence:</b> four small build issues after D1; CUL-1633 (the card's missing Reduce Motion frame) lands first. Hold and slide (CUL-1278) waits on D1 and D4 and takes the panel's amendments, now on the issue.</p>
-      </div>
-      <div class="brief"><h4>D4 · The order of the recent foods <span class="pill open">decide</span></h4>
-        <p><b>Deciding:</b> which food sits under the thumb.</p>
-        <p><b>Options:</b> (a) as shipped: newest lowest, reordered after every log, so the food just given is the one under the thumb; for wet in the morning and dry at night, it is the wrong food at every meal. <b>(b) frozen for the day: the order is set at local midnight from a bounded recent window and does not move until tomorrow. Recommended:</b> predictable slots are Apple's own rule for recent actions, a CHI 2004 study found menus with fixed slots faster than reordering ones, and the bound ends a pre-trial food lingering for weeks. (c) by frequency over the window (the owners' instinct; a new trial food climbs slowly).</p>
-        <p><b>Consequence:</b> a small build. It also unparks hold and slide, which no lens would ship over slots that reshuffle.</p>
-      </div>
-      <div class="brief"><h4>D5 · The turn's bounce <span class="pill open">decide</span></h4>
-        <p><b>Deciding:</b> whether the turn you love keeps its bounce (§04 draws both).</p>
-        <p><b>Options:</b> (a) keep it, named in Principle 9 as the one control that may overshoot. (b) the app's one spring: same duration, about a third of the overshoot. <b>(c) compare both on the next phone build and keep the one you prefer; Principle 9 gains a control rule either way. Recommended:</b> it is the one piece of delight you named, so your eye on a real phone should settle it, not a formula.</p>
-        <p><b>Consequence:</b> a Tier 2 edit to Principle 9: "a control may move only in the gesture that touched it, once, and only to state its new state; it never loops and never wears a record colour." The white plus already satisfies it.</p>
-      </div>
-      <div class="brief"><h4>D6 · Normal stool in the fan <span class="pill open">persona conflict</span></h4>
+      <div class="brief"><h4>D6 · Normal stool in the fan <span class="pill open">open · persona conflict</span></h4>
         <div class="conflict">
-          <p><b>Owner panel (Jordan):</b> a normal stool costs four taps through More events, a loose one three from the fan. In week three of a trial the good day is the one the vet most needs to see, and the fan makes the bad ones cheaper to log. Make the fan's stool pill a split Normal | Loose pill, like the sheet's tile.</p>
-          <p><b>Data Scientist:</b> changing which events get a pill partway through a record changes how often they are logged, and nothing on the report can show that capture change for one event. More normal stools logged from week three would make loose stool look rarer on a trial that changed nothing. (Raised as a rule for any pill added mid record.)</p>
-          <p><b>PM decision needed:</b> does the fan's stool pill become a split pill? If yes, the Data Scientist asks that the change date be recorded so the report can disclose it. Both shapes are drawn in §04.</p>
+          <p><b>Owner panel (Jordan):</b> a normal stool costs four taps through More events, a loose one three from the fan. In week three of a trial the good day is the one the vet most needs to see. Make the stool pill a split Normal | Loose (drawn in §04).</p>
+          <p><b>Data Scientist:</b> changing which events get a pill partway through a record changes how often they are logged, and the report cannot show that capture change for one event; more normal stools from week three would make loose stool look rarer on a trial that changed nothing.</p>
+          <p><b>PM decision needed:</b> does the stool pill become a split pill? If yes, the change date is recorded so the report can disclose it.</p>
         </div>
       </div>
-      <div class="brief"><h4>D7 · "Other" celebrates <span class="pill open">found along the way</span></h4>
-        <p><b>Deciding:</b> the beat after an "Other" log.</p>
-        <p><b>Options:</b> (a) as shipped: the gold glow and the success double tap, because Other is outside the symptom set. <b>(b) the calm beat and the soft tap, as a symptom gets. Recommended:</b> what owners type under Other is often the worrying thing ("ate a sock"), and Principle 9 never rewards a symptom, so an unknown is treated as one.</p>
-        <p><b>Consequence:</b> one small fix, filed as CUL-1632. A normal stool keeps its celebratory beat; it is the good day.</p>
+      <div class="brief"><h4>Ruled 2026-10-06 <span class="pill">ledger</span></h4>
+        <p><b>D1 · the hand-off:</b> D, one veil, one physics, one name. CUL-1642 (blocks hold and slide).</p>
+        <p><b>D3 · delight:</b> all four, with the flight in from the start because the crossfade alone read as subtle. CUL-1643 (after CUL-1633), CUL-1644, CUL-1645, CUL-1646.</p>
+        <p><b>D4 · the order of the recents:</b> deferred to the design team, which picked one order for the day from a bounded window (the Data Scientist sets the window). CUL-1647 (blocks hold and slide).</p>
+        <p><b>D5 · the bounce:</b> a touch bigger, about 19% overshoot. Built, CUL-1641. Motion &amp; IA's dissent (the app's gentler settle) is recorded.</p>
+        <p><b>D7 · "Other":</b> the calm beat. Built, CUL-1632, through one rule both log paths share.</p>
       </div>
       <div class="brief"><h4>Team defaults <span class="pill dir">applied unless you veto</span></h4>
-        <p><b>The white plus ships</b> (CUL-1626, built in this round): pure white, not the warmer moonlight white; the stroke weight and the Reduce Motion crossfade get a look on the phone.</p>
-        <p><b>Hold and slide loses its ring</b> (the fan opening is the signal; a teal ring breaks G4 C). Designer's fallback if the hold needs a cue: a white ring.</p>
+        <p><b>The white plus ships</b> (CUL-1626): pure white, not the warmer moonlight white; the stroke weight and the Reduce Motion crossfade get a look on the phone.</p>
+        <p><b>Hold and slide loses its ring</b> (the fan opening is the signal; a teal ring breaks the colour split). Designer's fallback if the hold needs a cue: a white ring.</p>
         <p><b>The teal on the confirm stage</b> (the save pill's wash, the Saw it / Found it selection) moves with CUL-1279's round, not here.</p>
         <p><b>No trial mark on a fan pill</b> (the shelf writes, so an unmarked pill would read as a verdict). Noted on CUL-416.</p>
       </div>
       <div class="brief"><h4>Filed from this round <span class="pill dir">defects, verified in code</span></h4>
-        <p>CUL-1632 "Other" celebrates (D7) · CUL-1633 the quick meal's card ignores Reduce Motion · CUL-1634 the pills jump on the first open, when the recent foods arrive late · CUL-1635 the fan can open under a meal card still showing, its Undo over the lowest pills (your wet then dry flow) · CUL-1636 the fan has no height budget at large text sizes · CUL-1637 the sheet's meal glyph fails contrast · CUL-1638 a quick meal's "now" time is treated as exact by the timing lanes. Carried with notes: CUL-724, CUL-365, CUL-1278, CUL-1279, CUL-1280, CUL-416. Already filed: CUL-727 (grabbers that cannot be dragged), CUL-1593 (the spinner).</p>
+        <p>CUL-1633 the quick meal's card ignores Reduce Motion · CUL-1634 the pills jump on the first open, when the recent foods arrive late · CUL-1635 the fan can open under a meal card still showing, its Undo over the lowest pills · CUL-1636 the fan has no height budget at large text sizes · CUL-1637 the sheet's meal glyph fails contrast · CUL-1638 a quick meal's "now" time is treated as exact by the timing lanes. Carried with notes: CUL-724, CUL-365, CUL-1278, CUL-1279, CUL-1280, CUL-416. Already filed: CUL-727, CUL-1593.</p>
       </div>
     </div>
   </section>
@@ -586,9 +575,6 @@
       : '<div class="st"><i class="avatar"></i>Log for Nyx <span class="caret">&#8964;</span></div>';
     return '<div class="ph-sheet"><div class="grab"></div>' + title + catalogueHTML() + '</div>';
   }
-  function panelHTML() {
-    return '<div class="ph-panel" aria-label="Every event"><div class="pt"><b>Everything else</b><span>Logging for Nyx</span></div>' + catalogueHTML('panel') + '</div>';
-  }
   function doneHTML() {
     return '<div class="ph-done" role="status" aria-live="polite">' +
       '<div class="hr"><span class="tk">' + SVG.check + '</span><span class="tt"><b class="dt">Logged · Royal Canin Selected Protein PR, Wet</b><span class="ds">5:20 PM</span></span><span class="acts"><span>Undo</span><span>Change time</span></span></div>' +
@@ -611,8 +597,6 @@
       '<div class="ph-tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div>' + doneHTML();
     if (handoff === 'A') html += '<div class="ph-modal slide"><div class="grey"></div>' + sheetHTML(false) + '</div>';
     if (handoff === 'D') html += '<div class="ph-dsheet">' + sheetHTML(true) + '</div>';
-    if (handoff === 'B') html += '<div class="ph-bsheet">' + sheetHTML(true) + '</div>';
-    if (handoff === 'C') html += panelHTML();
     ph.innerHTML = html;
     host.appendChild(ph);
 
@@ -686,33 +670,6 @@
         setOpenAria(true);
         later(function () { src.classList.add('gone'); }, 120);
         return;
-      }
-      if (handoff === 'B') {
-        var r = src.getBoundingClientRect(), p = ph.getBoundingClientRect();
-        var m = document.createElement('div');
-        m.className = 'ph-morph';
-        m.style.left = (r.left - p.left) + 'px'; m.style.top = (r.top - p.top) + 'px';
-        m.style.width = r.width + 'px'; m.style.height = r.height + 'px';
-        m.innerHTML = '<span class="lbl">More events</span>';
-        ph.appendChild(m);
-        stagger(false);
-        ph.classList.add('closing');
-        ph.classList.remove('open');
-        ph.classList.add('handoff-b');
-        if (rm()) { m.remove(); return; }
-        m.getBoundingClientRect();
-        m.classList.add('go');
-        m.querySelector('.lbl').style.opacity = '0';
-        m.style.left = '0px'; m.style.top = '116px'; m.style.width = p.width + 'px'; m.style.height = (p.height - 116) + 'px';
-        m.style.borderRadius = '22px 22px 0 0';
-        later(function () { m.style.opacity = '0'; m.style.transition = 'opacity 160ms ease'; }, 480);
-        later(function () { m.remove(); ph.classList.remove('closing'); }, 680);
-        return;
-      }
-      if (handoff === 'C') {
-        ph.classList.add('handoff-c');
-        ph.classList.remove('open');
-        setOpenAria(true);
       }
     }
 
@@ -789,7 +746,7 @@
       else open();
     });
     veil.addEventListener('click', function () {
-      if (ph.classList.contains('handoff-b') || ph.classList.contains('handoff-d')) { reset(); return; }
+      if (ph.classList.contains('handoff-d')) { reset(); return; }
       close(); ph.classList.remove('handoff-c');
     });
     ph.querySelector('.ph-fan').addEventListener('click', function (e) {
@@ -803,8 +760,6 @@
     });
     var grey = ph.querySelector('.ph-modal .grey');
     if (grey) grey.addEventListener('click', function () { reset(); });
-    var bs = ph.querySelector('.ph-bsheet');
-    if (bs) bs.addEventListener('click', function (e) { if (e.target === bs) reset(); });
 
     return {
       el: ph, open: open, reset: reset, opts: opts,
@@ -844,17 +799,16 @@
     return p;
   }
 
-  // §03: the hand-off
+  // §03: the hand-off. D was ruled (CUL-1642); B and C left the page (commit 462aa8a).
   var seam = [
-    demo('seam-demos', 'A', 'A · As shipped <span class="pill dir">today</span>', 'The fan retracts and its indigo veil fades while the sheet slides up from the bottom, carrying a grey veil with it as one block.'),
-    demo('seam-demos', 'D', 'D · One veil, one physics, one name <span class="pill cur">recommended</span>', 'The veil stays put. More events leaves last, the sheet rises on the app’s own settle, and its title says "Logging for", like the chip.'),
-    demo('seam-demos', 'B', 'B · The pill becomes the sheet', 'Both platforms’ guidance. More events grows into the sheet; large to build, and only if D still reads as two surfaces.', { option: true }),
-    demo('seam-demos', 'C', 'C · The fan grows in place', 'No second surface. Every lens rejects it: the list nearly fills the screen, and the confirm still needs a surface.', { option: true })
+    demo('seam-demos', 'A', 'Today <span class="pill dir">being replaced</span>', 'The fan retracts and its indigo veil fades while the sheet slides up from the bottom, carrying a grey veil with it as one block.'),
+    demo('seam-demos', 'D', 'D · One veil, one physics, one name <span class="pill cur">ruled · current</span>', 'The veil stays put. More events leaves last, the sheet rises on the app’s own settle, and its title says "Logging for", like the chip.')
   ];
   Array.prototype.slice.call(document.querySelectorAll('.veil-btn')).forEach(function (b) {
     b.addEventListener('click', function () {
       document.querySelectorAll('.veil-btn').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
-      seam.slice(1).forEach(function (p) { p.reset(); p.el.style.setProperty('--veil', VEILS[b.getAttribute('data-veil')]); });
+      seam[1].reset();
+      seam[1].el.style.setProperty('--veil', VEILS[b.getAttribute('data-veil')]);
     });
   });
   var seamRm = document.getElementById('seam-rm');
@@ -864,17 +818,13 @@
     seam.forEach(function (p) { p.reset(); p.el.classList.toggle('rm', on); });
   });
 
-  // §04: the quick meal, today and proposed
+  // §04: the quick meal, today and ruled. The flight is on: the PM found the crossfade
+  // alone subtle (CUL-1643).
   var del = [
     demo('delight-demos', 'today', 'Today <span class="pill dir">as shipped</span>', 'Tap a recent food: every pill retracts as if you had cancelled, then the card rises from below.', { play: 'food', playLabel: 'Play a quick meal' }),
-    demo('delight-demos', 'land', 'The meal lands in its card <span class="pill cur">recommended</span>', 'The food you chose stays while the rest step back, and the card arrives where it was. Doors carry a chevron; foods carry their format.', { play: 'food', playLabel: 'Play a quick meal' })
+    demo('delight-demos', 'land', 'The meal lands in its card <span class="pill cur">ruled · current</span>', 'The food you chose stays while the rest step back, its meal mark flies into the card’s check, and the card arrives where it was. Doors carry a chevron; foods carry their format.', { play: 'food', playLabel: 'Play a quick meal' })
   ];
-  var flyBtn = document.getElementById('fly-toggle');
-  flyBtn.addEventListener('click', function () {
-    var on = flyBtn.getAttribute('aria-pressed') !== 'true';
-    flyBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    del[1].opts.fly = on;
-  });
+  del[1].opts.fly = true;
   var delRm = document.getElementById('del-rm');
   delRm.addEventListener('click', function () {
     var on = delRm.getAttribute('aria-pressed') !== 'true';
@@ -882,7 +832,7 @@
     del.forEach(function (p) { p.reset(); p.el.classList.toggle('rm', on); });
   });
 
-  // §04: the pills, as proposed (static)
+  // §04: the pills, ruled (static)
   function pillFrame(title, cap, inner, opt) {
     var f = document.createElement('div');
     f.className = 'frame' + (opt ? ' option' : '');
@@ -894,18 +844,18 @@
   pillFrame('Today', 'Two foods that differ only in their last word, and every pill looks like every other.',
     staticPill('quiet', SVG.plus, '<span>More events</span>') + staticPill('sym', SVG.vomit, '<span>Vomit</span>') +
     staticPill('meal', SVG.meal, '<span>' + nyx[1].today + '</span>') + staticPill('meal', SVG.meal, '<span>' + nyx[2].today + '</span>'));
-  pillFrame('Proposed <span class="pill cur">recommended</span>', 'The record’s words and its format tag; doors carry a chevron, so a pill that writes reads differently from one that opens.',
+  pillFrame('Ruled <span class="pill cur">current</span>', 'The record’s words and its format tag; doors carry a chevron, so a pill that writes reads differently from one that opens.',
     staticPill('quiet', SVG.plus, '<span>More events</span><span class="chev">&#8250;</span>') + staticPill('sym', SVG.vomit, '<span>Vomit</span><span class="chev">&#8250;</span>') +
     staticPill('meal', SVG.meal, '<span class="lbl2"><span>' + nyx[1].label + '</span><span class="ftag">DRY</span></span>') +
     staticPill('meal', SVG.meal, '<span class="lbl2"><span>' + nyx[2].label + '</span><span class="ftag">WET</span></span>'));
-  pillFrame('D6 · The stool pill, as a split', 'Drawn for the conflict: Normal and Loose one tap each, like the sheet’s stool tile.',
+  pillFrame('D6 · The stool pill, as a split', 'Still open (a persona conflict, §05): Normal and Loose one tap each, like the sheet’s stool tile.',
     '<span class="split"><span class="g">' + SVG.stool + '</span>Stool<span class="seg"><span>Normal</span><span>Loose</span></span></span>' +
     staticPill('sym', SVG.vomit, '<span>Vomit</span><span class="chev">&#8250;</span>'), true);
 
   // §04: the turn, with and without its bounce
   var tp = document.getElementById('turnpair');
-  [['today', 'Today: about 13% overshoot', 'Tension 90, friction 7. The bounce you liked.'],
-   ['one', 'The app’s one spring: about 6%', 'The settle every other motion in the app uses.']].forEach(function (t) {
+  [['today', 'Today: about 13% overshoot', '18° past the ×. Tension 90, friction 7.'],
+   ['ruled', 'Ruled: about 19% overshoot', '25° past the ×. Friction 6, built.']].forEach(function (t) {
     var c = document.createElement('div');
     c.className = 'tcell';
     c.innerHTML = '<div class="tstage"><div class="tdisc ' + t[0] + '">' + SVG.white.replace('class="glyph" ', '') + '</div></div><b>' + t[1] + '</b><span>' + t[2] + '</span>';
