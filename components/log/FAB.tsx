@@ -4,7 +4,7 @@ import {
   Pressable, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
-import { ChevronDown, Plus } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Plus } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { EmptyState } from '../ui/EmptyState';
@@ -23,6 +23,8 @@ import { getRecentFoods, PickerFood } from '../../lib/db';
 import { insertMeal } from '../../lib/meals';
 import { applyMealTrialFlag } from '../../lib/mealTrialFlag';
 import { noPetToLogForCopy } from '../../lib/logCopy';
+import { rowFoodLabelOf } from '../../lib/dayEvents';
+import { foodFormatTag } from '../../lib/foodFormat';
 
 // Resolved once at module scope — a literal, shared with the log sheet (CUL-717).
 const noPetCopy = noPetToLogForCopy();
@@ -75,6 +77,21 @@ const FAN_GAP = 10;
 interface FanRow {
   key: string;
   node: ReactNode;
+}
+
+/** CUL-1644 (D3): a pill that OPENS something carries this; a food pill, which writes
+ *  at once, does not. Decorative: the pill's own label and role already say what it
+ *  is, so the chevron is hidden from assistive tech on both platforms. */
+function DoorChevron() {
+  return (
+    <View
+      testID="fab-door-chevron"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <ChevronRight size={16} color={theme.colorTextTertiary} strokeWidth={1.75} />
+    </View>
+  );
 }
 
 /**
@@ -532,6 +549,7 @@ export function FAB() {
             <Plus size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
           </View>
           <ThemedText style={styles.pillLabel}>More events</ThemedText>
+          <DoorChevron />
         </TouchableOpacity>
       ),
     });
@@ -556,6 +574,7 @@ export function FAB() {
             <EventIcon type="diarrhea" size={16} color={theme.colorEventSymptom} />
           </View>
           <ThemedText style={styles.pillLabel}>Loose stool</ThemedText>
+          <DoorChevron />
         </TouchableOpacity>
       ),
     });
@@ -572,6 +591,7 @@ export function FAB() {
             <EventIcon type="vomit" size={16} color={theme.colorEventSymptom} />
           </View>
           <ThemedText style={styles.pillLabel}>Vomit</ThemedText>
+          <DoorChevron />
         </TouchableOpacity>
       ),
     });
@@ -589,6 +609,7 @@ export function FAB() {
             <Plus size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
           </View>
           <ThemedText style={styles.pillLabel}>Log food</ThemedText>
+          <DoorChevron />
         </TouchableOpacity>
       ),
     });
@@ -598,6 +619,13 @@ export function FAB() {
     // for THIS pet, so there are no pills: they would be another pet's (C-12). The
     // query returns newest first; the fan draws newest LOWEST, nearest the thumb.
     for (const food of [...(foodsForActivePet ?? [])].reverse()) {
+      // CUL-1644 (D3): the food named the way History names it, through the one mapper,
+      // with its format as its own tag. The tag is a sibling that holds its width, never
+      // text appended to the label that wraps, so wet and dry of one line never read
+      // alike (the foodFormat.ts header's rule). The spoken label carries both halves.
+      const formatTag = foodFormatTag(food.format);
+      const foodLabel =
+        rowFoodLabelOf({ brand: food.brand, product: food.product_name, format: food.format }) ?? 'Food';
       rows.push({
         key: `food-${food.id}`,
         node: (
@@ -607,13 +635,25 @@ export function FAB() {
             activeOpacity={0.7}
             disabled={logging !== null}
             accessibilityRole="button"
+            accessibilityLabel={formatTag ? `${foodLabel}, ${formatTag.toLowerCase()}` : foodLabel}
+            // CUL-724's hint half: every other pill opens something; this one writes.
+            accessibilityHint={`Logs it for ${activePet.name} right away`}
           >
             <View style={[styles.pillGlyph, styles.pillGlyphMeal]}>
               <EventIcon type="meal" size={16} />
             </View>
-            <ThemedText style={styles.pillLabel} numberOfLines={2}>
-              {food.brand} {food.product_name}
-            </ThemedText>
+            <View style={styles.foodLabelRow}>
+              <ThemedText style={styles.pillLabel} numberOfLines={2}>
+                {foodLabel}
+              </ThemedText>
+              {formatTag ? (
+                <View style={styles.formatTag} testID="fab-format-tag">
+                  <ThemedText style={styles.formatTagText} numberOfLines={1}>
+                    {formatTag}
+                  </ThemedText>
+                </View>
+              ) : null}
+            </View>
             {logging === food.id && (
               <WhorlSpinner size="sm" ground="day" style={styles.spinner} />
             )}
@@ -829,6 +869,31 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
     fontWeight: theme.fontWeightMedium,
     flexShrink: 1,
+  },
+  // CUL-1644: the label and its format tag, side by side. The label yields (flexShrink 1,
+  // two lines); the tag holds its width (C-8: the half stated fewest times is protected),
+  // capped at the row so the largest Dynamic Type cannot push it out of the pill.
+  foodLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+  },
+  formatTag: {
+    flexShrink: 0,
+    maxWidth: '100%',
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusXS,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  // History's tag register (SpineNodeRow): tracked uppercase, tertiary ink.
+  formatTagText: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    letterSpacing: theme.trackingWide,
+    fontWeight: theme.weightMedium,
   },
   logForPill: {
     // Wide enough that a 16-char two-word name ("Schrodingers Cat") sits on one line;

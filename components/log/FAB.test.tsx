@@ -534,7 +534,7 @@ describe('FAB — the fan, nearest the thumb first', () => {
     seedPets(1);
     const view = await openMenu();
     expect(fanLabels(view)).toEqual([
-      'More events', 'Loose stool', 'Vomit', 'Log food', 'Royal Canin dry', 'Royal Canin wet',
+      'More events', 'Loose stool', 'Vomit', 'Log food', 'Royal Canin · dry', 'Royal Canin · wet',
     ]);
   });
 
@@ -771,5 +771,81 @@ describe('FAB — a one-tap food whose write fails', () => {
       alert.mockRestore();
       logged.mockRestore();
     }
+  });
+});
+
+describe('FAB — CUL-1644, the pills read like the record', () => {
+  const DOORS = ['More events', 'Loose stool', 'Vomit', 'Log food'];
+
+  /** The pill (its touchable host) that owns a piece of text. */
+  function pillOf(view: ReturnType<typeof render>, text: string | RegExp) {
+    let n: TreeNode | null = view.getByText(text);
+    while (n && !(typeof n.type === 'string' && typeof n.props.onResponderRelease === 'function')) n = n.parent;
+    if (!n) throw new Error(`no pill owns ${String(text)}`);
+    return n;
+  }
+  const chevronsIn = (pill: TreeNode) =>
+    pill.findAll((n: TreeNode) => typeof n.type === 'string' && n.props.testID === 'fab-door-chevron');
+
+  it('names a food the way History does, with its format as its own tag', async () => {
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f-wet', brand: 'Royal Canin', product_name: 'Selected Protein PR, Wet', format: 'wet_canned', food_type: 'meal' },
+      { id: 'f-dry', brand: 'Royal Canin', product_name: 'Selected Protein PR, Dry', format: 'dry_kibble', food_type: 'meal' },
+    ]);
+    seedPets(1);
+    const view = await openMenu();
+    // The trailing ", Wet" / ", Dry" leaves the label, because the tag says it: the two
+    // labels are now identical, and only the tags tell them apart.
+    expect(view.getAllByText('Royal Canin · Selected Protein PR')).toHaveLength(2);
+    expect(view.getByText('WET')).toBeTruthy();
+    expect(view.getByText('DRY')).toBeTruthy();
+    // The tag is never text inside the label that wraps: it is its own node, a sibling.
+    const label = view.getAllByText('Royal Canin · Selected Protein PR')[0];
+    expect(label.findAll((n: TreeNode) => n.props.testID === 'fab-format-tag')).toHaveLength(0);
+    const tags = view.UNSAFE_root.findAll(
+      (n: TreeNode) => typeof n.type === 'string' && n.props.testID === 'fab-format-tag',
+    );
+    expect(tags).toHaveLength(2);
+    // ...and it holds its width while the label yields.
+    const tagStyle = StyleSheet.flatten(tags[0].props.style);
+    expect(tagStyle.flexShrink).toBe(0);
+    expect(StyleSheet.flatten(label.props.style).flexShrink).toBe(1);
+  });
+
+  it('speaks the food in full, its format included, with a hint that it logs at once', async () => {
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f-dry', brand: 'Royal Canin', product_name: 'Selected Protein PR, Dry', format: 'dry_kibble', food_type: 'meal' },
+    ]);
+    seedPets(1);
+    const view = await openMenu();
+    const pill = view.getByLabelText('Royal Canin · Selected Protein PR, dry');
+    expect(pill.props.accessibilityHint).toBe('Logs it for Nyx right away');
+    // A door has no such hint: it opens something.
+    for (const door of DOORS) expect(pillOf(view, door).props.accessibilityHint).toBeUndefined();
+  });
+
+  it('a food with no honest format shows no tag, and its label is unchanged', async () => {
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f-other', brand: 'Hills', product_name: 'i/d', format: 'other', food_type: 'meal' },
+    ]);
+    seedPets(1);
+    const view = await openMenu();
+    expect(view.getByLabelText('Hills · i/d')).toBeTruthy();
+    expect(view.UNSAFE_root.findAll((n: TreeNode) => n.props.testID === 'fab-format-tag')).toHaveLength(0);
+  });
+
+  it('every door carries one chevron, hidden from assistive tech; a food pill carries none', async () => {
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet_canned', food_type: 'meal' },
+    ]);
+    seedPets(1);
+    const view = await openMenu();
+    for (const door of DOORS) {
+      const chevrons = chevronsIn(pillOf(view, door));
+      expect(chevrons).toHaveLength(1);
+      expect(chevrons[0].props.accessibilityElementsHidden).toBe(true);
+      expect(chevrons[0].props.importantForAccessibility).toBe('no-hide-descendants');
+    }
+    expect(chevronsIn(pillOf(view, 'Hills · i/d'))).toHaveLength(0);
   });
 });
