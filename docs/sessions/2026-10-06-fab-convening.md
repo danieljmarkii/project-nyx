@@ -37,3 +37,21 @@ Filed, each verified in code: CUL-1632 "Other" celebrates · CUL-1633 the quick 
 ## Lesson
 
 A pin that guards a colour by contrast cannot guard a colour chosen for meaning. The FAB's contrast rows were green for teal and white alike, so the ruling that teal means a good fact needed a render test that names the colour the bars actually draw.
+
+## The PM's rulings (same session)
+
+The PM reacted to the round the same evening:
+
+1. **The plus:** "if the plus is white in main then I'm just running an older build." The white plus is on #1088 and reaches main when it merges; the PM's build still draws teal.
+2. **D1: D**, one veil, one physics, one name. Build: CUL-1642.
+3. **D3: approved, "but it's subtle".** So the meal mark's flight is in from the start rather than held back as a second step. Builds: CUL-1643 (after CUL-1633), CUL-1644, CUL-1645, CUL-1646.
+4. **"The pills you drew have a color contrast issue."** A drawing bug: the static pill frames inherited the page's ink, light in dark mode, on white pills. The first render check ran in light mode only. Fixed by giving every app frame the app's ink; the republished round was checked in both themes.
+5. **D5: a touch more bounce.** Built here as CUL-1641: `TURN_SPRING` friction 7 → 6, damping ratio 0.54 → 0.47, about 19% overshoot (25° past the ×, was 18°), settling in about 420ms. Motion & IA's dissent recorded.
+6. **D4: deferred to the design team**, which picked one order for the day from a bounded window (the Data Scientist sets the window). Build: CUL-1647.
+7. **D7: calm.** Built here as CUL-1632: `isCalmCommit` (`constants/eventTypes.ts`, every `SYMPTOM_TYPES` leaf plus `other`) is the one rule the log sheet and the full screen `/log` flow both ask; `stool_normal` keeps its celebrate beat. The membership walk names the new consumer (C-11) and pins its set over every `EVENT_TYPES` key.
+
+Still open: **D2** (the veil's colour) and **D6** (normal stool in the fan). The mock was republished as one proposal at the same URL: D current, B and C gone (commit 462aa8a keeps them), the flight on, the ruled bounce beside today's, D2 and D6 in labelled boxes.
+
+**Validation for the rulings:** `tsc --noEmit` clean; `components/log/`, `constants/`, `app/log.test.tsx`, `lib/haptics.test.ts`, `store/momentStore.test.ts` and the guards, 67 suites and 1,311 tests. Each new pin was run red: Other back on celebrate reds two tests; friction back to 7 reds the motion test.
+
+**Second lesson:** check a mock in dark mode before publishing. An app frame drawn on the page inherits the page's theme unless it sets its own ink, and the viewer's theme is not the author's.
