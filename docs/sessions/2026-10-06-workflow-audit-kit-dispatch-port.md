@@ -19,7 +19,7 @@ Dispatched by `/dispatch` (adhoc row, CUL-1517), branch `claude/the-workflow-aud
 
 ## Found and filed
 
-- CUL-1631: the kit lacks the steward skill and `merge-check.sh` (which the ported command depends on), and six kit files still teach that only an attachment closes an issue. Only `wrap.md` was corrected here.
+- CUL-1631: the kit lacked the steward skill and `merge-check.sh` (which the ported command depends on), and six kit files taught that only an attachment closes an issue. Only `wrap.md` was corrected here; #1090 (CUL-1631) ported the rest and merged first, so this PR brought it in and changed its own README line to say the steward skill is in the kit.
 
 ## The re-port (2026-10-07)
 
@@ -27,4 +27,4 @@ The merge gate cleared at 00:25Z (#1085, CUL-1623; #1089, CUL-1624). Main came i
 
 ## Residuals
 
-- CUL-1631's PR (#1090) also edits `operating-kit/README.md` (its "Built in from day one" list). The two edits are near each other, not the same lines.
+- #1090 (CUL-1631) merged at 00:32Z, after this PR's first merge check; main came in again without a conflict. Retiring the README's "missing" line, which CUL-1639 was filed to do, is done in this PR.
