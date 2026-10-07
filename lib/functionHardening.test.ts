@@ -118,6 +118,28 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     why: 'CUL-1267 (075) — must stay INVOKER (it tests current_user; DEFINER would freeze nothing); pinned and revoked so it is not RPC-callable.',
   },
 
+  // 085 (CUL-1406): the dated correction beside a stored vomit read. The count
+  // and the recount are INVOKER (every caller already holds the read); the
+  // BEFORE trigger is INVOKER because its writer is the service role. Only the
+  // AFTER refresh is DEFINER: a client's own meal write fires it and the freeze
+  // would refuse the recount as `authenticated`. It raises nothing (C-31).
+  vomit_intake_record: {
+    definer: false, pinned: true, execute: [],
+    why: 'CUL-1406 (085) — INVOKER count; revoked from clients (service_role keeps an explicit grant, the read writer).',
+  },
+  apply_vomit_intake_corrections: {
+    definer: false, pinned: true, execute: [],
+    why: 'CUL-1406 (085) — INVOKER recount, reached only from the DEFINER refresh and the backfill; revoked so it is not RPC-callable.',
+  },
+  set_vomit_intake_correction: {
+    definer: false, pinned: true, execute: [],
+    why: 'CUL-1406 (085) — INVOKER BEFORE trigger on the read write; revoked so it is not RPC-callable.',
+  },
+  refresh_vomit_intake_corrections: {
+    definer: true, pinned: true, execute: [],
+    why: 'CUL-1406 (085) — DEFINER because a client meal write fires it and the freeze refuses the recount as authenticated; revoked so it is not RPC-callable.',
+  },
+
   // ── B-403: the auth/utility functions ─────────────────────────────────────
   handle_new_user: {
     definer: true, pinned: true, execute: [],
