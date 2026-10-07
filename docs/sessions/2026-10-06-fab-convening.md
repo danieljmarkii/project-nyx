@@ -67,3 +67,13 @@ The PM asked where this work lived in Linear and how it was organised. The hones
 - **Stayed where they were:** CUL-1638 (the engine's meal timing, which gates hold and slide) and CUL-1279 (the app wide colour round, in *Design v2*). STATUS.md gains the track's row.
 
 **Third lesson:** Linear stores a `#NNNN` on a project page as a pull request link, and it moved that link outside the bold of the wave header that held it. The cell stopped ending in `**`, and /dispatch's parser would have read the header as a broken row. A run order's wave headers name no PR number; the parser fix is filed as CUL-1653.
+
+## The last rulings (2026-10-07)
+
+1. **No phone check before a merge:** "I'm not going to do a phone check. I'll check it in production when I cut a build … We'll mature our QA efforts over time." CUL-1287 now asks for the checks on each build the PM cuts. The merge of #1088 still waits for the PM's word in this session (steward §7), since declining the check is not that word.
+2. **D2: grey.** One veil for the fan and the log sheet, the sheet's own `colorScrim`; the fan's indigo veil goes. CUL-1642 carries it, and PR-20 lost its merge gate.
+3. **D6: add a normal stool option.** The yes carried the brief's condition, so it is three PRs rather than one pill: CUL-1655, with CUL-1656 (a per-pet record of the day the fan first offered Normal, a migration), CUL-1657 (the split Normal and Loose pill, which writes that record) and CUL-1658 (the vet report's line beside the stool counts, which reads it). They are rows 29, 29b and 29c; hold and slide now waits for the split pill too.
+
+CUL-1625 is closed with every brief ruled. The round 2 page was republished (version 3) with the grey veil and the split pill drawn as current; the veil toggle and the D6 option box left the page, and commit 6583200 keeps them.
+
+**Fourth lesson:** a ruling inherits the condition written into its option. D6's brief said "if yes, the change date is recorded so the report can disclose it", so the PM's four word yes was also a yes to a migration and a report change. Writing the cost into the option is what kept that scope visible at the moment of ruling instead of surfacing after it.

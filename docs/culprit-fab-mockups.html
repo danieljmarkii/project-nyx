@@ -246,6 +246,10 @@
   .fp .lbl2 { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .fp .ftag { font-size: 8.5px; letter-spacing: 0.08em; font-weight: 600; color: var(--app-ink-2); border: 1px solid var(--app-rule); border-radius: 5px; padding: 1px 4px; flex-shrink: 0; }
   .fp .chev { color: var(--app-ink-3); margin-left: 1px; font-size: 13px; line-height: 1; }
+  .fp.split { padding: 5px 6px 5px 7px; cursor: default; }
+  .fp.split .seg { display: flex; gap: 4px; margin-left: 4px; }
+  .fp.split .seg button { border: 1px solid var(--app-rule); background: transparent; border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 500; cursor: pointer; }
+  .fp.split .seg button:focus-visible { outline: 2px solid var(--app-ink-2); outline-offset: 1px; }
   .ph[data-mode="today"] .fp:active { opacity: 0.7; }
   .ph[data-mode="land"] .fp:active { transform: scale(0.97) !important; background: #F4F4F5; transition: transform 90ms ease-out, background 90ms ease-out !important; }
   .fp.redeal { opacity: 0 !important; transform: translate(10px, 14px) scale(0.7) !important; transition: opacity 120ms ease, transform 140ms ease !important; }
@@ -319,9 +323,9 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 2 · ruled 2026-10-06 · D2 and D6 open</span><span>The FAB · CUL-1625</span><span>2026-10-06</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 2 · ruled 2026-10-06 and 2026-10-07 · nothing open</span><span>The FAB · CUL-1625</span><span>2026-10-07</span></p>
     <h1>The FAB and its fan</h1>
-    <p class="standfirst">The PM's reactions after a week with the indigo FAB on a phone, the whole team's answer, and the PM's rulings on it. This page now shows one proposal: what was ruled is drawn as current, the options not chosen have left the page (commit 462aa8a keeps them), and the two decisions still open sit in labelled boxes. Round 1 lives at §05 and §06 of the Design v2 device page.</p>
+    <p class="standfirst">The PM's reactions after a week with the indigo FAB on a phone, the whole team's answer, and the PM's rulings on it. This page now shows one proposal: what was ruled is drawn as current, the options not chosen have left the page (commits 462aa8a and 6583200 keep them), and the last two decisions, ruled on 2026-10-07, are drawn as current too. Round 1 lives at §05 and §06 of the Design v2 device page.</p>
     <div class="ledger" id="ledger">
       <div><b>1 · The plus</b><span><q>if the plus is white in main then I'm just running an older build</q> A clarification, not a change: the white plus is on PR #1088 and reaches main when it merges, so today's builds still draw teal. <span class="pill">built · CUL-1626 · §01</span></span></div>
       <div><b>2 · The hand-off</b><span><q>Let's go w.. D · One veil, one physics, one name</q> D is the current frame; B and C left the page. <span class="pill">ruled D · CUL-1642 · §03</span></span></div>
@@ -330,7 +334,9 @@
       <div><b>5 · The bounce</b><span><q>Love the bounce. Can we increase it a bit</q> About 19% overshoot now, 25° past the ×, up from 18°. <span class="pill">built · CUL-1641 · §04</span></span></div>
       <div><b>6 · The order</b><span><q>I'll defer to the design team</q> The team's call: one order for the day, from a bounded window. <span class="pill">team call · CUL-1647</span></span></div>
       <div><b>7 · "Other"</b><span><q>Nice catch.</q> An Other log now takes the calm beat. <span class="pill">built · CUL-1632</span></span></div>
-      <div><b>Still open</b><span>D2, the veil's colour (§03), and D6, normal stool in the fan (§04). <span class="pill open">decide · §05</span></span></div>
+      <div><b>8 · The phone check</b><span><q>I'm not going to do a phone check. I'll check it in production when I cut a build.</q> No phone check before a merge: the checks run on each build you cut. <span class="pill">ruled · CUL-1287</span></span></div>
+      <div><b>9 · D2, the veil</b><span><q>Grey</q> One veil for the fan and the sheet, the sheet's own grey; the fan's indigo veil goes. Phone D draws it. <span class="pill">ruled grey · CUL-1642 · §03</span></span></div>
+      <div><b>10 · D6, normal stool</b><span><q>Add a normal stool option</q> The stool pill splits into Normal and Loose, and the day each pet's fan first offered it is kept so the vet report can disclose it. <span class="pill">ruled · CUL-1655 · §04</span></span></div>
     </div>
   </header>
 
@@ -390,18 +396,10 @@
   <section id="seam">
     <div class="sec-head"><span class="sec-num">03</span><h2>The jump from the fan to the sheet</h2></div>
     <div class="col" id="seam-body">
-      <p><b>Ruled: D, one veil, one physics, one name</b> (CUL-1642). The change of surface stays; how the sheet arrives changes. Today the fan's indigo veil fades out while the sheet slides up carrying a grey veil inside it, a hard edge sweeping the screen, and the title changes from "Logging for Nyx" to "Log for Nyx". In D the veil never moves, More events leaves last, the sheet rises on the app's own settle, and its title reads "Logging for" like the chip. Under Reduce Motion the sheet crossfades.</p>
+      <p><b>Ruled: D, one veil, one physics, one name</b> (CUL-1642). The change of surface stays; how the sheet arrives changes. Today the fan's indigo veil fades out while the sheet slides up carrying a grey veil inside it, a hard edge sweeping the screen, and the title changes from "Logging for Nyx" to "Log for Nyx". In D the veil never moves, and it is grey, the sheet's own (D2, ruled 2026-10-07); More events leaves last, the sheet rises on the app's own settle, and its title reads "Logging for" like the chip. Under Reduce Motion the sheet crossfades.</p>
       <p>Tap the disc, then <b>More events</b>, on each phone. The options not chosen (the pill morphing into the sheet, the fan growing in place) have left the page.</p>
     </div>
     <div class="demo-row" id="seam-demos"></div>
-    <div class="frame option" style="width:auto;max-width:720px;margin-top:22px">
-      <div class="ctrl" role="group" aria-label="Veil for phone D" style="margin-top:0">
-        <button type="button" class="veil-btn" data-veil="grey" aria-pressed="true">Grey, as every other overlay (recommended)</button>
-        <button type="button" class="veil-btn" data-veil="deep" aria-pressed="false">Grey, deeper (50%)</button>
-        <button type="button" class="veil-btn" data-veil="night" aria-pressed="false">Indigo, the fan's today</button>
-      </div>
-      <div class="frame-cap"><b>D2 · The veil's colour</b><span>Try each on phone D. The structure is ruled; the colour is not. The team recommends grey: under the colour split ruled on 2026-10-03, indigo means "you can act", so an indigo veil across the whole screen dilutes the one indigo control on it.</span></div>
-    </div>
     <div class="ctrl"><button type="button" id="seam-rm" aria-pressed="false">Show the Reduce Motion frames</button></div>
   </section>
 
@@ -414,15 +412,16 @@
     </div>
     <div class="demo-row" id="delight-demos"></div>
     <div class="ctrl"><button type="button" id="del-rm" aria-pressed="false">Show the Reduce Motion frames</button></div>
-    <p class="col" style="font-size:13.5px;color:var(--ink-3);margin-top:12px">On the right phone, also try the <b>Logging for</b> chip: the pet switches first, then the food pills deal again for the new pet. The right phone's pills carry the proposal's words, tags and chevrons; the left phone is today's fan.</p>
+    <p class="col" style="font-size:13.5px;color:var(--ink-3);margin-top:12px">On the right phone, also try the <b>Logging for</b> chip: the pet switches first, then the food pills deal again for the new pet. The right phone's pills carry the proposal's words, tags, chevrons and the split stool pill; the left phone is today's fan.</p>
 
     <div class="ideas">
       <div class="idea"><h4>The meal lands in its card <span class="pill">ruled · CUL-1643</span></h4><p>A choice never plays the cancel. The tapped food stays while the others retract, its meal mark flies into the card's check, the box settles around it and "Logged" lands a beat later.</p><p><b>Must hold:</b> Undo and the intake chips are live no later than today; the arrival is identical for a food outside the trial list, whose warning lands after; food pills only; no new haptic; under Reduce Motion no flight, a crossfade in place (CUL-1633 first).</p></div>
       <div class="idea"><h4>The pills read like the record <span class="pill">ruled · CUL-1644</span></h4><p>Food pills borrow History's label and its WET or DRY tag, as its own element, so two formats of one food never look alike. Pills that open something carry a chevron; pills that write a meal do not.</p></div>
       <div class="idea"><h4>The press answers like the disc <span class="pill">ruled · CUL-1645</span></h4><p>A pressed pill settles slightly under the finger with a pressed fill instead of fading to 70%, and the spinner on a food pill goes, since the write is near instant.</p></div>
       <div class="idea"><h4>A pet switch deals the fan again <span class="pill">ruled · CUL-1646 · two pet homes</span></h4><p>The "Logging for" chip arrives first, with the veil, instead of last; a switch retracts the food pills and deals them again for the new pet.</p></div>
+      <div class="idea"><h4>Normal stool, one tap <span class="pill">ruled 2026-10-07 · CUL-1655</span></h4><p>The stool pill splits into Normal and Loose, like the sheet's stool tile, so the good day costs two taps instead of four. The day each pet's fan first offered it is kept, and the vet report names that date beside its stool counts, so a vet never reads more logging as fewer loose stools.</p></div>
       <div class="idea"><h4>The bounce, a touch bigger <span class="pill">built · CUL-1641</span></h4><p>About 19% overshoot, 25° past the ×, settling in about 420ms. Motion &amp; IA preferred the app's gentler settle; you ruled for the bounce. Compare below.</p></div>
-      <div class="idea"><h4>Hold, slide, release <span class="pill dir">parked · CUL-1278</span></h4><p>Waits for the hand-off (CUL-1642) and the day's fixed order (CUL-1647), and takes the panel's amendments: no ring; a release on Vomit or Loose stool opens the confirm and never writes; a food writes only from a pill held still on a fan that has landed; the tap path stays.</p></div>
+      <div class="idea"><h4>Hold, slide, release <span class="pill dir">parked · CUL-1278</span></h4><p>Waits for the hand-off (CUL-1642), the day's fixed order (CUL-1647) and the split stool pill (CUL-1657), and takes the panel's amendments: no ring; a release on Vomit or either half of the stool pill opens the confirm and never writes; a food writes only from a pill held still on a fan that has landed; the tap path stays.</p></div>
       <div class="idea rejected"><h4>Rejected by the panel</h4><p>A blur behind the fan and Home settling to 97% (chrome, and a native build); any glow, confetti or success haptic beyond today's check; an idle pulse on the disc; a paw or moon themed plus; a reverse flight on Undo; labels that fade in after their pill; a haptic on close.</p></div>
     </div>
 
@@ -436,20 +435,13 @@
 
   <!-- §05 -->
   <section id="decide">
-    <div class="sec-head"><span class="sec-num">05</span><h2>Ruled, and still open</h2></div>
-    <div class="col"><p>Two decisions are still open. Everything else was ruled on 2026-10-06 and is built or filed.</p></div>
+    <div class="sec-head"><span class="sec-num">05</span><h2>Ruled</h2></div>
+    <div class="col"><p>Every decision is ruled: five on 2026-10-06 and the last two on 2026-10-07, each built or filed.</p></div>
     <div class="briefs" id="briefs">
-      <div class="brief"><h4>D2 · The veil's colour <span class="pill open">open</span></h4>
-        <p><b>Deciding:</b> the single veil the fan and the sheet share (try all three on phone D in §03).</p>
-        <p><b>Options:</b> (a) the fan's indigo, as drawn in round 1. <b>(b) neutral grey, the sheet's and every other overlay's. Recommended:</b> under the colour split indigo means "you can act", so an indigo veil across the whole screen dilutes the one indigo control on it, and the app already shares one grey across its overlays. (c) grey, deeper (about 50%): two lenses found Home's Signal headlines outranking the pills through today's 34%.</p>
-        <p><b>Consequence:</b> CUL-1642 takes the answer as its veil token; (b) or (c) retires round 1's indigo veil, and the density is checked on the phone at that build.</p>
-      </div>
-      <div class="brief"><h4>D6 · Normal stool in the fan <span class="pill open">open · persona conflict</span></h4>
-        <div class="conflict">
-          <p><b>Owner panel (Jordan):</b> a normal stool costs four taps through More events, a loose one three from the fan. In week three of a trial the good day is the one the vet most needs to see. Make the stool pill a split Normal | Loose (drawn in §04).</p>
-          <p><b>Data Scientist:</b> changing which events get a pill partway through a record changes how often they are logged, and the report cannot show that capture change for one event; more normal stools from week three would make loose stool look rarer on a trial that changed nothing.</p>
-          <p><b>PM decision needed:</b> does the stool pill become a split pill? If yes, the change date is recorded so the report can disclose it.</p>
-        </div>
+      <div class="brief"><h4>Ruled 2026-10-07 <span class="pill">ledger</span></h4>
+        <p><b>D2 · the veil:</b> grey, the sheet's own, for the fan and the sheet alike; the fan's indigo veil goes. CUL-1642 carries it, and its merge waits on nothing.</p>
+        <p><b>D6 · normal stool in the fan:</b> add it. The stool pill splits into Normal and Loose, and the day each pet's fan first offered it is kept so the vet report can disclose the change beside its stool counts. CUL-1655, in three PRs: the record (CUL-1656), the pill (CUL-1657), the report's line (CUL-1658).</p>
+        <p><b>The phone check:</b> none before a merge; the checks run on each build the PM cuts (CUL-1287).</p>
       </div>
       <div class="brief"><h4>Ruled 2026-10-06 <span class="pill">ledger</span></h4>
         <p><b>D1 · the hand-off:</b> D, one veil, one physics, one name. CUL-1642 (blocks hold and slide).</p>
@@ -538,6 +530,11 @@
     return '<button type="button" class="fp" data-k="' + k + '"><span class="g ' + gcls + '">' + glyph + '</span><span>' + label + '</span>' +
       (proposed ? '<span class="chev" aria-hidden="true">&#8250;</span>' : '') + '</button>';
   }
+  // D6 (ruled 2026-10-07): the stool pill splits into Normal and Loose, each a door to its confirm.
+  function splitPill() {
+    return '<div class="fp split" data-k="stool" role="group" aria-label="Stool"><span class="g sym">' + SVG.stool + '</span><span>Stool</span>' +
+      '<span class="seg"><button type="button">Normal</button><button type="button">Loose</button></span></div>';
+  }
   function foodInner(f, proposed) {
     return '<span class="g meal">' + SVG.meal + '</span>' + (proposed
       ? '<span class="lbl2"><span>' + f.label + '</span><span class="ftag">' + f.tag + '</span></span>'
@@ -548,7 +545,7 @@
     return '<div class="ph-fan" role="menu" aria-label="Log for Nyx">' +
       '<button type="button" class="fp logfor" data-k="logfor"><i class="avatar"></i><span class="lf"><small>Logging for</small><b class="petname">Nyx</b></span><span class="caret">&#8964;</span></button>' +
       doorPill('more', 'quiet', SVG.plus, 'More events', proposed) +
-      doorPill('diarrhea', 'sym', SVG.stool, 'Loose stool', proposed) +
+      (proposed ? splitPill() : doorPill('diarrhea', 'sym', SVG.stool, 'Loose stool', proposed)) +
       doorPill('vomit', 'sym', SVG.vomit, 'Vomit', proposed) +
       doorPill('food', 'quiet', SVG.plus, 'Log food', proposed) +
       foods.map(function (f, i) { return '<button type="button" class="fp food" data-k="f' + i + '">' + foodInner(f, proposed) + '</button>'; }).join('') +
@@ -802,15 +799,8 @@
   // §03: the hand-off. D was ruled (CUL-1642); B and C left the page (commit 462aa8a).
   var seam = [
     demo('seam-demos', 'A', 'Today <span class="pill dir">being replaced</span>', 'The fan retracts and its indigo veil fades while the sheet slides up from the bottom, carrying a grey veil with it as one block.'),
-    demo('seam-demos', 'D', 'D · One veil, one physics, one name <span class="pill cur">ruled · current</span>', 'The veil stays put. More events leaves last, the sheet rises on the app’s own settle, and its title says "Logging for", like the chip.')
+    demo('seam-demos', 'D', 'D · One veil, one physics, one name <span class="pill cur">ruled · current</span>', 'The veil stays put, and it is grey (D2). More events leaves last, the sheet rises on the app’s own settle, and its title says "Logging for", like the chip.')
   ];
-  Array.prototype.slice.call(document.querySelectorAll('.veil-btn')).forEach(function (b) {
-    b.addEventListener('click', function () {
-      document.querySelectorAll('.veil-btn').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
-      seam[1].reset();
-      seam[1].el.style.setProperty('--veil', VEILS[b.getAttribute('data-veil')]);
-    });
-  });
   var seamRm = document.getElementById('seam-rm');
   seamRm.addEventListener('click', function () {
     var on = seamRm.getAttribute('aria-pressed') !== 'true';
@@ -822,7 +812,7 @@
   // alone subtle (CUL-1643).
   var del = [
     demo('delight-demos', 'today', 'Today <span class="pill dir">as shipped</span>', 'Tap a recent food: every pill retracts as if you had cancelled, then the card rises from below.', { play: 'food', playLabel: 'Play a quick meal' }),
-    demo('delight-demos', 'land', 'The meal lands in its card <span class="pill cur">ruled · current</span>', 'The food you chose stays while the rest step back, its meal mark flies into the card’s check, and the card arrives where it was. Doors carry a chevron; foods carry their format.', { play: 'food', playLabel: 'Play a quick meal' })
+    demo('delight-demos', 'land', 'The meal lands in its card <span class="pill cur">ruled · current</span>', 'The food you chose stays while the rest step back, its meal mark flies into the card’s check, and the card arrives where it was. Doors carry a chevron; foods carry their format; the stool pill splits into Normal and Loose.', { play: 'food', playLabel: 'Play a quick meal' })
   ];
   del[1].opts.fly = true;
   var delRm = document.getElementById('del-rm');
@@ -842,16 +832,14 @@
   function staticPill(gcls, glyph, body) { return '<span class="fp"><span class="g ' + gcls + '">' + glyph + '</span>' + body + '</span>'; }
   var nyx = PETS.Nyx;
   pillFrame('Today', 'Two foods that differ only in their last word, and every pill looks like every other.',
-    staticPill('quiet', SVG.plus, '<span>More events</span>') + staticPill('sym', SVG.vomit, '<span>Vomit</span>') +
+    staticPill('quiet', SVG.plus, '<span>More events</span>') + staticPill('sym', SVG.stool, '<span>Loose stool</span>') + staticPill('sym', SVG.vomit, '<span>Vomit</span>') +
     staticPill('meal', SVG.meal, '<span>' + nyx[1].today + '</span>') + staticPill('meal', SVG.meal, '<span>' + nyx[2].today + '</span>'));
-  pillFrame('Ruled <span class="pill cur">current</span>', 'The record’s words and its format tag; doors carry a chevron, so a pill that writes reads differently from one that opens.',
-    staticPill('quiet', SVG.plus, '<span>More events</span><span class="chev">&#8250;</span>') + staticPill('sym', SVG.vomit, '<span>Vomit</span><span class="chev">&#8250;</span>') +
+  pillFrame('Ruled <span class="pill cur">current</span>', 'The record’s words and its format tag; doors carry a chevron, so a pill that writes reads differently from one that opens; the stool pill splits into Normal and Loose (D6, ruled 2026-10-07).',
+    staticPill('quiet', SVG.plus, '<span>More events</span><span class="chev">&#8250;</span>') +
+    '<span class="split"><span class="g">' + SVG.stool + '</span>Stool<span class="seg"><span>Normal</span><span>Loose</span></span></span>' +
+    staticPill('sym', SVG.vomit, '<span>Vomit</span><span class="chev">&#8250;</span>') +
     staticPill('meal', SVG.meal, '<span class="lbl2"><span>' + nyx[1].label + '</span><span class="ftag">DRY</span></span>') +
     staticPill('meal', SVG.meal, '<span class="lbl2"><span>' + nyx[2].label + '</span><span class="ftag">WET</span></span>'));
-  pillFrame('D6 · The stool pill, as a split', 'Still open (a persona conflict, §05): Normal and Loose one tap each, like the sheet’s stool tile.',
-    '<span class="split"><span class="g">' + SVG.stool + '</span>Stool<span class="seg"><span>Normal</span><span>Loose</span></span></span>' +
-    staticPill('sym', SVG.vomit, '<span>Vomit</span><span class="chev">&#8250;</span>'), true);
-
   // §04: the turn, with and without its bounce
   var tp = document.getElementById('turnpair');
   [['today', 'Today: about 13% overshoot', '18° past the ×. Tension 90, friction 7.'],
