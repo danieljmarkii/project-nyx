@@ -57,7 +57,7 @@ This directory is inert inside project-nyx: its Claude config lives under `dot-c
 1. **`Needs PM` is a workflow state, not a label.** The label grew 10 → 144. (The predecessor kept its label by PM ruling on 2026-10-02 and drains it with a groomer step instead, because migrating 150 live items cost more than the state saved. A new team pays no migration, so start with the state.)
 2. **The retro trigger is computed by the hook**, not written as prose.
 3. **A session with no work PR opens its record-only PR non-draft**, so lessons do not strand on a draft branch.
-4. **Tracker close-on-merge is a known mechanic:** attach only what a PR finishes, never an ID range in a title, one sub-issue per PR.
+4. **Tracker close-on-merge is a known mechanic, as measured:** the bare issue token in a PR's title, body or head branch closes that issue on merge, and deleting the attachment does not stop it. So a PR names only what it finishes, never an ID range in a title, one sub-issue per PR, and every named issue is read back after the merge.
 5. **The manual starts lean under a ratchet**, instead of being trimmed after it hurts.
 
 ## Deliberately left behind

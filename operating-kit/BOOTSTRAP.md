@@ -93,7 +93,7 @@ Most steps are the PM's. Until step 1 is done there is no `Needs PM` state, so l
 1. **Create the workflow states:** `Needs PM` (type *unstarted*, after Todo) and `In Review` (type *started*) if the team lacks it. `Needs PM` must be a **state, not a label**: a state is exclusive and vacates on close, so "closed and still queued" becomes impossible. The predecessor used a label and it grew from 10 to 144.
 2. **Labels:** `Area: *` (one per major surface) for project-less issues, and `Quick Win` for the groomer. No catch-all project.
 3. **The coding-tool prompt template** ("copy as prompt"). Keep it a thin router; every rule lives in CLAUDE.md:
-   > You are working on {{ISSUE_PREFIX}}-NNN. Follow CLAUDE.md § Session Protocol exactly: claim first (state + claim comment naming your branch), orient, name the mode (BUILD: plan before non-trivial code; DISCOVERY: a brief, never the build), close with /wrap. The issue description and its comments are the spec; newest comment wins. Reference the issue in the PR; attach it only if this PR finishes it.
+   > You are working on {{ISSUE_PREFIX}}-NNN. Follow CLAUDE.md § Session Protocol exactly: claim first (state + claim comment naming your branch), orient, name the mode (BUILD: plan before non-trivial code; DISCOVERY: a brief, never the build), close with /wrap. The issue description and its comments are the spec; newest comment wins. Name the issue in the PR only if this PR finishes it: the bare token in a PR's title, body or head branch closes it on merge.
 4. **GitHub:** the tracker↔GitHub integration on; once CI exists, a `main` ruleset requiring its checks with an **empty bypass list**.
 
 ## §5 Verify, then ship as one PR

@@ -2,7 +2,7 @@
 <!-- The why is the important part. -->
 
 ## Issue(s)
-<!-- Name each {{ISSUE_PREFIX}}-NNN this PR advances. Only ATTACH what this PR finishes: an attachment closes the issue on merge. Never put an ID range in the title. -->
+<!-- Name only the {{ISSUE_PREFIX}}-NNN this PR FINISHES: the bare token in the title, this body or the head branch closes that issue on merge, and deleting the attachment does not stop it. Point at related issues in a tracker comment, never here. Never put an ID range in the title. -->
 
 ## Project / milestone
 —
