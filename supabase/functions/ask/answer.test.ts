@@ -55,6 +55,7 @@ import {
   type PhotoReadResult,
 } from './answer.ts'
 import type { AskCachedReadRow, ProjectedRead } from './tools.ts'
+import { projectCachedRead } from './tools.ts'
 
 // ── A minimal fetched context for dispatch tests ──────────────────────────────────
 const NOW = Date.UTC(2026, 6, 18, 12, 0, 0) // 2026-07-18T12:00:00Z
@@ -866,7 +867,7 @@ Deno.test('buildPhotoReadResult: each non-run plan maps to the right status; onl
     assert.equal(r.read, null) // no relayable read on any non-cached, non-run path
   }
   // relay_cached carries the projected read.
-  const relayed = buildPhotoReadResult({ action: 'relay_cached', eventId: 'e1', eventType: 'vomit', incidentType: 'vomit', read: { incidentType: 'vomit', status: 'completed', edited: false, description: null, flags: [], readText: null, readCorrection: null, recommendation: 'monitor', fields: { colour: 'yellow', contents: null, consistency: null, bloodPresent: 'none_visible', bilePresent: 'yes', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } } })
+  const relayed = buildPhotoReadResult({ action: 'relay_cached', eventId: 'e1', eventType: 'vomit', incidentType: 'vomit', read: { incidentType: 'vomit', status: 'completed', edited: false, description: null, flags: [], readText: null, recommendation: 'monitor', fields: { colour: 'yellow', contents: null, consistency: null, bloodPresent: 'none_visible', bilePresent: 'yes', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } } })
   assert.equal(relayed.status, 'cached')
   assert.equal(relayed.ranLiveRead, false)
   assert.ok(relayed.read)
@@ -905,7 +906,6 @@ function projected(over: Partial<ProjectedRead> = {}): ProjectedRead {
     description: null,
     flags: [],
     readText: null,
-    readCorrection: null,
     recommendation: 'monitor',
     fields: { colour: 'yellow', contents: ['bile'], consistency: null, bloodPresent: 'none_visible', bilePresent: 'yes', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null },
     ...over,
@@ -1063,18 +1063,23 @@ Deno.test('REASSURANCE_RE: the demonstrated A8 leak phrasings are now blocked (d
 // ── CUL-1406: a dated correction rides AFTER the stored words, never in their place ──────
 
 const OLD_INTAKE = "Nyx has been vomiting and hasn't eaten a full meal recently. In cats that combination is worth a call to your vet sooner rather than later."
-const CORRECTION = "Corrected Oct 7, 2026. The words above went further than the record. That day, the meal log held 6 meals for Nyx in the 24 hours before this vomit, and none was marked Most or All. This correction doesn't change the call to your vet."
+const CORRECTION = "Corrected Oct 7, 2026. The words above went further than the record. Of the 6 meals logged for Nyx in the 24 hours before I read this, 5 weren't rated, so the log couldn't say whether Nyx ate a full meal. This correction doesn't change the call to your vet."
 
+// Driven through the real projection (C-34): the pairing lives in projectCachedRead, so a test
+// that hands buildReadLine a pre-joined string would be green over a projection that dropped it.
 Deno.test('buildReadLine (CUL-1406): the stored words, then their correction; the verdict untouched', () => {
-  const line = buildReadLine(photoResult('cached', projected({ recommendation: 'worth_a_call', readText: OLD_INTAKE, readCorrection: CORRECTION })), 'Nyx')
+  const projectedRead = projectCachedRead(readRow({ eventId: 'e1', recommendation: 'worth_a_call', readText: OLD_INTAKE, readCorrection: CORRECTION }))
+  const line = buildReadLine(photoResult('cached', projectedRead), 'Nyx')
   assert.ok(line)
   const at = line!.indexOf(OLD_INTAKE)
   assert.ok(at >= 0, 'the stored words are relayed verbatim')
   assert.ok(line!.indexOf(CORRECTION) > at, 'the correction follows them')
-  assert.equal(validateAnswer({ text: line!, allowedNumerals: new Set(['6', '7', '24', '2026']), mode: 'data' }).ok, true)
+  assert.equal(projectedRead.recommendation, 'worth_a_call')
+  assert.equal(validateAnswer({ text: line!, allowedNumerals: new Set(['5', '6', '7', '24', '2026']), mode: 'data' }).ok, true)
 })
 
-Deno.test('buildReadLine (CUL-1406): no stored words, no correction (a dismissed note hides both)', () => {
-  const line = buildReadLine(photoResult('cached', projected({ readText: null, readCorrection: CORRECTION })), 'Nyx')
+Deno.test('buildReadLine (CUL-1406): a hidden note hides its correction too', () => {
+  const projectedRead = projectCachedRead(readRow({ eventId: 'e1', dismissedAt: '2026-10-07T13:00:00Z', readText: OLD_INTAKE, readCorrection: CORRECTION }))
+  const line = buildReadLine(photoResult('cached', projectedRead), 'Nyx')
   assert.ok(line && !line.includes('Corrected'))
 })

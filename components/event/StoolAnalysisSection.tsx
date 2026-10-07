@@ -159,7 +159,7 @@ const SELECT_COLS =
   'foreign_material_present, foreign_material_note, ai_raw_payload, edited_at, dismissed_at, ' +
   'updated_at, error, engine_flags, contextual_flags, tier, ' +
   // CUL-1406: read so the shared card stays one shape; the server writes these on vomit rows only (085).
-  'intake_correction_at, intake_correction_meals, intake_correction_most_or_all';
+  'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all';
 
 export function StoolAnalysisSection(
   { eventId, petId, petName, hasPhoto }:

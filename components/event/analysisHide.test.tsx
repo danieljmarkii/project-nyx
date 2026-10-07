@@ -219,6 +219,7 @@ const NOT_ON_SCREEN: Record<string, string> = {
   intake_correction_at: 'a recount beside the same words (CUL-1406); never moves the read or the verdict',
   intake_correction_meals: 'a recount beside the same words (CUL-1406); never moves the read or the verdict',
   intake_correction_most_or_all: 'a recount beside the same words (CUL-1406); never moves the read or the verdict',
+  intake_correction_unrated: 'a recount beside the same words (CUL-1406); never moves the read or the verdict',
 };
 
 const RECORDED = [

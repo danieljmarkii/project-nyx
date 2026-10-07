@@ -476,7 +476,7 @@ function first<T>(v: T | T[] | null | undefined): T | null {
 // fetchContext (the cached-read snapshot) and
 // runLivePhotoRead (the post-run re-read), so both project from the identical column set.
 const READ_COLS =
-  'event_id, incident_type, status, dismissed_at, edited_at, description, colour, contents, consistency, blood_present, bile_present, foreign_material_present, foreign_material_note, stool_consistency, stool_blood_present, stool_mucus_present, recommendation, read_text, intake_correction_at, intake_correction_meals, intake_correction_most_or_all'
+  'event_id, incident_type, status, dismissed_at, edited_at, description, colour, contents, consistency, blood_present, bile_present, foreign_material_present, foreign_material_note, stool_consistency, stool_blood_present, stool_mucus_present, recommendation, read_text, intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all'
 
 type ReadRowDb = Record<string, unknown> & { event_id: string; incident_type: string; status: string }
 

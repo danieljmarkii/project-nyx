@@ -864,9 +864,6 @@ export interface ProjectedRead {
   /** The dismissible n=1 read text, or null when dismissed / absent. Relayed verbatim; the
    *  validator gates the surrounding sentence. */
   readText: string | null
-  /** The dated correction that sits beside `readText` (CUL-1406), or null. Relayed after the
-   *  stored words whenever they are relayed, and hidden with them when the note is dismissed. */
-  readCorrection: string | null
   recommendation: string | null
   /** The structured clinical fields, passed through for a factual recount (all owner-
    *  editable / authoritative). Only non-null fields are meaningful. */
@@ -907,8 +904,12 @@ export function projectCachedRead(read: AskCachedReadRow): ProjectedRead {
     description: read.description,
     flags: derivePresentFlags(read),
     // The n=1 read (recommendation/read_text) is dismissible; hide it when dismissed.
-    readText: dismissed ? null : read.readText,
-    readCorrection: dismissed || !read.readText ? null : read.readCorrection,
+    // CUL-1406: a dated correction travels INSIDE the read's words, after them, as one string,
+    // so no relay (the photo-read line, recall_event, recent_events, last_symptom) can carry
+    // the stored words without their correction or the correction without the words.
+    readText: dismissed || !read.readText
+      ? null
+      : read.readCorrection ? `${read.readText} ${read.readCorrection}` : read.readText,
     recommendation: dismissed ? null : read.recommendation,
     fields: {
       colour: read.colour,

@@ -1717,14 +1717,14 @@ describe('VomitAnalysisSection — the dated correction beside a stored read (CU
   it('shows the stored words, then the correction, under the same Worth a call', async () => {
     mockRow = row({
       recommendation: 'worth_a_call', read_text: OLD,
-      intake_correction_at: '2026-10-07T12:00:00Z', intake_correction_meals: 6, intake_correction_most_or_all: 0,
+      intake_correction_at: '2026-10-07T12:00:00Z', intake_correction_meals: 6, intake_correction_unrated: 5, intake_correction_most_or_all: 0,
     });
     const { findByText, getByText } = render(<VomitAnalysisSection eventId="c1" petId="pet-1" petName="Nyx" hasPhoto />);
     expect(await findByText(OLD)).toBeTruthy();
     // The date is the reader's local date (lib/readCorrection.test.ts pins zones); CI runs
     // UTC+14 and −10, so only its shape is asserted here (C-29).
     expect(getByText(/^Corrected [A-Z][a-z]{2} \d{1,2}, 2026$/)).toBeTruthy();
-    expect(getByText(/held 6 meals for Nyx in the 24 hours before this vomit, and none was marked Most or All/)).toBeTruthy();
+    expect(getByText(/Of the 6 meals logged for Nyx in the 24 hours before I read this, 5 weren't rated/)).toBeTruthy();
     expect(getByText('Worth a call')).toBeTruthy();
   });
 
@@ -1738,7 +1738,7 @@ describe('VomitAnalysisSection — the dated correction beside a stored read (CU
   it('a hidden note hides its correction with it', async () => {
     mockRow = row({
       recommendation: 'worth_a_call', read_text: OLD, dismissed_at: '2026-10-07T13:00:00Z',
-      intake_correction_at: '2026-10-07T12:00:00Z', intake_correction_meals: 6, intake_correction_most_or_all: 0,
+      intake_correction_at: '2026-10-07T12:00:00Z', intake_correction_meals: 6, intake_correction_unrated: 5, intake_correction_most_or_all: 0,
     });
     const { findByText, queryByText } = render(<VomitAnalysisSection eventId="c3" petId="pet-1" petName="Nyx" hasPhoto />);
     expect(await findByText('AI note hidden')).toBeTruthy();

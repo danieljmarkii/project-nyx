@@ -148,7 +148,7 @@ const SELECT_COLS =
   'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
   'ai_raw_payload, edited_at, dismissed_at, updated_at, error, tier, engine_flags, ' +
   // CUL-1406: the facts behind a dated correction beside stored words (migration 085).
-  'intake_correction_at, intake_correction_meals, intake_correction_most_or_all';
+  'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all';
 
 export function VomitAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
