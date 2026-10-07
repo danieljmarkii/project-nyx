@@ -247,11 +247,14 @@ describe('EventTypeSheet', () => {
     expect(getByText('beat-pet:Nyx')).toBeTruthy();
   });
 
-  it('logging Other plays the celebrate beat (not a symptom)', () => {
+  // CUL-1632 (PM, 2026-10-06): what an owner logs under Other is often the worrying
+  // thing ("ate a sock"), so it is acknowledged like a symptom and never celebrated.
+  // It used to take the celebrate beat by falling through the symptom check.
+  it('logging Other plays the CALM beat: an unclassified log is never celebrated', () => {
     const { getByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
     fireEvent.press(getByText('Other'));
     fireEvent.press(getByText('stub-logged'));
-    expect(getByText('beat:celebrate')).toBeTruthy();
+    expect(getByText('beat:calm')).toBeTruthy();
   });
 
   // ── CUL-802: WHERE THE BEAT HANDS THE OWNER OFF ─────────────────────────

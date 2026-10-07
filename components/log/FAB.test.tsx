@@ -41,10 +41,11 @@ jest.mock('../pet/PetSwitcherSheet', () => ({
   },
 }));
 
-import { Alert, Animated, Text } from 'react-native';
+import { Alert, Animated, StyleSheet, Text } from 'react-native';
 import { act, render, fireEvent } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { FAB, HiddenUnderFabMenu } from './FAB';
+import { theme } from '../../constants/theme';
 import { usePetStore } from '../../store/petStore';
 import { useUiStore } from '../../store/uiStore';
 import { useMomentStore } from '../../store/momentStore';
@@ -569,10 +570,11 @@ describe('FAB — motion, and the Reduce Motion frame (beat 8)', () => {
       fireEvent.press(disc);
       await act(async () => {});
       expect(stagger).toHaveBeenCalledWith(38, expect.any(Array));
-      // The turn is the underdamped spring (the overshoot), not the old linear rotate.
+      // The turn is the underdamped spring (the overshoot), not the old linear rotate,
+      // at the PM's slightly bigger bounce (CUL-1641: friction 6, about 19% overshoot).
       expect(spring).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ toValue: 1, tension: 90, friction: 7 }),
+        expect.objectContaining({ toValue: 1, tension: 90, friction: 6 }),
       );
       // One glyph layer, turning — the crossfade's second (×) layer is absent.
       const rotations = discGlyphRotations(view);
@@ -626,6 +628,61 @@ describe('FAB — motion, and the Reduce Motion frame (beat 8)', () => {
     } finally {
       stagger.mockRestore();
     }
+  });
+});
+
+// ── The glyph is white, never the accent (CUL-1626) ──────────────────────────────
+//
+// The PM took the plus off teal on 2026-10-06, the first piece of CUL-1279's G4 = C
+// (2026-10-03: indigo is the action, teal is a good fact). The contrast suite pins the
+// PAIR, and teal on the disc would still pass it, so only this file can say which
+// colour the bars render: in motion one glyph turns into the ×; under Reduce Motion the
+// still × is a second set of bars that fades in over the first.
+describe('FAB — the plus is white on the indigo disc (CUL-1626)', () => {
+  /** Every fill under the disc's button, top to bottom: the disc, then its bars. */
+  function discFills(view: ReturnType<typeof render>): unknown[] {
+    const disc = view.getByLabelText(/Log event|Close menu/);
+    return disc
+      .findAll((n: TreeNode) => typeof n.type === 'string')
+      .map((n: TreeNode) => StyleSheet.flatten(n.props.style)?.backgroundColor)
+      .filter((fill: unknown) => fill !== undefined);
+  }
+
+  function expectWhiteBars(fills: unknown[], bars: number) {
+    expect(fills.filter((f) => f === theme.colorBrandNightElevated)).toHaveLength(1);
+    const glyph = fills.filter((f) => f !== theme.colorBrandNightElevated);
+    expect(glyph).toHaveLength(bars);
+    expect(glyph.every((f) => f === theme.colorTextOnDark)).toBe(true);
+    expect(fills).not.toContain(theme.colorAccent);
+  }
+
+  it('in motion: the plus and the × it turns into are one white glyph', async () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    const view = render(<FAB />);
+    expectWhiteBars(discFills(view), 2);
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    expectWhiteBars(discFills(view), 2);
+  });
+
+  it('under Reduce Motion: both crossfading layers, the plus and the still ×, are white', async () => {
+    useReducedMotionStore.setState({ reduceMotion: true });
+    const view = render(<FAB />);
+    expectWhiteBars(discFills(view), 4);
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    expectWhiteBars(discFills(view), 4);
+  });
+
+  // C-43: an unknown setting reads as still, so a cold start draws the crossfade's two
+  // layers, and both must be white before the setting has answered.
+  it('with the setting unknown: the still frame is white too', async () => {
+    useReducedMotionStore.setState({ reduceMotion: null });
+    const view = render(<FAB />);
+    expectWhiteBars(discFills(view), 4);
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    expectWhiteBars(discFills(view), 4);
   });
 });
 

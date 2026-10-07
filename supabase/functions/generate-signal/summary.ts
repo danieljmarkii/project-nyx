@@ -41,6 +41,16 @@
 //
 // Voice per nyx-voice; the n=1 / never-reassure-on-absence asymmetry per clinical-guardrails
 // + §7/§11 of the requirements doc.
+//
+// SAFETY SUMMARIES ARE TEMPLATE-ONLY, PERMANENTLY (PM ruling A on CUL-1630, 2026-10-07). No
+// model ever writes or rephrases a summary whose packet has `hasSafety`: `shouldPhraseWithModel`
+// refuses every such packet whatever `SUMMARY_MODEL_PHRASING_ENABLED` says, and
+// `modelMayPhraseSummary` is the one gate the Edge Function calls. A passing `validateSummary`
+// never licenses lifting this: the verbatim safety lead (CUL-1618) is necessary, not
+// sufficient, because a tail can undo the lead without a screened word ("Pixel ate everything
+// this morning."). Lifting the rule takes a new PM ruling, never a validator change. This also
+// closes B-096's re-enable question for safety summaries. Pinned by summary.test.ts over every
+// safety finding type (typed off SAFETY_TYPE_ORDER, so a new safety type must join the test).
 
 import type { Finding, MealEvent, SymptomEvent } from './detection.ts'
 import { intakeScore } from './detection.ts'
@@ -620,9 +630,20 @@ export const SUMMARY_MODEL_PHRASING_ENABLED = false
  * this AND `SUMMARY_MODEL_PHRASING_ENABLED`, so re-enabling the model never re-opens the
  * safety/quiet paths. CUL-1618's verbatim safety lead in validateSummary does NOT license
  * opening the safety path here: a vet-free tail can still contradict the lead it follows.
+ * The safety refusal is PERMANENT by PM ruling (CUL-1630, see the file header): changing it
+ * takes a new ruling, not a stronger validator.
  */
 export function shouldPhraseWithModel(packet: SummaryFactPacket): boolean {
   return !packet.hasSafety && !packet.quiet
+}
+
+/**
+ * The one gate the Edge Function asks before calling the model on a summary: the v1
+ * kill-switch AND the safety policy. Takes the switch as a required argument so a test can
+ * force it on and prove the policy alone keeps every safety packet template-only (CUL-1630).
+ */
+export function modelMayPhraseSummary(packet: SummaryFactPacket, phrasingSwitchOn: boolean): boolean {
+  return phrasingSwitchOn && shouldPhraseWithModel(packet)
 }
 
 // ── Validation (defense-in-depth; clinical-guardrails Pattern 8) ───────────────────────

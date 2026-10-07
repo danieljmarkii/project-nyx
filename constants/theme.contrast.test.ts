@@ -104,23 +104,26 @@ describe('the bright category colours do NOT clear AA as text on light', () => {
   });
 });
 
-describe('the FAB pair — an indigo disc and its teal plus (CUL-322, D3 = C)', () => {
+describe('the FAB pair — an indigo disc and its white plus (CUL-322 D3 = C; CUL-1626)', () => {
   // A NON-TEXT target (WCAG 1.4.11): the disc must clear 3:1 against the ground it
   // floats over, and the plus 3:1 against the disc. Three grounds, because the FAB
   // floats over Home's colorNeutralLight container, the white Cards scrolling under
   // it, and — while its menu is open — the indigo scrim laid over both.
   //
   // CUL-1063 shipped the disc as colorAccentInk, the one teal that cleared 3:1 with
-  // a white plus, and the PM read it on device as drab. D3 = C inverts the pair: the
-  // brand night is the disc and the BRIGHT teal is the glyph, the one place it passes
-  // (in-app brand spec §1 rule 3 names the FAB as its one exception).
+  // a white plus, and the PM read it on device as drab. D3 = C inverted the pair: the
+  // brand night became the disc and the BRIGHT teal the glyph (in-app brand spec §1
+  // rule 3 names the FAB as its one exception). CUL-1626 (PM, 2026-10-06) kept the
+  // disc and took the glyph white: CUL-1279's G4 = C keeps teal for a good fact, never
+  // the primary action. Teal on the disc still passes contrast, so no row here can
+  // stop it coming back; FAB.test.tsx pins the colour the bars render instead.
   const NON_TEXT = 3;
 
   const passing: ReadonlyArray<[label: string, fg: string, bg: string]> = [
     ['the disc on the app ground', theme.colorBrandNightElevated, theme.colorNeutralLight],
     ['the disc over a white Card', theme.colorBrandNightElevated, theme.colorSurface],
     ['the disc over its own open scrim', theme.colorBrandNightElevated, over(theme.colorScrimNight, theme.colorNeutralLight)],
-    ['the teal plus on the disc', theme.colorAccent, theme.colorBrandNightElevated],
+    ['the white plus on the disc', theme.colorTextOnDark, theme.colorBrandNightElevated],
   ];
 
   it.each(passing)('%s clears 3:1', (_label, fg, bg) => {
@@ -143,7 +146,7 @@ describe('the FAB pair — an indigo disc and its teal plus (CUL-322, D3 = C)', 
   it('records the measured ratios the PR body and the brand spec cite', () => {
     expect(contrastRatio(theme.colorBrandNightElevated, theme.colorNeutralLight)).toBeCloseTo(14.25, 2);
     expect(contrastRatio(theme.colorBrandNightElevated, theme.colorSurface)).toBeCloseTo(14.87, 2);
-    expect(contrastRatio(theme.colorAccent, theme.colorBrandNightElevated)).toBeCloseTo(6.57, 2);
+    expect(contrastRatio(theme.colorTextOnDark, theme.colorBrandNightElevated)).toBeCloseTo(14.87, 2);
     expect(contrastRatio(theme.colorAccent, theme.colorNeutralLight)).toBeCloseTo(2.17, 2);
   });
 });

@@ -114,7 +114,10 @@ const WALK: WalkRow[] = [
       + 'of this set and a type filter roses its own leaf exactly when the leaf is in it (through '
       + 'isSymptomFilter), so stool_normal\'s filter draws a neutral line, as its rows do. All types does '
       + 'NOT ride it: that rose is the Patterns month\'s vomiting-episode mark, so a cough day is never rose '
-      + 'there (the set equality is asserted below, over the shipped function)',
+      + 'there (the set equality is asserted below, over the shipped function). '
+      + 'The commit beat rides it too (commitToneOf, lib/commitTone.ts, CUL-1632): every leaf of this '
+      + 'set, plus `other`, takes the calm beat and the soft tap, so a leaf that joins the set is never '
+      + 'celebrated (asserted over every EVENT_TYPES key in lib/commitTone.test.ts)',
     read: inSet(SYMPTOM_TYPES),
     cough: { now: true, decision: 'YES — joins in THIS PR (§6 pairing rule)' },
     sneeze: { now: true, decision: 'YES — joins in THIS PR (§6 pairing rule)' },

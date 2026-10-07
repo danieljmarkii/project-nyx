@@ -20,7 +20,8 @@ import { insertSimpleEvent } from '../lib/simpleEvent';
 import { pickPhotoSource, type PhotoSource } from '../lib/photoSource';
 import { EventTypePicker } from '../components/log/EventTypePicker';
 import { Header } from '../components/ui/Header';
-import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES, hasPerIncidentRead } from '../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, hasPerIncidentRead } from '../constants/eventTypes';
+import { commitToneOf } from '../lib/commitTone';
 import { usePetStore, resolveRecordPetName } from '../store/petStore';
 import { useWidgetPetLink } from '../hooks/useWidgetPetLink';
 import { useSubmitGuard } from '../hooks/useSubmitGuard';
@@ -917,9 +918,10 @@ export default function LogModal() {
     // that used to live here now belong to insertSimpleEvent (so the in-sheet
     // confirm gets them too), and insertMeal already owns both for the meal branch.
     if (!isMeal) {
-      // Tone-aware: symptom logs get a calm confirm (never a festive gold beat
-      // over a worrying event); routine logs get the warm-gold celebrate moment.
-      const tone = selectedType !== null && SYMPTOM_TYPES.has(selectedType) ? 'calm' : 'celebrate';
+      // Tone-aware: a symptom, or an unclassified Other (CUL-1632), gets a calm confirm
+      // (never a festive gold beat over a worrying event); routine logs get the warm-gold
+      // celebrate moment. commitToneOf is the one rule the log sheet asks too.
+      const tone = commitToneOf(selectedType);
       // CUL-606 — the card is handed the RECORD, not a sentence, and derives what
       // it says from the SAME confidence fields the row was just written with
       // (tf.*, above). So a "found it" vomit's card reads "found by 5:33 PM",

@@ -16,15 +16,21 @@
 
 import { strict as assert } from 'node:assert'
 import type {
+  IncidentRedFlagFinding,
   IntakeDeclineFinding,
   MealEvent,
   ReflectionFinding,
+  SafetyFindingType,
+  SymptomBurdenFinding,
+  SymptomChronicityFinding,
   SymptomEvent,
   SymptomWorseningFinding,
 } from './detection.ts'
+import { detectWeightLoss, SAFETY_TYPE_ORDER } from './detection.ts'
 import {
   buildSummaryPacket,
   extractNumbers,
+  modelMayPhraseSummary,
   shouldPhraseWithModel,
   SUMMARY_MODEL_PHRASING_ENABLED,
   summaryModelPayload,
@@ -893,4 +899,153 @@ Deno.test('CUL-1618: a non-safety summary may not name the vet either', () => {
   assert.equal(validateSummary("Chicken was Pixel's most-logged meal protein this month. No need to see the vet.", p), false)
   assert.equal(validateSummary("Chicken was Pixel's most-logged meal protein this month. Pixel saw the vet last week.", p), false)
   assert.equal(validateSummary("Chicken was Pixel's most-logged meal protein this month. Keep logging for Pixel.", p), true)
+})
+
+// ── CUL-1630: safety summaries are template-only, permanently (PM ruling A, 2026-10-07) ─────
+//
+// The rule lives in summary.ts's header. These tests drive the gate the Edge Function calls,
+// `modelMayPhraseSummary`, with the kill-switch FORCED ON, over every safety finding type the
+// engine can emit, alone and in each composition the summary builds. A reflective packet is the
+// non-vacuity floor: the same gate must still say yes to it, or "false everywhere" proves nothing.
+
+// One real finding per safety type. Typed as a Record over SafetyFindingType (the union
+// SAFETY_TYPE_ORDER is checked against), so a new safety finding type fails the type check here
+// until it joins this test.
+const SAFETY_FINDING_BY_TYPE: Record<SafetyFindingType, Finding> = {
+  incident_red_flag: {
+    type: 'incident_red_flag', priorityClass: 'safety', incidentType: 'vomit', flags: ['blood'],
+    mostRecentFlaggedIso: daysAgoIso(1), flaggedIncidentCount: 1, windowDays: 14,
+  } satisfies IncidentRedFlagFinding,
+  intake_decline: declineFinding(),
+  symptom_burden: {
+    type: 'symptom_burden', priorityClass: 'safety', symptomType: 'vomit', count: 5, days: 4,
+    runDays: 3, daysSinceRunEnd: 0, countArm: true, persistenceArm: true, tier: 'today',
+    windowDays: 7, associationalOnly: true,
+  } satisfies SymptomBurdenFinding,
+  // The real lane's output over a confirmed loss (detection.weight.test.ts's Nyx record), so the
+  // template renders the decimals the sentence-count gap (CUL-1630 item 2) was about.
+  weight_loss: (() => {
+    const [f] = detectWeightLoss({
+      pet: { name: 'Pixel', species: 'cat', dietTrialActive: false },
+      symptomEvents: [],
+      mealEvents: [],
+      now: '2026-10-03T12:00:00.000Z',
+      weight: {
+        readings: [
+          { kg: 4.4, occurredAt: '2026-06-15T09:00:00Z', source: 'home_scale' },
+          { kg: 3.73, occurredAt: '2026-09-16T09:00:00Z', source: 'clinic' },
+        ],
+        dateOfBirth: '2023-09-01',
+      },
+    })
+    assert.ok(f, 'premise: the weight lane fires on a confirmed loss')
+    return f
+  })(),
+  symptom_chronicity: {
+    type: 'symptom_chronicity', priorityClass: 'safety', symptomType: 'vomit', episodeCount: 20,
+    spanDays: 42, activeWeeks: 6, symptomDays: 18, daysSinceLastEpisode: 0,
+    firstOnsetIso: daysAgoIso(42), tier: 'firm', windowDays: 56, associationalOnly: true,
+  } satisfies SymptomChronicityFinding,
+  symptom_worsening: worseningFinding(),
+}
+
+function packetOf(findings: Finding[], opts: { rising?: boolean; decorated?: Finding[] } = {}): SummaryFactPacket {
+  const p = buildSummaryPacket({
+    petName: 'Pixel',
+    findings,
+    mealEvents: ratedChickenMeals(8, 'all'),
+    symptomEvents: [symptom(), symptom()],
+    freeFedFoodIds: new Set(),
+    nowMs: NOW_MS,
+    risingBelowCardFloor: opts.rising ?? false,
+    watchedSentenceFor: opts.decorated
+      ? watchedSentenceLookup(opts.decorated.map((finding) => ({ finding })))
+      : NONE_WATCHED,
+  })
+  assert.ok(p, 'premise: every safety shape builds a packet')
+  return p!
+}
+
+/** Every summary packet shape that carries a safety clause, labelled for the failure message. */
+function everySafetyPacketShape(): Array<[string, SummaryFactPacket]> {
+  const shapes: Array<[string, SummaryFactPacket]> = []
+  const all = Object.values(SAFETY_FINDING_BY_TYPE)
+  for (const [type, f] of Object.entries(SAFETY_FINDING_BY_TYPE)) {
+    shapes.push([`${type} alone`, packetOf([f])])
+    // Beside a reflection: `quiet` is false here, so only the safety refusal keeps it off.
+    shapes.push([`${type} + reflection`, packetOf([f, reflectionFinding()])])
+    shapes.push([`${type} + a sign rising below the card floor`, packetOf([f], { rising: true })])
+    // EN-9: watched (the owner said the vet knows). The clause stops asking; it is still safety.
+    const watched = withCare(f, 'with_vet', "Pixel's vomiting, your vet knows.")
+    shapes.push([`${type} watched`, packetOf([f, reflectionFinding()], { decorated: [watched] })])
+  }
+  shapes.push(['every safety type at once', packetOf(all)])
+  shapes.push(['every safety type at once + reflection', packetOf([...all, reflectionFinding()])])
+  shapes.push([
+    'chronicity with cough-vomit adjacency + red flag + weight',
+    packetOf([
+      { ...SAFETY_FINDING_BY_TYPE.symptom_chronicity, coughVomitAdjacent: true } as Finding,
+      SAFETY_FINDING_BY_TYPE.incident_red_flag,
+      SAFETY_FINDING_BY_TYPE.weight_loss,
+    ]),
+  ])
+  shapes.push([
+    'one asking, one watched',
+    packetOf([SAFETY_FINDING_BY_TYPE.intake_decline, SAFETY_FINDING_BY_TYPE.symptom_worsening], {
+      decorated: [
+        SAFETY_FINDING_BY_TYPE.intake_decline,
+        withCare(SAFETY_FINDING_BY_TYPE.symptom_worsening, 'with_vet', "Pixel's vomiting, your vet knows."),
+      ],
+    }),
+  ])
+  return shapes
+}
+
+Deno.test('CUL-1630: the fixture covers every safety finding type the engine ranks', () => {
+  assert.deepEqual(Object.keys(SAFETY_FINDING_BY_TYPE).sort(), Object.keys(SAFETY_TYPE_ORDER).sort())
+  for (const [type, f] of Object.entries(SAFETY_FINDING_BY_TYPE)) {
+    assert.equal(f.type, type)
+    assert.equal(f.priorityClass, 'safety')
+  }
+})
+
+Deno.test('CUL-1630: with the phrasing switch FORCED ON, no safety packet ever reaches the model', () => {
+  const shapes = everySafetyPacketShape()
+  assert.ok(shapes.length >= 26, 'premise: every type, four ways each, plus the compositions')
+  for (const [label, p] of shapes) {
+    assert.equal(p.hasSafety, true, `premise: ${label} is a safety packet`)
+    assert.ok(p.safetyClauses.length >= 1, `premise: ${label} leads with a safety clause`)
+    assert.equal(shouldPhraseWithModel(p), false, `policy must refuse: ${label}`)
+    assert.equal(modelMayPhraseSummary(p, true), false, `gate must refuse with the switch on: ${label}`)
+  }
+  // The "+ reflection" and "watched" shapes are not quiet, so `quiet` cannot be what refused them.
+  assert.ok(shapes.some(([, p]) => !p.quiet), 'premise: some safety shapes are not quiet')
+})
+
+Deno.test('CUL-1630: the gate is not false everywhere — a reflective packet is model-eligible with the switch on, and the switch alone still holds', () => {
+  const quiet = packetOf([]) // no finding at all: a quiet, descriptive-only summary
+  assert.equal(quiet.quiet, true)
+  const eligible = buildSummaryPacket({
+    risingBelowCardFloor: false, watchedSentenceFor: NONE_WATCHED,
+    petName: 'Pixel',
+    findings: [reflectionFinding()],
+    mealEvents: ratedChickenMeals(6),
+    symptomEvents: [],
+    freeFedFoodIds: new Set(),
+    nowMs: NOW_MS,
+  })!
+  assert.equal(eligible.hasSafety, false)
+  assert.equal(modelMayPhraseSummary(eligible, true), true, 'non-vacuity floor: the policy admits a reflection summary')
+  assert.equal(modelMayPhraseSummary(eligible, false), false, 'the kill-switch off still refuses it')
+  assert.equal(modelMayPhraseSummary(quiet, true), false, 'a quiet summary stays template-only too')
+})
+
+Deno.test('CUL-1630: a passing validateSummary never licenses model phrasing on a safety packet', () => {
+  // The verbatim template validates, and the gate still refuses: the validator is not the gate.
+  const p = packetOf([SAFETY_FINDING_BY_TYPE.symptom_worsening])
+  assert.equal(validateSummary(summaryTemplate(p), p), true, 'premise: the safety template validates')
+  // And a tail that undoes the lead without a screened word also validates (the CUL-1618 gap).
+  const undoing = `${p.safetyClauses.join(' ')} Pixel ate everything this morning.`
+  assert.equal(validateSummary(undoing, p), true, 'premise: the validator alone cannot catch an undoing tail')
+  assert.equal(modelMayPhraseSummary(p, true), false)
 })
