@@ -146,3 +146,34 @@ describe('IncidentReadPending (§5.2)', () => {
     });
   });
 });
+
+describe('IncidentReadCard — the dated correction (CUL-1406, C-A)', () => {
+  const WORDS = "Nyx has been vomiting and hasn't eaten a full meal recently.";
+  const correction = { label: 'Corrected Oct 7, 2026', text: 'The words above went further than the record.' };
+
+  it('keeps the stored words untouched and puts the correction under them, as one element', () => {
+    const { getByText, getByTestId } = render(
+      <IncidentReadCard verdict="worth_a_call" label="Worth a call" readText={WORDS} correction={correction} onHide={() => {}} />,
+    );
+    const { StyleSheet } = require('react-native');
+    // No strikethrough (C-A): the words are drawn exactly as stored.
+    expect(StyleSheet.flatten(getByText(WORDS).props.style).textDecorationLine).toBeUndefined();
+    const block = getByTestId('incident-read-correction');
+    expect(block.props.accessible).toBe(true);
+    // No label that differs from the visible text (C-7): the element reads its children.
+    expect(block.props.accessibilityLabel).toBeUndefined();
+    expect(getByText(correction.label)).toBeTruthy();
+    expect(getByText(correction.text)).toBeTruthy();
+    // A record fact, never a second alarm: grey, on a rose card too.
+    expect(StyleSheet.flatten(block.props.style).borderLeftColor).toBe(theme.colorBorderStrong);
+    // The verdict is untouched.
+    expect(getByText('Worth a call')).toBeTruthy();
+  });
+
+  it('draws nothing without stored words to sit beside', () => {
+    const { queryByTestId } = render(
+      <IncidentReadCard verdict="worth_a_call" label="Worth a call" readText={null} correction={correction} onHide={() => {}} />,
+    );
+    expect(queryByTestId('incident-read-correction')).toBeNull();
+  });
+});

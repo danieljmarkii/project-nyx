@@ -101,6 +101,7 @@ export function IncidentReadCard({
   tellThem,
   watchFor,
   readText,
+  correction,
   onHide,
   arrival,
   onMeasure,
@@ -121,6 +122,10 @@ export function IncidentReadCard({
   /** Under a quiet read: what would change it, one clause per floor row (spec §3). */
   watchFor?: WatchForList | null;
   readText?: string | null;
+  /** CUL-1406: a dated correction beside stored words that went further than the record
+   *  (`lib/readCorrection.ts`). Under the words, never in place of them, and never a change
+   *  to the verdict above. Hidden with the note, because it is part of the note. */
+  correction?: { label: string; text: string } | null;
   onHide: () => void;
   /** Beat 1 of the arrival (CUL-804), while it is running; null every other moment —
    *  including a read that was already here on open, which never animates at all. */
@@ -190,6 +195,15 @@ export function IncidentReadCard({
           </View>
         ) : null}
         {readText ? <ThemedText style={styles.readText}>{readText}</ThemedText> : null}
+        {/* One accessible element, so VoiceOver reads the label and the body together in the
+            order the eye meets them. No strikethrough on the words above (C-A): the visible
+            and the spoken form are the same sentences, so no label differs from the text (C-7). */}
+        {readText && correction ? (
+          <View testID="incident-read-correction" accessible style={styles.correction}>
+            <ThemedText style={styles.correctionLabel}>{correction.label}</ThemedText>
+            <ThemedText style={styles.correctionText}>{correction.text}</ThemedText>
+          </View>
+        ) : null}
         {/* The list never sits under a call: a call's own ask is the action line, and a
             "call now if" under "call today" would read as the condition for the call above. */}
         {!attn && watchFor ? (
@@ -327,6 +341,26 @@ const styles = StyleSheet.create({
   readText: {
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightBody,
+  },
+  // A record fact, not a second alarm: grey ground and rail on every tone, never the rose.
+  correction: {
+    backgroundColor: theme.colorSurfaceSubtle,
+    borderLeftWidth: RAIL_WIDTH,
+    borderLeftColor: theme.colorBorderStrong,
+    borderRadius: theme.radiusSmall,
+    paddingVertical: theme.space1,
+    paddingHorizontal: theme.space1,
+    gap: theme.spaceMicro,
+  },
+  correctionLabel: {
+    fontSize: theme.textSM,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorTextSecondary,
+  },
+  correctionText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightBody,
   },
   disclaimer: {

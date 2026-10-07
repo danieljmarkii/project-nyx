@@ -71,6 +71,7 @@ import {
   BLOOD_OPTIONS,
 } from './vomitFields';
 import { ThemedText } from '../ui/ThemedText';
+import { intakeCorrectionDisplay, type IntakeCorrectionColumns } from '../../lib/readCorrection';
 import {
   IncidentReadCard, RAIL_TICK_HEIGHT, INCIDENT_READ_FAILED_LINE, INCIDENT_READ_NOT_ENOUGH_LINE,
   INCIDENT_RE_READING_PHOTO_LINE, INCIDENT_RE_READING_LINE,
@@ -91,7 +92,7 @@ import { useObservationFold } from './useObservationFold';
 // from either to a reassuring verdict).
 type Status = 'pending' | 'completed' | 'failed' | 'uncertain' | 'capped' | 'read_disabled';
 
-interface AnalysisRow {
+interface AnalysisRow extends IntakeCorrectionColumns {
   status: Status;
   // Text, not the shipped three-value union (CUL-1277): the server can hold a verdict this
   // build has never seen, and a type that says otherwise is what let `REC_LABEL[rec]`
@@ -145,7 +146,9 @@ const DISMISSED_LINE = 'AI note hidden';
 const SELECT_COLS =
   'status, recommendation, read_text, description, colour, contents, consistency, ' +
   'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
-  'ai_raw_payload, edited_at, dismissed_at, updated_at, error, tier, engine_flags';
+  'ai_raw_payload, edited_at, dismissed_at, updated_at, error, tier, engine_flags, ' +
+  // CUL-1406: the facts behind a dated correction beside stored words (migration 085).
+  'intake_correction_at, intake_correction_meals, intake_correction_most_or_all';
 
 export function VomitAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -592,6 +595,7 @@ export function VomitAnalysisSection(
             label={TIER_WORDS.not_enough_to_say.label}
             tone={TIER_WORDS.not_enough_to_say.tone}
             readText={row.read_text}
+            correction={intakeCorrectionDisplay(row, petName)}
             watchFor={photolessList}
             onHide={() => setDismissed(true)}
             arrival={arrival.rail}
@@ -711,6 +715,7 @@ export function VomitAnalysisSection(
           tellThem={tellThemLine}
           watchFor={watchFor}
           readText={row.read_text}
+            correction={intakeCorrectionDisplay(row, petName)}
           onHide={() => setDismissed(true)}
           arrival={arrival.rail}
           onMeasure={arrival.onContentLayout}

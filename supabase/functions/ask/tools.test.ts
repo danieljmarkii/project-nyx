@@ -1074,6 +1074,7 @@ function read(partial: Partial<AskCachedReadRow>): AskCachedReadRow {
     stoolMucusPresent: partial.stoolMucusPresent ?? null,
     recommendation: partial.recommendation ?? null,
     readText: partial.readText ?? null,
+    readCorrection: partial.readCorrection ?? null,
   }
 }
 
@@ -1232,4 +1233,16 @@ Deno.test('medications — a New York evening dose on the last day is its course
   const utc = medications(regimens, doses, { window: '30d', nowMs: NOW_MS, timezone: 'UTC' })
   assert.equal(utc.medications.find((m) => m.medicationId === 'r1')?.dosesGiven, 0)
   assert.equal(utc.medications.find((m) => m.medicationId === null)?.dosesGiven, 1)
+})
+
+Deno.test('projectCachedRead (CUL-1406): the correction rides beside the words, and hides with them', () => {
+  const words = "Nyx has been vomiting and hasn't eaten a full meal recently. In cats that combination is worth a call to your vet sooner rather than later."
+  const corr = 'Corrected Oct 7, 2026. The words above went further than the record.'
+  const shown = projectCachedRead(read({ readText: words, readCorrection: corr, recommendation: 'worth_a_call' }))
+  assert.equal(shown.readText, words)
+  assert.equal(shown.readCorrection, corr)
+  assert.equal(shown.recommendation, 'worth_a_call')
+  const hidden = projectCachedRead(read({ dismissedAt: '2026-10-07T00:00:00Z', readText: words, readCorrection: corr }))
+  assert.equal(hidden.readText, null)
+  assert.equal(hidden.readCorrection, null)
 })

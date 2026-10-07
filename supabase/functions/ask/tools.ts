@@ -459,6 +459,10 @@ export interface AskCachedReadRow {
   // ── n=1 interpretive read (dismissible, not editable) ──
   recommendation: string | null
   readText: string | null
+  /** CUL-1406: the dated correction beside `readText`, already worded by lib/readCorrection.ts
+   *  (label + body, the incident screen's words), or null. Relayed AFTER the stored words,
+   *  never in place of them; it never changes the verdict. */
+  readCorrection: string | null
 }
 
 // ── deleted_at contract (§5.2 / B-071) ────────────────────────────────────────────
@@ -860,6 +864,9 @@ export interface ProjectedRead {
   /** The dismissible n=1 read text, or null when dismissed / absent. Relayed verbatim; the
    *  validator gates the surrounding sentence. */
   readText: string | null
+  /** The dated correction that sits beside `readText` (CUL-1406), or null. Relayed after the
+   *  stored words whenever they are relayed, and hidden with them when the note is dismissed. */
+  readCorrection: string | null
   recommendation: string | null
   /** The structured clinical fields, passed through for a factual recount (all owner-
    *  editable / authoritative). Only non-null fields are meaningful. */
@@ -901,6 +908,7 @@ export function projectCachedRead(read: AskCachedReadRow): ProjectedRead {
     flags: derivePresentFlags(read),
     // The n=1 read (recommendation/read_text) is dismissible; hide it when dismissed.
     readText: dismissed ? null : read.readText,
+    readCorrection: dismissed || !read.readText ? null : read.readCorrection,
     recommendation: dismissed ? null : read.recommendation,
     fields: {
       colour: read.colour,

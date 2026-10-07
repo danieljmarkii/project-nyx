@@ -1709,3 +1709,39 @@ describe('VomitAnalysisSection — the floor\'s words (CUL-1510)', () => {
     expect(view.queryByTestId('incident-read-watch-for')).toBeNull();
   });
 });
+
+describe('VomitAnalysisSection — the dated correction beside a stored read (CUL-1406)', () => {
+  afterEach(() => { mockRow = null; });
+  const OLD = "Nyx has been vomiting and hasn't eaten a full meal recently. In cats that combination is worth a call to your vet sooner rather than later.";
+
+  it('shows the stored words, then the correction, under the same Worth a call', async () => {
+    mockRow = row({
+      recommendation: 'worth_a_call', read_text: OLD,
+      intake_correction_at: '2026-10-07T12:00:00Z', intake_correction_meals: 6, intake_correction_most_or_all: 0,
+    });
+    const { findByText, getByText } = render(<VomitAnalysisSection eventId="c1" petId="pet-1" petName="Nyx" hasPhoto />);
+    expect(await findByText(OLD)).toBeTruthy();
+    // The date is the reader's local date (lib/readCorrection.test.ts pins zones); CI runs
+    // UTC+14 and −10, so only its shape is asserted here (C-29).
+    expect(getByText(/^Corrected [A-Z][a-z]{2} \d{1,2}, 2026$/)).toBeTruthy();
+    expect(getByText(/held 6 meals for Nyx in the 24 hours before this vomit, and none was marked Most or All/)).toBeTruthy();
+    expect(getByText('Worth a call')).toBeTruthy();
+  });
+
+  it('a read with no correction draws no correction', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', read_text: OLD });
+    const { findByText, queryByTestId } = render(<VomitAnalysisSection eventId="c2" petId="pet-1" petName="Nyx" hasPhoto />);
+    expect(await findByText(OLD)).toBeTruthy();
+    expect(queryByTestId('incident-read-correction')).toBeNull();
+  });
+
+  it('a hidden note hides its correction with it', async () => {
+    mockRow = row({
+      recommendation: 'worth_a_call', read_text: OLD, dismissed_at: '2026-10-07T13:00:00Z',
+      intake_correction_at: '2026-10-07T12:00:00Z', intake_correction_meals: 6, intake_correction_most_or_all: 0,
+    });
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="c3" petId="pet-1" petName="Nyx" hasPhoto />);
+    expect(await findByText('AI note hidden')).toBeTruthy();
+    expect(queryByText(/^Corrected /)).toBeNull();
+  });
+});
