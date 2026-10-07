@@ -319,9 +319,11 @@ interface MomentState {
   // commit haptic with it — four rules the beat was re-deriving or missing.
   showSheetBeat: (payload: Omit<SheetBeatPayload, 'kind'>, opts?: ShowOpts) => void;
   hide: () => void;
-  // CUL-1635 — dismiss a card that sits in the FAB's corner, because the owner just
-  // opened the FAB. True when it dismissed one. See isCornerCardUp for the why.
-  dismissCornerCard: () => boolean;
+  // CUL-1635 — clear the FAB's corner because the owner just opened the FAB. See
+  // isCornerCardUp for the why. 'clear': nothing was there. 'dismissed': a card was, and
+  // is gone. 'held': a card is there that must not go yet (an unread safety note, or an
+  // Undo mid-write), so the fan must not open over it either.
+  dismissCornerCard: () => CornerResult;
   // CUL-612 — reverse the log this card is announcing: soft-delete the event, drop
   // it from Today, and swap the card to its removal line for a short read.
   //
@@ -660,6 +662,20 @@ export function isIntakeDecline(rating: IntakeRating | null | undefined): boolea
 // take its Undo off the Noticed card for nothing.
 const CORNER_KINDS: ReadonlySet<MomentPayload['kind']> = new Set(['meal', 'medication', 'named']);
 
+export type CornerResult = 'clear' | 'dismissed' | 'held';
+
+/**
+ * The card carries a safety note a gesture must not take away (CUL-1635, interim until
+ * the PM rules): a double-dose conflict, which History has no indicator for, or a trial
+ * heads-up, whose one-per-trial budget is spent the moment it renders. Both cards already
+ * hold a 7s floor against a shorter timer; this extends that floor to the FAB's tap.
+ */
+function carriesSafetyNote(payload: MomentPayload): boolean {
+  if (payload.kind === 'medication') return Boolean(payload.doubleDose?.conflict);
+  if (payload.kind === 'meal') return Boolean(payload.trialFlag);
+  return false;
+}
+
 /** A completion card is on screen in the FAB's corner (CUL-1635). */
 export function isCornerCardUp(s: { visible: boolean; payload: MomentPayload | null }): boolean {
   return s.visible && s.payload !== null && CORNER_KINDS.has(s.payload.kind);
@@ -722,9 +738,20 @@ export const useMomentStore = create<MomentState>((set) => ({
     set({ visible: false });
   },
   dismissCornerCard: () => {
-    if (!isCornerCardUp(useMomentStore.getState())) return false;
-    useMomentStore.getState().hide();
-    return true;
+    const state = useMomentStore.getState();
+    if (!isCornerCardUp(state) || !state.payload) return 'clear';
+    // A removed card has already said what it did; its line can go.
+    if (!state.removed && (undoInFlight || carriesSafetyNote(state.payload))) return 'held';
+    // Not hide(): its clearTimers() also cancels a PENDING reveal, and a second log's
+    // card (the picker path reveals ~450ms late) would then never show, taking its Undo
+    // with it. Only this card's clock stops; the pending one reveals, and the FAB's
+    // effect closes the fan for it.
+    clearHideTimer();
+    clearPauseCeiling();
+    dwellPaused = false;
+    bankedDurationMs = 0;
+    set({ visible: false });
+    return 'dismissed';
   },
   undo: async (eventId) => {
     const before = useMomentStore.getState();

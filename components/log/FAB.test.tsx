@@ -859,6 +859,26 @@ describe('FAB — the fan never shares the corner with a completion card', () =>
     expect(useMomentStore.getState().visible).toBe(true);
   });
 
+  it('a card holding a safety note keeps the fan shut until its dwell ends', async () => {
+    act(() => {
+      useMomentStore.getState().showMedication({
+        ...DOSE, doubleDose: { conflict: true, otherEventId: 'd0', gapMinutes: 60 },
+      } as never);
+    });
+    const view = await openMenu();
+    expect(useUiStore.getState().fabMenuOpen).toBe(false);
+    expect(view.queryByText('Log food')).toBeNull();
+    expect(useMomentStore.getState().visible).toBe(true);
+
+    // The 7s flagged dwell runs out on its own; the next tap opens the fan.
+    await act(async () => { jest.advanceTimersByTime(7000); });
+    expect(useMomentStore.getState().visible).toBe(false);
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    expect(useUiStore.getState().fabMenuOpen).toBe(true);
+    expect(overlaps).toEqual([]);
+  });
+
   it('the look\'s beat draws no corner card, so the fan leaves it alone', async () => {
     act(() => {
       useMomentStore.getState().showLook({

@@ -192,8 +192,9 @@ export function FAB() {
     // fan (a root sibling) and its Undo row sits on the lowest pill, so a tap meant for
     // the second food of a meal could undo the first. Dismissed on the owner's own tap,
     // before the fan draws: the card's pointerEvents drop with `visible`, so not even
-    // its fade can take a touch.
-    useMomentStore.getState().dismissCornerCard();
+    // its fade can take a touch. A card that is HELD (an unread safety note, an Undo
+    // mid-write) wins instead: the fan stays shut until the card's own dwell ends.
+    if (useMomentStore.getState().dismissCornerCard() === 'held') return;
     // Light impact on OPEN only — closing the menu commits to nothing and stays silent.
     openMenuHaptic();
     closing.current = false;
@@ -301,7 +302,10 @@ export function FAB() {
   // CUL-1635, the other direction: a card that reveals while the fan is open (the
   // picker path reveals ~450ms after its modal leaves) closes the fan rather than being
   // dismissed itself, since its Undo is a safety net the owner has not yet seen. A close
-  // already under way is the FAB's own quick meal handing over to its card.
+  // already under way is the FAB's own quick meal handing over to its card. A tap on the
+  // disc after this is the owner's own gesture again, and dismisses the card like any
+  // other open. `open` only ever turns true through openMenu, which clears the corner
+  // first, so this effect needs no case for a card already up when the fan opens.
   useEffect(() => {
     if (cornerCardUp && open && !closing.current) closeMenu();
   }, [cornerCardUp, open, closeMenu]);

@@ -1419,3 +1419,93 @@ describe('undo × the dwell pause (the CUL-612 / CUL-614 seam)', () => {
     expect(useMomentStore.getState().visible).toBe(false);
   });
 });
+
+// ── The FAB's corner (CUL-1635) ─────────────────────────────────────────────────────
+//
+// Opening the FAB clears a corner card first, so the fan never opens under its Undo.
+// What only the store can answer: which cards may go, that a card that may not is HELD
+// (and the FAB then stays shut), and that clearing one never cancels the next card's
+// pending reveal.
+describe('dismissCornerCard (CUL-1635)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    useMomentStore.getState().hide();
+    useMomentStore.setState({ payload: null, removed: false });
+    (reverseLoggedEvent as jest.Mock).mockImplementation(async () => {});
+  });
+  afterEach(() => {
+    useMomentStore.getState().hide();
+    jest.useRealTimers();
+  });
+
+  it('dismisses a plain meal, dose or named card, and reports clear when there is none', () => {
+    expect(useMomentStore.getState().dismissCornerCard()).toBe('clear');
+    for (const show of [
+      () => useMomentStore.getState().showMeal(mealPayload()),
+      () => useMomentStore.getState().showMedication(medicationPayload()),
+      () => useMomentStore.getState().showNamed(namedPayload()),
+    ]) {
+      show();
+      expect(useMomentStore.getState().dismissCornerCard()).toBe('dismissed');
+      expect(useMomentStore.getState().visible).toBe(false);
+    }
+  });
+
+  it('holds a dose card carrying a double-dose conflict, and a meal card carrying a trial heads-up', () => {
+    useMomentStore.getState().showMedication(medicationPayload({
+      doubleDose: { conflict: true, otherEventId: 'm0', gapMinutes: 95 },
+    }));
+    expect(useMomentStore.getState().dismissCornerCard()).toBe('held');
+    expect(useMomentStore.getState().visible).toBe(true);
+
+    useMomentStore.getState().showMeal(mealPayload({
+      trialFlag: { kind: 'off_trial_list', trialId: 't1', foodId: 'f9' } as never,
+    }));
+    expect(useMomentStore.getState().dismissCornerCard()).toBe('held');
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+
+  it('a dose card whose double-dose answer was no conflict is dismissed like any other', () => {
+    useMomentStore.getState().showMedication(medicationPayload({
+      doubleDose: { conflict: false, otherEventId: null, gapMinutes: null },
+    }));
+    expect(useMomentStore.getState().dismissCornerCard()).toBe('dismissed');
+  });
+
+  it('never cancels the next card\'s pending reveal', () => {
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'a' }));
+    // A second log on the picker path: its card reveals ~450ms later.
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'b' }), { delayMs: 450 });
+    expect(useMomentStore.getState().dismissCornerCard()).toBe('dismissed');
+    expect(useMomentStore.getState().visible).toBe(false);
+
+    jest.advanceTimersByTime(450);
+    const s = useMomentStore.getState();
+    expect(s.visible).toBe(true);
+    expect(s.payload?.eventId).toBe('b');
+  });
+
+  it('holds a card while its Undo is mid-write, so a failure still has a card to speak on', async () => {
+    let finish: () => void = () => {};
+    (reverseLoggedEvent as jest.Mock).mockImplementationOnce(
+      () => new Promise<void>((r) => { finish = r; }),
+    );
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'u1' }));
+    const pending = useMomentStore.getState().undo('u1');
+    expect(useMomentStore.getState().dismissCornerCard()).toBe('held');
+    finish();
+    await pending;
+    // Once the removal line is up the card has said its piece, and it may go.
+    expect(useMomentStore.getState().removed).toBe(true);
+    expect(useMomentStore.getState().dismissCornerCard()).toBe('dismissed');
+  });
+
+  it('leaves the look\'s beat alone: it draws no card in the corner', () => {
+    useMomentStore.getState().showLook({
+      eventId: 'l1', petId: 'p1', occurredAt: '2026-06-07T14:00:00.000Z',
+      outcome: 'nothing_unusual', words: [],
+    } as never);
+    expect(useMomentStore.getState().dismissCornerCard()).toBe('clear');
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+});
