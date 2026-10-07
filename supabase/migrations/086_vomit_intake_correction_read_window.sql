@@ -22,13 +22,21 @@
 --   · The window is the one the words were about: [read − 24 h, read], where
 --     `read` is `intake_read_at`, the moment the server last wrote those words.
 --     A held re-read never writes read_text (resolveReanalysisWrite's hold), so
---     the stamp moves only when the sentence was really recomputed. Backfill:
---     the later of `created_at` and the event's newest attachment (second
---     adversarial pass, finding 3): a row is often created before its photo
---     lands (6/12: 13 s later), and a replaced photo means a later read wrote
---     the words. `updated_at` cannot help (085's backfill moved it). STATED
---     BLIND SPOT: a later re-read with no new photo (Try again) is invisible
---     to every stamp a stored row carries; such a row is anchored early.
+--     the stamp moves only when the sentence was really recomputed. Backfill
+--     (stored rows carry no stamp of the read that wrote their words):
+--       · no photo, or the newest photo landed within 5 minutes of the row
+--         (the row is created as the upload starts: 6/12's photo landed 13 s
+--         later): anchor on the later of the two;
+--       · a photo landed more than 5 minutes after the row: the words may be
+--         the first read's (a re-read on the new photo is HELD over a stored
+--         worth_a_call and never writes read_text) or the later read's, and
+--         nothing stored says which. Anchoring on either can correct true
+--         words (adversarial passes 2 and 3, both measured on scratch rows),
+--         so these rows get NO stamp and NO correction. A later server write
+--         of the sentence stamps them properly.
+--     STATED BLIND SPOT: a re-read with no new photo (Try again) that wrote
+--     the sentence later is invisible to every stamp; such a row is anchored
+--     on its first read. `updated_at` cannot help (085's backfill moved it).
 --   · A correction is written only where that window shows the sentence rested
 --     on something other than rated intake, or where a Most / All meal has since
 --     landed in it:
@@ -77,8 +85,9 @@
 --       re-run 085's §5 backfill.
 --     Safe only while no client selects the two new columns (PR-13b's code half).
 --   Backfill:     §6: every stored read holding the old sentence is re-stamped
---                 (`intake_read_at := greatest(created_at, newest attachment)`)
---                 and recounted. Live 2026-10-07: 8 rows; 1 (6/12) moves 13 s.
+--                 and recounted (the anchor rule is in the header). Live
+--                 2026-10-07: 8 rows; 1 (6/12) moves 13 s; 0 have a photo
+--                 more than 5 minutes after the row.
 --   Affected tables: event_ai_analysis (2 columns, the CHECK, the backfill);
 --                 events and meals (AFTER triggers only).
 --   Sanity checks before applying:
@@ -87,6 +96,10 @@
 --     SELECT count(*) FROM public.event_ai_analysis
 --      WHERE incident_type = 'vomit'
 --        AND read_text LIKE '%hasn''t eaten a full meal recently.%';                      -- the rows
+--     SELECT count(*) FROM public.event_ai_analysis a
+--      WHERE a.incident_type = 'vomit' AND a.read_text LIKE '%hasn''t eaten a full meal recently.%'
+--        AND EXISTS (SELECT 1 FROM public.event_attachments t WHERE t.event_id = a.event_id
+--                     AND t.created_at > a.created_at + interval '5 minutes');           -- rows left uncorrected
 -- ============================================================
 
 
@@ -385,16 +398,21 @@ CREATE TRIGGER trg_events_vomit_intake_correction_upd
 -- read_text, so §4 does not fire). Clears 085's facts first so a row whose
 -- correction is no longer due ends NULL, never with 085's counts.
 UPDATE public.event_ai_analysis a
-   SET intake_read_at                = GREATEST(
-                                         a.created_at,
-                                         (SELECT max(t.created_at) FROM public.event_attachments t
-                                           WHERE t.event_id = a.event_id AND t.pet_id = a.pet_id)),
+   SET intake_read_at                = CASE
+                                         WHEN p.newest IS NULL OR p.newest <= a.created_at + interval '5 minutes'
+                                         THEN GREATEST(a.created_at, p.newest)
+                                       END,
        intake_correction_at          = NULL,
        intake_correction_meals       = NULL,
        intake_correction_unrated     = NULL,
        intake_correction_most_or_all = NULL
- WHERE incident_type = 'vomit'
-   AND read_text LIKE '%hasn''t eaten a full meal recently.%';
+ FROM (SELECT a2.id,
+              (SELECT max(t.created_at) FROM public.event_attachments t
+                WHERE t.event_id = a2.event_id AND t.pet_id = a2.pet_id) AS newest
+         FROM public.event_ai_analysis a2) p
+ WHERE p.id = a.id
+   AND a.incident_type = 'vomit'
+   AND a.read_text LIKE '%hasn''t eaten a full meal recently.%';
 
 DO $$
 DECLARE
