@@ -7,6 +7,7 @@
 //   node --experimental-strip-types scripts/dispatch/cli.ts plan <facts.json> [--board digest|table] [--for-pr [CUL-NNN …]]
 //   node --experimental-strip-types scripts/dispatch/cli.ts check-update <update.md> <facts.json>
 //   node --experimental-strip-types scripts/dispatch/cli.ts check-board <board.md> <facts.json>
+//   node --experimental-strip-types scripts/dispatch/cli.ts progress <facts.json> [--for-pr [CUL-NNN …]] [--email <owner>]
 //
 // facts.json: PlanInput (plan.ts) with each project's `description` given inline or as
 // `descriptionFile` (a path), plus optional `updates` (the `**/dispatch run**` bodies,
@@ -21,6 +22,7 @@ import * as fs from 'node:fs';
 
 import { renderBoard, validateBoard, type BoardShape } from './board.ts';
 import { autoEligible, planDispatch, type PlanInput, type ProjectInput } from './plan.ts';
+import { cyclesFrom, holdsFromPlan, nextFromPlan, nextFromQueued, progressEmail, renderProgress, sinceOf, unitsFromIssues, unitsFromPlan, type ProjectIssue, type Wake as ProgressWake } from './progress.ts';
 import { checkInFrom, closingLines, memoryCheck, prSafe, validateStatusUpdate, type Trigger } from './status.ts';
 
 type Facts = Omit<PlanInput, 'project' | 'others'> & {
@@ -104,6 +106,38 @@ function plan(f: Facts, shape: BoardShape): string {
   return out.join('\n');
 }
 
+// The progress update (CUL-1624). Extra facts: `wakes` (the children's wakes this session
+// received), `progressSince` (the newest `**/dispatch progress**` update's time) and, for a
+// project with no run-order table, `projectIssues` (every issue: id, state type, milestone,
+// labels, parent). The owner's address is an argument read from the session context, never
+// a fact in a file.
+type ProgressFacts = Facts & { wakes?: ProgressWake[]; progressSince?: string; projectIssues?: ProjectIssue[] };
+
+function progress(f: ProgressFacts): { alias: string; text: string } {
+  const p = planDispatch(f);
+  const own = f.launches.filter((l) => l.project === p.alias);
+  const table = p.verdicts.some((v) => v.row);
+  const units = table ? unitsFromPlan(p, f.prs) : unitsFromIssues(f.projectIssues ?? [], own, f.prs, f.queued ?? []);
+  const flying = units.filter((u) => u.state === 'running' || u.state === 'open').length;
+  const text = renderProgress({
+    alias: p.alias,
+    now: f.now,
+    since: f.progressSince ?? sinceOf([], f.now),
+    units,
+    launches: own,
+    wakes: f.wakes,
+    cycles: cyclesFrom(own, f.prs),
+    repoCycles: cyclesFrom(f.launches, f.prs),
+    next: table ? nextFromPlan(p) : nextFromQueued(f.queued ?? []),
+    holds: table
+      ? holdsFromPlan(p)
+      : (f.projectIssues ?? []).filter((i) => i.labels?.includes('Waiting on PM') && !['completed', 'canceled', 'duplicate'].includes(i.stateType)).map((i) => ({ text: `${i.id} (Waiting on PM)` })),
+    index: f.index,
+    slots: p.slots + flying,
+  });
+  return { alias: p.alias, text };
+}
+
 const [cmd, a, b, ...rest] = process.argv.slice(2);
 const flags = [a, b, ...rest];
 // The digest is the default Board (D4, CUL-1622): the PM reads the digests, not a table.
@@ -126,6 +160,14 @@ if (cmd === 'plan' && a) {
   const errs = validateBoard(fs.readFileSync(a, 'utf8'), { now: f.now, merged, rows: new Set(p.verdicts.map((v) => v.row)) });
   console.log(errs.length ? `REFUSED:\n${errs.map((e) => ` - ${e}`).join('\n')}` : 'OK');
   process.exit(errs.length ? 1 : 0);
+} else if (cmd === 'progress' && a) {
+  const f = load(a) as ProgressFacts;
+  const { alias, text } = progress(f);
+  if (flags.includes('--email')) console.log(JSON.stringify(progressEmail(text, alias, f.now, flags[flags.indexOf('--email') + 1]), null, 2));
+  else {
+    const keep = flags.includes('--for-pr') ? flags.slice(flags.indexOf('--for-pr') + 1).filter((x) => /^CUL-\d+$/.test(x)) : [];
+    console.log(flags.includes('--for-pr') ? prSafe(text, keep) : text);
+  }
 } else {
-  fail('usage: cli.ts plan <facts.json> [--board digest|table] [--for-pr] | check-update <update.md> <facts.json> | check-board <board.md> <facts.json>');
+  fail('usage: cli.ts plan <facts.json> [--board digest|table] [--for-pr] | check-update <update.md> <facts.json> | check-board <board.md> <facts.json> | progress <facts.json> [--for-pr] [--email <owner>]');
 }

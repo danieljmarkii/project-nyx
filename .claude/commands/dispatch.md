@@ -342,6 +342,30 @@ Approval never travels. It counts only where the PM types it, in the session tha
 - **The dispatcher's own verbs** are `merge #<n>` and `apply <NNN>`, typed by the PM in the dispatcher session. `merge #<n>` merges a row's PR through the steward skill's §7 gate, the same list a child applies, re-read immediately before, with `scripts/steward/merge-check.sh --head origin/<its branch>` standing in for the child's check; `apply <NNN>` applies migration `<NNN>` per CLAUDE.md's migration rule, whose confirmation is that typed number.
 - **A production write** (a merge that deploys, an apply) needs a confirmation no agent can produce. For an apply it is the PM's typed number. For a child's own merge that deploys, it is the PM's typed pick, or `fix` confirming an `auto` marker, on a brief that showed the row's ⚠ *merges itself when green (deploys …)* flag; a row whose functions change after that brief waits for a new `go`. Where the permission dialog CUL-1616 installs is present, it is the confirmation as well. No agent installs, edits, removes or answers that dialog.
 - **A child never starts a second track.** New work is filed as an issue and comes back to the dispatcher as a no-row candidate or the PM's `add`.
+- **The email exception (PM ruling (b), CUL-1624, 2026-10-06).** The never-line forbids sending; this is the one carve-out, and it is narrow. **The dispatcher session only** sends it: a dispatched child never sends email, and its never-line is unchanged. **To the PM's own address only**: the account owner's, read from the dispatcher's session context, never a literal in the repo and never any other recipient. **The five-line progress update only** (§ Progress updates), exactly as `progressEmail` returns it: no PR bodies, no issue text beyond titles and ids, no session transcripts, no health data. **Through the connected Gmail connector, sending to self.** When Gmail is not connected, or `progressEmail` returns `skipped`, the update still posts to Linear and prints in the session, and the dispatcher says once that the email was skipped. `guards/dispatchEmail.test.ts` pins it: dispatcher only, self only.
+
+## Progress updates (CUL-1624)
+
+PM ruling (b), 2026-10-06: a progress block at the top of every round digest, plus one update each weekday at 07:45 America/Chicago, posted as the project status update, printed in the dispatcher session and emailed to the PM. The digests say what just happened; this says how far along the project is, how fast it moves and roughly how much is left.
+
+1. **The block is the script's output, never composed.** `node --experimental-strip-types scripts/dispatch/cli.ts progress <facts.json>` prints five lines (`scripts/dispatch/progress.ts`):
+
+   ```
+   Progress: <merged> of <rows> merged (<%>) <bar> · <wave> <merged>/<rows> … · <n> in flight
+   Moved since <the last progress update, else a day back, CT>: merged … · stopped … · done short … · launched …, or "nothing"
+   Next: ready now: … · on <PR-NN merging | your ruling: <key>>: …
+   On you: <the top three holds, what each frees and holds> → <index CUL-NNN>
+   Estimate: <rows to run> ≈ <rounds> of <slots> ≈ <p25–p75> of running time, not a date (basis: <n> merged launches, launch to merge p25 · median · p75); not counted: <rows waiting on you or a gate>, <issues not on dispatch's run>
+   ```
+
+   The facts are step 0's facts file plus `wakes` (each child wake this session received, with its time), `progressSince` (the newest `**/dispatch progress**` update's time; absent, a day back) and, on a project with no run-order table, `projectIssues` (every issue: id, state type, milestone, labels, parent), whose issues then stand in for rows. The estimate counts only rows dispatch can run without the PM, from at least three measured launch-to-merge cycles (this project's, else repo-wide, which it says), as rounds of usable slots; with fewer it says so and gives none. It never prints a date: nights, rulings and reviews are outside the record.
+2. **Every round digest opens with it** (step 9.4), above its `/dispatch · <project short> · <local time>` line, and so does step 6's brief. Nothing else in the digest changes.
+3. **The weekday update: one trigger per live dispatcher.** On its first non-dry run, the dispatcher reads `list_triggers`; unless an enabled one is named `/dispatch progress · <project short>`, it arms one with `create_trigger`: that name, `cron_expression` `CRON_TZ=America/Chicago 45 7 * * 1-5`, fired into this session (no `persistent_session_id`, no `create_new_session_on_fire`), `initiation: human_request` (the PM's ruling), prompt `/dispatch wake · <project short> · progress`. Each project's dispatcher arms its own. At a hand-off (9.7) the successor arms its own and the old session deletes its trigger; a session step 0 finds superseded deletes its trigger; when every row has merged, the dispatcher deletes it.
+4. **A progress wake does three things and nothing else** (no launch, no Board, no other write): it runs `cli.ts progress` on fresh facts (step 1's reads), then
+   - posts the update with `save_status_update` (`type: project`, health unchanged): first line `**/dispatch progress**`, then the five lines, then `Email: sent` or `Email: skipped (<why>)`. Step 0 reads only `**/dispatch run**` updates as memory, so a progress update never reads as a run;
+   - prints the five lines in this session;
+   - emails them under § Authority's email exception: `cli.ts progress <facts.json> --email <the owner's address from this session's context>` prints `progressEmail`'s result, and its `to`, `subject` and `body` go to the Gmail connector's send, unchanged. Gmail not connected, or a `skipped` result: say so once in this session (the first progress wake that skips; later ones stay silent until that changes), and the status update records it.
+5. **Under `--dry-run`** the block prints; nothing posts, arms or sends.
 
 ## Page format (what a plan needs for rows to come out ready rather than held)
 
