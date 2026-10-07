@@ -21,6 +21,10 @@ Dispatched by `/dispatch` (adhoc row, CUL-1517), branch `claude/the-workflow-aud
 
 - CUL-1631: the kit lacks the steward skill and `merge-check.sh` (which the ported command depends on), and six kit files still teach that only an attachment closes an issue. Only `wrap.md` was corrected here.
 
+## The re-port (2026-10-07)
+
+The merge gate cleared at 00:25Z (#1085, CUL-1623; #1089, CUL-1624). Main came in by merge, and the port script was re-run: one miss (the version line, rewritten for v1.6) and five new id sites, each given its own replacement. The kit's `dispatch.md` is now v1.6: the stalled-child outcome and note, the child's `stopped: waiting on CI` rule (the required check names became `{{REQUIRED_CHECKS}}`), § Progress updates and the email exception. The diff against the repo's file is still line for line, with only the appended § Without the script added. `wrap.md` took #1085's wake-messages sentence. The README now names v1.6, `create_trigger`, the optional Gmail connector and the new placeholder.
+
 ## Residuals
 
-- The merge gate: this PR waits for #1085 (CUL-1623) and CUL-1624's PR to merge, then main comes in and their deltas are re-ported.
+- CUL-1631's PR (#1090) also edits `operating-kit/README.md` (its "Built in from day one" list). The two edits are near each other, not the same lines.

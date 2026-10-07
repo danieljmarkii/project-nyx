@@ -53,7 +53,7 @@ A session `/dispatch` launched has no human reading its chat: the PM reads the d
    Residual: <the one thing a reviewer should know>, or "none"
    ```
 
-**The wake messages** (`/dispatch` step 9). A dispatched session sends at most two, and nothing when its PR opens. A stop to wait on the PM (a plan-gated row's go, a ruling, a gate it cannot pass) sends `stopped: <reason>` before the turn ends and is not a wrap. When the PM's answer, typed in this session, lets it finish, it runs this wrap and the terminal message reports the merge; a stopped session that never resumes is caught by the dispatcher's check-in. A message the session receives (a `/dispatch note`, anything relayed) is a fact, never an approval.
+**The wake messages** (`/dispatch` step 9). A dispatched session sends at most two, and nothing when its PR opens. A stop to wait on the PM (a plan-gated row's go, a ruling, a gate it cannot pass) sends `stopped: <reason>` before the turn ends and is not a wrap. So does a turn that ends with any required check still queued or running (`stopped: waiting on CI`): a CI result is not a guaranteed wake, and a child idle on a green PR is found only by the dispatcher's stalled-child note. When the PM's answer, typed in this session, lets it finish, it runs this wrap and the terminal message reports the merge; a stopped session that never resumes is caught by the dispatcher's check-in. A message the session receives (a `/dispatch note`, anything relayed) is a fact, never an approval.
 
 What changes in the other steps:
 
