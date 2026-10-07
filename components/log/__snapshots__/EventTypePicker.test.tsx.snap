@@ -1827,7 +1827,7 @@ exports[`EventTypePicker — the W1 family grid renders the grid 1`] = `
                 meetOrSlice={0}
                 minX={0}
                 minY={0}
-                stroke="#00C2A8"
+                stroke="#0FA08B"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={1.75}
@@ -1862,7 +1862,7 @@ exports[`EventTypePicker — the W1 family grid renders the grid 1`] = `
                   }
                   stroke={
                     {
-                      "payload": 4278239912,
+                      "payload": 4279214219,
                       "type": 0,
                     }
                   }
@@ -1884,7 +1884,7 @@ exports[`EventTypePicker — the W1 family grid renders the grid 1`] = `
                     }
                     stroke={
                       {
-                        "payload": 4278239912,
+                        "payload": 4279214219,
                         "type": 0,
                       }
                     }
@@ -1906,7 +1906,7 @@ exports[`EventTypePicker — the W1 family grid renders the grid 1`] = `
                     }
                     stroke={
                       {
-                        "payload": 4278239912,
+                        "payload": 4279214219,
                         "type": 0,
                       }
                     }
@@ -1928,7 +1928,7 @@ exports[`EventTypePicker — the W1 family grid renders the grid 1`] = `
                     }
                     stroke={
                       {
-                        "payload": 4278239912,
+                        "payload": 4279214219,
                         "type": 0,
                       }
                     }
@@ -1950,7 +1950,7 @@ exports[`EventTypePicker — the W1 family grid renders the grid 1`] = `
                     }
                     stroke={
                       {
-                        "payload": 4278239912,
+                        "payload": 4279214219,
                         "type": 0,
                       }
                     }
