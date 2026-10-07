@@ -36,6 +36,11 @@ const SERVER_OWNED = [
   'rule_version', // 075
   'engine_flags', // 075
   'tier', // 079, CUL-1133
+  'intake_correction_at', // 085, CUL-1406
+  'intake_correction_meals', // 085, CUL-1406
+  'intake_correction_most_or_all', // 085, CUL-1406
+  'intake_correction_unrated', // 086, CUL-1406
+  'intake_read_at', // 086, CUL-1406
 ] as const;
 
 interface Replay {
