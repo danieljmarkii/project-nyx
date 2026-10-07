@@ -212,6 +212,14 @@ const NOT_ON_SCREEN: Record<string, string> = {
   updated_at: "the landing announcer's change marker (#938), never drawn",
   engine_flags:
     "decides whether the tier's words or the shipped ones stand; the server writes it only with a read, which writes `tier` beside it (compared)",
+  // CUL-1406 (migration 085): drawn, under the words, and hidden with them. Not compared,
+  // because a recount moves neither the words nor the verdict: a Hide made over an older
+  // count hides nothing more alarming than the owner read, and the server never clears a
+  // hide for a recount. Compared, a meal landing from another device would fail the Hide.
+  intake_correction_at: 'a recount beside the same words (CUL-1406); never moves the read or the verdict',
+  intake_correction_meals: 'a recount beside the same words (CUL-1406); never moves the read or the verdict',
+  intake_correction_most_or_all: 'a recount beside the same words (CUL-1406); never moves the read or the verdict',
+  intake_correction_unrated: 'a recount beside the same words (CUL-1406); never moves the read or the verdict',
 };
 
 const RECORDED = [

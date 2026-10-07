@@ -41,6 +41,7 @@ import { fetchWithTimeout } from '../_shared/http.ts'
 // CUL-989 — CUL-975's paged reader, shared with generate-report and generate-signal.
 import { fetchAll, incompletePullNames } from '../_shared/pull.ts'
 import { resolveIanaZone } from '../../../lib/utils.ts'
+import { intakeCorrectionOf, intakeCorrectionSentence, type IntakeCorrectionColumns } from '../../../lib/readCorrection.ts'
 import { projectCachedRead } from './tools.ts'
 import type {
   AskEventRow,
@@ -289,7 +290,7 @@ async function runAskLoop(
           const plan = planPhotoRead(ctx, eventId, liveReadsUsed)
           if (plan.action === 'run') {
             liveReadsUsed++ // count the invoke BEFORE it runs — bounds the loop even on failure
-            result = await runLivePhotoRead(client, plan.eventId, plan.eventType, plan.incidentType)
+            result = await runLivePhotoRead(client, plan.eventId, plan.eventType, plan.incidentType, { petName: ctx.petName, timezone: ctx.timezone })
           } else {
             result = buildPhotoReadResult(plan)
           }
@@ -470,15 +471,20 @@ function first<T>(v: T | T[] | null | undefined): T | null {
 }
 
 // The event_ai_analysis columns Ask relays (§6.2 mode 2 — the override-aware structured
-// fields + the dismissible n=1 read). Shared by fetchContext (the cached-read snapshot) and
+// fields + the dismissible n=1 read, and since CUL-1406 the facts behind a dated correction
+// beside it, migration 085). One literal, so supabase-js can type the select. Shared by
+// fetchContext (the cached-read snapshot) and
 // runLivePhotoRead (the post-run re-read), so both project from the identical column set.
 const READ_COLS =
-  'event_id, incident_type, status, dismissed_at, edited_at, description, colour, contents, consistency, blood_present, bile_present, foreign_material_present, foreign_material_note, stool_consistency, stool_blood_present, stool_mucus_present, recommendation, read_text'
+  'event_id, incident_type, status, dismissed_at, edited_at, description, colour, contents, consistency, blood_present, bile_present, foreign_material_present, foreign_material_note, stool_consistency, stool_blood_present, stool_mucus_present, recommendation, read_text, intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all'
 
 type ReadRowDb = Record<string, unknown> & { event_id: string; incident_type: string; status: string }
 
-/** Map an event_ai_analysis DB row (READ_COLS) to the AskCachedReadRow the tools relay. */
-function mapReadRow(r: ReadRowDb): AskCachedReadRow {
+/** Map an event_ai_analysis DB row (READ_COLS) to the AskCachedReadRow the tools relay. The
+ *  correction is worded here, once, by the module the incident screen uses (CUL-1406), so Ask
+ *  relays the screen's words with the pet's name and the owner's date. */
+function mapReadRow(r: ReadRowDb, words: { petName: string; timezone: string | null }): AskCachedReadRow {
+  const correction = intakeCorrectionOf(r as IntakeCorrectionColumns)
   return {
     eventId: r.event_id,
     incidentType: r.incident_type,
@@ -498,6 +504,7 @@ function mapReadRow(r: ReadRowDb): AskCachedReadRow {
     stoolMucusPresent: (r.stool_mucus_present as string) ?? null,
     recommendation: (r.recommendation as string) ?? null,
     readText: (r.read_text as string) ?? null,
+    readCorrection: correction ? intakeCorrectionSentence(correction, words.petName, words.timezone ?? undefined) : null,
   }
 }
 
@@ -532,6 +539,7 @@ async function runLivePhotoRead(
   eventId: string,
   eventType: string,
   incidentType: PhotoReadIncident,
+  words: { petName: string; timezone: string | null },
 ): Promise<PhotoReadResult> {
   const fn = incidentType === 'vomit' ? 'analyze-vomit' : 'analyze-stool'
   try {
@@ -551,7 +559,7 @@ async function runLivePhotoRead(
   if (!data) return photoReadOutcome(eventId, eventType, incidentType, 'unavailable')
   const row = data as ReadRowDb
   if (row.status === 'completed' || row.status === 'uncertain') {
-    return photoReadOutcome(eventId, eventType, incidentType, 'ran', projectCachedRead(mapReadRow(row)))
+    return photoReadOutcome(eventId, eventType, incidentType, 'ran', projectCachedRead(mapReadRow(row, words)))
   }
   if (row.status === 'capped') return photoReadOutcome(eventId, eventType, incidentType, 'capped')
   return photoReadOutcome(eventId, eventType, incidentType, 'unavailable')
@@ -817,8 +825,6 @@ async function fetchContext(
   // Foods currently free-fed (active_until IS NULL) — the §11 #6 intake-exclusion set.
   const freeFedFoodIds = new Set<string>(arrRows.filter((r) => r.active_until === null && r.food_item_id).map((r) => r.food_item_id as string))
 
-  // ── reads ──
-  const reads: AskCachedReadRow[] = readsPull.rows.map(mapReadRow)
 
   // ── trial / timezone / engine findings ──
   //
@@ -850,6 +856,9 @@ async function fetchContext(
   // last resort — never a silent New York the card never agreed with.
   const profile = profileRes.data as { timezone: string | null } | null
   const timezone = resolveIanaZone(requestTimezone, profile?.timezone)
+
+  // ── reads ── (after the zone: a correction's date is the owner's local date, CUL-1406)
+  const reads: AskCachedReadRow[] = readsPull.rows.map((r) => mapReadRow(r, { petName: pet.name, timezone }))
 
   // ai_signals.findings is CachedFinding[] = { rank, text, finding{ type, priorityClass, ... } }.
   // Map to the engineFindings tool's relay shape (type + priorityClass + verbatim payload).

@@ -459,6 +459,10 @@ export interface AskCachedReadRow {
   // ── n=1 interpretive read (dismissible, not editable) ──
   recommendation: string | null
   readText: string | null
+  /** CUL-1406: the dated correction beside `readText`, already worded by lib/readCorrection.ts
+   *  (label + body, the incident screen's words), or null. Relayed AFTER the stored words,
+   *  never in place of them; it never changes the verdict. */
+  readCorrection: string | null
 }
 
 // ── deleted_at contract (§5.2 / B-071) ────────────────────────────────────────────
@@ -900,7 +904,12 @@ export function projectCachedRead(read: AskCachedReadRow): ProjectedRead {
     description: read.description,
     flags: derivePresentFlags(read),
     // The n=1 read (recommendation/read_text) is dismissible; hide it when dismissed.
-    readText: dismissed ? null : read.readText,
+    // CUL-1406: a dated correction travels INSIDE the read's words, after them, as one string,
+    // so no relay (the photo-read line, recall_event, recent_events, last_symptom) can carry
+    // the stored words without their correction or the correction without the words.
+    readText: dismissed || !read.readText
+      ? null
+      : read.readCorrection ? `${read.readText} ${read.readCorrection}` : read.readText,
     recommendation: dismissed ? null : read.recommendation,
     fields: {
       colour: read.colour,

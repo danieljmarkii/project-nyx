@@ -77,6 +77,7 @@ import {
   CONTENT_OPTIONS,
 } from './stoolFields';
 import { ThemedText } from '../ui/ThemedText';
+import { intakeCorrectionDisplay, type IntakeCorrectionColumns } from '../../lib/readCorrection';
 import {
   IncidentReadCard, RAIL_TICK_HEIGHT, INCIDENT_READ_FAILED_LINE, INCIDENT_READ_NOT_ENOUGH_LINE,
   INCIDENT_RE_READING_PHOTO_LINE, INCIDENT_RE_READING_LINE,
@@ -97,7 +98,7 @@ import { useObservationFold } from './useObservationFold';
 // from either to a reassuring verdict).
 type Status = 'pending' | 'completed' | 'failed' | 'uncertain' | 'capped' | 'read_disabled';
 
-interface AnalysisRow {
+interface AnalysisRow extends IntakeCorrectionColumns {
   status: Status;
   // Text, not the shipped three-value union (CUL-1277): the server can hold a verdict this
   // build has never seen, and a type that says otherwise is what let `REC_LABEL[rec]`
@@ -156,7 +157,9 @@ const SELECT_COLS =
   'status, recommendation, read_text, description, stool_consistency, stool_colour, ' +
   'stool_content, stool_blood_present, stool_blood_type, stool_mucus_present, ' +
   'foreign_material_present, foreign_material_note, ai_raw_payload, edited_at, dismissed_at, ' +
-  'updated_at, error, engine_flags, contextual_flags, tier';
+  'updated_at, error, engine_flags, contextual_flags, tier, ' +
+  // CUL-1406: read so the shared card stays one shape; the server writes these on vomit rows only (085).
+  'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all';
 
 export function StoolAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -686,6 +689,7 @@ export function StoolAnalysisSection(
           tellThem={tellThemLine}
           disclosure={heldDisclosure}
           readText={row.read_text}
+            correction={intakeCorrectionDisplay(row, petName)}
           onHide={() => setDismissed(true)}
           arrival={arrival.rail}
           onMeasure={arrival.onContentLayout}

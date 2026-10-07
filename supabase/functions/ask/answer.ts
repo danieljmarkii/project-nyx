@@ -688,6 +688,8 @@ export function buildReadLine(result: PhotoReadResult, petName: string): string 
       const facts = recountReadFacts(read)
       // read_text is the deterministic analyze-vomit text (monitor template on the no-flag
       // path — safe by construction). Hidden when dismissed → fall back to a safe generic.
+      // CUL-1406: a stored read's dated correction is already inside readText, after the words
+      // (projectCachedRead), so this relays both or neither.
       const tail = read.readText
         ? read.readText
         : `A single photo on its own can't say how ${p} is doing. If you're worried, your vet is the best call.`
