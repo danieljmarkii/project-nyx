@@ -10,12 +10,12 @@ Dispatched build of CUL-1630, shipped via #1091. Mode BUILD.
 The PM ruled A on CUL-1630: no model ever writes or rephrases a Signal summary that holds a safety clause. The validator gaps the issue first listed (an undoing tail, the four-sentence cap against multi-sentence safety templates, curly apostrophes, a pet named "Vet") are moot under that rule and were deliberately left alone.
 
 - `supabase/functions/generate-signal/summary.ts`: a header rule stating the ruling, that a passing `validateSummary` never licenses lifting it, and that lifting it takes a new ruling. A new `modelMayPhraseSummary(packet, phrasingSwitchOn)`: the kill-switch and the safety policy in one gate, with the switch a required argument so a test can force it on.
-- `index.ts`: the summary path calls that gate instead of the inline pair. Behaviour is identical (the switch is still off).
+- `index.ts`: the summary path calls that gate instead of the inline pair. Behaviour is identical (the switch is still off). `index.test.ts` pins that wiring on the source.
 - `summary.test.ts`: four tests. With the switch forced on the gate refuses 30 safety packet shapes: each of the six safety types alone, beside a reflection (not quiet, so only the safety refusal holds it), below the EN-11 card floor, and watched under EN-9, plus four compositions. The fixture is a `Record<SafetyFindingType, Finding>`, so a seventh safety type fails the type check until it joins the test. A reflective packet is the non-vacuity floor. One test shows an undoing tail ("Pixel ate everything this morning.") passing `validateSummary` while the gate still refuses, which is the ruling's reason in executable form.
 
 ## Falsification
 
-Four mutants against the real file, each killed: the policy without `hasSafety` (5 red), the gate ignoring the policy (3 red), the gate always false (the non-vacuity floor, 1 red), `weight_loss` dropped from the fixture (TS2741). An `adversarial-reviewer` pass ran over the diff; its verdict is in the CUL-1630 outcome comment.
+Four mutants against the real file, each killed: the policy without `hasSafety` (5 red), the gate ignoring the policy (3 red), the gate always false (the non-vacuity floor, 1 red), `weight_loss` dropped from the fixture (TS2741). An `adversarial-reviewer` pass returned HOLDS: no producer puts a safety or vet-routing clause in a packet with `hasSafety` false (a watched EN-9 head is only reachable inside the safety branch; incomplete reads build no packet and return the disclosure directly), and the summary has one model call. It found one gap: nothing pinned `index.ts` to the gate, and bypassing it (`if (!SUMMARY_MODEL_PHRASING_ENABLED)`) left every suite green. Closed with a source-scan pin in `index.test.ts`, proven by that same mutation.
 
 ## Checks
 

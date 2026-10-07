@@ -452,3 +452,23 @@ Deno.test('EN-10 — Ask\'s rule 10 is in the phrasing and summary prompts', asy
   }
 })
 
+
+// ── CUL-1630: the summary's one model call sits behind the safety gate ─────────────────────
+// summary.ts says safety summaries are template-only by PM ruling and that `modelMayPhraseSummary`
+// is the one gate the Edge Function asks. The gate's logic is tested in summary.test.ts; this pins
+// the wiring, which the adversarial pass bypassed (`if (!SUMMARY_MODEL_PHRASING_ENABLED)`) with
+// every suite green. Proven by that mutation when written.
+Deno.test('CUL-1630 — the summary model call is reached only past modelMayPhraseSummary', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  const start = src.indexOf('async function phraseSummaryText(')
+  assertStrictEquals(start >= 0, true, 'phraseSummaryText is gone: re-point this pin')
+  const body = src.slice(start, src.indexOf('api.anthropic.com', start))
+  assertStrictEquals(
+    /if \(!modelMayPhraseSummary\(packet, SUMMARY_MODEL_PHRASING_ENABLED\)\) \{\s*return templated\s*\}/.test(body),
+    true,
+    'the summary reaches the model without the safety gate',
+  )
+  // One summary model request in the file, so a second path cannot skip the gate.
+  assertStrictEquals(src.split('system: SUMMARY_SYSTEM').length - 1, 1, 'a second summary model request exists')
+})
