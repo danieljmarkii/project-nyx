@@ -225,7 +225,7 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
     <div class="stat"><dt>open PRs are drafts</dt><dd>48 of 50</dd></div>
     <div class="stat"><dt>PRs merged in 7 days</dt><dd>100</dd></div>
     <div class="stat"><dt>median open to merge</dt><dd>29 min</dd></div>
-    <div class="stat"><dt>sessions since the last full retro</dt><dd>250</dd></div>
+    <div class="stat"><dt>sessions since the last full retro</dt><dd>240</dd></div>
     <div class="stat"><dt>CLAUDE.md headroom</dt><dd>693 B</dd></div>
   </dl>
 </header>
@@ -239,15 +239,15 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
   <div class="loop">
     <ol class="loop-steps">
       <li><span class="k">To start work</span><p>Paste a Linear issue's prompt, or run <code>/dispatch</code> and name the rows to start.</p></li>
-      <li><span class="k">Early in a build</span><p>Read the plan and say go. Only a mechanical fix skips this.</p></li>
+      <li><span class="k">Early in a build</span><p>Read the plan and say go. A mechanical fix or a routine <code>/dispatch</code> row skips this.</p></li>
       <li><span class="k">During a session</span><p>Rule on decision briefs. React to mock rounds, republished to the same URL each round.</p></li>
-      <li><span class="k">Before a live write</span><p>Approve a dispatched row's migration before it is applied. Do the App Store and console steps only you can reach.</p></li>
-      <li><span class="k">After a push</span><p>Run the QA script on your phone, then merge by hand or type <code>/wrap and merge</code>. A dispatched session may merge its own PR once every check is green.</p></li>
+      <li><span class="k">Before a live write</span><p>Type <code>apply &lt;NNN&gt;</code> before any migration is applied, in the session that applies it. Do the App Store and console steps only you can reach.</p></li>
+      <li><span class="k">After a push</span><p>Run the QA script on your phone, then merge by hand or type <code>/wrap and merge</code>. A dispatched session may merge its own PR through the steward gate: checks green, merge check clean, no migration.</p></li>
       <li><span class="k">At each wrap</span><p>Take the QA script, the next prompt, and One thing to learn.</p></li>
       <li><span class="k">Between sessions</span><p>Work the Waiting on PM queue: 152 open against a cap of 30.</p></li>
       <li><span class="k">Monthly</span><p><code>/coach</code> reads how you operated and hands you one habit.</p></li>
     </ol>
-    <div class="aside"><p><b>Your constraint is deciding, not merging.</b> 100 PRs merged in the last seven days, at a median of 29 minutes from open to merge. Waiting on PM went from 10 on 20 August to 97 on 11 September to 156 on 2 October, and stands at 152 today.</p><p><b>The drain is built and has not run.</b> On 2 October #999 added it as a groomer step: six lanes, a 72 hour default window, a cap of 30 that <code>/kickoff</code> prints (CUL-1366). The one time clear of the backlog is a grooming pass, and none has run since.</p><p><b>The second queue is drafts.</b> 48 of 50 open PRs are drafts. The oldest is 117 days old.</p></div>
+    <div class="aside"><p><b>Your constraint is deciding, not merging.</b> 100 PRs merged in the last seven days, at a median of 29 minutes from open to merge. Waiting on PM went from 10 on 20 August to 97 on 11 September to 153 on 27 September, and stands at 152 today.</p><p><b>The drain is built and has not run.</b> On 2 October #999 added it as a groomer step: six lanes, a 72 hour default window, a cap of 30 that <code>/kickoff</code> prints (CUL-1366). The one time clear of the backlog is a grooming pass, and none has run since.</p><p><b>The second queue is drafts.</b> 48 of 50 open PRs are drafts. The oldest is 117 days old.</p></div>
   </div>
 </section>
 
@@ -411,7 +411,7 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
 <rect class="box" x="330" y="44" width="132" height="80" rx="8"/>
 <text class="t-title" x="342" y="68">Design critique</text>
 <text class="t-body" x="342" y="90">isolated lenses,</text>
-<text class="t-body" x="342" y="106">a verifier each</text>
+<text class="t-body" x="342" y="106">then a verifier</text>
 <line class="ln" x1="465" y1="84" x2="480" y2="84" marker-end="url(#f2-n)"/>
 <rect class="box" x="482" y="44" width="132" height="80" rx="8"/>
 <text class="t-title" x="494" y="68">Decision briefs</text>
@@ -453,7 +453,7 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
 <text class="t-lab pm" x="566" y="167">ruling</text>
 <rect class="pmfill" x="938" y="200" width="132" height="56" rx="8"/>
 <text class="t-pm b" x="950" y="224">You pick rows</text>
-<text class="t-pm2" x="950" y="243">or a standing yes</text>
+<text class="t-pm2" x="950" y="243">or mark them auto</text>
 <line class="ln pm" x1="994" y1="126" x2="994" y2="198" marker-end="url(#f2-p)"/>
 <line class="ln pm" x1="1014" y1="199" x2="1014" y2="127" marker-end="url(#f2-p)"/>
 <text class="t-lab pm" x="986" y="167" text-anchor="end">proposal</text>
@@ -469,7 +469,7 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
 </svg>
     </div>
     <figcaption>
-      <span>Each track is a Linear project whose page carries the run order: which PR follows which, which may run side by side, and which never at the same time. Since 28 September <code>/dispatch</code> reads that page against GitHub, says why it holds each row back, and keeps at most six sessions in flight across the whole repo. Most new surfaces now ship dark behind a beta flag and graduate in four steps: the flip for every account, a removal PR that deletes the gate and the old path, one native build, a closeout. Between tracks, Quick Win sweeps take the small items.</span>
+      <span>Each track is a Linear project whose page carries the run order: which PR follows which, which may run side by side, and which never at the same time. Since 28 September <code>/dispatch</code> reads that page against GitHub and says why it holds each row back; since 6 October it keeps at most six sessions in flight across the whole repo. Most new surfaces now ship dark behind a beta flag and graduate in four steps: the flip for every account, a removal PR that deletes the gate and the old path, one native build, a closeout. Between tracks, Quick Win sweeps take the small items.</span>
 
     </figcaption>
   </figure>
@@ -488,7 +488,7 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
       <p>A lens Claude adopts in context. The routing table says which lenses each surface expects, and every Definition of Done names them: N/A is fine, silence is not.</p>
       <div class="fires"><b>Fires</b>when remembered; the sign off line makes it hard to forget</div>
       <div class="ex">Jordan: can I do this in under 10 seconds while my dog is being weird?</div>
-      <span class="count">10 on the roster, 3 specialists</span>
+      <span class="count">11 on the roster</span>
       
     </article>
     <article class="rung">
@@ -537,11 +537,11 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
     <div class="panel">
       <h3>Who decides what</h3>
       <table class="wide">
-        <tr><td>Sessions, without asking</td><td>The seven principles, Pets &gt; $, the engineering hard constraints and the two safety invariants. Small calls go in as team defaults you can veto.</td></tr>
-        <tr><td>Sessions stop and ask</td><td>A non trivial BUILD plan; anything touching RLS, Storage, deletion or export; a persona conflict; a spec edit; new scope.</td></tr>
+        <tr><td>Sessions, without asking</td><td>The nine design principles, Pets &gt; $, the engineering hard constraints and the two safety invariants. Small calls go in as team defaults you can veto.</td></tr>
+        <tr><td>Sessions stop and ask</td><td>A non trivial BUILD plan (a routine <code>/dispatch</code> row excepted); anything touching RLS, Storage, deletion or export; a persona conflict; a spec edit; new scope.</td></tr>
         <tr><td>Only you</td><td>Rulings, device checks, App Store and console steps, and the word to merge anything <code>/dispatch</code> did not launch.</td></tr>
-        <tr><td>Never, for anyone</td><td>Deploying except by merging. Committing to main.</td></tr>
-        <tr><td>Handed off already</td><td>The standing yes for low risk <code>/dispatch</code> rows and their self merge when green (29 September). On <code>/wrap and merge</code>, the session merges through the steward gate (3 October). Edge Function deploys on merge.</td></tr>
+        <tr><td>Never, for anyone</td><td>Deploying an Edge Function outside the deploy workflow, break glass aside. Committing to main.</td></tr>
+        <tr><td>Handed off already</td><td>Low risk <code>/dispatch</code> rows you mark <code>auto</code> (3 October, replacing the 29 September standing yes) and their self merge when green. On <code>/wrap and merge</code>, the session merges through the steward gate (3 October). Edge Function deploys on merge.</td></tr>
       </table>
 
       
@@ -561,9 +561,9 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
     <div class="panel">
       <h3>The clocks</h3>
       <dl class="clocks">
-        <div><dt>Every push</dt><dd>The git hook runs the type check and the full jest suite. It can be skipped; CI cannot.</dd></div>
-        <div><dt>Every PR</dt><dd>Required checks: types, jest (the guards run inside it), Deno, and no migration number held by another open PR. No bypass. Jest also reruns in three far time zones, advisory until CUL-586. Engine changes print a scorecard that reports and never blocks.</dd></div>
-        <div><dt>Every merge</dt><dd>Squash, after <code>scripts/steward/merge-check.sh</code> reads <code>CLEAN</code>. Every issue the PR names closes, so a task that spans PRs gets one sub-issue per PR. Changed Edge Functions deploy and record themselves unless the manifest holds them.</dd></div>
+        <div><dt>Every push</dt><dd>The git hook runs the type check and jest: the full suite locally, only what the push touches plus the guards in a cloud session. It can be skipped; CI cannot.</dd></div>
+        <div><dt>Every PR</dt><dd>Required checks: types, jest (the guards run inside it) and Deno. No bypass. A migration number check and jest in three far time zones also run, advisory until CUL-586. Engine changes print a scorecard that reports and never blocks.</dd></div>
+        <div><dt>Every merge</dt><dd>Squash; a session's own merge waits for <code>scripts/steward/merge-check.sh</code> to read <code>CLEAN</code>. Every issue the PR names closes, so a task that spans PRs gets one sub-issue per PR. Changed Edge Functions deploy and record themselves unless the manifest holds them.</dd></div>
         <div><dt>Every migration</dt><dd>Its own PR with a safety preflight, applied live before any code that needs it merges.</dd></div>
         <div><dt>Every session</dt><dd>Claim, orient, work, <code>/wrap</code>: one PR, one record, the next prompt, One thing to learn.</dd></div>
         <div><dt>Every mock round</dt><dd>Same URL each round. After you react, one proposal with a ledger mapping each reaction to what moved.</dd></div>
@@ -571,7 +571,7 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
         <div><dt>Most weeks</dt><dd>A Quick Win sweep ships the small items and tags the rest with the sitting each needs.</dd></div>
         <div><dt>Weekly</dt><dd>The suite runs with the clock moved forward.</dd></div>
         <div><dt>Monthly</dt><dd><code>/coach</code>, run by hand.</dd></div>
-        <div><dt>The retro</dt><dd>Ruled every ~10 sessions, but nothing fires it. The last full one was 11 September, 250 sessions ago; <code>/dispatch</code> had its own on 3 and 5 October.</dd></div>
+        <div><dt>The retro</dt><dd>Ruled every ~10 sessions, but nothing fires it. The last full one was 11 September, 240 sessions ago; <code>/dispatch</code> had its own on 3 and 5 October.</dd></div>
       </dl>
     </div>
     <div class="panel">
@@ -613,7 +613,7 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
     <h2>You already built the kit</h2>
     <p class="deck"><code>operating-kit/</code> (#976, 29 September) is the portable copy of this engine. <a href="https://claude.ai/artifact/41Qscq43pii1umUVqLAm1D">The Operating Kit</a> is its map, committed as <code>docs/how-we-work-template.html</code>.</p>
   </div>
-  <div class="panel intro"><p>To start a new project, paste <code>operating-kit/BOOTSTRAP.md</code> §0 into its first session. That session interviews you in four rounds, fills the templates, and installs everything as one PR.</p><p><b>Kept in sync by hand.</b> The workflow audit ported <code>/dispatch</code> v1.6 and the steward skill into the kit on 6 October. The README's rule to copy every other lesson across is still prose (retro L2), so the groomer and the learning loop have not followed.</p></div>
+  <div class="panel intro"><p>To start a new project, paste <code>operating-kit/BOOTSTRAP.md</code> §0 into its first session. That session interviews you in four rounds, fills the templates, and installs everything as one PR.</p><p><b>Kept in sync by hand.</b> The workflow audit ported <code>/dispatch</code> v1.6 and the steward skill into the kit on the night of 6 October. The README's rule to copy every other lesson across is still prose (retro L2), so the groomer and the learning loop have not followed.</p></div>
   <div class="panel">
     <h3>Where the kit and this repo differ, 7 October</h3>
     <div class="tscroll"><table class="div">
@@ -622,7 +622,7 @@ table.wide td:first-child { width: 30%; color: var(--ink); font-weight: 500; }
         <tr><td>Your queue</td><td><code>Needs PM</code> as a workflow state</td><td>The label, drained by a groomer step, cap 30</td><td>Both, by your 2 October ruling</td></tr>
         <tr><td>The retro</td><td>A <code>/retro</code> command, fired by the start hook printing RETRO DUE</td><td>Prose only; nothing has fired it since 11 September</td><td>Kit</td></tr>
         <tr><td>The start hook</td><td>Unshallows the clone and prints the manual's byte count</td><td>Runs <code>npm install</code> only</td><td>Kit</td></tr>
-        <tr><td>Discovery PRs</td><td>Open ready to merge</td><td>Merge once finished; <code>/wrap</code> still opens them as drafts</td><td>Even</td></tr>
+        <tr><td>Discovery PRs</td><td>Open ready to merge</td><td>Merge once finished; <code>/wrap</code> still opens them as drafts</td><td>Kit</td></tr>
         <tr><td><code>/dispatch</code></td><td>v1.6, ported 6 October, without its tested script</td><td>v1.6 with <code>scripts/dispatch/</code></td><td>Repo, narrowly</td></tr>
         <tr><td>Merging</td><td>The steward skill and <code>merge-check.sh</code>, ported 6 October</td><td>The same, since 3 October</td><td>Even</td></tr>
         <tr><td>The groomer</td><td>Condensed, 29 September</td><td>Retirement sweep, 7 day veto, label strip, queue drain (2 October)</td><td>Repo</td></tr>

@@ -11,7 +11,7 @@ export default {
     { v: '48 of 50', l: 'open PRs are drafts' },
     { v: '100', l: 'PRs merged in 7 days' },
     { v: '29 min', l: 'median open to merge' },
-    { v: '250', l: 'sessions since the last full retro' },
+    { v: '240', l: 'sessions since the last full retro' },
     { v: '693 B', l: 'CLAUDE.md headroom' },
   ],
   human: { label: 'YOU' },
@@ -22,16 +22,16 @@ export default {
     deck: 'What the system asks of you, and where it waits on you.',
     steps: [
       { when: 'To start work', what: "Paste a Linear issue's prompt, or run `/dispatch` and name the rows to start." },
-      { when: 'Early in a build', what: 'Read the plan and say go. Only a mechanical fix skips this.' },
+      { when: 'Early in a build', what: 'Read the plan and say go. A mechanical fix or a routine `/dispatch` row skips this.' },
       { when: 'During a session', what: 'Rule on decision briefs. React to mock rounds, republished to the same URL each round.' },
-      { when: 'Before a live write', what: "Approve a dispatched row's migration before it is applied. Do the App Store and console steps only you can reach." },
-      { when: 'After a push', what: 'Run the QA script on your phone, then merge by hand or type `/wrap and merge`. A dispatched session may merge its own PR once every check is green.' },
+      { when: 'Before a live write', what: 'Type `apply <NNN>` before any migration is applied, in the session that applies it. Do the App Store and console steps only you can reach.' },
+      { when: 'After a push', what: 'Run the QA script on your phone, then merge by hand or type `/wrap and merge`. A dispatched session may merge its own PR through the steward gate: checks green, merge check clean, no migration.' },
       { when: 'At each wrap', what: 'Take the QA script, the next prompt, and One thing to learn.' },
       { when: 'Between sessions', what: 'Work the Waiting on PM queue: 152 open against a cap of 30.' },
       { when: 'Monthly', what: '`/coach` reads how you operated and hands you one habit.' },
     ],
     aside: [
-      '**Your constraint is deciding, not merging.** 100 PRs merged in the last seven days, at a median of 29 minutes from open to merge. Waiting on PM went from 10 on 20 August to 97 on 11 September to 156 on 2 October, and stands at 152 today.',
+      '**Your constraint is deciding, not merging.** 100 PRs merged in the last seven days, at a median of 29 minutes from open to merge. Waiting on PM went from 10 on 20 August to 97 on 11 September to 153 on 27 September, and stands at 152 today.',
       '**The drain is built and has not run.** On 2 October #999 added it as a groomer step: six lanes, a 72 hour default window, a cap of 30 that `/kickoff` prints (CUL-1366). The one time clear of the backlog is a grooming pass, and none has run since.',
       '**The second queue is drafts.** 48 of 50 open PRs are drafts. The oldest is 117 days old.',
     ],
@@ -90,7 +90,7 @@ export default {
     nodes: [
       { name: 'Research brief', lines: ['dated evidence,', 'then frozen'] },
       { name: 'Mock round N', lines: ['one URL, round', 'after round'] },
-      { name: 'Design critique', lines: ['isolated lenses,', 'a verifier each'] },
+      { name: 'Design critique', lines: ['isolated lenses,', 'then a verifier'] },
       { name: 'Decision briefs', lines: ['2 to 4 options,', 'a pick or dissent'] },
       { name: 'The spec', lines: ['§0 decisions to', 'kickoff prompts'] },
       { name: 'The run order', lines: ['PR by PR, on its', 'Linear project'] },
@@ -100,11 +100,11 @@ export default {
     human: [
       { under: 1, name: 'You react', line: 'to its R-x prompts', down: 'round N', up: 'reactions' },
       { under: 3, name: 'You rule', line: 'brief by brief', down: 'brief', up: 'ruling' },
-      { under: 6, name: 'You pick rows', line: 'or a standing yes', down: 'proposal', up: 'picks' },
+      { under: 6, name: 'You pick rows', line: 'or mark them auto', down: 'proposal', up: 'picks' },
       { under: 7, name: 'You test', line: 'or waive; then GA', down: 'QA script', up: 'verdict' },
     ],
     footnote: 'Indigo boxes are you. Each pair of arrows is a handoff and its answer; your reactions turn round N into round N+1.',
-    caption: "Each track is a Linear project whose page carries the run order: which PR follows which, which may run side by side, and which never at the same time. Since 28 September `/dispatch` reads that page against GitHub, says why it holds each row back, and keeps at most six sessions in flight across the whole repo. Most new surfaces now ship dark behind a beta flag and graduate in four steps: the flip for every account, a removal PR that deletes the gate and the old path, one native build, a closeout. Between tracks, Quick Win sweeps take the small items.",
+    caption: "Each track is a Linear project whose page carries the run order: which PR follows which, which may run side by side, and which never at the same time. Since 28 September `/dispatch` reads that page against GitHub and says why it holds each row back; since 6 October it keeps at most six sessions in flight across the whole repo. Most new surfaces now ship dark behind a beta flag and graduate in four steps: the flip for every account, a removal PR that deletes the gate and the old path, one native build, a closeout. Between tracks, Quick Win sweeps take the small items.",
     aria: 'A track runs left to right in four phases: discover, decide, specify, build and ship. Sessions produce a research brief, mock rounds, a design critique, decision briefs, the spec, the run order, dispatch proposals and the build sessions. You react to each mock round, rule on each brief, pick which rows start, and test before calling GA.',
   },
 
@@ -114,7 +114,7 @@ export default {
     deck: 'Four ways to bring judgment to bear, from softest to hardest. When the same class of mistake comes back, the check that should have caught it moves up a rung.',
     scale: ['Remembered', 'Enforced'],
     rungs: [
-      { name: 'Persona', what: 'A lens Claude adopts in context. The routing table says which lenses each surface expects, and every Definition of Done names them: N/A is fine, silence is not.', fires: 'when remembered; the sign off line makes it hard to forget', example: 'Jordan: can I do this in under 10 seconds while my dog is being weird?', count: '10 on the roster, 3 specialists' },
+      { name: 'Persona', what: 'A lens Claude adopts in context. The routing table says which lenses each surface expects, and every Definition of Done names them: N/A is fine, silence is not.', fires: 'when remembered; the sign off line makes it hard to forget', example: 'Jordan: can I do this in under 10 seconds while my dog is being weird?', count: '11 on the roster' },
       { name: 'Skill', what: 'Instructions that load themselves when a matching file path or keyword appears.', fires: 'whenever the trigger matches', example: '`clinical-guardrails` loads on any per incident AI read: one sample may escalate, never reassure.', count: '6 skills' },
       { name: 'Subagent', what: 'A reviewer in a fresh context, briefed but never shown the build conversation, so it cannot share its optimism. It returns a verdict.', fires: 'when invoked; the Definition of Done requires one for clinical and statistical logic and for access control', example: '`adversarial-reviewer` must name the counterexample it tried. A bare ✓ is not a review.', count: '6 subagents' },
       { name: 'Guard', what: 'A test that reads the source and fails the build. Where an exemption exists, it is a reasoned marker at the site or a registry entry in the guard.', fires: 'on every PR in required CI, and before each push through the git hook', example: "`recordPetName.test.ts` fails if a record screen falls back to the active pet's name.", count: '48 guard tests' },
@@ -135,11 +135,11 @@ export default {
       h3: 'Who decides what',
       wide: true,
       rows: [
-        ['Sessions, without asking', 'The seven principles, Pets > $, the engineering hard constraints and the two safety invariants. Small calls go in as team defaults you can veto.'],
-        ['Sessions stop and ask', 'A non trivial BUILD plan; anything touching RLS, Storage, deletion or export; a persona conflict; a spec edit; new scope.'],
+        ['Sessions, without asking', 'The nine design principles, Pets > $, the engineering hard constraints and the two safety invariants. Small calls go in as team defaults you can veto.'],
+        ['Sessions stop and ask', 'A non trivial BUILD plan (a routine `/dispatch` row excepted); anything touching RLS, Storage, deletion or export; a persona conflict; a spec edit; new scope.'],
         ['Only you', 'Rulings, device checks, App Store and console steps, and the word to merge anything `/dispatch` did not launch.'],
-        ['Never, for anyone', 'Deploying except by merging. Committing to main.'],
-        ['Handed off already', 'The standing yes for low risk `/dispatch` rows and their self merge when green (29 September). On `/wrap and merge`, the session merges through the steward gate (3 October). Edge Function deploys on merge.'],
+        ['Never, for anyone', 'Deploying an Edge Function outside the deploy workflow, break glass aside. Committing to main.'],
+        ['Handed off already', 'Low risk `/dispatch` rows you mark `auto` (3 October, replacing the 29 September standing yes) and their self merge when green. On `/wrap and merge`, the session merges through the steward gate (3 October). Edge Function deploys on merge.'],
       ],
     }],
     state: {
@@ -157,9 +157,9 @@ export default {
     clocks: {
       h3: 'The clocks',
       rows: [
-        ['Every push', 'The git hook runs the type check and the full jest suite. It can be skipped; CI cannot.'],
-        ['Every PR', 'Required checks: types, jest (the guards run inside it), Deno, and no migration number held by another open PR. No bypass. Jest also reruns in three far time zones, advisory until CUL-586. Engine changes print a scorecard that reports and never blocks.'],
-        ['Every merge', 'Squash, after `scripts/steward/merge-check.sh` reads `CLEAN`. Every issue the PR names closes, so a task that spans PRs gets one sub-issue per PR. Changed Edge Functions deploy and record themselves unless the manifest holds them.'],
+        ['Every push', 'The git hook runs the type check and jest: the full suite locally, only what the push touches plus the guards in a cloud session. It can be skipped; CI cannot.'],
+        ['Every PR', 'Required checks: types, jest (the guards run inside it) and Deno. No bypass. A migration number check and jest in three far time zones also run, advisory until CUL-586. Engine changes print a scorecard that reports and never blocks.'],
+        ['Every merge', 'Squash; a session\'s own merge waits for `scripts/steward/merge-check.sh` to read `CLEAN`. Every issue the PR names closes, so a task that spans PRs gets one sub-issue per PR. Changed Edge Functions deploy and record themselves unless the manifest holds them.'],
         ['Every migration', 'Its own PR with a safety preflight, applied live before any code that needs it merges.'],
         ['Every session', 'Claim, orient, work, `/wrap`: one PR, one record, the next prompt, One thing to learn.'],
         ['Every mock round', 'Same URL each round. After you react, one proposal with a ledger mapping each reaction to what moved.'],
@@ -167,7 +167,7 @@ export default {
         ['Most weeks', 'A Quick Win sweep ships the small items and tags the rest with the sitting each needs.'],
         ['Weekly', 'The suite runs with the clock moved forward.'],
         ['Monthly', '`/coach`, run by hand.'],
-        ['The retro', 'Ruled every ~10 sessions, but nothing fires it. The last full one was 11 September, 250 sessions ago; `/dispatch` had its own on 3 and 5 October.'],
+        ['The retro', 'Ruled every ~10 sessions, but nothing fires it. The last full one was 11 September, 240 sessions ago; `/dispatch` had its own on 3 and 5 October.'],
       ],
     },
     talk: {
@@ -211,7 +211,7 @@ export default {
     deck: '`operating-kit/` (#976, 29 September) is the portable copy of this engine. [The Operating Kit](https://claude.ai/artifact/41Qscq43pii1umUVqLAm1D) is its map, committed as `docs/how-we-work-template.html`.',
     intro: [
       "To start a new project, paste `operating-kit/BOOTSTRAP.md` §0 into its first session. That session interviews you in four rounds, fills the templates, and installs everything as one PR.",
-      "**Kept in sync by hand.** The workflow audit ported `/dispatch` v1.6 and the steward skill into the kit on 6 October. The README's rule to copy every other lesson across is still prose (retro L2), so the groomer and the learning loop have not followed.",
+      "**Kept in sync by hand.** The workflow audit ported `/dispatch` v1.6 and the steward skill into the kit on the night of 6 October. The README's rule to copy every other lesson across is still prose (retro L2), so the groomer and the learning loop have not followed.",
     ],
     table: {
       h3: 'Where the kit and this repo differ, 7 October',
@@ -220,7 +220,7 @@ export default {
         ['Your queue', '`Needs PM` as a workflow state', 'The label, drained by a groomer step, cap 30', 'Both, by your 2 October ruling'],
         ['The retro', 'A `/retro` command, fired by the start hook printing RETRO DUE', 'Prose only; nothing has fired it since 11 September', 'Kit'],
         ['The start hook', "Unshallows the clone and prints the manual's byte count", 'Runs `npm install` only', 'Kit'],
-        ['Discovery PRs', 'Open ready to merge', 'Merge once finished; `/wrap` still opens them as drafts', 'Even'],
+        ['Discovery PRs', 'Open ready to merge', 'Merge once finished; `/wrap` still opens them as drafts', 'Kit'],
         ['`/dispatch`', 'v1.6, ported 6 October, without its tested script', 'v1.6 with `scripts/dispatch/`', 'Repo, narrowly'],
         ['Merging', 'The steward skill and `merge-check.sh`, ported 6 October', 'The same, since 3 October', 'Even'],
         ['The groomer', 'Condensed, 29 September', 'Retirement sweep, 7 day veto, label strip, queue drain (2 October)', 'Repo'],
