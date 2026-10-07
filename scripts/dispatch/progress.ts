@@ -21,6 +21,9 @@
 //     children are in the project is not counted (its children are).
 
 import type { Launch, Plan, PrFact } from './plan.ts';
+import type { Wake } from './stall.ts';
+
+export type { Wake };
 
 export const MIN_CYCLES = 3;
 export const BAR_WIDTH = 10;
@@ -32,8 +35,6 @@ const ZONE = 'America/Chicago';
 export type UnitState = 'merged' | 'running' | 'open' | 'parked' | 'ready' | 'held' | 'on-you' | 'unscheduled';
 export type Unit = { id: string; wave: string; state: UnitState; pr?: number; mergedAt?: string };
 
-// A child's wake as the dispatcher received it (the same shape step 9 reads).
-export type Wake = { session: string; kind: 'stopped' | 'merged' | 'done'; reason?: string; at: string };
 export type Cycle = { id: string; pr: number; launchedAt: string; mergedAt: string; minutes: number };
 export type NextItem = { id: string; on: string }; // on: 'now', 'PR-12 merging', 'your ruling: D4'
 export type HoldLine = { text: string; frees?: number; holds?: number };
