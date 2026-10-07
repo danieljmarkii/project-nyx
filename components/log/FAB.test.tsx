@@ -49,6 +49,7 @@ import { theme } from '../../constants/theme';
 import { usePetStore } from '../../store/petStore';
 import { useUiStore } from '../../store/uiStore';
 import { useMomentStore } from '../../store/momentStore';
+import { useEventStore } from '../../store/eventStore';
 import { useReducedMotionStore } from '../../store/reducedMotionStore';
 
 function seedPets(count: number) {
@@ -771,5 +772,86 @@ describe('FAB — a one-tap food whose write fails', () => {
       alert.mockRestore();
       logged.mockRestore();
     }
+  });
+});
+
+// ── CUL-1634 ─────────────────────────────────────────────────────────────────
+//
+// The fan is a column anchored to the disc, so a food row that lands after the fan
+// has run grows it upward and moves every pill above it under the thumb. The foods
+// are read before the open now, so a cold open's slot count is final on its first
+// render. The first test reds against the read-on-open tree: no read has run when the
+// disc is pressed, so the press's own render holds no food row.
+describe('FAB — CUL-1634, the recent foods are read before the fan runs', () => {
+  const HILLS = { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet', food_type: 'meal' };
+  const ROYAL = { id: 'f2', brand: 'Royal Canin', product_name: 'GI', format: 'dry', food_type: 'meal' };
+
+  beforeEach(() => {
+    getRecentFoods.mockReset();
+    getRecentFoods.mockImplementation(async () => []);
+  });
+
+  it('a cold open draws its food rows on the press’s own render, and the open reads nothing', async () => {
+    getRecentFoods.mockResolvedValueOnce([HILLS]);
+    seedPets(1);
+    const view = render(<FAB />);
+    // The cold start: the mount read answers while the menu is still closed.
+    await act(async () => {});
+    expect(getRecentFoods).toHaveBeenCalledTimes(1);
+
+    // No act after the press: this is the open's first render, before any read could
+    // answer. Every slot the fan will ever hold is already here.
+    fireEvent.press(view.getByLabelText('Log event'));
+    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills i/d']);
+
+    // And the open asked for nothing, so nothing can arrive to move the column.
+    await act(async () => {});
+    expect(getRecentFoods).toHaveBeenCalledTimes(1);
+    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills i/d']);
+  });
+
+  it('a new row of today waits for the close, and the next open carries it', async () => {
+    jest.useFakeTimers();
+    try {
+      getRecentFoods.mockResolvedValueOnce([HILLS]);
+      seedPets(1);
+      const view = render(<FAB />);
+      await act(async () => {});
+      fireEvent.press(view.getByLabelText('Log event'));
+      await act(async () => {});
+
+      // A meal lands in today's record while the menu is open: no read, no new row.
+      getRecentFoods.mockResolvedValue([ROYAL, HILLS]);
+      await act(async () => {
+        useEventStore.setState({ todayEvents: [{ id: 'e-new' } as never] });
+      });
+      expect(getRecentFoods).toHaveBeenCalledTimes(1);
+      expect(view.queryByText(/Royal Canin/)).toBeNull();
+
+      // The close reads, so the next open is current from its first frame.
+      fireEvent.press(view.getByTestId('fab-scrim'));
+      await settleAnimations();
+      expect(getRecentFoods).toHaveBeenCalledTimes(2);
+      fireEvent.press(view.getByLabelText('Log event'));
+      expect(fanLabels(view).slice(-3)).toEqual(['Log food', 'Hills i/d', 'Royal Canin GI']);
+    } finally {
+      useEventStore.setState({ todayEvents: [] });
+      jest.useRealTimers();
+    }
+  });
+
+  it('a tap that beats the mount read waits on that read rather than starting a second', async () => {
+    let release: (foods: unknown[]) => void = () => {};
+    getRecentFoods.mockImplementationOnce(
+      () => new Promise((resolve) => { release = resolve as never; }),
+    );
+    seedPets(1);
+    const view = render(<FAB />);
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    expect(getRecentFoods).toHaveBeenCalledTimes(1);
+
+    await act(async () => { release([HILLS]); });
+    expect(view.getByText(/Hills/)).toBeTruthy();
   });
 });
