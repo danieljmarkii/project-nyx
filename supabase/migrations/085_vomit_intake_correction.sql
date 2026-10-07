@@ -112,6 +112,11 @@
 --                   SELECT count(*) FROM public.event_ai_analysis
 --                    WHERE incident_type = 'vomit'
 --                      AND read_text LIKE '%hasn''t eaten a full meal recently.%';  -- the backfill's rows
+--                   SELECT count(*) FROM public.meals m JOIN public.events e ON e.id = m.event_id
+--                    WHERE m.pet_id <> e.pet_id;  -- expect 0; the count ignores such rows either way
+--   Known, not recounted (stale until the pet's next recount, never cross-account):
+--                 a meals row whose event_id or pet_id is edited, and a hard-deleted
+--                 meals row (the app never hard-deletes; events soft-delete).
 -- ============================================================
 
 
@@ -201,7 +206,11 @@ AS $$
   SELECT count(*)::integer,
          (count(*) FILTER (WHERE m.intake_rating IN ('most', 'all')))::integer
     FROM public.events e
-    LEFT JOIN public.meals m ON m.event_id = e.id
+    -- The meal's pet as well as its event: meals RLS checks only meals.pet_id and no
+    -- guard pairs it with the event's pet, so another account's meals row can sit on this
+    -- pet's meal event. Joined on the id alone, its rating would count here, in the
+    -- reassuring direction (rls-privacy-reviewer on this file, attack 1).
+    LEFT JOIN public.meals m ON m.event_id = e.id AND m.pet_id = e.pet_id
    WHERE e.pet_id = p_pet_id
      AND e.event_type = 'meal'
      AND e.deleted_at IS NULL
@@ -226,9 +235,11 @@ GRANT EXECUTE ON FUNCTION public.vomit_intake_record(uuid, timestamptz) TO servi
 -- (they name read_text) and never on a client's dismissal or field edit (they
 -- do not). Runs before trg_event_ai_analysis_stamps_frozen (triggers of one
 -- timing fire in name order, 'i' < 's'), so on the service role's write the
--- freeze sees the change and lets it through; a client that names read_text
--- itself has the change refused by the freeze, which is the posture 075 chose
--- for anything the server decides.
+-- freeze sees the change and lets it through. A client that names read_text
+-- itself (013's policy and the table grant still allow it on its own row) is
+-- refused by the freeze only when the facts would move; otherwise its text lands
+-- and the facts stay as they were. That is the owner's own row and a
+-- pre-existing grant, filed separately; the freeze never covered read_text.
 --
 -- The old sentence is matched by its fixed clause, which no other template in
 -- analyze-vomit or analyze-stool contains (EN-0's intake sentence says "meals
@@ -368,9 +379,13 @@ BEGIN
   ELSIF NEW.event_type = 'vomit' THEN
     PERFORM public.apply_vomit_intake_corrections(NEW.pet_id, NEW.occurred_at, NEW.occurred_at);
   END IF;
+  -- The old window, under the OLD pet: a meal moved in time, retyped, or moved to
+  -- another of the owner's pets leaves a count behind where it was.
   IF TG_OP = 'UPDATE' AND OLD.event_type = 'meal'
-     AND (OLD.occurred_at IS DISTINCT FROM NEW.occurred_at OR NEW.event_type IS DISTINCT FROM 'meal') THEN
-    PERFORM public.apply_vomit_intake_corrections(NEW.pet_id, OLD.occurred_at, OLD.occurred_at + interval '24 hours');
+     AND (OLD.occurred_at IS DISTINCT FROM NEW.occurred_at
+       OR NEW.event_type IS DISTINCT FROM 'meal'
+       OR OLD.pet_id IS DISTINCT FROM NEW.pet_id) THEN
+    PERFORM public.apply_vomit_intake_corrections(OLD.pet_id, OLD.occurred_at, OLD.occurred_at + interval '24 hours');
   END IF;
   RETURN NULL;
 END;
@@ -389,12 +404,13 @@ CREATE TRIGGER trg_events_vomit_intake_correction_ins
   EXECUTE FUNCTION public.refresh_vomit_intake_corrections();
 
 CREATE TRIGGER trg_events_vomit_intake_correction_upd
-  AFTER UPDATE OF occurred_at, deleted_at, event_type ON public.events
+  AFTER UPDATE OF occurred_at, deleted_at, event_type, pet_id ON public.events
   FOR EACH ROW
   WHEN ((NEW.event_type IN ('meal', 'vomit') OR OLD.event_type IN ('meal', 'vomit'))
         AND (OLD.occurred_at IS DISTINCT FROM NEW.occurred_at
           OR OLD.deleted_at  IS DISTINCT FROM NEW.deleted_at
-          OR OLD.event_type  IS DISTINCT FROM NEW.event_type))
+          OR OLD.event_type  IS DISTINCT FROM NEW.event_type
+          OR OLD.pet_id      IS DISTINCT FROM NEW.pet_id))
   EXECUTE FUNCTION public.refresh_vomit_intake_corrections();
 
 CREATE TRIGGER trg_meals_vomit_intake_correction_ins
