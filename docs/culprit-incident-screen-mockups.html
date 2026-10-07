@@ -168,6 +168,11 @@
   .readcard .readtext { font-size: 12.5px; line-height: 1.45; color: #525252; margin-top: 5px; }
   .readcard .disc { font-size: 10px; color: #A3A3A3; margin-top: 8px; }
   .readcard .hide { font-size: 11px; color: #737373; font-weight: 500; margin-top: 8px; display: flex; gap: 14px; }
+  .readcard .corr { margin-top: 9px; padding: 8px 10px; border-radius: 10px; background: #F5F5F5; border-left: 2px solid #A3A3A3; }
+  .readcard .corr .clabel { font-size: 10.5px; font-weight: 600; color: #525252; letter-spacing: 0.01em; }
+  .readcard .corr .ctext { font-size: 12px; line-height: 1.45; color: #525252; margin-top: 3px; }
+  .readcard .readtext.struck { text-decoration: line-through; text-decoration-color: #A3A3A3; color: #737373; }
+  .spoken { font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--ink-2); background: var(--paper-2); border: 1px dashed var(--rule); border-radius: 6px; padding: 8px 10px; margin-top: 8px; }
   .pending { display: flex; align-items: center; gap: 9px; padding: 8px 2px; color: #737373; font-size: 12.5px; }
   .pending .whorl { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid rgba(0,194,168,0.22); border-top-color: #00C2A8; }
   .obs { border-radius: 14px; padding: 10px 12px; background: #FFFFFF; box-shadow: 0 2px 10px rgba(19,17,46,0.05); }
@@ -218,7 +223,7 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span>Culprit · the incident screen</span><span>CUL-158 absorbed</span><span>2026-09-05</span><span class="roundtag">Round 2 · build-ready</span></p>
+    <p class="eyebrow"><span>Culprit · the incident screen</span><span>CUL-158 absorbed</span><span>2026-09-05</span><span class="roundtag">Round 2 · build-ready</span><span class="roundtag">Round 3 · §3b for ruling</span></p>
     <h1>Where a logged vomit lands, and how the read arrives</h1>
     <p class="standfirst">Today a photographed vomit ends on Home under the black card, and the one surface that holds the AI read is never shown. Round 1 mocked three routing directions, two shapes for the incident screen, and the read's <strong>arrival</strong> as a motion moment. <strong>Round 2 is the build-ready pass:</strong> the PM ruled all four briefs on 2026-09-05, the ruled frames are drawn in full below, and the round-1 alternatives stay as the deliberation record. Every frame renders the shipping light surfaces with the real tokens.</p>
     <div class="revnew"><b>Ruled 2026-09-05 (§0).</b> D1 land on the record · D2 photographed vomit + stool only · D3 <b>the photo stays the hero</b> (overrides the round-1 recommendation: an owner must be able to pull a vomit up and show a vet) · D4 the rail-led arrival. Build: CUL-802 (route) → CUL-803 (screen) → CUL-804 (arrival), spec <code>docs/nyx-incident-screen-requirements.md</code>. Round 2 supersedes round 1 on this URL.</div>
@@ -550,6 +555,73 @@
       <p><strong>Deciding:</strong> what the owner sees first on the record of a photographed incident.</p>
       <p><strong>Ruled:</strong> <span class="rec">S-A, keep the hero</span> (PM, 2026-09-05, D3): "I want the pet owner to be able to pull up a vomit and show it to a vet." The round-1 recommendation (S-B tile) is overridden and stays below as the record. Round 2 adds the viewer caption (V1) so the vet also sees when.</p>
       <p><strong>Consequence:</strong> PR 2 is a reorder inside the existing tree plus the rail, the grid, the fold, and the caption. The tile composition is not built.</p>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── Round 3 · the dated correction (CUL-1406) ───────────────────────── -->
+  <section id="correction">
+    <div class="sec-head"><span class="sec-num">§3b</span><h2>A dated correction beside a stored read <span class="roundtag">Round 3 · for ruling · CUL-1406</span></h2></div>
+    <div class="col">
+      <p><strong>Round 3 adds one decision to this page; §0–§7 are unchanged.</strong> Reads written before EN-0 (Engines v3 PR-13a) can carry <em>"Nyx has been vomiting and hasn't eaten a full meal recently"</em> with four or six meals in the log. New reads state the record instead. The stored ones keep their words, so a correction sits <strong>beside</strong> them: dated, stating what the meal log held, never a rewrite and never a change to the verdict (CUL-1201). Ask relays the same correction with the words.</p>
+      <p>Drawn over Nyx's Sep 22 read (six meals in the 24 hours before the vomit, none marked Most or All). The frames use today's card: rose rail, verdict, read, disclaimer.</p>
+    </div>
+
+    <h3>C-A · The words stay, the correction sits under them <span class="annot ok">current proposal · recommended</span></h3>
+    <div class="col"><p>The read is untouched. Under it, a quiet grey block with its date. No strikethrough, so what is seen and what VoiceOver says are the same sentence in the same order, and the owner is never left reading a line the app has crossed out but still shows as the reason for a call.</p></div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero"></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Tue, Sep 22</div><div class="time">7:40 AM</div><div class="who">Nyx's record</div></div>
+              <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext">Nyx has been vomiting and hasn't eaten a full meal recently. In cats that combination is worth a call to your vet sooner rather than later.</div><div class="corr"><div class="clabel">Corrected Oct 7, 2026</div><div class="ctext">The words above went further than the record. That day, the meal log held 6 meals for Nyx in the 24 hours before this vomit, and none was marked Most or All. This correction doesn't change the call to your vet.</div></div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div><div class="hide"><span>Hide this note</span></div></div></div></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>C-A · Sep 22, corrected</b>Grey ground and rail, never rose: the correction is a record fact, not a second alarm. The block hides with the note (Hide hides both) and comes back with it.</p>
+        <div class="spoken">VoiceOver, as one element: "Corrected October 7, 2026. The words above went further than the record. That day, the meal log held 6 meals for Nyx in the 24 hours before this vomit, and none was marked Most or All. This correction doesn't change the call to your vet."</div>
+      </div>
+    </div>
+
+    <h3>The three sentences the record can produce</h3>
+    <div class="col">
+      <p>The middle sentence is the only part that varies. It counts every meal in the 24 hours before the vomit, rated or not, and every Most or All among them, including a meal logged after the read ran (the back-fill case the old present-tense sentence could not survive). Every clause is pinned to a date, so the correction itself stays true when the log changes later.</p>
+      <ul>
+        <li><strong>No meals:</strong> "That day, the meal log held no meals for Nyx in the 24 hours before this vomit."</li>
+        <li><strong>Meals, none Most or All:</strong> "That day, the meal log held 6 meals for Nyx in the 24 hours before this vomit, and none was marked Most or All." (one meal: "held 1 meal …, and it wasn't marked Most or All.")</li>
+        <li><strong>A Most or All meal is there:</strong> "That day, the meal log held 3 meals for Nyx in the 24 hours before this vomit, and 1 was marked Most or All."</li>
+      </ul>
+      <p>Every form opens <em>"The words above went further than the record."</em> and closes <em>"This correction doesn't change the call to your vet."</em> No <code>!</code>, the pet is named, no conclusion about whether Nyx ate.</p>
+    </div>
+
+    <h3>C-B · Strike the words, correction under them <span class="annot">option, drawn for the decision · not the current proposal</span></h3>
+    <div class="col"><p>The issue named strikethrough as the visual it expected. It reads as "retracted" at a glance, but the verdict above it still stands on those words, and a struck line beside a live <em>Worth a call</em> reads as the app withdrawing the call. It also needs its own spoken form, because VoiceOver does not announce strikethrough.</p></div>
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="dhead"><span class="bk">‹</span>Vomit</div>
+            <div class="dscroll">
+              <div class="hero"></div>
+              <div class="rec"><div class="typ">Vomit</div><div class="date">Tue, Sep 22</div><div class="time">7:40 AM</div><div class="who">Nyx's record</div></div>
+              <div class="readcard attn"><div class="rrow"><div class="rail safety"></div><div class="ibody"><div class="verdict attn">Worth a call</div><div class="readtext struck">Nyx has been vomiting and hasn't eaten a full meal recently. In cats that combination is worth a call to your vet sooner rather than later.</div><div class="corr"><div class="clabel">Corrected Oct 7, 2026</div><div class="ctext">That day, the meal log held 6 meals for Nyx in the 24 hours before this vomit, and none was marked Most or All. This correction doesn't change the call to your vet.</div></div><div class="disc">This is a quick read of a single moment, not a diagnosis.</div><div class="hide"><span>Hide this note</span></div></div></div></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>C-B · Struck through</b>Same block, the original line struck. The sentence that justified the call is now the one visibly withdrawn.</p>
+        <div class="spoken">VoiceOver needs a label on the struck text: "Earlier wording, corrected: Nyx has been vomiting and hasn't eaten a full meal recently. …" then the correction.</div>
+      </div>
+    </div>
+
+    <div class="brief">
+      <p class="bid">R-5 · How a stored read shows its correction (CUL-1406)</p>
+      <p><strong>Deciding:</strong> how a pre-EN-0 intake sentence looks on the incident screen once its dated correction exists, and the correction's words (Ask relays the same words).</p>
+      <p><strong>Options:</strong> <span class="rec">C-A, words kept, correction beneath (recommended)</span>: one reading order for eyes and VoiceOver, and the call is never shown resting on a crossed-out reason. C-B, struck through: louder retraction, needs a separate spoken label, and reads as withdrawing the call. Either way the wording above can be edited in your ruling.</p>
+      <p><strong>Consequence:</strong> unblocks PR-13b's build (migration 085, the two incident sections, Ask's relay). C-B adds one accessibility label and a struck style; C-A adds neither.</p>
     </div>
   </section>
 
