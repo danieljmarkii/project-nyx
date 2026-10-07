@@ -7,12 +7,15 @@
 //   node --experimental-strip-types scripts/dispatch/cli.ts plan <facts.json> [--board digest|table] [--for-pr [CUL-NNN …]]
 //   node --experimental-strip-types scripts/dispatch/cli.ts check-update <update.md> <facts.json>
 //   node --experimental-strip-types scripts/dispatch/cli.ts check-board <board.md> <facts.json>
+//   node --experimental-strip-types scripts/dispatch/cli.ts progress <facts.json> [--for-pr [CUL-NNN …]] [--email <owner>]
 //
 // facts.json: PlanInput (plan.ts) with each project's `description` given inline or as
 // `descriptionFile` (a path), plus optional `updates` (the `**/dispatch run**` bodies,
 // newest first) with `updatesSince` (the oldest one's time), `branches` (remote branch names), `triggers` (list_triggers), `unblock`
 // (U lines), `index` (the ruling index id), `dispatcher` (this session's id), `teach`,
-// `queued`.
+// `queued`, and for the stalled-child check (CUL-1623) `checkRuns` (PR number → its head's
+// `get_check_runs` list), `headShas` (PR number → head sha), `wakes` (the children's
+// `/dispatch wake` messages this session received) and `notes` (the `/dispatch note`s it sent).
 //
 // `--for-pr [CUL-NNN …]` breaks every issue id but the ones listed, so the output can be
 // pasted into a PR body without its merge closing them (status.ts, prSafe).
@@ -21,6 +24,8 @@ import * as fs from 'node:fs';
 
 import { renderBoard, validateBoard, type BoardShape } from './board.ts';
 import { autoEligible, planDispatch, type PlanInput, type ProjectInput } from './plan.ts';
+import { cyclesFrom, holdsFromPlan, nextFromPlan, nextFromQueued, progressEmail, renderProgress, sinceOf, unitsFromIssues, unitsFromPlan, type ProjectIssue } from './progress.ts';
+import { CI_WAIT_CHECK_IN_MIN, checksOf, findStalls, type CheckRun, type Note, type Wake } from './stall.ts';
 import { checkInFrom, closingLines, memoryCheck, prSafe, validateStatusUpdate, type Trigger } from './status.ts';
 
 type Facts = Omit<PlanInput, 'project' | 'others'> & {
@@ -35,6 +40,10 @@ type Facts = Omit<PlanInput, 'project' | 'others'> & {
   dispatcher?: string;
   teach?: string;
   queued?: string[];
+  checkRuns?: Record<string, CheckRun[]>;
+  headShas?: Record<string, string>;
+  wakes?: Wake[];
+  notes?: Note[];
 };
 
 function fail(msg: string): never {
@@ -80,6 +89,36 @@ function plan(f: Facts, shape: BoardShape): string {
   say('Held:');
   for (const v of p.verdicts.filter((x) => x.row && !x.ready && x.state.kind !== 'merged')) say(` PR-${v.row} — ${v.reasons.join('; ')}`);
   say(`Auto (confirmed, unmerged): ${p.autoRows.map((r) => `PR-${r}`).join(', ') || 'none'}`);
+  // CUL-1623: a child idle on a green, mergeable PR never wakes on its own. Its checks are
+  // read here from the raw runs, never judged by hand (one passed run is not a green PR).
+  if (f.checkRuns) {
+    // Fail loudly rather than guess: runs without the sha they were read on cannot be noted
+    // once per head, and a missing wake list would make every child waiting on the PM look
+    // unheld (a fresh dispatcher re-reads the wakes from its predecessor's transcript).
+    const noSha = Object.keys(f.checkRuns).filter((n) => !f.headShas?.[n]);
+    if (noSha.length) fail(`checkRuns without headShas for #${noSha.join(', #')}: read both in the same moment`);
+    if (!f.wakes) fail('checkRuns without wakes: list every /dispatch wake received (an empty list if none)');
+    const stalls = findStalls({
+      now: f.now,
+      alias: p.alias,
+      launches: f.launches,
+      prs: f.prs.map((pr) => ({ ...pr, headSha: f.headShas?.[pr.number], checks: f.checkRuns?.[pr.number] ? checksOf(f.checkRuns[pr.number]) : undefined })),
+      sessions: f.sessions,
+      parked: p.parked.map((x) => x.pr),
+      wakes: f.wakes,
+      notes: f.notes ?? [],
+    });
+    say();
+    say(`Idle children: ${stalls.length ? '' : 'none'}`);
+    for (const s of stalls) {
+      if (s.kind === 'ci-wait') say(` ${s.row} #${s.pr} — idle while its checks run: keep a check-in ~${CI_WAIT_CHECK_IN_MIN} min out`);
+      else if (s.notedAt) say(` ${s.row} #${s.pr} — stalled; this head was noted at ${s.notedAt}, so nothing is sent again`);
+      else {
+        say(` ${s.row} #${s.pr} — stalled: send_message to ${s.session}:`);
+        for (const l of s.note!.split('\n')) say(`    ${l}`);
+      }
+    }
+  }
   if (f.updates || f.branches) {
     const d = memoryCheck({ slugs: [...new Set([p.slug, p.nameSlug])], updates: f.updates ?? [], branches: f.branches ?? [], prs: f.prs, mergedRows: merged, now: f.now, since: f.updatesSince ?? new Date(new Date(f.now).getTime() - 14 * 86_400_000).toISOString() });
     say();
@@ -104,6 +143,38 @@ function plan(f: Facts, shape: BoardShape): string {
   return out.join('\n');
 }
 
+// The progress update (CUL-1624). It reads `wakes` (above) and two more facts:
+// `progressSince` (the newest `**/dispatch progress**` update's time) and, for a project with
+// no run-order table, `projectIssues` (every issue: id, state type, milestone, labels,
+// parent). The owner's address is an argument read from the session context, never a fact
+// in a file.
+type ProgressFacts = Facts & { progressSince?: string; projectIssues?: ProjectIssue[] };
+
+function progress(f: ProgressFacts): { alias: string; text: string } {
+  const p = planDispatch(f);
+  const own = f.launches.filter((l) => l.project === p.alias);
+  const table = p.verdicts.some((v) => v.row);
+  const units = table ? unitsFromPlan(p, f.prs) : unitsFromIssues(f.projectIssues ?? [], own, f.prs, f.queued ?? []);
+  const flying = units.filter((u) => u.state === 'running' || u.state === 'open').length;
+  const text = renderProgress({
+    alias: p.alias,
+    now: f.now,
+    since: f.progressSince ?? sinceOf([], f.now),
+    units,
+    launches: own,
+    wakes: f.wakes,
+    cycles: cyclesFrom(own, f.prs),
+    repoCycles: cyclesFrom(f.launches, f.prs),
+    next: table ? nextFromPlan(p) : nextFromQueued(f.queued ?? []),
+    holds: table
+      ? holdsFromPlan(p)
+      : (f.projectIssues ?? []).filter((i) => i.labels?.includes('Waiting on PM') && !['completed', 'canceled', 'duplicate'].includes(i.stateType)).map((i) => ({ text: `${i.id} (Waiting on PM)` })),
+    index: f.index,
+    slots: p.slots + flying,
+  });
+  return { alias: p.alias, text };
+}
+
 const [cmd, a, b, ...rest] = process.argv.slice(2);
 const flags = [a, b, ...rest];
 // The digest is the default Board (D4, CUL-1622): the PM reads the digests, not a table.
@@ -126,6 +197,14 @@ if (cmd === 'plan' && a) {
   const errs = validateBoard(fs.readFileSync(a, 'utf8'), { now: f.now, merged, rows: new Set(p.verdicts.map((v) => v.row)) });
   console.log(errs.length ? `REFUSED:\n${errs.map((e) => ` - ${e}`).join('\n')}` : 'OK');
   process.exit(errs.length ? 1 : 0);
+} else if (cmd === 'progress' && a) {
+  const f = load(a) as ProgressFacts;
+  const { alias, text } = progress(f);
+  if (flags.includes('--email')) console.log(JSON.stringify(progressEmail(text, alias, f.now, flags[flags.indexOf('--email') + 1]), null, 2));
+  else {
+    const keep = flags.includes('--for-pr') ? flags.slice(flags.indexOf('--for-pr') + 1).filter((x) => /^CUL-\d+$/.test(x)) : [];
+    console.log(flags.includes('--for-pr') ? prSafe(text, keep) : text);
+  }
 } else {
-  fail('usage: cli.ts plan <facts.json> [--board digest|table] [--for-pr] | check-update <update.md> <facts.json> | check-board <board.md> <facts.json>');
+  fail('usage: cli.ts plan <facts.json> [--board digest|table] [--for-pr] | check-update <update.md> <facts.json> | check-board <board.md> <facts.json> | progress <facts.json> [--for-pr] [--email <owner>]');
 }
