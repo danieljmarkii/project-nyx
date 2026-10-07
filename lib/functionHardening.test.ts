@@ -131,6 +131,10 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: false, pinned: true, execute: [],
     why: 'CUL-1406 (085) — INVOKER recount, reached only from the DEFINER refresh and the backfill; revoked so it is not RPC-callable.',
   },
+  vomit_intake_correction_due: {
+    definer: false, pinned: true, execute: [],
+    why: 'CUL-1406 (086) — the one "is a correction due" predicate; IMMUTABLE INVOKER, revoked from clients (service_role keeps an explicit grant).',
+  },
   set_vomit_intake_correction: {
     definer: false, pinned: true, execute: [],
     why: 'CUL-1406 (085) — INVOKER BEFORE trigger on the read write; revoked so it is not RPC-callable.',
