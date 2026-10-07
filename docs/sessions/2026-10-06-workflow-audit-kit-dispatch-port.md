@@ -3,7 +3,7 @@
 **Date:** 2026-10-06
 **One thing:** none — dispatched session, not this round's teach row
 
-Dispatched by `/dispatch` (adhoc row, CUL-1517), branch `claude/the-workflow-audit-adhoc-10062353`; shipped via #1086 (the PR number is filled at creation; see the PR).
+Dispatched by `/dispatch` (adhoc row, CUL-1517), branch `claude/the-workflow-audit-adhoc-10062353`; shipped via #1087.
 
 ## What shipped
 
