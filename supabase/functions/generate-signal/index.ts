@@ -103,7 +103,7 @@ import {
 import {
   summaryModelPayload,
   validateSummary,
-  shouldPhraseWithModel,
+  modelMayPhraseSummary,
   SUMMARY_MODEL_PHRASING_ENABLED,
   SUMMARY_TOOL,
   SUMMARY_SYSTEM,
@@ -273,8 +273,9 @@ async function phraseSummaryText(packet: SummaryFactPacket, phrasingEnabled = tr
   // Restraint (PR-4 adversarial review). v1 ships TEMPLATE-ONLY — SUMMARY_MODEL_PHRASING_ENABLED
   // is false, so the model is never called (the summary is a descriptive count statement, phrased
   // template-only like ③/④/⑤/⑥; see the kill-switch doc). Even when re-enabled, the model stays
-  // off SAFETY and QUIET summaries (shouldPhraseWithModel) — those are always deterministic.
-  if (!SUMMARY_MODEL_PHRASING_ENABLED || !shouldPhraseWithModel(packet)) {
+  // off SAFETY and QUIET summaries (shouldPhraseWithModel) — those are always deterministic,
+  // and the safety half is permanent by PM ruling (CUL-1630).
+  if (!modelMayPhraseSummary(packet, SUMMARY_MODEL_PHRASING_ENABLED)) {
     return templated
   }
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
