@@ -8,6 +8,7 @@ A guard is a test that fails the build when a rule that must never regress is br
 | `claudeMdBudget.test.ts.template` | Byte ratchet on CLAUDE.md: regrowth reds, and a trim that leaves the ceiling stale reds too | `guards/claudeMdBudget.test.ts`, with `CEILING_BYTES` set to the installed file's `wc -c` and `{{PRODUCT}}` filled |
 | `fixtureRoot.ts.template` | Helper that puts detector fixtures OUTSIDE the scanned tree, with provenance-checked teardown | `guards/fixtureRoot.ts` once the first scanning guard exists |
 | `blankComments.ts.template` | Single-pass, line-preserving comment blanker for source scans | `guards/blankComments.ts` once the first scanning guard exists |
+| `mergeCheck.test.ts.template` | Proof by mutation for `scripts/steward/merge-check.sh` (the steward skill's merge check): 17 cases against throwaway git repos, with a stub `gh` for main's CI | `guards/mergeCheck.test.ts` when the steward skill is installed, beside `guards/fixtureRoot.ts`. Needs git 2.38+, bash and jq; it sets the migrations directory itself |
 
 These are TypeScript / Jest. For another stack, port the logic; the rules below are stack-independent.
 

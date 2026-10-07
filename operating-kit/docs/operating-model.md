@@ -94,8 +94,8 @@ A quick-win label was ~60% stale within weeks; 10 of 21 "quick wins" had a disqu
 
 ## 5. Tracker mechanics that bit (Linear + GitHub integration)
 
-- **An attachment closes an issue on merge; a bare mention usually does nothing.** Attach only what the PR finishes. Point at related work in a comment.
-- **Never put an issue-ID range in a PR title.** The integration attached both endpoints and would have closed both on merge.
+- **The bare issue token closes an issue on merge, wherever it sits.** Measured: every issue named in a PR's title, body or head branch went `Done` when the PR merged, and deleting the tracker attachment first did not stop it. (The earlier belief, that a mention without an attachment is inert, was wrong.) So a PR names only what it finishes; related or newly filed work is pointed at in a tracker comment; a branch name carries an issue only when that one PR finishes it; and after every merge, each named issue is read back and any that closed early is reopened.
+- **Never put an issue-ID range in a PR title.** The integration read both endpoints and would have closed both on merge.
 - **A multi-PR issue closes on its first PR's merge.** Split into one sub-issue per PR.
 - **`labels` replaces the whole set; `addLabels` appends.** Always use add/remove.
 - **The search index lags writes.** After a bulk pass, trust your write count.
