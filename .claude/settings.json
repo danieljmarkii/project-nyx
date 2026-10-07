@@ -1,5 +1,25 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__.*__(apply_migration|execute_sql|deploy_edge_function|merge_branch|reset_branch|rebase_branch|delete_branch|pause_project|restore_project)|Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --experimental-strip-types --no-warnings \"$CLAUDE_PROJECT_DIR/.claude/hooks/run-production-gate.ts\" || printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"The production gate could not run (CUL-1616), so a person decides this call.\"}}'"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*__send_message",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node --experimental-strip-types --no-warnings \"$CLAUDE_PROJECT_DIR/.claude/hooks/run-relay-form.ts\" || printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"The relay-form hook could not run (CUL-1616), so this message is not sent.\"}}'"
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [

@@ -26,9 +26,8 @@ import * as path from 'path';
 import { createFixtureRoot, removeFixtureRoot, writeFixture } from './fixtureRoot';
 
 const ROOT = path.resolve(__dirname, '..');
-const PROJECT = process.env.CUL1616_PROJECT_DIR ?? ROOT;
-const HOOKS = path.join(PROJECT, '.claude', 'hooks');
-const SETTINGS = path.join(PROJECT, '.claude', 'settings.json');
+const HOOKS = path.join(ROOT, '.claude', 'hooks');
+const SETTINGS = path.join(ROOT, '.claude', 'settings.json');
 const DRIVER = path.join(ROOT, 'guards', 'hookDriver.ts');
 const NODE_FLAGS = ['--experimental-strip-types', '--no-warnings'];
 const PROD = 'aigchluqluzuhtbfllgh';
@@ -309,7 +308,7 @@ describe('wiring in .claude/settings.json', () => {
 });
 
 // ── End to end: the command settings.json runs ──────────────────────────────────────
-type E2eRow = { rule: string; name: string; script: string; stdin: string; expect: Expect; env?: Record<string, string> };
+type E2eRow = { rule: string; name: string; script: string; stdin: string; expect: Expect; env?: { PATH: string } };
 
 const commandFor = (script: string): string => {
   const pre = (JSON.parse(fs.readFileSync(SETTINGS, 'utf8')) as { hooks: { PreToolUse: HookEntry[] } }).hooks.PreToolUse;
@@ -328,9 +327,12 @@ const E2E: E2eRow[] = [
 ];
 
 function runCommand(projectDir: string, row: E2eRow): { decision: Expect | string; stdout: string; status: number | null } {
-  const env: Record<string, string> = { ...(process.env as Record<string, string>), CLAUDE_PROJECT_DIR: projectDir, ...row.env };
-  if (row.env?.PATH) env.PATH = row.env.PATH;
-  else env.PATH = `${path.dirname(process.execPath)}:${process.env.PATH ?? ''}`;
+  // The jest worker's own node goes first on PATH, unless the row is about a missing node.
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    CLAUDE_PROJECT_DIR: projectDir,
+    PATH: row.env?.PATH ?? `${path.dirname(process.execPath)}:${process.env.PATH ?? ''}`,
+  };
   const r = spawnSync('/bin/sh', ['-c', commandFor(row.script)], { input: row.stdin, encoding: 'utf8', env });
   if (r.stdout === '') return { decision: null, stdout: '', status: r.status };
   let o: { hookSpecificOutput?: Record<string, unknown> };
@@ -352,7 +354,7 @@ function runCommand(projectDir: string, row: E2eRow): { decision: Expect | strin
 describe('end to end, through sh, as the harness runs it', () => {
   test.each(E2E.map((r, i) => [r.rule, r.name, i] as const))('%s — %s', (_rule, _name, i) => {
     const row = E2E[i];
-    const got = runCommand(PROJECT, row);
+    const got = runCommand(ROOT, row);
     expect(got.decision).toBe(row.expect);
     expect(got.status).toBe(0);
   });
