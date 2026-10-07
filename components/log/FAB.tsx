@@ -742,12 +742,14 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    // CUL-322, D3 = C (PM-ruled 2026-09-26): the brand night disc carrying the bright
-    // teal plus — the Culprit mark in miniature, and the one exception in-app brand
-    // rule 3 names. It replaces CUL-1063's colorAccentInk disc, which cleared contrast
-    // and read drab on device. 14.25:1 disc on colorNeutralLight, 6.57:1 plus on the
-    // disc; both pinned in constants/theme.contrast.test.ts, with the failing pairs a
-    // "tidy" would reach for (the bright teal as the disc; a white plus on it).
+    // CUL-322, D3 = C (PM-ruled 2026-09-26): the brand night disc, the one exception
+    // in-app brand rule 3 names. It replaces CUL-1063's colorAccentInk disc, which
+    // cleared contrast and read drab on device. Its glyph was the bright teal until
+    // CUL-1626 (PM, 2026-10-06) took it white: under CUL-1279's G4 = C (2026-10-03)
+    // indigo is the action and teal is a good fact, so a teal mark on the app's primary
+    // action read against the split. 14.25:1 disc on colorNeutralLight, 14.87:1 glyph
+    // on the disc; both pinned in constants/theme.contrast.test.ts, with the failing
+    // pairs a "tidy" would reach for (the bright teal as the disc; a white plus on it).
     backgroundColor: theme.colorBrandNightElevated,
     justifyContent: 'center',
     alignItems: 'center',
@@ -767,10 +769,12 @@ const styles = StyleSheet.create({
   fabGlyphCross: {
     transform: [{ rotate: '45deg' }],
   },
-  // The plus is drawn in bars, not text, so it is a glyph by construction — the teal
-  // is the accent's GLYPH role (C-1), not text on a light ground.
-  plusH: { position: 'absolute', width: 20, height: 2.5, backgroundColor: theme.colorAccent, borderRadius: 1.25 },
-  plusV: { position: 'absolute', width: 2.5, height: 20, backgroundColor: theme.colorAccent, borderRadius: 1.25 },
+  // The plus is drawn in bars, not text, so it is a glyph by construction. White on the
+  // indigo disc (CUL-1626): the action's own glyph, never the accent, which G4 = C keeps
+  // for a good fact. One glyph turns into the ×, so the × is white too, and so is the
+  // Reduce Motion cross; FAB.test.tsx pins the colour every bar renders.
+  plusH: { position: 'absolute', width: 20, height: 2.5, backgroundColor: theme.colorTextOnDark, borderRadius: 1.25 },
+  plusV: { position: 'absolute', width: 2.5, height: 20, backgroundColor: theme.colorTextOnDark, borderRadius: 1.25 },
 
   fan: {
     alignItems: 'flex-end',
