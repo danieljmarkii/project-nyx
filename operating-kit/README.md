@@ -24,7 +24,7 @@ This directory is inert inside project-nyx: its Claude config lives under `dot-c
 | Kit file | From | What changed |
 |---|---|---|
 | `dot-claude/commands/kickoff.md`, `wrap.md`, `handoff.md`, `pm-review.md` | same | `Needs PM` is a **state** from day one; one-PR-per-session and attachment rules folded in |
-| `dot-claude/commands/dispatch.md` | same | Repo and tracker parameterized |
+| `dot-claude/commands/dispatch.md` | same, v1.6 | Repo, tracker and project values are placeholders; ships the prose without `scripts/dispatch/` (§ What `/dispatch` needs, below) |
 | `dot-claude/commands/design-critique.md` + `dot-claude/workflows/design-critique.js` + `scripts/design-critique/render.mjs` | same | Lens library rewritten with domain slots |
 | `dot-claude/commands/retro.md` | **new** | The retro existed only as prose in project-nyx and never fired; now a command |
 | `dot-claude/hooks/session-start.sh` | extended | **Computes** `RETRO DUE`, unshallows the clone, prints the manual's budget. project-nyx's hook only ran `npm install` |
@@ -52,6 +52,16 @@ This directory is inert inside project-nyx: its Claude config lives under `dot-c
 | `scripts/groom/` | The preflight that refuses to reason over a shallow clone |
 
 ---
+
+## What `/dispatch` needs
+
+`/dispatch` (and `/wrap --dispatched`, the close-out its children run) is the predecessor's v1.6. It is a tier-two install: it earns its keep at the first run order of more than a handful of PRs. Before the first run it needs:
+
+- **Three MCP servers:** the tracker (projects with a description, project status updates, issue relations and `patch` edits; the tool names are Linear's), GitHub, and Claude Code Remote (`create_session`, `get_session`, `send_message`, `send_later`, `list_triggers`, `create_trigger`). The weekday progress email also needs a Gmail connector; without one the update posts to the tracker and the email is skipped.
+- **The `steward` skill (`dot-claude/skills/steward/`) and `scripts/steward/merge-check.sh`**, both in this kit. Every child merges through its §7 gate and every wake reads its §2 and §8, so install them with `/dispatch`.
+- **`scripts/dispatch/`, optionally.** The predecessor's tested script does the deterministic half (selection, the cap, the Board, the status lines, the stalled-child check, the progress block). It does not ship here, because its tests replay the predecessor's own plan pages; until a project writes or ports one, the command's § Without the script says how those steps run by hand.
+- **Tracker states `Needs PM` and `In Review`**, `/kickoff`'s claim step, the `adversarial-reviewer`, `security-privacy-reviewer` and `product-voice` names, and a plan page in the command's § Page format. The *teach row* needs a learning skill and is inert without one.
+- **These placeholders filled:** `{{TRACKER}}`, `{{TRACKER_TEAM}}`, `{{ISSUE_PREFIX}}` and its lowercase `{{ISSUE_PREFIX_LOWER}}`, `{{REPO}}`, `{{PM_TIMEZONE}}` (overnight and daytime rules), `{{DISPATCH_START_DATE}}` (the install date; older issues are never offered as rows), `{{SESSION_CAP}}` (sessions in flight across the repo; the predecessor settled on 6), `{{PRODUCTION_PATHS}}` (what deploys on merge), `{{HOTSPOT_FILES}}` (files only one session may edit at a time), `{{MIGRATIONS_DIR}}`, `{{REQUIRED_CHECKS}}` (the CI checks a child waits for before it may end a turn) and `{{SAFETY_SURFACE}}` (the domain word for a surface that plan-gates a row, e.g. *clinical*).
 
 ## Built in from day one (project-nyx's unsolved problems, not inherited)
 1. **`Needs PM` is a workflow state, not a label.** The label grew 10 → 144. (The predecessor kept its label by PM ruling on 2026-10-02 and drains it with a groomer step instead, because migrating 150 live items cost more than the state saved. A new team pays no migration, so start with the state.)
