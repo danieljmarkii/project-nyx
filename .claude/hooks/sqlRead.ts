@@ -19,7 +19,7 @@ export type SqlRead = { read: true } | { read: false; why: string };
 
 type Tok =
   | { k: 'word'; v: string } // unquoted identifier or keyword, lowercased
-  | { k: 'qid' } // "quoted identifier": never a keyword, never a known function
+  | { k: 'qid'; v: string } // "quoted identifier", lowercased: never a keyword, never a known function
   | { k: 'str' } // a string literal of any form; its content is gone
   | { k: 'num' }
   | { k: 'param' } // $1
@@ -76,7 +76,7 @@ export function lexSql(sql: string): Lexed {
           else break;
         } else j++;
       }
-      toks.push({ k: 'qid' });
+      toks.push({ k: 'qid', v: sql.slice(i + 1, j).replace(/""/g, '"').toLowerCase() });
       i = j + 1;
     } else if (c === '$') {
       if (/[0-9]/.test(sql[i + 1] ?? '')) {
@@ -171,13 +171,15 @@ function escapeStringEnd(sql: string, from: number): number {
 // A statement may START only with these.
 const READ_START = new Set(['select', 'with', 'table', 'values', 'show', 'explain']);
 
-// No statement may CONTAIN any of these, wherever they sit. Inside a read-starting
-// statement the live ones are the data-modifying CTE (insert, update, delete, merge),
-// SELECT … INTO (into), row locks (FOR UPDATE / FOR SHARE) and EXPLAIN ANALYZE, which
-// executes what it explains; the rest are here so a statement-start check is not the
-// only thing standing between a write and a pass.
+// No statement may CONTAIN any of these, wherever they sit, quoted or not (EXPLAIN
+// accepts its options quoted: `EXPLAIN ("analyze")`). Inside a read-starting statement
+// the live ones are the data-modifying CTE (insert, update, delete, merge), SELECT … INTO
+// (into), row locks (FOR UPDATE; FOR SHARE is checked by position below, since `share`
+// is also a plausible column name) and EXPLAIN ANALYZE, which executes what it explains;
+// the rest are here so a statement-start check is not the only thing standing between a
+// write and a pass.
 const WRITE_WORDS = new Set([
-  'insert', 'update', 'delete', 'merge', 'upsert', 'into', 'share',
+  'insert', 'update', 'delete', 'merge', 'upsert', 'into',
   'alter', 'create', 'drop', 'grant', 'revoke', 'truncate', 'copy', 'call', 'do',
   'set', 'reset', 'lock', 'listen', 'unlisten', 'notify', 'vacuum', 'analyze', 'analyse',
   'cluster', 'reindex', 'refresh', 'security', 'begin', 'commit', 'rollback', 'savepoint',
@@ -192,7 +194,7 @@ const PAREN_KEYWORDS = new Set([
   'between', 'like', 'ilike', 'similar', 'having', 'limit', 'offset', 'fetch', 'union',
   'intersect', 'except', 'distinct', 'case', 'cast', 'array', 'over', 'filter', 'group',
   'within', 'partition', 'order', 'is', 'of', 'recursive', 'materialized', 'tablesample',
-  'bernoulli', 'system', 'repeatable', 'sets', 'cube', 'rollup', 'explain', 'with', 'escape',
+  'bernoulli', 'system', 'repeatable', 'sets', 'cube', 'rollup', 'explain', 'with', 'for',
 ]);
 
 // Type names that take a modifier in parentheses: `numeric(10, 2)`.
@@ -252,8 +254,14 @@ const READ_FUNCTIONS = new Set([
   'pg_total_relation_size', 'pg_table_size', 'pg_indexes_size', 'pg_size_pretty',
   'pg_database_size', 'has_table_privilege', 'has_column_privilege', 'has_schema_privilege',
   'has_function_privilege', 'current_setting', 'current_database', 'current_schema',
-  'current_schemas', 'version',
+  'current_schemas', 'version', 'pg_get_function_identity_arguments',
+  // casts and generators with no side effect on the database
+  'date', 'gen_random_uuid',
 ]);
+
+// Functions trusted under one schema other than pg_catalog: Supabase's request helpers,
+// which read the caller's JWT claims and nothing else.
+const QUALIFIED_READS = new Set(['auth.uid', 'auth.role', 'auth.jwt', 'auth.email']);
 
 export function classifySql(sql: string): SqlRead {
   const lexed = lexSql(sql);
@@ -279,7 +287,11 @@ function statementNotRead(s: Tok[]): string | null {
   }
   for (let i = 0; i < s.length; i++) {
     const t = s[i];
-    if (t.k === 'word' && WRITE_WORDS.has(t.v)) return `it contains ${t.v.toUpperCase()}`;
+    if ((t.k === 'word' || t.k === 'qid') && WRITE_WORDS.has(t.v)) return `it contains ${t.v.toUpperCase()}`;
+    const before = s[i - 1];
+    if (t.k === 'word' && t.v === 'share' && before?.k === 'word' && (before.v === 'for' || before.v === 'key')) {
+      return 'it contains FOR SHARE, which locks rows';
+    }
     const next = s[i + 1];
     if (!next || next.k !== 'punct' || next.v !== '(') continue;
     if (t.k === 'qid') return 'it calls a "quoted name"(…) this gate cannot identify';
@@ -288,7 +300,8 @@ function statementNotRead(s: Tok[]): string | null {
     if (prev?.k === 'punct' && prev.v === '.') {
       const schema = s[i - 2];
       const schemaName = schema?.k === 'word' ? schema.v : 'a quoted schema';
-      if (schemaName !== 'pg_catalog' || !READ_FUNCTIONS.has(t.v)) {
+      const trusted = schemaName === 'pg_catalog' ? READ_FUNCTIONS.has(t.v) : QUALIFIED_READS.has(`${schemaName}.${t.v}`);
+      if (!trusted) {
         return `it calls ${schemaName}.${t.v}(…), which is not a known read-only built-in`;
       }
     } else if (!PAREN_KEYWORDS.has(t.v) && !TYPE_MODIFIERS.has(t.v) && !READ_FUNCTIONS.has(t.v)) {

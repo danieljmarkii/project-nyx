@@ -19,11 +19,18 @@ export type HookInput = {
   cwd: string;
 };
 
+/**
+ * A payload with no tool name is not one the rules can judge, so it throws and the
+ * caller answers with its fail-closed decision. Reading it as an unknown tool would give
+ * "no opinion", and a renamed field in a harness release would switch the gate off.
+ */
 export function toHookInput(raw: unknown): HookInput {
-  const o = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('the payload is not an object');
+  const o = raw as Record<string, unknown>;
+  if (typeof o.tool_name !== 'string' || o.tool_name === '') throw new Error('the payload names no tool');
   const ti = o.tool_input;
   return {
-    tool_name: typeof o.tool_name === 'string' ? o.tool_name : '',
+    tool_name: o.tool_name,
     tool_input: ti !== null && typeof ti === 'object' && !Array.isArray(ti) ? (ti as Record<string, unknown>) : {},
     cwd: typeof o.cwd === 'string' ? o.cwd : process.cwd(),
   };
