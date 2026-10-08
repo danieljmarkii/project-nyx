@@ -665,9 +665,10 @@ const CORNER_KINDS: ReadonlySet<MomentPayload['kind']> = new Set(['meal', 'medic
 export type CornerResult = 'clear' | 'dismissed' | 'held';
 
 /**
- * The card carries a safety note a gesture must not take away (CUL-1635, interim until
- * the PM rules): a double-dose conflict, which History has no indicator for, or a trial
- * heads-up, whose one-per-trial budget is spent the moment it renders. Both cards already
+ * The card carries a safety note a gesture must not take away (CUL-1635; the PM ruled
+ * the hold over the FAB's open, 2026-10-08): a double-dose conflict, which History has
+ * no indicator for, or a trial heads-up, whose one-per-trial budget is spent the moment
+ * it renders. Both cards already
  * hold a 7s floor against a shorter timer; this extends that floor to the FAB's tap.
  */
 function carriesSafetyNote(payload: MomentPayload): boolean {

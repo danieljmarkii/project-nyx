@@ -27,14 +27,16 @@ An isolated `code-reviewer` pass returned fix-before-merge with four findings. A
 
 - **A pending reveal was cancelled.** `hide()` also clears the show timer, so dismissing card A while card B's picker-path reveal was pending meant B never showed, Undo included. `dismissCornerCard` now stops only the showing card's clock. B reveals, and the FAB's effect closes the fan for it. Proven: swapping `hide()` back reds the store test.
 - **An Undo mid-write.** A card whose Undo is writing is now held, so a failed write still has a card to say so on. Once its removal line is up, it may go. Proven by mutation.
-- **A safety note.** A dose card carrying a double-dose conflict, or a meal card carrying a trial heads-up, is held: the fan stays shut until the card's own 7s dwell ends. This is the interim, and it is a persona conflict for the PM (below). Proven: removing the hold reds 2 tests.
+- **A safety note.** A dose card carrying a double-dose conflict, or a meal card carrying a trial heads-up, is held: the fan stays shut until the card's own 7s dwell ends. The PM ruled to keep it (below). Proven: removing the hold reds 2 tests.
 - **A comment overclaimed.** A tap on the disc during the fan's handover close is the owner's gesture again and dismisses the card. The comment now says so rather than claiming the card is protected.
 
-## The conflict, for the PM
+## The conflict, ruled
 
 > **Dr. Chen:** A double-dose note has no History indicator, and a trial heads-up's one-per-trial budget is spent the moment it renders. A tap on the + must not take either away before it is read.
 > **Jordan / Engineering:** Holding the card means the + does nothing for up to 7s after a flagged log. An owner logging the second food of a meal reads that as a broken button.
-> **PM decision needed:** Which wins on a flagged card: the note's dwell (shipped as the interim), or the FAB's open?
+> **PM decision needed:** Which wins on a flagged card: the note's dwell, or the FAB's open?
+
+**Ruled (a), the PM, 2026-10-08:** the hold stays. A flagged card keeps the fan shut until its own dwell ends.
 
 ## Residuals
 
@@ -42,7 +44,7 @@ An isolated `code-reviewer` pass returned fix-before-merge with four findings. A
 
 ## Persona sign-off
 
-Engineer ✓ (tsc clean; FAB + momentStore 160 green, card suites + guards/ 878 green) · Designer ✓ (Principle 9: no new motion, the card's existing exit plays) · QA ✓ (the AC as a store-level invariant, proven by mutation) · Data N/A · Dr. Chen ✓ on the interim (a flagged card holds), conflict open above · Adversarial review: not required (no clinical or statistical logic). Code review: isolated `code-reviewer`, four findings, all taken (above).
+Engineer ✓ (tsc clean; FAB + momentStore 160 green, card suites + guards/ 878 green) · Designer ✓ (Principle 9: no new motion, the card's existing exit plays) · QA ✓ (the AC as a store-level invariant, proven by mutation) · Data N/A · Dr. Chen ✓ (a flagged card holds; PM ruled (a)) · Adversarial review: not required (no clinical or statistical logic). Code review: isolated `code-reviewer`, four findings, all taken (above).
 
 ## Teach
 
