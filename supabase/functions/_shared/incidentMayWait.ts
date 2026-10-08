@@ -245,14 +245,25 @@ export function payloadShowsSubject(payload: unknown): boolean {
   return Object.entries(payload as Record<string, unknown>).some(([k, v]) => k.startsWith('appears_to_show_') && v === true)
 }
 
+/** The payload key naming the photo set a MODEL READ read (engineStamps.ts' photo_set_key of the
+ *  photos it saw, all of them, or null). Written into ai_raw_payload by the pipeline under the tier
+ *  key, so only a read that wrote a payload can write it. The row's own `photo_set_key` stamp is
+ *  NOT this: every stamped write advances it, the capped escalation and the floor-only write
+ *  included, and neither reads a photo (adversarial pass 3). */
+export const READ_PHOTO_SET_KEY = 'read_photo_set_key'
+
 /** A photographed row whose read stands for the photos on it now: finished, no error, the photo
- *  shows the subject, and the read was written over this same photo set. Anything less is an
- *  unread photo, which could hold what the read lacks (adversarial pass 2: a not-vomit photo
- *  under a record call; a photo added or replaced with no read after it, app/edit-event.tsx). */
+ *  shows the subject, and the payload was read over this same photo set. Anything less is an
+ *  unread photo, which could hold what the read lacks (adversarial passes 2 and 3: a not-vomit
+ *  photo under a record call; a photo added or replaced with no read after it, app/edit-event.tsx,
+ *  then a capped or floor-only write that stamps the new set over the old payload). A payload
+ *  written before PR-27e carries no key, so it reads as unread until the next read. */
 export function photoReadSettled(row: Record<string, unknown>, currentPhotoSetKey: string | null): boolean {
   if (row.status !== 'completed' || !!row.error) return false
-  if (!payloadShowsSubject(row.ai_raw_payload)) return false
-  return row.photo_set_key === currentPhotoSetKey
+  const payload = row.ai_raw_payload
+  if (!payloadShowsSubject(payload)) return false
+  const readKey = (payload as Record<string, unknown>)[READ_PHOTO_SET_KEY]
+  return typeof readKey === 'string' && readKey === currentPhotoSetKey
 }
 
 /** A neighbour's row says "call now", or carries a photo finding, or was never settled. */

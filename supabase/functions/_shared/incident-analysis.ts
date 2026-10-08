@@ -77,7 +77,7 @@ import {
 import { FLOOR_READ_HOURS, type FloorTier } from '../../../lib/incidentFloor.ts'
 // "May wait" (Engines v3 PR-27e, CUL-1628): the one predicate, and the reads behind it. Every
 // write below that writes `tier` writes `may_wait` beside it (087's writer contract).
-import { mayWaitValue, mayWaitVerdict, photoEvidenceRefuses, type MayWaitInput, type MayWaitRecord, type MayWaitVerdict } from './incidentMayWait.ts'
+import { mayWaitValue, mayWaitVerdict, photoEvidenceRefuses, READ_PHOTO_SET_KEY, type MayWaitInput, type MayWaitRecord, type MayWaitVerdict } from './incidentMayWait.ts'
 import {
   MAY_WAIT_ANALYSIS_COLUMNS,
   readMayWaitRecord,
@@ -2223,7 +2223,14 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       console.info(`${descriptor.functionName}: tier ${tieredFields.tier} (${tierReasonOf({ ...tieredFields, tier: tieredFields.tier })})`)
     }
 
-    const structuredValues = descriptor.buildStructuredValues(analysis)
+    // Under the tier key the payload names the photo set this read READ (all of it, or null):
+    // the one key a neighbour's "may wait" check can trust to mean "these photos were read"
+    // (incidentMayWait.ts, photoReadSettled). Flag-off, the payload is today's, byte for byte.
+    const structuredValues = descriptor.buildStructuredValues(
+      analysis && tiersOn
+        ? { ...analysis, [READ_PHOTO_SET_KEY]: completeRead && !partialReadCollapsed ? stamps.photoSetKey : null }
+        : analysis,
+    )
 
     // 8c. "May wait" (CUL-1628), on a call today only, decided over this run's read, the fresh
     //     stored row and the record around the incident (incidentMayWait.ts). Settled means every

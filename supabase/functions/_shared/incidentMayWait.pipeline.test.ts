@@ -318,7 +318,7 @@ Deno.test('may_wait · the floor-only write over a stored photo read decides fro
     db.event_ai_analysis.push({
       id: 'a1', event_id: 'evt-1', pet_id: 'pet-1', incident_type: 'vomit', status: 'completed', error: null, edited_at: null,
       recommendation: 'monitor', tier: 'logged', may_wait: null, visual_flags: [], contextual_flags: [],
-      ai_raw_payload: { ...CLEAN, appears_to_show_vomit: true, blood_present: blood }, blood_present: blood, colour: 'yellow', photo_set_key: setKey,
+      ai_raw_payload: { ...CLEAN, appears_to_show_vomit: true, blood_present: blood, read_photo_set_key: setKey }, blood_present: blood, colour: 'yellow', photo_set_key: current,
     })
     assertStrictEquals(await run(db, { event_id: 'evt-1', mode: 'floor' }), 200)
     assertStrictEquals(row(db)?.tier, 'call_today')
@@ -453,4 +453,56 @@ Deno.test('may_wait · a neighbour\'s read that is CAPPED takes back the TRUE be
   await run(db, { event_id: 'evt-2' })
   assertStrictEquals(row(db, 'evt-2')?.status, 'capped')
   assertStrictEquals(row(db)?.may_wait, null)
+})
+
+Deno.test('may_wait · pass 3: a neighbour\'s calm photo replaced, then CAPPED with a record call — the new photo is unread, so no TRUE', async () => {
+  const db = makeDb({ app_config: KEYS_ON('engines_v3_en3', 'engines_v3_en4') })
+  // Neighbour evt-2: its calm photo P1 was read; the row and its payload name P1's set.
+  neighbourVomit(db, 2)
+  const p1 = await photoSetKey(['att-evt-2'])
+  db.event_ai_analysis.push({
+    id: 'a-evt-2', event_id: 'evt-2', pet_id: 'pet-1', incident_type: 'vomit', status: 'completed', error: null, edited_at: null,
+    recommendation: 'worth_a_call', tier: 'call_today', may_wait: null, visual_flags: [], contextual_flags: ['repeated_vomiting'],
+    ai_raw_payload: { ...CLEAN, read_photo_set_key: p1 }, blood_present: 'none_visible', colour: 'yellow', photo_set_key: p1,
+  })
+  // The owner replaces P1 with P2; the re-read is capped, so the capped escalation stamps P2's
+  // set on the row over P1's payload (the row stamp moves; the payload's does not).
+  db.event_attachments = db.event_attachments.filter((a) => a.event_id !== 'evt-2')
+  db.event_attachments.push({ id: 'att-evt-2-p2', event_id: 'evt-2', storage_path: 'pet-1/evt-2/b.jpg', sort_order: 0 })
+  db.flags = ['repeated_vomiting']
+  const desc = descriptor(db)
+  desc.computeContextualFlags = () => Promise.resolve({ flags: ['repeated_vomiting'] as Flag[], copy: COPY })
+  db.dayCount = 99
+  const quiet = { error: console.error, warn: console.warn, info: console.info }
+  console.error = () => {}; console.warn = () => {}; console.info = () => {}
+  try {
+    await runIncidentAnalysis(desc, new Request('http://local/a', { method: 'POST', headers: { Authorization: 'Bearer t' }, body: JSON.stringify({ event_id: 'evt-2' }) }), deps(db))
+  } finally { Object.assign(console, quiet) }
+  assertStrictEquals(row(db, 'evt-2')?.photo_set_key, await photoSetKey(['att-evt-2-p2']))
+  // Now the read beside it: a photoless record call, everything else clean.
+  db.dayCount = 1
+  await run(db)
+  assertEquals([row(db)?.tier, row(db)?.may_wait], ['call_today', null])
+})
+
+Deno.test('may_wait · a full read under the tier key names the photo set it read in its payload; flag-off it does not', async () => {
+  const on = makeDb({ app_config: KEYS_ON('engines_v3_en3') })
+  photo(on)
+  await run(on)
+  assertStrictEquals((row(on)?.ai_raw_payload as Row).read_photo_set_key, await photoSetKey(['att-evt-1']))
+  const off = makeDb()
+  photo(off)
+  await run(off)
+  assertStrictEquals('read_photo_set_key' in (row(off)?.ai_raw_payload as Row), false)
+})
+
+Deno.test('may_wait · a read that saw only some photos names no photo set: its payload never counts as settled', async () => {
+  const db = makeDb({ app_config: KEYS_ON('engines_v3_en3') })
+  // Four photos: the pipeline reads at most three, so the read is partial (and escalates, so it
+  // is kept rather than collapsed).
+  for (const n of [1, 2, 3, 4]) db.event_attachments.push({ id: `att-${n}`, event_id: 'evt-1', storage_path: `pet-1/evt-1/${n}.jpg`, sort_order: n })
+  db.vision = () => BLOODY
+  await run(db)
+  assertStrictEquals(row(db)?.recommendation, 'worth_a_call')
+  assertStrictEquals((row(db)?.ai_raw_payload as Row).read_photo_set_key, null)
 })

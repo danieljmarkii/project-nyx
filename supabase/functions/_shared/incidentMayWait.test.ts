@@ -198,14 +198,19 @@ Deno.test('neighbour — a neighbour\'s row: call now, photo finding, model call
   }
   // A photoless neighbour with no row is the record's to judge, not a refusal on its own.
   assertStrictEquals(neighbourRefuses(withRow(null, false)), false)
-  const read = neighbourRow({ photo_set_key: 'att-n1', ai_raw_payload: { appears_to_show_vomit: true, recommendation: 'monitor', blood_present: 'none_visible', colour: 'yellow' } })
+  const read = neighbourRow({ photo_set_key: 'att-n1', ai_raw_payload: { appears_to_show_vomit: true, recommendation: 'monitor', blood_present: 'none_visible', colour: 'yellow', read_photo_set_key: 'att-n1' } })
   assertStrictEquals(neighbourRefuses(withRow(read)), false)
   // Adversarial pass 2: a photographed neighbour whose read never showed the subject, or was
   // written over another photo set (a photo added or replaced since), is an unread photo.
   assertStrictEquals(neighbourRefuses(withRow({ ...read, ai_raw_payload: { ...(read.ai_raw_payload as Row), appears_to_show_vomit: false } })), true)
   assertStrictEquals(neighbourRefuses(withRow({ ...read, ai_raw_payload: null })), true)
-  assertStrictEquals(neighbourRefuses(withRow({ ...read, photo_set_key: 'att-old' })), true)
-  assertStrictEquals(neighbourRefuses(withRow({ ...read, photo_set_key: null })), true)
+  const readOver = (key: unknown) => ({ ...read, ai_raw_payload: { ...(read.ai_raw_payload as Row), read_photo_set_key: key } })
+  assertStrictEquals(neighbourRefuses(withRow(readOver('att-old'))), true)
+  assertStrictEquals(neighbourRefuses(withRow(readOver(null))), true)
+  assertStrictEquals(neighbourRefuses(withRow(readOver(undefined))), true)
+  // Adversarial pass 3: the ROW's stamp advanced by a write that read no photo (a capped or
+  // floor-only write over a replaced photo) never stands for a read of the new photo.
+  assertStrictEquals(neighbourRefuses(withRow({ ...readOver('att-old'), photo_set_key: 'att-n1' })), true)
 })
 
 Deno.test('neighbour — lethargy a day either side of the run, or logged since, refuses; outside it does not', () => {
@@ -304,7 +309,7 @@ Deno.test('storedRowInput — a photographed row with no payload showing the sub
   const row = neighbourRow({ may_wait: true, ai_raw_payload: null })
   assertEquals(mayWaitVerdict(storedRowInput({ row, incidentType: 'vomit', hasPhoto: true, photoSetKey: 'att-1', floorOn: true, record: record() })).refusedBy, ['settled'])
   assertEquals(mayWaitVerdict(storedRowInput({ row, incidentType: 'vomit', hasPhoto: false, photoSetKey: null, floorOn: true, record: record() })).refusedBy, [])
-  const shown = neighbourRow({ photo_set_key: 'att-1', ai_raw_payload: { appears_to_show_vomit: true, recommendation: 'monitor', blood_present: 'none_visible', colour: 'yellow' } })
+  const shown = neighbourRow({ photo_set_key: 'att-1', ai_raw_payload: { read_photo_set_key: 'att-1', appears_to_show_vomit: true, recommendation: 'monitor', blood_present: 'none_visible', colour: 'yellow' } })
   assertEquals(mayWaitVerdict(storedRowInput({ row: shown, incidentType: 'vomit', hasPhoto: true, photoSetKey: 'att-1', floorOn: true, record: record() })).refusedBy, [])
   // The row was read over another photo set: the photo on the event now was never read.
   assertEquals(mayWaitVerdict(storedRowInput({ row: shown, incidentType: 'vomit', hasPhoto: true, photoSetKey: 'att-2', floorOn: true, record: record() })).refusedBy, ['settled'])
