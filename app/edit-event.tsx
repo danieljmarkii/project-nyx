@@ -73,6 +73,8 @@ export default function EditEventModal() {
   // CUL-869 — the daily look. It edits its WORDS and its NOTE on the child, and
   // neither is a field this screen already had, so both branches below are new.
   const isLook = eventType === 'check_in';
+  // A vomit / stool: a changed photo owes a per-incident read (CUL-1680).
+  const isReadable = hasPerIncidentRead(eventType);
 
   const [occurredAt, setOccurredAt] = useState(() =>
     occurredAtParam ? new Date(occurredAtParam) : new Date(),
@@ -638,7 +640,6 @@ export default function EditEventModal() {
           // what lets the server's may_wait revalidation take those back). The claim is taken
           // before `router.back()`, so the detail screen's section awaits this read on mount
           // instead of firing a second one (CUL-801).
-          const isReadable = hasPerIncidentRead(eventType);
           const readClaim = isReadable ? claimAnalysisChain(id) : null;
           let readInvoked = false;
           let landed = false;
@@ -717,7 +718,7 @@ export default function EditEventModal() {
         confidence != null ||
         // A new photo on a vomit / stool refreshes the Signal from its read chain above, once
         // the read has had its turn (CUL-1680); on any other event the photo counts here.
-        (newAttachmentUri != null && !hasPerIncidentRead(eventType)) ||
+        (newAttachmentUri != null && !isReadable) ||
         // A food cleared to none writes nothing (`updateMealFood` is skipped above), so only
         // a food set to another one counts.
         (config.hasFood && currentFoodId != null && currentFoodId !== loadedFoodRef.current);

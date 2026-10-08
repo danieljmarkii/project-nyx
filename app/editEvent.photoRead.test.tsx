@@ -86,8 +86,9 @@ jest.mock('../lib/analysis', () => ({
 }));
 
 let mockRouteParams: Record<string, string> = {};
+const mockBack = jest.fn();
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn(), back: jest.fn() },
+  router: { push: jest.fn(), back: (...a: unknown[]) => mockBack(...a) },
   useLocalSearchParams: () => mockRouteParams,
 }));
 jest.mock('../store/eventStore', () => {
@@ -149,6 +150,8 @@ describe('a photo changed on the edit screen gets its read (CUL-1680)', () => {
     const utils = await open('vomit');
     await attachAndSave(utils);
     expect(mockClaim).toHaveBeenCalledWith('evt-1');
+    // Taken before the screen closes, so the detail screen's section finds it held (CUL-801).
+    expect(mockClaim.mock.invocationCallOrder[0]).toBeLessThan(mockBack.mock.invocationCallOrder[0]);
     expect(mockVomit).toHaveBeenCalledTimes(1);
     expect(mockVomit).toHaveBeenCalledWith('evt-1');
     expect(mockStool).not.toHaveBeenCalled();
@@ -185,10 +188,25 @@ describe('a photo changed on the edit screen gets its read (CUL-1680)', () => {
     expect(mockTriggerRegen).not.toHaveBeenCalled();
   });
 
-  it('a refused read settles the claim false', async () => {
-    mockVomit.mockResolvedValue({ error: 'cap reached' });
+  // A cap is a 200 `gated` answer, not an error; an error is the invoke failing (a 500, a
+  // dropped connection), which leaves nothing new for the Signal to count.
+  it('a failed read invoke settles the claim false and refreshes nothing', async () => {
+    mockVomit.mockResolvedValue({ error: 'FunctionsHttpError: 500' });
     const utils = await open('vomit');
     await attachAndSave(utils);
+    expect(mockSettle).toHaveBeenCalledWith(false);
+    expect(mockTriggerRegen).not.toHaveBeenCalled();
+  });
+
+  it('an upload that rejects asks for no read and settles the claim false', async () => {
+    const { uploadPhoto } = jest.requireMock('../lib/storage') as { uploadPhoto: jest.Mock };
+    uploadPhoto.mockRejectedValueOnce(new Error('Network request failed'));
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const utils = await open('vomit');
+    await attachAndSave(utils);
+    errSpy.mockRestore();
+    expect(mockUpsert).not.toHaveBeenCalled();
+    expect(mockVomit).not.toHaveBeenCalled();
     expect(mockSettle).toHaveBeenCalledWith(false);
   });
 
