@@ -10,7 +10,10 @@
 import { normRow } from './page.ts';
 import type { Launch, PrFact } from './plan.ts';
 
-export const HANDOFF_TOKENS = 400_000;
+// 150K, not 400K: every wake re-reads the whole context, and a check-in often lands past
+// the cache window, so the late wakes cost the most. The status updates are the memory, so
+// an earlier hand-off loses nothing (PM, 2026-10-08).
+export const HANDOFF_TOKENS = 150_000;
 
 export type LaunchLine = { row: string; issue?: string; session?: string; branch?: string; at?: string; how?: string; raw: string };
 
@@ -161,7 +164,7 @@ export function memoryCheck(input: MemoryInput): string[] {
   return out;
 }
 
-// Scope item 5: the hand-off is due when the dispatcher's context passes ~400K tokens.
+// Scope item 5: the hand-off is due when the dispatcher's context passes ~150K tokens.
 export function handoffDue(contextTokens: number): boolean {
   return contextTokens >= HANDOFF_TOKENS;
 }

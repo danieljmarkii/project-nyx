@@ -5,6 +5,7 @@ import * as F from './fixtures/facts-2026-10-05.ts';
 import {
   checkInFrom,
   closingLines,
+  HANDOFF_TOKENS,
   handoffDue,
   issueIdsIn,
   launchLine,
@@ -131,7 +132,8 @@ describe('the PR-body guard', () => {
   });
 });
 
-it('the hand-off is due at ~400K tokens', () => {
-  expect(handoffDue(399_999)).toBe(false);
-  expect(handoffDue(400_000)).toBe(true);
+it('the hand-off is due at ~150K tokens', () => {
+  expect(HANDOFF_TOKENS).toBe(150_000);
+  expect(handoffDue(HANDOFF_TOKENS - 1)).toBe(false);
+  expect(handoffDue(HANDOFF_TOKENS)).toBe(true);
 });
