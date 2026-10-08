@@ -57,6 +57,7 @@ import { useMomentStore } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
 import { useSyncStore } from '../../store/syncStore';
+import { useRecordChangeStore } from '../../store/recordChangeStore';
 import { useReducedMotionStore } from '../../store/reducedMotionStore';
 
 function seedPets(count: number) {
@@ -1389,6 +1390,61 @@ describe('FAB — CUL-1647, the recent foods keep one order for the day', () => 
     });
     expect(getRecentFoods.mock.calls.at(-1)?.[0]).toBe('p2');
     expect(lastSpan()).toEqual(fabFoodDay(local(8, 12, 0).getTime()));
+  });
+});
+
+// ── CUL-1665 — a removal reaches the recent foods before the next open ────────
+//
+// A past-day meal is in no list `todayEvents` drives, so the fan hears of its deletion
+// through the record's change counter, which the shared reversal raises
+// (lib/undoLog.test.ts pins that half). This block pins the FAB's half.
+describe('FAB — CUL-1665, a deleted past meal leaves the recent foods', () => {
+  const HILLS = { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet', food_type: 'meal' };
+  const ROYAL = { id: 'f2', brand: 'Royal Canin', product_name: 'GI', format: 'dry', food_type: 'meal' };
+
+  beforeEach(() => {
+    getRecentFoods.mockReset();
+    getRecentFoods.mockImplementation(async () => []);
+    useRecordChangeStore.setState({ version: 0 });
+  });
+
+  it('a past-day meal deleted while the menu is closed is gone before the next open', async () => {
+    // Yesterday's dinner was logged as Royal Canin by mistake; the owner removes it from
+    // its record. Nothing of today's changed, so only the counter can carry this.
+    getRecentFoods.mockResolvedValueOnce([ROYAL, HILLS]);
+    seedPets(1);
+    const view = render(<FAB />);
+    await act(async () => {});
+    expect(getRecentFoods).toHaveBeenCalledTimes(1);
+
+    getRecentFoods.mockResolvedValue([HILLS]);
+    await act(async () => {
+      useRecordChangeStore.getState().notifyChanged();
+    });
+    expect(getRecentFoods).toHaveBeenCalledTimes(2);
+    fireEvent.press(view.getByLabelText('Log event'));
+    expect(view.queryByText(/Royal Canin/)).toBeNull();
+    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills · i/d']);
+  });
+
+  it('a removal while the menu is open lands nothing under the thumb; the close re-reads', async () => {
+    getRecentFoods.mockResolvedValueOnce([ROYAL, HILLS]);
+    seedPets(1);
+    const view = render(<FAB />);
+    await act(async () => {});
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+
+    getRecentFoods.mockResolvedValue([HILLS]);
+    await act(async () => {
+      useRecordChangeStore.getState().notifyChanged();
+    });
+    expect(getRecentFoods).toHaveBeenCalledTimes(1);
+    expect(fanLabels(view).slice(-3)).toEqual(['Log food', 'Hills · i/d', 'Royal Canin · GI']);
+
+    fireEvent.press(view.getByTestId('fab-scrim'));
+    await settleAnimations();
+    expect(getRecentFoods).toHaveBeenCalledTimes(2);
   });
 });
 
