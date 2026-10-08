@@ -40,7 +40,7 @@
 // stands now) or an answer whose reference left the read; those hold only while a prior row
 // carries them. A re-raise from before the concern left the set and came back within one course
 // is rebuilt too (louder). The D4 lapse list still lives only in the cache row: an unreadable
-// prior row lapses nothing (CUL-1600's split follow-up).
+// prior row lapses nothing (CUL-1663).
 
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 import { dayKeyFromIndex, localDayIndex, localDayIndexOf } from '../../../lib/utils.ts'
