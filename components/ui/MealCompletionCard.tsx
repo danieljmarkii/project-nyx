@@ -363,9 +363,11 @@ export function MealCompletionCard() {
       // moment the sheet opens, so a peek that scrubs nothing is a real gesture —
       // and this used to answer it by writing 'manual' unconditionally, asserting
       // the owner chose a time the app had stamped itself. occurred_at_source is
-      // how the vet report and the correlation engine tell a witnessed-now log
-      // from an owner backfill, so that is a record-fidelity defect even though
-      // nothing on screen changes.
+      // the record of whether a time was a witnessed-now log or an owner
+      // backfill; no server lane reads it yet (CUL-1638 ruled the timing lanes
+      // keep 'now' meals eligible), so it is stored truth, not a live input, and
+      // mislabelling it is a record-fidelity defect even though nothing on
+      // screen changes.
       //
       // On this card it also DESTROYED data, which the medication card's copy of
       // the bug did not: insertMeal takes the source as a parameter, and both
