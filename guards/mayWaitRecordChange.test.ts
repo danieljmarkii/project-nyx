@@ -23,7 +23,9 @@ import { stripSqlComments } from './sqlComments';
 //
 // WHAT IT CANNOT SEE: the live database (a dashboard edit), and the trigger's
 // runtime behaviour. 089's PR proves the behaviour against a scratch Postgres 16
-// (36 cases: 36 pass on 089, 22 fail on 088 alone; the probe is in the PR body).
+// (38 cases: 38 pass on 089; on 088 alone the 23 lowering cases fail and the 15
+// keep cases pass; the probe is in the PR body). Every rule here and in the probe
+// is mutation-proven (the PR body lists the mutants).
 // The stated blind spots of the trigger itself are in 089's header.
 // ─────────────────────────────────────────────────────────────────────────────
 
