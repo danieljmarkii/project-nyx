@@ -1660,3 +1660,178 @@ describe('FAB — CUL-724, VoiceOver focus moves into the fan when it opens', ()
     expect(focus.mock.calls.length).toBe(0);
   });
 });
+
+// ── CUL-1645 (D3) — the pills press like the disc, and nothing spins ────────────────
+//
+// A pill answered the finger by fading to 70%, so Home showed through it, and a one-tap
+// food spun a Whorl over a write that only touches local SQLite. Now every pill settles
+// to 0.97 with the pressed fill on touch DOWN, on the native driver; under Reduce Motion
+// the fill alone answers. A food holds the pressed state through its write instead of
+// spinning. What this suite cannot see is the feel: that is the device pass's.
+describe('FAB — CUL-1645, the pills press like the disc', () => {
+  const { PILL_MIN_HEIGHT, FAN_GAP } = require('../../lib/fanBudget');
+
+  /** The host that owns a label's touch: the nearest ancestor taking a release. */
+  function owningHost(node: TreeNode): TreeNode | null {
+    let n: TreeNode | null = node;
+    while (n) {
+      if (typeof n.type === 'string' && typeof n.props.onResponderRelease === 'function') return n;
+      n = n.parent;
+    }
+    return null;
+  }
+  function pillStyle(view: ReturnType<typeof render>, label: string | RegExp) {
+    const host = owningHost(view.getByText(label));
+    expect(host).not.toBeNull();
+    return StyleSheet.flatten(host!.props.style) as Record<string, unknown>;
+  }
+  const scaleOf = (style: Record<string, unknown>): unknown =>
+    (Array.isArray(style.transform) ? style.transform : [])
+      .map((t: Record<string, unknown>) => t.scale)
+      .find((v: unknown) => v !== undefined);
+  const pressedTo = (spring: jest.SpyInstance, toValue: number) =>
+    spring.mock.calls.filter(([, cfg]) => cfg.toValue === toValue && cfg.useNativeDriver === true).length;
+
+  function seedFood() {
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet', food_type: 'meal' },
+    ]);
+  }
+
+  afterEach(() => {
+    act(() => { useMomentStore.getState().hide(); });
+  });
+
+  // GUARD: red on the TouchableOpacity tree (no spring at 0.97, no pressed fill).
+  it.each(['Vomit', /Hills/])('in motion: %s settles to 0.97 with the pressed fill on touch down, and back on release', async (label) => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    seedFood();
+    const view = await openMenu();
+    const spring = jest.spyOn(Animated, 'spring');
+    try {
+      expect(pillStyle(view, label).backgroundColor).toBe(theme.colorSurface);
+      expect(pillStyle(view, label).opacity).toBeUndefined();
+
+      fireEvent(view.getByText(label), 'pressIn');
+      await act(async () => {});
+      expect(pressedTo(spring, 0.97)).toBe(1);
+      expect(pillStyle(view, label).backgroundColor).toBe(theme.colorSurfaceSubtle);
+      expect(scaleOf(pillStyle(view, label))).toBeDefined();
+
+      fireEvent(view.getByText(label), 'pressOut');
+      await act(async () => {});
+      expect(pressedTo(spring, 1)).toBe(1);
+      expect(pillStyle(view, label).backgroundColor).toBe(theme.colorSurface);
+    } finally {
+      spring.mockRestore();
+    }
+  });
+
+  // GUARD: the Reduce Motion path is the fill only — no spring, no transform on the pill.
+  it.each(['Vomit', /Hills/])('under Reduce Motion: %s takes the fill and never scales', async (label) => {
+    useReducedMotionStore.setState({ reduceMotion: true });
+    seedFood();
+    const view = await openMenu();
+    const spring = jest.spyOn(Animated, 'spring');
+    try {
+      fireEvent(view.getByText(label), 'pressIn');
+      await act(async () => {});
+      expect(pillStyle(view, label).backgroundColor).toBe(theme.colorSurfaceSubtle);
+      expect(scaleOf(pillStyle(view, label))).toBeUndefined();
+      expect(pillStyle(view, label).transform).toBeUndefined();
+      fireEvent(view.getByText(label), 'pressOut');
+      await act(async () => {});
+      expect(pillStyle(view, label).backgroundColor).toBe(theme.colorSurface);
+      expect(spring).not.toHaveBeenCalled();
+    } finally {
+      spring.mockRestore();
+    }
+  });
+
+  it('the pressed fill is the neutral pressed ground, never a colour that reads as success', () => {
+    const neverSuccess = [
+      theme.colorAccent, theme.colorAccentLight, theme.colorEventMeal, theme.colorEventMealLight,
+    ];
+    expect(neverSuccess).not.toContain(theme.colorSurfaceSubtle);
+  });
+
+  // GUARD: red on the old tree, where the pill drew a WhorlSpinner while writing.
+  it('a one-tap food holds the pressed state through its write, spins nothing, and writes once', async () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    insertMeal.mockReset();
+    let land: (v: unknown) => void = () => {};
+    insertMeal.mockImplementationOnce(() => new Promise((resolve) => { land = resolve; }));
+    seedFood();
+    const view = await openMenu();
+
+    // Release before press, the order Pressability fires them in on a lift. (RNTL also
+    // refuses events on the disabled pill once the write starts, so a release sent
+    // after the press would never arrive and the test would pass over nothing.)
+    fireEvent(view.getByText(/Hills/), 'pressIn');
+    fireEvent(view.getByText(/Hills/), 'pressOut');
+    fireEvent.press(view.getByText(/Hills/));
+    await act(async () => {});
+    expect(insertMeal).toHaveBeenCalledTimes(1);
+    // The finger is up and the write is in flight: the pill is still pressed.
+    expect(pillStyle(view, /Hills/).backgroundColor).toBe(theme.colorSurfaceSubtle);
+    expect(view.UNSAFE_root.findAll((n: TreeNode) => /Whorl/.test(String(n.type?.name ?? n.type?.displayName ?? ''))))
+      .toHaveLength(0);
+    // The `logging` guard still holds: a second tap mid-write writes nothing more.
+    fireEvent.press(view.getByText(/Hills/));
+    expect(insertMeal).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      land({ eventId: 'm1', occurredAtIso: '2026-10-08T12:00:00.000Z', now: '2026-10-08T12:00:00.000Z' });
+    });
+    expect(insertMeal).toHaveBeenCalledTimes(1);
+  });
+
+  it('a food write that fails releases the press, so the row reads as ready to retry', async () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    insertMeal.mockReset();
+    insertMeal.mockRejectedValueOnce(new Error('disk I/O error'));
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      seedFood();
+      const view = await openMenu();
+      fireEvent(view.getByText(/Hills/), 'pressIn');
+      await act(async () => { fireEvent.press(view.getByText(/Hills/)); });
+      fireEvent(view.getByText(/Hills/), 'pressOut');
+      await act(async () => {});
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(pillStyle(view, /Hills/).backgroundColor).toBe(theme.colorSurface);
+    } finally {
+      alert.mockRestore();
+      logged.mockRestore();
+    }
+  });
+
+  // C-5: every pill owns its own touch, carries the 44pt floor in its own box with no
+  // slop, and the stack's gap is the separation. The 0.97 is a transform, so it moves
+  // no geometry and cannot bring two hit areas together.
+  it('C-5: each pill is its own responder, no slop, the floor in its own box, a gap between', async () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    seedFood();
+    const view = await openMenu();
+    const labels = [...ACTION_ROWS, /Hills/];
+    const hosts = labels.map((l) => owningHost(view.getByText(l)));
+    expect(hosts.every(Boolean)).toBe(true);
+    expect(new Set(hosts).size).toBe(labels.length);
+    for (const host of hosts) {
+      expect(host!.props.hitSlop).toBeUndefined();
+      const style = StyleSheet.flatten(host!.props.style) as Record<string, unknown>;
+      expect(style.minHeight).toBe(PILL_MIN_HEIGHT);
+      expect(style.margin ?? 0).toBe(0);
+    }
+    expect(FAN_GAP).toBeGreaterThan(0);
+
+    // Held down, a pill keeps its own box: the pressed style adds no padding, margin or
+    // slop, only the fill and the transform.
+    fireEvent(view.getByText('Vomit'), 'pressIn');
+    await act(async () => {});
+    const pressed = owningHost(view.getByText('Vomit'))!;
+    expect(pressed.props.hitSlop).toBeUndefined();
+    expect((StyleSheet.flatten(pressed.props.style) as Record<string, unknown>).minHeight).toBe(PILL_MIN_HEIGHT);
+  });
+});

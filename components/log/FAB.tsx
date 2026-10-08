@@ -1,7 +1,8 @@
-import { useState, useRef, useCallback, useEffect, useContext, type ReactNode } from 'react';
+import { useState, useRef, useCallback, useEffect, useContext, type ReactNode, type Ref } from 'react';
 import {
-  TouchableOpacity, StyleSheet, View, Animated, BackHandler,
+  StyleSheet, View, Animated, BackHandler,
   Pressable, Alert, ScrollView, useWindowDimensions, AccessibilityInfo,
+  type PressableProps, type StyleProp, type ViewStyle,
 } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -9,7 +10,6 @@ import { ChevronDown, ChevronRight, Plus } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { EmptyState } from '../ui/EmptyState';
-import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { EventIcon } from '../event/EventIcon';
 import { PetAvatar } from '../pet/PetAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
@@ -49,6 +49,12 @@ const noPetCopy = noPetToLogForCopy();
 
 /** Beat 1: the disc answers the finger on touch-DOWN, before release. */
 const PRESS_SCALE = 0.9;
+/** CUL-1645 (D3): a pill answers the finger on the disc's vocabulary, at a pill's
+ *  weight. 0.97 rather than the disc's 0.9: a 300pt pill at 0.9 would travel 30pt, and
+ *  the settle should read as a press, not a jump. Same springs as the disc's. */
+const PILL_PRESS_SCALE = 0.97;
+const PRESS_IN_SPRING = { tension: 300, friction: 20 } as const;
+const PRESS_OUT_SPRING = { tension: 200, friction: 10 } as const;
 /** Beat 2: the plus turns 135° to land on ×. A 45° turn lands on the same glyph, but
  *  135° is enough travel for the spring's overshoot to read as weight. */
 const TURN_DEGREES = 135;
@@ -110,6 +116,69 @@ function DoorChevron() {
     >
       <ChevronRight size={PILL_CHEVRON} color={theme.colorTextTertiary} strokeWidth={1.75} />
     </View>
+  );
+}
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+/**
+ * A fan pill's press (CUL-1645, D3): on touch DOWN it settles to 0.97 and takes the
+ * pressed fill, the disc's own vocabulary on the native driver. Under Reduce Motion
+ * the fill alone answers and nothing scales (beat 8). `held` keeps the pressed state
+ * up after the finger lifts: a one-tap food holds it through its local write, which is
+ * what replaced the spinner (an instant action never spins, CUL-1593). The fill is the
+ * neutral pressed ground the app's other rows use, never a colour that reads as
+ * success: the completion card is where a write is said.
+ *
+ * The pill's own box is still the whole hit area: the scale is a transform, so it
+ * moves no geometry and the stack's gap still keeps every pill apart (C-5).
+ */
+function FanPill({
+  style, held = false, reducedMotion, ref, children, ...pressable
+}: Omit<PressableProps, 'style' | 'children' | 'onPressIn' | 'onPressOut'> & {
+  style: StyleProp<ViewStyle>;
+  held?: boolean;
+  reducedMotion: boolean;
+  ref?: Ref<View>;
+  children: ReactNode;
+}) {
+  const [touching, setTouching] = useState(false);
+  const scale = useRef(new Animated.Value(1)).current;
+  const pressed = touching || held;
+  // Driven off the pressed STATE, not the handlers: on release the touch ends and a
+  // food's write begins in one event, so React batches them and the pill never springs
+  // up for a frame between the two.
+  const settled = useRef(false);
+  useEffect(() => {
+    if (!settled.current) {
+      settled.current = true;
+      return;
+    }
+    if (reducedMotion) {
+      scale.setValue(1);
+      return;
+    }
+    Animated.spring(scale, pressed
+      ? { toValue: PILL_PRESS_SCALE, useNativeDriver: true, ...PRESS_IN_SPRING }
+      : { toValue: 1, useNativeDriver: true, ...PRESS_OUT_SPRING }).start();
+  }, [pressed, reducedMotion, scale]);
+
+  return (
+    <AnimatedPressable
+      ref={ref as never}
+      {...pressable}
+      onPressIn={() => setTouching(true)}
+      onPressOut={() => setTouching(false)}
+      style={[
+        styles.pill,
+        style,
+        pressed && styles.pillPressed,
+        reducedMotion ? null : { transform: [{ scale }] },
+      ]}
+      testID={pressable.testID ?? 'fab-pill'}
+    >
+      {children}
+    </AnimatedPressable>
   );
 }
 
@@ -422,11 +491,11 @@ export function FAB() {
   // Beat 1. Motion only: under Reduce Motion the disc does not scale (beat 8).
   const pressIn = useCallback(() => {
     if (reducedMotionNow()) return;
-    Animated.spring(pressScale, { toValue: PRESS_SCALE, useNativeDriver: true, tension: 300, friction: 20 }).start();
+    Animated.spring(pressScale, { toValue: PRESS_SCALE, useNativeDriver: true, ...PRESS_IN_SPRING }).start();
   }, [pressScale]);
   const pressOut = useCallback(() => {
     if (reducedMotionNow()) return;
-    Animated.spring(pressScale, { toValue: 1, useNativeDriver: true, tension: 200, friction: 10 }).start();
+    Animated.spring(pressScale, { toValue: 1, useNativeDriver: true, ...PRESS_OUT_SPRING }).start();
   }, [pressScale]);
 
   // The host hides everything under the menu from assistive tech (HiddenUnderFabMenu)
@@ -557,7 +626,7 @@ export function FAB() {
     if (logging) return; // a write is already in flight — silence is correct here
     if (!pet) {
       // CUL-717. This used to share the `logging` guard's bare return: the row did
-      // not even show its spinner, so a tap produced no feedback of any kind —
+      // not even show its pressed state, so a tap produced no feedback of any kind —
       // CUL-575's "a failed write is always said", applied to a write that never
       // starts. It now stays PUT, and the menu gate below means there is no recent
       // -food row to tap without a pet in the first place, so this is only the
@@ -637,7 +706,7 @@ export function FAB() {
         intakeRating: null,
       });
       // B-351 slice 4 / B-693 — resolve the trial heads-up and patch it onto the
-      // card. Fire-and-forget (not awaited here) so the tapped row's spinner
+      // card. Fire-and-forget (not awaited here) so the tapped row's held press
       // (setLogging(null) in the finally) releases immediately on the wedge's
       // fastest path. applyMealTrialFlag (lib/mealTrialFlag.ts — the ONE orchestration
       // both meal doors share, CUL-354) waits for the card to be on screen before
@@ -692,7 +761,7 @@ export function FAB() {
   const pillWidth = { maxWidth: fanPlan.pillMaxWidth };
   const scrollCap = { maxHeight: fanPlan.scrollMaxHeight ?? undefined };
   const foodLines = new Map(fanPlan.foods.map((f) => [f.id, f.numberOfLines]));
-  // The scroll opens at its bottom once per open; a later size change (a food's spinner)
+  // The scroll opens at its bottom once per open; a later size change (a food that answers late)
   // never yanks an owner who has scrolled up back down.
   if (!open) fanSnapped.current = false;
 
@@ -752,11 +821,11 @@ export function FAB() {
       rows.push({
         key: 'log-for',
         node: (
-          <TouchableOpacity
+          <FanPill
             ref={fanLeadRef}
-            style={[styles.pill, styles.logForPill, pillWidth]}
+            style={[styles.logForPill, pillWidth]}
+            reducedMotion={reducedMotion}
             onPress={whileOpen(() => setSwitcherVisible(true))}
-            activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel={`Logging for ${activePet.name} — switch pet`}
           >
@@ -769,7 +838,7 @@ export function FAB() {
               <ThemedText style={styles.logForName} numberOfLines={LOG_FOR_NAME_LINES}>{activePet.name}</ThemedText>
             </View>
             <ChevronDown size={PILL_CHEVRON} color={theme.colorTextSecondary} strokeWidth={1.75} />
-          </TouchableOpacity>
+          </FanPill>
         ),
       });
     }
@@ -783,12 +852,12 @@ export function FAB() {
     rows.push({
       key: 'more',
       node: (
-        <TouchableOpacity
+        <FanPill
           // The fan's top row when there is no pet chip above it (CUL-724).
           ref={rows.length === 0 ? fanLeadRef : undefined}
-          style={[styles.pill, pillWidth]}
+          style={pillWidth}
+          reducedMotion={reducedMotion}
           onPress={whileOpen(() => handOffToLogSheet())}
-          activeOpacity={0.7}
           accessibilityRole="button"
         >
           <View style={[styles.pillGlyph, styles.pillGlyphQuiet]}>
@@ -796,7 +865,7 @@ export function FAB() {
           </View>
           <ThemedText style={styles.pillLabel}>More events</ThemedText>
           <DoorChevron />
-        </TouchableOpacity>
+        </FanPill>
       ),
     });
 
@@ -810,10 +879,10 @@ export function FAB() {
     rows.push({
       key: 'diarrhea',
       node: (
-        <TouchableOpacity
-          style={[styles.pill, pillWidth]}
+        <FanPill
+          style={pillWidth}
+          reducedMotion={reducedMotion}
           onPress={whileOpen(() => handOffToLogSheet('diarrhea'))}
-          activeOpacity={0.7}
           accessibilityRole="button"
         >
           <View style={[styles.pillGlyph, styles.pillGlyphSymptom]}>
@@ -821,16 +890,16 @@ export function FAB() {
           </View>
           <ThemedText style={styles.pillLabel}>Loose stool</ThemedText>
           <DoorChevron />
-        </TouchableOpacity>
+        </FanPill>
       ),
     });
     rows.push({
       key: 'vomit',
       node: (
-        <TouchableOpacity
-          style={[styles.pill, pillWidth]}
+        <FanPill
+          style={pillWidth}
+          reducedMotion={reducedMotion}
           onPress={whileOpen(() => handOffToLogSheet('vomit'))}
-          activeOpacity={0.7}
           accessibilityRole="button"
         >
           <View style={[styles.pillGlyph, styles.pillGlyphSymptom]}>
@@ -838,17 +907,17 @@ export function FAB() {
           </View>
           <ThemedText style={styles.pillLabel}>Vomit</ThemedText>
           <DoorChevron />
-        </TouchableOpacity>
+        </FanPill>
       ),
     });
 
     rows.push({
       key: 'log-food',
       node: (
-        <TouchableOpacity
-          style={[styles.pill, pillWidth]}
+        <FanPill
+          style={pillWidth}
+          reducedMotion={reducedMotion}
           onPress={whileOpen(() => { closeMenu(); router.push('/log?type=meal'); })}
-          activeOpacity={0.7}
           accessibilityRole="button"
         >
           <View style={[styles.pillGlyph, styles.pillGlyphQuiet]}>
@@ -856,7 +925,7 @@ export function FAB() {
           </View>
           <ThemedText style={styles.pillLabel}>Log food</ThemedText>
           <DoorChevron />
-        </TouchableOpacity>
+        </FanPill>
       ),
     });
 
@@ -873,11 +942,13 @@ export function FAB() {
       rows.push({
         key: `food-${food.id}`,
         node: (
-          <TouchableOpacity
-            style={[styles.pill, pillWidth]}
+          <FanPill
+            style={pillWidth}
+            reducedMotion={reducedMotion}
             onPress={whileOpen(() => { void handleQuickMeal(food); })}
-            activeOpacity={0.7}
             disabled={logging !== null}
+            // The pressed state holds through the local write, in place of a spinner.
+            held={logging === food.id}
             accessibilityRole="button"
             accessibilityLabel={formatTag ? `${foodLabel}, ${formatTag.toLowerCase()}` : foodLabel}
             // CUL-724's hint half: every other pill opens something; this one writes.
@@ -898,10 +969,7 @@ export function FAB() {
                 </View>
               ) : null}
             </View>
-            {logging === food.id && (
-              <WhorlSpinner size="sm" ground="day" style={styles.spinner} />
-            )}
-          </TouchableOpacity>
+          </FanPill>
         ),
       });
     }
@@ -1135,6 +1203,10 @@ const styles = StyleSheet.create({
     // 300 plus the inset would overflow (an SE under Display Zoom is 320pt wide).
     ...shadows.md,
   },
+  // CUL-1645: the pressed ground, the neutral one the app's other rows press to.
+  pillPressed: {
+    backgroundColor: theme.colorSurfaceSubtle,
+  },
   pillGlyph: {
     width: PILL_GLYPH,
     height: PILL_GLYPH,
@@ -1215,8 +1287,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space2,
     paddingTop: theme.space2,
     paddingBottom: theme.space2,
-  },
-  spinner: {
-    marginLeft: theme.space1,
   },
 });
