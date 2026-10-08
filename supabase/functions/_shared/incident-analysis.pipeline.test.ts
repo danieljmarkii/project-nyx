@@ -628,7 +628,7 @@ Deno.test('pipeline EN-F — a first read carries every stamp, with the flag off
   const w = makeWorld({ vision: () => CLEAN })
   await run(w)
   assertEquals(w.row?.engine_flags, [])
-  assertStrictEquals(w.row?.rule_version, 'f2.test1')
+  assertStrictEquals(w.row?.rule_version, 'f3.test1')
   assertStrictEquals(w.row?.photo_set_key, ATTACHMENT_ID)
   assertStrictEquals(w.row?.model_id, 'test-model')
   assertStrictEquals(HEX64.test(String(w.row?.prompt_hash)), true)
@@ -680,7 +680,7 @@ Deno.test('pipeline EN-F — an owner-edited row: the read stamps refresh, the p
   await run(w)
   assertEquals(w.writes.map((x) => x.mode), ['update'])
   assertEquals(w.row?.engine_flags, ['engines_v3_en0'])
-  assertStrictEquals(w.row?.rule_version, 'f2.test1')
+  assertStrictEquals(w.row?.rule_version, 'f3.test1')
   assertEquals(w.row?.ai_raw_payload, { old: true })
   assertStrictEquals(w.row?.model_id, 'old-model')
   assertStrictEquals(w.row?.prompt_hash, 'b'.repeat(64))
@@ -748,7 +748,7 @@ Deno.test('pipeline EN-3 — flag-on, the full write-back carries the mapped tie
     assertStrictEquals(w.row?.recommendation, recommendation)
     assertStrictEquals(w.row?.tier, tier)
     assertEquals(w.row?.engine_flags, ['engines_v3_en3'])
-    assertStrictEquals(w.row?.rule_version, 'f2.test1')
+    assertStrictEquals(w.row?.rule_version, 'f3.test1')
   }
 })
 

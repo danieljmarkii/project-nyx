@@ -32,7 +32,7 @@ const FIELDS: AnalysisReadFields = {
 }
 
 const stored = (o: Partial<StoredAnalysis> = {}): StoredAnalysis => ({
-  recommendation: 'worth_a_call', tier: null, status: 'completed', edited: false, presentFlags: [], hidden: false, errored: false, ...o,
+  recommendation: 'worth_a_call', tier: null, status: 'completed', edited: false, presentFlags: [], hidden: false, errored: false, mayWait: null, ...o,
 })
 
 // ── tieredReadFields: the map, and nothing flag-off ─────────────────────────────────
@@ -132,13 +132,13 @@ Deno.test('EN-3 — the rescue carries a tier only under the key, from the same 
   assertStrictEquals(withRescueTier(rescue, false), rescue)
   assertStrictEquals(withRescueTier(null, true), null)
   const on = buildFailureWrite({
-    existing: null, existingReadFailed: false, floorOnly: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'x',
+    existing: null, existingReadFailed: false, floorOnly: false, tiersOn: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'x',
     rescue: withRescueTier(rescue, true), stamps: null,
   })
   assertStrictEquals(on.mode, 'rescue')
   assertStrictEquals((on as { values: Record<string, unknown> }).values.tier, 'call_today')
   const off = buildFailureWrite({
-    existing: null, existingReadFailed: false, floorOnly: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'x',
+    existing: null, existingReadFailed: false, floorOnly: false, tiersOn: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'x',
     rescue, stamps: null,
   })
   assertStrictEquals('tier' in (off as { values: Record<string, unknown> }).values, false)
@@ -147,13 +147,13 @@ Deno.test('EN-3 — the rescue carries a tier only under the key, from the same 
 Deno.test('EN-3 — a stored call tier survives a failed run even beside a lowered verdict', () => {
   const w = buildFailureWrite({
     existing: { recommendation: 'monitor', tier: 'call_today', presentFlags: [] },
-    existingReadFailed: false, floorOnly: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'boom', rescue: null, stamps: null,
+    existingReadFailed: false, floorOnly: false, tiersOn: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'boom', rescue: null, stamps: null,
   })
   assertEquals(w, { mode: 'error-only', values: { error: 'boom' } })
   // Untiered, today's rule exactly: a calm stored row falls to the retry frame.
   const untiered = buildFailureWrite({
     existing: { recommendation: 'monitor', tier: null, presentFlags: [] },
-    existingReadFailed: false, floorOnly: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'boom', rescue: null, stamps: null,
+    existingReadFailed: false, floorOnly: false, tiersOn: false, eventId: 'e', petId: 'p', incidentType: 'vomit', message: 'boom', rescue: null, stamps: null,
   })
   assertStrictEquals(untiered.mode, 'upsert')
 })

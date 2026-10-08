@@ -374,7 +374,7 @@ Deno.test('CUL-1323 — the failure write touches the hide ONLY when its rescue 
   // words over a row that held none, so it clears.
   const base = {
     eventId: 'evt-1', petId: 'pet-1', incidentType: 'vomit',
-    message: 'Claude API error 529', existingReadFailed: false, floorOnly: false, rescue: null, stamps: null,
+    message: 'Claude API error 529', existingReadFailed: false, floorOnly: false, tiersOn: false, rescue: null, stamps: null,
   }
   for (const existing of [{ recommendation: 'worth_a_call', presentFlags: [] }, { recommendation: 'monitor', presentFlags: [] }, null]) {
     const write = buildFailureWrite({ ...base, existing })
@@ -400,7 +400,7 @@ Deno.test('CUL-1323 — a HOLD writes no words, clears a hide it finds, and writ
   // client (old builds hide unconditionally), which is why "the owner hid these words" is
   // not enough to keep it (adversarial round 2, Break 1).
   const stored = (over: Partial<StoredAnalysis>): StoredAnalysis => ({
-    recommendation: 'worth_a_call', tier: null, status: 'completed', edited: false, presentFlags: [], hidden: false, errored: false, ...over,
+    recommendation: 'worth_a_call', tier: null, status: 'completed', edited: false, presentFlags: [], hidden: false, errored: false, mayWait: null, ...over,
   })
   const call = (s: StoredAnalysis | null, recommendation: 'worth_a_call' | 'monitor') =>
     resolveReanalysisWrite({
@@ -518,7 +518,7 @@ const FAILURE_BASE = {
   petId: 'pet-1',
   incidentType: 'vomit',
   message: 'Claude API error 529',
-  existingReadFailed: false, floorOnly: false,
+  existingReadFailed: false, floorOnly: false, tiersOn: false,
   rescue: null,
   // Not about stamps; engineStamps.test.ts pins what a stamped rescue carries.
   stamps: null,
@@ -710,12 +710,12 @@ Deno.test('snapshotStoredAnalysis — reads the verdict, the status, the edit an
       dismissed_at: '2026-09-21T10:00:00Z',
       error: 'Claude API error 529',
     }),
-    { recommendation: 'monitor', tier: null, status: 'failed', edited: true, presentFlags: ['blood'], hidden: true, errored: true },
+    { recommendation: 'monitor', tier: null, status: 'failed', edited: true, presentFlags: ['blood'], hidden: true, errored: true, mayWait: null },
   )
   // Garbage in the typed columns reads as absent, never as a verdict.
   assertEquals(
     snapshotStoredAnalysis(FAKE_DESCRIPTOR, { recommendation: 7, status: null, edited_at: null, blood_col: 'no' }),
-    { recommendation: null, tier: null, status: null, edited: false, presentFlags: [], hidden: false, errored: false },
+    { recommendation: null, tier: null, status: null, edited: false, presentFlags: [], hidden: false, errored: false, mayWait: null },
   )
 })
 
@@ -729,6 +729,7 @@ const stored = (o: Partial<StoredAnalysis> = {}): StoredAnalysis => ({
   presentFlags: [],
   hidden: false,
   errored: false,
+  mayWait: null,
   ...o,
 })
 
@@ -834,7 +835,7 @@ Deno.test('the error-only failure and the hold round-trip: a failed run then a c
   // buildFailureWrite over a finished call writes the error only; snapshot the row it leaves
   // and hand that to the next calm run's write decision, the order runIncidentAnalysis takes.
   const failure = buildFailureWrite({
-    existing: { recommendation: 'worth_a_call', presentFlags: [] }, existingReadFailed: false, floorOnly: false,
+    existing: { recommendation: 'worth_a_call', presentFlags: [] }, existingReadFailed: false, floorOnly: false, tiersOn: false,
     eventId: 'evt', petId: 'pet', incidentType: 'vomit', message: 'Claude API error 529', rescue: null, stamps: null,
   })
   assertEquals(failure, { mode: 'error-only', values: { error: 'Claude API error 529' } })
@@ -1317,7 +1318,9 @@ const NON_LITERAL_FROM: Record<string, { arg: string; why: string }> = {
 // A literal write the scan lets through without a builder: identity plus state, and
 // nothing a reader sees. An ALLOWLIST of keys (round 5: a literal carrying
 // blood_present or description changed what the owner sees without clearing the hide).
-const STATE_KEYS = new Set(['event_id', 'pet_id', 'incident_type', 'status', 'error'])
+// `may_wait` (CUL-1628): revalidateMayWait's lower-only re-check writes it alone. It writes no
+// words and only ever takes leave to wait away, so a hide on the row stands over the same words.
+const STATE_KEYS = new Set(['event_id', 'pet_id', 'incident_type', 'status', 'error', 'may_wait'])
 function isStateLiteral(arg: string): boolean {
   if (!arg.startsWith('{') || arg.includes('...')) return false
   const body = arg.slice(1, -1)

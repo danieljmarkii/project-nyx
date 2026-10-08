@@ -138,7 +138,7 @@ Deno.test('a full upsert carrying a payload gets every stamp', async () => {
     ai_raw_payload: { x: 1 },
     recommendation: 'monitor',
     photo_set_key: UUID_A,
-    rule_version: 'f2.vomit1',
+    rule_version: 'f3.vomit1',
     engine_flags: ['engines_v3_en0'],
     model_id: 'claude-sonnet-4-6',
     prompt_hash: s.promptHash,
@@ -151,7 +151,7 @@ Deno.test('a payload written NULL (no model ran) writes NULL payload stamps, bes
   assertStrictEquals(out.values.model_id, null)
   assertStrictEquals(out.values.prompt_hash, null)
   assertEquals(out.values.engine_flags, [])
-  assertStrictEquals(out.values.rule_version, 'f2.vomit1')
+  assertStrictEquals(out.values.rule_version, 'f3.vomit1')
 })
 
 Deno.test('a read-only update (owner-edited row) refreshes the read stamps and leaves the payload stamps', async () => {
@@ -183,21 +183,21 @@ Deno.test('a stamp overrides a same-named value a builder might carry', async ()
   const s = await stampsFor()
   const out = stampIncidentWrite(write('update', { engine_flags: ['forged'], rule_version: 'x' }), s)
   assertEquals(out.values.engine_flags, [])
-  assertStrictEquals(out.values.rule_version, 'f2.vomit1')
+  assertStrictEquals(out.values.rule_version, 'f3.vomit1')
 })
 
 Deno.test('the failure write: only the RESCUE (words) is stamped; error-only and the plain upsert are not', async () => {
   const s: IncidentStamps = await stampsFor({ engineFlags: ON })
   const base = {
     eventId: 'evt-1', petId: 'pet-1', incidentType: 'vomit', message: 'Claude API error 529',
-    existingReadFailed: false, floorOnly: false, stamps: s,
+    existingReadFailed: false, floorOnly: false, tiersOn: false, stamps: s,
   }
   const rescue = { recommendation: 'worth_a_call' as const, read_text: 'Worth a call.', visual_flags: [], contextual_flags: ['repeated_vomiting'] }
   const rescued = buildFailureWrite({ ...base, existing: { recommendation: 'monitor', presentFlags: [] }, rescue })
   assertStrictEquals(rescued.mode, 'rescue')
   if (rescued.mode === 'rescue') {
     assertEquals(rescued.values.engine_flags, ['engines_v3_en0'])
-    assertStrictEquals(rescued.values.rule_version, 'f2.vomit1')
+    assertStrictEquals(rescued.values.rule_version, 'f3.vomit1')
     assertStrictEquals(rescued.values.photo_set_key, UUID_A)
     assertStrictEquals('model_id' in rescued.values, false, 'a rescue writes no payload')
   }

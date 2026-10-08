@@ -166,7 +166,7 @@ Deno.test('EN-7 · a formed stool beside one vomit: no call from the pair flag-o
   assertStrictEquals(on.recommendation, 'monitor')
   assertStrictEquals(on.tier, 'logged')
   assertEquals(on.contextual_flags, [])
-  assertStrictEquals(on.rule_version, 'f2.stool2')
+  assertStrictEquals(on.rule_version, 'f3.stool2')
 })
 
 Deno.test('EN-7 · a stool logged Loose beside one vomit: call today (S1), with words about loose stool', async () => {

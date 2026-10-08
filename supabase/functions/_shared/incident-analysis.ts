@@ -75,6 +75,15 @@ import {
 // EN-4's floor (Engines v3 PR-28): only its tier type is named here; the rule itself runs in
 // the vomit descriptor, which hands its answer over as ContextualRun.minTier.
 import { FLOOR_READ_HOURS, type FloorTier } from '../../../lib/incidentFloor.ts'
+// "May wait" (Engines v3 PR-27e, CUL-1628): the one predicate, and the reads behind it. Every
+// write below that writes `tier` writes `may_wait` beside it (087's writer contract).
+import { mayWaitValue, mayWaitVerdict, type MayWaitInput, type MayWaitRecord, type MayWaitVerdict } from './incidentMayWait.ts'
+import {
+  MAY_WAIT_ANALYSIS_COLUMNS,
+  readMayWaitRecord,
+  revalidateMayWait,
+  storedRowInput,
+} from './incidentMayWaitEvidence.ts'
 
 export type { SupabaseClient }
 
@@ -381,6 +390,30 @@ export function raisedTier(
   return tierRank(minTier) > tierRank(mapped) ? minTier : mapped
 }
 
+// "May wait" beside the tier (Engines v3 PR-27e, CUL-1628; the rule is incidentMayWait.ts). A
+// write that names a tier names `may_wait` too, so no write inherits an earlier read's TRUE
+// (087 pairs them with no CHECK, on purpose). `verdict` null means the predicate did not run for
+// this write (a capped run, a rescue): it refuses, and a stored FALSE is kept either way.
+export function withMayWait<T extends { tier?: IncidentTier; may_wait?: boolean | null }>(
+  fields: T,
+  verdict: MayWaitVerdict | null,
+  storedMayWait: unknown,
+): T {
+  const value = mayWaitValue(fields.tier, verdict, storedMayWait)
+  return value === undefined ? fields : { ...fields, may_wait: value }
+}
+
+// The predicate's own checks first, the record's reads only when nothing else has refused: a
+// write that is not a call today, or whose photo already refuses, makes no extra read.
+export async function decideMayWait(
+  build: (record: MayWaitRecord | null) => MayWaitInput,
+  read: () => Promise<MayWaitRecord | null>,
+): Promise<MayWaitVerdict> {
+  const first = mayWaitVerdict(build(null))
+  if (first.refusedBy.some((r) => r !== 'evidence')) return first
+  return mayWaitVerdict(build(await read()))
+}
+
 export type TierReason = 'contextual' | 'visual' | 'model_only' | 'logged' | 'not_enough_to_say'
 
 export function tierReasonOf(fields: {
@@ -404,6 +437,8 @@ export interface AnalysisReadFields<TFlag extends string = string> {
   // EN-3's tier, beside the verdict. Present exactly when this run is under
   // `engines_v3_en3` (tieredReadFields); absent, the write is byte-for-byte today's.
   tier?: IncidentTier
+  // "May wait" (087, CUL-1628), beside the tier: present exactly when `tier` is (withMayWait).
+  may_wait?: boolean | null
   read_text: string | null
   visual_flags: string[]
   contextual_flags: TFlag[]
@@ -521,6 +556,9 @@ export interface StoredAnalysis {
   // (buildFailureWrite). The record reads it as "the latest read hit a problem" beside a
   // held call (CUL-819), so a hold, which is a run that finished, clears it (CUL-1509).
   errored: boolean
+  // The stored "may wait" (087), as read. Only FALSE matters to a writer: it is the incident's
+  // own photo evidence and is never written over (incidentMayWait.ts, mayWaitValue).
+  mayWait: boolean | null
 }
 
 export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
@@ -536,6 +574,7 @@ export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, T
     presentFlags: descriptor.presentFlagsFromStructured(row),
     hidden: !!row.dismissed_at,
     errored: !!row.error,
+    mayWait: typeof row.may_wait === 'boolean' ? row.may_wait : null,
   }
 }
 
@@ -626,14 +665,16 @@ export function holdsOver(
 // today while the new run's findings and words still land. Only a known stored tier is kept:
 // a verdict alone never mints a tier. The quiet tiers are not touched, so logged ↔
 // not_enough_to_say stays free (B-203, CUL-812), and flag-off (no tier on the write) is today.
+// The louder stored tier is never a call today here (it outranks the write's), so the write's
+// "may wait" goes with it: a call now never carries leave to wait (CUL-1628).
 export function keepLouderTier<TFlag extends string>(
-  stored: Pick<StoredAnalysis, 'tier'> | null,
+  stored: (Pick<StoredAnalysis, 'tier'> & { mayWait?: boolean | null }) | null,
   readFields: AnalysisReadFields<TFlag>,
 ): AnalysisReadFields<TFlag> {
   if (!stored || readFields.tier === undefined || !isIncidentTier(stored.tier)) return readFields
   const storedRank = tierRank(stored.tier)
   if (storedRank === TIER_RANK.quiet || storedRank <= tierRank(readFields.tier)) return readFields
-  return { ...readFields, tier: stored.tier }
+  return withMayWait({ ...readFields, tier: stored.tier }, null, stored.mayWait)
 }
 
 export function resolveReanalysisWrite<TFlag extends string>(params: {
@@ -800,7 +841,7 @@ export async function applyAnalysisWriteBack(
 export type FailureWrite =
   | { mode: 'upsert'; values: Record<string, unknown> }
   | { mode: 'rescue'; values: Record<string, unknown> }
-  | { mode: 'error-only'; values: { error: string } }
+  | { mode: 'error-only'; values: { error: string; may_wait?: boolean | null } }
   | { mode: 'skip' }
 
 // ── The rescue (CUL-815) — an escalation THIS run computed survives the run failing ──
@@ -878,8 +919,11 @@ export function withRescueTier<TFlag extends string>(
 // a missing retry button, so it fails CLOSED. `rescue` is required, not defaulted: a
 // default on a safety decision is that decision (C-37), and "no rescue" must be said.
 export function buildFailureWrite(params: {
-  existing: Pick<StoredAnalysis, 'recommendation' | 'presentFlags'> & { tier?: string | null } | null
+  existing: Pick<StoredAnalysis, 'recommendation' | 'presentFlags'> & { tier?: string | null; mayWait?: boolean | null } | null
   existingReadFailed: boolean
+  // The run was under the tier key (EN-3). Its error-only note then also takes back any leave to
+  // wait: a row whose latest read hit a problem is not a settled read (CUL-1611). Required (C-37).
+  tiersOn: boolean
   // The run was EN-4's floor-only mode (a refloor's per-vomit runs included). It reads no
   // photo, so its failure is not "the latest read hit a problem": noting `error` would put
   // CUL-819's line, and "From the earlier read", over a photo read that finished, and no
@@ -915,7 +959,7 @@ export function buildFailureWrite(params: {
     // clears `error`: a louder or equal one via readFields (error: null), a calmer one
     // through the hold (resolveReanalysisWrite, CUL-1509). A rescue would only swap one
     // escalation's words for another's, so the stored one stands.
-    return params.floorOnly ? { mode: 'skip' } : { mode: 'error-only', values: { error: params.message } }
+    return params.floorOnly ? { mode: 'skip' } : errorOnly(params)
   }
 
   if (params.rescue) {
@@ -934,7 +978,10 @@ export function buildFailureWrite(params: {
         pet_id: params.petId,
         incident_type: params.incidentType,
         recommendation: params.rescue.recommendation,
-        ...(params.rescue.tier !== undefined ? { tier: params.rescue.tier } : {}),
+        // A rescue is never a settled read, so it never carries leave to wait (CUL-1611).
+        ...(params.rescue.tier !== undefined
+          ? { tier: params.rescue.tier, may_wait: mayWaitValue(params.rescue.tier, null, params.existing?.mayWait) }
+          : {}),
         read_text: params.rescue.read_text,
         visual_flags: params.rescue.visual_flags,
         contextual_flags: params.rescue.contextual_flags,
@@ -952,7 +999,7 @@ export function buildFailureWrite(params: {
     // hides the observation grid, so "Couldn't finish reading this one" would stand
     // over "Blood: fresh red" on the record. Presence carries: keep the row, note the
     // error (CUL-532's class, on this write path).
-    return params.floorOnly ? { mode: 'skip' } : { mode: 'error-only', values: { error: params.message } }
+    return params.floorOnly ? { mode: 'skip' } : errorOnly(params)
   }
 
   return {
@@ -965,6 +1012,16 @@ export function buildFailureWrite(params: {
       error: params.message,
     },
   }
+}
+
+// The error-only note. Under the tier key it also lowers a stored TRUE (never a stored FALSE).
+function errorOnly(params: {
+  message: string
+  tiersOn: boolean
+  existing: { mayWait?: boolean | null } | null
+}): FailureWrite & { mode: 'error-only' } {
+  if (!params.tiersOn) return { mode: 'error-only', values: { error: params.message } }
+  return { mode: 'error-only', values: { error: params.message, may_wait: params.existing?.mayWait === false ? false : null } }
 }
 
 // ── Is the existing row a real analysis? (the cap path's never-bury guard) ─────
@@ -1420,6 +1477,8 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
     minTier: FloorTier | undefined
     existing: StoredRow
     stamps: IncidentStamps
+    // What "may wait" reads about the record (CUL-1628). Reached only under EN-4 + EN-3.
+    mayWait: { userClient: SupabaseClient; ownerId: string | null; species: string; occurredAt: string; nowMs: number }
   },
 ): Promise<Response> {
   const nothing = () => Response.json({ success: true, skipped: 'nothing_raised' }, { headers: CORS_HEADERS })
@@ -1449,7 +1508,7 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
   const addsFlag = contextual.length > storedContextual.length
   if (tierRank(next) <= effectiveTierRank(p.existing) && !addsFlag) return nothing()
 
-  const readFields: AnalysisReadFields<TFlag> = {
+  const baseReadFields: AnalysisReadFields<TFlag> = {
     recommendation: 'worth_a_call',
     tier: next,
     read_text: selectReadText(p.copy, {
@@ -1468,6 +1527,24 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
     status: 'completed',
     error: null,
   }
+  // "May wait" over the photo read already on the row: this run read no photo, so the row's own
+  // payload, flags and columns are the photo evidence, and a row with no payload showing the
+  // subject is an unread photo (storedRowInput).
+  const mayWaitInput = (record: MayWaitRecord | null): MayWaitInput => storedRowInput({
+    row: p.existing,
+    incidentType: p.incidentType,
+    hasPhoto: true,
+    floorOn: true,
+    record,
+    write: { tier: next, contextualFlags: contextual, visualFlags, status: 'completed' },
+  })
+  const readFields = withMayWait(
+    baseReadFields,
+    await decideMayWait(mayWaitInput, () => readMayWaitRecord(p.mayWait.userClient, {
+      petId: p.petId, ownerId: p.mayWait.ownerId, eventId: p.eventId, anchorAt: p.mayWait.occurredAt, species: p.mayWait.species, nowMs: p.mayWait.nowMs,
+    })),
+    p.existing.may_wait,
+  )
   const stored = snapshotStoredAnalysis(descriptor, p.existing)
   const writeBack = resolveReanalysisWrite({
     stored,
@@ -1484,6 +1561,9 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
   if (writeBack.mode === 'hold') return nothing() // unreachable: this write always escalates
   const { error } = await applyAnalysisWriteBack(adminClient, { eventId: p.eventId, petId: p.petId }, writeBack, p.stamps)
   if (error) throw new Error(`DB write failed: ${error}`)
+  await revalidateMayWait(p.mayWait.userClient, adminClient, {
+    petId: p.petId, ownerId: p.mayWait.ownerId, species: p.mayWait.species, anchorAt: p.mayWait.occurredAt, excludeEventId: p.eventId, nowMs: p.mayWait.nowMs,
+  })
   return Response.json(
     { success: true, floor: true, recommendation: 'worth_a_call', tier: writeBack.values.tier ?? next },
     { headers: CORS_HEADERS },
@@ -1521,7 +1601,7 @@ async function runRefloor<TAnalysis extends IncidentAnalysisBase, TFlag extends 
 
     const { data: trigger } = await userClient
       .from('events')
-      .select('id, pet_id, event_type, occurred_at, pets(user_id)')
+      .select('id, pet_id, event_type, occurred_at, pets(user_id, species)')
       .eq('id', triggerEventId)
       // No deleted_at filter (adversarial D4): a soft delete is a trigger (spec §8.3). Deleting
       // a meal rated All can raise the feline arm. Only the pet and the time are used, and
@@ -1531,7 +1611,7 @@ async function runRefloor<TAnalysis extends IncidentAnalysisBase, TFlag extends 
     if (!(REFLOOR_TRIGGER_TYPES as readonly string[]).includes(trigger.event_type as string)) {
       return Response.json({ error: 'Event does not re-floor' }, { status: 400, headers: CORS_HEADERS })
     }
-    const pet = (Array.isArray(trigger.pets) ? trigger.pets[0] : trigger.pets) as { user_id?: string | null } | null
+    const pet = (Array.isArray(trigger.pets) ? trigger.pets[0] : trigger.pets) as { user_id?: string | null; species?: string | null } | null
     const engineFlags = await readEngineFlags(userClient, typeof pet?.user_id === 'string' ? pet.user_id : null)
     if (!(descriptor.floorEngineKey && isEngineKeyOn(engineFlags, descriptor.floorEngineKey) && isEngineKeyOn(engineFlags, TIER_ENGINE_KEY))) {
       return Response.json({ success: true, skipped: 'floor_off' }, { headers: CORS_HEADERS })
@@ -1565,6 +1645,18 @@ async function runRefloor<TAnalysis extends IncidentAnalysisBase, TFlag extends 
       )
       results.push({ event_id: v.id, status: res.status })
     }
+    // A trigger can be the sign a stored TRUE was given without, on a vomit whose floor raised
+    // nothing (no write, so no re-check of its own) or on a stool, which has no floor: re-check
+    // every stored TRUE around it, lower-only (CUL-1628). The floor keys are on here, and with
+    // them EN-3, so this is the same key set "may wait" needs.
+    await revalidateMayWait(userClient, deps.adminClient(), {
+      petId: trigger.pet_id as string,
+      ownerId: typeof pet?.user_id === 'string' ? pet.user_id : null,
+      species: typeof pet?.species === 'string' ? pet.species : 'unknown',
+      anchorAt: trigger.occurred_at as string,
+      excludeEventId: null,
+      nowMs: Date.now(),
+    })
     return Response.json({ success: true, refloored: results.length, results }, { headers: CORS_HEADERS })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -1639,10 +1731,13 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // pet_id: every decision on the row first checks it is this event's (CUL-1203).
   // dismissed_at: a hold clears the owner's hide, so it has to know one is there (CUL-1323).
   // tier: every guard reads the louder of it and `recommendation` (EN-3, lib/incidentTier.ts).
-  const storedColumns = [
+  // may_wait and the columns its rule reads (CUL-1628): the stored FALSE is kept, and the stored
+  // flags, payload and colour are evidence about this incident's photo (incidentMayWait.ts).
+  const storedColumns = [...new Set([
     'id', 'pet_id', 'edited_at', 'status', 'recommendation', 'tier', 'dismissed_at', 'error',
     ...descriptor.redFlagColumns, ...(descriptor.afterReadColumns ?? []),
-  ].join(', ')
+    ...MAY_WAIT_ANALYSIS_COLUMNS.filter((c) => c !== 'event_id' && c !== 'incident_type'),
+  ])].join(', ')
   const readStoredRow = async (): Promise<StoredRow | null> =>
     existingRowOrThrow(
       await adminClient
@@ -1699,6 +1794,14 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     const engineFlags = await readEngineFlags(userClient, typeof pet?.user_id === 'string' ? pet.user_id : null)
     const tiersOn = isEngineKeyOn(engineFlags, TIER_ENGINE_KEY)
     tiersOnForFailure = tiersOn
+    // "May wait" (CUL-1628) can be TRUE only with EN-4's floor on as well: whether a call-now sign
+    // sits around the read is the floor's question. Off, no may_wait read is made and every write
+    // carries FALSE or NULL beside its tier; with the tier key off, no write names the column.
+    const mayWaitOn = tiersOn && isEngineKeyOn(engineFlags, 'engines_v3_en4')
+    const ownerId = typeof pet?.user_id === 'string' ? pet.user_id : null
+    const revalidateNeighbours = () => mayWaitOn
+      ? revalidateMayWait(userClient, adminClient, { petId, ownerId, species, anchorAt: occurredAt, excludeEventId: eventId, nowMs: Date.now() })
+      : Promise.resolve(0)
 
     // 1c. EN-4's floor-only mode (CUL-1134) runs only under its key AND the tier key (the
     //     floor's answer is a tier), for the owner. Refused here, before any read that could
@@ -1785,6 +1888,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       }
       return await writeFloorOverStoredRead(descriptor, adminClient, {
         eventId, petId, incidentType, petName, contextualFlags, copy, minTier, existing, stamps,
+        mayWait: { userClient, ownerId, species, occurredAt, nowMs: Date.now() },
       })
     }
 
@@ -1846,14 +1950,15 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           photoUnreadable: false,
           hasPhoto,
         })
-        const readFields: AnalysisReadFields<TFlag> = tieredReadFields({
+        // A capped run read no photo, so it never carries leave to wait (CUL-1611: a settled read).
+        const readFields: AnalysisReadFields<TFlag> = withMayWait(tieredReadFields({
           recommendation: cappedRec,
           read_text: readText,
           visual_flags: [],
           contextual_flags: contextualFlags,
           status: 'completed',
           error: null,
-        }, tiersOn, minTier)
+        }, tiersOn, minTier), null, existing?.may_wait)
         // Under the tier key a capped call never steps a louder stored call down (spec §1,
         // the PR-04b note): it keeps the stored tier, from the step-3b row, because this branch
         // makes no vision call and so has no window for a sibling to land in.
@@ -1868,6 +1973,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         })
         const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps)
         if (writeError) throw new Error(`DB write failed: ${writeError}`)
+        await revalidateNeighbours()
       } else if (!existingRealAnalysis) {
         // No escalation AND no prior real analysis to protect → record the cap /
         // disabled STATE (§4.5) so the client renders its designed state (T2-4).
@@ -2074,7 +2180,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // stored escalation, never takes a stored red flag off the record
     // (resolveReanalysisWrite). Decided on a FRESH read of the row, not step 3b's: see
     // readStoredRow for why that window matters.
-    const readFields: AnalysisReadFields<TFlag> = tieredReadFields({
+    const tieredFields: AnalysisReadFields<TFlag> = tieredReadFields({
       recommendation,
       read_text: readText,
       visual_flags: visualFlags,
@@ -2082,11 +2188,30 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       status,
       error: null,
     }, tiersOn, minTier)
-    if (readFields.tier) {
-      console.info(`${descriptor.functionName}: tier ${readFields.tier} (${tierReasonOf({ ...readFields, tier: readFields.tier })})`)
+    if (tieredFields.tier) {
+      console.info(`${descriptor.functionName}: tier ${tieredFields.tier} (${tierReasonOf({ ...tieredFields, tier: tieredFields.tier })})`)
     }
 
     const structuredValues = descriptor.buildStructuredValues(analysis)
+
+    // 8c. "May wait" (CUL-1628), on a call today only, decided over this run's read, the fresh
+    //     stored row and the record around the incident (incidentMayWait.ts). Settled means every
+    //     photo was read and shows the subject; a photo-less log is settled by having none.
+    const settledRun = !hasPhoto || (completeRead && !partialReadCollapsed && !photoUnreadable && !!analysis && descriptor.appearsToShowSubject(analysis))
+    const runInput = (record: MayWaitRecord | null): MayWaitInput => ({
+      floorOn: mayWaitOn,
+      write: { incidentType, tier: tieredFields.tier, contextualFlags, visualFlags, status },
+      run: { settled: settledRun, modelCalled: !!analysis && analysis.recommendation === 'worth_a_call', columns: analysis ? structuredValues : null },
+      stored: freshRow,
+      record,
+    })
+    const readFields = tieredFields.tier === undefined
+      ? tieredFields
+      : withMayWait(
+        tieredFields,
+        await decideMayWait(runInput, () => readMayWaitRecord(userClient, { petId, ownerId, eventId, anchorAt: occurredAt, species, nowMs: Date.now() })),
+        freshRow?.may_wait,
+      )
     const stored = snapshotStoredAnalysis(descriptor, freshRow)
     const writeBack = resolveReanalysisWrite({
       stored,
@@ -2117,6 +2242,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
 
     const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps)
     if (writeError) throw new Error(`DB write failed: ${writeError}`)
+    // This read may be the sign a neighbour's TRUE was given without: re-check them (lower-only).
+    await revalidateNeighbours()
 
     return Response.json(
       { success: true, recommendation, contextual_flags: contextualFlags, visual_flags: visualFlags },
@@ -2160,6 +2287,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       existing: latest,
       existingReadFailed: latestReadFailed,
       floorOnly,
+      tiersOn: tiersOnForFailure,
       eventId,
       petId: petIdForFailure,
       incidentType: incidentTypeForFailure,
