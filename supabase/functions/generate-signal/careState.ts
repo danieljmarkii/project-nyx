@@ -40,9 +40,11 @@
 // stands now) or an answer whose reference left the read; those hold only while a prior row
 // carries them. A re-raise from before the concern left the set and came back within one course
 // is rebuilt too (louder). The D4 lapse list still lives only in the cache row: an unreadable
-// prior row lapses nothing (CUL-1663). The replay reads a course's NEWEST dose only, so a newer
-// course answer that lapsed over a dosing gap of more than 14 days and was dosed again is read as
-// covering the gap (quieter, with no prior row only: the cache's marker covers it otherwise).
+// prior row lapses nothing (CUL-1663). The replay reads a trial's or course's end date, status and
+// newest dose as they stand TODAY, not as they stood on each past evening: a newer course that
+// lapsed over a dosing gap of more than 14 days and was dosed again reads as covering the gap, and
+// an end that synced late reads as on time. Both are quieter only with no prior row (the cache's
+// marker covers them otherwise), and the second matches the record as corrected.
 
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 import { dayKeyFromIndex, localDayIndex, localDayIndexOf } from '../../../lib/utils.ts'
