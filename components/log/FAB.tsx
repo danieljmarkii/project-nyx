@@ -1,8 +1,9 @@
-import { useState, useRef, useCallback, useEffect, type ReactNode } from 'react';
+import { useState, useRef, useCallback, useEffect, useContext, type ReactNode } from 'react';
 import {
   TouchableOpacity, StyleSheet, View, Animated, BackHandler,
-  Pressable, Alert,
+  Pressable, Alert, ScrollView, useWindowDimensions,
 } from 'react-native';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
@@ -25,6 +26,12 @@ import { applyMealTrialFlag } from '../../lib/mealTrialFlag';
 import { noPetToLogForCopy } from '../../lib/logCopy';
 import { rowFoodLabelOf } from '../../lib/dayEvents';
 import { foodFormatTag } from '../../lib/foodFormat';
+import {
+  planFan, FAB_BOTTOM, FAB_DISC, FAN_MARGIN_BOTTOM, FAN_RIGHT_INSET, FAN_GAP,
+  PILL_MIN_HEIGHT, PILL_PADDING_V, PILL_PADDING_LEFT, PILL_PADDING_RIGHT, PILL_INNER_GAP,
+  PILL_GLYPH, PILL_CHEVRON, PILL_LABEL_SIZE, FOOD_TAG_GAP, FOOD_TAG_PADDING_H, FOOD_TAG_PADDING_V,
+  LOG_FOR_LABEL_GAP, LOG_FOR_NAME_LINES,
+} from '../../lib/fanBudget';
 
 // Resolved once at module scope — a literal, shared with the log sheet (CUL-717).
 const noPetCopy = noPetToLogForCopy();
@@ -70,9 +77,8 @@ const FAN_FROM = { x: 18, y: 26, scale: 0.6 } as const;
  *  a distance from the disc), so a row that mounts after the fan has run — the
  *  recent foods answer asynchronously — lands on a slot already at rest. */
 const MAX_SLOTS = 8;
-/** The gap between two stacked pills. No pill carries hitSlop, so any positive gap
- *  keeps neighbours from sharing hit area (C-5); this one is the mock's 10pt. */
-const FAN_GAP = 10;
+/** The doors' labels, top to bottom, as the fan draws them and the budget plans them. */
+const DOOR_LABELS = ['More events', 'Loose stool', 'Vomit', 'Log food'] as const;
 
 interface FanRow {
   key: string;
@@ -89,7 +95,7 @@ function DoorChevron() {
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
-      <ChevronRight size={16} color={theme.colorTextTertiary} strokeWidth={1.75} />
+      <ChevronRight size={PILL_CHEVRON} color={theme.colorTextTertiary} strokeWidth={1.75} />
     </View>
   );
 }
@@ -199,6 +205,13 @@ export function FAB() {
   // look header publishes an overlay for its pinned way back and never draws a
   // bar, and hiding the + for it took the primary control off every tab.
   const captureOverlayOpen = useUiStore((s) => s.captureOverlay?.drawsDoneBar === true);
+
+  // CUL-1636 — the fan's height budget reads the window and the text multiplier. The
+  // insets context, not the hook: the hook throws without a provider, and the FAB has
+  // no reason to own one (on device expo-router's root always provides it).
+  const frame = useWindowDimensions();
+  const safeTop = useContext(SafeAreaInsetsContext)?.top ?? 0;
+  const fanScroll = useRef<ScrollView>(null);
 
   const openMenu = useCallback(() => {
     // Light impact on OPEN only — closing the menu commits to nothing and stays silent.
@@ -487,6 +500,25 @@ export function FAB() {
   // no foods yet still has `Log food` in the thumb's slot, which is the way forward.
   const rows: FanRow[] = [];
 
+  // CUL-1636 — planned from the window before anything is drawn (lib/fanBudget.ts): the
+  // oldest foods leave first when the fan would stand taller than the screen, and the
+  // chip is never the row that goes. Each food enters with the label it is drawn with.
+  const fanPlan = planFan({
+    windowWidth: frame.width,
+    windowHeight: frame.height,
+    fontScale: frame.fontScale,
+    safeTop,
+    chipName: activePet && pets.length > 1 ? activePet.name : null,
+    doors: DOOR_LABELS,
+    foods: (foodsForActivePet ?? []).map((food) => ({
+      id: food.id,
+      label: rowFoodLabelOf({ brand: food.brand, product: food.product_name, format: food.format }) ?? 'Food',
+      tag: foodFormatTag(food.format),
+    })),
+  });
+  const pillWidth = { maxWidth: fanPlan.pillMaxWidth };
+  const foodLines = new Map(fanPlan.foods.map((f) => [f.id, f.numberOfLines]));
+
   // ── THE MENU BODY, GATED ON THERE BEING A PET (CUL-717) ─────────────────────────
   // None of the action pills render without an active pet, so there is no pill to tap
   // into a silence — the same gate CUL-681 put on the log sheet's grid one layer down,
@@ -514,7 +546,7 @@ export function FAB() {
     rows.push({
       key: 'no-pet',
       node: (
-        <View style={styles.card}>
+        <View style={[styles.card, pillWidth]}>
           <EmptyState
             // Shared with the log sheet (lib/logCopy) — one state, two capture
             // surfaces, one wording. The clause order is load-bearing and its
@@ -543,21 +575,21 @@ export function FAB() {
         key: 'log-for',
         node: (
           <TouchableOpacity
-            style={[styles.pill, styles.logForPill]}
+            style={[styles.pill, styles.logForPill, pillWidth]}
             onPress={whileOpen(() => setSwitcherVisible(true))}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel={`Logging for ${activePet.name} — switch pet`}
           >
-            <PetAvatar name={activePet.name} photoPath={activePet.photo_path} size={28} />
+            <PetAvatar name={activePet.name} photoPath={activePet.photo_path} size={PILL_GLYPH} />
             {/* "Logging for" is a quiet eyebrow; the NAME gets its own line below
                 it. The name WRAPS (never truncates) — a pet's name should never be
                 cut — and only the genuinely long ones spill to two lines. */}
             <View style={styles.logForTextCol}>
               <ThemedText style={styles.logForLabel} numberOfLines={1}>Logging for</ThemedText>
-              <ThemedText style={styles.logForName} numberOfLines={2}>{activePet.name}</ThemedText>
+              <ThemedText style={styles.logForName} numberOfLines={LOG_FOR_NAME_LINES}>{activePet.name}</ThemedText>
             </View>
-            <ChevronDown size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
+            <ChevronDown size={PILL_CHEVRON} color={theme.colorTextSecondary} strokeWidth={1.75} />
           </TouchableOpacity>
         ),
       });
@@ -573,7 +605,7 @@ export function FAB() {
       key: 'more',
       node: (
         <TouchableOpacity
-          style={styles.pill}
+          style={[styles.pill, pillWidth]}
           onPress={whileOpen(() => { closeMenu(); openLogSheet(); })}
           activeOpacity={0.7}
           accessibilityRole="button"
@@ -598,7 +630,7 @@ export function FAB() {
       key: 'diarrhea',
       node: (
         <TouchableOpacity
-          style={styles.pill}
+          style={[styles.pill, pillWidth]}
           onPress={whileOpen(() => { closeMenu(); openLogSheet('diarrhea'); })}
           activeOpacity={0.7}
           accessibilityRole="button"
@@ -615,7 +647,7 @@ export function FAB() {
       key: 'vomit',
       node: (
         <TouchableOpacity
-          style={styles.pill}
+          style={[styles.pill, pillWidth]}
           onPress={whileOpen(() => { closeMenu(); openLogSheet('vomit'); })}
           activeOpacity={0.7}
           accessibilityRole="button"
@@ -633,7 +665,7 @@ export function FAB() {
       key: 'log-food',
       node: (
         <TouchableOpacity
-          style={styles.pill}
+          style={[styles.pill, pillWidth]}
           onPress={whileOpen(() => { closeMenu(); router.push('/log?type=meal'); })}
           activeOpacity={0.7}
           accessibilityRole="button"
@@ -651,7 +683,7 @@ export function FAB() {
     // food_type-agnostic). While `foodsForActivePet` is null the read has not answered
     // for THIS pet, so there are no pills: they would be another pet's (C-12). The
     // query returns newest first; the fan draws newest LOWEST, nearest the thumb.
-    for (const food of [...(foodsForActivePet ?? [])].reverse()) {
+    for (const food of [...(foodsForActivePet ?? [])].filter((f) => foodLines.has(f.id)).reverse()) {
       // CUL-1644 (D3): the food named the way History names it, through the one mapper,
       // with its format as its own tag. The tag is a sibling that holds its width, never
       // text appended to the label that wraps, so wet and dry of one line never read
@@ -663,7 +695,7 @@ export function FAB() {
         key: `food-${food.id}`,
         node: (
           <TouchableOpacity
-            style={styles.pill}
+            style={[styles.pill, pillWidth]}
             onPress={whileOpen(() => { void handleQuickMeal(food); })}
             activeOpacity={0.7}
             disabled={logging !== null}
@@ -676,7 +708,7 @@ export function FAB() {
               <EventIcon type="meal" size={16} />
             </View>
             <View style={styles.foodLabelRow}>
-              <ThemedText style={styles.pillLabel} numberOfLines={2}>
+              <ThemedText style={styles.pillLabel} numberOfLines={foodLines.get(food.id)}>
                 {foodLabel}
               </ThemedText>
               {formatTag ? (
@@ -700,6 +732,18 @@ export function FAB() {
   // Beat 2, and its Reduce Motion frame: in motion the one glyph turns; still, the
   // plus and the × crossfade on the menu's fade, so the open state still reads as
   // "close" without anything turning.
+  // A slot is a distance from the disc, so the row's index from the bottom picks it.
+  const slotFor = (row: FanRow, i: number) => (
+    <FanSlot
+      key={row.key}
+      anim={slots[Math.min(rows.length - 1 - i, MAX_SLOTS - 1)]}
+      fade={fade}
+      reducedMotion={reducedMotion}
+    >
+      {row.node}
+    </FanSlot>
+  );
+
   const glyphTurn = turn.interpolate({ inputRange: [0, 1], outputRange: ['0deg', `${TURN_DEGREES}deg`] });
 
   return (
@@ -738,16 +782,29 @@ export function FAB() {
         <View style={styles.fabContainer} pointerEvents="box-none">
           {open && (
             <View style={styles.fan} pointerEvents="box-none">
-              {rows.map((row, i) => (
-                <FanSlot
-                  key={row.key}
-                  anim={slots[Math.min(rows.length - 1 - i, MAX_SLOTS - 1)]}
-                  fade={fade}
-                  reducedMotion={reducedMotion}
-                >
-                  {row.node}
-                </FanSlot>
-              ))}
+              {fanPlan.scroll ? (
+                // CUL-1636, the budget's last step: even with no food the doors stand
+                // taller than the screen (AX2 and up on a small phone). The chip stays
+                // pinned on top, and the doors scroll beneath it, opened at the bottom so
+                // the pills nearest the thumb are the ones on screen.
+                <>
+                  {rows[0]?.key === 'log-for' && slotFor(rows[0], 0)}
+                  <ScrollView
+                    ref={fanScroll}
+                    testID="fab-fan-scroll"
+                    style={{ maxHeight: fanPlan.scrollMaxHeight ?? undefined }}
+                    contentContainerStyle={styles.fanScrollContent}
+                    showsVerticalScrollIndicator
+                    // A snap to the bottom on layout, never an animated scroll: it is where
+                    // the column opens, not motion the owner sees.
+                    onContentSizeChange={() => fanScroll.current?.scrollToEnd({ animated: false })}
+                  >
+                    {rows.map((row, i) => (row.key === 'log-for' ? null : slotFor(row, i)))}
+                  </ScrollView>
+                </>
+              ) : (
+                rows.map((row, i) => slotFor(row, i))
+              )}
             </View>
           )}
 
@@ -811,14 +868,14 @@ const styles = StyleSheet.create({
   },
   fabContainer: {
     position: 'absolute',
-    bottom: 72,
-    right: theme.space3,
+    bottom: FAB_BOTTOM,
+    right: FAN_RIGHT_INSET,
     alignItems: 'flex-end',
   },
   fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: FAB_DISC,
+    height: FAB_DISC,
+    borderRadius: FAB_DISC / 2,
     // CUL-322, D3 = C (PM-ruled 2026-09-26): the brand night disc, the one exception
     // in-app brand rule 3 names. It replaces CUL-1063's colorAccentInk disc, which
     // cleared contrast and read drab on device. Its glyph was the bright teal until
@@ -856,7 +913,11 @@ const styles = StyleSheet.create({
   fan: {
     alignItems: 'flex-end',
     gap: FAN_GAP,
-    marginBottom: theme.space2,
+    marginBottom: FAN_MARGIN_BOTTOM,
+  },
+  fanScrollContent: {
+    alignItems: 'flex-end',
+    gap: FAN_GAP,
   },
   fanSlot: {
     // Pills grow out of the disc's corner (beat 4), so they scale about theirs.
@@ -866,25 +927,25 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: PILL_INNER_GAP,
     backgroundColor: theme.colorSurface,
     borderRadius: theme.radiusFull,
-    paddingVertical: theme.space1,
-    paddingLeft: 10,
-    paddingRight: theme.space2,
+    paddingVertical: PILL_PADDING_V,
+    paddingLeft: PILL_PADDING_LEFT,
+    paddingRight: PILL_PADDING_RIGHT,
     // The 44pt floor is carried by the pill's own box, not hitSlop: the pills stack
     // with a gap and no slop, so no two ever share hit area (C-5) — on the recent-food
     // pills a mis-resolved tap would log the WRONG food, into a diet trial (CUL-612).
-    minHeight: 44,
+    minHeight: PILL_MIN_HEIGHT,
     // Long brand + product names wrap to two lines inside the cap rather than run off
-    // a narrow phone (iPhone SE @ 375pt: 300 + the 24pt right inset leaves a margin).
-    maxWidth: 300,
+    // a narrow phone. The cap itself is the budget's (`pillWidth`): 300pt, or less where
+    // 300 plus the inset would overflow (an SE under Display Zoom is 320pt wide).
     ...shadows.md,
   },
   pillGlyph: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: PILL_GLYPH,
+    height: PILL_GLYPH,
+    borderRadius: PILL_GLYPH / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -898,7 +959,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorNeutralLight,
   },
   pillLabel: {
-    fontSize: 15,
+    fontSize: PILL_LABEL_SIZE,
     color: theme.colorTextPrimary,
     fontWeight: theme.fontWeightMedium,
     flexShrink: 1,
@@ -909,7 +970,7 @@ const styles = StyleSheet.create({
   foodLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: FOOD_TAG_GAP,
     flexShrink: 1,
   },
   formatTag: {
@@ -918,8 +979,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colorBorder,
     borderRadius: theme.radiusXS,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
+    paddingHorizontal: FOOD_TAG_PADDING_H,
+    paddingVertical: FOOD_TAG_PADDING_V,
   },
   // History's tag register (SpineNodeRow): tracked uppercase, tertiary ink.
   formatTagText: {
@@ -940,7 +1001,7 @@ const styles = StyleSheet.create({
   logForLabel: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    marginBottom: 1,
+    marginBottom: LOG_FOR_LABEL_GAP,
   },
   logForName: {
     // The name is the wrong-pet safeguard — make it the chip's hero (textLG), on its
@@ -952,7 +1013,6 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: theme.colorSurface,
     borderRadius: theme.radiusMedium,
-    maxWidth: 300,
     ...shadows.md,
   },
   // The no-pet copy sits where the pills would (EmptyState's top-anchored 'inset'),
