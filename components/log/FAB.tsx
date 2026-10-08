@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useContext, type ReactNode } from 'react';
 import {
   TouchableOpacity, StyleSheet, View, Animated, BackHandler,
-  Pressable, Alert, ScrollView, useWindowDimensions,
+  Pressable, Alert, ScrollView, useWindowDimensions, AccessibilityInfo,
 } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -28,6 +28,7 @@ import { fabFoodDay } from '../../lib/fabRecentFoods';
 import { insertMeal } from '../../lib/meals';
 import { applyMealTrialFlag } from '../../lib/mealTrialFlag';
 import { noPetToLogForCopy } from '../../lib/logCopy';
+import { focusAccessibility } from '../../lib/a11yFocus';
 import { rowFoodLabelOf } from '../../lib/dayEvents';
 import { foodFormatTag } from '../../lib/foodFormat';
 import {
@@ -73,6 +74,14 @@ const CLOSE_ITEM_MS = 110;
 const CLOSE_MS = 180;
 /** Beat 8: under Reduce Motion everything is one crossfade of this length. */
 const FADE_MS = 150;
+
+// CUL-724 — what a screen reader hears as the fan opens, and how long the announcement
+// gets before focus moves onto the fan's top row. A focus move makes VoiceOver read the
+// focused row at once, which cuts off anything still being spoken, so the short sentence
+// goes first. The delay is a DEVICE number: if the phone check finds the announcement
+// clipped or the focus late, this is the one knob.
+export const FAN_OPEN_ANNOUNCEMENT = 'Log menu open';
+export const FAN_FOCUS_DELAY_MS = 500;
 /** Where a fan pill starts, relative to where it lands: tucked into the disc's
  *  corner at 60%, growing out of it (the pills' transformOrigin is that corner). */
 const FAN_FROM = { x: 18, y: 26, scale: 0.6 } as const;
@@ -222,6 +231,61 @@ export function FAB() {
   const fanScroll = useRef<ScrollView>(null);
   const fanSnapped = useRef(false);
 
+  // CUL-724 — VoiceOver focus moves INTO the fan when it opens. The modal layer keeps
+  // focus from wandering out, but nothing put it in: it stayed on the disc, and the
+  // first swipe went wherever the platform guessed. The fan's top row (the no-pet card,
+  // the pet chip, or More events, whichever leads) takes this callback as its ref, so
+  // the row's own mount is the trigger: the open, and the swap when the pets land under
+  // an open no-pet card, whose node leaves the tree and takes focus with it. A ref, not
+  // an effect, because the rows are built below the stand-down's early return, where no
+  // hook may run, and so the lead is never restated as a second predicate here.
+  //
+  // `fanLeadKey` is the lead row's key, written at render. The callback fires far more
+  // often than the lead changes: a touchable's ref goes through Animated's merged ref,
+  // which re-fires null and then the same node on EVERY render, and a row remounts when
+  // the fan switches into its scroll branch. Neither is a new lead, and neither may yank
+  // focus back to the top of a list the owner is already in, so only a new key arms. The
+  // lead is forgotten when the menu closes, so every open moves focus once.
+  const fanLeadKey = useRef<string | null>(null);
+  const focusedLead = useRef<string | null>(null);
+  const focusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The lead's LIVE node. The timer reads it when it fires rather than closing over the
+  // node it was armed with: a same-key remount inside the beat (the scroll branch flipping)
+  // would otherwise hand the platform an unmounted node, and focus would silently stay put.
+  const leadNode = useRef<View | null>(null);
+  const armFanFocus = useCallback(() => {
+    // The open is announced on both platforms: there is no live region here, so nothing
+    // else speaks it on Android (C-44), and the call is a no-op without a screen reader.
+    // The swap is not: the focus move reads the new top row, which says what changed.
+    if (focusedLead.current === null) AccessibilityInfo.announceForAccessibility(FAN_OPEN_ANNOUNCEMENT);
+    focusedLead.current = fanLeadKey.current;
+    if (focusTimer.current) clearTimeout(focusTimer.current);
+    focusTimer.current = setTimeout(() => {
+      focusTimer.current = null;
+      focusAccessibility(leadNode.current);
+    }, FAN_FOCUS_DELAY_MS);
+  }, []);
+  const fanLeadRef = useCallback((node: View | null) => {
+    leadNode.current = node;
+    if (!node) return;
+    const key = fanLeadKey.current;
+    if (key === null || focusedLead.current === key) return;
+    armFanFocus();
+  }, [armFanFocus]);
+  // A close keeps the pills mounted while they retract, so it cancels a pending move at
+  // its START: focus never lands on a row on its way out. The effect covers the closes
+  // that never run `closeMenu` (the capture overlay's stand-down) and forgets the lead.
+  const cancelFanFocus = useCallback(() => {
+    if (focusTimer.current) clearTimeout(focusTimer.current);
+    focusTimer.current = null;
+  }, []);
+  useEffect(() => {
+    if (open) return;
+    focusedLead.current = null;
+    cancelFanFocus();
+  }, [open, cancelFanFocus]);
+  useEffect(() => cancelFanFocus, [cancelFanFocus]);
+
   const openMenu = useCallback(() => {
     // CUL-1635 — the fan never opens under a completion card. The card paints over the
     // fan (a root sibling) and its Undo row sits on the lowest pill, so a tap meant for
@@ -259,6 +323,7 @@ export function FAB() {
   }, [turn, fade, slots]);
 
   const closeMenu = useCallback(() => {
+    cancelFanFocus();
     closing.current = true;
     const finish = ({ finished }: { finished: boolean }) => {
       // Interrupted by a re-open: the menu stays.
@@ -285,11 +350,20 @@ export function FAB() {
           Animated.timing(v, { toValue: 0, duration: CLOSE_ITEM_MS, useNativeDriver: true })),
       ),
     ]).start(finish);
-  }, [turn, fade, slots]);
+  }, [turn, fade, slots, cancelFanFocus]);
 
   const toggleMenu = useCallback(() => {
-    if (open && !closing.current) closeMenu(); else openMenu();
-  }, [open, openMenu, closeMenu]);
+    if (open && !closing.current) { closeMenu(); return; }
+    // A re-open caught mid-close (CUL-724): the rows never unmounted, so no ref fires and
+    // `open` never went false to forget the lead. It is a new open all the same, so it
+    // speaks and moves focus as one.
+    const reopening = open && closing.current;
+    openMenu();
+    if (reopening && leadNode.current) {
+      focusedLead.current = null;
+      armFanFocus();
+    }
+  }, [open, openMenu, closeMenu, armFanFocus]);
 
   // A pill acts only while the menu is staying open. A close keeps every pill mounted,
   // under the finger, for the ~180ms it animates, so a quick second tap used to act
@@ -606,7 +680,8 @@ export function FAB() {
     rows.push({
       key: 'no-pet',
       node: (
-        <View style={[styles.card, pillWidth]}>
+        // `accessible`, so the title and the body are one sentence and one focus stop.
+        <View ref={fanLeadRef} style={[styles.card, pillWidth]} accessible>
           <EmptyState
             // Shared with the log sheet (lib/logCopy) — one state, two capture
             // surfaces, one wording. The clause order is load-bearing and its
@@ -635,6 +710,7 @@ export function FAB() {
         key: 'log-for',
         node: (
           <TouchableOpacity
+            ref={fanLeadRef}
             style={[styles.pill, styles.logForPill, pillWidth]}
             onPress={whileOpen(() => setSwitcherVisible(true))}
             activeOpacity={0.7}
@@ -665,6 +741,8 @@ export function FAB() {
       key: 'more',
       node: (
         <TouchableOpacity
+          // The fan's top row when there is no pet chip above it (CUL-724).
+          ref={rows.length === 0 ? fanLeadRef : undefined}
           style={[styles.pill, pillWidth]}
           onPress={whileOpen(() => { closeMenu(); openLogSheet(); })}
           activeOpacity={0.7}
@@ -786,6 +864,7 @@ export function FAB() {
     }
   }
   slotCount.current = rows.length;
+  fanLeadKey.current = open ? rows[0]?.key ?? null : null;
 
   // Beat 2, and its Reduce Motion frame: in motion the one glyph turns; still, the
   // plus and the × crossfade on the menu's fade, so the open state still reads as

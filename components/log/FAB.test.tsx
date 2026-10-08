@@ -1391,3 +1391,169 @@ describe('FAB — CUL-1647, the recent foods keep one order for the day', () => 
     expect(lastSpan()).toEqual(fabFoodDay(local(8, 12, 0).getTime()));
   });
 });
+
+describe('FAB — CUL-724, VoiceOver focus moves into the fan when it opens', () => {
+  // Spied, not mocked at the top of the file, so the wiring is asserted here and the
+  // rest of the suite runs against the real helper (which no-ops off-device).
+  const a11yFocus = require('../../lib/a11yFocus') as typeof import('../../lib/a11yFocus');
+  const { AccessibilityInfo } = require('react-native') as typeof import('react-native');
+  const { FAN_OPEN_ANNOUNCEMENT, FAN_FOCUS_DELAY_MS } = require('./FAB') as typeof import('./FAB');
+  let focus: jest.SpyInstance;
+  let announce: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    focus = jest.spyOn(a11yFocus, 'focusAccessibility').mockReturnValue(true);
+    announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    // The jest preset already mocks AccessibilityInfo, so the spy is that mock, carrying
+    // every earlier test's opens: start this block's count from zero.
+    announce.mockClear();
+  });
+  afterEach(() => {
+    focus.mockRestore();
+    announce.mockRestore();
+    jest.useRealTimers();
+  });
+
+  /** The label on the node a focus call was handed. Read as a primitive: a failing matcher
+   *  over the node itself pretty-prints its fiber and runs the heap out. */
+  const focusedLabel = (call: number) => {
+    const node = focus.mock.calls[call][0] as { props?: { accessibilityLabel?: string } };
+    return node?.props?.accessibilityLabel;
+  };
+  const advance = (ms: number) => act(() => { jest.advanceTimersByTime(ms); });
+
+  it('announces the open, then moves focus onto the pet chip at the top of the fan', async () => {
+    const view = await openMenu();
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledWith(FAN_OPEN_ANNOUNCEMENT);
+    // The sentence gets its beat before focus moves: a focus move reads the row at once
+    // and would cut the announcement off.
+    advance(FAN_FOCUS_DELAY_MS - 1);
+    expect(focus.mock.calls.length).toBe(0);
+    advance(1);
+    expect(focus.mock.calls.length).toBe(1);
+    expect(focusedLabel(0)).toBe('Logging for Nyx — switch pet');
+    expect(view.getByLabelText('Logging for Nyx — switch pet')).toBeTruthy();
+  });
+
+  it('with one pet there is no chip, so focus lands on More events', async () => {
+    seedPets(1);
+    const view = await openMenu();
+    advance(FAN_FOCUS_DELAY_MS);
+    expect(focus.mock.calls.length).toBe(1);
+    const node = focus.mock.calls[0][0] as { props: { onResponderRelease?: unknown } };
+    // The node the ref holds is the touchable that owns the label: the same press handler.
+    let owner: TreeNode | null = view.getByText('More events').parent;
+    while (owner && typeof owner.props.onResponderRelease !== 'function') owner = owner.parent;
+    expect(owner).not.toBeNull();
+    expect(node.props.onResponderRelease === owner!.props.onResponderRelease).toBe(true);
+  });
+
+  it('the no-pet card is one focus stop, and the pets landing move focus to the chip without a second announcement', async () => {
+    seedNoPets();
+    const view = await openMenu();
+    advance(FAN_FOCUS_DELAY_MS);
+    expect(focus.mock.calls.length).toBe(1);
+    const card = focus.mock.calls[0][0] as { props: { accessible?: boolean } };
+    expect(card.props.accessible).toBe(true);
+    expect(view.getByText('No pet loaded yet')).toBeTruthy();
+
+    // The card the owner was on leaves the tree; focus would go with it.
+    await act(async () => { seedPets(2); });
+    advance(FAN_FOCUS_DELAY_MS);
+    expect(focus.mock.calls.length).toBe(2);
+    expect(focusedLabel(1)).toBe('Logging for Nyx — switch pet');
+    expect(announce).toHaveBeenCalledTimes(1);
+  });
+
+  it('a pet flip inside the open fan keeps the owner where they are', async () => {
+    await openMenu();
+    advance(FAN_FOCUS_DELAY_MS);
+    expect(focus.mock.calls.length).toBe(1);
+    await act(async () => {
+      usePetStore.setState({ activePet: { id: 'p2', name: 'Mochi' } as never });
+    });
+    advance(FAN_FOCUS_DELAY_MS);
+    expect(focus.mock.calls.length).toBe(1);
+    expect(announce).toHaveBeenCalledTimes(1);
+  });
+
+  it('a close before the beat moves no focus, and every open speaks and focuses again', async () => {
+    const view = await openMenu();
+    fireEvent.press(view.getByTestId('fab-scrim'));
+    // The close finishes (and its render commits) well inside the beat.
+    advance(FAN_FOCUS_DELAY_MS - 1);
+    advance(FAN_FOCUS_DELAY_MS);
+    expect(view.getByLabelText('Log event')).toBeTruthy();
+    expect(focus.mock.calls.length).toBe(0);
+
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    advance(FAN_FOCUS_DELAY_MS);
+    expect(announce).toHaveBeenCalledTimes(2);
+    expect(focus.mock.calls.length).toBe(1);
+  });
+
+  it('a close still retracting when the beat lands puts focus on no pill on its way out', async () => {
+    const view = await openMenu();
+    advance(FAN_FOCUS_DELAY_MS - 50);
+    fireEvent.press(view.getByTestId('fab-scrim'));
+    advance(50);
+    expect(focus.mock.calls.length).toBe(0);
+  });
+
+  it('a re-open caught mid-close speaks and moves focus again', async () => {
+    const view = await openMenu();
+    advance(FAN_FOCUS_DELAY_MS);
+    expect(focus.mock.calls.length).toBe(1);
+    // The disc reads "Close menu" until the retract finishes; the second tap re-opens.
+    fireEvent.press(view.getByLabelText('Close menu'));
+    fireEvent.press(view.getByLabelText('Close menu'));
+    await act(async () => {});
+    advance(FAN_FOCUS_DELAY_MS);
+    expect(view.getByLabelText('Close menu')).toBeTruthy();
+    expect(announce).toHaveBeenCalledTimes(2);
+    expect(focus.mock.calls.length).toBe(2);
+    expect(focusedLabel(1)).toBe('Logging for Nyx — switch pet');
+  });
+
+  it('a branch flip inside the beat still focuses a mounted lead', async () => {
+    // The scroll branch moves the lead to a new parent under the same key; a large text
+    // size on a small window is what flips it (lib/fanBudget.ts). REFACTOR-SAFETY, not a
+    // mutation-proven guard (C-18): in this renderer the chip's instance survives the
+    // flip (Animated's merged ref re-fires null, then the same node, on every render), so
+    // reverting the timer to the node it was armed with stays green here. The timer reads
+    // the live ref because a device remount would otherwise hand over a dead node; the
+    // VoiceOver pass at a large text size is where that half is verified.
+    const rn = require('react-native') as typeof import('react-native');
+    const dims = jest.spyOn(rn, 'useWindowDimensions');
+    try {
+      dims.mockReturnValue({ width: 375, height: 667, scale: 2, fontScale: 1 });
+      const view = await openMenu();
+      expect(view.queryByTestId('fab-fan-scroll')).toBeNull();
+      // The SE at AX3, the size the budget scrolls at (the CUL-1636 block pins it).
+      dims.mockReturnValue({ width: 375, height: 667, scale: 2, fontScale: 2.643 });
+      await act(async () => { view.rerender(<FAB />); });
+      expect(view.getByTestId('fab-fan-scroll')).toBeTruthy();
+      advance(FAN_FOCUS_DELAY_MS);
+      expect(focus.mock.calls.length).toBe(1);
+      const target = focus.mock.calls[0][0] as { props: { accessibilityLabel?: string } } | null;
+      expect(target?.props.accessibilityLabel).toBe('Logging for Nyx — switch pet');
+      // The row the platform is handed is still in the tree: the node that left on the
+      // remount carries the same label and props, so only its membership tells them apart.
+      const mounted = view.UNSAFE_root.findAll((n: TreeNode) => n.instance === target);
+      expect(mounted.length).toBe(1);
+    } finally {
+      dims.mockRestore();
+    }
+  });
+
+  it('never touches focus or speaks while the menu stays closed', async () => {
+    render(<FAB />);
+    await act(async () => {});
+    advance(FAN_FOCUS_DELAY_MS * 2);
+    expect(announce).not.toHaveBeenCalled();
+    expect(focus.mock.calls.length).toBe(0);
+  });
+});
