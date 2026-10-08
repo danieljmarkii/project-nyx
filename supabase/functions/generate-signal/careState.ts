@@ -40,7 +40,9 @@
 // stands now) or an answer whose reference left the read; those hold only while a prior row
 // carries them. A re-raise from before the concern left the set and came back within one course
 // is rebuilt too (louder). The D4 lapse list still lives only in the cache row: an unreadable
-// prior row lapses nothing (CUL-1663).
+// prior row lapses nothing (CUL-1663). The replay reads a course's NEWEST dose only, so a newer
+// course answer that lapsed over a dosing gap of more than 14 days and was dosed again is read as
+// covering the gap (quieter, with no prior row only: the cache's marker covers it otherwise).
 
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 import { dayKeyFromIndex, localDayIndex, localDayIndexOf } from '../../../lib/utils.ts'
@@ -890,9 +892,26 @@ function rebuiltMarker(sign: SymptomType, args: CareStateArgs, ix: DayIndex, cfg
   const valid = acks
     .filter((a) => a.sign === sign && !a.retracts && !NEVER_LIVE.has(lapseReason(a, args, none, start, cfg) ?? ''))
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || (a.id < b.id ? -1 : 1))
-  // Where an answer stood on local day d: past its own trial or course by the close of that day?
-  const scopeLapsedOn = (a: AckFact, d: number) =>
-    scopeLapseReason(a, d, Date.parse(a.createdAt), cfg, tz) !== null
+  // Where an answer stood on local day d, asked of the record as it stood THEN (adversarial round 2):
+  // today's record answers some of these wrongly for a past day, so each is asked per day.
+  //   • Its anchor: a trial or course may be written before it starts, and the step tested the
+  //     older answer until that day came (`future_anchor`).
+  //   • A course marked stopped or completed with no end date ended on a day the record does not
+  //     hold. For the answer's OWN walk it is treated as running (louder: its re-raise is kept);
+  //     as a NEWER answer covering an older one, as ended after its last logged dose, or always
+  //     when none is logged (louder: it covers nothing it cannot be shown to have covered).
+  const anchorDayOf = (a: AckFact) => localDayIndexOf(a.anchorOn, tz)
+  const endUnknown = (a: AckFact) =>
+    a.source === 'vet_started_course' && !!a.course && !a.course.endedOn && (a.course.status === 'completed' || a.course.status === 'stopped')
+  const scopeAsOf = (a: AckFact, d: number) =>
+    scopeLapseReason(endUnknown(a) ? { ...a, course: { ...(a.course as AckCourseScope), status: null } } : a, d, Date.parse(a.createdAt), cfg, tz)
+  const ownScopeEnded = (a: AckFact, d: number) => scopeAsOf(a, d) !== null
+  const coveredOn = (b: AckFact, d: number) => {
+    if (scopeAsOf(b, d) !== null) return false
+    if (!endUnknown(b)) return true
+    const last = b.course?.lastDoseAt ? Date.parse(b.course.lastDoseAt) : NaN
+    return Number.isFinite(last) && d <= localDayIndex(last, tz)
+  }
   const retractedBy = (a: AckFact, d: number) =>
     acks.some((r) => r.retracts === a.id && Number.isFinite(Date.parse(r.createdAt)) && localDayIndex(Date.parse(r.createdAt), tz) <= d)
   // Whether a newer answer, written on an earlier local day, was the one the step tested on d.
@@ -900,7 +919,8 @@ function rebuiltMarker(sign: SymptomType, args: CareStateArgs, ix: DayIndex, cfg
     const createdMs = Date.parse(a.createdAt)
     return valid.some((b) => {
       const bMs = Date.parse(b.createdAt)
-      return b !== a && bMs > createdMs && localDayIndex(bMs, tz) < d && !retractedBy(b, d) && !scopeLapsedOn(b, d)
+      const bAnchor = anchorDayOf(b)
+      return b !== a && bMs > createdMs && localDayIndex(bMs, tz) < d && bAnchor !== null && bAnchor <= d && !retractedBy(b, d) && coveredOn(b, d)
     })
   }
   let best: { day: number; reason: ReRaiseReason } | null = null
@@ -912,8 +932,12 @@ function rebuiltMarker(sign: SymptomType, args: CareStateArgs, ix: DayIndex, cfg
     // is the one it tests: the trigger day, or the day a newer answer covering it lapsed or was
     // taken back (adversarial pass on PR-23c, #2: testing the trigger day alone missed a re-raise
     // that surfaced when an eight-week trial ended). Its own retraction or scope end is final.
-    for (let d = rr.onDay; d <= ix.today; d += 1) {
-      if (retractedBy(a, d - 1) || scopeLapsedOn(a, d)) break
+    // Not before its own anchor: under CARE_STATE_CONFIG no arm can confirm before it (the rate
+    // reference ends the day before it, the dense arm's earliest second firing lands on it, a
+    // co-sign must be new against it), so this binds only if PR-16 retunes the knobs. A mutation
+    // removing it survives the tests for that reason, measured.
+    for (let d = Math.max(rr.onDay, anchorDayOf(a) ?? rr.onDay); d <= ix.today; d += 1) {
+      if (retractedBy(a, d - 1) || ownScopeEnded(a, d)) break
       if (supersededOn(a, d)) continue
       if (best === null || d > best.day) best = { day: d, reason: rr.reason }
       break

@@ -825,3 +825,30 @@ Deno.test('CUL-1600: a stand-in day names no date in the copy', () => {
   const f = stateOf({ symptoms: STABLE, acks: [ack({ id: 'a', daysAgo: 40 })], priorFindings: future, priorGeneratedAtMs: NOW_MS - DAY })
   assertEquals([f.state, f.backLine], ['raised_again', 'Still back.'])
 })
+
+Deno.test('CUL-1600 adversarial round 2 F3: a trial written before it starts covers nothing until it starts', () => {
+  const rec = [...events('vomit', everyNth(14, 170, 81)), ...events('vomit', everyNth(3, 80, 0), 8), ...events('vomit', everyNth(3, 80, 0), 18)]
+  const a = ack({ id: 'A', daysAgo: 45, source: 'visit_answer', anchorOn: dayOf(100) })
+  // Written on day −44 for a trial starting on day −30: until then the step tested A.
+  const b = ack({ id: 'B', daysAgo: 44, source: 'vet_started_trial', anchorOn: dayOf(30), trial: { startedOn: dayOf(30), endedOn: null, initialTargetDays: 56 } })
+  const s = stateOf({ symptoms: rec, acks: [a, b] })
+  assertEquals([s.state, s.raisedAgainOn], ['raised_again', '2026-08-23'], 'A\'s re-raise, with no prior row')
+  // The issue's shape: a skipped night with no stamp, D4 lapses both, then a visit before the re-raise.
+  const skipped = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety' } }]
+  const v = ack({ id: 'v', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(40), createdAt: at(0, 13) })
+  assertStrictEquals(stateOf({ symptoms: rec, acks: [a, b, v], priorFindings: skipped, priorGeneratedAtMs: NOW_MS - DAY }).state, 'raised_again')
+})
+
+Deno.test('CUL-1600 adversarial round 2 F1: a course stopped with no end date keeps its own re-raise, and covers only to its last dose', () => {
+  const course = (id: string, daysAgo: number, status: string, lastDoseDaysAgo: number) =>
+    ack({ id, daysAgo, source: 'vet_started_course', anchorOn: dayOf(daysAgo), course: { drugLabel: 'Cerenia', startedOn: dayOf(daysAgo), endedOn: null, status, hasTarget: true, lastDoseAt: at(lastDoseDaysAgo) } })
+  const visit = (anchorDaysAgo: number) => ack({ id: 'v', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(anchorDaysAgo), createdAt: at(0, 13) })
+  // Its own re-raise (the doubling, while it ran) survives the stop: a visit before it does not answer it.
+  for (const status of ['stopped', 'completed']) {
+    const s = stateOf({ symptoms: DOUBLING, acks: [course('a', 60, status, 8), visit(25)] })
+    assertStrictEquals(s.state, 'raised_again', `${status} with no end date`)
+  }
+  // As the newer answer it covers the older one only to its last dose (day −6), then the older one's re-raise surfaces.
+  const s = stateOf({ symptoms: DOUBLING, acks: [ack({ id: 'a', daysAgo: 60 }), course('b', 30, 'stopped', 6), ack({ id: 'c', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(12), createdAt: at(0, 13) })] })
+  assertEquals([s.state, s.raisedAgainOn], ['raised_again', '2026-09-25'], 'the day after its last dose')
+})
