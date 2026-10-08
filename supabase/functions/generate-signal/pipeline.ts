@@ -816,7 +816,7 @@ export function runSignalPipeline(
   // the lane's own ask), so one skipped night cannot drop the latch. The step also rebuilds the
   // marker from the record; this covers what the record cannot replay (the cough/vomit pair, a
   // failed care-history read). Flag off writes nothing new.
-  const priorLatches = en9On && !careStepRuns ? readPriorMarkers(priorSignal?.findings ?? null, priorMs(priorSignal), timezone) : null
+  const priorLatches = en9On && !careStepRuns ? readPriorMarkers(priorSignal?.findings ?? null, priorMs(priorSignal) ?? nowMs, timezone) : null
   const withLatch = (f: Finding): Finding => {
     const sign = priorLatches ? concernSignOf(f) : null
     const m = sign === null ? undefined : priorLatches?.get(sign)

@@ -698,8 +698,8 @@ Deno.test('CUL-1600 r0→r3: the marker is rebuilt from the record, so an answer
   const r2 = stateOf({ symptoms: DOUBLING, acks: [a], priorFindings: [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety' } }], priorGeneratedAtMs: NOW_MS - DAY })
   assertStrictEquals(r2.state, 'raised')
   assert(typeof r2.raisedAgainOn === 'string', 'r2 carries the rebuilt marker')
+  assertStrictEquals(r2.raisedAgainOn, '2026-09-10', 'the persistence day of the doubling, from the record')
   const reRaisedDaysAgo = daysAgoOf(r2.raisedAgainOn!)
-  assert(reRaisedDaysAgo > 0 && reRaisedDaysAgo <= 29, `the record re-raised inside the daily stretch (${reRaisedDaysAgo} days ago)`)
   // r3: the owner writes a visit anchored before the re-raise. Still back, named by its day.
   const oldVisit = ack({ id: 'v', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(reRaisedDaysAgo + 1), createdAt: at(0, 13) })
   const r3 = stateOf({ symptoms: DOUBLING, acks: [a, oldVisit], priorFindings: r2Row, priorGeneratedAtMs: NOW_MS - DAY })
@@ -775,4 +775,53 @@ Deno.test('CUL-1600: a skipped run\'s bare latch is read as a held marker, with 
   const s = stateOf({ symptoms: STABLE, acks: [ack({ id: 'a', daysAgo: 40 }), oldVisit], priorFindings: stamped, priorGeneratedAtMs: NOW_MS - DAY })
   // The old answer lapses (continuity unknown, D4), the older visit does not answer the latch.
   assertEquals([s.state, s.ackId, s.raisedAgainAt], ['raised_again', 'v', marker])
+})
+
+Deno.test('CUL-1600 adversarial #2: a re-raise that surfaces when a newer answer ends is rebuilt, prior row or none', () => {
+  // Once every 14 days, then twice a day every third day from day −80 (under the dense floor).
+  const rec = [...events('vomit', everyNth(14, 170, 81)), ...events('vomit', everyNth(3, 80, 0), 8), ...events('vomit', everyNth(3, 80, 0), 18)]
+  const a = ack({ id: 'A', daysAgo: 45, source: 'visit_answer', anchorOn: dayOf(100) })
+  // An eight-week trial from day −44 with a 34-day target covers A's first trigger, then ends.
+  const b = ack({ id: 'B', daysAgo: 44, source: 'vet_started_trial', anchorOn: dayOf(44), trial: { startedOn: dayOf(44), endedOn: null, initialTargetDays: 34 } })
+  const c = ack({ id: 'C', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(12), createdAt: at(0, 13) })
+  assertStrictEquals(stateOf({ symptoms: rec, acks: [a, b], nowMs: NOW_MS - 12 * DAY }).state, 'with_vet', 'during the trial')
+  const s = stateOf({ symptoms: rec, acks: [a, b, c] })
+  assertEquals([s.state, s.raisedAgainOn], ['raised_again', dayOf(10)], 'back from the day the trial ended, though no prior row says so')
+  // A visit from after the trial ended answers it.
+  const d = ack({ id: 'D', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(5), createdAt: at(0, 13) })
+  assertStrictEquals(stateOf({ symptoms: rec, acks: [a, b, d] }).state, 'with_vet')
+})
+
+Deno.test('CUL-1600 adversarial #3: markers combine field by field, so a prior row\'s earlier day never wins', () => {
+  const a = ack({ id: 'a', daysAgo: 60 })
+  const base = stateOf({ symptoms: DOUBLING, acks: [a], priorFindings: [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety' } }], priorGeneratedAtMs: NOW_MS - DAY })
+  const d = daysAgoOf(base.raisedAgainOn!)
+  // A later instant beside a day forty days earlier: the owner-writable row trying to quiet it.
+  const forged = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'with_vet', ackId: 'a', lapsed: [], raisedAgainAt: new Date(Date.parse(base.raisedAgainAt!) + 3_600_000).toISOString(), raisedAgainOn: dayOf(d + 40) } } }]
+  const v = ack({ id: 'v', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(d + 10), createdAt: at(0, 13) })
+  const s = stateOf({ symptoms: DOUBLING, acks: [a, v], priorFindings: forged, priorGeneratedAtMs: NOW_MS - DAY })
+  assertEquals([s.state, s.raisedAgainOn], ['raised_again', base.raisedAgainOn])
+})
+
+Deno.test('CUL-1600: the rebuilt marker is the local day in the owner\'s zone, and names its reason', () => {
+  const a = ack({ id: 'a', daysAgo: 60 })
+  const gone = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety' } }]
+  const utc = stateOf({ symptoms: DOUBLING, acks: [a], priorFindings: gone, priorGeneratedAtMs: NOW_MS - DAY })
+  assertEquals([utc.raisedAgainOn, utc.raisedAgainAt], ['2026-09-10', '2026-09-10T00:00:00.000Z'])
+  const nz = careStateOf(EN9_CARE_STATE_STEP([{ rank: 0, finding: chronicity() }], { ...args({ symptoms: DOUBLING, acks: [a], priorFindings: gone, priorGeneratedAtMs: NOW_MS - DAY }), timezone: 'Pacific/Auckland' })[0].finding)!
+  assertEquals([nz.raisedAgainOn, nz.raisedAgainAt], ['2026-09-11', '2026-09-10T12:00:00.000Z'], 'local midnight in Auckland')
+  // The held latch keeps the reason the record found, not a default.
+  const oldVisit = ack({ id: 'v', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(25), createdAt: at(0, 13) })
+  const held = stateOf({ symptoms: DOUBLING, acks: [a, oldVisit], priorFindings: r2Row, priorGeneratedAtMs: NOW_MS - DAY })
+  assertEquals([held.state, held.reason], ['raised_again', 'dense'])
+})
+
+Deno.test('CUL-1600: a stand-in day names no date in the copy', () => {
+  // A pre-marker raised_again row: its generation time is an upper bound, never "since" a day.
+  const s = stateOf({ symptoms: STABLE, acks: [ack({ id: 'a', daysAgo: 40 })], priorFindings: reRaisedRow('raised_again', undefined), priorGeneratedAtMs: NOW_MS - 3 * DAY })
+  assertEquals([s.state, s.backLine], ['raised_again', 'Still back.'])
+  // A day after today is a row nobody honest wrote: louder, never dated.
+  const future = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'raised_again', ackId: 'a', raisedAgainAt: at(-5, 12), raisedAgainOn: dayOf(-5) } } }]
+  const f = stateOf({ symptoms: STABLE, acks: [ack({ id: 'a', daysAgo: 40 })], priorFindings: future, priorGeneratedAtMs: NOW_MS - DAY })
+  assertEquals([f.state, f.backLine], ['raised_again', 'Still back.'])
 })

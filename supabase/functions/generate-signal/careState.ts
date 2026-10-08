@@ -444,6 +444,13 @@ export function lapseReason(ack: AckFact, args: CareStateArgs, retracted: Readon
   // than CARE_HISTORY_MAX_DAYS, or when that read failed: the concern then asks again (louder).
   const readFrom = Date.parse(args.readSinceIso)
   if (Number.isFinite(readFrom) && anchor - cfg.referenceDays < localDayIndex(readFrom, tz) + 1) return 'reference_out_of_read'
+  return scopeLapseReason(ack, today, created, cfg, tz)
+}
+
+/** Why a trial or course answer stopped on its own clock as of local day `today`, or null.
+ *  Its own function so the record rebuild can ask it alone (CUL-1600): asked through
+ *  `lapseReason`, an earlier reason (a reference out of the read) hides it. */
+function scopeLapseReason(ack: AckFact, today: number, created: number, cfg: CareStateConfig, tz: string | undefined): string | null {
   if (ack.source === 'vet_started_trial') {
     const t = ack.trial
     if (!t) return 'scope_missing'
@@ -736,13 +743,24 @@ export function findReRaise(x: ReRaiseArgs): ReRaise | null {
 export interface ReRaiseMarker {
   ms: number
   day: number
+  /** False when the day is a stand-in (a pre-marker row's generation time): the copy names no date. */
+  dated: boolean
+  /** What brought it back, when the marker knows (a rebuilt or stored one). */
+  reason: ReRaiseReason | null
 }
 
-/** The later marker is the louder one: fewer answers postdate it. */
+/**
+ * The louder of two markers, FIELD BY FIELD: the later instant and the later day, separately
+ * (adversarial pass on PR-23c, #3). Picking one whole marker by its instant let a prior row with a
+ * slightly later instant carry an EARLIER day in with it, and the day is the half `answersReRaise`
+ * reads for "about a day on or after it": an owner-writable field that quieted. Fewer answers
+ * postdate a later instant, and fewer are about a later day.
+ */
 function laterMarker(a: ReRaiseMarker | null, b: ReRaiseMarker | null): ReRaiseMarker | null {
   if (a === null) return b
   if (b === null) return a
-  return b.ms > a.ms || (b.ms === a.ms && b.day > a.day) ? b : a
+  const byDay = b.day > a.day ? b : a
+  return { ms: Math.max(a.ms, b.ms), day: byDay.day, dated: byDay.dated, reason: byDay.reason ?? (byDay === a ? b.reason : a.reason) }
 }
 
 interface PriorCare {
@@ -753,11 +771,15 @@ interface PriorCare {
 }
 
 /** A marker as a row stores it: the instant, and the day key when the row carries one. */
-function markerOf(at: unknown, on: unknown, tz: string | undefined): ReRaiseMarker | null {
+function markerOf(at: unknown, on: unknown, tz: string | undefined, reason: unknown = null): ReRaiseMarker | null {
   const ms = typeof at === 'string' ? Date.parse(at) : NaN
   if (!Number.isFinite(ms)) return null
   const day = typeof on === 'string' ? localDayIndexOf(on, tz) : null
-  return { ms, day: day ?? localDayIndex(ms, tz) }
+  return { ms, day: day ?? localDayIndex(ms, tz), dated: true, reason: reasonOf(reason) }
+}
+
+function reasonOf(r: unknown): ReRaiseReason | null {
+  return r === 'rate' || r === 'dense' || r === 'co_sign' || r === 'pair' ? r : null
 }
 
 /** The prior row's care state per sign, tolerant of any shape (a malformed entry reads as none). */
@@ -807,8 +829,8 @@ export function readPriorMarkers(raw: unknown, legacyMs: number | null, tz: stri
     const latch = f.raisedAgainLatch as Record<string, unknown> | undefined
     let lane: ReRaiseMarker | null = null
     if (c && typeof c === 'object') {
-      lane = markerOf(c.raisedAgainAt, c.raisedAgainOn, tz)
-      if (lane === null && c.state === 'raised_again' && legacyMs !== null) lane = { ms: legacyMs, day: localDayIndex(legacyMs, tz) }
+      lane = markerOf(c.raisedAgainAt, c.raisedAgainOn, tz, c.reason)
+      if (lane === null && c.state === 'raised_again' && legacyMs !== null) lane = { ms: legacyMs, day: localDayIndex(legacyMs, tz), dated: false, reason: reasonOf(c.reason) }
     }
     if (latch && typeof latch === 'object') lane = laterMarker(lane, markerOf(latch.at, latch.on, tz))
     if (lane === null) continue
@@ -827,6 +849,8 @@ export interface RaisedAgainLatch {
 export function latchOf(m: ReRaiseMarker): RaisedAgainLatch {
   return { at: new Date(m.ms).toISOString(), on: dayKeyFromIndex(m.day) }
 }
+// (A stamped latch carries no `dated` flag: a stand-in day is restamped as a dated one. That is
+// a copy imprecision only, never a quieter state, and only on a pre-marker row skipped once.)
 
 /** The first instant of local day `day` in `tz` (zone offsets are whole quarter hours). */
 function localDayStartMs(day: number, tz: string | undefined): number {
@@ -839,8 +863,6 @@ function localDayStartMs(day: number, tz: string | undefined): number {
 
 // Why an answer was never live in this course at all (it cannot have been re-raised against).
 const NEVER_LIVE = new Set(['malformed', 'future', 'future_anchor', 'anchor_after_answer', 'earlier_course', 'visit_before_onset', 'scope_missing'])
-// Why an answer stopped being live on its own clock (its trial or course).
-const SCOPE_LAPSE = new Set(['trial_ended', 'trial_target_reached', 'course_ended', 'course_last_dose', 'course_cap'])
 
 /**
  * CUL-1600 (PM ruling B, 2026-10-06): the re-raise marker rebuilt from the RECORD, with no
@@ -868,29 +890,36 @@ function rebuiltMarker(sign: SymptomType, args: CareStateArgs, ix: DayIndex, cfg
   const valid = acks
     .filter((a) => a.sign === sign && !a.retracts && !NEVER_LIVE.has(lapseReason(a, args, none, start, cfg) ?? ''))
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || (a.id < b.id ? -1 : 1))
-  // Where an answer stood on local day d: lapsed on its own clock by the close of that day?
-  const scopeLapsedOn = (a: AckFact, d: number) => {
-    const close = localDayStartMs(d + 1, tz) - 1
-    return SCOPE_LAPSE.has(lapseReason(a, { ...args, nowMs: Math.max(close, Date.parse(a.createdAt)) }, none, start, cfg) ?? '')
-  }
+  // Where an answer stood on local day d: past its own trial or course by the close of that day?
+  const scopeLapsedOn = (a: AckFact, d: number) =>
+    scopeLapseReason(a, d, Date.parse(a.createdAt), cfg, tz) !== null
   const retractedBy = (a: AckFact, d: number) =>
     acks.some((r) => r.retracts === a.id && Number.isFinite(Date.parse(r.createdAt)) && localDayIndex(Date.parse(r.createdAt), tz) <= d)
-  let best: number | null = null
+  // Whether a newer answer, written on an earlier local day, was the one the step tested on d.
+  const supersededOn = (a: AckFact, d: number) => {
+    const createdMs = Date.parse(a.createdAt)
+    return valid.some((b) => {
+      const bMs = Date.parse(b.createdAt)
+      return b !== a && bMs > createdMs && localDayIndex(bMs, tz) < d && !retractedBy(b, d) && !scopeLapsedOn(b, d)
+    })
+  }
+  let best: { day: number; reason: ReRaiseReason } | null = null
   for (const a of valid) {
     if (a.id === exceptId) continue
     const rr = findReRaise({ sign, ack: a, reference: referenceFor(sign, a, ix, cfg, tz), ix, args, cfg, pairOnsetIso: null, pairChronicAtAnswer: null, pairCourseStartMs: null })
     if (!rr) continue
-    const d = rr.onDay
-    if (retractedBy(a, d - 1) || scopeLapsedOn(a, d)) continue
-    const createdMs = Date.parse(a.createdAt)
-    const superseded = valid.some((b) => {
-      const bMs = Date.parse(b.createdAt)
-      return b !== a && bMs > createdMs && localDayIndex(bMs, tz) < d && !retractedBy(b, d) && !scopeLapsedOn(b, d)
-    })
-    if (superseded) continue
-    if (best === null || d > best) best = d
+    // Once its test has fired, the step says the concern is back on the FIRST evening this answer
+    // is the one it tests: the trigger day, or the day a newer answer covering it lapsed or was
+    // taken back (adversarial pass on PR-23c, #2: testing the trigger day alone missed a re-raise
+    // that surfaced when an eight-week trial ended). Its own retraction or scope end is final.
+    for (let d = rr.onDay; d <= ix.today; d += 1) {
+      if (retractedBy(a, d - 1) || scopeLapsedOn(a, d)) break
+      if (supersededOn(a, d)) continue
+      if (best === null || d > best.day) best = { day: d, reason: rr.reason }
+      break
+    }
   }
-  return best === null ? null : { ms: localDayStartMs(best, tz), day: best }
+  return best === null ? null : { ms: localDayStartMs(best.day, tz), day: best.day, dated: true, reason: best.reason }
 }
 
 /** The signs the prior row held a concern on (a chronicity or worsening safety card). */
@@ -1065,10 +1094,15 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     const drug = ack.source === 'vet_started_course' ? courseLabelFor(ack) : null
     const source = sourceSentence(ack, args.petName, ix.today, tz, drug)
     if (rr || latched) {
-      const reason: ReRaiseReason = rr?.reason ?? p?.reason ?? 'rate'
+      const reason: ReRaiseReason = rr?.reason ?? (latched ? (carried as ReRaiseMarker).reason : null) ?? p?.reason ?? 'rate'
       // A held latch with no fresh trigger names the day it came back, never "something changed":
       // a qualifying answer lapsing on its own clock changes nothing in the record (CUL-1600 res. 5).
-      const back = rr ? backBecauseLine(rr, sign, args.petName, ix.today) : `Back since ${formatDay((carried as ReRaiseMarker).day, ix.today)}.`
+      // The date is named only when the marker knows it: a pre-marker row's generation time is
+      // an upper bound, and a day after today is a row nobody honest wrote.
+      const held = carried as ReRaiseMarker
+      const back = rr
+        ? backBecauseLine(rr, sign, args.petName, ix.today)
+        : held.dated && held.day <= ix.today ? `Back since ${formatDay(held.day, ix.today)}.` : 'Still back.'
       const pair = rr ? pairLine(rr, reference, ix.today) : null
       const fact: CareStateFact = {
         state: 'raised_again', ackId: ack.id, source: ack.source, anchorOn: ack.anchorOn, reference, reason, recheckOn: null,
