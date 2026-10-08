@@ -12,10 +12,11 @@ import { theme } from '../constants/theme';
 import { ThemedText } from '../components/ui/ThemedText';
 import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
-import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, hasPerIncidentRead } from '../constants/eventTypes';
 import { getDb, updateEvent, updateMealFood, getMealForEvent, getDoseForEvent, getEventAttachment, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
 import { writeOwingFloorCheck } from '../lib/incidentFloorQueue';
 import { triggerSignalRegenDebounced } from '../lib/signal';
+import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain, awaitAnalysisChain } from '../lib/analysis';
 import { detachOtherEventAttachments } from '../lib/attachments';
 import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations, syncPendingLooks } from '../lib/sync';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
@@ -629,6 +630,18 @@ export default function EditEventModal() {
           // Compress + EXIF/GPS-strip before upload — parity with log.tsx / event/[id].tsx.
           // The local_uri persisted above keeps the original for the durable hero; only the
           // uploaded object is re-encoded, so a camera-roll photo's GPS metadata never reaches storage.
+          //
+          // CUL-1680 — a vomit / stool whose photo changed gets a fresh read, as the detail
+          // screen's photo-add does (`app/event/[id].tsx`). Without it the stored read keeps
+          // describing the photo it saw, and a "can wait until morning" stands over a photo
+          // nobody looked at, on this event and on the incidents beside it (the new read is
+          // what lets the server's may_wait revalidation take those back). The claim is taken
+          // before `router.back()`, so the detail screen's section awaits this read on mount
+          // instead of firing a second one (CUL-801).
+          const isReadable = hasPerIncidentRead(eventType);
+          const readClaim = isReadable ? claimAnalysisChain(id) : null;
+          let readInvoked = false;
+          let landed = false;
           compressForUpload(newAttachmentUri, newAttachmentDims?.width, newAttachmentDims?.height)
             .then((uploadUri) => uploadPhoto('nyx-event-attachments', storagePath, uploadUri))
             .then(async () => {
@@ -642,8 +655,28 @@ export default function EditEventModal() {
               // already guarded in log.tsx / event/[id].tsx).
               if (error) { console.warn('[edit-event] attachment upsert failed:', error.message); return; }
               await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
+              landed = true;
+              if (isReadable) {
+                // A null claim means another chain owns this event's read. Wait for it, then
+                // read anyway: this call exists because the PHOTO changed, and a read of the
+                // previous photo does not answer the new one (the detail screen's reasoning).
+                if (readClaim === null) await awaitAnalysisChain(id);
+                const { error: readErr } = eventType === 'vomit'
+                  ? await triggerVomitAnalysis(id)
+                  : await triggerStoolAnalysis(id);
+                if (readErr) console.warn('[edit-event] per-incident read trigger failed:', readErr);
+                readInvoked = !readErr;
+              }
             })
-            .catch(console.error);
+            .catch(console.error)
+            // Settles on every exit, so a section waiting on the chain triggers its own read
+            // when this one died before reading, instead of watching for a row nothing writes.
+            .finally(() => {
+              readClaim?.settle(readInvoked);
+              // The Signal counts the new photo once its read has had its turn (CUL-1219), and
+              // only once the photo reached the server: a rebuild spends a daily cap unit.
+              if (isReadable && landed && readInvoked) triggerSignalRegenDebounced(petResult.pet_id);
+            });
           // Detach the rows this photo replaced — after the replacement is
           // stored and its upload is in flight, so a failed insert can never
           // leave the event photoless and the owner's save doesn't wait on a
@@ -682,7 +715,9 @@ export default function EditEventModal() {
       const engineInputMoved =
         (Number.isFinite(openedMs) && new Date(occurredAtIso).getTime() !== openedMs) ||
         confidence != null ||
-        newAttachmentUri != null ||
+        // A new photo on a vomit / stool refreshes the Signal from its read chain above, once
+        // the read has had its turn (CUL-1680); on any other event the photo counts here.
+        (newAttachmentUri != null && !hasPerIncidentRead(eventType)) ||
         // A food cleared to none writes nothing (`updateMealFood` is skipped above), so only
         // a food set to another one counts.
         (config.hasFood && currentFoodId != null && currentFoodId !== loadedFoodRef.current);
