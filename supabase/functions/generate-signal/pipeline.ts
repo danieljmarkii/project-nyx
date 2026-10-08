@@ -112,6 +112,8 @@ import {
   careStateText,
   concernSignOf,
   isWatched,
+  latchOf,
+  readPriorMarkers,
   type CareRecord,
   type CareStateStep,
 } from './careState.ts'
@@ -787,8 +789,10 @@ export function runSignalPipeline(
   //     whole record, so the concern keeps asking (a kill switch makes Home louder, never
   //     quieter). Not without the logging facts either, for the same reason.
   const careFacts = args.careContextFacts
-  const decorated =
-    !readIncomplete && careFacts !== null && isEngineKeyOn(engineFlags, 'engines_v3_en9')
+  const en9On = isEngineKeyOn(engineFlags, 'engines_v3_en9')
+  const careStepRuns = !readIncomplete && careFacts !== null && en9On
+  const stepped =
+    careStepRuns
       ? careStateStep(withContext, {
         record: args.careRecord,
         symptoms: symptomEvents,
@@ -806,11 +810,24 @@ export function runSignalPipeline(
         wasChronicAt: chronicAsOf(input, config),
       })
       : withContext
+  // CUL-1600: a run that skips the step under the key still writes the row the next run reads.
+  // Every concern card it writes, reproduced or carried, keeps the prior row's re-raise marker as
+  // a bare `raisedAgainLatch` (no state, so nothing on the card is quieter and the client reads
+  // the lane's own ask), so one skipped night cannot drop the latch. The step also rebuilds the
+  // marker from the record; this covers what the record cannot replay (the cough/vomit pair, a
+  // failed care-history read). Flag off writes nothing new.
+  const priorLatches = en9On && !careStepRuns ? readPriorMarkers(priorSignal?.findings ?? null, priorMs(priorSignal) ?? nowMs, timezone) : null
+  const withLatch = (f: Finding): Finding => {
+    const sign = priorLatches ? concernSignOf(f) : null
+    const m = sign === null ? undefined : priorLatches?.get(sign)
+    return m ? ({ ...f, raisedAgainLatch: latchOf(m) } as unknown as Finding) : f
+  }
+  const decorated = priorLatches && priorLatches.size > 0 ? stepped.map((r) => ({ ...r, finding: withLatch(r.finding) })) : stepped
   // CUL-989: and no safety card the previous Signal showed disappears on an incomplete read.
   // Its absence here may be the rows the read did not reach, which is the resolution the ruling
   // withholds, so the prior card is carried forward as it was shown.
   const carried: CachedFinding[] = readIncomplete
-    ? carryPriorSafety(priorSafety, decorated.map((r) => r.finding), petName)
+    ? carryPriorSafety(priorSafety, decorated.map((r) => r.finding), petName).map((c) => ({ ...c, finding: withLatch(c.finding) }))
     : []
 
   // 4a. AI summary (B-023 PR 4). Assemble a DETERMINISTIC fact packet from the curated

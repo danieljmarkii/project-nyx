@@ -425,6 +425,46 @@ Deno.test('(c-en9) D1: a card carried over an incomplete read never carries a ca
   assertStrictEquals(carried >= 3, true, `only ${carried} carried cards: the test checks too little`)
 })
 
+Deno.test('(c-en9) CUL-1600: a run that skips the step keeps the prior marker on every concern card it writes, and nothing else', () => {
+  // A prior row whose concerns all carry a re-raise marker. Over an incomplete read (the step
+  // skipped), every concern card written, reproduced or carried, keeps it as a bare latch with no
+  // care state; flag off, or with the step running, no card gains the field.
+  const at = '2026-09-01T21:00:00.000Z'
+  let stamped = 0
+  let reproduced = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const fresh = run(c)
+    if (!fresh.findings.some((r) => concernSignOf(r.finding) !== null)) continue
+    const planted: PriorSignal = {
+      findings: fresh.findings.map((r) => ({ rank: r.rank, text: 'x', finding: { ...r.finding, careState: { state: 'with_vet', ackId: 'z', raisedAgainAt: at, raisedAgainOn: '2026-09-02' } } })),
+      generatedAt: new Date(Date.parse(c.nowIso) - 3_600_000).toISOString(),
+      engineFlags: [],
+    }
+    const go = (rows: typeof c.rows, flags: EngineFlags['on'], incomplete: string[]) =>
+      runSignalPipeline({ rows, incompletePulls: incomplete, prior: planted, nowMs: Date.parse(c.nowIso), engineFlags: { on: flags, readOk: true }, careRecord: EMPTY_CARE_RECORD, careContextFacts: POPULATED_CARE_CONTEXT_FACTS, weightFacts: null })
+    for (const rows of [c.rows, { ...c.rows, symptoms: [] }]) {
+      const r = go(rows, [EN9], ['meals'])
+      for (const f of [...r.findings.map((x) => x.finding), ...r.carried.map((x) => x.finding)]) {
+        const latch = (f as { raisedAgainLatch?: unknown }).raisedAgainLatch
+        if (concernSignOf(f) === null) {
+          assertStrictEquals(latch, undefined, `${c.name}: a ${f.type} gained a latch`)
+          continue
+        }
+        stamped++
+        if (rows === c.rows) reproduced++
+        assertEquals(latch, { at, on: '2026-09-02' }, `${c.name}: ${f.type} lost the marker`)
+        assertStrictEquals(careStateOf(f), null, `${c.name}: the latch brought a state with it`)
+      }
+      for (const off of [go(rows, [], ['meals']), go(rows, [EN9], [])]) {
+        for (const f of [...off.findings.map((x) => x.finding), ...off.carried.map((x) => x.finding)]) {
+          assertStrictEquals('raisedAgainLatch' in (f as object), false, `${c.name}: ${f.type} stamped with the flag off or the step running`)
+        }
+      }
+    }
+  }
+  assertStrictEquals(stamped >= 4 && reproduced >= 2, true, `only ${stamped} stamped (${reproduced} reproduced): the test checks too little`)
+})
+
 // ── (c-en8) EN-8, the weight lane (PR-19, CUL-1413) ──
 // Weigh-ins that raise the firm row on ANY case: an absence proves the gate only when the thing
 // gated was available to leak (C-41). Dated relative to each case's clock.

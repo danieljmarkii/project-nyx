@@ -1173,6 +1173,14 @@ Deno.test('engineFindings — EN-9: a watched concern follows a raised one and r
   assert.equal((r.findings[1].payload as { text: string }).text, 'with your vet …', 'the engine\'s sentence is relayed whole')
   // A finding with no care state is passed through untouched.
   assert.deepEqual(engineFindings([{ type: 'intake_decline', priorityClass: 'safety', payload: { b: 2 } }]).findings[0].payload, { b: 2 })
+  // CUL-1600: a skipped run's bare latch never reaches the model, with or without a state beside it.
+  const latch = { at: '2026-09-25T21:00:00.000Z', on: '2026-09-25' }
+  const stamped = engineFindings([
+    { type: 'symptom_chronicity', priorityClass: 'safety', payload: { text: 'worth a word …', raisedAgainLatch: latch } },
+    { type: 'symptom_worsening', priorityClass: 'safety', payload: { text: 'worth a word …', careState: { state: 'raised', raisedAgainAt: latch.at }, raisedAgainLatch: latch } },
+  ])
+  for (const f of stamped.findings) assert.equal('raisedAgainLatch' in (f.payload as object), false, `${f.type} relayed the latch`)
+  assert.deepEqual((stamped.findings.find((f) => f.type === 'symptom_worsening')!.payload as { careState: unknown }).careState, { state: 'raised' })
 })
 
 Deno.test('engineFindings — a stood-down marker (CUL-786) is never relayed and never counts as a finding', () => {
