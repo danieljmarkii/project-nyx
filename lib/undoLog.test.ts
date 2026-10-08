@@ -24,6 +24,7 @@ import { triggerSignalRegenDebounced } from './signal';
 import { syncPendingEvents } from './sync';
 import { reconcileWeightSnapshotAfterDelete } from './weight';
 import { reverseLoggedEvent } from './undoLog';
+import { useRecordChangeStore } from '../store/recordChangeStore';
 
 describe('reverseLoggedEvent', () => {
   beforeEach(() => {
@@ -68,7 +69,10 @@ describe('reverseLoggedEvent', () => {
     // HV-10 (CUL-1167) added `noteRemoval`: an event id and a time held in memory for a
     // few seconds so the list the owner returns to can fold the row away. It writes no
     // record, and the next test's closure walk holds it to that.
+    // CUL-1665 added the record's change counter: a data-free number in memory that
+    // tells subscribed surfaces to re-read. It writes no record either.
     expect(imports.join('\n')).toBe(
+      "import { useRecordChangeStore } from '../store/recordChangeStore';\n" +
       "import { getEventPetId, softDeleteEvent } from './db';\n" +
       "import { noteRemoval } from './removalNotice';\n" +
       "import { triggerSignalRegenDebounced } from './signal';\n" +
@@ -96,6 +100,27 @@ describe('reverseLoggedEvent', () => {
     expect(body()).not.toMatch(/insert|update[A-Z]|\bDELETE\b/);
     expect(body()).toMatch(/reconcileWeightSnapshotAfterDelete/);
     expect(body()).toMatch(/triggerSignalRegenDebounced/);
+  });
+
+  // ── CUL-1665: the record's change counter ──────────────────────────────────
+  describe('the record change signal (CUL-1665)', () => {
+    beforeEach(() => useRecordChangeStore.setState({ version: 0 }));
+
+    it('raises the counter once the soft delete has landed, for every event', async () => {
+      let versionAtDelete = -1;
+      (softDeleteEvent as jest.Mock).mockImplementation(async () => {
+        versionAtDelete = useRecordChangeStore.getState().version;
+      });
+      await reverseLoggedEvent('ev-past-meal');
+      expect(versionAtDelete).toBe(0);
+      expect(useRecordChangeStore.getState().version).toBe(1);
+    });
+
+    it('never raises it for a reversal whose local write failed', async () => {
+      (softDeleteEvent as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+      await expect(reverseLoggedEvent('ev-x')).rejects.toThrow('disk full');
+      expect(useRecordChangeStore.getState().version).toBe(0);
+    });
   });
 
   it('propagates a failed local write so the caller can keep the card honest', async () => {

@@ -20,6 +20,7 @@ import { useTodayKey } from '../../hooks/useTodayKey';
 import { openMenu as openMenuHaptic } from '../../lib/haptics';
 import { useEventStore } from '../../store/eventStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
+import { useRecordChangeStore } from '../../store/recordChangeStore';
 import { useSyncStore } from '../../store/syncStore';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore, isCornerCardUp } from '../../store/momentStore';
@@ -566,8 +567,9 @@ export function FAB() {
   // the record's corrections (PM go, 2026-10-08): a food archived since midnight leaves
   // the fan before its next open, because the library's change counter is a trigger, so
   // the pre-trial food an owner takes out of rotation is never one tap from a log; a sync
-  // cycle is one too. A past meal deleted on this device is seen at the next close or
-  // sync (the shared reversal raises no signal yet).
+  // cycle is one too, and so is a removal: the shared reversal raises the record's
+  // change counter (CUL-1665), so a past-day meal deleted from its record leaves the
+  // fan before the next open, as an archived food does.
   //
   // The day turns over while the menu is CLOSED, so the new order is never a read that
   // lands under the thumb: `useTodayKey` changes at local midnight and on the return to
@@ -577,6 +579,7 @@ export function FAB() {
   const todayKey = useTodayKey();
   const libraryVersion = useFoodLibraryStore((st) => st.version);
   const hydrationTick = useSyncStore((st) => st.hydrationTick);
+  const recordVersion = useRecordChangeStore((st) => st.version);
   const latestPetId = useRef(activePetId);
   latestPetId.current = activePetId;
   const openNow = useRef(open);
@@ -610,7 +613,7 @@ export function FAB() {
       .finally(() => {
         if (seq === readSeq.current && readingFor.current === activePetId) readingFor.current = null;
       });
-  }, [open, activePetId, todayHeadId, todayKey, libraryVersion, hydrationTick]);
+  }, [open, activePetId, todayHeadId, todayKey, libraryVersion, hydrationTick, recordVersion]);
 
   // Derived in the render body rather than mirrored into state (the C-9 shape): the
   // list is only ever this pet's, or nothing. A pet flip inside the open menu shows
