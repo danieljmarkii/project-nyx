@@ -44,10 +44,16 @@
 -- the smaller grant (any client could already make its own read louder by
 -- dismissing or deleting it).
 --
--- WHAT COUNTS AS AN EDIT: a client UPDATE that moves `edited_at` or a column the
--- server's predicate reads for blood, foreign material or colour
--- (incidentMayWait.ts `columnBlockers`). The app's edit always stamps
--- `edited_at`, so every app edit counts, whichever field it changed. A dismiss
+-- WHAT COUNTS AS AN EDIT: a client UPDATE that moves `edited_at` or any column
+-- the server's predicate reads that is not frozen: the blood, foreign-material
+-- and colour columns (incidentMayWait.ts `columnBlockers`), and the verdict
+-- columns a neighbour is judged on (`neighbourRefuses` / `photoReadSettled`:
+-- `recommendation`, `contextual_flags`, `status`, `error`). No app path writes
+-- the four verdict columns, but 013 lets a client, and a hand-PATCH that strips
+-- a neighbour's `concurrent_lethargy` must not leave the TRUE it would have
+-- refused (CUL-1668 adversarial pass). The guard pins the rule itself: every
+-- column the predicate reads is frozen or in this set. The app's edit always
+-- stamps `edited_at`, so every app edit counts, whichever field it changed. A dismiss
 -- (`dismissed_at`) is not an edit and keeps the TRUE. Server writes
 -- (service_role) are not touched: the server writes `may_wait` beside every
 -- `tier` and re-checks neighbours itself (revalidateMayWait).
@@ -63,9 +69,13 @@
 -- pet is lowered: fail closed.
 --
 -- CUL-882: an event moved between two of one owner's pets leaves its analysis
--- row on the old pet (074 freezes `pet_id`). "Same pet" here is the analysis
--- row's `pet_id` OR the edited event's current `pet_id`, so an edit reaches the
--- reads on both timelines. The server-side half (revalidateMayWait reads a
+-- row on the old pet (074 freezes `pet_id`). "Same pet" here is either side of
+-- either row: the neighbour's analysis `pet_id` or its event's current
+-- `pet_id`, against the edited row's `pet_id` or its event's current `pet_id`.
+-- So an edit reaches the reads on both timelines whichever of the two rows was
+-- moved (the adversarial pass broke the first draft, which matched only the
+-- neighbour's analysis `pet_id`). An owner edit is the only path that lowers a
+-- moved row's TRUE: the server's re-check reads analysis by the event's pet. The server-side half (revalidateMayWait reads a
 -- neighbour's analysis by the event's pet, so it never sees such a row) is not
 -- changed here.
 --
@@ -187,7 +197,11 @@ BEGIN
        OR NEW.blood_present            IS DISTINCT FROM OLD.blood_present
        OR NEW.stool_blood_present      IS DISTINCT FROM OLD.stool_blood_present
        OR NEW.stool_blood_type         IS DISTINCT FROM OLD.stool_blood_type
-       OR NEW.foreign_material_present IS DISTINCT FROM OLD.foreign_material_present) THEN
+       OR NEW.foreign_material_present IS DISTINCT FROM OLD.foreign_material_present
+       OR NEW.recommendation           IS DISTINCT FROM OLD.recommendation
+       OR NEW.contextual_flags         IS DISTINCT FROM OLD.contextual_flags
+       OR NEW.status                   IS DISTINCT FROM OLD.status
+       OR NEW.error                    IS DISTINCT FROM OLD.error) THEN
     RETURN NEW;
   END IF;
 
@@ -207,7 +221,12 @@ BEGIN
      SET may_wait = NULL
    WHERE a.may_wait IS TRUE
      AND a.event_id <> NEW.event_id
-     AND (a.pet_id = NEW.pet_id OR a.pet_id = v_event_pet)
+     AND (a.pet_id IN (NEW.pet_id, v_event_pet)
+          OR EXISTS (
+            SELECT 1
+              FROM public.events p
+             WHERE p.id = a.event_id
+               AND p.pet_id IN (NEW.pet_id, v_event_pet)))
      AND (v_anchor IS NULL
           OR EXISTS (
             SELECT 1
@@ -233,4 +252,4 @@ CREATE TRIGGER trg_event_ai_analysis_may_wait_edit_neighbours
   FOR EACH ROW EXECUTE FUNCTION public.take_back_may_wait_on_owner_edit();
 
 COMMENT ON FUNCTION public.take_back_may_wait_on_owner_edit() IS
-  'CUL-1668 (088): a client UPDATE that moves edited_at or a blood / foreign-material / colour column lowers may_wait TRUE -> NULL on the row (BEFORE) and on every TRUE of the same pet within 72 h either side of its event (AFTER; FLOOR_READ_HOURS, mirrored). INVOKER, so RLS bounds the sweep to the owner''s rows; service_role writes are untouched. Raises nothing.';
+  'CUL-1668 (088): a client UPDATE that moves edited_at or any unfrozen column the may_wait predicate reads (blood / foreign material / colour; recommendation, contextual_flags, status, error) lowers may_wait TRUE -> NULL on the row (BEFORE) and on every TRUE of the same pet (either row''s analysis or event pet) within 72 h either side of its event (AFTER; FLOOR_READ_HOURS, mirrored). INVOKER, so RLS bounds the sweep to the owner''s rows; service_role writes are untouched. Raises nothing.';

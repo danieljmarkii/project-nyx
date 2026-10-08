@@ -171,15 +171,21 @@ describe('event_ai_analysis: the server-owned columns stay frozen for clients', 
 
 const squash = (s: string) => s.replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/\s+\)/g, ')').trim();
 
-// The columns the server's may_wait predicate reads for blood, foreign material
-// and colour, read off `columnBlockers` itself so a column the predicate starts
-// reading reds here until the edit set covers it.
+// The columns the server's may_wait predicate reads off a stored row: the
+// blood / foreign-material / colour columns (`columnBlockers`), what a settled
+// photo read needs (`photoReadSettled`), and what a neighbour is judged on
+// (`neighbourRefuses`). Read off the source so a column the predicate starts
+// reading reds here until it is frozen or in the edit set.
 function predicateColumns(): string[] {
   const src = readFileSync(PREDICATE_SRC, 'utf8');
-  const start = src.indexOf('export function columnBlockers(');
-  const end = src.indexOf('\n}\n', start);
-  expect(start).toBeGreaterThan(-1);
-  return [...new Set([...src.slice(start, end).matchAll(/\brow\.(\w+)/g)].map((m) => m[1]))].sort();
+  const slice = (fn: string, varName: string): string[] => {
+    const start = src.indexOf(`export function ${fn}(`);
+    expect(start).toBeGreaterThan(-1);
+    const end = src.indexOf('\n}\n', start);
+    return [...src.slice(start, end).matchAll(new RegExp(`\\b${varName}\\.(\\w+)`, 'g'))].map((m) => m[1]);
+  };
+  const cols = [...slice('columnBlockers', 'row'), ...slice('photoReadSettled', 'row'), ...slice('neighbourRefuses', 'a')];
+  return [...new Set(cols)].sort();
 }
 
 // The edit set the take-back reacts to, read off the body's `IF NOT (...) THEN RETURN NEW` gate.
@@ -224,12 +230,16 @@ describe('event_ai_analysis: an owner edit takes back may_wait on the row and it
     expect(body).toMatch(/IF\s+current_user\s+NOT\s+IN\s*\(\s*'anon'\s*,\s*'authenticated'\s*\)\s+THEN\s+RETURN\s+NEW\s*;/i);
   });
 
-  it('reacts to edited_at and every column the server predicate reads against waiting', () => {
+  it('reacts to edited_at, and every column the server predicate reads is frozen or in the edit set', () => {
     const cols = editColumns(body);
     expect(cols).toContain('edited_at');
     const reads = predicateColumns();
-    expect(reads.length).toBeGreaterThanOrEqual(5);
-    for (const c of reads) expect(cols).toContain(c);
+    // Non-vacuity: the three slices found the columns they are known to read.
+    for (const known of ['colour', 'blood_present', 'status', 'contextual_flags', 'ai_raw_payload']) expect(reads).toContain(known);
+    const frozen: readonly string[] = SERVER_OWNED;
+    for (const c of reads) {
+      expect({ column: c, covered: frozen.includes(c) || cols.includes(c) }).toEqual({ column: c, covered: true });
+    }
   });
 
   it('never reacts to a dismissal or to may_wait itself (no recursion through the sweep)', () => {
@@ -248,7 +258,8 @@ describe('event_ai_analysis: an owner edit takes back may_wait on the row and it
     expect(squash(sweep?.[1] ?? '')).toBe('may_wait = NULL');
     const where = squash(sweep?.[2] ?? '');
     expect(where).toMatch(/^a\.may_wait IS TRUE AND /i);
-    expect(where).toMatch(/AND \(a\.pet_id = NEW\.pet_id OR a\.pet_id = v_event_pet\) AND /i);
+    // Either row's pet, analysis side or event side (CUL-882 both directions).
+    expect(where).toMatch(/AND \(a\.pet_id IN \(NEW\.pet_id, v_event_pet\) OR EXISTS \(SELECT 1 FROM public\.events p WHERE p\.id = a\.event_id AND p\.pet_id IN \(NEW\.pet_id, v_event_pet\)\)\) AND /i);
   });
 
   it('the neighbourhood is the server floor\'s reach, either side (mirrored from FLOOR_READ_HOURS)', () => {
