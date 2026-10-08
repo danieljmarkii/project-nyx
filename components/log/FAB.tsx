@@ -306,6 +306,10 @@ export function FAB() {
   const chosenExit = useRef(new Animated.Value(1)).current;
   const foodGlyphs = useRef(new Map<string, View>()).current;
   const flightFrom = useRef<{ foodId: string; rect: WindowRect | null } | null>(null);
+  // True once the open's springs have come to rest. A tap that beats them measures a pill
+  // still on its way out of the disc, whose clone would start off its glyph and jump, so
+  // such a tap flies nothing (the card rises as it always has).
+  const fanSettled = useRef(false);
 
   const pressScale = useRef(new Animated.Value(1)).current;
   const turn = useRef(new Animated.Value(0)).current;
@@ -427,8 +431,10 @@ export function FAB() {
     // Light impact on OPEN only — closing the menu commits to nothing and stays silent.
     openMenuHaptic();
     closing.current = false;
+    // A re-open caught mid-close: setValue also stops the chosen pill's fade if it runs.
     setChosen(null);
     chosenExit.setValue(1);
+    fanSettled.current = false;
     setOpen(true);
     dealtFor.current = usePetStore.getState().activePet?.id ?? null;
     dealPending.current = false;
@@ -441,7 +447,7 @@ export function FAB() {
       Animated.parallel([
         Animated.timing(fade, { toValue: 1, duration: FADE_MS, useNativeDriver: true }),
         Animated.timing(veil, { toValue: 1, duration: FADE_MS, useNativeDriver: true }),
-      ]).start();
+      ]).start(({ finished }) => { if (finished) fanSettled.current = true; });
       return;
     }
     // A slot past today's count lands at rest, so a row that mounts late appears in
@@ -458,7 +464,7 @@ export function FAB() {
       Animated.timing(fade, { toValue: 1, duration: SCRIM_IN_MS, useNativeDriver: true }),
       Animated.timing(veil, { toValue: 1, duration: SCRIM_IN_MS, useNativeDriver: true }),
       ...(chipSlot ? [fanIn(chipSlot), Animated.sequence([Animated.delay(CHIP_LEAD_MS), choices])] : [choices]),
-    ]).start();
+    ]).start(({ finished }) => { if (finished) fanSettled.current = true; });
   }, [turn, fade, veil, slots, chosenExit]);
 
   // `keepVeil` is the hand-off to the log sheet (CUL-1642): everything retracts as a
@@ -467,6 +473,7 @@ export function FAB() {
   // fades on its own `exit`, so a choice never plays the cancel.
   const retract = useCallback((keepVeil: boolean, chosenSlot: number | null = null) => {
     cancelFanFocus();
+    fanSettled.current = false;
     closing.current = true;
     // A close ends a redeal: the close's own stagger takes the food slots from here.
     dealAnim.current?.stop();
@@ -791,7 +798,7 @@ export function FAB() {
     // not answered by then (or never does) flies nothing either: the card rises as it
     // always has, which is a quieter arrival, never a wrong one.
     flightFrom.current = null;
-    if (!reducedMotionNow()) {
+    if (!reducedMotionNow() && fanSettled.current) {
       const from: { foodId: string; rect: WindowRect | null } = { foodId: food.id, rect: null };
       flightFrom.current = from;
       measureNodeInWindow(foodGlyphs.get(food.id), (rect) => { from.rect = rect; });

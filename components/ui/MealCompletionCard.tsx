@@ -26,7 +26,7 @@ import { AddTrialFoodSheet } from '../profile/AddTrialFoodSheet';
 import { buildAddTrialFoodSheet, ADD_TRIAL_FOOD_ERROR } from '../../lib/trialFoodsScreen';
 import { addTrialFood, foodLabel, type TrialFoodSelection } from '../../lib/dietTrialSetup';
 import type { TrialAllowedSetTrial } from '../../lib/trialAllowedSet';
-import { abortFlight, flightActiveFor, landFlight, setHeroReady, useFlightState } from '../motion/flightMotion';
+import { abortFlight, flightActiveFor, getFlightState, landFlight, setHeroReady, useFlightState } from '../motion/flightMotion';
 import { measureNodeInWindow } from '../../lib/measureNode';
 
 // The bar's real height, imported rather than re-derived: this file used to carry
@@ -195,7 +195,10 @@ export function MealCompletionCard() {
   const arriving = isMeal && payload ? flightActiveFor(flightState, payload.eventId) : false;
   const arrivingRef = useRef(arriving);
   arrivingRef.current = arriving;
-  const arrival = useRef(false);
+  const shownIdRef = useRef<string | null>(null);
+  shownIdRef.current = isMeal && payload ? payload.eventId : null;
+  // The meal an arrival began for, until its mark lands or the arrival ends otherwise.
+  const arrival = useRef<string | null>(null);
   const badgeSlot = useRef<View>(null);
 
   // THE RATING THIS CARD WAS PRESENTED WITH, per event (CUL-870).
@@ -231,18 +234,23 @@ export function MealCompletionCard() {
     if (shown && arrivingRef.current && !reduced) {
       // The arrival: in place, the box crossfading around the mark on its way in. The
       // check and the words wait for the landing (the effect below).
-      arrival.current = true;
+      arrival.current = shownIdRef.current;
       translateY.setValue(0);
       checkScale.setValue(MARK_LAND_SCALE);
       markOpacity.setValue(0);
       labelOpacity.setValue(0);
       const fade = Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true });
       fade.start();
-      return () => fade.stop();
+      // Asked once the reveal has committed, as well as on layout: a card re-shown with
+      // the same layout as its last showing fires no `onLayout` at all.
+      const frame = requestAnimationFrame(landMark);
+      return () => {
+        fade.stop();
+        cancelAnimationFrame(frame);
+      };
     }
-    arrival.current = false;
-    markOpacity.setValue(1);
-    labelOpacity.setValue(1);
+    // Hidden (dismissed, timed out, signed out) with a mark still flying: it goes too.
+    endArrival();
     if (reduced) {
       // Static frame: the card crossfades in place and the check never springs. Still
       // a fade, not a cut — the owner must see the confirmation arrive; the setting
@@ -286,15 +294,14 @@ export function MealCompletionCard() {
   // never lands on a card that is no longer there.
   useEffect(() => {
     if (!arrival.current) return;
-    if (arriving) {
-      if (!shown || removed) {
-        arrival.current = false;
-        abortFlight();
-      }
+    // Undone, or superseded in place by another meal: the arrival ends without a landing,
+    // and whatever the card shows next shows its check and words.
+    if (removed || !shown || shownIdRef.current !== arrival.current) {
+      endArrival();
       return;
     }
-    arrival.current = false;
-    if (!shown) return;
+    if (arriving) return;
+    arrival.current = null;
     const land = Animated.parallel([
       Animated.timing(markOpacity, { toValue: 1, duration: MARK_LAND_FADE_MS, useNativeDriver: true }),
       Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
@@ -306,13 +313,27 @@ export function MealCompletionCard() {
     land.start();
   }, [arriving, shown, removed, markOpacity, checkScale, labelOpacity]);
 
+  // An arrival that ends any way but a landing: the flight (if still up for that meal)
+  // comes down, and the check and the words are put back at rest, so a later card shown
+  // in place of this one, with no reveal of its own, is never drawn without them.
+  function endArrival() {
+    const id = arrival.current;
+    arrival.current = null;
+    markOpacity.setValue(1);
+    labelOpacity.setValue(1);
+    if (id === null) return;
+    if (flightActiveFor(getFlightState(), id)) abortFlight();
+    // Only after an arrival: on any other path the check's own spring owns its scale.
+    checkScale.setValue(1);
+  }
+
   // The target: the badge's slot, measured unscaled (the badge itself is under
   // `checkScale`). Asked on the slot's layout and on the card's, because the card is
   // bottom anchored and grows upward, so a taller card moves the slot in the window
   // without moving it inside its row. A changed rect retargets the spring in flight.
   function landMark() {
-    if (!arrivingRef.current || !payload) return;
-    const eventId = payload.eventId;
+    const eventId = shownIdRef.current;
+    if (!arrivingRef.current || eventId === null) return;
     measureNodeInWindow(badgeSlot.current, (rect) => {
       if (!rect) return;
       landFlight(eventId, rect);

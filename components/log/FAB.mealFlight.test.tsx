@@ -88,7 +88,17 @@ async function openAndTap(view: ReturnType<typeof render>, text: RegExp) {
   await act(async () => {});
   // The fan at rest, as a thumb finds it.
   act(() => { jest.advanceTimersByTime(600); });
-  await act(async () => { fireEvent.press(view.getByText(text)); });
+  await act(async () => { fireEvent.press(pillText(view, text)); });
+}
+
+/** A pill's label, never the card's headline that names the same food. */
+function pillText(view: ReturnType<typeof render>, text: RegExp): Node {
+  for (const hit of view.getAllByText(text)) {
+    let n: Node | null = hit;
+    while (n && flat(n).transformOrigin !== 'bottom right') n = n.parent;
+    if (n) return hit;
+  }
+  throw new Error(`no pill reads ${String(text)}`);
 }
 
 /** The card lays its check out: the stub answers with the target. */
@@ -155,7 +165,7 @@ describe('FAB — CUL-1643, the meal lands in its card', () => {
     // animations it starts: one per pill on the cancel's item timing, but for the chosen.
     const timing = jest.spyOn(Animated, 'timing');
     try {
-      await act(async () => { fireEvent.press(view.getByText(/Hydrolyzed/)); });
+      await act(async () => { fireEvent.press(pillText(view, /Hydrolyzed/)); });
       const retracts = timing.mock.calls.filter(([, c]) => c.toValue === 0 && c.duration === 110);
       expect(retracts).toHaveLength(drawn - 1);
       // The chosen pill's own fade, after its hold.
@@ -272,6 +282,61 @@ describe('FAB — CUL-1643, the meal lands in its card', () => {
     await act(async () => { fireEvent.press(view.getByText('Vomit')); });
     expect(getFlightState().phase).toBe('idle');
     expect(mockMeasured).toHaveLength(0);
+  });
+
+  // The code review's four gaps (2026-10-08): each was a path the first cut left open.
+  it('a card dismissed mid-flight takes the flight with it, and the pill’s mark comes back', async () => {
+    const view = mount();
+    await openAndTap(view, /Hydrolyzed/);
+    layOutCheck(view);
+    expect(getFlightState().phase).toBe('outbound');
+    act(() => { jest.advanceTimersByTime(600); });
+    // The owner opens the fan again before the mark lands: the open dismisses the card.
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    expect(useMomentStore.getState().visible).toBe(false);
+    expect(getFlightState().phase).toBe('idle');
+  });
+
+  it('an Undo mid-flight, then a second meal in place: the new card shows its check and words', async () => {
+    const view = mount();
+    await openAndTap(view, /Hydrolyzed/);
+    layOutCheck(view);
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    act(() => {
+      useMomentStore.getState().showMeal({
+        eventId: 'e3', petId: 'p1', occurredAt: OCCURRED, foodType: 'meal',
+        foodBrand: 'Purina', foodProductName: 'HA', foodFormat: null, intakeRating: null,
+      } as never);
+    });
+    expect(flat(view.getByTestId('meal-card-check')).opacity).toBe(1);
+    expect(flat(view.getByLabelText(/Logged · Purina/)).opacity).toBe(1);
+  });
+
+  it('a card re-shown with an unchanged layout still lands the mark (no onLayout fires)', async () => {
+    const view = mount();
+    await openAndTap(view, /Hydrolyzed/);
+    layOutCheck(view);
+    act(() => settleOutbound());
+    act(() => { jest.advanceTimersByTime(8000); });
+    expect(useMomentStore.getState().visible).toBe(false);
+    (insertMeal as jest.Mock).mockResolvedValue({ eventId: 'e2', occurredAtIso: OCCURRED, now: OCCURRED });
+    await openAndTap(view, /Hydrolyzed/);
+    expect(getFlightState().flight?.identity).toBe('e2');
+    // No layout event this time: the frame after the reveal asks for the target.
+    act(() => { jest.advanceTimersByTime(32); });
+    expect(getFlightState().phase).toBe('outbound');
+    expect(getFlightState().flight?.target).toEqual(mockTarget);
+  });
+
+  it('a tap that beats the open’s springs flies nothing: its pill is still on its way out', async () => {
+    const view = mount();
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    await act(async () => { fireEvent.press(pillText(view, /Hydrolyzed/)); });
+    expect(mockMeasured).toHaveLength(0);
+    expect(getFlightState().phase).toBe('idle');
+    expect(useMomentStore.getState().visible).toBe(true);
   });
 
   it('the mirrored dwell is the store’s own (C-34)', () => {
