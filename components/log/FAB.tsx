@@ -4,7 +4,7 @@ import {
   Pressable, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
-import { ChevronDown, Plus } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Plus } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from '../ui/ThemedText';
 import { EmptyState } from '../ui/EmptyState';
@@ -15,14 +15,20 @@ import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { useUiStore } from '../../store/uiStore';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { useTodayKey } from '../../hooks/useTodayKey';
 import { openMenu as openMenuHaptic } from '../../lib/haptics';
 import { useEventStore } from '../../store/eventStore';
+import { useFoodLibraryStore } from '../../store/foodLibraryStore';
+import { useSyncStore } from '../../store/syncStore';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore, isCornerCardUp } from '../../store/momentStore';
 import { getRecentFoods, PickerFood } from '../../lib/db';
+import { fabFoodDay } from '../../lib/fabRecentFoods';
 import { insertMeal } from '../../lib/meals';
 import { applyMealTrialFlag } from '../../lib/mealTrialFlag';
 import { noPetToLogForCopy } from '../../lib/logCopy';
+import { rowFoodLabelOf } from '../../lib/dayEvents';
+import { foodFormatTag } from '../../lib/foodFormat';
 
 // Resolved once at module scope — a literal, shared with the log sheet (CUL-717).
 const noPetCopy = noPetToLogForCopy();
@@ -75,6 +81,21 @@ const FAN_GAP = 10;
 interface FanRow {
   key: string;
   node: ReactNode;
+}
+
+/** CUL-1644 (D3): a pill that OPENS something carries this; a food pill, which writes
+ *  at once, does not. Decorative: the pill's own label and role already say what it
+ *  is, so the chevron is hidden from assistive tech on both platforms. */
+function DoorChevron() {
+  return (
+    <View
+      testID="fab-door-chevron"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      <ChevronRight size={16} color={theme.colorTextTertiary} strokeWidth={1.75} />
+    </View>
+  );
 }
 
 /**
@@ -208,8 +229,9 @@ export function FAB() {
       Animated.timing(fade, { toValue: 1, duration: FADE_MS, useNativeDriver: true }).start();
       return;
     }
-    // A slot past today's count lands at rest, so a row that mounts late (the recent
-    // foods answer after the fan has run) appears in place rather than invisibly at 0.
+    // A slot past today's count lands at rest, so a row that mounts late appears in
+    // place rather than invisibly at 0. The recent foods are read before the open now
+    // (CUL-1634), so this is the backstop for a tap that beats the mount read.
     slots.slice(count).forEach((v) => v.setValue(1));
     Animated.parallel([
       Animated.spring(turn, { toValue: 1, useNativeDriver: true, ...TURN_SPRING }),
@@ -320,25 +342,80 @@ export function FAB() {
     return () => sub.remove();
   }, [open, closeMenu]);
 
+  // CUL-1634 — the recent foods are read BEFORE the fan runs: on mount, on a pet
+  // change, after each close, and when today's record gains a row, never because the
+  // menu opened. The column is bottom anchored, so three rows landing after the fan
+  // grew it ~160pt upward and moved every pill above them, Vomit included, under a
+  // thumb already on its way. Reading while closed means a cold open's slot count is
+  // final on its first render, and a meal logged from the fan or the sheet is in the
+  // list by the next open.
+  //
+  // While open no read starts and none lands over held rows, because a read can only
+  // move rows under the finger; the next close refreshes. Two exceptions. CUL-723's:
+  // the pet flipped inside the open menu, so the held rows are another pet's
+  // (unrendered by the key below) and the new pet's must load. And a tap that beats
+  // the mount read: nothing is held, so the answer lands, late, as before. An open
+  // never cancels a read already in flight, which would turn the second case into a
+  // second round trip. `todayHeadId` is the change signal `useDaySummary` uses: the
+  // newest row of today.
+  const activePetId = activePet?.id ?? null;
+  const todayHeadId = useEventStore((s) => s.todayEvents[0]?.id ?? null);
+  // CUL-1647 — the read is bounded to the day: meals in the window before today's local
+  // midnight, never today's, so a re-read on any trigger here returns the same order
+  // all day and a log never moves a pill. Re-reading rather than freezing the list keeps
+  // the record's corrections (PM go, 2026-10-08): a food archived since midnight leaves
+  // the fan before its next open, because the library's change counter is a trigger, so
+  // the pre-trial food an owner takes out of rotation is never one tap from a log; a sync
+  // cycle is one too. A past meal deleted on this device is seen at the next close or
+  // sync (the shared reversal raises no signal yet).
+  //
+  // The day turns over while the menu is CLOSED, so the new order is never a read that
+  // lands under the thumb: `useTodayKey` changes at local midnight and on the return to
+  // the foreground, and the effect below re-reads on it unless the menu is open. A menu
+  // held open across midnight keeps its rows and re-reads on its close, like every other
+  // change.
+  const todayKey = useTodayKey();
+  const libraryVersion = useFoodLibraryStore((st) => st.version);
+  const hydrationTick = useSyncStore((st) => st.hydrationTick);
+  const latestPetId = useRef(activePetId);
+  latestPetId.current = activePetId;
+  const openNow = useRef(open);
+  openNow.current = open;
+  const heldFor = useRef<string | null>(null);
+  heldFor.current = recentFoods?.petId ?? null;
+  const readingFor = useRef<string | null>(null);
+  // Reads can overlap while closed (a library change, then a new row of today); only the
+  // newest one's answer lands, so an older read finishing late, one started before
+  // midnight above all, never overwrites a newer order.
+  const readSeq = useRef(0);
   useEffect(() => {
-    if (!open || !activePet) return;
-    let cancelled = false;
+    if (!activePetId) return;
+    if (open && (heldFor.current === activePetId || readingFor.current === activePetId)) return;
+    readingFor.current = activePetId;
+    const seq = ++readSeq.current;
     // The last 3 foods THIS pet actually ate, newest first. Shares getRecentFoods
     // with the picker (single source of truth), which orders by the pet's real
     // MAX(occurred_at) — not food_items_cache.last_used_at, which is shared across
     // pets and was reset to NULL on every sync, so the old query returned an
-    // effectively random 3. `null` window = no time bound (re-offer staples of
-    // any age). Async now, so guard against a resolve after the menu closes.
-    getRecentFoods(activePet.id, null, 3)
-      .then((foods) => { if (!cancelled) setRecentFoods({ petId: activePet.id, foods }); })
-      .catch((e) => console.warn('[FAB] recent foods load failed:', e));
-    return () => { cancelled = true; };
-  }, [open, activePet]);
+    // effectively random 3. No rolling window (`null`): the day's bounds are the
+    // window. Async, so the answer is checked against the pet it was read for.
+    getRecentFoods(activePetId, null, 3, fabFoodDay(Date.now()))
+      .then((foods) => {
+        if (seq !== readSeq.current) return;
+        if (latestPetId.current !== activePetId) return;
+        if (openNow.current && heldFor.current === activePetId) return;
+        setRecentFoods({ petId: activePetId, foods });
+      })
+      .catch((e) => console.warn('[FAB] recent foods load failed:', e))
+      .finally(() => {
+        if (seq === readSeq.current && readingFor.current === activePetId) readingFor.current = null;
+      });
+  }, [open, activePetId, todayHeadId, todayKey, libraryVersion, hydrationTick]);
 
   // Derived in the render body rather than mirrored into state (the C-9 shape): the
-  // list is only ever this pet's, or nothing. Note a reopen for the SAME pet still
-  // shows the held rows immediately while the refetch runs — the key matches, so
-  // there is no flash to pay for the safety.
+  // list is only ever this pet's, or nothing. A pet flip inside the open menu shows
+  // no food rows until the new pet's read answers: a wrong absence for a beat, never
+  // a wrong list.
   const foodsForActivePet =
     activePet && recentFoods?.petId === activePet.id ? recentFoods.foods : null;
 
@@ -554,6 +631,7 @@ export function FAB() {
             <Plus size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
           </View>
           <ThemedText style={styles.pillLabel}>More events</ThemedText>
+          <DoorChevron />
         </TouchableOpacity>
       ),
     });
@@ -578,6 +656,7 @@ export function FAB() {
             <EventIcon type="diarrhea" size={16} color={theme.colorEventSymptom} />
           </View>
           <ThemedText style={styles.pillLabel}>Loose stool</ThemedText>
+          <DoorChevron />
         </TouchableOpacity>
       ),
     });
@@ -594,6 +673,7 @@ export function FAB() {
             <EventIcon type="vomit" size={16} color={theme.colorEventSymptom} />
           </View>
           <ThemedText style={styles.pillLabel}>Vomit</ThemedText>
+          <DoorChevron />
         </TouchableOpacity>
       ),
     });
@@ -611,6 +691,7 @@ export function FAB() {
             <Plus size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
           </View>
           <ThemedText style={styles.pillLabel}>Log food</ThemedText>
+          <DoorChevron />
         </TouchableOpacity>
       ),
     });
@@ -620,6 +701,13 @@ export function FAB() {
     // for THIS pet, so there are no pills: they would be another pet's (C-12). The
     // query returns newest first; the fan draws newest LOWEST, nearest the thumb.
     for (const food of [...(foodsForActivePet ?? [])].reverse()) {
+      // CUL-1644 (D3): the food named the way History names it, through the one mapper,
+      // with its format as its own tag. The tag is a sibling that holds its width, never
+      // text appended to the label that wraps, so wet and dry of one line never read
+      // alike (the foodFormat.ts header's rule). The spoken label carries both halves.
+      const formatTag = foodFormatTag(food.format);
+      const foodLabel =
+        rowFoodLabelOf({ brand: food.brand, product: food.product_name, format: food.format }) ?? 'Food';
       rows.push({
         key: `food-${food.id}`,
         node: (
@@ -629,13 +717,25 @@ export function FAB() {
             activeOpacity={0.7}
             disabled={logging !== null}
             accessibilityRole="button"
+            accessibilityLabel={formatTag ? `${foodLabel}, ${formatTag.toLowerCase()}` : foodLabel}
+            // CUL-724's hint half: every other pill opens something; this one writes.
+            accessibilityHint={`Logs it for ${activePet.name} right away`}
           >
             <View style={[styles.pillGlyph, styles.pillGlyphMeal]}>
               <EventIcon type="meal" size={16} />
             </View>
-            <ThemedText style={styles.pillLabel} numberOfLines={2}>
-              {food.brand} {food.product_name}
-            </ThemedText>
+            <View style={styles.foodLabelRow}>
+              <ThemedText style={styles.pillLabel} numberOfLines={2}>
+                {foodLabel}
+              </ThemedText>
+              {formatTag ? (
+                <View style={styles.formatTag} testID="fab-format-tag">
+                  <ThemedText style={styles.formatTagText} numberOfLines={1}>
+                    {formatTag}
+                  </ThemedText>
+                </View>
+              ) : null}
+            </View>
             {logging === food.id && (
               <WhorlSpinner size="sm" ground="day" style={styles.spinner} />
             )}
@@ -851,6 +951,31 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
     fontWeight: theme.fontWeightMedium,
     flexShrink: 1,
+  },
+  // CUL-1644: the label and its format tag, side by side. The label yields (flexShrink 1,
+  // two lines); the tag holds its width (C-8: the half stated fewest times is protected),
+  // capped at the row so the largest Dynamic Type cannot push it out of the pill.
+  foodLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+  },
+  formatTag: {
+    flexShrink: 0,
+    maxWidth: '100%',
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusXS,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  // History's tag register (SpineNodeRow): tracked uppercase, tertiary ink.
+  formatTagText: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    letterSpacing: theme.trackingWide,
+    fontWeight: theme.weightMedium,
   },
   logForPill: {
     // Wide enough that a 16-char two-word name ("Schrodingers Cat") sits on one line;

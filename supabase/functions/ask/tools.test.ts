@@ -1074,6 +1074,7 @@ function read(partial: Partial<AskCachedReadRow>): AskCachedReadRow {
     stoolMucusPresent: partial.stoolMucusPresent ?? null,
     recommendation: partial.recommendation ?? null,
     readText: partial.readText ?? null,
+    readCorrection: partial.readCorrection ?? null,
   }
 }
 
@@ -1172,6 +1173,14 @@ Deno.test('engineFindings — EN-9: a watched concern follows a raised one and r
   assert.equal((r.findings[1].payload as { text: string }).text, 'with your vet …', 'the engine\'s sentence is relayed whole')
   // A finding with no care state is passed through untouched.
   assert.deepEqual(engineFindings([{ type: 'intake_decline', priorityClass: 'safety', payload: { b: 2 } }]).findings[0].payload, { b: 2 })
+  // CUL-1600: a skipped run's bare latch never reaches the model, with or without a state beside it.
+  const latch = { at: '2026-09-25T21:00:00.000Z', on: '2026-09-25' }
+  const stamped = engineFindings([
+    { type: 'symptom_chronicity', priorityClass: 'safety', payload: { text: 'worth a word …', raisedAgainLatch: latch } },
+    { type: 'symptom_worsening', priorityClass: 'safety', payload: { text: 'worth a word …', careState: { state: 'raised', raisedAgainAt: latch.at }, raisedAgainLatch: latch } },
+  ])
+  for (const f of stamped.findings) assert.equal('raisedAgainLatch' in (f.payload as object), false, `${f.type} relayed the latch`)
+  assert.deepEqual((stamped.findings.find((f) => f.type === 'symptom_worsening')!.payload as { careState: unknown }).careState, { state: 'raised' })
 })
 
 Deno.test('engineFindings — a stood-down marker (CUL-786) is never relayed and never counts as a finding', () => {
@@ -1232,4 +1241,19 @@ Deno.test('medications — a New York evening dose on the last day is its course
   const utc = medications(regimens, doses, { window: '30d', nowMs: NOW_MS, timezone: 'UTC' })
   assert.equal(utc.medications.find((m) => m.medicationId === 'r1')?.dosesGiven, 0)
   assert.equal(utc.medications.find((m) => m.medicationId === null)?.dosesGiven, 1)
+})
+
+Deno.test('projectCachedRead (CUL-1406): the correction rides beside the words, and hides with them', () => {
+  const words = "Nyx has been vomiting and hasn't eaten a full meal recently. In cats that combination is worth a call to your vet sooner rather than later."
+  const corr = 'Corrected Oct 7, 2026. The words above went further than the record.'
+  // One string, words first: every relay (recall tools included) carries both or neither.
+  const shown = projectCachedRead(read({ readText: words, readCorrection: corr, recommendation: 'worth_a_call' }))
+  assert.equal(shown.readText, `${words} ${corr}`)
+  assert.equal(shown.recommendation, 'worth_a_call')
+  assert.ok(!('readCorrection' in shown), 'no separate field a relay could drop or carry alone')
+  const hidden = projectCachedRead(read({ dismissedAt: '2026-10-07T00:00:00Z', readText: words, readCorrection: corr }))
+  assert.equal(hidden.readText, null)
+  // A correction never travels without the words it corrects.
+  assert.equal(projectCachedRead(read({ readText: null, readCorrection: corr })).readText, null)
+  assert.equal(projectCachedRead(read({ readText: words })).readText, words)
 })

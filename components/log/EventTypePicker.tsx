@@ -41,8 +41,10 @@ function pickerLabel(key: EventTypeKey): string {
 
 // The tinted circle behind each glyph — category IDENTITY, never a verdict (§2 of
 // the requirements). Symptoms rose, meal teal, medication slate, everything else a
-// neutral grey; each pairs the shipped *-Light wash with its event tint so the glyph
-// keeps contrast on the circle. Keyed per type (not per group) so a future regroup
+// neutral grey; each pairs the shipped *-Light wash with a glyph tint that clears
+// WCAG 1.4.11's 3:1 on it (theme.contrast.test.ts walks every entry). Meal is the one
+// pair where the bright event tint does not: colorEventMeal is 2.08:1 on its own wash,
+// so the glyph takes colorAccentGlyph, the same teal one notch darker (CUL-1637). Keyed per type (not per group) so a future regroup
 // can't silently mis-tint a glyph. §6 pairing rule (taxonomy spec): a new symptom
 // leaf joins this AND SYMPTOM_TYPES in the same PR — the membership test holds the
 // two to set-equality (± stool_normal, the one documented divergence). Exported for
@@ -55,7 +57,7 @@ export const CATEGORY_TINT: Record<EventTypeKey, { bg: string; fg: string }> = {
   sneeze: { bg: theme.colorEventSymptomLight, fg: theme.colorEventSymptom },
   lethargy: { bg: theme.colorEventSymptomLight, fg: theme.colorEventSymptom },
   itch: { bg: theme.colorEventSymptomLight, fg: theme.colorEventSymptom },
-  meal: { bg: theme.colorEventMealLight, fg: theme.colorEventMeal },
+  meal: { bg: theme.colorEventMealLight, fg: theme.colorAccentGlyph },
   medication: { bg: theme.colorEventMedicationLight, fg: theme.colorEventMedication },
   weight_check: { bg: theme.colorSurfaceSubtle, fg: theme.colorTextSecondary },
   other: { bg: theme.colorSurfaceSubtle, fg: theme.colorTextSecondary },

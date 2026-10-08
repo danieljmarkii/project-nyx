@@ -24,6 +24,11 @@ jest.mock('../../lib/haptics', () => ({
   destructiveConfirm: jest.fn(),
 }));
 jest.mock('../../lib/db', () => ({ getRecentFoods: jest.fn(async () => []) }));
+// CUL-1647 — the day key is the FAB's midnight trigger. Its own timer is pinned in
+// useTodayKey.test.ts; here it is a value the day-order tests turn, so the animation
+// helpers' runAllTimers never jumps the clock past a midnight a test did not ask for.
+let mockTodayKey = '2026-10-08';
+jest.mock('../../hooks/useTodayKey', () => ({ useTodayKey: () => mockTodayKey }));
 jest.mock('../../lib/meals', () => ({ insertMeal: jest.fn() }));
 jest.mock('../../lib/trialContaminant', () => ({
   evaluateMealLogTimeFlag: jest.fn(async () => null),
@@ -49,6 +54,9 @@ import { theme } from '../../constants/theme';
 import { usePetStore } from '../../store/petStore';
 import { useUiStore } from '../../store/uiStore';
 import { useMomentStore } from '../../store/momentStore';
+import { useEventStore } from '../../store/eventStore';
+import { useFoodLibraryStore } from '../../store/foodLibraryStore';
+import { useSyncStore } from '../../store/syncStore';
 import { useReducedMotionStore } from '../../store/reducedMotionStore';
 
 function seedPets(count: number) {
@@ -534,7 +542,7 @@ describe('FAB — the fan, nearest the thumb first', () => {
     seedPets(1);
     const view = await openMenu();
     expect(fanLabels(view)).toEqual([
-      'More events', 'Loose stool', 'Vomit', 'Log food', 'Royal Canin dry', 'Royal Canin wet',
+      'More events', 'Loose stool', 'Vomit', 'Log food', 'Royal Canin · dry', 'Royal Canin · wet',
     ]);
   });
 
@@ -917,5 +925,342 @@ describe('FAB — the fan never shares the corner with a completion card', () =>
     expect(useUiStore.getState().fabMenuOpen).toBe(true);
     expect(useMomentStore.getState().visible).toBe(false);
     expect(overlaps).toEqual([]);
+  });
+});
+
+describe('FAB — CUL-1644, the pills read like the record', () => {
+  const DOORS = ['More events', 'Loose stool', 'Vomit', 'Log food'];
+
+  /** The pill (its touchable host) that owns a piece of text. */
+  function pillOf(view: ReturnType<typeof render>, text: string | RegExp) {
+    let n: TreeNode | null = view.getByText(text);
+    while (n && !(typeof n.type === 'string' && typeof n.props.onResponderRelease === 'function')) n = n.parent;
+    if (!n) throw new Error(`no pill owns ${String(text)}`);
+    return n;
+  }
+  const chevronsIn = (pill: TreeNode) =>
+    pill.findAll((n: TreeNode) => typeof n.type === 'string' && n.props.testID === 'fab-door-chevron');
+
+  it('names a food the way History does, with its format as its own tag', async () => {
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f-wet', brand: 'Royal Canin', product_name: 'Selected Protein PR, Wet', format: 'wet_canned', food_type: 'meal' },
+      { id: 'f-dry', brand: 'Royal Canin', product_name: 'Selected Protein PR, Dry', format: 'dry_kibble', food_type: 'meal' },
+    ]);
+    seedPets(1);
+    const view = await openMenu();
+    // The trailing ", Wet" / ", Dry" leaves the label, because the tag says it: the two
+    // labels are now identical, and only the tags tell them apart.
+    expect(view.getAllByText('Royal Canin · Selected Protein PR')).toHaveLength(2);
+    expect(view.getByText('WET')).toBeTruthy();
+    expect(view.getByText('DRY')).toBeTruthy();
+    // The tag is never text inside the label that wraps: it is its own node, a sibling.
+    const label = view.getAllByText('Royal Canin · Selected Protein PR')[0];
+    expect(label.findAll((n: TreeNode) => n.props.testID === 'fab-format-tag')).toHaveLength(0);
+    const tags = view.UNSAFE_root.findAll(
+      (n: TreeNode) => typeof n.type === 'string' && n.props.testID === 'fab-format-tag',
+    );
+    expect(tags).toHaveLength(2);
+    // ...and it holds its width while the label yields.
+    const tagStyle = StyleSheet.flatten(tags[0].props.style);
+    expect(tagStyle.flexShrink).toBe(0);
+    expect(StyleSheet.flatten(label.props.style).flexShrink).toBe(1);
+  });
+
+  it('speaks the food in full, its format included, with a hint that it logs at once', async () => {
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f-dry', brand: 'Royal Canin', product_name: 'Selected Protein PR, Dry', format: 'dry_kibble', food_type: 'meal' },
+    ]);
+    seedPets(1);
+    const view = await openMenu();
+    const pill = view.getByLabelText('Royal Canin · Selected Protein PR, dry');
+    expect(pill.props.accessibilityHint).toBe('Logs it for Nyx right away');
+    // A door has no such hint: it opens something.
+    for (const door of DOORS) expect(pillOf(view, door).props.accessibilityHint).toBeUndefined();
+  });
+
+  it('a food with no honest format shows no tag, and its label is unchanged', async () => {
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f-other', brand: 'Hills', product_name: 'i/d', format: 'other', food_type: 'meal' },
+    ]);
+    seedPets(1);
+    const view = await openMenu();
+    expect(view.getByLabelText('Hills · i/d')).toBeTruthy();
+    expect(view.UNSAFE_root.findAll((n: TreeNode) => n.props.testID === 'fab-format-tag')).toHaveLength(0);
+  });
+
+  it('every door carries one chevron, hidden from assistive tech; a food pill carries none', async () => {
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet_canned', food_type: 'meal' },
+    ]);
+    seedPets(1);
+    const view = await openMenu();
+    for (const door of DOORS) {
+      const chevrons = chevronsIn(pillOf(view, door));
+      expect(chevrons).toHaveLength(1);
+      expect(chevrons[0].props.accessibilityElementsHidden).toBe(true);
+      expect(chevrons[0].props.importantForAccessibility).toBe('no-hide-descendants');
+    }
+    expect(chevronsIn(pillOf(view, 'Hills · i/d'))).toHaveLength(0);
+  });
+});
+
+// ── CUL-1634 ─────────────────────────────────────────────────────────────────
+//
+// The fan is a column anchored to the disc, so a food row that lands after the fan
+// has run grows it upward and moves every pill above it under the thumb. The foods
+// are read before the open now, so a cold open's slot count is final on its first
+// render. The first test reds against the read-on-open tree: no read has run when the
+// disc is pressed, so the press's own render holds no food row.
+describe('FAB — CUL-1634, the recent foods are read before the fan runs', () => {
+  const HILLS = { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet', food_type: 'meal' };
+  const ROYAL = { id: 'f2', brand: 'Royal Canin', product_name: 'GI', format: 'dry', food_type: 'meal' };
+
+  beforeEach(() => {
+    getRecentFoods.mockReset();
+    getRecentFoods.mockImplementation(async () => []);
+  });
+
+  it('a cold open draws its food rows on the press’s own render, and the open reads nothing', async () => {
+    getRecentFoods.mockResolvedValueOnce([HILLS]);
+    seedPets(1);
+    const view = render(<FAB />);
+    // The cold start: the mount read answers while the menu is still closed.
+    await act(async () => {});
+    expect(getRecentFoods).toHaveBeenCalledTimes(1);
+
+    // No act after the press: this is the open's first render, before any read could
+    // answer. Every slot the fan will ever hold is already here.
+    fireEvent.press(view.getByLabelText('Log event'));
+    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills · i/d']);
+
+    // And the open asked for nothing, so nothing can arrive to move the column.
+    await act(async () => {});
+    expect(getRecentFoods).toHaveBeenCalledTimes(1);
+    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills · i/d']);
+  });
+
+  it('a new row of today waits for the close, and the next open carries it', async () => {
+    jest.useFakeTimers();
+    try {
+      getRecentFoods.mockResolvedValueOnce([HILLS]);
+      seedPets(1);
+      const view = render(<FAB />);
+      await act(async () => {});
+      fireEvent.press(view.getByLabelText('Log event'));
+      await act(async () => {});
+
+      // A meal lands in today's record while the menu is open: no read, no new row.
+      getRecentFoods.mockResolvedValue([ROYAL, HILLS]);
+      await act(async () => {
+        useEventStore.setState({ todayEvents: [{ id: 'e-new' } as never] });
+      });
+      expect(getRecentFoods).toHaveBeenCalledTimes(1);
+      expect(view.queryByText(/Royal Canin/)).toBeNull();
+
+      // The close reads, so the next open is current from its first frame.
+      fireEvent.press(view.getByTestId('fab-scrim'));
+      await settleAnimations();
+      expect(getRecentFoods).toHaveBeenCalledTimes(2);
+      fireEvent.press(view.getByLabelText('Log event'));
+      expect(fanLabels(view).slice(-3)).toEqual(['Log food', 'Hills · i/d', 'Royal Canin · GI']);
+    } finally {
+      useEventStore.setState({ todayEvents: [] });
+      jest.useRealTimers();
+    }
+  });
+
+  it('a tap that beats the mount read waits on that read rather than starting a second', async () => {
+    let release: (foods: unknown[]) => void = () => {};
+    getRecentFoods.mockImplementationOnce(
+      () => new Promise((resolve) => { release = resolve as never; }),
+    );
+    seedPets(1);
+    const view = render(<FAB />);
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    expect(getRecentFoods).toHaveBeenCalledTimes(1);
+
+    await act(async () => { release([HILLS]); });
+    expect(view.getByText(/Hills/)).toBeTruthy();
+  });
+});
+
+// ── CUL-1647 ─────────────────────────────────────────────────────────────────
+//
+// The recent foods keep one order for the day: the read is bounded to the window
+// before today's LOCAL midnight, so a log today cannot move a pill, and the day turns
+// over while the menu is closed (a timer at midnight; a menu open across it re-reads on
+// its close). The clock is pinned to instants built from local components (C-29), so the
+// non-UTC CI job runs the same midnight in every zone.
+describe('FAB — CUL-1647, the recent foods keep one order for the day', () => {
+  const { fabFoodDay } = require('../../lib/fabRecentFoods') as typeof import('../../lib/fabRecentFoods');
+  const HILLS = { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet', food_type: 'meal' };
+  const ROYAL = { id: 'f2', brand: 'Royal Canin', product_name: 'GI', format: 'dry', food_type: 'meal' };
+  const local = (d: number, h: number, min = 0) => new Date(2026, 9, d, h, min);
+  /** The span the last read asked for. */
+  const lastSpan = () => getRecentFoods.mock.calls.at(-1)?.[3];
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    getRecentFoods.mockReset();
+    getRecentFoods.mockImplementation(async () => []);
+  });
+  afterEach(() => {
+    useEventStore.setState({ todayEvents: [] });
+    mockTodayKey = '2026-10-08';
+    jest.useRealTimers();
+  });
+
+  it('reads the window before today’s local midnight, and a log today asks for the same span', async () => {
+    jest.setSystemTime(local(8, 7, 15));
+    seedPets(1);
+    render(<FAB />);
+    await act(async () => {});
+    expect(getRecentFoods).toHaveBeenCalledWith('p1', null, 3, fabFoodDay(local(8, 7, 15).getTime()));
+    expect(lastSpan().before).toBe(local(8, 0).toISOString());
+
+    // Breakfast is logged: a new row of today re-reads, over the same span, so the
+    // meal just given is outside it and cannot rise to the thumb.
+    jest.setSystemTime(local(8, 7, 20));
+    await act(async () => {
+      useEventStore.setState({ todayEvents: [{ id: 'e-breakfast' } as never] });
+    });
+    expect(getRecentFoods).toHaveBeenCalledTimes(2);
+    expect(getRecentFoods.mock.calls[1][3]).toEqual(getRecentFoods.mock.calls[0][3]);
+  });
+
+  it('midnight passes while the menu is closed: the new day is read before the next open', async () => {
+    jest.setSystemTime(local(8, 23, 0));
+    getRecentFoods.mockResolvedValueOnce([HILLS]);
+    seedPets(1);
+    const view = render(<FAB />);
+    await act(async () => {});
+    expect(getRecentFoods).toHaveBeenCalledTimes(1);
+
+    // The order as of the 9th's midnight puts Royal Canin (given last night) nearest.
+    getRecentFoods.mockResolvedValue([ROYAL, HILLS]);
+    jest.setSystemTime(local(9, 0, 0));
+    mockTodayKey = '2026-10-09';
+    view.rerender(<FAB />);
+    await act(async () => {});
+    expect(getRecentFoods).toHaveBeenCalledTimes(2);
+    expect(lastSpan()).toEqual(fabFoodDay(local(9, 0, 0).getTime()));
+    expect(lastSpan().before).toBe(local(9, 0).toISOString());
+
+    // The first open after midnight draws the new order on the press's own render.
+    fireEvent.press(view.getByLabelText('Log event'));
+    expect(fanLabels(view).slice(-3)).toEqual(['Log food', 'Hills · i/d', 'Royal Canin · GI']);
+  });
+
+  it('midnight passes while the menu is open: no read lands under the thumb, the close reads', async () => {
+    jest.setSystemTime(local(8, 23, 59));
+    getRecentFoods.mockResolvedValueOnce([HILLS]);
+    seedPets(1);
+    const view = render(<FAB />);
+    await act(async () => {});
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+
+    getRecentFoods.mockResolvedValue([ROYAL, HILLS]);
+    jest.setSystemTime(local(9, 0, 1));
+    mockTodayKey = '2026-10-09';
+    view.rerender(<FAB />);
+    await act(async () => {});
+    expect(getRecentFoods).toHaveBeenCalledTimes(1);
+    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills · i/d']);
+
+    fireEvent.press(view.getByTestId('fab-scrim'));
+    await settleAnimations();
+    expect(getRecentFoods).toHaveBeenCalledTimes(2);
+    expect(lastSpan().before).toBe(local(9, 0).toISOString());
+  });
+
+  it('a food archived while the menu is closed is gone before the next open', async () => {
+    // The trial-start case: the owner takes the old food out of rotation in Foods.
+    jest.setSystemTime(local(8, 10, 0));
+    getRecentFoods.mockResolvedValueOnce([ROYAL, HILLS]);
+    seedPets(1);
+    const view = render(<FAB />);
+    await act(async () => {});
+
+    getRecentFoods.mockResolvedValue([HILLS]);
+    await act(async () => {
+      useFoodLibraryStore.getState().notifyChanged();
+    });
+    expect(getRecentFoods).toHaveBeenCalledTimes(2);
+    fireEvent.press(view.getByLabelText('Log event'));
+    expect(view.queryByText(/Royal Canin/)).toBeNull();
+    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills · i/d']);
+  });
+
+  it('a sync cycle re-reads while closed', async () => {
+    jest.setSystemTime(local(8, 10, 0));
+    seedPets(1);
+    render(<FAB />);
+    await act(async () => {});
+    await act(async () => {
+      useSyncStore.getState().bumpHydrationTick();
+    });
+    expect(getRecentFoods).toHaveBeenCalledTimes(2);
+  });
+
+  it('an older read that answers late never overwrites a newer one', async () => {
+    jest.setSystemTime(local(8, 23, 59));
+    let releaseOld: (foods: unknown[]) => void = () => {};
+    getRecentFoods.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseOld = resolve as never; }),
+    );
+    seedPets(1);
+    const view = render(<FAB />);
+    await act(async () => {});
+
+    // Midnight: the new day's read answers first.
+    getRecentFoods.mockResolvedValueOnce([ROYAL, HILLS]);
+    jest.setSystemTime(local(9, 0, 1));
+    mockTodayKey = '2026-10-09';
+    view.rerender(<FAB />);
+    await act(async () => {});
+    // Yesterday's read lands after it, and is dropped.
+    await act(async () => { releaseOld([HILLS]); });
+
+    fireEvent.press(view.getByLabelText('Log event'));
+    expect(fanLabels(view).slice(-3)).toEqual(['Log food', 'Hills · i/d', 'Royal Canin · GI']);
+  });
+
+  it('a read in flight when the menu opens over held rows is dropped, and the close re-reads', async () => {
+    // The sync tick fires on every foreground, so a read can be mid-flight at the open.
+    jest.setSystemTime(local(8, 10, 0));
+    getRecentFoods.mockResolvedValueOnce([HILLS]);
+    seedPets(1);
+    const view = render(<FAB />);
+    await act(async () => {});
+
+    let release: (foods: unknown[]) => void = () => {};
+    getRecentFoods.mockImplementationOnce(
+      () => new Promise((resolve) => { release = resolve as never; }),
+    );
+    await act(async () => {
+      useSyncStore.getState().bumpHydrationTick();
+    });
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => { release([ROYAL, HILLS]); });
+    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills · i/d']);
+
+    getRecentFoods.mockResolvedValue([ROYAL, HILLS]);
+    fireEvent.press(view.getByTestId('fab-scrim'));
+    await settleAnimations();
+    expect(getRecentFoods).toHaveBeenCalledTimes(3);
+  });
+
+  it('a pet switch reads that pet’s order over the same day', async () => {
+    jest.setSystemTime(local(8, 12, 0));
+    seedPets(2);
+    render(<FAB />);
+    await act(async () => {});
+    await act(async () => {
+      usePetStore.setState({ activePet: { id: 'p2', name: 'Mochi' } as never });
+    });
+    expect(getRecentFoods.mock.calls.at(-1)?.[0]).toBe('p2');
+    expect(lastSpan()).toEqual(fabFoodDay(local(8, 12, 0).getTime()));
   });
 });

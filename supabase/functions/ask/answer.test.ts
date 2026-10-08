@@ -55,6 +55,7 @@ import {
   type PhotoReadResult,
 } from './answer.ts'
 import type { AskCachedReadRow, ProjectedRead } from './tools.ts'
+import { projectCachedRead } from './tools.ts'
 
 // ── A minimal fetched context for dispatch tests ──────────────────────────────────
 const NOW = Date.UTC(2026, 6, 18, 12, 0, 0) // 2026-07-18T12:00:00Z
@@ -776,6 +777,7 @@ function readRow(over: Partial<AskCachedReadRow> & { eventId: string }): AskCach
     stoolMucusPresent: null,
     recommendation: null,
     readText: null,
+    readCorrection: null,
     ...over,
   }
 }
@@ -1056,4 +1058,43 @@ Deno.test('REASSURANCE_RE: the demonstrated A8 leak phrasings are now blocked (d
   ]) {
     assert.equal(validateAnswer({ text: good, allowedNumerals: new Set(['7', '30', '9']), mode: 'data' }).ok, true, `should still pass: ${good}`)
   }
+})
+
+// ── CUL-1406: a dated correction rides AFTER the stored words, never in their place ──────
+
+const OLD_INTAKE = "Nyx has been vomiting and hasn't eaten a full meal recently. In cats that combination is worth a call to your vet sooner rather than later."
+const CORRECTION = "Corrected Oct 7, 2026. The note \"hasn't eaten a full meal recently\" went further than the record. None of the 4 meals logged for Nyx in the 24 hours before I read this was rated, so the log couldn't say whether Nyx ate a full meal. This correction doesn't change the call to your vet."
+
+// Driven through the real projection (C-34): the pairing lives in projectCachedRead, so a test
+// that hands buildReadLine a pre-joined string would be green over a projection that dropped it.
+Deno.test('buildReadLine (CUL-1406): the stored words, then their correction; the verdict untouched', () => {
+  const projectedRead = projectCachedRead(readRow({ eventId: 'e1', recommendation: 'worth_a_call', readText: OLD_INTAKE, readCorrection: CORRECTION }))
+  const line = buildReadLine(photoResult('cached', projectedRead), 'Nyx')
+  assert.ok(line)
+  const at = line!.indexOf(OLD_INTAKE)
+  assert.ok(at >= 0, 'the stored words are relayed verbatim')
+  assert.ok(line!.indexOf(CORRECTION) > at, 'the correction follows them')
+  assert.equal(projectedRead.recommendation, 'worth_a_call')
+  assert.equal(validateAnswer({ text: line!, allowedNumerals: new Set(['4', '7', '24', '2026']), mode: 'data' }).ok, true)
+})
+
+Deno.test('buildReadLine (CUL-1406): a hidden note hides its correction too', () => {
+  const projectedRead = projectCachedRead(readRow({ eventId: 'e1', dismissedAt: '2026-10-07T13:00:00Z', readText: OLD_INTAKE, readCorrection: CORRECTION }))
+  const line = buildReadLine(photoResult('cached', projectedRead), 'Nyx')
+  assert.ok(line && !line.includes('Corrected'))
+})
+
+// Second adversarial pass, finding 1: on a flag-off row the photo's red flag is recounted BEFORE
+// the stored intake words, so the correction must name the sentence it corrects and never reach
+// back over the recount ("the words above" read as withdrawing the foreign-material line).
+Deno.test('buildReadLine (CUL-1406): the correction names its sentence; a foreign-material recount before it stands', () => {
+  const projectedRead = projectCachedRead(readRow({
+    eventId: 'e1', recommendation: 'worth_a_call', foreignMaterialPresent: 'yes', foreignMaterialNote: null,
+    readText: OLD_INTAKE, readCorrection: CORRECTION,
+  }))
+  const line = buildReadLine(photoResult('cached', projectedRead), 'Nyx')!
+  const recount = line.indexOf("something that doesn't look like food")
+  assert.ok(recount >= 0 && recount < line.indexOf(OLD_INTAKE), 'the red-flag recount leads, unchanged')
+  assert.ok(!/words above/i.test(line), 'nothing in the correction can reach back over the recount')
+  assert.ok(line.includes('The note "hasn\'t eaten a full meal recently" went further'))
 })

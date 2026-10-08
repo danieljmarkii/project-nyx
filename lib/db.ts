@@ -1,7 +1,12 @@
 import * as SQLite from 'expo-sqlite';
 import { File } from 'expo-file-system';
 import { LOCAL_WIPE_TABLES } from './hydration';
-import { LIBRARY_FOODS_QUERY, ARCHIVED_FOODS_QUERY } from './foodQueries';
+import {
+  LIBRARY_FOODS_QUERY,
+  ARCHIVED_FOODS_QUERY,
+  recentFoodsQuery,
+  RecentFoodsBounds,
+} from './foodQueries';
 import { EVENT_ATTACHMENT_QUERY, EVENT_ATTACHMENTS_QUERY } from './eventAttachmentQueries';
 import {
   MEDICATION_SCHEMA_SQL,
@@ -880,37 +885,13 @@ export async function getRecentFoods(
   petId: string,
   daysBack: number | null,
   limit: number,
+  bounds?: RecentFoodsBounds,
 ): Promise<PickerFood[]> {
   const db = getDb();
-  // Params are pushed in the same order their `?` placeholders appear below:
-  // pet_id, then the optional window cutoff, then the limit.
-  const params: (string | number)[] = [petId];
-  let windowClause = '';
-  if (daysBack != null) {
-    windowClause = 'AND e.occurred_at >= ?';
-    params.push(new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString());
-  }
-  params.push(limit);
-  return db.getAllAsync<PickerFood>(
-    // B-005: `AND f.archived_at IS NULL` — the picker/FAB "recent foods" is a
-    // picker read, so an archived food drops out of the re-offer set. This is the
-    // one archive filter that lives on a meals JOIN; it's still a PICKER read (it
-    // offers foods to log next), not a history/analytics read, so the invariant
-    // holds. The meal HISTORY itself (getTimeline, getMealForEvent) is a
-    // separate join and stays unfiltered.
-    `SELECT f.id, f.brand, f.product_name, f.format, f.food_type, f.photo_path
-     FROM meals m
-     JOIN events e ON e.id = m.event_id
-     JOIN food_items_cache f ON f.id = m.food_item_id
-     WHERE m.pet_id = ?
-       AND e.deleted_at IS NULL
-       AND f.archived_at IS NULL
-       ${windowClause}
-     GROUP BY f.id
-     ORDER BY MAX(e.occurred_at) DESC
-     LIMIT ?`,
-    params,
-  );
+  // The SQL lives in ./foodQueries so it runs against a real engine in jest; `bounds`
+  // is the FAB's fixed day span (CUL-1647), and every other caller omits it.
+  const { sql, params } = recentFoodsQuery(petId, daysBack, limit, bounds);
+  return db.getAllAsync<PickerFood>(sql, params);
 }
 
 // ONE food, in the picker's own shape, by id.

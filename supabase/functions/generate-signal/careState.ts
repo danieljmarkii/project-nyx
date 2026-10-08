@@ -34,13 +34,20 @@
 // `recheck_booked` needs to know an appointment is ABOUT the sign, which the shell may not read
 // under AC 10 (CUL-1531): the pure rule is here, and the shell passes no appointments. The
 // weight fact line (§4.1) is EN-8's gate and is not built here. Source 3 of C1a (the intake
-// predicate) waits on GAP-28's shared module. The latch's instant lives only in the cache row, so
-// a row written without the step (an incomplete read) drops it; the D4 rule then lapses every
-// older answer and the concern is `raised`, asking, but the next answer is judged as a first one
-// (CUL-1600).
+// predicate) waits on GAP-28's shared module. The latch is rebuilt from the record on every run
+// (CUL-1600, ruling B: `rebuiltMarker`) and a run that skips the step stamps the prior marker on
+// its concern cards, but the replay cannot see the cough/vomit pair (it reads the lane as it
+// stands now) or an answer whose reference left the read; those hold only while a prior row
+// carries them. A re-raise from before the concern left the set and came back within one course
+// is rebuilt too (louder). The D4 lapse list still lives only in the cache row: an unreadable
+// prior row lapses nothing (CUL-1663). The replay reads a trial's or course's end date, status and
+// newest dose as they stand TODAY, not as they stood on each past evening: a newer course that
+// lapsed over a dosing gap of more than 14 days and was dosed again reads as covering the gap, and
+// an end that synced late reads as on time. Both are quieter only with no prior row (the cache's
+// marker covers them otherwise), and the second matches the record as corrected.
 
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
-import { localDayIndex, localDayIndexOf } from '../../../lib/utils.ts'
+import { dayKeyFromIndex, localDayIndex, localDayIndexOf } from '../../../lib/utils.ts'
 import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 import { maskingSpansFor, windowTouchesSpan, type MaskCourse } from '../../../lib/maskingSpans.ts'
 import type { Finding, SymptomEvent, SymptomType } from './detection.ts'
@@ -243,6 +250,10 @@ export interface CareStateFact {
    *  written after it, about a day on or after it, exists, and comes back if that answer is
    *  retracted or lapses. Replaced only by a fresh re-raise. Absent on a concern never re-raised. */
   raisedAgainAt?: string
+  /** CUL-1600: the local day of `raisedAgainAt` (YYYY-MM-DD) as the run that set it saw it, so a
+   *  later run whose timezone read failed (UTC) still compares an answer's date against the day
+   *  the owner lived. Written beside `raisedAgainAt`, always. */
+  raisedAgainOn?: string
   /** Set on `raised_again`: the "Back because …" sentence on its own (DF-8), which also opens
    *  `text`. Its own field so Home draws it without splitting a sentence that carries the
    *  pet's name ("Mr. Biggles"), PR-35's code review. Absent on every other state. */
@@ -437,6 +448,13 @@ export function lapseReason(ack: AckFact, args: CareStateArgs, retracted: Readon
   // than CARE_HISTORY_MAX_DAYS, or when that read failed: the concern then asks again (louder).
   const readFrom = Date.parse(args.readSinceIso)
   if (Number.isFinite(readFrom) && anchor - cfg.referenceDays < localDayIndex(readFrom, tz) + 1) return 'reference_out_of_read'
+  return scopeLapseReason(ack, today, created, cfg, tz)
+}
+
+/** Why a trial or course answer stopped on its own clock as of local day `today`, or null.
+ *  Its own function so the record rebuild can ask it alone (CUL-1600): asked through
+ *  `lapseReason`, an earlier reason (a reference out of the read) hides it. */
+function scopeLapseReason(ack: AckFact, today: number, created: number, cfg: CareStateConfig, tz: string | undefined): string | null {
   if (ack.source === 'vet_started_trial') {
     const t = ack.trial
     if (!t) return 'scope_missing'
@@ -491,11 +509,27 @@ function liveAcks(sign: SymptomType, args: CareStateArgs, cfg: CareStateConfig, 
  * counts), and ABOUT a day on or after that run's day (`anchor_on`: the visit, the trial or course
  * start, the tap day). A visit, trial or course from before the concern came back is an answer
  * about the old concern, however late it is written.
+ *
+ * CUL-1600: the day half compares against the marker's own day (`raisedAgainOn`, stored by the run
+ * that set it), never this run's reading of the instant, so a run that fell back to UTC cannot
+ * accept a visit on the eve of the re-raise. And a trial or course answer is about the earlier of
+ * the day the owner wrote and the trial's or course's own start: the honest client writes the
+ * start, and a later `anchor_on` would turn an old trial into an answer (louder only).
  */
-export function answersReRaise(ack: AckFact, raisedAgainMs: number, tz: string | undefined): boolean {
+export function answersReRaise(ack: AckFact, raisedAgainMs: number, tz: string | undefined, raisedAgainDay?: number): boolean {
   const created = Date.parse(ack.createdAt)
+  const anchor = aboutDay(ack, tz)
+  const day = raisedAgainDay ?? localDayIndex(raisedAgainMs, tz)
+  return Number.isFinite(created) && created > raisedAgainMs && anchor !== null && anchor >= day
+}
+
+/** The day an answer is ABOUT, for the latch: its anchor, or the earlier scope start (CUL-1600). */
+function aboutDay(ack: AckFact, tz: string | undefined): number | null {
   const anchor = localDayIndexOf(ack.anchorOn, tz)
-  return Number.isFinite(created) && created > raisedAgainMs && anchor !== null && anchor >= localDayIndex(raisedAgainMs, tz)
+  if (anchor === null) return null
+  const scopeOn = ack.source === 'vet_started_trial' ? ack.trial?.startedOn : ack.source === 'vet_started_course' ? ack.course?.startedOn : null
+  const scope = typeof scopeOn === 'string' ? localDayIndexOf(scopeOn, tz) : null
+  return scope === null ? anchor : Math.min(anchor, scope)
 }
 
 // ── The reference (§4.2) ──────────────────────────────────────────────────────
@@ -709,13 +743,47 @@ export function findReRaise(x: ReRaiseArgs): ReRaise | null {
 
 // ── The prior row (the latch and the frozen reference) ────────────────────────
 
+/** A re-raise marker: the instant, and the local day it was said on (CUL-1600). */
+export interface ReRaiseMarker {
+  ms: number
+  day: number
+  /** False when the day is a stand-in (a pre-marker row's generation time): the copy names no date. */
+  dated: boolean
+  /** What brought it back, when the marker knows (a rebuilt or stored one). */
+  reason: ReRaiseReason | null
+}
+
+/**
+ * The louder of two markers, FIELD BY FIELD: the later instant and the later day, separately
+ * (adversarial pass on PR-23c, #3). Picking one whole marker by its instant let a prior row with a
+ * slightly later instant carry an EARLIER day in with it, and the day is the half `answersReRaise`
+ * reads for "about a day on or after it": an owner-writable field that quieted. Fewer answers
+ * postdate a later instant, and fewer are about a later day.
+ */
+function laterMarker(a: ReRaiseMarker | null, b: ReRaiseMarker | null): ReRaiseMarker | null {
+  if (a === null) return b
+  if (b === null) return a
+  const byDay = b.day > a.day ? b : a
+  return { ms: Math.max(a.ms, b.ms), day: byDay.day, dated: byDay.dated, reason: byDay.reason ?? (byDay === a ? b.reason : a.reason) }
+}
+
 interface PriorCare {
   state: CareStateValue
   ackId: string | null
   reason: ReRaiseReason | null
   lapsed: string[]
-  /** The carried re-raise instant (CUL-1545), or null when the row carries none. */
-  raisedAgainMs: number | null
+}
+
+/** A marker as a row stores it: the instant, and the day key when the row carries one. */
+function markerOf(at: unknown, on: unknown, tz: string | undefined, reason: unknown = null): ReRaiseMarker | null {
+  const ms = typeof at === 'string' ? Date.parse(at) : NaN
+  if (!Number.isFinite(ms)) return null
+  const day = typeof on === 'string' ? localDayIndexOf(on, tz) : null
+  return { ms, day: day ?? localDayIndex(ms, tz), dated: true, reason: reasonOf(reason) }
+}
+
+function reasonOf(r: unknown): ReRaiseReason | null {
+  return r === 'rate' || r === 'dense' || r === 'co_sign' || r === 'pair' ? r : null
 }
 
 /** The prior row's care state per sign, tolerant of any shape (a malformed entry reads as none). */
@@ -731,15 +799,10 @@ export function readPriorCare(raw: unknown): Map<string, PriorCare> {
     const state = c.state
     if (state !== 'raised' && state !== 'with_vet' && state !== 'recheck_booked' && state !== 'raised_again') continue
     const lapsed = Array.isArray(c.lapsed) ? (c.lapsed as unknown[]).filter((x): x is string => typeof x === 'string') : []
-    const at = typeof c.raisedAgainAt === 'string' ? Date.parse(c.raisedAgainAt) : NaN
-    const marker = Number.isFinite(at) ? at : null
     const prev = out.get(f.symptomType)
-    // The later marker is the louder one (fewer answers postdate it).
-    const pooledMarker = prev && prev.raisedAgainMs !== null && (marker === null || prev.raisedAgainMs > marker) ? prev.raisedAgainMs : marker
     // Loudest wins when two lanes of one sign disagree; the lapsed lists are pooled (louder too).
     if (prev && loud[prev.state] >= loud[state]) {
       prev.lapsed = [...new Set([...prev.lapsed, ...lapsed])]
-      prev.raisedAgainMs = pooledMarker
       continue
     }
     out.set(f.symptomType, {
@@ -747,10 +810,142 @@ export function readPriorCare(raw: unknown): Map<string, PriorCare> {
       ackId: typeof c.ackId === 'string' ? c.ackId : null,
       reason: c.reason === 'rate' || c.reason === 'dense' || c.reason === 'co_sign' || c.reason === 'pair' ? c.reason : null,
       lapsed: [...new Set([...(prev?.lapsed ?? []), ...lapsed])],
-      raisedAgainMs: pooledMarker,
     })
   }
   return out
+}
+
+/**
+ * The prior row's re-raise marker per sign (CUL-1545, CUL-1600). Each LANE resolves its own
+ * marker first: the care state's `raisedAgainAt`, else a `raised_again` with no marker stands on
+ * the row's generation time (`legacyMs`: no earlier than the true re-raise), else the bare
+ * `raisedAgainLatch` a run that skipped the step stamped on the card. Then the latest across lanes
+ * wins. Resolving per lane matters: a pooled marker read before the fallback let one lane's early
+ * marker outvote another lane's markerless `raised_again` (CUL-1600 residual 3).
+ */
+export function readPriorMarkers(raw: unknown, legacyMs: number | null, tz: string | undefined): Map<string, ReRaiseMarker> {
+  const out = new Map<string, ReRaiseMarker>()
+  if (!Array.isArray(raw)) return out
+  for (const e of raw) {
+    const f = (e as { finding?: unknown } | null)?.finding as Record<string, unknown> | undefined
+    if (!f || typeof f !== 'object' || !CONCERN_TYPES.has(f.type as Finding['type']) || typeof f.symptomType !== 'string') continue
+    const c = f.careState as Record<string, unknown> | undefined
+    const latch = f.raisedAgainLatch as Record<string, unknown> | undefined
+    let lane: ReRaiseMarker | null = null
+    if (c && typeof c === 'object') {
+      lane = markerOf(c.raisedAgainAt, c.raisedAgainOn, tz, c.reason)
+      if (lane === null && c.state === 'raised_again' && legacyMs !== null) lane = { ms: legacyMs, day: localDayIndex(legacyMs, tz), dated: false, reason: reasonOf(c.reason) }
+    }
+    if (latch && typeof latch === 'object') lane = laterMarker(lane, markerOf(latch.at, latch.on, tz))
+    if (lane === null) continue
+    const pooled = laterMarker(out.get(f.symptomType) ?? null, lane)
+    if (pooled) out.set(f.symptomType, pooled)
+  }
+  return out
+}
+
+/** A marker as the bare latch a skipped run stamps on a concern card (CUL-1600). */
+export interface RaisedAgainLatch {
+  at: string
+  on: string
+}
+
+export function latchOf(m: ReRaiseMarker): RaisedAgainLatch {
+  return { at: new Date(m.ms).toISOString(), on: dayKeyFromIndex(m.day) }
+}
+// (A stamped latch carries no `dated` flag: a stand-in day is restamped as a dated one. That is
+// a copy imprecision only, never a quieter state, and only on a pre-marker row skipped once.)
+
+/** The first instant of local day `day` in `tz` (zone offsets are whole quarter hours). */
+function localDayStartMs(day: number, tz: string | undefined): number {
+  const step = 15 * 60_000
+  for (let ms = day * MS_PER_DAY - 15 * 3_600_000; ms <= day * MS_PER_DAY + 15 * 3_600_000; ms += step) {
+    if (localDayIndex(ms, tz) >= day) return ms
+  }
+  return day * MS_PER_DAY
+}
+
+// Why an answer was never live in this course at all (it cannot have been re-raised against).
+const NEVER_LIVE = new Set(['malformed', 'future', 'future_anchor', 'anchor_after_answer', 'earlier_course', 'visit_before_onset', 'scope_missing'])
+
+/**
+ * CUL-1600 (PM ruling B, 2026-10-06): the re-raise marker rebuilt from the RECORD, with no
+ * dependency on the cache row. The step tests only the newest live answer, so a re-raise against
+ * an older one is visible to this run only through the marker the cache carried; a run that
+ * skipped the step (an incomplete read) or a prior row that could not be read dropped it, and the
+ * next answer about an older visit was judged as a first one.
+ *
+ * So the step's own evening-by-evening replay (`findReRaise`) is run against every answer this
+ * course has had but `exceptId` (the one the step tests live: its re-raise is this run's `rr`).
+ * Retracted and D4-lapsed answers count, because the re-raise against them happened. A candidate
+ * day counts only if that answer was the one the step would have tested that evening: no newer
+ * answer written on an EARLIER local day was live then (not yet retracted, not past its trial or
+ * course), and the answer itself was not past its own. The latest surviving day is the marker,
+ * dated from the start of that local day. The cough/vomit pair is not replayed (it reads the lane
+ * as it stands now) and an answer whose reference left the read replays its other arms only;
+ * the cache's marker, and a skipped run's stamp, cover both while a prior row exists.
+ */
+function rebuiltMarker(sign: SymptomType, args: CareStateArgs, ix: DayIndex, cfg: CareStateConfig, exceptId: string | null): ReRaiseMarker | null {
+  const tz = args.timezone
+  const start = courseStartMs(args, sign)
+  if (start === null) return null
+  const none = new Set<string>()
+  const acks = args.record.acknowledgements
+  const valid = acks
+    .filter((a) => a.sign === sign && !a.retracts && !NEVER_LIVE.has(lapseReason(a, args, none, start, cfg) ?? ''))
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || (a.id < b.id ? -1 : 1))
+  // Where an answer stood on local day d, asked of the record as it stood THEN (adversarial round 2):
+  // today's record answers some of these wrongly for a past day, so each is asked per day.
+  //   • Its anchor: a trial or course may be written before it starts, and the step tested the
+  //     older answer until that day came (`future_anchor`).
+  //   • A course marked stopped or completed with no end date ended on a day the record does not
+  //     hold. For the answer's OWN walk it is treated as running (louder: its re-raise is kept);
+  //     as a NEWER answer covering an older one, as ended after its last logged dose, or always
+  //     when none is logged (louder: it covers nothing it cannot be shown to have covered).
+  const anchorDayOf = (a: AckFact) => localDayIndexOf(a.anchorOn, tz)
+  const endUnknown = (a: AckFact) =>
+    a.source === 'vet_started_course' && !!a.course && !a.course.endedOn && (a.course.status === 'completed' || a.course.status === 'stopped')
+  const scopeAsOf = (a: AckFact, d: number) =>
+    scopeLapseReason(endUnknown(a) ? { ...a, course: { ...(a.course as AckCourseScope), status: null } } : a, d, Date.parse(a.createdAt), cfg, tz)
+  const ownScopeEnded = (a: AckFact, d: number) => scopeAsOf(a, d) !== null
+  const coveredOn = (b: AckFact, d: number) => {
+    if (scopeAsOf(b, d) !== null) return false
+    if (!endUnknown(b)) return true
+    const last = b.course?.lastDoseAt ? Date.parse(b.course.lastDoseAt) : NaN
+    return Number.isFinite(last) && d <= localDayIndex(last, tz)
+  }
+  const retractedBy = (a: AckFact, d: number) =>
+    acks.some((r) => r.retracts === a.id && Number.isFinite(Date.parse(r.createdAt)) && localDayIndex(Date.parse(r.createdAt), tz) <= d)
+  // Whether a newer answer, written on an earlier local day, was the one the step tested on d.
+  const supersededOn = (a: AckFact, d: number) => {
+    const createdMs = Date.parse(a.createdAt)
+    return valid.some((b) => {
+      const bMs = Date.parse(b.createdAt)
+      const bAnchor = anchorDayOf(b)
+      return b !== a && bMs > createdMs && localDayIndex(bMs, tz) < d && bAnchor !== null && bAnchor <= d && !retractedBy(b, d) && coveredOn(b, d)
+    })
+  }
+  let best: { day: number; reason: ReRaiseReason } | null = null
+  for (const a of valid) {
+    if (a.id === exceptId) continue
+    const rr = findReRaise({ sign, ack: a, reference: referenceFor(sign, a, ix, cfg, tz), ix, args, cfg, pairOnsetIso: null, pairChronicAtAnswer: null, pairCourseStartMs: null })
+    if (!rr) continue
+    // Once its test has fired, the step says the concern is back on the FIRST evening this answer
+    // is the one it tests: the trigger day, or the day a newer answer covering it lapsed or was
+    // taken back (adversarial pass on PR-23c, #2: testing the trigger day alone missed a re-raise
+    // that surfaced when an eight-week trial ended). Its own retraction or scope end is final.
+    // Not before its own anchor: under CARE_STATE_CONFIG no arm can confirm before it (the rate
+    // reference ends the day before it, the dense arm's earliest second firing lands on it, a
+    // co-sign must be new against it), so this binds only if PR-16 retunes the knobs. A mutation
+    // removing it survives the tests for that reason, measured.
+    for (let d = Math.max(rr.onDay, anchorDayOf(a) ?? rr.onDay); d <= ix.today; d += 1) {
+      if (retractedBy(a, d - 1) || ownScopeEnded(a, d)) break
+      if (supersededOn(a, d)) continue
+      if (best === null || d > best.day) best = { day: d, reason: rr.reason }
+      break
+    }
+  }
+  return best === null ? null : { ms: localDayStartMs(best.day, tz), day: best.day, dated: true, reason: best.reason }
 }
 
 /** The signs the prior row held a concern on (a chronicity or worsening safety card). */
@@ -867,6 +1062,9 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
   const prior = readPriorCare(args.priorFindings)
   const priorSigns = priorConcernSigns(args.priorFindings)
   const priorGen = args.priorGeneratedAtMs
+  // A row from before the marker existed that said raised_again stands on its own generation time,
+  // which is no earlier than the true re-raise (the louder reading); with no generation time, on now.
+  const priorMarkers = readPriorMarkers(args.priorFindings, priorGen ?? args.nowMs, tz)
   const chronicOnset = new Map<SymptomType, string>()
   for (const r of findings) {
     if (r.finding.type === 'symptom_chronicity') chronicOnset.set(r.finding.symptomType, r.finding.firstOnsetIso)
@@ -894,11 +1092,11 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     const live = liveAcks(sign, args, cfg, lapsed)
     const ack = live[0] ?? null
     // §4.5 the latch (CUL-1545): the instant a run first said this concern was back, carried on
-    // every state since while the concern stayed in the set. A row from before the marker existed
-    // that said raised_again stands on its own generation time, which is no earlier than the true
-    // re-raise (the louder reading); with no generation time, on now.
-    const carried = p === null ? null : p.raisedAgainMs ?? (p.state === 'raised_again' ? priorGen ?? args.nowMs : null)
-    const keep = carried === null ? {} : { raisedAgainAt: new Date(carried).toISOString() }
+    // every state since while the concern stayed in the set (or stamped by a run that skipped the
+    // step), and the same marker REBUILT from the record (CUL-1600, ruling B), so a skipped night or
+    // an unreadable prior row cannot drop it. The later of the two: later is louder.
+    const carried = laterMarker(priorMarkers.get(sign) ?? null, rebuiltMarker(sign, args, ix, cfg, ack?.id ?? null))
+    const keep = carried === null ? {} : { raisedAgainAt: new Date(carried.ms).toISOString(), raisedAgainOn: dayKeyFromIndex(carried.day) }
     if (!ack) {
       const raised: CareStateFact = { state: 'raised', ackId: null, source: null, anchorOn: null, reference: null, reason: null, recheckOn: null, text: null, lapsed: lapsedList, ...keep }
       bySign.set(sign, raised)
@@ -918,12 +1116,19 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     // after a qualifying one must not bring the concern back on its own. Keyed on time, never on
     // the answer's id (adversarial D5), and on the live set, so a retracted or lapsed answer
     // hands the concern back to the latch, never to an older answer, quietly (CUL-1545 N2).
-    const latched = carried !== null && !live.some((a) => answersReRaise(a, carried, tz))
+    const latched = carried !== null && !live.some((a) => answersReRaise(a, carried.ms, tz, carried.day))
     const drug = ack.source === 'vet_started_course' ? courseLabelFor(ack) : null
     const source = sourceSentence(ack, args.petName, ix.today, tz, drug)
     if (rr || latched) {
-      const reason: ReRaiseReason = rr?.reason ?? p?.reason ?? 'rate'
-      const back = rr ? backBecauseLine(rr, sign, args.petName, ix.today) : `Back because something changed since your answer.`
+      const reason: ReRaiseReason = rr?.reason ?? (latched ? (carried as ReRaiseMarker).reason : null) ?? p?.reason ?? 'rate'
+      // A held latch with no fresh trigger names the day it came back, never "something changed":
+      // a qualifying answer lapsing on its own clock changes nothing in the record (CUL-1600 res. 5).
+      // The date is named only when the marker knows it: a pre-marker row's generation time is
+      // an upper bound, and a day after today is a row nobody honest wrote.
+      const held = carried as ReRaiseMarker
+      const back = rr
+        ? backBecauseLine(rr, sign, args.petName, ix.today)
+        : held.dated && held.day <= ix.today ? `Back since ${formatDay(held.day, ix.today)}.` : 'Still back.'
       const pair = rr ? pairLine(rr, reference, ix.today) : null
       const fact: CareStateFact = {
         state: 'raised_again', ackId: ack.id, source: ack.source, anchorOn: ack.anchorOn, reference, reason, recheckOn: null,
@@ -934,7 +1139,8 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
         lapsed: lapsedList,
         // A held latch keeps its first instant; a fresh re-raise (nothing carried, or the carried
         // one answered) starts a new one at this run.
-        raisedAgainAt: new Date(latched ? (carried as number) : args.nowMs).toISOString(),
+        raisedAgainAt: new Date(latched ? (carried as ReRaiseMarker).ms : args.nowMs).toISOString(),
+        raisedAgainOn: dayKeyFromIndex(latched ? (carried as ReRaiseMarker).day : ix.today),
       }
       bySign.set(sign, fact)
       return fact

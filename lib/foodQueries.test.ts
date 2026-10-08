@@ -10,7 +10,8 @@
 // jest run (probed before adding this test).
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
-import { LIBRARY_FOODS_QUERY, ARCHIVED_FOODS_QUERY } from './foodQueries';
+import { LIBRARY_FOODS_QUERY, ARCHIVED_FOODS_QUERY, recentFoodsQuery } from './foodQueries';
+import { BASE_SCHEMA_SQL, COLUMN_UPGRADES } from './localSchema';
 
 interface LibRow {
   id: string;
@@ -240,5 +241,120 @@ describe('ARCHIVED_FOODS_QUERY — B-005 PR 3 Archived section', () => {
       ['b', 'B', 'Two', 'raw', 'meal', null, null],
     ]);
     expect(rows).toHaveLength(0);
+  });
+});
+
+// ── CUL-1647 ─────────────────────────────────────────────────────────────────
+//
+// The recent foods read, run for real over the production DDL. The FAB passes a fixed
+// span (the window before today's local midnight); the picker and the intake prefill
+// pass none and must get exactly the query they always had.
+describe('recentFoodsQuery — the FAB’s fixed span, and everyone else’s unchanged read', () => {
+  const PET = 'p1';
+  // Instants here are UTC literals on purpose: the bounds are instants too, so the
+  // comparison under test is instant against instant and no local day is in play.
+  const AFTER = '2026-09-24T04:00:00.000Z';
+  const BEFORE = '2026-10-08T04:00:00.000Z';
+
+  function seed(meals: Array<[eventId: string, foodId: string, occurredAt: string, opts?: { deleted?: boolean; pet?: string }]>) {
+    const db = new DatabaseSync(':memory:');
+    db.exec(BASE_SCHEMA_SQL);
+    // The device's schema is the base DDL plus its column upgrades (food_type and
+    // photo_path arrive that way), applied as initDb applies them.
+    for (const u of COLUMN_UPGRADES) {
+      try {
+        db.exec(`ALTER TABLE ${u.table} ADD COLUMN ${u.column} ${u.type}`);
+      } catch {
+        // A table outside BASE_SCHEMA_SQL, or a column already present: not this read's.
+      }
+    }
+    for (const id of ['wet', 'dry', 'old', 'treat']) {
+      db.prepare(
+        `INSERT INTO food_items_cache (id, brand, product_name, format) VALUES (?, 'Brand', ?, 'wet_canned')`,
+      ).run(id, id);
+    }
+    for (const [eventId, foodId, occurredAt, opts] of meals) {
+      const pet = opts?.pet ?? PET;
+      db.prepare(
+        `INSERT INTO events (id, pet_id, event_type, occurred_at, deleted_at) VALUES (?, ?, 'meal', ?, ?)`,
+      ).run(eventId, pet, occurredAt, opts?.deleted ? '2026-10-07T00:00:00.000Z' : null);
+      db.prepare(`INSERT INTO meals (id, event_id, pet_id, food_item_id) VALUES (?, ?, ?, ?)`).run(
+        `m-${eventId}`, eventId, pet, foodId,
+      );
+    }
+    return db;
+  }
+
+  function ids(db: ReturnType<typeof seed>, bounds?: { after: string; before: string }, limit = 3): string[] {
+    const { sql, params } = recentFoodsQuery(PET, null, limit, bounds);
+    const rows = db.prepare(sql).all(...params) as Array<{ id: string }>;
+    return rows.map((r) => r.id);
+  }
+
+  it('without bounds, the SQL and params are the read the picker always had', () => {
+    const legacy = `SELECT f.id, f.brand, f.product_name, f.format, f.food_type, f.photo_path
+     FROM meals m
+     JOIN events e ON e.id = m.event_id
+     JOIN food_items_cache f ON f.id = m.food_item_id
+     WHERE m.pet_id = ?
+       AND e.deleted_at IS NULL
+       AND f.archived_at IS NULL
+       AND e.occurred_at >= ?
+     GROUP BY f.id
+     ORDER BY MAX(e.occurred_at) DESC
+     LIMIT ?`;
+    const now = Date.parse('2026-10-08T12:00:00.000Z');
+    expect(recentFoodsQuery(PET, 30, 12, undefined, now)).toEqual({
+      sql: legacy,
+      params: [PET, new Date(now - 30 * 86400000).toISOString(), 12],
+    });
+    expect(recentFoodsQuery(PET, null, 3).sql).toBe(legacy.replace('AND e.occurred_at >= ?', ''));
+    expect(recentFoodsQuery(PET, null, 3).params).toEqual([PET, 3]);
+  });
+
+  it('a meal at or after the end bound (today) never moves the order', () => {
+    const db = seed([
+      ['e1', 'wet', '2026-10-07T08:00:00.000Z'],
+      ['e2', 'dry', '2026-10-06T20:00:00.000Z'],
+      // Today: dry again, and a food first given today.
+      ['e3', 'dry', '2026-10-08T09:00:00.000Z'],
+      ['e4', 'treat', '2026-10-08T10:00:00.000Z'],
+    ]);
+    expect(ids(db, { after: AFTER, before: BEFORE })).toEqual(['wet', 'dry']);
+    // Unbounded, today's logs reorder it and add the new food: the behaviour CUL-1647 ends.
+    expect(ids(db)).toEqual(['treat', 'dry', 'wet']);
+  });
+
+  it('a food last eaten before the window is gone; one on the start bound stays', () => {
+    const db = seed([
+      ['e1', 'wet', '2026-10-07T08:00:00.000Z'],
+      ['e2', 'old', '2026-09-24T03:59:59.999Z'],
+      ['e3', 'dry', AFTER],
+    ]);
+    expect(ids(db, { after: AFTER, before: BEFORE })).toEqual(['wet', 'dry']);
+  });
+
+  it('compares instants, not text: a hydrated +00:00 row on a bound is read as the instant it is (C-40)', () => {
+    const db = seed([
+      // The start bound's own instant, in PostgREST's spelling: inside (inclusive).
+      ['e1', 'dry', '2026-09-24T04:00:00+00:00'],
+      // The end bound's own instant, in PostgREST's spelling: outside (exclusive).
+      ['e2', 'treat', '2026-10-08T04:00:00+00:00'],
+      // A millisecond before the end, in the local spelling: inside.
+      ['e3', 'wet', '2026-10-08T03:59:59.999Z'],
+    ]);
+    expect(ids(db, { after: AFTER, before: BEFORE })).toEqual(['wet', 'dry']);
+    // The text compare this replaces would have dropped the start-bound row:
+    // '2026-09-24T04:00:00+' sorts before '2026-09-24T04:00:00.'.
+    expect('2026-09-24T04:00:00+00:00' >= AFTER).toBe(false);
+  });
+
+  it('keeps the existing filters: deleted meals and other pets stay out', () => {
+    const db = seed([
+      ['e1', 'wet', '2026-10-07T08:00:00.000Z', { deleted: true }],
+      ['e2', 'dry', '2026-10-07T09:00:00.000Z', { pet: 'p2' }],
+      ['e3', 'old', '2026-10-01T09:00:00.000Z'],
+    ]);
+    expect(ids(db, { after: AFTER, before: BEFORE })).toEqual(['old']);
   });
 });
