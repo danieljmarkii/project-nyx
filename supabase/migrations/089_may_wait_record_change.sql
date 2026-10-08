@@ -73,13 +73,20 @@
 --
 -- WHAT FIRES (four AFTER triggers, one function):
 --   events INSERT   a live lethargy (lethargy).
---   events UPDATE   OF occurred_at, pet_id, event_type, deleted_at: a move (time,
---                   pet or type changed, or the row un-deleted) touches the OLD
+--   events UPDATE   OF occurred_at, occurred_at_confidence, pet_id, event_type,
+--                   deleted_at: a move (time, confidence, pet or type changed, or
+--                   the row un-deleted) touches the OLD
 --                   place under the OLD pet and the NEW place under the NEW pet
 --                   (both, so either timeline loses its TRUEs), and self. A meal
 --                   soft-deleted touches its old place.
 --   meals INSERT    a rated meal, at its event's time.
 --   meals UPDATE    OF intake_rating, event_id, pet_id: the old and new place.
+-- The confidence counts as a move because the floor reads it: a found pile is
+-- never an onset (T1), and an estimated time does not merge (T2), so restating a
+-- "Found it" vomit as "Saw it" at the same time can make a run call-now
+-- (adversarial pass on this file). The guard derives the UPDATE OF list from the
+-- columns the server's evidence reader reads off `events`, so a column it starts
+-- reading reds there until it is watched here.
 -- An event type the predicate does not read (anything but lethargy, a meal, a
 -- vomit or a stool) touches only self. A soft delete of a vomit, stool or
 -- lethargy only removes evidence (calmer is never the result) and touches
@@ -116,7 +123,12 @@
 --   Same-pet:    074 / 023's triggers unchanged; nothing here writes a pet_id.
 --   Realtime:    lowered rows publish as ordinary updates (059); a boolean
 --                carries no words, paths or URLs.
---   Errors:      the function raises nothing (C-31).
+--   Errors:      the function raises nothing of its own (C-31). The one error it
+--                can hit is Postgres's own `timestamp out of range`, for a touch
+--                point within days of timestamptz's limit on a pet with a TRUE; it
+--                carries no row value, and RLS is applied before the window
+--                arithmetic, so it fails only the writer's own write
+--                (rls-privacy-reviewer, probes O1/O2/O8).
 --   Wipe list:   no local copy yet (PR-27f's).
 --   Model reads: none.
 --
@@ -137,6 +149,10 @@
 --   Backfill:     N/A. A TRUE that a change before this migration should have
 --                 lowered keeps standing until the server's next read near it;
 --                 no installed build renders a TRUE yet (PR-27f's).
+--   Bulk writes: a future migration or script that re-dates, re-types, re-pets
+--                 or un-deletes events (or re-rates meals) now lowers the TRUEs it
+--                 reaches, across tenants. That is the safe direction; say so in
+--                 that migration's pre-flight.
 --   Affected tables: events, meals (two triggers each), event_ai_analysis (the
 --                 sweep's target; one partial index). Sanity checks before applying:
 --                   SELECT count(*) FROM pg_proc WHERE proname = 'take_back_may_wait_on_record_change';  -- 0
@@ -181,6 +197,7 @@ BEGIN
       END IF;
     ELSE
       v_moved := NEW.occurred_at IS DISTINCT FROM OLD.occurred_at
+              OR NEW.occurred_at_confidence IS DISTINCT FROM OLD.occurred_at_confidence
               OR NEW.pet_id      IS DISTINCT FROM OLD.pet_id
               OR NEW.event_type  IS DISTINCT FROM OLD.event_type
               OR (OLD.deleted_at IS NOT NULL AND NEW.deleted_at IS NULL);
@@ -291,9 +308,10 @@ CREATE TRIGGER trg_events_may_wait_record_ins
   EXECUTE FUNCTION public.take_back_may_wait_on_record_change();
 
 CREATE TRIGGER trg_events_may_wait_record_upd
-  AFTER UPDATE OF occurred_at, pet_id, event_type, deleted_at ON public.events
+  AFTER UPDATE OF occurred_at, occurred_at_confidence, pet_id, event_type, deleted_at ON public.events
   FOR EACH ROW
   WHEN (OLD.occurred_at IS DISTINCT FROM NEW.occurred_at
+     OR OLD.occurred_at_confidence IS DISTINCT FROM NEW.occurred_at_confidence
      OR OLD.pet_id      IS DISTINCT FROM NEW.pet_id
      OR OLD.event_type  IS DISTINCT FROM NEW.event_type
      OR OLD.deleted_at  IS DISTINCT FROM NEW.deleted_at)
@@ -314,4 +332,4 @@ CREATE TRIGGER trg_meals_may_wait_record_upd
   EXECUTE FUNCTION public.take_back_may_wait_on_record_change();
 
 COMMENT ON FUNCTION public.take_back_may_wait_on_record_change() IS
-  'CUL-1671 (089): a change on the events side lowers may_wait TRUE -> NULL on every TRUE of the same pet (either row''s analysis or event pet) inside the predicate''s window: a lethargy (anchor <= L + 96 h), a moved vomit / stool (anchor within 144 h), a cat''s rated meal (anchor in [M - 72 h, M + 240 h], or every TRUE when M is within 168 h of now), and the moved event''s own TRUE. Windows mirrored from incidentMayWait.ts. INVOKER, so RLS bounds a client''s sweep; every role fires. Raises nothing.';
+  'CUL-1671 (089): a change on the events side lowers may_wait TRUE -> NULL on every TRUE of the same pet (either row''s analysis or event pet) inside the predicate''s window: a lethargy (anchor <= L + 96 h), a moved vomit / stool (anchor within 144 h), a cat''s rated meal (anchor in [M - 72 h, M + 240 h], or every TRUE when M is within 168 h of now), and the moved event''s own TRUE. A time / confidence / pet / type move or un-delete counts. Windows mirrored from incidentMayWait.ts. INVOKER, so RLS bounds a client''s sweep; every role fires. Raises no message of its own.';

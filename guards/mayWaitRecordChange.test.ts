@@ -23,7 +23,7 @@ import { stripSqlComments } from './sqlComments';
 //
 // WHAT IT CANNOT SEE: the live database (a dashboard edit), and the trigger's
 // runtime behaviour. 089's PR proves the behaviour against a scratch Postgres 16
-// (38 cases: 38 pass on 089; on 088 alone the 23 lowering cases fail and the 15
+// (41 cases: 41 pass on 089; on 088 alone the 25 lowering cases fail and the 16
 // keep cases pass; the probe is in the PR body). Every rule here and in the probe
 // is mutation-proven (the PR body lists the mutants).
 // The stated blind spots of the trigger itself are in 089's header.
@@ -115,7 +115,7 @@ describe('089: the function and its four triggers', () => {
     const mine = [...live.triggers.entries()].filter(([, t]) => t.fn === FN);
     expect(mine.map(([n, t]) => `${n}: ${t.timing} ON ${t.table}`).sort()).toEqual([
       'trg_events_may_wait_record_ins: AFTER INSERT ON events',
-      'trg_events_may_wait_record_upd: AFTER UPDATE OF OCCURRED_AT, PET_ID, EVENT_TYPE, DELETED_AT ON events',
+      'trg_events_may_wait_record_upd: AFTER UPDATE OF OCCURRED_AT, OCCURRED_AT_CONFIDENCE, PET_ID, EVENT_TYPE, DELETED_AT ON events',
       'trg_meals_may_wait_record_ins: AFTER INSERT ON meals',
       'trg_meals_may_wait_record_upd: AFTER UPDATE OF INTAKE_RATING, EVENT_ID, PET_ID ON meals',
     ]);
@@ -127,17 +127,59 @@ describe('089: the function and its four triggers', () => {
   });
 
   it('the update triggers fire on every column they name moving (and only then)', () => {
-    for (const [name, cols] of [
-      ['trg_events_may_wait_record_upd', ['occurred_at', 'pet_id', 'event_type', 'deleted_at']],
-      ['trg_meals_may_wait_record_upd', ['intake_rating', 'event_id', 'pet_id']],
-    ] as const) {
-      const when = live.triggers.get(name)?.when ?? '';
-      const named = [...when.matchAll(/OLD\.(\w+) IS DISTINCT FROM NEW\.(\w+)/g)].map((m) => {
+    for (const name of ['trg_events_may_wait_record_upd', 'trg_meals_may_wait_record_upd']) {
+      const t = live.triggers.get(name);
+      const listed = /UPDATE OF (.*)/.exec(t?.timing ?? '')?.[1].toLowerCase().split(/\s*,\s*/).sort() ?? [];
+      const named = [...(t?.when ?? '').matchAll(/OLD\.(\w+) IS DISTINCT FROM NEW\.(\w+)/g)].map((m) => {
         expect(m[1]).toBe(m[2]);
         return m[1];
       });
-      expect(named.sort()).toEqual([...cols].sort());
+      expect({ name, when: named.sort() }).toEqual({ name, when: listed });
     }
+  });
+
+  // Derived, not restated (adversarial pass on 089: a hand-written list left
+  // `occurred_at_confidence` unwatched while the floor keys T1 / T2 on it). Every
+  // column the server's evidence reader reads off `events`, selected or filtered,
+  // must be one the events trigger watches; every `meals` column it embeds, one the
+  // meals trigger watches.
+  function readerColumns(): { events: string[]; meals: string[] } {
+    const start = EVIDENCE_SRC.indexOf('export async function readMayWaitRecord(');
+    expect(start).toBeGreaterThan(-1);
+    const fnSrc = EVIDENCE_SRC.slice(start, EVIDENCE_SRC.indexOf('\n}\n', start));
+    const events = new Set<string>();
+    const meals = new Set<string>();
+    for (const chain of fnSrc.split(".from('").slice(1).filter((c) => c.startsWith("events')"))) {
+      const body = chain.slice(0, chain.search(/ as unknown as /));
+      const sel = /\.select\('([^']*)'\)/.exec(body)?.[1] ?? '';
+      for (const embed of sel.matchAll(/(\w+)\(([^)]*)\)/g)) {
+        expect(embed[1]).toBe('meals');
+        for (const c of embed[2].split(',')) meals.add(c.trim());
+      }
+      for (const c of sel.replace(/\w+\([^)]*\)/g, '').split(',')) if (c.trim()) events.add(c.trim());
+      for (const f of body.matchAll(/\.(?:eq|is|in|gte|lte)\('(\w+)'/g)) events.add(f[1]);
+    }
+    events.delete('id');
+    return { events: [...events].sort(), meals: [...meals].sort() };
+  }
+
+  it('the events trigger watches every column the evidence reader reads off events', () => {
+    const { events } = readerColumns();
+    // Non-vacuity: the columns the reader is known to read.
+    for (const known of ['occurred_at', 'occurred_at_confidence', 'event_type', 'pet_id', 'deleted_at']) expect(events).toContain(known);
+    const listed = /UPDATE OF (.*)/.exec(live.triggers.get('trg_events_may_wait_record_upd')?.timing ?? '')?.[1].toLowerCase().split(/\s*,\s*/) ?? [];
+    for (const c of events) expect({ column: c, watched: listed.includes(c) }).toEqual({ column: c, watched: true });
+    // And each counts as a move (deleted_at counts only on an un-delete).
+    for (const c of events.filter((x) => x !== 'deleted_at')) {
+      expect(flat).toMatch(new RegExp(`v_moved := [^;]*NEW\\.${c} IS DISTINCT FROM OLD\\.${c}`));
+    }
+  });
+
+  it('the meals trigger watches every meals column the reader embeds, and the join key', () => {
+    const { meals } = readerColumns();
+    expect(meals).toEqual(['intake_rating']);
+    const listed = /UPDATE OF (.*)/.exec(live.triggers.get('trg_meals_may_wait_record_upd')?.timing ?? '')?.[1].toLowerCase().split(/\s*,\s*/) ?? [];
+    for (const c of [...meals, 'event_id']) expect({ column: c, watched: listed.includes(c) }).toEqual({ column: c, watched: true });
   });
 
   it('every role fires: no current_user gate (no server path re-checks after an events write)', () => {
@@ -188,6 +230,11 @@ describe('089: each window mirrors the server predicate (C-34)', () => {
   });
 
   it('incident: anchor within twice the reach either side (the floor re-run on a neighbour)', () => {
+    // The run and the floor re-run reach one window from the anchor; the reader
+    // keeps neighbours inside it (the 144 h is that window twice).
+    expect(PREDICATE_SRC).toMatch(/\.filter\(\(t\) => Number\.isFinite\(t\) && Math\.abs\(t - anchorMs\) <= reach\)\]/);
+    expect(PREDICATE_SRC).toMatch(/if \(!Number\.isFinite\(t\) \|\| Math\.abs\(t - anchorMs\) > reach\) continue/);
+    expect(EVIDENCE_SRC).toMatch(/const near = incidents\.filter\(\(e\) => e\.id !== p\.eventId && Math\.abs\(Date\.parse\(e\.occurred_at\) - anchorMs\) <= reach\)/);
     expect(EVIDENCE_SRC).toMatch(/\.gte\('occurred_at', iso\(anchorMs - 2 \* reach\)\)/);
     expect(EVIDENCE_SRC).toMatch(/\.lte\('occurred_at', iso\(anchorMs \+ 2 \* reach\)\)/);
     expect(windowOf('incident')).toBe(
@@ -198,6 +245,8 @@ describe('089: each window mirrors the server predicate (C-34)', () => {
   it('meal: [M - reach, M + reach + the week], or every TRUE when M is in the week before now', () => {
     expect(PREDICATE_SRC).toMatch(/if \(!tracksIntakeAt\(record\.meals, record\.nowMs\)\) return false/);
     expect(PREDICATE_SRC).toMatch(/for \(const t of \[\.\.\.vomitTimes, record\.nowMs\]\)/);
+    // The run's vomits sit one window from the anchor (the 72 h either side of M).
+    expect(PREDICATE_SRC).toMatch(/const vomitTimes = record\.vomits\.map\(\(v\) => Date\.parse\(v\.at\)\)\.filter\(\(t\) => Number\.isFinite\(t\) && Math\.abs\(t - anchorMs\) <= reach\)/);
     expect(windowOf('meal')).toBe(
       `(t.kind = 'meal' AND ((n.occurred_at >= t.at - interval '${REACH} hours' AND n.occurred_at <= t.at + interval '${REACH} hours' + interval '${BASELINE} hours') OR t.at >= now() - interval '${BASELINE} hours')))))`,
     );
