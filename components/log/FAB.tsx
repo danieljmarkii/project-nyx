@@ -23,7 +23,9 @@ import { useFoodLibraryStore } from '../../store/foodLibraryStore';
 import { useRecordChangeStore } from '../../store/recordChangeStore';
 import { useSyncStore } from '../../store/syncStore';
 import { usePetStore } from '../../store/petStore';
-import { useMomentStore, isCornerCardUp } from '../../store/momentStore';
+import { useMomentStore, isCornerCardUp, MEAL_FLAGGED_DURATION_MS } from '../../store/momentStore';
+import { stageFlight, whenFlightDone } from '../motion/flightMotion';
+import { measureNodeInWindow, type WindowRect } from '../../lib/measureNode';
 import { getRecentFoods, PickerFood } from '../../lib/db';
 import { fabFoodDay } from '../../lib/fabRecentFoods';
 import { insertMeal } from '../../lib/meals';
@@ -86,6 +88,18 @@ const CLOSE_ITEM_MS = 110;
 const CLOSE_MS = 180;
 /** Beat 8: under Reduce Motion everything is one crossfade of this length. */
 const FADE_MS = 150;
+/** CUL-1643 (D3): a choice never plays the cancel. The tapped food holds this long while
+ *  the others retract, then fades under the arriving card over the next figure (the
+ *  mock's §04 timings, `docs/culprit-fab-mockups.html`). Opacity only, so the same two
+ *  numbers serve Reduce Motion: nothing moves either way. */
+const CHOSEN_HOLD_MS = 120;
+const CHOSEN_FADE_MS = 200;
+/** The meal card's interactive dwell, restarted when the meal mark lands so the flight
+ *  never eats it (C-21). Mirrors `MEAL_DURATION_MS` in `store/momentStore.ts`, which is
+ *  not exported: the same question (how long the card's Undo and intake chips stay
+ *  live), so the same number, and `FAB.test.tsx` drives the store to pin the two equal
+ *  (C-34). */
+export const MEAL_CARD_DWELL_MS = 5000;
 
 // CUL-724 — what a screen reader hears as the fan opens, and how long the announcement
 // gets before focus moves onto the fan's top row. A focus move makes VoiceOver read the
@@ -121,6 +135,16 @@ function DoorChevron() {
       importantForAccessibility="no-hide-descendants"
     >
       <ChevronRight size={PILL_CHEVRON} color={theme.colorTextTertiary} strokeWidth={1.75} />
+    </View>
+  );
+}
+
+/** A food pill's meal disc. Its own component because it is drawn twice: in the pill,
+ *  and as the flight's clone at the root (CUL-1643), which must be the same 28pt mark. */
+function MealMark({ hidden = false }: { hidden?: boolean }) {
+  return (
+    <View style={[styles.pillGlyph, styles.pillGlyphMeal, hidden && styles.pillGlyphFlown]}>
+      <EventIcon type="meal" size={16} />
     </View>
   );
 }
@@ -193,10 +217,13 @@ function FanPill({
  * only how it arrives. `slot` 0 is the pill nearest the disc.
  */
 function FanSlot({
-  anim, fade, reducedMotion, children,
+  anim, fade, exit, reducedMotion, children,
 }: {
   anim: Animated.Value;
   fade: Animated.Value;
+  /** CUL-1643: the chosen food's own fade. It stands in for the slot's opacity, so the
+   *  pill stays put at full while the others retract, and leaves under the card. */
+  exit?: Animated.Value;
   reducedMotion: boolean;
   children: ReactNode;
 }) {
@@ -206,9 +233,9 @@ function FanSlot({
   // own value multiplies in so a redeal (CUL-1646) can crossfade the foods alone: the
   // open sets every slot to 1, so outside a redeal this is the menu's fade unchanged.
   const style = reducedMotion
-    ? { opacity: Animated.multiply(fade, anim) }
+    ? { opacity: exit ?? Animated.multiply(fade, anim) }
     : {
-        opacity: anim.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' }),
+        opacity: exit ?? anim.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' }),
         transform: [
           { translateX: anim.interpolate({ inputRange: [0, 1], outputRange: [FAN_FROM.x, 0] }) },
           { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [FAN_FROM.y, 0] }) },
@@ -272,6 +299,13 @@ export function FAB() {
   // makes the mismatch unrenderable instead of briefly empty.
   const [recentFoods, setRecentFoods] = useState<{ petId: string; foods: PickerFood[] } | null>(null);
   const [logging, setLogging] = useState<string | null>(null);
+  // CUL-1643 — the food a one-tap log chose: its pill stays while the others retract,
+  // and `flown` hides its mark while the clone carries it to the card. The glyph nodes
+  // are what the flight measures, at the tap, so the rect is ready when the write lands.
+  const [chosen, setChosen] = useState<{ key: string; flown: boolean } | null>(null);
+  const chosenExit = useRef(new Animated.Value(1)).current;
+  const foodGlyphs = useRef(new Map<string, View>()).current;
+  const flightFrom = useRef<{ foodId: string; rect: WindowRect | null } | null>(null);
 
   const pressScale = useRef(new Animated.Value(1)).current;
   const turn = useRef(new Animated.Value(0)).current;
@@ -393,6 +427,8 @@ export function FAB() {
     // Light impact on OPEN only — closing the menu commits to nothing and stays silent.
     openMenuHaptic();
     closing.current = false;
+    setChosen(null);
+    chosenExit.setValue(1);
     setOpen(true);
     dealtFor.current = usePetStore.getState().activePet?.id ?? null;
     dealPending.current = false;
@@ -423,11 +459,13 @@ export function FAB() {
       Animated.timing(veil, { toValue: 1, duration: SCRIM_IN_MS, useNativeDriver: true }),
       ...(chipSlot ? [fanIn(chipSlot), Animated.sequence([Animated.delay(CHIP_LEAD_MS), choices])] : [choices]),
     ]).start();
-  }, [turn, fade, veil, slots]);
+  }, [turn, fade, veil, slots, chosenExit]);
 
   // `keepVeil` is the hand-off to the log sheet (CUL-1642): everything retracts as a
   // close does except the veil, which the sheet takes over at full.
-  const retract = useCallback((keepVeil: boolean) => {
+  // `chosenSlot` is a quick meal (CUL-1643): that pill is left out of the retract and
+  // fades on its own `exit`, so a choice never plays the cancel.
+  const retract = useCallback((keepVeil: boolean, chosenSlot: number | null = null) => {
     cancelFanFocus();
     closing.current = true;
     // A close ends a redeal: the close's own stagger takes the food slots from here.
@@ -440,14 +478,21 @@ export function FAB() {
       if (!finished || !closing.current) return;
       closing.current = false;
       setOpen(false);
+      setChosen(null);
       slots.forEach((v) => v.setValue(0));
+      chosenExit.setValue(1);
     };
+    const chosenOut = chosenSlot === null ? [] : [Animated.sequence([
+      Animated.delay(CHOSEN_HOLD_MS),
+      Animated.timing(chosenExit, { toValue: 0, duration: CHOSEN_FADE_MS, useNativeDriver: true }),
+    ])];
     const veilOut = (duration: number) =>
       (keepVeil ? [] : [Animated.timing(veil, { toValue: 0, duration, useNativeDriver: true })]);
     if (reducedMotionNow()) {
       Animated.parallel([
         Animated.timing(fade, { toValue: 0, duration: FADE_MS, useNativeDriver: true }),
         ...veilOut(FADE_MS),
+        ...chosenOut,
       ]).start((r) => {
         if (r.finished) turn.setValue(0);
         finish(r);
@@ -459,14 +504,15 @@ export function FAB() {
       Animated.timing(turn, { toValue: 0, duration: CLOSE_MS, useNativeDriver: true }),
       Animated.timing(fade, { toValue: 0, duration: CLOSE_MS, useNativeDriver: true }),
       ...veilOut(CLOSE_MS),
-      // Reverse order: the farthest pill retracts first.
+      ...chosenOut,
+      // Reverse order: the farthest pill retracts first. The chosen one stays.
       Animated.stagger(
         CLOSE_STAGGER_MS,
-        slots.slice(0, count).reverse().map((v) =>
+        slots.slice(0, count).filter((_, i) => i !== chosenSlot).reverse().map((v) =>
           Animated.timing(v, { toValue: 0, duration: CLOSE_ITEM_MS, useNativeDriver: true })),
       ),
     ]).start(finish);
-  }, [turn, fade, veil, slots, cancelFanFocus]);
+  }, [turn, fade, veil, slots, chosenExit, cancelFanFocus]);
 
   const closeMenu = useCallback(() => retract(false), [retract]);
 
@@ -546,11 +592,13 @@ export function FAB() {
     dealing.current = false;
     setOpen(false);
     setSwitcherVisible(false);
+    setChosen(null);
+    chosenExit.setValue(1);
     turn.setValue(0);
     fade.setValue(0);
     veil.setValue(0);
     slots.forEach((v) => v.setValue(0));
-  }, [captureOverlayOpen, turn, fade, veil, slots]);
+  }, [captureOverlayOpen, turn, fade, veil, slots, chosenExit]);
 
   // CUL-1635, the other direction: a card that reveals while the fan is open (the
   // picker path reveals ~450ms after its modal leaves) closes the fan rather than being
@@ -711,7 +759,7 @@ export function FAB() {
   }, [dealReady, activePetId, slots]);
   useEffect(() => () => dealAnim.current?.stop(), []);
 
-  async function handleQuickMeal(food: PickerFood) {
+  async function handleQuickMeal(food: PickerFood, slot: number) {
     // Write-time pet identity (multi-pet spec §6): read the store at the moment
     // of write, not the render-time closure (the queue-then-switch edge).
     const pet = usePetStore.getState().activePet;
@@ -731,6 +779,16 @@ export function FAB() {
       return;
     }
     setLogging(food.id);
+    // CUL-1643 — the meal mark's source, measured now so it is ready when the write
+    // lands. Under Reduce Motion nothing is measured and nothing flies. A rect that has
+    // not answered by then (or never does) flies nothing either: the card rises as it
+    // always has, which is a quieter arrival, never a wrong one.
+    flightFrom.current = null;
+    if (!reducedMotionNow()) {
+      const from: { foodId: string; rect: WindowRect | null } = { foodId: food.id, rect: null };
+      flightFrom.current = from;
+      measureNodeInWindow(foodGlyphs.get(food.id), (rect) => { from.rect = rect; });
+    }
     try {
       // insertMeal owns the event+meal write, the food-recency touch, the sync
       // push, AND the AI-Signal regen (B-059) — so this quick-log path can't
@@ -778,7 +836,26 @@ export function FAB() {
         food_format: food.format,
         food_type: foodType,
       });
-      closeMenu();
+      // ── THE MEAL LANDS IN ITS CARD (CUL-1643, PM ruling D3 of CUL-1625) ──────────
+      // A choice never plays the cancel: this pill stays while the others retract,
+      // and its meal mark flies into the card's check (`flightMotion.ts`, the Signal
+      // chart's flight, lifted). Staged BEFORE the card shows, so the card's first
+      // frame already knows to crossfade in place rather than rise. Food pills only:
+      // the doors open the sheet, and a symptom never flies. No haptic of its own: the
+      // card's reveal plays the commit's one buzz, as on every meal path.
+      const from = flightFrom.current;
+      flightFrom.current = null;
+      const flies = from !== null && from.foodId === food.id && from.rect !== null && !reducedMotionNow();
+      if (flies && from.rect) {
+        stageFlight({
+          identity: eventId,
+          title: foodText.get(food.id)?.label ?? 'Food',
+          source: from.rect,
+          element: <MealMark />,
+        });
+      }
+      setChosen({ key: `food-${food.id}`, flown: flies });
+      retract(false, slot);
       // Meal completion card: the warmed bottom-card presentation of the
       // completion moment (B-064). Carries the gold beat + "Logged {brand}", a
       // one-tap path back to the time picker for owners backfilling a meal fed
@@ -805,9 +882,30 @@ export function FAB() {
       // patching — a no-op here (this path reveals synchronously), but the same
       // guard the picker path needs. The ledger write happens only once the
       // heads-up renders, so one the owner never saw can't spend the food's budget.
-      void applyMealTrialFlag({ eventId, petId: pet.id, foodId: food.id, occurredAt: occurredAtIso });
+      //
+      // CUL-1643: with a flight up, both wait for the mark to land. The dwell restarts
+      // there, so Undo and the intake chips keep their whole window (C-21), and the
+      // heads-up lands after the mark rather than growing the card under it.
+      void landThenFlag(flies, { eventId, petId: pet.id, foodId: food.id, occurredAt: occurredAtIso });
     } finally {
       setLogging(null);
+    }
+  }
+
+  async function landThenFlag(flies: boolean, args: Parameters<typeof applyMealTrialFlag>[0]) {
+    try {
+      if (flies) {
+        await whenFlightDone(args.eventId);
+        // Only THIS meal's card, still up and not undone: a restart on a removal line
+        // would hold "Removed" past its own short dwell.
+        const m = useMomentStore.getState();
+        if (m.visible && !m.removed && m.payload?.kind === 'meal' && m.payload.eventId === args.eventId) {
+          m.rescheduleHide(m.payload.trialFlag ? MEAL_FLAGGED_DURATION_MS : MEAL_CARD_DWELL_MS);
+        }
+      }
+      await applyMealTrialFlag(args);
+    } catch (e) {
+      console.error('[FAB] quick meal landing failed:', e);
     }
   }
 
@@ -1025,19 +1123,23 @@ export function FAB() {
     // food_type-agnostic). While `foodsForActivePet` is null the read has not answered
     // for THIS pet, so there are no pills: they would be another pet's (C-12). The
     // query returns newest first; the fan draws newest LOWEST, nearest the thumb.
-    for (const food of [...(foodsForActivePet ?? [])].filter((f) => foodLines.has(f.id)).reverse()) {
+    const drawnFoods = [...(foodsForActivePet ?? [])].filter((f) => foodLines.has(f.id)).reverse();
+    drawnFoods.forEach((food, j) => {
       // CUL-1644 (D3): the food named the way History names it, through the one mapper,
       // with its format as its own tag. The tag is a sibling that holds its width, never
       // text appended to the label that wraps, so wet and dry of one line never read
       // alike (the foodFormat.ts header's rule). The spoken label carries both halves.
       const { label: foodLabel, tag: formatTag } = foodText.get(food.id)!;
+      // Its slot, as `slotFor` below picks it: the foods are the last rows, newest
+      // lowest, so a food's distance from the disc is the foods drawn after it.
+      const foodSlot = drawnFoods.length - 1 - j;
       rows.push({
         key: `food-${food.id}`,
         node: (
           <FanPill
             style={pillWidth}
             reducedMotion={reducedMotion}
-            onPress={whileOpen(() => { void handleQuickMeal(food); })}
+            onPress={whileOpen(() => { void handleQuickMeal(food, foodSlot); })}
             disabled={logging !== null}
             // The pressed state holds through the local write, in place of a spinner.
             held={logging === food.id}
@@ -1046,8 +1148,11 @@ export function FAB() {
             // CUL-724's hint half: every other pill opens something; this one writes.
             accessibilityHint={`Logs it for ${activePet.name} right away`}
           >
-            <View style={[styles.pillGlyph, styles.pillGlyphMeal]}>
-              <EventIcon type="meal" size={16} />
+            <View
+              ref={(node) => { if (node) foodGlyphs.set(food.id, node); else foodGlyphs.delete(food.id); }}
+              collapsable={false}
+            >
+              <MealMark hidden={chosen?.key === `food-${food.id}` && chosen.flown} />
             </View>
             <View style={styles.foodLabelRow}>
               <ThemedText style={styles.pillLabel} numberOfLines={foodLines.get(food.id)}>
@@ -1064,7 +1169,7 @@ export function FAB() {
           </FanPill>
         ),
       });
-    }
+    });
   }
   slotCount.current = rows.length;
   chipLeads.current = rows[0]?.key === 'log-for';
@@ -1084,6 +1189,7 @@ export function FAB() {
       key={row.key}
       anim={slots[Math.min(rows.length - 1 - i, MAX_SLOTS - 1)]}
       fade={fade}
+      exit={row.key === chosen?.key ? chosenExit : undefined}
       reducedMotion={reducedMotion}
     >
       {row.node}
@@ -1320,6 +1426,10 @@ const styles = StyleSheet.create({
   },
   pillGlyphQuiet: {
     backgroundColor: theme.colorNeutralLight,
+  },
+  // CUL-1643: the chosen food's mark while its clone flies, so it is never in two places.
+  pillGlyphFlown: {
+    opacity: 0,
   },
   pillLabel: {
     fontSize: PILL_LABEL_SIZE,

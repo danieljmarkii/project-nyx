@@ -13,6 +13,7 @@ import { useFlightClone } from './flightMotion';
 // reaches the screen underneath), and hidden from assistive tech on both platforms —
 // VoiceOver's focus goes to the screen's title, never to a clone that is about to leave.
 // No haptic here and none may be added (the module's header; `guards/haptics.test.ts`).
+// It carries the meal mark too (CUL-1643), so it paints above the completion cards.
 
 export function FlightHost() {
   const reducedMotion = useReducedMotion();
@@ -22,7 +23,7 @@ export function FlightHost() {
   const { source, element } = state.flight;
   return (
     <View
-      style={StyleSheet.absoluteFill}
+      style={[StyleSheet.absoluteFill, styles.layer]}
       pointerEvents="none"
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
@@ -45,6 +46,13 @@ export function FlightHost() {
 }
 
 const styles = StyleSheet.create({
+  // Above the completion cards (CUL-1643): the meal mark lands INTO the meal card's check,
+  // and the card's wrapper is `zIndex` 50 / `elevation` 12, so being drawn after it is not
+  // enough. With no background the elevation casts no shadow; it only orders the layer.
+  layer: {
+    zIndex: 60,
+    elevation: 13,
+  },
   clone: {
     position: 'absolute',
     left: 0,
