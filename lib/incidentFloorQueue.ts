@@ -85,14 +85,42 @@ export async function writeOwingFloorCheck<T>(eventId: string, write: () => Prom
     [eventId],
   );
   if (!row || !owesFloorCheck(row.event_type)) return write();
+  const out = await runOwingCheck(db, write, () => insertFloorMarker(db, eventId, row.pet_id));
+  kickFloorChecks();
+  return out;
+}
+
+/** The transaction-start refusal SQLite gives when another transaction is open on the
+ *  connection (expo-sqlite's `withTransactionAsync` is not exclusive). */
+const NESTED_TRANSACTION = /cannot start a transaction within a transaction/i;
+
+/**
+ * The write and its marker in ONE transaction. If the connection already has a transaction
+ * open (a hydration, a meal insert, another log landing in the same instant), BEGIN is
+ * refused before the write runs, and the write then goes as it did before this PR, with
+ * its marker as the next statement: an Undo, a rating or an edit must never fail because a
+ * re-check was owed (the code review on PR-28b). The marker then rides in whichever
+ * transaction is open, and only a crash between the two statements could lose it, which
+ * costs a re-check, never a record.
+ */
+export async function runOwingCheck<T>(
+  db: { withTransactionAsync(fn: () => Promise<void>): Promise<void> },
+  write: () => Promise<T>,
+  marker: () => Promise<void>,
+): Promise<T> {
   let out: T | undefined;
-  let wrote = false;
-  await db.withTransactionAsync(async () => {
+  let began = false;
+  try {
+    await db.withTransactionAsync(async () => {
+      began = true;
+      out = await write();
+      await marker();
+    });
+  } catch (e) {
+    if (began || !NESTED_TRANSACTION.test(e instanceof Error ? e.message : String(e))) throw e;
     out = await write();
-    await insertFloorMarker(db, eventId, row.pet_id);
-    wrote = true;
-  });
-  if (wrote) kickFloorChecks();
+    await marker();
+  }
   return out as T;
 }
 

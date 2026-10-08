@@ -197,22 +197,30 @@ describe('against the phone’s database', () => {
     mockDb.prepare(`INSERT INTO incident_floor_queue (id, pet_id, event_id, created_at) VALUES (?, ?, ?, ?)`).run(`m-${eventId}`, PET, eventId, at(0));
   }
 
-  it('lethargy after an earlier vomit: names that vomit’s read, records it shown, attaches the claim', async () => {
+  it('lethargy after an earlier vomit: names that vomit’s read and attaches the claim, recording nothing yet', async () => {
     seed('v1', 'vomit', -3);
     seed('l1', 'lethargy', 0);
     marker('l1');
     const said = await previewFloorAfterWrite('l1');
-    expect(said).toEqual({ eventId: 'v1', vomitAt: at(-3), tier: 'call_now', self: false, device: true, petId: PET });
-    expect(await readShownTiers(['v1'])).toEqual(new Map([['v1', 'call_now']]));
+    expect(said).toEqual({
+      eventId: 'v1', vomitAt: at(-3), tier: 'call_now', self: false, device: true, petId: PET,
+      raised: [{ eventId: 'v1', tier: 'call_now' }],
+    });
+    // Recorded as shown only when a card shows it (the register does that), never here:
+    // a card that never appeared must not silence the server's later arrival.
+    expect(await readShownTiers(['v1'])).toEqual(new Map());
     const claim = JSON.parse(String(mockDb.prepare(`SELECT device_claim FROM incident_floor_queue WHERE event_id = 'l1'`).get()?.device_claim));
     expect(claim).toEqual({ rule: FLOOR_CLAIM_RULE_VERSION, reads: [{ event_id: 'v1', tier: 'call_now', row_ids: expect.arrayContaining(['v1', 'l1']) }] });
   });
 
-  it('a second log in the same bout says nothing it already said', async () => {
+  it('a second log in the same bout says nothing a card already said', async () => {
     seed('v1', 'vomit', -3);
     seed('l1', 'lethargy', 0);
     marker('l1');
-    expect(await previewFloorAfterWrite('l1')).not.toBeNull();
+    const first = await previewFloorAfterWrite('l1');
+    expect(first).not.toBeNull();
+    // What the register records when the card shows it.
+    await recordShownTiers(first!.raised.map((r) => ({ eventId: r.eventId, petId: PET, tier: r.tier, source: 'device' as const })));
     seed('l2', 'lethargy', 1);
     marker('l2');
     expect(await previewFloorAfterWrite('l2')).toBeNull();
@@ -223,6 +231,18 @@ describe('against the phone’s database', () => {
     seed('l1', 'lethargy', 0);
     mockDb.prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at, tier) VALUES ('v1', 'completed', 'worth_a_call', ?, 'call_now')`).run(at(-2));
     expect(await previewFloorAfterWrite('l1')).toBeNull();
+  });
+
+  it('a row the server spelled `+00:00` at the edge of the padded bound is still read (C-40)', async () => {
+    mockDb
+      .prepare(
+        `INSERT INTO events (id, pet_id, event_type, occurred_at, occurred_at_confidence, source, occurred_at_source, created_at, updated_at, synced)
+         VALUES ('v-edge', ?, 'vomit', '2026-10-07T12:00:00+00:00', 'witnessed', 'manual', 'manual', ?, ?, 1)`,
+      )
+      .run(PET, at(0), at(0));
+    seed('l1', 'lethargy', 0);
+    // Lethargy 24 h after the vomit to the second: inside T3's either-side window.
+    expect(await previewFloorAfterWrite('l1')).toEqual(expect.objectContaining({ eventId: 'v-edge', tier: 'call_now' }));
   });
 
   it('a deleted lethargy log raises nothing (the floor reads live rows only)', async () => {

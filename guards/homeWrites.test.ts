@@ -331,10 +331,17 @@ const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = 
       'writes that queue and nothing else',
   },
   'lib/incidentFloorPreview.ts': {
-    helpers: ['recordShownTiers', 'attachDeviceClaim'],
+    helpers: ['attachDeviceClaim'],
     why:
-      'the phone\u2019s own floor after a log: records the call it said and attaches the ' +
-      'claim to the marker the log already wrote. Called by the log paths, never by Home',
+      'the phone\u2019s own floor after a log: attaches the claim to the marker the log ' +
+      'already wrote. Called by the log paths, never by Home',
+  },
+  'store/momentStore.ts': {
+    helpers: ['recordShownTiers'],
+    why:
+      'the completion register records a floor line as said at the moment a card shows it ' +
+      '(spec \u00a78.7): a local, never-pushed display fact, never a record. Its reversal ' +
+      'still goes through reverseLoggedEvent, which stays caught BY NAME anywhere else',
   },
   'lib/incidentTierShown.ts': {
     helpers: ['recordShownTiers'],

@@ -1,4 +1,3 @@
-import type { FloorAnnouncement } from '../lib/incidentFloorPreview';
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
@@ -42,6 +41,7 @@ import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFi
 // storage / analysis / signal / sync-event helpers directly for this path.
 import { applyMealTrialFlag } from '../lib/mealTrialFlag';
 import { exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, OccurredConfidence } from '../lib/utils';
+import type { FloorAnnouncement } from '../lib/incidentFloorPreview';
 
 type Step = 'type' | 'food' | 'medication' | 'simple' | 'weight';
 

@@ -1813,6 +1813,17 @@ describe('VomitAnalysisSection — the offline preview (PR-28b)', () => {
     expect(view.queryByText('Keep an eye out')).toBeNull();
   });
 
+  it('flag on, a stored call now marked pending (a Re-run) is never stood over by a quieter preview', async () => {
+    mockFloorOn = true;
+    // A dog with two vomits in 24 h: the phone's floor gives call today (T6), no lethargy.
+    const second = { id: 'p0', at: new Date(2026, 9, 8, 11, 0).toISOString(), confidence: 'witnessed' };
+    mockFloorFacts = { anchor, vomits: [anchor], courses: [], vomitRows: [second, vomitRow], lethargy: [] };
+    mockRow = row({ status: 'pending', recommendation: 'worth_a_call', tier: 'call_now', engine_flags: ['engines_v3_en3', 'engines_v3_en4'] });
+    const view = render(<VomitAnalysisSection eventId="p1" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(view.queryByText(/Worked out on this phone/)).toBeNull());
+    expect(view.queryByText('Call your vet today')).toBeNull();
+  });
+
   it('flag on, nothing on the record meets a row: the phone says nothing calm', async () => {
     mockFloorOn = true;
     mockFloorFacts = { anchor, vomits: [anchor], courses: [], vomitRows: [vomitRow], lethargy: [] };

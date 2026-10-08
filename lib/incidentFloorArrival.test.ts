@@ -57,6 +57,10 @@ import { useMomentStore } from '../store/momentStore';
 
 const PET = 'pet-a';
 const live = () => false;
+// The register records a shown line fire-and-forget; let that write settle.
+const flushWrites = async () => {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+};
 
 function seedVomit(id: string, at: string): void {
   mockDb
@@ -101,8 +105,12 @@ it('a re-run that raises two reads of one bout says the most recent, on the rais
   showCardFor('l1');
   mockServerReads = { v1: { recommendation: 'worth_a_call', tier: 'call_now' }, v2: { recommendation: 'worth_a_call', tier: 'call_now' } };
   await onFloorLanded({ triggerEventId: 'l1', petId: PET, eventIds: ['v1', 'v2'], stale: live });
-  expect(floorLine()).toEqual({ eventId: 'v2', vomitAt: '2026-10-08T10:00:00.000Z', tier: 'call_now', self: false, device: false, petId: PET });
-  // Both recorded as said, so neither arrives again.
+  expect(floorLine()).toEqual({
+    eventId: 'v2', vomitAt: '2026-10-08T10:00:00.000Z', tier: 'call_now', self: false, device: false, petId: PET,
+    raised: [{ eventId: 'v1', tier: 'call_now' }, { eventId: 'v2', tier: 'call_now' }],
+  });
+  // Both recorded as said (by the register, as the card took the line), so neither arrives again.
+  await flushWrites();
   expect(await readShownTiers(['v1', 'v2'])).toEqual(new Map([['v1', 'call_now'], ['v2', 'call_now']]));
 });
 
@@ -134,6 +142,7 @@ it('with no card up for the raising log, nothing is said and nothing is recorded
   mockServerReads = { v2: { recommendation: 'worth_a_call', tier: 'call_now' } };
   await onFloorLanded({ triggerEventId: 'l1', petId: PET, eventIds: ['v2'], stale: live });
   expect(floorLine()).toBeUndefined();
+  await flushWrites();
   expect(await readShownTiers(['v2'])).toEqual(new Map());
 });
 
@@ -153,4 +162,31 @@ it('a sign-out between the copy and the sentence says nothing', async () => {
   mockServerReads = { v2: { recommendation: 'worth_a_call', tier: 'call_now' } };
   await onFloorLanded({ triggerEventId: 'l1', petId: PET, eventIds: ['v2'], stale: () => true });
   expect(floorLine()).toBeUndefined();
+});
+
+it('a card already saying call now never drops to a newly raised call today', async () => {
+  useMomentStore.getState().showNamed({
+    tone: 'calm', eventId: 'l1', petId: PET, occurredAt: '2026-10-08T12:00:00.000Z',
+    record: { kind: 'event', typeLabel: 'Lethargy', confidence: 'witnessed', earliest: null, latest: null },
+    floorLine: { eventId: 'v1', vomitAt: '2026-10-08T08:00:00.000Z', tier: 'call_now', self: false, device: true, petId: PET, raised: [{ eventId: 'v1', tier: 'call_now' }] },
+  });
+  mockServerReads = { v2: { recommendation: 'worth_a_call', tier: 'call_today' } };
+  await onFloorLanded({ triggerEventId: 'l1', petId: PET, eventIds: ['v2'], stale: live });
+  expect(floorLine()).toEqual(expect.objectContaining({ eventId: 'v1', tier: 'call_now' }));
+});
+
+it('a card revealed with the phone’s line records it as said; a card never shown records nothing', async () => {
+  useMomentStore.getState().showNamed(
+    {
+      tone: 'calm', eventId: 'l1', petId: PET, occurredAt: '2026-10-08T12:00:00.000Z',
+      record: { kind: 'event', typeLabel: 'Lethargy', confidence: 'witnessed', earliest: null, latest: null },
+      floorLine: { eventId: 'v1', vomitAt: '2026-10-08T08:00:00.000Z', tier: 'call_now', self: false, device: true, petId: PET, raised: [{ eventId: 'v1', tier: 'call_now' }] },
+    },
+    { delayMs: 300 },
+  );
+  await flushWrites();
+  expect(await readShownTiers(['v1'])).toEqual(new Map());
+  jest.advanceTimersByTime(300);
+  await flushWrites();
+  expect(await readShownTiers(['v1'])).toEqual(new Map([['v1', 'call_now']]));
 });

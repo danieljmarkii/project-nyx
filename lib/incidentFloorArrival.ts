@@ -14,7 +14,7 @@ import { readCopies } from './readCopy';
 import { effectiveTierRank, TIER_RANK, type TierRank } from './incidentTier';
 import type { FloorTier } from './incidentFloor';
 import { pickBoutArrival } from './incidentFloorPreview';
-import { readShownTiers, recordShownTiers } from './incidentTierShown';
+import { readShownTiers } from './incidentTierShown';
 import { getDb } from './db';
 import { useMomentStore } from '../store/momentStore';
 import { useSyncStore } from '../store/syncStore';
@@ -72,21 +72,18 @@ export async function onFloorLanded(landing: FloorLanding): Promise<void> {
     }
     const { announce, raised } = pickBoutArrival(reads, prior);
     if (!announce || landing.stale()) return;
-    const card = useMomentStore.getState();
-    const landedOnCard = card.patchFloorLine(landing.triggerEventId, {
+    // The register records the bout as said only if the card takes the line (a visible card
+    // for this log, not undone, and not already saying a louder call). With no card up,
+    // nothing announced it, and the record shows the stored tier on its own when opened.
+    useMomentStore.getState().patchFloorLine(landing.triggerEventId, {
       eventId: announce.eventId,
       vomitAt: announce.at,
       tier: announce.tier,
       self: announce.eventId === landing.triggerEventId,
       device: false,
       petId: landing.petId,
+      raised: raised.map((r) => ({ eventId: r.eventId, tier: r.tier })),
     });
-    // Recorded as said only when it was: with no card up nothing announced it, and the
-    // record shows the stored tier on its own when opened. The bout's other raised reads
-    // are recorded with it, so none of them arrives a second time (§8.7).
-    if (landedOnCard) {
-      await recordShownTiers(raised.map((r) => ({ eventId: r.eventId, petId: landing.petId, tier: r.tier, source: 'server' as const })));
-    }
   } catch (e) {
     console.warn('[floor] landing not said:', e);
   }

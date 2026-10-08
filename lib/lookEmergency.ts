@@ -121,6 +121,11 @@ const CALL_NOW: Record<LookSpecies, readonly string[]> = {
 // and asserts call now, so the two cannot drift apart again. Both of the door's facts sit
 // in the last 24 hours, so they are never more than 24 hours apart: met here ⇒ T3 met.
 //
+// THE MOVE FOLLOWS THE FLOOR'S KEYS. With `engines_v3_en4` + `engines_v3_en3` off, the vomit
+// read itself still says today's "Worth a call" (call today) for vomiting with lethargy, so
+// the door keeps the row at call today in its shipped position and the page is unchanged
+// for that account (C-36). It moves to call now exactly where the read does.
+//
 // It collapses like the call-today rows, to its own imperative. On a FAILED read it is
 // printed as a sign in the call-now list, never collapsed: the fail-closed imperative stays
 // call today's (the block above it is always printed), because a "call now" the app may
@@ -213,6 +218,14 @@ export interface EmergencyDoorModel {
   metIds: readonly string[];
 }
 
+/** The call-today rows for one species. With the floor off, "Subdued and vomiting" sits in
+ *  its shipped place (second) among them, as before PR-28b. */
+function todayRows(species: LookSpecies, floorOn: boolean): readonly TodayRow[] {
+  if (floorOn) return CALL_TODAY[species];
+  const [first, ...rest] = CALL_TODAY[species];
+  return [first, ...CALL_NOW_ROWS[species], ...rest];
+}
+
 /**
  * The door, resolved for one species against what the record can settle.
  *
@@ -222,9 +235,11 @@ export interface EmergencyDoorModel {
 export function resolveEmergencyDoor(
   species: LookSpecies,
   facts: EmergencyFacts | null,
+  /** EN-4's two keys for this owner (`hooks/useFloorOn`). Off, the page is today's. */
+  floorOn = false,
 ): EmergencyDoorModel {
-  const nowRows = CALL_NOW_ROWS[species];
-  const rows = CALL_TODAY[species];
+  const nowRows = floorOn ? CALL_NOW_ROWS[species] : [];
+  const rows = todayRows(species, floorOn);
   if (facts === null) {
     return {
       now: [...CALL_NOW[species], ...nowRows.map((r) => r.threshold)],

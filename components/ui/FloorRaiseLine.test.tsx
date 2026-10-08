@@ -15,6 +15,7 @@ const base: FloorAnnouncement = {
   self: false,
   device: false,
   petId: 'pet-1',
+  raised: [{ eventId: 'v1', tier: 'call_now' }],
 };
 
 beforeEach(() => {

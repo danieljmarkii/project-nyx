@@ -49,17 +49,17 @@ export interface ShownWrite {
 export async function recordShownTiers(writes: readonly ShownWrite[], nowIso = new Date().toISOString()): Promise<void> {
   if (writes.length === 0) return;
   try {
-    const db = getDb();
-    for (const w of writes) {
-      await db.runAsync(
-        `INSERT INTO incident_tier_shown (event_id, pet_id, tier, shown_at, source)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(event_id) DO UPDATE SET
-           tier = excluded.tier, shown_at = excluded.shown_at, source = excluded.source
-         WHERE ${RANK_SQL('excluded.tier')} > ${RANK_SQL('incident_tier_shown.tier')}`,
-        [w.eventId, w.petId, w.tier, nowIso, w.source],
-      );
-    }
+    // ONE statement for the whole bout, so a sign-out's wipe can never land between two of
+    // its rows and leave half of them behind for the next account (the privacy pass on
+    // PR-28b). A bout is a handful of reads, far under SQLite's parameter budget.
+    await getDb().runAsync(
+      `INSERT INTO incident_tier_shown (event_id, pet_id, tier, shown_at, source)
+       VALUES ${writes.map(() => '(?, ?, ?, ?, ?)').join(', ')}
+       ON CONFLICT(event_id) DO UPDATE SET
+         tier = excluded.tier, shown_at = excluded.shown_at, source = excluded.source
+       WHERE ${RANK_SQL('excluded.tier')} > ${RANK_SQL('incident_tier_shown.tier')}`,
+      writes.flatMap((w) => [w.eventId, w.petId, w.tier, nowIso, w.source]),
+    );
   } catch (e) {
     console.warn('[floor] shown tier not recorded:', e);
   }

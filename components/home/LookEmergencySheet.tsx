@@ -29,6 +29,7 @@ import {
   resolveEmergencyDoor,
   type EmergencyRead,
 } from '../../lib/lookEmergency';
+import { useFloorOn } from '../../hooks/useFloorOn';
 
 interface Props {
   visible: boolean;
@@ -46,7 +47,9 @@ interface Props {
 
 export function LookEmergencySheet({ visible, species, petName, read, onClose }: Props) {
   const waiting = read.status === 'loading';
-  const door = resolveEmergencyDoor(species, read.status === 'ready' ? read.facts : null);
+  // Engines v3 PR-28b — "Subdued and vomiting" is call now only where the vomit read says so.
+  const floorOn = useFloorOn();
+  const door = resolveEmergencyDoor(species, read.status === 'ready' ? read.facts : null, floorOn);
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close" />

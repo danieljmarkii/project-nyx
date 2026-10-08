@@ -31,7 +31,7 @@ import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain } from '
 import { uploadPhoto, compressForUpload, persistCapture } from './storage';
 import { uuid, OccurredConfidence } from './utils';
 import { isStoolEvent } from '../constants/eventTypes';
-import { floorOnNow, insertFloorMarker, kickFloorChecks, owesFloorCheck } from './incidentFloorQueue';
+import { floorOnNow, insertFloorMarker, kickFloorChecks, owesFloorCheck, runOwingCheck } from './incidentFloorQueue';
 import { previewFloorAfterWrite, type FloorAnnouncement } from './incidentFloorPreview';
 
 // A photo the owner attached in the confirm. `takenAt` is the trusted EXIF ISO (or
@@ -89,6 +89,10 @@ export interface InsertSimpleEventResult {
 // regen are best-effort and never throw into the caller: once the event row lands,
 // the log has succeeded and a photo/sync hiccup must not read back as a failed log
 // (which would send the owner to re-log and duplicate the record).
+/** How long a log waits for the phone's own floor before showing its card without it
+ *  (Engines v3 PR-28b). A handful of local reads; the bound is for a slow device. */
+export const PREVIEW_BUDGET_MS = 300;
+
 export async function insertSimpleEvent(
   params: InsertSimpleEventParams,
 ): Promise<InsertSimpleEventResult> {
@@ -122,10 +126,7 @@ export async function insertSimpleEvent(
   // type, the write is the single statement it always was.
   const owesCheck = floorOnNow() && owesFloorCheck(params.eventType);
   if (owesCheck) {
-    await db.withTransactionAsync(async () => {
-      await writeEvent();
-      await insertFloorMarker(db, eventId, params.petId);
-    });
+    await runOwingCheck(db, writeEvent, () => insertFloorMarker(db, eventId, params.petId));
   } else {
     await writeEvent();
   }
@@ -155,7 +156,17 @@ export async function insertSimpleEvent(
   // (held by the drain until the event has landed). Never throws.
   let floor: FloorAnnouncement | null = null;
   if (owesCheck) {
-    floor = await previewFloorAfterWrite(eventId);
+    // Bounded: the card waits on this, and a log must close at local-write speed
+    // (Principle 1). A preview that has not answered in time is simply not said; the
+    // server's re-check still runs, and its answer can still land on the card.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    floor = await Promise.race([
+      previewFloorAfterWrite(eventId),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), PREVIEW_BUDGET_MS);
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
     kickFloorChecks();
   }
 

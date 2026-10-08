@@ -1,4 +1,3 @@
-import { FloorRaiseLine } from '../ui/FloorRaiseLine';
 import { useEffect, useRef } from 'react';
 import { StyleSheet, Animated, Easing, View, TouchableOpacity, Alert } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
@@ -10,6 +9,7 @@ import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement
 import { useMomentStore } from '../../store/momentStore';
 import { removedNoticeCopy, undoGateCopy, HITSLOP_ACTION_SOLO } from '../../lib/completionCard';
 import type { MomentTone } from '../../store/momentStore';
+import { FloorRaiseLine } from '../ui/FloorRaiseLine';
 
 // The completion beat that lands IN the sheet (B-745 PR 3). The root <CompletionMoment/>
 // can't be reused here: it's absoluteFill at the app root, so it renders UNDER the

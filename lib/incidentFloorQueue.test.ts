@@ -74,7 +74,7 @@ jest.mock('./signal', () => ({ triggerSignalRegenDebounced: jest.fn() }));
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
-import { floorOnNow, owesFloorCheck, writeOwingFloorCheck, insertFloorMarker } from './incidentFloorQueue';
+import { floorOnNow, owesFloorCheck, writeOwingFloorCheck, insertFloorMarker, runOwingCheck } from './incidentFloorQueue';
 import { syncPendingIncidentFloors, notifySignedOut } from './sync';
 import { MAX_SYNC_ATTEMPTS } from './syncQueue';
 
@@ -244,6 +244,20 @@ describe('the drain (drainIncidentFloorQueue)', () => {
     expect(mockInvokes[0].body).toEqual({ event_id: 'v1', mode: 'refloor', device_claim: { rule: 'vomit3', reads: [] } });
   });
 
+  it('a sign-out while one trigger’s answer is being said sends nothing for the next', async () => {
+    seedEvent('l1', 'lethargy');
+    seedEvent('l2', 'lethargy');
+    await insertFloorMarker(RUN, 'l1', PET);
+    await insertFloorMarker(RUN, 'l2', PET);
+    mockAnswer = () => ({ data: { success: true, results: [{ event_id: 'v1', status: 200 }] }, error: null });
+    mockLanded.mockImplementationOnce(async () => {
+      notifySignedOut();
+      return undefined;
+    });
+    await syncPendingIncidentFloors();
+    expect(mockInvokes.map((i) => i.body.event_id)).toEqual(['l1']);
+  });
+
   it('a sign-out mid-request marks and says nothing', async () => {
     seedEvent('v1', 'vomit');
     await insertFloorMarker(RUN, 'v1', PET);
@@ -254,5 +268,40 @@ describe('the drain (drainIncidentFloorQueue)', () => {
     await syncPendingIncidentFloors();
     expect(markers()[0]).toEqual(expect.objectContaining({ synced: 0 }));
     expect(mockLanded).not.toHaveBeenCalled();
+  });
+});
+
+describe('runOwingCheck — an owed re-check never fails the write it rides on', () => {
+  it('another transaction already open: BEGIN is refused, the write and its marker go plainly', async () => {
+    const order: string[] = [];
+    const db = {
+      withTransactionAsync: async () => {
+        throw new Error('Call to function NativeDatabase.execAsync has been rejected. cannot start a transaction within a transaction');
+      },
+    };
+    const out = await runOwingCheck(db, async () => { order.push('write'); return 7; }, async () => { order.push('marker'); });
+    expect(out).toBe(7);
+    expect(order).toEqual(['write', 'marker']);
+  });
+
+  it('a failure INSIDE the transaction is the write’s own, and is never retried outside it', async () => {
+    let writes = 0;
+    const db = {
+      withTransactionAsync: async (fn: () => Promise<void>) => {
+        await fn();
+      },
+    };
+    await expect(
+      runOwingCheck(db, async () => {
+        writes += 1;
+        throw new Error('cannot start a transaction within a transaction');
+      }, async () => undefined),
+    ).rejects.toThrow();
+    expect(writes).toBe(1);
+  });
+
+  it('any other refusal to begin is thrown, not swallowed', async () => {
+    const db = { withTransactionAsync: async () => { throw new Error('database is locked'); } };
+    await expect(runOwingCheck(db, async () => 1, async () => undefined)).rejects.toThrow('database is locked');
   });
 });

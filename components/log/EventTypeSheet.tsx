@@ -1,4 +1,3 @@
-import type { FloorAnnouncement } from '../../lib/incidentFloorPreview';
 import { useEffect, useRef, useState } from 'react';
 import {
   Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet,
@@ -26,6 +25,7 @@ import { noPetToLogForCopy } from '../../lib/logCopy';
 import type { LogSheetConfirmType } from '../../store/uiStore';
 import { useSheetMotion, type SheetVeil } from '../motion/sheetMotion';
 import { useAppActive } from '../../hooks/useAppActive';
+import type { FloorAnnouncement } from '../../lib/incidentFloorPreview';
 
 // Resolved once at module scope — a literal, shared with the FAB menu (CUL-717).
 const noPetCopy = noPetToLogForCopy();

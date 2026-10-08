@@ -1,4 +1,3 @@
-import type { FloorAnnouncement } from '../../lib/incidentFloorPreview';
 import { useEffect, useRef, useState } from 'react';
 import {
   View, StyleSheet, TouchableOpacity, TextInput, Image, Alert, Platform, ScrollView,
@@ -26,6 +25,7 @@ import { useAppActive } from '../../hooks/useAppActive';
 import { useEventStore } from '../../store/eventStore';
 import type { ConfirmDraft } from '../../lib/discardGuard';
 import { formatTime, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../../lib/utils';
+import type { FloorAnnouncement } from '../../lib/incidentFloorPreview';
 
 // The one-surface confirm (B-745 PR 3, round-4 mock frames 2–3). A simple event
 // (symptom / stool / Other) completes here IN PLACE of the picker grid: the app can

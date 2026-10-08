@@ -207,7 +207,10 @@ export function VomitAnalysisSection(
           birthDate: recordPet.date_of_birth,
         })
       : null;
-  const storedRank = row && row.status !== 'pending' ? effectiveTierRank(row) : TIER_RANK.quiet;
+  // A pending row keeps the rank of the tier it carries: a Re-run marks the stored row
+  // pending while it reads, and a stored call stays on screen through that (CUL-827), so a
+  // quieter preview must never stand over it (the adversarial pass on PR-28b).
+  const storedRank = row ? effectiveTierRank(row) : TIER_RANK.quiet;
   // Not before the first fetch has answered (`row` undefined): a stored read as loud would
   // otherwise be preceded by a frame of "Worked out on this phone". Offline, the fetch
   // answers with no row, and the preview stands.

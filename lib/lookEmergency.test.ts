@@ -73,16 +73,16 @@ describe('the collapse — a conditional the record already meets becomes the im
   it('a quiet loaded record collapses nothing and keeps every threshold', () => {
     const cat = resolveEmergencyDoor('cat', QUIET);
     expect(cat.imperative).toBeNull();
-    // Three call-today rows each since PR-28b moved "Subdued and vomiting" to call now;
-    // unmet, it is printed in the call-now list instead.
-    expect(cat.thresholds).toHaveLength(3);
+    expect(cat.thresholds).toHaveLength(4);
     expect(cat.nowImperative).toBeNull();
-    expect(cat.now).toContain('Subdued and vomiting');
     const dog = resolveEmergencyDoor('dog', QUIET);
     expect(dog.imperative).toBeNull();
-    expect(dog.thresholds).toHaveLength(3);
-    expect(dog.nowImperative).toBeNull();
-    expect(dog.now).toContain('Subdued and vomiting');
+    expect(dog.thresholds).toHaveLength(4);
+    // With EN-4's floor on, "Subdued and vomiting" moves to the call-now list (PR-28b).
+    const catOn = resolveEmergencyDoor('cat', QUIET, true);
+    expect(catOn.thresholds).toHaveLength(3);
+    expect(catOn.now).toContain('Subdued and vomiting');
+    expect(resolveEmergencyDoor('dog', QUIET, true).thresholds).toHaveLength(3);
   });
 
   it('the rows with no leaf behind them NEVER collapse, on any record', () => {
@@ -147,8 +147,17 @@ describe('subdued and vomiting is call now, matched to the floor (T3)', () => {
   const NOW = Date.parse('2026-10-08T12:00:00.000Z');
   const HOUR = 3_600_000;
 
+  it.each(['cat', 'dog'] as const)('%s · flag off: the page is today’s (call today, shipped place)', (species) => {
+    const off = resolveEmergencyDoor(species, { ...QUIET, lethargyRecently: true, vomitCount24h: 1 });
+    expect(off.imperative).toBe(CALL_TODAY_IMPERATIVE);
+    expect(off.nowImperative).toBeNull();
+    expect(off.metIds).toContain('subdued_vomiting');
+    expect(off.now).not.toContain('Subdued and vomiting');
+    expect(resolveEmergencyDoor(species, QUIET).thresholds[1]).toBe('Subdued and vomiting');
+  });
+
   it.each(['cat', 'dog'] as const)('%s · the met row collapses to call now, not call today', (species) => {
-    const door = resolveEmergencyDoor(species, { ...QUIET, lethargyRecently: true, vomitCount24h: 1 });
+    const door = resolveEmergencyDoor(species, { ...QUIET, lethargyRecently: true, vomitCount24h: 1 }, true);
     expect(door.nowImperative).toBe(CALL_NOW_IMPERATIVE);
     expect(door.metIds).toContain('subdued_vomiting');
     expect(door.imperative).toBeNull();
@@ -173,7 +182,7 @@ describe('subdued and vomiting is call now, matched to the floor (T3)', () => {
   });
 
   it('a failed read prints the row as a call-now sign and never collapses it', () => {
-    const door = resolveEmergencyDoor('cat', null);
+    const door = resolveEmergencyDoor('cat', null, true);
     expect(door.nowImperative).toBeNull();
     expect(door.now).toContain('Subdued and vomiting');
     expect(door.imperative).toBe(CALL_TODAY_IMPERATIVE);

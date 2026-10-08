@@ -3776,6 +3776,10 @@ async function drainIncidentFloorQueue(): Promise<void> {
     for (const r of rows) byEvent.set(r.event_id, [...(byEvent.get(r.event_id) ?? []), r]);
     let landed = 0;
     for (const [eventId, group] of byEvent) {
+      // Before each request, not only after: a sign-out during the previous trigger's
+      // marking or arrival must not send the next trigger's id and claim under whatever
+      // session follows (the privacy pass on PR-28b; CUL-642's class).
+      if (epoch !== signOutEpoch) return;
       const claim = [...group].reverse().find((r) => r.device_claim !== null)?.device_claim ?? null;
       let parsedClaim: unknown = null;
       try {

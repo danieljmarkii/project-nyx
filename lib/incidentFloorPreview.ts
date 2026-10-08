@@ -26,7 +26,7 @@ import { getDb } from './db';
 import { incidentFloor, FLOOR_LETHARGY_HOURS, FLOOR_READ_HOURS, type FloorTier, type FloorVomit } from './incidentFloor';
 import { effectiveTierRank, TIER_RANK, type TierRank } from './incidentTier';
 import { readCopies } from './readCopy';
-import { readShownTiers, recordShownTiers } from './incidentTierShown';
+import { readShownTiers } from './incidentTierShown';
 import { attachDeviceClaim } from './incidentFloorQueue';
 import { usePetStore } from '../store/petStore';
 
@@ -163,6 +163,11 @@ export interface FloorAnnouncement {
   /** Worked out on this phone (the preview), rather than stored by the server. */
   device: boolean;
   petId: string;
+  /** Every read this run raised, the named one included. Recorded as shown by the
+   *  completion register at the moment a card actually shows the sentence, never before
+   *  (the adversarial pass on PR-28b: recorded at preview time, a card that never appeared
+   *  silenced every later arrival of the same call). */
+  raised: { eventId: string; tier: FloorTier }[];
 }
 
 /**
@@ -212,7 +217,6 @@ export async function previewFloorAfterWrite(triggerId: string): Promise<FloorAn
     if (reads.length === 0) return null;
     const { announce, raised } = pickBoutArrival(reads, await priorRanks(reads.map((r) => r.eventId)));
     if (!announce) return null;
-    await recordShownTiers(raised.map((r) => ({ eventId: r.eventId, petId: trigger.pet_id, tier: r.tier, source: 'device' as const })));
     await attachDeviceClaim(triggerId, {
       rule: FLOOR_CLAIM_RULE_VERSION,
       reads: raised.map((r) => ({ event_id: r.eventId, tier: r.tier, row_ids: r.rowIds })),
@@ -224,6 +228,7 @@ export async function previewFloorAfterWrite(triggerId: string): Promise<FloorAn
       self: announce.eventId === triggerId,
       device: true,
       petId: trigger.pet_id,
+      raised: raised.map((r) => ({ eventId: r.eventId, tier: r.tier })),
     };
   } catch (e) {
     console.warn('[floor] preview failed:', e);

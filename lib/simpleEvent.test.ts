@@ -71,7 +71,7 @@ jest.mock('./utils', () => {
   return { ...actual, uuid: () => `id-${++mockIdCounter}` };
 });
 
-import { insertSimpleEvent } from './simpleEvent';
+import { insertSimpleEvent, PREVIEW_BUDGET_MS } from './simpleEvent';
 
 // Let the fire-and-forget photo/upload chain settle.
 const flush = () => new Promise((r) => setImmediate(r));
@@ -358,5 +358,20 @@ describe('EN-4 — every vomit and lethargy log owes a re-check (§8.4)', () => 
     expect(mockTx).not.toHaveBeenCalled();
     expect(sqlOf().filter((q) => /INSERT INTO incident_floor_queue/.test(q))).toEqual([]);
     expect(mockPreview).not.toHaveBeenCalled();
+  });
+});
+
+describe('EN-4 — the preview never holds the card past its budget (Principle 1)', () => {
+  it('a preview slower than the budget is not said; the log still returns and the push still runs', async () => {
+    jest.useFakeTimers();
+    mockFloorOn = true;
+    mockPreview.mockImplementation(() => new Promise(() => undefined));
+    const p = insertSimpleEvent({ ...base });
+    await jest.advanceTimersByTimeAsync(PREVIEW_BUDGET_MS);
+    const res = await p;
+    expect(res.floor).toBeNull();
+    expect(mockFloorPush).toHaveBeenCalled();
+    jest.useRealTimers();
+    mockPreview.mockResolvedValue(null);
   });
 });

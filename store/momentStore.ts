@@ -9,6 +9,7 @@ import type { DoseVehicle, DoubleDoseResult } from '../lib/medications';
 import type { LogTimeTrialFlag } from '../lib/trialContaminant';
 import type { LoggedRecord } from '../lib/completionCard';
 import type { FloorAnnouncement } from '../lib/incidentFloorPreview';
+import { recordShownTiers } from '../lib/incidentTierShown';
 
 // The earned completion surface, played after a successful log on any path so
 // the fastest taps get the same closure as the full flow (B-063). One store
@@ -484,6 +485,17 @@ export const MEDICATION_FLAGGED_DURATION_MS = 7000;
 // owner has not read yet. The sheet's beat included, whose 1.8s base would flash it past.
 export const FLOOR_LINE_DWELL_MS = 8000;
 
+/** A floor line is said once a card SHOWS it: record the bout's raised reads then, and only
+ *  then (spec §8.7). Fire-and-forget; `recordShownTiers` swallows its own failures. */
+function recordFloorLineShown(line: FloorAnnouncement | null | undefined): void {
+  if (!line) return;
+  void recordShownTiers(
+    line.raised.map((r) => ({ eventId: r.eventId, petId: line.petId, tier: r.tier, source: line.device ? 'device' : 'server' })),
+  );
+}
+
+const FLOOR_RANK = { call_today: 1, call_now: 2 } as const;
+
 function carriesFloorLine(payload: MomentPayload | null): boolean {
   if (!payload) return false;
   if (payload.kind === 'named' || payload.kind === 'sheetBeat' || payload.kind === 'meal') return Boolean(payload.floorLine);
@@ -735,6 +747,8 @@ function present(
     // payload through the fade, so a second log arriving during that fade would
     // otherwise render its own confirmation under the word "Removed".
     set({ visible: true, payload, removed: false });
+    // Engines v3 PR-28b — a card revealed carrying a floor line has now said it.
+    if (payload.kind === 'named' || payload.kind === 'sheetBeat' || payload.kind === 'meal') recordFloorLineShown(payload.floorLine);
     // A new card is a new undo target, so the previous card's in-flight latch must
     // not gate it. (It also keeps the latch from leaking between tests, which a
     // bare module-level flag otherwise does.)
@@ -911,7 +925,11 @@ export const useMomentStore = create<MomentState>((set) => ({
     // Not on a dismissing card (nobody would read it) nor an undone one: the log that
     // raised the read is no longer in the record, and its re-check will lower nothing.
     if (!state.visible || state.removed) return false;
+    // Never replace a louder call with a quieter one (the adversarial pass on PR-28b): a
+    // card already saying call now keeps it, and an equal call keeps the line it has.
+    if (p.floorLine && FLOOR_RANK[p.floorLine.tier] >= FLOOR_RANK[floorLine.tier]) return false;
     set({ payload: { ...p, floorLine } });
+    recordFloorLineShown(floorLine);
     useMomentStore.getState().rescheduleHide(FLOOR_LINE_DWELL_MS);
     return true;
   },
