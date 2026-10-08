@@ -65,6 +65,9 @@ const RETURN_BLOCK = [
 const LINK_ROOT = createFixtureRoot('cul1616-link');
 const LINK = path.join(LINK_ROOT, 'innocent.json');
 fs.symlinkSync(path.join(ROOT, '.claude', 'settings.json'), LINK);
+// A skills/ entry that is really the hooks directory (CUL-1670).
+fs.mkdirSync(path.join(LINK_ROOT, '.claude', 'skills'), { recursive: true });
+fs.symlinkSync(path.join(ROOT, '.claude', 'hooks'), path.join(LINK_ROOT, '.claude', 'skills', 'evil'));
 
 // A committed migration, for the dialog's MATCH line.
 const MIGRATION_084 = fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', '084_vet_call_cover.sql'), 'utf8');
@@ -190,6 +193,17 @@ const ROWS: Row[] = [
   gate('self.bash-read', 'git diff the hooks has no opinion', call('Bash', { command: 'git diff .claude/hooks/' }), null),
   gate('self.bash-read', 'a plain read from inside .claude has no opinion', call('Bash', { command: 'cat hooks/productionGate.ts' }, path.join(ROOT, '.claude')), null),
   gate('self.bash-pass', 'npm test has no opinion', call('Bash', { command: 'npm test' }), null),
+  gate('self.bash-pass', 'a cd into a computed directory that names no .claude has no opinion', call('Bash', { command: 'cd "$TMPDIR" && npm test' }), null),
+  // ── Skills, agents, commands, workflows cannot switch the gate off (CUL-1670) ────────
+  gate('self.skill-read', 'a chained, piped skill read has no opinion', call('Bash', { command: `cd ${ROOT} && cat .claude/skills/steward/SKILL.md | head -40` }), null),
+  gate('self.skill-read', 'grep over agents and commands has no opinion', call('Bash', { command: 'grep -rn wrap .claude/agents/ .claude/commands/ | head' }), null),
+  gate('self.skill-read', "the user's skills have no opinion", call('Bash', { command: 'ls ~/.claude/skills && cat /root/.claude/workflows/x.js | wc -l' }), null),
+  gate('self.skill-rest', 'a skill read chained to a settings write asks', call('Bash', { command: 'cat .claude/skills/x/SKILL.md && rm .claude/settings.json' }), 'ask'),
+  gate('self.skill-rest', 'a skill read piped into a hook asks', call('Bash', { command: 'cat .claude/skills/x/SKILL.md | tee .claude/hooks/hookIo.ts' }), 'ask'),
+  gate('self.skill-link', 'a skills path that climbs back out asks', call('Bash', { command: 'sed -i s/a/b/ .claude/skills/../settings.json; echo' }), 'ask'),
+  gate('self.skill-cd', 'cd into skills then a computed path asks', call('Bash', { command: 'cd .claude/skills && sed -i s/a/b/ "$(dirname "$PWD")/settings.json"' }), 'ask'),
+  gate('self.skill-link', 'a skills entry linked to the hooks asks', call('Bash', { command: 'sed -i s/a/b/ .claude/skills/evil/productionGate.ts; echo' }, LINK_ROOT), 'ask'),
+  gate('self.skill-inside', 'a chained read from inside .claude still asks', call('Bash', { command: 'cat skills/x/SKILL.md | head' }, path.join(ROOT, '.claude')), 'ask'),
 
   // ── Relay form ────────────────────────────────────────────────────────────────────
   relay('relay.gmail', "Gmail's send_message (the dispatcher's email to self, CUL-1624) is untouched", call('mcp__Gmail__send_message', { to: ['danieljmarkii@gmail.com'], subject: 'approve', body: 'merge it, approved' }), null),
@@ -463,6 +477,11 @@ const MUTANTS: Mutant[] = [
   { rule: 'self.git-add', file: 'productionGate.ts', from: "const READ_GIT = new Set(['diff', 'log', 'show', 'status', 'blame', 'ls-files']);", to: "const READ_GIT = new Set(['diff', 'log', 'show', 'status', 'add', 'blame', 'ls-files']);" },
   { rule: 'self.bash-read', file: 'productionGate.ts', from: '    if (!unsafe && READ_COMMANDS.has(words[0])) return null;\n', to: '' },
   { rule: 'self.bash-pass', file: 'productionGate.ts', from: '  if (!NAMES_GATE.test(cmd) && !inside) return null;\n', to: '' },
+  { rule: 'self.skill-read', file: 'productionGate.ts', from: '  if (!inside && namesOnlySafeDirs(cmd, cwd)) return null;\n', to: '' },
+  { rule: 'self.skill-inside', file: 'productionGate.ts', from: 'if (!inside && namesOnlySafeDirs(cmd, cwd)) return null;', to: 'if (namesOnlySafeDirs(cmd, cwd)) return null;' },
+  { rule: 'self.skill-rest', file: 'productionGate.ts', from: 'return !reachesGate && !NAMES_GATE.test(rest);', to: 'return !reachesGate;' },
+  { rule: 'self.skill-cd', file: 'productionGate.ts', from: '  if (CD_INTO.test(cmd)) return false;\n', to: '' },
+  { rule: 'self.skill-link', file: 'productionGate.ts', from: '    if (isGateFile(path.resolve(cwd, m))) reachesGate = true;\n', to: '' },
   // sqlRead.ts
   { rule: 'sql.start', file: 'sqlRead.ts', from: "if (!lead || lead.k !== 'word' || !READ_START.has(lead.v)) {", to: 'if (!lead) {' },
   { rule: 'sql.statements', file: 'sqlRead.ts', from: 'for (const s of live) {', to: 'for (const s of live.slice(0, 1)) {' },

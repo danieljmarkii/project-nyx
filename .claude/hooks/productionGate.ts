@@ -21,7 +21,8 @@
 //  - The gate's own files (.claude/settings*.json, .claude/hooks/, the user and managed
 //    settings) → ask on any write (PM ruling 2026-10-07), so an Auto session cannot edit
 //    the gate out without the dialog. Any shell command that mentions .claude, or runs
-//    from inside it, asks unless it is one plain read.
+//    from inside it, asks unless it is one plain read, or every .claude it names is
+//    skills/, agents/, commands/ or workflows/ (CUL-1670).
 //
 // Every quoted value is escaped (control, format and bidirectional characters become
 // visible `\u{…}`), every cut line or list says how much it cut, and the dialog names
@@ -41,8 +42,10 @@
 //  - Only the tools named above are gated. A writing tool the connector adds later, and
 //    a merge to main (which deploys Edge Functions), get no dialog from this hook.
 //  - The self-guard reads paths and command text. A script written elsewhere and then
-//    run, or a path assembled in the shell (`d=.cla; d+=ude`), gets past it. It is a
-//    tripwire, not a wall.
+//    run, or a path assembled in the shell (`d=.cla; d+=ude`), gets past it. So does a
+//    write whose destination lives inside a file a skills/ command reads, such as an
+//    archive extracted there (`tar -C .claude/skills -xf x.tar` with `../hooks` members).
+//    It is a tripwire, not a wall.
 //  - Hooks load when a session starts, so a session that started before this file
 //    existed runs without it. When node cannot start at all, the settings.json fallback
 //    asks on every matched call; when the harness skips hooks entirely, nothing here runs.
@@ -248,11 +251,31 @@ const READ_COMMANDS = new Set(['cat', 'head', 'tail', 'wc', 'grep', 'rg', 'ls', 
 const READ_GIT = new Set(['diff', 'log', 'show', 'status', 'blame', 'ls-files']);
 const RUNS_OR_WRITES = /^--(?:output|pre)\b/;
 
+// The .claude directories that cannot switch the gate off (CUL-1670, PM ruling
+// 2026-10-08): agents read skills and agents with piped, chained commands all session,
+// and asking on each one trained the PM to approve without reading. A command passes
+// when every .claude it names is one of these and resolves outside the gate's files
+// (`.claude/skills/../settings.json` and a linked skills/ entry do not), and it changes
+// into no .claude or computed directory (`cd .claude/skills && rm "$(dirname "$PWD")/settings.json"`).
+const SAFE_MENTION = /[^\s'"`;&|<>(){}$\\]*\.claude\/(?:skills|agents|commands|workflows)(?:\/[^\s'"`;&|<>(){}$\\]*)?(?=[\s'"`;&|<>(){}]|$)/g;
+const CD_INTO = /(?:^|[\s;&|(])(?:cd|pushd)\s+[^\s;&|]*(?:\.claude|[$`])/;
+
+function namesOnlySafeDirs(cmd: string, cwd: string): boolean {
+  if (CD_INTO.test(cmd)) return false;
+  let reachesGate = false;
+  const rest = cmd.replace(SAFE_MENTION, (m) => {
+    if (isGateFile(path.resolve(cwd, m))) reachesGate = true;
+    return ' ';
+  });
+  return !reachesGate && !NAMES_GATE.test(rest);
+}
+
 function askIfGateCommand(input: HookInput): Decision | null {
   const cmd = typeof input.tool_input.command === 'string' ? input.tool_input.command : '';
   const cwd = path.resolve(input.cwd);
   const inside = IN_GATE_DIR.test(cwd) || IN_GATE_DIR.test(realpathOfLongestExisting(cwd));
   if (!NAMES_GATE.test(cmd) && !inside) return null;
+  if (!inside && namesOnlySafeDirs(cmd, cwd)) return null;
   if (!SHELL_META.test(cmd)) {
     const words = cmd.trim().split(/\s+/);
     const unsafe = words.some((w) => RUNS_OR_WRITES.test(w));
