@@ -31,6 +31,8 @@ import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain } from '
 import { uploadPhoto, compressForUpload, persistCapture } from './storage';
 import { uuid, OccurredConfidence } from './utils';
 import { isStoolEvent } from '../constants/eventTypes';
+import { floorOnNow, insertFloorMarker, kickFloorChecks, owesFloorCheck } from './incidentFloorQueue';
+import { previewFloorAfterWrite, type FloorAnnouncement } from './incidentFloorPreview';
 
 // A photo the owner attached in the confirm. `takenAt` is the trusted EXIF ISO (or
 // null); width/height are the source pixel dims kept only so compressForUpload can
@@ -72,6 +74,12 @@ export interface InsertSimpleEventResult {
   occurredAtIso: string;
   // ISO created_at/updated_at written to the row.
   now: string;
+  // Engines v3 PR-28b (CUL-1436) — the one read this log raised to a call on the phone's
+  // own floor (§8.5, §6 item 3): its own (a vomit), or an earlier vomit's in its bout. Null
+  // when the floor's keys are off, the log owes no re-check, or nothing was raised; never
+  // an all-clear. The caller puts it on the completion card, and a photoless vomit whose
+  // own read is call now routes to its record (PMD-14 = A, §6 item 2).
+  floor: FloorAnnouncement | null;
 }
 
 // Write a simple event, attach its optional photo (firing the AI read for
@@ -93,7 +101,7 @@ export async function insertSimpleEvent(
   // inline (B-010: occurred_at is the derived point, the window bounds carry the
   // uncertainty, synced=0 queues it). Throws on failure → caller alerts + keeps
   // the tiles live; nothing is written, so a retry is clean.
-  await db.runAsync(
+  const writeEvent = () => db.runAsync(
     `INSERT INTO events
        (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source,
         occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
@@ -108,6 +116,19 @@ export async function insertSimpleEvent(
       now, now,
     ],
   );
+  // Engines v3 PR-28b (CUL-1436, §8.4) — a vomit or lethargy log owes the server a
+  // re-check, and the debt is written in the SAME transaction as the event, so it survives
+  // an app kill between the save and the network. With the floor's keys off, or any other
+  // type, the write is the single statement it always was.
+  const owesCheck = floorOnNow() && owesFloorCheck(params.eventType);
+  if (owesCheck) {
+    await db.withTransactionAsync(async () => {
+      await writeEvent();
+      await insertFloorMarker(db, eventId, params.petId);
+    });
+  } else {
+    await writeEvent();
+  }
 
   // Photo attachment (optional). Deliberately AFTER the event is committed and
   // best-effort: the event IS the record, the photo an enrichment — so a photo
@@ -130,7 +151,15 @@ export async function insertSimpleEvent(
   // regen. Fire-and-forget — home re-reads cache on focus.
   triggerSignalRegenDebounced(params.petId);
 
-  return { eventId, occurredAtIso, now };
+  // The phone's own floor over its rows, said at once (§8.5), then the server's re-check
+  // (held by the drain until the event has landed). Never throws.
+  let floor: FloorAnnouncement | null = null;
+  if (owesCheck) {
+    floor = await previewFloorAfterWrite(eventId);
+    kickFloorChecks();
+  }
+
+  return { eventId, occurredAtIso, now, floor };
 }
 
 // Insert the attachment row and kick off the compress → upload → AI-read chain.

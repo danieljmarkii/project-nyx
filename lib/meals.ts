@@ -20,6 +20,7 @@ import { getDb, getEventPetId, updateMealIntake } from './db';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 import { triggerSignalRegenDebounced } from './signal';
 import { uuid } from './utils';
+import { floorOnNow, insertFloorMarker, kickFloorChecks, writeOwingFloorCheck } from './incidentFloorQueue';
 import { useSyncStore } from '../store/syncStore';
 
 export interface InsertMealParams {
@@ -75,6 +76,7 @@ export async function insertMeal(params: InsertMealParams): Promise<InsertMealRe
   const occurredAtIso = occurredAt.toISOString();
   const eventId = uuid();
   const mealId = uuid();
+  const owesCheck = floorOnNow();
 
   // Both rows in ONE transaction so the meal is atomic (B-126): a meal is an
   // event + its 1:1 child, and a half-write (event lands, child INSERT throws)
@@ -106,7 +108,11 @@ export async function insertMeal(params: InsertMealParams): Promise<InsertMealRe
        VALUES (?, ?, ?, ?, 'unknown', ?, ?, ?, 0)`,
       [mealId, eventId, petId, foodId, intakeRating, now, now],
     );
+    // Engines v3 PR-28b (CUL-1436, §8.4): a meal re-checks the vomits around it (a refusal
+    // can raise one through the intake flag), so it owes a marker, in this transaction.
+    if (owesCheck) await insertFloorMarker(db, eventId, petId);
   });
+  if (owesCheck) kickFloorChecks();
 
   // A rated insert (the intake door) is a rating too: Home re-reads, so its row says what
   // the record says even where a caller's optimistic mirror left the rating off (History
@@ -179,7 +185,9 @@ export async function rateMealIntake(
   eventId: string,
   rating: Parameters<typeof updateMealIntake>[1],
 ): Promise<void> {
-  await updateMealIntake(eventId, rating);
+  // A later rating re-checks the vomits around the meal (§8.3); its marker is written in
+  // the same transaction as the rating, and only under the floor's keys.
+  await writeOwingFloorCheck(eventId, () => updateMealIntake(eventId, rating));
   notifyIntakeChanged();
   syncPendingMeals().catch((e) => console.error('[rateMealIntake] sync push failed:', e));
   getEventPetId(eventId)

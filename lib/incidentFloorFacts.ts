@@ -11,7 +11,7 @@
 // `…+00:00`, and those do not compare as text (C-40).
 
 import { getDb } from './db';
-import { FLOOR_READ_HOURS, type FloorVomit } from './incidentFloor';
+import { FLOOR_LETHARGY_HOURS, FLOOR_READ_HOURS, type FloorVomit } from './incidentFloor';
 
 export interface IncidentFloorFacts {
   /** The event this read is about, or null when the phone has no copy of it. */
@@ -20,6 +20,11 @@ export interface IncidentFloorFacts {
   vomits: FloorVomit[];
   /** Courses on board at the event, by the names the owner entered. */
   courses: string[];
+  /** The same vomits with their ids, and the pet's live lethargy logs within the floor's
+   *  lethargy window, for the phone's own floor over this read (EN-4's offline preview,
+   *  PR-28b, CUL-1436). */
+  vomitRows: { id: string; at: string; confidence: string | null }[];
+  lethargy: { id: string; at: string }[];
 }
 
 const HOUR = 3_600_000;
@@ -57,16 +62,17 @@ export async function loadIncidentFloorFacts(eventId: string, petId: string): Pr
       'SELECT occurred_at, occurred_at_confidence FROM events WHERE id = ? AND pet_id = ?',
       [eventId, petId],
     );
-    if (!own) return { anchor: null, vomits: [], courses: [] };
+    const none: IncidentFloorFacts = { anchor: null, vomits: [], courses: [], vomitRows: [], lethargy: [] };
+    if (!own) return none;
     const a = Date.parse(own.occurred_at);
-    if (!Number.isFinite(a)) return { anchor: null, vomits: [], courses: [] };
+    if (!Number.isFinite(a)) return none;
     const reach = FLOOR_READ_HOURS * HOUR;
-    const rows = await db.getAllAsync<{ occurred_at: string; occurred_at_confidence: string | null }>(
-      `SELECT occurred_at, occurred_at_confidence
+    const rows = await db.getAllAsync<{ id: string; event_type: string; occurred_at: string; occurred_at_confidence: string | null }>(
+      `SELECT id, event_type, occurred_at, occurred_at_confidence
          FROM events
         WHERE pet_id = ?
           AND deleted_at IS NULL
-          AND event_type = 'vomit'
+          AND event_type IN ('vomit', 'lethargy')
           AND occurred_at >= ?
           AND occurred_at <= ?`,
       [petId, new Date(a - reach - PAD_MS).toISOString(), new Date(a + reach + PAD_MS).toISOString()],
@@ -75,9 +81,16 @@ export async function loadIncidentFloorFacts(eventId: string, petId: string): Pr
       const t = Date.parse(iso);
       return Number.isFinite(t) && Math.abs(t - a) <= reach;
     };
-    const vomits = rows
-      .filter((r) => inWindow(r.occurred_at))
-      .map((r) => ({ at: r.occurred_at, confidence: r.occurred_at_confidence }));
+    const vomitRows = rows
+      .filter((r) => r.event_type === 'vomit' && inWindow(r.occurred_at))
+      .map((r) => ({ id: r.id, at: r.occurred_at, confidence: r.occurred_at_confidence }));
+    const vomits = vomitRows.map((r) => ({ at: r.at, confidence: r.confidence }));
+    const lethargy = rows
+      .filter((r) => {
+        const t = Date.parse(r.occurred_at);
+        return r.event_type === 'lethargy' && Number.isFinite(t) && Math.abs(t - a) <= FLOOR_LETHARGY_HOURS * HOUR;
+      })
+      .map((r) => ({ id: r.id, at: r.occurred_at }));
 
     const meds = await db.getAllAsync<{ drug_name: string; status: string; started_at: string; ended_at: string | null }>(
       'SELECT drug_name, status, started_at, ended_at FROM medications WHERE pet_id = ?',
@@ -89,6 +102,8 @@ export async function loadIncidentFloorFacts(eventId: string, petId: string): Pr
       anchor: { at: own.occurred_at, confidence: own.occurred_at_confidence },
       vomits,
       courses,
+      vomitRows,
+      lethargy,
     };
   } catch (e) {
     console.warn('[incidentFloorFacts] read failed:', e);

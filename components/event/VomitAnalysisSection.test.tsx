@@ -1641,7 +1641,7 @@ describe('VomitAnalysisSection — the floor\'s words (CUL-1510)', () => {
     usePetStore.setState({
       pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
     });
-    mockFloorFacts = { anchor, vomits: [anchor], courses: ['prednisone'] };
+    mockFloorFacts = { anchor, vomits: [anchor], courses: ['prednisone'], vomitRows: [], lethargy: [] };
   });
   afterEach(() => {
     nowSpy.mockRestore();

@@ -477,6 +477,50 @@ export const BASE_SCHEMA_SQL = `
       ON vet_call_follow_ups(synced)
       WHERE synced = 0;
 
+    -- incident_floor_queue — EN-4's durable re-check marker (Engines v3 PR-28b, CUL-1436;
+    -- docs/nyx-incident-tiers-requirements.md §8.3–8.5). LOCAL ONLY: there is no server
+    -- table. A row is a promise that analyze-vomit will be asked to re-floor this pet's
+    -- vomits around one log (mode: 'refloor', PM 2026-10-08 for a new vomit too), written
+    -- in the SAME transaction as the vomit, lethargy or meal write that owes it, so an app
+    -- killed between the save and the network still owes the check on the next launch.
+    --
+    -- INSERT-ONLY (no updated_at): every owed check is its own row, and the drain sends one
+    -- request per (event_id) however many rows wait on it. It is held until its event (and
+    -- a meal's rating row) has landed, because the server reads the settled record with the
+    -- caller's JWT and a 404 on an unseen trigger is a wasted attempt.
+    --
+    -- device_claim is the tier the phone showed, its rule version and the row ids it read
+    -- (§8.5), as JSON. Sent in the request; the server adopts it only once CUL-1437's
+    -- shown-tier log exists, and until then ignores it, as it ignores any unknown field.
+    CREATE TABLE IF NOT EXISTS incident_floor_queue (
+      id            TEXT PRIMARY KEY,
+      pet_id        TEXT NOT NULL,
+      event_id      TEXT NOT NULL,
+      device_claim  TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      synced        INTEGER NOT NULL DEFAULT 0,
+      sync_attempts INTEGER NOT NULL DEFAULT 0,
+      sync_error    TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_incident_floor_queue_unsynced
+      ON incident_floor_queue(synced)
+      WHERE synced = 0;
+
+    -- incident_tier_shown — the call tier THIS PHONE has shown for a read (Engines v3
+    -- PR-28b, CUL-1436; spec §8.7, GAP-33). LOCAL ONLY and never pushed: it is what the
+    -- one-arrival rule reads, so a stored tier arrives only above what this phone already
+    -- said, and a re-check that raises several reads of one bout announces one. Raise-only
+    -- (lib/incidentTierShown.ts): a later, lower write never moves it. The server's own
+    -- record of what was shown is CUL-1437's log; this is not a copy of it.
+    CREATE TABLE IF NOT EXISTS incident_tier_shown (
+      event_id      TEXT PRIMARY KEY,
+      pet_id        TEXT NOT NULL,
+      tier          TEXT NOT NULL,
+      shown_at      TEXT NOT NULL,
+      source        TEXT NOT NULL
+    );
+
     -- feeding_arrangements — pet↔food standing fact ("always available / free-fed").
     -- B-040 R1 (PR 2). Mirrors supabase/migrations/018_feeding_arrangements.sql.
     -- A STANDING FACT, not a per-nibble log: one row per (pet, food) free-choice

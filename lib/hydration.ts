@@ -288,6 +288,14 @@ export const LOCAL_WIPE_TABLES = [
   // about what the vet said. Neither may survive a sign-out onto someone else's phone.
   'vet_call_follow_ups',
   'vet_calls',
+  // Engines v3 PR-28b (CUL-1436) EN-4's re-check marker and the tiers this phone showed.
+  // Both name an event (no local FK), so they lead 'events'.
+  //
+  // A TRUST & SAFETY REQUIREMENT, not bookkeeping: a marker says this pet vomited or was
+  // lethargic at a time, and a shown row says the phone told this household to call a vet
+  // about it. A dated clinical flag about a named animal; neither may survive a sign-out.
+  'incident_floor_queue',
+  'incident_tier_shown',
   'vet_visit_attachments',
   // B-117 medication mirror (children-first). medication_administrations
   // FK→events ON DELETE CASCADE locally, so it MUST precede events. medications

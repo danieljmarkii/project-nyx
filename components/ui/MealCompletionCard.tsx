@@ -15,6 +15,7 @@ import {
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { updateEvent, getEventSource } from '../../lib/db';
+import { writeOwingFloorCheck } from '../../lib/incidentFloorQueue';
 import { rateMealIntake } from '../../lib/meals';
 import { syncPendingEvents } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
@@ -399,11 +400,11 @@ export function MealCompletionCard() {
       // neither value — the explicit nulls it used to pass were harmless only while
       // no meal path writes a note, and would have made the first one that does
       // erasable by a time edit, with nothing failing.
-      await updateEvent(payload.eventId, {
+      await writeOwingFloorCheck(payload.eventId, () => updateEvent(payload.eventId, {
         occurred_at: iso,
         occurred_at_source: source,
         confidence: { value: 'witnessed', earliest: null, latest: null },
-      });
+      }));
       patchInToday(payload.eventId, { occurred_at: iso });
       patchOccurredAt(iso);
       setPickerFor(null);

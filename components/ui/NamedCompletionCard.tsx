@@ -10,6 +10,7 @@ import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { updateEvent, getEventSource } from '../../lib/db';
+import { writeOwingFloorCheck } from '../../lib/incidentFloorQueue';
 import { syncPendingEvents } from '../../lib/sync';
 import {
   summarizeLoggedRecord, canChangeTime, resolveNamedTimeEdit, applyNamedTimeEdit,
@@ -176,7 +177,7 @@ export function NamedCompletionCard() {
       // claim", applied to the point).
       const changed = edit.occurredAtIso !== payload.occurredAt;
       const source = sourceAfterPointEdit(await getEventSource(payload.eventId), changed);
-      await updateEvent(payload.eventId, {
+      await writeOwingFloorCheck(payload.eventId, () => updateEvent(payload.eventId, {
         occurred_at: edit.occurredAtIso,
         // `severity` and `notes` deliberately OMITTED. The /log flow writes an
         // owner-typed note on both of this card's paths, and this edit is about
@@ -190,7 +191,7 @@ export function NamedCompletionCard() {
         // discovery bound moves with the point. Everything else keeps its stored
         // claim, so a time correction can never promote a row to "seen".
         ...(edit.confidence ? { confidence: edit.confidence } : {}),
-      });
+      }));
       patchInToday(payload.eventId, {
         occurred_at: edit.occurredAtIso,
         ...(edit.confidence
