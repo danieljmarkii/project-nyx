@@ -9,7 +9,9 @@ Dispatched build of CUL-1647, plan-gated (Gate: clinical); the PM's go was typed
 
 **The window.** Data Scientist: 14 local days, on the asymmetry of the two errors (a missing food costs one tap through the picker; a stale pill costs a re-exposure logged into a trial). PM approved re-reading with fixed day bounds over freezing the list, so corrections leave the fan the same day.
 
-**Reviews.** Code review: ship-ready, one ordering finding (fixed: a sequence token). Adversarial review: FAIL on one item, an archived food stayed a pill on the next open because nothing re-read; fixed by making the library counter a trigger, and proven by mutation. Held: UTC+14, −10 and DST bounds; mixed ISO spellings at a bound; pet switch; menu open across midnight.
+**Reviews.** Code review: ship-ready, one ordering finding (fixed: a sequence token). Adversarial review: FAIL on one item, an archived food stayed a pill on the next open because nothing re-read; fixed by making the library counter a trigger, and proven by mutation. Held: UTC+14, −10 and DST bounds; mixed ISO spellings at a bound; pet switch; menu open across midnight. Second pass on the fix: PASS (every archive and restore writer calls the library counter; the sequence token never strands a read); its one coverage gap, a read in flight when the menu opens over held rows, now has a test proven by mutation.
+
+**Merge.** Main's PR-23 changed the pill labels mid-build; the first CI run on the PR failed on four of this PR's assertions for that reason only, fixed after merging main in.
 
 **Filed.** CUL-1665: the shared reversal raises no change signal, so a past meal deleted on this device leaves the fan at the next close or sync rather than before the next open.
 

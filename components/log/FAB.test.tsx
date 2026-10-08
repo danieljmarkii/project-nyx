@@ -1081,6 +1081,31 @@ describe('FAB — CUL-1647, the recent foods keep one order for the day', () => 
     expect(fanLabels(view).slice(-3)).toEqual(['Log food', 'Hills · i/d', 'Royal Canin · GI']);
   });
 
+  it('a read in flight when the menu opens over held rows is dropped, and the close re-reads', async () => {
+    // The sync tick fires on every foreground, so a read can be mid-flight at the open.
+    jest.setSystemTime(local(8, 10, 0));
+    getRecentFoods.mockResolvedValueOnce([HILLS]);
+    seedPets(1);
+    const view = render(<FAB />);
+    await act(async () => {});
+
+    let release: (foods: unknown[]) => void = () => {};
+    getRecentFoods.mockImplementationOnce(
+      () => new Promise((resolve) => { release = resolve as never; }),
+    );
+    await act(async () => {
+      useSyncStore.getState().bumpHydrationTick();
+    });
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => { release([ROYAL, HILLS]); });
+    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills · i/d']);
+
+    getRecentFoods.mockResolvedValue([ROYAL, HILLS]);
+    fireEvent.press(view.getByTestId('fab-scrim'));
+    await settleAnimations();
+    expect(getRecentFoods).toHaveBeenCalledTimes(3);
+  });
+
   it('a pet switch reads that pet’s order over the same day', async () => {
     jest.setSystemTime(local(8, 12, 0));
     seedPets(2);
