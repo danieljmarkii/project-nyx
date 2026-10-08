@@ -24,6 +24,7 @@
 
 import { theme } from './theme';
 import { CATEGORY_TINT } from '../components/log/EventTypePicker';
+import { DAY_ROW_ICON_GROUND, DAY_ROW_TINT } from '../components/designV2/patterns/dayRowTint';
 
 /** WCAG 2.1 relative luminance of an #rrggbb colour (sRGB, linearized). */
 function relativeLuminance(hex: string): number {
@@ -301,5 +302,27 @@ describe('CUL-1637 — every picker tile glyph clears 3:1 on its circle', () => 
     // The thinnest of the rest: rose on its own wash. Recorded so a token nudge that
     // drops it under the floor is a visible diff, not a surprise.
     expect(contrastRatio(theme.colorEventSymptom, theme.colorEventSymptomLight)).toBeCloseTo(3.06, 2);
+  });
+});
+
+// ── The Patterns month drill-in's row glyphs (CUL-1659) ───────────────────────────────
+// The same bright teal, on a different surface: each day row draws its category glyph on
+// a white chip. Walks the shipped map against the shipped ground, so a new category or a
+// revert to the bright meal tint is measured here.
+describe('CUL-1659 — every month drill-in row glyph clears 3:1 on its chip', () => {
+  const NON_TEXT = 3;
+
+  it('the chip is white, the ground the ratios below are measured on', () => {
+    expect(DAY_ROW_ICON_GROUND).toBe(theme.colorSurface);
+  });
+
+  it.each(Object.entries(DAY_ROW_TINT))('%s', (_category, fg) => {
+    expect(contrastRatio(fg, DAY_ROW_ICON_GROUND)).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+
+  it('the meal glyph is the accent glyph, and the bright meal tint it replaced fails on white', () => {
+    expect(DAY_ROW_TINT.meal).toBe(theme.colorAccentGlyph);
+    expect(contrastRatio(theme.colorEventMeal, DAY_ROW_ICON_GROUND)).toBeCloseTo(2.26, 2);
+    expect(contrastRatio(theme.colorAccentGlyph, DAY_ROW_ICON_GROUND)).toBeCloseTo(3.27, 2);
   });
 });
