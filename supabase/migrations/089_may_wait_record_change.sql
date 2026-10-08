@@ -72,7 +72,12 @@
 -- reds there until this file moves with it.
 --
 -- WHAT FIRES (four AFTER triggers, one function):
---   events INSERT   a live lethargy (lethargy).
+--   events INSERT   a live lethargy (lethargy), or a live vomit or stool
+--                   (incident). A photoless incident reaches no server code
+--                   (lib/simpleEvent.ts reads only inside its photo branch), and a
+--                   third vomit in half an hour is the floor's T1; the PM ruled it
+--                   in (CUL-1671, 2026-10-08). A photographed one is lowered here
+--                   too, ahead of the server's own re-check, which never re-raises.
 --   events UPDATE   OF occurred_at, occurred_at_confidence, pet_id, event_type,
 --                   deleted_at: a move (time, confidence, pet or type changed, or
 --                   the row un-deleted) touches the OLD
@@ -104,9 +109,9 @@
 -- edit predicate is false for every lowered row, and no events or meals row is
 -- written.
 --
--- STATED BLIND SPOTS (filed on CUL-1671): a new vomit or stool row is not a
--- touch point (a photographed one runs the server's own re-check; a photoless
--- one runs none); a profile time zone change (the `dst` rule) and a pet's species
+-- STATED BLIND SPOTS (filed on CUL-1671): a photo added or replaced on an event
+-- (event_attachments, which the predicate reads through `photoReadSettled`) is
+-- not watched, and the edit screen's photo change runs no read; a profile time zone change (the `dst` rule) and a pet's species
 -- change are not watched; a write that commits between the server's record read
 -- and its TRUE write leaves that TRUE (the read-in-flight race); and a TRUE
 -- refused by time alone (the cat intake check at a later now) is CUL-1629's
@@ -190,10 +195,13 @@ DECLARE
 BEGIN
   IF TG_TABLE_NAME = 'events' THEN
     IF TG_OP = 'INSERT' THEN
-      IF NEW.event_type::text = 'lethargy' AND NEW.deleted_at IS NULL THEN
-        v_kinds := v_kinds || 'lethargy'::text;
-        v_pets  := v_pets  || NEW.pet_id;
-        v_ats   := v_ats   || NEW.occurred_at;
+      IF NEW.deleted_at IS NULL THEN
+        v_kinds := v_kinds || CASE
+                     WHEN NEW.event_type::text = 'lethargy' THEN 'lethargy'
+                     WHEN NEW.event_type::text IN ('vomit', 'stool_normal', 'diarrhea') THEN 'incident'
+                   END;
+        v_pets  := v_pets || NEW.pet_id;
+        v_ats   := v_ats  || NEW.occurred_at;
       END IF;
     ELSE
       v_moved := NEW.occurred_at IS DISTINCT FROM OLD.occurred_at
@@ -304,7 +312,7 @@ REVOKE ALL ON FUNCTION public.take_back_may_wait_on_record_change() FROM authent
 CREATE TRIGGER trg_events_may_wait_record_ins
   AFTER INSERT ON public.events
   FOR EACH ROW
-  WHEN (NEW.event_type = 'lethargy')
+  WHEN (NEW.event_type IN ('lethargy', 'vomit', 'stool_normal', 'diarrhea'))
   EXECUTE FUNCTION public.take_back_may_wait_on_record_change();
 
 CREATE TRIGGER trg_events_may_wait_record_upd
@@ -332,4 +340,4 @@ CREATE TRIGGER trg_meals_may_wait_record_upd
   EXECUTE FUNCTION public.take_back_may_wait_on_record_change();
 
 COMMENT ON FUNCTION public.take_back_may_wait_on_record_change() IS
-  'CUL-1671 (089): a change on the events side lowers may_wait TRUE -> NULL on every TRUE of the same pet (either row''s analysis or event pet) inside the predicate''s window: a lethargy (anchor <= L + 96 h), a moved vomit / stool (anchor within 144 h), a cat''s rated meal (anchor in [M - 72 h, M + 240 h], or every TRUE when M is within 168 h of now), and the moved event''s own TRUE. A time / confidence / pet / type move or un-delete counts. Windows mirrored from incidentMayWait.ts. INVOKER, so RLS bounds a client''s sweep; every role fires. Raises no message of its own.';
+  'CUL-1671 (089): a change on the events side lowers may_wait TRUE -> NULL on every TRUE of the same pet (either row''s analysis or event pet) inside the predicate''s window: a lethargy (anchor <= L + 96 h), a new or moved vomit / stool (anchor within 144 h), a cat''s rated meal (anchor in [M - 72 h, M + 240 h], or every TRUE when M is within 168 h of now), and the moved event''s own TRUE. A time / confidence / pet / type move or un-delete counts. Windows mirrored from incidentMayWait.ts. INVOKER, so RLS bounds a client''s sweep; every role fires. Raises no message of its own.';

@@ -23,7 +23,7 @@ import { stripSqlComments } from './sqlComments';
 //
 // WHAT IT CANNOT SEE: the live database (a dashboard edit), and the trigger's
 // runtime behaviour. 089's PR proves the behaviour against a scratch Postgres 16
-// (41 cases: 41 pass on 089; on 088 alone the 25 lowering cases fail and the 16
+// (48 cases: 48 pass on 089; on 088 alone the 27 lowering cases fail and the 21
 // keep cases pass; the probe is in the PR body). Every rule here and in the probe
 // is mutation-proven (the PR body lists the mutants).
 // The stated blind spots of the trigger itself are in 089's header.
@@ -122,7 +122,13 @@ describe('089: the function and its four triggers', () => {
   });
 
   it('the insert triggers fire on a lethargy and on a rated meal', () => {
-    expect(live.triggers.get('trg_events_may_wait_record_ins')?.when).toMatch(/WHEN \(NEW\.event_type = 'lethargy'\)/);
+    // A lethargy, and every incident type the predicate reads (a photoless one
+    // reaches no server code; PM ruling on CUL-1671, 2026-10-08).
+    const m = /export const MAY_WAIT_INCIDENT_TYPES = \[([^\]]*)\]/.exec(EVIDENCE_SRC);
+    const incidents = [...(m?.[1] ?? '').matchAll(/'(\w+)'/g)].map((x) => x[1]);
+    const ins = /WHEN \(NEW\.event_type IN \(([^)]*)\)\)/.exec(live.triggers.get('trg_events_may_wait_record_ins')?.when ?? '');
+    expect(ins).not.toBeNull();
+    expect([...(ins?.[1] ?? '').matchAll(/'(\w+)'/g)].map((x) => x[1]).sort()).toEqual(['lethargy', ...incidents].sort());
     expect(live.triggers.get('trg_meals_may_wait_record_ins')?.when).toMatch(/WHEN \(NEW\.intake_rating IS NOT NULL\)/);
   });
 
@@ -265,13 +271,14 @@ describe('089: each window mirrors the server predicate (C-34)', () => {
 });
 
 describe('089: the kinds are the predicate\'s event types', () => {
-  it('the incident types are MAY_WAIT_INCIDENT_TYPES, at both the old and the new place', () => {
+  it('the incident types are MAY_WAIT_INCIDENT_TYPES, at the insert and at both places of a move', () => {
     const m = /export const MAY_WAIT_INCIDENT_TYPES = \[([^\]]*)\]/.exec(EVIDENCE_SRC);
     expect(m).not.toBeNull();
     const ts = [...(m?.[1] ?? '').matchAll(/'(\w+)'/g)].map((x) => x[1]).sort();
     expect(ts).toEqual(['diarrhea', 'stool_normal', 'vomit']);
     const sites = [...flat.matchAll(/WHEN (OLD|NEW)\.event_type::text IN \(([^)]*)\) THEN 'incident'/g)];
-    expect(sites.map((s) => s[1]).sort()).toEqual(['NEW', 'OLD']);
+    // The insert's NEW, and the update's OLD and NEW places.
+    expect(sites.map((s) => s[1]).sort()).toEqual(['NEW', 'NEW', 'OLD']);
     for (const s of sites) expect([...s[2].matchAll(/'(\w+)'/g)].map((x) => x[1]).sort()).toEqual(ts);
   });
 
