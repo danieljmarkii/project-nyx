@@ -5,6 +5,7 @@ import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { TimeEditSheet } from './TimeEditSheet';
 import { useMomentStore, isIntakeDecline } from '../../store/momentStore';
@@ -129,12 +130,18 @@ export function MealCompletionCard() {
   } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { pets } = usePetStore();
+  // CUL-1633 — read in the render, as the FAB and the named card do: the store has the
+  // OS answer before the first frame (CUL-1123), and unknown reads as still (C-43). No
+  // handler here moves anything, so nothing needs `reducedMotionNow()`.
+  const reduced = useReducedMotion();
 
-  const translateY = useRef(new Animated.Value(80)).current;
+  // Seeded from the setting so the first frame under Reduce Motion is already the
+  // static one: the card in place, the check at rest.
+  const translateY = useRef(new Animated.Value(reduced ? 0 : 80)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   // The gold "beat" — the mint check springs in with a warm-gold halo so the
   // card carries the moment's warmth without a full-screen takeover.
-  const checkScale = useRef(new Animated.Value(0.6)).current;
+  const checkScale = useRef(new Animated.Value(reduced ? 1 : 0.6)).current;
 
   // The eventId the picker was OPENED for; null while closed (CUL-709). Captured at
   // open rather than read live at save: `present()` swaps the payload IN PLACE, so
@@ -193,7 +200,21 @@ export function MealCompletionCard() {
   }
 
   useEffect(() => {
-    Animated.parallel([
+    if (reduced) {
+      // Static frame: the card crossfades in place and the check never springs. Still
+      // a fade, not a cut — the owner must see the confirmation arrive; the setting
+      // asks for less movement, not less information.
+      translateY.setValue(0);
+      checkScale.setValue(1);
+      const fade = Animated.timing(opacity, {
+        toValue: shown ? 1 : 0,
+        duration: shown ? 180 : 140,
+        useNativeDriver: true,
+      });
+      fade.start();
+      return () => fade.stop();
+    }
+    const anim = Animated.parallel([
       Animated.spring(translateY, {
         toValue: shown ? 0 : 80,
         useNativeDriver: true,
@@ -211,8 +232,10 @@ export function MealCompletionCard() {
         tension: 60,
         friction: 7,
       }),
-    ]).start();
-  }, [shown, translateY, opacity, checkScale]);
+    ]);
+    anim.start();
+    return () => anim.stop();
+  }, [shown, reduced, translateY, opacity, checkScale]);
 
   function openPicker() {
     if (!isMeal) return;
