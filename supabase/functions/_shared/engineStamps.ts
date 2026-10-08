@@ -57,7 +57,8 @@ import { findingIdentity, type IdentifiableFinding } from '../../../lib/findingI
 // f2 (Engines v3 PR-26, CUL-1133): the tier written beside the verdict under
 // engines_v3_en3, and the hold that compares tiers (holdsOver). A row's tier is read under
 // the rule its rule_version names (the "earlier rule" line, spec §1).
-export const FRAMEWORK_RULE_VERSION = 'f2'
+// f3 (Engines v3 PR-27e, CUL-1628): "may wait" written beside the tier (incidentMayWait.ts).
+export const FRAMEWORK_RULE_VERSION = 'f3'
 
 export async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
