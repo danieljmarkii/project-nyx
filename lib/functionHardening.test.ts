@@ -117,6 +117,14 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: false, pinned: true, execute: [],
     why: 'CUL-1267 (075) — must stay INVOKER (it tests current_user; DEFINER would freeze nothing); pinned and revoked so it is not RPC-callable.',
   },
+  // 088 (CUL-1668): an owner edit lowers may_wait on the row and its
+  // neighbours. INVOKER for the same reason as the freeze (it judges
+  // current_user), and so 013's RLS bounds the neighbour sweep to rows the
+  // editing owner could UPDATE themselves.
+  take_back_may_wait_on_owner_edit: {
+    definer: false, pinned: true, execute: [],
+    why: 'CUL-1668 (088) — must stay INVOKER (it tests current_user, and RLS must bound the neighbour sweep); pinned and revoked so it is not RPC-callable.',
+  },
 
   // 085 (CUL-1406): the dated correction beside a stored vomit read. The count
   // and the recount are INVOKER (every caller already holds the read); the
