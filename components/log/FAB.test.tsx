@@ -1835,3 +1835,167 @@ describe('FAB — CUL-1645, the pills press like the disc', () => {
     expect((StyleSheet.flatten(pressed.props.style) as Record<string, unknown>).minHeight).toBe(PILL_MIN_HEIGHT);
   });
 });
+
+// ── CUL-1646 (D3): context leads, and a pet switch deals the foods again ─────────
+//
+// In a two pet home the "Logging for" chip is the guard against a wrong pet log, and
+// the nearest first stagger landed it LAST. It springs with the veil now and the
+// choices follow it. A switch inside the open fan used to swap the foods in place, in
+// slots already at rest; now the new pet's pills fan in from the disc once its keyed
+// read lands (CUL-723 still un-renders the old ones at once), and no pill acts until
+// the deal ends.
+describe('FAB — CUL-1646, the chip arrives first and a switch deals the foods again', () => {
+  const realOpenLogSheet = useUiStore.getState().openLogSheet;
+  const HILLS = { id: 'f1', brand: 'Hills', product_name: 'i/d', format: 'wet', food_type: 'meal' };
+  const ROYAL = { id: 'f2', brand: 'Royal Canin', product_name: 'GI', format: 'dry', food_type: 'meal' };
+  const PURINA = { id: 'f3', brand: 'Purina', product_name: 'EN', format: 'dry', food_type: 'meal' };
+  let openLogSheet: jest.Mock;
+
+  // Each test queues the reads it means; a queued answer no read asked for would leak
+  // into the next test's switch.
+  const resetReads = () => {
+    getRecentFoods.mockReset();
+    getRecentFoods.mockImplementation(async () => []);
+  };
+  beforeEach(() => {
+    jest.useFakeTimers();
+    resetReads();
+    insertMeal.mockReset();
+    openLogSheet = jest.fn(() => true);
+    useUiStore.setState({ openLogSheet });
+  });
+  afterEach(async () => {
+    await settleAnimations();
+    jest.useRealTimers();
+    useUiStore.setState({ openLogSheet: realOpenLogSheet });
+    jest.restoreAllMocks();
+    resetReads();
+  });
+
+  /** Switch to Mochi with Mochi's read held open; returns its release. */
+  async function switchToMochi() {
+    let release: (foods: unknown[]) => void = () => {};
+    getRecentFoods.mockImplementationOnce(() => new Promise((resolve) => { release = resolve as never; }));
+    await act(async () => {
+      usePetStore.setState({ activePet: { id: 'p2', name: 'Mochi' } as never });
+    });
+    return (foods: unknown[]) => act(async () => { release(foods); });
+  }
+
+  it('in motion, the chip springs at once and the choices fan 60ms after it', async () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    const delay = jest.spyOn(Animated, 'delay');
+    const stagger = jest.spyOn(Animated, 'stagger');
+    await openMenu();
+    expect(delay).toHaveBeenCalledWith(60);
+    // Chip + four doors: the stagger carries the four choices, never the chip.
+    expect(stagger).toHaveBeenCalledWith(38, expect.any(Array));
+    expect(stagger.mock.calls.at(-1)![1]).toHaveLength(4);
+  });
+
+  it('a one pet home sees no change: no chip, no lead, every pill on the one stagger', async () => {
+    seedPets(1);
+    useReducedMotionStore.setState({ reduceMotion: false });
+    const delay = jest.spyOn(Animated, 'delay');
+    const stagger = jest.spyOn(Animated, 'stagger');
+    const view = await openMenu();
+    expect(view.queryByLabelText(/Logging for/)).toBeNull();
+    expect(delay).not.toHaveBeenCalled();
+    expect(stagger.mock.calls.at(-1)![1]).toHaveLength(4);
+  });
+
+  it('a switch deals the new pet’s foods once its read lands, and nothing acts until then', async () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    getRecentFoods.mockResolvedValueOnce([HILLS]);
+    const view = await openMenu();
+    await settleAnimations();
+    const stagger = jest.spyOn(Animated, 'stagger');
+
+    const land = await switchToMochi();
+    // The old pet's rows are gone at once (CUL-723), and nothing is dealt yet.
+    expect(view.queryByText(/Hills/)).toBeNull();
+    expect(stagger).not.toHaveBeenCalled();
+    // Waiting on the read: no pill acts.
+    fireEvent.press(view.getByText('Vomit'));
+    expect(openLogSheet).not.toHaveBeenCalled();
+
+    await land([ROYAL, PURINA]);
+    // Both of Mochi's foods fan in from the disc, nearest first on the open's stagger.
+    expect(stagger).toHaveBeenCalledTimes(1);
+    expect(stagger).toHaveBeenCalledWith(38, expect.any(Array));
+    expect(stagger.mock.calls[0][1]).toHaveLength(2);
+    // Mid deal: neither a food nor a door acts.
+    fireEvent.press(view.getByText(/Royal Canin/));
+    fireEvent.press(view.getByText('Vomit'));
+    expect(insertMeal).not.toHaveBeenCalled();
+    expect(openLogSheet).not.toHaveBeenCalled();
+
+    await settleAnimations();
+    fireEvent.press(view.getByText('Vomit'));
+    expect(openLogSheet).toHaveBeenCalledTimes(1);
+  });
+
+  it('A → B → A before B answers deals A’s foods again, since they left with the first switch', async () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    getRecentFoods.mockResolvedValueOnce([HILLS]);
+    const view = await openMenu();
+    await settleAnimations();
+    await switchToMochi();
+    const stagger = jest.spyOn(Animated, 'stagger');
+    // Nyx's rows are still held, keyed to Nyx, so no read runs: they are dealt as held.
+    await act(async () => {
+      usePetStore.setState({ activePet: { id: 'p1', name: 'Nyx' } as never });
+    });
+    expect(view.getByText(/Hills/)).toBeTruthy();
+    expect(stagger).toHaveBeenCalledWith(38, expect.any(Array));
+    expect(stagger.mock.calls[0][1]).toHaveLength(1);
+  });
+
+  it('under Reduce Motion the foods crossfade in, and nothing moves', async () => {
+    useReducedMotionStore.setState({ reduceMotion: true });
+    getRecentFoods.mockResolvedValueOnce([HILLS]);
+    await openMenu();
+    await settleAnimations();
+    const stagger = jest.spyOn(Animated, 'stagger');
+    const spring = jest.spyOn(Animated, 'spring');
+    const timing = jest.spyOn(Animated, 'timing');
+
+    const land = await switchToMochi();
+    await land([ROYAL]);
+    expect(stagger).not.toHaveBeenCalled();
+    expect(spring).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tension: 120 }));
+    expect(timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 1, duration: 150 }));
+  });
+
+  it('a read that fails releases the pills: the doors act again', async () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    getRecentFoods.mockResolvedValueOnce([HILLS]);
+    const view = await openMenu();
+    await settleAnimations();
+    getRecentFoods.mockRejectedValueOnce(new Error('disk'));
+    await act(async () => {
+      usePetStore.setState({ activePet: { id: 'p2', name: 'Mochi' } as never });
+    });
+    // The rejection settles on its own microtask after the switch's render.
+    await act(async () => {});
+    fireEvent.press(view.getByText('Vomit'));
+    expect(openLogSheet).toHaveBeenCalledTimes(1);
+  });
+
+  it('a close mid deal ends it, and the next open acts normally', async () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    getRecentFoods.mockResolvedValueOnce([HILLS]);
+    const view = await openMenu();
+    await settleAnimations();
+    const land = await switchToMochi();
+    await land([ROYAL]);
+    fireEvent.press(view.getByTestId('fab-scrim'));
+    await settleAnimations();
+    getRecentFoods.mockResolvedValue([ROYAL]);
+    fireEvent.press(view.getByLabelText('Log event'));
+    await act(async () => {});
+    fireEvent.press(view.getByText('Vomit'));
+    expect(openLogSheet).toHaveBeenCalledTimes(1);
+  });
+});

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useContext, type ReactNode, type Ref } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useContext, type ReactNode, type Ref } from 'react';
 import {
   StyleSheet, View, Animated, BackHandler,
   Pressable, Alert, ScrollView, useWindowDimensions, AccessibilityInfo,
@@ -67,6 +67,11 @@ const TURN_DEGREES = 135;
 const TURN_SPRING = { tension: 90, friction: 6 } as const;
 /** Beat 4: items leave the disc nearest first, this far apart. */
 const FAN_STAGGER_MS = 38;
+/** CUL-1646 (D3): in a two pet home the "Logging for" chip leads. It springs with the
+ *  veil at delay 0, and the choices fan after it, nearest first, this much later (the
+ *  mock's §04 figure). Context before choice: the owner sees whose log it is before a
+ *  food lands under the thumb. A one pet home has no chip and keeps the plain stagger. */
+const CHIP_LEAD_MS = 60;
 /** The fan item's own spring: a lighter overshoot than the turn, so eight pills
  *  landing do not wobble as a group. */
 const FAN_SPRING = { tension: 120, friction: 9 } as const;
@@ -196,9 +201,11 @@ function FanSlot({
 }) {
   // Reduce Motion: the pill rides the one crossfade and never moves (beat 8). The
   // choice is made at render from the hook (C-43); the handlers write the end state
-  // either way, so a setting flipped mid-open still renders a correct frame.
+  // either way, so a setting flipped mid-open still renders a correct frame. The slot's
+  // own value multiplies in so a redeal (CUL-1646) can crossfade the foods alone: the
+  // open sets every slot to 1, so outside a redeal this is the menu's fade unchanged.
   const style = reducedMotion
-    ? { opacity: fade }
+    ? { opacity: Animated.multiply(fade, anim) }
     : {
         opacity: anim.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolate: 'clamp' }),
         transform: [
@@ -278,6 +285,17 @@ export function FAB() {
   // How many pills the last render drew — the open and close stagger only the ones on
   // screen, so the close keeps its ~180ms however many slots are idle.
   const slotCount = useRef(0);
+  // CUL-1646 — whether the top row the last render drew is the "Logging for" chip, and
+  // how many of the rows are recent foods (always the lowest, so slots 0 … n-1).
+  const chipLeads = useRef(false);
+  const foodSlotCount = useRef(0);
+  // The pet the open fan's foods are dealt for, whether a switch is waiting on that
+  // pet's read, and whether a redeal is under way. A pill acts on neither a redeal nor
+  // a close (`whileOpen`): mid redeal the rows are still arriving under the finger.
+  const dealtFor = useRef<string | null>(null);
+  const dealPending = useRef(false);
+  const dealing = useRef(false);
+  const dealAnim = useRef<Animated.CompositeAnimation | null>(null);
   // True between a close starting and its animation finishing. A tap in that window
   // re-opens rather than closing again: the menu is still mounted and on its way out.
   const closing = useRef(false);
@@ -375,6 +393,8 @@ export function FAB() {
     openMenuHaptic();
     closing.current = false;
     setOpen(true);
+    dealtFor.current = usePetStore.getState().activePet?.id ?? null;
+    dealPending.current = false;
     const count = Math.max(slotCount.current, 1);
     if (reducedMotionNow()) {
       // Beat 8: one crossfade. The turn and the slots jump to their end state so a
@@ -391,15 +411,16 @@ export function FAB() {
     // place rather than invisibly at 0. The recent foods are read before the open now
     // (CUL-1634), so this is the backstop for a tap that beats the mount read.
     slots.slice(count).forEach((v) => v.setValue(1));
+    const fanIn = (v: Animated.Value) => Animated.spring(v, { toValue: 1, useNativeDriver: true, ...FAN_SPRING });
+    // CUL-1646: the chip is the farthest slot, which the nearest first stagger landed
+    // LAST. It leads now, with the veil, and the choices follow it.
+    const chipSlot = chipLeads.current && count > 1 ? slots[count - 1] : null;
+    const choices = Animated.stagger(FAN_STAGGER_MS, slots.slice(0, chipSlot ? count - 1 : count).map(fanIn));
     Animated.parallel([
       Animated.spring(turn, { toValue: 1, useNativeDriver: true, ...TURN_SPRING }),
       Animated.timing(fade, { toValue: 1, duration: SCRIM_IN_MS, useNativeDriver: true }),
       Animated.timing(veil, { toValue: 1, duration: SCRIM_IN_MS, useNativeDriver: true }),
-      Animated.stagger(
-        FAN_STAGGER_MS,
-        slots.slice(0, count).map((v) =>
-          Animated.spring(v, { toValue: 1, useNativeDriver: true, ...FAN_SPRING })),
-      ),
+      ...(chipSlot ? [fanIn(chipSlot), Animated.sequence([Animated.delay(CHIP_LEAD_MS), choices])] : [choices]),
     ]).start();
   }, [turn, fade, veil, slots]);
 
@@ -408,6 +429,11 @@ export function FAB() {
   const retract = useCallback((keepVeil: boolean) => {
     cancelFanFocus();
     closing.current = true;
+    // A close ends a redeal: the close's own stagger takes the food slots from here.
+    dealAnim.current?.stop();
+    dealAnim.current = null;
+    dealPending.current = false;
+    dealing.current = false;
     const finish = ({ finished }: { finished: boolean }) => {
       // Interrupted by a re-open: the menu stays.
       if (!finished || !closing.current) return;
@@ -484,7 +510,7 @@ export function FAB() {
   // (its `logging` guard has already released by then). Read from the ref, so the
   // answer is current at the tap rather than at the last render.
   const whileOpen = (action: () => void) => () => {
-    if (closing.current) return;
+    if (closing.current || dealing.current) return;
     action();
   };
 
@@ -513,6 +539,10 @@ export function FAB() {
   useEffect(() => {
     if (!captureOverlayOpen) return;
     closing.current = false;
+    dealAnim.current?.stop();
+    dealAnim.current = null;
+    dealPending.current = false;
+    dealing.current = false;
     setOpen(false);
     setSwitcherVisible(false);
     turn.setValue(0);
@@ -606,7 +636,16 @@ export function FAB() {
         if (openNow.current && heldFor.current === activePetId) return;
         setRecentFoods({ petId: activePetId, foods });
       })
-      .catch((e) => console.warn('[FAB] recent foods load failed:', e))
+      .catch((e) => {
+        console.warn('[FAB] recent foods load failed:', e);
+        // CUL-1646: a redeal waiting on this read would hold every pill untappable for
+        // as long as the fan stays open. The foods stay unrendered (no list is not a
+        // wrong list), and the doors answer again.
+        if (latestPetId.current === activePetId && dealPending.current) {
+          dealPending.current = false;
+          dealing.current = false;
+        }
+      })
       .finally(() => {
         if (seq === readSeq.current && readingFor.current === activePetId) readingFor.current = null;
       });
@@ -618,6 +657,56 @@ export function FAB() {
   // a wrong list.
   const foodsForActivePet =
     activePet && recentFoods?.petId === activePet.id ? recentFoods.foods : null;
+
+  // ── THE REDEAL (CUL-1646, D3) ──────────────────────────────────────────────────
+  // A pet switch inside the open fan deals the food pills again, nearest first on the
+  // open's own stagger, once the keyed read for the new pet has landed. Before that the
+  // outgoing pet's rows are already gone (CUL-723's key un-renders them the frame the
+  // chip changes name), so the "retract" the mock draws is that un-render: the mock
+  // plays the old foods back under the new name for 140ms, which CUL-723 forbids, and
+  // that rule wins. The pills fan in from the disc rather than appearing in slots
+  // already at rest, which is what said "these are new". Under Reduce Motion the foods
+  // crossfade in. Every pill is held untappable from the switch until the deal ends
+  // (`whileOpen`), since rows arriving under the finger are rows it can mis-hit.
+  //
+  // A switch is seen at render, where the chip's new name is: the fan adopts the new
+  // pet and waits on its read. A→B→A before B answers deals A's rows again too, since
+  // they left the screen with the first switch. A fan opened before the pets landed
+  // adopts the first pet without a deal: nothing was on screen to deal again.
+  //
+  // The slots are zeroed DURING the render that first draws the new pet's foods (below,
+  // once the rows are built), not in an effect: a FanSlot mounts with its value's
+  // current reading, so a zero written after the commit could paint the foods at full
+  // for a frame first. Once per deal, and only the slots the budget draws a food on, so
+  // a door is never zeroed.
+  if (open && !closing.current && activePetId !== null && dealtFor.current !== activePetId) {
+    dealPending.current = dealtFor.current !== null;
+    dealtFor.current = activePetId;
+  }
+  dealing.current = dealPending.current || dealAnim.current !== null;
+  const dealReady = dealPending.current && foodsForActivePet !== null;
+  const zeroedFor = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!dealReady) return;
+    dealPending.current = false;
+    zeroedFor.current = null;
+    const n = foodSlotCount.current;
+    const foodSlots = slots.slice(0, n);
+    if (n === 0) { dealing.current = false; return; }
+    const anim = reducedMotionNow()
+      ? Animated.parallel(foodSlots.map((v) =>
+          Animated.timing(v, { toValue: 1, duration: FADE_MS, useNativeDriver: true })))
+      : Animated.stagger(FAN_STAGGER_MS, foodSlots.map((v) =>
+          Animated.spring(v, { toValue: 1, useNativeDriver: true, ...FAN_SPRING })));
+    dealAnim.current = anim;
+    dealing.current = true;
+    anim.start(() => {
+      if (dealAnim.current !== anim) return;
+      dealAnim.current = null;
+      dealing.current = false;
+    });
+  }, [dealReady, activePetId, slots]);
+  useEffect(() => () => dealAnim.current?.stop(), []);
 
   async function handleQuickMeal(food: PickerFood) {
     // Write-time pet identity (multi-pet spec §6): read the store at the moment
@@ -975,6 +1064,12 @@ export function FAB() {
     }
   }
   slotCount.current = rows.length;
+  chipLeads.current = rows[0]?.key === 'log-for';
+  foodSlotCount.current = rows.filter((r) => r.key.startsWith('food-')).length;
+  if (dealReady && zeroedFor.current !== activePetId) {
+    zeroedFor.current = activePetId;
+    slots.slice(0, foodSlotCount.current).forEach((v) => v.setValue(0));
+  }
   fanLeadKey.current = open ? rows[0]?.key ?? null : null;
 
   // Beat 2, and its Reduce Motion frame: in motion the one glyph turns; still, the
