@@ -122,8 +122,9 @@ export function MedicationCompletionCard() {
       // savePicker for the full argument. Save is live the moment the sheet opens,
       // so a peek that scrubs nothing used to flip occurred_at_source from the
       // 'now' insertMedicationDose stamped to 'manual', asserting the owner chose
-      // a time the app had stamped itself. That column is how the vet report and
-      // the correlation engine tell a witnessed-now dose from an owner backfill.
+      // a time the app had stamped itself. That column records whether a dose time
+      // was witnessed-now or an owner backfill; no server lane reads it yet
+      // (CUL-1638), so the cost is a false stored claim, not a live misread.
       //
       // Nothing owner-authored is destroyed here, unlike on the meal card: a dose
       // is always 'now' at insert (insertMedicationDose hardcodes it — there is no
