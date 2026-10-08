@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Animated, Platform, Alert } from 'react-native';
-import { Check } from 'lucide-react-native';
 import { router, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme, shadows } from '../../constants/theme';
@@ -19,6 +18,7 @@ import {
 } from '../../lib/completionCard';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { ThemedText } from './ThemedText';
+import { CompletionMark } from './CompletionMark';
 import { TimeEditSheet } from './TimeEditSheet';
 import { FloorRaiseLine } from './FloorRaiseLine';
 import { openRaisedRead } from './openRaisedRead';
@@ -378,14 +378,8 @@ export function NamedCompletionCard() {
                 is the shipped tone call (Principle 4 — we acknowledge a 2am vomit,
                 we never congratulate it) and the visual half of the same rule the
                 haptic layer enforces with its single soft tap. */}
-            <Animated.View
-              style={[
-                styles.checkBadge,
-                celebrate && styles.checkBadgeCelebrate,
-                { transform: [{ scale: checkScale }] },
-              ]}
-            >
-              <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
+            <Animated.View testID="named-card-check" style={{ transform: [{ scale: checkScale }] }}>
+              <CompletionMark halo={celebrate} />
             </Animated.View>
             {/* One summary node: a screen reader speaks what was saved and where it
                 went as a single announcement, not two orphan lines. */}
@@ -492,24 +486,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space2,
-  },
-  checkBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: theme.colorFillOnDark,
-    borderWidth: 1.5,
-    borderColor: theme.colorMomentConfirm,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  // Celebrate-only warmth. The calm tone deliberately has no shadow at all.
-  checkBadgeCelebrate: {
-    shadowColor: theme.colorMomentGlow,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 6,
   },
   labelCol: {
     flexGrow: 1,

@@ -45,7 +45,7 @@ jest.mock('../../lib/haptics', () => ({
   destructiveConfirm: jest.fn(),
 }));
 
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { NamedCompletionCard } from './NamedCompletionCard';
 import { useMomentStore } from '../../store/momentStore';
@@ -184,13 +184,9 @@ describe('NamedCompletionCard — what it says', () => {
 });
 
 describe('NamedCompletionCard — tone', () => {
-  function badgeStyles(view: ReturnType<typeof render>) {
-    // The mark's container is the only view carrying the confirm-ring border.
-    const all = view.UNSAFE_root.findAll((n: StyledNode) => {
-      const s = StyleSheet.flatten(n.props?.style) as { borderColor?: string } | undefined;
-      return s?.borderColor === theme.colorMomentConfirm;
-    });
-    return StyleSheet.flatten(all[0].props.style) as { shadowColor?: string };
+  // The halo is drawn inside the mark (CUL-1691); a calm beat renders no halo node.
+  function haloOf(view: ReturnType<typeof render>) {
+    return within(view.getByTestId('named-card-check')).queryByTestId('completion-mark-halo');
   }
 
   // The visual half of the rule the haptic layer enforces with its soft tap: we
@@ -198,20 +194,20 @@ describe('NamedCompletionCard — tone', () => {
   it('a CALM commit draws no gold halo', () => {
     const view = render(<NamedCompletionCard />);
     seed({ tone: 'calm' });
-    expect(badgeStyles(view).shadowColor).toBeUndefined();
+    expect(haloOf(view)).toBeNull();
   });
 
   it('a CELEBRATE commit draws the warm-gold halo', () => {
     const view = render(<NamedCompletionCard />);
     seed({ tone: 'celebrate' });
-    expect(badgeStyles(view).shadowColor).toBe(theme.colorMomentGlow);
+    expect(haloOf(view)).not.toBeNull();
   });
 
   // A weight check is neutral clinical data — never a celebration of the number.
   it('a weight check carries no gold', () => {
     const view = render(<NamedCompletionCard />);
     seed({ tone: 'calm', record: { kind: 'weight', weightKg: 5.62 } });
-    expect(badgeStyles(view).shadowColor).toBeUndefined();
+    expect(haloOf(view)).toBeNull();
   });
 });
 

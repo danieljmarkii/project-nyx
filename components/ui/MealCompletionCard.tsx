@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-native';
 import { router, usePathname } from 'expo-router';
-import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
+import { CompletionMark } from './CompletionMark';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
@@ -708,15 +708,11 @@ export function MealCompletionCard() {
             <View ref={badgeSlot} onLayout={landMark} testID="meal-card-check-slot">
               <Animated.View
                 testID="meal-card-check"
-                style={[
-                  styles.checkBadge,
-                  !decline && styles.checkBadgeCelebrate,
-                  // Held at 0 by the render while the mark flies, so no frame
-                  // can draw the check under its own clone; the landing fades it up.
-                  { opacity: arriving ? 0 : markOpacity, transform: [{ scale: checkScale }] },
-                ]}
+                // Held at 0 by the render while the mark flies, so no frame
+                // can draw the check under its own clone; the landing fades it up.
+                style={{ opacity: arriving ? 0 : markOpacity, transform: [{ scale: checkScale }] }}
               >
-                <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
+                <CompletionMark halo={!decline} />
               </Animated.View>
             </View>
             {/* One summary node, as on the named card: the food and the time are one
@@ -930,26 +926,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space2,
-  },
-  // Mint ring on the dark card. The warm-gold halo is its own style, as on the named
-  // card: a refusal takes the ring without it (CUL-894).
-  checkBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: theme.colorFillOnDark,
-    borderWidth: 1.5,
-    borderColor: theme.colorMomentConfirm,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  // The celebrate warmth — eaten and unrated meals only.
-  checkBadgeCelebrate: {
-    shadowColor: theme.colorMomentGlow,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 6,
   },
   labelCol: {
     flexGrow: 1,
