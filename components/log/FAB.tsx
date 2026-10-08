@@ -236,28 +236,38 @@ export function FAB() {
   // an effect, because the rows are built below the stand-down's early return, where no
   // hook may run, and so the lead is never restated as a second predicate here.
   //
-  // `fanLeadKey` is the lead row's key, written at render. A lead that only REMOUNTS
-  // under the same key (the fan switching into its scroll branch) is not a new lead and
-  // must not yank focus back to the top of a list the owner is already in; the lead is
-  // forgotten when the menu closes, so every open moves focus once.
+  // `fanLeadKey` is the lead row's key, written at render. The callback fires far more
+  // often than the lead changes: a touchable's ref goes through Animated's merged ref,
+  // which re-fires null and then the same node on EVERY render, and a row remounts when
+  // the fan switches into its scroll branch. Neither is a new lead, and neither may yank
+  // focus back to the top of a list the owner is already in, so only a new key arms. The
+  // lead is forgotten when the menu closes, so every open moves focus once.
   const fanLeadKey = useRef<string | null>(null);
   const focusedLead = useRef<string | null>(null);
   const focusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fanLeadRef = useCallback((node: View | null) => {
-    if (!node) return;
-    const key = fanLeadKey.current;
-    if (key === null || focusedLead.current === key) return;
+  // The lead's LIVE node. The timer reads it when it fires rather than closing over the
+  // node it was armed with: a same-key remount inside the beat (the scroll branch flipping)
+  // would otherwise hand the platform an unmounted node, and focus would silently stay put.
+  const leadNode = useRef<View | null>(null);
+  const armFanFocus = useCallback(() => {
     // The open is announced on both platforms: there is no live region here, so nothing
     // else speaks it on Android (C-44), and the call is a no-op without a screen reader.
     // The swap is not: the focus move reads the new top row, which says what changed.
     if (focusedLead.current === null) AccessibilityInfo.announceForAccessibility(FAN_OPEN_ANNOUNCEMENT);
-    focusedLead.current = key;
+    focusedLead.current = fanLeadKey.current;
     if (focusTimer.current) clearTimeout(focusTimer.current);
     focusTimer.current = setTimeout(() => {
       focusTimer.current = null;
-      focusAccessibility(node);
+      focusAccessibility(leadNode.current);
     }, FAN_FOCUS_DELAY_MS);
   }, []);
+  const fanLeadRef = useCallback((node: View | null) => {
+    leadNode.current = node;
+    if (!node) return;
+    const key = fanLeadKey.current;
+    if (key === null || focusedLead.current === key) return;
+    armFanFocus();
+  }, [armFanFocus]);
   // A close keeps the pills mounted while they retract, so it cancels a pending move at
   // its START: focus never lands on a row on its way out. The effect covers the closes
   // that never run `closeMenu` (the capture overlay's stand-down) and forgets the lead.
@@ -332,8 +342,17 @@ export function FAB() {
   }, [turn, fade, slots, cancelFanFocus]);
 
   const toggleMenu = useCallback(() => {
-    if (open && !closing.current) closeMenu(); else openMenu();
-  }, [open, openMenu, closeMenu]);
+    if (open && !closing.current) { closeMenu(); return; }
+    // A re-open caught mid-close (CUL-724): the rows never unmounted, so no ref fires and
+    // `open` never went false to forget the lead. It is a new open all the same, so it
+    // speaks and moves focus as one.
+    const reopening = open && closing.current;
+    openMenu();
+    if (reopening && leadNode.current) {
+      focusedLead.current = null;
+      armFanFocus();
+    }
+  }, [open, openMenu, closeMenu, armFanFocus]);
 
   // A pill acts only while the menu is staying open. A close keeps every pill mounted,
   // under the finger, for the ~180ms it animates, so a quick second tap used to act

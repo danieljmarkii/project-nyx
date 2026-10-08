@@ -1357,6 +1357,52 @@ describe('FAB — CUL-724, VoiceOver focus moves into the fan when it opens', ()
     expect(focus.mock.calls.length).toBe(0);
   });
 
+  it('a re-open caught mid-close speaks and moves focus again', async () => {
+    const view = await openMenu();
+    advance(FAN_FOCUS_DELAY_MS);
+    expect(focus.mock.calls.length).toBe(1);
+    // The disc reads "Close menu" until the retract finishes; the second tap re-opens.
+    fireEvent.press(view.getByLabelText('Close menu'));
+    fireEvent.press(view.getByLabelText('Close menu'));
+    await act(async () => {});
+    advance(FAN_FOCUS_DELAY_MS);
+    expect(view.getByLabelText('Close menu')).toBeTruthy();
+    expect(announce).toHaveBeenCalledTimes(2);
+    expect(focus.mock.calls.length).toBe(2);
+    expect(focusedLabel(1)).toBe('Logging for Nyx — switch pet');
+  });
+
+  it('a branch flip inside the beat still focuses a mounted lead', async () => {
+    // The scroll branch moves the lead to a new parent under the same key; a large text
+    // size on a small window is what flips it (lib/fanBudget.ts). REFACTOR-SAFETY, not a
+    // mutation-proven guard (C-18): in this renderer the chip's instance survives the
+    // flip (Animated's merged ref re-fires null, then the same node, on every render), so
+    // reverting the timer to the node it was armed with stays green here. The timer reads
+    // the live ref because a device remount would otherwise hand over a dead node; the
+    // VoiceOver pass at a large text size is where that half is verified.
+    const rn = require('react-native') as typeof import('react-native');
+    const dims = jest.spyOn(rn, 'useWindowDimensions');
+    try {
+      dims.mockReturnValue({ width: 375, height: 667, scale: 2, fontScale: 1 });
+      const view = await openMenu();
+      expect(view.queryByTestId('fab-fan-scroll')).toBeNull();
+      // The SE at AX3, the size the budget scrolls at (the CUL-1636 block pins it).
+      dims.mockReturnValue({ width: 375, height: 667, scale: 2, fontScale: 2.643 });
+      await act(async () => { view.rerender(<FAB />); });
+      expect(view.getByTestId('fab-fan-scroll')).toBeTruthy();
+      advance(FAN_FOCUS_DELAY_MS);
+      expect(focus.mock.calls.length).toBe(1);
+      const target = focus.mock.calls[0][0] as { props: { accessibilityLabel?: string } } | null;
+      expect(target?.props.accessibilityLabel).toBe('Logging for Nyx — switch pet');
+      // The row the platform is handed is still in the tree: the node that left on the
+      // remount carries the same label and props, so only its membership tells them apart.
+      const mounted = view.UNSAFE_root.findAll((n: TreeNode) => n.instance === target);
+      expect(mounted.length).toBe(1);
+    } finally {
+      dims.mockRestore();
+    }
+  });
+
   it('never touches focus or speaks while the menu stays closed', async () => {
     render(<FAB />);
     await act(async () => {});
