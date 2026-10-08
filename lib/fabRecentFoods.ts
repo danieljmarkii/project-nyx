@@ -34,4 +34,3 @@ export function fabFoodDay(nowMs: number): RecentFoodsBounds {
   after.setDate(after.getDate() - FAB_RECENT_WINDOW_DAYS);
   return { after: after.toISOString(), before: before.toISOString() };
 }
-

@@ -46,4 +46,3 @@ describe('fabFoodDay — the span is the window before today’s local midnight'
     expect(FAB_RECENT_WINDOW_DAYS).toBe(14);
   });
 });
-

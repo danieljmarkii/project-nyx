@@ -18,6 +18,8 @@ import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useTodayKey } from '../../hooks/useTodayKey';
 import { openMenu as openMenuHaptic } from '../../lib/haptics';
 import { useEventStore } from '../../store/eventStore';
+import { useFoodLibraryStore } from '../../store/foodLibraryStore';
+import { useSyncStore } from '../../store/syncStore';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore } from '../../store/momentStore';
 import { getRecentFoods, PickerFood } from '../../lib/db';
@@ -322,9 +324,11 @@ export function FAB() {
   // CUL-1647 — the read is bounded to the day: meals in the window before today's local
   // midnight, never today's, so a re-read on any trigger here returns the same order
   // all day and a log never moves a pill. Re-reading rather than freezing the list keeps
-  // the record's corrections: a meal deleted or a food archived since midnight leaves the
-  // fan the same day instead of staying one tap from a log until tomorrow (PM go,
-  // 2026-10-08).
+  // the record's corrections (PM go, 2026-10-08): a food archived since midnight leaves
+  // the fan before its next open, because the library's change counter is a trigger, so
+  // the pre-trial food an owner takes out of rotation is never one tap from a log; a sync
+  // cycle is one too. A past meal deleted on this device is seen at the next close or
+  // sync (the shared reversal raises no signal yet).
   //
   // The day turns over while the menu is CLOSED, so the new order is never a read that
   // lands under the thumb: `useTodayKey` changes at local midnight and on the return to
@@ -332,6 +336,8 @@ export function FAB() {
   // held open across midnight keeps its rows and re-reads on its close, like every other
   // change.
   const todayKey = useTodayKey();
+  const libraryVersion = useFoodLibraryStore((st) => st.version);
+  const hydrationTick = useSyncStore((st) => st.hydrationTick);
   const latestPetId = useRef(activePetId);
   latestPetId.current = activePetId;
   const openNow = useRef(open);
@@ -339,10 +345,15 @@ export function FAB() {
   const heldFor = useRef<string | null>(null);
   heldFor.current = recentFoods?.petId ?? null;
   const readingFor = useRef<string | null>(null);
+  // Reads can overlap while closed (a library change, then a new row of today); only the
+  // newest one's answer lands, so an older read finishing late, one started before
+  // midnight above all, never overwrites a newer order.
+  const readSeq = useRef(0);
   useEffect(() => {
     if (!activePetId) return;
     if (open && (heldFor.current === activePetId || readingFor.current === activePetId)) return;
     readingFor.current = activePetId;
+    const seq = ++readSeq.current;
     // The last 3 foods THIS pet actually ate, newest first. Shares getRecentFoods
     // with the picker (single source of truth), which orders by the pet's real
     // MAX(occurred_at) — not food_items_cache.last_used_at, which is shared across
@@ -351,15 +362,16 @@ export function FAB() {
     // window. Async, so the answer is checked against the pet it was read for.
     getRecentFoods(activePetId, null, 3, fabFoodDay(Date.now()))
       .then((foods) => {
+        if (seq !== readSeq.current) return;
         if (latestPetId.current !== activePetId) return;
         if (openNow.current && heldFor.current === activePetId) return;
         setRecentFoods({ petId: activePetId, foods });
       })
       .catch((e) => console.warn('[FAB] recent foods load failed:', e))
       .finally(() => {
-        if (readingFor.current === activePetId) readingFor.current = null;
+        if (seq === readSeq.current && readingFor.current === activePetId) readingFor.current = null;
       });
-  }, [open, activePetId, todayHeadId, todayKey]);
+  }, [open, activePetId, todayHeadId, todayKey, libraryVersion, hydrationTick]);
 
   // Derived in the render body rather than mirrored into state (the C-9 shape): the
   // list is only ever this pet's, or nothing. A pet flip inside the open menu shows

@@ -55,6 +55,8 @@ import { usePetStore } from '../../store/petStore';
 import { useUiStore } from '../../store/uiStore';
 import { useMomentStore } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
+import { useFoodLibraryStore } from '../../store/foodLibraryStore';
+import { useSyncStore } from '../../store/syncStore';
 import { useReducedMotionStore } from '../../store/reducedMotionStore';
 
 function seedPets(count: number) {
@@ -949,6 +951,58 @@ describe('FAB — CUL-1647, the recent foods keep one order for the day', () => 
     await settleAnimations();
     expect(getRecentFoods).toHaveBeenCalledTimes(2);
     expect(lastSpan().before).toBe(local(9, 0).toISOString());
+  });
+
+  it('a food archived while the menu is closed is gone before the next open', async () => {
+    // The trial-start case: the owner takes the old food out of rotation in Foods.
+    jest.setSystemTime(local(8, 10, 0));
+    getRecentFoods.mockResolvedValueOnce([ROYAL, HILLS]);
+    seedPets(1);
+    const view = render(<FAB />);
+    await act(async () => {});
+
+    getRecentFoods.mockResolvedValue([HILLS]);
+    await act(async () => {
+      useFoodLibraryStore.getState().notifyChanged();
+    });
+    expect(getRecentFoods).toHaveBeenCalledTimes(2);
+    fireEvent.press(view.getByLabelText('Log event'));
+    expect(view.queryByText(/Royal Canin/)).toBeNull();
+    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills i/d']);
+  });
+
+  it('a sync cycle re-reads while closed', async () => {
+    jest.setSystemTime(local(8, 10, 0));
+    seedPets(1);
+    render(<FAB />);
+    await act(async () => {});
+    await act(async () => {
+      useSyncStore.getState().bumpHydrationTick();
+    });
+    expect(getRecentFoods).toHaveBeenCalledTimes(2);
+  });
+
+  it('an older read that answers late never overwrites a newer one', async () => {
+    jest.setSystemTime(local(8, 23, 59));
+    let releaseOld: (foods: unknown[]) => void = () => {};
+    getRecentFoods.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseOld = resolve as never; }),
+    );
+    seedPets(1);
+    const view = render(<FAB />);
+    await act(async () => {});
+
+    // Midnight: the new day's read answers first.
+    getRecentFoods.mockResolvedValueOnce([ROYAL, HILLS]);
+    jest.setSystemTime(local(9, 0, 1));
+    mockTodayKey = '2026-10-09';
+    view.rerender(<FAB />);
+    await act(async () => {});
+    // Yesterday's read lands after it, and is dropped.
+    await act(async () => { releaseOld([HILLS]); });
+
+    fireEvent.press(view.getByLabelText('Log event'));
+    expect(fanLabels(view).slice(-3)).toEqual(['Log food', 'Hills i/d', 'Royal Canin GI']);
   });
 
   it('a pet switch reads that pet’s order over the same day', async () => {
