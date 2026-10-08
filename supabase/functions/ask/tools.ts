@@ -1686,10 +1686,12 @@ export function engineFindings(
 // date and count). The reference counts, the answer id and the re-raise reason are the engine's
 // working, not facts about the pet, and a model handed "with_vet" plus a reference is a
 // paraphrase away from "under control" (BRK-13; validateAnswer's screens are the backstop).
+// The bare re-raise latch a skipped run stamps on a concern (CUL-1600) is the same working, a
+// dated instant with no state word beside it, so it never reaches the model at all.
 function relayPayload(payload: unknown): unknown {
   if (!payload || typeof payload !== 'object') return payload
-  const p = payload as Record<string, unknown>
-  if (!('careState' in p)) return payload
+  const { raisedAgainLatch, ...p } = payload as Record<string, unknown>
+  if (!('careState' in p)) return raisedAgainLatch === undefined ? payload : p
   const state = (p.careState as { state?: unknown } | null)?.state
   return { ...p, careState: typeof state === 'string' ? { state } : null }
 }
