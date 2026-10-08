@@ -133,6 +133,7 @@ import { useUiStore } from '../../store/uiStore';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore } from '../../store/momentStore';
 import { PetAvatar } from '../pet/PetAvatar';
+import { theme } from '../../constants/theme';
 
 // CUL-964 — a commit now hands the beat to the completion register, which arms a REAL
 // dwell timer. Cleared around EVERY case in this file, not just the first describe's:
@@ -160,8 +161,8 @@ describe('EventTypeSheet', () => {
   });
 
   it('titles the sheet for the active pet', () => {
-    const { getByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
-    expect(getByText('Log for Nyx')).toBeTruthy();
+    const { getByLabelText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    expect(getByLabelText(/^Logging for Nyx/)).toBeTruthy();
   });
 
   it('a symptom tile confirms IN PLACE — no navigation, sheet stays open', () => {
@@ -205,11 +206,11 @@ describe('EventTypeSheet', () => {
   });
 
   it('back from the confirm returns to the grid', () => {
-    const { getByText, queryByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    const { getByText, getByLabelText, queryByLabelText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
     fireEvent.press(getByText('Vomit'));
-    expect(queryByText('Log for Nyx')).toBeNull(); // grid title hidden in confirm
+    expect(queryByLabelText(/^Logging for Nyx/)).toBeNull(); // grid title hidden in confirm
     fireEvent.press(getByText('stub-back'));
-    expect(getByText('Log for Nyx')).toBeTruthy();  // back at the grid
+    expect(getByLabelText(/^Logging for Nyx/)).toBeTruthy();  // back at the grid
   });
 
   it('logging a symptom plays the calm beat, then closes on beat-done', () => {
@@ -405,7 +406,7 @@ describe('EventTypeSheet', () => {
     const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
     expect(presented(view)).toHaveLength(1);
 
-    fireEvent.press(view.getByLabelText('Log for Nyx — switch pet'));
+    fireEvent.press(view.getByLabelText('Logging for Nyx — switch pet'));
     expect(view.getByText('Your pets')).toBeTruthy();  // the switcher really is up
     expect(presented(view)).toHaveLength(1);           // ...and still one Modal
   });
@@ -439,7 +440,7 @@ describe('EventTypeSheet', () => {
     expect(hidden()).toBe(0);
     expect(modalLayers()).toBe(0);
 
-    fireEvent.press(view.getByLabelText('Log for Nyx — switch pet'));
+    fireEvent.press(view.getByLabelText('Logging for Nyx — switch pet'));
     expect(hidden()).toBe(1);      // Android: the sheet stands down
     expect(modalLayers()).toBe(1); // iOS: the panel declares itself modal
   });
@@ -450,11 +451,11 @@ describe('EventTypeSheet', () => {
     const { getByText, getByLabelText, queryByText } = render(
       <EventTypeSheet visible onClose={onClose} />,
     );
-    fireEvent.press(getByLabelText('Log for Nyx — switch pet'));
+    fireEvent.press(getByLabelText('Logging for Nyx — switch pet'));
     fireEvent.press(getByLabelText('Switch to Mochi'));
 
     expect(queryByText('Your pets')).toBeNull();     // switcher dismissed
-    expect(getByText('Log for Mochi')).toBeTruthy(); // sheet retitled, still open
+    expect(getByLabelText(/^Logging for Mochi/)).toBeTruthy(); // sheet retitled, still open
     expect(onClose).not.toHaveBeenCalled();
     expect(router.push).not.toHaveBeenCalled();
   });
@@ -471,7 +472,7 @@ describe('EventTypeSheet', () => {
     // rendered control — there is no other way to reach Android back from here.
     const back = () => act(() => view.UNSAFE_getAllByType(Modal)[0].props.onRequestClose());
 
-    fireEvent.press(view.getByLabelText('Log for Nyx — switch pet'));
+    fireEvent.press(view.getByLabelText('Logging for Nyx — switch pet'));
     back();
     expect(view.queryByText('Your pets')).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
@@ -495,7 +496,7 @@ describe('EventTypeSheet', () => {
   it('hosts the switcher with no account management in it', async () => {
     seedPets(2);
     const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
-    fireEvent.press(view.getByLabelText('Log for Nyx — switch pet'));
+    fireEvent.press(view.getByLabelText('Logging for Nyx — switch pet'));
 
     expect(view.getByText('Your pets')).toBeTruthy();
     expect(view.getByLabelText('Switch to Mochi')).toBeTruthy(); // the pets, yes
@@ -527,11 +528,11 @@ describe('EventTypeSheet', () => {
     // also holds that the switcher is closed.)
     expect(avatarPets(view)).toEqual(['Nyx']);
 
-    fireEvent.press(view.getByLabelText('Log for Nyx — switch pet'));
+    fireEvent.press(view.getByLabelText('Logging for Nyx — switch pet'));
     fireEvent.press(view.getByLabelText('Switch to Mochi'));
 
     expect(avatarPets(view)).toEqual(['Mochi']);
-    expect(view.getByText('Log for Mochi')).toBeTruthy(); // the word moved too
+    expect(view.getByLabelText(/^Logging for Mochi/)).toBeTruthy(); // the word moved too
   });
 
   // Not decoration parked next to the control: the disc is INSIDE the button the
@@ -549,7 +550,7 @@ describe('EventTypeSheet', () => {
       }
       return null;
     };
-    const row = owning(view.getByText('Log for Nyx'));
+    const row = owning(view.getByLabelText(/^Logging for Nyx/));
     expect(row).not.toBeNull();
     expect(owning(view.UNSAFE_getAllByType(PetAvatar)[0])).toBe(row);
   });
@@ -563,17 +564,17 @@ describe('EventTypeSheet', () => {
   it('a single-pet household keeps the avatar and loses only the switch (R5-1)', () => {
     const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
     expect(avatarPets(view)).toEqual(['Nyx']);
-    expect(view.queryByLabelText('Log for Nyx — switch pet')).toBeNull();
+    expect(view.queryByLabelText('Logging for Nyx — switch pet')).toBeNull();
   });
 
   it('shows the pet-switcher affordance only for multi-pet households', () => {
     const single = render(<EventTypeSheet visible onClose={jest.fn()} />);
-    expect(single.queryByLabelText('Log for Nyx — switch pet')).toBeNull();
+    expect(single.queryByLabelText('Logging for Nyx — switch pet')).toBeNull();
     single.unmount();
 
     seedPets(2);
     const multi = render(<EventTypeSheet visible onClose={jest.fn()} />);
-    expect(multi.getByLabelText('Log for Nyx — switch pet')).toBeTruthy();
+    expect(multi.getByLabelText('Logging for Nyx — switch pet')).toBeTruthy();
   });
 
   // ── CUL-682 item 1: the row must not ANNOUNCE a control it does not have ────
@@ -598,7 +599,7 @@ describe('EventTypeSheet', () => {
 
   it('the single-pet title row carries no disabled state to announce', () => {
     const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
-    const chain = ancestors(view.getByText('Log for Nyx'));
+    const chain = ancestors(view.getByLabelText(/^Logging for Nyx/));
     expect(chain.some((n) => n.props?.accessibilityState?.disabled)).toBe(false);
     // And it is not a phantom button either — no role was ever set here, but the
     // rival fix (keep the touchable, drop only `disabled`) would leave a row that
@@ -617,7 +618,7 @@ describe('EventTypeSheet', () => {
       activePet: { id: 'p1', name: 'Bartholomew Fitzgerald III' } as never,
     });
     const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
-    expect(view.getByLabelText('Log for Bartholomew Fitzgerald III')).toBeTruthy();
+    expect(view.getByLabelText('Logging for Bartholomew Fitzgerald III')).toBeTruthy();
   });
 
   // The label only means anything if the row is ONE node. An accessibilityLabel on
@@ -626,7 +627,7 @@ describe('EventTypeSheet', () => {
   // with a label sitting next to it looking like a fix.
   it('the single-pet row is one accessible node, not a labelled container', () => {
     const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
-    const labelled = view.getByLabelText('Log for Nyx');
+    const labelled = view.getByLabelText('Logging for Nyx');
     expect(labelled.props.accessible).toBe(true);
     // The disc is inside that node, so the announcement covers the whole row.
     expect(ancestors(view.UNSAFE_getAllByType(PetAvatar)[0])).toContain(labelled);
@@ -639,7 +640,7 @@ describe('EventTypeSheet', () => {
   it('the multi-pet row still announces a real, enabled switch', () => {
     seedPets(2);
     const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
-    const row = view.getByLabelText('Log for Nyx — switch pet');
+    const row = view.getByLabelText('Logging for Nyx — switch pet');
     expect(row.props.accessibilityRole).toBe('button');
     expect(row.props.accessibilityState?.disabled).toBeFalsy();
   });
@@ -922,14 +923,14 @@ describe('EventTypeSheet — no pet to log for (CUL-681)', () => {
 
   it('drops the "Log for your pet" placeholder title — it would contradict the copy', () => {
     const { queryByText } = render(<EventTypeSheet visible onClose={jest.fn()} />);
-    expect(queryByText(/^Log for/)).toBeNull();
+    expect(queryByText(/^Logging for/)).toBeNull();
   });
 
   it('swaps back to the grid the moment pets hydrate — no reopen needed', () => {
     const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
     expect(view.queryByText('Vomit')).toBeNull();
     act(() => { seedPets(1); });
-    expect(view.getByText('Log for Nyx')).toBeTruthy();
+    expect(view.getByLabelText(/^Logging for Nyx/)).toBeTruthy();
     expect(view.getByText('Vomit')).toBeTruthy();
     expect(view.queryByText('No pet loaded yet')).toBeNull();
   });
@@ -977,7 +978,7 @@ describe('EventTypeSheet — opened at a confirm (CUL-504)', () => {
   it('starts at the confirm for the type, naming the pet, and never renders the grid', () => {
     const view = render(<EventTypeSheet visible initialType="vomit" onClose={jest.fn()} />);
     expect(view.getByText('confirm:vomit:Nyx')).toBeTruthy();
-    expect(view.queryByText('Log for Nyx')).toBeNull();
+    expect(view.queryByLabelText(/^Logging for Nyx/)).toBeNull();
     // Not "the grid is gone now" — it was never drawn. An effect-driven stage change
     // would render the grid first and then replace it, which is a picker flashing
     // under the finger of an owner who already said what happened.
@@ -1005,7 +1006,7 @@ describe('EventTypeSheet — opened at a confirm (CUL-504)', () => {
   it('back from the confirm lands on the grid', () => {
     const view = render(<EventTypeSheet visible initialType="vomit" onClose={jest.fn()} />);
     fireEvent.press(view.getByText('stub-back'));
-    expect(view.getByText('Log for Nyx')).toBeTruthy();
+    expect(view.getByLabelText(/^Logging for Nyx/)).toBeTruthy();
     expect(view.getByText('Vomit')).toBeTruthy();
   });
 
@@ -1069,7 +1070,7 @@ describe('EventTypeSheet — opened at a confirm (CUL-504)', () => {
     act(() => { useUiStore.getState().closeLogSheet(); });
 
     act(() => { useUiStore.getState().openLogSheet(); });
-    expect(view.getByText('Log for Nyx')).toBeTruthy();
+    expect(view.getByLabelText(/^Logging for Nyx/)).toBeTruthy();
     expect(view.queryByText('confirm:vomit:Nyx')).toBeNull();
     act(() => { useUiStore.getState().closeLogSheet(); });
 
@@ -1079,5 +1080,86 @@ describe('EventTypeSheet — opened at a confirm (CUL-504)', () => {
     // A reopen straight to a confirm is still never a grid frame, even with a sheet
     // that has shown the grid before: the open mounts a fresh one.
     expect(mockGridRenders.count).toBe(0);
+  });
+});
+
+// ── CUL-1642: ONE VEIL, ONE PHYSICS, ONE NAME ──────────────────────────────────
+//
+// The Modal stops sliding its own scrim, and the sheet rises inside it on the shared
+// sheet motion (`components/motion/sheetMotion.ts`, whose physics and crossfade are
+// pinned in its own test). What only the SHEET owes: the Modal never animates itself;
+// it is still exactly one Modal (C-14) whether the switcher is up or not and through
+// the exit; the veil is the shared `colorScrim`; Reduce Motion never moves the sheet;
+// and the title reads the chip's "Logging for" over a name that is never truncated.
+describe('EventTypeSheet — the hand-off from the fan (CUL-1642)', () => {
+  const { Modal } = require('react-native');
+  const { useReducedMotionStore } = require('../../store/reducedMotionStore');
+  const presented = (view: ReturnType<typeof render>) =>
+    view.UNSAFE_getAllByType(Modal).filter((m: { props: { visible: boolean } }) => m.props.visible);
+
+  beforeEach(() => { seedPets(2); });
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  it('the Modal presents with no animation of its own, so the veil never slides', () => {
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    const [modal] = view.UNSAFE_getAllByType(Modal);
+    expect(modal.props.animationType).toBe('none');
+    expect(typeof modal.props.onShow).toBe('function');
+  });
+
+  it('exactly ONE Modal, open and closed, switcher up or down, and none inside it', () => {
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    expect(view.UNSAFE_getAllByType(Modal)).toHaveLength(1);
+    expect(presented(view)).toHaveLength(1);
+    fireEvent.press(view.getByLabelText('Logging for Nyx — switch pet'));
+    expect(view.UNSAFE_getAllByType(Modal)).toHaveLength(1);
+    expect(presented(view)).toHaveLength(1);
+    view.rerender(<EventTypeSheet visible={false} onClose={jest.fn()} />);
+    expect(view.UNSAFE_getAllByType(Modal)).toHaveLength(1);
+    expect(presented(view)).toHaveLength(0);
+  });
+
+  it('the veil is the shared colorScrim, the one the fan now wears', () => {
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    const scrim = StyleSheet.flatten(view.getByTestId('log-sheet-scrim').props.style);
+    expect(scrim.backgroundColor).toBe(theme.colorScrim);
+  });
+
+  it('a handed veil waits at 0 until the Modal is shown, then is at full as the fan is told', () => {
+    const onVeilTaken = jest.fn();
+    const view = render(<EventTypeSheet visible veil="handed" onClose={jest.fn()} onVeilTaken={onVeilTaken} />);
+    const opacity = () => StyleSheet.flatten(view.getByTestId('log-sheet-scrim').props.style).opacity;
+    expect(opacity()).toBe(0);
+    act(() => { view.UNSAFE_getAllByType(Modal)[0].props.onShow(); });
+    expect(onVeilTaken).toHaveBeenCalledTimes(1);
+    expect(opacity()).toBe(1);
+  });
+
+  it('under Reduce Motion the sheet never travels: it crossfades in place', () => {
+    useReducedMotionStore.setState({ reduceMotion: true });
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    act(() => { view.UNSAFE_getAllByType(Modal)[0].props.onShow(); });
+    const style = StyleSheet.flatten(view.getByTestId('log-sheet').props.style);
+    expect(style.transform).toEqual([{ translateY: 0 }]);
+  });
+
+  it('in motion the sheet starts below the screen and rises', () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    const y = () => StyleSheet.flatten(view.getByTestId('log-sheet').props.style).transform[0].translateY;
+    expect(y()).toBeGreaterThan(0);
+  });
+
+  it('titles the sheet "Logging for" over the name, and the name never truncates', () => {
+    usePetStore.setState({
+      pets: [{ id: 'p1', name: 'Bartholomew Fitzgerald III' }, { id: 'p2', name: 'Mochi' }] as never,
+      activePet: { id: 'p1', name: 'Bartholomew Fitzgerald III' } as never,
+    });
+    const view = render(<EventTypeSheet visible onClose={jest.fn()} />);
+    expect(view.getByText('Logging for')).toBeTruthy();
+    const name = view.getByTestId('log-sheet-title-name');
+    expect(name.props.children).toBe('Bartholomew Fitzgerald III');
+    expect(name.props.numberOfLines).toBeUndefined();
+    expect(view.getByLabelText('Logging for Bartholomew Fitzgerald III — switch pet')).toBeTruthy();
   });
 });

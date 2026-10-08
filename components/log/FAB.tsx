@@ -13,7 +13,7 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { EventIcon } from '../event/EventIcon';
 import { PetAvatar } from '../pet/PetAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
-import { useUiStore } from '../../store/uiStore';
+import { useUiStore, type LogSheetConfirmType } from '../../store/uiStore';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useTodayKey } from '../../hooks/useTodayKey';
@@ -168,6 +168,9 @@ export function FAB() {
   // The log sheet is not this component's any more (CUL-503): one root mount serves
   // every door, and the FAB is three of them — More events, and the two quick taps.
   const openLogSheet = useUiStore((s) => s.openLogSheet);
+  // CUL-1642 — the fan's veil is handed to the sheet, not faded under it.
+  const logSheetUp = useUiStore((s) => s.logSheet !== null);
+  const logSheetVeilTaken = useUiStore((s) => s.logSheetVeilTaken);
   const setFabMenuOpen = useUiStore((s) => s.setFabMenuOpen);
   const reducedMotion = useReducedMotion();
 
@@ -195,8 +198,13 @@ export function FAB() {
 
   const pressScale = useRef(new Animated.Value(1)).current;
   const turn = useRef(new Animated.Value(0)).current;
-  // The scrim's opacity, and under Reduce Motion the whole menu's.
+  // The menu's opacity under Reduce Motion, and the glyph's crossfade there.
   const fade = useRef(new Animated.Value(0)).current;
+  // The VEIL's opacity, apart from the fade since CUL-1642: a hand-off to the log sheet
+  // retracts the fan (the fade, under Reduce Motion) while the veil stays at full.
+  const veil = useRef(new Animated.Value(0)).current;
+  // True from a hand-off until the sheet's veil is up: the veil outlives the menu.
+  const [veilHeld, setVeilHeld] = useState(false);
   const slots = useRef(Array.from({ length: MAX_SLOTS }, () => new Animated.Value(0))).current;
   // How many pills the last render drew — the open and close stagger only the ones on
   // screen, so the close keeps its ~180ms however many slots are idle.
@@ -304,7 +312,10 @@ export function FAB() {
       // render that still reads motion (the setting flipped mid-open) is correct.
       turn.setValue(1);
       slots.forEach((v) => v.setValue(1));
-      Animated.timing(fade, { toValue: 1, duration: FADE_MS, useNativeDriver: true }).start();
+      Animated.parallel([
+        Animated.timing(fade, { toValue: 1, duration: FADE_MS, useNativeDriver: true }),
+        Animated.timing(veil, { toValue: 1, duration: FADE_MS, useNativeDriver: true }),
+      ]).start();
       return;
     }
     // A slot past today's count lands at rest, so a row that mounts late appears in
@@ -314,15 +325,18 @@ export function FAB() {
     Animated.parallel([
       Animated.spring(turn, { toValue: 1, useNativeDriver: true, ...TURN_SPRING }),
       Animated.timing(fade, { toValue: 1, duration: SCRIM_IN_MS, useNativeDriver: true }),
+      Animated.timing(veil, { toValue: 1, duration: SCRIM_IN_MS, useNativeDriver: true }),
       Animated.stagger(
         FAN_STAGGER_MS,
         slots.slice(0, count).map((v) =>
           Animated.spring(v, { toValue: 1, useNativeDriver: true, ...FAN_SPRING })),
       ),
     ]).start();
-  }, [turn, fade, slots]);
+  }, [turn, fade, veil, slots]);
 
-  const closeMenu = useCallback(() => {
+  // `keepVeil` is the hand-off to the log sheet (CUL-1642): everything retracts as a
+  // close does except the veil, which the sheet takes over at full.
+  const retract = useCallback((keepVeil: boolean) => {
     cancelFanFocus();
     closing.current = true;
     const finish = ({ finished }: { finished: boolean }) => {
@@ -332,8 +346,13 @@ export function FAB() {
       setOpen(false);
       slots.forEach((v) => v.setValue(0));
     };
+    const veilOut = (duration: number) =>
+      (keepVeil ? [] : [Animated.timing(veil, { toValue: 0, duration, useNativeDriver: true })]);
     if (reducedMotionNow()) {
-      Animated.timing(fade, { toValue: 0, duration: FADE_MS, useNativeDriver: true }).start((r) => {
+      Animated.parallel([
+        Animated.timing(fade, { toValue: 0, duration: FADE_MS, useNativeDriver: true }),
+        ...veilOut(FADE_MS),
+      ]).start((r) => {
         if (r.finished) turn.setValue(0);
         finish(r);
       });
@@ -343,6 +362,7 @@ export function FAB() {
     Animated.parallel([
       Animated.timing(turn, { toValue: 0, duration: CLOSE_MS, useNativeDriver: true }),
       Animated.timing(fade, { toValue: 0, duration: CLOSE_MS, useNativeDriver: true }),
+      ...veilOut(CLOSE_MS),
       // Reverse order: the farthest pill retracts first.
       Animated.stagger(
         CLOSE_STAGGER_MS,
@@ -350,7 +370,29 @@ export function FAB() {
           Animated.timing(v, { toValue: 0, duration: CLOSE_ITEM_MS, useNativeDriver: true })),
       ),
     ]).start(finish);
-  }, [turn, fade, slots, cancelFanFocus]);
+  }, [turn, fade, veil, slots, cancelFanFocus]);
+
+  const closeMenu = useCallback(() => retract(false), [retract]);
+
+  // ── THE HAND-OFF TO THE LOG SHEET (CUL-1642, D1 = D) ─────────────────────────
+  // The fan's three sheet doors no longer fade the fan's veil out while the sheet's
+  // Modal slides its own up: the veil STAYS, the fan retracts beneath it, and the sheet
+  // takes the veil over at full the tick its Modal is shown (one colour, `colorScrim`,
+  // D2), so nothing on screen changes but the sheet rising. A store that refuses the
+  // open (a sheet already up) gets the plain close: nobody would take the veil.
+  const handOffToLogSheet = (initialType?: LogSheetConfirmType) => {
+    if (!openLogSheet(initialType, { veil: 'handed' })) { closeMenu(); return; }
+    setVeilHeld(true);
+    retract(true);
+  };
+
+  // The release: the sheet has the veil, or the sheet went down before it was shown.
+  useEffect(() => {
+    if (!veilHeld) return;
+    if (!logSheetVeilTaken && logSheetUp) return;
+    veil.setValue(0);
+    setVeilHeld(false);
+  }, [veilHeld, logSheetVeilTaken, logSheetUp, veil]);
 
   const toggleMenu = useCallback(() => {
     if (open && !closing.current) { closeMenu(); return; }
@@ -406,8 +448,9 @@ export function FAB() {
     setSwitcherVisible(false);
     turn.setValue(0);
     fade.setValue(0);
+    veil.setValue(0);
     slots.forEach((v) => v.setValue(0));
-  }, [captureOverlayOpen, turn, fade, slots]);
+  }, [captureOverlayOpen, turn, fade, veil, slots]);
 
   // CUL-1635, the other direction: a card that reveals while the fan is open (the
   // picker path reveals ~450ms after its modal leaves) closes the fan rather than being
@@ -744,7 +787,7 @@ export function FAB() {
           // The fan's top row when there is no pet chip above it (CUL-724).
           ref={rows.length === 0 ? fanLeadRef : undefined}
           style={[styles.pill, pillWidth]}
-          onPress={whileOpen(() => { closeMenu(); openLogSheet(); })}
+          onPress={whileOpen(() => handOffToLogSheet())}
           activeOpacity={0.7}
           accessibilityRole="button"
         >
@@ -769,7 +812,7 @@ export function FAB() {
       node: (
         <TouchableOpacity
           style={[styles.pill, pillWidth]}
-          onPress={whileOpen(() => { closeMenu(); openLogSheet('diarrhea'); })}
+          onPress={whileOpen(() => handOffToLogSheet('diarrhea'))}
           activeOpacity={0.7}
           accessibilityRole="button"
         >
@@ -786,7 +829,7 @@ export function FAB() {
       node: (
         <TouchableOpacity
           style={[styles.pill, pillWidth]}
-          onPress={whileOpen(() => { closeMenu(); openLogSheet('vomit'); })}
+          onPress={whileOpen(() => handOffToLogSheet('vomit'))}
           activeOpacity={0.7}
           accessibilityRole="button"
         >
@@ -896,16 +939,17 @@ export function FAB() {
         accessibilityViewIsModal={open}
         onAccessibilityEscape={open ? closeMenu : undefined}
       >
-        {open && (
+        {(open || veilHeld) && (
           <Animated.View
-            style={[StyleSheet.absoluteFill, styles.scrim, { opacity: fade }]}
+            style={[StyleSheet.absoluteFill, styles.scrim, { opacity: veil }]}
             pointerEvents="box-none"
+            testID="fab-veil"
           >
             {/* The scrim's PRESS unmounts while the switcher Modal is up: on Android
                 the tap that closes the Modal scrim can bleed through to this
                 absolute-fill Pressable and dismiss the menu — the flip-then-log flow
                 needs the menu to survive the flip. The veil itself stays. */}
-            {!switcherVisible && (
+            {!switcherVisible && !veilHeld && (
               <Pressable
                 style={StyleSheet.absoluteFill}
                 onPress={closeMenu}
@@ -1005,7 +1049,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrim: {
-    backgroundColor: theme.colorScrimNight,
+    // The sheet's own veil (CUL-1642, D2, PM 2026-10-07): one colour from the fan to
+    // the log sheet, so the hand-off changes nothing but the sheet rising.
+    backgroundColor: theme.colorScrim,
   },
   fabContainer: {
     position: 'absolute',

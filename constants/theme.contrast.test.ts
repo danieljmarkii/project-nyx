@@ -124,7 +124,7 @@ describe('the FAB pair — an indigo disc and its white plus (CUL-322 D3 = C; CU
   const passing: ReadonlyArray<[label: string, fg: string, bg: string]> = [
     ['the disc on the app ground', theme.colorBrandNightElevated, theme.colorNeutralLight],
     ['the disc over a white Card', theme.colorBrandNightElevated, theme.colorSurface],
-    ['the disc over its own open scrim', theme.colorBrandNightElevated, over(theme.colorScrimNight, theme.colorNeutralLight)],
+    ['the disc over its own open scrim', theme.colorBrandNightElevated, over(theme.colorScrim, theme.colorNeutralLight)],
     ['the white plus on the disc', theme.colorTextOnDark, theme.colorBrandNightElevated],
   ];
 

@@ -124,9 +124,24 @@ export type LogSheetConfirmType = Exclude<
  * The request is the sheet's visibility: non-null while it is up. `initialType` starts
  * the open at the confirm instead of the grid — the FAB's Vomit / Loose stool quick
  * taps. Null opens the grid.
+ *
+ * `veil` (CUL-1642, D1 = D) says whose dim is on screen as the sheet opens. The fan's
+ * three doors open the sheet from UNDER the fan's veil, the same `colorScrim`, so they
+ * ask for `'handed'`: the sheet's scrim waits at 0 and takes over at full the tick the
+ * Modal is shown, and the fan drops its own on `logSheetVeilTaken`. Every other door has
+ * no veil up and asks for `'own'`, which fades in with the rise. Spelled here rather
+ * than imported from `components/motion/sheetMotion.ts` for the closure reason above.
  */
+export type LogSheetVeil = 'own' | 'handed';
+
 export interface LogSheetRequest {
   initialType: LogSheetConfirmType | null;
+  veil: LogSheetVeil;
+}
+
+export interface OpenLogSheetOptions {
+  /** `'handed'` only from a door that already has the shared veil on screen (the fan). */
+  veil?: LogSheetVeil;
 }
 
 interface UiState {
@@ -145,9 +160,15 @@ interface UiState {
    *  Modal still slides out. */
   logSheetOpens: number;
   /** Open the log sheet at its grid, or straight at the confirm for `initialType`. A
-   *  no-op while a sheet is already up: the open that is on screen wins. */
-  openLogSheet: (initialType?: LogSheetConfirmType) => void;
+   *  no-op while a sheet is already up: the open that is on screen wins. Returns
+   *  whether THIS call opened it, so a door handing over its veil knows whether anyone
+   *  will take it. */
+  openLogSheet: (initialType?: LogSheetConfirmType, options?: OpenLogSheetOptions) => boolean;
   closeLogSheet: () => void;
+  /** True once the open sheet's veil is at full (CUL-1642). False from every open until
+   *  the sheet is shown; the fan holds its own veil until then. */
+  logSheetVeilTaken: boolean;
+  takeLogSheetVeil: () => void;
   /** True while the FAB's menu is open. The tabs layout reads it to hide everything
    *  under the menu from assistive tech (CUL-322 / C-14): the menu declares itself
    *  modal, but on Android only the host can take its siblings out of the tree. */
@@ -155,7 +176,7 @@ interface UiState {
   setFabMenuOpen: (open: boolean) => void;
 }
 
-export const useUiStore = create<UiState>((set) => ({
+export const useUiStore = create<UiState>((set, get) => ({
   captureOverlay: null,
   setCaptureOverlay: (captureOverlay) => set({ captureOverlay }),
   intakeDoor: null,
@@ -168,13 +189,18 @@ export const useUiStore = create<UiState>((set) => ({
   // and mount another in its place: a quick double tap on any door (the FAB's rows, the
   // Home nudge, the day summary, Ask) re-keyed the sheet mid-presentation, the CUL-662
   // iOS wedge class. Returning the same state object notifies no subscriber.
-  openLogSheet: (initialType) =>
-    set((st) =>
-      st.logSheet
-        ? st
-        : { logSheet: { initialType: initialType ?? null }, logSheetOpens: st.logSheetOpens + 1 },
-    ),
+  openLogSheet: (initialType, options) => {
+    if (get().logSheet) return false;
+    set((st) => ({
+      logSheet: { initialType: initialType ?? null, veil: options?.veil ?? 'own' },
+      logSheetOpens: st.logSheetOpens + 1,
+      logSheetVeilTaken: false,
+    }));
+    return true;
+  },
   closeLogSheet: () => set({ logSheet: null }),
+  logSheetVeilTaken: false,
+  takeLogSheetVeil: () => set((st) => (st.logSheetVeilTaken ? st : { logSheetVeilTaken: true })),
   fabMenuOpen: false,
   setFabMenuOpen: (fabMenuOpen) => set({ fabMenuOpen }),
 }));
