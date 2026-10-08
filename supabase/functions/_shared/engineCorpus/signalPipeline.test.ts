@@ -92,6 +92,18 @@ const run = (
     en11Config,
     careStep,
   )
+// CUL-1667: an answer is given on a concern card, so a row was written before it. A case that
+// answers its concerns carries that row (each concern held, with a care fact) unless it has its
+// own; a missing row beside an answer is the lost-write case, continuity unknown.
+const withHeldPrior = (c: SignalPipelineCase): SignalPipelineCase => {
+  if (c.prior !== null) return c
+  const held = run(c).findings.map((r) => ({
+    rank: r.rank,
+    text: 'x',
+    finding: concernSignOf(r.finding) === null ? r.finding : { ...r.finding, careState: { state: 'raised', ackId: null, lapsed: [] } },
+  }))
+  return { ...c, prior: { findings: held, generatedAt: new Date(Date.parse(c.nowIso) - 43_200_000).toISOString(), engineFlags: [EN9] } }
+}
 const payload = (c: SignalPipelineCase, engineFlags?: EngineFlags, careRecord?: CareRecord): SignalPayload =>
   templatePayload(run(c, engineFlags, careRecord))
 const types = (p: SignalPayload): string[] => p.findings.map((e) => e.finding.type)
@@ -327,7 +339,8 @@ Deno.test('(c-en9) AC-3: with every concern answered, every escalation keeps its
   const ON: EngineFlags = { on: [EN9], readOk: true }
   let concerns = 0
   let escalations = 0
-  for (const c of SIGNAL_PIPELINE_CORPUS) {
+  for (const c0 of SIGNAL_PIPELINE_CORPUS) {
+    const c = withHeldPrior(c0)
     const off = run(c, OFF, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS)
     // An answer about every sign the case has a concern on, given yesterday.
     const signs = [...new Set(off.findings.map((r) => concernSignOf(r.finding)).filter((s): s is NonNullable<typeof s> => s !== null))]
@@ -371,7 +384,8 @@ Deno.test('(c-en9) CUL-1538: the summary says what a watched card says, and stil
   const ON: EngineFlags = { on: [EN9], readOk: true }
   let watched = 0
   let asking = 0
-  for (const c of SIGNAL_PIPELINE_CORPUS) {
+  for (const c0 of SIGNAL_PIPELINE_CORPUS) {
+    const c = withHeldPrior(c0)
     const off = run(c, OFF, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS)
     const signs = [...new Set(off.findings.map((r) => concernSignOf(r.finding)).filter((s): s is NonNullable<typeof s> => s !== null))]
     const nowMs = Date.parse(c.nowIso)
@@ -423,7 +437,8 @@ Deno.test('(c-en9) CUL-1663: an unreadable prior row lapses every answer written
       })),
     }
     const failed = run(c, ON, record, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, EN9_CARE_STATE_STEP, null, true)
-    const read = run(c, ON, record, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, EN9_CARE_STATE_STEP, null, false)
+    // The read that answered found the row that held yesterday's concerns (CUL-1667: no row at all is the lost write).
+    const read = run(withHeldPrior(c), ON, record, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, EN9_CARE_STATE_STEP, null, false)
     read.findings.forEach((r, i) => {
       const sign = concernSignOf(r.finding)
       if (sign === null) {
@@ -447,6 +462,52 @@ Deno.test('(c-en9) CUL-1663: an unreadable prior row lapses every answer written
     }
   }
   assertStrictEquals(lapsed >= 3, true, `only ${lapsed} watched concerns: the test checks too little`)
+})
+
+Deno.test('(c-en9) CUL-1667: a missing prior row beside an answer lapses exactly as an unreadable one; with no answer, or flag off, nothing moves', () => {
+  // The lost write: the read answered and found no row, while the record holds an answer about the
+  // sign. Ruled A (2026-10-08): continuity unknown, the same row CUL-1663 writes for a failed read.
+  const ON: EngineFlags = { on: [EN9], readOk: true }
+  let lapsed = 0
+  let unanswered = 0
+  for (const c0 of SIGNAL_PIPELINE_CORPUS) {
+    const c = { ...c0, prior: null }
+    const signs = [...new Set(run(c, OFF).findings.map((r) => concernSignOf(r.finding)).filter((s): s is NonNullable<typeof s> => s !== null))]
+    const nowMs = Date.parse(c.nowIso)
+    const record: CareRecord = {
+      ...EMPTY_CARE_RECORD,
+      acknowledgements: signs.map((sign, i) => ({
+        id: `ack-${i}`, sign, source: 'my_vet_knows' as const, anchorOn: new Date(nowMs - 86_400_000).toISOString().slice(0, 10),
+        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null,
+      })),
+    }
+    const missing = run(c, ON, record, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, EN9_CARE_STATE_STEP, null, false)
+    const failed = run(c, ON, record, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, EN9_CARE_STATE_STEP, null, true)
+    assertEquals(missing, failed, `${c.name}: a missing row and an unreadable one disagree`)
+    for (const r of missing.findings) {
+      const sign = concernSignOf(r.finding)
+      if (sign === null) continue
+      lapsed++
+      const care = careStateOf(r.finding)
+      assertStrictEquals(care?.state, 'raised', `${c.name}: an answer survived a lost write`)
+      assertEquals(care?.lapsed, [`ack-${signs.indexOf(sign)}`], `${c.name}: the lapse is not on the row`)
+    }
+    // A first run with no answers on record: every concern asks with nothing on its lapse list.
+    for (const r of run(c, ON, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS).findings) {
+      if (concernSignOf(r.finding) === null) continue
+      unanswered++
+      assertEquals([careStateOf(r.finding)?.state, careStateOf(r.finding)?.lapsed], ['raised', []], `${c.name}: a first run moved`)
+    }
+    // Flag off: the answers and the missing row change nothing at all.
+    for (const [label, flags] of EN9_OFF_STATES) {
+      assertEquals(
+        run(c, flags, record, [], POPULATED_CARE_CONTEXT_FACTS),
+        run(c, flags, EMPTY_CARE_RECORD, [], POPULATED_CARE_CONTEXT_FACTS),
+        `${c.name}: ${label}`,
+      )
+    }
+  }
+  assertStrictEquals(lapsed >= 3 && unanswered >= 3, true, `only ${lapsed} answered and ${unanswered} unanswered concerns: the test checks too little`)
 })
 
 Deno.test('(c-en9) D1: a card carried over an incomplete read never carries a care state', () => {

@@ -74,8 +74,16 @@ interface Case {
   nowMs?: number
 }
 
+// CUL-1667: an answer is given on a concern card, so a case with no prior row of its own carries
+// the row that held its concerns (a neutral care fact each). A missing row beside an answer is the
+// lost write, continuity unknown; a case tests it by passing `priorFindings: null` explicitly.
+function heldRow(c: Case): unknown {
+  return (c.findings ?? [chronicity()]).map((finding, rank) => ({ rank, finding: { ...finding, careState: { state: 'raised', ackId: null, lapsed: [] } } }))
+}
+
 function args(c: Case): CareStateArgs {
   const now = c.nowMs ?? NOW_MS
+  const held = !('priorFindings' in c)
   const nowDaysAgo = Math.round((NOW_MS - now) / DAY)
   return {
     record: { ...EMPTY_CARE_RECORD, acknowledgements: c.acks ?? [], ...c.record },
@@ -89,8 +97,8 @@ function args(c: Case): CareStateArgs {
     petName: 'Nyx',
     episodeGapHours: 3,
     recencyDaysFor: () => 14,
-    priorFindings: c.priorFindings ?? null,
-    priorGeneratedAtMs: c.priorGeneratedAtMs ?? null,
+    priorFindings: held ? heldRow(c) : c.priorFindings ?? null,
+    priorGeneratedAtMs: held && !('priorGeneratedAtMs' in c) ? now - DAY : c.priorGeneratedAtMs ?? null,
   }
 }
 
@@ -503,8 +511,45 @@ Deno.test('D4: an answer lapses when its concern left the set, and stays lapsed 
   assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a], priorFindings: back, priorGeneratedAtMs: NOW_MS - DAY }).state, 'raised')
   // A newer answer stands.
   assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a, ack({ id: 'b', daysAgo: 0, createdAt: at(0, 13) })], priorFindings: back, priorGeneratedAtMs: NOW_MS - DAY }).state, 'with_vet')
-  // No prior row at all lapses nothing.
+  // The row that held the concern, read, lapses nothing (a MISSING row is CUL-1667's, below).
   assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a] }).state, 'with_vet')
+})
+
+Deno.test('CUL-1667: R1 → R2 lost write → R3: a missing prior row beside an answer is continuity unknown', () => {
+  // R1 raised the concern and the owner answered A. R2 stood the concern down, deleted R1's row and
+  // lost its insert, so R3's read answers with NO row. The concern is back at R3 within one course.
+  const a = ack({ id: 'a', daysAgo: 30 })
+  const r3 = stateOf({ symptoms: STABLE, acks: [a], priorFindings: null, priorGeneratedAtMs: null })
+  assertEquals([r3.state, r3.ackId, r3.lapsed], ['raised', null, ['a']])
+  // R4 reads R3's row: the lapse is carried, so A never revives.
+  const r3Row = [{ rank: 0, finding: { ...chronicity(), careState: r3 } }]
+  assertEquals([stateOf({ symptoms: STABLE, acks: [a], priorFindings: r3Row, priorGeneratedAtMs: NOW_MS - DAY }).state], ['raised'])
+  // A fresh answer after R3 stands, as after any lapse.
+  const b = ack({ id: 'b', daysAgo: 0, createdAt: at(0, 13) })
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a, b], priorFindings: r3Row, priorGeneratedAtMs: NOW_MS - DAY }).state, 'with_vet')
+  // The same as an unreadable row: the two unknowns write the same fact.
+  const failed = careStateOf(EN9_CARE_STATE_STEP([{ rank: 0, finding: chronicity() }], { ...args({ symptoms: STABLE, acks: [a], priorFindings: null }), priorReadFailed: true })[0].finding)!
+  assertEquals(r3, failed)
+})
+
+Deno.test('CUL-1667: a first run with no answers is unchanged; a row that says nothing about continuity lapses', () => {
+  const a = ack({ id: 'a', daysAgo: 30 })
+  // A first run, no row and no answers: raised, nothing to lapse.
+  const first = stateOf({ symptoms: STABLE, acks: [], priorFindings: null, priorGeneratedAtMs: null })
+  assertEquals([first.state, first.lapsed], ['raised', []])
+  // A row read cleanly whose findings are not a list (owner-writable): no more than no row.
+  for (const bad of [{}, 'x', 7]) {
+    assertEquals(stateOf({ symptoms: STABLE, acks: [a], priorFindings: bad, priorGeneratedAtMs: NOW_MS - DAY }).lapsed, ['a'])
+  }
+  // A row naming the concern with no generation time cannot bound anything either.
+  const held = [{ rank: 0, finding: { ...chronicity(), careState: { state: 'raised', ackId: null, lapsed: [] } } }]
+  assertEquals(stateOf({ symptoms: STABLE, acks: [a], priorFindings: held, priorGeneratedAtMs: null }).lapsed, ['a'])
+  assertEquals(stateOf({ symptoms: STABLE, acks: [a], priorFindings: held, priorGeneratedAtMs: NaN }).lapsed, ['a'])
+  assertEquals(stateOf({ symptoms: STABLE, acks: [a], priorFindings: held, priorGeneratedAtMs: NOW_MS - DAY }).lapsed, [])
+  // Only this sign's answers written before the run.
+  const cough = ack({ id: 'c', daysAgo: 30, sign: 'cough' })
+  const after = ack({ id: 'n', daysAgo: 0, createdAt: new Date(NOW_MS).toISOString() })
+  assertEquals(stateOf({ symptoms: STABLE, acks: [a, cough, after], priorFindings: null }).lapsed, ['a'])
 })
 
 Deno.test('CUL-1663: an unreadable prior row lapses every answer written before the run, and only those', () => {
