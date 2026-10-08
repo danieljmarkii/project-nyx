@@ -55,6 +55,7 @@ import {
 } from '../../lib/incidentTierWords';
 import {
   floorRanOn,
+  phoneWorkedOutLine,
   tellThem,
   vomitFindings,
   watchForList,
@@ -77,6 +78,12 @@ import {
   INCIDENT_RE_READING_PHOTO_LINE, INCIDENT_RE_READING_LINE,
 } from './IncidentReadCard';
 import { useReadLandingAnnouncement } from './useReadLandingAnnouncement';
+import { useFloorOn } from '../../hooks/useFloorOn';
+import { previewForRead } from '../../lib/incidentFloorPreview';
+import { recordShownTiers } from '../../lib/incidentTierShown';
+import { useShownTier } from '../../hooks/useShownTier';
+import { effectiveTierRank, TIER_RANK } from '../../lib/incidentTier';
+import type { FloorTier } from '../../lib/incidentFloor';
 import { IncidentReadSection } from './IncidentReadSection';
 import { ObservationGrid } from './ObservationGrid';
 import { useIncidentArrival } from '../motion/arrivalMotion';
@@ -150,6 +157,16 @@ const SELECT_COLS =
   // CUL-1406: the facts behind a dated correction beside stored words (migration 085).
   'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all';
 
+function floorTierRank(tier: FloorTier): number {
+  return tier === 'call_now' ? TIER_RANK.call_now : TIER_RANK.call_today;
+}
+
+function callTierOfRank(rank: number): FloorTier | null {
+  if (rank === TIER_RANK.call_now) return 'call_now';
+  if (rank === TIER_RANK.call_today) return 'call_today';
+  return null;
+}
+
 export function VomitAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
   { eventId: string; petId: string; petName?: string | null; hasPhoto: boolean },
@@ -173,6 +190,31 @@ export function VomitAnalysisSection(
   const floorFacts = useIncidentFloorFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}|${Math.floor(clockNow / FLOOR_FACTS_REFRESH_MS)}`);
   // The RECORD's pet (C-9): species and birthday decide which clauses its list carries.
   const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
+
+  // Engines v3 PR-28b (CUL-1436; spec §8.5, §8.7) — the phone's own floor over its rows for
+  // THIS read, shown where it is louder than the stored read (offline, or before the
+  // re-check lands), and the tier this phone already showed, which a landing must rise
+  // above to arrive. Both are null with the floor's keys off: nothing here changes then.
+  const floorOn = useFloorOn();
+  const shownTier = useShownTier(eventId, floorOn);
+  const previewTier =
+    floorOn && floorFacts && recordPet
+      ? previewForRead({
+          eventId,
+          vomits: floorFacts.vomitRows,
+          lethargy: floorFacts.lethargy,
+          species: recordPet.species,
+          birthDate: recordPet.date_of_birth,
+        })
+      : null;
+  const storedRank = row && row.status !== 'pending' ? effectiveTierRank(row) : TIER_RANK.quiet;
+  // Not before the first fetch has answered (`row` undefined): a stored read as loud would
+  // otherwise be preceded by a frame of "Worked out on this phone". Offline, the fetch
+  // answers with no row, and the preview stands.
+  const preview = row !== undefined && previewTier && floorTierRank(previewTier) > storedRank ? previewTier : null;
+  // A landing at or below what this phone already said arrives silently (§8.7): no rail,
+  // no announcement. The read still renders; only its arrival is withheld.
+  const landingSaysNothingNew = floorOn && shownTier !== null && !!row && effectiveTierRank(row) <= floorTierRank(shownTier);
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
   // the grid so a re-render of the block never resets what the owner folded, and fed the
@@ -208,7 +250,7 @@ export function VomitAnalysisSection(
     // corrected did not ARRIVE, it was answered. `edited_at` survives a re-analysis (the
     // Edge Function never clobbers a human review), so it is still set when the re-read
     // lands — which is exactly the case the rule names.
-    suppressed: !!row?.edited_at,
+    suppressed: !!row?.edited_at || landingSaysNothingNew,
     reducedMotion,
     appActive,
     identity: eventId,
@@ -221,7 +263,17 @@ export function VomitAnalysisSection(
     awaitingRead,
     identity: eventId,
     version: row?.updated_at ?? null,
+    suppressed: landingSaysNothingNew,
   });
+
+  // What this record showed, for the next landing's baseline (§8.7). Only calls, only under
+  // the floor's keys; raise-only in SQL, so a quieter write never steps it down.
+  const recordedCall = preview ?? (floorOn && row && row.status !== 'pending' ? callTierOfRank(effectiveTierRank(row)) : null);
+  const recordedSource = preview ? 'device' : 'server';
+  useEffect(() => {
+    if (!recordedCall) return;
+    void recordShownTiers([{ eventId, petId, tier: recordedCall, source: recordedSource }]);
+  }, [eventId, petId, recordedCall, recordedSource]);
 
   const fetchRow = useCallback(async (): Promise<AnalysisRow | null> => {
     const { data } = await supabase
@@ -448,6 +500,46 @@ export function VomitAnalysisSection(
   }
 
   // ── Render states ──
+
+  // Engines v3 PR-28b (§8.5) — the phone's own floor gives this read a call the stored read
+  // does not hold yet (offline, or before the re-check lands). Said here, on the record, with
+  // the line that says where it came from, and never on History, the month or Home. It
+  // stands over every other state, a pending one included, because each of those says less.
+  // No Hide: nothing stored is behind it. It goes the moment the stored read is as loud.
+  if (preview) {
+    const words = TIER_WORDS[preview];
+    const previewTellThem = floorFacts?.anchor
+      ? tellThem({
+          petName,
+          kind: 'vomit',
+          anchor: floorFacts.anchor,
+          vomits: floorFacts.vomits,
+          findings: row ? vomitFindings(row) : [],
+          courses: floorFacts.courses,
+          nowMs: clockNow,
+        })
+      : null;
+    const phoneLine = phoneWorkedOutLine(petName);
+    return (
+      <IncidentReadSection
+        arrival={arrival}
+        announcer={announcer}
+        announcement={`${words.label}. ${phoneLine}`}
+        pending={false}
+      >
+        <IncidentReadCard
+          verdict="worth_a_call"
+          label={words.label}
+          tone={words.tone}
+          action={words.action}
+          disclosure={phoneLine}
+          tellThem={previewTellThem}
+          arrival={arrival.rail}
+          onMeasure={arrival.onContentLayout}
+        />
+      </IncidentReadSection>
+    );
+  }
 
   // First load, nothing known yet. Only shown WITH a photo — a photoless event
   // stays silent until it resolves (to an escalation, or to nothing), so the

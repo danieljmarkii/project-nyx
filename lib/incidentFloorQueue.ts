@@ -17,7 +17,7 @@
 //
 // DARK BEHIND TWO KEYS. The server floors only when `engines_v3_en4` AND `engines_v3_en3`
 // are on for the owner (`analyze-vomit/context.ts`), so the phone asks the same question
-// (`floorOnNow`). With either off no marker is written, no transaction is opened that was
+// (`floorOnNow`, and `hooks/useFloorOn` on a screen). With either off no marker is written, no transaction is opened that was
 // not opened before, and nothing new renders: the write paths below take their old shape
 // exactly (C-36).
 //
@@ -25,7 +25,6 @@
 // push goes through that module's `serializeQueuePush` (C-24). This module imports it
 // lazily: `lib/sync.ts` sits under every writer here.
 
-import { allowlistFlagNow, useAllowlistFlag } from '../hooks/useAppConfig';
 import { getDb } from './db';
 import { uuid } from './utils';
 
@@ -37,16 +36,21 @@ export function owesFloorCheck(eventType: string | null | undefined): boolean {
   return (FLOOR_TRIGGER_TYPES as readonly string[]).includes(eventType ?? '');
 }
 
-/** Both keys, for the signed-in owner. Read at write time; not reactive. */
+/** Both keys, for the signed-in owner. Read at write time; not reactive (a screen that
+ *  must follow a flip uses `hooks/useFloorOn`).
+ *
+ *  The config store is required LAZILY: it pulls the config fetcher, and with it the
+ *  Supabase client, into every module that imports this one, and the write paths here sit
+ *  under the event, meal and reversal modules. A store that cannot be loaded reads as off,
+ *  the allowlist primitive's own fail-closed direction. */
 export function floorOnNow(): boolean {
-  return allowlistFlagNow('engines_v3_en4') && allowlistFlagNow('engines_v3_en3');
-}
-
-/** The same two keys, for a screen that must follow a flip. */
-export function useFloorOn(): boolean {
-  const en4 = useAllowlistFlag('engines_v3_en4');
-  const en3 = useAllowlistFlag('engines_v3_en3');
-  return en4 && en3;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { allowlistFlagNow } = require('../hooks/useAppConfig') as typeof import('../hooks/useAppConfig');
+    return allowlistFlagNow('engines_v3_en4') && allowlistFlagNow('engines_v3_en3');
+  } catch {
+    return false;
+  }
 }
 
 /** The slice of the database handle a marker write needs, so a caller's transaction hands
@@ -106,7 +110,7 @@ export function kickFloorChecks(): void {
 export async function attachDeviceClaim(eventId: string, claim: unknown): Promise<void> {
   try {
     await getDb().runAsync(
-      'UPDATE incident_floor_queue SET device_claim = ? WHERE event_id = ? AND synced = 0',
+      'UPDATE incident_floor_queue SET device_claim = ? WHERE event_id = ? AND synced <> 1',
       [JSON.stringify(claim), eventId],
     );
   } catch (e) {

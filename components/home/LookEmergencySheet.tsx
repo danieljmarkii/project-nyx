@@ -59,6 +59,13 @@ export function LookEmergencySheet({ visible, species, petName, read, onClose }:
               of these is a thing the app holds a row for, which is exactly why they are
               printed rather than offered as chips (§4.1 rule 9). */}
           <ThemedText style={styles.blockHeader}>{CALL_NOW_HEADER}</ThemedText>
+          {/* Engines v3 PR-28b — the one call-now row the record can settle (subdued and
+              vomiting, the floor's T3), collapsed the same way as the call-today rows. */}
+          {!waiting && door.nowImperative !== null && (
+            <ThemedText style={styles.imperative} testID="look-emergency-now-imperative">
+              {door.nowImperative}
+            </ThemedText>
+          )}
           {door.now.map((line) => (
             <View key={line} style={styles.row}>
               <ThemedText style={styles.bullet}>·</ThemedText>

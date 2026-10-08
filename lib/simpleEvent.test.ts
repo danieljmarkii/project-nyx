@@ -14,15 +14,24 @@
 // must be `mock`-prefixed.
 
 const mockRunAsync = jest.fn().mockResolvedValue(undefined);
+const mockTx = jest.fn(async (fn: () => Promise<void>) => fn());
 jest.mock('./db', () => ({
-  getDb: () => ({ runAsync: mockRunAsync }),
+  getDb: () => ({ runAsync: mockRunAsync, withTransactionAsync: mockTx }),
 }));
+
+// Engines v3 PR-28b — EN-4's two keys, off unless a test turns them on.
+let mockFloorOn = false;
+jest.mock('../hooks/useAppConfig', () => ({ allowlistFlagNow: () => mockFloorOn }));
+const mockPreview = jest.fn().mockResolvedValue(null);
+jest.mock('./incidentFloorPreview', () => ({ previewFloorAfterWrite: (...a: unknown[]) => mockPreview(...a) }));
+const mockFloorPush = jest.fn().mockResolvedValue(undefined);
 
 const mockSyncPendingEvents = jest.fn().mockResolvedValue(undefined);
 const mockSyncPendingMeals = jest.fn().mockResolvedValue(undefined);
 jest.mock('./sync', () => ({
   syncPendingEvents: (...a: unknown[]) => mockSyncPendingEvents(...a),
   syncPendingMeals: (...a: unknown[]) => mockSyncPendingMeals(...a),
+  syncPendingIncidentFloors: (...a: unknown[]) => mockFloorPush(...a),
 }));
 
 const mockRegen = jest.fn();
@@ -69,6 +78,8 @@ const flush = () => new Promise((r) => setImmediate(r));
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockFloorOn = false;
+  mockPreview.mockResolvedValue(null);
   mockIdCounter = 0;
   mockRunAsync.mockResolvedValue(undefined);
   mockUpsert.mockResolvedValue({ error: null });
@@ -299,5 +310,53 @@ describe('insertSimpleEvent — the analysis-chain claim (CUL-801)', () => {
     });
     await flush();
     expect(mockSettle).toHaveBeenCalledWith(false);
+  });
+});
+
+// ── Engines v3 PR-28b (CUL-1436): the re-check marker, in the event's transaction ──────
+describe('EN-4 — every vomit and lethargy log owes a re-check (§8.4)', () => {
+  const sqlOf = () => mockRunAsync.mock.calls.map((c) => String(c[0]));
+
+  it('flag off: one statement, no transaction, no marker, no preview (the shape it always had)', async () => {
+    const res = await insertSimpleEvent({ ...base });
+    expect(mockTx).not.toHaveBeenCalled();
+    expect(sqlOf().filter((q) => /INSERT INTO incident_floor_queue/.test(q))).toEqual([]);
+    expect(mockPreview).not.toHaveBeenCalled();
+    expect(mockFloorPush).not.toHaveBeenCalled();
+    expect(res.floor).toBeNull();
+  });
+
+  it('flag on, a vomit: the event and its marker in ONE transaction, then the preview and the push', async () => {
+    mockFloorOn = true;
+    const said = { eventId: 'id-1', vomitAt: 'x', tier: 'call_now', self: true, device: true, petId: 'pet-1' };
+    mockPreview.mockResolvedValue(said);
+    const order: string[] = [];
+    mockTx.mockImplementationOnce(async (fn: () => Promise<void>) => {
+      order.push('begin');
+      await fn();
+      order.push('commit');
+    });
+    mockRunAsync.mockImplementation(async (q: string) => {
+      order.push(/incident_floor_queue/.test(q) ? 'marker' : /INSERT INTO events/.test(q) ? 'event' : 'other');
+    });
+    const res = await insertSimpleEvent({ ...base });
+    expect(order.slice(0, 4)).toEqual(['begin', 'event', 'marker', 'commit']);
+    expect(mockPreview).toHaveBeenCalledWith(res.eventId);
+    expect(mockFloorPush).toHaveBeenCalled();
+    expect(res.floor).toEqual(said);
+  });
+
+  it('flag on, lethargy: owes one too', async () => {
+    mockFloorOn = true;
+    await insertSimpleEvent({ ...base, eventType: 'lethargy' });
+    expect(sqlOf().filter((q) => /INSERT INTO incident_floor_queue/.test(q))).toHaveLength(1);
+  });
+
+  it('flag on, a type the server cannot re-floor around: no marker, no preview', async () => {
+    mockFloorOn = true;
+    await insertSimpleEvent({ ...base, eventType: 'diarrhea' });
+    expect(mockTx).not.toHaveBeenCalled();
+    expect(sqlOf().filter((q) => /INSERT INTO incident_floor_queue/.test(q))).toEqual([]);
+    expect(mockPreview).not.toHaveBeenCalled();
   });
 });

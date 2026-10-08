@@ -126,7 +126,10 @@ export function IncidentReadCard({
    *  (`lib/readCorrection.ts`). Under the words, never in place of them, and never a change
    *  to the verdict above. Hidden with the note, because it is part of the note. */
   correction?: { label: string; text: string } | null;
-  onHide: () => void;
+  /** Absent on a card with nothing stored to hide (Engines v3 PR-28b: the phone's own
+   *  preview of a call, which no row holds yet). The control is then ABSENT, never
+   *  disabled (C-7). */
+  onHide?: () => void;
   /** Beat 1 of the arrival (CUL-804), while it is running; null every other moment —
    *  including a read that was already here on open, which never animates at all. */
   arrival?: ArrivalRail | null;
@@ -222,14 +225,16 @@ export function IncidentReadCard({
         <ThemedText style={styles.disclaimer}>{INCIDENT_READ_DISCLAIMER}</ThemedText>
         {/* The visible text IS the accessible name — never a label that differs from it
             (C-7). This replaces the shipped `✕`, which announced nothing at all. */}
-        <TouchableOpacity
-          onPress={onHide}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          style={styles.hideRow}
-          accessibilityRole="button"
-        >
-          <ThemedText style={styles.hideText}>{INCIDENT_READ_HIDE_LABEL}</ThemedText>
-        </TouchableOpacity>
+        {onHide ? (
+          <TouchableOpacity
+            onPress={onHide}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={styles.hideRow}
+            accessibilityRole="button"
+          >
+            <ThemedText style={styles.hideText}>{INCIDENT_READ_HIDE_LABEL}</ThemedText>
+          </TouchableOpacity>
+        ) : null}
       </View>
     </View>
   );

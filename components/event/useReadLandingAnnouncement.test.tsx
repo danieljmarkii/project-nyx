@@ -28,13 +28,14 @@ function Stage({ announcer, line }: { announcer: ReadLandingAnnouncer; line: str
 // are not about it read as "the row moved"; the cases that ARE about it pass it explicitly.
 let tick = 0;
 function Host({
-  awaiting, id, line, v, onAnnouncer,
+  awaiting, id, line, v, onAnnouncer, suppressed,
 }: {
   awaiting: boolean; id: string; line: string | null; v?: string | null;
   onAnnouncer?: (a: ReadLandingAnnouncer) => void;
+  suppressed?: boolean;
 }) {
   const version = v === undefined ? `t${(tick += 1)}` : v;
-  const announcer = useReadLandingAnnouncement({ awaitingRead: awaiting, identity: id, version });
+  const announcer = useReadLandingAnnouncement({ awaitingRead: awaiting, identity: id, version, suppressed });
   onAnnouncer?.(announcer);
   return line === null ? null : <Stage announcer={announcer} line={line} />;
 }
@@ -48,6 +49,20 @@ beforeEach(() => {
 afterEach(() => announce.mockRestore());
 
 describe('useReadLandingAnnouncement', () => {
+  // Engines v3 PR-28b (CUL-1436, spec §8.7): a stored tier arrives only above what the
+  // phone already showed, so a landing the host marks as saying nothing new is silent.
+  it('a landing marked suppressed (nothing above what the phone showed) says nothing', () => {
+    const view = render(<Host awaiting id="e1" line={null} />);
+    view.rerender(<Host awaiting={false} id="e1" line="Call your vet now" suppressed />);
+    expect(announce).not.toHaveBeenCalled();
+  });
+
+  it('the suppression is read on the landing commit, so an unsuppressed landing still speaks', () => {
+    const view = render(<Host awaiting id="e1" line={null} suppressed />);
+    view.rerender(<Host awaiting={false} id="e1" line="Call your vet now" suppressed={false} />);
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Call your vet now'));
+  });
+
   it('speaks what the stage shows when a read the host waited for lands', () => {
     const view = render(<Host awaiting id="e1" line={null} />);
     view.rerender(<Host awaiting={false} id="e1" line="Worth a call" />);

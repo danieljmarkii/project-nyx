@@ -13,7 +13,7 @@
 // The spring itself is the host's and is pinned in `FlightHost.test.tsx`; here the
 // landing is driven through the store's own `settleOutbound`, the call the host makes.
 
-jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
+jest.mock('expo-router', () => ({ router: { push: jest.fn() }, usePathname: () => '/' }));
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../lib/storage', () => ({ getPublicUrl: () => null }));
 jest.mock('../../lib/haptics', () => ({

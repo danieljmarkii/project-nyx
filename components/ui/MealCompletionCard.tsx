@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-native';
-import { router } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
@@ -8,6 +8,8 @@ import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { TimeEditSheet } from './TimeEditSheet';
+import { FloorRaiseLine } from './FloorRaiseLine';
+import { openRaisedRead } from './openRaisedRead';
 import { useMomentStore, isIntakeDecline } from '../../store/momentStore';
 import {
   removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
@@ -142,6 +144,11 @@ export function MealCompletionCard() {
   } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { pets } = usePetStore();
+  // The route, read at tap time through a ref (C-22's shape), for the floor line's door.
+  const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
+  const pathnameNow = () => pathnameRef.current;
   // CUL-1633 — read in the render, as the FAB and the named card do: the store has the
   // OS answer before the first frame (CUL-1123), and unknown reads as still (C-43). No
   // handler here moves anything, so nothing needs `reducedMotionNow()`.
@@ -564,6 +571,7 @@ export function MealCompletionCard() {
   // null; never pre-stamped. 'other' and unclassified foods stay opted out.
   const showIntake = payload.foodType === 'meal' || payload.foodType === 'treat';
   const trialFlag = payload.trialFlag ?? null;
+  const raisedId = payload.floorLine?.eventId ?? '';
   // Two registers, one per kind (B-693). CONTENTS (rung 2) → the calm passive
   // prose it has always been; MEMBERSHIP (rung 3) → the amber panel copy + the
   // "+ Add to the trial list" hatch. mealFlagCopy names a protein, so it may only
@@ -844,6 +852,19 @@ export function MealCompletionCard() {
               <ThemedText style={styles.comboText}>+ Add a med given with this</ThemedText>
             </TouchableOpacity>
           )}
+          {/* Engines v3 PR-28b (CUL-1436, §6 item 3) — a vomit read this meal's re-check
+              raised to a call, patched in when the server answers. Last, behind a divider:
+              the combo row above reaches 8pt down, and the card's gap plus this wrap's
+              top padding (16pt) clears it (C-5). */}
+          {payload.floorLine ? (
+            <View style={styles.flagWrap}>
+              <FloorRaiseLine
+                line={payload.floorLine}
+                petName={mealPetName}
+                onOpen={() => openRaisedRead(raisedId, pathnameNow(), hide)}
+              />
+            </View>
+          ) : null}
           </>
           )}
         </View>

@@ -269,13 +269,17 @@ const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = 
   },
   'lib/simpleEvent.ts': { helpers: ['insertSimpleEvent'], why: 'declares insertSimpleEvent' },
   'lib/undoLog.ts': {
-    helpers: ['reverseLoggedEvent', 'softDeleteEvent', 'reconcileWeightSnapshotAfterDelete'],
+    helpers: ['reverseLoggedEvent', 'softDeleteEvent', 'reconcileWeightSnapshotAfterDelete', 'writeOwingFloorCheck'],
     why:
       'declares the ONE shared reversal, whose implementation is softDeleteEvent (C-20), ' +
-      'and which un-writes a weigh-in\u2019s snapshot on the way out (CUL-641)',
+      'and which un-writes a weigh-in\u2019s snapshot on the way out (CUL-641). Since ' +
+      'Engines v3 PR-28b the soft delete runs inside writeOwingFloorCheck, so the re-check ' +
+      'marker it owes shares its transaction (CUL-1436)',
   },
   'lib/sync.ts': {
-    helpers: [],
+    // onFloorLanded: the re-check drain hands the server's answer to the arrival rule,
+    // which copies the reads and records what the phone said (Engines v3 PR-28b).
+    helpers: ['onFloorLanded'],
     why: 'the queue drains and the hydration mirror \u2014 this IS the durable-write layer',
   },
   'lib/weight.ts': {
@@ -314,6 +318,29 @@ const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = 
       'Home reaches this module for the read\u2019s state (TodayCard) and writes ' +
       'nothing through it; both helpers are in WRITE_CALLS, so a Home card that calls ' +
       'one is still caught BY NAME.',
+  },
+  // Engines v3 PR-28b (CUL-1436) \u2014 registered the PR they SHIP (C-32). The completion
+  // register types its payload's floor line from the preview module and reaches the
+  // reversal, so all three sit in Home's closure. None is a control: each is the layer a
+  // log, an edit or a delete goes THROUGH, and none writes a record a vet reads.
+  'lib/incidentFloorQueue.ts': {
+    helpers: ['writeOwingFloorCheck', 'insertFloorMarker', 'attachDeviceClaim'],
+    why:
+      'declares all three: the durable re-check marker (a local queue row owed to the ' +
+      'server, never pushed as a record) and the device claim it carries. Its raw SQL ' +
+      'writes that queue and nothing else',
+  },
+  'lib/incidentFloorPreview.ts': {
+    helpers: ['recordShownTiers', 'attachDeviceClaim'],
+    why:
+      'the phone\u2019s own floor after a log: records the call it said and attaches the ' +
+      'claim to the marker the log already wrote. Called by the log paths, never by Home',
+  },
+  'lib/incidentTierShown.ts': {
+    helpers: ['recordShownTiers'],
+    why:
+      'declares it: the local, never-pushed record of the call tier this phone showed, ' +
+      'read by the one-arrival rule (spec \u00a78.7)',
   },
   // HV-5 (CUL-1162) \u2014 registered the PR it SHIPS (C-32). Home's spine reads the read's
   // verdict from this module, so its one upsert is in Home's closure; without this entry

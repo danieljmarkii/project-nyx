@@ -20,11 +20,16 @@ jest.mock('./db', () => ({
   getEventPetId: (...a: unknown[]) => mockGetEventPetId(...a),
 }));
 
+// Engines v3 PR-28b — EN-4's keys, off unless a test turns them on.
+let mockFloorOn = false;
+jest.mock('../hooks/useAppConfig', () => ({ allowlistFlagNow: () => mockFloorOn }));
+const mockFloorPush = jest.fn().mockResolvedValue(undefined);
 const mockSyncPendingEvents = jest.fn().mockResolvedValue(undefined);
 const mockSyncPendingMeals = jest.fn().mockResolvedValue(undefined);
 jest.mock('./sync', () => ({
   syncPendingEvents: (...a: unknown[]) => mockSyncPendingEvents(...a),
   syncPendingMeals: (...a: unknown[]) => mockSyncPendingMeals(...a),
+  syncPendingIncidentFloors: (...a: unknown[]) => mockFloorPush(...a),
 }));
 
 const mockTriggerSignalRegenDebounced = jest.fn();
@@ -333,5 +338,39 @@ describe('one write path for a rating (CUL-1087)', () => {
   it('no other file names updateMealIntake: it goes through rateMealIntake', () => {
     // Named, not just called: an import is a reach, and an alias would hide a call.
     expect(namers.filter((f) => !ALLOWED.has(f))).toEqual([]);
+  });
+});
+
+// ── Engines v3 PR-28b (CUL-1436): a meal re-checks the vomits around it (§8.3) ──────────
+describe('EN-4 — a meal owes a re-check, in its own transaction', () => {
+  beforeEach(() => {
+    mockFloorOn = false;
+    mockRunAsync.mockClear();
+    mockFloorPush.mockClear();
+  });
+  const markerWrites = () => mockRunAsync.mock.calls.filter((c) => /incident_floor_queue/.test(String(c[0])));
+
+  it('flag off: no marker and no push', async () => {
+    await insertMeal({ petId: 'pet-1', foodId: 'f1', occurredAt: new Date('2026-10-08T12:00:00.000Z'), occurredAtSource: 'manual' });
+    expect(markerWrites()).toEqual([]);
+    expect(mockFloorPush).not.toHaveBeenCalled();
+  });
+
+  it('flag on: the marker is written inside the meal’s transaction, then pushed', async () => {
+    mockFloorOn = true;
+    let inside = false;
+    const seen: boolean[] = [];
+    mockWithTransactionAsync.mockImplementationOnce(async (cb: () => Promise<void>) => {
+      inside = true;
+      await cb();
+      inside = false;
+    });
+    mockRunAsync.mockImplementation(async (q: string) => {
+      if (/incident_floor_queue/.test(q)) seen.push(inside);
+    });
+    await insertMeal({ petId: 'pet-1', foodId: 'f1', occurredAt: new Date('2026-10-08T12:00:00.000Z'), occurredAtSource: 'manual' });
+    expect(seen).toEqual([true]);
+    expect(mockFloorPush).toHaveBeenCalled();
+    mockRunAsync.mockResolvedValue(undefined);
   });
 });
