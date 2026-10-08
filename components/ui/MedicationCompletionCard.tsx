@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-native';
-import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
+import { CompletionMark } from './CompletionMark';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { TimeEditSheet } from './TimeEditSheet';
@@ -368,8 +368,8 @@ export function MedicationCompletionCard() {
         ) : (
         <>
         <View style={styles.headerRow}>
-          <Animated.View style={[styles.checkBadge, { transform: [{ scale: checkScale }] }]}>
-            <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
+          <Animated.View testID="med-card-check" style={{ transform: [{ scale: checkScale }] }}>
+            <CompletionMark halo />
           </Animated.View>
           {/* One summary node, as on the named card: what was given and when (or
               what it rode in) is one announcement, not two orphan lines. */}
@@ -536,21 +536,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space2,
-  },
-  checkBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: theme.colorFillOnDark,
-    borderWidth: 1.5,
-    borderColor: theme.colorMomentConfirm,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: theme.colorMomentGlow,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 6,
   },
   labelCol: {
     flexGrow: 1,

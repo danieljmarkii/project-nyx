@@ -69,7 +69,7 @@ jest.mock('../../lib/trialFoodsScreen', () => ({
 }));
 
 import { Alert, Animated, StyleSheet } from 'react-native';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { MealCompletionCard } from './MealCompletionCard';
 import { useMomentStore } from '../../store/momentStore';
 import { usePetStore } from '../../store/petStore';
@@ -430,10 +430,9 @@ describe('MealCompletionCard — a rating stated ELSEWHERE is not erasable here 
 });
 
 describe('MealCompletionCard — a refusal is acknowledged, never celebrated (CUL-894)', () => {
-  const haloOf = (view: ReturnType<typeof render>) => {
-    const flat = Object.assign({}, ...[view.getByTestId('meal-card-check').props.style].flat(Infinity).filter(Boolean));
-    return flat.shadowColor;
-  };
+  // The halo is drawn (CUL-1691), so its presence is a node inside the mark, not a style.
+  const haloOf = (view: ReturnType<typeof render>) =>
+    within(view.getByTestId('meal-card-check')).queryByTestId('completion-mark-halo') ?? undefined;
 
   it('a refused reveal names the record, not the act', () => {
     seedMeal({ foodType: 'meal', intakeRating: 'refused' });
