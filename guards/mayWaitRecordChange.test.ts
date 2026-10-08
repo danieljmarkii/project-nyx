@@ -6,7 +6,10 @@ import { FLOOR_LETHARGY_HOURS, FLOOR_READ_HOURS } from '../lib/incidentFloor';
 import { stripSqlComments } from './sqlComments';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 089 (CUL-1671): a change on the events side takes back a stored leave to wait.
+// 089 + 090 (CUL-1671): a change on the events side takes back a stored leave to
+// wait. 089 ran in production from its first draft; 090 re-creates the function
+// and the two events triggers with the confidence move and the incident insert,
+// so this file judges the replay's LAST definitions (089 alone reds here).
 //
 // `take_back_may_wait_on_record_change()` lowers `may_wait` TRUE -> NULL when a
 // lethargy is logged, a cat's rated meal lands, moves or is re-rated, or an
@@ -22,8 +25,9 @@ import { stripSqlComments } from './sqlComments';
 // lib/functionHardening.test.ts's.
 //
 // WHAT IT CANNOT SEE: the live database (a dashboard edit), and the trigger's
-// runtime behaviour. 089's PR proves the behaviour against a scratch Postgres 16
-// (48 cases: 48 pass on 089; on 088 alone the 27 lowering cases fail and the 21
+// runtime behaviour. The PR proves the behaviour against a scratch Postgres 16
+// (48 cases: 48 pass on 089 + 090; on 089 alone the 4 confidence / incident-insert
+// cases fail; on 088 alone the 27 lowering cases fail and the 21
 // keep cases pass; the probe is in the PR body). Every rule here and in the probe
 // is mutation-proven (the PR body lists the mutants).
 // The stated blind spots of the trigger itself are in 089's header.

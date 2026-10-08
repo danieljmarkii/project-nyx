@@ -3,7 +3,7 @@
 **Date:** 2026-10-08
 **One thing:** D3 L1 — Reading a test: a green test only proves something if the thing it checks could have failed · check: pending
 
-Dispatched build of CUL-1671, shipped via #1120. It also finishes CUL-1676, which the PM folded in mid-session. The plan was posted and the PM typed "go". After the reviews, the PM typed "yes to 1, keep 2". **089 is not applied** and the PR is left open: applying it takes the PM's typed `apply 089`, and a dispatched child neither applies nor merges a migration.
+Dispatched build of CUL-1671, shipped via #1120. **089 and 090.** The dispatcher applied 089 to production from its first draft (3e2d1de), before the confidence fix and the incident-insert ruling landed. The PM then ruled the split: 089's file goes back to the applied bytes (sha 3080b978), and both changes move to **090**, which waits on the PM's `apply 090`. The probe on 088+089 (what production runs) fails exactly the 4 new cases; with 090 on top, 48/48 pass. The guard judges the replay's last definitions, and it reds with 090 removed. It also finishes CUL-1676, which the PM folded in mid-session. The plan was posted and the PM typed "go". After the reviews, the PM typed "yes to 1, keep 2". The PR is left open for the PM: 090 is unapplied, and a dispatched child neither applies nor merges a migration.
 
 **What shipped.**
 - One INVOKER function, `take_back_may_wait_on_record_change()`. It is pinned, EXECUTE is revoked from clients, and it raises no message of its own.
