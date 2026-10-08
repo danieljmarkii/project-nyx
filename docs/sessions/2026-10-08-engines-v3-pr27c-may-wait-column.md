@@ -3,7 +3,7 @@
 **Date:** 2026-10-08
 **One thing:** none — dispatched session, not this round's teach row
 
-Dispatched by `/dispatch` (Engines v3), CUL-1627, the first of three PRs under the PM's ruling A on CUL-1611 (the server decides whether a call-today read may say "first thing tomorrow"). Plan posted on the issue, PM go typed in session. Shipped via #1103 as a draft, left for the PM: it holds migration 087, which waits on the PM's typed `apply 087`.
+Dispatched by `/dispatch` (Engines v3), CUL-1627, the first of three PRs under the PM's ruling A on CUL-1611 (the server decides whether a call-today read may say "first thing tomorrow"). Plan posted on the issue, PM go typed in session. Shipped via #1103 as a draft, left for the PM to merge. The PM typed `apply 087` in this session, and the migration was applied to production through the Supabase MCP (`incident_may_wait`). The pre-flight found the live freeze body identical to 086's. Afterwards, every PR-body check passed, and the advisors showed nothing new. Noticed: Supabase's migration list has no row for 086, although 086's objects are live.
 
 ## What shipped
 
