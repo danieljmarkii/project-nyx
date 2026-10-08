@@ -737,6 +737,9 @@ const handler = async (req: Request): Promise<Response> => {
     //     read withholds the marker (today's wordless vanish, the safe direction for a
     //     sentence about absence), warned. Fenced: a throw costs the marker, never the regen.
     let prior: PriorSignal | null = null
+    // CUL-1663: a FAILED read (not a missing row) is continuity unknown to EN-9's care step,
+    // which lapses every answer written before this run (the louder reading; flag off, unread).
+    let priorReadFailed = false
     try {
       const { data: priorRow, error: priorError } = await supabase
         .from('ai_signals')
@@ -746,11 +749,13 @@ const handler = async (req: Request): Promise<Response> => {
         .limit(1)
         .maybeSingle()
       if (priorError) {
+        priorReadFailed = true
         console.warn('generate-signal: prior ai_signals read failed — no stand-down minted:', priorError.message)
       } else if (priorRow) {
         prior = { findings: priorRow.findings, generatedAt: priorRow.generated_at, engineFlags: priorRow.engine_flags }
       }
     } catch (priorErr) {
+      priorReadFailed = true
       const detail = priorErr instanceof Error ? priorErr.message : String(priorErr)
       console.warn('generate-signal: prior ai_signals read failed — no stand-down minted:', detail)
     }
@@ -772,6 +777,7 @@ const handler = async (req: Request): Promise<Response> => {
       },
       incompletePulls,
       prior,
+      priorReadFailed,
       nowMs,
       engineFlags,
       careRecord,

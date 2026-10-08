@@ -122,11 +122,26 @@ describe('CoverageDoor', () => {
     await waitFor(() => expect(t.getByText(/the record starts today/)).toBeTruthy());
     // …then, on another screen, it is re-timed to an older record start. Nothing Home
     // watches changed; focus is the only signal.
-    mockReadRecordStart.mockResolvedValue(OLD_RECORD);
+    //
+    // The re-read is awaited inside act and the NEW line is asserted, never polled for the
+    // old one's absence (CUL-1661): a `waitFor(... toBeNull())` raced the re-read's
+    // resolution against a one-second wall clock and went red under full-suite load, and
+    // an absence proves nothing about what replaced it (C-41).
+    const recordStart = Promise.resolve(OLD_RECORD);
+    const monthRows = Promise.resolve([local(today, 8)]);
+    mockReadRecordStart.mockReturnValue(recordStart);
+    mockReadMonth.mockReturnValue(monthRows);
     const calls = mockReadRecordStart.mock.calls.length;
-    act(() => mockFocusListeners.forEach((cb) => cb()));
-    await waitFor(() => expect(mockReadRecordStart.mock.calls.length).toBeGreaterThan(calls));
-    await waitFor(() => expect(t.queryByText(/the record starts today/)).toBeNull());
+    await act(async () => {
+      mockFocusListeners.forEach((cb) => cb());
+      await Promise.all([recordStart, monthRows]);
+    });
+    expect(mockReadRecordStart.mock.calls.length).toBeGreaterThan(calls);
+    // Today is outside the window (it ends yesterday), so over the older record the month
+    // reads as nothing logged yet — or, on the 1st, as a month that starts today.
+    const expected = today === 1 ? 'the month starts today' : `logged 0 of ${finished} ${finished === 1 ? 'day' : 'days'}`;
+    expect(t.getByText(new RegExp(expected))).toBeTruthy();
+    expect(t.queryByText(/the record starts today/)).toBeNull();
   });
 });
 

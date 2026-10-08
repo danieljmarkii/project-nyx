@@ -507,6 +507,28 @@ Deno.test('D4: an answer lapses when its concern left the set, and stays lapsed 
   assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a] }).state, 'with_vet')
 })
 
+Deno.test('CUL-1663: an unreadable prior row lapses every answer written before the run, and only those', () => {
+  // The issue's case: an answer from before a stand-down. The row that recorded the stand-down
+  // could not be read, so nothing says whether the concern left the set: continuity unknown.
+  const a = ack({ id: 'a', daysAgo: 30 })
+  const failed = (acks: AckFact[]) => EN9_CARE_STATE_STEP([{ rank: 0, finding: chronicity() }], { ...args({ symptoms: STABLE, acks }), priorReadFailed: true })
+  const s = careStateOf(failed([a])[0].finding)!
+  assertEquals([s.state, s.ackId, s.lapsed], ['raised', null, ['a']])
+  // An answer given moments before the run lapses too (the owner answers once more, the ruled cost).
+  const fresh = ack({ id: 'f', daysAgo: 0, createdAt: new Date(NOW_MS - 60_000).toISOString() })
+  assertEquals(careStateOf(failed([a, fresh])[0].finding)!.lapsed, ['a', 'f'])
+  // An answer stamped at or after the run's instant is not "written before this run".
+  const after = ack({ id: 'n', daysAgo: 0, createdAt: new Date(NOW_MS).toISOString() })
+  assertEquals(careStateOf(failed([after])[0].finding)!.lapsed, [])
+  // Another sign's answer is that sign's business: it lapses on its own concern, never here.
+  const cough = ack({ id: 'c', daysAgo: 30, sign: 'cough' })
+  assertEquals(careStateOf(failed([a, cough])[0].finding)!.lapsed, ['a'])
+  // A read that answered (no row, or false) lapses nothing.
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [a] }).state, 'with_vet')
+  const readOk = EN9_CARE_STATE_STEP([{ rank: 0, finding: chronicity() }], { ...args({ symptoms: STABLE, acks: [a] }), priorReadFailed: false })
+  assertStrictEquals(careStateOf(readOk[0].finding)!.state, 'with_vet')
+})
+
 Deno.test('D5: a re-raise never drops back to an older answer when the newer one lapses', () => {
   const older = ack({ id: 'older', daysAgo: 60 })
   const trial = ack({ id: 'trial', daysAgo: 30, source: 'vet_started_trial', anchorOn: dayOf(31), trial: { startedOn: dayOf(31), endedOn: dayOf(2), initialTargetDays: 56 } })

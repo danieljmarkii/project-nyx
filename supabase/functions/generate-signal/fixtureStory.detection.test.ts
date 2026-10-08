@@ -149,6 +149,7 @@ function leadOf(pet: FixturePet, nowMs: number, flags: EngineFlags, zone: { tz: 
     rows: rowsFor(pet, nowMs, zone),
     incompletePulls: [],
     prior: null,
+    priorReadFailed: false,
     nowMs,
     engineFlags: flags,
     careRecord: EMPTY_CARE_RECORD,

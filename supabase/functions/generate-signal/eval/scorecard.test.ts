@@ -72,6 +72,7 @@ Deno.test('the observer shows what the shipped pipeline returns for the same row
         rows: rowsAt(view.record, 'a', T),
         incompletePulls: [],
         prior: null,
+        priorReadFailed: false,
         nowMs: T,
         engineFlags: FLAG_OFF,
         careRecord: EMPTY_CARE_RECORD,
