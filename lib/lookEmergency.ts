@@ -57,6 +57,9 @@ export const EMERGENCY_DOOR_LABEL = 'Signs that mean call today ›';
 
 /** The imperative a met condition collapses to. One string, one place. */
 export const CALL_TODAY_IMPERATIVE = 'Call your vet today.';
+/** The call-now block's own collapse (Engines v3 PR-28b, CUL-1436): a record-dependent
+ *  call-now row the record meets. */
+export const CALL_NOW_IMPERATIVE = 'Call your vet now.';
 
 export const CALL_NOW_HEADER = 'Call your vet now';
 export const CALL_TODAY_HEADER = 'Call today';
@@ -110,6 +113,40 @@ const CALL_NOW: Record<LookSpecies, readonly string[]> = {
   ],
 };
 
+// ── Call your vet now — the ONE row the record can settle (Engines v3 PR-28b) ──────
+// "Subdued and vomiting" was a call-today threshold until EN-4's floor made lethargy and
+// vomiting a call now (T3, `lib/incidentFloor.ts`; spec §7, the ruling sheet's provisional
+// adoption, E-6). The door reads the same table as the vomit read, so it moved with it,
+// and `lib/lookEmergency.test.ts` drives the REAL floor with the facts that meet this row
+// and asserts call now, so the two cannot drift apart again. Both of the door's facts sit
+// in the last 24 hours, so they are never more than 24 hours apart: met here ⇒ T3 met.
+//
+// THE MOVE FOLLOWS THE FLOOR'S KEYS. With `engines_v3_en4` + `engines_v3_en3` off, the vomit
+// read itself still says today's "Worth a call" (call today) for vomiting with lethargy, so
+// the door keeps the row at call today in its shipped position and the page is unchanged
+// for that account (C-36). It moves to call now exactly where the read does.
+//
+// It collapses like the call-today rows, to its own imperative. On a FAILED read it is
+// printed as a sign in the call-now list, never collapsed: the fail-closed imperative stays
+// call today's (the block above it is always printed), because a "call now" the app may
+// take back a frame later is one an owner learns to disbelieve.
+const CALL_NOW_ROWS: Record<LookSpecies, readonly TodayRow[]> = {
+  cat: [
+    {
+      id: 'subdued_vomiting',
+      threshold: 'Subdued and vomiting',
+      met: (f) => f.lethargyRecently && f.vomitCount24h >= 1,
+    },
+  ],
+  dog: [
+    {
+      id: 'subdued_vomiting',
+      threshold: 'Subdued and vomiting',
+      met: (f) => f.lethargyRecently && f.vomitCount24h >= 1,
+    },
+  ],
+};
+
 // ── Call today — the triage-desk thresholds, each with its collapse (§4.6) ────
 const CALL_TODAY: Record<LookSpecies, readonly TodayRow[]> = {
   cat: [
@@ -117,11 +154,6 @@ const CALL_TODAY: Record<LookSpecies, readonly TodayRow[]> = {
       id: 'subdued_not_eating_24h',
       threshold: 'Subdued and not eating a full meal in 24 hours',
       met: (f) => f.lethargyRecently && f.refusedRecently,
-    },
-    {
-      id: 'subdued_vomiting',
-      threshold: 'Subdued and vomiting',
-      met: (f) => f.lethargyRecently && f.vomitCount24h >= 1,
     },
     {
       // No leaf: hiding is a look word, and a look never feeds this door (T-5). It
@@ -142,11 +174,6 @@ const CALL_TODAY: Record<LookSpecies, readonly TodayRow[]> = {
       id: 'subdued_no_food_24h',
       threshold: 'Subdued and no food for 24 hours',
       met: (f) => f.lethargyRecently && f.refusedRecently,
-    },
-    {
-      id: 'subdued_vomiting',
-      threshold: 'Subdued and vomiting',
-      met: (f) => f.lethargyRecently && f.vomitCount24h >= 1,
     },
     {
       id: 'vomiting_again_24h',
@@ -171,8 +198,12 @@ export type EmergencyRead =
   | { status: 'failed' };
 
 export interface EmergencyDoorModel {
-  /** The always-printed block. */
+  /** The always-printed block, plus the record-dependent call-now rows the record does not
+   *  meet (or cannot be read for). */
   now: readonly string[];
+  /** `CALL_NOW_IMPERATIVE` when the record meets a call-now row; null otherwise, the
+   *  failed read included (see CALL_NOW_ROWS). */
+  nowImperative: string | null;
   /** `CALL_TODAY_IMPERATIVE` when the record meets at least one threshold — or when
    *  the facts have not answered (fail closed). Null on a loaded record that meets
    *  none, where the thresholds speak for themselves. */
@@ -187,6 +218,14 @@ export interface EmergencyDoorModel {
   metIds: readonly string[];
 }
 
+/** The call-today rows for one species. With the floor off, "Subdued and vomiting" sits in
+ *  its shipped place (second) among them, as before PR-28b. */
+function todayRows(species: LookSpecies, floorOn: boolean): readonly TodayRow[] {
+  if (floorOn) return CALL_TODAY[species];
+  const [first, ...rest] = CALL_TODAY[species];
+  return [first, ...CALL_NOW_ROWS[species], ...rest];
+}
+
 /**
  * The door, resolved for one species against what the record can settle.
  *
@@ -196,18 +235,28 @@ export interface EmergencyDoorModel {
 export function resolveEmergencyDoor(
   species: LookSpecies,
   facts: EmergencyFacts | null,
+  /** EN-4's two keys for this owner (`hooks/useFloorOn`). Off, the page is today's. */
+  floorOn = false,
 ): EmergencyDoorModel {
-  const now = CALL_NOW[species];
-  const rows = CALL_TODAY[species];
+  const nowRows = floorOn ? CALL_NOW_ROWS[species] : [];
+  const rows = todayRows(species, floorOn);
   if (facts === null) {
-    return { now, imperative: CALL_TODAY_IMPERATIVE, thresholds: [], metIds: [] };
+    return {
+      now: [...CALL_NOW[species], ...nowRows.map((r) => r.threshold)],
+      nowImperative: null,
+      imperative: CALL_TODAY_IMPERATIVE,
+      thresholds: [],
+      metIds: [],
+    };
   }
+  const nowMet = nowRows.filter((r) => r.met(facts));
   const met = rows.filter((r) => r.met(facts));
   return {
-    now,
+    now: [...CALL_NOW[species], ...nowRows.filter((r) => !nowMet.includes(r)).map((r) => r.threshold)],
+    nowImperative: nowMet.length > 0 ? CALL_NOW_IMPERATIVE : null,
     imperative: met.length > 0 ? CALL_TODAY_IMPERATIVE : null,
     thresholds: rows.filter((r) => !met.includes(r)).map((r) => r.threshold),
-    metIds: met.map((r) => r.id),
+    metIds: [...nowMet, ...met].map((r) => r.id),
   };
 }
 
@@ -219,11 +268,13 @@ export function allEmergencyStrings(): string[] {
     EMERGENCY_SHEET_TITLE,
     EMERGENCY_DOOR_LABEL,
     CALL_TODAY_IMPERATIVE,
+    CALL_NOW_IMPERATIVE,
     CALL_NOW_HEADER,
     CALL_TODAY_HEADER,
   ];
   for (const species of ['cat', 'dog'] as const) {
     out.push(...CALL_NOW[species]);
+    out.push(...CALL_NOW_ROWS[species].map((r) => r.threshold));
     out.push(...CALL_TODAY[species].map((r) => r.threshold));
   }
   return out;

@@ -41,6 +41,7 @@ import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFi
 // storage / analysis / signal / sync-event helpers directly for this path.
 import { applyMealTrialFlag } from '../lib/mealTrialFlag';
 import { exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, OccurredConfidence } from '../lib/utils';
+import type { FloorAnnouncement } from '../lib/incidentFloorPreview';
 
 type Step = 'type' | 'food' | 'medication' | 'simple' | 'weight';
 
@@ -809,6 +810,8 @@ export default function LogModal() {
     const isMeal = selectedType === 'meal' && !!foodId;
     let eventId: string;
     let now: string;
+    // Engines v3 PR-28b — the read this log raised to a call on the phone's own floor.
+    let floor: FloorAnnouncement | null = null;
     // The write can throw (insertMeal now wraps the meal DB writes, and the
     // non-meal branch hits SQLite directly). Surface a failure instead of
     // silently freezing on the current step — without this the touch handler
@@ -849,6 +852,7 @@ export default function LogModal() {
         });
         eventId = res.eventId;
         now = res.now;
+        floor = res.floor;
       }
     } catch (e) {
       console.error('[log] event write failed:', e);
@@ -910,7 +914,12 @@ export default function LogModal() {
     // so it slides down onto a record that is already there. The alternative —
     // back() then push() — would push INTO a dismissing modal, which is the racier
     // half of the fork the spec left open (§3.1).
-    if (!isMeal && attachmentUri && hasPerIncidentRead(selectedType)) {
+    //
+    // Engines v3 PR-28b (PMD-14 = A, spec §6 item 2): a PHOTOLESS vomit whose own read the
+    // phone's floor puts at call now goes to its record too, the same REPLACE. Call today
+    // stays on router.back(), said on the named card.
+    const photolessCallNow = !!floor && floor.self && floor.tier === 'call_now';
+    if (!isMeal && ((attachmentUri && hasPerIncidentRead(selectedType)) || photolessCallNow)) {
       router.replace(`/event/${eventId}`);
     } else {
       router.back();
@@ -950,6 +959,7 @@ export default function LogModal() {
           // and cannot be taken again. Same line the discard guard draws one step
           // earlier in this very flow — guard what cannot be recreated.
           hasAttachment: !!attachmentUri,
+          floorLine: floor,
         },
         { delayMs: 300 },
       );

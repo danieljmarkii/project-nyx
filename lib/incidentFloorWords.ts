@@ -51,6 +51,7 @@
 // (the follow-up issue on CUL-1510). Louder than the spec until then, never calmer than
 // today's "Worth a call".
 
+import { TIER_WORDS } from './incidentTierWords';
 import {
   FLOOR_LETHARGY_HOURS,
   FLOOR_MERGE_MINUTES,
@@ -406,3 +407,38 @@ export function tellThem(input: TellThemInput): string | null {
   if (input.courses.length > 0) parts.push(`on ${input.courses.join(', ')}`);
   return `${parts.join('; ')}.`;
 }
+
+// ── EN-4's client half: the preview line and the raise line (PR-28b, CUL-1436) ────────
+// Spec §6 item 3 and §8.5. Both are said only over a CALL: the phone never says anything
+// calm about a read it worked out alone (n=1 never reassures, clinical-guardrails Pattern 1),
+// so there is no quiet sibling of either sentence.
+
+/** §8.5: under a tier this phone worked out over its own rows, before the server has. */
+export function phoneWorkedOutLine(petName: string | null | undefined): string {
+  return `Worked out on this phone. It's saved when ${named(petName)}'s record syncs.`;
+}
+
+/** §6 item 3: the sentence a log's completion says when it raised a read. On the vomit's own
+ *  log it is the read itself, in the tier map's landing words; on a lethargy or meal log, or
+ *  a vomit that raised an earlier one, it names the read by the vomit's time. */
+export function raisedReadLine(input: {
+  petName: string | null | undefined;
+  tier: FloorTier;
+  /** The raised read's vomit, as it sits in the record. */
+  vomitAt: string;
+  /** True when the log on the card is the vomit whose read this is. */
+  self: boolean;
+  nowMs: number;
+}): string {
+  const p = capitalised(named(input.petName));
+  // The tier map's own label, so the card and the record can never name one call two ways.
+  const label = TIER_WORDS[input.tier].label;
+  const words = label.charAt(0).toLowerCase() + label.slice(1);
+  if (input.self) return `${p}'s read: ${words}.`;
+  const at = Date.parse(input.vomitAt);
+  const when = Number.isFinite(at) ? ` at ${pastWords(at, input.nowMs)}` : '';
+  return `${p}'s read for the vomit${when} is now: ${words}.`;
+}
+
+/** The door from that sentence to the read it names. */
+export const OPEN_THE_READ = 'Open the read';

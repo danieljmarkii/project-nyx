@@ -71,12 +71,16 @@ describe('reverseLoggedEvent', () => {
     // record, and the next test's closure walk holds it to that.
     // CUL-1665 added the record's change counter: a data-free number in memory that
     // tells subscribed surfaces to re-read. It writes no record either.
+    // Engines v3 PR-28b (CUL-1436) added `writeOwingFloorCheck`: the soft delete runs inside
+    // it so a re-check marker shares its transaction. The marker asks the server to re-floor
+    // the reads around the deleted log; it writes no adherence and no event field.
     expect(imports.join('\n')).toBe(
       "import { useRecordChangeStore } from '../store/recordChangeStore';\n" +
       "import { getEventPetId, softDeleteEvent } from './db';\n" +
       "import { noteRemoval } from './removalNotice';\n" +
       "import { triggerSignalRegenDebounced } from './signal';\n" +
       "import { syncPendingEvents } from './sync';\n" +
+      "import { writeOwingFloorCheck } from './incidentFloorQueue';\n" +
       "import { reconcileWeightSnapshotAfterDelete } from './weight';",
     );
     expect(body()).not.toMatch(/adherence|updateEvent|updateMealIntake/);

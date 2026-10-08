@@ -14,6 +14,7 @@ import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { getDb, updateEvent, updateMealFood, getMealForEvent, getDoseForEvent, getEventAttachment, getEventAttachments, getEventSource, getEventTimeFields } from '../lib/db';
+import { writeOwingFloorCheck } from '../lib/incidentFloorQueue';
 import { triggerSignalRegenDebounced } from '../lib/signal';
 import { detachOtherEventAttachments } from '../lib/attachments';
 import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations, syncPendingLooks } from '../lib/sync';
@@ -508,13 +509,13 @@ export default function EditEventModal() {
       // cannot push a row the server will reject forever (T-22).
       const parentNotes = isLook ? null : notes.trim() || null;
 
-      await updateEvent(id, {
+      await writeOwingFloorCheck(id, () => updateEvent(id, {
         occurred_at: occurredAtIso,
         severity: null,
         notes: parentNotes,
         occurred_at_source: tf.source,
         ...(confidence ? { confidence } : {}),
-      });
+      }));
 
       // CUL-869 — the look's child. Three fields, three different reasons to write:
       //

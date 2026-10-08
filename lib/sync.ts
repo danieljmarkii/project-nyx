@@ -43,6 +43,9 @@ import {
   NOT_QUARANTINED_SQL,
   parentLandedSql,
   visitLandedSql,
+  incidentFloorPushQueueSql,
+  classifyFloorCheckFailure,
+  formatFloorCheckError,
   type SyncFailureClass,
 } from './syncQueue';
 import { proteinsToCacheText, proteinsFromCacheText } from './protein';
@@ -133,7 +136,8 @@ type QueueTable =
   | 'notification_preferences'
   | 'care_acknowledgements'
   | 'vet_calls'
-  | 'vet_call_follow_ups';
+  | 'vet_call_follow_ups'
+  | 'incident_floor_queue';
 
 // The queues whose rows CANNOT CHANGE between the moment a push reads them and the
 // moment its response lands: an attachment row is written once and never edited in
@@ -157,6 +161,7 @@ export const INSERT_ONLY_QUEUE_TABLES = [
   'care_acknowledgements',
   'vet_calls',
   'vet_call_follow_ups',
+  'incident_floor_queue',
 ] as const;
 type InsertOnlyQueueTable = (typeof INSERT_ONLY_QUEUE_TABLES)[number];
 
@@ -3723,6 +3728,109 @@ async function drainVetCallFollowUpsQueue(): Promise<void> {
   }
 }
 
+// ── Engines v3 PR-28b: EN-4's re-check marker ───────────────────────────────────
+
+/**
+ * Ask `analyze-vomit` to re-floor around every log that owes it (`incident_floor_queue`,
+ * CUL-1436; spec §8.4). Not a table push: each request is `{ event_id, mode: 'refloor' }`,
+ * the server reads the settled record itself, and nothing is inserted anywhere.
+ *
+ * HELD until the trigger has landed (`floorTriggerLandedSql`): its event, and a meal's row.
+ * Several markers waiting on one event (a log, then its rating, then an edit) send ONE
+ * request, carrying the newest device claim, and are marked together: the server reads the
+ * record as it now stands, so the later writes are already in what it reads.
+ *
+ * WHAT COUNTS AS LANDED. Any 2xx, a `skipped` answer included: `floor_off` means the
+ * owner's flags are off on the server, and re-sending cannot change that. The server's
+ * answer names the reads it re-floored; those are copied to the phone and handed to the
+ * one-arrival rule (`lib/incidentFloorArrival.ts`), which may say one of them on a card
+ * still showing the log that raised it.
+ *
+ * SIGN-OUT: the epoch guard of every drain here. Nothing is marked, copied or said once it
+ * moves, so an answer that lands after `wipeLocalSession` cannot reach the next account.
+ */
+export function syncPendingIncidentFloors(): Promise<void> {
+  // The marker is held until its event lands, so ask for the event's push first (each
+  // goes through its own serialized entry point, C-24, and a run already going is joined).
+  return syncPendingEvents()
+    .then(() => syncPendingMeals())
+    .catch((e: unknown) => console.warn('[sync] events push before re-check failed (queued):', e))
+    .then(() => serializeQueuePush('incident_floor_queue', drainIncidentFloorQueue));
+}
+
+const FLOOR_QUEUE_MAX_PASSES = 3;
+
+async function drainIncidentFloorQueue(): Promise<void> {
+  const epoch = signOutEpoch;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+  const db = getDb();
+  for (let pass = 0; pass < FLOOR_QUEUE_MAX_PASSES; pass++) {
+    if (epoch !== signOutEpoch) return;
+    const rows = await db.getAllAsync<{ id: string; pet_id: string; event_id: string; device_claim: string | null }>(
+      incidentFloorPushQueueSql(),
+    );
+    if (rows.length === 0) return;
+    // One request per trigger, in the order its first marker was written.
+    const byEvent = new Map<string, typeof rows>();
+    for (const r of rows) byEvent.set(r.event_id, [...(byEvent.get(r.event_id) ?? []), r]);
+    let landed = 0;
+    for (const [eventId, group] of byEvent) {
+      // Before each request, not only after: a sign-out during the previous trigger's
+      // marking or arrival must not send the next trigger's id and claim under whatever
+      // session follows (the privacy pass on PR-28b; CUL-642's class).
+      if (epoch !== signOutEpoch) return;
+      const claim = [...group].reverse().find((r) => r.device_claim !== null)?.device_claim ?? null;
+      let parsedClaim: unknown = null;
+      try {
+        parsedClaim = claim ? JSON.parse(claim) : null;
+      } catch {
+        parsedClaim = null;
+      }
+      let data: unknown = null;
+      let error: unknown = null;
+      try {
+        const res = await supabase.functions.invoke('analyze-vomit', {
+          body: parsedClaim
+            ? { event_id: eventId, mode: 'refloor', device_claim: parsedClaim }
+            : { event_id: eventId, mode: 'refloor' },
+        });
+        data = res.data;
+        error = res.error;
+      } catch (e) {
+        error = e;
+      }
+      if (epoch !== signOutEpoch) return;
+      if (error) {
+        const failure = classifyFloorCheckFailure(error);
+        if (failure === 'transient') {
+          console.warn('[sync] re-check failed (retrying next cycle):', error);
+          return;
+        }
+        for (const r of group) {
+          await applyFailurePolicy(db, 'incident_floor_queue', r, failure, formatFloorCheckError(error));
+        }
+        continue;
+      }
+      await markSyncedInsertOnly(db, 'incident_floor_queue', group.map((r) => r.id));
+      landed += 1;
+      const results = (data as { results?: { event_id?: unknown }[] } | null)?.results;
+      const floored = Array.isArray(results)
+        ? results.map((r) => r?.event_id).filter((id): id is string => typeof id === 'string')
+        : [];
+      if (floored.length > 0) {
+        // Lazy: lib/incidentFloorArrival.ts imports the stores and the copy reader, which
+        // sit above this module. Never throws (its own contract); awaited so the next
+        // request's answer is said after this one's.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { onFloorLanded } = require('./incidentFloorArrival') as typeof import('./incidentFloorArrival');
+        await onFloorLanded({ triggerEventId: eventId, petId: group[0].pet_id, eventIds: floored, stale: () => epoch !== signOutEpoch });
+      }
+    }
+    if (landed === 0) return;
+  }
+}
+
 /**
  * Pull the calls and their ledger (insert-only, so incremental on created_at with overlap,
  * the event_attachments shape). A row already here keeps every field but one: these rows
@@ -3845,6 +3953,10 @@ async function pushAllQueues(): Promise<void> {
   // drains hold a row whose parent has not landed (082's guard refuses it with a TERMINAL
   // 23514); events went first above, and calls go before their ledger here.
   await syncPendingVetCalls();
+  // Engines v3 PR-28b: EN-4's re-checks wait on their event and a meal's row, both pushed
+  // above; the drain holds any whose trigger has not landed. Through the queue's own
+  // serialized drain, not its public entry point, which would re-run the events push.
+  await serializeQueuePush('incident_floor_queue', drainIncidentFloorQueue);
   // B-661: account-scoped, no FK to anything pushed above (v1 rows are
   // account-wide, pet_id NULL), so its position is free — last, after the
   // pet-scoped queues.

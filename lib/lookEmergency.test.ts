@@ -6,12 +6,14 @@
 // holds no read (`lib/lookEmergencyFacts.ts` does).
 
 import {
+  CALL_NOW_IMPERATIVE,
   CALL_TODAY_IMPERATIVE,
   allEmergencyStrings,
   resolveEmergencyDoor,
   type EmergencyFacts,
 } from './lookEmergency';
 import { hasBannedSignalVocabulary } from './signalCopy';
+import { FLOOR_ROW_TIER, incidentFloor } from './incidentFloor';
 
 /** A loaded, quiet record — every threshold unmet. */
 const QUIET: EmergencyFacts = {
@@ -72,9 +74,15 @@ describe('the collapse — a conditional the record already meets becomes the im
     const cat = resolveEmergencyDoor('cat', QUIET);
     expect(cat.imperative).toBeNull();
     expect(cat.thresholds).toHaveLength(4);
+    expect(cat.nowImperative).toBeNull();
     const dog = resolveEmergencyDoor('dog', QUIET);
     expect(dog.imperative).toBeNull();
     expect(dog.thresholds).toHaveLength(4);
+    // With EN-4's floor on, "Subdued and vomiting" moves to the call-now list (PR-28b).
+    const catOn = resolveEmergencyDoor('cat', QUIET, true);
+    expect(catOn.thresholds).toHaveLength(3);
+    expect(catOn.now).toContain('Subdued and vomiting');
+    expect(resolveEmergencyDoor('dog', QUIET, true).thresholds).toHaveLength(3);
   });
 
   it('the rows with no leaf behind them NEVER collapse, on any record', () => {
@@ -127,5 +135,56 @@ describe('every string the door can print', () => {
 
   it('says the imperative once, and says it plainly', () => {
     expect(CALL_TODAY_IMPERATIVE).toBe('Call your vet today.');
+  });
+});
+
+// ── The door and the floor say the same thing (Engines v3 PR-28b, CUL-1436; spec §7) ──
+// "Subdued and vomiting" is the floor's T3. The door's two facts both sit in the last 24
+// hours, so they are never more than 24 hours apart, and the floor reads lethargy within
+// 24 hours either side of a vomit. So every record that meets this row meets T3, and this
+// drives the REAL floor at the widest separation the door's facts allow.
+describe('subdued and vomiting is call now, matched to the floor (T3)', () => {
+  const NOW = Date.parse('2026-10-08T12:00:00.000Z');
+  const HOUR = 3_600_000;
+
+  it.each(['cat', 'dog'] as const)('%s · flag off: the page is today’s (call today, shipped place)', (species) => {
+    const off = resolveEmergencyDoor(species, { ...QUIET, lethargyRecently: true, vomitCount24h: 1 });
+    expect(off.imperative).toBe(CALL_TODAY_IMPERATIVE);
+    expect(off.nowImperative).toBeNull();
+    expect(off.metIds).toContain('subdued_vomiting');
+    expect(off.now).not.toContain('Subdued and vomiting');
+    expect(resolveEmergencyDoor(species, QUIET).thresholds[1]).toBe('Subdued and vomiting');
+  });
+
+  it.each(['cat', 'dog'] as const)('%s · the met row collapses to call now, not call today', (species) => {
+    const door = resolveEmergencyDoor(species, { ...QUIET, lethargyRecently: true, vomitCount24h: 1 }, true);
+    expect(door.nowImperative).toBe(CALL_NOW_IMPERATIVE);
+    expect(door.metIds).toContain('subdued_vomiting');
+    expect(door.imperative).toBeNull();
+    expect(door.now).not.toContain('Subdued and vomiting');
+    expect(door.thresholds).not.toContain('Subdued and vomiting');
+  });
+
+  it.each(['cat', 'dog', 'other'])('%s · the floor gives the same facts call now through T3', (species) => {
+    // Lethargy at the far edge of the door's window, the vomit at the near edge.
+    const lethargyAt = new Date(NOW - 24 * HOUR).toISOString();
+    const vomitAt = new Date(NOW).toISOString();
+    const r = incidentFloor({
+      anchor: { at: vomitAt, confidence: 'witnessed' },
+      vomits: [{ at: vomitAt, confidence: 'witnessed' }],
+      lethargyAt: [lethargyAt],
+      species,
+      birthDate: '2020-01-01',
+    });
+    expect(r.rows).toContain('T3');
+    expect(r.tier).toBe('call_now');
+    expect(FLOOR_ROW_TIER.T3).toBe('call_now');
+  });
+
+  it('a failed read prints the row as a call-now sign and never collapses it', () => {
+    const door = resolveEmergencyDoor('cat', null, true);
+    expect(door.nowImperative).toBeNull();
+    expect(door.now).toContain('Subdued and vomiting');
+    expect(door.imperative).toBe(CALL_TODAY_IMPERATIVE);
   });
 });

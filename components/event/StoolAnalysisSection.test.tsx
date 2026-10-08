@@ -1146,6 +1146,8 @@ describe('StoolAnalysisSection — the floor\'s words (CUL-1510)', () => {
       anchor: { at: STOOL.toISOString(), confidence: 'witnessed' },
       vomits: [{ at: new Date(2026, 5, 10, 9, 0).toISOString(), confidence: 'witnessed' }],
       courses: [],
+      vomitRows: [],
+      lethargy: [],
     };
   });
   afterEach(() => {

@@ -259,13 +259,15 @@ describe('app/edit-event.tsx — the save may only write an ASSERTED confidence 
   // Code only (CUL-885): a comment holding one of the shapes below could otherwise pad
   // a count or satisfy a `toContain` while the real line is gone.
   const src = blankComments(readFileSync(join(ROOT, 'app/edit-event.tsx'), 'utf8'));
-  // The single updateEvent call, from the identifier to the closing `});`.
-  const updateCall = /await updateEvent\([\s\S]*?\n {6}\}\);/.exec(src)?.[0] ?? '';
+  // The single updateEvent call, from the identifier to the closing `}));`. Since Engines
+  // v3 PR-28b (CUL-1436) it runs inside writeOwingFloorCheck, so a re-check marker shares
+  // its transaction; the write itself is the same call.
+  const updateCall = /await writeOwingFloorCheck\(id, \(\) => updateEvent\([\s\S]*?\n {6}\}\)\);/.exec(src)?.[0] ?? '';
 
   it('has exactly one updateEvent call, and this suite found it', () => {
     // If the file grows a second write, the assertions below stop covering it —
     // fail here rather than pass vacuously against the first one.
-    expect(src.match(/await updateEvent\(/g)).toHaveLength(1);
+    expect(src.match(/\bupdateEvent\(/g)).toHaveLength(1);
     expect(updateCall).not.toBe('');
   });
 

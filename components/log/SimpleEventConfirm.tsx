@@ -25,6 +25,7 @@ import { useAppActive } from '../../hooks/useAppActive';
 import { useEventStore } from '../../store/eventStore';
 import type { ConfirmDraft } from '../../lib/discardGuard';
 import { formatTime, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../../lib/utils';
+import type { FloorAnnouncement } from '../../lib/incidentFloorPreview';
 
 // The one-surface confirm (B-745 PR 3, round-4 mock frames 2–3). A simple event
 // (symptom / stool / Other) completes here IN PLACE of the picker grid: the app can
@@ -72,6 +73,8 @@ interface Props {
     record: LoggedRecord;
     hasAttachment: boolean;
     hasNote: boolean;
+    /** Engines v3 PR-28b: the read this log raised to a call on the phone's own floor. */
+    floor: FloorAnnouncement | null;
   }) => void;
   /** CUL-612 — what the owner has put into this confirm so far, so the HOST can
    *  guard its own dismissal paths (a backdrop tap destroys this component, and a
@@ -396,6 +399,7 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
         // same reason the record is built from `tf`: what the host acts on must be
         // what landed in the row.
         hasAttachment: !!photo,
+        floor: res.floor,
         // The note the write above actually carried — `notes.trim()`, the same
         // expression passed to insertSimpleEvent, not the raw field: whitespace is not
         // a note, and a gate that named one the row does not hold would teach the owner

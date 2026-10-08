@@ -25,6 +25,7 @@ import { noPetToLogForCopy } from '../../lib/logCopy';
 import type { LogSheetConfirmType } from '../../store/uiStore';
 import { useSheetMotion, type SheetVeil } from '../motion/sheetMotion';
 import { useAppActive } from '../../hooks/useAppActive';
+import type { FloorAnnouncement } from '../../lib/incidentFloorPreview';
 
 // Resolved once at module scope — a literal, shared with the FAB menu (CUL-717).
 const noPetCopy = noPetToLogForCopy();
@@ -312,7 +313,7 @@ export function EventTypeSheet({
 
   function handleLogged(result: {
     eventId: string; occurredAtIso: string; record: LoggedRecord;
-    hasAttachment: boolean; hasNote: boolean;
+    hasAttachment: boolean; hasNote: boolean; floor: FloorAnnouncement | null;
   }) {
     // If the sheet was dismissed while the write was in flight, don't resurface — the
     // event is written and will appear on Home; showing a beat on a hidden/reopened
@@ -332,8 +333,13 @@ export function EventTypeSheet({
     // CUL-802 — the same scope the full-screen /log flow routes on, asked with the
     // same predicate: a photo, on a type whose photo gets a read. `confirm` is the
     // type this write was for (captured at grid→confirm), never a re-read.
+    //
+    // Engines v3 PR-28b (PMD-14 = A, spec §6 item 2): a PHOTOLESS vomit whose read the
+    // phone's own floor puts at call now lands on its record too, as a photographed one
+    // does. Call today stays on the completion path, said on the beat.
+    const photolessCallNow = !!result.floor && result.floor.self && result.floor.tier === 'call_now';
     setLandOnEventId(
-      result.hasAttachment && confirm && hasPerIncidentRead(confirm.type) ? result.eventId : null,
+      (result.hasAttachment && confirm && hasPerIncidentRead(confirm.type)) || photolessCallNow ? result.eventId : null,
     );
     // CUL-964 — hand the commit to the completion register BEFORE the stage moves, so
     // the beat's first frame already has its payload. The register owns the dwell, the
@@ -346,6 +352,7 @@ export function EventTypeSheet({
       occurredAt: result.occurredAtIso,
       hasAttachment: result.hasAttachment,
       hasNote: result.hasNote,
+      floorLine: result.floor,
     });
     setBeatEventId(result.eventId);
     setStage('done');
@@ -358,6 +365,15 @@ export function EventTypeSheet({
   // the host, so both land in the same commit and the modal dismiss animation plays
   // over a record that is already on the stack — the same ordering the full-screen
   // path gets for free from replace().
+  // The beat's floor line opens the read it names (Engines v3 PR-28b). The sheet cannot
+  // push over itself (CUL-662), so the read becomes the beat's landing and the beat is
+  // dismissed: `handleBeatDone` then closes the sheet first and pushes second, the one
+  // order that works, and G5's removed check still applies.
+  function handleOpenRaisedRead(eventId: string) {
+    setLandOnEventId(eventId);
+    useMomentStore.getState().hide();
+  }
+
   function handleBeatDone(removed: boolean) {
     // The same liveness guard `handleLogged` carries, for the same reason and with the
     // same ref. Today it is belt-and-braces: a dismissal that beats the register
@@ -585,6 +601,7 @@ export function EventTypeSheet({
                 door this PR closes. */}
             {stage === 'done' && beatSentence && beatEventId && confirm && (
               <SheetLogBeat
+                onOpenRaisedRead={handleOpenRaisedRead}
                 tone={beatTone}
                 title={beatSentence}
                 eventId={beatEventId}

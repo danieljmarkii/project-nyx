@@ -66,7 +66,7 @@ function showAndRender(
   };
   act(() => { useMomentStore.getState().showSheetBeat(payload); });
   return render(
-    <SheetLogBeat
+    <SheetLogBeat onOpenRaisedRead={jest.fn()}
       tone={props.tone ?? 'calm'}
       title={props.title ?? SENTENCE}
       petName={props.petName ?? 'Nyx'}
@@ -351,7 +351,7 @@ describe('the dwell — the register owns the clock, the beat only reports the e
     try {
       const onDone = jest.fn();
       render(
-        <SheetLogBeat tone="calm" title={SENTENCE} petName="Nyx" eventId="e1" onDone={onDone} />,
+        <SheetLogBeat onOpenRaisedRead={jest.fn()} tone="calm" title={SENTENCE} petName="Nyx" eventId="e1" onDone={onDone} />,
       );
       act(() => { jest.advanceTimersByTime(5000); });
       expect(onDone).not.toHaveBeenCalled();
@@ -485,7 +485,7 @@ describe('the VoiceOver announcement (CUL-1275)', () => {
       useMomentStore.getState().showSheetBeat({ tone: 'calm', eventId: 'other', occurredAt: '2026-09-14T17:33:00.000Z' });
     });
     render(
-      <SheetLogBeat tone="calm" title={SENTENCE} petName="Nyx" eventId="e1" onDone={jest.fn()} />,
+      <SheetLogBeat onOpenRaisedRead={jest.fn()} tone="calm" title={SENTENCE} petName="Nyx" eventId="e1" onDone={jest.fn()} />,
     );
     expect(announce).not.toHaveBeenCalled();
   });

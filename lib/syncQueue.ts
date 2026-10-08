@@ -350,6 +350,10 @@ export const SYNC_QUEUES: readonly SyncQueue[] = [
   // PARENT-GATED: a call waits on its event, a ledger row on its event and its call.
   { table: 'vet_calls', pendingSince: 'created_at' },
   { table: 'vet_call_follow_ups', pendingSince: 'created_at' },
+  // Engines v3 PR-28b (CUL-1436) — EN-4's re-check marker. Insert-only (each owed check is
+  // its own row), so created_at is the age. Held until its event and a meal's rating row
+  // have landed (drainIncidentFloorQueue).
+  { table: 'incident_floor_queue', pendingSince: 'created_at' },
 ];
 
 /**
@@ -502,6 +506,12 @@ export const PARENT_GATED_QUEUES = {
     { parent: 'events', column: 'event_id' },
     { parent: 'vet_calls', column: 'vet_call_id' },
   ],
+  // • incident_floor_queue (Engines v3 PR-28b) → the log it re-checks around. The server
+  //   reads that row with the caller's JWT; sent before it lands, the re-check 404s and
+  //   spends an attempt. A soft delete re-queues the event (synced = 0), so a re-check
+  //   owed by a delete also waits for the tombstone to land. A meal's rating lives on
+  //   `meals`, keyed by event_id rather than id, so its gate is the drain's own clause.
+  incident_floor_queue: [{ parent: 'events', column: 'event_id' }],
 } as const satisfies Record<string, readonly { parent: string; column: string }[]>;
 export type ParentGatedQueue = keyof typeof PARENT_GATED_QUEUES;
 
@@ -525,6 +535,68 @@ export function parentLandedSql(child: ParentGatedQueue): string {
      WHERE gate_p.id = ${child}.${column}
        AND gate_p.synced = 0 AND gate_p.sync_error IS NULL)`)
     .join('\n     AND ');
+}
+
+/**
+ * EN-4's re-check marker waits on its event AND, for a meal, on the meal's row (Engines v3
+ * PR-28b, CUL-1436). A rating lives on `meals`, keyed by `event_id` rather than by the
+ * marker's column the generic gate joins on, and the server's re-floor reads the rating
+ * through the vomit read's intake flag: sent first, the check would floor over the rating
+ * the owner had just replaced. The same "a quarantined parent holds nothing" rule.
+ */
+export function floorTriggerLandedSql(): string {
+  return `${parentLandedSql('incident_floor_queue')}
+     AND NOT EXISTS (SELECT 1 FROM meals gate_m
+     WHERE gate_m.event_id = incident_floor_queue.event_id
+       AND gate_m.synced = 0 AND gate_m.sync_error IS NULL)`;
+}
+
+/** The re-check drain's queue read, exported so `syncQueue.visitLink.test.ts` replays the
+ *  shipped statement rather than a copy of it. */
+export function incidentFloorPushQueueSql(): string {
+  return `SELECT id, pet_id, event_id, device_claim FROM incident_floor_queue
+        WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+          AND ${floorTriggerLandedSql()}
+        ORDER BY created_at ASC, rowid ASC LIMIT 50`;
+}
+
+/** The HTTP status a supabase-js Functions error carries (`FunctionsHttpError.context` is
+ *  the Response), read structurally like `lib/account.ts` does. Null on a transport or
+ *  relay error, which carries no Response. */
+export function functionsErrorStatus(error: unknown): number | null {
+  if (error && typeof error === 'object' && 'context' in error) {
+    const context = (error as { context?: unknown }).context;
+    if (context && typeof context === 'object' && 'status' in context) {
+      const status = (context as { status?: unknown }).status;
+      if (typeof status === 'number' && Number.isFinite(status)) return status;
+    }
+  }
+  return null;
+}
+
+/**
+ * A re-check that `analyze-vomit` refused or never received (Engines v3 PR-28b). The same
+ * safety line as the two classifiers above: a failure the server never produced (no
+ * status: offline, a dropped socket) costs nothing. A status the condition will clear on
+ * its own (401/403 an auth race, 408, 429, a 502/503/504 at the edge) costs nothing
+ * either. Anything else the function answered against THIS request (400, a 404 for a
+ * trigger it cannot see, a 409, its own 500 "Re-floor failed") spends an attempt, so a
+ * check the server can never answer parks after the budget rather than being re-sent
+ * every cycle for the life of the install. Nothing is terminal on one try: the request is
+ * one id, and a 404 can be a row that has not settled yet.
+ */
+export function classifyFloorCheckFailure(error: unknown): SyncFailureClass {
+  const status = functionsErrorStatus(error);
+  if (status === null) return 'transient';
+  if (status === 401 || status === 403 || status === 408 || status === 429) return 'transient';
+  if (status === 502 || status === 503 || status === 504) return 'transient';
+  return 'rejected';
+}
+
+export function formatFloorCheckError(error: unknown): string {
+  const status = functionsErrorStatus(error);
+  const message = error instanceof Error ? error.message : String((error as { message?: unknown })?.message ?? error);
+  return `refloor${status !== null ? `-${status}` : ''}: ${message}`;
 }
 
 // Table names are compile-time literals from SYNC_QUEUES, never caller data —

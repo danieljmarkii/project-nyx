@@ -10,6 +10,7 @@ import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { updateEvent, getEventSource } from '../../lib/db';
+import { writeOwingFloorCheck } from '../../lib/incidentFloorQueue';
 import { syncPendingEvents } from '../../lib/sync';
 import {
   summarizeLoggedRecord, canChangeTime, resolveNamedTimeEdit, applyNamedTimeEdit,
@@ -19,6 +20,8 @@ import {
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { ThemedText } from './ThemedText';
 import { TimeEditSheet } from './TimeEditSheet';
+import { FloorRaiseLine } from './FloorRaiseLine';
+import { openRaisedRead } from './openRaisedRead';
 
 // Tab bar height from app/(tabs)/_layout.tsx — the card must clear it so it isn't
 // occluded when the owner lands back on a tabs screen after a log.
@@ -176,7 +179,7 @@ export function NamedCompletionCard() {
       // claim", applied to the point).
       const changed = edit.occurredAtIso !== payload.occurredAt;
       const source = sourceAfterPointEdit(await getEventSource(payload.eventId), changed);
-      await updateEvent(payload.eventId, {
+      await writeOwingFloorCheck(payload.eventId, () => updateEvent(payload.eventId, {
         occurred_at: edit.occurredAtIso,
         // `severity` and `notes` deliberately OMITTED. The /log flow writes an
         // owner-typed note on both of this card's paths, and this edit is about
@@ -190,7 +193,7 @@ export function NamedCompletionCard() {
         // discovery bound moves with the point. Everything else keeps its stored
         // claim, so a time correction can never promote a row to "seen".
         ...(edit.confidence ? { confidence: edit.confidence } : {}),
-      });
+      }));
       patchInToday(payload.eventId, {
         occurred_at: edit.occurredAtIso,
         ...(edit.confidence
@@ -309,6 +312,7 @@ export function NamedCompletionCard() {
   // and must run on every render (the rules of hooks). `named` is null for another
   // card's payload, so nothing here is computed for a payload this card never paints.
   const named = payload?.kind === 'named' ? payload : null;
+  const raisedId = named?.floorLine?.eventId ?? '';
   const sentence = named ? summarizeLoggedRecord(named.record, named.occurredAt) : '';
   // Name the RECORD's pet, not the active one, through the one shared lookup
   // (CUL-574). The write already landed on the right animal, but a
@@ -396,6 +400,17 @@ export function NamedCompletionCard() {
               <ThemedText style={styles.subLabel}>{`Saved to ${petName}’s record`}</ThemedText>
             </View>
           </View>
+
+          {/* Engines v3 PR-28b — a read this log raised to a call (§6 item 3). Above the
+              action row, its own control; the opening goes through the shared helper so
+              a card already over that record only steps aside. */}
+          {named?.floorLine ? (
+            <FloorRaiseLine
+              line={named.floorLine}
+              petName={petName}
+              onOpen={() => openRaisedRead(raisedId, pathnameRef.current, hide)}
+            />
+          ) : null}
 
           {/* The action row — Undo left of Change time (round-2 mock). The ROW is
               unconditional now because Undo is; only Change time is gated, and it

@@ -24,6 +24,7 @@ import {
   PARENT_GATED_QUEUES,
   VISIT_LINKED_TABLES,
   parentLandedSql,
+  incidentFloorPushQueueSql,
   visitLandedSql,
   type ParentGatedQueue,
   type VisitLinkedTable,
@@ -208,6 +209,7 @@ const CHILD_PUSH_QUEUE_SQL: Record<ParentGatedQueue, () => string> = {
   care_acknowledgements: () => shippedSelect('care_acknowledgements'),
   vet_calls: () => shippedSelect('vet_calls'),
   vet_call_follow_ups: () => shippedSelect('vet_call_follow_ups'),
+  incident_floor_queue: () => incidentFloorPushQueueSql(),
 };
 
 function pickedChildren(db: Db, child: ParentGatedQueue): string[] {

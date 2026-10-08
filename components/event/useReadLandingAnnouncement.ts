@@ -81,6 +81,7 @@ export function useReadLandingAnnouncement({
   awaitingRead,
   identity,
   version,
+  suppressed = false,
 }: {
   /** A read is being PRODUCED — the section's `working || status === 'pending'`, the same
    *  fact the arrival reads (never "the pending box is on screen", which is also true
@@ -95,8 +96,14 @@ export function useReadLandingAnnouncement({
   /** The row's change marker (`updated_at`), or null with no row. A wait that ends with it
    *  unmoved wrote nothing, and says nothing. */
   version: string | null;
+  /** Engines v3 PR-28b (CUL-1436, spec §8.7): this landing says nothing new, because the
+   *  phone already showed this read at this tier or louder. Read on the landing commit, so
+   *  it describes the row that landed. The edge still settles, silently. */
+  suppressed?: boolean;
 }): ReadLandingAnnouncer {
   const line = useRef<string | null>(null);
+  const suppressedNow = useRef(suppressed);
+  suppressedNow.current = suppressed;
   const note = useCallback((next: string | null) => {
     line.current = next;
   }, []);
@@ -181,7 +188,7 @@ export function useReadLandingAnnouncement({
       return;
     }
     seen.current = { identity, awaiting: false, waitVersion: version, armed: false, version };
-    if (line.current) AccessibilityInfo.announceForAccessibility(readLandedCopy(line.current));
+    if (line.current && !suppressedNow.current) AccessibilityInfo.announceForAccessibility(readLandedCopy(line.current));
   }, [awaitingRead, identity, version]);
 
   // THE EXPLICIT HALF (adversarial round 4, F1). A failed re-run marks the row pending and

@@ -76,6 +76,14 @@ jest.mock('./useReadLandingAnnouncement', () => {
   };
 });
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
+// Engines v3 PR-28b — EN-4's keys, the tier this phone already showed, and what the record
+// records as shown. Off and empty unless a test sets them.
+let mockFloorOn = false;
+jest.mock('../../hooks/useFloorOn', () => ({ useFloorOn: () => mockFloorOn }));
+let mockShownTier: 'call_now' | 'call_today' | null = null;
+jest.mock('../../hooks/useShownTier', () => ({ useShownTier: () => mockShownTier }));
+const mockRecordShown = jest.fn(async (_w: unknown) => undefined);
+jest.mock('../../lib/incidentTierShown', () => ({ recordShownTiers: (w: unknown) => mockRecordShown(w) }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { readObservationFold, setObservationFold } from '../../lib/observationFold';
@@ -1641,7 +1649,7 @@ describe('VomitAnalysisSection — the floor\'s words (CUL-1510)', () => {
     usePetStore.setState({
       pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
     });
-    mockFloorFacts = { anchor, vomits: [anchor], courses: ['prednisone'] };
+    mockFloorFacts = { anchor, vomits: [anchor], courses: ['prednisone'], vomitRows: [], lethargy: [] };
   });
   afterEach(() => {
     nowSpy.mockRestore();
@@ -1743,5 +1751,84 @@ describe('VomitAnalysisSection — the dated correction beside a stored read (CU
     const { findByText, queryByText } = render(<VomitAnalysisSection eventId="c3" petId="pet-1" petName="Nyx" hasPhoto />);
     expect(await findByText('AI note hidden')).toBeTruthy();
     expect(queryByText(/^(Corrected|From the meal log)/)).toBeNull();
+  });
+});
+
+// ── Engines v3 PR-28b (CUL-1436): the phone's own floor on the record (§8.5) ────────────
+describe('VomitAnalysisSection — the offline preview (PR-28b)', () => {
+  const VOMIT = new Date(2026, 9, 8, 13, 0);
+  const vomitRow = { id: 'p1', at: VOMIT.toISOString(), confidence: 'witnessed' };
+  const lethargy = [{ id: 'l1', at: new Date(2026, 9, 8, 9, 0).toISOString() }];
+  const anchor = { at: VOMIT.toISOString(), confidence: 'witnessed' };
+  let nowSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    nowSpy = jest.spyOn(Date, 'now').mockReturnValue(new Date(2026, 9, 8, 14, 0).getTime());
+    usePetStore.setState({
+      pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
+    });
+    mockFloorFacts = { anchor, vomits: [anchor], courses: [], vomitRows: [vomitRow], lethargy };
+    mockRecordShown.mockClear();
+  });
+  afterEach(() => {
+    nowSpy.mockRestore();
+    mockRow = null;
+    mockFloorFacts = null;
+    mockFloorOn = false;
+    mockShownTier = null;
+    usePetStore.setState({ pets: [] });
+  });
+
+  it('flag off: the same record (lethargy beside a photoless vomit) shows nothing new', async () => {
+    const view = render(<VomitAnalysisSection eventId="p1" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    await waitFor(() => expect(view.toJSON()).toBeNull());
+    expect(view.queryByText('Call your vet now')).toBeNull();
+    expect(mockRecordShown).not.toHaveBeenCalled();
+  });
+
+  it('flag on, no stored read yet: the call, where it came from, and no Hide', async () => {
+    mockFloorOn = true;
+    const view = render(<VomitAnalysisSection eventId="p1" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    await view.findByText('Call your vet now');
+    expect(view.getByText("Worked out on this phone. It's saved when Rex's record syncs.")).toBeTruthy();
+    expect(view.getByText("Call your vet now. If they're closed, call an emergency clinic.")).toBeTruthy();
+    expect(view.queryByText('Hide')).toBeNull();
+    expect(mockRecordShown).toHaveBeenCalledWith([{ eventId: 'p1', petId: 'pet-1', tier: 'call_now', source: 'device' }]);
+  });
+
+  it('flag on, a stored read as loud: the stored read, with no phone line', async () => {
+    mockFloorOn = true;
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_now', engine_flags: ['engines_v3_en3', 'engines_v3_en4'], contextual_flags: ['concurrent_lethargy'] });
+    const view = render(<VomitAnalysisSection eventId="p1" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    await view.findByText('Call your vet now');
+    expect(view.queryByText(/Worked out on this phone/)).toBeNull();
+    expect(mockRecordShown).toHaveBeenCalledWith([{ eventId: 'p1', petId: 'pet-1', tier: 'call_now', source: 'server' }]);
+  });
+
+  it('flag on, a stored read quieter than the phone’s floor: the preview stands over it', async () => {
+    mockFloorOn = true;
+    mockRow = row({ recommendation: 'monitor', tier: 'logged', engine_flags: ['engines_v3_en3', 'engines_v3_en4'], read_text: 'Foamy.' });
+    const view = render(<VomitAnalysisSection eventId="p1" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet now');
+    expect(view.queryByText('Keep an eye out')).toBeNull();
+  });
+
+  it('flag on, a stored call now marked pending (a Re-run) is never stood over by a quieter preview', async () => {
+    mockFloorOn = true;
+    // A dog with two vomits in 24 h: the phone's floor gives call today (T6), no lethargy.
+    const second = { id: 'p0', at: new Date(2026, 9, 8, 11, 0).toISOString(), confidence: 'witnessed' };
+    mockFloorFacts = { anchor, vomits: [anchor], courses: [], vomitRows: [second, vomitRow], lethargy: [] };
+    mockRow = row({ status: 'pending', recommendation: 'worth_a_call', tier: 'call_now', engine_flags: ['engines_v3_en3', 'engines_v3_en4'] });
+    const view = render(<VomitAnalysisSection eventId="p1" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(view.queryByText(/Worked out on this phone/)).toBeNull());
+    expect(view.queryByText('Call your vet today')).toBeNull();
+  });
+
+  it('flag on, nothing on the record meets a row: the phone says nothing calm', async () => {
+    mockFloorOn = true;
+    mockFloorFacts = { anchor, vomits: [anchor], courses: [], vomitRows: [vomitRow], lethargy: [] };
+    const view = render(<VomitAnalysisSection eventId="p1" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    await waitFor(() => expect(view.toJSON()).toBeNull());
+    expect(mockRecordShown).not.toHaveBeenCalled();
   });
 });

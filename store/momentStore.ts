@@ -8,6 +8,8 @@ import type { DoseAdherence } from '../components/log/AdherenceChipRow';
 import type { DoseVehicle, DoubleDoseResult } from '../lib/medications';
 import type { LogTimeTrialFlag } from '../lib/trialContaminant';
 import type { LoggedRecord } from '../lib/completionCard';
+import type { FloorAnnouncement } from '../lib/incidentFloorPreview';
+import { recordShownTiers } from '../lib/incidentTierShown';
 
 // The earned completion surface, played after a successful log on any path so
 // the fastest taps get the same closure as the full flow (B-063). One store
@@ -114,6 +116,12 @@ export interface NamedPayload {
   // Optional, and absent means the same as `false` — every path that cannot carry a
   // note simply omits it.
   hasNote?: boolean;
+  // Engines v3 PR-28b (CUL-1436; spec §6 item 3, §8.5) — a vomit read this log raised to a
+  // call: the log's own read (a vomit), or an earlier one in its bout (a lethargy log, a
+  // third vomit). Set at show time from the phone's preview, or patched in when the
+  // server's re-check lands (`patchFloorLine`). Absent means nothing to say, and is never
+  // an all-clear: the floor is raise-only and says nothing calm.
+  floorLine?: FloorAnnouncement | null;
 }
 
 export interface MealPayload {
@@ -153,6 +161,9 @@ export interface MealPayload {
   // render any negative form. Neither kind ever gates the log (Principle 1 — the
   // log stays one tap; the meal is already saved before this resolves).
   trialFlag?: LogTimeTrialFlag | null;
+  // Engines v3 PR-28b — a meal re-checks the vomits around it, and a raise the server
+  // finds is said here (NamedPayload's field, same meaning).
+  floorLine?: FloorAnnouncement | null;
 }
 
 export interface MedicationPayload {
@@ -254,6 +265,8 @@ export interface SheetBeatPayload {
   // branching (`undoGateCopy`).
   hasAttachment?: boolean;
   hasNote?: boolean;
+  // Engines v3 PR-28b — NamedPayload's field, for the sheet's own vomit and lethargy logs.
+  floorLine?: FloorAnnouncement | null;
 }
 
 export type MomentPayload =
@@ -364,6 +377,12 @@ interface MomentState {
   // spends rule 3's one-per-food budget on a heads-up actually rendered. Takes
   // either kind of the log-time union (contents or membership, B-693).
   patchTrialFlag: (eventId: string, flag: LogTimeTrialFlag) => boolean;
+  // Engines v3 PR-28b (CUL-1436) — land a raised read's sentence on the card of the log
+  // that raised it, when the server's re-check answers after the card appeared. The
+  // patchTrialFlag guards: the card for THIS event, visible, not undone. Holds the card
+  // for FLOOR_LINE_DWELL_MS (a floor on every later reschedule, like the double-dose
+  // note's). Returns whether it landed, so the caller records the tier as said only then.
+  patchFloorLine: (eventId: string, line: FloorAnnouncement) => boolean;
   // Mutates the in-flight MEDICATION card's adherence after a chip tap. Pair with
   // rescheduleHide() for a visible confirmation window. No-op on other payloads.
   patchAdherence: (adherence: DoseAdherence | null) => void;
@@ -461,6 +480,27 @@ export const SHEET_BEAT_DWELL_MS = 1800;
 // that flashes past in 5s. Same can't-forget reasoning that puts the meal card's
 // flagged duration in showMeal instead of its callers.
 export const MEDICATION_FLAGGED_DURATION_MS = 7000;
+// Engines v3 PR-28b — a card carrying a call it raised (the floor's line) holds at least
+// this long, on every presentation, as the double-dose note does: it is a call to a vet the
+// owner has not read yet. The sheet's beat included, whose 1.8s base would flash it past.
+export const FLOOR_LINE_DWELL_MS = 8000;
+
+/** A floor line is said once a card SHOWS it: record the bout's raised reads then, and only
+ *  then (spec §8.7). Fire-and-forget; `recordShownTiers` swallows its own failures. */
+function recordFloorLineShown(line: FloorAnnouncement | null | undefined): void {
+  if (!line) return;
+  void recordShownTiers(
+    line.raised.map((r) => ({ eventId: r.eventId, petId: line.petId, tier: r.tier, source: line.device ? 'device' : 'server' })),
+  );
+}
+
+const FLOOR_RANK = { call_today: 1, call_now: 2 } as const;
+
+function carriesFloorLine(payload: MomentPayload | null): boolean {
+  if (!payload) return false;
+  if (payload.kind === 'named' || payload.kind === 'sheetBeat' || payload.kind === 'meal') return Boolean(payload.floorLine);
+  return false;
+}
 // How long a fire-and-forget flag evaluation waits for the meal card to actually
 // appear before giving up (see whenMealCardVisible). Sized well above the picker
 // path's ~450ms reveal defer: a card that has not appeared by now was superseded
@@ -672,6 +712,7 @@ export type CornerResult = 'clear' | 'dismissed' | 'held';
  * hold a 7s floor against a shorter timer; this extends that floor to the FAB's tap.
  */
 function carriesSafetyNote(payload: MomentPayload): boolean {
+  if (carriesFloorLine(payload)) return true;
   if (payload.kind === 'medication') return Boolean(payload.doubleDose?.conflict);
   if (payload.kind === 'meal') return Boolean(payload.trialFlag);
   return false;
@@ -706,6 +747,8 @@ function present(
     // payload through the fade, so a second log arriving during that fade would
     // otherwise render its own confirmation under the word "Removed".
     set({ visible: true, payload, removed: false });
+    // Engines v3 PR-28b — a card revealed carrying a floor line has now said it.
+    if (payload.kind === 'named' || payload.kind === 'sheetBeat' || payload.kind === 'meal') recordFloorLineShown(payload.floorLine);
     // A new card is a new undo target, so the previous card's in-flight latch must
     // not gate it. (It also keeps the latch from leaking between tests, which a
     // bare module-level flag otherwise does.)
@@ -721,19 +764,19 @@ export const useMomentStore = create<MomentState>((set) => ({
   payload: null,
   removed: false,
   showNamed: (payload, opts) =>
-    present(set, { kind: 'named', ...payload }, opts, NAMED_DURATION_MS),
+    present(set, { kind: 'named', ...payload }, opts, payload.floorLine ? FLOOR_LINE_DWELL_MS : NAMED_DURATION_MS),
   showMeal: (payload, opts) =>
     present(
       set,
       { kind: 'meal', ...payload },
       opts,
-      payload.trialFlag ? MEAL_FLAGGED_DURATION_MS : MEAL_DURATION_MS,
+      payload.floorLine ? FLOOR_LINE_DWELL_MS : payload.trialFlag ? MEAL_FLAGGED_DURATION_MS : MEAL_DURATION_MS,
     ),
   showMedication: (payload, opts) =>
     present(set, { kind: 'medication', ...payload }, opts, MEDICATION_DURATION_MS),
   showLook: (payload, opts) => present(set, { kind: 'look', ...payload }, opts, LOOK_DWELL_MS),
   showSheetBeat: (payload, opts) =>
-    present(set, { kind: 'sheetBeat', ...payload }, opts, SHEET_BEAT_DWELL_MS),
+    present(set, { kind: 'sheetBeat', ...payload }, opts, payload.floorLine ? FLOOR_LINE_DWELL_MS : SHEET_BEAT_DWELL_MS),
   hide: () => {
     clearTimers();
     set({ visible: false });
@@ -874,6 +917,22 @@ export const useMomentStore = create<MomentState>((set) => ({
     set({ payload: { ...state.payload, trialFlag } });
     return true;
   },
+  patchFloorLine: (eventId, floorLine) => {
+    const state = useMomentStore.getState();
+    const p = state.payload;
+    if (!p || (p.kind !== 'named' && p.kind !== 'sheetBeat' && p.kind !== 'meal')) return false;
+    if (p.eventId !== eventId) return false;
+    // Not on a dismissing card (nobody would read it) nor an undone one: the log that
+    // raised the read is no longer in the record, and its re-check will lower nothing.
+    if (!state.visible || state.removed) return false;
+    // Never replace a louder call with a quieter one (the adversarial pass on PR-28b): a
+    // card already saying call now keeps it, and an equal call keeps the line it has.
+    if (p.floorLine && FLOOR_RANK[p.floorLine.tier] >= FLOOR_RANK[floorLine.tier]) return false;
+    set({ payload: { ...p, floorLine } });
+    recordFloorLineShown(floorLine);
+    useMomentStore.getState().rescheduleHide(FLOOR_LINE_DWELL_MS);
+    return true;
+  },
   patchAdherence: (adherence) => {
     const s = useMomentStore.getState();
     if (s.payload?.kind !== 'medication' || s.removed) return;
@@ -932,7 +991,9 @@ export const useMomentStore = create<MomentState>((set) => ({
     const floorMs =
       state.payload?.kind === 'medication' && state.payload.doubleDose?.conflict
         ? MEDICATION_FLAGGED_DURATION_MS
-        : 0;
+        : carriesFloorLine(state.payload)
+          ? FLOOR_LINE_DWELL_MS
+          : 0;
     const next = Math.max(durationMs, floorMs);
     // CUL-614 — while the dwell is PAUSED, bank the request instead of arming it.
     // Every chip handler calls rescheduleHide(CHIP_CONFIRM_HOLD_MS) from its onPress,

@@ -91,11 +91,21 @@ export type AppConfigKey = keyof AppConfigValues;
 // is read on the phone because nothing in EN-14 runs on the server. The same value shape and
 // the same fail-closed resolution, so the PM's allowlist step is one row. NOT SEEDED: absent
 // reads as off. PMD-12 (CUL-1313) keeps it to the PM's account until the published purpose.
+//
+// `engines_v3_en4` and `engines_v3_en3` (Engines v3 PR-28b, CUL-1436) are read on the phone
+// for EN-4's client half: the durable re-check marker on every vomit, lethargy and meal log,
+// and the floor's offline preview (lib/incidentFloorQueue.ts). The server resolves the same
+// two rows for the record's owner (`_shared/engineFlags.ts`) and runs the floor only when
+// BOTH are on, so the phone asks the same question (`floorOnNow`) and never queues a check
+// the server would refuse, nor previews a tier the server's rule cannot write. NOT SEEDED:
+// absent reads as off, and with either off the phone writes and draws nothing new.
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',
   'widget_enabled',
   'engines_v3_en14',
+  'engines_v3_en3',
+  'engines_v3_en4',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -112,6 +122,8 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   ask_general_enabled: undefined,
   widget_enabled: undefined,
   engines_v3_en14: undefined,
+  engines_v3_en3: undefined,
+  engines_v3_en4: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

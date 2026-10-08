@@ -29,6 +29,7 @@ import {
   resolveEmergencyDoor,
   type EmergencyRead,
 } from '../../lib/lookEmergency';
+import { useFloorOn } from '../../hooks/useFloorOn';
 
 interface Props {
   visible: boolean;
@@ -46,7 +47,9 @@ interface Props {
 
 export function LookEmergencySheet({ visible, species, petName, read, onClose }: Props) {
   const waiting = read.status === 'loading';
-  const door = resolveEmergencyDoor(species, read.status === 'ready' ? read.facts : null);
+  // Engines v3 PR-28b — "Subdued and vomiting" is call now only where the vomit read says so.
+  const floorOn = useFloorOn();
+  const door = resolveEmergencyDoor(species, read.status === 'ready' ? read.facts : null, floorOn);
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close" />
@@ -59,6 +62,13 @@ export function LookEmergencySheet({ visible, species, petName, read, onClose }:
               of these is a thing the app holds a row for, which is exactly why they are
               printed rather than offered as chips (§4.1 rule 9). */}
           <ThemedText style={styles.blockHeader}>{CALL_NOW_HEADER}</ThemedText>
+          {/* Engines v3 PR-28b — the one call-now row the record can settle (subdued and
+              vomiting, the floor's T3), collapsed the same way as the call-today rows. */}
+          {!waiting && door.nowImperative !== null && (
+            <ThemedText style={styles.imperative} testID="look-emergency-now-imperative">
+              {door.nowImperative}
+            </ThemedText>
+          )}
           {door.now.map((line) => (
             <View key={line} style={styles.row}>
               <ThemedText style={styles.bullet}>·</ThemedText>

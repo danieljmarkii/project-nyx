@@ -97,6 +97,7 @@ import { getEventPetId, softDeleteEvent } from './db';
 import { noteRemoval } from './removalNotice';
 import { triggerSignalRegenDebounced } from './signal';
 import { syncPendingEvents } from './sync';
+import { writeOwingFloorCheck } from './incidentFloorQueue';
 import { reconcileWeightSnapshotAfterDelete } from './weight';
 
 /**
@@ -121,7 +122,10 @@ export async function reverseLoggedEvent(
   eventId: string,
   opts?: { restoreWeightSnapshotToKg: number | null },
 ): Promise<void> {
-  await softDeleteEvent(eventId);
+  // Engines v3 PR-28b (CUL-1436, §8.3): deleting a vomit, lethargy or meal log re-checks
+  // the reads around it, and the marker shares the soft delete's transaction. The server's
+  // re-floor is raise-only, so the delete lowers nothing it showed (§8.8).
+  await writeOwingFloorCheck(eventId, () => softDeleteEvent(eventId));
   // HV-10 (CUL-1167) — the list the owner returns to folds this row away rather than
   // letting it vanish (History v2 §4). Noted only once the local write has landed: a
   // reversal that failed must never fold a row that is still in the record.

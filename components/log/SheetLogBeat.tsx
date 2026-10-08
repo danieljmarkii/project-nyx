@@ -9,6 +9,7 @@ import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement
 import { useMomentStore } from '../../store/momentStore';
 import { removedNoticeCopy, undoGateCopy, HITSLOP_ACTION_SOLO } from '../../lib/completionCard';
 import type { MomentTone } from '../../store/momentStore';
+import { FloorRaiseLine } from '../ui/FloorRaiseLine';
 
 // The completion beat that lands IN the sheet (B-745 PR 3). The root <CompletionMoment/>
 // can't be reused here: it's absoluteFill at the app root, so it renders UNDER the
@@ -101,9 +102,15 @@ interface Props {
    * the dismissal rather than being re-read from a store that has already moved on.
    */
   onDone: (removed: boolean) => void;
+  /**
+   * Engines v3 PR-28b (CUL-1436) — the door from the beat's floor line to the read it
+   * names. The HOST owns it, because only the host can close the sheet before the push
+   * (CUL-662: a pushed screen renders behind the sheet's Modal).
+   */
+  onOpenRaisedRead: (eventId: string) => void;
 }
 
-export function SheetLogBeat({ tone, title, petName, eventId, onDone }: Props) {
+export function SheetLogBeat({ tone, title, petName, eventId, onDone, onOpenRaisedRead }: Props) {
   const reduced = useReducedMotion();
   const celebrate = tone === 'celebrate';
 
@@ -122,6 +129,7 @@ export function SheetLogBeat({ tone, title, petName, eventId, onDone }: Props) {
     payload?.kind === 'sheetBeat' && payload.eventId === eventId ? payload : null;
   const mine = minePayload !== null;
   const removed = mine && storeRemoved;
+  const floorLine = !removed ? minePayload?.floorLine ?? null : null;
 
   const checkScale = useRef(new Animated.Value(reduced ? 1 : 0.6)).current;
   const surfaceOpacity = useRef(new Animated.Value(reduced ? 1 : 0)).current;
@@ -316,6 +324,16 @@ export function SheetLogBeat({ tone, title, petName, eventId, onDone }: Props) {
           {notice ? notice.detail : `Saved to ${petName}’s record`}
         </ThemedText>
       </View>
+      {/* Engines v3 PR-28b — a read this log raised to a call (§6 item 3), between the
+          sentence and Undo. The wrap's 16pt gap clears Undo's 12pt reach (C-5). */}
+      {floorLine ? (
+        <FloorRaiseLine
+          line={floorLine}
+          petName={petName}
+          ground="light"
+          onOpen={() => onOpenRaisedRead(floorLine.eventId)}
+        />
+      ) : null}
       {/* Undo renders UNCONDITIONALLY while the row is still there — the R1 rule,
           inherited rather than restated: the records with no other in-place way back
           are exactly the ones a conditional affordance would drop. Once removed it is
