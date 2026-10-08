@@ -623,7 +623,8 @@ export function MealCompletionCard() {
     <>
       <Animated.View
         pointerEvents={shown ? 'box-none' : 'none'}
-        style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
+        // In place while the mark flies (CUL-1643), whatever the value last held.
+        style={[styles.wrapper, { opacity, transform: [{ translateY: arriving ? 0 : translateY }] }]}
       >
         {/* CUL-614 / §5 "Dwell" — the auto-dismiss stops while a finger is on the card
             and any interaction resets it. Wired at the ROOT because touch events bubble
@@ -678,7 +679,9 @@ export function MealCompletionCard() {
                 style={[
                   styles.checkBadge,
                   !decline && styles.checkBadgeCelebrate,
-                  { opacity: markOpacity, transform: [{ scale: checkScale }] },
+                  // Held at 0 by the render while the mark flies, so no frame
+                  // can draw the check under its own clone; the landing fades it up.
+                  { opacity: arriving ? 0 : markOpacity, transform: [{ scale: checkScale }] },
                 ]}
               >
                 <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
@@ -688,7 +691,7 @@ export function MealCompletionCard() {
                 announcement, not two orphan lines. The headline's fallback rule lives
                 with `headline` above. */}
             <Animated.View
-              style={[styles.labelCol, { opacity: labelOpacity }]}
+              style={[styles.labelCol, { opacity: arriving ? 0 : labelOpacity }]}
               accessible
               accessibilityRole="summary"
               accessibilityLiveRegion="polite"

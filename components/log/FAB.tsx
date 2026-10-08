@@ -482,6 +482,11 @@ export function FAB() {
       slots.forEach((v) => v.setValue(0));
       chosenExit.setValue(1);
     };
+    // A tap that beats the open's own spring: the retract stops the open's stagger as a
+    // whole, so the chosen pill is carried to rest here rather than frozen mid-fan.
+    const chosenRest = chosenSlot === null ? [] : [
+      Animated.spring(slots[chosenSlot], { toValue: 1, useNativeDriver: true, ...FAN_SPRING }),
+    ];
     const chosenOut = chosenSlot === null ? [] : [Animated.sequence([
       Animated.delay(CHOSEN_HOLD_MS),
       Animated.timing(chosenExit, { toValue: 0, duration: CHOSEN_FADE_MS, useNativeDriver: true }),
@@ -489,6 +494,7 @@ export function FAB() {
     const veilOut = (duration: number) =>
       (keepVeil ? [] : [Animated.timing(veil, { toValue: 0, duration, useNativeDriver: true })]);
     if (reducedMotionNow()) {
+      if (chosenSlot !== null) slots[chosenSlot].setValue(1);
       Animated.parallel([
         Animated.timing(fade, { toValue: 0, duration: FADE_MS, useNativeDriver: true }),
         ...veilOut(FADE_MS),
@@ -504,6 +510,7 @@ export function FAB() {
       Animated.timing(turn, { toValue: 0, duration: CLOSE_MS, useNativeDriver: true }),
       Animated.timing(fade, { toValue: 0, duration: CLOSE_MS, useNativeDriver: true }),
       ...veilOut(CLOSE_MS),
+      ...chosenRest,
       ...chosenOut,
       // Reverse order: the farthest pill retracts first. The chosen one stays.
       Animated.stagger(
