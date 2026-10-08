@@ -15,11 +15,13 @@ import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { useUiStore } from '../../store/uiStore';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { useTodayKey } from '../../hooks/useTodayKey';
 import { openMenu as openMenuHaptic } from '../../lib/haptics';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore } from '../../store/momentStore';
 import { getRecentFoods, PickerFood } from '../../lib/db';
+import { fabFoodDay } from '../../lib/fabRecentFoods';
 import { insertMeal } from '../../lib/meals';
 import { applyMealTrialFlag } from '../../lib/mealTrialFlag';
 import { noPetToLogForCopy } from '../../lib/logCopy';
@@ -317,6 +319,19 @@ export function FAB() {
   // newest row of today.
   const activePetId = activePet?.id ?? null;
   const todayHeadId = useEventStore((s) => s.todayEvents[0]?.id ?? null);
+  // CUL-1647 — the read is bounded to the day: meals in the window before today's local
+  // midnight, never today's, so a re-read on any trigger here returns the same order
+  // all day and a log never moves a pill. Re-reading rather than freezing the list keeps
+  // the record's corrections: a meal deleted or a food archived since midnight leaves the
+  // fan the same day instead of staying one tap from a log until tomorrow (PM go,
+  // 2026-10-08).
+  //
+  // The day turns over while the menu is CLOSED, so the new order is never a read that
+  // lands under the thumb: `useTodayKey` changes at local midnight and on the return to
+  // the foreground, and the effect below re-reads on it unless the menu is open. A menu
+  // held open across midnight keeps its rows and re-reads on its close, like every other
+  // change.
+  const todayKey = useTodayKey();
   const latestPetId = useRef(activePetId);
   latestPetId.current = activePetId;
   const openNow = useRef(open);
@@ -332,9 +347,9 @@ export function FAB() {
     // with the picker (single source of truth), which orders by the pet's real
     // MAX(occurred_at) — not food_items_cache.last_used_at, which is shared across
     // pets and was reset to NULL on every sync, so the old query returned an
-    // effectively random 3. `null` window = no time bound (re-offer staples of
-    // any age). Async, so the answer is checked against the pet it was read for.
-    getRecentFoods(activePetId, null, 3)
+    // effectively random 3. No rolling window (`null`): the day's bounds are the
+    // window. Async, so the answer is checked against the pet it was read for.
+    getRecentFoods(activePetId, null, 3, fabFoodDay(Date.now()))
       .then((foods) => {
         if (latestPetId.current !== activePetId) return;
         if (openNow.current && heldFor.current === activePetId) return;
@@ -344,7 +359,7 @@ export function FAB() {
       .finally(() => {
         if (readingFor.current === activePetId) readingFor.current = null;
       });
-  }, [open, activePetId, todayHeadId]);
+  }, [open, activePetId, todayHeadId, todayKey]);
 
   // Derived in the render body rather than mirrored into state (the C-9 shape): the
   // list is only ever this pet's, or nothing. A pet flip inside the open menu shows
