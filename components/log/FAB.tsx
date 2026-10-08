@@ -212,6 +212,7 @@ export function FAB() {
   const frame = useWindowDimensions();
   const safeTop = useContext(SafeAreaInsetsContext)?.top ?? 0;
   const fanScroll = useRef<ScrollView>(null);
+  const fanSnapped = useRef(false);
 
   const openMenu = useCallback(() => {
     // Light impact on OPEN only — closing the menu commits to nothing and stays silent.
@@ -502,22 +503,32 @@ export function FAB() {
 
   // CUL-1636 — planned from the window before anything is drawn (lib/fanBudget.ts): the
   // oldest foods leave first when the fan would stand taller than the screen, and the
-  // chip is never the row that goes. Each food enters with the label it is drawn with.
+  // chip is never the row that goes. Each food's label and tag are computed ONCE and
+  // read by both the plan and the pill, so what is budgeted is what is drawn. With no
+  // pet only the no-pet card renders, so nothing is planned for doors it never draws.
+  const foodText = new Map(
+    (foodsForActivePet ?? []).map((food) => [food.id, {
+      label: rowFoodLabelOf({ brand: food.brand, product: food.product_name, format: food.format }) ?? 'Food',
+      tag: foodFormatTag(food.format),
+    }]),
+  );
   const fanPlan = planFan({
     windowWidth: frame.width,
     windowHeight: frame.height,
     fontScale: frame.fontScale,
     safeTop,
     chipName: activePet && pets.length > 1 ? activePet.name : null,
-    doors: DOOR_LABELS,
-    foods: (foodsForActivePet ?? []).map((food) => ({
-      id: food.id,
-      label: rowFoodLabelOf({ brand: food.brand, product: food.product_name, format: food.format }) ?? 'Food',
-      tag: foodFormatTag(food.format),
-    })),
+    doors: activePet ? DOOR_LABELS : [],
+    foods: [...foodText].map(([id, text]) => ({ id, ...text })),
   });
+  // The two values the plan decides at render, as the style entries the pills and the
+  // scroll take (a window-derived number has no token to live in).
   const pillWidth = { maxWidth: fanPlan.pillMaxWidth };
+  const scrollCap = { maxHeight: fanPlan.scrollMaxHeight ?? undefined };
   const foodLines = new Map(fanPlan.foods.map((f) => [f.id, f.numberOfLines]));
+  // The scroll opens at its bottom once per open; a later size change (a food's spinner)
+  // never yanks an owner who has scrolled up back down.
+  if (!open) fanSnapped.current = false;
 
   // ── THE MENU BODY, GATED ON THERE BEING A PET (CUL-717) ─────────────────────────
   // None of the action pills render without an active pet, so there is no pill to tap
@@ -688,9 +699,7 @@ export function FAB() {
       // with its format as its own tag. The tag is a sibling that holds its width, never
       // text appended to the label that wraps, so wet and dry of one line never read
       // alike (the foodFormat.ts header's rule). The spoken label carries both halves.
-      const formatTag = foodFormatTag(food.format);
-      const foodLabel =
-        rowFoodLabelOf({ brand: food.brand, product: food.product_name, format: food.format }) ?? 'Food';
+      const { label: foodLabel, tag: formatTag } = foodText.get(food.id)!;
       rows.push({
         key: `food-${food.id}`,
         node: (
@@ -782,7 +791,7 @@ export function FAB() {
         <View style={styles.fabContainer} pointerEvents="box-none">
           {open && (
             <View style={styles.fan} pointerEvents="box-none">
-              {fanPlan.scroll ? (
+              {fanPlan.scroll && activePet ? (
                 // CUL-1636, the budget's last step: even with no food the doors stand
                 // taller than the screen (AX2 and up on a small phone). The chip stays
                 // pinned on top, and the doors scroll beneath it, opened at the bottom so
@@ -792,12 +801,16 @@ export function FAB() {
                   <ScrollView
                     ref={fanScroll}
                     testID="fab-fan-scroll"
-                    style={{ maxHeight: fanPlan.scrollMaxHeight ?? undefined }}
+                    style={scrollCap}
                     contentContainerStyle={styles.fanScrollContent}
                     showsVerticalScrollIndicator
                     // A snap to the bottom on layout, never an animated scroll: it is where
                     // the column opens, not motion the owner sees.
-                    onContentSizeChange={() => fanScroll.current?.scrollToEnd({ animated: false })}
+                    onContentSizeChange={() => {
+                      if (fanSnapped.current) return;
+                      fanSnapped.current = true;
+                      fanScroll.current?.scrollToEnd({ animated: false });
+                    }}
                   >
                     {rows.map((row, i) => (row.key === 'log-for' ? null : slotFor(row, i)))}
                   </ScrollView>
@@ -915,9 +928,15 @@ const styles = StyleSheet.create({
     gap: FAN_GAP,
     marginBottom: FAN_MARGIN_BOTTOM,
   },
+  // A scroll view clips its children, so the content keeps room for the pills' shadow
+  // above, below and to the left (the right edge stays flush with the chip and the disc).
+  // The open's slide in from the disc's corner is clipped at the right edge here, for the
+  // ~300ms it runs: the device check at AX2 / AX3 on an SE is where that is judged.
   fanScrollContent: {
     alignItems: 'flex-end',
     gap: FAN_GAP,
+    paddingVertical: theme.space1,
+    paddingLeft: theme.space1,
   },
   fanSlot: {
     // Pills grow out of the disc's corner (beat 4), so they scale about theirs.

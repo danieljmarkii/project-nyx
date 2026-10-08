@@ -940,6 +940,7 @@ describe('FAB — CUL-1634, the recent foods are read before the fan runs', () =
 // 320pt screen, and when even the doors overflow the chip stays outside the scroll.
 describe('FAB — CUL-1636, the fan fits at large text sizes and never cuts the pet chip', () => {
   const RN = require('react-native');
+  const { FAN_RIGHT_INSET, FAN_LEFT_MARGIN } = require('../../lib/fanBudget');
   /** RN's fontScale per iOS content size. */
   const AX = { default: 1, AX1: 1.786, AX2: 2.143, AX3: 2.643 } as const;
   const THREE = [
@@ -985,34 +986,52 @@ describe('FAB — CUL-1636, the fan fits at large text sizes and never cuts the 
       .filter((w: unknown) => w !== undefined);
     // Every pill but the disc carries the cap: the chip, four doors, two foods.
     expect(widths).toHaveLength(7);
-    for (const w of widths) expect(w).toBe(320 - 24 - 16);
+    for (const w of widths) expect(w).toBe(320 - FAN_RIGHT_INSET - FAN_LEFT_MARGIN);
   });
 
-  it.each([['AX1', AX.AX1], ['AX2', AX.AX2], ['AX3', AX.AX3]] as const)(
-    'an iPhone SE at %s: the chip is drawn and every door is reachable',
-    async (_name, scale) => {
-      windowOf(375, 667, scale);
-      getRecentFoods.mockResolvedValueOnce(THREE);
-      const view = await openMenu();
-      const chip = view.getByLabelText('Logging for Nyx — switch pet');
-      for (const door of ['More events', 'Loose stool', 'Vomit', 'Log food']) expect(view.getByText(door)).toBeTruthy();
-      const scroll = view.queryByTestId('fab-fan-scroll');
-      if (scroll) {
-        // The doors scroll; the chip is pinned outside the scroll, so it never leaves.
-        expect(scroll.findAll((n: TreeNode) => n === chip)).toHaveLength(0);
-        expect(foodLabels(view)).toEqual([]);
-        expect(StyleSheet.flatten(scroll.props.style).maxHeight).toBeGreaterThan(0);
-        expect(() => fireEvent(scroll, 'contentSizeChange', 300, 900)).not.toThrow();
-      } else {
-        expect(foodLabels(view).length).toBeLessThan(3);
-      }
-    },
-  );
-
-  it('the SE at AX3 is the scroll case, so the branch above is exercised', async () => {
-    windowOf(375, 667, AX.AX3);
+  // The SE (375×667, no safe area in the test host) at each AX size: what the plan
+  // decides, stated per size so no branch can pass for the other.
+  it.each([
+    ['AX1', AX.AX1, { scroll: false, maxFoods: 2 }],
+    ['AX2', AX.AX2, { scroll: false, maxFoods: 0 }],
+    ['AX3', AX.AX3, { scroll: true, maxFoods: 0 }],
+  ] as const)('an iPhone SE at %s: the chip leads and every door is drawn', async (_name, scale, want) => {
+    windowOf(375, 667, scale);
+    getRecentFoods.mockResolvedValueOnce(THREE);
     const view = await openMenu();
-    expect(view.getByTestId('fab-fan-scroll')).toBeTruthy();
+    expect(view.getByLabelText('Logging for Nyx — switch pet')).toBeTruthy();
+    // The chip first, then the four doors in order: nothing is cut and nothing moved.
+    expect(fanLabels(view).slice(0, 7)).toEqual(['N', 'Logging for', 'Nyx', 'More events', 'Loose stool', 'Vomit', 'Log food']);
+    expect(foodLabels(view).length).toBeLessThanOrEqual(want.maxFoods);
+    expect(view.queryByTestId('fab-fan-scroll') !== null).toBe(want.scroll);
+  });
+
+  it('the SE at AX3: the chip is pinned outside the scroll, which opens at its bottom once', async () => {
+    windowOf(375, 667, AX.AX3);
+    getRecentFoods.mockResolvedValueOnce(THREE);
+    const view = await openMenu();
+    const chip = view.getByLabelText('Logging for Nyx — switch pet');
+    const scroll = view.getByTestId('fab-fan-scroll');
+    expect(scroll.findAll((n: TreeNode) => n === chip)).toHaveLength(0);
+    for (const door of ['More events', 'Loose stool', 'Vomit', 'Log food']) {
+      expect(scroll.findAll((n: TreeNode) => n === view.getByText(door))).toHaveLength(1);
+    }
+    expect(StyleSheet.flatten(scroll.props.style).maxHeight).toBeGreaterThan(0);
+    const instance = view.UNSAFE_getByType(RN.ScrollView).instance;
+    const toEnd = jest.spyOn(instance, 'scrollToEnd').mockImplementation(() => {});
+    fireEvent(scroll, 'contentSizeChange', 300, 900);
+    fireEvent(scroll, 'contentSizeChange', 300, 960);
+    // A snap, not motion (the programmatic-scroll rule), and only on the open.
+    expect(toEnd).toHaveBeenCalledTimes(1);
+    expect(toEnd).toHaveBeenCalledWith({ animated: false });
+  });
+
+  it('with no pet only the no-pet card is drawn, and never inside a scroll', async () => {
+    windowOf(320, 568, AX.AX3);
+    usePetStore.setState({ pets: [] as never, activePet: null });
+    const view = await openMenu();
+    expect(view.queryByTestId('fab-fan-scroll')).toBeNull();
+    expect(view.queryByText('More events')).toBeNull();
   });
 
   it('two foods that would truncate to the same words under one tag wrap in full', async () => {
