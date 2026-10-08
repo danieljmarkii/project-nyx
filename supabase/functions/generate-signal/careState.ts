@@ -39,9 +39,10 @@
 // its concern cards, but the replay cannot see the cough/vomit pair (it reads the lane as it
 // stands now) or an answer whose reference left the read; those hold only while a prior row
 // carries them. A re-raise from before the concern left the set and came back within one course
-// is rebuilt too (louder). The D4 lapse list still lives only in the cache row: an unreadable
-// prior row lapses nothing (CUL-1663). The replay reads a trial's or course's end date, status and
-// newest dose as they stand TODAY, not as they stood on each past evening: a newer course that
+// is rebuilt too (louder). The D4 lapse list lives in the cache row; a prior row the shell could
+// not read lapses every answer written before the run (CUL-1663, ruled expire: the owner answers
+// once more). The replay reads a trial's or course's end date, status and newest dose as they
+// stand TODAY, not as they stood on each past evening: a newer course that
 // lapsed over a dosing gap of more than 14 days and was dosed again reads as covering the gap, and
 // an end that synced late reads as on time. Both are quieter only with no prior row (the cache's
 // marker covers them otherwise), and the second matches the record as corrected.
@@ -211,6 +212,9 @@ export interface CareStateArgs {
   priorFindings: unknown
   /** When the previous row was generated, or null. */
   priorGeneratedAtMs: number | null
+  /** The shell asked for the previous row and the read failed (CUL-1663). Not "no row": a pet
+   *  with no row yet has nothing to lapse. Absent means false. */
+  priorReadFailed?: boolean
   /** Whether `sign`'s chronicity lane fired over the record as it stood at `ms` (the pipeline
    *  runs detection over the events up to then). Absent in unit tests: the pair falls back to
    *  the other sign's first onset. */
@@ -1086,6 +1090,14 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     if (priorSigns !== null && priorGen !== null && (!priorSigns.has(sign) || !prior.has(sign))) {
       for (const a of args.record.acknowledgements) {
         if (a.sign === sign && Date.parse(a.createdAt) < priorGen) lapsed.add(a.id)
+      }
+    }
+    // A previous row the shell could not read (CUL-1663, ruled expire 2026-10-08) is the same
+    // unknown with no generation time to bound it: every answer written before this run lapses,
+    // and the owner answers once more. Louder by construction; the lapse is carried like any other.
+    if (args.priorReadFailed === true) {
+      for (const a of args.record.acknowledgements) {
+        if (a.sign === sign && Date.parse(a.createdAt) < args.nowMs) lapsed.add(a.id)
       }
     }
     const lapsedList = [...lapsed].sort()

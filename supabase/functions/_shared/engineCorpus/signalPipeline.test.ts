@@ -84,9 +84,10 @@ const run = (
   en11Config: DetectionConfig = EN11_CONFIG,
   careStep: CareStateStep = EN9_CARE_STATE_STEP,
   weightFacts: WeightLaneInput | null = null,
+  priorReadFailed = false,
 ) =>
   runSignalPipeline(
-    { rows: c.rows, incompletePulls, prior: c.prior, nowMs: Date.parse(c.nowIso), engineFlags, careRecord, careContextFacts, weightFacts },
+    { rows: c.rows, incompletePulls, prior: c.prior, priorReadFailed, nowMs: Date.parse(c.nowIso), engineFlags, careRecord, careContextFacts, weightFacts },
     step,
     en11Config,
     careStep,
@@ -404,6 +405,50 @@ Deno.test('(c-en9) CUL-1538: the summary says what a watched card says, and stil
   assertStrictEquals(watched >= 3 && asking >= 3, true, `only ${watched} watched and ${asking} asking cards: the property checks too little`)
 })
 
+Deno.test('(c-en9) CUL-1663: an unreadable prior row lapses every answer written before the run; flag off, nothing moves', () => {
+  // The shell's prior read failed, so `prior` is null and the pipeline is told so. Under the key,
+  // every concern answered yesterday asks again with its answer on the lapse list (continuity
+  // unknown is broken, ruled expire 2026-10-08). The same answers with no failed read stand.
+  const ON: EngineFlags = { on: [EN9], readOk: true }
+  let lapsed = 0
+  for (const c0 of SIGNAL_PIPELINE_CORPUS) {
+    const c = { ...c0, prior: null }
+    const signs = [...new Set(run(c, OFF).findings.map((r) => concernSignOf(r.finding)).filter((s): s is NonNullable<typeof s> => s !== null))]
+    const nowMs = Date.parse(c.nowIso)
+    const record: CareRecord = {
+      ...EMPTY_CARE_RECORD,
+      acknowledgements: signs.map((sign, i) => ({
+        id: `ack-${i}`, sign, source: 'my_vet_knows' as const, anchorOn: new Date(nowMs - 86_400_000).toISOString().slice(0, 10),
+        createdAt: new Date(nowMs - 86_400_000).toISOString(), retracts: null, trial: null, course: null,
+      })),
+    }
+    const failed = run(c, ON, record, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, EN9_CARE_STATE_STEP, null, true)
+    const read = run(c, ON, record, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, EN9_CARE_STATE_STEP, null, false)
+    read.findings.forEach((r, i) => {
+      const sign = concernSignOf(r.finding)
+      if (sign === null) {
+        assertEquals(failed.findings[i], r, `${c.name}: a ${r.finding.type} that is not a concern moved`)
+        return
+      }
+      const before = careStateOf(r.finding)
+      const after = careStateOf(failed.findings[i].finding)
+      if (before?.state !== 'with_vet') return
+      lapsed++
+      assertStrictEquals(after?.state, 'raised', `${c.name}: an answer survived a failed read`)
+      assertEquals(after?.lapsed, [`ack-${signs.indexOf(sign)}`], `${c.name}: the lapse is not on the row, so the next run would revive it`)
+    })
+    // Flag off: the failed read changes nothing at all.
+    for (const [label, flags] of EN9_OFF_STATES) {
+      assertEquals(
+        run(c, flags, record, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, EN9_CARE_STATE_STEP, null, true),
+        run(c, flags, record, [], POPULATED_CARE_CONTEXT_FACTS, EN10_CONTEXT_STEP, EN11_CONFIG, EN9_CARE_STATE_STEP, null, false),
+        `${c.name}: ${label}`,
+      )
+    }
+  }
+  assertStrictEquals(lapsed >= 3, true, `only ${lapsed} watched concerns: the test checks too little`)
+})
+
 Deno.test('(c-en9) D1: a card carried over an incomplete read never carries a care state', () => {
   // A prior row whose safety cards all carry a planted with_vet: over an incomplete read the
   // carried cards come back without it, so nothing an old or owner-written row says can quiet them.
@@ -416,7 +461,7 @@ Deno.test('(c-en9) D1: a card carried over an incomplete read never carries a ca
       generatedAt: new Date(Date.parse(c.nowIso) - 3_600_000).toISOString(),
       engineFlags: [],
     }
-    const r = runSignalPipeline({ rows: { ...c.rows, symptoms: [] }, incompletePulls: ['symptoms'], prior: planted, nowMs: Date.parse(c.nowIso), engineFlags: { on: [EN9], readOk: true }, careRecord: EMPTY_CARE_RECORD, careContextFacts: POPULATED_CARE_CONTEXT_FACTS, weightFacts: null })
+    const r = runSignalPipeline({ rows: { ...c.rows, symptoms: [] }, incompletePulls: ['symptoms'], prior: planted, priorReadFailed: false, nowMs: Date.parse(c.nowIso), engineFlags: { on: [EN9], readOk: true }, careRecord: EMPTY_CARE_RECORD, careContextFacts: POPULATED_CARE_CONTEXT_FACTS, weightFacts: null })
     for (const e of r.carried) {
       carried++
       assertStrictEquals('careState' in (e.finding as object), false, `${c.name}: ${e.finding.type} carried a care state`)
@@ -441,7 +486,7 @@ Deno.test('(c-en9) CUL-1600: a run that skips the step keeps the prior marker on
       engineFlags: [],
     }
     const go = (rows: typeof c.rows, flags: EngineFlags['on'], incomplete: string[]) =>
-      runSignalPipeline({ rows, incompletePulls: incomplete, prior: planted, nowMs: Date.parse(c.nowIso), engineFlags: { on: flags, readOk: true }, careRecord: EMPTY_CARE_RECORD, careContextFacts: POPULATED_CARE_CONTEXT_FACTS, weightFacts: null })
+      runSignalPipeline({ rows, incompletePulls: incomplete, prior: planted, priorReadFailed: false, nowMs: Date.parse(c.nowIso), engineFlags: { on: flags, readOk: true }, careRecord: EMPTY_CARE_RECORD, careContextFacts: POPULATED_CARE_CONTEXT_FACTS, weightFacts: null })
     for (const rows of [c.rows, { ...c.rows, symptoms: [] }]) {
       const r = go(rows, [EN9], ['meals'])
       for (const f of [...r.findings.map((x) => x.finding), ...r.carried.map((x) => x.finding)]) {
@@ -562,6 +607,7 @@ Deno.test('(f) a throw while resolving the stand-down costs the marker, never th
     rows: golden.rows,
     incompletePulls: [],
     prior: exploding,
+    priorReadFailed: false,
     nowMs: Date.parse(golden.nowIso),
     engineFlags: OFF,
     careRecord: EMPTY_CARE_RECORD,
