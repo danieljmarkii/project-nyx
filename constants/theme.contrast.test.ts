@@ -23,6 +23,7 @@
 // restatement of the others.
 
 import { theme } from './theme';
+import { CATEGORY_TINT } from '../components/log/EventTypePicker';
 
 /** WCAG 2.1 relative luminance of an #rrggbb colour (sRGB, linearized). */
 function relativeLuminance(hex: string): number {
@@ -274,5 +275,31 @@ describe('CUL-1224 — the day mark at the accessibility floor', () => {
     expect(contrastRatio(theme.colorEventMedication, theme.colorEventSymptom)).toBeLessThan(1.5);
     expect(contrastRatio(theme.colorEventSymptomInk, theme.colorEventSymptom)).toBeLessThan(3);
     expect(contrastRatio(theme.colorTextOnDark, theme.colorEventSymptom)).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// ── The log sheet's tinted tile circles (CUL-1637) ────────────────────────────────────
+// Each picker tile draws a category glyph on a pale wash: a NON-TEXT pair, so the floor
+// is 3:1. The meal tile shipped the bright teal on the mint wash at 2.08:1. This walks
+// the real map rather than restating its tokens, so a new tile, or a revert to the
+// bright tint, is measured here the moment it lands.
+describe('CUL-1637 — every picker tile glyph clears 3:1 on its circle', () => {
+  const NON_TEXT = 3;
+
+  it.each(Object.entries(CATEGORY_TINT))('%s', (_type, { fg, bg }) => {
+    expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+
+  it('the meal glyph is the accent glyph, and the bright meal tint it replaced fails on the wash', () => {
+    expect(CATEGORY_TINT.meal.fg).toBe(theme.colorAccentGlyph);
+    expect(contrastRatio(theme.colorEventMeal, theme.colorEventMealLight)).toBeLessThan(NON_TEXT);
+  });
+
+  it('records the measured ratios', () => {
+    expect(contrastRatio(theme.colorAccentGlyph, theme.colorEventMealLight)).toBeCloseTo(3.01, 2);
+    expect(contrastRatio(theme.colorEventMeal, theme.colorEventMealLight)).toBeCloseTo(2.08, 2);
+    // The thinnest of the rest: rose on its own wash. Recorded so a token nudge that
+    // drops it under the floor is a visible diff, not a surprise.
+    expect(contrastRatio(theme.colorEventSymptom, theme.colorEventSymptomLight)).toBeCloseTo(3.06, 2);
   });
 });
