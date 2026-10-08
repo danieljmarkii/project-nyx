@@ -353,11 +353,6 @@ export default function RootLayout() {
         <Stack.Screen name="settings/feedback" />
         <Stack.Screen name="settings/password" />
       </Stack>
-      {/* The Signal chart's flight (D2-6 / CUL-1069): the clone lives HERE, above the whole
-          stack, because a push would unmount anything inside a screen — the chart lifts off
-          Home and lands on the Signal's screen across the transition. Renders nothing when
-          no flight is up; hidden from touch and from assistive tech. */}
-      <FlightHost />
       {/* The Noticed card's intake door (CUL-870 / N-3b). It is mounted HERE, beside the
           completion cards, rather than inside the card that opens it: the sheet writes a
           meal, and a meal write reachable from Home's import closure is a third Home
@@ -374,6 +369,13 @@ export default function RootLayout() {
       <MealCompletionCard />
       <MedicationCompletionCard />
       <NamedCompletionCard />
+      {/* The flight's clone (D2-6 / CUL-1069): the clone lives HERE, above the whole
+          stack, because a push would unmount anything inside a screen — the Signal's chart
+          lifts off Home and lands on its screen across the transition. After the completion
+          cards since CUL-1643, and above them by its own zIndex: the FAB's meal mark lands
+          INTO the meal card's check. Renders nothing when no flight is up; hidden from
+          touch and from assistive tech. */}
+      <FlightHost />
       <Snackbar />
       <ColdStartOverlay />
     </>

@@ -26,6 +26,8 @@ import { AddTrialFoodSheet } from '../profile/AddTrialFoodSheet';
 import { buildAddTrialFoodSheet, ADD_TRIAL_FOOD_ERROR } from '../../lib/trialFoodsScreen';
 import { addTrialFood, foodLabel, type TrialFoodSelection } from '../../lib/dietTrialSetup';
 import type { TrialAllowedSetTrial } from '../../lib/trialAllowedSet';
+import { abortFlight, flightActiveFor, getFlightState, landFlight, setHeroReady, useFlightState } from '../motion/flightMotion';
+import { measureNodeInWindow } from '../../lib/measureNode';
 
 // The bar's real height, imported rather than re-derived: this file used to carry
 // its own `Platform.OS === 'ios' ? 80 : 60` sourced by comment from
@@ -38,6 +40,15 @@ import { TAB_HEIGHT } from '../nav/NyxTabBar';
 // confirmed before dismiss. Per the B-014 persona round: snatching it away
 // immediately reads as the system overriding the input.
 const INTAKE_CONFIRM_HOLD_MS = 1500;
+
+// CUL-1643 — the FAB's meal mark lands in this card's check (`flightMotion.ts`). While it
+// flies the card crossfades in place (never the 80pt rise) with its check and its words
+// held back; the mark's release shows the check, settling from this scale, and "Logged ·
+// …" follows a beat later (Principle 9's order: the record moves, then it is named).
+const MARK_LAND_SCALE = 0.85;
+const MARK_LAND_FADE_MS = 140;
+const LABEL_BEAT_MS = 120;
+const LABEL_FADE_MS = 180;
 
 // B-693 — everything the shipped AddTrialFoodSheet needs, captured from the
 // membership flag + the meal payload at the moment the owner taps "+ Add to the
@@ -142,6 +153,10 @@ export function MealCompletionCard() {
   // The gold "beat" — the mint check springs in with a warm-gold halo so the
   // card carries the moment's warmth without a full-screen takeover.
   const checkScale = useRef(new Animated.Value(reduced ? 1 : 0.6)).current;
+  // CUL-1643 — the arrival from the FAB's flight: the check's own opacity and the words'.
+  // Both sit at 1 on every other path, so nothing about them changes there.
+  const markOpacity = useRef(new Animated.Value(1)).current;
+  const labelOpacity = useRef(new Animated.Value(1)).current;
 
   // The eventId the picker was OPENED for; null while closed (CUL-709). Captured at
   // open rather than read live at save: `present()` swaps the payload IN PLACE, so
@@ -169,6 +184,22 @@ export function MealCompletionCard() {
   // Only the meal presentation renders here; the beat is the sibling overlay.
   const isMeal = payload?.kind === 'meal';
   const shown = visible && isMeal;
+
+  // CUL-1643 — a flight is up for THIS meal: the FAB staged its pill's meal mark before it
+  // showed the card. Read from the flight store, so the card needs no new field on the
+  // payload and every other meal path (which stages nothing) is untouched. `arrival` is
+  // true from the reveal until the mark lands, and is what the abort below keys on: a
+  // card that never showed while the flight was staged (one render apart) is not one
+  // that went away under it.
+  const flightState = useFlightState();
+  const arriving = isMeal && payload ? flightActiveFor(flightState, payload.eventId) : false;
+  const arrivingRef = useRef(arriving);
+  arrivingRef.current = arriving;
+  const shownIdRef = useRef<string | null>(null);
+  shownIdRef.current = isMeal && payload ? payload.eventId : null;
+  // The meal an arrival began for, until its mark lands or the arrival ends otherwise.
+  const arrival = useRef<string | null>(null);
+  const badgeSlot = useRef<View>(null);
 
   // THE RATING THIS CARD WAS PRESENTED WITH, per event (CUL-870).
   //
@@ -200,6 +231,26 @@ export function MealCompletionCard() {
   }
 
   useEffect(() => {
+    if (shown && arrivingRef.current && !reduced) {
+      // The arrival: in place, the box crossfading around the mark on its way in. The
+      // check and the words wait for the landing (the effect below).
+      arrival.current = shownIdRef.current;
+      translateY.setValue(0);
+      checkScale.setValue(MARK_LAND_SCALE);
+      markOpacity.setValue(0);
+      labelOpacity.setValue(0);
+      const fade = Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true });
+      fade.start();
+      // Asked once the reveal has committed, as well as on layout: a card re-shown with
+      // the same layout as its last showing fires no `onLayout` at all.
+      const frame = requestAnimationFrame(landMark);
+      return () => {
+        fade.stop();
+        cancelAnimationFrame(frame);
+      };
+    }
+    // Hidden (dismissed, timed out, signed out) with a mark still flying: it goes too.
+    endArrival();
     if (reduced) {
       // Static frame: the card crossfades in place and the check never springs. Still
       // a fade, not a cut — the owner must see the confirmation arrive; the setting
@@ -235,7 +286,60 @@ export function MealCompletionCard() {
     ]);
     anim.start();
     return () => anim.stop();
-  }, [shown, reduced, translateY, opacity, checkScale]);
+  }, [shown, reduced, translateY, opacity, checkScale, markOpacity, labelOpacity]);
+
+  // CUL-1643 — the landing. The flight's release and the check showing are one store
+  // update, so the clone never leaves a frame with no mark under it. A card that goes away
+  // mid-flight (dismissed, superseded, undone) takes the flight with it, so the clone
+  // never lands on a card that is no longer there.
+  useEffect(() => {
+    if (!arrival.current) return;
+    // Undone, or superseded in place by another meal: the arrival ends without a landing,
+    // and whatever the card shows next shows its check and words.
+    if (removed || !shown || shownIdRef.current !== arrival.current) {
+      endArrival();
+      return;
+    }
+    if (arriving) return;
+    arrival.current = null;
+    const land = Animated.parallel([
+      Animated.timing(markOpacity, { toValue: 1, duration: MARK_LAND_FADE_MS, useNativeDriver: true }),
+      Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
+      Animated.sequence([
+        Animated.delay(LABEL_BEAT_MS),
+        Animated.timing(labelOpacity, { toValue: 1, duration: LABEL_FADE_MS, useNativeDriver: true }),
+      ]),
+    ]);
+    land.start();
+  }, [arriving, shown, removed, markOpacity, checkScale, labelOpacity]);
+
+  // An arrival that ends any way but a landing: the flight (if still up for that meal)
+  // comes down, and the check and the words are put back at rest, so a later card shown
+  // in place of this one, with no reveal of its own, is never drawn without them.
+  function endArrival() {
+    const id = arrival.current;
+    arrival.current = null;
+    markOpacity.setValue(1);
+    labelOpacity.setValue(1);
+    if (id === null) return;
+    if (flightActiveFor(getFlightState(), id)) abortFlight();
+    // Only after an arrival: on any other path the check's own spring owns its scale.
+    checkScale.setValue(1);
+  }
+
+  // The target: the badge's slot, measured unscaled (the badge itself is under
+  // `checkScale`). Asked on the slot's layout and on the card's, because the card is
+  // bottom anchored and grows upward, so a taller card moves the slot in the window
+  // without moving it inside its row. A changed rect retargets the spring in flight.
+  function landMark() {
+    const eventId = shownIdRef.current;
+    if (!arrivingRef.current || eventId === null) return;
+    measureNodeInWindow(badgeSlot.current, (rect) => {
+      if (!rect) return;
+      landFlight(eventId, rect);
+      setHeroReady(eventId, true);
+    });
+  }
 
   function openPicker() {
     if (!isMeal) return;
@@ -540,7 +644,8 @@ export function MealCompletionCard() {
     <>
       <Animated.View
         pointerEvents={shown ? 'box-none' : 'none'}
-        style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
+        // In place while the mark flies (CUL-1643), whatever the value last held.
+        style={[styles.wrapper, { opacity, transform: [{ translateY: arriving ? 0 : translateY }] }]}
       >
         {/* CUL-614 / §5 "Dwell" — the auto-dismiss stops while a finger is on the card
             and any interaction resets it. Wired at the ROOT because touch events bubble
@@ -558,6 +663,7 @@ export function MealCompletionCard() {
         <View
           style={styles.card}
           testID="meal-card-surface"
+          onLayout={landMark}
           onTouchStart={notice ? undefined : pauseDwell}
           onTouchEnd={notice ? undefined : resumeDwell}
           onTouchCancel={notice ? undefined : resumeDwell}
@@ -588,21 +694,25 @@ export function MealCompletionCard() {
                 Over a refusal the halo goes (CUL-894): the named card's calm tone,
                 acknowledged and never congratulated. The check stays — it says the
                 record landed, which is still true. */}
-            <Animated.View
-              testID="meal-card-check"
-              style={[
-                styles.checkBadge,
-                !decline && styles.checkBadgeCelebrate,
-                { transform: [{ scale: checkScale }] },
-              ]}
-            >
-              <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
-            </Animated.View>
+            <View ref={badgeSlot} onLayout={landMark} testID="meal-card-check-slot">
+              <Animated.View
+                testID="meal-card-check"
+                style={[
+                  styles.checkBadge,
+                  !decline && styles.checkBadgeCelebrate,
+                  // Held at 0 by the render while the mark flies, so no frame
+                  // can draw the check under its own clone; the landing fades it up.
+                  { opacity: arriving ? 0 : markOpacity, transform: [{ scale: checkScale }] },
+                ]}
+              >
+                <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
+              </Animated.View>
+            </View>
             {/* One summary node, as on the named card: the food and the time are one
                 announcement, not two orphan lines. The headline's fallback rule lives
                 with `headline` above. */}
-            <View
-              style={styles.labelCol}
+            <Animated.View
+              style={[styles.labelCol, { opacity: arriving ? 0 : labelOpacity }]}
               accessible
               accessibilityRole="summary"
               accessibilityLiveRegion="polite"
@@ -612,7 +722,7 @@ export function MealCompletionCard() {
                 {headline}
               </ThemedText>
               <ThemedText style={styles.subLabel}>{occurredTime}</ThemedText>
-            </View>
+            </Animated.View>
             {/* Undo sits LEFT of Change time (round-2 mock's R1 pairing). It is in
                 the header row rather than a footer of its own because everything
                 below this line is a follow-up ABOUT the meal — putting a reversal

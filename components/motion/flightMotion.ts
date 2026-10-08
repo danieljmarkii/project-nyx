@@ -60,6 +60,18 @@
 // would read as natural, on a chart whose screen paints `worth_a_call` (the gallery); the
 // safety lead flies nothing (S1: it has no chart), and the benign one lands in silence.
 // This file and `FlightHost.tsx` are named in `guards/haptics.test.ts`'s ALWAYS_SCANNED.
+//
+// THE SECOND FLIGHT: THE MEAL MARK (CUL-1643, PM ruling D3 of CUL-1625). A one-tap food in
+// the FAB's fan stages the pill's 28pt meal disc here; the meal card lands it on its 32pt
+// check badge (`components/ui/MealCompletionCard.tsx`) and releases it in the same commit
+// that shows the badge. Lifted, not restated (C-30): the same store, the same spring, the
+// same host. Two things differ and both are the caller's: the identity is the meal's event
+// id (a UUID, so it never collides with a Signal's `foldIdentity`), and there is no push,
+// so no route fades and `peekFlight` is never asked. The host sits ABOVE the completion
+// cards for this (`app/_layout.tsx`), which costs the Signal flight nothing: no card is up
+// over Home's chart while it flies. Reduce Motion stages nothing here either (the FAB
+// checks), and the card simply crossfades in place. No haptic: the card's reveal plays the
+// commit's one buzz, as every meal path does.
 
 import type { ReactElement } from 'react';
 import { useEffect, useRef, useSyncExternalStore } from 'react';
@@ -129,13 +141,13 @@ export function flightScale(source: WindowRect, target: WindowRect): number {
 // ── The handoff store ──────────────────────────────────────────────────────────────
 
 export interface FlightPayload {
-  /** The finding's identity (`foldIdentity`) — the route's `id`. */
+  /** What is flying: a Signal's `foldIdentity` (the route's `id`), or a meal's event id. */
   identity: string;
-  /** The card's title, so the screen can draw it before its own read answers. */
+  /** The source's title, so a screen can draw it before its own read answers. */
   title: string;
-  /** The card's chart, in window coordinates. */
+  /** The source element's frame, in window coordinates. */
   source: WindowRect;
-  /** The chart itself — the card's `WeeklyBars`, already drawn. */
+  /** The element itself, already drawn: the card's `WeeklyBars`, or the pill's meal mark. */
   element: ReactElement;
 }
 
@@ -278,6 +290,32 @@ export function abortFlight(): void {
   clearTtl();
   if (state === IDLE) return;
   set(IDLE);
+}
+
+/**
+ * Resolves once no flight is up for `identity`: released, aborted, or never staged. The
+ * meal card's dwell restarts here and its trial heads-up waits on it (CUL-1643), so the
+ * flight never eats the 5 s window and the warning lands after the mark. Bounded: a
+ * flight that is still up after `timeoutMs` resolves all the same, so a caller never
+ * hangs on a spring the platform stopped. Never rejects.
+ */
+export function whenFlightDone(
+  identity: string,
+  timeoutMs: number = FLIGHT_MOTION.handoffTtlMs + FLIGHT_MOTION.budgetMs,
+): Promise<void> {
+  if (!flightActiveFor(state, identity)) return Promise.resolve();
+  return new Promise((resolve) => {
+    let unsub = () => {};
+    const finish = () => {
+      clearTimeout(timer);
+      unsub();
+      resolve();
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    unsub = subscribeFlight(() => {
+      if (!flightActiveFor(state, identity)) finish();
+    });
+  });
 }
 
 // ── The clone's values (the host's hook) ───────────────────────────────────────────
