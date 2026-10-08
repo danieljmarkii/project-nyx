@@ -1003,7 +1003,7 @@ describe('FAB — CUL-1647, the recent foods keep one order for the day', () => 
 
     // The first open after midnight draws the new order on the press's own render.
     fireEvent.press(view.getByLabelText('Log event'));
-    expect(fanLabels(view).slice(-3)).toEqual(['Log food', 'Hills i/d', 'Royal Canin GI']);
+    expect(fanLabels(view).slice(-3)).toEqual(['Log food', 'Hills · i/d', 'Royal Canin · GI']);
   });
 
   it('midnight passes while the menu is open: no read lands under the thumb, the close reads', async () => {
@@ -1021,7 +1021,7 @@ describe('FAB — CUL-1647, the recent foods keep one order for the day', () => 
     view.rerender(<FAB />);
     await act(async () => {});
     expect(getRecentFoods).toHaveBeenCalledTimes(1);
-    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills i/d']);
+    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills · i/d']);
 
     fireEvent.press(view.getByTestId('fab-scrim'));
     await settleAnimations();
@@ -1044,7 +1044,7 @@ describe('FAB — CUL-1647, the recent foods keep one order for the day', () => 
     expect(getRecentFoods).toHaveBeenCalledTimes(2);
     fireEvent.press(view.getByLabelText('Log event'));
     expect(view.queryByText(/Royal Canin/)).toBeNull();
-    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills i/d']);
+    expect(fanLabels(view).slice(-2)).toEqual(['Log food', 'Hills · i/d']);
   });
 
   it('a sync cycle re-reads while closed', async () => {
@@ -1078,7 +1078,7 @@ describe('FAB — CUL-1647, the recent foods keep one order for the day', () => 
     await act(async () => { releaseOld([HILLS]); });
 
     fireEvent.press(view.getByLabelText('Log event'));
-    expect(fanLabels(view).slice(-3)).toEqual(['Log food', 'Hills i/d', 'Royal Canin GI']);
+    expect(fanLabels(view).slice(-3)).toEqual(['Log food', 'Hills · i/d', 'Royal Canin · GI']);
   });
 
   it('a pet switch reads that pet’s order over the same day', async () => {
