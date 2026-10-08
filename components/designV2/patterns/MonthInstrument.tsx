@@ -25,7 +25,7 @@ import { lensEpisodeDays, resolveLens, symptomLenses, VOMIT_LENS, type SymptomLe
 import { symptomLabel, symptomOccurrenceLabel } from '../../../lib/metricDetail';
 import { historyDayHref, historyDayLabel } from '../../../lib/historyDateFilter';
 import { describeDayEventDoors, daySheetSubtitle } from '../../../lib/dayEvents';
-import type { EventTintCategory } from '../../../lib/dayEvents';
+import { DAY_ROW_ICON_GROUND, DAY_ROW_TINT } from './dayRowTint';
 import type { TimelineRow } from '../../../lib/db';
 import { WeeklyBars } from '../../charts/WeeklyBars';
 import { DayMark, DayMarkLine } from '../../charts/DayMark';
@@ -114,16 +114,6 @@ const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
  *  `space0_5` is exactly that floor; the test pins the rendered gap off the style. */
 const GRID_GAP = theme.space0_5;
 
-// The drill-in's category tint (the shipped DayEventsSheet's, verbatim: symptom rose, meal
-// teal, medication slate; weight and a look neutral — a look's identity is "the owner
-// answered", never a category hue of its own).
-const CATEGORY_TINT: Record<EventTintCategory, string> = {
-  symptom: theme.colorEventSymptom,
-  meal: theme.colorEventMeal,
-  medication: theme.colorEventMedication,
-  other: theme.colorTextSecondary,
-  look: theme.colorTextSecondary,
-};
 
 interface Props {
   petId: string;
@@ -658,7 +648,7 @@ function DaySlot({
                   testID={`day-row-${it.id}`}
                 >
                   <View style={styles.rowIcon}>
-                    <EventIcon type={it.eventType} size={16} color={CATEGORY_TINT[it.category]} />
+                    <EventIcon type={it.eventType} size={16} color={DAY_ROW_TINT[it.category]} />
                   </View>
                   <View style={styles.rowText}>
                     <ThemedText style={styles.rowTitle} numberOfLines={1}>
@@ -972,7 +962,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: theme.colorSurface,
+    backgroundColor: DAY_ROW_ICON_GROUND,
     alignItems: 'center',
     justifyContent: 'center',
   },

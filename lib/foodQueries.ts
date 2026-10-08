@@ -70,3 +70,61 @@ export const ARCHIVED_FOODS_QUERY =
    GROUP BY LOWER(brand), LOWER(product_name), format
    HAVING COUNT(*) = COUNT(archived_at)
    ORDER BY MAX(archived_at) DESC, brand COLLATE NOCASE ASC, product_name COLLATE NOCASE ASC`;
+
+// The recent foods read (`getRecentFoods`, lib/db.ts): the foods this pet actually ate,
+// newest first by the pet's own MAX(occurred_at). Built here, I/O free, so the SQL runs
+// against a real engine in foodQueries.test.ts.
+//
+// B-005: `AND f.archived_at IS NULL`. The recent foods are a PICKER read (they offer a
+// food to log next), so an archived food drops out of the re-offer set. This is the one
+// archive filter that lives on a meals JOIN; the meal HISTORY itself (getTimeline,
+// getMealForEvent) is a separate join and stays unfiltered.
+//
+// Two ways to bound it. `daysBack` is the picker's rolling window, and its text compare
+// is unchanged. `bounds` is a fixed span of instants (CUL-1647, the FAB's day order),
+// compared through julianday() on BOTH sides, never as text: a row written locally
+// reads `…T04:00:00.000Z`, the same instant hydrated from PostgREST reads
+// `…T04:00:00+00:00`, and as text `+` sorts before `.`, which drops a row sitting
+// exactly on a bound (C-40). `after` is inclusive and `before` exclusive. With neither,
+// the SQL and the params are what they were before `bounds` existed
+// (pinned in foodQueries.test.ts).
+export interface RecentFoodsBounds {
+  after: string;
+  before: string;
+}
+
+export function recentFoodsQuery(
+  petId: string,
+  daysBack: number | null,
+  limit: number,
+  bounds?: RecentFoodsBounds,
+  nowMs: number = Date.now(),
+): { sql: string; params: (string | number)[] } {
+  // Params are pushed in the same order their `?` placeholders appear below:
+  // pet_id, then the optional window cutoff, then the optional bounds, then the limit.
+  const params: (string | number)[] = [petId];
+  let windowClause = '';
+  if (daysBack != null) {
+    windowClause = 'AND e.occurred_at >= ?';
+    params.push(new Date(nowMs - daysBack * 24 * 60 * 60 * 1000).toISOString());
+  }
+  let boundsClause = '';
+  if (bounds) {
+    boundsClause =
+      'AND julianday(e.occurred_at) >= julianday(?) AND julianday(e.occurred_at) < julianday(?)';
+    params.push(bounds.after, bounds.before);
+  }
+  params.push(limit);
+  const sql = `SELECT f.id, f.brand, f.product_name, f.format, f.food_type, f.photo_path
+     FROM meals m
+     JOIN events e ON e.id = m.event_id
+     JOIN food_items_cache f ON f.id = m.food_item_id
+     WHERE m.pet_id = ?
+       AND e.deleted_at IS NULL
+       AND f.archived_at IS NULL
+       ${windowClause}${boundsClause ? ` ${boundsClause}` : ''}
+     GROUP BY f.id
+     ORDER BY MAX(e.occurred_at) DESC
+     LIMIT ?`;
+  return { sql, params };
+}
