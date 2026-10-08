@@ -34,10 +34,13 @@
 // `recheck_booked` needs to know an appointment is ABOUT the sign, which the shell may not read
 // under AC 10 (CUL-1531): the pure rule is here, and the shell passes no appointments. The
 // weight fact line (§4.1) is EN-8's gate and is not built here. Source 3 of C1a (the intake
-// predicate) waits on GAP-28's shared module. The latch's instant lives only in the cache row, so
-// a row written without the step (an incomplete read) drops it; the D4 rule then lapses every
-// older answer and the concern is `raised`, asking, but the next answer is judged as a first one
-// (CUL-1600).
+// predicate) waits on GAP-28's shared module. The latch is rebuilt from the record on every run
+// (CUL-1600, ruling B: `rebuiltMarker`) and a run that skips the step stamps the prior marker on
+// its concern cards, but the replay cannot see the cough/vomit pair (it reads the lane as it
+// stands now) or an answer whose reference left the read; those hold only while a prior row
+// carries them. A re-raise from before the concern left the set and came back within one course
+// is rebuilt too (louder). The D4 lapse list still lives only in the cache row: an unreadable
+// prior row lapses nothing (CUL-1600's split follow-up).
 
 import { collapseToEpisodeOnsets } from '../../../lib/symptomEpisodes.ts'
 import { dayKeyFromIndex, localDayIndex, localDayIndexOf } from '../../../lib/utils.ts'

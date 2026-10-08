@@ -682,3 +682,97 @@ Deno.test('CUL-1290: a re-raised concern carries the ask, never the question', (
   assertStrictEquals(s.state, 'raised_again')
   assertStrictEquals(s.recheckQuestion ?? null, null)
 })
+
+// ── The latch survives a night the step skipped, and a prior row that cannot be read (CUL-1600) ──
+
+// The issue's r0→r3: 2 a week, then daily for the last 30 days; the answer 60 days old.
+const DOUBLING = events('vomit', [...everyNth(4, 120, 30), ...everyNth(1, 29, 0)])
+// r2's row: an incomplete read at r1 skipped the step, so r2 lapsed the old answer (D4 re-check)
+// and wrote `raised` with the lapse and no marker. The marker r0 wrote is gone from the cache.
+const r2Row = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'raised', ackId: null, lapsed: ['a'] } } }]
+const daysAgoOf = (key: string) => Math.round((Date.UTC(2026, 8, 30) - Date.parse(`${key}T00:00:00Z`)) / DAY)
+
+Deno.test('CUL-1600 r0→r3: the marker is rebuilt from the record, so an answer about an older visit cannot quiet a doubling', () => {
+  const a = ack({ id: 'a', daysAgo: 60 })
+  // r2: the old answer lapsed, the concern asks, and the rebuilt marker is on the row.
+  const r2 = stateOf({ symptoms: DOUBLING, acks: [a], priorFindings: [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety' } }], priorGeneratedAtMs: NOW_MS - DAY })
+  assertStrictEquals(r2.state, 'raised')
+  assert(typeof r2.raisedAgainOn === 'string', 'r2 carries the rebuilt marker')
+  const reRaisedDaysAgo = daysAgoOf(r2.raisedAgainOn!)
+  assert(reRaisedDaysAgo > 0 && reRaisedDaysAgo <= 29, `the record re-raised inside the daily stretch (${reRaisedDaysAgo} days ago)`)
+  // r3: the owner writes a visit anchored before the re-raise. Still back, named by its day.
+  const oldVisit = ack({ id: 'v', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(reRaisedDaysAgo + 1), createdAt: at(0, 13) })
+  const r3 = stateOf({ symptoms: DOUBLING, acks: [a, oldVisit], priorFindings: r2Row, priorGeneratedAtMs: NOW_MS - DAY })
+  assertEquals([r3.state, r3.ackId, r3.raisedAgainOn], ['raised_again', 'v', r2.raisedAgainOn])
+  // The same with no prior row at all (the read failed): the record alone holds it.
+  assertStrictEquals(stateOf({ symptoms: DOUBLING, acks: [a, oldVisit] }).state, 'raised_again')
+  // Control: a visit on the re-raise day, written after it, is an answer.
+  const visit = ack({ id: 'w', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(reRaisedDaysAgo), createdAt: at(0, 13) })
+  assertStrictEquals(stateOf({ symptoms: DOUBLING, acks: [a, visit], priorFindings: r2Row, priorGeneratedAtMs: NOW_MS - DAY }).state, 'with_vet')
+  // Control: with no re-raise in the record, no marker is invented.
+  assertStrictEquals('raisedAgainAt' in stateOf({ symptoms: STABLE, acks: [a, oldVisit], priorFindings: r2Row, priorGeneratedAtMs: NOW_MS - DAY }), false)
+})
+
+Deno.test('CUL-1600: a re-raise the step would never have tested (a newer answer was live) never latches', () => {
+  // Diarrhea once 80 days ago, then on two days 55 and 50 days ago. Against the 120-day answer it
+  // is a new co-sign on day −50; against the 65-day answer it is not new (day −80 is within 28 days
+  // of its anchor), and from day −65 that newer answer was the one the step tested.
+  const symptoms = [...STABLE, ...events('diarrhea', [80, 55, 50])]
+  const a = ack({ id: 'a', daysAgo: 120 })
+  const k = ack({ id: 'k', daysAgo: 65 })
+  const s = stateOf({ symptoms, acks: [a, k], record: { history: null } })
+  assertEquals([s.state, s.ackId, 'raisedAgainAt' in s], ['with_vet', 'k', false])
+  // Undone before day −50: the older answer was the live one, its re-raise stands, and an answer
+  // about a visit before it does not quiet it.
+  const undo: AckFact = { ...ack({ id: 'u', daysAgo: 60 }), retracts: 'k' }
+  const oldVisit = ack({ id: 'v', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(52), createdAt: at(0, 13) })
+  assertStrictEquals(stateOf({ symptoms, acks: [a, k, undo, oldVisit] }).state, 'raised_again')
+})
+
+Deno.test('CUL-1600 residual 2: the marker\'s own day decides, not this run\'s reading of the instant', () => {
+  // Auckland: 12:30 UTC on Sep 25 is 00:30 on Sep 26. This run fell back to UTC.
+  const marker = '2026-09-25T12:30:00.000Z'
+  const row = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'raised_again', ackId: 'a', reason: 'rate', raisedAgainAt: marker, raisedAgainOn: '2026-09-26' } } }]
+  const eve = ack({ id: 'v', daysAgo: 0, source: 'visit_answer', anchorOn: '2026-09-25', createdAt: at(0, 13) })
+  const s = stateOf({ symptoms: STABLE, acks: [ack({ id: 'a', daysAgo: 40 }), eve], priorFindings: row, priorGeneratedAtMs: NOW_MS - DAY })
+  assertEquals([s.state, s.raisedAgainAt, s.raisedAgainOn], ['raised_again', marker, '2026-09-26'])
+})
+
+Deno.test('CUL-1600 residual 3: each lane resolves its own marker before the latest wins', () => {
+  const gen = NOW_MS - DAY
+  // The worsening lane carries an early marker; the chronicity lane says raised_again with none.
+  // The marked lane comes first: the old reader pooled it, then skipped the fallback.
+  const row = [
+    { rank: 0, finding: { type: 'symptom_worsening', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'with_vet', ackId: 'a', raisedAgainAt: at(30, 21) } } },
+    { rank: 1, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', careState: { state: 'raised_again', ackId: 'a', reason: 'rate' } } },
+  ]
+  const visit = ack({ id: 'v', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(10), createdAt: at(0, 13) })
+  const s = stateOf({ symptoms: STABLE, acks: [ack({ id: 'a', daysAgo: 40 }), visit], priorFindings: row, priorGeneratedAtMs: gen })
+  assertEquals([s.state, s.raisedAgainAt], ['raised_again', new Date(gen).toISOString()])
+})
+
+Deno.test('CUL-1600 residual 4: a trial answer is about the trial\'s start, whatever day it names', () => {
+  const marker = at(5, 21)
+  const t = ack({ id: 't', daysAgo: 0, source: 'vet_started_trial', anchorOn: dayOf(0), createdAt: at(0, 13), trial: { startedOn: dayOf(10), endedOn: null, initialTargetDays: 56 } })
+  const s = stateOf({ symptoms: STABLE, acks: [ack({ id: 'a', daysAgo: 40 }), t], priorFindings: reRaisedRow('raised_again', marker), priorGeneratedAtMs: NOW_MS - DAY })
+  assertStrictEquals(s.state, 'raised_again')
+  // A trial started on or after the re-raise day still answers it.
+  const t2 = ack({ ...t, id: 't2', daysAgo: 0, trial: { startedOn: dayOf(4), endedOn: null, initialTargetDays: 56 } })
+  assertStrictEquals(stateOf({ symptoms: STABLE, acks: [ack({ id: 'a', daysAgo: 40 }), t2], priorFindings: reRaisedRow('raised_again', marker), priorGeneratedAtMs: NOW_MS - DAY }).state, 'with_vet')
+})
+
+Deno.test('CUL-1600 residual 5: a held latch with nothing new names the day it came back', () => {
+  const s = stateOf({ symptoms: STABLE, acks: [ack({ id: 'a', daysAgo: 40 })], priorFindings: reRaisedRow('raised_again', at(5, 21)), priorGeneratedAtMs: NOW_MS - DAY })
+  assertEquals([s.state, s.backLine], ['raised_again', 'Back since Sep 25.'])
+  assert(s.text!.startsWith('Back since Sep 25. '), s.text!)
+  assertStrictEquals(careClaimReason(s.text!), null)
+})
+
+Deno.test('CUL-1600: a skipped run\'s bare latch is read as a held marker, with no state', () => {
+  const marker = at(5, 21)
+  const stamped = [{ rank: 0, finding: { type: 'symptom_chronicity', symptomType: 'vomit', priorityClass: 'safety', raisedAgainLatch: { at: marker, on: dayOf(5) } } }]
+  const oldVisit = ack({ id: 'v', daysAgo: 0, source: 'visit_answer', anchorOn: dayOf(10), createdAt: at(0, 13) })
+  const s = stateOf({ symptoms: STABLE, acks: [ack({ id: 'a', daysAgo: 40 }), oldVisit], priorFindings: stamped, priorGeneratedAtMs: NOW_MS - DAY })
+  // The old answer lapses (continuity unknown, D4), the older visit does not answer the latch.
+  assertEquals([s.state, s.ackId, s.raisedAgainAt], ['raised_again', 'v', marker])
+})
