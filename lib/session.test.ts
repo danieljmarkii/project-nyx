@@ -250,7 +250,7 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
   // owner's pet and holding any typed note. The moment-store reset's leak, for sheets.
   it('takes down the root-mounted sheets, so none outlives the session', async () => {
     useUiStore.setState({
-      logSheet: { initialType: 'vomit' },
+      logSheet: { initialType: 'vomit', veil: 'own' },
       intakeDoor: { petId: 'pet-a', petName: 'Mochi', sex: 'female', cardHasSelections: true },
       captureOverlay: {
         summary: 'Mochi · off, didn’t want the walk', inViewport: true, busy: false,
@@ -328,7 +328,7 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
   it('a failure taking the sheets down never stops the teardown', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     await recordRecoveryRequest('jordan@example.com', t0);
-    useUiStore.setState({ logSheet: { initialType: null } });
+    useUiStore.setState({ logSheet: { initialType: null, veil: 'own' } });
     const unsubscribe = useUiStore.subscribe(() => { throw new Error('listener threw'); });
     try {
       await expect(wipeLocalSession()).resolves.toBeUndefined();

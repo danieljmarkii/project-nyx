@@ -303,12 +303,11 @@ export const theme = {
   colorAttentionBorder: '#F2DFB3', // amber hairline
 
   // Modal scrim — one value for every bottom-sheet/confirm overlay so stacked
-  // surfaces dim identically (switcher sheet, archive confirm; FAB chip next).
+  // surfaces dim identically (switcher sheet, archive confirm, the log sheet). Since
+  // CUL-1642 (D2, PM 2026-10-07) it is the FAB menu's veil too, so the fan hands its
+  // veil to the log sheet with no visible change; the indigo `colorScrimNight` the
+  // fan wore since CUL-322 is gone. A ground, never a fill.
   colorScrim: 'rgba(10, 10, 10, 0.35)',
-  // The FAB menu's scrim (CUL-322, mock round 1 §06 beat 3): the brand night at
-  // 34%, so Home steps back under an indigo veil rather than a grey one. A ground,
-  // never a fill; nothing is drawn on it but the menu's own opaque pills.
-  colorScrimNight: 'rgba(19, 17, 46, 0.34)',
 
   // Completion "moment" — consumed by PR 4 (gold ring in app/log.tsx).
   colorMomentGlow: '#FBBF24',

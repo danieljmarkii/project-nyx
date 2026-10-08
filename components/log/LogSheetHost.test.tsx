@@ -19,7 +19,13 @@ jest.mock('./EventTypeSheet', () => {
         mockLifecycle.mounts += 1;
         return () => { mockLifecycle.unmounts += 1; };
       }, []);
-      return <Text onPress={props.onClose as () => void}>stub-close</Text>;
+      return (
+        <>
+          <Text onPress={props.onClose as () => void}>stub-close</Text>
+          {/* The real sheet calls this a commit after its exit took the Modal down. */}
+          <Text onPress={props.onExited as () => void}>stub-exited</Text>
+        </>
+      );
     },
   };
 });
@@ -32,7 +38,7 @@ beforeEach(() => {
   mockLifecycle.mounts = 0;
   mockLifecycle.unmounts = 0;
   mockLastProps.current = null;
-  act(() => { useUiStore.setState({ logSheet: null }); });
+  act(() => { useUiStore.setState({ logSheet: null, logSheetVeilTaken: false }); });
 });
 
 describe('LogSheetHost', () => {
@@ -43,10 +49,11 @@ describe('LogSheetHost', () => {
   });
 
   it('opens it at the grid, or at the confirm the request names', () => {
-    render(<LogSheetHost />);
+    const view = render(<LogSheetHost />);
     act(() => { useUiStore.getState().openLogSheet(); });
     expect(mockLastProps.current).toMatchObject({ visible: true, initialType: null });
     act(() => { useUiStore.getState().closeLogSheet(); });
+    fireEvent.press(view.getByText('stub-exited'));
     act(() => { useUiStore.getState().openLogSheet('diarrhea'); });
     expect(mockLastProps.current).toMatchObject({ visible: true, initialType: 'diarrhea' });
   });
@@ -70,11 +77,12 @@ describe('LogSheetHost', () => {
   });
 
   it('every open mounts a fresh sheet, so its starting stage is read for that open', () => {
-    render(<LogSheetHost />);
+    const view = render(<LogSheetHost />);
     expect(mockLifecycle.mounts).toBe(1);
     act(() => { useUiStore.getState().openLogSheet('vomit'); });
     expect(mockLifecycle.mounts).toBe(2);
     act(() => { useUiStore.getState().closeLogSheet(); });
+    fireEvent.press(view.getByText('stub-exited'));
     act(() => { useUiStore.getState().openLogSheet(); });
     expect(mockLifecycle.mounts).toBe(3);
     // One sheet at a time: each fresh mount replaced the one before it.
@@ -94,5 +102,59 @@ describe('LogSheetHost', () => {
     expect(mockLifecycle.mounts).toBe(2);
     expect(mockLifecycle.unmounts).toBe(1);
     expect(mockLastProps.current).toMatchObject({ visible: true, initialType: null });
+  });
+});
+
+// ── CUL-1642: THE EXITING PHASE, AND CUL-1472'S RE-KEY RACE ──────────────────
+//
+// The sheet's Modal no longer slides out on its own (`animationType` "none"), so the
+// sheet runs its exit and reports `onExited` once its Modal is down. A door tapped
+// during that exit used to bump the key at once: the old instance unmounted with its
+// Modal still on screen and a fresh one presented in the SAME commit, the two-Modal
+// state C-14 forbids. The host now holds the new open until the old sheet has left.
+describe('LogSheetHost — the exiting phase (CUL-1642, CUL-1472)', () => {
+  it('a door tapped while the closed sheet is still leaving waits for it, then mounts fresh', () => {
+    const view = render(<LogSheetHost />);
+    act(() => { useUiStore.getState().openLogSheet('vomit'); });
+    act(() => { useUiStore.getState().closeLogSheet(); });
+    const mountsMidExit = mockLifecycle.mounts;
+    const unmountsMidExit = mockLifecycle.unmounts;
+
+    act(() => { useUiStore.getState().openLogSheet('diarrhea'); });
+    // Still the leaving instance, still told it is closed: no re-key mid-exit.
+    expect(mockLifecycle.mounts).toBe(mountsMidExit);
+    expect(mockLifecycle.unmounts).toBe(unmountsMidExit);
+    expect(mockLastProps.current).toMatchObject({ visible: false });
+
+    fireEvent.press(view.getByText('stub-exited'));
+    // Now the fresh one, for the open that waited.
+    expect(mockLifecycle.mounts).toBe(mountsMidExit + 1);
+    expect(mockLifecycle.unmounts).toBe(unmountsMidExit + 1);
+    expect(mockLastProps.current).toMatchObject({ visible: true, initialType: 'diarrhea' });
+  });
+
+  it('a close with no open waiting mounts nothing when the exit ends', () => {
+    const view = render(<LogSheetHost />);
+    act(() => { useUiStore.getState().openLogSheet(); });
+    act(() => { useUiStore.getState().closeLogSheet(); });
+    const mounts = mockLifecycle.mounts;
+    fireEvent.press(view.getByText('stub-exited'));
+    expect(mockLifecycle.mounts).toBe(mounts);
+    expect(mockLastProps.current).toMatchObject({ visible: false });
+  });
+
+  it('hands the request’s veil and the store’s veil hand-off to the sheet', () => {
+    render(<LogSheetHost />);
+    act(() => { useUiStore.getState().openLogSheet(undefined, { veil: 'handed' }); });
+    expect(mockLastProps.current).toMatchObject({ visible: true, veil: 'handed' });
+    expect(useUiStore.getState().logSheetVeilTaken).toBe(false);
+    act(() => { (mockLastProps.current?.onVeilTaken as () => void)(); });
+    expect(useUiStore.getState().logSheetVeilTaken).toBe(true);
+  });
+
+  it('every other door owns its veil', () => {
+    render(<LogSheetHost />);
+    act(() => { useUiStore.getState().openLogSheet(); });
+    expect(mockLastProps.current).toMatchObject({ visible: true, veil: 'own' });
   });
 });

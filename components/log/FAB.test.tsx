@@ -157,7 +157,7 @@ describe('FAB — the rows that open the log sheet', () => {
     const view = await openMenu();
     expect(useUiStore.getState().logSheet).toBeNull();
     fireEvent.press(view.getByText(row));
-    expect(useUiStore.getState().logSheet).toEqual({ initialType });
+    expect(useUiStore.getState().logSheet).toEqual({ initialType, veil: 'handed' });
     expect(router.push).not.toHaveBeenCalled();
   });
 
@@ -1389,5 +1389,108 @@ describe('FAB — CUL-1647, the recent foods keep one order for the day', () => 
     });
     expect(getRecentFoods.mock.calls.at(-1)?.[0]).toBe('p2');
     expect(lastSpan()).toEqual(fabFoodDay(local(8, 12, 0).getTime()));
+  });
+});
+
+// ── CUL-1642 — the hand-off to the log sheet: one veil ─────────────────────────
+//
+// The fan's three sheet doors used to fade the fan's indigo veil out while the sheet's
+// Modal slid a grey one up beside it. Now the veil is ONE colour (`colorScrim`, D2) and
+// it STAYS: the fan retracts beneath it, and the veil comes down only once the sheet
+// has its own up at full (`logSheetVeilTaken`), or the sheet went away first.
+describe('FAB — CUL-1642, the veil is handed to the log sheet', () => {
+  // The veil's Animated.Value, off the composite that carries it. A native-driven value
+  // is not read back into JS under jest, so what is asserted is that nothing was ever
+  // started toward 0 on it — the hand-off's whole claim — rather than its last frame.
+  const veilValue = (view: ReturnType<typeof render>) =>
+    [view.UNSAFE_getByProps({ testID: 'fab-veil' }).props.style].flat(3)
+      .find((st: { opacity?: unknown } | null) => st && typeof st === 'object' && 'opacity' in st).opacity;
+  const fadedOut = (timing: jest.SpyInstance, value: unknown) =>
+    timing.mock.calls.some(([v, cfg]) => v === value && (cfg as { toValue: number }).toValue === 0);
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    useUiStore.setState({ logSheetVeilTaken: false });
+  });
+  afterEach(async () => {
+    await settleAnimations();
+    jest.useRealTimers();
+  });
+
+  it('the fan wears the sheet’s veil: the same colorScrim, never the old indigo', async () => {
+    const view = await openMenu();
+    expect(StyleSheet.flatten(view.getByTestId('fab-veil').props.style).backgroundColor).toBe(theme.colorScrim);
+  });
+
+  it.each([
+    ['More events', null],
+    ['Vomit', 'vomit'],
+    ['Loose stool', 'diarrhea'],
+  ] as const)('%s keeps the veil at full past the fan’s close, until the sheet takes it', async (row, initialType) => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    const view = await openMenu();
+    await settleAnimations();
+    const veil = veilValue(view);
+    const timing = jest.spyOn(Animated, 'timing');
+    fireEvent.press(view.getByText(row));
+    expect(useUiStore.getState().logSheet).toEqual({ initialType, veil: 'handed' });
+    // The fan retracts; the veil outlives it, never faded, and no longer a way to close.
+    await settleAnimations();
+    expect(view.queryByText('More events')).toBeNull();
+    expect(view.getByTestId('fab-veil')).toBeTruthy();
+    expect(fadedOut(timing, veil)).toBe(false);
+    expect(view.queryByTestId('fab-scrim')).toBeNull();
+    timing.mockRestore();
+
+    act(() => { useUiStore.getState().takeLogSheetVeil(); });
+    expect(view.queryByTestId('fab-veil')).toBeNull();
+  });
+
+  it('under Reduce Motion the fan crossfades out and the veil still holds', async () => {
+    useReducedMotionStore.setState({ reduceMotion: true });
+    const view = await openMenu();
+    await settleAnimations();
+    const veil = veilValue(view);
+    const timing = jest.spyOn(Animated, 'timing');
+    fireEvent.press(view.getByText('More events'));
+    await settleAnimations();
+    expect(view.queryByText('Vomit')).toBeNull();
+    expect(view.getByTestId('fab-veil')).toBeTruthy();
+    expect(fadedOut(timing, veil)).toBe(false);
+    timing.mockRestore();
+    act(() => { useUiStore.getState().takeLogSheetVeil(); });
+    expect(view.queryByTestId('fab-veil')).toBeNull();
+  });
+
+  it('a sheet closed before it was shown takes the fan’s veil down with it', async () => {
+    const view = await openMenu();
+    fireEvent.press(view.getByText('More events'));
+    await settleAnimations();
+    expect(view.getByTestId('fab-veil')).toBeTruthy();
+    act(() => { useUiStore.getState().closeLogSheet(); });
+    expect(view.queryByTestId('fab-veil')).toBeNull();
+  });
+
+  // The control for the two above: a plain close DOES fade the veil, so the detector
+  // is not vacuous.
+  it('a plain close (the veil tapped) fades the veil out', async () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    const view = await openMenu();
+    await settleAnimations();
+    const veil = veilValue(view);
+    const timing = jest.spyOn(Animated, 'timing');
+    fireEvent.press(view.getByTestId('fab-scrim'));
+    expect(fadedOut(timing, veil)).toBe(true);
+    timing.mockRestore();
+  });
+
+  it('a door whose open the store refuses (a sheet already up) just closes the fan', async () => {
+    const view = await openMenu();
+    act(() => { useUiStore.setState({ logSheet: { initialType: null, veil: 'own' } }); });
+    fireEvent.press(view.getByText('Vomit'));
+    await settleAnimations();
+    // Nobody will take a veil, so none is held.
+    expect(view.queryByTestId('fab-veil')).toBeNull();
+    expect(useUiStore.getState().logSheet).toEqual({ initialType: null, veil: 'own' });
   });
 });

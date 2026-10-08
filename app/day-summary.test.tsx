@@ -101,7 +101,7 @@ describe('DaySummaryScreen — four-state wiring', () => {
     expect(getByText('Nothing in Biscuit’s record today')).toBeTruthy();
     expect(useUiStore.getState().logSheet).toBeNull();
     fireEvent.press(getByText('Log an event'));
-    expect(useUiStore.getState().logSheet).toEqual({ initialType: null });
+    expect(useUiStore.getState().logSheet).toEqual({ initialType: null, veil: 'own' });
     expect(router.push).not.toHaveBeenCalled();
   });
 

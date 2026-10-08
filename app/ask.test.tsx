@@ -70,7 +70,7 @@ describe('Ask — the empty record’s door', () => {
 
     fireEvent.press(screen.getByText('Log something for Nyx'));
 
-    expect(useUiStore.getState().logSheet).toEqual({ initialType: null });
+    expect(useUiStore.getState().logSheet).toEqual({ initialType: null, veil: 'own' });
     expect(router.push).not.toHaveBeenCalled();
   });
 });

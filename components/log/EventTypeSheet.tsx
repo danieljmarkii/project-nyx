@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet,
+  Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet,
   TouchableOpacity, View,
 } from 'react-native';
 import { useWindowDimensions } from 'react-native';
@@ -23,6 +23,8 @@ import { PetAvatar } from '../pet/PetAvatar';
 import { discardGuardCopy, type ConfirmDraft } from '../../lib/discardGuard';
 import { noPetToLogForCopy } from '../../lib/logCopy';
 import type { LogSheetConfirmType } from '../../store/uiStore';
+import { useSheetMotion, type SheetVeil } from '../motion/sheetMotion';
+import { useAppActive } from '../../hooks/useAppActive';
 
 // Resolved once at module scope — a literal, shared with the FAB menu (CUL-717).
 const noPetCopy = noPetToLogForCopy();
@@ -65,6 +67,15 @@ interface Props {
    *  at MOUNT, so a host that wants it honoured mounts a fresh sheet per open (the
    *  one host, LogSheetHost, keys it per open); null or absent opens the grid. */
   initialType?: LogSheetConfirmType | null;
+  /** Whose veil is on screen as this open starts (CUL-1642): `'handed'` from the fan,
+   *  whose veil is this sheet's colour and is already up; `'own'` otherwise. Read when
+   *  the Modal is shown. */
+  veil?: SheetVeil;
+  /** The tick this sheet's veil is at full; the fan drops its own here. */
+  onVeilTaken?: () => void;
+  /** A commit after the Modal has gone down at the end of the exit. The host mounts the
+   *  next open's sheet only after this, so two Modals never share a commit (C-14). */
+  onExited?: () => void;
 }
 
 type Stage = 'grid' | 'confirm' | 'done';
@@ -102,22 +113,30 @@ function routesOut(type: EventTypeKey): boolean {
 // already narrowed `activePet` to non-null — the grid does not render without a pet
 // (CUL-681), and re-admitting an optional pet here would re-open the "your pet"
 // fallback that rendered a confident "Y" disc for a pet that was not there.
+//
+// CUL-1642 — the title takes the FAB chip's form: a quiet "Logging for" eyebrow over the
+// pet's name on its own line, so the sheet that rises out of the fan names the pet in the
+// words the chip just used (the chip and the title were "Logging for" and "Log for", a
+// seam the PM read on device; this reopens CUL-682's copy split, ruled before the seam
+// was examined). The NAME NEVER TRUNCATES: it is the wrong-pet safeguard, so a long one
+// wraps onto a second line rather than ellipsing, exactly as the chip's does.
 function TitleRowContent({ name, photoPath }: { name: string; photoPath: string | null }) {
   return (
     <>
       <PetAvatar name={name} photoPath={photoPath} size={SHEET_HEADER_DISC} />
-      {/* numberOfLines + the style's flexShrink let a long name ellipse rather than
-          push the chevron off the end. Both hosts spell the full name into an
-          accessibilityLabel, so what is cut here is never cut from the record of
-          which pet this sheet writes to. */}
-      <ThemedText style={styles.title} numberOfLines={1}>
-        Log for {name}
-      </ThemedText>
+      {/* The column's flexShrink is what lets a long name wrap inside the row instead of
+          pushing the chevron off the end. */}
+      <View style={styles.titleCol}>
+        <ThemedText style={styles.titleEyebrow} numberOfLines={1}>Logging for</ThemedText>
+        <ThemedText style={styles.title} testID="log-sheet-title-name">{name}</ThemedText>
+      </View>
     </>
   );
 }
 
-export function EventTypeSheet({ visible, onClose, initialType = null }: Props) {
+export function EventTypeSheet({
+  visible, onClose, initialType = null, veil = 'own', onVeilTaken, onExited,
+}: Props) {
   const { pets, activePet } = usePetStore();
   const insets = useSafeAreaInsets();
   // The sheet's height cap, in POINTS (CUL-755) — see the avoider below for why it is
@@ -126,6 +145,17 @@ export function EventTypeSheet({ visible, onClose, initialType = null }: Props) 
   const { height: windowHeight } = useWindowDimensions();
   const sheetMaxHeight = windowHeight * 0.8;
   const [switcherVisible, setSwitcherVisible] = useState(false);
+
+  // ── ONE VEIL, ONE PHYSICS (CUL-1642) ──────────────────────────────────────
+  // The Modal presents with no animation of its own, and the shared sheet motion moves
+  // what is inside it: the veil holds (handed from the fan) or fades up (every other
+  // door), and only the sheet rises, on the app's settle; a crossfade under Reduce
+  // Motion. Every door reaches this sheet through the one host, so every door gets the
+  // same rise. The window's height is the travel: far enough to start off screen.
+  const appActive = useAppActive();
+  const motion = useSheetMotion({
+    visible, veil, travelPt: windowHeight, appActive, onVeilTaken, onExited,
+  });
 
   // ── WHERE AN OPEN STARTS (CUL-504) ───────────────────────────────────────────
   // A quick tap names its event before the sheet opens, so the sheet starts at that
@@ -139,7 +169,7 @@ export function EventTypeSheet({ visible, onClose, initialType = null }: Props) 
   //
   // So `initialType` is read at MOUNT, and the one host (LogSheetHost) mounts a fresh
   // sheet for every open by keying it per open. A close keeps the instance, so the
-  // Modal still slides out; the next open replaces it.
+  // sheet still makes its exit; the next open replaces it once it has.
   //
   // The pet is captured here exactly as a grid tap captures it in handleSelect: the
   // confirm has no switcher, so this is the pet the confirm writes for. With no active
@@ -349,15 +379,34 @@ export function EventTypeSheet({ visible, onClose, initialType = null }: Props) 
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleRequestClose}>
-      <View style={styles.backdrop}>
+    <Modal
+      visible={motion.modalVisible}
+      transparent
+      // "none", never "slide" (CUL-1642): the platform's slide carries the whole window,
+      // veil and all, up the screen. The rise is `motion.sheetStyle`'s.
+      animationType="none"
+      onShow={motion.onShow}
+      onRequestClose={handleRequestClose}
+    >
+      {/* On its way out the sheet takes no touch: every control in it belongs to an open
+          the owner has already closed. */}
+      <View style={styles.backdrop} pointerEvents={motion.phase === 'exiting' ? 'none' : 'auto'}>
         {/* Drop the scrim while the switcher layer is up: the panel brings its own,
             identical and in the same place, so the dim transfers with no visible
             change — and never doubles. During the completion beat the scrim stays but
-            the beat auto-closes; an early dismiss tap is harmless (already written). */}
-        {!switcherVisible && (
-          <Pressable style={styles.scrim} onPress={requestClose} accessibilityLabel="Close" />
-        )}
+            the beat auto-closes; an early dismiss tap is harmless (already written).
+            The same `colorScrim` is the fan's veil (CUL-1642, D2), which is how a
+            handed veil changes owner with no visible change. */}
+        {/* Hidden rather than unmounted while the switcher is up: the veil's value is
+            native-driven, and a native animation must never be started on a node that
+            has gone (an exit with the switcher open did exactly that). */}
+        <View style={[StyleSheet.absoluteFill, switcherVisible && styles.scrimHidden]} pointerEvents="box-none">
+          <Animated.View style={[styles.scrim, motion.scrimStyle]} testID="log-sheet-scrim">
+            {!switcherVisible && (
+              <Pressable style={StyleSheet.absoluteFill} onPress={requestClose} accessibilityLabel="Close" />
+            )}
+          </Animated.View>
+        </View>
         {/* ── KEYBOARD AVOIDANCE (CUL-755) ────────────────────────────────
             The note field and the summary pill — which IS the save (§0) — are the
             last two rows of the confirm, and this sheet is bottom-anchored. Without
@@ -405,10 +454,12 @@ export function EventTypeSheet({ visible, onClose, initialType = null }: Props) 
           // to a plain View, which is what we want there.
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View
+          <Animated.View
+            testID="log-sheet"
             style={[
             styles.sheet,
             { maxHeight: sheetMaxHeight, paddingBottom: insets.bottom + theme.space2 },
+            motion.sheetStyle,
           ]}
             // Assistive-tech containment for the switcher layer. As a sibling Modal the
             // switcher got this from the platform; as a layer it does not, so the sheet
@@ -475,10 +526,10 @@ export function EventTypeSheet({ visible, onClose, initialType = null }: Props) 
                     prop was doing both.
 
                     The single-pet row carries its own label rather than leaning on
-                    the text, because CUL-679's `flexShrink: 1` (which the avatar's
-                    38pt makes necessary) means a long name now ELLIPSES here — and
-                    with no label the full name had nowhere to survive. Multi-pet
-                    never had that problem: its label already spells the name out.
+                    the text: since CUL-1642 the eyebrow and the name are two Texts, so
+                    without one node the reader would stop on the disc, the eyebrow and
+                    the name separately (C-8: a label rejoins a split string). The name
+                    wraps rather than ellipsing now, so nothing is cut either way.
                     `accessible` is what makes the View one node the label applies to;
                     without it the label is inert and the disc + text stay separate
                     stops. */}
@@ -488,7 +539,7 @@ export function EventTypeSheet({ visible, onClose, initialType = null }: Props) 
                     onPress={() => setSwitcherVisible(true)}
                     activeOpacity={0.7}
                     accessibilityRole="button"
-                    accessibilityLabel={`Log for ${activePet.name} — switch pet`}
+                    accessibilityLabel={`Logging for ${activePet.name} — switch pet`}
                   >
                     <TitleRowContent name={activePet.name} photoPath={activePet.photo_path} />
                     <ChevronDown size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
@@ -496,12 +547,12 @@ export function EventTypeSheet({ visible, onClose, initialType = null }: Props) 
                 ) : (
                   <View
                     style={styles.titleRow}
-                    // One node, one announcement: "Log for Nyx", no role and no
+                    // One node, one announcement: "Logging for Nyx", no role and no
                     // disabled trait. `accessible` is load-bearing — without it the
-                    // label never applies and the disc and the sentence stay two
-                    // separate stops, the second of which reads the ellipsed text.
+                    // label never applies and the disc, the eyebrow and the name stay
+                    // three separate stops.
                     accessible
-                    accessibilityLabel={`Log for ${activePet.name}`}
+                    accessibilityLabel={`Logging for ${activePet.name}`}
                   >
                     <TitleRowContent name={activePet.name} photoPath={activePet.photo_path} />
                   </View>
@@ -545,7 +596,7 @@ export function EventTypeSheet({ visible, onClose, initialType = null }: Props) 
                 onDone={handleBeatDone}
               />
             )}
-          </View>
+          </Animated.View>
         </KeyboardAvoidingView>
 
         {/* The pet switcher, as the top LAYER of this Modal — never a second one.
@@ -584,6 +635,9 @@ const styles = StyleSheet.create({
   scrim: {
     ...StyleSheet.absoluteFill,
     backgroundColor: theme.colorScrim,
+  },
+  scrimHidden: {
+    opacity: 0,
   },
   // The keyboard-avoiding host (CUL-755). Its only job is that the sheet PLUS the
   // keyboard never exceed the screen: RN caps the border box, so with behavior
@@ -628,12 +682,18 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: theme.space3,
   },
-  title: {
-    // The confirm header's headerText carries this for the same reason: with a
-    // leading disc and a trailing chevron on the row, a long pet name would push
-    // the chevron off the end rather than ellipsing itself. numberOfLines alone
-    // does not shrink a Text inside a row — it needs somewhere to shrink to.
+  // With a leading disc and a trailing chevron on the row, the column has to be the
+  // thing that shrinks, or a long name pushes the chevron off the end instead of
+  // wrapping inside its own width.
+  titleCol: {
     flexShrink: 1,
+  },
+  // The chip's eyebrow, verbatim in size and ink (FAB's `logForLabel`).
+  titleEyebrow: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+  },
+  title: {
     fontSize: theme.textLG,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
