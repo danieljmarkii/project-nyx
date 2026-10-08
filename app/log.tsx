@@ -171,9 +171,10 @@ export default function LogModal() {
   //
   // Default is 'now' (CUL-576). It used to be 'manual' on the reasoning that the
   // owner implicitly accepts the clock by not changing it — but that reads the
-  // column backwards. `occurred_at_source` exists so the vet report and the
-  // correlation engine can tell a witnessed-now log from an owner-backfilled one
-  // (lib/eventTimeEdit, B-525), and 'manual' is the app asserting that a human
+  // column backwards. `occurred_at_source` records whether a time was a
+  // witnessed-now log or an owner backfill (lib/eventTimeEdit, B-525); no server
+  // lane reads it yet (CUL-1638 is the ruling on whether one should), so it is
+  // stored truth, not a live input. 'manual' is the app asserting that a human
   // chose this timestamp. Nobody chose it: the app did, at mount. Every symptom
   // and weight logged on the default clock has been claiming otherwise.
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('now');

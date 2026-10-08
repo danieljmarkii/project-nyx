@@ -152,8 +152,11 @@ export function SimpleEventConfirm({ type, petId, petName, onBack, onLogged, onD
   // not offered here (round-4 mock; AC-FOUND names witnessed/window only).
   const [occurredAt, setOccurredAt] = useState(() => new Date());
   // 'now', not 'manual' (CUL-576) — the sheet's opening time is the app's own
-  // clock assumption, and `occurred_at_source` is what tells the vet report and
-  // the correlation engine apart from an owner-backfilled one. Claiming 'manual'
+  // clock assumption, and `occurred_at_source` is the record of that, kept so a
+  // reader can tell it apart from an owner-backfilled one. No server lane reads
+  // it yet (the report and the engine read only the confidence; CUL-1638 is the
+  // ruling on whether one should), so the column is stored truth, not a live
+  // input. Claiming 'manual'
   // over a value nobody chose is the B-525 mislabel from the other side. The
   // full-screen path (app/log.tsx) carries the same default and the same reason.
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('now');
