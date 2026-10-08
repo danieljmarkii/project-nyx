@@ -68,11 +68,12 @@ jest.mock('../../lib/trialFoodsScreen', () => ({
   }),
 }));
 
-import { Alert } from 'react-native';
+import { Alert, Animated, StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { MealCompletionCard } from './MealCompletionCard';
 import { useMomentStore } from '../../store/momentStore';
 import { usePetStore } from '../../store/petStore';
+import { useReducedMotionStore } from '../../store/reducedMotionStore';
 import type { LogTimeTrialFlag } from '../../lib/trialContaminant';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { updateEvent, updateMealIntake, getEventSource } from '../../lib/db';
@@ -760,5 +761,67 @@ describe('MealCompletionCard — the VoiceOver announcement (CUL-1275)', () => {
     seedMeal();
     render(<MealCompletionCard />);
     expect(announce).not.toHaveBeenCalled();
+  });
+});
+
+// CUL-1633 — the card honours Reduce Motion (C-43). Under the setting, or while it is
+// still unknown, the card crossfades in place: no rise from 80pt, no spring on the
+// check, and the check is drawn at its rest scale. The fade stays, so the owner still
+// SEES the confirmation arrive — the setting asks for less movement, not less news.
+describe('MealCompletionCard — Reduce Motion (CUL-1633)', () => {
+  afterEach(() => {
+    useReducedMotionStore.setState({ reduceMotion: null });
+  });
+
+  type Style = Record<string, unknown> | undefined;
+  function transformsOf(node: { props: { style?: unknown } }): Record<string, unknown>[] {
+    const flat = StyleSheet.flatten(node.props.style as never) as Style;
+    return Array.isArray(flat?.transform) ? (flat.transform as Record<string, unknown>[]) : [];
+  }
+
+  function mount() {
+    const spring = jest.spyOn(Animated, 'spring');
+    const timing = jest.spyOn(Animated, 'timing');
+    const view = render(<MealCompletionCard />);
+    seedMeal();
+    act(() => { jest.advanceTimersByTime(400); });
+    const check = view.getByTestId('meal-card-check');
+    // The wrapper is the Animated.View carrying translateY, an ancestor of the surface.
+    let wrapper = view.getByTestId('meal-card-surface').parent;
+    while (wrapper && !transformsOf(wrapper).some((t) => 'translateY' in t)) wrapper = wrapper.parent;
+    return { view, spring, timing, check, wrapper };
+  }
+
+  for (const setting of [true, null] as const) {
+    it(`reduceMotion ${String(setting)}: crossfades in place, the check still at scale 1`, () => {
+      useReducedMotionStore.setState({ reduceMotion: setting });
+      const { spring, timing, check, wrapper } = mount();
+      try {
+        expect(spring).not.toHaveBeenCalled();
+        // The fade is the one motion left, and it is a fade to full.
+        expect(timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 1 }));
+        expect(transformsOf(check)).toEqual([{ scale: 1 }]);
+        expect(wrapper).toBeTruthy();
+        expect(transformsOf(wrapper!)).toEqual([{ translateY: 0 }]);
+      } finally {
+        spring.mockRestore();
+        timing.mockRestore();
+      }
+    });
+  }
+
+  it('reduceMotion false: the card rises on its spring and the check springs to 1', () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    const { spring } = mount();
+    try {
+      expect(spring).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ toValue: 0, tension: 80, friction: 11 }),
+      );
+      expect(spring).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ toValue: 1, tension: 60, friction: 7 }),
+      );
+    } finally {
+      spring.mockRestore();
+    }
   });
 });
