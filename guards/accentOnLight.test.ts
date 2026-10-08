@@ -33,9 +33,33 @@
 // WHAT IT DOES NOT CLAIM. That every remaining accent text is legible — a marker is an
 // argument, and a wrong one is wrong. What it removes is the SILENT site: the one nobody
 // decided about, which is every site this class has ever shipped.
+//
+// THE ACCENT HAS MORE THAN ONE NAME (CUL-1664). `#00C2A8` is `colorAccent`, and also
+// `colorEventMeal` and `colorMomentConfirm`. A scan spelled for one name passes the same
+// pixels under another, so the names are DERIVED from the theme by value (`ACCENT_NAMES`)
+// rather than listed, and the derived set is pinned so a new alias is a visible decision.
+//
+// GLYPH SITES ARE OUT OF SCOPE, AND WHY — measured on 2026-10-08 (C-33), not assumed.
+// A glyph's floor is 3:1, and the bright teal misses that on white too (2.26:1), so the
+// question CUL-1664 asked was whether to scan glyph tints as well. The count says no:
+//   - `color={…}` / `tint={…}` props naming one of the three names: 29 sites (the auth
+//     heroes, chevrons, ScopeMenu's checks, the completion cards' checks on dark …);
+//   - object values under a non-`*Color` key: 22 more — nine Switch tracks, and tint maps
+//     and chart tokens that are mostly FILLS (the Signal rails and band, a composition
+//     bar), which a grep cannot tell from a glyph.
+// Fifty-one markers is a scope error, not an exemption. And the decisive half: neither
+// hole the issue names took a shape a grep reaches. CUL-1637 was `fg: colorEventMeal` in
+// a map, CUL-1659 `meal: colorEventMeal` in a map, each drawn through `color={MAP[k]}`.
+// What caught both, and what catches the class, is `theme.contrast.test.ts` measuring an
+// EXPORTED tint map against its EXPORTED ground (`CATEGORY_TINT`, `DAY_ROW_TINT` +
+// `DAY_ROW_ICON_GROUND`). A new glyph tint map follows that precedent; the 51 existing
+// sites are a design sweep with their own issue (CUL-1666), since repointing them to
+// `colorAccentGlyph` visibly darkens the brand teal and is shown before it is shipped.
 
 import * as fs from 'fs';
 import * as path from 'path';
+
+import { theme } from '../constants/theme';
 
 import { createFixtureRoot, removeFixtureRoot, writeFixture } from './fixtureRoot';
 
@@ -43,7 +67,16 @@ const ROOT = path.resolve(__dirname, '..');
 const SCAN_DIRS = ['app', 'components', 'hooks', 'lib', 'store'];
 
 /**
- * A `color:` STYLE KEY whose value is the brand accent.
+ * Every theme key whose value IS the bright accent — its names, derived rather than
+ * listed (CUL-1664). Exported so the pin below can assert the set.
+ */
+export const ACCENT_NAMES: readonly string[] = Object.entries(theme)
+  .filter(([, v]) => typeof v === 'string' && v.toUpperCase() === theme.colorAccent.toUpperCase())
+  .map(([k]) => k)
+  .sort();
+
+/**
+ * A `color:` STYLE KEY whose value is the brand accent, under any of its names.
  *
  * Deliberately not the CUL-744 issue's own `color: theme.colorAccent,$` — that anchor
  * missed four real sites in single-line style declarations (`recLabelAttn: { color:
@@ -51,14 +84,16 @@ const SCAN_DIRS = ['app', 'components', 'hooks', 'lib', 'store'];
  * stool/vomit AI read. An enumeration chosen by a grep is only as complete as the grep.
  *
  * `\bcolor:` cannot match `backgroundColor:` / `borderColor:` / `tintColor:` (different
- * case, no word boundary), so fills and borders — which are graphical, and correct at the
- * 3:1 target the accent is tuned for — are out of scope by construction rather than by a
- * denylist. `colorAccent\b` likewise excludes `colorAccentInk` and `colorAccentLight`.
+ * case, no word boundary), so fills and borders — which are graphical, and judged at the
+ * 3:1 target — are out of scope by construction rather than by a denylist. The trailing
+ * `\b` likewise excludes `colorAccentInk` and `colorAccentLight`.
  *
  * The `color={theme.colorAccent}` PROP form (a lucide icon's tint) is also out of scope:
- * that is a glyph, judged at 3:1, not text.
+ * that is a glyph, judged at 3:1, not text — see the header for the measurement.
  */
-const ACCENT_TEXT = /(^|[^A-Za-z0-9_.])color:\s*theme\.colorAccent\b/;
+const ACCENT_TEXT = new RegExp(
+  `(^|[^A-Za-z0-9_.])color:\\s*theme\\.(${ACCENT_NAMES.join('|')})\\b`,
+);
 
 const MARKER = /\/\/\s*accent-on-dark-ok:\s*\S+/;
 
@@ -157,6 +192,13 @@ describe('CUL-744 — the brand accent is never the colour of text on a light gr
     expect(sites.length).toBeGreaterThan(0);
   });
 
+  it('reads every name the accent goes by, not just colorAccent (CUL-1664)', () => {
+    // Pinned in both directions. A fourth alias joining the theme turns this red, so the
+    // widening is a decision someone reads; an alias dropping out (a re-tuned meal tint)
+    // does too, so the set never silently narrows back to the one name it started with.
+    expect(ACCENT_NAMES).toEqual(['colorAccent', 'colorEventMeal', 'colorMomentConfirm']);
+  });
+
   it('still detects — and still exempts — the known dark-ground site', () => {
     // `Snackbar.action` is teal on colorNeutralDark at 8.75:1: correct as shipped, and
     // the site CUL-578 spot-checked. Pinning one REAL site as detected-and-exempt proves
@@ -174,7 +216,8 @@ describe('CUL-744 — the brand accent is never the colour of text on a light gr
         .filter((s) => !s.exempt)
         .map(
           (s) =>
-            `${s.file}:${s.line} colours TEXT with theme.colorAccent. On a light ground that is ` +
+            `${s.file}:${s.line} colours TEXT with the bright accent (${ACCENT_NAMES.join(' / ')} are one ` +
+            `hex). On a light ground that is ` +
             `2.08–2.26:1, under the 4.5:1 AA floor — use theme.colorAccentInk (4.74–5.17:1). ` +
             `If this genuinely sits on a DARK ground, add an inline ` +
             `"// accent-on-dark-ok: <ground>, <ratio>" within ${MARKER_WINDOW} lines above it.`,
@@ -282,8 +325,22 @@ describe('the detector, proven by mutation', () => {
     ).toEqual([]);
   });
 
+  it('flags the accent under its other names (the CUL-1637 / CUL-1659 alias hole)', () => {
+    const sites = scan(
+      'const s = {\n  a: { color: theme.colorEventMeal },\n  b: { color: theme.colorMomentConfirm },\n};',
+    );
+    expect(sites.map((s) => [s.line, s.exempt])).toEqual([[2, false], [3, false]]);
+  });
+
+  it('does not read a longer name that merely starts with an alias', () => {
+    expect(scan('const s = { a: { color: theme.colorEventMealLight } };')).toEqual([]);
+  });
+
   it('ignores the icon-tint PROP form, which is a glyph and not text', () => {
-    expect(scan('const x = <Icon color={theme.colorAccent} />;')).toEqual([]);
+    // Every name, because the header's out-of-scope decision covers every name.
+    expect(
+      scan('const x = <><Icon color={theme.colorAccent} /><Icon color={theme.colorEventMeal} /></>;'),
+    ).toEqual([]);
   });
 
   it('ignores the ink and the tint — only the bright accent is the defect', () => {
