@@ -162,6 +162,9 @@ export interface MayWaitNeighbour {
   eventType: string
   at: string
   hasPhoto: boolean
+  /** photo_set_key (engineStamps.ts) of the photos on it NOW: a row stamped with another set was
+   *  read over photos it no longer has (a photo added or replaced with no read after it). */
+  photoSetKey: string | null
   /** Its event_ai_analysis row, or null when it has none. */
   analysis: Record<string, unknown> | null
 }
@@ -236,11 +239,27 @@ export function readIsSettled(input: MayWaitInput): boolean {
   return !input.stored?.edited_at
 }
 
+/** The model's payload says the photo shows the subject (appears_to_show_vomit / _stool). */
+export function payloadShowsSubject(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') return false
+  return Object.entries(payload as Record<string, unknown>).some(([k, v]) => k.startsWith('appears_to_show_') && v === true)
+}
+
+/** A photographed row whose read stands for the photos on it now: finished, no error, the photo
+ *  shows the subject, and the read was written over this same photo set. Anything less is an
+ *  unread photo, which could hold what the read lacks (adversarial pass 2: a not-vomit photo
+ *  under a record call; a photo added or replaced with no read after it, app/edit-event.tsx). */
+export function photoReadSettled(row: Record<string, unknown>, currentPhotoSetKey: string | null): boolean {
+  if (row.status !== 'completed' || !!row.error) return false
+  if (!payloadShowsSubject(row.ai_raw_payload)) return false
+  return row.photo_set_key === currentPhotoSetKey
+}
+
 /** A neighbour's row says "call now", or carries a photo finding, or was never settled. */
 export function neighbourRefuses(n: MayWaitNeighbour): boolean {
   const a = n.analysis
   if (!a) return n.hasPhoto
-  if (n.hasPhoto && (a.status !== 'completed' || !!a.error)) return true
+  if (n.hasPhoto && !photoReadSettled(a, n.photoSetKey)) return true
   if (effectiveTierRank({ tier: a.tier as string | null, recommendation: a.recommendation as string | null }) === TIER_RANK.call_now) return true
   if (listOf(a.visual_flags).length > 0) return true
   if (listOf(a.contextual_flags).some((f) => NEIGHBOUR_REFUSING_FLAGS.includes(f))) return true

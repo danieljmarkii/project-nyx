@@ -19,6 +19,7 @@ import {
 } from './incidentMayWait.ts'
 import { payloadShowsSubject, storedRowInput } from './incidentMayWaitEvidence.ts'
 
+type Row = Record<string, unknown>
 const H = 3_600_000
 // A Wednesday in January: no DST change anywhere near it in New York.
 const VOMIT = '2026-01-14T14:00:00.000Z'
@@ -34,7 +35,7 @@ function record(o: Partial<MayWaitRecord> = {}): MayWaitRecord {
     species: 'dog',
     timeZone: 'America/New_York',
     vomits: [{ at: iso(VOMIT_MS - 4 * H), confidence: 'witnessed' }, { at: VOMIT, confidence: 'witnessed' }],
-    neighbours: [{ eventId: 'n1', eventType: 'vomit', at: iso(VOMIT_MS - 4 * H), hasPhoto: false, analysis: neighbourRow() }],
+    neighbours: [{ eventId: 'n1', eventType: 'vomit', at: iso(VOMIT_MS - 4 * H), hasPhoto: false, photoSetKey: null, analysis: neighbourRow() }],
     lethargyAt: [],
     meals: [],
     ...o,
@@ -171,7 +172,7 @@ Deno.test('neighbour — the floor re-run on a neighbouring vomit: a burst two d
 
 Deno.test('neighbour — a neighbour\'s row: call now, photo finding, model call, intake, lethargy, FALSE, unsettled photo', () => {
   const withRow = (row: Record<string, unknown> | null, hasPhoto = true): MayWaitNeighbour =>
-    ({ eventId: 'n1', eventType: 'vomit', at: iso(VOMIT_MS - 4 * H), hasPhoto, analysis: row })
+    ({ eventId: 'n1', eventType: 'vomit', at: iso(VOMIT_MS - 4 * H), hasPhoto, photoSetKey: hasPhoto ? 'att-n1' : null, analysis: row })
   const cases: [string, MayWaitNeighbour][] = [
     ['call now', withRow(neighbourRow({ tier: 'call_now' }))],
     ['an unknown verdict ranks call now', withRow(neighbourRow({ tier: null, recommendation: 'something_new' }))],
@@ -197,7 +198,14 @@ Deno.test('neighbour — a neighbour\'s row: call now, photo finding, model call
   }
   // A photoless neighbour with no row is the record's to judge, not a refusal on its own.
   assertStrictEquals(neighbourRefuses(withRow(null, false)), false)
-  assertStrictEquals(neighbourRefuses(withRow(neighbourRow())), false)
+  const read = neighbourRow({ photo_set_key: 'att-n1', ai_raw_payload: { appears_to_show_vomit: true, recommendation: 'monitor', blood_present: 'none_visible', colour: 'yellow' } })
+  assertStrictEquals(neighbourRefuses(withRow(read)), false)
+  // Adversarial pass 2: a photographed neighbour whose read never showed the subject, or was
+  // written over another photo set (a photo added or replaced since), is an unread photo.
+  assertStrictEquals(neighbourRefuses(withRow({ ...read, ai_raw_payload: { ...(read.ai_raw_payload as Row), appears_to_show_vomit: false } })), true)
+  assertStrictEquals(neighbourRefuses(withRow({ ...read, ai_raw_payload: null })), true)
+  assertStrictEquals(neighbourRefuses(withRow({ ...read, photo_set_key: 'att-old' })), true)
+  assertStrictEquals(neighbourRefuses(withRow({ ...read, photo_set_key: null })), true)
 })
 
 Deno.test('neighbour — lethargy a day either side of the run, or logged since, refuses; outside it does not', () => {
@@ -294,11 +302,13 @@ Deno.test('payload and column helpers read both types, present-or-unclear only',
 
 Deno.test('storedRowInput — a photographed row with no payload showing the subject is an unread photo', () => {
   const row = neighbourRow({ may_wait: true, ai_raw_payload: null })
-  assertEquals(mayWaitVerdict(storedRowInput({ row, incidentType: 'vomit', hasPhoto: true, floorOn: true, record: record() })).refusedBy, ['settled'])
-  assertEquals(mayWaitVerdict(storedRowInput({ row, incidentType: 'vomit', hasPhoto: false, floorOn: true, record: record() })).refusedBy, [])
-  const shown = neighbourRow({ ai_raw_payload: { appears_to_show_vomit: true, recommendation: 'monitor', blood_present: 'none_visible', colour: 'yellow' } })
-  assertEquals(mayWaitVerdict(storedRowInput({ row: shown, incidentType: 'vomit', hasPhoto: true, floorOn: true, record: record() })).refusedBy, [])
-  assertEquals(mayWaitVerdict(storedRowInput({ row: { ...shown, error: 'x' }, incidentType: 'vomit', hasPhoto: true, floorOn: true, record: record() })).refusedBy, ['settled'])
+  assertEquals(mayWaitVerdict(storedRowInput({ row, incidentType: 'vomit', hasPhoto: true, photoSetKey: 'att-1', floorOn: true, record: record() })).refusedBy, ['settled'])
+  assertEquals(mayWaitVerdict(storedRowInput({ row, incidentType: 'vomit', hasPhoto: false, photoSetKey: null, floorOn: true, record: record() })).refusedBy, [])
+  const shown = neighbourRow({ photo_set_key: 'att-1', ai_raw_payload: { appears_to_show_vomit: true, recommendation: 'monitor', blood_present: 'none_visible', colour: 'yellow' } })
+  assertEquals(mayWaitVerdict(storedRowInput({ row: shown, incidentType: 'vomit', hasPhoto: true, photoSetKey: 'att-1', floorOn: true, record: record() })).refusedBy, [])
+  // The row was read over another photo set: the photo on the event now was never read.
+  assertEquals(mayWaitVerdict(storedRowInput({ row: shown, incidentType: 'vomit', hasPhoto: true, photoSetKey: 'att-2', floorOn: true, record: record() })).refusedBy, ['settled'])
+  assertEquals(mayWaitVerdict(storedRowInput({ row: { ...shown, error: 'x' }, incidentType: 'vomit', hasPhoto: true, photoSetKey: 'att-1', floorOn: true, record: record() })).refusedBy, ['settled'])
 })
 
 // ── CUL-1510's four adversarial passes, against the server predicate ──────────────
@@ -318,7 +328,7 @@ Deno.test('CUL-1510 pass 1 — a lethargy flag or met sign, the model\'s own cal
 
 Deno.test('CUL-1510 pass 2 — a call-now sign on a neighbouring record, a frozen payload after an edit, a rescue over an unread photo', () => {
   // A neighbour already at call now (its own T3).
-  const n = { eventId: 'n1', eventType: 'vomit', at: iso(VOMIT_MS - 4 * H), hasPhoto: false, analysis: neighbourRow({ tier: 'call_now', contextual_flags: ['concurrent_lethargy'] }) }
+  const n = { eventId: 'n1', eventType: 'vomit', at: iso(VOMIT_MS - 4 * H), hasPhoto: false, photoSetKey: null, analysis: neighbourRow({ tier: 'call_now', contextual_flags: ['concurrent_lethargy'] }) }
   assertStrictEquals(mayWaitVerdict(input({ record: record({ neighbours: [n] }) })).mayWait, false)
   // The owner edited blood away; the payload still says fresh red.
   assertStrictEquals(mayWaitVerdict(input({ stored: { edited_at: '2026-01-14T15:00:00Z', blood_present: 'none_visible', ai_raw_payload: { blood_present: 'fresh_red' } } })).mayWait, false)
@@ -327,14 +337,14 @@ Deno.test('CUL-1510 pass 2 — a call-now sign on a neighbouring record, a froze
 })
 
 Deno.test('CUL-1510 pass 3 — a neighbour\'s photo finding, a burst more than 24 h from the event, stale facts', () => {
-  const photo = { eventId: 'n1', eventType: 'vomit', at: iso(VOMIT_MS - 30 * H), hasPhoto: true, analysis: neighbourRow({ visual_flags: ['blood'], blood_present: 'coffee_ground' }) }
+  const photo = { eventId: 'n1', eventType: 'vomit', at: iso(VOMIT_MS - 30 * H), hasPhoto: true, photoSetKey: 'att-n1', analysis: neighbourRow({ visual_flags: ['blood'], blood_present: 'coffee_ground' }) }
   assertStrictEquals(mayWaitVerdict(input({ record: record({ neighbours: [photo] }) })).mayWait, false)
   // Three witnessed vomits in 20 minutes, 40 h before the read's vomit: no 24 h window holds both.
   const burst = [0, 10, 20].map((m) => ({ at: iso(VOMIT_MS - 40 * H + m * 60_000), confidence: 'witnessed' as const }))
   assertStrictEquals(mayWaitVerdict(input({ record: record({ vomits: [...burst, { at: VOMIT, confidence: 'witnessed' }] }) })).mayWait, false)
   // Stale facts: a neighbour whose photo was still unread when this ran. The read refuses, and
   // the value written is NULL, so the next run (once the photo is read) decides afresh.
-  const unread = { eventId: 'n2', eventType: 'vomit', at: iso(VOMIT_MS - 2 * H), hasPhoto: true, analysis: null }
+  const unread = { eventId: 'n2', eventType: 'vomit', at: iso(VOMIT_MS - 2 * H), hasPhoto: true, photoSetKey: 'att-n1', analysis: null }
   const v = mayWaitVerdict(input({ record: record({ neighbours: [unread] }) }))
   assertEquals(v.refusedBy, ['neighbour'])
   assertStrictEquals(mayWaitValue('call_today', v, null), null)
@@ -347,7 +357,7 @@ Deno.test('CUL-1510 pass 4 — a removed photo\'s blood call, a photoless neighb
   // ...and it survives the write itself.
   assertStrictEquals(mayWaitValue('call_today', mayWaitVerdict(input({ stored: { may_wait: false } })), false), false)
   // A photoless neighbour's intake flag, with no row behind it: the record's meals carry it.
-  const cat = record({ species: 'cat', neighbours: [{ eventId: 'n1', eventType: 'vomit', at: iso(VOMIT_MS - 4 * H), hasPhoto: false, analysis: null }], meals: [{ at: iso(VOMIT_MS - 50 * H), rating: 'little' }] })
+  const cat = record({ species: 'cat', neighbours: [{ eventId: 'n1', eventType: 'vomit', at: iso(VOMIT_MS - 4 * H), hasPhoto: false, photoSetKey: null, analysis: null }], meals: [{ at: iso(VOMIT_MS - 50 * H), rating: 'little' }] })
   assertStrictEquals(mayWaitVerdict(input({ record: cat })).mayWait, false)
   // Lethargy back-dated outside the read's own 24 h window but inside the run's.
   assertStrictEquals(mayWaitVerdict(input({ record: record({ lethargyAt: [iso(VOMIT_MS - 26 * H)] }) })).mayWait, false)

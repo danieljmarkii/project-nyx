@@ -10,12 +10,15 @@
 // analyze-vomit make the same call; C-42 names report pulls, which this is not).
 
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { photoSetKey } from './engineStamps.ts'
 import {
   MAY_WAIT_INTAKE_BASELINE_HOURS,
   MAY_WAIT_LETHARGY_HOURS,
   MAY_WAIT_NEIGHBOUR_HOURS,
   mayWaitValue,
   mayWaitVerdict,
+  payloadShowsSubject,
+  photoReadSettled,
   type MayWaitInput,
   type MayWaitNeighbour,
   type MayWaitRecord,
@@ -27,7 +30,7 @@ export const MAY_WAIT_INCIDENT_TYPES = ['vomit', 'stool_normal', 'diarrhea'] as 
 /** The analysis columns a neighbour's check reads (both types' names; the table is one). */
 export const MAY_WAIT_ANALYSIS_COLUMNS = [
   'event_id', 'incident_type', 'status', 'error', 'edited_at', 'recommendation', 'tier', 'may_wait',
-  'visual_flags', 'contextual_flags', 'ai_raw_payload',
+  'visual_flags', 'contextual_flags', 'ai_raw_payload', 'photo_set_key',
   'blood_present', 'stool_blood_present', 'foreign_material_present', 'colour', 'stool_colour',
 ] as const
 
@@ -97,9 +100,10 @@ export async function readMayWaitRecord(client: SupabaseClient, p: MayWaitRecord
     const ids = near.map((e) => e.id)
     let photographed = new Set<string>()
     let analyses = new Map<string, Record<string, unknown>>()
+    const setKeys = new Map<string, string | null>()
     if (ids.length > 0) {
       const [attRes, aiRes] = await Promise.all([
-        client.from('event_attachments').select('event_id').in('event_id', ids) as unknown as Promise<Result<{ event_id: string }[]>>,
+        client.from('event_attachments').select('id, event_id').in('event_id', ids) as unknown as Promise<Result<{ id: string; event_id: string }[]>>,
         client
           .from('event_ai_analysis')
           .select(MAY_WAIT_ANALYSIS_COLUMNS.join(', '))
@@ -109,6 +113,9 @@ export async function readMayWaitRecord(client: SupabaseClient, p: MayWaitRecord
       if (!attRes || attRes.error || !aiRes || aiRes.error) return null
       photographed = new Set((attRes.data ?? []).map((a) => a.event_id))
       analyses = new Map((aiRes.data ?? []).map((a) => [a.event_id as string, a]))
+      for (const id of photographed) {
+        setKeys.set(id, await photoSetKey((attRes.data ?? []).filter((a) => a.event_id === id).map((a) => a.id)))
+      }
     }
 
     const neighbours: MayWaitNeighbour[] = near.map((e) => ({
@@ -116,6 +123,7 @@ export async function readMayWaitRecord(client: SupabaseClient, p: MayWaitRecord
       eventType: e.event_type,
       at: e.occurred_at,
       hasPhoto: photographed.has(e.id),
+      photoSetKey: setKeys.get(e.id) ?? null,
       analysis: analyses.get(e.id) ?? null,
     }))
     const ratingOf = (m: unknown): string | null => {
@@ -141,11 +149,7 @@ export async function readMayWaitRecord(client: SupabaseClient, p: MayWaitRecord
   }
 }
 
-/** The model's payload says the photo shows the subject (appears_to_show_vomit / _stool). */
-export function payloadShowsSubject(payload: unknown): boolean {
-  if (!payload || typeof payload !== 'object') return false
-  return Object.entries(payload as Record<string, unknown>).some(([k, v]) => k.startsWith('appears_to_show_') && v === true)
-}
+export { payloadShowsSubject }
 
 /** The predicate over a row already on file: its words, flags and payload are what the read
  *  wrote; only the record around it may have moved. Used by the floor-only write over a stored
@@ -155,6 +159,8 @@ export function storedRowInput(params: {
   row: Record<string, unknown>
   incidentType: string
   hasPhoto: boolean
+  /** photo_set_key of the photos on the event now (null with none). */
+  photoSetKey: string | null
   floorOn: boolean
   record: MayWaitRecord | null
   /** The write's own read fields when it is about to replace the row's (the floor-only write). */
@@ -172,7 +178,7 @@ export function storedRowInput(params: {
       status: params.write?.status ?? (typeof r.status === 'string' ? r.status : ''),
     },
     run: {
-      settled: !r.error && (!params.hasPhoto || payloadShowsSubject(r.ai_raw_payload)),
+      settled: !r.error && (!params.hasPhoto || photoReadSettled(r, params.photoSetKey)),
       modelCalled: false,
       columns: null,
     },
@@ -221,14 +227,16 @@ export async function revalidateMayWait(
       if (!ev) return 0
       const { data: att, error: attErr } = await (userClient
         .from('event_attachments')
-        .select('event_id')
-        .eq('event_id', ev.id) as unknown as Promise<Result<{ event_id: string }[]>>)
+        .select('id')
+        .eq('event_id', ev.id) as unknown as Promise<Result<{ id: string }[]>>)
       // An attachments read that fails reads as "no record" below, which refuses: a transient
       // error lowers a TRUE that may have been right. That is the fail-closed side, on purpose.
       const record = attErr ? null : await readMayWaitRecord(userClient, {
         petId: p.petId, ownerId: p.ownerId, eventId: ev.id, anchorAt: ev.occurred_at, species: p.species, nowMs: p.nowMs,
       })
-      const input = storedRowInput({ row, incidentType: ev.event_type, hasPhoto: (att ?? []).length > 0, floorOn: true, record })
+      const input = storedRowInput({
+        row, incidentType: ev.event_type, hasPhoto: (att ?? []).length > 0, photoSetKey: await photoSetKey((att ?? []).map((a) => a.id)), floorOn: true, record,
+      })
       const verdict = mayWaitVerdict(input)
       if (verdict.mayWait) return 0
       const next = mayWaitValue(input.write.tier, verdict, row.may_wait) ?? null

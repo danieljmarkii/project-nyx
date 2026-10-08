@@ -1546,6 +1546,7 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
     row: p.existing,
     incidentType: p.incidentType,
     hasPhoto: true,
+    photoSetKey: p.stamps.photoSetKey,
     floorOn: true,
     record,
     write: { tier: next, contextualFlags: contextual, visualFlags, status: 'completed' },
@@ -1737,6 +1738,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   let tiersOnForFailure = false
   // EN-4's floor tier, for the same reason: a rescued call carries the tier the record earned.
   let minTierForFailure: FloorTier | undefined
+  // The neighbours' re-check (CUL-1628), once the run knows its keys and its event.
+  let revalidateForFailure: (() => Promise<number>) | null = null
 
   // The stored row, read with every column a write decision switches on. Read twice:
   // at step 3b for the cap branch, and again at step 9, because the vision call
@@ -1816,6 +1819,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     const revalidateNeighbours = (includeSelf = false) => mayWaitOn
       ? revalidateMayWait(userClient, adminClient, { petId, ownerId, species, anchorAt: occurredAt, excludeEventId: includeSelf ? null : eventId, nowMs: Date.now() })
       : Promise.resolve(0)
+    revalidateForFailure = mayWaitOn ? () => revalidateNeighbours() : null
 
     // 1c. EN-4's floor-only mode (CUL-1134) runs only under its key AND the tier key (the
     //     floor's answer is a tier), for the owner. Refused here, before any read that could
@@ -2015,6 +2019,9 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
           .eq('may_wait', true)
         if (lowerError) throw new Error(`DB write failed: ${lowerError.message}`)
       }
+      // This row may now be a refusing neighbour (an unread photo): re-check the TRUEs around it.
+      // The escalation arm above re-checked already.
+      if (contextualFlags.length === 0) await revalidateNeighbours()
       return Response.json(
         {
           success: true,
@@ -2295,6 +2302,9 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // fails closed in buildFailureWrite.
     // It reads the red-flag columns too, so a stored red flag under a calm verdict is
     // kept visible rather than hidden behind the retry frame (buildFailureWrite).
+    // A failed read leaves this row a refusing neighbour (an unread photo, an error): re-check the
+    // TRUEs around it, lower-only and best-effort, before the failure write (CUL-1628).
+    if (revalidateForFailure) await revalidateForFailure()
     let latest: StoredAnalysis | null = null
     let latestReadFailed = false
     if (petIdForFailure && incidentTypeForFailure) {
