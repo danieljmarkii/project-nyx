@@ -544,6 +544,7 @@ Deno.test('CUL-1667: a first run with no answers is unchanged; a row that says n
   // A row naming the concern with no generation time cannot bound anything either.
   const held = [{ rank: 0, finding: { ...chronicity(), careState: { state: 'raised', ackId: null, lapsed: [] } } }]
   assertEquals(stateOf({ symptoms: STABLE, acks: [a], priorFindings: held, priorGeneratedAtMs: null }).lapsed, ['a'])
+  assertEquals(stateOf({ symptoms: STABLE, acks: [a], priorFindings: held, priorGeneratedAtMs: NaN }).lapsed, ['a'])
   assertEquals(stateOf({ symptoms: STABLE, acks: [a], priorFindings: held, priorGeneratedAtMs: NOW_MS - DAY }).lapsed, [])
   // Only this sign's answers written before the run.
   const cough = ack({ id: 'c', daysAgo: 30, sign: 'cough' })

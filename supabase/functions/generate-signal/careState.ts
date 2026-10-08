@@ -1066,7 +1066,7 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
   const prior = readPriorCare(args.priorFindings)
   const priorSigns = priorConcernSigns(args.priorFindings)
   const priorGen = args.priorGeneratedAtMs
-  const priorContinuityUnknown = args.priorReadFailed === true || priorSigns === null || priorGen === null
+  const priorContinuityUnknown = args.priorReadFailed === true || priorSigns === null || priorGen === null || !Number.isFinite(priorGen)
   // A row from before the marker existed that said raised_again stands on its own generation time,
   // which is no earlier than the true re-raise (the louder reading); with no generation time, on now.
   const priorMarkers = readPriorMarkers(args.priorFindings, priorGen ?? args.nowMs, tz)
@@ -1097,9 +1097,11 @@ export const EN9_CARE_STATE_STEP: CareStateStep = (findings, argsIn) => {
     // unknown with no generation time to bound it: every answer written before this run lapses,
     // and the owner answers once more. Louder by construction; the lapse is carried like any other.
     // So is a row that is MISSING while the record holds an answer (CUL-1667, ruled A 2026-10-08):
-    // answers are given on a concern card, so a row was written, and the only thing that removes
-    // one is the shell's own delete-then-insert losing its insert. A row whose findings are not a
-    // list, or that names concerns with no generation time, says no more about continuity.
+    // answers are given on a concern card, so a row was written, and only the shell's own
+    // delete-then-insert removes one: its insert lost, or a second run reading between the two
+    // (two devices, or past the client's regen wait). Either way the owner answers once more, the
+    // louder side (CUL-1673 holds the atomic replace). A row whose findings are not a list, or that
+    // names concerns with no usable generation time, says no more about continuity.
     if (priorContinuityUnknown) {
       for (const a of args.record.acknowledgements) {
         if (a.sign === sign && Date.parse(a.createdAt) < args.nowMs) lapsed.add(a.id)
