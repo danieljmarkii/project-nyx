@@ -216,8 +216,9 @@ Deno.test('neighbour — a cat: the intake flag at any vomit in the run or at th
   assertEquals(refused(cat([
     { at: iso(VOMIT_MS - 5 * H), rating: 'all' },
   ])), [])
-  // Never rates meals: the shipped tracking guard keeps the flag off (Pattern 6).
-  assertEquals(refused(cat([{ at: iso(VOMIT_MS - 5 * H), rating: null }])), [])
+  // Never rates meals: the flag cannot fire (Pattern 6), and the gap cannot grant a wait either.
+  assertEquals(refused(cat([{ at: iso(VOMIT_MS - 5 * H), rating: null }])), ['neighbour'])
+  assertEquals(refused(cat([])), ['neighbour'])
   // A dog's meals are never read for this.
   assertEquals(refused(input({ record: record({ meals: [{ at: iso(VOMIT_MS - 72 * H), rating: 'some' }] }) })), [])
 })
@@ -274,8 +275,10 @@ Deno.test('mayWaitValue — TRUE only on a passed call today; FALSE only on the 
   for (const tier of ['call_today', 'call_now', 'logged', 'not_enough_to_say']) {
     assertStrictEquals(mayWaitValue(tier, pass, false), false, tier)
   }
-  // With no tier written (the key off), nothing is written at all, the FALSE included.
+  // With no tier written (the key off), nothing is written, the FALSE included; a stored TRUE
+  // (written before a rollback) is taken back.
   assertStrictEquals(mayWaitValue(undefined, pass, false), undefined)
+  assertStrictEquals(mayWaitValue(undefined, null, true), null)
 })
 
 Deno.test('payload and column helpers read both types, present-or-unclear only', () => {

@@ -215,21 +215,25 @@ export async function revalidateMayWait(
       .eq('may_wait', true)
       .in('event_id', candidates.map((e) => e.id)) as unknown as Promise<Result<Record<string, unknown>[]>>)
     if (rowErr) throw new Error(rowErr.message)
-    let lowered = 0
-    for (const row of rows ?? []) {
+    // In parallel: each row's re-check is independent, and this runs before the read responds.
+    const results = await Promise.all((rows ?? []).map(async (row) => {
       const ev = candidates.find((e) => e.id === row.event_id)
-      if (!ev) continue
+      if (!ev) return 0
       const { data: att, error: attErr } = await (userClient
         .from('event_attachments')
         .select('event_id')
         .eq('event_id', ev.id) as unknown as Promise<Result<{ event_id: string }[]>>)
+      // An attachments read that fails reads as "no record" below, which refuses: a transient
+      // error lowers a TRUE that may have been right. That is the fail-closed side, on purpose.
       const record = attErr ? null : await readMayWaitRecord(userClient, {
         petId: p.petId, ownerId: p.ownerId, eventId: ev.id, anchorAt: ev.occurred_at, species: p.species, nowMs: p.nowMs,
       })
       const input = storedRowInput({ row, incidentType: ev.event_type, hasPhoto: (att ?? []).length > 0, floorOn: true, record })
       const verdict = mayWaitVerdict(input)
-      if (verdict.mayWait) continue
+      if (verdict.mayWait) return 0
       const next = mayWaitValue(input.write.tier, verdict, row.may_wait) ?? null
+      // Compare-and-set on the TRUE. A zero-row match is silent, unlike updateAnalysisRow (C-39):
+      // it means a concurrent write already replaced the TRUE, which is the outcome wanted.
       const { error: upErr } = await adminClient
         .from('event_ai_analysis')
         .update({ may_wait: next })
@@ -238,8 +242,9 @@ export async function revalidateMayWait(
         .eq('may_wait', true)
       if (upErr) throw new Error(upErr.message)
       console.info(`may_wait: lowered a stored TRUE on ${ev.id} (${verdict.refusedBy.join(', ')})`)
-      lowered++
-    }
+      return 1
+    }))
+    const lowered = results.reduce<number>((a, b) => a + b, 0)
     return lowered
   } catch (err) {
     console.warn('may_wait: the re-check of stored TRUEs did not finish:', err instanceof Error ? err.message : String(err))

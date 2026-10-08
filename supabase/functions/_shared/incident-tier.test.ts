@@ -109,7 +109,7 @@ Deno.test('EN-3 never-lower — a stored call tier beside a lowered verdict stil
 
 Deno.test('EN-3 never-lower — resolveReanalysisWrite writes a call today over a stored call now, at call now', () => {
   const w = resolveReanalysisWrite({
-    stored: stored({ tier: 'call_now' }), eventId: 'e', petId: 'p', incidentType: 'vomit', readComplete: true, structuredValues: { blood_col: 'yes' },
+    stored: stored({ tier: 'call_now' }), eventId: 'e', petId: 'p', incidentType: 'vomit', readComplete: true, holdLowersMayWaitTo: null, structuredValues: { blood_col: 'yes' },
     nextPresentFlags: ['blood'], readFields: tieredReadFields({ ...FIELDS, recommendation: 'worth_a_call' }, true),
   }) as { mode: string; values: Record<string, unknown> }
   assertStrictEquals(w.mode, 'upsert')
@@ -117,7 +117,7 @@ Deno.test('EN-3 never-lower — resolveReanalysisWrite writes a call today over 
   assertStrictEquals(w.values.blood_col, 'yes') // the new finding lands
   // Flag-off: the column is left alone (the stored call now stays on the row).
   const off = resolveReanalysisWrite({
-    stored: stored({ tier: 'call_now' }), eventId: 'e', petId: 'p', incidentType: 'vomit', readComplete: true, structuredValues: {},
+    stored: stored({ tier: 'call_now' }), eventId: 'e', petId: 'p', incidentType: 'vomit', readComplete: true, holdLowersMayWaitTo: null, structuredValues: {},
     nextPresentFlags: [], readFields: { ...FIELDS, recommendation: 'worth_a_call' },
   }) as { mode: string; values: Record<string, unknown> }
   assertStrictEquals(off.mode, 'upsert')

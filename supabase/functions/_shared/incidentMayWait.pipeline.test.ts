@@ -20,7 +20,8 @@ type Row = Record<string, unknown>
 type Flag = 'repeated_vomiting' | 'concurrent_lethargy'
 
 interface TestAnalysis extends IncidentAnalysisBase {
-  appears: boolean
+  // The real descriptors' field name: the re-check of a stored TRUE reads it off the payload.
+  appears_to_show_vomit: boolean
   blood_present: string | null
   colour: string | null
 }
@@ -44,6 +45,8 @@ interface Db {
   vision: () => TestAnalysis | null
   flags: Flag[]
   minTier?: 'call_now' | 'call_today'
+  // Runs as an event_ai_analysis upsert lands: a sibling read landing beside this run's write.
+  onUpsert?: (db: Db) => void
 }
 
 function makeDb(o: Partial<Db> = {}): Db {
@@ -100,6 +103,7 @@ class Q {
       for (const r of hit) Object.assign(r, structuredClone(this.values))
       return { data: this.returning ? hit.map((r) => ({ id: r.id })) : null, error: null }
     }
+    if (this.table === 'event_ai_analysis') { const hook = this.db.onUpsert; this.db.onUpsert = undefined; hook?.(this.db) }
     const existing = rows.find((r) => r.event_id === this.values.event_id)
     if (existing) Object.assign(existing, structuredClone(this.values))
     else rows.push({ id: `a-${this.values.event_id}`, edited_at: null, ...structuredClone(this.values) })
@@ -148,7 +152,7 @@ function descriptor(db: Db): IncidentDescriptor<TestAnalysis, Flag> {
     ruleVersion: 'test1',
     floorEngineKey: 'engines_v3_en4',
     parseToolResult: () => null,
-    appearsToShowSubject: (a) => a.appears,
+    appearsToShowSubject: (a) => a.appears_to_show_vomit,
     // Only the read itself is this run's flags; a neighbour read in the same test gets none.
     computeContextualFlags: (_c, e) => Promise.resolve(
       e.eventId === 'evt-1' ? ({ flags: db.flags, copy: COPY, minTier: db.minTier } as ContextualRun<Flag, TestAnalysis>) : [],
@@ -166,7 +170,7 @@ function descriptor(db: Db): IncidentDescriptor<TestAnalysis, Flag> {
 }
 
 const CLEAN: TestAnalysis = {
-  appears: true, blood_present: 'none_visible', colour: 'yellow', visual_flags: [], recommendation: 'monitor', read_text: null, description: null,
+  appears_to_show_vomit: true, blood_present: 'none_visible', colour: 'yellow', visual_flags: [], recommendation: 'monitor', read_text: null, description: null,
 }
 const MODEL_CALL: TestAnalysis = { ...CLEAN, recommendation: 'worth_a_call', read_text: 'MODEL: plant matter' }
 const BLOODY: TestAnalysis = { ...CLEAN, blood_present: 'fresh_red', visual_flags: ['blood'], recommendation: 'worth_a_call' }
@@ -216,8 +220,9 @@ Deno.test('may_wait · EN-3 + EN-4, a photoless record-only call today over a cl
   await run(db)
   assertStrictEquals(row(db)?.tier, 'call_today')
   assertStrictEquals(row(db)?.may_wait, true)
-  // The non-vacuity half: the record was read.
-  assertStrictEquals(db.reads.user_profiles, 1)
+  // The non-vacuity half: the record was read, for the decision and again for the re-check of
+  // the TRUE this write carried.
+  assertStrictEquals(db.reads.user_profiles, 2)
 })
 
 Deno.test('may_wait · the floor\'s call now carries NULL, never a TRUE', async () => {
@@ -342,8 +347,68 @@ Deno.test('may_wait · a stored FALSE outlives a later write of any tier (a call
 })
 
 Deno.test('may_wait · a photo the model says is not the subject is not a settled read: NULL', async () => {
-  const db = makeDb({ app_config: KEYS_ON('engines_v3_en3', 'engines_v3_en4'), vision: () => ({ ...CLEAN, appears: false }) })
+  const db = makeDb({ app_config: KEYS_ON('engines_v3_en3', 'engines_v3_en4'), vision: () => ({ ...CLEAN, appears_to_show_vomit: false }) })
   photo(db)
+  await run(db)
+  assertEquals([row(db)?.tier, row(db)?.may_wait], ['call_today', null])
+})
+
+// ── The adversarial pass's findings 3–5: a stored TRUE never outlives a write over it ──
+
+Deno.test('may_wait · a HOLD over a stored TRUE takes it back: FALSE when the new photo refutes it (pink, unsure blood)', async () => {
+  const db = makeDb({ app_config: KEYS_ON('engines_v3_en3', 'engines_v3_en4') })
+  await run(db)
+  assertStrictEquals(row(db)?.may_wait, true)
+  // The record call lapses, and a photo is added that reads pink with unsure blood; the model
+  // says monitor, so the stored call is HELD over it and its words stand.
+  db.flags = []
+  photo(db)
+  db.vision = () => ({ ...CLEAN, colour: 'pink_red', blood_present: 'unsure' })
+  await run(db)
+  assertEquals([row(db)?.recommendation, row(db)?.tier, row(db)?.may_wait], ['worth_a_call', 'call_today', false])
+})
+
+Deno.test('may_wait · a HOLD over a stored TRUE with a clean new photo still takes it back (NULL)', async () => {
+  const db = makeDb({ app_config: KEYS_ON('engines_v3_en3', 'engines_v3_en4') })
+  await run(db)
+  db.flags = []
+  photo(db)
+  await run(db)
+  assertEquals([row(db)?.tier, row(db)?.may_wait], ['call_today', null])
+})
+
+Deno.test('may_wait · a capped run with no flags over a stored TRUE and a new photo takes it back', async () => {
+  const db = makeDb({ app_config: KEYS_ON('engines_v3_en3', 'engines_v3_en4') })
+  await run(db)
+  assertStrictEquals(row(db)?.may_wait, true)
+  db.flags = []
+  db.dayCount = 99
+  photo(db)
+  await run(db)
+  assertEquals([row(db)?.tier, row(db)?.may_wait], ['call_today', null])
+})
+
+Deno.test('may_wait · the tier key rolled back: the next read takes a stored TRUE back', async () => {
+  const db = makeDb({ app_config: KEYS_ON('engines_v3_en3', 'engines_v3_en4') })
+  await run(db)
+  assertStrictEquals(row(db)?.may_wait, true)
+  db.app_config = []
+  photo(db)
+  db.vision = () => BLOODY
+  await run(db)
+  assertStrictEquals(row(db)?.may_wait, null)
+})
+
+Deno.test('may_wait · a neighbour that lands between the decision and the write: the TRUE is re-checked after it', async () => {
+  const db = makeDb({ app_config: KEYS_ON('engines_v3_en3', 'engines_v3_en4') })
+  db.onUpsert = (d) => {
+    d.events.push({ id: 'evt-2', pet_id: 'pet-1', event_type: 'vomit', occurred_at: iso(T0 + H), occurred_at_confidence: 'witnessed', deleted_at: null, pets: PET })
+    d.event_attachments.push({ id: 'att-evt-2', event_id: 'evt-2', storage_path: 'pet-1/evt-2/a.jpg', sort_order: 0 })
+    d.event_ai_analysis.push({
+      id: 'a-evt-2', event_id: 'evt-2', pet_id: 'pet-1', incident_type: 'vomit', status: 'completed', error: null, edited_at: null,
+      recommendation: 'worth_a_call', tier: 'call_today', may_wait: false, visual_flags: ['blood'], contextual_flags: [], ai_raw_payload: null,
+    })
+  }
   await run(db)
   assertEquals([row(db)?.tier, row(db)?.may_wait], ['call_today', null])
 })

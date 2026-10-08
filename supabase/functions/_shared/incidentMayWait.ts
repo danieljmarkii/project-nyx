@@ -250,6 +250,14 @@ export function neighbourRefuses(n: MayWaitNeighbour): boolean {
   return columnBlockers(payloadAsColumns(n.eventType, a.ai_raw_payload)).length > 0
 }
 
+/** A rated meal in the week before `atMs`: the owner tracks intake. */
+export function tracksIntakeAt(meals: MayWaitRecord['meals'], atMs: number): boolean {
+  return meals.some((m) => {
+    const t = Date.parse(m.at)
+    return m.rating !== null && Number.isFinite(t) && t <= atMs && t >= atMs - MAY_WAIT_INTAKE_BASELINE_HOURS * HOUR
+  })
+}
+
 /** The cat intake flag as shipped, evaluated at `atMs`. */
 export function intakeFlagAt(meals: MayWaitRecord['meals'], atMs: number): boolean {
   const within = (iso: string, hours: number) => {
@@ -289,8 +297,12 @@ export function noCallNowAround(record: MayWaitRecord): boolean {
     return Number.isFinite(t) && t >= first - MAY_WAIT_LETHARGY_HOURS * HOUR && t <= lethargyTo
   })) return false
 
-  // A cat: the intake flag at any vomit in the run, and at the read.
+  // A cat: the intake flag at any vomit in the run, and at the read. And a cat whose meals are
+  // not rated has no intake record at all: the flag's tracking guard (Pattern 6) keeps it from
+  // ESCALATING on a gap in the log, and the same gap must not GRANT a night's wait either
+  // (adversarial pass, finding 6: a cat inside the 48 h hepatic-lipidosis window).
   if (record.species === 'cat') {
+    if (!tracksIntakeAt(record.meals, record.nowMs)) return false
     const vomitTimes = record.vomits.map((v) => Date.parse(v.at)).filter((t) => Number.isFinite(t) && Math.abs(t - anchorMs) <= reach)
     for (const t of [...vomitTimes, record.nowMs]) {
       if (intakeFlagAt(record.meals, t)) return false
@@ -336,6 +348,12 @@ export function notAcrossDst(record: MayWaitRecord): boolean {
 
 // ── The predicate ─────────────────────────────────────────────────────────────────
 
+/** Whether THIS incident's own photo evidence refuses the wait (the rules that write FALSE),
+ *  whatever the tier: a hold or a calm read keeps its words, but not a TRUE its photo refutes. */
+export function photoEvidenceRefuses(input: MayWaitInput): boolean {
+  return !noPhotoFinding(input) || !noBloodColour(input) || !noModelCall(input)
+}
+
 export function mayWaitVerdict(input: MayWaitInput): MayWaitVerdict {
   const refusedBy: MayWaitRule[] = []
   if (input.write.tier !== 'call_today') refusedBy.push('tier')
@@ -354,16 +372,18 @@ export function mayWaitVerdict(input: MayWaitInput): MayWaitVerdict {
   return { mayWait: refusedBy.length === 0, refusedBy }
 }
 
-/** The value a write of `tier` carries. Absent when the write names no tier (the key is off).
- *  TRUE only on a call today the predicate passed; FALSE on a call today its own photo refused;
- *  NULL otherwise (any other tier, or a refusal the record recomputes). A stored FALSE is never
- *  written over, whatever the tier: it is the one trace a removed photo leaves (see the header). */
+/** The value a write of `tier` carries. TRUE only on a call today the predicate passed; FALSE on
+ *  a call today its own photo refused; NULL otherwise (any other tier, or a refusal the record
+ *  recomputes). A stored FALSE is never written over, whatever the tier: it is the one trace a
+ *  removed photo leaves (see the header). A write that names no tier (the key off) names no
+ *  may_wait either, except over a stored TRUE, which it takes back: a TRUE written before a
+ *  rollback must not outlive the reads that follow it (adversarial pass, finding 4). */
 export function mayWaitValue(
   tier: string | undefined,
   verdict: MayWaitVerdict | null,
   storedMayWait: unknown,
 ): boolean | null | undefined {
-  if (tier === undefined) return undefined
+  if (tier === undefined) return storedMayWait === true ? null : undefined
   if (storedMayWait === false) return false
   if (tier !== 'call_today' || !verdict) return null
   if (verdict.mayWait) return true

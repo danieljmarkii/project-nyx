@@ -404,7 +404,7 @@ Deno.test('CUL-1323 — a HOLD writes no words, clears a hide it finds, and writ
   })
   const call = (s: StoredAnalysis | null, recommendation: 'worth_a_call' | 'monitor') =>
     resolveReanalysisWrite({
-      stored: s, eventId: 'evt', petId: 'pet', incidentType: 'vomit', readComplete: true,
+      stored: s, eventId: 'evt', petId: 'pet', incidentType: 'vomit', readComplete: true, holdLowersMayWaitTo: null,
       structuredValues: {}, nextPresentFlags: [], readFields: { ...READ_FIELDS, recommendation },
     })
   assertEquals(call(stored({ hidden: true }), 'monitor'), { mode: 'hold', values: { dismissed_at: null } })
@@ -752,6 +752,7 @@ const resolve = (s: StoredAnalysis | null, next: AnalysisReadFields, nextPresent
     nextPresentFlags,
     readFields: next,
     readComplete,
+    holdLowersMayWaitTo: null,
   })
 
 Deno.test('resolveReanalysisWrite — a photo escalation is HELD over a calmer re-read (Dr. Chen\'s confirmed case)', () => {

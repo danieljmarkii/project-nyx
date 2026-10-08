@@ -77,7 +77,7 @@ import {
 import { FLOOR_READ_HOURS, type FloorTier } from '../../../lib/incidentFloor.ts'
 // "May wait" (Engines v3 PR-27e, CUL-1628): the one predicate, and the reads behind it. Every
 // write below that writes `tier` writes `may_wait` beside it (087's writer contract).
-import { mayWaitValue, mayWaitVerdict, type MayWaitInput, type MayWaitRecord, type MayWaitVerdict } from './incidentMayWait.ts'
+import { mayWaitValue, mayWaitVerdict, photoEvidenceRefuses, type MayWaitInput, type MayWaitRecord, type MayWaitVerdict } from './incidentMayWait.ts'
 import {
   MAY_WAIT_ANALYSIS_COLUMNS,
   readMayWaitRecord,
@@ -605,7 +605,7 @@ export function snapshotStoredAnalysis<TAnalysis extends IncidentAnalysisBase, T
 // Re-run, so it is a mitigation, not the fix: CUL-1357 carries the server-side one.
 export type ReanalysisWrite =
   | AnalysisWriteBack
-  | { mode: 'hold'; values: { status?: string; error?: null; dismissed_at?: null } | null }
+  | { mode: 'hold'; values: { status?: string; error?: null; dismissed_at?: null; may_wait?: boolean | null } | null }
 
 // The step-9 write decision. Two rules on top of Pattern 7's never-clobber:
 //
@@ -694,18 +694,25 @@ export function resolveReanalysisWrite<TFlag extends string>(params: {
   // record's CUL-819 line must keep saying so (adversarial pass on CUL-1509). Required, no
   // default: a default here would decide what the line says for the caller (C-37).
   readComplete: boolean
+  // What a HOLD writes to a stored TRUE (CUL-1628): a hold keeps the stored call's words, never
+  // its leave to wait, because this calmer run may be the one that saw what refutes it (a pink
+  // photo over a lapsed record call: adversarial pass, finding 3). FALSE when this run's own photo
+  // refuses the wait, else NULL. Ignored unless the stored value is TRUE. Required (C-37).
+  holdLowersMayWaitTo: boolean | null
 }): ReanalysisWrite {
   const { stored, readFields } = params
   if (stored && holdsOver(stored, readFields)) {
     const settle = stored.status !== 'completed' && stored.status !== 'uncertain'
     const clearError = params.readComplete && (settle || stored.errored)
-    if (!settle && !clearError && !stored.hidden) return { mode: 'hold', values: null }
+    const lowerMayWait = stored.mayWait === true
+    if (!settle && !clearError && !stored.hidden && !lowerMayWait) return { mode: 'hold', values: null }
     return {
       mode: 'hold',
       values: {
         ...(settle ? { status: readFields.status } : {}),
         ...(clearError ? { error: null } : {}),
         ...(stored.hidden ? { dismissed_at: null } : {}),
+        ...(lowerMayWait ? { may_wait: params.holdLowersMayWaitTo } : {}),
       },
     }
   }
@@ -1020,7 +1027,12 @@ function errorOnly(params: {
   tiersOn: boolean
   existing: { mayWait?: boolean | null } | null
 }): FailureWrite & { mode: 'error-only' } {
-  if (!params.tiersOn) return { mode: 'error-only', values: { error: params.message } }
+  if (!params.tiersOn) {
+    // Off, the column is named only to take back a TRUE written before the rollback.
+    return params.existing?.mayWait === true
+      ? { mode: 'error-only', values: { error: params.message, may_wait: null } }
+      : { mode: 'error-only', values: { error: params.message } }
+  }
   return { mode: 'error-only', values: { error: params.message, may_wait: params.existing?.mayWait === false ? false : null } }
 }
 
@@ -1557,6 +1569,8 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
     nextPresentFlags: stored?.presentFlags ?? [],
     readFields,
     readFieldsOnly: true,
+    // Unreachable (this write always escalates, so it never holds); said rather than defaulted.
+    holdLowersMayWaitTo: null,
   })
   if (writeBack.mode === 'hold') return nothing() // unreachable: this write always escalates
   const { error } = await applyAnalysisWriteBack(adminClient, { eventId: p.eventId, petId: p.petId }, writeBack, p.stamps)
@@ -1799,8 +1813,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // carries FALSE or NULL beside its tier; with the tier key off, no write names the column.
     const mayWaitOn = tiersOn && isEngineKeyOn(engineFlags, 'engines_v3_en4')
     const ownerId = typeof pet?.user_id === 'string' ? pet.user_id : null
-    const revalidateNeighbours = () => mayWaitOn
-      ? revalidateMayWait(userClient, adminClient, { petId, ownerId, species, anchorAt: occurredAt, excludeEventId: eventId, nowMs: Date.now() })
+    const revalidateNeighbours = (includeSelf = false) => mayWaitOn
+      ? revalidateMayWait(userClient, adminClient, { petId, ownerId, species, anchorAt: occurredAt, excludeEventId: includeSelf ? null : eventId, nowMs: Date.now() })
       : Promise.resolve(0)
 
     // 1c. EN-4's floor-only mode (CUL-1134) runs only under its key AND the tier key (the
@@ -1990,7 +2004,17 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         if (writeError) throw new Error(`DB write failed: ${writeError.message}`)
       }
       // else: capped/disabled, no new flags, but a real analysis already exists →
-      // leave it exactly as-is (success, no write).
+      // leave it exactly as-is (success, no write), save one column: a stored TRUE beside a
+      // photo this run could not read is taken back (CUL-1628; adversarial pass, finding 3).
+      else if (hasPhoto && existing?.may_wait === true) {
+        const { error: lowerError } = await adminClient
+          .from('event_ai_analysis')
+          .update({ may_wait: null })
+          .eq('event_id', eventId)
+          .eq('pet_id', petId)
+          .eq('may_wait', true)
+        if (lowerError) throw new Error(`DB write failed: ${lowerError.message}`)
+      }
       return Response.json(
         {
           success: true,
@@ -2205,13 +2229,13 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       stored: freshRow,
       record,
     })
-    const readFields = tieredFields.tier === undefined
-      ? tieredFields
-      : withMayWait(
-        tieredFields,
-        await decideMayWait(runInput, () => readMayWaitRecord(userClient, { petId, ownerId, eventId, anchorAt: occurredAt, species, nowMs: Date.now() })),
-        freshRow?.may_wait,
-      )
+    const readFields = withMayWait(
+      tieredFields,
+      tieredFields.tier === undefined
+        ? null
+        : await decideMayWait(runInput, () => readMayWaitRecord(userClient, { petId, ownerId, eventId, anchorAt: occurredAt, species, nowMs: Date.now() })),
+      freshRow?.may_wait,
+    )
     const stored = snapshotStoredAnalysis(descriptor, freshRow)
     const writeBack = resolveReanalysisWrite({
       stored,
@@ -2222,6 +2246,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       readComplete: !photoUnreadable && !partialReadCollapsed,
       nextPresentFlags: descriptor.presentFlagsFromStructured(structuredValues),
       readFields,
+      holdLowersMayWaitTo: photoEvidenceRefuses(runInput(null)) ? false : null,
     })
 
     // A hold writes no stamp: the words it keeps are an earlier run's (engineStamps.ts).
@@ -2243,7 +2268,10 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     const { error: writeError } = await applyAnalysisWriteBack(adminClient, { eventId, petId }, writeBack, stamps)
     if (writeError) throw new Error(`DB write failed: ${writeError}`)
     // This read may be the sign a neighbour's TRUE was given without: re-check them (lower-only).
-    await revalidateNeighbours()
+    // A TRUE this write just carried is re-checked too, against the record as it stands after
+    // the write: a neighbour's read that landed between this run's decision and its write
+    // re-checked before the TRUE existed (adversarial pass, finding 5).
+    await revalidateNeighbours(writeBack.values.may_wait === true)
 
     return Response.json(
       { success: true, recommendation, contextual_flags: contextualFlags, visual_flags: visualFlags },
