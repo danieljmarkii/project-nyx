@@ -237,6 +237,24 @@ Deno.test('EN-F wiring — the prior row is read with its flags, and minting is 
   }
 })
 
+Deno.test('CUL-1663 wiring — both ways the prior read can fail say so, and the pipeline is told', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  // The rule lives in careState.ts (careState.test.ts, signalPipeline.test.ts); the shell's half
+  // is that an error AND a throw each set the flag, a missing row does not, and the call hands it over.
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  const read = src.slice(src.indexOf('let priorReadFailed'), src.indexOf('runSignalPipeline({'))
+  assertStrictEquals(/^let priorReadFailed = false\n/.test(read), true, 'the flag no longer starts false (a missing row is not a failed read)')
+  const errorBranch = read.slice(read.indexOf('if (priorError) {'), read.indexOf('} else if (priorRow)'))
+  assertStrictEquals(/\bpriorReadFailed = true\b/.test(errorBranch), true, 'a read error no longer sets the flag')
+  const catchBranch = read.slice(read.indexOf('} catch (priorErr) {'))
+  assertStrictEquals(/\bpriorReadFailed = true\b/.test(catchBranch), true, 'a thrown read no longer sets the flag')
+  assertStrictEquals((read.match(/\bpriorReadFailed = true\b/g) ?? []).length, 2, 'the flag is set somewhere other than the two failure branches')
+  const call = src.slice(src.indexOf('runSignalPipeline({'), src.indexOf('careRecord:', src.indexOf('runSignalPipeline({')))
+  assertStrictEquals(/\bpriorReadFailed,/.test(call), true, 'the shell no longer hands the pipeline the failed read')
+  const pipeline = blankComments(await Deno.readTextFile(new URL('./pipeline.ts', import.meta.url)))
+  assertStrictEquals(/priorReadFailed: args\.priorReadFailed,/.test(pipeline), true, 'the pipeline no longer hands the care step the failed read')
+})
+
 Deno.test('EN-F wiring — the flag is read for the pet\'s owner, and the cache row carries the stamps', async () => {
   const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
   const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))

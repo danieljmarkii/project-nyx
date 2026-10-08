@@ -532,6 +532,11 @@ export interface SignalPipelineInput {
   // (C-37). Non-empty applies the step-3 ruling below: `applyIncompleteRead`.
   incompletePulls: readonly string[]
   prior: PriorSignal | null
+  // CUL-1663: the shell asked for the previous row and the read FAILED (an error or a throw),
+  // as distinct from `prior: null` with no row yet. Under `engines_v3_en9` the care step treats
+  // it as continuity unknown and lapses every answer written before this run (ruled expire,
+  // 2026-10-08). Required, so no caller forgets to say: a default here would be the decision (C-37).
+  priorReadFailed: boolean
   nowMs: number
   engineFlags: EngineFlags
   // EN-9 (PR-23): read by the shell only while `engines_v3_en9` is on; EMPTY_CARE_RECORD otherwise.
@@ -807,6 +812,7 @@ export function runSignalPipeline(
         recencyDaysFor: (sign) => chronicityFloorsFor(sign, rows.pet.species as Species, config.chronicity).ongoingRecencyDays,
         priorFindings: priorSignal?.findings ?? null,
         priorGeneratedAtMs: priorMs(priorSignal),
+        priorReadFailed: args.priorReadFailed,
         wasChronicAt: chronicAsOf(input, config),
       })
       : withContext

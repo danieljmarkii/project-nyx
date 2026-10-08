@@ -122,6 +122,7 @@ export function makeSignalObserver(opts: SignalObserverOptions): Observer {
         rows: rowsAt(view.record, pet.key, T),
         incompletePulls: [],
         prior: last ? { findings: last.payload.findings, generatedAt: last.generatedAt, engineFlags: flags.on } : null,
+        priorReadFailed: false,
         nowMs: T,
         engineFlags: flags,
         careRecord: en9 ? careAt(view.record, pet.key, T) : EMPTY_CARE_RECORD,
