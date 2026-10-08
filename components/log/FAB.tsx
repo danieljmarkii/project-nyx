@@ -214,8 +214,9 @@ export function FAB() {
       Animated.timing(fade, { toValue: 1, duration: FADE_MS, useNativeDriver: true }).start();
       return;
     }
-    // A slot past today's count lands at rest, so a row that mounts late (the recent
-    // foods answer after the fan has run) appears in place rather than invisibly at 0.
+    // A slot past today's count lands at rest, so a row that mounts late appears in
+    // place rather than invisibly at 0. The recent foods are read before the open now
+    // (CUL-1634), so this is the backstop for a tap that beats the mount read.
     slots.slice(count).forEach((v) => v.setValue(1));
     Animated.parallel([
       Animated.spring(turn, { toValue: 1, useNativeDriver: true, ...TURN_SPRING }),
@@ -315,25 +316,57 @@ export function FAB() {
     return () => sub.remove();
   }, [open, closeMenu]);
 
+  // CUL-1634 — the recent foods are read BEFORE the fan runs: on mount, on a pet
+  // change, after each close, and when today's record gains a row, never because the
+  // menu opened. The column is bottom anchored, so three rows landing after the fan
+  // grew it ~160pt upward and moved every pill above them, Vomit included, under a
+  // thumb already on its way. Reading while closed means a cold open's slot count is
+  // final on its first render, and a meal logged from the fan or the sheet is in the
+  // list by the next open.
+  //
+  // While open no read starts and none lands over held rows, because a read can only
+  // move rows under the finger; the next close refreshes. Two exceptions. CUL-723's:
+  // the pet flipped inside the open menu, so the held rows are another pet's
+  // (unrendered by the key below) and the new pet's must load. And a tap that beats
+  // the mount read: nothing is held, so the answer lands, late, as before. An open
+  // never cancels a read already in flight, which would turn the second case into a
+  // second round trip. `todayHeadId` is the change signal `useDaySummary` uses: the
+  // newest row of today.
+  const activePetId = activePet?.id ?? null;
+  const todayHeadId = useEventStore((s) => s.todayEvents[0]?.id ?? null);
+  const latestPetId = useRef(activePetId);
+  latestPetId.current = activePetId;
+  const openNow = useRef(open);
+  openNow.current = open;
+  const heldFor = useRef<string | null>(null);
+  heldFor.current = recentFoods?.petId ?? null;
+  const readingFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!open || !activePet) return;
-    let cancelled = false;
+    if (!activePetId) return;
+    if (open && (heldFor.current === activePetId || readingFor.current === activePetId)) return;
+    readingFor.current = activePetId;
     // The last 3 foods THIS pet actually ate, newest first. Shares getRecentFoods
     // with the picker (single source of truth), which orders by the pet's real
     // MAX(occurred_at) — not food_items_cache.last_used_at, which is shared across
     // pets and was reset to NULL on every sync, so the old query returned an
     // effectively random 3. `null` window = no time bound (re-offer staples of
-    // any age). Async now, so guard against a resolve after the menu closes.
-    getRecentFoods(activePet.id, null, 3)
-      .then((foods) => { if (!cancelled) setRecentFoods({ petId: activePet.id, foods }); })
-      .catch((e) => console.warn('[FAB] recent foods load failed:', e));
-    return () => { cancelled = true; };
-  }, [open, activePet]);
+    // any age). Async, so the answer is checked against the pet it was read for.
+    getRecentFoods(activePetId, null, 3)
+      .then((foods) => {
+        if (latestPetId.current !== activePetId) return;
+        if (openNow.current && heldFor.current === activePetId) return;
+        setRecentFoods({ petId: activePetId, foods });
+      })
+      .catch((e) => console.warn('[FAB] recent foods load failed:', e))
+      .finally(() => {
+        if (readingFor.current === activePetId) readingFor.current = null;
+      });
+  }, [open, activePetId, todayHeadId]);
 
   // Derived in the render body rather than mirrored into state (the C-9 shape): the
-  // list is only ever this pet's, or nothing. Note a reopen for the SAME pet still
-  // shows the held rows immediately while the refetch runs — the key matches, so
-  // there is no flash to pay for the safety.
+  // list is only ever this pet's, or nothing. A pet flip inside the open menu shows
+  // no food rows until the new pet's read answers: a wrong absence for a beat, never
+  // a wrong list.
   const foodsForActivePet =
     activePet && recentFoods?.petId === activePet.id ? recentFoods.foods : null;
 
