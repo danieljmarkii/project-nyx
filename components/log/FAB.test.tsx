@@ -1085,6 +1085,133 @@ describe('FAB — CUL-1634, the recent foods are read before the fan runs', () =
   });
 });
 
+// ── CUL-1636 ─────────────────────────────────────────────────────────────────
+//
+// The fan has a height budget (lib/fanBudget.ts, where the 320pt / AX1–AX3 matrix is
+// asserted over data). These pin that the FAB draws what the plan says: the chip is
+// always drawn, the oldest foods are the ones that leave, a pill never runs past a
+// 320pt screen, and when even the doors overflow the chip stays outside the scroll.
+describe('FAB — CUL-1636, the fan fits at large text sizes and never cuts the pet chip', () => {
+  const RN = require('react-native');
+  const { FAN_RIGHT_INSET, FAN_LEFT_MARGIN } = require('../../lib/fanBudget');
+  /** RN's fontScale per iOS content size. */
+  const AX = { default: 1, AX1: 1.786, AX2: 2.143, AX3: 2.643 } as const;
+  const THREE = [
+    { id: 'rc-wet', brand: 'Royal Canin', product_name: 'Selected Protein PR, Wet', format: 'wet_canned', food_type: 'meal' },
+    { id: 'rc-dry', brand: 'Royal Canin', product_name: 'Selected Protein PR, Dry', format: 'dry_kibble', food_type: 'meal' },
+    { id: 'hills', brand: 'Hills', product_name: 'i/d Low Fat', format: 'dry_kibble', food_type: 'meal' },
+  ];
+  let dims: jest.SpyInstance;
+  function windowOf(width: number, height: number, fontScale: number) {
+    dims = jest.spyOn(RN, 'useWindowDimensions').mockReturnValue({ width, height, fontScale, scale: 2 });
+  }
+  afterEach(() => dims?.mockRestore());
+
+  const foodLabels = (view: ReturnType<typeof render>) =>
+    fanLabels(view).filter((l) => l.startsWith('Royal Canin') || l.startsWith('Hills'));
+
+  it('a roomy phone at default text draws every food, as before', async () => {
+    windowOf(430, 932, AX.default);
+    getRecentFoods.mockResolvedValueOnce(THREE);
+    const view = await openMenu();
+    expect(view.getByText('Logging for')).toBeTruthy();
+    expect(foodLabels(view)).toHaveLength(3);
+    expect(view.queryByTestId('fab-fan-scroll')).toBeNull();
+  });
+
+  it('a 320pt SE at default text keeps the chip and the newest foods, and drops the oldest', async () => {
+    windowOf(320, 568, AX.default);
+    getRecentFoods.mockResolvedValueOnce(THREE);
+    const view = await openMenu();
+    expect(view.getByText('Logging for')).toBeTruthy();
+    // Hills is the oldest of the three, so it is the one that leaves.
+    expect(foodLabels(view)).toEqual(['Royal Canin · Selected Protein PR', 'Royal Canin · Selected Protein PR']);
+    expect(view.queryByText(/^Hills/)).toBeNull();
+  });
+
+  it('on a 320pt screen no pill is wider than the screen less its insets', async () => {
+    windowOf(320, 568, AX.default);
+    getRecentFoods.mockResolvedValueOnce(THREE);
+    const view = await openMenu();
+    const pills = pressableHosts(view).filter((n: TreeNode) => n.props.testID !== 'fab-scrim');
+    const widths = pills
+      .map((n: TreeNode) => StyleSheet.flatten(n.props.style)?.maxWidth)
+      .filter((w: unknown) => w !== undefined);
+    // Every pill but the disc carries the cap: the chip, four doors, two foods.
+    expect(widths).toHaveLength(7);
+    for (const w of widths) expect(w).toBe(320 - FAN_RIGHT_INSET - FAN_LEFT_MARGIN);
+  });
+
+  // The SE (375×667, no safe area in the test host) at each AX size: what the plan
+  // decides, stated per size so no branch can pass for the other.
+  it.each([
+    ['AX1', AX.AX1, { scroll: false, maxFoods: 2 }],
+    ['AX2', AX.AX2, { scroll: false, maxFoods: 0 }],
+    ['AX3', AX.AX3, { scroll: true, maxFoods: 0 }],
+  ] as const)('an iPhone SE at %s: the chip leads and every door is drawn', async (_name, scale, want) => {
+    windowOf(375, 667, scale);
+    getRecentFoods.mockResolvedValueOnce(THREE);
+    const view = await openMenu();
+    expect(view.getByLabelText('Logging for Nyx — switch pet')).toBeTruthy();
+    // The chip first, then the four doors in order: nothing is cut and nothing moved.
+    expect(fanLabels(view).slice(0, 7)).toEqual(['N', 'Logging for', 'Nyx', 'More events', 'Loose stool', 'Vomit', 'Log food']);
+    expect(foodLabels(view).length).toBeLessThanOrEqual(want.maxFoods);
+    expect(view.queryByTestId('fab-fan-scroll') !== null).toBe(want.scroll);
+  });
+
+  it('the SE at AX3: the chip is pinned outside the scroll, which opens at its bottom once', async () => {
+    windowOf(375, 667, AX.AX3);
+    getRecentFoods.mockResolvedValueOnce(THREE);
+    const view = await openMenu();
+    const chip = view.getByLabelText('Logging for Nyx — switch pet');
+    const scroll = view.getByTestId('fab-fan-scroll');
+    expect(scroll.findAll((n: TreeNode) => n === chip)).toHaveLength(0);
+    for (const door of ['More events', 'Loose stool', 'Vomit', 'Log food']) {
+      expect(scroll.findAll((n: TreeNode) => n === view.getByText(door))).toHaveLength(1);
+    }
+    expect(StyleSheet.flatten(scroll.props.style).maxHeight).toBeGreaterThan(0);
+    const instance = view.UNSAFE_getByType(RN.ScrollView).instance;
+    const toEnd = jest.spyOn(instance, 'scrollToEnd').mockImplementation(() => {});
+    fireEvent(scroll, 'contentSizeChange', 300, 900);
+    fireEvent(scroll, 'contentSizeChange', 300, 960);
+    // A snap, not motion (the programmatic-scroll rule), and only on the open.
+    expect(toEnd).toHaveBeenCalledTimes(1);
+    expect(toEnd).toHaveBeenCalledWith({ animated: false });
+  });
+
+  it('with no pet only the no-pet card is drawn, and never inside a scroll', async () => {
+    windowOf(320, 568, AX.AX3);
+    usePetStore.setState({ pets: [] as never, activePet: null });
+    const view = await openMenu();
+    expect(view.queryByTestId('fab-fan-scroll')).toBeNull();
+    expect(view.queryByText('More events')).toBeNull();
+  });
+
+  it('two foods that would truncate to the same words under one tag wrap in full', async () => {
+    windowOf(430, 932, AX.AX1);
+    seedPets(1);
+    getRecentFoods.mockResolvedValueOnce([
+      { id: 'pr', brand: 'Royal Canin', product_name: 'Selected Protein Adult PR Hydrolysed Rabbit', format: 'dry_kibble', food_type: 'meal' },
+      { id: 'pd', brand: 'Royal Canin', product_name: 'Selected Protein Adult PD Hydrolysed Duck', format: 'dry_kibble', food_type: 'meal' },
+    ]);
+    const view = await openMenu();
+    const labels = view.getAllByText(/^Royal Canin · Selected Protein Adult/);
+    expect(labels).toHaveLength(2);
+    for (const l of labels) expect(l.props.numberOfLines).toBeUndefined();
+  });
+
+  it('the wet / dry pair keeps its two-line cap: the tag already tells them apart', async () => {
+    windowOf(430, 932, AX.AX1);
+    getRecentFoods.mockResolvedValueOnce(THREE.slice(0, 2));
+    const view = await openMenu();
+    const labels = view.getAllByText('Royal Canin · Selected Protein PR');
+    expect(labels).toHaveLength(2);
+    for (const l of labels) expect(l.props.numberOfLines).toBe(2);
+    expect(view.getByText('WET')).toBeTruthy();
+    expect(view.getByText('DRY')).toBeTruthy();
+  });
+});
+
 // ── CUL-1647 ─────────────────────────────────────────────────────────────────
 //
 // The recent foods keep one order for the day: the read is bounded to the window
