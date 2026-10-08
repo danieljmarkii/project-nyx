@@ -22,7 +22,7 @@ import { useEventStore } from '../../store/eventStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
 import { useSyncStore } from '../../store/syncStore';
 import { usePetStore } from '../../store/petStore';
-import { useMomentStore } from '../../store/momentStore';
+import { useMomentStore, isCornerCardUp } from '../../store/momentStore';
 import { getRecentFoods, PickerFood } from '../../lib/db';
 import { fabFoodDay } from '../../lib/fabRecentFoods';
 import { insertMeal } from '../../lib/meals';
@@ -210,6 +210,10 @@ export function FAB() {
   // bar, and hiding the + for it took the primary control off every tab.
   const captureOverlayOpen = useUiStore((s) => s.captureOverlay?.drawsDoneBar === true);
 
+  // CUL-1635 — a completion card in the disc's corner, read as a boolean for the same
+  // reason as the overlay above.
+  const cornerCardUp = useMomentStore(isCornerCardUp);
+
   // CUL-1636 — the fan's height budget reads the window and the text multiplier. The
   // insets context, not the hook: the hook throws without a provider, and the FAB has
   // no reason to own one (on device expo-router's root always provides it).
@@ -219,6 +223,13 @@ export function FAB() {
   const fanSnapped = useRef(false);
 
   const openMenu = useCallback(() => {
+    // CUL-1635 — the fan never opens under a completion card. The card paints over the
+    // fan (a root sibling) and its Undo row sits on the lowest pill, so a tap meant for
+    // the second food of a meal could undo the first. Dismissed on the owner's own tap,
+    // before the fan draws: the card's pointerEvents drop with `visible`, so not even
+    // its fade can take a touch. A card that is HELD (an unread safety note, an Undo
+    // mid-write) wins instead: the fan stays shut until the card's own dwell ends.
+    if (useMomentStore.getState().dismissCornerCard() === 'held') return;
     // Light impact on OPEN only — closing the menu commits to nothing and stays silent.
     openMenuHaptic();
     closing.current = false;
@@ -323,6 +334,17 @@ export function FAB() {
     fade.setValue(0);
     slots.forEach((v) => v.setValue(0));
   }, [captureOverlayOpen, turn, fade, slots]);
+
+  // CUL-1635, the other direction: a card that reveals while the fan is open (the
+  // picker path reveals ~450ms after its modal leaves) closes the fan rather than being
+  // dismissed itself, since its Undo is a safety net the owner has not yet seen. A close
+  // already under way is the FAB's own quick meal handing over to its card. A tap on the
+  // disc after this is the owner's own gesture again, and dismisses the card like any
+  // other open. `open` only ever turns true through openMenu, which clears the corner
+  // first, so this effect needs no case for a card already up when the fan opens.
+  useEffect(() => {
+    if (cornerCardUp && open && !closing.current) closeMenu();
+  }, [cornerCardUp, open, closeMenu]);
 
   // A modal menu answers Android's back the way it answers the scrim: it closes.
   useEffect(() => {
