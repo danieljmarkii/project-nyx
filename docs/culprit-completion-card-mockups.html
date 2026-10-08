@@ -1,0 +1,295 @@
+<title>Culprit Completion Card</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..600&family=Geist:wght@400..600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a light review page; phone frames sit in a wrapping row so every
+   frame reads at the same scale; annotations sit under each frame. */
+:root {
+  --page: #F6F6F4; --ink: #17171A; --muted: #6B6B70; --rule: #E2E2DE;
+  --surface: #FFFFFF; --note: #EEF7F5; --noteInk: #0B5C52; --warn: #FFF4E0; --warnInk: #7A4B00;
+  /* app tokens, verbatim from constants/theme.ts */
+  --cardDark: #0A0A0A; --confirm: #00C2A8; --glow: #FBBF24; --onDark: #FFFFFF;
+  --onDarkSub: rgba(255,255,255,0.7); --divOnDark: rgba(255,255,255,0.15); --fillOnDark: rgba(255,255,255,0.06);
+  --night: #13112E; --nightUp: #251F57; --symptomInk: #B4232F;
+  --display: "Newsreader", Georgia, serif; --body: "Geist", -apple-system, "Helvetica Neue", sans-serif;
+  --mono: "Geist Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #121214; --ink: #ECECEE; --muted: #9A9AA2; --rule: #2A2A2F; --surface: #1B1B1F;
+  --note: #10302B; --noteInk: #8FE3D6; --warn: #33270F; --warnInk: #F5CB7A; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --page: #121214; --ink: #ECECEE; --muted: #9A9AA2; --rule: #2A2A2F; --surface: #1B1B1F;
+  --note: #10302B; --noteInk: #8FE3D6; --warn: #33270F; --warnInk: #F5CB7A; color-scheme: dark }
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 64px; display: grid; gap: 40px; }
+h1 { font-family: var(--display); font-weight: 500; font-size: 2.1rem; line-height: 1.15; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--display); font-weight: 500; font-size: 1.45rem; margin: 0 0 4px; text-wrap: balance; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.lede { max-width: 66ch; color: var(--muted); margin: 8px 0 0; }
+section { display: grid; gap: 18px; }
+.ledger { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 16px 18px; display: grid; gap: 6px; max-width: 80ch; }
+.ledger div { display: grid; grid-template-columns: 9ch 1fr; gap: 12px; }
+.ledger b { font-weight: 600; }
+
+.row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.frame { width: 340px; max-width: 100%; display: grid; gap: 10px; }
+.tag { justify-self: start; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--rule); color: var(--muted); }
+.tag.current { background: var(--note); color: var(--noteInk); border-color: transparent; }
+.tag.option { background: var(--warn); color: var(--warnInk); border-color: transparent; }
+.notes { font-size: 13.5px; color: var(--muted); margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.notes b { color: var(--ink); font-weight: 600; }
+
+/* the phone: a slice of History behind the card */
+.phone { position: relative; width: 340px; max-width: 100%; height: 470px; border-radius: 30px; background: #FFFFFF; border: 1px solid #DCDCD8; overflow: hidden; font-family: var(--body); color: #17171A; }
+.hist { padding: 18px 18px 0; display: grid; gap: 14px; opacity: .55; }
+.hist .day { font-weight: 600; font-size: 15px; }
+.hist .ev { display: grid; grid-template-columns: 64px 10px 1fr; gap: 8px; font-size: 13px; }
+.hist .ev i { width: 8px; height: 8px; border-radius: 50%; background: var(--confirm); margin-top: 6px; }
+.hist time { color: #6B6B70; font-variant-numeric: tabular-nums; }
+.fab { position: absolute; right: 14px; bottom: 16px; width: 50px; height: 50px; border-radius: 50%; background: var(--nightUp); display: grid; place-items: center; color: #fff; font-size: 26px; font-weight: 300; }
+
+/* card shared */
+.card { position: absolute; left: 12px; right: 12px; bottom: 78px; border-radius: 24px; color: var(--onDark); box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.card.ink { background: var(--cardDark); }
+.card.night { background: var(--night); }
+
+/* ── NOW (as shipped) ── */
+.now { padding: 12px 16px; display: grid; gap: 8px; }
+.now .head { display: flex; align-items: center; gap: 12px; }
+.now .badge { flex: 0 0 32px; height: 32px; border-radius: 50%; background: var(--fillOnDark); border: 1.5px solid var(--confirm); display: grid; place-items: center;
+  /* iOS traces a shadow off the layer's alpha: on a 6% fill that is the 1.5pt ring and the 3pt strokes, so the gold glow hugs thin lines */
+  filter: drop-shadow(0 0 3px rgba(251,191,36,.55)) drop-shadow(0 0 6px rgba(251,191,36,.35)); }
+.now .t { flex: 1; min-width: 0; }
+.now .t div:first-child { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.now .t div:last-child { font-size: 13px; color: var(--onDarkSub); }
+.now .acts { display: flex; gap: 8px; font-size: 13px; font-weight: 500; text-decoration: underline; white-space: nowrap; }
+.now .q { border-top: 1px solid var(--divOnDark); padding-top: 8px; font-size: 13px; color: var(--onDarkSub); display: grid; gap: 6px; }
+.now .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.now .chips span { padding: 6px 13px; border: 1px solid rgba(255,255,255,.3); border-radius: 99px; color: #fff; font-size: 13.5px; }
+.now .combo { border-top: 1px solid var(--divOnDark); padding: 14px 0 4px; font-size: 13.5px; color: var(--onDarkSub); }
+
+/* ── PROPOSAL ── */
+.pr { padding: 14px 14px 6px; display: grid; gap: 0; }
+.pr .head { display: grid; grid-template-columns: 36px 1fr auto; gap: 12px; align-items: start; padding: 0 2px 12px; }
+.pr .name { font-weight: 500; font-size: 15px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pr .meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; color: var(--onDarkSub); }
+.pr .verb.decline { color: #FFB4B4; }
+.pr .timepill { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px 2px 9px; border-radius: 99px; background: rgba(255,255,255,.09); color: #fff; font-variant-numeric: tabular-nums; }
+.pr .timepill svg { opacity: .7; }
+.pr .undo { font-size: 13px; font-weight: 500; padding: 6px 12px; border-radius: 99px; border: 1px solid var(--divOnDark); color: #fff; margin-top: 2px; }
+.pr .q { border-top: 1px solid var(--divOnDark); padding: 10px 2px 12px; display: grid; gap: 8px; }
+.pr .q > span { font-size: 13px; color: var(--onDarkSub); }
+.scale { display: grid; grid-template-columns: repeat(5, 1fr); border-radius: 12px; background: rgba(255,255,255,.06); padding: 3px; gap: 2px; }
+.scale span { text-align: center; font-size: 13.5px; padding: 9px 0; border-radius: 9px; color: rgba(255,255,255,.85); }
+.scale span.on { background: #fff; color: #0A0A0A; font-weight: 500; }
+.pr .combo { border-top: 1px solid var(--divOnDark); display: flex; align-items: center; gap: 10px; padding: 12px 2px; font-size: 13.5px; color: #fff; }
+.pr .combo .plus { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--divOnDark); display: grid; place-items: center; font-size: 14px; color: var(--onDarkSub); }
+.pr .combo .chev { margin-left: auto; color: var(--onDarkSub); }
+.pr .removedLine { font-size: 13px; color: var(--onDarkSub); }
+
+/* the mark, macro */
+.macro { display: flex; flex-wrap: wrap; gap: 24px; }
+.mcell { background: var(--cardDark); border-radius: 18px; width: 250px; max-width: 100%; height: 200px; display: grid; place-items: center; position: relative; }
+.mcell .cap { position: absolute; left: 14px; bottom: 10px; font-size: 12px; color: var(--onDarkSub); }
+.mcell .big { width: 112px; height: 112px; border-radius: 50%; border: 5px solid var(--confirm); background: var(--fillOnDark); display: grid; place-items: center;
+  filter: drop-shadow(0 0 8px rgba(251,191,36,.55)) drop-shadow(0 0 18px rgba(251,191,36,.3)); }
+
+.briefs { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.brief { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 16px 18px; display: grid; gap: 6px; font-size: 14px; min-width: 0; }
+.brief h3 { margin: 0 0 2px; font-size: 15px; font-weight: 600; }
+.brief p { margin: 0; }
+.brief .k { color: var(--muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; margin-right: 6px; }
+code { font-family: var(--mono); font-size: .88em; }
+@media (prefers-reduced-motion: no-preference) { .draw path { stroke-dasharray: 24; stroke-dashoffset: 0; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Completion card · round 1 · 2026-10-08</div>
+    <h1>The meal confirmation, tuned</h1>
+    <p class="lede">The dark card that confirms a meal (<code>MealCompletionCard</code>). Prompted by a TestFlight screenshot: the check looked grainy and the card felt crowded. One proposal, with the shipped card beside it and two real decisions boxed as options.</p>
+  </header>
+
+  <div class="ledger">
+    <div><b>Reaction</b><span>The green check feels grainy. → Root cause found (below). Fix is drawn into every proposal frame.</span></div>
+    <div><b>Reaction</b><span>The toast could use design love. → Five changes, listed under the proposal frame. Nothing about what the card says or writes changes.</span></div>
+  </div>
+
+  <section>
+    <div>
+      <h2>Why the check looks grainy</h2>
+      <p class="lede">The badge's gold halo is an iOS layer shadow. The badge has no solid fill (6% white), so iOS traces the shadow from whatever is opaque inside it: a 1.5pt ring and a 3pt check. The gold blur hugs two thin teal lines, mixes to a muddy olive on near black, and gets re-rasterised offscreen every frame while the mark springs in. That fringe is the grain. Enlarged:</p>
+    </div>
+    <div class="macro">
+      <div class="mcell">
+        <div class="big"><svg width="58" height="58" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#00C2A8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <span class="cap">Now · shadow traced off the strokes</span>
+      </div>
+      <div class="mcell">
+        <svg width="150" height="150" viewBox="0 0 150 150" aria-hidden="true">
+          <defs><radialGradient id="halo1" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#FBBF24" stop-opacity=".28"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs>
+          <circle cx="75" cy="75" r="75" fill="url(#halo1)"/>
+          <circle cx="75" cy="75" r="53" fill="#00C2A8"/>
+          <path d="M52 77l15 15 32-34" stroke="#0A0A0A" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="cap">Proposed · one SVG, halo drawn, no shadow</span>
+      </div>
+    </div>
+    <ul class="notes">
+      <li><b>The fix:</b> draw the whole mark in one <code>react-native-svg</code> node: a solid teal disc, a dark check knocked out of it, and the gold halo as a radial gradient behind. No layer shadow, so nothing for iOS to trace. Vector at every scale, including mid-spring.</li>
+      <li><b>Celebrate vs. refusal stays exactly as ruled (CUL-894):</b> the halo is a prop on the mark; a refused or picked-at bowl gets the disc without it.</li>
+      <li><b>The named and medication cards share the same badge style</b>, so the same mark replaces all three. One component, one render path.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>The card</h2>
+    <div class="row">
+
+      <div class="frame">
+        <span class="tag">As shipped</span>
+        <div class="phone">
+          <div class="hist"><div class="day">Thu, Oct 8 · Today</div>
+            <div class="ev"><time>6:32 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
+            <div class="ev"><time>7:06 AM</time><i></i><span><b>4 meals</b> · Royal Canin · Selected Protein PR</span></div></div>
+          <div class="card ink now">
+            <div class="head">
+              <div class="badge"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#00C2A8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>6:04 PM</div></div>
+              <div class="acts"><span>Undo</span><span>Change time</span></div>
+            </div>
+            <div class="q">How much did Nyx eat?
+              <div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+            <div class="combo">+ Add a med given with this</div>
+          </div>
+          <div class="fab">+</div>
+        </div>
+        <ol class="notes">
+          <li><b>The food name truncates</b> after "Royal Can…". It is the one thing the card exists to name, and two underlined links take its width.</li>
+          <li><b>"All" orphans</b> onto a second line, so the scale reads as four answers plus an afterthought, and the top answer looks least likely.</li>
+          <li><b>Underlined links</b> read as web text, not controls, on a native sheet.</li>
+          <li>The med row floats under a large empty band; its spacing does not match the row above.</li>
+        </ol>
+      </div>
+
+      <div class="frame">
+        <span class="tag current">Current proposal</span>
+        <div class="phone">
+          <div class="hist"><div class="day">Thu, Oct 8 · Today</div>
+            <div class="ev"><time>6:32 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
+            <div class="ev"><time>7:06 AM</time><i></i><span><b>4 meals</b> · Royal Canin · Selected Protein PR</span></div></div>
+          <div class="card ink pr">
+            <div class="head">
+              <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
+                <defs><radialGradient id="h2" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#FBBF24" stop-opacity=".3"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs>
+                <circle cx="18" cy="18" r="18" fill="url(#h2)"/><circle cx="18" cy="18" r="13" fill="#00C2A8"/>
+                <path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#0A0A0A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div>
+                <div class="name">Royal Canin Selected Protein PR (Dry)</div>
+                <div class="meta"><span class="verb">Logged</span>
+                  <span class="timepill">6:04 PM <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></span></div>
+              </div>
+              <span class="undo">Undo</span>
+            </div>
+            <div class="q"><span>How much did Nyx eat?</span>
+              <div class="scale"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+            <div class="combo"><span class="plus">+</span>Add a med given with this<span class="chev">›</span></div>
+          </div>
+          <div class="fab">+</div>
+        </div>
+        <ol class="notes">
+          <li><b>The mark:</b> the crisp SVG disc above, at 36pt with the halo inside its own box.</li>
+          <li><b>The name gets the row</b> and two lines before it yields. The verb moves under it, so "Logged" / "Refused" still names the record (C-17), it just stops costing the name its width.</li>
+          <li><b>The time is the Change-time control.</b> A pill with a caret on the time itself, so "Change time" stops being a second link. Undo stays in the header, top right, as a pill.</li>
+          <li><b>Intake is one scale</b>, five equal segments in a track. Fits a 390pt phone at Dynamic Type default; the selected answer fills white.</li>
+          <li><b>The med row is a row</b>: same padding as the scale, a plus disc and a chevron, because it opens a sheet.</li>
+        </ol>
+      </div>
+
+      <div class="frame">
+        <span class="tag current">Current proposal · refused</span>
+        <div class="phone">
+          <div class="hist"><div class="day">Thu, Oct 8 · Today</div>
+            <div class="ev"><time>6:32 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
+            <div class="ev"><time>7:06 AM</time><i></i><span><b>4 meals</b> · Royal Canin · Selected Protein PR</span></div></div>
+          <div class="card ink pr">
+            <div class="head">
+              <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="13" fill="#00C2A8"/>
+                <path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#0A0A0A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div>
+                <div class="name">Royal Canin Selected Protein PR (Dry)</div>
+                <div class="meta"><span class="verb">Refused</span>
+                  <span class="timepill">6:04 PM <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></span></div>
+              </div>
+              <span class="undo">Undo</span>
+            </div>
+            <div class="q"><span>How much did Nyx eat?</span>
+              <div class="scale"><span class="on">Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+            <div class="combo"><span class="plus">+</span>Add a med given with this<span class="chev">›</span></div>
+          </div>
+          <div class="fab">+</div>
+        </div>
+        <ol class="notes">
+          <li><b>No halo</b> over a refusal (CUL-894): acknowledged, never congratulated. The check stays because the record did land.</li>
+          <li>The verb follows the chips live, as today. It reads in the plain sub-label colour, never red: a refusal here is a record, and the intake-decline flag owns any alarm.</li>
+        </ol>
+      </div>
+
+      <div class="frame">
+        <span class="tag option">Option, drawn for the decision · not the proposal</span>
+        <div class="phone">
+          <div class="hist"><div class="day">Thu, Oct 8 · Today</div>
+            <div class="ev"><time>6:32 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
+            <div class="ev"><time>7:06 AM</time><i></i><span><b>4 meals</b> · Royal Canin · Selected Protein PR</span></div></div>
+          <div class="card night pr">
+            <div class="head">
+              <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
+                <defs><radialGradient id="h3" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#FBBF24" stop-opacity=".3"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs>
+                <circle cx="18" cy="18" r="18" fill="url(#h3)"/><circle cx="18" cy="18" r="13" fill="#00C2A8"/>
+                <path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#13112E" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div>
+                <div class="name">Royal Canin Selected Protein PR (Dry)</div>
+                <div class="meta"><span class="verb">Logged</span>
+                  <span class="timepill">6:04 PM <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></span></div>
+              </div>
+              <span class="undo">Undo</span>
+            </div>
+            <div class="q"><span>How much did Nyx eat?</span>
+              <div class="scale"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+            <div class="combo"><span class="plus">+</span>Add a med given with this<span class="chev">›</span></div>
+          </div>
+          <div class="fab">+</div>
+        </div>
+        <ol class="notes">
+          <li><b>Night ground</b> instead of near black. The mark flies here from the indigo FAB, so the card would share its ground.</li>
+          <li>Cost: the register rule keeps night for surfaces where the app works on the pet's behalf. A confirmation is the owner's own act, so this bends that rule.</li>
+        </ol>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Decisions</h2>
+    <div class="briefs">
+      <div class="brief">
+        <h3>1 · Ship the mark fix alone first?</h3>
+        <p><span class="k">Deciding</span>Whether the grain fix waits for the recompose.</p>
+        <p><span class="k">Options</span><b>Ship it now (recommended):</b> small, one component, fixes all three cards, no copy or layout change. Or bundle it with the recompose.</p>
+        <p><span class="k">Consequence</span>The next TestFlight cut loses the grain regardless of how the layout rounds go.</p>
+      </div>
+      <div class="brief">
+        <h3>2 · The time as the Change-time control</h3>
+        <p><span class="k">Deciding</span>Whether "Change time" stays a word or becomes the time itself.</p>
+        <p><span class="k">Options</span><b>Time pill (recommended):</b> frees the name's width and puts the control on the thing it changes. Or keep the word as a second header pill.</p>
+        <p><span class="k">Consequence</span>Touches the CUL-612 action pair and its hit-area guard; the named and medication cards would follow.</p>
+      </div>
+      <div class="brief">
+        <h3>3 · Card ground</h3>
+        <p><span class="k">Deciding</span>Near black (today) or the indigo night of the FAB.</p>
+        <p><span class="k">Options</span><b>Keep near black (recommended):</b> the night register stays meaningful. Or night, for continuity with the FAB flight.</p>
+        <p><span class="k">Consequence</span>Night would amend the in-app brand register rule, a Tier-2 spec edit.</p>
+      </div>
+    </div>
+  </section>
+</div>
