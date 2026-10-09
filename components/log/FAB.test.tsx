@@ -30,6 +30,9 @@ jest.mock('../../lib/db', () => ({ getRecentFoods: jest.fn(async () => []) }));
 let mockTodayKey = '2026-10-08';
 jest.mock('../../hooks/useTodayKey', () => ({ useTodayKey: () => mockTodayKey }));
 jest.mock('../../lib/meals', () => ({ insertMeal: jest.fn() }));
+// CUL-1657 — the split stool pill's record. Its writer is pinned in lib/captureChanges.test.ts
+// against a real database; here only the call is read.
+jest.mock('../../lib/captureChanges', () => ({ recordCaptureChange: jest.fn(async () => 0) }));
 jest.mock('../../lib/trialContaminant', () => ({
   evaluateMealLogTimeFlag: jest.fn(async () => null),
   noteTrialFlagShown: jest.fn(),
@@ -153,7 +156,8 @@ describe('FAB — the rows that open the log sheet', () => {
   it.each([
     ['More events', null],
     ['Vomit', 'vomit'],
-    ['Loose stool', 'diarrhea'],
+    ['Normal', 'stool_normal'],
+    ['Loose', 'diarrhea'],
   ] as const)('%s opens the sheet (initialType %s) and pushes nothing', async (row, initialType) => {
     const view = await openMenu();
     expect(useUiStore.getState().logSheet).toBeNull();
@@ -195,7 +199,7 @@ function seedNoPets() {
 }
 
 /** Every row the menu offers when it has a pet. */
-const ACTION_ROWS = ['Log food', 'Vomit', 'Loose stool', 'More events'];
+const ACTION_ROWS = ['Log food', 'Vomit', 'Normal', 'Loose', 'More events'];
 
 describe('FAB — no pet to log for', () => {
   it('offers no row to tap, and says why instead', async () => {
@@ -543,7 +547,7 @@ describe('FAB — the fan, nearest the thumb first', () => {
     seedPets(1);
     const view = await openMenu();
     expect(fanLabels(view)).toEqual([
-      'More events', 'Loose stool', 'Vomit', 'Log food', 'Royal Canin · dry', 'Royal Canin · wet',
+      'More events', 'Stool', 'Normal', 'Loose', 'Vomit', 'Log food', 'Royal Canin · dry', 'Royal Canin · wet',
     ]);
   });
 
@@ -930,7 +934,10 @@ describe('FAB — the fan never shares the corner with a completion card', () =>
 });
 
 describe('FAB — CUL-1644, the pills read like the record', () => {
-  const DOORS = ['More events', 'Loose stool', 'Vomit', 'Log food'];
+  // The stool row's two segments are doors too (CUL-1657): each opens the sheet's confirm.
+  const DOORS = ['More events', 'Normal', 'Loose', 'Vomit', 'Log food'];
+  // The pills that are ONE door, and so carry its chevron.
+  const WHOLE_DOORS = ['More events', 'Vomit', 'Log food'];
 
   /** The pill (its touchable host) that owns a piece of text. */
   function pillOf(view: ReturnType<typeof render>, text: string | RegExp) {
@@ -995,13 +1002,17 @@ describe('FAB — CUL-1644, the pills read like the record', () => {
     ]);
     seedPets(1);
     const view = await openMenu();
-    for (const door of DOORS) {
+    for (const door of WHOLE_DOORS) {
       const chevrons = chevronsIn(pillOf(view, door));
       expect(chevrons).toHaveLength(1);
       expect(chevrons[0].props.accessibilityElementsHidden).toBe(true);
       expect(chevrons[0].props.importantForAccessibility).toBe('no-hide-descendants');
     }
     expect(chevronsIn(pillOf(view, 'Hills · i/d'))).toHaveLength(0);
+    // The split stool pill carries none, as the ruled round 2 frame draws it (§04): its
+    // outlined segments are what say "choose, then confirm", and a chevron at the pill's
+    // end would sit on the Loose segment alone.
+    expect(chevronsIn(view.getByTestId('fab-stool-split'))).toHaveLength(0);
   });
 });
 
@@ -1138,7 +1149,9 @@ describe('FAB — CUL-1636, the fan fits at large text sizes and never cuts the 
     const widths = pills
       .map((n: TreeNode) => StyleSheet.flatten(n.props.style)?.maxWidth)
       .filter((w: unknown) => w !== undefined);
-    // Every pill but the disc carries the cap: the chip, four doors, two foods.
+    // Every pill but the disc carries the cap: the chip, three doors, two foods, and the
+    // split stool pill, which is a View holding its two segments (CUL-1657).
+    widths.push(StyleSheet.flatten(view.getByTestId('fab-stool-split').props.style).maxWidth);
     expect(widths).toHaveLength(7);
     for (const w of widths) expect(w).toBe(320 - FAN_RIGHT_INSET - FAN_LEFT_MARGIN);
   });
@@ -1155,7 +1168,7 @@ describe('FAB — CUL-1636, the fan fits at large text sizes and never cuts the 
     const view = await openMenu();
     expect(view.getByLabelText('Logging for Nyx — switch pet')).toBeTruthy();
     // The chip first, then the four doors in order: nothing is cut and nothing moved.
-    expect(fanLabels(view).slice(0, 7)).toEqual(['N', 'Logging for', 'Nyx', 'More events', 'Loose stool', 'Vomit', 'Log food']);
+    expect(fanLabels(view).slice(0, 9)).toEqual(['N', 'Logging for', 'Nyx', 'More events', 'Stool', 'Normal', 'Loose', 'Vomit', 'Log food']);
     expect(foodLabels(view).length).toBeLessThanOrEqual(want.maxFoods);
     expect(view.queryByTestId('fab-fan-scroll') !== null).toBe(want.scroll);
   });
@@ -1167,7 +1180,7 @@ describe('FAB — CUL-1636, the fan fits at large text sizes and never cuts the 
     const chip = view.getByLabelText('Logging for Nyx — switch pet');
     const scroll = view.getByTestId('fab-fan-scroll');
     expect(scroll.findAll((n: TreeNode) => n === chip)).toHaveLength(0);
-    for (const door of ['More events', 'Loose stool', 'Vomit', 'Log food']) {
+    for (const door of ['More events', 'Stool', 'Normal', 'Loose', 'Vomit', 'Log food']) {
       expect(scroll.findAll((n: TreeNode) => n === view.getByText(door))).toHaveLength(1);
     }
     expect(StyleSheet.flatten(scroll.props.style).maxHeight).toBeGreaterThan(0);
@@ -1481,7 +1494,8 @@ describe('FAB — CUL-1642, the veil is handed to the log sheet', () => {
   it.each([
     ['More events', null],
     ['Vomit', 'vomit'],
-    ['Loose stool', 'diarrhea'],
+    ['Normal', 'stool_normal'],
+    ['Loose', 'diarrhea'],
   ] as const)('%s keeps the veil at full past the fan’s close, until the sheet takes it', async (row, initialType) => {
     useReducedMotionStore.setState({ reduceMotion: false });
     const view = await openMenu();
@@ -2053,5 +2067,95 @@ describe('FAB — CUL-1646, the chip arrives first and a switch deals the foods 
     await act(async () => {});
     fireEvent.press(view.getByText('Vomit'));
     expect(openLogSheet).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── CUL-1657 (D6): the stool pill splits into Normal and Loose ──────────────────
+//
+// The sheet's split Stool tile, carried into the fan. Each segment opens its own
+// confirm (pinned above, with the other doors); here, what only the split adds: two
+// targets that never share a touch, honest labels, the row's slot, and PR-29's record.
+describe('FAB — CUL-1657, the split stool pill', () => {
+  const { recordCaptureChange } = require('../../lib/captureChanges') as { recordCaptureChange: jest.Mock };
+  const { PILL_MIN_HEIGHT } = require('../../lib/fanBudget');
+  const hostOf = (node: TreeNode): TreeNode | null => {
+    let n: TreeNode | null = node;
+    while (n && !(typeof n.type === 'string' && typeof n.props.onResponderRelease === 'function')) n = n.parent;
+    return n;
+  };
+  beforeEach(() => recordCaptureChange.mockClear());
+
+  it('C-5: two targets, each its own box at the floor, no slop, nothing touchable around them', async () => {
+    const view = await openMenu();
+    const normal = view.getByTestId('fab-stool-normal');
+    const loose = view.getByTestId('fab-stool-loose');
+    // Walk UP from each word (C-6): the word's own segment owns it, and the two differ.
+    expect(hostOf(view.getByText('Normal'))).toBe(normal);
+    expect(hostOf(view.getByText('Loose'))).toBe(loose);
+    for (const seg of [normal, loose]) {
+      expect(seg.props.hitSlop).toBeUndefined();
+      const st = StyleSheet.flatten(seg.props.style) as Record<string, unknown>;
+      expect(st.minHeight).toBe(PILL_MIN_HEIGHT);
+      expect(st.minWidth).toBe(PILL_MIN_HEIGHT);
+      expect(st.margin ?? 0).toBe(0);
+    }
+    // With no slop on either side, the facing reach is zero: any gap at all keeps them apart.
+    const row = normal.parent as TreeNode;
+    let segs: TreeNode | null = row;
+    while (segs && StyleSheet.flatten(segs.props.style)?.gap === undefined) segs = segs.parent;
+    expect((StyleSheet.flatten(segs!.props.style) as Record<string, number>).gap).toBeGreaterThanOrEqual(0);
+    // The pill and its "Stool" are identity, not a control: a press between the two
+    // segments has no third action to fire.
+    expect(hostOf(view.getByText('Stool'))).toBeNull();
+    expect(hostOf(view.getByTestId('fab-stool-split'))).toBeNull();
+  });
+
+  it('C-7: each segment says what it does, the sheet tile’s own words', async () => {
+    const view = await openMenu();
+    expect(view.getByTestId('fab-stool-normal').props.accessibilityLabel).toBe('Log normal stool');
+    expect(view.getByTestId('fab-stool-loose').props.accessibilityLabel).toBe('Log loose stool');
+    expect(view.getByTestId('fab-stool-normal').props.accessibilityRole).toBe('button');
+    expect(view.getByTestId('fab-stool-loose').props.accessibilityRole).toBe('button');
+  });
+
+  it('takes the stool row’s place: the fan keeps its order and grows no row', async () => {
+    seedPets(1);
+    const view = await openMenu();
+    expect(fanLabels(view)).toEqual(['More events', 'Stool', 'Normal', 'Loose', 'Vomit', 'Log food']);
+    expect(view.queryByText('Loose stool')).toBeNull();
+  });
+
+  it('PR-29’s record: every pet of the account, dated before Normal can be tapped', async () => {
+    const view = render(<FAB />);
+    // Closed, the pill is not drawn, so nothing is recorded yet.
+    expect(recordCaptureChange).not.toHaveBeenCalled();
+    const before = Date.now();
+    fireEvent.press(view.getByLabelText('Log event'));
+    // The first frame Normal exists on is the frame its record has been asked for.
+    expect(view.getByTestId('fab-stool-normal')).toBeTruthy();
+    expect(recordCaptureChange).toHaveBeenCalledTimes(1);
+    const [key, petIds, at] = recordCaptureChange.mock.calls[0];
+    expect(key).toBe('fab_stool_split');
+    // Both pets, though only Nyx is active: the fan changed for every pet of the account.
+    expect([...petIds].sort()).toEqual(['p1', 'p2']);
+    expect((at as Date).getTime()).toBeGreaterThanOrEqual(before);
+    expect((at as Date).getTime()).toBeLessThanOrEqual(Date.now());
+    await act(async () => {});
+  });
+
+  it('a pet that joins while the fan is open is recorded too', async () => {
+    seedPets(1);
+    const view = await openMenu();
+    expect(recordCaptureChange.mock.calls.map((c) => c[1])).toEqual([['p1']]);
+    await act(async () => { seedPets(2); });
+    expect(recordCaptureChange).toHaveBeenCalledTimes(2);
+    expect([...recordCaptureChange.mock.calls[1][1]].sort()).toEqual(['p1', 'p2']);
+    expect(view.getByTestId('fab-stool-split')).toBeTruthy();
+  });
+
+  it('with no pet the pill is not drawn, so nothing is recorded', async () => {
+    usePetStore.setState({ pets: [] as never, activePet: null });
+    await openMenu();
+    expect(recordCaptureChange).not.toHaveBeenCalled();
   });
 });
