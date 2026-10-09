@@ -5846,7 +5846,7 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     : ns.kind === 'on'
     ? `<br/><b>Logging changed on ${nsDay(ns.at)}:</b> the owner's app added a dedicated normal-stool entry, so normal stools before that date are under-recorded and the normal to loose ratio is not comparable across it.${splitLine(nsDay(ns.at), ns.split)}${shortcutTail}`
     : ns.kind === 'since'
-    ? `<br/><b>Logging changed ${ns.exact ? 'on' : 'by'} ${nsDay(ns.at)}, before this window:</b> the owner's app added a dedicated normal-stool entry. A report covering any period before ${nsDay(ns.at)} under-records normal stools, so the normal share here will look better from the change alone.${shortcutTail}`
+    ? `<br/><b>Logging changed ${ns.exact ? 'on' : 'by'} ${nsDay(ns.at)}, before this window:</b> the owner's app added a dedicated normal-stool entry. Within this window the counts are comparable; against a report covering any period before ${nsDay(ns.at)}, which under-records normal stools, the normal share here will look better from the change alone.${shortcutTail}`
     : ns.kind === 'between'
     ? `<br/><b>Logging changed between ${nsDay(ns.from)} and ${nsDay(ns.to)}:</b> the owner's app added a dedicated normal-stool entry in that span (the phone's and the server's clocks disagree on the day), so normal stools before it are under-recorded and the normal to loose ratio is not comparable across it.${shortcutTail}`
     : ns.kind === 'by'

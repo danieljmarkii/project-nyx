@@ -8141,7 +8141,7 @@ Deno.test('stool: ruling 2a — a change before the window says so, naming the s
   const exact = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: true } } }))
   assert.ok(/<b>Logging changed on Mar 20, before this window:<\/b> the owner's app added a dedicated normal-stool entry\./.test(exact))
   // "covering any period before", never "from before that date", which reads as the date a report was MADE.
-  assert.ok(/A report covering any period before Mar 20 under-records normal stools, so the normal share here will look better from the change alone\.<br\/>Loose stools had their own entry throughout/.test(exact))
+  assert.ok(/Within this window the counts are comparable; against a report covering any period before Mar 20, which under-records normal stools, the normal share here will look better from the change alone\.<br\/>Loose stools had their own entry throughout/.test(exact))
   const by = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: false } } }))
   assert.ok(/Logging changed by Mar 20, before this window:/.test(by))
 })
