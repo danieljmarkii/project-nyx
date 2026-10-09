@@ -476,7 +476,8 @@ function en5IntakeRecordSentence(p: string, record: IntakeRecord): string {
       hours < 1 ? 'less than an hour' : hours === 1 ? 'about an hour' : hours < 48 ? `about ${hours} hours` : `about ${Math.round(hours / 24)} days`
     const aside = record.setAside ? ', not counting treats or free-fed bowls' : ''
     const n = record.unratedSince ?? 0
-    const since = n === 0 ? '' : n === 1 ? ' One meal logged after it had no rating.' : ` ${n} meals logged after it had no rating.`
+    // Bounded by the vomit, like the count it states (round 5, S3).
+    const since = n === 0 ? '' : n === 1 ? ' One meal logged after it, before this vomit, had no rating.' : ` ${n} meals logged after it, before this vomit, had no rating.`
     return `The last rated meal logged for ${p} before this vomit${aside}, ${when} earlier, was marked ${word}.${since}`
   }
   if (record.window === 'noticed') {

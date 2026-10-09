@@ -570,7 +570,25 @@ Deno.test('A, round 4: a later refusal never answers an earlier one; a tie is re
   const on = ctx(r3, v, v + 1 * H, EN5)
   assertEquals(on.intakeRecord?.unratedSince, 15)
   assertStrictEquals(
-    buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord).startsWith('The last rated meal logged for Nyx before this vomit, about 6 days earlier, was marked Refused. 15 meals logged after it had no rating.'),
+    buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord).startsWith('The last rated meal logged for Nyx before this vomit, about 6 days earlier, was marked Refused. 15 meals logged after it, before this vomit, had no rating.'),
     true,
   )
+})
+
+Deno.test('A, round 5: tied qualifying refusals set nothing aside, a tie names one word in either order, and the count says where it stops', () => {
+  const v = Date.parse('2026-09-10T08:00:00Z')
+  const at = v - 4 * 24 * H
+  const bg = meal(v - 5 * 24 * H, 'all')
+  // S1 + S2: wet Refused and dry Picked at one instant, in both orders.
+  for (const pair of [[meal(at, 'refused'), meal(at, 'picked', 'meal', 'f-b')], [meal(at, 'picked', 'meal', 'f-b'), meal(at, 'refused')]]) {
+    const on = ctx(rowsOf([bg, ...pair], v), v, v + 1 * H, EN5)
+    assertEquals(on.intakeRecord?.window, 'last_rated')
+    assertEquals(on.intakeRecord?.rating, 'refused', 'S2')
+    assertEquals(on.intakeRecord?.setAside, false, 'S1')
+  }
+  // S3 + S4: an unrated meal at the refusal's own instant is not "after" it; the count stops at the vomit.
+  const s3 = rowsOf([meal(v - 40 * H, 'all'), meal(v - 30 * H, 'refused'), meal(v - 30 * H, null), meal(v - 20 * H, null), meal(v + 2 * H, null)], v)
+  const on = ctx(s3, v, v + 20 * H, EN5)
+  assertEquals(on.intakeRecord?.unratedSince, 1)
+  assertStrictEquals(buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord).includes('One meal logged after it, before this vomit, had no rating.'), true)
 })

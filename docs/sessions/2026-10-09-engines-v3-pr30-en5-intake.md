@@ -41,7 +41,12 @@ Dispatched session (`/dispatch`, Engines v3, PR-30), CUL-1722 (of CUL-1136). The
   - R1: a later refusal "answered" an earlier one.
   - R2: tied timestamps made the sentence depend on row order.
   - R3: unrated meals since the refusal went unsaid.
-- **Round 5:** see the outcome comment on CUL-1722.
+- **Round 5:** R1, R2 and R3 hold, and the backstop still fires only where the shipped rule fires. Three wording breaks:
+  - S1: tied qualifying refusals printed a false "not counting treats or free-fed bowls".
+  - S2: the word for a Refused/Picked tie depended on row order.
+  - S3: the unrated count read as a total but stopped at the vomit.
+  - All three are fixed with guards.
+- **Round 6:** see the outcome comment on CUL-1722.
 
 Every fix landed with a guard proven by mutation: break the source, watch the test go red, restore. Two tests needed rebuilding because their first fixtures could not fail:
 - **The 24 h cap test:** a later All silenced the half either way, so the test passed with or without the cap.

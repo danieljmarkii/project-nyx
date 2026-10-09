@@ -29,6 +29,7 @@ import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 import { FLOOR_LETHARGY_HOURS, FLOOR_READ_HOURS, incidentFloor, type FloorResult } from '../../../lib/incidentFloor.ts'
 import type { FreeFedIntakeSpan } from '../../../lib/freeFedIntake.ts'
 import {
+  INTAKE_SCORE,
   isKnownIntakeRating,
   isPositiveIntakeRating,
   isQualifyingIntakeMeal,
@@ -460,7 +461,9 @@ export const EN5_CONTEXT_STEP: VomitContextStep = (prior, args) => {
   const lastRated = meals
     .filter((m) => Number.isFinite(m.ms) && m.ms <= vomitMs && m.ms >= vomitMs - INTAKE_BASELINE_WINDOW_DAYS * 86_400_000)
     .filter((m) => isQualifyingIntakeMeal(m, spans) && isKnownIntakeRating(m.intakeRating))
-    .sort((a, b) => b.ms - a.ms)[0]
+    // Newest first; at one instant, the lowest score first, so a Refused and a Picked logged
+    // together name the same word whatever order the two reads returned them in (round 5, S2).
+    .sort((a, b) => b.ms - a.ms || (INTAKE_SCORE[a.intakeRating as string] ?? 0) - (INTAKE_SCORE[b.intakeRating as string] ?? 0))[0]
   if (lastRated && isRefusedOrPickedRating(lastRated.intakeRating) && after.rated === 0 && atRead.rated === 0) {
     // Every row at or after the refusal's own instant, but the refusal itself: a meal stamped the
     // same instant (a two-food dinner back-dated to one picker time) is "after" it whatever order
@@ -481,10 +484,12 @@ export const EN5_CONTEXT_STEP: VomitContextStep = (prior, args) => {
         // Whole hours, floored, so "about N hours" never rounds a 40-minute gap up to one.
         hoursBefore: Math.floor((vomitMs - lastRated.ms) / 3_600_000),
         rating: lastRated.intakeRating === 'refused' ? 'refused' : 'picked',
-        setAside: ratedAfter.some((m) => m.ms <= vomitMs),
+        // Only a rated row the predicate set aside (a treat, a bowl) earns the clause; a tied
+        // qualifying refusal is not one (round 5, S1).
+        setAside: ratedAfter.some((m) => m.ms <= vomitMs && !isQualifyingIntakeMeal(m, spans)),
         // The meals logged between it and the vomit with no rating, said beside it so a week of
         // unrated meals is never hidden behind one old refusal (round 4, R3).
-        unratedSince: sinceRefusal.filter((m) => m.ms <= vomitMs && !isKnownIntakeRating(m.intakeRating)).length,
+        unratedSince: sinceRefusal.filter((m) => m.ms > lastRated.ms && m.ms <= vomitMs && !isKnownIntakeRating(m.intakeRating)).length,
       })
     }
   }
