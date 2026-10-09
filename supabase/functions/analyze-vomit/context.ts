@@ -27,6 +27,17 @@
 
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 import { FLOOR_LETHARGY_HOURS, FLOOR_READ_HOURS, incidentFloor, type FloorResult } from '../../../lib/incidentFloor.ts'
+import type { FreeFedIntakeSpan } from '../../../lib/freeFedIntake.ts'
+import {
+  isKnownIntakeRating,
+  isPositiveIntakeRating,
+  isQualifyingIntakeMeal,
+  isRefusedOrPickedRating,
+  NOTICED_REFUSAL_LOOKBACK,
+  NOTICED_REFUSAL_RECENCY_DAYS,
+  noticedRefusalAt,
+  type IntakeEvidenceMeal,
+} from '../../../lib/intakeEvidence.ts'
 
 // ── Context windows (Dr. Chen, 2026-05-24) ─────────────────────────────────────────
 // The vomit lookback: every non-deleted vomit in the last 24 h.
@@ -62,6 +73,10 @@ export interface ContextInput {
   // window, rated or not, so the read can say "6 meals were logged … none was marked Most
   // or All" rather than conclude the cat has not eaten (the 9/4 and 9/22 reads).
   intakeRecord?: IntakeRecord
+  // EN-5 only (set by EN5_CONTEXT_STEP): the cat intake arm's answer under "an unrated meal
+  // is unknown". When present it decides the flag in place of tracksIntake /
+  // hasRecentPositiveIntake, which keep their shipped values for the record.
+  en5IntakeFires?: boolean
   // EN-4 only (engines_v3_en4 with engines_v3_en3, set by assembleContext through buildFloor):
   // the floor's answer over the record around this vomit (lib/incidentFloor.ts).
   floor?: FloorResult
@@ -70,16 +85,35 @@ export interface ContextInput {
 export interface IntakeRecord {
   // 'before_vomit': the 24 h before the vomit. 'before_read': the 24 h before the read ran
   // (the shipped window, when only it fired, e.g. the cat that ate, vomited, then refused).
-  window: 'before_vomit' | 'before_read'
+  // EN-5 adds 'after_vomit' (from the vomit to the read, at most 24 h) and 'noticed' (the
+  // Noticed predicate: two of the last three qualifying meals refused or picked).
+  window: 'before_vomit' | 'before_read' | 'after_vomit' | 'noticed'
   mealsLogged: number
+  // EN-5 only. How many of the meals in the window carried a rating: the sentence speaks
+  // about those and says how many more had none, so an unrated meal is never read as
+  // "didn't eat". For 'noticed', how many qualifying meals were looked at (at most three).
+  mealsRated?: number
+  // EN-5 'noticed' only: how many of those were Refused or Picked.
+  refusedOrPicked?: number
 }
 
 // The rows, in the shapes the three reads return them.
-export type MealIntakeJoin = { intake_rating: string | null } | { intake_rating: string | null }[] | null
+// `food_item_id` and `food_items` are selected only under engines_v3_en5 (the Noticed
+// predicate needs the treat and free-fed filters); the shipped read selects the rating alone.
+export type FoodTypeJoin = { food_type: string | null } | { food_type: string | null }[] | null
+export interface MealIntakeRow {
+  intake_rating: string | null
+  food_item_id?: string | null
+  food_items?: FoodTypeJoin
+}
+export type MealIntakeJoin = MealIntakeRow | MealIntakeRow[] | null
 export interface VomitContextRows {
   vomits: { occurred_at: string }[]
   lethargy: { occurred_at: string }[]
   meals: { occurred_at: string; meals: MealIntakeJoin }[]
+  // EN-5 only: the pet's free-fed bowl spans, active and ended. Absent reads as no bowls,
+  // which keeps a free-fed rating counted: the louder reading of an unknown.
+  freeFedSpans?: FreeFedIntakeSpan[]
 }
 
 export interface BuildVomitContextArgs {
@@ -146,7 +180,10 @@ export function vomitAnchoredReads(
   engineFlags: EngineFlags,
 ): { vomits: AnchoredRange | null; meals: AnchoredRange | null } | null {
   const vomitMs = Date.parse(thisEventOccurredAt)
-  if (!isEngineKeyOn(engineFlags, 'engines_v3_en0') || !Number.isFinite(vomitMs)) return null
+  // EN-5 reads the same anchored rows: its before-vomit half and its Noticed check at the
+  // vomit need the days before an old vomit that the read-time window no longer reaches.
+  const wanted = isEngineKeyOn(engineFlags, 'engines_v3_en0') || isEngineKeyOn(engineFlags, 'engines_v3_en5')
+  if (!wanted || !Number.isFinite(vomitMs)) return null
   const shipped = vomitContextWindows(nowMs)
   const a = vomitAnchoredWindows(vomitMs)
   const range = (fromMs: number, toMs: number, beforeIso: string): AnchoredRange | null =>
@@ -273,12 +310,121 @@ export const EN0_CONTEXT_STEP: VomitContextStep = (shipped, args) => {
   return next
 }
 
-// The gate. `step` is a parameter so the guard can hand in a step that changes
-// something and prove the gate decides whether it runs (a deleted gate reds either
-// way); production always takes EN0_CONTEXT_STEP.
-export function buildVomitContext(args: BuildVomitContextArgs, step: VomitContextStep = EN0_CONTEXT_STEP): ContextInput {
+// ── EN-5's step (Engines v3 PR-30, CUL-1722): an unrated meal is unknown ───────────────
+// PM ruling, 2026-10-09 (threshold A): the cat intake arm fires on a half of the record that
+// holds at least one RATED meal and none rated Most or All. Unrated meals count neither way:
+// they never fire the arm (the 8/19, 9/4 and 9/22 reads, where every meal was logged and
+// none was rated) and never cancel it. The weekly "tracks intake" guard goes with them: a
+// half fires only on its own rated meals, so a non-rater can never be flagged.
+//
+// FOUR HALVES, each independent, the arm firing when any one does:
+//   · before_vomit: the 24 h before the vomit (EN-0's anchored half, rated meals only);
+//   · after_vomit:  from the vomit to the read, at most 24 h. Eating BEFORE a vomit never
+//                   cancels refusals AFTER it (critique BRK-2), so this half never sees the
+//                   meals before the vomit; and it stops at 24 h so a late re-read never
+//                   judges an old vomit by refusals logged days later;
+//   · before_read:  the 24 h before the read (the shipped window, rated meals only), kept so
+//                   the arm is never quieter than today except where every meal in that
+//                   window was unrated: the one change EN-5 exists to make;
+//   · noticed:      the Noticed predicate (`lib/intakeEvidence.ts`, the daily look's arm 3:
+//                   two of the last three qualifying meals refused or picked, three-day
+//                   recency) at the vomit and at the read capped at 24 h after it. I1, ruled
+//                   A 2026-10-02: in union, never in place of the arm.
+// Treats and free-fed bowls stay in the three rating halves exactly as they are today (a
+// rated treat speaks, a treat marked All cancels); only the Noticed check drops them, as it
+// always has. Dropping the pill-pocket false alarm from the halves is a quieter row and
+// stays the PM's (GAP-28 / MFU-7), not this step's.
+//
+// Cats only, like the shipped arm. Dogs (T8/T10b) need the "no food seen" answer, PR-30q.
+export const AFTER_VOMIT_INTAKE_HOURS = 24
+
+function evidenceOf(m: { occurred_at: string; meals: MealIntakeJoin }): IntakeEvidenceMeal {
+  const meal = Array.isArray(m.meals) ? m.meals[0] : m.meals
+  const food = Array.isArray(meal?.food_items) ? meal?.food_items[0] : meal?.food_items
+  return {
+    ms: Date.parse(m.occurred_at),
+    foodItemId: meal?.food_item_id ?? null,
+    foodType: food?.food_type ?? null,
+    intakeRating: meal?.intake_rating ?? null,
+  }
+}
+
+interface RatedHalf {
+  logged: number
+  rated: number
+  fires: boolean
+}
+function ratedHalf(meals: readonly IntakeEvidenceMeal[], fromMs: number, toMs: number, includeFrom: boolean): RatedHalf {
+  const inWindow = meals.filter(
+    (m) => Number.isFinite(m.ms) && (includeFrom ? m.ms >= fromMs : m.ms > fromMs) && m.ms <= toMs,
+  )
+  const rated = inWindow.filter((m) => isKnownIntakeRating(m.intakeRating))
+  return {
+    logged: inWindow.length,
+    rated: rated.length,
+    fires: rated.length > 0 && !rated.some((m) => isPositiveIntakeRating(m.intakeRating)),
+  }
+}
+
+export const EN5_CONTEXT_STEP: VomitContextStep = (prior, args) => {
+  if (args.species !== 'cat') return prior
+  const vomitMs = Date.parse(args.thisEventOccurredAt)
+  const readMs = args.nowMs
+  // An instant that cannot be read anchors nothing: the arm is silent rather than guessing.
+  if (!Number.isFinite(vomitMs) || !Number.isFinite(readMs)) return { ...prior, en5IntakeFires: false, intakeRecord: undefined }
+
+  const meals = args.rows.meals.map(evidenceOf).filter((m) => m.ms <= readMs)
+  const spans = args.rows.freeFedSpans ?? []
+  const day = FELINE_REDUCED_INTAKE_HOURS * 3_600_000
+  const afterEnd = Math.min(readMs, vomitMs + AFTER_VOMIT_INTAKE_HOURS * 3_600_000)
+
+  const before = ratedHalf(meals, vomitMs - day, vomitMs, true)
+  const after = afterEnd > vomitMs ? ratedHalf(meals, vomitMs, afterEnd, false) : { logged: 0, rated: 0, fires: false }
+  const atRead = ratedHalf(meals, readMs - day, readMs, true)
+
+  const record = (window: IntakeRecord['window'], h: RatedHalf): ContextInput => ({
+    ...prior,
+    en5IntakeFires: true,
+    intakeRecord: { window, mealsLogged: h.logged, mealsRated: h.rated },
+  })
+  if (before.fires) return record('before_vomit', before)
+  if (after.fires) return record('after_vomit', after)
+  if (atRead.fires) return record('before_read', atRead)
+
+  for (const atMs of [vomitMs, afterEnd]) {
+    if (!noticedRefusalAt(meals, spans, atMs)) continue
+    const fromMs = atMs - NOTICED_REFUSAL_RECENCY_DAYS * 86_400_000
+    const lastFew = meals
+      .filter((m) => m.ms >= fromMs && m.ms <= atMs && isQualifyingIntakeMeal(m, spans))
+      .sort((a, b) => b.ms - a.ms)
+      .slice(0, NOTICED_REFUSAL_LOOKBACK)
+    return {
+      ...prior,
+      en5IntakeFires: true,
+      intakeRecord: {
+        window: 'noticed',
+        mealsLogged: lastFew.length,
+        mealsRated: lastFew.length,
+        refusedOrPicked: lastFew.filter((m) => isRefusedOrPickedRating(m.intakeRating)).length,
+      },
+    }
+  }
+  return { ...prior, en5IntakeFires: false, intakeRecord: undefined }
+}
+
+// The gate. `step` and `en5Step` are parameters so the guards can hand in steps that change
+// something and prove each gate decides whether its step runs (a deleted gate reds either
+// way); production always takes EN0_CONTEXT_STEP and EN5_CONTEXT_STEP. EN-5 runs after EN-0
+// and decides the intake arm on its own rule, so with both keys on, EN-0's unrated-meal
+// intake firing is replaced and its vomit union is kept.
+export function buildVomitContext(
+  args: BuildVomitContextArgs,
+  step: VomitContextStep = EN0_CONTEXT_STEP,
+  en5Step: VomitContextStep = EN5_CONTEXT_STEP,
+): ContextInput {
   const shipped = shippedVomitContext(args)
-  return isEngineKeyOn(args.engineFlags, 'engines_v3_en0') ? step(shipped, args) : shipped
+  const en0 = isEngineKeyOn(args.engineFlags, 'engines_v3_en0') ? step(shipped, args) : shipped
+  return isEngineKeyOn(args.engineFlags, 'engines_v3_en5') ? en5Step(en0, args) : en0
 }
 
 // ── EN-4's floor (Engines v3 PR-28, CUL-1134) ───────────────────────────────────────────

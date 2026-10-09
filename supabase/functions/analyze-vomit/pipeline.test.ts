@@ -27,6 +27,9 @@ interface World {
   vomitMs: number
   others: { event_type: string; occurred_at: string; rating?: string | null }[]
   en0: boolean
+  // EN-5 (PR-30): its key, and a meal read that answers with an error.
+  en5?: boolean
+  mealsError?: 'anchored'
   vision: VomitAnalysis
   row: Row | null
   writes: number
@@ -69,6 +72,10 @@ class FakeQuery {
         error: null,
       }
     }
+    if (this.table === 'events' && this.filters.event_type === 'meal' && w.mealsError === 'anchored' && this.before !== null) {
+      return { data: null, error: { message: 'meal read failed' } } as unknown as { data: unknown; error: null }
+    }
+    if (this.table === 'feeding_arrangements') return { data: [], error: null }
     if (this.table === 'events') {
       const all = [{ event_type: 'vomit', occurred_at: iso(w.vomitMs) }, ...w.others]
       const rows = all
@@ -81,7 +88,8 @@ class FakeQuery {
     }
     if (this.table === 'event_attachments') return { data: [{ id: '0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b', storage_path: 'pet-1/evt-1/a.jpg' }], error: null }
     if (this.table === 'app_config') {
-      return { data: w.en0 ? [{ key: 'engines_v3_en0', value: { enabled: false, allowlist: [OWNER] } }] : [], error: null }
+      const on = (key: string) => ({ key, value: { enabled: false, allowlist: [OWNER] } })
+      return { data: [...(w.en0 ? [on('engines_v3_en0')] : []), ...(w.en5 ? [on('engines_v3_en5')] : [])], error: null }
     }
     if (this.table !== 'event_ai_analysis') throw new Error(`unexpected table ${this.table}`)
     if (this.mode === 'select') return { data: w.row ? { ...w.row } : null, error: null }
@@ -171,7 +179,7 @@ Deno.test('pipeline diff A · 8/19: a late read over unrated meals — same verd
   assertEquals([off.recommendation, on.recommendation], ['worth_a_call', 'worth_a_call'])
   assertEquals(off.engine_flags, [])
   assertEquals(on.engine_flags, ['engines_v3_en0'])
-  assertStrictEquals(on.rule_version, 'f3.vomit3')
+  assertStrictEquals(on.rule_version, 'f3.vomit4')
 })
 
 Deno.test('pipeline diff B · 9/22: foreign material and the intake flag — the photo finding leads, the model\'s words stay out', async () => {
@@ -280,4 +288,67 @@ Deno.test('pipeline · the anchored reads never re-read a row the shipped read a
   })
   assertEquals(row.contextual_flags, [])
   assertStrictEquals(row.recommendation, 'monitor')
+})
+
+// ── EN-5 (Engines v3 PR-30, CUL-1722): unrated meals are unknown ─────────────────────────
+
+Deno.test('pipeline EN-5 · 9/4: four unrated meals, a calm photo: the intake warning goes, and the read says nothing about eating', async () => {
+  const world = () => {
+    const vomitMs = Date.now() - 10 * 60_000
+    return {
+      species: 'cat' as const, vomitMs, vision: CLEAN,
+      others: [
+        ...[4, 9, 14, 19].map((h) => ({ event_type: 'meal', occurred_at: iso(vomitMs - h * H), rating: null })),
+        { event_type: 'meal', occurred_at: iso(vomitMs - 72 * H), rating: 'some' },
+      ],
+    }
+  }
+  const off = await read({ ...world(), en0: false, row: null, writes: 0 })
+  const on = await read({ ...world(), en0: false, en5: true, row: null, writes: 0 })
+  assertEquals(off.contextual_flags, ['feline_reduced_intake'])
+  assertStrictEquals(off.recommendation, 'worth_a_call')
+  assertEquals(on.contextual_flags, [])
+  assertStrictEquals(on.recommendation, 'monitor')
+  assertEquals(on.engine_flags, ['engines_v3_en5'])
+  assertStrictEquals(on.rule_version, 'f3.vomit4')
+})
+
+Deno.test('pipeline EN-5 · a meal read that fails never reads as quiet: the rule without EN-5 stands', async () => {
+  // A vomit eight days old, re-read now: the meals before it come only from the anchored read,
+  // and that read fails. EN-5 would see no meals before the vomit and stay quiet; the rule without
+  // it fires on the week it can see (a Some three days ago, nothing eaten well since). On a failed
+  // read the louder rule stands (the CUL-815 posture).
+  const world = () => {
+    const vomitMs = Date.now() - 8 * 24 * H
+    return {
+      species: 'cat' as const, vomitMs, vision: CLEAN,
+      others: [
+        ...[2, 3, 4].map((h) => ({ event_type: 'meal', occurred_at: iso(vomitMs - h * H), rating: 'refused' })),
+        { event_type: 'meal', occurred_at: iso(Date.now() - 72 * H), rating: 'some' },
+        { event_type: 'meal', occurred_at: iso(Date.now() - 5 * H), rating: null },
+      ],
+    }
+  }
+  const off = await read({ ...world(), en0: false, mealsError: 'anchored', row: null, writes: 0 })
+  const on = await read({ ...world(), en0: false, en5: true, mealsError: 'anchored', row: null, writes: 0 })
+  assertEquals(off.contextual_flags, ['feline_reduced_intake'])
+  assertEquals(on.contextual_flags, ['feline_reduced_intake'])
+  // And with the read answering, EN-5 reads the refusals before the vomit itself.
+  const answered = await read({ ...world(), en0: false, en5: true, row: null, writes: 0 })
+  assertEquals(answered.contextual_flags, ['feline_reduced_intake'])
+  assertStrictEquals(String(answered.read_text).startsWith('When I read this, 3 rated meals were logged for Nyx in the 24 hours before this vomit'), true)
+})
+
+Deno.test('pipeline EN-5 · 7/27-shaped refusals stay a call, stated over rated meals', async () => {
+  const vomitMs = Date.now() - 15 * 60_000
+  const on = await read({
+    species: 'cat', vomitMs, vision: CLEAN, en0: false, en5: true, row: null, writes: 0,
+    others: (['refused', 'refused', 'picked'] as const).map((rating, i) => ({ event_type: 'meal', occurred_at: iso(vomitMs - (2 + i * 4) * H), rating })),
+  })
+  assertEquals(on.contextual_flags, ['feline_reduced_intake'])
+  assertStrictEquals(on.recommendation, 'worth_a_call')
+  assertStrictEquals(
+    on.read_text,
+    "When I read this, 3 rated meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
 })

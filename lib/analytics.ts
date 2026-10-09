@@ -44,6 +44,12 @@
 
 import { getDb } from './db';
 import { isFreeFedIntakeMeal, parseFreeFedIntakeSpans, type FreeFedIntakeSpan } from './freeFedIntake';
+import {
+  FINISHED_SCORE,
+  INTAKE_SCORE,
+  isQualifyingIntakeMeal,
+  isRefusedOrPickedRating,
+} from './intakeEvidence';
 import { canonicalizeProtein, proteinsFromCacheText, readProteinSet } from './protein';
 import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
 
@@ -76,15 +82,8 @@ export type Species = 'dog' | 'cat' | 'other';
 
 /** WSAVA 5-point intake scale → ordinal score (0 refused .. 4 all). "Finished" a
  *  meal = rated `most` or `all` (score ≥ FINISHED_SCORE). */
-const INTAKE_SCORE: Record<string, number> = {
-  refused: 0,
-  picked: 1,
-  some: 2,
-  most: 3,
-  all: 4,
-};
-const FINISHED_SCORE = 3; // most | all
-const PICKED_SCORE = 1; // refused | picked — the decline half (CUL-873, T-20)
+// The scale lives in `lib/intakeEvidence.ts` since Engines v3 PR-30 (GAP-28), so the vomit
+// read on the server reads the same scores and the same refusal class as this module.
 
 /**
  * Minimum-sample floors (§11 #5). Reuses the Signal's intake-baseline bar
@@ -801,9 +800,7 @@ export function isFinishedMeal(m: AnalyticsMeal): boolean {
  * third, the decline calendar, stopped restating it in the same change.
  */
 export function qualifyingIntakeMeals(rows: AnalyticsMeal[], freeFed: FreeFedExclusion): AnalyticsMeal[] {
-  return rows.filter(
-    (m) => m.foodType !== 'treat' && m.intakeRating != null && !isFreeFedMeal(m, freeFed),
-  );
+  return rows.filter((m) => isQualifyingIntakeMeal(m, freeFed));
 }
 
 /**
@@ -822,8 +819,7 @@ export function qualifyingIntakeMeals(rows: AnalyticsMeal[], freeFed: FreeFedExc
  * — the belt is here anyway, because the predicate is the one making the claim.
  */
 export function isRefusedOrPickedMeal(m: AnalyticsMeal): boolean {
-  const score = INTAKE_SCORE[m.intakeRating as string];
-  return score !== undefined && score <= PICKED_SCORE;
+  return isRefusedOrPickedRating(m.intakeRating);
 }
 
 /**

@@ -53,7 +53,14 @@ import { resolveAllowlistFlag } from './flags.ts'
 // weigh-ins with their source and its birthday, and detection may raise `weight_loss`. It adds a
 // finding, so it is a SIGNAL key. NOT SEEDED, like en3: absent reads as off. It goes live after
 // PMD-9 is re-run on lib/weightStory.ts's exact definition, by weighing cadence (ruling sheet W1).
-export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en4', 'engines_v3_en8', 'engines_v3_en9', 'engines_v3_en10', 'engines_v3_en11'] as const
+// engines_v3_en5: EN-5, intake evidence on the vomit read (Engines v3 PR-30, CUL-1722): an unrated
+// meal is unknown, and the Noticed predicate joins the cat intake arm in union
+// (analyze-vomit/context.ts EN5_CONTEXT_STEP). It is QUIETER than today where every meal around a
+// vomit was logged unrated, so it goes live only together with engines_v3_en8 (the weight lane
+// catches the cat the unrated meals hid; CUL-1136) and after the real-vet review (CUL-1312). It
+// changes only the per-incident read, never the Signal, so it is not a SIGNAL key. Absent reads
+// as off, like en3, so this PR needs no migration; PR-30m's migration seeds the row off.
+export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en4', 'engines_v3_en5', 'engines_v3_en8', 'engines_v3_en9', 'engines_v3_en10', 'engines_v3_en11'] as const
 export type EngineKey = typeof ENGINE_KEYS[number]
 
 // The keys the SIGNAL engine (generate-signal) reads that can change WHAT IT DETECTS. A Signal

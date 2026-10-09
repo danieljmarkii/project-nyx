@@ -50,10 +50,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   getIntakeDecline,
   getQualifyingIntakeMeals,
-  isRefusedOrPickedMeal,
   type AnalyticsMeal,
   type Species,
 } from './analytics';
+import {
+  NOTICED_REFUSAL_LOOKBACK,
+  NOTICED_REFUSAL_MIN,
+  NOTICED_REFUSAL_RECENCY_DAYS,
+  noticedRefusalPattern,
+} from './intakeEvidence';
 import { localDayIndex, dayKeyFromIndex } from './utils';
 import { lookWordKind, type LookSpecies } from '../constants/lookWords';
 import type { TrialStripSafety } from './trialStripDoor';
@@ -100,7 +105,7 @@ const MS_PER_DAY = 86_400_000;
  * no refusal in it at all. This one requires the newest qualifying meal on the record to
  * BE a refusal.
  */
-export const LOOK_REFUSAL_RECENCY_DAYS = 3;
+export const LOOK_REFUSAL_RECENCY_DAYS = NOTICED_REFUSAL_RECENCY_DAYS;
 
 /**
  * How many of the last three must be refused or picked.
@@ -112,10 +117,10 @@ export const LOOK_REFUSAL_RECENCY_DAYS = 3;
  * of coverage footer, so a 1-of-1 threshold would make the footer unreachable for any
  * mildly picky cat. The cadence table is in the PR body.
  */
-export const LOOK_REFUSAL_MIN = 2;
+export const LOOK_REFUSAL_MIN = NOTICED_REFUSAL_MIN;
 
 /** How many recent qualifying meals the arm looks back over. */
-export const LOOK_REFUSAL_LOOKBACK = 3;
+export const LOOK_REFUSAL_LOOKBACK = NOTICED_REFUSAL_LOOKBACK;
 
 /** The facts the predicate reads. Loaded by `loadLookWithheldFacts` plus the two the
  *  caller already holds; nothing here is read from a store at decision time. */
@@ -166,8 +171,9 @@ export function intakeArm(meals: readonly AnalyticsMeal[]): boolean {
   // which is what makes "the last three" a statement about now. Belt: re-slicing here
   // rather than trusting an ordering keeps the arm honest if a caller ever hands over an
   // unsorted list.
-  const recent = [...meals].sort((a, b) => b.ms - a.ms).slice(0, LOOK_REFUSAL_LOOKBACK);
-  return recent.filter(isRefusedOrPickedMeal).length >= LOOK_REFUSAL_MIN;
+  // Since Engines v3 PR-30 the rule itself lives in `lib/intakeEvidence.ts` (GAP-28), where
+  // the vomit read imports it too, so the card and the read can never disagree about it.
+  return noticedRefusalPattern(meals);
 }
 
 /**
