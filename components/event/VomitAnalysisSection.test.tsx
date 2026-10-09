@@ -98,6 +98,7 @@ import { theme } from '../../constants/theme';
 import { readLandedCopy } from './useReadLandingAnnouncement';
 import { EARLIER_READ_LABEL, HELD_CALL_DISCLOSURE } from '../../lib/incidentTierWords';
 import { usePetStore } from '../../store/petStore';
+import { useMomentStore } from '../../store/momentStore';
 import { watchAnalysisRow, awaitAnalysisChain, triggerVomitAnalysis } from '../../lib/analysis';
 import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
 import { facing, flat, owningTouchable, touchableToken } from '../../testUtils/tree';
@@ -1888,6 +1889,19 @@ describe('VomitAnalysisSection — call today\'s wait line (CUL-1629)', () => {
     const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
     await view.findByText('Call your vet today');
     expect(view.queryByText(/first thing/)).toBeNull();
+  });
+
+  it('a take-back the server writes while the record is open reaches it (adversarial finding 2)', async () => {
+    mockRow = waitRow();
+    const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText(/^Call your vet first thing tomorrow/);
+    // A neighbour's blood photo is read; the server lowers this row's leave (090, revalidate).
+    mockRow = waitRow({ may_wait: null, updated_at: new Date(2026, 6, 15, 21, 50).toISOString() });
+    // The owner logged that neighbour over this record: the completion card's payload moves.
+    act(() => { useMomentStore.setState({ payload: { kind: 'named' } as never }); });
+    await view.findByText("Call your vet today. If they're closed, call an emergency clinic.");
+    expect(view.queryByText(/first thing/)).toBeNull();
+    act(() => { useMomentStore.setState({ payload: null }); });
   });
 
   it('a TRUE over an owner edit keeps the louder line', async () => {

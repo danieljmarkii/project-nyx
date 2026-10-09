@@ -2,8 +2,8 @@
 // the stored fact could grant the wait (`enabled`: a new-rule call today with `may_wait` TRUE),
 // so every other read costs nothing, and the server's photo read never runs for them.
 //
-// Re-read when the row moves (`rowKey`) and on the floor facts' cadence (`tick`), so a log made on
-// this phone, or a sync that lands, reaches the line without a reopen. Null until the read answers
+// Re-read when the row moves (`rowKey`), every minute (`tick`) and on every log this phone commits
+// (`lastLogged`), so a log made over the record, or a sync that lands, reaches the line at once. Null until the read answers
 // and on a failed read: the line keeps the louder words then (lib/mayWaitLine.ts). A moved row
 // clears the last answer first, so a new read never stands on the old one's facts; a tick does
 // not, so the line does not blink to the louder words every few minutes over facts that held.
@@ -15,7 +15,10 @@ export function useMayWaitFacts(
   eventId: string,
   petId: string,
   rowKey: string,
-  tick: number,
+  /** Moves every minute: re-read. */
+  tick: string,
+  /** The last log this phone committed (its completion card's payload): re-read. */
+  lastLogged: unknown,
   enabled: boolean,
 ): MayWaitFacts | null {
   const [facts, setFacts] = useState<MayWaitFacts | null>(null);
@@ -31,6 +34,6 @@ export function useMayWaitFacts(
     return () => {
       live = false;
     };
-  }, [eventId, petId, rowKey, tick, enabled]);
+  }, [eventId, petId, rowKey, tick, lastLogged, enabled]);
   return facts;
 }

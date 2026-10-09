@@ -100,13 +100,13 @@ describe('loadMayWaitFacts', () => {
     add();
     const f = await loadMayWaitFacts('v0', PET, NOW);
     expect(f!.unsynced).toBe(true);
-    expect(mayWaitRefusalOf({
-      row: {
+    const shown = {
         status: 'completed', tier: 'call_today', engine_flags: ['engines_v3_en3'], may_wait: true, edited_at: null, error: null,
         updated_at: iso(ANCHOR + 10 * 60_000), photo_set_key: PHOTO, ai_raw_payload: { read_photo_set_key: PHOTO },
-      },
-      facts: f, kind: 'vomit', petName: 'Nyx', species: 'dog', birthDate: null, nowMs: NOW, timeZone: 'UTC',
-    })).not.toBeNull();
+    };
+    expect(mayWaitRefusalOf({
+      row: shown, freshRow: shown, facts: f, kind: 'vomit', petName: 'Nyx', species: 'dog', birthDate: null, nowMs: NOW, offsetAt: () => 0,
+    })).not.toBeNull(); // 'unsynced', or 'photos' first for a queued photo (the sets differ)
   });
 
   it('a deleted vomit is not in the floor\'s rows once synced', async () => {

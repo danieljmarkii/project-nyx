@@ -29,25 +29,34 @@
 //   intake     a cat: no rated meal in the week before now, or the intake flag firing at any
 //              vomit in the run or AT NOW. Time alone fires it, with no write to trigger anything
 //              (PR-27h's finding 1), so only the render can re-check it.
-//   expired    the leave covers the night after the decision, and ends at the first 6 AM after
-//              it, local. A morning that has come is the "first thing" the line promised; past it
-//              the line would offer a second night nobody decided.
+//   expired    the leave covers ONE night, and ends at the first local 6 AM after the EARLIER of
+//              the decision and the incident. A morning that has come is the "first thing" the
+//              line promised; past it the line would offer a second night nobody decided. The
+//              decision is read off `updated_at`, which every write moves (075), a Hide or a Show
+//              included, and 088 does not take the leave back on one: so the incident's own time
+//              bounds the night too, and a hide tapped open the next morning cannot re-open it
+//              (adversarial pass on this PR, finding 1; a server-stamped decision time is filed).
 //   dst        an offset change in the DEVICE's zone around the read (the server checked the
-//              profile's zone, which may lag the phone; PR-27e's precondition 3).
-//   signs      the line names the pet's call-now signs as the exception; with none left to name,
-//              there is no wait line, only the louder one.
+//              profile's zone, which may lag the phone; PR-27e's precondition 3), read off the
+//              runtime's own clock (`getTimezoneOffset`), so it needs no Intl zone support.
+//   fresh      the caller hands the row it re-read from the server this minute, and the line
+//              stands only while that copy is the one on screen (same `updated_at`): a take-back
+//              written for a neighbour's finding (088–092, revalidateMayWait) reaches an open
+//              record within a minute, never "until the next open" (finding 2).
 //
 // ── THE WORDS (device local hour; PM ruling D1 = a: 6 AM / 6 PM / midnight) ──────────────────
 //   day          Call your vet today. If they're closed, first thing tomorrow, or an emergency
 //                clinic tonight if {signs}.
 //   evening      Call your vet first thing tomorrow, or an emergency clinic tonight if {signs}.
 //   small hours  Call your vet first thing this morning, or an emergency clinic now if {signs}.
-// {signs}: a vomit names the floor's live call-now clauses (T2, T3), the watch-for list's own
-// words; a stool names "{pet} is low on energy or vomits" (PM ruling D2 = a), since the floor
-// reads vomits only and generates no clause for a stool.
+// {signs} is count-free and has no deadline: a vomit says "{pet} vomits again or is low on
+// energy"; a stool says "{pet} is low on energy or vomits" (PM ruling D2 = a). The floor's own
+// clauses were tried first and failed the adversarial pass (finding 3): T2's "twice more by 1 AM"
+// counts from this vomit's onset and misses an earlier onset inside the span, so the night's
+// exception named one vomit too many and a deadline 40 minutes late. "Again" is never later than
+// the floor, which is the direction a night's exception must err.
 //
-// MIRRORED, SAME QUESTION (C-34): `intakeFlagAt`, `tracksIntakeAt`, `utcOffsetMinutes` and
-// `dstChangeBetween` mirror `supabase/functions/_shared/incidentMayWait.ts`, whose constants they
+// MIRRORED, SAME QUESTION (C-34): `intakeFlagAt` and `tracksIntakeAt` mirror `supabase/functions/_shared/incidentMayWait.ts`, whose constants they
 // import from nowhere: the phone may not import the Edge Function tree. `lib/mayWaitLine.test.ts`
 // drives both copies over the same fixtures, so a drift is a red build.
 //
@@ -56,7 +65,7 @@
 // until the section's next read; the gates above re-run on every minute tick regardless.
 
 import { FLOOR_LETHARGY_HOURS, FLOOR_READ_HOURS, incidentFloor, type FloorVomit } from './incidentFloor';
-import { named, orList, watchForClauses } from './incidentFloorWords';
+import { named } from './incidentFloorWords';
 import { isTieredRow, TIER_WORDS } from './incidentTierWords';
 
 const HOUR = 3_600_000;
@@ -88,7 +97,7 @@ export type MayWaitRefusal =
   | 'intake'
   | 'expired'
   | 'dst'
-  | 'signs'
+  | 'fresh'
   | 'facts';
 
 /** The analysis row's columns this reads. Unknown-typed: a server value this build does not
@@ -140,8 +149,12 @@ export interface MayWaitInput {
   species: string | null;
   birthDate: string | null;
   nowMs: number;
-  /** The device's zone; `Intl`'s when omitted. A test passes one. */
-  timeZone?: string | null;
+  /** The row re-read from the server for this gate (null until it answers). The line stands
+   *  only while it is the copy on screen: same `updated_at`, still TRUE. */
+  freshRow: MayWaitRow | null | undefined;
+  /** The device's UTC offset at an instant, in `getTimezoneOffset`'s sign. A test injects
+   *  one; the runtime's own clock otherwise. */
+  offsetAt?: (atMs: number) => number;
 }
 
 // ── Mirrors of the server's rules (C-34: same question; parity-tested) ───────────────────────
@@ -165,31 +178,19 @@ export function intakeFlagAt(meals: readonly MayWaitMeal[], atMs: number): boole
   return tracks && !ate;
 }
 
-/** The UTC offset (minutes) of `zone` at `atMs`, or null when the zone is not one Intl knows. */
-export function utcOffsetMinutes(zone: string, atMs: number): number | null {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'longOffset' }).formatToParts(new Date(atMs));
-    const name = parts.find((p) => p.type === 'timeZoneName')?.value ?? '';
-    if (name === 'GMT') return 0;
-    const m = /^GMT([+-])(\d{2}):(\d{2})$/.exec(name);
-    if (!m) return null;
-    const minutes = Number(m[2]) * 60 + Number(m[3]);
-    return m[1] === '-' ? -minutes : minutes;
-  } catch {
-    return null;
+/** Whether the offset moves anywhere in [fromMs, toMs]. Every DST change holds for hours, so
+ *  an hourly sample finds each one (the server's `dstChangeBetween`, over the device's clock). */
+export function offsetChangeBetween(offsetAt: (atMs: number) => number, fromMs: number, toMs: number): boolean {
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return true;
+  const first = offsetAt(fromMs);
+  if (!Number.isFinite(first)) return true;
+  for (let t = fromMs; t < toMs; t += HOUR) {
+    if (offsetAt(t) !== first) return true;
   }
+  return offsetAt(toMs) !== first;
 }
 
-/** Whether the offset moves anywhere in [fromMs, toMs]; an unknown zone answers true (refuse). */
-export function dstChangeBetween(zone: string | null, fromMs: number, toMs: number): boolean {
-  if (!zone || !Number.isFinite(fromMs) || !Number.isFinite(toMs)) return true;
-  const first = utcOffsetMinutes(zone, fromMs);
-  if (first === null) return true;
-  for (let t = fromMs; t < toMs; t += HOUR) {
-    if (utcOffsetMinutes(zone, t) !== first) return true;
-  }
-  return utcOffsetMinutes(zone, toMs) !== first;
-}
+const deviceOffsetAt = (atMs: number) => new Date(atMs).getTimezoneOffset();
 
 // ── The photo set ────────────────────────────────────────────────────────────────────────────
 
@@ -290,31 +291,12 @@ export function clockBandOf(nowMs: number): ClockBand {
   return h < EVENING_HOUR ? 'day' : 'evening';
 }
 
-function deviceZone(): string | null {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
-  } catch {
-    return null;
-  }
-}
-
 // ── The signs ────────────────────────────────────────────────────────────────────────────────
 
-/** The pet's call-now signs as the exception, or null when none is left to name. */
-export function callNowSignsOf(input: MayWaitInput, anchor: FloorVomit): string | null {
-  if (input.kind === 'stool') return `${named(input.petName)} is low on energy or vomits`;
-  if (!input.facts || input.species === null) return null;
-  const clauses = watchForClauses({
-    petName: input.petName,
-    species: input.species,
-    birthDate: input.birthDate,
-    anchor,
-    vomits: input.facts.vomits,
-    nowMs: input.nowMs,
-  })
-    .filter((c) => c.tier === 'call_now')
-    .map((c) => c.text);
-  return clauses.length > 0 ? orList(clauses) : null;
+/** The pet's call-now signs as the exception: count-free, deadline-free (see the header). */
+export function callNowSignsOf(kind: 'vomit' | 'stool', petName: string | null | undefined): string {
+  const p = named(petName);
+  return kind === 'vomit' ? `${p} vomits again or is low on energy` : `${p} is low on energy or vomits`;
 }
 
 export function waitLine(band: ClockBand, signs: string): string {
@@ -350,25 +332,20 @@ export function mayWaitRefusalOf(input: MayWaitInput): MayWaitRefusal | null {
   if (floorCallsNowAround(anchorMs, facts, input.species)) return 'floor';
   if (lethargyAround(anchorMs, facts, input.nowMs)) return 'lethargy';
   if (input.species === 'cat' && catIntakeRefuses(anchorMs, facts, input.nowMs)) return 'intake';
-  if (input.nowMs >= leaveEndsAt(decidedMs)) return 'expired';
+  if (input.nowMs >= leaveEndsAt(Math.min(decidedMs, anchorMs))) return 'expired';
 
-  const zone = input.timeZone === undefined ? deviceZone() : input.timeZone;
   const from = Math.min(anchorMs, input.nowMs) - MAY_WAIT_REACH_HOURS * HOUR;
   const to = Math.max(anchorMs, input.nowMs) + MAY_WAIT_DST_AFTER_HOURS * HOUR;
-  if (dstChangeBetween(zone, from, to)) return 'dst';
+  if (offsetChangeBetween(input.offsetAt ?? deviceOffsetAt, from, to)) return 'dst';
 
-  const anchor = facts.vomits.find((v) => parsed(v.at) === anchorMs) ?? { at: facts.anchorAt, confidence: null };
-  if (callNowSignsOf(input, anchor) === null) return 'signs';
+  const fresh = input.freshRow;
+  if (!fresh || fresh.may_wait !== true || fresh.updated_at !== row.updated_at) return 'fresh';
   return null;
 }
 
 /** Call today's action line on the record: the wait line on a TRUE every gate keeps, else the
  *  louder line. Never null, never calmer than "Worth a call". */
 export function callTodayActionOf(input: MayWaitInput): string {
-  const louder = TIER_WORDS.call_today.action ?? '';
-  if (mayWaitRefusalOf(input) !== null || !input.facts) return louder;
-  const anchorMs = parsed(input.facts.anchorAt);
-  const anchor = input.facts.vomits.find((v) => parsed(v.at) === anchorMs) ?? { at: input.facts.anchorAt, confidence: null };
-  const signs = callNowSignsOf(input, anchor);
-  return signs === null ? louder : waitLine(clockBandOf(input.nowMs), signs);
+  if (mayWaitRefusalOf(input) !== null) return TIER_WORDS.call_today.action ?? '';
+  return waitLine(clockBandOf(input.nowMs), callNowSignsOf(input.kind, input.petName));
 }

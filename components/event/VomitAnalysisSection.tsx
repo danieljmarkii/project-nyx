@@ -62,6 +62,7 @@ import {
 } from '../../lib/incidentFloorWords';
 import { FLOOR_FACTS_REFRESH_MS, useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
 import { useMayWaitFacts } from '../../hooks/useMayWaitFacts';
+import { useMomentStore } from '../../store/momentStore';
 import { callTodayActionOf } from '../../lib/mayWaitLine';
 import { usePetStore } from '../../store/petStore';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
@@ -199,13 +200,12 @@ export function VomitAnalysisSection(
   const floorFacts = useIncidentFloorFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}|${Math.floor(clockNow / FLOOR_FACTS_REFRESH_MS)}`);
   // CUL-1629: the phone's read behind call today's wait line, only when the stored fact could
   // grant it (a new-rule call today with `may_wait` TRUE); every other read costs nothing.
-  const mayWaitFacts = useMayWaitFacts(
-    eventId,
-    petId,
-    `${row?.updated_at ?? row?.status ?? ''}`,
-    Math.floor(clockNow / FLOOR_FACTS_REFRESH_MS),
-    !!row && row.tier === 'call_today' && row.may_wait === true && isTieredRow(row),
-  );
+  // Re-read every minute and on every log this phone commits (the completion card's payload
+  // moves on each), so a vomit or lethargy logged over this record reaches the line at once.
+  const waitCandidate = !!row && row.tier === 'call_today' && row.may_wait === true && isTieredRow(row);
+  const lastLogged = useMomentStore((s) => s.payload);
+  const waitTick = `${Math.floor(clockNow / 60_000)}`;
+  const mayWaitFacts = useMayWaitFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}`, waitTick, lastLogged, waitCandidate);
   // The RECORD's pet (C-9): species and birthday decide which clauses its list carries.
   const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
 
@@ -304,6 +304,30 @@ export function VomitAnalysisSection(
       .maybeSingle();
     return (data as AnalysisRow | null) ?? null;
   }, [eventId]);
+
+  // CUL-1629: the stored fact re-read from the server on the same cadence, for the wait line
+  // alone. A resolved row is otherwise fetched once, so a take-back the server writes for a
+  // neighbour's finding (088–092) would never reach an open record. The line stands only
+  // while this copy and the one on screen agree; a newer one is shown, not just obeyed.
+  const [freshWaitRow, setFreshWaitRow] = useState<AnalysisRow | null>(null);
+  // Cleared when the row on screen moves, never on the tick: the line does not blink to the
+  // louder words every minute over a copy that still agrees.
+  useEffect(() => {
+    setFreshWaitRow(null);
+  }, [waitCandidate, row?.updated_at]);
+  useEffect(() => {
+    if (!waitCandidate) return undefined;
+    let live = true;
+    void fetchRow().then((next) => {
+      if (!live || cancelled.current) return;
+      setFreshWaitRow(next);
+      const shown = latestRow.current;
+      if (next && next.status !== 'pending' && shown && next.updated_at !== shown.updated_at) setRow(next);
+    });
+    return () => {
+      live = false;
+    };
+  }, [waitCandidate, row?.updated_at, waitTick, lastLogged, fetchRow]);
 
   // Re-read the row and resolve if the analysis has moved off 'pending'. Returns
   // true once resolved — the realtime watch tears down on true. Guards its state
@@ -830,11 +854,14 @@ export function VomitAnalysisSection(
               ? callTodayActionOf({
                   row,
                   facts: mayWaitFacts,
+                  freshRow: freshWaitRow,
                   kind: 'vomit',
                   petName,
                   species: recordPet?.species ?? null,
                   birthDate: recordPet?.date_of_birth ?? null,
-                  nowMs,
+                  // The live clock, not the minute tick: a phone back from the background
+                  // must not judge the night's end on the minute it was put away.
+                  nowMs: Date.now(),
                 })
               : display
                 ? TIER_WORDS[display].action

@@ -7,7 +7,6 @@
 import {
   callTodayActionOf,
   clockBandOf,
-  dstChangeBetween,
   intakeFlagAt,
   leaveEndsAt,
   MAY_WAIT_DST_AFTER_HOURS,
@@ -16,9 +15,9 @@ import {
   MAY_WAIT_LETHARGY_HOURS,
   MAY_WAIT_REACH_HOURS,
   mayWaitRefusalOf,
+  offsetChangeBetween,
   photoSetListKey,
   tracksIntakeAt,
-  utcOffsetMinutes,
   type MayWaitFacts,
   type MayWaitInput,
   type MayWaitRow,
@@ -67,15 +66,18 @@ function facts(over: Partial<MayWaitFacts> = {}): MayWaitFacts {
   };
 }
 function input(over: Partial<MayWaitInput> = {}): MayWaitInput {
+  // The server re-read agrees with the row on screen unless a test says otherwise.
+  const shown = over.row === undefined ? row() : over.row;
   return {
-    row: row(),
+    row: shown,
+    freshRow: shown,
     facts: facts(),
     kind: 'vomit',
     petName: 'Nyx',
     species: 'dog',
     birthDate: '2020-01-01',
     nowMs: local(15, 22),
-    timeZone: 'UTC',
+    offsetAt: () => 0,
     ...over,
   };
 }
@@ -84,8 +86,7 @@ describe('both halves (the issue\'s pinned test)', () => {
   it('a TRUE at 10 PM gets the wait line, naming the call-now signs', () => {
     const line = callTodayActionOf(input());
     expect(mayWaitRefusalOf(input())).toBeNull();
-    expect(line).toMatch(/^Call your vet first thing tomorrow, or an emergency clinic tonight if /);
-    expect(line).toContain('Nyx is low on energy by 9 PM tomorrow');
+    expect(line).toBe('Call your vet first thing tomorrow, or an emergency clinic tonight if Nyx vomits again or is low on energy.');
     expect(line).not.toBe(LOUDER);
   });
 
@@ -122,12 +123,12 @@ describe('the clock (D1: 6 AM / 6 PM / midnight)', () => {
   it('day: today, first thing tomorrow if closed', () => {
     const decided = local(15, 14);
     const line = callTodayActionOf(input({ row: row({ updated_at: iso(decided) }), facts: facts({ anchorAt: iso(local(15, 13)), vomits: [{ at: iso(local(15, 8)), confidence: 'witnessed' }, { at: iso(local(15, 13)), confidence: 'witnessed' }] }), nowMs: local(15, 14, 30) }));
-    expect(line).toMatch(/^Call your vet today\. If they're closed, first thing tomorrow, or an emergency clinic tonight if /);
+    expect(line).toBe("Call your vet today. If they're closed, first thing tomorrow, or an emergency clinic tonight if Nyx vomits again or is low on energy.");
   });
 
   it('small hours: first thing this morning, an emergency clinic now if', () => {
     const line = callTodayActionOf(input({ nowMs: local(16, 2) }));
-    expect(line).toMatch(/^Call your vet first thing this morning, or an emergency clinic now if /);
+    expect(line).toBe('Call your vet first thing this morning, or an emergency clinic now if Nyx vomits again or is low on energy.');
   });
 
   it('the leave ends at the first 6 AM after the decision', () => {
@@ -139,6 +140,18 @@ describe('the clock (D1: 6 AM / 6 PM / midnight)', () => {
     expect(mayWaitRefusalOf(input({ nowMs: local(16, 6) }))).toBe('expired');
     // The morning after, the line would offer a second night nobody decided.
     expect(callTodayActionOf(input({ nowMs: local(16, 9) }))).toBe(LOUDER);
+  });
+
+  it('a Hide then Show the next morning moves updated_at, and still opens no second night (finding 1)', () => {
+    const shown = row({ updated_at: iso(local(16, 7, 31)) });
+    expect(mayWaitRefusalOf(input({ row: shown, nowMs: local(16, 12) }))).toBe('expired');
+    expect(mayWaitRefusalOf(input({ row: shown, nowMs: local(16, 20) }))).toBe('expired');
+  });
+
+  it('the night is bounded by the incident too: a vomit back-dated past a morning never waits', () => {
+    const decided = row({ updated_at: iso(local(15, 21, 30)) });
+    const old = facts({ anchorAt: iso(local(14, 20)), vomits: [{ at: iso(local(14, 10)), confidence: 'witnessed' }, { at: iso(local(14, 20)), confidence: 'witnessed' }] });
+    expect(mayWaitRefusalOf(input({ row: decided, facts: old }))).toBe('expired');
   });
 });
 
@@ -212,15 +225,14 @@ describe('each gate refuses on its own', () => {
     expect(mayWaitRefusalOf(input({ facts: facts({ vomits }) }))).toBe('floor');
   });
 
-  it('lethargy: within a day of a vomit the floor hears it (T3); past that, up to now, this gate does', () => {
+  it('lethargy: within a day of a vomit the floor hears it (T3); around a stool run, this gate does', () => {
     expect(mayWaitRefusalOf(input({ facts: facts({ lethargyAt: [iso(local(15, 21, 50))] }) }))).toBe('floor');
-    // A stool logged two days back, read tonight: lethargy logged now is past every vomit
-    // window the floor reads, and still takes the wait away (the server's "anything since").
+    // A stool read tonight, no vomit anywhere: the floor reads nothing, the lethargy gate does.
     const stool = (lethargyAt: string[]) =>
-      input({ kind: 'stool', facts: facts({ anchorAt: iso(local(13, 20)), vomits: [], stoolAt: [iso(local(13, 20))], lethargyAt }) });
+      input({ kind: 'stool', facts: facts({ vomits: [], stoolAt: [iso(local(15, 12)), iso(ANCHOR)], lethargyAt }) });
     expect(mayWaitRefusalOf(stool([]))).toBeNull();
-    expect(mayWaitRefusalOf(stool([iso(local(15, 21, 50))]))).toBe('lethargy');
-    expect(mayWaitRefusalOf(stool([iso(local(12, 21))]))).toBe('lethargy'); // a day before the run
+    expect(mayWaitRefusalOf(stool([iso(local(15, 21, 50))]))).toBe('lethargy'); // logged since
+    expect(mayWaitRefusalOf(stool([iso(local(14, 13))]))).toBe('lethargy'); // a day before the run
     expect(mayWaitRefusalOf(stool([iso(local(8, 12))]))).toBeNull(); // a week before
   });
 
@@ -245,19 +257,21 @@ describe('each gate refuses on its own', () => {
     });
   });
 
-  it('dst: an offset change in the device zone around the read; an unknown zone', () => {
-    const nov = (d: number, h: number) => Date.UTC(2026, 10, d, h);
-    const zone = 'America/New_York'; // falls back Nov 1 2026
-    expect(dstChangeBetween(zone, nov(2, 0) - 72 * HOUR, nov(2, 0) + 48 * HOUR)).toBe(true);
-    expect(mayWaitRefusalOf(input({ timeZone: 'Not/AZone' }))).toBe('dst');
-    expect(mayWaitRefusalOf(input({ timeZone: null }))).toBe('dst');
-    expect(mayWaitRefusalOf(input({ timeZone: 'Europe/London' }))).toBeNull(); // July: no change
+  it('dst: an offset change in the device\'s own clock around the read refuses; an unreadable one too', () => {
+    const shift = local(16, 4);
+    expect(mayWaitRefusalOf(input({ offsetAt: (t) => (t < shift ? -60 : 0) }))).toBe('dst');
+    expect(mayWaitRefusalOf(input({ offsetAt: () => Number.NaN }))).toBe('dst');
+    // A change more than 48 hours past the read is outside the night's reach.
+    const far = local(15, 22) + 49 * HOUR;
+    expect(mayWaitRefusalOf(input({ offsetAt: (t) => (t < far ? -60 : 0) }))).toBeNull();
   });
 
-  it('signs: a found pile a day old has no call-now sign left to name, so no wait', () => {
-    const anchor = local(14, 20);
-    const vomits = [{ at: iso(anchor), confidence: 'window' }, { at: iso(local(14, 10)), confidence: 'witnessed' }];
-    expect(mayWaitRefusalOf(input({ facts: facts({ anchorAt: iso(anchor), vomits }) }))).toBe('signs');
+  it('fresh: the line stands only while the server\'s copy agrees with the one on screen (finding 2)', () => {
+    expect(mayWaitRefusalOf(input({ freshRow: null }))).toBe('fresh');
+    // A neighbour's finding took the leave back on the server after this record opened.
+    expect(mayWaitRefusalOf(input({ freshRow: row({ may_wait: null, updated_at: iso(local(15, 21, 55)) }) }))).toBe('fresh');
+    expect(mayWaitRefusalOf(input({ freshRow: row({ may_wait: true, updated_at: iso(local(15, 21, 55)) }) }))).toBe('fresh');
+    expect(callTodayActionOf(input({ freshRow: row({ may_wait: null }) }))).toBe(LOUDER);
   });
 });
 
@@ -277,7 +291,15 @@ describe('D2 = a: a stool names its own signs', () => {
 });
 
 describe('the copy (nyx-voice)', () => {
-  it('no exclamation marks, never "missed", never a calmer word than a call', () => {
+  it('the exception is count-free and deadline-free, so it is never later than the floor (finding 3)', () => {
+    // Two onsets 40 minutes apart: one more vomit is already T2's third. "Again" says so.
+    const two = facts({ vomits: [{ at: iso(local(15, 20, 20)), confidence: 'witnessed' }, { at: iso(ANCHOR), confidence: 'witnessed' }] });
+    const line = callTodayActionOf(input({ facts: two }));
+    expect(line).toContain('if Nyx vomits again or is low on energy.');
+    expect(line).not.toMatch(/twice|by \d/);
+  });
+
+  it('no exclamation marks, never a calmer word than a call', () => {
     for (const nowMs of [local(15, 22), local(16, 2)]) {
       const line = callTodayActionOf(input({ nowMs }));
       expect(line).not.toMatch(/!/);
@@ -306,12 +328,12 @@ describe('the mirrors equal the server (C-34)', () => {
     }
   });
 
-  it('utcOffsetMinutes and dstChangeBetween over zones and spans', () => {
-    const zones = ['UTC', 'America/New_York', 'Europe/London', 'Pacific/Chatham', 'Pacific/Kiritimati', 'Australia/Lord_Howe', 'Nope/Zone'];
+  it('offsetChangeBetween answers as the server\'s dstChangeBetween over the same offsets', () => {
+    const zones = ['UTC', 'America/New_York', 'Europe/London', 'Pacific/Chatham', 'Pacific/Kiritimati', 'Australia/Lord_Howe'];
     const starts = [Date.UTC(2026, 6, 15), Date.UTC(2026, 9, 30), Date.UTC(2026, 2, 7), Date.UTC(2026, 8, 25), Date.UTC(2026, 3, 3)];
-    for (const z of zones) for (const s of starts) {
-      expect(utcOffsetMinutes(z, s)).toBe(server.utcOffsetMinutes(z, s));
-      expect(dstChangeBetween(z, s, s + 5 * 24 * HOUR)).toBe(server.dstChangeBetween(z, s, s + 5 * 24 * HOUR));
+    for (const z of zones) for (const st of starts) {
+      const offsetAt = (t: number) => server.utcOffsetMinutes(z, t) ?? Number.NaN;
+      expect(offsetChangeBetween(offsetAt, st, st + 5 * 24 * HOUR)).toBe(server.dstChangeBetween(z, st, st + 5 * 24 * HOUR));
     }
   });
 
