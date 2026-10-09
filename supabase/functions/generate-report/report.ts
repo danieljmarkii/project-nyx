@@ -636,6 +636,18 @@ export interface ReportAttachmentInput {
 }
 
 /**
+ * CUL-1658 (FAB PR-29c) — a `capture_changes` row (migration 091): the day this pet's capture
+ * surface first offered a change. The report reads one key today, `fab_stool_split`, the day the
+ * fan's stool pill split into Normal and Loose and a normal stool became one tap to log.
+ * `firstSeenAt` is the phone's clock, `createdAt` the server's; see `captureChangeInstant`.
+ */
+export interface ReportCaptureChangeInput {
+  changeKey: string
+  firstSeenAt: string
+  createdAt: string
+}
+
+/**
  * The full pure-assembly input. The caller pulls a GENEROUS lookback (≥ the
  * report window; the live Signal pulls 180d) so the detection reuse has enough
  * history for its natural sub-windows; report.ts scopes everything to the resolved
@@ -688,6 +700,14 @@ export interface ReportInput {
    * absent ⇒ no incident photos (an empty Appendix E, which simply does not render).
    */
   attachments?: ReportAttachmentInput[]
+  /**
+   * CUL-1658 — this pet's `capture_changes` rows. Optional so every earlier fixture and the
+   * `resolveScope` pre-pull keep compiling; ABSENT ⇒ no row ⇒ no disclosure line, which is the
+   * report for a pet whose fan never changed. A read that FAILED does not arrive as absent:
+   * the I/O shell names `capture_changes` in `incompletePulls`, so the page says the record is
+   * partial rather than silently dropping the line.
+   */
+  captureChanges?: ReportCaptureChangeInput[]
   /**
    * B-613 — the instant `events` was pulled from (`index.ts`'s `computeLookbackIso`).
    *
@@ -797,6 +817,50 @@ function localDayKey(iso: string, tz: string | null): string | null {
     }
   }
   return new Date(ms).toISOString().slice(0, 10)
+}
+
+/** The `capture_changes` key for the fan's split stool pill (migration 091's CHECK). */
+export const FAB_STOOL_SPLIT_KEY = 'fab_stool_split'
+
+/**
+ * CUL-1658 — the instant a capture change is DISCLOSED from: the earlier of the phone's clock
+ * (`first_seen_at`) and the server's (`created_at`), migration 091's reader rule. A fast phone
+ * clock and a late offline push then both err EARLY, which moves the date toward the window
+ * and over-discloses rather than hides. An unparseable side is ignored; both unparseable ⇒ null.
+ *
+ * The two are compared as INSTANTS, never as text (C-40): the phone writes `…T04:00:00.000Z`,
+ * PostgREST returns `…T04:00:00+00:00`, and those order differently as strings.
+ */
+export function captureChangeInstant(row: ReportCaptureChangeInput): string | null {
+  const seen = parseMs(row.firstSeenAt)
+  const created = parseMs(row.createdAt)
+  if (seen === null && created === null) return null
+  if (seen === null) return row.createdAt
+  if (created === null) return row.firstSeenAt
+  return seen <= created ? row.firstSeenAt : row.createdAt
+}
+
+/**
+ * CUL-1658 — the one-tap-normal instant when its owner-local day falls on or between the
+ * window's first and last day, else null.
+ *
+ * BEFORE the window ⇒ null: every day in it already had the pill, so the counts are on one
+ * footing. AFTER ⇒ null: none did. ON the first day ⇒ disclosed: a few hours of that day were
+ * logged without the pill, and the direction that cannot mislead is the one that says so.
+ * Day keys are fixed-width `YYYY-MM-DD` dates, so comparing them as text is comparing days.
+ */
+export function oneTapNormalInWindow(
+  rows: ReportCaptureChangeInput[] | undefined,
+  scope: Pick<ReportScope, 'startDate' | 'endDate'>,
+  tz: string | null,
+): string | null {
+  const row = (rows ?? []).find((r) => r.changeKey === FAB_STOOL_SPLIT_KEY)
+  if (!row) return null
+  const instant = captureChangeInstant(row)
+  if (instant === null) return null
+  const day = localDayKey(instant, tz)
+  if (day === null) return null
+  return day >= scope.startDate && day <= scope.endDate ? instant : null
 }
 
 /** A calendar-day key ('YYYY-MM-DD', already a local day OR a DATE column) → an integer day index. */
@@ -1597,6 +1661,14 @@ export interface StoolCharacteristics {
   looseCount: number
   windowDays: number
   loggedDays: number
+  /**
+   * CUL-1658 — the instant a normal stool became one tap to log for this pet (the fan's split
+   * stool pill, `capture_changes.fab_stool_split`), set ONLY when its owner-local day falls inside
+   * the window; null otherwise (no row, or the change sits wholly before or after the window).
+   * The counts above are never adjusted for it: the line beside them discloses, it never
+   * corrects. REQUIRED, so a fixture or a new builder must decide rather than inherit silence.
+   */
+  oneTapNormalFrom: string | null
   /**
    * AI photo-read enrichment (migration 034 / analyze-stool). Null when NO stool incident has a
    * photo the AI could read — the section then renders the owner-described counts + an honest "not
@@ -3664,7 +3736,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
             reviewedCount,
           }
         : null
-    stool = { total: stoolNormal + stoolLoose, normalCount: stoolNormal, looseCount: stoolLoose, windowDays, loggedDays, ai }
+    stool = {
+      total: stoolNormal + stoolLoose,
+      normalCount: stoolNormal,
+      looseCount: stoolLoose,
+      windowDays,
+      loggedDays,
+      oneTapNormalFrom: oneTapNormalInWindow(input.captureChanges, scope, tz),
+      ai,
+    }
   }
 
   // ── Weight (§3.3, B-186) ──────────────────────────────────────────────────────

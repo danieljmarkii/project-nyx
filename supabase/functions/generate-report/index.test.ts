@@ -1521,3 +1521,49 @@ Deno.test('the handler reads includeNotes through parseIncludeNotes and starts O
   assert.match(handlerSrc, /kind: 'owner', includeLookNotes: includeNotes/)
   assert.doesNotMatch(handlerSrc, /includeNotes = true/)
 })
+
+// ── CUL-1658 (FAB PR-29c) — the capture_changes read ─────────────────────────────
+
+function stoolShellTables(captureChanges: FakeTable | undefined) {
+  const stoolRow = (id: string, type: string, daysAgo: number) => ({
+    id, event_type: type, occurred_at: new Date(NOW_MS - daysAgo * MS_PER_DAY).toISOString(),
+    occurred_at_confidence: 'witnessed', occurred_at_earliest: null, occurred_at_latest: null,
+    severity: null, notes: null, created_at: NOW, meals: null,
+  })
+  return {
+    pets: { single: { id: 'p1', user_id: 'u1', name: 'Nyx', species: 'cat', breed: null, sex: 'female', date_of_birth: '2020-01-01', weight_kg: '4.2' } },
+    user_profiles: { single: { display_name: 'Jordan', timezone: 'America/New_York' } },
+    vet_visits: { list: [] },
+    diet_trials: { list: [] },
+    events: { list: [stoolRow('s1', 'stool_normal', 3), stoolRow('s2', 'diarrhea', 20)] },
+    capture_changes: captureChanges,
+  }
+}
+
+Deno.test('generateReportForPet: a capture_changes row inside the window reaches the stool strip', async () => {
+  const seen = new Date(NOW_MS - 10 * MS_PER_DAY).toISOString()
+  const res = await generateReportForPet(
+    fakeClient(stoolShellTables({ single: { change_key: 'fab_stool_split', first_seen_at: seen, created_at: seen } })),
+    'p1', NOW_MS, null, OWNER_AUDIENCE,
+  )
+  assert.equal(res.status, 200)
+  assert.match(res.body.html as string, /Logging changed on Jun 22:<\/b>/)
+  assert.ok(!/Partial record/.test(res.body.html as string))
+})
+
+Deno.test('generateReportForPet: no capture_changes row ⇒ no line, no partial-record note', async () => {
+  const res = await generateReportForPet(fakeClient(stoolShellTables(undefined)), 'p1', NOW_MS, null, OWNER_AUDIENCE)
+  assert.equal(res.status, 200)
+  assert.ok(!/Logging changed|Partial record/.test(res.body.html as string))
+})
+
+Deno.test('generateReportForPet: a FAILED capture_changes read still renders, and names the gap (never silent)', async () => {
+  const res = await generateReportForPet(
+    fakeClient(stoolShellTables({ error: { message: 'statement timeout' } })),
+    'p1', NOW_MS, null, OWNER_AUDIENCE,
+  )
+  assert.equal(res.status, 200, 'a disclosure read never costs the owner the report')
+  const html = res.body.html as string
+  assert.ok(/Partial record\.<\/b> Some of this pet's logging-change dates could not be read/.test(html))
+  assert.ok(!/Logging changed/.test(html))
+})

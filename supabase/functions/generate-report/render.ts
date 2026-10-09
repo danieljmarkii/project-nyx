@@ -1651,6 +1651,9 @@ const TRUNCATION_NOUNS: Record<string, string> = {
   conditions: 'recorded conditions',
   diet_trials: 'diet trials',
   vet_visits: 'vet visits',
+  // CUL-1658 — a failed read here does not shorten a count; it can hide the stool strip's
+  // logging-change line, so the partial-record note names what that line would have said.
+  capture_changes: 'logging-change dates',
   // CUL-979 — the household pull. A short read here is not an under-count of anything on
   // the page, it is a MISSING CONFOUNDER (the second animal), which is exactly the class the
   // sentence above names as "context which would qualify a finding".
@@ -5811,6 +5814,19 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     .map((c) => `${single ? '' : `<span class="sw" style="background:${c.bg}"></span>`}${c.label} &times;${c.n}`)
     .join('&nbsp;&middot;&nbsp; ')
 
+  // CUL-1658 (FAB PR-29c) — the day a normal stool became one tap to log, when it falls inside
+  // the window. Logging ease moves what gets RECORDED, not what the pet did, so the normal count
+  // and the normal to loose mix can shift across that date for no clinical reason; the report
+  // cannot see that from the rows, so it says so beside them. It DISCLOSES and never adjusts:
+  // the counts above are untouched. The last sentence is the half that protects the patient:
+  // loose stools were one tap throughout, so a real change in the loose count is not explained
+  // away by this line. Year stamped once, only when it differs from the window's (CUL-69).
+  const changeLine = st.oneTapNormalFrom
+    ? `<br/><b>Logging changed on ${h(
+        fmtLocalDayScoped(st.oneTapNormalFrom, snap.timezone, snap.scope.endDate),
+      )}:</b> from that date a normal stool took one tap to log, so more normal stools may be recorded from then than before, and the normal to loose mix can shift for that reason alone. Loose stools were one tap throughout; this change does not affect their count.`
+    : ''
+
   const ai = st.ai
   const aiTag = ai
     ? '<span class="aitag">Automated photo analysis &middot; owner-reviewable</span>'
@@ -5895,7 +5911,7 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     <div class="pheno">
       <div>
         ${barHtml}
-        <div class="mixkey">${keyLine}<br/>Owner-described${
+        <div class="mixkey">${keyLine}${changeLine}<br/>Owner-described${
     // C-3: a coverage density beside a count is the UN-LOGGED days only, and nothing when
     // fully covered. "Owner-described over 43 of 46 days logged" read as a stool denominator
     // (the R-11 cold read: one loose stool out of forty-three), when 43/46 was record coverage.
