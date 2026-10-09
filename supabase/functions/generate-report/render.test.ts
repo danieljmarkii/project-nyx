@@ -1428,7 +1428,7 @@ Deno.test('an out-of-range date degrades to the raw string, never leaks "undefin
 // ── Coverage: stool characteristics (present-only for blood/mucus) ─────────────────
 
 Deno.test('stool: no photo read → owner-described bar + the pre-AI limitation note', () => {
-  const html = renderReport(base({ stool: { total: 6, normalCount: 4, looseCount: 2, windowDays: 52, loggedDays: 48, ai: null } }))
+  const html = renderReport(base({ stool: { total: 6, normalCount: 4, looseCount: 2, windowDays: 52, loggedDays: 48, normalShortcut: null, ai: null } }))
   assert.ok(/Stool characteristics/.test(html))
   assert.ok(/owner-described/.test(html))
   assert.ok(/No photos were read/.test(html), 'pre-AI limitation note stands when ai is null')
@@ -1438,7 +1438,7 @@ Deno.test('stool: no photo read → owner-described bar + the pre-AI limitation 
 Deno.test('stool: AI read, nothing present → Bristol line + "not a clearance" (never "0 of N")', () => {
   const html = renderReport(base({
     stool: {
-      total: 4, normalCount: 3, looseCount: 1, windowDays: 30, loggedDays: 28,
+      total: 4, normalCount: 3, looseCount: 1, windowDays: 30, loggedDays: 28, normalShortcut: null,
       ai: {
         totalIncidents: 4, withAnalysis: 3,
         states: { completed: 3, uncertain: 0, failed: 0, pending: 0 }, assessedCount: 3,
@@ -1459,7 +1459,7 @@ Deno.test('stool: AI read, nothing present → Bristol line + "not a clearance" 
 Deno.test('stool: melena blood + mucus present → present findings, melena named, mucus is monitor-tier', () => {
   const html = renderReport(base({
     stool: {
-      total: 2, normalCount: 0, looseCount: 2, windowDays: 14, loggedDays: 10,
+      total: 2, normalCount: 0, looseCount: 2, windowDays: 14, loggedDays: 10, normalShortcut: null,
       ai: {
         totalIncidents: 2, withAnalysis: 2,
         states: { completed: 2, uncertain: 0, failed: 0, pending: 0 }, assessedCount: 2,
@@ -1484,7 +1484,7 @@ Deno.test('stool: melena blood + mucus present → present findings, melena name
 Deno.test('stool: haematochezia (fresh_red) blood named distinctly from melena', () => {
   const html = renderReport(base({
     stool: {
-      total: 1, normalCount: 0, looseCount: 1, windowDays: 7, loggedDays: 7,
+      total: 1, normalCount: 0, looseCount: 1, windowDays: 7, loggedDays: 7, normalShortcut: null,
       ai: {
         totalIncidents: 1, withAnalysis: 1,
         states: { completed: 1, uncertain: 0, failed: 0, pending: 0 }, assessedCount: 1,
@@ -5728,7 +5728,7 @@ function everythingOnSnap(): ReportSnapshot {
       [mhEntry({ drugName: 'Metronidazole', startedDay: '2026-05-08', isActive: true, dosesLogged: 82, plannedDoses: 90, dosesPerDay: 2 })],
       '2026-05-08',
     ),
-    stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 91, loggedDays: 30, ai: null },
+    stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 91, loggedDays: 30, normalShortcut: null, ai: null },
     vomitPhenotype: emptyPhenotype(),
     incidentPhotos: [photo({ eventId: 'ev-p1', occurredAt: '2026-06-01T10:00:00Z', dataUri: PNG_1PX })],
     concurrentChanges: [
@@ -5846,12 +5846,12 @@ Deno.test('CUL-993 A.4 — a single entry reads "1 entry", never "1 entries"', (
 
 // ── A.6: a proportion bar of one category is a number ──
 Deno.test('CUL-993 A.6 — a one-category stool distribution is a count line, not a full-width bar', () => {
-  const one = renderReport(base({ stool: { total: 1, normalCount: 0, looseCount: 1, windowDays: 91, loggedDays: 30, ai: null } }))
+  const one = renderReport(base({ stool: { total: 1, normalCount: 0, looseCount: 1, windowDays: 91, loggedDays: 30, normalShortcut: null, ai: null } }))
   const sec = one.slice(one.indexOf('<h2>Stool characteristics'), one.indexOf('<h2>Diet, feeding'))
   assert.ok(!/class="barmix"/.test(sec), 'no proportion bar for one category')
   assert.ok(!/class="sw"/.test(sec), 'no swatch without a bar to key')
   assert.ok(/Normal \/ formed &times;0&nbsp;&middot;&nbsp; Loose \/ watery &times;1/.test(sec), 'BOTH counts stand — one loose of one, never one loose of an unstated many')
-  const two = renderReport(base({ stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 91, loggedDays: 30, ai: null } }))
+  const two = renderReport(base({ stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 91, loggedDays: 30, normalShortcut: null, ai: null } }))
   const sec2 = two.slice(two.indexOf('<h2>Stool characteristics'), two.indexOf('<h2>Diet, feeding'))
   assert.equal((sec2.match(/class="seg"/g) ?? []).length, 2, 'two categories draw the bar')
   assert.equal((sec2.match(/class="sw"/g) ?? []).length, 2, 'and key it')
@@ -6141,10 +6141,10 @@ Deno.test('CUL-993 A.3 — the marker line is drawn in two segments that leave t
 })
 
 Deno.test('R-11 cold read — the stool strip\'s coverage is the un-logged days only, never a ratio that reads as a stool denominator (C-3)', () => {
-  const partial = renderReport(base({ stool: { total: 1, normalCount: 0, looseCount: 1, windowDays: 46, loggedDays: 43, ai: null } }))
+  const partial = renderReport(base({ stool: { total: 1, normalCount: 0, looseCount: 1, windowDays: 46, loggedDays: 43, normalShortcut: null, ai: null } }))
   assert.ok(/Owner-described; nothing of any kind was logged on <span class="num">3<\/span> of <span class="num">46<\/span> days, so a stool on those days is not in this count\. Loose-stool events/.test(partial))
   assert.ok(!/Owner-described over/.test(partial), 'the "over 43 of 46 days logged" ratio is gone')
-  const full = renderReport(base({ stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 46, loggedDays: 46, ai: null } }))
+  const full = renderReport(base({ stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 46, loggedDays: 46, normalShortcut: null, ai: null } }))
   assert.ok(/Owner-described\. Loose-stool events/.test(full), 'nothing when fully covered')
 })
 
@@ -8094,4 +8094,54 @@ Deno.test('CUL-1274 — appendix E states the unrecorded remainder, and a fully 
   assert.ok(/^12 logged meals across 1 food ·/.test(appendixECaption(all)), appendixECaption(all))
   assert.ok(!/recorded/.test(appendixECaption(all)))
   assert.equal(appendixEMealRows(all)[0][4], 'Ate it all ×12', 'no "not recorded" cell when there is none')
+})
+
+// ── CUL-1658 — the normal-shortcut line: its four arms, year stamping, both strip shapes ──────
+
+const NS_STOOL = { total: 4, normalCount: 3, looseCount: 1, windowDays: 91, loggedDays: 80, ai: null }
+
+Deno.test('stool: the normal-shortcut line carries the year only when it differs from the window end', () => {
+  const same = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'on', at: '2026-05-10T15:00:00Z', split: null } } }))
+  assert.ok(/Logging changed on May 10:<\/b>/.test(same), 'same year as the window end ⇒ no year')
+  const cross = base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'on', at: '2025-12-20T15:00:00Z', split: null } } })
+  cross.scope = { ...cross.scope, startDate: '2025-12-01', endDate: '2026-01-15' }
+  assert.ok(/Logging changed on Dec 20, 2025:<\/b>/.test(renderReport(cross)), 'a different year ⇒ stamped')
+})
+
+Deno.test('stool: each normal-shortcut arm prints its own head, and every dated arm keeps the protecting tail', () => {
+  const by = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'by', at: '2026-05-10T15:00:00Z' } } }))
+  assert.ok(/Logging changed on or before May 10:<\/b>/.test(by))
+  const spans = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'spans' } } }))
+  assert.ok(/Logging changed, date not fixed:<\/b>/.test(spans))
+  for (const html of [by, spans]) assert.ok(/a rise in loose stools is not explained by this change, but a fall may partly reflect borderline stools now logged as normal\./.test(html))
+  const unknown = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'unknown' } } }))
+  assert.ok(/Logging change not checked:<\/b>/.test(unknown))
+  assert.ok(/If it did, a fall in loose stools may partly reflect borderline stools now logged as normal\./.test(unknown))
+})
+
+Deno.test('stool: the normal-shortcut line prints in the single-category shape too, and never without the field', () => {
+  const single = renderReport(base({ stool: { ...NS_STOOL, total: 2, normalCount: 0, looseCount: 2, normalShortcut: { kind: 'on', at: '2026-05-10T15:00:00Z', split: null } } }))
+  assert.ok(/Logging changed on May 10/.test(single))
+  const off = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: null } }))
+  assert.ok(!/Logging change/.test(off))
+})
+
+Deno.test('stool: ruling 1a — the line gives the counts on each side of the day, with the coverage of each', () => {
+  const html = renderReport(base({ stool: { ...NS_STOOL, total: 30, normalCount: 24, looseCount: 6, normalShortcut: {
+    kind: 'on', at: '2026-06-10T15:00:00Z',
+    split: { before: { normal: 4, loose: 4, days: 68, loggedDays: 7 }, from: { normal: 20, loose: 2, days: 23, loggedDays: 23 } },
+  } } }))
+  const flat = html.replace(/<span class="num">(\d+)<\/span>/g, '$1')
+  assert.ok(/<br\/>Before Jun 10 \(7 of 68 days had any log\): loose &times;4 &middot; normal &times;4<br\/>From Jun 10 \(23 of 23 days had any log\): loose &times;2 &middot; normal &times;20<br\/>/.test(flat))
+  // The pooled counts are still printed, untouched: the split sits beside them, never in place of them.
+  assert.ok(/Normal \/ formed &times;24/.test(flat) && /Loose \/ watery &times;6/.test(flat))
+})
+
+Deno.test('stool: ruling 2a — a change before the window says so, naming the server day, with the protecting tail', () => {
+  const exact = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: true } } }))
+  assert.ok(/<b>Logging changed on Mar 20, before this window:<\/b> the owner's app added a dedicated normal-stool entry\./.test(exact))
+  // "covering any period before", never "from before that date", which reads as the date a report was MADE.
+  assert.ok(/Within this window the counts are comparable; against a report covering any period before Mar 20, which under-records normal stools, the normal share here will look better from the change alone\.<br\/>Loose stools had their own entry throughout/.test(exact))
+  const by = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: false } } }))
+  assert.ok(/Logging changed by Mar 20, before this window:/.test(by))
 })

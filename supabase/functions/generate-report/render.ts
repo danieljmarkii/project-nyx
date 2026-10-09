@@ -53,6 +53,8 @@ import type {
   SymptomAggregate,
   VomitContentCategory,
   StoolCharacteristics,
+  StoolPeriodCounts,
+  StoolShortcutSplit,
   WeightSection,
   DietSummary,
   MedicationAdherence,
@@ -5811,6 +5813,48 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     .map((c) => `${single ? '' : `<span class="sw" style="background:${c.bg}"></span>`}${c.label} &times;${c.n}`)
     .join('&nbsp;&middot;&nbsp; ')
 
+  // CUL-1658 (FAB PR-29c) — the day a normal stool got its own shortcut in the owner's fan, when
+  // it reaches into the window. Easier logging moves what gets RECORDED, not what the pet did, so
+  // the normal count and the normal to loose ratio can shift across that date for no clinical
+  // reason; the report cannot see that from the rows, so it says so beside them. It DISCLOSES and
+  // never adjusts: the counts above are untouched.
+  //
+  // THE LAST SENTENCE IS THE ONE THAT PROTECTS THE PATIENT, and it names BOTH directions. Loose
+  // stool had its own entry before and after, so a RISE in loose stools cannot come from this
+  // change; a FALL can, because a borderline stool that once took the only cheap door (Loose) can
+  // now take Normal (adversarial F1). The cold read (round 2) found a rise-only sentence left an
+  // observed 4 → 2 fall reading as improvement, so the fall is said plainly. Never "the loose count
+  // is unaffected"; never "one tap" (each half of the split pill opens a confirm, F4). Year stamped
+  // once, only when it differs from the window's (CUL-69). One idea per line, so a 60-second scan
+  // meets the change, then each period's counts, then the direction of the bias.
+  const shortcutTail =
+    '<br/>Loose stools had their own entry throughout, so a rise in loose stools is not explained by this change, but a fall may partly reflect borderline stools now logged as normal.'
+  const ns = st.normalShortcut
+  const nsDay = (iso: string) => h(fmtLocalDayScoped(iso, snap.timezone, snap.scope.endDate))
+  // Ruling 1a (PM, 2026-10-09): the counts on each side of the day, beside the pooled ones, so
+  // the ratio is read inside each logging regime. Loose first: it is the count a vet reads across
+  // the date. The day string is decided ONCE and reused, so the head and both labels carry the
+  // same year decision (CUL-69).
+  const period = (label: string, p: StoolPeriodCounts) =>
+    `<br/>${label} (${num(p.loggedDays)} of ${num(p.days)} day${p.days === 1 ? '' : 's'} had any log): loose &times;${num(
+      p.loose,
+    )} &middot; normal &times;${num(p.normal)}`
+  const splitLine = (day: string, sp: StoolShortcutSplit | null) =>
+    sp ? `${period(`Before ${day}`, sp.before)}${period(`From ${day}`, sp.from)}` : ''
+  const changeLine = !ns
+    ? ''
+    : ns.kind === 'on'
+    ? `<br/><b>Logging changed on ${nsDay(ns.at)}:</b> the owner's app added a dedicated normal-stool entry, so normal stools before that date are under-recorded and the normal to loose ratio is not comparable across it.${splitLine(nsDay(ns.at), ns.split)}${shortcutTail}`
+    : ns.kind === 'since'
+    ? `<br/><b>Logging changed ${ns.exact ? 'on' : 'by'} ${nsDay(ns.at)}, before this window:</b> the owner's app added a dedicated normal-stool entry. Within this window the counts are comparable; against a report covering any period before ${nsDay(ns.at)}, which under-records normal stools, the normal share here will look better from the change alone.${shortcutTail}`
+    : ns.kind === 'between'
+    ? `<br/><b>Logging changed between ${nsDay(ns.from)} and ${nsDay(ns.to)}:</b> the owner's app added a dedicated normal-stool entry in that span (the phone's and the server's clocks disagree on the day), so normal stools before it are under-recorded and the normal to loose ratio is not comparable across it.${shortcutTail}`
+    : ns.kind === 'by'
+    ? `<br/><b>Logging changed on or before ${nsDay(ns.at)}:</b> by that date the owner's app had added a dedicated normal-stool entry, so normal stools earlier in this window are likely under-recorded and the normal to loose ratio is not comparable across it.${shortcutTail}`
+    : ns.kind === 'spans'
+    ? `<br/><b>Logging changed, date not fixed:</b> the owner's app added a dedicated normal-stool entry at a date the record cannot place within this window, so the normal to loose ratio may not be comparable across it.${shortcutTail}`
+    : `<br/><b>Logging change not checked:</b> whether the owner's app added a dedicated normal-stool entry during this window could not be read, so the normal to loose ratio may shift for that reason. If it did, a fall in loose stools may partly reflect borderline stools now logged as normal.`
+
   const ai = st.ai
   const aiTag = ai
     ? '<span class="aitag">Automated photo analysis &middot; owner-reviewable</span>'
@@ -5895,7 +5939,7 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     <div class="pheno">
       <div>
         ${barHtml}
-        <div class="mixkey">${keyLine}<br/>Owner-described${
+        <div class="mixkey">${keyLine}${changeLine}<br/>Owner-described${
     // C-3: a coverage density beside a count is the UN-LOGGED days only, and nothing when
     // fully covered. "Owner-described over 43 of 46 days logged" read as a stool denominator
     // (the R-11 cold read: one loose stool out of forty-three), when 43/46 was record coverage.

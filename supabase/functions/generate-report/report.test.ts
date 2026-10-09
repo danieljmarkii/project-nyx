@@ -24,6 +24,9 @@ import {
   FALLBACK_DAYS,
   INTAKE_LOG_CAP,
   summariseIntake,
+  normalShortcutDisclosure,
+  FAB_STOOL_SPLIT_KEY,
+  NORMAL_SHORTCUT_SINCE_DAYS,
   type ReportInput,
   type ReportEventInput,
   type ReportAiAnalysisInput,
@@ -5113,4 +5116,172 @@ Deno.test('EN-11 — the report drops the 2-vs-0 worsening flag only under engin
     assert.deepEqual(assembleReport(en11Input([k])), off, k)
   }
   assert.deepEqual(assembleReport(en11Input([], false)), off, 'a failed read')
+})
+
+// ── CUL-1658 (FAB PR-29c) — the day a normal stool got its own shortcut, beside the stool counts ──
+//
+// The report reads PR-29's `capture_changes` row and, when the span between its two clocks reaches
+// into the window, carries a disclosure on `stool.normalShortcut` for the strip's line. Fixtures
+// are local-day honest (B-514): TZ is America/New_York, and the instants that matter are chosen so
+// their UTC day and their local day differ.
+
+const STOOL_FIXTURE = [
+  makeEvent({ id: 'sn1', type: 'stool_normal', occurredAt: at('2026-05-02') }),
+  makeEvent({ id: 'sn2', type: 'stool_normal', occurredAt: at('2026-06-20') }),
+  makeEvent({ id: 'sn3', type: 'stool_normal', occurredAt: at('2026-06-21') }),
+  makeEvent({ id: 'sl1', type: 'diarrhea', occurredAt: at('2026-05-03') }),
+]
+
+function splitRow(firstSeenAt: string, createdAt = firstSeenAt, changeKey = FAB_STOOL_SPLIT_KEY) {
+  return { changeKey, firstSeenAt, createdAt }
+}
+
+function stoolWith(captureChanges?: ReturnType<typeof splitRow>[] | 'unreadable') {
+  return assembleReport(baseInput({ events: STOOL_FIXTURE, ...(captureChanges ? { captureChanges } : {}) }))
+}
+
+Deno.test('normal shortcut: a change inside the window is carried, and NOTHING else in the snapshot moves', () => {
+  const without = stoolWith()
+  // 03:30Z on Jun 11 is Jun 10 in New York: the UTC and local days differ on purpose.
+  const withRow = stoolWith([splitRow('2026-06-11T03:30:00.000Z')])
+  assert.equal(without.stool!.normalShortcut, null)
+  const ns = withRow.stool!.normalShortcut
+  assert.ok(ns && ns.kind === 'on' && ns.split)
+  assert.equal(ns.at, '2026-06-11T03:30:00.000Z')
+  // Ruling 1a — the split is the strip's own population on each side of the LOCAL day (Jun 10):
+  // May 2 normal + May 3 loose before; Jun 20 + Jun 21 normal from. Before + from = the totals,
+  // and the two periods' days tile the window exactly.
+  assert.deepEqual(ns.split.before, { ...ns.split.before, normal: 1, loose: 1, loggedDays: 2 })
+  assert.deepEqual(ns.split.from, { ...ns.split.from, normal: 2, loose: 0, loggedDays: 2 })
+  assert.equal(ns.split.before.days + ns.split.from.days, withRow.scope.windowDays)
+  assert.equal(ns.split.before.normal + ns.split.from.normal, withRow.stool!.normalCount)
+  assert.equal(ns.split.before.loose + ns.split.from.loose, withRow.stool!.looseCount)
+  // The line discloses, it never adjusts: the whole snapshot is identical bar the one field.
+  assert.deepEqual({ ...withRow, stool: { ...withRow.stool!, normalShortcut: null } }, without)
+  assert.equal(withRow.stool!.normalCount, 3)
+  assert.equal(withRow.stool!.looseCount, 1)
+})
+
+Deno.test('normal shortcut: before the window, after it, no row, another key ⇒ no disclosure', () => {
+  const scope = stoolWith().scope
+  assert.ok(scope.startDate < '2026-06-11' && scope.endDate > '2026-06-11', 'fixture sanity: Jun 11 is inside the window')
+  assert.equal(stoolWith([splitRow('2025-12-01T15:00:00.000Z')]).stool!.normalShortcut, null, 'before (both clocks), over 180 days before the window end: nothing')
+  assert.equal(stoolWith([splitRow('2026-07-05T15:00:00.000Z')]).stool!.normalShortcut, null, 'after (both clocks): no window day had it')
+  assert.equal(stoolWith([]).stool!.normalShortcut, null, 'no row')
+  assert.equal(stoolWith([splitRow('2026-06-11T15:00:00.000Z', '2026-06-11T15:00:00.000Z', 'some_other_change')]).stool!.normalShortcut, null, 'only the stool split speaks to the stool strip')
+})
+
+Deno.test('normal shortcut: the window bounds are LOCAL days, both inclusive', () => {
+  const { startDate, endDate } = stoolWith().scope
+  const scope = { startDate, endDate }
+  // Local 00:30 on the first day (04:30Z in EDT) is in; local 23:30 the day before (03:30Z on the
+  // first day, which a UTC-day reader would wrongly let in) is out.
+  assert.equal(normalShortcutDisclosure([splitRow(`${startDate}T04:30:00.000Z`)], scope, TZ)?.kind, 'on', 'first local day ⇒ disclosed')
+  assert.equal(normalShortcutDisclosure([splitRow(`${startDate}T03:30:00.000Z`)], scope, TZ)?.kind, 'since', 'the local day before ⇒ the before-the-window arm (ruling 2a), never the in-window one')
+  // Local 23:30 on the last day is 03:30Z the next UTC day: still in. Local 00:30 the day after is out.
+  const nextUtc = new Date(Date.parse(`${endDate}T00:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10)
+  assert.equal(normalShortcutDisclosure([splitRow(`${nextUtc}T03:30:00.000Z`)], scope, TZ)?.kind, 'on', 'last local day ⇒ disclosed')
+  assert.equal(normalShortcutDisclosure([splitRow(`${nextUtc}T04:30:00.000Z`)], scope, TZ), null, 'the local day after ⇒ not disclosed')
+})
+
+Deno.test('normal shortcut: the two clocks bound a SPAN, and any reach into the window discloses', () => {
+  const scope = { startDate: '2026-09-10', endDate: '2026-10-09' }
+  // Both clocks on one day ⇒ the day is known: `on`, and assembly may split there.
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-09-15T13:00:00.000Z', '2026-09-15T13:00:04+00:00')], scope, TZ),
+    { kind: 'on', at: '2026-09-15T13:00:00.000Z', split: null },
+  )
+  // ROUND 2, M1 — the clocks disagree on the day (a phone 5 days slow, or an honest phone and a
+  // late push: indistinguishable). Neither day is the day, so the span is named and NOT split.
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-09-15T15:00:00.000Z', '2026-09-20T15:00:00+00:00')], scope, TZ),
+    { kind: 'between', from: '2026-09-15T15:00:00.000Z', to: '2026-09-20T15:00:00+00:00' },
+  )
+  // A late push past the window's end: still disclosed, as the span.
+  assert.equal(
+    normalShortcutDisclosure([splitRow('2026-09-15T15:00:00.000Z', '2026-10-20T15:00:00+00:00')], scope, TZ)?.kind,
+    'between',
+  )
+  // A fast phone clock claims a day after the window; the server received it inside.
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-10-20T15:00:00.000Z', '2026-09-15T15:00:00+00:00')], scope, TZ),
+    { kind: 'between', from: '2026-09-15T15:00:00+00:00', to: '2026-10-20T15:00:00.000Z' },
+  )
+  // ADVERSARIAL F2 — a phone a week SLOW dates a Sep 15 change Sep 8, before the window. The
+  // earlier-clock rule alone hid the line here; the server's day keeps it, as "on or before".
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-09-08T15:00:00.000Z', '2026-09-15T15:00:00+00:00')], scope, TZ),
+    { kind: 'by', at: '2026-09-15T15:00:00+00:00' },
+  )
+  // A slow clock AND a late push straddle the whole window: disclosed, with no date.
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-08-01T15:00:00.000Z', '2026-10-20T15:00:00+00:00')], scope, TZ),
+    { kind: 'spans' },
+  )
+  // C-40: two spellings of one instant, which order the wrong way as text, are one instant.
+  assert.ok('2026-09-15T04:00:00+00:00' < '2026-09-15T04:00:00.000Z', 'fixture sanity: the spellings differ as text')
+  assert.equal(
+    normalShortcutDisclosure([splitRow('2026-09-15T04:00:00.000Z', '2026-09-15T04:00:00+00:00')], scope, TZ)?.kind,
+    'on',
+  )
+  // One unreadable clock falls back to the other; both unreadable ⇒ the change exists, its date does not.
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('not a date', '2026-09-15T15:00:00Z')], scope, TZ),
+    { kind: 'on', at: '2026-09-15T15:00:00Z', split: null },
+  )
+  assert.deepEqual(normalShortcutDisclosure([splitRow('not a date', 'nor this')], scope, TZ), { kind: 'unknown' })
+})
+
+Deno.test('normal shortcut: a FAILED read is unknown, never silence, and never the page-wide banner', () => {
+  const snap = stoolWith('unreadable')
+  assert.deepEqual(snap.stool!.normalShortcut, { kind: 'unknown' })
+  assert.deepEqual(snap.incompletePulls, [], 'counts are complete; the banner would call them minimums')
+})
+
+Deno.test('normal shortcut: rendered beside the stool counts, dated in the owner\'s zone, only when it reaches the window', () => {
+  const html = renderReport(stoolWith([splitRow('2026-06-11T03:30:00.000Z')]))
+  const sec = plainText(html.slice(html.indexOf('<h2>Stool characteristics'), html.indexOf('<h2>Diet, feeding')))
+  assert.match(sec, /Logging changed on Jun 10: the owner's app added a dedicated normal-stool entry/)
+  // F1 + cold read round 2: both directions, and never the absolute claim that reassured.
+  assert.match(sec, /a rise in loose stools is not explained by this change, but a fall may partly reflect borderline stools now logged as normal\./)
+  assert.ok(!/does not affect|unaffected|one tap/.test(sec))
+  // The line sits after the counts and before the owner-described clause.
+  assert.ok(sec.indexOf('Loose / watery') < sec.indexOf('Logging changed') && sec.indexOf('Logging changed') < sec.indexOf('Owner-described'))
+  const none = plainText(renderReport(stoolWith([splitRow('2025-12-01T15:00:00.000Z')])))
+  assert.ok(!/Logging change|normal-stool entry/.test(none), 'a change over 180 days before the window end prints nothing')
+  const unknown = plainText(renderReport(stoolWith('unreadable')))
+  assert.match(unknown, /Logging change not checked:/)
+  assert.ok(!/Partial record/.test(unknown))
+})
+
+Deno.test('normal shortcut: ruling 2a — wholly before the window ⇒ `since` for 180 days, then nothing', () => {
+  const scope = { startDate: '2026-09-10', endDate: '2026-10-09' }
+  // Server day Aug 1: the window ends 69 days later.
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-08-01T15:00:00.000Z', '2026-08-01T15:00:05+00:00')], scope, TZ),
+    { kind: 'since', at: '2026-08-01T15:00:05+00:00', exact: true },
+  )
+  // The phone a week slow: the server's day is still named, as "by".
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-07-25T15:00:00.000Z', '2026-08-01T15:00:05+00:00')], scope, TZ),
+    { kind: 'since', at: '2026-08-01T15:00:05+00:00', exact: false },
+  )
+  // The bound, derived from the shipped constant (C-34): end − server day = 180 ⇒ in; 181 ⇒ out.
+  const dayBefore = (n: number) => new Date(Date.parse(`${scope.endDate}T15:00:00Z`) - n * 86_400_000).toISOString()
+  assert.equal(normalShortcutDisclosure([splitRow(dayBefore(NORMAL_SHORTCUT_SINCE_DAYS))], scope, TZ)?.kind, 'since')
+  assert.equal(normalShortcutDisclosure([splitRow(dayBefore(NORMAL_SHORTCUT_SINCE_DAYS + 1))], scope, TZ), null)
+})
+
+Deno.test('normal shortcut: ruling 1a — no split when the change is on the window\'s first day (no "before")', () => {
+  const start = stoolWith().scope.startDate
+  const snap = stoolWith([splitRow(`${start}T16:00:00.000Z`)])
+  assert.deepEqual(snap.stool!.normalShortcut, { kind: 'on', at: `${start}T16:00:00.000Z`, split: null })
+})
+
+Deno.test('normal shortcut: round 2 M1 — clocks a few days apart inside the window ⇒ named span, never a split', () => {
+  const snap = stoolWith([splitRow('2026-06-05T15:00:00.000Z', '2026-06-11T15:00:00+00:00')])
+  assert.deepEqual(snap.stool!.normalShortcut, { kind: 'between', from: '2026-06-05T15:00:00.000Z', to: '2026-06-11T15:00:00+00:00' })
+  const sec = plainText(renderReport(snap))
+  assert.match(sec, /Logging changed between Jun 5 and Jun 11:/)
+  assert.ok(!/Before Jun|From Jun/.test(sec), 'no split at an unconfirmed day')
 })
