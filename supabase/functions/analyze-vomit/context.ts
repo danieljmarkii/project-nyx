@@ -87,14 +87,23 @@ export interface IntakeRecord {
   // (the shipped window, when only it fired, e.g. the cat that ate, vomited, then refused).
   // EN-5 adds 'after_vomit' (from the vomit to the read, at most 24 h) and 'noticed' (the
   // Noticed predicate: two of the last three qualifying meals refused or picked).
-  window: 'before_vomit' | 'before_read' | 'after_vomit' | 'noticed'
+  window: 'before_vomit' | 'before_read' | 'after_vomit' | 'noticed' | 'last_rated'
   mealsLogged: number
   // EN-5 only. How many of the meals in the window carried a rating: the sentence speaks
   // about those and says how many more had none, so an unrated meal is never read as
   // "didn't eat". For 'noticed', how many qualifying meals were looked at (at most three).
   mealsRated?: number
-  // EN-5 'noticed' only: how many of those were Refused or Picked.
+  // EN-5 'noticed' only: how many of those were Refused or Picked, and the instant the
+  // predicate was read at (the vomit; the read; or 24 h after the vomit, when the read was later).
   refusedOrPicked?: number
+  at?: 'vomit' | 'read' | 'after_vomit_24h'
+  // EN-5 'after_vomit' only: true when the read ran more than 24 h after the vomit, so the half
+  // stopped at 24 h.
+  cappedAt24h?: boolean
+  // EN-5 'last_rated' only: how many hours before the vomit the newest rated meal was, and its
+  // rating.
+  hoursBefore?: number
+  rating?: 'refused' | 'picked'
 }
 
 // The rows, in the shapes the three reads return them.
@@ -192,7 +201,13 @@ export function vomitAnchoredReads(
       : null
   return {
     vomits: range(a.vomitsFromMs, a.vomitsToMs, shipped.vomitsSinceIso),
-    meals: range(a.intakeBaselineFromMs, vomitMs, shipped.intakeBaselineSinceIso),
+    // EN-5's after-vomit half reads to 24 h after the vomit; for a read more than a week later
+    // the shipped window no longer reaches it (the adversarial pass, J). Still bounded both sides.
+    meals: range(
+      a.intakeBaselineFromMs,
+      isEngineKeyOn(engineFlags, 'engines_v3_en5') ? vomitMs + AFTER_VOMIT_INTAKE_HOURS * 3_600_000 : vomitMs,
+      shipped.intakeBaselineSinceIso,
+    ),
   }
 }
 
@@ -317,7 +332,7 @@ export const EN0_CONTEXT_STEP: VomitContextStep = (shipped, args) => {
 // none was rated) and never cancel it. The weekly "tracks intake" guard goes with them: a
 // half fires only on its own rated meals, so a non-rater can never be flagged.
 //
-// FOUR HALVES, each independent, the arm firing when any one does:
+// FOUR HALVES AND ONE BACKSTOP, each independent, the arm firing when any one does:
 //   · before_vomit: the 24 h before the vomit (EN-0's anchored half, rated meals only);
 //   · after_vomit:  from the vomit to the read, at most 24 h. Eating BEFORE a vomit never
 //                   cancels refusals AFTER it (critique BRK-2), so this half never sees the
@@ -329,7 +344,9 @@ export const EN0_CONTEXT_STEP: VomitContextStep = (shipped, args) => {
 //   · noticed:      the Noticed predicate (`lib/intakeEvidence.ts`, the daily look's arm 3:
 //                   two of the last three qualifying meals refused or picked, three-day
 //                   recency) at the vomit and at the read capped at 24 h after it. I1, ruled
-//                   A 2026-10-02: in union, never in place of the arm.
+//                   A 2026-10-02: in union, never in place of the arm;
+//   · last_rated:   ⚠ provisional (the adversarial pass, A): the newest rated meal in the
+//                   three days before the vomit was Refused or Picked. See the step.
 // Treats and free-fed bowls stay in the three rating halves exactly as they are today (a
 // rated treat speaks, a treat marked All cancels); only the Noticed check drops them, as it
 // always has. Dropping the pill-pocket false alarm from the halves is a quieter row and
@@ -373,7 +390,10 @@ export const EN5_CONTEXT_STEP: VomitContextStep = (prior, args) => {
   // An instant that cannot be read anchors nothing: the arm is silent rather than guessing.
   if (!Number.isFinite(vomitMs) || !Number.isFinite(readMs)) return { ...prior, en5IntakeFires: false, intakeRecord: undefined }
 
-  const meals = args.rows.meals.map(evidenceOf).filter((m) => m.ms <= readMs)
+  // Each half bounds its own rows. No global "nothing after the read" filter: a vomit stamped a
+  // minute ahead of the server's clock must still see the refusal logged just before it (the
+  // adversarial pass, L); the halves that run to the read stop at the read themselves.
+  const meals = args.rows.meals.map(evidenceOf)
   const spans = args.rows.freeFedSpans ?? []
   const day = FELINE_REDUCED_INTAKE_HOURS * 3_600_000
   const afterEnd = Math.min(readMs, vomitMs + AFTER_VOMIT_INTAKE_HOURS * 3_600_000)
@@ -382,32 +402,55 @@ export const EN5_CONTEXT_STEP: VomitContextStep = (prior, args) => {
   const after = afterEnd > vomitMs ? ratedHalf(meals, vomitMs, afterEnd, false) : { logged: 0, rated: 0, fires: false }
   const atRead = ratedHalf(meals, readMs - day, readMs, true)
 
-  const record = (window: IntakeRecord['window'], h: RatedHalf): ContextInput => ({
-    ...prior,
-    en5IntakeFires: true,
-    intakeRecord: { window, mealsLogged: h.logged, mealsRated: h.rated },
-  })
-  if (before.fires) return record('before_vomit', before)
-  if (after.fires) return record('after_vomit', after)
-  if (atRead.fires) return record('before_read', atRead)
+  const fired = (intakeRecord: IntakeRecord): ContextInput => ({ ...prior, en5IntakeFires: true, intakeRecord })
+  if (before.fires) return fired({ window: 'before_vomit', mealsLogged: before.logged, mealsRated: before.rated })
+  if (after.fires) {
+    // The half stops 24 h after the vomit; when the read ran later, the words say so, or "after
+    // this vomit" would claim meals the half never looked at (the adversarial pass, B).
+    return fired({ window: 'after_vomit', mealsLogged: after.logged, mealsRated: after.rated, cappedAt24h: afterEnd < readMs })
+  }
+  if (atRead.fires) return fired({ window: 'before_read', mealsLogged: atRead.logged, mealsRated: atRead.rated })
 
-  for (const atMs of [vomitMs, afterEnd]) {
+  // The Noticed predicate, at the vomit and at the after-half's end. The record says WHICH
+  // instant fired, so the words are anchored to it and not to the read (the adversarial pass, C).
+  const instants: [number, NonNullable<IntakeRecord['at']>][] = [
+    [vomitMs, 'vomit'],
+    [afterEnd, afterEnd < readMs ? 'after_vomit_24h' : 'read'],
+  ]
+  for (const [atMs, at] of instants) {
     if (!noticedRefusalAt(meals, spans, atMs)) continue
     const fromMs = atMs - NOTICED_REFUSAL_RECENCY_DAYS * 86_400_000
     const lastFew = meals
       .filter((m) => m.ms >= fromMs && m.ms <= atMs && isQualifyingIntakeMeal(m, spans))
       .sort((a, b) => b.ms - a.ms)
       .slice(0, NOTICED_REFUSAL_LOOKBACK)
-    return {
-      ...prior,
-      en5IntakeFires: true,
-      intakeRecord: {
-        window: 'noticed',
-        mealsLogged: lastFew.length,
-        mealsRated: lastFew.length,
-        refusedOrPicked: lastFew.filter((m) => isRefusedOrPickedRating(m.intakeRating)).length,
-      },
-    }
+    return fired({
+      window: 'noticed',
+      at,
+      mealsLogged: lastFew.length,
+      mealsRated: lastFew.length,
+      refusedOrPicked: lastFew.filter((m) => isRefusedOrPickedRating(m.intakeRating)).length,
+    })
+  }
+
+  // ⚠ PROVISIONAL, louder default pending the PM (the adversarial pass, A): the newest rated meal
+  // before the vomit, within the Noticed recency bound, was Refused or Picked, and nothing rated
+  // since. An absent meal is as unknown as an unrated one, and an unknown never cancels a recorded
+  // refusal; without this arm, a refusal 25 h before a vomit with nothing logged since went
+  // quieter than today. Today's other empty-window firing (the newest rating Some, Most or All,
+  // e.g. the 6/7 vomit logged before its meals were back-filled) stays quiet. Brief on CUL-1136.
+  const lastRated = meals
+    .filter((m) => Number.isFinite(m.ms) && m.ms <= vomitMs && m.ms >= vomitMs - NOTICED_REFUSAL_RECENCY_DAYS * 86_400_000)
+    .filter((m) => isKnownIntakeRating(m.intakeRating))
+    .sort((a, b) => b.ms - a.ms)[0]
+  if (lastRated && isRefusedOrPickedRating(lastRated.intakeRating)) {
+    return fired({
+      window: 'last_rated',
+      mealsLogged: 1,
+      mealsRated: 1,
+      hoursBefore: Math.round((vomitMs - lastRated.ms) / 3_600_000),
+      rating: lastRated.intakeRating === 'refused' ? 'refused' : 'picked',
+    })
   }
   return { ...prior, en5IntakeFires: false, intakeRecord: undefined }
 }

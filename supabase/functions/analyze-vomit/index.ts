@@ -469,14 +469,25 @@ function unratedClause(record: IntakeRecord): string {
 }
 function en5IntakeRecordSentence(p: string, record: IntakeRecord): string {
   const rated = record.mealsRated ?? 0
+  if (record.window === 'last_rated') {
+    const word = record.rating === 'picked' ? 'Picked' : 'Refused'
+    const hours = record.hoursBefore ?? 0
+    return `The last rated meal logged for ${p} before this vomit, ${hours === 1 ? 'about an hour' : `about ${hours} hours`} earlier, was marked ${word}.`
+  }
   if (record.window === 'noticed') {
-    return `When I read this, ${record.refusedOrPicked ?? 0} of the last ${count(rated, 'rated meal', 'rated meals')} logged for ${p} had been marked Refused or Picked.`
+    // Anchored to the instant the predicate fired, never to the read alone: a cat that refused
+    // twice before the vomit and ate after it is described as she was before the vomit.
+    const k = record.refusedOrPicked ?? 0
+    const lastN = `the last ${count(rated, 'rated meal', 'rated meals')}`
+    if (record.at === 'vomit') return `Of ${lastN} logged for ${p} before this vomit, ${k} had been marked Refused or Picked.`
+    if (record.at === 'after_vomit_24h') return `Of ${lastN} logged for ${p} by 24 hours after this vomit, ${k} had been marked Refused or Picked.`
+    return `When I read this, ${k} of ${lastN} logged for ${p} had been marked Refused or Picked.`
   }
   const span =
     record.window === 'before_vomit'
       ? 'in the 24 hours before this vomit'
       : record.window === 'after_vomit'
-        ? 'after this vomit'
+        ? record.cappedAt24h ? 'in the 24 hours after this vomit' : 'since this vomit'
         : 'in the 24 hours before then'
   const verb = record.window !== 'before_vomit' ? 'had been' : rated === 1 ? 'was' : 'were'
   const tail = rated === 1 ? "and it wasn't marked Most or All." : 'and none was marked Most or All.'
@@ -787,11 +798,17 @@ async function assembleContext(
     lethargy: (lethargyRes.data ?? []) as VomitContextRows['lethargy'],
     meals: [...(mealEventsRes.data ?? []), ...(anchoredMealsRes.data ?? [])] as VomitContextRows['meals'],
   }
-  // EN-5 reads absence of a refusal as quiet, so it never runs over a meal read that did not
-  // answer: the context falls back to the rule without it (EN-0's or the shipped), which reads
-  // the same failed read the way it always has. A failed bowl read only keeps free-fed
-  // ratings counted, the louder reading, so it needs no fallback.
-  const mealsFailed = Boolean((mealEventsRes as { error?: unknown }).error || (anchoredMealsRes as { error?: unknown }).error)
+  // EN-5 reads absence of a refusal as quiet, so it never runs over a read that did not answer:
+  // the CONTEXT falls back to the rule without it (EN-0's or the shipped), which reads the same
+  // failed read the way it always has. The bowl read counts too: a free-fed rating that should
+  // have been set aside can push a refusal out of the Noticed predicate's last three (the
+  // adversarial pass, K). Two things still say EN-5 on such a row, stated rather than hidden:
+  // its engine_flags stamp (built from the owner's keys by the shared pipeline) and its copy
+  // (vomitContextualRun picks EN-0's words, whose intake line without a record is the
+  // defensive "The meal log doesn't show …"). STATED BLIND SPOT: `error` is the only check; a
+  // read PostgREST capped would pass it (C-42). The windows are days, far below max-rows.
+  const failed = (r: unknown) => Boolean((r as { error?: unknown }).error)
+  const mealsFailed = failed(mealEventsRes) || failed(anchoredMealsRes) || failed(arrangementsRes)
   const contextFlags: EngineFlags = en5 && mealsFailed
     ? { ...engineFlags, on: engineFlags.on.filter((k) => k !== 'engines_v3_en5') }
     : engineFlags

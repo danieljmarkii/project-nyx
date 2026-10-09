@@ -30,6 +30,7 @@ interface World {
   // EN-5 (PR-30): its key, and a meal read that answers with an error.
   en5?: boolean
   mealsError?: 'anchored'
+  bowlError?: boolean
   vision: VomitAnalysis
   row: Row | null
   writes: number
@@ -75,7 +76,9 @@ class FakeQuery {
     if (this.table === 'events' && this.filters.event_type === 'meal' && w.mealsError === 'anchored' && this.before !== null) {
       return { data: null, error: { message: 'meal read failed' } } as unknown as { data: unknown; error: null }
     }
-    if (this.table === 'feeding_arrangements') return { data: [], error: null }
+    if (this.table === 'feeding_arrangements') {
+      return (w.bowlError ? { data: null, error: { message: 'bowl read failed' } } : { data: [], error: null }) as { data: unknown; error: null }
+    }
     if (this.table === 'events') {
       const all = [{ event_type: 'vomit', occurred_at: iso(w.vomitMs) }, ...w.others]
       const rows = all
@@ -351,4 +354,23 @@ Deno.test('pipeline EN-5 · 7/27-shaped refusals stay a call, stated over rated 
     on.read_text,
     "When I read this, 3 rated meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
+})
+
+Deno.test('pipeline EN-5 · a failed bowl read never reads as quiet either (the adversarial pass, K)', async () => {
+  // 9/4's shape, which EN-5 reads as quiet on a complete read. With the bowl read failing, the
+  // rule without EN-5 stands and the shipped warning is kept.
+  const world = () => {
+    const vomitMs = Date.now() - 10 * 60_000
+    return {
+      species: 'cat' as const, vomitMs, vision: CLEAN,
+      others: [
+        ...[4, 9, 14, 19].map((h) => ({ event_type: 'meal', occurred_at: iso(vomitMs - h * H), rating: null })),
+        { event_type: 'meal', occurred_at: iso(vomitMs - 72 * H), rating: 'some' },
+      ],
+    }
+  }
+  const failed = await read({ ...world(), en0: false, en5: true, bowlError: true, row: null, writes: 0 })
+  assertEquals(failed.contextual_flags, ['feline_reduced_intake'])
+  const answered = await read({ ...world(), en0: false, en5: true, row: null, writes: 0 })
+  assertEquals(answered.contextual_flags, [])
 })

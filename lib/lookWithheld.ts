@@ -172,7 +172,8 @@ export function intakeArm(meals: readonly AnalyticsMeal[]): boolean {
   // rather than trusting an ordering keeps the arm honest if a caller ever hands over an
   // unsorted list.
   // Since Engines v3 PR-30 the rule itself lives in `lib/intakeEvidence.ts` (GAP-28), where
-  // the vomit read imports it too, so the card and the read can never disagree about it.
+  // the vomit read imports it too: the card and the read share the rule (the read asks it at
+  // the vomit and a day after, over its own reads, in union with its rating halves).
   return noticedRefusalPattern(meals);
 }
 

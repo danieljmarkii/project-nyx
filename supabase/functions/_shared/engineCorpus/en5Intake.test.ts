@@ -20,6 +20,7 @@ import {
   buildVomitContext,
   EN0_CONTEXT_STEP,
   EN5_CONTEXT_STEP,
+  vomitAnchoredReads,
   type BuildVomitContextArgs,
   type ContextInput,
   type IntakeRecord,
@@ -218,7 +219,11 @@ Deno.test('BRK-2: eating before a vomit never cancels refusals after it (louder 
   assertStrictEquals(intakeFires(ctx(rows, v, now, OFF)), false, 'shipped: the All in the read window cancels')
   const on = ctx(rows, v, now, EN5)
   assertStrictEquals(intakeFires(on), true)
-  assertEquals(on.intakeRecord, { window: 'after_vomit', mealsLogged: 2, mealsRated: 2 })
+  assertEquals(on.intakeRecord, { window: 'after_vomit', mealsLogged: 2, mealsRated: 2, cappedAt24h: false })
+  assertStrictEquals(
+    buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord).startsWith('When I read this, 2 rated meals had been logged for Nyx since this vomit, and none was marked Most or All.'),
+    true,
+  )
 })
 
 Deno.test('the after-vomit half stops at 24 h: a re-read days later is not judged by later refusals', () => {
@@ -256,10 +261,10 @@ Deno.test('I1: the Noticed predicate fires in union where no rating half does (l
   assertStrictEquals(intakeFires(ctx(rows, v, v + 5 * 60_000, OFF)), false, 'shipped: the treat marked All cancels')
   const on = ctx(rows, v, v + 5 * 60_000, EN5)
   assertStrictEquals(intakeFires(on), true)
-  assertEquals(on.intakeRecord, { window: 'noticed', mealsLogged: 3, mealsRated: 3, refusedOrPicked: 2 })
+  assertEquals(on.intakeRecord, { window: 'noticed', at: 'vomit', mealsLogged: 3, mealsRated: 3, refusedOrPicked: 2 })
   assertStrictEquals(
     buildEn0ContextualReadText('Pixel', computeContextualFlags(on), on.intakeRecord),
-    "When I read this, 2 of the last 3 rated meals logged for Pixel had been marked Refused or Picked. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "Of the last 3 rated meals logged for Pixel before this vomit, 2 had been marked Refused or Picked. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
 })
 
@@ -271,11 +276,13 @@ Deno.test('the Noticed predicate sets treats and free-fed bowls aside, as it doe
   const v = Date.parse('2026-09-10T08:00:00Z')
   const refusals = [meal(v - 40 * H, 'refused', 'treat'), meal(v - 35 * H, 'refused', 'meal', 'bowl'), meal(v - 30 * H, 'refused')]
   const withBowl: VomitContextRows = { ...rowsOf(refusals, v), freeFedSpans: [{ foodItemId: 'bowl', fromMs: v - 100 * H, untilMs: Infinity }] }
-  assertStrictEquals(intakeFires(ctx(withBowl, v, v + 5 * 60_000, EN5)), false)
+  // Noticed sets the bowl aside and stays below its floor; the provisional last-rated backstop
+  // (newest rating a refusal) is what speaks, and the record says which one did.
+  assertEquals(ctx(withBowl, v, v + 5 * 60_000, EN5).intakeRecord?.window, 'last_rated')
   const noBowl = rowsOf(refusals, v)
   const on = ctx(noBowl, v, v + 5 * 60_000, EN5)
   assertStrictEquals(intakeFires(on), true)
-  assertEquals(on.intakeRecord, { window: 'noticed', mealsLogged: 2, mealsRated: 2, refusedOrPicked: 2 })
+  assertEquals(on.intakeRecord, { window: 'noticed', at: 'vomit', mealsLogged: 2, mealsRated: 2, refusedOrPicked: 2 })
 })
 
 // ── Two properties over seeded records ───────────────────────────────────────────────────
@@ -390,9 +397,18 @@ const REASSURE_VOCAB = /\b(fine|okay|ok|healthy|normal|unremarkable|all clear|no
 Deno.test('EN-5 copy: every sentence it can build never reassures, never concludes, always routes to the vet', () => {
   const records: IntakeRecord[] = []
   for (const window of ['before_vomit', 'after_vomit', 'before_read'] as const) {
-    for (const mealsRated of [1, 2, 6]) for (const unrated of [0, 1, 5]) records.push({ window, mealsLogged: mealsRated + unrated, mealsRated })
+    for (const mealsRated of [1, 2, 6]) {
+      for (const unrated of [0, 1, 5]) {
+        for (const cappedAt24h of window === 'after_vomit' ? [false, true] : [undefined]) {
+          records.push({ window, mealsLogged: mealsRated + unrated, mealsRated, ...(cappedAt24h === undefined ? {} : { cappedAt24h }) })
+        }
+      }
+    }
   }
-  for (const n of [2, 3]) for (const k of [2, 3].filter((k) => k <= n)) records.push({ window: 'noticed', mealsLogged: n, mealsRated: n, refusedOrPicked: k })
+  for (const at of ['vomit', 'read', 'after_vomit_24h'] as const) {
+    for (const n of [2, 3]) for (const k of [2, 3].filter((k) => k <= n)) records.push({ window: 'noticed', at, mealsLogged: n, mealsRated: n, refusedOrPicked: k })
+  }
+  for (const hoursBefore of [1, 25, 70]) for (const rating of ['refused', 'picked'] as const) records.push({ window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore, rating })
   let seen = 0
   for (const pet of ['Pixel', '']) {
     for (const record of records) {
@@ -405,9 +421,75 @@ Deno.test('EN-5 copy: every sentence it can build never reassures, never conclud
         assertStrictEquals(t.includes('!'), false, t)
         assertStrictEquals(/hasn't eaten|didn't eat|not eating|\brecently\b|\byesterday\b|\btoday\b|\blast night\b/i.test(t), false, `concluded or dated: "${t}"`)
         assertStrictEquals(/vet/.test(t), true, t)
-        assertStrictEquals(/\b1 (meal|more|rated)|Another 1\b/.test(t), false, `a bare "1": "${t}"`)
+        assertStrictEquals(/\b1 (meal|more|rated|hours)|Another 1\b/.test(t), false, `a bare "1": "${t}"`)
       }
     }
   }
   assertStrictEquals(seen > 100, true)
+})
+
+// ── The adversarial pass's counterexamples, kept (CUL-1722) ──────────────────────────────
+
+Deno.test('B: an after-vomit fire read more than a day later says "in the 24 hours after", true when stored', () => {
+  const v = Date.parse('2026-09-10T08:00:00Z')
+  const rows = rowsOf([meal(v - 30 * H, 'all'), meal(v + 5 * H, 'refused'), meal(v + 30 * H, 'all')], v)
+  const on = ctx(rows, v, v + 48 * H, EN5)
+  assertStrictEquals(intakeFires(on), true)
+  assertEquals(on.intakeRecord, { window: 'after_vomit', mealsLogged: 1, mealsRated: 1, cappedAt24h: true })
+  assertStrictEquals(
+    buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord),
+    "When I read this, one rated meal had been logged for Nyx in the 24 hours after this vomit, and it wasn't marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
+})
+
+Deno.test('C: the Noticed predicate firing at the vomit is described before the vomit, not at the read', () => {
+  const v = Date.parse('2026-09-10T08:00:00Z')
+  const rows = rowsOf([meal(v - 40 * H, 'refused'), meal(v - 30 * H, 'refused'), meal(v - 20 * H, 'all'), meal(v + 3 * H, 'all'), meal(v + 10 * H, 'all')], v)
+  const on = ctx(rows, v, v + 26 * H, EN5)
+  assertStrictEquals(intakeFires(on), true)
+  assertEquals(on.intakeRecord?.at, 'vomit')
+  assertStrictEquals(
+    buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord).startsWith('Of the last 3 rated meals logged for Nyx before this vomit, 2 had been marked Refused or Picked.'),
+    true,
+  )
+})
+
+Deno.test('A (provisional): a refusal 25 h before the vomit with nothing logged since still fires; 6/7 stays quiet', () => {
+  const v = Date.parse('2026-09-10T08:00:00Z')
+  const rows = rowsOf([meal(v - 50 * H, 'all'), meal(v - 40 * H, 'all'), meal(v - 25 * H, 'refused')], v)
+  assertStrictEquals(intakeFires(ctx(rows, v, v + 1 * H, OFF)), true, 'shipped fires')
+  const on = ctx(rows, v, v + 1 * H, EN5)
+  assertStrictEquals(intakeFires(on), true)
+  assertEquals(on.intakeRecord, { window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore: 25, rating: 'refused' })
+  assertStrictEquals(
+    buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord),
+    "The last rated meal logged for Nyx before this vomit, about 25 hours earlier, was marked Refused. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
+  // Unrated meals since the refusal do not cancel it either.
+  const withUnrated = rowsOf([meal(v - 40 * H, 'all'), meal(v - 25 * H, 'picked'), meal(v - 10 * H, null), meal(v - 2 * H, null)], v)
+  assertEquals(ctx(withUnrated, v, v + 1 * H, EN5).intakeRecord?.window, 'last_rated')
+  // Past the three-day bound it is not "the last rated meal" any more.
+  const old = rowsOf([meal(v - 80 * H, 'refused')], v)
+  assertStrictEquals(intakeFires(ctx(old, v, v + 1 * H, EN5)), false)
+  // The 6/7 shape: the newest rating was Most, nothing logged since. Shipped fires; EN-5 does not.
+  const sixSeven = rowsOf([meal(v - 49 * H, 'most')], v)
+  assertStrictEquals(intakeFires(ctx(sixSeven, v, v, OFF)), true)
+  assertStrictEquals(intakeFires(ctx(sixSeven, v, v, EN5)), false)
+})
+
+Deno.test('L: a vomit stamped a minute ahead of the server clock still sees the refusal just before it', () => {
+  const v = Date.parse('2026-09-10T08:00:00Z')
+  const rows = rowsOf([meal(v - 30 * H, 'all'), meal(v - 60_000, 'refused')], v)
+  const on = ctx(rows, v, v - 2 * 60_000, EN5)
+  assertStrictEquals(intakeFires(on), true)
+  assertEquals(on.intakeRecord?.window, 'before_vomit')
+})
+
+Deno.test('J: under EN-5 the anchored meal read reaches 24 h after the vomit; flag-off it stops at the vomit', () => {
+  const v = Date.parse('2026-09-01T08:00:00Z')
+  const now = v + 9 * 24 * H
+  const on = vomitAnchoredReads(now, iso(v), EN5)
+  assertStrictEquals(on?.meals?.toIso, iso(v + 24 * H))
+  assertStrictEquals(vomitAnchoredReads(now, iso(v), EN0)?.meals?.toIso, iso(v))
+  assertStrictEquals(vomitAnchoredReads(now, iso(v), OFF), null)
 })
