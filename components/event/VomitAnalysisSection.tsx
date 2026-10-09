@@ -14,7 +14,7 @@
 // Guardrail (Dr. Chen, B-013): the read ESCALATES on a visible/contextual red
 // flag and NEVER reassures on absence. The recommendation enum has no
 // reassuring value, so this component never renders an "all clear".
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
@@ -61,6 +61,9 @@ import {
   watchForList,
 } from '../../lib/incidentFloorWords';
 import { FLOOR_FACTS_REFRESH_MS, useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
+import { useMayWaitFacts } from '../../hooks/useMayWaitFacts';
+import { useMomentStore } from '../../store/momentStore';
+import { callTodayActionOf } from '../../lib/mayWaitLine';
 import { usePetStore } from '../../store/petStore';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
 import { vomitCapCopy } from '../../constants/monetizationCopy';
@@ -124,6 +127,11 @@ interface AnalysisRow extends IntakeCorrectionColumns {
    *  read that was written from a wait that ended with nothing written (CUL-1275). */
   updated_at?: string | null;
   error: string | null;
+  /** CUL-1611: the server's leave for call today to say "first thing tomorrow" (087). Only
+   *  TRUE grants it, and only through `lib/mayWaitLine.ts`'s gates. */
+  may_wait?: boolean | null;
+  /** The photo set the row's last write was stamped over (075). */
+  photo_set_key?: string | null;
   /** The Engines keys the read was written under: a new-rule read speaks its tier. */
   engine_flags?: string[] | null;
 }
@@ -155,7 +163,9 @@ const SELECT_COLS =
   'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
   'ai_raw_payload, edited_at, dismissed_at, updated_at, error, tier, engine_flags, ' +
   // CUL-1406: the facts behind a dated correction beside stored words (migration 085).
-  'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all';
+  'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all, ' +
+  // CUL-1629: the server's leave to wait, and the photo set the row was stamped over (087, 075).
+  'may_wait, photo_set_key';
 
 function floorTierRank(tier: FloorTier): number {
   return tier === 'call_now' ? TIER_RANK.call_now : TIER_RANK.call_today;
@@ -188,6 +198,19 @@ export function VomitAnalysisSection(
   // CUL-1510: the record around this vomit, for the floor's words under the read. Re-read
   // when the row moves, so a read raised by a neighbouring log counts that log.
   const floorFacts = useIncidentFloorFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}|${Math.floor(clockNow / FLOOR_FACTS_REFRESH_MS)}`);
+  // CUL-1629: the phone's read behind call today's wait line, only when the stored fact could
+  // grant it (a new-rule call today with `may_wait` TRUE); every other read costs nothing.
+  // Re-read every minute and on every log this phone commits (the completion card's payload
+  // moves on each), so a vomit or lethargy logged over this record reaches the line at once.
+  const waitCandidate = !!row && row.tier === 'call_today' && row.may_wait === true && isTieredRow(row);
+  const lastLogged = useMomentStore((s) => s.payload);
+  // When that log landed: an answer read before it cannot have seen it (the `stale` gate).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const lastLoggedAt = useMemo(() => (lastLogged ? Date.now() : null), [lastLogged]);
+  // Back from the background re-reads and re-renders at once, never on the next interval.
+  const waitActive = useAppActive();
+  const waitTick = `${Math.floor(clockNow / 60_000)}|${waitActive}`;
+  const mayWaitFacts = useMayWaitFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}`, waitTick, lastLogged, waitCandidate);
   // The RECORD's pet (C-9): species and birthday decide which clauses its list carries.
   const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
 
@@ -286,6 +309,38 @@ export function VomitAnalysisSection(
       .maybeSingle();
     return (data as AnalysisRow | null) ?? null;
   }, [eventId]);
+
+  // CUL-1629: the stored fact re-read from the server on the same cadence, for the wait line
+  // alone. A resolved row is otherwise fetched once, so a take-back the server writes for a
+  // neighbour's finding (088–092) would never reach an open record. The line stands only
+  // while this copy and the one on screen agree; a newer one is shown, not just obeyed.
+  const [freshWait, setFreshWait] = useState<{ row: AnalysisRow | null; readAt: number } | null>(null);
+  // Cleared when the row on screen moves, never on the tick: the line does not blink to the
+  // louder words every minute over a copy that still agrees. A read is never cancelled by
+  // the next tick either (a slow network would then starve every answer); each answer carries
+  // the time its read started, and the newest started read wins.
+  const freshSeq = useRef(0);
+  const latestFreshSeq = useRef(0);
+  const freshScope = useRef(0);
+  useEffect(() => {
+    // A new question: every read already in flight answers the old one. Defense in depth: an
+    // old-scope answer would also fail the gate's `updated_at` match, so this only ever spares
+    // the line a louder blink (adversarial pass 3, mutant M1).
+    freshScope.current = freshSeq.current;
+    setFreshWait(null);
+  }, [eventId, waitCandidate, row?.updated_at]);
+  useEffect(() => {
+    if (!waitCandidate) return;
+    const seq = ++freshSeq.current;
+    const readAt = Date.now();
+    void fetchRow().then((next) => {
+      if (cancelled.current || seq <= freshScope.current || seq < latestFreshSeq.current) return;
+      latestFreshSeq.current = seq;
+      setFreshWait({ row: next, readAt });
+      const shown = latestRow.current;
+      if (next && next.status !== 'pending' && shown && next.updated_at !== shown.updated_at) setRow(next);
+    });
+  }, [waitCandidate, row?.updated_at, waitTick, lastLogged, fetchRow]);
 
   // Re-read the row and resolve if the analysis has moved off 'pending'. Returns
   // true once resolved — the realtime watch tears down on true. Guards its state
@@ -805,7 +860,28 @@ export function VomitAnalysisSection(
           // EN-3: the tier's tone and action line from the map; both absent on an
           // earlier-rule read, which draws today's card.
           tone={display ? TIER_WORDS[display].tone : undefined}
-          action={display ? TIER_WORDS[display].action : null}
+          action={
+            display === 'call_today'
+              // CUL-1629: "first thing tomorrow" only on the server's stored fact, and only
+              // while every gate the phone can check still holds; else the louder line.
+              ? callTodayActionOf({
+                  row,
+                  facts: mayWaitFacts,
+                  freshRow: freshWait?.row ?? null,
+                  freshReadAt: freshWait?.readAt ?? null,
+                  lastLoggedAt,
+                  kind: 'vomit',
+                  petName,
+                  species: recordPet?.species ?? null,
+                  birthDate: recordPet?.date_of_birth ?? null,
+                  // The live clock, not the minute tick: a phone back from the background
+                  // must not judge the night's end on the minute it was put away.
+                  nowMs: Date.now(),
+                })
+              : display
+                ? TIER_WORDS[display].action
+                : null
+          }
           disclosure={heldDisclosure}
           tellThem={tellThemLine}
           watchFor={watchFor}

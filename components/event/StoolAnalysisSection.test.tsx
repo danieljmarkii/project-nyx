@@ -13,15 +13,25 @@
 let mockRow: Record<string, unknown> | null = null;
 // CUL-1510: the record around the stool, as the floor's words read it (null = not answered).
 let mockFloorFacts: import('../../lib/incidentFloorFacts').IncidentFloorFacts | null = null;
-jest.mock('../../hooks/useIncidentFloorFacts', () => ({ useIncidentFloorFacts: () => mockFloorFacts, useMinuteNow: () => Date.now() }));
+// CUL-1629: a test may hold the minute clock still, as the real one holds while backgrounded.
+let mockMinuteNow: number | null = null;
+jest.mock('../../hooks/useIncidentFloorFacts', () => ({ useIncidentFloorFacts: () => mockFloorFacts, useMinuteNow: () => mockMinuteNow ?? Date.now() }));
+// CUL-1629: the phone's read behind call today's wait line (null = not answered).
+let mockMayWaitFacts: import('../../lib/mayWaitLine').MayWaitFacts | null = null;
+jest.mock('../../hooks/useMayWaitFacts', () => ({ useMayWaitFacts: () => mockMayWaitFacts }));
 // Set to make a Hide / Show write fail, and to hold it until the test lets it answer
 // (CUL-827's R7 case: the write must fail AFTER a re-run's restore has landed).
 let mockUpdateError: { message: string } | null = null;
 let mockUpdateGate: Promise<void> | null = null;
+// CUL-1629: row reads the test answers by hand (a slow network), or null for at once.
+let mockReadQueue: ((r: { data: unknown; error: null }) => void)[] | null = null;
 jest.mock('../../lib/supabase', () => ({
   supabase: {
     from: () => ({
-      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: mockRow, error: null }) }) }),
+      // CUL-1629: with `mockReadQueue` set, each row read waits for the test to answer it.
+      select: () => ({ eq: () => ({ maybeSingle: () => (mockReadQueue
+        ? new Promise((resolve) => mockReadQueue!.push(resolve))
+        : Promise.resolve({ data: mockRow, error: null })) }) }),
       // Answers both write shapes Hide / Show has had: `await .update().eq()`, and
       // CUL-1323's compare-and-set, `.eq().eq|is|filter().select()` (lib/analysisDismissal),
       // which reads one written row back as "the words on screen were still the record's".
@@ -85,9 +95,12 @@ jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
+import { AppState } from 'react-native';
 import { Alert, LayoutAnimation } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { StoolAnalysisSection } from './StoolAnalysisSection';
+import { usePetStore } from '../../store/petStore';
+import { useMomentStore } from '../../store/momentStore';
 import { theme } from '../../constants/theme';
 import { flat } from '../../testUtils/tree';
 import { readLandedCopy } from './useReadLandingAnnouncement';
@@ -1170,5 +1183,148 @@ describe('StoolAnalysisSection — the floor\'s words (CUL-1510)', () => {
     const view = render(<StoolAnalysisSection eventId="s2" petId="pet-1" petName="Rex" hasPhoto />);
     await view.findByText('Worth a call');
     expect(view.queryByText('What to tell them:')).toBeNull();
+  });
+});
+
+// ── CUL-1629: "first thing tomorrow" only on the server's stored fact ───────────────────────
+describe('StoolAnalysisSection — call today\'s wait line (CUL-1629)', () => {
+  const STAMP = ['engines_v3_en3', 'engines_v3_en4'];
+  const PHOTO = '6f1c0d2e-1111-4a5b-9c3d-000000000001';
+  const AT = new Date(2026, 6, 15, 21, 0);
+  const iso = (d: Date) => d.toISOString();
+  let nowSpy: jest.SpyInstance;
+  const waitRow = (over: Record<string, unknown> = {}) => row({
+    recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_loose_stool'],
+    may_wait: true, photo_set_key: PHOTO, updated_at: iso(new Date(2026, 6, 15, 21, 30)),
+    ai_raw_payload: { appears_to_show_stool: true, recommendation: 'monitor', read_photo_set_key: PHOTO }, ...over,
+  });
+  beforeEach(() => {
+    nowSpy = jest.spyOn(Date, 'now').mockReturnValue(new Date(2026, 6, 15, 22, 0).getTime());
+    usePetStore.setState({
+      pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
+    });
+    mockMayWaitFacts = {
+      readAt: new Date(2026, 6, 15, 22, 0).getTime(),
+      anchorAt: iso(AT), serverAttachmentIds: [PHOTO], localAttachmentIds: [PHOTO], unsynced: false,
+      vomits: [],
+      stoolAt: [], lethargyAt: [], meals: [],
+    };
+  });
+  afterEach(() => {
+    nowSpy.mockRestore();
+    mockRow = null;
+    mockMayWaitFacts = null;
+    mockReadQueue = null;
+    usePetStore.setState({ pets: [] });
+  });
+
+  it('a stored TRUE at 10 PM: first thing tomorrow, the call-now signs named as the exception', async () => {
+    mockRow = waitRow();
+    const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText(/^Call your vet first thing tomorrow, or an emergency clinic tonight /)).toBeTruthy();
+    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeNull();
+  });
+
+  it.each([false, null, undefined])('may_wait = %p keeps the louder line', async (value) => {
+    mockRow = waitRow({ may_wait: value });
+    const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
+    expect(view.queryByText(/first thing/)).toBeNull();
+  });
+
+  it('a TRUE before the phone\'s read answers keeps the louder line', async () => {
+    mockRow = waitRow();
+    mockMayWaitFacts = null;
+    const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText(/first thing/)).toBeNull();
+  });
+
+  // ── The wiring the third adversarial pass found unpinned (T1) ──────────────────────────
+  const LOUD = "Call your vet today. If they're closed, call an emergency clinic.";
+  const WAIT = /^Call your vet first thing tomorrow/;
+  const at = (min: number) => new Date(2026, 6, 15, 22, min).getTime();
+  const freshFacts = (readAt: number) => { mockMayWaitFacts = { ...mockMayWaitFacts!, readAt }; };
+
+  it('a fresh-row read that hangs past two minutes leaves the louder line, not the old answer', async () => {
+    mockRow = waitRow();
+    const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText(WAIT);
+    mockReadQueue = [];
+    nowSpy.mockReturnValue(at(3));
+    freshFacts(at(3));
+    view.rerender(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText(LOUD);
+    mockReadQueue = null;
+  });
+
+  it('an answer read before a log this phone just committed leaves the louder line', async () => {
+    mockRow = waitRow();
+    const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText(WAIT);
+    nowSpy.mockReturnValue(at(0) + 10_000);
+    // The facts were read at 22:00; the log lands ten seconds later.
+    act(() => { useMomentStore.setState({ payload: { kind: 'named' } as never }); });
+    await view.findByText(LOUD);
+    act(() => { useMomentStore.setState({ payload: null }); });
+  });
+
+  it('back from the background, the record re-reads at once rather than standing on old answers', async () => {
+    // Every subscriber hears the change, as on the device (the section holds several).
+    const handlers: ((s: string) => void)[] = [];
+    const onChange = (state: string) => handlers.forEach((h) => h(state));
+    // Swapped by hand, not spied: the test environment's AppState listener is itself a mock, and
+    // restoring a spy over it leaves the next test's `useAppActive` with nothing to call.
+    const target = AppState as unknown as { addEventListener: unknown };
+    const original = target.addEventListener;
+    target.addEventListener = (_t: string, h: (s: string) => void) => {
+      handlers.push(h);
+      return { remove: () => undefined };
+    };
+    try {
+      mockRow = waitRow();
+      // The minute clock stands still while backgrounded: only the foreground itself re-reads.
+      mockMinuteNow = at(0);
+      const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+      await view.findByText(WAIT);
+      act(() => { onChange('background'); });
+      nowSpy.mockReturnValue(at(3));
+      freshFacts(at(3));
+      // Foreground: the old fresh-row answer is 3 minutes old; a new read answers at once.
+      act(() => { onChange('active'); });
+      await view.findByText(WAIT);
+    } finally {
+      target.addEventListener = original;
+      mockMinuteNow = null;
+    }
+  });
+
+  it('an older fresh-row read landing after a newer one never replaces it', async () => {
+    mockRow = waitRow();
+    const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText(WAIT);
+    mockReadQueue = [];
+    nowSpy.mockReturnValue(at(1));
+    freshFacts(at(1));
+    view.rerender(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />); // read A
+    nowSpy.mockReturnValue(at(2));
+    freshFacts(at(2));
+    view.rerender(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />); // read B
+    const [a, b] = mockReadQueue;
+    await act(async () => { b({ data: mockRow, error: null }); });
+    await view.findByText(WAIT);
+    // A, started first, answers last with the leave gone and the same stamp: it is older news.
+    await act(async () => { a({ data: { ...(mockRow as object), may_wait: null }, error: null }); });
+    expect(view.queryByText(WAIT)).toBeTruthy();
+    mockReadQueue = null;
+  });
+
+  it('a TRUE over an owner edit keeps the louder line', async () => {
+    mockRow = waitRow({ edited_at: iso(new Date(2026, 6, 15, 21, 45)) });
+    const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText(/first thing/)).toBeNull();
   });
 });

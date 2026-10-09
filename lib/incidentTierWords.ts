@@ -103,11 +103,11 @@ export const TIER_WORDS: Readonly<Record<TierDisplay, TierWords>> = {
     label: 'Call your vet today',
     short: 'Call today',
     readAs: 'call today',
-    // No leave to wait (CUL-1510): "first thing tomorrow" is safe only over a call the
-    // record alone raised, with no call-now sign met around it, and only the server can see
-    // that (four adversarial passes on PR-27b broke every client-side proof). So the line
-    // takes call now's after-hours path: louder than the spec, never calmer than "Worth a
-    // call". The late-day resolution lands server-side.
+    // The louder line, and what every surface but the record says (CUL-1510): "first thing
+    // tomorrow" is safe only over a call the record alone raised, with no call-now sign met
+    // around it, and only the server can see that. The record's card resolves the late-day
+    // line through `lib/mayWaitLine.ts`, on the server's stored `may_wait` fact alone
+    // (CUL-1629), and falls back to these words whenever any gate there refuses.
     action: "Call your vet today. If they're closed, call an emergency clinic.",
     tone: 'call_outline',
     call: true,
