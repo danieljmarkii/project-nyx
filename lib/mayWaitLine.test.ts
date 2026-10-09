@@ -8,6 +8,7 @@ import {
   callTodayActionOf,
   clockBandOf,
   intakeFlagAt,
+  leaveDecidedAt,
   leaveEndsAt,
   MAY_WAIT_DST_AFTER_HOURS,
   MAY_WAIT_INTAKE_BASELINE_HOURS,
@@ -163,6 +164,40 @@ describe('the clock (D1: 6 AM / 6 PM / midnight)', () => {
     const decided = row({ updated_at: iso(local(15, 21, 30)) });
     const old = facts({ anchorAt: iso(local(14, 20)), vomits: [{ at: iso(local(14, 10)), confidence: 'witnessed' }, { at: iso(local(14, 20)), confidence: 'witnessed' }] });
     expect(mayWaitRefusalOf(input({ row: decided, facts: old }))).toBe('expired');
+  });
+});
+
+describe('the night runs from the server\'s decision stamp (094, PR-27l, CUL-1707)', () => {
+  // A vomit from last night, read late tonight: the read decided the leave at 9:30 PM on the 15th.
+  const lastNight = facts({ anchorAt: iso(local(14, 20)), vomits: [{ at: iso(local(14, 10)), confidence: 'witnessed' }, { at: iso(local(14, 20)), confidence: 'witnessed' }] });
+  const stamped = (over: Partial<MayWaitRow> = {}) => row({ may_wait_decided_at: iso(local(15, 21, 30)), ...over });
+
+  it('a late read of an older vomit runs to the morning after the decision, not the incident', () => {
+    expect(mayWaitRefusalOf(input({ row: stamped(), facts: lastNight, nowMs: local(16, 5, 59) }))).toBeNull();
+    expect(mayWaitRefusalOf(input({ row: stamped(), facts: lastNight, nowMs: local(16, 6) }))).toBe('expired');
+    // The same row with no stamp keeps PR-27f's bound: the incident's night, already gone.
+    expect(mayWaitRefusalOf(input({ row: row(), facts: lastNight, nowMs: local(15, 22) }))).toBe('expired');
+  });
+
+  it('a Hide then Show the next morning moves updated_at and not the stamp: no second night', () => {
+    const shown = stamped({ updated_at: iso(local(16, 7, 31)) });
+    expect(mayWaitRefusalOf(input({ row: shown, facts: lastNight, nowMs: local(16, 12) }))).toBe('expired');
+    expect(mayWaitRefusalOf(input({ row: shown, facts: lastNight, nowMs: local(16, 20) }))).toBe('expired');
+  });
+
+  it('a stamp later than updated_at is read as updated_at: a skewed clock never lengthens the night', () => {
+    const skewed = stamped({ may_wait_decided_at: iso(local(16, 7)), updated_at: iso(local(15, 21, 30)) });
+    expect(leaveDecidedAt(skewed, local(15, 21))).toBe(local(15, 21, 30));
+    expect(mayWaitRefusalOf(input({ row: skewed, nowMs: local(16, 6) }))).toBe('expired');
+  });
+
+  it('no stamp keeps the earlier of updated_at and the incident; an unreadable stamp refuses', () => {
+    expect(leaveDecidedAt(row({ updated_at: iso(local(15, 21, 30)) }), local(14, 20))).toBe(local(14, 20));
+    expect(leaveDecidedAt(row({ may_wait_decided_at: null, updated_at: iso(local(15, 21, 30)) }), local(14, 20))).toBe(local(14, 20));
+    expect(leaveDecidedAt(stamped(), local(14, 20))).toBe(local(15, 21, 30));
+    expect(mayWaitRefusalOf(input({ row: stamped({ may_wait_decided_at: 'not a time' }) }))).toBe('facts');
+    expect(mayWaitRefusalOf(input({ row: stamped({ may_wait_decided_at: 1_760_000_000_000 }) }))).toBe('facts');
+    expect(mayWaitRefusalOf(input({ row: stamped({ updated_at: null }) }))).toBe('facts');
   });
 });
 
