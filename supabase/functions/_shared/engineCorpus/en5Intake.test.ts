@@ -408,7 +408,7 @@ Deno.test('EN-5 copy: every sentence it can build never reassures, never conclud
   for (const at of ['vomit', 'read', 'after_vomit_24h'] as const) {
     for (const n of [2, 3]) for (const k of [2, 3].filter((k) => k <= n)) records.push({ window: 'noticed', at, mealsLogged: n, mealsRated: n, refusedOrPicked: k })
   }
-  for (const hoursBefore of [1, 25, 70]) for (const rating of ['refused', 'picked'] as const) records.push({ window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore, rating })
+  for (const hoursBefore of [0, 1, 25, 70]) for (const rating of ['refused', 'picked'] as const) records.push({ window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore, rating })
   let seen = 0
   for (const pet of ['Pixel', '']) {
     for (const record of records) {
@@ -468,8 +468,12 @@ Deno.test('A (provisional): a refusal 25 h before the vomit with nothing logged 
   // Unrated meals since the refusal do not cancel it either.
   const withUnrated = rowsOf([meal(v - 40 * H, 'all'), meal(v - 25 * H, 'picked'), meal(v - 10 * H, null), meal(v - 2 * H, null)], v)
   assertEquals(ctx(withUnrated, v, v + 1 * H, EN5).intakeRecord?.window, 'last_rated')
-  // Past the three-day bound it is not "the last rated meal" any more.
-  const old = rowsOf([meal(v - 80 * H, 'refused')], v)
+  // A refusal four days back with nothing since: inside the week the shipped arm looks back over (Q).
+  const fourDays = rowsOf([meal(v - 5 * 24 * H, 'all'), meal(v - 4 * 24 * H, 'refused')], v)
+  assertStrictEquals(intakeFires(ctx(fourDays, v, v + 1 * H, OFF)), true, 'shipped fires on Q')
+  assertEquals(ctx(fourDays, v, v + 1 * H, EN5).intakeRecord?.window, 'last_rated')
+  // Past the week it is not "the last rated meal" any more.
+  const old = rowsOf([meal(v - 8 * 24 * H, 'refused')], v)
   assertStrictEquals(intakeFires(ctx(old, v, v + 1 * H, EN5)), false)
   // The 6/7 shape: the newest rating was Most, nothing logged since. Shipped fires; EN-5 does not.
   const sixSeven = rowsOf([meal(v - 49 * H, 'most')], v)
@@ -492,4 +496,29 @@ Deno.test('J: under EN-5 the anchored meal read reaches 24 h after the vomit; fl
   assertStrictEquals(on?.meals?.toIso, iso(v + 24 * H))
   assertStrictEquals(vomitAnchoredReads(now, iso(v), EN0)?.meals?.toIso, iso(v))
   assertStrictEquals(vomitAnchoredReads(now, iso(v), OFF), null)
+})
+
+Deno.test('A, the re-pass: the backstop speaks only on an empty window, over qualifying meals', () => {
+  const v = Date.parse('2026-09-10T08:00:00Z')
+  const quietNoticed = [meal(v - 40 * H, 'all'), meal(v - 30 * H, 'all')]
+  // M: a refusal beside a meal eaten well in the same half is threshold A's to judge, and A says quiet.
+  const m = rowsOf([...quietNoticed, meal(v - 10 * H, 'all'), meal(v - 1 * H, 'refused')], v)
+  assertStrictEquals(intakeFires(ctx(m, v, v + 1 * H, EN5)), false, 'M')
+  // N: a refused treat (the pill pocket) is not a meal, and its half has a rated row anyway.
+  const n = rowsOf([...quietNoticed, meal(v - 6 * H, 'all'), meal(v - 1 * H, 'refused', 'treat')], v)
+  assertStrictEquals(intakeFires(ctx(n, v, v + 1 * H, EN5)), false, 'N')
+  // O: a stale refusal, then a meal eaten well after the vomit.
+  const o = rowsOf([...quietNoticed, meal(v - 25 * H, 'refused'), meal(v + 2 * H, 'all')], v)
+  assertStrictEquals(intakeFires(ctx(o, v, v + 3 * H, EN5)), false, 'O')
+  // A refused treat as the newest rating over an empty window: the treat is set aside, the meal before speaks.
+  const treatNewest = rowsOf([meal(v - 40 * H, 'all'), meal(v - 30 * H, 'all'), meal(v - 26 * H, 'refused', 'treat')], v)
+  assertStrictEquals(intakeFires(ctx(treatNewest, v, v + 1 * H, EN5)), false, 'treat newest')
+})
+
+Deno.test('A, the re-pass: under an hour reads "less than an hour earlier", never "about 0 hours"', () => {
+  for (const [hoursBefore, phrase] of [[0, 'less than an hour earlier'], [1, 'about an hour earlier'], [25, 'about 25 hours earlier']] as const) {
+    const t = buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore, rating: 'refused' })
+    assertStrictEquals(t.includes(phrase), true, t)
+    assertStrictEquals(/\b0 hours/.test(t), false, t)
+  }
 })

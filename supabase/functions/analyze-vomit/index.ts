@@ -472,7 +472,8 @@ function en5IntakeRecordSentence(p: string, record: IntakeRecord): string {
   if (record.window === 'last_rated') {
     const word = record.rating === 'picked' ? 'Picked' : 'Refused'
     const hours = record.hoursBefore ?? 0
-    return `The last rated meal logged for ${p} before this vomit, ${hours === 1 ? 'about an hour' : `about ${hours} hours`} earlier, was marked ${word}.`
+    const when = hours < 1 ? 'less than an hour' : hours === 1 ? 'about an hour' : `about ${hours} hours`
+    return `The last rated meal logged for ${p} before this vomit, ${when} earlier, was marked ${word}.`
   }
   if (record.window === 'noticed') {
     // Anchored to the instant the predicate fired, never to the read alone: a cat that refused

@@ -345,8 +345,8 @@ export const EN0_CONTEXT_STEP: VomitContextStep = (shipped, args) => {
 //                   two of the last three qualifying meals refused or picked, three-day
 //                   recency) at the vomit and at the read capped at 24 h after it. I1, ruled
 //                   A 2026-10-02: in union, never in place of the arm;
-//   · last_rated:   ⚠ provisional (the adversarial pass, A): the newest rated meal in the
-//                   three days before the vomit was Refused or Picked. See the step.
+//   · last_rated:   ⚠ provisional (the adversarial pass, A): on an empty window only, the newest
+//                   qualifying rated meal in the week before the vomit was Refused or Picked.
 // Treats and free-fed bowls stay in the three rating halves exactly as they are today (a
 // rated treat speaks, a treat marked All cancels); only the Noticed check drops them, as it
 // always has. Dropping the pill-pocket false alarm from the halves is a quieter row and
@@ -433,22 +433,30 @@ export const EN5_CONTEXT_STEP: VomitContextStep = (prior, args) => {
     })
   }
 
-  // ⚠ PROVISIONAL, louder default pending the PM (the adversarial pass, A): the newest rated meal
-  // before the vomit, within the Noticed recency bound, was Refused or Picked, and nothing rated
-  // since. An absent meal is as unknown as an unrated one, and an unknown never cancels a recorded
-  // refusal; without this arm, a refusal 25 h before a vomit with nothing logged since went
-  // quieter than today. Today's other empty-window firing (the newest rating Some, Most or All,
-  // e.g. the 6/7 vomit logged before its meals were back-filled) stays quiet. Brief on CUL-1136.
-  const lastRated = meals
-    .filter((m) => Number.isFinite(m.ms) && m.ms <= vomitMs && m.ms >= vomitMs - NOTICED_REFUSAL_RECENCY_DAYS * 86_400_000)
-    .filter((m) => isKnownIntakeRating(m.intakeRating))
-    .sort((a, b) => b.ms - a.ms)[0]
+  // ⚠ PROVISIONAL, louder default pending the PM (the adversarial pass, A): the EMPTY window. When
+  // none of the three rating halves holds a rated meal at all, an absent meal is as unknown as an
+  // unrated one, and an unknown never cancels a recorded refusal: so the newest QUALIFYING rated
+  // meal in the week before the vomit (the shipped tracking guard's own reach, so a refusal four
+  // days back is not dropped where today's arm would fire) speaks if it was Refused or Picked.
+  // Only on an empty window: a meal rated in any half has already been judged there, so a meal
+  // eaten well between the refusal and the read silences this arm too (the re-pass, M and O).
+  // Qualifying only, as the Noticed predicate reads: a refused pill pocket is not a meal (N).
+  // Today's other empty-window firing (the newest rating Some, Most or All, e.g. the 6/7 vomit
+  // logged before its meals were back-filled) stays quiet. Brief on CUL-1136.
+  const halvesEmpty = before.rated === 0 && after.rated === 0 && atRead.rated === 0
+  const lastRated = halvesEmpty
+    ? meals
+      .filter((m) => Number.isFinite(m.ms) && m.ms <= vomitMs && m.ms >= vomitMs - INTAKE_BASELINE_WINDOW_DAYS * 86_400_000)
+      .filter((m) => isQualifyingIntakeMeal(m, spans) && isKnownIntakeRating(m.intakeRating))
+      .sort((a, b) => b.ms - a.ms)[0]
+    : undefined
   if (lastRated && isRefusedOrPickedRating(lastRated.intakeRating)) {
     return fired({
       window: 'last_rated',
       mealsLogged: 1,
       mealsRated: 1,
-      hoursBefore: Math.round((vomitMs - lastRated.ms) / 3_600_000),
+      // Whole hours, floored, so "about N hours" never rounds a 40-minute gap up to one.
+      hoursBefore: Math.floor((vomitMs - lastRated.ms) / 3_600_000),
       rating: lastRated.intakeRating === 'refused' ? 'refused' : 'picked',
     })
   }
