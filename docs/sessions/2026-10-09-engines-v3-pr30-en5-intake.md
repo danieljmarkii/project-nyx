@@ -3,7 +3,7 @@
 **Date:** 2026-10-09
 **One thing:** S3 L1 — Config flags: merging the code is not releasing it; a missing row keeps EN-5 dark · check: pending
 
-Dispatched session (`/dispatch`, Engines v3, PR-30), CUL-1722 (of CUL-1136). The row was plan-gated (a clinical surface). The plan went on CUL-1136 and the PM typed "go, A" in this session. Shipped via #1140, left open for the PM (see the end).
+Dispatched session (`/dispatch`, Engines v3, PR-30), CUL-1722 (of CUL-1136). The row was plan-gated (a clinical surface). The plan went on CUL-1136 and the PM typed "go, A" in this session. Shipped via #1140, left open for the PM: the 9/22 acceptance line and the provisional backstop wait on the rulings in CUL-1728.
 
 ## What shipped
 
@@ -46,7 +46,7 @@ Dispatched session (`/dispatch`, Engines v3, PR-30), CUL-1722 (of CUL-1136). The
   - S2: the word for a Refused/Picked tie depended on row order.
   - S3: the unrated count read as a total but stopped at the vomit.
   - All three are fixed with guards.
-- **Round 6:** see the outcome comment on CUL-1722.
+- **Round 6:** PASS. S1 to S4 hold, and no fix changes whether the arm fires (the tie-break is symmetric over tied rows). The Dr. Chen / Biostatistician DoD line: the backstop can only fire where the shipped rule fires (future-dated rows aside), and every quiet case falls under a stated carve-out.
 
 Every fix landed with a guard proven by mutation: break the source, watch the test go red, restore. Two tests needed rebuilding because their first fixtures could not fail:
 - **The 24 h cap test:** a later All silenced the half either way, so the test passed with or without the cap.
