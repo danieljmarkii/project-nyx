@@ -58,7 +58,7 @@ jest.mock('./supabase', () => ({
 jest.mock('./signal', () => ({ triggerSignalRegenDebounced: jest.fn() }));
 
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
-import { CAPTURE_CHANGE_KEYS } from './captureChanges';
+import { CAPTURE_CHANGE_KEYS, recordCaptureChange } from './captureChanges';
 import { syncPendingCaptureChanges, notifySignedOut } from './sync';
 import { MAX_SYNC_ATTEMPTS } from './syncQueue';
 
@@ -153,5 +153,50 @@ describe('syncPendingCaptureChanges', () => {
     expect(mockInserts).toHaveLength(1);
     expect(row('a').synced).toBe(0);
     expect(row('b').synced).toBe(0);
+  });
+});
+
+// FAB PR-29b (CUL-1657): the writer, against PR-29's contract on CUL-1657.
+describe('recordCaptureChange', () => {
+  const at = new Date('2026-10-09T15:00:00.000Z');
+  const rows = () => mockDb.prepare('SELECT * FROM capture_changes ORDER BY pet_id').all() as Record<string, unknown>[];
+  // The push is fire-and-forget; let it settle before reading what it sent.
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  it('writes one row per pet of the account, each with its OWN id, dated the phone clock', async () => {
+    expect(await recordCaptureChange('fab_stool_split', ['pet-a', 'pet-b', 'pet-c'], at)).toBe(3);
+    const written = rows();
+    expect(written.map((r) => r.pet_id)).toEqual(['pet-a', 'pet-b', 'pet-c']);
+    // A shared id would let the push's 23505-as-landed mark a pet's row synced unsent.
+    expect(new Set(written.map((r) => r.id)).size).toBe(3);
+    for (const r of written) expect(r).toMatchObject({ change_key: 'fab_stool_split', first_seen_at: '2026-10-09T15:00:00.000Z' });
+  });
+
+  it('never rewrites a pet that has its row: the first date stands, and only the missing pet is written', async () => {
+    await recordCaptureChange('fab_stool_split', ['pet-a'], at);
+    const later = new Date('2026-10-20T09:00:00.000Z');
+    expect(await recordCaptureChange('fab_stool_split', ['pet-a', 'pet-new'], later)).toBe(1);
+    expect(rows().map((r) => [r.pet_id, r.first_seen_at])).toEqual([
+      ['pet-a', '2026-10-09T15:00:00.000Z'],
+      ['pet-new', '2026-10-20T09:00:00.000Z'],
+    ]);
+    expect(await recordCaptureChange('fab_stool_split', ['pet-a', 'pet-new'], later)).toBe(0);
+  });
+
+  it('writes nothing for an empty account and a pet named twice once', async () => {
+    expect(await recordCaptureChange('fab_stool_split', [], at)).toBe(0);
+    expect(await recordCaptureChange('fab_stool_split', ['pet-a', 'pet-a'], at)).toBe(1);
+    expect(rows()).toHaveLength(1);
+  });
+
+  it('pushes what it wrote, and pushes nothing when it wrote nothing', async () => {
+    await recordCaptureChange('fab_stool_split', ['pet-a', 'pet-b'], at);
+    await settle();
+    expect(mockInserts.map((r) => r.pet_id).sort()).toEqual(['pet-a', 'pet-b']);
+    expect(rows().every((r) => r.synced === 1)).toBe(true);
+    mockInserts.length = 0;
+    await recordCaptureChange('fab_stool_split', ['pet-a', 'pet-b'], at);
+    await settle();
+    expect(mockInserts).toHaveLength(0);
   });
 });
