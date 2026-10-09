@@ -22,6 +22,7 @@ import {
   type MayWaitInput,
   type MayWaitNeighbour,
   type MayWaitRecord,
+  withMayWaitDecidedAt,
 } from './incidentMayWait.ts'
 
 /** The events a neighbour can be: every per-incident read's type. */
@@ -244,7 +245,7 @@ export async function revalidateMayWait(
       // it means a concurrent write already replaced the TRUE, which is the outcome wanted.
       const { error: upErr } = await adminClient
         .from('event_ai_analysis')
-        .update({ may_wait: next })
+        .update(withMayWaitDecidedAt({ may_wait: next }, new Date().toISOString()))
         .eq('event_id', ev.id)
         .eq('pet_id', p.petId)
         .eq('may_wait', true)

@@ -77,7 +77,7 @@ import {
 import { FLOOR_READ_HOURS, type FloorTier } from '../../../lib/incidentFloor.ts'
 // "May wait" (Engines v3 PR-27e, CUL-1628): the one predicate, and the reads behind it. Every
 // write below that writes `tier` writes `may_wait` beside it (087's writer contract).
-import { mayWaitValue, mayWaitVerdict, photoEvidenceRefuses, READ_PHOTO_SET_KEY, type MayWaitInput, type MayWaitRecord, type MayWaitVerdict } from './incidentMayWait.ts'
+import { mayWaitValue, mayWaitVerdict, photoEvidenceRefuses, READ_PHOTO_SET_KEY, withMayWaitDecidedAt, type MayWaitInput, type MayWaitRecord, type MayWaitVerdict } from './incidentMayWait.ts'
 import {
   MAY_WAIT_ANALYSIS_COLUMNS,
   readMayWaitRecord,
@@ -773,7 +773,7 @@ export async function updateAnalysisRow(
 ): Promise<{ error: string | null }> {
   const { data, error } = await client
     .from('event_ai_analysis')
-    .update(values)
+    .update(withMayWaitDecidedAt(values, new Date().toISOString()))
     .eq('event_id', key.eventId)
     .eq('pet_id', key.petId)
     .select('id')
@@ -804,7 +804,7 @@ export async function applyAnalysisWriteBack(
   if (writeBack.mode === 'update') return updateAnalysisRow(client, key, writeBack.values)
   const { error } = await client
     .from('event_ai_analysis')
-    .upsert(writeBack.values, { onConflict: 'event_id' })
+    .upsert(withMayWaitDecidedAt(writeBack.values, new Date().toISOString()), { onConflict: 'event_id' })
   return { error: error ? error.message : null }
 }
 
@@ -2013,7 +2013,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       else if (hasPhoto && existing?.may_wait === true) {
         const { error: lowerError } = await adminClient
           .from('event_ai_analysis')
-          .update({ may_wait: null })
+          .update(withMayWaitDecidedAt({ may_wait: null }, new Date().toISOString()))
           .eq('event_id', eventId)
           .eq('pet_id', petId)
           .eq('may_wait', true)
@@ -2358,7 +2358,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     } else if (failureWrite.mode === 'upsert' || failureWrite.mode === 'rescue') {
       await adminClient
         .from('event_ai_analysis')
-        .upsert(failureWrite.values, { onConflict: 'event_id' })
+        .upsert(withMayWaitDecidedAt(failureWrite.values, new Date().toISOString()), { onConflict: 'event_id' })
         .then(() => undefined)
     }
 

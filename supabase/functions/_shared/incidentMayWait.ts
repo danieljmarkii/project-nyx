@@ -419,3 +419,18 @@ export function mayWaitValue(
   if (verdict.mayWait) return true
   return verdict.refusedBy.some((r) => PHOTO_EVIDENCE_RULES.includes(r)) ? false : null
 }
+
+/** The decision's time beside the decision (094, CUL-1707). A server write that carries
+ *  `may_wait` also carries `may_wait_decided_at`, the time of that write; a write that does not
+ *  carry `may_wait` gets no stamp. A TRUE is only written on a fresh passing verdict
+ *  (`mayWaitValue`), so beside a TRUE the stamp is that verdict's time, and the stamp is never
+ *  newer than the TRUE it sits beside: the one direction that would lengthen the night the phone
+ *  allows (lib/mayWaitLine.ts `leaveEndsAt`). Every writer of `may_wait` routes through this;
+ *  `incidentMayWait.test.ts` pins the call sites. */
+export function withMayWaitDecidedAt<T extends Record<string, unknown>>(
+  values: T,
+  nowIso: string,
+): T & { may_wait_decided_at?: string } {
+  if (!Object.prototype.hasOwnProperty.call(values, 'may_wait') || values.may_wait === undefined) return values
+  return { ...values, may_wait_decided_at: nowIso }
+}

@@ -1141,7 +1141,7 @@ Deno.test('CUL-1203 — every event_ai_analysis UPDATE under supabase/functions 
   // Floor: the helper's OWN chain must be among them, keyed — not merely "some
   // update was found", which a scan dropping every other chain would still pass.
   const helper = updates.filter((u) =>
-    u.file.endsWith('/_shared/incident-analysis.ts') && /\.update\(values\)/.test(u.chain))
+    u.file.endsWith('/_shared/incident-analysis.ts') && /\.update\(withMayWaitDecidedAt\(values,/.test(u.chain))
   assertStrictEquals(helper.length, 1, 'the scan did not find updateAnalysisRow\'s own chain')
   for (const { file, chain } of updates) {
     assertStrictEquals(
@@ -1149,6 +1149,79 @@ Deno.test('CUL-1203 — every event_ai_analysis UPDATE under supabase/functions 
       `${file}: an event_ai_analysis update without .eq('pet_id', …) — route it through updateAnalysisRow (CUL-1203)`,
     )
   }
+})
+
+// ── CUL-1707 (PR-27l, migration 094): the decision's time rides with the decision ────────────
+// Every server write that carries `may_wait` stamps `may_wait_decided_at` in the same write, and a
+// write that does not carry it leaves the stamp alone (a stamp newer than its TRUE would lengthen
+// the night the phone allows). The behaviour through the two write helpers, then a scan: every
+// event_ai_analysis write chain under supabase/functions routes its values through
+// withMayWaitDecidedAt, or writes a literal that names no `may_wait`.
+
+const STAMP_FLOOR = Date.now()
+
+Deno.test('CUL-1707 — updateAnalysisRow stamps the decision beside may_wait, and only then', async () => {
+  const row: Row = { id: 'r1', event_id: 'E', pet_id: 'P', may_wait: null, may_wait_decided_at: 'earlier' }
+  const { client } = memoryTable([row])
+  assertStrictEquals((await updateAnalysisRow(client, { eventId: 'E', petId: 'P' }, { error: 'boom' })).error, null)
+  assertStrictEquals(row.may_wait_decided_at, 'earlier') // no may_wait in the write: untouched
+  assertStrictEquals((await updateAnalysisRow(client, { eventId: 'E', petId: 'P' }, { tier: 'call_today', may_wait: true })).error, null)
+  assertStrictEquals(row.may_wait, true)
+  const stamped = Date.parse(String(row.may_wait_decided_at))
+  assertStrictEquals(stamped >= STAMP_FLOOR && stamped <= Date.now(), true)
+})
+
+Deno.test('CUL-1707 — the write-back upsert stamps a may_wait it carries, and nothing else', async () => {
+  const { client, rows } = memoryTable([])
+  const carrying = { mode: 'upsert', values: { event_id: 'E', pet_id: 'P', tier: 'call_today', may_wait: true } }
+  // deno-lint-ignore no-explicit-any
+  assertStrictEquals((await applyAnalysisWriteBack(client, { eventId: 'E', petId: 'P' }, carrying as any, null)).error, null)
+  assertStrictEquals(typeof rows[0].may_wait_decided_at, 'string')
+  const { client: c2, rows: r2 } = memoryTable([])
+  const without = { mode: 'upsert', values: { event_id: 'E2', pet_id: 'P', status: 'capped' } }
+  // deno-lint-ignore no-explicit-any
+  await applyAnalysisWriteBack(c2, { eventId: 'E2', petId: 'P' }, without as any, null)
+  assertStrictEquals('may_wait_decided_at' in r2[0], false)
+})
+
+function writeChains(raw: string): string[] {
+  return analysisChains(raw).filter((c) => /\.(update|upsert|insert)\(/.test(c))
+}
+
+function stampsOrNamesNoMayWait(chain: string): boolean {
+  const m = chain.match(/\.(?:update|upsert|insert)\(\s*([\s\S]*)$/)
+  const arg = m ? m[1] : ''
+  if (/^withMayWaitDecidedAt\(/.test(arg)) return true
+  // A literal object that does not name may_wait cannot carry a decision.
+  return /^\{/.test(arg) && !/\bmay_wait\b/.test(arg.slice(0, arg.indexOf('}') + 1))
+}
+
+Deno.test('CUL-1707 — every event_ai_analysis write under supabase/functions stamps the decision or carries none', async () => {
+  const root = new URL('../', import.meta.url)
+  const writes: { file: string; chain: string }[] = []
+  for await (const file of sourceFiles(root)) {
+    if (file.pathname.endsWith('.test.ts')) continue
+    const src = await Deno.readTextFile(file)
+    for (const chain of writeChains(src)) writes.push({ file: file.pathname, chain })
+  }
+  // Floor: the five writers of may_wait PR-27l routed, by file (not "some write was found").
+  const count = (suffix: string) => writes.filter((w) => w.file.endsWith(suffix) && /withMayWaitDecidedAt\(/.test(w.chain)).length
+  assertStrictEquals(count('/_shared/incident-analysis.ts'), 4, 'the scan lost one of incident-analysis.ts\'s four may_wait writes')
+  assertStrictEquals(count('/_shared/incidentMayWaitEvidence.ts'), 1, 'the scan lost revalidateMayWait\'s write')
+  for (const { file, chain } of writes) {
+    assertStrictEquals(stampsOrNamesNoMayWait(chain), true, `${file}: an event_ai_analysis write that may carry may_wait without withMayWaitDecidedAt (CUL-1707)`)
+  }
+})
+
+Deno.test('CUL-1707 — the scan reds on an unstamped may_wait write (the guard, proven)', () => {
+  const [bare] = writeChains("await c\n  .from('event_ai_analysis')\n  .update({ may_wait: null })\n  .eq('pet_id', p)\n")
+  const [viaValues] = writeChains("await c.from('event_ai_analysis').upsert(values, { onConflict: 'event_id' })\n")
+  const [stamped] = writeChains("await c.from('event_ai_analysis').update(withMayWaitDecidedAt({ may_wait: null }, now)).eq('pet_id', p)\n")
+  const [noDecision] = writeChains("await c.from('event_ai_analysis').upsert({ event_id: e, status }, { onConflict: 'event_id' })\n")
+  assertStrictEquals(stampsOrNamesNoMayWait(bare), false)
+  assertStrictEquals(stampsOrNamesNoMayWait(viaValues), false)
+  assertStrictEquals(stampsOrNamesNoMayWait(stamped), true)
+  assertStrictEquals(stampsOrNamesNoMayWait(noDecision), true)
 })
 
 Deno.test('CUL-1203 — the scan sees an unkeyed update when there is one (the guard, proven)', () => {
@@ -1430,7 +1503,11 @@ function readWordSinks(raw: string, file?: string): { sanctioned: Sink[]; violat
     }
   }
   for (const { open, method, site } of writes) {
-    const arg = callArgs(src, open)[0] ?? ''
+    // CUL-1707: withMayWaitDecidedAt(x, now) adds only the decision's time beside a may_wait x
+    // already carries, so the write is judged on x (its own scan is the CUL-1707 test above).
+    const written = callArgs(src, open)[0] ?? ''
+    const stampOpen = /^withMayWaitDecidedAt\(/.test(written) ? open + 1 + src.slice(open + 1).indexOf('withMayWaitDecidedAt(') + 'withMayWaitDecidedAt'.length : -1
+    const arg = stampOpen > 0 ? (callArgs(src, stampOpen)[0] ?? '') : written
     const fn = enclosingFunction(src, site)
     const owner = /^(\w+)\.values$/.exec(arg)
     if (arg === 'values' && fn === 'updateAnalysisRow') sanctioned.push({ kind: 'updateAnalysisRow', at: open })
