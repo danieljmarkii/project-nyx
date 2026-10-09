@@ -137,7 +137,8 @@ type QueueTable =
   | 'care_acknowledgements'
   | 'vet_calls'
   | 'vet_call_follow_ups'
-  | 'incident_floor_queue';
+  | 'incident_floor_queue'
+  | 'capture_changes';
 
 // The queues whose rows CANNOT CHANGE between the moment a push reads them and the
 // moment its response lands: an attachment row is written once and never edited in
@@ -162,6 +163,7 @@ export const INSERT_ONLY_QUEUE_TABLES = [
   'vet_calls',
   'vet_call_follow_ups',
   'incident_floor_queue',
+  'capture_changes',
 ] as const;
 type InsertOnlyQueueTable = (typeof INSERT_ONLY_QUEUE_TABLES)[number];
 
@@ -3641,7 +3643,7 @@ export function syncPendingVetCalls(): Promise<void> {
   );
 }
 
-type CallQueueTable = 'vet_calls' | 'vet_call_follow_ups';
+type CallQueueTable = 'vet_calls' | 'vet_call_follow_ups' | 'capture_changes';
 
 async function insertQueuedRows<T extends { id: string }>(
   table: CallQueueTable,
@@ -3726,6 +3728,44 @@ async function drainVetCallFollowUpsQueue(): Promise<void> {
     }), epoch);
     if (landed === 'stop' || landed === 0) return;
   }
+}
+
+// ── FAB PR-29: the day a pet's capture surface changed ─────────────────────────
+
+/**
+ * Push the queued capture-change rows (`capture_changes`, migration 091, CUL-1656).
+ *
+ * The care-answers contract (082): a plain INSERT of exactly the columns 091 grants
+ * (created_at is the server's clock), never an upsert, since no role holds UPDATE. A 23505
+ * counts as LANDED, and here it has two sources, both of which mean the fact is on the
+ * server: our own id (a response lost on the way back), or the (pet_id, change_key)
+ * UNIQUE, when another phone, or this one before a sign-out wipe, wrote the pet's row
+ * first. The server keeps the first row, and its date.
+ *
+ * No parent gate: the only link is the pet, and pets are written remote-first.
+ *
+ * SIGN-OUT: `insertQueuedRows` stops, marking nothing, once the sign-out epoch moves.
+ */
+export function syncPendingCaptureChanges(): Promise<void> {
+  return serializeQueuePush('capture_changes', drainCaptureChangesQueue);
+}
+
+async function drainCaptureChangesQueue(): Promise<void> {
+  const epoch = signOutEpoch;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+  const db = getDb();
+  // One pass: nothing in this queue waits on another of its rows.
+  const rows = await db.getAllAsync<{
+    id: string; pet_id: string; change_key: string; first_seen_at: string;
+  }>(
+    `SELECT * FROM capture_changes WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+     ORDER BY created_at ASC, rowid ASC LIMIT 50`,
+  );
+  if (epoch !== signOutEpoch) return;
+  await insertQueuedRows('capture_changes', rows, (r) => ({
+    id: r.id, pet_id: r.pet_id, change_key: r.change_key, first_seen_at: r.first_seen_at,
+  }), epoch);
 }
 
 // ── Engines v3 PR-28b: EN-4's re-check marker ───────────────────────────────────
@@ -3957,6 +3997,8 @@ async function pushAllQueues(): Promise<void> {
   // above; the drain holds any whose trigger has not landed. Through the queue's own
   // serialized drain, not its public entry point, which would re-run the events push.
   await serializeQueuePush('incident_floor_queue', drainIncidentFloorQueue);
+  // FAB PR-29: names only its pet, which is written remote-first, so its position is free.
+  await syncPendingCaptureChanges();
   // B-661: account-scoped, no FK to anything pushed above (v1 rows are
   // account-wide, pet_id NULL), so its position is free — last, after the
   // pet-scoped queues.
