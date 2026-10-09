@@ -318,15 +318,18 @@ export function weightDeltaLine(
 ): string | null {
   if (model.delta == null || model.deltaFrac == null || !model.first) return null;
   const since = `since ${dateOf(model.first.occurredAt)}`;
-  // Interior readings only: the last reading's distance is what the delta itself says.
-  const past = model.points.filter((p, i) => p.pastFloor && i !== model.points.length - 1).length;
-  const clippedTail = past > 0 ? ` · ${past} ${pluralize(past, 'reading')} past ±10%` : '';
   // The gate must describe the SAME readings the line does: a reading the display drops
   // (a stored 0.01 kg rounds to 0.0 lbs) would otherwise set the direction and the
   // percentage from a dot that is not drawn (round 2). Unequal sets fall back to the
   // display's readings and never print the caveat.
   const sameReadings = gate.model.points.length === model.points.length;
   const g = sameReadings ? gate.model : model;
+  // Counted on the STORED readings (`g`), like the direction and the percentage: the display
+  // rounds to 0.1 lb, so a true 11.8 % dip (2.29 → 2.02 kg) displays as exactly 10.0 % and
+  // would go unsaid (the adversarial pass on CUL-1716). Interior readings only: the last
+  // reading's distance is what the delta itself says.
+  const past = g.points.filter((p, i) => p.pastFloor && i !== g.points.length - 1).length;
+  const clippedTail = past > 0 ? ` · ${past} ${pluralize(past, 'reading')} past ±10%` : '';
   // The FACT decides no-change, direction and percentage: the stored readings, never the
   // display's rounding (a 20 g move rounds to 0.0 lbs and is still a move).
   const factDelta = g.delta ?? model.delta;

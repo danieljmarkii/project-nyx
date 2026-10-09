@@ -414,6 +414,14 @@ describe('weightDeltaLine (D2-5)', () => {
     expect(line([r(5.0, '2026-07-03T08:00:00Z'), r(4.6, '2026-08-03T08:00:00Z'), r(5.0, '2026-09-12T08:00:00Z')])).toBe('No change since 07-03');
   });
 
+  it('CUL-1716: the ±10 % disclosure reads the STORED kilograms, never the rounded pounds', () => {
+    // 2.29 → 2.02 kg is an 11.8 % dip; in pounds it rounds to 5.0 → 4.5, exactly 10.0 %.
+    const kg = [r(2.29, '2026-07-03T08:00:00Z'), r(2.02, '2026-08-03T08:00:00Z'), r(2.29, '2026-09-12T08:00:00Z')];
+    const lbs = kg.map((x) => r(Math.round(x.value * 2.20462 * 10) / 10, x.occurredAt));
+    expect(lbs.map((x) => x.value)).toEqual([5.0, 4.5, 5.0]);
+    expect(weightDeltaLine(weightBand(lbs), 'lbs', fmt, { model: weightBand(kg), noiseAbs: NOISE })).toBe('No change since 07-03 · 1 reading past ±10%');
+  });
+
   it('no verdict words: down is not "lost", flat is "no change", never "steady"', () => {
     const m = line([r(10, '2026-07-03T08:00:00Z'), r(8.5, '2026-09-12T08:00:00Z')], 'lbs');
     expect(m).not.toMatch(/lost|gained|steady|stable|holding|improv|good|healthy|!/i);
