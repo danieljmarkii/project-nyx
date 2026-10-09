@@ -354,6 +354,10 @@ export const SYNC_QUEUES: readonly SyncQueue[] = [
   // its own row), so created_at is the age. Held until its event and a meal's rating row
   // have landed (drainIncidentFloorQueue).
   { table: 'incident_floor_queue', pendingSince: 'created_at' },
+  // FAB PR-29 (CUL-1656) — the day a pet's capture surface changed. Insert-only (091
+  // grants no UPDATE; the row is one dated fact), so created_at is the age. Not gated:
+  // its only parent is the pet, which is written remote-first.
+  { table: 'capture_changes', pendingSince: 'created_at' },
 ];
 
 /**

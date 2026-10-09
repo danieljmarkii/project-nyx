@@ -344,7 +344,7 @@ describe('SYNC_QUEUES covers the real schema (B-398, the B-424 shape)', () => {
     // compare. Anything else appearing here is a new queue that
     // slipped past the check above.
     expect(SYNC_QUEUES.filter((q) => pushGuardColumn(q.table) === null).map((q) => q.table))
-      .toEqual(['event_attachments', 'vet_visit_attachments', 'care_acknowledgements', 'vet_calls', 'vet_call_follow_ups', 'incident_floor_queue']);
+      .toEqual(['event_attachments', 'vet_visit_attachments', 'care_acknowledgements', 'vet_calls', 'vet_call_follow_ups', 'incident_floor_queue', 'capture_changes']);
   });
 
   it('answers null for a table it has never heard of — never a default guard', () => {

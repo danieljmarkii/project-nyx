@@ -288,6 +288,13 @@ export const LOCAL_WIPE_TABLES = [
   // about what the vet said. Neither may survive a sign-out onto someone else's phone.
   'vet_call_follow_ups',
   'vet_calls',
+  // FAB PR-29 (CUL-1656) capture_changes — the day each pet's fan first offered a change.
+  // Names only its pet (pets are not mirrored here), so its position is free.
+  //
+  // Wiped because it is the owner's data, keyed by her pets: a row says this household's
+  // phone ran a given build from a given day. Left behind, the next account's writer
+  // would also find "already written" for pet ids it does not own (harmless, but wrong).
+  'capture_changes',
   // Engines v3 PR-28b (CUL-1436) EN-4's re-check marker and the tiers this phone showed.
   // Both name an event (no local FK), so they lead 'events'.
   //

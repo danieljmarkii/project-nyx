@@ -477,6 +477,35 @@ export const BASE_SCHEMA_SQL = `
       ON vet_call_follow_ups(synced)
       WHERE synced = 0;
 
+    -- capture_changes — the day each pet's capture surface first offered a change (FAB
+    -- PR-29, CUL-1656). Mirrors supabase/migrations/091_capture_changes.sql.
+    --
+    -- INSERT-ONLY (no updated_at, CUL-691): the server table is append-only by RLS, and a
+    -- row is one dated fact that never changes. The local UNIQUE matches the server's, so
+    -- the writer (PR-29b) can INSERT OR IGNORE once per pet per change on this phone.
+    --
+    -- Nothing on the phone reads it to decide anything but "already written": the report
+    -- reads the server row. It is not pulled; a phone that writes again after a sign-out
+    -- wipe meets the server's 23505, which keeps the original date.
+    --
+    -- No parent gate: pets are written remote-first, so a pet id on this phone is already
+    -- on the server.
+    CREATE TABLE IF NOT EXISTS capture_changes (
+      id             TEXT PRIMARY KEY,
+      pet_id         TEXT NOT NULL,
+      change_key     TEXT NOT NULL,
+      first_seen_at  TEXT NOT NULL,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      synced         INTEGER NOT NULL DEFAULT 0,
+      sync_attempts  INTEGER NOT NULL DEFAULT 0,
+      sync_error     TEXT,
+      UNIQUE (pet_id, change_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_capture_changes_unsynced
+      ON capture_changes(synced)
+      WHERE synced = 0;
+
     -- incident_floor_queue — EN-4's durable re-check marker (Engines v3 PR-28b, CUL-1436;
     -- docs/nyx-incident-tiers-requirements.md §8.3–8.5). LOCAL ONLY: there is no server
     -- table. A row is a promise that analyze-vomit will be asked to re-floor this pet's
