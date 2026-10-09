@@ -3643,7 +3643,7 @@ export function syncPendingVetCalls(): Promise<void> {
   );
 }
 
-type CallQueueTable = 'vet_calls' | 'vet_call_follow_ups' | 'capture_changes';
+type CallQueueTable = 'vet_calls' | 'vet_call_follow_ups';
 
 async function insertQueuedRows<T extends { id: string }>(
   table: CallQueueTable,
@@ -3733,18 +3733,26 @@ async function drainVetCallFollowUpsQueue(): Promise<void> {
 // ── FAB PR-29: the day a pet's capture surface changed ─────────────────────────
 
 /**
- * Push the queued capture-change rows (`capture_changes`, migration 091, CUL-1656).
+ * Push the queued capture-change rows (`capture_changes`, migration 091, CUL-1656)
+ * through `record_capture_change` (migration 093, CUL-1701), never a plain INSERT.
  *
- * The care-answers contract (082): a plain INSERT of exactly the columns 091 grants
- * (created_at is the server's clock), never an upsert, since no role holds UPDATE. A 23505
- * counts as LANDED, and here it has two sources, both of which mean the fact is on the
- * server: our own id (a response lost on the way back), or the (pet_id, change_key)
- * UNIQUE, when another phone, or this one before a sign-out wipe, wrote the pet's row
- * first. The server keeps the first row, and its date.
+ * The function inserts the row and, when the pet already has one for the change (another
+ * phone's, or this phone's before a sign-out wipe), keeps the EARLIER `first_seen_at`. A
+ * plain insert kept whichever arrived first, so an offline phone that saw the change first
+ * lost its date to a later phone that was online. 091 grants no UPDATE, so only a function
+ * can lower the date. It takes exactly 091's writer columns: created_at stays the server's.
+ *
+ * WHAT COUNTS AS LANDED: no error. A replay of our own row (a lost response) is a no-op
+ * success. A 23505 is NOT landed here: the conflict the plain insert met is now absorbed by
+ * the function, so a 23505 can only be our id colliding with another row's, and the fact
+ * is not on the server. It is terminal (the same id never lands), so the row quarantines.
+ *
+ * BEFORE 093 IS APPLIED the call answers PGRST202 (no such function), which carries no
+ * SQLSTATE and so classifies transient: rows wait, attempts unspent, and push once it is.
  *
  * No parent gate: the only link is the pet, and pets are written remote-first.
  *
- * SIGN-OUT: `insertQueuedRows` stops, marking nothing, once the sign-out epoch moves.
+ * SIGN-OUT: stops, marking nothing, once the sign-out epoch moves.
  */
 export function syncPendingCaptureChanges(): Promise<void> {
   return serializeQueuePush('capture_changes', drainCaptureChangesQueue);
@@ -3762,10 +3770,22 @@ async function drainCaptureChangesQueue(): Promise<void> {
     `SELECT * FROM capture_changes WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
      ORDER BY created_at ASC, rowid ASC LIMIT 50`,
   );
-  if (epoch !== signOutEpoch) return;
-  await insertQueuedRows('capture_changes', rows, (r) => ({
-    id: r.id, pet_id: r.pet_id, change_key: r.change_key, first_seen_at: r.first_seen_at,
-  }), epoch);
+  for (const r of rows) {
+    if (epoch !== signOutEpoch) return;
+    const { error } = await supabase.rpc('record_capture_change', {
+      p_id: r.id, p_pet_id: r.pet_id, p_change_key: r.change_key, p_first_seen_at: r.first_seen_at,
+    });
+    if (epoch !== signOutEpoch) return;
+    if (error) {
+      if (classifySyncFailure(error) === 'transient') {
+        console.warn('[sync] capture_changes push failed (retrying next cycle):', error.message);
+        return;
+      }
+      await recordPushFailure(db, 'capture_changes', r, error);
+      continue;
+    }
+    await markSyncedInsertOnly(db, 'capture_changes', [r.id]);
+  }
 }
 
 // ── Engines v3 PR-28b: EN-4's re-check marker ───────────────────────────────────

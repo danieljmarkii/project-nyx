@@ -2,10 +2,11 @@
 // database (node:sqlite over the app's own schema constants, C-35).
 //
 // Pinned here: the client's keys equal 091's CHECK; the local UNIQUE lets a writer
-// write once per pet per change; the push sends exactly 091's granted columns, marks
-// what landed, counts a 23505 as landed (our own id, or another phone's row for the
-// pet), waits on a transient failure, spends an attempt on a refusal, and marks
-// nothing once a sign-out has moved the epoch.
+// write once per pet per change; the push calls 093's record_capture_change with
+// exactly 091's writer columns (FAB PR-29d, CUL-1701), marks what landed, waits on a
+// transient failure (PGRST202 before 093 is applied included), spends an attempt on a
+// refusal, quarantines a 23505 (under the function it never means the fact is there),
+// and marks nothing once a sign-out has moved the epoch.
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -33,26 +34,27 @@ jest.mock('./db', () => ({
   setWatermark: jest.fn(),
 }));
 
-// The server, at the one call the drain makes. Every insert is recorded.
+// The server, at the one call the drain makes. Every call's arguments are recorded.
 const mockInserts: Record<string, unknown>[] = [];
-let mockAnswer: (row: Record<string, unknown>) => { data: unknown; error: unknown } = (row) => ({
-  data: [{ id: row.id }],
+let mockAnswer: (args: Record<string, unknown>) => { data: unknown; error: unknown } = () => ({
+  data: null,
   error: null,
 });
 let mockDuringInsert: () => void = () => undefined;
 jest.mock('./supabase', () => ({
   supabase: {
     auth: { getSession: jest.fn(async () => ({ data: { session: { user: { id: 'u1' } } } })) },
-    from: jest.fn((table: string) => ({
-      insert: (row: Record<string, unknown>) => ({
-        select: async () => {
-          if (table !== 'capture_changes') throw new Error(`unexpected table ${table}`);
-          mockInserts.push(row);
-          mockDuringInsert();
-          return mockAnswer(row);
-        },
-      }),
-    })),
+    // The push never writes the table directly: a plain insert keeps the first row to
+    // arrive, not the earliest date (CUL-1701).
+    from: jest.fn((table: string) => {
+      throw new Error(`unexpected table ${table}`);
+    }),
+    rpc: jest.fn(async (fn: string, args: Record<string, unknown>) => {
+      if (fn !== 'record_capture_change') throw new Error(`unexpected function ${fn}`);
+      mockInserts.push(args);
+      mockDuringInsert();
+      return mockAnswer(args);
+    }),
   },
 }));
 jest.mock('./signal', () => ({ triggerSignalRegenDebounced: jest.fn() }));
@@ -73,7 +75,7 @@ beforeEach(async () => {
   mockDb.exec(BASE_SCHEMA_SQL);
   await applyColumnUpgrades(async (sql: string) => mockDb.exec(sql));
   mockInserts.length = 0;
-  mockAnswer = (r) => ({ data: [{ id: r.id }], error: null });
+  mockAnswer = () => ({ data: null, error: null });
   mockDuringInsert = () => undefined;
 });
 
@@ -100,23 +102,32 @@ describe('the local mirror', () => {
 });
 
 describe('syncPendingCaptureChanges', () => {
-  it('sends exactly 091’s granted columns and marks the row landed', async () => {
+  it('calls record_capture_change with exactly 091’s writer columns and marks the row landed', async () => {
     write('a', 'pet-a');
     await syncPendingCaptureChanges();
-    // Never created_at: the server's clock stamps it, and 091 grants no INSERT on it.
+    // Never created_at: the server's clock stamps it, and the function never takes it.
     expect(mockInserts).toEqual([
-      { id: 'a', pet_id: 'pet-a', change_key: 'fab_stool_split', first_seen_at: '2026-10-09T08:00:00.000Z' },
+      { p_id: 'a', p_pet_id: 'pet-a', p_change_key: 'fab_stool_split', p_first_seen_at: '2026-10-09T08:00:00.000Z' },
     ]);
     expect(row('a').synced).toBe(1);
     await syncPendingCaptureChanges();
     expect(mockInserts).toHaveLength(1);
   });
 
-  it('counts a 23505 as landed: the pet’s row is already on the server (another phone, or before a wipe)', async () => {
+  it('names the function 093 creates, with the parameters it declares', () => {
+    const sql = readFileSync(join(__dirname, '..', 'supabase/migrations/093_capture_changes_keep_earliest.sql'), 'utf8');
+    const m = /CREATE FUNCTION public\.record_capture_change\(([^)]*)\)/.exec(sql);
+    expect(m).not.toBeNull();
+    const params = (m as RegExpExecArray)[1].split(',').map((x) => x.trim().split(/\s+/)[0]);
+    expect(params).toEqual(['p_id', 'p_pet_id', 'p_change_key', 'p_first_seen_at']);
+  });
+
+  it('never counts a 23505 as landed: under the function it is an id collision, so it quarantines (terminal)', async () => {
     write('a', 'pet-a');
-    mockAnswer = () => ({ data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "capture_changes_one_per_pet_change"' } });
+    mockAnswer = () => ({ data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "capture_changes_pkey"' } });
     await syncPendingCaptureChanges();
-    expect(row('a')).toMatchObject({ synced: 1, sync_error: null });
+    expect(row('a').synced).toBe(0);
+    expect(row('a').sync_error).toMatch(/^23505/);
   });
 
   it('leaves the row queued, attempt unspent, on a transient failure', async () => {
@@ -126,9 +137,16 @@ describe('syncPendingCaptureChanges', () => {
     expect(row('a')).toMatchObject({ synced: 0, sync_attempts: 0, sync_error: null });
   });
 
+  it('waits, attempt unspent, while 093 is not applied (PGRST202, no such function)', async () => {
+    write('a', 'pet-a');
+    mockAnswer = () => ({ data: null, error: { code: 'PGRST202', message: 'Could not find the function public.record_capture_change' } });
+    await syncPendingCaptureChanges();
+    expect(row('a')).toMatchObject({ synced: 0, sync_attempts: 0, sync_error: null });
+  });
+
   it('spends an attempt on a refusal, and quarantines at the cap', async () => {
     write('a', 'pet-a');
-    mockAnswer = () => ({ data: null, error: { code: '42501', message: 'new row violates row-level security policy' } });
+    mockAnswer = () => ({ data: null, error: { code: '42501', message: 'capture change refused: pet not owned by caller' } });
     await syncPendingCaptureChanges();
     expect(row('a')).toMatchObject({ synced: 0, sync_attempts: 1 });
     for (let i = 1; i < MAX_SYNC_ATTEMPTS; i++) await syncPendingCaptureChanges();
@@ -138,11 +156,15 @@ describe('syncPendingCaptureChanges', () => {
     expect(mockInserts).toHaveLength(sent);
   });
 
-  it('treats an empty answer as RLS-filtered, never as landed', async () => {
+  it('a refusal on one row does not hold the next', async () => {
     write('a', 'pet-a');
-    mockAnswer = () => ({ data: [], error: null });
+    write('b', 'pet-b');
+    mockAnswer = (args) => (args.p_id === 'a'
+      ? { data: null, error: { code: '42501', message: 'capture change refused: pet not owned by caller' } }
+      : { data: null, error: null });
     await syncPendingCaptureChanges();
     expect(row('a')).toMatchObject({ synced: 0, sync_attempts: 1 });
+    expect(row('b').synced).toBe(1);
   });
 
   it('marks nothing once a sign-out lands while the request is in the air', async () => {
@@ -192,7 +214,7 @@ describe('recordCaptureChange', () => {
   it('pushes what it wrote, and pushes nothing when it wrote nothing', async () => {
     await recordCaptureChange('fab_stool_split', ['pet-a', 'pet-b'], at);
     await settle();
-    expect(mockInserts.map((r) => r.pet_id).sort()).toEqual(['pet-a', 'pet-b']);
+    expect(mockInserts.map((r) => r.p_pet_id).sort()).toEqual(['pet-a', 'pet-b']);
     expect(rows().every((r) => r.synced === 1)).toBe(true);
     mockInserts.length = 0;
     await recordCaptureChange('fab_stool_split', ['pet-a', 'pet-b'], at);
