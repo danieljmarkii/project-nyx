@@ -1,9 +1,10 @@
-# Completion card, round 2: what the record says it is for
+# Completion card, rounds 2 to 4: what it is for, daylight, motion
 
 **Date:** 2026-10-09
-**One thing:** none (discovery round, no code)
+**One thing:** P4 L1 — Leading vs lagging indicators: the intake answer rate fell from 89% to 1% long before a missed refusal would show · check: pending
+**One thing (re-ask):** S1 L1 — Code vs build vs OTA (from 2026-10-08: the mark fix was JavaScript only) · check: pending
 
-DISCOVERY for CUL-1694 (sub-issue of CUL-1691), shipped via the session's PR. No code, no schema, no flag.
+DISCOVERY for CUL-1694 (sub-issue of CUL-1691), shipped via #1127. No app code, no schema, no flag: three mock rounds and a build-ready spec.
 
 ## The ask
 
@@ -67,3 +68,17 @@ The rest (timers keyed to the record, the vessel fill keyed to the flight's `lan
 **Shipped in this PR:** round 4 of `docs/culprit-completion-card-mockups.html` (seven playable states, a 4× slow-motion toggle, frame-by-frame stills and a timeline); the new `docs/nyx-completion-card-requirements.md` v0.9 (the ground token map, the motion timeline and constants, every state, the engines rule, the PR plan and QA matrix). It becomes v1.0 BUILD-READY on the two open calls. The spec is not yet in CLAUDE.md's Read-These table; that table is size-guarded, so add it in the first build PR with an offsetting trim.
 
 **Open calls:** R4-1 (on the + path, the name lands at about 0.2s, recommended, or after the mark at about 0.9s); R4-2 (the dim: dimmed means inactive, recommended).
+
+## Round 4 rulings and the build-readiness review
+
+**PM rulings on round 4:** R4-1, the food's name lands early on the + path; the motion as drawn, with the Undo collapse into "Removed" called out as liked. R4-2 (the dim) was not addressed, so it is recorded as a reversible team call on the recommendation ("dimmed means inactive"). The spec went to v1.0 BUILD-READY.
+
+**Build-readiness review** (a third workflow: three reviewers dry-ran PR 1, PRs 2 to 4, and the house rules from the spec alone; a refuter checked every gap). 53 findings; 12 held outright and 27 more were real with a corrected fix. The worst: text that would have stayed white on the new white card (Undo, Change time, the snackbar message), the + path's release wiring that would have skipped the fill entirely (`setHeroReady` at measure time), and no exact dose-gold predicate (two reviewers disagreed; the lead settled it on the calm side, `doseCelebrates`). A fourth workflow folded all 39 in and checked each landed; 7 follow-up problems were repaired. The spec is v1.1.
+
+**Team calls added by the review, all reversible:** a trial heads-up never changes the gold (D5); a card carrying a vet-call line or a double-dose conflict is calm; the device spike folds into PR 2's on-device QA, with Android on the safer reveal until an Android phone passes it.
+
+**Filed:** CUL-1709 (the snackbar is silent to screen readers), CUL-1710 (the success buzz over a card drawn calm). Earlier this session: CUL-1696, CUL-1697.
+
+## Persona sign-off
+
+Designer ✓ (Principles 8 and 9: the cover-the-words test, no loop, calm on symptoms) — Motion & IA ✓ (one physics, imported constants) — Engineer ✓ (native driver only, no animated SVG prop, JS-only PRs) — Dr. Chen ✓ (no gold on a symptom, refusal, unconfirmed dose or vet call; safety silent) — Data Scientist ✓ (the intake-rate evidence and its confounds stated) — T&S N/A (no new data path; the CUL-1709 accessibility gap filed).
