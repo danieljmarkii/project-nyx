@@ -42,14 +42,11 @@
 // call that says what was not seen reads as reassurance (Pattern 1).
 //
 // ── CALL TODAY'S ACTION LINE (§2 rule 1): NOT HERE ───────────────────────────
-// Call today's line is a fixed string in the tier-word map ("If they're closed, call an
-// emergency clinic"), with no leave to wait. The spec's late-day "first thing tomorrow" is
-// safe only over a call the record alone raised, with no call-now sign met anywhere around
-// it, and four adversarial passes on this PR showed the phone cannot prove that: a removed
-// photo's blood call, a neighbour's intake flag and a back-dated lethargy are all invisible
-// to it. The leave to wait moves to the server, which holds every read's flags and payload
-// (the follow-up issue on CUL-1510). Louder than the spec until then, never calmer than
-// today's "Worth a call".
+// Call today's louder line is a fixed string in the tier-word map ("If they're closed, call an
+// emergency clinic"). The late-day "first thing tomorrow" is `lib/mayWaitLine.ts`: it stands
+// only on the server's stored `may_wait` fact (CUL-1611 ruled A; four adversarial passes on
+// PR-27b showed the phone cannot prove it alone), and names this file's call-now clauses as
+// the exception (CUL-1629).
 
 import { TIER_WORDS } from './incidentTierWords';
 import {
@@ -128,7 +125,7 @@ export function pastWords(atMs: number, nowMs: number): string {
   return `${MONTHS[at.getMonth()]} ${at.getDate()}, ${clockWords(at)}`;
 }
 
-function named(petName: string | null | undefined): string {
+export function named(petName: string | null | undefined): string {
   const p = (petName ?? '').trim();
   return p.length > 0 ? p : 'your pet';
 }
@@ -138,7 +135,7 @@ function capitalised(s: string): string {
 }
 
 /** "a", "a or b", "a, b, or c". */
-function orList(parts: readonly string[]): string {
+export function orList(parts: readonly string[]): string {
   if (parts.length <= 1) return parts[0] ?? '';
   if (parts.length === 2) return `${parts[0]} or ${parts[1]}`;
   return `${parts.slice(0, -1).join(', ')}, or ${parts[parts.length - 1]}`;

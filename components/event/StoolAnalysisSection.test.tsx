@@ -14,6 +14,9 @@ let mockRow: Record<string, unknown> | null = null;
 // CUL-1510: the record around the stool, as the floor's words read it (null = not answered).
 let mockFloorFacts: import('../../lib/incidentFloorFacts').IncidentFloorFacts | null = null;
 jest.mock('../../hooks/useIncidentFloorFacts', () => ({ useIncidentFloorFacts: () => mockFloorFacts, useMinuteNow: () => Date.now() }));
+// CUL-1629: the phone's read behind call today's wait line (null = not answered).
+let mockMayWaitFacts: import('../../lib/mayWaitLine').MayWaitFacts | null = null;
+jest.mock('../../hooks/useMayWaitFacts', () => ({ useMayWaitFacts: () => mockMayWaitFacts }));
 // Set to make a Hide / Show write fail, and to hold it until the test lets it answer
 // (CUL-827's R7 case: the write must fail AFTER a re-run's restore has landed).
 let mockUpdateError: { message: string } | null = null;
@@ -88,6 +91,7 @@ import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
 import { Alert, LayoutAnimation } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { StoolAnalysisSection } from './StoolAnalysisSection';
+import { usePetStore } from '../../store/petStore';
 import { theme } from '../../constants/theme';
 import { flat } from '../../testUtils/tree';
 import { readLandedCopy } from './useReadLandingAnnouncement';
@@ -1170,5 +1174,67 @@ describe('StoolAnalysisSection — the floor\'s words (CUL-1510)', () => {
     const view = render(<StoolAnalysisSection eventId="s2" petId="pet-1" petName="Rex" hasPhoto />);
     await view.findByText('Worth a call');
     expect(view.queryByText('What to tell them:')).toBeNull();
+  });
+});
+
+// ── CUL-1629: "first thing tomorrow" only on the server's stored fact ───────────────────────
+describe('StoolAnalysisSection — call today\'s wait line (CUL-1629)', () => {
+  const STAMP = ['engines_v3_en3', 'engines_v3_en4'];
+  const PHOTO = '6f1c0d2e-1111-4a5b-9c3d-000000000001';
+  const AT = new Date(2026, 6, 15, 21, 0);
+  const iso = (d: Date) => d.toISOString();
+  let nowSpy: jest.SpyInstance;
+  const waitRow = (over: Record<string, unknown> = {}) => row({
+    recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_loose_stool'],
+    may_wait: true, photo_set_key: PHOTO, updated_at: iso(new Date(2026, 6, 15, 21, 30)),
+    ai_raw_payload: { appears_to_show_stool: true, recommendation: 'monitor', read_photo_set_key: PHOTO }, ...over,
+  });
+  beforeEach(() => {
+    nowSpy = jest.spyOn(Date, 'now').mockReturnValue(new Date(2026, 6, 15, 22, 0).getTime());
+    usePetStore.setState({
+      pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
+    });
+    mockMayWaitFacts = {
+      anchorAt: iso(AT), serverAttachmentIds: [PHOTO], localAttachmentIds: [PHOTO], unsynced: false,
+      vomits: [],
+      stoolAt: [], lethargyAt: [], meals: [],
+    };
+  });
+  afterEach(() => {
+    nowSpy.mockRestore();
+    mockRow = null;
+    mockMayWaitFacts = null;
+    usePetStore.setState({ pets: [] });
+  });
+
+  it('a stored TRUE at 10 PM: first thing tomorrow, the call-now signs named as the exception', async () => {
+    mockRow = waitRow();
+    const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText(/^Call your vet first thing tomorrow, or an emergency clinic tonight /)).toBeTruthy();
+    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeNull();
+  });
+
+  it.each([false, null, undefined])('may_wait = %p keeps the louder line', async (value) => {
+    mockRow = waitRow({ may_wait: value });
+    const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
+    expect(view.queryByText(/first thing/)).toBeNull();
+  });
+
+  it('a TRUE before the phone\'s read answers keeps the louder line', async () => {
+    mockRow = waitRow();
+    mockMayWaitFacts = null;
+    const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText(/first thing/)).toBeNull();
+  });
+
+  it('a TRUE over an owner edit keeps the louder line', async () => {
+    mockRow = waitRow({ edited_at: iso(new Date(2026, 6, 15, 21, 45)) });
+    const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText(/first thing/)).toBeNull();
   });
 });

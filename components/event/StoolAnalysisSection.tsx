@@ -66,6 +66,9 @@ import {
   tellThem,
 } from '../../lib/incidentFloorWords';
 import { FLOOR_FACTS_REFRESH_MS, useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
+import { useMayWaitFacts } from '../../hooks/useMayWaitFacts';
+import { usePetStore } from '../../store/petStore';
+import { callTodayActionOf } from '../../lib/mayWaitLine';
 import { StoolFieldsEditor } from './StoolFieldsEditor';
 import { stoolCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -124,6 +127,11 @@ interface AnalysisRow extends IntakeCorrectionColumns {
    *  read that was written from a wait that ended with nothing written (CUL-1275). */
   updated_at?: string | null;
   error: string | null;
+  /** CUL-1611: the server's leave for call today to say "first thing tomorrow" (087). Only
+   *  TRUE grants it, and only through `lib/mayWaitLine.ts`'s gates. */
+  may_wait?: boolean | null;
+  /** The photo set the row's last write was stamped over (075). */
+  photo_set_key?: string | null;
   /** EN-7's re-check on an owner edit (CUL-1408, lib/stoolForm.ts): the key the read was
    *  written under, and whether its vomiting call stands. Optional: a row read before they
    *  were selected carries neither, and then no re-check fires. */
@@ -159,7 +167,9 @@ const SELECT_COLS =
   'foreign_material_present, foreign_material_note, ai_raw_payload, edited_at, dismissed_at, ' +
   'updated_at, error, engine_flags, contextual_flags, tier, ' +
   // CUL-1406: read so the shared card stays one shape; the server writes these on vomit rows only (085).
-  'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all';
+  'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all, ' +
+  // CUL-1629: the server's leave to wait, and the photo set the row was stamped over (087, 075).
+  'may_wait, photo_set_key';
 
 export function StoolAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -182,6 +192,17 @@ export function StoolAnalysisSection(
   // CUL-1510: the record around this stool (the vomits beside it, the courses on board),
   // for "What to tell them" under a call. Re-read when the row moves.
   const floorFacts = useIncidentFloorFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}|${Math.floor(clockNow / FLOOR_FACTS_REFRESH_MS)}`);
+  // CUL-1629: the phone's read behind call today's wait line, only when the stored fact could
+  // grant it (a new-rule call today with `may_wait` TRUE); every other read costs nothing.
+  const mayWaitFacts = useMayWaitFacts(
+    eventId,
+    petId,
+    `${row?.updated_at ?? row?.status ?? ''}`,
+    Math.floor(clockNow / FLOOR_FACTS_REFRESH_MS),
+    !!row && row.tier === 'call_today' && row.may_wait === true && isTieredRow(row),
+  );
+  // The RECORD's pet (C-9): its species decides the wait line's intake re-check.
+  const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
   // the grid so a re-render of the block never resets what the owner folded, and fed the
@@ -685,7 +706,23 @@ export function StoolAnalysisSection(
           // EN-3: the tier's tone and action line from the map; both absent on an
           // earlier-rule read, which draws today's card.
           tone={display ? TIER_WORDS[display].tone : undefined}
-          action={display ? TIER_WORDS[display].action : null}
+          action={
+            display === 'call_today'
+              // CUL-1629: "first thing tomorrow" only on the server's stored fact, and only
+              // while every gate the phone can check still holds; else the louder line.
+              ? callTodayActionOf({
+                  row,
+                  facts: mayWaitFacts,
+                  kind: 'stool',
+                  petName,
+                  species: recordPet?.species ?? null,
+                  birthDate: recordPet?.date_of_birth ?? null,
+                  nowMs,
+                })
+              : display
+                ? TIER_WORDS[display].action
+                : null
+          }
           tellThem={tellThemLine}
           disclosure={heldDisclosure}
           readText={row.read_text}
