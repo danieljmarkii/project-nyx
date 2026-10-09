@@ -1,8 +1,8 @@
 # Completion card: daylight and motion requirements
 
-**Version:** 0.9 (draft) | **Last Updated:** 2026-10-09 | **Tracking:** CUL-1691 (parent), CUL-1694 (rounds 2 to 4)
+**Version:** 1.0 BUILD-READY | **Last Updated:** 2026-10-09 | **Tracking:** CUL-1691 (parent), CUL-1694 (rounds 2 to 4)
 **Design authority:** `docs/culprit-completion-card-mockups.html` round 4 (https://claude.ai/artifact/6sbHCY6U9VMTKRbxAaj9U5). The page plays every motion below; where this file and the page disagree on a number, this file wins.
-**Becomes v1.0 BUILD-READY** when the PM rules round 4's two calls (§0, R4-1 and R4-2).
+Every decision below is ruled or recorded as a reversible team call; nothing gates the build.
 
 The completion card is the bottom card after a log: `components/ui/MealCompletionCard.tsx`, `NamedCompletionCard.tsx`, `MedicationCompletionCard.tsx`, the mark in `components/ui/CompletionMark.tsx`, driven by `store/momentStore.ts`. It shows about 7 times a day. This spec changes its ground and its motion. **It changes nothing the card says, asks or writes.**
 
@@ -14,10 +14,10 @@ The completion card is the bottom card after a log: `components/ui/MealCompletio
 |---|---|---|
 | D1 | The cards and the Snackbar move from `colorNeutralDark` to a daylight ground. Polish spec §5 R1 is reworded from "a warm dark bottom card over a dimmed Home (never a white flash)" to "a daylight bottom card over a dimmed Home (never a full-screen white takeover)"; the reword lands in PR 1. | **PM-ruled 2026-10-09** (round 3, call 1) |
 | D2 | The mark: a `colorAccentGlyph` disc, the check knocked out in white, a 2pt white gap between the disc and the gold halo. | **PM-ruled 2026-10-09** (round 3, call 2), with motion asked for, which became D3 |
-| D3 | The motion: "the check writes itself" (§2). | Drawn in round 4; the PM's "ready to build" follows round 4 |
+| D3 | The motion: "the check writes itself" (§2), including Undo collapsing into the "Removed" line. | **PM-ruled 2026-10-09** (round 4; the PM called out the Undo collapse as liked) |
 | D4 | No night variant of the card. The card can land over the day screen only on one narrow path (9pm summary on, nothing logged, "Log an event", then a meal, dose or weight through `/log`), at most once a night. The daylight card plays the same there. | Team call, answered to the PM's question in round 4 |
-| R4-1 | On the + path, the food's name lands about 0.2s after launch (recommended) or after the mark lands, about 0.9s (FAB PR-22's order). | **Open** |
-| R4-2 | The dim behind the symptom and weight card: "dimmed means inactive" (the look chips under the dim ignore taps; recommended), leave as is, or close the card on tap (withdrawn: the dim covers the + button and the tabs, and closing early ends the Undo window). | **Open** |
+| R4-1 | On the + path, the food's name lands about 0.2s after launch, not after the mark lands (FAB PR-22's order). | **PM-ruled 2026-10-09:** early |
+| R4-2 | The dim behind the symptom and weight card: "dimmed means inactive": the look chips under the dim ignore taps; the + button and the tabs keep working. (Closing the card on a dim tap was withdrawn: the dim covers + and the tabs, and closing early ends the Undo window.) | **Team call 2026-10-09**, the recommendation the PM did not object to; reversible on the PM's word. Lands in PR 3 only. |
 
 **Team calls in round 4, reversible on the PM's word:** the gold fades in rather than grows (the 2pt gap holds on every frame); on the + path the teal fill reveals the check in one beat, with no separate pen; no bounce on the record; a dose gets gold only when given (CUL-894's bowl rule applied to doses); a touch finishes the motion.
 
@@ -73,7 +73,7 @@ Calm tone (a symptom, a weight, a refused or picked-at bowl, a dose not given): 
 | ms after launch | What the owner sees | How |
 |---|---|---|
 | 0 | The food's own meal disc lifts out of the pill and flies to the mark's slot, as it does today (FAB PR-22). The card crossfades in place. | Existing flight (`flightMotion.ts`, `FLIGHT_SPRING`). Card opacity over 180 (`FAN_CLOSE_MS`, lifted into the module). The card's own mark is hidden until release. |
-| 120 to 300 | The sentence lands (R4-1 recommended; the alternative starts it at the release). | Same as §2.1. |
+| 120 to 300 | The sentence lands, while the disc is still flying (R4-1). | Same as §2.1. |
 | ~600 to 750 | When the flight store reaches `landed`, teal fills the meal disc from its centre and the fill reveals the white check: one beat. | A fill View on the vessel (`colorAccentGlyph`, the check above it), scale 0.02→1 over 150, `Easing.out(cubic)`. 0.02 mirrors `DRAW_IN_MOTION.barFromScale`. The fill starts on the `landed` phase, never on the clone's mount, so the bounce carries only the meal disc. |
 | ~750 | Release: the clone unmounts and the card's own mark shows, written. | `setHeroReady` only after the fill reports done. Not claimed pixel-identical until spike (c) measures it. |
 | 750 to 900 | Gold, celebrate only. | As §2.1. |
@@ -88,7 +88,7 @@ Calm tone (a symptom, a weight, a refused or picked-at bowl, a dose not given): 
 - **Touch, app blur, valve:** any touch on the card (`onTouchStart`, beside `pauseDwell`; the named card gains the touch-finish only) or `useAppActive` going false finishes everything: stop, then pin the end frame. **Finishing never advances the halo:** it pins the halo at its current value (0 if not started) and lets the tone at touch-end decide. A JS valve at the plan's end + 60ms (`2 × FOLD_MOTION.settleSlackMs`) pins anything that has not reported done.
 - **Reduce Motion** (read once at start, unknown reads as still): every card is an opacity crossfade over 150, the mark drawn at rest, the halo at rest or absent; Undo is a true crossfade and the height snaps; exit is opacity only. The medication card gains this branch, which it lacks today.
 - **Haptics:** unchanged. One buzz per record at the reveal; everything in §2 is silent.
-- **The dim (R4-2, if ruled "dimmed means inactive"):** while the named card's dim is up, the Home look chips ignore taps; the + button and the tabs keep working.
+- **The dim (R4-2):** while the named card's dim is up, the Home look chips ignore taps; the + button and the tabs keep working.
 
 ### §2.4 Constants
 
@@ -121,7 +121,7 @@ Every PR ships over the air: no schema, no server, no new library.
 ## §4 QA matrix (each row is a device check on both platforms)
 
 1. Meal from `/log`, eaten → rise, disc, write, words, gold, in that order; at rest by 0.4s.
-2. Meal from the + pill → the disc flies, fills, reveals the check; the name lands early (or late, per R4-1).
+2. Meal from the + pill → the disc flies, fills, reveals the check; the name lands about 0.2s after launch (R4-1).
 3. Refused bowl → no gold at any frame, including a touch during the arrival.
 4. Symptom over Home → the same motion, no gold, the dim in and out with the card.
 5. Symptom with a vet-call line → the line readable as the card appears; no extra motion or buzz.
@@ -135,4 +135,5 @@ Every PR ships over the air: no schema, no server, no new library.
 
 ## Version history
 
+- **1.0 (2026-10-09):** R4-1 ruled (the name lands early); D3 ruled with the Undo collapse; R4-2 recorded as a team call. BUILD-READY.
 - **0.9 (2026-10-09):** drafted from mock rounds 2 to 4 and two multi-lens reviews (ground: 4 candidates × 4 judges + 2 adversarial passes; motion: 4 concepts × 5 judges, a synthesis and an adversarial pass). D1 and D2 PM-ruled; R4-1 and R4-2 open.

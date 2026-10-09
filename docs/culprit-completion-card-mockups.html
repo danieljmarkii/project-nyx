@@ -322,6 +322,7 @@ code { font-family: var(--mono); font-size: .88em; }
 
   <div class="ledger">
     <div><b>Ruled</b><span>Call 1, the card in daylight, and call 2, the deeper teal disc with the white gap. Every frame here uses both.</span></div>
+    <div><b>Round 4</b><span>Ruled: the name lands early on the + path, and the motion as drawn, including Undo collapsing into "Removed". The dim was not addressed, so it is recorded as a team call on the recommendation and can be reversed. The spec is now build-ready: docs/nyx-completion-card-requirements.md.</span></div>
     <div><b>Reaction</b><span>"The new check could get some motion, like the FAB." → This round. The check writes itself, and from the + button the food's own disc turns into it.</span></div>
     <div><b>Reaction</b><span>"Do we even have the night state?" → Barely. It takes the 9pm summary switched on, a day with nothing logged, "Log an event" on the night screen, then a meal, dose or weight. At most once a night. Round 3's night card is gone: the daylight card plays the same everywhere.</span></div>
     <div><b>Reaction</b><span>"Tap to dim: explain more." → Explained below in plain words. Round 3's recommendation changed after a closer look, and the reason is there too.</span></div>
@@ -529,13 +530,13 @@ code { font-family: var(--mono); font-size: .88em; }
     <h2>Decisions</h2>
     <div class="briefs">
       <div class="brief">
-        <h3>1 · When the name lands on the + path</h3>
+        <h3>1 · When the name lands on the + path · <span class="tag current">Ruled: early</span></h3>
         <p><span class="k">Deciding</span>How soon the food's name appears after a one-tap meal from the + button. Both are playable in the second demo.</p>
         <p><span class="k">Options</span><b>Right away, about 0.2s, while the disc flies (recommended):</b> the confirmation never waits on the flourish, and VoiceOver and the screen agree. Or after the mark lands, about 0.9s, which is today's order (FAB PR-22, Oct 8).</p>
         <p><span class="k">Consequence</span>Changes one timing in PR-22's sequence; the disc still moves first.</p>
       </div>
       <div class="brief">
-        <h3>2 · The dim</h3>
+        <h3>2 · The dim · <span class="tag">Team call: dimmed means inactive, reversible</span></h3>
         <p><span class="k">Deciding</span>What a tap on the darkened area does while a symptom or weight card is up.</p>
         <p><span class="k">Options</span><b>Dimmed means inactive (recommended):</b> fixes the one risky tap and changes nothing else. Or leave it. Or close the card on tap (withdrawn, see above).</p>
         <p><span class="k">Consequence</span>A small change to the look chips only, in the symptom card's PR.</p>
