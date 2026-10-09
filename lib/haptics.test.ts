@@ -63,6 +63,13 @@ describe('§5.6 — each moment maps to its documented pattern', () => {
     expect(mockSelection).toHaveBeenCalledTimes(1);
   });
 
+  it('a slide crossing onto a fan pill plays the selection tick, never an impact or a commit', () => {
+    haptics.slideCross();
+    expect(mockSelection).toHaveBeenCalledTimes(1);
+    expect(mockImpact).not.toHaveBeenCalled();
+    expect(mockNotification).not.toHaveBeenCalled();
+  });
+
   it('opening the FAB / switching pets plays a light impact — not a commit pattern', () => {
     haptics.openMenu();
     expect(mockImpact).toHaveBeenCalledWith('light');
@@ -95,7 +102,7 @@ describe('§5.6 — each moment maps to its documented pattern', () => {
 });
 
 describe('silence on safety (D7) — the absence is the API', () => {
-  it('exports exactly the eight verbs, and nothing a safety surface could call', () => {
+  it('exports exactly the nine verbs, and nothing a safety surface could call', () => {
     // There is no `safetyArrival` / `alert` / `warn` verb, deliberately: plainness is
     // the severity signal, and a buzz on bad news is the phone rewarding it. Pinning
     // the export list means adding one is a visible, argued change — not a slip.
@@ -104,7 +111,8 @@ describe('silence on safety (D7) — the absence is the API', () => {
     // the pin working rather than the pin loosening. It is not a safety verb: §4's
     // arrival never plays when a safety finding is present, so the moment it marks is
     // one the safety gate has already excluded. A future `safetyArrival` would fail
-    // this test, and should.
+    // this test, and should. `slideCross` (CUL-1278) is the second: a thumb passing
+    // over a fan pill, a selection tick that carries no news at all.
     expect(Object.keys(haptics).sort()).toEqual([
       'commitRoutine',
       'commitSymptom',
@@ -114,6 +122,7 @@ describe('silence on safety (D7) — the absence is the API', () => {
       'openMenu',
       'pullThreshold',
       'selectChip',
+      'slideCross',
     ]);
   });
 });

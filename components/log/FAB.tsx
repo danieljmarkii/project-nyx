@@ -17,7 +17,7 @@ import { useUiStore, type LogSheetConfirmType } from '../../store/uiStore';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useTodayKey } from '../../hooks/useTodayKey';
-import { openMenu as openMenuHaptic } from '../../lib/haptics';
+import { openMenu as openMenuHaptic, slideCross } from '../../lib/haptics';
 import { useEventStore } from '../../store/eventStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
 import { useRecordChangeStore } from '../../store/recordChangeStore';
@@ -25,7 +25,7 @@ import { useSyncStore } from '../../store/syncStore';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore, isCornerCardUp, MEAL_FLAGGED_DURATION_MS } from '../../store/momentStore';
 import { stageFlight, whenFlightDone } from '../motion/flightMotion';
-import { measureNodeInWindow, type WindowRect } from '../../lib/measureNode';
+import { measureNodeInWindow, measureNodeOnPage, type WindowRect } from '../../lib/measureNode';
 import { getRecentFoods, PickerFood } from '../../lib/db';
 import { fabFoodDay } from '../../lib/fabRecentFoods';
 import { insertMeal } from '../../lib/meals';
@@ -35,6 +35,10 @@ import { focusAccessibility } from '../../lib/a11yFocus';
 import { rowFoodLabelOf } from '../../lib/dayEvents';
 import { foodFormatTag } from '../../lib/foodFormat';
 import { recordCaptureChange } from '../../lib/captureChanges';
+import {
+  HOLD_TO_OPEN_MS, leftDisc, nextRest, releaseOutcome, spacesAgree, targetAt,
+  type Point, type Rect, type Rest, type SlideKind, type SlideTarget,
+} from '../../lib/fanSlide';
 import {
   planFan, FAB_BOTTOM, FAB_DISC, FAN_MARGIN_BOTTOM, FAN_RIGHT_INSET, FAN_GAP,
   PILL_MIN_HEIGHT, PILL_PADDING_V, PILL_PADDING_LEFT, PILL_PADDING_RIGHT, PILL_INNER_GAP,
@@ -49,7 +53,8 @@ const noPetCopy = noPetToLogForCopy();
 //
 // One engine: RN `Animated` on the native driver, every value a transform or an
 // opacity (C-30's split — nothing here moves geometry, so there is no LayoutAnimation
-// half). Hold-and-slide (beat 5) is CUL-1278 and is deliberately absent.
+// half). Hold-and-slide (beat 5) is CUL-1278: see THE SLIDE below, and its write rule in
+// `lib/fanSlide.ts`.
 
 /** Beat 1: the disc answers the finger on touch-DOWN, before release. */
 const PRESS_SCALE = 0.9;
@@ -127,6 +132,9 @@ interface FanRow {
   node: ReactNode;
 }
 
+/** A slide target's key: a pill's row key, or one of the split stool pill's segments. */
+type SlideKey = string;
+
 /** CUL-1644 (D3): a pill that OPENS something carries this; a food pill, which writes
  *  at once, does not. Decorative: the pill's own label and role already say what it
  *  is, so the chevron is hidden from assistive tech on both platforms. */
@@ -181,12 +189,16 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
  * its own row the first time the fan shows it.
  */
 function StoolSplitPill({
-  style, petIds, onNormal, onLoose,
+  style, petIds, onNormal, onLoose, segRef, slideOver = null,
 }: {
   style: StyleProp<ViewStyle>;
   petIds: readonly string[];
   onNormal: () => void;
   onLoose: () => void;
+  /** CUL-1278: each segment is its own slide target, measured apart. */
+  segRef?: (key: SlideKey, node: View | null) => void;
+  /** CUL-1278: the segment a slide is resting over takes its pressed fill. */
+  slideOver?: string | null;
 }) {
   // Keyed by the set of pets, so a pet that arrives while the fan is open is written too.
   const petKey = [...petIds].sort().join(',');
@@ -211,6 +223,7 @@ function StoolSplitPill({
       <ThemedText style={[styles.pillLabel, styles.splitLabel]}>Stool</ThemedText>
       <View style={styles.splitSegs}>
         <Pressable
+          ref={segRef ? (node) => segRef('stool-normal', node) : undefined}
           onPress={tapped(onNormal)}
           style={styles.splitSeg}
           accessibilityRole="button"
@@ -218,12 +231,13 @@ function StoolSplitPill({
           testID="fab-stool-normal"
         >
           {({ pressed }) => (
-            <View style={[styles.splitChip, pressed && styles.splitChipPressed]}>
+            <View style={[styles.splitChip, (pressed || slideOver === 'stool-normal') && styles.splitChipPressed]}>
               <ThemedText style={styles.splitChipText}>Normal</ThemedText>
             </View>
           )}
         </Pressable>
         <Pressable
+          ref={segRef ? (node) => segRef('stool-loose', node) : undefined}
           onPress={tapped(onLoose)}
           style={styles.splitSeg}
           accessibilityRole="button"
@@ -231,7 +245,7 @@ function StoolSplitPill({
           testID="fab-stool-loose"
         >
           {({ pressed }) => (
-            <View style={[styles.splitChip, pressed && styles.splitChipPressed]}>
+            <View style={[styles.splitChip, (pressed || slideOver === 'stool-loose') && styles.splitChipPressed]}>
               <ThemedText style={styles.splitChipText}>Loose</ThemedText>
             </View>
           )}
@@ -429,6 +443,112 @@ export function FAB() {
   // re-opens rather than closing again: the menu is still mounted and on its way out.
   const closing = useRef(false);
 
+  // ── THE SLIDE (CUL-1278, D5 = a; the convening's amendments, CUL-1625) ──────────
+  // Press and hold the disc (HOLD_TO_OPEN_MS) and the fan opens as a tap opens it; slide
+  // to a pill and let go, and the release does what a tap on that pill does. The write
+  // rule is `lib/fanSlide.ts`; this half measures, follows the finger, and runs the tap's
+  // own action. No ring (amendment 1): the fan opening is the hold's signal.
+  //
+  // The finger is followed from the disc: the touch belongs to the disc's Pressable from
+  // press to lift, so its moves bubble to the View around it whichever pill they cross,
+  // and no pill's own press ever fires during a slide. A pill is hit-tested against its
+  // PAGE frame (the space the touch is reported in), measured once the fan has landed and
+  // dropped whenever the drawn rows change (a late food, a redeal), so nothing is chosen
+  // against a pill still moving. The disc is measured at the hold: its frame says when the
+  // finger has left it (a roll on the disc is a slow tap), and whether the measure and the
+  // touch share a space at all (rule 2's check). The dwell runs on the events' own clock.
+  // The large-text scroll branch takes no slide: a door scrolled under the pinned chip
+  // still measures where it hides, so the fan there is tap only.
+  //
+  // `slide` is the live gesture; null outside one. `slideTargets` is the current measure
+  // (empty is "not measured", which the rule reads as no hit). `slideNodes` and
+  // `slideActions` are written at render: the node each target measures, and the tap's
+  // own action for it, so a release can only ever run what a tap runs (C-17, C-18). Both
+  // writes are idempotent (the same render writes the same map), and only handlers and
+  // effects read them.
+  const slide = useRef<{
+    start: Point; origin: Point | null; last: Point; left: boolean; rest: Rest | null; disc: Rect | null;
+  } | null>(null);
+  const pressPoint = useRef<Point | null>(null);
+  // The disc's origin in the touch's own space: the press's page point less its point
+  // within the disc. The disc's content takes no touch, so the press's target is always
+  // the Pressable's host, which sits exactly on the measured wrapper.
+  const pressOrigin = useRef<Point | null>(null);
+  const discNode = useRef<View | null>(null);
+  const fanScrolls = useRef(false);
+  const slideTargets = useRef<SlideTarget[]>([]);
+  const slideNodes = useRef(new Map<SlideKey, View>()).current;
+  const slideActions = useRef(new Map<SlideKey, { kind: SlideKind; run: () => void }>());
+  const rowsSig = useRef('');
+  const remeasure = useRef(false);
+  const [slideOver, setSlideOver] = useState<SlideKey | null>(null);
+  const slideOverNow = useRef<SlideKey | null>(null);
+  // Amendment 4: a screen reader cannot drag, and VoiceOver's double-tap-and-hold is a
+  // long press. With one running the disc takes no long press at all, so every press
+  // is the tap it always was.
+  const [screenReaderOn, setScreenReaderOn] = useState(false);
+  useEffect(() => {
+    let live = true;
+    AccessibilityInfo.isScreenReaderEnabled()
+      .then((on) => { if (live && on) setScreenReaderOn(true); })
+      // Unknown reads as no screen reader: the change event still corrects it, and the
+      // cost of the wrong guess is a long press a reader would not have used.
+      .catch((e) => console.warn('[FAB] screen reader probe failed', e));
+    const sub = AccessibilityInfo.addEventListener('screenReaderChanged', (on: boolean) => setScreenReaderOn(on));
+    return () => { live = false; sub?.remove(); };
+  }, []);
+
+  /** The pill under the finger, said once per arrival: the pressed fill, and the
+   *  selection tick on landing on a new pill (never on leaving one for empty space). */
+  const showSlideOver = useCallback((key: SlideKey | null) => {
+    if (slideOverNow.current === key) return;
+    slideOverNow.current = key;
+    setSlideOver(key);
+    if (key !== null) slideCross();
+  }, []);
+
+  /** Measure every target on the page, once the fan is at rest, no redeal runs, the fan is
+   *  not the scroll branch, and the disc's own frame says the measure and the touch share a
+   *  space. All the frames land together or not at all: one null drops the batch, since a
+   *  column with a hole would hit-test as if the hole were empty. A finger already over a
+   *  pill shows it, but its rest has no event time yet, so it cannot write until it moves:
+   *  a still finger is never timed from a clock it did not set. */
+  const measureSlideTargets = useCallback(() => {
+    const s = slide.current;
+    if (!s || !s.disc || !fanSettled.current || dealing.current || fanScrolls.current) return;
+    if (!spacesAgree(s.disc, s.origin)) {
+      console.warn('[FAB] slide measure and touch disagree; the fan stays tap only');
+      return;
+    }
+    const sig = rowsSig.current;
+    const entries = [...slideNodes.entries()].filter(([k]) => slideActions.current.has(k));
+    if (entries.length === 0) return;
+    const out: SlideTarget[] = [];
+    let pending = entries.length;
+    let whole = true;
+    entries.forEach(([key, node]) => {
+      const kind = slideActions.current.get(key)!.kind;
+      measureNodeOnPage(node as never, (rect) => {
+        if (rect) out.push({ key, kind, rect });
+        else whole = false;
+        if (--pending > 0) return;
+        if (!whole) return;
+        if (slide.current !== s || rowsSig.current !== sig) return;
+        if (!fanSettled.current || dealing.current || fanScrolls.current) return;
+        slideTargets.current = out;
+        const hit = targetAt(out, s.last);
+        s.rest = nextRest(null, hit, s.last, null);
+        showSlideOver(hit?.key ?? null);
+      });
+    });
+  }, [slideNodes, showSlideOver]);
+
+  const endSlide = useCallback(() => {
+    slide.current = null;
+    slideTargets.current = [];
+    showSlideOver(null);
+  }, [showSlideOver]);
+
   // CUL-871 (T-21) — THE FAB STEPS ASIDE for a Home capture overlay. The Noticed grid's
   // pinned Done bar stands exactly where this button does (its box is 72–128 pt off the
   // screen bottom, the bar sits at the foot of Home's body), and T-21 requires the way
@@ -510,14 +630,14 @@ export function FAB() {
   }, [open, cancelFanFocus]);
   useEffect(() => cancelFanFocus, [cancelFanFocus]);
 
-  const openMenu = useCallback(() => {
+  const openMenu = useCallback((): boolean => {
     // CUL-1635 — the fan never opens under a completion card. The card paints over the
     // fan (a root sibling) and its Undo row sits on the lowest pill, so a tap meant for
     // the second food of a meal could undo the first. Dismissed on the owner's own tap,
     // before the fan draws: the card's pointerEvents drop with `visible`, so not even
     // its fade can take a touch. A card that is HELD (an unread safety note, an Undo
     // mid-write) wins instead: the fan stays shut until the card's own dwell ends.
-    if (useMomentStore.getState().dismissCornerCard() === 'held') return;
+    if (useMomentStore.getState().dismissCornerCard() === 'held') return false;
     // Light impact on OPEN only — closing the menu commits to nothing and stays silent.
     openMenuHaptic();
     closing.current = false;
@@ -537,8 +657,12 @@ export function FAB() {
       Animated.parallel([
         Animated.timing(fade, { toValue: 1, duration: FADE_MS, useNativeDriver: true }),
         Animated.timing(veil, { toValue: 1, duration: FADE_MS, useNativeDriver: true }),
-      ]).start(({ finished }) => { if (finished) fanSettled.current = true; });
-      return;
+      ]).start(({ finished }) => {
+        if (!finished) return;
+        fanSettled.current = true;
+        measureSlideTargets();
+      });
+      return true;
     }
     // A slot past today's count lands at rest, so a row that mounts late appears in
     // place rather than invisibly at 0. The recent foods are read before the open now
@@ -554,8 +678,13 @@ export function FAB() {
       Animated.timing(fade, { toValue: 1, duration: SCRIM_IN_MS, useNativeDriver: true }),
       Animated.timing(veil, { toValue: 1, duration: SCRIM_IN_MS, useNativeDriver: true }),
       ...(chipSlot ? [fanIn(chipSlot), Animated.sequence([Animated.delay(CHIP_LEAD_MS), choices])] : [choices]),
-    ]).start(({ finished }) => { if (finished) fanSettled.current = true; });
-  }, [turn, fade, veil, slots, chosenExit]);
+    ]).start(({ finished }) => {
+      if (!finished) return;
+      fanSettled.current = true;
+      measureSlideTargets();
+    });
+    return true;
+  }, [turn, fade, veil, slots, chosenExit, measureSlideTargets]);
 
   // `keepVeil` is the hand-off to the log sheet (CUL-1642): everything retracts as a
   // close does except the veil, which the sheet takes over at full.
@@ -563,6 +692,9 @@ export function FAB() {
   // fades on its own `exit`, so a choice never plays the cancel.
   const retract = useCallback((keepVeil: boolean, chosenSlot: number | null = null) => {
     cancelFanFocus();
+    // A close under the finger (a card arriving, a quick meal's hand-over) ends the slide:
+    // nothing left to hit-test, and no tick over whatever took the fan's place.
+    endSlide();
     fanSettled.current = false;
     closing.current = true;
     // A close ends a redeal: the close's own stagger takes the food slots from here.
@@ -616,7 +748,7 @@ export function FAB() {
           Animated.timing(v, { toValue: 0, duration: CLOSE_ITEM_MS, useNativeDriver: true })),
       ),
     ]).start(finish);
-  }, [turn, fade, veil, slots, chosenExit, cancelFanFocus]);
+  }, [turn, fade, veil, slots, chosenExit, cancelFanFocus, endSlide]);
 
   const closeMenu = useCallback(() => retract(false), [retract]);
 
@@ -675,6 +807,56 @@ export function FAB() {
     Animated.spring(pressScale, { toValue: 1, useNativeDriver: true, ...PRESS_OUT_SPRING }).start();
   }, [pressScale]);
 
+  // The hold. A long press replaces the press it ends (Pressable fires no onPress after
+  // one), so on an open menu it does what a tap there does, closes, rather than leaving
+  // a slow press on the × answered by nothing. On a closed menu it opens the fan as a
+  // tap would and starts following the finger.
+  const holdDisc = useCallback(() => {
+    if (open && !closing.current) { closeMenu(); return; }
+    const start = pressPoint.current;
+    if (!openMenu() || !start || fanScrolls.current) return;
+    const s = { start, origin: pressOrigin.current, last: start, left: false, rest: null, disc: null as Rect | null };
+    slide.current = s;
+    slideTargets.current = [];
+    // The disc does not move (its press scale aside), so one measure serves the slide.
+    measureNodeOnPage(discNode.current as never, (rect) => {
+      if (slide.current !== s) return;
+      s.disc = rect;
+      measureSlideTargets();
+    });
+  }, [open, openMenu, closeMenu, measureSlideTargets]);
+
+  // `t` is the event's own timestamp, the clock the dwell runs on (rule 1).
+  const followSlide = (p: Point, t: number | null) => {
+    const s = slide.current;
+    if (!s) return;
+    if (!s.left && leftDisc(s.disc, s.start, p)) s.left = true;
+    s.last = p;
+    const hit = targetAt(slideTargets.current, p);
+    s.rest = nextRest(s.rest, hit, p, t);
+    showSlideOver(hit?.key ?? null);
+  };
+
+  const releaseSlide = (p: Point, t: number | null) => {
+    const s = slide.current;
+    if (!s) return;
+    const outcome = releaseOutcome({
+      targets: slideTargets.current,
+      at: p,
+      rest: s.rest,
+      left: s.left || leftDisc(s.disc, s.start, p),
+      busy: closing.current || dealing.current,
+      now: t,
+    });
+    const action = outcome.kind === 'act' ? slideActions.current.get(outcome.key) : undefined;
+    endSlide();
+    // A menu that closed under the finger (a card arriving, the overlay) has nothing
+    // left to act on or to close.
+    if (!openNow.current || closing.current) return;
+    if (outcome.kind === 'close') closeMenu();
+    else action?.run();
+  };
+
   // The host hides everything under the menu from assistive tech (HiddenUnderFabMenu)
   // for exactly as long as the menu is mounted, and never outlives this component.
   useEffect(() => {
@@ -689,6 +871,8 @@ export function FAB() {
   // timer) should not be what discovers that; the menu simply closes.
   useEffect(() => {
     if (!captureOverlayOpen) return;
+    endSlide();
+    fanSettled.current = false;
     closing.current = false;
     dealAnim.current?.stop();
     dealAnim.current = null;
@@ -702,7 +886,7 @@ export function FAB() {
     fade.setValue(0);
     veil.setValue(0);
     slots.forEach((v) => v.setValue(0));
-  }, [captureOverlayOpen, turn, fade, veil, slots, chosenExit]);
+  }, [captureOverlayOpen, turn, fade, veil, slots, chosenExit, endSlide]);
 
   // CUL-1635, the other direction: a card that reveals while the fan is open (the
   // picker path reveals ~450ms after its modal leaves) closes the fan rather than being
@@ -859,9 +1043,22 @@ export function FAB() {
       if (dealAnim.current !== anim) return;
       dealAnim.current = null;
       dealing.current = false;
+      measureSlideTargets();
     });
-  }, [dealReady, activePetId, slots]);
+  }, [dealReady, activePetId, slots, measureSlideTargets]);
   useEffect(() => () => dealAnim.current?.stop(), []);
+
+  // The drawn rows changed under a slide (a late food, a redeal): the render that drew
+  // them dropped the measure, and this re-measures once they are laid out. Every render,
+  // because it is declared above the stand-down's early return, where the rows are built.
+  useEffect(() => {
+    if (!remeasure.current) return;
+    remeasure.current = false;
+    if (!slide.current) return;
+    slide.current.rest = null;
+    showSlideOver(null);
+    measureSlideTargets();
+  });
 
   async function handleQuickMeal(food: PickerFood, slot: number) {
     // Write-time pet identity (multi-pet spec §6): read the store at the moment
@@ -1029,6 +1226,18 @@ export function FAB() {
   // "Recent foods" and its "No foods logged yet" line left with the panel. A pet with
   // no foods yet still has `Log food` in the thumb's slot, which is the way forward.
   const rows: FanRow[] = [];
+  // CUL-1278 — the pills a slide can let go on, rebuilt with the rows, each with the tap's
+  // own action. The pet chip is not one: a switch is not a log, so a slide that ends on
+  // it closes (lib/fanSlide.ts rule 4).
+  const actions = new Map<SlideKey, { kind: SlideKind; run: () => void }>();
+  slideActions.current = actions;
+  const slideTarget = (key: SlideKey, kind: SlideKind, run: () => void) => {
+    actions.set(key, { kind, run });
+    return (node: View | null) => {
+      if (node) slideNodes.set(key, node);
+      else slideNodes.delete(key);
+    };
+  };
 
   // CUL-1636 — planned from the window before anything is drawn (lib/fanBudget.ts): the
   // oldest foods leave first when the fan would stand taller than the screen, and the
@@ -1143,15 +1352,20 @@ export function FAB() {
     // in B-745 PR 1 (R4: every log starts from the event; photos still attach inside
     // each event flow), as was the older "Log with photo" row before it — both were
     // redundant second pathways to this one destination.
+    const openMore = whileOpen(() => handOffToLogSheet());
+    const moreTarget = slideTarget('more', 'door', openMore);
+    const moreLeads = rows.length === 0;
     rows.push({
       key: 'more',
       node: (
         <FanPill
           // The fan's top row when there is no pet chip above it (CUL-724).
-          ref={rows.length === 0 ? fanLeadRef : undefined}
+          ref={(node: View | null) => { moreTarget(node); if (moreLeads) fanLeadRef(node); }}
+          testID="fab-pill-more"
           style={pillWidth}
+          held={slideOver === 'more'}
           reducedMotion={reducedMotion}
-          onPress={whileOpen(() => handOffToLogSheet())}
+          onPress={openMore}
           accessibilityRole="button"
         >
           <View style={[styles.pillGlyph, styles.pillGlyphQuiet]}>
@@ -1173,24 +1387,41 @@ export function FAB() {
     //
     // CUL-1657 (D6): the stool row is the split pill, Normal and Loose. It keeps the
     // row's key and its slot, so the fan's order and its eight slots are unchanged.
+    // A slide that lets go on either segment opens its confirm, exactly as the tap does,
+    // and never writes (amendment 2, as PR-29b split the pill).
+    const openNormal = whileOpen(() => handOffToLogSheet('stool_normal'));
+    const openLoose = whileOpen(() => handOffToLogSheet('diarrhea'));
+    const segTargets = {
+      'stool-normal': slideTarget('stool-normal', 'confirm', openNormal),
+      'stool-loose': slideTarget('stool-loose', 'confirm', openLoose),
+    } as Record<SlideKey, (node: View | null) => void>;
     rows.push({
       key: 'diarrhea',
       node: (
         <StoolSplitPill
           style={pillWidth}
           petIds={pets.map((p) => p.id)}
-          onNormal={whileOpen(() => handOffToLogSheet('stool_normal'))}
-          onLoose={whileOpen(() => handOffToLogSheet('diarrhea'))}
+          onNormal={openNormal}
+          onLoose={openLoose}
+          segRef={(key, node) => segTargets[key]?.(node)}
+          slideOver={slideOver}
         />
       ),
     });
+    // Amendment 2: a slide that lets go on Vomit opens the confirm, where Saw it or Found
+    // it is answered, and never writes. A found vomit written "now" would be placed
+    // against the nearest meal by the timing lane.
+    const openVomit = whileOpen(() => handOffToLogSheet('vomit'));
     rows.push({
       key: 'vomit',
       node: (
         <FanPill
+          ref={slideTarget('vomit', 'confirm', openVomit)}
+          testID="fab-pill-vomit"
           style={pillWidth}
+          held={slideOver === 'vomit'}
           reducedMotion={reducedMotion}
-          onPress={whileOpen(() => handOffToLogSheet('vomit'))}
+          onPress={openVomit}
           accessibilityRole="button"
         >
           <View style={[styles.pillGlyph, styles.pillGlyphSymptom]}>
@@ -1202,13 +1433,17 @@ export function FAB() {
       ),
     });
 
+    const openLogFood = whileOpen(() => { closeMenu(); router.push('/log?type=meal'); });
     rows.push({
       key: 'log-food',
       node: (
         <FanPill
+          ref={slideTarget('log-food', 'door', openLogFood)}
+          testID="fab-pill-log-food"
           style={pillWidth}
+          held={slideOver === 'log-food'}
           reducedMotion={reducedMotion}
-          onPress={whileOpen(() => { closeMenu(); router.push('/log?type=meal'); })}
+          onPress={openLogFood}
           accessibilityRole="button"
         >
           <View style={[styles.pillGlyph, styles.pillGlyphQuiet]}>
@@ -1234,16 +1469,24 @@ export function FAB() {
       // Its slot, as `slotFor` below picks it: the foods are the last rows, newest
       // lowest, so a food's distance from the disc is the foods drawn after it.
       const foodSlot = drawnFoods.length - 1 - j;
+      const foodKey = `food-${food.id}`;
+      // The one writer a slide can reach, through the tap's own call: the same write, the
+      // same card, the same flight and trial flag. Whether a release may run it is the
+      // dwell rule's (lib/fanSlide.ts rule 1), never this row's.
+      const logThis = whileOpen(() => { void handleQuickMeal(food, foodSlot); });
       rows.push({
-        key: `food-${food.id}`,
+        key: foodKey,
         node: (
           <FanPill
+            ref={slideTarget(foodKey, 'food', logThis)}
+            testID={`fab-pill-${foodKey}`}
             style={pillWidth}
             reducedMotion={reducedMotion}
-            onPress={whileOpen(() => { void handleQuickMeal(food, foodSlot); })}
+            onPress={logThis}
             disabled={logging !== null}
-            // The pressed state holds through the local write, in place of a spinner.
-            held={logging === food.id}
+            // The pressed state holds through the local write, in place of a spinner, and
+            // shows the pill a slide is resting on.
+            held={logging === food.id || slideOver === foodKey}
             accessibilityRole="button"
             accessibilityLabel={formatTag ? `${foodLabel}, ${formatTag.toLowerCase()}` : foodLabel}
             // CUL-724's hint half: every other pill opens something; this one writes.
@@ -1280,6 +1523,23 @@ export function FAB() {
     slots.slice(0, foodSlotCount.current).forEach((v) => v.setValue(0));
   }
   fanLeadKey.current = open ? rows[0]?.key ?? null : null;
+  // CUL-1278: rows drawn differently are pills somewhere else. The measure goes now, in
+  // the render that moves them, so no move between this commit and the re-measure can
+  // hit-test a stale frame; the effect above measures again once they are laid out.
+  // The keys, and everything else that moves a pill without changing its key: the scroll
+  // branch, the width cap, each food's line count.
+  const sig = [
+    rows.map((r) => r.key).join('|'),
+    fanPlan.scroll ? 'scroll' : 'column',
+    fanPlan.pillMaxWidth,
+    fanPlan.foods.map((f) => `${f.id}:${f.numberOfLines}`).join('|'),
+  ].join('#');
+  fanScrolls.current = fanPlan.scroll;
+  if (rowsSig.current !== sig) {
+    rowsSig.current = sig;
+    slideTargets.current = [];
+    remeasure.current = true;
+  }
 
   // Beat 2, and its Reduce Motion frame: in motion the one glyph turns; still, the
   // plus and the × crossfade on the menu's fade, so the open state still reads as
@@ -1366,36 +1626,65 @@ export function FAB() {
             </View>
           )}
 
-          <Pressable
-            onPress={toggleMenu}
-            onPressIn={pressIn}
-            onPressOut={pressOut}
-            accessibilityRole="button"
-            accessibilityLabel={open ? 'Close menu' : 'Log event'}
-            accessibilityState={{ expanded: open }}
+          {/* The slide follows the finger here: the touch belongs to the disc from press
+              to lift, so its moves bubble to this View whichever pill they cross. */}
+          <View
+            ref={discNode}
+            collapsable={false}
+            testID="fab-disc-touch"
+            onTouchMove={(e) => followSlide(
+              { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY }, e.nativeEvent.timestamp ?? null)}
+            onTouchEnd={(e) => releaseSlide(
+              { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY }, e.nativeEvent.timestamp ?? null)}
+            onTouchCancel={() => {
+              // The system took the touch (a call, a gesture): never a choice. Close.
+              if (!slide.current) return;
+              endSlide();
+              if (openNow.current && !closing.current) closeMenu();
+            }}
           >
-            <Animated.View style={[styles.fab, { transform: [{ scale: pressScale }] }]}>
-              {reducedMotion ? (
-                <>
-                  <Animated.View
-                    style={[styles.fabInner, { opacity: fade.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }]}
-                  >
+            <Pressable
+              onPress={toggleMenu}
+              onPressIn={(e) => {
+                // A press with no coordinates (a synthesized one) cannot start a slide.
+                const ne = e?.nativeEvent;
+                pressPoint.current = ne ? { x: ne.pageX, y: ne.pageY } : null;
+                pressOrigin.current = ne && typeof ne.locationX === 'number' && typeof ne.locationY === 'number'
+                  ? { x: ne.pageX - ne.locationX, y: ne.pageY - ne.locationY }
+                  : null;
+                pressIn();
+              }}
+              onPressOut={pressOut}
+              // Amendment 4: no long press under a screen reader, so every press is a tap.
+              onLongPress={screenReaderOn ? undefined : holdDisc}
+              delayLongPress={HOLD_TO_OPEN_MS}
+              accessibilityRole="button"
+              accessibilityLabel={open ? 'Close menu' : 'Log event'}
+              accessibilityState={{ expanded: open }}
+            >
+              <Animated.View pointerEvents="none" style={[styles.fab, { transform: [{ scale: pressScale }] }]}>
+                {reducedMotion ? (
+                  <>
+                    <Animated.View
+                      style={[styles.fabInner, { opacity: fade.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }]}
+                    >
+                      <View style={styles.plusH} />
+                      <View style={styles.plusV} />
+                    </Animated.View>
+                    <Animated.View style={[styles.fabInner, styles.fabGlyphStacked, styles.fabGlyphCross, { opacity: fade }]}>
+                      <View style={styles.plusH} />
+                      <View style={styles.plusV} />
+                    </Animated.View>
+                  </>
+                ) : (
+                  <Animated.View style={[styles.fabInner, { transform: [{ rotate: glyphTurn }] }]}>
                     <View style={styles.plusH} />
                     <View style={styles.plusV} />
                   </Animated.View>
-                  <Animated.View style={[styles.fabInner, styles.fabGlyphStacked, styles.fabGlyphCross, { opacity: fade }]}>
-                    <View style={styles.plusH} />
-                    <View style={styles.plusV} />
-                  </Animated.View>
-                </>
-              ) : (
-                <Animated.View style={[styles.fabInner, { transform: [{ rotate: glyphTurn }] }]}>
-                  <View style={styles.plusH} />
-                  <View style={styles.plusV} />
-                </Animated.View>
-              )}
-            </Animated.View>
-          </Pressable>
+                )}
+              </Animated.View>
+            </Pressable>
+          </View>
         </View>
       </View>
 
