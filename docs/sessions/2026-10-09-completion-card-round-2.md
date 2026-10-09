@@ -47,3 +47,23 @@ A workflow (4 readers, 4 candidates, 4 lens judges, 2 adversarial verifiers) set
 - **What the verifiers caught, now in the proposal:** the deeper teal disc fails 3:1 against its own gold halo in the celebrate state (fixed with a 2pt white gap before the halo); an outline would match the content cards, so the lift is shadow only; the amber trial panel needs a stronger bar to keep its chroma (one new token); a log from the day screen would land a white card on night, so the card takes the night ground over a night screen; the symptom card's dim passes taps through to Home's look chips.
 
 Decisions requested (on the page): approve daylight with polish §5 R1 reworded (a better-than-the-rule brief); the mark (deeper teal with a gap, recommended, or the teal ink disc); a tap on the symptom card's dim closes the card (recommended).
+
+## Round 4, same session: the check writes itself
+
+**PM rulings on round 3:** call 1 (daylight) and call 2 (the deeper teal disc with the white gap) approved; call 3 (the dim) held for a plainer explanation. The PM asked for motion on the new check ("like we do with the FAB") and asked whether the night state exists.
+
+A second workflow (4 readers, 4 motion concepts, 5 lens judges, a synthesis, an adversarial pass) chose the motion. Scores: the check writes itself 7.8, the pill becomes the check 7.2, quiet weight 6.6, into the record 4.1. The adversarial pass returned 15 issues; the ones that change what the PM sees are now in the mock:
+- the gold fades in at scale 1 (a bloom would close the 2pt gap);
+- on the + path the teal fill reveals the check in one beat, no separate pen (four beats would tire at 7 a day);
+- finishing on touch never advances the gold, so a finger on "Refused" never flashes it;
+- Undo makes the controls inert at once.
+
+The rest (timers keyed to the record, the vessel fill keyed to the flight's `landed` phase, the trial flag resolving before the gold) are build rules in the new spec.
+
+**Night state:** it exists on one narrow path (9pm summary on, nothing logged, "Log an event", then a meal, dose or weight through `/log`), at most once a night. No night variant; the daylight card plays the same there.
+
+**The dim:** round 3's "tap closes the card" is withdrawn. The dim covers the + button and the tabs, so + would take two taps, and closing early ends the Undo window. New recommendation: dimmed means inactive (the look chips under the dim ignore taps).
+
+**Shipped in this PR:** round 4 of `docs/culprit-completion-card-mockups.html` (seven playable states, a 4× slow-motion toggle, frame-by-frame stills and a timeline); the new `docs/nyx-completion-card-requirements.md` v0.9 (the ground token map, the motion timeline and constants, every state, the engines rule, the PR plan and QA matrix). It becomes v1.0 BUILD-READY on the two open calls. The spec is not yet in CLAUDE.md's Read-These table; that table is size-guarded, so add it in the first build PR with an offsetting trim.
+
+**Open calls:** R4-1 (on the + path, the name lands at about 0.2s, recommended, or after the mark at about 0.9s); R4-2 (the dim: dimmed means inactive, recommended).
