@@ -44,7 +44,8 @@
 // A glyph's floor is 3:1, and the bright teal misses that on white too (2.26:1), so the
 // question CUL-1664 asked was whether to scan glyph tints as well. The count says no:
 //   - `color={…}` / `tint={…}` props naming one of the three names: 29 sites (the auth
-//     heroes, chevrons, ScopeMenu's checks, the completion cards' checks on dark …);
+//     heroes, chevrons, ScopeMenu's checks, the completion cards' checks, on dark until
+//     CUL-1691 PR 1 …);
 //   - object values under a non-`*Color` key: 22 more — nine Switch tracks, and tint maps
 //     and chart tokens that are mostly FILLS (the Signal rails and band, a composition
 //     bar), which a grep cannot tell from a glyph.
