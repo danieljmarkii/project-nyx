@@ -3,27 +3,40 @@ import { Animated, StyleSheet, View, type LayoutChangeEvent } from 'react-native
 import { theme } from '../../constants/theme';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
-import type { WeightBandModel } from '../../lib/chartModels';
+import { WEIGHT_BAND_FRAC, type WeightBandModel, type WeightPoint } from '../../lib/chartModels';
 import { weightDotsA11yLabel, weightWord } from '../../lib/chartCopy';
 import { ThemedText } from '../ui/ThemedText';
 import { useDrawIn } from '../motion/drawInMotion';
 
-// WeightDots — readings as dots by DATE on a fixed ±10 % band, to the §05 standard
-// (CUL-1064; design authority `docs/culprit-design-v4-mockups.html` §04 option A, ruled:
-// "dots by date on a fixed ±10% band with no fill and the delta spoken").
+// WeightDots — readings as dots by DATE on a stepped band, to the §05 standard (CUL-1064;
+// design authority `docs/culprit-design-v4-mockups.html` §04 option A, ruled: "dots by
+// date on a fixed ±10% band with no fill and the delta spoken"; the band's width amended by
+// CUL-1716, `docs/culprit-weight-card-mockups.html`).
 //
 //   a mark per fact ........ a dot per reading, where its date is — not evenly spaced
 //   a count on every mark .. the first and last values printed; the delta is the CALLER's line
-//   the denominator ........ the band, its edges labelled +10 % / −10 % of the first reading
-//   the uncounted .......... a reading past the band is drawn at the edge as a HOLLOW dot with
-//                            its value printed beside it, and said in the label — so a 35 %
-//                            loss never draws like a 10 % one to a sighted reader either
+//   the denominator ........ the band, its edges labelled with its width (±10, 20 or 30 % of the
+//                            first reading); when it has widened, the ±10 % lines stay,
+//                            labelled, so the scale a reader learned is still drawn
+//   the uncounted .......... a reading past ±30 % is drawn at the edge as a HOLLOW dot with
+//                            its value printed beside it, and said in the label — so a 45 %
+//                            loss never draws like a 30 % one to a sighted reader either
 //   the window named ....... the first and last dates under their dots
 //
 // NO FILL. A fill says "quantity from zero" and this axis does not start at zero; there
-// is no area view in this tree and the test pins its absence. The band never moves: with
-// two readings a clipped range would make any change fill the plot, and the fixed band
-// makes a 2 % change look like 2 % at two readings and at six.
+// is no area view in this tree and the test pins its absence. The band never NARROWS below
+// ±10 %: with two readings a range fitted to the data would make any change fill the plot,
+// and the floor makes a 2 % change look like 2 % at two readings and at six. It only widens,
+// in fixed steps (`weightBand`), so a 15 % loss draws as 15 % instead of a dot pinned to
+// the ±10 % edge (the PM's device read, CUL-1716).
+//
+// THE REFERENCE LINE IS NOT THE WEIGHT. The first reading's level is drawn dotted and faint,
+// never solid: a solid line across the plot read as the weight itself, so two readings 15 %
+// apart looked flat (CUL-1716). Its dot carries its value.
+//
+// THE LAST VALUE NEVER LEAVES THE PLOT. It is right-aligned to its dot and sits above it
+// (below it in the band's upper half, or when the neighbouring dot is in the way); clamped
+// beside its dot it ran into the gutter's band label on every change near the edge.
 //
 // HONEST AT LOW COUNTS. One reading is a number and its date, not a line (n = 1 says
 // nothing about movement); two readings are the pair on the band; the empty state is
@@ -49,11 +62,53 @@ interface Props {
   plotHeight?: number;
 }
 
-const DEFAULT_PLOT_HEIGHT = 56;
+const DEFAULT_PLOT_HEIGHT = 96;
 const DOT_SIZE = 6;
 const LAST_DOT_SIZE = 8;
 /** Room at the right for the band-edge labels. */
-const EDGE_LABEL_WIDTH = 40;
+export const EDGE_LABEL_WIDTH = 40;
+/** Where the band labels start, right of the plot. */
+const EDGE_LABEL_GAP = 6;
+/** Room above and below the band for a value label on an edge dot. */
+export const LABEL_ROOM = 22;
+/** The first dot is inset by its own radius so it is never half off the card. */
+const X_INSET = LAST_DOT_SIZE / 2;
+const LAST_LABEL_HEIGHT = 18;
+/** An estimate of one character of the last value's label (textSM, semibold, tabular),
+ *  used only to tell whether the neighbouring dot sits under the label. */
+const LAST_LABEL_CHAR_W = 7.5;
+
+/** Whether the last value goes ABOVE its dot: above in the band's lower half, below in its
+ *  upper half, and the other side when the neighbouring dot would sit under the label. */
+export function lastValueAbove(
+  points: readonly WeightPoint[],
+  label: string,
+  px: (x: number) => number,
+  py: (y: number) => number,
+  /** The plot area's full height, label room included. */
+  plotBottom: number,
+): boolean {
+  const n = points.length;
+  const last = points[n - 1];
+  const prefer = last.y <= 0.5;
+  const prev = n > 1 ? points[n - 2] : null;
+  if (!prev) return prefer;
+  const right = px(last.x) + 2;
+  const left = right - label.length * LAST_LABEL_CHAR_W;
+  const r = DOT_SIZE / 2;
+  const covers = (above: boolean) => {
+    const top = above ? py(last.y) - LAST_DOT_SIZE / 2 - 2 - LAST_LABEL_HEIGHT : py(last.y) + LAST_DOT_SIZE / 2 + 2;
+    const x = px(prev.x);
+    const y = py(prev.y);
+    return x + r >= left && x - r <= right && y + r >= top && y - r <= top + LAST_LABEL_HEIGHT;
+  };
+  // Flipped only into room the plot has: a label below a bottom-edge dot would sit on the dates.
+  const fits = (above: boolean) => {
+    const top = above ? py(last.y) - LAST_DOT_SIZE / 2 - 2 - LAST_LABEL_HEIGHT : py(last.y) + LAST_DOT_SIZE / 2 + 2;
+    return top >= 0 && top + LAST_LABEL_HEIGHT <= plotBottom;
+  };
+  return covers(prefer) && !covers(!prefer) && fits(!prefer) ? !prefer : prefer;
+}
 
 export function WeightDots({ model, unit, formatDate, drawIn = false, identity = 'weight', plotHeight = DEFAULT_PLOT_HEIGHT }: Props) {
   const reducedMotion = useReducedMotion();
@@ -90,26 +145,44 @@ export function WeightDots({ model, unit, formatDate, drawIn = false, identity =
   }
 
   const plotW = Math.max(0, width - EDGE_LABEL_WIDTH);
-  const px = (x: number) => x * plotW;
-  const py = (y: number) => (1 - y) * plotHeight;
+  const px = (x: number) => X_INSET + x * Math.max(0, plotW - X_INSET);
+  const py = (y: number) => LABEL_ROOM + (1 - y) * plotHeight;
   const n = model.points.length;
+  const frac = model.band?.frac ?? WEIGHT_BAND_FRAC;
+  const pct = Math.round(frac * 100);
+  // The ±10 % lines, kept when the band has widened past them (their place in the band).
+  const guide = frac > WEIGHT_BAND_FRAC ? WEIGHT_BAND_FRAC / frac / 2 : null;
+  const lastWord = weightWord(model.last.value, unit);
+  const lastAbove = lastValueAbove(model.points, lastWord, px, py, plotHeight + LABEL_ROOM * 2);
 
   return (
     <View accessible accessibilityLabel={a11y} testID="weight-dots">
       <View importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
-        <View style={[styles.plot, { height: plotHeight }]} onLayout={onLayout} testID="weight-plot">
+        <View style={[styles.plot, { height: plotHeight + LABEL_ROOM * 2 }]} onLayout={onLayout} testID="weight-plot">
           {width > 0 && (
             <>
-              {/* The band: dashed edges, the first reading's own line solid between them. */}
+              {/* The band: dashed, labelled edges; the first reading's level dotted and faint. */}
               <View style={[styles.edge, styles.edgeDashed, { top: py(1), width: plotW }]} />
-              <View style={[styles.edge, { top: py(0.5), width: plotW }]} />
+              <View style={[styles.edge, styles.edgeFaint, { top: py(0.5), width: plotW }]} testID="weight-ref-line" />
               <View style={[styles.edge, styles.edgeDashed, { top: py(0), width: plotW }]} />
-              <ThemedText style={[styles.edgeLabel, { top: py(1) - 6, left: plotW + 4 }]} testID="weight-edge-hi">
-                +10%
+              <ThemedText style={[styles.edgeLabel, { top: py(1) - 6, left: plotW + EDGE_LABEL_GAP }]} testID="weight-edge-hi">
+                {`+${pct}%`}
               </ThemedText>
-              <ThemedText style={[styles.edgeLabel, { top: py(0) - 6, left: plotW + 4 }]} testID="weight-edge-lo">
-                −10%
+              <ThemedText style={[styles.edgeLabel, { top: py(0) - 6, left: plotW + EDGE_LABEL_GAP }]} testID="weight-edge-lo">
+                {`−${pct}%`}
               </ThemedText>
+              {guide != null && (
+                <>
+                  <View style={[styles.edge, styles.edgeFaint, { top: py(0.5 + guide), width: plotW }]} testID="weight-guide-hi" />
+                  <View style={[styles.edge, styles.edgeFaint, { top: py(0.5 - guide), width: plotW }]} testID="weight-guide-lo" />
+                  <ThemedText style={[styles.edgeLabel, { top: py(0.5 + guide) - 6, left: plotW + EDGE_LABEL_GAP }]} testID="weight-guide-hi-label">
+                    +10%
+                  </ThemedText>
+                  <ThemedText style={[styles.edgeLabel, { top: py(0.5 - guide) - 6, left: plotW + EDGE_LABEL_GAP }]} testID="weight-guide-lo-label">
+                    −10%
+                  </ThemedText>
+                </>
+              )}
               {model.points.map((p, i) => {
                 const last = i === n - 1;
                 const size = last ? LAST_DOT_SIZE : DOT_SIZE;
@@ -141,17 +214,28 @@ export function WeightDots({ model, unit, formatDate, drawIn = false, identity =
                   </Animated.View>
                 ) : null,
               )}
-              {/* The first value, small, above its dot; the last value with its unit beside its dot. */}
+              {/* The first value, small, above its dot; the last value with its unit, right-aligned
+                  to its dot and above or below it, never in the gutter. */}
               <Animated.View style={[styles.firstValue, { left: px(model.first.x) + 5, top: py(model.first.y) - 16 }, labelStyle]}>
                 <ThemedText style={styles.smallValue} testID="weight-first-value">
                   {model.first.value.toFixed(1)}
                 </ThemedText>
               </Animated.View>
               <Animated.View
-                style={[styles.lastValue, { left: Math.min(px(model.last.x) + 7, plotW - 4), top: py(model.last.y) - 8 }, labelStyle]}
+                style={[
+                  styles.lastValue,
+                  {
+                    right: width - (px(model.last.x) + 2),
+                    top: lastAbove
+                      ? py(model.last.y) - LAST_DOT_SIZE / 2 - 2 - LAST_LABEL_HEIGHT
+                      : py(model.last.y) + LAST_DOT_SIZE / 2 + 2,
+                  },
+                  labelStyle,
+                ]}
+                testID="weight-last-value-box"
               >
                 <ThemedText style={styles.lastValueText} testID="weight-last-value">
-                  {weightWord(model.last.value, unit)}
+                  {lastWord}
                 </ThemedText>
               </Animated.View>
             </>
@@ -200,6 +284,12 @@ const styles = StyleSheet.create({
   edgeDashed: {
     borderStyle: 'dashed',
   },
+  // The reference level and the ±10 % guides: dotted and hairline, never a line that
+  // could pass for the weight.
+  edgeFaint: {
+    borderStyle: 'dotted',
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   edgeLabel: {
     position: 'absolute',
     fontSize: theme.textXS,
@@ -236,6 +326,7 @@ const styles = StyleSheet.create({
   },
   lastValueText: {
     fontSize: theme.textSM,
+    lineHeight: LAST_LABEL_HEIGHT,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
     fontVariant: ['tabular-nums'],
@@ -243,7 +334,6 @@ const styles = StyleSheet.create({
   dates: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: theme.space0_5,
     paddingRight: EDGE_LABEL_WIDTH,
   },
   date: {

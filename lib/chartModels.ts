@@ -516,8 +516,21 @@ export function lanesUntimedLine(lanes: readonly LaneModel[]): string {
 
 // ── Weight, dots by date ──────────────────────────────────────────────────────
 
-/** The band is ±this fraction of the FIRST reading, and it never moves. */
+/** The band's floor: ±this fraction of the FIRST reading. It never narrows below it, so a
+ *  2 % change draws as 2 % at two readings and at six (R4-4's protection). */
 export const WEIGHT_BAND_FRAC = 0.1;
+
+/** The widths the band may take, smallest first (CUL-1716, PM ruling 2026-10-09: the
+ *  stepped band, amending R4-4). The band is the first step that holds every reading, so
+ *  a 15 % loss draws as 15 % instead of a hollow dot pinned to the ±10 % edge. It stops at
+ *  ±30 %: past that a reading is more likely a typo or kilograms entered as pounds, and
+ *  widening to fit it would flatten every real change beside it, so it clips as before. */
+export const WEIGHT_BAND_STEPS = [0.1, 0.2, 0.3] as const;
+
+/** Float slack for the step choice AND the clip test, so the two can never disagree: a
+ *  4.4 → 3.96 loss is 0.10000000000000007 of the first reading and must draw ON the ±10 %
+ *  edge, unclipped, not widen the band. */
+const WEIGHT_BAND_EPS = 1e-9;
 
 export interface WeightBandReading {
   value: number;
@@ -529,13 +542,18 @@ export interface WeightBandReading {
 export interface WeightPoint {
   /** 0..1 by DATE across the readings' span — not by index. */
   x: number;
-  /** 0..1 within the band (0 = −10 %, 1 = +10 %), clamped. */
+  /** 0..1 within the band (0 = its lower edge, 1 = its upper edge), clamped. */
   y: number;
   value: number;
   occurredAt: string;
   ms: number;
   /** The reading lies outside the band and was drawn at its edge; the number still prints. */
   clipped: boolean;
+  /** The reading is more than ±10 % (`WEIGHT_BAND_FRAC`) from the first, whatever width the
+   *  band stepped to. The words disclose an interior reading past this line: a widened band
+   *  draws a 30 % dip in place, and the delta beside it must still not say "No change"
+   *  alone (CUL-1716). */
+  pastFloor: boolean;
 }
 
 /** `empty` nothing to draw · `number` one reading is a number and its date · `pair` two
@@ -546,8 +564,9 @@ export interface WeightBandModel {
   state: WeightBandState;
   /** Ascending by date. */
   points: WeightPoint[];
-  /** The band around the first reading; null when empty. */
-  band: { ref: number; lo: number; hi: number } | null;
+  /** The band around the first reading; null when empty. `frac` is its half-width as a
+   *  fraction of `ref`, one of `WEIGHT_BAND_STEPS`. */
+  band: { ref: number; lo: number; hi: number; frac: number } | null;
   first: WeightPoint | null;
   last: WeightPoint | null;
   /** last − first in the caller's unit (the readings' own — lbs on the app's surfaces),
@@ -562,7 +581,8 @@ export interface WeightBandModel {
 }
 
 /**
- * Dots by date on a fixed ±10 % band around the first reading. Readings are sorted by
+ * Dots by date on a stepped band around the first reading: the smallest of ±10 / 20 / 30 %
+ * that holds every reading (`WEIGHT_BAND_STEPS`). Readings are sorted by
  * instant (parsed, C-40). With a zero-width span (every reading at one instant) every
  * point sits at x = 0.5 rather than dividing by zero.
  */
@@ -585,20 +605,25 @@ export function weightBand(readings: readonly WeightBandReading[]): WeightBandMo
     return { state: 'empty', points: [], band: null, first: null, last: null, delta: null, deltaFrac: null, spanDays: null };
   }
   const ref = parsed[0].value;
-  const lo = ref * (1 - WEIGHT_BAND_FRAC);
-  const hi = ref * (1 + WEIGHT_BAND_FRAC);
+  const maxDev = Math.max(...parsed.map((r) => Math.abs(r.value - ref) / ref));
+  const frac = WEIGHT_BAND_STEPS.find((f) => maxDev <= f + WEIGHT_BAND_EPS) ?? WEIGHT_BAND_STEPS[WEIGHT_BAND_STEPS.length - 1];
+  const lo = ref * (1 - frac);
+  const hi = ref * (1 + frac);
   const t0 = parsed[0].ms;
   const span = parsed[parsed.length - 1].ms - t0;
   const points: WeightPoint[] = parsed.map((r) => {
     const rawY = hi === lo ? 0.5 : (r.value - lo) / (hi - lo);
     const y = Math.max(0, Math.min(1, rawY));
+    // Clipped by the same slack the step used: a reading the step held is never "outside".
+    const dev = (r.value - ref) / ref;
     return {
       x: span > 0 ? (r.ms - t0) / span : 0.5,
       y,
       value: r.value,
       occurredAt: r.occurredAt,
       ms: r.ms,
-      clipped: rawY !== y,
+      clipped: Math.abs(dev) > frac + WEIGHT_BAND_EPS,
+      pastFloor: Math.abs(dev) > WEIGHT_BAND_FRAC + WEIGHT_BAND_EPS,
     };
   });
   const first = points[0];
@@ -608,7 +633,7 @@ export function weightBand(readings: readonly WeightBandReading[]): WeightBandMo
   return {
     state,
     points,
-    band: { ref, lo, hi },
+    band: { ref, lo, hi, frac },
     first,
     last,
     delta: n >= 2 ? last.value - first.value : null,

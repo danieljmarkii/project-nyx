@@ -434,7 +434,7 @@ describe('episodeDaysOf — one entry per EPISODE, through the engine\'s own col
   });
 });
 
-describe('weightBand — dots by date on a fixed ±10 % band', () => {
+describe('weightBand — dots by date on a stepped band', () => {
   const r = (value: number, iso: string) => ({ value, occurredAt: iso });
 
   it('x is by DATE, not index: uneven dates give unequal spacing', () => {
@@ -447,12 +447,48 @@ describe('weightBand — dots by date on a fixed ±10 % band', () => {
     expect(b).toBeCloseTo(1 / 71, 6);
   });
 
-  it('the band is fixed on the FIRST reading and never moves with later ones', () => {
+  it('the band centres on the FIRST reading and stops at ±30 %: past it, a reading clips to the edge', () => {
     const m = weightBand([r(4.6, '2026-07-03T08:00:00Z'), r(3.0, '2026-08-03T08:00:00Z')]);
-    expect(m.band).toEqual({ ref: 4.6, lo: 4.6 * (1 - WEIGHT_BAND_FRAC), hi: 4.6 * (1 + WEIGHT_BAND_FRAC) });
+    expect(m.band).toEqual({ ref: 4.6, lo: 4.6 * (1 - 0.3), hi: 4.6 * (1 + 0.3), frac: 0.3 });
     expect(m.points[1].clipped).toBe(true);
+    expect(m.points[1].pastFloor).toBe(true);
     expect(m.points[1].y).toBe(0);
     expect(m.points[1].value).toBe(3.0); // the number still prints; only the dot is at the edge
+  });
+
+  it('CUL-1716: the band is the smallest step that holds every reading, and never narrower than ±10 %', () => {
+    const at = (v: number[]) => weightBand(v.map((x, i) => r(x, `2026-0${6 + i}-01T08:00:00Z`)));
+    // A 2 % change draws on ±10 %, exactly as the fixed band did: R4-4's protection.
+    expect(at([10, 9.8]).band?.frac).toBe(WEIGHT_BAND_FRAC);
+    expect(at([10, 9.8]).points[1].y).toBeCloseTo(0.4, 9);
+    // The PM's device record: 9.7 → 8.2 lbs is 15 % down, drawn in place on ±20 %.
+    const pm = at([9.7, 8.2]);
+    expect(pm.band?.frac).toBe(0.2);
+    expect(pm.points[1].clipped).toBe(false);
+    expect(pm.points[1].pastFloor).toBe(true);
+    expect(pm.points[1].y).toBeCloseTo((8.2 - 9.7 * 0.8) / (9.7 * 0.4), 9);
+    // A gain steps the same way; the widest reading decides, wherever it sits.
+    expect(at([10, 12.5, 10.4]).band?.frac).toBe(0.3);
+    expect(at([10, 11.9, 9.5]).band?.frac).toBe(0.2);
+    // Exactly on a step is held by it, not widened past it.
+    expect(at([10, 9]).band?.frac).toBe(0.1);
+    expect(at([10, 7]).band?.frac).toBe(0.3);
+    expect(at([10, 7]).points[1].clipped).toBe(false);
+  });
+
+  it('CUL-1716: the step and the clip share one float slack, so a reading the step held is never "outside"', () => {
+    // (4.4 − 3.96) / 4.4 is 0.10000000000000007 in binary, and 4.4 → 3.08 is 0.30000000000000004:
+    // a reading exactly on a step must be held by it, not widen the band or clip past the cap.
+    expect(Math.abs(3.96 - 4.4) / 4.4).toBeGreaterThan(0.1); // the fixture really is on the float edge
+    const ten = weightBand([r(4.4, '2026-07-03T08:00:00Z'), r(3.96, '2026-08-03T08:00:00Z')]);
+    expect(ten.band?.frac).toBe(0.1);
+    expect(ten.points[1].clipped).toBe(false);
+    expect(ten.points[1].pastFloor).toBe(false);
+    expect(ten.points[1].y).toBeCloseTo(0, 9);
+    expect(Math.abs(3.08 - 4.4) / 4.4).toBeGreaterThan(0.3);
+    const thirty = weightBand([r(4.4, '2026-07-03T08:00:00Z'), r(3.08, '2026-08-03T08:00:00Z')]);
+    expect(thirty.band?.frac).toBe(0.3);
+    expect(thirty.points[1].clipped).toBe(false);
   });
 
   it('n = 1 → the number; n = 2 → the pair; n = 0 → empty', () => {

@@ -174,8 +174,12 @@ describe('weightDotsA11yLabel + weightWord', () => {
     expect(weightDotsA11yLabel(weightBand([r(4.6, '2026-09-12T08:00:00Z')]), 'kg', dateOf)).toBe('Weight, one reading: 4.6 kg on 2026-09-12.');
     const three = weightBand([r(4.6, '2026-07-03T08:00:00Z'), r(4.5, '2026-08-03T08:00:00Z'), r(3.0, '2026-09-12T08:00:00Z')]);
     expect(weightDotsA11yLabel(three, 'kg', dateOf)).toBe(
-      'Weight, 3 readings from 2026-07-03 to 2026-09-12, drawn by date on a band from 10 percent below to 10 percent above the first reading: 4.6 kg to 3.0 kg. 1 reading outside the band, drawn at its edge.',
+      'Weight, 3 readings from 2026-07-03 to 2026-09-12, drawn by date on a band from 30 percent below to 30 percent above the first reading: 4.6 kg to 3.0 kg. 1 reading outside the band, drawn at its edge.',
     );
+    // The band speaks the width it stepped to (CUL-1716): a 15 % loss is drawn on ±20 %, in place.
+    const fifteen = weightBand([r(4.6, '2026-07-03T08:00:00Z'), r(3.9, '2026-09-12T08:00:00Z')]);
+    expect(weightDotsA11yLabel(fifteen, 'kg', dateOf)).toContain('a band from 20 percent below to 20 percent above');
+    expect(weightDotsA11yLabel(fifteen, 'kg', dateOf)).not.toContain('outside the band');
     const two = weightBand([r(4.6, '2026-07-03T08:00:00Z'), r(4.5, '2026-08-03T08:00:00Z')]);
     expect(weightDotsA11yLabel(two, 'kg', dateOf)).not.toContain('outside the band');
     expect(weightDotsA11yLabel(two, 'kg', dateOf)).not.toMatch(/down|up|since/i); // the delta is the caller's
@@ -255,7 +259,7 @@ describe('weightDeltaLine (D2-5)', () => {
 
     it('the adversarial pass: a few grams of rise beside a large loss is never stated as a run', () => {
       // "up at each of the last 2 readings" beside a 24 % loss reads as recovery.
-      expect(line(series([6.0, 4.5, 4.51, 4.52]))).toBe('Down 1.5 kg (25%) since 07-03 · 2 readings outside the band');
+      expect(line(series([6.0, 4.5, 4.51, 4.52]))).toBe('Down 1.5 kg (25%) since 07-03 · 2 readings past ±10%');
     });
 
     it('round 2: one 10 g reading above the start is not a scatter; the caveat stays off a steady loss', () => {
@@ -339,7 +343,7 @@ describe('weightDeltaLine (D2-5)', () => {
     });
 
     it('a fall against an overall rise is stated, joined with "but"; it is the accusing half', () => {
-      expect(line(series([4.0, 5.0, 4.8, 4.7]))).toBe('Up 0.7 kg (18%) since 07-03 · but lower at each of the last 2 readings · 2 readings outside the band');
+      expect(line(series([4.0, 5.0, 4.8, 4.7]))).toBe('Up 0.7 kg (18%) since 07-03 · but lower at each of the last 2 readings · 2 readings past ±10%');
     });
 
     it('"No change" is the stored fact, never the display\'s rounding', () => {
@@ -401,9 +405,13 @@ describe('weightDeltaLine (D2-5)', () => {
     expect(line([r(4.6, '2026-07-03T08:00:00Z'), r(4.62, '2026-09-12T08:00:00Z')])).toBe(`Up less than 0.1 kg since 07-03 · ${HOME_SCALE_CAVEAT}`);
   });
 
-  it('a reading outside the band between the ends is disclosed — "No change" never stands alone over a 30 % dip', () => {
+  it('a reading past ±10 % between the ends is disclosed — "No change" never stands alone over a 30 % dip', () => {
+    // The stepped band draws this dip in place (±30 %, unclipped); the words still name it.
     const dip = line([r(5.0, '2026-07-03T08:00:00Z'), r(3.5, '2026-08-03T08:00:00Z'), r(5.0, '2026-09-12T08:00:00Z')]);
-    expect(dip).toBe('No change since 07-03 · 1 reading outside the band');
+    expect(dip).toBe('No change since 07-03 · 1 reading past ±10%');
+    // Past the ±30 % cap too, and not at all inside ±10 %.
+    expect(line([r(5.0, '2026-07-03T08:00:00Z'), r(2.0, '2026-08-03T08:00:00Z'), r(5.0, '2026-09-12T08:00:00Z')])).toBe('No change since 07-03 · 1 reading past ±10%');
+    expect(line([r(5.0, '2026-07-03T08:00:00Z'), r(4.6, '2026-08-03T08:00:00Z'), r(5.0, '2026-09-12T08:00:00Z')])).toBe('No change since 07-03');
   });
 
   it('no verdict words: down is not "lost", flat is "no change", never "steady"', () => {

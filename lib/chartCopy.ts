@@ -234,7 +234,9 @@ export function weightDotsA11yLabel(model: WeightBandModel, unit: string, dateOf
   // Interior readings only: the last reading's distance is what the delta itself says.
   const clipped = model.points.filter((p) => p.clipped).length;
   const tail = clipped > 0 ? ` ${clipped} ${pluralize(clipped, 'reading')} outside the band, drawn at its edge.` : '';
-  return `Weight, ${n} readings from ${dateOf(model.first.occurredAt)} to ${dateOf(model.last.occurredAt)}, drawn by date on a band from 10 percent below to 10 percent above the first reading: ${weightWord(model.first.value, unit)} to ${weightWord(model.last.value, unit)}.${tail}`;
+  // The band's width as drawn: it steps to 20 or 30 percent when a reading falls outside 10.
+  const pctWord = `${Math.round((model.band?.frac ?? 0.1) * 100)} percent`;
+  return `Weight, ${n} readings from ${dateOf(model.first.occurredAt)} to ${dateOf(model.last.occurredAt)}, drawn by date on a band from ${pctWord} below to ${pctWord} above the first reading: ${weightWord(model.first.value, unit)} to ${weightWord(model.last.value, unit)}.${tail}`;
 }
 
 // ── The weight's spoken delta (D2-5 · CUL-1067) ───────────────────────────────
@@ -301,10 +303,11 @@ export function trailingWeightRun(model: WeightBandModel): { steps: number; dir:
  * the card must say the 7 %, not "No change". A move under the display's precision
  * prints as "less than 0.1 lbs" with its percentage.
  *
- * A reading outside the band BETWEEN the ends is disclosed beside the delta: first
- * versus last cannot see a 30 % dip that recovered, and a screen reader that hears "one
- * reading outside the band" must not then hear "No change" standing alone. The last
- * reading's own distance is the delta, so it is not counted twice.
+ * A reading past ±10 % of the first BETWEEN the ends is disclosed beside the delta: first
+ * versus last cannot see a 30 % dip that recovered, and "No change" must never stand alone
+ * over one. The line is the band's ±10 % floor, not its drawn width, so the disclosure does
+ * not vanish when the band steps wider to draw the dip (CUL-1716); the chart labels the same
+ * ±10 % lines. The last reading's own distance is the delta, so it is not counted twice.
  */
 export function weightDeltaLine(
   model: WeightBandModel,
@@ -316,8 +319,8 @@ export function weightDeltaLine(
   if (model.delta == null || model.deltaFrac == null || !model.first) return null;
   const since = `since ${dateOf(model.first.occurredAt)}`;
   // Interior readings only: the last reading's distance is what the delta itself says.
-  const clipped = model.points.filter((p, i) => p.clipped && i !== model.points.length - 1).length;
-  const clippedTail = clipped > 0 ? ` · ${clipped} ${pluralize(clipped, 'reading')} outside the band` : '';
+  const past = model.points.filter((p, i) => p.pastFloor && i !== model.points.length - 1).length;
+  const clippedTail = past > 0 ? ` · ${past} ${pluralize(past, 'reading')} past ±10%` : '';
   // The gate must describe the SAME readings the line does: a reading the display drops
   // (a stored 0.01 kg rounds to 0.0 lbs) would otherwise set the direction and the
   // percentage from a dot that is not drawn (round 2). Unequal sets fall back to the
