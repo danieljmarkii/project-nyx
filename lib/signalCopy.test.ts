@@ -66,6 +66,7 @@ import {
   timingStoryClockLaneModel,
   timingStoryControlDisclosure,
   timingStoryRefusalLine,
+  REFUSAL_VET_TAIL,
   photoCompositionLines,
   timingStoryVetLine,
   DOT_LANE_MAX,
@@ -2562,11 +2563,11 @@ describe('trialResponseCompareRows (CUL-13 / B-766 — the two-sided count rows)
 describe('CUL-1195 — the long band says when its vomits followed a refused bowl (provisional wording)', () => {
   it('the timing card: the subset beside the long count, on either shape', () => {
     expect(timingStoryRefusalLine(emptyStomach({ longCount: 11, eligibleCount: 11, longAfterRefusalCount: 11 }))).toBe(
-      '11 of the 11 episodes 6h or more after eating followed a refused meal.',
+      "11 of the 11 episodes 6h or more after eating followed a refused meal. That's worth mentioning to your vet.",
     );
     const story = timingStory();
     expect(timingStoryRefusalLine(timingStory({ long: { ...story.long, afterRefusalCount: 1 } }))).toBe(
-      `1 of the ${story.long.count} episodes 6h or more after eating followed a refused meal.`,
+      `1 of the ${story.long.count} episodes 6h or more after eating followed a refused meal. That's worth mentioning to your vet.`,
     );
   });
   it('the timing card: nothing at zero, on an old cache, or on a non-number — never "none followed"', () => {
@@ -2580,14 +2581,14 @@ describe('CUL-1195 — the long band says when its vomits followed a refused bow
   it('the trial card: each window that has one, a subset of the long row', () => {
     expect(
       trialResponseRefusalLine(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 2 } })),
-    ).toBe('Of those 6h or more after eating, 3 in the trial · 2 before it followed a refused meal.');
+    ).toBe("Of those 6 hours or more after eating, these followed a refused meal: 3 in the trial · 2 before it. That's worth mentioning to your vet.");
     expect(
       trialResponseRefusalLine(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 0 } })),
-    ).toBe('Of those 6h or more after eating, 3 in the trial followed a refused meal.');
+    ).toBe("Of those 6 hours or more after eating, these followed a refused meal: 3 in the trial. That's worth mentioning to your vet.");
   });
   it('the trial card: a window with none is never printed as a zero (a fall would read as the trial fixing it)', () => {
     const line = trialResponseRefusalLine(trialResponse({ long: { trial: 2, baseline: 7 }, longAfterRefusal: { trial: 0, baseline: 2 } }));
-    expect(line).toBe('Of those 6h or more after eating, 2 before it followed a refused meal.');
+    expect(line).toBe("Of those 6 hours or more after eating, these followed a refused meal: 2 before it. That's worth mentioning to your vet.");
     expect(line).not.toMatch(/\b0\b/);
   });
   it('the trial card: nothing when neither window has one, or on an old cache; clamped per window', () => {
@@ -2595,7 +2596,7 @@ describe('CUL-1195 — the long band says when its vomits followed a refused bow
     expect(trialResponseRefusalLine(trialResponse())).toBeNull();
     // long.trial is 0 in the fixture, so a malformed trial count clamps to zero and only the baseline speaks.
     expect(trialResponseRefusalLine(trialResponse({ longAfterRefusal: { trial: 5, baseline: 2 } }))).toBe(
-      'Of those 6h or more after eating, 2 before it followed a refused meal.',
+      "Of those 6 hours or more after eating, these followed a refused meal: 2 before it. That's worth mentioning to your vet.",
     );
   });
 });
@@ -2818,5 +2819,27 @@ describe('symptom-chronicity — the counted 4-week compare (v1.1-b, CUL-787)', 
         expect(str.includes('!')).toBe(false);
       }
     }
+  });
+});
+
+describe('I4 (ruling sheet §2.7): every card surface that prints the refused-bowl count ends on the vet tail', () => {
+  const tail = REFUSAL_VET_TAIL;
+  it('the tail is a whole sentence of its own, never a fragment', () => {
+    expect(tail).toBe("That's worth mentioning to your vet.");
+  });
+  it('the timing card face, the trial card and the Patterns panel all end on it', () => {
+    expect(timingStoryRefusalLine(emptyStomach({ longCount: 3, eligibleCount: 4, longAfterRefusalCount: 2 }))).toMatch(
+      new RegExp(`refused meal\\. ${tail.replace(/[.']/g, (c) => `\\${c}`)}$`),
+    );
+    const trial = trialResponseRefusalLine(
+      trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 2 } }),
+    );
+    expect(trial?.endsWith(` ${tail}`)).toBe(true);
+  });
+  it('the trial card states the claim BEFORE the middot, so no window can read as exempt from it', () => {
+    const trial = trialResponseRefusalLine(
+      trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 2 } }),
+    )!;
+    expect(trial.indexOf('followed a refused meal')).toBeLessThan(trial.indexOf('·'));
   });
 });

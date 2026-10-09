@@ -1717,6 +1717,12 @@ export function timingStoryClockLaneModel(f: TimingStoryLike): DotLaneModel | nu
 // field, because "none followed a refused meal" would reassure over a record whose bowls are rated
 // only by exception (CUL-1118). Clamped to the long count, so a malformed cache can never print
 // "12 of the 11".
+// I4 (ruling sheet §2.7, PM 10/02): the card surfaces that print the refused-bowl count end on this
+// tail, a sentence of its own, never a fragment. It is the guard against the hunger reading ("give
+// her a snack") of a vomit long after eating. One constant so the timing card, the trial card and
+// the Patterns panel cannot drift; the terse Home row omits it because it opens the card.
+export const REFUSAL_VET_TAIL = "That's worth mentioning to your vet.";
+
 function refusalCountOf(f: TimingStoryLike): number {
   const raw = f.type === 'timing_story' ? f.long.afterRefusalCount : f.longAfterRefusalCount;
   return raw == null || !Number.isFinite(raw) ? 0 : clampCount(raw, longCountOf(f));
@@ -1727,7 +1733,7 @@ function refusalCountOf(f: TimingStoryLike): number {
 export function timingStoryRefusalLine(f: TimingStoryLike): string | null {
   const k = refusalCountOf(f);
   if (k < 1) return null;
-  return `${k} of the ${count(longCountOf(f), 'episode', 'episodes')} ${f.longGapHours}h or more after eating followed a refused meal.`;
+  return `${k} of the ${count(longCountOf(f), 'episode', 'episodes')} ${f.longGapHours}h or more after eating followed a refused meal. ${REFUSAL_VET_TAIL}`;
 }
 
 /** The honest un-timeable remainder (S2) — episodes we couldn't place against a meal at
@@ -1890,7 +1896,7 @@ export function trialResponseRefusalLine(f: TrialResponseFinding): string | null
     (p): p is string => p != null,
   );
   if (parts.length === 0) return null;
-  return `Of those ${f.longGapHours}h or more after eating, ${parts.join(' · ')} followed a refused meal.`;
+  return `Of those ${f.longGapHours} hours or more after eating, these followed a refused meal: ${parts.join(' · ')}. ${REFUSAL_VET_TAIL}`;
 }
 
 /** The day-count badge — "Day N of M" (target set) or "Day N" (unset). `target_duration_days` is the

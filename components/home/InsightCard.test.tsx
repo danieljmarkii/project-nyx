@@ -242,7 +242,7 @@ describe('InsightCard — SR-1 card-face receipts', () => {
   });
 
   it('CUL-1195: the timing card face says how many long-band vomits followed a refused bowl, and VoiceOver hears it', () => {
-    const line = '7 of the 7 episodes 6h or more after eating followed a refused meal.';
+    const line = "7 of the 7 episodes 6h or more after eating followed a refused meal. That's worth mentioning to your vet.";
     const node = <InsightCard cached={anyCached(emptyStomach({ longAfterRefusalCount: 7 }))} petName="Nyx" />;
     expect(render(node).queryByText(line)).toBeTruthy();
     expect(a11yLabelOf(node)).toContain(line);
@@ -252,7 +252,7 @@ describe('InsightCard — SR-1 card-face receipts', () => {
   });
 
   it('CUL-1195: the trial card face carries the long row’s refused-bowl subset, both windows', () => {
-    const line = 'Of those 6h or more after eating, 3 in the trial followed a refused meal.';
+    const line = "Of those 6 hours or more after eating, these followed a refused meal: 3 in the trial. That's worth mentioning to your vet.";
     const node = (
       <InsightCard
         cached={anyCached(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 0 } }))}
