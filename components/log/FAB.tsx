@@ -25,7 +25,7 @@ import { useSyncStore } from '../../store/syncStore';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore, isCornerCardUp, MEAL_FLAGGED_DURATION_MS } from '../../store/momentStore';
 import { stageFlight, whenFlightDone } from '../motion/flightMotion';
-import { measureNodeInWindow, type WindowRect } from '../../lib/measureNode';
+import { measureNodeInWindow, measureNodeOnPage, type WindowRect } from '../../lib/measureNode';
 import { getRecentFoods, PickerFood } from '../../lib/db';
 import { fabFoodDay } from '../../lib/fabRecentFoods';
 import { insertMeal } from '../../lib/meals';
@@ -36,8 +36,8 @@ import { rowFoodLabelOf } from '../../lib/dayEvents';
 import { foodFormatTag } from '../../lib/foodFormat';
 import { recordCaptureChange } from '../../lib/captureChanges';
 import {
-  HOLD_TO_OPEN_MS, beyondSlop, nextRest, releaseOutcome, targetAt,
-  type Point, type Rest, type SlideKind, type SlideTarget,
+  HOLD_TO_OPEN_MS, leftDisc, nextRest, releaseOutcome, spacesAgree, targetAt,
+  type Point, type Rect, type Rest, type SlideKind, type SlideTarget,
 } from '../../lib/fanSlide';
 import {
   planFan, FAB_BOTTOM, FAB_DISC, FAN_MARGIN_BOTTOM, FAN_RIGHT_INSET, FAN_GAP,
@@ -452,15 +452,26 @@ export function FAB() {
   // The finger is followed from the disc: the touch belongs to the disc's Pressable from
   // press to lift, so its moves bubble to the View around it whichever pill they cross,
   // and no pill's own press ever fires during a slide. A pill is hit-tested against its
-  // window frame, measured once the fan has landed and dropped whenever the drawn rows
-  // change (a late food, a redeal), so nothing is chosen against a pill still moving.
+  // PAGE frame (the space the touch is reported in), measured once the fan has landed and
+  // dropped whenever the drawn rows change (a late food, a redeal), so nothing is chosen
+  // against a pill still moving. The disc is measured at the hold: its frame says when the
+  // finger has left it (a roll on the disc is a slow tap), and whether the measure and the
+  // touch share a space at all (rule 2's check). The dwell runs on the events' own clock.
+  // The large-text scroll branch takes no slide: a door scrolled under the pinned chip
+  // still measures where it hides, so the fan there is tap only.
   //
   // `slide` is the live gesture; null outside one. `slideTargets` is the current measure
   // (empty is "not measured", which the rule reads as no hit). `slideNodes` and
   // `slideActions` are written at render: the node each target measures, and the tap's
-  // own action for it, so a release can only ever run what a tap runs (C-17, C-18).
-  const slide = useRef<{ start: Point; last: Point; moved: boolean; rest: Rest | null } | null>(null);
+  // own action for it, so a release can only ever run what a tap runs (C-17, C-18). Both
+  // writes are idempotent (the same render writes the same map), and only handlers and
+  // effects read them.
+  const slide = useRef<{
+    start: Point; last: Point; left: boolean; rest: Rest | null; disc: Rect | null;
+  } | null>(null);
   const pressPoint = useRef<Point | null>(null);
+  const discNode = useRef<View | null>(null);
+  const fanScrolls = useRef(false);
   const slideTargets = useRef<SlideTarget[]>([]);
   const slideNodes = useRef(new Map<SlideKey, View>()).current;
   const slideActions = useRef(new Map<SlideKey, { kind: SlideKind; run: () => void }>());
@@ -476,7 +487,9 @@ export function FAB() {
     let live = true;
     AccessibilityInfo.isScreenReaderEnabled()
       .then((on) => { if (live && on) setScreenReaderOn(true); })
-      .catch(() => {});
+      // Unknown reads as no screen reader: the change event still corrects it, and the
+      // cost of the wrong guess is a long press a reader would not have used.
+      .catch((e) => console.warn('[FAB] screen reader probe failed', e));
     const sub = AccessibilityInfo.addEventListener('screenReaderChanged', (on: boolean) => setScreenReaderOn(on));
     return () => { live = false; sub?.remove(); };
   }, []);
@@ -490,26 +503,37 @@ export function FAB() {
     if (key !== null) slideCross();
   }, []);
 
-  /** Measure every target in the window, once the fan is at rest and no redeal runs. All
-   *  the frames land together or not at all: a partial measure would hit-test against a
-   *  column with holes. A finger already resting on a pill starts its dwell from here. */
+  /** Measure every target on the page, once the fan is at rest, no redeal runs, the fan is
+   *  not the scroll branch, and the disc's own frame says the measure and the touch share a
+   *  space. All the frames land together or not at all: one null drops the batch, since a
+   *  column with a hole would hit-test as if the hole were empty. A finger already over a
+   *  pill shows it, but its rest has no event time yet, so it cannot write until it moves:
+   *  a still finger is never timed from a clock it did not set. */
   const measureSlideTargets = useCallback(() => {
     const s = slide.current;
-    if (!s || !fanSettled.current || dealing.current) return;
+    if (!s || !s.disc || !fanSettled.current || dealing.current || fanScrolls.current) return;
+    if (!spacesAgree(s.disc, s.start)) {
+      console.warn('[FAB] slide measure and touch disagree; the fan stays tap only');
+      return;
+    }
     const sig = rowsSig.current;
     const entries = [...slideNodes.entries()].filter(([k]) => slideActions.current.has(k));
     if (entries.length === 0) return;
     const out: SlideTarget[] = [];
-    let left = entries.length;
+    let pending = entries.length;
+    let whole = true;
     entries.forEach(([key, node]) => {
       const kind = slideActions.current.get(key)!.kind;
-      measureNodeInWindow(node as never, (rect) => {
+      measureNodeOnPage(node as never, (rect) => {
         if (rect) out.push({ key, kind, rect });
-        if (--left > 0) return;
-        if (slide.current !== s || rowsSig.current !== sig || !fanSettled.current || dealing.current) return;
+        else whole = false;
+        if (--pending > 0) return;
+        if (!whole) return;
+        if (slide.current !== s || rowsSig.current !== sig) return;
+        if (!fanSettled.current || dealing.current || fanScrolls.current) return;
         slideTargets.current = out;
         const hit = targetAt(out, s.last);
-        s.rest = nextRest(null, hit, s.last, Date.now());
+        s.rest = nextRest(null, hit, s.last, null);
         showSlideOver(hit?.key ?? null);
       });
     });
@@ -664,6 +688,9 @@ export function FAB() {
   // fades on its own `exit`, so a choice never plays the cancel.
   const retract = useCallback((keepVeil: boolean, chosenSlot: number | null = null) => {
     cancelFanFocus();
+    // A close under the finger (a card arriving, a quick meal's hand-over) ends the slide:
+    // nothing left to hit-test, and no tick over whatever took the fan's place.
+    endSlide();
     fanSettled.current = false;
     closing.current = true;
     // A close ends a redeal: the close's own stagger takes the food slots from here.
@@ -717,7 +744,7 @@ export function FAB() {
           Animated.timing(v, { toValue: 0, duration: CLOSE_ITEM_MS, useNativeDriver: true })),
       ),
     ]).start(finish);
-  }, [turn, fade, veil, slots, chosenExit, cancelFanFocus]);
+  }, [turn, fade, veil, slots, chosenExit, cancelFanFocus, endSlide]);
 
   const closeMenu = useCallback(() => retract(false), [retract]);
 
@@ -783,31 +810,39 @@ export function FAB() {
   const holdDisc = useCallback(() => {
     if (open && !closing.current) { closeMenu(); return; }
     const start = pressPoint.current;
-    if (!openMenu() || !start) return;
-    slide.current = { start, last: start, moved: false, rest: null };
+    if (!openMenu() || !start || fanScrolls.current) return;
+    const s = { start, last: start, left: false, rest: null, disc: null as Rect | null };
+    slide.current = s;
     slideTargets.current = [];
-  }, [open, openMenu, closeMenu]);
+    // The disc does not move (its press scale aside), so one measure serves the slide.
+    measureNodeOnPage(discNode.current as never, (rect) => {
+      if (slide.current !== s) return;
+      s.disc = rect;
+      measureSlideTargets();
+    });
+  }, [open, openMenu, closeMenu, measureSlideTargets]);
 
-  const followSlide = (p: Point) => {
+  // `t` is the event's own timestamp, the clock the dwell runs on (rule 1).
+  const followSlide = (p: Point, t: number | null) => {
     const s = slide.current;
     if (!s) return;
-    if (!s.moved && beyondSlop(s.start, p)) s.moved = true;
+    if (!s.left && leftDisc(s.disc, s.start, p)) s.left = true;
     s.last = p;
     const hit = targetAt(slideTargets.current, p);
-    s.rest = nextRest(s.rest, hit, p, Date.now());
+    s.rest = nextRest(s.rest, hit, p, t);
     showSlideOver(hit?.key ?? null);
   };
 
-  const releaseSlide = (p: Point) => {
+  const releaseSlide = (p: Point, t: number | null) => {
     const s = slide.current;
     if (!s) return;
     const outcome = releaseOutcome({
       targets: slideTargets.current,
       at: p,
       rest: s.rest,
-      moved: s.moved || beyondSlop(s.start, p),
+      left: s.left || leftDisc(s.disc, s.start, p),
       busy: closing.current || dealing.current,
-      now: Date.now(),
+      now: t,
     });
     const action = outcome.kind === 'act' ? slideActions.current.get(outcome.key) : undefined;
     endSlide();
@@ -832,6 +867,8 @@ export function FAB() {
   // timer) should not be what discovers that; the menu simply closes.
   useEffect(() => {
     if (!captureOverlayOpen) return;
+    endSlide();
+    fanSettled.current = false;
     closing.current = false;
     dealAnim.current?.stop();
     dealAnim.current = null;
@@ -845,7 +882,7 @@ export function FAB() {
     fade.setValue(0);
     veil.setValue(0);
     slots.forEach((v) => v.setValue(0));
-  }, [captureOverlayOpen, turn, fade, veil, slots, chosenExit]);
+  }, [captureOverlayOpen, turn, fade, veil, slots, chosenExit, endSlide]);
 
   // CUL-1635, the other direction: a card that reveals while the fan is open (the
   // picker path reveals ~450ms after its modal leaves) closes the fan rather than being
@@ -1485,7 +1522,15 @@ export function FAB() {
   // CUL-1278: rows drawn differently are pills somewhere else. The measure goes now, in
   // the render that moves them, so no move between this commit and the re-measure can
   // hit-test a stale frame; the effect above measures again once they are laid out.
-  const sig = rows.map((r) => r.key).join('|');
+  // The keys, and everything else that moves a pill without changing its key: the scroll
+  // branch, the width cap, each food's line count.
+  const sig = [
+    rows.map((r) => r.key).join('|'),
+    fanPlan.scroll ? 'scroll' : 'column',
+    fanPlan.pillMaxWidth,
+    fanPlan.foods.map((f) => `${f.id}:${f.numberOfLines}`).join('|'),
+  ].join('#');
+  fanScrolls.current = fanPlan.scroll;
   if (rowsSig.current !== sig) {
     rowsSig.current = sig;
     slideTargets.current = [];
@@ -1580,9 +1625,13 @@ export function FAB() {
           {/* The slide follows the finger here: the touch belongs to the disc from press
               to lift, so its moves bubble to this View whichever pill they cross. */}
           <View
+            ref={discNode}
+            collapsable={false}
             testID="fab-disc-touch"
-            onTouchMove={(e) => followSlide({ x: e.nativeEvent.pageX, y: e.nativeEvent.pageY })}
-            onTouchEnd={(e) => releaseSlide({ x: e.nativeEvent.pageX, y: e.nativeEvent.pageY })}
+            onTouchMove={(e) => followSlide(
+              { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY }, e.nativeEvent.timestamp ?? null)}
+            onTouchEnd={(e) => releaseSlide(
+              { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY }, e.nativeEvent.timestamp ?? null)}
             onTouchCancel={() => {
               // The system took the touch (a call, a gesture): never a choice. Close.
               if (!slide.current) return;

@@ -3,7 +3,8 @@
 // constants (C-34): the dwell and the slop are never restated as literals here.
 
 import {
-  FOOD_DWELL_MS, STILL_SLOP_PT, beyondSlop, nextRest, releaseOutcome, targetAt,
+  DISC_FALLBACK_RADIUS_PT, FOOD_DWELL_MS, SPACE_CHECK_SLOP_PT, STILL_SLOP_PT,
+  beyondSlop, leftDisc, nextRest, releaseOutcome, spacesAgree, targetAt,
   type Rest, type SlideTarget,
 } from './fanSlide';
 
@@ -29,7 +30,7 @@ const centre = (key: string) => {
 function restedOn(key: string, liftAt: number, extra: Partial<Parameters<typeof releaseOutcome>[0]> = {}) {
   const at = centre(key);
   const rest: Rest = { key, since: 0, ...at };
-  return releaseOutcome({ targets: TARGETS, at, rest, moved: true, busy: false, now: liftAt, ...extra });
+  return releaseOutcome({ targets: TARGETS, at, rest, left: true, busy: false, now: liftAt, ...extra });
 }
 
 describe('targetAt', () => {
@@ -90,7 +91,7 @@ describe('rule 1 — a food writes only from a pill held still', () => {
 
   it('never writes with no rest at all (a fast slide that lifts on a food)', () => {
     expect(releaseOutcome({
-      targets: TARGETS, at: centre('food-a'), rest: null, moved: true, busy: false, now: 10_000,
+      targets: TARGETS, at: centre('food-a'), rest: null, left: true, busy: false, now: 10_000,
     })).toEqual({ kind: 'stay' });
   });
 
@@ -98,7 +99,7 @@ describe('rule 1 — a food writes only from a pill held still', () => {
     // Rested on food-b long enough, then slid to food-a and lifted at once.
     expect(releaseOutcome({
       targets: TARGETS, at: centre('food-a'), rest: { key: 'food-b', since: 0, ...centre('food-b') },
-      moved: true, busy: false, now: 10_000,
+      left: true, busy: false, now: 10_000,
     })).toEqual({ kind: 'stay' });
   });
 
@@ -106,7 +107,7 @@ describe('rule 1 — a food writes only from a pill held still', () => {
     const p = centre('food-a');
     expect(releaseOutcome({
       targets: TARGETS, at: { x: p.x, y: p.y + STILL_SLOP_PT + 1 }, rest: { key: 'food-a', since: 0, ...p },
-      moved: true, busy: false, now: 10_000,
+      left: true, busy: false, now: 10_000,
     })).toEqual({ kind: 'stay' });
   });
 });
@@ -120,7 +121,7 @@ describe('rule 2 — nothing acts before the fan is measured', () => {
 describe('rule 3 — a symptom opens its confirm, with no dwell to earn', () => {
   it.each(['vomit', 'stool-normal', 'stool-loose'])('%s acts on a passing release', (key) => {
     expect(releaseOutcome({
-      targets: TARGETS, at: centre(key), rest: null, moved: true, busy: false, now: 0,
+      targets: TARGETS, at: centre(key), rest: null, left: true, busy: false, now: 0,
     })).toEqual({ kind: 'act', key });
   });
 
@@ -132,18 +133,28 @@ describe('rule 3 — a symptom opens its confirm, with no dwell to earn', () => 
 
 describe('rule 4 — off every pill closes; a finger that never left the disc stays', () => {
   it('a slide back to the disc closes', () => {
-    expect(releaseOutcome({ targets: TARGETS, at: DISC, rest: null, moved: true, busy: false, now: 0 }))
+    expect(releaseOutcome({ targets: TARGETS, at: DISC, rest: null, left: true, busy: false, now: 0 }))
       .toEqual({ kind: 'close' });
   });
 
   it('a release over the veil closes', () => {
-    expect(releaseOutcome({ targets: TARGETS, at: { x: 20, y: 200 }, rest: null, moved: true, busy: false, now: 0 }))
+    expect(releaseOutcome({ targets: TARGETS, at: { x: 20, y: 200 }, rest: null, left: true, busy: false, now: 0 }))
       .toEqual({ kind: 'close' });
   });
 
   it('a hold that never moved is a slow tap: the fan stays open', () => {
-    expect(releaseOutcome({ targets: TARGETS, at: DISC, rest: null, moved: false, busy: false, now: 0 }))
+    expect(releaseOutcome({ targets: TARGETS, at: DISC, rest: null, left: false, busy: false, now: 0 }))
       .toEqual({ kind: 'stay' });
+  });
+
+  it('a roll that stays on the disc is still a slow tap; leaving it is a slide', () => {
+    const disc = { x: 302, y: 622, width: 56, height: 56 };
+    // A 10pt roll inside the disc's frame never left it.
+    expect(leftDisc(disc, DISC, { x: DISC.x + 10, y: DISC.y - 10 })).toBe(false);
+    expect(leftDisc(disc, DISC, { x: disc.x - 1, y: DISC.y })).toBe(true);
+    // Unmeasured: the radius from the press point decides.
+    expect(leftDisc(null, DISC, { x: DISC.x + DISC_FALLBACK_RADIUS_PT, y: DISC.y })).toBe(false);
+    expect(leftDisc(null, DISC, { x: DISC.x + DISC_FALLBACK_RADIUS_PT + 1, y: DISC.y })).toBe(true);
   });
 
   it('beyondSlop is strict at the slop itself', () => {
@@ -155,5 +166,32 @@ describe('rule 4 — off every pill closes; a finger that never left the disc st
 describe('rule 5 — a redeal or a close under way is busy', () => {
   it.each(['food-a', 'vomit', 'more'])('a release over %s while busy stays, unacted', (key) => {
     expect(restedOn(key, 10_000, { busy: true })).toEqual({ kind: 'stay' });
+  });
+});
+
+describe('the dwell runs on the touch’s own clock', () => {
+  it('a rest or a lift with no event time never writes a food', () => {
+    const at = centre('food-a');
+    expect(releaseOutcome({
+      targets: TARGETS, at, rest: { key: 'food-a', since: null, ...at }, left: true, busy: false, now: 10_000,
+    })).toEqual({ kind: 'stay' });
+    expect(releaseOutcome({
+      targets: TARGETS, at, rest: { key: 'food-a', since: 0, ...at }, left: true, busy: false, now: null,
+    })).toEqual({ kind: 'stay' });
+  });
+});
+
+describe('rule 2 — the measure is trusted only in the touch’s own space', () => {
+  const disc = { x: 302, y: 622, width: 56, height: 56 };
+
+  it('a disc frame that holds the press point agrees, with the scale-down margin', () => {
+    expect(spacesAgree(disc, DISC)).toBe(true);
+    expect(spacesAgree(disc, { x: disc.x - SPACE_CHECK_SLOP_PT, y: disc.y })).toBe(true);
+  });
+
+  it('a frame one status bar off disagrees', () => {
+    // Android edge-to-edge: a window frame 24pt above the page space.
+    expect(spacesAgree({ ...disc, y: disc.y - 24 - disc.height }, DISC)).toBe(false);
+    expect(spacesAgree(disc, { x: DISC.x, y: disc.y + disc.height + SPACE_CHECK_SLOP_PT + 1 })).toBe(false);
   });
 });

@@ -5,9 +5,11 @@
 // against a fan that is not measured.
 //
 // The platform's measurement is the one edge stubbed: the test renderer's host nodes never
-// answer `measureInWindow` (`lib/measureNode.ts`), so the stub answers each slide target
-// with its frame from FRAMES, keyed by the node's testID, and answers nothing at all while
-// `mockMeasureOn` is off, which is a fan whose frames have not come back.
+// answer `measure` (`lib/measureNode.ts`), so the stub answers each slide target with its
+// page frame from `mockFrames`, keyed by the node's testID (the disc's wrapper included),
+// and answers nothing at all while `mockMeasureOn` is off, which is a fan whose frames
+// have not come back. Every touch carries its own event timestamp, as the platform's do,
+// so the dwell is driven on that clock and a test can stall JS behind it.
 
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
@@ -40,10 +42,12 @@ const mockFrames: Record<string, { x: number; y: number; width: number; height: 
   'fab-pill-log-food': { x: 100, y: 456, width: 260, height: 44 },
   'fab-pill-food-f-old': { x: 100, y: 508, width: 260, height: 44 },
   'fab-pill-food-f-new': { x: 100, y: 560, width: 260, height: 44 },
+  'fab-disc-touch': { x: 302, y: 622, width: 56, height: 56 },
 };
 let mockMeasureOn = true;
 jest.mock('../../lib/measureNode', () => ({
-  measureNodeInWindow: (node: { props?: { testID?: string } } | null, cb: (r: unknown) => void) => {
+  measureNodeInWindow: (_node: unknown, cb: (r: unknown) => void) => cb(null),
+  measureNodeOnPage: (node: { props?: { testID?: string } } | null, cb: (r: unknown) => void) => {
     if (!mockMeasureOn) return;
     cb(mockFrames[node?.props?.testID ?? ''] ?? null);
   },
@@ -76,13 +80,15 @@ const centreOf = (testID: string) => {
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 };
 
-function touch(view: View, kind: 'touchMove' | 'touchEnd', p: { x: number; y: number }) {
+/** A touch event, stamped on the touch's own clock: the fake clock unless a test says
+ *  otherwise (a JS stall is a handler running late behind an early timestamp). */
+function touch(view: View, kind: 'touchMove' | 'touchEnd', p: { x: number; y: number }, at = Date.now()) {
   act(() => {
-    fireEvent(view.getByTestId('fab-disc-touch'), kind, { nativeEvent: { pageX: p.x, pageY: p.y } });
+    fireEvent(view.getByTestId('fab-disc-touch'), kind, { nativeEvent: { pageX: p.x, pageY: p.y, timestamp: at } });
   });
 }
-const move = (view: View, p: { x: number; y: number }) => touch(view, 'touchMove', p);
-const lift = (view: View, p: { x: number; y: number }) => touch(view, 'touchEnd', p);
+const move = (view: View, p: { x: number; y: number }, at?: number) => touch(view, 'touchMove', p, at);
+const lift = (view: View, p: { x: number; y: number }, at?: number) => touch(view, 'touchEnd', p, at);
 
 /** Press the disc and hold it past the threshold: the fan opens in slide mode. With
  *  `land`, the open's springs run to rest and the fan is measured. */
@@ -144,7 +150,17 @@ describe('the hold', () => {
   it('a hold that never moves is a slow tap: the fan stays open, nothing written', async () => {
     const view = await mount();
     await hold(view);
-    lift(view, { x: DISC.x + STILL_SLOP_PT, y: DISC.y });
+    lift(view, DISC);
+    await act(async () => { jest.advanceTimersByTime(1000); });
+    expect(menuOpen()).toBe(true);
+  });
+
+  // F2 of the adversarial review: a slow tap that rolls 10pt on the disc is still a tap.
+  it('a slow tap that rolls on the disc stays open too', async () => {
+    const view = await mount();
+    await hold(view);
+    move(view, { x: DISC.x + 10, y: DISC.y - 10 });
+    lift(view, { x: DISC.x + 10, y: DISC.y - 10 });
     await act(async () => { jest.advanceTimersByTime(1000); });
     expect(menuOpen()).toBe(true);
     expect(insertMeal).not.toHaveBeenCalled();
@@ -257,6 +273,30 @@ describe('amendment 3 — a food writes only from a pill held still on a landed 
     expect(insertMeal).not.toHaveBeenCalled();
   });
 
+  // B1 of the adversarial review: a 30ms brush on a food whose touchEnd JS reaches 500ms
+  // late. The handler-side clock reads a rest; the touch's own clock does not.
+  it('a JS stall never turns a brush past a food into a rest', async () => {
+    const view = await mount();
+    await hold(view);
+    const t0 = Date.now();
+    move(view, centreOf('fab-pill-food-f-new'), t0);
+    act(() => { jest.advanceTimersByTime(500); });
+    await act(async () => { lift(view, centreOf('fab-pill-food-f-new'), t0 + 30); });
+    expect(insertMeal).not.toHaveBeenCalled();
+  });
+
+  it('a finger already still on a food as the fan lands cannot write until it is timed', async () => {
+    const view = await mount();
+    await hold(view, { land: false });
+    // Over the food before any frame is known: no rest can start.
+    move(view, centreOf('fab-pill-food-f-new'));
+    await act(async () => { jest.advanceTimersByTime(1000); });
+    // The fan has landed and is measured; the finger never moved again.
+    await act(async () => { lift(view, centreOf('fab-pill-food-f-new')); });
+    expect(insertMeal).not.toHaveBeenCalled();
+    expect(menuOpen()).toBe(true);
+  });
+
   it('rows that change under the finger drop the measure until they are measured again', async () => {
     // A tap that beat the mount read: the foods land after the fan has. Before they do,
     // the column is shorter and Vomit stands where the older food will.
@@ -317,6 +357,92 @@ describe('a release off every pill closes with no write', () => {
     await act(async () => { jest.advanceTimersByTime(1000); });
     expect(insertMeal).not.toHaveBeenCalled();
     expect(menuOpen()).toBe(false);
+  });
+});
+
+// D1 of the adversarial review: a measure in a space the touch is not reported in (an
+// Android root under the status bar) would land every hit a pill off. The disc's own
+// frame must contain the point that pressed it, or nothing is hit at all.
+describe('the measure is trusted only in the touch’s own space', () => {
+  it('a disc frame a status bar away leaves the fan tap only: no hit, no write', async () => {
+    const atRest = mockFrames['fab-disc-touch'];
+    mockFrames['fab-disc-touch'] = { ...atRest, y: atRest.y - 80 };
+    try {
+      const view = await mount();
+      await hold(view);
+      rest(view, 'fab-pill-food-f-new', FOOD_DWELL_MS * 2);
+      await act(async () => { lift(view, centreOf('fab-pill-food-f-new')); });
+      expect(insertMeal).not.toHaveBeenCalled();
+      expect(slideCross).not.toHaveBeenCalled();
+    } finally {
+      mockFrames['fab-disc-touch'] = atRest;
+    }
+  });
+
+  it('one frame that does not come back drops the whole measure', async () => {
+    const vomit = mockFrames['fab-pill-vomit'];
+    delete mockFrames['fab-pill-vomit'];
+    try {
+      const view = await mount();
+      await hold(view);
+      move(view, centreOf('fab-pill-log-food'));
+      lift(view, centreOf('fab-pill-log-food'));
+      expect(router.push).not.toHaveBeenCalled();
+    } finally {
+      mockFrames['fab-pill-vomit'] = vomit;
+    }
+  });
+});
+
+// C2 of the adversarial review: in the large-text scroll branch a door scrolled under the
+// pinned chip still measures where it hides, so the hold opens the fan and takes no slide.
+describe('the scroll branch is tap only', () => {
+  it('a hold on an SE at AX3 opens the fan and a release over a door does nothing', async () => {
+    const dims = jest.spyOn(require('react-native'), 'useWindowDimensions')
+      .mockReturnValue({ width: 320, height: 568, fontScale: 2.643, scale: 2 });
+    try {
+      const view = await mount();
+      await hold(view);
+      expect(view.getByTestId('fab-fan-scroll')).toBeTruthy();
+      move(view, centreOf('fab-pill-vomit'));
+      lift(view, centreOf('fab-pill-vomit'));
+      expect(useUiStore.getState().logSheet).toBeNull();
+      expect(slideCross).not.toHaveBeenCalled();
+      expect(menuOpen()).toBe(true);
+    } finally {
+      dims.mockRestore();
+    }
+  });
+});
+
+// E1 / E2 of the adversarial review: a fan closed under the finger ends the slide.
+describe('a close under the finger ends the slide', () => {
+  it('after the capture overlay stands the FAB down, a move ticks and fills nothing', async () => {
+    const view = await mount();
+    await hold(view);
+    act(() => { useUiStore.setState({ captureOverlay: { drawsDoneBar: true } as never }); });
+    act(() => { useUiStore.setState({ captureOverlay: null }); });
+    move(view, centreOf('fab-pill-vomit'));
+    lift(view, centreOf('fab-pill-vomit'));
+    expect(slideCross).not.toHaveBeenCalled();
+    expect(useUiStore.getState().logSheet).toBeNull();
+  });
+
+  it('a corner card that closes the fan ends the slide with it', async () => {
+    const view = await mount();
+    await hold(view);
+    move(view, centreOf('fab-pill-vomit'));
+    expect(slideCross).toHaveBeenCalledTimes(1);
+    act(() => {
+      useMomentStore.setState({
+        visible: true,
+        payload: { kind: 'meal', eventId: 'ev-x', petId: 'p1', occurredAt: '2026-10-09T12:00:00.000Z' },
+      } as never);
+    });
+    move(view, centreOf('fab-pill-log-food'));
+    lift(view, centreOf('fab-pill-log-food'));
+    expect(slideCross).toHaveBeenCalledTimes(1);
+    expect(router.push).not.toHaveBeenCalled();
   });
 });
 
