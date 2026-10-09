@@ -17,10 +17,14 @@ import { ThemedText } from './ThemedText';
 // from library" archives, dismisses its own modal, and this appears over the
 // Foods tab underneath carrying Undo.
 //
-// Shares the meal card's dark-card idiom (colorNeutralDark, the same above-the-FAB
-// position, the same slide-up spring), so the two transient bottom surfaces read
-// as one family. Respects reduced motion with a static frame (no slide), per the
-// B-284 motion budget.
+// Shares the completion cards' daylight ground (colorSurface lifted by shadows.lg, no
+// outline, CUL-1691 PR 1), the same above-the-FAB position and the same slide-up
+// spring, so the two transient bottom surfaces read as one family. Respects reduced
+// motion with a static frame (no slide), per the B-284 motion budget.
+//
+// The ground is OPAQUE on purpose: iOS traces a layer shadow off the composite alpha,
+// so a translucent card would grain its own shadow (#1125). The shadow sits on `card`,
+// never on the transparent `wrapper` (Snackbar.test.tsx pins both).
 export function Snackbar() {
   const { visible, payload, runAction } = useSnackbarStore();
   const reduced = useReducedMotion();
@@ -96,17 +100,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space2,
-    backgroundColor: theme.colorNeutralDark,
+    // Opaque, under the shadow (see the header).
+    backgroundColor: theme.colorSurface,
     paddingHorizontal: theme.space2,
     paddingVertical: 12,
     borderRadius: theme.radiusLarge,
-    ...shadows.md,
+    ...shadows.lg,
   },
   message: {
     flexGrow: 1,
     flexShrink: 1,
     fontSize: theme.textMD,
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
     fontWeight: theme.weightRegular,
   },
   // 44pt min touch target (the 3am-test floor) — the label alone is ~15pt.
@@ -116,10 +121,8 @@ const styles = StyleSheet.create({
   },
   action: {
     fontSize: theme.textMD,
-    // accent-on-dark-ok: colorNeutralDark (the snackbar's own fill, :96) — 8.75:1.
-    // The inverse of CUL-744: colorAccentInk here would be 3.83:1 and FAIL. A blind
-    // sweep of the accent-as-text class breaks this site.
-    color: theme.colorAccent,
+    // The ink, on the white ground: 5.17:1 (the bright colorAccent would be 2.26:1).
+    color: theme.colorAccentInk,
     fontWeight: theme.weightMedium,
   },
 });

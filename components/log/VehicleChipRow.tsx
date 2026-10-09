@@ -24,8 +24,6 @@ interface Props {
   // skippable framing for an inline surface.
   label?: string | null;
   size?: 'default' | 'compact';
-  // Flip to true on a dark parent surface (the completion card).
-  onDark?: boolean;
 }
 
 export function VehicleChipRow({
@@ -33,7 +31,6 @@ export function VehicleChipRow({
   onChange,
   label = 'How was it given? (optional)',
   size = 'default',
-  onDark = false,
 }: Props) {
   const readOnly = onChange === undefined;
 
@@ -51,7 +48,7 @@ export function VehicleChipRow({
           label={opt.label}
           active
           onPress={() => {}}
-          variant={onDark ? 'onDark' : 'default'}
+          variant="default"
         />
       </View>
     );
@@ -63,10 +60,7 @@ export function VehicleChipRow({
   return (
     <View style={size === 'compact' ? styles.compactWrap : styles.wrap}>
       {showLabel && (
-        <ThemedText style={[
-          size === 'compact' ? styles.labelCompact : styles.label,
-          onDark && styles.labelOnDark,
-        ]}>
+        <ThemedText style={size === 'compact' ? styles.labelCompact : styles.label}>
           {label}
         </ThemedText>
       )}
@@ -79,7 +73,7 @@ export function VehicleChipRow({
                 label={opt.label}
                 active={active}
                 onPress={() => onChange(active ? null : opt.value)}
-                variant={onDark ? 'onDark' : 'filled'}
+                variant="filled"
               />
             </View>
           );
@@ -107,9 +101,6 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     textTransform: 'uppercase',
     letterSpacing: theme.trackingWidest,
-  },
-  labelOnDark: {
-    color: theme.colorTextOnDarkSubtle,
   },
   row: {
     flexDirection: 'row',

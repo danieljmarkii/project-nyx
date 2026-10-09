@@ -18,7 +18,7 @@ import {
 } from '../../lib/completionCard';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { ThemedText } from './ThemedText';
-import { CompletionMark } from './CompletionMark';
+import { COMPLETION_GROUND, CompletionMark } from './CompletionMark';
 import { TimeEditSheet } from './TimeEditSheet';
 import { FloorRaiseLine } from './FloorRaiseLine';
 import { openRaisedRead } from './openRaisedRead';
@@ -59,9 +59,12 @@ const RECORD_ROUTE_PREFIX = '/event/';
 // things were wrong with it, and this card is shaped by all three:
 //
 //   1. It was a camera flash. The canonical capture moment in Jordan's brief is
-//      one-handed, in a dark bedroom, at 2am. So the ground here DIMS instead —
-//      and the dim is the whole visual event, which is why there is no white
-//      surface anywhere in this component.
+//      one-handed, in a dark bedroom, at 2am. So the screen behind DIMS instead:
+//      a daylight bottom card over a dimmed Home, never a full-screen white
+//      takeover (polish spec §5 R1, reworded by CUL-1691 D1). The card is the
+//      app's own white, lifted by shadows.lg with no outline, and OPAQUE on
+//      purpose: iOS traces a layer shadow off the composite alpha, so a
+//      translucent card would grain its own shadow (#1125). The test pins it.
 //   2. It said "Logged". The app knew exactly what it had just written and threw
 //      that away. This card speaks the record's own sentence (see below).
 //   3. It offered nothing. No Change time, no way back. A mis-tapped time was
@@ -474,13 +477,15 @@ const styles = StyleSheet.create({
     zIndex: 50,
     elevation: 12,
   },
+  // Opaque under its shadow (see the header): the shadow lives here, never on the
+  // transparent wrapper, and the ground is the one the mark's check is knocked out in.
   card: {
-    backgroundColor: theme.colorNeutralDark,
+    backgroundColor: COMPLETION_GROUND,
     paddingHorizontal: theme.space2,
     paddingVertical: 12,
     borderRadius: theme.radiusLarge,
     gap: theme.space1,
-    ...shadows.md,
+    ...shadows.lg,
   },
   headerRow: {
     flexDirection: 'row',
@@ -497,12 +502,12 @@ const styles = StyleSheet.create({
   // less than the record holds.
   title: {
     fontSize: theme.textMD,
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
     fontWeight: theme.weightMedium,
   },
   subLabel: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSubtle,
+    color: theme.colorTextSecondary,
     fontWeight: theme.weightRegular,
   },
   actionRow: {
@@ -510,7 +515,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space1,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorDividerOnDark,
+    borderTopColor: theme.colorBorderStrong,
     paddingTop: theme.space1,
   },
   // Pill, per the round-2 mock — and a 44pt floor, which the visual height alone
@@ -521,11 +526,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.colorDividerOnDark,
+    borderColor: theme.colorBorderStrong,
   },
   actionText: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
     fontWeight: theme.weightMedium,
   },
 });

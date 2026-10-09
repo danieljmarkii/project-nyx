@@ -9,7 +9,7 @@ interface Props {
   values: readonly string[];
   /** Fired with the tapped option's value; the caller toggles it in/out. */
   onToggle: (value: string) => void;
-  variant?: 'default' | 'filled' | 'onDark';
+  variant?: 'default' | 'filled';
   // Announced as the group's label (e.g. "Also contains"); pairs with the
   // on-screen SectionLabel above it.
   accessibilityLabel?: string;

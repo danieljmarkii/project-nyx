@@ -330,7 +330,6 @@ export function SheetLogBeat({ tone, title, petName, eventId, onDone, onOpenRais
         <FloorRaiseLine
           line={floorLine}
           petName={petName}
-          ground="light"
           onOpen={() => onOpenRaisedRead(floorLine.eventId)}
         />
       ) : null}

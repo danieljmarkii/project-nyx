@@ -56,6 +56,7 @@ import { updateEvent, getEventSource } from '../../lib/db';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { destructiveConfirm } from '../../lib/haptics';
 import { Alert } from 'react-native';
+import { OPAQUE_HEX, shadowedGrounds } from '../../testUtils/tree';
 
 // Minimal structural stand-in for react-test-renderer's ReactTestInstance:
 // @types/react-test-renderer is not a dependency here, and three style predicates
@@ -354,16 +355,30 @@ describe('NamedCompletionCard — the ground', () => {
     expect(scrims[0].props.pointerEvents).toBe('none');
   });
 
-  // No white surface anywhere: the takeover's defining failure was a solid-white
-  // full screen in a dark bedroom.
-  it('paints no white ground', () => {
+  // D1 (CUL-1691): a daylight bottom card over a dimmed Home, never a full-screen
+  // white takeover. The takeover's defining failure was a solid-white full screen in
+  // a dark bedroom; the white now lives only on the card, and the card is OPAQUE
+  // under its shadow (spec §1, the #1125 grain). Keyed on shadowColor, never
+  // elevation: the wrapper carries elevation for Android stacking and has no ground,
+  // and the scrim is translucent by design, so "every backgroundColor is opaque"
+  // would be the wrong rule.
+  it('paints white only on the shadowed card, opaque, never a full-screen takeover', () => {
     const view = render(<NamedCompletionCard />);
     seed();
-    const white = view.UNSAFE_root.findAll((n: StyledNode) => {
-      const s = StyleSheet.flatten(n.props?.style) as { backgroundColor?: string } | undefined;
-      return s?.backgroundColor === theme.colorSurface;
-    });
-    expect(white).toHaveLength(0);
+    const flat = (n: StyledNode) =>
+      StyleSheet.flatten(n.props?.style) as
+        | { backgroundColor?: string; shadowColor?: string; position?: string; top?: number; bottom?: number }
+        | undefined;
+    const grounds = shadowedGrounds(view.UNSAFE_root);
+    expect(grounds.length).toBeGreaterThan(0);
+    for (const g of grounds) expect(g).toMatch(OPAQUE_HEX);
+    const white = view.UNSAFE_root.findAll((n: StyledNode) => flat(n)?.backgroundColor === theme.colorSurface);
+    expect(white.length).toBeGreaterThan(0);
+    for (const n of white) {
+      expect(flat(n)?.shadowColor).toBeDefined();
+      // Never an absoluteFill: the white is a card, not a screen.
+      expect(flat(n)?.position).not.toBe('absolute');
+    }
   });
 });
 
