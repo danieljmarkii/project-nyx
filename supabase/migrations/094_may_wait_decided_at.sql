@@ -49,8 +49,11 @@
 --
 -- STATED BLIND SPOTS:
 --   · A row deleted and re-created loses its first stamp. No app path deletes an
---     analysis row (013 lets the owner; the owner gains one night per deletion,
---     which costs a fresh model read under the caps).
+--     analysis row, but 013's FOR ALL policy lets the owner by hand, and a
+--     re-read then stamps afresh: one more night per deletion. Photographed, that
+--     costs a model read under the caps; a photoless record-alone call is not
+--     capped (the cap gate runs only with a photo, incident-analysis.ts), so it
+--     costs only the hand-made DELETE and a re-invoke.
 --   · A TRUE that predates 094, lowered and then raised again, is stamped at the
 --     raise: its first night is unknowable. Only incidents spanning the apply.
 --   · The stamp is the write's transaction start, a moment after the server's

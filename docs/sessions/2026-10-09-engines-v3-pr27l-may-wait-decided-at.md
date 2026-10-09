@@ -29,9 +29,9 @@ PM rulings:
   - The column joins the analysis sections' one select.
 - **Guards.**
   - `guards/mayWaitDecidedAt.test.ts` (new) pins:
-    - the four branches, and their order;
-    - the trigger's timing;
-    - the firing order against the freeze, 088's owner-edit lower and `updated_at`;
+    - the function's whole body, by equality;
+    - that the trigger is live, enabled and BEFORE INSERT OR UPDATE (the replay drops it on a `DROP FUNCTION`, `DROP TRIGGER`, `DISABLE TRIGGER` or rename);
+    - the firing order, read off the replay's own triggers;
     - that no Edge Function names the column.
   - `incidentReadFreeze.test.ts` adds the column to `SERVER_OWNED`.
 
@@ -51,7 +51,21 @@ PM rulings:
 
 **A test race found on the way.** The "stored TRUE at 10 PM" tests, vomit and stool, asserted the wait line synchronously after an unrelated `findByText`. That raced the async fresh re-read, and the run failed 2 of 5 times under the added guard's load. Both now `await findByText` the line itself.
 
+**The second adversarial pass** ran on Postgres 16 with the real 075, 088 and 094 bodies, and returned HOLDS for the invariant:
+- a re-read upsert carrying a +1-day stamp: the first stamp is kept;
+- lower, then raise: the stamp stays the first one;
+- a client moving the stamp: 42501;
+- a TRUE from before 094, re-read: stays unstamped;
+- a conflicting insert: stamped once;
+- an event moved between pets: the stamp is kept.
+
+The guard did not hold the first time:
+- An extra re-stamp arm, `DROP FUNCTION … CASCADE` and `DISABLE TRIGGER` all left it green.
+- Its order test sorted constants restated in the test.
+
+All fixed. The body is pinned by equality, and the replay models drops, disables and renames. Six mutants now fail (extra arm, no keep, drop function, disable, rename, the freeze firing after the stamp) and the clean tree passes. 094's first blind spot also understated its cost: a photoless call isn't capped, so re-creating one costs only a hand-made DELETE.
+
 **Stated blind spots (in 094's header).**
-- A row that is deleted and re-created loses its first stamp. No app path does this.
+- A row that is deleted and re-created loses its first stamp. No app path does this; by hand, a photoless call costs no cap.
 - A TRUE from before 094, lowered and then raised, is stamped at the raise.
 - The stamp is the write's transaction start, a moment after the verdict.

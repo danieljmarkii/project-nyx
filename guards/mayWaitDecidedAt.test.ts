@@ -13,13 +13,13 @@ import { stripSqlComments } from './sqlComments';
 // that set it itself could set it late. So the stamp has one writer, the
 // trigger, and it only ever fills an empty stamp on a transition to TRUE.
 //
-// This reads the LAST definition of the trigger's function and the trigger
-// across the migration replay and pins: the four branches (insert, keep,
-// transition, otherwise none), the timing, the firing order (after the freeze,
-// so a client's attempt is refused loudly, and after 088's owner-edit lower, so
-// it sees the may_wait the row will hold; before updated_at), and that no Edge
-// Function names the column (a writer there would be overwritten, and its
-// presence would mean someone thinks they own it).
+// This replays the migrations and pins: the function's whole body, by equality
+// (an extra arm is the realistic regression); that its trigger is live, enabled
+// and BEFORE INSERT OR UPDATE (a later DROP FUNCTION … CASCADE, DROP TRIGGER,
+// DISABLE TRIGGER or RENAME removes it from the live set); the firing order read
+// off the replay's own triggers; and that no Edge Function names the column (a
+// writer there would be overwritten, and its presence would mean someone thinks
+// they own it).
 //
 // WHAT IT CANNOT SEE: the trigger's runtime behaviour. 094's PR proved that on
 // a scratch Postgres 16 (nine cases and two mutants, in the PR body). The live
@@ -37,24 +37,50 @@ const UPDATED_AT_TRIGGER = 'trg_event_ai_analysis_updated_at';
 
 const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
 
-function replay(): { body: string | null; trigger: { timing: string; fn: string } | null } {
-  let body: string | null = null;
-  let trigger: { timing: string; fn: string } | null = null;
+interface Replay {
+  body: string | null;
+  /** Every live, enabled trigger on event_ai_analysis: name -> timing and function. */
+  triggers: Map<string, { timing: string; fn: string }>;
+}
+
+function replay(): Replay {
+  const out: Replay = { body: null, triggers: new Map() };
   const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
   for (const file of files) {
     const sql = stripSqlComments(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
     const events: { at: number; apply: () => void }[] = [];
-    const fnRe = new RegExp(`CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+(?:public\\.)?${FN}\\s*\\(\\)[\\s\\S]*?\\$\\$([\\s\\S]*?)\\$\\$`, 'gi');
-    for (const m of sql.matchAll(fnRe)) events.push({ at: m.index ?? 0, apply: () => { body = m[1]; } });
-    const trgRe = new RegExp(`CREATE\\s+TRIGGER\\s+${TRIGGER}\\s+(BEFORE|AFTER)\\s+([\\w\\s]+?)\\s+ON\\s+(?:public\\.)?event_ai_analysis\\b[\\s\\S]*?EXECUTE\\s+FUNCTION\\s+(?:public\\.)?(\\w+)`, 'gi');
-    for (const m of sql.matchAll(trgRe)) {
-      events.push({ at: m.index ?? 0, apply: () => { trigger = { timing: squash(`${m[1]} ${m[2]}`).toUpperCase(), fn: m[3].toLowerCase() }; } });
-    }
-    const dropRe = new RegExp(`DROP\\s+TRIGGER\\s+(?:IF\\s+EXISTS\\s+)?${TRIGGER}\\b`, 'gi');
-    for (const m of sql.matchAll(dropRe)) events.push({ at: m.index ?? 0, apply: () => { trigger = null; } });
+    const on = (re: RegExp, apply: (m: RegExpMatchArray) => void) => {
+      for (const m of sql.matchAll(re)) events.push({ at: m.index ?? 0, apply: () => apply(m) });
+    };
+    on(new RegExp(`CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+(?:public\\.)?${FN}\\s*\\(\\)[\\s\\S]*?\\$\\$([\\s\\S]*?)\\$\\$`, 'gi'), (m) => {
+      out.body = m[1];
+    });
+    // A dropped function takes its trigger with it (CASCADE), or the drop fails; either way
+    // the stamp is no longer what this file pins.
+    on(new RegExp(`DROP\\s+FUNCTION\\s+(?:IF\\s+EXISTS\\s+)?(?:public\\.)?${FN}\\b`, 'gi'), () => {
+      out.body = null;
+      for (const [name, t] of out.triggers) if (t.fn === FN) out.triggers.delete(name);
+    });
+    on(/CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+(\w+)\s+(BEFORE|AFTER)\s+([\w\s,]+?)\s+ON\s+(?:public\.)?event_ai_analysis\b[\s\S]*?EXECUTE\s+FUNCTION\s+(?:public\.)?(\w+)/gi, (m) => {
+      out.triggers.set(m[1].toLowerCase(), { timing: squash(`${m[2]} ${m[3]}`).toUpperCase(), fn: m[4].toLowerCase() });
+    });
+    on(/DROP\s+TRIGGER\s+(?:IF\s+EXISTS\s+)?(\w+)\s+ON\s+(?:public\.)?event_ai_analysis\b/gi, (m) => {
+      out.triggers.delete(m[1].toLowerCase());
+    });
+    // A disabled or renamed trigger is not the one this file pins: drop it from the live set.
+    on(/ALTER\s+TABLE\s+(?:ONLY\s+)?(?:public\.)?event_ai_analysis\s+DISABLE\s+TRIGGER\s+(\w+)/gi, (m) => {
+      const name = m[1].toLowerCase();
+      if (name === 'all' || name === 'user') out.triggers.clear();
+      else out.triggers.delete(name);
+    });
+    on(/ALTER\s+TRIGGER\s+(\w+)\s+ON\s+(?:public\.)?event_ai_analysis\s+RENAME\s+TO\s+(\w+)/gi, (m) => {
+      const t = out.triggers.get(m[1].toLowerCase());
+      out.triggers.delete(m[1].toLowerCase());
+      if (t) out.triggers.set(m[2].toLowerCase(), t);
+    });
     events.sort((a, b) => a.at - b.at).forEach((e) => e.apply());
   }
-  return { body, trigger };
+  return out;
 }
 
 function tsFiles(dir: string): string[] {
@@ -70,32 +96,46 @@ function tsFiles(dir: string): string[] {
 const live = replay();
 const body = squash(live.body ?? '');
 
+// The whole body, pinned by equality: an extra arm (a re-stamp on some condition) is the
+// realistic regression, and per-arm `toContain` checks cannot see one (second adversarial pass,
+// M1). Changing the body means changing this, in the same PR, on purpose.
+const EXPECTED_BODY = squash(`
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.may_wait_decided_at := CASE WHEN NEW.may_wait IS TRUE THEN now() END;
+  ELSIF OLD.may_wait_decided_at IS NOT NULL THEN
+    NEW.may_wait_decided_at := OLD.may_wait_decided_at;
+  ELSIF NEW.may_wait IS TRUE AND OLD.may_wait IS NOT TRUE THEN
+    NEW.may_wait_decided_at := now();
+  ELSE
+    NEW.may_wait_decided_at := NULL;
+  END IF;
+  RETURN NEW;
+END;`);
+
+const beforeTriggers = () =>
+  [...live.triggers].filter(([, t]) => t.timing.startsWith('BEFORE')).map(([name]) => name).sort();
+
 describe('may_wait_decided_at: one writer, set once (094, CUL-1707)', () => {
-  it('the function and its trigger are live at the end of the replay', () => {
+  it('the function is live and its body is exactly the four arms (insert, keep, transition, none)', () => {
     expect(live.body).not.toBeNull();
-    expect(live.trigger).toEqual({ timing: 'BEFORE INSERT OR UPDATE', fn: FN });
+    expect(body).toBe(EXPECTED_BODY);
   });
 
-  it('an insert stamps only a TRUE, and only with the database clock', () => {
-    expect(body).toContain("IF TG_OP = 'INSERT' THEN NEW.may_wait_decided_at := CASE WHEN NEW.may_wait IS TRUE THEN now() END;");
+  it('its trigger is live and enabled, BEFORE INSERT OR UPDATE, calling it', () => {
+    expect(live.triggers.get(TRIGGER)).toEqual({ timing: 'BEFORE INSERT OR UPDATE', fn: FN });
   });
 
-  it('a stamp, once set, is never moved by any write (a re-read, a lower, a writer naming it)', () => {
-    expect(body).toContain('ELSIF OLD.may_wait_decided_at IS NOT NULL THEN NEW.may_wait_decided_at := OLD.may_wait_decided_at;');
-  });
-
-  it('an update stamps only the transition to TRUE (never a TRUE that already stood)', () => {
-    expect(body).toContain('ELSIF NEW.may_wait IS TRUE AND OLD.may_wait IS NOT TRUE THEN NEW.may_wait_decided_at := now();');
-    expect(body).toContain('ELSE NEW.may_wait_decided_at := NULL; END IF;');
-  });
-
-  it('the branches run in that order: keep before transition', () => {
-    expect(body.indexOf('OLD.may_wait_decided_at IS NOT NULL')).toBeLessThan(body.indexOf('AND OLD.may_wait IS NOT TRUE'));
-  });
-
-  it('fires after the freeze and 088\'s owner-edit lower, before updated_at (BEFORE triggers fire in name order)', () => {
-    const order = [OWNER_EDIT_TRIGGER, FREEZE_TRIGGER, TRIGGER, UPDATED_AT_TRIGGER];
-    expect([...order].sort()).toEqual(order);
+  it('the freeze fires before it (so a client attempt is refused, not silently held), updated_at after', () => {
+    // Read off the replay's live BEFORE triggers, not off constants restated here. The order
+    // is not what holds the stamp (every role is overwritten by the keep arm); it decides
+    // whether a client's attempt is LOUD (42501) and that updated_at is set after the stamp.
+    const order = beforeTriggers();
+    expect(order).toContain(FREEZE_TRIGGER);
+    expect(order).toContain(UPDATED_AT_TRIGGER);
+    expect(order.indexOf(FREEZE_TRIGGER)).toBeLessThan(order.indexOf(TRIGGER));
+    expect(order.indexOf(TRIGGER)).toBeLessThan(order.indexOf(UPDATED_AT_TRIGGER));
+    if (order.includes(OWNER_EDIT_TRIGGER)) expect(order.indexOf(OWNER_EDIT_TRIGGER)).toBeLessThan(order.indexOf(TRIGGER));
   });
 
   it('no Edge Function names the column: the trigger is its only writer', () => {
