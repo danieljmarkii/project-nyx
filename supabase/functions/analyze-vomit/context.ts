@@ -107,6 +107,8 @@ export interface IntakeRecord {
   // EN-5 'last_rated' only: a treat or a free-fed bowl was rated between that meal and the vomit,
   // so the words say treats and bowls were set aside.
   setAside?: boolean
+  // EN-5 'last_rated' only: meals logged between that meal and the vomit with no rating.
+  unratedSince?: number
 }
 
 // The rows, in the shapes the three reads return them.
@@ -442,7 +444,10 @@ export const EN5_CONTEXT_STEP: VomitContextStep = (prior, args) => {
   // vomit speaks if it was Refused or Picked, when all of these hold (three adversarial rounds):
   //   · no qualifying meal was rated after it, up to the read: eating well (or Some) after the
   //     refusal answers it, wherever it falls, including between the halves (Z5, M, O);
-  //   · the read's own two halves (after the vomit, before the read) hold no rated meal of any
+  // Stated carve-outs, where the newest qualifying rating is a refusal and the arm is still quiet:
+// a refusal after the after-vomit half's 24 h cap on a late re-read (the cap, ruled); and a half
+// holding a Most or All, which threshold A has already judged (round 4, R4 and R5).
+//   · the read's own two halves (after the vomit, before the read) hold no rated meal of any
   //     kind, so threshold A has not already judged them (N). The before-vomit half is NOT in
   //     this condition: it can hold an All from BEFORE the refusal (Z1);
   //   · some meal was rated in the week before the read, the shipped tracking guard's own test,
@@ -457,8 +462,14 @@ export const EN5_CONTEXT_STEP: VomitContextStep = (prior, args) => {
     .filter((m) => isQualifyingIntakeMeal(m, spans) && isKnownIntakeRating(m.intakeRating))
     .sort((a, b) => b.ms - a.ms)[0]
   if (lastRated && isRefusedOrPickedRating(lastRated.intakeRating) && after.rated === 0 && atRead.rated === 0) {
-    const ratedAfter = meals.filter((m) => Number.isFinite(m.ms) && m.ms > lastRated.ms && m.ms <= readMs && isKnownIntakeRating(m.intakeRating))
-    const answered = ratedAfter.some((m) => isQualifyingIntakeMeal(m, spans))
+    // Every row at or after the refusal's own instant, but the refusal itself: a meal stamped the
+    // same instant (a two-food dinner back-dated to one picker time) is "after" it whatever order
+    // the two reads returned them in (round 4, R2).
+    const sinceRefusal = meals.filter((m) => m !== lastRated && Number.isFinite(m.ms) && m.ms >= lastRated.ms && m.ms <= readMs)
+    const ratedAfter = sinceRefusal.filter((m) => isKnownIntakeRating(m.intakeRating))
+    // Only eating answers a refusal: a qualifying Some, Most or All. A later Refused or Picked is
+    // more of the same evidence and never quiets the earlier one (round 4, R1).
+    const answered = ratedAfter.some((m) => isQualifyingIntakeMeal(m, spans) && !isRefusedOrPickedRating(m.intakeRating))
     const tracks = meals.some(
       (m) => Number.isFinite(m.ms) && m.ms >= readMs - INTAKE_BASELINE_WINDOW_DAYS * 86_400_000 && m.ms <= readMs && isKnownIntakeRating(m.intakeRating),
     )
@@ -471,6 +482,9 @@ export const EN5_CONTEXT_STEP: VomitContextStep = (prior, args) => {
         hoursBefore: Math.floor((vomitMs - lastRated.ms) / 3_600_000),
         rating: lastRated.intakeRating === 'refused' ? 'refused' : 'picked',
         setAside: ratedAfter.some((m) => m.ms <= vomitMs),
+        // The meals logged between it and the vomit with no rating, said beside it so a week of
+        // unrated meals is never hidden behind one old refusal (round 4, R3).
+        unratedSince: sinceRefusal.filter((m) => m.ms <= vomitMs && !isKnownIntakeRating(m.intakeRating)).length,
       })
     }
   }

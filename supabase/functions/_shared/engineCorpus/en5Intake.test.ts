@@ -410,7 +410,9 @@ Deno.test('EN-5 copy: every sentence it can build never reassures, never conclud
   }
   for (const hoursBefore of [0, 1, 25, 70]) {
     for (const rating of ['refused', 'picked'] as const) {
-      for (const setAside of [false, true]) records.push({ window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore, rating, setAside })
+      for (const setAside of [false, true]) {
+        for (const unratedSince of [0, 1, 15]) records.push({ window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore, rating, setAside, unratedSince })
+      }
     }
   }
   let seen = 0
@@ -464,7 +466,7 @@ Deno.test('A (provisional): a refusal 25 h before the vomit with nothing logged 
   assertStrictEquals(intakeFires(ctx(rows, v, v + 1 * H, OFF)), true, 'shipped fires')
   const on = ctx(rows, v, v + 1 * H, EN5)
   assertStrictEquals(intakeFires(on), true)
-  assertEquals(on.intakeRecord, { window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore: 25, rating: 'refused', setAside: false })
+  assertEquals(on.intakeRecord, { window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore: 25, rating: 'refused', setAside: false, unratedSince: 0 })
   assertStrictEquals(
     buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord),
     "The last rated meal logged for Nyx before this vomit, about 25 hours earlier, was marked Refused. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
@@ -551,4 +553,24 @@ Deno.test('A, round 3: answered refusals stay quiet, a late read over an empty w
       true,
     )
   }
+})
+
+Deno.test('A, round 4: a later refusal never answers an earlier one; a tie is read the same in either order; unrated meals since are said', () => {
+  const v = Date.parse('2026-09-10T08:00:00Z')
+  // R1: a second refusal between the halves on a late re-read keeps the arm firing.
+  const r1 = rowsOf([meal(v - 40 * H, 'all'), meal(v - 30 * H, 'refused'), meal(v + 36 * H, 'refused')], v)
+  assertStrictEquals(intakeFires(ctx(r1, v, v + 72 * H, OFF)), true, 'shipped fires on R1')
+  assertEquals(ctx(r1, v, v + 72 * H, EN5).intakeRecord?.window, 'last_rated', 'R1')
+  // R2: a Refused and an All at one instant: quiet in either order.
+  for (const pair of [[meal(v - 30 * H, 'refused'), meal(v - 30 * H, 'all', 'meal', 'f-b')], [meal(v - 30 * H, 'all', 'meal', 'f-b'), meal(v - 30 * H, 'refused')]]) {
+    assertStrictEquals(ctx(rowsOf([meal(v - 40 * H, 'all'), ...pair], v), v, v + 1 * H, EN5).intakeRecord?.window === 'last_rated', false, 'R2')
+  }
+  // R3: a six-day-old refusal and fifteen unrated meals since: the words say so.
+  const r3 = rowsOf([meal(v - 6.5 * 24 * H, 'all'), meal(v - 6 * 24 * H, 'refused'), ...Array.from({ length: 15 }, (_, i) => meal(v - (5 * 24 - i * 8) * H, null))], v)
+  const on = ctx(r3, v, v + 1 * H, EN5)
+  assertEquals(on.intakeRecord?.unratedSince, 15)
+  assertStrictEquals(
+    buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord).startsWith('The last rated meal logged for Nyx before this vomit, about 6 days earlier, was marked Refused. 15 meals logged after it had no rating.'),
+    true,
+  )
 })

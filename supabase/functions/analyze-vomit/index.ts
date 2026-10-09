@@ -475,7 +475,9 @@ function en5IntakeRecordSentence(p: string, record: IntakeRecord): string {
     const when =
       hours < 1 ? 'less than an hour' : hours === 1 ? 'about an hour' : hours < 48 ? `about ${hours} hours` : `about ${Math.round(hours / 24)} days`
     const aside = record.setAside ? ', not counting treats or free-fed bowls' : ''
-    return `The last rated meal logged for ${p} before this vomit${aside}, ${when} earlier, was marked ${word}.`
+    const n = record.unratedSince ?? 0
+    const since = n === 0 ? '' : n === 1 ? ' One meal logged after it had no rating.' : ` ${n} meals logged after it had no rating.`
+    return `The last rated meal logged for ${p} before this vomit${aside}, ${when} earlier, was marked ${word}.${since}`
   }
   if (record.window === 'noticed') {
     // Anchored to the instant the predicate fired, never to the read alone: a cat that refused
