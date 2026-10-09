@@ -5186,15 +5186,26 @@ Deno.test('normal shortcut: the window bounds are LOCAL days, both inclusive', (
 
 Deno.test('normal shortcut: the two clocks bound a SPAN, and any reach into the window discloses', () => {
   const scope = { startDate: '2026-09-10', endDate: '2026-10-09' }
-  // A late offline push: the phone saw it in the window; the server got it after. The phone day is named.
+  // Both clocks on one day ⇒ the day is known: `on`, and assembly may split there.
   assert.deepEqual(
-    normalShortcutDisclosure([splitRow('2026-09-15T15:00:00.000Z', '2026-10-20T15:00:00+00:00')], scope, TZ),
-    { kind: 'on', at: '2026-09-15T15:00:00.000Z', split: null },
+    normalShortcutDisclosure([splitRow('2026-09-15T13:00:00.000Z', '2026-09-15T13:00:04+00:00')], scope, TZ),
+    { kind: 'on', at: '2026-09-15T13:00:00.000Z', split: null },
   )
-  // A fast phone clock claims a day after the window; the server received it inside. The server day is named.
+  // ROUND 2, M1 — the clocks disagree on the day (a phone 5 days slow, or an honest phone and a
+  // late push: indistinguishable). Neither day is the day, so the span is named and NOT split.
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-09-15T15:00:00.000Z', '2026-09-20T15:00:00+00:00')], scope, TZ),
+    { kind: 'between', from: '2026-09-15T15:00:00.000Z', to: '2026-09-20T15:00:00+00:00' },
+  )
+  // A late push past the window's end: still disclosed, as the span.
+  assert.equal(
+    normalShortcutDisclosure([splitRow('2026-09-15T15:00:00.000Z', '2026-10-20T15:00:00+00:00')], scope, TZ)?.kind,
+    'between',
+  )
+  // A fast phone clock claims a day after the window; the server received it inside.
   assert.deepEqual(
     normalShortcutDisclosure([splitRow('2026-10-20T15:00:00.000Z', '2026-09-15T15:00:00+00:00')], scope, TZ),
-    { kind: 'on', at: '2026-09-15T15:00:00+00:00', split: null },
+    { kind: 'between', from: '2026-09-15T15:00:00+00:00', to: '2026-10-20T15:00:00.000Z' },
   )
   // ADVERSARIAL F2 — a phone a week SLOW dates a Sep 15 change Sep 8, before the window. The
   // earlier-clock rule alone hid the line here; the server's day keeps it, as "on or before".
@@ -5265,4 +5276,12 @@ Deno.test('normal shortcut: ruling 1a — no split when the change is on the win
   const start = stoolWith().scope.startDate
   const snap = stoolWith([splitRow(`${start}T16:00:00.000Z`)])
   assert.deepEqual(snap.stool!.normalShortcut, { kind: 'on', at: `${start}T16:00:00.000Z`, split: null })
+})
+
+Deno.test('normal shortcut: round 2 M1 — clocks a few days apart inside the window ⇒ named span, never a split', () => {
+  const snap = stoolWith([splitRow('2026-06-05T15:00:00.000Z', '2026-06-11T15:00:00+00:00')])
+  assert.deepEqual(snap.stool!.normalShortcut, { kind: 'between', from: '2026-06-05T15:00:00.000Z', to: '2026-06-11T15:00:00+00:00' })
+  const sec = plainText(renderReport(snap))
+  assert.match(sec, /Logging changed between Jun 5 and Jun 11:/)
+  assert.ok(!/Before Jun|From Jun/.test(sec), 'no split at an unconfirmed day')
 })

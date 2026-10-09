@@ -825,13 +825,15 @@ export const FAB_STOOL_SPLIT_KEY = 'fab_stool_split'
 
 /**
  * CUL-1658 — what the stool strip says about the fan's split stool pill:
- *   `on`       the change's day is known and inside the window
+ *   `on`       the change's day is known (both clocks agree on it) and inside the window
+ *   `between`  the earlier clock's day is inside the window but the clocks disagree on the day
  *   `by`       only the server's clock is inside: the change landed on or before that day
  *   `spans`    the two clocks straddle the whole window, so the day cannot be placed in it
  *   `unknown`  the read failed: the strip says the change could not be checked
  */
 export type NormalShortcutDisclosure =
   | { kind: 'on'; at: string; split: StoolShortcutSplit | null }
+  | { kind: 'between'; from: string; to: string }
   | { kind: 'by'; at: string }
   | { kind: 'spans' }
   | { kind: 'since'; at: string; exact: boolean }
@@ -906,14 +908,20 @@ export function normalShortcutDisclosure(
   if (earlyDay > scope.endDate) return null
   if (lateDay < scope.startDate) {
     // Wholly before the window: within one report the counts share a footing, but a vet holding
-    // an earlier report does not (ruling 2a). The server's day is named: the change had landed
-    // by then, so "since" it is true whatever the phone's clock said.
+    // an earlier report does not (ruling 2a). The LATER clock's day is named (the server's, or a
+    // fast phone's): neither clock can precede the change, so "by" that day is true either way.
     const lateNum = dayNumber(lateDay)
     const endNum = dayNumber(scope.endDate)
     if (lateNum === null || endNum === null || endNum - lateNum > NORMAL_SHORTCUT_SINCE_DAYS) return null
     return { kind: 'since', at: late.iso, exact: earlyDay === lateDay }
   }
-  if (earlyDay >= scope.startDate) return { kind: 'on', at: early.iso, split: null }
+  // The day is KNOWN only when both clocks agree on it. When they disagree, neither can be trusted
+  // as the day (a slow phone and a late push look identical), so the span is named and nothing is
+  // split: a split at either end would put days of one logging regime on the other side
+  // (adversarial round 2, M1).
+  if (earlyDay >= scope.startDate) {
+    return earlyDay === lateDay ? { kind: 'on', at: early.iso, split: null } : { kind: 'between', from: early.iso, to: late.iso }
+  }
   if (lateDay <= scope.endDate) return { kind: 'by', at: late.iso }
   return { kind: 'spans' }
 }
