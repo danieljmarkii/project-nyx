@@ -119,6 +119,19 @@ export function selectChip(): void {
 }
 
 /**
+ * A hold-and-slide over the FAB's fan crossed onto a new pill (CUL-1278).
+ *
+ * The selection tick, the same pattern as `selectChip`, as its own verb because it is
+ * a different moment (C-34): nothing is chosen yet, the thumb is passing over a row. It
+ * fires on ARRIVING at a pill, never on leaving one for empty space, so a slide across
+ * the column ticks once per row and a slide off the fan is silent. A food logged by the
+ * slide still plays its commit through the card's reveal, as on every meal path.
+ */
+export function slideCross(): void {
+  play(() => Haptics.selectionAsync());
+}
+
+/**
  * A menu-class interaction — opening the FAB, or picking a pet in the switcher.
  *
  * Light impact: it marks a navigational move, not a commitment. Same verb for both
