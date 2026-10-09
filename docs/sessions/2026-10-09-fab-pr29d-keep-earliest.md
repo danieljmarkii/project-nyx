@@ -3,7 +3,7 @@
 **Date:** 2026-10-09
 **One thing:** none — dispatched session, not this round's teach row
 
-Dispatched session (`/dispatch`, FAB round 2), CUL-1701, ruled option A by the PM on 2026-10-09. The row was plan-gated (a migration and a function-security change): the plan was posted on the issue and the PM typed the go in this session. Shipped via #1131, a draft left for the PM's `apply 093`. This session neither applies nor merges it.
+Dispatched session (`/dispatch`, FAB round 2), CUL-1701, ruled option A by the PM on 2026-10-09. The row was plan-gated (a migration and a function-security change): the plan was posted on the issue and the PM typed the go in this session. Shipped via #1131. The PM typed `apply 093` in this session and it was applied (live version 20261009194024); this session does not merge the PR.
 
 ## What shipped
 
@@ -40,5 +40,7 @@ Dispatched session (`/dispatch`, FAB round 2), CUL-1701, ruled option A by the P
 
 ## Residuals
 
-- The PM's `apply 093`, then the VERIFY block and `get_advisors`, then two live RPC calls with a real token: own pet → 204, another pet → 403.
+- **Applied** on the PM's typed `apply 093`, live version 20261009194024. The VERIFY block passed live. A live probe from an account with no pets got the constant 42501 on a real pet and on a pet that does not exist; anon got permission denied; no row was written. `get_advisors`: security raised 0029 (a DEFINER function signed-in users can run), which is intended and shared with `record_ai_usage`; performance raised nothing on this table or function.
+- Still open: one live call with a real user token on that user's own pet (expect 204). Making it writes a real row, so it is the PM's call. The first build carrying this client exercises it anyway.
+- The PR merges once CI is green on its head; this session does not merge it.
 - CUL-1706: a floor in the reader for an implausibly early date (a Data Scientist call).

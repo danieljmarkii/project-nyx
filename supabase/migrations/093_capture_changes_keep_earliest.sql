@@ -2,6 +2,18 @@
 -- Migration 093: capture_changes keeps the EARLIER date when two phones collide
 --   CUL-1701 (FAB PR-29d), ruled A by the PM 2026-10-09. Follows 091 (applied),
 --   so this is a new file rather than an edit to it (the 045 rule).
+--
+-- APPLIED to production 2026-10-09 (the PM's typed `apply 093`), live version
+-- 20261009194024, name capture_changes_keep_earliest. The VERIFY block passed on
+-- the live database (DEFINER, search_path "", EXECUTE authenticated only, table
+-- grants unchanged, owners postgres | postgres). A live probe as an account with
+-- no pets got the constant 42501 on a real pet and on a pet that does not exist,
+-- anon got permission denied, and no row was written. get_advisors (security)
+-- raised 0029 authenticated_security_definer_function_executable on this
+-- function, which is intended: authenticated is the one role that pushes, and
+-- the body's caller check is the boundary (record_ai_usage carries the same
+-- lint). Performance raised nothing on this function or table. Comments added
+-- after the apply change no statement.
 -- ============================================================
 --
 -- THE FINDING (adversarial review of PR-29b)
