@@ -1,6 +1,7 @@
 # Engines v3 PR-27l: may_wait stamps when the leave was first granted (migration 094)
 
 **Date:** 2026-10-09
+**One thing:** none — dispatched session, not this round's teach row
 
 Dispatched build of CUL-1707, shipped via #1135.
 
@@ -69,3 +70,5 @@ All fixed. The body is pinned by equality, and the replay models drops, disables
 - A row that is deleted and re-created loses its first stamp. No app path does this; by hand, a photoless call costs no cap.
 - A TRUE from before 094, lowered and then raised, is stamped at the raise.
 - The stamp is the write's transaction start, a moment after the verdict.
+
+**Close-out.** CI is green on `fffc42a`. The PM typed `apply 094` in this session, but a dispatched session never runs `apply_migration`, so 094 waits for a non-dispatched session to apply it, then the merge. The PR is left for the PM.
