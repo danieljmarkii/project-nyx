@@ -52,19 +52,33 @@
 --              089 left it standing).
 --   neighbour  every TRUE of the same pet (the attachment's pet or P's, against
 --              the analysis row's pet or its event's: CUL-882's both-ways rule)
---              whose anchor sits within 2 x 72 h of P's `occurred_at`, when P is
---              an incident the predicate reads (MAY_WAIT_INCIDENT_TYPES): the
---              neighbour check refuses a neighbour holding an unread photo, and
---              the window is 090's incident window (mirrored from
---              MAY_WAIT_NEIGHBOUR_HOURS, pinned by
---              guards/mayWaitPhotoChange.test.ts; C-34: same value, same question).
+--              whose anchor sits within 72 h of P's `occurred_at`, when P is a
+--              live incident the predicate reads (MAY_WAIT_INCIDENT_TYPES, not
+--              soft-deleted): `readMayWaitRecord` reads photo sets only for the
+--              live incidents within MAY_WAIT_NEIGHBOUR_HOURS of the anchor (its
+--              `near`), and `neighbourRefuses` refuses one holding an unread
+--              photo. NOT 090's 2 x 72 h: that answers a different question (a
+--              moved vomit changes the floor re-run, which reads twice the reach
+--              and reads no photo). Same value today, different question, so the
+--              window is derived from `near`, pinned by
+--              guards/mayWaitPhotoChange.test.ts (C-34).
 -- A photo on any other event type (a meal, a symptom) is not a neighbour the
 -- predicate reads, so it lowers only P's own TRUE (none exists: only incidents
 -- carry a per-incident read).
 --
 -- FAILS CLOSED: a touched event that cannot be read (hard-deleted, or outside
 -- the writer's RLS) lowers every TRUE on the attachment's pet; a TRUE whose own
--- event cannot be read is lowered for any touch on its pet.
+-- event cannot be read is lowered for a touch on a live incident of its pet.
+--
+-- THE DELETION CASCADE (adversarial pass): auth.admin.deleteUser deletes
+-- auth.users as supabase_auth_admin, and a cascade's row triggers run as the
+-- role that ran the outer DELETE. That role holds no grant on public, so the
+-- sweep would raise `permission denied for schema public` and abort the account
+-- deletion. On a DELETE only, a writer that cannot UPDATE event_ai_analysis and
+-- SELECT events returns before the sweep (privileges read from pg_catalog,
+-- schema first, since naming a table in an unusable schema itself raises).
+-- Such a writer reaches event_attachments only through a cascade, which takes
+-- every row it could lower with it. An insert or move still raises for it.
 --
 -- WHAT FIRES (two AFTER triggers, row-level, one function; split because a
 -- WHEN clause cannot read OLD on an insert or NEW on a delete):
@@ -87,8 +101,11 @@
 --     section re-reads on a photo-set mismatch; the drain asks once lib/sync.ts
 --     is free);
 --   · the read-in-flight race: a read that started over the old set and writes
---     TRUE after this trigger fired carries the old `read_photo_set_key`. Only the
---     reader-side check closes that (CUL-1629 must require `read_photo_set_key`
+--     TRUE after this trigger fired carries the old `read_photo_set_key`. The
+--     pipeline's own re-check after its write (revalidateMayWait, including
+--     self) re-reads the attachment ids and narrows this to the instant the two
+--     transactions overlap, or a failed best-effort re-check. Only the
+--     reader-side check closes it (CUL-1629 must require `read_photo_set_key`
 --     to equal the current set before it renders a TRUE);
 --   · a TRUE written before this migration over a photo already changed stays
 --     until the server's next read near it (no backfill; no installed build
@@ -97,11 +114,18 @@
 -- ------------------------------------------------------------
 -- R-5, THE PRIVACY LINE
 -- ------------------------------------------------------------
---   Cascade:     unchanged. An account deletion's cascade fires the trigger on
---                rows already going; it lowers TRUEs that are about to be deleted.
+--   Cascade:     unchanged, and never blocked: under supabase_auth_admin the
+--                trigger returns before its sweep (above); under a role with the
+--                grants it lowers TRUEs that are about to be deleted.
 --   RLS:         unchanged. INVOKER: for a client its reads (events) and its sweep
---                are bounded by the writer's own rows; service_role is already
---                unbounded and names the pet.
+--                are bounded by the writer's own rows. service_role is unbounded,
+--                and the touched event's pet is matched as well as the
+--                attachment's: event_attachments has no same-pet guard (003 has
+--                no 074-style trigger), so a service-role write on a row a client
+--                planted with another account's event id would lower that
+--                account's TRUE near it. Lower-only and raises nothing, and no
+--                service-role path writes event_attachments today (filed on
+--                CUL-1682 with the same-pet guard).
 --   Freeze:      unchanged. The sweep uses 088's TRUE -> NULL, nothing else.
 --   Storage:     untouched; the trigger reads no path and no object.
 --   Realtime:    lowered rows publish as ordinary updates (059); a boolean
@@ -143,6 +167,22 @@ DECLARE
   v_events uuid[] := '{}';
   v_pets   uuid[] := '{}';
 BEGIN
+  -- The deletion cascade: auth.admin.deleteUser deletes auth.users as
+  -- supabase_auth_admin, and the cascade's row triggers run as that role, which
+  -- holds no grant on public. An unguarded sweep would abort every account
+  -- deletion with a photo. A writer that cannot reach the analyses can only be
+  -- deleting attachments through a cascade, and every row it could lower goes
+  -- with them. DELETE only: an insert or move by such a writer still raises.
+  IF TG_OP = 'DELETE' THEN
+    IF NOT has_schema_privilege('public', 'USAGE') THEN
+      RETURN NULL;
+    END IF;
+    IF NOT has_table_privilege('public.event_ai_analysis', 'UPDATE')
+       OR NOT has_table_privilege('public.events', 'SELECT') THEN
+      RETURN NULL;
+    END IF;
+  END IF;
+
   IF TG_OP IN ('INSERT', 'UPDATE') THEN
     v_events := v_events || NEW.event_id;
     v_pets   := v_pets   || NEW.pet_id;
@@ -165,9 +205,10 @@ BEGIN
                  OR n.pet_id = t.pet OR n.pet_id = p.pet_id)
             AND (p.id IS NULL
                  OR (p.event_type::text IN ('vomit', 'stool_normal', 'diarrhea')
+                     AND p.deleted_at IS NULL
                      AND (n.occurred_at IS NULL
-                          OR (n.occurred_at >= p.occurred_at - 2 * interval '72 hours'
-                              AND n.occurred_at <= p.occurred_at + 2 * interval '72 hours'))))));
+                          OR (n.occurred_at >= p.occurred_at - interval '72 hours'
+                              AND n.occurred_at <= p.occurred_at + interval '72 hours'))))));
   RETURN NULL;
 END;
 $$;
@@ -189,4 +230,4 @@ CREATE TRIGGER trg_event_attachments_may_wait_photo_move
   EXECUTE FUNCTION public.take_back_may_wait_on_photo_change();
 
 COMMENT ON FUNCTION public.take_back_may_wait_on_photo_change() IS
-  'CUL-1682 (092): a photo inserted, deleted or moved on event_attachments lowers may_wait TRUE -> NULL on the touched event''s own TRUE and, when that event is a vomit / stool, on every TRUE of the same pet anchored within 144 h of it (090''s incident window, mirrored from incidentMayWait.ts): the predicate grants leave only over photos it read (photoReadSettled). An unreadable event lowers every TRUE on the pet. INVOKER, so RLS bounds a client''s sweep; every role fires. Raises no message of its own.';
+  'CUL-1682 (092): a photo inserted, deleted or moved on event_attachments lowers may_wait TRUE -> NULL on the touched event''s own TRUE and, when that event is a vomit / stool, on every TRUE of the same pet anchored within 72 h of it (the reader''s neighbour reach, MAY_WAIT_NEIGHBOUR_HOURS): the predicate grants leave only over photos it read (photoReadSettled). An unreadable event lowers every TRUE on the pet. On a DELETE by a writer without the grants (the deleteUser cascade) it returns first. INVOKER, so RLS bounds a client''s sweep; every role fires. Raises no message of its own.';

@@ -12,8 +12,8 @@ import { stripSqlComments } from './sqlComments';
 // set NOW, on the read and on every photographed neighbour), but it checks that
 // only when it writes. A photo the retry queue lands later asks for nothing, so
 // `take_back_may_wait_on_photo_change()` lowers TRUE -> NULL on the touched
-// event's own TRUE and, for a vomit / stool, on every TRUE of the pet within
-// 090's incident window.
+// event's own TRUE and, for a live vomit / stool, on every TRUE of the pet
+// within the reader's neighbour reach (72 h).
 //
 // This file replays the migrations (the last definition wins) and pins: the two
 // triggers and when they fire, the lower-only write, the self / neighbour /
@@ -23,9 +23,9 @@ import { stripSqlComments } from './sqlComments';
 // The INVOKER / pinned / revoked posture is lib/functionHardening.test.ts's.
 //
 // WHAT IT CANNOT SEE: the live database, and the trigger's runtime behaviour.
-// The PR proves the behaviour against a scratch Postgres 16 (30 cases: 30 pass
-// with 092; without it the 13 lowering cases fail and the 17 keep cases pass;
-// 13 mutants, each killed; the probe is in the PR body).
+// The PR proves the behaviour against a scratch Postgres 16, the deletion
+// cascade under a role with no grant on public included (the probe and its
+// mutants are in the PR body).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ROOT = join(__dirname, '..');
@@ -70,7 +70,9 @@ function replay(): { body: string | null; triggers: Map<string, Trigger> } {
 }
 
 const live = replay();
-const body: string = live.body ?? '';
+// The body's own line comments are prose, not code: drop them before matching
+// (none of its string literals holds a `--`).
+const body: string = (live.body ?? '').replace(/--[^\n]*/g, '');
 const squash = (s: string) => s.replace(/\s+/g, ' ').replace(/\(\s+/g, '(').replace(/\s+\)/g, ')').trim();
 const flat = squash(body);
 const mine = [...live.triggers.entries()].filter(([, t]) => t.fn === FN);
@@ -127,6 +129,26 @@ describe('092: the function and its two triggers', () => {
     expect(body).not.toMatch(/current_user/i);
   });
 
+  // auth.admin.deleteUser deletes auth.users as supabase_auth_admin; the
+  // cascade's row triggers run as that role, which holds no grant on public, so
+  // an unguarded sweep aborts every account deletion with a photo (adversarial
+  // pass on 092). The gate returns on a DELETE only, by privilege read off
+  // pg_catalog, schema first (naming a table in an unusable schema raises).
+  it('a DELETE by a writer without the grants returns before the sweep, and only a DELETE', () => {
+    const gate = flat.slice(0, flat.indexOf("IF TG_OP IN ('INSERT', 'UPDATE')"));
+    expect(gate).toBe(
+      "DECLARE v_events uuid[] := '{}'; v_pets uuid[] := '{}'; BEGIN " +
+      "IF TG_OP = 'DELETE' THEN " +
+      "IF NOT has_schema_privilege('public', 'USAGE') THEN RETURN NULL; END IF; " +
+      "IF NOT has_table_privilege('public.event_ai_analysis', 'UPDATE') OR NOT has_table_privilege('public.events', 'SELECT') THEN RETURN NULL; END IF; " +
+      'END IF; ',
+    );
+    // The sweep's targets are exactly the tables the gate checks.
+    const tables = [...body.matchAll(/\bpublic\.(\w+)/g)].map((m) => m[1]);
+    expect([...new Set(tables)].sort()).toEqual(['event_ai_analysis', 'events']);
+    expect(body.match(/RETURN NULL;/g) ?? []).toHaveLength(3);
+  });
+
   it('both sides of a move are touched (OLD on delete and update, NEW on insert and update)', () => {
     expect(flat).toContain("IF TG_OP IN ('INSERT', 'UPDATE') THEN v_events := v_events || NEW.event_id; v_pets := v_pets || NEW.pet_id; END IF;");
     expect(flat).toContain("IF TG_OP IN ('DELETE', 'UPDATE') THEN v_events := v_events || OLD.event_id; v_pets := v_pets || OLD.pet_id; END IF;");
@@ -169,17 +191,30 @@ describe('092: it answers the predicate (C-34)', () => {
     expect(EVIDENCE_SRC).toMatch(/settled: !r\.error && \(!params\.hasPhoto \|\| photoReadSettled\(r, params\.photoSetKey\)\)/);
   });
 
-  it('the neighbour window is 090\'s incident window: twice MAY_WAIT_NEIGHBOUR_HOURS either side', () => {
+  // The photo question is "is it a neighbour": the reader reads photo sets only
+  // for its `near` (live incidents within one reach, inclusive). NOT 090's
+  // 2 x reach, which answers the floor re-run's question and reads no photo
+  // (adversarial pass on 092; C-34: same value, different question).
+  it('the neighbour window is the reader\'s `near`: one MAY_WAIT_NEIGHBOUR_HOURS either side, inclusive', () => {
     expect(PREDICATE_SRC).toMatch(/export const MAY_WAIT_NEIGHBOUR_HOURS = FLOOR_READ_HOURS\b/);
     // Non-vacuity: the value the window is derived from.
     expect(FLOOR_READ_HOURS).toBe(72);
-    expect(EVIDENCE_SRC).toMatch(/\.gte\('occurred_at', iso\(anchorMs - 2 \* reach\)\)/);
-    expect(EVIDENCE_SRC).toMatch(/\.lte\('occurred_at', iso\(anchorMs \+ 2 \* reach\)\)/);
+    expect(EVIDENCE_SRC).toMatch(/const near = incidents\.filter\(\(e\) => e\.id !== p\.eventId && Math\.abs\(Date\.parse\(e\.occurred_at\) - anchorMs\) <= reach\)/);
+    expect(EVIDENCE_SRC).toMatch(/const ids = near\.map\(\(e\) => e\.id\)/);
+    expect(EVIDENCE_SRC).toMatch(/client\.from\('event_attachments'\)\.select\('id, event_id'\)\.in\('event_id', ids\)/);
     expect(flat).toContain(
-      `n.occurred_at >= p.occurred_at - 2 * interval '${FLOOR_READ_HOURS} hours' AND n.occurred_at <= p.occurred_at + 2 * interval '${FLOOR_READ_HOURS} hours'`,
+      `n.occurred_at >= p.occurred_at - interval '${FLOOR_READ_HOURS} hours' AND n.occurred_at <= p.occurred_at + interval '${FLOOR_READ_HOURS} hours'`,
     );
     const hours = [...body.matchAll(/interval\s+'(\d+)\s+hours'/gi)].map((m) => Number(m[1]));
     expect(hours).toEqual([FLOOR_READ_HOURS, FLOOR_READ_HOURS]);
+    expect(body).not.toMatch(/\d\s*\*\s*interval/i);
+  });
+
+  it('a neighbour is live: the reader reads incidents with deleted_at null', () => {
+    const start = EVIDENCE_SRC.indexOf('export async function readMayWaitRecord(');
+    const fnSrc = EVIDENCE_SRC.slice(start, EVIDENCE_SRC.indexOf('const near =', start));
+    expect(fnSrc).toMatch(/\.in\('event_type', \[\.\.\.MAY_WAIT_INCIDENT_TYPES\]\)\s*\.is\('deleted_at', null\)/);
+    expect(flat).toContain("AND p.deleted_at IS NULL AND (n.occurred_at IS NULL OR (");
   });
 
   it('a neighbour is an incident the predicate reads (MAY_WAIT_INCIDENT_TYPES)', () => {
