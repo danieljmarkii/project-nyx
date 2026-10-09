@@ -49,6 +49,7 @@ import { updateEvent, getEventSource } from '../../lib/db';
 import { usePetStore } from '../../store/petStore';
 import { useSyncStore } from '../../store/syncStore';
 import { formatTime } from '../../lib/utils';
+import { OPAQUE_HEX, shadowedGrounds } from '../../testUtils/tree';
 
 const CONFLICT = { conflict: true, otherEventId: 'm0', gapMinutes: 95 };
 const NO_CONFLICT = { conflict: false, otherEventId: null, gapMinutes: null };
@@ -555,5 +556,17 @@ describe('MedicationCompletionCard — the VoiceOver announcement (CUL-1275)', (
     seedDose();
     render(<MedicationCompletionCard />);
     expect(announce).not.toHaveBeenCalled();
+  });
+});
+
+// CUL-1691 PR 1 (spec §1): the daylight ground is OPAQUE under its shadow. iOS traces a
+// layer shadow off the composite alpha, so a translucent card grains (#1125).
+describe('MedicationCompletionCard — the opaque daylight ground (CUL-1691)', () => {
+  it('puts its shadow on an opaque ground', () => {
+    const view = render(<MedicationCompletionCard />);
+    seedDose();
+    const grounds = shadowedGrounds(view.UNSAFE_root);
+    expect(grounds.length).toBeGreaterThan(0);
+    for (const g of grounds) expect(g).toMatch(OPAQUE_HEX);
   });
 });

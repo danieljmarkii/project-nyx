@@ -79,6 +79,7 @@ import { reverseLoggedEvent } from '../../lib/undoLog';
 import { updateEvent, updateMealIntake, getEventSource } from '../../lib/db';
 import { triggerSignalRegenDebounced } from '../../lib/signal';
 import { formatTime } from '../../lib/utils';
+import { OPAQUE_HEX, shadowedGrounds } from '../../testUtils/tree';
 
 const MEMBERSHIP_FLAG: LogTimeTrialFlag = {
   kind: 'off_trial_list',
@@ -822,5 +823,17 @@ describe('MealCompletionCard — Reduce Motion (CUL-1633)', () => {
     } finally {
       spring.mockRestore();
     }
+  });
+});
+
+// CUL-1691 PR 1 (spec §1): the daylight ground is OPAQUE under its shadow. iOS traces a
+// layer shadow off the composite alpha, so a translucent card grains (#1125).
+describe('MealCompletionCard — the opaque daylight ground (CUL-1691)', () => {
+  it('puts its shadow on an opaque ground', () => {
+    const view = render(<MealCompletionCard />);
+    seedMeal();
+    const grounds = shadowedGrounds(view.UNSAFE_root);
+    expect(grounds.length).toBeGreaterThan(0);
+    for (const g of grounds) expect(g).toMatch(OPAQUE_HEX);
   });
 });

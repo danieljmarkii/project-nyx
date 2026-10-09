@@ -3,7 +3,7 @@ import { View, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-nativ
 import { router, usePathname } from 'expo-router';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
-import { CompletionMark } from './CompletionMark';
+import { COMPLETION_GROUND, CompletionMark } from './CompletionMark';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
@@ -81,6 +81,11 @@ interface AddTarget {
 // (handlePickFood) and the FAB quick-meal (handleQuickMeal) — fires the same
 // surface via showMeal(). The full-screen terminal beat for non-meal logs is a
 // sibling presentation rendered by <CompletionMoment/>.
+//
+// The ground is daylight (CUL-1691 PR 1, D1): a white card lifted by shadows.lg, no
+// outline (an outline would match the content cards beneath), over the screen it
+// confirms. It is OPAQUE on purpose: iOS traces a layer shadow off the composite
+// alpha, so a translucent card would grain its own shadow (#1125). The test pins it.
 //
 // Two affordances live here, both visible in the same moment:
 //   1. "Change time" — backfill path for meals fed before the owner reached
@@ -773,7 +778,6 @@ export function MealCompletionCard() {
                 onChange={handleIntakeChange}
                 label={null}
                 size="compact"
-                onDark
               />
             </View>
           )}
@@ -914,13 +918,15 @@ const styles = StyleSheet.create({
     zIndex: 50,
     elevation: 12,
   },
+  // Opaque under its shadow (see the header): the shadow lives here, never on the
+  // transparent wrapper, and the ground is the one the mark's check is knocked out in.
   card: {
-    backgroundColor: theme.colorNeutralDark,
+    backgroundColor: COMPLETION_GROUND,
     paddingHorizontal: theme.space2,
     paddingVertical: 12,
     borderRadius: theme.radiusLarge,
     gap: theme.space1,
-    ...shadows.md,
+    ...shadows.lg,
   },
   headerRow: {
     flexDirection: 'row',
@@ -934,12 +940,12 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: theme.textMD,
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
     fontWeight: theme.weightMedium,
   },
   subLabel: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSubtle,
+    color: theme.colorTextSecondary,
     fontWeight: theme.weightRegular,
   },
   // The two reversal/correction controls, grouped (CUL-612). Tight internal gap:
@@ -962,7 +968,7 @@ const styles = StyleSheet.create({
   // presentations now agree — the sentence leads, the controls sit under it.
   action: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
     fontWeight: theme.weightMedium,
     textDecorationLine: 'underline',
   },
@@ -970,51 +976,50 @@ const styles = StyleSheet.create({
     // Subtle separator so the chip row reads as a related-but-distinct
     // affordance, not a second action on the same line.
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorDividerOnDark,
+    borderTopColor: theme.colorBorderStrong,
     paddingTop: theme.space1,
     gap: 6,
   },
   intakeLabel: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSubtle,
+    color: theme.colorTextSecondary,
     fontWeight: theme.weightRegular,
   },
   // B-351 slice 4 — the passive trial-contaminant heads-up. Same divider treatment
-  // as the rows around it so the card stays one calm stack, and no accent fill: on
-  // this dark ground the tinted safety card the detail screens use would read as an
-  // alarm, and D2's whole point is that log-time is the NON-blocking register. The
+  // as the rows around it so the card stays one calm stack, and no accent fill: the
+  // tinted safety card the detail screens use would read as an alarm, and D2's whole point is that log-time is the NON-blocking register. The
   // headline carries slightly more weight than the detail so the fact lands first.
   flagWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorDividerOnDark,
+    borderTopColor: theme.colorBorderStrong,
     paddingTop: theme.space1,
     gap: 2,
   },
   flagHeadline: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
   },
   flagDetail: {
     fontSize: theme.textSM,
     lineHeight: theme.textSM * 1.4,
-    color: theme.colorTextOnDarkSubtle,
+    color: theme.colorTextSecondary,
   },
   // B-693 — the amber "attention" panel for the rung-3 membership heads-up. The
   // wrapper carries the same top-divider treatment as the sibling blocks so the
   // card stays one calm stack; the tinted, left-barred panel inside is what makes
   // THIS one unmissable (mock round 2, PM-ruled amber over a rose "danger"
   // rendering) — its claim-strength stays list-absence, not harm, which is why it
-  // is the moment gold and not the app's rose symptom red.
+  // is the attention amber and not the app's rose symptom red.
   membershipSect: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorDividerOnDark,
+    borderTopColor: theme.colorBorderStrong,
     paddingTop: theme.space1,
   },
   membershipPanel: {
-    backgroundColor: theme.colorMomentGlowFillOnDark,
+    backgroundColor: theme.colorAttentionLight,
     borderLeftWidth: 3,
-    borderLeftColor: theme.colorMomentGlow,
+    borderLeftColor: theme.colorAttentionRail,
     borderRadius: theme.radiusMedium,
     paddingVertical: 10,
     paddingHorizontal: 12,
@@ -1023,24 +1028,24 @@ const styles = StyleSheet.create({
   membershipTextBlock: {
     gap: 2,
   },
-  // The micro-caps eyebrow in the moment gold — "Off the trial list". Names the
+  // The micro-caps eyebrow in the attention ink — "Off the trial list". Names the
   // register (a fact about the LIST) before the sentence lands.
   membershipEyebrow: {
     fontSize: theme.textXS,
     fontWeight: theme.weightSemibold,
-    color: theme.colorMomentGlow,
+    color: theme.colorAttentionInk,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
   // The add hatch — the quietest line in the panel, still a full 44pt tap target
-  // (the 3am-test floor). Subtle-on-dark, like the combo row it sits above.
+  // (the 3am-test floor). The secondary ink, like the combo row it sits above.
   membershipAddRow: {
     minHeight: 44,
     justifyContent: 'center',
   },
   membershipAddText: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSubtle,
+    color: theme.colorTextSecondary,
     fontWeight: theme.weightMedium,
   },
   // The opt-in combo entry (B-156 PR B2b). ≥44pt tappable (the 3am-test floor) via
@@ -1048,14 +1053,14 @@ const styles = StyleSheet.create({
   // intake row, never a peer of the logged act. Deliberately the quietest line.
   comboRow: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorDividerOnDark,
+    borderTopColor: theme.colorBorderStrong,
     paddingTop: theme.space1,
     minHeight: 44,
     justifyContent: 'center',
   },
   comboText: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSubtle,
+    color: theme.colorTextSecondary,
     fontWeight: theme.weightMedium,
   },
 

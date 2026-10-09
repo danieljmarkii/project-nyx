@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
-import { CompletionMark } from './CompletionMark';
+import { COMPLETION_GROUND, CompletionMark } from './CompletionMark';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { TimeEditSheet } from './TimeEditSheet';
@@ -60,6 +60,11 @@ const CHIP_CONFIRM_HOLD_MS = 1500;
 // stays a REVERSAL and never becomes a second path to an affirmative — removing a
 // dose can only reduce what the record claims, and an unanswered card still lands
 // `unconfirmed`, exactly as before.
+//
+// The ground is daylight (CUL-1691 PR 1, D1), the meal card's: a white card lifted by
+// shadows.lg, no outline. It is OPAQUE on purpose: iOS traces a layer shadow off the
+// composite alpha, so a translucent card would grain its own shadow (#1125). The test
+// pins it.
 export function MedicationCompletionCard() {
   const {
     visible, payload, removed, hide, undo, patchOccurredAt, patchAdherence, patchHowGiven,
@@ -447,7 +452,6 @@ export function MedicationCompletionCard() {
             onChange={handleAdherenceChange}
             label={null}
             size="compact"
-            onDark
           />
         </View>
         {/* B-157 (CUL-284) — the calm double-dose check, at log time. Sits BELOW the
@@ -458,7 +462,7 @@ export function MedicationCompletionCard() {
 
             Non-interactive, and read as one summary node so a screen reader speaks the
             fact and its "worth double-checking" tail together instead of as an orphan
-            line. Divider-only on the card's dark ground, mirroring the detail screen's
+            line. Divider-only on the card, mirroring the detail screen's
             deliberate NOT-the-rose-tint ruling: §6.4 is a flag, never an alarm, and the
             record cannot yet distinguish a mistaken second tap from a real second dose.
             The correction lives where it can be made properly — the chips here for the
@@ -482,7 +486,6 @@ export function MedicationCompletionCard() {
             onChange={handleVehicleChange}
             label={null}
             size="compact"
-            onDark
           />
         </View>
         </>
@@ -524,13 +527,15 @@ const styles = StyleSheet.create({
     zIndex: 50,
     elevation: 12,
   },
+  // Opaque under its shadow (see the header): the shadow lives here, never on the
+  // transparent wrapper, and the ground is the one the mark's check is knocked out in.
   card: {
-    backgroundColor: theme.colorNeutralDark,
+    backgroundColor: COMPLETION_GROUND,
     paddingHorizontal: theme.space2,
     paddingVertical: 12,
     borderRadius: theme.radiusLarge,
     gap: theme.space1,
-    ...shadows.md,
+    ...shadows.lg,
   },
   headerRow: {
     flexDirection: 'row',
@@ -544,12 +549,12 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: theme.textMD,
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
     fontWeight: theme.weightMedium,
   },
   subLabel: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSubtle,
+    color: theme.colorTextSecondary,
     fontWeight: theme.weightRegular,
   },
   // 44pt min touch target (the 3am-test rule) — the underlined label alone is
@@ -567,26 +572,26 @@ const styles = StyleSheet.create({
   },
   action: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
     fontWeight: theme.weightMedium,
     textDecorationLine: 'underline',
   },
   adherenceWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorDividerOnDark,
+    borderTopColor: theme.colorBorderStrong,
     paddingTop: theme.space1,
     gap: 6,
   },
   adherenceLabel: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSubtle,
+    color: theme.colorTextSecondary,
     fontWeight: theme.weightRegular,
   },
   // The in-doubt reason line — fainter than the prompt, sits between it and the chips.
   // Calm, never an alarm colour: the rose flag lives on the chip-row downgrade, not here.
   inDoubtReason: {
     fontSize: theme.textXS,
-    color: theme.colorTextOnDarkFaint,
+    color: theme.colorTextTertiary,
     fontWeight: theme.weightRegular,
   },
   // B-157 — the double-dose note block. Same top-divider treatment as its siblings so
@@ -595,13 +600,13 @@ const styles = StyleSheet.create({
   // to the adherence question but must not read as fine print.
   doubleDoseWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorDividerOnDark,
+    borderTopColor: theme.colorBorderStrong,
     paddingTop: theme.space1,
   },
   doubleDoseText: {
     fontSize: theme.textSM,
     lineHeight: theme.textSM * 1.4,
-    color: theme.colorTextOnDarkSubtle,
+    color: theme.colorTextSecondary,
     fontWeight: theme.weightRegular,
   },
   // Subordinate to the adherence block: a fainter divider + dimmer label so the
@@ -609,13 +614,13 @@ const styles = StyleSheet.create({
   // it?" question, never a peer of it.
   vehicleWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorDividerOnDark,
+    borderTopColor: theme.colorBorderStrong,
     paddingTop: theme.space1,
     gap: 6,
   },
   vehicleLabel: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkFaint,
+    color: theme.colorTextTertiary,
     fontWeight: theme.weightRegular,
   },
 

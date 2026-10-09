@@ -4,8 +4,7 @@ import { ThemedText } from './ThemedText';
 
 type Variant =
   | 'default'   // active: teal outline + tinted background (date presets)
-  | 'filled'    // active: dark filled (type filters)
-  | 'onDark';   // active: accent fill on a dark parent surface (intake chips in Toast)
+  | 'filled';   // active: near-black pill, white label (type filters, the completion cards' intake chips)
 
 interface Props {
   label: string;
@@ -106,42 +105,13 @@ const filledVariant = StyleSheet.create({
   },
 });
 
-// Use inside a dark-surface container (e.g. the post-log Toast card).
-// Inactive: translucent white border + soft white label, transparent fill so
-// the parent card colour shows through. Active: accent fill, white label —
-// reads cleanly against the dark card without competing with the card's
-// own affordances.
-const onDarkVariant = StyleSheet.create({
-  base: {
-    ...baseChip,
-    borderColor: 'rgba(255,255,255,0.3)',
-    backgroundColor: 'transparent',
-  },
-  activeContainer: {
-    backgroundColor: theme.colorAccent,
-    borderColor: theme.colorAccent,
-  },
-  label: {
-    ...baseLabel,
-    // Deliberately a translucent white rather than a token: the inactive label sits
-    // on a transparent chip over an unknown dark card colour, so it has to blend
-    // with whatever shows through. The ACTIVE label sits on a solid accent fill and
-    // is the token (B-168).
-    color: 'rgba(255,255,255,0.85)',
-  },
-  activeLabel: {
-    color: theme.colorTextOnDark,
-  },
-});
-
 const STYLE_BY_VARIANT = {
   default: defaultVariant,
   filled: filledVariant,
-  onDark: onDarkVariant,
 };
 
 // Variant-agnostic dim for the temporarily-inert state — layered over whichever
-// variant's container/label so the busy look is one rule, not three.
+// variant's container/label so the busy look is one rule, not one per variant.
 const styles = StyleSheet.create({
   disabled: {
     opacity: theme.opacityDisabled,

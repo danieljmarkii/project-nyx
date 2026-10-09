@@ -25,14 +25,11 @@ interface Props {
   // row's chip (`lib/rowChips.ts`) — the old `onChange`-omitted read-only branch that reused
   // FilterChip lived here and is gone, so a handler is now required.
   onChange: (next: IntakeRating | null) => void;
-  // Optional header label. Pass null/'' to suppress (e.g. inside a toast
+  // Optional header label. Pass null/'' to suppress (e.g. inside the meal card,
   // where vertical budget is tight). Defaults to the locked "later is fine"
   // framing for the inline log surface.
   label?: string | null;
   size?: 'default' | 'compact';
-  // Flip to true when rendering on a dark parent surface (Toast card).
-  // Switches the chip variant + label colours.
-  onDark?: boolean;
 }
 
 export function IntakeChipRow({
@@ -40,17 +37,13 @@ export function IntakeChipRow({
   onChange,
   label = 'Already finished? (optional)',
   size = 'default',
-  onDark = false,
 }: Props) {
   // Editable: 5-chip row. Tap an active chip to clear back to null.
   const showLabel = label !== null && label !== '';
   return (
     <View style={size === 'compact' ? styles.compactWrap : styles.wrap}>
       {showLabel && (
-        <ThemedText style={[
-          size === 'compact' ? styles.labelCompact : styles.label,
-          onDark && styles.labelOnDark,
-        ]}>
+        <ThemedText style={size === 'compact' ? styles.labelCompact : styles.label}>
           {label}
         </ThemedText>
       )}
@@ -63,7 +56,7 @@ export function IntakeChipRow({
                 label={opt.label}
                 active={active}
                 onPress={() => onChange(active ? null : opt.value)}
-                variant={onDark ? 'onDark' : 'filled'}
+                variant="filled"
               />
             </View>
           );
@@ -91,9 +84,6 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     textTransform: 'uppercase',
     letterSpacing: theme.trackingWidest,
-  },
-  labelOnDark: {
-    color: theme.colorTextOnDarkSubtle,
   },
   row: {
     flexDirection: 'row',

@@ -3,9 +3,10 @@ import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, Path, RadialGradient, Stop } from 'react-native-svg';
 import { theme } from '../../constants/theme';
 
-// The completion cards' check (CUL-1691). One vector node: a solid confirm disc, the
+// The completion cards' check (CUL-1691). One vector node: a solid teal disc, the
 // check knocked out of it in the card's own ground, and — on a celebrate beat only —
-// the warm-gold halo DRAWN as a radial gradient behind it.
+// the warm-gold halo DRAWN as a radial gradient behind it, starting after a 2pt gap of
+// that same ground (spec §1, D2), so the gold never touches the disc.
 //
 // Why not a ring plus a layer shadow, as before: the old badge's fill was 6% white with
 // no `shadowPath`, so iOS traced the gold shadow off the composite alpha — a 1.5pt ring
@@ -18,9 +19,14 @@ import { theme } from '../../constants/theme';
 
 export const MARK_SIZE = 32;
 const HALO_SIZE = 52;
-// Where the disc's edge falls on the halo's radius: the gradient starts at the edge,
-// so the gold reads as light around the disc rather than a tint across it.
-const DISC_EDGE = MARK_SIZE / HALO_SIZE;
+// The ground the check is knocked out in and the halo's gap shows. It IS the cards'
+// ground: the three completion cards paint their `card` with this constant, so the knock-out can never drift from the surface it sits on.
+export const COMPLETION_GROUND = theme.colorSurface;
+// The halo's stops, as fractions of its 26pt radius: transparent out to r18 (the
+// disc's r16 plus the 2pt gap), the gold's peak at r18.2, fading to nothing at r26.
+// A 0.2pt ramp reads as a hard stop and needs no two stops at one offset.
+export const HALO_GAP_OFFSET = 0.692;
+export const HALO_PEAK_OFFSET = 0.7;
 
 interface CompletionMarkProps {
   /** The celebrate warmth. Off over a refusal, a calm symptom, a weight (CUL-894). */
@@ -35,7 +41,9 @@ export function CompletionMark({ halo }: CompletionMarkProps) {
         <Svg testID="completion-mark-halo" width={HALO_SIZE} height={HALO_SIZE} style={styles.halo}>
           <Defs>
             <RadialGradient id={gradientId} cx="50%" cy="50%" r="50%">
-              <Stop offset={DISC_EDGE * 0.9} stopColor={theme.colorMomentGlow} stopOpacity={0.34} />
+              <Stop offset={0} stopColor={theme.colorMomentGlow} stopOpacity={0} />
+              <Stop offset={HALO_GAP_OFFSET} stopColor={theme.colorMomentGlow} stopOpacity={0} />
+              <Stop offset={HALO_PEAK_OFFSET} stopColor={theme.colorMomentGlow} stopOpacity={0.34} />
               <Stop offset={1} stopColor={theme.colorMomentGlow} stopOpacity={0} />
             </RadialGradient>
           </Defs>
@@ -43,10 +51,11 @@ export function CompletionMark({ halo }: CompletionMarkProps) {
         </Svg>
       )}
       <Svg testID="completion-mark-disc" width={MARK_SIZE} height={MARK_SIZE} viewBox="0 0 32 32">
-        <Circle cx={16} cy={16} r={16} fill={theme.colorMomentConfirm} />
+        <Circle cx={16} cy={16} r={16} fill={theme.colorAccentGlyph} />
         <Path
+          testID="completion-mark-check"
           d="M10 16.6l4.1 4.1 8-8.6"
-          stroke={theme.colorNeutralDark}
+          stroke={COMPLETION_GROUND}
           strokeWidth={2.6}
           strokeLinecap="round"
           strokeLinejoin="round"
