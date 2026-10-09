@@ -2038,9 +2038,9 @@ describe('VomitAnalysisSection — the go-live day (CUL-1513)', () => {
   it("the pet's first new-rule read says what changed; a later one does not", async () => {
     mockLiveSince = '2026-10-20';
     mockSeamReads = [
-      { event_id: 'old', occurred_at: '2026-09-22T05:30:00.000Z', status: 'completed', recommendation: 'worth_a_call', tier: null, engine_flags: '[]' },
-      { event_id: 'g2', occurred_at: '2026-10-21T00:05:00.000Z', status: 'completed', recommendation: 'monitor', tier: 'logged', engine_flags: JSON.stringify(EN3) },
-      { event_id: 'g3', occurred_at: '2026-10-23T00:05:00.000Z', status: 'completed', recommendation: 'worth_a_call', tier: 'call_today', engine_flags: JSON.stringify(EN3) },
+      { event_id: 'old', occurred_at: '2026-09-22T05:30:00.000Z', updated_at: BEFORE, status: 'completed', recommendation: 'worth_a_call', tier: null, engine_flags: '[]' },
+      { event_id: 'g2', occurred_at: '2026-10-21T00:05:00.000Z', updated_at: new Date(2026, 9, 21).toISOString(), status: 'completed', recommendation: 'monitor', tier: 'logged', engine_flags: JSON.stringify(EN3) },
+      { event_id: 'g3', occurred_at: '2026-10-23T00:05:00.000Z', updated_at: new Date(2026, 9, 23).toISOString(), status: 'completed', recommendation: 'worth_a_call', tier: 'call_today', engine_flags: JSON.stringify(EN3) },
     ];
     mockRow = row({ recommendation: 'monitor', tier: 'logged', engine_flags: EN3, updated_at: new Date(2026, 9, 21).toISOString() });
     const first = render(<VomitAnalysisSection eventId="g2" petId="pet-1" petName="Rex" hasPhoto />);
@@ -2050,7 +2050,7 @@ describe('VomitAnalysisSection — the go-live day (CUL-1513)', () => {
       ),
     );
     first.unmount();
-    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3 });
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3, updated_at: new Date(2026, 9, 23).toISOString() });
     const later = render(<VomitAnalysisSection eventId="g3" petId="pet-1" petName="Rex" hasPhoto />);
     await later.findByText('Call your vet today');
     await waitFor(() => expect(mockReadSeam).toHaveBeenCalledTimes(2));

@@ -186,7 +186,7 @@ export async function readCopies(eventIds: readonly string[]): Promise<Map<strin
  */
 export async function readPetSeamReads(petId: string): Promise<SeamRead[]> {
   return getDb().getAllAsync<SeamRead>(
-    `SELECT v.event_id, e.occurred_at, v.status, v.recommendation, v.tier, v.engine_flags
+    `SELECT v.event_id, e.occurred_at, v.updated_at, v.status, v.recommendation, v.tier, v.engine_flags
        FROM event_ai_verdicts v
        JOIN events e ON e.id = v.event_id
       WHERE e.pet_id = ? AND e.deleted_at IS NULL`,

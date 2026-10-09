@@ -72,51 +72,69 @@ export function newSinceLine(liveSince: string, petName: string | null | undefin
   return `New since ${dayWord(liveSince)}: reads say how soon to call. ${keep} the words they had.`;
 }
 
-/** One read of the pet's, as the phone's copy holds it, with its event's time. */
+/** One read of the pet's, as the phone's copy holds it, with its event's time and the
+ *  read's own last write. */
 export interface SeamRead extends TierRow {
   event_id: string;
   occurred_at: string;
+  /** The server's `updated_at` for the read: when it was last written, so when the rule
+   *  that wrote it was in force. */
+  updated_at: string | null;
 }
 
 /**
  * From the record alone, so a second phone agrees (spec §5, no device key): the event whose
- * read is the pet's FIRST new-rule read (earliest event, the id breaking a tie), and whether
- * the pet has any earlier-rule read. Only reads that stand as words count (`tierDisplayOf`):
- * a read in flight or with no verdict is not "a read" either side of the seam. Pure.
+ * read was the pet's FIRST made under the new rule, and whether the pet has any earlier-rule
+ * read. "First" is by when the READ was written, never when the event happened: a Re-run
+ * can tier a September incident in November, and that read is not the one that met the new
+ * rule first (code review on PR-27k). The id breaks a tie. A read's last write is the
+ * closest the copy holds to when it was read, and it can only move later (a hide or a
+ * correction bumps it), so the line can drift to a later read, never back over the date.
+ * Only reads that stand as words count (`tierDisplayOf`): a read in flight or with no
+ * verdict is not "a read" either side of the seam. Pure.
  */
-export function ruleSeamOf(reads: readonly SeamRead[]): { firstTiered: string | null; hasEarlier: boolean } {
+export function ruleSeamOf(reads: readonly SeamRead[]): {
+  firstTiered: string | null;
+  firstTieredAt: string | null;
+  hasEarlier: boolean;
+} {
   let hasEarlier = false;
-  let first: { id: string; at: number } | null = null;
+  let first: { id: string; at: number; raw: string } | null = null;
   for (const r of reads) {
     if (tierDisplayOf(r) === null) continue;
     if (!isTieredRow(r)) {
       hasEarlier = true;
       continue;
     }
-    const at = new Date(r.occurred_at).getTime();
+    if (!r.updated_at) continue;
+    const at = new Date(r.updated_at).getTime();
     if (!Number.isFinite(at)) continue;
-    if (first === null || at < first.at || (at === first.at && r.event_id < first.id)) first = { id: r.event_id, at };
+    if (first === null || at < first.at || (at === first.at && r.event_id < first.id)) first = { id: r.event_id, at, raw: r.updated_at };
   }
-  return { firstTiered: first?.id ?? null, hasEarlier };
+  return { firstTiered: first?.id ?? null, firstTieredAt: first?.raw ?? null, hasEarlier };
 }
 
-/** The "New since" line for this event's read, or null: no go-live day, or this is not the
- *  pet's first new-rule read, or the pet has no earlier read to keep its words. `own` is the
- *  record screen's own row for the event, fresher than the phone's copy of it (a Re-run that
- *  tiered this read lands on screen before the copy's next pull), so it stands in for it. */
+/** The "New since" line for this event's read, or null: no go-live day, this is not the
+ *  pet's first new-rule read, the pet has no earlier read to keep its words, or that first
+ *  read was written BEFORE the day (an allow-listed tester's reads tier before the date the
+ *  seed names, and "New since Oct 20" over an Oct 12 read is false). `own` is the record
+ *  screen's own row for the event, fresher than the phone's copy of it (a Re-run that tiered
+ *  this read lands on screen before the copy's next pull), so it stands in for it. */
 export function newSinceLineOf(
   eventId: string,
   reads: readonly SeamRead[],
   liveSince: string | null,
   petName: string | null | undefined,
-  own?: TierRow | null,
+  own?: (TierRow & { updated_at?: string | null }) | null,
 ): string | null {
   if (!liveSince) return null;
   const merged = own
-    ? reads.map((r) => (r.event_id === eventId ? { ...r, ...own, event_id: r.event_id, occurred_at: r.occurred_at } : r))
+    ? reads.map((r) => (r.event_id === eventId ? { ...r, ...own, event_id: r.event_id, occurred_at: r.occurred_at, updated_at: own.updated_at ?? r.updated_at } : r))
     : reads;
-  const { firstTiered, hasEarlier } = ruleSeamOf(merged);
-  return hasEarlier && firstTiered === eventId ? newSinceLine(liveSince, petName) : null;
+  const { firstTiered, firstTieredAt, hasEarlier } = ruleSeamOf(merged);
+  if (!hasEarlier || firstTiered !== eventId || firstTieredAt === null) return null;
+  if (readBeforeLiveSince(firstTieredAt, liveSince)) return null;
+  return newSinceLine(liveSince, petName);
 }
 
 /**
