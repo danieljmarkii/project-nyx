@@ -3950,6 +3950,12 @@ async function hydrateVetCallFollowUps(db: Db, stale: () => boolean): Promise<vo
 }
 
 async function pushAllQueues(): Promise<void> {
+  // FAB PR-29b (CUL-1657): FIRST. It names only its pet, which is written remote-first,
+  // so it waits on nothing, and going first means this phone's change date reaches the
+  // server before any event logged after it. A push cut off between the two would
+  // otherwise land the events first and widen the window in which another phone's
+  // later date can win the (pet_id, change_key) UNIQUE.
+  await syncPendingCaptureChanges();
   await syncPendingEvents();
   await syncPendingMeals();
   // B-186: weight_checks FK→events; pushed after events (parents land first).
@@ -3997,8 +4003,6 @@ async function pushAllQueues(): Promise<void> {
   // above; the drain holds any whose trigger has not landed. Through the queue's own
   // serialized drain, not its public entry point, which would re-run the events push.
   await serializeQueuePush('incident_floor_queue', drainIncidentFloorQueue);
-  // FAB PR-29: names only its pet, which is written remote-first, so its position is free.
-  await syncPendingCaptureChanges();
   // B-661: account-scoped, no FK to anything pushed above (v1 rows are
   // account-wide, pet_id NULL), so its position is free — last, after the
   // pet-scoped queues.

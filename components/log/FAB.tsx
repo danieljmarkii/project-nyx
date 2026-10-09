@@ -34,6 +34,7 @@ import { noPetToLogForCopy } from '../../lib/logCopy';
 import { focusAccessibility } from '../../lib/a11yFocus';
 import { rowFoodLabelOf } from '../../lib/dayEvents';
 import { foodFormatTag } from '../../lib/foodFormat';
+import { recordCaptureChange } from '../../lib/captureChanges';
 import {
   planFan, FAB_BOTTOM, FAB_DISC, FAN_MARGIN_BOTTOM, FAN_RIGHT_INSET, FAN_GAP,
   PILL_MIN_HEIGHT, PILL_PADDING_V, PILL_PADDING_LEFT, PILL_PADDING_RIGHT, PILL_INNER_GAP,
@@ -111,13 +112,15 @@ export const FAN_FOCUS_DELAY_MS = 500;
 /** Where a fan pill starts, relative to where it lands: tucked into the disc's
  *  corner at 60%, growing out of it (the pills' transformOrigin is that corner). */
 const FAN_FROM = { x: 18, y: 26, scale: 0.6 } as const;
-/** The most pills the fan can hold: the switcher chip, More events, Loose stool,
+/** The most pills the fan can hold: the switcher chip, More events, Stool,
  *  Vomit, Log food, and three recent foods. One Animated.Value per SLOT (a slot is
  *  a distance from the disc), so a row that mounts after the fan has run — the
  *  recent foods answer asynchronously — lands on a slot already at rest. */
 const MAX_SLOTS = 8;
-/** The doors' labels, top to bottom, as the fan draws them and the budget plans them. */
-const DOOR_LABELS = ['More events', 'Loose stool', 'Vomit', 'Log food'] as const;
+/** The doors' labels, top to bottom, as the fan draws them and the budget plans them.
+ *  The split stool pill is planned by everything it draws in its row (its label and both
+ *  segments), so the budget wraps it as wide as it stands (CUL-1657). */
+const DOOR_LABELS = ['More events', 'Stool Normal Loose', 'Vomit', 'Log food'] as const;
 
 interface FanRow {
   key: string;
@@ -150,6 +153,93 @@ function MealMark({ hidden = false }: { hidden?: boolean }) {
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+/**
+ * THE SPLIT STOOL PILL (CUL-1657, PM ruling D6 on CUL-1655; mock round 2 §04). The
+ * sheet's split Stool tile (EventTypePicker's StoolSplitTile), carried into the fan: the
+ * glyph and "Stool" name the subject and are not a control; the two segments are. Each
+ * opens the same confirm the sheet uses (Saw it or Found it, the optional photo), never
+ * a silent write, so a normal stool is two taps from Home and a loose one is unchanged.
+ *
+ * The pill is a plain View, not a FanPill: a touchable around two touchables would
+ * answer a press between them with a third action. Each segment is its own Pressable,
+ * a 44pt box (the floor carried by the box, no hitSlop, as on every pill here, C-5), so
+ * the two never share hit area and the gap between them only has to be non-negative.
+ * Normal against Loose is a clinical distinction, so the boundary stays unambiguous.
+ * The visible chip inside each box is smaller; the box is the target.
+ *
+ * Labels say what the segment does (C-7), the sheet tile's own words. The segments do
+ * not scale on press: the fill answers alone, so Reduce Motion has nothing to take
+ * away, and the pill arrives on its FanSlot like every other pill.
+ *
+ * THE RECORD (PR-29, migration 091): the first time this pill shows, every pet of the
+ * account gets its `fab_stool_split` row, dated now. Written from this pill's own
+ * mount, so it is dated before the first frame anyone can tap Normal on (React flushes
+ * a mount's passive effects before it handles the next touch, and the date is taken
+ * synchronously at the top of the effect). `recordCaptureChange` writes only the pets
+ * that lack a row, so every later open writes nothing, and a pet that joins later gets
+ * its own row the first time the fan shows it.
+ */
+function StoolSplitPill({
+  style, petIds, onNormal, onLoose,
+}: {
+  style: StyleProp<ViewStyle>;
+  petIds: readonly string[];
+  onNormal: () => void;
+  onLoose: () => void;
+}) {
+  // Keyed by the set of pets, so a pet that arrives while the fan is open is written too.
+  const petKey = [...petIds].sort().join(',');
+  const record = useCallback(() => {
+    if (!petKey) return;
+    recordCaptureChange('fab_stool_split', petKey.split(','), new Date()).catch((err) => {
+      console.warn('[FAB] could not record the stool split for the vet report', err);
+    });
+  }, [petKey]);
+  useEffect(record, [record]);
+  // The backstop (adversarial review): a mount write that threw (a busy database) is not
+  // retried until the pill mounts again, so a segment asks once more as it is tapped. On
+  // the normal path the pets already have their rows and this writes nothing; after a
+  // failed mount write it dates the row at the tap, still before the event it opens.
+  const tapped = (open: () => void) => () => { record(); open(); };
+
+  return (
+    <View style={[styles.pill, styles.splitPill, style]} testID="fab-stool-split">
+      <View style={[styles.pillGlyph, styles.pillGlyphSymptom]}>
+        <EventIcon type="stool_normal" size={16} color={theme.colorEventSymptom} />
+      </View>
+      <ThemedText style={[styles.pillLabel, styles.splitLabel]}>Stool</ThemedText>
+      <View style={styles.splitSegs}>
+        <Pressable
+          onPress={tapped(onNormal)}
+          style={styles.splitSeg}
+          accessibilityRole="button"
+          accessibilityLabel="Log normal stool"
+          testID="fab-stool-normal"
+        >
+          {({ pressed }) => (
+            <View style={[styles.splitChip, pressed && styles.splitChipPressed]}>
+              <ThemedText style={styles.splitChipText}>Normal</ThemedText>
+            </View>
+          )}
+        </Pressable>
+        <Pressable
+          onPress={tapped(onLoose)}
+          style={styles.splitSeg}
+          accessibilityRole="button"
+          accessibilityLabel="Log loose stool"
+          testID="fab-stool-loose"
+        >
+          {({ pressed }) => (
+            <View style={[styles.splitChip, pressed && styles.splitChipPressed]}>
+              <ThemedText style={styles.splitChipText}>Loose</ThemedText>
+            </View>
+          )}
+        </Pressable>
+      </View>
+    </View>
+  );
+}
 
 /**
  * A fan pill's press (CUL-1645, D3): on touch DOWN it settles to 0.97 and takes the
@@ -1080,21 +1170,18 @@ export function FAB() {
     // loose stool need because they're discovery-prone. Still one tap to the confirm,
     // one tap to save — and the completion card is the sheet's, never this menu's
     // (beat 6, C-17).
+    //
+    // CUL-1657 (D6): the stool row is the split pill, Normal and Loose. It keeps the
+    // row's key and its slot, so the fan's order and its eight slots are unchanged.
     rows.push({
       key: 'diarrhea',
       node: (
-        <FanPill
+        <StoolSplitPill
           style={pillWidth}
-          reducedMotion={reducedMotion}
-          onPress={whileOpen(() => handOffToLogSheet('diarrhea'))}
-          accessibilityRole="button"
-        >
-          <View style={[styles.pillGlyph, styles.pillGlyphSymptom]}>
-            <EventIcon type="diarrhea" size={16} color={theme.colorEventSymptom} />
-          </View>
-          <ThemedText style={styles.pillLabel}>Loose stool</ThemedText>
-          <DoorChevron />
-        </FanPill>
+          petIds={pets.map((p) => p.id)}
+          onNormal={whileOpen(() => handOffToLogSheet('stool_normal'))}
+          onLoose={whileOpen(() => handOffToLogSheet('diarrhea'))}
+        />
       ),
     });
     rows.push({
@@ -1424,6 +1511,48 @@ const styles = StyleSheet.create({
   // CUL-1645: the pressed ground, the neutral one the app's other rows press to.
   pillPressed: {
     backgroundColor: theme.colorSurfaceSubtle,
+  },
+  // CUL-1657: the split stool pill. Its segments are 44pt boxes, so the pill drops its
+  // vertical padding to keep the doors' height, and its right padding to the segments'
+  // own gap, so the Loose box reaches the pill's edge. It wraps rather than squeezing
+  // "Stool" letter by letter at the largest type: the segments drop to a second line,
+  // still side by side, still apart.
+  splitPill: {
+    paddingVertical: 0,
+    paddingRight: theme.space1,
+    flexWrap: 'wrap',
+    rowGap: 0,
+  },
+  splitLabel: {
+    flexShrink: 0,
+  },
+  splitSegs: {
+    flexDirection: 'row',
+    gap: theme.space1,
+    marginLeft: 'auto',
+  },
+  // The target: the 44pt floor in both directions, carried by the box (no hitSlop).
+  splitSeg: {
+    minHeight: PILL_MIN_HEIGHT,
+    minWidth: PILL_MIN_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // What the eye sees inside the target: the sheet tile's segment, at the pill's weight.
+  splitChip: {
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusFull,
+    paddingVertical: theme.space1,
+    paddingHorizontal: theme.space2,
+  },
+  splitChipPressed: {
+    backgroundColor: theme.colorSurfaceSubtle,
+  },
+  splitChipText: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
   },
   pillGlyph: {
     width: PILL_GLYPH,
