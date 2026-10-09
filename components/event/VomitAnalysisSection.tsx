@@ -14,7 +14,7 @@
 // Guardrail (Dr. Chen, B-013): the read ESCALATES on a visible/contextual red
 // flag and NEVER reassures on absence. The recommendation enum has no
 // reassuring value, so this component never renders an "all clear".
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
@@ -204,7 +204,12 @@ export function VomitAnalysisSection(
   // moves on each), so a vomit or lethargy logged over this record reaches the line at once.
   const waitCandidate = !!row && row.tier === 'call_today' && row.may_wait === true && isTieredRow(row);
   const lastLogged = useMomentStore((s) => s.payload);
-  const waitTick = `${Math.floor(clockNow / 60_000)}`;
+  // When that log landed: an answer read before it cannot have seen it (the `stale` gate).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const lastLoggedAt = useMemo(() => (lastLogged ? Date.now() : null), [lastLogged]);
+  // Back from the background re-reads and re-renders at once, never on the next interval.
+  const waitActive = useAppActive();
+  const waitTick = `${Math.floor(clockNow / 60_000)}|${waitActive}`;
   const mayWaitFacts = useMayWaitFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}`, waitTick, lastLogged, waitCandidate);
   // The RECORD's pet (C-9): species and birthday decide which clauses its list carries.
   const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
@@ -309,24 +314,30 @@ export function VomitAnalysisSection(
   // alone. A resolved row is otherwise fetched once, so a take-back the server writes for a
   // neighbour's finding (088–092) would never reach an open record. The line stands only
   // while this copy and the one on screen agree; a newer one is shown, not just obeyed.
-  const [freshWaitRow, setFreshWaitRow] = useState<AnalysisRow | null>(null);
+  const [freshWait, setFreshWait] = useState<{ row: AnalysisRow | null; readAt: number } | null>(null);
   // Cleared when the row on screen moves, never on the tick: the line does not blink to the
-  // louder words every minute over a copy that still agrees.
+  // louder words every minute over a copy that still agrees. A read is never cancelled by
+  // the next tick either (a slow network would then starve every answer); each answer carries
+  // the time its read started, and the newest started read wins.
+  const freshSeq = useRef(0);
+  const latestFreshSeq = useRef(0);
+  const freshScope = useRef(0);
   useEffect(() => {
-    setFreshWaitRow(null);
+    // A new question: every read already in flight answers the old one.
+    freshScope.current = freshSeq.current;
+    setFreshWait(null);
   }, [waitCandidate, row?.updated_at]);
   useEffect(() => {
-    if (!waitCandidate) return undefined;
-    let live = true;
+    if (!waitCandidate) return;
+    const seq = ++freshSeq.current;
+    const readAt = Date.now();
     void fetchRow().then((next) => {
-      if (!live || cancelled.current) return;
-      setFreshWaitRow(next);
+      if (cancelled.current || seq <= freshScope.current || seq < latestFreshSeq.current) return;
+      latestFreshSeq.current = seq;
+      setFreshWait({ row: next, readAt });
       const shown = latestRow.current;
       if (next && next.status !== 'pending' && shown && next.updated_at !== shown.updated_at) setRow(next);
     });
-    return () => {
-      live = false;
-    };
   }, [waitCandidate, row?.updated_at, waitTick, lastLogged, fetchRow]);
 
   // Re-read the row and resolve if the analysis has moved off 'pending'. Returns
@@ -854,7 +865,9 @@ export function VomitAnalysisSection(
               ? callTodayActionOf({
                   row,
                   facts: mayWaitFacts,
-                  freshRow: freshWaitRow,
+                  freshRow: freshWait?.row ?? null,
+                  freshReadAt: freshWait?.readAt ?? null,
+                  lastLoggedAt,
                   kind: 'vomit',
                   petName,
                   species: recordPet?.species ?? null,

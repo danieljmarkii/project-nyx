@@ -1195,6 +1195,7 @@ describe('StoolAnalysisSection — call today\'s wait line (CUL-1629)', () => {
       pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
     });
     mockMayWaitFacts = {
+      readAt: new Date(2026, 6, 15, 22, 0).getTime(),
       anchorAt: iso(AT), serverAttachmentIds: [PHOTO], localAttachmentIds: [PHOTO], unsynced: false,
       vomits: [],
       stoolAt: [], lethargyAt: [], meals: [],

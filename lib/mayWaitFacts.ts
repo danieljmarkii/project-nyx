@@ -120,6 +120,7 @@ export async function loadMayWaitFacts(eventId: string, petId: string, nowMs: nu
       attachments.some((t) => t.synced === 0);
 
     return {
+      readAt: nowMs,
       anchorAt: own.occurred_at,
       serverAttachmentIds: serverIds,
       localAttachmentIds: attachments.map((t) => t.id),

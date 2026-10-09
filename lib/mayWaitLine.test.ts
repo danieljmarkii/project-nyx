@@ -49,8 +49,10 @@ function row(over: Partial<MayWaitRow> = {}): MayWaitRow {
     ...over,
   };
 }
+// `readAt` NaN means "read just now": `input` stamps it with the test's clock.
 function facts(over: Partial<MayWaitFacts> = {}): MayWaitFacts {
   return {
+    readAt: Number.NaN,
     anchorAt: iso(ANCHOR),
     serverAttachmentIds: [PHOTO],
     localAttachmentIds: [PHOTO],
@@ -68,7 +70,8 @@ function facts(over: Partial<MayWaitFacts> = {}): MayWaitFacts {
 function input(over: Partial<MayWaitInput> = {}): MayWaitInput {
   // The server re-read agrees with the row on screen unless a test says otherwise.
   const shown = over.row === undefined ? row() : over.row;
-  return {
+  const base: MayWaitInput = {
+    freshReadAt: null,
     row: shown,
     freshRow: shown,
     facts: facts(),
@@ -78,7 +81,15 @@ function input(over: Partial<MayWaitInput> = {}): MayWaitInput {
     birthDate: '2020-01-01',
     nowMs: local(15, 22),
     offsetAt: () => 0,
+    lastLoggedAt: null,
     ...over,
+  };
+  // Every answer was read just now, unless a test says when.
+  const nowMs = base.nowMs;
+  return {
+    ...base,
+    facts: base.facts && Number.isNaN(base.facts.readAt) ? { ...base.facts, readAt: nowMs } : base.facts,
+    freshReadAt: over.freshReadAt === undefined ? nowMs : over.freshReadAt,
   };
 }
 
@@ -248,12 +259,13 @@ describe('each gate refuses on its own', () => {
     it('TIME ALONE: the same record refuses once a day passes with no Most or All meal', () => {
       // The last full meal was 2 AM yesterday; read at 1 AM, decided 1:30 AM.
       const meals = [{ at: iso(local(15, 2)), rating: 'all' }];
-      const early = cat(meals, {
+      const at = (nowMs: number) => cat(meals, {
+        nowMs,
         row: row({ updated_at: iso(local(16, 1, 30)) }),
         facts: facts({ meals, anchorAt: iso(local(16, 1)), vomits: [{ at: iso(local(15, 15)), confidence: 'witnessed' }, { at: iso(local(16, 1)), confidence: 'witnessed' }] }),
       });
-      expect(mayWaitRefusalOf({ ...early, nowMs: local(16, 1, 45) })).toBeNull();
-      expect(mayWaitRefusalOf({ ...early, nowMs: local(16, 2, 5) })).toBe('intake');
+      expect(mayWaitRefusalOf(at(local(16, 1, 45)))).toBeNull();
+      expect(mayWaitRefusalOf(at(local(16, 2, 5)))).toBe('intake');
     });
   });
 
@@ -272,6 +284,25 @@ describe('each gate refuses on its own', () => {
     expect(mayWaitRefusalOf(input({ freshRow: row({ may_wait: null, updated_at: iso(local(15, 21, 55)) }) }))).toBe('fresh');
     expect(mayWaitRefusalOf(input({ freshRow: row({ may_wait: true, updated_at: iso(local(15, 21, 55)) }) }))).toBe('fresh');
     expect(callTodayActionOf(input({ freshRow: row({ may_wait: null }) }))).toBe(LOUDER);
+  });
+});
+
+describe('stale: an answer is as old as the read that started it (second pass, F1)', () => {
+  const NOW = local(15, 22);
+  it('facts or a fresh row read more than two minutes ago refuse', () => {
+    expect(mayWaitRefusalOf(input({ nowMs: NOW, facts: facts({ readAt: NOW - 2 * 60_000 }) }))).toBeNull();
+    expect(mayWaitRefusalOf(input({ nowMs: NOW, facts: facts({ readAt: NOW - 2 * 60_000 - 1 }) }))).toBe('stale');
+    expect(mayWaitRefusalOf(input({ nowMs: NOW, freshReadAt: NOW - 3 * 60_000 }))).toBe('stale');
+    expect(mayWaitRefusalOf(input({ nowMs: NOW, freshReadAt: null }))).toBe('stale');
+  });
+  it('an answer read before the newest log on this phone cannot have seen it', () => {
+    const logged = NOW - 10_000;
+    expect(mayWaitRefusalOf(input({ nowMs: NOW, lastLoggedAt: logged, facts: facts({ readAt: logged - 1 }) }))).toBe('stale');
+    expect(mayWaitRefusalOf(input({ nowMs: NOW, lastLoggedAt: logged, freshReadAt: logged - 1 }))).toBe('stale');
+    expect(mayWaitRefusalOf(input({ nowMs: NOW, lastLoggedAt: logged, facts: facts({ readAt: logged }), freshReadAt: logged }))).toBeNull();
+  });
+  it('a read stamped in the future (a clock moved back) refuses', () => {
+    expect(mayWaitRefusalOf(input({ nowMs: NOW, facts: facts({ readAt: NOW + 60_000 }) }))).toBe('stale');
   });
 });
 

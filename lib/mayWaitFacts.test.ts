@@ -78,6 +78,7 @@ describe('loadMayWaitFacts', () => {
     expect(f!.serverAttachmentIds).toEqual([PHOTO]);
     expect(f!.localAttachmentIds).toEqual([PHOTO]);
     expect(f!.unsynced).toBe(false);
+    expect(f!.readAt).toBe(NOW);
   });
 
   it('an UNSYNCED vomit is in the floor\'s rows and marks the read unsynced', async () => {
@@ -105,7 +106,7 @@ describe('loadMayWaitFacts', () => {
         updated_at: iso(ANCHOR + 10 * 60_000), photo_set_key: PHOTO, ai_raw_payload: { read_photo_set_key: PHOTO },
     };
     expect(mayWaitRefusalOf({
-      row: shown, freshRow: shown, facts: f, kind: 'vomit', petName: 'Nyx', species: 'dog', birthDate: null, nowMs: NOW, offsetAt: () => 0,
+      row: shown, freshRow: shown, freshReadAt: NOW, lastLoggedAt: null, facts: f, kind: 'vomit', petName: 'Nyx', species: 'dog', birthDate: null, nowMs: NOW, offsetAt: () => 0,
     })).not.toBeNull(); // 'unsynced', or 'photos' first for a queued photo (the sets differ)
   });
 

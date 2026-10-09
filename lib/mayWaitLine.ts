@@ -43,6 +43,10 @@
 //              stands only while that copy is the one on screen (same `updated_at`): a take-back
 //              written for a neighbour's finding (088–092, revalidateMayWait) reaches an open
 //              record within a minute, never "until the next open" (finding 2).
+//   stale      every answer above is as old as the read that STARTED it: older than two minutes,
+//              or started before the newest log this phone committed, it refuses. A read that
+//              hangs past the cadence is never waited on, so a slow network leaves the louder
+//              line, never the last clean answer (second adversarial pass, F1).
 //
 // ── THE WORDS (device local hour; PM ruling D1 = a: 6 AM / 6 PM / midnight) ──────────────────
 //   day          Call your vet today. If they're closed, first thing tomorrow, or an emergency
@@ -80,6 +84,10 @@ export const MAY_WAIT_INTAKE_BASELINE_HOURS = 7 * 24;
 /** Mirrors `MAY_WAIT_DST_AFTER_HOURS`: how far past the read the offset is checked. */
 export const MAY_WAIT_DST_AFTER_HOURS = 48;
 
+/** How old an answer may be before it no longer speaks for the record: twice the re-read cadence.
+ *  A read slower than this is not waited on; the line goes louder until a fresh one lands. */
+export const MAY_WAIT_FRESH_MS = 2 * 60_000;
+
 /** The local hour the leave ends at, and the day band begins at (D1). */
 export const MORNING_HOUR = 6;
 /** The local hour the evening band begins at (D1). */
@@ -98,6 +106,7 @@ export type MayWaitRefusal =
   | 'expired'
   | 'dst'
   | 'fresh'
+  | 'stale'
   | 'facts';
 
 /** The analysis row's columns this reads. Unknown-typed: a server value this build does not
@@ -121,6 +130,9 @@ export interface MayWaitMeal {
 
 /** What the phone read around the incident (`lib/mayWaitFacts.ts`). */
 export interface MayWaitFacts {
+  /** When the read that produced these facts STARTED (ms). An answer older than
+   *  `MAY_WAIT_FRESH_MS`, or older than the newest log, refuses (the `stale` gate). */
+  readAt: number;
   /** The incident's own time, from the phone's copy of the event. */
   anchorAt: string;
   /** Attachment ids the server holds for this event NOW (a fresh read). */
@@ -152,6 +164,10 @@ export interface MayWaitInput {
   /** The row re-read from the server for this gate (null until it answers). The line stands
    *  only while it is the copy on screen: same `updated_at`, still TRUE. */
   freshRow: MayWaitRow | null | undefined;
+  /** When the read that returned `freshRow` STARTED (ms). */
+  freshReadAt: number | null;
+  /** When this phone last committed a log (ms), or null. An answer read before it refuses. */
+  lastLoggedAt: number | null;
   /** The device's UTC offset at an instant, in `getTimezoneOffset`'s sign. A test injects
    *  one; the runtime's own clock otherwise. */
   offsetAt?: (atMs: number) => number;
@@ -340,6 +356,13 @@ export function mayWaitRefusalOf(input: MayWaitInput): MayWaitRefusal | null {
 
   const fresh = input.freshRow;
   if (!fresh || fresh.may_wait !== true || fresh.updated_at !== row.updated_at) return 'fresh';
+
+  // An answer is as old as the read that started it. A read that never lands (a network that
+  // hangs past the re-read cadence) must not leave the last clean answer standing, and an
+  // answer read before the newest log cannot have seen it (second adversarial pass, F1).
+  const answeredAfter = Math.max(input.nowMs - MAY_WAIT_FRESH_MS, input.lastLoggedAt ?? Number.NEGATIVE_INFINITY);
+  const fresher = (at: number | null) => at !== null && Number.isFinite(at) && at >= answeredAfter && at <= input.nowMs;
+  if (!fresher(facts.readAt) || !fresher(input.freshReadAt)) return 'stale';
   return null;
 }
 
