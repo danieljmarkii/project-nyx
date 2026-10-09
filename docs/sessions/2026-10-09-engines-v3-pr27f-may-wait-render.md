@@ -29,9 +29,11 @@ Three `adversarial-reviewer` passes; each broke the previous fix.
 ## Decisions
 
 - **D1–D3 ruled a** by the PM in-session.
-- **Two departures from the approved plan, both louder, left for the PM to confirm** (PR left unmerged for this):
+- **Two departures from the approved plan, both louder, ruled (a) keep both** by the PM in-session (2026-10-09):
   - (i) the vomit's exception names "vomits again or is low on energy", not the floor's own clauses;
   - (ii) the night is bounded by the incident's time as well as the decision's.
+
+  This unseats the plan's {signs} wording for the vomit only; D2 stands.
 
 ## Residuals
 
