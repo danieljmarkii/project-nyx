@@ -408,7 +408,11 @@ Deno.test('EN-5 copy: every sentence it can build never reassures, never conclud
   for (const at of ['vomit', 'read', 'after_vomit_24h'] as const) {
     for (const n of [2, 3]) for (const k of [2, 3].filter((k) => k <= n)) records.push({ window: 'noticed', at, mealsLogged: n, mealsRated: n, refusedOrPicked: k })
   }
-  for (const hoursBefore of [0, 1, 25, 70]) for (const rating of ['refused', 'picked'] as const) records.push({ window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore, rating })
+  for (const hoursBefore of [0, 1, 25, 70]) {
+    for (const rating of ['refused', 'picked'] as const) {
+      for (const setAside of [false, true]) records.push({ window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore, rating, setAside })
+    }
+  }
   let seen = 0
   for (const pet of ['Pixel', '']) {
     for (const record of records) {
@@ -460,7 +464,7 @@ Deno.test('A (provisional): a refusal 25 h before the vomit with nothing logged 
   assertStrictEquals(intakeFires(ctx(rows, v, v + 1 * H, OFF)), true, 'shipped fires')
   const on = ctx(rows, v, v + 1 * H, EN5)
   assertStrictEquals(intakeFires(on), true)
-  assertEquals(on.intakeRecord, { window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore: 25, rating: 'refused' })
+  assertEquals(on.intakeRecord, { window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore: 25, rating: 'refused', setAside: false })
   assertStrictEquals(
     buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord),
     "The last rated meal logged for Nyx before this vomit, about 25 hours earlier, was marked Refused. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
@@ -516,9 +520,35 @@ Deno.test('A, the re-pass: the backstop speaks only on an empty window, over qua
 })
 
 Deno.test('A, the re-pass: under an hour reads "less than an hour earlier", never "about 0 hours"', () => {
-  for (const [hoursBefore, phrase] of [[0, 'less than an hour earlier'], [1, 'about an hour earlier'], [25, 'about 25 hours earlier']] as const) {
+  for (const [hoursBefore, phrase] of [[0, 'less than an hour earlier'], [1, 'about an hour earlier'], [25, 'about 25 hours earlier'], [47, 'about 47 hours earlier'], [96, 'about 4 days earlier']] as const) {
     const t = buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'last_rated', mealsLogged: 1, mealsRated: 1, hoursBefore, rating: 'refused' })
     assertStrictEquals(t.includes(phrase), true, t)
     assertStrictEquals(/\b0 hours/.test(t), false, t)
+  }
+})
+
+Deno.test('A, round 3: answered refusals stay quiet, a late read over an empty week stays quiet, and the words stay true', () => {
+  const v = Date.parse('2026-09-10T08:00:00Z')
+  const bg = [meal(v - 40 * H, 'all'), meal(v - 30 * H, 'all')]
+  // Z5: a meal eaten well between the halves answers the refusal.
+  const z5 = rowsOf([meal(v - 40 * H, 'all'), meal(v - 30 * H, 'refused'), meal(v + 30 * H, 'all')], v)
+  assertStrictEquals(ctx(z5, v, v + 60 * H, EN5).intakeRecord?.window === 'last_rated', false, 'Z5')
+  // Z2: a refusal six days before the vomit, read five days after, nothing logged in the read's week.
+  const z2 = rowsOf([meal(v - 6.5 * 24 * H, 'all'), meal(v - 6 * 24 * H, 'refused')], v)
+  assertStrictEquals(intakeFires(ctx(z2, v, v + 5 * 24 * H, OFF)), false, 'shipped is quiet on Z2')
+  assertStrictEquals(intakeFires(ctx(z2, v, v + 5 * 24 * H, EN5)), false, 'Z2')
+  // Z1: an All before the refusal sits in the before-vomit half; the refusal still speaks.
+  const z1 = rowsOf([meal(v - 60 * H, 'all'), meal(v - 50 * H, 'all'), meal(v - 20 * H, 'all'), meal(v - 18 * H, 'refused'), meal(v + 5 * H, null)], v)
+  assertStrictEquals(intakeFires(ctx(z1, v, v + 10 * H, OFF)), true, 'shipped fires on Z1')
+  assertEquals(ctx(z1, v, v + 10 * H, EN5).intakeRecord?.window, 'last_rated', 'Z1')
+  // Z3 / Z4: a bowl or a treat rated All after the wet refusal: the words say they were set aside.
+  for (const later of [meal(v - 26 * H, 'all', 'meal', 'bowl'), meal(v - 26 * H, 'all', 'treat')]) {
+    const rows: VomitContextRows = { ...rowsOf([...bg.slice(0, 1), meal(v - 30 * H, 'refused'), later], v), freeFedSpans: [{ foodItemId: 'bowl', fromMs: v - 100 * H, untilMs: Infinity }] }
+    const on = ctx(rows, v, v + 1 * H, EN5)
+    assertEquals(on.intakeRecord?.setAside, true)
+    assertStrictEquals(
+      buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord).startsWith('The last rated meal logged for Nyx before this vomit, not counting treats or free-fed bowls, about 30 hours earlier, was marked Refused.'),
+      true,
+    )
   }
 })
