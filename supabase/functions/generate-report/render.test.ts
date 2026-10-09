@@ -8101,9 +8101,9 @@ Deno.test('CUL-1274 — appendix E states the unrecorded remainder, and a fully 
 const NS_STOOL = { total: 4, normalCount: 3, looseCount: 1, windowDays: 91, loggedDays: 80, ai: null }
 
 Deno.test('stool: the normal-shortcut line carries the year only when it differs from the window end', () => {
-  const same = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'on', at: '2026-05-10T15:00:00Z' } } }))
+  const same = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'on', at: '2026-05-10T15:00:00Z', split: null } } }))
   assert.ok(/Logging changed on May 10:<\/b>/.test(same), 'same year as the window end ⇒ no year')
-  const cross = base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'on', at: '2025-12-20T15:00:00Z' } } })
+  const cross = base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'on', at: '2025-12-20T15:00:00Z', split: null } } })
   cross.scope = { ...cross.scope, startDate: '2025-12-01', endDate: '2026-01-15' }
   assert.ok(/Logging changed on Dec 20, 2025:<\/b>/.test(renderReport(cross)), 'a different year ⇒ stamped')
 })
@@ -8120,8 +8120,27 @@ Deno.test('stool: each normal-shortcut arm prints its own head, and every dated 
 })
 
 Deno.test('stool: the normal-shortcut line prints in the single-category shape too, and never without the field', () => {
-  const single = renderReport(base({ stool: { ...NS_STOOL, total: 2, normalCount: 0, looseCount: 2, normalShortcut: { kind: 'on', at: '2026-05-10T15:00:00Z' } } }))
+  const single = renderReport(base({ stool: { ...NS_STOOL, total: 2, normalCount: 0, looseCount: 2, normalShortcut: { kind: 'on', at: '2026-05-10T15:00:00Z', split: null } } }))
   assert.ok(/Logging changed on May 10/.test(single))
   const off = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: null } }))
   assert.ok(!/Logging change/.test(off))
+})
+
+Deno.test('stool: ruling 1a — the line gives the counts on each side of the day, with the coverage of each', () => {
+  const html = renderReport(base({ stool: { ...NS_STOOL, total: 30, normalCount: 24, looseCount: 6, normalShortcut: {
+    kind: 'on', at: '2026-06-10T15:00:00Z',
+    split: { before: { normal: 4, loose: 4, days: 68, loggedDays: 7 }, from: { normal: 20, loose: 2, days: 23, loggedDays: 23 } },
+  } } }))
+  const flat = html.replace(/<span class="num">(\d+)<\/span>/g, '$1')
+  assert.ok(/<b>Before Jun 10:<\/b> normal &times;4 &middot; loose &times;4 \(7 of 68 days had any log\)\. <b>From Jun 10:<\/b> normal &times;20 &middot; loose &times;2 \(23 of 23 days had any log\)\./.test(flat))
+  // The pooled counts are still printed, untouched: the split sits beside them, never in place of them.
+  assert.ok(/Normal \/ formed &times;24/.test(flat) && /Loose \/ watery &times;6/.test(flat))
+})
+
+Deno.test('stool: ruling 2a — a change before the window says so, naming the server day, with the protecting tail', () => {
+  const exact = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: true } } }))
+  assert.ok(/<b>Logging changed on Mar 20, before this window:<\/b> since then the owner's app/.test(exact))
+  assert.ok(/not comparable with a report from before that date\. Loose stools had their own shortcut before and after/.test(exact))
+  const by = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: false } } }))
+  assert.ok(/Logging changed by Mar 20, before this window:/.test(by))
 })

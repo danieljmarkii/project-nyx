@@ -831,10 +831,39 @@ export const FAB_STOOL_SPLIT_KEY = 'fab_stool_split'
  *   `unknown`  the read failed: the strip says the change could not be checked
  */
 export type NormalShortcutDisclosure =
-  | { kind: 'on'; at: string }
+  | { kind: 'on'; at: string; split: StoolShortcutSplit | null }
   | { kind: 'by'; at: string }
   | { kind: 'spans' }
+  | { kind: 'since'; at: string; exact: boolean }
   | { kind: 'unknown' }
+
+/**
+ * CUL-1658 ruling 1a (PM, 2026-10-09) — the strip's counts on each side of the change day, so a
+ * vet reads the ratio inside each logging regime rather than the pooled bar (the cold read: a
+ * 4 / 4 then 20 / 2 record pooled to "20% loose", which described neither period). Same
+ * population as the strip's totals (collapsed in-window incidents), so before + from always sums
+ * to them; `loggedDays` is the strip's own coverage measure (a day with any log), split the same
+ * way, because coverage moves across the date too. Only when the day is KNOWN (`on`): an "on or
+ * before" day would put post-change stools on the before side.
+ */
+export interface StoolShortcutSplit {
+  before: StoolPeriodCounts
+  from: StoolPeriodCounts
+}
+export interface StoolPeriodCounts {
+  normal: number
+  loose: number
+  days: number
+  loggedDays: number
+}
+
+/**
+ * CUL-1658 ruling 2a (PM, 2026-10-09) — how long after the change a report whose whole window
+ * is after it still says so, because a vet compares it with a report from before (adversarial
+ * F3: Aug 10 normal / 8 loose against Oct 40 / 8 reads as improvement). 180 days covers the
+ * usual recheck interval; measured from the change's server day to the window's last day.
+ */
+export const NORMAL_SHORTCUT_SINCE_DAYS = 180
 
 /**
  * CUL-1658 — the stool strip's disclosure for the fan's split stool pill, from the pet's
@@ -850,8 +879,9 @@ export type NormalShortcutDisclosure =
  * true. Over-disclosing a change that in fact preceded the window costs a sentence; missing one
  * costs a vet a ratio read across two logging regimes.
  *
- * BEFORE the window (both clocks) ⇒ null: every window day had the shortcut. AFTER (both) ⇒
- * null: none did. Instants are parsed, never compared as text (C-40). Day keys are fixed-width
+ * BEFORE the window (both clocks) ⇒ `since`, for NORMAL_SHORTCUT_SINCE_DAYS (ruling 2a), then
+ * null. AFTER (both) ⇒ null: no window day had it. `on`'s split is filled by assembly, which
+ * holds the events. Instants are parsed, never compared as text (C-40). Day keys are fixed-width
  * `YYYY-MM-DD`, so comparing them as text is comparing days.
  */
 export function normalShortcutDisclosure(
@@ -873,10 +903,49 @@ export function normalShortcutDisclosure(
   const earlyDay = localDayKey(early.iso, tz)
   const lateDay = localDayKey(late.iso, tz)
   if (earlyDay === null || lateDay === null) return { kind: 'unknown' }
-  if (lateDay < scope.startDate || earlyDay > scope.endDate) return null
-  if (earlyDay >= scope.startDate) return { kind: 'on', at: early.iso }
+  if (earlyDay > scope.endDate) return null
+  if (lateDay < scope.startDate) {
+    // Wholly before the window: within one report the counts share a footing, but a vet holding
+    // an earlier report does not (ruling 2a). The server's day is named: the change had landed
+    // by then, so "since" it is true whatever the phone's clock said.
+    const lateNum = dayNumber(lateDay)
+    const endNum = dayNumber(scope.endDate)
+    if (lateNum === null || endNum === null || endNum - lateNum > NORMAL_SHORTCUT_SINCE_DAYS) return null
+    return { kind: 'since', at: late.iso, exact: earlyDay === lateDay }
+  }
+  if (earlyDay >= scope.startDate) return { kind: 'on', at: early.iso, split: null }
   if (lateDay <= scope.endDate) return { kind: 'by', at: late.iso }
   return { kind: 'spans' }
+}
+
+/**
+ * CUL-1658 ruling 1a — fill `on`'s split from the strip's own incidents and logged days. No split
+ * when the change falls on the window's first day: there is no "before" to show.
+ */
+function withStoolSplit(
+  d: NormalShortcutDisclosure | null,
+  stoolIncidents: Array<{ type: string; occurredAt: string }>,
+  loggedDayNums: Set<number>,
+  scope: Pick<ReportScope, 'startDayNum' | 'endDayNum'>,
+  tz: string | null,
+): NormalShortcutDisclosure | null {
+  if (!d || d.kind !== 'on') return d
+  const changeNum = eventDayNumber(d.at, tz)
+  if (changeNum === null || changeNum <= scope.startDayNum) return d
+  const period = (lo: number, hi: number): StoolPeriodCounts => {
+    const inside = (dn: number | null) => dn !== null && dn >= lo && dn <= hi
+    const rows = stoolIncidents.filter((e) => inside(eventDayNumber(e.occurredAt, tz)))
+    return {
+      normal: rows.filter((e) => e.type === STOOL_NORMAL_TYPE).length,
+      loose: rows.filter((e) => e.type === DIARRHEA_TYPE).length,
+      days: hi - lo + 1,
+      loggedDays: [...loggedDayNums].filter((dn) => inside(dn)).length,
+    }
+  }
+  return {
+    ...d,
+    split: { before: period(scope.startDayNum, changeNum - 1), from: period(changeNum, scope.endDayNum) },
+  }
 }
 
 /** A calendar-day key ('YYYY-MM-DD', already a local day OR a DATE column) → an integer day index. */
@@ -3758,7 +3827,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       looseCount: stoolLoose,
       windowDays,
       loggedDays,
-      normalShortcut: normalShortcutDisclosure(input.captureChanges, scope, tz),
+      normalShortcut: withStoolSplit(normalShortcutDisclosure(input.captureChanges, scope, tz), stoolIncidents, loggedDayNums, scope, tz),
       ai,
     }
   }

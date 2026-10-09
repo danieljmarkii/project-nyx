@@ -53,6 +53,8 @@ import type {
   SymptomAggregate,
   VomitContentCategory,
   StoolCharacteristics,
+  StoolPeriodCounts,
+  StoolShortcutSplit,
   WeightSection,
   DietSummary,
   MedicationAdherence,
@@ -5827,10 +5829,21 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     ' Loose stools had their own shortcut before and after, so a rise in loose stools is not explained by this change; some borderline stools may now be logged as normal rather than loose.'
   const ns = st.normalShortcut
   const nsDay = (iso: string) => h(fmtLocalDayScoped(iso, snap.timezone, snap.scope.endDate))
+  // Ruling 1a (PM, 2026-10-09): the counts on each side of the day, beside the pooled ones, so
+  // the ratio is read inside each logging regime. The day string is decided ONCE and reused, so
+  // the head and both labels carry the same year decision (CUL-69).
+  const period = (label: string, p: StoolPeriodCounts) =>
+    `<b>${label}:</b> normal &times;${num(p.normal)} &middot; loose &times;${num(p.loose)} (${num(p.loggedDays)} of ${num(
+      p.days,
+    )} day${p.days === 1 ? '' : 's'} had any log).`
+  const splitLine = (day: string, sp: StoolShortcutSplit | null) =>
+    sp ? ` ${period(`Before ${day}`, sp.before)} ${period(`From ${day}`, sp.from)}` : ''
   const changeLine = !ns
     ? ''
     : ns.kind === 'on'
-    ? `<br/><b>Logging changed on ${nsDay(ns.at)}:</b> from that date the owner's app gave a normal stool its own shortcut, so normal stools before it are likely under-recorded and the normal to loose ratio is not comparable across it.${shortcutTail}`
+    ? `<br/><b>Logging changed on ${nsDay(ns.at)}:</b> from that date the owner's app gave a normal stool its own shortcut, so normal stools before it are likely under-recorded and the normal to loose ratio is not comparable across it.${splitLine(nsDay(ns.at), ns.split)}${shortcutTail}`
+    : ns.kind === 'since'
+    ? `<br/><b>Logging changed ${ns.exact ? 'on' : 'by'} ${nsDay(ns.at)}, before this window:</b> since then the owner's app has given a normal stool its own shortcut, so the normal to loose ratio here is not comparable with a report from before that date.${shortcutTail}`
     : ns.kind === 'by'
     ? `<br/><b>Logging changed on or before ${nsDay(ns.at)}:</b> by that date the owner's app gave a normal stool its own shortcut, so normal stools earlier in this window are likely under-recorded and the normal to loose ratio is not comparable across it.${shortcutTail}`
     : ns.kind === 'spans'
