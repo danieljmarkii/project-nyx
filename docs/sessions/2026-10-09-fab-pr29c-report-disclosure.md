@@ -68,5 +68,5 @@ Dispatched session (`/dispatch`, FAB round 2, Wave 3), CUL-1658, a sub-issue of 
 
 ## Residuals
 
-- The Tier-2 edit to `docs/nyx-vet-report-requirements.md` §3 item 7 is proposed in #1130's body, not written.
+- The Tier-2 edit to `docs/nyx-vet-report-requirements.md` §3 item 7 was approved by the PM in session (CUL-1704) and written in this PR.
 - The line prints only once PR-29b's writer has rows. PR-29b merged as #1129.
