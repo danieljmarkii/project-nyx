@@ -101,171 +101,428 @@ section { display: grid; gap: 18px; }
 .brief .k { color: var(--muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; margin-right: 6px; }
 code { font-family: var(--mono); font-size: .88em; }
 @media (prefers-reduced-motion: no-preference) { .draw path { stroke-dasharray: 24; stroke-dashoffset: 0; } }
+/* ── ROUND 3 ── the same card on a daylight ground */
+:root { --dayCard: #FFFFFF; --ink0: #0A0A0A; --ink2: #525252; --ink3: #737373; --hair: #D4D4D4; --glyph: #0FA08B; --accInk: #0B7B6C;
+  --attLight: #FDF3DC; --attInk: #6B4A0E; --attRail: #B7791F; --roseInk: #9F1239; --nightUp2: #251F57; --night2: #13112E;
+  --onNight: #ECEAF6; --onNightMuted: #A6A2CE; --gridline: #E2E2DE; --rose: #F43F5E; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --gridline: #2A2A2F; } }
+:root[data-theme="dark"] { --gridline: #2A2A2F; }
+.pair { display: grid; gap: 10px; }
+.pair h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.pair .row { gap: 20px; }
+.phone.home { background: #FAFAFA; }
+.homeslice { padding: 18px 16px 0; display: grid; gap: 12px; }
+.homeslice .hd { font-family: var(--display); font-size: 22px; font-weight: 500; color: #17171A; }
+.homeslice .look { display: flex; gap: 6px; flex-wrap: wrap; }
+.homeslice .look span { padding: 5px 11px; border-radius: 99px; border: 1px solid #EAEAEA; background: #FFFFFF; font-size: 13px; color: #525252; }
+.homeslice .tc { background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 18px; padding: 12px 14px; display: grid; gap: 8px; font-size: 13px; color: #17171A; }
+.homeslice .tc .cl { font-size: 12px; color: #6B6B70; }
+.homeslice .tc .ln { display: grid; grid-template-columns: 58px 12px 1fr; gap: 8px; }
+.homeslice .tc .ln time { color: #6B6B70; text-align: right; font-variant-numeric: tabular-nums; }
+.homeslice .tc .ln i { width: 8px; height: 8px; border-radius: 50%; background: var(--confirm); margin-top: 5px; }
+.homeslice .tc .ln i.sym { background: var(--rose); }
+.dim { position: absolute; inset: 0; background: rgba(10,10,10,.35); }
+.recap { position: absolute; inset: 0; background: var(--night2); padding: 18px 16px; display: grid; align-content: start; gap: 10px; color: var(--onNight); }
+.recap .rt { font-family: var(--display); font-size: 24px; }
+.recap .rs { font-size: 13px; color: var(--onNightMuted); }
+.recap .tile { background: var(--nightUp2); border-radius: 14px; padding: 12px; font-size: 13px; color: var(--onNightMuted); }
+/* the card, both grounds, one anatomy */
+.card.day { background: var(--dayCard); color: var(--ink0); box-shadow: 0 4px 18px rgba(0,0,0,.14), 0 1px 2px rgba(0,0,0,.05); }
+.card.nup { background: var(--nightUp2); color: var(--onNight); box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+.k3 { padding: 12px 16px; display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); }
+.k3 .head { display: flex; align-items: center; gap: 12px; }
+.k3 .head svg { flex: 0 0 auto; }
+.k3 .t { flex: 1; min-width: 0; }
+.k3 .t div:first-child { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 15px; }
+.k3 .t div:last-child { font-size: 13px; }
+.k3 .acts { display: flex; gap: 10px; font-size: 13px; font-weight: 500; text-decoration: underline; white-space: nowrap; }
+.k3 .q { border-top: 1px solid; padding-top: 8px; font-size: 13px; display: grid; gap: 6px; }
+.k3 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.k3 .chips span { padding: 6px 13px; border: 1px solid; border-radius: 99px; font-size: 13.5px; }
+.k3 .combo { border-top: 1px solid; padding: 12px 0 4px; font-size: 13.5px; }
+.k3 .panel { border-radius: 12px; padding: 10px 12px 10px 14px; display: grid; gap: 3px; position: relative; overflow: hidden; }
+.k3 .panel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+.k3 .panel .eb { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.k3 .panel .hl { font-size: 14px; font-weight: 500; }
+.k3 .panel .dt { font-size: 12.5px; }
+.k3 .panel .ad { font-size: 13px; font-weight: 500; margin-top: 4px; }
+.k3 .floor { display: grid; gap: 2px; padding: 4px 0; }
+.k3 .floor .l { font-size: 15px; font-weight: 600; }
+.k3 .floor .o { font-size: 13px; font-weight: 500; text-decoration: underline; }
+.k3 .pills { display: flex; gap: 10px; padding-top: 4px; }
+.k3 .pills span { font-size: 13px; font-weight: 500; padding: 6px 14px; border-radius: 99px; border: 1px solid; }
+/* today's colours */
+.card.ink .k3 .t div:last-child, .card.ink .k3 .q, .card.ink .k3 .combo, .card.ink .k3 .panel .dt, .card.ink .k3 .panel .ad { color: rgba(255,255,255,.7); }
+.card.ink .k3 .q, .card.ink .k3 .combo { border-top-color: rgba(255,255,255,.15); }
+.card.ink .k3 .chips span { border-color: rgba(255,255,255,.3); color: rgba(255,255,255,.85); }
+.card.ink .k3 .chips span.on { background: var(--confirm); border-color: var(--confirm); color: #fff; }
+.card.ink .k3 .panel { background: #27200D; }
+.card.ink .k3 .panel::before { background: var(--glow); }
+.card.ink .k3 .panel .eb { color: var(--glow); }
+.card.ink .k3 .pills span { border-color: rgba(255,255,255,.15); }
+/* daylight colours */
+.card.day .k3 .t div:last-child, .card.day .k3 .q, .card.day .k3 .combo, .card.day .k3 .panel .dt, .card.day .k3 .panel .ad { color: var(--ink2); }
+.card.day .k3 .q, .card.day .k3 .combo { border-top-color: var(--hair); }
+.card.day .k3 .chips span { border-color: #EAEAEA; color: var(--ink2); background: #FFFFFF; }
+.card.day .k3 .chips span.on { background: var(--ink0); border-color: var(--ink0); color: #FFFFFF; }
+.card.day .k3 .chips span.wash { background: #CDF5EC; border-color: #CDF5EC; color: #08685B; font-weight: 500; }
+.card.day .k3 .chips span.given { background: var(--accInk); border-color: var(--accInk); color: #FFFFFF; }
+.card.day .k3 .panel { background: var(--attLight); }
+.card.day .k3 .panel::before { background: var(--attRail); }
+.card.day .k3 .panel .eb { color: var(--attInk); }
+.card.day .k3 .pills span { border-color: var(--hair); color: var(--ink0); }
+/* night, over the recap */
+.card.nup .k3 .t div:last-child { color: var(--onNightMuted); }
+.card.nup .k3 .q { border-top-color: rgba(236,234,246,.18); color: var(--onNightMuted); }
+.card.nup .k3 .chips span { border-color: rgba(236,234,246,.35); color: var(--onNight); }
+/* scorecard */
+.score { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 620px; }
+.score th, .score td { text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.score th { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.score td.n { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.score tr.win td { background: var(--note); color: var(--noteInk); }
+.score .sw { display: inline-block; width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--rule); vertical-align: -2px; margin-right: 8px; }
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; }
+.facts { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.fact { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.fact h3 { margin: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.fact p { margin: 0; font-size: 14px; color: var(--muted); }
+.fact .sw { width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--rule); flex: 0 0 auto; }
+.marks { display: flex; flex-wrap: wrap; gap: 16px; }
+.mk { background: #FFFFFF; border: 1px solid #E2E2DE; border-radius: 16px; width: 200px; max-width: 100%; padding: 14px; display: grid; gap: 8px; justify-items: center; color: #17171A; }
+.mk .cap { font-size: 12.5px; text-align: center; color: #4A4A50; }
+.mk .num { font-size: 12px; font-variant-numeric: tabular-nums; color: #6B6B70; text-align: center; }
+.snack { width: 340px; max-width: 100%; border-radius: 16px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; font-size: 14px; gap: 12px; }
+.snack.ink { background: #0A0A0A; color: #FFFFFF; }
+.snack.ink b { color: #00C2A8; font-weight: 500; }
+.snack.day { background: #FFFFFF; color: #0A0A0A; box-shadow: 0 4px 18px rgba(0,0,0,.14), 0 1px 2px rgba(0,0,0,.05); }
+.snack.day b { color: #0B7B6C; font-weight: 500; }
+.snackrow { display: flex; flex-wrap: wrap; gap: 20px; padding: 18px; background: #FAFAFA; border: 1px solid #E2E2DE; border-radius: 16px; }
+.phone.tall { height: 540px; }
+.sw.k { background: #0A0A0A; } .sw.n { background: #13112E; } .sw.w { background: #FFFFFF; }
+.sw.p { background: #F4F2EC; } .sw.g { background: #1F1F23; } .sw.u { background: #251F57; }
+.chipbox { background: #FFFFFF; color: #0A0A0A; }
+.brief { align-content: start; }
+.chipbox .chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.chipbox .chips span { padding: 6px 13px; border: 1px solid #EAEAEA; border-radius: 99px; font-size: 13.5px; color: #525252; background: #FFFFFF; }
+.chipbox .chips span.on { background: #0A0A0A; border-color: #0A0A0A; color: #FFFFFF; }
+.chipbox .chips span.wash { background: #CDF5EC; border-color: #CDF5EC; color: #08685B; font-weight: 500; }
+/* ── ROUND 4 ── the card's motion. Every duration is a multiple of --s so the page can slow it down. */
+:root { --s: 1; --gold: #FBBF24; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn { font: inherit; font-size: 14px; font-weight: 500; padding: 8px 16px; border-radius: 99px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer; }
+.btn:hover { border-color: var(--muted); }
+.btn:focus-visible { outline: 2px solid var(--noteInk); outline-offset: 2px; }
+.btn.primary { background: var(--ink); color: var(--page); border-color: var(--ink); }
+.btn[aria-pressed="true"] { background: var(--note); color: var(--noteInk); border-color: transparent; }
+.demo .phone { cursor: pointer; }
+.demo .replay { justify-self: start; }
+/* the mark as built: a 32pt disc, a white check, a 52pt halo with a hard edge at r18 (the 2pt gap) */
+.mark4 { position: relative; width: 32px; height: 32px; flex: 0 0 32px; }
+.mark4 .halo { position: absolute; left: -10px; top: -10px; width: 52px; height: 52px; border-radius: 50%;
+  background: radial-gradient(circle closest-side, rgba(251,191,36,0) 0 69.2%, rgba(251,191,36,.34) 69.2%, rgba(251,191,36,0) 100%); }
+.mark4 .disc { position: absolute; inset: 0; border-radius: 50%; background: #0FA08B; }
+.mark4 .chk { position: absolute; inset: 0; width: 32px; height: 32px; }
+.calm .mark4 .halo { display: none; }
+.removed { display: none; }
+.k3 .t { position: relative; }
+/* ── the card path (from /log, a capture screen, a symptom) ── */
+@keyframes c-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes c-rise { from { transform: translateY(24px); } to { transform: none; } }
+@keyframes c-disc { from { transform: scale(.6); } to { transform: none; } }
+@keyframes c-write { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes c-unwrite { from { clip-path: inset(0 0 0 0); } to { clip-path: inset(0 100% 0 0); } }
+@keyframes c-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes c-sink { from { transform: none; opacity: 1; } to { transform: translateY(8px); opacity: 0; } }
+@keyframes c-back { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.play.cardpath .dim { animation: c-fade calc(150ms * var(--s)) cubic-bezier(.25,.46,.45,.94) both; }
+.play.cardpath .card { animation: c-fade calc(150ms * var(--s)) cubic-bezier(.25,.46,.45,.94) both, c-rise calc(213ms * var(--s)) cubic-bezier(.2,.9,.25,1) both; }
+.play.cardpath .disc { animation: c-disc calc(150ms * var(--s)) cubic-bezier(.33,1,.68,1) both; }
+.play.cardpath .chk { animation: c-write calc(160ms * var(--s)) cubic-bezier(.45,0,.55,1) calc(90ms * var(--s)) both; }
+.play.cardpath .t { animation: c-fade calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(120ms * var(--s)) both; }
+.play.cardpath .halo { animation: c-fade calc(150ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(250ms * var(--s)) both; }
+/* ── the + button path: the pill's meal disc flies in (FlightHost, above the card), fills with teal, and the fill reveals the check ── */
+.flyer { position: absolute; width: 32px; height: 32px; z-index: 5; pointer-events: none; opacity: 0; }
+.flyer .m { position: absolute; inset: 0; border-radius: 50%; background: #E0FBF7; border: 1px solid #BFEDE6; display: grid; place-items: center; }
+.flyer .m i { width: 11px; height: 11px; border-radius: 3px; border: 1.6px solid #525252; display: block; }
+.flyer .fill { position: absolute; inset: 0; clip-path: circle(1% at 50% 50%); }
+.flyer .fill .disc { position: absolute; inset: 0; border-radius: 50%; background: #0FA08B; }
+.flyer .fill svg { position: absolute; inset: 0; }
+@keyframes f-fly {
+  0% { transform: translate(var(--dx), var(--dy)) scale(.875); opacity: 1; animation-timing-function: cubic-bezier(.3,.55,.45,1); }
+  38% { transform: translate(calc(var(--dx) * -0.046), calc(var(--dy) * -0.046)) scale(1); animation-timing-function: cubic-bezier(.45,0,.55,1); }
+  62% { transform: translate(calc(var(--dx) * 0.012), calc(var(--dy) * 0.012)) scale(1); animation-timing-function: cubic-bezier(.45,0,.55,1); }
+  100% { transform: none; opacity: 1; } }
+@keyframes f-gone { to { opacity: 0; } }
+@keyframes f-fill { from { clip-path: circle(1% at 50% 50%); } to { clip-path: circle(50% at 50% 50%); } }
+@keyframes f-show { from { opacity: 0; } to { opacity: 1; } }
+.play.fabpath .card { animation: c-fade calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) both; }
+.play.fabpath .flyer { animation: f-fly calc(600ms * var(--s)) both, f-gone 1ms linear calc(750ms * var(--s)) forwards; }
+.play.fabpath .flyer .fill { animation: f-fill calc(150ms * var(--s)) cubic-bezier(.33,1,.68,1) calc(600ms * var(--s)) both; }
+.play.fabpath .card .disc, .play.fabpath .card .chk { animation: f-show 1ms linear calc(750ms * var(--s)) both; }
+.play.fabpath .card .halo { animation: c-fade calc(150ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(750ms * var(--s)) both; }
+.play.fabpath.early .t { animation: c-fade calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(120ms * var(--s)) both; }
+.play.fabpath.late .t { animation: c-fade calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(870ms * var(--s)) both; }
+.fabpath .pillsrc { position: absolute; right: 16px; bottom: 84px; padding: 7px 14px 7px 8px; border-radius: 99px; background: #FFFFFF; box-shadow: 0 2px 10px rgba(0,0,0,.12); font-size: 13px; color: #17171A; display: flex; gap: 8px; align-items: center; opacity: 0; z-index: 4; }
+.fabpath .pillsrc b { width: 22px; height: 22px; border-radius: 50%; background: #E0FBF7; display: block; }
+@keyframes p-pill { 0% { opacity: 1; transform: scale(.97); } 60% { opacity: 1; } 100% { opacity: 0; transform: scale(.97); } }
+.play.fabpath .pillsrc { animation: p-pill calc(320ms * var(--s)) linear both; }
+/* ── Undo to Removed ── */
+.play.undopath .chk { animation: c-unwrite calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) both; }
+.play.undopath .body { animation: c-out calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(60ms * var(--s)) both; }
+@keyframes c-collapse { from { max-height: 140px; } to { max-height: 0; padding-top: 0; padding-bottom: 0; border-top-width: 0; } }
+.play.undopath .t { animation: c-out calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(60ms * var(--s)) both; }
+.play.undopath .q, .play.undopath .combo { overflow: hidden; animation: c-out calc(180ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(60ms * var(--s)) both, c-collapse calc(300ms * var(--s)) cubic-bezier(.42,0,.58,1) calc(240ms * var(--s)) both; }
+.play.undopath .disc, .play.undopath .halo { animation: c-out calc(150ms * var(--s)) cubic-bezier(.25,.46,.45,.94) calc(120ms * var(--s)) both; }
+.undopath.play .removed, .undopath.done .removed { display: grid; }
+.undopath.play .removed { animation: c-back calc(300ms * var(--s)) cubic-bezier(.33,1,.68,1) calc(220ms * var(--s)) both; }
+.undopath .removed { position: absolute; left: 16px; right: 16px; top: 12px; gap: 2px; }
+.undopath .removed b { font-size: 15px; font-weight: 500; }
+.undopath .removed span { font-size: 13px; color: #525252; }
+/* ── the exit ── */
+.play.exitpath .card { animation: c-sink calc(180ms * var(--s)) cubic-bezier(.55,.06,.68,.19) calc(400ms * var(--s)) both; }
+/* ── Reduce Motion ── */
+.play.rmpath .card { animation: c-fade calc(150ms * var(--s)) cubic-bezier(.25,.46,.45,.94) both; }
+/* the storyboard: one mark at five moments */
+.board { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-end; }
+.still { display: grid; gap: 8px; justify-items: center; }
+.still .stage { width: 76px; height: 76px; background: #FFFFFF; border: 1px solid #E2E2DE; border-radius: 14px; display: grid; place-items: center; }
+.still .cap { font-size: 12.5px; color: var(--muted); text-align: center; max-width: 13ch; font-variant-numeric: tabular-nums; }
+.s0 .disc { transform: scale(.6); } .s0 .chk { clip-path: inset(0 100% 0 0); } .s0 .halo, .s1 .halo, .s2 .halo { opacity: 0; }
+.s1 .disc { transform: scale(.97); } .s1 .chk { clip-path: inset(0 100% 0 0); }
+.s2 .chk { clip-path: inset(0 45% 0 0); }
+.s3 .halo { opacity: .5; }
+/* the timeline */
+.tl { display: grid; gap: 6px; min-width: 520px; }
+.tl .r { display: grid; grid-template-columns: 150px 1fr; gap: 12px; align-items: center; font-size: 13px; }
+.tl .r > span:first-child { color: var(--muted); }
+.tl .track { position: relative; height: 14px; background: linear-gradient(to right, var(--rule) 1px, transparent 1px) 0 0 / 10% 100%; border-radius: 3px; }
+.tl .bar { position: absolute; top: 2px; height: 10px; border-radius: 3px; background: var(--noteInk); }
+.tl .bar.gold { background: #D69E1B; }
+.tl .bar.light { background: var(--muted); opacity: .55; }
+.tl .axis { display: grid; grid-template-columns: 150px 1fr; gap: 12px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tl .axis div:last-child { display: flex; justify-content: space-between; }
+.never { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.never div { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 12px 14px; font-size: 14px; color: var(--muted); }
+.never b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; }
+.explain { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 16px 18px; display: grid; gap: 10px; max-width: 80ch; }
+.explain p { margin: 0; }
+.explain ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+@media (prefers-reduced-motion: reduce) { .rmnote { display: block; } }
+.rmnote { display: none; font-size: 13px; color: var(--muted); }
+.tlpad { padding: 16px 18px; }
 </style>
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">Completion card · round 1 · 2026-10-08</div>
-    <h1>The meal confirmation, tuned</h1>
-    <p class="lede">The dark card that confirms a meal (<code>MealCompletionCard</code>). Prompted by a TestFlight screenshot: the check looked grainy and the card felt crowded. One proposal, with the shipped card beside it and two real decisions boxed as options.</p>
+    <div class="eyebrow">Completion card · round 4 · 2026-10-09</div>
+    <h1>The check writes itself</h1>
+    <p class="lede">The daylight card, now in motion. Press any frame to play it, or slow everything down to see each beat. Below the demos: the same motion frame by frame, what it never does, the dim explained in plain words, and the build plan.</p>
   </header>
 
   <div class="ledger">
-    <div><b>Reaction</b><span>The green check feels grainy. → Root cause found (below). Fix is drawn into every proposal frame.</span></div>
-    <div><b>Reaction</b><span>The toast could use design love. → Five changes, listed under the proposal frame. Nothing about what the card says or writes changes.</span></div>
+    <div><b>Ruled</b><span>Call 1, the card in daylight, and call 2, the deeper teal disc with the white gap. Every frame here uses both.</span></div>
+    <div><b>Round 4</b><span>Ruled: the name lands early on the + path, and the motion as drawn, including Undo collapsing into "Removed". The dim was not addressed, so it is recorded as a team call on the recommendation and can be reversed. The spec is now build-ready: docs/nyx-completion-card-requirements.md.</span></div>
+    <div><b>Reaction</b><span>"The new check could get some motion, like the FAB." → This round. The check writes itself, and from the + button the food's own disc turns into it.</span></div>
+    <div><b>Reaction</b><span>"Do we even have the night state?" → Barely. It takes the 9pm summary switched on, a day with nothing logged, "Log an event" on the night screen, then a meal, dose or weight. At most once a night. Round 3's night card is gone: the daylight card plays the same everywhere.</span></div>
+    <div><b>Reaction</b><span>"Tap to dim: explain more." → Explained below in plain words. Round 3's recommendation changed after a closer look, and the reason is there too.</span></div>
   </div>
 
   <section>
     <div>
-      <h2>Why the check looks grainy</h2>
-      <p class="lede">The badge's gold halo is an iOS layer shadow. The badge has no solid fill (6% white), so iOS traces the shadow from whatever is opaque inside it: a 1.5pt ring and a 3pt check. The gold blur hugs two thin teal lines, mixes to a muddy olive on near black, and gets re-rasterised offscreen every frame while the mark springs in. That fringe is the grain. Enlarged:</p>
+      <h2>The motion</h2>
+      <p class="lede">Seven states. Each plays once when pressed and then holds still: nothing loops.</p>
     </div>
-    <div class="macro">
-      <div class="mcell">
-        <div class="big"><svg width="58" height="58" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#00C2A8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <span class="cap">Now · shadow traced off the strokes</span>
+    <div class="controls">
+      <button class="btn primary" type="button" id="playAll">Play all</button>
+      <button class="btn" type="button" id="slow" aria-pressed="false">Slow motion, 4×</button>
+      <span class="rmnote">Your device has Reduce Motion on, so nothing plays until you press a button.</span>
+    </div>
+    <div class="row">
+      <div class="frame demo cardpath">
+        <span class="tag current">A meal from the log screen</span>
+        <div class="phone" data-play aria-label="A meal from the log screen: tap to replay">
+          <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
+              <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
+              <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div><div class="card day "><div class="k3">
+              <div class="head"><div class="mark4"><span class="halo"></span><span class="disc"></span><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>6:04 PM</div></div>
+                <div class="acts body"><span>Undo</span><span>Change time</span></div>
+              </div>
+              <div class="q body">How much did Nyx eat?<div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+              <div class="combo body">+ Add a med given with this</div>
+            </div></div><div class="fab">+</div>
+        </div>
+        <div class="controls"><button class="btn replay" type="button" data-play>Replay</button></div>
+        <ol class="notes"><li><b>0 ms:</b> the card fades in and rises 24pt on the house sheet spring. No bounce, and the haptic plays here, unchanged.</li><li><b>0 to 150:</b> the disc grows from 60% to full, never past it.</li><li><b>90 to 250:</b> the check is written left to right: the short stroke down, the long stroke up.</li><li><b>120 to 300:</b> the sentence lands. Undo and the chips are live from the first frame.</li><li><b>250 to 400:</b> gold fades in once at the disc's edge, the pen lifted. A good moment only.</li></ol>
       </div>
-      <div class="mcell">
-        <svg width="150" height="150" viewBox="0 0 150 150" aria-hidden="true">
-          <defs><radialGradient id="halo1" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#FBBF24" stop-opacity=".28"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs>
-          <circle cx="75" cy="75" r="75" fill="url(#halo1)"/>
-          <circle cx="75" cy="75" r="53" fill="#00C2A8"/>
-          <path d="M52 77l15 15 32-34" stroke="#0A0A0A" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <span class="cap">Proposed · one SVG, halo drawn, no shadow</span>
+      <div class="frame demo fabpath early">
+        <span class="tag current">A meal from the + button</span>
+        <div class="phone" data-play aria-label="A meal from the + button: tap to replay">
+          <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
+              <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
+              <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div><div class="card day "><div class="k3">
+              <div class="head"><div class="mark4"><span class="halo"></span><span class="disc"></span><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>6:04 PM</div></div>
+                <div class="acts body"><span>Undo</span><span>Change time</span></div>
+              </div>
+              <div class="q body">How much did Nyx eat?<div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+              <div class="combo body">+ Add a med given with this</div>
+            </div></div><div class="flyer" aria-hidden="true"><span class="m"><i></i></span><span class="fill"><span class="disc"></span><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div><div class="pillsrc" aria-hidden="true"><b></b>Royal Canin</div><div class="fab">+</div>
+        </div>
+        <div class="controls"><button class="btn replay" type="button" data-play data-words="early">Replay · name lands early</button><button class="btn" type="button" data-play data-words="late">Replay · name after the mark</button></div>
+        <ol class="notes"><li><b>The food's own disc flies in</b>, as it does today (FAB PR-22), with the house settle.</li><li><b>On landing it fills with teal from the centre</b>, and the fill reveals the white check. One beat, not a fill and then a pen, so this path stays short.</li><li><b>Then the gold</b>, the same as the log screen. Done by about 0.9s; the sentence and controls long before (decision 1).</li></ol>
+      </div>
+      <div class="frame demo cardpath calm">
+        <span class="tag current">A symptom, over Home</span>
+        <div class="phone home" data-play aria-label="A symptom: tap to replay">
+          <div class="homeslice"><div class="hd">Nyx</div>
+              <div class="look"><span>Herself</span><span>Quiet</span><span>Off</span><span>More…</span></div>
+              <div class="tc"><span class="cl">Today · 4 logged · 1 vomit · 3 meals</span>
+                <div class="ln"><time>7:04 AM</time><i></i><span>Royal Canin Selected Protein PR</span></div>
+                <div class="ln"><time>12:40 PM</time><i></i><span>Royal Canin Selected Protein PR</span></div></div></div><div class="dim"></div><div class="card day"><div class="k3">
+              <div class="head"><div class="mark4"><span class="halo"></span><span class="disc"></span><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div class="t"><div>Vomit · found by 5:33 PM</div><div>Saved to Nyx’s record</div></div>
+              </div>
+              <div class="pills"><span>Undo</span><span>Change time</span></div>
+            </div></div>
+        </div>
+        <div class="controls"><button class="btn replay" type="button" data-play>Replay</button></div>
+        <ol class="notes"><li><b>The same physics, no gold.</b> The check is written over a 2am vomit exactly as over breakfast: it says "saved", never "well done".</li><li>Today's check overshoots by 7.7% even on a symptom. That bounce is gone.</li><li>The dim fades in with the card and leaves with it.</li></ol>
+      </div>
+      <div class="frame demo cardpath calm">
+        <span class="tag current">A symptom carrying a vet call</span>
+        <div class="phone home" data-play aria-label="A vet call: tap to replay">
+          <div class="homeslice"><div class="hd">Nyx</div>
+              <div class="look"><span>Herself</span><span>Quiet</span><span>Off</span><span>More…</span></div>
+              <div class="tc"><span class="cl">Today · 4 logged · 1 vomit · 3 meals</span>
+                <div class="ln"><time>7:04 AM</time><i></i><span>Royal Canin Selected Protein PR</span></div>
+                <div class="ln"><time>12:40 PM</time><i></i><span>Royal Canin Selected Protein PR</span></div></div></div><div class="dim"></div><div class="card day"><div class="k3">
+              <div class="head"><div class="mark4"><span class="halo"></span><span class="disc"></span><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div class="t"><div>Vomit · found by 5:33 PM</div><div>Saved to Nyx’s record</div></div>
+              </div><div class="floor"><span class="l">Nyx's read: call your vet today.</span><span class="o">Open the read</span></div>
+              <div class="pills"><span>Undo</span><span>Change time</span></div>
+            </div></div>
+        </div>
+        <div class="controls"><button class="btn replay" type="button" data-play>Replay</button></div>
+        <ol class="notes"><li><b>The call line has no motion of its own.</b> It is readable as the card fades in, with no beat, no colour and no extra buzz. Safety is silent.</li><li>If the call arrives a moment later (the server re-check), the card's motion finishes on the spot and the line opens at once. It never waits for the pen.</li></ol>
+      </div>
+      <div class="frame demo undopath">
+        <span class="tag current">Undo</span>
+        <div class="phone" data-play aria-label="Undo: tap to replay">
+          <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
+              <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
+              <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div><div class="card day "><div class="k3">
+              <div class="head"><div class="mark4"><span class="halo"></span><span class="disc"></span><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>6:04 PM</div></div>
+                <div class="acts body"><span>Undo</span><span>Change time</span></div>
+              </div>
+              <div class="q body">How much did Nyx eat?<div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+              <div class="combo body">+ Add a med given with this</div>
+            </div><div class="removed"><b>Removed</b><span>Taken out of Nyx’s record</span></div></div><div class="fab">+</div>
+        </div>
+        <div class="controls"><button class="btn replay" type="button" data-play>Replay</button></div>
+        <ol class="notes"><li><b>The check un-writes</b>, tip first, and the disc goes with it: the record was taken out.</li><li><b>The controls stop responding the moment Undo is tapped</b>, so nothing can be written to the removed meal while it fades.</li><li>"Removed" then holds its full 2.4 seconds.</li></ol>
+      </div>
+      <div class="frame demo exitpath">
+        <span class="tag current">Leaving, after the dwell</span>
+        <div class="phone" data-play aria-label="Leaving: tap to replay">
+          <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
+              <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
+              <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div><div class="card day "><div class="k3">
+              <div class="head"><div class="mark4"><span class="halo"></span><span class="disc"></span><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>6:04 PM</div></div>
+                <div class="acts body"><span>Undo</span><span>Change time</span></div>
+              </div>
+              <div class="q body">How much did Nyx eat?<div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+              <div class="combo body">+ Add a med given with this</div>
+            </div></div><div class="fab">+</div>
+        </div>
+        <div class="controls"><button class="btn replay" type="button" data-play>Replay</button></div>
+        <ol class="notes"><li><b>A short sink and a fade</b>, 8pt over 180ms. The check stays whole: leaving is not removing.</li><li>Replaces today's 80pt drop. Every card leaves the same way, however it arrived.</li></ol>
+      </div>
+      <div class="frame demo rmpath">
+        <span class="tag current">With Reduce Motion on</span>
+        <div class="phone" data-play aria-label="Reduce Motion: tap to replay">
+          <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
+              <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
+              <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div><div class="card day "><div class="k3">
+              <div class="head"><div class="mark4"><span class="halo"></span><span class="disc"></span><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>6:04 PM</div></div>
+                <div class="acts body"><span>Undo</span><span>Change time</span></div>
+              </div>
+              <div class="q body">How much did Nyx eat?<div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+              <div class="combo body">+ Add a med given with this</div>
+            </div></div><div class="fab">+</div>
+        </div>
+        <div class="controls"><button class="btn replay" type="button" data-play>Replay</button></div>
+        <ol class="notes"><li><b>A 150ms crossfade, nothing else.</b> The mark is already written and the gold already there on a good moment.</li><li>The dose card gains this today's build lacks.</li></ol>
       </div>
     </div>
-    <ul class="notes">
-      <li><b>The fix:</b> draw the whole mark in one <code>react-native-svg</code> node: a solid teal disc, a dark check knocked out of it, and the gold halo as a radial gradient behind. No layer shadow, so nothing for iOS to trace. Vector at every scale, including mid-spring.</li>
-      <li><b>Celebrate vs. refusal stays exactly as ruled (CUL-894):</b> the halo is a prop on the mark; a refused or picked-at bowl gets the disc without it.</li>
-      <li><b>The named and medication cards share the same badge style</b>, so the same mark replaces all three. One component, one render path.</li>
-    </ul>
   </section>
 
   <section>
-    <h2>The card</h2>
-    <div class="row">
-
-      <div class="frame">
-        <span class="tag">As shipped</span>
-        <div class="phone">
-          <div class="hist"><div class="day">Thu, Oct 8 · Today</div>
-            <div class="ev"><time>6:32 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
-            <div class="ev"><time>7:06 AM</time><i></i><span><b>4 meals</b> · Royal Canin · Selected Protein PR</span></div></div>
-          <div class="card ink now">
-            <div class="head">
-              <div class="badge"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#00C2A8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-              <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>6:04 PM</div></div>
-              <div class="acts"><span>Undo</span><span>Change time</span></div>
-            </div>
-            <div class="q">How much did Nyx eat?
-              <div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
-            <div class="combo">+ Add a med given with this</div>
-          </div>
-          <div class="fab">+</div>
-        </div>
-        <ol class="notes">
-          <li><b>The food name truncates</b> after "Royal Can…". It is the one thing the card exists to name, and two underlined links take its width.</li>
-          <li><b>"All" orphans</b> onto a second line, so the scale reads as four answers plus an afterthought, and the top answer looks least likely.</li>
-          <li><b>Underlined links</b> read as web text, not controls, on a native sheet.</li>
-          <li>The med row floats under a large empty band; its spacing does not match the row above.</li>
-        </ol>
+    <div>
+      <h2>Frame by frame</h2>
+      <p class="lede">The mark at five moments on the log-screen path, then both paths as a timeline in milliseconds.</p>
+    </div>
+    <div class="board">
+      <div class="still s0"><div class="stage"><div class="mark4"><span class="halo"></span><span class="disc"></span><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div><span class="cap">0 ms · the disc starts at 60%</span></div>
+      <div class="still s1"><div class="stage"><div class="mark4"><span class="halo"></span><span class="disc"></span><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div><span class="cap">90 ms · full, the pen touches</span></div>
+      <div class="still s2"><div class="stage"><div class="mark4"><span class="halo"></span><span class="disc"></span><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div><span class="cap">170 ms · half written</span></div>
+      <div class="still s3"><div class="stage"><div class="mark4"><span class="halo"></span><span class="disc"></span><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div><span class="cap">300 ms · written, gold arriving</span></div>
+      <div class="still s4"><div class="stage"><div class="mark4"><span class="halo"></span><span class="disc"></span><svg class="chk" viewBox="0 0 32 32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div></div><span class="cap">400 ms · at rest</span></div>
+    </div>
+    <div class="tablewrap tlpad">
+      <div class="tl">
+        <div class="r"><span><b>Log screen</b></span><span></span></div>
+        <div class="r"><span>Card fades and rises</span><div class="track"><span class="bar" style="left:0;width:21.3%"></span></div></div>
+        <div class="r"><span>Disc grows</span><div class="track"><span class="bar" style="left:0;width:15%"></span></div></div>
+        <div class="r"><span>Check is written</span><div class="track"><span class="bar" style="left:9%;width:16%"></span></div></div>
+        <div class="r"><span>Sentence lands</span><div class="track"><span class="bar light" style="left:12%;width:18%"></span></div></div>
+        <div class="r"><span>Gold (good moments)</span><div class="track"><span class="bar gold" style="left:25%;width:15%"></span></div></div>
+        <div class="r"><span><b>+ button</b></span><span></span></div>
+        <div class="r"><span>Food's disc flies in</span><div class="track"><span class="bar" style="left:0;width:60%"></span></div></div>
+        <div class="r"><span>Sentence lands</span><div class="track"><span class="bar light" style="left:12%;width:18%"></span></div></div>
+        <div class="r"><span>Fill reveals the check</span><div class="track"><span class="bar" style="left:60%;width:15%"></span></div></div>
+        <div class="r"><span>Gold (good moments)</span><div class="track"><span class="bar gold" style="left:75%;width:15%"></span></div></div>
+        <div class="axis"><span></span><div><span>0</span><span>250</span><span>500</span><span>750</span><span>1000 ms</span></div></div>
       </div>
+    </div>
+  </section>
 
-      <div class="frame">
-        <span class="tag current">Current proposal</span>
-        <div class="phone">
-          <div class="hist"><div class="day">Thu, Oct 8 · Today</div>
-            <div class="ev"><time>6:32 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
-            <div class="ev"><time>7:06 AM</time><i></i><span><b>4 meals</b> · Royal Canin · Selected Protein PR</span></div></div>
-          <div class="card ink pr">
-            <div class="head">
-              <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
-                <defs><radialGradient id="h2" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#FBBF24" stop-opacity=".3"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs>
-                <circle cx="18" cy="18" r="18" fill="url(#h2)"/><circle cx="18" cy="18" r="13" fill="#00C2A8"/>
-                <path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#0A0A0A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <div>
-                <div class="name">Royal Canin Selected Protein PR (Dry)</div>
-                <div class="meta"><span class="verb">Logged</span>
-                  <span class="timepill">6:04 PM <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></span></div>
-              </div>
-              <span class="undo">Undo</span>
-            </div>
-            <div class="q"><span>How much did Nyx eat?</span>
-              <div class="scale"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
-            <div class="combo"><span class="plus">+</span>Add a med given with this<span class="chev">›</span></div>
-          </div>
-          <div class="fab">+</div>
-        </div>
-        <ol class="notes">
-          <li><b>The mark:</b> the crisp SVG disc above, at 36pt with the halo inside its own box.</li>
-          <li><b>The name gets the row</b> and two lines before it yields. The verb moves under it, so "Logged" / "Refused" still names the record (C-17), it just stops costing the name its width.</li>
-          <li><b>The time is the Change-time control.</b> A pill with a caret on the time itself, so "Change time" stops being a second link. Undo stays in the header, top right, as a pill.</li>
-          <li><b>Intake is one scale</b>, five equal segments in a track. Fits a 390pt phone at Dynamic Type default; the selected answer fills white.</li>
-          <li><b>The med row is a row</b>: same padding as the scale, a plus disc and a chevron, because it opens a sheet.</li>
-        </ol>
-      </div>
+  <section>
+    <div>
+      <h2>Why it should still feel good the fiftieth time</h2>
+      <p class="lede">The card shows about seven times a day, so the motion has to delight once and then get out of the way.</p>
+    </div>
+    <ul class="notes">
+      <li><b>Cover the words and it still reads.</b> A mark gets written onto the card: something was just recorded. Gold says it was a good moment; no gold says it was noted. From the + button, the food you tapped visibly becomes the record.</li>
+      <li><b>It is short and identical every time.</b> At rest by 0.3s on a symptom and 0.4s on a meal from the log screen. The sentence is readable by about 0.2s, and the controls never wait.</li>
+      <li><b>A touch finishes it.</b> Any touch on the card jumps straight to the end. It never replays and never shows gold on the way to a refusal.</li>
+      <li><b>It speaks the app's existing motion.</b> The house spring, the fold's timings and the FAB's flight, imported rather than retyped.</li>
+    </ul>
+    <div class="never">
+      <div><b>No bounce on the record</b>The FAB's bounce answers a finger on a button. The record's mark settles.</div>
+      <div><b>No gold on a symptom, a weight or a refusal</b>Same motion, no celebration. A dose gets gold only when given.</div>
+      <div><b>No motion or buzz for a vet call</b>The line is simply there when the card is.</div>
+      <div><b>No loop, no shimmer, no countdown</b>The breathing tick stays the app's only loop.</div>
+      <div><b>The haptic doesn't move</b>One buzz at the moment the record is saved, exactly as today.</div>
+    </div>
+  </section>
 
-      <div class="frame">
-        <span class="tag current">Current proposal · refused</span>
-        <div class="phone">
-          <div class="hist"><div class="day">Thu, Oct 8 · Today</div>
-            <div class="ev"><time>6:32 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
-            <div class="ev"><time>7:06 AM</time><i></i><span><b>4 meals</b> · Royal Canin · Selected Protein PR</span></div></div>
-          <div class="card ink pr">
-            <div class="head">
-              <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="13" fill="#00C2A8"/>
-                <path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#0A0A0A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <div>
-                <div class="name">Royal Canin Selected Protein PR (Dry)</div>
-                <div class="meta"><span class="verb">Refused</span>
-                  <span class="timepill">6:04 PM <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></span></div>
-              </div>
-              <span class="undo">Undo</span>
-            </div>
-            <div class="q"><span>How much did Nyx eat?</span>
-              <div class="scale"><span class="on">Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
-            <div class="combo"><span class="plus">+</span>Add a med given with this<span class="chev">›</span></div>
-          </div>
-          <div class="fab">+</div>
-        </div>
-        <ol class="notes">
-          <li><b>No halo</b> over a refusal (CUL-894): acknowledged, never congratulated. The check stays because the record did land.</li>
-          <li>The verb follows the chips live, as today. It reads in the plain sub-label colour, never red: a refusal here is a record, and the intake-decline flag owns any alarm.</li>
-        </ol>
-      </div>
-
-      <div class="frame">
-        <span class="tag option">Option, drawn for the decision · not the proposal</span>
-        <div class="phone">
-          <div class="hist"><div class="day">Thu, Oct 8 · Today</div>
-            <div class="ev"><time>6:32 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
-            <div class="ev"><time>7:06 AM</time><i></i><span><b>4 meals</b> · Royal Canin · Selected Protein PR</span></div></div>
-          <div class="card night pr">
-            <div class="head">
-              <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
-                <defs><radialGradient id="h3" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#FBBF24" stop-opacity=".3"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs>
-                <circle cx="18" cy="18" r="18" fill="url(#h3)"/><circle cx="18" cy="18" r="13" fill="#00C2A8"/>
-                <path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#13112E" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <div>
-                <div class="name">Royal Canin Selected Protein PR (Dry)</div>
-                <div class="meta"><span class="verb">Logged</span>
-                  <span class="timepill">6:04 PM <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></span></div>
-              </div>
-              <span class="undo">Undo</span>
-            </div>
-            <div class="q"><span>How much did Nyx eat?</span>
-              <div class="scale"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
-            <div class="combo"><span class="plus">+</span>Add a med given with this<span class="chev">›</span></div>
-          </div>
-          <div class="fab">+</div>
-        </div>
-        <ol class="notes">
-          <li><b>Night ground</b> instead of near black. The mark flies here from the indigo FAB, so the card would share its ground.</li>
-          <li>Cost: the register rule keeps night for surfaces where the app works on the pet's behalf. A confirmation is the owner's own act, so this bends that rule.</li>
-        </ol>
-      </div>
-
+  <section>
+    <div>
+      <h2>The dim, in plain words</h2>
+    </div>
+    <div class="explain">
+      <p>When you log a symptom or a weight, the card appears and the screen behind it darkens. The darkening is only paint: it doesn't catch taps. A tap on the dark area goes straight through to whatever is underneath, usually Home.</p>
+      <p>Most of what's under there is harmless. The + button opens the menu and closes the card; a tab switches screens. One thing isn't: the look chips at the top of Home (Herself, Quiet, Off) save a look on a single tap. So a stray tap on the dark area while the card is up can save a look you didn't mean to.</p>
+      <ol>
+        <li><b>Leave it as it is.</b> The stray tap is possible; nobody has reported it.</li>
+        <li><b>Dimmed means inactive (recommended).</b> While the dim is up, the look chips under it ignore taps. Everything else keeps working exactly as today.</li>
+        <li><b>A tap on the dim closes the card, like a sheet.</b> Round 3 recommended this; withdrawn. The dark area also covers the + button and the tabs, so tapping + would only close the card and you'd have to tap again, and closing early ends the Undo window.</li>
+      </ol>
     </div>
   </section>
 
@@ -273,23 +530,74 @@ code { font-family: var(--mono); font-size: .88em; }
     <h2>Decisions</h2>
     <div class="briefs">
       <div class="brief">
-        <h3>1 · Ship the mark fix alone first?</h3>
-        <p><span class="k">Deciding</span>Whether the grain fix waits for the recompose.</p>
-        <p><span class="k">Options</span><b>Ship it now (recommended):</b> small, one component, fixes all three cards, no copy or layout change. Or bundle it with the recompose.</p>
-        <p><span class="k">Consequence</span>The next TestFlight cut loses the grain regardless of how the layout rounds go.</p>
+        <h3>1 · When the name lands on the + path · <span class="tag current">Ruled: early</span></h3>
+        <p><span class="k">Deciding</span>How soon the food's name appears after a one-tap meal from the + button. Both are playable in the second demo.</p>
+        <p><span class="k">Options</span><b>Right away, about 0.2s, while the disc flies (recommended):</b> the confirmation never waits on the flourish, and VoiceOver and the screen agree. Or after the mark lands, about 0.9s, which is today's order (FAB PR-22, Oct 8).</p>
+        <p><span class="k">Consequence</span>Changes one timing in PR-22's sequence; the disc still moves first.</p>
       </div>
       <div class="brief">
-        <h3>2 · The time as the Change-time control</h3>
-        <p><span class="k">Deciding</span>Whether "Change time" stays a word or becomes the time itself.</p>
-        <p><span class="k">Options</span><b>Time pill (recommended):</b> frees the name's width and puts the control on the thing it changes. Or keep the word as a second header pill.</p>
-        <p><span class="k">Consequence</span>Touches the CUL-612 action pair and its hit-area guard; the named and medication cards would follow.</p>
-      </div>
-      <div class="brief">
-        <h3>3 · Card ground</h3>
-        <p><span class="k">Deciding</span>Near black (today) or the indigo night of the FAB.</p>
-        <p><span class="k">Options</span><b>Keep near black (recommended):</b> the night register stays meaningful. Or night, for continuity with the FAB flight.</p>
-        <p><span class="k">Consequence</span>Night would amend the in-app brand register rule, a Tier-2 spec edit.</p>
+        <h3>2 · The dim · <span class="tag">Team call: dimmed means inactive, reversible</span></h3>
+        <p><span class="k">Deciding</span>What a tap on the darkened area does while a symptom or weight card is up.</p>
+        <p><span class="k">Options</span><b>Dimmed means inactive (recommended):</b> fixes the one risky tap and changes nothing else. Or leave it. Or close the card on tap (withdrawn, see above).</p>
+        <p><span class="k">Consequence</span>A small change to the look chips only, in the symptom card's PR.</p>
       </div>
     </div>
+    <ul class="notes">
+      <li><b>Team calls, shown above, reversible on your word:</b> gold fades in rather than grows, so the white gap holds on every frame; on the + path the fill reveals the check in one beat; no bounce on the record; a dose gets gold only when given; a touch finishes the motion; no night version.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Ready to build</h2>
+    <ol class="notes">
+      <li><b>PR 1 · the daylight paint</b> (ruled): the three cards, the mark, the snackbar, the chip rows and the call line, plus the polish spec's §5 wording. No motion change.</li>
+      <li><b>PR 2 · the motion</b>: one shared motion module, the meal card and the + path. A half-day device check comes first: the check's left-to-right reveal on Android, and the halo's hard edge on both platforms.</li>
+      <li><b>PR 3 · the symptom and dose cards</b>, including the Reduce Motion handling the dose card lacks today, and the dim call.</li>
+      <li><b>PR 4 · the snackbar</b> takes the same entry and exit, so the two bottom surfaces stay one family.</li>
+    </ol>
+    <p class="lede">Everything ships as an app update over the air: no schema, no server, no new library. Once you make the two calls, each PR becomes a Linear issue with the spec attached.</p>
   </section>
 </div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  function setupFlyer(demo) {
+    var phone = demo.querySelector('.phone');
+    var mark = phone.querySelector('.card .mark4');
+    var src = phone.querySelector('.pillsrc b');
+    var fly = phone.querySelector('.flyer');
+    if (!phone || !mark || !src || !fly) return;
+    var p = phone.getBoundingClientRect(), m = mark.getBoundingClientRect(), s = src.getBoundingClientRect();
+    fly.style.left = (m.left - p.left) + 'px';
+    fly.style.top = (m.top - p.top) + 'px';
+    fly.style.setProperty('--dx', ((s.left + s.width / 2) - (m.left + m.width / 2)) + 'px');
+    fly.style.setProperty('--dy', ((s.top + s.height / 2) - (m.top + m.height / 2)) + 'px');
+  }
+  function play(demo, words) {
+    demo.classList.remove('play');
+    if (words) { demo.classList.remove('early', 'late'); demo.classList.add(words); }
+    void demo.offsetWidth;
+    if (demo.classList.contains('fabpath')) setupFlyer(demo);
+    demo.classList.add('play');
+    var s = parseFloat(getComputedStyle(root).getPropertyValue('--s')) || 1;
+    if (demo.classList.contains('exitpath') || demo.classList.contains('undopath')) {
+      clearTimeout(demo._t);
+      demo._t = setTimeout(function () { demo.classList.remove('play'); }, 2600 * s);
+    }
+  }
+  document.querySelectorAll('.demo').forEach(function (demo) {
+    demo.querySelectorAll('[data-play]').forEach(function (el) {
+      el.addEventListener('click', function () { play(demo, el.getAttribute('data-words')); });
+    });
+  });
+  var all = document.getElementById('playAll');
+  if (all) all.addEventListener('click', function () { document.querySelectorAll('.demo').forEach(function (d) { play(d); }); });
+  var slow = document.getElementById('slow');
+  if (slow) slow.addEventListener('click', function () {
+    var on = slow.getAttribute('aria-pressed') !== 'true';
+    slow.setAttribute('aria-pressed', on ? 'true' : 'false');
+    root.style.setProperty('--s', on ? '4' : '1');
+  });
+})();
+</script>
