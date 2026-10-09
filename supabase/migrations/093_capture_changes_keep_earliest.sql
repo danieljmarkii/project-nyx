@@ -117,6 +117,13 @@ $$;
 COMMENT ON FUNCTION public.record_capture_change(uuid, uuid, text, timestamptz) IS
   'The push for capture_changes (migration 093, FAB PR-29d, CUL-1701): inserts the row, and on a (pet_id, change_key) conflict keeps the EARLIER first_seen_at. SECURITY DEFINER so the table stays append-only for every role; refuses (42501, constant message) unless p_pet_id is a pet of auth.uid(). Never touches created_at.';
 
+-- MAINTENANCE WARNING (rls-privacy-reviewer, N1): this body runs as the table's
+-- owner, so RLS does not apply to its INSERT and PostgreSQL keeps the DETAIL line
+-- it drops under RLS ("Key (id)=(...) already exists", "Failing row contains").
+-- Today every value there is the caller's own input. A new constraint or trigger
+-- on capture_changes (an EXCLUDE, a key across tenants, a trigger that reads a
+-- parent) could put another account's values in that DETAIL: re-check it here.
+--
 -- Supabase's default privileges give EXECUTE to anon, authenticated and
 -- service_role at CREATE, and PostgreSQL gives it to PUBLIC. Take it all back,
 -- then give it to the one role that pushes.
@@ -141,3 +148,12 @@ GRANT EXECUTE ON FUNCTION public.record_capture_change(uuid, uuid, text, timesta
 --   SELECT privilege_type FROM information_schema.role_table_grants
 --    WHERE table_name = 'capture_changes' AND grantee = 'authenticated';
 --     -- SELECT only, unchanged from 091 (no UPDATE)
+--   SELECT p.proowner::regrole AS fn_owner, c.relowner::regrole AS table_owner
+--     FROM pg_proc p, pg_class c
+--    WHERE p.oid = 'public.record_capture_change(uuid, uuid, text, timestamptz)'::regprocedure
+--      AND c.oid = 'public.capture_changes'::regclass;
+--     -- postgres | postgres. The body reads pets and writes capture_changes as
+--     -- this owner; an owner without RLS bypass on pets would refuse every call
+--     -- (42501, fail closed, rows quarantine after their attempts).
+--   Then one live call each with a real user token: own pet -> 204; a pet id
+--   the user does not own -> 403 with the constant message.
