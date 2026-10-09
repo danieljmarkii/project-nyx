@@ -96,7 +96,6 @@ export type MayWaitRefusal =
 export interface MayWaitRow {
   status?: string | null;
   tier?: string | null;
-  recommendation?: string | null;
   engine_flags?: unknown;
   may_wait?: unknown;
   edited_at?: string | null;

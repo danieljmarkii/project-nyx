@@ -24,9 +24,14 @@ import { supabase } from './supabase';
 const HOUR = 3_600_000;
 const PAD_MS = 24 * HOUR;
 
+// symptom-list-ok: a mirror of the server's may-wait READ (`MAY_WAIT_INCIDENT_TYPES` plus its
+// lethargy and meal queries, incidentMayWaitEvidence.ts), not a membership decision: which
+// leaves a wait is decided over is the server's call, and mayWaitFacts.test.ts pins this copy
+// to it by value, so a leaf added there reds here rather than leaving the phone a row short.
 /** The server's incident types (`MAY_WAIT_INCIDENT_TYPES`): the reads a may-wait run is made of. */
 export const MAY_WAIT_STOOL_TYPES = ['stool_normal', 'diarrhea'] as const;
-const INCIDENT_TYPES = ['vomit', ...MAY_WAIT_STOOL_TYPES];
+export const MAY_WAIT_INCIDENT_TYPES = ['vomit', ...MAY_WAIT_STOOL_TYPES];
+const INCIDENT_TYPES = MAY_WAIT_INCIDENT_TYPES;
 /** Every event type a may-wait decision reads: an unsynced one of these is a fact it never saw. */
 const READ_TYPES = [...INCIDENT_TYPES, 'lethargy', 'meal'];
 

@@ -20,7 +20,9 @@ jest.mock('./supabase', () => ({
   supabase: { from: () => ({ select: () => ({ eq: async () => mockServer }) }) },
 }));
 
-import { loadMayWaitFacts } from './mayWaitFacts';
+import { loadMayWaitFacts, MAY_WAIT_INCIDENT_TYPES } from './mayWaitFacts';
+import * as fs from 'fs';
+import * as path from 'path';
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { mayWaitRefusalOf } from './mayWaitLine';
 
@@ -135,5 +137,17 @@ describe('loadMayWaitFacts', () => {
     const f = await loadMayWaitFacts('v0', PET, NOW);
     expect(f!.lethargyAt).toEqual([]);
     expect(f!.unsynced).toBe(false);
+  });
+});
+
+describe('the read mirrors the server\'s (C-34)', () => {
+  // incidentMayWaitEvidence.ts imports esm.sh, which the app's tsc cannot resolve, so its
+  // list is read from the source by value: a leaf added there reds here.
+  it('the incident types equal MAY_WAIT_INCIDENT_TYPES', () => {
+    const src = fs.readFileSync(path.resolve(__dirname, '../supabase/functions/_shared/incidentMayWaitEvidence.ts'), 'utf8');
+    const m = /export const MAY_WAIT_INCIDENT_TYPES = \[([^\]]*)\]/.exec(src);
+    expect(m).not.toBeNull();
+    const server = m![1].split(',').map((x) => x.trim().replace(/^'|'$/g, '')).filter(Boolean);
+    expect([...MAY_WAIT_INCIDENT_TYPES].sort()).toEqual(server.sort());
   });
 });

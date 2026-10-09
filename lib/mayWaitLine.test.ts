@@ -25,7 +25,6 @@ import {
 } from './mayWaitLine';
 import { TIER_WORDS } from './incidentTierWords';
 import * as server from '../supabase/functions/_shared/incidentMayWait';
-import { photoSetKey as serverPhotoSetKey } from '../supabase/functions/_shared/engineStamps';
 
 const LOUDER = TIER_WORDS.call_today.action;
 const HOUR = 3_600_000;
@@ -41,7 +40,6 @@ function row(over: Partial<MayWaitRow> = {}): MayWaitRow {
   return {
     status: 'completed',
     tier: 'call_today',
-    recommendation: 'monitor',
     engine_flags: ['engines_v3_en3', 'engines_v3_en4'],
     may_wait: true,
     edited_at: null,
@@ -317,10 +315,14 @@ describe('the mirrors equal the server (C-34)', () => {
     }
   });
 
-  it('the photo-set list form equals the server\'s photoSetKey wherever the server lists', async () => {
-    const sets = [[], [PHOTO], [PHOTO_2, PHOTO], [PHOTO.toUpperCase(), PHOTO_2]];
-    for (const s of sets) expect(photoSetListKey(s)).toBe(await serverPhotoSetKey(s));
+  // engineStamps.ts imports esm.sh, which the app's tsc cannot resolve, so its list form is
+  // pinned here by value: lowercased, sorted, comma-joined, null for none (075's key).
+  it('the photo-set list form is the server\'s photoSetKey list form', () => {
+    expect(photoSetListKey([])).toBeNull();
+    expect(photoSetListKey([PHOTO])).toBe(PHOTO);
+    expect(photoSetListKey([PHOTO_2, PHOTO.toUpperCase()])).toBe(`${PHOTO},${PHOTO_2}`);
     // Where the server hashes, the phone answers undefined (cannot compare): never a match.
     expect(photoSetListKey(['NOT_AN_ID'])).toBeUndefined();
+    expect(photoSetListKey(Array.from({ length: 120 }, (_, i) => `${PHOTO.slice(0, -3)}${String(i).padStart(3, '0')}`))).toBeUndefined();
   });
 });
