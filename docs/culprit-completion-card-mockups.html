@@ -101,370 +101,403 @@ section { display: grid; gap: 18px; }
 .brief .k { color: var(--muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; margin-right: 6px; }
 code { font-family: var(--mono); font-size: .88em; }
 @media (prefers-reduced-motion: no-preference) { .draw path { stroke-dasharray: 24; stroke-dashoffset: 0; } }
-/* ── ROUND 2 ── evidence tiles, the chart, the receipt, the exception, Home in place */
-:root { --bar: #0B5C52; --gridline: #E2E2DE; --rose: #F43F5E; --roseInk: #9F1239; --amber: #F59E0B; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bar: #8FE3D6; --gridline: #2A2A2F; } }
-:root[data-theme="dark"] { --bar: #8FE3D6; --gridline: #2A2A2F; }
-.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
-.tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 16px; display: grid; gap: 4px; align-content: start; min-width: 0; }
-.tile .n { font-family: var(--display); font-size: 1.9rem; line-height: 1.05; font-variant-numeric: tabular-nums; }
-.tile .l { font-size: 13.5px; color: var(--ink); }
-.tile .s { font-size: 12px; color: var(--muted); }
-.chartbox { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 16px 18px 12px; display: grid; gap: 8px; max-width: 760px; }
-.chartbox h3 { margin: 0; font-size: 15px; font-weight: 600; }
-.chartbox .sub { margin: 0; font-size: 13px; color: var(--muted); }
-.chartscroll { overflow-x: auto; }
-.chartscroll svg { display: block; width: 100%; min-width: 460px; height: auto; }
-.chartscroll text { font-family: var(--body); fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-.chartscroll text.v { fill: var(--ink); font-size: 12.5px; font-weight: 600; }
-.chartscroll text.m { fill: var(--ink); font-size: 12px; }
-.chartscroll .bar { fill: var(--bar); }
-.chartscroll .bar:hover { opacity: .8; }
-.chartscroll line { stroke: var(--gridline); stroke-width: 1; }
-.chartscroll line.mark { stroke: var(--muted); stroke-dasharray: 3 3; }
-.jobs { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-.job { border-top: 2px solid var(--ink); padding-top: 10px; display: grid; gap: 4px; min-width: 0; }
-.job h3 { margin: 0; font-size: 15px; font-weight: 600; }
-.job .f { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.job p { margin: 0; font-size: 14px; color: var(--muted); }
-.dir { font-family: var(--display); font-size: 1.15rem; font-weight: 500; margin: 0; }
-.cost { font-size: 13.5px; color: var(--muted); margin: 0; padding: 8px 12px; border-left: 2px solid var(--rule); }
-.cost b { color: var(--ink); font-weight: 600; }
-.reco { background: var(--note); color: var(--noteInk); border-radius: 14px; padding: 16px 18px; display: grid; gap: 8px; max-width: 80ch; }
-.reco h3 { margin: 0; font-size: 16px; font-weight: 600; }
-.reco p, .reco li { margin: 0; font-size: 14.5px; }
-.reco ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
-details.archive { border-top: 1px solid var(--rule); padding-top: 18px; }
-details.archive > summary { cursor: pointer; font-family: var(--display); font-size: 1.3rem; }
-details.archive > summary:focus-visible { outline: 2px solid var(--noteInk); outline-offset: 4px; }
-details.archive[open] > summary { margin-bottom: 18px; }
-.phone.tall { height: 520px; }
-/* the receipt (direction A, B, E) */
-.rc { padding: 12px 12px 10px; display: grid; gap: 10px; }
-.rc .dayline { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--onDarkSub); padding: 0 4px; font-variant-numeric: tabular-nums; }
-.slice { display: grid; grid-template-columns: 62px 20px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 10px; align-items: start; position: relative; }
-.slice::before { content: ""; position: absolute; left: 79.25px; top: 8px; bottom: 10px; width: 1.5px; background: var(--divOnDark); }
-.slice .tm { text-align: right; font-size: 12.5px; color: var(--onDarkSub); padding-top: 1px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.slice .nd { height: 20px; display: grid; place-items: center; position: relative; z-index: 1; }
-.slice .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--confirm); box-shadow: 0 0 0 3px var(--cardDark); }
-.slice .dot.treat { background: transparent; border: 1.5px solid var(--confirm); }
-.slice .tx { min-width: 0; font-size: 13.5px; line-height: 1.3; }
-.slice .tx .nm { font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.slice .tx .vb { font-size: 12.5px; color: var(--onDarkSub); margin-top: 2px; }
-.slice .dim { opacity: .5; }
-.slice .asked .nm { text-decoration: underline; text-decoration-color: rgba(255,255,255,.35); text-underline-offset: 3px; }
-.tp { display: inline-block; padding: 2px 8px; border-radius: 99px; background: rgba(255,255,255,.12); color: #fff; font-size: 12.5px; font-variant-numeric: tabular-nums; }
-.up { font-size: 12.5px; font-weight: 500; padding: 4px 11px; border-radius: 99px; border: 1px solid var(--divOnDark); color: #fff; white-space: nowrap; }
-.rc .q { border-top: 1px solid var(--divOnDark); padding: 10px 4px 2px; display: grid; gap: 8px; }
-.rc .q > span { font-size: 13px; color: var(--onDarkSub); }
-.rc .q > span b { color: #fff; font-weight: 500; }
-/* the exception (direction C): daylight, rose rail, plain */
-.xc { position: absolute; left: 12px; right: 12px; bottom: 78px; border-radius: 22px; background: #FFFFFF; color: #17171A; border: 1px solid #F1D5DA; box-shadow: 0 10px 30px rgba(0,0,0,.16); display: grid; grid-template-columns: 4px minmax(0, 1fr); overflow: hidden; }
-.xc .rail { background: var(--rose); }
-.xc .in { padding: 14px 14px 12px; display: grid; gap: 10px; }
-.xc .lead { font-size: 16.5px; font-weight: 600; line-height: 1.3; }
-.xc .det { font-size: 13.5px; color: #4A4A50; margin-top: -4px; }
-.xc .btns { display: flex; gap: 16px; align-items: center; }
-.xc .pri { background: #17171A; color: #fff; font-size: 13.5px; font-weight: 500; padding: 9px 16px; border-radius: 99px; }
-.xc .sec { font-size: 13.5px; font-weight: 500; padding: 9px 4px; color: #17171A; }
-.xc .rec { border-top: 1px solid #ECECEA; padding-top: 10px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: #4A4A50; }
-.xc .rec .tpl { padding: 2px 8px; border-radius: 99px; background: #F1F1EF; color: #17171A; font-variant-numeric: tabular-nums; }
-.xc .rec .upl { margin-left: auto; font-size: 12.5px; font-weight: 500; padding: 4px 11px; border-radius: 99px; border: 1px solid #DCDCD8; color: #17171A; }
-/* Home in place (direction D) */
-.home { padding: 16px 14px 0; display: grid; gap: 12px; }
-.home .hd { font-family: var(--display); font-size: 22px; font-weight: 500; }
-.home .look { font-size: 13px; color: #6B6B70; display: flex; gap: 6px; flex-wrap: wrap; }
-.home .look span { padding: 4px 10px; border-radius: 99px; border: 1px solid #DCDCD8; color: #17171A; }
-.today { border: 1px solid #ECECEA; border-radius: 18px; padding: 12px 12px 10px; display: grid; gap: 10px; }
-.today .cl { font-size: 12px; color: #6B6B70; font-variant-numeric: tabular-nums; }
-.lslice { display: grid; grid-template-columns: 58px 16px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 9px; align-items: start; position: relative; font-size: 13px; }
-.lslice::before { content: ""; position: absolute; left: 73.25px; top: 8px; bottom: 8px; width: 1.5px; background: #E6E6E2; }
-.lslice .tm { text-align: right; color: #6B6B70; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.lslice .nd { height: 18px; display: grid; place-items: center; position: relative; z-index: 1; }
-.lslice .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--confirm); box-shadow: 0 0 0 3px #FFFFFF; }
-.lslice .dot.sym { background: var(--rose); }
-.lslice .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lslice .new { background: #E0FBF7; border-radius: 8px; padding: 0 6px; margin-left: -6px; }
-.lslice .tpl { padding: 1px 7px; border-radius: 99px; background: #FFFFFF; border: 1px solid #BFEDE6; font-variant-numeric: tabular-nums; }
-.lslice .upl { font-size: 12px; font-weight: 500; padding: 2px 9px; border-radius: 99px; border: 1px solid #BFEDE6; background: #FFFFFF; white-space: nowrap; }
-.lscale { grid-column: 3 / 5; display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; padding: 3px; border-radius: 10px; background: #F1F1EF; }
-.lscale span { text-align: center; font-size: 11.5px; padding: 6px 0; border-radius: 8px; color: #17171A; }
-.archivebody { display: grid; gap: 40px; }
-.now { grid-template-columns: minmax(0, 1fr); }
-@media (max-width: 560px) { .tile:last-child { grid-column: 1 / -1; } }
+/* ── ROUND 3 ── the same card on a daylight ground */
+:root { --dayCard: #FFFFFF; --ink0: #0A0A0A; --ink2: #525252; --ink3: #737373; --hair: #D4D4D4; --glyph: #0FA08B; --accInk: #0B7B6C;
+  --attLight: #FDF3DC; --attInk: #6B4A0E; --attRail: #B7791F; --roseInk: #9F1239; --nightUp2: #251F57; --night2: #13112E;
+  --onNight: #ECEAF6; --onNightMuted: #A6A2CE; --gridline: #E2E2DE; --rose: #F43F5E; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --gridline: #2A2A2F; } }
+:root[data-theme="dark"] { --gridline: #2A2A2F; }
+.pair { display: grid; gap: 10px; }
+.pair h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.pair .row { gap: 20px; }
+.phone.home { background: #FAFAFA; }
+.homeslice { padding: 18px 16px 0; display: grid; gap: 12px; }
+.homeslice .hd { font-family: var(--display); font-size: 22px; font-weight: 500; color: #17171A; }
+.homeslice .look { display: flex; gap: 6px; flex-wrap: wrap; }
+.homeslice .look span { padding: 5px 11px; border-radius: 99px; border: 1px solid #EAEAEA; background: #FFFFFF; font-size: 13px; color: #525252; }
+.homeslice .tc { background: #FFFFFF; border: 1px solid #EAEAEA; border-radius: 18px; padding: 12px 14px; display: grid; gap: 8px; font-size: 13px; color: #17171A; }
+.homeslice .tc .cl { font-size: 12px; color: #6B6B70; }
+.homeslice .tc .ln { display: grid; grid-template-columns: 58px 12px 1fr; gap: 8px; }
+.homeslice .tc .ln time { color: #6B6B70; text-align: right; font-variant-numeric: tabular-nums; }
+.homeslice .tc .ln i { width: 8px; height: 8px; border-radius: 50%; background: var(--confirm); margin-top: 5px; }
+.homeslice .tc .ln i.sym { background: var(--rose); }
+.dim { position: absolute; inset: 0; background: rgba(10,10,10,.35); }
+.recap { position: absolute; inset: 0; background: var(--night2); padding: 18px 16px; display: grid; align-content: start; gap: 10px; color: var(--onNight); }
+.recap .rt { font-family: var(--display); font-size: 24px; }
+.recap .rs { font-size: 13px; color: var(--onNightMuted); }
+.recap .tile { background: var(--nightUp2); border-radius: 14px; padding: 12px; font-size: 13px; color: var(--onNightMuted); }
+/* the card, both grounds, one anatomy */
+.card.day { background: var(--dayCard); color: var(--ink0); box-shadow: 0 4px 18px rgba(0,0,0,.14), 0 1px 2px rgba(0,0,0,.05); }
+.card.nup { background: var(--nightUp2); color: var(--onNight); box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+.k3 { padding: 12px 16px; display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); }
+.k3 .head { display: flex; align-items: center; gap: 12px; }
+.k3 .head svg { flex: 0 0 auto; }
+.k3 .t { flex: 1; min-width: 0; }
+.k3 .t div:first-child { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 15px; }
+.k3 .t div:last-child { font-size: 13px; }
+.k3 .acts { display: flex; gap: 10px; font-size: 13px; font-weight: 500; text-decoration: underline; white-space: nowrap; }
+.k3 .q { border-top: 1px solid; padding-top: 8px; font-size: 13px; display: grid; gap: 6px; }
+.k3 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.k3 .chips span { padding: 6px 13px; border: 1px solid; border-radius: 99px; font-size: 13.5px; }
+.k3 .combo { border-top: 1px solid; padding: 12px 0 4px; font-size: 13.5px; }
+.k3 .panel { border-radius: 12px; padding: 10px 12px 10px 14px; display: grid; gap: 3px; position: relative; overflow: hidden; }
+.k3 .panel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+.k3 .panel .eb { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.k3 .panel .hl { font-size: 14px; font-weight: 500; }
+.k3 .panel .dt { font-size: 12.5px; }
+.k3 .panel .ad { font-size: 13px; font-weight: 500; margin-top: 4px; }
+.k3 .floor { display: grid; gap: 2px; padding: 4px 0; }
+.k3 .floor .l { font-size: 15px; font-weight: 600; }
+.k3 .floor .o { font-size: 13px; font-weight: 500; text-decoration: underline; }
+.k3 .pills { display: flex; gap: 10px; padding-top: 4px; }
+.k3 .pills span { font-size: 13px; font-weight: 500; padding: 6px 14px; border-radius: 99px; border: 1px solid; }
+/* today's colours */
+.card.ink .k3 .t div:last-child, .card.ink .k3 .q, .card.ink .k3 .combo, .card.ink .k3 .panel .dt, .card.ink .k3 .panel .ad { color: rgba(255,255,255,.7); }
+.card.ink .k3 .q, .card.ink .k3 .combo { border-top-color: rgba(255,255,255,.15); }
+.card.ink .k3 .chips span { border-color: rgba(255,255,255,.3); color: rgba(255,255,255,.85); }
+.card.ink .k3 .chips span.on { background: var(--confirm); border-color: var(--confirm); color: #fff; }
+.card.ink .k3 .panel { background: #27200D; }
+.card.ink .k3 .panel::before { background: var(--glow); }
+.card.ink .k3 .panel .eb { color: var(--glow); }
+.card.ink .k3 .pills span { border-color: rgba(255,255,255,.15); }
+/* daylight colours */
+.card.day .k3 .t div:last-child, .card.day .k3 .q, .card.day .k3 .combo, .card.day .k3 .panel .dt, .card.day .k3 .panel .ad { color: var(--ink2); }
+.card.day .k3 .q, .card.day .k3 .combo { border-top-color: var(--hair); }
+.card.day .k3 .chips span { border-color: #EAEAEA; color: var(--ink2); background: #FFFFFF; }
+.card.day .k3 .chips span.on { background: var(--ink0); border-color: var(--ink0); color: #FFFFFF; }
+.card.day .k3 .chips span.wash { background: #CDF5EC; border-color: #CDF5EC; color: #08685B; font-weight: 500; }
+.card.day .k3 .chips span.given { background: var(--accInk); border-color: var(--accInk); color: #FFFFFF; }
+.card.day .k3 .panel { background: var(--attLight); }
+.card.day .k3 .panel::before { background: var(--attRail); }
+.card.day .k3 .panel .eb { color: var(--attInk); }
+.card.day .k3 .pills span { border-color: var(--hair); color: var(--ink0); }
+/* night, over the recap */
+.card.nup .k3 .t div:last-child { color: var(--onNightMuted); }
+.card.nup .k3 .q { border-top-color: rgba(236,234,246,.18); color: var(--onNightMuted); }
+.card.nup .k3 .chips span { border-color: rgba(236,234,246,.35); color: var(--onNight); }
+/* scorecard */
+.score { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 620px; }
+.score th, .score td { text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.score th { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.score td.n { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.score tr.win td { background: var(--note); color: var(--noteInk); }
+.score .sw { display: inline-block; width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--rule); vertical-align: -2px; margin-right: 8px; }
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; }
+.facts { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.fact { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.fact h3 { margin: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.fact p { margin: 0; font-size: 14px; color: var(--muted); }
+.fact .sw { width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--rule); flex: 0 0 auto; }
+.marks { display: flex; flex-wrap: wrap; gap: 16px; }
+.mk { background: #FFFFFF; border: 1px solid #E2E2DE; border-radius: 16px; width: 200px; max-width: 100%; padding: 14px; display: grid; gap: 8px; justify-items: center; color: #17171A; }
+.mk .cap { font-size: 12.5px; text-align: center; color: #4A4A50; }
+.mk .num { font-size: 12px; font-variant-numeric: tabular-nums; color: #6B6B70; text-align: center; }
+.snack { width: 340px; max-width: 100%; border-radius: 16px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; font-size: 14px; gap: 12px; }
+.snack.ink { background: #0A0A0A; color: #FFFFFF; }
+.snack.ink b { color: #00C2A8; font-weight: 500; }
+.snack.day { background: #FFFFFF; color: #0A0A0A; box-shadow: 0 4px 18px rgba(0,0,0,.14), 0 1px 2px rgba(0,0,0,.05); }
+.snack.day b { color: #0B7B6C; font-weight: 500; }
+.snackrow { display: flex; flex-wrap: wrap; gap: 20px; padding: 18px; background: #FAFAFA; border: 1px solid #E2E2DE; border-radius: 16px; }
+.phone.tall { height: 540px; }
+.sw.k { background: #0A0A0A; } .sw.n { background: #13112E; } .sw.w { background: #FFFFFF; }
+.sw.p { background: #F4F2EC; } .sw.g { background: #1F1F23; } .sw.u { background: #251F57; }
+.chipbox { background: #FFFFFF; color: #0A0A0A; }
+.brief { align-content: start; }
+.chipbox .chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.chipbox .chips span { padding: 6px 13px; border: 1px solid #EAEAEA; border-radius: 99px; font-size: 13.5px; color: #525252; background: #FFFFFF; }
+.chipbox .chips span.on { background: #0A0A0A; border-color: #0A0A0A; color: #FFFFFF; }
+.chipbox .chips span.wash { background: #CDF5EC; border-color: #CDF5EC; color: #08685B; font-weight: 500; }
 </style>
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">Completion card · round 2 · 2026-10-09</div>
-    <h1>The surface you see seven times a day</h1>
-    <p class="lede">Round 1 tuned the meal card. This round steps back: the card fires after nearly every log, so its design compounds. What the record says the card is used for, why that matters, five directions drawn side by side, and the combination the team recommends.</p>
+    <div class="eyebrow">Completion card · round 3 · 2026-10-09</div>
+    <h1>The card in daylight</h1>
+    <p class="lede">The same card, the same words and controls, on the app's own light ground instead of near black. One proposal, drawn beside today's card for every state it can be in, with the three calls left inside it boxed as options.</p>
   </header>
 
   <div class="ledger">
-    <div><b>Reaction</b><span>This toast is shown so often. Is there a better, more efficient design? Think divergently. → This round. Evidence first, then five directions, one recommendation, three decisions.</span></div>
-    <div><b>Round 1</b><span>Decision 1 shipped (#1125, the crisp mark). Decision 2, the time as the Change-time control, now has data behind it and folds into direction A. Decision 3, the card's ground, is answered differently in direction C. Round 1's frames are kept at the bottom.</span></div>
+    <div><b>Reaction</b><span>"No massive overhaul at the moment." → Round 2's five directions leave this page (commit 8b9f3da keeps them). Its two findings are filed so they are not lost: CUL-1696 (when the intake question asks) and CUL-1697 (a vet call's look and timer). Nothing here changes what the card says, asks or writes.</span></div>
+    <div><b>Reaction</b><span>"It's jarringly black. Aside from the day screen, the only jarring black chunk." → Confirmed, with three corrections below. Proposal: daylight.</span></div>
+    <div><b>Round 1</b><span>Decision 3 (near black or indigo night) → neither. Night fails the register rule's own tests, and its premise was off: the mark that flies into the card comes from the white quick-meal pill, not the indigo FAB. Decision 2 (the time as the Change-time control) is not part of this round and stays open on CUL-1691.</span></div>
   </div>
 
   <section>
     <div>
-      <h2>What the record says the card is for</h2>
-      <p class="lede">Read from the production record, counts only. Most of it is one household's dogfood, so treat it as a strong hint, not a measurement.</p>
+      <h2>What is black today</h2>
+      <p class="lede">An inventory of every large dark ground in the shipped app. The PM's read holds.</p>
     </div>
-    <div class="tiles">
-      <div class="tile"><span class="n">~7 a day</span><span class="l">completion surfaces, 8 in 10 of them meals</span><span class="s">454 live logs over 59 active days, last 60 days</span></div>
-      <div class="tile"><span class="n">1 in 10</span><span class="l">meal cards used to change the time</span><span class="s">22 of 232 meals re-timed within 30s, last 45 days</span></div>
-      <div class="tile"><span class="n">4 of 185</span><span class="l">meal cards got an intake answer since Sep 1</span><span class="s">All four answers were less than "All"</span></div>
-      <div class="tile"><span class="n">4 of 363</span><span class="l">meals undone from the card</span><span class="s">Deleted within 15s of the write, last 60 days</span></div>
-      <div class="tile"><span class="n">1 in 11</span><span class="l">logs land while the card before it is still up</span><span class="s">26 of 294 logs within 10s of the previous one</span></div>
-    </div>
-
-    <div class="chartbox">
-      <h3>Meals with an intake answer, by month</h3>
-      <p class="sub">The one pet logged continuously since May. Answered meals over logged meals; October is eight days.</p>
-      <div class="chartscroll" role="img" aria-label="Share of meals with an intake answer: May 69%, June 89%, July 65%, August 19%, September 1%, October 1 to 8 5%.">
-        <svg viewBox="0 0 560 214" aria-hidden="true">
-          <line x1="40" y1="30" x2="546" y2="30"/>
-          <line x1="40" y1="100" x2="546" y2="100"/>
-          <line x1="40" y1="170" x2="546" y2="170"/>
-          <text x="34" y="34" text-anchor="end">100%</text>
-          <text x="34" y="104" text-anchor="end">50%</text>
-          <text x="34" y="174" text-anchor="end">0</text>
-          <line class="mark" x1="290" y1="30" x2="290" y2="170"/>
-          <text x="295" y="42">Aug 4: trial heads-up panel</text>
-          <text x="295" y="56">Aug 23: Undo, in-place beats</text>
-          <g><title>May: 91 of 132 meals answered (69%)</title><path class="bar" d="M61.7,170 V77.4 Q61.7,73.4 65.7,73.4 H97.7 Q101.7,73.4 101.7,77.4 V170 Z"/></g>
-          <g><title>June: 213 of 240 meals answered (89%)</title><path class="bar" d="M145,170 V49.4 Q145,45.4 149,45.4 H181 Q185,45.4 185,49.4 V170 Z"/></g>
-          <g><title>July: 195 of 301 meals answered (65%)</title><path class="bar" d="M228.3,170 V83 Q228.3,79 232.3,79 H264.3 Q268.3,79 268.3,83 V170 Z"/></g>
-          <g><title>August: 32 of 172 meals answered (19%)</title><path class="bar" d="M311.7,170 V147.4 Q311.7,143.4 315.7,143.4 H347.7 Q351.7,143.4 351.7,147.4 V170 Z"/></g>
-          <g><title>September: 2 of 142 meals answered (1%)</title><rect class="bar" x="395" y="168" width="40" height="2"/></g>
-          <g><title>October 1 to 8: 2 of 43 meals answered (5%)</title><path class="bar" d="M478.3,170 V166 Q478.3,163 481.3,163 H515.3 Q518.3,163 518.3,166 V170 Z"/></g>
-          <text class="v" x="81.7" y="66" text-anchor="middle">69%</text>
-          <text class="v" x="165" y="38" text-anchor="middle">89%</text>
-          <text class="v" x="248.3" y="72" text-anchor="middle">65%</text>
-          <text class="v" x="331.7" y="136" text-anchor="middle">19%</text>
-          <text class="v" x="415" y="161" text-anchor="middle">1%</text>
-          <text class="v" x="498.3" y="156" text-anchor="middle">5%</text>
-          <text class="m" x="81.7" y="189" text-anchor="middle">May</text>
-          <text class="m" x="165" y="189" text-anchor="middle">Jun</text>
-          <text class="m" x="248.3" y="189" text-anchor="middle">Jul</text>
-          <text class="m" x="331.7" y="189" text-anchor="middle">Aug</text>
-          <text class="m" x="415" y="189" text-anchor="middle">Sep</text>
-          <text class="m" x="498.3" y="189" text-anchor="middle">Oct 1–8</text>
-          <text x="81.7" y="205" text-anchor="middle">91 of 132</text>
-          <text x="165" y="205" text-anchor="middle">213 of 240</text>
-          <text x="248.3" y="205" text-anchor="middle">195 of 301</text>
-          <text x="331.7" y="205" text-anchor="middle">32 of 172</text>
-          <text x="415" y="205" text-anchor="middle">2 of 142</text>
-          <text x="498.3" y="205" text-anchor="middle">2 of 43</text>
-        </svg>
-      </div>
-      <p class="sub">Three things changed around August and the data cannot separate them: the card grew (a trial panel, then Undo), the owner had seen it several hundred times, and the routine may have changed. All three point the same way. The intake question is now answered only when something is off.</p>
+    <div class="facts">
+      <div class="fact"><h3><span class="sw k"></span>The completion cards</h3><p>Near black (#0A0A0A), full width, about a quarter of the screen, roughly 7 times a day. The symptom card also dims Home by 35%, which makes it the darkest routine moment in the app. No ruling ever chose this ground: it came in as a Gmail-style "Undo send" snackbar and was carried forward.</p></div>
+      <div class="fact"><h3><span class="sw k"></span>The snackbar</h3><p>Same ground, same slot, and its own file says it is meant to read as one family with the meal card. It shows rarely (a restored food, a saved password). It goes with the cards.</p></div>
+      <div class="fact"><h3><span class="sw n"></span>The day screen</h3><p>Not black: brand night indigo (#13112E), chosen on purpose for the 9pm recap you open. It is a ruled register and it stays. The other dark grounds (splash, camera, photo viewer, a one-time paywall) are intentional and rare.</p></div>
     </div>
   </section>
 
   <section>
     <div>
-      <h2>Three jobs, one form</h2>
-      <p class="lede">The card does three jobs at very different frequencies, and all three wear the same dark card with the same check.</p>
+      <h2>Four grounds, four lenses</h2>
+      <p class="lede">Four candidates were each drawn up with a full colour map, then scored independently by a designer, an accessibility checker who recomputed every contrast ratio, an engineer and the brand steward. Scores out of 10.</p>
     </div>
-    <div class="jobs">
-      <div class="job"><span class="f">Every log · used ~1%</span><h3>Confirm, and offer a way back</h3><p>The write landed, here is what it says, Undo if the tap was wrong. Needed every time, acted on almost never. It should be the smallest, most specific thing the app can draw.</p></div>
-      <div class="job"><span class="f">Meals · time 10%, intake 2%</span><h3>Capture at recall</h3><p>The time is the workhorse, yet it is the smallest control. The intake scale takes the most room and is now the least used, partly because a bowl just put down has no answer yet.</p></div>
-      <div class="job"><span class="f">Rare · the one that matters</span><h3>Carry an exception</h3><p>A vomit read raised to a call, a food off the trial list, a second dose. It arrives inside the form the owner has learned to skip.</p></div>
+    <div class="tablewrap">
+      <table class="score">
+        <thead><tr><th>Ground</th><th>Design</th><th>Contrast</th><th>Eng.</th><th>Brand</th><th>Mean</th><th>The short version</th></tr></thead>
+        <tbody>
+          <tr class="win"><td><span class="sw w"></span><b>Daylight</b></td><td class="n">8</td><td class="n">6</td><td class="n">7</td><td class="n">8</td><td class="n"><b>7.3</b></td><td>Removes the block using pieces the app already ships. Keeps every brand rule. The contrast checker's one issue (the mark against its own halo) is fixed below.</td></tr>
+          <tr><td><span class="sw p"></span>Warm paper</td><td class="n">4</td><td class="n">8</td><td class="n">4</td><td class="n">5</td><td class="n">5.3</td><td>Darker than the page it floats over, so it reads as a recessed tray. Adds a second neutral surface and dulls the mark.</td></tr>
+          <tr><td><span class="sw g"></span>Graphite</td><td class="n">5</td><td class="n">4</td><td class="n">6</td><td class="n">5</td><td class="n">5.0</td><td>Softens the block without removing it (14.5:1 against Home, against 19:1 today), so a second change is likely.</td></tr>
+          <tr><td><span class="sw u"></span>Brand night</td><td class="n">3</td><td class="n">8</td><td class="n">3</td><td class="n">2</td><td class="n">4.0</td><td>Still a dark block. Fails the register rule's tests (the card is the owner's own act, editable, all day) and would sit on the FAB's own indigo.</td></tr>
+        </tbody>
+      </table>
     </div>
     <ul class="notes">
-      <li><b>Habituation is fast and it transfers.</b> The visual response to a repeated warning drops after the second exposure, and a warning that changes its appearance resists it; avoidance learned for one look carries over to whatever later wears that look (<code>docs/research/2026-09-home-insight-fold-and-freshness-patterns.md</code> §4). The exception currently wears the routine's look.</li>
-      <li><b>Principle 9's test fails today.</b> Cover the words: a check on a dark card could be any app's. Nothing in the motion says which record changed or where it sits in the day.</li>
+      <li><b>The rule that decides it:</b> the brand register rule keeps capture in the day system, and its source says "The 3am log stays light, fast, and boring on purpose." The completion card is the tail of capture.</li>
+      <li><b>The 2am worry is still covered.</b> Home behind the card is already near white (#FAFAFA), so a bounded white card adds no light. The symptom card keeps its dim.</li>
     </ul>
   </section>
 
   <section>
     <div>
-      <h2>Five directions</h2>
-      <p class="lede">Drawn side by side for the decision, with the shipped card first for reference. Each frame says what it costs.</p>
+      <h2>The proposal, state by state</h2>
+      <p class="lede">Today on the left, daylight on the right. Same anatomy everywhere; only the ground and the colours that follow it change.</p>
     </div>
-    <div class="row">
 
-      <div class="frame">
-        <span class="tag">Shipped · with #1125's mark</span>
-        <div class="phone tall">
-          <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
-            <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
-            <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div>
-          <div class="card ink now">
-            <div class="head">
-              <svg width="32" height="32" viewBox="0 0 36 36" aria-hidden="true">
-                <defs><radialGradient id="r2h0" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#FBBF24" stop-opacity=".3"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs>
-                <circle cx="18" cy="18" r="18" fill="url(#r2h0)"/><circle cx="18" cy="18" r="13" fill="#00C2A8"/>
-                <path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#0A0A0A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>6:04 PM</div></div>
-              <div class="acts"><span>Undo</span><span>Change time</span></div>
-            </div>
-            <div class="q">How much did Nyx eat?
-              <div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
-            <div class="combo">+ Add a med given with this</div>
-          </div>
-          <div class="fab">+</div>
-        </div>
-        <ol class="notes">
-          <li><b>Change time</b>, the most used control (1 in 10), is a small underlined word.</li>
-          <li><b>The scale</b> takes the most room and gets an answer on about 2 in 100 cards now.</li>
-          <li><b>Undo</b> is right to keep (one safety net, C-21), and right to keep small.</li>
-        </ol>
-      </div>
-
-      <div class="frame">
-        <span class="tag option">Direction A · the receipt</span>
-        <div class="phone tall">
-          <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
-            <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
-            <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div>
-          <div class="card ink rc">
-            <div class="dayline"><span>Today · 6 logged · 1 cough · 5 meals</span></div>
-            <div class="slice">
-              <span class="tm dim">12:40 PM</span><span class="nd dim"><i class="dot"></i></span><span class="tx dim"><span class="nm">Royal Canin Selected Protein PR</span></span><span></span>
-              <span class="tm"><span class="tp">6:04 PM</span></span>
-              <span class="nd"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="10" fill="#00C2A8"/><path d="M6.6 11.4l2.9 2.9 5.9-6.3" stroke="#0A0A0A" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-              <span class="tx"><span class="nm">Royal Canin Selected Protein PR (Dry)</span><span class="vb">Logged</span></span>
-              <span class="up">Undo</span>
-            </div>
-            <div class="q"><span>How much did Nyx eat?</span>
-              <div class="scale"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
-          </div>
-          <div class="fab">+</div>
-        </div>
-        <ol class="notes">
-          <li><b>The confirmation is the record.</b> The card draws the new row the way History and Home draw it, on a slice of today's line, and the mark is the row's node. Cover the words and you still see a meal join the day.</li>
-          <li><b>Different every time, for free.</b> The slice, the count and the neighbour change with each log, which is the property habituation research says resists tuning out. No novelty for its own sake.</li>
-          <li><b>The time is the control</b> (round 1's decision 2), on the left where every row keeps its time.</li>
-        </ol>
-        <p class="cost"><b>Costs:</b> the count line must come from the same day pipeline as Home (<code>buildDay</code>, <code>countLine</code>) for the record's pet, never the active one (C-3, C-9). Taller than today when the scale shows, which B fixes.</p>
-      </div>
-
-      <div class="frame">
-        <span class="tag option">Direction B · the bowl you can see</span>
-        <div class="phone tall">
-          <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
-            <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
-            <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div>
-          <div class="card ink rc">
-            <div class="dayline"><span>Today · 6 logged · 1 cough · 5 meals</span></div>
-            <div class="slice">
-              <span class="tm">12:40 PM</span><span class="nd"><i class="dot"></i></span><span class="tx asked"><span class="nm">Royal Canin Selected Protein PR</span><span class="vb">No answer yet</span></span><span></span>
-              <span class="tm"><span class="tp">6:04 PM</span></span>
-              <span class="nd"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="10" fill="#00C2A8"/><path d="M6.6 11.4l2.9 2.9 5.9-6.3" stroke="#0A0A0A" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-              <span class="tx"><span class="nm">Royal Canin Selected Protein PR (Dry)</span><span class="vb">Logged</span></span>
-              <span class="up">Undo</span>
-            </div>
-            <div class="q"><span>How much of the <b>12:40 PM</b> bowl did Nyx eat?</span>
-              <div class="scale"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
-          </div>
-          <div class="fab">+</div>
-        </div>
-        <ol class="notes">
-          <li><b>Ask when there is an answer.</b> At bowl-down nothing has been eaten. At the next refill, what is left is in front of the owner. The card asks about the newest bowl old enough to have an answer, and names it.</li>
-          <li><b>A rule sketch, for the experts to set:</b> same pet, a meal or treat, not a free-fed bowl, at least 30 minutes old, within about 16 hours, no answer yet. A meal logged late (time moved back) is asked about itself. Nothing waiting: no question, and the card is two rows.</li>
-          <li><b>Still optional, never pre-stamped.</b> Silence stays silence; intake is not preference.</li>
-        </ol>
-        <p class="cost"><b>Costs:</b> a refusal reaches the decline detector one feeding later. The answer writes to a different record than the one just logged, so it must name its bowl and stay on the same pet. Clinical, so Dr. Chen and the Data Scientist rule.</p>
-      </div>
-
-      <div class="frame">
-        <span class="tag option">Direction C · the exception changes form</span>
-        <div class="phone tall">
-          <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
-            <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
-            <div class="ev"><time>3:40 PM</time><i></i><span><b>Treat</b> · Churu Tuna</span></div></div>
-          <div class="xc">
-            <span class="rail"></span>
-            <div class="in">
-              <div class="lead">Nyx's read: call your vet today.</div>
-              <div class="det">If they're closed, call an emergency clinic.</div>
-              <div class="btns"><span class="pri">Open the read</span><span class="sec">Close</span></div>
-              <div class="rec">
-                <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.4l2.8 2.8 6-6.4" stroke="#6B6B70" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                <span>Vomit · found by</span><span class="tpl">5:33 PM</span><span class="upl">Undo</span>
+    <div class="pair">
+      <h3>A meal, eaten</h3>
+      <div class="row">
+        <div class="frame">
+          <span class="tag">Today</span>
+          <div class="phone">
+            <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
+              <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
+              <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div>
+            <div class="card ink"><div class="k3">
+              <div class="head">
+                <svg width="32" height="32" viewBox="0 0 36 36" aria-hidden="true"><defs><radialGradient id="g3a" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#FBBF24" stop-opacity=".3"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs><circle cx="18" cy="18" r="18" fill="url(#g3a)"/><circle cx="18" cy="18" r="13" fill="#00C2A8"/><path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#0A0A0A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>6:04 PM</div></div>
+                <div class="acts"><span>Undo</span><span>Change time</span></div>
               </div>
-            </div>
+              <div class="q">How much did Nyx eat?<div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+              <div class="combo">+ Add a med given with this</div>
+            </div></div>
+            <div class="fab">+</div>
           </div>
-          <div class="fab">+</div>
         </div>
-        <ol class="notes">
-          <li><b>Different ground, shape and feel.</b> Daylight, a rose rail, plain words, no mark, no halo, no commit tap (silence on safety). It shares nothing the eye has learned to skip.</li>
-          <li><b>The sentence leads; the record follows</b> as one quiet line that still carries the time and Undo.</li>
-          <li><b>It holds until the owner closes it</b> or opens the read. Today the same line sits inside the dark card and leaves after 8 seconds.</li>
-          <li>An attention case (off the trial list, a second dose) takes the same daylight form with an amber rail, on today's timed dwell.</li>
-        </ol>
-        <p class="cost"><b>Costs:</b> amends the dwell rule in polish spec §5 and the floor line's presentation (incident tiers §6 item 3), both Tier 2. A held card covers the FAB until closed.</p>
-      </div>
-
-      <div class="frame">
-        <span class="tag option">Direction D · in place, no card</span>
-        <div class="phone tall">
-          <div class="home">
-            <div class="hd">Nyx</div>
-            <div class="look"><span>Herself</span><span>Quiet</span><span>Off</span><span>More…</span></div>
-            <div class="today">
-              <div class="cl">Today · 6 logged · 1 cough · 5 meals</div>
-              <div class="lslice">
-                <span class="tm">7:04 AM</span><span class="nd"><i class="dot"></i></span><span class="tx">Royal Canin Selected Protein PR</span><span></span>
-                <span class="tm">10:15 AM</span><span class="nd"><i class="dot sym"></i></span><span class="tx">Cough</span><span></span>
-                <span class="tm">12:40 PM</span><span class="nd"><i class="dot"></i></span><span class="tx">Royal Canin Selected Protein PR</span><span></span>
-                <span class="tm"><span class="tpl">6:04 PM</span></span><span class="nd"><i class="dot"></i></span><span class="tx new">Royal Canin Selected Protein PR</span><span class="upl">Undo</span>
-                <span class="lscale"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></span>
+        <div class="frame">
+          <span class="tag current">Proposed · daylight</span>
+          <div class="phone">
+            <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
+              <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
+              <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div>
+            <div class="card day"><div class="k3">
+              <div class="head">
+                <svg width="36" height="36" viewBox="0 0 40 40" aria-hidden="true"><defs><radialGradient id="g3b" cx="50%" cy="50%" r="50%"><stop offset="75%" stop-color="#FBBF24" stop-opacity="0"/><stop offset="77%" stop-color="#FBBF24" stop-opacity=".55"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs><circle cx="20" cy="20" r="20" fill="url(#g3b)"/><circle cx="20" cy="20" r="13" fill="#0FA08B"/><path d="M14.4 20.6l3.7 3.7 7.6-8.2" stroke="#FFFFFF" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>6:04 PM</div></div>
+                <div class="acts"><span>Undo</span><span>Change time</span></div>
               </div>
-            </div>
+              <div class="q">How much did Nyx eat?<div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+              <div class="combo">+ Add a med given with this</div>
+            </div></div>
+            <div class="fab">+</div>
           </div>
-          <div class="fab">+</div>
+          <ol class="notes">
+            <li><b>Lift by shadow, no outline.</b> An outline would match the History and Home cards underneath, so the confirmation would read as one more row.</li>
+            <li><b>The mark:</b> a deeper teal disc (3.27:1 on white; the bright teal would be 2.26:1), the check cut out in white, and a 2pt white gap before the gold halo so the disc never sits on gold (decision 2).</li>
+            <li><b>Text:</b> the app's own inks, 19.8:1 and 7.8:1. The quick meal's pale disc now lands on a pale card, so the flight reads as one object.</li>
+          </ol>
         </div>
-        <ol class="notes">
-          <li><b>The purest "record moving".</b> No floating card: the row lands where it lives on Today, with its time, Undo and question inline for the dwell.</li>
-        </ol>
-        <p class="cost"><b>Costs, and why it is not recommended now:</b> it works only on Home, so History, Foods and every other door still need a card (two forms to keep honest). The intake write would run from Home's import closure, which the Home write rule forbids (§0.1, <code>guards/homeWrites.test.ts</code>). It reverses Today's ruling that the spine draws once and the new row's moment belongs to the card. On a long day the row lands below the fold.</p>
       </div>
+    </div>
 
-      <div class="frame">
-        <span class="tag option">Direction E · the stack</span>
-        <div class="phone tall">
-          <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
-            <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
-            <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div>
-          <div class="card ink rc">
-            <div class="dayline"><span>2 logged just now</span><span>Today · 7 logged</span></div>
-            <div class="slice">
-              <span class="tm"><span class="tp">6:04 PM</span></span>
-              <span class="nd"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="10" fill="#00C2A8"/><path d="M6.6 11.4l2.9 2.9 5.9-6.3" stroke="#0A0A0A" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-              <span class="tx"><span class="nm">Royal Canin Selected Protein PR (Dry)</span><span class="vb">Logged</span></span>
-              <span class="up">Undo</span>
-              <span class="tm"><span class="tp">6:04 PM</span></span>
-              <span class="nd"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="10" fill="#00C2A8"/><path d="M6.6 11.4l2.9 2.9 5.9-6.3" stroke="#0A0A0A" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-              <span class="tx"><span class="nm">Churu Tuna</span><span class="vb">Treat</span></span>
-              <span class="up">Undo</span>
-            </div>
+    <div class="pair">
+      <h3>A meal off the trial list, answered "Some"</h3>
+      <div class="row">
+        <div class="frame">
+          <span class="tag">Today</span>
+          <div class="phone tall">
+            <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
+              <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div>
+            <div class="card ink"><div class="k3">
+              <div class="head">
+                <svg width="32" height="32" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="13" fill="#00C2A8"/><path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#0A0A0A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div class="t"><div>Logged · Churu Tuna</div><div>3:40 PM</div></div>
+                <div class="acts"><span>Undo</span><span>Change time</span></div>
+              </div>
+              <div class="q">You said · tap another to change<div class="chips"><span>Refused</span><span>Picked</span><span class="on">Some</span><span>Most</span><span>All</span></div></div>
+              <div class="panel"><span class="eb">Off the trial list</span><span class="hl">This one isn’t on Nyx’s trial list.</span><span class="dt">The meal’s saved, and it counts in the trial record. If your vet okayed this food, adding it to the list keeps the record straight.</span><span class="ad">+ Add to the trial list</span></div>
+            </div></div>
+            <div class="fab">+</div>
           </div>
-          <div class="fab">+</div>
+          <ol class="notes"><li>The selected chip today is white on bright teal: 2.26:1, under the 4.5:1 text floor.</li></ol>
         </div>
-        <ol class="notes">
-          <li><b>A burst becomes one receipt.</b> Today the second log's card replaces the first, and the first one's Undo goes with it. The stack keeps both reachable for one shared dwell.</li>
-          <li>Each row names its pet when the burst spans pets (C-9).</li>
-        </ol>
-        <p class="cost"><b>Costs:</b> per-row staleness and dwell rules (C-21), and a symptom row in a stack never shares a meal's warmth. Small, and only worth it on top of A.</p>
+        <div class="frame">
+          <span class="tag current">Proposed · daylight</span>
+          <div class="phone tall">
+            <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
+              <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div>
+            <div class="card day"><div class="k3">
+              <div class="head">
+                <svg width="36" height="36" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="13" fill="#0FA08B"/><path d="M14.4 20.6l3.7 3.7 7.6-8.2" stroke="#FFFFFF" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div class="t"><div>Logged · Churu Tuna</div><div>3:40 PM</div></div>
+                <div class="acts"><span>Undo</span><span>Change time</span></div>
+              </div>
+              <div class="q">You said · tap another to change<div class="chips"><span>Refused</span><span>Picked</span><span class="on">Some</span><span>Most</span><span>All</span></div></div>
+              <div class="panel"><span class="eb">Off the trial list</span><span class="hl">This one isn’t on Nyx’s trial list.</span><span class="dt">The meal’s saved, and it counts in the trial record. If your vet okayed this food, adding it to the list keeps the record straight.</span><span class="ad">+ Add to the trial list</span></div>
+            </div></div>
+            <div class="fab">+</div>
+          </div>
+          <ol class="notes">
+            <li><b>The amber panel</b> moves to the app's existing attention wash and ink (7.29:1), with a stronger amber bar (one new token) so it keeps the colour that made it hard to read past.</li>
+            <li><b>The selected chip</b> is the app's standard light chip, the same one the intake sheet shows a second earlier: a dark pill, 19.8:1. No halo, as ruled, because the bowl was not finished.</li>
+          </ol>
+        </div>
       </div>
+    </div>
 
+    <div class="pair">
+      <h3>A vomit whose read is a vet call, over Home</h3>
+      <div class="row">
+        <div class="frame">
+          <span class="tag">Today</span>
+          <div class="phone home">
+            <div class="homeslice"><div class="hd">Nyx</div>
+              <div class="look"><span>Herself</span><span>Quiet</span><span>Off</span><span>More…</span></div>
+              <div class="tc"><span class="cl">Today · 4 logged · 1 vomit · 3 meals</span>
+                <div class="ln"><time>7:04 AM</time><i></i><span>Royal Canin Selected Protein PR</span></div>
+                <div class="ln"><time>12:40 PM</time><i></i><span>Royal Canin Selected Protein PR</span></div></div></div>
+            <div class="dim"></div>
+            <div class="card ink"><div class="k3">
+              <div class="head">
+                <svg width="32" height="32" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="13" fill="#00C2A8"/><path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#0A0A0A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div class="t"><div>Vomit · found by 5:33 PM</div><div>Saved to Nyx’s record</div></div>
+              </div>
+              <div class="floor"><span class="l">Nyx's read: call your vet today.</span><span class="o">Open the read</span></div>
+              <div class="pills"><span>Undo</span><span>Change time</span></div>
+            </div></div>
+          </div>
+        </div>
+        <div class="frame">
+          <span class="tag current">Proposed · daylight</span>
+          <div class="phone home">
+            <div class="homeslice"><div class="hd">Nyx</div>
+              <div class="look"><span>Herself</span><span>Quiet</span><span>Off</span><span>More…</span></div>
+              <div class="tc"><span class="cl">Today · 4 logged · 1 vomit · 3 meals</span>
+                <div class="ln"><time>7:04 AM</time><i></i><span>Royal Canin Selected Protein PR</span></div>
+                <div class="ln"><time>12:40 PM</time><i></i><span>Royal Canin Selected Protein PR</span></div></div></div>
+            <div class="dim"></div>
+            <div class="card day"><div class="k3">
+              <div class="head">
+                <svg width="36" height="36" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="13" fill="#0FA08B"/><path d="M14.4 20.6l3.7 3.7 7.6-8.2" stroke="#FFFFFF" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div class="t"><div>Vomit · found by 5:33 PM</div><div>Saved to Nyx’s record</div></div>
+              </div>
+              <div class="floor"><span class="l">Nyx's read: call your vet today.</span><span class="o">Open the read</span></div>
+              <div class="pills"><span>Undo</span><span>Change time</span></div>
+            </div></div>
+          </div>
+          <ol class="notes">
+            <li><b>The call line</b> uses the light version that already ships for the in-sheet beat: dark semibold, 19.8:1. Calm tone, no halo, no gold, as today.</li>
+            <li><b>The dim stays</b>, so the card stands out (2.43:1 against the dimmed Home) and the 2am screen gets darker, not brighter. What a tap on the dim does is decision 3.</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h3>A dose, given</h3>
+      <div class="row">
+        <div class="frame">
+          <span class="tag">Today</span>
+          <div class="phone">
+            <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
+              <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div>
+            <div class="card ink"><div class="k3">
+              <div class="head">
+                <svg width="32" height="32" viewBox="0 0 36 36" aria-hidden="true"><defs><radialGradient id="g3c" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#FBBF24" stop-opacity=".3"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs><circle cx="18" cy="18" r="18" fill="url(#g3c)"/><circle cx="18" cy="18" r="13" fill="#00C2A8"/><path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#0A0A0A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div class="t"><div>Logged · Gabapentin 100 mg</div><div>8:02 AM</div></div>
+                <div class="acts"><span>Undo</span><span>Change time</span></div>
+              </div>
+              <div class="q">Nyx took it — tap to change.<div class="chips"><span class="on">Given</span><span>Partial</span><span>Missed</span><span>Refused</span></div></div>
+            </div></div>
+            <div class="fab">+</div>
+          </div>
+        </div>
+        <div class="frame">
+          <span class="tag current">Proposed · daylight</span>
+          <div class="phone">
+            <div class="hist"><div class="day">Fri, Oct 9 · Today</div>
+              <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div>
+            <div class="card day"><div class="k3">
+              <div class="head">
+                <svg width="36" height="36" viewBox="0 0 40 40" aria-hidden="true"><defs><radialGradient id="g3d" cx="50%" cy="50%" r="50%"><stop offset="75%" stop-color="#FBBF24" stop-opacity="0"/><stop offset="77%" stop-color="#FBBF24" stop-opacity=".55"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs><circle cx="20" cy="20" r="20" fill="url(#g3d)"/><circle cx="20" cy="20" r="13" fill="#0FA08B"/><path d="M14.4 20.6l3.7 3.7 7.6-8.2" stroke="#FFFFFF" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div class="t"><div>Logged · Gabapentin 100 mg</div><div>8:02 AM</div></div>
+                <div class="acts"><span>Undo</span><span>Change time</span></div>
+              </div>
+              <div class="q">Nyx took it — tap to change.<div class="chips"><span class="given">Given</span><span>Partial</span><span>Missed</span><span>Refused</span></div></div>
+            </div></div>
+            <div class="fab">+</div>
+          </div>
+          <ol class="notes">
+            <li><b>Adherence keeps its meaning in colour</b>, in ink: Given in deep teal (5.17:1), Partial, Missed and Refused in deep rose (8.02:1). Both fix today's white-on-bright labels (2.26:1 and 3.67:1).</li>
+            <li>A double-dose note and the Removed line take the same inks as the header.</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <div class="pair">
+      <h3>A log made from the day screen</h3>
+      <div class="row">
+        <div class="frame">
+          <span class="tag current">Proposed · night where the screen is night</span>
+          <div class="phone">
+            <div class="recap"><span class="rt">Today</span><span class="rs">Nyx · Friday</span>
+              <div class="tile">Nothing logged yet today.</div></div>
+            <div class="card nup"><div class="k3">
+              <div class="head">
+                <svg width="32" height="32" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="13" fill="#00C2A8"/><path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#251F57" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>9:06 PM</div></div>
+                <div class="acts"><span>Undo</span><span>Change time</span></div>
+              </div>
+              <div class="q">How much did Nyx eat?<div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+            </div></div>
+          </div>
+          <ol class="notes">
+            <li><b>The card follows the screen it lands on.</b> The day screen's empty state can start a log, and the cards draw over whatever is underneath, so a plain swap would flash a white card on the 9pm night screen. Over a night screen the card takes the night card ground (12.5:1 text, the bright teal mark at 6.57:1).</li>
+          </ol>
+        </div>
+        <div class="frame">
+          <span class="tag">The snackbar, today and proposed</span>
+          <div class="snackrow">
+            <div class="snack ink"><span>Restored Royal Canin to your library</span></div>
+            <div class="snack day"><span>Restored Royal Canin to your library</span></div>
+          </div>
+          <ol class="notes"><li><b>The snackbar goes with the cards</b>, as its own file intends. No call uses its action button today; if one does, the action takes the teal ink (5.17:1), which the accent-on-light guard requires.</li></ol>
+        </div>
+      </div>
     </div>
   </section>
 
   <section>
-    <div class="reco">
-      <h3>Recommended: A + B + C, one system</h3>
-      <p>The routine is a receipt, the exception changes form, and intake waits for the bowl it asks about.</p>
-      <ul>
-        <li><b>Routine (about 97 in 100 cards):</b> direction B's frame. Today's line with the new row landing on it, the time as the control, Undo. On most bowl-downs no earlier bowl is waiting, so the card is two rows instead of four.</li>
-        <li><b>Exception (the rest):</b> direction C's frame. Its own ground, its own feel, held until closed for a call.</li>
-        <li><b>Not now:</b> D collides with the Home write rule and doubles the forms. E is a cheap add on top of A, later.</li>
-        <li><b>Untouched:</b> what every card writes, Undo's reach and the one shared reversal, the intake-is-not-preference and n=1 rules, the halo rule over a refusal. Nothing on the routine card may read as an all-clear, and the absence of an exception never does.</li>
-      </ul>
+    <div>
+      <h2>Three calls inside the proposal</h2>
+      <p class="lede">Each is drawn so it can be ruled from the page.</p>
+    </div>
+    <div class="marks">
+      <div class="mk"><span class="tag current">Proposed</span>
+        <svg width="96" height="96" viewBox="0 0 40 40" aria-hidden="true"><defs><radialGradient id="g3e" cx="50%" cy="50%" r="50%"><stop offset="75%" stop-color="#FBBF24" stop-opacity="0"/><stop offset="77%" stop-color="#FBBF24" stop-opacity=".55"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs><circle cx="20" cy="20" r="20" fill="url(#g3e)"/><circle cx="20" cy="20" r="13" fill="#0FA08B"/><path d="M14.4 20.6l3.7 3.7 7.6-8.2" stroke="#FFFFFF" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="cap">Deeper teal disc, white cut-out, a 2pt white gap, then the halo</span><span class="num">Disc 3.27:1 against white on every side</span></div>
+      <div class="mk"><span class="tag option">Option, drawn for the decision</span>
+        <svg width="96" height="96" viewBox="0 0 40 40" aria-hidden="true"><defs><radialGradient id="g3f" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#FBBF24" stop-opacity=".55"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs><circle cx="20" cy="20" r="20" fill="url(#g3f)"/><circle cx="20" cy="20" r="13" fill="#0B7B6C"/><path d="M14.4 20.6l3.7 3.7 7.6-8.2" stroke="#FFFFFF" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="cap">The teal ink disc, halo touching it</span><span class="num">5.17:1 on white, 3.9:1 on the halo. The ink read as drab on the FAB (CUL-1063)</span></div>
+      <div class="mk"><span class="tag">Why not the bright teal</span>
+        <svg width="96" height="96" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="13" fill="#00C2A8"/><path d="M14.4 20.6l3.7 3.7 7.6-8.2" stroke="#FFFFFF" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="cap">Today's disc on white</span><span class="num">2.26:1, under the 3:1 floor for a mark</span></div>
+      <div class="mk"><span class="tag current">Proposed · selected chip</span>
+        <div class="chipbox"><div class="chips"><span>Picked</span><span class="on">Some</span><span>Most</span></div></div>
+        <span class="cap">The app's standard light chip, as on the intake sheet</span><span class="num">19.8:1</span></div>
+      <div class="mk"><span class="tag option">Option · selected chip</span>
+        <div class="chipbox"><div class="chips"><span>Picked</span><span class="wash">Some</span><span>Most</span></div></div>
+        <span class="cap">The teal wash pair, if a dark pill reads as the same complaint at a smaller size</span><span class="num">5.69:1</span></div>
     </div>
   </section>
 
@@ -472,206 +505,27 @@ details.archive[open] > summary { margin-bottom: 18px; }
     <h2>Decisions</h2>
     <div class="briefs">
       <div class="brief">
-        <h3>1 · What round 3 draws</h3>
-        <p><span class="k">Deciding</span>Which direction becomes the proposal and its spec.</p>
-        <p><span class="k">Options</span><b>A + B + C (recommended):</b> fits each job to its frequency and takes the exception out of the habituated form. Or tune round 1 only: cheapest, and the exception stays inside the form owners skip. Or D: purest motion, collides with the Home write rule.</p>
-        <p><span class="k">Consequence</span>A + B + C opens a completion card v2 spec; round 1's time pill folds into it and the ground question (decision 3) closes.</p>
+        <h3>1 · Move the card to daylight</h3>
+        <p><span class="k">Rule</span>Polish spec §5 R1 (2026-08-22): "a warm dark bottom card over a dimmed Home (never a white flash)". It protected the 2am owner from the retired full-screen white takeover.</p>
+        <p><span class="k">Better</span>A white card in the day system. The protection still holds: the card is a bounded inset, Home is already near white, and the symptom card keeps its dim.</p>
+        <p><span class="k">Recommend</span><b>Approve</b>, with §5 R1 reworded to "a daylight bottom card over a dimmed Home (never a full-screen white takeover)". One app-only PR, shipped over the air. CUL-1697's exception must then stand out by rail, hold and no mark, not by ground.</p>
       </div>
       <div class="brief">
-        <h3>2 · When the meal card asks about intake</h3>
-        <p><span class="k">Deciding</span>Whether it asks about this bowl or the newest bowl old enough to answer.</p>
-        <p><span class="k">Options</span><b>Newest answerable bowl, behind a flag, measured for three weeks (recommended):</b> the current question goes unanswered on 181 of 185 cards. Or keep this bowl.</p>
-        <p><span class="k">Consequence</span>Clinical: Dr. Chen, the Data Scientist and an adversarial pass set the window and the latency before any build.</p>
+        <h3>2 · The mark on white</h3>
+        <p><span class="k">Deciding</span>Which teal the confirm disc becomes once the bright teal fails on white.</p>
+        <p><span class="k">Options</span><b>Deeper teal with a white gap before the halo (recommended):</b> the brightest teal that clears 3:1, and the gap keeps it clear in the celebrate state. Or the teal ink disc: strongest, but the ink you called drab on the FAB.</p>
+        <p><span class="k">Consequence</span>Closes the cards' part of the CUL-1666 glyph sweep.</p>
       </div>
       <div class="brief">
-        <h3>3 · A vet call holds until closed</h3>
-        <p><span class="k">Deciding</span>Whether a card carrying a call still dismisses itself.</p>
-        <p><span class="k">Options</span><b>Holds until Close or Open the read, call tiers only (recommended):</b> a timer on "call your vet today" is the wrong vessel. Or keep today's 8 second floor.</p>
-        <p><span class="k">Consequence</span>Tier-2 edits to polish spec §5 (dwell) and incident tiers §6 item 3.</p>
-      </div>
-    </div>
-  </section>
-
-  <details class="archive">
-    <summary>Round 1 · 2026-10-08 · the meal confirmation, tuned</summary>
-    <div class="archivebody">
-  <section>
-    <div>
-      <h2>Why the check looks grainy</h2>
-      <p class="lede">The badge's gold halo is an iOS layer shadow. The badge has no solid fill (6% white), so iOS traces the shadow from whatever is opaque inside it: a 1.5pt ring and a 3pt check. The gold blur hugs two thin teal lines, mixes to a muddy olive on near black, and gets re-rasterised offscreen every frame while the mark springs in. That fringe is the grain. Enlarged:</p>
-    </div>
-    <div class="macro">
-      <div class="mcell">
-        <div class="big"><svg width="58" height="58" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#00C2A8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <span class="cap">Now · shadow traced off the strokes</span>
-      </div>
-      <div class="mcell">
-        <svg width="150" height="150" viewBox="0 0 150 150" aria-hidden="true">
-          <defs><radialGradient id="halo1" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#FBBF24" stop-opacity=".28"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs>
-          <circle cx="75" cy="75" r="75" fill="url(#halo1)"/>
-          <circle cx="75" cy="75" r="53" fill="#00C2A8"/>
-          <path d="M52 77l15 15 32-34" stroke="#0A0A0A" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <span class="cap">Proposed · one SVG, halo drawn, no shadow</span>
+        <h3>3 · A tap on the symptom card's dim</h3>
+        <p><span class="k">Deciding</span>What happens when the owner taps the dimmed area around the symptom card.</p>
+        <p><span class="k">Options</span><b>It closes the card (recommended):</b> a white card over a dim reads as a sheet, and sheets close that way. Today the tap passes through to Home, where a look chip writes on one tap. Or keep the pass-through. Or drop the dim.</p>
+        <p><span class="k">Consequence</span>Under the dim, Home is one tap away rather than live. The meal and dose cards have no dim and are unchanged.</p>
       </div>
     </div>
     <ul class="notes">
-      <li><b>The fix:</b> draw the whole mark in one <code>react-native-svg</code> node: a solid teal disc, a dark check knocked out of it, and the gold halo as a radial gradient behind. No layer shadow, so nothing for iOS to trace. Vector at every scale, including mid-spring.</li>
-      <li><b>Celebrate vs. refusal stays exactly as ruled (CUL-894):</b> the halo is a prop on the mark; a refused or picked-at bowl gets the disc without it.</li>
-      <li><b>The named and medication cards share the same badge style</b>, so the same mark replaces all three. One component, one render path.</li>
+      <li><b>Team calls, shown above, reversible on your word:</b> no outline on the card; the amber bar's new token; the card going night over the day screen; the snackbar moving with the cards; the selected chip (the option box is there if the dark pill bothers you).</li>
+      <li><b>What the build touches:</b> the three cards, the mark, the snackbar, three chip rows, the call line's ground, one token, and the tests that pin the old ground. No schema, no server, no native module.</li>
     </ul>
   </section>
-
-  <section>
-    <h2>The card</h2>
-    <div class="row">
-
-      <div class="frame">
-        <span class="tag">As shipped</span>
-        <div class="phone">
-          <div class="hist"><div class="day">Thu, Oct 8 · Today</div>
-            <div class="ev"><time>6:32 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
-            <div class="ev"><time>7:06 AM</time><i></i><span><b>4 meals</b> · Royal Canin · Selected Protein PR</span></div></div>
-          <div class="card ink now">
-            <div class="head">
-              <div class="badge"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#00C2A8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-              <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>6:04 PM</div></div>
-              <div class="acts"><span>Undo</span><span>Change time</span></div>
-            </div>
-            <div class="q">How much did Nyx eat?
-              <div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
-            <div class="combo">+ Add a med given with this</div>
-          </div>
-          <div class="fab">+</div>
-        </div>
-        <ol class="notes">
-          <li><b>The food name truncates</b> after "Royal Can…". It is the one thing the card exists to name, and two underlined links take its width.</li>
-          <li><b>"All" orphans</b> onto a second line, so the scale reads as four answers plus an afterthought, and the top answer looks least likely.</li>
-          <li><b>Underlined links</b> read as web text, not controls, on a native sheet.</li>
-          <li>The med row floats under a large empty band; its spacing does not match the row above.</li>
-        </ol>
-      </div>
-
-      <div class="frame">
-        <span class="tag current">Current proposal</span>
-        <div class="phone">
-          <div class="hist"><div class="day">Thu, Oct 8 · Today</div>
-            <div class="ev"><time>6:32 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
-            <div class="ev"><time>7:06 AM</time><i></i><span><b>4 meals</b> · Royal Canin · Selected Protein PR</span></div></div>
-          <div class="card ink pr">
-            <div class="head">
-              <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
-                <defs><radialGradient id="h2" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#FBBF24" stop-opacity=".3"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs>
-                <circle cx="18" cy="18" r="18" fill="url(#h2)"/><circle cx="18" cy="18" r="13" fill="#00C2A8"/>
-                <path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#0A0A0A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <div>
-                <div class="name">Royal Canin Selected Protein PR (Dry)</div>
-                <div class="meta"><span class="verb">Logged</span>
-                  <span class="timepill">6:04 PM <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></span></div>
-              </div>
-              <span class="undo">Undo</span>
-            </div>
-            <div class="q"><span>How much did Nyx eat?</span>
-              <div class="scale"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
-            <div class="combo"><span class="plus">+</span>Add a med given with this<span class="chev">›</span></div>
-          </div>
-          <div class="fab">+</div>
-        </div>
-        <ol class="notes">
-          <li><b>The mark:</b> the crisp SVG disc above, at 36pt with the halo inside its own box.</li>
-          <li><b>The name gets the row</b> and two lines before it yields. The verb moves under it, so "Logged" / "Refused" still names the record (C-17), it just stops costing the name its width.</li>
-          <li><b>The time is the Change-time control.</b> A pill with a caret on the time itself, so "Change time" stops being a second link. Undo stays in the header, top right, as a pill.</li>
-          <li><b>Intake is one scale</b>, five equal segments in a track. Fits a 390pt phone at Dynamic Type default; the selected answer fills white.</li>
-          <li><b>The med row is a row</b>: same padding as the scale, a plus disc and a chevron, because it opens a sheet.</li>
-        </ol>
-      </div>
-
-      <div class="frame">
-        <span class="tag current">Current proposal · refused</span>
-        <div class="phone">
-          <div class="hist"><div class="day">Thu, Oct 8 · Today</div>
-            <div class="ev"><time>6:32 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
-            <div class="ev"><time>7:06 AM</time><i></i><span><b>4 meals</b> · Royal Canin · Selected Protein PR</span></div></div>
-          <div class="card ink pr">
-            <div class="head">
-              <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="13" fill="#00C2A8"/>
-                <path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#0A0A0A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <div>
-                <div class="name">Royal Canin Selected Protein PR (Dry)</div>
-                <div class="meta"><span class="verb">Refused</span>
-                  <span class="timepill">6:04 PM <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></span></div>
-              </div>
-              <span class="undo">Undo</span>
-            </div>
-            <div class="q"><span>How much did Nyx eat?</span>
-              <div class="scale"><span class="on">Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
-            <div class="combo"><span class="plus">+</span>Add a med given with this<span class="chev">›</span></div>
-          </div>
-          <div class="fab">+</div>
-        </div>
-        <ol class="notes">
-          <li><b>No halo</b> over a refusal (CUL-894): acknowledged, never congratulated. The check stays because the record did land.</li>
-          <li>The verb follows the chips live, as today. It reads in the plain sub-label colour, never red: a refusal here is a record, and the intake-decline flag owns any alarm.</li>
-        </ol>
-      </div>
-
-      <div class="frame">
-        <span class="tag option">Option, drawn for the decision · not the proposal</span>
-        <div class="phone">
-          <div class="hist"><div class="day">Thu, Oct 8 · Today</div>
-            <div class="ev"><time>6:32 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
-            <div class="ev"><time>7:06 AM</time><i></i><span><b>4 meals</b> · Royal Canin · Selected Protein PR</span></div></div>
-          <div class="card night pr">
-            <div class="head">
-              <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
-                <defs><radialGradient id="h3" cx="50%" cy="50%" r="50%"><stop offset="55%" stop-color="#FBBF24" stop-opacity=".3"/><stop offset="100%" stop-color="#FBBF24" stop-opacity="0"/></radialGradient></defs>
-                <circle cx="18" cy="18" r="18" fill="url(#h3)"/><circle cx="18" cy="18" r="13" fill="#00C2A8"/>
-                <path d="M12.4 18.6l3.7 3.7 7.6-8.2" stroke="#13112E" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <div>
-                <div class="name">Royal Canin Selected Protein PR (Dry)</div>
-                <div class="meta"><span class="verb">Logged</span>
-                  <span class="timepill">6:04 PM <svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg></span></div>
-              </div>
-              <span class="undo">Undo</span>
-            </div>
-            <div class="q"><span>How much did Nyx eat?</span>
-              <div class="scale"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
-            <div class="combo"><span class="plus">+</span>Add a med given with this<span class="chev">›</span></div>
-          </div>
-          <div class="fab">+</div>
-        </div>
-        <ol class="notes">
-          <li><b>Night ground</b> instead of near black. The mark flies here from the indigo FAB, so the card would share its ground.</li>
-          <li>Cost: the register rule keeps night for surfaces where the app works on the pet's behalf. A confirmation is the owner's own act, so this bends that rule.</li>
-        </ol>
-      </div>
-
-    </div>
-  </section>
-
-  <section>
-    <h2>Decisions</h2>
-    <div class="briefs">
-      <div class="brief">
-        <h3>1 · Ship the mark fix alone first?</h3>
-        <p><span class="k">Deciding</span>Whether the grain fix waits for the recompose.</p>
-        <p><span class="k">Options</span><b>Ship it now (recommended):</b> small, one component, fixes all three cards, no copy or layout change. Or bundle it with the recompose.</p>
-        <p><span class="k">Consequence</span>The next TestFlight cut loses the grain regardless of how the layout rounds go.</p>
-      </div>
-      <div class="brief">
-        <h3>2 · The time as the Change-time control</h3>
-        <p><span class="k">Deciding</span>Whether "Change time" stays a word or becomes the time itself.</p>
-        <p><span class="k">Options</span><b>Time pill (recommended):</b> frees the name's width and puts the control on the thing it changes. Or keep the word as a second header pill.</p>
-        <p><span class="k">Consequence</span>Touches the CUL-612 action pair and its hit-area guard; the named and medication cards would follow.</p>
-      </div>
-      <div class="brief">
-        <h3>3 · Card ground</h3>
-        <p><span class="k">Deciding</span>Near black (today) or the indigo night of the FAB.</p>
-        <p><span class="k">Options</span><b>Keep near black (recommended):</b> the night register stays meaningful. Or night, for continuity with the FAB flight.</p>
-        <p><span class="k">Consequence</span>Night would amend the in-app brand register rule, a Tier-2 spec edit.</p>
-      </div>
-    </div>
-  </section>
-    </div>
-  </details>
 </div>

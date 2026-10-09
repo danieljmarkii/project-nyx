@@ -35,3 +35,15 @@ Three jobs share one form: confirm and reverse (every log, acted on ~1%), captur
 ## Persona lenses
 
 Designer: the routine card is a receipt drawn in the record's own row shape; the exception gets its own ground and feel. Dr. Chen and Data Scientist: B moves when intake is asked, not whether, and keeps default null; latency and attribution are theirs to rule. Engineer: D is rejected for the Home write rule (`guards/homeWrites.test.ts`) and for doubling the forms. T&S: N/A (no new data path).
+
+## Round 3, same session: the card in daylight
+
+The PM's reaction to round 2: no massive overhaul now, but the card is "jarringly black", the only jarring black chunk aside from the day screen. Round 2's directions left the page (commit 8b9f3da keeps them); its two findings were filed as CUL-1696 (when the intake question asks) and CUL-1697 (a vet call's look and timer).
+
+A workflow (4 readers, 4 candidates, 4 lens judges, 2 adversarial verifiers) settled the ground:
+
+- **Inventory:** the cards and the snackbar share #0A0A0A, no ruling ever chose it (it came in as an "Undo send" snackbar, #37). The day screen is brand night #13112E, deliberate. The app has no system dark mode.
+- **Scores (design / contrast / engineering / brand):** daylight 8/6/7/8, warm paper 4/8/4/5, graphite 5/4/6/5, brand night 3/8/3/2. Daylight is the only one that removes the block and keeps every brand rule (register rule 2: capture stays in the day system).
+- **What the verifiers caught, now in the proposal:** the deeper teal disc fails 3:1 against its own gold halo in the celebrate state (fixed with a 2pt white gap before the halo); an outline would match the content cards, so the lift is shadow only; the amber trial panel needs a stronger bar to keep its chroma (one new token); a log from the day screen would land a white card on night, so the card takes the night ground over a night screen; the symptom card's dim passes taps through to Home's look chips.
+
+Decisions requested (on the page): approve daylight with polish §5 R1 reworded (a better-than-the-rule brief); the mark (deeper teal with a gap, recommended, or the teal ink disc); a tap on the symptom card's dim closes the card (recommended).
