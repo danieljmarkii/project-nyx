@@ -8113,10 +8113,10 @@ Deno.test('stool: each normal-shortcut arm prints its own head, and every dated 
   assert.ok(/Logging changed on or before May 10:<\/b>/.test(by))
   const spans = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'spans' } } }))
   assert.ok(/Logging changed, date not fixed:<\/b>/.test(spans))
-  for (const html of [by, spans]) assert.ok(/a rise in loose stools is not explained by this change/.test(html))
+  for (const html of [by, spans]) assert.ok(/a rise in loose stools is not explained by this change, but a fall may partly reflect borderline stools now logged as normal\./.test(html))
   const unknown = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'unknown' } } }))
   assert.ok(/Logging change not checked:<\/b>/.test(unknown))
-  assert.ok(/A rise in loose stools would not be explained by such a change\./.test(unknown))
+  assert.ok(/If it did, a fall in loose stools may partly reflect borderline stools now logged as normal\./.test(unknown))
 })
 
 Deno.test('stool: the normal-shortcut line prints in the single-category shape too, and never without the field', () => {
@@ -8132,15 +8132,16 @@ Deno.test('stool: ruling 1a — the line gives the counts on each side of the da
     split: { before: { normal: 4, loose: 4, days: 68, loggedDays: 7 }, from: { normal: 20, loose: 2, days: 23, loggedDays: 23 } },
   } } }))
   const flat = html.replace(/<span class="num">(\d+)<\/span>/g, '$1')
-  assert.ok(/<b>Before Jun 10:<\/b> normal &times;4 &middot; loose &times;4 \(7 of 68 days had any log\)\. <b>From Jun 10:<\/b> normal &times;20 &middot; loose &times;2 \(23 of 23 days had any log\)\./.test(flat))
+  assert.ok(/<br\/>Before Jun 10 \(7 of 68 days had any log\): loose &times;4 &middot; normal &times;4<br\/>From Jun 10 \(23 of 23 days had any log\): loose &times;2 &middot; normal &times;20<br\/>/.test(flat))
   // The pooled counts are still printed, untouched: the split sits beside them, never in place of them.
   assert.ok(/Normal \/ formed &times;24/.test(flat) && /Loose \/ watery &times;6/.test(flat))
 })
 
 Deno.test('stool: ruling 2a — a change before the window says so, naming the server day, with the protecting tail', () => {
   const exact = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: true } } }))
-  assert.ok(/<b>Logging changed on Mar 20, before this window:<\/b> since then the owner's app/.test(exact))
-  assert.ok(/not comparable with a report from before that date\. Loose stools had their own shortcut before and after/.test(exact))
+  assert.ok(/<b>Logging changed on Mar 20, before this window:<\/b> the owner's app added a dedicated normal-stool entry\./.test(exact))
+  // "covering any period before", never "from before that date", which reads as the date a report was MADE.
+  assert.ok(/A report covering any period before Mar 20 under-records normal stools, so the normal share here will look better from the change alone\.<br\/>Loose stools had their own entry throughout/.test(exact))
   const by = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: false } } }))
   assert.ok(/Logging changed by Mar 20, before this window:/.test(by))
 })

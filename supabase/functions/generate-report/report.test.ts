@@ -5230,14 +5230,14 @@ Deno.test('normal shortcut: a FAILED read is unknown, never silence, and never t
 Deno.test('normal shortcut: rendered beside the stool counts, dated in the owner\'s zone, only when it reaches the window', () => {
   const html = renderReport(stoolWith([splitRow('2026-06-11T03:30:00.000Z')]))
   const sec = plainText(html.slice(html.indexOf('<h2>Stool characteristics'), html.indexOf('<h2>Diet, feeding')))
-  assert.match(sec, /Logging changed on Jun 10: from that date the owner's app gave a normal stool its own shortcut/)
-  // F1: the protecting half, and never the absolute claim that reassured.
-  assert.match(sec, /a rise in loose stools is not explained by this change; some borderline stools may now be logged as normal rather than loose\./)
-  assert.ok(!/does not affect|one tap/.test(sec))
+  assert.match(sec, /Logging changed on Jun 10: the owner's app added a dedicated normal-stool entry/)
+  // F1 + cold read round 2: both directions, and never the absolute claim that reassured.
+  assert.match(sec, /a rise in loose stools is not explained by this change, but a fall may partly reflect borderline stools now logged as normal\./)
+  assert.ok(!/does not affect|unaffected|one tap/.test(sec))
   // The line sits after the counts and before the owner-described clause.
   assert.ok(sec.indexOf('Loose / watery') < sec.indexOf('Logging changed') && sec.indexOf('Logging changed') < sec.indexOf('Owner-described'))
   const none = plainText(renderReport(stoolWith([splitRow('2025-12-01T15:00:00.000Z')])))
-  assert.ok(!/Logging change|shortcut/.test(none), 'a change before the window prints nothing')
+  assert.ok(!/Logging change|normal-stool entry/.test(none), 'a change over 180 days before the window end prints nothing')
   const unknown = plainText(renderReport(stoolWith('unreadable')))
   assert.match(unknown, /Logging change not checked:/)
   assert.ok(!/Partial record/.test(unknown))

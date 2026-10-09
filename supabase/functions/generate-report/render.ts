@@ -5819,36 +5819,39 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
   // reason; the report cannot see that from the rows, so it says so beside them. It DISCLOSES and
   // never adjusts: the counts above are untouched.
   //
-  // THE LAST SENTENCE IS THE ONE THAT PROTECTS THE PATIENT, and it claims only what holds. Loose
-  // stool had its own shortcut before and after, so a RISE in loose stools cannot come from this
+  // THE LAST SENTENCE IS THE ONE THAT PROTECTS THE PATIENT, and it names BOTH directions. Loose
+  // stool had its own entry before and after, so a RISE in loose stools cannot come from this
   // change; a FALL can, because a borderline stool that once took the only cheap door (Loose) can
-  // now take Normal (adversarial F1). So it says the first and warns of the second, and never
-  // that the loose count is "unaffected". "Shortcut", not "one tap": each half of the split pill
-  // opens a confirm (F4). Year stamped once, only when it differs from the window's (CUL-69).
+  // now take Normal (adversarial F1). The cold read (round 2) found a rise-only sentence left an
+  // observed 4 → 2 fall reading as improvement, so the fall is said plainly. Never "the loose count
+  // is unaffected"; never "one tap" (each half of the split pill opens a confirm, F4). Year stamped
+  // once, only when it differs from the window's (CUL-69). One idea per line, so a 60-second scan
+  // meets the change, then each period's counts, then the direction of the bias.
   const shortcutTail =
-    ' Loose stools had their own shortcut before and after, so a rise in loose stools is not explained by this change; some borderline stools may now be logged as normal rather than loose.'
+    '<br/>Loose stools had their own entry throughout, so a rise in loose stools is not explained by this change, but a fall may partly reflect borderline stools now logged as normal.'
   const ns = st.normalShortcut
   const nsDay = (iso: string) => h(fmtLocalDayScoped(iso, snap.timezone, snap.scope.endDate))
   // Ruling 1a (PM, 2026-10-09): the counts on each side of the day, beside the pooled ones, so
-  // the ratio is read inside each logging regime. The day string is decided ONCE and reused, so
-  // the head and both labels carry the same year decision (CUL-69).
+  // the ratio is read inside each logging regime. Loose first: it is the count a vet reads across
+  // the date. The day string is decided ONCE and reused, so the head and both labels carry the
+  // same year decision (CUL-69).
   const period = (label: string, p: StoolPeriodCounts) =>
-    `<b>${label}:</b> normal &times;${num(p.normal)} &middot; loose &times;${num(p.loose)} (${num(p.loggedDays)} of ${num(
-      p.days,
-    )} day${p.days === 1 ? '' : 's'} had any log).`
+    `<br/>${label} (${num(p.loggedDays)} of ${num(p.days)} day${p.days === 1 ? '' : 's'} had any log): loose &times;${num(
+      p.loose,
+    )} &middot; normal &times;${num(p.normal)}`
   const splitLine = (day: string, sp: StoolShortcutSplit | null) =>
-    sp ? ` ${period(`Before ${day}`, sp.before)} ${period(`From ${day}`, sp.from)}` : ''
+    sp ? `${period(`Before ${day}`, sp.before)}${period(`From ${day}`, sp.from)}` : ''
   const changeLine = !ns
     ? ''
     : ns.kind === 'on'
-    ? `<br/><b>Logging changed on ${nsDay(ns.at)}:</b> from that date the owner's app gave a normal stool its own shortcut, so normal stools before it are likely under-recorded and the normal to loose ratio is not comparable across it.${splitLine(nsDay(ns.at), ns.split)}${shortcutTail}`
+    ? `<br/><b>Logging changed on ${nsDay(ns.at)}:</b> the owner's app added a dedicated normal-stool entry, so normal stools before that date are under-recorded and the normal to loose ratio is not comparable across it.${splitLine(nsDay(ns.at), ns.split)}${shortcutTail}`
     : ns.kind === 'since'
-    ? `<br/><b>Logging changed ${ns.exact ? 'on' : 'by'} ${nsDay(ns.at)}, before this window:</b> since then the owner's app has given a normal stool its own shortcut, so the normal to loose ratio here is not comparable with a report from before that date.${shortcutTail}`
+    ? `<br/><b>Logging changed ${ns.exact ? 'on' : 'by'} ${nsDay(ns.at)}, before this window:</b> the owner's app added a dedicated normal-stool entry. A report covering any period before ${nsDay(ns.at)} under-records normal stools, so the normal share here will look better from the change alone.${shortcutTail}`
     : ns.kind === 'by'
-    ? `<br/><b>Logging changed on or before ${nsDay(ns.at)}:</b> by that date the owner's app gave a normal stool its own shortcut, so normal stools earlier in this window are likely under-recorded and the normal to loose ratio is not comparable across it.${shortcutTail}`
+    ? `<br/><b>Logging changed on or before ${nsDay(ns.at)}:</b> by that date the owner's app had added a dedicated normal-stool entry, so normal stools earlier in this window are likely under-recorded and the normal to loose ratio is not comparable across it.${shortcutTail}`
     : ns.kind === 'spans'
-    ? `<br/><b>Logging changed, date not fixed:</b> at some point the owner's app gave a normal stool its own shortcut, and the record cannot place that date within this window, so the normal to loose ratio may not be comparable across it.${shortcutTail}`
-    : `<br/><b>Logging change not checked:</b> whether the owner's app gave a normal stool its own shortcut during this window could not be read, so the normal to loose ratio may shift for that reason. A rise in loose stools would not be explained by such a change.`
+    ? `<br/><b>Logging changed, date not fixed:</b> the owner's app added a dedicated normal-stool entry at a date the record cannot place within this window, so the normal to loose ratio may not be comparable across it.${shortcutTail}`
+    : `<br/><b>Logging change not checked:</b> whether the owner's app added a dedicated normal-stool entry during this window could not be read, so the normal to loose ratio may shift for that reason. If it did, a fall in loose stools may partly reflect borderline stools now logged as normal.`
 
   const ai = st.ai
   const aiTag = ai
