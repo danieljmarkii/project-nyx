@@ -323,10 +323,12 @@ export function VomitAnalysisSection(
   const latestFreshSeq = useRef(0);
   const freshScope = useRef(0);
   useEffect(() => {
-    // A new question: every read already in flight answers the old one.
+    // A new question: every read already in flight answers the old one. Defense in depth: an
+    // old-scope answer would also fail the gate's `updated_at` match, so this only ever spares
+    // the line a louder blink (adversarial pass 3, mutant M1).
     freshScope.current = freshSeq.current;
     setFreshWait(null);
-  }, [waitCandidate, row?.updated_at]);
+  }, [eventId, waitCandidate, row?.updated_at]);
   useEffect(() => {
     if (!waitCandidate) return;
     const seq = ++freshSeq.current;

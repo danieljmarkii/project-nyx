@@ -46,7 +46,9 @@
 //   stale      every answer above is as old as the read that STARTED it: older than two minutes,
 //              or started before the newest log this phone committed, it refuses. A read that
 //              hangs past the cadence is never waited on, so a slow network leaves the louder
-//              line, never the last clean answer (second adversarial pass, F1).
+//              line, never the last clean answer (second adversarial pass, F1). The gate is
+//              re-judged on each render, which the minute tick drives, so a hung network turns
+//              the line louder within a minute of the answer turning two minutes old.
 //
 // ── THE WORDS (device local hour; PM ruling D1 = a: 6 AM / 6 PM / midnight) ──────────────────
 //   day          Call your vet today. If they're closed, first thing tomorrow, or an emergency
@@ -360,8 +362,13 @@ export function mayWaitRefusalOf(input: MayWaitInput): MayWaitRefusal | null {
   // An answer is as old as the read that started it. A read that never lands (a network that
   // hangs past the re-read cadence) must not leave the last clean answer standing, and an
   // answer read before the newest log cannot have seen it (second adversarial pass, F1).
-  const answeredAfter = Math.max(input.nowMs - MAY_WAIT_FRESH_MS, input.lastLoggedAt ?? Number.NEGATIVE_INFINITY);
-  const fresher = (at: number | null) => at !== null && Number.isFinite(at) && at >= answeredAfter && at <= input.nowMs;
+  // An answer must start strictly AFTER the log: a same-millisecond read cannot be shown to have
+  // seen it. Not clamped to now: after a clock corrected backwards, a read stamped before the
+  // log's stamp cannot be told apart from one that began before the log, so the line stays louder
+  // until the clock passes the stamp or a new log moves it (stated cost: usefulness only).
+  const loggedAt = input.lastLoggedAt ?? Number.NEGATIVE_INFINITY;
+  const fresher = (at: number | null) =>
+    at !== null && Number.isFinite(at) && at >= input.nowMs - MAY_WAIT_FRESH_MS && at > loggedAt && at <= input.nowMs;
   if (!fresher(facts.readAt) || !fresher(input.freshReadAt)) return 'stale';
   return null;
 }

@@ -299,8 +299,13 @@ describe('stale: an answer is as old as the read that started it (second pass, F
     const logged = NOW - 10_000;
     expect(mayWaitRefusalOf(input({ nowMs: NOW, lastLoggedAt: logged, facts: facts({ readAt: logged - 1 }) }))).toBe('stale');
     expect(mayWaitRefusalOf(input({ nowMs: NOW, lastLoggedAt: logged, freshReadAt: logged - 1 }))).toBe('stale');
-    expect(mayWaitRefusalOf(input({ nowMs: NOW, lastLoggedAt: logged, facts: facts({ readAt: logged }), freshReadAt: logged }))).toBeNull();
+    expect(mayWaitRefusalOf(input({ nowMs: NOW, lastLoggedAt: logged, facts: facts({ readAt: logged }), freshReadAt: logged + 1 }))).toBe('stale'); // same ms: unproven
+    expect(mayWaitRefusalOf(input({ nowMs: NOW, lastLoggedAt: logged, facts: facts({ readAt: logged + 1 }), freshReadAt: logged + 1 }))).toBeNull();
   });
+  it('a log stamped in the future (a clock corrected back) keeps the louder line: only louder', () => {
+    expect(mayWaitRefusalOf(input({ nowMs: NOW, lastLoggedAt: NOW + 3_600_000, facts: facts({ readAt: NOW }), freshReadAt: NOW }))).toBe('stale');
+  });
+
   it('a read stamped in the future (a clock moved back) refuses', () => {
     expect(mayWaitRefusalOf(input({ nowMs: NOW, facts: facts({ readAt: NOW + 60_000 }) }))).toBe('stale');
   });

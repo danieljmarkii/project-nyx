@@ -11,7 +11,8 @@
 // NO READ IS CANCELLED BY THE NEXT ONE (second adversarial pass, F1): on a network slower than the
 // tick, cancel-on-tick starved every answer and left the last clean one on screen for good. Each
 // read runs to its end, the newest STARTED read wins, and every answer carries `readAt`, which the
-// line's `stale` gate refuses once it is older than two minutes or older than the newest log.
+// line's `stale` gate refuses once it is older than two minutes (judged at the next render, at most a
+// minute later) or older than the newest log.
 import { useEffect, useRef, useState } from 'react';
 import type { MayWaitFacts } from '../lib/mayWaitLine';
 import { loadMayWaitFacts } from '../lib/mayWaitFacts';
