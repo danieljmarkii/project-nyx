@@ -27,7 +27,14 @@ Dispatched session (`/dispatch`, FAB round 2, Wave 3), CUL-1657, a sub-issue of 
 
 ## Reviews
 
-See the outcome comment on CUL-1657 for the code-reviewer and adversarial-reviewer verdicts.
+- **code-reviewer: ship-ready.** Every point of the contract was checked: fresh ids, pets on the server, INSERT OR IGNORE, the phone's clock. So were C-5, C-7, C-26 and the import cycle. Two nits, both left as they are:
+  - A sign-out wipe between the SELECT and the INSERT. The window is tiny, and the result is a quarantined row.
+  - The `join` and `split` round trip.
+- **adversarial-reviewer: FAIL (low, bounded).** Three breaks, and one path that held only narrowly:
+  - **A mount write that throws, then a Normal tap.** Fixed here: each segment asks `recordCaptureChange` again as it is tapped. That is a no-op normally, and it dates the row at the tap after a failed mount write. Proven red by mutation.
+  - **Events landing before the capture row.** The path held, but narrowly: if a push was cut off between the two, the events landed first. Fixed here: `pushAllQueues` sends `capture_changes` first, so a phone's change date leaves before any event logged after it.
+  - **Two phones, where the first to show the pill is unsynced when the second's row lands.** The server's UNIQUE keeps the later date, and the push counts the earlier phone's 23505 as landed. 091's header understates this: it says "both offline" and "days at most", but one unsynced phone is enough and the span has no upper bound. The fix needs a migration (keep the earlier date on conflict, or read the MIN) and a PM ruling. It was filed, not built.
+  - **A quarantined row never reaches the server, and the writer never rewrites it.** PR-29c's reader must treat a missing row as unknown, never as "no change". This was passed to PR-29c with the other reader notes: backdated logs, no disclosure without earlier data, one day boundary, and saying the mix moved, not only the normal count.
 
 ## Tests
 
@@ -38,6 +45,7 @@ See the outcome comment on CUL-1657 for the code-reviewer and adversarial-review
 ## Residuals
 
 - Reduce Motion and the phone check ride the device sitting (CUL-1287).
+- The two-phone date race in 091 is a filed follow-up, waiting on the PM.
 
 ## Teach
 

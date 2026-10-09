@@ -2153,6 +2153,23 @@ describe('FAB — CUL-1657, the split stool pill', () => {
     expect(view.getByTestId('fab-stool-split')).toBeTruthy();
   });
 
+  it('a tap asks again, so a mount write that failed is dated no later than the tap', async () => {
+    recordCaptureChange.mockRejectedValueOnce(new Error('database is locked'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const view = await openMenu();
+    expect(recordCaptureChange).toHaveBeenCalledTimes(1);
+    const before = Date.now();
+    fireEvent.press(view.getByText('Normal'));
+    expect(recordCaptureChange).toHaveBeenCalledTimes(2);
+    const [key, petIds, at] = recordCaptureChange.mock.calls[1];
+    expect(key).toBe('fab_stool_split');
+    expect([...petIds].sort()).toEqual(['p1', 'p2']);
+    expect((at as Date).getTime()).toBeGreaterThanOrEqual(before);
+    // ...and the tap still opens its confirm.
+    expect(useUiStore.getState().logSheet).toEqual({ initialType: 'stool_normal', veil: 'handed' });
+    warn.mockRestore();
+  });
+
   it('with no pet the pill is not drawn, so nothing is recorded', async () => {
     usePetStore.setState({ pets: [] as never, activePet: null });
     await openMenu();

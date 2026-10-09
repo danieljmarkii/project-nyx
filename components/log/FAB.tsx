@@ -190,12 +190,18 @@ function StoolSplitPill({
 }) {
   // Keyed by the set of pets, so a pet that arrives while the fan is open is written too.
   const petKey = [...petIds].sort().join(',');
-  useEffect(() => {
+  const record = useCallback(() => {
     if (!petKey) return;
     recordCaptureChange('fab_stool_split', petKey.split(','), new Date()).catch((err) => {
       console.warn('[FAB] could not record the stool split for the vet report', err);
     });
   }, [petKey]);
+  useEffect(record, [record]);
+  // The backstop (adversarial review): a mount write that threw (a busy database) is not
+  // retried until the pill mounts again, so a segment asks once more as it is tapped. On
+  // the normal path the pets already have their rows and this writes nothing; after a
+  // failed mount write it dates the row at the tap, still before the event it opens.
+  const tapped = (open: () => void) => () => { record(); open(); };
 
   return (
     <View style={[styles.pill, styles.splitPill, style]} testID="fab-stool-split">
@@ -205,7 +211,7 @@ function StoolSplitPill({
       <ThemedText style={[styles.pillLabel, styles.splitLabel]}>Stool</ThemedText>
       <View style={styles.splitSegs}>
         <Pressable
-          onPress={onNormal}
+          onPress={tapped(onNormal)}
           style={styles.splitSeg}
           accessibilityRole="button"
           accessibilityLabel="Log normal stool"
@@ -218,7 +224,7 @@ function StoolSplitPill({
           )}
         </Pressable>
         <Pressable
-          onPress={onLoose}
+          onPress={tapped(onLoose)}
           style={styles.splitSeg}
           accessibilityRole="button"
           accessibilityLabel="Log loose stool"
