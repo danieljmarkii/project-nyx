@@ -124,8 +124,8 @@
 --                no 074-style trigger), so a service-role write on a row a client
 --                planted with another account's event id would lower that
 --                account's TRUE near it. Lower-only and raises nothing, and no
---                service-role path writes event_attachments today (filed on
---                CUL-1682 with the same-pet guard).
+--                service-role path writes event_attachments today (the missing
+--                same-pet guard is CUL-1699).
 --   Freeze:      unchanged. The sweep uses 088's TRUE -> NULL, nothing else.
 --   Storage:     untouched; the trigger reads no path and no object.
 --   Realtime:    lowered rows publish as ordinary updates (059); a boolean
