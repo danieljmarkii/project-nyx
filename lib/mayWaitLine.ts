@@ -29,13 +29,18 @@
 //   intake     a cat: no rated meal in the week before now, or the intake flag firing at any
 //              vomit in the run or AT NOW. Time alone fires it, with no write to trigger anything
 //              (PR-27h's finding 1), so only the render can re-check it.
-//   expired    the leave covers ONE night, and ends at the first local 6 AM after the EARLIER of
-//              the decision and the incident. A morning that has come is the "first thing" the
-//              line promised; past it the line would offer a second night nobody decided. The
-//              decision is read off `updated_at`, which every write moves (075), a Hide or a Show
-//              included, and 088 does not take the leave back on one: so the incident's own time
-//              bounds the night too, and a hide tapped open the next morning cannot re-open it
-//              (adversarial pass on this PR, finding 1; a server-stamped decision time is filed).
+//   expired    the leave covers ONE night, and ends at the first local 6 AM after the decision.
+//              A morning that has come is the "first thing" the line promised; past it the line
+//              would offer a second night nobody decided. The decision is the database's stamp,
+//              `may_wait_decided_at` (094, PR-27l, CUL-1707): the time `may_wait` FIRST became
+//              TRUE on the row, set once by a trigger and never moved, so a re-read of an old
+//              incident cannot start a fresh night (PM ruling A). Read never later than
+//              `updated_at`. A row with no stamp (no TRUE since 094) keeps PR-27f's bound, the
+//              EARLIER of `updated_at` and the incident: every write
+//              moves `updated_at` (075), a Hide or a Show included, and 088 does not take the leave
+//              back on one, so without the incident a hide tapped open the next morning would
+//              re-open the night (PR-27f's adversarial pass, finding 1). A stamp that is present
+//              and unreadable refuses (`facts`).
 //   dst        an offset change in the DEVICE's zone around the read (the server checked the
 //              profile's zone, which may lag the phone; PR-27e's precondition 3), read off the
 //              runtime's own clock (`getTimezoneOffset`), so it needs no Intl zone support.
@@ -121,6 +126,9 @@ export interface MayWaitRow {
   edited_at?: string | null;
   error?: string | null;
   updated_at?: string | null;
+  /** When `may_wait` first became TRUE on the row, set once by the database (094); absent or
+   *  null on a row with no TRUE since. */
+  may_wait_decided_at?: unknown;
   photo_set_key?: string | null;
   ai_raw_payload?: unknown;
 }
@@ -294,6 +302,18 @@ export function catIntakeRefuses(anchorMs: number, facts: MayWaitFacts, nowMs: n
 
 // ── The clock ────────────────────────────────────────────────────────────────────────────────
 
+/** When the night the leave covers starts counting (the `expired` gate): the first grant's
+ *  stamp, never later than `updated_at`; with no stamp, the earlier of `updated_at` and the
+ *  incident (PR-27f's bound). NaN, which refuses, when a time it needs does not parse. */
+export function leaveDecidedAt(row: MayWaitRow, anchorMs: number): number {
+  const updatedMs = parsed(row.updated_at ?? '');
+  if (!Number.isFinite(updatedMs)) return Number.NaN;
+  const stamp = row.may_wait_decided_at;
+  if (stamp === null || stamp === undefined) return Math.min(updatedMs, anchorMs);
+  const stampMs = typeof stamp === 'string' ? parsed(stamp) : Number.NaN;
+  return Number.isFinite(stampMs) ? Math.min(stampMs, updatedMs) : Number.NaN;
+}
+
 /** The first local 6 AM strictly after `decidedMs`: the end of the night the leave covers. */
 export function leaveEndsAt(decidedMs: number): number {
   const d = new Date(decidedMs);
@@ -342,7 +362,7 @@ export function mayWaitRefusalOf(input: MayWaitInput): MayWaitRefusal | null {
   const facts = input.facts;
   if (!facts || input.species === null || !Number.isFinite(input.nowMs)) return 'facts';
   const anchorMs = parsed(facts.anchorAt);
-  const decidedMs = parsed(row.updated_at ?? '');
+  const decidedMs = Number.isFinite(anchorMs) ? leaveDecidedAt(row, anchorMs) : Number.NaN;
   if (!Number.isFinite(anchorMs) || !Number.isFinite(decidedMs)) return 'facts';
 
   if (!readCoversPhotosNow(row, facts)) return 'photos';
@@ -350,7 +370,7 @@ export function mayWaitRefusalOf(input: MayWaitInput): MayWaitRefusal | null {
   if (floorCallsNowAround(anchorMs, facts, input.species)) return 'floor';
   if (lethargyAround(anchorMs, facts, input.nowMs)) return 'lethargy';
   if (input.species === 'cat' && catIntakeRefuses(anchorMs, facts, input.nowMs)) return 'intake';
-  if (input.nowMs >= leaveEndsAt(Math.min(decidedMs, anchorMs))) return 'expired';
+  if (input.nowMs >= leaveEndsAt(decidedMs)) return 'expired';
 
   const from = Math.min(anchorMs, input.nowMs) - MAY_WAIT_REACH_HOURS * HOUR;
   const to = Math.max(anchorMs, input.nowMs) + MAY_WAIT_DST_AFTER_HOURS * HOUR;

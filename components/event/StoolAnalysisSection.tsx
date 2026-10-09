@@ -134,6 +134,7 @@ interface AnalysisRow extends IntakeCorrectionColumns {
   /** CUL-1611: the server's leave for call today to say "first thing tomorrow" (087). Only
    *  TRUE grants it, and only through `lib/mayWaitLine.ts`'s gates. */
   may_wait?: boolean | null;
+  may_wait_decided_at?: string | null;
   /** The photo set the row's last write was stamped over (075). */
   photo_set_key?: string | null;
   /** EN-7's re-check on an owner edit (CUL-1408, lib/stoolForm.ts): the key the read was
@@ -173,7 +174,7 @@ const SELECT_COLS =
   // CUL-1406: read so the shared card stays one shape; the server writes these on vomit rows only (085).
   'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all, ' +
   // CUL-1629: the server's leave to wait, and the photo set the row was stamped over (087, 075).
-  'may_wait, photo_set_key';
+  'may_wait, may_wait_decided_at, photo_set_key';
 
 export function StoolAnalysisSection(
   { eventId, petId, petName, hasPhoto }:

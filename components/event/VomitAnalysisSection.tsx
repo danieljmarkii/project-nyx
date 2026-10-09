@@ -133,6 +133,7 @@ interface AnalysisRow extends IntakeCorrectionColumns {
   /** CUL-1611: the server's leave for call today to say "first thing tomorrow" (087). Only
    *  TRUE grants it, and only through `lib/mayWaitLine.ts`'s gates. */
   may_wait?: boolean | null;
+  may_wait_decided_at?: string | null;
   /** The photo set the row's last write was stamped over (075). */
   photo_set_key?: string | null;
   /** The Engines keys the read was written under: a new-rule read speaks its tier. */
@@ -168,7 +169,7 @@ const SELECT_COLS =
   // CUL-1406: the facts behind a dated correction beside stored words (migration 085).
   'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all, ' +
   // CUL-1629: the server's leave to wait, and the photo set the row was stamped over (087, 075).
-  'may_wait, photo_set_key';
+  'may_wait, may_wait_decided_at, photo_set_key';
 
 function floorTierRank(tier: FloorTier): number {
   return tier === 'call_now' ? TIER_RANK.call_now : TIER_RANK.call_today;
