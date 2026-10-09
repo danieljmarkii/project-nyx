@@ -639,7 +639,7 @@ export interface ReportAttachmentInput {
  * CUL-1658 (FAB PR-29c) — a `capture_changes` row (migration 091): the day this pet's capture
  * surface first offered a change. The report reads one key today, `fab_stool_split`, the day the
  * fan's stool pill split into Normal and Loose and a normal stool became one tap to log.
- * `firstSeenAt` is the phone's clock, `createdAt` the server's; see `captureChangeInstant`.
+ * `firstSeenAt` is the phone's clock, `createdAt` the server's; see `normalShortcutDisclosure`.
  */
 export interface ReportCaptureChangeInput {
   changeKey: string
@@ -701,13 +701,14 @@ export interface ReportInput {
    */
   attachments?: ReportAttachmentInput[]
   /**
-   * CUL-1658 — this pet's `capture_changes` rows. Optional so every earlier fixture and the
-   * `resolveScope` pre-pull keep compiling; ABSENT ⇒ no row ⇒ no disclosure line, which is the
-   * report for a pet whose fan never changed. A read that FAILED does not arrive as absent:
-   * the I/O shell names `capture_changes` in `incompletePulls`, so the page says the record is
-   * partial rather than silently dropping the line.
+   * CUL-1658 — this pet's `capture_changes` rows, or `'unreadable'` when the read FAILED.
+   * Optional so every earlier fixture and the `resolveScope` pre-pull keep compiling; ABSENT ⇒
+   * no row ⇒ no disclosure, which is the report for a pet whose fan never changed. A failed read
+   * is never absent: the stool strip then says the change could not be checked, in place of the
+   * dated line (adversarial F5: the page-wide partial-record banner calls every count a minimum,
+   * which is false when only this date is missing).
    */
-  captureChanges?: ReportCaptureChangeInput[]
+  captureChanges?: ReportCaptureChangeInput[] | 'unreadable'
   /**
    * B-613 — the instant `events` was pulled from (`index.ts`'s `computeLookbackIso`).
    *
@@ -823,44 +824,59 @@ function localDayKey(iso: string, tz: string | null): string | null {
 export const FAB_STOOL_SPLIT_KEY = 'fab_stool_split'
 
 /**
- * CUL-1658 — the instant a capture change is DISCLOSED from: the earlier of the phone's clock
- * (`first_seen_at`) and the server's (`created_at`), migration 091's reader rule. A fast phone
- * clock and a late offline push then both err EARLY, which moves the date toward the window
- * and over-discloses rather than hides. An unparseable side is ignored; both unparseable ⇒ null.
- *
- * The two are compared as INSTANTS, never as text (C-40): the phone writes `…T04:00:00.000Z`,
- * PostgREST returns `…T04:00:00+00:00`, and those order differently as strings.
+ * CUL-1658 — what the stool strip says about the fan's split stool pill:
+ *   `on`       the change's day is known and inside the window
+ *   `by`       only the server's clock is inside: the change landed on or before that day
+ *   `spans`    the two clocks straddle the whole window, so the day cannot be placed in it
+ *   `unknown`  the read failed: the strip says the change could not be checked
  */
-export function captureChangeInstant(row: ReportCaptureChangeInput): string | null {
-  const seen = parseMs(row.firstSeenAt)
-  const created = parseMs(row.createdAt)
-  if (seen === null && created === null) return null
-  if (seen === null) return row.createdAt
-  if (created === null) return row.firstSeenAt
-  return seen <= created ? row.firstSeenAt : row.createdAt
-}
+export type NormalShortcutDisclosure =
+  | { kind: 'on'; at: string }
+  | { kind: 'by'; at: string }
+  | { kind: 'spans' }
+  | { kind: 'unknown' }
 
 /**
- * CUL-1658 — the one-tap-normal instant when its owner-local day falls on or between the
- * window's first and last day, else null.
+ * CUL-1658 — the stool strip's disclosure for the fan's split stool pill, from the pet's
+ * `capture_changes` row and the window.
  *
- * BEFORE the window ⇒ null: every day in it already had the pill, so the counts are on one
- * footing. AFTER ⇒ null: none did. ON the first day ⇒ disclosed: a few hours of that day were
- * logged without the pill, and the direction that cannot mislead is the one that says so.
- * Day keys are fixed-width `YYYY-MM-DD` dates, so comparing them as text is comparing days.
+ * THE TWO CLOCKS BOUND A SPAN, they are not two guesses at a point. `first_seen_at` is the
+ * phone's clock, which can run fast OR slow; `created_at` is the server's, which is never early
+ * but can be days late (an offline push). Migration 091's rule (disclose the EARLIER) is safe at
+ * the window's END and unsafe at its START: a phone a week slow dates a mid-window change before
+ * the window and the line vanishes (adversarial F2). So the line prints whenever the span
+ * [earlier, later] reaches into the window, and names the earlier day only when that day is
+ * itself inside; otherwise it says "on or before" the later one, which the server's clock makes
+ * true. Over-disclosing a change that in fact preceded the window costs a sentence; missing one
+ * costs a vet a ratio read across two logging regimes.
+ *
+ * BEFORE the window (both clocks) ⇒ null: every window day had the shortcut. AFTER (both) ⇒
+ * null: none did. Instants are parsed, never compared as text (C-40). Day keys are fixed-width
+ * `YYYY-MM-DD`, so comparing them as text is comparing days.
  */
-export function oneTapNormalInWindow(
-  rows: ReportCaptureChangeInput[] | undefined,
+export function normalShortcutDisclosure(
+  rows: ReportCaptureChangeInput[] | 'unreadable' | undefined,
   scope: Pick<ReportScope, 'startDate' | 'endDate'>,
   tz: string | null,
-): string | null {
+): NormalShortcutDisclosure | null {
+  if (rows === 'unreadable') return { kind: 'unknown' }
   const row = (rows ?? []).find((r) => r.changeKey === FAB_STOOL_SPLIT_KEY)
   if (!row) return null
-  const instant = captureChangeInstant(row)
-  if (instant === null) return null
-  const day = localDayKey(instant, tz)
-  if (day === null) return null
-  return day >= scope.startDate && day <= scope.endDate ? instant : null
+  const clocks = [row.firstSeenAt, row.createdAt]
+    .map((iso) => ({ iso, ms: parseMs(iso) }))
+    .filter((c): c is { iso: string; ms: number } => c.ms !== null)
+    .sort((x, y) => x.ms - y.ms)
+  // Neither clock readable: the row exists, so the change happened, and when is unknown.
+  if (clocks.length === 0) return { kind: 'unknown' }
+  const early = clocks[0]
+  const late = clocks[clocks.length - 1]
+  const earlyDay = localDayKey(early.iso, tz)
+  const lateDay = localDayKey(late.iso, tz)
+  if (earlyDay === null || lateDay === null) return { kind: 'unknown' }
+  if (lateDay < scope.startDate || earlyDay > scope.endDate) return null
+  if (earlyDay >= scope.startDate) return { kind: 'on', at: early.iso }
+  if (lateDay <= scope.endDate) return { kind: 'by', at: late.iso }
+  return { kind: 'spans' }
 }
 
 /** A calendar-day key ('YYYY-MM-DD', already a local day OR a DATE column) → an integer day index. */
@@ -1662,13 +1678,13 @@ export interface StoolCharacteristics {
   windowDays: number
   loggedDays: number
   /**
-   * CUL-1658 — the instant a normal stool became one tap to log for this pet (the fan's split
-   * stool pill, `capture_changes.fab_stool_split`), set ONLY when its owner-local day falls inside
-   * the window; null otherwise (no row, or the change sits wholly before or after the window).
-   * The counts above are never adjusted for it: the line beside them discloses, it never
-   * corrects. REQUIRED, so a fixture or a new builder must decide rather than inherit silence.
+   * CUL-1658 — whether, and when, a normal stool got its own shortcut in the owner's fan inside
+   * this window (`capture_changes.fab_stool_split`); null when the change sits wholly outside the
+   * window or the pet has no row. The counts above are never adjusted for it: the line beside them
+   * discloses, it never corrects. REQUIRED, so a fixture or a new builder decides rather than
+   * inheriting silence. See `normalShortcutDisclosure` for the four arms.
    */
-  oneTapNormalFrom: string | null
+  normalShortcut: NormalShortcutDisclosure | null
   /**
    * AI photo-read enrichment (migration 034 / analyze-stool). Null when NO stool incident has a
    * photo the AI could read — the section then renders the owner-described counts + an honest "not
@@ -3742,7 +3758,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       looseCount: stoolLoose,
       windowDays,
       loggedDays,
-      oneTapNormalFrom: oneTapNormalInWindow(input.captureChanges, scope, tz),
+      normalShortcut: normalShortcutDisclosure(input.captureChanges, scope, tz),
       ai,
     }
   }

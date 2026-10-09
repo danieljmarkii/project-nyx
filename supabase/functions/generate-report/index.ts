@@ -1416,15 +1416,17 @@ export async function generateReportForPet(
     medicationItemsComplete = medItemsPull.complete
   }
 
-  // CUL-1658 — a failed read here does NOT refuse the report and does NOT drop the line
-  // silently. It costs the stool strip one disclosure, never a count, so refusing would hand
-  // an owner at a clinic no report to protect a sentence; dropping it silently would print
-  // a normal to loose mix with no word that logging changed. So it is named in the
-  // partial-record note instead, the CUL-975 disclosure arm.
-  const captureChangesComplete = !captureChangeRes.error
-  const captureChanges = captureChangesComplete
-    ? mapCaptureChangeRows(captureChangeRes.data ? [captureChangeRes.data as CaptureChangeRow] : [])
-    : []
+  // CUL-1658 — a failed read here neither refuses the report nor drops the line silently. It
+  // costs the stool strip one disclosure, never a count, so refusing would hand an owner at a
+  // clinic no report to protect a sentence, and the page-wide partial-record banner would tell
+  // the vet every count is a minimum, which is false here. So the strip itself says the change
+  // could not be checked, and the error is logged for us.
+  if (captureChangeRes.error) {
+    console.error('generate-report capture_changes read failed:', captureChangeRes.error.message)
+  }
+  const captureChanges: ReportCaptureChangeInput[] | 'unreadable' = captureChangeRes.error
+    ? 'unreadable'
+    : mapCaptureChangeRows(captureChangeRes.data ? [captureChangeRes.data as CaptureChangeRow] : [])
 
   const rawLookRows = rowsOrThrow<LookRow>(looksRes, 'looks')
   const lookRows = mapLookRows(rawLookRows)
@@ -1469,7 +1471,6 @@ export async function generateReportForPet(
       ['vet_visits', vetVisitsPull.complete],
       ['diet_trials', dietTrialsPull.complete],
       ['pets', householdPull.complete],
-      ['capture_changes', captureChangesComplete],
     ] as [string, boolean][]
   )
     .filter(([, complete]) => !complete)

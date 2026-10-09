@@ -1557,13 +1557,13 @@ Deno.test('generateReportForPet: no capture_changes row ⇒ no line, no partial-
   assert.ok(!/Logging changed|Partial record/.test(res.body.html as string))
 })
 
-Deno.test('generateReportForPet: a FAILED capture_changes read still renders, and names the gap (never silent)', async () => {
+Deno.test('generateReportForPet: a FAILED capture_changes read still renders, and says so in the strip (never silent)', async () => {
   const res = await generateReportForPet(
     fakeClient(stoolShellTables({ error: { message: 'statement timeout' } })),
     'p1', NOW_MS, null, OWNER_AUDIENCE,
   )
   assert.equal(res.status, 200, 'a disclosure read never costs the owner the report')
   const html = res.body.html as string
-  assert.ok(/Partial record\.<\/b> Some of this pet's logging-change dates could not be read/.test(html))
-  assert.ok(!/Logging changed/.test(html))
+  assert.ok(/Logging change not checked:<\/b>/.test(html))
+  assert.ok(!/Partial record/.test(html), 'the counts are complete; the banner would call them minimums')
 })

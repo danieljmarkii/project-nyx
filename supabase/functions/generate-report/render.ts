@@ -1651,9 +1651,6 @@ const TRUNCATION_NOUNS: Record<string, string> = {
   conditions: 'recorded conditions',
   diet_trials: 'diet trials',
   vet_visits: 'vet visits',
-  // CUL-1658 — a failed read here does not shorten a count; it can hide the stool strip's
-  // logging-change line, so the partial-record note names what that line would have said.
-  capture_changes: 'logging-change dates',
   // CUL-979 — the household pull. A short read here is not an under-count of anything on
   // the page, it is a MISSING CONFOUNDER (the second animal), which is exactly the class the
   // sentence above names as "context which would qualify a finding".
@@ -5814,18 +5811,31 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     .map((c) => `${single ? '' : `<span class="sw" style="background:${c.bg}"></span>`}${c.label} &times;${c.n}`)
     .join('&nbsp;&middot;&nbsp; ')
 
-  // CUL-1658 (FAB PR-29c) — the day a normal stool became one tap to log, when it falls inside
-  // the window. Logging ease moves what gets RECORDED, not what the pet did, so the normal count
-  // and the normal to loose mix can shift across that date for no clinical reason; the report
-  // cannot see that from the rows, so it says so beside them. It DISCLOSES and never adjusts:
-  // the counts above are untouched. The last sentence is the half that protects the patient:
-  // loose stools were one tap throughout, so a real change in the loose count is not explained
-  // away by this line. Year stamped once, only when it differs from the window's (CUL-69).
-  const changeLine = st.oneTapNormalFrom
-    ? `<br/><b>Logging changed on ${h(
-        fmtLocalDayScoped(st.oneTapNormalFrom, snap.timezone, snap.scope.endDate),
-      )}:</b> from that date a normal stool took one tap to log, so more normal stools may be recorded from then than before, and the normal to loose mix can shift for that reason alone. Loose stools were one tap throughout; this change does not affect their count.`
-    : ''
+  // CUL-1658 (FAB PR-29c) — the day a normal stool got its own shortcut in the owner's fan, when
+  // it reaches into the window. Easier logging moves what gets RECORDED, not what the pet did, so
+  // the normal count and the normal to loose ratio can shift across that date for no clinical
+  // reason; the report cannot see that from the rows, so it says so beside them. It DISCLOSES and
+  // never adjusts: the counts above are untouched.
+  //
+  // THE LAST SENTENCE IS THE ONE THAT PROTECTS THE PATIENT, and it claims only what holds. Loose
+  // stool had its own shortcut before and after, so a RISE in loose stools cannot come from this
+  // change; a FALL can, because a borderline stool that once took the only cheap door (Loose) can
+  // now take Normal (adversarial F1). So it says the first and warns of the second, and never
+  // that the loose count is "unaffected". "Shortcut", not "one tap": each half of the split pill
+  // opens a confirm (F4). Year stamped once, only when it differs from the window's (CUL-69).
+  const shortcutTail =
+    ' Loose stools had their own shortcut before and after, so a rise in loose stools is not explained by this change; some borderline stools may now be logged as normal rather than loose.'
+  const ns = st.normalShortcut
+  const nsDay = (iso: string) => h(fmtLocalDayScoped(iso, snap.timezone, snap.scope.endDate))
+  const changeLine = !ns
+    ? ''
+    : ns.kind === 'on'
+    ? `<br/><b>Logging changed on ${nsDay(ns.at)}:</b> from that date the owner's app gave a normal stool its own shortcut, so normal stools before it are likely under-recorded and the normal to loose ratio is not comparable across it.${shortcutTail}`
+    : ns.kind === 'by'
+    ? `<br/><b>Logging changed on or before ${nsDay(ns.at)}:</b> by that date the owner's app gave a normal stool its own shortcut, so normal stools earlier in this window are likely under-recorded and the normal to loose ratio is not comparable across it.${shortcutTail}`
+    : ns.kind === 'spans'
+    ? `<br/><b>Logging changed, date not fixed:</b> at some point the owner's app gave a normal stool its own shortcut, and the record cannot place that date within this window, so the normal to loose ratio may not be comparable across it.${shortcutTail}`
+    : `<br/><b>Logging change not checked:</b> whether the owner's app gave a normal stool its own shortcut during this window could not be read, so the normal to loose ratio may shift for that reason. A rise in loose stools would not be explained by such a change.`
 
   const ai = st.ai
   const aiTag = ai
