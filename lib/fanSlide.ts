@@ -22,9 +22,12 @@
 //      change (a late recent-food read, a pet switch dealing new foods). With no
 //      current measure there is no hit, so nothing can be chosen against a pill that is
 //      still moving (amendment 3, CUL-1634, CUL-1647). The pills are measured in the
-//      space the touch is reported in, and the measure is trusted only if the disc's own
-//      frame contains the point that pressed it (`spacesAgree`): two spaces a status bar
-//      apart would land every hit one pill off, so they fail to no hit at all.
+//      space the touch is reported in, and the measure is trusted only if the disc's
+//      measured origin is the origin the touch itself reports for the disc (its page
+//      point less its point within the disc), to within `SPACE_CHECK_TOLERANCE_PT`
+//      (`spacesAgree`). Two spaces a status bar apart would land every hit one pill off,
+//      so they fail to no hit at all. A containment check is not enough: the press can be
+//      anywhere on a 56pt disc, so it would pass offsets up to the disc's width.
 //   3. A SYMPTOM NEVER WRITES FROM HERE. Vomit, Normal and Loose open their confirm,
 //      exactly as a tap does (amendment 2, PR-29b's split): the confirm is where Saw it
 //      or Found it is answered, and a direct write would stamp a found vomit "now".
@@ -48,10 +51,9 @@ export const FOOD_DWELL_MS = 150;
 /** How far a resting finger may drift and still be resting. Past it the dwell restarts
  *  from the new point. */
 export const STILL_SLOP_PT = 6;
-/** How far outside the disc's measured frame the press point may sit and the two spaces
- *  still count as one. The disc is scaled to 0.9 under the finger (a few points off
- *  each edge), so the margin covers that; a status bar (24pt and up) does not fit in it. */
-export const SPACE_CHECK_SLOP_PT = 12;
+/** How far the disc's measured origin may sit from the origin the touch reports for it
+ *  and the two spaces still count as one: rounding, never a status bar (24pt and up). */
+export const SPACE_CHECK_TOLERANCE_PT = 2;
 /** Without a measured disc, how far from the press point counts as having left it: the
  *  disc's radius, so a roll on the disc is never read as a slide. */
 export const DISC_FALLBACK_RADIUS_PT = FAB_DISC / 2;
@@ -118,10 +120,14 @@ export function leftDisc(disc: Rect | null, start: Point, p: Point): boolean {
   return Math.hypot(p.x - start.x, p.y - start.y) > DISC_FALLBACK_RADIUS_PT;
 }
 
-/** Whether the measured frames and the touch share a space: the disc's frame, measured the
- *  way the pills are, must contain the point that pressed it (rule 2). */
-export function spacesAgree(disc: Rect, press: Point): boolean {
-  return insideRect(disc, press, SPACE_CHECK_SLOP_PT);
+/** Whether the measured frames and the touch share a space (rule 2): the disc's origin as
+ *  measured the way the pills are, against the disc's origin in the touch's own space
+ *  (`pageX - locationX`, `pageY - locationY` of the press that started the hold). Null,
+ *  an origin the touch never reported, never agrees. */
+export function spacesAgree(disc: Rect, touchOrigin: Point | null): boolean {
+  if (!touchOrigin) return false;
+  return Math.abs(disc.x - touchOrigin.x) <= SPACE_CHECK_TOLERANCE_PT
+    && Math.abs(disc.y - touchOrigin.y) <= SPACE_CHECK_TOLERANCE_PT;
 }
 
 /** The rest after a move. Leaving every pill ends it; a new pill starts one; drifting

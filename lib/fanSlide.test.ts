@@ -3,7 +3,7 @@
 // constants (C-34): the dwell and the slop are never restated as literals here.
 
 import {
-  DISC_FALLBACK_RADIUS_PT, FOOD_DWELL_MS, SPACE_CHECK_SLOP_PT, STILL_SLOP_PT,
+  DISC_FALLBACK_RADIUS_PT, FOOD_DWELL_MS, SPACE_CHECK_TOLERANCE_PT, STILL_SLOP_PT,
   beyondSlop, leftDisc, nextRest, releaseOutcome, spacesAgree, targetAt,
   type Rest, type SlideTarget,
 } from './fanSlide';
@@ -184,14 +184,19 @@ describe('the dwell runs on the touch’s own clock', () => {
 describe('rule 2 — the measure is trusted only in the touch’s own space', () => {
   const disc = { x: 302, y: 622, width: 56, height: 56 };
 
-  it('a disc frame that holds the press point agrees, with the scale-down margin', () => {
-    expect(spacesAgree(disc, DISC)).toBe(true);
-    expect(spacesAgree(disc, { x: disc.x - SPACE_CHECK_SLOP_PT, y: disc.y })).toBe(true);
+  it('the measured origin and the touch’s origin agree within rounding', () => {
+    expect(spacesAgree(disc, { x: disc.x, y: disc.y })).toBe(true);
+    expect(spacesAgree(disc, { x: disc.x + SPACE_CHECK_TOLERANCE_PT, y: disc.y - SPACE_CHECK_TOLERANCE_PT })).toBe(true);
   });
 
-  it('a frame one status bar off disagrees', () => {
-    // Android edge-to-edge: a window frame 24pt above the page space.
-    expect(spacesAgree({ ...disc, y: disc.y - 24 - disc.height }, DISC)).toBe(false);
-    expect(spacesAgree(disc, { x: DISC.x, y: disc.y + disc.height + SPACE_CHECK_SLOP_PT + 1 })).toBe(false);
+  // The smallest real status bar, 24pt, wherever on the disc the thumb landed: a
+  // containment check would have passed this (the re-run's probe 2).
+  it.each([24, 48])('a frame %ipt off disagrees', (bar) => {
+    expect(spacesAgree({ ...disc, y: disc.y - bar }, { x: disc.x, y: disc.y })).toBe(false);
+    expect(spacesAgree(disc, { x: disc.x, y: disc.y + SPACE_CHECK_TOLERANCE_PT + 1 })).toBe(false);
+  });
+
+  it('an origin the touch never reported never agrees', () => {
+    expect(spacesAgree(disc, null)).toBe(false);
   });
 });

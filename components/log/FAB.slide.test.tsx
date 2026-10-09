@@ -94,7 +94,11 @@ const lift = (view: View, p: { x: number; y: number }, at?: number) => touch(vie
  *  `land`, the open's springs run to rest and the fan is measured. */
 async function hold(view: View, { land = true } = {}) {
   const disc = view.getByLabelText('Log event');
-  fireEvent(disc, 'pressIn', { nativeEvent: { pageX: DISC.x, pageY: DISC.y } });
+  const frame = mockFrames['fab-disc-touch'];
+  // The press reports its point within the disc as well, as the platform's does.
+  fireEvent(disc, 'pressIn', {
+    nativeEvent: { pageX: DISC.x, pageY: DISC.y, locationX: DISC.x - frame.x, locationY: DISC.y - frame.y },
+  });
   fireEvent(disc, 'longPress');
   await act(async () => {});
   if (land) await act(async () => { jest.advanceTimersByTime(1000); });
@@ -364,19 +368,45 @@ describe('a release off every pill closes with no write', () => {
 // Android root under the status bar) would land every hit a pill off. The disc's own
 // frame must contain the point that pressed it, or nothing is hit at all.
 describe('the measure is trusted only in the touch’s own space', () => {
-  it('a disc frame a status bar away leaves the fan tap only: no hit, no write', async () => {
-    const atRest = mockFrames['fab-disc-touch'];
-    mockFrames['fab-disc-touch'] = { ...atRest, y: atRest.y - 80 };
+  // The re-run's probe 2: EVERY frame measured 24pt above the touch's space (the smallest
+  // real status bar), the press reporting the disc where it really is. The finger rests on
+  // the lower half of the older food, which a measure 24pt up reads as the newer one.
+  it('every frame a status bar off: the fan stays tap only, and the neighbour is never written', async () => {
+    const saved = { ...mockFrames };
+    const view = await mount();
+    const truth = centreOf('fab-pill-food-f-old');
+    const press = { ...DISC };
+    const discAtRest = mockFrames['fab-disc-touch'];
+    const disc = view.getByLabelText('Log event');
+    for (const k of Object.keys(mockFrames)) mockFrames[k] = { ...mockFrames[k], y: mockFrames[k].y - 24 };
     try {
-      const view = await mount();
-      await hold(view);
-      rest(view, 'fab-pill-food-f-new', FOOD_DWELL_MS * 2);
-      await act(async () => { lift(view, centreOf('fab-pill-food-f-new')); });
+      fireEvent(disc, 'pressIn', {
+        nativeEvent: {
+          pageX: press.x, pageY: press.y, locationX: press.x - discAtRest.x, locationY: press.y - discAtRest.y,
+        },
+      });
+      fireEvent(disc, 'longPress');
+      await act(async () => { jest.advanceTimersByTime(1000); });
+      rest(view, 'fab-pill-food-f-old', 0);
+      move(view, { x: truth.x, y: truth.y + 16 });
+      act(() => { jest.advanceTimersByTime(FOOD_DWELL_MS * 2); });
+      await act(async () => { lift(view, { x: truth.x, y: truth.y + 16 }); });
       expect(insertMeal).not.toHaveBeenCalled();
       expect(slideCross).not.toHaveBeenCalled();
     } finally {
-      mockFrames['fab-disc-touch'] = atRest;
+      Object.assign(mockFrames, saved);
     }
+  });
+
+  it('a press that reports no point within the disc leaves the fan tap only', async () => {
+    const view = await mount();
+    const disc = view.getByLabelText('Log event');
+    fireEvent(disc, 'pressIn', { nativeEvent: { pageX: DISC.x, pageY: DISC.y } });
+    fireEvent(disc, 'longPress');
+    await act(async () => { jest.advanceTimersByTime(1000); });
+    rest(view, 'fab-pill-food-f-new', FOOD_DWELL_MS * 2);
+    await act(async () => { lift(view, centreOf('fab-pill-food-f-new')); });
+    expect(insertMeal).not.toHaveBeenCalled();
   });
 
   it('one frame that does not come back drops the whole measure', async () => {

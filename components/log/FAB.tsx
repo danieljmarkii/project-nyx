@@ -467,9 +467,13 @@ export function FAB() {
   // writes are idempotent (the same render writes the same map), and only handlers and
   // effects read them.
   const slide = useRef<{
-    start: Point; last: Point; left: boolean; rest: Rest | null; disc: Rect | null;
+    start: Point; origin: Point | null; last: Point; left: boolean; rest: Rest | null; disc: Rect | null;
   } | null>(null);
   const pressPoint = useRef<Point | null>(null);
+  // The disc's origin in the touch's own space: the press's page point less its point
+  // within the disc. The disc's content takes no touch, so the press's target is always
+  // the Pressable's host, which sits exactly on the measured wrapper.
+  const pressOrigin = useRef<Point | null>(null);
   const discNode = useRef<View | null>(null);
   const fanScrolls = useRef(false);
   const slideTargets = useRef<SlideTarget[]>([]);
@@ -512,7 +516,7 @@ export function FAB() {
   const measureSlideTargets = useCallback(() => {
     const s = slide.current;
     if (!s || !s.disc || !fanSettled.current || dealing.current || fanScrolls.current) return;
-    if (!spacesAgree(s.disc, s.start)) {
+    if (!spacesAgree(s.disc, s.origin)) {
       console.warn('[FAB] slide measure and touch disagree; the fan stays tap only');
       return;
     }
@@ -811,7 +815,7 @@ export function FAB() {
     if (open && !closing.current) { closeMenu(); return; }
     const start = pressPoint.current;
     if (!openMenu() || !start || fanScrolls.current) return;
-    const s = { start, last: start, left: false, rest: null, disc: null as Rect | null };
+    const s = { start, origin: pressOrigin.current, last: start, left: false, rest: null, disc: null as Rect | null };
     slide.current = s;
     slideTargets.current = [];
     // The disc does not move (its press scale aside), so one measure serves the slide.
@@ -1645,6 +1649,9 @@ export function FAB() {
                 // A press with no coordinates (a synthesized one) cannot start a slide.
                 const ne = e?.nativeEvent;
                 pressPoint.current = ne ? { x: ne.pageX, y: ne.pageY } : null;
+                pressOrigin.current = ne && typeof ne.locationX === 'number' && typeof ne.locationY === 'number'
+                  ? { x: ne.pageX - ne.locationX, y: ne.pageY - ne.locationY }
+                  : null;
                 pressIn();
               }}
               onPressOut={pressOut}
@@ -1655,7 +1662,7 @@ export function FAB() {
               accessibilityLabel={open ? 'Close menu' : 'Log event'}
               accessibilityState={{ expanded: open }}
             >
-              <Animated.View style={[styles.fab, { transform: [{ scale: pressScale }] }]}>
+              <Animated.View pointerEvents="none" style={[styles.fab, { transform: [{ scale: pressScale }] }]}>
                 {reducedMotion ? (
                   <>
                     <Animated.View
