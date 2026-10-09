@@ -90,6 +90,15 @@ jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 // records as shown. Off and empty unless a test sets them.
 let mockFloorOn = false;
 jest.mock('../../hooks/useFloorOn', () => ({ useFloorOn: () => mockFloorOn }));
+// EN-3's go-live day (CUL-1513): unseeded unless a test names one, as on every phone today.
+let mockLiveSince: string | null = null;
+jest.mock('../../hooks/useEn3LiveSince', () => ({ useEn3LiveSince: () => mockLiveSince }));
+let mockSeamReads: unknown[] = [];
+const mockReadSeam = jest.fn(async () => mockSeamReads);
+jest.mock('../../lib/readCopy', () => ({
+  ...jest.requireActual('../../lib/readCopy'),
+  readPetSeamReads: () => mockReadSeam(),
+}));
 let mockShownTier: 'call_now' | 'call_today' | null = null;
 jest.mock('../../hooks/useShownTier', () => ({ useShownTier: () => mockShownTier }));
 const mockRecordShown = jest.fn(async (_w: unknown) => undefined);
@@ -1998,5 +2007,53 @@ describe('VomitAnalysisSection — call today\'s wait line (CUL-1629)', () => {
     const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
     await view.findByText('Call your vet today');
     expect(view.queryByText(/first thing/)).toBeNull();
+  });
+});
+
+// ── CUL-1513 (tiers spec §5): the go-live day's lines on the record ─────────────
+describe('VomitAnalysisSection — the go-live day (CUL-1513)', () => {
+  const EN3 = ['engines_v3_en3'];
+  const BEFORE = new Date(2026, 8, 22, 1, 30).toISOString();
+  afterEach(() => {
+    mockRow = null;
+    mockLiveSince = null;
+    mockSeamReads = [];
+    mockReadSeam.mockClear();
+  });
+
+  it('an earlier-rule read keeps its card and gains one meta line, only once the day is seeded', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: BEFORE });
+    const dark = render(<VomitAnalysisSection eventId="g1" petId="pet-1" petName="Rex" hasPhoto />);
+    await dark.findByText('Worth a call');
+    expect(dark.queryByTestId('incident-read-rule-note')).toBeNull();
+    dark.unmount();
+    mockLiveSince = '2026-10-20';
+    const lit = render(<VomitAnalysisSection eventId="g1" petId="pet-1" petName="Rex" hasPhoto />);
+    await lit.findByText('Worth a call');
+    expect(lit.getByTestId('incident-read-rule-note').props.children).toBe('Read under the earlier rule, before Oct 20.');
+    // No read of the pet's record is issued for an earlier-rule read.
+    expect(mockReadSeam).not.toHaveBeenCalled();
+  });
+
+  it("the pet's first new-rule read says what changed; a later one does not", async () => {
+    mockLiveSince = '2026-10-20';
+    mockSeamReads = [
+      { event_id: 'old', occurred_at: '2026-09-22T05:30:00.000Z', status: 'completed', recommendation: 'worth_a_call', tier: null, engine_flags: '[]' },
+      { event_id: 'g2', occurred_at: '2026-10-21T00:05:00.000Z', status: 'completed', recommendation: 'monitor', tier: 'logged', engine_flags: JSON.stringify(EN3) },
+      { event_id: 'g3', occurred_at: '2026-10-23T00:05:00.000Z', status: 'completed', recommendation: 'worth_a_call', tier: 'call_today', engine_flags: JSON.stringify(EN3) },
+    ];
+    mockRow = row({ recommendation: 'monitor', tier: 'logged', engine_flags: EN3, updated_at: new Date(2026, 9, 21).toISOString() });
+    const first = render(<VomitAnalysisSection eventId="g2" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() =>
+      expect(first.getByTestId('incident-read-rule-note').props.children).toBe(
+        "New since Oct 20: reads say how soon to call. Rex's earlier reads keep the words they had.",
+      ),
+    );
+    first.unmount();
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3 });
+    const later = render(<VomitAnalysisSection eventId="g3" petId="pet-1" petName="Rex" hasPhoto />);
+    await later.findByText('Call your vet today');
+    await waitFor(() => expect(mockReadSeam).toHaveBeenCalledTimes(2));
+    expect(later.queryByTestId('incident-read-rule-note')).toBeNull();
   });
 });

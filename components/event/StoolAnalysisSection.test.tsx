@@ -92,6 +92,9 @@ jest.mock('./useReadLandingAnnouncement', () => {
   };
 });
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
+// EN-3's go-live day (CUL-1513): unseeded unless a test names one.
+let mockLiveSince: string | null = null;
+jest.mock('../../hooks/useEn3LiveSince', () => ({ useEn3LiveSince: () => mockLiveSince }));
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
@@ -1326,5 +1329,29 @@ describe('StoolAnalysisSection — call today\'s wait line (CUL-1629)', () => {
     const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
     await view.findByText('Call your vet today');
     expect(view.queryByText(/first thing/)).toBeNull();
+  });
+});
+
+describe('StoolAnalysisSection — the go-live day (CUL-1513)', () => {
+  afterEach(() => {
+    mockRow = null;
+    mockLiveSince = null;
+  });
+
+  it("an earlier-rule read gains the dated meta line only once the day is seeded, and only if it was read before it", async () => {
+    mockRow = row({ recommendation: 'worth_a_call', updated_at: new Date(2026, 8, 22, 1, 30).toISOString() });
+    const dark = render(<StoolAnalysisSection eventId="d1" petId="pet-1" petName="Rex" hasPhoto />);
+    await dark.findByText('Worth a call');
+    expect(dark.queryByTestId('incident-read-rule-note')).toBeNull();
+    dark.unmount();
+    mockLiveSince = '2026-10-20';
+    const lit = render(<StoolAnalysisSection eventId="d1" petId="pet-1" petName="Rex" hasPhoto />);
+    await lit.findByText('Worth a call');
+    expect(lit.getByTestId('incident-read-rule-note').props.children).toBe('Read under the earlier rule, before Oct 20.');
+    lit.unmount();
+    mockRow = row({ recommendation: 'worth_a_call', updated_at: new Date(2026, 9, 21).toISOString() });
+    const after = render(<StoolAnalysisSection eventId="d2" petId="pet-1" petName="Rex" hasPhoto />);
+    await after.findByText('Worth a call');
+    expect(after.queryByTestId('incident-read-rule-note')).toBeNull();
   });
 });

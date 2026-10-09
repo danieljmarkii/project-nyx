@@ -100,6 +100,7 @@ import { getDb, getWatermark, setWatermark } from './db';
 import { EVENT_ATTACHMENT_ORDER } from './eventAttachmentQueries';
 import { advanceWatermark, HYDRATE_WATERMARK_OVERLAP_MS, watermarkQueryFloor } from './hydration';
 import type { ReadCopyRow } from './readState';
+import type { SeamRead } from './ruleSeam';
 import { supabase } from './supabase';
 
 /**
@@ -175,6 +176,22 @@ export async function readCopies(eventIds: readonly string[]): Promise<Map<strin
     }
   }
   return out;
+}
+
+/**
+ * Every read the copy holds for one pet's live events, with each event's time, for EN-3's
+ * "New since" line (`lib/ruleSeam.ts`, CUL-1513): the pet's first new-rule read and whether
+ * it has an earlier one are decided from these rows. Local only; a soft-deleted event's read
+ * is not the pet's. Throws on a local read failure; the caller degrades to no line.
+ */
+export async function readPetSeamReads(petId: string): Promise<SeamRead[]> {
+  return getDb().getAllAsync<SeamRead>(
+    `SELECT v.event_id, e.occurred_at, v.status, v.recommendation, v.tier, v.engine_flags
+       FROM event_ai_verdicts v
+       JOIN events e ON e.id = v.event_id
+      WHERE e.pet_id = ? AND e.deleted_at IS NULL`,
+    [petId],
+  );
 }
 
 /** The server's hash form of `photo_set_key` (engineStamps.ts): 64 hex, no comma, no

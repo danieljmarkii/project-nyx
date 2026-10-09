@@ -82,6 +82,9 @@ import {
 } from './IncidentReadCard';
 import { useReadLandingAnnouncement } from './useReadLandingAnnouncement';
 import { useFloorOn } from '../../hooks/useFloorOn';
+import { useEn3LiveSince } from '../../hooks/useEn3LiveSince';
+import { useNewSinceLine } from '../../hooks/useNewSinceLine';
+import { earlierRuleLineOf } from '../../lib/ruleSeam';
 import { previewForRead } from '../../lib/incidentFloorPreview';
 import { recordShownTiers } from '../../lib/incidentTierShown';
 import { useShownTier } from '../../hooks/useShownTier';
@@ -211,6 +214,10 @@ export function VomitAnalysisSection(
   const waitActive = useAppActive();
   const waitTick = `${Math.floor(clockNow / 60_000)}|${waitActive}`;
   const mayWaitFacts = useMayWaitFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}`, waitTick, lastLogged, waitCandidate);
+  // CUL-1513 (tiers spec §5): the go-live day's lines. Both null until the key's own
+  // `app_config` value carries a day for this owner, so the card is today's to the byte.
+  const liveSince = useEn3LiveSince();
+  const newSince = useNewSinceLine(eventId, petId, petName, row ?? null, `${row?.updated_at ?? row?.status ?? ''}`);
   // The RECORD's pet (C-9): species and birthday decide which clauses its list carries.
   const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
 
@@ -790,6 +797,9 @@ export function VomitAnalysisSection(
   // tone/action (it keeps today's card), never null for a call.
   const tiered = isTieredRow(row);
   const display = tiered ? tierDisplayOf(row) : null;
+  // One meta line about the rule: the first new-rule read's "New since", or an earlier-rule
+  // read's "before {date}" (that one only when the read was last written before the day).
+  const ruleNote = tiered ? newSince : earlierRuleLineOf(row, liveSince);
   // CUL-819 (a): a call whose latest run did not finish says so beside the verdict, never
   // reverted. True only since the server's hold clears a stale `error` (CUL-1509): before
   // that, a later run that finished calm and was held left the old error standing, and the
@@ -883,6 +893,7 @@ export function VomitAnalysisSection(
                 : null
           }
           disclosure={heldDisclosure}
+          ruleNote={ruleNote}
           tellThem={tellThemLine}
           watchFor={watchFor}
           readText={row.read_text}

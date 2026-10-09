@@ -98,6 +98,7 @@ export function IncidentReadCard({
   tone,
   action,
   disclosure,
+  ruleNote,
   tellThem,
   watchFor,
   readText,
@@ -117,6 +118,10 @@ export function IncidentReadCard({
   action?: string | null;
   /** CUL-819 (a): the latest read did not finish, said beside the call it left standing. */
   disclosure?: string | null;
+  /** EN-3's GA day (CUL-1513, tiers spec §5): "Read under the earlier rule, before {date}."
+   *  under an earlier-rule read, or "New since {date}: …" on a pet's first new-rule read.
+   *  A meta line about the rule, on every tone; absent until the go-live day is seeded. */
+  ruleNote?: string | null;
   /** Under a call: what to tell the vet, from enum fields only (spec §2 rule 2). */
   tellThem?: string | null;
   /** Under a quiet read: what would change it, one clause per floor row (spec §3). */
@@ -221,6 +226,9 @@ export function IncidentReadCard({
         ) : null}
         {attn && disclosure ? (
           <ThemedText testID="incident-read-disclosure" style={styles.disclosure}>{disclosure}</ThemedText>
+        ) : null}
+        {ruleNote ? (
+          <ThemedText testID="incident-read-rule-note" style={styles.ruleNote}>{ruleNote}</ThemedText>
         ) : null}
         <ThemedText style={styles.disclaimer}>{INCIDENT_READ_DISCLAIMER}</ThemedText>
         {/* The visible text IS the accessible name — never a label that differs from it
@@ -339,6 +347,11 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightBody,
   },
   disclosure: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightBody,
+  },
+  ruleNote: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightBody,
