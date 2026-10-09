@@ -175,12 +175,12 @@ Deno.test('record replay: the words each read now says', () => {
   }
   assertStrictEquals(
     said(REPLAY[2]),
-    "I can see something that doesn't look like food in this photo. When I read this, one rated meal was logged for Nyx in the 24 hours before this vomit, and it wasn't marked Most or All. 5 more had no rating. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "I can see something that doesn't look like food in this photo. When I read this, one rated meal was logged for Nyx in the 24 hours before this vomit, and it wasn't marked Most or All. Another 5 had no rating. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
   const on727 = ctx(rowsOf(REPLAY[3].meals, V727), V727, REPLAY[3].nowMs, EN5)
   assertStrictEquals(
     buildEn0ContextualReadText('Nyx', computeContextualFlags(on727), on727.intakeRecord),
-    "When I read this, 6 rated meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. One more had no rating. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, 6 rated meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. Another one had no rating. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
 })
 
@@ -405,7 +405,7 @@ Deno.test('EN-5 copy: every sentence it can build never reassures, never conclud
         assertStrictEquals(t.includes('!'), false, t)
         assertStrictEquals(/hasn't eaten|didn't eat|not eating|\brecently\b|\byesterday\b|\btoday\b|\blast night\b/i.test(t), false, `concluded or dated: "${t}"`)
         assertStrictEquals(/vet/.test(t), true, t)
-        assertStrictEquals(/\b1 (meal|more|rated)/.test(t), false, `a bare "1": "${t}"`)
+        assertStrictEquals(/\b1 (meal|more|rated)|Another 1\b/.test(t), false, `a bare "1": "${t}"`)
       }
     }
   }

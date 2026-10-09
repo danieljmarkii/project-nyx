@@ -465,7 +465,7 @@ function count(n: number, one: string, many: string): string {
 function unratedClause(record: IntakeRecord): string {
   const unrated = record.mealsLogged - (record.mealsRated ?? 0)
   if (unrated <= 0) return ''
-  return unrated === 1 ? ' One more had no rating.' : ` ${unrated} more had no rating.`
+  return unrated === 1 ? ' Another one had no rating.' : ` Another ${unrated} had no rating.`
 }
 function en5IntakeRecordSentence(p: string, record: IntakeRecord): string {
   const rated = record.mealsRated ?? 0
