@@ -5,8 +5,10 @@
 --   PR-29c the first reader (the vet report's disclosure beside its stool counts,
 --   §3.7). Nothing reads or writes this table until they ship.
 --
--- NOT YET APPLIED. The PM applies it (`apply 091`); the PR merges once applied
--- and the VERIFY block below has passed.
+-- APPLIED to production 2026-10-09 (PM-approved), live version 20261009134928,
+-- name capture_changes. The VERIFY block below passed on the live database, and
+-- get_advisors (security + performance) raised nothing on this table. Comments
+-- added after the apply change no statement.
 -- ============================================================
 --
 -- WHY THIS TABLE EXISTS
