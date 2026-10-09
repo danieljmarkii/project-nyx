@@ -167,7 +167,7 @@ describe('the clock (D1: 6 AM / 6 PM / midnight)', () => {
   });
 });
 
-describe('the night runs from the server\'s decision stamp (094, PR-27l, CUL-1707)', () => {
+describe('the night runs from the first grant\'s stamp (094, PR-27l, CUL-1707)', () => {
   // A vomit from last night, read late tonight: the read decided the leave at 9:30 PM on the 15th.
   const lastNight = facts({ anchorAt: iso(local(14, 20)), vomits: [{ at: iso(local(14, 10)), confidence: 'witnessed' }, { at: iso(local(14, 20)), confidence: 'witnessed' }] });
   const stamped = (over: Partial<MayWaitRow> = {}) => row({ may_wait_decided_at: iso(local(15, 21, 30)), ...over });
@@ -183,6 +183,13 @@ describe('the night runs from the server\'s decision stamp (094, PR-27l, CUL-170
     const shown = stamped({ updated_at: iso(local(16, 7, 31)) });
     expect(mayWaitRefusalOf(input({ row: shown, facts: lastNight, nowMs: local(16, 12) }))).toBe('expired');
     expect(mayWaitRefusalOf(input({ row: shown, facts: lastNight, nowMs: local(16, 20) }))).toBe('expired');
+  });
+
+  it('a re-read the next evening keeps the first grant\'s stamp, so it starts no second night (ruling A)', () => {
+    // The database never moves a set stamp; a re-read moves only updated_at.
+    const reread = stamped({ updated_at: iso(local(16, 20)) });
+    expect(mayWaitRefusalOf(input({ row: reread, facts: lastNight, nowMs: local(16, 21) }))).toBe('expired');
+    expect(callTodayActionOf(input({ row: reread, facts: lastNight, nowMs: local(16, 21) }))).toBe(LOUDER);
   });
 
   it('a stamp later than updated_at is read as updated_at: a skewed clock never lengthens the night', () => {

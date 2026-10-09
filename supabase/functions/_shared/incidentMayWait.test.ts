@@ -13,7 +13,6 @@ import {
   neighbourRefuses,
   payloadAsColumns,
   utcOffsetMinutes,
-  withMayWaitDecidedAt,
   type MayWaitInput,
   type MayWaitNeighbour,
   type MayWaitRecord,
@@ -367,14 +366,4 @@ Deno.test('CUL-1510 pass 4 — a removed photo\'s blood call, a photoless neighb
   assertStrictEquals(mayWaitVerdict(input({ record: cat })).mayWait, false)
   // Lethargy back-dated outside the read's own 24 h window but inside the run's.
   assertStrictEquals(mayWaitVerdict(input({ record: record({ lethargyAt: [iso(VOMIT_MS - 26 * H)] }) })).mayWait, false)
-})
-
-Deno.test('withMayWaitDecidedAt — a write carrying may_wait carries its time; any other write carries none (CUL-1707)', () => {
-  const at = '2026-10-09T21:00:00.000Z'
-  assertEquals(withMayWaitDecidedAt({ tier: 'call_today', may_wait: true }, at), { tier: 'call_today', may_wait: true, may_wait_decided_at: at })
-  assertEquals(withMayWaitDecidedAt({ may_wait: null }, at), { may_wait: null, may_wait_decided_at: at })
-  assertEquals(withMayWaitDecidedAt({ may_wait: false }, at), { may_wait: false, may_wait_decided_at: at })
-  // No decision in the write: the stamp stays where the last decision left it.
-  assertEquals(withMayWaitDecidedAt({ error: 'boom' }, at), { error: 'boom' })
-  assertEquals(withMayWaitDecidedAt({ status: 'pending', may_wait: undefined }, at), { status: 'pending', may_wait: undefined })
 })

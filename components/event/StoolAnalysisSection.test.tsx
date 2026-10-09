@@ -1222,7 +1222,8 @@ describe('StoolAnalysisSection — call today\'s wait line (CUL-1629)', () => {
     mockRow = waitRow();
     const view = render(<StoolAnalysisSection eventId="s-wait" petId="pet-1" petName="Rex" hasPhoto />);
     await view.findByText('Call your vet today');
-    expect(view.queryByText(/^Call your vet first thing tomorrow, or an emergency clinic tonight /)).toBeTruthy();
+    // Wait for the line: it lands after the fresh re-read answers (an async gate).
+    expect(await view.findByText(/^Call your vet first thing tomorrow, or an emergency clinic tonight /)).toBeTruthy();
     expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeNull();
   });
 

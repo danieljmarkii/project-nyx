@@ -1,49 +1,57 @@
-# Engines v3 PR-27l: may_wait stamps when the leave was decided (migration 094)
+# Engines v3 PR-27l: may_wait stamps when the leave was first granted (migration 094)
 
 **Date:** 2026-10-09
 
-Dispatched build of CUL-1707, shipped via #1135. **094 is unapplied.** Applying it takes the PM's typed `apply 094`. This PR merges only after that, because the server writer names the new column and PostgREST fails any write that names an unknown one. The PM chose **A** (one PR: migration, server writer and phone together) over splitting the schema into its own PR.
+Dispatched build of CUL-1707, shipped via #1135.
 
-**The gap (CUL-1629, PR-27f's adversarial finding 1).** "First thing tomorrow" covers one night, ending at the first local 6 AM after the decision. The phone had no decision time. `updated_at` moves on every write, a Hide or Show included, so PR-27f bounded the night by min(`updated_at`, the incident's time). That bound is safe, but it ends a late read of an older vomit before its night.
+**094 is unapplied.** Applying it takes the PM's typed `apply 094`. This PR merges only after that, because the phone selects the new column. No Edge Function changes, so merging deploys nothing.
+
+PM rulings:
+- **Go A:** one PR, not a schema-only split.
+- **Ruling A** on the re-read residual: the stamp is set once, by a database trigger.
+
+**The gap (CUL-1629, PR-27f's adversarial finding 1).** "First thing tomorrow" covers one night, ending at the first local 6 AM after the decision. The phone had no decision time. `updated_at` moves on every write, a Hide or a Show included. So PR-27f bounded the night by min(`updated_at`, the incident's time). That bound is safe, but it ends a late read of an older vomit before its night has run.
+
+**First draft, and why it changed.** The first draft stamped the time of every server write that carried `may_wait`, through a writer helper at the five write sites. Both reviews returned HOLDS on its invariant (no stamp newer than its TRUE). Both also found the same residual: the server's predicate never reads an incident's age, so a second read of an old call-today vomit re-stamped it and started a fresh night that PR-27f's bound used to refuse. The PM ruled A, and the helper and its scans were reverted.
 
 **What shipped.**
-- **Migration 094.** Adds `event_ai_analysis.may_wait_decided_at timestamptz` (nullable, no default, no backfill). The freeze is re-stated as 088's body plus one line, so no client can move the stamp.
-- **`withMayWaitDecidedAt`** (`_shared/incidentMayWait.ts`) stamps the write's time only when the write carries a `may_wait` key. It is applied at all five server writes of `may_wait`:
-  - `updateAnalysisRow`
-  - the write-back upsert
-  - the failure upsert
-  - the capped branch's lower
-  - `revalidateMayWait`
-- **The rule it keeps.** A TRUE is written only on a fresh passing verdict, and a write without `may_wait` never moves the stamp. So the stamp is never newer than the TRUE beside it. A miss leaves an older stamp or none, and both end the night sooner.
-- **The phone** (`lib/mayWaitLine.ts`, `leaveDecidedAt`):
-  - With a stamp, the night starts at min(stamp, `updated_at`), so a skewed stamp cannot lengthen it.
-  - With no stamp, PR-27f's bound stands.
-  - A stamp that is present but won't parse refuses the wait.
-  - The column joins the two analysis sections' one select.
-- **Guards:**
+- **Migration 094.**
+  - Adds `event_ai_analysis.may_wait_decided_at timestamptz`: nullable, no default, no backfill.
+  - Adds the trigger `trg_event_ai_analysis_stamps_may_wait_once`. It fires BEFORE INSERT OR UPDATE and runs INVOKER, with `search_path` pinned and client EXECUTE revoked.
+    - It stamps `now()` on the first transition to TRUE.
+    - It keeps any stamp it finds, against every role.
+    - It never stamps a TRUE that already stood before the migration.
+  - The freeze is 088's body plus one line. It fires before the stamp trigger (name order), so a client's attempt to move the stamp is refused loudly (42501).
+- **Phone** (`lib/mayWaitLine.ts`, `leaveDecidedAt`).
+  - With a stamp, the night starts at min(stamp, `updated_at`).
+  - With no stamp, PR-27f's bound applies.
+  - A stamp that won't parse refuses the wait.
+  - The column joins the analysis sections' one select.
+- **Guards.**
+  - `guards/mayWaitDecidedAt.test.ts` (new) pins:
+    - the four branches, and their order;
+    - the trigger's timing;
+    - the firing order against the freeze, 088's owner-edit lower and `updated_at`;
+    - that no Edge Function names the column.
   - `incidentReadFreeze.test.ts` adds the column to `SERVER_OWNED`.
-  - A new Deno scan checks that every `event_ai_analysis` write under `supabase/functions` either routes through the helper or writes a literal with no `may_wait`. Its floor is four call sites in `incident-analysis.ts` and one in `incidentMayWaitEvidence.ts`.
-  - CUL-1323's read-words scan now unwraps the helper.
 
 **Proofs.**
-- Unwrapping `revalidateMayWait`'s write turns the new scan red.
-- In `leaveDecidedAt`, putting the incident back into the min turns the three stamp tests red, and dropping the `updated_at` clamp turns the skew test red.
-- `lib/mayWaitLine` passes in Kiritimati, Chatham, Honolulu and New York.
-- `deno check` and the `_shared` Deno suites are green (330 tests).
-- `tsc` is clean.
+- **Scratch Postgres 16**, 094 applied over 088's freeze and 075's `updated_at`. Nine cases held:
+  - an insert of TRUE stamps; an insert of NULL does not;
+  - a writer that names the column is overridden;
+  - a re-read that keeps TRUE leaves the stamp unmoved;
+  - lowering and then raising again keeps the first stamp;
+  - NULL → TRUE stamps, never later than `updated_at`;
+  - a TRUE written before 094 is never stamped, by a Hide or by a TRUE → TRUE write;
+  - FALSE stays unstamped;
+  - a client moving the stamp forward or to NULL gets 42501, while a client Hide or lower passes with the stamp kept;
+  - the posture checks out (INVOKER, pinned, no client EXECUTE).
+- **Mutants.** Dropping the "keep" branch turns P3 and P4 red. Dropping the transition condition turns P6 red. Each guard was also proven by mutation.
+- **Phone.** The re-read test ("next evening keeps the first grant") passes. `lib/mayWaitLine` passes in Kiritimati, Chatham, Honolulu and New York. `tsc` is clean.
 
-**Reviews.** The adversarial review and the rls-privacy-reviewer (with a Postgres 16 probe) both returned **HOLDS**:
-- No server path leaves a TRUE beside a newer stamp.
-- No client route moves the stamp.
-- 094's freeze is 088's body plus one line.
+**A test race found on the way.** The "stored TRUE at 10 PM" tests, vomit and stool, asserted the wait line synchronously after an unrelated `findByText`. That raced the async fresh re-read, and the run failed 2 of 5 times under the added guard's load. Both now `await findByText` the line itself.
 
-Both found the same residual: the stamp records the latest decision, so a re-read of an old call-today incident that passes again starts a fresh night, which PR-27f's incident bound used to refuse.
-
-**Open:** that ruling is with the PM on CUL-1707. Options:
-- **(a) recommended:** the stamp is set once, by a database trigger;
-- **(b):** accept a re-read as a new decision;
-- **(c):** always keep the incident bound.
-
-Minor findings, held until the ruling settles the shape:
-- The stamp is the write's time, a moment after the verdict (finding B; (a) closes it).
-- The helper's comment names the wrong test file as the one that pins its call sites (finding C).
+**Stated blind spots (in 094's header).**
+- A row that is deleted and re-created loses its first stamp. No app path does this.
+- A TRUE from before 094, lowered and then raised, is stamped at the raise.
+- The stamp is the write's transaction start, a moment after the verdict.

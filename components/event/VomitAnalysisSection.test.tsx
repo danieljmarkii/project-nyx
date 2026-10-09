@@ -1881,7 +1881,9 @@ describe('VomitAnalysisSection — call today\'s wait line (CUL-1629)', () => {
     mockRow = waitRow();
     const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
     await view.findByText('Call your vet today');
-    expect(view.queryByText(/^Call your vet first thing tomorrow, or an emergency clinic tonight /)).toBeTruthy();
+    // The wait line lands after the fresh re-read answers (an async gate), so wait for it rather
+    // than racing it: under a loaded run the assertion could land a tick before the answer.
+    expect(await view.findByText(/^Call your vet first thing tomorrow, or an emergency clinic tonight /)).toBeTruthy();
     expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeNull();
   });
 

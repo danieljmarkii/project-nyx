@@ -31,10 +31,12 @@
 //              (PR-27h's finding 1), so only the render can re-check it.
 //   expired    the leave covers ONE night, and ends at the first local 6 AM after the decision.
 //              A morning that has come is the "first thing" the line promised; past it the line
-//              would offer a second night nobody decided. The decision is the server's stamp,
-//              `may_wait_decided_at` (094, PR-27l, CUL-1707), read never later than `updated_at`,
-//              so a skewed stamp cannot lengthen the night. A row with no stamp (written before
-//              094) keeps PR-27f's bound, the EARLIER of `updated_at` and the incident: every write
+//              would offer a second night nobody decided. The decision is the database's stamp,
+//              `may_wait_decided_at` (094, PR-27l, CUL-1707): the time `may_wait` FIRST became
+//              TRUE on the row, set once by a trigger and never moved, so a re-read of an old
+//              incident cannot start a fresh night (PM ruling A). Read never later than
+//              `updated_at`. A row with no stamp (no TRUE since 094) keeps PR-27f's bound, the
+//              EARLIER of `updated_at` and the incident: every write
 //              moves `updated_at` (075), a Hide or a Show included, and 088 does not take the leave
 //              back on one, so without the incident a hide tapped open the next morning would
 //              re-open the night (PR-27f's adversarial pass, finding 1). A stamp that is present
@@ -124,7 +126,8 @@ export interface MayWaitRow {
   edited_at?: string | null;
   error?: string | null;
   updated_at?: string | null;
-  /** When the server decided `may_wait` (094); absent or null on a row written before it. */
+  /** When `may_wait` first became TRUE on the row, set once by the database (094); absent or
+   *  null on a row with no TRUE since. */
   may_wait_decided_at?: unknown;
   photo_set_key?: string | null;
   ai_raw_payload?: unknown;
@@ -299,7 +302,7 @@ export function catIntakeRefuses(anchorMs: number, facts: MayWaitFacts, nowMs: n
 
 // ── The clock ────────────────────────────────────────────────────────────────────────────────
 
-/** When the night the leave covers starts counting (the `expired` gate): the server's decision
+/** When the night the leave covers starts counting (the `expired` gate): the first grant's
  *  stamp, never later than `updated_at`; with no stamp, the earlier of `updated_at` and the
  *  incident (PR-27f's bound). NaN, which refuses, when a time it needs does not parse. */
 export function leaveDecidedAt(row: MayWaitRow, anchorMs: number): number {
