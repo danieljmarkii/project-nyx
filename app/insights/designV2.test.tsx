@@ -19,7 +19,7 @@ jest.mock('../../lib/sync', () => ({
   syncPendingFeedingArrangements: jest.fn(),
 }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
-jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false }));
+jest.mock('../../hooks/useAppConfig', () => ({ useAllowlistFlag: () => false, useAllowlistFlagsRaw: () => ({}) }));
 jest.mock('../../lib/betaFeatures', () => ({ useBetaOptIn: () => false }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
