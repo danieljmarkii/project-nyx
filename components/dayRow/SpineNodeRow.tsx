@@ -713,8 +713,8 @@ export function SpineCompactRow({
  * `values.lead`): as the lead grows out of the bead (0 to 80ms, linear) the back beads slide
  * up under the front one, and as the lead retracts (200 to 280ms) they slide back out; a
  * reversal turns them round with the line. Under Reduce Motion nothing slides: the stack
- * crossfades against the line (`values.line`), out as the line fades in and back as it
- * fades out, and at rest closed it is simply there.
+ * crossfades against the line (`values.line`, gated by the lead), out as the line fades in
+ * and back as it fades out, and at rest closed it is simply there.
  */
 function RunStack({
   nodeId,
@@ -732,7 +732,11 @@ function RunStack({
   const back = runStackBeads(count) - 1;
   if (back < 1) return null;
   const { lead, line } = motion.values;
-  const faded = reducedMotion && motion.phase !== 'closed';
+  // Reduce Motion's fade reads the line AND the lead, never the render's phase: the lead sits
+  // at 1 for the whole Reduce Motion open and close and drops to 0 in the same native write
+  // that pins the line back to 1 at the close's end, so the stack never reads "hidden" in the
+  // frame before the phase commits `closed` (a blink the phase alone let through, the review).
+  const hidden = Animated.multiply(line, lead);
   return (
     <View
       pointerEvents="none"
@@ -758,7 +762,7 @@ function RunStack({
                 borderWidth: bead.ringWidth,
                 backgroundColor: bead.fill,
                 borderColor: bead.ring,
-                opacity: faded ? line.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) : 1,
+                opacity: reducedMotion ? hidden.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) : 1,
                 transform: [
                   { translateY: reducedMotion ? fanned : lead.interpolate({ inputRange: [0, 1], outputRange: [fanned, 0] }) },
                 ],

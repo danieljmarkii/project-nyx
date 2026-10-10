@@ -1168,4 +1168,22 @@ describe('the stack: a folded run carries "several", and only that (CUL-1736, D4
     expect(stackBeads(t).map(translateOf)).toEqual([8, 4]);
     expect(stackBeads(t).map(opacityOf)).toEqual([1, 1]);
   });
+
+  it('Reduce Motion: no blink as a close lands — the line pinned back before the phase commits never hides the stack', () => {
+    mockUseReducedMotion.mockReturnValue(true);
+    const t = render(<InPlace node={run(3)} initial />);
+    const animatedBeads = t.UNSAFE_root.findAll(
+      (n: Instance) => typeof n.type !== 'string' && /^spine-run-stack-bead-compact:m0-/.test(n.props.testID ?? ''),
+    );
+    const opacityNode = (StyleSheet.flatten(animatedBeads[0].props.style) as { opacity: { __getValue: () => number } }).opacity;
+    expect(opacityNode.__getValue()).toBe(0);
+    // The close's last write, `rest(false)`, before React commits `closed`: the lead to 0 and
+    // the line back to 1 in one tick, with the render still in its open phase.
+    const [leadView] = t.UNSAFE_root.findAll(
+      (n: Instance) => typeof n.type !== 'string' && n.props.testID === 'spine-run-lead-compact:m0',
+    );
+    const leadScale = (StyleSheet.flatten(leadView.props.style).transform as { scaleY: Animated.Value }[])[0].scaleY;
+    leadScale.setValue(0);
+    expect(opacityNode.__getValue()).toBe(1);
+  });
 });
