@@ -153,7 +153,11 @@ Deno.test('template-only: validatePhrasing refuses every model sentence, even on
 
 Deno.test('the template-only list in index.ts names weight_loss (saves the model call)', async () => {
   const src = await Deno.readTextFile(new URL('./index.ts', import.meta.url))
-  assert.ok(/finding\.type === 'weight_loss'\s*\n?\s*\)\s*\{\s*\n\s*return fallback/.test(src))
+  // Inside the template-only `if (...) { return fallback }`, last or followed by another clause
+  // (PR-30s added I5's after it).
+  const list = src.slice(src.indexOf("finding.type === 'reflection' ||"))
+  const block = list.slice(0, list.indexOf('return fallback'))
+  assert.ok(/finding\.type === 'weight_loss'\s*(\|\||\n?\s*\)\s*\{)/.test(block))
 })
 
 Deno.test('a carried weight card renders with its tier ask, and only its exact template passes', () => {
