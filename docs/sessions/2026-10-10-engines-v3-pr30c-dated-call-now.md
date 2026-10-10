@@ -9,7 +9,7 @@ CUL-1739, a `/dispatch` child, plan-gated. Shipped via #1156.
 
 - **The rule (PM ruling A).** A new-rule call now says "now" for 24 hours from when it was *said*. After that, Home's row, the cross-pet banner, the Signal screen's sentence and evidence, Home's arrival speech, and the record's card (vomit and stool) quote the call with its day: "On Oct 3, the read said: call your vet now". The card keeps its 14-day window, its rose and its place. There is no haptic. Call-today and earlier-rule cards are byte-identical.
 - **When the 24 hours start (ruling 1a).** "Said" is the later of the event and the read row's last write. generate-signal reads `event_ai_analysis.updated_at` (as `writtenAt`) and emits `tierReadIso`, the freshest said-at over the card's tier. The record uses its own row. A card cached before this change has no `tierReadIso` and keeps "now".
-- **The banner (rulings (a) and 2a).** In its first day, a call now leads, as PR-30a built it. After that it ranks 0.5: just under a live red flag, above intake decline. If a later call today exists, the banner says that call instead.
+- **The banner (rulings (a), 2a and B).** In its first day, a call now leads, as PR-30a built it. After that it ranks 0.5: just under a live red flag, above intake decline. It ranks with a live red flag when a later call today exists, by event order or by write order. It always keeps its own dated words; under ruling B it never steps down to the call today.
 - **The words.** `lib/callNowDated.ts` holds the one 24-hour check, `callNowSaidAt`, `localCallDay` and the dated strings, all built from `TIER_WORDS`. Every dated day is the phone's local day. The record's action line reads: "If you haven't spoken to your vet since, call them now. If they're closed, call an emergency clinic."
 
 ## Decisions
@@ -17,6 +17,7 @@ CUL-1739, a `/dispatch` child, plan-gated. Shipped via #1156.
 - **24 hours, not the local day.** A local-day rule would date an 11:40 pm call twenty minutes later. That reads calmer than "now" inside its first day.
 - **Said-at, not the event (1a, PM).** A re-floor raised a 25-hour-old vomit to call now. Dated by the event, it showed dated on first render, and "since Oct 8" excused an owner who had called before the lethargy.
 - **The banner refines ruling (a) (2a, PM).** At an equal rank, a dated call now could hide a fresh call today in the other family, or on the same card.
+- **Loud-only (B, PM).** `updated_at` moves on writes unrelated to the call, so it may raise a rank and never decides a word. A dedicated stamp is the follow-up (CUL-1754).
 - **Local day for every dated form (second pass).** East of UTC, a UTC day can name the day before the owner was told, which is the excusal direction. Home's photo eyebrow keeps its UTC day.
 
 ## Falsification
@@ -49,7 +50,13 @@ CUL-1739, a `/dispatch` child, plan-gated. Shipped via #1156.
   - Every date on the row is local.
 
   Proven by mutation (1 red).
-- **Pass 5:** see the outcome comment on CUL-1739.
+- **Pass 5: PASS** (scoped to ruling B). It retried:
+  - the Hide on the call-now row (it restarts "now", loud);
+  - a Hide or the 089 take-back on the call-today row (the rank can only rise, the words stay put);
+  - a re-floor (a full first day from the write);
+  - call-today words standing where a call now stands (none);
+  - a word built from `callTodaySaidIso` (none);
+  - the first-day rank (always −1, as on main).
 - **Named residuals (all loud, accepted under ruling B):**
   - a Hide, an edit or a failed re-read restarts "now" for a day and dates the call to that day (false, but it asks for more calling, never less);
   - in the late-raised case the row can read "on Oct 10, the read said: call your vet now · A later read on Oct 8 says call today";
@@ -71,3 +78,4 @@ CUL-1739, a `/dispatch` child, plan-gated. Shipped via #1156.
 ## Filed
 
 - CUL-1749: a call today says "today" for its whole window (needs its own ruling).
+- CUL-1754: a dedicated `call_said_at` stamp, so the dated form never borrows `updated_at` (needs a migration).
