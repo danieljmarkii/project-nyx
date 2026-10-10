@@ -55,6 +55,13 @@
 --   · `contextual_flags` is not in the client freeze (it never was); a client
 --     write of it would move this stamp LATER, the loud side. No app path writes
 --     it. Freezing it is a separate change.
+--   · `recommendation` is not in the client freeze either (075's older hole). On a
+--     legacy level-1 row (no tier, `worth_a_call`) a client write of it can clear the
+--     stamp (readers then fall back to `updated_at`) or re-stamp it now(): later, the
+--     loud side. It cannot touch a call now, whose level needs the frozen `tier`.
+--   · The level is a closed CASE over today's tier values (079's CHECK). A migration
+--     that widens the tier CHECK must update this function and the guard's pinned body
+--     in the same file, or the new value ranks 0 and its stamp clears (loud fallback).
 --   · A row deleted and re-created stamps afresh (094's note; no app path deletes).
 --
 -- NO DEFAULT, NO BACKFILL, deliberately: an old call's said-at is unknowable, and
@@ -91,6 +98,9 @@
 --       public.freeze_event_ai_analysis_stamps() and its three REVOKEs verbatim;
 --     ALTER TABLE public.event_ai_analysis DROP COLUMN call_said_at;
 --     COMMIT;
+--     The order is load-bearing: plpgsql records no dependency, so dropping the column
+--     before restoring the freeze succeeds silently and then every client UPDATE (a
+--     Hide, an edit) fails with "record new has no field call_said_at".
 --     The code PR that reads the column (CUL-1754 PR 2) must be reverted or held
 --     first: generate-signal and both analysis sections select it.
 --   Backfill:     N/A, deliberately (see above).
