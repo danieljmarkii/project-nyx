@@ -2386,6 +2386,10 @@ const BANNER_SAFETY_PRIORITY: Record<
  *  `refused_then_vomited` card (PR-30s) sits below the burden card and above chronicity, so a
  *  "call your vet today" pet always takes the banner from a "mention it to your vet" one. */
 function bannerRankOf(f: BannerSafetyFinding): number {
+  // Engines v3 PR-30a (CUL-1511): a new-rule "call your vet now" takes the banner from every other
+  // pet's finding, a call today's included, so the household's loudest ask is never the one a
+  // pet's place in the list hides. Every other red flag keeps its shipped rank.
+  if (f.type === 'incident_red_flag' && incidentCallOf(f) === 'call_now') return -1;
   if (f.type === 'intake_decline' && f.trigger === 'refused_then_vomited') return 2.5;
   return BANNER_SAFETY_PRIORITY[f.type];
 }
