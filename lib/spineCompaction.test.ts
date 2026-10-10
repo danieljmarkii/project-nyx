@@ -11,7 +11,17 @@
 // TIMEZONE HONESTY (C-29): every instant is an offset from one UTC anchor and the rule
 // only ever compares instants, so nothing here depends on the runner's zone.
 
-import { compactSpine, isCompactable, sameRun, sortChronological, type CompactableNode } from './spineCompaction';
+import {
+  BEFORE_VOMIT_WINDOW_MINUTES,
+  compactSpine,
+  eatenBeforeVomit,
+  isCompactable,
+  sameRun,
+  sortChronological,
+  type CompactableNode,
+  type VomitSpan,
+} from './spineCompaction';
+import { DEFAULT_MEAL_TIMING_CONFIG } from './mealTiming';
 import type { EventTintCategory } from './dayEvents';
 
 const BASE = Date.parse('2026-09-17T05:00:00Z');
@@ -40,6 +50,7 @@ function node(
     noted: false,
     vehicle: false,
     timed: false,
+    beforeVomit: false,
     approximate: false,
     ...over,
   };
@@ -180,12 +191,13 @@ describe('rule B — a run joins meals of one product eaten normally, and nothin
     expect(lines(groups)).toEqual([['a', 'b', 'c']]);
   });
 
-  it('a photographed, noted, vehicle, timed or approximate meal is its own row, and splits the run it sat in', () => {
+  it('a photographed, noted, vehicle, timed, before-vomit or approximate meal is its own row, and splits the run it sat in', () => {
     const breaks: Partial<CompactableNode>[] = [
       { hasPhoto: true },
       { noted: true },
       { vehicle: true },
       { timed: true },
+      { beforeVomit: true },
       { approximate: true },
     ];
     for (const over of breaks) {
@@ -311,7 +323,9 @@ describe('compactSpine — properties over 400 random days', () => {
       for (const n of g.nodes) {
         expect([null, 'most', 'all']).toContain(n.intake);
         expect(n.product).not.toBeNull();
-        expect([n.hasPhoto, n.noted, n.vehicle, n.timed, n.approximate]).toEqual([false, false, false, false, false]);
+        expect([n.hasPhoto, n.noted, n.vehicle, n.timed, n.beforeVomit, n.approximate]).toEqual([
+          false, false, false, false, false, false,
+        ]);
       }
     }
 
@@ -394,5 +408,78 @@ describe('compactSpine — breaks over 400 random days', () => {
   it('the floor: the sweep holds days whose breaks actually split a run', () => {
     const split = days.filter(({ day, breaks }) => JSON.stringify(compactSpine(day, breaks)) !== JSON.stringify(compactSpine(day)));
     expect(split.length).toBeGreaterThanOrEqual(20);
+  });
+});
+
+// ── CUL-1737: a meal eaten within the window before ANY vomit keeps its own row ──
+describe('eatenBeforeVomit — the window, its ends and its source', () => {
+  const v = (h: number, m: number): VomitSpan => ({ fromMs: at(h, m), toMs: at(h, m) });
+
+  it('mirrors the timing lane’s rapid band, the source it names (C-34)', () => {
+    expect(BEFORE_VOMIT_WINDOW_MINUTES).toBe(DEFAULT_MEAL_TIMING_CONFIG.rapidWindowMinutes);
+    expect(BEFORE_VOMIT_WINDOW_MINUTES).toBe(30);
+  });
+
+  it('30:00 before is inside (inclusive), 30:01 before is outside', () => {
+    const vomit = at(13, 30);
+    expect(eatenBeforeVomit(vomit - 30 * MIN, [v(13, 30)])).toBe(true);
+    expect(eatenBeforeVomit(vomit - 30 * MIN - 1000, [v(13, 30)])).toBe(false);
+  });
+
+  it('a meal at the vomit’s own instant is inside; one after a point vomit never is', () => {
+    expect(eatenBeforeVomit(at(13, 30), [v(13, 30)])).toBe(true);
+    expect(eatenBeforeVomit(at(13, 31), [v(13, 30)])).toBe(false);
+  });
+
+  it('a found vomit’s span runs from the window before its earliest bound to its latest', () => {
+    const found: VomitSpan = { fromMs: at(9, 0), toMs: at(13, 30) };
+    expect(eatenBeforeVomit(at(8, 30), [found])).toBe(true);
+    expect(eatenBeforeVomit(at(8, 29), [found])).toBe(false);
+    expect(eatenBeforeVomit(at(11, 0), [found])).toBe(true);
+    expect(eatenBeforeVomit(at(13, 30), [found])).toBe(true);
+    expect(eatenBeforeVomit(at(13, 31), [found])).toBe(false);
+  });
+
+  it('no vomit, no break', () => {
+    expect(eatenBeforeVomit(at(8, 0), [])).toBe(false);
+  });
+});
+
+describe('compactSpine — a meal within the window before any vomit is never inside a run, over 400 random days', () => {
+  const rng = lcg(0x1737);
+  const days = Array.from({ length: 400 }, (_, d) => {
+    // Plain meals of one product on a 5-minute grid, so meals land on both sides of a 30-min
+    // boundary; a vomit or two (some found, with a window), placed among them.
+    const meals = Array.from({ length: 2 + Math.floor(rng() * 7) }, (_x, i) =>
+      at(0, Math.floor(rng() * 24 * 12) * 5),
+    ).map((t, i) => ({ id: `m${d}-${i}`, t }));
+    const vomits: VomitSpan[] = Array.from({ length: 1 + Math.floor(rng() * 2) }, () => {
+      const t = at(0, Math.floor(rng() * 24 * 12) * 5);
+      return rng() < 0.3 ? { fromMs: t - Math.floor(rng() * 24) * 5 * MIN, toMs: t } : { fromMs: t, toMs: t };
+    });
+    // The fact through the SHIPPED helper, the way `runFactsOf` derives it.
+    const nodes = [
+      ...meals.map(({ id, t }) => bowl(id, t, { beforeVomit: eatenBeforeVomit(t, vomits) })),
+      ...randomDay(rng).filter((n) => n.category !== 'meal').map((n) => ({ ...n, day: 0, id: `x${d}-${n.id}` })),
+    ];
+    return { nodes, vomits };
+  });
+
+  it.each(days.map((d, i) => [i, d] as const))('day %i', (_i, { nodes, vomits }) => {
+    const W = BEFORE_VOMIT_WINDOW_MINUTES * MIN;
+    // Stated from the raw instants and the shipped constant, not from the fact.
+    const inWindow = (t: number) => vomits.some((v) => v.fromMs - W <= t && t <= v.toMs);
+    for (const g of compactSpine(nodes)) {
+      if (g.kind !== 'compact') continue;
+      for (const n of g.nodes) expect(inWindow(n.timeMs)).toBe(false);
+    }
+  });
+
+  it('the floor: the sweep holds days where a meal in the window would otherwise have joined a run', () => {
+    const bites = days.filter(({ nodes }) => {
+      const cleared = nodes.map((n) => ({ ...n, beforeVomit: false }));
+      return JSON.stringify(compactSpine(cleared)) !== JSON.stringify(compactSpine(nodes));
+    });
+    expect(bites.length).toBeGreaterThanOrEqual(50);
   });
 });

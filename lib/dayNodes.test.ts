@@ -28,7 +28,7 @@
 jest.mock('./supabase', () => ({ supabase: { from: jest.fn() } }));
 
 import { buildDay, buildDayNodes, type DayEvent, type DayNodeFacts } from './dayNodes';
-import { buildSpine, type SpineAnalysisRow, type SpineInput } from './spineNode';
+import { buildSpine, vomitSpanOf, type SpineAnalysisRow, type SpineInput } from './spineNode';
 import { DEFAULT_MEAL_TIMING_CONFIG, type MealTimingConfig } from './mealTiming';
 
 const BASE = new Date(2026, 8, 17, 0, 0, 0, 0).getTime();
@@ -109,6 +109,7 @@ function asSpineInput(events: readonly DayEvent[], { reads, timings }: DayNodeFa
     config: timings.config,
     timedElsewhere: timings.timedElsewhere,
     runBreaks: timings.runBreaks,
+    vomitsElsewhere: timings.vomitsElsewhere,
   };
 }
 
@@ -272,6 +273,7 @@ const WITHOUT = {
   config: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, config: undefined } }),
   timedElsewhere: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, timedElsewhere: undefined } }),
   runBreaks: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, runBreaks: undefined } }),
+  vomitsElsewhere: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, vomitsElsewhere: undefined } }),
 };
 type Fact = keyof typeof WITHOUT;
 
@@ -349,6 +351,13 @@ const WITNESSES: Witness[] = [
     why: 'a 9:00 AM look History draws between the 6:20 and 10:45 AM meals keeps them two rows (CUL-1719)',
     day: timedDay([row('wb-m2', 'meal', 10, 45, PR), row('wb-m1', 'meal', 6, 20, PR)], { runBreaks: [at(9, 0)] }),
   },
+  {
+    fact: 'vomitsElsewhere',
+    why: 'an 11:50 PM bowl before a 12:10 AM vomit on the next card keeps its own row (CUL-1737)',
+    day: timedDay([row('wv-m2', 'meal', 23, 50, PR), row('wv-m1', 'meal', 22, 0, PR)], {
+      vomitsElsewhere: [{ fromMs: at(24, 10), toMs: at(24, 10) }],
+    }),
+  },
 ];
 
 /** Every day the equality runs over: each witness day once, then the random ones. */
@@ -425,5 +434,128 @@ describe('CUL-1719 — a look between a run’s members in time breaks the run',
       timings: { feedings: three.map(feedingOf), freeFedSpans: [], runBreaks: [at(12, 0)] },
     });
     expect(nodes.map((n) => (n.kind === 'compact' ? n.ids : n.id))).toEqual([['c-m1', 'c-m2'], 't-m3']);
+  });
+});
+
+// ── CUL-1737: a meal eaten within 30 minutes before ANY vomit keeps its own row ──────
+// The timing anchor covers only a witnessed episode opener with a feeding before it, so a
+// meal minutes before a found vomit, the second vomit of a bout, or a vomit in a free-fed
+// span folded into the run above the vomit. Through `buildDay`, the one pipeline Home and
+// History call; instants are offsets from LOCAL midnight (B-514), so each day is one day in
+// every zone the non-UTC job runs.
+describe('CUL-1737 — a meal within 30 minutes before any vomit is never folded into a run', () => {
+  const NO_READS = { photographed: new Set<string>(), analysis: new Map(), working: new Set<string>() };
+  const shape = (rows: DayEvent[], timings: Partial<DayNodeFacts['timings']> = {}) =>
+    buildDayNodes(rows, {
+      reads: NO_READS,
+      timings: { feedings: rows.filter((r) => r.event_type === 'meal').map(feedingOf), freeFedSpans: [], ...timings },
+    }).map((n) => (n.kind === 'compact' ? n.ids : n.id));
+  const found = (id: string, h: number, m: number, earliest?: [number, number]) =>
+    row(id, 'vomit', h, m, {
+      occurred_at_confidence: 'window',
+      occurred_at_earliest: earliest ? iso(earliest[0], earliest[1]) : null,
+      occurred_at_latest: iso(h, m),
+    });
+
+  it('the mock’s day: 8:00 AM and 12:30 PM share a line, the 1:05 PM meal stands alone, then the vomit found at 1:30', () => {
+    const day = [found('v', 13, 30), row('m3', 'meal', 13, 5, PR), row('m2', 'meal', 12, 30, PR), row('m1', 'meal', 8, 0, PR)];
+    expect(shape(day)).toEqual([['m1', 'm2'], 'm3', 'v']);
+  });
+
+  it('the second vomit of a bout (never timed): the meal 20 minutes before it is its own row', () => {
+    const day = [
+      row('v2', 'vomit', 11, 0),
+      row('b3', 'meal', 10, 40, PR),
+      row('b2', 'meal', 10, 20, PR),
+      row('b1', 'meal', 10, 0, PR),
+      row('v1', 'vomit', 9, 10),
+      row('a1', 'meal', 9, 0, PR),
+    ];
+    // v1 opens the bout and is timed from a1; v2 is inside the episode gap, so no line.
+    const nodes = buildDayNodes(day, {
+      reads: NO_READS,
+      timings: { feedings: day.filter((r) => r.event_type === 'meal').map(feedingOf), freeFedSpans: [] },
+    });
+    const v2 = nodes.find((n) => n.kind === 'event' && n.id === 'v2');
+    expect(v2?.kind === 'event' ? v2.timing : 'missing').toBeNull();
+    expect(shape(day)).toEqual(['a1', 'v1', ['b1', 'b2'], 'b3', 'v2']);
+  });
+
+  it('a vomit in a free-fed span (never timed): the meal before it in the window is its own row', () => {
+    const day = [row('v', 'vomit', 12, 45), row('m3', 'meal', 12, 30, PR), row('m2', 'meal', 11, 30, PR), row('m1', 'meal', 11, 0, PR)];
+    const span = [{ fromMs: at(10, 0), untilMs: at(14, 0) }];
+    const nodes = buildDayNodes(day, {
+      reads: NO_READS,
+      timings: { feedings: day.filter((r) => r.event_type === 'meal').map(feedingOf), freeFedSpans: span },
+    });
+    const v = nodes.find((n) => n.kind === 'event' && n.id === 'v');
+    expect(v?.kind === 'event' ? v.timing : 'missing').toBeNull();
+    expect(shape(day, { freeFedSpans: span })).toEqual([['m1', 'm2'], 'm3', 'v']);
+  });
+
+  it('a found vomit with a window: every meal from 30 minutes before its earliest bound to its latest is its own row', () => {
+    // Found at 11:00, last seen fine at 9:20: the span is 8:50 – 11:00.
+    const day = [
+      row('m6', 'meal', 11, 30, PR),
+      found('v', 11, 0, [9, 20]),
+      row('m5', 'meal', 10, 30, PR),
+      row('m4', 'meal', 9, 0, PR),
+      row('m3', 'meal', 8, 50, PR),
+      row('m2', 'meal', 8, 0, PR),
+      row('m1', 'meal', 7, 0, PR),
+    ];
+    expect(shape(day)).toEqual([['m1', 'm2'], 'm3', 'm4', 'm5', 'v', 'm6']);
+  });
+
+  it('a found vomit with no earliest bound counts from its recorded time alone', () => {
+    const day = [found('v', 11, 0), row('m3', 'meal', 10, 30, PR), row('m2', 'meal', 10, 29, PR), row('m1', 'meal', 9, 0, PR)];
+    expect(shape(day)).toEqual([['m1', 'm2'], 'm3', 'v']);
+  });
+
+  it('30:00 before is inside the window: that meal keeps its row', () => {
+    const day = [found('v', 13, 0), row('m3', 'meal', 12, 30, PR), row('m2', 'meal', 11, 30, PR), row('m1', 'meal', 11, 0, PR)];
+    expect(shape(day)).toEqual([['m1', 'm2'], 'm3', 'v']);
+  });
+
+  it('30:01 before is outside: that meal joins the run above the vomit', () => {
+    const day = [
+      found('v', 13, 0),
+      row('m3', 'meal', 12, 29 + 59 / 60, PR),
+      row('m2', 'meal', 11, 30, PR),
+      row('m1', 'meal', 11, 0, PR),
+    ];
+    expect(shape(day)).toEqual([['m1', 'm2', 'm3'], 'v']);
+  });
+
+  it('a meal after a seen vomit is not on this rule', () => {
+    const day = [row('m3', 'meal', 14, 0, PR), row('m2', 'meal', 13, 10, PR), row('v', 'vomit', 13, 0), row('m1', 'meal', 9, 0, PR)];
+    expect(shape(day)).toEqual(['m1', 'v', ['m2', 'm3']]);
+  });
+
+  it('a later meal inside the window before a TIMED vomit is its own row too, not only the anchor', () => {
+    // Two bowls within 30 minutes of a witnessed vomit: the lane times from the nearer one;
+    // the other folded with breakfast before.
+    const day = [row('v', 'vomit', 13, 0), row('m3', 'meal', 12, 50, PR), row('m2', 'meal', 12, 40, PR), row('m1', 'meal', 8, 0, PR)];
+    expect(shape(day)).toEqual(['m1', 'm2', 'm3', 'v']);
+  });
+
+  it('vomitSpanOf: the span always holds the recorded time, on BOTH sides, and reads only a vomit', () => {
+    const t = at(11, 0);
+    // A found vomit whose bounds sit inside or past its recorded time, or will not parse.
+    expect(vomitSpanOf(found('a', 11, 0, [9, 20]))).toEqual({ fromMs: at(9, 20), toMs: t });
+    expect(vomitSpanOf({ ...found('b', 11, 0), occurred_at_latest: iso(10, 0) })).toEqual({ fromMs: t, toMs: t });
+    expect(vomitSpanOf({ ...found('c', 11, 0), occurred_at_earliest: iso(12, 0) })).toEqual({ fromMs: t, toMs: t });
+    expect(vomitSpanOf({ ...found('d', 11, 0), occurred_at_earliest: 'nope', occurred_at_latest: 'nope' })).toEqual({ fromMs: t, toMs: t });
+    // A seen vomit carrying stray bounds is its instant: only a found one reads its window.
+    expect(vomitSpanOf(row('e', 'vomit', 11, 0, { occurred_at_earliest: iso(9, 0), occurred_at_latest: iso(13, 0) }))).toEqual({ fromMs: t, toMs: t });
+    expect(vomitSpanOf(row('f', 'cough', 11, 0))).toBeNull();
+    expect(vomitSpanOf({ ...row('g', 'vomit', 11, 0), occurred_at: 'nope' })).toBeNull();
+  });
+
+  it('only a vomit: a cough, stool or other symptom in the window leaves the run as it was', () => {
+    for (const type of ['cough', 'diarrhea', 'lethargy']) {
+      const day = [row('x', type, 13, 0), row('m2', 'meal', 12, 50, PR), row('m1', 'meal', 12, 0, PR)];
+      expect(shape(day)).toEqual([['m1', 'm2'], 'x']);
+    }
   });
 });
