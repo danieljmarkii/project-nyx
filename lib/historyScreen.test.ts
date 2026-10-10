@@ -281,6 +281,34 @@ describe('across midnight: an 11:50 PM meal before a 12:10 AM vomit keeps its ro
     expect(idsOf(alone ?? [])).toEqual(['run(e1,e2,e3)']);
   });
 
+  it('the next day NOT loaded (a month window’s edge, a filter, a search): the timing read’s vomit still keeps the bowl out', () => {
+    const spanOf = { fromMs: Date.parse(at(17, 0, 10)), toMs: Date.parse(at(17, 0, 10)) };
+    const withOnset: HistoryDayTiming = { ...timing, onsets: [{ ms: spanOf.fromMs, confidence: 'window', span: spanOf }] };
+    const alone = historyNodesByDay({ days: new Map([['2026-09-16', evening]]), reads: NO_READS, timing: withOnset });
+    expect(idsOf(alone.get('2026-09-16') ?? [])).toEqual(['run(e1,e2)', 'e3']);
+  });
+
+  it('the rebuild for a cross-midnight timing anchor still carries the other days’ vomits', () => {
+    // Sep 17: a vomit found at 12:30 AM, last seen fine at 9:40 PM (its span 9:10 PM – 12:30 AM),
+    // then a seen vomit at 4 AM, a new episode, timed from the 11:50 PM bowl. Sep 16 is built
+    // twice (the anchor), and the second build must still hand in the found vomit.
+    const day16 = [
+      onDay('d1', 'meal', 16, 19, 0, PR),
+      onDay('d2', 'meal', 16, 20, 0, PR),
+      onDay('d3', 'meal', 16, 22, 0, PR),
+      onDay('d4', 'meal', 16, 23, 50, PR),
+    ];
+    const day17 = [
+      onDay('f1', 'vomit', 17, 0, 30, { occurred_at_confidence: 'window', occurred_at_earliest: at(16, 21, 40), occurred_at_latest: at(17, 0, 30) }),
+      onDay('s1', 'vomit', 17, 4, 0),
+    ];
+    const t: HistoryDayTiming = { feedings: day16.map(feedingOf), freeFedSpans: [], onsets: [] };
+    const byDay = historyNodesByDay({ days: new Map([['2026-09-17', day17], ['2026-09-16', day16]]), reads: NO_READS, timing: t });
+    const s1 = byDay.get('2026-09-17')?.find((n) => n.id === 's1');
+    expect(s1?.kind === 'event' ? s1.timing : null).toMatch(/after eating/);
+    expect(idsOf(byDay.get('2026-09-16') ?? [])).toEqual(['run(d1,d2)', 'd3', 'd4']);
+  });
+
   it('a found vomit whose window opened the evening before reaches back past midnight', () => {
     const opened = [
       onDay('n2', 'vomit', 17, 7, 0, { occurred_at_confidence: 'window', occurred_at_earliest: at(16, 23, 20), occurred_at_latest: at(17, 7, 0) }),

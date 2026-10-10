@@ -28,7 +28,7 @@
 jest.mock('./supabase', () => ({ supabase: { from: jest.fn() } }));
 
 import { buildDay, buildDayNodes, type DayEvent, type DayNodeFacts } from './dayNodes';
-import { buildSpine, type SpineAnalysisRow, type SpineInput } from './spineNode';
+import { buildSpine, vomitSpanOf, type SpineAnalysisRow, type SpineInput } from './spineNode';
 import { DEFAULT_MEAL_TIMING_CONFIG, type MealTimingConfig } from './mealTiming';
 
 const BASE = new Date(2026, 8, 17, 0, 0, 0, 0).getTime();
@@ -537,6 +537,19 @@ describe('CUL-1737 — a meal within 30 minutes before any vomit is never folded
     // the other folded with breakfast before.
     const day = [row('v', 'vomit', 13, 0), row('m3', 'meal', 12, 50, PR), row('m2', 'meal', 12, 40, PR), row('m1', 'meal', 8, 0, PR)];
     expect(shape(day)).toEqual(['m1', 'm2', 'm3', 'v']);
+  });
+
+  it('vomitSpanOf: the span always holds the recorded time, on BOTH sides, and reads only a vomit', () => {
+    const t = at(11, 0);
+    // A found vomit whose bounds sit inside or past its recorded time, or will not parse.
+    expect(vomitSpanOf(found('a', 11, 0, [9, 20]))).toEqual({ fromMs: at(9, 20), toMs: t });
+    expect(vomitSpanOf({ ...found('b', 11, 0), occurred_at_latest: iso(10, 0) })).toEqual({ fromMs: t, toMs: t });
+    expect(vomitSpanOf({ ...found('c', 11, 0), occurred_at_earliest: iso(12, 0) })).toEqual({ fromMs: t, toMs: t });
+    expect(vomitSpanOf({ ...found('d', 11, 0), occurred_at_earliest: 'nope', occurred_at_latest: 'nope' })).toEqual({ fromMs: t, toMs: t });
+    // A seen vomit carrying stray bounds is its instant: only a found one reads its window.
+    expect(vomitSpanOf(row('e', 'vomit', 11, 0, { occurred_at_earliest: iso(9, 0), occurred_at_latest: iso(13, 0) }))).toEqual({ fromMs: t, toMs: t });
+    expect(vomitSpanOf(row('f', 'cough', 11, 0))).toBeNull();
+    expect(vomitSpanOf({ ...row('g', 'vomit', 11, 0), occurred_at: 'nope' })).toBeNull();
   });
 
   it('only a vomit: a cough, stool or other symptom in the window leaves the run as it was', () => {

@@ -13,7 +13,7 @@
 // same under every filter, because the nodes never saw the filter.
 
 import { SYMPTOM_TYPES, type EventTypeKey } from '../constants/eventTypes';
-import { buildDay, type DayNode } from './dayNodes';
+import { buildDay, vomitSpanOf, type DayNode, type VomitSpan } from './dayNodes';
 import {
   DEFAULT_MEAL_TIMING_CONFIG,
   type FeedingInput,
@@ -21,8 +21,7 @@ import {
   type OnsetConfidence,
 } from './mealTiming';
 import type { HistoryRow } from './historyQueries';
-import type { VomitSpan } from './spineCompaction';
-import { mayCarryRead, vomitSpanOf, type SpineAnalysisRow } from './spineNode';
+import { mayCarryRead, type SpineAnalysisRow } from './spineNode';
 import {
   absenceText,
   type CountLineDoorKey,
@@ -269,7 +268,11 @@ export function priorOnsetsFor(
 export interface HistoryDayTiming {
   feedings: readonly FeedingInput[];
   freeFedSpans: readonly FreeFedSpan[];
-  onsets: readonly { ms: number; confidence: OnsetConfidence | null }[];
+  /** `span`: the vomit's time as rule B's before-vomit break reads it (CUL-1737). The read
+   *  runs from the loaded span on with no upper bound and no filter, so it carries the vomits
+   *  the loaded days cannot (a 12:10 AM vomit past the window's edge, or on a day the filter
+   *  hides). Optional: a caller without it falls back to the loaded days alone. */
+  onsets: readonly { ms: number; confidence: OnsetConfidence | null; span?: VomitSpan }[];
 }
 
 /** The phone's copy of the reads for the loaded rows, and the ids whose copy a look has
@@ -325,8 +328,14 @@ export function historyNodesByDay(args: {
   for (const [day, rows] of args.days) {
     vomitsByDay.set(day, rows.map(vomitSpanOf).filter((v): v is VomitSpan => v !== null));
   }
-  const vomitsElsewhereOf = (day: string): VomitSpan[] =>
-    [...vomitsByDay].flatMap(([d, spans]) => (d === day ? [] : spans));
+  // Plus the timing read's vomits, which reach past the loaded days: a month window's edge
+  // or a filter leaves the next day unloaded, and its 12:10 AM vomit must still count (a day's
+  // own vomits may repeat here; the predicate reads instants, so a repeat changes nothing).
+  const timingVomits = timing.onsets.flatMap((o) => (o.span ? [o.span] : []));
+  const vomitsElsewhereOf = (day: string): VomitSpan[] => [
+    ...[...vomitsByDay].flatMap(([d, spans]) => (d === day ? [] : spans)),
+    ...timingVomits,
+  ];
   const build = (day: string, rows: readonly HistoryRow[], timedElsewhere?: ReadonlySet<string>) =>
     buildDay(rows, {
       reads: {

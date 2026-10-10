@@ -30,6 +30,7 @@ import type { VomitSpan } from './spineCompaction';
 import type { FeedingInput, FreeFedSpan, MealTimingConfig, OnsetConfidence } from './mealTiming';
 import {
   buildSpine,
+  vomitSpanOf,
   type SpineAnalysisRow,
   type SpineCompactNode,
   type SpineEventInput,
@@ -37,6 +38,12 @@ import {
   type SpineModel,
   type SpineNode,
 } from './spineNode';
+
+/** A vomit's span as rule B's before-vomit break reads it (CUL-1737), the way a surface
+ *  that draws one card per day builds `DayTimings.vomitsElsewhere`. Re-exported here so
+ *  that surface keeps to the pipeline's one door (`guards/dayRowOneWay.test.ts`). */
+export { vomitSpanOf };
+export type { VomitSpan };
 
 /** One node on a day's thread: a single event, or a run of meals. */
 export type DayNode = SpineNode;

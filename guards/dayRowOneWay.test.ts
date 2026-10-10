@@ -76,6 +76,9 @@ const ROW_MODULES: Readonly<Record<string, ReadonlySet<string>>> = {
     'DayReads',
     'DayTimings',
     'DayNodeFacts',
+    // A vomit's span, for the other days' vomits a per-day surface hands in (CUL-1737).
+    'vomitSpanOf',
+    'VomitSpan',
   ]),
   // The count line's words and the read gate are the day's, not a row's: TodayCard reads
   // the copy for exactly the rows the pipeline asks about (`mayCarryRead`, CUL-1197).
