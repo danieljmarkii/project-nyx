@@ -41,7 +41,7 @@ jest.mock('../../lib/db', () => ({
 }));
 
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { Alert } from 'react-native';
+import { Alert, Animated, LayoutAnimation } from 'react-native';
 import { MedicationCompletionCard } from './MedicationCompletionCard';
 import { reverseLoggedEvent } from '../../lib/undoLog';
 import { useMomentStore } from '../../store/momentStore';
@@ -50,6 +50,8 @@ import { usePetStore } from '../../store/petStore';
 import { useSyncStore } from '../../store/syncStore';
 import { formatTime } from '../../lib/utils';
 import { OPAQUE_HEX, shadowedGrounds } from '../../testUtils/tree';
+import { useReducedMotionStore } from '../../store/reducedMotionStore';
+import { COMPLETION_MOTION } from '../motion/completionMotion';
 
 const CONFLICT = { conflict: true, otherEventId: 'm0', gapMinutes: 95 };
 const NO_CONFLICT = { conflict: false, otherEventId: null, gapMinutes: null };
@@ -568,5 +570,298 @@ describe('MedicationCompletionCard — the opaque daylight ground (CUL-1691)', (
     const grounds = shadowedGrounds(view.UNSAFE_root);
     expect(grounds.length).toBeGreaterThan(0);
     for (const g of grounds) expect(g).toMatch(OPAQUE_HEX);
+  });
+});
+
+// ── CUL-1691 PR 3: the motion, the gold, the leaving body ──────────────────────────
+
+function haloLayer(view: ReturnType<typeof render>) {
+  return view.queryByTestId('completion-mark-halo-layer', { includeHiddenElements: true });
+}
+function advance(ms: number) {
+  act(() => { jest.advanceTimersByTime(ms); });
+}
+/** Past the gold's own valve: wherever the halo will end, it has ended. */
+const HALO_REST_MS = COMPLETION_MOTION.haloDelayMs + COMPLETION_MOTION.haloFadeMs + COMPLETION_MOTION.valveSlackMs + 10;
+
+describe('MedicationCompletionCard — the gold is doseCelebrates (CUL-1691 §2.1)', () => {
+  beforeEach(() => { useReducedMotionStore.setState({ reduceMotion: false }); });
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  it('a standalone dose, Given, with the check settled, draws the gold', () => {
+    const view = render(<MedicationCompletionCard />);
+    seedDose({ doubleDoseSettled: true });
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).not.toBeNull();
+  });
+
+  for (const [name, over] of [
+    ['Refused', { adherence: 'refused' }],
+    ['an assumed given on an unrated combo', { pairedFoodName: 'Kibble', vehicleIntake: null }],
+    ['a given dose carrying a double-dose conflict', { doubleDose: CONFLICT }],
+  ] as const) {
+    it(`${name} draws no gold at any frame`, () => {
+      const view = render(<MedicationCompletionCard />);
+      seedDose({ ...over, doubleDoseSettled: true } as MedOver);
+      for (const ms of [0, 100, 200, 300, 500]) {
+        advance(ms);
+        expect(haloLayer(view)).toBeNull();
+      }
+    });
+  }
+
+  it('an in-doubt combo answered Given gains the gold', async () => {
+    const view = render(<MedicationCompletionCard />);
+    seedDose({ adherence: null, pairedFoodName: 'Kibble', vehicleIntake: 'refused', doubleDoseSettled: true });
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).toBeNull();
+    await act(async () => { fireEvent.press(view.getByText('Given')); });
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).not.toBeNull();
+  });
+
+  it('an in-doubt combo answered Given whose recheck finds a conflict never shows gold', async () => {
+    let resolve: (v: unknown) => void = () => {};
+    mockGetDoubleDoseFlag.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    const view = render(<MedicationCompletionCard />);
+    seedDose({ adherence: null, pairedFoodName: 'Kibble', vehicleIntake: 'refused', doubleDoseSettled: true });
+    advance(HALO_REST_MS);
+    await act(async () => { fireEvent.press(view.getByText('Given')); });
+    // The recheck is in flight: the wait is re-armed, so no gold.
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).toBeNull();
+    await act(async () => { resolve(CONFLICT); });
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).toBeNull();
+    view.getByText(NOTE);
+  });
+
+  it('a failed recheck after Given leaves no gold (an unknown is not a clear check)', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGetDoubleDoseFlag.mockRejectedValueOnce(new Error('sqlite'));
+    const view = render(<MedicationCompletionCard />);
+    seedDose({ adherence: null, pairedFoodName: 'Kibble', vehicleIntake: 'refused', doubleDoseSettled: true });
+    advance(HALO_REST_MS);
+    await act(async () => { fireEvent.press(view.getByText('Given')); });
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).toBeNull();
+  });
+
+  it('conflict, then Missed, then Given with a failing recheck: no gold over the possible repeat', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const view = render(<MedicationCompletionCard />);
+    seedDose({ doubleDose: CONFLICT, doubleDoseSettled: true });
+    mockGetDoubleDoseFlag.mockResolvedValueOnce(NO_CONFLICT);
+    await act(async () => { fireEvent.press(view.getByText('Missed')); });
+    mockGetDoubleDoseFlag.mockRejectedValueOnce(new Error('sqlite'));
+    await act(async () => { fireEvent.press(view.getByText('Given')); });
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).toBeNull();
+  });
+
+  it('a pending check starts no native gold clock: nothing is mounted until the beat sees it settled', () => {
+    const view = render(<MedicationCompletionCard />);
+    seedDose();
+    advance(100);
+    expect(haloLayer(view)).toBeNull();
+    act(() => { useMomentStore.getState().markDoubleDoseSettled('m1'); });
+    advance(50);
+    // Settled before it is due, but the gold still waits for its beat.
+    expect(haloLayer(view)).toBeNull();
+    advance(COMPLETION_MOTION.haloDelayMs);
+    expect(haloLayer(view)).not.toBeNull();
+  });
+
+  it('Given then Missed: the gold leaves and the disc never replays', async () => {
+    const timing = jest.spyOn(Animated, 'timing');
+    try {
+      const view = render(<MedicationCompletionCard />);
+      seedDose({ doubleDoseSettled: true });
+      advance(HALO_REST_MS);
+      expect(haloLayer(view)).not.toBeNull();
+      timing.mockClear();
+      await act(async () => { fireEvent.press(view.getByText('Missed')); });
+      expect(timing).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ toValue: 0, duration: COMPLETION_MOTION.haloLeaveMs }),
+      );
+      // A correction is not a new record: no second pen stroke on the card's clock.
+      expect(timing).not.toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ toValue: COMPLETION_MOTION.labelBeatMs + COMPLETION_MOTION.labelFadeMs }),
+      );
+      advance(HALO_REST_MS);
+      expect(haloLayer(view)).toBeNull();
+    } finally {
+      timing.mockRestore();
+    }
+  });
+});
+
+describe('MedicationCompletionCard — the gold waits on the double-dose check (CUL-1691 §2.3)', () => {
+  beforeEach(() => { useReducedMotionStore.setState({ reduceMotion: false }); });
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  it('settled before the gold is due: the gold blooms on time', () => {
+    const view = render(<MedicationCompletionCard />);
+    seedDose();
+    advance(20);
+    act(() => { useMomentStore.getState().markDoubleDoseSettled('m1'); });
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).not.toBeNull();
+  });
+
+  it('still pending when the gold is due: absent on this arrival, and a late settle does not bloom it', () => {
+    const view = render(<MedicationCompletionCard />);
+    seedDose();
+    advance(COMPLETION_MOTION.haloDelayMs + 10);
+    act(() => { useMomentStore.getState().markDoubleDoseSettled('m1'); });
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).toBeNull();
+  });
+
+  it('a touch while the check is pending holds the gold at 0', () => {
+    const view = render(<MedicationCompletionCard />);
+    seedDose();
+    advance(100);
+    const surface = view.getByTestId('medication-card-surface');
+    act(() => { fireEvent(surface, 'touchStart'); });
+    act(() => { fireEvent(surface, 'touchEnd'); });
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).toBeNull();
+  });
+
+  it('a conflict landing after the bloom takes the gold away over haloLeaveMs', () => {
+    const configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+    const timing = jest.spyOn(Animated, 'timing');
+    try {
+      const view = render(<MedicationCompletionCard />);
+      seedDose({ doubleDoseSettled: true });
+      advance(HALO_REST_MS);
+      expect(haloLayer(view)).not.toBeNull();
+      timing.mockClear();
+      act(() => { useMomentStore.getState().patchDoubleDose('m1', CONFLICT, 'given'); });
+      expect(configureNext).toHaveBeenCalled();
+      expect(timing).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ toValue: 0, duration: COMPLETION_MOTION.haloLeaveMs }),
+      );
+      advance(HALO_REST_MS);
+      expect(haloLayer(view)).toBeNull();
+      view.getByText(NOTE);
+    } finally {
+      configureNext.mockRestore();
+      timing.mockRestore();
+    }
+  });
+});
+
+describe('MedicationCompletionCard — Reduce Motion (CUL-1691 §2.3)', () => {
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  for (const setting of [true, null] as const) {
+    it(`reduceMotion ${String(setting)}: a crossfade, nothing springs, the gold at rest`, () => {
+      useReducedMotionStore.setState({ reduceMotion: setting });
+      const spring = jest.spyOn(Animated, 'spring');
+      const timing = jest.spyOn(Animated, 'timing');
+      try {
+        const view = render(<MedicationCompletionCard />);
+        seedDose({ doubleDoseSettled: true });
+        expect(spring).not.toHaveBeenCalled();
+        expect(timing).toHaveBeenCalledWith(
+          expect.anything(), expect.objectContaining({ toValue: 1, duration: COMPLETION_MOTION.crossfadeMs }),
+        );
+        expect(haloLayer(view)).not.toBeNull();
+      } finally {
+        spring.mockRestore();
+        timing.mockRestore();
+      }
+    });
+  }
+
+  it('reduceMotion false: the card rises on its spring', () => {
+    useReducedMotionStore.setState({ reduceMotion: false });
+    const spring = jest.spyOn(Animated, 'spring');
+    try {
+      render(<MedicationCompletionCard />);
+      seedDose();
+      expect(spring).toHaveBeenCalledTimes(1);
+    } finally {
+      spring.mockRestore();
+    }
+  });
+});
+
+describe('MedicationCompletionCard — the leaving body after Undo (CUL-1691 §2.3)', () => {
+  beforeEach(() => { useReducedMotionStore.setState({ reduceMotion: false }); });
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  const HIDDEN = { includeHiddenElements: true } as const;
+  type Node = { props: Record<string, unknown>; parent: Node | null };
+  function controls(view: ReturnType<typeof render>) {
+    const rows = view.UNSAFE_root.findAll((n: Node) =>
+      typeof n.props.onChange === 'function' && n.props.size === 'compact') as unknown as Node[];
+    let time: Node | null = view.getByLabelText('Change time of this dose', HIDDEN) as unknown as Node;
+    while (time && typeof time.props.onPress !== 'function') time = time.parent;
+    return {
+      adherence: () => (rows[0].props.onChange as (v: unknown) => void)('refused'),
+      vehicle: () => (rows[1].props.onChange as (v: unknown) => void)('in_food'),
+      changeTime: () => (time!.props.onPress as () => void)(),
+    };
+  }
+  function assertNothingWritten(view: ReturnType<typeof render>) {
+    expect(mockUpdateDoseAdherence).not.toHaveBeenCalled();
+    expect(view.queryByText('When was this dose given?', HIDDEN)).toBeNull();
+    const p = useMomentStore.getState().payload;
+    expect(p).toHaveProperty('adherence', 'given');
+    expect(p).toHaveProperty('howGiven', null);
+  }
+
+  it('from the tap, before the reversal lands: every write and door is refused, and nothing visual changes', async () => {
+    (reverseLoggedEvent as jest.Mock).mockImplementationOnce(() => new Promise(() => {}));
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    const c = controls(view);
+    act(() => { fireEvent.press(view.getByLabelText('Undo — remove this dose')); });
+    expect(useMomentStore.getState().undoing).toBe('m1');
+    expect(view.getByTestId('medication-card-body').props.accessibilityElementsHidden).toBeUndefined();
+    expect(view.getByTestId('medication-card-surface').props.pointerEvents).toBe('none');
+    await act(async () => { c.adherence(); c.vehicle(); c.changeTime(); });
+    assertNothingWritten(view);
+  });
+
+  it('while leaving: hidden from assistive tech, no live region, the header still speaks the logged sentence', async () => {
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    const c = controls(view);
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this dose')); });
+    expect(useMomentStore.getState().removed).toBe(true);
+    const body = view.getByTestId('medication-card-body', HIDDEN);
+    expect(body.props.pointerEvents).toBe('none');
+    expect(body.props.accessibilityElementsHidden).toBe(true);
+    expect(body.props.importantForAccessibility).toBe('no-hide-descendants');
+    const header = view.getByLabelText(/^Logged · Prednisolone\./, HIDDEN);
+    expect(header.props.accessibilityLiveRegion).toBeUndefined();
+    expect(view.queryByText('Removed', HIDDEN)).toBeNull();
+    await act(async () => { c.adherence(); c.vehicle(); c.changeTime(); });
+    assertNothingWritten(view);
+  });
+
+  it('the pen un-writes, then "Removed" lands under FOLD_LAYOUT and re-arms its 2.4s dwell', async () => {
+    const configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+    const real = useMomentStore.getState().armRemovedDwell;
+    const armed: string[] = [];
+    useMomentStore.setState({ armRemovedDwell: (id: string) => { armed.push(id); real(id); } });
+    try {
+      seedDose({ doubleDose: CONFLICT });
+      const view = render(<MedicationCompletionCard />);
+      await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this dose')); });
+      advance(COMPLETION_MOTION.unwriteMs + 10);
+      expect(configureNext).toHaveBeenCalled();
+      expect(view.getByText('Removed').parent).toBeTruthy();
+      expect(view.queryByTestId('medication-card-body', HIDDEN)).toBeNull();
+      advance(400);
+      expect(armed).toEqual(['m1']);
+    } finally {
+      configureNext.mockRestore();
+      useMomentStore.setState({ armRemovedDwell: real });
+    }
   });
 });

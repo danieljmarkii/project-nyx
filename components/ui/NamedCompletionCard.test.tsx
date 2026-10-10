@@ -28,6 +28,8 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 47, right: 0, bottom: 34, left: 0 }),
 }));
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
+const mockOpenRaised = jest.fn();
+jest.mock('./openRaisedRead', () => ({ openRaisedRead: (...a: unknown[]) => mockOpenRaised(...a) }));
 jest.mock('../../lib/undoLog', () => ({ reverseLoggedEvent: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../lib/db', () => ({
   updateEvent: jest.fn().mockResolvedValue(undefined),
@@ -46,7 +48,7 @@ jest.mock('../../lib/haptics', () => ({
 }));
 
 import { act, fireEvent, render, within } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { Animated, LayoutAnimation, StyleSheet } from 'react-native';
 import { NamedCompletionCard } from './NamedCompletionCard';
 import { useMomentStore } from '../../store/momentStore';
 import { usePetStore } from '../../store/petStore';
@@ -57,6 +59,10 @@ import { reverseLoggedEvent } from '../../lib/undoLog';
 import { destructiveConfirm } from '../../lib/haptics';
 import { Alert } from 'react-native';
 import { OPAQUE_HEX, shadowedGrounds } from '../../testUtils/tree';
+import { useReducedMotionStore } from '../../store/reducedMotionStore';
+import { COMPLETION_MOTION } from '../motion/completionMotion';
+import { FOLD_MOTION } from '../motion/foldMotion';
+import { REMOVED_DURATION_MS } from '../../store/momentStore';
 
 // Minimal structural stand-in for react-test-renderer's ReactTestInstance:
 // @types/react-test-renderer is not a dependency here, and three style predicates
@@ -946,5 +952,251 @@ describe('NamedCompletionCard — the VoiceOver announcement (CUL-1275)', () => 
     seed();
     expect(announce).not.toHaveBeenCalled();
     expect(view.getByLabelText(SAVED).props.accessibilityLiveRegion).toBe('polite');
+  });
+});
+
+// ── CUL-1691 PR 3: the motion, the touch-finish, the leaving body ──────────────────
+
+const LINE = {
+  eventId: 'v1', vomitAt: '2026-06-07T13:00:00.000Z', tier: 'call_today', self: false, device: true, petId: 'p1',
+  raised: [{ eventId: 'v1', tier: 'call_today' }],
+} as never;
+
+function haloLayer(view: ReturnType<typeof render>) {
+  return view.queryByTestId('completion-mark-halo-layer', { includeHiddenElements: true });
+}
+/** The live value of a node's Animated opacity, read off the composite that carries it. */
+function liveOpacity(host: { props: { style?: unknown }; parent: unknown }): number {
+  let n = host as { props: { style?: unknown }; parent: unknown } | null;
+  while (n) {
+    const styles = ([] as unknown[]).concat(n.props.style ?? []).flat(Infinity) as { opacity?: unknown }[];
+    for (const st of styles) {
+      const o = st?.opacity as { __getValue?: () => number } | undefined;
+      if (o && typeof o.__getValue === 'function') return o.__getValue();
+    }
+    n = n.parent as typeof n;
+  }
+  throw new Error('no animated opacity');
+}
+function advance(ms: number) {
+  act(() => { jest.advanceTimersByTime(ms); });
+}
+const HALO_REST_MS = COMPLETION_MOTION.haloDelayMs + COMPLETION_MOTION.haloFadeMs + COMPLETION_MOTION.valveSlackMs + 10;
+
+describe('NamedCompletionCard — the arrival (CUL-1691 §2.1)', () => {
+  beforeEach(() => { useReducedMotionStore.setState({ reduceMotion: false }); });
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  it('a celebrate commit rises on its spring and the gold arrives; its valve pins it at 1', () => {
+    const spring = jest.spyOn(Animated, 'spring');
+    try {
+      const view = render(<NamedCompletionCard />);
+      seed({ tone: 'celebrate' });
+      expect(spring).toHaveBeenCalledTimes(1);
+      advance(HALO_REST_MS);
+      expect(liveOpacity(haloLayer(view)!)).toBe(1);
+    } finally {
+      spring.mockRestore();
+    }
+  });
+
+  it('a symptom and a weight check: the same motion, no gold at any frame', () => {
+    for (const over of [{ tone: 'calm' as const }, { tone: 'calm' as const, record: { kind: 'weight', weightKg: 5.6 } as never }]) {
+      const view = render(<NamedCompletionCard />);
+      seed(over);
+      for (const ms of [0, 100, 200, 300, 500]) {
+        advance(ms);
+        expect(haloLayer(view)).toBeNull();
+      }
+      view.unmount();
+      act(() => { useMomentStore.getState().hide(); });
+    }
+  });
+
+  it('a celebrate commit carrying a vet-call line is calm', () => {
+    const view = render(<NamedCompletionCard />);
+    seed({ tone: 'celebrate', floorLine: LINE });
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).toBeNull();
+  });
+
+  it('the dim fades with the card and leaves with it', () => {
+    const timing = jest.spyOn(Animated, 'timing');
+    try {
+      const view = render(<NamedCompletionCard />);
+      seed();
+      const scrim = view.getByTestId('named-card-scrim');
+      const surface = view.getByTestId('named-card-surface');
+      // The native clock never steps in the test renderer: at the reveal both are at 0,
+      // and a touch pins the arrival's end, where both are at 1.
+      expect(liveOpacity(scrim)).toBe(0);
+      act(() => { fireEvent(surface, 'touchStart'); });
+      expect(liveOpacity(scrim)).toBe(1);
+      expect(liveOpacity(scrim)).toBe(liveOpacity(surface));
+      timing.mockClear();
+      act(() => { useMomentStore.getState().hide(); });
+      expect(timing).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ toValue: 1, duration: COMPLETION_MOTION.exitMs }),
+      );
+    } finally {
+      timing.mockRestore();
+    }
+  });
+});
+
+describe('NamedCompletionCard — the touch-finish (CUL-1691 §2.3)', () => {
+  beforeEach(() => { useReducedMotionStore.setState({ reduceMotion: false }); });
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  it('a touch during the arrival pins every beat at its end', () => {
+    const view = render(<NamedCompletionCard />);
+    seed({ tone: 'calm' });
+    const words = view.getByLabelText(/^Vomit/);
+    expect(liveOpacity(words)).toBe(0);
+    act(() => { fireEvent(view.getByTestId('named-card-surface'), 'touchStart'); });
+    expect(liveOpacity(words)).toBe(1);
+  });
+
+  it('lifting the touch settles a celebrate card\'s gold toward 1 over haloFadeMs', () => {
+    const timing = jest.spyOn(Animated, 'timing');
+    try {
+      const view = render(<NamedCompletionCard />);
+      seed({ tone: 'celebrate' });
+      advance(50);
+      const surface = view.getByTestId('named-card-surface');
+      act(() => { fireEvent(surface, 'touchStart'); });
+      timing.mockClear();
+      act(() => { fireEvent(surface, 'touchEnd'); });
+      // The native driver never steps a value here: assert the settle it starts.
+      expect(timing).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ toValue: 1, duration: COMPLETION_MOTION.haloFadeMs }),
+      );
+      expect(haloLayer(view)).not.toBeNull();
+    } finally {
+      timing.mockRestore();
+    }
+  });
+});
+
+describe('NamedCompletionCard — Reduce Motion (CUL-1691 §2.3)', () => {
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  for (const setting of [true, null] as const) {
+    it(`reduceMotion ${String(setting)}: a crossfade, nothing springs`, () => {
+      useReducedMotionStore.setState({ reduceMotion: setting });
+      const spring = jest.spyOn(Animated, 'spring');
+      const timing = jest.spyOn(Animated, 'timing');
+      try {
+        render(<NamedCompletionCard />);
+        seed({ tone: 'celebrate' });
+        expect(spring).not.toHaveBeenCalled();
+        expect(timing).toHaveBeenCalledWith(
+          expect.anything(), expect.objectContaining({ toValue: 1, duration: COMPLETION_MOTION.crossfadeMs }),
+        );
+      } finally {
+        spring.mockRestore();
+        timing.mockRestore();
+      }
+    });
+  }
+});
+
+describe('NamedCompletionCard — the leaving body after Undo (CUL-1691 §2.3)', () => {
+  beforeEach(() => { useReducedMotionStore.setState({ reduceMotion: false }); mockOpenRaised.mockClear(); });
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  const HIDDEN = { includeHiddenElements: true } as const;
+  type Node = { props: Record<string, unknown>; parent: Node | null };
+  function controls(view: ReturnType<typeof render>) {
+    let time: Node | null = view.getByLabelText('Change time of this log', HIDDEN) as unknown as Node;
+    while (time && typeof time.props.onPress !== 'function') time = time.parent;
+    const floor = view.UNSAFE_root.findAll((n: Node) =>
+      typeof n.props.onOpen === 'function' && n.props.line !== undefined)[0] as unknown as Node;
+    return {
+      changeTime: () => (time!.props.onPress as () => void)(),
+      openRead: () => (floor.props.onOpen as () => void)(),
+    };
+  }
+  function assertNothingOpened(view: ReturnType<typeof render>) {
+    expect(mockOpenRaised).not.toHaveBeenCalled();
+    expect(view.queryByText('When did this happen?', HIDDEN)).toBeNull();
+    expect(updateEvent).not.toHaveBeenCalled();
+  }
+
+  it('from the tap, before the reversal lands: Change time and the floor line are refused, nothing visual changes', async () => {
+    (reverseLoggedEvent as jest.Mock).mockImplementationOnce(() => new Promise(() => {}));
+    const view = render(<NamedCompletionCard />);
+    seed({ floorLine: LINE });
+    const c = controls(view);
+    act(() => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    expect(useMomentStore.getState().undoing).toBe('e1');
+    expect(view.getByTestId('named-card-body').props.accessibilityElementsHidden).toBeUndefined();
+    expect(view.getByTestId('named-card-surface').props.pointerEvents).toBe('none');
+    await act(async () => { c.changeTime(); c.openRead(); });
+    assertNothingOpened(view);
+  });
+
+  it('while leaving: hidden from assistive tech, no live region, the header still speaks the logged sentence', async () => {
+    const view = render(<NamedCompletionCard />);
+    seed({ floorLine: LINE });
+    const c = controls(view);
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    expect(useMomentStore.getState().removed).toBe(true);
+    const body = view.getByTestId('named-card-body', HIDDEN);
+    expect(body.props.pointerEvents).toBe('none');
+    expect(body.props.accessibilityElementsHidden).toBe(true);
+    expect(body.props.importantForAccessibility).toBe('no-hide-descendants');
+    const header = view.getByLabelText(/^Vomit.*Saved to Biscuit’s record$/, HIDDEN);
+    expect(header.props.accessibilityLiveRegion).toBeUndefined();
+    expect(view.queryByText('Removed', HIDDEN)).toBeNull();
+    await act(async () => { c.changeTime(); c.openRead(); });
+    assertNothingOpened(view);
+  });
+
+  it('"Removed" lands under FOLD_LAYOUT and holds 2.4s from there, on a card that carried a vet-call line', async () => {
+    const configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+    const real = useMomentStore.getState().armRemovedDwell;
+    const armed: number[] = [];
+    useMomentStore.setState({ armRemovedDwell: (id: string) => { armed.push(Date.now()); real(id); } });
+    try {
+      const view = render(<NamedCompletionCard />);
+      seed({ floorLine: LINE });
+      await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+      advance(COMPLETION_MOTION.unwriteMs + 10);
+      expect(configureNext).toHaveBeenCalled();
+      expect(view.getByLabelText('Removed. Taken out of Biscuit’s record').props.accessibilityLiveRegion).toBe('polite');
+      expect(view.queryByTestId('named-card-body', HIDDEN)).toBeNull();
+      advance(FOLD_MOTION.landDelayMs + FOLD_MOTION.landMs + 20);
+      expect(armed).toHaveLength(1);
+      const sinceLanding = Date.now() - armed[0];
+      advance(REMOVED_DURATION_MS - sinceLanding - 1);
+      expect(useMomentStore.getState().visible).toBe(true);
+      advance(1);
+      expect(useMomentStore.getState().visible).toBe(false);
+    } finally {
+      configureNext.mockRestore();
+      useMomentStore.setState({ armRemovedDwell: real });
+    }
+  });
+});
+
+describe('NamedCompletionCard — a vet-call line patched in after the reveal (CUL-1691 §2.3)', () => {
+  beforeEach(() => { useReducedMotionStore.setState({ reduceMotion: false }); });
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  it('finishes the arrival, fires FOLD_LAYOUT, and takes a standing gold away', () => {
+    const configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+    try {
+      const view = render(<NamedCompletionCard />);
+      seed({ tone: 'celebrate' });
+      advance(HALO_REST_MS);
+      expect(haloLayer(view)).not.toBeNull();
+      act(() => { useMomentStore.getState().patchFloorLine('e1', LINE); });
+      expect(configureNext).toHaveBeenCalled();
+      advance(HALO_REST_MS);
+      expect(haloLayer(view)).toBeNull();
+    } finally {
+      configureNext.mockRestore();
+    }
   });
 });

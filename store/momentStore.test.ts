@@ -27,7 +27,7 @@ import { commitRoutine, commitSymptom, destructiveConfirm, selectChip } from '..
 import { reverseLoggedEvent } from '../lib/undoLog';
 import { forgetFlaggedFoodInTrial } from '../lib/trialContaminant';
 import {
-  useMomentStore, whenMealCardVisible, whenMedicationCardVisible,
+  useMomentStore, whenMealCardVisible, whenMedicationCardVisible, completionTone, isNamedDimUp,
   MEDICATION_FLAGGED_DURATION_MS, REMOVED_DURATION_MS, SHEET_BEAT_DWELL_MS,
 } from './momentStore';
 import type { MealPayload, MedicationPayload, NamedPayload, SheetBeatPayload } from './momentStore';
@@ -1646,5 +1646,68 @@ describe('armRemovedDwell — "Removed" holds 2.4s from the frame it lands (§2.
     expect(commitSymptom).not.toHaveBeenCalled();
     expect(selectChip).not.toHaveBeenCalled();
     expect(destructiveConfirm).not.toHaveBeenCalled();
+  });
+});
+
+describe('PR 3 (CUL-1691): the dose tone, the settled flag, the dim', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    useMomentStore.getState().hide();
+    useMomentStore.setState({ payload: null });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  function med(): MedicationPayload {
+    const p = useMomentStore.getState().payload;
+    if (p?.kind !== 'medication') throw new Error('expected medication payload');
+    return p;
+  }
+
+  it('completionTone reads doseCelebrates for a dose', () => {
+    useMomentStore.getState().showMedication(medicationPayload());
+    expect(completionTone(med())).toBe('celebrate');
+    useMomentStore.getState().showMedication(medicationPayload({ adherence: 'refused' }));
+    expect(completionTone(med())).toBe('calm');
+    useMomentStore.getState().showMedication(medicationPayload({ pairedFoodName: 'Kibble', vehicleIntake: null }));
+    expect(completionTone(med())).toBe('calm');
+    useMomentStore.getState().showMedication(
+      medicationPayload({ doubleDose: { conflict: true, otherEventId: 'm0', gapMinutes: 30 } }),
+    );
+    expect(completionTone(med())).toBe('calm');
+  });
+
+  it('markDoubleDoseSettled lands on the showing dose only', () => {
+    useMomentStore.getState().showMedication(medicationPayload({ eventId: 'm1' }));
+    useMomentStore.getState().markDoubleDoseSettled('m-other');
+    expect(med().doubleDoseSettled).toBeUndefined();
+    useMomentStore.getState().markDoubleDoseSettled('m1');
+    expect(med().doubleDoseSettled).toBe(true);
+  });
+
+  it('markDoubleDoseSettled is refused on a hidden or undone card', async () => {
+    useMomentStore.getState().showMedication(medicationPayload({ eventId: 'm1' }));
+    useMomentStore.getState().hide();
+    useMomentStore.getState().markDoubleDoseSettled('m1');
+    expect(med().doubleDoseSettled).toBeUndefined();
+
+    useMomentStore.getState().showMedication(medicationPayload({ eventId: 'm2' }));
+    await useMomentStore.getState().undo('m2');
+    expect(useMomentStore.getState().removed).toBe(true);
+    useMomentStore.getState().markDoubleDoseSettled('m2');
+    expect(med().doubleDoseSettled).toBeUndefined();
+  });
+
+  it('isNamedDimUp holds for a visible named card, through Removed, and drops on hide', async () => {
+    expect(isNamedDimUp(useMomentStore.getState())).toBe(false);
+    useMomentStore.getState().showNamed(namedPayload({ eventId: 'n1' }));
+    expect(isNamedDimUp(useMomentStore.getState())).toBe(true);
+    await useMomentStore.getState().undo('n1');
+    expect(isNamedDimUp(useMomentStore.getState())).toBe(true);
+    useMomentStore.getState().hide();
+    expect(isNamedDimUp(useMomentStore.getState())).toBe(false);
+    useMomentStore.getState().showMeal(mealPayload());
+    expect(isNamedDimUp(useMomentStore.getState())).toBe(false);
   });
 });

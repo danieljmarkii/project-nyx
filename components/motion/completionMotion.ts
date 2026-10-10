@@ -230,6 +230,10 @@ export interface CompletionArrivalParams {
   appActive: boolean;
   /** The tone as the store holds it NOW: read with `getState()`, never a closure (§2.1). */
   celebrateNow: () => boolean;
+  /** A read the gold must wait on (the dose's double-dose check, §2.3): while true the
+   *  halo holds at 0, and if it is still true when the gold is due, the gold stays absent
+   *  on this arrival. Fails toward calm. Absent: nothing to wait on. */
+  haloPending?: () => boolean;
   /** The tone of this render, so a correction after the arrival crossfades the halo. */
   celebrate: boolean;
   /** The store's identity right now, so a stale valve never acts on a newer card. */
@@ -343,6 +347,13 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
   // Latest params, read inside timers and callbacks.
   const params = useRef(p);
   params.current = p;
+  /** Gold may show now: the tone celebrates AND nothing it waits on is pending. Every
+   *  read but the arrival's first uses this; the first only starts the clock, whose gold
+   *  is not due until `haloDelayMs`. */
+  const celebrateReady = useCallback(
+    () => params.current.celebrateNow() && !(params.current.haloPending?.() ?? false),
+    [],
+  );
 
   const arrivalId = useRef<string | null>(null);
   const variantRef = useRef<ArrivalVariant>(variant);
@@ -441,7 +452,7 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
    *  `haloLeaveMs`, from wherever it stands. Opacity only, at scale 1. */
   const settleHalo = useCallback(() => {
     if (leaving.current) return;
-    const celebrate = params.current.celebrateNow();
+    const celebrate = celebrateReady();
     holdHalo((h) => {
       if (celebrate) {
         setHaloMode('held');
@@ -452,12 +463,32 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
       if (h <= 0 || params.current.reducedMotion) { pinHeld(0); setHaloMode('off'); return; }
       animateHeld(0, M.haloLeaveMs, EASE.haloOut, () => setHaloMode('off'));
     });
-  }, [holdHalo, pinHeld, animateHeld, setHaloMode]);
+  }, [holdHalo, pinHeld, animateHeld, setHaloMode, celebrateReady]);
 
   /** Start the halo's own clock: the gold fades in at `delayMs` on it. Mounted only on a
    *  celebrate tone; re-read when the beat is due (§2.1). */
   const startHalo = useCallback((delayMs: number) => {
     if (!params.current.celebrateNow()) { setHaloMode('off'); return; }
+    if (delayMs > 0 && params.current.haloPending?.()) {
+      // A read the gold waits on is still out: start NO native clock. A native fade would
+      // rise on the UI thread from `delayMs` whatever JS is doing, so a stalled JS thread
+      // could bloom gold over a dose whose double-dose check had not answered. Instead the
+      // JS beat decides when it is due: gold only if the read has settled by then, faded
+      // in from that beat, so any lag fails toward calm. Running, so a correction cannot
+      // bloom it early.
+      haloLive.current?.stop();
+      haloLive.current = null;
+      pinHeld(0);
+      setHaloMode('off');
+      haloArrivalRunning.current = true;
+      later(delayMs, () => {
+        if (!haloArrivalRunning.current) return; // a touch or a blur already settled it
+        haloArrivalRunning.current = false;
+        if (haloModeRef.current !== 'off') return;
+        if (celebrateReady()) settleHalo();
+      });
+      return;
+    }
     haloLive.current?.stop();
     haloDelay.current = delayMs;
     haloStartedAt.current = Date.now();
@@ -472,7 +503,7 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
     if (delayMs > 0) {
       later(delayMs, () => {
         if (haloModeRef.current !== 'arrival') return;
-        if (!params.current.celebrateNow()) {
+        if (!celebrateReady()) {
           haloLive.current?.stop();
           haloLive.current = null;
           haloArrivalRunning.current = false;
@@ -487,11 +518,11 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
       haloLive.current?.stop();
       haloLive.current = null;
       haloArrivalRunning.current = false;
-      const celebrate = params.current.celebrateNow();
+      const celebrate = celebrateReady();
       pinHeld(celebrate ? 1 : 0);
       setHaloMode(celebrate ? 'held' : 'off');
     });
-  }, [v, later, pinHeld, setHaloMode]);
+  }, [v, later, pinHeld, setHaloMode, celebrateReady, settleHalo]);
 
   /** The arrival, from its first frame. */
   const startArrival = useCallback((id: string, next: ArrivalVariant) => {
@@ -518,7 +549,7 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
       const a = Animated.timing(v.still, { toValue: 1, duration: M.crossfadeMs, useNativeDriver: true });
       clockLive.current = a;
       a.start();
-      const celebrate = params.current.celebrateNow();
+      const celebrate = celebrateReady();
       pinHeld(celebrate ? 1 : 0);
       setHaloMode(celebrate ? 'held' : 'off');
       return;
@@ -556,7 +587,7 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
       pinHeld(0);
       setHaloMode('off');
     }
-  }, [v, clearTimers, later, pinCard, startHalo, settleHalo, pinHeld, setHaloMode]);
+  }, [v, clearTimers, later, pinCard, startHalo, settleHalo, pinHeld, setHaloMode, celebrateReady]);
 
   /** Finish everything but the halo, which is held where it stands. */
   const finishMotion = useCallback(() => {

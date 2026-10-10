@@ -76,7 +76,7 @@ import { insertLook } from '../../../lib/looks';
 import { HITSLOP_ACTION_SOLO } from '../../../lib/completionCard';
 import { wordsFromLocalText, wordsToLocalText } from '../../../lib/lookWordsCodec';
 import { formatTime } from '../../../lib/utils';
-import { LOOK_DWELL_MS, useMomentStore } from '../../../store/momentStore';
+import { LOOK_DWELL_MS, isNamedDimUp, useMomentStore } from '../../../store/momentStore';
 import { useEventStore, type NyxEvent } from '../../../store/eventStore';
 import { usePetStore } from '../../../store/petStore';
 import { useSyncStore } from '../../../store/syncStore';
@@ -90,6 +90,10 @@ import { Line, SilhouetteFrame } from '../waits/Silhouette';
 
 /** The header's own copy. */
 export const LOOK_MORE = 'More…';
+/** What a screen reader hears, after "dimmed", on a word chip under the named card's dim
+ *  (CUL-1691 R4-2): the chip exists, why it is off, and when it comes back. In place of
+ *  the gloss; the label is unchanged (C-7: `disabled` is a claim, so it says why). */
+export const LOOK_CHIP_DIM_HINT = 'Ready again when the card at the bottom closes';
 /**
  * The beat's length under a screen reader (CUL-1224, GAP-6). One accidental double-tap
  * writes a look; with VoiceOver on, five seconds is not long enough to hear that it
@@ -174,6 +178,11 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
   const [gridOpen, setGridOpen] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // DIMMED MEANS INACTIVE (CUL-1691 R4-2). While the named card's dim is up, the chips
+  // that write a look on one tap are off: a thumb reaching for the card's Undo through
+  // the dim must not save a look. Only the writers; every door stays live (a refusal or
+  // an emergency is never put out of reach behind a dwell, BRK-19).
+  const dimUp = useMomentStore(isNamedDimUp);
   const [justWritten, setJustWritten] = useState<string | null>(null);
   // The write happened under a screen reader: the beat runs long and its Undo takes focus.
   const [spokenWrite, setSpokenWrite] = useState(false);
@@ -278,6 +287,9 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
       const subject = activePet;
       const subjectSpecies = lookSpeciesOf(subject?.species);
       if (!subject || !subjectSpecies || submitting) return;
+      // Read at the tap, never from a closure (R4-2): an ignored tap shows no press and
+      // never buzzes, so this sits before `selectChip()`.
+      if (isNamedDimUp(useMomentStore.getState())) return;
       selectChip();
       setSubmitting(true);
       // Asked alongside the write, so the answer is in hand when the beat opens. A failed
@@ -426,7 +438,7 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
     </Pressable>
   );
   const absenceChip = (
-    <HeaderChip label={LOOK_ABSENCE_CHIP} onPress={onAbsence} disabled={submitting} testID="look-header-absence" />
+    <HeaderChip label={LOOK_ABSENCE_CHIP} onPress={onAbsence} disabled={submitting} dimUp={dimUp} testID="look-header-absence" />
   );
 
   return (
@@ -539,6 +551,7 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
                   hint={gridOpen ? null : word.gloss}
                   onPress={() => onWord(key)}
                   disabled={submitting}
+                  dimUp={dimUp}
                   testID={`look-header-chip-${key}`}
                 />
               );
@@ -577,6 +590,7 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
                   label={notHerselfLabel(sex)}
                   onPress={() => onWord(LOOK_OPENING_CHIP_KEY)}
                   disabled={submitting}
+                  dimUp={dimUp}
                   testID="look-header-opening"
                 />
               </View>
@@ -612,6 +626,7 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
                           label={gridChipLabel(word)}
                           onPress={() => onWord(word.key)}
                           disabled={submitting}
+                          dimUp={dimUp}
                           testID={`look-header-grid-chip-${word.key}`}
                         />
                       ))}
@@ -738,28 +753,31 @@ function AnsweredRow({
 
 // ── A chip that writes ──────────────────────────────────────────────────────────
 
-/** A BUTTON, not a checkbox (C-7): the tap records a look, it toggles nothing. */
+/** A BUTTON, not a checkbox (C-7): the tap records a look, it toggles nothing. Under the
+ *  named card's dim it is `disabled`, a true claim, paired with the hint saying why. */
 function HeaderChip({
   label,
   hint,
   onPress,
   disabled,
+  dimUp,
   testID,
 }: {
   label: string;
   hint?: string | null;
   onPress: () => void;
   disabled: boolean;
+  dimUp: boolean;
   testID: string;
 }) {
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled}
+      disabled={disabled || dimUp}
       hitSlop={HEADER_CHIP_SLOP}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint={hint ?? undefined}
+      accessibilityHint={dimUp ? LOOK_CHIP_DIM_HINT : hint ?? undefined}
       style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
       testID={testID}
     >

@@ -265,6 +265,12 @@ export async function applyLogTimeDoubleDoseCheck(params: {
   // be comparable to the card's adherence rather than any stored TEXT.
   adherence: DoseAdherence | null;
 }): Promise<void> {
+  // CUL-1691 §2.3 — every exit that has an ANSWER reports SETTLED, after the card is up:
+  // a given dose's gold waits on this read. A failed read reports nothing, so the gold
+  // stays away (an unknown is never a clear check). The store's write is keyed to this
+  // dose, so a superseded card (the wait resolves false) is never touched, and the newer
+  // dose's own check settles that one.
+  const settle = () => useMomentStore.getState().markDoubleDoseSettled(params.eventId);
   let flag;
   try {
     flag = await getDoubleDoseFlag(params);
@@ -272,18 +278,25 @@ export async function applyLogTimeDoubleDoseCheck(params: {
     // A check failure must never surface as a log failure — the dose is saved and the
     // card is showing. Warn and leave the note off; the detail screen still has it.
     console.warn('[medication-dose] log-time double-dose check failed:', e);
+    // NOT settled: an unknown is not a clear check, so the gold stays away (the card's
+    // wait fails toward calm; CUL-1713's adversarial pass, a team call).
     return;
   }
-  // No conflict → nothing to say. Note what is NOT done here: there is no "no repeat
-  // found" state to render (§6.1 — absence of a flag is never reassurance).
-  if (!flag.conflict) return;
   // Wait for the card to actually be on screen before patching. The picker path defers
   // its reveal by ~450ms while this local read resolves in single-digit ms, so a bare
   // patch would land on a not-yet-revealed card and drop the note. `false` means a
   // newer dose superseded this card — skip, rather than decorate the wrong dose.
   if (!(await whenMedicationCardVisible(params.eventId))) return;
-  // The third argument is the precondition: this result was computed against the
-  // adherence the dose was WRITTEN with, and the store drops it if the owner has since
-  // changed it on the card. That tap fired its own recheck, which carries the truth.
-  useMomentStore.getState().patchDoubleDose(params.eventId, flag, params.adherence);
+  // No conflict → nothing to say, only that the check is done. Note what is NOT done
+  // here: there is no "no repeat found" state to render (§6.1 — absence of a flag is
+  // never reassurance); `doubleDoseSettled` lets the gold through and renders nothing.
+  if (flag.conflict) {
+    // The third argument is the precondition: this result was computed against the
+    // adherence the dose was WRITTEN with, and the store drops it if the owner has since
+    // changed it on the card. That tap fired its own recheck, which carries the truth.
+    // The patch lands BEFORE the settle, so the gold can never see "settled" without
+    // the conflict that came with it.
+    useMomentStore.getState().patchDoubleDose(params.eventId, flag, params.adherence);
+  }
+  settle();
 }
