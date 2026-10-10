@@ -28,6 +28,7 @@ import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
 import { callFromOtherRead, incidentCallNowDated, incidentRedFlagAsk, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, symptomWord } from './signalCopy';
 import { riseKeptSentence } from './screenMasking';
+import { localCallDay } from './callNowDated';
 import type { SignalScreenModel } from './signalScreen';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
 import type { SignalTrialWindow } from './signalWindows';
@@ -191,7 +192,8 @@ function countLine(finding: SignalFinding, nowMs: number | undefined): string | 
         }
         const later = laterCallTodayIsoOf(finding);
         if (later !== null) {
-          const d = stripDayUTC(later);
+          // PR-30c: the local day, as the dated call-now ask prints (one zone per row).
+          const d = localCallDay(later);
           parts.push(d ? `A later read on ${d.short} says call today` : 'A later read says call today');
         }
         return parts.length > 0 ? parts.join(' · ') : null;

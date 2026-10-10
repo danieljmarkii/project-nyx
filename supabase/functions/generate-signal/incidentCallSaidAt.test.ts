@@ -52,14 +52,24 @@ Deno.test('tierReadIso — the freshest said-at over the tier, never a quieter r
   assert.equal(f.laterCallTodayIso, at(30, 9))
 })
 
-Deno.test('tierReadIso — absent when no read carries a write time, and on a card with no call (the loud default)', () => {
-  const [f] = detectIncidentRedFlags(input([analysis({ call: 'call_now' })]))
-  assert.equal('tierReadIso' in f, false)
-  const [g] = detectIncidentRedFlags(input([analysis({ call: 'call_now', writtenAt: 'not a time' })]))
-  assert.equal('tierReadIso' in g, false)
+Deno.test('tierReadIso — a read with no readable write time is said at its event; a card with no call has none', () => {
+  const [f] = detectIncidentRedFlags(input([analysis({ call: 'call_now', occurredAt: at(28, 9) })]))
+  assert.equal(f.tierReadIso, at(28, 9))
+  const [g] = detectIncidentRedFlags(input([analysis({ call: 'call_now', occurredAt: at(28, 9), writtenAt: 'not a time' })]))
+  assert.equal(g.tierReadIso, at(28, 9))
   const [photo] = detectIncidentRedFlags(input([analysis({ bloodPresent: 'fresh_red', writtenAt: at(29, 10) })]))
   assert.equal('tierReadIso' in photo, false)
   assert.equal('tier' in photo, false)
+})
+
+Deno.test('tierReadIso — a fresh call now with no write time is never out-dated by an older read\'s write (mixed family)', () => {
+  const [f] = detectIncidentRedFlags(
+    input([
+      analysis({ call: 'call_now', occurredAt: at(26, 9), writtenAt: at(26, 9) }),
+      analysis({ call: 'call_now', occurredAt: at(30, 9) }),
+    ]),
+  )
+  assert.equal(f.tierReadIso, at(30, 9))
 })
 
 Deno.test('tierReadIso — two spellings of one instant compare parsed (C-40)', () => {
@@ -91,7 +101,7 @@ Deno.test('mapIncidentAnalyses — carries the row write time as writtenAt', () 
 
 // The second adversarial pass: "later" is ordered by when each call was SAID, the clock the phone
 // dates by, never by the event's time alone.
-Deno.test('laterCallTodayIso — a call today written today on an OLDER event still reaches the card (variant A)', () => {
+Deno.test('a call today written today on an OLDER event ranks the card, never its words (variant A)', () => {
   const [f] = detectIncidentRedFlags(
     input([
       analysis({ call: 'call_now', occurredAt: at(28, 9), writtenAt: at(28, 9) }),
@@ -99,7 +109,29 @@ Deno.test('laterCallTodayIso — a call today written today on an OLDER event st
     ]),
   )
   assert.equal(f.tier, 'call_now')
-  assert.equal(f.laterCallTodayIso, at(30, 10))
+  assert.equal('laterCallTodayIso' in f, false)
+  assert.equal(f.callTodaySaidIso, at(30, 10))
+})
+
+Deno.test('a rewrite of an old call-today row (089, a Hide) never promotes it into the words (third pass)', () => {
+  const [f] = detectIncidentRedFlags(
+    input([
+      analysis({ call: 'call_today', occurredAt: at(20, 9), writtenAt: at(29, 18) }), // 089 took may_wait back
+      analysis({ call: 'call_now', occurredAt: at(26, 9), writtenAt: at(26, 9) }),
+    ]),
+  )
+  assert.equal('laterCallTodayIso' in f, false)
+  assert.equal(f.tierReadIso, at(26, 9))
+})
+
+Deno.test('a call today whose event follows the call now is later, dated by its event', () => {
+  const [f] = detectIncidentRedFlags(
+    input([
+      analysis({ call: 'call_now', occurredAt: at(26, 9), writtenAt: at(26, 9) }),
+      analysis({ call: 'call_today', occurredAt: at(29, 9), writtenAt: at(29, 9) }),
+    ]),
+  )
+  assert.equal(f.laterCallTodayIso, at(29, 9))
 })
 
 Deno.test('laterCallTodayIso — a call now raised after a call today never steps down to it (variant B)', () => {
@@ -114,7 +146,7 @@ Deno.test('laterCallTodayIso — a call now raised after a call today never step
   assert.equal('laterCallTodayIso' in f, false)
 })
 
-Deno.test('laterCallTodayIso — with no write times it keeps the event order (the shipped behaviour)', () => {
+Deno.test('laterCallTodayIso — with no write times it is the event order (the shipped behaviour)', () => {
   const [f] = detectIncidentRedFlags(
     input([analysis({ call: 'call_now', occurredAt: at(27, 9) }), analysis({ call: 'call_today', occurredAt: at(28, 9) })]),
   )

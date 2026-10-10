@@ -102,8 +102,10 @@ describe('a new-rule call speaks the map’s words on Home', () => {
     expect(evidenceText(f, 'Nyx')).toContain('A read on October 8 says to call your vet now.');
     // A later call today under the call now is said on the row and in the evidence too.
     const later = { ...f, laterCallTodayIso: '2026-10-09T07:00:00.000Z' };
-    expect(signalHomeLine(later)!.count).toBe('The call is from a read on Oct 8 · A later read on Oct 9 says call today');
-    expect(evidenceText(later, 'Nyx')).toContain('A later read, on October 9, says to call your vet today.');
+    // The later call today is dated by the phone's local day (PR-30c), the call's own read in UTC as PR-30a shipped.
+    const L = localCallDay(later.laterCallTodayIso)!;
+    expect(signalHomeLine(later)!.count).toBe(`The call is from a read on Oct 8 · A later read on ${L.short} says call today`);
+    expect(evidenceText(later, 'Nyx')).toContain(`A later read, on ${L.long}, says to call your vet today.`);
     // One instant, two spellings: one read (C-40).
     expect(signalHomeLine(card({ tier: 'call_now', mostRecentFlaggedIso: '2026-10-08T07:02:00.000Z', tierIso: '2026-10-08T07:02:00+00:00' }))!.count).toBeNull();
     // The same read: no second date.
@@ -217,8 +219,9 @@ describe('a call now after its first day (PR-30c)', () => {
     expect(signalHomeLine(f, null, dayTwo)!.count).toBeNull();
     expect(signalHomeLine(f, null, dayTwo)!.ask).toBe(`on ${D.short}, a read said: call your vet now`);
     const later = { ...f, laterCallTodayIso: '2026-10-09T07:00:00.000Z' };
-    expect(signalHomeLine(later, null, dayTwo)!.count).toBe('A later read on Oct 9 says call today');
-    expect(evidenceText(later, 'Nyx', dayTwo)).toContain(`On ${D.long}, a read said: call your vet now. A later read, on October 9, says to call your vet today.`);
+    const L = localCallDay(later.laterCallTodayIso)!;
+    expect(signalHomeLine(later, null, dayTwo)!.count).toBe(`A later read on ${L.short} says call today`);
+    expect(evidenceText(later, 'Nyx', dayTwo)).toContain(`On ${D.long}, a read said: call your vet now. A later read, on ${L.long}, says to call your vet today.`);
   });
 
   it('every surface the clock reaches keeps the ask, quotes the call in the past tense, and never claims "now" for it', () => {
@@ -314,5 +317,26 @@ describe('a call now after its first day (PR-30c)', () => {
     expect(safetyArrivalSpoken('Nyx', arriving, dayTwo)).toBe(
       `On ${D.long}, the read of Nyx's vomit said: call your vet now. This is a read of your logs, not a diagnosis.`,
     );
+  });
+});
+
+describe('2a rank half: a call today said after a dated call now ranks the card, never its words (PR-30c, third pass)', () => {
+  const READ = '2026-10-07T07:00:00.000Z';
+  const later = Date.parse(READ) + 3 * 24 * 3600_000;
+  const cached = (finding: IncidentRedFlagFinding): CachedFinding => ({ finding, rank: 0, text: '' });
+  const dated = (over: Partial<IncidentRedFlagFinding> = {}) => card({ tier: 'call_now', tierIso: READ, tierReadIso: READ, ...over });
+  const otherPetToday = card({ tier: 'call_today', tierIso: '2026-10-09T08:00:00.000Z' });
+
+  it('an old call today rewritten later (089, a Hide) raises the rank and leaves the words alone', () => {
+    const f = dated({ callTodaySaidIso: '2026-10-09T18:00:00.000Z' });
+    expect(bannerCopy(f, 'Nyx', later).text).toBe(`Nyx: on ${localCallDay(READ)!.short}, a vomit read said call your vet now.`);
+    expect(signalHomeLine(f, null, later)!.count).toBeNull();
+    // Ranked as a live red flag, so list order decides against another pet's call today.
+    expect(selectCrossPetSafetyFinding([{ pet: { id: 'a' }, findings: [cached(f)] }, { pet: { id: 'b' }, findings: [cached(otherPetToday)] }], later)?.pet.id).toBe('a');
+  });
+
+  it('a call today said before the call now leaves the dated card at 0.5', () => {
+    const f = dated({ callTodaySaidIso: '2026-10-06T18:00:00.000Z' });
+    expect(selectCrossPetSafetyFinding([{ pet: { id: 'a' }, findings: [cached(f)] }, { pet: { id: 'b' }, findings: [cached(otherPetToday)] }], later)?.pet.id).toBe('b');
   });
 });

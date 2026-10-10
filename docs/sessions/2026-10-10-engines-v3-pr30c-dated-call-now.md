@@ -31,7 +31,16 @@ CUL-1739, a `/dispatch` child, plan-gated. Shipped via #1156.
   - Dated days printed in UTC.
 
   Fixed: later is ordered by said-at, with a fallback to event order only when write times are missing, and dated days print in the phone's local day. Both fixes are proven by mutation.
-- **Pass 3:** see the outcome comment on CUL-1739.
+- **Pass 3: FAIL.** Both pass-2 variants held, and so did Sydney. Two new breaks:
+  - A rewrite unrelated to the call moved a call-today row's `updated_at`: 089's meal-log `may_wait` take-back, a Hide, a failed re-read. That promoted an old call today into the banner's words with an invented "later read" date.
+  - The call-today clause stayed in UTC.
+
+  Fixed with two separate halves:
+  - **Words.** A call today is "later" only when its *event* follows the call now's said-at.
+  - **Rank.** A new `callTodaySaidIso` raises a dated card to a live red flag's rank, and never changes a word.
+
+  The call-today day is now local too. A row with no write time counts as said at its event, which hardens the mixed-family case. Proven by mutation (2 red).
+- **Pass 4:** see the outcome comment on CUL-1739.
 - **Named residuals (all loud):**
   - an owner edit, a Hide or a failed re-read moves `updated_at`, which restarts "now" for a day;
   - Get ready's "Worth raising" quotes the server sentence verbatim;
@@ -42,8 +51,8 @@ CUL-1739, a `/dispatch` child, plan-gated. Shipped via #1156.
 ## Checks
 
 - `tsc --noEmit` is clean.
-- jest (signal, record, guards, home, hooks): 2,883 passed. The PR-30c suites also pass under UTC, +14, −10, +5:45 and +12:45.
-- `deno test supabase/functions`: 2,661 passed.
+- jest (signal, record, guards, home, hooks): 2,885 passed. The PR-30c suites also pass under UTC, +14, −10, +5:45 and +12:45.
+- `deno test supabase/functions`: 2,664 passed.
 - Mutations: the boundary (23 hours) reds 7 tests, the banner rank reds 1, and the later-call-today order reds 2.
 - Reviews: `nyx-voice` passed after one fix ("call them now"), and `code-reviewer` found no blockers.
 

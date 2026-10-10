@@ -226,7 +226,9 @@ function laterCallTodaySentence(finding: IncidentRedFlagFinding): string {
   const iso = laterCallTodayIsoOf(finding);
   if (iso === null) return '';
   const label = TIER_WORDS.call_today.label;
-  return ` A later read, on ${shortDateUTC(iso)}, says to ${label.charAt(0).toLowerCase()}${label.slice(1)}.`;
+  // PR-30c: the phone's local day, as every dated call-now form prints, so the two days in one
+  // sentence never disagree by a time zone (the third adversarial pass).
+  return ` A later read, on ${localCallDay(iso)?.long ?? shortDateUTC(iso)}, says to ${label.charAt(0).toLowerCase()}${label.slice(1)}.`;
 }
 
 /** A read's noun by family, for a call-only card ("a vomit read", "a stool read"). */
@@ -2504,6 +2506,15 @@ const BANNER_SAFETY_PRIORITY: Record<
   symptom_worsening: 4,
 };
 
+/** PR-30c (2a's rank half): the family's call today was said after its call now. Ranks only, so
+ *  a rewrite that moves a call-today row's write time can raise the card, never change a word. */
+function callTodaySaidSinceCallNow(f: IncidentRedFlagFinding): boolean {
+  if (typeof f.callTodaySaidIso !== 'string' || typeof f.tierReadIso !== 'string') return false;
+  const today = Date.parse(f.callTodaySaidIso);
+  const now = Date.parse(f.tierReadIso);
+  return Number.isFinite(today) && Number.isFinite(now) && today > now;
+}
+
 /** A banner finding's place in BANNER_SAFETY_PRIORITY, mirroring the engine's `safetyRankOf`: I5's
  *  `refused_then_vomited` card (PR-30s) sits below the burden card and above chronicity, so a
  *  "call your vet today" pet always takes the banner from a "mention it to your vet" one. */
@@ -2517,7 +2528,7 @@ function bannerRankOf(f: BannerSafetyFinding, nowMs: number | undefined): number
     // Ruling 2a: a dated call now ranks just under a live red flag (a fresh call today on any pet,
     // or in the same pet's other family, takes the banner from it) and above intake decline. One
     // carrying a later call today speaks that call, so it ranks as one.
-    return laterCallTodayIsoOf(f) !== null ? BANNER_SAFETY_PRIORITY.incident_red_flag : 0.5;
+    return laterCallTodayIsoOf(f) !== null || callTodaySaidSinceCallNow(f) ? BANNER_SAFETY_PRIORITY.incident_red_flag : 0.5;
   }
   if (f.type === 'intake_decline' && f.trigger === 'refused_then_vomited') return 2.5;
   return BANNER_SAFETY_PRIORITY[f.type];
