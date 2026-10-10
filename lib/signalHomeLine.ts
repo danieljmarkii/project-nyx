@@ -26,7 +26,7 @@
 import { careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
-import { refusedThenVomitedOf, stripDayUTC, symptomWord } from './signalCopy';
+import { incidentRedFlagAsk, isRecordCallFinding, refusedThenVomitedOf, stripDayUTC, symptomWord } from './signalCopy';
 import { riseKeptSentence } from './screenMasking';
 import type { SignalScreenModel } from './signalScreen';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
@@ -63,7 +63,8 @@ function numWord(n: number): string {
  *   intake       "worth keeping an eye on, and a word with your vet if it carries on" (both)
  * The conditional asks keep their lead-in: cut to "a word with your vet if it carries on"
  * they read as a fragment with no verb (pm-feature-review).
- *   red flag     "worth a call to your vet"
+ *   red flag     "worth a call to your vet"; a NEW-RULE call (Engines v3 PR-30a, CUL-1511) asks in
+ *                the tier-word map's words, "call your vet now" / "call your vet today"
  *   burden       today "worth a call to your vet today" · soon "worth booking a vet visit soon"
  */
 export function signalHomeAsk(finding: SignalFinding): string | null {
@@ -81,7 +82,7 @@ export function signalHomeAsk(finding: SignalFinding): string | null {
       if (finding.trigger === 'refused_then_vomited') return 'worth mentioning to your vet';
       return 'worth keeping an eye on, and a word with your vet if it carries on';
     case 'incident_red_flag':
-      return 'worth a call to your vet';
+      return incidentRedFlagAsk(finding);
     case 'symptom_burden':
       return finding.tier === 'today' ? 'worth a call to your vet today' : 'worth booking a vet visit soon';
     default:
@@ -185,8 +186,10 @@ function eyebrow(finding: SignalFinding): string | null {
   // The photo record's own day, UTC like the sentence ("on September 22") and the phone
   // script — never a local day that could disagree with the screen by one.
   const day = stripDayUTC(finding.mostRecentFlaggedIso);
-  if (!day) return finding.flaggedIncidentCount === 1 ? 'Photo read' : 'Photo reads';
-  return finding.flaggedIncidentCount === 1 ? `Photo read · ${day.short}` : `Photo reads · latest ${day.short}`;
+  // PR-30a: a call the record raised read no photo, so its eyebrow never says one did.
+  const [one, many] = isRecordCallFinding(finding) ? ['Read', 'Reads'] : ['Photo read', 'Photo reads'];
+  if (!day) return finding.flaggedIncidentCount === 1 ? one : many;
+  return finding.flaggedIncidentCount === 1 ? `${one} · ${day.short}` : `${many} · latest ${day.short}`;
 }
 
 /**

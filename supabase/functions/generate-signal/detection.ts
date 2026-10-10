@@ -616,7 +616,16 @@ export interface IncidentAnalysisInput {
    * derivation reads it for both. PRESENT-ONLY — only 'yes' is a red flag; 'no'/'unsure'/null is NOT.
    */
   foreignMaterialPresent: string | null
+  /**
+   * Engines v3 PR-30a (CUL-1511): the call this read stands on under the NEW rule, resolved by the
+   * record's own `tierDisplayOf` (pipeline.ts `newRuleCallOf`), or null/absent. An earlier-rule call
+   * is null here, so the lane keeps today's words and today's trigger for every unstamped read.
+   */
+  call?: IncidentCall | null
 }
+
+/** A new-rule call on a per-incident read: the two tiers Home's safety band shows (spec §4). */
+export type IncidentCall = 'call_now' | 'call_today'
 
 /** A logged dose reduced to what doseToMedicationWindow needs (the caller's DB-row projection). */
 export interface DoseEventInput {
@@ -1935,6 +1944,23 @@ export interface IncidentRedFlagFinding extends FindingBase {
   flaggedIncidentCount: number
   /** The recency window in days actually applied (a flag older than this no longer leads Home). */
   windowDays: number
+  /**
+   * Engines v3 PR-30a (CUL-1511; docs/nyx-incident-tiers-requirements.md §4, K1 = A): the loudest
+   * NEW-RULE call among this family's in-window reads, in the record's own resolution. Present ⇒ the
+   * card's ask is that tier's words ("call your vet now" / "call your vet today"); absent ⇒ every
+   * read here is earlier-rule and the card keeps today's "worth a call to your vet", to the byte.
+   * It never lowers anything: it is set only from a call, and a family with a photo flag fires
+   * whether or not it is set.
+   */
+  tier?: IncidentCall
+  /**
+   * Present (true) when the family has NO photo flag and fires only because a new-rule read is a
+   * call the record raised (K1 = A: every call joins Home's band, the contextual ones included).
+   * Then `flags` is empty, and `flaggedIncidentCount` / `mostRecentFlaggedIso` count and date the
+   * CALLED reads instead of the flagged ones (clustered the same way, B-368). Absent on every card
+   * a photo flag raised. Never present without `tier`.
+   */
+  fromRecord?: true
 }
 
 export type Finding =
@@ -7216,13 +7242,25 @@ export function detectIncidentRedFlags(
     flagKinds: Set<IncidentFlagKind>
     mostRecentMs: number
     mostRecentIso: string
-    inWindow: { ms: number; flagged: boolean }[]
+    inWindow: { ms: number; flagged: boolean; called: boolean }[]
+    /** PR-30a: the loudest new-rule call in the window, and its most recent called read. */
+    call: IncidentCall | null
+    mostRecentCalledMs: number
+    mostRecentCalledIso: string
   }
   const byFamily = new Map<IncidentCategory, FamilyAcc>()
   const familyAcc = (cat: IncidentCategory): FamilyAcc => {
     let acc = byFamily.get(cat)
     if (!acc) {
-      acc = { flagKinds: new Set(), mostRecentMs: -Infinity, mostRecentIso: '', inWindow: [] }
+      acc = {
+        flagKinds: new Set(),
+        mostRecentMs: -Infinity,
+        mostRecentIso: '',
+        inWindow: [],
+        call: null,
+        mostRecentCalledMs: -Infinity,
+        mostRecentCalledIso: '',
+      }
       byFamily.set(cat, acc)
     }
     return acc
@@ -7243,7 +7281,17 @@ export function detectIncidentRedFlags(
     const flags = deriveIncidentFlags(a)
     const flagged = flags.length > 0 // no PRESENT flag ⇒ silence, never a "clear"; but it still
     const acc = familyAcc(cat)
-    acc.inWindow.push({ ms, flagged }) // participates in clustering as a possible re-log anchor
+    // PR-30a: a new-rule call, in the record's own words. call now outranks call today; nothing
+    // quiet is ever recorded here, so this can only add a card or raise an ask.
+    const call = a.call === 'call_now' || a.call === 'call_today' ? a.call : null
+    acc.inWindow.push({ ms, flagged, called: call !== null }) // participates in clustering as a possible re-log anchor
+    if (call !== null) {
+      if (acc.call !== 'call_now') acc.call = call
+      if (ms > acc.mostRecentCalledMs) {
+        acc.mostRecentCalledMs = ms
+        acc.mostRecentCalledIso = a.occurredAt
+      }
+    }
     if (flagged) {
       for (const f of flags) acc.flagKinds.add(f)
       if (ms > acc.mostRecentMs) {
@@ -7255,11 +7303,29 @@ export function detectIncidentRedFlags(
 
   // Emit one finding per family with ≥1 flagged in-window incident, in a DETERMINISTIC family order
   // (vomit before stool) — the ranker also breaks the incident_red_flag/incident_red_flag tie this
-  // way, so the two agree. A family with no flagged incident emits nothing (silence, never a "clear").
+  // way, so the two agree. A family with no flagged incident emits nothing (silence, never a "clear"),
+  // unless a new-rule read in it is a call (PR-30a, K1 = A), which emits a `fromRecord` card.
   const out: IncidentRedFlagFinding[] = []
   for (const cat of INCIDENT_CATEGORY_ORDER) {
     const acc = byFamily.get(cat)
-    if (!acc || acc.flagKinds.size === 0) continue
+    if (!acc) continue
+    // PR-30a (K1 = A): a family with no photo flag still fires when a new-rule read in the window is
+    // a call the record raised. Its card counts and dates the CALLED reads (`fromRecord`).
+    if (acc.flagKinds.size === 0) {
+      if (acc.call === null) continue
+      out.push({
+        type: 'incident_red_flag',
+        priorityClass: 'safety',
+        incidentType: cat,
+        flags: [],
+        mostRecentFlaggedIso: acc.mostRecentCalledIso,
+        flaggedIncidentCount: countFlaggedClusters(acc.inWindow.map((x) => ({ ms: x.ms, flagged: x.called }))),
+        windowDays: config.incidentRedFlag.windowDays,
+        tier: acc.call,
+        fromRecord: true,
+      })
+      continue
+    }
 
     // B-368 — collapse NEAR-DUPLICATE re-logs of one incident so the count (and its singular/plural
     // "logged photo(s)" copy) describes distinct flagged incidents, not raw analysis rows: the same
@@ -7289,6 +7355,8 @@ export function detectIncidentRedFlags(
       mostRecentFlaggedIso: acc.mostRecentIso,
       flaggedIncidentCount,
       windowDays: config.incidentRedFlag.windowDays,
+      // PR-30a: the family's loudest new-rule call, or nothing (today's words).
+      ...(acc.call !== null ? { tier: acc.call } : {}),
     })
   }
   return out
