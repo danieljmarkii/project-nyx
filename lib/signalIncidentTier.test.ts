@@ -97,6 +97,12 @@ describe('a new-rule call speaks the map’s words on Home', () => {
     expect(line.count).toBe('The call is from a read on Oct 8');
     expect(line.ask).toBe('call your vet now');
     expect(evidenceText(f, 'Nyx')).toContain('A read on October 8 says to call your vet now.');
+    // A later call today under the call now is said on the row and in the evidence too.
+    const later = { ...f, laterCallTodayIso: '2026-10-09T07:00:00.000Z' };
+    expect(signalHomeLine(later)!.count).toBe('The call is from a read on Oct 8 · A later read on Oct 9 says call today');
+    expect(evidenceText(later, 'Nyx')).toContain('A later read, on October 9, says to call your vet today.');
+    // One instant, two spellings: one read (C-40).
+    expect(signalHomeLine(card({ tier: 'call_now', mostRecentFlaggedIso: '2026-10-08T07:02:00.000Z', tierIso: '2026-10-08T07:02:00+00:00' }))!.count).toBeNull();
     // The same read: no second date.
     expect(signalHomeLine(card({ tier: 'call_now', tierIso: '2026-10-08T07:02:00.000Z' }))!.count).toBeNull();
   });

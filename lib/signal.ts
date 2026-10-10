@@ -224,6 +224,8 @@ export interface IncidentRedFlagFinding {
   tier?: 'call_now' | 'call_today';
   /** The most recent read at `tier`: the read whose words the ask is. Present exactly when `tier` is. */
   tierIso?: string;
+  /** A later read saying call today, under an older read's call now: its occurred_at. */
+  laterCallTodayIso?: string;
   /** Present when no photo flagged anything and a read's call is the whole card: then `flags` is
    *  empty, the count is the CALLED reads', and the date is `tierIso`. The card never says where
    *  the call came from (the row cannot tell). Never present without `tier`. */

@@ -348,7 +348,7 @@ export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: stri
     // cleared, so any source named here could be false (adversarial pass, #1/#2). The record's
     // card says why. Dated by the read whose words the ask is (`tierIso`).
     const noun = INCIDENT_READ_NOUN[f.incidentType]
-    return `The read of ${petName}'s ${noun} on ${onsetDay(f.tierIso ?? f.mostRecentFlaggedIso)} says to ${ask}. This is a read of your logs, not a diagnosis.`
+    return `The read of ${petName}'s ${noun} on ${onsetDay(f.tierIso ?? f.mostRecentFlaggedIso)} says to ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
   }
   return templateIncidentRedFlagPhoto(f, petName, ask)
 }
@@ -375,10 +375,18 @@ function templateIncidentRedFlagPhoto(f: IncidentRedFlagFinding, petName: string
       : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}, most recently on ${when}`
   // PR-30a: when the louder call is a DIFFERENT read from the flagged photo, the sentence says so
   // and dates it, rather than pinning the call on the older photo (adversarial pass, #3).
-  if (f.tierIso !== undefined && f.tierIso !== f.mostRecentFlaggedIso) {
-    return `${lead}. A read on ${onsetDay(f.tierIso)} says to ${ask}. This is a read of your logs, not a diagnosis.`
+  // Instants compared parsed, never as text (C-40).
+  if (f.tierIso !== undefined && Date.parse(f.tierIso) !== Date.parse(f.mostRecentFlaggedIso)) {
+    return `${lead}. A read on ${onsetDay(f.tierIso)} says to ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
   }
-  return `${lead} — ${ask}. This is a read of your logs, not a diagnosis.`
+  return `${lead} — ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
+}
+
+/** PR-30a: a call today newer than the card's call now, said as its own dated sentence (with a
+ *  leading space), or nothing. The words are the map's, like the card's own ask. */
+function laterCallTodayClause(f: IncidentRedFlagFinding): string {
+  if (f.tier !== 'call_now' || f.laterCallTodayIso === undefined) return ''
+  return ` A later read, on ${onsetDay(f.laterCallTodayIso)}, says to ${lowerFirst(TIER_WORDS.call_today.label)}.`
 }
 
 // The §9 adjacency note opens by naming the sign the card is NOT about, so an owner reading

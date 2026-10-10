@@ -1960,6 +1960,11 @@ export interface IncidentRedFlagFinding extends FindingBase {
    *  On a photo card it can be a different read from the flagged photo, and the sentence says so
    *  rather than pinning the louder call on the older photo. Present exactly when `tier` is. */
   tierIso?: string
+  /** A LATER read in the family that says call today, when the card's tier is call now from an
+   *  older read: its occurred_at. Present only then. Without it a fresh call today under an older
+   *  call now changed nothing on Home (the adversarial pass's second round): the card says it as
+   *  its own dated clause, so every call joins the band (K1 = A). */
+  laterCallTodayIso?: string
   /**
    * Present (true) when the family has NO photo flag and fires only because a new-rule read is a
    * call (K1 = A: every call joins Home's band, the contextual ones included). The card says only
@@ -7311,6 +7316,12 @@ export function detectIncidentRedFlags(
   // (vomit before stool) — the ranker also breaks the incident_red_flag/incident_red_flag tie this
   // way, so the two agree. A family with no flagged incident emits nothing (silence, never a "clear"),
   // unless a new-rule read in it is a call (PR-30a, K1 = A), which emits a `callOnly` card.
+  // PR-30a: a call today newer than the call now the card speaks, as its own dated clause.
+  const laterCallToday = (acc: FamilyAcc): { laterCallTodayIso?: string } =>
+    acc.call === 'call_now' && acc.latestAt.call_today.ms > acc.latestAt.call_now.ms
+      ? { laterCallTodayIso: acc.latestAt.call_today.iso }
+      : {}
+
   const out: IncidentRedFlagFinding[] = []
   for (const cat of INCIDENT_CATEGORY_ORDER) {
     const acc = byFamily.get(cat)
@@ -7330,6 +7341,7 @@ export function detectIncidentRedFlags(
         windowDays: config.incidentRedFlag.windowDays,
         tier: acc.call,
         tierIso: acc.latestAt[acc.call].iso,
+        ...laterCallToday(acc),
         callOnly: true,
       })
       continue
@@ -7365,6 +7377,7 @@ export function detectIncidentRedFlags(
       windowDays: config.incidentRedFlag.windowDays,
       // PR-30a: the family's loudest new-rule call, or nothing (today's words).
       ...(acc.call !== null ? { tier: acc.call, tierIso: acc.latestAt[acc.call].iso } : {}),
+      ...laterCallToday(acc),
     })
   }
   return out

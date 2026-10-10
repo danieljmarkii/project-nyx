@@ -180,6 +180,29 @@ export function isCallOnlyFinding(finding: IncidentRedFlagFinding): boolean {
   return finding.callOnly === true && finding.flags.length === 0 && incidentCallOf(finding) !== null;
 }
 
+/** Two ISO instants, compared parsed and never as text (C-40). */
+function sameInstant(a: string, b: string): boolean {
+  return Date.parse(a) === Date.parse(b);
+}
+
+/** A red-flag card whose call came from a different read than its flagged photo. */
+export function callFromOtherRead(finding: IncidentRedFlagFinding): boolean {
+  return finding.tierIso !== undefined && !isCallOnlyFinding(finding) && !sameInstant(finding.tierIso, finding.mostRecentFlaggedIso);
+}
+
+/** A later read saying call today under the card's call now (PR-30a), or null. */
+export function laterCallTodayIsoOf(finding: IncidentRedFlagFinding): string | null {
+  return incidentCallOf(finding) === 'call_now' && typeof finding.laterCallTodayIso === 'string' ? finding.laterCallTodayIso : null;
+}
+
+/** " A later read, on {date}, says to call your vet today." or nothing. */
+function laterCallTodaySentence(finding: IncidentRedFlagFinding): string {
+  const iso = laterCallTodayIsoOf(finding);
+  if (iso === null) return '';
+  const label = TIER_WORDS.call_today.label;
+  return ` A later read, on ${shortDateUTC(iso)}, says to ${label.charAt(0).toLowerCase()}${label.slice(1)}.`;
+}
+
 /** A read's noun by family, for a call-only card ("a vomit read", "a stool read"). */
 export const INCIDENT_READ_NOUN: Record<IncidentCategory, string> = { vomit: 'vomit', stool: 'stool' };
 
@@ -817,10 +840,11 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
       // diagnosis, then the ask; never a source, which the row cannot back. The record's own
       // card says why it called.
       const noun = INCIDENT_READ_NOUN[finding.incidentType];
-      return (
-        `The read of ${petName}'s ${noun} is an automated read, not a confirmed finding and not a diagnosis. ` +
-        `${capitalize(ask)}: the read itself says why.`
-      );
+      const lead =
+        finding.flaggedIncidentCount === 1
+          ? `The read of ${petName}'s ${noun} is an automated read, not a confirmed finding and not a diagnosis.`
+          : `The reads of ${petName}'s ${noun} logs are automated reads, not confirmed findings and not a diagnosis.`;
+      return `${lead} ${capitalize(ask)}: the read itself says why.${laterCallTodaySentence(finding)}`;
     }
     const symptom = INCIDENT_NOUN[finding.incidentType]; // 'vomiting' | 'stool' (neutral, never "loose stool")
     const phrase = incidentFlagPhrase(finding.flags);
@@ -832,15 +856,15 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // PR-30a: a new-rule call asks in the map's words; every other card keeps the shipped line.
     // A call from a different read than the flagged photo is dated as its own (adversarial #3).
     const otherRead =
-      finding.tierIso !== undefined && finding.tierIso !== finding.mostRecentFlaggedIso
-        ? `A read on ${shortDateUTC(finding.tierIso)} says to ${ask}. `
+      finding.tierIso !== undefined && callFromOtherRead(finding)
+        ? `A read on ${shortDateUTC(finding.tierIso)} says to ${ask}.${laterCallTodaySentence(finding)} `
         : '';
     const tail =
       incidentCallOf(finding) === null
         ? `It's still worth a call to your vet, who can look at what you logged and tell you what it means.`
         : otherRead
           ? `${otherRead}Your vet can look at what you logged and tell you what it means.`
-          : `${capitalize(ask)}: they can look at what you logged and tell you what it means.`;
+          : `${capitalize(ask)}: they can look at what you logged and tell you what it means.${laterCallTodaySentence(finding)}`;
     return `${lead} — an automated read of ${readNoun}, not a confirmed finding and not a diagnosis. ${tail}`;
   }
   if (finding.type === 'food_symptom_correlation') {

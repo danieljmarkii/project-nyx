@@ -26,7 +26,7 @@
 import { careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
-import { incidentRedFlagAsk, isCallOnlyFinding, refusedThenVomitedOf, stripDayUTC, symptomWord } from './signalCopy';
+import { callFromOtherRead, incidentRedFlagAsk, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, symptomWord } from './signalCopy';
 import { riseKeptSentence } from './screenMasking';
 import type { SignalScreenModel } from './signalScreen';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
@@ -177,11 +177,21 @@ function countLine(finding: SignalFinding): string | null {
       // The headline and the eyebrow carry it: the phrase, the family and the date. PR-30a: a
       // call from a different read than the flagged photo carries that read's day here, so the
       // ask is never pinned on the older photo (the adversarial pass, #3).
-      if (finding.tierIso !== undefined && finding.tierIso !== finding.mostRecentFlaggedIso && !isCallOnlyFinding(finding)) {
-        const d = stripDayUTC(finding.tierIso);
-        return d ? `The call is from a read on ${d.short}` : 'The call is from a later read';
+      // Second round: a later call today under an older call now is said here too, so a fresh call
+      // always changes the row. Instants compared parsed (C-40, inside the helpers).
+      {
+        const parts: string[] = [];
+        if (finding.tierIso !== undefined && callFromOtherRead(finding)) {
+          const d = stripDayUTC(finding.tierIso);
+          parts.push(d ? `The call is from a read on ${d.short}` : 'The call is from a later read');
+        }
+        const later = laterCallTodayIsoOf(finding);
+        if (later !== null) {
+          const d = stripDayUTC(later);
+          parts.push(d ? `A later read on ${d.short} says call today` : 'A later read says call today');
+        }
+        return parts.length > 0 ? parts.join(' · ') : null;
       }
-      return null;
     default:
       return null;
   }

@@ -226,3 +226,39 @@ Deno.test('carried — a record call carries with its tier; a flagless card with
   assert.equal(canRenderCarried(card()), true)
   assert.ok(templateCarried(card(), 'Nyx', at(28, 9)).includes('worth a call to your vet'))
 })
+
+Deno.test('a fresh call today under an older call now joins the band (adversarial pass 2, #4)', () => {
+  // A new-rule photo call now on May 20, then a call-only call today on May 29.
+  const before = detectIncidentRedFlags(input([analysis({ bloodPresent: 'fresh_red', call: 'call_now', occurredAt: at(20, 9) })]))
+  const after = detectIncidentRedFlags(input([
+    analysis({ bloodPresent: 'fresh_red', call: 'call_now', occurredAt: at(20, 9) }),
+    analysis({ call: 'call_today', occurredAt: at(29, 9) }),
+  ]))
+  assert.notDeepEqual(after, before, 'the fresh call changes the card')
+  assert.equal(after[0].tier, 'call_now')
+  assert.equal(after[0].laterCallTodayIso, at(29, 9))
+  const t = templateIncidentRedFlag(after[0], 'Nyx')
+  assert.ok(t.includes('— call your vet now. A later read, on May 29, says to call your vet today.'), t)
+  assert.ok(validatePhrasing(t, after[0]))
+  // On a call-only card too.
+  const [c] = detectIncidentRedFlags(input([
+    analysis({ call: 'call_now', occurredAt: at(20, 9) }),
+    analysis({ call: 'call_today', occurredAt: at(29, 9) }),
+  ]))
+  assert.equal(c.laterCallTodayIso, at(29, 9))
+  assert.ok(templateIncidentRedFlag(c, 'Nyx').includes('on May 20 says to call your vet now. A later read, on May 29, says to call your vet today.'))
+  // An OLDER call today adds nothing; a newer call now is the card's own date.
+  const [o] = detectIncidentRedFlags(input([
+    analysis({ call: 'call_today', occurredAt: at(20, 9) }),
+    analysis({ call: 'call_now', occurredAt: at(29, 9) }),
+  ]))
+  assert.equal(o.laterCallTodayIso, undefined)
+})
+
+Deno.test('one instant in two spellings is one read (C-40)', () => {
+  const t = templateIncidentRedFlag(
+    card({ tier: 'call_now', mostRecentFlaggedIso: '2026-05-28T09:00:00.000Z', tierIso: '2026-05-28T09:00:00+00:00' }),
+    'Nyx',
+  )
+  assert.equal(/A read on/.test(t), false, t)
+})
