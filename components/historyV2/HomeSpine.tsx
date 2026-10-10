@@ -20,6 +20,7 @@ import { useCallback, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
 import type { DayNode } from '../../lib/dayNodes';
+import { carryOpenRuns } from '../../lib/openRunCarry';
 import { DayNodeRow } from '../dayRow/DayNodeRow';
 import { ThreadDraw, type ThreadGeometry } from '../motion/ThreadDraw';
 import { SPINE_THREAD } from '../recap/DaySpine';
@@ -50,6 +51,14 @@ export function HomeSpine({ nodes, onOpen, drawToken, claimDraw }: HomeSpineProp
       return next;
     });
   }, []);
+  // A re-keyed run (an earlier meal logged, its first meal deleted) stays open: carried in
+  // the render that brings the new nodes, so its row never mounts closed (CUL-1757).
+  const [carriedFrom, setCarriedFrom] = useState(nodes);
+  if (carriedFrom !== nodes) {
+    setCarriedFrom(nodes);
+    const carried = carryOpenRuns(open, carriedFrom, nodes);
+    if (carried !== open) setOpen(carried);
+  }
   const rows = nodes.map((node, i) => ({
     key: node.id,
     node: (

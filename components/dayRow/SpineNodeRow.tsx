@@ -66,6 +66,7 @@ import { announceQueued, readLandedSpoken, useRowSpeech } from './rowSpeech';
 import { FOLD_LAYOUT, UNFOLD_LAYOUT } from '../motion/foldMotion';
 import { useRunOpen } from '../motion/runOpenMotion';
 import { RunRevealContext } from '../motion/runRevealMotion';
+import { ThreadDrawing } from '../motion/threadMotion';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { ADHERENCE_OPTIONS } from '../log/AdherenceChipRow';
@@ -546,6 +547,8 @@ export function SpineCompactRow({
   };
   // Called either way (the rules of hooks) and held closed when the host did not ask for it,
   // so the shipped path runs no timer, no beat and no `configureNext` of this machine's.
+  // A tap while the day's thread draws waits for it to settle (CUL-1757).
+  const threadDrawing = useContext(ThreadDrawing);
   const motion = useRunOpen({
     shown: openInPlace && expanded,
     identity: node.id,
@@ -554,6 +557,7 @@ export function SpineCompactRow({
     leadTop: RUN_LEAD_TOP,
     reducedMotion,
     appActive,
+    held: threadDrawing,
     onFreshOpen: openInPlace ? onFreshOpen : undefined,
   });
   // Every other way an open ends (a host's reset, a settle to closed, the run re-keyed under

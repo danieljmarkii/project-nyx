@@ -83,11 +83,11 @@ type Shot = { phase: string; geometry: string; clipped: boolean; calls: number }
  *  unmounted SHUT (zero high) moves nothing, so only an un-shut box counts. */
 const geometryOf = (m: RunOpen) => `${m.slotMounted && m.boxHeight === null}|${m.membersBelow}`;
 
-function filmed(initial: { shown: boolean }, extra: Partial<{ reducedMotion: boolean; count: number }> = {}) {
+function filmed(initial: { shown: boolean; held?: boolean }, extra: Partial<{ reducedMotion: boolean; count: number }> = {}) {
   const shots: Shot[] = [];
   const configureNext = LayoutAnimation.configureNext as unknown as jest.Mock;
   const hook = renderHook(
-    (p: { shown: boolean; appActive?: boolean; identity?: string }) => {
+    (p: { shown: boolean; appActive?: boolean; identity?: string; held?: boolean }) => {
       const m = useRunOpen({ ...base, count: 2, ...extra, ...p });
       shots.push({ phase: m.phase, geometry: geometryOf(m), clipped: m.clipped, calls: configureNext.mock.calls.length });
       return m;
@@ -381,6 +381,30 @@ describe('useRunOpen — Reduce Motion, blur, re-key, reset', () => {
     expect(t.result.current.phase).toBe('open');
     tick(500);
     expect(LayoutAnimation.configureNext).not.toHaveBeenCalled();
+  });
+
+  it('held by a drawing thread (CUL-1757): an open and a close wait, configure nothing, then run as asked once it settles', () => {
+    timedAnimations();
+    const t = filmed({ shown: false, held: true });
+    act(() => t.rerender({ shown: true, held: true }));
+    tick(100);
+    expect(t.result.current.phase).toBe('closed');
+    expect(LayoutAnimation.configureNext).not.toHaveBeenCalled();
+    act(() => t.rerender({ shown: true, held: false }));
+    tick(RUN_MOTION.mountFrameMs);
+    expect(LayoutAnimation.configureNext).toHaveBeenLastCalledWith(RUN_OPEN_LAYOUT);
+    tick(500);
+    expect(t.result.current.phase).toBe('open');
+    (LayoutAnimation.configureNext as unknown as jest.Mock).mockClear();
+    act(() => t.rerender({ shown: false, held: true }));
+    tick(100);
+    expect(t.result.current.phase).toBe('open');
+    expect(LayoutAnimation.configureNext).not.toHaveBeenCalled();
+    act(() => t.rerender({ shown: false, held: false }));
+    expect(LayoutAnimation.configureNext).toHaveBeenLastCalledWith(RUN_CLOSE_LAYOUT);
+    tick(RUN_CLOSE_BUDGET_MS);
+    expect(t.result.current.phase).toBe('closed');
+    expect(bareGeometryCommits(t.shots)).toEqual([]);
   });
 
   it('a host\'s reset lands the run at once, with no choreography and no config', () => {

@@ -127,6 +127,7 @@ import {
   type QuietState,
 } from '../../lib/historyScreen';
 import { recordWeekday } from '../../lib/recordDates';
+import { carryOpenRuns } from '../../lib/openRunCarry';
 import { mayCarryRead } from '../../lib/spineNode';
 import { readAnalysisRows } from '../../lib/spineReads';
 import { syncNow } from '../../lib/sync';
@@ -600,6 +601,14 @@ export function HistoryList() {
         : NO_NODES_BY_DAY,
     [snapshot, working],
   );
+  // A re-keyed run (an earlier meal logged, its first meal deleted) stays open: carried in
+  // the render that brings the new nodes, so its row never mounts closed (CUL-1757).
+  const [carriedFrom, setCarriedFrom] = useState(nodesByDay);
+  if (carriedFrom !== nodesByDay) {
+    setCarriedFrom(nodesByDay);
+    const carried = carryOpenRuns(openRuns, [...carriedFrom.values()].flat(), [...nodesByDay.values()].flat());
+    if (carried !== openRuns) setOpenRuns(carried);
+  }
 
   // The rows a removal could fold, read by the focus callback when the owner comes back.
   foldable.current = useMemo(
