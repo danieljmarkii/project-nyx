@@ -627,6 +627,13 @@ export interface IncidentAnalysisInput {
    * write under the key stores one.
    */
   call?: IncidentCall | null
+  /**
+   * Engines v3 PR-30c (CUL-1739): when the read row was last written (`event_ai_analysis.updated_at`),
+   * or null/absent. A call's "said at" instant is the later of this and `occurredAt`: a read
+   * raised to call now a day after its event (a re-floor, a late sync) was said when it was
+   * written, never on the event's day.
+   */
+  writtenAt?: string | null
 }
 
 /** A new-rule call on a per-incident read: the two tiers Home's safety band shows (spec §4). */
@@ -1967,6 +1974,15 @@ export interface IncidentRedFlagFinding extends FindingBase {
    *  call now changed nothing on Home (the adversarial pass's second round): the card says it as
    *  its own dated clause, so every call joins the band (K1 = A). */
   laterCallTodayIso?: string
+  /** Engines v3 PR-30c (CUL-1739): the freshest instant any in-window read at `tier` SAID its
+   *  call: per read the later of its occurred_at and its row's last write (its event when the
+   *  write is unknown), the max over the reads. Present exactly when `tier` is. The phone dates a
+   *  call now from this, a day after it; absent (a cache from before PR-30c), it keeps "now". */
+  tierReadIso?: string
+  /** PR-30c (ruling 2a's rank half): under a call now, when the family's call today was last
+   *  said. Ranks only: the phone keeps a dated call now at a live red flag's rank while this is
+   *  fresher than `tierReadIso`. Never a word on any surface (`laterCallTodayIso` carries those). */
+  callTodaySaidIso?: string
   /**
    * Present (true) when the family has NO photo flag and fires only because a new-rule read is a
    * call (K1 = A: every call joins Home's band, the contextual ones included). The card says only
@@ -7264,6 +7280,8 @@ export function detectIncidentRedFlags(
      *  tier, so a card is dated by a read that says its own words (never a quieter one's day). */
     call: IncidentCall | null
     latestAt: Record<IncidentCall, { ms: number; iso: string }>
+    /** PR-30c: the freshest "said at" instant per call tier (max of occurred and written). */
+    saidAt: Record<IncidentCall, { ms: number; iso: string }>
   }
   const byFamily = new Map<IncidentCategory, FamilyAcc>()
   const familyAcc = (cat: IncidentCategory): FamilyAcc => {
@@ -7276,6 +7294,7 @@ export function detectIncidentRedFlags(
         inWindow: [],
         call: null,
         latestAt: { call_now: { ms: -Infinity, iso: '' }, call_today: { ms: -Infinity, iso: '' } },
+        saidAt: { call_now: { ms: -Infinity, iso: '' }, call_today: { ms: -Infinity, iso: '' } },
       }
       byFamily.set(cat, acc)
     }
@@ -7304,6 +7323,13 @@ export function detectIncidentRedFlags(
     if (call !== null) {
       if (acc.call !== 'call_now') acc.call = call
       if (ms > acc.latestAt[call].ms) acc.latestAt[call] = { ms, iso: a.occurredAt }
+      // PR-30c: when this call was said, the later of the event and the row's write. Parsed,
+      // never text (C-40).
+      // A read with no readable write time counts as said at its event (the third adversarial
+      // pass: skipping it let an older read's write date a call now raised today).
+      const writtenMs = typeof a.writtenAt === 'string' ? Date.parse(a.writtenAt) : NaN
+      const said = Number.isFinite(writtenMs) && writtenMs > ms ? { ms: writtenMs, iso: a.writtenAt as string } : { ms, iso: a.occurredAt }
+      if (said.ms > acc.saidAt[call].ms) acc.saidAt[call] = said
     }
     if (flagged) {
       for (const f of flags) acc.flagKinds.add(f)
@@ -7319,10 +7345,24 @@ export function detectIncidentRedFlags(
   // way, so the two agree. A family with no flagged incident emits nothing (silence, never a "clear"),
   // unless a new-rule read in it is a call (PR-30a, K1 = A), which emits a `callOnly` card.
   // PR-30a: a call today newer than the call now the card speaks, as its own dated clause.
+  // PR-30c (CUL-1739; PM ruling B after the fourth adversarial pass). A call today is LATER by
+  // EVENT order, as PR-30a shipped it: event times never move on a rewrite, so neither a rewrite of
+  // the call-today row (089's `may_wait` take-back) nor one of the call-now row (a Hide, an edit, a
+  // failed re-read) can add or erase this clause. `updated_at` is not a "said at" stamp, so it never
+  // decides a word here (a dedicated stamp is the follow-up). The date is that event's.
   const laterCallToday = (acc: FamilyAcc): { laterCallTodayIso?: string } =>
     acc.call === 'call_now' && acc.latestAt.call_today.ms > acc.latestAt.call_now.ms
       ? { laterCallTodayIso: acc.latestAt.call_today.iso }
       : {}
+  // The rank half (ruling 2a), kept apart from the words: when the family's call today was last
+  // said, under a call now. The phone ranks a dated call now as a live red flag when this is
+  // fresher than the call now's own said-at. A rewrite can only raise that rank (the loud side),
+  // never change a word.
+  const callTodaySaid = (acc: FamilyAcc): { callTodaySaidIso?: string } =>
+    acc.call === 'call_now' && Number.isFinite(acc.saidAt.call_today.ms) ? { callTodaySaidIso: acc.saidAt.call_today.iso } : {}
+  // PR-30c: when the card's call was last said, for the phone's dated form.
+  const tierRead = (acc: FamilyAcc): { tierReadIso?: string } =>
+    acc.call !== null && Number.isFinite(acc.saidAt[acc.call].ms) ? { tierReadIso: acc.saidAt[acc.call].iso } : {}
 
   const out: IncidentRedFlagFinding[] = []
   for (const cat of INCIDENT_CATEGORY_ORDER) {
@@ -7344,6 +7384,8 @@ export function detectIncidentRedFlags(
         tier: acc.call,
         tierIso: acc.latestAt[acc.call].iso,
         ...laterCallToday(acc),
+        ...tierRead(acc),
+        ...callTodaySaid(acc),
         callOnly: true,
       })
       continue
@@ -7380,6 +7422,8 @@ export function detectIncidentRedFlags(
       // PR-30a: the family's loudest new-rule call, or nothing (today's words).
       ...(acc.call !== null ? { tier: acc.call, tierIso: acc.latestAt[acc.call].iso } : {}),
       ...laterCallToday(acc),
+      ...tierRead(acc),
+      ...callTodaySaid(acc),
     })
   }
   return out

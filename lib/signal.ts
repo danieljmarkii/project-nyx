@@ -226,6 +226,12 @@ export interface IncidentRedFlagFinding {
   tierIso?: string;
   /** A later read saying call today, under an older read's call now: its occurred_at. */
   laterCallTodayIso?: string;
+  /** Engines v3 PR-30c (CUL-1739): when the card's call was last SAID (the later of its event and
+   *  its read's last write). The phone dates a call now a day after this; absent keeps "now". */
+  tierReadIso?: string;
+  /** PR-30c (ruling 2a's rank half): under a call now, when the family's call today was last said.
+   *  Ranks the banner only, never a word. Mirror of detection.ts. */
+  callTodaySaidIso?: string;
   /** Present when no photo flagged anything and a read's call is the whole card: then `flags` is
    *  empty, the count is the CALLED reads', and the date is `tierIso`. The card never says where
    *  the call came from (the row cannot tell). Never present without `tier`. */

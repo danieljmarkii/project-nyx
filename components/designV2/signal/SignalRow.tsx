@@ -9,6 +9,7 @@ import { foldIdentity } from '../../../lib/signalFold';
 import { CARE_WATCHED_LINE, CARE_WATCHED_TAG, careBackLine, careStateBody, careStateViewOf, type CareStateView } from '../../../lib/careState';
 import { loadSignalRowScreen, loadSignalRowTrial, type SignalRowScreen } from '../../../lib/signalLead';
 import { useSyncStore } from '../../../store/syncStore';
+import { useMinuteNow } from '../../../hooks/useIncidentFloorFacts';
 import { signalTrialWindowFor } from '../../../lib/signalTrialAnchor';
 import type { SignalTrialWindow } from '../../../lib/signalWindows';
 import { DotLane, StackedCompare } from '../../home/SignalReceipts';
@@ -110,6 +111,7 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
   // on #1053: offline logs that turn a fall into a rise must not leave a stale falling pair).
   // A tick re-read keeps the answer on screen while it runs, so nothing redraws for nothing (C-30).
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
+  const nowMs = useMinuteNow();
   const signalTick = useSyncStore((s) => s.signalTick);
   useEffect(() => {
     if (!readsScreen) return;
@@ -125,7 +127,8 @@ export function SignalRow({ cached, petId, onOpen, isLead = false, generatedAt }
   const screen: SignalRowScreen | undefined = answer?.key === readKey ? answer.screen : undefined;
 
   // A trial finding counted over a trial since replaced speaks in its own day (CUL-1360).
-  const base = signalHomeLine(finding, signalTrialWindowFor(finding, { generatedAt, trial }));
+  // PR-30c (CUL-1739): a call now steps to its dated form a day after its read, on the minute.
+  const base = signalHomeLine(finding, signalTrialWindowFor(finding, { generatedAt, trial }), nowMs);
   if (!base) return null;
   // While the screen's read is in flight, or when it did not answer, a safety row keeps the
   // finding's own words (the ask never waits on a read, and no safety type is ever set aside);

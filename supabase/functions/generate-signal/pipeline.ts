@@ -415,6 +415,9 @@ export interface IncidentAnalysisRow {
   recommendation?: string | null
   tier?: string | null
   engine_flags?: string[] | string | null
+  // PR-30c (CUL-1739): when this row was last written. A call now's clock runs from the later of
+  // this and the event, so a call raised after its event is never dated on its first render.
+  updated_at?: string | null
   events: IncidentEventJoin
 }
 
@@ -431,6 +434,7 @@ export function mapIncidentAnalyses(rows: IncidentAnalysisRow[]): IncidentAnalys
       stoolBloodPresent: r.stool_blood_present, // read only for the stool family (B-364)
       foreignMaterialPresent: r.foreign_material_present,
       call: newRuleCallOf(r),
+      writtenAt: r.updated_at ?? null,
     })
   }
   return out

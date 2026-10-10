@@ -1593,6 +1593,46 @@ describe('VomitAnalysisSection — the tier (EN-3)', () => {
     expect(flat(getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
   });
 
+  // Engines v3 PR-30c (CUL-1739): after its first day a call now quotes the read with its day, and
+  // still sends the owner to a vet; inside the day, and while the event's instant is unread, "now".
+  it('a call now a day after its event steps to the dated form, keeping the rose and the ask', async () => {
+    const vomitAt = new Date(2026, 9, 3, 23, 40);
+    mockFloorFacts = { anchor: { at: vomitAt.toISOString(), confidence: 'witnessed' }, vomits: [], courses: [], vomitRows: [], lethargy: [] };
+    try {
+      mockMinuteNow = vomitAt.getTime() + 24 * 3600_000 - 60_000;
+      mockRow = row({ recommendation: 'worth_a_call', tier: 'call_now', engine_flags: EN3, updated_at: vomitAt.toISOString() });
+      const first = render(<VomitAnalysisSection eventId="t1d" petId="pet-1" petName="Rex" hasPhoto />);
+      await first.findByText('Call your vet now');
+      first.unmount();
+
+      mockMinuteNow = vomitAt.getTime() + 24 * 3600_000;
+      const later = render(<VomitAnalysisSection eventId="t1e" petId="pet-1" petName="Rex" hasPhoto />);
+      await later.findByText('On Oct 3, the read said: call your vet now');
+      expect(later.queryByText("If you haven't spoken to your vet since, call them now. If they're closed, call an emergency clinic.")).toBeTruthy();
+      expect(later.queryByText('Call your vet now')).toBeNull();
+      expect(flat(later.getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
+      later.unmount();
+
+      // A call raised a day later (a re-floor): "now" for a day from the write, then dated by it.
+      mockRow = row({ recommendation: 'worth_a_call', tier: 'call_now', engine_flags: EN3, updated_at: new Date(2026, 9, 4, 23, 0).toISOString() });
+      const late = render(<VomitAnalysisSection eventId="t1g" petId="pet-1" petName="Rex" hasPhoto />);
+      await late.findByText('Call your vet now');
+      late.unmount();
+      mockMinuteNow = new Date(2026, 9, 5, 23, 0).getTime();
+      const lateDated = render(<VomitAnalysisSection eventId="t1h" petId="pet-1" petName="Rex" hasPhoto />);
+      await lateDated.findByText('On Oct 4, the read said: call your vet now');
+      lateDated.unmount();
+
+      // The event's instant unread: the loud form stands.
+      mockFloorFacts = null;
+      const unread = render(<VomitAnalysisSection eventId="t1f" petId="pet-1" petName="Rex" hasPhoto />);
+      await unread.findByText('Call your vet now');
+    } finally {
+      mockFloorFacts = null;
+      mockMinuteNow = null;
+    }
+  });
+
   it('a new-rule call today: its own words, and the rose OUTLINE on the plain surface', async () => {
     mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3 });
     const { findByText, getByTestId, queryByText } = render(<VomitAnalysisSection eventId="t2" petId="pet-1" petName="Rex" hasPhoto />);
