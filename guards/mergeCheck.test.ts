@@ -79,6 +79,11 @@
 //   ✗ a released hold not read as deploying
 //   ✗ a new function not read as deploying
 //   ✗ an unreadable manifest read as holding nothing
+//   ✗ a helper that failed with no message read as "deploys nothing" (the code review's
+//     false CLEAN: a signal or an OOM kill says nothing on stderr)
+//   ✗ main's last deploy run that failed, was manual, or was unread ignored (three mutants)
+//   ✗ a deploy-run finding never moving the verdict
+//   ✗ wrap.md dropped from the gate paths
 //
 // HOW MAIN'S CI IS FAKED. The script reads it with `gh api`, and every case runs with a
 // stub `gh` first on PATH (written under the fixture root) that serves a JSON file named
@@ -151,12 +156,14 @@ interface Run {
 
 let ghBin = '';
 let greenMain = '';
+let greenDeploy = '';
 
 interface CiRun {
   id: number;
   conclusion: string;
   sha: string;
   status?: string;
+  event?: string;
 }
 
 /** A page of ci.yml runs as the Actions API returns it, newest first; returns its path. */
@@ -167,6 +174,7 @@ function runsFile(name: string, runs: CiRun[]): string {
     status: r.status ?? 'completed',
     conclusion: r.conclusion,
     head_sha: r.sha,
+    event: r.event ?? 'push',
     html_url: `https://ci.example.invalid/runs/${r.id}`,
   }));
   fs.writeFileSync(file, JSON.stringify({ total_count: runs.length, workflow_runs }), 'utf8');
@@ -178,7 +186,7 @@ function check(cwd: string, args: string[] = [], extra: Record<string, string> =
     const out = execFileSync('bash', [SCRIPT, ...args], {
       cwd,
       encoding: 'utf8',
-      env: gitEnv({ PATH: `${ghBin}:${process.env.PATH ?? ''}`, FAKE_GH_MAIN: greenMain, ...extra }),
+      env: gitEnv({ PATH: `${ghBin}:${process.env.PATH ?? ''}`, FAKE_GH_MAIN: greenMain, FAKE_GH_DEPLOY: greenDeploy, ...extra }),
       stdio: 'pipe',
     });
     return { code: 0, out };
@@ -287,6 +295,7 @@ beforeAll(() => {
       '# A stand-in for `gh api`: main\'s runs or this branch\'s, from files the case names.',
       'for a in "$@"; do case "$a" in repos/*) endpoint=$a ;; esac; done',
       'case "${endpoint:-}" in',
+      '  *edge-deploy.yml*) src=${FAKE_GH_DEPLOY:-} ;;',
       '  *head_sha=*) src=${FAKE_GH_OWN:-} ;;',
       '  *branch=*) src=${FAKE_GH_MAIN:-} ;;',
       '  *) src= ;;',
@@ -298,6 +307,7 @@ beforeAll(() => {
     { encoding: 'utf8', mode: 0o755 },
   );
   greenMain = runsFile('green', [{ id: 11, conclusion: 'success', sha: 'a'.repeat(40) }]);
+  greenDeploy = runsFile('deploy-green', [{ id: 21, conclusion: 'success', sha: 'a'.repeat(40) }]);
 });
 
 afterAll(() => {
@@ -834,6 +844,9 @@ describe('scripts/steward/merge-check.sh', () => {
       ['scripts/edge-deploy/plan.ts'],
       ['scripts/steward/merge-check.sh'],
       ['scripts/steward/deploys.ts'],
+      ['.claude/skills/steward/SKILL.md'],
+      ['.claude/commands/dispatch.md'],
+      ['.claude/commands/wrap.md'],
     ])('an edit to %s is REVIEW naming the file', (rel) => {
       const fx = fixture();
       const s = session(fx, 'claude/gate', { [rel]: 'changed\n' });
@@ -843,7 +856,7 @@ describe('scripts/steward/merge-check.sh', () => {
       expect(r.code).toBe(2);
     });
 
-    it.each([['.claude/skills/steward/SKILL.md'], ['.claude/commands/dispatch.md'], ['.github/workflows/ci.yml'], ['scripts/steward/migration-numbers.sh']])(
+    it.each([['.claude/skills/other/SKILL.md'], ['.claude/commands/kickoff.md'], ['.github/workflows/ci.yml'], ['scripts/steward/migration-numbers.sh']])(
       'an edit to %s is not a gate file',
       (rel) => {
         const fx = fixture();
@@ -853,6 +866,47 @@ describe('scripts/steward/merge-check.sh', () => {
         expect(r.code).toBe(0);
       },
     );
+
+    // The review's false CLEAN: a helper killed by a signal prints nothing on stderr, and
+    // silence must never read as "deploys nothing".
+    it('a helper that fails without a word is treated as deploying', () => {
+      const fx = withFunctions();
+      const s = session(fx, 'claude/feature', { 'feature.txt': 'x\n' });
+      const bin = path.join(root, `silent-node-${(seq += 1)}`);
+      fs.mkdirSync(bin, { recursive: true });
+      fs.writeFileSync(path.join(bin, 'node'), '#!/usr/bin/env bash\nexit 137\n', { encoding: 'utf8', mode: 0o755 });
+      const r = check(s, [], { PATH: `${bin}:${ghBin}:${process.env.PATH ?? ''}` });
+      expect(r.out).toContain('  deploys   could not tell, treated as deploying: the helper exited 137 with no message');
+      expect(r.code).toBe(2);
+    });
+
+    // The workflow deploys what main changed since its last RECORDED deploy, so a failed
+    // or manual run leaves functions a docs-only merge would still deploy.
+    it('main\'s last deploy run that failed, was manual, or cannot be read is REVIEW on any landing', () => {
+      const fx = fixture();
+      const s = session(fx, 'claude/docs', { 'feature.txt': 'x\n' });
+
+      const failed = runsFile('deploy-red', [
+        { id: 62, conclusion: 'cancelled', sha: 'b'.repeat(40) },
+        { id: 61, conclusion: 'failure', sha: 'b'.repeat(40) },
+      ]);
+      const f = check(s, [], { FAKE_GH_DEPLOY: failed });
+      expect(f.out).toContain("  deploys   main's last deploy run did not pass (https://ci.example.invalid/runs/61, failure)");
+      expect(f.code).toBe(2);
+
+      const manual = runsFile('deploy-manual', [{ id: 71, conclusion: 'success', sha: 'b'.repeat(40), event: 'workflow_dispatch' }]);
+      const m = check(s, [], { FAKE_GH_DEPLOY: manual });
+      expect(m.out).toContain("  deploys   main's last deploy run was a manual one (https://ci.example.invalid/runs/71)");
+      expect(m.code).toBe(2);
+
+      const unread = check(s, [], { FAKE_GH_DEPLOY: '' });
+      expect(unread.out).toContain("  deploys   main's last deploy run could not be read (gh: Not Found (HTTP 404)");
+      expect(unread.code).toBe(2);
+
+      const pushed = check(s);
+      expect(pushed.out).toContain('production: landing deploys no Edge Function and edits no gate file');
+      expect(pushed.code).toBe(0);
+    });
 
     it('after the merge (--head origin/main) there is nothing left to land, so no production line', () => {
       const fx = withFunctions();

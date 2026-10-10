@@ -12,8 +12,8 @@
 //
 // Stated blind spots:
 //  - It compares the two trees, not the deploy records. A function main changed whose
-//    deploy failed or was skipped deploys again on the next merge whatever it touches,
-//    and this does not report it.
+//    deploy failed, or that a manual run rolled back, deploys again on the next merge
+//    whatever it touches; merge-check.sh covers that with main's latest deploy run.
 //  - Only ROOTS are read out of each tree. A closure that reaches past them leaves an
 //    unresolved import, which is exit 3 (treated as deploying) until ROOTS grows.
 
