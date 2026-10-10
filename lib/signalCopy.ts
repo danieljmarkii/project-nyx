@@ -45,6 +45,7 @@ import type { BackBecauseReason } from './signalFold';
 import { formatTimingBandLabel } from './timingBandLabels';
 import { careClaimReason } from './careClaimScreens';
 import { correlationCluster } from './findingIdentity';
+import { TIER_WORDS } from './incidentTierWords';
 
 // A timing finding — the two types whose evidence renders as a receipt (SR-1, §4).
 type TimingFinding = PostprandialTimingFinding | TimeOfDayClusteringFinding;
@@ -149,6 +150,61 @@ export function incidentFlagPhrase(flags: IncidentFlagKind[]): string {
     ? `${INCIDENT_FLAG_PHRASE.blood} and ${INCIDENT_FLAG_PHRASE.foreign_material}`
     : INCIDENT_FLAG_PHRASE[flags[0]];
 }
+
+// ── The red-flag card's call (Engines v3 PR-30a, CUL-1511) ───────────────────
+// docs/nyx-incident-tiers-requirements.md §2, §4 (K1 = A). A card whose family holds a NEW-RULE
+// call asks in the tier-word map's own words ("call your vet now" / "call your vet today"); every
+// other card keeps the shipped "worth a call to your vet", because an earlier-rule call is never
+// relabelled (spec §5). The words come from the map, never restated here, so the Home row, the
+// banner and the record say one thing. The server's sentence reads the same map
+// (generate-signal `phrasing.ts`, `incidentRedFlagAsk`).
+
+/** The tier a red-flag card asks in, or null for the shipped words. A cached value this build
+ *  does not know is null too: it keeps the shipped ask, never a word the build cannot back. */
+export function incidentCallOf(finding: IncidentRedFlagFinding): 'call_now' | 'call_today' | null {
+  return finding.tier === 'call_now' || finding.tier === 'call_today' ? finding.tier : null;
+}
+
+/** The card's ask, lower-case, verbatim as its sentence says it. */
+export function incidentRedFlagAsk(finding: IncidentRedFlagFinding): string {
+  const call = incidentCallOf(finding);
+  if (call === null) return 'worth a call to your vet';
+  const label = TIER_WORDS[call].label;
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+/** True when a read's call is the whole card: no photo flag, a new-rule tier. Such a card never
+ *  says where the call came from: the row cannot tell a contextual sign from the model's own call
+ *  on a clean photo or a call whose blood the owner cleared (the adversarial pass on PR-30a). */
+export function isCallOnlyFinding(finding: IncidentRedFlagFinding): boolean {
+  return finding.callOnly === true && finding.flags.length === 0 && incidentCallOf(finding) !== null;
+}
+
+/** Two ISO instants, compared parsed and never as text (C-40). */
+function sameInstant(a: string, b: string): boolean {
+  return Date.parse(a) === Date.parse(b);
+}
+
+/** A red-flag card whose call came from a different read than its flagged photo. */
+export function callFromOtherRead(finding: IncidentRedFlagFinding): boolean {
+  return finding.tierIso !== undefined && !isCallOnlyFinding(finding) && !sameInstant(finding.tierIso, finding.mostRecentFlaggedIso);
+}
+
+/** A later read saying call today under the card's call now (PR-30a), or null. */
+export function laterCallTodayIsoOf(finding: IncidentRedFlagFinding): string | null {
+  return incidentCallOf(finding) === 'call_now' && typeof finding.laterCallTodayIso === 'string' ? finding.laterCallTodayIso : null;
+}
+
+/** " A later read, on {date}, says to call your vet today." or nothing. */
+function laterCallTodaySentence(finding: IncidentRedFlagFinding): string {
+  const iso = laterCallTodayIsoOf(finding);
+  if (iso === null) return '';
+  const label = TIER_WORDS.call_today.label;
+  return ` A later read, on ${shortDateUTC(iso)}, says to ${label.charAt(0).toLowerCase()}${label.slice(1)}.`;
+}
+
+/** A read's noun by family, for a call-only card ("a vomit read", "a stool read"). */
+export const INCIDENT_READ_NOUN: Record<IncidentCategory, string> = { vomit: 'vomit', stool: 'stool' };
 
 // Plain 12-hour clock label for a local hour 0..23 (⑥, B-079): 0→'12am', 4→'4am',
 // 12→'12pm', 23→'11pm'. Mirror of clockHourLabel in the generate-signal phrasing module —
@@ -541,6 +597,11 @@ export function sampleLine(finding: SignalFinding): string {
     // The honest sample weight + provenance (§6): an AI read of the flagged photo(s), never a
     // count that implies a confirmed finding. "AI read" mirrors the detail-screen unconfirmed
     // register; the count is episode-collapsed bouts (B-368), so a re-logged bout reads as one.
+    // PR-30a: a call-only card counts the reads that call, and names no photo or source.
+    if (isCallOnlyFinding(finding)) {
+      const noun = INCIDENT_READ_NOUN[finding.incidentType];
+      return `From ${count(finding.flaggedIncidentCount, `${noun} read`, `${noun} reads`)} that call for your vet`;
+    }
     return `From an AI read of ${count(finding.flaggedIncidentCount, 'logged photo', 'logged photos')}`;
   }
   if (finding.type === 'food_symptom_correlation') {
@@ -773,6 +834,18 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // clause is a provenance disclaimer, immediately followed by the vet ask, never an all-clear),
     // NEVER diagnoses, NEVER assigns a cause. The date lives in the main card sentence, so the
     // tap-through adds the provenance + why-it-matters rather than repeating it.
+    const ask = incidentRedFlagAsk(finding);
+    if (isCallOnlyFinding(finding)) {
+      // PR-30a (K1 = A): a read's call with no photo finding. That it is a read and not a
+      // diagnosis, then the ask; never a source, which the row cannot back. The record's own
+      // card says why it called.
+      const noun = INCIDENT_READ_NOUN[finding.incidentType];
+      const lead =
+        finding.flaggedIncidentCount === 1
+          ? `The read of ${petName}'s ${noun} is an automated read, not a confirmed finding and not a diagnosis.`
+          : `The reads of ${petName}'s ${noun} logs are automated reads, not confirmed findings and not a diagnosis.`;
+      return `${lead} ${capitalize(ask)}: the read itself says why.${laterCallTodaySentence(finding)}`;
+    }
     const symptom = INCIDENT_NOUN[finding.incidentType]; // 'vomiting' | 'stool' (neutral, never "loose stool")
     const phrase = incidentFlagPhrase(finding.flags);
     const single = finding.flaggedIncidentCount === 1;
@@ -780,10 +853,19 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
       ? `A photo you logged of ${petName}'s ${symptom} showed ${phrase}`
       : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}`;
     const readNoun = single ? 'a single photo' : 'those photos';
-    return (
-      `${lead} — an automated read of ${readNoun}, not a confirmed finding and not a diagnosis. ` +
-      `It's still worth a call to your vet, who can look at what you logged and tell you what it means.`
-    );
+    // PR-30a: a new-rule call asks in the map's words; every other card keeps the shipped line.
+    // A call from a different read than the flagged photo is dated as its own (adversarial #3).
+    const otherRead =
+      finding.tierIso !== undefined && callFromOtherRead(finding)
+        ? `A read on ${shortDateUTC(finding.tierIso)} says to ${ask}.${laterCallTodaySentence(finding)} `
+        : '';
+    const tail =
+      incidentCallOf(finding) === null
+        ? `It's still worth a call to your vet, who can look at what you logged and tell you what it means.`
+        : otherRead
+          ? `${otherRead}Your vet can look at what you logged and tell you what it means.`
+          : `${capitalize(ask)}: they can look at what you logged and tell you what it means.${laterCallTodaySentence(finding)}`;
+    return `${lead} — an automated read of ${readNoun}, not a confirmed finding and not a diagnosis. ${tail}`;
   }
   if (finding.type === 'food_symptom_correlation') {
     const symptom = symptomWord(finding.symptomType);
@@ -2239,6 +2321,15 @@ function phoneScriptFacts(
     ];
   }
   if (finding.type === 'incident_red_flag') {
+    if (isCallOnlyFinding(finding)) {
+      // PR-30a: a call-only card has no photo finding to name, and names no source.
+      const readNoun = INCIDENT_READ_NOUN[finding.incidentType];
+      return [
+        { label: 'What says to call', value: `a read of ${petName}'s ${readNoun}` },
+        { label: 'From', value: count(finding.flaggedIncidentCount, `${readNoun} read`, `${readNoun} reads`) },
+        { label: 'Most recent', value: shortDateUTC(finding.tierIso ?? finding.mostRecentFlaggedIso) },
+      ];
+    }
     const noun = INCIDENT_NOUN[finding.incidentType];
     return [
       { label: 'What a photo showed', value: `${incidentFlagPhrase(finding.flags)} in ${petName}'s ${noun}` },
@@ -2326,6 +2417,10 @@ const BANNER_SAFETY_PRIORITY: Record<
  *  `refused_then_vomited` card (PR-30s) sits below the burden card and above chronicity, so a
  *  "call your vet today" pet always takes the banner from a "mention it to your vet" one. */
 function bannerRankOf(f: BannerSafetyFinding): number {
+  // Engines v3 PR-30a (CUL-1511): a new-rule "call your vet now" takes the banner from every other
+  // pet's finding, a call today's included, so the household's loudest ask is never the one a
+  // pet's place in the list hides. Every other red flag keeps its shipped rank.
+  if (f.type === 'incident_red_flag' && incidentCallOf(f) === 'call_now') return -1;
   if (f.type === 'intake_decline' && f.trigger === 'refused_then_vomited') return 2.5;
   return BANNER_SAFETY_PRIORITY[f.type];
 }
@@ -2461,6 +2556,12 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null): string {
     // Never a cause, never a severity verdict, never a reassurance (validateBannerPhrasing screens
     // it as defense-in-depth). Refers to the pet by the leading bold name only (no "you"), like
     // the other banner rests.
+    // Engines v3 PR-30a (CUL-1511; mock §03): a new-rule call says its tier on the banner, in
+    // the map's words, photo or not ("Nyx: a vomit read says call your vet now"). An
+    // earlier-rule card keeps today's banner to the byte.
+    if (incidentCallOf(finding) !== null) {
+      return `: a ${INCIDENT_READ_NOUN[finding.incidentType]} read says ${incidentRedFlagAsk(finding)}.`;
+    }
     const phrase = incidentFlagPhrase(finding.flags);
     const noun = finding.flaggedIncidentCount === 1 ? 'a logged photo' : 'logged photos';
     return ` has ${noun} showing ${phrase} — worth a look.`;

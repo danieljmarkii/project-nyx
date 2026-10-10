@@ -39,6 +39,7 @@ import type {
 } from './detection.ts'
 import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
+import { TIER_WORDS } from '../../../lib/incidentTierWords.ts'
 
 // §3.2 visible-card cap: governs the LOW/MEDIUM-priority insight set only.
 // Safety/concern findings are exempt — never withheld to honor the cap.
@@ -311,7 +312,48 @@ const INCIDENT_NOUN: Record<IncidentCategory, string> = {
   stool: 'stool',
 }
 
+// Engines v3 PR-30a (CUL-1511; docs/nyx-incident-tiers-requirements.md §2, §4). A card whose
+// family holds a NEW-RULE call asks in the tier-word map's own words, lower-cased mid-sentence
+// ("call your vet now" / "call your vet today"); every other card keeps the shipped "worth a call
+// to your vet" to the byte, because an earlier-rule call is never relabelled (spec §5). The words
+// are read from the map, never restated, so Home, the banner and the record cannot drift apart.
+const RED_FLAG_LEGACY_ASK = 'worth a call to your vet'
+
+function lowerFirst(s: string): string {
+  return s.charAt(0).toLowerCase() + s.slice(1)
+}
+
+/** The red-flag card's ask, verbatim as its sentence says it. */
+export function incidentRedFlagAsk(f: Pick<IncidentRedFlagFinding, 'tier'>): string {
+  return f.tier === 'call_now' || f.tier === 'call_today' ? lowerFirst(TIER_WORDS[f.tier].label) : RED_FLAG_LEGACY_ASK
+}
+
+/** A read's noun by family ("a vomit read", "a stool read"), for the card a record call raised. */
+const INCIDENT_READ_NOUN: Record<IncidentCategory, string> = {
+  vomit: 'vomit',
+  stool: 'stool',
+}
+
+/** True when the card fires only on a call the record raised: no photo flag, a new-rule tier. */
+function isCallOnly(f: IncidentRedFlagFinding): boolean {
+  return f.callOnly === true && f.flags.length === 0 && (f.tier === 'call_now' || f.tier === 'call_today')
+}
+
 export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: string): string {
+  const ask = incidentRedFlagAsk(f)
+  if (isCallOnly(f)) {
+    // PR-30a (K1 = A): a read that says to call, with no photo finding on the card. It names the
+    // read, its day and the ask, and NEVER where the call came from: the row cannot tell a
+    // contextual sign from the model's own call on a clean photo or a call whose blood the owner
+    // cleared, so any source named here could be false (adversarial pass, #1/#2). The record's
+    // card says why. Dated by the read whose words the ask is (`tierIso`).
+    const noun = INCIDENT_READ_NOUN[f.incidentType]
+    return `The read of ${petName}'s ${noun} on ${onsetDay(f.tierIso ?? f.mostRecentFlaggedIso)} says to ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
+  }
+  return templateIncidentRedFlagPhoto(f, petName, ask)
+}
+
+function templateIncidentRedFlagPhoto(f: IncidentRedFlagFinding, petName: string, ask: string): string {
   // Detector — per-incident visual red flag (B-340). SAFETY class, template-only (no LLM, like
   // ③–⑦) — a structural never-reassure guarantee. ESCALATE-ON-PRESENCE: it names what the photo
   // showed and routes to the vet. NEVER reassures, NEVER diagnoses, NEVER assigns a cause ("showed
@@ -331,7 +373,20 @@ export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: stri
     f.flaggedIncidentCount === 1 && !f.countIsFloor
       ? `A photo you logged of ${petName}'s ${symptom} showed ${phrase}, on ${when}`
       : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}, most recently on ${when}`
-  return `${lead} — worth a call to your vet. This is a read of your logs, not a diagnosis.`
+  // PR-30a: when the louder call is a DIFFERENT read from the flagged photo, the sentence says so
+  // and dates it, rather than pinning the call on the older photo (adversarial pass, #3).
+  // Instants compared parsed, never as text (C-40).
+  if (f.tierIso !== undefined && Date.parse(f.tierIso) !== Date.parse(f.mostRecentFlaggedIso)) {
+    return `${lead}. A read on ${onsetDay(f.tierIso)} says to ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
+  }
+  return `${lead} — ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
+}
+
+/** PR-30a: a call today newer than the card's call now, said as its own dated sentence (with a
+ *  leading space), or nothing. The words are the map's, like the card's own ask. */
+function laterCallTodayClause(f: IncidentRedFlagFinding): string {
+  if (f.tier !== 'call_now' || f.laterCallTodayIso === undefined) return ''
+  return ` A later read, on ${onsetDay(f.laterCallTodayIso)}, says to ${lowerFirst(TIER_WORDS.call_today.label)}.`
 }
 
 // The §9 adjacency note opens by naming the sign the card is NOT about, so an owner reading
@@ -606,11 +661,13 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
               ? 'vomiting soon after turning down a meal'
               : 'eating less than usual'
           : f.type === 'incident_red_flag'
-            ? `a photo of ${INCIDENT_NOUN[f.incidentType]} showing ${f.flags.map((k) => INCIDENT_FLAG_PHRASE[k]).join(' and ')}`
+            ? isCallOnly(f)
+              ? `a ${INCIDENT_READ_NOUN[f.incidentType]} read that called for your vet`
+              : `a photo of ${INCIDENT_NOUN[f.incidentType]} showing ${f.flags.map((k) => INCIDENT_FLAG_PHRASE[k]).join(' and ')}`
             : 'a pattern'
   const ask =
     f.type === 'incident_red_flag'
-      ? 'worth a call to your vet'
+      ? incidentRedFlagAsk(f)
       : f.type === 'symptom_burden'
         ? f.tier === 'today'
           ? 'worth a call to your vet'
@@ -649,13 +706,15 @@ export function canRenderCarried(f: unknown): boolean {
       return known(CARRYABLE_WEIGHT_TIERS, x.tier)
     case 'intake_decline':
       return x.trigger === undefined || typeof x.trigger === 'string'
-    case 'incident_red_flag':
-      return (
-        known(INCIDENT_NOUN, x.incidentType) &&
-        Array.isArray(x.flags) &&
-        x.flags.length > 0 &&
-        x.flags.every((k) => known(INCIDENT_FLAG_PHRASE, k))
-      )
+    case 'incident_red_flag': {
+      // PR-30a: a tier, when present, must be one this build can say; a card with no photo flag is
+      // carryable only as a record call, which always carries one.
+      const r = f as { tier?: unknown; callOnly?: unknown }
+      const tierOk = r.tier === undefined || r.tier === 'call_now' || r.tier === 'call_today'
+      if (!tierOk || !known(INCIDENT_NOUN, x.incidentType) || !Array.isArray(x.flags)) return false
+      if (x.flags.length === 0) return r.callOnly === true && r.tier !== undefined
+      return x.flags.every((k) => known(INCIDENT_FLAG_PHRASE, k))
+    }
     default:
       return false
   }
@@ -1121,6 +1180,7 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       incident: INCIDENT_NOUN[finding.incidentType],
       flags: finding.flags, // ('blood' | 'foreign_material')[]
       flagged_incident_count: finding.flaggedIncidentCount,
+      tier: finding.tier ?? null, // PR-30a: a new-rule call's tier, or null (the shipped ask)
       relationship: 'visible_finding', // what the photo showed — NOT a cause, NOT a diagnosis
       severity: 'calm_safety_flag', // surface clearly, route to vet, never reassure
     }
