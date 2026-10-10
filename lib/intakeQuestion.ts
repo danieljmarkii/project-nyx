@@ -174,47 +174,54 @@ export function answerLabel(form: IntakeForm, answer: string, sex: PetSex): stri
   return answer === 'not_observable' ? 'Not sure' : answer === 'no' ? 'No' : answer === 'a_little' ? 'A little' : 'Yes';
 }
 
-/** The least lead time a named morning must give: under it, the line asks for today instead
- *  of naming an hour (the adversarial pass on PR-30q, B3 and R2-1). Never a later morning: a
- *  "Not sure" at 6:30 AM is told today, not tomorrow. */
+/** The least lead time the named hour gives the owner (the adversarial pass on PR-30q, B3). */
 export const SAFETY_NET_LEAD_HOURS = 2;
-/** The longest span of unknown intake a named hour may reach, counted from the hour the
- *  question asked from: the hepatic-lipidosis window is why a cat's unknown day is never left
- *  to run on (B3). Past it, the line asks for today. */
+/** The latest the named hour may fall, counted from the hour the question asked from: a cat's
+ *  unknown intake is never left to run on (B3, R2-1). An answer given later than this still
+ *  gets its lead time. */
 export const SAFETY_NET_MAX_HOURS = 48;
-/** How long after the hour asked about the line stays on the record at all: it is about this
- *  vomit's day, so an old record's "Not sure" does not keep a call to action on History
- *  forever (R2-1). */
-export const SAFETY_NET_SHOWN_HOURS = 72;
+/** How long after the answer the line stays on the record: the record's age, never hours of
+ *  unknown intake, so a live "Not sure" is never silenced at its riskiest (R3-2), and an old
+ *  record does not carry a call to action forever. */
+export const SAFETY_NET_SHOWN_DAYS = 7;
+
+function ceilToHour(ms: number): number {
+  const d = new Date(ms);
+  if (d.getMinutes() !== 0 || d.getSeconds() !== 0 || d.getMilliseconds() !== 0) {
+    d.setMinutes(0, 0, 0);
+    d.setHours(d.getHours() + 1);
+  }
+  return d.getTime();
+}
 
 /**
- * The hour the line names: the first SAFETY_NET_HOUR strictly after the answer, in the
- * device's zone. Null when the instants cannot be read, when that morning is under
- * SAFETY_NET_LEAD_HOURS away, or when it lies past SAFETY_NET_MAX_HOURS after `since`: in
- * each case the line asks for today rather than naming a later hour.
+ * The hour the line names. Always one, and always at least SAFETY_NET_LEAD_HOURS after the
+ * answer: the first SAFETY_NET_HOUR after the answer when that leaves the lead, otherwise the
+ * answer plus the lead, rounded up to the hour (a 6:30 AM "Not sure" reads "by 9 AM today",
+ * never tomorrow, R2-1). Never later than SAFETY_NET_MAX_HOURS after `since`, unless the answer
+ * itself came later, when it is the answer plus the lead. Null only when an instant cannot be read.
  */
 export function safetyNetDeadline(answeredAt: string, since: string): number | null {
   const ms = Date.parse(answeredAt);
   const sinceMs = Date.parse(since);
   if (!Number.isFinite(ms) || !Number.isFinite(sinceMs)) return null;
-  const d = new Date(ms);
-  d.setHours(SAFETY_NET_HOUR, 0, 0, 0);
-  if (d.getTime() <= ms) d.setDate(d.getDate() + 1);
-  const deadline = d.getTime();
-  if (deadline - ms < SAFETY_NET_LEAD_HOURS * MS_PER_HOUR) return null;
-  if (deadline > sinceMs + SAFETY_NET_MAX_HOURS * MS_PER_HOUR) return null;
-  return deadline;
+  const lead = ms + SAFETY_NET_LEAD_HOURS * MS_PER_HOUR;
+  const morning = new Date(ms);
+  morning.setHours(SAFETY_NET_HOUR, 0, 0, 0);
+  if (morning.getTime() <= ms) morning.setDate(morning.getDate() + 1);
+  const named = morning.getTime() >= lead ? morning.getTime() : ceilToHour(lead);
+  const cap = sinceMs + SAFETY_NET_MAX_HOURS * MS_PER_HOUR;
+  return named <= cap ? named : Math.max(cap, ceilToHour(lead));
 }
 
 /**
- * The dated safety-net line under a "Not sure" or "Haven't seen" on an intake form, derived
- * at render and never stored. Null for every other answer, for the other_food form (it asks
- * about something else entirely), and once SAFETY_NET_SHOWN_HOURS have passed since the hour
- * asked about.
+ * The safety-net line under a "Not sure" or "Haven't seen" on an intake form, derived at
+ * render and never stored. Null for every other answer, for the other_food form (it asks about
+ * something else entirely), and SAFETY_NET_SHOWN_DAYS after the answer.
  *
- * Where no hour fits, or once the named one has passed, it asks for today in words that fit
- * an owner who does not know: "If you don't see Nyx eat today, call your vet." Never a
- * sentence about a deadline in the past.
+ * ONLY EVER LOUDER (R3-1). Before the named hour it names it; from that hour on it says call
+ * now, and stays there. It never relaxes into an open "today" that renews at midnight. Both
+ * forms speak of what the owner has SEEN, since she answered that she does not know (R3-3).
  */
 export function safetyNetLine(
   form: IntakeForm,
@@ -225,11 +232,11 @@ export function safetyNetLine(
   nowMs: number,
 ): string | null {
   if (form === 'other_food' || answer !== 'not_observable') return null;
-  const sinceMs = Date.parse(since);
-  if (!Number.isFinite(Date.parse(answeredAt)) || !Number.isFinite(sinceMs)) return null;
-  if (nowMs > sinceMs + SAFETY_NET_SHOWN_HOURS * MS_PER_HOUR) return null;
-  const p = petName && petName.trim() !== '' ? petName.trim() : 'your pet';
+  const answeredMs = Date.parse(answeredAt);
   const deadline = safetyNetDeadline(answeredAt, since);
-  if (deadline === null || nowMs >= deadline) return `If you don't see ${p} eat today, call your vet.`;
-  return `If ${p} hasn't eaten by ${hourWord(deadline)} ${dayWord(deadline, nowMs)}, call your vet.`;
+  if (deadline === null) return null;
+  if (nowMs > answeredMs + SAFETY_NET_SHOWN_DAYS * 24 * MS_PER_HOUR) return null;
+  const p = petName && petName.trim() !== '' ? petName.trim() : 'your pet';
+  if (nowMs >= deadline) return `If you still haven't seen ${p} eat, call your vet now.`;
+  return `If you haven't seen ${p} eat by ${hourWord(deadline)} ${dayWord(deadline, nowMs)}, call your vet.`;
 }

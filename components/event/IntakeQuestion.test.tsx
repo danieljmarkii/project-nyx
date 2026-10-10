@@ -190,23 +190,22 @@ describe('answering', () => {
     expect(screen.getByText('You said: No')).toBeTruthy();
   });
 
-  it('"Not sure" folds with the safety-net line: a named 8 AM, or today when none fits (B3)', async () => {
-    // Asked from an hour ago, answered now: a named 8 AM, or "today" when 8 AM is under two
-    // hours away.
+  it('"Not sure" folds with the safety-net line, which names an hour (B3, R3-1)', async () => {
     mockAnswers = {
       meal_fed: { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: new Date(Date.now() - 60 * 60_000).toISOString(), form: 'meal_fed', answer: 'not_observable', answered_at: new Date().toISOString() },
     };
     const view = await draw();
     expect(screen.getByText('You said: Not sure')).toBeTruthy();
-    expect(screen.getByText(/^(If Nyx hasn't eaten by 8 AM (today|tomorrow), call your vet\.|If you don't see Nyx eat today, call your vet\.)$/)).toBeTruthy();
+    expect(screen.getByText(/^If you haven't seen Nyx eat by \d+ (AM|PM) (today|tomorrow), call your vet\.$/)).toBeTruthy();
     view.unmount();
-    // Asked from two and a half days ago: past the 48 h cap, so the line asks for today.
+    // Answered a day ago with the hour long past: call now.
     mockAnswers = {
-      meal_fed: { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: new Date(Date.now() - 60 * 3_600_000).toISOString(), form: 'meal_fed', answer: 'not_observable', answered_at: new Date().toISOString() },
+      meal_fed: { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: new Date(Date.now() - 60 * 3_600_000).toISOString(), form: 'meal_fed', answer: 'not_observable', answered_at: new Date(Date.now() - 30 * 3_600_000).toISOString() },
     };
     await draw();
-    expect(screen.getByText("If you don't see Nyx eat today, call your vet.")).toBeTruthy();
+    expect(screen.getByText("If you still haven't seen Nyx eat, call your vet now.")).toBeTruthy();
   });
+
 
   it('a dog\'s Yes opens the meal log for the record\'s pet: a door, never a form on the record', async () => {
     mockPets = [{ id: 'pet-a', species: 'dog', sex: 'male', name: 'Mochi' }];
