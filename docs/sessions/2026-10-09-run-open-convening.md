@@ -1,6 +1,6 @@
 # The run convening: the grouped meals line that opens in place
 
-**Date:** 2026-10-09 · **Issue:** CUL-1715 (DISCOVERY, the convening) · **Branch:** `claude/vigilant-noether-izi7v6` · **Mock:** `docs/culprit-run-open-mockups.html`, rounds 1, 2 and 2.1, one URL: https://claude.ai/artifact/LxYrPQEQeMBZcPE6mWFWpZ · **Shipped via #1138**
+**Date:** 2026-10-09 · **Issue:** CUL-1715 (DISCOVERY, the convening) · **Branch:** `claude/vigilant-noether-izi7v6` · **Mock:** `docs/culprit-run-open-mockups.html`, rounds 1 to 2.2, one URL: https://claude.ai/artifact/LxYrPQEQeMBZcPE6mWFWpZ · **Shipped via #1138**
 
 **PM prompt (with one Home screenshot: a run of two meals opened, the 2:52 PM meal and a photographed vomit marked *Worth a call* below it):** "I have a v1 animation here that I'd love for us to turbocharge. It's used on the home and history tabs as far as I'm aware but might be on others as well … this is an interaction that happens frequently and because of that it should be delightful. So. What can we do to improve this experience. Let's gather the full team and discuss."
 
@@ -87,7 +87,13 @@ The flying "deal" (beads travelling down to their meals) was cut by all six.
 - **D4 ruled (b):** the arcs are §06's stack, its back beads showing under the front one. Every proposal phone now carries it, and the owners' tick per meal idea (option c) left the page.
 - **The dissent is recorded** (Data Scientist, Dr. Chen, the owner panel) and its three conditions ride the build: the words keep the count; the mark never changes with a rating; the phone check asks one owner what the arcs say, and an answer about how the meals went brings it back to the PM.
 - **A rule the ruling contradicted was corrected:** §09's "no glyph that only ever plays over calm content" now names its one exception, since a run holds only meals eaten normally or unrated.
-- **D5 is the one decision still open.**
+
+**Round 2.2.** "D5 yes, go with (a)"
+
+- **D5 ruled (a):** any meal eaten within 30 minutes before a vomit keeps its own row, whether the vomit was seen or found, the first of a bout or not. The lane times only a witnessed episode opener (`lib/mealTiming.ts:575`), so a meal before a found vomit could fold into a run until now.
+- **Drawn under D5:** before and after, on a day whose vomit was found at 1:30 PM. The 1:05 PM meal leaves "3 meals" for its own row.
+- **Also on the page:** the §05 reveal phone left its option box, since D3 was ruled in round 2; and the briefs grid now shrinks to the column, so the page holds at 390.
+- **Every decision is ruled.** The convening is finished.
 
 ## Filed
 
@@ -104,6 +110,7 @@ Each was verified in code by the lead.
 - **CUL-1734 · D1, the run's own motion.** Blocked by CUL-1718 and CUL-1721, and on History by CUL-1719.
 - **CUL-1735 · D3, the bounded reveal scroll.** After CUL-1734.
 - **CUL-1736 · D4, the stack.** After CUL-1734, with the dissent's three conditions.
+- **CUL-1737 · D5, a meal before a vomit keeps its row (High).** Clinical: Dr. Chen signs off the window and the adversarial review runs. It shares `lib/spineNode.ts` with CUL-1719, so the two run in order.
 
 **Noted, not filed:**
 
@@ -114,7 +121,7 @@ Each was verified in code by the lead.
 
 - Docs only, so the pre-push hook runs nothing.
 - The mock was driven in Chromium. That covered the scrubber on all three phones at eight instants each way, the 12-meal run, the reveal scroll, live open and close, Reduce Motion emulated, dark mode and 390pt. There were no page errors.
-- Rounds 2 and 2.1 were driven the same way before each publish. Round 2.1 also counted the stack's beads on every phone on the page: none on today's, one back bead at two meals and two at four or more on every proposal phone.
+- Rounds 2, 2.1 and 2.2 were driven the same way before each publish; round 2.2's first drive caught the page 22pt wider than a 390 screen (the D5 frames widened the briefs grid), fixed before publishing. Round 2.1 also counted the stack's beads on every phone on the page: none on today's, one back bead at two meals and two at four or more on every proposal phone.
 
 ## Lessons
 

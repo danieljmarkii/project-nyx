@@ -149,6 +149,8 @@
   .rw .ti .de { font-weight: 400; color: var(--app-ink-2); }
   .rw .ft { font-size: 11px; line-height: 13px; font-weight: 500; letter-spacing: 0.4px; color: var(--app-ink-3); text-transform: uppercase; flex-shrink: 0; }
   .rw .cam { display: inline-flex; color: var(--app-ink-3); }
+  .rw .tm .tt { display: block; margin-top: 3px; font-size: 10px; line-height: 12px; font-weight: 500; letter-spacing: 0.4px; text-transform: uppercase; color: var(--app-ink-3); }
+  .frames.d5 { margin-top: 18px; }
   .rw .chip { font-size: 11px; line-height: 13px; font-weight: 500; letter-spacing: 0.4px; text-transform: uppercase; color: var(--app-meal-ink); background: var(--app-meal-wash); border-radius: 999px; padding: 2px 8px; flex-shrink: 0; }
   .rw .cam svg { width: 11px; height: 11px; }
   .rw .l2 { margin-top: 2px; font-size: 11px; line-height: 14px; color: var(--app-ink-2); }
@@ -210,7 +212,7 @@
   .chart .donelbl { fill: var(--ink); font-family: var(--mono); font-size: 10.5px; }
 
   /* Briefs, voices, ideas */
-  .briefs { display: grid; gap: 18px; margin-top: 24px; }
+  .briefs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; margin-top: 24px; }
   .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); }
   .brief h4 { margin: 0 0 8px; font-size: 15.5px; color: var(--ink); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
   .brief p { margin: 0 0 6px; }
@@ -253,19 +255,20 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 2.1 · your reactions folded in · one decision open</span><span>Grouped meals · CUL-1715</span><span>2026-10-10</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 2.2 · your reactions folded in · every decision ruled</span><span>Grouped meals · CUL-1715</span><span>2026-10-10</span></p>
     <h1>The grouped meals line, opened in place</h1>
     <p class="standfirst">On Home and History, meals of one food logged back to back share one line, and tapping it opens the meals underneath. You called that opening a first version and asked the whole team what would make it delightful, since owners open these lines many times a day. This page rebuilds today's opening from the code and slows it down so you can see its seams, draws the team's proposal beside it on the same day, and carries the discussion and the decisions.</p>
     <p class="ask"><q>I have a v1 animation here that I'd love for us to turbocharge… I feel like this is an interaction that happens frequently and because of that it should be delightful. So. What can we do to improve this experience. Let's gather the full team and discuss.</q><br>Your message, with the Home screenshot of Fri, Oct 9.</p>
     <div class="ledger" id="ledger">
       <div><b>1 · What you see once it is open</b><span><q>I like everything you have except 04.. what you see when it's open. I'd like for you to ensure brand and other info is still available on the meal when it's expanded.</q> Ruled: every opened meal keeps its brand, product, format, rating and time, as today's row does. The team kept what removes nothing: the line from the run's own bead, a smaller bead on it, a darker time, and the time and format first with the brand and product on the meal's second line. If you'd rather each meal look exactly like today's row, that is the boxed option in §02 and §04. Round 1's meals without the brand have left the page; commit 5169716 keeps them. <span class="pill">ruled · D2 · §04</span></span></div>
-      <div><b>2 · Everything else</b><span><q>I like everything you have</q> Read as yes to D1 (build the proposal, the thread first) and D3 (the bounded reveal scroll). D4 (the stack) had no recommendation to like and D5 is a clinical rule change, so both needed your word; D4 has it now (3). <span class="pill">D1 · D3 ruled</span></span></div>
-      <div><b>3 · A mark for "several"</b><span><q>FWIW.. I like the concept of a mark or indicator for multiple meals. The little radiating arcs.</q> Ruled D4 (b): the arcs are §06's stack, up to three beads down the thread behind the front one, tucking as the line leaves and sliding back out as it returns. Every proposal phone on the page now carries it, folded; today's phones do not. The dissent is recorded under D4 and its three conditions ride the build: the words keep the count, the mark never changes with a rating, and the phone check asks an owner what it says. The owners' tick per meal idea (option c) has left the page; commit 818c5e0 keeps it. <span class="pill">ruled · D4 · §06</span> <span class="pill open">D5 open</span></span></div>
+      <div><b>2 · Everything else</b><span><q>I like everything you have</q> Read as yes to D1 (build the proposal, the thread first) and D3 (the bounded reveal scroll). D4 (the stack) had no recommendation to like and D5 is a clinical rule change, so both needed your word; both have it now (3 and 4). <span class="pill">D1 · D3 ruled</span></span></div>
+      <div><b>3 · A mark for "several"</b><span><q>FWIW.. I like the concept of a mark or indicator for multiple meals. The little radiating arcs.</q> Ruled D4 (b): the arcs are §06's stack, up to three beads down the thread behind the front one, tucking as the line leaves and sliding back out as it returns. Every proposal phone on the page now carries it, folded; today's phones do not. The dissent is recorded under D4 and its three conditions ride the build: the words keep the count, the mark never changes with a rating, and the phone check asks an owner what it says. The owners' tick per meal idea (option c) has left the page; commit 818c5e0 keeps it. <span class="pill">ruled · D4 · §06</span></span></div>
+      <div><b>4 · A meal minutes before a vomit</b><span><q>D5 yes, go with (a)</q> Ruled: any meal eaten within 30 minutes before a vomit keeps its own row, whether the vomit was seen or found, the first of a bout or not. It is drawn under D5 in §07, before and after, on a day with a found vomit, which the timing lane never times. The reveal scroll in §05, ruled in 2, also leaves its option box. <span class="pill">ruled · D5 · §07</span> <span class="pill">every decision ruled</span></span></div>
     </div>
     <div class="summary">
       <p><b>The team's answer, from round 1.</b> Six seats read your screenshot and the code in isolation, and they agree on the shape of it.</p>
       <p>Today's opening is not short of a flourish; it has seams. The rows below jump 44pt, then bounce about 12% past their place, then the teal line pops to its length after everything has stopped, and the close ends with another jump.</p>
-      <p>The proposal (§02) takes every seam out. The line grows out of the bead you tapped, the box opens from nothing on an ease with no bounce, each meal lands where the box's edge reaches it, the close is faster than the open, and the meals nest under their line, each still carrying its brand and every fact. It is at rest in about a third of a second. Folded, the line's bead carries a small stack that says "several".</p>
+      <p>The proposal (§02) takes every seam out. The line grows out of the bead you tapped, the box opens from nothing on an ease with no bounce, each meal lands where the box's edge reaches it, the close is faster than the open, and the meals nest under their line, each still carrying its brand and every fact. It is at rest in about a third of a second. Folded, the line's bead carries a small stack that says "several", and a meal eaten within 30 minutes before a vomit never folds into it.</p>
       <p>One idea split the team: that stack (§06). You ruled for it, and the dissent's conditions ride the build. And your screenshot showed something bigger than the animation: the grey thread that should join every bead is not drawn at all (§01, filed).</p>
     </div>
   </header>
@@ -414,7 +417,7 @@
 
   <!-- §07 -->
   <section id="decide">
-    <div class="sec-head"><span class="sec-num">07</span><h2>Decisions for you</h2></div>
+    <div class="sec-head"><span class="sec-num">07</span><h2>The decisions, ruled</h2></div>
     <div class="briefs" id="briefs">
       <div class="brief">
         <h4>D1 · Build the proposal: take the seams out <span class="pill">ruled yes · 2026-10-10</span></h4>
@@ -450,10 +453,12 @@
         <p><b>Consequence:</b> the shared row frame changes for runs only, never on the month or the report. Build: CUL-1736, after the open it rides (CUL-1734).</p>
       </div>
       <div class="brief">
-        <h4>D5 · A meal minutes before any vomit keeps its own row <span class="pill open">to rule</span><span class="pill">clinical</span></h4>
+        <h4>D5 · A meal minutes before any vomit keeps its own row <span class="pill">ruled yes · 2026-10-10</span><span class="pill">clinical</span></h4>
+        <p><b>Ruled:</b> <q>D5 yes, go with (a)</q></p>
         <p><b>Deciding:</b> whether rule B also keeps out of a run a meal eaten within 30 minutes before a vomit the timing lane did not measure from (a found vomit, a second vomit in one bout, a free fed span). Today such a meal can fold into "3 meals" right above the vomit.</p>
         <p><b>Options:</b> (a) <b>Yes</b> (recommended by the Data Scientist with Dr. Chen: runs only break more on bad days, which are the days a vet reads); (b) no, keep rule B as ruled (CUL-1163).</p>
-        <p><b>Consequence:</b> a rule B change in <code>lib/spineCompaction.ts</code> and a History v2 §3.6 edit, with Dr. Chen signing off the window. Independent of D1 to D4.</p>
+        <p><b>Consequence:</b> a rule B change in <code>lib/spineCompaction.ts</code> and a History v2 §3.6 edit, with Dr. Chen signing off the window. Independent of D1 to D4. Build: CUL-1737, with an adversarial review.</p>
+        <div class="frames d5" id="d5-frames"></div>
       </div>
       <div class="brief">
         <h4>Team defaults <span class="pill">you can reverse any</span></h4>
@@ -516,6 +521,7 @@
       <p><b>The proposal's numbers come from the seats:</b> an 80ms linear lead, a 240ms ease out box, a 150ms landing with a 4pt drift where the box's edge reaches each meal (never starting after 250ms), a 100ms leave, a 200ms close and an 80ms retract.</p>
       <p><b>Round 2 (2026-10-10)</b> changes only what an opened meal shows, after your reaction to §04: the brand and product are back on every meal. The motion, the beats and the charts are round 1's.</p>
       <p><b>Round 2.1 (2026-10-10)</b> folds in your word on D4: every proposal phone now carries the stack, folded, and its tuck rides the line's lead and retract, so the charts gain a Stack row. Nothing else moved.</p>
+      <p><b>Round 2.2 (2026-10-10)</b> folds in your word on D5 and draws it under its brief, before and after. The reveal scroll in §05, ruled in round 2, leaves its option box.</p>
       <p><b>Only a phone can judge motion.</b> This page shows the order, the timing and the seams. How a curve feels under a thumb at 120Hz, beside a real scroll, is the device's call. Principle 9: "a motion or a haptic is verified on a phone, never in a test."</p>
     </div>
   </section>
@@ -572,7 +578,7 @@
     var stack = '';
     if (o.stack) { for (var k = o.stack - 1; k >= 1; k--) stack += '<i style="top:' + (3 + k * STACK_STEP) + 'px"></i>'; stack = '<span class="stk" aria-hidden="true">' + stack + '</span>'; }
     return '<div class="rw' + (o.cls ? ' ' + o.cls : '') + '"' + (o.attrs || '') + '>' +
-      '<div class="tm">' + esc(timeText(o.time)) + '</div>' +
+      '<div class="tm">' + esc(timeText(o.time)) + (o.ttag ? '<span class="tt">' + esc(o.ttag) + '</span>' : '') + '</div>' +
       '<div class="rl"><i class="ln t"></i><i class="ln b"></i>' + stack + '<i class="bd' + (o.vomit ? ' vomit' : '') + '"></i>' + (o.lead ? '<i class="lead"></i>' : '') + '</div>' +
       '<div class="bx"><div class="tl"><span class="ti">' + esc(o.title) + (o.detail ? '<span class="de"> · ' + esc(o.detail) + '</span>' : '') + '</span>' +
       (o.tag ? '<span class="ft">' + esc(o.tag) + '</span>' : '') + (o.photo ? '<span class="cam" aria-hidden="true">' + CAMERA + '</span>' : '') + (o.chip ? '<span class="chip">' + esc(o.chip) + '</span>' : '') + '</div>' +
@@ -944,11 +950,27 @@
     host.querySelectorAll('.card > div').forEach(function (el) { new Phone(el, { mini: true, static: true, open: true, n: parseInt(el.getAttribute('data-n') || '2', 10) }); });
   }
 
+  // D5, ruled: a meal within 30 minutes before any vomit keeps its own row. Drawn on a day
+  // whose vomit was found, which the timing lane never times, so nothing kept the meal out.
+  function d5Frames() {
+    var host = document.getElementById('d5-frames');
+    if (!host) return;
+    var vomit = row({ cls: 'lastnode', time: '1:30 PM', ttag: 'Found', title: 'Vomit', vomit: true });
+    var count = '<div class="ph-count"><b>4</b> logged · 1 vomit · 3 meals</div>';
+    var before = row({ cls: 'head firstnode', time: '8:00 AM – 1:05 PM', title: '3 meals', detail: PRODUCT, line2: '1 wet · 2 dry', chev: true, stack: 3 }) + vomit;
+    var after = row({ cls: 'head firstnode', time: '8:00 AM – 12:30 PM', title: '2 meals', detail: PRODUCT, line2: '1 wet · 1 dry', chev: true, stack: 2 }) +
+      row({ time: '1:05 PM', title: 'Meal', detail: PRODUCT, tag: 'DRY' }) + vomit;
+    var frame = function (inner, cap) { return '<div class="frame"><div class="card"><div class="optP thread-fixed nested">' + count + '<div class="sp">' + inner + '</div></div></div><div class="demo-cap">' + cap + '</div></div>'; };
+    host.innerHTML =
+      frame(before, '<b>Today</b><span>The 1:05 PM meal, 25 minutes before a vomit found at 1:30, folds into "3 meals" right above it. The lane never times a found vomit, so nothing kept that meal out.</span>') +
+      frame(after, '<b>With D5 <span class="pill cur">current</span></b><span>Any meal eaten within 30 minutes before a vomit keeps its own row, seen or found, first of a bout or not. The other two meals still share a line.</span>');
+  }
+
   function edgeRow() {
     var host = document.getElementById('edge-row');
     host.innerHTML =
       '<div class="demo"><div class="ph short optA" data-opt="A" id="ph-low-a"></div><div class="demo-cap"><b>Today: it opens out of sight</b><span>Tap the 2 meals line near the bottom.</span></div></div>' +
-      '<div class="demo frame option" style="width:384px;"><div class="ph short optP thread-fixed nested" data-opt="P" id="ph-low-b"></div><div class="demo-cap"><b>The proposal with a reveal scroll</b><span>The list moves just far enough to show the first meal; under Reduce Motion it jumps; on a close it stays.</span></div></div>';
+      '<div class="demo"><div class="ph short optP thread-fixed nested" data-opt="P" id="ph-low-b"></div><div class="demo-cap"><b>The proposal with a reveal scroll <span class="pill cur">current</span></b><span>The list moves just far enough to show the first meal; under Reduce Motion it jumps; on a close it stays.</span></div></div>';
     var a = make(document.getElementById('ph-low-a'), { tall: true });
     var b = make(document.getElementById('ph-low-b'), { tall: true, reveal: true });
     [a, b].forEach(function (p) { var sc = p.q.scroll; sc.scrollTop = 0; var at = p.q.head.getBoundingClientRect().top - sc.getBoundingClientRect().top; sc.scrollTop = Math.max(0, at - (sc.clientHeight - 116)); });
@@ -990,7 +1012,7 @@
       { opt: 'C', cls: 'optP thread-fixed nested', n: 8, rest: false, label: 'stack · 8 meals', c: 'Still three. The words carry the count.' }
     ]);
     make(document.getElementById('ph-stack'), { n: 4 });
-    drawCharts(); restFrames(); edgeRow();
+    drawCharts(); restFrames(); edgeRow(); d5Frames();
     // The option's caption states the measured cost of today's rows at twelve meals.
     var probe = document.createElement('div'); probe.style.cssText = 'position:absolute;left:-9999px;top:0;width:302px;';
     probe.innerHTML = '<div class="optP thread-fixed nested" data-opt="P"></div><div class="optP thread-fixed" data-opt="B"></div>';
