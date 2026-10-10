@@ -7290,6 +7290,10 @@ export function detectIncidentRedFlags(
     /** PR-30c: the freshest "said at" instant per call tier (max of occurred and written), and
      *  whether that read's write time was the row's real stamp (CUL-1759) or `updated_at`. */
     saidAt: Record<IncidentCall, { ms: number; iso: string; stamped: boolean }>
+    /** CUL-1759: every call read in the family carries the row's own stamp. Only then does "later"
+     *  follow said order: a Hide moves an unstamped sibling's updated_at but never whether it is
+     *  stamped, so no unrelated write can switch the words (the adversarial pass, P2). */
+    allCallsStamped: boolean
   }
   const byFamily = new Map<IncidentCategory, FamilyAcc>()
   const familyAcc = (cat: IncidentCategory): FamilyAcc => {
@@ -7303,6 +7307,7 @@ export function detectIncidentRedFlags(
         call: null,
         latestAt: { call_now: { ms: -Infinity, iso: '' }, call_today: { ms: -Infinity, iso: '' } },
         saidAt: { call_now: { ms: -Infinity, iso: '', stamped: false }, call_today: { ms: -Infinity, iso: '', stamped: false } },
+        allCallsStamped: true,
       }
       byFamily.set(cat, acc)
     }
@@ -7344,6 +7349,7 @@ export function detectIncidentRedFlags(
         ? { ms: sourceMs, iso: sourceIso as string, stamped }
         : { ms, iso: a.occurredAt, stamped }
       if (said.ms > acc.saidAt[call].ms) acc.saidAt[call] = said
+      if (!stamped) acc.allCallsStamped = false
     }
     if (flagged) {
       for (const f of flags) acc.flagKinds.add(f)
@@ -7364,7 +7370,7 @@ export function detectIncidentRedFlags(
   // the call-today row (089's `may_wait` take-back) nor one of the call-now row (a Hide, an edit, a
   // failed re-read) can add or erase this clause. `updated_at` is not a "said at" stamp, so it never
   // decides a word here. The date is that event's.
-  // CUL-1759 (PM ruling (a), 2026-10-10): when the freshest read at BOTH tiers carries the row's own
+  // CUL-1759 (PM ruling (a), 2026-10-10): when EVERY call read in the family carries the row's own
   // stamp (099), which no unrelated write moves, "later" is ordered by when each call was SAID and
   // dated by that instant: a call today written today on an older event reaches the card, and a call
   // now raised after a call today never sits under a "later" one. Otherwise event order, as before.
@@ -7372,7 +7378,7 @@ export function detectIncidentRedFlags(
     if (acc.call !== 'call_now') return {}
     const now = acc.saidAt.call_now
     const today = acc.saidAt.call_today
-    if (now.stamped && today.stamped && Number.isFinite(today.ms)) {
+    if (acc.allCallsStamped && now.stamped && today.stamped && Number.isFinite(today.ms)) {
       return today.ms > now.ms ? { laterCallTodayIso: today.iso } : {}
     }
     return acc.latestAt.call_today.ms > acc.latestAt.call_now.ms ? { laterCallTodayIso: acc.latestAt.call_today.iso } : {}

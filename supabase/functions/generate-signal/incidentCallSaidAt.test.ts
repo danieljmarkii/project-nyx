@@ -240,3 +240,17 @@ Deno.test('mapIncidentAnalyses — carries the row stamp as callSaidAt', () => {
   assert.equal(a.callSaidAt, at(28, 9))
   assert.equal(a.writtenAt, at(29, 10))
 })
+
+Deno.test('callSaidAt — a pre-099 sibling anywhere in the family keeps event order, so a Hide on it cannot switch the words (P2)', () => {
+  const rows = (siblingWritten: string) =>
+    input([
+      analysis({ call: 'call_now', occurredAt: at(26, 9), callSaidAt: at(26, 9) }),
+      analysis({ call: 'call_today', occurredAt: at(24, 9), callSaidAt: at(27, 10) }), // stamped, older event
+      analysis({ call: 'call_today', occurredAt: at(25, 9), writtenAt: siblingWritten }), // pre-099
+    ])
+  const [before] = detectIncidentRedFlags(rows(at(25, 9)))
+  const [afterHide] = detectIncidentRedFlags(rows(at(29, 12)))
+  // Event order both times: the newest call-today EVENT (25th) is before the call now's (26th).
+  assert.equal('laterCallTodayIso' in before, false)
+  assert.equal('laterCallTodayIso' in afterHide, false)
+})

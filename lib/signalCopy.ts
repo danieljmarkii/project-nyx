@@ -2527,9 +2527,11 @@ function bannerRankOf(f: BannerSafetyFinding, nowMs: number | undefined): number
     if (!incidentCallNowDated(f, nowMs)) return -1;
     // Ruling 2a's rank: a dated call now ranks just under a live red flag (a fresh call today on any
     // pet, or in the same pet's other family, takes the banner from it) and above intake decline.
-    // Under ruling B a later call today in its own family raises it to a live red flag's rank, by
-    // either clock: event order (`laterCallTodayIso`) or write order (`callTodaySaidIso`). Either can
-    // only raise the rank, so a rewrite of either row never lowers it.
+    // A later call today in its own family raises it to a live red flag's rank: `laterCallTodayIso`
+    // (event order, or said order once every call read is stamped, CUL-1759) or `callTodaySaidIso`
+    // (the call today's said-at, fresher than the call now's). With unstamped reads either half can
+    // only raise the rank. Once every read is stamped the two agree, so the rank follows said order:
+    // a call today said before the call now leaves the dated card at 0.5, by design (ruling (a)).
     return laterCallTodayIsoOf(f) !== null || callTodaySaidSinceCallNow(f) ? BANNER_SAFETY_PRIORITY.incident_red_flag : 0.5;
   }
   if (f.type === 'intake_decline' && f.trigger === 'refused_then_vomited') return 2.5;
