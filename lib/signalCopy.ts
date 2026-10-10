@@ -181,7 +181,9 @@ export function incidentRedFlagAsk(finding: IncidentRedFlagFinding, nowMs?: numb
   if (call === null) return 'worth a call to your vet';
   if (incidentCallNowDated(finding, nowMs) && finding.tierIso !== undefined) {
     const d = stripDayUTC(finding.tierIso);
-    if (d) return datedCallNowAsk(d.short);
+    // A call from a different read than the flagged photo is "a read", as the sentence says it
+    // (PR-30a's adversarial #3): the eyebrow above dates the photo, not this read.
+    if (d) return datedCallNowAsk(d.short, callFromOtherRead(finding) ? 'a read' : 'the read');
   }
   const label = TIER_WORDS[call].label;
   return label.charAt(0).toLowerCase() + label.slice(1);

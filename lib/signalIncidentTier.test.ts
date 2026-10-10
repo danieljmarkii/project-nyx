@@ -212,6 +212,7 @@ describe('a call now after its first day (PR-30c)', () => {
   it('a call from a later read keeps one date on the row (the ask carries it), and a later call today still shows', () => {
     const f = callNow({ mostRecentFlaggedIso: '2026-09-28T07:00:00.000Z' });
     expect(signalHomeLine(f, null, dayTwo)!.count).toBeNull();
+    expect(signalHomeLine(f, null, dayTwo)!.ask).toBe('on Oct 8, a read said: call your vet now');
     const later = { ...f, laterCallTodayIso: '2026-10-09T07:00:00.000Z' };
     expect(signalHomeLine(later, null, dayTwo)!.count).toBe('A later read on Oct 9 says call today');
     expect(evidenceText(later, 'Nyx', dayTwo)).toContain('On October 8, a read said: call your vet now. A later read, on October 9, says to call your vet today.');

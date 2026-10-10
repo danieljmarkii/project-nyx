@@ -42,8 +42,8 @@ export function datedCallNowLabel(day: string): string {
 
 /** The dated form lower-cased at its head, for a sentence that already began
  *  ("…. on Oct 3, the read said: call your vet now"). */
-export function datedCallNowAsk(day: string): string {
-  return `on ${day}, the read said: ${CALL_NOW_ASK}`;
+export function datedCallNowAsk(day: string, read: 'the read' | 'a read'): string {
+  return `on ${day}, ${read} said: ${CALL_NOW_ASK}`;
 }
 
 /** The record card's action line under a dated call now. It still sends the owner to a vet,
