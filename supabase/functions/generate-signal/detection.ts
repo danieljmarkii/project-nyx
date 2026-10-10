@@ -622,7 +622,9 @@ export interface IncidentAnalysisInput {
   /**
    * Engines v3 PR-30a (CUL-1511): the call this read stands on under the NEW rule, resolved by the
    * record's own `tierDisplayOf` (pipeline.ts `newRuleCallOf`), or null/absent. An earlier-rule call
-   * is null here, so the lane keeps today's words and today's trigger for every unstamped read.
+   * is null here, so the lane keeps today's words and today's trigger for every unstamped read but
+   * one: a stored `tier = 'call_now'` is a call whatever the stamp (CUL-1516, GAP-34), since only a
+   * write under the key stores one.
    */
   call?: IncidentCall | null
 }
