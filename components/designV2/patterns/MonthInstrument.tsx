@@ -614,25 +614,24 @@ function DaySlot({
   const onLayout = (e: LayoutChangeEvent) => motion.onSlotLayout(e.nativeEvent.layout.height);
   const railOut = motion.inFlight && motion.railHeight != null;
   const items = load && 'rows' in load ? describeDayEventDoors(load.rows) : [];
-  // The fold's anatomy: idle, the shipped tree to the byte — a plain rail, plain rows, no
-  // wrapper. In flight, the rail is an `Animated.View` out of the flow with an explicit
-  // height, and the rows sit in an `Animated.View` that mounts only while they are
-  // arriving or leaving (an animated wrapper left mounted across an idle state keeps a
-  // stale node attached to its value, and the next beat starts against it).
-  const rowsWrapped = motion.phase !== 'open';
+  // The fold's anatomy: idle, a plain rail and plain rows. In flight, the rail leaves the
+  // flow with an explicit height. Each node keeps ONE element type across every phase
+  // (CUL-1721): the rail is always an `Animated.View` and the rows always sit in the one
+  // animated stage, so nothing in the day remounts at either end of a transition — a row
+  // VoiceOver is on keeps its focus. The values rest at 1 / 0 whenever the slot is idle.
   const rowsStyle = { opacity: motion.values.rowsOpacity, transform: [{ translateY: motion.values.rowsShift }] };
   return (
     <View style={[styles.slot, { minHeight: motion.slotMinHeight }]} onLayout={onLayout} testID="day-slot">
-      {railOut ? (
-        <Animated.View
-          testID="day-rail"
-          style={[styles.rail, styles.railOut, { height: motion.railHeight as number, transform: [{ scaleY: motion.values.railScale }] }]}
-        />
-      ) : (
-        <View style={styles.rail} testID="day-rail" />
-      )}
+      <Animated.View
+        testID="day-rail"
+        style={
+          railOut
+            ? [styles.rail, styles.railOut, { height: motion.railHeight as number, transform: [{ scaleY: motion.values.railScale }] }]
+            : styles.rail
+        }
+      />
       {motion.rowsMounted && (
-        <RowsStage wrapped={rowsWrapped} style={rowsStyle}>
+        <RowsStage style={rowsStyle}>
           <ThemedText style={styles.dayTitle}>{dayMarkDateWord(aboutKey)}</ThemedText>
           {load == null ? (
             <ThemedText style={styles.daySubtitle}>Loading…</ThemedText>
@@ -712,24 +711,18 @@ function DaySlot({
   );
 }
 
-/** The rows' stage: an animated wrapper while they arrive or leave, a plain View at rest. */
+/** The rows' stage: the one animated wrapper, mounted with the rows (CUL-1721). */
 function RowsStage({
-  wrapped,
   style,
   children,
 }: {
-  wrapped: boolean;
   style: { opacity: Animated.Value; transform: { translateY: Animated.Value }[] };
   children: ReactNode;
 }) {
-  return wrapped ? (
+  return (
     <Animated.View style={[styles.slotContent, style]} testID="day-detail">
       {children}
     </Animated.View>
-  ) : (
-    <View style={styles.slotContent} testID="day-detail">
-      {children}
-    </View>
   );
 }
 

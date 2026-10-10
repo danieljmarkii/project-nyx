@@ -471,8 +471,9 @@ export function SpineCompactRow({
   };
   const Chevron = expanded ? ChevronUp : ChevronDown;
   // Whether the members are on screen under the run: the host's state for the shipped open;
-  // the machine's slot for open in place, which stays through the close's last beat.
-  const membersOut = openInPlace ? motion.slotMounted : expanded;
+  // the machine's slot for open in place, which yields the row's edge back on the close's
+  // configured commit (so the last node's padding never changes on a bare one, CUL-1721).
+  const membersOut = openInPlace ? motion.membersBelow : expanded;
   const members = node.rows.map((row, i) => (
     <SpineEventRow
       key={row.id}
@@ -535,10 +536,14 @@ export function SpineCompactRow({
 /**
  * The members opening in place (HV-10): the month's day anatomy, on the thread. The slot is
  * the members' box; the run's rail lies over the thread along it. Idle and open it is the
- * shipped tree's shape, a plain rail and plain rows; in flight the rail leaves the flow with
- * an explicit height (so no layout keyframe re-commits a view carrying a native-driver
- * transform, the fold's Fabric rule) and the members sit in an animated stage that exists
- * only while they arrive or leave.
+ * shipped tree's shape, a plain rail and plain rows; in flight the slot clips, and the rail
+ * leaves the flow with an explicit height (so no layout keyframe re-commits a view carrying
+ * a native-driver transform, the fold's Fabric rule).
+ *
+ * ONE ELEMENT TYPE PER NODE ACROSS EVERY PHASE (CUL-1721): the rail is always an
+ * `Animated.View` and the members always sit in the one animated stage, so nothing under
+ * the run remounts at either end — a member VoiceOver is on keeps its focus, and a press
+ * in that frame lands. (The stage used to unwrap at rest, which remounted every member.)
  */
 function RunInPlace({
   nodeId,
@@ -553,33 +558,26 @@ function RunInPlace({
   const railOut = motion.inFlight && motion.railHeight != null;
   return (
     <View
-      style={[styles.members, { minHeight: motion.slotMinHeight }]}
+      style={[styles.members, { minHeight: motion.slotMinHeight }, motion.clipped && styles.membersClip]}
       onLayout={(e) => motion.onSlotLayout(e.nativeEvent.layout.height)}
       testID={`spine-members-${nodeId}`}
     >
-      {railOut ? (
-        <Animated.View
-          pointerEvents="none"
-          testID={`spine-run-rail-${nodeId}`}
-          style={[
-            styles.runRailOut,
-            { height: motion.railHeight as number, transform: [{ scaleY: motion.values.railScale }] },
-          ]}
-        />
-      ) : (
-        <View style={styles.runRail} pointerEvents="none" testID={`spine-run-rail-${nodeId}`} />
-      )}
+      <Animated.View
+        pointerEvents="none"
+        testID={`spine-run-rail-${nodeId}`}
+        style={
+          railOut
+            ? [styles.runRailOut, { height: motion.railHeight as number, transform: [{ scaleY: motion.values.railScale }] }]
+            : styles.runRail
+        }
+      />
       {motion.rowsMounted ? (
-        motion.phase === 'open' ? (
-          children
-        ) : (
-          <Animated.View
-            testID={`spine-members-stage-${nodeId}`}
-            style={{ opacity: motion.values.rowsOpacity, transform: [{ translateY: motion.values.rowsShift }] }}
-          >
-            {children}
-          </Animated.View>
-        )
+        <Animated.View
+          testID={`spine-members-stage-${nodeId}`}
+          style={{ opacity: motion.values.rowsOpacity, transform: [{ translateY: motion.values.rowsShift }] }}
+        >
+          {children}
+        </Animated.View>
       ) : null}
     </View>
   );
@@ -691,6 +689,8 @@ const styles = StyleSheet.create({
 
   // An opened run: its members are full rows on the thread; the run's rail lies over it.
   members: { position: 'relative' },
+  // In flight only: a rail holding the open box's height never spills past a closing box.
+  membersClip: { overflow: 'hidden' },
   runRail: {
     position: 'absolute',
     left: THREAD_X - RUN_RAIL_W / 2,
