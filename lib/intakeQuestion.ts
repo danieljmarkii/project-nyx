@@ -211,7 +211,10 @@ export function safetyNetDeadline(answeredAt: string, since: string): number | n
   if (morning.getTime() <= ms) morning.setDate(morning.getDate() + 1);
   const named = morning.getTime() >= lead ? morning.getTime() : ceilToHour(lead);
   const cap = sinceMs + SAFETY_NET_MAX_HOURS * MS_PER_HOUR;
-  return named <= cap ? named : Math.max(cap, ceilToHour(lead));
+  if (named <= cap) return named;
+  // Rounding up in local time can overshoot by up to an hour on a clock-change night (the
+  // adversarial pass, R4-1): while the lead itself fits under the cap, the cap is the hour.
+  return lead <= cap ? cap : ceilToHour(lead);
 }
 
 /**

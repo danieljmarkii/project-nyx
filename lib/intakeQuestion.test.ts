@@ -132,12 +132,16 @@ describe('the instants', () => {
     expect(safetyNetDeadline(iso(local(2026, 10, 5, 8, 2)), since)).toBe(local(2026, 10, 6, 8));
     // Tue 9:00 AM, already 49 h: the answer plus two hours.
     expect(safetyNetDeadline(iso(local(2026, 10, 6, 9)), since)).toBe(local(2026, 10, 6, 11));
+    // A deadline whose lead fits under the cap never passes it (R4-1, the clock-change overshoot).
+    const capMs = Date.parse(since) + 48 * 3_600_000;
+    expect(safetyNetDeadline(iso(capMs - 2 * 3_600_000 - 30 * 60_000), since)).toBeLessThanOrEqual(capMs);
     // Every deadline is at least two hours after its answer, and at most 48 h after since or answer + 3 h.
     for (let m = 0; m < 4 * 24 * 60; m += 37) {
       const answered = local(2026, 10, 4, 8) + m * 60_000;
       const d = safetyNetDeadline(iso(answered), since) as number;
       expect(d - answered).toBeGreaterThanOrEqual(2 * 3_600_000);
-      expect(d).toBeLessThanOrEqual(Math.max(Date.parse(since) + 48 * 3_600_000, answered + 3 * 3_600_000));
+      const lead = answered + 2 * 3_600_000;
+      expect(d).toBeLessThanOrEqual(lead <= capMs ? capMs : lead + 3_600_000);
     }
   });
 
