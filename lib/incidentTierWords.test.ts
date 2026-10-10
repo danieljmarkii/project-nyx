@@ -56,8 +56,33 @@ describe('which words stand', () => {
   it('the STAMP decides new-rule words, never a tier\'s presence (spec §1); the tier still counts toward the call', () => {
     // A rollback's flag-off write: a stale tier beside a stamp without the key.
     expect(tierDisplayOf({ status: 'completed', recommendation: 'worth_a_call', tier: 'logged', engine_flags: [] })).toBe('worth_a_call');
-    expect(tierDisplayOf({ status: 'completed', recommendation: 'monitor', tier: 'call_now', engine_flags: [] })).toBe('worth_a_call');
+    expect(tierDisplayOf({ status: 'completed', recommendation: 'worth_a_call', tier: 'call_today', engine_flags: [] })).toBe('worth_a_call');
     expect(isTieredRow({ tier: 'call_today', engine_flags: null })).toBe(false);
+    expect(isTieredRow({ tier: 'logged', engine_flags: [] })).toBe(false);
+  });
+
+  it('a shown call now never steps down in words after a flag-off write (CUL-1516, GAP-34)', () => {
+    // The issue's shape: shown call now, then a flag-off escalation write stamped `[]` that
+    // leaves the tier column alone. Same rose, same rank, and now the same words.
+    const overwritten = { status: 'completed', recommendation: 'worth_a_call', tier: 'call_now', engine_flags: [] };
+    expect(tierDisplayOf(overwritten)).toBe('call_now');
+    expect(isTieredRow(overwritten)).toBe(true);
+    // The record's card switches on `isTieredRow`, so it draws the call-now action line too.
+    expect(TIER_WORDS[tierDisplayOf(overwritten)!].action).toMatch(/emergency clinic/);
+    // A flag-off write of a calmer verdict, every stamp shape, every status: still call now.
+    for (const engine_flags of [[], null, undefined, '[]', 'not json', ['engines_v3_en0']]) {
+      for (const status of STATUSES) {
+        for (const recommendation of ['worth_a_call', 'monitor', 'not_enough_to_say', null, 'call_soon']) {
+          expect(tierDisplayOf({ status, recommendation, tier: 'call_now', engine_flags })).toBe('call_now');
+        }
+      }
+    }
+    // Louder only: the exception never makes a quieter tier speak new words.
+    for (const tier of ['call_today', 'logged', 'not_enough_to_say', null]) {
+      expect(isTieredRow({ tier, engine_flags: [] })).toBe(false);
+    }
+    // And a stored call now counts in the new rule's population, the words it speaks.
+    expect(TIER_WORDS.call_now.rule).toBe('tiered');
   });
 
   it('the louder column wins: a flag-off write of a verdict never lowers a stored call tier', () => {

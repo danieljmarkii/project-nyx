@@ -26,7 +26,7 @@
 import { careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
-import { refusedThenVomitedOf, stripDayUTC, symptomWord } from './signalCopy';
+import { callFromOtherRead, incidentRedFlagAsk, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, symptomWord } from './signalCopy';
 import { riseKeptSentence } from './screenMasking';
 import type { SignalScreenModel } from './signalScreen';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
@@ -63,7 +63,8 @@ function numWord(n: number): string {
  *   intake       "worth keeping an eye on, and a word with your vet if it carries on" (both)
  * The conditional asks keep their lead-in: cut to "a word with your vet if it carries on"
  * they read as a fragment with no verb (pm-feature-review).
- *   red flag     "worth a call to your vet"
+ *   red flag     "worth a call to your vet"; a NEW-RULE call (Engines v3 PR-30a, CUL-1511) asks in
+ *                the tier-word map's words, "call your vet now" / "call your vet today"
  *   burden       today "worth a call to your vet today" · soon "worth booking a vet visit soon"
  */
 export function signalHomeAsk(finding: SignalFinding): string | null {
@@ -81,7 +82,7 @@ export function signalHomeAsk(finding: SignalFinding): string | null {
       if (finding.trigger === 'refused_then_vomited') return 'worth mentioning to your vet';
       return 'worth keeping an eye on, and a word with your vet if it carries on';
     case 'incident_red_flag':
-      return 'worth a call to your vet';
+      return incidentRedFlagAsk(finding);
     case 'symptom_burden':
       return finding.tier === 'today' ? 'worth a call to your vet today' : 'worth booking a vet visit soon';
     default:
@@ -173,8 +174,24 @@ function countLine(finding: SignalFinding): string | null {
       }
       return finding.daysBelowBaseline <= 1 ? 'Today' : `The last ${numWord(finding.daysBelowBaseline)} days`;
     case 'incident_red_flag':
-      // The headline and the eyebrow carry it: the phrase, the family and the date.
-      return null;
+      // The headline and the eyebrow carry it: the phrase, the family and the date. PR-30a: a
+      // call from a different read than the flagged photo carries that read's day here, so the
+      // ask is never pinned on the older photo (the adversarial pass, #3).
+      // Second round: a later call today under an older call now is said here too, so a fresh call
+      // always changes the row. Instants compared parsed (C-40, inside the helpers).
+      {
+        const parts: string[] = [];
+        if (finding.tierIso !== undefined && callFromOtherRead(finding)) {
+          const d = stripDayUTC(finding.tierIso);
+          parts.push(d ? `The call is from a read on ${d.short}` : 'The call is from a later read');
+        }
+        const later = laterCallTodayIsoOf(finding);
+        if (later !== null) {
+          const d = stripDayUTC(later);
+          parts.push(d ? `A later read on ${d.short} says call today` : 'A later read says call today');
+        }
+        return parts.length > 0 ? parts.join(' · ') : null;
+      }
     default:
       return null;
   }
@@ -184,6 +201,12 @@ function eyebrow(finding: SignalFinding): string | null {
   if (finding.type !== 'incident_red_flag') return null;
   // The photo record's own day, UTC like the sentence ("on September 22") and the phone
   // script — never a local day that could disagree with the screen by one.
+  // PR-30a: a call-only card is dated by the read whose words its ask is, and its eyebrow never
+  // says a photo found something.
+  if (isCallOnlyFinding(finding)) {
+    const d = stripDayUTC(finding.tierIso ?? finding.mostRecentFlaggedIso);
+    return d ? `Read · ${d.short}` : 'Read';
+  }
   const day = stripDayUTC(finding.mostRecentFlaggedIso);
   if (!day) return finding.flaggedIncidentCount === 1 ? 'Photo read' : 'Photo reads';
   return finding.flaggedIncidentCount === 1 ? `Photo read · ${day.short}` : `Photo reads · latest ${day.short}`;
