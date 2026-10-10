@@ -34,6 +34,7 @@ import {
   photoPresence,
   projectCachedRead,
   recallEvent,
+  tierWordsOf,
   recentEvents,
   resolveWindow,
   symptomTrend,
@@ -1073,6 +1074,8 @@ function read(partial: Partial<AskCachedReadRow>): AskCachedReadRow {
     stoolBloodPresent: partial.stoolBloodPresent ?? null,
     stoolMucusPresent: partial.stoolMucusPresent ?? null,
     recommendation: partial.recommendation ?? null,
+    tier: partial.tier ?? null,
+    engineFlags: partial.engineFlags ?? null,
     readText: partial.readText ?? null,
     readCorrection: partial.readCorrection ?? null,
   }
@@ -1098,7 +1101,7 @@ Deno.test('projectCachedRead — an owner-cleared flag does not resurface (overr
 Deno.test('projectCachedRead — a dismissed n=1 read hides its interpretive text but keeps structured facts', () => {
   const p = projectCachedRead(read({ dismissedAt: '2026-07-15T00:00:00Z', readText: 'HIDE_ME', recommendation: 'worth_a_call', bloodPresent: 'fresh_red' }))
   assert.equal(p.readText, null)
-  assert.equal(p.recommendation, null)
+  assert.equal(p.tierWords, null)
   assert.deepEqual(p.flags, ['blood']) // the structured fact still surfaces (escalation on presence)
 })
 
@@ -1249,11 +1252,46 @@ Deno.test('projectCachedRead (CUL-1406): the correction rides beside the words, 
   // One string, words first: every relay (recall tools included) carries both or neither.
   const shown = projectCachedRead(read({ readText: words, readCorrection: corr, recommendation: 'worth_a_call' }))
   assert.equal(shown.readText, `${words} ${corr}`)
-  assert.equal(shown.recommendation, 'worth_a_call')
+  assert.equal(shown.tierWords, 'Worth a call')
   assert.ok(!('readCorrection' in shown), 'no separate field a relay could drop or carry alone')
   const hidden = projectCachedRead(read({ dismissedAt: '2026-10-07T00:00:00Z', readText: words, readCorrection: corr }))
   assert.equal(hidden.readText, null)
   // A correction never travels without the words it corrects.
   assert.equal(projectCachedRead(read({ readText: null, readCorrection: corr })).readText, null)
   assert.equal(projectCachedRead(read({ readText: words })).readText, words)
+})
+
+// ── CUL-1512 (PR-27m): Ask quotes the record's words, never a raw tier or verdict ──────────
+
+const EN3 = ['engines_v3_en3']
+
+Deno.test('tierWordsOf — the record\'s words, by the one map\'s resolver (spec §4)', () => {
+  // A new-rule row speaks the new words.
+  assert.equal(tierWordsOf(read({ tier: 'call_now', recommendation: 'worth_a_call', engineFlags: EN3 })), 'Call your vet now')
+  assert.equal(tierWordsOf(read({ tier: 'call_today', recommendation: 'worth_a_call', engineFlags: EN3 })), 'Call your vet today')
+  assert.equal(tierWordsOf(read({ tier: 'logged', recommendation: 'monitor', engineFlags: EN3 })), 'Keep an eye out')
+  assert.equal(tierWordsOf(read({ tier: 'not_enough_to_say', recommendation: 'not_enough_to_say', engineFlags: EN3 })), 'Not enough to say yet')
+  // The stamp decides, never the tier's presence: an unstamped call now (a rollback) keeps
+  // the shipped words, and so does every earlier-rule read (spec §5).
+  assert.equal(tierWordsOf(read({ tier: 'call_now', recommendation: 'worth_a_call' })), 'Worth a call')
+  assert.equal(tierWordsOf(read({ recommendation: 'worth_a_call' })), 'Worth a call')
+  assert.equal(tierWordsOf(read({ recommendation: 'monitor' })), 'Keep an eye out')
+  // A value this build does not know fails toward the rose (CUL-1277), never blank or calm.
+  assert.equal(tierWordsOf(read({ recommendation: 'call_the_moon' })), 'Worth a call')
+  // A call stands at any status; a quiet word only on a finished read.
+  assert.equal(tierWordsOf(read({ status: 'failed', recommendation: 'worth_a_call' })), 'Worth a call')
+  assert.equal(tierWordsOf(read({ status: 'failed', tier: 'logged', recommendation: 'monitor', engineFlags: EN3 })), null)
+  assert.equal(tierWordsOf(read({ status: 'pending', recommendation: 'monitor' })), null)
+  assert.equal(tierWordsOf(read({})), null)
+})
+
+Deno.test('projectCachedRead — no raw tier, verdict or stamp reaches the relay (spec §4)', () => {
+  const p = projectCachedRead(read({ tier: 'call_today', recommendation: 'worth_a_call', engineFlags: EN3 }))
+  assert.equal(p.tierWords, 'Call your vet today')
+  const json = JSON.stringify(p)
+  for (const raw of ['call_today', 'worth_a_call', 'engines_v3_en3', '"tier"', 'recommendation', 'engine']) {
+    assert.equal(json.includes(raw), false, `the projection leaks ${raw}`)
+  }
+  // Dismissal hides the words with the rest of the n=1 read.
+  assert.equal(projectCachedRead(read({ tier: 'call_now', recommendation: 'worth_a_call', engineFlags: EN3, dismissedAt: '2026-10-01T00:00:00Z' })).tierWords, null)
 })

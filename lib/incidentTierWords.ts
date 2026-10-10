@@ -2,8 +2,11 @@
 // (EN-3, CUL-1133; Engines v3 PR-27; docs/nyx-incident-tiers-requirements.md §2).
 //
 // `lib/incidentTier.ts` holds the ORDER and no words, so the Edge Functions can import it.
-// This file holds the WORDS and is client-only: nothing under supabase/functions imports it,
-// so a label edit never redeploys analyze-* (C-26). Every surface that names a read (the
+// This file holds the WORDS. One Edge Function imports it, `ask`, because Ask quotes the
+// words the record shows (spec §4, CUL-1512), so a label edit redeploys Ask and nothing
+// else: analyze-* never import it, and a label edit never redeploys them (C-26). It imports
+// only the two import-free rule modules, with explicit `.ts` paths so Deno can load it.
+// Every surface that names a read (the
 // record's card, the gallery tiles, the History and Home row, the month and its chart text)
 // asks `tierDisplayOf` which words stand and reads them from `TIER_WORDS`. A build guard
 // (`guards/incidentTierWords.test.ts`) fails on the literal "worth a call" outside this
@@ -40,8 +43,8 @@
 // "what to tell them" line are generated from the floor's rows in
 // `lib/incidentFloorWords.ts` (CUL-1510), never hand-written here (spec §3, BRK-3).
 
-import { effectiveTierRank, isIncidentTier, TIER_RANK } from './incidentTier';
-import { isQuietVerdict } from './incidentVerdict';
+import { effectiveTierRank, isIncidentTier, TIER_RANK } from './incidentTier.ts';
+import { isQuietVerdict } from './incidentVerdict.ts';
 
 /** The key a new-rule read is stamped with (`engine_flags`). One key covers EN-3's server
  *  half and EN-7, which ship together (PR-26); `lib/stoolForm.ts` names the same string for

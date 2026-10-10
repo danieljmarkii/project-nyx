@@ -65,6 +65,7 @@
 
 import { canonicalizeProtein, readProteinSet } from '../generate-signal/protein.ts'
 import { attributeDoses, type AttributableDose } from '../../../lib/medications.ts'
+import { TIER_WORDS, tierDisplayOf } from '../../../lib/incidentTierWords.ts'
 
 // ── Shared constants ────────────────────────────────────────────────────────────
 
@@ -458,6 +459,11 @@ export interface AskCachedReadRow {
   stoolMucusPresent: string | null
   // ── n=1 interpretive read (dismissible, not editable) ──
   recommendation: string | null
+  /** EN-3's tier beside `recommendation` (migration 079), and the rule-version stamp that
+   *  decides which words stand (075's `engine_flags`). Read only to resolve the words the
+   *  record shows (`tierWords`); neither raw value is ever relayed (spec §4, CUL-1512). */
+  tier: string | null
+  engineFlags: string[] | null
   readText: string | null
   /** CUL-1406: the dated correction beside `readText`, already worded by lib/readCorrection.ts
    *  (label + body, the incident screen's words), or null. Relayed AFTER the stored words,
@@ -864,7 +870,12 @@ export interface ProjectedRead {
   /** The dismissible n=1 read text, or null when dismissed / absent. Relayed verbatim; the
    *  validator gates the surrounding sentence. */
   readText: string | null
-  recommendation: string | null
+  /** The words the owner's record shows for this read, quoted from the one tier-word map
+   *  (`lib/incidentTierWords.ts`, resolved by `tierDisplayOf` exactly as the record does), or
+   *  null when no words stand (dismissed, no verdict, or a quiet verdict on a read that did
+   *  not finish). The raw `tier` / `recommendation` values never reach the model (spec §4):
+   *  the system prompt defines each of these phrases in one line instead. */
+  tierWords: string | null
   /** The structured clinical fields, passed through for a factual recount (all owner-
    *  editable / authoritative). Only non-null fields are meaningful. */
   fields: {
@@ -892,6 +903,19 @@ export function derivePresentFlags(read: AskCachedReadRow): DerivedFlag[] {
   return flags
 }
 
+/** The record's words for a read: the same resolver every client surface asks, over the same
+ *  four columns (status, tier, verdict, stamp), so Ask can never name a read differently from
+ *  the screen it links to. */
+export function tierWordsOf(read: Pick<AskCachedReadRow, 'status' | 'tier' | 'recommendation' | 'engineFlags'>): string | null {
+  const display = tierDisplayOf({
+    status: read.status,
+    tier: read.tier,
+    recommendation: read.recommendation,
+    engine_flags: read.engineFlags,
+  })
+  return display === null ? null : TIER_WORDS[display].label
+}
+
 /** Project a cached read into the relayable, override-aware shape. A dismissed read hides
  *  its n=1 interpretive text (soft-delete rule) but its structured facts remain recountable;
  *  a non-completed read carries no structured facts yet. */
@@ -910,7 +934,7 @@ export function projectCachedRead(read: AskCachedReadRow): ProjectedRead {
     readText: dismissed || !read.readText
       ? null
       : read.readCorrection ? `${read.readText} ${read.readCorrection}` : read.readText,
-    recommendation: dismissed ? null : read.recommendation,
+    tierWords: dismissed ? null : tierWordsOf(read),
     fields: {
       colour: read.colour,
       contents: read.contents,
