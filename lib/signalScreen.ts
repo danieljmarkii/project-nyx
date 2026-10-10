@@ -68,7 +68,7 @@ import {
   type PhoneScriptMasking,
   type ScreenMasking,
 } from './screenMasking';
-import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, reflectionExpandedExtras, symptomWord, type PhoneScriptCounting } from './signalCopy';
+import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, isStoodDown, reflectionExpandedExtras, symptomWord, type PhoneScriptCounting } from './signalCopy';
 import { isFallingVomitPair, signalSaysNotEating, visibleFindings } from './signalVisible';
 import {
   compareGateCounts,
@@ -251,6 +251,10 @@ export interface SignalScreenEpisodes {
   tiles: GalleryTile[];
   /** The episodes with no photo, each with its call: the count line's second clause. */
   photoless: PhotolessEpisode[];
+  /** Whether these episodes are evidence for a finding Home is TRACKING
+   *  (`findingTracksPattern`): where a new-rule `logged` read is drawn "Part of a pattern"
+   *  (K2, CUL-1515, `lib/incidentPattern.ts`). The record asks the same field. */
+  tracksPattern: boolean;
 }
 
 export interface SignalScreenModel {
@@ -338,7 +342,20 @@ function episodesInWeeks(episodes: readonly SignalScreenEpisode[], weekly: Weekl
   });
 }
 
-function galleryOf(inWeeks: readonly SignalScreenEpisode[], verdicts: SignalScreenInput['verdicts'], weeks: number): SignalScreenEpisodes {
+/** Whether a finding is one Home is TRACKING (K2, CUL-1515): every finding the screen draws
+ *  but the stood-down line, which says Home stopped. Every other gate is the loader's own
+ *  (Home's visibility stack, masking, an unsupported type), so a finding the screen will not
+ *  draw marks nothing. */
+export function findingTracksPattern(finding: SignalFinding): boolean {
+  return !isStoodDown(finding);
+}
+
+function galleryOf(
+  inWeeks: readonly SignalScreenEpisode[],
+  verdicts: SignalScreenInput['verdicts'],
+  weeks: number,
+  tracksPattern: boolean,
+): SignalScreenEpisodes {
   const photographed = inWeeks
     .filter((e): e is SignalScreenEpisode & { photo: SignalScreenPhoto } => e.photo != null)
     .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt));
@@ -366,7 +383,7 @@ function galleryOf(inWeeks: readonly SignalScreenEpisode[], verdicts: SignalScre
     });
   const total = inWeeks.length;
   const n = photographed.length;
-  return { total, photographedCount: n, weeks, countLine: galleryCountLine(total, weeks, n, photoless), tiles, photoless };
+  return { total, photographedCount: n, weeks, countLine: galleryCountLine(total, weeks, n, photoless), tiles, photoless, tracksPattern };
 }
 
 /** A bout's rows as one key, the tile's own row among them. */
@@ -814,7 +831,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     lanes,
     // A masked record with nothing in the drawn weeks prints no "0 in these 5 weeks" (CUL-1440,
     // the adversarial pass): the gallery's count line is a count over those weeks too.
-    episodes: inWeeks.length === 0 && weeklyMaskOf(input.masking, weekly, input.today) ? null : galleryOf(inWeeks, input.verdicts, weekly.weeks.length),
+    episodes: inWeeks.length === 0 && weeklyMaskOf(input.masking, weekly, input.today) ? null : galleryOf(inWeeks, input.verdicts, weekly.weeks.length, findingTracksPattern(finding)),
     why,
     context: careContextLinesOf(finding),
     safety,
