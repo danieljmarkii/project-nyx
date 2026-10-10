@@ -873,7 +873,7 @@ describe('SignalZone — the arrival moment', () => {
     // The CUL-527 residual, and the sharpest case in this feature. A `fewer_during_trial`
     // trial_response is dropped by the B-789 safety suppression, but `displayState` is
     // derived upstream over the FULL set — so the state reads 'live' with an EMPTY stack.
-    // Counting `findings.length` would sweep a blank card with a gold wash and a success
+    // Counting `findings.length` would sweep a blank card with a gold wash and a
     // tap, and burn the marker doing it, for the one owner whose cat is refusing food.
     // The finding is insight-class, so the safety gate does not catch this; counting what
     // RENDERS is what catches it.
