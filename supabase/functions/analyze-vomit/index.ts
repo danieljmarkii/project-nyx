@@ -471,10 +471,13 @@ function unratedClause(record: IntakeRecord): string {
 function en5IntakeRecordSentence(p: string, record: IntakeRecord): string {
   if (record.window === 'answer') {
     // The owner's own answer (PR-30q). Pinned to the vomit, never to a clock the server does
-    // not hold: the question named an hour a day before the vomit, in the owner's zone.
-    if (record.answerForm === 'free_fed') return `You said you'd seen ${p} refuse food since the day before this vomit.`
-    if (record.answer === 'a_little') return `You said ${p} had eaten only a little since the day before this vomit.`
-    return `You said ${p} hadn't eaten a meal since the day before this vomit.`
+    // not hold: the question named an hour a day before the vomit, in the owner's zone. And
+    // pinned to the READ, like every sentence here ("When I read this"): a stored call is held
+    // over a later, quieter run (never lowered), so the words it keeps must stay true after
+    // the owner changes her answer (the privacy pass on PR-30q, attack 5).
+    if (record.answerForm === 'free_fed') return `When I read this, you'd said you had seen ${p} refuse food since the day before this vomit.`
+    if (record.answer === 'a_little') return `When I read this, you'd said ${p} had eaten only a little since the day before this vomit.`
+    return `When I read this, you'd said ${p} hadn't eaten a meal since the day before this vomit.`
   }
   const rated = record.mealsRated ?? 0
   if (record.window === 'last_rated') {

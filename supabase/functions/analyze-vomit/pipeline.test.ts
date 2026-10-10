@@ -404,7 +404,7 @@ Deno.test('pipeline EN-5 · 9/4\'s shape, then the owner answers No: a call toda
   assertStrictEquals(no.recommendation, 'worth_a_call')
   assertStrictEquals(
     no.read_text,
-    "You said Nyx hadn't eaten a meal since the day before this vomit. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+    "When I read this, you'd said Nyx hadn't eaten a meal since the day before this vomit. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
   )
   // "A little" stores as Picked (I3) and fires on its own, as one Picked meal does (threshold A).
   const little = await read(world([{ id: 'a1', form: 'meal_fed', answer: 'a_little', answered_at: iso(Date.now() - H) }]))

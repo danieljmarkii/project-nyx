@@ -616,9 +616,9 @@ Deno.test('the answer\'s words: each form and answer, past tense, pinned to the 
   const tail = " In a cat that's vomiting, that's worth a call to your vet sooner rather than later."
   const say = (answerForm: 'meal_fed' | 'free_fed', answer: 'no' | 'a_little') =>
     buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'answer', mealsLogged: 0, mealsRated: 0, answerForm, answer })
-  assertStrictEquals(say('meal_fed', 'no'), "You said Nyx hadn't eaten a meal since the day before this vomit." + tail)
-  assertStrictEquals(say('meal_fed', 'a_little'), 'You said Nyx had eaten only a little since the day before this vomit.' + tail)
-  assertStrictEquals(say('free_fed', 'no'), "You said you'd seen Nyx refuse food since the day before this vomit." + tail)
+  assertStrictEquals(say('meal_fed', 'no'), "When I read this, you'd said Nyx hadn't eaten a meal since the day before this vomit." + tail)
+  assertStrictEquals(say('meal_fed', 'a_little'), "When I read this, you'd said Nyx had eaten only a little since the day before this vomit." + tail)
+  assertStrictEquals(say('free_fed', 'no'), "When I read this, you'd said you had seen Nyx refuse food since the day before this vomit." + tail)
 })
 
 Deno.test('Yes, Not sure and the other-food door add nothing: every corpus case reads as if unanswered', () => {
