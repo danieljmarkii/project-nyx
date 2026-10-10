@@ -147,6 +147,34 @@ describe('answering', () => {
     expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({ answer: 'no', existingId: 'a1', since: '2026-10-07T18:00:00.000Z' }));
   });
 
+  it('Change, then the same answer: the fold closes and nothing is written', async () => {
+    mockAnswers = {
+      meal_fed: { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: '2026-10-07T18:00:00.000Z', form: 'meal_fed', answer: 'no', answered_at: new Date().toISOString() },
+    };
+    await draw();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('intake-question-change-meal_fed'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('No'));
+    });
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(screen.getByText('You said: No')).toBeTruthy();
+  });
+
+  it('a re-read that fails after a save keeps the answer on screen (C-12)', async () => {
+    await draw();
+    const saved = { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: '2026-10-07T18:00:00.000Z', form: 'meal_fed', answer: 'no', answered_at: new Date().toISOString() };
+    mockSave.mockImplementationOnce(async () => saved);
+    mockReadChecks.mockImplementationOnce(async () => {
+      throw new Error('db busy');
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('No'));
+    });
+    expect(screen.getByText('You said: No')).toBeTruthy();
+  });
+
   it('"Not sure" folds with the dated safety-net line', async () => {
     mockAnswers = {
       meal_fed: { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: '2026-10-07T18:00:00.000Z', form: 'meal_fed', answer: 'not_observable', answered_at: new Date().toISOString() },

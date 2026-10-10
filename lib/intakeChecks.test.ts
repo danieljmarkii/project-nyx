@@ -107,6 +107,14 @@ describe('saveIntakeAnswer', () => {
     expect(markers()).toEqual([expect.objectContaining({ event_id: 'v1', pet_id: PET, synced: 0 })]);
   });
 
+  it('the other-food door owes no re-check: the server never reads it as intake', async () => {
+    mockFlags = { engines_v3_en4: true, engines_v3_en3: true };
+    seedEvent('v1');
+    await saveIntakeAnswer({ eventId: 'v1', petId: PET, form: 'other_food', answer: 'yes', since: SINCE });
+    expect(rows()).toHaveLength(1);
+    expect(markers()).toEqual([]);
+  });
+
   it('Change is an UPDATE of the row: it moves updated_at and re-queues, keeping since and form', async () => {
     seedEvent('v1');
     const first = await saveIntakeAnswer({ eventId: 'v1', petId: PET, form: 'meal_fed', answer: 'not_observable', since: SINCE, now: new Date('2026-10-08T19:00:00.000Z') });

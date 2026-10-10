@@ -89,9 +89,13 @@ export async function saveIntakeAnswer(input: SaveIntakeAnswer): Promise<IntakeC
   if (input.answer === 'a_little' && input.form !== 'meal_fed') throw new Error('"A little" is meal_fed only');
   const at = (input.now ?? new Date()).toISOString();
   const db = getDb();
+  // The other-food door is never intake evidence (the server reads meal_fed and free_fed
+  // only), so its answer owes the vomit no re-check.
+  const owing = <T,>(write: () => Promise<T>): Promise<T> =>
+    input.form === 'other_food' ? write() : writeOwingFloorCheck(input.eventId, write);
   if (input.existingId) {
     const existingId = input.existingId;
-    await writeOwingFloorCheck(input.eventId, async () => {
+    await owing(async () => {
       const res = await db.runAsync(
         `UPDATE intake_checks SET answer = ?, answered_at = ?, updated_at = ?, synced = 0, sync_attempts = 0, sync_error = NULL
           WHERE id = ? AND event_id = ? AND deleted_at IS NULL`,
@@ -117,7 +121,7 @@ export async function saveIntakeAnswer(input: SaveIntakeAnswer): Promise<IntakeC
     answer: input.answer,
     answered_at: at,
   };
-  await writeOwingFloorCheck(input.eventId, () =>
+  await owing(() =>
     db.runAsync(
       `INSERT INTO intake_checks (id, pet_id, event_id, since, form, answer, answered_at, created_at, updated_at, synced)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,

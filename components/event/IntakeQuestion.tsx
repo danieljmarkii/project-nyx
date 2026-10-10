@@ -78,10 +78,10 @@ export function IntakeQuestion({ eventId, petId, occurredAt, petName }: Props) {
       setAnswers(a);
       setLoaded(true);
     } catch (e) {
-      // Nothing drawn: the read above stands whatever happens here, and an unanswered
-      // question waits for the next open.
+      // The read above stands whatever happens here. A first read that fails draws nothing
+      // (an unanswered question waits for the next open); a re-read that fails keeps what the
+      // last read drew, so a saved answer never vanishes behind a failed refresh (C-12).
       console.warn('[intake-question] read failed:', e);
-      setLoaded(false);
     }
   }, [eventId, petId]);
 
@@ -111,10 +111,16 @@ export function IntakeQuestion({ eventId, petId, occurredAt, petName }: Props) {
   const nowMs = Date.now();
 
   const answer = async (form: IntakeForm, value: IntakeAnswer, existing: IntakeCheckRow | undefined) => {
+    // Change, then the same answer: the fold closes and nothing is written (no new
+    // answered_at, no re-check owed for an answer that did not move).
+    if (existing && existing.answer === value) {
+      setEditing((e) => ({ ...e, [form]: false }));
+      return;
+    }
     if (inFlight.current) return;
     inFlight.current = true;
     try {
-      await saveIntakeAnswer({
+      const saved = await saveIntakeAnswer({
         eventId,
         petId,
         form,
@@ -125,6 +131,7 @@ export function IntakeQuestion({ eventId, petId, occurredAt, petName }: Props) {
       // Local-first: the push never holds the fold.
       pushIntakeChecks();
       setEditing((e) => ({ ...e, [form]: false }));
+      setAnswers((a) => ({ ...a, [form]: saved }));
       await load();
     } catch (e) {
       console.warn('[intake-question] save failed:', e);
@@ -163,6 +170,7 @@ export function IntakeQuestion({ eventId, petId, occurredAt, petName }: Props) {
                   onPress={() => setEditing((e) => ({ ...e, [form]: true }))}
                   accessibilityRole="button"
                   accessibilityLabel="Change"
+                  accessibilityHint={question}
                   style={styles.change}
                   testID={`intake-question-change-${form}`}
                 >
