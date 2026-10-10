@@ -83,7 +83,7 @@ const SIGNAL_LOAD_SKELETON_MS = 1500;
 //   250ms   the wash begins — teal into a breath of moment-gold, left-to-right,
 //           900ms, ease-out
 //   400ms   the building rows dissolve as the first headline crossfades in (→900ms)
-//   900ms   one soft success tap
+//   900ms   one soft tap (never the success pattern, CUL-647)
 //   1200ms  the rest of the stack settles
 //
 // TWO PLACES THIS READS THE SHIPPED ANATOMY RATHER THAN THE MOCK'S, both deliberate:
@@ -317,7 +317,7 @@ function useArrivalMoment({
         run.current.timer = null;
         insightArrival();
         // CUL-636 — THE TAP GETS ITS SENTENCE. Without this the moment is, for a blind
-        // owner, one unexplained congratulatory buzz: everything that says "something
+        // owner, one unexplained buzz: everything that says "something
         // arrived" is in pixels. Three reasons it lives on this timer rather than in an
         // effect keyed on `playing`:
         //   • It inherits every gate the moment already has — safety-class, marker-once,
