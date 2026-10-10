@@ -6,6 +6,7 @@
 
 import { SYMPTOM_TYPES, type EventTypeKey } from '../constants/eventTypes';
 import type { MomentTone } from '../store/momentStore';
+import { isGivenAssumed } from './medications';
 
 /** The beat a commit of this type lands with: 'calm' (no gold, the soft tap) for every
  *  symptom and for `other`, 'celebrate' for the rest. What an owner logs under Other is
@@ -17,4 +18,24 @@ import type { MomentTone } from '../store/momentStore';
  *  cannot drift, and a leaf that joins SYMPTOM_TYPES is never celebrated. */
 export function commitToneOf(type: EventTypeKey | null | undefined): MomentTone {
   return type != null && (SYMPTOM_TYPES.has(type) || type === 'other') ? 'calm' : 'celebrate';
+}
+
+/** The dose's gold (CUL-1691 §2.1): only a dose the owner asserted was given, with no
+ *  double-dose conflict. It calls the same `isGivenAssumed` the card's prompt reads, so
+ *  the mark and the sentence cannot disagree: an assumed `'given'` on an unrated combo is
+ *  a card still asking "Did {pet} take it?", and gold there would answer for the owner.
+ *  Calm is the never-wrong direction while the card asks a question. Here, not in
+ *  `lib/medications.ts`, because that file is in `ask`'s and `generate-report`'s import
+ *  closure (C-26): a change there would redeploy both for a rule only the card reads. */
+export function doseCelebrates(params: {
+  adherence: string | null;
+  isCombo: boolean;
+  vehicleIntake: string | null | undefined;
+  doubleDose?: { conflict: boolean } | null;
+}): boolean {
+  return (
+    params.adherence === 'given' &&
+    !isGivenAssumed({ isCombo: params.isCombo, vehicleIntake: params.vehicleIntake, adherence: params.adherence }) &&
+    !params.doubleDose?.conflict
+  );
 }

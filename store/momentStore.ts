@@ -10,6 +10,7 @@ import type { LogTimeTrialFlag } from '../lib/trialContaminant';
 import type { LoggedRecord } from '../lib/completionCard';
 import type { FloorAnnouncement } from '../lib/incidentFloorPreview';
 import { recordShownTiers } from '../lib/incidentTierShown';
+import { doseCelebrates } from '../lib/commitTone';
 
 // The earned completion surface, played after a successful log on any path so
 // the fastest taps get the same closure as the full flow (B-063). One store
@@ -223,6 +224,12 @@ export interface MedicationPayload {
   // already saved, the note asks nothing, and its durable home is the dose's detail
   // screen, which recomputes it on every focus.
   doubleDose?: DoubleDoseResult | null;
+  // CUL-1691 §2.3 — the log-time double-dose check has finished, whatever it found
+  // (a conflict, nothing, a failure, a result dropped because the owner changed the
+  // answer). The one read the gold waits on: a given dose's halo never mounts before
+  // this, so a conflict landing a beat later cannot take back gold the card just gave.
+  // Absent means "not yet", which fails toward calm.
+  doubleDoseSettled?: boolean;
 }
 
 export interface LookPayload {
@@ -431,6 +438,10 @@ interface MomentState {
   // While the dwell is PAUSED this banks the duration instead of arming a timer
   // (see pauseDwell), so a chip's confirm hold cannot restart the clock under the
   // owner's own finger.
+  // CUL-1691 §2.3 — the log-time double-dose check reports it has finished, on every
+  // exit path. Refused unless this dose's card is visible and not undone, as the
+  // conflict patch is.
+  markDoubleDoseSettled: (eventId: string) => void;
   rescheduleHide: (durationMs: number) => void;
   // CUL-614 / §5 "Dwell" — the auto-dismiss stops while the owner is touching the
   // card, and any interaction resets it. Called from the card's root touch handlers,
@@ -743,12 +754,29 @@ function carriesSafetyNote(payload: MomentPayload): boolean {
  * - Any card carrying a vet-call line is calm (team call, reversible; Dr. Chen confirms
  *   on CUL-1712).
  *
- * The dose's tone (`doseCelebrates`) joins in PR 3 with the medication card's motion.
+ * - Dose: `doseCelebrates` (`lib/commitTone.ts`): an asserted, given dose with no
+ *   double-dose conflict. The card's halo also waits on `doubleDoseSettled`; that wait is
+ *   the arrival's, not the tone's.
  */
-export function completionTone(payload: MealPayload | NamedPayload): MomentTone {
+export function completionTone(payload: MealPayload | NamedPayload | MedicationPayload): MomentTone {
+  if (payload.kind === 'medication') {
+    return doseCelebrates({
+      adherence: payload.adherence,
+      isCombo: Boolean(payload.pairedFoodName),
+      vehicleIntake: payload.vehicleIntake ?? null,
+      doubleDose: payload.doubleDose,
+    }) ? 'celebrate' : 'calm';
+  }
   if (carriesFloorLine(payload)) return 'calm';
   if (payload.kind === 'meal') return isIntakeDecline(payload.intakeRating) ? 'calm' : 'celebrate';
   return payload.tone;
+}
+
+/** The dim behind the named card is up (CUL-1691 R4-2): the scrim's target and the look
+ *  chips under it both read this. True through "Removed" (`undo` keeps `visible`), false
+ *  on the exit's first frame. Read with `getState()` at a tap, never from a closure. */
+export function isNamedDimUp(s: { visible: boolean; payload: MomentPayload | null }): boolean {
+  return s.visible && s.payload?.kind === 'named';
 }
 
 /** A completion card is on screen in the FAB's corner (CUL-1635). */
@@ -1014,6 +1042,12 @@ export const useMomentStore = create<MomentState>((set) => ({
     // the dwell to read a note that just disappeared would be the opposite of calm.
     if (doubleDose.conflict) useMomentStore.getState().rescheduleHide(MEDICATION_FLAGGED_DURATION_MS);
     return true;
+  },
+  markDoubleDoseSettled: (eventId) => {
+    const state = useMomentStore.getState();
+    if (state.payload?.kind !== 'medication' || state.payload.eventId !== eventId) return;
+    if (!state.visible || state.removed || state.payload.doubleDoseSettled) return;
+    set({ payload: { ...state.payload, doubleDoseSettled: true } });
   },
   rescheduleHide: (durationMs) => {
     // B-157 (CUL-284) — a card carrying an unread safety note has a FLOOR on its dwell,
