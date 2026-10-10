@@ -4,11 +4,12 @@ jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 
-import { StyleSheet } from 'react-native';
+import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { DayCardBody, DayCardHeader, TODAY_NOTHING_YET } from './DayCard';
+import { RAIL_W, SPINE_THREAD } from '../recap/DaySpine';
 import { emptyDayFacts, type DateOnlyItem, type DayFacts } from '../../lib/historyDays';
 import type { HistoryRow } from '../../lib/historyQueries';
 import { historyNodesByDay } from '../../lib/historyScreen';
@@ -139,6 +140,23 @@ describe('DayCardBody', () => {
     fireEvent.press(screen.getByTestId('history-item-visit-visit-1'));
     expect(bodyProps.onOpenVisit).toHaveBeenCalledWith('visit-1');
     expect(screen.getByText('Prednisone started')).toBeTruthy();
+  });
+
+  it('CUL-1718: a date-only item’s thread runs through its bottom padding to the next row', () => {
+    const rows = [row('m1', 'meal', 9)];
+    render(<DayCardBody {...bodyProps} day="2026-09-17" items={[start]} nodes={nodesOf(rows)} shownRows={rows} noticed={false} />);
+    type Node = { props: { style?: unknown }; children: unknown[]; findAll: (p: (n: Node) => boolean) => Node[] };
+    const item = screen.getByTestId('history-item-course-start-2026-09-17') as unknown as Node;
+    const flat = (n: Node): ViewStyle => StyleSheet.flatten(n.props.style as StyleProp<ViewStyle>) ?? {};
+    const [rail] = item.findAll((n) => typeof n.props.style !== 'undefined' && flat(n).width === RAIL_W);
+    expect(flat(rail).alignSelf).toBe('stretch');
+    const itemRow = item.findAll((n) => n.children.includes(rail as never))[0];
+    const pad = flat(itemRow).paddingBottom;
+    expect(pad).toBe(SPINE_THREAD.rowGapPad);
+    // The item is first and not last: one segment, the bottom one, carried through the pad.
+    const segments = rail.findAll((n) => flat(n).position === 'absolute');
+    const bottoms = segments.filter((n) => flat(n).bottom !== undefined).map((n) => flat(n).bottom);
+    expect(new Set(bottoms)).toEqual(new Set([-(pad as number)]));
   });
 
   it('a filter hides rows, never builds them another way: only the shown row is drawn', () => {

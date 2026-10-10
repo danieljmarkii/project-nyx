@@ -63,6 +63,14 @@ const DOT_CENTER_Y = DOT_TOP + DOT / 2;
 const LINE_LEFT = (RAIL_W - LINE_W) / 2;
 /** The row's gap between its three columns (`styles.row.gap`). */
 const ROW_GAP = theme.space1;
+/**
+ * The space under every row but the last (`styles.rowGap`), and how far past its rail the
+ * bottom segment runs (CUL-1718). The rail stretches to the row's CONTENT box, which ends
+ * above this padding, so a segment ending at the rail's foot stops this far short of the
+ * next row's bead. One constant for both, so the carry cannot drift from the gap it
+ * crosses. History's date-only items read it as `SPINE_THREAD.rowGapPad`.
+ */
+const ROW_GAP_PAD = theme.space2;
 
 /** The per-ground colours the frame and the default body read. The night set is the
  *  shipped one, verbatim; the day set is Home's light ground (D2-4), where small
@@ -106,6 +114,8 @@ export const SPINE_THREAD = {
   x: TIME_W + ROW_GAP + RAIL_W / 2,
   dotCenterY: DOT_CENTER_Y,
   lineW: LINE_W,
+  /** The row's bottom padding, which a bottom segment runs through to the next row. */
+  rowGapPad: ROW_GAP_PAD,
   dayColor: GROUND.day.thread,
 } as const;
 
@@ -230,9 +240,9 @@ export function SpineRowFrame({
         <ThemedText style={[styles.time, { color: g.time }]}>{timeColumnText(time)}</ThemedText>
       )}
 
-      <View style={styles.rail}>
-        {!isFirst && <View style={[styles.line, styles.lineTop, { backgroundColor: g.thread }]} />}
-        {!isLast && <View style={[styles.line, styles.lineBottom, { backgroundColor: g.thread }]} />}
+      <View style={styles.rail} testID="spine-rail">
+        {!isFirst && <View testID="spine-thread-top" style={[styles.line, styles.lineTop, { backgroundColor: g.thread }]} />}
+        {!isLast && <View testID="spine-thread-bottom" style={[styles.line, styles.lineBottom, { backgroundColor: g.thread }]} />}
         <View style={[styles.dot, { backgroundColor: fill, borderColor: ring }]} />
       </View>
 
@@ -327,7 +337,7 @@ const styles = StyleSheet.create({
     // every row without a hitSlop that would overlap the adjacent row's target.
     minHeight: 44,
   },
-  rowGap: { paddingBottom: theme.space2 },
+  rowGap: { paddingBottom: ROW_GAP_PAD },
   rowLast: { paddingBottom: theme.spaceMicro },
 
   time: {
@@ -354,14 +364,17 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
-  rail: { width: RAIL_W, alignItems: 'center' },
+  // Stretched (CUL-1718): under the row's `alignItems: 'flex-start'` the column was only as
+  // tall as the dot, so its segments were confined to 14pt and the dot covered them.
+  rail: { width: RAIL_W, alignItems: 'center', alignSelf: 'stretch' },
   line: {
     position: 'absolute',
     left: LINE_LEFT,
     width: LINE_W,
   },
   lineTop: { top: 0, height: DOT_CENTER_Y },
-  lineBottom: { top: DOT_CENTER_Y, bottom: 0 },
+  // Through the row's bottom padding to the next row's top, where its `lineTop` begins.
+  lineBottom: { top: DOT_CENTER_Y, bottom: -ROW_GAP_PAD },
   dot: {
     marginTop: DOT_TOP,
     width: DOT,
