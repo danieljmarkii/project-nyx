@@ -474,7 +474,9 @@ function en5IntakeRecordSentence(p: string, record: IntakeRecord): string {
     // not hold: the question named an hour a day before the vomit, in the owner's zone. And
     // pinned to the READ, like every sentence here ("When I read this"): a stored call is held
     // over a later, quieter run (never lowered), so the words it keeps must stay true after
-    // the owner changes her answer (the privacy pass on PR-30q, attack 5).
+    // the owner changes her answer (the privacy pass on PR-30q, attack 5). These words may
+    // reach Ask, which relays a read's words: ruled A by the PM, 2026-10-10 (CUL-1724). Ask
+    // still never reads intake_checks itself (guards/intakeChecks.test.ts).
     if (record.answerForm === 'free_fed') return `When I read this, you'd said you had seen ${p} refuse food since the day before this vomit.`
     if (record.answer === 'a_little') return `When I read this, you'd said ${p} had eaten only a little since the day before this vomit.`
     return `When I read this, you'd said ${p} hadn't eaten a meal since the day before this vomit.`

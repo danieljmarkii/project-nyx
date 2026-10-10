@@ -11,9 +11,14 @@
 //      CUL-1724) is the only Edge Function that names the table, and it names its columns
 //      (no `*`, no bare select). READERS holds exactly it; a second entry is a privacy
 //      decision with its own line, never a registration (C-32).
-//      generate-report and ask may never name it: whether the vet report or Ask shows an
-//      intake answer is not ruled, so an entry for either is a PM ruling, not a
-//      registration.
+//      generate-report and ask may never name it, so an entry for either is a PM ruling,
+//      not a registration.
+//      RULED (PM, 2026-10-10, CUL-1724, option A): Ask never reads this TABLE, but the vomit
+//      read's own words may cite the answer ("When I read this, you'd said Nyx hadn't eaten
+//      …"), and Ask relays a read's words as it relays any read's. The answer is the owner's
+//      own record, shown back to her, and the read must say why it called. This narrows 097's
+//      header line ("never reaches … Ask until ruled") to the table; the vet report still
+//      reads no read_text and no answer.
 //   3. SOFT DELETE ONLY. Over every migration from 097 on: no DELETE policy, no GRANT of
 //      DELETE or TRUNCATE, and no table-level GRANT INSERT / UPDATE (which would
 //      re-cover created_at, the server's column). A schema-wide grant (ON ALL TABLES
