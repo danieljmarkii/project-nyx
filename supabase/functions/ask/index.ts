@@ -70,6 +70,7 @@ import {
   mentionsPhotoAppearance,
   SCRUBBED_READ_HEADLINE,
   validateAnswer,
+  careNamesFrom,
   collectNumerals,
   buildProvenance,
   buildComponent,
@@ -381,7 +382,13 @@ function finalizeAnswer(
     if (mentionsPhotoAppearance(detail)) detailOut = ''
   }
   const combined = `${headlineOut} ${detailOut}`.trim()
-  const verdict = validateAnswer({ text: combined, allowedNumerals, mode, safety: sawSafetyFinding })
+  const verdict = validateAnswer({
+    text: combined,
+    allowedNumerals,
+    mode,
+    safety: sawSafetyFinding,
+    care: careNamesFrom(captured),
+  })
   if (!verdict.ok) {
     console.warn(`ask: answer failed validation (${verdict.reason}) — using deflection fallback`)
     // A failed model sentence never reaches the owner (never blank, never unguarded). Route to

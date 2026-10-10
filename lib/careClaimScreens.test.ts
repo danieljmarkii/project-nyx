@@ -10,6 +10,7 @@ import {
   DELEGATION_RE,
   TREATMENT_ATTRIBUTION_RE,
   careClaimReason,
+  zeroBesideCareReason,
 } from './careClaimScreens';
 
 // The critique's reproduced seven (CUL-1271 description, verbatim).
@@ -137,6 +138,7 @@ const HONEST = [
   'Your vet asked you to keep an eye on the vomiting.',
   'Logging each meal will help your vet.',
   'The app works without a connection.',
+  // Passes the VERDICT screens; a zero beside a visit is refused by zeroBesideCareReason (CUL-1429).
   'No vomiting has been logged since the visit.',
   'Since the prednisone started, she has stopped eating her dinner.',
   'Since the visit, the vomiting has come back.',
@@ -183,5 +185,90 @@ describe('careClaimScreens (CUL-1271)', () => {
   it('treats null and empty input as no claim', () => {
     expect(careClaimReason('')).toBeNull();
     expect(careClaimReason(undefined as unknown as string)).toBeNull();
+  });
+});
+
+// CUL-1429 — a zero beside a visit or a medication. The two sentences the CUL-1420 adversarial
+// pass reproduced passing every Ask screen, the forms a model writes once EN-10's lines reach
+// it, and the honest forms (a non-zero count, a zero beside nothing, the window and the logging).
+describe('zeroBesideCareReason (CUL-1429)', () => {
+  const NONE = { knownNames: [] as string[], onBoardNames: [] as string[] };
+
+  it.each([
+    'Since the Sep 16 visit, 0 vomiting episodes are logged.',
+    'Since the Sep 16 visit, no vomiting episodes are logged.',
+    'Your vet saw Nyx on Sep 16. No vomiting has been logged since that visit.',
+    'Nothing has been logged since the visit.',
+    'She has been vomit-free since her appointment.',
+    "Nyx hasn't vomited since the recheck.",
+    'Vomiting episodes logged since the visit: 0.',
+    'Since the check-up, vomiting is logged on 0 of 14 days.',
+    'No coughing is logged this week. The vet visit is on Oct 20.',
+  ])('refuses a zero beside a visit: %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).toBe('zero_beside_visit');
+  });
+
+  it.each([
+    'Prednisone started Sep 10; 0 coughing episodes are logged since.',
+    'Prednisone started Sep 10. No coughing episodes are logged since then.',
+    'Since the Cerenia started, none are logged.',
+    'Nyx is on prednisolone 5mg tablets, and not a single episode is logged this week.',
+    'Apoquel started Sep 1; no scratching is logged since.',
+    'Since her medication started, 0 episodes are logged.',
+    'No vomiting is logged since the steroid started.',
+    "Nyx hasn't vomited since starting the Metro-Pred.",
+  ])('refuses a zero beside a drug that can hide the sign: %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).toBe('zero_beside_medication');
+  });
+
+  it("refuses a zero beside the record's own course name, nickname or not", () => {
+    const ctx = { knownNames: ["Buddy's tummy pills"], onBoardNames: [] };
+    expect(zeroBesideCareReason("No vomiting is logged since Buddy's tummy pills started.", ctx)).toBe(
+      'zero_beside_medication',
+    );
+  });
+
+  it('refuses a zero while a masking course is on board, even unnamed in the answer', () => {
+    const ctx = { knownNames: ['Prednisone'], onBoardNames: ['Prednisone'] };
+    expect(zeroBesideCareReason('No coughing is logged this week.', ctx)).toBe('zero_beside_medication');
+    // An unresolved on-board name masks every sign, like a systemic steroid.
+    expect(zeroBesideCareReason('0 episodes are logged this week.', { knownNames: [], onBoardNames: ['Mystery drops'] })).toBe(
+      'zero_beside_medication',
+    );
+  });
+
+  it.each([
+    // A drug that cannot hide the counted sign (carprofen causes GI upset, masks nothing).
+    ['Carprofen started Sep 10; no coughing is logged since.', NONE],
+    ['No coughing is logged this week.', { knownNames: ['Carprofen'], onBoardNames: ['Carprofen'] }],
+    // An antiemetic hides vomiting, not coughing.
+    ['Cerenia started Sep 10; 0 coughing episodes are logged since.', NONE],
+  ])('passes a zero beside a drug that cannot hide that sign: %s', (text, ctx) => {
+    expect(zeroBesideCareReason(text, ctx)).toBeNull();
+  });
+
+  it.each([
+    // Non-zero counts beside a visit or a drug: the escalation-direction fact always shows.
+    'Your vet saw Nyx on Sep 16; 4 vomiting episodes are logged since.',
+    'Prednisone started Sep 10; 3 coughing episodes are logged since.',
+    'Since the Sep 16 visit, 11 days, with something logged on 11 of them.',
+    'Nyx is on prednisone: 12 doses logged, 2 not fully taken, since Sep 10.',
+    'Since the visit, 10 vomiting episodes are logged.',
+    // A zero beside nothing.
+    'No vomiting is logged this week.',
+    'Nyx has vomited 0 times this week.',
+    // Words that look like a zero and are not.
+    'There is no need to wait: worth a call to your vet today.',
+    "Nyx hasn't eaten since yesterday — worth a call to your vet today.",
+    'No, Nyx has 4 episodes logged since the Sep 16 visit.',
+    'Prednisone 0.5 mg was logged at 8:00 am, 3 times this week.',
+  ])('passes: %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).toBeNull();
+  });
+
+  it('the reproduced pair passes careClaimReason, so the zero screen is the one that catches it', () => {
+    // Documents the hole CUL-1429 closes: the verdict screens are not count-aware.
+    expect(careClaimReason('Since the Sep 16 visit, 0 vomiting episodes are logged.')).toBeNull();
+    expect(careClaimReason('No vomiting has been logged since the visit.')).toBeNull();
   });
 });

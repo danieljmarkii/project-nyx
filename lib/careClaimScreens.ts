@@ -18,14 +18,33 @@
 // Sep 16; 4 episodes are logged since." — which none of these arms touch, because every arm
 // is anchored on the verdict phrase, never on "since", "vet", a drug name or a date.
 //
+// ⚠ EXCEPT A ZERO (CUL-1429). "Since the Sep 16 visit, 0 vomiting episodes are logged" passes
+// both arms above, and is the third reassuring class: a zero beside a visit or a masking drug
+// reads as "it worked", and a steroid (or an injection given in the room) can hide the very
+// sign being counted (care-state spec §5.1, AC 17). An earlier header here called "none LOGGED
+// since" the honest form; beside a visit or a drug it is not. `zeroBesideCareReason` below is
+// the count-aware screen, used by Ask; the Signal's own lines withhold the zero structurally
+// (`generate-signal/careContext.ts`), from the same drug table (`lib/maskingSpans.ts`).
+//
 // A keyword screen is not paraphrase-proof: the structural question (a denylist versus an
 // allowlisted recount or a judge) is CUL-271's and stays open there. What this module buys is
 // that the screens agree: the banner used to mirror phrasing.ts by hand ("KEEP IN SYNC"), and
 // a new arm added in one place and not the other is exactly the drift that let a sibling
 // screen fall behind. Deno needs the `.ts` import extension, so importers from
-// `supabase/functions` write '../../../lib/careClaimScreens.ts'; this file imports nothing.
+// `supabase/functions` write '../../../lib/careClaimScreens.ts'; this file imports only the
+// shared drug table (`maskingSpans.ts`, pure), so the zero screen and the Signal agree on
+// which drugs mask.
 //
 // Apostrophes: models emit both ' and ’, so every contraction arm takes either.
+
+import {
+  ALL_SIGNS,
+  courseEffectOn,
+  DRUG_NAME_CLASSES,
+  resolveDrugClasses,
+  type DrugClass,
+  type MaskSign,
+} from './maskingSpans.ts'
 
 // Shared fragments. APOS takes both apostrophes; SYMPTOM_WORD is only the symptom vocabulary
 // the comparison / absence arms anchor on, so an INTAKE escalation ("finished fewer meals
@@ -138,5 +157,146 @@ export function careClaimReason(text: string): CareClaimReason | null {
   const t = text ?? ''
   if (DELEGATION_RE.test(t)) return 'delegation'
   if (TREATMENT_ATTRIBUTION_RE.test(t)) return 'treatment_attribution'
+  return null
+}
+
+// ── A zero beside a visit or a medication (CUL-1429) ──────────────────────────────────────
+//
+// The rule is the Signal's (care-state spec §5.1, AC 17; `generate-signal/careContext.ts`): no
+// zero beside a visit, and no zero of a sign beside a drug that can hide that sign. The Signal
+// knows dates and withholds only inside the 42-day spans; a sentence does not carry its dates
+// reliably, so this screen is stricter in the safe direction:
+//   • a ZERO is any count of none: "0 episodes", "no vomiting", "none logged", "nothing has
+//     been logged", "hasn't vomited", "vomit-free", "not a single cough", "…: 0".
+//   • a VISIT is any visit word (visit, appointment, check-up, recheck, exam, "the vet saw"),
+//     past or booked: a zero beside one is refused on every sign, because the visit is taken as
+//     an unrecorded masking drug (an injection in the room never enters `medications`).
+//   • a MEDICATION is a name in the shared table, a name the record handed the writer, or a
+//     generic word ("her medication", "the steroid", "doses") when no name is written. A name
+//     is judged by `resolveDrugClasses` + `courseEffectOn`, the Signal's own: carprofen beside
+//     "no coughing" passes (it cannot hide a cough); prednisone, an unknown name or a bare "her
+//     medication" is refused (unresolved fails toward masking, like a systemic steroid).
+//   • a course the record says may be ON BOARD (`onBoardNames`) sits beside every zero in the
+//     answer whether the answer names it or not, as the Signal's lines withhold every zero on
+//     the screen while a masking drug is on board.
+// The zero's sign is read from its own sentence; a sentence naming no sign ("nothing logged",
+// "0 episodes") is a zero of every sign.
+//
+// What this does not see (stated, so it never reads as coverage): a visit the answer names only
+// by its date ("since Sep 16"), and a masking course the record holds that the answer neither
+// names nor the caller passes. The prompt's rule 10 asks for the window and the logging instead,
+// which carries no zero at all.
+
+const ZERO_RES: RegExp[] = [
+  // "0 vomiting episodes", "zero coughs", "no vomiting", "no new episodes", "not a single
+  // cough", "without an episode". The sign noun is required, so "no need", "no more than 3
+  // episodes" and "No, she…" pass.
+  new RegExp(
+    String.raw`\b(?:0(?![.,:]\d)|zero|no|not (?:a single|one|any)|without (?:a|an|any))\s+(?:(?:new|more|further|other|logged|recorded|reported)\s+){0,2}(?:\w+\s+)?(?:vomit\w*|throw(?:ing)?[- ]up|diarrh\w*|loose stools?|stools?|cough\w*|sneez\w*|itch\w*|scratch\w*|lick\w*|skin\w*|rash\w*|symptoms?|episodes?|bouts?|accidents?|flare-?ups?|times|incidents?|events?|signs?)\b`,
+    'i',
+  ),
+  // "none logged", "nothing has been logged", "none since", "nothing so far".
+  new RegExp(
+    String.raw`\b(?:nothing|none)(?:\s+(?:new|more|else|at all|of (?:them|it|those)))?(?:\s+(?:is|was|were|are|has|have|had)(?:\s+been)?)?\s+(?:logged|recorded|noted|reported|seen|since|so far)\b`,
+    'i',
+  ),
+  // "hasn't vomited", "has not had any episodes", "didn't log a cough". An INTAKE absence
+  // ("hasn't eaten") is an escalation and never matches.
+  new RegExp(
+    String.raw`\b(?:hasn${APOS}t|has not|haven${APOS}t|have not|didn${APOS}t|did not|hadn${APOS}t|had not)\s+(?:\w+\s+)?(?:vomited|coughed|scratched|itched|sneezed|licked|thrown up|threw up|been sick|had (?:a|an|any)\b|logged (?:a|an|any)\b)`,
+    'i',
+  ),
+  // "vomit-free", "symptom free", and the count stated after its noun: "…since the visit: 0",
+  // "the count is 0".
+  new RegExp(String.raw`\b(?:vomit\w*|cough\w*|symptom|itch\w*|diarrh\w*|scratch\w*|sneez\w*|episode)[- ]free\b`, 'i'),
+  new RegExp(String.raw`(?:[:=]|\b(?:is|are|was|were|at|stands at))\s*(?:0|zero)\b(?![.,:]\d)`, 'i'),
+  // "on 0 of 14 days".
+  new RegExp(String.raw`\b(?:0|zero|none)\s+of\s+(?:the\s+)?\d+\b`, 'i'),
+]
+
+const VISIT_RE =
+  /\b(?:visit(?:s|ed)?|appointments?|check-?ups?|re-?checks?|exams?|examination|consult(?:ation)?s?|(?:the|your|her|his|their)\s+vet\s+(?:saw|examined|checked)|saw\s+(?:the|your|her|his|their|a)\s+vet|seen\s+by\s+(?:the|your|her|his|their|a)\s+vet|at\s+the\s+(?:vet|clinic))\b/i
+
+// A medication referred to without its name. Judged only when no name is written: "the
+// prednisone … her medication" names one course, not two.
+const GENERIC_MED_RE =
+  /\b(?:medications?|medicines?|meds|drugs?|doses?|dosing|pills?|tablets?|injections?|injected|shots?|steroids?|antibiotics?|treatments?|prescription|prescribed|course)\b/i
+
+const SIGN_WORDS: [RegExp, MaskSign[]][] = [
+  [/\b(?:vomit\w*|threw up|thrown up|throw(?:ing)?[- ]up|been sick)\b/i, ['vomit']],
+  [/\b(?:diarrh\w*|loose stools?|stools?)\b/i, ['diarrhea']],
+  [/\bcough\w*\b/i, ['cough']],
+  [/\bsneez\w*\b/i, ['sneeze']],
+  [/\bitch\w*\b/i, ['itch']],
+  [/\b(?:scratch\w*|lick\w*)\b/i, ['scratch']],
+  [/\b(?:skin|rash\w*|hives)\b/i, ['skin_reaction']],
+]
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** The signs each zero in `text` counts: its own sentence's sign words, or every sign. */
+function zeroSigns(text: string): Set<MaskSign> {
+  const signs = new Set<MaskSign>()
+  for (const sentence of text.split(/(?<=[.;?!])\s+|\n+/)) {
+    if (!ZERO_RES.some((re) => re.test(sentence))) continue
+    let named = false
+    for (const [re, ss] of SIGN_WORDS) {
+      if (re.test(sentence)) {
+        named = true
+        for (const s of ss) signs.add(s)
+      }
+    }
+    if (!named) for (const s of ALL_SIGNS) signs.add(s)
+  }
+  return signs
+}
+
+/** The medications `text` names, each as the table reads it (null: unresolved, masks all). */
+function namedMedications(text: string, knownNames: readonly string[]): (DrugClass[] | null)[] {
+  const out: (DrugClass[] | null)[] = []
+  const lower = text.toLowerCase()
+  for (const w of lower.split(/[^a-z-]+/)) {
+    if (!w) continue
+    const classes = DRUG_NAME_CLASSES[w]
+    if (classes) out.push([...classes])
+    // A combination ("Metro-Pred") is judged whole, so an unknown part fails toward masking.
+    else if (w.includes('-') && w.split('-').some((part) => DRUG_NAME_CLASSES[part])) out.push(resolveDrugClasses([w]))
+  }
+  for (const name of knownNames) {
+    const n = (name ?? '').trim().toLowerCase()
+    if (n.length < 3) continue
+    if (new RegExp(String.raw`(?:^|[^a-z0-9])${escapeRe(n)}(?:$|[^a-z0-9])`).test(lower)) {
+      out.push(resolveDrugClasses([name]))
+    }
+  }
+  if (out.length === 0 && GENERIC_MED_RE.test(text)) out.push(null)
+  return out
+}
+
+export interface ZeroBesideCareContext {
+  /** Every medication name the record handed the writer this turn (the regimens' and doses'
+   *  labels). A mention of one in the text is a medication beside the zero, nickname or not. */
+  knownNames: readonly string[]
+  /** The names of courses that may be on board (active, or dosed in the read window). Each one
+   *  sits beside every zero in the answer, named or not. */
+  onBoardNames: readonly string[]
+}
+
+export type ZeroBesideCareReason = 'zero_beside_visit' | 'zero_beside_medication'
+
+/** Whether `text` puts a zero beside a visit or beside a medication that can hide the counted
+ *  sign (CUL-1429). Both lists are required: an empty list is a statement that the record
+ *  handed over no medication, never a default (C-37). */
+export function zeroBesideCareReason(text: string, ctx: ZeroBesideCareContext): ZeroBesideCareReason | null {
+  const t = text ?? ''
+  const signs = zeroSigns(t)
+  if (signs.size === 0) return null
+  if (VISIT_RE.test(t)) return 'zero_beside_visit'
+  const meds = [...namedMedications(t, ctx.knownNames), ...ctx.onBoardNames.map((n) => resolveDrugClasses([n]))]
+  for (const classes of meds) {
+    for (const sign of signs) if (courseEffectOn(classes, sign).masks) return 'zero_beside_medication'
+  }
   return null
 }
