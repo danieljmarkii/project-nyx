@@ -418,6 +418,8 @@ export interface IncidentAnalysisRow {
   // PR-30c (CUL-1739): when this row was last written. A call now's clock runs from the later of
   // this and the event, so a call raised after its event is never dated on its first render.
   updated_at?: string | null
+  // CUL-1759: the row's own "call said at" stamp (099); NULL on a row not stamped since then.
+  call_said_at?: string | null
   events: IncidentEventJoin
 }
 
@@ -435,6 +437,7 @@ export function mapIncidentAnalyses(rows: IncidentAnalysisRow[]): IncidentAnalys
       foreignMaterialPresent: r.foreign_material_present,
       call: newRuleCallOf(r),
       writtenAt: r.updated_at ?? null,
+      callSaidAt: r.call_said_at ?? null,
     })
   }
   return out
