@@ -318,17 +318,33 @@ export function nodeReadOf(
 
 // ── Timing ──────────────────────────────────────────────────────────────────────
 
-/** "3 min after eating" · "2 h after eating" · "2 h 20 min after eating", for the rapid
- *  and mid bands. The LONG band takes the lane's own band label rather than a number:
- *  "12 h after eating" off a breakfast-only logger is a claim about an unlogged dinner.
- *  Minutes are rounded; an hour figure drops a remainder under five minutes. */
+/** "under a minute after eating" · "3 min after eating" · "2 h after eating" · "2 h 20 min
+ *  after eating", for the rapid and mid bands. The LONG band takes the lane's own band label
+ *  rather than a number: "12 h after eating" off a breakfast-only logger is a claim about an
+ *  unlogged dinner. `minutes` is the CLOCK gap (`clockMinuteGap`): the minutes a reader gets by
+ *  subtracting the two printed times, so the line and the time column never disagree
+ *  (CUL-1720). Zero means both rows print the same minute, which is "under a minute", never
+ *  "0 min". An hour figure drops a remainder under five minutes. */
 export function timingLine(minutes: number, band: TimingBand, config: MealTimingConfig = DEFAULT_MEAL_TIMING_CONFIG): string {
   if (band === 'long') return timingBandLabel(band, config);
   const m = Math.max(0, Math.round(minutes));
+  if (m === 0) return 'under a minute after eating';
   if (m < 60) return `${m} min after eating`;
   const h = Math.floor(m / 60);
   const r = m % 60;
   return r >= 5 ? `${h} h ${r} min after eating` : `${h} h after eating`;
+}
+
+/** Whole minutes between two instants as the time column prints them: each instant cut to its
+ *  minute (`formatTime` drops the seconds), then subtracted. A meal at 2:52:50 and a vomit at
+ *  2:53:10 are 20 seconds apart and read 1 min, because the rows say 2:52 and 2:53; 2:52:10
+ *  and 2:53:50 read 1 min too, never the rounded 2 (CUL-1720). Every zone's offset is a whole
+ *  number of minutes, so cutting the epoch instant cuts the local one at the same place. The
+ *  band is still the lane's, off the true gap; only the spoken number follows the clock. */
+const MS_PER_MINUTE = 60_000;
+
+export function clockMinuteGap(fromMs: number, toMs: number): number {
+  return Math.floor(toMs / MS_PER_MINUTE) - Math.floor(fromMs / MS_PER_MINUTE);
 }
 
 /** A vomit row's timing line: the words, and the meal they are measured from. The meal id is
@@ -386,6 +402,7 @@ export function timingsByRow(
     freeFedSpans,
     config,
   );
+  const feedingMs = new Map(feedings.map((f) => [f.id, f.ms]));
   const out = new Map<string, SpineTimingLine>();
   for (const eligible of dist.eligible) {
     // Keyed back through the episode that carries this onset: the row the collapse
@@ -393,12 +410,20 @@ export function timingsByRow(
     const opener = episodes.find((e) => e.ms === eligible.onsetMs);
     if (opener?.id) {
       out.set(opener.id, {
-        text: timingLine(eligible.minutesSinceFeeding, eligible.band, config),
+        text: timingLine(spokenMinutes(eligible, feedingMs.get(eligible.feedingId)), eligible.band, config),
         mealId: eligible.feedingId,
       });
     }
   }
   return out;
+}
+
+/** The minutes a timing line speaks: the clock gap to the anchor feeding the lane named. The
+ *  lane always names one of `feedings`; were it ever missing, the true gap cut to whole minutes
+ *  is the honest fallback (never rounded up past what the clock could show). */
+function spokenMinutes(eligible: { onsetMs: number; minutesSinceFeeding: number }, fedMs: number | undefined): number {
+  if (fedMs === undefined || !Number.isFinite(fedMs)) return Math.floor(eligible.minutesSinceFeeding);
+  return clockMinuteGap(fedMs, eligible.onsetMs);
 }
 
 // ── Rows → nodes ─────────────────────────────────────────────────────────────────
