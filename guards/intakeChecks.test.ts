@@ -15,7 +15,9 @@
 //      registration.
 //   3. SOFT DELETE ONLY. Over every migration from 097 on: no DELETE policy, no GRANT of
 //      DELETE or TRUNCATE, and no table-level GRANT INSERT / UPDATE (which would
-//      re-cover created_at, the server's column).
+//      re-cover created_at, the server's column). A schema-wide grant (ON ALL TABLES
+//      IN SCHEMA public) or an ALTER DEFAULT PRIVILEGES granting DELETE, TRUNCATE or
+//      ALL reds too: it reaches this table without naming it, and TRUNCATE ignores RLS.
 //
 // ── WHAT IT DOES NOT CLAIM (C-38: a blind spot left unstated reads as coverage) ─────
 //   · Syntactic. A table name assembled at runtime, or a `.from(variable)`, is invisible
@@ -150,6 +152,10 @@ export function deleteBreaches(sql: string): string[] {
   if (new RegExp(`CREATE\\s+POLICY[^;]*ON\\s+${t}[^;]*FOR\\s+(DELETE|ALL)\\b`, 'i').test(sql)) out.push('a DELETE (or ALL) policy');
   if (new RegExp(`GRANT[^;]*\\b(DELETE|TRUNCATE|ALL)\\b[^;]*ON\\s+(?:TABLE\\s+)?${t}`, 'i').test(sql)) out.push('a GRANT of DELETE / TRUNCATE / ALL');
   if (new RegExp(`GRANT\\s+(?:SELECT\\s*,\\s*)?(INSERT|UPDATE)\\b(?!\\s*\\()[^;]*ON\\s+(?:TABLE\\s+)?${t}`, 'i').test(sql)) out.push('a table-level GRANT INSERT / UPDATE');
+  // A schema-wide grant or a default privilege reaches this table without naming it.
+  // RLS still denies DELETE (no policy), but TRUNCATE ignores RLS.
+  if (/GRANT[^;]*\b(DELETE|TRUNCATE|ALL)\b[^;]*ON\s+ALL\s+TABLES\s+IN\s+SCHEMA\s+public\b[^;]*\b(authenticated|anon|public|service_role)\b/i.test(sql)) out.push('a schema-wide GRANT of DELETE / TRUNCATE / ALL');
+  if (/ALTER\s+DEFAULT\s+PRIVILEGES[^;]*GRANT[^;]*\b(DELETE|TRUNCATE|ALL)\b/i.test(sql)) out.push('a default privilege granting DELETE / TRUNCATE / ALL');
   return out;
 }
 
@@ -185,6 +191,8 @@ describe('Soft delete only — no role may DELETE or TRUNCATE intake_checks', ()
     expect(deleteBreaches('GRANT DELETE ON TABLE public.intake_checks TO authenticated;')).toEqual(['a GRANT of DELETE / TRUNCATE / ALL']);
     expect(deleteBreaches('GRANT INSERT ON TABLE public.intake_checks TO authenticated;')).toEqual(['a table-level GRANT INSERT / UPDATE']);
     expect(deleteBreaches('GRANT UPDATE (answer) ON TABLE public.intake_checks TO authenticated;')).toEqual([]);
+    expect(deleteBreaches('GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;')).toEqual(['a schema-wide GRANT of DELETE / TRUNCATE / ALL']);
+    expect(deleteBreaches('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT DELETE ON TABLES TO authenticated;')).toEqual(['a default privilege granting DELETE / TRUNCATE / ALL']);
   });
 });
 

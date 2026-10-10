@@ -74,9 +74,19 @@
 -- C-31: the one RAISE names only NEW.* values. Nothing read from the event (its
 -- type, its pet, its time) reaches the message.
 --
--- WHAT IS NOT CLOSED, stated: the platform-generic row-id existence oracle. An
--- INSERT reusing another account's primary key fails with 23505 where a fresh id
--- succeeds. It needs an unguessable UUID that no path hands out (082's finding).
+-- WHAT IS NOT CLOSED, stated (rls-privacy-reviewer, 2026-10-10):
+--   * The platform-generic row-id existence oracle. An upsert reusing another
+--     account's primary key fails 42501 (the RLS conflict check, which runs
+--     before the UPDATE arm, so the guard never sees that row), and ON CONFLICT
+--     DO NOTHING returns 0 rows where a fresh id returns 1. It needs an
+--     unguessable UUID that no path hands out (082's finding).
+--   * PostgreSQL evaluates an ON CONFLICT DO UPDATE ... WHERE clause on the
+--     EXISTING row before the RLS conflict check, so arbitrary SQL as
+--     `authenticated` holding a victim's row id could read that row through the
+--     WHERE's error. Platform-wide (every table where authenticated holds INSERT
+--     and UPDATE), not this table's. PostgREST's on_conflict emits no WHERE and
+--     no RPC here runs dynamic SQL, so no client path reaches it today; it is
+--     filed as its own issue.
 --
 -- ------------------------------------------------------------
 -- WHAT ELSE CAN MOVE (C-38)
@@ -120,7 +130,10 @@
 -- Seeds engines_v3_en5 off, in 075's shape: {"enabled": false, "allowlist": []},
 -- ON CONFLICT DO NOTHING, so a re-apply never touches a live row and a committed
 -- seed never carries a uid. The flag fails closed, so the seed turns nothing on.
--- It exists so the PM can allowlist an account without hand-writing the row.
+-- It exists so the PM can allowlist an account without hand-writing the row, and
+-- 075's rule holds: app_config is readable by every signed-in client (GAP-26 /
+-- B-744), so the allowlist stays the PM's uid alone, never the App Review demo
+-- account, until CUL-489 moves cohorts somewhere private.
 --
 -- ------------------------------------------------------------
 -- MIGRATION SAFETY PRE-FLIGHT
