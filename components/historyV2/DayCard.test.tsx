@@ -159,6 +159,31 @@ describe('DayCardBody', () => {
     expect(new Set(bottoms)).toEqual(new Set([-(pad as number)]));
   });
 
+  it('CUL-1751: a look’s row fills its 44pt door, so the thread runs through it to the next row', () => {
+    const rows = [row('m1', 'meal', 8), row('v1', 'vomit', 20)];
+    const look = row('lk', 'check_in', 12, { look_outcome: 'observed', look_words: null, look_note: null } as Partial<HistoryRow>);
+    render(
+      <DayCardBody {...bodyProps} day="2026-09-17" items={[]} nodes={nodesOf(rows)} shownRows={rows} looks={[look]} noticed={false} />,
+    );
+    type Node = { props: { style?: unknown }; children: unknown[]; findAll: (p: (n: Node) => boolean) => Node[] };
+    const door = screen.getByTestId('history-look-lk') as unknown as Node;
+    const flat = (n: Node): ViewStyle => StyleSheet.flatten(n.props.style as StyleProp<ViewStyle>) ?? {};
+    // The door is taller than a look's text plus its pad; the row must grow to the door's foot.
+    expect(flat(door).minHeight).toBeGreaterThanOrEqual(44);
+    const [rail] = door.findAll((n) => typeof n.props.style !== 'undefined' && flat(n).width === RAIL_W);
+    expect(flat(rail).alignSelf).toBe('stretch');
+    const itemRow = door.findAll((n) => n.children.includes(rail as never))[0];
+    expect(flat(itemRow).flexGrow).toBe(1);
+    // Between two rows, both segments, the bottom one carried through the pad.
+    const pad = flat(itemRow).paddingBottom;
+    expect(pad).toBe(SPINE_THREAD.rowGapPad);
+    const segments = rail.findAll((n) => flat(n).position === 'absolute');
+    const bottoms = segments.filter((n) => flat(n).bottom !== undefined).map((n) => flat(n).bottom);
+    expect(new Set(bottoms)).toEqual(new Set([-(pad as number)]));
+    // Not first: the top segment is drawn too (findAll returns composite and host alike, so count tops).
+    expect(new Set(segments.map((n) => flat(n).top)).size).toBe(2);
+  });
+
   it('a filter hides rows, never builds them another way: only the shown row is drawn', () => {
     const rows = [row('m1', 'meal', 8), row('v1', 'vomit', 9), row('m2', 'meal', 10)];
     render(<DayCardBody {...bodyProps} day="2026-09-17" items={[]} nodes={nodesOf(rows)} shownRows={[rows[1]]} noticed={false} />);

@@ -20,12 +20,12 @@ const mockUseAppActive = jest.fn(() => true);
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => mockUseAppActive() }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { AccessibilityInfo, Animated, LayoutAnimation, StyleSheet } from 'react-native';
 import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { FOLD_LAYOUT, FOLD_MOTION, UNFOLD_LAYOUT } from '../motion/foldMotion';
-import { OPEN_IN_PLACE_LEAD_PT } from '../motion/openInPlaceMotion';
+import { LEAD_LAYOUT, OPEN_IN_PLACE_BUDGET_MS, OPEN_IN_PLACE_LEAD_PT } from '../motion/openInPlaceMotion';
 import { useState } from 'react';
 import { TICK_BREATH } from '../motion/arrivalMotion';
 import type { NodeRead, SpineCompactNode, SpineDose, SpineEventNode } from '../../lib/spineNode';
@@ -626,6 +626,91 @@ describe('a run opens in place: every member, a full row, nothing capped (AC 17,
   });
 });
 
+// ── The member form (CUL-1733; spec §3.6, D2 ruled on CUL-1715) ────────────────────────
+
+describe('an opened run\'s member: the difference first, the brand and product on line 2', () => {
+  const PRODUCT = 'Royal Canin · Selected Protein PR';
+  /** A run of `intakes.length` meals, one rating each (null for unrated), alternating format. */
+  function ratedRun(intakes: (string | null)[]): SpineCompactNode {
+    const rows = intakes.map((intake, i) =>
+      meal(`m${i}`, TIMES[i], { intake, formatTag: i % 2 === 0 ? 'WET' : 'DRY' }),
+    );
+    return { ...run(intakes.length), rows };
+  }
+  const open = (node: SpineCompactNode) =>
+    render(<SpineCompactRow node={node} isFirst isLast expanded onToggle={jest.fn()} onOpen={jest.fn()} />);
+
+  it.each([
+    ['two meals', ['all', 'most']],
+    ['four meals, two rated', ['all', null, 'most', null]],
+  ] as const)('%s: line 1 carries the meal word, the format and the chip; line 2 the product', (_name, intakes) => {
+    const node = ratedRun([...intakes]);
+    const t = open(node);
+    node.rows.forEach((row, i) => {
+      const line1 = within(t.getByTestId(`spine-member-line1-${row.id}`));
+      expect(line1.getByText('Meal')).toBeTruthy();
+      expect(line1.getByText(row.formatTag as string)).toBeTruthy();
+      // Nothing of the product rides line 1.
+      expect(line1.queryByText(/Royal Canin/)).toBeNull();
+      expect(line1.queryByText(/Selected Protein/)).toBeNull();
+      // The chip is a line-1 sibling when the meal is rated, and absent when it is not.
+      const want = intakes[i] === 'all' ? 'All' : intakes[i] === 'most' ? 'Most' : null;
+      if (want) expect(within(line1.getByTestId(`spine-chip-${row.id}`)).getByText(want)).toBeTruthy();
+      else expect(line1.queryByTestId(`spine-chip-${row.id}`)).toBeNull();
+      // Line 2: the brand and product, in the run's own second-line register.
+      const food = t.getByTestId(`spine-member-food-${row.id}`);
+      expect(food.props.children).toBe(PRODUCT);
+      expect(styleOf(food)).toMatchObject({ fontSize: theme.textXS, color: theme.colorTextSecondary });
+      expect(styleOf(food)).toEqual(styleOf(t.getByTestId(`spine-formats-${node.id}`)));
+    });
+  });
+
+  it('VoiceOver still hears the whole row, the product included, in its reading order', () => {
+    const node = ratedRun(['all', 'most']);
+    const t = open(node);
+    for (const row of node.rows) {
+      const label = t.getByTestId(`spine-node-${row.id}`).props.accessibilityLabel as string;
+      expect(label).toBe(eventRowLabel(row));
+      expect(label).toMatch(/^Meal, Royal Canin, Selected Protein PR, (wet|dry), (all|most) eaten, /);
+    }
+  });
+
+  it('the member bead is 9pt, centred where the 11pt bead centres; the time takes the secondary ink', () => {
+    const node = ratedRun(['all', 'most']);
+    const t = open(node);
+    const dots = t.getAllByTestId('spine-dot-member');
+    expect(dots).toHaveLength(2);
+    // The run's own bead, the single-row geometry, is the rail's last child.
+    const runRail = t.getAllByTestId('spine-rail')[0];
+    const runDot = styleOf(runRail.children[runRail.children.length - 1] as never);
+    const d = styleOf(dots[0]);
+    expect(d.width).toBe(9);
+    expect(d.height).toBe(9);
+    expect(d.borderWidth).toBe(runDot.borderWidth);
+    expect((d.marginTop as number) + (d.width as number) / 2).toBe(
+      (runDot.marginTop as number) + (runDot.width as number) / 2,
+    );
+    expect(d.backgroundColor).toBe(runDot.backgroundColor);
+    expect(styleOf(t.getByText('6:02\u00a0AM')).color).toBe(theme.colorTextSecondary);
+    // The run's range keeps the tertiary time.
+    expect(styleOf(t.getByText(/^6:02\sAM\s– /)).color).toBe(theme.colorTextTertiary);
+  });
+
+  it('a single row is untouched: the product on line 1, the 11pt bead, the tertiary time, no member form', () => {
+    const row = meal('s1', '9:15 AM', { intake: 'most' });
+    const t = render(<SpineEventRow node={row} isFirst isLast onOpen={jest.fn()} />);
+    expect(t.queryByTestId('spine-member-line1-s1')).toBeNull();
+    expect(t.queryByTestId('spine-member-food-s1')).toBeNull();
+    expect(t.queryByTestId('spine-dot-member')).toBeNull();
+    expect(t.getByText(` · ${PRODUCT}`)).toBeTruthy();
+    const rail = t.getByTestId('spine-rail');
+    const dot = styleOf(rail.children[rail.children.length - 1] as never);
+    expect(dot.width).toBe(11);
+    expect(styleOf(t.getByText('9:15\u00a0AM')).color).toBe(theme.colorTextTertiary);
+    expect(t.getByTestId('spine-node-s1').props.accessibilityLabel).toBe(eventRowLabel(row));
+  });
+});
+
 // ── Open in place, the motion (HV-10 / CUL-1167; spec §4 "Open a run", AC 32) ─────────
 
 describe('open in place (HV-10): the one choreography the month uses, on the thread', () => {
@@ -654,25 +739,30 @@ describe('open in place (HV-10): the one choreography the month uses, on the thr
     const node = run(3);
     const t = render(<InPlace node={node} />);
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
-    // Beat 1: the slot is there at the lead height, its rail out of the flow and growing;
-    // no member is mounted, and nothing has touched the layout yet.
-    expect(styleOf(t.getByTestId('spine-members-compact:m0')).minHeight).toBe(OPEN_IN_PLACE_LEAD_PT);
+    // Beat 1: the slot is there at the lead height, clipped, its rail out of the flow and
+    // growing; no member is mounted. The slot's mount moves the rows beneath, so it rides
+    // the lead's own layout config (CUL-1721: it used to land bare, a jump).
+    const lead = styleOf(t.getByTestId('spine-members-compact:m0'));
+    expect(lead.minHeight).toBe(OPEN_IN_PLACE_LEAD_PT);
+    expect(lead.overflow).toBe('hidden');
     const leadRail = styleOf(t.getByTestId('spine-run-rail-compact:m0'));
     expect(leadRail.height).toBe(OPEN_IN_PLACE_LEAD_PT);
     expect(leadRail.transformOrigin).toBe('top');
     expect(t.queryByTestId('spine-node-m0')).toBeNull();
-    expect(configureNext).not.toHaveBeenCalled();
+    expect(configureNext).toHaveBeenCalledTimes(1);
+    expect(configureNext).toHaveBeenLastCalledWith(LEAD_LAYOUT);
     // Beat 2: railLagMs later, ONE layout commit on the fold's unfold spring, and the members
     // mount in their animated stage.
     advance(FOLD_MOTION.railLagMs);
-    expect(configureNext).toHaveBeenCalledTimes(1);
-    expect(configureNext).toHaveBeenCalledWith(UNFOLD_LAYOUT);
+    expect(configureNext).toHaveBeenCalledTimes(2);
+    expect(configureNext).toHaveBeenLastCalledWith(UNFOLD_LAYOUT);
     expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
     for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
-    // At rest: no stage, the rail back on the thread with no explicit height, every member a
-    // full row, nothing capping the box (AC 17 under the motion too).
+    // At rest: the same stage (one element type across phases, CUL-1721), the rail back on
+    // the thread with no explicit height, every member a full row, nothing capping or
+    // clipping the box (AC 17 under the motion too).
     settleOpen();
-    expect(t.queryByTestId('spine-members-stage-compact:m0')).toBeNull();
+    expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
     const rail = styleOf(t.getByTestId('spine-run-rail-compact:m0'));
     expect(rail.height).toBeUndefined();
     expect((rail.left as number) + (rail.width as number) / 2).toBe(THREAD_X);
@@ -716,10 +806,55 @@ describe('open in place (HV-10): the one choreography the month uses, on the thr
     for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
     expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
     expect(configureNext).not.toHaveBeenCalled();
+    const member = t.getByTestId(`spine-node-${node.rows[0].id}`);
     advance(theme.durationFast + FOLD_MOTION.settleSlackMs);
     expect(theme.durationFast).toBe(150);
-    expect(t.queryByTestId('spine-members-stage-compact:m0')).toBeNull();
+    // At rest the members are the same elements the fade drew (CUL-1721: nothing remounts).
+    expect(t.getByTestId(`spine-node-${node.rows[0].id}`)).toBe(member);
     expect(configureNext).not.toHaveBeenCalled();
+  });
+
+  it('CUL-1721: a member is the SAME element from its mount to its unmount, so VoiceOver focus and a press survive both ends', () => {
+    const node = run(3);
+    const t = render(<InPlace node={node} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(FOLD_MOTION.railLagMs);
+    const landing = t.getByTestId('spine-node-m1');
+    settleOpen();
+    expect(t.getByTestId('spine-node-m1')).toBe(landing);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    // Leaving: still mounted, still the same element.
+    expect(t.getByTestId('spine-node-m1')).toBe(landing);
+    const rail = t.getByTestId('spine-run-rail-compact:m0');
+    advance(1);
+    expect(t.getByTestId('spine-run-rail-compact:m0')).toBe(rail);
+  });
+
+  it('CUL-1721: the slot clips while it moves (a rail holding the open box never spills onto the next bead), and never at rest', () => {
+    const t = render(<InPlace node={run(3)} initial />);
+    expect(styleOf(t.getByTestId('spine-members-compact:m0')).overflow).not.toBe('hidden');
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    expect(styleOf(t.getByTestId('spine-members-compact:m0')).overflow).toBe('hidden');
+    // jest's native driver ends the leave in the tick it starts, so the box is closing
+    // within the rail's lag (the rail still to trail): still clipped, and closing to zero.
+    advance(FOLD_MOTION.railLagMs / 2);
+    const closing = styleOf(t.getByTestId('spine-members-compact:m0'));
+    expect(closing.overflow).toBe('hidden');
+    expect(closing.minHeight).toBe(0);
+  });
+
+  it.each([2, 12])('CUL-1721: a %d-meal run opens and closes inside the same time budget', (n) => {
+    const node = run(n);
+    const t = render(<InPlace node={node} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(OPEN_IN_PLACE_BUDGET_MS.open);
+    // Idle: the rail back on the thread, nothing clipped, every member a full row.
+    expect(styleOf(t.getByTestId('spine-run-rail-compact:m0')).height).toBeUndefined();
+    expect(styleOf(t.getByTestId('spine-members-compact:m0')).overflow).not.toBe('hidden');
+    for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(OPEN_IN_PLACE_BUDGET_MS.close);
+    expect(t.queryByTestId('spine-members-compact:m0')).toBeNull();
   });
 
   it('without `openInPlace` the shipped open is untouched: no stage, no lead, the fold\'s config on the tap', () => {

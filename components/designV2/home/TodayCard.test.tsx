@@ -85,6 +85,7 @@ import { useEventStore } from '../../../store/eventStore';
 import { useReducedMotionStore } from '../../../store/reducedMotionStore';
 import { TODAY_EMPTY_LINE, TODAY_EMPTY_LOOK_LINE, TODAY_FAILED_LINE, TODAY_MEAL_TAIL, TodayCard } from './TodayCard';
 import { RowSpeechContext } from '../../dayRow/rowSpeech';
+import { LEAD_LAYOUT } from '../../motion/openInPlaceMotion';
 import { todayMealNudge } from '../../../lib/lookCard';
 
 const at = (h: number, m: number): string => {
@@ -513,7 +514,9 @@ describe('Home\'s first paint and open in place (History v2)', () => {
     fireEvent.press(t.getByTestId('spine-node-compact:m6'));
     expect(t.getByTestId('spine-members-compact:m6')).toBeTruthy();
     expect(t.queryByTestId('spine-node-m6')).toBeNull();
-    expect(configureNext).not.toHaveBeenCalled();
+    // The slot's mount moves the rows beneath, so it rides the lead's own config, and only
+    // that one so far: the box's spring follows the rail (CUL-1721).
+    expect(configureNext.mock.calls).toEqual([[LEAD_LAYOUT]]);
     await waitFor(() => expect(t.getByTestId('spine-node-m6')).toBeTruthy());
     configureNext.mockRestore();
   });

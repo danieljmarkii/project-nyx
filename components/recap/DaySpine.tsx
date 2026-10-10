@@ -60,6 +60,13 @@ const DOT = NODE_DOT_SIZE;
 const LINE_W = 2;
 const DOT_TOP = 3; // marginTop lifting the dot to the title's first line
 const DOT_CENTER_Y = DOT_TOP + DOT / 2;
+/**
+ * An opened run's member bead (CUL-1733): 9pt, the same 2pt ground ring round a 5pt fill,
+ * centred where the 11pt bead centres, so it sits on the run's line a size below the run's
+ * own bead. Derived from the full bead's centre, never retyped, so the two cannot drift.
+ */
+export const MEMBER_DOT = 9;
+const MEMBER_DOT_TOP = DOT_CENTER_Y - MEMBER_DOT / 2;
 const LINE_LEFT = (RAIL_W - LINE_W) / 2;
 /** The row's gap between its three columns (`styles.row.gap`). */
 const ROW_GAP = theme.space1;
@@ -189,6 +196,10 @@ export interface SpineRowFrameProps {
   trailing?: ReactNode;
   /** Pressed-state styling, passed through from the enclosing Pressable. */
   pressed?: boolean;
+  /** An opened run's member (CUL-1733): the smaller bead on the run's line, and the time a
+   *  step darker (the secondary ink), because it is the fact the owner opened the run to
+   *  read. Absent, the frame is exactly what it was. */
+  member?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -207,9 +218,11 @@ export function SpineRowFrame({
   children,
   trailing,
   pressed = false,
+  member = false,
   style,
 }: SpineRowFrameProps) {
   const g = GROUND[ground];
+  const timeColor = member ? g.detail : g.time;
   // CUL-869 — fill and ring come from the shared rule rather than from this
   // component, so a look is the hollow bead on the spine that the lane already
   // draws (nodeTints.ts). `styles.dot` still supplies the geometry and every other
@@ -233,17 +246,24 @@ export function SpineRowFrame({
         // The tag rides in the time's own fixed column, under it, held to the same rules:
         // no line cap, nothing that clips, free to grow downward (AC 19).
         <View style={styles.timeColumn}>
-          <ThemedText style={[styles.timeInColumn, { color: g.time }]}>{timeColumnText(time)}</ThemedText>
+          <ThemedText style={[styles.timeInColumn, { color: timeColor }]}>{timeColumnText(time)}</ThemedText>
           <ThemedText style={[styles.timeTag, { color: g.detail }]}>{timeTag}</ThemedText>
         </View>
       ) : (
-        <ThemedText style={[styles.time, { color: g.time }]}>{timeColumnText(time)}</ThemedText>
+        <ThemedText style={[styles.time, { color: timeColor }]}>{timeColumnText(time)}</ThemedText>
       )}
 
       <View style={styles.rail} testID="spine-rail">
         {!isFirst && <View testID="spine-thread-top" style={[styles.line, styles.lineTop, { backgroundColor: g.thread }]} />}
         {!isLast && <View testID="spine-thread-bottom" style={[styles.line, styles.lineBottom, { backgroundColor: g.thread }]} />}
-        <View style={[styles.dot, { backgroundColor: fill, borderColor: ring }]} />
+        {member ? (
+          <View
+            style={[styles.dot, styles.dotMember, { backgroundColor: fill, borderColor: ring }]}
+            testID="spine-dot-member"
+          />
+        ) : (
+          <View style={[styles.dot, { backgroundColor: fill, borderColor: ring }]} />
+        )}
       </View>
 
       <View style={styles.body}>{children}</View>
@@ -383,6 +403,12 @@ const styles = StyleSheet.create({
     borderWidth: NODE_DOT_RING,
     // The ground-coloured ring makes the node read as a bead cutting the thread.
     zIndex: 1,
+  },
+  dotMember: {
+    marginTop: MEMBER_DOT_TOP,
+    width: MEMBER_DOT,
+    height: MEMBER_DOT,
+    borderRadius: MEMBER_DOT / 2,
   },
 
   body: { flex: 1, minWidth: 0 },

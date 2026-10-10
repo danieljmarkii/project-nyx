@@ -17,8 +17,9 @@
 //     say yet* (its record's words, CUL-1234), the breathing tick, and
 //     NOTHING for a calm read (a calm verdict is never a word on a list; n=1 never
 //     reassures).
-//   • Open in place: every member of an opened run is a full row, the same row a single
-//     event draws, with every fact and the 44pt floor (GAP-8). Where the host asks for it
+//   • Open in place: every member of an opened run is a full row with every fact and the
+//     44pt floor (GAP-8), in the member form (CUL-1733): the meal word, format and chip on
+//     line 1, the brand and product on line 2, a 9pt bead on the run's line. Where the host asks for it
 //     (`openInPlace`: History v2's day cards, and Home's spine), the run
 //     opens on the ONE open-in-place choreography the month's day uses (`useOpenInPlace`,
 //     HV-10 / CUL-1167): the run's rail leads along the thread, the box follows, the members
@@ -219,12 +220,15 @@ export function SpineEventRow({
   isFirst,
   isLast,
   onOpen,
+  member = false,
 }: {
   node: SpineEventNode;
   isFirst: boolean;
   isLast: boolean;
   /** Overridable so a test drives navigation without a router mock. */
   onOpen?: (id: string) => void;
+  /** An opened run's member (CUL-1733): the difference first. See `MemberLines`. */
+  member?: boolean;
 }) {
   const open = () => {
     if (onOpen) onOpen(node.id);
@@ -249,44 +253,49 @@ export function SpineEventRow({
           time={node.time}
           timeTag={node.timeTag ? TIME_TAG_LABEL[node.timeTag] : null}
           pressed={pressed}
+          member={member}
         >
-          <View style={styles.titleLine}>
-            {/* The name takes two lines at most and never cuts inside the tags beside it:
-                the tags and the chip are siblings that follow it or wrap under it (BRK-12). */}
-            <ThemedText style={styles.title} numberOfLines={2}>
-              {node.title}
-              {node.detail || node.timing || vehicleIntake ? (
-                <ThemedText style={styles.detail}>
-                  {node.detail ? ` · ${node.detail}` : null}
-                  {vehicleIntake ? (
-                    // geist-ok: nested span — differs from its parent only in colour (the vehicle's
-                    // intake in the meal chip's ink, GAP-3), so it stays a raw <Text> and inherits
-                    // the parent's resolved Geist face; a ThemedText here would break the cascade.
-                    <Text style={styles[PHRASE_INK[vehicleIntake.tone]]}> · {vehicleIntake.phrase}</Text>
-                  ) : null}
-                  {node.timing ? ` · ${node.timing}` : null}
+          {member ? (
+            <MemberLines node={node} chip={chip} />
+          ) : (
+            <View style={styles.titleLine}>
+              {/* The name takes two lines at most and never cuts inside the tags beside it:
+                  the tags and the chip are siblings that follow it or wrap under it (BRK-12). */}
+              <ThemedText style={styles.title} numberOfLines={2}>
+                {node.title}
+                {node.detail || node.timing || vehicleIntake ? (
+                  <ThemedText style={styles.detail}>
+                    {node.detail ? ` · ${node.detail}` : null}
+                    {vehicleIntake ? (
+                      // geist-ok: nested span — differs from its parent only in colour (the vehicle's
+                      // intake in the meal chip's ink, GAP-3), so it stays a raw <Text> and inherits
+                      // the parent's resolved Geist face; a ThemedText here would break the cascade.
+                      <Text style={styles[PHRASE_INK[vehicleIntake.tone]]}> · {vehicleIntake.phrase}</Text>
+                    ) : null}
+                    {node.timing ? ` · ${node.timing}` : null}
+                  </ThemedText>
+                ) : null}
+              </ThemedText>
+              {node.formatTag ? (
+                <ThemedText style={styles.formatTag} numberOfLines={1}>
+                  {node.formatTag}
                 </ThemedText>
               ) : null}
-            </ThemedText>
-            {node.formatTag ? (
-              <ThemedText style={styles.formatTag} numberOfLines={1}>
-                {node.formatTag}
-              </ThemedText>
-            ) : null}
-            {node.photo ? (
-              // A glyph, never the picture (R4-2 option A). Spoken as "photographed" through
-              // the row's one label.
-              <View
-                style={styles.photoGlyph}
-                testID={`spine-photo-${node.id}`}
-                accessibilityElementsHidden
-                importantForAccessibility="no-hide-descendants"
-              >
-                <Camera size={11} color={theme.colorTextTertiary} strokeWidth={2} />
-              </View>
-            ) : null}
-            {chip ? <RowChip chip={chip} testID={`spine-chip-${node.id}`} /> : null}
-          </View>
+              {node.photo ? (
+                // A glyph, never the picture (R4-2 option A). Spoken as "photographed" through
+                // the row's one label.
+                <View
+                  style={styles.photoGlyph}
+                  testID={`spine-photo-${node.id}`}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                >
+                  <Camera size={11} color={theme.colorTextTertiary} strokeWidth={2} />
+                </View>
+              ) : null}
+              {chip ? <RowChip chip={chip} testID={`spine-chip-${node.id}`} /> : null}
+            </View>
+          )}
           {node.carries ? (
             <ThemedText style={styles.line2} testID={`spine-carries-${node.id}`}>
               {node.carries}
@@ -300,6 +309,49 @@ export function SpineEventRow({
         </SpineRowFrame>
       )}
     </Pressable>
+  );
+}
+
+/**
+ * An opened run's member, two lines (CUL-1733; History v2 §3.6, D2 ruled on CUL-1715): the
+ * run above it already names the product, so a member LEADS with what tells it from its
+ * neighbours (the meal word, its format, its rating) and carries the brand and product on
+ * line 2 in the run's own second-line register. Every fact stays (GAP-8); only the order
+ * moves. The spoken label is the row's, unchanged (`eventRowLabel`, C-8), so VoiceOver still
+ * names the product. A run holds meals only (rule B), so a dose's vehicle never lands here;
+ * a timing line, should one, stays with the meal word on line 1.
+ */
+function MemberLines({ node, chip }: { node: SpineEventNode; chip: Chip | null }) {
+  return (
+    <>
+      <View style={styles.titleLine} testID={`spine-member-line1-${node.id}`}>
+        <ThemedText style={styles.title} numberOfLines={2}>
+          {node.title}
+          {node.timing ? <ThemedText style={styles.detail}> · {node.timing}</ThemedText> : null}
+        </ThemedText>
+        {node.formatTag ? (
+          <ThemedText style={styles.formatTag} numberOfLines={1}>
+            {node.formatTag}
+          </ThemedText>
+        ) : null}
+        {node.photo ? (
+          <View
+            style={styles.photoGlyph}
+            testID={`spine-photo-${node.id}`}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <Camera size={11} color={theme.colorTextTertiary} strokeWidth={2} />
+          </View>
+        ) : null}
+        {chip ? <RowChip chip={chip} testID={`spine-chip-${node.id}`} /> : null}
+      </View>
+      {node.detail ? (
+        <ThemedText style={styles.line2} testID={`spine-member-food-${node.id}`}>
+          {node.detail}
+        </ThemedText>
+      ) : null}
+    </>
   );
 }
 
@@ -471,8 +523,9 @@ export function SpineCompactRow({
   };
   const Chevron = expanded ? ChevronUp : ChevronDown;
   // Whether the members are on screen under the run: the host's state for the shipped open;
-  // the machine's slot for open in place, which stays through the close's last beat.
-  const membersOut = openInPlace ? motion.slotMounted : expanded;
+  // the machine's slot for open in place, which yields the row's edge back on the close's
+  // configured commit (so the last node's padding never changes on a bare one, CUL-1721).
+  const membersOut = openInPlace ? motion.membersBelow : expanded;
   const members = node.rows.map((row, i) => (
     <SpineEventRow
       key={row.id}
@@ -480,6 +533,7 @@ export function SpineCompactRow({
       isFirst={false}
       isLast={isLast && i === node.rows.length - 1}
       onOpen={onOpen}
+      member
     />
   ));
   return (
@@ -521,8 +575,8 @@ export function SpineCompactRow({
           {members}
         </RunInPlace>
       ) : expanded ? (
-        // Every member, each the same full row a single event draws: uncapped, unclipped,
-        // every fact (GAP-8). The run's rail lies over the thread along them.
+        // Every member, each a full row in the member form: uncapped, unclipped, every
+        // fact (GAP-8). The run's rail lies over the thread along them.
         <View style={styles.members} testID={`spine-members-${node.id}`}>
           <View style={styles.runRail} pointerEvents="none" testID={`spine-run-rail-${node.id}`} />
           {members}
@@ -535,10 +589,14 @@ export function SpineCompactRow({
 /**
  * The members opening in place (HV-10): the month's day anatomy, on the thread. The slot is
  * the members' box; the run's rail lies over the thread along it. Idle and open it is the
- * shipped tree's shape, a plain rail and plain rows; in flight the rail leaves the flow with
- * an explicit height (so no layout keyframe re-commits a view carrying a native-driver
- * transform, the fold's Fabric rule) and the members sit in an animated stage that exists
- * only while they arrive or leave.
+ * shipped tree's shape, a plain rail and plain rows; in flight the slot clips, and the rail
+ * leaves the flow with an explicit height (so no layout keyframe re-commits a view carrying
+ * a native-driver transform, the fold's Fabric rule).
+ *
+ * ONE ELEMENT TYPE PER NODE ACROSS EVERY PHASE (CUL-1721): the rail is always an
+ * `Animated.View` and the members always sit in the one animated stage, so nothing under
+ * the run remounts at either end — a member VoiceOver is on keeps its focus, and a press
+ * in that frame lands. (The stage used to unwrap at rest, which remounted every member.)
  */
 function RunInPlace({
   nodeId,
@@ -553,33 +611,26 @@ function RunInPlace({
   const railOut = motion.inFlight && motion.railHeight != null;
   return (
     <View
-      style={[styles.members, { minHeight: motion.slotMinHeight }]}
+      style={[styles.members, { minHeight: motion.slotMinHeight }, motion.clipped && styles.membersClip]}
       onLayout={(e) => motion.onSlotLayout(e.nativeEvent.layout.height)}
       testID={`spine-members-${nodeId}`}
     >
-      {railOut ? (
-        <Animated.View
-          pointerEvents="none"
-          testID={`spine-run-rail-${nodeId}`}
-          style={[
-            styles.runRailOut,
-            { height: motion.railHeight as number, transform: [{ scaleY: motion.values.railScale }] },
-          ]}
-        />
-      ) : (
-        <View style={styles.runRail} pointerEvents="none" testID={`spine-run-rail-${nodeId}`} />
-      )}
+      <Animated.View
+        pointerEvents="none"
+        testID={`spine-run-rail-${nodeId}`}
+        style={
+          railOut
+            ? [styles.runRailOut, { height: motion.railHeight as number, transform: [{ scaleY: motion.values.railScale }] }]
+            : styles.runRail
+        }
+      />
       {motion.rowsMounted ? (
-        motion.phase === 'open' ? (
-          children
-        ) : (
-          <Animated.View
-            testID={`spine-members-stage-${nodeId}`}
-            style={{ opacity: motion.values.rowsOpacity, transform: [{ translateY: motion.values.rowsShift }] }}
-          >
-            {children}
-          </Animated.View>
-        )
+        <Animated.View
+          testID={`spine-members-stage-${nodeId}`}
+          style={{ opacity: motion.values.rowsOpacity, transform: [{ translateY: motion.values.rowsShift }] }}
+        >
+          {children}
+        </Animated.View>
       ) : null}
     </View>
   );
@@ -691,6 +742,8 @@ const styles = StyleSheet.create({
 
   // An opened run: its members are full rows on the thread; the run's rail lies over it.
   members: { position: 'relative' },
+  // In flight only: a rail holding the open box's height never spills past a closing box.
+  membersClip: { overflow: 'hidden' },
   runRail: {
     position: 'absolute',
     left: THREAD_X - RUN_RAIL_W / 2,

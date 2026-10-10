@@ -145,6 +145,7 @@ import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useSyncStore } from '../../store/syncStore';
 import { FOLD_LAYOUT, FOLD_MOTION } from '../motion/foldMotion';
+import { OpenInPlaceReset } from '../motion/openInPlaceMotion';
 import { createPaintLedger } from '../motion/threadMotion';
 import { EmptyState } from '../ui/EmptyState';
 import { Skeleton } from '../ui/Skeleton';
@@ -357,12 +358,16 @@ export function HistoryList() {
 
   // A new scope: read it, close every run, and start at the top without a glide (§4).
   const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(NO_OPEN);
+  // The runs close with the scope in the same commit and with no choreography: a close's
+  // beats would run over the reload, and its layout commit could land on it (CUL-1721).
+  const [runReset, setRunReset] = useState(0);
   // The mount's request reads the record fresh; a later one is a new scope, a new day or a
   // new pet, and only a new scope can find a record to reuse (the store keys it on the pet
   // and the day, and a switch drops it).
   const requestedOnce = useRef(false);
   useEffect(() => {
     setOpenRuns(NO_OPEN);
+    setRunReset((n) => n + 1);
     // Nothing from the old list carries over: no fold half done, no focus waiting on a
     // day of the old scope.
     cancelFold();
@@ -979,38 +984,40 @@ export function HistoryList() {
 
   return (
     <CellLaidOut.Provider value={onCellLaidOut}>
-      <SectionList<HistorySection, ListSection>
-        ref={listRef}
-        style={styles.list}
-        sections={sections}
-        keyExtractor={(m) => `body:${sectionKeyOf(m)}`}
-        renderSectionHeader={renderSectionHeader}
-        renderItem={renderItem}
-        stickySectionHeadersEnabled
-        // A drag through search results puts the keyboard away, as the platform's own lists do.
-        keyboardDismissMode="on-drag"
-        // A week of days on the first paint (a day is three cells: its header, its body, its
-        // footer): the strip shows this week, so a landing from it never waits on a measure.
-        initialNumToRender={INITIAL_CELLS}
-        ListHeaderComponent={header}
-        ListEmptyComponent={empty}
-        ListFooterComponent={footer}
-        onEndReached={() => {
-          if (snapshot?.pages.next) void useHistoryListStore.getState().loadMore();
-        }}
-        onEndReachedThreshold={0.5}
-        onScrollBeginDrag={onScrollBeginDrag}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        onLayout={onLayout}
-        onScrollToIndexFailed={onScrollToIndexFailed}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colorTextSecondary} />
-        }
-        contentContainerStyle={[styles.content, sections.length === 0 && styles.contentEmpty]}
-        CellRendererComponent={HistoryCell}
-        testID="history-list"
-      />
+      <OpenInPlaceReset.Provider value={runReset}>
+        <SectionList<HistorySection, ListSection>
+          ref={listRef}
+          style={styles.list}
+          sections={sections}
+          keyExtractor={(m) => `body:${sectionKeyOf(m)}`}
+          renderSectionHeader={renderSectionHeader}
+          renderItem={renderItem}
+          stickySectionHeadersEnabled
+          // A drag through search results puts the keyboard away, as the platform's own lists do.
+          keyboardDismissMode="on-drag"
+          // A week of days on the first paint (a day is three cells: its header, its body, its
+          // footer): the strip shows this week, so a landing from it never waits on a measure.
+          initialNumToRender={INITIAL_CELLS}
+          ListHeaderComponent={header}
+          ListEmptyComponent={empty}
+          ListFooterComponent={footer}
+          onEndReached={() => {
+            if (snapshot?.pages.next) void useHistoryListStore.getState().loadMore();
+          }}
+          onEndReachedThreshold={0.5}
+          onScrollBeginDrag={onScrollBeginDrag}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          onLayout={onLayout}
+          onScrollToIndexFailed={onScrollToIndexFailed}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colorTextSecondary} />
+          }
+          contentContainerStyle={[styles.content, sections.length === 0 && styles.contentEmpty]}
+          CellRendererComponent={HistoryCell}
+          testID="history-list"
+        />
+      </OpenInPlaceReset.Provider>
     </CellLaidOut.Provider>
   );
 }
