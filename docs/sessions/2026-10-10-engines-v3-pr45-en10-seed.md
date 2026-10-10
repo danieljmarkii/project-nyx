@@ -3,7 +3,7 @@
 **Date:** 2026-10-10
 **One thing:** none — dispatched session, not this round's teach row
 
-Shipped via the draft PR on `claude/engines-v3-pr45-10101243` (CUL-1727). Dispatched by `/dispatch`, BUILD mode. Plan-gated: the plan and the gate check were posted on CUL-1727 and the PM typed `go B` in session. Not applied here; applying takes the PM's `apply 098` in the dispatcher session.
+Shipped via #1151 (CUL-1727). Dispatched by `/dispatch`, BUILD mode. Plan-gated: the plan and the gate check were posted on CUL-1727 and the PM typed `go B` in session. Not applied here; applying takes the PM's `apply 098` in the dispatcher session.
 
 ## What shipped
 
