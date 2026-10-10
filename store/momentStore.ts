@@ -294,6 +294,19 @@ interface MomentState {
   // CUL-612 — the card has been undone and is showing its removal line instead of
   // its confirmation. Reset by present(), so it describes THIS card only.
   removed: boolean;
+  // CUL-1691 §2.3 — the record an Undo has been tapped on, from the tap (set in the
+  // same synchronous block as the in-flight latch, before its await) until the next
+  // card or a failed reversal. While it names the card's record, the card is inert:
+  // every write and door returns early, and nothing visual changes, because a
+  // reversal is never shown before it has happened (CUL-612). `removed` takes over
+  // once it has.
+  undoing: string | null;
+  // CUL-1691 §2.5 — re-arm the "Removed" dwell from the frame the line LANDS. Refused
+  // unless this exact card is visible and undone: the store decides from the `removed`
+  // fact, never from a flag the caller passes (B-157). Arms through `armHide` directly,
+  // never `rescheduleHide`, whose double-dose (7s) and floor-line (8s) floors would hold
+  // a 2.4s "Removed" far past the log it reversed.
+  armRemovedDwell: (eventId: string) => void;
   // The R1 named card (CUL-606) — symptom logs + weight checks. Takes the
   // RECORD, not a sentence: the card derives what it says (§5's sentence rule).
   showNamed: (payload: Omit<NamedPayload, 'kind'>, opts?: ShowOpts) => void;
@@ -718,6 +731,26 @@ function carriesSafetyNote(payload: MomentPayload): boolean {
   return false;
 }
 
+/**
+ * The completion card's tone (CUL-1691 §2.1): whether the mark carries the gold. ONE
+ * predicate the cards, the halo beat and the finish all read; no card computes its own.
+ *
+ * - Meal: celebrate unless the intake was declined (an unrated meal celebrates). A trial
+ *   heads-up never changes it (D5): the evaluator returns null when unsure and on a
+ *   repeat, and null is never an all-clear, so withholding gold beside a heads-up would
+ *   make gold read as "on the diet".
+ * - Named: its own `tone`.
+ * - Any card carrying a vet-call line is calm (team call, reversible; Dr. Chen confirms
+ *   on CUL-1712).
+ *
+ * The dose's tone (`doseCelebrates`) joins in PR 3 with the medication card's motion.
+ */
+export function completionTone(payload: MealPayload | NamedPayload): MomentTone {
+  if (carriesFloorLine(payload)) return 'calm';
+  if (payload.kind === 'meal') return isIntakeDecline(payload.intakeRating) ? 'calm' : 'celebrate';
+  return payload.tone;
+}
+
 /** A completion card is on screen in the FAB's corner (CUL-1635). */
 export function isCornerCardUp(s: { visible: boolean; payload: MomentPayload | null }): boolean {
   return s.visible && s.payload !== null && CORNER_KINDS.has(s.payload.kind);
@@ -746,7 +779,7 @@ function present(
     // removal line leaking onto the next log. A card that was undone keeps its
     // payload through the fade, so a second log arriving during that fade would
     // otherwise render its own confirmation under the word "Removed".
-    set({ visible: true, payload, removed: false });
+    set({ visible: true, payload, removed: false, undoing: null });
     // Engines v3 PR-28b — a card revealed carrying a floor line has now said it.
     if (payload.kind === 'named' || payload.kind === 'sheetBeat' || payload.kind === 'meal') recordFloorLineShown(payload.floorLine);
     // A new card is a new undo target, so the previous card's in-flight latch must
@@ -763,6 +796,7 @@ export const useMomentStore = create<MomentState>((set) => ({
   visible: false,
   payload: null,
   removed: false,
+  undoing: null,
   showNamed: (payload, opts) =>
     present(set, { kind: 'named', ...payload }, opts, payload.floorLine ? FLOOR_LINE_DWELL_MS : NAMED_DURATION_MS),
   showMeal: (payload, opts) =>
@@ -836,6 +870,8 @@ export const useMomentStore = create<MomentState>((set) => ({
     } catch (e) {
       console.error('[moment] undo failed:', e);
       undoInFlight = false;
+      // A failed reversal leaves the card as it was, controls live.
+      if (useMomentStore.getState().undoing === payload.eventId) set({ undoing: null });
       // Leave the card exactly as it was — including its controls — and give the
       // owner a fresh window to read the alert and try again. Showing the removal
       // line here would be the one unrecoverable lie this surface can tell: the
@@ -878,6 +914,11 @@ export const useMomentStore = create<MomentState>((set) => ({
   // ledger budget on a card nobody can act on. The rest are only reachable from
   // controls the removal line unmounts, and are guarded anyway: an invariant with
   // exceptions is one nobody can check.
+  armRemovedDwell: (eventId) => {
+    const s = useMomentStore.getState();
+    if (!s.visible || !s.removed || s.payload?.eventId !== eventId) return;
+    armHide(set, REMOVED_DURATION_MS);
+  },
   patchOccurredAt: (occurredAt) =>
     set((state) =>
       state.payload && !state.removed

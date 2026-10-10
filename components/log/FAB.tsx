@@ -25,6 +25,8 @@ import { useSyncStore } from '../../store/syncStore';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore, isCornerCardUp, MEAL_FLAGGED_DURATION_MS } from '../../store/momentStore';
 import { stageFlight, whenFlightDone } from '../motion/flightMotion';
+import { COMPLETION_MOTION } from '../motion/completionMotion';
+import { FlightVessel, MealMark } from '../ui/MealMark';
 import { measureNodeInWindow, measureNodeOnPage, type WindowRect } from '../../lib/measureNode';
 import { getRecentFoods, PickerFood } from '../../lib/db';
 import { fabFoodDay } from '../../lib/fabRecentFoods';
@@ -91,7 +93,9 @@ const SCRIM_IN_MS = 240;
  *  (five pills: 4 × 18 + 110). */
 const CLOSE_STAGGER_MS = 18;
 const CLOSE_ITEM_MS = 110;
-const CLOSE_MS = 180;
+// The card fades in place over the frames the fan retracts (CUL-1691 §2.2): one number,
+// owned by the completion card's motion and imported back here.
+const CLOSE_MS = COMPLETION_MOTION.inPlaceFadeMs;
 /** Beat 8: under Reduce Motion everything is one crossfade of this length. */
 const FADE_MS = 150;
 /** CUL-1643 (D3): a choice never plays the cancel. The tapped food holds this long while
@@ -146,16 +150,6 @@ function DoorChevron() {
       importantForAccessibility="no-hide-descendants"
     >
       <ChevronRight size={PILL_CHEVRON} color={theme.colorTextTertiary} strokeWidth={1.75} />
-    </View>
-  );
-}
-
-/** A food pill's meal disc. Its own component because it is drawn twice: in the pill,
- *  and as the flight's clone at the root (CUL-1643), which must be the same 28pt mark. */
-function MealMark({ hidden = false }: { hidden?: boolean }) {
-  return (
-    <View style={[styles.pillGlyph, styles.pillGlyphMeal, hidden && styles.pillGlyphFlown]}>
-      <EventIcon type="meal" size={16} />
     </View>
   );
 }
@@ -1152,7 +1146,9 @@ export function FAB() {
           identity: eventId,
           title: foodText.get(food.id)?.label ?? 'Food',
           source: from.rect,
-          element: <MealMark />,
+          // The vessel: the pill's meal disc, which fills and reveals the check on its
+          // landing and releases the flight itself (CUL-1691 §2.2).
+          element: <FlightVessel identity={eventId} />,
         });
       }
       setChosen({ key: `food-${food.id}`, flown: flies });
@@ -1850,18 +1846,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  pillGlyphMeal: {
-    backgroundColor: theme.colorEventMealLight,
-  },
   pillGlyphSymptom: {
     backgroundColor: theme.colorEventSymptomLight,
   },
   pillGlyphQuiet: {
     backgroundColor: theme.colorNeutralLight,
-  },
-  // CUL-1643: the chosen food's mark while its clone flies, so it is never in two places.
-  pillGlyphFlown: {
-    opacity: 0,
   },
   pillLabel: {
     fontSize: PILL_LABEL_SIZE,
