@@ -27,6 +27,12 @@
 //     the meals fade in over 150ms. The Patterns month keeps `useOpenInPlace`; nothing
 //     run-only reaches it. Without `openInPlace`, the run keeps the shipped
 //     `LayoutAnimation` open, byte for byte.
+//   • The stack (CUL-1736, D4 ruled 2026-10-10): a folded run carries "several" as up to
+//     three beads down the thread, the back ones 4pt apart and behind the front bead, so
+//     each shows as an arc below it. It is a function of the meal COUNT alone (never a
+//     rating, a format, or anything else in the run: the dissent's condition 2), draws
+//     nothing VoiceOver reads (condition 1: the words keep the number), and rides the
+//     run's own line: it tucks on the lead and comes back out on the retract.
 //
 // Never an image: Home is the surface a guest sees over the owner's shoulder (T&S; R4-2
 // option A), so the photo is one tap in, on the record, where the vet will ask to see it.
@@ -58,13 +64,13 @@ import Svg, { Circle, Line } from 'react-native-svg';
 import { router } from 'expo-router';
 import { Camera, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
-import { SPINE_THREAD, SpineRowFrame } from '../recap/DaySpine';
+import { SPINE_THREAD, SpineRowFrame, type SpineBead } from '../recap/DaySpine';
 import { NODE_DOT_SIZE } from '../recap/nodeTints';
 import { ThemedText } from '../ui/ThemedText';
 import { useNodeArrival } from '../motion/arrivalMotion';
 import { announceQueued, readLandedSpoken, useRowSpeech } from './rowSpeech';
 import { FOLD_LAYOUT, UNFOLD_LAYOUT } from '../motion/foldMotion';
-import { useRunOpen } from '../motion/runOpenMotion';
+import { useRunOpen, type RunOpen } from '../motion/runOpenMotion';
 import { RunRevealContext } from '../motion/runRevealMotion';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
@@ -95,6 +101,18 @@ const RUN_LEAD_TOP = SPINE_THREAD.dotCenterY + NODE_DOT_SIZE / 2;
  *  for a first meal that has not reported. Same value as `runOpenMotion`'s header floor, a
  *  different question (a member's height, not the header's), so its own constant (C-34). */
 const RUN_MEMBER_FLOOR_PT = 44;
+
+/** The stack (CUL-1736): how far down the thread each back bead sits behind the one in
+ *  front, and the most beads it ever draws. The cap is the ruling's: the mark says
+ *  "several", the words keep the number. */
+export const RUN_STACK_STEP_PT = 4;
+export const RUN_STACK_MAX = 3;
+
+/** How many beads a folded run draws: two for two meals, three for three or more, none for
+ *  one. Takes the COUNT and nothing else, so the stack can never say how the meals went. */
+export function runStackBeads(count: number): number {
+  return count < 2 ? 0 : Math.min(count, RUN_STACK_MAX);
+}
 
 // ── The chips ─────────────────────────────────────────────────────────────────────
 
@@ -624,6 +642,14 @@ export function SpineCompactRow({
             // wraps under it and the arrow never moves. It points the way the run opens:
             // here, downward (rule D).
             trailing={chevron}
+            // The stack rides the run's own line, so it is drawn where the run opens in place.
+            underBead={
+              openInPlace
+                ? (bead) => (
+                    <RunStack nodeId={node.id} count={node.rows.length} bead={bead} motion={motion} reducedMotion={reducedMotion} />
+                  )
+                : undefined
+            }
           >
             <ThemedText style={styles.title} numberOfLines={2}>
               {node.title}
@@ -674,6 +700,73 @@ export function SpineCompactRow({
           {members}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * The stack (CUL-1736): the back beads, deepest first so each lies under the one in front,
+ * in the bead's own fill and ring. Absolute on the bead's own frame, so no layout commit
+ * touches it; only native values move it.
+ *
+ * It rides the run's line, never a clock of its own (`RUN_MOTION`'s beats, through
+ * `values.lead`): as the lead grows out of the bead (0 to 80ms, linear) the back beads slide
+ * up under the front one, and as the lead retracts (200 to 280ms) they slide back out; a
+ * reversal turns them round with the line. Under Reduce Motion nothing slides: the stack
+ * crossfades against the line (`values.line`), out as the line fades in and back as it
+ * fades out, and at rest closed it is simply there.
+ */
+function RunStack({
+  nodeId,
+  count,
+  bead,
+  motion,
+  reducedMotion,
+}: {
+  nodeId: string;
+  count: number;
+  bead: SpineBead;
+  motion: RunOpen;
+  reducedMotion: boolean;
+}) {
+  const back = runStackBeads(count) - 1;
+  if (back < 1) return null;
+  const { lead, line } = motion.values;
+  const faded = reducedMotion && motion.phase !== 'closed';
+  return (
+    <View
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={StyleSheet.absoluteFill}
+      testID={`spine-run-stack-${nodeId}`}
+    >
+      {Array.from({ length: back }, (_, i) => back - i).map((depth) => {
+        const fanned = depth * RUN_STACK_STEP_PT;
+        return (
+          <Animated.View
+            key={depth}
+            testID={`spine-run-stack-bead-${nodeId}-${depth}`}
+            style={[
+              styles.stackBead,
+              {
+                left: bead.left,
+                top: bead.top,
+                width: bead.size,
+                height: bead.size,
+                borderRadius: bead.size / 2,
+                borderWidth: bead.ringWidth,
+                backgroundColor: bead.fill,
+                borderColor: bead.ring,
+                opacity: faded ? line.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) : 1,
+                transform: [
+                  { translateY: reducedMotion ? fanned : lead.interpolate({ inputRange: [0, 1], outputRange: [fanned, 0] }) },
+                ],
+              },
+            ]}
+          />
+        );
+      })}
     </View>
   );
 }
@@ -865,6 +958,8 @@ const styles = StyleSheet.create({
     borderRadius: RUN_RAIL_W / 2,
     backgroundColor: theme.colorEventMeal,
   },
+  // The stack's back bead (CUL-1736): its frame is the bead's own, handed in by the frame.
+  stackBead: { position: 'absolute' },
   // Open in place (CUL-1734): the box shut at zero while it waits for its configured commit.
   membersShut: { height: 0 },
   // The lead, from the run's bead to the header's foot. `colorAccentGlyph` (3.27:1, a

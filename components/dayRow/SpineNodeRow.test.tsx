@@ -10,7 +10,8 @@
 // reading order (C-8); and open in place, the static half (AC 17: every member of a run of
 // 2, 5, 9 and 12 drawn as a full row, nothing capped or clipped) and its motion (CUL-1734,
 // `openInPlace`: the run's own open, its Reduce Motion form, and VoiceOver staying on the
-// run; the beats themselves are pinned in `components/motion/runOpenMotion.test.ts`).
+// run; the beats themselves are pinned in `components/motion/runOpenMotion.test.ts`), and
+// the stack a folded run carries (CUL-1736: the count's mark, never the meals' rating).
 
 const mockUseReducedMotion = jest.fn(() => false);
 jest.mock('../../hooks/useReducedMotion', () => ({
@@ -41,12 +42,15 @@ import { TICK_BREATH } from '../motion/arrivalMotion';
 import type { NodeRead, SpineCompactNode, SpineDose, SpineEventNode } from '../../lib/spineNode';
 import {
   PHOTOGRAPHED_LABEL,
+  RUN_STACK_STEP_PT,
   SPINE_READ_PENDING_LABEL,
   SPINE_TICK_HEIGHT,
   SpineCompactRow,
   SpineEventRow,
   THREAD_X,
   eventRowLabel,
+  runRowLabel,
+  runStackBeads,
 } from './SpineNodeRow';
 import { RAIL_W, SPINE_THREAD, TIME_W } from '../recap/DaySpine';
 import { RowSpeechContext, readLandedSpoken, type RowSpeech } from './rowSpeech';
@@ -991,5 +995,177 @@ describe('the reveal: the run asks its list to show its first meal, once per ope
     expect(cancel).toHaveBeenCalled();
     advance(1_000);
     expect(request).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── The stack (CUL-1736, D4) ──────────────────────────────────────────────────────
+
+describe('the stack: a folded run carries "several", and only that (CUL-1736, D4)', () => {
+  function InPlace({ node, initial = false }: { node: SpineCompactNode; initial?: boolean }) {
+    const [expanded, setExpanded] = useState(initial);
+    return (
+      <SpineCompactRow
+        node={node}
+        isFirst
+        isLast
+        expanded={expanded}
+        onToggle={() => setExpanded((e) => !e)}
+        onOpen={jest.fn()}
+        openInPlace
+      />
+    );
+  }
+  const advance = (ms: number) =>
+    act(() => {
+      jest.advanceTimersByTime(ms);
+    });
+  /** A run of `n` meals, every one rated `intake` (or every one unrated). */
+  const ratedRun = (n: number, intake: string | null): SpineCompactNode => {
+    const base = run(n);
+    return { ...base, rows: base.rows.map((r) => ({ ...r, intake })) };
+  };
+  const stackBeads = (t: ReturnType<typeof render>, id = 'compact:m0') =>
+    t.queryAllByTestId(new RegExp(`^spine-run-stack-bead-${id}-`), { includeHiddenElements: true });
+  const translateOf = (el: { props: { style?: unknown } }) => {
+    const ty = (styleOf(el).transform as { translateY: unknown }[])[0].translateY;
+    return typeof ty === 'number' ? ty : (ty as { __getValue: () => number }).__getValue();
+  };
+  /** A rendered node (the renderer's own instance type, derived rather than imported). */
+  type Instance = ReturnType<typeof render>['root'];
+  const opacityOf = (el: { props: { style?: unknown } }) => {
+    const o = styleOf(el).opacity;
+    return typeof o === 'number' ? o : (o as { __getValue: () => number }).__getValue();
+  };
+  /** Everything the stack draws: each bead's frame, colours, offset and opacity. */
+  const stackShape = (t: ReturnType<typeof render>) =>
+    stackBeads(t).map((b) => ({ ...styleOf(b), transform: translateOf(b), opacity: opacityOf(b) }));
+
+  it('two beads at two meals, three at three, three at twelve; none for one', () => {
+    expect([1, 2, 3, 4, 12].map(runStackBeads)).toEqual([0, 2, 3, 3, 3]);
+    // Drawn: the front bead is the frame's own, so the stack draws the BACK beads.
+    for (const [n, back] of [
+      [2, 1],
+      [3, 2],
+      [12, 2],
+    ] as const) {
+      const t = render(<InPlace node={run(n)} />);
+      const beads = stackBeads(t);
+      expect(beads).toHaveLength(back);
+      // Each back bead 4pt further down the thread, the deepest drawn first (so it lies under).
+      expect(beads.map(translateOf)).toEqual(Array.from({ length: back }, (_, i) => (back - i) * RUN_STACK_STEP_PT));
+      t.unmount();
+    }
+  });
+
+  it('a back bead is the bead itself: its fill, its ring, its frame, on the thread and under the front bead', () => {
+    // A run mid-day, so both thread segments are drawn.
+    const t = render(
+      <SpineCompactRow node={run(4)} isFirst={false} isLast={false} expanded={false} onToggle={jest.fn()} openInPlace />,
+    );
+    const rail = within(t.getByTestId('spine-node-compact:m0')).getByTestId('spine-rail', { includeHiddenElements: true });
+    // Paint order inside the rail: the thread, then the stack, then the front bead on top.
+    const kids = (rail.children as (Instance | string)[]).filter((k): k is Instance => typeof k !== 'string');
+    const idOf = (k: Instance): string =>
+      k.props.testID ?? k.findAll((n: Instance) => typeof n.type === 'string' && !!n.props.testID)[0]?.props.testID ?? 'bead';
+    expect(kids.map(idOf)).toEqual(['spine-thread-top', 'spine-thread-bottom', 'spine-run-stack-compact:m0', 'bead']);
+    const f = styleOf(kids[kids.length - 1]);
+    for (const b of stackBeads(t)) {
+      const st = styleOf(b);
+      for (const k of ['width', 'height', 'borderRadius', 'borderWidth', 'backgroundColor', 'borderColor'] as const) {
+        expect(st[k]).toBe(f[k]);
+      }
+      expect(st.borderWidth).toBe(2);
+      expect(st.top).toBe(f.marginTop);
+      expect((st.left as number) + (st.width as number) / 2).toBe(RAIL_W / 2);
+    }
+  });
+
+  it('never on a single row, and never where the run does not open in place', () => {
+    const one = render(<SpineEventRow node={meal('m0', '8:00 AM', { intake: 'all' })} isFirst isLast onOpen={jest.fn()} />);
+    expect(one.queryByTestId(/^spine-run-stack/, { includeHiddenElements: true })).toBeNull();
+    const shipped = render(<SpineCompactRow node={run(4)} isFirst isLast expanded={false} onToggle={jest.fn()} />);
+    expect(shipped.queryByTestId(/^spine-run-stack/, { includeHiddenElements: true })).toBeNull();
+  });
+
+  it('condition 2: the same stack for an All run, an unrated run, a Most run, a mixed run and a wet run', () => {
+    const allRun = render(<InPlace node={ratedRun(4, 'all')} />);
+    const shape = stackShape(allRun);
+    expect(shape).toHaveLength(2);
+    const others = [
+      ratedRun(4, null),
+      ratedRun(4, 'most'),
+      run(4),
+      { ...run(4), formats: '1 wet · 3 dry', rows: run(4).rows.map((r) => ({ ...r, formatTag: 'WET' })) },
+    ];
+    for (const node of others) {
+      const t = render(<InPlace node={node} />);
+      expect(stackShape(t)).toEqual(shape);
+      t.unmount();
+    }
+  });
+
+  it('condition 1: VoiceOver reads nothing new; the run\'s one label is byte-identical with and without the stack', () => {
+    const node = run(5);
+    const withStack = render(<InPlace node={node} />);
+    const without = render(<SpineCompactRow node={node} isFirst isLast expanded={false} onToggle={jest.fn()} />);
+    expect(withStack.queryByTestId('spine-run-stack-compact:m0', { includeHiddenElements: true })).toBeTruthy();
+    expect(without.queryByTestId('spine-run-stack-compact:m0', { includeHiddenElements: true })).toBeNull();
+    const a = withStack.getByTestId('spine-node-compact:m0').props;
+    const b = without.getByTestId('spine-node-compact:m0').props;
+    expect(a.accessibilityLabel).toBe(b.accessibilityLabel);
+    expect(a.accessibilityLabel).toBe(runRowLabel(node, false));
+    expect(a.accessibilityState).toEqual(b.accessibilityState);
+    // The words keep the count.
+    expect(a.accessibilityLabel).toMatch(/^5 meals, /);
+    const stack = withStack.getByTestId('spine-run-stack-compact:m0', { includeHiddenElements: true });
+    expect(stack.props.accessibilityElementsHidden).toBe(true);
+    expect(stack.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(stack.props.pointerEvents).toBe('none');
+  });
+
+  it('the tuck rides the line: the beads move on the lead\'s own value, tucked once it has grown, back out once it retracts', () => {
+    const t = render(<InPlace node={run(4)} />);
+    expect(stackBeads(t).map(translateOf)).toEqual([8, 4]);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    // Never a clock of its own: each bead's offset is an interpolation of the value the lead
+    // scales on (0 to 80ms out, 200 to 280ms back, `RUN_MOTION`), so the beats are the line's.
+    // Read off the Animated components (the host holds only the resolved numbers).
+    const animated = (testID: string | RegExp) =>
+      t.UNSAFE_root.findAll(
+        (n: Instance) => typeof n.type !== 'string' && (typeof testID === 'string' ? n.props.testID === testID : testID.test(n.props.testID ?? '')),
+      ).filter((n: Instance, i: number, all: Instance[]) => all.findIndex((m) => m.props.testID === n.props.testID) === i);
+    const [leadView] = animated('spine-run-lead-compact:m0');
+    const leadScale = (StyleSheet.flatten(leadView.props.style).transform as { scaleY: unknown }[])[0].scaleY;
+    expect(leadScale).toBeInstanceOf(Animated.Value);
+    const beadViews = animated(/^spine-run-stack-bead-compact:m0-/);
+    expect(beadViews).toHaveLength(2);
+    for (const b of beadViews) {
+      const ty = (StyleSheet.flatten(b.props.style).transform as { translateY: { _parent?: unknown } }[])[0].translateY;
+      expect(ty._parent).toBe(leadScale);
+    }
+    advance(RUN_MOTION.mountFrameMs + Math.ceil(runOpenIdleMs(runLandStarts(4))) + FRAME_MS);
+    expect(stackBeads(t).map(translateOf)).toEqual([0, 0]);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    // Still tucked while the box closes: the line has not begun to retract.
+    advance(RUN_MOTION.retractDelayMs - FRAME_MS);
+    expect(stackBeads(t).map(translateOf)).toEqual([0, 0]);
+    advance(RUN_CLOSE_BUDGET_MS);
+    expect(t.queryByTestId('spine-members-compact:m0')).toBeNull();
+    expect(stackBeads(t).map(translateOf)).toEqual([8, 4]);
+    expect(stackBeads(t).map(opacityOf)).toEqual([1, 1]);
+  });
+
+  it('Reduce Motion: nothing slides; the stack crossfades out with the line and back as it leaves', () => {
+    mockUseReducedMotion.mockReturnValue(true);
+    const t = render(<InPlace node={run(3)} />);
+    expect(stackBeads(t).map(opacityOf)).toEqual([1, 1]);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(RUN_MOTION.crossfadeMs + FRAME_MS);
+    expect(stackBeads(t).map(translateOf)).toEqual([8, 4]);
+    expect(stackBeads(t).map(opacityOf)).toEqual([0, 0]);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(RUN_MOTION.crossfadeMs + FRAME_MS);
+    expect(stackBeads(t).map(translateOf)).toEqual([8, 4]);
+    expect(stackBeads(t).map(opacityOf)).toEqual([1, 1]);
   });
 });

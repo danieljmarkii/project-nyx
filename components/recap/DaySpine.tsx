@@ -200,7 +200,22 @@ export interface SpineRowFrameProps {
    *  step darker (the secondary ink), because it is the fact the owner opened the run to
    *  read. Absent, the frame is exactly what it was. */
   member?: boolean;
+  /** Drawn in the rail on the thread and UNDER the bead (CUL-1736: a folded run's back
+   *  beads), handed the bead's own colours and frame so it never retypes them. Absent, the
+   *  rail is exactly what it was. */
+  underBead?: (bead: SpineBead) => ReactNode;
   style?: StyleProp<ViewStyle>;
+}
+
+/** The full bead as the rail draws it: its colours, and its frame inside the rail column
+ *  (left edge, top edge, diameter, ring width). */
+export interface SpineBead {
+  fill: string;
+  ring: string;
+  left: number;
+  top: number;
+  size: number;
+  ringWidth: number;
 }
 
 /**
@@ -219,6 +234,7 @@ export function SpineRowFrame({
   trailing,
   pressed = false,
   member = false,
+  underBead,
   style,
 }: SpineRowFrameProps) {
   const g = GROUND[ground];
@@ -256,6 +272,7 @@ export function SpineRowFrame({
       <View style={styles.rail} testID="spine-rail">
         {!isFirst && <View testID="spine-thread-top" style={[styles.line, styles.lineTop, { backgroundColor: g.thread }]} />}
         {!isLast && <View testID="spine-thread-bottom" style={[styles.line, styles.lineBottom, { backgroundColor: g.thread }]} />}
+        {underBead?.({ fill, ring, left: (RAIL_W - DOT) / 2, top: DOT_TOP, size: DOT, ringWidth: NODE_DOT_RING })}
         {member ? (
           <View
             style={[styles.dot, styles.dotMember, { backgroundColor: fill, borderColor: ring }]}
