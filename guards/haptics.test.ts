@@ -154,6 +154,11 @@ const ALWAYS_SCANNED = [
   // `commitSymptom` import in either reds the build).
   'components/designV2/patterns/MonthInstrument.tsx',
   'components/motion/openInPlaceMotion.ts',
+  // CUL-1734 — the run's own open, which the day's list (Home and History, beside
+  // `worth_a_call`) now rides instead of the month's machine. A `.ts` hook, so invisible
+  // to the walk; its landing beat is where a "landed" buzz would read as natural. Named
+  // the PR it ships; proven by mutation (a `commitSymptom` import reds the build).
+  'components/motion/runOpenMotion.ts',
   // HV-5 (CUL-1162) — the one read predicate. It paints nothing, and it is named anyway
   // because History v2's spec puts the READ itself in this scan (§4: "a haptic on
   // anything safety-bearing (the haptics guard's scan includes History v2's read)"):
