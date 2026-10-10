@@ -81,6 +81,15 @@ import {
   trialResponseDietStructureLine,
   type BannerSafetyFinding,
 } from './signalCopy';
+import {
+  intakeRefusedThenVomitedFaceLine,
+  refusedThenVomitedLine,
+  STRIP_ASKS,
+  stripAskLine,
+  stripCountLine,
+  stripNameLine,
+} from './signalCopy';
+import { refusedThenVomitedSentence as serverRefusedThenVomitedSentence } from '../supabase/functions/generate-signal/phrasing';
 import type {
   CachedFinding,
   CorrelationFinding,
@@ -2841,5 +2850,55 @@ describe('I4 (ruling sheet §2.7): every card surface that prints the refused-bo
       trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 2 } }),
     )!;
     expect(trial.indexOf('followed a refused meal')).toBeLessThan(trial.indexOf('·'));
+  });
+});
+
+describe('I5 (Engines v3 PR-30s): refused, then vomited within minutes, on every client surface', () => {
+  const facts = { episodeCount: 2, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', windowMinutes: 30 };
+  const alone = intakeDecline({ trigger: 'refused_then_vomited', daysBelowBaseline: 0, ratedMealsConsidered: 0, refusedThenVomited: facts });
+  const riding = intakeDecline({ refusedThenVomited: { ...facts, episodeCount: 3 } });
+  const SENTENCE = "Pixel vomited within 30 minutes of turning down a meal on 2 days since September 6. That's worth mentioning to your vet.";
+
+  it('the line is the server’s sentence, character for character (one sentence, two modules)', () => {
+    expect(refusedThenVomitedLine(alone, 'Pixel')).toBe(SENTENCE);
+    expect(refusedThenVomitedLine(alone, 'Pixel')).toBe(serverRefusedThenVomitedSentence(facts, 'Pixel'));
+    const three = { ...facts, episodeCount: 3 };
+    expect(refusedThenVomitedLine(riding, 'Pixel')).toBe(serverRefusedThenVomitedSentence(three, 'Pixel'));
+    expect(refusedThenVomitedLine(riding, 'Pixel')).toContain('3 times, on 2 days');
+  });
+
+  it('absent, malformed or zero facts say nothing, never a zero (absence says nothing about her eating)', () => {
+    expect(refusedThenVomitedLine(intakeDecline(), 'Pixel')).toBeNull();
+    for (const bad of [0, Number.NaN, -1]) {
+      expect(refusedThenVomitedLine(intakeDecline({ refusedThenVomited: { ...facts, episodeCount: bad } }), 'Pixel')).toBeNull();
+    }
+  });
+
+  it('the face line rides only on the cards whose own claim is something else', () => {
+    expect(intakeRefusedThenVomitedFaceLine(alone, 'Pixel')).toBeNull();
+    expect(intakeRefusedThenVomitedFaceLine(riding, 'Pixel')).toContain('within 30 minutes of turning down a meal');
+    expect(intakeRefusedThenVomitedFaceLine(intakeDecline(), 'Pixel')).toBeNull();
+  });
+
+  it('every branch names the new trigger: none falls through to “eating less than usual”', () => {
+    expect(stripNameLine(alone)).toBe('Vomited after a refused meal');
+    expect(stripAskLine(alone)).toBe(STRIP_ASKS.tell);
+    expect(stripCountLine(alone)).toBe('On 2 days · since Sep 6');
+    expect(sampleLine(alone)).toBe('2 episodes you saw, each soon after a refused meal');
+    expect(evidenceText(alone, 'Pixel')).toContain(SENTENCE);
+    expect(bannerCopy(alone, 'Pixel').text).toBe('Pixel vomited soon after turning down a meal on more than one day — worth a look.');
+    const script = phoneScript(alone, 'Pixel', false, null, null)!;
+    expect(script.map((f) => f.label)).toEqual(['Concern', 'Vomited soon after a refused meal', 'Within', 'First']);
+    for (const s of [stripNameLine(alone), sampleLine(alone), evidenceText(alone, 'Pixel'), bannerCopy(alone, 'Pixel').text, ...script.map((f) => f.value)]) {
+      expect(s).not.toMatch(/eat(en|ing) less|below the usual|nause|picky|fussy|because|caus/i);
+      expect(s).not.toContain('!');
+    }
+  });
+
+  it('on a ② card the facts follow the card’s own reason, in the expand and the phone script', () => {
+    expect(evidenceText(riding, 'Pixel')).toMatch(/if it carries on\. Pixel vomited within 30 minutes/);
+    const labels = phoneScript(riding, 'Pixel', false, null, null)!.map((f) => f.label);
+    expect(labels.slice(0, 3)).toEqual(['Concern', 'How long', 'Compared with']);
+    expect(labels).toContain('Vomited soon after a refused meal');
   });
 });

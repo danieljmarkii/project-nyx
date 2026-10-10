@@ -22,6 +22,7 @@ import type {
   IncidentFlagKind,
   IncidentRedFlagFinding,
   IntakeDeclineFinding,
+  RefusedThenVomitedFacts,
   MedOnBoardContext,
   PhotoComposition,
   PostprandialTimingFinding,
@@ -598,6 +599,11 @@ export function sampleLine(finding: SignalFinding): string {
       ? `Compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`
       : 'Compared with what you usually log';
   }
+  if (finding.trigger === 'refused_then_vomited') {
+    // I5: no baseline is compared, so the line says what was counted and where it came from.
+    const r = refusedThenVomitedOf(finding);
+    return r ? `${count(r.episodeCount, 'episode', 'episodes')} you saw, each soon after a refused meal` : 'Episodes you saw, soon after a refused meal';
+  }
   return `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual, across ${count(
     finding.ratedMealsConsidered,
     'recent meal',
@@ -1057,17 +1063,28 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // line exists to refuse. Kept only so evidenceText stays total over the union.
     return '';
   }
+  // I5 (PR-30s): on the two other intake cards the refused-then-vomited facts follow the card's own
+  // reason, as a sentence of their own (empty when the cache carries none).
+  const i5 = refusedThenVomitedLine(finding, petName);
+  const i5Tail = i5 ? ` ${i5}` : '';
+  if (finding.trigger === 'refused_then_vomited') {
+    // Only witnessed vomits count (a found pile's time is a guess), and nothing is said of the
+    // nights she refused and did not vomit: ratings are exception-only, so no rate is honest.
+    return i5
+      ? `${i5} Only vomiting you saw is counted, each time measured from a meal you marked Refused.`
+      : `${petName} vomited soon after turning down a meal. That's worth mentioning to your vet.`;
+  }
   if (finding.trigger === 'refused_normal_food') {
     const food = finding.refusedFoodLabel ?? 'a food they normally finish';
     return (
       `${petName} just turned down ${food}, which is normally eaten. Eating less can be an early sign ` +
-      `something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.`
+      `something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.${i5Tail}`
     );
   }
   return (
     `${petName} has eaten less than usual for ${count(finding.daysBelowBaseline, 'day', 'days')}, ` +
     `compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}. Eating less can be ` +
-    `an early sign something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.`
+    `an early sign something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.${i5Tail}`
   );
 }
 
@@ -1723,6 +1740,35 @@ export function timingStoryClockLaneModel(f: TimingStoryLike): DotLaneModel | nu
 // the Patterns panel cannot drift; the terse Home row omits it because it opens the card.
 export const REFUSAL_VET_TAIL = "That's worth mentioning to your vet.";
 
+/** I5 (Engines v3 PR-30s): the refused-then-vomited facts on an intake card, or null. Present only
+ *  on caches written under `engines_v3_en5`; a malformed count reads as absent, never as a zero. */
+function refusedThenVomitedOf(finding: SignalFinding): RefusedThenVomitedFacts | null {
+  if (finding.type !== 'intake_decline') return null;
+  const r = finding.refusedThenVomited;
+  if (!r) return null;
+  const ok = (n: number) => Number.isFinite(n) && n >= 1;
+  return ok(r.episodeCount) && ok(r.dayCount) && ok(r.windowMinutes) ? r : null;
+}
+
+/** I5's sentence, the mirror of `refusedThenVomitedSentence` in generate-signal/phrasing.ts (keep
+ *  the two in sync; the parity test pins them). Sequence, never cause; never "nausea", never
+ *  "picky"; counts and a date the owner can check, and I4's vet tail. On a `refused_then_vomited`
+ *  card it is the claim; on the other two intake cards it is the extra line under the sentence.
+ *  Null when the cache carries no facts: nothing is ever said of their absence. */
+export function refusedThenVomitedLine(finding: SignalFinding, petName: string): string | null {
+  const r = refusedThenVomitedOf(finding);
+  if (!r) return null;
+  const times = r.episodeCount === r.dayCount ? '' : `${r.episodeCount} times, `;
+  return `${petName} vomited within ${r.windowMinutes} minutes of turning down a meal ${times}on ${r.dayCount} days since ${shortDateUTC(r.firstIso)}. ${REFUSAL_VET_TAIL}`;
+}
+
+/** The face line under an intake card's sentence: I5's line on the two cards whose own claim is
+ *  something else. Null on the `refused_then_vomited` card, whose sentence already says it. */
+export function intakeRefusedThenVomitedFaceLine(finding: SignalFinding, petName: string): string | null {
+  if (finding.type !== 'intake_decline' || finding.trigger === 'refused_then_vomited') return null;
+  return refusedThenVomitedLine(finding, petName);
+}
+
 function refusalCountOf(f: TimingStoryLike): number {
   const raw = f.type === 'timing_story' ? f.long.afterRefusalCount : f.longAfterRefusalCount;
   return raw == null || !Number.isFinite(raw) ? 0 : clampCount(raw, longCountOf(f));
@@ -2199,6 +2245,19 @@ function phoneScriptFacts(
     ];
   }
   if (finding.type === 'intake_decline') {
+    // I5 (PR-30s): the refused-then-vomited rows, the whole evidence on its own card and appended
+    // to the other two. Counts and a date; no rate (ratings are exception-only).
+    const r = refusedThenVomitedOf(finding);
+    const i5Rows = r
+      ? [
+          { label: 'Vomited soon after a refused meal', value: r.episodeCount === r.dayCount ? `on ${count(r.dayCount, 'day', 'days')}` : `${count(r.episodeCount, 'time', 'times')}, on ${count(r.dayCount, 'day', 'days')}` },
+          { label: 'Within', value: `${r.windowMinutes} minutes of the refusal` },
+          { label: 'First', value: shortDateUTC(r.firstIso) },
+        ]
+      : [];
+    if (finding.trigger === 'refused_then_vomited') {
+      return [{ label: 'Concern', value: 'vomited soon after a refused meal' }, ...i5Rows];
+    }
     if (finding.trigger === 'refused_normal_food') {
       const food = truncateFoodLabel(finding.refusedFoodLabel);
       return [
@@ -2211,12 +2270,14 @@ function phoneScriptFacts(
               ? count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')
               : 'what you usually log',
         },
+        ...i5Rows,
       ];
     }
     return [
       { label: 'Concern', value: 'eating less than usual' },
       { label: 'How long', value: `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual` },
       { label: 'Compared with', value: count(finding.ratedMealsConsidered, 'recent meal', 'recent meals') },
+      ...i5Rows,
     ];
   }
   return null;
@@ -2395,6 +2456,10 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null): string {
     return ` has ${noun} showing ${phrase} — worth a look.`;
   }
   if (finding.type === 'intake_decline') {
+    if (finding.trigger === 'refused_then_vomited') {
+      // I5 (PR-30s): the sequence, never a cause; the banner's own calm ask.
+      return ` vomited soon after turning down a meal on more than one day — worth a look.`;
+    }
     if (finding.trigger === 'refused_normal_food') {
       // Names the refused food (intake, not a timing-only finding — naming it is
       // intended and clinically appropriate, as in the Signal template). With no
@@ -2612,7 +2677,11 @@ export function stripNameLine(finding: SignalFinding): string | null {
       // the strip states the axis rose and nothing about severity (never "worse").
       return `${capitalize(symptomWord(finding.symptomType))} up this week`;
     case 'intake_decline':
-      return finding.trigger === 'refused_normal_food' ? 'Refused the usual food' : 'Eating less than usual';
+      return finding.trigger === 'refused_normal_food'
+        ? 'Refused the usual food'
+        : finding.trigger === 'refused_then_vomited'
+          ? 'Vomited after a refused meal'
+          : 'Eating less than usual';
     case 'incident_red_flag':
       // Blood leads when both flags are set (the engine's own stable order, and the more
       // urgent read); the sentence and the expand still name both. The noun is the family
@@ -2667,8 +2736,9 @@ export function stripAskLine(finding: SignalFinding): string | null {
       // pm-feature-review's catch — `Tell your vet` hardened a conditional into an imperative).
       return finding.tier === 'firm' ? STRIP_ASKS.visit : finding.tier === 'soft' ? STRIP_ASKS.check : STRIP_ASKS.tell;
     case 'intake_decline':
-      // templateIntakeDecline: both triggers end "a word with your vet if it carries on".
-      return STRIP_ASKS.check;
+      // templateIntakeDecline: ② ends "a word with your vet if it carries on"; I5 (PR-30s) ends
+      // "That's worth mentioning to your vet.", an unconditional tell.
+      return finding.trigger === 'refused_then_vomited' ? STRIP_ASKS.tell : STRIP_ASKS.check;
     case 'incident_red_flag':
       // templateIncidentRedFlag: "worth a call to your vet".
       return STRIP_ASKS.call;
@@ -2711,6 +2781,16 @@ function stripCount(finding: SignalFinding, ctx: StripContext, spoken: boolean):
         return finding.ratedMealsConsidered > 0
           ? `Compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`
           : 'Compared with what you usually log';
+      }
+      if (finding.trigger === 'refused_then_vomited') {
+        // I5 (PR-30s): the count and the days, with the first one's date as the recency.
+        const r = refusedThenVomitedOf(finding);
+        if (!r) return 'Soon after a refused meal';
+        const first = stripDayUTC(r.firstIso);
+        const since = first ? (spoken ? `, since ${first.spoken}` : ` · since ${first.short}`) : '';
+        const days = count(r.dayCount, 'day', 'days');
+        const body = r.episodeCount === r.dayCount ? `On ${days}` : `${count(r.episodeCount, 'time', 'times')}, on ${days}`;
+        return `${body}${since}`;
       }
       return `${count(finding.daysBelowBaseline, 'day', 'days')} below the usual, ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`;
     case 'incident_red_flag':
