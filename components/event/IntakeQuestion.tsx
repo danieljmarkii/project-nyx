@@ -113,7 +113,8 @@ export function IntakeQuestion({ eventId, petId, occurredAt, petName }: Props) {
   const answer = async (form: IntakeForm, value: IntakeAnswer, existing: IntakeCheckRow | undefined) => {
     // Change, then the same answer: the fold closes and nothing is written (no new
     // answered_at, no re-check owed for an answer that did not move).
-    if (existing && existing.answer === value) {
+    // A refused answer re-sends on the same tap: the UPDATE clears its refusal.
+    if (existing && existing.answer === value && !existing.sync_error) {
       setEditing((e) => ({ ...e, [form]: false }));
       return;
     }
@@ -155,7 +156,7 @@ export function IntakeQuestion({ eventId, petId, occurredAt, petName }: Props) {
         };
         const question = intakeQuestionText(form, ctx);
         if (row && !editing[form]) {
-          const net = safetyNetLine(form, row.answer, row.answered_at, petName, nowMs);
+          const net = safetyNetLine(form, row.answer, row.answered_at, row.since, petName, nowMs);
           return (
             <View key={form} style={styles.form} testID={`intake-question-${form}`}>
               <ThemedText style={styles.question} accessibilityRole="header">
@@ -177,6 +178,9 @@ export function IntakeQuestion({ eventId, petId, occurredAt, petName }: Props) {
                   <ThemedText style={styles.changeText}>Change</ThemedText>
                 </Pressable>
               </View>
+              {row.sync_error ? (
+                <ThemedText style={styles.net}>This answer didn’t reach your record. Tap Change to send it again.</ThemedText>
+              ) : null}
               {net ? <ThemedText style={styles.net}>{net}</ThemedText> : null}
               {form === 'other_food' && row.answer === 'yes' ? (
                 <Pressable

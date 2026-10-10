@@ -80,7 +80,7 @@ describe('the words', () => {
         intakeQuestionHint(f, { onTrial: true }) ?? '',
         ...intakeOptions(f, 'female').map((o) => o.label),
       ]),
-      safetyNetLine('meal_fed', 'not_observable', iso(now), 'Nyx', now) ?? '',
+      safetyNetLine('meal_fed', 'not_observable', iso(now), since, 'Nyx', now) ?? '',
     ];
     expect(all.some((s) => s.includes('!'))).toBe(false);
   });
@@ -111,21 +111,39 @@ describe('the instants', () => {
     expect(hourWord(local(2026, 10, 10, 12))).toBe('12 PM');
   });
 
-  it('the safety net names the next 8 AM strictly after the answer', () => {
-    expect(safetyNetDeadline(iso(local(2026, 10, 10, 1)))).toBe(local(2026, 10, 10, 8));
-    expect(safetyNetDeadline(iso(local(2026, 10, 10, 8)))).toBe(local(2026, 10, 11, 8));
-    expect(safetyNetDeadline(iso(local(2026, 10, 10, 21)))).toBe(local(2026, 10, 11, 8));
-    expect(safetyNetDeadline('nope')).toBeNull();
+  // The question asks from 6 PM the day before a 6 PM vomit; answers come after.
+  const SINCE = iso(local(2026, 10, 9, 18));
+
+  it('the safety net names the first 8 AM at least two hours after the answer', () => {
+    expect(safetyNetDeadline(iso(local(2026, 10, 10, 1)), SINCE)).toBe(local(2026, 10, 10, 8));
+    // 7:59 never reads "by 8 AM today" (B3): one minute is no deadline.
+    expect(safetyNetDeadline(iso(local(2026, 10, 10, 7, 59)), SINCE)).toBe(local(2026, 10, 11, 8));
+    expect(safetyNetDeadline(iso(local(2026, 10, 10, 21)), SINCE)).toBe(local(2026, 10, 11, 8));
+    expect(safetyNetDeadline('nope', SINCE)).toBeNull();
   });
 
-  it('the safety-net line: on the intake forms\' not_observable only, dated', () => {
+  it('never more than 48 hours of unknown intake from the hour asked about (B3)', () => {
+    // Asked from Sun 8 AM; "Not sure" at Mon 8:02 AM: the next 8 AM is Tue 8 AM, exactly 48 h.
+    const since = iso(local(2026, 10, 4, 8));
+    expect(safetyNetDeadline(iso(local(2026, 10, 5, 8, 2)), since)).toBe(local(2026, 10, 6, 8));
+    // "Not sure" at Mon 9 PM: 8 AM Tue is inside 48 h.
+    expect(safetyNetDeadline(iso(local(2026, 10, 5, 21)), since)).toBe(local(2026, 10, 6, 8));
+    // "Not sure" at Tue 8:02 AM, a day later: the next 8 AM would be 72 h; the cap leaves no
+    // lead time, so the line asks for today.
+    expect(safetyNetDeadline(iso(local(2026, 10, 6, 8, 2)), since)).toBeNull();
+    expect(safetyNetLine('meal_fed', 'not_observable', iso(local(2026, 10, 6, 8, 2)), since, 'Nyx', local(2026, 10, 6, 8, 3))).toBe(
+      "If Nyx still isn't eating, call your vet today.",
+    );
+  });
+
+  it('the safety-net line: on the intake forms\' not_observable only, dated, and today once the hour passes', () => {
     const answered = iso(local(2026, 10, 10, 21));
     const now = local(2026, 10, 10, 21, 5);
-    expect(safetyNetLine('meal_fed', 'not_observable', answered, 'Nyx', now)).toBe("If Nyx hasn't eaten by 8 AM tomorrow, call your vet.");
-    expect(safetyNetLine('free_fed', 'not_observable', answered, 'Pixel', now)).toBe("If Pixel hasn't eaten by 8 AM tomorrow, call your vet.");
-    // Read the next week, the line keeps its date rather than drifting with the clock.
-    expect(safetyNetLine('meal_fed', 'not_observable', answered, 'Nyx', local(2026, 10, 20, 9))).toBe("If Nyx hasn't eaten by 8 AM Oct 11, call your vet.");
-    for (const a of ['yes', 'a_little', 'no']) expect(safetyNetLine('meal_fed', a, answered, 'Nyx', now)).toBeNull();
-    expect(safetyNetLine('other_food', 'not_observable', answered, 'Nyx', now)).toBeNull();
+    expect(safetyNetLine('meal_fed', 'not_observable', answered, SINCE, 'Nyx', now)).toBe("If Nyx hasn't eaten by 8 AM tomorrow, call your vet.");
+    expect(safetyNetLine('free_fed', 'not_observable', answered, SINCE, 'Pixel', now)).toBe("If Pixel hasn't eaten by 8 AM tomorrow, call your vet.");
+    // Read after the hour, the line never speaks of a past deadline.
+    expect(safetyNetLine('meal_fed', 'not_observable', answered, SINCE, 'Nyx', local(2026, 10, 11, 9))).toBe("If Nyx still isn't eating, call your vet today.");
+    for (const a of ['yes', 'a_little', 'no']) expect(safetyNetLine('meal_fed', a, answered, SINCE, 'Nyx', now)).toBeNull();
+    expect(safetyNetLine('other_food', 'not_observable', answered, SINCE, 'Nyx', now)).toBeNull();
   });
 });

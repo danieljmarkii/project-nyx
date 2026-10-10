@@ -20,7 +20,7 @@ import {
   buildVomitContext,
   EN0_CONTEXT_STEP,
   EN5_CONTEXT_STEP,
-  newestIntakeAnswer,
+  newestIntakeAnswers,
   vomitAnchoredReads,
   type BuildVomitContextArgs,
   type ContextInput,
@@ -653,20 +653,34 @@ Deno.test('the newest live answer wins: a Change from No to Yes quiets nothing i
   assertStrictEquals(intakeFires(ctx(rows([answerRow('yes', vomitMs + H, 'a1'), answerRow('no', vomitMs + 2 * H, 'a2')]), vomitMs, nowMs, EN5)), true)
 })
 
-Deno.test('newestIntakeAnswer: parsed instants (C-40), an id tie-break, the intake forms only', () => {
+Deno.test('newestIntakeAnswers: per form, parsed instants (C-40), an id tie-break, the intake forms only', () => {
   // The same instant spelled two ways: a text compare would put '+00:00' before '.000Z'.
   const z = { id: 'b', form: 'meal_fed', answer: 'no', answered_at: '2026-10-08T04:00:00.000Z' }
   const plus = { id: 'a', form: 'meal_fed', answer: 'yes', answered_at: '2026-10-08T04:00:00+00:00' }
   assertStrictEquals(Date.parse(z.answered_at), Date.parse(plus.answered_at))
   assertNotEquals(z.answered_at, plus.answered_at)
+  const ids = (rows: typeof z[]) => newestIntakeAnswers(rows).map((r) => r.id)
   // Same instant: the higher id wins, in either order.
-  assertStrictEquals(newestIntakeAnswer([z, plus])?.id, 'b')
-  assertStrictEquals(newestIntakeAnswer([plus, z])?.id, 'b')
+  assertEquals(ids([z, plus]), ['b'])
+  assertEquals(ids([plus, z]), ['b'])
   // A later spelling with '+00:00' still wins on time.
-  assertStrictEquals(newestIntakeAnswer([z, { ...plus, answered_at: '2026-10-08T04:00:01+00:00' }])?.id, 'a')
+  assertEquals(ids([z, { ...plus, answered_at: '2026-10-08T04:00:01+00:00' }]), ['a'])
   // The other-food door is never intake evidence, whatever its time.
-  assertStrictEquals(newestIntakeAnswer([{ ...z, form: 'other_food', answered_at: '2026-10-09T00:00:00.000Z' }]), null)
-  assertStrictEquals(newestIntakeAnswer(undefined), null)
+  assertEquals(ids([{ ...z, form: 'other_food', answered_at: '2026-10-09T00:00:00.000Z' }]), [])
+  assertEquals(newestIntakeAnswers(undefined), [])
+  // One per form: a later free-fed answer never displaces the meal question's.
+  assertEquals(ids([z, { ...plus, id: 'c', form: 'free_fed', answered_at: '2026-10-09T00:00:00.000Z' }]), ['b', 'c'])
+})
+
+Deno.test('a bowl set up after a meal-fed No: its "Haven\'t seen" never displaces the No (the adversarial pass, B5)', () => {
+  const vomitMs = Date.parse('2026-10-08T07:00:00.000Z')
+  const rows = {
+    ...rowsOf([], vomitMs),
+    intakeAnswers: [answerRow('no', vomitMs + H, 'a1', 'meal_fed'), answerRow('not_observable', vomitMs + 3 * H, 'a2', 'free_fed')],
+  }
+  const c = ctx(rows, vomitMs, vomitMs + 4 * H, EN5)
+  assertStrictEquals(intakeFires(c), true)
+  assertEquals(c.intakeRecord?.answerForm, 'meal_fed')
 })
 
 Deno.test('a dog\'s answer never fires the cat arm, and flag-off never reads an answer', () => {

@@ -174,29 +174,52 @@ export function answerLabel(form: IntakeForm, answer: string, sex: PetSex): stri
   return answer === 'not_observable' ? 'Not sure' : answer === 'no' ? 'No' : answer === 'a_little' ? 'A little' : 'Yes';
 }
 
+/** The least lead time the named morning gives: a "Not sure" at 7:59 never reads "by 8 AM
+ *  today" (the adversarial pass on PR-30q, B3). */
+export const SAFETY_NET_LEAD_HOURS = 2;
+/** The longest span of unknown intake the line ever waits out, counted from the hour the
+ *  question asked from: the hepatic-lipidosis window is why a cat's unknown day is not left to
+ *  run to three (B3). */
+export const SAFETY_NET_MAX_HOURS = 48;
+
 /**
- * The first SAFETY_NET_HOUR strictly after the answer, in the device's zone. An answer at
- * 1 AM names 8 AM that morning; at 9 AM, 8 AM the next day. The nearest named morning is the
- * protective one: the question already covers the day before the vomit.
+ * The deadline the line names: the first SAFETY_NET_HOUR at least SAFETY_NET_LEAD_HOURS after
+ * the answer, in the device's zone, but never later than SAFETY_NET_MAX_HOURS after `since`.
+ * Null when the instants cannot be read, or when that cap leaves no lead time at all: the
+ * answer came too late for a named hour, and the line asks for today instead.
  */
-export function safetyNetDeadline(answeredAt: string): number | null {
+export function safetyNetDeadline(answeredAt: string, since: string): number | null {
   const ms = Date.parse(answeredAt);
-  if (!Number.isFinite(ms)) return null;
+  const sinceMs = Date.parse(since);
+  if (!Number.isFinite(ms) || !Number.isFinite(sinceMs)) return null;
   const d = new Date(ms);
   d.setHours(SAFETY_NET_HOUR, 0, 0, 0);
-  if (d.getTime() <= ms) d.setDate(d.getDate() + 1);
-  return d.getTime();
+  while (d.getTime() < ms + SAFETY_NET_LEAD_HOURS * MS_PER_HOUR) d.setDate(d.getDate() + 1);
+  const deadline = Math.min(d.getTime(), sinceMs + SAFETY_NET_MAX_HOURS * MS_PER_HOUR);
+  return deadline - ms < SAFETY_NET_LEAD_HOURS * MS_PER_HOUR ? null : deadline;
 }
 
 /**
  * The dated safety-net line under a "Not sure" or "Haven't seen" on an intake form, derived
  * at render and never stored. Null for every other answer, and for the other_food form,
  * which asks about something else entirely.
+ *
+ * Once the named hour has passed, or when the answer came too late to name one, the line
+ * stops naming a time and asks for today: a past deadline is still a call to action, never a
+ * sentence about yesterday (B3).
  */
-export function safetyNetLine(form: IntakeForm, answer: string, answeredAt: string, petName: string | null, nowMs: number): string | null {
+export function safetyNetLine(
+  form: IntakeForm,
+  answer: string,
+  answeredAt: string,
+  since: string,
+  petName: string | null,
+  nowMs: number,
+): string | null {
   if (form === 'other_food' || answer !== 'not_observable') return null;
-  const deadline = safetyNetDeadline(answeredAt);
-  if (deadline === null) return null;
   const p = petName && petName.trim() !== '' ? petName.trim() : 'your pet';
+  if (!Number.isFinite(Date.parse(answeredAt))) return null;
+  const deadline = safetyNetDeadline(answeredAt, since);
+  if (deadline === null || nowMs >= deadline) return `If ${p} still isn't eating, call your vet today.`;
   return `If ${p} hasn't eaten by ${hourWord(deadline)} ${dayWord(deadline, nowMs)}, call your vet.`;
 }

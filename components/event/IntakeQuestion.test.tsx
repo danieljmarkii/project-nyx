@@ -162,6 +162,21 @@ describe('answering', () => {
     expect(screen.getByText('You said: No')).toBeTruthy();
   });
 
+  it('an answer the server refused is said, and the same answer sends it again (B4)', async () => {
+    mockAnswers = {
+      meal_fed: { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: '2026-10-07T18:00:00.000Z', form: 'meal_fed', answer: 'no', answered_at: new Date().toISOString(), sync_error: '23514: refused' },
+    };
+    await draw();
+    expect(screen.getByText('This answer didn’t reach your record. Tap Change to send it again.')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('intake-question-change-meal_fed'));
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('No'));
+    });
+    expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({ answer: 'no', existingId: 'a1' }));
+  });
+
   it('a re-read that fails after a save keeps the answer on screen (C-12)', async () => {
     await draw();
     const saved = { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: '2026-10-07T18:00:00.000Z', form: 'meal_fed', answer: 'no', answered_at: new Date().toISOString() };
@@ -175,13 +190,22 @@ describe('answering', () => {
     expect(screen.getByText('You said: No')).toBeTruthy();
   });
 
-  it('"Not sure" folds with the dated safety-net line', async () => {
+  it('"Not sure" folds with the safety-net line: a named 8 AM, or today when none fits (B3)', async () => {
+    // Asked from an hour ago, answered now: the next 8 AM is inside 48 h unless it is under two
+    // hours away and the day after is past the cap, which no hour of the day reaches here.
     mockAnswers = {
-      meal_fed: { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: '2026-10-07T18:00:00.000Z', form: 'meal_fed', answer: 'not_observable', answered_at: new Date().toISOString() },
+      meal_fed: { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: new Date(Date.now() - 60 * 60_000).toISOString(), form: 'meal_fed', answer: 'not_observable', answered_at: new Date().toISOString() },
+    };
+    const view = await draw();
+    expect(screen.getByText('You said: Not sure')).toBeTruthy();
+    expect(screen.getByText(/^If Nyx hasn't eaten by 8 AM (today|tomorrow|[A-Z][a-z]+), call your vet\.$/)).toBeTruthy();
+    view.unmount();
+    // Asked from three days ago: the cap has passed, so the line asks for today.
+    mockAnswers = {
+      meal_fed: { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: new Date(Date.now() - 72 * 3_600_000).toISOString(), form: 'meal_fed', answer: 'not_observable', answered_at: new Date().toISOString() },
     };
     await draw();
-    expect(screen.getByText('You said: Not sure')).toBeTruthy();
-    expect(screen.getByText(/^If Nyx hasn't eaten by 8 AM (today|tomorrow), call your vet\.$/)).toBeTruthy();
+    expect(screen.getByText("If Nyx still isn't eating, call your vet today.")).toBeTruthy();
   });
 
   it('a dog\'s Yes opens the meal log for the record\'s pet: a door, never a form on the record', async () => {

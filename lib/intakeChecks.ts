@@ -27,6 +27,10 @@ export interface IntakeCheckRow {
   form: IntakeForm;
   answer: IntakeAnswer;
   answered_at: string;
+  /** The push's refusal, when the server would not take the answer (quarantined). Read so a
+   *  failed write is said on the record, never left behind "You said" (the adversarial pass on
+   *  PR-30q, B4). Absent on a row this module built itself. */
+  sync_error?: string | null;
 }
 
 const FORMS: readonly IntakeForm[] = ['meal_fed', 'free_fed', 'other_food'];
@@ -36,7 +40,7 @@ const ANSWERS: readonly IntakeAnswer[] = ['yes', 'a_little', 'no', 'not_observab
  *  counts for nothing. */
 export async function readIntakeChecks(eventId: string): Promise<Partial<Record<IntakeForm, IntakeCheckRow>>> {
   const rows = await getDb().getAllAsync<IntakeCheckRow>(
-    `SELECT ic.id, ic.pet_id, ic.event_id, ic.since, ic.form, ic.answer, ic.answered_at
+    `SELECT ic.id, ic.pet_id, ic.event_id, ic.since, ic.form, ic.answer, ic.answered_at, ic.sync_error
        FROM intake_checks ic
        JOIN events e ON e.id = ic.event_id
       WHERE ic.event_id = ?

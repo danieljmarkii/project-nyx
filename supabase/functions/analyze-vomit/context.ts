@@ -149,23 +149,23 @@ export interface VomitContextRows {
 }
 
 /**
- * The owner's answer that counts, under the read rule of migration 097: the newest live row
- * on an intake form by answered_at, then id. Instants are parsed, never compared as text
- * (C-40). Exported for its test.
+ * The owner's answers that count, under the read rule of migration 097: per (vomit, FORM),
+ * the newest live row by answered_at, then id. Per form, never one across both: a bowl set up
+ * after a meal-fed No moves the question to the free-fed form, and its "Haven't seen" must not
+ * displace the No (the adversarial pass on PR-30q, B5). Instants are parsed, never compared as
+ * text (C-40). Exported for its test.
  */
-export function newestIntakeAnswer(rows: readonly IntakeAnswerRow[] | undefined): IntakeAnswerRow | null {
-  let best: IntakeAnswerRow | null = null
-  let bestMs = -Infinity
+export function newestIntakeAnswers(rows: readonly IntakeAnswerRow[] | undefined): IntakeAnswerRow[] {
+  const best = new Map<string, { row: IntakeAnswerRow; ms: number }>()
   for (const r of rows ?? []) {
     if (r.form !== 'meal_fed' && r.form !== 'free_fed') continue
-    const ms = Date.parse(r.answered_at)
-    const at = Number.isFinite(ms) ? ms : -Infinity
-    if (!best || at > bestMs || (at === bestMs && r.id > best.id)) {
-      best = r
-      bestMs = at
-    }
+    const parsed = Date.parse(r.answered_at)
+    const ms = Number.isFinite(parsed) ? parsed : -Infinity
+    const held = best.get(r.form)
+    if (!held || ms > held.ms || (ms === held.ms && r.id > held.row.id)) best.set(r.form, { row: r, ms })
   }
-  return best
+  // meal_fed first, so a record holding both names the meal question's answer.
+  return (['meal_fed', 'free_fed'] as const).flatMap((f) => (best.has(f) ? [best.get(f)!.row] : []))
 }
 
 export interface BuildVomitContextArgs {
@@ -449,7 +449,7 @@ export const EN5_CONTEXT_STEP: VomitContextStep = (prior, args) => {
   // minute ahead of the server's clock must still see the refusal logged just before it (the
   // adversarial pass, L); the halves that run to the read stop at the read themselves.
   const fired = (intakeRecord: IntakeRecord): ContextInput => ({ ...prior, en5IntakeFires: true, intakeRecord })
-  const answer = newestIntakeAnswer(args.rows.intakeAnswers)
+  const answer = newestIntakeAnswers(args.rows.intakeAnswers).find((a) => a.answer === 'no' || a.answer === 'a_little')
   if (answer && (answer.answer === 'no' || answer.answer === 'a_little')) {
     return fired({ window: 'answer', mealsLogged: 0, mealsRated: 0, answerForm: answer.form as IntakeAnswerForm, answer: answer.answer })
   }

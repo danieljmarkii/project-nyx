@@ -161,6 +161,13 @@ describe('readIntakeChecks: the newest live answer per form, under a live vomit 
     expect(read.other_food?.id).toBe('c');
   });
 
+  it('a refused answer carries its refusal, so the record can say it (B4)', async () => {
+    seedEvent('v1');
+    insert('a', 'v1', 'meal_fed', 'no', '2026-10-08T19:00:00.000Z');
+    mockDb.prepare(`UPDATE intake_checks SET sync_error = '23514: refused' WHERE id = 'a'`).run();
+    expect((await readIntakeChecks('v1')).meal_fed?.sync_error).toBe('23514: refused');
+  });
+
   it('a deleted answer, a deleted or re-typed vomit, or an answer naming another pet counts for nothing', async () => {
     seedEvent('v1');
     insert('a', 'v1', 'meal_fed', 'no', '2026-10-08T19:00:00.000Z', { deletedAt: '2026-10-08T19:05:00.000Z' });

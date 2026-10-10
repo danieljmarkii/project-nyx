@@ -842,13 +842,16 @@ async function assembleContext(
   // defensive "The meal log doesn't show …"). STATED BLIND SPOT: `error` is the only check; a
   // read PostgREST capped would pass it (C-42). The windows are days, far below max-rows.
   const failed = (r: unknown) => Boolean((r as { error?: unknown }).error)
-  // The answers read counts too: an answer of No the read could not see is a refusal unseen.
-  const mealsFailed = failed(mealEventsRes) || failed(anchoredMealsRes) || failed(arrangementsRes) || failed(answersRes)
+  // The answers read is NOT in this set (the adversarial pass on PR-30q, B1): falling back to
+  // the rule without EN-5 is not "the louder rule" for every record, because EN-5's Noticed and
+  // last-rated halves fire where the shipped arm and EN-0 do not. A failed answers read is read
+  // as UNANSWERED instead, below: exactly PR-30's EN-5, which an answer can only add to.
+  const mealsFailed = failed(mealEventsRes) || failed(anchoredMealsRes) || failed(arrangementsRes)
   const contextFlags: EngineFlags = en5 && mealsFailed
     ? { ...engineFlags, on: engineFlags.on.filter((k) => k !== 'engines_v3_en5') }
     : engineFlags
   if (en5) {
-    rows.intakeAnswers = ((answersRes.data ?? []) as IntakeAnswerRow[]).map((r) => ({
+    rows.intakeAnswers = (failed(answersRes) ? [] : (answersRes.data ?? []) as IntakeAnswerRow[]).map((r) => ({
       id: r.id,
       form: r.form,
       answer: r.answer,
@@ -943,7 +946,10 @@ export const VOMIT_DESCRIPTOR: IncidentDescriptor<VomitAnalysis, ContextualFlag>
   // 'vomit4': EN-5's intake evidence (CUL-1722): unrated meals are unknown and the Noticed
   // predicate joins the cat intake arm, only under engines_v3_en5; flag-off rows carry it too
   // and derive as vomit3 did. The floor itself is unchanged.
-  ruleVersion: 'vomit4',
+  // 'vomit5': EN-5's question (PR-30q, CUL-1724): the owner's answer of No or A little under
+  // this vomit fires the cat intake arm, only under engines_v3_en5; flag-off rows derive as
+  // vomit4 did.
+  ruleVersion: 'vomit5',
   floorEngineKey: 'engines_v3_en4',
   parseToolResult: parseAnalysisToolResult,
   appearsToShowSubject: (analysis) => analysis.appears_to_show_vomit,
