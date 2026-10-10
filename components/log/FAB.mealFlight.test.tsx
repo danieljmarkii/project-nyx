@@ -527,3 +527,23 @@ describe('FAB — CUL-1643, the meal lands in its card', () => {
     expect(Number(flat(host).elevation)).toBeGreaterThan(Number(flat(wrapper!).elevation));
   });
 });
+
+describe('FAB — the old card’s flight still ends when a new card shows inside the window (CUL-1712 review)', () => {
+  it('a log-screen meal shown inside the 180ms window does not cancel the old flight’s end', async () => {
+    const view = mount();
+    await openAndTap(view, /Hydrolyzed/);
+    layOutCheck(view);
+    expect(getFlightState().phase).toBe('outbound');
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    act(() => { jest.advanceTimersByTime(60); });
+    // A second meal from /log (no flight of its own) inside the window.
+    act(() => {
+      useMomentStore.getState().showMeal({
+        eventId: 'e5', petId: 'p1', occurredAt: OCCURRED, foodType: 'meal',
+        foodBrand: 'Purina', foodProductName: 'HA', foodFormat: null, intakeRating: null,
+      } as never);
+    });
+    act(() => { jest.advanceTimersByTime(COMPLETION_MOTION.exitMs); });
+    expect(getFlightState().phase).toBe('idle');
+  });
+});

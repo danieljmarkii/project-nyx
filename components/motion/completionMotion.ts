@@ -640,6 +640,8 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
     setCollapse('leaving');
     const id = identity;
     const land = () => {
+      // A card that hid mid-collapse has nothing to land (and `configureNext` is app-global).
+      if (leaving.current) return;
       if (arrivalId.current !== id || params.current.currentIdentity() !== id) return;
       setCollapse('landed');
       if (params.current.reducedMotion) {
@@ -703,6 +705,8 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
   }, [finishMotion]);
 
   // ── The nodes for this render (stable per variant, so nothing re-attaches) ───────
+  // Read from a ref in render: safe because `startHalo` sets the delay BEFORE the
+  // `setHaloMode` that causes this render. Keep that order.
   const haloFromRelease = haloDelay.current === 0;
   const nodes = useMemo(() => {
     const fade =

@@ -1178,3 +1178,59 @@ describe('MealCompletionCard — the leaving body after Undo (CUL-1691 §2.3)', 
     }
   });
 });
+
+// The code review's three timing cases (CUL-1712): each is a path where a beat could act
+// on a card that has already gone.
+describe('MealCompletionCard — nothing acts on a card that has gone (CUL-1712 review)', () => {
+  beforeEach(() => { useReducedMotionStore.setState({ reduceMotion: false }); });
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  it('a note patched after the card hid lays out plainly: no app-global FOLD_LAYOUT', () => {
+    const configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+    try {
+      const view = render(<MealCompletionCard />);
+      seedMeal({ foodType: 'meal' });
+      advance(600);
+      act(() => { useMomentStore.getState().hide(); });
+      // The store refuses a patch on a hidden card; force the payload as a late server
+      // answer would leave it if it did not.
+      act(() => {
+        const p = useMomentStore.getState().payload!;
+        useMomentStore.setState({ payload: { ...p, floorLine: LINE } as never });
+      });
+      expect(configureNext).not.toHaveBeenCalled();
+      expect(view.queryByTestId('meal-card-surface')).not.toBeNull();
+    } finally {
+      configureNext.mockRestore();
+    }
+  });
+
+  it('an Undo collapse whose card hides before it lands never lands: no FOLD_LAYOUT, no re-armed dwell', async () => {
+    const configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+    const real = useMomentStore.getState().armRemovedDwell;
+    const armed: string[] = [];
+    useMomentStore.setState({ armRemovedDwell: (id: string) => { armed.push(id); real(id); } });
+    afterThis.push(() => useMomentStore.setState({ armRemovedDwell: real }));
+    // The unwrite never reports, as under a stalled JS thread, until after the hide.
+    const timing = jest.spyOn(Animated, 'timing');
+    const pending: (() => void)[] = [];
+    const realTiming = timing.getMockImplementation();
+    timing.mockImplementation((value, config) => {
+      const anim = (realTiming ?? jest.requireActual('react-native').Animated.timing)(value, config);
+      if (config.duration !== COMPLETION_MOTION.unwriteMs || config.toValue !== 1) return anim;
+      return { ...anim, start: (cb?: Animated.EndCallback) => { pending.push(() => cb?.({ finished: true })); } };
+    });
+    try {
+      const view = render(<MealCompletionCard />);
+      seedMeal({ foodType: 'meal' });
+      await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+      act(() => { useMomentStore.getState().hide(); });
+      act(() => { for (const f of pending) f(); });
+      expect(configureNext).not.toHaveBeenCalled();
+      expect(armed).toHaveLength(0);
+    } finally {
+      timing.mockRestore();
+      configureNext.mockRestore();
+    }
+  });
+});

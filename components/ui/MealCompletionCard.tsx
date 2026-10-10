@@ -248,16 +248,26 @@ export function MealCompletionCard() {
   // inside that window survives, and a landing never unmounts a clone part-faded.
   const upId = shown && !removed && isMeal && payload ? payload.eventId : null;
   const prevUpId = useRef<string | null>(null);
+  // Pending ends, cleared only on unmount: a new card shown inside the window must not
+  // cancel the old card's end (the guarded call already spares a newer flight).
+  const pendingEnds = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => {
     const was = prevUpId.current;
     prevUpId.current = upId;
     if (was === null || was === upId) return;
     clearFlightValve();
     if (!flightActiveFor(getFlightState(), was)) return;
-    const t = setTimeout(() => endFlightFor(was), COMPLETION_MOTION.exitMs);
-    return () => clearTimeout(t);
+    const t = setTimeout(() => {
+      pendingEnds.current = pendingEnds.current.filter((x) => x !== t);
+      endFlightFor(was);
+    }, COMPLETION_MOTION.exitMs);
+    pendingEnds.current.push(t);
   }, [upId]);
-  useEffect(() => clearFlightValve, []);
+  useEffect(() => () => {
+    clearFlightValve();
+    for (const t of pendingEnds.current) clearTimeout(t);
+    pendingEnds.current = [];
+  }, []);
 
   // The target: the badge's slot, measured unscaled. Asked on the slot's layout and on
   // the card's, because the card is bottom anchored and grows upward, so a taller card
@@ -307,7 +317,9 @@ export function MealCompletionCard() {
     if (laid.id === id && laid.floorLine === liveFloor && laid.trialFlag === liveTrial) return;
     const next = { id, floorLine: liveFloor, trialFlag: liveTrial };
     const atReveal = laid.id !== id || Date.now() - revealedAt.current.at <= COMPLETION_MOTION.labelBeatMs;
-    if (atReveal || removed) {
+    // A card that is hidden, leaving or undone lays the note out plainly: `configureNext`
+    // is app-global, and there is no arrival left to finish.
+    if (atReveal || upId === null) {
       setLaid(next);
       return;
     }
@@ -317,11 +329,15 @@ export function MealCompletionCard() {
     setLaid(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mealNow?.eventId, liveFloor, liveTrial]);
+  // The tone decides only after the FOLD_LAYOUT commit has laid the note out: this runs
+  // on the commit that changed `laid`, never on every render.
+  const settleHaloRef = useRef(arrival.settleHalo);
+  settleHaloRef.current = arrival.settleHalo;
   useEffect(() => {
     if (!pendingSettle.current) return;
     pendingSettle.current = false;
-    arrival.settleHalo();
-  }, [laid, arrival]);
+    settleHaloRef.current();
+  }, [laid]);
   // What the card lays out: the laid snapshot for this record, else the payload's own
   // (a fresh card lays its notes out with itself, no frame without them).
   const notesLaid = mealNow !== null && laid.id === mealNow.eventId;
@@ -728,7 +744,7 @@ export function MealCompletionCard() {
                 testID="meal-card-check"
                 // Hidden while the mark flies, so no frame can draw the check under its
                 // own clone; the vessel's release shows it, written, in one commit.
-                style={{ opacity: arriving ? 0 : 1 }}
+                style={arriving ? styles.markHidden : styles.markShown}
               >
                 <CompletionMark halo={arrival.haloMode !== 'off'} motion={arrival.mark} />
               </View>
@@ -980,6 +996,8 @@ const styles = StyleSheet.create({
     left: theme.space2,
     right: theme.space2,
   },
+  markHidden: { opacity: 0 },
+  markShown: { opacity: 1 },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
