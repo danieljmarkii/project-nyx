@@ -44,11 +44,13 @@ Clinically- or statistically-load-bearing logic: correlation/detection engines, 
 
 ### Verdict
 - PASS — every load-bearing failure mode survived a stated counterexample
-- FAIL — at least one broke; list them, highest-severity first
+- FAIL — at least one broke; list them, highest-severity first, each tagged LOUD (the wrong output errs toward escalation: an extra, earlier or louder warning) or QUIET (it can drop, soften or delay a warning)
 - INSUFFICIENT — could not construct a fair test of <X>; say what's needed
 
 ### DoD line (copy-paste ready)
 <e.g. "Biostatistician: tried a daily staple + sporadic treat → staple correctly washes out (no discordant pairs) ✓; tried attention-biased control logging → logging-eligibility guard holds ✓">
 ```
+
+The PR's pass cap (CLAUDE.md DoD, PM 2026-10-10) is two: if the invoker says this is pass 2, end the verdict with one line, `Ships at the cap: yes` when every break is LOUD, `no` when any is QUIET. A QUIET break blocks at any pass.
 
 If you cannot name a single falsification attempt for a piece of logic, say so plainly — that means it has not been reviewed, and you must not imply otherwise.
