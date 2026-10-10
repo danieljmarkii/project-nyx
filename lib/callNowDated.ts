@@ -7,7 +7,10 @@
 // the call with its day ("On Oct 3, the read said: call your vet now"). The card keeps the
 // full 14-day window, its rose and its place on Home: only the claim that it is "now" goes.
 //
-// THE BOUNDARY IS 24 HOURS FROM THE READ'S INSTANT, never the local day. A local-day rule would
+// THE BOUNDARY IS 24 HOURS FROM THE READ'S INSTANT, never the local day. "The read's instant" is
+// the occurred_at of the event it read (Home's `tierIso`, the record's floor anchor), the same
+// instant every surface already dates the read by, never the time the model ran: a log entered
+// a day late is dated as soon as it is shown, and still asks for the call. A local-day rule would
 // date an 11:40 pm call twenty minutes later, which reads calmer than "call now" inside its
 // first day. A 24-hour rule cannot. An instant the phone cannot parse, or one in the future
 // (a skewed clock), keeps "now": the loud form is the failure mode, never the quiet one.
