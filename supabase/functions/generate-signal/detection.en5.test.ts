@@ -18,6 +18,8 @@ import {
   EN5_SETTINGS,
   detectIntakeDecline,
   detectSignals,
+  safetyRankOf,
+  SAFETY_TYPE_ORDER,
   withEn5Config,
   type DetectionInput,
   type IntakeDeclineFinding,
@@ -83,7 +85,7 @@ Deno.test('I5 — the alternate-night refuser: ② is quiet, and under the key t
   assert.equal(on.length, 1)
   assert.equal(on[0].trigger, 'refused_then_vomited')
   assert.equal(on[0].priorityClass, 'safety')
-  assert.deepEqual(on[0].refusedThenVomited, { episodeCount: 2, dayCount: 2, firstIso: at(24, 18, 15), windowMinutes: 30 })
+  assert.deepEqual(on[0].refusedThenVomited, { episodeCount: 2, dayCount: 2, firstIso: at(24, 18, 15), firstLocalDay: '2026-05-24', windowMinutes: 30 })
 })
 
 Deno.test('I5 — flag off is the detector without I5: no config the shell picks off-key carries en5', () => {
@@ -146,15 +148,57 @@ Deno.test('I5 — the 14-day window: two nights 15 and 20 days ago are out', () 
   assert.equal(i5(detectIntakeDecline(input(refuserNights([16, 20])), ON)).length, 1)
 })
 
-Deno.test('I5 — days are the owner\'s days: two vomits either side of UTC midnight are one evening in New York', () => {
-  // 20:10 UTC and 03:40 UTC the next day are 16:10 and 23:40 on May 25 in New York (EDT, UTC-4):
-  // one local day. 7.5 hours apart, so the 3-hour re-log collapse keeps them two episodes.
+Deno.test('I5 — one night across local midnight is one night: the 20-hour span holds the floor (D3)', () => {
+  // The adversarial pass's probe: 23:20/23:30 and 02:40/02:50 New York time, 3h20 apart, so two
+  // episodes past the 3-hour collapse on two local days. One bad night, never "on 2 days".
   const rec = {
-    mealEvents: [...breakfasts(), feed(25, 20, 0, 'refused'), feed(26, 3, 30, 'refused')],
-    symptomEvents: [vomit(25, 20, 10), vomit(26, 3, 40)],
+    mealEvents: [...breakfasts(), feed(28, 3, 20, 'refused'), feed(28, 6, 40, 'refused')],
+    symptomEvents: [vomit(28, 3, 30), vomit(28, 6, 50)],
   }
-  assert.equal(i5(detectIntakeDecline(input({ ...rec, timezone: 'UTC' }), ON)).length, 1, 'two UTC days')
-  assert.deepEqual(i5(detectIntakeDecline(input({ ...rec, timezone: 'America/New_York' }), ON)), [], 'one local evening')
+  assert.deepEqual(i5(detectIntakeDecline(input({ ...rec, timezone: 'America/New_York' }), ON)), [])
+  // Two evenings a day apart clear it.
+  assert.equal(i5(detectIntakeDecline(input({ ...refuserNights([27, 28]), timezone: 'America/New_York' }), ON)).length, 1)
+})
+
+Deno.test('I5 — no zone on file is silence, never a guessed UTC day (D3, ⑥\'s rule)', () => {
+  for (const timezone of [undefined, '', 'Not/AZone']) {
+    assert.deepEqual(i5(detectIntakeDecline(input({ ...refuserNights([24, 26]), timezone }), ON)), [], String(timezone))
+  }
+})
+
+Deno.test('I5 — the "since" date is the owner\'s day, the same calendar the day count reads (D5)', () => {
+  // 18:15 UTC on May 24 is 02:15 on May 25 in Tokyo.
+  const f = detectIntakeDecline(input({ ...refuserNights([24, 26]), timezone: 'Asia/Tokyo' }), ON)[0]
+  assert.equal(f.refusedThenVomited?.firstLocalDay, '2026-05-25')
+  assert.match(refusedThenVomitedSentence(f.refusedThenVomited!, 'Pixel'), /since May 25\./)
+})
+
+Deno.test('I5 — an I5-only card never takes the lead from a "call your vet today" burden card (D2)', () => {
+  // Refused-then-vomited on May 23 and 25, then vomiting on May 27, 28 and 29 (burden "today").
+  const rec = refuserNights([23, 25])
+  rec.symptomEvents.push(vomit(27, 12, 0), vomit(28, 12, 0), vomit(29, 12, 0))
+  const off = detectSignals(input(rec), DEFAULT_CONFIG)
+  const on = detectSignals(input(rec), ON)
+  assert.equal(off[0].finding.type, 'symptom_burden', 'premise: burden leads flag off')
+  assert.equal(on[0].finding.type, 'symptom_burden', 'burden still leads under the key')
+  assert.ok(on.some((r) => r.finding.type === 'intake_decline'), 'and the I5 card is shown below it')
+  assert.equal(safetyRankOf(on.find((r) => r.finding.type === 'intake_decline')!.finding) > SAFETY_TYPE_ORDER.symptom_burden, true)
+})
+
+Deno.test('I5 — template-only: no model sentence is accepted while a card carries the facts (D1)', () => {
+  const f = detectIntakeDecline(input(refuserNights([24, 26])), ON)[0]
+  for (const t of [
+    'Pixel vomited soon after refusing meals, which can be a sign of nausea — worth a word with your vet.',
+    'Pixel vomited on 2 days because she had refused her meal — worth mentioning to your vet.',
+    'Pixel has been eating less for 0 days and vomited — worth keeping an eye on.',
+    'Pixel vomited on an empty stomach, likely bilious vomiting — worth a word with your vet.',
+    refusedThenVomitedSentence(f.refusedThenVomited!, 'Pixel'),
+  ]) {
+    assert.equal(validatePhrasing(t, f), false, t)
+  }
+  // And ②'s card riding the facts is held the same way; without them it is ②'s card as before.
+  const plain = { ...f, trigger: 'consecutive_low' as const, refusedThenVomited: undefined }
+  assert.equal(validatePhrasing('Pixel has eaten less than usual today — worth keeping an eye on, and a word with your vet if it carries on.', plain), true)
 })
 
 Deno.test('I5 — when ② fires, the facts ride as a line on its leading card and add no second card', () => {
@@ -204,8 +248,17 @@ Deno.test('I5 — the sentence: counts and a date, sequence never cause, the vet
   const three = refusedThenVomitedSentence({ ...f.refusedThenVomited!, episodeCount: 3 }, 'Pixel')
   assert.equal(three, "Pixel vomited within 30 minutes of turning down a meal 3 times, on 2 days since May 24. That's worth mentioning to your vet.")
   for (const t of [two, three]) {
-    assert.equal(validatePhrasing(t, f), true, t)
     assert.equal(hasBannedSignalVocabulary(t), false, t)
+    assert.equal(t.includes('!'), false, t)
     assert.doesNotMatch(t, /\b(nause\w*|picky|fussy|because|caus\w*)\b/i)
   }
+})
+
+Deno.test('I5 — the shell routes a card carrying the facts to its template, never the model (D1, by source)', () => {
+  // phraseFinding is not exported; its template-only list is the first line of defence, so it is
+  // pinned here beside validatePhrasing's refusal (the backstop, tested above).
+  const src = Deno.readTextFileSync(new URL('./index.ts', import.meta.url))
+  const fn = src.slice(src.indexOf('async function phraseFinding('))
+  // The clause closes the template-only `if (...)`, whose body is `return fallback`.
+  assert.match(fn, /\|\|\s*(?:\/\/[^\n]*\n\s*)*\(finding\.type === 'intake_decline' && finding\.refusedThenVomited !== undefined\)\s*\)\s*\{\s*return fallback/)
 })

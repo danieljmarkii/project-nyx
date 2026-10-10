@@ -342,8 +342,10 @@ Deno.test('(c-en5) the gate opens: with engines_v3_en5 on, the refuser gets the 
     assertStrictEquals(f.type, 'intake_decline', label)
     assertStrictEquals(f.trigger, 'refused_then_vomited', label)
     assertEquals([f.refusedThenVomited.episodeCount, f.refusedThenVomited.dayCount], [2, 2], label)
-    // Every sentence it writes passes the screens the Signal's own sentences pass.
-    assertStrictEquals(validatePhrasing(shown[0].text, f as never), true, `${label}: ${shown[0].text}`)
+    // Template-only (adversarial pass D1): the row's sentence IS the template, and no model sentence
+    // is ever accepted over it, its own words included.
+    assertStrictEquals(shown[0].text, templateForFinding(f as never, 'Miso'), label)
+    assertStrictEquals(validatePhrasing(shown[0].text, f as never), false, label)
     assertStrictEquals(hasBannedSignalVocabulary(shown[0].text), false, `${label}: ${shown[0].text}`)
     assertStrictEquals(shown[0].text.includes('!'), false, label)
   }

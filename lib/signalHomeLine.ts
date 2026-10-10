@@ -26,7 +26,7 @@
 import { careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
-import { stripDayUTC, symptomWord } from './signalCopy';
+import { refusedThenVomitedOf, stripDayUTC, symptomWord } from './signalCopy';
 import { riseKeptSentence } from './screenMasking';
 import type { SignalScreenModel } from './signalScreen';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
@@ -165,7 +165,8 @@ function countLine(finding: SignalFinding): string | null {
       if (finding.trigger === 'refused_normal_food') return finding.refusedFoodLabel ? `${finding.refusedFoodLabel}, just now` : 'Just now';
       // I5 (PR-30s): the count the headline names, never a rate.
       if (finding.trigger === 'refused_then_vomited') {
-        const r = finding.refusedThenVomited;
+        // Through the copy module's guard, so a malformed cache reads as absent (never "NaN days").
+        const r = refusedThenVomitedOf(finding);
         // The sentence's own form: the times only when they differ from the days.
         if (!r) return null;
         return r.episodeCount === r.dayCount ? `On ${plural(r.dayCount, 'day', 'days')}` : `${plural(r.episodeCount, 'time', 'times')}, on ${plural(r.dayCount, 'day', 'days')}`;

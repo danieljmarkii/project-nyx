@@ -193,7 +193,12 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
     finding.type === 'incident_red_flag' ||
     // Engines v3 PR-19 (EN-8, CUL-1413) — the weight row: two readings, their sources and the
     // tier's ask. Template-only, which also saves the call (validatePhrasing refuses it anyway).
-    finding.type === 'weight_loss'
+    finding.type === 'weight_loss' ||
+    // Engines v3 PR-30s (I5, CUL-1725): an intake card carrying the refused-then-vomited facts, on
+    // its own card or riding ②'s. The load is a sequence the model would turn into a cause ("because
+    // she refused") or a mechanism ("nausea", "an empty stomach"), and the intake screens catch
+    // neither (adversarial pass D1). validatePhrasing refuses every model sentence here too.
+    (finding.type === 'intake_decline' && finding.refusedThenVomited !== undefined)
   ) {
     return fallback
   }

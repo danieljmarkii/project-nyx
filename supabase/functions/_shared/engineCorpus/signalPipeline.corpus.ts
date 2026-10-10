@@ -303,6 +303,8 @@ export const SIGNAL_PIPELINE_CORPUS: SignalPipelineCase[] = [
     rows: {
       pet: cat,
       ...EMPTY,
+      // I5 needs the owner's zone to count days (silent without one, like ⑥).
+      timezone: 'UTC',
       meals: [...mealsDaily(1, 16, 'all'), meal(2, 'refused', KIBBLE, 18), meal(4, 'refused', KIBBLE, 18)],
       symptoms: [2, 4].map((d) => ({
         id: id('vomit'),

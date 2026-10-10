@@ -124,7 +124,7 @@ export function templateCorrelation(f: CorrelationFinding, petName: string): str
 // vomit on one day adds "3 times,".
 export function refusedThenVomitedSentence(r: RefusedThenVomitedFacts, petName: string): string {
   const times = r.episodeCount === r.dayCount ? '' : `${r.episodeCount} times, `
-  return `${petName} vomited within ${r.windowMinutes} minutes of turning down a meal ${times}on ${r.dayCount} days since ${onsetDay(r.firstIso)}. That's worth mentioning to your vet.`
+  return `${petName} vomited within ${r.windowMinutes} minutes of turning down a meal ${times}on ${r.dayCount} days since ${onsetDay(r.firstLocalDay)}. That's worth mentioning to your vet.`
 }
 
 export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string): string {
@@ -773,6 +773,13 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     // Never reassure on a safety flag; never reframe a decline as fussiness.
     if (REASSURANCE_RE.test(t) || DISMISSIVE_RE.test(t)) return false
   }
+  if (finding.type === 'intake_decline' && finding.refusedThenVomited !== undefined) {
+    // Engines v3 PR-30s (I5): NO MODEL SENTENCE IS EVER ACCEPTED while the card carries the
+    // refused-then-vomited facts. A free sentence over "she vomited soon after refusing" slides to
+    // "because she refused" or "a sign of nausea", which REASSURANCE_RE and DISMISSIVE_RE do not
+    // read (adversarial pass D1). index.ts routes the card to its template; this is the backstop.
+    return false
+  }
   if (finding.type === 'weight_loss') {
     // Engines v3 PR-19 (EN-8, CUL-1413): NO MODEL SENTENCE IS EVER ACCEPTED, for the burden card's
     // reason below: the load is two readings, their sources and the tier's ask, and no screen over
@@ -1121,20 +1128,11 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
   return {
     insight_type: 'intake_decline',
     pet_name: petName,
-    trigger: finding.trigger, // 'consecutive_low' | 'refused_normal_food' | 'refused_then_vomited'
+    // 'refused_then_vomited' (I5) never reaches the model: it is template-only (index.ts).
+    trigger: finding.trigger, // 'consecutive_low' | 'refused_normal_food'
     species: finding.species,
     days_eating_less: finding.daysBelowBaseline,
     refused_food: finding.refusedFoodLabel,
-    // I5 (PR-30s): a count and a sequence, never a cause or a mechanism. Absent flag off.
-    ...(finding.refusedThenVomited
-      ? {
-          vomited_soon_after_refusal: {
-            episodes: finding.refusedThenVomited.episodeCount,
-            days: finding.refusedThenVomited.dayCount,
-            within_minutes: finding.refusedThenVomited.windowMinutes,
-          },
-        }
-      : {}),
     severity: 'calm_safety_flag', // surface clearly, never reassure, never "picky"
   }
 }

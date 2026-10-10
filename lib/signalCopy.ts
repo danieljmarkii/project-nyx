@@ -1742,12 +1742,14 @@ export const REFUSAL_VET_TAIL = "That's worth mentioning to your vet.";
 
 /** I5 (Engines v3 PR-30s): the refused-then-vomited facts on an intake card, or null. Present only
  *  on caches written under `engines_v3_en5`; a malformed count reads as absent, never as a zero. */
-function refusedThenVomitedOf(finding: SignalFinding): RefusedThenVomitedFacts | null {
+export function refusedThenVomitedOf(finding: SignalFinding): RefusedThenVomitedFacts | null {
   if (finding.type !== 'intake_decline') return null;
   const r = finding.refusedThenVomited;
   if (!r) return null;
   const ok = (n: number) => Number.isFinite(n) && n >= 1;
-  return ok(r.episodeCount) && ok(r.dayCount) && ok(r.windowMinutes) ? r : null;
+  // A cache written before `firstLocalDay` (none: the field shipped with the trigger) or a
+  // malformed one reads as absent.
+  return ok(r.episodeCount) && ok(r.dayCount) && ok(r.windowMinutes) && typeof r.firstLocalDay === 'string' ? r : null;
 }
 
 /** I5's sentence, the mirror of `refusedThenVomitedSentence` in generate-signal/phrasing.ts (keep
@@ -1759,7 +1761,7 @@ export function refusedThenVomitedLine(finding: SignalFinding, petName: string):
   const r = refusedThenVomitedOf(finding);
   if (!r) return null;
   const times = r.episodeCount === r.dayCount ? '' : `${r.episodeCount} times, `;
-  return `${petName} vomited within ${r.windowMinutes} minutes of turning down a meal ${times}on ${r.dayCount} days since ${shortDateUTC(r.firstIso)}. ${REFUSAL_VET_TAIL}`;
+  return `${petName} vomited within ${r.windowMinutes} minutes of turning down a meal ${times}on ${r.dayCount} days since ${shortDateUTC(r.firstLocalDay)}. ${REFUSAL_VET_TAIL}`;
 }
 
 /** The face line under an intake card's sentence: I5's line on the two cards whose own claim is
@@ -2252,7 +2254,7 @@ function phoneScriptFacts(
       ? [
           { label: 'Vomited soon after a refused meal', value: r.episodeCount === r.dayCount ? `on ${count(r.dayCount, 'day', 'days')}` : `${count(r.episodeCount, 'time', 'times')}, on ${count(r.dayCount, 'day', 'days')}` },
           { label: 'Within', value: `${r.windowMinutes} minutes of the refusal` },
-          { label: 'First', value: shortDateUTC(r.firstIso) },
+          { label: 'First', value: shortDateUTC(r.firstLocalDay) },
         ]
       : [];
     if (finding.trigger === 'refused_then_vomited') {
@@ -2320,6 +2322,14 @@ const BANNER_SAFETY_PRIORITY: Record<
   symptom_worsening: 4,
 };
 
+/** A banner finding's place in BANNER_SAFETY_PRIORITY, mirroring the engine's `safetyRankOf`: I5's
+ *  `refused_then_vomited` card (PR-30s) sits below the burden card and above chronicity, so a
+ *  "call your vet today" pet always takes the banner from a "mention it to your vet" one. */
+function bannerRankOf(f: BannerSafetyFinding): number {
+  if (f.type === 'intake_decline' && f.trigger === 'refused_then_vomited') return 2.5;
+  return BANNER_SAFETY_PRIORITY[f.type];
+}
+
 export type BannerSafetyFinding =
   | IncidentRedFlagFinding
   | IntakeDeclineFinding
@@ -2347,7 +2357,7 @@ function petTopSafetyFinding(findings: CachedFinding[]): BannerSafetyFinding | n
   for (const cf of findings) {
     const f = cf.finding;
     if (!isBannerSafetyFinding(f)) continue;
-    if (best === null || BANNER_SAFETY_PRIORITY[f.type] < BANNER_SAFETY_PRIORITY[best.type]) {
+    if (best === null || bannerRankOf(f) < bannerRankOf(best)) {
       best = f;
     }
   }
@@ -2384,7 +2394,7 @@ export function selectCrossPetSafetyFinding<P extends { id: string }>(
     // Strict `<` so the FIRST candidate wins a same-priority tie (stable order).
     if (
       best === null ||
-      BANNER_SAFETY_PRIORITY[finding.type] < BANNER_SAFETY_PRIORITY[best.finding.type]
+      bannerRankOf(finding) < bannerRankOf(best.finding)
     ) {
       best = { pet: c.pet, finding };
     }
@@ -2786,7 +2796,7 @@ function stripCount(finding: SignalFinding, ctx: StripContext, spoken: boolean):
         // I5 (PR-30s): the count and the days, with the first one's date as the recency.
         const r = refusedThenVomitedOf(finding);
         if (!r) return 'Soon after a refused meal';
-        const first = stripDayUTC(r.firstIso);
+        const first = stripDayUTC(r.firstLocalDay);
         const since = first ? (spoken ? `, since ${first.spoken}` : ` · since ${first.short}`) : '';
         const days = count(r.dayCount, 'day', 'days');
         const body = r.episodeCount === r.dayCount ? `On ${days}` : `${count(r.episodeCount, 'time', 'times')}, on ${days}`;

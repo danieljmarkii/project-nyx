@@ -243,9 +243,9 @@ function intakes(): IntakeDeclineFinding[] {
     { ...low, trigger: 'refused_normal_food', refusedFoodLabel: 'Kibble' },
     { ...low, trigger: 'refused_normal_food', refusedFoodLabel: null },
     // I5 (Engines v3 PR-30s): the card alone, with a second vomit on one day, and riding on ②.
-    { ...low, trigger: 'refused_then_vomited', daysBelowBaseline: 0, ratedMealsConsidered: 0, refusedThenVomited: { episodeCount: 2, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', windowMinutes: 30 } },
-    { ...low, trigger: 'refused_then_vomited', daysBelowBaseline: 0, ratedMealsConsidered: 0, refusedThenVomited: { episodeCount: 3, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', windowMinutes: 30 } },
-    { ...low, daysBelowBaseline: 1, refusedThenVomited: { episodeCount: 2, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', windowMinutes: 30 } },
+    { ...low, trigger: 'refused_then_vomited', daysBelowBaseline: 0, ratedMealsConsidered: 0, refusedThenVomited: { episodeCount: 2, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', firstLocalDay: '2026-09-06', windowMinutes: 30 } },
+    { ...low, trigger: 'refused_then_vomited', daysBelowBaseline: 0, ratedMealsConsidered: 0, refusedThenVomited: { episodeCount: 3, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', firstLocalDay: '2026-09-06', windowMinutes: 30 } },
+    { ...low, daysBelowBaseline: 1, refusedThenVomited: { episodeCount: 2, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', firstLocalDay: '2026-09-06', windowMinutes: 30 } },
   ];
 }
 

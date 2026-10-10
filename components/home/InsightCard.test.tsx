@@ -768,7 +768,7 @@ describe('InsightCard — the counted 4-week compare inside the chronicity card 
 });
 
 describe('InsightCard — I5 (Engines v3 PR-30s): the refused-then-vomited line on the intake card', () => {
-  const facts = { episodeCount: 2, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', windowMinutes: 30 };
+  const facts = { episodeCount: 2, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', firstLocalDay: '2026-09-06', windowMinutes: 30 };
   const base = {
     type: 'intake_decline' as const,
     priorityClass: 'safety' as const,

@@ -267,7 +267,8 @@ const cached = (
     | PostprandialTimingFinding
     | TimeOfDayClusteringFinding
     | EmptyStomachTimingFinding
-    | TimingStoryFinding,
+    | TimingStoryFinding
+    | SymptomBurdenFinding,
   rank = 0,
 ): CachedFinding => ({
   rank,
@@ -1896,6 +1897,23 @@ describe('selectCrossPetSafetyFinding', () => {
     expect(selectCrossPetSafetyFinding([declineVsChronic])?.finding.type).toBe('intake_decline');
   });
 
+  it('I5 (PR-30s, adversarial D2): a refused-then-vomited card yields to a burden card and leads chronicity', () => {
+    const i5 = intakeDecline({
+      trigger: 'refused_then_vomited',
+      daysBelowBaseline: 0,
+      ratedMealsConsidered: 0,
+      refusedThenVomited: { episodeCount: 2, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', firstLocalDay: '2026-09-06', windowMinutes: 30 },
+    });
+    const i5Pet = candidate('i5', [i5]);
+    const burdenPet = candidate('burden', [burden()]);
+    expect(selectCrossPetSafetyFinding([i5Pet, burdenPet])?.pet.id).toBe('burden');
+    expect(selectCrossPetSafetyFinding([burdenPet, i5Pet])?.pet.id).toBe('burden');
+    expect(selectCrossPetSafetyFinding([candidate('A', [burden(), i5])])?.finding.type).toBe('symptom_burden');
+    expect(selectCrossPetSafetyFinding([candidate('B', [chronicity(), i5])])?.finding.type).toBe('intake_decline');
+    // ②'s own cards keep their place above burden.
+    expect(selectCrossPetSafetyFinding([candidate('C', [burden(), intakeDecline()])])?.finding.type).toBe('intake_decline');
+  });
+
   it('across two pets, intake_decline outranks worsening regardless of list order (§4)', () => {
     const declinePet = candidate('decline', [intakeDecline()]);
     const worsenPet = candidate('worsen', [worsening()]);
@@ -2854,7 +2872,7 @@ describe('I4 (ruling sheet §2.7): every card surface that prints the refused-bo
 });
 
 describe('I5 (Engines v3 PR-30s): refused, then vomited within minutes, on every client surface', () => {
-  const facts = { episodeCount: 2, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', windowMinutes: 30 };
+  const facts = { episodeCount: 2, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', firstLocalDay: '2026-09-06', windowMinutes: 30 };
   const alone = intakeDecline({ trigger: 'refused_then_vomited', daysBelowBaseline: 0, ratedMealsConsidered: 0, refusedThenVomited: facts });
   const riding = intakeDecline({ refusedThenVomited: { ...facts, episodeCount: 3 } });
   const SENTENCE = "Pixel vomited within 30 minutes of turning down a meal on 2 days since September 6. That's worth mentioning to your vet.";

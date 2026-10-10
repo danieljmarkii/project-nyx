@@ -1120,8 +1120,11 @@ export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food' | '
 export interface RefusedThenVomitedFacts {
   episodeCount: number
   dayCount: number
-  /** ISO onset of the earliest counted episode, the "since" date the line prints. */
+  /** ISO onset of the earliest counted episode. */
   firstIso: string
+  /** That onset's day in the owner's zone (YYYY-MM-DD), the "since" date the line prints, so the
+   *  date and the day count read the same calendar (adversarial pass D5). */
+  firstLocalDay: string
   /** The rapid band's minutes (`rapidWindowMinutes`), carried so no surface restates the 30. */
   windowMinutes: number
 }
@@ -2160,6 +2163,9 @@ export interface DetectionConfig {
       minEpisodes: number
       /** ...on at least this many of the owner's local days. */
       minDays: number
+      /** ...and the first and last counted onsets at least this many hours apart, so one night
+       *  that crosses midnight never meets a two-day floor (adversarial pass D3). */
+      minSpanHours: number
     }
   }
   reflection: {
@@ -4195,8 +4201,9 @@ const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>> = {
  * lane's own evidence bars). Cats only, provisionally (species is on the real-vet list). Null below
  * the floor: the absence of this line says nothing about her eating, and nothing renders it.
  *
- * Days are the owner's local days (`localIsoDay`; UTC when no zone is on file, the weight lane's
- * fallback). Two vomits on one evening are one day, so a single bad night never meets the floor.
+ * Days are the owner's local days. With no valid zone on file I5 is SILENT, as ⑥ is: a UTC day
+ * would split an American evening in two and print a count the owner never lived. And the counted
+ * onsets must span `minSpanHours`, so one night across local midnight never meets the floor.
  */
 function refusedThenVomitedFacts(
   input: DetectionInput,
@@ -4204,6 +4211,7 @@ function refusedThenVomitedFacts(
   rule: NonNullable<DetectionConfig['en5']>['refusedThenVomited'],
 ): RefusedThenVomitedFacts | null {
   if (input.pet.species !== 'cat') return null
+  if (!isValidTimeZone(input.timezone)) return null
   const nowMs = Date.parse(input.now)
   if (!Number.isFinite(nowMs)) return null
   const timingConfig = timingConfigFor(config)
@@ -4224,10 +4232,13 @@ function refusedThenVomitedFacts(
   })
   const days = new Set(counted.map((e) => localIsoDay(new Date(e.ms).toISOString(), input.timezone)))
   if (counted.length < rule.minEpisodes || days.size < rule.minDays) return null
+  if (counted[counted.length - 1].ms - counted[0].ms < rule.minSpanHours * MS_PER_HOUR) return null
+  const firstIso = new Date(counted[0].ms).toISOString()
   return {
     episodeCount: counted.length,
     dayCount: days.size,
-    firstIso: new Date(counted[0].ms).toISOString(),
+    firstIso,
+    firstLocalDay: localIsoDay(firstIso, input.timezone),
     windowMinutes: timingConfig.rapidWindowMinutes,
   }
 }
@@ -4235,7 +4246,9 @@ function refusedThenVomitedFacts(
 /** I5's provisional values (ruling sheet §2.7: the rapid band, two episodes on two days; the window
  *  is the intake baseline's 14 days). All three are on the real-vet list (CUL-1312). */
 export const EN5_SETTINGS: NonNullable<DetectionConfig['en5']> = {
-  refusedThenVomited: { windowDays: 14, minEpisodes: 2, minDays: 2 },
+  // 20 hours: two evenings a day apart clear it with room for a dinner served later, and one night
+  // across midnight (a 3-hour gap) never does.
+  refusedThenVomited: { windowDays: 14, minEpisodes: 2, minDays: 2, minSpanHours: 20 },
 }
 
 /** The config under `engines_v3_en5`: the caller's config plus I5, so it composes with EN-11's. */
@@ -7432,6 +7445,19 @@ export const SAFETY_TYPE_ORDER: Readonly<Record<SafetyFindingType, number>> = {
 }
 
 /**
+ * A safety finding's place in SAFETY_TYPE_ORDER. One exception, by finding rather than by type:
+ * I5's `refused_then_vomited` intake card (Engines v3 PR-30s) sits BELOW the burden and weight
+ * cards and above chronicity. ②'s place above burden is the 48-hour feline liver window for a cat
+ * not eating; I5's card asks only "worth mentioning to your vet", and ranking it as ② let it take
+ * the lead from a "worth a call to your vet today" burden card (adversarial pass D2). PROVISIONAL,
+ * with I5's other values on the real-vet list. Mirrored in the client banner (lib/signalCopy.ts).
+ */
+export function safetyRankOf(f: Finding): number {
+  if (f.type === 'intake_decline' && f.trigger === 'refused_then_vomited') return 3.5
+  return (SAFETY_TYPE_ORDER as Readonly<Record<string, number>>)[f.type] ?? 9
+}
+
+/**
  * Orders findings per §5: safety first, then the context-lead insight, then the
  * rest by evidence tier (Established before Early) and effect strength. Returns
  * findings tagged with their resolved rank.
@@ -7453,8 +7479,7 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
     // (SAFETY_TYPE_ORDER); within intake-decline, an outright refusal of a normally-eaten
     // food leads.
     if (x.priorityClass === 'safety' && y.priorityClass === 'safety') {
-      const order = SAFETY_TYPE_ORDER as Readonly<Record<string, number>>
-      const safetyDiff = (order[x.type] ?? 9) - (order[y.type] ?? 9)
+      const safetyDiff = safetyRankOf(x) - safetyRankOf(y)
       if (safetyDiff !== 0) return safetyDiff
       // Two per-incident red-flag cards (a bloody vomit AND a bloody stool, B-364): both lead every
       // other safety lane; between the two, vomit leads stool — a fixed, deterministic order (also

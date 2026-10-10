@@ -63,8 +63,10 @@ export type IncidentFlagKind = 'blood' | 'foreign_material';
 // blood flag on a formed stool never reads as "loose stool". Picks the owner-facing noun only.
 export type IncidentCategory = 'vomit' | 'stool';
 // `refused_then_vomited` (I5, Engines v3 PR-30s): a cat that vomited minutes after turning down a
-// bowl on two days. Server-emitted only under `engines_v3_en5`; every client switch on the trigger
-// names it, so a build that predates the key never paints it as "Eating less than usual".
+// bowl on two days. Server-emitted only under `engines_v3_en5`; every switch on the trigger in THIS
+// build names it. A build from before PR-30s does not know it and falls through to the
+// consecutive-low copy ("Eating less than usual"), so the key may not flip for an account still on
+// such a build (adversarial pass D4; the condition is on CUL-1725).
 export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food' | 'refused_then_vomited';
 
 /** Mirror of detection.ts RefusedThenVomitedFacts (I5). A count over a named population, never a
@@ -73,6 +75,8 @@ export interface RefusedThenVomitedFacts {
   episodeCount: number;
   dayCount: number;
   firstIso: string;
+  /** The first onset's day in the owner's zone (YYYY-MM-DD), the date every line prints. */
+  firstLocalDay: string;
   windowMinutes: number;
 }
 export type ReflectionDirection = 'flat' | 'improving';
