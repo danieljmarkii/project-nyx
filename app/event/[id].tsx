@@ -48,6 +48,7 @@ import {
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
 import { StoolAnalysisSection } from '../../components/event/StoolAnalysisSection';
 import { CallAnswers } from '../../components/event/CallAnswers';
+import { IntakeQuestion } from '../../components/event/IntakeQuestion';
 import { destructiveConfirm } from '../../lib/haptics';
 import { EmptyState, Header, PhotoViewer } from '../../components/ui';
 import { ThemedText } from '../../components/ui/ThemedText';
@@ -937,6 +938,18 @@ export default function EventDetailScreen() {
               petId={event.pet_id}
               petName={eventPetName}
               hasPhoto={!!attachment}
+            />
+          ) : null}
+
+          {/* Engines v3 PR-30q (CUL-1724): EN-5's question, "Has she eaten since …?", under the
+              vomit's read and never in it; no time limit, never announced. Dark behind
+              engines_v3_en5. */}
+          {event.event_type === 'vomit' ? (
+            <IntakeQuestion
+              eventId={event.id}
+              petId={event.pet_id}
+              occurredAt={event.occurred_at}
+              petName={eventPetName}
             />
           ) : null}
 
