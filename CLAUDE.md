@@ -331,6 +331,8 @@ Whenever a PM decision is requested — an Open Questions row, a mock round's re
 - **Options:** the 2–4 real options, each ≤1 line, with the team's **recommendation marked and its one-line why**. If there's a genuine persona conflict, name the dissent instead of a recommendation (Conflict Protocol still applies).
 - **Consequence:** one line on what the ruling unblocks or forecloses (build scope, spec edits, deferrals). A re-ruling names every earlier ruling it unseats (CUL-1606 F5).
 
+**Every `CUL-NNN` is a link (PM directive, 2026-10-10):** in chat, summaries, kickoff prompts, PR bodies and Linear text, write `[CUL-NNN](https://linear.app/projectnyx/issue/CUL-NNN)`, never a bare token. Code and commit messages are exempt.
+
 Keep each brief to ~4 lines. The bar: the PM can rule from the brief alone. A bare "thoughts?" or an option list with no recommendation is not a decision request, anywhere decisions surface.
 
 **Mock what you change (PM directive, 2026-08-07).** A design change is shown, never only described: any change to a user-facing surface lands as frames in the current mock round (republished to the same artifact URL) in the same session it's proposed, and a decision whose options differ *visually* renders those options **side by side in the mock** — the brief then points at the frames. Presenting a visual choice in words alone is the anti-pattern this rule exists to stop. (A change with no rendered surface is exempt.)
