@@ -59,6 +59,7 @@ import { router } from 'expo-router';
 import { Camera, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SPINE_THREAD, SpineRowFrame } from '../recap/DaySpine';
+import { NODE_DOT_SIZE } from '../recap/nodeTints';
 import { ThemedText } from '../ui/ThemedText';
 import { useNodeArrival } from '../motion/arrivalMotion';
 import { announceQueued, readLandedSpoken, useRowSpeech } from './rowSpeech';
@@ -87,6 +88,8 @@ export const TIME_TAG_LABEL = { found: 'found', estimated: 'estimated' } as cons
 export const THREAD_X = SPINE_THREAD.x;
 /** The opened run's rail, laid over the thread along its members. */
 const RUN_RAIL_W = 4;
+/** Where the run's lead starts: the foot of the run's own bead (its centre plus half the bead). */
+const RUN_LEAD_TOP = SPINE_THREAD.dotCenterY + NODE_DOT_SIZE / 2;
 
 // ── The chips ─────────────────────────────────────────────────────────────────────
 
@@ -521,6 +524,7 @@ export function SpineCompactRow({
     identity: node.id,
     count: node.rows.length,
     beadCenterY: SPINE_THREAD.dotCenterY,
+    leadTop: RUN_LEAD_TOP,
     reducedMotion,
     appActive,
   });
@@ -561,22 +565,6 @@ export function SpineCompactRow({
   );
   return (
     <View>
-      {openInPlace && motion.slotMounted ? (
-        // The lead: out of the run's own bead, down the header's thread segment. An explicit
-        // top and height, so no layout commit ever touches its frame; its scaleY is native.
-        <Animated.View
-          pointerEvents="none"
-          testID={`spine-run-lead-${node.id}`}
-          style={[
-            styles.runLead,
-            {
-              height: motion.leadHeight,
-              opacity: motion.values.line,
-              transform: [{ scaleY: motion.values.lead }],
-            },
-          ]}
-        />
-      ) : null}
       <Pressable
         onPress={toggle}
         onLayout={openInPlace ? (e) => motion.onHeaderLayout(e.nativeEvent.layout.height) : undefined}
@@ -610,6 +598,24 @@ export function SpineCompactRow({
           </SpineRowFrame>
         )}
       </Pressable>
+      {openInPlace && motion.slotMounted ? (
+        // The lead: out of the run's own bead, down the header's thread segment. Drawn over
+        // the header (so the grey thread never stripes it) from the bead's foot (so it never
+        // covers the bead). An explicit top and height, so no layout commit ever touches its
+        // frame; its scaleY is native.
+        <Animated.View
+          pointerEvents="none"
+          testID={`spine-run-lead-${node.id}`}
+          style={[
+            styles.runLead,
+            {
+              height: motion.leadHeight,
+              opacity: motion.values.line,
+              transform: [{ scaleY: motion.values.lead }],
+            },
+          ]}
+        />
+      ) : null}
       {openInPlace ? (
         <RunInPlace nodeId={node.id} motion={motion} memberIds={node.rows.map((r) => r.id)}>
           {members}
@@ -805,14 +811,13 @@ const styles = StyleSheet.create({
   // Open in place (CUL-1734): the box shut at zero while it waits for its configured commit.
   membersShut: { height: 0 },
   // The lead, from the run's bead to the header's foot. `colorAccentGlyph` (3.27:1, a
-  // glyph on the light card, C-1); square at its foot, where the box's line takes over.
+  // glyph on the light card, C-1); square at both ends: the bead caps its top, and the
+  // box's line takes over at its foot.
   runLead: {
     position: 'absolute',
     left: THREAD_X - RUN_RAIL_W / 2,
-    top: SPINE_THREAD.dotCenterY,
+    top: RUN_LEAD_TOP,
     width: RUN_RAIL_W,
-    borderTopLeftRadius: RUN_RAIL_W / 2,
-    borderTopRightRadius: RUN_RAIL_W / 2,
     backgroundColor: theme.colorAccentGlyph,
     transformOrigin: 'top',
   },

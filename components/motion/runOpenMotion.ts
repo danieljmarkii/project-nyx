@@ -183,7 +183,7 @@ export interface RunOpen {
   /** Something sits under the header: the header yields its bottom edge. Changes only on a
    *  configured commit (or under the exemptions). */
   membersBelow: boolean;
-  /** The lead's explicit height: the bead's centre to the header's foot. */
+  /** The lead's explicit height: the bead's foot to the header's foot. */
   leadHeight: number;
   /** How far above the box's foot the rail stops: at the last meal's bead. Null until the
    *  meals have reported their layout (the host's fallback then). Read only on commits
@@ -205,8 +205,11 @@ interface Params {
   identity: string;
   /** How many meals the run holds. */
   count: number;
-  /** Where the bead's centre sits in the header (`SPINE_THREAD.dotCenterY`). */
+  /** Where a bead's centre sits in its row (`SPINE_THREAD.dotCenterY`): the rail ends at
+   *  the last meal's. */
   beadCenterY: number;
+  /** Where the lead starts in the header: the foot of the run's bead. */
+  leadTop: number;
   reducedMotion: boolean;
   appActive: boolean;
 }
@@ -214,7 +217,7 @@ interface Params {
 /** The header's floor before it has reported a layout (the 44pt row). */
 const HEADER_FLOOR_PT = 44;
 
-export function useRunOpen({ shown, identity, count, beadCenterY, reducedMotion, appActive }: Params): RunOpen {
+export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reducedMotion, appActive }: Params): RunOpen {
   const [phase, setPhase] = useState<RunOpenPhase>(shown ? 'open' : 'closed');
   const [headerH, setHeaderH] = useState(HEADER_FLOOR_PT);
 
@@ -494,7 +497,7 @@ export function useRunOpen({ shown, identity, count, beadCenterY, reducedMotion,
     clipped: inFlight,
     inFlight,
     membersBelow: phase === 'opening' || phase === 'open' || phase === 'crossfade',
-    leadHeight: Math.max(0, headerH - beadCenterY),
+    leadHeight: Math.max(0, headerH - leadTop),
     railBottom: railBottom.current,
     values,
     onHeaderLayout,

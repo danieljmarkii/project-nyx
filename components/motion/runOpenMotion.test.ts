@@ -24,7 +24,7 @@ import {
   type RunOpen,
 } from './runOpenMotion';
 
-const base = { identity: 'compact:m0', beadCenterY: 8.5, reducedMotion: false, appActive: true };
+const base = { identity: 'compact:m0', beadCenterY: 8.5, leadTop: 14, reducedMotion: false, appActive: true };
 const valueOf = (v: Animated.Value) => (v as unknown as { __getValue: () => number }).__getValue();
 
 type TimingCall = { value: Animated.Value; toValue: number; duration: number; delay: number; at: number };
@@ -236,7 +236,12 @@ describe('useRunOpen — a second tap reverses from where it is', () => {
     tick(RUN_MOTION.mountFrameMs + 200);
     const v = t.result.current.values;
     const before = calls.length;
+    // The last of twelve meals has not landed yet (it starts at 250): it is still clear.
+    const lastBefore = valueOf(v.members[11].opacity);
+    expect(lastBefore).toBe(0);
     act(() => t.rerender({ shown: false }));
+    // Nothing jumps to an end first: the meal turns round from where it is.
+    expect(valueOf(v.members[11].opacity)).toBe(lastBefore);
     // 200ms into the box's opening: a reverse over 200ms, no delay, from the frame on screen.
     expect(LayoutAnimation.configureNext).toHaveBeenLastCalledWith(runReverseLayout(200));
     expect(t.result.current.phase).toBe('closing');

@@ -760,7 +760,8 @@ describe('open in place: the run\'s own motion (CUL-1734, D1)', () => {
     expect(configureNext).not.toHaveBeenCalled();
     // The lead: out of the run's own bead, its own frame (explicit top and height), the glyph tint.
     const lead = styleOf(t.getByTestId('spine-run-lead-compact:m0'));
-    expect(lead.top).toBe(SPINE_THREAD.dotCenterY);
+    // From the bead's foot (its centre plus half the 11pt bead), over the header's grey thread.
+    expect(lead.top).toBe(SPINE_THREAD.dotCenterY + 11 / 2);
     expect(typeof lead.height).toBe('number');
     expect(lead.bottom).toBeUndefined();
     expect(lead.transformOrigin).toBe('top');
