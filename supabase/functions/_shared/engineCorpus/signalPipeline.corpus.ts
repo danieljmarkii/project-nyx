@@ -294,6 +294,28 @@ export const SIGNAL_PIPELINE_CORPUS: SignalPipelineCase[] = [
     expectedTypes: ['intake_decline'],
   },
   {
+    // I5 (Engines v3 PR-30s, CUL-1725): the critique's alternate-night refuser. Breakfast eaten
+    // every day, dinner turned down on two nights and a witnessed vomit 20 minutes later each time.
+    // Detector ② stays quiet (the latest bowl was eaten, and no day is in its recent window), so
+    // flag off this case has no intake card; under engines_v3_en5 it gains one ((c-en5)).
+    name: 'a cat that turns down dinner and vomits 20 minutes later, on two nights',
+    nowIso: NOW,
+    rows: {
+      pet: cat,
+      ...EMPTY,
+      meals: [...mealsDaily(1, 16, 'all'), meal(2, 'refused', KIBBLE, 18), meal(4, 'refused', KIBBLE, 18)],
+      symptoms: [2, 4].map((d) => ({
+        id: id('vomit'),
+        event_type: 'vomit',
+        occurred_at: new Date(Date.parse(ago(d, 18)) + 20 * 60_000).toISOString(),
+        occurred_at_confidence: 'witnessed',
+        severity: null,
+      })),
+    },
+    prior: null,
+    expectedTypes: ['symptom_worsening'],
+  },
+  {
     name: 'a diet trial in its third week, nothing else of note',
     nowIso: NOW,
     rows: {

@@ -446,12 +446,13 @@ Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the
     true,
     'a failed weight read no longer marks the run incomplete',
   )
-  // EN-11 (PR-32, CUL-1141): the fingerprint hashes the config the pipeline detects with, chosen
-  // on the same literal key pipeline.ts reads (a second site the pipeline guard cannot see).
+  // EN-11 (PR-32, CUL-1141) and EN-5 (PR-30s, CUL-1725): the fingerprint hashes the config the
+  // pipeline detects with, through the ONE function the pipeline also calls (signalDetectionConfig),
+  // so the two sites cannot pick different configs. Its key reads are pinned in pipeline.test.ts.
   assertStrictEquals(
-    /config:\s*isEngineKeyOn\(engineFlags, 'engines_v3_en11'\)\s*\?\s*EN11_CONFIG\s*:\s*DEFAULT_CONFIG/.test(src),
+    /config:\s*signalDetectionConfig\(engineFlags\)/.test(src),
     true,
-    'the fingerprint no longer hashes the EN-11 config under its key',
+    'the fingerprint no longer hashes the config the pipeline detects with',
   )
   // vet_visits is read inside readCareContextFacts and nowhere else in the shell.
   const fn = src.slice(src.indexOf('export async function readCareContextFacts('))

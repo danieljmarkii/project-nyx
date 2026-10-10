@@ -19,6 +19,7 @@ import type {
   Finding,
   CorrelationFinding,
   IntakeDeclineFinding,
+  RefusedThenVomitedFacts,
   ReflectionFinding,
   SymptomWorseningFinding,
   SymptomBurdenFinding,
@@ -114,9 +115,24 @@ export function templateCorrelation(f: CorrelationFinding, petName: string): str
   return `${petName}'s ${symptom} has tended to follow meals with ${f.protein} within about ${window} hours — an early pattern worth keeping an eye on as you keep logging.`
 }
 
+// I5 (Engines v3 PR-30s, CUL-1725; ruling sheet §2.7, nyx-voice): refused, then vomited within
+// minutes. Mirrored on the client (`refusedThenVomitedLine`, lib/signalCopy.ts); keep the two in
+// sync. "Within N minutes of turning down a meal" is SEQUENCE, never cause (CAUSAL_RE), never
+// "nausea" (a mechanism the record cannot see), never "picky" (intake is not preference). Counts
+// and a date, so the owner can check it; the vet tail is the ask, the same words as I4's. When the
+// count equals the day count the times are implied by the days ("on 2 days"), so only a second
+// vomit on one day adds "3 times,".
+export function refusedThenVomitedSentence(r: RefusedThenVomitedFacts, petName: string): string {
+  const times = r.episodeCount === r.dayCount ? '' : `${r.episodeCount} times, `
+  return `${petName} vomited within ${r.windowMinutes} minutes of turning down a meal ${times}on ${r.dayCount} days since ${onsetDay(r.firstIso)}. That's worth mentioning to your vet.`
+}
+
 export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string): string {
   // Safety finding: calm, clear, points toward keeping an eye on it + the vet.
   // Never reassures, never frames reduced eating as fussiness.
+  if (f.trigger === 'refused_then_vomited' && f.refusedThenVomited) {
+    return refusedThenVomitedSentence(f.refusedThenVomited, petName)
+  }
   if (f.trigger === 'refused_normal_food') {
     const food = f.refusedFoodLabel ?? 'a food they usually finish'
     return `${petName} just turned down ${food}, which ${petName} normally eats — worth keeping an eye on, and a word with your vet if it carries on.`
@@ -586,7 +602,9 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
         : f.type === 'intake_decline'
           ? f.trigger === 'refused_normal_food'
             ? 'turning down a food they usually eat'
-            : 'eating less than usual'
+            : f.trigger === 'refused_then_vomited'
+              ? 'vomiting soon after turning down a meal'
+              : 'eating less than usual'
           : f.type === 'incident_red_flag'
             ? `a photo of ${INCIDENT_NOUN[f.incidentType]} showing ${f.flags.map((k) => INCIDENT_FLAG_PHRASE[k]).join(' and ')}`
             : 'a pattern'
@@ -1103,10 +1121,20 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
   return {
     insight_type: 'intake_decline',
     pet_name: petName,
-    trigger: finding.trigger, // 'consecutive_low' | 'refused_normal_food'
+    trigger: finding.trigger, // 'consecutive_low' | 'refused_normal_food' | 'refused_then_vomited'
     species: finding.species,
     days_eating_less: finding.daysBelowBaseline,
     refused_food: finding.refusedFoodLabel,
+    // I5 (PR-30s): a count and a sequence, never a cause or a mechanism. Absent flag off.
+    ...(finding.refusedThenVomited
+      ? {
+          vomited_soon_after_refusal: {
+            episodes: finding.refusedThenVomited.episodeCount,
+            days: finding.refusedThenVomited.dayCount,
+            within_minutes: finding.refusedThenVomited.windowMinutes,
+          },
+        }
+      : {}),
     severity: 'calm_safety_flag', // surface clearly, never reassure, never "picky"
   }
 }

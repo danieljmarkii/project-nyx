@@ -46,6 +46,7 @@ import {
   doseToMedicationWindow,
   DEFAULT_CONFIG,
   EN11_CONFIG,
+  withEn5Config,
   type Finding,
   type CoverageDiagnostic,
   type SymptomEvent,
@@ -582,6 +583,14 @@ export interface SignalPipelineResult {
 
 // ── The pipeline ──────────────────────────────────────────────────────────────
 
+/** The one detection config for a run's flags: EN-11's under `engines_v3_en11`, plus I5 under
+ *  `engines_v3_en5` (PR-30s, CUL-1725). Shared by the pipeline and the shell's fingerprint, so the
+ *  config fingerprinted is the config detected with. Both flags off, DEFAULT_CONFIG itself. */
+export function signalDetectionConfig(engineFlags: EngineFlags, en11Config: DetectionConfig = EN11_CONFIG): DetectionConfig {
+  const base = isEngineKeyOn(engineFlags, 'engines_v3_en11') ? en11Config : DEFAULT_CONFIG
+  return isEngineKeyOn(engineFlags, 'engines_v3_en5') ? withEn5Config(base) : base
+}
+
 // `careContextStep` exists for the flag-off guard, which hands in a step that changes every
 // finding so its running is always visible; production always takes EN10_CONTEXT_STEP.
 // `en11Config` likewise (Engines v3 PR-32, CUL-1141): the guard hands in a config that throws on
@@ -695,7 +704,7 @@ export function runSignalPipeline(
   }
   // EN-11 (Engines v3 PR-32, CUL-1141): the one config every step below reads. DEFAULT_CONFIG
   // unless `engines_v3_en11` is on, so flag off is the same object as before.
-  const config = isEngineKeyOn(engineFlags, 'engines_v3_en11') ? en11Config : DEFAULT_CONFIG
+  const config = signalDetectionConfig(engineFlags, en11Config)
   // Engines v3 PR-14d (CUL-1410): one card per sign where the burden card and ④ say the same week.
   const detected = suppressWorseningUnderBurden(detectSignals(input, config))
   // CUL-989 step 3, BEFORE curation so a withheld card never holds a slot under the cap.
