@@ -1,0 +1,812 @@
+<title>Culprit Intake Capture</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400..600&family=Geist:wght@400..600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a light review page, as the completion card and daily look rounds are. Phone
+   frames sit in wrapping rows at one scale, each with its tag above and its notes below;
+   the two decision briefs near the top point at the frames that draw their options. */
+:root {
+  --page: #F6F6F4; --ink: #17171A; --muted: #6B6B70; --rule: #E2E2DE; --surface: #FFFFFF;
+  --note: #EEF7F5; --noteInk: #0B5C52; --warn: #FFF4E0; --warnInk: #7A4B00; --no: #FBEFF1; --noInk: #8E1B33;
+  --bar: #3F3F46; --phoneEdge: #DCDCD8;
+  /* the phone is always the app's light ground: these are constants/theme.ts verbatim and
+     are never redefined below, so a frame reads the same in either page theme */
+  --app-bg: #FAFAFA; --app-surface: #FFFFFF; --app-ink: #0A0A0A; --app-ink2: #525252; --app-ink3: #737373;
+  --app-border: #EAEAEA; --app-borderStrong: #D4D4D4; --app-subtle: #F5F5F5;
+  --app-accent: #00C2A8; --app-accentInk: #0B7B6C; --app-accentLight: #E0FBF7; --app-accentSel: #08685B; --app-mark: #0FA08B;
+  --app-rose: #F43F5E; --app-roseInk: #9F1239; --app-roseLight: #FFE4E6;
+  --app-fab: #251F57; --app-onFab: #FFFFFF; --app-scrim: rgba(10,10,10,.35); --app-shadow: rgba(0,0,0,.14);
+  --display: "Newsreader", Georgia, serif;
+  --body: "Geist", -apple-system, "Helvetica Neue", sans-serif;
+  --mono: "Geist Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #121214; --ink: #ECECEE; --muted: #9A9AA2; --rule: #2A2A2F; --surface: #1B1B1F;
+  --note: #10302B; --noteInk: #8FE3D6; --warn: #33270F; --warnInk: #F5CB7A; --no: #3A1620; --noInk: #F6A7B6;
+  --bar: #C9C9CF; --phoneEdge: #2F2F35; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --page: #121214; --ink: #ECECEE; --muted: #9A9AA2; --rule: #2A2A2F; --surface: #1B1B1F;
+  --note: #10302B; --noteInk: #8FE3D6; --warn: #33270F; --warnInk: #F5CB7A; --no: #3A1620; --noInk: #F6A7B6;
+  --bar: #C9C9CF; --phoneEdge: #2F2F35; color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 72px; display: grid; gap: 48px; }
+h1 { font-family: var(--display); font-weight: 500; font-size: 2.2rem; line-height: 1.12; margin: 0; text-wrap: balance; max-width: 24ch; }
+h2 { font-family: var(--display); font-weight: 500; font-size: 1.5rem; line-height: 1.2; margin: 0; text-wrap: balance; }
+h3 { margin: 0; font-size: 15px; font-weight: 600; }
+p { margin: 0; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.lede { max-width: 68ch; color: var(--muted); }
+section { display: grid; gap: 18px; min-width: 0; }
+.head { display: grid; gap: 10px; }
+code { font-family: var(--mono); font-size: .88em; }
+a { color: var(--noteInk); }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--noteInk); outline-offset: 2px; }
+
+/* the ledger: what goes, what stays */
+.ledger { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 16px 18px; display: grid; gap: 8px; max-width: 84ch; }
+.ledger div { display: grid; grid-template-columns: 8ch minmax(0, 1fr); gap: 12px; }
+.ledger b { font-weight: 600; }
+
+/* the record */
+.record { display: grid; gap: 20px; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; }
+@media (max-width: 820px) { .record { grid-template-columns: minmax(0, 1fr); } }
+.chartbox { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 16px 18px 12px; display: grid; gap: 8px; min-width: 0; }
+.chartbox svg { width: 100%; height: auto; max-width: 520px; display: block; }
+.chart .b { fill: var(--bar); }
+.chart .grid { stroke: var(--rule); stroke-width: 1; }
+.chart .v { fill: var(--ink); font: 600 11px var(--body); font-variant-numeric: tabular-nums; }
+.chart .m { fill: var(--muted); font: 11px var(--body); }
+.chart .ax { fill: var(--muted); font: 10px var(--body); }
+.cap { font-size: 13px; color: var(--muted); }
+.facts { display: grid; gap: 12px; }
+.fact { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 16px; display: grid; gap: 4px; min-width: 0; }
+.fact .n { font-family: var(--display); font-size: 1.6rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.fact p { font-size: 14px; color: var(--muted); }
+
+/* briefs */
+.briefs { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.brief { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 16px 18px; display: grid; gap: 8px; font-size: 14px; align-content: start; min-width: 0; }
+.brief .k { color: var(--muted); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; margin-right: 6px; }
+.brief ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.rec { display: inline-block; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; padding: 1px 7px; border-radius: 99px; background: var(--note); color: var(--noteInk); margin-left: 4px; vertical-align: 1px; }
+
+/* frames */
+.row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.frame { width: 340px; max-width: 100%; display: grid; gap: 10px; min-width: 0; }
+.tag { justify-self: start; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--rule); color: var(--muted); }
+.tag.current { background: var(--note); color: var(--noteInk); border-color: transparent; }
+.tag.option { background: var(--warn); color: var(--warnInk); border-color: transparent; }
+.tag.no { background: var(--no); color: var(--noInk); border-color: transparent; }
+.notes { font-size: 13.5px; color: var(--muted); margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.notes b { color: var(--ink); font-weight: 600; }
+.optbox { border: 1px dashed var(--warnInk); border-radius: 18px; padding: 14px; display: grid; gap: 10px; max-width: 100%; min-width: 0; }
+.optbox.no { border-color: var(--noInk); }
+.optbox > .lbl { font-size: 12px; color: var(--warnInk); }
+.optbox.no > .lbl { color: var(--noInk); }
+
+/* ── the phone ── */
+.phone { position: relative; width: 340px; max-width: 100%; height: 600px; border-radius: 30px; background: var(--app-bg); border: 1px solid var(--phoneEdge); overflow: hidden; color: var(--app-ink); font-family: var(--body); font-size: 13px; line-height: 1.4; }
+.phone.short { height: 480px; }
+.phone button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; text-align: inherit; cursor: pointer; }
+
+/* Home: the header, the Today card with Noticed as its header, the day's spine */
+.hh { padding: 20px 18px 8px; display: grid; gap: 1px; }
+.hh .pn { font-family: var(--display); font-size: 24px; font-weight: 500; }
+.hh .dt { font-size: 12px; color: var(--app-ink3); }
+.today { margin: 6px 12px 0; background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 16px; padding: 14px 14px 12px; display: grid; gap: 10px; }
+.lq { font-family: var(--display); font-size: 18px; letter-spacing: -0.2px; line-height: 1.25; }
+.lchips { display: flex; flex-wrap: wrap; gap: 8px 6px; }
+.lc { border: 1px solid var(--app-borderStrong); border-radius: 99px; padding: 6px 10px; background: var(--app-surface); font-size: 12px; font-weight: 500; color: var(--app-ink); line-height: 1.3; }
+.phone button.lc { border: 1px solid var(--app-borderStrong); padding: 6px 10px; background: var(--app-surface); }
+.lc.word-new { border-color: var(--app-roseInk); color: var(--app-roseInk); }
+.lmore { padding: 6px 4px; font-size: 12px; font-weight: 500; color: var(--app-accentInk); }
+.entry { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--app-ink3); }
+.entry .rail { width: 3px; height: 18px; border-radius: 2px; background: var(--app-accent); flex: 0 0 3px; }
+.entry b { color: var(--app-ink2); font-weight: 500; }
+.ctlrow { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.ctl { font-size: 12px; font-weight: 500; color: var(--app-accentInk); }
+.cnt { font-size: 12px; color: var(--app-ink3); padding-top: 10px; border-top: 1px solid var(--app-border); }
+.spine { display: grid; gap: 9px; }
+.sr { display: grid; grid-template-columns: 62px 10px minmax(0, 1fr); gap: 8px; font-size: 12.5px; align-items: start; }
+.sr time { color: var(--app-ink3); text-align: right; font-variant-numeric: tabular-nums; }
+.sr i { width: 8px; height: 8px; border-radius: 50%; background: var(--app-accent); margin-top: 5px; }
+.sr.con i { background: var(--app-rose); }
+.sr.unk i { background: var(--app-borderStrong); }
+.sr.new span { font-weight: 500; }
+.fab { position: absolute; right: 14px; bottom: 16px; width: 50px; height: 50px; border-radius: 50%; background: var(--app-fab); color: var(--app-onFab); display: grid; place-items: center; font-size: 26px; font-weight: 300; }
+.faded { opacity: .55; }
+
+/* the sheet */
+.dim { position: absolute; inset: 0; background: var(--app-scrim); }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--app-surface); border-radius: 24px 24px 0 0; padding: 10px 18px 20px; display: grid; gap: 12px; box-shadow: 0 -6px 24px var(--app-shadow); }
+.grab { justify-self: center; width: 36px; height: 4px; border-radius: 2px; background: var(--app-borderStrong); }
+.sq { font-family: var(--display); font-size: 20px; line-height: 1.25; text-wrap: balance; }
+.hint { font-size: 12.5px; color: var(--app-ink3); }
+.ans { display: flex; flex-wrap: wrap; gap: 8px; }
+.ans > span, .phone .ans > button { min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 99px; border: 1px solid var(--app-border); background: var(--app-surface); font-size: 13px; font-weight: 500; color: var(--app-ink); }
+.ans > .on, .phone .ans > button.on { border-color: var(--app-accentInk); background: var(--app-accentLight); color: var(--app-accentSel); }
+.promise { font-size: 12.5px; color: var(--app-ink3); }
+.back { font-size: 13px; font-weight: 500; color: var(--app-accentInk); justify-self: start; min-height: 32px; display: inline-flex; align-items: center; }
+.phone button.back { color: var(--app-accentInk); }
+.said { font-size: 13px; color: var(--app-ink2); }
+.said .link, .phone .said button.link { color: var(--app-accentInk); font-weight: 500; }
+.call { font-size: 13.5px; font-weight: 600; color: var(--app-roseInk); }
+.net { font-size: 13px; color: var(--app-ink); }
+.bowls { border-top: 1px solid var(--app-border); padding-top: 10px; display: grid; }
+.bh { font-size: 12.5px; color: var(--app-ink2); display: flex; justify-content: space-between; gap: 8px; padding-bottom: 2px; }
+.bh span { color: var(--app-ink3); }
+.bw { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 8px; align-items: center; min-height: 40px; font-size: 12.5px; border-bottom: 1px solid var(--app-subtle); width: 100%; }
+.bw time { color: var(--app-ink3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bw > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bw em { font-style: normal; color: var(--app-ink3); }
+.bw em.g { color: var(--app-roseInk); font-weight: 500; }
+.five { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 6px 0 8px; }
+.five > span, .phone .five > button { text-align: center; padding: 8px 0; border-radius: 99px; border: 1px solid var(--app-border); font-size: 12px; background: var(--app-surface); }
+.five > .on, .phone .five > button.on { background: var(--app-ink); color: var(--app-surface); border-color: var(--app-ink); }
+.done { text-align: center; padding: 12px; border-radius: 99px; background: var(--app-ink); color: var(--app-surface); font-weight: 500; font-size: 14px; }
+.phone button.done { background: var(--app-ink); color: var(--app-surface); padding: 12px; border-radius: 99px; text-align: center; }
+.phone button.bw { border-bottom: 1px solid var(--app-subtle); }
+
+/* the meal card over a slice of History (the daylight card, CUL-1711) */
+.hist { padding: 18px 18px 0; display: grid; gap: 14px; opacity: .55; }
+.hist .day { font-weight: 600; font-size: 14px; }
+.hist .ev { display: grid; grid-template-columns: 64px 10px minmax(0, 1fr); gap: 8px; font-size: 12.5px; }
+.hist .ev i { width: 8px; height: 8px; border-radius: 50%; background: var(--app-accent); margin-top: 6px; }
+.hist time { color: var(--app-ink3); font-variant-numeric: tabular-nums; }
+.card { position: absolute; left: 12px; right: 12px; bottom: 78px; border-radius: 24px; background: var(--app-surface); color: var(--app-ink); box-shadow: 0 4px 18px var(--app-shadow), 0 1px 2px rgba(0,0,0,.05); }
+.k3 { padding: 12px 16px; display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); }
+.k3 .hd { display: flex; align-items: center; gap: 12px; }
+.mark { width: 32px; height: 32px; flex: 0 0 32px; border-radius: 50%; background: var(--app-mark); display: grid; place-items: center; }
+.k3 .t { flex: 1; min-width: 0; }
+.k3 .t div:first-child { font-weight: 500; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.k3 .t div:last-child { font-size: 12.5px; color: var(--app-ink2); }
+.k3 .acts { display: flex; gap: 10px; font-size: 12.5px; font-weight: 500; text-decoration: underline; white-space: nowrap; }
+.k3 .q { border-top: 1px solid var(--app-borderStrong); padding-top: 8px; font-size: 12.5px; color: var(--app-ink2); display: grid; gap: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips span { padding: 6px 12px; border: 1px solid var(--app-border); border-radius: 99px; font-size: 12.5px; color: var(--app-ink2); background: var(--app-surface); }
+.k3 .combo { border-top: 1px solid var(--app-borderStrong); padding: 12px 0 4px; font-size: 13px; color: var(--app-ink2); }
+
+/* a record screen and a settings screen */
+.scr { padding: 18px 18px; display: grid; gap: 16px; }
+.scr .nav { font-size: 13px; color: var(--app-accentInk); font-weight: 500; }
+.scr .ttl { font-family: var(--display); font-size: 26px; font-weight: 500; line-height: 1.1; }
+.scr .when { font-size: 12.5px; color: var(--app-ink3); margin-top: 2px; }
+.scr .sec { display: grid; gap: 6px; }
+.scr .sl { font-size: 11px; letter-spacing: .08em; color: var(--app-ink3); }
+.scr .fp { font-size: 15px; font-weight: 500; }
+.scr .fb { font-size: 12.5px; color: var(--app-ink2); }
+.setrow { background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 14px; padding: 12px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.setrow .l { font-size: 13.5px; font-weight: 500; }
+.setrow .s { font-size: 12px; color: var(--app-ink3); }
+.switch { width: 46px; height: 28px; border-radius: 99px; background: var(--app-accent); position: relative; }
+.switch::after { content: ""; position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--app-surface); }
+.dimrow { opacity: .5; }
+
+/* the table */
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 640px; }
+th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 600; white-space: nowrap; }
+.explain { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 16px 18px; display: grid; gap: 8px; max-width: 84ch; }
+.later { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 84ch; color: var(--muted); }
+.later b { color: var(--ink); font-weight: 600; }
+
+/* the prototype */
+.controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.btn { font: inherit; font-size: 14px; font-weight: 500; padding: 8px 16px; border-radius: 99px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer; }
+.btn:hover { border-color: var(--muted); }
+.taps { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.taps b { color: var(--ink); font-weight: 600; }
+#proto .lc { cursor: default; }
+#proto button.lc.door { cursor: pointer; }
+@keyframes rise { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+#proto .sheet.enter { animation: rise .22s cubic-bezier(.2,.9,.25,1) both; }
+#proto .dim.enter { animation: fade .15s ease-out both; }
+@media (prefers-reduced-motion: reduce) { #proto .sheet.enter, #proto .dim.enter { animation: none; } }
+footer { font-size: 13px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 16px; }
+</style>
+
+<main class="wrap">
+
+  <header class="head">
+    <div class="eyebrow">Culprit · Intake capture · Round 1 · Oct 10, 2026 · CUL-1753</div>
+    <h1>Ask when she's off her food, not after every bowl.</h1>
+    <p class="lede">The first drawing of the team's proposal from the Oct 10 discussion. The meal card stops asking how much. Noticed's door asks how she's been eating, and the answer reaches every safety check. Grading stays on every meal. Two decisions are drawn side by side in §7.</p>
+    <div class="ledger" aria-label="What changes">
+      <div><b>Goes</b><span>The "How much did Nyx eat?" chips on the card that shows after you log a meal.</span></div>
+      <div><b>Stays</b><span>The five point grade, on every meal's record and from the door. Every check that reads it. Meal logging, untouched.</span></div>
+      <div><b>Added</b><span>One place to say she isn't eating, read by every safety check.</span></div>
+      <div><b>Ships</b><span>Dark, behind the Engines v3 flag, and live only together with the weight lane.</span></div>
+    </div>
+  </header>
+
+  <section aria-labelledby="why">
+    <div class="eyebrow">Why now</div>
+    <h2 id="why">Grading stopped in August. Logging didn't.</h2>
+    <div class="record">
+      <div class="chartbox">
+        <svg class="chart" viewBox="0 0 360 190" role="img" aria-label="Share of Nyx's meals with an intake answer, by month: May 69 percent, June 89, July 65, August 19, September 1, October 5.">
+          <line class="grid" x1="28" y1="30" x2="356" y2="30"/>
+          <line class="grid" x1="28" y1="95" x2="356" y2="95"/>
+          <line class="grid" x1="28" y1="160" x2="356" y2="160"/>
+          <text class="ax" x="0" y="33">100%</text>
+          <text class="ax" x="6" y="98">50%</text>
+          <text class="ax" x="14" y="163">0</text>
+          <rect class="b" x="36" y="70.3" width="36" height="89.7" rx="3"/>
+          <rect class="b" x="90" y="44.3" width="36" height="115.7" rx="3"/>
+          <rect class="b" x="144" y="75.5" width="36" height="84.5" rx="3"/>
+          <rect class="b" x="198" y="135.3" width="36" height="24.7" rx="3"/>
+          <rect class="b" x="252" y="158.7" width="36" height="1.3" rx="0.6"/>
+          <rect class="b" x="306" y="153.5" width="36" height="6.5" rx="2"/>
+          <text class="v" x="54" y="64" text-anchor="middle">69%</text>
+          <text class="v" x="108" y="38" text-anchor="middle">89%</text>
+          <text class="v" x="162" y="69" text-anchor="middle">65%</text>
+          <text class="v" x="216" y="129" text-anchor="middle">19%</text>
+          <text class="v" x="270" y="152" text-anchor="middle">1%</text>
+          <text class="v" x="324" y="147" text-anchor="middle">5%</text>
+          <text class="m" x="54" y="178" text-anchor="middle">May</text>
+          <text class="m" x="108" y="178" text-anchor="middle">Jun</text>
+          <text class="m" x="162" y="178" text-anchor="middle">Jul</text>
+          <text class="m" x="216" y="178" text-anchor="middle">Aug</text>
+          <text class="m" x="270" y="178" text-anchor="middle">Sep</text>
+          <text class="m" x="324" y="178" text-anchor="middle">Oct</text>
+        </svg>
+        <p class="cap">Share of Nyx's meals with an intake answer, by month. October is Oct 1 to 8. Meals were logged every day throughout. Source: the production counts on CUL-1696, one household's record.</p>
+      </div>
+      <div class="facts">
+        <div class="fact"><div class="n">4 of 185</div><p>meals graded since Sep 1. All four were graded because something was off. Owners already report exceptions on their own.</p></div>
+        <div class="fact"><div class="n">25 to 50</div><p>meals logged a week since late August, every day of the week. The meal stream is healthy. Only the grade went quiet.</p></div>
+        <div class="fact"><div class="n">Since mid August</div><p>the Signal's appetite check has been blind. It needs four graded meals in two weeks, and the record has not had them.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="decide">
+    <div class="eyebrow">Two rulings</div>
+    <h2 id="decide">What this round asks you to decide</h2>
+    <div class="briefs">
+      <div class="brief">
+        <h3>D1 · A setting to grade every meal?</h3>
+        <p><span class="k">Deciding</span>whether owners get a switch that brings the per meal question back.</p>
+        <ul>
+          <li><b>(a) No setting</b><span class="rec">Recommended</span>. The overhead goes for everyone, and the engine never trusts a mode the owner stopped following. Drawn in <a href="#card">§1</a>.</li>
+          <li><b>(b)</b> A per pet switch, off by default. Drawn in <a href="#options">§7</a>.</li>
+          <li><b>(c)</b> The same switch, on by default.</li>
+        </ul>
+        <p><span class="k">Consequence</span>(a) needs nothing new. (b) or (c) add a schema PR and copy that knows the mode on the report, Ask and the trial card.</p>
+      </div>
+      <div class="brief">
+        <h3>D2 · What the Didn't eat door records</h3>
+        <p><span class="k">Deciding</span>whether Noticed's door answers a day question the safety checks can read.</p>
+        <ul>
+          <li><b>(a) The day question</b><span class="rec">Recommended</span>. Two taps, no duplicate meal, an honest Not sure. Drawn in <a href="#door">§2</a> and <a href="#try">§3</a>.</li>
+          <li><b>(b)</b> Today's door, a new graded meal, kept reachable all day. Drawn in <a href="#options">§7</a>.</li>
+          <li><b>(c)</b> An appetite word on the look. Reopens the Oct 2 ruling. Drawn in <a href="#options">§7</a>.</li>
+        </ul>
+        <p><span class="k">Consequence</span>(a) needs a Tier 2 edit to the daily look spec, one schema PR, and Dr. Chen signing the words and the 24 hour and 3 day rules.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="card" aria-labelledby="h-card">
+    <div class="eyebrow">§1 · The meal card</div>
+    <h2 id="h-card">The meal card stops asking how much</h2>
+    <div class="row">
+      <div class="frame">
+        <span class="tag">Today</span>
+        <div class="phone short" role="img" aria-label="Today's meal card, asking how much Nyx ate, with five chips.">
+          <div class="hist"><div class="day">Sat, Oct 10 · Today</div>
+            <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
+            <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div>
+          <div class="card"><div class="k3">
+            <div class="hd"><span class="mark"><svg viewBox="0 0 32 32" width="32" height="32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>6:04 PM</div></div>
+              <div class="acts"><span>Undo</span><span>Change time</span></div></div>
+            <div class="q">How much did Nyx eat?<div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+            <div class="combo">+ Add a med given with this</div>
+          </div></div>
+          <div class="fab">+</div>
+        </div>
+        <ol class="notes">
+          <li>Asks the moment the bowl goes down, before there's an answer.</li>
+          <li>Answered on <b>4 of 185</b> meals since Sep 1.</li>
+          <li>Drawn on the daylight card being built now (CUL-1711), so the question is the only difference between these two frames.</li>
+        </ol>
+      </div>
+      <div class="frame">
+        <span class="tag current">Proposed</span>
+        <div class="phone short" role="img" aria-label="The proposed meal card: the same card without the intake question.">
+          <div class="hist"><div class="day">Sat, Oct 10 · Today</div>
+            <div class="ev"><time>7:04 AM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div>
+            <div class="ev"><time>12:40 PM</time><i></i><span><b>Meal</b> · Royal Canin · Selected Protein PR</span></div></div>
+          <div class="card"><div class="k3">
+            <div class="hd"><span class="mark"><svg viewBox="0 0 32 32" width="32" height="32" aria-hidden="true"><path d="M10 16.6l4.1 4.1 8-8.6" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <div class="t"><div>Logged · Royal Canin Selected Protein PR (Dry)</div><div>6:04 PM</div></div>
+              <div class="acts"><span>Undo</span><span>Change time</span></div></div>
+            <div class="combo">+ Add a med given with this</div>
+          </div></div>
+          <div class="fab">+</div>
+        </div>
+        <ol class="notes">
+          <li>The card confirms what was written. Undo, Change time and the med row stay.</li>
+          <li>A logged meal means it was <b>offered</b>, never that it was eaten.</li>
+          <li>Behind the Engines v3 flag. Today's card stays until the flag goes live.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section id="door" aria-labelledby="h-door">
+    <div class="eyebrow">§2 · Noticed's door</div>
+    <h2 id="h-door">The door asks how she's been eating</h2>
+    <p class="lede">Nyx at 7:40 PM. She left most of her 6:04 PM bowl. The same question the vomit read already asks, counted back from this hour yesterday. Two taps to a saved answer.</p>
+    <div class="row">
+
+      <div class="frame">
+        <span class="tag current">1 · Home, unchanged</span>
+        <div class="phone" role="img" aria-label="Home. The Today card asks how Nyx seems today. The first chip is Didn't eat.">
+          <div class="hh"><div class="pn">Nyx</div><div class="dt">Saturday, Oct 10</div></div>
+          <div class="today">
+            <div class="lq">How does Nyx seem today?</div>
+            <div class="lchips"><span class="lc door">Didn’t eat ›</span><span class="lc">Off</span><span class="lc">Sleeping more</span><span class="lc">Hiding</span><span class="lc">Not grooming</span><span class="lc">Lip-licking</span><span class="lc">Outside the box</span><span class="lc">Lively</span><span class="lc">Played</span><span class="lc">Nothing unusual</span><span class="lmore">More…</span></div>
+            <div class="cnt">3 meals</div>
+            <div class="spine">
+              <div class="sr"><time>7:04 AM</time><i></i><span>Meal · Royal Canin Selected Protein PR</span></div>
+              <div class="sr"><time>12:40 PM</time><i></i><span>Meal · Royal Canin Selected Protein PR</span></div>
+              <div class="sr"><time>6:04 PM</time><i></i><span>Meal · Royal Canin Selected Protein PR</span></div>
+            </div>
+          </div>
+          <div class="fab">+</div>
+        </div>
+        <ol class="notes"><li><b>Tap 1.</b> The door already leads the row. Nothing on Home changes.</li></ol>
+      </div>
+
+      <div class="frame">
+        <span class="tag current">2 · The question</span>
+        <div class="phone" role="img" aria-label="A sheet over Home asks: Has Nyx eaten a meal since 7 PM yesterday? Answers: A little, No, Not sure.">
+          <div class="faded"><div class="hh"><div class="pn">Nyx</div><div class="dt">Saturday, Oct 10</div></div>
+            <div class="today"><div class="lq">How does Nyx seem today?</div><div class="lchips"><span class="lc">Didn’t eat ›</span><span class="lc">Off</span><span class="lc">Sleeping more</span><span class="lc">Hiding</span></div></div></div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="sq">Has Nyx eaten a meal since 7 PM yesterday?</div>
+            <div class="ans"><span>A little</span><span>No</span><span>Not sure</span></div>
+            <p class="promise">Nothing is saved until you pick an answer.</p>
+            <span class="back">‹ Back to Noticed</span>
+          </div>
+        </div>
+        <ol class="notes">
+          <li><b>Tap 2 saves.</b> The vomit read's question, word for word, so one question has one meaning everywhere.</li>
+          <li>No "Yes, ate well" here. The door is for when something's off, and a Yes never quiets anything anyway.</li>
+        </ol>
+      </div>
+
+      <div class="frame">
+        <span class="tag current">3 · A little, saved</span>
+        <div class="phone" role="img" aria-label="Saved. You said: A little. An optional list asks which bowl she left, with the 6:04 PM bowl open to five grades.">
+          <div class="faded"><div class="hh"><div class="pn">Nyx</div><div class="dt">Saturday, Oct 10</div></div></div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="sq">Has Nyx eaten a meal since 7 PM yesterday?</div>
+            <div class="said">You said: A little · <span class="link">Change</span></div>
+            <div class="bowls">
+              <div class="bh">Which bowl did she leave?<span>Optional</span></div>
+              <div class="bw"><time>9:31 PM yesterday</time><span>Royal Canin Selected Protein PR</span><em>›</em></div>
+              <div class="bw"><time>7:04 AM</time><span>Royal Canin Selected Protein PR</span><em>›</em></div>
+              <div class="bw"><time>12:40 PM</time><span>Royal Canin Selected Protein PR</span><em>›</em></div>
+              <div class="bw"><time>6:04 PM</time><span>Royal Canin Selected Protein PR</span><em>⌄</em></div>
+              <div class="five"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div>
+            </div>
+            <span class="done">Done</span>
+          </div>
+        </div>
+        <ol class="notes">
+          <li>Saved the moment she tapped. Stored as Picked (the October ruling on "A little"), which counts toward the 3 day rule.</li>
+          <li><b>Optional:</b> grade the bowl she left. It grades the meal you already logged and never creates a new one. Nothing is preselected.</li>
+        </ol>
+      </div>
+
+      <div class="frame">
+        <span class="tag current">4 · No</span>
+        <div class="phone" role="img" aria-label="You said: No. A line in rose ink: Not eating for a day is a reason to call your vet today.">
+          <div class="faded"><div class="hh"><div class="pn">Nyx</div><div class="dt">Saturday, Oct 10</div></div></div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="sq">Has Nyx eaten a meal since 7 PM yesterday?</div>
+            <div class="said">You said: No · <span class="link">Change</span></div>
+            <p class="call">Not eating for a day is a reason to call your vet today.</p>
+            <div class="bowls">
+              <div class="bh">Which bowl did she leave?<span>Optional</span></div>
+              <div class="bw"><time>9:31 PM yesterday</time><span>Royal Canin Selected Protein PR</span><em>›</em></div>
+              <div class="bw"><time>7:04 AM</time><span>Royal Canin Selected Protein PR</span><em>›</em></div>
+              <div class="bw"><time>12:40 PM</time><span>Royal Canin Selected Protein PR</span><em>›</em></div>
+              <div class="bw"><time>6:04 PM</time><span>Royal Canin Selected Protein PR</span><em>›</em></div>
+            </div>
+            <span class="done">Done</span>
+          </div>
+        </div>
+        <ol class="notes">
+          <li>For a cat, a day without a meal meets the call today line the emergency door already uses. Plain text, no haptic, as every safety line is.</li>
+          <li><b>Dr. Chen signs the words,</b> and what No means for a dog.</li>
+        </ol>
+      </div>
+
+      <div class="frame">
+        <span class="tag current">5 · Not sure</span>
+        <div class="phone" role="img" aria-label="You said: Not sure. A line: If you haven't seen Nyx eat by 8 AM tomorrow, call your vet.">
+          <div class="faded"><div class="hh"><div class="pn">Nyx</div><div class="dt">Saturday, Oct 10</div></div></div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="sq">Has Nyx eaten a meal since 7 PM yesterday?</div>
+            <div class="said">You said: Not sure · <span class="link">Change</span></div>
+            <p class="net">If you haven’t seen Nyx eat by 8 AM tomorrow, call your vet.</p>
+            <span class="done">Done</span>
+          </div>
+        </div>
+        <ol class="notes">
+          <li>The honest answer for a shared bowl or a day you weren't home. It stays unknown and is never counted as eaten.</li>
+          <li>The dated line is the vomit question's line, reused as shipped. It only ever gets louder.</li>
+        </ol>
+      </div>
+
+      <div class="frame">
+        <span class="tag current">6 · Home, after</span>
+        <div class="phone" role="img" aria-label="Home after saving. Today's record shows a new row at 7:41 PM: Ate a little since 7 PM yesterday.">
+          <div class="hh"><div class="pn">Nyx</div><div class="dt">Saturday, Oct 10</div></div>
+          <div class="today">
+            <div class="lq">How does Nyx seem today?</div>
+            <div class="lchips"><span class="lc door">Didn’t eat ›</span><span class="lc">Off</span><span class="lc">Sleeping more</span><span class="lc">Hiding</span><span class="lc">Not grooming</span><span class="lc">Lip-licking</span><span class="lc">Outside the box</span><span class="lc">Lively</span><span class="lc">Played</span><span class="lc">Nothing unusual</span><span class="lmore">More…</span></div>
+            <div class="cnt">3 meals</div>
+            <div class="spine">
+              <div class="sr"><time>7:04 AM</time><i></i><span>Meal · Royal Canin Selected Protein PR</span></div>
+              <div class="sr"><time>12:40 PM</time><i></i><span>Meal · Royal Canin Selected Protein PR</span></div>
+              <div class="sr"><time>6:04 PM</time><i></i><span>Meal · Royal Canin Selected Protein PR</span></div>
+              <div class="sr con new"><time>7:41 PM</time><i></i><span>Ate a little since 7 PM yesterday</span></div>
+            </div>
+          </div>
+          <div class="fab">+</div>
+        </div>
+        <ol class="notes">
+          <li>The answer sits in today's record, so it can be seen, changed or undone like any entry.</li>
+          <li>The look question stays open: the door writes nothing to the look.</li>
+          <li>Whether the answer joins the day's count line is a build call.</li>
+        </ol>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="try" aria-labelledby="h-try">
+    <div class="eyebrow">§3 · Try it</div>
+    <h2 id="h-try">The two taps</h2>
+    <p class="lede">Tap the door, then an answer. The counter stops at the first save. Only the door and the sheet are live here.</p>
+    <div class="row">
+      <div class="frame">
+        <span class="tag current">Prototype</span>
+        <div class="phone" id="proto"></div>
+        <div class="controls"><button class="btn" type="button" id="protoReset">Start over</button><span class="taps" id="protoTaps" aria-live="polite">Taps so far: 0</span></div>
+      </div>
+      <ol class="notes" style="max-width: 46ch">
+        <li><b>Back to Noticed</b> saves nothing, as the shipped sheet promises.</li>
+        <li><b>Change</b> reopens the answers with yours marked. The last answer wins.</li>
+        <li><b>A bowl</b> opens its five grades. Tapping a lit grade clears it, as the meal's record does today.</li>
+        <li>After <b>Done</b>, Home shows the answer in today's record. Tap the door again to see or change it.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-edges">
+    <div class="eyebrow">§4 · Two edges</div>
+    <h2 id="h-edges">After a look, and two cats on one bowl</h2>
+    <div class="row">
+      <div class="frame">
+        <span class="tag">Today, after a look</span>
+        <div class="phone short" role="img" aria-label="Today, after a look: the entry Nothing unusual at 8:02 AM and an Add a look control. The door is hidden.">
+          <div class="hh"><div class="pn">Nyx</div><div class="dt">Saturday, Oct 10</div></div>
+          <div class="today">
+            <div class="lq">How does Nyx seem today?</div>
+            <div class="entry"><span class="rail"></span><span><b>Nothing unusual</b> · 8:02 AM</span></div>
+            <div class="ctlrow"><span class="ctl">Add a look</span></div>
+            <div class="cnt">3 meals</div>
+            <div class="spine"><div class="sr"><time>7:04 AM</time><i></i><span>Meal · Royal Canin Selected Protein PR</span></div><div class="sr"><time>12:40 PM</time><i></i><span>Meal · Royal Canin Selected Protein PR</span></div></div>
+          </div>
+        </div>
+        <ol class="notes"><li>Once the look is answered, the door hides behind Add a look. One more tap, and it reads as part of the look.</li></ol>
+      </div>
+      <div class="frame">
+        <span class="tag current">Proposed, after a look</span>
+        <div class="phone short" role="img" aria-label="Proposed, after a look: the same entry, with Add a look and the Didn't eat door side by side.">
+          <div class="hh"><div class="pn">Nyx</div><div class="dt">Saturday, Oct 10</div></div>
+          <div class="today">
+            <div class="lq">How does Nyx seem today?</div>
+            <div class="entry"><span class="rail"></span><span><b>Nothing unusual</b> · 8:02 AM</span></div>
+            <div class="ctlrow"><span class="lc door">Didn’t eat ›</span><span class="ctl">Add a look</span></div>
+            <div class="cnt">3 meals</div>
+            <div class="spine"><div class="sr"><time>7:04 AM</time><i></i><span>Meal · Royal Canin Selected Protein PR</span></div><div class="sr"><time>12:40 PM</time><i></i><span>Meal · Royal Canin Selected Protein PR</span></div></div>
+          </div>
+        </div>
+        <ol class="notes"><li>The door stays out all day. A "Nothing unusual" at 8 AM shouldn't make it harder to say she didn't eat at 7 PM.</li></ol>
+      </div>
+      <div class="frame">
+        <span class="tag current">Two cats, a free fed bowl</span>
+        <div class="phone short" role="img" aria-label="Sam's cat Pixel. The sheet asks: Have you seen Pixel eat since 7 PM yesterday? Sam said Haven't seen. A line: If you haven't seen Pixel eat by 8 AM tomorrow, call your vet.">
+          <div class="faded"><div class="hh"><div class="pn">Pixel</div><div class="dt">Saturday, Oct 10</div></div>
+            <div class="today"><div class="lq">How does Pixel seem today?</div><div class="lchips"><span class="lc">Left her food ›</span><span class="lc">Off</span><span class="lc">Hiding</span></div></div></div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="sq">Have you seen Pixel eat since 7 PM yesterday?</div>
+            <p class="hint">"Haven't seen" is a fine answer.</p>
+            <div class="ans"><span>No, she wouldn’t</span><span class="on">Haven’t seen</span></div>
+            <p class="net">If you haven’t seen Pixel eat by 8 AM tomorrow, call your vet.</p>
+            <span class="done">Done</span>
+          </div>
+        </div>
+        <ol class="notes">
+          <li>Sam's Pixel grazes from a bowl Juniper shares. The free fed question asks what Sam <b>saw</b>, so she never guesses about the wrong cat.</li>
+          <li>Closes CUL-895 (no honest Not sure) and CUL-1391 (a free fed bowl had no way to raise the flag).</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-stays">
+    <div class="eyebrow">§5 · Grading stays</div>
+    <h2 id="h-stays">Every meal can still be graded</h2>
+    <div class="row">
+      <div class="frame">
+        <span class="tag">Unchanged</span>
+        <div class="phone short" role="img" aria-label="A meal's record screen. Food: Selected Protein PR, Royal Canin, Dry. Intake: five grades.">
+          <div class="scr">
+            <div class="nav">‹ Back</div>
+            <div><div class="ttl">Meal</div><div class="when">6:04 PM · Saturday, Oct 10</div></div>
+            <div class="sec"><div class="sl">FOOD</div><div class="fp">Selected Protein PR</div><div class="fb">Royal Canin · Dry</div></div>
+            <div class="sec"><div class="sl">INTAKE</div><div class="chips"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div></div>
+          </div>
+        </div>
+        <ol class="notes"><li>A meal's own record keeps its five grades, as shipped. The bowl step in §2 writes to this same grade.</li></ol>
+      </div>
+      <div class="explain" style="align-self: start">
+        <h3>Why this isn't ripping out intake</h3>
+        <p>The grade, its scale and its column stay. Every safety check that reads a grade keeps reading it. What leaves is one question asked at the wrong moment, and it has been going unanswered since August.</p>
+        <p>The door adds what the record is missing: a way to say she isn't eating that the checks can read. The Signal's appetite check gets an input again for the first time since mid August.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-checks">
+    <div class="eyebrow">§6 · What the checks hear</div>
+    <h2 id="h-checks">An answer only ever adds concern</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Answer</th><th>What the record says</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td>No</td><td>No meal since 7 PM yesterday</td><td>Counts as a refusal. For a cat, a day without a meal is a call today.</td></tr>
+          <tr><td>A little</td><td>Stored as Picked</td><td>Counts toward the 3 day rule for reduced eating.</td></tr>
+          <tr><td>Not sure, Haven't seen</td><td>Unknown</td><td>Never counted as eaten. A dated line names when to call.</td></tr>
+          <tr><td>No answer</td><td>Unknown</td><td>Nothing either way. Silence is never read as eaten or not eaten.</td></tr>
+          <tr><td>A graded bowl</td><td>That meal's grade</td><td>The same observation as the day answer, counted once.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="explain">
+      <p><b>Who reads it:</b> the vomit read, the Signal's appetite check, Noticed's not eating state and the trial card, all through one shared intake check. Nothing here ever lowers a warning.</p>
+      <p><b>The backstop:</b> a grazing cat can eat 30 to 50% less without one bowl that looks left. No answer catches that; weight does. So this goes live together with the weight lane, never before it.</p>
+    </div>
+  </section>
+
+  <section id="options" aria-labelledby="h-options">
+    <div class="eyebrow">§7 · The options, drawn for the decisions</div>
+    <h2 id="h-options">What the other answers would look like</h2>
+    <div class="row">
+      <div class="optbox">
+        <span class="lbl">D1 (b) or (c). An option, drawn for the decision, not the proposal.</span>
+        <div class="frame">
+          <span class="tag option">A setting</span>
+          <div class="phone short" role="img" aria-label="Nyx's settings. A switch: Ask how much Nyx ate after each meal.">
+            <div class="scr">
+              <div class="nav">‹ Nyx</div>
+              <div class="ttl">Logging</div>
+              <div class="setrow"><div><div class="l">Ask how much Nyx ate after each meal</div><div class="s">Grading stays on each meal's record either way.</div></div><span class="switch" aria-hidden="true"></span></div>
+              <div class="setrow dimrow"><div><div class="l">Remind me at 9 PM</div><div class="s">The daily summary.</div></div><span class="switch" aria-hidden="true"></span></div>
+            </div>
+          </div>
+          <ol class="notes">
+            <li>(b) ships it off, (c) ships it on. Either way the engine has to know which mode every meal was logged under, and every count has to say so.</li>
+            <li>A mode chosen in May is wrong in October when she gets sick, and few owners come back to settings.</li>
+          </ol>
+        </div>
+      </div>
+      <div class="optbox">
+        <span class="lbl">D2 (b). An option, drawn for the decision, not the proposal.</span>
+        <div class="frame">
+          <span class="tag option">Today's door</span>
+          <div class="phone short" role="img" aria-label="Today's door sheet: Meal, 7:40 PM, now. A new meal. How much did Nyx eat? Five grades.">
+            <div class="faded"><div class="hh"><div class="pn">Nyx</div><div class="dt">Saturday, Oct 10</div></div></div>
+            <div class="dim"></div>
+            <div class="sheet">
+              <div class="grab"></div>
+              <div class="sq">Meal · 7:40 PM, now</div>
+              <p class="hint">A new meal — not a change to one you logged earlier.</p>
+              <div class="said">Royal Canin Selected Protein PR · the trial diet · <span class="link">Change food ›</span></div>
+              <div class="said">How much did Nyx eat?</div>
+              <div class="five"><span>Refused</span><span>Picked</span><span>Some</span><span>Most</span><span>All</span></div>
+              <p class="promise">Nothing is saved until you pick how much.</p>
+              <span class="back">‹ Back to Noticed</span>
+            </div>
+          </div>
+          <ol class="notes">
+            <li>Shipped copy, verbatim. It writes a <b>new</b> meal at 7:40 PM beside the 6:04 PM bowl she left, so the food counts twice.</li>
+            <li>No Not sure, so a shared bowl has no honest answer (CUL-895).</li>
+          </ol>
+        </div>
+      </div>
+      <div class="optbox no">
+        <span class="lbl">D2 (c). Drawn for the decision. The team advises against it.</span>
+        <div class="frame">
+          <span class="tag no">An appetite word</span>
+          <div class="phone short" role="img" aria-label="Home with a new word on the look: Ate less.">
+            <div class="hh"><div class="pn">Nyx</div><div class="dt">Saturday, Oct 10</div></div>
+            <div class="today">
+              <div class="lq">How does Nyx seem today?</div>
+              <div class="lchips"><span class="lc word-new">Ate less</span><span class="lc">Off</span><span class="lc">Sleeping more</span><span class="lc">Hiding</span><span class="lc">Not grooming</span><span class="lc">Lip-licking</span><span class="lc">Outside the box</span><span class="lc">Lively</span><span class="lc">Played</span><span class="lc">Nothing unusual</span><span class="lmore">More…</span></div>
+            </div>
+          </div>
+          <ol class="notes">
+            <li>One tap, but a look never enters the engine (ruled Oct 2), so the word would reach no safety check.</li>
+            <li>Dr. Chen's September worry applies in full: the word gets tapped and nothing downstream hears it.</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-later">
+    <div class="eyebrow">Not drawn this round</div>
+    <h2 id="h-later">Held for later rounds or rulings</h2>
+    <ul class="later">
+      <li><b>The vet report's line</b> that intake is recorded by exception. The answers don't reach the report until that is ruled.</li>
+      <li><b>The Signal's appetite card</b> when day answers trip it.</li>
+      <li><b>Asking in context,</b> such as the first days of a new trial diet. Only if a real case shows up.</li>
+      <li><b>The door's label.</b> It stays "Didn't eat ›" unless you want it changed.</li>
+      <li><b>What No means for a dog,</b> for Dr. Chen.</li>
+    </ul>
+  </section>
+
+  <footer>Source of truth: <code>docs/culprit-intake-capture-mockups.html</code>. Issue: CUL-1753. Round 1, Oct 10, 2026. Later rounds republish to this same page.</footer>
+</main>
+
+<script>
+(() => {
+  const root = document.getElementById('proto');
+  const tapsEl = document.getElementById('protoTaps');
+  const resetBtn = document.getElementById('protoReset');
+  if (!root || !tapsEl || !resetBtn) return;
+
+  const FOOD = 'Royal Canin Selected Protein PR';
+  const BOWLS = [
+    { id: 'b0', time: '9:31 PM yesterday' },
+    { id: 'b1', time: '7:04 AM' },
+    { id: 'b2', time: '12:40 PM' },
+    { id: 'b3', time: '6:04 PM' },
+  ];
+  const ANSWERS = [['a_little', 'A little'], ['no', 'No'], ['not_sure', 'Not sure']];
+  const GRADES = ['Refused', 'Picked', 'Some', 'Most', 'All'];
+  const ROW = {
+    a_little: { cls: 'con', text: 'Ate a little since 7 PM yesterday' },
+    no: { cls: 'con', text: 'No meal since 7 PM yesterday' },
+    not_sure: { cls: 'unk', text: 'Not sure she has eaten since 7 PM yesterday' },
+  };
+  const QUESTION = 'Has Nyx eaten a meal since 7 PM yesterday?';
+  let s;
+  let entering = false;
+
+  const label = (a) => (ANSWERS.find((x) => x[0] === a) || [null, ''])[1];
+
+  function home(live) {
+    const door = live
+      ? '<button type="button" class="lc door" data-act="door" aria-label="Didn\'t eat. Opens a question about Nyx\'s eating">Didn’t eat ›</button>'
+      : '<span class="lc">Didn’t eat ›</span>';
+    let rows = '';
+    rows += `<div class="sr"><time>7:04 AM</time><i></i><span>Meal · ${FOOD}</span></div>`;
+    rows += `<div class="sr"><time>12:40 PM</time><i></i><span>Meal · ${FOOD}</span></div>`;
+    rows += `<div class="sr"><time>6:04 PM</time><i></i><span>Meal · ${FOOD}</span></div>`;
+    if (s.answer) {
+      const r = ROW[s.answer];
+      rows += `<div class="sr ${r.cls} new"><time>7:41 PM</time><i></i><span>${r.text}</span></div>`;
+    }
+    return `<div class="hh"><div class="pn">Nyx</div><div class="dt">Saturday, Oct 10</div></div>
+      <div class="today"><div class="lq">How does Nyx seem today?</div>
+        <div class="lchips">${door}<span class="lc">Off</span><span class="lc">Sleeping more</span><span class="lc">Hiding</span><span class="lc">Not grooming</span><span class="lc">Lip-licking</span><span class="lc">Outside the box</span><span class="lc">Lively</span><span class="lc">Played</span><span class="lc">Nothing unusual</span><span class="lmore">More…</span></div>
+        <div class="cnt">3 meals</div><div class="spine">${rows}</div></div>
+      <div class="fab" aria-hidden="true">+</div>`;
+  }
+
+  function bowls() {
+    let h = '<div class="bowls"><div class="bh">Which bowl did she leave?<span>Optional</span></div>';
+    for (const b of BOWLS) {
+      const g = s.graded[b.id];
+      const open = s.open === b.id;
+      h += `<button type="button" class="bw" data-act="bowl" data-id="${b.id}" aria-expanded="${open}"><time>${b.time}</time><span>${FOOD}</span><em class="${g ? 'g' : ''}">${g || (open ? '⌄' : '›')}</em></button>`;
+      if (open) {
+        h += '<div class="five" role="group" aria-label="How much of this bowl">';
+        for (const x of GRADES) h += `<button type="button" data-act="grade" data-id="${b.id}" data-v="${x}" class="${g === x ? 'on' : ''}" aria-pressed="${g === x}">${x}</button>`;
+        h += '</div>';
+      }
+    }
+    return h + '</div>';
+  }
+
+  function sheet() {
+    const enter = entering ? ' enter' : '';
+    let h = `<div class="dim${enter}" data-act="close"></div><div class="sheet${enter}" role="dialog" aria-label="${QUESTION}"><div class="grab"></div><div class="sq">${QUESTION}</div>`;
+    if (!s.answer || s.editing) {
+      h += '<div class="ans" role="group" aria-label="Answers">';
+      for (const [v, l] of ANSWERS) h += `<button type="button" data-act="answer" data-v="${v}" class="${s.answer === v ? 'on' : ''}" aria-pressed="${s.answer === v}">${l}</button>`;
+      h += '</div>';
+      if (!s.answer) h += '<p class="promise">Nothing is saved until you pick an answer.</p>';
+      h += '<button type="button" class="back" data-act="close">‹ Back to Noticed</button>';
+    } else {
+      h += `<div class="said">You said: ${label(s.answer)} · <button type="button" class="link" data-act="change">Change</button></div>`;
+      if (s.answer === 'no') h += '<p class="call">Not eating for a day is a reason to call your vet today.</p>';
+      if (s.answer === 'not_sure') h += '<p class="net">If you haven’t seen Nyx eat by 8 AM tomorrow, call your vet.</p>';
+      if (s.answer !== 'not_sure') h += bowls();
+      h += '<button type="button" class="done" data-act="done">Done</button>';
+    }
+    return h + '</div>';
+  }
+
+  function render(focusSel) {
+    root.innerHTML = s.view === 'home' ? home(true) : `<div class="faded" aria-hidden="true" inert>${home(false)}</div>${sheet()}`;
+    entering = false;
+    tapsEl.innerHTML = s.savedIn
+      ? `Saved in <b>${s.savedIn} taps</b>. Everything after that is optional.`
+      : `Taps so far: <b>${s.taps}</b>`;
+    if (focusSel) {
+      const f = root.querySelector(focusSel);
+      if (f) f.focus();
+    }
+  }
+
+  function reset() {
+    s = { view: 'home', answer: null, editing: false, open: null, graded: {}, taps: 0, savedIn: 0 };
+    render();
+  }
+
+  root.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-act]');
+    if (!t || !root.contains(t)) return;
+    if (s.view === 'home' && t.dataset.act !== 'door') return;
+    if (!s.savedIn) s.taps += 1;
+    const keyboard = e.detail === 0;
+    switch (t.dataset.act) {
+      case 'door': s.view = 'sheet'; entering = true; break;
+      case 'close': s.view = 'home'; s.editing = false; s.open = null; break;
+      case 'answer':
+        s.answer = t.dataset.v; s.editing = false;
+        if (!s.savedIn) s.savedIn = s.taps;
+        break;
+      case 'change': s.editing = true; break;
+      case 'bowl': s.open = s.open === t.dataset.id ? null : t.dataset.id; break;
+      case 'grade': {
+        const id = t.dataset.id;
+        if (s.graded[id] === t.dataset.v) delete s.graded[id]; else s.graded[id] = t.dataset.v;
+        break;
+      }
+      case 'done': s.view = 'home'; s.open = null; break;
+      default: break;
+    }
+    render(keyboard ? (s.view === 'home' ? '[data-act="door"]' : '.sheet button') : null);
+  });
+
+  resetBtn.addEventListener('click', reset);
+  reset();
+})();
+</script>
