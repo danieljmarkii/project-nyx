@@ -25,7 +25,7 @@ import { AccessibilityInfo, Animated, LayoutAnimation, StyleSheet } from 'react-
 import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { FOLD_LAYOUT, FOLD_MOTION, UNFOLD_LAYOUT } from '../motion/foldMotion';
-import { OPEN_IN_PLACE_LEAD_PT } from '../motion/openInPlaceMotion';
+import { LEAD_LAYOUT, OPEN_IN_PLACE_BUDGET_MS, OPEN_IN_PLACE_LEAD_PT } from '../motion/openInPlaceMotion';
 import { useState } from 'react';
 import { TICK_BREATH } from '../motion/arrivalMotion';
 import type { NodeRead, SpineCompactNode, SpineDose, SpineEventNode } from '../../lib/spineNode';
@@ -654,25 +654,30 @@ describe('open in place (HV-10): the one choreography the month uses, on the thr
     const node = run(3);
     const t = render(<InPlace node={node} />);
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
-    // Beat 1: the slot is there at the lead height, its rail out of the flow and growing;
-    // no member is mounted, and nothing has touched the layout yet.
-    expect(styleOf(t.getByTestId('spine-members-compact:m0')).minHeight).toBe(OPEN_IN_PLACE_LEAD_PT);
+    // Beat 1: the slot is there at the lead height, clipped, its rail out of the flow and
+    // growing; no member is mounted. The slot's mount moves the rows beneath, so it rides
+    // the lead's own layout config (CUL-1721: it used to land bare, a jump).
+    const lead = styleOf(t.getByTestId('spine-members-compact:m0'));
+    expect(lead.minHeight).toBe(OPEN_IN_PLACE_LEAD_PT);
+    expect(lead.overflow).toBe('hidden');
     const leadRail = styleOf(t.getByTestId('spine-run-rail-compact:m0'));
     expect(leadRail.height).toBe(OPEN_IN_PLACE_LEAD_PT);
     expect(leadRail.transformOrigin).toBe('top');
     expect(t.queryByTestId('spine-node-m0')).toBeNull();
-    expect(configureNext).not.toHaveBeenCalled();
+    expect(configureNext).toHaveBeenCalledTimes(1);
+    expect(configureNext).toHaveBeenLastCalledWith(LEAD_LAYOUT);
     // Beat 2: railLagMs later, ONE layout commit on the fold's unfold spring, and the members
     // mount in their animated stage.
     advance(FOLD_MOTION.railLagMs);
-    expect(configureNext).toHaveBeenCalledTimes(1);
-    expect(configureNext).toHaveBeenCalledWith(UNFOLD_LAYOUT);
+    expect(configureNext).toHaveBeenCalledTimes(2);
+    expect(configureNext).toHaveBeenLastCalledWith(UNFOLD_LAYOUT);
     expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
     for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
-    // At rest: no stage, the rail back on the thread with no explicit height, every member a
-    // full row, nothing capping the box (AC 17 under the motion too).
+    // At rest: the same stage (one element type across phases, CUL-1721), the rail back on
+    // the thread with no explicit height, every member a full row, nothing capping or
+    // clipping the box (AC 17 under the motion too).
     settleOpen();
-    expect(t.queryByTestId('spine-members-stage-compact:m0')).toBeNull();
+    expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
     const rail = styleOf(t.getByTestId('spine-run-rail-compact:m0'));
     expect(rail.height).toBeUndefined();
     expect((rail.left as number) + (rail.width as number) / 2).toBe(THREAD_X);
@@ -716,10 +721,54 @@ describe('open in place (HV-10): the one choreography the month uses, on the thr
     for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
     expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
     expect(configureNext).not.toHaveBeenCalled();
+    const member = t.getByTestId(`spine-node-${node.rows[0].id}`);
     advance(theme.durationFast + FOLD_MOTION.settleSlackMs);
     expect(theme.durationFast).toBe(150);
-    expect(t.queryByTestId('spine-members-stage-compact:m0')).toBeNull();
+    // At rest the members are the same elements the fade drew (CUL-1721: nothing remounts).
+    expect(t.getByTestId(`spine-node-${node.rows[0].id}`)).toBe(member);
     expect(configureNext).not.toHaveBeenCalled();
+  });
+
+  it('CUL-1721: a member is the SAME element from its mount to its unmount, so VoiceOver focus and a press survive both ends', () => {
+    const node = run(3);
+    const t = render(<InPlace node={node} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(FOLD_MOTION.railLagMs);
+    const landing = t.getByTestId('spine-node-m1');
+    settleOpen();
+    expect(t.getByTestId('spine-node-m1')).toBe(landing);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    // Leaving: still mounted, still the same element.
+    expect(t.getByTestId('spine-node-m1')).toBe(landing);
+    const rail = t.getByTestId('spine-run-rail-compact:m0');
+    advance(1);
+    expect(t.getByTestId('spine-run-rail-compact:m0')).toBe(rail);
+  });
+
+  it('CUL-1721: the slot clips while it moves (a rail holding the open box never spills onto the next bead), and never at rest', () => {
+    const t = render(<InPlace node={run(3)} initial />);
+    expect(styleOf(t.getByTestId('spine-members-compact:m0')).overflow).not.toBe('hidden');
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    expect(styleOf(t.getByTestId('spine-members-compact:m0')).overflow).toBe('hidden');
+    advance(FOLD_MOTION.leaveMs);
+    // The box is closing (the rail still trails): still clipped, at zero.
+    const closing = styleOf(t.getByTestId('spine-members-compact:m0'));
+    expect(closing.overflow).toBe('hidden');
+    expect(closing.minHeight).toBe(0);
+  });
+
+  it.each([2, 12])('CUL-1721: a %d-meal run opens and closes inside the same time budget', (n) => {
+    const node = run(n);
+    const t = render(<InPlace node={node} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(OPEN_IN_PLACE_BUDGET_MS.open);
+    // Idle: the rail back on the thread, nothing clipped, every member a full row.
+    expect(styleOf(t.getByTestId('spine-run-rail-compact:m0')).height).toBeUndefined();
+    expect(styleOf(t.getByTestId('spine-members-compact:m0')).overflow).not.toBe('hidden');
+    for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(OPEN_IN_PLACE_BUDGET_MS.close);
+    expect(t.queryByTestId('spine-members-compact:m0')).toBeNull();
   });
 
   it('without `openInPlace` the shipped open is untouched: no stage, no lead, the fold\'s config on the tap', () => {
