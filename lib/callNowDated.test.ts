@@ -51,7 +51,7 @@ describe('the dated words quote the map and keep the ask', () => {
     const dated = recordDatedCallNow(READ, readMs + CALL_NOW_FIRST_DAY_MS)!;
     expect(dated.label).toMatch(/^On [A-Z][a-z]{2} \d{1,2}, the read said: call your vet now$/);
     expect(dated.action).toBe(DATED_CALL_NOW_ACTION);
-    expect(dated.action).toMatch(/call yours now/);
+    expect(dated.action).toMatch(/call them now/);
     expect(dated.action).toMatch(/emergency clinic/);
     expect(dated.action).not.toMatch(/!/);
   });

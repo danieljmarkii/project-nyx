@@ -1124,7 +1124,7 @@ describe('StoolAnalysisSection — the tier (EN-3)', () => {
       mockRow = row({ recommendation: 'worth_a_call', tier: 'call_now', engine_flags: ['engines_v3_en3'] });
       const view = render(<StoolAnalysisSection eventId="s-dated" petId="pet-1" petName="Rex" hasPhoto />);
       await view.findByText('On Oct 3, the read said: call your vet now');
-      expect(view.queryByText("If you haven't spoken to a vet since, call yours now. If they're closed, call an emergency clinic.")).toBeTruthy();
+      expect(view.queryByText("If you haven't spoken to your vet since, call them now. If they're closed, call an emergency clinic.")).toBeTruthy();
     } finally {
       mockFloorFacts = null;
       mockMinuteNow = null;

@@ -46,7 +46,7 @@ export function datedCallNowAsk(day: string): string {
 /** The record card's action line under a dated call now. It still sends the owner to a vet,
  *  now, unless they have spoken to one since; it never says the call has passed. */
 export const DATED_CALL_NOW_ACTION =
-  "If you haven't spoken to a vet since, call yours now. If they're closed, call an emergency clinic.";
+  "If you haven't spoken to your vet since, call them now. If they're closed, call an emergency clinic.";
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 

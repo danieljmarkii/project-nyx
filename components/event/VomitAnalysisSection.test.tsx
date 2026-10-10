@@ -1608,7 +1608,7 @@ describe('VomitAnalysisSection — the tier (EN-3)', () => {
       mockMinuteNow = vomitAt.getTime() + 24 * 3600_000;
       const later = render(<VomitAnalysisSection eventId="t1e" petId="pet-1" petName="Rex" hasPhoto />);
       await later.findByText('On Oct 3, the read said: call your vet now');
-      expect(later.queryByText("If you haven't spoken to a vet since, call yours now. If they're closed, call an emergency clinic.")).toBeTruthy();
+      expect(later.queryByText("If you haven't spoken to your vet since, call them now. If they're closed, call an emergency clinic.")).toBeTruthy();
       expect(later.queryByText('Call your vet now')).toBeNull();
       expect(flat(later.getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
       later.unmount();
