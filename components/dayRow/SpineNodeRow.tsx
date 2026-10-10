@@ -20,11 +20,13 @@
 //   • Open in place: every member of an opened run is a full row with every fact and the
 //     44pt floor (GAP-8), in the member form (CUL-1733): the meal word, format and chip on
 //     line 1, the brand and product on line 2, a 9pt bead on the run's line. Where the host asks for it
-//     (`openInPlace`: History v2's day cards, and Home's spine), the run
-//     opens on the ONE open-in-place choreography the month's day uses (`useOpenInPlace`,
-//     HV-10 / CUL-1167): the run's rail leads along the thread, the box follows, the members
-//     land; under Reduce Motion the box is there at once and the members fade in over
-//     150ms. Without it, the run keeps the shipped `LayoutAnimation` open, byte for byte.
+//     (`openInPlace`: History v2's day cards, and Home's spine), the run opens on its OWN
+//     motion (`useRunOpen`, CUL-1734, D1): the chevron turns, the line grows out of the
+//     run's bead, the box opens from nothing with no bounce, and each meal lands as the
+//     box's edge reaches it; under Reduce Motion the box is there at once and the line and
+//     the meals fade in over 150ms. The Patterns month keeps `useOpenInPlace`; nothing
+//     run-only reaches it. Without `openInPlace`, the run keeps the shipped
+//     `LayoutAnimation` open, byte for byte.
 //
 // Never an image: Home is the surface a guest sees over the owner's shoulder (T&S; R4-2
 // option A), so the photo is one tap in, on the record, where the vet will ask to see it.
@@ -57,11 +59,12 @@ import { router } from 'expo-router';
 import { Camera, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SPINE_THREAD, SpineRowFrame } from '../recap/DaySpine';
+import { NODE_DOT_SIZE } from '../recap/nodeTints';
 import { ThemedText } from '../ui/ThemedText';
 import { useNodeArrival } from '../motion/arrivalMotion';
 import { announceQueued, readLandedSpoken, useRowSpeech } from './rowSpeech';
 import { FOLD_LAYOUT, UNFOLD_LAYOUT } from '../motion/foldMotion';
-import { useOpenInPlace } from '../motion/openInPlaceMotion';
+import { useRunOpen } from '../motion/runOpenMotion';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { ADHERENCE_OPTIONS } from '../log/AdherenceChipRow';
@@ -85,6 +88,8 @@ export const TIME_TAG_LABEL = { found: 'found', estimated: 'estimated' } as cons
 export const THREAD_X = SPINE_THREAD.x;
 /** The opened run's rail, laid over the thread along its members. */
 const RUN_RAIL_W = 4;
+/** Where the run's lead starts: the foot of the run's own bead (its centre plus half the bead). */
+const RUN_LEAD_TOP = SPINE_THREAD.dotCenterY + NODE_DOT_SIZE / 2;
 
 // ── The chips ─────────────────────────────────────────────────────────────────────
 
@@ -514,7 +519,15 @@ export function SpineCompactRow({
   const appActive = useAppActive();
   // Called either way (the rules of hooks) and held closed when the host did not ask for it,
   // so the shipped path runs no timer, no beat and no `configureNext` of this machine's.
-  const motion = useOpenInPlace({ shown: openInPlace && expanded, identity: node.id, reducedMotion, appActive });
+  const motion = useRunOpen({
+    shown: openInPlace && expanded,
+    identity: node.id,
+    count: node.rows.length,
+    beadCenterY: SPINE_THREAD.dotCenterY,
+    leadTop: RUN_LEAD_TOP,
+    reducedMotion,
+    appActive,
+  });
   const toggle = () => {
     // The shipped open: geometry on `LayoutAnimation`, nothing else moves; under reduced
     // motion the rows appear. The open-in-place machine drives its own layout commits.
@@ -536,10 +549,25 @@ export function SpineCompactRow({
       member
     />
   ));
+  // Open in place: the chevron TURNS (one glyph, rotated 180°, so the turn reverses from
+  // where it is); the shipped open swaps the glyph.
+  const chevron = openInPlace ? (
+    <Animated.View
+      testID={`spine-run-chevron-${node.id}`}
+      style={{
+        transform: [{ rotate: motion.values.chevron.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }],
+      }}
+    >
+      <ChevronDown size={15} color={theme.colorAccentInk} strokeWidth={2} />
+    </Animated.View>
+  ) : (
+    <Chevron size={15} color={theme.colorAccentInk} strokeWidth={2} />
+  );
   return (
     <View>
       <Pressable
         onPress={toggle}
+        onLayout={openInPlace ? (e) => motion.onHeaderLayout(e.nativeEvent.layout.height) : undefined}
         accessibilityRole="button"
         accessibilityLabel={runRowLabel(node, expanded)}
         accessibilityState={{ expanded }}
@@ -556,7 +584,7 @@ export function SpineCompactRow({
             // The chevron rides the row's edge, not the title's end, so a long food name
             // wraps under it and the arrow never moves. It points the way the run opens:
             // here, downward (rule D).
-            trailing={<Chevron size={15} color={theme.colorAccentInk} strokeWidth={2} />}
+            trailing={chevron}
           >
             <ThemedText style={styles.title} numberOfLines={2}>
               {node.title}
@@ -570,8 +598,26 @@ export function SpineCompactRow({
           </SpineRowFrame>
         )}
       </Pressable>
+      {openInPlace && motion.slotMounted ? (
+        // The lead: out of the run's own bead, down the header's thread segment. Drawn over
+        // the header (so the grey thread never stripes it) from the bead's foot (so it never
+        // covers the bead). An explicit top and height, so no layout commit ever touches its
+        // frame; its scaleY is native.
+        <Animated.View
+          pointerEvents="none"
+          testID={`spine-run-lead-${node.id}`}
+          style={[
+            styles.runLead,
+            {
+              height: motion.leadHeight,
+              opacity: motion.values.line,
+              transform: [{ scaleY: motion.values.lead }],
+            },
+          ]}
+        />
+      ) : null}
       {openInPlace ? (
-        <RunInPlace nodeId={node.id} motion={motion}>
+        <RunInPlace nodeId={node.id} motion={motion} memberIds={node.rows.map((r) => r.id)}>
           {members}
         </RunInPlace>
       ) : expanded ? (
@@ -587,51 +633,60 @@ export function SpineCompactRow({
 }
 
 /**
- * The members opening in place (HV-10): the month's day anatomy, on the thread. The slot is
- * the members' box; the run's rail lies over the thread along it. Idle and open it is the
- * shipped tree's shape, a plain rail and plain rows; in flight the slot clips, and the rail
- * leaves the flow with an explicit height (so no layout keyframe re-commits a view carrying
- * a native-driver transform, the fold's Fabric rule).
+ * The members opening in place, on the run's own motion (CUL-1734). The slot is the box:
+ * mounted SHUT at zero height, let go on one configured commit, clipped while it moves.
+ * The rail inside it is a plain line with no transform, anchored top and bottom, so the
+ * box's own keyframe carries it along the edge. Each meal sits in its own animated wrapper
+ * and lands as the edge reaches it.
  *
- * ONE ELEMENT TYPE PER NODE ACROSS EVERY PHASE (CUL-1721): the rail is always an
- * `Animated.View` and the members always sit in the one animated stage, so nothing under
- * the run remounts at either end — a member VoiceOver is on keeps its focus, and a press
- * in that frame lands. (The stage used to unwrap at rest, which remounted every member.)
+ * ONE ELEMENT TYPE PER NODE ACROSS EVERY PHASE (CUL-1721): the rail, the stage and every
+ * meal's wrapper are the same elements from the box's mount to its unmount, so nothing
+ * remounts at either end: a member VoiceOver is on keeps its focus, and a press lands.
  */
 function RunInPlace({
   nodeId,
   motion,
+  memberIds,
   children,
 }: {
   nodeId: string;
-  motion: ReturnType<typeof useOpenInPlace>;
-  children: ReactNode;
+  motion: ReturnType<typeof useRunOpen>;
+  memberIds: string[];
+  children: ReactNode[];
 }) {
   if (!motion.slotMounted) return null;
-  const railOut = motion.inFlight && motion.railHeight != null;
   return (
     <View
-      style={[styles.members, { minHeight: motion.slotMinHeight }, motion.clipped && styles.membersClip]}
-      onLayout={(e) => motion.onSlotLayout(e.nativeEvent.layout.height)}
+      style={[styles.members, motion.boxHeight === 0 && styles.membersShut, motion.clipped && styles.membersClip]}
       testID={`spine-members-${nodeId}`}
     >
       <Animated.View
         pointerEvents="none"
         testID={`spine-run-rail-${nodeId}`}
-        style={
-          railOut
-            ? [styles.runRailOut, { height: motion.railHeight as number, transform: [{ scaleY: motion.values.railScale }] }]
-            : styles.runRail
-        }
+        style={[
+          styles.runLine,
+          motion.railBottom != null ? { bottom: motion.railBottom } : null,
+          { opacity: motion.values.line },
+        ]}
       />
-      {motion.rowsMounted ? (
-        <Animated.View
-          testID={`spine-members-stage-${nodeId}`}
-          style={{ opacity: motion.values.rowsOpacity, transform: [{ translateY: motion.values.rowsShift }] }}
-        >
-          {children}
-        </Animated.View>
-      ) : null}
+      <View
+        testID={`spine-members-stage-${nodeId}`}
+        onLayout={(e) => motion.onStageLayout(e.nativeEvent.layout.height)}
+      >
+        {children.map((child, i) => {
+          const v = motion.values.members[i];
+          return (
+            <Animated.View
+              key={memberIds[i]}
+              testID={`spine-member-wrap-${memberIds[i]}`}
+              onLayout={(e) => motion.onMemberLayout(i, e.nativeEvent.layout.y)}
+              style={{ opacity: v.opacity, transform: [{ translateY: v.shift }] }}
+            >
+              {child}
+            </Animated.View>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -753,14 +808,29 @@ const styles = StyleSheet.create({
     borderRadius: RUN_RAIL_W / 2,
     backgroundColor: theme.colorEventMeal,
   },
-  // In flight (open in place): out of the flow with an explicit height, growing about its top.
-  runRailOut: {
+  // Open in place (CUL-1734): the box shut at zero while it waits for its configured commit.
+  membersShut: { height: 0 },
+  // The lead, from the run's bead to the header's foot. `colorAccentGlyph` (3.27:1, a
+  // glyph on the light card, C-1); square at both ends: the bead caps its top, and the
+  // box's line takes over at its foot.
+  runLead: {
+    position: 'absolute',
+    left: THREAD_X - RUN_RAIL_W / 2,
+    top: RUN_LEAD_TOP,
+    width: RUN_RAIL_W,
+    backgroundColor: theme.colorAccentGlyph,
+    transformOrigin: 'top',
+  },
+  // The box's line: plain, no transform, the box's keyframe carries it. Square at its top,
+  // where it meets the lead; down to the last meal's bead once the meals have measured.
+  runLine: {
     position: 'absolute',
     left: THREAD_X - RUN_RAIL_W / 2,
     top: 0,
+    bottom: theme.space2,
     width: RUN_RAIL_W,
-    borderRadius: RUN_RAIL_W / 2,
-    backgroundColor: theme.colorEventMeal,
-    transformOrigin: 'top',
+    borderBottomLeftRadius: RUN_RAIL_W / 2,
+    borderBottomRightRadius: RUN_RAIL_W / 2,
+    backgroundColor: theme.colorAccentGlyph,
   },
 });

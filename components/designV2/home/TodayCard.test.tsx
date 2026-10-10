@@ -80,12 +80,12 @@ jest.mock('../../motion/threadMotion', () => {
 });
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { AccessibilityInfo, LayoutAnimation } from 'react-native';
+import { AccessibilityInfo, LayoutAnimation, StyleSheet } from 'react-native';
 import { useEventStore } from '../../../store/eventStore';
 import { useReducedMotionStore } from '../../../store/reducedMotionStore';
 import { TODAY_EMPTY_LINE, TODAY_EMPTY_LOOK_LINE, TODAY_FAILED_LINE, TODAY_MEAL_TAIL, TodayCard } from './TodayCard';
 import { RowSpeechContext } from '../../dayRow/rowSpeech';
-import { LEAD_LAYOUT } from '../../motion/openInPlaceMotion';
+import { RUN_OPEN_LAYOUT } from '../../motion/runOpenMotion';
 import { todayMealNudge } from '../../../lib/lookCard';
 
 const at = (h: number, m: number): string => {
@@ -506,18 +506,20 @@ describe('Home\'s first paint and open in place (History v2)', () => {
     expect(mockClaims).toEqual([]);
   });
 
-  it('a run opens in place: the rail leads with no member yet', async () => {
+  it('a run opens in place on its own motion: the box mounts shut with its meals, then one configured commit (CUL-1734)', async () => {
     const configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
     ready(SEP_17);
     const t = render(<TodayCard />);
     await waitFor(() => expect(t.getByTestId('spine-node-compact:m6')).toBeTruthy());
     fireEvent.press(t.getByTestId('spine-node-compact:m6'));
-    expect(t.getByTestId('spine-members-compact:m6')).toBeTruthy();
-    expect(t.queryByTestId('spine-node-m6')).toBeNull();
-    // The slot's mount moves the rows beneath, so it rides the lead's own config, and only
-    // that one so far: the box's spring follows the rail (CUL-1721).
-    expect(configureNext.mock.calls).toEqual([[LEAD_LAYOUT]]);
-    await waitFor(() => expect(t.getByTestId('spine-node-m6')).toBeTruthy());
+    // The box is mounted SHUT with every meal inside it (nothing in the flow moves, so
+    // nothing is configured yet); the line grows out of the run's bead.
+    expect(StyleSheet.flatten(t.getByTestId('spine-members-compact:m6').props.style).height).toBe(0);
+    expect(t.getByTestId('spine-node-m6')).toBeTruthy();
+    expect(t.getByTestId('spine-run-lead-compact:m6')).toBeTruthy();
+    expect(configureNext).not.toHaveBeenCalled();
+    // One frame later the box is let go on the run's own ease, and only that.
+    await waitFor(() => expect(configureNext.mock.calls).toEqual([[RUN_OPEN_LAYOUT]]));
     configureNext.mockRestore();
   });
 

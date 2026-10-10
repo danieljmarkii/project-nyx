@@ -8,9 +8,9 @@
 // reduced motion, the breath; AC 24's resting half (an arrival ends in exactly the row a
 // fresh render of that state draws); VoiceOver hearing the whole row as one sentence in
 // reading order (C-8); and open in place, the static half (AC 17: every member of a run of
-// 2, 5, 9 and 12 drawn as a full row, nothing capped or clipped) and its motion (HV-10,
-// `openInPlace`: the month's choreography on the thread, its Reduce Motion form, and
-// VoiceOver staying on the run).
+// 2, 5, 9 and 12 drawn as a full row, nothing capped or clipped) and its motion (CUL-1734,
+// `openInPlace`: the run's own open, its Reduce Motion form, and VoiceOver staying on the
+// run; the beats themselves are pinned in `components/motion/runOpenMotion.test.ts`).
 
 const mockUseReducedMotion = jest.fn(() => false);
 jest.mock('../../hooks/useReducedMotion', () => ({
@@ -25,7 +25,15 @@ import { AccessibilityInfo, Animated, LayoutAnimation, StyleSheet } from 'react-
 import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { FOLD_LAYOUT, FOLD_MOTION, UNFOLD_LAYOUT } from '../motion/foldMotion';
-import { LEAD_LAYOUT, OPEN_IN_PLACE_BUDGET_MS, OPEN_IN_PLACE_LEAD_PT } from '../motion/openInPlaceMotion';
+import {
+  RUN_CLOSE_BUDGET_MS,
+  RUN_CLOSE_LAYOUT,
+  RUN_MOTION,
+  RUN_OPEN_LAYOUT,
+  runLandStarts,
+  runOpenBudgetMs,
+  runOpenIdleMs,
+} from '../motion/runOpenMotion';
 import { useState } from 'react';
 import { TICK_BREATH } from '../motion/arrivalMotion';
 import type { NodeRead, SpineCompactNode, SpineDose, SpineEventNode } from '../../lib/spineNode';
@@ -38,7 +46,7 @@ import {
   THREAD_X,
   eventRowLabel,
 } from './SpineNodeRow';
-import { RAIL_W, TIME_W } from '../recap/DaySpine';
+import { RAIL_W, SPINE_THREAD, TIME_W } from '../recap/DaySpine';
 import { RowSpeechContext, readLandedSpoken, type RowSpeech } from './rowSpeech';
 
 const FRAME_MS = 20;
@@ -713,7 +721,7 @@ describe('an opened run\'s member: the difference first, the brand and product o
 
 // ── Open in place, the motion (HV-10 / CUL-1167; spec §4 "Open a run", AC 32) ─────────
 
-describe('open in place (HV-10): the one choreography the month uses, on the thread', () => {
+describe('open in place: the run\'s own motion (CUL-1734, D1)', () => {
   /** A host that owns the open state, as a day card and Home's spine do. */
   function InPlace({ node, initial = false }: { node: SpineCompactNode; initial?: boolean }) {
     const [expanded, setExpanded] = useState(initial);
@@ -733,128 +741,149 @@ describe('open in place (HV-10): the one choreography the month uses, on the thr
     act(() => {
       jest.advanceTimersByTime(ms);
     });
-  const settleOpen = () => advance(FOLD_MOTION.railLagMs + FOLD_MOTION.openMs + FOLD_MOTION.landMs + FOLD_MOTION.settleSlackMs * 3);
+  const openBudget = (n: number) => RUN_MOTION.mountFrameMs + Math.ceil(runOpenIdleMs(runLandStarts(n)));
+  /** The chevron's drawn turn (the host's resolved style, or the interpolation behind it). */
+  const rotationOf = (el: { props: { style?: unknown } }) => {
+    const r = (styleOf(el).transform as { rotate: unknown }[])[0].rotate;
+    return typeof r === 'string' ? r : (r as { __getValue: () => string }).__getValue();
+  };
 
-  it('a tap: the rail leads along the thread with no member yet; the box follows on the fold\'s spring; the members land; at rest, the shipped shape', () => {
+  it('a tap: the box mounts shut with every meal inside it, the line at the bead; one frame later ONE configured commit lets it go; at rest, nothing clipped', () => {
     const node = run(3);
     const t = render(<InPlace node={node} />);
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
-    // Beat 1: the slot is there at the lead height, clipped, its rail out of the flow and
-    // growing; no member is mounted. The slot's mount moves the rows beneath, so it rides
-    // the lead's own layout config (CUL-1721: it used to land bare, a jump).
-    const lead = styleOf(t.getByTestId('spine-members-compact:m0'));
-    expect(lead.minHeight).toBe(OPEN_IN_PLACE_LEAD_PT);
-    expect(lead.overflow).toBe('hidden');
-    const leadRail = styleOf(t.getByTestId('spine-run-rail-compact:m0'));
-    expect(leadRail.height).toBe(OPEN_IN_PLACE_LEAD_PT);
-    expect(leadRail.transformOrigin).toBe('top');
-    expect(t.queryByTestId('spine-node-m0')).toBeNull();
+    // t=0: the box is there, SHUT and clipped, every meal already mounted inside it (so none
+    // remounts later); nothing in the flow has moved, so nothing is configured.
+    const shut = styleOf(t.getByTestId('spine-members-compact:m0'));
+    expect(shut.height).toBe(0);
+    expect(shut.overflow).toBe('hidden');
+    for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
+    expect(configureNext).not.toHaveBeenCalled();
+    // The lead: out of the run's own bead, its own frame (explicit top and height), the glyph tint.
+    const lead = styleOf(t.getByTestId('spine-run-lead-compact:m0'));
+    // From the bead's foot (its centre plus half the 11pt bead), over the header's grey thread.
+    expect(lead.top).toBe(SPINE_THREAD.dotCenterY + 11 / 2);
+    expect(typeof lead.height).toBe('number');
+    expect(lead.bottom).toBeUndefined();
+    expect(lead.transformOrigin).toBe('top');
+    expect(lead.backgroundColor).toBe(theme.colorAccentGlyph);
+    expect((lead.left as number) + (lead.width as number) / 2).toBe(THREAD_X);
+    // One frame later: ONE layout commit on the run's own ease, the box's height let go.
+    advance(RUN_MOTION.mountFrameMs);
     expect(configureNext).toHaveBeenCalledTimes(1);
-    expect(configureNext).toHaveBeenLastCalledWith(LEAD_LAYOUT);
-    // Beat 2: railLagMs later, ONE layout commit on the fold's unfold spring, and the members
-    // mount in their animated stage.
-    advance(FOLD_MOTION.railLagMs);
-    expect(configureNext).toHaveBeenCalledTimes(2);
-    expect(configureNext).toHaveBeenLastCalledWith(UNFOLD_LAYOUT);
-    expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
-    for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
-    // At rest: the same stage (one element type across phases, CUL-1721), the rail back on
-    // the thread with no explicit height, every member a full row, nothing capping or
-    // clipping the box (AC 17 under the motion too).
-    settleOpen();
-    expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
-    const rail = styleOf(t.getByTestId('spine-run-rail-compact:m0'));
-    expect(rail.height).toBeUndefined();
-    expect((rail.left as number) + (rail.width as number) / 2).toBe(THREAD_X);
+    expect(configureNext).toHaveBeenLastCalledWith(RUN_OPEN_LAYOUT);
+    expect(styleOf(t.getByTestId('spine-members-compact:m0')).height).toBeUndefined();
+    // At rest: no clip, the line on the thread in the glyph tint, no transform on it.
+    advance(openBudget(3));
     const box = styleOf(t.getByTestId('spine-members-compact:m0'));
-    expect(box.maxHeight).toBeUndefined();
-    expect(box.height).toBeUndefined();
     expect(box.overflow).not.toBe('hidden');
+    expect(box.height).toBeUndefined();
+    const rail = styleOf(t.getByTestId('spine-run-rail-compact:m0'));
+    expect(rail.backgroundColor).toBe(theme.colorAccentGlyph);
+    expect(rail.transform).toBeUndefined();
+    expect(rail.top).toBe(0);
+    expect((rail.left as number) + (rail.width as number) / 2).toBe(THREAD_X);
+    expect(rotationOf(t.getByTestId('spine-run-chevron-compact:m0'))).toBe('180deg');
     for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
+  });
+
+  it('the chevron turns: one glyph, rotated, never swapped (so a turn reverses from where it is)', () => {
+    const t = render(<InPlace node={run(2)} />);
+    const chev = t.getByTestId('spine-run-chevron-compact:m0');
+    expect(rotationOf(chev)).toBe('0deg');
+    expect(within(chev).UNSAFE_queryByType(ChevronUp)).toBeNull();
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(openBudget(2));
+    expect(t.getByTestId('spine-run-chevron-compact:m0')).toBe(chev);
+    expect(within(chev).UNSAFE_queryByType(ChevronUp)).toBeNull();
+    expect(within(chev).UNSAFE_getByType(ChevronDown)).toBeTruthy();
+  });
+
+  it('the line reaches the last meal\'s bead once the meals have measured', () => {
+    const node = run(3);
+    const t = render(<InPlace node={node} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    layout(t.getByTestId('spine-members-stage-compact:m0') as never, 180);
+    fireEvent(t.getByTestId('spine-member-wrap-m2'), 'layout', { nativeEvent: { layout: { x: 0, y: 120, width: 300, height: 60 } } });
+    advance(RUN_MOTION.mountFrameMs);
+    expect(styleOf(t.getByTestId('spine-run-rail-compact:m0')).bottom).toBe(180 - (120 + SPINE_THREAD.dotCenterY));
   });
 
   it('VoiceOver stays on the run: the same element before and after, now saying it hides them', () => {
     const t = render(<InPlace node={run(3)} />);
     const before = t.getByTestId('spine-node-compact:m0');
     fireEvent.press(before);
-    settleOpen();
+    advance(openBudget(3));
     const after = t.getByTestId('spine-node-compact:m0');
     expect(after).toBe(before);
     expect(after.props.accessibilityState).toEqual({ expanded: true });
     expect(after.props.accessibilityLabel).toMatch(/Hides each one$/);
   });
 
-  it('closing: the members leave, then the box closes on the fold\'s ease, then the rail trails and the slot goes', () => {
+  it('closing: ONE configured commit takes the box to zero on the tap, clipped, the meals still mounted; the box unmounts at 280', () => {
     const t = render(<InPlace node={run(3)} initial />);
     expect(t.getByTestId('spine-node-m0')).toBeTruthy();
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
-    // Beat 1: the members fade out in their stage, still mounted; no layout commit yet.
-    expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
-    expect(configureNext).not.toHaveBeenCalled();
-    advance(FOLD_MOTION.leaveMs);
-    expect(configureNext).toHaveBeenCalledWith(FOLD_LAYOUT);
-    advance(FOLD_MOTION.closeMs + FOLD_MOTION.railLagMs + FOLD_MOTION.railTrailMs + FOLD_MOTION.settleSlackMs * 3);
+    expect(configureNext).toHaveBeenCalledTimes(1);
+    expect(configureNext).toHaveBeenLastCalledWith(RUN_CLOSE_LAYOUT);
+    const closing = styleOf(t.getByTestId('spine-members-compact:m0'));
+    expect(closing.height).toBe(0);
+    expect(closing.overflow).toBe('hidden');
+    expect(t.getByTestId('spine-node-m0')).toBeTruthy();
+    advance(RUN_CLOSE_BUDGET_MS - 1);
+    expect(t.getByTestId('spine-members-compact:m0')).toBeTruthy();
+    advance(1);
     expect(t.queryByTestId('spine-members-compact:m0')).toBeNull();
+    expect(t.queryByTestId('spine-run-lead-compact:m0')).toBeNull();
   });
 
-  it('Reduce Motion (known on the first render): the box at once, the members fade in over 150ms, no layout keyframe', () => {
+  it('Reduce Motion (known on the first render): the box at once, the line and the meals fade in over 150ms, no layout keyframe', () => {
     mockUseReducedMotion.mockReturnValue(true);
     const node = run(3);
     const t = render(<InPlace node={node} />);
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
-    // Geometry at once: every member mounted on the same frame as the tap, in the fading stage.
     for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
-    expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
+    expect(styleOf(t.getByTestId('spine-members-compact:m0')).height).toBeUndefined();
     expect(configureNext).not.toHaveBeenCalled();
     const member = t.getByTestId(`spine-node-${node.rows[0].id}`);
-    advance(theme.durationFast + FOLD_MOTION.settleSlackMs);
+    advance(theme.durationFast);
     expect(theme.durationFast).toBe(150);
-    // At rest the members are the same elements the fade drew (CUL-1721: nothing remounts).
     expect(t.getByTestId(`spine-node-${node.rows[0].id}`)).toBe(member);
+    expect(rotationOf(t.getByTestId('spine-run-chevron-compact:m0'))).toBe('180deg');
     expect(configureNext).not.toHaveBeenCalled();
   });
 
-  it('CUL-1721: a member is the SAME element from its mount to its unmount, so VoiceOver focus and a press survive both ends', () => {
+  it('CUL-1721: a meal, its wrapper, the line and the lead are the SAME elements from the box\'s mount to its unmount', () => {
     const node = run(3);
     const t = render(<InPlace node={node} />);
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
-    advance(FOLD_MOTION.railLagMs);
-    const landing = t.getByTestId('spine-node-m1');
-    settleOpen();
-    expect(t.getByTestId('spine-node-m1')).toBe(landing);
+    const ids = ['spine-node-m1', 'spine-member-wrap-m1', 'spine-run-rail-compact:m0', 'spine-run-lead-compact:m0', 'spine-members-stage-compact:m0'];
+    const first = ids.map((id) => t.getByTestId(id));
+    advance(RUN_MOTION.mountFrameMs);
+    expect(ids.map((id) => t.getByTestId(id))).toEqual(first);
+    advance(openBudget(3));
+    expect(ids.map((id) => t.getByTestId(id))).toEqual(first);
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
-    // Leaving: still mounted, still the same element.
-    expect(t.getByTestId('spine-node-m1')).toBe(landing);
-    const rail = t.getByTestId('spine-run-rail-compact:m0');
-    advance(1);
-    expect(t.getByTestId('spine-run-rail-compact:m0')).toBe(rail);
+    advance(RUN_CLOSE_BUDGET_MS - 1);
+    ids.forEach((id, i) => expect(t.getByTestId(id)).toBe(first[i]));
   });
 
-  it('CUL-1721: the slot clips while it moves (a rail holding the open box never spills onto the next bead), and never at rest', () => {
-    const t = render(<InPlace node={run(3)} initial />);
-    expect(styleOf(t.getByTestId('spine-members-compact:m0')).overflow).not.toBe('hidden');
-    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
-    expect(styleOf(t.getByTestId('spine-members-compact:m0')).overflow).toBe('hidden');
-    // jest's native driver ends the leave in the tick it starts, so the box is closing
-    // within the rail's lag (the rail still to trail): still clipped, and closing to zero.
-    advance(FOLD_MOTION.railLagMs / 2);
-    const closing = styleOf(t.getByTestId('spine-members-compact:m0'));
-    expect(closing.overflow).toBe('hidden');
-    expect(closing.minHeight).toBe(0);
-  });
-
-  it.each([2, 12])('CUL-1721: a %d-meal run opens and closes inside the same time budget', (n) => {
+  it.each([2, 8, 12])('a %d-meal run is at rest inside its budget (never past 400ms), and closes inside 280', (n) => {
     const node = run(n);
     const t = render(<InPlace node={node} />);
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
-    advance(OPEN_IN_PLACE_BUDGET_MS.open);
-    // Idle: the rail back on the thread, nothing clipped, every member a full row.
-    expect(styleOf(t.getByTestId('spine-run-rail-compact:m0')).height).toBeUndefined();
+    advance(openBudget(n));
+    expect(runOpenBudgetMs(runLandStarts(n))).toBeLessThanOrEqual(400);
     expect(styleOf(t.getByTestId('spine-members-compact:m0')).overflow).not.toBe('hidden');
     for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
-    advance(OPEN_IN_PLACE_BUDGET_MS.close);
+    advance(RUN_CLOSE_BUDGET_MS);
     expect(t.queryByTestId('spine-members-compact:m0')).toBeNull();
+  });
+
+  it('no haptic: the row\'s open imports nothing from lib/haptics (C-16)', () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '../motion/runOpenMotion.ts'), 'utf8') as string;
+    expect(src).not.toMatch(/lib\/haptics|expo-haptics/);
   });
 
   it('without `openInPlace` the shipped open is untouched: no stage, no lead, the fold\'s config on the tap', () => {
@@ -867,8 +896,11 @@ describe('open in place (HV-10): the one choreography the month uses, on the thr
     expect(configureNext).toHaveBeenCalledWith(UNFOLD_LAYOUT);
     expect(t.getByTestId('spine-node-m0')).toBeTruthy();
     expect(t.queryByTestId('spine-members-stage-compact:m0')).toBeNull();
-    expect(styleOf(t.getByTestId('spine-members-compact:m0')).minHeight).toBeUndefined();
+    expect(t.queryByTestId('spine-run-lead-compact:m0')).toBeNull();
+    expect(t.queryByTestId('spine-run-chevron-compact:m0')).toBeNull();
+    expect(styleOf(t.getByTestId('spine-run-rail-compact:m0')).backgroundColor).toBe(theme.colorEventMeal);
     advance(1_000);
     expect(configureNext).toHaveBeenCalledTimes(1);
   });
 });
+
