@@ -106,8 +106,10 @@ export function useReadLandingAnnouncement({
    *  it describes the row that landed. The edge still settles, silently. */
   suppressed?: boolean;
   /** The RECORD's pet name (`resolveRecordPetName`, C-9), never the active pet's: the
-   *  landing names whose read it is. Read on the landing commit, like `suppressed`. */
-  petName?: string | null;
+   *  landing names whose read it is. Read on the landing commit, like `suppressed`.
+   *  Required, null where the record has none (C-37): an omitted name would speak as
+   *  "your pet" over a record that has one. */
+  petName: string | null | undefined;
 }): ReadLandingAnnouncer {
   const line = useRef<string | null>(null);
   const suppressedNow = useRef(suppressed);
