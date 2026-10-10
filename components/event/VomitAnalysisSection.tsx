@@ -297,6 +297,7 @@ export function VomitAnalysisSection(
     awaitingRead,
     identity: eventId,
     version: row?.updated_at ?? null,
+    petName,
     suppressed: landingSaysNothingNew,
   });
 

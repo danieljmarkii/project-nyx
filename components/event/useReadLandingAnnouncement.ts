@@ -36,8 +36,8 @@
 // whose branch renders nothing (`read_disabled`, a photoless `not_enough_to_say`) mounts no
 // stage, reports nothing, and says nothing — there is nothing on screen to describe.
 //
-// EVERY RENDERED VERDICT, ONE FORM. "AI read: Worth a call" and "AI read: Keep an eye out"
-// are spoken on the same edge in the same shape. G4 holds a Worth a call to the same
+// EVERY RENDERED VERDICT, ONE FORM. "Biscuit's read: worth a call." and "Biscuit's read:
+// keep an eye out." are spoken on the same edge in the same shape. G4 holds a Worth a call to the same
 // physics as every other read; on the audio channel the same rule has a clinical edge too:
 // if only escalations were spoken, a screen-reader owner would learn that silence means the
 // read was calm — reassurance by absence, which n=1 never gives (clinical-guardrails). The
@@ -62,6 +62,7 @@
 
 import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import { AccessibilityInfo } from 'react-native';
+import { readLandedLine } from '../../lib/incidentFloorWords';
 
 /** The stage's report channel: what the landed section says, or null while it waits. */
 export interface ReadLandingAnnouncer {
@@ -72,9 +73,12 @@ export interface ReadLandingAnnouncer {
   expectLanding: () => void;
 }
 
-/** What is spoken when a read lands: the section's own label, then its first line. */
-export function readLandedCopy(line: string): string {
-  return `AI read: ${line}`;
+/** What is spoken when a read lands (mock §04, CUL-1514): the record's pet, then what the
+ *  section is showing, "Biscuit's read: call your vet now." The words are the tier map's;
+ *  `lib/incidentFloorWords.ts` owns the sentence, which the completion card's raise line
+ *  shares, so the two channels can never say one landing two ways. */
+export function readLandedCopy(petName: string | null | undefined, line: string): string {
+  return readLandedLine(petName, line);
 }
 
 export function useReadLandingAnnouncement({
@@ -82,6 +86,7 @@ export function useReadLandingAnnouncement({
   identity,
   version,
   suppressed = false,
+  petName,
 }: {
   /** A read is being PRODUCED — the section's `working || status === 'pending'`, the same
    *  fact the arrival reads (never "the pending box is on screen", which is also true
@@ -100,10 +105,15 @@ export function useReadLandingAnnouncement({
    *  phone already showed this read at this tier or louder. Read on the landing commit, so
    *  it describes the row that landed. The edge still settles, silently. */
   suppressed?: boolean;
+  /** The RECORD's pet name (`resolveRecordPetName`, C-9), never the active pet's: the
+   *  landing names whose read it is. Read on the landing commit, like `suppressed`. */
+  petName?: string | null;
 }): ReadLandingAnnouncer {
   const line = useRef<string | null>(null);
   const suppressedNow = useRef(suppressed);
   suppressedNow.current = suppressed;
+  const petNameNow = useRef(petName);
+  petNameNow.current = petName;
   const note = useCallback((next: string | null) => {
     line.current = next;
   }, []);
@@ -188,7 +198,7 @@ export function useReadLandingAnnouncement({
       return;
     }
     seen.current = { identity, awaiting: false, waitVersion: version, armed: false, version };
-    if (line.current && !suppressedNow.current) AccessibilityInfo.announceForAccessibility(readLandedCopy(line.current));
+    if (line.current && !suppressedNow.current) AccessibilityInfo.announceForAccessibility(readLandedCopy(petNameNow.current, line.current));
   }, [awaitingRead, identity, version]);
 
   // THE EXPLICIT HALF (adversarial round 4, F1). A failed re-run marks the row pending and

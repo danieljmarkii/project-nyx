@@ -264,6 +264,7 @@ export function StoolAnalysisSection(
     awaitingRead,
     identity: eventId,
     version: row?.updated_at ?? null,
+    petName,
   });
 
   const fetchRow = useCallback(async (): Promise<AnalysisRow | null> => {

@@ -1164,7 +1164,9 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await land(row({ recommendation: 'worth_a_call', read_text: 'Blood in it is worth a vet’s eye today.' }));
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(announce).toHaveBeenCalledTimes(1);
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
+    // CUL-1514: the record's pet, by name, in the literal sentence the hook speaks.
+    expect(announce).toHaveBeenCalledWith("Rex's read: worth a call.");
   });
 
   it('a calm read is spoken in the same form — silence must never mean "calm"', async () => {
@@ -1172,7 +1174,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     render(<VomitAnalysisSection eventId="an-2" petId="pet-1" petName="Rex" hasPhoto />);
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     await land(row({ recommendation: 'monitor', read_text: 'Yellow, foamy, mostly bile.' }));
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Keep an eye out'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Keep an eye out'));
   });
 
   it('a PHOTOLESS contextual escalation is spoken — it never showed a pending box, so the arrival never runs', async () => {
@@ -1187,7 +1189,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     expect(await view.findByText('Worth a call')).toBeTruthy();
     await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
     expect(configureNext).not.toHaveBeenCalled(); // no arrival…
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call')); // …and still spoken
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call')); // …and still spoken
   });
 
   it('a re-read over an owner’s EDIT is spoken — the arrival is suppressed there, the words are still new', async () => {
@@ -1200,7 +1202,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await land(row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', edited_at: '2026-09-20T10:00:00.000Z' }));
     await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
     expect(configureNext).not.toHaveBeenCalled();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   it('a failed read is spoken too — the wait ended, and the owner is told how', async () => {
@@ -1208,7 +1210,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     render(<VomitAnalysisSection eventId="an-5" petId="pet-1" petName="Rex" hasPhoto />);
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     await land(row({ status: 'failed', recommendation: null }));
-    expect(announce).toHaveBeenCalledWith(readLandedCopy("Couldn't finish reading this one."));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', "Couldn't finish reading this one."));
   });
 
   it('a read already in the record on open says NOTHING — it did not land, it was there', async () => {
@@ -1280,7 +1282,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     await land(row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', dismissed_at: '2026-09-19T08:00:00.000Z' }));
     expect(await view.findByText('AI note hidden')).toBeTruthy();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('AI note hidden'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'AI note hidden'));
   });
 
   // ── The second adversarial pass (CUL-1275) ──────────────────────────────────
@@ -1312,7 +1314,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T12:00:40.000Z' });
     await act(async () => { await check(); });
     expect(await view.findByText('Worth a call')).toBeTruthy();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   // ── The third adversarial pass (CUL-1275) ───────────────────────────────────
@@ -1329,7 +1331,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     await land(unseen); // skipped: nothing new written
     expect(await view.findByText('Worth a call')).toBeTruthy();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   it('…and from the not-enough frame after a give-up (R2)', async () => {
@@ -1345,7 +1347,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await land(held);
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(announce).toHaveBeenCalledTimes(1);
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   it('a FAILED re-run trigger never parks the section on "Reading the photo…" over a stored Worth a call (R3)', async () => {
@@ -1374,7 +1376,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     mockExpectLanding.mockClear();
     await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
     expect(await view.findByText('Worth a call')).toBeTruthy();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
     // Told outright, so a batched commit cannot drop it (F1).
     expect(mockExpectLanding).toHaveBeenCalledTimes(1);
     alert.mockRestore();
@@ -1397,7 +1399,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await waitFor(() => expect(alert).toHaveBeenCalledWith('Could not start analysis', 'Try again in a moment.'));
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(view.queryByText('Reading the photo…')).toBeNull();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
     alert.mockRestore();
   });
 
@@ -1443,8 +1445,8 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await act(async () => { fireEvent.press(tryIt); });
     expect(await view.findByText("Couldn't finish reading this one.")).toBeTruthy();
     expect(view.queryByText('Keep an eye out')).toBeNull();
-    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Keep an eye out'));
-    expect(announce).toHaveBeenCalledWith(readLandedCopy("Couldn't finish reading this one."));
+    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Rex', 'Keep an eye out'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', "Couldn't finish reading this one."));
     alert.mockRestore();
   });
 
@@ -1457,7 +1459,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     failWritingFailure(row({ status: 'failed', recommendation: 'monitor', read_text: 'Yellow.', updated_at: '2026-09-26T12:00:09.000Z' }));
     await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
     expect(await view.findByText("Couldn't finish reading this one.")).toBeTruthy();
-    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Keep an eye out'));
+    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Rex', 'Keep an eye out'));
     alert.mockRestore();
   });
 
@@ -1497,7 +1499,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     });
     await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
     expect(await view.findByText('Worth a call')).toBeTruthy();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
     alert.mockRestore();
   });
 
@@ -1518,7 +1520,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await act(async () => { fireEvent.press(tryAgain); });
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(view.queryByText('AI note hidden')).toBeNull();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
     alert.mockRestore();
   });
 
@@ -1531,7 +1533,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     await land(row({ recommendation: 'call_today', read_text: 'Call your vet today.' }));
     expect(await view.findByText('Worth a call')).toBeTruthy();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   it('is spoken on ANDROID too — the section carries no live region to cover it', async () => {
@@ -1540,7 +1542,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     render(<VomitAnalysisSection eventId="an-8" petId="pet-1" petName="Rex" hasPhoto />);
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     await land(row({ recommendation: 'worth_a_call', read_text: 'Worth a call.' }));
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   it('the section’s label is a heading, so the rotor can jump to the read', async () => {

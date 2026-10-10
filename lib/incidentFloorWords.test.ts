@@ -10,6 +10,8 @@ import {
   deadlineWords,
   floorRanOn,
   pastWords,
+  raisedReadLine,
+  readLandedLine,
   stoolFindings,
   tellThem,
   vomitFindings,
@@ -316,5 +318,34 @@ describe('no line asserts wellness (clinical-guardrails Pattern 1)', () => {
     const lines = [...(watchForList(input({ anchorMs: a, species: 'dog', birthDate: null }))?.lines ?? []), bloatLine('Mochi')];
     for (const line of lines) expect(line).not.toMatch(REASSURANCE);
     for (const line of lines) expect(line).not.toMatch(/!/);
+  });
+});
+
+// CUL-1514, mock §04: the landing's spoken sentence, and the completion card's raise line on
+// its own vomit, are one sentence.
+describe('readLandedLine', () => {
+  it.each([
+    ['Call your vet now', "Biscuit's read: call your vet now."],
+    ['Call your vet today', "Biscuit's read: call your vet today."],
+    ['Keep an eye out', "Biscuit's read: keep an eye out."],
+    ['Not enough to say yet', "Biscuit's read: not enough to say yet."],
+    ['Worth a call', "Biscuit's read: worth a call."],
+    ['AI note hidden', "Biscuit's read: AI note hidden."],
+    ["Couldn't finish reading this one.", "Biscuit's read: Couldn't finish reading this one."],
+  ])('%s', (line, spoken) => {
+    expect(readLandedLine('Biscuit', line)).toBe(spoken);
+  });
+
+  it('falls back to "your pet" for a blank name', () => {
+    expect(readLandedLine(null, 'Call your vet now')).toBe("Your pet's read: call your vet now.");
+    expect(readLandedLine('  ', 'Call your vet now')).toBe("Your pet's read: call your vet now.");
+  });
+
+  it("matches the completion card's raise line on the vomit's own log", () => {
+    for (const tier of ['call_now', 'call_today'] as const) {
+      expect(
+        raisedReadLine({ petName: 'Nyx', tier, vomitAt: iso(local(3, 9)), self: true, nowMs: local(3, 10) }),
+      ).toBe(readLandedLine('Nyx', tier === 'call_now' ? 'Call your vet now' : 'Call your vet today'));
+    }
   });
 });
