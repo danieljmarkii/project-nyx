@@ -219,6 +219,12 @@ interface Params {
   leadTop: number;
   reducedMotion: boolean;
   appActive: boolean;
+  /** The thread under the run is drawing (`ThreadDrawing`, CUL-1757): an open or a close
+   *  the host asks for waits until it settles, then runs as asked. Every commit this
+   *  machine makes animates the flow's layout, and a keyframe over the draw's in-flight
+   *  wrappers snaps the draw back. A re-key, a reset and a blur still land at once (they
+   *  move nothing). */
+  held?: boolean;
   /** A FRESH open has started (CUL-1735): the box's commit, or Reduce Motion's at-once box.
    *  Never a reversal, a close, a re-key, a blur or a host's reset; once per open. */
   onFreshOpen?: () => void;
@@ -235,6 +241,7 @@ export function useRunOpen({
   leadTop,
   reducedMotion,
   appActive,
+  held = false,
   onFreshOpen,
 }: Params): RunOpen {
   const freshOpen = useRef(onFreshOpen);
@@ -487,11 +494,14 @@ export function useRunOpen({
       settle(true);
       return;
     }
+    // The host's ask is read again when the draw settles (`held` is a dependency), so a tap
+    // during the first paint opens the run the moment the thread is still.
+    if (held) return;
     if (shown === lastShown.current) return;
     lastShown.current = shown;
     if (shown) open();
     else close();
-  }, [shown, identity, resetGen, open, close, settle]);
+  }, [shown, identity, resetGen, held, open, close, settle]);
 
   // A blur FINISHES the transition at the state the host asked for.
   useEffect(() => {

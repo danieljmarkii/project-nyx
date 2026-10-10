@@ -86,6 +86,8 @@ import { useReducedMotionStore } from '../../../store/reducedMotionStore';
 import { TODAY_EMPTY_LINE, TODAY_EMPTY_LOOK_LINE, TODAY_FAILED_LINE, TODAY_MEAL_TAIL, TodayCard } from './TodayCard';
 import { RowSpeechContext } from '../../dayRow/rowSpeech';
 import { RUN_OPEN_LAYOUT } from '../../motion/runOpenMotion';
+import { FOLD_MOTION } from '../../motion/foldMotion';
+import { threadDrawTotalMs } from '../../motion/threadMotion';
 import { todayMealNudge } from '../../../lib/lookCard';
 
 const at = (h: number, m: number): string => {
@@ -511,6 +513,9 @@ describe('Home\'s first paint and open in place (History v2)', () => {
     ready(SEP_17);
     const t = render(<TodayCard />);
     await waitFor(() => expect(t.getByTestId('spine-node-compact:m6')).toBeTruthy());
+    // The first paint is over before the tap: a tap during it waits for the thread to
+    // settle (CUL-1757, pinned in `components/historyV2/HomeSpine.test.tsx`).
+    await act(() => new Promise((r) => setTimeout(r, threadDrawTotalMs(12) + FOLD_MOTION.settleSlackMs * 2)));
     fireEvent.press(t.getByTestId('spine-node-compact:m6'));
     // The box is mounted SHUT with every meal inside it (nothing in the flow moves, so
     // nothing is configured yet); the line grows out of the run's bead.

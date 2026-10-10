@@ -1591,3 +1591,43 @@ describe('VoiceOver hears the day header as one sentence (HV-7\'s focus note)', 
     await waitOut(DRAW_TAIL_MS);
   });
 });
+
+describe('an open run re-keyed by the record stays open (CUL-1757)', () => {
+  // A run's id is its first meal's, so both edits give the open run a new id on the re-read.
+  // Reduce Motion so the open lands at once; the carry is the same either way.
+  async function openYesterdaysRun() {
+    insertFood('rc', 'Royal Canin', 'Selected Protein PR');
+    insertMeal('m4a', at(1, 8), 'rc', 'all');
+    insertMeal('m4b', at(1, 9), 'rc', 'all');
+    useReducedMotionStore.setState({ reduceMotion: true, gateOpen: true });
+    await renderList();
+    await waitOut(DRAW_TAIL_MS);
+    fireEvent.press(screen.getByTestId('spine-node-compact:m4a'));
+    await waitOut(400);
+    expect(screen.getByTestId('spine-members-compact:m4a')).toBeTruthy();
+  }
+
+  it('an earlier meal logged into it: the run under its new id is open', async () => {
+    await openYesterdaysRun();
+    insertMeal('m4early', at(1, 6), 'rc', 'all');
+    act(() => useSyncStore.getState().bumpHydrationTick());
+    await settle();
+    expect(screen.getByTestId('spine-node-compact:m4early').props.accessibilityState).toEqual({ expanded: true });
+    expect(screen.getByTestId('spine-members-compact:m4early')).toBeTruthy();
+    await waitOut(400);
+  });
+
+  it('its first meal deleted: the run under its new id is open', async () => {
+    await openYesterdaysRun();
+    insertMeal('m4c', at(1, 10), 'rc', 'all');
+    act(() => useSyncStore.getState().bumpHydrationTick());
+    await settle();
+    expect(screen.getByTestId('spine-members-compact:m4a')).toBeTruthy();
+    softDelete('m4a');
+    act(() => useSyncStore.getState().bumpHydrationTick());
+    await settle();
+    expect(screen.getByTestId('spine-node-compact:m4b').props.accessibilityState).toEqual({ expanded: true });
+    expect(screen.getByTestId('spine-members-compact:m4b')).toBeTruthy();
+    await waitOut(400);
+  });
+});
