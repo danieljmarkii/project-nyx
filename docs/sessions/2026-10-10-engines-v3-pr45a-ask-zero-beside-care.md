@@ -68,14 +68,12 @@ Mutation proofs: disabling the `validateAnswer` arm reds both CUL-1429 validateA
 
 ## Where it stands
 
-The PR is left open for the PM, for two reasons:
-- `main` is red until PR-30b lands.
-- The Definition of Done's adversarial line has no PASS. Five passes each found a fresh ring of paraphrases or false positives, and all of them are now fixed and pinned. The screen catches every phrasing the passes produced, including the issue's two reproduced sentences, and lets the rule-10 forms, intake and dose escalations and routing advice through. It is still a denylist.
+The PM ruled **(b)** on 2026-10-10: merge this screen as a safety layer, and hold the every-account `engines_v3_en10` flip until an allowlisted recount lands (CUL-1748). The PM also ruled a date that implies a zero (CUL-1745) in scope of AC 17, and folded it into that recount rather than this phrase list. `main` went green with #1155 (PR-30b) and was merged into the branch. The PM then said, in this session, to merge once green.
 
-Whether that is enough to gate turning `engines_v3_en10` on for every account, or whether CUL-271's structural check must come first, is the PM's call.
+The adversarial line has no PASS, and the ruling accepts that knowingly. Five passes each found a fresh ring of paraphrases or false positives, and all of them are now fixed and pinned. The screen is a denylist, and the recount is the structural answer.
 
 ## Residuals
 
 - A visit named only by its date, when neither the answer nor the current question names it. Earlier conversation turns are not read.
-- Zero wordings no arm lists (CUL-271).
+- Zero wordings no arm lists. The recount (CUL-1748) is the structural answer.
 - A deflection drops the deterministic photo-read line, because `finalizeAnswer` returns before building it. This predates the PR, but the new screen makes deflections more frequent.
