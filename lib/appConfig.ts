@@ -99,6 +99,11 @@ export type AppConfigKey = keyof AppConfigValues;
 // BOTH are on, so the phone asks the same question (`floorOnNow`) and never queues a check
 // the server would refuse, nor previews a tier the server's rule cannot write. NOT SEEDED:
 // absent reads as off, and with either off the phone writes and draws nothing new.
+//
+// `engines_v3_en5` (Engines v3 PR-30q, CUL-1724) is read on the phone for EN-5's question
+// under a vomit read ("Has she eaten since …?"); the server resolves the same row for the
+// vomit read's intake arm. SEEDED OFF by migration 097. With it off nothing draws and
+// nothing is read.
 export const ALLOWLIST_FLAG_KEYS = [
   'ask_enabled',
   'ask_general_enabled',
@@ -106,6 +111,7 @@ export const ALLOWLIST_FLAG_KEYS = [
   'engines_v3_en14',
   'engines_v3_en3',
   'engines_v3_en4',
+  'engines_v3_en5',
 ] as const;
 export type AllowlistFlagKey = (typeof ALLOWLIST_FLAG_KEYS)[number];
 
@@ -124,6 +130,7 @@ export const ALLOWLIST_FLAGS_UNSET: AllowlistFlagValues = {
   engines_v3_en14: undefined,
   engines_v3_en3: undefined,
   engines_v3_en4: undefined,
+  engines_v3_en5: undefined,
 };
 
 // The pure primitive. `userId` is the signed-in caller's uid (null when unknown /

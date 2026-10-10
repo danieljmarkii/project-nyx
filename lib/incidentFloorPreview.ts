@@ -38,7 +38,7 @@ export const REFLOOR_WINDOW_HOURS = 24;
 
 /** The floor's rule version as the server stamps it (`ruleVersion` in
  *  `analyze-vomit/index.ts`), pinned by test. Rides the device claim. */
-export const FLOOR_CLAIM_RULE_VERSION = 'vomit4';
+export const FLOOR_CLAIM_RULE_VERSION = 'vomit5';
 
 const HOUR = 3_600_000;
 

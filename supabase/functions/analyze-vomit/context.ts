@@ -88,7 +88,8 @@ export interface IntakeRecord {
   // (the shipped window, when only it fired, e.g. the cat that ate, vomited, then refused).
   // EN-5 adds 'after_vomit' (from the vomit to the read, at most 24 h) and 'noticed' (the
   // Noticed predicate: two of the last three qualifying meals refused or picked).
-  window: 'before_vomit' | 'before_read' | 'after_vomit' | 'noticed' | 'last_rated'
+  // EN-5 PR-30q adds 'answer': the owner's own answer under this vomit was No or A little.
+  window: 'before_vomit' | 'before_read' | 'after_vomit' | 'noticed' | 'last_rated' | 'answer'
   mealsLogged: number
   // EN-5 only. How many of the meals in the window carried a rating: the sentence speaks
   // about those and says how many more had none, so an unrated meal is never read as
@@ -110,6 +111,19 @@ export interface IntakeRecord {
   setAside?: boolean
   // EN-5 'last_rated' only: meals logged between that meal and the vomit with no rating.
   unratedSince?: number
+  // EN-5 'answer' only (PR-30q): which question was answered, and the answer's meaning.
+  answerForm?: IntakeAnswerForm
+  answer?: 'no' | 'a_little'
+}
+
+// The two intake forms of EN-5's question (migration 097). The third, other_food, asks the
+// dog and trial door "could he have eaten something else?" and is never intake evidence.
+export type IntakeAnswerForm = 'meal_fed' | 'free_fed'
+export interface IntakeAnswerRow {
+  id: string
+  form: string
+  answer: string
+  answered_at: string
 }
 
 // The rows, in the shapes the three reads return them.
@@ -129,6 +143,29 @@ export interface VomitContextRows {
   // EN-5 only: the pet's free-fed bowl spans, active and ended. Absent reads as no bowls,
   // which keeps a free-fed rating counted: the louder reading of an unknown.
   freeFedSpans?: FreeFedIntakeSpan[]
+  // EN-5 only (PR-30q): the live answers to the intake question under THIS vomit, already
+  // joined to a live vomit of this pet by the read. Absent or empty reads as unanswered.
+  intakeAnswers?: IntakeAnswerRow[]
+}
+
+/**
+ * The owner's answers that count, under the read rule of migration 097: per (vomit, FORM),
+ * the newest live row by answered_at, then id. Per form, never one across both: a bowl set up
+ * after a meal-fed No moves the question to the free-fed form, and its "Haven't seen" must not
+ * displace the No (the adversarial pass on PR-30q, B5). Instants are parsed, never compared as
+ * text (C-40). Exported for its test.
+ */
+export function newestIntakeAnswers(rows: readonly IntakeAnswerRow[] | undefined): IntakeAnswerRow[] {
+  const best = new Map<string, { row: IntakeAnswerRow; ms: number }>()
+  for (const r of rows ?? []) {
+    if (r.form !== 'meal_fed' && r.form !== 'free_fed') continue
+    const parsed = Date.parse(r.answered_at)
+    const ms = Number.isFinite(parsed) ? parsed : -Infinity
+    const held = best.get(r.form)
+    if (!held || ms > held.ms || (ms === held.ms && r.id > held.row.id)) best.set(r.form, { row: r, ms })
+  }
+  // meal_fed first, so a record holding both names the meal question's answer.
+  return (['meal_fed', 'free_fed'] as const).flatMap((f) => (best.has(f) ? [best.get(f)!.row] : []))
 }
 
 export interface BuildVomitContextArgs {
@@ -358,7 +395,19 @@ export const EN0_CONTEXT_STEP: VomitContextStep = (shipped, args) => {
 // always has. Dropping the pill-pocket false alarm from the halves is a quieter row and
 // stays the PM's (GAP-28 / MFU-7), not this step's.
 //
-// Cats only, like the shipped arm. Dogs (T8/T10b) need the "no food seen" answer, PR-30q.
+// THE OWNER'S ANSWER (PR-30q, CUL-1724; spec §9; I3). Checked first: an answer of No, or of
+// "A little" (stored as Picked), under this vomit fires the arm on its own. It is the record's
+// most direct intake fact, and an answer only ADDS evidence:
+//   · Yes is stored and shown, and never quiets anything here (PM, 2026-10-10: "Yes never
+//     quiets", the louder reading; spec §9 drafts it as a positive meal, a quieter row that
+//     would need its own sign-off). It falls through to the halves below untouched.
+//   · not_observable ("Not sure", "Haven't seen") is unknown, never normal: it falls through.
+//   · It never enters the Noticed predicate, so it can never push a real refusal out of the
+//     last three (CUL-1118's warning about a synthetic meal row).
+// The re-read that carries it is EN-4's refloor, which never lowers a stored call.
+//
+// Cats only, like the shipped arm. A dog's question asks about something else (could he have
+// eaten something else?), so T10b, a dog's "no food in 24 h", is not built here.
 export const AFTER_VOMIT_INTAKE_HOURS = 24
 
 function evidenceOf(m: { occurred_at: string; meals: MealIntakeJoin }): IntakeEvidenceMeal {
@@ -399,6 +448,12 @@ export const EN5_CONTEXT_STEP: VomitContextStep = (prior, args) => {
   // Each half bounds its own rows. No global "nothing after the read" filter: a vomit stamped a
   // minute ahead of the server's clock must still see the refusal logged just before it (the
   // adversarial pass, L); the halves that run to the read stop at the read themselves.
+  const fired = (intakeRecord: IntakeRecord): ContextInput => ({ ...prior, en5IntakeFires: true, intakeRecord })
+  const answer = newestIntakeAnswers(args.rows.intakeAnswers).find((a) => a.answer === 'no' || a.answer === 'a_little')
+  if (answer && (answer.answer === 'no' || answer.answer === 'a_little')) {
+    return fired({ window: 'answer', mealsLogged: 0, mealsRated: 0, answerForm: answer.form as IntakeAnswerForm, answer: answer.answer })
+  }
+
   const meals = args.rows.meals.map(evidenceOf)
   const spans = args.rows.freeFedSpans ?? []
   const day = FELINE_REDUCED_INTAKE_HOURS * 3_600_000
@@ -408,7 +463,6 @@ export const EN5_CONTEXT_STEP: VomitContextStep = (prior, args) => {
   const after = afterEnd > vomitMs ? ratedHalf(meals, vomitMs, afterEnd, false) : { logged: 0, rated: 0, fires: false }
   const atRead = ratedHalf(meals, readMs - day, readMs, true)
 
-  const fired = (intakeRecord: IntakeRecord): ContextInput => ({ ...prior, en5IntakeFires: true, intakeRecord })
   if (before.fires) return fired({ window: 'before_vomit', mealsLogged: before.logged, mealsRated: before.rated })
   if (after.fires) {
     // The half stops 24 h after the vomit; when the read ran later, the words say so, or "after

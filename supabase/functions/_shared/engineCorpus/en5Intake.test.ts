@@ -20,6 +20,7 @@ import {
   buildVomitContext,
   EN0_CONTEXT_STEP,
   EN5_CONTEXT_STEP,
+  newestIntakeAnswers,
   vomitAnchoredReads,
   type BuildVomitContextArgs,
   type ContextInput,
@@ -592,4 +593,100 @@ Deno.test('A, round 5: tied qualifying refusals set nothing aside, a tie names o
   const on = ctx(s3, v, v + 20 * H, EN5)
   assertEquals(on.intakeRecord?.unratedSince, 1)
   assertStrictEquals(buildEn0ContextualReadText('Nyx', computeContextualFlags(on), on.intakeRecord).includes('One meal logged after it, before this vomit, had no rating.'), true)
+})
+
+// ── EN-5's question (PR-30q, CUL-1724): the owner's answer under this vomit ─────────────
+
+const answerRow = (answer: string, at: number, id = 'a1', form = 'meal_fed') => ({ id, form, answer, answered_at: iso(at) })
+
+Deno.test('an answer of No or A little fires the cat arm on its own, over a record with nothing rated', () => {
+  const vomitMs = Date.parse('2026-10-08T07:00:00.000Z')
+  const nowMs = vomitMs + 3 * H
+  const meals = [4, 9, 14].map((h) => meal(vomitMs - h * H, null))
+  for (const [answer, form] of [['no', 'meal_fed'], ['a_little', 'meal_fed'], ['no', 'free_fed']] as const) {
+    const c = ctx({ ...rowsOf(meals, vomitMs), intakeAnswers: [answerRow(answer, vomitMs + H, 'a1', form)] }, vomitMs, nowMs, EN5)
+    assertStrictEquals(intakeFires(c), true, `${form}/${answer}`)
+    assertEquals(c.intakeRecord, { window: 'answer', mealsLogged: 0, mealsRated: 0, answerForm: form, answer } as IntakeRecord)
+  }
+  const unanswered = ctx(rowsOf(meals, vomitMs), vomitMs, nowMs, EN5)
+  assertStrictEquals(intakeFires(unanswered), false)
+})
+
+Deno.test('the answer\'s words: each form and answer, past tense, pinned to the vomit', () => {
+  const tail = " In a cat that's vomiting, that's worth a call to your vet sooner rather than later."
+  const say = (answerForm: 'meal_fed' | 'free_fed', answer: 'no' | 'a_little') =>
+    buildEn0ContextualReadText('Nyx', ['feline_reduced_intake'], { window: 'answer', mealsLogged: 0, mealsRated: 0, answerForm, answer })
+  assertStrictEquals(say('meal_fed', 'no'), "When I read this, you'd said Nyx hadn't eaten a meal since the day before this vomit." + tail)
+  assertStrictEquals(say('meal_fed', 'a_little'), "When I read this, you'd said Nyx had eaten only a little since the day before this vomit." + tail)
+  assertStrictEquals(say('free_fed', 'no'), "When I read this, you'd said you had seen Nyx refuse food since the day before this vomit." + tail)
+})
+
+Deno.test('Yes, Not sure and the other-food door add nothing: every corpus case reads as if unanswered', () => {
+  // The answer only ADDS evidence (spec §9; PM go 2026-10-10 on "Yes never quiets"). Over every
+  // case the corpus holds, a Yes, a not_observable, or any other_food answer leaves the context
+  // exactly as the record without an answer, so it can never quiet the arm.
+  let cases = 0
+  for (const c of VOMIT_CONTEXT_CORPUS) {
+    const vomitMs = Date.parse(c.thisEventOccurredAt)
+    const base: BuildVomitContextArgs = { rows: c.rows, thisEventOccurredAt: c.thisEventOccurredAt, species: c.species, nowMs: Date.parse(c.nowIso), engineFlags: EN5 }
+    const plain = buildVomitContext(base)
+    for (const answers of [
+      [answerRow('yes', vomitMs + H)],
+      [answerRow('not_observable', vomitMs + H)],
+      [answerRow('no', vomitMs + H, 'a1', 'other_food')],
+      [answerRow('yes', vomitMs + H, 'a1', 'free_fed')],
+    ]) {
+      assertEquals(buildVomitContext({ ...base, rows: { ...c.rows, intakeAnswers: answers } }), plain, c.name)
+      cases++
+    }
+  }
+  assertStrictEquals(cases >= 48, true)
+})
+
+Deno.test('the newest live answer wins: a Change from No to Yes quiets nothing it did not raise, a Change to No raises', () => {
+  const vomitMs = Date.parse('2026-10-08T07:00:00.000Z')
+  const nowMs = vomitMs + 5 * H
+  const rows = (answers: ReturnType<typeof answerRow>[]) => ({ ...rowsOf([], vomitMs), intakeAnswers: answers })
+  // Newer Yes over an older No: the No no longer counts.
+  assertStrictEquals(intakeFires(ctx(rows([answerRow('no', vomitMs + H, 'a1'), answerRow('yes', vomitMs + 2 * H, 'a2')]), vomitMs, nowMs, EN5)), false)
+  // Newer No over an older Yes: raises.
+  assertStrictEquals(intakeFires(ctx(rows([answerRow('yes', vomitMs + H, 'a1'), answerRow('no', vomitMs + 2 * H, 'a2')]), vomitMs, nowMs, EN5)), true)
+})
+
+Deno.test('newestIntakeAnswers: per form, parsed instants (C-40), an id tie-break, the intake forms only', () => {
+  // The same instant spelled two ways: a text compare would put '+00:00' before '.000Z'.
+  const z = { id: 'b', form: 'meal_fed', answer: 'no', answered_at: '2026-10-08T04:00:00.000Z' }
+  const plus = { id: 'a', form: 'meal_fed', answer: 'yes', answered_at: '2026-10-08T04:00:00+00:00' }
+  assertStrictEquals(Date.parse(z.answered_at), Date.parse(plus.answered_at))
+  assertNotEquals(z.answered_at, plus.answered_at)
+  const ids = (rows: typeof z[]) => newestIntakeAnswers(rows).map((r) => r.id)
+  // Same instant: the higher id wins, in either order.
+  assertEquals(ids([z, plus]), ['b'])
+  assertEquals(ids([plus, z]), ['b'])
+  // A later spelling with '+00:00' still wins on time.
+  assertEquals(ids([z, { ...plus, answered_at: '2026-10-08T04:00:01+00:00' }]), ['a'])
+  // The other-food door is never intake evidence, whatever its time.
+  assertEquals(ids([{ ...z, form: 'other_food', answered_at: '2026-10-09T00:00:00.000Z' }]), [])
+  assertEquals(newestIntakeAnswers(undefined), [])
+  // One per form: a later free-fed answer never displaces the meal question's.
+  assertEquals(ids([z, { ...plus, id: 'c', form: 'free_fed', answered_at: '2026-10-09T00:00:00.000Z' }]), ['b', 'c'])
+})
+
+Deno.test('a bowl set up after a meal-fed No: its "Haven\'t seen" never displaces the No (the adversarial pass, B5)', () => {
+  const vomitMs = Date.parse('2026-10-08T07:00:00.000Z')
+  const rows = {
+    ...rowsOf([], vomitMs),
+    intakeAnswers: [answerRow('no', vomitMs + H, 'a1', 'meal_fed'), answerRow('not_observable', vomitMs + 3 * H, 'a2', 'free_fed')],
+  }
+  const c = ctx(rows, vomitMs, vomitMs + 4 * H, EN5)
+  assertStrictEquals(intakeFires(c), true)
+  assertEquals(c.intakeRecord?.answerForm, 'meal_fed')
+})
+
+Deno.test('a dog\'s answer never fires the cat arm, and flag-off never reads an answer', () => {
+  const vomitMs = Date.parse('2026-10-08T07:00:00.000Z')
+  const rows = { ...rowsOf([], vomitMs), intakeAnswers: [answerRow('no', vomitMs + H)] }
+  assertStrictEquals(intakeFires(ctx(rows, vomitMs, vomitMs + 3 * H, EN5, 'dog')), false)
+  assertStrictEquals(intakeFires(ctx(rows, vomitMs, vomitMs + 3 * H, OFF)), false)
+  assertStrictEquals(intakeFires(ctx(rows, vomitMs, vomitMs + 3 * H, EN0)), false)
 })
