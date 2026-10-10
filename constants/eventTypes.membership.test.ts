@@ -496,12 +496,20 @@ const WALK: WalkRow[] = [
     },
   },
   {
-    list: 'ALL_SIGNS + DRUG_CLASS_EFFECTS (lib/maskingSpans.ts, shared with generate-signal/careContext.ts)',
+    list: 'ALL_SIGNS + DRUG_CLASS_EFFECTS (lib/maskingSpans.ts, shared with generate-signal/careContext.ts; ALL_SIGNS also rides into lib/careClaimScreens.ts zeroBesideCareReason, Ask\'s zero screen, CUL-1429, as the signs a sign-less zero counts)',
     governs: 'EN-10\'s drug table (CUL-1420): which signs a medication course is drawn beside, and which signs it may MASK, so a zero is withheld. Placement only — every count is the chronicity lane\'s own episodes',
     read: () => scan('lib/maskingSpans.ts', 'const ALL_SIGNS', 'export const DRUG_NAME_CLASSES'),
     cough: { now: true, decision: 'YES — a systemic steroid masks every sign, and inhaled corticosteroids, antitussives and bronchodilators mask cough (§5.1\'s rows, verbatim). Absent, a zero cough count would print beside prednisone: the "it worked" reading §5.1 forbids.' },
     sneeze: { now: true, decision: 'YES — in ALL_SIGNS only (a systemic steroid masks it). No lane carries sneeze today, so no line is drawn beside it; the membership is there before a finding can be, the SYMPTOM_LABEL precedent.' },
     check_in: { now: false, decision: 'NO — a look is not a sign a drug moves, and it never reaches a context line (the logging pull excludes it; see the whole-source row).' },
+  },
+  {
+    list: 'SIGN_WORDS (lib/careClaimScreens.ts, Ask\'s zero screen)',
+    governs: 'CUL-1429: which sign a zero in an Ask sentence counts ("no coughing … since the prednisone"), so the shared drug table (lib/maskingSpans.ts) decides whether a drug beside it may hide that sign. A sentence naming no sign is a zero of every sign (ALL_SIGNS). Refusal only, never a count',
+    read: () => scan('lib/careClaimScreens.ts', 'const SIGN_WORDS', '\n]'),
+    cough: { now: true, decision: 'YES — a zero cough count beside prednisone or an antitussive is the §5.1 "it worked" reading; the drug table masks cough.' },
+    sneeze: { now: true, decision: 'YES — a systemic steroid masks it, so a zero sneeze count beside one is refused like any other sign.' },
+    check_in: { now: false, decision: 'NO — a look is not a sign a drug hides, and Ask never counts looks as symptoms.' },
   },
   {
     list: 'coSignsFor (supabase/functions/generate-signal/careState.ts)',
@@ -676,7 +684,8 @@ describe('membership walk (HR-6) — every list decided, current state == decide
     // −1 (CUL-1175 / HV-14): v1 History's TYPE_FILTER_KEYS, deleted with its screen. History
     // v2's type sheet derives from EVENT_TYPES and enumerates no symptom leaf.
     // −1 (CUL-1071 / D2-8): TREND_SYMPTOM_TYPES, deleted with Home's Trend card.
-    expect(WALK).toHaveLength(25);
+    // +1 (CUL-1429): SIGN_WORDS, Ask's zero screen (lib/careClaimScreens.ts).
+    expect(WALK).toHaveLength(26);
   });
 });
 

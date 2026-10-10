@@ -70,6 +70,8 @@ import {
   mentionsPhotoAppearance,
   SCRUBBED_READ_HEADLINE,
   validateAnswer,
+  careNamesFrom,
+  screenProvenanceZero,
   collectNumerals,
   buildProvenance,
   buildComponent,
@@ -340,7 +342,7 @@ function finalizeAnswer(
   ctx: AskDataContext,
   generalEnabled: boolean,
   sawSafetyFinding: boolean,
-  _question: string,
+  question: string,
 ): AskAnswerBody {
   const petName = ctx.petName
   const input = terminal.input ?? {}
@@ -381,7 +383,14 @@ function finalizeAnswer(
     if (mentionsPhotoAppearance(detail)) detailOut = ''
   }
   const combined = `${headlineOut} ${detailOut}`.trim()
-  const verdict = validateAnswer({ text: combined, allowedNumerals, mode, safety: sawSafetyFinding })
+  const care = careNamesFrom(captured, { ...ctx, question })
+  const verdict = validateAnswer({
+    text: combined,
+    allowedNumerals,
+    mode,
+    safety: sawSafetyFinding,
+    care,
+  })
   if (!verdict.ok) {
     console.warn(`ask: answer failed validation (${verdict.reason}) — using deflection fallback`)
     // A failed model sentence never reaches the owner (never blank, never unguarded). Route to
@@ -394,7 +403,8 @@ function finalizeAnswer(
   // Server-built provenance + component from the FEATURED tool result (never model-authored
   // numbers, so the denominator/window is present by construction — AC-8).
   const featured = pickFeatured(featureName, captured)
-  const provenance = featured ? buildProvenance(featured) : null
+  // CUL-1429: the server-built count beside the answer obeys the same zero rule as its text.
+  const provenance = screenProvenanceZero(featured ? buildProvenance(featured) : null, combined, care)
   const component: ComponentDescriptor | null = featured ? buildComponent(featured) : null
 
   // The photo read's owner-facing content is DETERMINISTIC (never the model's prose — the
