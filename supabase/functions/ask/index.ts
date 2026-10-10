@@ -342,7 +342,7 @@ function finalizeAnswer(
   ctx: AskDataContext,
   generalEnabled: boolean,
   sawSafetyFinding: boolean,
-  _question: string,
+  question: string,
 ): AskAnswerBody {
   const petName = ctx.petName
   const input = terminal.input ?? {}
@@ -383,7 +383,7 @@ function finalizeAnswer(
     if (mentionsPhotoAppearance(detail)) detailOut = ''
   }
   const combined = `${headlineOut} ${detailOut}`.trim()
-  const care = careNamesFrom(captured, ctx)
+  const care = careNamesFrom(captured, { ...ctx, question })
   const verdict = validateAnswer({
     text: combined,
     allowedNumerals,

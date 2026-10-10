@@ -632,7 +632,7 @@ Deno.test('validateAnswer: an on-board course from the record withholds a zero t
       },
     },
   ]
-  const care = careNamesFrom(captured, { regimens: [], nowMs: Date.UTC(2026, 9, 10, 12), timezone: 'UTC' })
+  const care = careNamesFrom(captured, { regimens: [], nowMs: Date.UTC(2026, 9, 10, 12), timezone: 'UTC', question: 'Has Nyx coughed?' })
   assert.deepEqual(care.onBoardNames, ['Prednisolone'])
   assert.deepEqual([...care.knownNames].sort(), ['Cerenia', 'Prednisolone'])
   const text = 'No coughing is logged in the last 30 days.'
@@ -652,6 +652,7 @@ Deno.test('careNamesFrom: a regimen on board or in its tail is beside every zero
   const care = careNamesFrom([], {
     nowMs,
     timezone: 'UTC',
+    question: 'Has she vomited this week?',
     regimens: [
       reg('a', 'Prednisolone', 'active', '2026-10-01', null),
       // Ended 10 days ago: inside the 42-day tail, the Signal still withholds its zero.
@@ -669,8 +670,21 @@ Deno.test('careNamesFrom: a regimen on board or in its tail is beside every zero
   )
 })
 
+Deno.test('careNamesFrom: a course whose tail touches the widest window read joins, and the question carries a visit (CUL-1429)', () => {
+  const nowMs = Date.UTC(2026, 9, 10, 12)
+  // Ended Aug 11 (60 days ago): its tail ran to Sep 22, inside a 30-day window, outside a 7-day one.
+  const regimens = [{ id: 'a', drugLabel: 'Prednisolone', status: 'ended', startedAt: '2026-07-20', endedAt: '2026-08-11', doseAmount: null, deletedAt: null }]
+  const read30 = [{ name: 'count_symptom', result: { kind: 'count_symptom', window: '30d', count: 0 } }]
+  const read7 = [{ name: 'count_symptom', result: { kind: 'count_symptom', window: '7d', count: 0 } }]
+  const q = 'How many times has she vomited?'
+  assert.deepEqual(careNamesFrom(read30, { regimens, nowMs, timezone: 'UTC', question: q }).onBoardNames, ['Prednisolone'])
+  assert.deepEqual(careNamesFrom(read7, { regimens, nowMs, timezone: 'UTC', question: q }).onBoardNames, [])
+  assert.equal(careNamesFrom(read7, { regimens: [], nowMs, timezone: 'UTC', question: 'Has she vomited since her vet visit?' }).visitInContext, true)
+  assert.equal(careNamesFrom(read7, { regimens: [], nowMs, timezone: 'UTC', question: 'Should I call the clinic?' }).visitInContext, false)
+})
+
 Deno.test('screenProvenanceZero: the "0 events" line beside a visit keeps only its logging (CUL-1429)', () => {
-  const none = { knownNames: [], onBoardNames: [] }
+  const none = { knownNames: [], onBoardNames: [], visitInContext: false }
   const prov = { window: 'since the visit', denominator: '0 events · logging on 7 of 7 days', tapThrough: null }
   const text = 'Since the Sep 16 visit, 7 days, with something logged on 7 of them.'
   assert.equal(screenProvenanceZero(prov, text, none)?.denominator, 'logging on 7 of 7 days')
@@ -680,7 +694,7 @@ Deno.test('screenProvenanceZero: the "0 events" line beside a visit keeps only i
   assert.equal(screenProvenanceZero(four, text, none)?.denominator, four.denominator)
   // An on-board steroid drops the count even when the answer names nothing.
   assert.equal(
-    screenProvenanceZero(prov, 'In the last 7 days:', { knownNames: [], onBoardNames: ['Prednisone'] })?.denominator,
+    screenProvenanceZero(prov, 'In the last 7 days:', { knownNames: [], onBoardNames: ['Prednisone'], visitInContext: false })?.denominator,
     'logging on 7 of 7 days',
   )
 })

@@ -84,10 +84,11 @@ import {
 } from './tools.ts'
 import {
   careClaimReason,
+  textMentionsVisit,
   zeroBesideCareReason,
   type ZeroBesideCareContext,
 } from '../../../lib/careClaimScreens.ts'
-import { assessCourse } from '../../../lib/maskingSpans.ts'
+import { assessCourse, MASK_TAIL_DAYS } from '../../../lib/maskingSpans.ts'
 import { localDayIndex } from '../../../lib/utils.ts'
 import { TIER_WORDS, type TierDisplay } from '../../../lib/incidentTierWords.ts'
 
@@ -939,7 +940,7 @@ export interface ValidateAnswerParams {
   care?: ZeroBesideCareContext
 }
 
-const NO_CARE_NAMES: ZeroBesideCareContext = { knownNames: [], onBoardNames: [] }
+const NO_CARE_NAMES: ZeroBesideCareContext = { knownNames: [], onBoardNames: [], visitInContext: false }
 
 /** The medication names the zero screen judges an answer against (CUL-1429).
  *  • `knownNames`: every regimen's label, and every `drugLabel` a tool handed the model, so a
@@ -948,15 +949,28 @@ const NO_CARE_NAMES: ZeroBesideCareContext = { knownNames: [], onBoardNames: [] 
  *    own `assessCourse` (`lib/maskingSpans.ts`), read from the regimens this turn already
  *    loaded — never from which tools the model chose to call (adversarial review, PR-45a: a
  *    steroid the model never looked up still hides the sign). A `medications` entry dosed in
- *    the window joins it too: an ad-hoc dose has no regimen row. */
+ *    the window joins it too: an ad-hoc dose has no regimen row. A course whose span (start to
+ *    end + 42 days) touches the widest window a tool read this turn joins as well: "0 vomits in
+ *    the last 30 days" must not stand beside a steroid that ended 60 days ago, whose tail ran to
+ *    18 days ago (adversarial pass 2, the Signal's `windowTouchesSpan`).
+ *  • `visitInContext`: the owner's question names a visit, so an answer that dates its zero
+ *    ("since Sep 16") still sits beside that visit. */
 export function careNamesFrom(
   captured: readonly { name: string; result: unknown }[],
-  record: { regimens: readonly AskRegimenRow[]; nowMs: number; timezone: string | null },
+  record: { regimens: readonly AskRegimenRow[]; nowMs: number; timezone: string | null; question: string },
 ): ZeroBesideCareContext {
   const known = new Set<string>()
   const onBoard = new Set<string>()
   const tz = record.timezone ?? undefined
   const todayIndex = localDayIndex(record.nowMs, tz)
+  // The widest window any tool read this turn; 7 days (the default window) when none says.
+  const WINDOW_DAYS: Record<string, number> = { '7d': 7, '14d': 14, '30d': 30, all: Infinity, since_trial_start: Infinity }
+  let windowDays = 7
+  for (const c of captured) {
+    const w = (c.result as { window?: unknown } | null)?.window
+    if (typeof w === 'string' && WINDOW_DAYS[w] !== undefined) windowDays = Math.max(windowDays, WINDOW_DAYS[w])
+  }
+  const windowStart = todayIndex - windowDays + 1
   for (const r of record.regimens) {
     if (r.deletedAt) continue
     const label = (r.drugLabel ?? '').trim()
@@ -968,7 +982,11 @@ export function careNamesFrom(
       tz,
     )
     // A course with no start is unplaced, not absent: an active one still counts as on board.
-    if (placed.onBoard || placed.inTail || (placed.start === null && r.status === 'active')) onBoard.add(label)
+    const spanTouchesWindow =
+      placed.start !== null && placed.start <= todayIndex && placed.end !== null && placed.end + MASK_TAIL_DAYS >= windowStart
+    if (placed.onBoard || placed.inTail || spanTouchesWindow || (placed.start === null && r.status === 'active')) {
+      onBoard.add(label)
+    }
   }
   const walk = (v: unknown): void => {
     if (Array.isArray(v)) {
@@ -992,7 +1010,7 @@ export function careNamesFrom(
       }
     }
   }
-  return { knownNames: [...known], onBoardNames: [...onBoard] }
+  return { knownNames: [...known], onBoardNames: [...onBoard], visitInContext: textMentionsVisit(record.question) }
 }
 
 /** The provenance line beside an answer may not carry the zero the answer may not (CUL-1429):

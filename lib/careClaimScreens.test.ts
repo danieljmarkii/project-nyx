@@ -10,6 +10,7 @@ import {
   DELEGATION_RE,
   TREATMENT_ATTRIBUTION_RE,
   careClaimReason,
+  textMentionsVisit,
   zeroBesideCareReason,
 } from './careClaimScreens';
 
@@ -192,7 +193,7 @@ describe('careClaimScreens (CUL-1271)', () => {
 // pass reproduced passing every Ask screen, the forms a model writes once EN-10's lines reach
 // it, and the honest forms (a non-zero count, a zero beside nothing, the window and the logging).
 describe('zeroBesideCareReason (CUL-1429)', () => {
-  const NONE = { knownNames: [] as string[], onBoardNames: [] as string[] };
+  const NONE = { knownNames: [] as string[], onBoardNames: [] as string[], visitInContext: false };
 
   it.each([
     'Since the Sep 16 visit, 0 vomiting episodes are logged.',
@@ -291,18 +292,62 @@ describe('zeroBesideCareReason (CUL-1429)', () => {
     expect(zeroBesideCareReason(text, NONE)).toBeNull();
   });
 
+  // Adversarial pass 2 (PR-45a).
+  it.each([
+    'In the 14 days after the visit she hasn\'t thrown up and is eating well.',
+    "On prednisolone, she hasn't thrown up and is eating well.",
+    "She hasn't had another vomiting episode since the visit.",
+    "I don't see any vomiting logged since the prednisolone started.",
+    "There's no record of vomiting since the prednisolone started.",
+    "I couldn't find any vomiting since the prednisolone started.",
+    'On prednisolone. Vomiting episodes in the last 14 days: none.',
+    "On prednisolone, vomiting doesn't appear in the last 14 days.",
+    'On prednisolone, the log shows nothing for vomiting.',
+    'On prednisolone she has eaten every meal and not vomited.',
+  ])('refuses (adversarial pass 2): %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).not.toBeNull();
+  });
+
+  it('a visit the owner asked about sits beside a zero the answer only dates', () => {
+    const text = 'No vomiting is logged since Sep 16, with logging on 12 of 14 days.';
+    expect(zeroBesideCareReason(text, NONE)).toBeNull();
+    expect(zeroBesideCareReason(text, { ...NONE, visitInContext: true })).toBe('zero_beside_visit');
+    expect(textMentionsVisit('Has she vomited since her vet visit?')).toBe(true);
+    expect(textMentionsVisit('Has she vomited this week?')).toBe(false);
+    expect(textMentionsVisit('Should I call the clinic?')).toBe(false);
+  });
+
+  it.each([
+    // Routing advice is not a visit (adversarial pass 2, F1).
+    'No vomiting is logged in the last 7 days. If she vomits again, call the clinic.',
+    'No vomiting is logged in the last 7 days. If it gets worse, go to the ER.',
+    'No vomiting is logged in the last 7 days; consult your vet if it starts again.',
+    'No vomiting is logged in the last 7 days. Bring this to her next appointment.',
+    'No vomiting is logged in the last 7 days, worth raising at the exam on Oct 12.',
+    // "hasn't stopped" is the opposite of a zero (F2).
+    "She hasn't stopped vomiting since the visit: 6 episodes in 7 days.",
+    'She still hasn\'t stopped scratching since the Apoquel, 11 entries.',
+    // A missed-dose or intake clause beside a symptom count (F3, F4).
+    "Prednisolone hasn't been logged since Oct 3. Worth checking with your vet.",
+    'Nothing has been logged for her prednisolone since Oct 3.',
+    "Her inhaler hasn't been logged since Oct 1.",
+    'Since the visit she has vomited 4 times and eaten 0 of 6 meals.',
+  ])('passes (adversarial pass 2): %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).toBeNull();
+  });
+
   it("refuses a zero beside the record's own course name, nickname or not", () => {
-    const ctx = { knownNames: ["Buddy's tummy pills"], onBoardNames: [] };
+    const ctx = { knownNames: ["Buddy's tummy pills"], onBoardNames: [], visitInContext: false };
     expect(zeroBesideCareReason("No vomiting is logged since Buddy's tummy pills started.", ctx)).toBe(
       'zero_beside_medication',
     );
   });
 
   it('refuses a zero while a masking course is on board, even unnamed in the answer', () => {
-    const ctx = { knownNames: ['Prednisone'], onBoardNames: ['Prednisone'] };
+    const ctx = { knownNames: ['Prednisone'], onBoardNames: ['Prednisone'], visitInContext: false };
     expect(zeroBesideCareReason('No coughing is logged this week.', ctx)).toBe('zero_beside_medication');
     // An unresolved on-board name masks every sign, like a systemic steroid.
-    expect(zeroBesideCareReason('0 episodes are logged this week.', { knownNames: [], onBoardNames: ['Mystery drops'] })).toBe(
+    expect(zeroBesideCareReason('0 episodes are logged this week.', { knownNames: [], onBoardNames: ['Mystery drops'], visitInContext: false })).toBe(
       'zero_beside_medication',
     );
   });
@@ -310,7 +355,7 @@ describe('zeroBesideCareReason (CUL-1429)', () => {
   it.each([
     // A drug that cannot hide the counted sign (carprofen causes GI upset, masks nothing).
     ['Carprofen started Sep 10; no coughing is logged since.', NONE],
-    ['No coughing is logged this week.', { knownNames: ['Carprofen'], onBoardNames: ['Carprofen'] }],
+    ['No coughing is logged this week.', { knownNames: ['Carprofen'], onBoardNames: ['Carprofen'], visitInContext: false }],
     // An antiemetic hides vomiting, not coughing.
     ['Cerenia started Sep 10; 0 coughing episodes are logged since.', NONE],
   ])('passes a zero beside a drug that cannot hide that sign: %s', (text, ctx) => {
