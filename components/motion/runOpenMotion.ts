@@ -219,12 +219,26 @@ interface Params {
   leadTop: number;
   reducedMotion: boolean;
   appActive: boolean;
+  /** A FRESH open has started (CUL-1735): the box's commit, or Reduce Motion's at-once box.
+   *  Never a reversal, a close, a re-key, a blur or a host's reset; once per open. */
+  onFreshOpen?: () => void;
 }
 
 /** The header's floor before it has reported a layout (the 44pt row). */
 const HEADER_FLOOR_PT = 44;
 
-export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reducedMotion, appActive }: Params): RunOpen {
+export function useRunOpen({
+  shown,
+  identity,
+  count,
+  beadCenterY,
+  leadTop,
+  reducedMotion,
+  appActive,
+  onFreshOpen,
+}: Params): RunOpen {
+  const freshOpen = useRef(onFreshOpen);
+  freshOpen.current = onFreshOpen;
   const [phase, setPhase] = useState<RunOpenPhase>(shown ? 'open' : 'closed');
 
   const values = useRef<RunOpenValues>({
@@ -358,6 +372,7 @@ export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reduc
       start(timing(m.shift, 0, RUN_MOTION.landMs, Easing.out(Easing.cubic), starts[i]));
     });
     later(runOpenIdleMs(starts), () => finish(true, 'opening'));
+    freshOpen.current?.();
   }, [values, go, start, timing, members, later, finish, fixMeasures]);
 
   const open = useCallback(() => {
@@ -373,6 +388,7 @@ export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reduc
       start(timing(values.line, 1, RUN_MOTION.crossfadeMs, Easing.out(Easing.quad)));
       for (const m of members()) start(timing(m.opacity, 1, RUN_MOTION.crossfadeMs, Easing.out(Easing.quad)));
       later(RUN_MOTION.crossfadeMs, () => finish(true, 'crossfade'));
+      if (from === 'closed') freshOpen.current?.();
       return;
     }
     if (from === 'crossfade') {

@@ -34,6 +34,7 @@ import {
   runOpenBudgetMs,
   runOpenIdleMs,
 } from '../motion/runOpenMotion';
+import { RunRevealContext, type RunRevealMeasure } from '../motion/runRevealMotion';
 import { useState } from 'react';
 import { TICK_BREATH } from '../motion/arrivalMotion';
 import type { NodeRead, SpineCompactNode, SpineDose, SpineEventNode } from '../../lib/spineNode';
@@ -901,6 +902,63 @@ describe('open in place: the run\'s own motion (CUL-1734, D1)', () => {
     expect(styleOf(t.getByTestId('spine-run-rail-compact:m0')).backgroundColor).toBe(theme.colorEventMeal);
     advance(1_000);
     expect(configureNext).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── The reveal (CUL-1735, D3): the run asks its list once per open, never on a close ──────
+
+describe('the reveal: the run asks its list to show its first meal, once per open', () => {
+  function Hosted({ node, request }: { node: SpineCompactNode; request: jest.Mock }) {
+    const [expanded, setExpanded] = useState(false);
+    return (
+      <RunRevealContext.Provider value={request}>
+        <SpineCompactRow
+          node={node}
+          isFirst
+          isLast
+          expanded={expanded}
+          onToggle={() => setExpanded((e) => !e)}
+          onOpen={jest.fn()}
+          openInPlace
+        />
+      </RunRevealContext.Provider>
+    );
+  }
+  const advance = (ms: number) =>
+    act(() => {
+      jest.advanceTimersByTime(ms);
+    });
+  const host = () => {
+    const cancel = jest.fn();
+    const request = jest.fn((_m: RunRevealMeasure) => cancel);
+    return { request, cancel };
+  };
+
+  it('an open asks once, on the box\'s commit; the close asks nothing and drops what is pending', () => {
+    const { request, cancel } = host();
+    const t = render(<Hosted node={run(3)} request={request} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    expect(request).not.toHaveBeenCalled();
+    advance(RUN_MOTION.mountFrameMs);
+    expect(request).toHaveBeenCalledTimes(1);
+    advance(1_000);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(1_000);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('a reversal mid-open (a second tap) cancels the reveal, and the turn back never asks again', () => {
+    const { request, cancel } = host();
+    const t = render(<Hosted node={run(3)} request={request} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(RUN_MOTION.mountFrameMs + 40);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    expect(cancel).toHaveBeenCalledTimes(1);
+    advance(60);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(1_000);
+    expect(request).toHaveBeenCalledTimes(1);
   });
 });
 

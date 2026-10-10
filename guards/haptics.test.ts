@@ -159,6 +159,10 @@ const ALWAYS_SCANNED = [
   // to the walk; its landing beat is where a "landed" buzz would read as natural. Named
   // the PR it ships; proven by mutation (a `commitSymptom` import reds the build).
   'components/motion/runOpenMotion.ts',
+  // CUL-1735 — the reveal: the list's move under a run that opens out of sight, on the same
+  // day's list. A `.ts` hook, invisible to the walk, and the move is where a "there it is"
+  // tap would read as natural. Named the PR it ships; proven by mutation.
+  'components/motion/runRevealMotion.ts',
   // HV-5 (CUL-1162) — the one read predicate. It paints nothing, and it is named anyway
   // because History v2's spec puts the READ itself in this scan (§4: "a haptic on
   // anything safety-bearing (the haptics guard's scan includes History v2's read)"):

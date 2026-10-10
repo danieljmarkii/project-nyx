@@ -52,7 +52,7 @@
 // `accessibilityState.expanded` and its members announce individually once opened. The
 // rose's arrival is announced politely, never assertively: a verdict is not an alert.
 
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useContext, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { Animated, LayoutAnimation, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line } from 'react-native-svg';
 import { router } from 'expo-router';
@@ -65,6 +65,7 @@ import { useNodeArrival } from '../motion/arrivalMotion';
 import { announceQueued, readLandedSpoken, useRowSpeech } from './rowSpeech';
 import { FOLD_LAYOUT, UNFOLD_LAYOUT } from '../motion/foldMotion';
 import { useRunOpen } from '../motion/runOpenMotion';
+import { RunRevealContext } from '../motion/runRevealMotion';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { ADHERENCE_OPTIONS } from '../log/AdherenceChipRow';
@@ -90,6 +91,8 @@ export const THREAD_X = SPINE_THREAD.x;
 const RUN_RAIL_W = 4;
 /** Where the run's lead starts: the foot of the run's own bead (its centre plus half the bead). */
 const RUN_LEAD_TOP = SPINE_THREAD.dotCenterY + NODE_DOT_SIZE / 2;
+/** A member row's floor (GAP-8): the reveal's stand-in for a first meal that has not reported. */
+const RUN_MEMBER_FLOOR_PT = 44;
 
 // ── The chips ─────────────────────────────────────────────────────────────────────
 
@@ -517,6 +520,29 @@ export function SpineCompactRow({
 }) {
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
+  // The reveal (CUL-1735, D3): on a fresh open the run tells the list where its first meal
+  // will rest, and the list moves just far enough to show it. The run measures; the list
+  // owns the scroll. No host (the Patterns month, a test): nobody is asked.
+  const requestReveal = useContext(RunRevealContext);
+  const headerRef = useRef<View>(null);
+  /** The first meal's foot below the box's top, once the meals have laid out. */
+  const firstMealFoot = useRef<number | null>(null);
+  const cancelReveal = useRef<(() => void) | null>(null);
+  const dropReveal = () => {
+    cancelReveal.current?.();
+    cancelReveal.current = null;
+  };
+  useEffect(() => () => cancelReveal.current?.(), []);
+  const onFreshOpen = () => {
+    if (!requestReveal) return;
+    dropReveal();
+    cancelReveal.current = requestReveal((done) =>
+      headerRef.current?.measureInWindow((_x, y, _w, h) =>
+        // Before the meals report (a frame can beat them), a member's 44pt floor stands in.
+        done({ runTop: y, mealBottom: y + h + (firstMealFoot.current ?? RUN_MEMBER_FLOOR_PT) }),
+      ),
+    );
+  };
   // Called either way (the rules of hooks) and held closed when the host did not ask for it,
   // so the shipped path runs no timer, no beat and no `configureNext` of this machine's.
   const motion = useRunOpen({
@@ -527,8 +553,11 @@ export function SpineCompactRow({
     leadTop: RUN_LEAD_TOP,
     reducedMotion,
     appActive,
+    onFreshOpen: openInPlace ? onFreshOpen : undefined,
   });
   const toggle = () => {
+    // A close (or a reversal) never scrolls: a reveal not yet fired is dropped.
+    if (expanded) dropReveal();
     // The shipped open: geometry on `LayoutAnimation`, nothing else moves; under reduced
     // motion the rows appear. The open-in-place machine drives its own layout commits.
     if (!openInPlace && !reducedMotion) LayoutAnimation.configureNext(expanded ? FOLD_LAYOUT : UNFOLD_LAYOUT);
@@ -566,6 +595,7 @@ export function SpineCompactRow({
   return (
     <View>
       <Pressable
+        ref={headerRef}
         onPress={toggle}
         onLayout={openInPlace ? (e) => motion.onHeaderLayout(e.nativeEvent.layout.height) : undefined}
         accessibilityRole="button"
@@ -617,7 +647,14 @@ export function SpineCompactRow({
         />
       ) : null}
       {openInPlace ? (
-        <RunInPlace nodeId={node.id} motion={motion} memberIds={node.rows.map((r) => r.id)}>
+        <RunInPlace
+          nodeId={node.id}
+          motion={motion}
+          memberIds={node.rows.map((r) => r.id)}
+          onFirstMealFoot={(foot) => {
+            firstMealFoot.current = foot;
+          }}
+        >
           {members}
         </RunInPlace>
       ) : expanded ? (
@@ -647,13 +684,17 @@ function RunInPlace({
   nodeId,
   motion,
   memberIds,
+  onFirstMealFoot,
   children,
 }: {
   nodeId: string;
   motion: ReturnType<typeof useRunOpen>;
   memberIds: string[];
+  /** The first meal's foot below the box's top, at rest (the reveal's measure, CUL-1735). */
+  onFirstMealFoot: (foot: number) => void;
   children: ReactNode[];
 }) {
+  const stageY = useRef(0);
   if (!motion.slotMounted) return null;
   return (
     <View
@@ -671,7 +712,10 @@ function RunInPlace({
       />
       <View
         testID={`spine-members-stage-${nodeId}`}
-        onLayout={(e) => motion.onStageLayout(e.nativeEvent.layout.height)}
+        onLayout={(e) => {
+          stageY.current = e.nativeEvent.layout.y;
+          motion.onStageLayout(e.nativeEvent.layout.height);
+        }}
       >
         {children.map((child, i) => {
           const v = motion.values.members[i];
@@ -679,7 +723,11 @@ function RunInPlace({
             <Animated.View
               key={memberIds[i]}
               testID={`spine-member-wrap-${memberIds[i]}`}
-              onLayout={(e) => motion.onMemberLayout(i, e.nativeEvent.layout.y)}
+              onLayout={(e) => {
+                const { y, height } = e.nativeEvent.layout;
+                motion.onMemberLayout(i, y);
+                if (i === 0) onFirstMealFoot(stageY.current + y + height);
+              }}
               style={{ opacity: v.opacity, transform: [{ translateY: v.shift }] }}
             >
               {child}
