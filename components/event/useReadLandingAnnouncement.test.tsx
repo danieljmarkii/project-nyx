@@ -28,14 +28,15 @@ function Stage({ announcer, line }: { announcer: ReadLandingAnnouncer; line: str
 // are not about it read as "the row moved"; the cases that ARE about it pass it explicitly.
 let tick = 0;
 function Host({
-  awaiting, id, line, v, onAnnouncer, suppressed,
+  awaiting, id, line, v, onAnnouncer, suppressed, petName = 'Biscuit',
 }: {
   awaiting: boolean; id: string; line: string | null; v?: string | null;
   onAnnouncer?: (a: ReadLandingAnnouncer) => void;
   suppressed?: boolean;
+  petName?: string | null;
 }) {
   const version = v === undefined ? `t${(tick += 1)}` : v;
-  const announcer = useReadLandingAnnouncement({ awaitingRead: awaiting, identity: id, version, suppressed });
+  const announcer = useReadLandingAnnouncement({ awaitingRead: awaiting, identity: id, version, suppressed, petName });
   onAnnouncer?.(announcer);
   return line === null ? null : <Stage announcer={announcer} line={line} />;
 }
@@ -49,6 +50,50 @@ beforeEach(() => {
 afterEach(() => announce.mockRestore());
 
 describe('useReadLandingAnnouncement', () => {
+  // CUL-1514, mock §04's spoken contract. Literal strings, never `readLandedCopy`, so a
+  // change to the sentence reds here rather than moving both sides of the assertion.
+  describe('the spoken form names the pet and the call', () => {
+    it.each([
+      ['Call your vet now', "Biscuit's read: call your vet now."],
+      ['Call your vet today', "Biscuit's read: call your vet today."],
+      ['Keep an eye out', "Biscuit's read: keep an eye out."],
+      ['Not enough to say yet', "Biscuit's read: not enough to say yet."],
+      ['Worth a call', "Biscuit's read: worth a call."],
+    ])('%s', (label, spoken) => {
+      const view = render(<Host awaiting id="e1" line={null} />);
+      view.rerender(<Host awaiting={false} id="e1" line={label} />);
+      expect(announce.mock.calls).toEqual([[spoken]]);
+    });
+
+    it("a held call's disclosure rides the same utterance, after the call", () => {
+      const view = render(<Host awaiting id="e1" line={null} />);
+      view.rerender(
+        <Host awaiting={false} id="e1" line="Call your vet today. The latest read hit a problem. This call stands." />,
+      );
+      expect(announce.mock.calls).toEqual([
+        ["Biscuit's read: call your vet today. The latest read hit a problem. This call stands."],
+      ]);
+    });
+
+    it('a line that is not a verdict keeps its own words after the name', () => {
+      const view = render(<Host awaiting id="e1" line={null} />);
+      view.rerender(<Host awaiting={false} id="e1" line="Couldn't finish reading this one." />);
+      expect(announce.mock.calls).toEqual([["Biscuit's read: Couldn't finish reading this one."]]);
+    });
+
+    it('a record with no pet name says "your pet", never a blank', () => {
+      const view = render(<Host awaiting id="e1" line={null} petName={null} />);
+      view.rerender(<Host awaiting={false} id="e1" line="Call your vet now" petName="  " />);
+      expect(announce.mock.calls).toEqual([["Your pet's read: call your vet now."]]);
+    });
+
+    it('the name is read on the landing commit', () => {
+      const view = render(<Host awaiting id="e1" line={null} petName={null} />);
+      view.rerender(<Host awaiting={false} id="e1" line="Call your vet now" petName="Mochi" />);
+      expect(announce.mock.calls).toEqual([["Mochi's read: call your vet now."]]);
+    });
+  });
+
   // Engines v3 PR-28b (CUL-1436, spec §8.7): a stored tier arrives only above what the
   // phone already showed, so a landing the host marks as saying nothing new is silent.
   it('a landing marked suppressed (nothing above what the phone showed) says nothing', () => {
@@ -60,14 +105,14 @@ describe('useReadLandingAnnouncement', () => {
   it('the suppression is read on the landing commit, so an unsuppressed landing still speaks', () => {
     const view = render(<Host awaiting id="e1" line={null} suppressed />);
     view.rerender(<Host awaiting={false} id="e1" line="Call your vet now" suppressed={false} />);
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Call your vet now'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Biscuit', 'Call your vet now'));
   });
 
   it('speaks what the stage shows when a read the host waited for lands', () => {
     const view = render(<Host awaiting id="e1" line={null} />);
     view.rerender(<Host awaiting={false} id="e1" line="Worth a call" />);
     expect(announce).toHaveBeenCalledTimes(1);
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Biscuit', 'Worth a call'));
   });
 
   it('says nothing for a read already showing on the first frame — it was there, it did not land', () => {
@@ -102,8 +147,8 @@ describe('useReadLandingAnnouncement', () => {
     view.rerender(<Host awaiting id="e1" line={null} />);
     view.rerender(<Host awaiting={false} id="e1" line="Worth a call" />);
     expect(announce.mock.calls).toEqual([
-      [readLandedCopy('Keep an eye out')],
-      [readLandedCopy('Worth a call')],
+      [readLandedCopy('Biscuit', 'Keep an eye out')],
+      [readLandedCopy('Biscuit', 'Worth a call')],
     ]);
   });
 
@@ -127,7 +172,7 @@ describe('useReadLandingAnnouncement', () => {
     const view = render(<Host awaiting={false} id="e1" line="Keep an eye out" v="t-old" />);
     view.rerender(<Host awaiting id="e1" line="Keep an eye out" v="t-old" />);
     view.rerender(<Host awaiting={false} id="e1" line="Keep an eye out" v="t-new" />);
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Keep an eye out'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Biscuit', 'Keep an eye out'));
   });
 
   it('compares against what the row held when the WAIT began, not the render before the fall', () => {
@@ -137,7 +182,7 @@ describe('useReadLandingAnnouncement', () => {
     view.rerender(<Host awaiting id="e1" line={null} v="t-pending" />);
     view.rerender(<Host awaiting id="e1" line={null} v="t-done" />);
     view.rerender(<Host awaiting={false} id="e1" line="Worth a call" v="t-done" />);
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Biscuit', 'Worth a call'));
   });
 
   // ── The second adversarial pass (CUL-1275) ─────────────────────────────────
@@ -149,7 +194,7 @@ describe('useReadLandingAnnouncement', () => {
     expect(announce).not.toHaveBeenCalled();
     view.rerender(<Host awaiting={false} id="e1" line="Worth a call" v="t-late" />);
     expect(announce).toHaveBeenCalledTimes(1);
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Biscuit', 'Worth a call'));
     // …and only once: the arm is spent.
     view.rerender(<Host awaiting={false} id="e1" line="Worth a call" v="t-later" />);
     expect(announce).toHaveBeenCalledTimes(1);
@@ -186,7 +231,7 @@ describe('useReadLandingAnnouncement', () => {
     a!.expectLanding();
     view.rerender(<Host awaiting={false} id="e1" line="Worth a call" v="t1" />);
     view.rerender(<Host awaiting={false} id="e1" line="Worth a call" v="t2" />);
-    expect(announce.mock.calls).toEqual([[readLandedCopy('Worth a call')]]);
+    expect(announce.mock.calls).toEqual([[readLandedCopy('Biscuit', 'Worth a call')]]);
   });
 
   it('`expectLanding` inside a wait changes nothing — the fall owns it, no double speech', () => {
@@ -195,6 +240,6 @@ describe('useReadLandingAnnouncement', () => {
     view.rerender(<Host awaiting id="e1" line={null} v="t0" />);
     a!.expectLanding();
     view.rerender(<Host awaiting={false} id="e1" line="Worth a call" v="t1" />);
-    expect(announce.mock.calls).toEqual([[readLandedCopy('Worth a call')]]);
+    expect(announce.mock.calls).toEqual([[readLandedCopy('Biscuit', 'Worth a call')]]);
   });
 });

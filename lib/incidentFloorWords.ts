@@ -427,14 +427,32 @@ export function raisedReadLine(input: {
   self: boolean;
   nowMs: number;
 }): string {
-  const p = capitalised(named(input.petName));
   // The tier map's own label, so the card and the record can never name one call two ways.
   const label = TIER_WORDS[input.tier].label;
+  if (input.self) return readLandedLine(input.petName, label);
+  const p = capitalised(named(input.petName));
   const words = label.charAt(0).toLowerCase() + label.slice(1);
-  if (input.self) return `${p}'s read: ${words}.`;
   const at = Date.parse(input.vomitAt);
   const when = Number.isFinite(at) ? ` at ${pastWords(at, input.nowMs)}` : '';
   return `${p}'s read for the vomit${when} is now: ${words}.`;
+}
+
+/** Mock §04's spoken contract (CUL-1514): what VoiceOver and TalkBack hear when a read lands
+ *  on the open record, "Biscuit's read: call your vet now.", for every verdict. The pet is
+ *  the RECORD's (the caller resolves it with `resolveRecordPetName`, C-9), and "your pet"
+ *  where the record has no name. `line` is what the section is showing, in its own words: a
+ *  verdict opens with the tier map's label, which is spoken in the map's words and lower-cased
+ *  after the colon (the completion card's raise line does the same, above); whatever the
+ *  card says after it (CUL-819's held-call disclosure, the phone's worked-out line) follows
+ *  in the same utterance, so it is never lost behind the call. A line that is not a verdict
+ *  (the failed line, the cap copy, a hidden note) keeps its own words after the name. No new
+ *  word is added to any tier: the spoken words are the visible words (mock §04). */
+export function readLandedLine(petName: string | null | undefined, line: string): string {
+  const p = capitalised(named(petName));
+  const body = line.trim();
+  const opensWithVerdict = Object.values(TIER_WORDS).some((w) => body.startsWith(w.label));
+  const spoken = opensWithVerdict ? body.charAt(0).toLowerCase() + body.slice(1) : body;
+  return `${p}'s read: ${/[.?]$/.test(spoken) ? spoken : `${spoken}.`}`;
 }
 
 /** The door from that sentence to the read it names. */

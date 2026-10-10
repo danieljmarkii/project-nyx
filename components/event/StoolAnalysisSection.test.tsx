@@ -902,7 +902,9 @@ describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
     await land(row({ recommendation: 'worth_a_call', read_text: 'Black, tarry stool is worth a call today.' }));
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(announce).toHaveBeenCalledTimes(1);
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
+    // CUL-1514: the record's pet, by name, in the literal sentence the hook speaks.
+    expect(announce).toHaveBeenCalledWith("Rex's read: worth a call.");
   });
 
   it('a PHOTOLESS contextual escalation is spoken', async () => {
@@ -910,7 +912,7 @@ describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     expect(view.toJSON()).toBeNull();
     await land(row({ recommendation: 'worth_a_call', read_text: 'Worth a call.' }));
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   it('Show, then a SKIPPED re-run, says nothing — the re-run re-bases on the server’s row', async () => {
@@ -935,7 +937,7 @@ describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
     fireEvent.press(view.getByText('Re-run analysis'));
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     await land(unseen);
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   it('a FAILED re-run trigger never parks the section on "Reading the photo…" (R3)', async () => {
@@ -961,7 +963,7 @@ describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
     mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T11:00:00.000Z' });
     await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
     expect(await view.findByText('Worth a call')).toBeTruthy();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
     expect(mockExpectLanding).toHaveBeenCalledTimes(1);
     alert.mockRestore();
   });
@@ -978,7 +980,7 @@ describe('StoolAnalysisSection — the landing is announced (CUL-1275)', () => {
     });
     await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
     expect(await view.findByText("Couldn't finish reading this one.")).toBeTruthy();
-    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Keep an eye out'));
+    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Rex', 'Keep an eye out'));
     alert.mockRestore();
   });
 
