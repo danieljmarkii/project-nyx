@@ -131,8 +131,9 @@ const REPLAY: Replay[] = [
     // Six meals in the window: one Picked, five unrated. Under threshold A the Picked meal is
     // a rated meal with nothing eaten well, so the arm still fires, and its sentence now says
     // exactly that (one rated meal, five with no rating) instead of "hasn't eaten a full meal".
-    // The issue's acceptance line expected 9/22 to go quiet; that holds only under threshold B.
-    // Reported on CUL-1136. The read is call-worthy anyway for the possible foreign material.
+    // The issue's acceptance line expected 9/22 to go quiet, which holds only under threshold B;
+    // the PM kept A on 2026-10-10 (CUL-1728). The read is call-worthy anyway for the possible
+    // foreign material.
     name: '9/22: one Picked among five unrated still fires under threshold A, and says so',
     vomitMs: V922,
     nowMs: V922 + 5 * 60_000,
@@ -276,7 +277,7 @@ Deno.test('the Noticed predicate sets treats and free-fed bowls aside, as it doe
   const v = Date.parse('2026-09-10T08:00:00Z')
   const refusals = [meal(v - 40 * H, 'refused', 'treat'), meal(v - 35 * H, 'refused', 'meal', 'bowl'), meal(v - 30 * H, 'refused')]
   const withBowl: VomitContextRows = { ...rowsOf(refusals, v), freeFedSpans: [{ foodItemId: 'bowl', fromMs: v - 100 * H, untilMs: Infinity }] }
-  // Noticed sets the bowl aside and stays below its floor; the provisional last-rated backstop
+  // Noticed sets the bowl aside and stays below its floor; the last-rated backstop
   // (newest rating a refusal) is what speaks, and the record says which one did.
   assertEquals(ctx(withBowl, v, v + 5 * 60_000, EN5).intakeRecord?.window, 'last_rated')
   const noBowl = rowsOf(refusals, v)
@@ -460,7 +461,7 @@ Deno.test('C: the Noticed predicate firing at the vomit is described before the 
   )
 })
 
-Deno.test('A (provisional): a refusal 25 h before the vomit with nothing logged since still fires; 6/7 stays quiet', () => {
+Deno.test('A (ruled 2026-10-10): a refusal 25 h before the vomit with nothing logged since still fires; 6/7 stays quiet', () => {
   const v = Date.parse('2026-09-10T08:00:00Z')
   const rows = rowsOf([meal(v - 50 * H, 'all'), meal(v - 40 * H, 'all'), meal(v - 25 * H, 'refused')], v)
   assertStrictEquals(intakeFires(ctx(rows, v, v + 1 * H, OFF)), true, 'shipped fires')

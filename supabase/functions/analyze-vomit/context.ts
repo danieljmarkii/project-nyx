@@ -351,7 +351,7 @@ export const EN0_CONTEXT_STEP: VomitContextStep = (shipped, args) => {
 //                   two of the last three qualifying meals refused or picked, three-day
 //                   recency) at the vomit and at the read capped at 24 h after it. I1, ruled
 //                   A 2026-10-02: in union, never in place of the arm;
-//   · last_rated:   ⚠ provisional (the adversarial pass, A): the newest qualifying rated meal in
+//   · last_rated:   ruled A, 2026-10-10 (CUL-1728): the newest qualifying rated meal in
 //                   the week before the vomit was Refused or Picked, and nothing has answered it.
 // Treats and free-fed bowls stay in the three rating halves exactly as they are today (a
 // rated treat speaks, a treat marked All cancels); only the Noticed check drops them, as it
@@ -439,25 +439,25 @@ export const EN5_CONTEXT_STEP: VomitContextStep = (prior, args) => {
     })
   }
 
-  // ⚠ PROVISIONAL, louder default pending the PM (the adversarial pass, A): a recorded refusal
-  // nothing has answered since. An absent meal is as unknown as an unrated one, and an unknown
-  // never cancels a recorded refusal, so the newest QUALIFYING rated meal in the week before the
-  // vomit speaks if it was Refused or Picked, when all of these hold (three adversarial rounds):
-  //   · no qualifying meal was rated after it, up to the read: eating well (or Some) after the
-  //     refusal answers it, wherever it falls, including between the halves (Z5, M, O);
-  // Stated carve-outs, where the newest qualifying rating is a refusal and the arm is still quiet:
-// a refusal after the after-vomit half's 24 h cap on a late re-read (the cap, ruled); and a half
-// holding a Most or All, which threshold A has already judged (round 4, R4 and R5).
-//   · the read's own two halves (after the vomit, before the read) hold no rated meal of any
+  // The last-rated backstop: a recorded refusal nothing has answered since. Ruled A by the PM,
+  // 2026-10-10 (CUL-1728), after six adversarial rounds. An absent meal is as unknown as an
+  // unrated one, and an unknown never cancels a recorded refusal, so the newest QUALIFYING rated
+  // meal in the week before the vomit speaks if it was Refused or Picked, when all of these hold:
+  //   · no qualifying meal was rated Some, Most or All after it, up to the read: only eating
+  //     answers a refusal, wherever it falls, including between the halves (Z5, M, O); a later
+  //     refusal is more of the same evidence and never quiets it (R1);
+  //   · the read's own two halves (after the vomit, before the read) hold no rated meal of any
   //     kind, so threshold A has not already judged them (N). The before-vomit half is NOT in
   //     this condition: it can hold an All from BEFORE the refusal (Z1);
   //   · some meal was rated in the week before the read, the shipped tracking guard's own test,
   //     so eleven days of nothing logged is not read as a refusal (Z2).
+  // Together the last two mean it fires only where the shipped arm fires too (round 4's proof).
   // Qualifying only, as the Noticed predicate reads: a refused pill pocket is not a meal. When a
   // treat or a bowl was rated after the refusal, the words say they were set aside (Z3, Z4).
-  // Today's other firing on a read window with no rated meal (the newest rating Some, Most or
-  // All, e.g. the 6/7 vomit logged before its meals were back-filled) stays quiet. Brief on
-  // CUL-1136.
+  // Stated carve-outs, quiet although the newest qualifying rating is a refusal: a refusal past
+  // the after-vomit half's 24 h cap on a late re-read (R4), and a half holding a Most or All,
+  // which threshold A has judged (R5). Quiet as ruled: a read window with no rated meal whose
+  // newest rating was Some, Most or All (the 6/7 vomit logged before its meals were back-filled).
   const lastRated = meals
     .filter((m) => Number.isFinite(m.ms) && m.ms <= vomitMs && m.ms >= vomitMs - INTAKE_BASELINE_WINDOW_DAYS * 86_400_000)
     .filter((m) => isQualifyingIntakeMeal(m, spans) && isKnownIntakeRating(m.intakeRating))

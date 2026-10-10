@@ -3,7 +3,7 @@
 **Date:** 2026-10-09
 **One thing:** S3 L1 — Config flags: merging the code is not releasing it; a missing row keeps EN-5 dark · check: pending
 
-Dispatched session (`/dispatch`, Engines v3, PR-30), CUL-1722 (of CUL-1136). The row was plan-gated (a clinical surface). The plan went on CUL-1136 and the PM typed "go, A" in this session. Shipped via #1140, left open for the PM: the 9/22 acceptance line and the provisional backstop wait on the rulings in CUL-1728.
+Dispatched session (`/dispatch`, Engines v3, PR-30), CUL-1722 (of CUL-1136). The row was plan-gated (a clinical surface). The plan went on CUL-1136 and the PM typed "go, A" in this session. Shipped via #1140. The two calls built in the louder direction were ruled by the PM in this session on 2026-10-10 (CUL-1728), and the PR merged through the steward gate after that.
 
 ## What shipped
 
@@ -55,9 +55,9 @@ Every fix landed with a guard proven by mutation: break the source, watch the te
 ## Decisions
 
 - PM, typed in session: go, threshold A.
-- Built in the louder direction, for the PM to rule (briefs on CUL-1136):
-  - **The empty window (`last_rated`):** keep A, B (drop it) or C (fire on every empty window).
-  - **9/22:** it still fires under A. Its one Picked meal is a rated meal with nothing eaten well, and its sentence is now true. The issue's acceptance line expected it quiet, which holds only under B.
+- PM, typed in session 2026-10-10: "empty window A, 9/22 keep A" (CUL-1728). Both were already built that way:
+  - **The empty window:** the `last_rated` backstop stays (option A). The 6/7 shape (a read window with no rated meal whose newest rating was Some, Most or All) stays quiet.
+  - **9/22:** it keeps firing under threshold A. Its one Picked meal is a rated meal with nothing eaten well, and its sentence is now true. The issue's acceptance line ("goes quiet") is superseded by this ruling.
 - Kept as shipped, recorded: the pill-pocket false alarm in the rating halves (GAP-28, MFU-7, a separate quieter row).
 - Found: the weight lane's exact-copy rule (CUL-1413) makes a P3 cat with two identical saved readings silent in both lanes unless the fall clears 0.6 kg.
 
