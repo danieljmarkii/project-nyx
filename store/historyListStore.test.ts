@@ -66,6 +66,9 @@ import { usePetStore, type Pet } from './petStore';
 import { defaultHistoryScope, type HistoryScope } from './historyScopeStore';
 import { historyRequestKey, mergePages, snapshotForScope, useHistoryListStore } from './historyListStore';
 import * as historyWindowFacts from '../lib/historyWindowFacts';
+import * as spineReads from '../lib/spineReads';
+import { dayStartMs } from '../lib/historyScreen';
+import { DEFAULT_MEAL_TIMING_CONFIG } from '../lib/mealTiming';
 
 const TODAY = toLocalDayKey(new Date());
 const dayAgo = (n: number) => shiftDay(TODAY, -n);
@@ -728,5 +731,61 @@ describe('CUL-1244 — looks under All types: read beside the page, never into i
     expect([...store().snapshot!.looks.keys()]).toEqual([TODAY]);
     for (let guard = 0; store().snapshot!.pages.next && guard < 10; guard++) await store().loadMore();
     expect([...store().snapshot!.looks.keys()].sort()).toEqual([dayAgo(11), TODAY].sort());
+  });
+});
+
+// ── CUL-1760 — the timing read runs under a filter, a search and a month window ─────
+// CUL-1737's before-vomit break reads the vomits past the loaded days from
+// `timing.onsets[].span`, so the read must run whatever narrows the page (Noticed aside). Each
+// case seeds a vomit inside the episode gap before the first loaded day, on a day the scope
+// does not show, so a read that ran is also a read that found it.
+
+describe('CUL-1760 — the timing read runs under a filter, a search and a month window', () => {
+  const gapMs = DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours * 60 * 60 * 1000;
+  const monthOf = (day: string) => day.slice(0, 7);
+
+  async function expectTimingRead(scope: HistoryScope, vomitId: string) {
+    const spy = jest.spyOn(spineReads, 'readVomitOnsetsSince');
+    try {
+      expect(await store().load({ pet: PET_A, scope, today: TODAY })).toBe('drawn');
+      const snap = store().snapshot!;
+      const span = snap.pages.span!;
+      const shown = snap.pages.days.flatMap((d) => d.rows).map((r) => r.id);
+      expect(shown.length).toBeGreaterThan(0);
+      expect(shown).not.toContain(vomitId);
+      expect(spy).toHaveBeenCalledWith(PET_A.id, new Date(dayStartMs(span.fromDay)! - gapMs).toISOString());
+      // The vomit the scope hides reaches the timing lane all the same.
+      const vomitMs = Date.parse((mockRaw.prepare('SELECT occurred_at FROM events WHERE id = ?').get(vomitId) as { occurred_at: string }).occurred_at);
+      expect(snap.timing.onsets.map((o) => o.ms)).toContain(vomitMs);
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it('under a type filter', async () => {
+    for (let n = 0; n < 3; n++) insertEvent(`c${n}`, at(n, 8), 'cough');
+    insertEvent('v-hidden', at(3, 23), 'vomit');
+    await expectTimingRead(scopeFor(PET_A.id, { filter: { kind: 'type', type: 'cough' } }), 'v-hidden');
+  });
+
+  it('under a search', async () => {
+    for (let n = 0; n < 3; n++) insertEvent(`c${n}`, at(n, 8), 'cough');
+    insertEvent('v-hidden', at(3, 23), 'vomit');
+    await expectTimingRead(scopeFor(PET_A.id, { searchOpen: true, searchText: 'cough' }), 'v-hidden');
+  });
+
+  it('under a month window', async () => {
+    // A past month, its first day loaded, the vomit late on the last day of the month before.
+    const first = `${monthOf(shiftDay(`${monthOf(TODAY)}-01`, -1))}-01`;
+    const onDay = (day: string, h: number) => {
+      const d = dayKeyToLocalDate(day) as Date;
+      d.setHours(h, 0, 0, 0);
+      return d.toISOString();
+    };
+    insertEvent('c-first', onDay(first, 8), 'cough');
+    insertEvent('v-hidden', onDay(shiftDay(first, -1), 23), 'vomit');
+    insertEvent('c-today', at(0, 8), 'cough');
+    await expectTimingRead(scopeFor(PET_A.id, { window: { kind: 'month', month: monthOf(first) } }), 'v-hidden');
+    expect(store().snapshot!.pages.span!.fromDay).toBe(first);
   });
 });
