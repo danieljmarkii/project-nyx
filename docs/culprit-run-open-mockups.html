@@ -2,8 +2,9 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
 <style>
   /* ============================================================
-     Grouped Meals, Opened. Round 1 of the run that opens in place
-     (CUL-1715, the PM's convening of 2026-10-09). House system: the
+     Grouped Meals, Opened. The run that opens in place (CUL-1715, the
+     PM's convening of 2026-10-09). Round 2 (2026-10-10) folds in the PM's
+     reaction: every opened meal keeps its brand and every fact. House system: the
      FAB round's tokens; the phone frames draw the app's real light
      tokens (constants/theme.ts) at 1pt = 1px, in both page themes.
      One timing engine drives every phone, frame strip and beat chart,
@@ -58,6 +59,11 @@
   a { color: var(--teal-ink); }
   .ask { margin: 26px 0 0; border-left: 3px solid var(--rule); padding: 2px 0 2px 16px; max-width: 64ch; color: var(--ink-2); font-size: 15px; }
   .ask q { font-style: italic; color: var(--ink); quotes: "\201C" "\201D"; }
+  .ledger { display: grid; gap: 8px; margin: 22px 0 0; max-width: 92ch; }
+  .ledger div { display: grid; grid-template-columns: 220px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  @media (max-width: 640px) { .ledger div { grid-template-columns: 1fr; gap: 4px; } }
+  .ledger b { color: var(--ink); }
+  .ledger q, .brief q { font-style: italic; color: var(--ink); quotes: "\201C" "\201D"; }
   .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
   .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
   .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
@@ -143,6 +149,7 @@
   .rw .ti .de { font-weight: 400; color: var(--app-ink-2); }
   .rw .ft { font-size: 11px; line-height: 13px; font-weight: 500; letter-spacing: 0.4px; color: var(--app-ink-3); text-transform: uppercase; flex-shrink: 0; }
   .rw .cam { display: inline-flex; color: var(--app-ink-3); }
+  .rw .chip { font-size: 11px; line-height: 13px; font-weight: 500; letter-spacing: 0.4px; text-transform: uppercase; color: var(--app-meal-ink); background: var(--app-meal-wash); border-radius: 999px; padding: 2px 8px; flex-shrink: 0; }
   .rw .cam svg { width: 11px; height: 11px; }
   .rw .l2 { margin-top: 2px; font-size: 11px; line-height: 14px; color: var(--app-ink-2); }
   .rw .rd { display: flex; gap: 8px; align-items: stretch; margin-top: 4px; }
@@ -246,14 +253,18 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 1 · five decisions for you</span><span>Grouped meals · CUL-1715</span><span>2026-10-09</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 2 · your reaction folded in · two decisions open</span><span>Grouped meals · CUL-1715</span><span>2026-10-10</span></p>
     <h1>The grouped meals line, opened in place</h1>
     <p class="standfirst">On Home and History, meals of one food logged back to back share one line, and tapping it opens the meals underneath. You called that opening a first version and asked the whole team what would make it delightful, since owners open these lines many times a day. This page rebuilds today's opening from the code and slows it down so you can see its seams, draws the team's proposal beside it on the same day, and carries the discussion and the decisions.</p>
     <p class="ask"><q>I have a v1 animation here that I'd love for us to turbocharge… I feel like this is an interaction that happens frequently and because of that it should be delightful. So. What can we do to improve this experience. Let's gather the full team and discuss.</q><br>Your message, with the Home screenshot of Fri, Oct 9.</p>
+    <div class="ledger" id="ledger">
+      <div><b>1 · What you see once it is open</b><span><q>I like everything you have except 04.. what you see when it's open. I'd like for you to ensure brand and other info is still available on the meal when it's expanded.</q> Ruled: every opened meal keeps its brand, product, format, rating and time, as today's row does. The team kept what removes nothing: the line from the run's own bead, a smaller bead on it, a darker time, and the time and format first with the brand and product on the meal's second line. If you'd rather each meal look exactly like today's row, that is the boxed option in §02 and §04. Round 1's meals without the brand have left the page; commit 5169716 keeps them. <span class="pill">ruled · D2 · §04</span></span></div>
+      <div><b>2 · Everything else</b><span><q>I like everything you have</q> Read as yes to D1 (build the proposal, the thread first) and D3 (the bounded reveal scroll). D4 (the stack) has no recommendation to like, and D5 is a clinical rule change, so both still need your word. <span class="pill">D1 · D3 ruled</span> <span class="pill open">D4 · D5 open</span></span></div>
+    </div>
     <div class="summary">
-      <p><b>The team's answer in four lines.</b> Six seats read your screenshot and the code in isolation, and they agree on the shape of it.</p>
+      <p><b>The team's answer, from round 1.</b> Six seats read your screenshot and the code in isolation, and they agree on the shape of it.</p>
       <p>Today's opening is not short of a flourish; it has seams. The rows below jump 44pt, then bounce about 12% past their place, then the teal line pops to its length after everything has stopped, and the close ends with another jump.</p>
-      <p>The proposal (§02) takes every seam out. The line grows out of the bead you tapped, the box opens from nothing on an ease with no bounce, each meal lands where the box's edge reaches it, the close is faster than the open, and the meals nest under their line with the product named once. It is at rest in about a third of a second.</p>
+      <p>The proposal (§02) takes every seam out. The line grows out of the bead you tapped, the box opens from nothing on an ease with no bounce, each meal lands where the box's edge reaches it, the close is faster than the open, and the meals nest under their line, each still carrying its brand and every fact. It is at rest in about a third of a second.</p>
       <p>One idea splits the team: a small stack on the folded line's bead that says "several" (§06). And your screenshot showed something bigger than the animation: the grey thread that should join every bead is not drawn at all (§01, filed).</p>
     </div>
   </header>
@@ -300,7 +311,7 @@
   <section id="side">
     <div class="sec-head"><span class="sec-num">02</span><h2>The proposal, beside today</h2></div>
     <div class="col">
-      <p>Three phones on the same day. Tap any <b>meals</b> line, or play all three together, and use the slider to stop every phone on the same instant. The middle phone is the team's proposal. The right one is the same motion with today's full rows, which is what you get if you keep the member rows as they are (§07, D2).</p>
+      <p>Three phones on the same day. Tap any <b>meals</b> line, or play all three together, and use the slider to stop every phone on the same instant. The middle phone is the team's proposal. The right one is the same motion with today's rows exactly, if you'd rather the meals not change at all (§07, D2).</p>
     </div>
     <div class="ctrl" id="ctrl-all">
       <span class="grp"><button type="button" class="primary" data-act="open">Open all three</button><button type="button" data-act="close">Close all three</button></span>
@@ -329,11 +340,11 @@
       </div>
       <div class="demo">
         <div class="ph optP thread-fixed nested" data-opt="P"></div>
-        <div class="demo-cap"><b>The proposal <span class="pill cur">current</span></b><span>The line grows out of the bead you tapped, the box opens from nothing with no bounce and clips while it moves, each meal lands where the box's edge reaches it, the arrow turns, and nothing jumps at either end. The meals nest under their line.</span></div>
+        <div class="demo-cap"><b>The proposal <span class="pill cur">current</span></b><span>The line grows out of the bead you tapped, the box opens from nothing with no bounce and clips while it moves, each meal lands where the box's edge reaches it, the arrow turns, and nothing jumps at either end. The meals nest under their line, each keeping its brand and every fact.</span></div>
       </div>
       <div class="demo frame option" style="width:384px;">
         <div class="ph optP thread-fixed" data-opt="B"></div>
-        <div class="demo-cap"><b>The same motion, today's full rows</b><span>If you keep each meal a full row (D2): the product three times, three lines each, and a run of twelve about 270pt taller.</span></div>
+        <div class="demo-cap"><b>The same motion, today's rows exactly</b><span>Every fact as today, with the product first on each meal: three lines a meal, and a run of twelve <span class="js-taller">taller</span>.</span></div>
       </div>
     </div>
     <h3>Frame by frame: the proposal's opening</h3>
@@ -359,7 +370,7 @@
   <section id="rest">
     <div class="sec-head"><span class="sec-num">04</span><h2>What you see once it is open</h2></div>
     <div class="col">
-      <p>The motion is half of it; the other half is what the open run says when it stops. Today it prints the product three times, its meals look exactly like the 2:52 PM meal below them, and only the teal line says which meals were in the group. In the proposal the line starts at the run's own bead and ends at its last meal, the meals sit on smaller beads, and each meal shows only what differs: its time, its format, and its rating when it has one. VoiceOver still reads each meal in full.</p>
+      <p>The motion is half of it; the other half is what the open run says when it stops. Your ruling: every meal keeps its brand, product, format, rating and time. What the proposal changes is the order and the weight, never the facts. Each meal leads with what differs from its neighbours, its time and its format (and its rating when it has one), and carries the brand and product on its second line, in the same small type the run's own second line uses. The meals sit on a smaller bead on the run's line, the line starts at the run's own bead and ends at its last meal, and the time is a step darker. The 2:52 PM meal, which is its own row, now plainly sits outside the group. VoiceOver reads each meal in full.</p>
     </div>
     <div class="frames" id="rest-frames"></div>
   </section>
@@ -402,21 +413,22 @@
     <div class="sec-head"><span class="sec-num">07</span><h2>Decisions for you</h2></div>
     <div class="briefs" id="briefs">
       <div class="brief">
-        <h4>D1 · Build the proposal: take the seams out <span class="pill open">to rule</span></h4>
+        <h4>D1 · Build the proposal: take the seams out <span class="pill">ruled yes · 2026-10-10</span></h4>
+        <p><b>Ruled:</b> <q>I like everything you have</q>, read as (a).</p>
         <p><b>Deciding:</b> whether the team replaces today's opening with §02's proposal on Home and History, with its mechanism fixes reaching the Patterns month.</p>
         <p><b>Options:</b> (a) <b>Build it, the thread first</b> (recommended: all six seats converged on removing seams rather than adding a flourish, and the fix reaches three surfaces); (b) fix only the two 44pt jumps and the clip, and keep the bounce, the pop and the swap; (c) leave it.</p>
         <p><b>Consequence:</b> three PRs in order: the thread (CUL-1718), the shared machine (CUL-1721), then the run's own motion. The run gets its own box curve, so the daily look and a read's arrival keep theirs. Done when it is filmed on Home, History and the month with a run of twelve and a run under the plus.</p>
       </div>
       <div class="brief">
-        <h4>D2 · Nest the meals under their line <span class="pill open">to rule</span><span class="pill dir">better than the rule</span></h4>
-        <p><b>The rule:</b> GAP-8 (the History v2 critique, 2026-09-23) made every opened meal a full row with every fact. It protected the facts that tell meals apart, chiefly the rating chip that separates All from Most, and it stopped a clip from hiding meals.</p>
-        <p><b>The better thing:</b> drop only the product name, which rule B guarantees is identical across the run and which the line above already prints; keep the time, the format, the chip, the 44pt floor and the full spoken label; sit the meals on smaller beads, as round 5 drew them. The critique that wrote GAP-8 asked for a distinct member shape too; the build used the single row instead.</p>
-        <p><b>Does the protection hold:</b> yes. Every fact that tells meals apart stays, and a run of twelve opens to about 530pt instead of about 800pt.</p>
-        <p><b>Options:</b> (a) <b>Approve</b> (recommended: five seats for; Engineering neutral, "keep the spoken label whole"); (b) keep full rows (the right-hand phone in §02).</p>
-        <p><b>Consequence:</b> a §3.6 note in History v2's spec; the shared row gains a member form; nothing reaches the vet report, the engine or any count.</p>
+        <h4>D2 · What each opened meal shows <span class="pill">ruled · 2026-10-10</span></h4>
+        <p><b>Ruled:</b> <q>I'd like for you to ensure brand and other info is still available on the meal when it's expanded.</q> Every opened meal keeps its brand, product, format, rating and time, so GAP-8's "every fact" holds and nothing is dropped. The team's recommendation to drop the product is withdrawn.</p>
+        <p><b>The team's form inside the ruling:</b> each meal's first line is what differs (its time beside it, "Meal", its format, its rating when it has one); its second line is the brand and product, in the same small type the run's own second line uses; the meal sits on a smaller bead on the run's line, and its time is a step darker. Two lines a meal instead of three, every fact on screen, and VoiceOver reads each meal in full.</p>
+        <p><b>Option:</b> today's rows exactly (the boxed phone in §02 and the boxed frame in §04), if you'd rather the meals not change at all.</p>
+        <p><b>Consequence:</b> the shared row gains a member form and History v2's spec gains a §3.6 note; nothing reaches the vet report, the engine or any count.</p>
       </div>
       <div class="brief">
-        <h4>D3 · Show what opened when it opens out of sight <span class="pill open">to rule</span><span class="pill dir">better than the rule</span></h4>
+        <h4>D3 · Show what opened when it opens out of sight <span class="pill">ruled yes · 2026-10-10</span><span class="pill dir">better than the rule</span></h4>
+        <p><b>Ruled:</b> <q>I like everything you have</q>, read as (a).</p>
         <p><b>The rule:</b> GAP-8 also said "Opening never scrolls the list", to keep the owner's place.</p>
         <p><b>The better thing:</b> only when the first meal would land under the plus or off screen, move the list just far enough to show it, never past the run's own line, never on a close, and as a jump under Reduce Motion. Today the tap's only feedback is the arrow, in the plus's column.</p>
         <p><b>Options:</b> (a) <b>Approve, bounded as above</b> (recommended: the owner panel, Motion &amp; IA and Engineering); (b) keep "never scrolls".</p>
@@ -497,6 +509,7 @@
     <div class="col">
       <p><b>Today's phone is rebuilt from the code.</b> Every beat is the shipped constant: the 160ms lead, 80ms lag, 370ms spring at damping 0.7, 40ms and 300ms landing, 180ms leave, 300ms close, 220ms trail, 30ms slack and the 44pt band. The box's spring and ease are React Native's own layout curves, taken from its source. The rows are the app's frame: a 60pt time column, an 18pt bead column with an 11pt bead and a 2pt ring, 13pt titles, the 44pt floor and the 16pt gap, with the thread drawn as it ships.</p>
       <p><b>The proposal's numbers come from the seats:</b> an 80ms linear lead, a 240ms ease out box, a 150ms landing with a 4pt drift where the box's edge reaches each meal (never starting after 250ms), a 100ms leave, a 200ms close and an 80ms retract.</p>
+      <p><b>Round 2 (2026-10-10)</b> changes only what an opened meal shows, after your reaction to §04: the brand and product are back on every meal. The motion, the beats and the charts are round 1's.</p>
       <p><b>Only a phone can judge motion.</b> This page shows the order, the timing and the seams. How a curve feels under a thumb at 120Hz, beside a real scroll, is the device's call. Principle 9: "a motion or a haptic is verified on a phone, never in a test."</p>
     </div>
   </section>
@@ -536,7 +549,7 @@
   var NBSP = ' ';
   var DAYS = {
     2: { m: [['6:20 AM', 'WET'], ['10:45 AM', 'DRY']], range: '6:20 – 10:45 AM', formats: '1 wet · 1 dry', count: ['4', 'logged · 1 vomit · 3 meals'] },
-    4: { m: [['6:20 AM', 'WET'], ['8:05 AM', 'DRY'], ['9:30 AM', 'DRY'], ['10:45 AM', 'DRY']], range: '6:20 – 10:45 AM', formats: '1 wet · 3 dry', count: ['6', 'logged · 1 vomit · 5 meals'] },
+    4: { m: [['6:20 AM', 'WET'], ['8:05 AM', 'DRY', 'All'], ['9:30 AM', 'DRY', 'Most'], ['10:45 AM', 'DRY']], range: '6:20 – 10:45 AM', formats: '1 wet · 3 dry', count: ['6', 'logged · 1 vomit · 5 meals'] },
     8: { m: [['6:20 AM', 'WET'], ['7:15 AM', 'DRY'], ['8:05 AM', 'DRY'], ['8:50 AM', 'WET'], ['9:30 AM', 'DRY'], ['10:05 AM', 'DRY'], ['10:45 AM', 'DRY'], ['11:40 AM', 'DRY']], range: '6:20 – 11:40 AM', formats: '2 wet · 6 dry', count: ['10', 'logged · 1 vomit · 9 meals'] },
     12: { m: [['6:20 AM', 'WET'], ['6:55 AM', 'DRY'], ['7:30 AM', 'DRY'], ['8:05 AM', 'DRY'], ['8:40 AM', 'WET'], ['9:15 AM', 'DRY'], ['9:50 AM', 'DRY'], ['10:25 AM', 'DRY'], ['11:00 AM', 'DRY'], ['11:35 AM', 'WET'], ['12:10 PM', 'DRY'], ['12:45 PM', 'DRY']], range: '6:20 AM – 12:45 PM', formats: '3 wet · 9 dry', count: ['14', 'logged · 1 vomit · 13 meals'] }
   };
@@ -556,17 +569,23 @@
       '<div class="tm">' + esc(timeText(o.time)) + '</div>' +
       '<div class="rl"><i class="ln t"></i><i class="ln b"></i>' + stack + '<i class="bd' + (o.vomit ? ' vomit' : '') + '"></i>' + (o.lead ? '<i class="lead"></i>' : '') + '</div>' +
       '<div class="bx"><div class="tl"><span class="ti">' + esc(o.title) + (o.detail ? '<span class="de"> · ' + esc(o.detail) + '</span>' : '') + '</span>' +
-      (o.tag ? '<span class="ft">' + esc(o.tag) + '</span>' : '') + (o.photo ? '<span class="cam" aria-hidden="true">' + CAMERA + '</span>' : '') + '</div>' +
+      (o.tag ? '<span class="ft">' + esc(o.tag) + '</span>' : '') + (o.photo ? '<span class="cam" aria-hidden="true">' + CAMERA + '</span>' : '') + (o.chip ? '<span class="chip">' + esc(o.chip) + '</span>' : '') + '</div>' +
       (o.line2 ? '<div class="l2">' + esc(o.line2) + '</div>' : '') +
       (o.read ? '<div class="rd"><i></i><span>' + esc(o.read) + '</span></div>' : '') + '</div>' +
       (o.chev ? '<div class="tr"><span class="chev">' + CHEV_DOWN + '</span></div>' : '') + '</div>';
   }
 
-  function spineHTML(n, o1, stack) {
+  // A member in the proposal's form keeps every fact a single row carries (the PM's
+  // ruling on D2): what differs leads, the brand and product sit on its second line.
+  function spineHTML(n, form, stack) {
     var d = DAYS[n];
     var label = n + ' meals, ' + PRODUCT.replace(' · ', ', ') + ', ' + d.formats.replace(' · ', ', ') + ', ' + d.range + '. Shows each one';
     var h = row({ cls: 'head firstnode', attrs: ' role="button" tabindex="0" aria-expanded="false" aria-label="' + esc(label) + '"', time: d.range, title: n + ' meals', detail: PRODUCT, line2: d.formats, chev: true, lead: true, stack: stack ? Math.min(n, STACK_MAX) : 0 });
-    var members = d.m.map(function (m) { return row({ cls: 'mem', time: m[0], title: 'Meal', detail: o1 ? '' : PRODUCT, tag: m[1] }); }).join('');
+    var members = d.m.map(function (m) {
+      return form === 'nested'
+        ? row({ cls: 'mem', time: m[0], title: 'Meal', tag: m[1], chip: m[2], line2: PRODUCT })
+        : row({ cls: 'mem', time: m[0], title: 'Meal', detail: PRODUCT, tag: m[1], chip: m[2] });
+    }).join('');
     var single = row({ time: '2:52 PM', title: 'Meal', detail: PRODUCT, tag: 'DRY' });
     var vomit = row({ cls: 'lastnode', time: '2:53 PM', title: 'Vomit', detail: '0 min after eating', photo: true, vomit: true, read: 'Worth a call' });
     return '<div class="sp">' + h + '<div class="slot"><i class="rail-a"></i><i class="rail-s"></i>' + members + '</div>' + single + vomit + '</div>';
@@ -686,8 +705,8 @@
     this.build();
   }
   Phone.prototype.build = function () {
-    var o1 = this.opt === 'P' || this.opt === 'C' || !!this.o.o1;
-    var inner = spineHTML(this.n, o1, this.opt === 'C');
+    var form = this.opt === 'P' || this.opt === 'C' ? 'nested' : 'full';
+    var inner = spineHTML(this.n, form, this.opt === 'C');
     if (this.o.mini) this.el.innerHTML = '<div class="ph-count"><b>' + DAYS[this.n].count[0] + '</b> ' + DAYS[this.n].count[1] + '</div>' + inner;
     else this.el.innerHTML = chrome(this.n, inner, !!this.o.tall);
     var q = this.q = {
@@ -911,9 +930,10 @@
     var host = document.getElementById('rest-frames');
     host.innerHTML =
       '<div class="frame"><div class="card"><div class="optA" data-opt="A"></div></div><div class="demo-cap"><b>Today, open</b><span>The product three times; the meals look like the 2:52 PM meal; the thread is stubs.</span></div></div>' +
-      '<div class="frame"><div class="card"><div class="optP thread-fixed nested" data-opt="P"></div></div><div class="demo-cap"><b>The proposal, open <span class="pill cur">current</span></b><span>One line from the run\'s bead to its last meal; each meal on a smaller bead, showing its time and format; the 2:52 PM meal plainly outside.</span></div></div>' +
-      '<div class="frame option"><div class="card"><div class="optP thread-fixed" data-opt="B"></div></div><div class="demo-cap"><b>The proposal with today\'s full rows</b><span>If you keep each meal a full row (D2).</span></div></div>';
-    host.querySelectorAll('.card > div').forEach(function (el) { new Phone(el, { mini: true, static: true, open: true }); });
+      '<div class="frame"><div class="card"><div class="optP thread-fixed nested" data-opt="P"></div></div><div class="demo-cap"><b>The proposal, open <span class="pill cur">current</span></b><span>Every fact on every meal: its time and format first, its brand and product second, on a smaller bead on one line from the run\'s bead to its last meal. The 2:52 PM meal plainly sits outside.</span></div></div>' +
+      '<div class="frame option"><div class="card"><div class="optP thread-fixed" data-opt="B"></div></div><div class="demo-cap"><b>Option: today\'s rows exactly</b><span>The same facts, with the product first on each meal and three lines a meal.</span></div></div>';
+    host.insertAdjacentHTML('beforeend', '<div class="frame"><div class="card"><div class="optP thread-fixed nested" data-opt="P" data-n="4"></div></div><div class="demo-cap"><b>The proposal, four meals, two rated <span class="pill cur">current</span></b><span>A rating keeps its chip on the meal\'s first line, beside the format, so All and Most still tell apart at a glance.</span></div></div>');
+    host.querySelectorAll('.card > div').forEach(function (el) { new Phone(el, { mini: true, static: true, open: true, n: parseInt(el.getAttribute('data-n') || '2', 10) }); });
   }
 
   function edgeRow() {
@@ -963,6 +983,13 @@
     ]);
     make(document.getElementById('ph-stack'), { n: 4 });
     drawCharts(); restFrames(); edgeRow();
+    // The option's caption states the measured cost of today's rows at twelve meals.
+    var probe = document.createElement('div'); probe.style.cssText = 'position:absolute;left:-9999px;top:0;width:302px;';
+    probe.innerHTML = '<div class="optP thread-fixed nested" data-opt="P"></div><div class="optP thread-fixed" data-opt="B"></div>';
+    document.body.appendChild(probe);
+    var hP = new Phone(probe.children[0], { mini: true, static: true, n: 12 }).g.Sfull, hB = new Phone(probe.children[1], { mini: true, static: true, n: 12 }).g.Sfull;
+    document.body.removeChild(probe);
+    document.querySelectorAll('.js-taller').forEach(function (el) { el.textContent = 'about ' + Math.round(hB - hP) + 'pt taller (' + Math.round(hB) + 'pt against ' + Math.round(hP) + 'pt)'; });
 
     var ca = document.getElementById('ctrl-a');
     ca.addEventListener('click', function (e) {
