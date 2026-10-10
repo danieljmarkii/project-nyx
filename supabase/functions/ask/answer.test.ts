@@ -36,6 +36,8 @@ import {
   sanitizeFollowups,
   strayNumerals,
   validateAnswer,
+  careNamesFrom,
+  screenProvenanceZero,
   planPhotoRead,
   buildPhotoReadResult,
   buildReadLine,
@@ -594,6 +596,125 @@ Deno.test('sanitizeFollowups: drops a chip asserting containment or effect, keep
     'Is the prednisone working?', // a QUESTION about effect → kept
   ])
   assert.deepEqual(out, ['Is the prednisone working?'])
+})
+
+// ── CUL-1429: no zero beside a visit or a masking drug ───────────────────────────
+// The two sentences the CUL-1420 adversarial pass reproduced passing every Ask screen. Every
+// numeral is allowed, so the numeral-subset check cannot be what rejects them.
+Deno.test('validateAnswer: refuses a zero beside a visit or a masking drug, in BOTH modes (CUL-1429)', () => {
+  const allowed = new Set(['0', '16', '10'])
+  const cases: [string, string][] = [
+    ['Since the Sep 16 visit, 0 vomiting episodes are logged.', 'zero_beside_visit'],
+    ['Since the Sep 16 visit, no vomiting episodes are logged.', 'zero_beside_visit'],
+    ['Prednisone started Sep 10; no coughing episodes are logged since.', 'zero_beside_medication'],
+  ]
+  for (const [text, reason] of cases) {
+    for (const mode of ['data', 'general'] as const) {
+      const r = validateAnswer({ text, allowedNumerals: allowed, mode })
+      assert.deepEqual(r, { ok: false, reason }, `${mode}: ${text}`)
+    }
+  }
+})
+
+Deno.test('validateAnswer: an on-board course from the record withholds a zero the answer does not tie to it (CUL-1429)', () => {
+  const captured = [
+    {
+      name: 'medications',
+      result: {
+        kind: 'medications',
+        window: '30d',
+        windowLabel: 'the last 30 days',
+        medications: [
+          { medicationId: 'm1', drugLabel: 'Prednisolone', active: true, doseAmount: null, lastDoseAt: null, dosesGiven: 9, dosesMissed: 0, dosesPartial: 0, dosesUnconfirmed: 0 },
+          // Ended long ago, no dose in the window: not on board.
+          { medicationId: 'm2', drugLabel: 'Cerenia', active: false, doseAmount: null, lastDoseAt: null, dosesGiven: 0, dosesMissed: 0, dosesPartial: 0, dosesUnconfirmed: 0 },
+        ],
+      },
+    },
+  ]
+  const care = careNamesFrom(captured, { regimens: [], nowMs: Date.UTC(2026, 9, 10, 12), timezone: 'UTC', question: 'Has Nyx coughed?' })
+  assert.deepEqual(care.onBoardNames, ['Prednisolone'])
+  assert.deepEqual([...care.knownNames].sort(), ['Cerenia', 'Prednisolone'])
+  const text = 'No coughing is logged in the last 30 days.'
+  assert.deepEqual(validateAnswer({ text, allowedNumerals: new Set(['30']), mode: 'data', care }), {
+    ok: false,
+    reason: 'zero_beside_medication',
+  })
+  // Without the record's course the same sentence is a zero beside nothing.
+  assert.deepEqual(validateAnswer({ text, allowedNumerals: new Set(['30']), mode: 'data' }), { ok: true })
+})
+
+Deno.test('careNamesFrom: a regimen on board or in its tail is beside every zero, whatever tools ran (CUL-1429)', () => {
+  const nowMs = Date.UTC(2026, 9, 10, 12)
+  const reg = (id: string, drugLabel: string, status: string, startedAt: string | null, endedAt: string | null) => ({
+    id, drugLabel, status, startedAt, endedAt, doseAmount: null, deletedAt: null,
+  })
+  const care = careNamesFrom([], {
+    nowMs,
+    timezone: 'UTC',
+    question: 'Has she vomited this week?',
+    regimens: [
+      reg('a', 'Prednisolone', 'active', '2026-10-01', null),
+      // Ended 10 days ago: inside the 42-day tail, the Signal still withholds its zero.
+      reg('b', 'Cerenia', 'ended', '2026-09-20', '2026-09-30'),
+      // Ended long ago: out of the tail.
+      reg('c', 'Apoquel', 'ended', '2026-01-01', '2026-02-01'),
+    ],
+  })
+  assert.deepEqual([...care.onBoardNames].sort(), ['Cerenia', 'Prednisolone'])
+  assert.deepEqual([...care.knownNames].sort(), ['Apoquel', 'Cerenia', 'Prednisolone'])
+  // The model called only count_symptom; the steroid still withholds the zero.
+  assert.deepEqual(
+    validateAnswer({ text: 'No vomiting is logged in the last 7 days.', allowedNumerals: new Set(['7']), mode: 'data', care }),
+    { ok: false, reason: 'zero_beside_medication' },
+  )
+})
+
+Deno.test('careNamesFrom: a course whose tail touches the widest window read joins, and the question carries a visit (CUL-1429)', () => {
+  const nowMs = Date.UTC(2026, 9, 10, 12)
+  // Ended Aug 11 (60 days ago): its tail ran to Sep 22, inside a 30-day window, outside a 7-day one.
+  const regimens = [{ id: 'a', drugLabel: 'Prednisolone', status: 'ended', startedAt: '2026-07-20', endedAt: '2026-08-11', doseAmount: null, deletedAt: null }]
+  const read30 = [{ name: 'count_symptom', result: { kind: 'count_symptom', window: '30d', count: 0 } }]
+  const read7 = [{ name: 'count_symptom', result: { kind: 'count_symptom', window: '7d', count: 0 } }]
+  const q = 'How many times has she vomited?'
+  assert.deepEqual(careNamesFrom(read30, { regimens, nowMs, timezone: 'UTC', question: q }).onBoardNames, ['Prednisolone'])
+  assert.deepEqual(careNamesFrom(read7, { regimens, nowMs, timezone: 'UTC', question: q }).onBoardNames, [])
+  assert.equal(careNamesFrom(read7, { regimens: [], nowMs, timezone: 'UTC', question: 'Has she vomited since her vet visit?' }).visitInContext, true)
+  assert.equal(careNamesFrom(read7, { regimens: [], nowMs, timezone: 'UTC', question: 'Should I call the clinic?' }).visitInContext, false)
+})
+
+Deno.test('screenProvenanceZero: the "0 events" line beside a visit keeps only its logging (CUL-1429)', () => {
+  const none = { knownNames: [], onBoardNames: [], visitInContext: false }
+  const prov = { window: 'since the visit', denominator: '0 events · logging on 7 of 7 days', tapThrough: null }
+  const text = 'Since the Sep 16 visit, 7 days, with something logged on 7 of them.'
+  assert.equal(screenProvenanceZero(prov, text, none)?.denominator, 'logging on 7 of 7 days')
+  // A zero beside nothing keeps its count; a non-zero count beside a visit keeps it too.
+  assert.equal(screenProvenanceZero(prov, 'In the last 7 days:', none)?.denominator, prov.denominator)
+  const four = { ...prov, denominator: '4 events · logging on 7 of 7 days' }
+  assert.equal(screenProvenanceZero(four, text, none)?.denominator, four.denominator)
+  // An on-board steroid drops the count even when the answer names nothing.
+  assert.equal(
+    screenProvenanceZero(prov, 'In the last 7 days:', { knownNames: [], onBoardNames: ['Prednisone'], visitInContext: false })?.denominator,
+    'logging on 7 of 7 days',
+  )
+})
+
+Deno.test('validateAnswer: the window-and-logging form and a non-zero count beside a visit pass (CUL-1429)', () => {
+  const allowed = new Set(['16', '11', '4', '10', '3'])
+  for (const text of [
+    'Since the Sep 16 visit, 11 days, with something logged on 11 of them.',
+    'Your vet saw Nyx on Sep 16; 4 vomiting episodes are logged since.',
+    'Carprofen started Sep 10; no coughing is logged since.',
+  ]) {
+    assert.deepEqual(validateAnswer({ text, allowedNumerals: allowed, mode: 'data' }), { ok: true }, text)
+  }
+})
+
+Deno.test('sanitizeFollowups: drops a chip putting a zero beside a visit (CUL-1429)', () => {
+  assert.deepEqual(
+    sanitizeFollowups(['Why is there no vomiting logged since the visit?', 'When did Nyx last vomit?']),
+    ['When did Nyx last vomit?'],
+  )
 })
 
 Deno.test('buildDeflection: a model clarifier passes the phrasing gate or falls back (CUL-1271)', () => {

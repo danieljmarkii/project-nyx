@@ -77,11 +77,19 @@ import {
   type AskWeightRow,
   type AskRegimenRow,
   type AskDoseRow,
+  type MedicationEntry,
   type AskFeedingArrangementRow,
   type AskCachedReadRow,
   type ProjectedRead,
 } from './tools.ts'
-import { careClaimReason } from '../../../lib/careClaimScreens.ts'
+import {
+  careClaimReason,
+  textMentionsVisit,
+  zeroBesideCareReason,
+  type ZeroBesideCareContext,
+} from '../../../lib/careClaimScreens.ts'
+import { assessCourse, MASK_TAIL_DAYS } from '../../../lib/maskingSpans.ts'
+import { localDayIndex } from '../../../lib/utils.ts'
 import { TIER_WORDS, type TierDisplay } from '../../../lib/incidentTierWords.ts'
 
 // ── Model & loop bounds ─────────────────────────────────────────────────────────
@@ -926,6 +934,102 @@ export interface ValidateAnswerParams {
   /** True when a live engine SAFETY finding is being relayed — reassurance is doubly
    *  barred (it already is unconditionally, but this documents the intent). */
   safety?: boolean
+  /** The record's medication names this turn (`careNamesFrom`), for the zero screen
+   *  (CUL-1429). Absent means the turn read no medication; the screen's visit, table and
+   *  generic-word arms run either way. */
+  care?: ZeroBesideCareContext
+}
+
+const NO_CARE_NAMES: ZeroBesideCareContext = { knownNames: [], onBoardNames: [], visitInContext: false }
+
+/** The medication names the zero screen judges an answer against (CUL-1429).
+ *  • `knownNames`: every regimen's label, and every `drugLabel` a tool handed the model, so a
+ *    nickname the answer writes is still a medication beside its zero.
+ *  • `onBoardNames`: every regimen ON BOARD or inside its 42-day tail, placed by the Signal's
+ *    own `assessCourse` (`lib/maskingSpans.ts`), read from the regimens this turn already
+ *    loaded — never from which tools the model chose to call (adversarial review, PR-45a: a
+ *    steroid the model never looked up still hides the sign). A `medications` entry dosed in
+ *    the window joins it too: an ad-hoc dose has no regimen row. A course whose span (start to
+ *    end + 42 days) touches the widest window a tool read this turn joins as well: "0 vomits in
+ *    the last 30 days" must not stand beside a steroid that ended 60 days ago, whose tail ran to
+ *    18 days ago (adversarial pass 2, the Signal's `windowTouchesSpan`).
+ *  • `visitInContext`: the owner's question names a visit, so an answer that dates its zero
+ *    ("since Sep 16") still sits beside that visit. */
+export function careNamesFrom(
+  captured: readonly { name: string; result: unknown }[],
+  record: { regimens: readonly AskRegimenRow[]; nowMs: number; timezone: string | null; question: string },
+): ZeroBesideCareContext {
+  const known = new Set<string>()
+  const onBoard = new Set<string>()
+  const tz = record.timezone ?? undefined
+  const todayIndex = localDayIndex(record.nowMs, tz)
+  // The widest window any tool read this turn; 7 days (the default window) when none says.
+  const WINDOW_DAYS: Record<string, number> = { '7d': 7, '14d': 14, '30d': 30, all: Infinity, since_trial_start: Infinity }
+  let windowDays = 7
+  for (const c of captured) {
+    const w = (c.result as { window?: unknown } | null)?.window
+    if (typeof w === 'string' && WINDOW_DAYS[w] !== undefined) windowDays = Math.max(windowDays, WINDOW_DAYS[w])
+  }
+  const windowStart = todayIndex - windowDays + 1
+  for (const r of record.regimens) {
+    if (r.deletedAt) continue
+    const label = (r.drugLabel ?? '').trim()
+    if (!label) continue
+    known.add(label)
+    const placed = assessCourse(
+      { drugLabel: label, names: [], startedOn: r.startedAt, endedOn: r.endedAt, status: r.status },
+      todayIndex,
+      tz,
+    )
+    // A course with no start is unplaced, not absent: an active one still counts as on board.
+    const spanTouchesWindow =
+      placed.start !== null && placed.start <= todayIndex && placed.end !== null && placed.end + MASK_TAIL_DAYS >= windowStart
+    if (placed.onBoard || placed.inTail || spanTouchesWindow || (placed.start === null && r.status === 'active')) {
+      onBoard.add(label)
+    }
+  }
+  const walk = (v: unknown): void => {
+    if (Array.isArray(v)) {
+      for (const x of v) walk(x)
+      return
+    }
+    if (!v || typeof v !== 'object') return
+    const o = v as Record<string, unknown>
+    if (typeof o.drugLabel === 'string' && o.drugLabel.trim()) known.add(o.drugLabel.trim())
+    for (const x of Object.values(o)) walk(x)
+  }
+  for (const c of captured) {
+    walk(c.result)
+    const r = c.result as { kind?: unknown; medications?: unknown } | null
+    if (r && r.kind === 'medications' && Array.isArray(r.medications)) {
+      for (const m of r.medications as Partial<MedicationEntry>[]) {
+        const label = typeof m.drugLabel === 'string' ? m.drugLabel.trim() : ''
+        if (!label) continue
+        const dosed = (m.dosesGiven ?? 0) + (m.dosesPartial ?? 0) + (m.dosesMissed ?? 0) + (m.dosesUnconfirmed ?? 0)
+        if (m.active === true || dosed > 0) onBoard.add(label)
+      }
+    }
+  }
+  return { knownNames: [...known], onBoardNames: [...onBoard], visitInContext: textMentionsVisit(record.question) }
+}
+
+/** The provenance line beside an answer may not carry the zero the answer may not (CUL-1429):
+ *  "Since the Sep 16 visit, 7 days, with something logged on 7 of them." over "0 events ·
+ *  logging on 7 of 7 days" is the same zero, printed by the server. The count half is dropped
+ *  and the logging stays; anything else that still screens drops the line. */
+export function screenProvenanceZero(
+  provenance: AnswerProvenance | null,
+  answerText: string,
+  care: ZeroBesideCareContext,
+): AnswerProvenance | null {
+  if (!provenance || !provenance.denominator) return provenance
+  const d = provenance.denominator
+  if (!zeroBesideCareReason(`${answerText}\n${d}`, care)) return provenance
+  const logging = d.replace(/^0 events? · /, '')
+  if (logging !== d && !zeroBesideCareReason(`${answerText}\n${logging}`, care)) {
+    return { ...provenance, denominator: logging }
+  }
+  return { ...provenance, denominator: null }
 }
 
 export type ValidateResult = { ok: true } | { ok: false; reason: string }
@@ -951,6 +1055,12 @@ export function validateAnswer(params: ValidateAnswerParams): ValidateResult {
   // honest form is a dated fact beside a count ("prednisone started Sep 10; 3 logged since").
   const careClaim = careClaimReason(t)
   if (careClaim) return { ok: false, reason: careClaim }
+  // No zero beside a visit or a masking drug (CUL-1429; care-state spec §5.1, AC 17) —
+  // unconditional. "Since the Sep 16 visit, 0 vomiting episodes are logged" reads as "it
+  // worked", and a steroid or an injection given at the visit can hide the very sign counted.
+  // The honest form is the window and the logging, with no count of none.
+  const zero = zeroBesideCareReason(t, params.care ?? NO_CARE_NAMES)
+  if (zero) return { ok: false, reason: zero }
   if (params.mode === 'data') {
     // Associational only (G4/§7.2): the model may not assert causation from the log.
     if (CAUSAL_RE.test(t)) return { ok: false, reason: 'causal' }
@@ -1027,6 +1137,8 @@ export function sanitizeFollowups(followups: unknown, max = 3): string[] {
     // prednisone helped?", "Has the vomiting settled since the visit?") is dropped — the arms
     // cannot tell it from the assertion, and a dropped chip costs nothing.
     if (careClaimReason(t)) continue
+    // CUL-1429: nor a zero beside a visit or a drug ("Why is there no vomiting since the visit?").
+    if (zeroBesideCareReason(t, NO_CARE_NAMES)) continue
     out.push(t)
     if (out.length >= max) break
   }
@@ -1448,7 +1560,7 @@ export const SYSTEM_PROMPT =
   "(7) Plain, warm language; address the owner as 'you'; use the pet's name; no exclamation marks; never cute. One or two sentences of detail. " +
   "(8) For a diagnosis-shaped or interpretive question ('does she have X', 'is that a lot', 'should I worry'), or a fishing-for-reassurance question ('so she's fine, right'), call decline — those are the vet's call, and declining still offers to line up the evidence. " +
   "(9) PHOTOS: to answer what a vomit or stool incident LOOKED like, first recall the event, then — only if it HAS a photo but no read yet — call read_photo with its id. read_photo does NOT return the photo's appearance to you: the factual read summary is rendered for the owner DIRECTLY, separately from your text. You get only the read STATUS and any PRESENT red flags. So: if it reports a red flag, lead by naming that concern plainly and route to the vet. Otherwise DO NOT describe, interpret, or comment on how the photo looked — do NOT say it looked fine/clear/normal, that nothing was wrong or concerning, that it's a good sign, or that the read came back clear — give ONLY the recall context (when it happened, how often). If it reports no_photo / capped / unavailable, say so plainly and point to the event. Never fill any gap with reassurance. Do NOT call read_photo for a non-vomit/stool event or speculatively — only when the owner asked what an incident looked like. " +
-  "(10) VISITS, CARE AND TREATMENTS: relay a vet visit, a medication or a diet only as a DATED FACT beside a COUNT from a tool (e.g. 'Your vet saw Nyx on Sep 16; 4 vomiting episodes are logged since.' or 'Prednisone started Sep 10; 3 coughing episodes are logged since.'). NEVER describe a concern as handled or held — do not say it is under control, covered, in the vet's hands, taken care of, dealt with, resolved, or that there is nothing more to do. NEVER credit a treatment with an effect — do not say a medication, diet or visit is helping, working, doing the trick, or that a symptom settled, eased or calmed since it started. If the owner asks whether a treatment is helping or a concern is handled, say the record can show dates and counts and that the rest is for the vet to judge — WITHOUT repeating the owner's effect or containment words (not 'whether it is working', not 'whether it is under control'). " +
+  "(10) VISITS, CARE AND TREATMENTS: relay a vet visit, a medication or a diet only as a DATED FACT beside a COUNT from a tool (e.g. 'Your vet saw Nyx on Sep 16; 4 vomiting episodes are logged since.' or 'Prednisone started Sep 10; 3 coughing episodes are logged since.'). NEVER describe a concern as handled or held — do not say it is under control, covered, in the vet's hands, taken care of, dealt with, resolved, or that there is nothing more to do. NEVER credit a treatment with an effect — do not say a medication, diet or visit is helping, working, doing the trick, or that a symptom settled, eased or calmed since it started. If the owner asks whether a treatment is helping or a concern is handled, say the record can show dates and counts and that the rest is for the vet to judge — WITHOUT repeating the owner's effect or containment words (not 'whether it is working', not 'whether it is under control').NEVER put a count of none beside a visit or a medication (not '0 episodes', 'no vomiting', 'none logged' or 'hasn't vomited' in an answer that names a visit, a drug or her medication, or while a course is active): a steroid, or an injection given at the visit, can hide the very sign being counted, so a zero there reads as 'it worked'. State the window and the logging instead (e.g. 'Since the Sep 16 visit, 11 days, with something logged on 11 of them.'). " +
   TIER_RULE
 
 export const GENERAL_SYSTEM_PROMPT =

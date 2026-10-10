@@ -23,7 +23,7 @@
 // the opposite of plain); it is the Home row's second line and the sentence's.
 
 import type { SignalFinding } from './signal';
-import { incidentFlagPhrase, localHourBand, stripNameLine, symptomWord } from './signalCopy';
+import { incidentFlagPhrase, isCallOnlyFinding, localHourBand, stripNameLine, symptomWord } from './signalCopy';
 import type { SignalTrialWindow } from './signalWindows';
 import { signalWindowDays } from './signalWindows';
 
@@ -192,6 +192,11 @@ export function signalTitle(finding: SignalFinding, trial: SignalTrialWindow | n
       // templateIncidentRedFlag's own phrase ("possible blood", "possible foreign material")
       // — "possible" keeps it an unconfirmed read — and its family noun, never a consistency
       // the photo did not measure.
+      // Engines v3 PR-30a (CUL-1511): a read's call with no photo finding names the read and what
+      // it says, never a source the row cannot back.
+      if (isCallOnlyFinding(finding)) {
+        return `A ${finding.incidentType} read says to call`;
+      }
       return `${capitalize(incidentFlagPhrase(finding.flags))} in ${finding.flaggedIncidentCount === 1 ? `a ${finding.incidentType} photo` : `${finding.incidentType} photos`}`;
     case 'intake_decline':
       // The shipped name, a fact about the record.

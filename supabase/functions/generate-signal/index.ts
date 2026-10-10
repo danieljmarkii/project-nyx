@@ -644,11 +644,13 @@ const handler = async (req: Request): Promise<Response> => {
       // from the structured fields (override-aware), never the cached visual_flags. `status`,
       // `contents` + `bile_present` are added for L3 photo composition (CUL-9), which reads the same
       // rows but filters to completed VOMIT reads itself (computePhotoComposition). Empty ⇒ silent.
+      // `recommendation`, `tier` + `engine_flags` (Engines v3 PR-30a, CUL-1511) let the lane say a
+      // new-rule call in the record's words and carry a call the record raised (`newRuleCallOf`).
       fetchAll<IncidentAnalysisRow>('event_ai_analysis', (r) => r.event_id, (from, to) =>
         supabase
         .from('event_ai_analysis')
         .select(
-          'event_id, incident_type, status, blood_present, stool_blood_present, foreign_material_present, contents, bile_present, events!inner(occurred_at)',
+          'event_id, incident_type, status, blood_present, stool_blood_present, foreign_material_present, contents, bile_present, recommendation, tier, engine_flags, events!inner(occurred_at)',
           { count: 'exact' },
         )
         .eq('pet_id', petId)

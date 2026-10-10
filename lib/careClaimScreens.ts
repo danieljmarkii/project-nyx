@@ -18,14 +18,33 @@
 // Sep 16; 4 episodes are logged since." — which none of these arms touch, because every arm
 // is anchored on the verdict phrase, never on "since", "vet", a drug name or a date.
 //
+// ⚠ EXCEPT A ZERO (CUL-1429). "Since the Sep 16 visit, 0 vomiting episodes are logged" passes
+// both arms above, and is the third reassuring class: a zero beside a visit or a masking drug
+// reads as "it worked", and a steroid (or an injection given in the room) can hide the very
+// sign being counted (care-state spec §5.1, AC 17). An earlier header here called "none LOGGED
+// since" the honest form; beside a visit or a drug it is not. `zeroBesideCareReason` below is
+// the count-aware screen, used by Ask; the Signal's own lines withhold the zero structurally
+// (`generate-signal/careContext.ts`), from the same drug table (`lib/maskingSpans.ts`).
+//
 // A keyword screen is not paraphrase-proof: the structural question (a denylist versus an
 // allowlisted recount or a judge) is CUL-271's and stays open there. What this module buys is
 // that the screens agree: the banner used to mirror phrasing.ts by hand ("KEEP IN SYNC"), and
 // a new arm added in one place and not the other is exactly the drift that let a sibling
 // screen fall behind. Deno needs the `.ts` import extension, so importers from
-// `supabase/functions` write '../../../lib/careClaimScreens.ts'; this file imports nothing.
+// `supabase/functions` write '../../../lib/careClaimScreens.ts'; this file imports only the
+// shared drug table (`maskingSpans.ts`, pure), so the zero screen and the Signal agree on
+// which drugs mask.
 //
 // Apostrophes: models emit both ' and ’, so every contraction arm takes either.
+
+import {
+  ALL_SIGNS,
+  courseEffectOn,
+  DRUG_NAME_CLASSES,
+  resolveDrugClasses,
+  type DrugClass,
+  type MaskSign,
+} from './maskingSpans.ts'
 
 // Shared fragments. APOS takes both apostrophes; SYMPTOM_WORD is only the symptom vocabulary
 // the comparison / absence arms anchor on, so an INTAKE escalation ("finished fewer meals
@@ -139,4 +158,289 @@ export function careClaimReason(text: string): CareClaimReason | null {
   if (DELEGATION_RE.test(t)) return 'delegation'
   if (TREATMENT_ATTRIBUTION_RE.test(t)) return 'treatment_attribution'
   return null
+}
+
+// ── A zero beside a visit or a medication (CUL-1429) ──────────────────────────────────────
+//
+// The rule is the Signal's (care-state spec §5.1, AC 17; `generate-signal/careContext.ts`): no
+// zero beside a visit, and no zero of a sign beside a drug that can hide that sign. The Signal
+// knows dates and withholds only inside the 42-day spans; a sentence does not carry its dates
+// reliably, so this screen is stricter in the safe direction:
+//   • a ZERO is any count of none: "0 episodes", "no vomiting", "none logged", "nothing has
+//     been logged", "hasn't vomited", "vomit-free", "not a single cough", "…: 0".
+//   • a VISIT is any visit word (visit, appointment, check-up, recheck, exam, "the vet saw"),
+//     past or booked: a zero beside one is refused on every sign, because the visit is taken as
+//     an unrecorded masking drug (an injection in the room never enters `medications`).
+//   • a MEDICATION is a name in the shared table, a name the record handed the writer, or a
+//     generic word ("her medication", "the steroid", "doses") when no name is written. A name
+//     is judged by `resolveDrugClasses` + `courseEffectOn`, the Signal's own: carprofen beside
+//     "no coughing" passes (it cannot hide a cough); prednisone, an unknown name or a bare "her
+//     medication" is refused (unresolved fails toward masking, like a systemic steroid).
+//   • a course the record says may be ON BOARD (`onBoardNames`) sits beside every zero in the
+//     answer whether the answer names it or not, as the Signal's lines withhold every zero on
+//     the screen while a masking drug is on board.
+// The zero's sign is read from its own sentence; a sentence naming no sign ("nothing logged",
+// "0 episodes") is a zero of every sign.
+//
+// A sentence about meals or doses alone ("hasn't had a full meal since the visit", "0 doses
+// given") is set aside: it is an escalation, and refusing it would deflect it.
+//
+// What this does not see (stated, so it never reads as coverage): a visit the answer names only
+// by its date when neither the answer nor the owner's current question names it (an earlier turn
+// of the conversation is not read), and a zero phrased in words no arm lists. It is a DENYLIST: the
+// structural answer (an allowlisted recount or a judge) is CUL-271's and stays open there. The
+// prompt's rule 10 asks for the window and the logging instead, which carries no zero at all,
+// and Ask's caller hands in every course the record holds on board or in its tail, so a zero is
+// refused while one is, named or not.
+
+// The sign nouns a zero is counted in. Wide on purpose: an owner's word ("honking", "runny
+// poop", "hairballs") is still a sign, and an unlisted noun is caught by the generic arm below.
+const ZERO_NOUN = String.raw`(?:vomit\w*|throw(?:ing|s)?[- ]?ups?|retch\w*|regurgitat\w*|hairballs?|gag\w*|diarrh\w*|loose stools?|runny \w+|stools?|poops?|cough\w*|hack\w*|honk\w*|sneez\w*|itch\w*|scratch\w*|lick\w*|skin\w*|rash\w*|hives|symptoms?|episodes?|bouts?|accidents?|flare-?ups?|times|incidents?|events?|entr(?:y|ies))`
+const SIGN_VERB = String.raw`(?:vomit\w*|cough\w*|scratch\w*|itch\w*|sneez\w*|lick\w*|retch\w*|gag\w*|hack\w*|throwing up)`
+const NEG = String.raw`(?:\b(?:has|have|had|did|was|were|is|are|does|do|could|would|should|ai)(?:n${APOS}t|\s+not)|\b(?:can${APOS}t|cannot|can not|won${APOS}t|will not)|${APOS}(?:ve|s|d)\s+not)`
+
+const ZERO_RES: RegExp[] = [
+  // "0 vomiting episodes", "zero coughs", "no vomiting", "no new episodes", "not a single
+  // cough", "without vomiting", "no days with vomiting". The noun is required, so "no need",
+  // "no more than 3 episodes" and "No, she…" pass.
+  new RegExp(
+    String.raw`\b(?:0(?![.,:]\d)|zero|no|not (?:a single|one|any)|without(?:\s+(?:a|an|any))?)\s+(?:(?:new|more|further|other|logged|recorded|reported|single)\s+){0,2}(?:\w+\s+)?${ZERO_NOUN}\b(?![-‐]free)`,
+    'i',
+  ),
+  // "no days with vomiting", "0 days of coughing".
+  new RegExp(String.raw`\b(?:no|0|zero)\s+days?\s+(?:with|of|when|where)\b`, 'i'),
+  // "none logged", "Nothing's been logged", "none since", "nothing so far", "none of the
+  // vomiting has come back", "she's had none", and a bare trailing "…, nothing."
+  new RegExp(
+    String.raw`\b(?:nothing|none)(?:${APOS}s)?(?:\s+(?:new|more|else|at all|of (?:them|it|those|the \w+)|(?:about|regarding)\s+\w+))?(?:\s+(?:is|was|were|are|has|have|had)(?:\s+been)?)?(?:\s+been)?\s+(?:logged|recorded|noted|reported|seen|since|so far|came back|come back|returned)\b`,
+    'i',
+  ),
+  new RegExp(String.raw`\b(?:had|has had|have had|${APOS}s had|${APOS}ve had)\s+none\b|(?:^|[,:;])\s*nothing\s*(?:[.;!?]|$)`, 'i'),
+  // "hasn't vomited", "has not had any episodes", "didn't log a cough", "vomiting has not been
+  // logged", "hasn't recurred", "didn't happen again", "there hasn't been any vomiting",
+  // "you've not logged any". An INTAKE absence ("hasn't eaten") never matches here, and a
+  // sentence about meals or doses alone is set aside below.
+  new RegExp(
+    String.raw`${NEG}\s+(?:\w+\s+){0,2}?(?:vomited|coughed|scratched|itched|sneezed|licked|retched|gagged|thrown up|threw up|been sick|(?:vomit|cough|scratch|itch|sneeze|lick|retch|gag|throw up|be sick)\b|been (?:vomiting|coughing|scratching|itching|sneezing|licking|sick)|had (?:a|an|any|another)\b|logged (?:a|an|any|another)\b|(?:see|find|spot)\s+(?:any|a|an)\b|(?:include|contain|show|have)\s+any\b|come up\b|been any\b|been (?:a|an)\s+(?:single\s+)?(?:\w+\s+)?${ZERO_NOUN}|(?:shown up|turned up|appeared)(?!\s+(?:as|less|more|fewer|quite|so)\b)|(?:been\s+)?(?:logged|recorded|seen|noted|reported)(?!\s+as\b)|recurred|returned|come back|came back|happened(?: again)?(?!\s+before)|happen\b(?: again)?(?!\s+before))`,
+    'i',
+  ),
+  // "has stopped vomiting", "the vomiting stopped". Not "stopped eating": an escalation.
+  // "hasn't stopped vomiting" is the opposite claim, and never matches.
+  new RegExp(String.raw`(?<!n${APOS}t\s|\bnot\s|\bnever\s|\bstill\s)\bstopped\s+${SIGN_VERB}|\b${SIGN_VERB}\s+(?:has\s+|have\s+|had\s+)?stopped\b`, 'i'),
+  // "vomit-free", "symptom free", "clear of vomiting", "the log is clean / empty / quiet".
+  new RegExp(String.raw`(?<!\bno\s)\b(?:vomit\w*|cough\w*|symptom|itch\w*|diarrh\w*|scratch\w*|sneez\w*|episode)[- ]free\b|\bclear of\b`, 'i'),
+  new RegExp(
+    String.raw`\b(?:log|logs|record|logging|it|things?)(?:${APOS}s)?\s+(?:(?:is|was|has been|have been|had been|looks?|stayed|been)\s+)?(?:\w+\s+)?(?:clean|empty|quiet|blank)\b`,
+    'i',
+  ),
+  // A count stated after its noun or as a result: "…since the visit: 0", "the count is 0",
+  // "vomiting 0", "vomiting none", "dropped to zero", "went from 5 to 0", "0 logged".
+  new RegExp(String.raw`(?:[:=]|\b(?:is|are|was|were|at|stands at|to))\s*(?:0|zero)\b(?![.,:]\d)`, 'i'),
+  new RegExp(String.raw`\b${ZERO_NOUN}\s+(?:0|zero|none)\b(?![.,:]\d)`, 'i'),
+  new RegExp(String.raw`\b(?:0|zero)\s+(?:(?:were|are|was|is)\s+)?(?:logged|recorded)\b`, 'i'),
+  // "on 0 of 14 days", "0/14 days", "0 of the last 3 days", "0% of days", "0.0 per day".
+  new RegExp(String.raw`\b(?:0|zero|none)\s*(?:/|of)\s*(?:the\s+)?(?:last\s+|past\s+)?\d+\b`, 'i'),
+  new RegExp(String.raw`(?:^|[^\d.])0(?:\.0+)?\s*(?:%|percent\b|per cent\b)|\b0\.0+\s+(?:per|a|an|each)\b`, 'i'),
+  // The generic arm: a count of none of a noun no list above names ("no seizures logged").
+  new RegExp(String.raw`\bno\s+\w+(?:\s+\w+)?\s+(?:logged|recorded|since|so far)\b`, 'i'),
+  // Recall phrasings: "there's no record of vomiting", "the log shows nothing", "vomiting
+  // doesn't appear", "Vomiting episodes in the last 14 days: none", "eaten well and not vomited".
+  new RegExp(String.raw`\bno (?:record|trace|mention|entry|entries) of (?:any\s+)?(?:\w+\s+)?(?:${SIGN_VERB}|diarrh\w*|episodes?|symptoms?|throw(?:ing)?[- ]?ups?)|\bno signs? of (?:any\s+)?(?:more\s+)?${SIGN_VERB}|\b(?:vomit\w*|cough\w*|diarrh\w*|itch\w*|scratch\w*|sneez\w*|symptoms?|episodes?)\s+(?:is|are|was|were|has been|have been)\s+absent\b|\bnothing\s+(?:about|on|regarding|for)\s+(?:her\s+|his\s+|the\s+)?${SIGN_VERB}|\bno signs? of (?:illness|being sick|anything)\b|\bno logs? (?:for|of)\s+${SIGN_VERB}|\bshows? nothing\b|\b(?:doesn${APOS}t|does not|don${APOS}t|do not)\s+(?:appear|show up)\b|[:=]\s*(?:none|nothing)\b`, 'i'),
+  // "none of those entries is vomiting", "Vomiting isn't among them".
+  new RegExp(String.raw`\bnone (?:of (?:it|them|those|these|the|this|her|his|their|\w+${APOS}s)\b[^.;]{0,40}?\b)?(?:is|are|was|were)\b|\bfree of\b|\bthere (?:aren${APOS}t|are not|weren${APOS}t|were not|isn${APOS}t|is not)\s+any\b|\bnot (?:once|one time|a single time)\b|\b(?:isn${APOS}t|is not|aren${APOS}t|are not|wasn${APOS}t|was not|weren${APOS}t|were not)\s+(?:among|in|on|part of)\s+(?:them|those|these|it|the (?:log|record|entries))\b`, 'i'),
+  new RegExp(String.raw`(?<!\b(?:has|have|had|is|was|were|are)\s)\bnot\s+(?:vomited|coughed|scratched|itched|sneezed|licked|thrown up|been sick)\b`, 'i'),
+]
+
+const VISIT_RE = new RegExp(
+  [
+    String.raw`\b(?:visit(?:s|ed)?|appointments?|appts?|check-?ups?|re-?checks?|exams?|examination|consult(?:ation)?s?|clinic\w*|hospital\w*|discharg\w*|surger(?:y|ies)|dental)\b`,
+    String.raw`\b(?:the|your|her|his|their)\s+vet\s+(?:saw|examined|checked|looked|treated|gave|injected)\b`,
+    String.raw`\b(?:saw|seen\s+by|seeing)\s+(?:the|your|her|his|their|a)\s+vet\b`,
+    String.raw`\b(?:since|after|before|at|from)\s+(?:the|her|his|their|your)\s+vet\b`,
+    String.raw`\b(?:trip|visit|going|went|go|been)\s+to\s+(?:the|a|her|his|their|your)\s+(?:vet|er|emergency)\b`,
+    String.raw`\bvet\s+(?:trip|appt|appointment|stay|check)\b`,
+  ].join('|'),
+  'i',
+)
+// Case-sensitive: "the ER", "Dr. Patel", "Dr Okafor".
+const VISIT_CASED_RE = /\bER\b|\bDr\.?\s+[A-Z]/
+// Routing advice names a place, not a visit that happened: "call the clinic", "go to the ER",
+// "consult your vet", "bring this to her next appointment", "raise it at the exam". The prompt
+// tells the model to route to the vet, so these are blanked before the visit test (adversarial
+// pass 2, PR-45a: they deflected plain zero answers that named no visit and no drug).
+const ROUTING_RE =
+  /\b(?:call|ring|phone|contact|email|go to|head to|take her to|take him to|take them to|consult|book|schedule|bring (?:\w+ ){0,2}to|raise (?:\w+ ){0,2}(?:at|with)|ask (?:\w+ ){0,2}at|mention (?:\w+ ){0,2}at|at)\s+(?:the|your|her|his|their|an?|a)?\s*(?:next\s+|nearest\s+|local\s+|emergency\s+|24-hour\s+)*(?:clinic|vet|ER|hospital|appointment|appt|exam|check-?up|recheck|consult(?:ation)?)\b(?:\s+on\s+\w+\s+\d+)?/gi
+function mentionsVisit(text: string): boolean {
+  const t = text.replace(ROUTING_RE, ' ')
+  return VISIT_RE.test(t) || VISIT_CASED_RE.test(t)
+}
+
+// A medication referred to without its name. Judged only when no name is written: "the
+// prednisone … her medication" names one course, not two.
+const GENERIC_MED_RE =
+  /\b(?:medications?|medicines?|meds|drugs?|doses?|dosing|pills?|tablets?|injections?|injected|injectables?|shots?|jabs?|steroids?|antibiotics?|antiemetics?|inhalers?|rx|treatments?|prescription|prescribed|course)\b/i
+
+const SIGN_WORDS: [RegExp, MaskSign[]][] = [
+  [/\b(?:vomit\w*|threw up|thrown up|throw(?:ing|s)?[- ]?ups?|been sick|retch\w*|regurgitat\w*|hairballs?|gag\w*)\b/i, ['vomit']],
+  [/\b(?:diarrh\w*|loose stools?|runny \w+|stools?|poops?)\b/i, ['diarrhea']],
+  [/\b(?:cough\w*|hack\w*|honk\w*)\b/i, ['cough']],
+  [/\bsneez\w*\b/i, ['sneeze']],
+  [/\bitch\w*\b/i, ['itch']],
+  [/\b(?:scratch\w*|lick\w*)\b/i, ['scratch']],
+  [/\b(?:skin|rash\w*|hives)\b/i, ['skin_reaction']],
+]
+
+// A sentence about meals, food or doses alone is not a symptom zero: "she hasn't had a full meal
+// since the visit" and "0 doses given, 3 missed" are escalations, and refusing them would trade
+// the screen's protection for a deflection (adversarial review, PR-45a). A sentence that also
+// names a sign or an episode is judged as a zero.
+const INTAKE_OR_DOSE_RE =
+  /\b(?:meals?|food|foods|eat\w*|ate|finish\w*|water|drink\w*|treats?|kibble|dinner|breakfast|lunch|appetite|doses?|given|administered|missed)\b/i
+// Built from the same nouns and verbs the zero arms read, plus the phrasal forms, so the two
+// can never drift apart (adversarial pass 2: "hasn't thrown up and is eating well" was set aside).
+const SYMPTOM_ONLY_RE = new RegExp(
+  String.raw`\b(?:${SIGN_VERB}|vomit\w*|thr(?:ew|own|ow\w*) up|throw(?:ing|s)?[- ]?ups?|brought (?:\w+ )?up|kept (?:\w+ )?down|retch\w*|regurgitat\w*|hairballs?|gag\w*|diarrh\w*|loose stools?|runny \w+|stools?|poops?|cough\w*|hack\w*|honk\w*|sneez\w*|itch\w*|scratch\w*|lick\w*|skin\w*|rash\w*|hives|symptoms?|episodes?|bouts?|flare-?ups?|sick)\b`,
+  'i',
+)
+// A medication as the thing not logged ("prednisolone hasn't been logged since Oct 3", "nothing
+// logged for her prednisolone") is an adherence escalation, set aside like a dose. A medication
+// as the zero's anchor ("since the prednisolone, nothing") is not, and is judged.
+const MED_NOT_LOGGED_RE =
+  /\b(?:has|have|was|were)(?:n['’]t|\s+not)\s+been\s+(?:logged|recorded|given)\b|\b(?:logged|recorded|given)\s+for\s+(?:her|his|their|the)\b|\bno\s+(?:doses?|pills?)\b/i
+// "no episodes other than 2 coughs": the exception names a sign the zero is NOT about.
+const EXCEPTION_RE = /\b(?:other than|besides|except|apart from|aside from|but for|just|only)\b/i
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// A statement about the LOG, not the pet: "nothing was logged on Tuesday", "with nothing logged
+// on 2 of them", "no entries exist for Sep 20 and 21", "days without a log can't be counted as
+// days without vomiting". Rule 10's honest coverage form; blanked before the zero arms read the
+// clause (adversarial pass 3: it deflected answers on every turn with a gap).
+// A partial day count ("2 of 14", "2 of them") is coverage; an all-days count ("11 of 11") is the
+// zero itself, so the numbers must differ. "those days", "some days" are not read as coverage:
+// they are as often the zero's own window (adversarial pass 4).
+const DAY_WORD = String.raw`(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day|today|yesterday|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\.?\s+\d{1,2}|(?<gapn>\d+)\s+of\s+(?!\k<gapn>\b)(?:\d+|them|the)\b|that day|the other \d+)`
+const DATE_WORD = String.raw`(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\.?\s+\d{1,2})`
+const LOG_GAP_RES: RegExp[] = [
+  new RegExp(
+    String.raw`\b(?:nothing|no entries|no logs?|none)\b(?:\s+(?:was|were|is|are|has been|have been|had been|exist|exists))?(?:\s+(?:logged|recorded|entered))?\s+(?:on|for)\s+${DAY_WORD}`,
+    'i',
+  ),
+  // "days without a log can't be counted", "the days where nothing was logged", "2 days have no
+  // entries". Each stops at its own clause, so a zero in the next clause is still read.
+  /\bdays?\s+(?:without|with no)\s+(?:a\s+|any\s+)?(?:log|logs|logging|entr(?:y|ies))\b/i,
+  /\bdays?\s+(?:where|when|on which)\s+nothing\s+(?:was|is|has been)\s+logged\b/i,
+  /\bdays?\s+(?:have|had|has)\s+no\s+(?:entries|logs?)\b/i,
+]
+
+// "nothing was logged between Sep 19 and Sep 21", "no entries from Sep 19 to Sep 21": blanked over
+// the whole sentence before it is cut into clauses, since the range itself holds an "and".
+const LOG_GAP_RANGE_RE = new RegExp(
+  String.raw`\b(?:nothing|no entries|no logs?|none)\b(?:\s+(?:was|were|is|are|has been|have been|had been|exist|exists))?(?:\s+(?:logged|recorded|entered))?\s+(?:between\s+${DATE_WORD}\s+and|from\s+${DATE_WORD}\s+to)\s+${DATE_WORD}`,
+  'gi',
+)
+
+// An escalation phrased with a negation: "there hasn't been a day without coughing".
+const NEGATED_ESCALATION_RE =
+  /\b(?:hasn['’]t|has not|haven['’]t|have not|wasn['’]t|was not)\s+been\s+(?:a|one)\s+(?:single\s+)?day\s+without\b[^,;.]*/gi
+
+/** A clause with its coverage statements blanked, unless it names a sign: "nothing was logged
+ *  on 11 of 11 days for vomiting" is the zero, not a gap. */
+function withoutLogGaps(clause: string): string {
+  if (SYMPTOM_ONLY_RE.test(clause.replace(/\bdays?\s+(?:without|with no)\s+(?:a\s+|any\s+)?(?:log|logs|logging|entr(?:y|ies))\b[^,;]*/gi, ' '))) {
+    return clause
+  }
+  return LOG_GAP_RES.some((re) => re.test(clause)) ? ' ' : clause
+}
+
+/** Whether one clause states a symptom zero. A clause about meals, doses or a medication alone
+ *  ("eaten 0 of 6 meals", "prednisolone hasn't been logged since Oct 3") is set aside: it is an
+ *  intake or adherence escalation. Judged per CLAUSE, so a food word in one half of a sentence
+ *  never hides a symptom zero in the other ("hasn't thrown up and is eating well"). */
+function clauseHasZero(clause: string, meds: (c: string) => boolean): boolean {
+  if (!ZERO_RES.some((re) => re.test(clause))) return false
+  const setAside = INTAKE_OR_DOSE_RE.test(clause) || (meds(clause) && MED_NOT_LOGGED_RE.test(clause))
+  return !setAside || SYMPTOM_ONLY_RE.test(clause)
+}
+
+/** The signs each zero in `text` counts: its own sentence's sign words, or every sign. */
+function zeroSigns(text: string, meds: (c: string) => boolean): Set<MaskSign> {
+  const signs = new Set<MaskSign>()
+  for (const raw of text.split(/(?<=[.;?!])\s+|\n+/)) {
+    const sentence = raw.replace(NEGATED_ESCALATION_RE, ' ').replace(LOG_GAP_RANGE_RE, ' ')
+    const clauses = sentence.split(/[,;]|\s(?:and|but|while|though|so)\s/i).map(withoutLogGaps)
+    if (!clauses.some((c) => clauseHasZero(c, meds))) continue
+    let named = false
+    if (!EXCEPTION_RE.test(sentence)) {
+      for (const [re, ss] of SIGN_WORDS) {
+        if (re.test(sentence)) {
+          named = true
+          for (const s of ss) signs.add(s)
+        }
+      }
+    }
+    if (!named) for (const s of ALL_SIGNS) signs.add(s)
+  }
+  return signs
+}
+
+/** The medications `text` names, each as the table reads it (null: unresolved, masks all). */
+function namedMedications(text: string, knownNames: readonly string[]): (DrugClass[] | null)[] {
+  const out: (DrugClass[] | null)[] = []
+  const lower = text.toLowerCase()
+  for (const w of lower.split(/[^a-z-]+/)) {
+    if (!w) continue
+    const classes = DRUG_NAME_CLASSES[w]
+    if (classes) out.push([...classes])
+    // A combination ("Metro-Pred") is judged whole, so an unknown part fails toward masking.
+    else if (w.includes('-') && DRUG_NAME_CLASSES[w.replace(/-/g, '')]) out.push([...DRUG_NAME_CLASSES[w.replace(/-/g, '')]])
+    else if (w.includes('-') && w.split('-').some((part) => DRUG_NAME_CLASSES[part])) out.push(resolveDrugClasses([w]))
+  }
+  for (const name of knownNames) {
+    const n = (name ?? '').trim().toLowerCase()
+    if (n.length < 3) continue
+    if (new RegExp(String.raw`(?:^|[^a-z0-9])${escapeRe(n)}(?:$|[^a-z0-9])`).test(lower)) {
+      out.push(resolveDrugClasses([name]))
+    }
+  }
+  if (out.length === 0 && GENERIC_MED_RE.test(text)) out.push(null)
+  return out
+}
+
+export interface ZeroBesideCareContext {
+  /** Every medication name the record handed the writer this turn (the regimens' and doses'
+   *  labels). A mention of one in the text is a medication beside the zero, nickname or not. */
+  knownNames: readonly string[]
+  /** The names of courses that may be on board (active, or dosed in the read window). Each one
+   *  sits beside every zero in the answer, named or not. */
+  onBoardNames: readonly string[]
+  /** The owner asked about a visit ("has she vomited since her vet visit?"), so a zero the
+   *  answer dates ("since Sep 16") sits beside that visit though it never says the word. */
+  visitInContext: boolean
+}
+
+export type ZeroBesideCareReason = 'zero_beside_visit' | 'zero_beside_medication'
+
+/** Whether `text` puts a zero beside a visit or beside a medication that can hide the counted
+ *  sign (CUL-1429). Both lists are required: an empty list is a statement that the record
+ *  handed over no medication, never a default (C-37). */
+export function zeroBesideCareReason(text: string, ctx: ZeroBesideCareContext): ZeroBesideCareReason | null {
+  // NFKC folds lookalike and full-width letters; a soft hyphen is dropped.
+  const t = (text ?? '').normalize('NFKC').replace(/\u00ad/g, '')
+  const signs = zeroSigns(t, (clause) => namedMedications(clause, ctx.knownNames).length > 0)
+  if (signs.size === 0) return null
+  if (ctx.visitInContext || mentionsVisit(t)) return 'zero_beside_visit'
+  const meds = [...namedMedications(t, ctx.knownNames), ...ctx.onBoardNames.map((n) => resolveDrugClasses([n]))]
+  for (const classes of meds) {
+    for (const sign of signs) if (courseEffectOn(classes, sign).masks) return 'zero_beside_medication'
+  }
+  return null
+}
+
+/** Whether a question or an earlier turn names a visit, read the way the zero screen reads an
+ *  answer (routing advice set aside). Ask's caller passes it as `visitInContext`. */
+export function textMentionsVisit(text: string): boolean {
+  return mentionsVisit((text ?? '').normalize('NFKC'))
 }
