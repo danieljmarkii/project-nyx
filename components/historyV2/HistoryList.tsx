@@ -69,6 +69,7 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AppState,
+  Dimensions,
   LayoutAnimation,
   RefreshControl,
   SectionList,
@@ -142,6 +143,7 @@ import {
 import { effectiveSearch, filterId, useHistoryScopeStore, type HistoryScope } from '../../store/historyScopeStore';
 import { usePetStore } from '../../store/petStore';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
+import { RunRevealContext, useRunRevealHost } from '../motion/runRevealMotion';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useSyncStore } from '../../store/syncStore';
 import { FOLD_LAYOUT, FOLD_MOTION } from '../motion/foldMotion';
@@ -763,6 +765,30 @@ export function HistoryList() {
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     viewport.current = e.nativeEvent.layout.height;
   }, []);
+  /** The sticky day header's height, as last laid out (every day's header is one height). */
+  const stickyHeaderH = useRef(0);
+  const onStickyHeaderLayout = useCallback((e: LayoutChangeEvent) => {
+    stickyHeaderH.current = e.nativeEvent.layout.height;
+  }, []);
+  // A run that opens out of sight moves the list just far enough to show its first meal
+  // (CUL-1735, D3): bounded so the run's own line stays on screen, never on a close.
+  const runReveal = useRunRevealHost({
+    // The day header pins over the list's top: the run's line must rest clear of it.
+    topInset: () => stickyHeaderH.current,
+    measureViewport: (done) =>
+      listRef.current
+        ?.getScrollResponder()
+        ?.getNativeScrollRef()
+        ?.measureInWindow((_x, y, _w, h) => done(y, y + h)),
+    scrollBy: (dy) =>
+      listRef.current?.getScrollResponder()?.scrollTo({ y: scrollY.current + dy, animated: !reducedMotionNow() }),
+    windowHeight: () => Dimensions.get('window').height,
+  });
+  const cancelReveal = runReveal.cancel;
+  const onDragBegin = useCallback(() => {
+    cancelReveal();
+    onScrollBeginDrag();
+  }, [cancelReveal, onScrollBeginDrag]);
 
   // A second tap on the History tab: back to today (§3.1), and VoiceOver onto today's
   // header (the list's first day's, when a filter hides today).
@@ -794,20 +820,22 @@ export function HistoryList() {
       const m = section.model;
       if (m.kind !== 'day' && m.kind !== 'today-open') return null;
       return (
-        <DayCardHeader
-          day={m.day}
-          today={snapshot.today}
-          facts={dayFactsOn(snapshot.facts.days, m.day)}
-          filter={snapshot.filter}
-          search={snapshot.search !== null}
-          landed={landedDay === m.day}
-          hasItems={snapshot.items.has(m.day)}
-          withCounts={m.kind === 'day'}
-          focusRef={focusRefFor(section.key, m.day, m.day)}
-        />
+        <View onLayout={onStickyHeaderLayout}>
+          <DayCardHeader
+            day={m.day}
+            today={snapshot.today}
+            facts={dayFactsOn(snapshot.facts.days, m.day)}
+            filter={snapshot.filter}
+            search={snapshot.search !== null}
+            landed={landedDay === m.day}
+            hasItems={snapshot.items.has(m.day)}
+            withCounts={m.kind === 'day'}
+            focusRef={focusRefFor(section.key, m.day, m.day)}
+          />
+        </View>
       );
     },
-    [snapshot, landedDay, focusRefFor],
+    [snapshot, landedDay, focusRefFor, onStickyHeaderLayout],
   );
 
   const renderItem = useCallback(
@@ -985,38 +1013,41 @@ export function HistoryList() {
   return (
     <CellLaidOut.Provider value={onCellLaidOut}>
       <OpenInPlaceReset.Provider value={runReset}>
-        <SectionList<HistorySection, ListSection>
-          ref={listRef}
-          style={styles.list}
-          sections={sections}
-          keyExtractor={(m) => `body:${sectionKeyOf(m)}`}
-          renderSectionHeader={renderSectionHeader}
-          renderItem={renderItem}
-          stickySectionHeadersEnabled
-          // A drag through search results puts the keyboard away, as the platform's own lists do.
-          keyboardDismissMode="on-drag"
-          // A week of days on the first paint (a day is three cells: its header, its body, its
-          // footer): the strip shows this week, so a landing from it never waits on a measure.
-          initialNumToRender={INITIAL_CELLS}
-          ListHeaderComponent={header}
-          ListEmptyComponent={empty}
-          ListFooterComponent={footer}
-          onEndReached={() => {
-            if (snapshot?.pages.next) void useHistoryListStore.getState().loadMore();
-          }}
-          onEndReachedThreshold={0.5}
-          onScrollBeginDrag={onScrollBeginDrag}
-          onScroll={onScroll}
-          scrollEventThrottle={16}
-          onLayout={onLayout}
-          onScrollToIndexFailed={onScrollToIndexFailed}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colorTextSecondary} />
-          }
-          contentContainerStyle={[styles.content, sections.length === 0 && styles.contentEmpty]}
-          CellRendererComponent={HistoryCell}
-          testID="history-list"
-        />
+        <RunRevealContext.Provider value={runReveal.request}>
+          <SectionList<HistorySection, ListSection>
+            ref={listRef}
+            style={styles.list}
+            sections={sections}
+            keyExtractor={(m) => `body:${sectionKeyOf(m)}`}
+            renderSectionHeader={renderSectionHeader}
+            renderItem={renderItem}
+            stickySectionHeadersEnabled
+            // A drag through search results puts the keyboard away, as the platform's own lists do.
+            keyboardDismissMode="on-drag"
+            // A week of days on the first paint (a day is three cells: its header, its body, its
+            // footer): the strip shows this week, so a landing from it never waits on a measure.
+            initialNumToRender={INITIAL_CELLS}
+            ListHeaderComponent={header}
+            ListEmptyComponent={empty}
+            ListFooterComponent={footer}
+            onEndReached={() => {
+              if (snapshot?.pages.next) void useHistoryListStore.getState().loadMore();
+            }}
+            onEndReachedThreshold={0.5}
+            onScrollBeginDrag={onDragBegin}
+            onScroll={onScroll}
+            scrollEventThrottle={16}
+            onLayout={onLayout}
+            onScrollToIndexFailed={onScrollToIndexFailed}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colorTextSecondary} />
+            }
+            contentContainerStyle={[styles.content, sections.length === 0 && styles.contentEmpty]}
+            CellRendererComponent={HistoryCell}
+            onContentSizeChange={runReveal.onContentSizeChange}
+            testID="history-list"
+          />
+        </RunRevealContext.Provider>
       </OpenInPlaceReset.Provider>
     </CellLaidOut.Provider>
   );
