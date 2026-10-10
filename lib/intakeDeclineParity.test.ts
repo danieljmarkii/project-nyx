@@ -152,10 +152,13 @@ function serverVerdict(rec: Rec, withBowls: boolean): Verdict[] {
   }).map(verdictOf);
 }
 
+// `trigger` is the server's wider union: I5's `refused_then_vomited` (PR-30s) is server-only and
+// never fires here (the server runs DEFAULT_CONFIG, which carries no `en5`), so equality still
+// means the phone and the server reached the same verdict.
 type Verdict = Pick<
   IntakeDeclineFlag,
-  'trigger' | 'baselineScore' | 'recentScore' | 'daysBelowBaseline' | 'refusedFoodLabel' | 'ratedMealsConsidered'
->;
+  'baselineScore' | 'recentScore' | 'daysBelowBaseline' | 'refusedFoodLabel' | 'ratedMealsConsidered'
+> & { trigger: IntakeDeclineFinding['trigger'] };
 
 function verdictOf(f: IntakeDeclineFlag | IntakeDeclineFinding): Verdict {
   return {

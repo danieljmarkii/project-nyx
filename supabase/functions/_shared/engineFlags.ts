@@ -53,13 +53,15 @@ import { resolveAllowlistFlag } from './flags.ts'
 // weigh-ins with their source and its birthday, and detection may raise `weight_loss`. It adds a
 // finding, so it is a SIGNAL key. NOT SEEDED, like en3: absent reads as off. It goes live after
 // PMD-9 is re-run on lib/weightStory.ts's exact definition, by weighing cadence (ruling sheet W1).
-// engines_v3_en5: EN-5, intake evidence on the vomit read (Engines v3 PR-30, CUL-1722): an unrated
-// meal is unknown, and the Noticed predicate joins the cat intake arm in union
-// (analyze-vomit/context.ts EN5_CONTEXT_STEP). It is QUIETER than today where every meal around a
-// vomit was logged unrated, so it goes live only together with engines_v3_en8 (the weight lane
-// catches the cat the unrated meals hid; CUL-1136) and after the real-vet review (CUL-1312). It
-// changes only the per-incident read, never the Signal, so it is not a SIGNAL key. Absent reads
-// as off, like en3, so this PR needs no migration; PR-30m's migration seeds the row off.
+// engines_v3_en5: EN-5, intake evidence. Two halves read it. The read half (Engines v3 PR-30,
+// CUL-1722): on the vomit read an unrated meal is unknown, and the Noticed predicate joins the cat
+// intake arm in union (analyze-vomit/context.ts EN5_CONTEXT_STEP); it is QUIETER than today where
+// every meal around a vomit was logged unrated, which is why the weight lane must be live with it.
+// The Signal half (Engines v3 PR-30s, CUL-1725) runs I5 in the intake lane: a cat that vomited
+// within the rapid band of a refused bowl on two days raises (or rides as a line on) the cat intake
+// card. It adds a finding, so it is a SIGNAL key. NOT SEEDED: absent reads as off. The flip waits
+// on EN-8 live ("ships only with EN-8"), the real-vet review (CUL-1312) and the client half
+// reaching a build.
 export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en4', 'engines_v3_en5', 'engines_v3_en8', 'engines_v3_en9', 'engines_v3_en10', 'engines_v3_en11'] as const
 export type EngineKey = typeof ENGINE_KEYS[number]
 
@@ -76,7 +78,9 @@ export type EngineKey = typeof ENGINE_KEYS[number]
 // sentences, so it is gated like EN-11.
 // EN-8 (engines_v3_en8, PR-19) is the third: it adds the weight finding, so a weight card that
 // vanishes across its flip vanished because the lane went dark, never because the pet regained.
-export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = ['engines_v3_en8', 'engines_v3_en9', 'engines_v3_en11']
+// EN-5 (engines_v3_en5, PR-30s) is the fourth: I5 adds an intake card, so one that vanishes across
+// its flip vanished because the rule went dark, never because she started eating.
+export const SIGNAL_ENGINE_KEYS: readonly EngineKey[] = ['engines_v3_en5', 'engines_v3_en8', 'engines_v3_en9', 'engines_v3_en11']
 
 // The keys the Signal reads that only DECORATE a finding it already made: they add a field,
 // and change no finding's presence, rank or sentence. Proven per key by the corpus guard

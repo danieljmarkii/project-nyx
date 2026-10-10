@@ -82,6 +82,7 @@ import {
   type ProjectedRead,
 } from './tools.ts'
 import { careClaimReason } from '../../../lib/careClaimScreens.ts'
+import { TIER_WORDS, type TierDisplay } from '../../../lib/incidentTierWords.ts'
 
 // ── Model & loop bounds ─────────────────────────────────────────────────────────
 
@@ -708,6 +709,16 @@ export function buildReadLine(result: PhotoReadResult, petName: string): string 
   }
 }
 
+/** The map's words that are a CALL: the one test of whether a read's words may be handed to
+ *  the model on the read_photo path. Derived from the map's own `call` field, so a new call
+ *  word joins without an edit here. */
+const CALL_WORDS: ReadonlySet<string> = new Set(
+  Object.values(TIER_WORDS).filter((w) => w.call).map((w) => w.label),
+)
+export function callWordsOf(words: string | null): string | null {
+  return words !== null && CALL_WORDS.has(words) ? words : null
+}
+
 /** The REDACTED view of a read_photo result handed to the MODEL. It never carries the benign
  *  clinical details (colour/contents/description/read_text) — and, critically, for a NO-FLAG
  *  read it carries NO absence signal either: `red_flags` is present ONLY when a red flag is
@@ -721,9 +732,21 @@ export function redactReadForModel(result: PhotoReadResult): Record<string, unkn
   const redFlags = result.read?.flags ?? []
   const hasRead = result.status === 'ran' || result.status === 'cached'
   const base = { kind: 'read_photo', eventId: result.eventId, eventType: result.eventType, status: result.status, ranLiveRead: result.ranLiveRead }
-  if (hasRead && redFlags.length > 0) {
-    // Escalation — the model IS told the present flag so it can lead with the concern.
-    return { ...base, red_flags: redFlags, guidance: 'A red flag is present in this photo — lead by naming that concern plainly and route to the vet. The factual read summary is shown to the owner directly; do not add a wellness verdict.' }
+  // CUL-1512: a read whose words are a CALL hands the model those words, so it quotes the
+  // record's "Call your vet now" rather than a phrase of its own. Escalate-only: a quiet
+  // read's words ("Keep an eye out") are withheld here like every other no-flag detail. A
+  // call can stand with no photo flag (a floor row the record alone raised), so this is its
+  // own trigger, not a refinement of the flag branch.
+  const callWords = hasRead ? callWordsOf(result.read?.tierWords ?? null) : null
+  if (hasRead && (redFlags.length > 0 || callWords !== null)) {
+    // Escalation — the model IS told the present flag (and the call) so it can lead with it.
+    const escalation: Record<string, unknown> = { ...base }
+    if (redFlags.length > 0) escalation.red_flags = redFlags
+    if (callWords !== null) escalation.read_words = callWords
+    escalation.guidance = callWords !== null
+      ? `This read says "${callWords}". Quote those words exactly, lead with them${redFlags.length > 0 ? ', name the red flag plainly' : ''}, and route to the vet. The factual read summary is shown to the owner directly; do not add a wellness verdict.`
+      : 'A red flag is present in this photo — lead by naming that concern plainly and route to the vet. The factual read summary is shown to the owner directly; do not add a wellness verdict.'
+    return escalation
   }
   if (hasRead) {
     // NO absence signal — no red_flags field at all. The model is told it has no appearance
@@ -766,13 +789,17 @@ export function mentionsPhotoAppearance(text: string): boolean {
  *  present-flag escalation — i.e. the reassurance-on-absence risk cases that trigger the
  *  reference bar: a no-flag ran/cached read, OR a capped/unavailable/no_photo/budget/
  *  not_found/unsupported read (where there is no read at all, so a model "it looked clear"
- *  is a pure fabrication — round-3 residual 2). ONLY a real present-flag read is exempt
- *  (the model SHOULD name the concern — escalate). */
+ *  is a pure fabrication — round-3 residual 2). ONLY a real present-flag read, or a read whose
+ *  words are a call, is exempt (the model SHOULD name the concern — escalate). */
 export function featuredNonEscalatingRead(captured: { name: string; result: unknown }[]): boolean {
   for (let i = captured.length - 1; i >= 0; i--) {
     if (captured[i].name !== 'read_photo') continue
     const r = captured[i].result as PhotoReadResult
-    const isEscalation = (r.status === 'ran' || r.status === 'cached') && !!r.read && r.read.flags.length > 0
+    // A read whose words are a CALL is an escalation too (CUL-1512): a call the record raised
+    // with no photo flag hands the model its words to lead with, and scrubbing that headline
+    // would soften the call the record shows. Same test as redactReadForModel's, one helper.
+    const isEscalation = (r.status === 'ran' || r.status === 'cached') && !!r.read &&
+      (r.read.flags.length > 0 || callWordsOf(r.read.tierWords) !== null)
     return !isEscalation
   }
   return false
@@ -1372,6 +1399,42 @@ export function buildDeflection(reason: DeflectionReason, petName: string, clari
 // System prompts (§5.4)
 // ══════════════════════════════════════════════════════════════════════════════════
 
+/** What each of the record's read words means, one line each, for the MODEL only (spec §4,
+ *  CUL-1512): it receives the words the owner's record shows (`tierWords`), never a raw tier
+ *  or verdict value. The phrases come from the one map (`lib/incidentTierWords.ts`); only the
+ *  definitions live here. Keyed by every display the map draws, so a new one is a type error
+ *  until it is defined. Two displays share "Keep an eye out", so the rule names it once. No
+ *  definition speaks to wellness (clinical-guardrails Pattern 1): the quiet words say what
+ *  the read did not find, never what that means for the pet. */
+export const TIER_DEFINITIONS: Readonly<Record<TierDisplay, string>> = {
+  call_now: "the read found a sign that needs a vet now; if they're closed, an emergency clinic",
+  call_today: "the read found a sign that needs a vet today; if they're closed, an emergency clinic",
+  worth_a_call: 'the read found a sign to call the vet about, without saying how soon; older reads keep these words',
+  logged: 'the read flagged nothing that needs a call, which never means the pet is well',
+  monitor: 'the read flagged nothing that needs a call, which never means the pet is well',
+  not_enough_to_say: "the read couldn't say anything from this one, which never means the pet is well",
+}
+
+/** Rule (11), built from the map's labels and the definitions above. */
+export function tierRule(): string {
+  const seen = new Set<string>()
+  const lines: string[] = []
+  for (const key of Object.keys(TIER_DEFINITIONS) as TierDisplay[]) {
+    const label = TIER_WORDS[key].label
+    if (seen.has(label)) continue
+    seen.add(label)
+    lines.push(`"${label}" means ${TIER_DEFINITIONS[key]}.`)
+  }
+  return (
+    "(11) A READ'S WORDS: a recalled vomit or stool read may carry tierWords, the exact words the owner's record shows for it. " +
+    'If you mention the read, quote those words exactly; never swap in another phrase, never make a call sound less urgent, and never give an older read newer words. ' +
+    'A read whose words are a call leads the answer, like a safety finding. ' +
+    lines.join(' ')
+  )
+}
+
+const TIER_RULE = tierRule()
+
 export const SYSTEM_PROMPT =
   "You are the working voice of Culprit, a calm pet-health app. The owner asks a question about ONE specific pet, and your ONLY sources are the deterministic tools listed. " +
   "You NEVER compute a number yourself and NEVER author a query — you select and parameterize the closed tools, read their results, then phrase an answer using ONLY the facts they returned. " +
@@ -1385,7 +1448,8 @@ export const SYSTEM_PROMPT =
   "(7) Plain, warm language; address the owner as 'you'; use the pet's name; no exclamation marks; never cute. One or two sentences of detail. " +
   "(8) For a diagnosis-shaped or interpretive question ('does she have X', 'is that a lot', 'should I worry'), or a fishing-for-reassurance question ('so she's fine, right'), call decline — those are the vet's call, and declining still offers to line up the evidence. " +
   "(9) PHOTOS: to answer what a vomit or stool incident LOOKED like, first recall the event, then — only if it HAS a photo but no read yet — call read_photo with its id. read_photo does NOT return the photo's appearance to you: the factual read summary is rendered for the owner DIRECTLY, separately from your text. You get only the read STATUS and any PRESENT red flags. So: if it reports a red flag, lead by naming that concern plainly and route to the vet. Otherwise DO NOT describe, interpret, or comment on how the photo looked — do NOT say it looked fine/clear/normal, that nothing was wrong or concerning, that it's a good sign, or that the read came back clear — give ONLY the recall context (when it happened, how often). If it reports no_photo / capped / unavailable, say so plainly and point to the event. Never fill any gap with reassurance. Do NOT call read_photo for a non-vomit/stool event or speculatively — only when the owner asked what an incident looked like. " +
-  "(10) VISITS, CARE AND TREATMENTS: relay a vet visit, a medication or a diet only as a DATED FACT beside a COUNT from a tool (e.g. 'Your vet saw Nyx on Sep 16; 4 vomiting episodes are logged since.' or 'Prednisone started Sep 10; 3 coughing episodes are logged since.'). NEVER describe a concern as handled or held — do not say it is under control, covered, in the vet's hands, taken care of, dealt with, resolved, or that there is nothing more to do. NEVER credit a treatment with an effect — do not say a medication, diet or visit is helping, working, doing the trick, or that a symptom settled, eased or calmed since it started. If the owner asks whether a treatment is helping or a concern is handled, say the record can show dates and counts and that the rest is for the vet to judge — WITHOUT repeating the owner's effect or containment words (not 'whether it is working', not 'whether it is under control')."
+  "(10) VISITS, CARE AND TREATMENTS: relay a vet visit, a medication or a diet only as a DATED FACT beside a COUNT from a tool (e.g. 'Your vet saw Nyx on Sep 16; 4 vomiting episodes are logged since.' or 'Prednisone started Sep 10; 3 coughing episodes are logged since.'). NEVER describe a concern as handled or held — do not say it is under control, covered, in the vet's hands, taken care of, dealt with, resolved, or that there is nothing more to do. NEVER credit a treatment with an effect — do not say a medication, diet or visit is helping, working, doing the trick, or that a symptom settled, eased or calmed since it started. If the owner asks whether a treatment is helping or a concern is handled, say the record can show dates and counts and that the rest is for the vet to judge — WITHOUT repeating the owner's effect or containment words (not 'whether it is working', not 'whether it is under control'). " +
+  TIER_RULE
 
 export const GENERAL_SYSTEM_PROMPT =
   SYSTEM_PROMPT +

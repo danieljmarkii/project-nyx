@@ -34,8 +34,6 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
-  DEFAULT_CONFIG,
-  EN11_CONFIG,
   CORRELATION_SYMPTOM_TYPES,
   RED_FLAG_INCIDENT_TYPES,
   type Finding,
@@ -68,6 +66,7 @@ import {
   type SymptomRow,
   mapWeightCheckRows,
   type WeightCheckRow,
+  signalDetectionConfig,
 } from './pipeline.ts'
 // Abort the Claude phrasing/summary calls after a bounded timeout (CUL-258). Both
 // callers already fall back to the deterministic template on any throw, so a timeout
@@ -132,7 +131,7 @@ const PHRASING_MODEL = 'claude-haiku-4-5'
 // DEFAULT_CONFIG, the phrasing model and the Engines flags; engineStamps.ts). Bump it with
 // any change to detection, curation, decoration or phrasing that can change what a pet's
 // Signal says: the fingerprint cannot see a code change this number does not record.
-export const SIGNAL_ENGINE_VERSION = 'signal.8' // signal.8: PR-19 (CUL-1413), EN-8's weight lane behind engines_v3_en8 (flag off unchanged). signal.7: PR-23 (CUL-1417), EN-9's care state behind engines_v3_en9 (flag off unchanged). signal.6: PR-32 (CUL-1141), EN-11 behind engines_v3_en11 (flag off unchanged). signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
+export const SIGNAL_ENGINE_VERSION = 'signal.9' // signal.9: PR-30s (CUL-1725), I5's refused-then-vomited intake card behind engines_v3_en5 (flag off unchanged). signal.8: PR-19 (CUL-1413), EN-8's weight lane behind engines_v3_en8 (flag off unchanged). signal.7: PR-23 (CUL-1417), EN-9's care state behind engines_v3_en9 (flag off unchanged). signal.6: PR-32 (CUL-1141), EN-11 behind engines_v3_en11 (flag off unchanged). signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
 
 const MS_PER_DAY = 86_400_000
 
@@ -194,7 +193,12 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
     finding.type === 'incident_red_flag' ||
     // Engines v3 PR-19 (EN-8, CUL-1413) — the weight row: two readings, their sources and the
     // tier's ask. Template-only, which also saves the call (validatePhrasing refuses it anyway).
-    finding.type === 'weight_loss'
+    finding.type === 'weight_loss' ||
+    // Engines v3 PR-30s (I5, CUL-1725): an intake card carrying the refused-then-vomited facts, on
+    // its own card or riding ②'s. The load is a sequence the model would turn into a cause ("because
+    // she refused") or a mechanism ("nausea", "an empty stomach"), and the intake screens catch
+    // neither (adversarial pass D1). validatePhrasing refuses every model sentence here too.
+    (finding.type === 'intake_decline' && finding.refusedThenVomited !== undefined)
   ) {
     return fallback
   }
@@ -726,7 +730,7 @@ const handler = async (req: Request): Promise<Response> => {
       engine: 'generate-signal',
       version: SIGNAL_ENGINE_VERSION,
       // The config this run detects with: EN-11's under its key (runSignalPipeline picks the same).
-      config: isEngineKeyOn(engineFlags, 'engines_v3_en11') ? EN11_CONFIG : DEFAULT_CONFIG,
+      config: signalDetectionConfig(engineFlags),
       phrasingModel: PHRASING_MODEL,
       engineFlags: engineFlags.on,
     })

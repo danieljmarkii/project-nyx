@@ -41,6 +41,7 @@ import {
   incompleteReadDisclosure,
   isReassuringOrResolving,
   runSignalPipeline,
+  signalDetectionConfig,
   templatePayload,
   templateTexts,
   WATCHED_HEAD_END,
@@ -162,6 +163,7 @@ const SENTINEL: CareContextStep = (findings) =>
 const EN10 = 'engines_v3_en10'
 const EN9 = 'engines_v3_en9'
 const EN8 = 'engines_v3_en8'
+const EN5 = 'engines_v3_en5'
 // EN-10's guards hold EN-9 off: EN-9 reads the same facts and has its own guard (c-en9), so a
 // state with it on would compare two steps at once.
 const NO_EN9 = Object.entries(FLAG_STATES).map(([l, f]) => [l, { ...f, on: f.on.filter((k) => k !== EN9) }] as const)
@@ -176,7 +178,7 @@ Deno.test('(c) tripwire: the Signal keys are exactly the ones with an absence gu
   // tests (the row changes only by its field); a new one needs its own absence guard beside
   // them, and a key that changes what is detected goes in SIGNAL_ENGINE_KEYS instead.
   assertEquals([...SIGNAL_DECORATING_KEYS], [EN10], 'a new decorating key needs its own absence guard beside (c)')
-  assertEquals([...SIGNAL_ENGINE_KEYS], [EN8, EN9, EN11], 'a Signal key that changes a sentence or a rank needs its own absence guard beside (c-en8) / (c-en9) / (c-en11)')
+  assertEquals([...SIGNAL_ENGINE_KEYS], [EN5, EN8, EN9, EN11], 'a Signal key that changes a sentence or a rank needs its own absence guard beside (c-en5) / (c-en8) / (c-en9) / (c-en11)')
   assertStrictEquals(ON_STATES.length >= 2 && OFF_STATES.length >= 3, true, 'the flag states lost a side')
 })
 
@@ -253,8 +255,13 @@ Deno.test('(c) over an incomplete read the step does not run, key on or off', ()
 // ── (c-en11) EN-11, the first key that changes detection (PR-32, CUL-1141) ──
 // A config that throws on any read: the C-36 "feature absent" for a config, since a gate that
 // lets it through cannot stay quiet.
+// `ownKeys` too: EN-5's `withEn5Config` (PR-30s) spreads the config it is handed, and a spread
+// lists keys rather than getting them, so a get-only trap read as an empty config.
 const THROWING_CONFIG = new Proxy({} as DetectionConfig, {
   get: () => {
+    throw new Error('EN-11 config read')
+  },
+  ownKeys: () => {
     throw new Error('EN-11 config read')
   },
 })
@@ -298,6 +305,62 @@ Deno.test('(c-en11) the real config adds no safety card and moves nothing over a
   }
   // Non-vacuity: the corpus holds a case EN-11 changes (the 2-vs-0 worsening case).
   assertStrictEquals(changed >= 1, true, 'no corpus case moves under EN-11, so this test checks nothing')
+})
+
+// ── (c-en5) EN-5's Signal half, I5 (PR-30s, CUL-1725) ──
+// I5 rides in the detection config (`en5`), so "flag off is the feature's absence" (C-36) is: no
+// config the pipeline can pick without the key carries `en5`, and the one case built to fire it
+// shows nothing of it. Then the gate opens on every state with the key, and the rule adds the
+// intake card and its line and moves nothing else.
+const EN5_OFF_STATES = Object.entries(FLAG_STATES).filter(([, f]) => !f.on.includes(EN5))
+const EN5_ON_STATES = Object.entries(FLAG_STATES).filter(([, f]) => f.on.includes(EN5))
+const I5_CASE = SIGNAL_PIPELINE_CORPUS.find((c) => c.name.startsWith('a cat that turns down dinner'))!
+const i5Facts = (p: SignalPayload) =>
+  p.findings.filter((e) => (e.finding as { refusedThenVomited?: unknown }).refusedThenVomited !== undefined)
+// Stand-down markers are left out too: flipping a Signal key withholds them by design (the
+// EN-F gate, standDown.test.ts), which is the gate working, not I5 moving a card.
+const withoutI5 = (p: SignalPayload) =>
+  p.findings
+    .filter((e) => (e.finding as { trigger?: string }).trigger !== 'refused_then_vomited' && e.finding.type !== 'stood_down')
+    // Rank is left out on purpose: a safety card added above an insight moves its number, not its order.
+    .map((e) => ({ text: e.text, finding: JSON.stringify(e.finding, (k, v) => (k === 'refusedThenVomited' ? undefined : v)) }))
+
+Deno.test('(c-en5) flag off: no config the pipeline picks carries I5, and the case built to fire it shows none of it', () => {
+  assertStrictEquals(EN5_ON_STATES.length >= 2 && EN5_OFF_STATES.length >= 3, true, 'the flag states lost a side')
+  for (const [label, flags] of EN5_OFF_STATES) {
+    assertStrictEquals(signalDetectionConfig(flags).en5, undefined, label)
+    assertEquals(i5Facts(payload(I5_CASE, flags)), [], label)
+  }
+})
+
+Deno.test('(c-en5) the gate opens: with engines_v3_en5 on, the refuser gets the intake card and its facts', () => {
+  for (const [label, flags] of EN5_ON_STATES) {
+    assertStrictEquals(signalDetectionConfig(flags).en5 !== undefined, true, label)
+    const shown = i5Facts(payload(I5_CASE, flags))
+    assertStrictEquals(shown.length, 1, label)
+    const f = shown[0].finding as { type: string; trigger: string; refusedThenVomited: { episodeCount: number; dayCount: number } }
+    assertStrictEquals(f.type, 'intake_decline', label)
+    assertStrictEquals(f.trigger, 'refused_then_vomited', label)
+    assertEquals([f.refusedThenVomited.episodeCount, f.refusedThenVomited.dayCount], [2, 2], label)
+    // Template-only (adversarial pass D1): the row's sentence IS the template, and no model sentence
+    // is ever accepted over it, its own words included.
+    assertStrictEquals(shown[0].text, templateForFinding(f as never, 'Miso'), label)
+    assertStrictEquals(validatePhrasing(shown[0].text, f as never), false, label)
+    assertStrictEquals(hasBannedSignalVocabulary(shown[0].text), false, `${label}: ${shown[0].text}`)
+    assertStrictEquals(shown[0].text.includes('!'), false, label)
+  }
+})
+
+Deno.test('(c-en5) I5 adds the intake card or its line and moves nothing else, on every case', () => {
+  const ON: EngineFlags = { on: [EN5], readOk: true }
+  let added = 0
+  for (const c of SIGNAL_PIPELINE_CORPUS) {
+    const off = payload(c, OFF)
+    const on = payload(c, ON)
+    assertEquals(withoutI5(on), withoutI5(off), c.name)
+    if (i5Facts(on).length > 0) added++
+  }
+  assertStrictEquals(added >= 1, true, 'no corpus case gains I5, so this test checks nothing')
 })
 
 // ── (c-en9) EN-9, the care state (PR-23, CUL-1417) ──
