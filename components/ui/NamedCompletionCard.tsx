@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Animated, Platform, Alert } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Animated, Platform, Alert, LayoutAnimation } from 'react-native';
 import { router, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme, shadows } from '../../constants/theme';
-import { useMomentStore } from '../../store/momentStore';
+import { useMomentStore, completionTone, isNamedDimUp } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { useAppActive } from '../../hooks/useAppActive';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { updateEvent, getEventSource } from '../../lib/db';
 import { writeOwingFloorCheck } from '../../lib/incidentFloorQueue';
@@ -22,6 +23,8 @@ import { COMPLETION_GROUND, CompletionMark } from './CompletionMark';
 import { TimeEditSheet } from './TimeEditSheet';
 import { FloorRaiseLine } from './FloorRaiseLine';
 import { openRaisedRead } from './openRaisedRead';
+import { COMPLETION_MOTION, useCompletionArrival } from '../motion/completionMotion';
+import { FOLD_LAYOUT } from '../motion/foldMotion';
 
 // Tab bar height from app/(tabs)/_layout.tsx — the card must clear it so it isn't
 // occluded when the owner lands back on a tabs screen after a log.
@@ -99,12 +102,13 @@ const RECORD_ROUTE_PREFIX = '/event/';
 // carries the full rule.
 export function NamedCompletionCard() {
   const {
-    visible, payload, removed, hide, undo, patchOccurredAt, patchRecord,
-    pauseDwell, resumeDwell,
+    visible, payload, removed, undoing, hide, undo, patchOccurredAt, patchRecord,
+    pauseDwell, resumeDwell, armRemovedDwell,
   } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { pets } = usePetStore();
   const reduced = useReducedMotion();
+  const appActive = useAppActive();
   // Both are provider-safe from here: app/_layout.tsx renders this INSIDE ExpoRoot,
   // which wraps the tree in a SafeAreaProvider, and expo-router's route info falls
   // back to a default when no navigator has mounted.
@@ -121,51 +125,87 @@ export function NamedCompletionCard() {
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
 
-  const translateY = useRef(new Animated.Value(80)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
-  const scrimOpacity = useRef(new Animated.Value(0)).current;
-  // The mark's spring. Held at rest under Reduce Motion — the static frame.
-  const checkScale = useRef(new Animated.Value(reduced ? 1 : 0.6)).current;
-
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const isNamed = payload?.kind === 'named';
-  const shown = visible && isNamed;
+  // The card and its dim are up together: `isNamedDimUp` is the one predicate the scrim
+  // and the look chips under it read (R4-2), so the two can never disagree.
+  const shown = isNamedDimUp({ visible, payload });
 
+  // CUL-1691 §2 — the motion: the meal card's hook, one tone predicate. The tone is read
+  // from the store when a beat is due (`celebrateNow`), never from this render's closure.
+  // No flight reaches this card, so `flying` is always false and `endFlight` has nothing
+  // to end. Reduce Motion is a crossfade inside the hook, read once at start (C-43).
+  const namedNow = isNamed ? payload : null;
+  const arrival = useCompletionArrival({
+    identity: namedNow ? namedNow.eventId : null,
+    shown,
+    removed,
+    flying: false,
+    reducedMotion: reduced,
+    appActive,
+    celebrate: namedNow ? completionTone(namedNow) === 'celebrate' : false,
+    celebrateNow: () => {
+      const p = useMomentStore.getState().payload;
+      return p?.kind === 'named' && completionTone(p) === 'celebrate';
+    },
+    currentIdentity: () => useMomentStore.getState().payload?.eventId,
+    onRemovedLanded: (id) => armRemovedDwell(id),
+    endFlight: () => undefined,
+  });
+
+  // INERT FROM THE UNDO TAP (§2.3). Read from the store at the tap, so Change time or the
+  // floor line's door pressed in the same frame as Undo is refused before the reversal's
+  // await resolves. Nothing visual changes on the tap: a reversal is never shown before
+  // it has happened (CUL-612).
+  function inertNow(eventId: string): boolean {
+    const st = useMomentStore.getState();
+    return st.undoing === eventId || (st.removed && st.payload?.eventId === eventId);
+  }
+  const inert = namedNow ? undoing === namedNow.eventId || removed : false;
+
+  // A VET-CALL LINE PATCHED IN AFTER THE REVEAL (§2.3, `patchFloorLine`). One committed
+  // within `labelBeatMs` of the reveal lays out with the card. One later finishes the
+  // arrival the way a touch does, THEN fires `FOLD_LAYOUT` (app-global: it animates the
+  // next commit anywhere), then lays the line out, then the tone decides (a vet-call line
+  // makes the card calm, so a standing halo leaves).
+  const upId = shown && !removed && namedNow ? namedNow.eventId : null;
+  const revealedAt = useRef<{ id: string | null; at: number }>({ id: null, at: 0 });
+  if (upId !== null && revealedAt.current.id !== upId) revealedAt.current = { id: upId, at: Date.now() };
+  const [laid, setLaid] = useState<{ id: string | null; floorLine: unknown }>({ id: null, floorLine: null });
+  const pendingSettle = useRef(false);
+  const liveFloor = namedNow?.floorLine ?? null;
   useEffect(() => {
-    if (reduced) {
-      // Static frame: the card and its ground appear and leave at full value, and
-      // the mark never springs. Deliberately still a state CHANGE, not a freeze —
-      // an owner with Reduce Motion on must still see the confirmation arrive;
-      // the setting asks for less movement, not less information. (The commit
-      // haptic is unaffected — it fires in the store, and touch is not motion.)
-      translateY.setValue(0);
-      opacity.setValue(shown ? 1 : 0);
-      scrimOpacity.setValue(shown ? 1 : 0);
-      checkScale.setValue(1);
+    if (!namedNow) return;
+    const id = namedNow.eventId;
+    if (laid.id === id && laid.floorLine === liveFloor) return;
+    const next = { id, floorLine: liveFloor };
+    const atReveal = laid.id !== id || Date.now() - revealedAt.current.at <= COMPLETION_MOTION.labelBeatMs;
+    // A card that is hidden, leaving or undone lays the line out plainly: `configureNext`
+    // is app-global, and there is no arrival left to finish.
+    if (atReveal || upId === null) {
+      setLaid(next);
       return;
     }
-    const anim = Animated.parallel([
-      Animated.spring(translateY, {
-        toValue: shown ? 0 : 80, useNativeDriver: true, tension: 80, friction: 11,
-      }),
-      Animated.timing(opacity, {
-        toValue: shown ? 1 : 0, duration: shown ? 180 : 140, useNativeDriver: true,
-      }),
-      Animated.timing(scrimOpacity, {
-        toValue: shown ? 1 : 0, duration: shown ? 180 : 140, useNativeDriver: true,
-      }),
-      Animated.spring(checkScale, {
-        toValue: shown ? 1 : 0.6, useNativeDriver: true, tension: 60, friction: 7,
-      }),
-    ]);
-    anim.start();
-    return () => anim.stop();
-  }, [shown, reduced, translateY, opacity, scrimOpacity, checkScale]);
+    arrival.finishForPatch();
+    LayoutAnimation.configureNext(FOLD_LAYOUT);
+    pendingSettle.current = true;
+    setLaid(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [namedNow?.eventId, liveFloor]);
+  // The tone decides only after the FOLD_LAYOUT commit has laid the line out.
+  const settleHaloRef = useRef(arrival.settleHalo);
+  settleHaloRef.current = arrival.settleHalo;
+  useEffect(() => {
+    if (!pendingSettle.current) return;
+    pendingSettle.current = false;
+    settleHaloRef.current();
+  }, [laid]);
+  const layFloor = (namedNow !== null && laid.id === namedNow.eventId ? laid.floorLine : liveFloor) as typeof liveFloor;
 
   async function handleSaveTime(next: Date) {
-    if (!isNamed) return;
+    if (!isNamed || inertNow(payload.eventId)) return;
     const edit = resolveNamedTimeEdit(payload.record, next);
     // Belt-and-braces: the affordance is not rendered when the record can't take a
     // single-point edit, so this is unreachable — but a null here must never
@@ -327,9 +367,13 @@ export function NamedCompletionCard() {
   // the wrong animal. A miss falls to the anonymous form.
   const petName = named ? resolveRecordPetName(pets, named.petId) : '';
   const notice = named && removed ? removedNoticeCopy(petName) : null;
-  // ONE string per state, and it is both the summary node's label and what VoiceOver is
-  // told — so the two can never describe the card differently.
-  const summaryLabel = notice ? notice.a11yLabel : `${sentence}. Saved to ${petName}’s record`;
+  // The header always speaks the LOGGED sentence, derived from the payload, never from
+  // `removed` (§2.3): through the collapse the old body is hidden from assistive tech,
+  // and the Removed label belongs to the removal node and the announcement alone.
+  const headerLabel = `${sentence}. Saved to ${petName}’s record`;
+  // What VoiceOver is told: iOS speaks "Removed" through this hook on the `removed`
+  // fact; Android through the removal node's live region when it mounts. Once each.
+  const summaryLabel = notice ? notice.a11yLabel : headerLabel;
 
   // CUL-1275 — the summary node's `accessibilityLiveRegion` is Android-only, so on an
   // iPhone this card confirmed every save and every Undo in silence. Spoken only while
@@ -341,79 +385,89 @@ export function NamedCompletionCard() {
   // never mount for another card's payload.
   if (!payload || payload.kind !== 'named') return null;
 
-  const celebrate = payload.tone === 'celebrate';
   const showChangeTime = canChangeTime(payload.record);
   const prompt = timeEditPrompt(payload.record);
+
+  // The collapse (§2.3): the body stays, frozen and hidden from assistive tech, until
+  // "Removed" lands; under Reduce Motion both are mounted for a true crossfade.
+  const bodyUp = !(removed && arrival.collapse === 'landed');
+  const noticeUp = notice !== null && (arrival.collapse === 'landed' || (arrival.collapse === 'leaving' && reduced));
+  // Never `disabled` (it announces "dimmed", C-7): hidden from assistive tech, because
+  // TalkBack's double-tap reaches `onPress` through `pointerEvents="none"`.
+  const leavingBody = removed
+    ? ({ pointerEvents: 'none', accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' } as const)
+    : null;
 
   return (
     <>
       {/* The dimmed ground. Purely visual — it never takes a touch, so Home stays
-          usable underneath for the whole dwell. */}
-      <Animated.View pointerEvents="none" style={[styles.scrim, { opacity: scrimOpacity }]} />
+          usable underneath for the whole dwell. It fades with the card and leaves with
+          it (§2.1): its opacity is the card's, and the card is up exactly while
+          `isNamedDimUp` holds, the same predicate the look chips read. */}
+      <Animated.View pointerEvents="none" style={[styles.scrim, { opacity: arrival.cardOpacity }]} />
 
       <Animated.View
-        pointerEvents={shown ? 'box-none' : 'none'}
-        style={[styles.wrapper, { bottom: bottomOffset, opacity, transform: [{ translateY }] }]}
+        pointerEvents={shown && !inert ? 'box-none' : 'none'}
+        style={[styles.wrapper, { bottom: bottomOffset, opacity: arrival.cardOpacity, transform: [{ translateY: arrival.cardTranslateY }] }]}
       >
-        <View style={styles.card}>
-          {notice ? (
-            /* The removal line. No mark — a check over the word "Removed" would be
-               two contradictory signals, and the quiet is the point. Announced
-               politely so a screen-reader owner hears the reversal land, which is
-               the only confirmation this state gets. */
-            <View
-              style={styles.labelCol}
-              // `accessible` is load-bearing: without it the label never applies and
-              // the two lines stay two separate stops (SheetLogBeat, CUL-682).
-              accessible
-              accessibilityRole="summary"
-              accessibilityLiveRegion="polite"
-              accessibilityLabel={summaryLabel}
-            >
-              <ThemedText style={styles.title}>{notice.title}</ThemedText>
-              <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
-            </View>
-          ) : (
-          <>
+        {/* A touch finishes the motion; lifting it lets the tone settle the halo (§2.3).
+            This card has no dwell pause on its root, so it gains the finish only. Not
+            wired from the Undo tap on: that state has nothing to finish. */}
+        <View
+          style={styles.card}
+          testID="named-card-surface"
+          pointerEvents={inert ? 'none' : 'auto'}
+          onTouchStart={inert ? undefined : arrival.finishForTouch}
+          onTouchEnd={inert ? undefined : arrival.settleForTouch}
+          onTouchCancel={inert ? undefined : arrival.settleForTouch}
+        >
+          {bodyUp && (
+          <View style={styles.body} testID="named-card-body" {...leavingBody}>
           <View style={styles.headerRow}>
-            {/* The mark. The warm-gold halo is the CELEBRATE tone only: a symptom
-                log and a weight check get the same mint check with no gold, which
-                is the shipped tone call (Principle 4 — we acknowledge a 2am vomit,
-                we never congratulate it) and the visual half of the same rule the
-                haptic layer enforces with its single soft tap. */}
-            <Animated.View testID="named-card-check" style={{ transform: [{ scale: checkScale }] }}>
-              <CompletionMark halo={celebrate} />
-            </Animated.View>
+            {/* The mark. The warm-gold halo is the CELEBRATE tone only (`completionTone`):
+                a symptom log and a weight check get the same check with no gold, which
+                is the shipped tone call (Principle 4 — we acknowledge a 2am vomit, we
+                never congratulate it) and the visual half of the same rule the haptic
+                layer enforces with its single soft tap. */}
+            <View testID="named-card-check">
+              <CompletionMark halo={arrival.haloMode !== 'off'} motion={arrival.mark} />
+            </View>
             {/* One summary node: a screen reader speaks what was saved and where it
-                went as a single announcement, not two orphan lines. */}
-            <View
-              style={styles.labelCol}
+                went as a single announcement, not two orphan lines. The words land on
+                their own beat; the node itself is never split. */}
+            <Animated.View
+              style={[styles.labelCol, { opacity: arrival.wordsOpacity }]}
               accessible
               accessibilityRole="summary"
-              accessibilityLiveRegion="polite"
-              accessibilityLabel={summaryLabel}
+              accessibilityLiveRegion={removed ? undefined : 'polite'}
+              accessibilityLabel={headerLabel}
             >
               <ThemedText style={styles.title}>{sentence}</ThemedText>
               <ThemedText style={styles.subLabel}>{`Saved to ${petName}’s record`}</ThemedText>
-            </View>
+            </Animated.View>
           </View>
 
           {/* Engines v3 PR-28b — a read this log raised to a call (§6 item 3). Above the
               action row, its own control; the opening goes through the shared helper so
-              a card already over that record only steps aside. */}
-          {named?.floorLine ? (
-            <FloorRaiseLine
-              line={named.floorLine}
-              petName={petName}
-              onOpen={() => openRaisedRead(raisedId, pathnameRef.current, hide)}
-            />
+              a card already over that record only steps aside. No motion of its own. */}
+          {layFloor ? (
+            <Animated.View style={{ opacity: arrival.bodyOpacity }}>
+              <FloorRaiseLine
+                line={layFloor}
+                petName={petName}
+                onOpen={() => {
+                  if (inertNow(payload.eventId)) return;
+                  openRaisedRead(raisedId, pathnameRef.current, hide);
+                }}
+              />
+            </Animated.View>
           ) : null}
 
           {/* The action row — Undo left of Change time (round-2 mock). The ROW is
               unconditional now because Undo is; only Change time is gated, and it
               is absent rather than disabled (a dead control on a 5s card teaches
               the owner the app is broken). */}
-          <View style={styles.actionRow}>
+          <Animated.View style={[styles.actionRow, { opacity: arrival.bodyOpacity }]}>
             <TouchableOpacity
               onPress={handleUndo}
               hitSlop={HITSLOP_ACTION_LEFT}
@@ -425,7 +479,10 @@ export function NamedCompletionCard() {
             </TouchableOpacity>
             {showChangeTime && (
               <TouchableOpacity
-                onPress={() => setPickerOpen(true)}
+                onPress={() => {
+                  if (inertNow(payload.eventId)) return;
+                  setPickerOpen(true);
+                }}
                 hitSlop={HITSLOP_ACTION_RIGHT}
                 style={styles.actionBtn}
                 accessibilityRole="button"
@@ -434,9 +491,27 @@ export function NamedCompletionCard() {
                 <ThemedText style={styles.actionText}>Change time</ThemedText>
               </TouchableOpacity>
             )}
+          </Animated.View>
           </View>
-          </>
           )}
+          {noticeUp && notice ? (
+            /* The removal line. No mark — a check over the word "Removed" would be
+               two contradictory signals, and the quiet is the point. From the frame it
+               mounts it is the card's only live region (Android speaks it here; iOS
+               through the hook above). */
+            <Animated.View
+              style={[styles.labelCol, !bodyUp ? null : styles.noticeOverlay, { opacity: arrival.noticeOpacity }]}
+              // `accessible` is load-bearing: without it the label never applies and
+              // the two lines stay two separate stops (SheetLogBeat, CUL-682).
+              accessible
+              accessibilityRole="summary"
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={notice.a11yLabel}
+            >
+              <ThemedText style={styles.title}>{notice.title}</ThemedText>
+              <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
+            </Animated.View>
+          ) : null}
         </View>
       </Animated.View>
 
@@ -486,6 +561,17 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusLarge,
     gap: theme.space1,
     ...shadows.lg,
+  },
+  body: {
+    gap: theme.space1,
+  },
+  // Reduce Motion's true crossfade: "Removed" over the leaving body, in the card's
+  // padding box, until the body goes and the height snaps.
+  noticeOverlay: {
+    position: 'absolute',
+    top: 12,
+    left: theme.space2,
+    right: theme.space2,
   },
   headerRow: {
     flexDirection: 'row',
