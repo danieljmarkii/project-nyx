@@ -3,7 +3,7 @@
 **Date:** 2026-10-10
 **One thing:** D3 L1 — Reading a test: what it proves and what it cannot · check: pending
 
-Shipped via #PRNUM (CUL-1712). Dispatched by `/dispatch` (PR-02 of *Completion card: daylight and motion*). Left open for the PM: the merge waits on §4 rows D1 to D4 on the iPhone over Runtime B and on Dr. Chen's comment on CUL-1712.
+Shipped via #1142 (CUL-1712). Dispatched by `/dispatch` (PR-02 of *Completion card: daylight and motion*). Left open for the PM: the merge waits on §4 rows D1 to D4 on the iPhone over Runtime B and on Dr. Chen's comment on CUL-1712.
 
 ## What shipped
 
@@ -20,6 +20,17 @@ Shipped via #PRNUM (CUL-1712). Dispatched by `/dispatch` (PR-02 of *Completion c
 - **The native driver never steps a value in the test renderer.** Assertions read the animation a beat starts, the layer it mounts, or the value a JS valve pins, and the words' early landing is proven by running the card's clock to its end by hand. That is also why the merge waits on the iPhone rows: no test here can see a frame.
 - The pre-push hook blocked the first push on the six flight tests the spec said must change; they were rewritten, not dodged.
 
+## The code review
+
+An isolated `code-reviewer` pass found four timing bugs, all fixed with a test proven by reverting the fix:
+
+1. The halo's settle after a patched note ran in the same flush as the patch, before the `FOLD_LAYOUT` commit (the effect also re-ran every render). It now runs on the commit that lays the note out.
+2. A note arriving after the card hid still fired the app-global `FOLD_LAYOUT`. A hidden card now lays it out plainly.
+3. A new card shown inside the old one's 180ms window cancelled the old flight's end, leaving the clone up. The end now survives; the guarded call already spares a newer flight.
+4. An Undo collapse finishing after the card hid could still "land". It no longer does.
+
+Plus one inline style moved to the stylesheet.
+
 ## Falsification
 
 Every new guard was broken on purpose and went red: D5 (the tone reading `trialFlag`: 3 tests), the three budgets (`haloFadeMs` 300, a softer rise spring, a longer word fade), each of the five Undo guards (intake, combo, Change time, the trial add hatch, the floor line's door), the leaving body's hidden props, `armRemovedDwell`'s `removed` check, and a `commitSymptom` import in each of the six newly scanned files.
@@ -31,3 +42,17 @@ Adversarial review: N/A for statistics (no engine or threshold changed). The cli
 - Android ships `'cover'`, unmeasured (no Android phone).
 - D3 and D4 re-run on the first TestFlight cut after merge: Runtime B serves dev-mode JS and overstates contention.
 - The halo's finish reads its position from JS time, so under heavy JS contention a touch can pin the gold a few percent off where the native clock had it. A step of a few percent in opacity, once, on a touch.
+
+## Teach
+
+### One thing — Reading a test: what it proves and what it cannot (D3, L1)
+A test runs a piece of the app in a pretend phone and checks what it can see. Here the pretend phone cannot see animation: the motion runs on the phone's graphics side, and the test only sees the app's instructions to it. So the tests prove what was *asked for* (start this fade, pin this value, never mount the gold on a refused bowl), not what the screen *drew*.
+
+**Like:** checking a recipe was followed by reading the cook's order slips. You can prove the oven was set to 200° for 12 minutes; you cannot prove the cake rose.
+
+**In today's work:** `components/log/FAB.mealFlight.test.tsx`
+`if (config.toValue === CARD_CLOCK_END_MS ...) value.setValue(CARD_CLOCK_END_MS);` moves the card's clock to its end by hand, because the pretend phone never moves it, and only then checks that the food's name is showing while the disc is still flying.
+
+**Why it matters to you as PM:** it is why this PR waits on your iPhone rows D1 to D4: a seam in the pen stroke or a jump at the landing is a picture, and no test here can see a picture.
+
+**Check:** If a future change made the check stroke draw from right to left, would this PR's tests catch it, and what would?
