@@ -13,7 +13,7 @@ Dispatched session (CUL-1516, BUILD), shipped via #1150.
 
 ## Decisions
 - Candidate fix (b) from the issue: the words read the louder of the stored tier and the stamp, scoped to `call_now`. It was chosen over candidate (a), a server hold that keeps the stamp. The client fix also covers a rolled-back server build, needs no analyze-* redeploy, and keeps the flag-off run's own read text on the row.
-- Proposed Tier-2 edit to spec §1 (not written): "Earlier rule is decided by the rule-version stamp, save a stored `call_now`, which keeps its words over a later flag-off write (GAP-34)."
+- Tier-2 edit to spec §1, PM-approved in session 2026-10-10 and written in this PR (spec v0.4): "Earlier rule" is decided by the rule-version stamp, save a stored `call_now`, which keeps its words over a later flag-off write (GAP-34).
 
 ## Falsification
 The adversarial reviewer verdict was PASS. It tried five ways to put a `call_now` on a row the owner was never shown as call now:
