@@ -620,6 +620,33 @@ describe('MedicationCompletionCard — the gold is doseCelebrates (CUL-1691 §2.
     expect(haloLayer(view)).not.toBeNull();
   });
 
+  it('an in-doubt combo answered Given whose recheck finds a conflict never shows gold', async () => {
+    let resolve: (v: unknown) => void = () => {};
+    mockGetDoubleDoseFlag.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    const view = render(<MedicationCompletionCard />);
+    seedDose({ adherence: null, pairedFoodName: 'Kibble', vehicleIntake: 'refused', doubleDoseSettled: true });
+    advance(HALO_REST_MS);
+    await act(async () => { fireEvent.press(view.getByText('Given')); });
+    // The recheck is in flight: the wait is re-armed, so no gold.
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).toBeNull();
+    await act(async () => { resolve(CONFLICT); });
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).toBeNull();
+    view.getByText(NOTE);
+  });
+
+  it('a failed recheck after Given settles the wait, so a clean dose still gains its gold', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGetDoubleDoseFlag.mockRejectedValueOnce(new Error('sqlite'));
+    const view = render(<MedicationCompletionCard />);
+    seedDose({ adherence: null, pairedFoodName: 'Kibble', vehicleIntake: 'refused', doubleDoseSettled: true });
+    advance(HALO_REST_MS);
+    await act(async () => { fireEvent.press(view.getByText('Given')); });
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).not.toBeNull();
+  });
+
   it('Given then Missed: the gold leaves and the disc never replays', async () => {
     const timing = jest.spyOn(Animated, 'timing');
     try {

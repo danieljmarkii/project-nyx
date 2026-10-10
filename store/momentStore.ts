@@ -1009,11 +1009,18 @@ export const useMomentStore = create<MomentState>((set) => ({
     const s = useMomentStore.getState();
     if (s.payload?.kind !== 'medication' || s.removed) return;
     selectChip();
-    set((state) =>
-      state.payload?.kind === 'medication'
-        ? { payload: { ...state.payload, adherence } }
-        : {}
-    );
+    set((state) => {
+      if (state.payload?.kind !== 'medication') return {};
+      // CUL-1691 §2.3 — an answer moving TO 'given' re-arms the gold's wait: the check
+      // that settled was computed for the old answer (an in-doubt dose's check cannot
+      // flag a repeat), so the gold holds at 0 until the card's own recheck lands.
+      // Without this an in-doubt dose answered Given flashed gold for one local read
+      // before its conflict arrived.
+      const rearm = adherence === 'given' && state.payload.adherence !== 'given';
+      return {
+        payload: { ...state.payload, adherence, ...(rearm ? { doubleDoseSettled: false } : {}) },
+      };
+    });
   },
   patchHowGiven: (howGiven) => {
     const s = useMomentStore.getState();
@@ -1036,7 +1043,8 @@ export const useMomentStore = create<MomentState>((set) => ({
     if (!state.visible || state.removed) return false;
     // The result must describe the dose as it now stands (see the interface note).
     if (state.payload.adherence !== computedForAdherence) return false;
-    set({ payload: { ...state.payload, doubleDose } });
+    // A result for the answer on screen is the check settling for it (§2.3).
+    set({ payload: { ...state.payload, doubleDose, doubleDoseSettled: true } });
     // Only a CONFLICT buys more time. The clear path (a downgrade off 'given' retiring
     // the note) must leave the chip-tap's own shorter confirm hold alone — extending
     // the dwell to read a note that just disappeared would be the opposite of calm.
@@ -1046,7 +1054,7 @@ export const useMomentStore = create<MomentState>((set) => ({
   markDoubleDoseSettled: (eventId) => {
     const state = useMomentStore.getState();
     if (state.payload?.kind !== 'medication' || state.payload.eventId !== eventId) return;
-    if (!state.visible || state.removed || state.payload.doubleDoseSettled) return;
+    if (!state.visible || state.removed || state.payload.doubleDoseSettled === true) return;
     set({ payload: { ...state.payload, doubleDoseSettled: true } });
   },
   rescheduleHide: (durationMs) => {
