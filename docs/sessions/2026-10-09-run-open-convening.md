@@ -1,6 +1,8 @@
 # The run convening: the grouped meals line that opens in place
 
-**Date:** 2026-10-09 · **Issue:** CUL-1715 (DISCOVERY, the convening) · **Branch:** `claude/vigilant-noether-izi7v6` · **Mock:** `docs/culprit-run-open-mockups.html`, rounds 1 to 2.2, one URL: https://claude.ai/artifact/LxYrPQEQeMBZcPE6mWFWpZ · **Shipped via #1138**
+**Date:** 2026-10-09, continued 2026-10-10 · **Issue:** CUL-1715 (DISCOVERY, the convening) · **Branch:** `claude/vigilant-noether-izi7v6` · **Mock:** `docs/culprit-run-open-mockups.html`, rounds 1 to 2.2, one URL: https://claude.ai/artifact/LxYrPQEQeMBZcPE6mWFWpZ · **Shipped via #1138**
+
+**One thing:** P1 L1 — The strategy kernel: "seams, not a missing flourish" was the diagnosis that kept five rulings small · check: pending
 
 **PM prompt (with one Home screenshot: a run of two meals opened, the 2:52 PM meal and a photographed vomit marked *Worth a call* below it):** "I have a v1 animation here that I'd love for us to turbocharge. It's used on the home and history tabs as far as I'm aware but might be on others as well … this is an interaction that happens frequently and because of that it should be delightful. So. What can we do to improve this experience. Let's gather the full team and discuss."
 
