@@ -155,6 +155,10 @@ export interface SpineInput {
   /** Meal ids a timing line on ANOTHER day measures from (`DayTimings.timedElsewhere`):
    *  each keeps its own row here too. */
   timedElsewhere?: ReadonlySet<string>;
+  /** Instants (ms) of rows the surface draws among the nodes without handing them over as
+   *  rows here: History's daily looks (CUL-1719). A run never crosses one
+   *  (`compactSpine`'s `breaks`). Home leaves it out: its look is the header. */
+  runBreaks?: readonly number[];
 }
 
 // ── Outputs ─────────────────────────────────────────────────────────────────────
@@ -660,7 +664,10 @@ export function buildSpine(input: SpineInput): SpineModel {
   const ctx = dayContext(rows, timing);
   const timed = new Set([...[...timing.values()].map((t) => t.mealId), ...(input.timedElsewhere ?? [])]);
   const nodes = rows.map((r) => eventNode(r, input, ctx));
-  const groups = compactSpine(nodes.map((n) => runFactsOf(n, ctx.byId.get(n.id) as SpineEventInput, ctx, timed)));
+  const groups = compactSpine(
+    nodes.map((n) => runFactsOf(n, ctx.byId.get(n.id) as SpineEventInput, ctx, timed)),
+    input.runBreaks,
+  );
   const lines: SpineNode[] = groups.map((g) =>
     g.kind === 'compact' ? compactNode(g.nodes.map((x) => x.node)) : g.node.node,
   );
