@@ -258,6 +258,38 @@ describe('a timing line on another card keeps its meal on its own row (timedElse
   });
 });
 
+describe('across midnight: an 11:50 PM meal before a 12:10 AM vomit keeps its row on the earlier card (CUL-1737)', () => {
+  const at = (d: number, h: number, m: number) => new Date(2026, 8, d, h, m, 0, 0).toISOString();
+  const onDay = (id: string, type: string, d: number, h: number, m: number, extra: Partial<HistoryRow> = {}) =>
+    ({ ...row(id, type, 0, 0, extra), occurred_at: at(d, h, m), created_at: at(d, h, m), updated_at: at(d, h, m) }) as HistoryRow;
+  const evening = [onDay('e1', 'meal', 16, 22, 30, PR), onDay('e2', 'meal', 16, 23, 0, PR), onDay('e3', 'meal', 16, 23, 50, PR)];
+  // Found, so the lane never times it and no anchor keeps the 11:50 PM bowl out.
+  const night = [
+    onDay('n1', 'vomit', 17, 0, 10, { occurred_at_confidence: 'window', occurred_at_earliest: null, occurred_at_latest: at(17, 0, 10) }),
+  ];
+  const timing: HistoryDayTiming = { feedings: evening.map(feedingOf), freeFedSpans: [], onsets: [] };
+
+  it('with the next day loaded, the 11:50 PM bowl is its own row', () => {
+    const byDay = historyNodesByDay({ days: new Map([['2026-09-17', night], ['2026-09-16', evening]]), reads: NO_READS, timing });
+    const vomit = byDay.get('2026-09-17')?.[0];
+    expect(vomit?.kind === 'event' ? vomit.timing : 'missing').toBeNull();
+    expect(idsOf(byDay.get('2026-09-16') ?? [])).toEqual(['run(e1,e2)', 'e3']);
+  });
+
+  it('without it, the evening is one run: the handed-in vomit is what kept the bowl out', () => {
+    const alone = historyNodesByDay({ days: new Map([['2026-09-16', evening]]), reads: NO_READS, timing }).get('2026-09-16');
+    expect(idsOf(alone ?? [])).toEqual(['run(e1,e2,e3)']);
+  });
+
+  it('a found vomit whose window opened the evening before reaches back past midnight', () => {
+    const opened = [
+      onDay('n2', 'vomit', 17, 7, 0, { occurred_at_confidence: 'window', occurred_at_earliest: at(16, 23, 20), occurred_at_latest: at(17, 7, 0) }),
+    ];
+    const byDay = historyNodesByDay({ days: new Map([['2026-09-17', opened], ['2026-09-16', evening]]), reads: NO_READS, timing });
+    expect(idsOf(byDay.get('2026-09-16') ?? [])).toEqual(['e1', 'e2', 'e3']);
+  });
+});
+
 describe('visibleNodesOf', () => {
   // Three bowls of one product and no vomit, so no timing line keeps one out: one run.
   const breakfastToLunch = [row('a1', 'meal', 8, 0, PR), row('a2', 'meal', 9, 0, PR), row('a3', 'meal', 10, 0, PR)];

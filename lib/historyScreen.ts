@@ -21,7 +21,8 @@ import {
   type OnsetConfidence,
 } from './mealTiming';
 import type { HistoryRow } from './historyQueries';
-import { mayCarryRead, type SpineAnalysisRow } from './spineNode';
+import type { VomitSpan } from './spineCompaction';
+import { mayCarryRead, vomitSpanOf, type SpineAnalysisRow } from './spineNode';
 import {
   absenceText,
   type CountLineDoorKey,
@@ -296,6 +297,9 @@ export interface HistoryReads {
  * are the ones the pipeline itself used (`DayModel.anchors`), read off a first pass; only a
  * day that holds such a meal is built again.
  *
+ * Each day is also handed the other days' vomits (CUL-1737): a meal eaten within 30 minutes
+ * before any vomit keeps its own row, and at 11:50 PM the vomit it precedes is on the next card.
+ *
  * The looks the card draws among the rows (All types, CUL-1244) are handed in as run breaks
  * (CUL-1719): the pipeline leaves a look out of its rows, and the card threads it in by its
  * time, so a run folded over a look's instant would print a 9:00 AM look after its 10:45 AM
@@ -312,6 +316,17 @@ export function historyNodesByDay(args: {
   const { reads, timing } = args;
   const breaksOf = (day: string): number[] =>
     (args.looks?.get(day) ?? []).map((r) => Date.parse(r.occurred_at)).filter((ms) => Number.isFinite(ms));
+  // Every loaded day's vomits, so each card is handed the OTHER days' (CUL-1737): an 11:50 PM
+  // meal before a 12:10 AM vomit keeps its row on the earlier card. The whole days, before any
+  // filter, like the nodes themselves. Every other day, not only the next: a found vomit's
+  // window may open the evening before, and the predicate reads instants, so a far day's
+  // vomit simply matches no meal.
+  const vomitsByDay = new Map<string, VomitSpan[]>();
+  for (const [day, rows] of args.days) {
+    vomitsByDay.set(day, rows.map(vomitSpanOf).filter((v): v is VomitSpan => v !== null));
+  }
+  const vomitsElsewhereOf = (day: string): VomitSpan[] =>
+    [...vomitsByDay].flatMap(([d, spans]) => (d === day ? [] : spans));
   const build = (day: string, rows: readonly HistoryRow[], timedElsewhere?: ReadonlySet<string>) =>
     buildDay(rows, {
       reads: {
@@ -329,6 +344,7 @@ export function historyNodesByDay(args: {
         priorOnsets: priorOnsetsFor(day, timing.onsets),
         timedElsewhere,
         runBreaks: breaksOf(day),
+        vomitsElsewhere: vomitsElsewhereOf(day),
       },
     });
 

@@ -26,6 +26,7 @@
 // observed reads, the feedings — `lib/spineReads.ts`) and hands them over; a read that
 // has not answered is handed over EMPTY, never guessed (TodayCard's pet guard).
 
+import type { VomitSpan } from './spineCompaction';
 import type { FeedingInput, FreeFedSpan, MealTimingConfig, OnsetConfidence } from './mealTiming';
 import {
   buildSpine,
@@ -80,6 +81,12 @@ export interface DayTimings {
    *  never crosses a row between its members in time. Home leaves it out: its look is the
    *  header, not a row. Optional, so the call shape is unchanged. */
   runBreaks?: readonly number[];
+  /** The vomits on OTHER days, as spans (`vomitSpanOf`). A meal eaten within 30 minutes
+   *  before any vomit keeps its own row (CUL-1737); a day's own vomits are read here, but a
+   *  12:10 AM vomit on the next card is not, so a surface that draws one card per day
+   *  (History) hands the other days' vomits in, the way `timedElsewhere` enters. Home draws
+   *  today alone and leaves it out. Optional, so the call shape is unchanged. */
+  vomitsElsewhere?: readonly VomitSpan[];
 }
 
 export interface DayNodeFacts {
@@ -104,6 +111,7 @@ export function buildDay(events: readonly DayEvent[], { reads, timings }: DayNod
     config: timings.config,
     timedElsewhere: timings.timedElsewhere,
     runBreaks: timings.runBreaks,
+    vomitsElsewhere: timings.vomitsElsewhere,
   });
 }
 

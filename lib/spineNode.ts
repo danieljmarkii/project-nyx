@@ -87,7 +87,7 @@ import {
   type OnsetConfidence,
   type TimingBand,
 } from './mealTiming';
-import { compactSpine, type CompactableNode } from './spineCompaction';
+import { compactSpine, eatenBeforeVomit, type CompactableNode, type VomitSpan } from './spineCompaction';
 import { TIMING_SYMPTOM_TYPE, timingBandLabel } from './patternsTiming';
 import { localDayIndex } from './utils';
 import { kgToLbs } from './weightUnits';
@@ -159,6 +159,10 @@ export interface SpineInput {
    *  rows here: History's daily looks (CUL-1719). A run never crosses one
    *  (`compactSpine`'s `breaks`). Home leaves it out: its look is the header. */
   runBreaks?: readonly number[];
+  /** The vomits on OTHER days, as spans (`vomitSpanOf`), so a meal at 11:50 PM before a
+   *  12:10 AM vomit keeps its row on the earlier card (CUL-1737; `DayTimings.vomitsElsewhere`).
+   *  Home leaves it out: it draws today alone. */
+  vomitsElsewhere?: readonly VomitSpan[];
 }
 
 // ── Outputs ─────────────────────────────────────────────────────────────────────
@@ -559,8 +563,37 @@ function eventNode(row: SpineEventInput, input: SpineInput, ctx: DayContext): Sp
   };
 }
 
+/** The one event type a meal's before-vomit break reads (CUL-1737: vomit only, as ruled;
+ *  another type is a new clinical call, never a build detail). */
+const BEFORE_VOMIT_TYPE = 'vomit';
+
+/**
+ * A vomit row's time as rule B's before-vomit break reads it; null off a vomit or on a row
+ * whose instant cannot be parsed. A seen or estimated vomit is its recorded instant. A FOUND
+ * one (`window`) is its owner's window, earliest bound to latest; a bound that is missing or
+ * unparseable falls back to the recorded time, and the span always holds the recorded time,
+ * so a malformed window is never narrower than the point rule (it errs toward a break).
+ */
+export function vomitSpanOf(row: SpineEventInput): VomitSpan | null {
+  if (row.event_type !== BEFORE_VOMIT_TYPE) return null;
+  const ms = Date.parse(row.occurred_at);
+  if (!Number.isFinite(ms)) return null;
+  if (row.occurred_at_confidence !== 'window') return { fromMs: ms, toMs: ms };
+  const bound = (v: string | null | undefined) => {
+    const b = v ? Date.parse(v) : NaN;
+    return Number.isFinite(b) ? b : ms;
+  };
+  return { fromMs: Math.min(ms, bound(row.occurred_at_earliest)), toMs: Math.max(ms, bound(row.occurred_at_latest)) };
+}
+
 /** The facts rule B reads, derived from the node and its row (`lib/spineCompaction.ts`). */
-function runFactsOf(node: SpineEventNode, row: SpineEventInput, ctx: DayContext, timed: ReadonlySet<string>) {
+function runFactsOf(
+  node: SpineEventNode,
+  row: SpineEventInput,
+  ctx: DayContext,
+  timed: ReadonlySet<string>,
+  vomits: readonly VomitSpan[],
+) {
   const isMeal = node.category === 'meal';
   return {
     id: node.id,
@@ -576,6 +609,7 @@ function runFactsOf(node: SpineEventNode, row: SpineEventInput, ctx: DayContext,
     noted: !!row.notes?.trim(),
     vehicle: ctx.dosesIn.has(node.id) || (row.paired_dose_count ?? 0) > 0,
     timed: timed.has(node.id),
+    beforeVomit: isMeal && eatenBeforeVomit(node.timeMs, vomits),
     approximate: node.timeTag !== null,
     node,
   } satisfies CompactableNode & { node: SpineEventNode };
@@ -664,8 +698,14 @@ export function buildSpine(input: SpineInput): SpineModel {
   const ctx = dayContext(rows, timing);
   const timed = new Set([...[...timing.values()].map((t) => t.mealId), ...(input.timedElsewhere ?? [])]);
   const nodes = rows.map((r) => eventNode(r, input, ctx));
+  // Every vomit on the day, seen or found, timed or not, first of a bout or later, plus the
+  // ones a surface hands in from another day (CUL-1737).
+  const vomits = [
+    ...rows.map(vomitSpanOf).filter((v): v is VomitSpan => v !== null),
+    ...(input.vomitsElsewhere ?? []),
+  ];
   const groups = compactSpine(
-    nodes.map((n) => runFactsOf(n, ctx.byId.get(n.id) as SpineEventInput, ctx, timed)),
+    nodes.map((n) => runFactsOf(n, ctx.byId.get(n.id) as SpineEventInput, ctx, timed, vomits)),
     input.runBreaks,
   );
   const lines: SpineNode[] = groups.map((g) =>
