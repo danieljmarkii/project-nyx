@@ -19,6 +19,7 @@ import {
   RUN_OPEN_LAYOUT,
   runLandStarts,
   runOpenBudgetMs,
+  runOpenIdleMs,
   runReverseLayout,
   useRunOpen,
   type RunOpen,
@@ -169,9 +170,12 @@ describe('useRunOpen — the beats (§02, §03)', () => {
     [12, 400],
   ])('the budget at %d meals: at rest by %dms after the box\'s commit, never past 400', (n, expected) => {
     timedAnimations();
-    const budget = runOpenBudgetMs(runLandStarts(n));
-    expect(Math.round(budget)).toBe(expected);
-    expect(budget).toBeLessThanOrEqual(400);
+    expect(Math.round(runOpenBudgetMs(runLandStarts(n)))).toBe(expected);
+    expect(runOpenBudgetMs(runLandStarts(n))).toBeLessThanOrEqual(400);
+    // The idle commit waits one frame past the box's keyframe (Fabric starts it on the next
+    // commit), never past the last meal's landing: the clip never comes off a moving box.
+    const budget = runOpenIdleMs(runLandStarts(n));
+    expect(budget).toBe(Math.max(runOpenBudgetMs(runLandStarts(n)), 80 + 240 + RUN_MOTION.mountFrameMs));
     const t = filmed({ shown: false }, { count: n });
     act(() => t.rerender({ shown: true }));
     tick(RUN_MOTION.mountFrameMs + Math.ceil(budget) - 2);
@@ -250,7 +254,7 @@ describe('useRunOpen — a second tap reverses from where it is', () => {
     expect(turned.find((c) => c.value === v.chevron)).toMatchObject({ toValue: 0, duration: 200, delay: 0 });
     expect(turned.find((c) => c.value === v.lead)).toMatchObject({ toValue: 0, duration: 200 });
     expect(turned.filter((c) => c.value === v.members[11].opacity)).toHaveLength(1);
-    tick(199);
+    tick(199 + RUN_MOTION.mountFrameMs);
     expect(t.result.current.slotMounted).toBe(true);
     tick(1);
     expect(t.result.current.phase).toBe('closed');
@@ -274,7 +278,7 @@ describe('useRunOpen — a second tap reverses from where it is', () => {
     expect(LayoutAnimation.configureNext).toHaveBeenLastCalledWith(runReverseLayout(150));
     expect(t.result.current.phase).toBe('opening');
     expect(t.shots.every((s) => s.phase !== 'closed' && s.phase !== 'primed')).toBe(true);
-    tick(150);
+    tick(150 + RUN_MOTION.mountFrameMs);
     expect(t.result.current.phase).toBe('open');
   });
 
@@ -315,6 +319,26 @@ describe('useRunOpen — no geometry change without a layout config in the same 
     expect(t.result.current.phase).toBe('open');
     expect(bareGeometryCommits(t.shots)).toEqual([]);
     for (const s of t.shots) expect(s.clipped).toBe(s.phase !== 'open' && s.phase !== 'closed');
+  });
+});
+
+describe('useRunOpen — a layout report never becomes a commit mid-flight (the lead\'s frame)', () => {
+  it('the header growing as it yields its edge changes the lead\'s height only on the machine\'s next commit, never under its scale', () => {
+    timedAnimations();
+    const t = filmed({ shown: false });
+    act(() => t.result.current.onHeaderLayout(50));
+    act(() => t.rerender({ shown: true }));
+    expect(t.result.current.leadHeight).toBe(50 - base.leadTop);
+    tick(RUN_MOTION.mountFrameMs + 10);
+    expect(t.result.current.phase).toBe('opening');
+    // The header grows by the gap it now carries: the report lands while the lead scales.
+    const renders = t.shots.length;
+    act(() => t.result.current.onHeaderLayout(64));
+    expect(t.shots.length).toBe(renders);
+    expect(t.result.current.leadHeight).toBe(50 - base.leadTop);
+    tick(500);
+    expect(t.result.current.phase).toBe('open');
+    expect(t.result.current.leadHeight).toBe(64 - base.leadTop);
   });
 });
 

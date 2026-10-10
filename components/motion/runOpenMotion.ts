@@ -137,6 +137,13 @@ export function runOpenBudgetMs(starts: readonly number[]): number {
   return Math.max(RUN_MOTION.chevronMs, RUN_MOTION.boxDelayMs + RUN_MOTION.boxMs, lastLand);
 }
 
+/** From the box's commit to the idle commit: the budget, but never before the box's own
+ *  keyframe has had a frame to land (Fabric starts it on the commit after the timer is
+ *  armed), so the clip never comes off a box still moving. */
+export function runOpenIdleMs(starts: readonly number[]): number {
+  return Math.max(runOpenBudgetMs(starts), RUN_MOTION.boxDelayMs + RUN_MOTION.boxMs + RUN_MOTION.mountFrameMs);
+}
+
 /** From the tap to the box's unmount. */
 export const RUN_CLOSE_BUDGET_MS = Math.max(
   RUN_MOTION.chevronMs,
@@ -219,7 +226,6 @@ const HEADER_FLOOR_PT = 44;
 
 export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reducedMotion, appActive }: Params): RunOpen {
   const [phase, setPhase] = useState<RunOpenPhase>(shown ? 'open' : 'closed');
-  const [headerH, setHeaderH] = useState(HEADER_FLOOR_PT);
 
   const values = useRef<RunOpenValues>({
     chevron: new Animated.Value(shown ? 1 : 0),
@@ -239,14 +245,19 @@ export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reduc
   countRef.current = count;
   const stageH = useRef<number | null>(null);
   const tops = useRef<(number | undefined)[]>([]);
+  const headerH = useRef(HEADER_FLOOR_PT);
   const railBottom = useRef<number | null>(null);
-  /** The rail's foot from the measured meals, frozen onto the ref only ahead of a commit
-   *  this machine makes (configured, or idle). */
-  const fixRailBottom = useCallback(() => {
+  const leadHeight = useRef(Math.max(0, HEADER_FLOOR_PT - leadTop));
+  /** The measured frames (the rail's foot, the lead's height), frozen onto refs only ahead
+   *  of a commit this machine makes (configured, or idle). A layout report never renders on
+   *  its own: the header grows when it yields its edge to the box, and a bare commit then
+   *  would change the lead's frame under its in-flight native scale (Fabric snaps it back). */
+  const fixMeasures = useCallback(() => {
     const last = tops.current[countRef.current - 1];
     railBottom.current =
       stageH.current != null && last != null ? Math.max(0, stageH.current - (last + beadCenterY)) : null;
-  }, [beadCenterY]);
+    leadHeight.current = Math.max(0, headerH.current - leadTop);
+  }, [beadCenterY, leadTop]);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const running = useRef<Animated.CompositeAnimation[]>([]);
   const mounted = useRef(true);
@@ -308,22 +319,22 @@ export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reduc
   const settle = useCallback(
     (toShown: boolean) => {
       stopAll();
-      fixRailBottom();
+      fixMeasures();
       rest(toShown);
       go(toShown ? 'open' : 'closed');
     },
-    [stopAll, rest, go, fixRailBottom],
+    [stopAll, rest, go, fixMeasures],
   );
 
   /** The idle commit: the clip comes off (open), or the zero-high box unmounts (closed). */
   const finish = useCallback(
     (toShown: boolean, from: RunOpenPhase) => {
       if (phaseRef.current !== from) return;
-      fixRailBottom();
+      fixMeasures();
       rest(toShown);
       go(toShown ? 'open' : 'closed');
     },
-    [rest, go, fixRailBottom],
+    [rest, go, fixMeasures],
   );
 
   /** How long a turn-round takes: the time spent getting here, floored. */
@@ -336,7 +347,7 @@ export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reduc
   const beginOpen = useCallback(() => {
     if (phaseRef.current !== 'primed') return;
     const starts = runLandStarts(countRef.current, tops.current, stageH.current);
-    fixRailBottom();
+    fixMeasures();
     // ONE configured commit: the box's height is let go, and the header yields its edge.
     LayoutAnimation.configureNext(RUN_OPEN_LAYOUT);
     go('opening');
@@ -346,8 +357,8 @@ export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reduc
       start(timing(m.opacity, 1, RUN_MOTION.landMs, Easing.out(Easing.quad), starts[i]));
       start(timing(m.shift, 0, RUN_MOTION.landMs, Easing.out(Easing.cubic), starts[i]));
     });
-    later(runOpenBudgetMs(starts), () => finish(true, 'opening'));
-  }, [values, go, start, timing, members, later, finish, fixRailBottom]);
+    later(runOpenIdleMs(starts), () => finish(true, 'opening'));
+  }, [values, go, start, timing, members, later, finish, fixMeasures]);
 
   const open = useCallback(() => {
     const from = phaseRef.current;
@@ -380,15 +391,16 @@ export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reduc
         start(timing(m.opacity, 1, ms, Easing.out(Easing.quad)));
         start(timing(m.shift, 0, ms, Easing.out(Easing.cubic)));
       }
-      later(ms, () => finish(true, 'opening'));
+      later(ms + RUN_MOTION.mountFrameMs, () => finish(true, 'opening'));
       return;
     }
     // A fresh open: the box mounts SHUT, its meals clear and lifted, the line in the bead.
+    fixMeasures();
     rest(false);
     for (const m of members()) m.shift.setValue(-RUN_MOTION.landDriftPt);
     go('primed');
     later(RUN_MOTION.mountFrameMs, beginOpen);
-  }, [values, stopAll, members, go, start, timing, later, finish, reverseMs, rest, beginOpen, settle]);
+  }, [values, stopAll, members, go, start, timing, later, finish, reverseMs, rest, beginOpen, settle, fixMeasures]);
 
   // ── Close ─────────────────────────────────────────────────────────────────────
   const close = useCallback(() => {
@@ -421,7 +433,7 @@ export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reduc
         start(timing(m.opacity, 0, ms, Easing.out(Easing.quad)));
         start(timing(m.shift, -RUN_MOTION.landDriftPt, ms, Easing.out(Easing.quad)));
       }
-      later(ms, () => finish(false, 'closing'));
+      later(ms + RUN_MOTION.mountFrameMs, () => finish(false, 'closing'));
       return;
     }
     // From rest: ONE configured commit takes the box to zero and yields the header's edge.
@@ -454,8 +466,8 @@ export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reduc
     const reKeyed = lastIdentity.current !== identity && lastShown.current && shown;
     lastIdentity.current = identity;
     if (reKeyed) {
-      stageH.current = null;
-      tops.current = [];
+      // The measures are left alone: the new run's layout reports overwrite them, and the
+      // next commit this machine makes freezes them.
       settle(true);
       return;
     }
@@ -481,7 +493,9 @@ export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reduc
     };
   }, [stopAll]);
 
-  const onHeaderLayout = useCallback((height: number) => setHeaderH(height), []);
+  const onHeaderLayout = useCallback((height: number) => {
+    headerH.current = height;
+  }, []);
   const onStageLayout = useCallback((height: number) => {
     stageH.current = height;
   }, []);
@@ -497,7 +511,7 @@ export function useRunOpen({ shown, identity, count, beadCenterY, leadTop, reduc
     clipped: inFlight,
     inFlight,
     membersBelow: phase === 'opening' || phase === 'open' || phase === 'crossfade',
-    leadHeight: Math.max(0, headerH - leadTop),
+    leadHeight: leadHeight.current,
     railBottom: railBottom.current,
     values,
     onHeaderLayout,

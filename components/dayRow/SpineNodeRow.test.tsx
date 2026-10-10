@@ -32,6 +32,7 @@ import {
   RUN_OPEN_LAYOUT,
   runLandStarts,
   runOpenBudgetMs,
+  runOpenIdleMs,
 } from '../motion/runOpenMotion';
 import { useState } from 'react';
 import { TICK_BREATH } from '../motion/arrivalMotion';
@@ -740,7 +741,7 @@ describe('open in place: the run\'s own motion (CUL-1734, D1)', () => {
     act(() => {
       jest.advanceTimersByTime(ms);
     });
-  const openBudget = (n: number) => RUN_MOTION.mountFrameMs + Math.ceil(runOpenBudgetMs(runLandStarts(n)));
+  const openBudget = (n: number) => RUN_MOTION.mountFrameMs + Math.ceil(runOpenIdleMs(runLandStarts(n)));
   /** The chevron's drawn turn (the host's resolved style, or the interpolation behind it). */
   const rotationOf = (el: { props: { style?: unknown } }) => {
     const r = (styleOf(el).transform as { rotate: unknown }[])[0].rotate;
@@ -872,7 +873,7 @@ describe('open in place: the run\'s own motion (CUL-1734, D1)', () => {
     const t = render(<InPlace node={node} />);
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
     advance(openBudget(n));
-    expect(openBudget(n) - RUN_MOTION.mountFrameMs).toBeLessThanOrEqual(400);
+    expect(runOpenBudgetMs(runLandStarts(n))).toBeLessThanOrEqual(400);
     expect(styleOf(t.getByTestId('spine-members-compact:m0')).overflow).not.toBe('hidden');
     for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
