@@ -253,19 +253,20 @@
 
 <div class="wrap">
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 2 · your reaction folded in · two decisions open</span><span>Grouped meals · CUL-1715</span><span>2026-10-10</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 2.1 · your reactions folded in · one decision open</span><span>Grouped meals · CUL-1715</span><span>2026-10-10</span></p>
     <h1>The grouped meals line, opened in place</h1>
     <p class="standfirst">On Home and History, meals of one food logged back to back share one line, and tapping it opens the meals underneath. You called that opening a first version and asked the whole team what would make it delightful, since owners open these lines many times a day. This page rebuilds today's opening from the code and slows it down so you can see its seams, draws the team's proposal beside it on the same day, and carries the discussion and the decisions.</p>
     <p class="ask"><q>I have a v1 animation here that I'd love for us to turbocharge… I feel like this is an interaction that happens frequently and because of that it should be delightful. So. What can we do to improve this experience. Let's gather the full team and discuss.</q><br>Your message, with the Home screenshot of Fri, Oct 9.</p>
     <div class="ledger" id="ledger">
       <div><b>1 · What you see once it is open</b><span><q>I like everything you have except 04.. what you see when it's open. I'd like for you to ensure brand and other info is still available on the meal when it's expanded.</q> Ruled: every opened meal keeps its brand, product, format, rating and time, as today's row does. The team kept what removes nothing: the line from the run's own bead, a smaller bead on it, a darker time, and the time and format first with the brand and product on the meal's second line. If you'd rather each meal look exactly like today's row, that is the boxed option in §02 and §04. Round 1's meals without the brand have left the page; commit 5169716 keeps them. <span class="pill">ruled · D2 · §04</span></span></div>
-      <div><b>2 · Everything else</b><span><q>I like everything you have</q> Read as yes to D1 (build the proposal, the thread first) and D3 (the bounded reveal scroll). D4 (the stack) has no recommendation to like, and D5 is a clinical rule change, so both still need your word. <span class="pill">D1 · D3 ruled</span> <span class="pill open">D4 · D5 open</span></span></div>
+      <div><b>2 · Everything else</b><span><q>I like everything you have</q> Read as yes to D1 (build the proposal, the thread first) and D3 (the bounded reveal scroll). D4 (the stack) had no recommendation to like and D5 is a clinical rule change, so both needed your word; D4 has it now (3). <span class="pill">D1 · D3 ruled</span></span></div>
+      <div><b>3 · A mark for "several"</b><span><q>FWIW.. I like the concept of a mark or indicator for multiple meals. The little radiating arcs.</q> Ruled D4 (b): the arcs are §06's stack, up to three beads down the thread behind the front one, tucking as the line leaves and sliding back out as it returns. Every proposal phone on the page now carries it, folded; today's phones do not. The dissent is recorded under D4 and its three conditions ride the build: the words keep the count, the mark never changes with a rating, and the phone check asks an owner what it says. The owners' tick per meal idea (option c) has left the page; commit 818c5e0 keeps it. <span class="pill">ruled · D4 · §06</span> <span class="pill open">D5 open</span></span></div>
     </div>
     <div class="summary">
       <p><b>The team's answer, from round 1.</b> Six seats read your screenshot and the code in isolation, and they agree on the shape of it.</p>
       <p>Today's opening is not short of a flourish; it has seams. The rows below jump 44pt, then bounce about 12% past their place, then the teal line pops to its length after everything has stopped, and the close ends with another jump.</p>
-      <p>The proposal (§02) takes every seam out. The line grows out of the bead you tapped, the box opens from nothing on an ease with no bounce, each meal lands where the box's edge reaches it, the close is faster than the open, and the meals nest under their line, each still carrying its brand and every fact. It is at rest in about a third of a second.</p>
-      <p>One idea splits the team: a small stack on the folded line's bead that says "several" (§06). And your screenshot showed something bigger than the animation: the grey thread that should join every bead is not drawn at all (§01, filed).</p>
+      <p>The proposal (§02) takes every seam out. The line grows out of the bead you tapped, the box opens from nothing on an ease with no bounce, each meal lands where the box's edge reaches it, the close is faster than the open, and the meals nest under their line, each still carrying its brand and every fact. It is at rest in about a third of a second. Folded, the line's bead carries a small stack that says "several".</p>
+      <p>One idea split the team: that stack (§06). You ruled for it, and the dissent's conditions ride the build. And your screenshot showed something bigger than the animation: the grey thread that should join every bead is not drawn at all (§01, filed).</p>
     </div>
   </header>
 
@@ -340,7 +341,7 @@
       </div>
       <div class="demo">
         <div class="ph optP thread-fixed nested" data-opt="P"></div>
-        <div class="demo-cap"><b>The proposal <span class="pill cur">current</span></b><span>The line grows out of the bead you tapped, the box opens from nothing with no bounce and clips while it moves, each meal lands where the box's edge reaches it, the arrow turns, and nothing jumps at either end. The meals nest under their line, each keeping its brand and every fact.</span></div>
+        <div class="demo-cap"><b>The proposal <span class="pill cur">current</span></b><span>The line grows out of the bead you tapped, the box opens from nothing with no bounce and clips while it moves, each meal lands where the box's edge reaches it, the arrow turns, and nothing jumps at either end. The meals nest under their line, each keeping its brand and every fact. Folded, its bead carries the stack (§06).</span></div>
       </div>
       <div class="demo frame option" style="width:384px;">
         <div class="ph optP thread-fixed" data-opt="B"></div>
@@ -386,9 +387,9 @@
 
   <!-- §06 -->
   <section id="several">
-    <div class="sec-head"><span class="sec-num">06</span><h2>A mark for "several": the one idea that splits the team</h2></div>
+    <div class="sec-head"><span class="sec-num">06</span><h2>A mark for "several": ruled</h2></div>
     <div class="col">
-      <p>Folded, a run of four meals draws one bead, the same bead a single meal draws, so the thread shows three beads under "4 logged". The Designer and Motion &amp; IA want a still mark at the bead that says "several": up to three beads stacked down the thread, tucking under the front bead as the line leaves. The Data Scientist, Dr. Chen and the owner panel want no mark: a stack capped at three cannot tell four meals from eight, and a glyph that only ever appears on calm meals teaches owners that it means "fine". The flying version, where the beads travel down to their meals, was cut by all six seats. This is drawn so you can rule it (§07, D4).</p>
+      <p>Today a folded run of four meals draws one bead, the same bead a single meal draws, so the thread shows three beads under "4 logged". You ruled for the mark: up to three beads stacked down the thread behind the front one, each showing as an arc below it, tucking under the front bead as the line leaves and sliding back out as it returns. Two meals draw two beads, an exact count; three or more draw three, which says "several" and leaves the number to the words. The Data Scientist, Dr. Chen and the owner panel dissented (§07, D4): a capped stack cannot tell four meals from eight, and a mark that only ever appears on meals eaten normally or unrated could teach owners that it means "fine". Their conditions ride the build. The flying version, where the beads travel down to their meals, stays cut.</p>
     </div>
     <div class="beads" role="img" aria-label="Close-ups of the bead at four times size: one meal, two meals as today, two meals as a stack, and four or more meals as a stack capped at three">
       <figure><svg viewBox="0 0 72 120"><line x1="36" y1="0" x2="36" y2="120" class="thr"/><circle cx="36" cy="34" r="22" class="ring"/><circle cx="36" cy="34" r="14" class="fill"/></svg><figcaption><b>1 meal</b><span>today and proposed</span></figcaption></figure>
@@ -398,12 +399,15 @@
     </div>
     <div class="strip-wrap"><div class="strip" id="strip-stack"></div></div>
     <div class="demo-row">
-      <div class="demo frame option" style="width:384px;">
+      <div class="demo">
         <div class="ph optP thread-fixed nested" data-opt="C" id="ph-stack"></div>
-        <div class="demo-cap"><b>The stack, live</b><span>Four meals. The back beads tuck under the front one while the line leaves the bead, and slide back out as it returns. Everything else is the proposal.</span></div>
+        <div class="demo-cap"><b>The stack, live <span class="pill cur">current</span></b><span>Four meals. The back beads tuck under the front one while the line leaves the bead, and slide back out as it returns. It is the proposal, the same as §02.</span></div>
       </div>
       <div class="col" style="flex:1; min-width: min(100%, 320px);">
-        <p><b>Parked, not drawn: a tick per meal at its time.</b> The owner panel's idea for Sam, whose grazing cat logs many small meals: the folded line carries a short strip with one tick at each meal's time, so an afternoon gap shows without opening. It is a chart, so it has to pass the chart standard first, and its hard question is Principle 8's coverage rule: a gap in the strip cannot tell "didn't eat" from "didn't log". It goes to a later round if you want it.</p>
+        <p><b>The dissent's conditions, carried into the build (CUL-1736).</b></p>
+        <p><b>1 · The words keep the count.</b> The line's number and its spoken label are unchanged, and the mark adds nothing to what VoiceOver reads.</p>
+        <p><b>2 · The mark never changes with a rating,</b> a format or anything else in the run, so it can say "several" and never "how it went".</p>
+        <p><b>3 · The phone check asks one owner, cold, what the arcs say.</b> An answer about how the meals went, rather than how many, brings it back to you.</p>
       </div>
     </div>
   </section>
@@ -417,14 +421,14 @@
         <p><b>Ruled:</b> <q>I like everything you have</q>, read as (a).</p>
         <p><b>Deciding:</b> whether the team replaces today's opening with §02's proposal on Home and History, with its mechanism fixes reaching the Patterns month.</p>
         <p><b>Options:</b> (a) <b>Build it, the thread first</b> (recommended: all six seats converged on removing seams rather than adding a flourish, and the fix reaches three surfaces); (b) fix only the two 44pt jumps and the clip, and keep the bounce, the pop and the swap; (c) leave it.</p>
-        <p><b>Consequence:</b> three PRs in order: the thread (CUL-1718), the shared machine (CUL-1721), then the run's own motion. The run gets its own box curve, so the daily look and a read's arrival keep theirs. Done when it is filmed on Home, History and the month with a run of twelve and a run under the plus.</p>
+        <p><b>Consequence:</b> three PRs in order: the thread (CUL-1718), the shared machine (CUL-1721), then the run's own motion (CUL-1734). The run gets its own box curve, so the daily look and a read's arrival keep theirs. Done when it is filmed on Home, History and the month with a run of twelve and a run under the plus.</p>
       </div>
       <div class="brief">
         <h4>D2 · What each opened meal shows <span class="pill">ruled · 2026-10-10</span></h4>
         <p><b>Ruled:</b> <q>I'd like for you to ensure brand and other info is still available on the meal when it's expanded.</q> Every opened meal keeps its brand, product, format, rating and time, so GAP-8's "every fact" holds and nothing is dropped. The team's recommendation to drop the product is withdrawn.</p>
         <p><b>The team's form inside the ruling:</b> each meal's first line is what differs (its time beside it, "Meal", its format, its rating when it has one); its second line is the brand and product, in the same small type the run's own second line uses; the meal sits on a smaller bead on the run's line, and its time is a step darker. Two lines a meal instead of three, every fact on screen, and VoiceOver reads each meal in full.</p>
         <p><b>Option:</b> today's rows exactly (the boxed phone in §02 and the boxed frame in §04), if you'd rather the meals not change at all.</p>
-        <p><b>Consequence:</b> the shared row gains a member form and History v2's spec gains a §3.6 note; nothing reaches the vet report, the engine or any count.</p>
+        <p><b>Consequence:</b> the shared row gains a member form and History v2's spec gains a §3.6 note; nothing reaches the vet report, the engine or any count. Build: CUL-1733.</p>
       </div>
       <div class="brief">
         <h4>D3 · Show what opened when it opens out of sight <span class="pill">ruled yes · 2026-10-10</span><span class="pill dir">better than the rule</span></h4>
@@ -432,17 +436,18 @@
         <p><b>The rule:</b> GAP-8 also said "Opening never scrolls the list", to keep the owner's place.</p>
         <p><b>The better thing:</b> only when the first meal would land under the plus or off screen, move the list just far enough to show it, never past the run's own line, never on a close, and as a jump under Reduce Motion. Today the tap's only feedback is the arrow, in the plus's column.</p>
         <p><b>Options:</b> (a) <b>Approve, bounded as above</b> (recommended: the owner panel, Motion &amp; IA and Engineering); (b) keep "never scrolls".</p>
-        <p><b>Consequence:</b> a programmatic scroll under <code>guards/programmaticScroll.test.ts</code>, and a new row in History v2's §4 motion table. No platform precedent was found either way.</p>
+        <p><b>Consequence:</b> a programmatic scroll under <code>guards/programmaticScroll.test.ts</code>, and a new row in History v2's §4 motion table. No platform precedent was found either way. Build: CUL-1735, after CUL-1734.</p>
       </div>
       <div class="brief">
-        <h4>D4 · A mark for "several" on the folded line <span class="pill open">to rule</span><span class="pill">persona conflict</span></h4>
+        <h4>D4 · A mark for "several" on the folded line <span class="pill">ruled (b) · 2026-10-10</span><span class="pill">persona conflict</span></h4>
+        <p><b>Ruled:</b> <q>FWIW.. I like the concept of a mark or indicator for multiple meals. The little radiating arcs.</q> Read as (b), the still stack: the arcs are its back beads showing under the front one. The dissent below is the record, and its conditions ride the build (§06).</p>
         <div class="conflict">
           <p><b>Designer and Motion &amp; IA:</b> a still stack of up to three beads says "several" at the bead, outside the plus's column, and gives Principle 8 a mark per meal exactly where most runs are (two and three meals).</p>
           <p><b>Data Scientist, Dr. Chen and the owner panel:</b> a capped stack cannot tell four from eight, fails the covered caption test, and is a glyph that only ever appears on calm meals, most of them unrated, so it teaches "fine".</p>
-          <p><b>PM decision needed:</b> is a "several" mark worth a mark that stops counting at three?</p>
+          <p><b>Asked:</b> is a "several" mark worth a mark that stops counting at three? <b>Answered:</b> yes; the words keep the number.</p>
         </div>
         <p><b>Options:</b> (a) no mark; the words carry the count; (b) the still stack, capped at three, tucking as the line leaves, after a phone check; (c) park it, and draw the owners' tick per meal idea next round.</p>
-        <p><b>Consequence:</b> (b) changes the shared row frame for runs only, never on the month; (a) and (c) change nothing now.</p>
+        <p><b>Consequence:</b> the shared row frame changes for runs only, never on the month or the report. Build: CUL-1736, after the open it rides (CUL-1734).</p>
       </div>
       <div class="brief">
         <h4>D5 · A meal minutes before any vomit keeps its own row <span class="pill open">to rule</span><span class="pill">clinical</span></h4>
@@ -457,7 +462,7 @@
         <p><b>A second tap reverses from where the motion is,</b> never finishing the old direction first.</p>
         <p><b>The line</b> starts at the bead you tapped and ends at the last meal's bead, in the darker teal mark colour (3.27:1 on white, <code>colorAccentGlyph</code>), so the group reads as one shape.</p>
         <p><b>Each meal lands where the box's edge reaches it,</b> so the reveal runs in time order without a per meal timer that grows with the count. History's look order (CUL-1719) is fixed before this lands on History.</p>
-        <p><b>Reduce Motion:</b> the box is there at once, the line and the meals crossfade over 150ms, and the arrow swaps.</p>
+        <p><b>Reduce Motion:</b> the box is there at once, the line, the stack and the meals crossfade over 150ms, and the arrow swaps.</p>
       </div>
     </div>
   </section>
@@ -483,7 +488,7 @@
       <div><span><b>No haptic.</b> Opening a group is not a commit, and the row this lives in paints <i>Worth a call</i>; the haptics guard forbids one by design.</span></div>
       <div><span><b>No bounce on the rows below,</b> and never on <i>Worth a call</i>, which rides the same geometry.</span></div>
       <div><span><b>No flying beads, glow, pulse, count up or celebration.</b> A run of meals is the calmest thing on the day, and "8 meals" is not a score for a cat that may be eating less.</span></div>
-      <div><span><b>No motion, colour or glyph that only ever plays over calm content.</b> It is why D4 is a conflict rather than a default.</span></div>
+      <div><span><b>No decoration that only ever plays over calm content,</b> save the one mark you ruled for. Runs hold only meals eaten normally or unrated, so the stack (D4) is built to say how many and never how it went (§06's conditions).</span></div>
       <div><span><b>No duration that grows with the number of meals.</b> Twelve meals settle inside the same 400ms as two.</span></div>
       <div><span><b>Nothing drawn over another record.</b> The box clips while it moves; the teal line never crosses a rose bead.</span></div>
       <div><span><b>Nothing run only on the Patterns month.</b> It shares the mechanism fixes and keeps one motion for every verdict.</span></div>
@@ -497,7 +502,7 @@
     <div class="found">
       <div><b>CUL-1718 · The day's thread is not drawn.</b> Home, History and the Daily Recap show 3pt stubs instead of a line; the first paint draws a thread and then erases it. The fix stretches the bead's column and runs the segment through the row's 16pt gap. High; it comes first because the proposal's line leads along it.</div>
       <div><b>CUL-1719 · History prints a look out of time order beside a run.</b> A 9:00 AM "Off" lands under a run's 10:45 AM meal, on screen and to VoiceOver. Fix: a look breaks a run, as rule B's own sentence says any row between meals does.</div>
-      <div><b>CUL-1721 · The shipped seams,</b> every one of §01's eight with its line of code, plus History's filter change animating a close, opening during the first paint, and a run whose id changes snapping shut. D1 decides how far its fix goes.</div>
+      <div><b>CUL-1721 · The shipped seams,</b> every one of §01's eight with its line of code, plus History's filter change animating a close, opening during the first paint, and a run whose id changes snapping shut. D1 ruled the full proposal: these fixes go into the shared machine, and the run's own motion is CUL-1734.</div>
       <div><b>CUL-1720 · "0 min after eating" beside 2:52 and 2:53 PM.</b> The timing line rounds a gap under a minute down to zero while the times print a minute apart. Low.</div>
       <div><b>Noted, not filed.</b> Editing one meal so it splits a run closes the later half (its id is its first meal's). The History v2 device pass that would have caught §01 was canceled; your production checks now cover it.</div>
     </div>
@@ -510,6 +515,7 @@
       <p><b>Today's phone is rebuilt from the code.</b> Every beat is the shipped constant: the 160ms lead, 80ms lag, 370ms spring at damping 0.7, 40ms and 300ms landing, 180ms leave, 300ms close, 220ms trail, 30ms slack and the 44pt band. The box's spring and ease are React Native's own layout curves, taken from its source. The rows are the app's frame: a 60pt time column, an 18pt bead column with an 11pt bead and a 2pt ring, 13pt titles, the 44pt floor and the 16pt gap, with the thread drawn as it ships.</p>
       <p><b>The proposal's numbers come from the seats:</b> an 80ms linear lead, a 240ms ease out box, a 150ms landing with a 4pt drift where the box's edge reaches each meal (never starting after 250ms), a 100ms leave, a 200ms close and an 80ms retract.</p>
       <p><b>Round 2 (2026-10-10)</b> changes only what an opened meal shows, after your reaction to §04: the brand and product are back on every meal. The motion, the beats and the charts are round 1's.</p>
+      <p><b>Round 2.1 (2026-10-10)</b> folds in your word on D4: every proposal phone now carries the stack, folded, and its tuck rides the line's lead and retract, so the charts gain a Stack row. Nothing else moved.</p>
       <p><b>Only a phone can judge motion.</b> This page shows the order, the timing and the seams. How a curve feels under a thumb at 120Hz, beside a real scroll, is the device's call. Principle 9: "a motion or a haptic is verified on a phone, never in a test."</p>
     </div>
   </section>
@@ -706,7 +712,7 @@
   }
   Phone.prototype.build = function () {
     var form = this.opt === 'P' || this.opt === 'C' ? 'nested' : 'full';
-    var inner = spineHTML(this.n, form, this.opt === 'C');
+    var inner = spineHTML(this.n, form, this.opt !== 'A');
     if (this.o.mini) this.el.innerHTML = '<div class="ph-count"><b>' + DAYS[this.n].count[0] + '</b> ' + DAYS[this.n].count[1] + '</div>' + inner;
     else this.el.innerHTML = chrome(this.n, inner, !!this.o.tall);
     var q = this.q = {
@@ -873,11 +879,13 @@
       seams = [[0, 0, ''], [0, 1, 'snaps to 44pt'], [SHIP_CLOSE_END, 4, 'jumps up 44pt']];
     } else if (dir === 'open') {
       rows = [['Arrow', [[0, PR.chevMs]], 'turns'], ['Line', [[0, PR.leadMs], [PR.boxAt, PR.boxAt + PR.boxMs, 'held']], 'leads, then rides the box'],
+        ['Stack', [[0, PR.leadMs]], 'tucks with the line'],
         ['Box', [[PR.boxAt, PR.boxAt + PR.boxMs]], 'from nothing, no bounce'],
         ['Meals', range(g.n).map(function (k) { var a = landStart(k, g); return [a, a + PR.landMs]; }), 'as the edge reaches each']];
     } else {
       rows = [['Arrow', [[0, PR.chevMs]], 'turns back'], ['Meals', [[0, PR.leaveMs]], 'leave first'],
-        ['Box', [[PR.closeAt, PR.closeAt + PR.closeMs]], 'closes, clipped'], ['Line', [[PR.retractAt, PR.retractAt + PR.retractMs]], 'back into the bead']];
+        ['Box', [[PR.closeAt, PR.closeAt + PR.closeMs]], 'closes, clipped'], ['Line', [[PR.retractAt, PR.retractAt + PR.retractMs]], 'back into the bead'],
+        ['Stack', [[PR.retractAt, PR.retractAt + PR.retractMs]], 'back out with the line']];
     }
     var RH = 30, top = 22, H = top + rows.length * RH + 34;
     var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc((opt === 'A' ? 'Today' : 'The proposal') + ', ' + (dir === 'open' ? 'opening' : 'closing') + ': at rest at ' + Math.round(done) + ' ms') + '">';
@@ -922,7 +930,7 @@
       ['At rest, ' + STATE.n + ' meals, opening', SHIP_OPEN_END + 'ms', openP + 'ms', 'Owners: readable by about 250ms'],
       ['At rest, closing', SHIP_CLOSE_END + 'ms, ending in a jump', closeP + 'ms, nothing left to snap', 'Research: 250ms or less'],
       ['A second tap mid flight', 'Jumps to the end, then starts over', 'Reverses from where it is', 'HIG: "let people cancel motion"'],
-      ['Reduce Motion', 'The box at once; the meals fade in over 150ms; the arrow swaps', 'The same, and the line fades with the meals', 'Principle 9\'s three way rule']
+      ['Reduce Motion', 'The box at once; the meals fade in over 150ms; the arrow swaps', 'The same, and the line and the stack crossfade with the meals', 'Principle 9\'s three way rule']
     ].map(function (r) { return '<tr><td><b>' + r[0] + '</b></td><td>' + r[1] + '</td><td>' + r[2] + '</td><td>' + r[3] + '</td></tr>'; }).join('');
   }
 
@@ -969,7 +977,7 @@
     ]);
     strip(document.getElementById('strip-prop'), [
       { opt: 'P', cls: 'optP thread-fixed nested', dir: 'open', t: 0, c: 'The tap. The arrow starts to turn; nothing below has moved.' },
-      { opt: 'P', cls: 'optP thread-fixed nested', dir: 'open', t: 50, c: 'The line leaves the bead you tapped, down the thread.' },
+      { opt: 'P', cls: 'optP thread-fixed nested', dir: 'open', t: 50, c: 'The line leaves the bead you tapped, down the thread; the stack tucks under the bead.' },
       { opt: 'P', cls: 'optP thread-fixed nested', dir: 'open', t: 110, c: 'The box opens from nothing; the first meal lands.' },
       { opt: 'P', cls: 'optP thread-fixed nested', dir: 'open', t: 170, c: 'The edge reaches the second meal; it lands.' },
       { opt: 'P', cls: 'optP thread-fixed nested', dir: 'open', t: 240, c: 'The box slows into place, no swing past it.' },
