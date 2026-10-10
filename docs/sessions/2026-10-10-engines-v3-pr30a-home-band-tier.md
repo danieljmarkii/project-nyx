@@ -31,6 +31,20 @@ The adversarial-reviewer agent's first pass returned FAIL. Nothing was calmer th
 
 A second pass held all five. It then broke one new case: a photo call now on Sep 28, then a fresh call-only call today on Oct 10. The finding was byte-identical before and after, so the fresh call never reached Home, which is the case K1 = A exists for. Fixed: `laterCallTodayIso` carries it, and the sentence, the evidence and the Home row add "A later read, on Oct 10, says to call your vet today." Proven by mutation. The same pass hardened the date comparisons to parse instants (C-40) and made the call-only evidence plural.
 
+A third pass returned **PASS**. It tried:
+- the later-call clause on photo and call-only cards;
+- a newer call now beside an older call today;
+- same-instant reads;
+- cross-family dates;
+- a tampered cache value;
+- the C-40 spelling split.
+
+None showed Home or the banner calmer than the record. Its notes:
+- the photo is named twice when the later read is the photo itself (cosmetic);
+- the client tests do not assert the call-only card's later clause (the server tests do).
+
+The `nyx-voice` read of the rewritten strings (C-28) passed with no changes. Every string names the pet and a date and carries the map's own ask, with no `!`, no alarm word, no jargon and no wellness claim.
+
 Held: a call-now on pet B vs every lane on pet C (banner); mixed earlier-rule and new-rule reads in one family (no word steps down); failed-status and unstamped stale calls (presence holds, dark); `flags: []` through every live consumer.
 
 Routed, not fixed here:
