@@ -8,7 +8,7 @@ CUL-1512 (EN-3 remainder ⑤), a `/dispatch` child. Shipped via #1141.
 ## What shipped
 
 - Ask's `READ_COLS` reads `tier` (079) and `engine_flags` (075), so the record's words can be resolved. Both columns are applied, and both are already read by the phone through `lib/readCopy.ts`.
-- `projectCachedRead` resolves `tierWords` through the one tier-word map: `tierDisplayOf` + `TIER_WORDS`, the same resolver every client surface uses. The raw `recommendation` field left `ProjectedRead`, so no tier, verdict or stamp value reaches the model.
+- `mapReadRow` resolves `tierWords` from the raw DB row through the one tier-word map (`tierWordsOf` → `tierDisplayOf` + `TIER_WORDS`), the same resolver every client surface uses, where the dated correction is already worded. `AskCachedReadRow` carries no raw tier or stamp column, and the raw `recommendation` field left `ProjectedRead`, so no tier, verdict or stamp value reaches the model.
 - `SYSTEM_PROMPT` rule (11) is built from the map's labels plus `TIER_DEFINITIONS` (one line per word; two displays share "Keep an eye out", so it is defined once). The model quotes the words exactly, never softens a call, and never gives an older read newer words.
 - `redactReadForModel` hands the model a call's words (`read_words`) even when the photo has no flag, and only for a call; quiet words stay withheld. `featuredNonEscalatingRead` counts a call's words as an escalation through the same helper (`callWordsOf`).
 - The Deno guard that kept `tier` out of Ask's select was flipped to pin `tier`, `engine_flags` and `recommendation` in it.
@@ -26,6 +26,10 @@ Its two other findings predate this PR, so they went to Wave 7 rather than widen
 
 - CUL-1731: a held call whose fresh read is capped goes quiet.
 - CUL-1732: a dismissed call goes silent in Ask while the record keeps it. This needs a PM ruling.
+
+## CI
+
+The first run went red on `engineStamps.guard.test.ts`, the one-writer guard. It read the `{ engine_flags: … }` literal that `tierWordsOf` built for the resolver as a stamp write. The guard is right not to tell a read-side literal from a write, so it stayed unchanged. The words are now resolved from the DB row as it is, in `mapReadRow`. The miss happened because I ran only the `ask/` suites locally; the full `supabase/functions/` run (2585 passed) is what catches a guard like this.
 
 ## Checks
 
