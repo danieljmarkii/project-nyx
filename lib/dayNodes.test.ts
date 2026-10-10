@@ -108,6 +108,7 @@ function asSpineInput(events: readonly DayEvent[], { reads, timings }: DayNodeFa
     priorOnsets: timings.priorOnsets,
     config: timings.config,
     timedElsewhere: timings.timedElsewhere,
+    runBreaks: timings.runBreaks,
   };
 }
 
@@ -270,6 +271,7 @@ const WITHOUT = {
   priorOnsets: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, priorOnsets: undefined } }),
   config: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, config: undefined } }),
   timedElsewhere: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, timedElsewhere: undefined } }),
+  runBreaks: (f: DayNodeFacts): DayNodeFacts => ({ ...f, timings: { ...f.timings, runBreaks: undefined } }),
 };
 type Fact = keyof typeof WITHOUT;
 
@@ -342,6 +344,11 @@ const WITNESSES: Witness[] = [
       timedElsewhere: new Set(['we-m2']),
     }),
   },
+  {
+    fact: 'runBreaks',
+    why: 'a 9:00 AM look History draws between the 6:20 and 10:45 AM meals keeps them two rows (CUL-1719)',
+    day: timedDay([row('wb-m2', 'meal', 10, 45, PR), row('wb-m1', 'meal', 6, 20, PR)], { runBreaks: [at(9, 0)] }),
+  },
 ];
 
 /** Every day the equality runs over: each witness day once, then the random ones. */
@@ -375,5 +382,48 @@ describe('the floor under the equality: the sweep can SEE every fact it hands ov
     };
     expect(timingOf(w.day.facts) !== null).toBe(w.timed.withFact);
     expect(timingOf(WITHOUT[w.fact](w.day.facts)) !== null).toBe(!w.timed.withFact);
+  });
+});
+
+// ── CUL-1719: a look History draws among the rows breaks a run it falls inside ────────
+// The pipeline leaves looks out of its rows (T-5), and History's card threads each answered
+// look in by its time (CUL-1244). A run folded over a look's instant sat at its first
+// member's time, so a 9:00 AM look drawn there printed after the 10:45 AM meal. Rule B's
+// own sentence: a run never crosses a row between its members in time.
+describe('CUL-1719 — a look between a run’s members in time breaks the run', () => {
+  const MEALS = [row('c-m2', 'meal', 10, 45, PR), row('c-m1', 'meal', 6, 20, PR)];
+  const factsWith = (runBreaks?: number[]): DayNodeFacts => ({
+    reads: { photographed: new Set(), analysis: new Map(), working: new Set() },
+    timings: { feedings: MEALS.map(feedingOf), freeFedSpans: [], ...(runBreaks ? { runBreaks } : {}) },
+  });
+  const shape = (facts: DayNodeFacts) => buildDayNodes(MEALS, facts).map((n) => (n.kind === 'compact' ? n.ids : n.id));
+
+  it('the convening’s day with no look: one run, 6:20 – 10:45 AM', () => {
+    expect(shape(factsWith())).toEqual([['c-m1', 'c-m2']]);
+    // No break and an empty list are the same day (Home's call is unchanged).
+    expect(buildDay(MEALS, factsWith([]))).toEqual(buildDay(MEALS, factsWith()));
+  });
+
+  it('a 9:00 AM look: the 6:20 meal and the 10:45 meal each keep their own row', () => {
+    expect(shape(factsWith([at(9, 0)]))).toEqual(['c-m1', 'c-m2']);
+  });
+
+  it('a look before, after, or at the last member’s minute leaves the run whole', () => {
+    for (const t of [at(5, 0), at(11, 30), at(10, 45), at(23, 59)]) {
+      expect(shape(factsWith([t]))).toEqual([['c-m1', 'c-m2']]);
+    }
+  });
+
+  it('a look at the first member’s minute sits after it, so it breaks (the card threads it after the 6:20 meal)', () => {
+    expect(shape(factsWith([at(6, 20)]))).toEqual(['c-m1', 'c-m2']);
+  });
+
+  it('a run of three keeps the half on each side whole', () => {
+    const three = [row('t-m3', 'meal', 18, 0, PR), ...MEALS];
+    const nodes = buildDayNodes(three, {
+      reads: { photographed: new Set(), analysis: new Map(), working: new Set() },
+      timings: { feedings: three.map(feedingOf), freeFedSpans: [], runBreaks: [at(12, 0)] },
+    });
+    expect(nodes.map((n) => (n.kind === 'compact' ? n.ids : n.id))).toEqual([['c-m1', 'c-m2'], 't-m3']);
   });
 });

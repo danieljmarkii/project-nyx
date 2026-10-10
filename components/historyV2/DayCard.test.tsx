@@ -191,3 +191,48 @@ describe('DayCardBody', () => {
     expect(screen.getByText('Nothing logged yet today.')).toBeTruthy();
   });
 });
+
+// CUL-1719: a look drawn among the rows breaks a run of meals it falls inside. The pipeline
+// leaves looks out of its rows and the card threads each look in by its time, so a run
+// folded over a 9:00 AM look printed it after the run's 10:45 AM meal.
+describe('DayCardBody — a look inside a run’s span (CUL-1719)', () => {
+  const PR = { food_type: 'meal', food_brand: 'Royal Canin', food_product_name: 'Selected Protein PR' } as Partial<HistoryRow>;
+  const at = (id: string, event_type: string, h: number, m: number, extra: Partial<HistoryRow> = {}): HistoryRow => {
+    const iso = new Date(2026, 8, 17, h, m, 0, 0).toISOString();
+    return { ...row(id, event_type, h, extra), occurred_at: iso, created_at: iso, updated_at: iso };
+  };
+  const lookAt = (h: number, m: number) =>
+    at('lk', 'check_in', h, m, { look_outcome: 'observed', look_words: null, look_note: null } as Partial<HistoryRow>);
+  const MEALS = [at('m1', 'meal', 6, 20, PR), at('m2', 'meal', 10, 45, PR)];
+
+  /** The day as the list builds it: its nodes over the whole day, the looks it draws as breaks. */
+  const drawn = (looks: HistoryRow[]) => {
+    const day = '2026-09-17';
+    const nodes =
+      historyNodesByDay({
+        days: new Map([[day, MEALS]]),
+        reads: { analysis: new Map(), answered: new Set(), working: new Set() },
+        timing: { feedings: [], freeFedSpans: [], onsets: [] },
+        looks: new Map([[day, looks]]),
+      }).get(day) ?? [];
+    render(<DayCardBody {...bodyProps} day={day} items={[]} nodes={nodes} shownRows={MEALS} looks={looks} noticed={false} />);
+    const body = screen.getByTestId('history-day-body-2026-09-17');
+    const ids = (body as unknown as { findAll: (p: (n: { props: { testID?: string } }) => boolean) => { props: { testID: string } }[] })
+      .findAll((n) => typeof n.props.testID === 'string' && /^(spine-node|history-look)-/.test(n.props.testID))
+      .map((n) => n.props.testID);
+    return ids.filter((id, i) => ids.indexOf(id) === i);
+  };
+
+  it('the convening’s day plus a 9:00 AM look: the 6:20 AM meal, the look, then the 10:45 AM meal, and no run', () => {
+    expect(drawn([lookAt(9, 0)])).toEqual(['spine-node-m1', 'history-look-lk', 'spine-node-m2']);
+  });
+
+  it('the same day with no look is unchanged: one run', () => {
+    expect(drawn([])).toEqual(['spine-node-compact:m1']);
+  });
+
+  it('a look before or after the run’s span leaves the run whole', () => {
+    expect(drawn([lookAt(5, 30)])).toEqual(['history-look-lk', 'spine-node-compact:m1']);
+    expect(drawn([lookAt(14, 0)])).toEqual(['spine-node-compact:m1', 'history-look-lk']);
+  });
+});

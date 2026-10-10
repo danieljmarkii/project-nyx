@@ -73,6 +73,13 @@ export interface DayTimings {
    *  draws one card per day (History) hands the next day's anchors in. Home draws today
    *  alone and leaves it out. Optional, so the call shape HV-7 renders from is unchanged. */
   timedElsewhere?: ReadonlySet<string>;
+  /** Instants (ms) of the looks a surface draws AMONG the nodes (History under All types,
+   *  CUL-1244). The pipeline leaves looks out of its rows (T-5), so without these a run of
+   *  meals would fold straight over a 9:00 AM look between its 6:20 and 10:45 members, and
+   *  the look would thread in after the whole run (CUL-1719). Rule B's own sentence: a run
+   *  never crosses a row between its members in time. Home leaves it out: its look is the
+   *  header, not a row. Optional, so the call shape is unchanged. */
+  runBreaks?: readonly number[];
 }
 
 export interface DayNodeFacts {
@@ -96,6 +103,7 @@ export function buildDay(events: readonly DayEvent[], { reads, timings }: DayNod
     priorOnsets: timings.priorOnsets,
     config: timings.config,
     timedElsewhere: timings.timedElsewhere,
+    runBreaks: timings.runBreaks,
   });
 }
 

@@ -341,3 +341,58 @@ describe('compactSpine — properties over 400 random days', () => {
     }
   });
 });
+
+// ── CUL-1719: breaks — a row drawn among the nodes without being one (History's looks) ──
+describe('compactSpine — breaks over 400 random days', () => {
+  const rng = lcg(0x1719);
+  const days = Array.from({ length: 400 }, (_, d) => {
+    // Random days rarely hold a run (measured: a split on 1 day in 400), so each day adds
+    // 2–6 plain meals of one product to a random day, ON day 0 so midnight cannot split them.
+    const plain = Array.from({ length: 2 + Math.floor(rng() * 5) }, (_x, i) =>
+      node(`r${d}-${i}`, 'meal', at(0, Math.floor(rng() * 48) * 30), false, 'Meal', { day: 0, product: 'rc' }),
+    );
+    const day = [...randomDay(rng), ...plain];
+    // Random breaks on the nodes' coarse grid (so one at a member's own minute occurs), plus,
+    // for each run the unbroken fold draws, often one inside its span: random days alone
+    // split a run on 1 day in 400 (measured), a floor that holds by luck.
+    const breaks = Array.from({ length: Math.floor(rng() * 3) }, () => at(0, Math.floor(rng() * 48) * 30));
+    for (const g of compactSpine(day)) {
+      if (g.kind !== 'compact' || rng() < 0.3) continue;
+      const lo = g.nodes[0].timeMs;
+      const hi = g.nodes[g.nodes.length - 1].timeMs;
+      breaks.push(lo + Math.floor(rng() * (hi - lo + 1)));
+    }
+    return { day, breaks };
+  });
+
+  it.each(days.map((d, i) => [i, d] as const))('day %i: no run crosses a break, and none is a no-op', (_i, { day, breaks }) => {
+    // No breaks and an empty list fold the same day (Home passes none).
+    expect(compactSpine(day, [])).toEqual(compactSpine(day));
+
+    const groups = compactSpine(day, breaks);
+    const sorted = sortChronological(day);
+    // Nothing dropped, nothing reordered.
+    expect(groups.flatMap((g) => (g.kind === 'compact' ? g.nodes : [g.node])).map((n) => n.id)).toEqual(sorted.map((n) => n.id));
+    // NEVER ACROSS a break, stated as the card threads a look: it sits before the first node
+    // LATER than it, so between members a and b exactly when a.timeMs <= t < b.timeMs.
+    for (const g of groups) {
+      if (g.kind !== 'compact') continue;
+      for (let k = 1; k < g.nodes.length; k++) {
+        const a = g.nodes[k - 1].timeMs;
+        const b = g.nodes[k].timeMs;
+        expect(breaks.filter((t) => a <= t && t < b)).toEqual([]);
+      }
+    }
+    // A break only splits: every run here lies inside one run of the unbroken fold.
+    const unbroken = new Map<string, number>();
+    compactSpine(day).forEach((g, gi) => (g.kind === 'compact' ? g.nodes : [g.node]).forEach((n) => unbroken.set(n.id, gi)));
+    for (const g of groups) {
+      if (g.kind === 'compact') expect(new Set(g.nodes.map((n) => unbroken.get(n.id))).size).toBe(1);
+    }
+  });
+
+  it('the floor: the sweep holds days whose breaks actually split a run', () => {
+    const split = days.filter(({ day, breaks }) => JSON.stringify(compactSpine(day, breaks)) !== JSON.stringify(compactSpine(day)));
+    expect(split.length).toBeGreaterThanOrEqual(20);
+  });
+});

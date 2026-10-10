@@ -585,9 +585,11 @@ export function HistoryList() {
             days: snapshot.wholeDays,
             reads: { analysis: snapshot.analysis, answered: snapshot.answered, working },
             timing: snapshot.timing,
+            // The looks each card draws among its rows break a run they fall inside (CUL-1719).
+            looks: lookRows,
           })
         : NO_NODES_BY_DAY,
-    [snapshot, working],
+    [snapshot, working, lookRows],
   );
 
   // The rows a removal could fold, read by the focus callback when the owner comes back.

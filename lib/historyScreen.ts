@@ -295,14 +295,23 @@ export interface HistoryReads {
  * last night's 10 PM bowl keeps that bowl on its own row on the previous card. The anchors
  * are the ones the pipeline itself used (`DayModel.anchors`), read off a first pass; only a
  * day that holds such a meal is built again.
+ *
+ * The looks the card draws among the rows (All types, CUL-1244) are handed in as run breaks
+ * (CUL-1719): the pipeline leaves a look out of its rows, and the card threads it in by its
+ * time, so a run folded over a look's instant would print a 9:00 AM look after its 10:45 AM
+ * member. Pass exactly the looks the card draws; none, and every run is what it was.
  */
 export function historyNodesByDay(args: {
   /** Every loaded day's rows, morning to night (`readWholeDays`, or the page's own). */
   days: ReadonlyMap<string, readonly HistoryRow[]>;
   reads: HistoryReads;
   timing: HistoryDayTiming;
+  /** The looks each card draws among its rows, by day (`DayCardBody`'s `looks`). */
+  looks?: ReadonlyMap<string, readonly HistoryRow[]>;
 }): Map<string, DayNode[]> {
   const { reads, timing } = args;
+  const breaksOf = (day: string): number[] =>
+    (args.looks?.get(day) ?? []).map((r) => Date.parse(r.occurred_at)).filter((ms) => Number.isFinite(ms));
   const build = (day: string, rows: readonly HistoryRow[], timedElsewhere?: ReadonlySet<string>) =>
     buildDay(rows, {
       reads: {
@@ -319,6 +328,7 @@ export function historyNodesByDay(args: {
         freeFedSpans: timing.freeFedSpans,
         priorOnsets: priorOnsetsFor(day, timing.onsets),
         timedElsewhere,
+        runBreaks: breaksOf(day),
       },
     });
 

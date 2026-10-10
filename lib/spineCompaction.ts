@@ -116,14 +116,33 @@ export function sortChronological<T extends CompactableNode>(nodes: readonly T[]
 }
 
 /**
+ * Does a row drawn beside the nodes, but not one of them, fall between two run members in
+ * time? `breaks` are those rows' instants (History's daily looks, CUL-1719). A surface
+ * threads such a row before the first node LATER than it, so one at `t` sits after `a` and
+ * before `b` exactly when `a.timeMs <= t < b.timeMs`: that half-open span is the break, and
+ * a row the surface would draw outside the run's span leaves the run whole.
+ */
+function crossesBreak(a: CompactableNode, b: CompactableNode, breaks: readonly number[]): boolean {
+  return breaks.some((t) => a.timeMs <= t && t < b.timeMs);
+}
+
+/**
  * Fold a day's nodes into lines. Sorted first; then a maximal stretch of nodes that each
  * `sameRun` the one before, of length ≥ 2, becomes one `compact` group, and every other
  * node (including a lone compactable meal) is a `single`.
  *
+ * `breaks` (optional): instants of rows the surface draws among the nodes without handing
+ * them over as nodes (History's looks, CUL-1719). A run never crosses one, the same as it
+ * never crosses a symptom; absent or empty, the fold is exactly what it was (Home passes
+ * none: its look is the header, not a row on the spine).
+ *
  * Total: never throws, never drops a node (flattening the result in order is the sorted
  * input, pinned by the sweep).
  */
-export function compactSpine<T extends CompactableNode>(nodes: readonly T[]): CompactGroup<T>[] {
+export function compactSpine<T extends CompactableNode>(
+  nodes: readonly T[],
+  breaks: readonly number[] = [],
+): CompactGroup<T>[] {
   const sorted = sortChronological(nodes);
   const out: CompactGroup<T>[] = [];
   let run: T[] = [];
@@ -134,8 +153,11 @@ export function compactSpine<T extends CompactableNode>(nodes: readonly T[]): Co
   };
   for (const node of sorted) {
     if (isCompactable(node)) {
-      // Another product, kind or day closes the run and opens the next.
-      if (run.length > 0 && !sameRun(run[run.length - 1], node)) flush();
+      // Another product, kind or day, or a drawn row between the two in time, closes the
+      // run and opens the next.
+      if (run.length > 0 && (!sameRun(run[run.length - 1], node) || crossesBreak(run[run.length - 1], node, breaks))) {
+        flush();
+      }
       run.push(node);
       continue;
     }
