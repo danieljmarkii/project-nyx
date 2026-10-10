@@ -219,7 +219,7 @@ const ZERO_RES: RegExp[] = [
   // "you've not logged any". An INTAKE absence ("hasn't eaten") never matches here, and a
   // sentence about meals or doses alone is set aside below.
   new RegExp(
-    String.raw`${NEG}\s+(?:\w+\s+){0,2}?(?:vomited|coughed|scratched|itched|sneezed|licked|retched|gagged|thrown up|threw up|been sick|had (?:a|an|any|another)\b|logged (?:a|an|any|another)\b|(?:see|find|spot)\s+any\b|been (?:any|a|an)\b|shown up|turned up|appeared|been (?:logged|recorded|seen|noted|reported)|recurred|returned|come back|came back|happened(?: again)?|happen(?: again)?)`,
+    String.raw`${NEG}\s+(?:\w+\s+){0,2}?(?:vomited|coughed|scratched|itched|sneezed|licked|retched|gagged|thrown up|threw up|been sick|had (?:a|an|any|another)\b|logged (?:a|an|any|another)\b|(?:see|find|spot)\s+any\b|been any\b|been (?:a|an)\s+(?:single\s+)?(?:\w+\s+)?${ZERO_NOUN}|(?:shown up|turned up|appeared)(?!\s+(?:as|less|more|fewer|quite|so)\b)|been (?:logged|recorded|seen|noted|reported)(?!\s+as\b)|recurred|returned|come back|came back|happened(?: again)?(?!\s+before)|happen\b(?: again)?(?!\s+before))`,
     'i',
   ),
   // "has stopped vomiting", "the vomiting stopped". Not "stopped eating": an escalation.
@@ -243,7 +243,7 @@ const ZERO_RES: RegExp[] = [
   new RegExp(String.raw`\bno\s+\w+(?:\s+\w+)?\s+(?:logged|recorded|since|so far)\b`, 'i'),
   // Recall phrasings: "there's no record of vomiting", "the log shows nothing", "vomiting
   // doesn't appear", "Vomiting episodes in the last 14 days: none", "eaten well and not vomited".
-  new RegExp(String.raw`\bno (?:record|trace|mention|entry|entries) of\b|\bno signs? of (?:any\s+)?(?:more\s+)?${SIGN_VERB}|\babsent from\b|\bshows? nothing\b|\b(?:doesn${APOS}t|does not|don${APOS}t|do not)\s+(?:appear|show up)\b|[:=]\s*none\b`, 'i'),
+  new RegExp(String.raw`\bno (?:record|trace|mention|entry|entries) of\b|\bno signs? of (?:any\s+)?(?:more\s+)?${SIGN_VERB}|\b(?:vomit\w*|cough\w*|diarrh\w*|itch\w*|scratch\w*|sneez\w*|symptoms?|episodes?)\s+(?:is|are|was|were|has been|have been)\s+absent\b|\bnothing\s+(?:about|on|regarding|for)\s+(?:her\s+|his\s+|the\s+)?${SIGN_VERB}|\bno signs? of (?:illness|being sick|anything)\b|\bno logs? (?:for|of)\s+${SIGN_VERB}|\bshows? nothing\b|\b(?:doesn${APOS}t|does not|don${APOS}t|do not)\s+(?:appear|show up)\b|[:=]\s*(?:none|nothing)\b`, 'i'),
   // "none of those entries is vomiting", "Vomiting isn't among them".
   new RegExp(String.raw`\bnone of (?:it|them|those|these|the)\b[^.;]{0,40}?\b(?:is|are|was|were)\b|\b(?:isn${APOS}t|is not|aren${APOS}t|are not|wasn${APOS}t|was not|weren${APOS}t|were not)\s+(?:among|in|on|part of)\s+(?:them|those|these|it|the (?:log|record|entries))\b`, 'i'),
   new RegExp(String.raw`(?<!\b(?:has|have|had|is|was|were|are)\s)\bnot\s+(?:vomited|coughed|scratched|itched|sneezed|licked|thrown up|been sick)\b`, 'i'),
@@ -316,14 +316,42 @@ function escapeRe(s: string): string {
 // on 2 of them", "no entries exist for Sep 20 and 21", "days without a log can't be counted as
 // days without vomiting". Rule 10's honest coverage form; blanked before the zero arms read the
 // clause (adversarial pass 3: it deflected answers on every turn with a gap).
-const DAY_WORD = String.raw`(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day|today|yesterday|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\.?\s+\d{1,2}|\d+\s+of\b|those|that day|these|the other|some|a few|several)`
-const LOG_GAP_RE = new RegExp(
-  [
+// A partial day count ("2 of 14", "2 of them") is coverage; an all-days count ("11 of 11") is the
+// zero itself, so the numbers must differ. "those days", "some days" are not read as coverage:
+// they are as often the zero's own window (adversarial pass 4).
+const DAY_WORD = String.raw`(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day|today|yesterday|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\.?\s+\d{1,2}|(?<gapn>\d+)\s+of\s+(?!\k<gapn>\b)(?:\d+|them|the)\b|that day|the other \d+)`
+const DATE_WORD = String.raw`(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\.?\s+\d{1,2})`
+const LOG_GAP_RES: RegExp[] = [
+  new RegExp(
     String.raw`\b(?:nothing|no entries|no logs?|none)\b(?:\s+(?:was|were|is|are|has been|have been|had been|exist|exists))?(?:\s+(?:logged|recorded|entered))?\s+(?:on|for)\s+${DAY_WORD}`,
-    String.raw`\bdays?\s+(?:without|with no)\s+(?:a\s+|any\s+)?(?:log|logs|logging|entr(?:y|ies))\b[^.;]*`,
-  ].join('|'),
+    'i',
+  ),
+  // "days without a log can't be counted", "the days where nothing was logged", "2 days have no
+  // entries". Each stops at its own clause, so a zero in the next clause is still read.
+  /\bdays?\s+(?:without|with no)\s+(?:a\s+|any\s+)?(?:log|logs|logging|entr(?:y|ies))\b/i,
+  /\bdays?\s+(?:where|when|on which)\s+nothing\s+(?:was|is|has been)\s+logged\b/i,
+  /\bdays?\s+(?:have|had|has)\s+no\s+(?:entries|logs?)\b/i,
+]
+
+// "nothing was logged between Sep 19 and Sep 21", "no entries from Sep 19 to Sep 21": blanked over
+// the whole sentence before it is cut into clauses, since the range itself holds an "and".
+const LOG_GAP_RANGE_RE = new RegExp(
+  String.raw`\b(?:nothing|no entries|no logs?|none)\b(?:\s+(?:was|were|is|are|has been|have been|had been|exist|exists))?(?:\s+(?:logged|recorded|entered))?\s+(?:between\s+${DATE_WORD}\s+and|from\s+${DATE_WORD}\s+to)\s+${DATE_WORD}`,
   'gi',
 )
+
+// An escalation phrased with a negation: "there hasn't been a day without coughing".
+const NEGATED_ESCALATION_RE =
+  /\b(?:hasn['’]t|has not|haven['’]t|have not|wasn['’]t|was not)\s+been\s+(?:a|one)\s+(?:single\s+)?day\s+without\b[^,;.]*/gi
+
+/** A clause with its coverage statements blanked, unless it names a sign: "nothing was logged
+ *  on 11 of 11 days for vomiting" is the zero, not a gap. */
+function withoutLogGaps(clause: string): string {
+  if (SYMPTOM_ONLY_RE.test(clause.replace(/\bdays?\s+(?:without|with no)\s+(?:a\s+|any\s+)?(?:log|logs|logging|entr(?:y|ies))\b[^,;]*/gi, ' '))) {
+    return clause
+  }
+  return LOG_GAP_RES.some((re) => re.test(clause)) ? ' ' : clause
+}
 
 /** Whether one clause states a symptom zero. A clause about meals, doses or a medication alone
  *  ("eaten 0 of 6 meals", "prednisolone hasn't been logged since Oct 3") is set aside: it is an
@@ -339,8 +367,8 @@ function clauseHasZero(clause: string, meds: (c: string) => boolean): boolean {
 function zeroSigns(text: string, meds: (c: string) => boolean): Set<MaskSign> {
   const signs = new Set<MaskSign>()
   for (const raw of text.split(/(?<=[.;?!])\s+|\n+/)) {
-    const sentence = raw.replace(LOG_GAP_RE, ' ')
-    const clauses = sentence.split(/[,;]|\s(?:and|but|while|though)\s/i)
+    const sentence = raw.replace(NEGATED_ESCALATION_RE, ' ').replace(LOG_GAP_RANGE_RE, ' ')
+    const clauses = sentence.split(/[,;]|\s(?:and|but|while|though|so)\s/i).map(withoutLogGaps)
     if (!clauses.some((c) => clauseHasZero(c, meds))) continue
     let named = false
     if (!EXCEPTION_RE.test(sentence)) {

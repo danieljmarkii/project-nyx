@@ -371,6 +371,39 @@ describe('zeroBesideCareReason (CUL-1429)', () => {
     expect(zeroBesideCareReason(text, { ...NONE, onBoardNames: ['Prednisolone'] })).toBeNull();
   });
 
+  // Adversarial pass 4 (PR-45a): the coverage blanking may not erase a zero.
+  it.each([
+    'There were 2 days without a log since the visit, but no vomiting was recorded on the other 12.',
+    "Days without any entries aren't counted, and she has had no vomiting since the visit.",
+    'Since the visit, 3 days without logs, and no coughing on the 11 logged days.',
+    'Since the vet visit, nothing was logged on 11 of 11 days for vomiting.',
+    'Since the visit, she had nothing logged on those days for vomiting.',
+    'Vomiting: nothing on those 9 days since Cerenia started.',
+    'None was logged on those 8 days since Cerenia.',
+    "Since the visit, there's nothing about coughing in the log.",
+    'No logs for vomiting since the visit.',
+  ])('refuses (adversarial pass 4): %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).not.toBeNull();
+  });
+
+  it('an all-days count with the visit in the question is the zero, not coverage', () => {
+    const ctx = { ...NONE, visitInContext: true };
+    expect(zeroBesideCareReason('Since her Sep 16 visit, none were logged on 9 of 9 days.', ctx)).toBe('zero_beside_visit');
+  });
+
+  it.each([
+    'Since the visit, vomiting was logged 2 times; nothing was logged between Sep 19 and Sep 21.',
+    'Since the visit, vomiting was logged on 3 of 7 days; 2 days have no entries.',
+    'Since the visit, vomiting was logged 2 times. I can\'t count the days where nothing was logged.',
+    'She vomited twice since the visit, and there hasn\'t been an improvement.',
+    "Since the visit she has vomited 2 times, and there hasn't been a day without coughing.",
+    "Since Cerenia, vomiting hasn't shown up as often, but it is still there: 2 times.",
+    'Vomiting was logged 3 times since the visit; the blood you mentioned is absent from the notes.',
+    'Since the visit she vomited twice; this hasn\'t happened before.',
+  ])('passes (adversarial pass 4): %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).toBeNull();
+  });
+
   it("refuses a zero beside the record's own course name, nickname or not", () => {
     const ctx = { knownNames: ["Buddy's tummy pills"], onBoardNames: [], visitInContext: false };
     expect(zeroBesideCareReason("No vomiting is logged since Buddy's tummy pills started.", ctx)).toBe(
