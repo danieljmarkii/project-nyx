@@ -13,4 +13,4 @@
 
 **Checks.** `tsc` clean; full jest 646 suites / 16,357 tests green.
 
-**Tier-2 edit, PM-approved 2026-10-10 and written in this PR.** `docs/nyx-app-polish-requirements.md` §4 ("one soft success tap at 900ms") and the §5.6 shipped-state note ("the §4 arrival's success tap") now read as a soft tap, never the success pattern; version 1.3 → 1.4.
+**Tier-2 edit, PM-approved 2026-10-10 and written in this PR.** `docs/nyx-app-polish-requirements.md` §4 ("one soft success tap at 900ms") and the §5.6 shipped-state note ("the §4 arrival's success tap") now read as a soft tap, never the success pattern; version 1.3 → 1.4. The same §5.6 note's verb count moved from eight to nine for `slideCross` (CUL-1278, landed 2026-10-09, after the note's GA snapshot), PM-approved in session.
