@@ -276,7 +276,8 @@ function LookLine({ row, isFirst, isLast }: { row: HistoryRow; isFirst: boolean;
       style={({ pressed }) => [styles.lookDoor, pressed && styles.pressed]}
       testID={`history-look-${row.id}`}
     >
-      <View style={[styles.itemRow, isLast ? styles.itemRowLast : styles.itemRowGap]}>
+      {/* The row fills the 44pt door, as the visit's does, so the thread reaches the next bead (CUL-1751). */}
+      <View style={[styles.itemRow, isLast ? styles.itemRowLast : styles.itemRowGap, styles.itemRowFill]}>
         <ThemedText style={styles.lookTime}>{timeColumnText(d.time)}</ThemedText>
         <View style={styles.rail}>
           {!isFirst ? <View style={[styles.thread, styles.threadTop]} /> : null}
