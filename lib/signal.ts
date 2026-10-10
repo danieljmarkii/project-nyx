@@ -219,6 +219,17 @@ export interface IncidentRedFlagFinding {
   mostRecentFlaggedIso: string;
   flaggedIncidentCount: number;
   windowDays: number;
+  /** Engines v3 PR-30a (CUL-1511): the family's loudest NEW-RULE call. Present ⇒ the ask is the
+   *  tier-word map's words; absent ⇒ the shipped "worth a call to your vet". Mirror of detection.ts. */
+  tier?: 'call_now' | 'call_today';
+  /** The most recent read at `tier`: the read whose words the ask is. Present exactly when `tier` is. */
+  tierIso?: string;
+  /** A later read saying call today, under an older read's call now: its occurred_at. */
+  laterCallTodayIso?: string;
+  /** Present when no photo flagged anything and a read's call is the whole card: then `flags` is
+   *  empty, the count is the CALLED reads', and the date is `tierIso`. The card never says where
+   *  the call came from (the row cannot tell). Never present without `tier`. */
+  callOnly?: true;
 }
 
 export interface IntakeDeclineFinding {
