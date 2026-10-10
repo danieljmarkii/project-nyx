@@ -1271,9 +1271,13 @@ Deno.test('tierWordsOf — the record\'s words, by the one map\'s resolver, over
   assert.equal(tierWordsOf(row({ tier: 'call_today', recommendation: 'worth_a_call', engine_flags: EN3 })), 'Call your vet today')
   assert.equal(tierWordsOf(row({ tier: 'logged', recommendation: 'monitor', engine_flags: EN3 })), 'Keep an eye out')
   assert.equal(tierWordsOf(row({ tier: 'not_enough_to_say', recommendation: 'not_enough_to_say', engine_flags: EN3 })), 'Not enough to say yet')
-  // The stamp decides, never the tier's presence: an unstamped call now (a rollback) keeps
-  // the shipped words, and so does every earlier-rule read (spec §5).
-  assert.equal(tierWordsOf(row({ tier: 'call_now', recommendation: 'worth_a_call' })), 'Worth a call')
+  // The stamp decides, never the tier's presence, save a stored call now: a flag-off write
+  // over a shown call now never steps its words down (CUL-1516, GAP-34), and Ask quotes what
+  // the record shows. A stale call today on an unstamped row, and every earlier-rule read,
+  // keep the shipped words (spec §5).
+  assert.equal(tierWordsOf(row({ tier: 'call_now', recommendation: 'worth_a_call' })), 'Call your vet now')
+  assert.equal(tierWordsOf(row({ tier: 'call_now', recommendation: 'monitor', engine_flags: [] })), 'Call your vet now')
+  assert.equal(tierWordsOf(row({ tier: 'call_today', recommendation: 'worth_a_call', engine_flags: [] })), 'Worth a call')
   assert.equal(tierWordsOf(row({ recommendation: 'worth_a_call' })), 'Worth a call')
   assert.equal(tierWordsOf(row({ recommendation: 'monitor' })), 'Keep an eye out')
   // A value this build does not know fails toward the rose (CUL-1277), never blank or calm.
