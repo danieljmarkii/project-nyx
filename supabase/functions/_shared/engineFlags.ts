@@ -53,11 +53,15 @@ import { resolveAllowlistFlag } from './flags.ts'
 // weigh-ins with their source and its birthday, and detection may raise `weight_loss`. It adds a
 // finding, so it is a SIGNAL key. NOT SEEDED, like en3: absent reads as off. It goes live after
 // PMD-9 is re-run on lib/weightStory.ts's exact definition, by weighing cadence (ruling sheet W1).
-// engines_v3_en5: EN-5, intake evidence. Its Signal half (Engines v3 PR-30s, CUL-1725) runs I5 in
-// the intake lane: a cat that vomited within the rapid band of a refused bowl on two days raises
-// (or rides as a line on) the cat intake card. It adds a finding, so it is a SIGNAL key. NOT
-// SEEDED: absent reads as off. EN-5's read half (PR-30) reads the same key in analyze-vomit; the
-// flip waits on EN-8 live ("ships only with EN-8") and on the client half reaching a build.
+// engines_v3_en5: EN-5, intake evidence. Two halves read it. The read half (Engines v3 PR-30,
+// CUL-1722): on the vomit read an unrated meal is unknown, and the Noticed predicate joins the cat
+// intake arm in union (analyze-vomit/context.ts EN5_CONTEXT_STEP); it is QUIETER than today where
+// every meal around a vomit was logged unrated, which is why the weight lane must be live with it.
+// The Signal half (Engines v3 PR-30s, CUL-1725) runs I5 in the intake lane: a cat that vomited
+// within the rapid band of a refused bowl on two days raises (or rides as a line on) the cat intake
+// card. It adds a finding, so it is a SIGNAL key. NOT SEEDED: absent reads as off. The flip waits
+// on EN-8 live ("ships only with EN-8"), the real-vet review (CUL-1312) and the client half
+// reaching a build.
 export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en4', 'engines_v3_en5', 'engines_v3_en8', 'engines_v3_en9', 'engines_v3_en10', 'engines_v3_en11'] as const
 export type EngineKey = typeof ENGINE_KEYS[number]
 
