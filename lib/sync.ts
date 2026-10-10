@@ -122,6 +122,7 @@ type QueueTable =
   | 'meals'
   | 'weight_checks'
   | 'looks'
+  | 'intake_checks'
   | 'events'
   | 'event_attachments'
   | 'vet_visits'
@@ -1026,6 +1027,48 @@ async function drainWeightChecksQueue(): Promise<void> {
  */
 export function syncPendingLooks(): Promise<void> {
   return serializeQueuePush('looks', drainLooksQueue);
+}
+
+/**
+ * Push the owner's answers to "Has she eaten?" (Engines v3 PR-30q, CUL-1724; migration 097).
+ *
+ * PARENT-GATED (`parentLandedSql`): 097's same-pet guard runs before the foreign key, so an
+ * answer under a vomit still on this phone would be refused with a TERMINAL 23514 and
+ * quarantined. The row waits for its vomit, which `pushAllQueues` pushes first.
+ *
+ * created_at is never sent: 097 grants INSERT and UPDATE on every column but it, so the
+ * server stamps it. updated_at is sent for a fresh insert's benefit; set_updated_at
+ * rewrites it to server-NOW on an update (B-055), and markSynced compares the local value
+ * the push read (C-23).
+ */
+export function syncPendingIntakeChecks(): Promise<void> {
+  return serializeQueuePush('intake_checks', drainIntakeChecksQueue);
+}
+
+async function drainIntakeChecksQueue(): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+  const db = getDb();
+  const unsynced = await db.getAllAsync<{
+    id: string; pet_id: string; event_id: string; since: string; form: string; answer: string;
+    answered_at: string; updated_at: string; deleted_at: string | null;
+  }>(
+    `SELECT * FROM intake_checks WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}
+        AND ${parentLandedSql('intake_checks')}
+      LIMIT 100`,
+  );
+  if (unsynced.length === 0) return;
+  await pushRows(db, 'intake_checks', unsynced, (r) => ({
+    id: r.id,
+    pet_id: r.pet_id,
+    event_id: r.event_id,
+    since: r.since,
+    form: r.form,
+    answer: r.answer,
+    answered_at: r.answered_at,
+    updated_at: r.updated_at,
+    deleted_at: r.deleted_at,
+  }));
 }
 
 async function drainLooksQueue(): Promise<void> {
@@ -2310,6 +2353,10 @@ interface RemoteLook {
   words: string[] | null; vocab_version: number | null; notes: string | null;
   created_at: string; updated_at: string;
 }
+interface RemoteIntakeCheck {
+  id: string; pet_id: string; event_id: string; since: string; form: string; answer: string;
+  answered_at: string; created_at: string; updated_at: string; deleted_at: string | null;
+}
 interface RemoteEventAttachment {
   id: string; event_id: string; pet_id: string; storage_path: string;
   mime_type: string | null; taken_at: string | null; sort_order: number | null; created_at: string;
@@ -2632,6 +2679,41 @@ async function hydrateLooks(db: Db, stale: () => boolean): Promise<void> {
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
   if (stale()) return;
   if (wm) await setWatermark('looks', wm);
+}
+
+async function hydrateIntakeChecks(db: Db, stale: () => boolean): Promise<void> {
+  // Engines v3 PR-30q (CUL-1724): incremental on updated_at, the looks shape. Runs after
+  // hydrateEvents, so the parent vomit is present for the readers that join it. An owner's soft
+  // delete travels as deleted_at, so no absence pass is needed. EXPLICIT COLUMN LIST,
+  // never `*` (the R-5 privacy line, guards/intakeChecks.test.ts).
+  const since = await getWatermark('intake_checks');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<RemoteIntakeCheck>(
+    'intake_checks',
+    'id, pet_id, event_id, since, form, answer, answered_at, created_at, updated_at, deleted_at',
+    floor ? { column: 'updated_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+  const localById = await loadLocalRowMeta(db, 'intake_checks', rows.map((r) => r.id), 'updated_at');
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return;
+  for (const r of toWrite) {
+    // The mutable fields only (097 freezes id, pet_id, event_id, since and form). The
+    // `WHERE ...synced = 1` backstop never clobbers a row with an unpushed local edit.
+    await db.runAsync(
+      `INSERT INTO intake_checks
+        (id, pet_id, event_id, since, form, answer, answered_at, created_at, updated_at, deleted_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,1)
+       ON CONFLICT(id) DO UPDATE SET
+         answer=excluded.answer, answered_at=excluded.answered_at,
+         updated_at=excluded.updated_at, deleted_at=excluded.deleted_at, synced=1
+       WHERE intake_checks.synced = 1`,
+      [r.id, r.pet_id, r.event_id, r.since, r.form, r.answer, r.answered_at, r.created_at, r.updated_at, r.deleted_at ?? null],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('intake_checks', wm);
 }
 
 async function hydrateEventAttachments(db: Db, stale: () => boolean): Promise<void> {
@@ -3382,6 +3464,10 @@ export async function hydrateFromCloud(): Promise<void> {
   // deleted_at, which hydrateEvents propagates.
   await runHydrationStep('looks', () => hydrateLooks(db, stale));
   if (stale()) return;
+  // Engines v3 PR-30q: intake_checks names its vomit (no local FK); after hydrateEvents,
+  // so the parent is present for the readers that join it.
+  await runHydrationStep('intake_checks', () => hydrateIntakeChecks(db, stale));
+  if (stale()) return;
   await runHydrationStep('event_attachments', () => hydrateEventAttachments(db, stale));
   if (stale()) return;
   // HV-5 (CUL-1162): the per-incident read's copy on the phone. No local FK to events,
@@ -3814,6 +3900,7 @@ export function syncPendingIncidentFloors(): Promise<void> {
   // goes through its own serialized entry point, C-24, and a run already going is joined).
   return syncPendingEvents()
     .then(() => syncPendingMeals())
+    .then(() => syncPendingIntakeChecks())
     .catch((e: unknown) => console.warn('[sync] events push before re-check failed (queued):', e))
     .then(() => serializeQueuePush('incident_floor_queue', drainIncidentFloorQueue));
 }
@@ -3984,6 +4071,9 @@ async function pushAllQueues(): Promise<void> {
   // be visible, so the parent must land first. The drain gates on e.synced = 1
   // regardless — this ordering only saves a cycle.
   await syncPendingLooks();
+  // Engines v3 PR-30q: an answer waits on its vomit (pushed above); the drain holds it
+  // otherwise, because 097's guard refuses an unseen parent with a TERMINAL 23514.
+  await syncPendingIntakeChecks();
   await syncPendingAttachments();
   await syncPendingVetVisits();
   // B-478: no server-side FK to vet_visits is required for a document to land

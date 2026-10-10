@@ -349,6 +349,14 @@ export const LOCAL_WIPE_TABLES = [
   // than a warning). This list still fails OPEN at runtime, which is why both
   // halves exist.
   'looks',
+  // Engines v3 PR-30q (CUL-1724) intake_checks — the answer to "Has she eaten?" under a
+  // vomit read. It names its event (no local FK, see localSchema.ts), so it leads
+  // 'events' under the children-before-parents contract.
+  //
+  // A TRUST & SAFETY REQUIREMENT, not bookkeeping: a row says a named household's
+  // animal vomited and had, or had not, eaten since a stated hour. A dated clinical fact
+  // about the pet; it must not survive a sign-out onto someone else's phone.
+  'intake_checks',
   'events',
   // B-478 vet_documents — the Vet Files library. No local FK is declared on
   // vet_visit_id (see localSchema.ts for why), so nothing would throw on a

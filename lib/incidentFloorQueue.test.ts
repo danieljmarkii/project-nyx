@@ -197,6 +197,22 @@ describe('the drain (drainIncidentFloorQueue)', () => {
     expect(mockInvokes).toEqual([{ name: 'analyze-vomit', body: { event_id: 'm1', mode: 'refloor' } }]);
   });
 
+  it('holds a vomit’s marker until an intake answer under it has landed (PR-30q)', async () => {
+    // The refloor reads the answer into the cat intake arm: sent first, it would read the
+    // record without the answer that owed it.
+    seedEvent('v1', 'vomit');
+    mockDb
+      .prepare(`INSERT INTO intake_checks (id, pet_id, event_id, since, form, answer, answered_at, synced)
+                VALUES ('ic-1', ?, 'v1', '2026-10-07T12:00:00.000Z', 'meal_fed', 'no', '2026-10-08T13:00:00.000Z', 0)`)
+      .run(PET);
+    await insertFloorMarker(RUN, 'v1', PET);
+    await syncPendingIncidentFloors();
+    expect(mockInvokes).toEqual([]);
+    mockDb.prepare(`UPDATE intake_checks SET synced = 1 WHERE id = 'ic-1'`).run();
+    await syncPendingIncidentFloors();
+    expect(mockInvokes).toEqual([{ name: 'analyze-vomit', body: { event_id: 'v1', mode: 'refloor' } }]);
+  });
+
   it('a skipped answer (flags off on the server) has landed: re-sending cannot change it', async () => {
     seedEvent('v1', 'vomit');
     await insertFloorMarker(RUN, 'v1', PET);
