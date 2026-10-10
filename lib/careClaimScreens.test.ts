@@ -221,6 +221,76 @@ describe('zeroBesideCareReason (CUL-1429)', () => {
     expect(zeroBesideCareReason(text, NONE)).toBe('zero_beside_medication');
   });
 
+  // The adversarial pass on the first push (PR-45a): wordings, visit words and generic names
+  // the first arms missed. Each sits beside prednisolone (masks every sign) or a visit.
+  it.each([
+    'Prednisolone is on board, and vomiting has not been logged since.',
+    "Since the prednisolone started, vomiting hasn't been logged.",
+    "Since the prednisolone, the vomiting hasn't recurred.",
+    "Since the prednisolone, it didn't happen again.",
+    'Since the prednisolone, she has stopped vomiting.',
+    'Since the prednisolone, the vomiting stopped.',
+    'None of the vomiting has come back since the prednisolone.',
+    "There hasn't been any vomiting since the prednisolone.",
+    "Since the prednisolone she's had none.",
+    "You've not logged any vomiting since the prednisolone.",
+    "Nothing's been logged since the prednisolone.",
+    'Since Pred started, nothing.',
+    'She has gone 12 days without vomiting on prednisolone.',
+    'On prednisolone she is clear of vomiting.',
+    'Since the prednisolone the log is clean.',
+    'Since the prednisolone it has been quiet.',
+    'Since the prednisolone there are no entries for vomiting.',
+    'On prednisolone the vomiting dropped to zero.',
+    'On prednisolone it went from 5 to 0.',
+    'On prednisolone: coughing 2, vomiting 0.',
+    'On prednisolone, vomiting none.',
+    'On prednisolone, vomiting on 0/14 days.',
+    'On prednisolone, vomiting on 0 of the last 3 days.',
+    'On prednisolone, no days with vomiting.',
+    'On prednisolone, vomiting on 0% of days.',
+    'On prednisolone, 0 logged.',
+    'On prednisolone, no throw-ups since.',
+    'On prednisolone, no honking logged.',
+    'On prednisolone, no seizures logged.',
+    'Since Cerenia started, no episodes other than 2 coughs.',
+    'Since Cerenia started, no new episodes besides a cough.',
+    'Since the antiemetic started, no vomiting is logged.',
+    'Since the inhaler started, no coughing is logged.',
+  ])('refuses (adversarial pass): %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).not.toBeNull();
+  });
+
+  it.each([
+    'No vomiting is logged since the vet.',
+    'No vomiting is logged since her trip to the vet.',
+    'Vet trip on Sep 16; no vomiting is logged since.',
+    'No vomiting since the clinic.',
+    'No vomiting since seeing Dr. Patel.',
+    'No vomiting since the ER.',
+    'No vomiting since her vet appt.',
+    'No vomiting since the hospital stay.',
+    'No vomiting since she was discharged.',
+    'No vomiting since her dental.',
+    'No vomiting since her surgery.',
+    'No vomiting since the vet looked at her.',
+  ])('refuses a zero beside a visit word (adversarial pass): %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).toBe('zero_beside_visit');
+  });
+
+  it.each([
+    // Intake and dose sentences are escalations; refusing them would deflect them.
+    "Since the Sep 16 visit, she hasn't had a full meal logged.",
+    "She hasn't had any food logged since the visit.",
+    'Since the visit, 0 of 6 meals were finished.',
+    'Prednisone: 0 doses given this week, 3 missed.',
+    'Cerenia was given 0 times this week.',
+    // "she's been quiet" is a lethargy report, never a clean log.
+    "Since the visit she's been quiet and off her food.",
+  ])('passes an intake or dose escalation beside a visit or drug: %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).toBeNull();
+  });
+
   it("refuses a zero beside the record's own course name, nickname or not", () => {
     const ctx = { knownNames: ["Buddy's tummy pills"], onBoardNames: [] };
     expect(zeroBesideCareReason("No vomiting is logged since Buddy's tummy pills started.", ctx)).toBe(

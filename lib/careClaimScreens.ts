@@ -182,55 +182,104 @@ export function careClaimReason(text: string): CareClaimReason | null {
 // The zero's sign is read from its own sentence; a sentence naming no sign ("nothing logged",
 // "0 episodes") is a zero of every sign.
 //
+// A sentence about meals or doses alone ("hasn't had a full meal since the visit", "0 doses
+// given") is set aside: it is an escalation, and refusing it would deflect it.
+//
 // What this does not see (stated, so it never reads as coverage): a visit the answer names only
-// by its date ("since Sep 16"), and a masking course the record holds that the answer neither
-// names nor the caller passes. The prompt's rule 10 asks for the window and the logging instead,
-// which carries no zero at all.
+// by its date ("since Sep 16"), and a zero phrased in words no arm lists. It is a DENYLIST: the
+// structural answer (an allowlisted recount or a judge) is CUL-271's and stays open there. The
+// prompt's rule 10 asks for the window and the logging instead, which carries no zero at all,
+// and Ask's caller hands in every course the record holds on board or in its tail, so a zero is
+// refused while one is, named or not.
+
+// The sign nouns a zero is counted in. Wide on purpose: an owner's word ("honking", "runny
+// poop", "hairballs") is still a sign, and an unlisted noun is caught by the generic arm below.
+const ZERO_NOUN = String.raw`(?:vomit\w*|throw(?:ing|s)?[- ]?ups?|retch\w*|regurgitat\w*|hairballs?|gag\w*|diarrh\w*|loose stools?|runny \w+|stools?|poops?|cough\w*|hack\w*|honk\w*|sneez\w*|itch\w*|scratch\w*|lick\w*|skin\w*|rash\w*|hives|symptoms?|episodes?|bouts?|accidents?|flare-?ups?|times|incidents?|events?|signs?|entr(?:y|ies)|days?)`
+const SIGN_VERB = String.raw`(?:vomit\w*|cough\w*|scratch\w*|itch\w*|sneez\w*|lick\w*|retch\w*|gag\w*|hack\w*|throwing up)`
+const NEG = String.raw`(?:\b(?:has|have|had|did|was|were|is|are|does|do)(?:n${APOS}t|\s+not)|${APOS}(?:ve|s|d)\s+not)`
 
 const ZERO_RES: RegExp[] = [
   // "0 vomiting episodes", "zero coughs", "no vomiting", "no new episodes", "not a single
-  // cough", "without an episode". The sign noun is required, so "no need", "no more than 3
-  // episodes" and "No, she…" pass.
+  // cough", "without vomiting", "no days with vomiting". The noun is required, so "no need",
+  // "no more than 3 episodes" and "No, she…" pass.
   new RegExp(
-    String.raw`\b(?:0(?![.,:]\d)|zero|no|not (?:a single|one|any)|without (?:a|an|any))\s+(?:(?:new|more|further|other|logged|recorded|reported)\s+){0,2}(?:\w+\s+)?(?:vomit\w*|throw(?:ing)?[- ]up|diarrh\w*|loose stools?|stools?|cough\w*|sneez\w*|itch\w*|scratch\w*|lick\w*|skin\w*|rash\w*|symptoms?|episodes?|bouts?|accidents?|flare-?ups?|times|incidents?|events?|signs?)\b`,
+    String.raw`\b(?:0(?![.,:]\d)|zero|no|not (?:a single|one|any)|without(?:\s+(?:a|an|any))?)\s+(?:(?:new|more|further|other|logged|recorded|reported|single)\s+){0,2}(?:\w+\s+)?${ZERO_NOUN}\b`,
     'i',
   ),
-  // "none logged", "nothing has been logged", "none since", "nothing so far".
+  // "none logged", "Nothing's been logged", "none since", "nothing so far", "none of the
+  // vomiting has come back", "she's had none", and a bare trailing "…, nothing."
   new RegExp(
-    String.raw`\b(?:nothing|none)(?:\s+(?:new|more|else|at all|of (?:them|it|those)))?(?:\s+(?:is|was|were|are|has|have|had)(?:\s+been)?)?\s+(?:logged|recorded|noted|reported|seen|since|so far)\b`,
+    String.raw`\b(?:nothing|none)(?:${APOS}s)?(?:\s+(?:new|more|else|at all|of (?:them|it|those|the \w+)))?(?:\s+(?:is|was|were|are|has|have|had)(?:\s+been)?)?(?:\s+been)?\s+(?:logged|recorded|noted|reported|seen|since|so far|came back|come back|returned)\b`,
     'i',
   ),
-  // "hasn't vomited", "has not had any episodes", "didn't log a cough". An INTAKE absence
-  // ("hasn't eaten") is an escalation and never matches.
+  new RegExp(String.raw`\b(?:had|has had|have had|${APOS}s had|${APOS}ve had)\s+none\b|(?:^|[,:;]\s*)nothing\s*(?:[.;!?]|$)`, 'i'),
+  // "hasn't vomited", "has not had any episodes", "didn't log a cough", "vomiting has not been
+  // logged", "hasn't recurred", "didn't happen again", "there hasn't been any vomiting",
+  // "you've not logged any". An INTAKE absence ("hasn't eaten") never matches here, and a
+  // sentence about meals or doses alone is set aside below.
   new RegExp(
-    String.raw`\b(?:hasn${APOS}t|has not|haven${APOS}t|have not|didn${APOS}t|did not|hadn${APOS}t|had not)\s+(?:\w+\s+)?(?:vomited|coughed|scratched|itched|sneezed|licked|thrown up|threw up|been sick|had (?:a|an|any)\b|logged (?:a|an|any)\b)`,
+    String.raw`${NEG}\s+(?:\w+\s+){0,2}?(?:vomited|coughed|scratched|itched|sneezed|licked|retched|gagged|thrown up|threw up|been sick|had (?:a|an|any)\b|logged (?:a|an|any)\b|been any\b|been (?:logged|recorded|seen|noted|reported)|recurred|returned|come back|came back|happened(?: again)?|happen(?: again)?)`,
     'i',
   ),
-  // "vomit-free", "symptom free", and the count stated after its noun: "…since the visit: 0",
-  // "the count is 0".
-  new RegExp(String.raw`\b(?:vomit\w*|cough\w*|symptom|itch\w*|diarrh\w*|scratch\w*|sneez\w*|episode)[- ]free\b`, 'i'),
-  new RegExp(String.raw`(?:[:=]|\b(?:is|are|was|were|at|stands at))\s*(?:0|zero)\b(?![.,:]\d)`, 'i'),
-  // "on 0 of 14 days".
-  new RegExp(String.raw`\b(?:0|zero|none)\s+of\s+(?:the\s+)?\d+\b`, 'i'),
+  // "has stopped vomiting", "the vomiting stopped". Not "stopped eating": an escalation.
+  new RegExp(String.raw`\bstopped\s+${SIGN_VERB}|\b${SIGN_VERB}\s+(?:has\s+|have\s+|had\s+)?stopped\b`, 'i'),
+  // "vomit-free", "symptom free", "clear of vomiting", "the log is clean / empty / quiet".
+  new RegExp(String.raw`\b(?:vomit\w*|cough\w*|symptom|itch\w*|diarrh\w*|scratch\w*|sneez\w*|episode)[- ]free\b|\bclear of\b`, 'i'),
+  new RegExp(
+    String.raw`\b(?:log|logs|record|logging|it|things?)(?:${APOS}s)?\s+(?:(?:is|was|has been|have been|had been|looks?|stayed|been)\s+)?(?:\w+\s+)?(?:clean|empty|quiet|blank)\b`,
+    'i',
+  ),
+  // A count stated after its noun or as a result: "…since the visit: 0", "the count is 0",
+  // "vomiting 0", "vomiting none", "dropped to zero", "went from 5 to 0", "0 logged".
+  new RegExp(String.raw`(?:[:=]|\b(?:is|are|was|were|at|stands at|to))\s*(?:0|zero)\b(?![.,:]\d)`, 'i'),
+  new RegExp(String.raw`\b${ZERO_NOUN}\s+(?:0|zero|none)\b(?![.,:]\d)`, 'i'),
+  new RegExp(String.raw`\b(?:0|zero)\s+(?:(?:were|are|was|is)\s+)?(?:logged|recorded)\b`, 'i'),
+  // "on 0 of 14 days", "0/14 days", "0 of the last 3 days", "0% of days", "0.0 per day".
+  new RegExp(String.raw`\b(?:0|zero|none)\s*(?:/|of)\s*(?:the\s+)?(?:last\s+|past\s+)?\d+\b`, 'i'),
+  new RegExp(String.raw`(?:^|[^\d.])0(?:\.0+)?\s*(?:%|percent\b|per cent\b)|\b0\.0+\s+(?:per|a|an|each)\b`, 'i'),
+  // The generic arm: a count of none of a noun no list above names ("no seizures logged").
+  new RegExp(String.raw`\bno\s+\w+(?:\s+\w+)?\s+(?:logged|recorded|since|so far)\b`, 'i'),
 ]
 
-const VISIT_RE =
-  /\b(?:visit(?:s|ed)?|appointments?|check-?ups?|re-?checks?|exams?|examination|consult(?:ation)?s?|(?:the|your|her|his|their)\s+vet\s+(?:saw|examined|checked)|saw\s+(?:the|your|her|his|their|a)\s+vet|seen\s+by\s+(?:the|your|her|his|their|a)\s+vet|at\s+the\s+(?:vet|clinic))\b/i
+const VISIT_RE = new RegExp(
+  [
+    String.raw`\b(?:visit(?:s|ed)?|appointments?|appts?|check-?ups?|re-?checks?|exams?|examination|consult(?:ation)?s?|clinic\w*|hospital\w*|discharg\w*|surger(?:y|ies)|dental)\b`,
+    String.raw`\b(?:the|your|her|his|their)\s+vet\s+(?:saw|examined|checked|looked|treated|gave|injected)\b`,
+    String.raw`\b(?:saw|seen\s+by|seeing)\s+(?:the|your|her|his|their|a)\s+vet\b`,
+    String.raw`\b(?:since|after|before|at|from)\s+(?:the|her|his|their|your)\s+vet\b`,
+    String.raw`\b(?:trip|visit|going|went|go|been)\s+to\s+(?:the|a|her|his|their|your)\s+(?:vet|er|emergency)\b`,
+    String.raw`\bvet\s+(?:trip|appt|appointment|stay|check)\b`,
+  ].join('|'),
+  'i',
+)
+// Case-sensitive: "the ER", "Dr. Patel", "Dr Okafor".
+const VISIT_CASED_RE = /\bER\b|\bDr\.?\s+[A-Z]/
 
 // A medication referred to without its name. Judged only when no name is written: "the
 // prednisone … her medication" names one course, not two.
 const GENERIC_MED_RE =
-  /\b(?:medications?|medicines?|meds|drugs?|doses?|dosing|pills?|tablets?|injections?|injected|shots?|steroids?|antibiotics?|treatments?|prescription|prescribed|course)\b/i
+  /\b(?:medications?|medicines?|meds|drugs?|doses?|dosing|pills?|tablets?|injections?|injected|injectables?|shots?|jabs?|steroids?|antibiotics?|antiemetics?|inhalers?|rx|treatments?|prescription|prescribed|course)\b/i
 
 const SIGN_WORDS: [RegExp, MaskSign[]][] = [
-  [/\b(?:vomit\w*|threw up|thrown up|throw(?:ing)?[- ]up|been sick)\b/i, ['vomit']],
-  [/\b(?:diarrh\w*|loose stools?|stools?)\b/i, ['diarrhea']],
-  [/\bcough\w*\b/i, ['cough']],
+  [/\b(?:vomit\w*|threw up|thrown up|throw(?:ing|s)?[- ]?ups?|been sick|retch\w*|regurgitat\w*|hairballs?|gag\w*)\b/i, ['vomit']],
+  [/\b(?:diarrh\w*|loose stools?|runny \w+|stools?|poops?)\b/i, ['diarrhea']],
+  [/\b(?:cough\w*|hack\w*|honk\w*)\b/i, ['cough']],
   [/\bsneez\w*\b/i, ['sneeze']],
   [/\bitch\w*\b/i, ['itch']],
   [/\b(?:scratch\w*|lick\w*)\b/i, ['scratch']],
   [/\b(?:skin|rash\w*|hives)\b/i, ['skin_reaction']],
 ]
+
+// A sentence about meals, food or doses alone is not a symptom zero: "she hasn't had a full meal
+// since the visit" and "0 doses given, 3 missed" are escalations, and refusing them would trade
+// the screen's protection for a deflection (adversarial review, PR-45a). A sentence that also
+// names a sign or an episode is judged as a zero.
+const INTAKE_OR_DOSE_RE =
+  /\b(?:meals?|food|foods|eat\w*|ate|finish\w*|water|drink\w*|treats?|kibble|dinner|breakfast|lunch|appetite|doses?|given|administered|missed)\b/i
+const SYMPTOM_ONLY_RE =
+  /\b(?:vomit\w*|throw(?:ing|s)?[- ]?ups?|retch\w*|regurgitat\w*|hairballs?|gag\w*|diarrh\w*|loose stools?|runny \w+|stools?|poops?|cough\w*|hack\w*|honk\w*|sneez\w*|itch\w*|scratch\w*|lick\w*|skin\w*|rash\w*|hives|symptoms?|episodes?|bouts?|flare-?ups?|sick)\b/i
+// "no episodes other than 2 coughs": the exception names a sign the zero is NOT about.
+const EXCEPTION_RE = /\b(?:other than|besides|except|apart from|aside from|but for|just|only)\b/i
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -241,11 +290,14 @@ function zeroSigns(text: string): Set<MaskSign> {
   const signs = new Set<MaskSign>()
   for (const sentence of text.split(/(?<=[.;?!])\s+|\n+/)) {
     if (!ZERO_RES.some((re) => re.test(sentence))) continue
+    if (INTAKE_OR_DOSE_RE.test(sentence) && !SYMPTOM_ONLY_RE.test(sentence)) continue
     let named = false
-    for (const [re, ss] of SIGN_WORDS) {
-      if (re.test(sentence)) {
-        named = true
-        for (const s of ss) signs.add(s)
+    if (!EXCEPTION_RE.test(sentence)) {
+      for (const [re, ss] of SIGN_WORDS) {
+        if (re.test(sentence)) {
+          named = true
+          for (const s of ss) signs.add(s)
+        }
       }
     }
     if (!named) for (const s of ALL_SIGNS) signs.add(s)
@@ -262,6 +314,7 @@ function namedMedications(text: string, knownNames: readonly string[]): (DrugCla
     const classes = DRUG_NAME_CLASSES[w]
     if (classes) out.push([...classes])
     // A combination ("Metro-Pred") is judged whole, so an unknown part fails toward masking.
+    else if (w.includes('-') && DRUG_NAME_CLASSES[w.replace(/-/g, '')]) out.push([...DRUG_NAME_CLASSES[w.replace(/-/g, '')]])
     else if (w.includes('-') && w.split('-').some((part) => DRUG_NAME_CLASSES[part])) out.push(resolveDrugClasses([w]))
   }
   for (const name of knownNames) {
@@ -290,10 +343,11 @@ export type ZeroBesideCareReason = 'zero_beside_visit' | 'zero_beside_medication
  *  sign (CUL-1429). Both lists are required: an empty list is a statement that the record
  *  handed over no medication, never a default (C-37). */
 export function zeroBesideCareReason(text: string, ctx: ZeroBesideCareContext): ZeroBesideCareReason | null {
-  const t = text ?? ''
+  // NFKC folds lookalike and full-width letters; a soft hyphen is dropped.
+  const t = (text ?? '').normalize('NFKC').replace(/\u00ad/g, '')
   const signs = zeroSigns(t)
   if (signs.size === 0) return null
-  if (VISIT_RE.test(t)) return 'zero_beside_visit'
+  if (VISIT_RE.test(t) || VISIT_CASED_RE.test(t)) return 'zero_beside_visit'
   const meds = [...namedMedications(t, ctx.knownNames), ...ctx.onBoardNames.map((n) => resolveDrugClasses([n]))]
   for (const classes of meds) {
     for (const sign of signs) if (courseEffectOn(classes, sign).masks) return 'zero_beside_medication'

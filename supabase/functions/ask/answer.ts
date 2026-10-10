@@ -87,6 +87,8 @@ import {
   zeroBesideCareReason,
   type ZeroBesideCareContext,
 } from '../../../lib/careClaimScreens.ts'
+import { assessCourse } from '../../../lib/maskingSpans.ts'
+import { localDayIndex } from '../../../lib/utils.ts'
 import { TIER_WORDS, type TierDisplay } from '../../../lib/incidentTierWords.ts'
 
 // ── Model & loop bounds ─────────────────────────────────────────────────────────
@@ -939,13 +941,35 @@ export interface ValidateAnswerParams {
 
 const NO_CARE_NAMES: ZeroBesideCareContext = { knownNames: [], onBoardNames: [] }
 
-/** The medication names the captured tool results handed the model (CUL-1429): every
- *  `drugLabel` anywhere is a name the model may write, and a `medications` entry that is
- *  active or dosed in the window is a course that may be on board, so it sits beside every
- *  zero in the answer whether the answer names it or not. */
-export function careNamesFrom(captured: readonly { name: string; result: unknown }[]): ZeroBesideCareContext {
+/** The medication names the zero screen judges an answer against (CUL-1429).
+ *  • `knownNames`: every regimen's label, and every `drugLabel` a tool handed the model, so a
+ *    nickname the answer writes is still a medication beside its zero.
+ *  • `onBoardNames`: every regimen ON BOARD or inside its 42-day tail, placed by the Signal's
+ *    own `assessCourse` (`lib/maskingSpans.ts`), read from the regimens this turn already
+ *    loaded — never from which tools the model chose to call (adversarial review, PR-45a: a
+ *    steroid the model never looked up still hides the sign). A `medications` entry dosed in
+ *    the window joins it too: an ad-hoc dose has no regimen row. */
+export function careNamesFrom(
+  captured: readonly { name: string; result: unknown }[],
+  record: { regimens: readonly AskRegimenRow[]; nowMs: number; timezone: string | null },
+): ZeroBesideCareContext {
   const known = new Set<string>()
   const onBoard = new Set<string>()
+  const tz = record.timezone ?? undefined
+  const todayIndex = localDayIndex(record.nowMs, tz)
+  for (const r of record.regimens) {
+    if (r.deletedAt) continue
+    const label = (r.drugLabel ?? '').trim()
+    if (!label) continue
+    known.add(label)
+    const placed = assessCourse(
+      { drugLabel: label, names: [], startedOn: r.startedAt, endedOn: r.endedAt, status: r.status },
+      todayIndex,
+      tz,
+    )
+    // A course with no start is unplaced, not absent: an active one still counts as on board.
+    if (placed.onBoard || placed.inTail || (placed.start === null && r.status === 'active')) onBoard.add(label)
+  }
   const walk = (v: unknown): void => {
     if (Array.isArray(v)) {
       for (const x of v) walk(x)
@@ -969,6 +993,25 @@ export function careNamesFrom(captured: readonly { name: string; result: unknown
     }
   }
   return { knownNames: [...known], onBoardNames: [...onBoard] }
+}
+
+/** The provenance line beside an answer may not carry the zero the answer may not (CUL-1429):
+ *  "Since the Sep 16 visit, 7 days, with something logged on 7 of them." over "0 events ·
+ *  logging on 7 of 7 days" is the same zero, printed by the server. The count half is dropped
+ *  and the logging stays; anything else that still screens drops the line. */
+export function screenProvenanceZero(
+  provenance: AnswerProvenance | null,
+  answerText: string,
+  care: ZeroBesideCareContext,
+): AnswerProvenance | null {
+  if (!provenance || !provenance.denominator) return provenance
+  const d = provenance.denominator
+  if (!zeroBesideCareReason(`${answerText}\n${d}`, care)) return provenance
+  const logging = d.replace(/^0 events? · /, '')
+  if (logging !== d && !zeroBesideCareReason(`${answerText}\n${logging}`, care)) {
+    return { ...provenance, denominator: logging }
+  }
+  return { ...provenance, denominator: null }
 }
 
 export type ValidateResult = { ok: true } | { ok: false; reason: string }
