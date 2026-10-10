@@ -438,10 +438,13 @@ export function mapIncidentAnalyses(rows: IncidentAnalysisRow[]): IncidentAnalys
 
 /**
  * The call a NEW-RULE read stands on, in the record's own resolution (`tierDisplayOf`, the one the
- * record, History and Ask use), or null. Earlier-rule rows are null; a stamped row holding a
- * value this build does not know is call now. An earlier-rule call (`worth_a_call`, or a value this build
- * does not know) is null here on purpose: it keeps today's lane and today's words (spec §4, §5), so
- * nothing on Home moves until a read is stamped under `engines_v3_en3` (CUL-1407).
+ * record, History and Ask use), or null. A stamped row holding a value this build does not know is
+ * call now. An earlier-rule call (`worth_a_call`, or a value this build does not know, on an
+ * unstamped row) is null here on purpose: it keeps today's lane and today's words (spec §4, §5).
+ * The one unstamped row that IS a call is a stored `tier = 'call_now'` (CUL-1516, GAP-34): only a
+ * write under `engines_v3_en3` stores one, so the owner was shown it, and the record keeps its
+ * words over a later flag-off write. Home follows the record. Nothing on Home moves until a read
+ * has been written under the key (CUL-1407).
  */
 export function newRuleCallOf(r: Pick<IncidentAnalysisRow, 'status' | 'recommendation' | 'tier' | 'engine_flags'>): IncidentCall | null {
   // The row itself, never a rebuilt literal: the stamp is only READ here, and the one-writer guard

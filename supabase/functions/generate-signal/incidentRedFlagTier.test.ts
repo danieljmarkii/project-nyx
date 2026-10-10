@@ -60,8 +60,11 @@ Deno.test('newRuleCallOf — a stamped call is its tier; everything else is no c
   assert.equal(newRuleCallOf(row({ tier: 'logged', recommendation: 'worth_a_call', engine_flags: STAMPED })), 'call_today')
   // Earlier rule: today's words, today's lane. This is the dark state.
   assert.equal(newRuleCallOf(row({ recommendation: 'worth_a_call' })), null)
-  assert.equal(newRuleCallOf(row({ tier: 'call_now', recommendation: 'worth_a_call', engine_flags: [] })), null)
-  assert.equal(newRuleCallOf(row({ tier: 'call_now', recommendation: 'worth_a_call' })), null)
+  assert.equal(newRuleCallOf(row({ tier: 'call_today', recommendation: 'worth_a_call', engine_flags: [] })), null)
+  // A stored call now is a new-rule call whatever the stamp (CUL-1516, GAP-34): only a write under
+  // the key stores one, so the owner was shown it, and Home follows the record rather than step it down.
+  assert.equal(newRuleCallOf(row({ tier: 'call_now', recommendation: 'worth_a_call', engine_flags: [] })), 'call_now')
+  assert.equal(newRuleCallOf(row({ tier: 'call_now', recommendation: 'worth_a_call' })), 'call_now')
   // Quiet reads are never a call.
   assert.equal(newRuleCallOf(row({ tier: 'logged', recommendation: 'monitor', engine_flags: STAMPED })), null)
   assert.equal(newRuleCallOf(row({ tier: 'not_enough_to_say', recommendation: 'not_enough_to_say', engine_flags: STAMPED })), null)
