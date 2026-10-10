@@ -65,7 +65,7 @@
 
 import { canonicalizeProtein, readProteinSet } from '../generate-signal/protein.ts'
 import { attributeDoses, type AttributableDose } from '../../../lib/medications.ts'
-import { TIER_WORDS, tierDisplayOf } from '../../../lib/incidentTierWords.ts'
+import { TIER_WORDS, tierDisplayOf, type TierRow } from '../../../lib/incidentTierWords.ts'
 
 // ── Shared constants ────────────────────────────────────────────────────────────
 
@@ -459,11 +459,11 @@ export interface AskCachedReadRow {
   stoolMucusPresent: string | null
   // ── n=1 interpretive read (dismissible, not editable) ──
   recommendation: string | null
-  /** EN-3's tier beside `recommendation` (migration 079), and the rule-version stamp that
-   *  decides which words stand (075's `engine_flags`). Read only to resolve the words the
-   *  record shows (`tierWords`); neither raw value is ever relayed (spec §4, CUL-1512). */
-  tier: string | null
-  engineFlags: string[] | null
+  /** The words the record shows for this read, resolved from the raw row (status, verdict,
+   *  `tier` 079, `engine_flags` 075) by `tierWordsOf` when the row is mapped, as the dated
+   *  correction is worded there too. Neither raw column is carried past that point, so no
+   *  tier, verdict or stamp value can reach the model (spec §4, CUL-1512). */
+  tierWords: string | null
   readText: string | null
   /** CUL-1406: the dated correction beside `readText`, already worded by lib/readCorrection.ts
    *  (label + body, the incident screen's words), or null. Relayed AFTER the stored words,
@@ -903,16 +903,12 @@ export function derivePresentFlags(read: AskCachedReadRow): DerivedFlag[] {
   return flags
 }
 
-/** The record's words for a read: the same resolver every client surface asks, over the same
- *  four columns (status, tier, verdict, stamp), so Ask can never name a read differently from
- *  the screen it links to. */
-export function tierWordsOf(read: Pick<AskCachedReadRow, 'status' | 'tier' | 'recommendation' | 'engineFlags'>): string | null {
-  const display = tierDisplayOf({
-    status: read.status,
-    tier: read.tier,
-    recommendation: read.recommendation,
-    engine_flags: read.engineFlags,
-  })
+/** The record's words for a read: the same resolver every client surface asks, handed the
+ *  raw row's own four columns (status, tier, verdict, stamp), so Ask can never name a read
+ *  differently from the screen it links to. Takes the DB row as it is, so nothing here
+ *  rebuilds a stamp-shaped object (the one-writer guard, engineStamps.guard.test.ts). */
+export function tierWordsOf(row: TierRow): string | null {
+  const display = tierDisplayOf(row)
   return display === null ? null : TIER_WORDS[display].label
 }
 
@@ -934,7 +930,7 @@ export function projectCachedRead(read: AskCachedReadRow): ProjectedRead {
     readText: dismissed || !read.readText
       ? null
       : read.readCorrection ? `${read.readText} ${read.readCorrection}` : read.readText,
-    tierWords: dismissed ? null : tierWordsOf(read),
+    tierWords: dismissed ? null : read.tierWords,
     fields: {
       colour: read.colour,
       contents: read.contents,

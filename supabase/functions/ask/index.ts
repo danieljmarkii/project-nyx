@@ -42,7 +42,7 @@ import { fetchWithTimeout } from '../_shared/http.ts'
 import { fetchAll, incompletePullNames } from '../_shared/pull.ts'
 import { resolveIanaZone } from '../../../lib/utils.ts'
 import { intakeCorrectionOf, intakeCorrectionSentence, type IntakeCorrectionColumns } from '../../../lib/readCorrection.ts'
-import { projectCachedRead } from './tools.ts'
+import { projectCachedRead, tierWordsOf } from './tools.ts'
 import type {
   AskEventRow,
   AskMealRow,
@@ -474,7 +474,7 @@ function first<T>(v: T | T[] | null | undefined): T | null {
 // fields + the dismissible n=1 read, and since CUL-1406 the facts behind a dated correction
 // beside it, migration 085). Since CUL-1512 it also reads `tier` (079) and `engine_flags`
 // (075): the two columns the tier-word map needs to resolve the words the record shows.
-// Neither is relayed raw; `projectCachedRead` turns them into those words. One literal, so supabase-js can type the select. Shared by
+// Neither is relayed raw: `mapReadRow` turns them into those words (`tierWordsOf`). One literal, so supabase-js can type the select. Shared by
 // fetchContext (the cached-read snapshot) and
 // runLivePhotoRead (the post-run re-read), so both project from the identical column set.
 const READ_COLS =
@@ -505,8 +505,7 @@ function mapReadRow(r: ReadRowDb, words: { petName: string; timezone: string | n
     stoolBloodPresent: (r.stool_blood_present as string) ?? null,
     stoolMucusPresent: (r.stool_mucus_present as string) ?? null,
     recommendation: (r.recommendation as string) ?? null,
-    tier: (r.tier as string) ?? null,
-    engineFlags: Array.isArray(r.engine_flags) ? (r.engine_flags as string[]) : null,
+    tierWords: tierWordsOf(r),
     readText: (r.read_text as string) ?? null,
     readCorrection: correction ? intakeCorrectionSentence(correction, words.petName, words.timezone ?? undefined) : null,
   }

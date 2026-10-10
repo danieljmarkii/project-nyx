@@ -780,8 +780,7 @@ function readRow(over: Partial<AskCachedReadRow> & { eventId: string }): AskCach
     stoolBloodPresent: null,
     stoolMucusPresent: null,
     recommendation: null,
-    tier: null,
-    engineFlags: null,
+    tierWords: null,
     readText: null,
     readCorrection: null,
     ...over,
@@ -1074,7 +1073,7 @@ const CORRECTION = "Corrected Oct 7, 2026. The note \"hasn't eaten a full meal r
 // Driven through the real projection (C-34): the pairing lives in projectCachedRead, so a test
 // that hands buildReadLine a pre-joined string would be green over a projection that dropped it.
 Deno.test('buildReadLine (CUL-1406): the stored words, then their correction; the verdict untouched', () => {
-  const projectedRead = projectCachedRead(readRow({ eventId: 'e1', recommendation: 'worth_a_call', readText: OLD_INTAKE, readCorrection: CORRECTION }))
+  const projectedRead = projectCachedRead(readRow({ eventId: 'e1', recommendation: 'worth_a_call', tierWords: 'Worth a call', readText: OLD_INTAKE, readCorrection: CORRECTION }))
   const line = buildReadLine(photoResult('cached', projectedRead), 'Nyx')
   assert.ok(line)
   const at = line!.indexOf(OLD_INTAKE)
