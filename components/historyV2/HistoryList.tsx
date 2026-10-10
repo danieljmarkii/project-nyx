@@ -586,10 +586,12 @@ export function HistoryList() {
             reads: { analysis: snapshot.analysis, answered: snapshot.answered, working },
             timing: snapshot.timing,
             // The looks each card draws among its rows break a run they fall inside (CUL-1719).
-            looks: lookRows,
+            // The read's looks, not the removal-filtered ones: like the rows, the nodes hold
+            // until the next read, so a removal never re-folds a run or moves its id.
+            looks: snapshot.looks,
           })
         : NO_NODES_BY_DAY,
-    [snapshot, working, lookRows],
+    [snapshot, working],
   );
 
   // The rows a removal could fold, read by the focus callback when the owner comes back.
