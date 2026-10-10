@@ -34,6 +34,7 @@
 
 import { getDietTrialProgress } from './analytics';
 import { getDb } from './db';
+import { REFUSAL_VET_TAIL } from './signalCopy';
 import { loadTrialPredicateFacts } from './dietTrialFacts';
 import {
   classifyEpisodeSet,
@@ -284,7 +285,7 @@ export function trialPhenotypeRefusalLine(p: TrialPhenotypeFacts, config: MealTi
   const k = Math.min(p.longAfterRefusalCount, long);
   if (k < 1) return null;
   const eps = long === 1 ? 'episode' : 'episodes';
-  return `${k} of the ${long} ${eps} ${timingBandLabel('long', config)} followed a refused meal.`;
+  return `${k} of the ${long} ${eps} ${timingBandLabel('long', config)} followed a refused meal. ${REFUSAL_VET_TAIL}`;
 }
 
 /** The treat-share row value, e.g. "7% of meals & treats" — or the honest no-data form.

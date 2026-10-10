@@ -73,6 +73,7 @@ import {
   classifyEpisodeSet,
   collapseEpisodes,
   feedingIsEatingAnchor,
+  minutesAfterLastRefusal,
   timedEligibleFeedings,
   type FeedingInput,
   type FreeFedSpan,
@@ -1104,7 +1105,29 @@ export interface CorrelationFinding extends FindingBase {
   medContext?: MedOnBoardContext
 }
 
-export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food'
+// `refused_then_vomited` (I5, CUL-1196; Engines v3 PR-30s): a cat who vomited minutes after turning
+// down a bowl, on at least two days. It is emitted ONLY under `engines_v3_en5` (config.en5), and only
+// when the other two are quiet: when either fires, the same facts ride on it as `refusedThenVomited`
+// instead (ruling sheet §2.7 I5 = a line on the cat intake card, not a new card; PM option A, 10/09).
+export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food' | 'refused_then_vomited'
+
+/**
+ * I5's facts: how many collapsed vomit episodes followed a refused bowl within `windowMinutes`, on
+ * how many of the owner's days, and the first one's onset. A COUNT over a named population, never
+ * a rate: the record cannot say how many refusals were NOT followed by a vomit in a way an owner
+ * should read as reassurance (ratings are exception-only, CUL-1118), so no denominator is offered.
+ */
+export interface RefusedThenVomitedFacts {
+  episodeCount: number
+  dayCount: number
+  /** ISO onset of the earliest counted episode. */
+  firstIso: string
+  /** That onset's day in the owner's zone (YYYY-MM-DD), the "since" date the line prints, so the
+   *  date and the day count read the same calendar (adversarial pass D5). */
+  firstLocalDay: string
+  /** The rapid band's minutes (`rapidWindowMinutes`), carried so no surface restates the 30. */
+  windowMinutes: number
+}
 
 /**
  * Calm intake-decline safety flag (②). NEVER softened into "picky", NEVER reassures,
@@ -1137,6 +1160,12 @@ export interface IntakeDeclineFinding extends FindingBase {
    * span; this stays a raw structured fact (no Date.now-relative arithmetic in the finding).
    */
   lastFullMealIso: string | null
+  /**
+   * I5 (Engines v3 PR-30s): present only under `engines_v3_en5`, on a cat, at or above the floor.
+   * On a `refused_then_vomited` finding it is the whole claim; on the other two triggers it is the
+   * extra line the card prints. Absent says nothing (a record that rates bowls by exception).
+   */
+  refusedThenVomited?: RefusedThenVomitedFacts
 }
 
 /** A reflection only ever describes a FLAT ("same as last week") or IMPROVING (falling) trend. */
@@ -2118,6 +2147,25 @@ export interface DetectionConfig {
     cat: {
       consecutiveDaysBelowBaseline: number
       singleDayConcernCeiling: number
+    }
+  }
+  /**
+   * EN-5's Signal half (Engines v3 PR-30s, CUL-1725), behind `engines_v3_en5`. ABSENT on
+   * DEFAULT_CONFIG and EN11_CONFIG, so the intake lane is byte-identical for an account without
+   * the key; the shells add it with `withEn5Config` only while the key is on. Present, it runs
+   * I5 (refused, then vomited within minutes) on cats and nothing else.
+   */
+  en5?: {
+    refusedThenVomited: {
+      /** Look back this many days for qualifying episodes. */
+      windowDays: number
+      /** At least this many collapsed vomit episodes... */
+      minEpisodes: number
+      /** ...on at least this many of the owner's local days. */
+      minDays: number
+      /** ...and the first and last counted onsets at least this many hours apart, so one night
+       *  that crosses midnight never meets a two-day floor (adversarial pass D3). */
+      minSpanHours: number
     }
   }
   reflection: {
@@ -4099,9 +4147,119 @@ function lastFullMeal(meals: RatedMeal[]): string | null {
   return null
 }
 
+/**
+ * Detector ②, the intake lane. Under `engines_v3_en5` (config.en5) it also runs I5, refused then
+ * vomited within minutes (Engines v3 PR-30s, CUL-1725): when ② fires, I5's facts ride on its
+ * leading card as a line; when ② is quiet, I5 raises the cat intake card by itself (PM option A,
+ * 10/09), because the cat it exists for (one refusal a night) never trips ②. Flag off, this is
+ * `detectIntakeDeclineCore` and nothing else.
+ */
 export function detectIntakeDecline(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
+): IntakeDeclineFinding[] {
+  const findings = detectIntakeDeclineCore(input, config)
+  if (!config.en5) return findings
+  const facts = refusedThenVomitedFacts(input, config, config.en5.refusedThenVomited)
+  if (!facts) return findings
+  if (findings.length > 0) {
+    // One line, on the card that leads (the ranker's own trigger order), so two intake cards
+    // never print it twice.
+    const lead = findings.reduce((a, b) => (INTAKE_TRIGGER_RANK[b.trigger] < INTAKE_TRIGGER_RANK[a.trigger] ? b : a))
+    return findings.map((f) => (f === lead ? { ...f, refusedThenVomited: facts } : f))
+  }
+  return [
+    {
+      type: 'intake_decline',
+      priorityClass: 'safety',
+      trigger: 'refused_then_vomited',
+      species: input.pet.species,
+      // No baseline is involved: the claim is a count of episodes, so the score fields hold the
+      // refusal's score and no comparison, and no surface reads them for this trigger.
+      baselineScore: intakeScore('refused'),
+      recentScore: intakeScore('refused'),
+      daysBelowBaseline: 0,
+      refusedFoodLabel: null,
+      ratedMealsConsidered: 0,
+      lastFullMealIso: lastFullMeal(classifyRatedMeals(input.mealEvents, intakeFreeFedSpans(input))),
+      refusedThenVomited: facts,
+    },
+  ]
+}
+
+/** The ranker's order within intake_decline (refused_normal_food leads), shared with the line's
+ *  placement so the line always sits on the card that leads. */
+const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>> = {
+  refused_normal_food: 0,
+  consecutive_low: 1,
+  refused_then_vomited: 2,
+}
+
+/**
+ * I5 (ruling sheet §2.7, CUL-1196): the collapsed vomit episodes in the last `windowDays` whose last
+ * bowl was rated Refused within the rapid band's minutes (`minutesAfterLastRefusal`, the timing
+ * lane's own evidence bars). Cats only, provisionally (species is on the real-vet list). Null below
+ * the floor: the absence of this line says nothing about her eating, and nothing renders it.
+ *
+ * Days are the owner's local days. With no valid zone on file I5 is SILENT, as ⑥ is: a UTC day
+ * would split an American evening in two and print a count the owner never lived. And the counted
+ * onsets must span `minSpanHours`, so one night across local midnight never meets the floor.
+ */
+function refusedThenVomitedFacts(
+  input: DetectionInput,
+  config: DetectionConfig,
+  rule: NonNullable<DetectionConfig['en5']>['refusedThenVomited'],
+): RefusedThenVomitedFacts | null {
+  if (input.pet.species !== 'cat') return null
+  if (!isValidTimeZone(input.timezone)) return null
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return null
+  const timingConfig = timingConfigFor(config)
+  const feedings = timingFeedingsOf(input)
+  const freeFedSpans = timingFreeFedSpansOf(input)
+  const windowStart = nowMs - rule.windowDays * MS_PER_DAY
+  // Collapse on the full list, then window (the timing lane's wiring rule).
+  const episodes = collapseEpisodes(
+    input.symptomEvents
+      .filter((e) => e.type === POSTPRANDIAL_SYMPTOM_TYPE)
+      .map((e) => ({ ms: Date.parse(e.occurredAt), confidence: e.occurredAtConfidence ?? null }))
+      .filter((e) => Number.isFinite(e.ms)),
+    config.symptomEpisodeGapHours,
+  ).filter((e) => e.ms >= windowStart && e.ms <= nowMs)
+  const counted = episodes.filter((e) => {
+    const minutes = minutesAfterLastRefusal({ onsetMs: e.ms, confidence: e.confidence }, feedings, freeFedSpans, timingConfig)
+    return minutes !== null && minutes <= timingConfig.rapidWindowMinutes
+  })
+  const days = new Set(counted.map((e) => localIsoDay(new Date(e.ms).toISOString(), input.timezone)))
+  if (counted.length < rule.minEpisodes || days.size < rule.minDays) return null
+  if (counted[counted.length - 1].ms - counted[0].ms < rule.minSpanHours * MS_PER_HOUR) return null
+  const firstIso = new Date(counted[0].ms).toISOString()
+  return {
+    episodeCount: counted.length,
+    dayCount: days.size,
+    firstIso,
+    firstLocalDay: localIsoDay(firstIso, input.timezone),
+    windowMinutes: timingConfig.rapidWindowMinutes,
+  }
+}
+
+/** I5's provisional values (ruling sheet §2.7: the rapid band, two episodes on two days; the window
+ *  is the intake baseline's 14 days). All three are on the real-vet list (CUL-1312). */
+export const EN5_SETTINGS: NonNullable<DetectionConfig['en5']> = {
+  // 14 hours: one bad night rarely runs past about 12, so it never clears this, while two evenings
+  // with a late first dinner (22:00, then 17:30 the next day: 19.5 hours) do. The first draft had
+  // 20, and the re-review silenced that refuser with it; the quiet side is the one that misses a cat.
+  refusedThenVomited: { windowDays: 14, minEpisodes: 2, minDays: 2, minSpanHours: 14 },
+}
+
+/** The config under `engines_v3_en5`: the caller's config plus I5, so it composes with EN-11's. */
+export function withEn5Config(config: DetectionConfig): DetectionConfig {
+  return { ...config, en5: EN5_SETTINGS }
+}
+
+function detectIntakeDeclineCore(
+  input: DetectionInput,
+  config: DetectionConfig,
 ): IntakeDeclineFinding[] {
   const cfg = config.intakeDecline
   const nowMs = Date.parse(input.now)
@@ -5380,6 +5538,27 @@ function timingConfigFor(config: DetectionConfig): MealTimingConfig {
   }
 }
 
+/** The pet's feedings as the timing lane reads them: the event id, the instant, the intake rating,
+ *  the evidence-only form. The NULL-tolerant witnessed filter, the refusal rule and the sort live in
+ *  `lib/mealTiming.ts`, so no caller can anchor a claim on an estimated or refused feeding. Shared
+ *  by ⑤/L1's scan and I5, so the two read one feeding list. */
+function timingFeedingsOf(input: DetectionInput): FeedingInput[] {
+  return input.mealEvents.map((m) => ({
+    id: m.id,
+    ms: Date.parse(m.occurredAt),
+    confidence: m.occurredAtConfidence ?? null,
+    intakeRating: m.intakeRating,
+    form: m.foodLabel ?? m.foodType ?? null,
+  }))
+}
+
+/** Free-fed standing facts (B-040): a bowl available in the preceding window makes "minutes since
+ *  last logged feeding" fiction. classifyArrangements parses + drops garbage/inverted spans
+ *  (untilMs > fromMs), satisfying isFreeFedNear's valid-span precondition. */
+function timingFreeFedSpansOf(input: DetectionInput): FreeFedSpan[] {
+  return classifyArrangements(input.feedingArrangements ?? []).map((s) => ({ fromMs: s.fromMs, untilMs: s.untilMs }))
+}
+
 /** The shared vomit-timing scan ⑤ and L1 both read — ONE distribution over ONE eligible set. */
 interface TimingScan {
   /** The banded eligible episodes + bandCounts (rapid/mid/long) over the eligible denominator. */
@@ -5413,19 +5592,8 @@ function scanVomitTiming(input: DetectionInput, config: DetectionConfig): Timing
   // evidence-only form). The NULL-tolerant witnessed filter, the refusal rule (a Refused bowl never
   // anchors — CUL-1122) and the sort all live in `lib/mealTiming.ts` (`classifyEpisodeSet` prepares
   // them once), so a caller can't forget one and anchor a claim on an estimated or refused feeding.
-  const feedings: FeedingInput[] = input.mealEvents.map((m) => ({
-    id: m.id,
-    ms: Date.parse(m.occurredAt),
-    confidence: m.occurredAtConfidence ?? null,
-    intakeRating: m.intakeRating,
-    form: m.foodLabel ?? m.foodType ?? null,
-  }))
-  // Free-fed standing facts (B-040): a bowl available in the preceding window makes
-  // "minutes since last logged feeding" fiction. classifyArrangements parses + drops garbage/
-  // inverted spans (untilMs > fromMs), satisfying isFreeFedNear's valid-span precondition.
-  const freeFedSpans: FreeFedSpan[] = classifyArrangements(input.feedingArrangements ?? []).map(
-    (s) => ({ fromMs: s.fromMs, untilMs: s.untilMs }),
-  )
+  const feedings = timingFeedingsOf(input)
+  const freeFedSpans = timingFreeFedSpansOf(input)
 
   const vomitEvents = input.symptomEvents
     .filter((s) => s.type === POSTPRANDIAL_SYMPTOM_TYPE)
@@ -7278,6 +7446,19 @@ export const SAFETY_TYPE_ORDER: Readonly<Record<SafetyFindingType, number>> = {
 }
 
 /**
+ * A safety finding's place in SAFETY_TYPE_ORDER. One exception, by finding rather than by type:
+ * I5's `refused_then_vomited` intake card (Engines v3 PR-30s) sits BELOW the burden and weight
+ * cards and above chronicity. ②'s place above burden is the 48-hour feline liver window for a cat
+ * not eating; I5's card asks only "worth mentioning to your vet", and ranking it as ② let it take
+ * the lead from a "worth a call to your vet today" burden card (adversarial pass D2). PROVISIONAL,
+ * with I5's other values on the real-vet list. Mirrored in the client banner (lib/signalCopy.ts).
+ */
+export function safetyRankOf(f: Finding): number {
+  if (f.type === 'intake_decline' && f.trigger === 'refused_then_vomited') return 3.5
+  return (SAFETY_TYPE_ORDER as Readonly<Record<string, number>>)[f.type] ?? 9
+}
+
+/**
  * Orders findings per §5: safety first, then the context-lead insight, then the
  * rest by evidence tier (Established before Early) and effect strength. Returns
  * findings tagged with their resolved rank.
@@ -7299,8 +7480,7 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
     // (SAFETY_TYPE_ORDER); within intake-decline, an outright refusal of a normally-eaten
     // food leads.
     if (x.priorityClass === 'safety' && y.priorityClass === 'safety') {
-      const order = SAFETY_TYPE_ORDER as Readonly<Record<string, number>>
-      const safetyDiff = (order[x.type] ?? 9) - (order[y.type] ?? 9)
+      const safetyDiff = safetyRankOf(x) - safetyRankOf(y)
       if (safetyDiff !== 0) return safetyDiff
       // Two per-incident red-flag cards (a bloody vomit AND a bloody stool, B-364): both lead every
       // other safety lane; between the two, vomit leads stool — a fixed, deterministic order (also
@@ -7312,11 +7492,7 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
         )
       }
       if (x.type === 'intake_decline' && y.type === 'intake_decline') {
-        const order: Record<IntakeDeclineTrigger, number> = {
-          refused_normal_food: 0,
-          consecutive_low: 1,
-        }
-        return order[x.trigger] - order[y.trigger]
+        return INTAKE_TRIGGER_RANK[x.trigger] - INTAKE_TRIGGER_RANK[y.trigger]
       }
       // Two chronicity cards (R4 both-stated, CUL-676) — the same shape as the two
       // red-flags above, and stated EXPLICITLY for the same reason: the detector already

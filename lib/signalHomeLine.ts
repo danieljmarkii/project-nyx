@@ -26,7 +26,7 @@
 import { careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
-import { stripDayUTC, symptomWord } from './signalCopy';
+import { refusedThenVomitedOf, stripDayUTC, symptomWord } from './signalCopy';
 import { riseKeptSentence } from './screenMasking';
 import type { SignalScreenModel } from './signalScreen';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
@@ -77,6 +77,8 @@ export function signalHomeAsk(finding: SignalFinding): string | null {
           ? 'worth keeping an eye on, and a word with your vet if it carries on'
           : 'worth a word with your vet';
     case 'intake_decline':
+      // I5 (PR-30s): its sentence ends on I4's tail, so its ask is that tail's words.
+      if (finding.trigger === 'refused_then_vomited') return 'worth mentioning to your vet';
       return 'worth keeping an eye on, and a word with your vet if it carries on';
     case 'incident_red_flag':
       return 'worth a call to your vet';
@@ -161,6 +163,14 @@ function countLine(finding: SignalFinding): string | null {
       // The sentence's own time anchor ("just turned down …"), with the food it names — said
       // without "down", a word the row's verdict screen reads as a direction.
       if (finding.trigger === 'refused_normal_food') return finding.refusedFoodLabel ? `${finding.refusedFoodLabel}, just now` : 'Just now';
+      // I5 (PR-30s): the count the headline names, never a rate.
+      if (finding.trigger === 'refused_then_vomited') {
+        // Through the copy module's guard, so a malformed cache reads as absent (never "NaN days").
+        const r = refusedThenVomitedOf(finding);
+        // The sentence's own form: the times only when they differ from the days.
+        if (!r) return null;
+        return r.episodeCount === r.dayCount ? `On ${plural(r.dayCount, 'day', 'days')}` : `${plural(r.episodeCount, 'time', 'times')}, on ${plural(r.dayCount, 'day', 'days')}`;
+      }
       return finding.daysBelowBaseline <= 1 ? 'Today' : `The last ${numWord(finding.daysBelowBaseline)} days`;
     case 'incident_red_flag':
       // The headline and the eyebrow carry it: the phrase, the family and the date.

@@ -1337,9 +1337,10 @@ describe('CUL-950 — the intake order is the ENGINE’s, pinned to its source (
       path.resolve(__dirname, '../supabase/functions/generate-signal/detection.ts'),
       'utf8',
     );
-    const block = /x\.type === 'intake_decline' && y\.type === 'intake_decline'\)\s*\{\s*const order: Record<IntakeDeclineTrigger, number> = \{([^}]*)\}/.exec(
-      src,
-    );
+    // PR-30s moved the order into one constant the comparator and I5's line placement share;
+    // pin both the comparator's use of it and its body.
+    expect(/x\.type === 'intake_decline' && y\.type === 'intake_decline'\)\s*\{\s*return INTAKE_TRIGGER_RANK\[x\.trigger\] - INTAKE_TRIGGER_RANK\[y\.trigger\]/.test(src)).toBe(true);
+    const block = /const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>> = \{([^}]*)\}/.exec(src);
     expect(block).not.toBeNull();
     const engine = Object.fromEntries(
       Array.from((block as RegExpExecArray)[1].matchAll(/(\w+):\s*(\d+)/g), (m) => [m[1], Number(m[2])]),

@@ -62,7 +62,23 @@ export type IncidentFlagKind = 'blood' | 'foreign_material';
 // Stool ('stool_normal' + 'diarrhea' server-side) collapses to 'stool' with a NEUTRAL noun, so a
 // blood flag on a formed stool never reads as "loose stool". Picks the owner-facing noun only.
 export type IncidentCategory = 'vomit' | 'stool';
-export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food';
+// `refused_then_vomited` (I5, Engines v3 PR-30s): a cat that vomited minutes after turning down a
+// bowl on two days. Server-emitted only under `engines_v3_en5`; every switch on the trigger in THIS
+// build names it. A build from before PR-30s does not know it and falls through to the
+// consecutive-low copy ("Eating less than usual"), so the key may not flip for an account still on
+// such a build (adversarial pass D4; the condition is on CUL-1725).
+export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food' | 'refused_then_vomited';
+
+/** Mirror of detection.ts RefusedThenVomitedFacts (I5). A count over a named population, never a
+ *  rate: absence says nothing, so no surface ever prints a zero of it. */
+export interface RefusedThenVomitedFacts {
+  episodeCount: number;
+  dayCount: number;
+  firstIso: string;
+  /** The first onset's day in the owner's zone (YYYY-MM-DD), the date every line prints. */
+  firstLocalDay: string;
+  windowMinutes: number;
+}
 export type ReflectionDirection = 'flat' | 'improving';
 export type WorseningTrigger = 'more_episodes' | 'more_days';
 export type WorseningTier = 'firm' | 'standard' | 'soft';
@@ -213,6 +229,9 @@ export interface IntakeDeclineFinding {
   daysBelowBaseline: number;
   refusedFoodLabel: string | null;
   ratedMealsConsidered: number;
+  /** I5: on a `refused_then_vomited` card it is the claim; on the other two it is the card's extra
+   *  line. Absent on every cache written without `engines_v3_en5`. */
+  refusedThenVomited?: RefusedThenVomitedFacts;
 }
 
 // Reflection (③, B-051) — descriptive symptom-count trend, no causal/wellness

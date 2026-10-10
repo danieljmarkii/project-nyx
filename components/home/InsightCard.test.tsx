@@ -242,7 +242,7 @@ describe('InsightCard — SR-1 card-face receipts', () => {
   });
 
   it('CUL-1195: the timing card face says how many long-band vomits followed a refused bowl, and VoiceOver hears it', () => {
-    const line = '7 of the 7 episodes 6h or more after eating followed a refused meal.';
+    const line = "7 of the 7 episodes 6h or more after eating followed a refused meal. That's worth mentioning to your vet.";
     const node = <InsightCard cached={anyCached(emptyStomach({ longAfterRefusalCount: 7 }))} petName="Nyx" />;
     expect(render(node).queryByText(line)).toBeTruthy();
     expect(a11yLabelOf(node)).toContain(line);
@@ -252,7 +252,7 @@ describe('InsightCard — SR-1 card-face receipts', () => {
   });
 
   it('CUL-1195: the trial card face carries the long row’s refused-bowl subset, both windows', () => {
-    const line = 'Of those 6h or more after eating, 3 in the trial followed a refused meal.';
+    const line = "Of those 6 hours or more after eating, these followed a refused meal: 3 in the trial. That's worth mentioning to your vet.";
     const node = (
       <InsightCard
         cached={anyCached(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 0 } }))}
@@ -764,5 +764,43 @@ describe('InsightCard — the counted 4-week compare inside the chronicity card 
     expect(view.queryByText('If you call your clinic, the facts to have ready')).toBeTruthy();
     expect(view.queryByText('Counted honestly')).toBeNull();
     expect(view.queryByText(/Recent 4 weeks/)).toBeNull();
+  });
+});
+
+describe('InsightCard — I5 (Engines v3 PR-30s): the refused-then-vomited line on the intake card', () => {
+  const facts = { episodeCount: 2, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', firstLocalDay: '2026-09-06', windowMinutes: 30 };
+  const base = {
+    type: 'intake_decline' as const,
+    priorityClass: 'safety' as const,
+    species: 'cat' as const,
+    refusedFoodLabel: null,
+  };
+  const line = "Nyx vomited within 30 minutes of turning down a meal on 2 days since September 6. That's worth mentioning to your vet.";
+
+  it('rides under a ② card’s own sentence, and VoiceOver hears it through the face label', () => {
+    const node = (
+      <InsightCard
+        cached={anyCached({ ...base, trigger: 'consecutive_low', daysBelowBaseline: 1, ratedMealsConsidered: 9, refusedThenVomited: facts })}
+        petName="Nyx"
+      />
+    );
+    expect(render(node).queryByText(line)).toBeTruthy();
+    expect(a11yLabelOf(node)).toContain(line);
+  });
+
+  it('is never printed twice: the I5 card’s sentence already says it, so the face adds no line', () => {
+    const node = (
+      <InsightCard
+        cached={anyCached({ ...base, trigger: 'refused_then_vomited', daysBelowBaseline: 0, ratedMealsConsidered: 0, refusedThenVomited: facts }, line)}
+        petName="Nyx"
+      />
+    );
+    expect(render(node).queryAllByText(line)).toHaveLength(1);
+  });
+
+  it('a ② card without the facts is the card it always was', () => {
+    const without = <InsightCard cached={anyCached({ ...base, trigger: 'consecutive_low', daysBelowBaseline: 1, ratedMealsConsidered: 9 })} petName="Nyx" />;
+    expect(render(without).queryByText(/turning down a meal/)).toBeNull();
+    expect(a11yLabelOf(without)).not.toMatch(/turning down a meal/);
   });
 });

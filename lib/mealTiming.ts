@@ -700,3 +700,39 @@ export function classifyEpisodeSet(
     totalCount: eligible.length + ineligible.length,
   };
 }
+
+// ── Refused, then vomited within minutes (I5, CUL-1196; Engines v3 PR-30s) ───
+//
+// The CUL-1195 disclosure above keeps the timing measured from eating and only SAYS a refused bowl
+// sat in between. That leaves a cat who turns down her dinner and vomits minutes later with no
+// card of her own: detector ② needs a decline across rated meals, and one refusal a night never
+// makes one (the critique's alternate-night refuser, `docs/engines-v3-critique-2026-09.md` MFU-2).
+// So this asks a second, narrower question of ONE episode: was the last bowl offered before it
+// turned away, and how many minutes before the onset? The detector (`detection.ts`, the intake
+// lane, behind `engines_v3_en5`) applies the window and the floors; nothing here is a floor.
+//
+// The same evidence bars as the timing above, so the two lanes can never disagree about a bowl:
+// a WITNESSED onset only (a discovered pile's time is a guess, and "within minutes" is the whole
+// claim), never near a free-fed bowl (she may have grazed), the same lookback, and the same
+// refusal rule (`feedingIsEatingAnchor`). The refusal must be the LAST bowl: an eaten feeding
+// after it (or at the same instant, where the eaten one stays the last word, as `afterRefusal`)
+// means the vomit followed eating, and this returns null.
+
+/** Minutes from the last bowl the owner rated Refused to this episode's onset, when that refusal
+ *  is the last time-trustworthy feeding before the onset; null otherwise. */
+export function minutesAfterLastRefusal(
+  episode: { onsetMs: number; confidence?: OnsetConfidence | null },
+  feedings: readonly FeedingInput[],
+  freeFedSpans: readonly FreeFedSpan[],
+  config: MealTimingConfig = DEFAULT_MEAL_TIMING_CONFIG,
+): number | null {
+  if (!onsetIsTimeEligible(episode.confidence)) return null;
+  if (!Number.isFinite(episode.onsetMs)) return null;
+  if (isFreeFedNear(episode.onsetMs, freeFedSpans, config)) return null;
+  const prepared = prepareFeedings(feedings);
+  const refusal = nearestPrecedingFeeding(episode.onsetMs, prepared.refused, config);
+  if (!refusal) return null;
+  const eaten = nearestPrecedingFeeding(episode.onsetMs, prepared.anchors, config);
+  if (eaten && eaten.ms >= refusal.ms) return null;
+  return (episode.onsetMs - refusal.ms) / MS_PER_MINUTE;
+}
