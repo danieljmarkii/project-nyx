@@ -4246,9 +4246,10 @@ function refusedThenVomitedFacts(
 /** I5's provisional values (ruling sheet §2.7: the rapid band, two episodes on two days; the window
  *  is the intake baseline's 14 days). All three are on the real-vet list (CUL-1312). */
 export const EN5_SETTINGS: NonNullable<DetectionConfig['en5']> = {
-  // 20 hours: two evenings a day apart clear it with room for a dinner served later, and one night
-  // across midnight (a 3-hour gap) never does.
-  refusedThenVomited: { windowDays: 14, minEpisodes: 2, minDays: 2, minSpanHours: 20 },
+  // 14 hours: one bad night rarely runs past about 12, so it never clears this, while two evenings
+  // with a late first dinner (22:00, then 17:30 the next day: 19.5 hours) do. The first draft had
+  // 20, and the re-review silenced that refuser with it; the quiet side is the one that misses a cat.
+  refusedThenVomited: { windowDays: 14, minEpisodes: 2, minDays: 2, minSpanHours: 14 },
 }
 
 /** The config under `engines_v3_en5`: the caller's config plus I5, so it composes with EN-11's. */

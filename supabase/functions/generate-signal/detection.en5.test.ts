@@ -148,7 +148,7 @@ Deno.test('I5 — the 14-day window: two nights 15 and 20 days ago are out', () 
   assert.equal(i5(detectIntakeDecline(input(refuserNights([16, 20])), ON)).length, 1)
 })
 
-Deno.test('I5 — one night across local midnight is one night: the 20-hour span holds the floor (D3)', () => {
+Deno.test('I5 — one night across local midnight is one night: the 14-hour span holds the floor (D3)', () => {
   // The adversarial pass's probe: 23:20/23:30 and 02:40/02:50 New York time, 3h20 apart, so two
   // episodes past the 3-hour collapse on two local days. One bad night, never "on 2 days".
   const rec = {
@@ -158,6 +158,19 @@ Deno.test('I5 — one night across local midnight is one night: the 20-hour span
   assert.deepEqual(i5(detectIntakeDecline(input({ ...rec, timezone: 'America/New_York' }), ON)), [])
   // Two evenings a day apart clear it.
   assert.equal(i5(detectIntakeDecline(input({ ...refuserNights([27, 28]), timezone: 'America/New_York' }), ON)).length, 1)
+  // A late first dinner still clears it (the re-review's case): 22:00 then 17:30 the next evening,
+  // New York time (02:00Z May 27 and 21:30Z May 27), 19.5 hours apart.
+  const late = {
+    mealEvents: [...breakfasts(), feed(27, 1, 50, 'refused'), feed(27, 21, 20, 'refused')],
+    symptomEvents: [vomit(27, 2, 0), vomit(27, 21, 30)],
+  }
+  assert.equal(i5(detectIntakeDecline(input({ ...late, timezone: 'America/New_York' }), ON)).length, 1)
+  // And a long single night (20:00 to 07:30, 11.5 hours, across midnight) never does.
+  const longNight = {
+    mealEvents: [...breakfasts(), feed(28, 23, 50, 'refused'), feed(29, 11, 20, 'refused')],
+    symptomEvents: [vomit(29, 0, 0), vomit(29, 11, 30)],
+  }
+  assert.deepEqual(i5(detectIntakeDecline(input({ ...longNight, timezone: 'America/New_York' }), ON)), [])
 })
 
 Deno.test('I5 — no zone on file is silence, never a guessed UTC day (D3, ⑥\'s rule)', () => {
