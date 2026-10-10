@@ -89,6 +89,9 @@ export const RunRevealContext = createContext<RequestRunReveal | null>(null);
 interface HostParams {
   /** The list's visible frame, window y. */
   measureViewport: (done: (top: number, bottom: number) => void) => void;
+  /** What covers the list's top edge (History's sticky day header): the run's line must stay
+   *  clear of it, not merely inside the scroll view's frame. Zero where nothing is pinned. */
+  topInset?: () => number;
   /** Move the list down by `dy` from where it is (the host reads its own offset). */
   scrollBy: (dy: number) => void;
   /** The screen's height, for the plus's top. */
@@ -101,20 +104,25 @@ interface HostParams {
  */
 export function useRunRevealHost({
   measureViewport,
+  topInset,
   scrollBy,
   windowHeight,
 }: HostParams): {
   request: RequestRunReveal;
   onContentSizeChange: (w: number, h: number) => void;
+  /** The owner has taken the list (a drag): a reveal not yet fired never lands. */
+  cancel: () => void;
 } {
-  const params = useRef({ measureViewport, scrollBy, windowHeight });
-  params.current = { measureViewport, scrollBy, windowHeight };
+  const params = useRef({ measureViewport, topInset, scrollBy, windowHeight });
+  params.current = { measureViewport, topInset, scrollBy, windowHeight };
   const pending = useRef<{
     measure: RunRevealMeasure;
     timer: ReturnType<typeof setTimeout>;
     live: { on: boolean };
   } | null>(null);
   const lastH = useRef<number | null>(null);
+  /** The newest request's switch, kept past its firing so a drag stops a measure in flight. */
+  const latest = useRef<{ on: boolean } | null>(null);
 
   const fire = useCallback(() => {
     const p = pending.current;
@@ -128,7 +136,7 @@ export function useRunRevealHost({
         p.live.on = false;
         const d = runRevealDistance({
           ...run,
-          viewTop,
+          viewTop: viewTop + (params.current.topInset?.() ?? 0),
           viewBottom,
           plusTop: params.current.windowHeight() - RUN_REVEAL.plusRisePt,
         });
@@ -144,6 +152,8 @@ export function useRunRevealHost({
         clearTimeout(pending.current.timer);
       }
       const live = { on: true };
+      if (latest.current) latest.current.on = false;
+      latest.current = live;
       pending.current = {
         measure,
         live,
@@ -170,16 +180,14 @@ export function useRunRevealHost({
     [fire],
   );
 
-  useEffect(
-    () => () => {
-      if (pending.current) {
-        pending.current.live.on = false;
-        clearTimeout(pending.current.timer);
-        pending.current = null;
-      }
-    },
-    [],
-  );
+  const cancel = useCallback(() => {
+    if (latest.current) latest.current.on = false;
+    if (!pending.current) return;
+    clearTimeout(pending.current.timer);
+    pending.current = null;
+  }, []);
 
-  return { request, onContentSizeChange };
+  useEffect(() => cancel, [cancel]);
+
+  return { request, onContentSizeChange, cancel };
 }

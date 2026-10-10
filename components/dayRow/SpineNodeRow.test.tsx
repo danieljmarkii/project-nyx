@@ -35,6 +35,7 @@ import {
   runOpenIdleMs,
 } from '../motion/runOpenMotion';
 import { RunRevealContext, type RunRevealMeasure } from '../motion/runRevealMotion';
+import { OpenInPlaceReset } from '../motion/openInPlaceMotion';
 import { useState } from 'react';
 import { TICK_BREATH } from '../motion/arrivalMotion';
 import type { NodeRead, SpineCompactNode, SpineDose, SpineEventNode } from '../../lib/spineNode';
@@ -960,5 +961,35 @@ describe('the reveal: the run asks its list to show its first meal, once per ope
     advance(1_000);
     expect(request).toHaveBeenCalledTimes(1);
   });
+  it("a host's reset under an opening run drops its reveal: the list never moves for a run that closed", () => {
+    const { request, cancel } = host();
+    // The host owns the open state; a reset (a filter change) closes its runs and bumps the
+    // generation in one render, with no tap on the run.
+    function Reset({ gen, expanded }: { gen: number; expanded: boolean }) {
+      return (
+        <OpenInPlaceReset.Provider value={gen}>
+          <RunRevealContext.Provider value={request}>
+            <SpineCompactRow
+              node={run(3)}
+              isFirst
+              isLast
+              expanded={expanded}
+              onToggle={jest.fn()}
+              onOpen={jest.fn()}
+              openInPlace
+            />
+          </RunRevealContext.Provider>
+        </OpenInPlaceReset.Provider>
+      );
+    }
+    const t = render(<Reset gen={0} expanded={false} />);
+    t.rerender(<Reset gen={0} expanded />);
+    advance(RUN_MOTION.mountFrameMs);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(cancel).not.toHaveBeenCalled();
+    t.rerender(<Reset gen={1} expanded={false} />);
+    expect(cancel).toHaveBeenCalled();
+    advance(1_000);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
 });
-

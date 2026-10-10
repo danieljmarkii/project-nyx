@@ -91,7 +91,9 @@ export const THREAD_X = SPINE_THREAD.x;
 const RUN_RAIL_W = 4;
 /** Where the run's lead starts: the foot of the run's own bead (its centre plus half the bead). */
 const RUN_LEAD_TOP = SPINE_THREAD.dotCenterY + NODE_DOT_SIZE / 2;
-/** A member row's floor (GAP-8): the reveal's stand-in for a first meal that has not reported. */
+/** A member row's floor (GAP-8, the 44pt touch floor every row keeps): the reveal's stand-in
+ *  for a first meal that has not reported. Same value as `runOpenMotion`'s header floor, a
+ *  different question (a member's height, not the header's), so its own constant (C-34). */
 const RUN_MEMBER_FLOOR_PT = 44;
 
 // ── The chips ─────────────────────────────────────────────────────────────────────
@@ -532,7 +534,6 @@ export function SpineCompactRow({
     cancelReveal.current?.();
     cancelReveal.current = null;
   };
-  useEffect(() => () => cancelReveal.current?.(), []);
   const onFreshOpen = () => {
     if (!requestReveal) return;
     dropReveal();
@@ -555,6 +556,14 @@ export function SpineCompactRow({
     appActive,
     onFreshOpen: openInPlace ? onFreshOpen : undefined,
   });
+  // Every other way an open ends (a host's reset, a settle to closed, the run re-keyed under
+  // it) drops a reveal not yet landed, as the close tap does: the list never moves for a run
+  // that is no longer opening.
+  const revealPhase = motion.phase;
+  useEffect(() => {
+    if (revealPhase === 'closed' || revealPhase === 'closing') dropReveal();
+  }, [revealPhase]);
+  useEffect(() => dropReveal, [node.id]);
   const toggle = () => {
     // A close (or a reversal) never scrolls: a reveal not yet fired is dropped.
     if (expanded) dropReveal();

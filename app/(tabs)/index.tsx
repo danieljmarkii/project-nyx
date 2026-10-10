@@ -249,6 +249,8 @@ export default function HomeScreen() {
           // appearing and costs a fraction of the bridge traffic.
           scrollEventThrottle={100}
           onContentSizeChange={runReveal.onContentSizeChange}
+          // The owner has taken the feed: a reveal not yet landed never does.
+          onScrollBeginDrag={runReveal.cancel}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

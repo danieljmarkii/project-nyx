@@ -274,4 +274,36 @@ describe('useRunRevealHost — the list scrolls once, after the content grows', 
     expect(t.scrollBy).toHaveBeenCalledTimes(1);
     expect(t.scrollBy).toHaveBeenCalledWith(expected);
   });
+  it("History's sticky day header: the run's line rests clear of it, not merely inside the list", () => {
+    const scrollBy = jest.fn();
+    const sticky = 40;
+    const h = renderHook(() =>
+      useRunRevealHost({
+        measureViewport: (done) => done(VIEW.top, VIEW.bottom),
+        topInset: () => sticky,
+        scrollBy,
+        windowHeight: () => 764 + 80,
+      }),
+    );
+    const near = { runTop: 200, mealBottom: 900 };
+    h.result.current.request((done) => done(near));
+    act(() => {
+      jest.advanceTimersByTime(RUN_REVEAL.fallbackMs);
+    });
+    expect(scrollBy).toHaveBeenCalledWith(near.runTop - (VIEW.top + sticky + RUN_REVEAL.marginPt));
+  });
+
+  it('a drag (the owner takes the list) stops a reveal, even one whose measure is in flight', () => {
+    const t = host();
+    let finish: (() => void) | null = null;
+    t.result.current.request((done) => {
+      finish = () => done(low);
+    });
+    act(() => {
+      jest.advanceTimersByTime(RUN_REVEAL.fallbackMs);
+    });
+    t.result.current.cancel();
+    finish!();
+    expect(t.scrollBy).not.toHaveBeenCalled();
+  });
 });
