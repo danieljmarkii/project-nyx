@@ -7345,15 +7345,15 @@ export function detectIncidentRedFlags(
   // way, so the two agree. A family with no flagged incident emits nothing (silence, never a "clear"),
   // unless a new-rule read in it is a call (PR-30a, K1 = A), which emits a `callOnly` card.
   // PR-30a: a call today newer than the call now the card speaks, as its own dated clause.
-  // PR-30c (CUL-1739, the second and third adversarial passes). A call today is LATER, and the
-  // card's words may say it, only when its EVENT comes after the call now was said: a call now
-  // raised after a call today never steps down to it, and a rewrite unrelated to the call (089's
-  // `may_wait` take-back, a Hide, a failed re-read) that moves a call-today row's `updated_at`
-  // can never promote it over a call now. The date is that event's.
-  const laterCallToday = (acc: FamilyAcc): { laterCallTodayIso?: string } => {
-    if (acc.call !== 'call_now') return {}
-    return acc.latestAt.call_today.ms > acc.saidAt.call_now.ms ? { laterCallTodayIso: acc.latestAt.call_today.iso } : {}
-  }
+  // PR-30c (CUL-1739; PM ruling B after the fourth adversarial pass). A call today is LATER by
+  // EVENT order, as PR-30a shipped it: event times never move on a rewrite, so neither a rewrite of
+  // the call-today row (089's `may_wait` take-back) nor one of the call-now row (a Hide, an edit, a
+  // failed re-read) can add or erase this clause. `updated_at` is not a "said at" stamp, so it never
+  // decides a word here (a dedicated stamp is the follow-up). The date is that event's.
+  const laterCallToday = (acc: FamilyAcc): { laterCallTodayIso?: string } =>
+    acc.call === 'call_now' && acc.latestAt.call_today.ms > acc.latestAt.call_now.ms
+      ? { laterCallTodayIso: acc.latestAt.call_today.iso }
+      : {}
   // The rank half (ruling 2a), kept apart from the words: when the family's call today was last
   // said, under a call now. The phone ranks a dated call now as a live red flag when this is
   // fresher than the call now's own said-at. A rewrite can only raise that rank (the loud side),

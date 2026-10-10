@@ -950,7 +950,7 @@ export function evidenceText(
     // A call from a different read than the flagged photo is dated as its own (adversarial #3).
     const otherRead =
       finding.tierIso !== undefined && callFromOtherRead(finding)
-        ? `A read on ${shortDateUTC(finding.tierIso)} says to ${ask}.${laterCallTodaySentence(finding)} `
+        ? `A read on ${localCallDay(finding.tierIso)?.long ?? shortDateUTC(finding.tierIso)} says to ${ask}.${laterCallTodaySentence(finding)} `
         : '';
     const tail =
       incidentCallOf(finding) === null
@@ -2525,9 +2525,11 @@ function bannerRankOf(f: BannerSafetyFinding, nowMs: number | undefined): number
   // PR-30c (CUL-1739, PM rulings (a) and 2a): in its first day a call now leads the banner.
   if (f.type === 'incident_red_flag' && incidentCallOf(f) === 'call_now') {
     if (!incidentCallNowDated(f, nowMs)) return -1;
-    // Ruling 2a: a dated call now ranks just under a live red flag (a fresh call today on any pet,
-    // or in the same pet's other family, takes the banner from it) and above intake decline. One
-    // carrying a later call today speaks that call, so it ranks as one.
+    // Ruling 2a's rank: a dated call now ranks just under a live red flag (a fresh call today on any
+    // pet, or in the same pet's other family, takes the banner from it) and above intake decline.
+    // Under ruling B a later call today in its own family raises it to a live red flag's rank, by
+    // either clock: event order (`laterCallTodayIso`) or write order (`callTodaySaidIso`). Either can
+    // only raise the rank, so a rewrite of either row never lowers it.
     return laterCallTodayIsoOf(f) !== null || callTodaySaidSinceCallNow(f) ? BANNER_SAFETY_PRIORITY.incident_red_flag : 0.5;
   }
   if (f.type === 'intake_decline' && f.trigger === 'refused_then_vomited') return 2.5;
@@ -2677,13 +2679,10 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
     // earlier-rule card keeps today's banner to the byte.
     // PR-30c (CUL-1739): after its first day a call now gains its date and the past tense
     // ("Nyx: on Oct 3, a vomit read said call your vet now.").
-    // PR-30c, ruling 2a: a later call today under a dated call now is the pet's freshest call, so
-    // the banner says that one in its own words, never the old call now alone.
+    // PR-30c (PM ruling B): a dated call now keeps its own words on the banner, never stepping
+    // down to a call today; a later call today raises the card's rank instead (`bannerRankOf`).
     const saidIso = datedCallNowIsoOf(finding, nowMs);
     if (saidIso !== null) {
-      if (laterCallTodayIsoOf(finding) !== null) {
-        return `: a ${INCIDENT_READ_NOUN[finding.incidentType]} read says ${TIER_WORDS.call_today.label.charAt(0).toLowerCase()}${TIER_WORDS.call_today.label.slice(1)}.`;
-      }
       const d = localCallDay(saidIso);
       if (d) return `: on ${d.short}, a ${INCIDENT_READ_NOUN[finding.incidentType]} read said ${CALL_NOW_ASK}.`;
     }

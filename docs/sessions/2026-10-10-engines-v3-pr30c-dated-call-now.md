@@ -40,8 +40,20 @@ CUL-1739, a `/dispatch` child, plan-gated. Shipped via #1156.
   - **Rank.** A new `callTodaySaidIso` raises a dated card to a live red flag's rank, and never changes a word.
 
   The call-today day is now local too. A row with no write time counts as said at its event, which hardens the mixed-family case. Proven by mutation (2 red).
-- **Pass 4:** see the outcome comment on CUL-1739.
-- **Named residuals (all loud):**
+- **Pass 4: FAIL.** This was the mirror of pass 3: a rewrite of the *call-now* row (a Hide, an edit, a failed re-read) erased a genuinely later call today and lowered the rank. Every break in passes 2–4 had the same root: `updated_at` is not a "said at" stamp.
+
+  **PM ruling B: ship every rule loud-only.**
+  - The banner never steps its words down from a dated call now (this reverses the wording half of 2a).
+  - The "later call today" clause is event order again, as PR-30a shipped it, so a rewrite can neither add nor erase it.
+  - The rank can only rise, by either clock.
+  - Every date on the row is local.
+
+  Proven by mutation (1 red).
+- **Pass 5:** see the outcome comment on CUL-1739.
+- **Named residuals (all loud, accepted under ruling B):**
+  - a Hide, an edit or a failed re-read restarts "now" for a day and dates the call to that day (false, but it asks for more calling, never less);
+  - in the late-raised case the row can read "on Oct 10, the read said: call your vet now · A later read on Oct 8 says call today";
+  - the follow-up is a dedicated `call_said_at` stamp (filed);
   - an owner edit, a Hide or a failed re-read moves `updated_at`, which restarts "now" for a day;
   - Get ready's "Worth raising" quotes the server sentence verbatim;
   - `InsightCard`'s evidence call passes no clock (nothing renders `InsightCard`);
@@ -52,7 +64,7 @@ CUL-1739, a `/dispatch` child, plan-gated. Shipped via #1156.
 
 - `tsc --noEmit` is clean.
 - jest (signal, record, guards, home, hooks): 2,885 passed. The PR-30c suites also pass under UTC, +14, −10, +5:45 and +12:45.
-- `deno test supabase/functions`: 2,664 passed.
+- `deno test supabase/functions`: 2,665 passed.
 - Mutations: the boundary (23 hours) reds 7 tests, the banner rank reds 1, and the later-call-today order reds 2.
 - Reviews: `nyx-voice` passed after one fix ("call them now"), and `code-reviewer` found no blockers.
 

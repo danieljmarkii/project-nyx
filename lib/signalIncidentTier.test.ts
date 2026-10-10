@@ -97,14 +97,15 @@ describe('a new-rule call speaks the map’s words on Home', () => {
     const f = card({ tier: 'call_now', mostRecentFlaggedIso: '2026-09-28T07:00:00.000Z', tierIso: '2026-10-08T07:02:00.000Z' });
     const line = signalHomeLine(f)!;
     expect(line.eyebrow).toBe('Photo read · Sep 28');
-    expect(line.count).toBe('The call is from a read on Oct 8');
+    // The call's read is dated by the phone's local day (PR-30c: one zone per row).
+    const T = localCallDay(f.tierIso!)!;
+    expect(line.count).toBe(`The call is from a read on ${T.short}`);
     expect(line.ask).toBe('call your vet now');
-    expect(evidenceText(f, 'Nyx')).toContain('A read on October 8 says to call your vet now.');
+    expect(evidenceText(f, 'Nyx')).toContain(`A read on ${T.long} says to call your vet now.`);
     // A later call today under the call now is said on the row and in the evidence too.
     const later = { ...f, laterCallTodayIso: '2026-10-09T07:00:00.000Z' };
-    // The later call today is dated by the phone's local day (PR-30c), the call's own read in UTC as PR-30a shipped.
     const L = localCallDay(later.laterCallTodayIso)!;
-    expect(signalHomeLine(later)!.count).toBe(`The call is from a read on Oct 8 · A later read on ${L.short} says call today`);
+    expect(signalHomeLine(later)!.count).toBe(`The call is from a read on ${T.short} · A later read on ${L.short} says call today`);
     expect(evidenceText(later, 'Nyx')).toContain(`A later read, on ${L.long}, says to call your vet today.`);
     // One instant, two spellings: one read (C-40).
     expect(signalHomeLine(card({ tier: 'call_now', mostRecentFlaggedIso: '2026-10-08T07:02:00.000Z', tierIso: '2026-10-08T07:02:00+00:00' }))!.count).toBeNull();
@@ -275,10 +276,12 @@ describe('a call now after its first day (PR-30c)', () => {
     expect(picked?.finding).toBe(stoolToday);
   });
 
-  it('a later call today under a dated call now is what the banner says (2a)', () => {
+  it('a later call today under a dated call now keeps the call now words and raises its rank (ruling B)', () => {
     const f = callNow({ laterCallTodayIso: '2026-10-09T05:00:00.000Z' });
-    expect(bannerCopy(f, 'Nyx', dayTwo).text).toBe('Nyx: a vomit read says call your vet today.');
+    expect(bannerCopy(f, 'Nyx', dayTwo).text).toBe(`Nyx: on ${D.short}, a vomit read said call your vet now.`);
     expect(validateBannerPhrasing(bannerCopy(f, 'Nyx', dayTwo).screened)).toBe(true);
+    // The Home row still says the later call today.
+    expect(signalHomeLine(f, null, dayTwo)!.count).toBe(`A later read on ${localCallDay(f.laterCallTodayIso!)!.short} says call today`);
     // It ranks as a live red flag, so it ties a call today on another pet and order decides.
     const today = card({ tier: 'call_today', tierIso: '2026-10-09T08:00:00.000Z' });
     const cached = (finding: IncidentRedFlagFinding): CachedFinding => ({ finding, rank: 0, text: '' });

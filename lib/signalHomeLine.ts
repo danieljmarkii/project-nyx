@@ -187,7 +187,8 @@ function countLine(finding: SignalFinding, nowMs: number | undefined): string | 
         // PR-30c: a dated call now already says its read's day in the ask, so the row does not
         // say it twice.
         if (finding.tierIso !== undefined && callFromOtherRead(finding) && !incidentCallNowDated(finding, nowMs)) {
-          const d = stripDayUTC(finding.tierIso);
+          // PR-30c: the local day, as the later call today beside it prints (one zone per row).
+          const d = localCallDay(finding.tierIso);
           parts.push(d ? `The call is from a read on ${d.short}` : 'The call is from a later read');
         }
         const later = laterCallTodayIsoOf(finding);

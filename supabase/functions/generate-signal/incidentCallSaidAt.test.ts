@@ -99,8 +99,8 @@ Deno.test('mapIncidentAnalyses — carries the row write time as writtenAt', () 
   assert.equal(a.call, 'call_now')
 })
 
-// The second adversarial pass: "later" is ordered by when each call was SAID, the clock the phone
-// dates by, never by the event's time alone.
+// "Later" in the words is EVENT order (PM ruling B): `updated_at` moves on rewrites unrelated to the
+// call, so it may raise a rank (`callTodaySaidIso`) and never decides a word.
 Deno.test('a call today written today on an OLDER event ranks the card, never its words (variant A)', () => {
   const [f] = detectIncidentRedFlags(
     input([
@@ -134,7 +134,7 @@ Deno.test('a call today whose event follows the call now is later, dated by its 
   assert.equal(f.laterCallTodayIso, at(29, 9))
 })
 
-Deno.test('laterCallTodayIso — a call now raised after a call today never steps down to it (variant B)', () => {
+Deno.test('laterCallTodayIso — event order: a call now raised late keeps the clause, and the phone keeps the call now words (variant B, ruling B)', () => {
   const [f] = detectIncidentRedFlags(
     input([
       analysis({ call: 'call_now', occurredAt: at(27, 9), writtenAt: at(30, 10) }), // raised late
@@ -143,7 +143,18 @@ Deno.test('laterCallTodayIso — a call now raised after a call today never step
   )
   assert.equal(f.tier, 'call_now')
   assert.equal(f.tierReadIso, at(30, 10))
-  assert.equal('laterCallTodayIso' in f, false)
+  // Event order (the PR-30a rule): the clause is kept; the banner never steps its words down.
+  assert.equal(f.laterCallTodayIso, at(28, 9))
+})
+
+Deno.test('a rewrite of the call-now row (a Hide, an edit) never erases a genuinely later call today (fourth pass)', () => {
+  const [f] = detectIncidentRedFlags(
+    input([
+      analysis({ call: 'call_now', occurredAt: at(21, 9), writtenAt: at(24, 12) }), // hidden on the 24th
+      analysis({ call: 'call_today', occurredAt: at(23, 10), writtenAt: at(23, 10) }),
+    ]),
+  )
+  assert.equal(f.laterCallTodayIso, at(23, 10))
 })
 
 Deno.test('laterCallTodayIso — with no write times it is the event order (the shipped behaviour)', () => {
