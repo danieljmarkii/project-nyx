@@ -46,6 +46,7 @@ import { formatTimingBandLabel } from './timingBandLabels';
 import { careClaimReason } from './careClaimScreens';
 import { correlationCluster } from './findingIdentity';
 import { TIER_WORDS } from './incidentTierWords';
+import { callNowIsDated, CALL_NOW_ASK, datedCallNowAsk } from './callNowDated';
 
 // A timing finding — the two types whose evidence renders as a receipt (SR-1, §4).
 type TimingFinding = PostprandialTimingFinding | TimeOfDayClusteringFinding;
@@ -165,10 +166,23 @@ export function incidentCallOf(finding: IncidentRedFlagFinding): 'call_now' | 'c
   return finding.tier === 'call_now' || finding.tier === 'call_today' ? finding.tier : null;
 }
 
-/** The card's ask, lower-case, verbatim as its sentence says it. */
-export function incidentRedFlagAsk(finding: IncidentRedFlagFinding): string {
+/** True when the card's call is a new-rule call now whose read is a full day old at `nowMs`
+ *  (Engines v3 PR-30c, CUL-1739; `lib/callNowDated.ts`). Every surface that would say "now"
+ *  steps to the dated form then. No clock (`nowMs` absent) keeps "now": the loud form is the
+ *  default, never the quiet one. */
+export function incidentCallNowDated(finding: IncidentRedFlagFinding, nowMs: number | undefined): boolean {
+  return nowMs !== undefined && incidentCallOf(finding) === 'call_now' && callNowIsDated(finding.tierIso, nowMs);
+}
+
+/** The card's ask, lower-case, verbatim as its sentence says it. After its first day a call now
+ *  is the dated form ("on Oct 3, the read said: call your vet now", PR-30c). */
+export function incidentRedFlagAsk(finding: IncidentRedFlagFinding, nowMs?: number): string {
   const call = incidentCallOf(finding);
   if (call === null) return 'worth a call to your vet';
+  if (incidentCallNowDated(finding, nowMs) && finding.tierIso !== undefined) {
+    const d = stripDayUTC(finding.tierIso);
+    if (d) return datedCallNowAsk(d.short);
+  }
   const label = TIER_WORDS[call].label;
   return label.charAt(0).toLowerCase() + label.slice(1);
 }
@@ -205,6 +219,58 @@ function laterCallTodaySentence(finding: IncidentRedFlagFinding): string {
 
 /** A read's noun by family, for a call-only card ("a vomit read", "a stool read"). */
 export const INCIDENT_READ_NOUN: Record<IncidentCategory, string> = { vomit: 'vomit', stool: 'stool' };
+
+/** The evidence of a call now past its first day (PR-30c): the read's provenance, then the call
+ *  quoted with its day. Never a word that the call has passed, never a source the row cannot back. */
+function datedCallNowEvidence(finding: IncidentRedFlagFinding, petName: string, tierIso: string): string {
+  const day = shortDateUTC(tierIso);
+  if (isCallOnlyFinding(finding)) {
+    const noun = INCIDENT_READ_NOUN[finding.incidentType];
+    const lead =
+      finding.flaggedIncidentCount === 1
+        ? `The read of ${petName}'s ${noun} is an automated read, not a confirmed finding and not a diagnosis.`
+        : `The reads of ${petName}'s ${noun} logs are automated reads, not confirmed findings and not a diagnosis.`;
+    return `${lead} On ${day}, the read said: ${CALL_NOW_ASK}. The read itself says why.${laterCallTodaySentence(finding)}`;
+  }
+  const symptom = INCIDENT_NOUN[finding.incidentType];
+  const phrase = incidentFlagPhrase(finding.flags);
+  const single = finding.flaggedIncidentCount === 1;
+  const lead = single
+    ? `A photo you logged of ${petName}'s ${symptom} showed ${phrase}`
+    : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}`;
+  const readNoun = single ? 'a single photo' : 'those photos';
+  const article = callFromOtherRead(finding) ? 'a' : 'the';
+  return (
+    `${lead} — an automated read of ${readNoun}, not a confirmed finding and not a diagnosis. ` +
+    `On ${day}, ${article} read said: ${CALL_NOW_ASK}.${laterCallTodaySentence(finding)} ` +
+    `Your vet can look at what you logged and tell you what it means.`
+  );
+}
+
+/**
+ * The red-flag card's sentence at `nowMs` (PR-30c, CUL-1739). The server phrased the sentence
+ * when it ran, and a cached sentence can be days old, so a call now past its first day is
+ * re-phrased here in the dated form; every other card returns the server's sentence verbatim.
+ * Read by the Signal screen and by Home's arrival speech, the two places the sentence is said.
+ */
+export function incidentRedFlagSentenceAt(finding: SignalFinding, petName: string, serverText: string, nowMs: number | undefined): string {
+  if (finding.type !== 'incident_red_flag' || finding.tierIso === undefined || !incidentCallNowDated(finding, nowMs)) return serverText;
+  const day = shortDateUTC(finding.tierIso);
+  const later = laterCallTodaySentence(finding);
+  const tail = 'This is a read of your logs, not a diagnosis.';
+  if (isCallOnlyFinding(finding)) {
+    return `On ${day}, the read of ${petName}'s ${INCIDENT_READ_NOUN[finding.incidentType]} said: ${CALL_NOW_ASK}.${later} ${tail}`;
+  }
+  const symptom = INCIDENT_NOUN[finding.incidentType];
+  const phrase = incidentFlagPhrase(finding.flags);
+  const when = shortDateUTC(finding.mostRecentFlaggedIso);
+  const lead =
+    finding.flaggedIncidentCount === 1 && (finding as { countIsFloor?: unknown }).countIsFloor !== true
+      ? `A photo you logged of ${petName}'s ${symptom} showed ${phrase}, on ${when}`
+      : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}, most recently on ${when}`;
+  const call = callFromOtherRead(finding) ? `On ${day}, a read said: ${CALL_NOW_ASK}.` : `The read said: ${CALL_NOW_ASK}.`;
+  return `${lead}. ${call}${later} ${tail}`;
+}
 
 // Plain 12-hour clock label for a local hour 0..23 (⑥, B-079): 0→'12am', 4→'4am',
 // 12→'12pm', 23→'11pm'. Mirror of clockHourLabel in the generate-signal phrasing module —
@@ -826,8 +892,17 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-export function evidenceText(finding: SignalFinding, petName: string): string {
+export function evidenceText(
+  finding: SignalFinding,
+  petName: string,
+  /** The clock a call now is read against (PR-30c). Absent keeps "now", the loud form. */
+  nowMs?: number,
+): string {
   if (finding.type === 'incident_red_flag') {
+    // PR-30c (CUL-1739): after its first day a call now quotes the read with its day, in the
+    // past tense, and keeps the ask. Every other card is untouched.
+    const dated = incidentCallNowDated(finding, nowMs) && finding.tierIso !== undefined ? datedCallNowEvidence(finding, petName, finding.tierIso) : null;
+    if (dated !== null) return dated;
     // Tap-to-expand evidence (B-340): names WHAT the photo showed + the symptom + the pet, is
     // honest about the AI provenance (an automated read of a single photo, unconfirmed), and routes
     // to the vet. ESCALATE-ON-PRESENCE — NEVER reassures (the "not confirmed / not a diagnosis"
@@ -2416,11 +2491,14 @@ const BANNER_SAFETY_PRIORITY: Record<
 /** A banner finding's place in BANNER_SAFETY_PRIORITY, mirroring the engine's `safetyRankOf`: I5's
  *  `refused_then_vomited` card (PR-30s) sits below the burden card and above chronicity, so a
  *  "call your vet today" pet always takes the banner from a "mention it to your vet" one. */
-function bannerRankOf(f: BannerSafetyFinding): number {
+function bannerRankOf(f: BannerSafetyFinding, nowMs: number | undefined): number {
   // Engines v3 PR-30a (CUL-1511): a new-rule "call your vet now" takes the banner from every other
   // pet's finding, a call today's included, so the household's loudest ask is never the one a
   // pet's place in the list hides. Every other red flag keeps its shipped rank.
-  if (f.type === 'incident_red_flag' && incidentCallOf(f) === 'call_now') return -1;
+  // PR-30c (CUL-1739, PM ruling (a)): after its first day a call now keeps its dated words and
+  // drops to the shipped red-flag rank, so a fresh call today on another pet is not outranked by
+  // a call now days old. In its first day it leads, as above.
+  if (f.type === 'incident_red_flag' && incidentCallOf(f) === 'call_now' && !incidentCallNowDated(f, nowMs)) return -1;
   if (f.type === 'intake_decline' && f.trigger === 'refused_then_vomited') return 2.5;
   return BANNER_SAFETY_PRIORITY[f.type];
 }
@@ -2447,12 +2525,12 @@ function isBannerSafetyFinding(f: SignalFinding): f is BannerSafetyFinding {
 // A pet's representative banner finding = its highest-priority banner-safety
 // finding (incident_red_flag preferred, then intake_decline, then chronicity). Returns null if it
 // has none — a pet whose only findings are reflections/correlations/descriptive can't raise a banner.
-function petTopSafetyFinding(findings: CachedFinding[]): BannerSafetyFinding | null {
+function petTopSafetyFinding(findings: CachedFinding[], nowMs: number | undefined): BannerSafetyFinding | null {
   let best: BannerSafetyFinding | null = null;
   for (const cf of findings) {
     const f = cf.finding;
     if (!isBannerSafetyFinding(f)) continue;
-    if (best === null || bannerRankOf(f) < bannerRankOf(best)) {
+    if (best === null || bannerRankOf(f, nowMs) < bannerRankOf(best, nowMs)) {
       best = f;
     }
   }
@@ -2481,15 +2559,17 @@ export interface SelectedBanner<P> {
 // store holds only non-archived pets, so an archived pet can never be a candidate.
 export function selectCrossPetSafetyFinding<P extends { id: string }>(
   candidates: BannerPetCandidate<P>[],
+  /** The clock a call now is read against (PR-30c). Absent keeps every call now first. */
+  nowMs?: number,
 ): SelectedBanner<P> | null {
   let best: SelectedBanner<P> | null = null;
   for (const c of candidates) {
-    const finding = petTopSafetyFinding(c.findings);
+    const finding = petTopSafetyFinding(c.findings, nowMs);
     if (!finding) continue;
     // Strict `<` so the FIRST candidate wins a same-priority tie (stable order).
     if (
       best === null ||
-      bannerRankOf(finding) < bannerRankOf(best.finding)
+      bannerRankOf(finding, nowMs) < bannerRankOf(best.finding, nowMs)
     ) {
       best = { pet: c.pet, finding };
     }
@@ -2513,14 +2593,19 @@ export interface BannerCopy {
 // lands on the pet's full Signal where the calibrated ask lives). Plain symptom
 // word (nyx-voice). The sentence always opens with the pet name so the component
 // can bold it; `text === petName + rest` by construction.
-export function bannerCopy(finding: BannerSafetyFinding, petName: string): BannerCopy {
+export function bannerCopy(
+  finding: BannerSafetyFinding,
+  petName: string,
+  /** The clock a call now is read against (PR-30c). Absent keeps "now", the loud form. */
+  nowMs?: number,
+): BannerCopy {
   const food = finding.type === 'intake_decline' ? truncateFoodLabel(finding.refusedFoodLabel) : null;
-  const rest = bannerRest(finding, food);
+  const rest = bannerRest(finding, food, nowMs);
   return {
     text: `${petName}${rest}`,
     rest,
     // A stand-in only where the owner's word is: a blank label keeps the no-label sentence.
-    screened: `${SCREEN_PET_NAME}${bannerRest(finding, food === null ? null : SCREEN_FOOD_LABEL)}`,
+    screened: `${SCREEN_PET_NAME}${bannerRest(finding, food === null ? null : SCREEN_FOOD_LABEL, nowMs)}`,
   };
 }
 
@@ -2548,7 +2633,7 @@ function truncateFoodLabel(label: string | null): string | null {
 // The sentence AFTER the pet name. The name is prepended by bannerCopy, so the
 // rest never repeats it — it refers to the pet as "they" where needed (matching
 // the Signal evidence copy), so the leading name can render bold once (mock A3).
-function bannerRest(finding: BannerSafetyFinding, food: string | null): string {
+function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: number | undefined): string {
   if (finding.type === 'incident_red_flag') {
     // Per-incident visual red flag (B-340) — the teaser names WHAT the logged photo showed
     // (blood / foreign material), calmly. "possible …" keeps it an unconfirmed AI read; the
@@ -2559,6 +2644,12 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null): string {
     // Engines v3 PR-30a (CUL-1511; mock §03): a new-rule call says its tier on the banner, in
     // the map's words, photo or not ("Nyx: a vomit read says call your vet now"). An
     // earlier-rule card keeps today's banner to the byte.
+    // PR-30c (CUL-1739): after its first day a call now gains its date and the past tense
+    // ("Nyx: on Oct 3, a vomit read said call your vet now.").
+    if (incidentCallNowDated(finding, nowMs) && finding.tierIso !== undefined) {
+      const d = stripDayUTC(finding.tierIso);
+      if (d) return `: on ${d.short}, a ${INCIDENT_READ_NOUN[finding.incidentType]} read said ${CALL_NOW_ASK}.`;
+    }
     if (incidentCallOf(finding) !== null) {
       return `: a ${INCIDENT_READ_NOUN[finding.incidentType]} read says ${incidentRedFlagAsk(finding)}.`;
     }

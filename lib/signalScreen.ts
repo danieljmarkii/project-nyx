@@ -68,7 +68,7 @@ import {
   type PhoneScriptMasking,
   type ScreenMasking,
 } from './screenMasking';
-import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, reflectionExpandedExtras, symptomWord, type PhoneScriptCounting } from './signalCopy';
+import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, incidentRedFlagSentenceAt, reflectionExpandedExtras, symptomWord, type PhoneScriptCounting } from './signalCopy';
 import { isFallingVomitPair, signalSaysNotEating, visibleFindings } from './signalVisible';
 import {
   compareGateCounts,
@@ -161,6 +161,9 @@ export interface SignalScreenInput {
   cached: CachedFinding;
   petName: string;
   today: string;
+  /** The clock the screen was read at (PR-30c, CUL-1739): a call now past its first day is
+   *  re-phrased in its dated form. Absent keeps the server's sentence, the loud form. */
+  nowMs?: number;
   trial: SignalTrialWindow | null;
   episodes: readonly SignalScreenEpisode[];
   /** Every local day with any log — never derived from the episodes (C-3). The chart's
@@ -637,7 +640,7 @@ export function whyLines(
   // A composed sentence carries the chart's numbers (GC-4); the server's evidence restated the
   // engine's, so *Why* says instead what a bar and an episode are. Where the engine's sentence
   // stands, its own evidence stands with it.
-  const lines: string[] = [composed ? countedUnitLine() : evidenceText(finding, input.petName)];
+  const lines: string[] = [composed ? countedUnitLine() : evidenceText(finding, input.petName, input.nowMs)];
   // A correlation's own window (CUL-1218): the matched days above come from the engine's
   // whole read, which the payload does not carry and nothing else on the screen states. No
   // chart sits under it to disagree — a correlation draws none (`signalChartSymptomOf`).
@@ -743,7 +746,9 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
       identity,
       finding,
       title,
-      sentence: input.cached.text,
+      // A red-flag call now past its first day is dated at the clock (PR-30c); every other
+      // card keeps the server's sentence verbatim.
+      sentence: incidentRedFlagSentenceAt(finding, input.petName, input.cached.text, input.nowMs),
       countedAt: null,
       scriptFinding: finding,
       scriptCounting: null,
@@ -1515,6 +1520,7 @@ export async function loadSignalScreen(petId: string, identity: string, nowMs: n
     cached,
     petName,
     today,
+    nowMs,
     trial,
     episodes,
     loggedDays: logged.loggedDays,

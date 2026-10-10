@@ -467,7 +467,7 @@ function useSafetyArrivalSpeech({
     // Not in front: leave the arrival unconsumed, to be said when Home is.
     if (!appActive || !speech.mayAnnounce()) return;
     for (const f of arriving) ids.add(safetySpeechIdentity(f));
-    const spoken = safetyArrivalSpoken(petName, arriving);
+    const spoken = safetyArrivalSpoken(petName, arriving, Date.now());
     if (spoken) announceQueued(spoken);
   }, [petId, petName, answered, rendered, speech, appActive]);
 }

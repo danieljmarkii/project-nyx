@@ -53,6 +53,7 @@ import {
   TIER_WORDS,
   tierDisplayOf,
 } from '../../lib/incidentTierWords';
+import { recordDatedCallNow } from '../../lib/callNowDated';
 import {
   floorRanOn,
   phoneWorkedOutLine,
@@ -859,7 +860,11 @@ export function VomitAnalysisSection(
           onOpen: () => router.push(patternMembership.href),
         }
       : null;
-  const readLabel = pattern ? PATTERN_WORDS.label : incidentReadLabel(row);
+  // PR-30c (CUL-1739): a call now steps to its dated form a day after the event it read; the
+  // event's instant is the floor read's anchor, so an unanswered read keeps "now" (loud).
+  const datedCall = display === 'call_now' ? recordDatedCallNow(floorFacts?.anchor?.at ?? null, clockNow) : null;
+  const callLabel = datedCall?.label ?? incidentReadLabel(row);
+  const readLabel = pattern ? PATTERN_WORDS.label : callLabel;
 
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
@@ -879,9 +884,9 @@ export function VomitAnalysisSection(
       // without speaking what they chose to hide.
       announcement={
         dismissed ? DISMISSED_LINE
-        : heldDisclosure ? `${incidentReadLabel(row)}. ${heldDisclosure}`
+        : heldDisclosure ? `${callLabel}. ${heldDisclosure}`
         : pattern ? PATTERN_WORDS.spoken
-        : incidentReadLabel(row)
+        : callLabel
       }
       pending={false}
     >
@@ -920,9 +925,11 @@ export function VomitAnalysisSection(
                   // must not judge the night's end on the minute it was put away.
                   nowMs: Date.now(),
                 })
-              : display
-                ? TIER_WORDS[display].action
-                : null
+              : datedCall
+                ? datedCall.action
+                : display
+                  ? TIER_WORDS[display].action
+                  : null
           }
           disclosure={heldDisclosure}
           pattern={pattern}
