@@ -789,13 +789,17 @@ export function mentionsPhotoAppearance(text: string): boolean {
  *  present-flag escalation — i.e. the reassurance-on-absence risk cases that trigger the
  *  reference bar: a no-flag ran/cached read, OR a capped/unavailable/no_photo/budget/
  *  not_found/unsupported read (where there is no read at all, so a model "it looked clear"
- *  is a pure fabrication — round-3 residual 2). ONLY a real present-flag read is exempt
- *  (the model SHOULD name the concern — escalate). */
+ *  is a pure fabrication — round-3 residual 2). ONLY a real present-flag read, or a read whose
+ *  words are a call, is exempt (the model SHOULD name the concern — escalate). */
 export function featuredNonEscalatingRead(captured: { name: string; result: unknown }[]): boolean {
   for (let i = captured.length - 1; i >= 0; i--) {
     if (captured[i].name !== 'read_photo') continue
     const r = captured[i].result as PhotoReadResult
-    const isEscalation = (r.status === 'ran' || r.status === 'cached') && !!r.read && r.read.flags.length > 0
+    // A read whose words are a CALL is an escalation too (CUL-1512): a call the record raised
+    // with no photo flag hands the model its words to lead with, and scrubbing that headline
+    // would soften the call the record shows. Same test as redactReadForModel's, one helper.
+    const isEscalation = (r.status === 'ran' || r.status === 'cached') && !!r.read &&
+      (r.read.flags.length > 0 || callWordsOf(r.read.tierWords) !== null)
     return !isEscalation
   }
   return false
@@ -1405,7 +1409,7 @@ export function buildDeflection(reason: DeflectionReason, petName: string, clari
 export const TIER_DEFINITIONS: Readonly<Record<TierDisplay, string>> = {
   call_now: "the read found a sign that needs a vet now; if they're closed, an emergency clinic",
   call_today: "the read found a sign that needs a vet today; if they're closed, an emergency clinic",
-  worth_a_call: 'a read from before reads said how soon to call; it found a sign to call the vet about, and it keeps those words',
+  worth_a_call: 'the read found a sign to call the vet about, without saying how soon; older reads keep these words',
   logged: 'the read flagged nothing that needs a call, which never means the pet is well',
   monitor: 'the read flagged nothing that needs a call, which never means the pet is well',
   not_enough_to_say: "the read couldn't say anything from this one, which never means the pet is well",

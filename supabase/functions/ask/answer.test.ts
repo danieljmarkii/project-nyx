@@ -1158,3 +1158,14 @@ Deno.test('redactReadForModel — a call with no photo flag still reaches the mo
   // No read, no words, whatever the projection holds.
   assert.equal('read_words' in redactReadForModel(photoResult('capped', projected({ tierWords: 'Call your vet now' }))), false)
 })
+
+Deno.test('featuredNonEscalatingRead — a call the record raised with no photo flag is an escalation, so its headline is never scrubbed (CUL-1512)', () => {
+  for (const words of ['Call your vet now', 'Call your vet today', 'Worth a call']) {
+    assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('cached', projected({ flags: [], tierWords: words })) }]), false, words)
+  }
+  // Quiet words keep the bar on; a call's words on a read that did not come back do not lift it.
+  for (const words of ['Keep an eye out', 'Not enough to say yet', null]) {
+    assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('cached', projected({ flags: [], tierWords: words })) }]), true, String(words))
+  }
+  assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('capped', projected({ tierWords: 'Call your vet now' })) }]), true)
+})
