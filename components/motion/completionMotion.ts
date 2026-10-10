@@ -385,27 +385,57 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
     v.still.setValue(1);
   }, [v]);
 
+  // Where the gold stands NOW, worked out in JS. A native value's `stopAnimation`
+  // callback is asynchronous (it asks the UI thread), so the finish cannot wait on it:
+  // the halo's position is derived from when its current beat started instead.
+  const haloStartedAt = useRef(0);
+  const heldTrack = useRef<{ from: number; to: number; start: number; dur: number; easing: EasingFn } | null>(null);
+  const heldStatic = useRef(0);
+  const haloNow = useCallback((): number => {
+    const now = Date.now();
+    if (haloModeRef.current === 'arrival') return haloOpacityAt(now - haloStartedAt.current, haloDelay.current);
+    if (haloModeRef.current === 'held') {
+      const t = heldTrack.current;
+      return t ? easedAt(now - t.start, 0, t.dur, t.from, t.to, t.easing) : heldStatic.current;
+    }
+    return 0;
+  }, []);
+  const pinHeld = useCallback((h: number) => {
+    heldTrack.current = null;
+    heldStatic.current = h;
+    v.haloHeld.setValue(h);
+  }, [v]);
+  const animateHeld = useCallback((to: number, dur: number, easing: EasingFn, onDone: () => void) => {
+    const from = heldStatic.current;
+    heldTrack.current = { from, to, start: Date.now(), dur, easing };
+    const a = Animated.timing(v.haloHeld, { toValue: to, duration: dur, easing, useNativeDriver: true });
+    haloLive.current = a;
+    a.start(() => {
+      if (haloLive.current !== a) return;
+      haloLive.current = null;
+      heldTrack.current = null;
+      heldStatic.current = to;
+      onDone();
+    });
+  }, [v]);
+
   /** Stop the halo where it stands and hold it there (0 if not started). */
   const holdHalo = useCallback((onHeld: (h: number) => void) => {
+    const h = haloNow();
     haloLive.current?.stop();
     haloLive.current = null;
-    if (haloModeRef.current === 'arrival') {
-      haloArrivalRunning.current = false;
-      v.haloClock.stopAnimation((ms) => {
-        const h = haloOpacityAt(ms, haloDelay.current);
-        v.haloHeld.setValue(h);
-        setHaloMode('held');
-        onHeld(h);
-      });
+    haloArrivalRunning.current = false;
+    v.haloClock.stopAnimation();
+    v.haloHeld.stopAnimation();
+    if (haloModeRef.current === 'off') {
+      pinHeld(0);
+      onHeld(0);
       return;
     }
-    if (haloModeRef.current === 'held') {
-      v.haloHeld.stopAnimation((h) => onHeld(h));
-      return;
-    }
-    v.haloHeld.setValue(0);
-    onHeld(0);
-  }, [v, setHaloMode]);
+    pinHeld(h);
+    setHaloMode('held');
+    onHeld(h);
+  }, [v, haloNow, pinHeld, setHaloMode]);
 
   /** Settle the gold to the tone the store holds now: in over `haloFadeMs`, out over
    *  `haloLeaveMs`, from wherever it stands. Opacity only, at scale 1. */
@@ -414,30 +444,15 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
     const celebrate = params.current.celebrateNow();
     holdHalo((h) => {
       if (celebrate) {
-        if (h >= 1) { v.haloHeld.setValue(1); setHaloMode('held'); return; }
         setHaloMode('held');
-        if (params.current.reducedMotion) { v.haloHeld.setValue(1); return; }
-        const a = Animated.timing(v.haloHeld, {
-          toValue: 1, duration: M.haloFadeMs, easing: EASE.haloIn, useNativeDriver: true,
-        });
-        haloLive.current = a;
-        a.start(() => { if (haloLive.current === a) haloLive.current = null; });
+        if (h >= 1 || params.current.reducedMotion) { pinHeld(1); return; }
+        animateHeld(1, M.haloFadeMs, EASE.haloIn, () => {});
         return;
       }
-      if (h <= 0) { v.haloHeld.setValue(0); setHaloMode('off'); return; }
-      if (params.current.reducedMotion) { v.haloHeld.setValue(0); setHaloMode('off'); return; }
-      const a = Animated.timing(v.haloHeld, {
-        toValue: 0, duration: M.haloLeaveMs, easing: EASE.haloOut, useNativeDriver: true,
-      });
-      haloLive.current = a;
-      a.start(() => {
-        if (haloLive.current !== a) return;
-        haloLive.current = null;
-        v.haloHeld.setValue(0);
-        setHaloMode('off');
-      });
+      if (h <= 0 || params.current.reducedMotion) { pinHeld(0); setHaloMode('off'); return; }
+      animateHeld(0, M.haloLeaveMs, EASE.haloOut, () => setHaloMode('off'));
     });
-  }, [v, holdHalo, setHaloMode]);
+  }, [holdHalo, pinHeld, animateHeld, setHaloMode]);
 
   /** Start the halo's own clock: the gold fades in at `delayMs` on it. Mounted only on a
    *  celebrate tone; re-read when the beat is due (§2.1). */
@@ -445,6 +460,7 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
     if (!params.current.celebrateNow()) { setHaloMode('off'); return; }
     haloLive.current?.stop();
     haloDelay.current = delayMs;
+    haloStartedAt.current = Date.now();
     v.haloClock.setValue(0);
     setHaloMode('arrival');
     haloArrivalRunning.current = true;
@@ -472,10 +488,10 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
       haloLive.current = null;
       haloArrivalRunning.current = false;
       const celebrate = params.current.celebrateNow();
-      v.haloHeld.setValue(celebrate ? 1 : 0);
+      pinHeld(celebrate ? 1 : 0);
       setHaloMode(celebrate ? 'held' : 'off');
     });
-  }, [v, later, setHaloMode]);
+  }, [v, later, pinHeld, setHaloMode]);
 
   /** The arrival, from its first frame. */
   const startArrival = useCallback((id: string, next: ArrivalVariant) => {
@@ -503,7 +519,7 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
       clockLive.current = a;
       a.start();
       const celebrate = params.current.celebrateNow();
-      v.haloHeld.setValue(celebrate ? 1 : 0);
+      pinHeld(celebrate ? 1 : 0);
       setHaloMode(celebrate ? 'held' : 'off');
       return;
     }
@@ -537,15 +553,15 @@ export function useCompletionArrival(p: CompletionArrivalParams): CompletionArri
       settleHalo();
     } else {
       // The + path: no gold until the clone is released.
-      v.haloHeld.setValue(0);
+      pinHeld(0);
       setHaloMode('off');
     }
-  }, [v, clearTimers, later, pinCard, startHalo, settleHalo, setHaloMode]);
+  }, [v, clearTimers, later, pinCard, startHalo, settleHalo, pinHeld, setHaloMode]);
 
   /** Finish everything but the halo, which is held where it stands. */
   const finishMotion = useCallback(() => {
     pinCard();
-    if (haloModeRef.current === 'arrival') holdHalo(() => {});
+    if (haloModeRef.current === 'arrival') holdHalo(() => undefined);
     const id = arrivalId.current;
     if (id !== null && params.current.flying) params.current.endFlight(id);
   }, [pinCard, holdHalo]);

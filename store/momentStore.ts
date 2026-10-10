@@ -841,6 +841,9 @@ export const useMomentStore = create<MomentState>((set) => ({
     // The card that rendered this control must still be the card on screen.
     if (payload.eventId !== eventId) return 'ignored';
     undoInFlight = true;
+    // CUL-1691 §2.3 — the card is inert from this tap, before the await below: a chip or
+    // a door pressed in the same frame as Undo must not write to a meal being removed.
+    set({ undoing: payload.eventId });
     // Rigid, on the tap — because on this surface the tap IS the destructive
     // confirm (§5.6). The History/detail Remove withholds it until the alert's
     // confirm for the opposite reason: there, a live Cancel is still on screen.

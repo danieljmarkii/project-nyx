@@ -125,6 +125,7 @@ export function CompletionMark({ halo, motion, reveal = checkRevealFor() }: Comp
             ]}
           >
             <Animated.View
+              testID="completion-mark-check-window-inner"
               style={[
                 styles.windowInner,
                 slide ? { transform: [{ translateX: slide.inner }] } : null,

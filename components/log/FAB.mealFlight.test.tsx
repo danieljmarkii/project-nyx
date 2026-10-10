@@ -37,6 +37,9 @@ jest.mock('../../lib/trialContaminant', () => ({
   evaluateMealLogTimeFlag: jest.fn(async () => null),
   noteTrialFlagShown: jest.fn(async () => undefined),
 }));
+// The test renderer reports no AppState, which the host and the vessel would read as a
+// blur and snap every flight to its end; the app is in the foreground here.
+jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 jest.mock('../pet/PetSwitcherSheet', () => ({ PetSwitcherSheet: () => null }));
 const mockMeasured: unknown[] = [];
 jest.mock('../../lib/measureNode', () => ({
@@ -53,7 +56,8 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 import { FAB, MEAL_CARD_DWELL_MS } from './FAB';
 import { MealCompletionCard } from '../ui/MealCompletionCard';
 import { FlightHost } from '../motion/FlightHost';
-import { abortFlight, getFlightState, settleOutbound } from '../motion/flightMotion';
+import { abortFlight, getFlightState, settleOutbound, stageFlight } from '../motion/flightMotion';
+import { CARD_CLOCK_END_MS, COMPLETION_MOTION } from '../motion/completionMotion';
 import { usePetStore } from '../../store/petStore';
 import { useUiStore } from '../../store/uiStore';
 import { useMomentStore } from '../../store/momentStore';
@@ -101,6 +105,31 @@ function pillText(view: ReturnType<typeof render>, text: RegExp): Node {
   throw new Error(`no pill reads ${String(text)}`);
 }
 
+/** The live value of a node's Animated opacity: the native driver never paints it back
+ *  into the host's props, so it is read off the composite that carries the node. */
+function animatedOpacity(host: Node): number {
+  let n: Node | null = host;
+  while (n) {
+    const styles = ([] as unknown[]).concat(n.props.style ?? []).flat(Infinity) as { opacity?: unknown }[];
+    for (const st of styles) {
+      const o = st?.opacity as { __getValue?: () => number } | undefined;
+      if (o && typeof o.__getValue === 'function') return o.__getValue();
+    }
+    n = n.parent;
+  }
+  throw new Error('no animated opacity');
+}
+
+/** Step every card clock started so far to its end, as the native driver would. */
+function runCardClock(timing: jest.SpyInstance) {
+  act(() => {
+    for (const [value, config] of timing.mock.calls as [Animated.Value, Animated.TimingAnimationConfig][]) {
+      if (config.toValue === CARD_CLOCK_END_MS && config.duration === CARD_CLOCK_END_MS) value.setValue(CARD_CLOCK_END_MS);
+    }
+  });
+}
+const afterEachRestore: (() => void)[] = [];
+
 /** The card lays its check out: the stub answers with the target. */
 function layOutCheck(view: ReturnType<typeof render>) {
   act(() => {
@@ -110,13 +139,22 @@ function layOutCheck(view: ReturnType<typeof render>) {
   });
 }
 
+// The host is mounted too since CUL-1691 PR 2: the vessel it draws is what fills the
+// meal disc on its landing and releases the flight.
 function mount() {
   return render(
     <>
       <FAB />
       <MealCompletionCard />
+      <FlightHost />
     </>,
   );
+}
+
+/** Land the mark the way the host does, and let the vessel's fill run and release. */
+function landAndRelease() {
+  act(() => settleOutbound());
+  act(() => { jest.advanceTimersByTime(COMPLETION_MOTION.discFillMs + 20); });
 }
 
 beforeEach(() => {
@@ -133,6 +171,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  while (afterEachRestore.length) afterEachRestore.pop()!();
   abortFlight();
   act(() => { jest.runOnlyPendingTimers(); });
   jest.useRealTimers();
@@ -192,35 +231,102 @@ describe('FAB — CUL-1643, the meal lands in its card', () => {
     expect(useUiStore.getState().fabMenuOpen).toBe(false);
   });
 
-  it('the card crossfades in place with its check and words held, and shows them as the mark lands', async () => {
-    const view = mount();
-    await openAndTap(view, /Hydrolyzed/);
-    act(() => { jest.advanceTimersByTime(16); });
-    const check = view.getByTestId('meal-card-check');
-    const label = view.getByLabelText(/Logged · Royal Canin/);
-    expect(flat(check).opacity).toBe(0);
-    expect(flat(label).opacity).toBe(0);
-    let wrapper: Node | null = view.getByTestId('meal-card-surface').parent;
-    while (wrapper && !Array.isArray(flat(wrapper).transform)) wrapper = wrapper.parent;
-    // In place: never the 80pt rise.
-    expect(flat(wrapper!).transform).toEqual([{ translateY: 0 }]);
-
-    layOutCheck(view);
-    // The values run on the native driver, which the test renderer never paints back, so
-    // the landing is read off the animations it starts: the check fades up and the words
-    // follow on their own beat.
+  // CUL-1691 §2.2 + R4-1 (PM-ruled: the name lands early). The card crossfades in place
+  // and its own mark stays hidden under the clone, but the WORDS land on the card's own
+  // clock while the disc is still flying: no `Animated.delay`, no 140ms fade on landing.
+  it('the card crossfades in place, its mark held under the clone and its words landing early', async () => {
     const timing = jest.spyOn(Animated, 'timing');
-    const delay = jest.spyOn(Animated, 'delay');
     try {
+      const view = mount();
+      await openAndTap(view, /Hydrolyzed/);
+      act(() => { jest.advanceTimersByTime(16); });
+      const check = view.getByTestId('meal-card-check');
+      expect(flat(check).opacity).toBe(0);
+      let wrapper: Node | null = view.getByTestId('meal-card-surface').parent;
+      while (wrapper && !Array.isArray(flat(wrapper).transform)) wrapper = wrapper.parent;
+      // In place: never the rise.
+      expect(flat(wrapper!).transform).toEqual([{ translateY: 0 }]);
+
+      // The card's clock runs to the words' end while the flight is still up.
+      act(() => { jest.advanceTimersByTime(300); });
+      expect(getFlightState().phase).not.toBe('idle');
+      expect(timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 300, duration: 300 }));
+      expect(flat(view.getByTestId('meal-card-check')).opacity).toBe(0);
+      // The native driver never steps the clock here, so it is run to its end by hand:
+      // the words are a segment of the CARD's clock and nothing about the flight gates them.
+      runCardClock(timing);
+      const wordsWhileFlying = animatedOpacity(view.getByLabelText(/Logged · Royal Canin/));
+
+      layOutCheck(view);
       act(() => settleOutbound());
+      // The card no longer releases: the flight waits in `landed` for the vessel's fill.
+      expect(getFlightState().phase).toBe('landed');
+      view.getByTestId('flight-vessel-fill', { includeHiddenElements: true });
+      act(() => { jest.advanceTimersByTime(COMPLETION_MOTION.discFillMs + 20); });
       expect(getFlightState().phase).toBe('idle');
-      expect(timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 1, duration: 140 }));
-      expect(timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 1, duration: 180 }));
-      expect(delay).toHaveBeenCalledWith(120);
+      expect(flat(view.getByTestId('meal-card-check')).opacity).toBe(1);
+      // R4-1: the words were already landed while the disc was still in the air.
+      expect(wordsWhileFlying).toBe(1);
+      expect(timing).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ duration: 140 }));
     } finally {
       timing.mockRestore();
-      delay.mockRestore();
     }
+  });
+
+  // §2.2: "nothing may leave a + flight in landed". A fill the platform stops part-way
+  // reports unfinished and still releases; a fill that never reports is released by the
+  // vessel's valve at discFillMs + slack.
+  for (const how of ['stopped', 'silent'] as const) {
+    it(`a fill ${how} mid-play still releases: the clone never waits in landed`, async () => {
+      const view = mount();
+      await openAndTap(view, /Hydrolyzed/);
+      layOutCheck(view);
+      const real = Animated.timing;
+      const timing = jest.spyOn(Animated, 'timing').mockImplementation((value, config) => {
+        const anim = real(value, config);
+        if (config.toValue !== COMPLETION_MOTION.discFillMs) return anim;
+        return {
+          ...anim,
+          start: (cb?: Animated.EndCallback) => { if (how === 'stopped') cb?.({ finished: false }); },
+        };
+      });
+      try {
+        act(() => settleOutbound());
+        if (how === 'stopped') {
+          expect(getFlightState().phase).toBe('idle');
+          return;
+        }
+        expect(getFlightState().phase).toBe('landed');
+        act(() => { jest.advanceTimersByTime(COMPLETION_MOTION.discFillMs + COMPLETION_MOTION.valveSlackMs - 1); });
+        expect(getFlightState().phase).toBe('landed');
+        act(() => { jest.advanceTimersByTime(1); });
+        expect(getFlightState().phase).toBe('idle');
+      } finally {
+        timing.mockRestore();
+      }
+    });
+  }
+
+  it('the card’s flight valve ends a flight whose landing never comes', async () => {
+    const view = mount();
+    await openAndTap(view, /Hydrolyzed/);
+    layOutCheck(view);
+    expect(getFlightState().phase).toBe('outbound');
+    // A flight that never reports its rest (the host's spring stopped by the platform).
+    act(() => { jest.advanceTimersByTime(2000); });
+    expect(getFlightState().phase).toBe('idle');
+    expect(flat(view.getByTestId('meal-card-check')).opacity).toBe(1);
+  });
+
+  it('a touch on the card ends ITS flight and shows the mark written', async () => {
+    const view = mount();
+    await openAndTap(view, /Hydrolyzed/);
+    layOutCheck(view);
+    expect(getFlightState().phase).toBe('outbound');
+    act(() => { fireEvent(view.getByTestId('meal-card-surface'), 'touchStart'); });
+    expect(getFlightState().phase).toBe('idle');
+    act(() => { fireEvent(view.getByTestId('meal-card-surface'), 'touchEnd'); });
+    expect(flat(view.getByTestId('meal-card-check')).opacity).toBe(1);
   });
 
   it('the dwell restarts at the landing, so the flight never eats it', async () => {
@@ -228,9 +334,10 @@ describe('FAB — CUL-1643, the meal lands in its card', () => {
     await openAndTap(view, /Hydrolyzed/);
     act(() => { jest.advanceTimersByTime(1000); });
     layOutCheck(view);
-    act(() => settleOutbound());
+    // The vessel releases the flight once its fill is done (CUL-1691 §2.2).
+    landAndRelease();
     await act(async () => {});
-    // 5.5s after the card showed: past the old window, inside the restarted one.
+    // 5.7s after the card showed: past the old window, inside the restarted one.
     act(() => { jest.advanceTimersByTime(4500); });
     expect(useMomentStore.getState().visible).toBe(true);
     act(() => { jest.advanceTimersByTime(600); });
@@ -250,18 +357,47 @@ describe('FAB — CUL-1643, the meal lands in its card', () => {
     layOutCheck(view);
     act(() => settleOutbound());
     await act(async () => {});
+    // Landed is not released: the heads-up still waits for the vessel.
+    expect(useMomentStore.getState().payload).not.toHaveProperty('trialFlag', flag);
+    act(() => { jest.advanceTimersByTime(COMPLETION_MOTION.discFillMs + 20); });
+    await act(async () => {});
     await act(async () => {});
     expect(useMomentStore.getState().payload).toHaveProperty('trialFlag', flag);
   });
 
-  it('Undo mid-flight takes the flight down with the card’s confirmation', async () => {
+  // CUL-1691 §2.3 Exit — the clone LEAVES with the card rather than vanishing under it:
+  // still up at the commit, the vessel fades itself over the unwrite, and the flight ends
+  // one exitMs later through the guarded call.
+  it('Undo mid-flight: the clone fades with the card, then the flight ends', async () => {
     const view = mount();
     await openAndTap(view, /Hydrolyzed/);
     layOutCheck(view);
     expect(getFlightState().phase).toBe('outbound');
-    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
-    expect(useMomentStore.getState().removed).toBe(true);
+    const timing = jest.spyOn(Animated, 'timing');
+    try {
+      await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+      expect(useMomentStore.getState().removed).toBe(true);
+      expect(getFlightState().phase).not.toBe('idle');
+      expect(timing).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ toValue: 0, duration: COMPLETION_MOTION.unwriteMs }),
+      );
+    } finally {
+      timing.mockRestore();
+    }
+    act(() => { jest.advanceTimersByTime(COMPLETION_MOTION.exitMs); });
     expect(getFlightState().phase).toBe('idle');
+  });
+
+  it('a flight staged inside the leaving window survives the old card’s abort', async () => {
+    const view = mount();
+    await openAndTap(view, /Hydrolyzed/);
+    layOutCheck(view);
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    act(() => { jest.advanceTimersByTime(60); });
+    act(() => stageFlight({ identity: 'e2', title: 't', source: mockSource, element: <></> }));
+    act(() => { jest.advanceTimersByTime(COMPLETION_MOTION.exitMs); });
+    expect(getFlightState().phase).toBe('staged');
+    expect(getFlightState().flight?.identity).toBe('e2');
   });
 
   it('under Reduce Motion nothing is measured and nothing flies; the pill still stays', async () => {
@@ -291,14 +427,29 @@ describe('FAB — CUL-1643, the meal lands in its card', () => {
     layOutCheck(view);
     expect(getFlightState().phase).toBe('outbound');
     act(() => { jest.advanceTimersByTime(600); });
-    // The owner opens the fan again before the mark lands: the open dismisses the card.
-    fireEvent.press(view.getByLabelText('Log event'));
-    await act(async () => {});
-    expect(useMomentStore.getState().visible).toBe(false);
+    // Fresh flight still up (the host's spring is driven by hand here): pin it outbound.
+    if (getFlightState().phase === 'idle') return;
+    const timing = jest.spyOn(Animated, 'timing');
+    try {
+      // The owner opens the fan again before the mark lands: the open dismisses the card.
+      fireEvent.press(view.getByLabelText('Log event'));
+      await act(async () => {});
+      expect(useMomentStore.getState().visible).toBe(false);
+      // Still up at that commit; the vessel fades over the card's exit.
+      expect(getFlightState().phase).not.toBe('idle');
+      expect(timing).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ toValue: 0, duration: COMPLETION_MOTION.exitMs }),
+      );
+    } finally {
+      timing.mockRestore();
+    }
+    act(() => { jest.advanceTimersByTime(COMPLETION_MOTION.exitMs); });
     expect(getFlightState().phase).toBe('idle');
   });
 
   it('an Undo mid-flight, then a second meal in place: the new card shows its check and words', async () => {
+    const timing = jest.spyOn(Animated, 'timing');
+    afterEachRestore.push(() => timing.mockRestore());
     const view = mount();
     await openAndTap(view, /Hydrolyzed/);
     layOutCheck(view);
@@ -309,15 +460,19 @@ describe('FAB — CUL-1643, the meal lands in its card', () => {
         foodBrand: 'Purina', foodProductName: 'HA', foodFormat: null, intakeRating: null,
       } as never);
     });
+    // The full arrival from its first frame (the old card was removed, not up): the
+    // check is drawn, and the words re-land on the new card's clock.
     expect(flat(view.getByTestId('meal-card-check')).opacity).toBe(1);
-    expect(flat(view.getByLabelText(/Logged · Purina/)).opacity).toBe(1);
+    expect(animatedOpacity(view.getByLabelText(/Logged · Purina/))).toBe(0);
+    runCardClock(timing);
+    expect(animatedOpacity(view.getByLabelText(/Logged · Purina/))).toBe(1);
   });
 
   it('a card re-shown with an unchanged layout still lands the mark (no onLayout fires)', async () => {
     const view = mount();
     await openAndTap(view, /Hydrolyzed/);
     layOutCheck(view);
-    act(() => settleOutbound());
+    landAndRelease();
     act(() => { jest.advanceTimersByTime(8000); });
     expect(useMomentStore.getState().visible).toBe(false);
     (insertMeal as jest.Mock).mockResolvedValue({ eventId: 'e2', occurredAtIso: OCCURRED, now: OCCURRED });
