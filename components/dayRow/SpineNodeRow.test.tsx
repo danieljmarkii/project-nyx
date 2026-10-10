@@ -20,7 +20,7 @@ const mockUseAppActive = jest.fn(() => true);
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => mockUseAppActive() }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { AccessibilityInfo, Animated, LayoutAnimation, StyleSheet } from 'react-native';
 import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
@@ -623,6 +623,91 @@ describe('a run opens in place: every member, a full row, nothing capped (AC 17,
     const t = render(<Host node={run(3)} expanded={false} onToggle={jest.fn()} />);
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
     expect(configureNext).not.toHaveBeenCalled();
+  });
+});
+
+// ── The member form (CUL-1733; spec §3.6, D2 ruled on CUL-1715) ────────────────────────
+
+describe('an opened run\'s member: the difference first, the brand and product on line 2', () => {
+  const PRODUCT = 'Royal Canin · Selected Protein PR';
+  /** A run of `intakes.length` meals, one rating each (null for unrated), alternating format. */
+  function ratedRun(intakes: (string | null)[]): SpineCompactNode {
+    const rows = intakes.map((intake, i) =>
+      meal(`m${i}`, TIMES[i], { intake, formatTag: i % 2 === 0 ? 'WET' : 'DRY' }),
+    );
+    return { ...run(intakes.length), rows };
+  }
+  const open = (node: SpineCompactNode) =>
+    render(<SpineCompactRow node={node} isFirst isLast expanded onToggle={jest.fn()} onOpen={jest.fn()} />);
+
+  it.each([
+    ['two meals', ['all', 'most']],
+    ['four meals, two rated', ['all', null, 'most', null]],
+  ] as const)('%s: line 1 carries the meal word, the format and the chip; line 2 the product', (_name, intakes) => {
+    const node = ratedRun([...intakes]);
+    const t = open(node);
+    node.rows.forEach((row, i) => {
+      const line1 = within(t.getByTestId(`spine-member-line1-${row.id}`));
+      expect(line1.getByText('Meal')).toBeTruthy();
+      expect(line1.getByText(row.formatTag as string)).toBeTruthy();
+      // Nothing of the product rides line 1.
+      expect(line1.queryByText(/Royal Canin/)).toBeNull();
+      expect(line1.queryByText(/Selected Protein/)).toBeNull();
+      // The chip is a line-1 sibling when the meal is rated, and absent when it is not.
+      const want = intakes[i] === 'all' ? 'All' : intakes[i] === 'most' ? 'Most' : null;
+      if (want) expect(within(line1.getByTestId(`spine-chip-${row.id}`)).getByText(want)).toBeTruthy();
+      else expect(line1.queryByTestId(`spine-chip-${row.id}`)).toBeNull();
+      // Line 2: the brand and product, in the run's own second-line register.
+      const food = t.getByTestId(`spine-member-food-${row.id}`);
+      expect(food.props.children).toBe(PRODUCT);
+      expect(styleOf(food)).toMatchObject({ fontSize: theme.textXS, color: theme.colorTextSecondary });
+      expect(styleOf(food)).toEqual(styleOf(t.getByTestId(`spine-formats-${node.id}`)));
+    });
+  });
+
+  it('VoiceOver still hears the whole row, the product included, in its reading order', () => {
+    const node = ratedRun(['all', 'most']);
+    const t = open(node);
+    for (const row of node.rows) {
+      const label = t.getByTestId(`spine-node-${row.id}`).props.accessibilityLabel as string;
+      expect(label).toBe(eventRowLabel(row));
+      expect(label).toMatch(/^Meal, Royal Canin, Selected Protein PR, (wet|dry), (all|most) eaten, /);
+    }
+  });
+
+  it('the member bead is 9pt, centred where the 11pt bead centres; the time takes the secondary ink', () => {
+    const node = ratedRun(['all', 'most']);
+    const t = open(node);
+    const dots = t.getAllByTestId('spine-dot-member');
+    expect(dots).toHaveLength(2);
+    // The run's own bead, the single-row geometry, is the rail's last child.
+    const runRail = t.getAllByTestId('spine-rail')[0];
+    const runDot = styleOf(runRail.children[runRail.children.length - 1] as never);
+    const d = styleOf(dots[0]);
+    expect(d.width).toBe(9);
+    expect(d.height).toBe(9);
+    expect(d.borderWidth).toBe(runDot.borderWidth);
+    expect((d.marginTop as number) + (d.width as number) / 2).toBe(
+      (runDot.marginTop as number) + (runDot.width as number) / 2,
+    );
+    expect(d.backgroundColor).toBe(runDot.backgroundColor);
+    expect(styleOf(t.getByText('6:02\u00a0AM')).color).toBe(theme.colorTextSecondary);
+    // The run's range keeps the tertiary time.
+    expect(styleOf(t.getByText(/^6:02\sAM\s– /)).color).toBe(theme.colorTextTertiary);
+  });
+
+  it('a single row is untouched: the product on line 1, the 11pt bead, the tertiary time, no member form', () => {
+    const row = meal('s1', '9:15 AM', { intake: 'most' });
+    const t = render(<SpineEventRow node={row} isFirst isLast onOpen={jest.fn()} />);
+    expect(t.queryByTestId('spine-member-line1-s1')).toBeNull();
+    expect(t.queryByTestId('spine-member-food-s1')).toBeNull();
+    expect(t.queryByTestId('spine-dot-member')).toBeNull();
+    expect(t.getByText(` · ${PRODUCT}`)).toBeTruthy();
+    const rail = t.getByTestId('spine-rail');
+    const dot = styleOf(rail.children[rail.children.length - 1] as never);
+    expect(dot.width).toBe(11);
+    expect(styleOf(t.getByText('9:15\u00a0AM')).color).toBe(theme.colorTextTertiary);
+    expect(t.getByTestId('spine-node-s1').props.accessibilityLabel).toBe(eventRowLabel(row));
   });
 });
 
