@@ -280,13 +280,9 @@ export function MedicationCompletionCard() {
     getDoubleDoseFlag({ eventId, petId, medicationItemId, occurredAt, adherence: next })
       .then((flag) => patchDoubleDose(eventId, flag, next))
       .catch((e) => {
+        // A failed recheck never settles the gold's wait: an unknown is not a clear
+        // check, so a Given whose recheck failed stays calm (§2.3, fails toward calm).
         console.warn('[medication-card] double-dose recheck failed:', e);
-        // A failed recheck still settles the gold's wait (§2.3), but only for the answer
-        // it was run for: a later tap's own recheck owns the newer answer.
-        const p = useMomentStore.getState().payload;
-        if (p?.kind === 'medication' && p.eventId === eventId && p.adherence === next) {
-          useMomentStore.getState().markDoubleDoseSettled(eventId);
-        }
       });
   }
 

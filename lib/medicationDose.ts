@@ -265,10 +265,11 @@ export async function applyLogTimeDoubleDoseCheck(params: {
   // be comparable to the card's adherence rather than any stored TEXT.
   adherence: DoseAdherence | null;
 }): Promise<void> {
-  // CUL-1691 §2.3 — every exit reports SETTLED, after the card is up: a given dose's gold
-  // waits on this read, so a path that returned silently would leave the halo waiting on
-  // nothing. The store's write is keyed to this dose, so a superseded card (the wait
-  // resolves false) is never touched, and the newer dose's own check settles that one.
+  // CUL-1691 §2.3 — every exit that has an ANSWER reports SETTLED, after the card is up:
+  // a given dose's gold waits on this read. A failed read reports nothing, so the gold
+  // stays away (an unknown is never a clear check). The store's write is keyed to this
+  // dose, so a superseded card (the wait resolves false) is never touched, and the newer
+  // dose's own check settles that one.
   const settle = () => useMomentStore.getState().markDoubleDoseSettled(params.eventId);
   let flag;
   try {
@@ -277,7 +278,8 @@ export async function applyLogTimeDoubleDoseCheck(params: {
     // A check failure must never surface as a log failure — the dose is saved and the
     // card is showing. Warn and leave the note off; the detail screen still has it.
     console.warn('[medication-dose] log-time double-dose check failed:', e);
-    if (await whenMedicationCardVisible(params.eventId)) settle();
+    // NOT settled: an unknown is not a clear check, so the gold stays away (the card's
+    // wait fails toward calm; CUL-1713's adversarial pass, a team call).
     return;
   }
   // Wait for the card to actually be on screen before patching. The picker path defers

@@ -636,7 +636,7 @@ describe('MedicationCompletionCard — the gold is doseCelebrates (CUL-1691 §2.
     view.getByText(NOTE);
   });
 
-  it('a failed recheck after Given settles the wait, so a clean dose still gains its gold', async () => {
+  it('a failed recheck after Given leaves no gold (an unknown is not a clear check)', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockGetDoubleDoseFlag.mockRejectedValueOnce(new Error('sqlite'));
     const view = render(<MedicationCompletionCard />);
@@ -644,6 +644,31 @@ describe('MedicationCompletionCard — the gold is doseCelebrates (CUL-1691 §2.
     advance(HALO_REST_MS);
     await act(async () => { fireEvent.press(view.getByText('Given')); });
     advance(HALO_REST_MS);
+    expect(haloLayer(view)).toBeNull();
+  });
+
+  it('conflict, then Missed, then Given with a failing recheck: no gold over the possible repeat', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const view = render(<MedicationCompletionCard />);
+    seedDose({ doubleDose: CONFLICT, doubleDoseSettled: true });
+    mockGetDoubleDoseFlag.mockResolvedValueOnce(NO_CONFLICT);
+    await act(async () => { fireEvent.press(view.getByText('Missed')); });
+    mockGetDoubleDoseFlag.mockRejectedValueOnce(new Error('sqlite'));
+    await act(async () => { fireEvent.press(view.getByText('Given')); });
+    advance(HALO_REST_MS);
+    expect(haloLayer(view)).toBeNull();
+  });
+
+  it('a pending check starts no native gold clock: nothing is mounted until the beat sees it settled', () => {
+    const view = render(<MedicationCompletionCard />);
+    seedDose();
+    advance(100);
+    expect(haloLayer(view)).toBeNull();
+    act(() => { useMomentStore.getState().markDoubleDoseSettled('m1'); });
+    advance(50);
+    // Settled before it is due, but the gold still waits for its beat.
+    expect(haloLayer(view)).toBeNull();
+    advance(COMPLETION_MOTION.haloDelayMs);
     expect(haloLayer(view)).not.toBeNull();
   });
 

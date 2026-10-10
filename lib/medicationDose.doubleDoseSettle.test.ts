@@ -1,4 +1,4 @@
-// The log-time double-dose check reports SETTLED on every exit path (CUL-1691 §2.3): a
+// The log-time double-dose check reports SETTLED on every exit with an answer (CUL-1691 §2.3): a
 // given dose's gold waits on this read, so an exit that returned silently would leave
 // the halo waiting on nothing. Driven through the real `applyLogTimeDoubleDoseCheck`;
 // the store and the local read are stubbed, since what is under test is the exits.
@@ -41,7 +41,7 @@ beforeEach(() => {
   jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
-describe('applyLogTimeDoubleDoseCheck settles on every exit (CUL-1691 §2.3)', () => {
+describe('applyLogTimeDoubleDoseCheck settles on every answered exit (CUL-1691 §2.3)', () => {
   it('a conflict: the patch lands, then the settle, keyed to this dose', async () => {
     mockGetDoubleDoseFlag.mockResolvedValue({ conflict: true, otherEventId: 'x', gapMinutes: 20 });
     await applyLogTimeDoubleDoseCheck(PARAMS);
@@ -58,11 +58,11 @@ describe('applyLogTimeDoubleDoseCheck settles on every exit (CUL-1691 §2.3)', (
     expect(mockMarkSettled).toHaveBeenCalledWith('dose-1');
   });
 
-  it('a failed read: settled, never patched', async () => {
+  it('a failed read: never settled, never patched (an unknown is not a clear check)', async () => {
     mockGetDoubleDoseFlag.mockRejectedValue(new Error('sqlite'));
     await applyLogTimeDoubleDoseCheck(PARAMS);
     expect(mockPatchDoubleDose).not.toHaveBeenCalled();
-    expect(mockMarkSettled).toHaveBeenCalledWith('dose-1');
+    expect(mockMarkSettled).not.toHaveBeenCalled();
   });
 
   it('a patch the store refuses (the owner changed the answer) still settles', async () => {
