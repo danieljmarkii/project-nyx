@@ -38,9 +38,15 @@ Shipped via #1149 (CUL-1515). Dispatched by `/dispatch`, BUILD mode, on `claude/
 - **Adversarial-reviewer, round 1:**
   - Held: a call, a held call, a louder phone floor, a re-run in flight, `not_enough_to_say` and `monitor` never take the word. Hide and a re-read that lands as a call clear the mark. Record-pet scoping holds.
   - Failed, fixed above: the improving reflection, the timing finding, a stale comment, the single try/catch, and unkeyed hook state.
-  - Round 2 verdict is in the PR's thread.
+- **Adversarial-reviewer, round 2: PASS.**
+  - Held: an improving reflection and a falling trial pair mark nothing, and neither does a postprandial finding with a 3am fasting vomit.
+  - Marked, and should be: a flat diarrhea reflection on a stool record, and a rising trial pair over in-trial episodes.
+  - A higher-ranked finding that throws no longer hides a lower one that matches.
+  - A reused screen never carries one record's finding to another.
+  - One residual, documented in `findingTracksPattern`: a 7-day burden drawn over two weeks over-includes, on the louder side.
 
 ## Residuals
 
+- A burden finding's drawn weeks are wider than its own window, so the mark over-includes on the louder side. This is documented, not clipped.
 - `lib/incidentTierWords.ts`'s header still says the pattern "lands with the finding's evidence set, and until then a logged read says Keep an eye out". It is left alone because an edit there redeploys Ask.
 - Should an insight-class flat reflection count as "tracking"? Today it does: its bars are its evidence. Raised on CUL-1515 for the PM's eye, not blocking.

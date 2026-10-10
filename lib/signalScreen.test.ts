@@ -1359,6 +1359,14 @@ describe('CUL-1216 — a falling pair on the screen carries its gates', () => {
     expect(timing.episodes?.tracksPattern).toBe(false);
   });
 
+  it('CUL-1515: a falling trial pair is not tracking; a rising one is', () => {
+    const { findingTracksPattern } = jest.requireActual('./signalScreen') as typeof import('./signalScreen');
+    const pair = (comparisonDirection: 'more_during_trial' | 'fewer_during_trial') =>
+      ({ type: 'trial_response', priorityClass: 'insight', comparisonDirection }) as unknown as CachedFinding['finding'];
+    expect(findingTracksPattern(pair('fewer_during_trial'))).toBe(false);
+    expect(findingTracksPattern(pair('more_during_trial'))).toBe(true);
+  });
+
   // Adversarial pass F2: the trial lanes are a before/during pair; a falling split is one lane.
   it('F2: on a trial, a falling before/in-trial lane split is drawn as one lane; a rising one stays split', () => {
     const t = trial({ dayCounter: 20, startDay: shift(THURSDAY, -19) });

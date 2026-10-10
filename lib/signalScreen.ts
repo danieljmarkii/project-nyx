@@ -360,6 +360,11 @@ function episodesInWeeks(episodes: readonly SignalScreenEpisode[], weekly: Weekl
  *     made (`leadTakesChartCard`'s own reading), so the drawn episodes are not their evidence
  *     (spec §4, "in the live finding's evidence set"; adversarial pass, F2).
  *   • NOT the stood-down line, which says Home stopped, nor intake decline (no episodes).
+ *
+ * The evidence is the DRAWN weeks, which can be wider than a finding's own window: a 7-day
+ * burden is drawn over two weeks, and the screen reads episodes logged since the engine ran.
+ * Both over-include on the louder side, under a finding of the same sign, and the record and
+ * the gallery still agree because both read this one set (adversarial pass, round 2).
  */
 export function findingTracksPattern(finding: SignalFinding): boolean {
   switch (finding.type) {
