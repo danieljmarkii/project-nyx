@@ -88,3 +88,35 @@ Deno.test('mapIncidentAnalyses — carries the row write time as writtenAt', () 
   assert.equal(a.writtenAt, at(29, 10))
   assert.equal(a.call, 'call_now')
 })
+
+// The second adversarial pass: "later" is ordered by when each call was SAID, the clock the phone
+// dates by, never by the event's time alone.
+Deno.test('laterCallTodayIso — a call today written today on an OLDER event still reaches the card (variant A)', () => {
+  const [f] = detectIncidentRedFlags(
+    input([
+      analysis({ call: 'call_now', occurredAt: at(28, 9), writtenAt: at(28, 9) }),
+      analysis({ call: 'call_today', occurredAt: at(27, 9), writtenAt: at(30, 10) }), // a late sync
+    ]),
+  )
+  assert.equal(f.tier, 'call_now')
+  assert.equal(f.laterCallTodayIso, at(30, 10))
+})
+
+Deno.test('laterCallTodayIso — a call now raised after a call today never steps down to it (variant B)', () => {
+  const [f] = detectIncidentRedFlags(
+    input([
+      analysis({ call: 'call_now', occurredAt: at(27, 9), writtenAt: at(30, 10) }), // raised late
+      analysis({ call: 'call_today', occurredAt: at(28, 9), writtenAt: at(28, 9) }),
+    ]),
+  )
+  assert.equal(f.tier, 'call_now')
+  assert.equal(f.tierReadIso, at(30, 10))
+  assert.equal('laterCallTodayIso' in f, false)
+})
+
+Deno.test('laterCallTodayIso — with no write times it keeps the event order (the shipped behaviour)', () => {
+  const [f] = detectIncidentRedFlags(
+    input([analysis({ call: 'call_now', occurredAt: at(27, 9) }), analysis({ call: 'call_today', occurredAt: at(28, 9) })]),
+  )
+  assert.equal(f.laterCallTodayIso, at(28, 9))
+})

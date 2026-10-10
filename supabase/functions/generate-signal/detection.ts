@@ -7341,10 +7341,16 @@ export function detectIncidentRedFlags(
   // way, so the two agree. A family with no flagged incident emits nothing (silence, never a "clear"),
   // unless a new-rule read in it is a call (PR-30a, K1 = A), which emits a `callOnly` card.
   // PR-30a: a call today newer than the call now the card speaks, as its own dated clause.
-  const laterCallToday = (acc: FamilyAcc): { laterCallTodayIso?: string } =>
-    acc.call === 'call_now' && acc.latestAt.call_today.ms > acc.latestAt.call_now.ms
-      ? { laterCallTodayIso: acc.latestAt.call_today.iso }
-      : {}
+  // PR-30c (CUL-1739, the second adversarial pass): "later" is ordered by when each call was SAID
+  // (the later of its event and its row's write), the same clock the phone dates a call now by, so
+  // a call today written today on an older event still reaches the card, and a call now raised
+  // after a call today never steps down to it. Without write times it falls back to event order.
+  const laterCallToday = (acc: FamilyAcc): { laterCallTodayIso?: string } => {
+    if (acc.call !== 'call_now') return {}
+    const said = Number.isFinite(acc.saidAt.call_now.ms) && Number.isFinite(acc.saidAt.call_today.ms)
+    if (said) return acc.saidAt.call_today.ms > acc.saidAt.call_now.ms ? { laterCallTodayIso: acc.saidAt.call_today.iso } : {}
+    return acc.latestAt.call_today.ms > acc.latestAt.call_now.ms ? { laterCallTodayIso: acc.latestAt.call_today.iso } : {}
+  }
   // PR-30c: when the card's call was last said, for the phone's dated form.
   const tierRead = (acc: FamilyAcc): { tierReadIso?: string } =>
     acc.call !== null && Number.isFinite(acc.saidAt[acc.call].ms) ? { tierReadIso: acc.saidAt[acc.call].iso } : {}

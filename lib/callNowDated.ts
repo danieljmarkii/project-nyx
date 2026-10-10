@@ -55,6 +55,17 @@ export const DATED_CALL_NOW_ACTION =
   "If you haven't spoken to your vet since, call them now. If they're closed, call an emergency clinic.";
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** The phone's LOCAL day of an instant, short ("Oct 9") and long ("October 9"), or null. Every
+ *  dated form uses the local day (the second adversarial pass): a UTC day east of Greenwich can
+ *  print the day BEFORE the owner was told, and "if you haven't spoken to your vet since" would
+ *  then excuse a call made before the read. Home's eyebrow keeps its UTC photo day. */
+export function localCallDay(iso: string): { short: string; long: string } | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return { short: `${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`, long: `${MONTH_LONG[d.getMonth()]} ${d.getDate()}` };
+}
 
 /** The later of two instants, as the ISO string that holds it; null when either cannot be read
  *  (then nothing is dated: the loud form). Parsed, never compared as text (C-40). */
@@ -70,8 +81,7 @@ export function callNowSaidAt(eventIso: string | null | undefined, writtenIso: s
  * The record card's words for a new-rule call now, or null while it is in its first day (and
  * whenever either instant cannot be read): then the card keeps the map's "Call your vet now" and
  * its action line. The day is when the call was said (`callNowSaidAt`), by the phone's LOCAL day,
- * as the record's own header dates the event; Home's Signal surfaces date in UTC, as their
- * eyebrow already does.
+ * as the record's own header dates the event; as every dated form does (`localCallDay`).
  */
 export function recordDatedCallNow(
   eventIso: string | null | undefined,
@@ -80,6 +90,6 @@ export function recordDatedCallNow(
 ): { label: string; action: string } | null {
   const said = callNowSaidAt(eventIso, writtenIso);
   if (said === null || !callNowIsDated(said, nowMs)) return null;
-  const d = new Date(said);
-  return { label: datedCallNowLabel(`${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`), action: DATED_CALL_NOW_ACTION };
+  const day = localCallDay(said);
+  return day ? { label: datedCallNowLabel(day.short), action: DATED_CALL_NOW_ACTION } : null;
 }

@@ -46,7 +46,7 @@ import { formatTimingBandLabel } from './timingBandLabels';
 import { careClaimReason } from './careClaimScreens';
 import { correlationCluster } from './findingIdentity';
 import { TIER_WORDS } from './incidentTierWords';
-import { callNowIsDated, CALL_NOW_ASK, datedCallNowAsk } from './callNowDated';
+import { callNowIsDated, CALL_NOW_ASK, datedCallNowAsk, localCallDay } from './callNowDated';
 
 // A timing finding — the two types whose evidence renders as a receipt (SR-1, §4).
 type TimingFinding = PostprandialTimingFinding | TimeOfDayClusteringFinding;
@@ -190,7 +190,7 @@ export function incidentRedFlagAsk(finding: IncidentRedFlagFinding, nowMs?: numb
   if (call === null) return 'worth a call to your vet';
   const saidIso = datedCallNowIsoOf(finding, nowMs);
   if (saidIso !== null) {
-    const d = stripDayUTC(saidIso);
+    const d = localCallDay(saidIso);
     // A call from a different read than the flagged photo is "a read", as the sentence says it
     // (PR-30a's adversarial #3): the eyebrow above dates the photo, not this read.
     if (d) return datedCallNowAsk(d.short, callFromOtherRead(finding) ? 'a read' : 'the read');
@@ -235,7 +235,7 @@ export const INCIDENT_READ_NOUN: Record<IncidentCategory, string> = { vomit: 'vo
 /** The evidence of a call now past its first day (PR-30c): the read's provenance, then the call
  *  quoted with its day. Never a word that the call has passed, never a source the row cannot back. */
 function datedCallNowEvidence(finding: IncidentRedFlagFinding, petName: string, saidIso: string): string {
-  const day = shortDateUTC(saidIso);
+  const day = localCallDay(saidIso)?.long ?? shortDateUTC(saidIso);
   if (isCallOnlyFinding(finding)) {
     const noun = INCIDENT_READ_NOUN[finding.incidentType];
     const lead =
@@ -268,7 +268,7 @@ function datedCallNowEvidence(finding: IncidentRedFlagFinding, petName: string, 
 export function incidentRedFlagSentenceAt(finding: SignalFinding, petName: string, serverText: string, nowMs: number | undefined): string {
   const saidIso = finding.type === 'incident_red_flag' ? datedCallNowIsoOf(finding, nowMs) : null;
   if (finding.type !== 'incident_red_flag' || saidIso === null) return serverText;
-  const day = shortDateUTC(saidIso);
+  const day = localCallDay(saidIso)?.long ?? shortDateUTC(saidIso);
   const later = laterCallTodaySentence(finding);
   const tail = 'This is a read of your logs, not a diagnosis.';
   if (isCallOnlyFinding(finding)) {
@@ -281,7 +281,9 @@ export function incidentRedFlagSentenceAt(finding: SignalFinding, petName: strin
     finding.flaggedIncidentCount === 1 && (finding as { countIsFloor?: unknown }).countIsFloor !== true
       ? `A photo you logged of ${petName}'s ${symptom} showed ${phrase}, on ${when}`
       : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}, most recently on ${when}`;
-  const call = callFromOtherRead(finding) ? `On ${day}, a read said: ${CALL_NOW_ASK}.` : `The read said: ${CALL_NOW_ASK}.`;
+  // Always the said-at day, in the phone's local day: the lead's photo day is UTC (the shipped
+  // sentence), and a reader must not have to infer when the call was said from it.
+  const call = `On ${day}, ${callFromOtherRead(finding) ? 'a' : 'the'} read said: ${CALL_NOW_ASK}.`;
   return `${lead}. ${call}${later} ${tail}`;
 }
 
@@ -2671,7 +2673,7 @@ function bannerRest(finding: BannerSafetyFinding, food: string | null, nowMs: nu
       if (laterCallTodayIsoOf(finding) !== null) {
         return `: a ${INCIDENT_READ_NOUN[finding.incidentType]} read says ${TIER_WORDS.call_today.label.charAt(0).toLowerCase()}${TIER_WORDS.call_today.label.slice(1)}.`;
       }
-      const d = stripDayUTC(saidIso);
+      const d = localCallDay(saidIso);
       if (d) return `: on ${d.short}, a ${INCIDENT_READ_NOUN[finding.incidentType]} read said ${CALL_NOW_ASK}.`;
     }
     if (incidentCallOf(finding) !== null) {
