@@ -59,9 +59,10 @@ Run `scripts/steward/merge-check.sh` again after resolving, and before any merge
   - `replaced` (your resolution rewrote it): confirm `main`'s intent survived in the replacement. Read the line itself, never the tag: reverting `main`'s value to your branch's old one is also a replacement.
   - `back` (main deleted it, your resolution returned it): delete it again, unless your branch needs that exact line; on the record (2026-08-23) this is how four raw `<Text>`s returned over main's `ThemedText` sweep.
   - A duplicate migration number: renumber as in §4. A conflict marker: finish the resolution.
+  - `production:` (landing deploys an Edge Function, or edits the production gate, the deploy path or this check; CUL-1654): **never cleared in writing.** Only the PM's typed `merge` clears it (§7). The lines under it name the functions and why each deploys (`shipping code changed`, `new function`, `hold released`, or `could not tell`, which counts as deploying) and the gate files.
   - `main's CI: RED`: do not land on it. Wait for the fix, or be it: a branch that contains the red commit, touches a file changed since `main` was last green, and has its own CI passed on that head reads as the fix and stays `CLEAN`. A fix the check cannot see (a date-pinned test, nothing changed) is cleared in writing. `could not read` is never green: read `main`'s latest CI run with `actions_list` and say what it was.
 
-  Clear a `REVIEW` in writing: the merge commit message or the PR body says which lines were rewritten or moved on purpose, one line each or one per group. On the record, careful resolutions almost never delete a line outright, so a `deleted` line is the one to doubt first.
+  Clear a `REVIEW` in writing (every kind but `production:`): the merge commit message or the PR body says which lines were rewritten or moved on purpose, one line each or one per group. On the record, careful resolutions almost never delete a line outright, so a `deleted` line is the one to doubt first.
 - **Exit 3 is never a pass.** It means the check could not run: a shallow clone (`git fetch --unshallow origin`), a file name it refuses, an unknown ref. Fix the cause and run it again.
 
 ## 6. Proving it before the push
@@ -81,6 +82,7 @@ The one session that merges a PR not its own is the dispatcher, and only on the 
 - every check on its head commit has completed and passed (Claude Approvals included, where it runs);
 - GitHub reports it mergeable with no conflict;
 - the head is the commit those checks ran on, and the commit `scripts/steward/merge-check.sh` called `CLEAN` (or whose `REVIEW` is cleared in writing, §5);
+- **a production write waits for the PM's typed `merge` (CUL-1654, PM ruling 2026-10-10).** When the check prints a `production:` line, the merge needs the PM's `merge` typed in the session that merges: `/wrap and merge` or `merge` in a PR's own session, `merge #<n>` in the dispatcher. A dispatched child never makes this merge on its prompt, a pick or an `auto` marker; it leaves the PR green and stops (`dispatch.md` step 5). Run the check on the exact head being merged: the PM's `merge` covers what that run named, and a later push that changes the list needs the word again;
 - the issue's Definition of Done passes, adversarial review included where the issue requires it;
 - the PR holds no migration that is unapplied and needs none.
 

@@ -67,6 +67,19 @@
 //   ✗ migration numbers compared as text (3_ against 003_)
 //   ✗ an empty base migration listing read as no duplicates
 //
+// MUTANTS added with CUL-1654 (the production line), run against the real script and
+// its helper 2026-10-10, every one killed:
+//
+//   ✗ a production line never moving the verdict
+//   ✗ .claude/hooks/ dropped from the gate paths
+//   ✗ .claude/settings*.json dropped from the gate paths
+//   ✗ a helper that failed read as "deploys nothing"
+//   ✗ an import the walk could not resolve ignored
+//   ✗ holds ignored (a held function's change read as deploying)
+//   ✗ a released hold not read as deploying
+//   ✗ a new function not read as deploying
+//   ✗ an unreadable manifest read as holding nothing
+//
 // HOW MAIN'S CI IS FAKED. The script reads it with `gh api`, and every case runs with a
 // stub `gh` first on PATH (written under the fixture root) that serves a JSON file named
 // by FAKE_GH_MAIN for main's runs and FAKE_GH_OWN for this branch's, and fails like a
@@ -738,5 +751,114 @@ describe('scripts/steward/merge-check.sh', () => {
     const silent = check(s, [], { FAKE_GH_MAIN: onlyCancelled });
     expect(silent.out).toContain('silence is not green');
     expect(silent.code).toBe(2);
+  });
+
+  // CUL-1654: merging to main deploys every Edge Function whose shipping code changed, so
+  // a landing that deploys, or that edits the gate's own files, is REVIEW and never
+  // clears in writing. The fixture's functions import `lib/` the way the real ones do, so
+  // the closure walk exercised is the deploy workflow's own.
+  describe('production writes (CUL-1654)', () => {
+    const FUNCTIONS: Record<string, string> = {
+      'supabase/functions/fn-a/index.ts': "import { shared } from '../../../lib/shared.ts';\nexport const a = shared;\n",
+      'supabase/functions/fn-held/index.ts': "export const held = 1;\n",
+      'supabase/functions/deploy-manifest.json': JSON.stringify({ holds: { 'fn-held': { ref: 'CUL-1' } } }),
+      'lib/shared.ts': 'export const shared = 1;\n',
+      'lib/unused.ts': 'export const unused = 1;\n',
+    };
+
+    /** A fixture whose main already carries the functions above. */
+    function withFunctions(): Fixture {
+      const fx = fixture();
+      landOnMain(fx, FUNCTIONS, 'functions');
+      return fx;
+    }
+
+    it('a landing that changes no function and no gate file says so and stays CLEAN', () => {
+      const fx = withFunctions();
+      const s = session(fx, 'claude/feature', { 'lib/unused.ts': 'export const unused = 2;\n', 'feature.txt': 'x\n' });
+      const r = check(s);
+      expect(r.out).toContain('production: landing deploys no Edge Function and edits no gate file');
+      expect(lastLine(r.out)).toBe('MERGE CHECK: CLEAN');
+      expect(r.code).toBe(0);
+    });
+
+    it('a change inside a function\'s closure (a shared lib file) is REVIEW naming the function', () => {
+      const fx = withFunctions();
+      const s = session(fx, 'claude/feature', { 'lib/shared.ts': 'export const shared = 2;\n' });
+      const r = check(s);
+      expect(r.out).toContain("production: landing it is a production write; a self-merge waits for the PM's typed merge");
+      expect(r.out).toContain('  deploys   fn-a (shipping code changed)\n');
+      expect(r.out).toContain('never cleared in writing');
+      expect(lastLine(r.out)).toBe('MERGE CHECK: REVIEW');
+      expect(r.code).toBe(2);
+    });
+
+    it('a held function\'s change does not deploy; releasing the hold does', () => {
+      const fx = withFunctions();
+      const held = session(fx, 'claude/held', { 'supabase/functions/fn-held/index.ts': 'export const held = 2;\n' });
+      const r = check(held);
+      expect(r.out).toContain('production: landing deploys no Edge Function');
+      expect(r.code).toBe(0);
+
+      const release = session(fx, 'claude/release', { 'supabase/functions/deploy-manifest.json': JSON.stringify({ holds: {} }) });
+      const q = check(release);
+      expect(q.out).toContain('  deploys   fn-held (hold released)\n');
+      expect(q.code).toBe(2);
+    });
+
+    it('a new function deploys on the merge that adds it', () => {
+      const fx = withFunctions();
+      const s = session(fx, 'claude/new', { 'supabase/functions/fn-new/index.ts': 'export const n = 1;\n' });
+      const r = check(s);
+      expect(r.out).toContain('  deploys   fn-new (new function)\n');
+      expect(r.code).toBe(2);
+    });
+
+    it('an import the walk cannot resolve is treated as deploying, never as none', () => {
+      const fx = withFunctions();
+      const s = session(fx, 'claude/far', {
+        'supabase/functions/fn-a/index.ts': "import { far } from '../../../types/far.ts';\nexport const a = far;\n",
+        'types/far.ts': 'export const far = 1;\n',
+      });
+      const r = check(s);
+      expect(r.out).toContain('  deploys   could not tell, treated as deploying: deploys: fn-a imports ../../../types/far.ts');
+      expect(r.code).toBe(2);
+    });
+
+    it.each([
+      ['.claude/hooks/productionGate.ts'],
+      ['.claude/settings.json'],
+      ['.claude/settings.local.json'],
+      ['.github/workflows/edge-deploy.yml'],
+      ['scripts/deploy-edge.sh'],
+      ['scripts/edge-deploy/plan.ts'],
+      ['scripts/steward/merge-check.sh'],
+      ['scripts/steward/deploys.ts'],
+    ])('an edit to %s is REVIEW naming the file', (rel) => {
+      const fx = fixture();
+      const s = session(fx, 'claude/gate', { [rel]: 'changed\n' });
+      const r = check(s);
+      expect(r.out).toContain(`  edits     ${rel}\n`);
+      expect(lastLine(r.out)).toBe('MERGE CHECK: REVIEW');
+      expect(r.code).toBe(2);
+    });
+
+    it.each([['.claude/skills/steward/SKILL.md'], ['.claude/commands/dispatch.md'], ['.github/workflows/ci.yml'], ['scripts/steward/migration-numbers.sh']])(
+      'an edit to %s is not a gate file',
+      (rel) => {
+        const fx = fixture();
+        const s = session(fx, 'claude/not-gate', { [rel]: 'changed\n' });
+        const r = check(s);
+        expect(r.out).toContain('production: landing deploys no Edge Function and edits no gate file');
+        expect(r.code).toBe(0);
+      },
+    );
+
+    it('after the merge (--head origin/main) there is nothing left to land, so no production line', () => {
+      const fx = withFunctions();
+      const r = check(fx.mainClone, ['--head', 'origin/main']);
+      expect(r.out).not.toContain('production:');
+      expect(r.code).toBe(0);
+    });
   });
 });
