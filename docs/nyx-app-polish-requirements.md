@@ -1,5 +1,5 @@
 # Culprit — App Polish Requirements (Aug 2026)
-**Version:** 1.3 | **Status:** BUILD-READY | **Last Updated:** 2026-10-09
+**Version:** 1.4 | **Status:** BUILD-READY | **Last Updated:** 2026-10-10
 
 The build contract for the **Aug. 2026 Design Polish** track (Linear project, team Culprit). Born from the 2026-08-22 design/UX session: a four-lens audit (Jordan capture · Sam multi-pet · Designer periphery · PO Linear reconciliation) → three mock rounds, every decision PM-ruled same day. This doc is canonical; the Linear project links it as a Resource and the repo file wins on divergence.
 
@@ -55,7 +55,7 @@ Out of scope for this track, held in round 1's appendix for their own selection:
 `components/home/SignalZone.tsx`, local `Animated` values, no new deps. PM-locked spec:
 
 - **Trigger:** the Signal cache transitions building → live with ≥1 finding AND the per-pet arrival marker is unset.
-- **Sequence (~1.2s):** 0ms rail turns live → 250ms the wash begins (teal into a breath of moment-gold, left-to-right, 900ms, ease-out) → building rows dissolve as the first headline crossfades in (400–900ms) → sub-line fades at 1200ms. One soft success tap at 900ms.
+- **Sequence (~1.2s):** 0ms rail turns live → 250ms the wash begins (teal into a breath of moment-gold, left-to-right, 900ms, ease-out) → building rows dissolve as the first headline crossfades in (400–900ms) → sub-line fades at 1200ms. One soft tap at 900ms, never the success pattern (CUL-647, PM 2026-10-10: every finding that can arrive names a symptom, so it is acknowledged, never congratulated).
 - **Once per pet, ever:** AsyncStorage marker `signal_arrival_played:<petId>`, registered in `wipeLocalSession` (B-402 rule — a shared device never replays another account's moment). Device-local; a reinstall may replay once (accepted, harmless).
 - **Never for a safety finding:** if the first-ever finding leads the safety band, the card appears plainly and instantly (S1 — plainness is the severity signal) and the marker is set anyway.
 - **Reduced motion:** plain crossfade, no sweep; the haptic still fires (touch is not motion). Uses `hooks/useReducedMotion` + pauses on blur per the loading-system convention.
@@ -101,7 +101,7 @@ One `lib/haptics.ts`, seven verbs, consumed at the moment stores so a new log pa
 
 iOS system haptic settings are respected automatically; `expo-haptics` (managed-workflow safe) is the one new dependency.
 
-**⚠ Shipped state at Design v2's GA (2026-10-05, CUL-1071).** `lib/haptics.ts` exports **eight** verbs, the table's six plus two added since, each its own moment: `commitVisit` (a saved vet visit, a single soft tap like a symptom, for a different reason; CUL-902) and `insightArrival` (the §4 arrival's success tap, fired only by `SignalZone`, the scan's one exemption; CUL-601). The silence rule is enforced by `guards/haptics.test.ts`, and the Design v2 spine row (`components/dayRow/SpineNodeRow.tsx`) is in its `ALWAYS_SCANNED` set: a read landing *Worth a call* on Home buzzes nothing. On Home under Design v2:
+**⚠ Shipped state at Design v2's GA (2026-10-05, CUL-1071).** `lib/haptics.ts` exports **eight** verbs, the table's six plus two added since, each its own moment: `commitVisit` (a saved vet visit, a single soft tap like a symptom, for a different reason; CUL-902) and `insightArrival` (the §4 arrival's soft tap, never the success pattern since CUL-647, fired only by `SignalZone`, the scan's one exemption; CUL-601). The silence rule is enforced by `guards/haptics.test.ts`, and the Design v2 spine row (`components/dayRow/SpineNodeRow.tsx`) is in its `ALWAYS_SCANNED` set: a read landing *Worth a call* on Home buzzes nothing. On Home under Design v2:
 - **The look header** (`components/designV2/home/LookHeader.tsx`) plays `selectChip` once per tap, and the tap is the save, so a look has no commit haptic (the daily-look spec's T-10). Opening *More…*, *Add a look* or the intake door plays `openMenu`.
 - **Pull-to-refresh** plays `pullThreshold` from `app/(tabs)/index.tsx`.
 - **The medication strip's confirm is gone with the strip** (deleted at GA), so the R2 beat it carried (§5) no longer appears on Home; the look header's beat is the in-place beat Home hosts, a `momentStore` presentation (`showLook`, `LOOK_DWELL_MS` 5000ms, 30s under a screen reader, CUL-1224) whose Undo reaches the shared reversal. Its dwell is the R1 five seconds, not R2's 1800ms in-sheet cap: the header is not a sheet. No ruling names which register's dwell rule the header follows; this records the code.
