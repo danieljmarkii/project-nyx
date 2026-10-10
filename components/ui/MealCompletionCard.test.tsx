@@ -46,6 +46,12 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
+// The door the floor line and the combo row open, observable (CUL-1691 §2.3's guards).
+const mockPush = jest.fn();
+jest.mock('expo-router', () => ({ router: { push: (...a: unknown[]) => mockPush(...a) }, usePathname: () => '/' }));
+// The test renderer reports no AppState; the app is foregrounded unless a test says not.
+let mockAppActive = true;
+jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => mockAppActive }));
 
 const mockAddTrialFood = jest.fn().mockResolvedValue('new-row-id');
 jest.mock('../../lib/dietTrialSetup', () => ({
@@ -68,7 +74,7 @@ jest.mock('../../lib/trialFoodsScreen', () => ({
   }),
 }));
 
-import { Alert, Animated, StyleSheet } from 'react-native';
+import { Alert, Animated, LayoutAnimation, StyleSheet } from 'react-native';
 import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { MealCompletionCard } from './MealCompletionCard';
 import { useMomentStore } from '../../store/momentStore';
@@ -79,6 +85,10 @@ import { reverseLoggedEvent } from '../../lib/undoLog';
 import { updateEvent, updateMealIntake, getEventSource } from '../../lib/db';
 import { triggerSignalRegenDebounced } from '../../lib/signal';
 import { formatTime } from '../../lib/utils';
+import { COMPLETION_MOTION } from '../motion/completionMotion';
+import { FOLD_MOTION } from '../motion/foldMotion';
+import { REMOVED_DURATION_MS } from '../../store/momentStore';
+import { SHEET_SPRING } from '../motion/sheetMotion';
 import { OPAQUE_HEX, shadowedGrounds } from '../../testUtils/tree';
 
 const MEMBERSHIP_FLAG: LogTimeTrialFlag = {
@@ -765,10 +775,12 @@ describe('MealCompletionCard — the VoiceOver announcement (CUL-1275)', () => {
 });
 
 // CUL-1633 — the card honours Reduce Motion (C-43). Under the setting, or while it is
-// still unknown, the card crossfades in place: no rise from 80pt, no spring on the
-// check, and the check is drawn at its rest scale. The fade stays, so the owner still
-// SEES the confirmation arrive — the setting asks for less movement, not less news.
-describe('MealCompletionCard — Reduce Motion (CUL-1633)', () => {
+// still unknown, the card crossfades in place: no rise, no spring, and the mark is drawn
+// at rest. The fade stays, so the owner still SEES the confirmation arrive.
+//
+// CUL-1691 PR 2 moved the check's scale into the mark's DISC layer (it lives on the
+// card's clock now, never a spring), and the rise to the 24pt `SHEET_SPRING`.
+describe('MealCompletionCard — Reduce Motion (CUL-1633, CUL-1691)', () => {
   afterEach(() => {
     useReducedMotionStore.setState({ reduceMotion: null });
   });
@@ -784,23 +796,24 @@ describe('MealCompletionCard — Reduce Motion (CUL-1633)', () => {
     const timing = jest.spyOn(Animated, 'timing');
     const view = render(<MealCompletionCard />);
     seedMeal();
-    act(() => { jest.advanceTimersByTime(400); });
-    const check = view.getByTestId('meal-card-check');
+    const disc = view.getByTestId('completion-mark-disc-layer');
     // The wrapper is the Animated.View carrying translateY, an ancestor of the surface.
     let wrapper = view.getByTestId('meal-card-surface').parent;
     while (wrapper && !transformsOf(wrapper).some((t) => 'translateY' in t)) wrapper = wrapper.parent;
-    return { view, spring, timing, check, wrapper };
+    return { view, spring, timing, disc, wrapper };
   }
 
   for (const setting of [true, null] as const) {
-    it(`reduceMotion ${String(setting)}: crossfades in place, the check still at scale 1`, () => {
+    it(`reduceMotion ${String(setting)}: crossfades in place, the mark at rest`, () => {
       useReducedMotionStore.setState({ reduceMotion: setting });
-      const { spring, timing, check, wrapper } = mount();
+      const { spring, timing, disc, wrapper } = mount();
       try {
         expect(spring).not.toHaveBeenCalled();
-        // The fade is the one motion left, and it is a fade to full.
-        expect(timing).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 1 }));
-        expect(transformsOf(check)).toEqual([{ scale: 1 }]);
+        // The fade is the one motion left: a crossfade to full over crossfadeMs.
+        expect(timing).toHaveBeenCalledWith(
+          expect.anything(), expect.objectContaining({ toValue: 1, duration: COMPLETION_MOTION.crossfadeMs }),
+        );
+        expect(transformsOf(disc)).toEqual([{ scale: 1 }]);
         expect(wrapper).toBeTruthy();
         expect(transformsOf(wrapper!)).toEqual([{ translateY: 0 }]);
       } finally {
@@ -810,16 +823,17 @@ describe('MealCompletionCard — Reduce Motion (CUL-1633)', () => {
     });
   }
 
-  it('reduceMotion false: the card rises on its spring and the check springs to 1', () => {
+  it('reduceMotion false: the card rises 24pt on SHEET_SPRING and nothing springs on the check', () => {
     useReducedMotionStore.setState({ reduceMotion: false });
-    const { spring } = mount();
+    const { spring, disc, wrapper } = mount();
     try {
+      expect(spring).toHaveBeenCalledTimes(1);
       expect(spring).toHaveBeenCalledWith(
-        expect.anything(), expect.objectContaining({ toValue: 0, tension: 80, friction: 11 }),
+        expect.anything(), expect.objectContaining({ toValue: 0, ...SHEET_SPRING }),
       );
-      expect(spring).toHaveBeenCalledWith(
-        expect.anything(), expect.objectContaining({ toValue: 1, tension: 60, friction: 7 }),
-      );
+      // The rise's first frame: 24pt down; the disc's first frame: 60%.
+      expect(transformsOf(wrapper!)).toEqual([{ translateY: COMPLETION_MOTION.riseFromPt }]);
+      expect(transformsOf(disc)).toEqual([{ scale: COMPLETION_MOTION.discFromScale }]);
     } finally {
       spring.mockRestore();
     }
@@ -835,5 +849,388 @@ describe('MealCompletionCard — the opaque daylight ground (CUL-1691)', () => {
     const grounds = shadowedGrounds(view.UNSAFE_root);
     expect(grounds.length).toBeGreaterThan(0);
     for (const g of grounds) expect(g).toMatch(OPAQUE_HEX);
+  });
+});
+
+// ── CUL-1691 PR 2 — the motion, the tone, the patched notes (spec §2.1 to §2.5) ─────
+//
+// The native driver never steps a value in the test renderer, so a beat is asserted by
+// the animation it STARTS, by the layer it mounts, or by the value a valve PINS (valves
+// are JS timers and do run). `includeHiddenElements` wherever the leaving body is read.
+const LINE = {
+  eventId: 'v1', vomitAt: '2026-06-07T13:00:00.000Z', tier: 'call_today', self: false, device: true, petId: 'p1',
+  raised: [{ eventId: 'v1', tier: 'call_today' }],
+} as never;
+
+function haloLayer(view: ReturnType<typeof render>) {
+  return view.queryByTestId('completion-mark-halo-layer', { includeHiddenElements: true });
+}
+/** The live value of a node's Animated opacity, read off the composite that carries it
+ *  (the host holds the value as it was when it last rendered). */
+function liveOpacity(host: { props: { style?: unknown }; parent: unknown }): number {
+  let n = host as { props: { style?: unknown }; parent: unknown } | null;
+  while (n) {
+    const styles = ([] as unknown[]).concat(n.props.style ?? []).flat(Infinity) as { opacity?: unknown }[];
+    for (const st of styles) {
+      const o = st?.opacity as { __getValue?: () => number } | undefined;
+      if (o && typeof o.__getValue === 'function') return o.__getValue();
+    }
+    n = n.parent as typeof n;
+  }
+  throw new Error('no animated opacity');
+}
+function advance(ms: number) {
+  act(() => { jest.advanceTimersByTime(ms); });
+}
+const afterThis: (() => void)[] = [];
+afterEach(() => { while (afterThis.length) afterThis.pop()!(); });
+
+describe('MealCompletionCard — the halo follows the one tone predicate (CUL-1691 §2.1)', () => {
+  beforeEach(() => { useReducedMotionStore.setState({ reduceMotion: false }); });
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  it('an eaten meal mounts the gold and its valve pins it at 1', () => {
+    const view = render(<MealCompletionCard />);
+    seedMeal({ foodType: 'meal', intakeRating: 'all' });
+    expect(haloLayer(view)).not.toBeNull();
+    advance(COMPLETION_MOTION.haloDelayMs + COMPLETION_MOTION.haloFadeMs + COMPLETION_MOTION.valveSlackMs + 10);
+    expect(liveOpacity(haloLayer(view)!)).toBe(1);
+  });
+
+  it('a refused meal never mounts the gold, at any frame', () => {
+    const view = render(<MealCompletionCard />);
+    seedMeal({ foodType: 'meal', intakeRating: 'refused' });
+    for (const ms of [0, 100, 200, 300, 500]) {
+      advance(ms);
+      expect(haloLayer(view)).toBeNull();
+    }
+  });
+
+  it('a card carrying a vet-call line is calm (team call; Dr. Chen confirms on CUL-1712)', () => {
+    const view = render(<MealCompletionCard />);
+    seedMeal({ foodType: 'meal', intakeRating: 'all', floorLine: LINE });
+    for (const ms of [0, 260, 500]) {
+      advance(ms);
+      expect(haloLayer(view)).toBeNull();
+    }
+    view.getByText(/vet/i);
+  });
+
+  it('a Refused tap during the arrival leaves no gold at any frame (the tone is read at touch-end)', () => {
+    const view = render(<MealCompletionCard />);
+    seedMeal({ foodType: 'meal', intakeRating: null });
+    advance(200);
+    const surface = view.getByTestId('meal-card-surface');
+    act(() => { fireEvent(surface, 'touchStart'); });
+    act(() => { fireEvent.press(view.getByText('Refused')); });
+    act(() => { fireEvent(surface, 'touchEnd'); });
+    expect(haloLayer(view)).toBeNull();
+    advance(600);
+    expect(haloLayer(view)).toBeNull();
+  });
+
+  it('a correction to eaten crossfades the gold in over haloFadeMs; the disc never replays', () => {
+    const timing = jest.spyOn(Animated, 'timing');
+    try {
+      const view = render(<MealCompletionCard />);
+      seedMeal({ foodType: 'meal', intakeRating: 'refused' });
+      advance(600);
+      timing.mockClear();
+      act(() => { fireEvent.press(view.getByText('All')); });
+      expect(haloLayer(view)).not.toBeNull();
+      expect(timing).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ toValue: 1, duration: COMPLETION_MOTION.haloFadeMs }),
+      );
+      // No second arrival: the card's clock was not restarted.
+      expect(timing).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 300, duration: 300 }));
+    } finally {
+      timing.mockRestore();
+    }
+  });
+
+  it('a stale valve never pins a second log’s rewrite', () => {
+    // The clock never reports its end here, so the valves are its only pinners.
+    const real = Animated.timing;
+    const timing = jest.spyOn(Animated, 'timing').mockImplementation((value, config) => {
+      const anim = real(value, config);
+      return config.toValue === 300 ? { ...anim, start: () => undefined } : anim;
+    });
+    afterThis.push(() => timing.mockRestore());
+    const view = render(<MealCompletionCard />);
+    seedMeal({ foodType: 'meal' });
+    advance(100);
+    act(() => {
+      useMomentStore.getState().showMeal({
+        eventId: 'e2', petId: 'p1', occurredAt: '2026-06-07T14:05:00.000Z', foodType: 'meal',
+        foodBrand: 'PetCo', foodProductName: 'Kibble', intakeRating: null,
+      });
+    });
+    const words = () => liveOpacity(view.getByLabelText(/Logged · PetCo Kibble/));
+    // e1's valve was due at 360ms; e2's is due at 100 + 360.
+    advance(300);
+    expect(words()).toBe(0);
+    advance(100);
+    expect(words()).toBe(1);
+  });
+});
+
+describe('MealCompletionCard — a note patched in after the reveal (CUL-1691 §2.3)', () => {
+  beforeEach(() => { useReducedMotionStore.setState({ reduceMotion: false }); });
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  function spies() {
+    const timing = jest.spyOn(Animated, 'timing');
+    const spring = jest.spyOn(Animated, 'spring');
+    const seen: { clock: number; rise: number }[] = [];
+    const configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {
+      const clock = timing.mock.calls.find(([, c]) => c.toValue === 300 && c.duration === 300)?.[0] as Animated.Value;
+      const rise = spring.mock.calls[0]?.[0] as Animated.Value;
+      seen.push({
+        clock: (clock as unknown as { __getValue(): number }).__getValue(),
+        rise: (rise as unknown as { __getValue(): number }).__getValue(),
+      });
+    });
+    return { timing, spring, configureNext, seen, restore: () => { timing.mockRestore(); spring.mockRestore(); configureNext.mockRestore(); } };
+  }
+
+  it('at the reveal (the picker path): it lays out with the card, no FOLD_LAYOUT, and the gold follows the intake alone (D5)', () => {
+    const s = spies();
+    try {
+      const view = render(<MealCompletionCard />);
+      seedMeal({ foodType: 'meal', intakeRating: null });
+      act(() => { useMomentStore.getState().patchTrialFlag('e1', MEMBERSHIP_FLAG); });
+      view.getByText('Off the trial list');
+      expect(s.configureNext).not.toHaveBeenCalled();
+      advance(500);
+      expect(liveOpacity(haloLayer(view)!)).toBe(1);
+    } finally {
+      s.restore();
+    }
+  });
+
+  it('later (the + path’s release): FOLD_LAYOUT only after every beat has stopped, and the gold still ends at 1', () => {
+    const s = spies();
+    try {
+      const view = render(<MealCompletionCard />);
+      seedMeal({ foodType: 'meal', intakeRating: null });
+      advance(200);
+      expect(view.queryByText('Off the trial list')).toBeNull();
+      act(() => { useMomentStore.getState().patchTrialFlag('e1', MEMBERSHIP_FLAG); });
+      view.getByText('Off the trial list');
+      expect(s.configureNext).toHaveBeenCalledTimes(1);
+      // At the call, the clock had been pinned at its end and the rise at rest.
+      expect(s.seen[0]).toEqual({ clock: 300, rise: 0 });
+      expect(haloLayer(view)).not.toBeNull();
+      expect(s.timing).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ toValue: 1, duration: COMPLETION_MOTION.haloFadeMs }),
+      );
+    } finally {
+      s.restore();
+    }
+  });
+
+  it('on a refused meal the gold never mounts, flag or no flag', () => {
+    const s = spies();
+    try {
+      const view = render(<MealCompletionCard />);
+      seedMeal({ foodType: 'meal', intakeRating: 'refused' });
+      advance(200);
+      act(() => { useMomentStore.getState().patchTrialFlag('e1', MEMBERSHIP_FLAG); });
+      expect(haloLayer(view)).toBeNull();
+      advance(500);
+      expect(haloLayer(view)).toBeNull();
+    } finally {
+      s.restore();
+    }
+  });
+
+  it('a vet-call line patched onto a celebrate card takes the standing gold away', () => {
+    const s = spies();
+    try {
+      const view = render(<MealCompletionCard />);
+      seedMeal({ foodType: 'meal', intakeRating: 'all' });
+      advance(500);
+      expect(liveOpacity(haloLayer(view)!)).toBe(1);
+      act(() => { useMomentStore.getState().patchFloorLine('e1', LINE); });
+      expect(s.timing).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ toValue: 0, duration: COMPLETION_MOTION.haloLeaveMs }),
+      );
+      advance(COMPLETION_MOTION.haloLeaveMs + 20);
+      expect(haloLayer(view)).toBeNull();
+    } finally {
+      s.restore();
+    }
+  });
+});
+
+// §2.3 — Undo: inert from the tap, the motion on `removed`. Each guard is called through
+// its control's PROP, because `fireEvent.press` honours `pointerEvents="none"` and would
+// pass with no guard at all. Mutation-proven: delete any one `inertNow` guard and its
+// row below reds.
+describe('MealCompletionCard — the leaving body after Undo (CUL-1691 §2.3)', () => {
+  beforeEach(() => { useReducedMotionStore.setState({ reduceMotion: false }); mockPush.mockClear(); });
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  const HIDDEN = { includeHiddenElements: true } as const;
+
+  function seedAll() {
+    seedMeal({ foodType: 'meal', trialFlag: MEMBERSHIP_FLAG, floorLine: LINE });
+  }
+
+  type Pressable = { props: { onPress?: () => void; onChange?: (v: unknown) => void; onOpen?: () => void }; parent: Pressable | null };
+  function controls(view: ReturnType<typeof render>) {
+    // The control's own `onPress` prop, on the composite above the labelled host.
+    const byLabel = (re: RegExp) => {
+      let n: Pressable | null = view.getByLabelText(re, HIDDEN) as unknown as Pressable;
+      while (n && typeof n.props.onPress !== 'function') n = n.parent;
+      if (!n) throw new Error(`no onPress for ${String(re)}`);
+      return n;
+    };
+    const chipRow = view.UNSAFE_root.findAll((n: { props: Record<string, unknown> }) =>
+      typeof n.props.onChange === 'function' && n.props.size === 'compact')[0] as unknown as Pressable;
+    const floor = view.UNSAFE_root.findAll((n: { props: Record<string, unknown> }) =>
+      typeof n.props.onOpen === 'function' && n.props.line !== undefined)[0] as unknown as Pressable;
+    return {
+      intake: () => chipRow.props.onChange!('all'),
+      combo: () => byLabel(/Add a medication given with/).props.onPress!(),
+      addToList: () => byLabel(/Add to the trial list/).props.onPress!(),
+      changeTime: () => byLabel(/Change time of this log/).props.onPress!(),
+      openRead: () => floor.props.onOpen!(),
+    };
+  }
+
+  function assertNothingWritten(view: ReturnType<typeof render>) {
+    expect(updateMealIntake).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(view.queryByTestId('add-trial-food-sheet', HIDDEN)).toBeNull();
+    expect(view.queryByText('When did this happen?', HIDDEN)).toBeNull();
+    expect(useMomentStore.getState().payload).toHaveProperty('intakeRating', null);
+  }
+
+  it('from the tap, before the reversal lands: every write and door is refused, and nothing visual changes', async () => {
+    (reverseLoggedEvent as jest.Mock).mockImplementationOnce(() => new Promise(() => {}));
+    seedAll();
+    const view = render(<MealCompletionCard />);
+    const c = controls(view);
+    act(() => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    expect(useMomentStore.getState().undoing).toBe('e1');
+    expect(useMomentStore.getState().removed).toBe(false);
+    // Nothing visual changes on the tap (CUL-612): the body is not hidden yet.
+    expect(view.getByTestId('meal-card-body').props.accessibilityElementsHidden).toBeUndefined();
+    expect(view.getByTestId('meal-card-surface').props.pointerEvents).toBe('none');
+    await act(async () => {
+      c.intake(); c.combo(); c.addToList(); c.changeTime(); c.openRead();
+    });
+    assertNothingWritten(view);
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+
+  it('while leaving: the body is hidden from assistive tech, carries no live region, and its header still speaks the logged sentence', async () => {
+    seedAll();
+    const view = render(<MealCompletionCard />);
+    const c = controls(view);
+    await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+    expect(useMomentStore.getState().removed).toBe(true);
+    const body = view.getByTestId('meal-card-body', HIDDEN);
+    expect(body.props.pointerEvents).toBe('none');
+    expect(body.props.accessibilityElementsHidden).toBe(true);
+    expect(body.props.importantForAccessibility).toBe('no-hide-descendants');
+    const header = view.getByLabelText(/^Logged · PetCo Dental Treats\./, HIDDEN);
+    expect(header.props.accessibilityLiveRegion).toBeUndefined();
+    // "Removed" has not landed: the leaving body is the only thing drawn.
+    expect(view.queryByText('Removed', HIDDEN)).toBeNull();
+    await act(async () => {
+      c.intake(); c.combo(); c.addToList(); c.changeTime(); c.openRead();
+    });
+    assertNothingWritten(view);
+  });
+
+  it('the pen un-writes over unwriteMs, then "Removed" lands under FOLD_LAYOUT and holds 2.4s from there', async () => {
+    const configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+    const timing = jest.spyOn(Animated, 'timing');
+    try {
+      const real = useMomentStore.getState().armRemovedDwell;
+      const armed: number[] = [];
+      useMomentStore.setState({ armRemovedDwell: (id: string) => { armed.push(Date.now()); real(id); } });
+      afterThis.push(() => useMomentStore.setState({ armRemovedDwell: real }));
+      seedAll();
+      const view = render(<MealCompletionCard />);
+      await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+      expect(timing).toHaveBeenCalledWith(
+        expect.anything(), expect.objectContaining({ toValue: 1, duration: COMPLETION_MOTION.unwriteMs }),
+      );
+      advance(COMPLETION_MOTION.unwriteMs + 10);
+      expect(configureNext).toHaveBeenCalled();
+      const removedNode = view.getByLabelText('Removed. Taken out of Biscuit’s record');
+      expect(removedNode.props.accessibilityLiveRegion).toBe('polite');
+      expect(view.queryByTestId('meal-card-body', HIDDEN)).toBeNull();
+      // "Removed" lands, and from THAT frame holds 2.4s (not the vet-call line's 8s).
+      advance(FOLD_MOTION.landDelayMs + FOLD_MOTION.landMs + 20);
+      expect(armed).toHaveLength(1);
+      const sinceLanding = Date.now() - armed[0];
+      advance(REMOVED_DURATION_MS - sinceLanding - 1);
+      expect(useMomentStore.getState().visible).toBe(true);
+      advance(1);
+      expect(useMomentStore.getState().visible).toBe(false);
+    } finally {
+      configureNext.mockRestore();
+      timing.mockRestore();
+    }
+  });
+});
+
+// The code review's three timing cases (CUL-1712): each is a path where a beat could act
+// on a card that has already gone.
+describe('MealCompletionCard — nothing acts on a card that has gone (CUL-1712 review)', () => {
+  beforeEach(() => { useReducedMotionStore.setState({ reduceMotion: false }); });
+  afterEach(() => { useReducedMotionStore.setState({ reduceMotion: null }); });
+
+  it('a note patched after the card hid lays out plainly: no app-global FOLD_LAYOUT', () => {
+    const configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+    try {
+      const view = render(<MealCompletionCard />);
+      seedMeal({ foodType: 'meal' });
+      advance(600);
+      act(() => { useMomentStore.getState().hide(); });
+      // The store refuses a patch on a hidden card; force the payload as a late server
+      // answer would leave it if it did not.
+      act(() => {
+        const p = useMomentStore.getState().payload!;
+        useMomentStore.setState({ payload: { ...p, floorLine: LINE } as never });
+      });
+      expect(configureNext).not.toHaveBeenCalled();
+      expect(view.queryByTestId('meal-card-surface')).not.toBeNull();
+    } finally {
+      configureNext.mockRestore();
+    }
+  });
+
+  it('an Undo collapse whose card hides before it lands never lands: no FOLD_LAYOUT, no re-armed dwell', async () => {
+    const configureNext = jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => {});
+    const real = useMomentStore.getState().armRemovedDwell;
+    const armed: string[] = [];
+    useMomentStore.setState({ armRemovedDwell: (id: string) => { armed.push(id); real(id); } });
+    afterThis.push(() => useMomentStore.setState({ armRemovedDwell: real }));
+    // The unwrite never reports, as under a stalled JS thread, until after the hide.
+    const timing = jest.spyOn(Animated, 'timing');
+    const pending: (() => void)[] = [];
+    const realTiming = timing.getMockImplementation();
+    timing.mockImplementation((value, config) => {
+      const anim = (realTiming ?? jest.requireActual('react-native').Animated.timing)(value, config);
+      if (config.duration !== COMPLETION_MOTION.unwriteMs || config.toValue !== 1) return anim;
+      return { ...anim, start: (cb?: Animated.EndCallback) => { pending.push(() => cb?.({ finished: true })); } };
+    });
+    try {
+      const view = render(<MealCompletionCard />);
+      seedMeal({ foodType: 'meal' });
+      await act(async () => { fireEvent.press(view.getByLabelText('Undo — remove this log')); });
+      act(() => { useMomentStore.getState().hide(); });
+      act(() => { for (const f of pending) f(); });
+      expect(configureNext).not.toHaveBeenCalled();
+      expect(armed).toHaveLength(0);
+    } finally {
+      timing.mockRestore();
+      configureNext.mockRestore();
+    }
   });
 });

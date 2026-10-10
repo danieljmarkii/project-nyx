@@ -181,6 +181,25 @@ const ALWAYS_SCANNED = [
   'components/motion/threadMotion.ts',
   'components/motion/ThreadDraw.tsx',
   'components/historyV2/HomeSpine.tsx',
+  // CUL-1712 (Completion card PR 2) — the completion card's motion: the module, the
+  // layered mark, the two cards that host the vet-call line (`FloorRaiseLine`) and wire
+  // its landing and the patched-line commit, the line itself (it paints the call tier;
+  // unscanned since #1122), and the vessel the + path flies. Every beat in them is
+  // silent by spec (§2.3 Haptics: one buzz per record, at the reveal), and the landing,
+  // the written check and the gold are exactly where a "done" buzz would read as natural
+  // beside "Call your vet today". None carries the MARKERS. `FAB.tsx` is never here: it
+  // imports `openMenu` by design. Proven by mutation on CUL-1712: a `commitSymptom` import
+  // in each reds the build.
+  //
+  // THE BLIND SPOT, stated: `store/momentStore.ts` imports `lib/haptics` by design (it
+  // plays the reveal's one buzz), so a vet-call line arriving through `patchFloorLine` is
+  // beyond this scan. `store/momentStore.test.ts` pins that arrival as silent instead.
+  'components/motion/completionMotion.ts',
+  'components/ui/CompletionMark.tsx',
+  'components/ui/MealCompletionCard.tsx',
+  'components/ui/NamedCompletionCard.tsx',
+  'components/ui/FloorRaiseLine.tsx',
+  'components/ui/MealMark.tsx',
 ];
 
 const HAPTICS_IMPORT = /from\s+['"][^'"]*\/haptics['"]|require\(\s*['"][^'"]*\/haptics['"]\s*\)/;

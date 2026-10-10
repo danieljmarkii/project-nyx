@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Animated, Alert, LayoutAnimation } from 'react-native';
 import { router, usePathname } from 'expo-router';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
 import { COMPLETION_GROUND, CompletionMark } from './CompletionMark';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { useAppActive } from '../../hooks/useAppActive';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { TimeEditSheet } from './TimeEditSheet';
 import { FloorRaiseLine } from './FloorRaiseLine';
 import { openRaisedRead } from './openRaisedRead';
-import { useMomentStore, isIntakeDecline } from '../../store/momentStore';
+import { useMomentStore, isIntakeDecline, completionTone } from '../../store/momentStore';
 import {
   removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
 } from '../../lib/completionCard';
@@ -29,7 +30,11 @@ import { AddTrialFoodSheet } from '../profile/AddTrialFoodSheet';
 import { buildAddTrialFoodSheet, ADD_TRIAL_FOOD_ERROR } from '../../lib/trialFoodsScreen';
 import { addTrialFood, foodLabel, type TrialFoodSelection } from '../../lib/dietTrialSetup';
 import type { TrialAllowedSetTrial } from '../../lib/trialAllowedSet';
-import { abortFlight, flightActiveFor, getFlightState, landFlight, setHeroReady, useFlightState } from '../motion/flightMotion';
+import {
+  abortFlight, flightActiveFor, flightRestMs, getFlightState, landFlight, useFlightState,
+} from '../motion/flightMotion';
+import { COMPLETION_MOTION, useCompletionArrival } from '../motion/completionMotion';
+import { FOLD_LAYOUT } from '../motion/foldMotion';
 import { measureNodeInWindow } from '../../lib/measureNode';
 
 // The bar's real height, imported rather than re-derived: this file used to carry
@@ -44,14 +49,17 @@ import { TAB_HEIGHT } from '../nav/NyxTabBar';
 // immediately reads as the system overriding the input.
 const INTAKE_CONFIRM_HOLD_MS = 1500;
 
-// CUL-1643 — the FAB's meal mark lands in this card's check (`flightMotion.ts`). While it
-// flies the card crossfades in place (never the 80pt rise) with its check and its words
-// held back; the mark's release shows the check, settling from this scale, and "Logged ·
-// …" follows a beat later (Principle 9's order: the record moves, then it is named).
-const MARK_LAND_SCALE = 0.85;
-const MARK_LAND_FADE_MS = 140;
-const LABEL_BEAT_MS = 120;
-const LABEL_FADE_MS = 180;
+// CUL-1643 / CUL-1691 §2.2 — the FAB's meal mark lands in this card's check. While it
+// flies the card crossfades in place (never the rise) with its own mark hidden; the
+// vessel (`components/ui/MealMark.tsx`) fills, reveals the check and releases the flight,
+// and the card's mark shows, written, in that same commit. The words do NOT wait for the
+// landing (R4-1, PM-ruled: the name lands about 0.2s after launch).
+
+/** The guarded end of THIS card's flight: `abortFlight` takes no identity and the Signal
+ *  screen shares it, so it is never called bare. */
+function endFlightFor(eventId: string) {
+  if (flightActiveFor(getFlightState(), eventId)) abortFlight();
+}
 
 // B-693 — everything the shipped AddTrialFoodSheet needs, captured from the
 // membership flag + the meal payload at the moment the owner taps "+ Add to the
@@ -144,8 +152,8 @@ interface AddTarget {
 // is never an all-clear, and there is deliberately no "no conflict" state.
 export function MealCompletionCard() {
   const {
-    visible, payload, removed, hide, undo, patchOccurredAt, patchIntakeRating, rescheduleHide,
-    pauseDwell, resumeDwell,
+    visible, payload, removed, undoing, hide, undo, patchOccurredAt, patchIntakeRating, rescheduleHide,
+    pauseDwell, resumeDwell, armRemovedDwell,
   } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { pets } = usePetStore();
@@ -155,21 +163,9 @@ export function MealCompletionCard() {
   pathnameRef.current = pathname;
   const pathnameNow = () => pathnameRef.current;
   // CUL-1633 — read in the render, as the FAB and the named card do: the store has the
-  // OS answer before the first frame (CUL-1123), and unknown reads as still (C-43). No
-  // handler here moves anything, so nothing needs `reducedMotionNow()`.
+  // OS answer before the first frame (CUL-1123), and unknown reads as still (C-43).
   const reduced = useReducedMotion();
-
-  // Seeded from the setting so the first frame under Reduce Motion is already the
-  // static one: the card in place, the check at rest.
-  const translateY = useRef(new Animated.Value(reduced ? 0 : 80)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
-  // The gold "beat" — the mint check springs in with a warm-gold halo so the
-  // card carries the moment's warmth without a full-screen takeover.
-  const checkScale = useRef(new Animated.Value(reduced ? 1 : 0.6)).current;
-  // CUL-1643 — the arrival from the FAB's flight: the check's own opacity and the words'.
-  // Both sit at 1 on every other path, so nothing about them changes there.
-  const markOpacity = useRef(new Animated.Value(1)).current;
-  const labelOpacity = useRef(new Animated.Value(1)).current;
+  const appActive = useAppActive();
 
   // The eventId the picker was OPENED for; null while closed (CUL-709). Captured at
   // open rather than read live at save: `present()` swaps the payload IN PLACE, so
@@ -200,19 +196,153 @@ export function MealCompletionCard() {
 
   // CUL-1643 — a flight is up for THIS meal: the FAB staged its pill's meal mark before it
   // showed the card. Read from the flight store, so the card needs no new field on the
-  // payload and every other meal path (which stages nothing) is untouched. `arrival` is
-  // true from the reveal until the mark lands, and is what the abort below keys on: a
-  // card that never showed while the flight was staged (one render apart) is not one
-  // that went away under it.
+  // payload and every other meal path (which stages nothing) is untouched.
   const flightState = useFlightState();
   const arriving = isMeal && payload ? flightActiveFor(flightState, payload.eventId) : false;
   const arrivingRef = useRef(arriving);
   arrivingRef.current = arriving;
   const shownIdRef = useRef<string | null>(null);
   shownIdRef.current = isMeal && payload ? payload.eventId : null;
-  // The meal an arrival began for, until its mark lands or the arrival ends otherwise.
-  const arrival = useRef<string | null>(null);
   const badgeSlot = useRef<View>(null);
+
+  // CUL-1691 §2 — the motion: one hook, one tone predicate. The tone is read from the
+  // store when a beat is due (`celebrateNow`), never from this render's closure.
+  const mealNow = isMeal ? payload : null;
+  const arrival = useCompletionArrival({
+    identity: mealNow ? mealNow.eventId : null,
+    shown,
+    removed,
+    flying: arriving,
+    reducedMotion: reduced,
+    appActive,
+    celebrate: mealNow ? completionTone(mealNow) === 'celebrate' : false,
+    celebrateNow: () => {
+      const p = useMomentStore.getState().payload;
+      return p?.kind === 'meal' && completionTone(p) === 'celebrate';
+    },
+    currentIdentity: () => useMomentStore.getState().payload?.eventId,
+    onRemovedLanded: (id) => armRemovedDwell(id),
+    endFlight: endFlightFor,
+  });
+
+  // INERT FROM THE UNDO TAP (§2.3). Read from the store at the tap, so a write or a door
+  // pressed in the same frame as Undo is refused before the reversal's await resolves.
+  function inertNow(eventId: string): boolean {
+    const s = useMomentStore.getState();
+    return s.undoing === eventId || (s.removed && s.payload?.eventId === eventId);
+  }
+  const inert = isMeal && payload ? undoing === payload.eventId || removed : false;
+
+  // The card's flight valve (§2.2): armed on every landing that changes the target, at
+  // the spring's rest for that distance plus the fill and its slack. It ends THIS card's
+  // flight only, through the guarded call.
+  const flightValve = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearFlightValve = () => {
+    if (flightValve.current) clearTimeout(flightValve.current);
+    flightValve.current = null;
+  };
+
+  // THE CLONE LEAVES WITH THE CARD (§2.3 Exit). The first commit in which the card that
+  // showed for a flight is hidden, superseded or undone: the vessel starts its own fade,
+  // the valve is cleared, and the flight ends one `exitMs` later — so a flight staged
+  // inside that window survives, and a landing never unmounts a clone part-faded.
+  const upId = shown && !removed && isMeal && payload ? payload.eventId : null;
+  const prevUpId = useRef<string | null>(null);
+  // Pending ends, cleared only on unmount: a new card shown inside the window must not
+  // cancel the old card's end (the guarded call already spares a newer flight).
+  const pendingEnds = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => {
+    const was = prevUpId.current;
+    prevUpId.current = upId;
+    if (was === null || was === upId) return;
+    clearFlightValve();
+    if (!flightActiveFor(getFlightState(), was)) return;
+    const t = setTimeout(() => {
+      pendingEnds.current = pendingEnds.current.filter((x) => x !== t);
+      endFlightFor(was);
+    }, COMPLETION_MOTION.exitMs);
+    pendingEnds.current.push(t);
+  }, [upId]);
+  useEffect(() => () => {
+    clearFlightValve();
+    for (const t of pendingEnds.current) clearTimeout(t);
+    pendingEnds.current = [];
+  }, []);
+
+  // The target: the badge's slot, measured unscaled. Asked on the slot's layout and on
+  // the card's, because the card is bottom anchored and grows upward, so a taller card
+  // moves the slot in the window without moving it inside its row. A changed rect
+  // retargets the spring in flight. The vessel releases; the card only lands (§2.2).
+  function landMark() {
+    const eventId = shownIdRef.current;
+    if (!arrivingRef.current || eventId === null) return;
+    measureNodeInWindow(badgeSlot.current, (rect) => {
+      if (!rect) return;
+      const before = getFlightState().flight?.target ?? null;
+      landFlight(eventId, rect);
+      const f = getFlightState().flight;
+      if (!f || f.identity !== eventId || !f.target || f.target === before) return;
+      clearFlightValve();
+      const distance = Math.hypot(f.target.x - f.source.x, f.target.y - f.source.y);
+      flightValve.current = setTimeout(
+        () => endFlightFor(eventId),
+        flightRestMs(distance) + COMPLETION_MOTION.discFillMs + COMPLETION_MOTION.valveSlackMs,
+      );
+    });
+  }
+  // Asked once the reveal has committed, as well as on layout: a card re-shown with the
+  // same layout as its last showing fires no `onLayout` at all.
+  useEffect(() => {
+    if (!shown || !arriving) return;
+    const frame = requestAnimationFrame(landMark);
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown, upId]);
+
+  // A NOTE PATCHED IN AFTER THE REVEAL (§2.3): the vet-call line or the trial heads-up.
+  // One committed within `labelBeatMs` of the reveal lays out with the card. One later
+  // finishes the arrival the way a touch does, THEN fires `FOLD_LAYOUT` (app-global: it
+  // animates the next commit anywhere), then lays the note out, then the tone decides.
+  const revealedAt = useRef<{ id: string | null; at: number }>({ id: null, at: 0 });
+  if (upId !== null && revealedAt.current.id !== upId) revealedAt.current = { id: upId, at: Date.now() };
+  const [laid, setLaid] = useState<{ id: string | null; floorLine: unknown; trialFlag: unknown }>({
+    id: null, floorLine: null, trialFlag: null,
+  });
+  const pendingSettle = useRef(false);
+  const liveFloor = mealNow?.floorLine ?? null;
+  const liveTrial = mealNow?.trialFlag ?? null;
+  useEffect(() => {
+    if (!mealNow) return;
+    const id = mealNow.eventId;
+    if (laid.id === id && laid.floorLine === liveFloor && laid.trialFlag === liveTrial) return;
+    const next = { id, floorLine: liveFloor, trialFlag: liveTrial };
+    const atReveal = laid.id !== id || Date.now() - revealedAt.current.at <= COMPLETION_MOTION.labelBeatMs;
+    // A card that is hidden, leaving or undone lays the note out plainly: `configureNext`
+    // is app-global, and there is no arrival left to finish.
+    if (atReveal || upId === null) {
+      setLaid(next);
+      return;
+    }
+    arrival.finishForPatch();
+    LayoutAnimation.configureNext(FOLD_LAYOUT);
+    pendingSettle.current = true;
+    setLaid(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mealNow?.eventId, liveFloor, liveTrial]);
+  // The tone decides only after the FOLD_LAYOUT commit has laid the note out: this runs
+  // on the commit that changed `laid`, never on every render.
+  const settleHaloRef = useRef(arrival.settleHalo);
+  settleHaloRef.current = arrival.settleHalo;
+  useEffect(() => {
+    if (!pendingSettle.current) return;
+    pendingSettle.current = false;
+    settleHaloRef.current();
+  }, [laid]);
+  // What the card lays out: the laid snapshot for this record, else the payload's own
+  // (a fresh card lays its notes out with itself, no frame without them).
+  const notesLaid = mealNow !== null && laid.id === mealNow.eventId;
+  const layFloor = (notesLaid ? laid.floorLine : liveFloor) as typeof liveFloor;
+  const layTrial = (notesLaid ? laid.trialFlag : liveTrial) as typeof liveTrial;
 
   // THE RATING THIS CARD WAS PRESENTED WITH, per event (CUL-870).
   //
@@ -243,119 +373,9 @@ export function MealCompletionCard() {
     presentedIntake.current = { eventId: payload.eventId, rating: payload.intakeRating };
   }
 
-  useEffect(() => {
-    if (shown && arrivingRef.current && !reduced) {
-      // The arrival: in place, the box crossfading around the mark on its way in. The
-      // check and the words wait for the landing (the effect below).
-      arrival.current = shownIdRef.current;
-      translateY.setValue(0);
-      checkScale.setValue(MARK_LAND_SCALE);
-      markOpacity.setValue(0);
-      labelOpacity.setValue(0);
-      const fade = Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true });
-      fade.start();
-      // Asked once the reveal has committed, as well as on layout: a card re-shown with
-      // the same layout as its last showing fires no `onLayout` at all.
-      const frame = requestAnimationFrame(landMark);
-      return () => {
-        fade.stop();
-        cancelAnimationFrame(frame);
-      };
-    }
-    // Hidden (dismissed, timed out, signed out) with a mark still flying: it goes too.
-    endArrival();
-    if (reduced) {
-      // Static frame: the card crossfades in place and the check never springs. Still
-      // a fade, not a cut — the owner must see the confirmation arrive; the setting
-      // asks for less movement, not less information.
-      translateY.setValue(0);
-      checkScale.setValue(1);
-      const fade = Animated.timing(opacity, {
-        toValue: shown ? 1 : 0,
-        duration: shown ? 180 : 140,
-        useNativeDriver: true,
-      });
-      fade.start();
-      return () => fade.stop();
-    }
-    const anim = Animated.parallel([
-      Animated.spring(translateY, {
-        toValue: shown ? 0 : 80,
-        useNativeDriver: true,
-        tension: 80,
-        friction: 11,
-      }),
-      Animated.timing(opacity, {
-        toValue: shown ? 1 : 0,
-        duration: shown ? 180 : 140,
-        useNativeDriver: true,
-      }),
-      Animated.spring(checkScale, {
-        toValue: shown ? 1 : 0.6,
-        useNativeDriver: true,
-        tension: 60,
-        friction: 7,
-      }),
-    ]);
-    anim.start();
-    return () => anim.stop();
-  }, [shown, reduced, translateY, opacity, checkScale, markOpacity, labelOpacity]);
-
-  // CUL-1643 — the landing. The flight's release and the check showing are one store
-  // update, so the clone never leaves a frame with no mark under it. A card that goes away
-  // mid-flight (dismissed, superseded, undone) takes the flight with it, so the clone
-  // never lands on a card that is no longer there.
-  useEffect(() => {
-    if (!arrival.current) return;
-    // Undone, or superseded in place by another meal: the arrival ends without a landing,
-    // and whatever the card shows next shows its check and words.
-    if (removed || !shown || shownIdRef.current !== arrival.current) {
-      endArrival();
-      return;
-    }
-    if (arriving) return;
-    arrival.current = null;
-    const land = Animated.parallel([
-      Animated.timing(markOpacity, { toValue: 1, duration: MARK_LAND_FADE_MS, useNativeDriver: true }),
-      Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
-      Animated.sequence([
-        Animated.delay(LABEL_BEAT_MS),
-        Animated.timing(labelOpacity, { toValue: 1, duration: LABEL_FADE_MS, useNativeDriver: true }),
-      ]),
-    ]);
-    land.start();
-  }, [arriving, shown, removed, markOpacity, checkScale, labelOpacity]);
-
-  // An arrival that ends any way but a landing: the flight (if still up for that meal)
-  // comes down, and the check and the words are put back at rest, so a later card shown
-  // in place of this one, with no reveal of its own, is never drawn without them.
-  function endArrival() {
-    const id = arrival.current;
-    arrival.current = null;
-    markOpacity.setValue(1);
-    labelOpacity.setValue(1);
-    if (id === null) return;
-    if (flightActiveFor(getFlightState(), id)) abortFlight();
-    // Only after an arrival: on any other path the check's own spring owns its scale.
-    checkScale.setValue(1);
-  }
-
-  // The target: the badge's slot, measured unscaled (the badge itself is under
-  // `checkScale`). Asked on the slot's layout and on the card's, because the card is
-  // bottom anchored and grows upward, so a taller card moves the slot in the window
-  // without moving it inside its row. A changed rect retargets the spring in flight.
-  function landMark() {
-    const eventId = shownIdRef.current;
-    if (!arrivingRef.current || eventId === null) return;
-    measureNodeInWindow(badgeSlot.current, (rect) => {
-      if (!rect) return;
-      landFlight(eventId, rect);
-      setHeroReady(eventId, true);
-    });
-  }
-
   function openPicker() {
     if (!isMeal) return;
+    if (inertNow(payload.eventId)) return;
     setPickerFor(payload.eventId);
   }
 
@@ -435,6 +455,7 @@ export function MealCompletionCard() {
   async function handleIntakeChange(next: IntakeRating | null) {
     if (!isMeal) return;
     const eventId = payload.eventId;
+    if (inertNow(eventId)) return;
     const prevRating = payload.intakeRating;
     // See `presentedIntake`. A tap that would erase an answer the owner gave on another
     // surface holds the card open instead — she gets the beat, the record keeps her
@@ -478,6 +499,7 @@ export function MealCompletionCard() {
   // the dose confirmation will present its own "Logged together" card on return.
   function handleAddMed() {
     if (!isMeal) return;
+    if (inertNow(payload.eventId)) return;
     const foodName = [payload.foodBrand, payload.foodProductName].filter(Boolean).join(' ').trim();
     hide();
     router.push({
@@ -556,8 +578,13 @@ export function MealCompletionCard() {
   const mealPetName = meal ? resolveRecordPetName(pets, meal.petId) : '';
   // The removal line names the MEAL's pet for the same reason the flag copy does.
   const notice = meal && removed ? removedNoticeCopy(mealPetName) : null;
-  // ONE string per state: the header's summary label and what VoiceOver is told.
-  const summaryLabel = notice ? notice.a11yLabel : `${headline}. ${occurredTime}`;
+  // The header always speaks the LOGGED sentence, derived from the payload, never from
+  // `removed` (§2.3): through the collapse the old body is hidden from assistive tech,
+  // and the Removed label belongs to the removal node and the announcement alone.
+  const headerLabel = `${headline}. ${occurredTime}`;
+  // What VoiceOver is told: iOS speaks "Removed" through this hook on the `removed`
+  // fact; Android through the removal node's live region when it mounts. Once each.
+  const summaryLabel = notice ? notice.a11yLabel : headerLabel;
 
   // CUL-1275 — the removal line's `accessibilityLiveRegion` is Android-only, and the
   // header had no live region at all, so this card confirmed a meal on NEITHER platform
@@ -575,8 +602,10 @@ export function MealCompletionCard() {
   // 2026-05-23) because treat refusal is itself a clinical signal. Default stays
   // null; never pre-stamped. 'other' and unclassified foods stay opted out.
   const showIntake = payload.foodType === 'meal' || payload.foodType === 'treat';
-  const trialFlag = payload.trialFlag ?? null;
-  const raisedId = payload.floorLine?.eventId ?? '';
+  // The notes as LAID OUT (see `laid`): a patched one waits for its FOLD_LAYOUT commit.
+  const trialFlag = layTrial ?? null;
+  const floorLine = layFloor ?? null;
+  const raisedId = floorLine?.eventId ?? '';
   // Two registers, one per kind (B-693). CONTENTS (rung 2) → the calm passive
   // prose it has always been; MEMBERSHIP (rung 3) → the amber panel copy + the
   // "+ Add to the trial list" hatch. mealFlagCopy names a protein, so it may only
@@ -596,6 +625,7 @@ export function MealCompletionCard() {
     // pattern the sibling handlers use); the kind check narrows the flag to the
     // membership one, so its trial-schedule fields are in scope below.
     if (!isMeal) return;
+    if (inertNow(payload.eventId)) return;
     if (trialFlag?.kind !== 'off_trial_list') return;
     const brand = payload.foodBrand ?? '';
     const product_name = payload.foodProductName ?? '';
@@ -656,12 +686,30 @@ export function MealCompletionCard() {
     setAddTarget(null);
   }
 
+  // The collapse (§2.3): the body stays, frozen and hidden from assistive tech, until
+  // "Removed" lands; under Reduce Motion both are mounted for a true crossfade.
+  const bodyUp = !(removed && arrival.collapse === 'landed');
+  const noticeUp = notice !== null && (arrival.collapse === 'landed' || (arrival.collapse === 'leaving' && reduced));
+  const leavingBody = removed
+    ? ({ pointerEvents: 'none', accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' } as const)
+    : null;
+  const hasFollowUps = showIntake || contentsCopy !== null || membershipCopy !== null || floorLine !== null;
+
+  function touchStart() {
+    pauseDwell();
+    // A touch finishes the motion (and on the + path ends this card's flight).
+    arrival.finishForTouch();
+  }
+  function touchEnd() {
+    resumeDwell();
+    arrival.settleForTouch();
+  }
+
   return (
     <>
       <Animated.View
-        pointerEvents={shown ? 'box-none' : 'none'}
-        // In place while the mark flies (CUL-1643), whatever the value last held.
-        style={[styles.wrapper, { opacity, transform: [{ translateY: arriving ? 0 : translateY }] }]}
+        pointerEvents={shown && !inert ? 'box-none' : 'none'}
+        style={[styles.wrapper, { opacity: arrival.cardOpacity, transform: [{ translateY: arrival.cardTranslateY }] }]}
       >
         {/* CUL-614 / §5 "Dwell" — the auto-dismiss stops while a finger is on the card
             and any interaction resets it. Wired at the ROOT because touch events bubble
@@ -671,64 +719,46 @@ export function MealCompletionCard() {
             as much as onTouchEnd: a gesture the responder system takes away (a scroll
             claiming it, a Modal mounting over it) ends there and nowhere else.
 
-            NOT wired over the CUL-612 removal line, deliberately — see the twin note in
-            MedicationCompletionCard: that state has nothing to read, tap or answer, and
-            resuming arms a full interactive window, which would let a stray touch
-            stretch a 2.4s "Removed" past the dwell chosen so a reversal does not outstay
-            the log it reversed. */}
+            NOT wired from the Undo tap on (CUL-612, CUL-1691 §2.3): that state has
+            nothing to read, tap or answer, and resuming arms a full interactive window,
+            which would let a stray touch stretch a 2.4s "Removed" past the dwell chosen
+            so a reversal does not outstay the log it reversed. */}
         <View
           style={styles.card}
           testID="meal-card-surface"
           onLayout={landMark}
-          onTouchStart={notice ? undefined : pauseDwell}
-          onTouchEnd={notice ? undefined : resumeDwell}
-          onTouchCancel={notice ? undefined : resumeDwell}
+          pointerEvents={inert ? 'none' : 'auto'}
+          onTouchStart={inert ? undefined : touchStart}
+          onTouchEnd={inert ? undefined : touchEnd}
+          onTouchCancel={inert ? undefined : touchEnd}
         >
-          {notice ? (
-            /* The removal line — no mark, no controls, no follow-ups. A gold check
-               over the word "Removed" would be two contradictory signals, and an
-               intake chip row would be asking how much of a meal was eaten that is
-               no longer in the record. Announced politely: this state has no other
-               confirmation for a screen-reader owner. */
-            <View
-              style={styles.labelCol}
-              // `accessible` is load-bearing: without it the label never applies and
-              // the two lines stay two separate stops (SheetLogBeat, CUL-682).
-              accessible
-              accessibilityRole="summary"
-              accessibilityLiveRegion="polite"
-              accessibilityLabel={summaryLabel}
-            >
-              <ThemedText style={styles.title}>{notice.title}</ThemedText>
-              <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
-            </View>
-          ) : (
-          <>
+          {bodyUp && (
+          <View style={styles.body} testID="meal-card-body" {...leavingBody}>
           <View style={styles.headerRow}>
-            {/* Gold beat: mint check + warm-gold halo, carrying the moment's
-                warmth into the non-blocking card — on an eaten or unrated meal only.
-                Over a refusal the halo goes (CUL-894): the named card's calm tone,
-                acknowledged and never congratulated. The check stays — it says the
-                record landed, which is still true. */}
+            {/* Gold beat: teal disc, the check written into it, and the warm-gold halo
+                on an eaten or unrated meal only (`completionTone`). Over a refusal the
+                halo never mounts (CUL-894): acknowledged and never congratulated. The
+                check stays — it says the record landed, which is still true. */}
             <View ref={badgeSlot} onLayout={landMark} testID="meal-card-check-slot">
-              <Animated.View
+              <View
                 testID="meal-card-check"
-                // Held at 0 by the render while the mark flies, so no frame
-                // can draw the check under its own clone; the landing fades it up.
-                style={{ opacity: arriving ? 0 : markOpacity, transform: [{ scale: checkScale }] }}
+                // Hidden while the mark flies, so no frame can draw the check under its
+                // own clone; the vessel's release shows it, written, in one commit.
+                style={arriving ? styles.markHidden : styles.markShown}
               >
-                <CompletionMark halo={!decline} />
-              </Animated.View>
+                <CompletionMark halo={arrival.haloMode !== 'off'} motion={arrival.mark} />
+              </View>
             </View>
             {/* One summary node, as on the named card: the food and the time are one
                 announcement, not two orphan lines. The headline's fallback rule lives
-                with `headline` above. */}
+                with `headline` above. The words land on their own beat and never wait
+                for a flight (R4-1). */}
             <Animated.View
-              style={[styles.labelCol, { opacity: arriving ? 0 : labelOpacity }]}
+              style={[styles.labelCol, { opacity: arrival.wordsOpacity }]}
               accessible
               accessibilityRole="summary"
-              accessibilityLiveRegion="polite"
-              accessibilityLabel={summaryLabel}
+              accessibilityLiveRegion={removed ? undefined : 'polite'}
+              accessibilityLabel={headerLabel}
             >
               <ThemedText style={styles.title} numberOfLines={1}>
                 {headline}
@@ -740,7 +770,7 @@ export function MealCompletionCard() {
                 below this line is a follow-up ABOUT the meal — putting a reversal
                 at the end of that stack would read as one more thing to add.
                 Grouped so the header's wide gap applies once, to the pair. */}
-            <View style={styles.actionPair}>
+            <Animated.View style={[styles.actionPair, { opacity: arrival.bodyOpacity }]}>
             <TouchableOpacity
               onPress={handleUndo}
               hitSlop={HITSLOP_ACTION_LEFT}
@@ -759,8 +789,10 @@ export function MealCompletionCard() {
             >
               <ThemedText style={styles.action}>Change time</ThemedText>
             </TouchableOpacity>
-            </View>
+            </Animated.View>
           </View>
+          {hasFollowUps && (
+          <Animated.View style={[styles.body, { opacity: arrival.bodyOpacity }]}>
           {showIntake && (
             <View style={styles.intakeWrap}>
               {/* CUL-894 — on the intake door's card the owner has ALREADY answered (the
@@ -856,17 +888,41 @@ export function MealCompletionCard() {
               raised to a call, patched in when the server answers. Last, behind a divider:
               the combo row above reaches 8pt down, and the card's gap plus this wrap's
               top padding (16pt) clears it (C-5). */}
-          {payload.floorLine ? (
+          {floorLine ? (
             <View style={styles.flagWrap}>
               <FloorRaiseLine
-                line={payload.floorLine}
+                line={floorLine}
                 petName={mealPetName}
-                onOpen={() => openRaisedRead(raisedId, pathnameNow(), hide)}
+                onOpen={() => {
+                  if (inertNow(payload.eventId)) return;
+                  openRaisedRead(raisedId, pathnameNow(), hide);
+                }}
               />
             </View>
           ) : null}
-          </>
+          </Animated.View>
           )}
+          </View>
+          )}
+          {noticeUp && notice ? (
+            /* The removal line — no mark, no controls, no follow-ups. A gold check
+               over the word "Removed" would be two contradictory signals, and an
+               intake chip row would be asking how much of a meal was eaten that is
+               no longer in the record. From the frame it mounts it is the card's only
+               live region (Android speaks it here; iOS through the hook above). */
+            <Animated.View
+              style={[styles.labelCol, !bodyUp ? null : styles.noticeOverlay, { opacity: arrival.noticeOpacity }]}
+              // `accessible` is load-bearing: without it the label never applies and
+              // the two lines stay two separate stops (SheetLogBeat, CUL-682).
+              accessible
+              accessibilityRole="summary"
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={notice.a11yLabel}
+            >
+              <ThemedText style={styles.title}>{notice.title}</ThemedText>
+              <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
+            </Animated.View>
+          ) : null}
         </View>
       </Animated.View>
 
@@ -928,6 +984,20 @@ const styles = StyleSheet.create({
     gap: theme.space1,
     ...shadows.lg,
   },
+  // The body and its follow-ups keep the card's own rhythm: one gap between blocks.
+  body: {
+    gap: theme.space1,
+  },
+  // Reduce Motion's true crossfade: "Removed" over the leaving body, in the card's
+  // padding box, until the body goes and the height snaps.
+  noticeOverlay: {
+    position: 'absolute',
+    top: 12,
+    left: theme.space2,
+    right: theme.space2,
+  },
+  markHidden: { opacity: 0 },
+  markShown: { opacity: 1 },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
