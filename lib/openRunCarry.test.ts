@@ -38,6 +38,11 @@ describe('carryOpenRuns', () => {
     ]);
   });
 
+  it('a first meal moved into ANOTHER run (backdated across midnight) does not steer the carry there', () => {
+    const out = carryOpenRuns(new Set(['compact:a']), [runOf('a', 'b', 'c'), runOf('x', 'y')], [runOf('x', 'a', 'y'), runOf('b', 'c')]);
+    expect([...out]).toEqual(['compact:b']);
+  });
+
   it('leaves other open ids alone beside a moved one', () => {
     const out = carryOpenRuns(new Set(['compact:a', 'compact:q']), [runOf('a', 'b'), runOf('q', 'r')], [runOf('z', 'a', 'b'), runOf('q', 'r')]);
     expect([...out].sort()).toEqual(['compact:q', 'compact:z']);
