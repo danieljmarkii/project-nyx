@@ -191,21 +191,21 @@ describe('answering', () => {
   });
 
   it('"Not sure" folds with the safety-net line: a named 8 AM, or today when none fits (B3)', async () => {
-    // Asked from an hour ago, answered now: the next 8 AM is inside 48 h unless it is under two
-    // hours away and the day after is past the cap, which no hour of the day reaches here.
+    // Asked from an hour ago, answered now: a named 8 AM, or "today" when 8 AM is under two
+    // hours away.
     mockAnswers = {
       meal_fed: { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: new Date(Date.now() - 60 * 60_000).toISOString(), form: 'meal_fed', answer: 'not_observable', answered_at: new Date().toISOString() },
     };
     const view = await draw();
     expect(screen.getByText('You said: Not sure')).toBeTruthy();
-    expect(screen.getByText(/^If Nyx hasn't eaten by 8 AM (today|tomorrow|[A-Z][a-z]+), call your vet\.$/)).toBeTruthy();
+    expect(screen.getByText(/^(If Nyx hasn't eaten by 8 AM (today|tomorrow), call your vet\.|If you don't see Nyx eat today, call your vet\.)$/)).toBeTruthy();
     view.unmount();
-    // Asked from three days ago: the cap has passed, so the line asks for today.
+    // Asked from two and a half days ago: past the 48 h cap, so the line asks for today.
     mockAnswers = {
-      meal_fed: { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: new Date(Date.now() - 72 * 3_600_000).toISOString(), form: 'meal_fed', answer: 'not_observable', answered_at: new Date().toISOString() },
+      meal_fed: { id: 'a1', pet_id: 'pet-a', event_id: 'v1', since: new Date(Date.now() - 60 * 3_600_000).toISOString(), form: 'meal_fed', answer: 'not_observable', answered_at: new Date().toISOString() },
     };
     await draw();
-    expect(screen.getByText("If Nyx still isn't eating, call your vet today.")).toBeTruthy();
+    expect(screen.getByText("If you don't see Nyx eat today, call your vet.")).toBeTruthy();
   });
 
   it('a dog\'s Yes opens the meal log for the record\'s pet: a door, never a form on the record', async () => {

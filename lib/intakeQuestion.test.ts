@@ -114,35 +114,38 @@ describe('the instants', () => {
   // The question asks from 6 PM the day before a 6 PM vomit; answers come after.
   const SINCE = iso(local(2026, 10, 9, 18));
 
-  it('the safety net names the first 8 AM at least two hours after the answer', () => {
+  it('the safety net names the first 8 AM after the answer, or asks for today when it is under two hours away', () => {
     expect(safetyNetDeadline(iso(local(2026, 10, 10, 1)), SINCE)).toBe(local(2026, 10, 10, 8));
-    // 7:59 never reads "by 8 AM today" (B3): one minute is no deadline.
-    expect(safetyNetDeadline(iso(local(2026, 10, 10, 7, 59)), SINCE)).toBe(local(2026, 10, 11, 8));
     expect(safetyNetDeadline(iso(local(2026, 10, 10, 21)), SINCE)).toBe(local(2026, 10, 11, 8));
+    // 7:59 and 6:30 never read "by 8 AM today", and never move to tomorrow (R2-1): today instead.
+    expect(safetyNetDeadline(iso(local(2026, 10, 10, 7, 59)), SINCE)).toBeNull();
+    expect(safetyNetDeadline(iso(local(2026, 10, 10, 6, 30)), SINCE)).toBeNull();
+    expect(safetyNetLine('meal_fed', 'not_observable', iso(local(2026, 10, 10, 6, 30)), SINCE, 'Nyx', local(2026, 10, 10, 6, 31))).toBe(
+      "If you don't see Nyx eat today, call your vet.",
+    );
     expect(safetyNetDeadline('nope', SINCE)).toBeNull();
   });
 
-  it('never more than 48 hours of unknown intake from the hour asked about (B3)', () => {
-    // Asked from Sun 8 AM; "Not sure" at Mon 8:02 AM: the next 8 AM is Tue 8 AM, exactly 48 h.
+  it('never a named hour past 48 hours of unknown intake from the hour asked about (B3)', () => {
+    // Asked from Sun 8 AM; "Not sure" at Mon 9 PM: 8 AM Tue is exactly 48 h, inside.
     const since = iso(local(2026, 10, 4, 8));
-    expect(safetyNetDeadline(iso(local(2026, 10, 5, 8, 2)), since)).toBe(local(2026, 10, 6, 8));
-    // "Not sure" at Mon 9 PM: 8 AM Tue is inside 48 h.
     expect(safetyNetDeadline(iso(local(2026, 10, 5, 21)), since)).toBe(local(2026, 10, 6, 8));
-    // "Not sure" at Tue 8:02 AM, a day later: the next 8 AM would be 72 h; the cap leaves no
-    // lead time, so the line asks for today.
+    // "Not sure" at Tue 8:02 AM: the next 8 AM would be 72 h, so the line asks for today.
     expect(safetyNetDeadline(iso(local(2026, 10, 6, 8, 2)), since)).toBeNull();
     expect(safetyNetLine('meal_fed', 'not_observable', iso(local(2026, 10, 6, 8, 2)), since, 'Nyx', local(2026, 10, 6, 8, 3))).toBe(
-      "If Nyx still isn't eating, call your vet today.",
+      "If you don't see Nyx eat today, call your vet.",
     );
   });
 
-  it('the safety-net line: on the intake forms\' not_observable only, dated, and today once the hour passes', () => {
+  it('the safety-net line: on the intake forms\' not_observable only, dated, today once the hour passes, gone after three days', () => {
     const answered = iso(local(2026, 10, 10, 21));
     const now = local(2026, 10, 10, 21, 5);
     expect(safetyNetLine('meal_fed', 'not_observable', answered, SINCE, 'Nyx', now)).toBe("If Nyx hasn't eaten by 8 AM tomorrow, call your vet.");
     expect(safetyNetLine('free_fed', 'not_observable', answered, SINCE, 'Pixel', now)).toBe("If Pixel hasn't eaten by 8 AM tomorrow, call your vet.");
     // Read after the hour, the line never speaks of a past deadline.
-    expect(safetyNetLine('meal_fed', 'not_observable', answered, SINCE, 'Nyx', local(2026, 10, 11, 9))).toBe("If Nyx still isn't eating, call your vet today.");
+    expect(safetyNetLine('meal_fed', 'not_observable', answered, SINCE, 'Nyx', local(2026, 10, 11, 9))).toBe("If you don't see Nyx eat today, call your vet.");
+    // Three days after the hour asked about, an old record carries no call to action (R2-1).
+    expect(safetyNetLine('meal_fed', 'not_observable', answered, SINCE, 'Nyx', local(2026, 10, 12, 19))).toBeNull();
     for (const a of ['yes', 'a_little', 'no']) expect(safetyNetLine('meal_fed', a, answered, SINCE, 'Nyx', now)).toBeNull();
     expect(safetyNetLine('other_food', 'not_observable', answered, SINCE, 'Nyx', now)).toBeNull();
   });
