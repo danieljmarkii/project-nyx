@@ -7,6 +7,7 @@
 import { strict as assert } from 'node:assert'
 import {
   detectIncidentRedFlags,
+  rankFindings,
   type DetectionInput,
   type IncidentAnalysisInput,
   type IncidentRedFlagFinding,
@@ -64,6 +65,10 @@ Deno.test('newRuleCallOf — a stamped call is its tier; everything else is no c
   // Quiet reads are never a call.
   assert.equal(newRuleCallOf(row({ tier: 'logged', recommendation: 'monitor', engine_flags: STAMPED })), null)
   assert.equal(newRuleCallOf(row({ tier: 'not_enough_to_say', recommendation: 'not_enough_to_say', engine_flags: STAMPED })), null)
+  // A stamped value this build does not know: the record draws a call, so Home carries the loudest
+  // (adversarial pass #8; spec §1 ranks an unknown value as call now).
+  assert.equal(newRuleCallOf(row({ tier: 'call_later', recommendation: 'worth_a_call', engine_flags: STAMPED })), 'call_now')
+  assert.equal(newRuleCallOf(row({ recommendation: 'phone_vet', engine_flags: STAMPED })), 'call_now')
   // A row read without the columns (an older select) is no call.
   assert.equal(newRuleCallOf({ status: 'completed' }), null)
 })
@@ -90,9 +95,10 @@ Deno.test('detector — a new-rule call the record raised joins the band (K1 = A
   assert.equal(f.priorityClass, 'safety')
   assert.deepEqual(f.flags, [])
   assert.equal(f.tier, 'call_today')
-  assert.equal(f.fromRecord, true)
+  assert.equal(f.callOnly, true)
   assert.equal(f.flaggedIncidentCount, 1)
   assert.equal(f.mostRecentFlaggedIso, at(29, 7))
+  assert.equal(f.tierIso, at(29, 7))
 })
 
 Deno.test('detector — call now outranks call today in either order; the count clusters called reads', () => {
@@ -104,7 +110,9 @@ Deno.test('detector — call now outranks call today in either order; the count 
     ]))
     assert.equal(f.tier, 'call_now')
     assert.equal(f.flaggedIncidentCount, 2, 'two called reads a day apart; the quiet one is not counted')
-    assert.equal(f.mostRecentFlaggedIso, at(28, 9), 'dated by the most recent CALLED read, not the quiet one')
+    const nowAt = order[0] === 'call_now' ? at(27, 9) : at(28, 9)
+    assert.equal(f.tierIso, nowAt, 'dated by the read that says call now, never a call today (#4)')
+    assert.equal(f.mostRecentFlaggedIso, nowAt)
   }
 })
 
@@ -115,9 +123,27 @@ Deno.test('detector — a photo flag keeps its card and gains the family\'s loud
   ]))
   assert.deepEqual(f.flags, ['blood'])
   assert.equal(f.tier, 'call_now')
-  assert.equal(f.fromRecord, undefined, 'a photo raised this card')
+  assert.equal(f.callOnly, undefined, 'a photo raised this card')
   assert.equal(f.flaggedIncidentCount, 1, 'the count stays the flagged photos')
   assert.equal(f.mostRecentFlaggedIso, at(26, 9), 'and the date stays the flagged photo\'s')
+  assert.equal(f.tierIso, at(28, 9), 'the call carries its own read\'s date')
+  const t = templateIncidentRedFlag(f, 'Nyx')
+  assert.ok(t.includes('on May 26. A read on May 28 says to call your vet now.'), `the call is never pinned on the older photo: ${t}`)
+  assert.ok(validatePhrasing(t, f))
+})
+
+Deno.test('ranking — a stool call now leads a vomit call today; family order breaks a tie (#5)', () => {
+  const out = detectIncidentRedFlags(input([
+    analysis({ bloodPresent: 'fresh_red', call: 'call_today' }),
+    analysis({ incidentType: 'diarrhea', stoolBloodPresent: 'yes', call: 'call_now' }),
+  ]))
+  const ranked = rankFindings(out, input([]).pet)
+  assert.deepEqual(ranked.map((r) => (r.finding as IncidentRedFlagFinding).incidentType), ['stool', 'vomit'])
+  const flat = rankFindings(detectIncidentRedFlags(input([
+    analysis({ bloodPresent: 'fresh_red' }),
+    analysis({ incidentType: 'diarrhea', stoolBloodPresent: 'yes' }),
+  ])), input([]).pet)
+  assert.deepEqual(flat.map((r) => (r.finding as IncidentRedFlagFinding).incidentType), ['vomit', 'stool'])
 })
 
 Deno.test('detector — a call outside the window never leads Home', () => {
@@ -129,7 +155,7 @@ Deno.test('detector — families stay apart: a stool call and a vomit flag are t
     analysis({ foreignMaterialPresent: 'yes' }),
     analysis({ incidentType: 'diarrhea', call: 'call_today' }),
   ]))
-  assert.deepEqual(out.map((f) => [f.incidentType, f.tier ?? null, f.fromRecord ?? null]), [
+  assert.deepEqual(out.map((f) => [f.incidentType, f.tier ?? null, f.callOnly ?? null]), [
     ['vomit', null, null],
     ['stool', 'call_today', true],
   ])
@@ -168,8 +194,8 @@ Deno.test('sentence — every tiered and record-call variant carries its ask ver
   for (const tier of ['call_now', 'call_today'] as const) {
     for (const n of [1, 3]) {
       variants.push(card({ tier, flaggedIncidentCount: n }))
-      variants.push(card({ tier, flaggedIncidentCount: n, flags: [], fromRecord: true }))
-      variants.push(card({ tier, flaggedIncidentCount: n, flags: [], fromRecord: true, incidentType: 'stool' }))
+      variants.push(card({ tier, flaggedIncidentCount: n, flags: [], callOnly: true }))
+      variants.push(card({ tier, flaggedIncidentCount: n, flags: [], callOnly: true, incidentType: 'stool' }))
     }
   }
   for (const f of variants) {
@@ -179,20 +205,22 @@ Deno.test('sentence — every tiered and record-call variant carries its ask ver
     assert.ok(/not a diagnosis/.test(t))
     assert.equal(t.includes('undefined'), false)
     assert.ok(validatePhrasing(t, f), `screens pass: ${t}`)
-    if (f.fromRecord) assert.equal(/photo/i.test(t), false, `a record call never claims a photo: ${t}`)
+    // A call-only card never names a source: the row cannot tell a contextual sign from the
+    // model's own call on a clean photo or a call whose blood the owner cleared (#1, #2).
+    if (f.callOnly) assert.equal(/photo|what you logged|logged around/i.test(t), false, `no source claimed: ${t}`)
   }
   assert.equal(
-    templateIncidentRedFlag(card({ tier: 'call_now', flags: [], fromRecord: true }), 'Nyx'),
-    "The read of Nyx's vomit on May 28, from what you logged around it, says to call your vet now. This is a read of your logs, not a diagnosis.",
+    templateIncidentRedFlag(card({ tier: 'call_now', flags: [], callOnly: true }), 'Nyx'),
+    "The read of Nyx's vomit on May 28 says to call your vet now. This is a read of your logs, not a diagnosis.",
   )
 })
 
 Deno.test('carried — a record call carries with its tier; a flagless card without one is refused', () => {
-  const rec = card({ tier: 'call_today', flags: [], fromRecord: true })
+  const rec = card({ tier: 'call_today', flags: [], callOnly: true })
   assert.equal(canRenderCarried(rec), true)
   assert.ok(templateCarried(rec, 'Nyx', at(28, 9)).includes('call your vet today'))
   assert.equal(/worth a call/i.test(templateCarried(rec, 'Nyx', at(28, 9))), false)
-  assert.equal(canRenderCarried(card({ flags: [], fromRecord: true })), false, 'no tier, nothing to say')
+  assert.equal(canRenderCarried(card({ flags: [], callOnly: true })), false, 'no tier, nothing to say')
   assert.equal(canRenderCarried(card({ flags: [] })), false, 'the shipped refusal stands')
   assert.equal(canRenderCarried(card({ tier: 'call_soon' as unknown as 'call_now' })), false)
   assert.equal(canRenderCarried(card()), true)

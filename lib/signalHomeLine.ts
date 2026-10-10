@@ -26,7 +26,7 @@
 import { careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
-import { incidentRedFlagAsk, isRecordCallFinding, refusedThenVomitedOf, stripDayUTC, symptomWord } from './signalCopy';
+import { incidentRedFlagAsk, isCallOnlyFinding, refusedThenVomitedOf, stripDayUTC, symptomWord } from './signalCopy';
 import { riseKeptSentence } from './screenMasking';
 import type { SignalScreenModel } from './signalScreen';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
@@ -174,7 +174,13 @@ function countLine(finding: SignalFinding): string | null {
       }
       return finding.daysBelowBaseline <= 1 ? 'Today' : `The last ${numWord(finding.daysBelowBaseline)} days`;
     case 'incident_red_flag':
-      // The headline and the eyebrow carry it: the phrase, the family and the date.
+      // The headline and the eyebrow carry it: the phrase, the family and the date. PR-30a: a
+      // call from a different read than the flagged photo carries that read's day here, so the
+      // ask is never pinned on the older photo (the adversarial pass, #3).
+      if (finding.tierIso !== undefined && finding.tierIso !== finding.mostRecentFlaggedIso && !isCallOnlyFinding(finding)) {
+        const d = stripDayUTC(finding.tierIso);
+        return d ? `The call is from a read on ${d.short}` : 'The call is from a later read';
+      }
       return null;
     default:
       return null;
@@ -185,11 +191,15 @@ function eyebrow(finding: SignalFinding): string | null {
   if (finding.type !== 'incident_red_flag') return null;
   // The photo record's own day, UTC like the sentence ("on September 22") and the phone
   // script — never a local day that could disagree with the screen by one.
+  // PR-30a: a call-only card is dated by the read whose words its ask is, and its eyebrow never
+  // says a photo found something.
+  if (isCallOnlyFinding(finding)) {
+    const d = stripDayUTC(finding.tierIso ?? finding.mostRecentFlaggedIso);
+    return d ? `Read · ${d.short}` : 'Read';
+  }
   const day = stripDayUTC(finding.mostRecentFlaggedIso);
-  // PR-30a: a call the record raised read no photo, so its eyebrow never says one did.
-  const [one, many] = isRecordCallFinding(finding) ? ['Read', 'Reads'] : ['Photo read', 'Photo reads'];
-  if (!day) return finding.flaggedIncidentCount === 1 ? one : many;
-  return finding.flaggedIncidentCount === 1 ? `${one} · ${day.short}` : `${many} · latest ${day.short}`;
+  if (!day) return finding.flaggedIncidentCount === 1 ? 'Photo read' : 'Photo reads';
+  return finding.flaggedIncidentCount === 1 ? `Photo read · ${day.short}` : `Photo reads · latest ${day.short}`;
 }
 
 /**

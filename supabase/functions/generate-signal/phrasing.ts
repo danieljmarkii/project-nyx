@@ -335,23 +335,20 @@ const INCIDENT_READ_NOUN: Record<IncidentCategory, string> = {
 }
 
 /** True when the card fires only on a call the record raised: no photo flag, a new-rule tier. */
-function isRecordCall(f: IncidentRedFlagFinding): boolean {
-  return f.fromRecord === true && f.flags.length === 0 && (f.tier === 'call_now' || f.tier === 'call_today')
+function isCallOnly(f: IncidentRedFlagFinding): boolean {
+  return f.callOnly === true && f.flags.length === 0 && (f.tier === 'call_now' || f.tier === 'call_today')
 }
 
 export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: string): string {
   const ask = incidentRedFlagAsk(f)
-  if (isRecordCall(f)) {
-    // PR-30a (K1 = A): a call the record raised, with no photo concern. It names the read and its
-    // day and says where the call came from, never what it means: the record's own card names the
-    // signs. Escalate-only by construction: it exists only on a call.
+  if (isCallOnly(f)) {
+    // PR-30a (K1 = A): a read that says to call, with no photo finding on the card. It names the
+    // read, its day and the ask, and NEVER where the call came from: the row cannot tell a
+    // contextual sign from the model's own call on a clean photo or a call whose blood the owner
+    // cleared, so any source named here could be false (adversarial pass, #1/#2). The record's
+    // card says why. Dated by the read whose words the ask is (`tierIso`).
     const noun = INCIDENT_READ_NOUN[f.incidentType]
-    const when = onsetDay(f.mostRecentFlaggedIso)
-    const lead =
-      f.flaggedIncidentCount === 1 && !f.countIsFloor
-        ? `The read of ${petName}'s ${noun} on ${when}, from what you logged around it, says to ${ask}`
-        : `Reads of ${petName}'s ${noun} logs, most recently on ${when}, say to ${ask}, from what you logged around them`
-    return `${lead}. This is a read of your logs, not a diagnosis.`
+    return `The read of ${petName}'s ${noun} on ${onsetDay(f.tierIso ?? f.mostRecentFlaggedIso)} says to ${ask}. This is a read of your logs, not a diagnosis.`
   }
   return templateIncidentRedFlagPhoto(f, petName, ask)
 }
@@ -376,6 +373,11 @@ function templateIncidentRedFlagPhoto(f: IncidentRedFlagFinding, petName: string
     f.flaggedIncidentCount === 1 && !f.countIsFloor
       ? `A photo you logged of ${petName}'s ${symptom} showed ${phrase}, on ${when}`
       : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}, most recently on ${when}`
+  // PR-30a: when the louder call is a DIFFERENT read from the flagged photo, the sentence says so
+  // and dates it, rather than pinning the call on the older photo (adversarial pass, #3).
+  if (f.tierIso !== undefined && f.tierIso !== f.mostRecentFlaggedIso) {
+    return `${lead}. A read on ${onsetDay(f.tierIso)} says to ${ask}. This is a read of your logs, not a diagnosis.`
+  }
   return `${lead} — ${ask}. This is a read of your logs, not a diagnosis.`
 }
 
@@ -651,7 +653,7 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
               ? 'vomiting soon after turning down a meal'
               : 'eating less than usual'
           : f.type === 'incident_red_flag'
-            ? isRecordCall(f)
+            ? isCallOnly(f)
               ? `a ${INCIDENT_READ_NOUN[f.incidentType]} read that called for your vet`
               : `a photo of ${INCIDENT_NOUN[f.incidentType]} showing ${f.flags.map((k) => INCIDENT_FLAG_PHRASE[k]).join(' and ')}`
             : 'a pattern'
@@ -699,10 +701,10 @@ export function canRenderCarried(f: unknown): boolean {
     case 'incident_red_flag': {
       // PR-30a: a tier, when present, must be one this build can say; a card with no photo flag is
       // carryable only as a record call, which always carries one.
-      const r = f as { tier?: unknown; fromRecord?: unknown }
+      const r = f as { tier?: unknown; callOnly?: unknown }
       const tierOk = r.tier === undefined || r.tier === 'call_now' || r.tier === 'call_today'
       if (!tierOk || !known(INCIDENT_NOUN, x.incidentType) || !Array.isArray(x.flags)) return false
-      if (x.flags.length === 0) return r.fromRecord === true && r.tier !== undefined
+      if (x.flags.length === 0) return r.callOnly === true && r.tier !== undefined
       return x.flags.every((k) => known(INCIDENT_FLAG_PHRASE, k))
     }
     default:

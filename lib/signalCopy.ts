@@ -173,12 +173,14 @@ export function incidentRedFlagAsk(finding: IncidentRedFlagFinding): string {
   return label.charAt(0).toLowerCase() + label.slice(1);
 }
 
-/** True when a call the record raised is the whole card: no photo flag, a new-rule tier. */
-export function isRecordCallFinding(finding: IncidentRedFlagFinding): boolean {
-  return finding.fromRecord === true && finding.flags.length === 0 && incidentCallOf(finding) !== null;
+/** True when a read's call is the whole card: no photo flag, a new-rule tier. Such a card never
+ *  says where the call came from: the row cannot tell a contextual sign from the model's own call
+ *  on a clean photo or a call whose blood the owner cleared (the adversarial pass on PR-30a). */
+export function isCallOnlyFinding(finding: IncidentRedFlagFinding): boolean {
+  return finding.callOnly === true && finding.flags.length === 0 && incidentCallOf(finding) !== null;
 }
 
-/** A read's noun by family, for a record call ("a vomit read", "a stool read"). */
+/** A read's noun by family, for a call-only card ("a vomit read", "a stool read"). */
 export const INCIDENT_READ_NOUN: Record<IncidentCategory, string> = { vomit: 'vomit', stool: 'stool' };
 
 // Plain 12-hour clock label for a local hour 0..23 (⑥, B-079): 0→'12am', 4→'4am',
@@ -572,11 +574,10 @@ export function sampleLine(finding: SignalFinding): string {
     // The honest sample weight + provenance (§6): an AI read of the flagged photo(s), never a
     // count that implies a confirmed finding. "AI read" mirrors the detail-screen unconfirmed
     // register; the count is episode-collapsed bouts (B-368), so a re-logged bout reads as one.
-    // PR-30a: a record call read no photo, so it says where it came from instead.
-    if (isRecordCallFinding(finding)) {
+    // PR-30a: a call-only card counts the reads that call, and names no photo or source.
+    if (isCallOnlyFinding(finding)) {
       const noun = INCIDENT_READ_NOUN[finding.incidentType];
-      const n = finding.flaggedIncidentCount;
-      return n === 1 ? `From what you logged around a ${noun}` : `From what you logged around ${n} ${noun} logs`;
+      return `From ${count(finding.flaggedIncidentCount, `${noun} read`, `${noun} reads`)} that call for your vet`;
     }
     return `From an AI read of ${count(finding.flaggedIncidentCount, 'logged photo', 'logged photos')}`;
   }
@@ -811,15 +812,14 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // NEVER diagnoses, NEVER assigns a cause. The date lives in the main card sentence, so the
     // tap-through adds the provenance + why-it-matters rather than repeating it.
     const ask = incidentRedFlagAsk(finding);
-    if (isRecordCallFinding(finding)) {
-      // PR-30a (K1 = A): a call the record raised. Where it came from, that it is not a
-      // diagnosis, and the ask, in that order; the record's own card names the signs.
+    if (isCallOnlyFinding(finding)) {
+      // PR-30a (K1 = A): a read's call with no photo finding. That it is a read and not a
+      // diagnosis, then the ask; never a source, which the row cannot back. The record's own
+      // card says why it called.
       const noun = INCIDENT_READ_NOUN[finding.incidentType];
-      const single = finding.flaggedIncidentCount === 1;
-      const lead = single ? `The read of ${petName}'s ${noun}` : `Reads of ${petName}'s ${noun} logs`;
       return (
-        `${lead} ${single ? 'comes' : 'come'} from what you logged around ${single ? 'it' : 'them'}, not from a photo, and ${single ? 'is' : 'are'} not a diagnosis. ` +
-        `${capitalize(ask)}: the read on the record says why.`
+        `The read of ${petName}'s ${noun} is an automated read, not a confirmed finding and not a diagnosis. ` +
+        `${capitalize(ask)}: the read itself says why.`
       );
     }
     const symptom = INCIDENT_NOUN[finding.incidentType]; // 'vomiting' | 'stool' (neutral, never "loose stool")
@@ -830,10 +830,17 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
       : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}`;
     const readNoun = single ? 'a single photo' : 'those photos';
     // PR-30a: a new-rule call asks in the map's words; every other card keeps the shipped line.
+    // A call from a different read than the flagged photo is dated as its own (adversarial #3).
+    const otherRead =
+      finding.tierIso !== undefined && finding.tierIso !== finding.mostRecentFlaggedIso
+        ? `A read on ${shortDateUTC(finding.tierIso)} says to ${ask}. `
+        : '';
     const tail =
       incidentCallOf(finding) === null
         ? `It's still worth a call to your vet, who can look at what you logged and tell you what it means.`
-        : `${capitalize(ask)}: they can look at what you logged and tell you what it means.`;
+        : otherRead
+          ? `${otherRead}Your vet can look at what you logged and tell you what it means.`
+          : `${capitalize(ask)}: they can look at what you logged and tell you what it means.`;
     return `${lead} — an automated read of ${readNoun}, not a confirmed finding and not a diagnosis. ${tail}`;
   }
   if (finding.type === 'food_symptom_correlation') {
@@ -2290,13 +2297,13 @@ function phoneScriptFacts(
     ];
   }
   if (finding.type === 'incident_red_flag') {
-    if (isRecordCallFinding(finding)) {
-      // PR-30a: a record call has no photo finding to name; it says where the call came from.
+    if (isCallOnlyFinding(finding)) {
+      // PR-30a: a call-only card has no photo finding to name, and names no source.
       const readNoun = INCIDENT_READ_NOUN[finding.incidentType];
       return [
-        { label: 'What called for your vet', value: `the read of ${petName}'s ${readNoun}, from what you logged around it` },
-        { label: 'From', value: count(finding.flaggedIncidentCount, `${readNoun} log`, `${readNoun} logs`) },
-        { label: 'Most recent', value: shortDateUTC(finding.mostRecentFlaggedIso) },
+        { label: 'What says to call', value: `a read of ${petName}'s ${readNoun}` },
+        { label: 'From', value: count(finding.flaggedIncidentCount, `${readNoun} read`, `${readNoun} reads`) },
+        { label: 'Most recent', value: shortDateUTC(finding.tierIso ?? finding.mostRecentFlaggedIso) },
       ];
     }
     const noun = INCIDENT_NOUN[finding.incidentType];

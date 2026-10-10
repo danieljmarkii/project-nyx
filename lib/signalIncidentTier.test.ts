@@ -9,7 +9,7 @@ import {
   evidenceText,
   selectCrossPetSafetyFinding,
   incidentRedFlagAsk,
-  isRecordCallFinding,
+  isCallOnlyFinding,
   phoneScript,
   sampleLine,
   validateBannerPhrasing,
@@ -30,7 +30,7 @@ const card = (over: Partial<IncidentRedFlagFinding> = {}): IncidentRedFlagFindin
 });
 
 const recordCall = (over: Partial<IncidentRedFlagFinding> = {}) =>
-  card({ flags: [], fromRecord: true, tier: 'call_today', ...over });
+  card({ flags: [], callOnly: true, tier: 'call_today', ...over });
 
 const EVERY_NEW_RULE_CARD: IncidentRedFlagFinding[] = (['call_now', 'call_today'] as const).flatMap((tier) =>
   [1, 3].flatMap((n) => [
@@ -62,8 +62,8 @@ describe('the earlier rule keeps today’s words (the dark state)', () => {
   });
 
   it('a flagless card with no tier is not a record call (a corrupt cache never reads as one)', () => {
-    expect(isRecordCallFinding(card({ flags: [], fromRecord: true }))).toBe(false);
-    expect(isRecordCallFinding(card({ flags: [] }))).toBe(false);
+    expect(isCallOnlyFinding(card({ flags: [], callOnly: true }))).toBe(false);
+    expect(isCallOnlyFinding(card({ flags: [] }))).toBe(false);
   });
 });
 
@@ -76,18 +76,29 @@ describe('a new-rule call speaks the map’s words on Home', () => {
     );
   });
 
-  it('a record call names a read, never a photo, on the row', () => {
-    const line = signalHomeLine(recordCall({ tier: 'call_now' }))!;
+  it('a call-only card names a read and its day, never a photo or a source', () => {
+    const line = signalHomeLine(recordCall({ tier: 'call_now', tierIso: '2026-10-08T07:02:00.000Z' }))!;
     expect(line).toEqual({
       eyebrow: 'Read · Oct 8',
-      headline: 'A vomit read from what you logged',
+      headline: 'A vomit read says to call',
       count: null,
       ask: 'call your vet now',
     });
     expect(signalHomeLine(recordCall({ flaggedIncidentCount: 2, incidentType: 'stool' }))).toMatchObject({
-      eyebrow: 'Reads · latest Oct 8',
-      headline: 'Stool reads from what you logged',
+      eyebrow: 'Read · Oct 8',
+      headline: 'A stool read says to call',
     });
+  });
+
+  it('a call from a later read than the flagged photo carries that read’s day (never pinned on the photo)', () => {
+    const f = card({ tier: 'call_now', mostRecentFlaggedIso: '2026-09-28T07:00:00.000Z', tierIso: '2026-10-08T07:02:00.000Z' });
+    const line = signalHomeLine(f)!;
+    expect(line.eyebrow).toBe('Photo read · Sep 28');
+    expect(line.count).toBe('The call is from a read on Oct 8');
+    expect(line.ask).toBe('call your vet now');
+    expect(evidenceText(f, 'Nyx')).toContain('A read on October 8 says to call your vet now.');
+    // The same read: no second date.
+    expect(signalHomeLine(card({ tier: 'call_now', tierIso: '2026-10-08T07:02:00.000Z' }))!.count).toBeNull();
   });
 
   it('every surface naming a new-rule card carries its ask and never the shipped words or a photo it did not read', () => {
@@ -103,7 +114,9 @@ describe('a new-rule call speaks the map’s words on Home', () => {
       for (const w of words) {
         expect(w).not.toMatch(/worth a call/i);
         expect(w).not.toMatch(/undefined|NaN/);
-        if (f.fromRecord) expect(w).not.toMatch(/(?<!not from a )photo|possible blood|red flag/i);
+        // No source claimed: the row cannot tell a contextual sign from the model's own call on a
+        // clean photo or a call whose blood the owner cleared (adversarial pass, #1/#2).
+        if (f.callOnly) expect(w).not.toMatch(/photo|possible blood|red flag|what you logged|logged around/i);
       }
       expect(evidenceText(f, 'Nyx').toLowerCase()).toContain(ask);
       expect(bannerCopy(f, 'Nyx').text.toLowerCase()).toContain(ask);

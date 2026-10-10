@@ -574,7 +574,10 @@ export interface MedicationWindow {
  * path deliberately does NOT refresh on an owner override (lib/analysis.ts / B-339). Deriving
  * from the structured fields is what makes an owner override that clears the fact clear the Home
  * card BY CONSTRUCTION — the same derivation generate-report already uses (unionPresentFlags),
- * so the two override-aware surfaces agree.
+ * so the two override-aware surfaces agree. EXCEPT a NEW-RULE call (Engines v3 PR-30a, `call`):
+ * an owner edit never moves `tier`, so a call the owner's edit leaves standing on the record also
+ * stands on Home, as a card that says a read says to call (`callOnly`) and names no photo
+ * finding. Home is never calmer than the record; lowering a call is the owner's own act (GAP-34).
  *
  * CONTRACT: the caller passes only rows whose analyzed event is NON-soft-deleted and within the
  * lookback (the join is in generate-signal/index.ts). Values are the raw enum strings from the DB;
@@ -1953,14 +1956,21 @@ export interface IncidentRedFlagFinding extends FindingBase {
    * whether or not it is set.
    */
   tier?: IncidentCall
+  /** ISO-8601 UTC occurred_at of the most recent read at `tier`: the read whose words the ask is.
+   *  On a photo card it can be a different read from the flagged photo, and the sentence says so
+   *  rather than pinning the louder call on the older photo. Present exactly when `tier` is. */
+  tierIso?: string
   /**
    * Present (true) when the family has NO photo flag and fires only because a new-rule read is a
-   * call the record raised (K1 = A: every call joins Home's band, the contextual ones included).
-   * Then `flags` is empty, and `flaggedIncidentCount` / `mostRecentFlaggedIso` count and date the
-   * CALLED reads instead of the flagged ones (clustered the same way, B-368). Absent on every card
-   * a photo flag raised. Never present without `tier`.
+   * call (K1 = A: every call joins Home's band, the contextual ones included). The card says only
+   * that a read says to call: never where the call came from, because the row cannot say (the
+   * model's own escalation on a clean photo, a contextual sign, and a call whose blood the owner
+   * cleared all look alike here; the record's card names the reason). Then `flags` is empty,
+   * `flaggedIncidentCount` counts the CALLED reads (clustered as B-368 does), and
+   * `mostRecentFlaggedIso` is `tierIso`. Absent on every card a photo flag raised. Never present
+   * without `tier`.
    */
-  fromRecord?: true
+  callOnly?: true
 }
 
 export type Finding =
@@ -7243,10 +7253,10 @@ export function detectIncidentRedFlags(
     mostRecentMs: number
     mostRecentIso: string
     inWindow: { ms: number; flagged: boolean; called: boolean }[]
-    /** PR-30a: the loudest new-rule call in the window, and its most recent called read. */
+    /** PR-30a: the loudest new-rule call in the window, and the most recent read at EACH call
+     *  tier, so a card is dated by a read that says its own words (never a quieter one's day). */
     call: IncidentCall | null
-    mostRecentCalledMs: number
-    mostRecentCalledIso: string
+    latestAt: Record<IncidentCall, { ms: number; iso: string }>
   }
   const byFamily = new Map<IncidentCategory, FamilyAcc>()
   const familyAcc = (cat: IncidentCategory): FamilyAcc => {
@@ -7258,8 +7268,7 @@ export function detectIncidentRedFlags(
         mostRecentIso: '',
         inWindow: [],
         call: null,
-        mostRecentCalledMs: -Infinity,
-        mostRecentCalledIso: '',
+        latestAt: { call_now: { ms: -Infinity, iso: '' }, call_today: { ms: -Infinity, iso: '' } },
       }
       byFamily.set(cat, acc)
     }
@@ -7287,10 +7296,7 @@ export function detectIncidentRedFlags(
     acc.inWindow.push({ ms, flagged, called: call !== null }) // participates in clustering as a possible re-log anchor
     if (call !== null) {
       if (acc.call !== 'call_now') acc.call = call
-      if (ms > acc.mostRecentCalledMs) {
-        acc.mostRecentCalledMs = ms
-        acc.mostRecentCalledIso = a.occurredAt
-      }
+      if (ms > acc.latestAt[call].ms) acc.latestAt[call] = { ms, iso: a.occurredAt }
     }
     if (flagged) {
       for (const f of flags) acc.flagKinds.add(f)
@@ -7304,13 +7310,13 @@ export function detectIncidentRedFlags(
   // Emit one finding per family with ≥1 flagged in-window incident, in a DETERMINISTIC family order
   // (vomit before stool) — the ranker also breaks the incident_red_flag/incident_red_flag tie this
   // way, so the two agree. A family with no flagged incident emits nothing (silence, never a "clear"),
-  // unless a new-rule read in it is a call (PR-30a, K1 = A), which emits a `fromRecord` card.
+  // unless a new-rule read in it is a call (PR-30a, K1 = A), which emits a `callOnly` card.
   const out: IncidentRedFlagFinding[] = []
   for (const cat of INCIDENT_CATEGORY_ORDER) {
     const acc = byFamily.get(cat)
     if (!acc) continue
     // PR-30a (K1 = A): a family with no photo flag still fires when a new-rule read in the window is
-    // a call the record raised. Its card counts and dates the CALLED reads (`fromRecord`).
+    // a call the record raised. Its card counts and dates the CALLED reads (`callOnly`).
     if (acc.flagKinds.size === 0) {
       if (acc.call === null) continue
       out.push({
@@ -7318,11 +7324,13 @@ export function detectIncidentRedFlags(
         priorityClass: 'safety',
         incidentType: cat,
         flags: [],
-        mostRecentFlaggedIso: acc.mostRecentCalledIso,
+        // Dated by the most recent read that says the card's own words (adversarial pass, #4).
+        mostRecentFlaggedIso: acc.latestAt[acc.call].iso,
         flaggedIncidentCount: countFlaggedClusters(acc.inWindow.map((x) => ({ ms: x.ms, flagged: x.called }))),
         windowDays: config.incidentRedFlag.windowDays,
         tier: acc.call,
-        fromRecord: true,
+        tierIso: acc.latestAt[acc.call].iso,
+        callOnly: true,
       })
       continue
     }
@@ -7356,10 +7364,15 @@ export function detectIncidentRedFlags(
       flaggedIncidentCount,
       windowDays: config.incidentRedFlag.windowDays,
       // PR-30a: the family's loudest new-rule call, or nothing (today's words).
-      ...(acc.call !== null ? { tier: acc.call } : {}),
+      ...(acc.call !== null ? { tier: acc.call, tierIso: acc.latestAt[acc.call].iso } : {}),
     })
   }
   return out
+}
+
+/** A red-flag card's new-rule call as a rank: call now 2, call today 1, none 0. */
+function redFlagCallRank(f: IncidentRedFlagFinding): number {
+  return f.tier === 'call_now' ? 2 : f.tier === 'call_today' ? 1 : 0
 }
 
 // ── Detector registry (§4) ──────────────────────────────────────────────────
@@ -7554,6 +7567,12 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
       // other safety lane; between the two, vomit leads stool — a fixed, deterministic order (also
       // the detector's emission order), so the surface never reorders on re-run. Neither is dropped.
       if (x.type === 'incident_red_flag' && y.type === 'incident_red_flag') {
+        // Engines v3 PR-30a (CUL-1511): the louder new-rule call leads first (mock §03: call now
+        // "ranks first"), so a stool call now never sits under a vomit call today, and the pet's
+        // own band agrees with the cross-pet banner's pick (`bannerRankOf`). Family order breaks
+        // a tie, as it always has.
+        const callDiff = redFlagCallRank(y) - redFlagCallRank(x)
+        if (callDiff !== 0) return callDiff
         return (
           INCIDENT_CATEGORY_ORDER.indexOf(x.incidentType) -
           INCIDENT_CATEGORY_ORDER.indexOf(y.incidentType)

@@ -83,7 +83,7 @@ import {
 // the vomit timing findings AFTER detection, so the engine's output is untouched.
 import { computePhotoComposition, type PhotoAnalysisInput } from './photoComposition.ts'
 import { findingIdentity } from '../../../lib/findingIdentity.ts'
-import { tierDisplayOf } from '../../../lib/incidentTierWords.ts'
+import { isTieredRow, tierDisplayOf } from '../../../lib/incidentTierWords.ts'
 // B-422's effective end, from the ONE module that owns it. Imported across the
 // function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
 // — a second copy of `start + target + grace` living here is the failure mode.
@@ -438,18 +438,21 @@ export function mapIncidentAnalyses(rows: IncidentAnalysisRow[]): IncidentAnalys
 
 /**
  * The call a NEW-RULE read stands on, in the record's own resolution (`tierDisplayOf`, the one the
- * record, History and Ask use), or null. An earlier-rule call (`worth_a_call`, or a value this build
+ * record, History and Ask use), or null. Earlier-rule rows are null; a stamped row holding a
+ * value this build does not know is call now. An earlier-rule call (`worth_a_call`, or a value this build
  * does not know) is null here on purpose: it keeps today's lane and today's words (spec §4, §5), so
  * nothing on Home moves until a read is stamped under `engines_v3_en3` (CUL-1407).
  */
 export function newRuleCallOf(r: Pick<IncidentAnalysisRow, 'status' | 'recommendation' | 'tier' | 'engine_flags'>): IncidentCall | null {
-  const display = tierDisplayOf({
-    status: r.status,
-    tier: r.tier ?? null,
-    recommendation: r.recommendation ?? null,
-    engine_flags: r.engine_flags ?? null,
-  })
-  return display === 'call_now' || display === 'call_today' ? display : null
+  // The row itself, never a rebuilt literal: the stamp is only READ here, and the one-writer guard
+  // (`_shared/engineStamps.guard.test.ts`) reads a stamp key in an object literal as a write.
+  const display = tierDisplayOf(r)
+  if (display === 'call_now' || display === 'call_today') return display
+  // A stamped row whose value this build does not know: the record draws it as a call
+  // ("Worth a call", CUL-1277), and spec §1 ranks an unknown value as call now. Home must not be
+  // silent beside it (adversarial pass, #8), so it carries the loudest call.
+  if (display === 'worth_a_call' && isTieredRow(r)) return 'call_now'
+  return null
 }
 
 /**
