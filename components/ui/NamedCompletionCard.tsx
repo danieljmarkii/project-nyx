@@ -404,7 +404,7 @@ export function NamedCompletionCard() {
           usable underneath for the whole dwell. It fades with the card and leaves with
           it (§2.1): its opacity is the card's, and the card is up exactly while
           `isNamedDimUp` holds, the same predicate the look chips read. */}
-      <Animated.View pointerEvents="none" style={[styles.scrim, { opacity: arrival.cardOpacity }]} />
+      <Animated.View pointerEvents="none" testID="named-card-scrim" style={[styles.scrim, { opacity: arrival.cardOpacity }]} />
 
       <Animated.View
         pointerEvents={shown && !inert ? 'box-none' : 'none'}
