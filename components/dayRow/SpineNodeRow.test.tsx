@@ -750,8 +750,9 @@ describe('open in place (HV-10): the one choreography the month uses, on the thr
     expect(styleOf(t.getByTestId('spine-members-compact:m0')).overflow).not.toBe('hidden');
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
     expect(styleOf(t.getByTestId('spine-members-compact:m0')).overflow).toBe('hidden');
-    advance(FOLD_MOTION.leaveMs);
-    // The box is closing (the rail still trails): still clipped, at zero.
+    // jest's native driver ends the leave in the tick it starts, so the box is closing
+    // within the rail's lag (the rail still to trail): still clipped, and closing to zero.
+    advance(FOLD_MOTION.railLagMs / 2);
     const closing = styleOf(t.getByTestId('spine-members-compact:m0'));
     expect(closing.overflow).toBe('hidden');
     expect(closing.minHeight).toBe(0);
