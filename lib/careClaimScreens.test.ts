@@ -336,6 +336,41 @@ describe('zeroBesideCareReason (CUL-1429)', () => {
     expect(zeroBesideCareReason(text, NONE)).toBeNull();
   });
 
+  // Adversarial pass 3 (PR-45a).
+  it.each([
+    'Since the Sep 16 visit, 11 days, with something logged on 11 of them, and none of those entries is vomiting.',
+    'Since the Sep 16 visit, 11 days, with something logged on 11 of them. Vomiting isn\'t among them.',
+    "Prednisone started Sep 10; there hasn't been a coughing episode logged since.",
+    "Since the Sep 16 visit, vomiting hasn't shown up in the log.",
+    'Since the visit, vomiting is absent from the log.',
+    'Since the prednisolone, nothing about coughing has been logged.',
+    'Since the visit there has been no sign of vomiting.',
+  ])('refuses (adversarial pass 3): %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).not.toBeNull();
+  });
+
+  it('a zero the owner asked about by visit, phrased as "none of it"', () => {
+    expect(
+      zeroBesideCareReason('Since Sep 16, 11 days, with something logged on 11 of them. None of it is vomiting.', {
+        ...NONE,
+        visitInContext: true,
+      }),
+    ).toBe('zero_beside_visit');
+  });
+
+  it.each([
+    // A statement about the log's coverage is not a symptom zero.
+    'Nyx vomited 2 times this week. Nothing was logged on Tuesday, so that day is unknown.',
+    'Since the Sep 16 visit, 4 vomiting episodes are logged over 11 days, with nothing logged on 2 of them.',
+    'Since the visit, 3 vomiting episodes are logged. No entries exist for Sep 20 and 21.',
+    "Since the visit, 3 vomiting episodes are logged. Days without a log can't be counted as days without vomiting.",
+    // An escalation is not a zero.
+    'Nyx has vomited 6 times in 3 days since the visit with no sign of it slowing down; call your vet today.',
+  ])('passes beside a visit (adversarial pass 3): %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).toBeNull();
+    expect(zeroBesideCareReason(text, { ...NONE, onBoardNames: ['Prednisolone'] })).toBeNull();
+  });
+
   it("refuses a zero beside the record's own course name, nickname or not", () => {
     const ctx = { knownNames: ["Buddy's tummy pills"], onBoardNames: [], visitInContext: false };
     expect(zeroBesideCareReason("No vomiting is logged since Buddy's tummy pills started.", ctx)).toBe(

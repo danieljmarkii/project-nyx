@@ -195,7 +195,7 @@ export function careClaimReason(text: string): CareClaimReason | null {
 
 // The sign nouns a zero is counted in. Wide on purpose: an owner's word ("honking", "runny
 // poop", "hairballs") is still a sign, and an unlisted noun is caught by the generic arm below.
-const ZERO_NOUN = String.raw`(?:vomit\w*|throw(?:ing|s)?[- ]?ups?|retch\w*|regurgitat\w*|hairballs?|gag\w*|diarrh\w*|loose stools?|runny \w+|stools?|poops?|cough\w*|hack\w*|honk\w*|sneez\w*|itch\w*|scratch\w*|lick\w*|skin\w*|rash\w*|hives|symptoms?|episodes?|bouts?|accidents?|flare-?ups?|times|incidents?|events?|signs?|entr(?:y|ies)|days?)`
+const ZERO_NOUN = String.raw`(?:vomit\w*|throw(?:ing|s)?[- ]?ups?|retch\w*|regurgitat\w*|hairballs?|gag\w*|diarrh\w*|loose stools?|runny \w+|stools?|poops?|cough\w*|hack\w*|honk\w*|sneez\w*|itch\w*|scratch\w*|lick\w*|skin\w*|rash\w*|hives|symptoms?|episodes?|bouts?|accidents?|flare-?ups?|times|incidents?|events?|entr(?:y|ies)|days?)`
 const SIGN_VERB = String.raw`(?:vomit\w*|cough\w*|scratch\w*|itch\w*|sneez\w*|lick\w*|retch\w*|gag\w*|hack\w*|throwing up)`
 const NEG = String.raw`(?:\b(?:has|have|had|did|was|were|is|are|does|do|could|can|would)(?:n${APOS}t|\s+not)|${APOS}(?:ve|s|d)\s+not)`
 
@@ -210,7 +210,7 @@ const ZERO_RES: RegExp[] = [
   // "none logged", "Nothing's been logged", "none since", "nothing so far", "none of the
   // vomiting has come back", "she's had none", and a bare trailing "…, nothing."
   new RegExp(
-    String.raw`\b(?:nothing|none)(?:${APOS}s)?(?:\s+(?:new|more|else|at all|of (?:them|it|those|the \w+)))?(?:\s+(?:is|was|were|are|has|have|had)(?:\s+been)?)?(?:\s+been)?\s+(?:logged|recorded|noted|reported|seen|since|so far|came back|come back|returned)\b`,
+    String.raw`\b(?:nothing|none)(?:${APOS}s)?(?:\s+(?:new|more|else|at all|of (?:them|it|those|the \w+)|(?:about|regarding)\s+\w+))?(?:\s+(?:is|was|were|are|has|have|had)(?:\s+been)?)?(?:\s+been)?\s+(?:logged|recorded|noted|reported|seen|since|so far|came back|come back|returned)\b`,
     'i',
   ),
   new RegExp(String.raw`\b(?:had|has had|have had|${APOS}s had|${APOS}ve had)\s+none\b|(?:^|[,:;])\s*nothing\s*(?:[.;!?]|$)`, 'i'),
@@ -219,7 +219,7 @@ const ZERO_RES: RegExp[] = [
   // "you've not logged any". An INTAKE absence ("hasn't eaten") never matches here, and a
   // sentence about meals or doses alone is set aside below.
   new RegExp(
-    String.raw`${NEG}\s+(?:\w+\s+){0,2}?(?:vomited|coughed|scratched|itched|sneezed|licked|retched|gagged|thrown up|threw up|been sick|had (?:a|an|any|another)\b|logged (?:a|an|any|another)\b|(?:see|find|spot)\s+any\b|been any\b|been (?:logged|recorded|seen|noted|reported)|recurred|returned|come back|came back|happened(?: again)?|happen(?: again)?)`,
+    String.raw`${NEG}\s+(?:\w+\s+){0,2}?(?:vomited|coughed|scratched|itched|sneezed|licked|retched|gagged|thrown up|threw up|been sick|had (?:a|an|any|another)\b|logged (?:a|an|any|another)\b|(?:see|find|spot)\s+any\b|been (?:any|a|an)\b|shown up|turned up|appeared|been (?:logged|recorded|seen|noted|reported)|recurred|returned|come back|came back|happened(?: again)?|happen(?: again)?)`,
     'i',
   ),
   // "has stopped vomiting", "the vomiting stopped". Not "stopped eating": an escalation.
@@ -243,7 +243,9 @@ const ZERO_RES: RegExp[] = [
   new RegExp(String.raw`\bno\s+\w+(?:\s+\w+)?\s+(?:logged|recorded|since|so far)\b`, 'i'),
   // Recall phrasings: "there's no record of vomiting", "the log shows nothing", "vomiting
   // doesn't appear", "Vomiting episodes in the last 14 days: none", "eaten well and not vomited".
-  new RegExp(String.raw`\bno (?:record|sign|trace|mention|entry|entries) of\b|\bshows? nothing\b|\b(?:doesn${APOS}t|does not|don${APOS}t|do not)\s+(?:appear|show up)\b|[:=]\s*none\b`, 'i'),
+  new RegExp(String.raw`\bno (?:record|trace|mention|entry|entries) of\b|\bno signs? of (?:any\s+)?(?:more\s+)?${SIGN_VERB}|\babsent from\b|\bshows? nothing\b|\b(?:doesn${APOS}t|does not|don${APOS}t|do not)\s+(?:appear|show up)\b|[:=]\s*none\b`, 'i'),
+  // "none of those entries is vomiting", "Vomiting isn't among them".
+  new RegExp(String.raw`\bnone of (?:it|them|those|these|the)\b[^.;]{0,40}?\b(?:is|are|was|were)\b|\b(?:isn${APOS}t|is not|aren${APOS}t|are not|wasn${APOS}t|was not|weren${APOS}t|were not)\s+(?:among|in|on|part of)\s+(?:them|those|these|it|the (?:log|record|entries))\b`, 'i'),
   new RegExp(String.raw`(?<!\b(?:has|have|had|is|was|were|are)\s)\bnot\s+(?:vomited|coughed|scratched|itched|sneezed|licked|thrown up|been sick)\b`, 'i'),
 ]
 
@@ -310,6 +312,19 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+// A statement about the LOG, not the pet: "nothing was logged on Tuesday", "with nothing logged
+// on 2 of them", "no entries exist for Sep 20 and 21", "days without a log can't be counted as
+// days without vomiting". Rule 10's honest coverage form; blanked before the zero arms read the
+// clause (adversarial pass 3: it deflected answers on every turn with a gap).
+const DAY_WORD = String.raw`(?:(?:mon|tues|wednes|thurs|fri|satur|sun)day|today|yesterday|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\w*\.?\s+\d{1,2}|\d+\s+of\b|those|that day|these|the other|some|a few|several)`
+const LOG_GAP_RE = new RegExp(
+  [
+    String.raw`\b(?:nothing|no entries|no logs?|none)\b(?:\s+(?:was|were|is|are|has been|have been|had been|exist|exists))?(?:\s+(?:logged|recorded|entered))?\s+(?:on|for)\s+${DAY_WORD}`,
+    String.raw`\bdays?\s+(?:without|with no)\s+(?:a\s+|any\s+)?(?:log|logs|logging|entr(?:y|ies))\b[^.;]*`,
+  ].join('|'),
+  'gi',
+)
+
 /** Whether one clause states a symptom zero. A clause about meals, doses or a medication alone
  *  ("eaten 0 of 6 meals", "prednisolone hasn't been logged since Oct 3") is set aside: it is an
  *  intake or adherence escalation. Judged per CLAUSE, so a food word in one half of a sentence
@@ -323,7 +338,8 @@ function clauseHasZero(clause: string, meds: (c: string) => boolean): boolean {
 /** The signs each zero in `text` counts: its own sentence's sign words, or every sign. */
 function zeroSigns(text: string, meds: (c: string) => boolean): Set<MaskSign> {
   const signs = new Set<MaskSign>()
-  for (const sentence of text.split(/(?<=[.;?!])\s+|\n+/)) {
+  for (const raw of text.split(/(?<=[.;?!])\s+|\n+/)) {
+    const sentence = raw.replace(LOG_GAP_RE, ' ')
     const clauses = sentence.split(/[,;]|\s(?:and|but|while|though)\s/i)
     if (!clauses.some((c) => clauseHasZero(c, meds))) continue
     let named = false
