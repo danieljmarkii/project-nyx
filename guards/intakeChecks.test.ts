@@ -7,9 +7,10 @@
 //      reach a model as prose. A later migration that adds an unbounded text column
 //      (a note) reds here: that is a Trust & Safety decision with its own privacy line,
 //      never a quiet ALTER.
-//   2. NO READER YET, AND NEVER THE REPORT OR ASK. No Edge Function names the table in
-//      this PR. READERS is EMPTY and the empty set is the assertion (C-32): PR-30q adds
-//      analyze-vomit, which must name its columns (no `*`, no bare select).
+//   2. ONE READER, AND NEVER THE REPORT OR ASK. analyze-vomit's context read (PR-30q,
+//      CUL-1724) is the only Edge Function that names the table, and it names its columns
+//      (no `*`, no bare select). READERS holds exactly it; a second entry is a privacy
+//      decision with its own line, never a registration (C-32).
 //      generate-report and ask may never name it: whether the vet report or Ask shows an
 //      intake answer is not ruled, so an entry for either is a PM ruling, not a
 //      registration.
@@ -42,9 +43,11 @@ const MIGRATIONS_DIR = path.join(ROOT, 'supabase', 'migrations');
 const MIGRATION = '097_intake_checks.sql';
 const TABLE = 'intake_checks';
 
-/** Edge Function files that may read the table, each with its reason. EMPTY until
- *  PR-30q's analyze-vomit reader lands (C-32). */
-const READERS: Readonly<Record<string, string>> = {};
+/** Edge Function files that may read the table, each with its reason (C-32). */
+const READERS: Readonly<Record<string, string>> = {
+  'supabase/functions/analyze-vomit/index.ts':
+    "PR-30q (CUL-1724): the vomit read's context reads the owner's answers under THIS vomit (id, form, answer, answered_at), joined to a live vomit of the same pet, into the cat intake arm. Under engines_v3_en5 only.",
+};
 
 /** Directories that may never name the table, whatever READERS says. */
 const NEVER = ['supabase/functions/generate-report/', 'supabase/functions/ask/'];
@@ -196,7 +199,7 @@ describe('Soft delete only — no role may DELETE or TRUNCATE intake_checks', ()
   });
 });
 
-describe('R-5 — no Edge Function reads intake_checks yet; the report and Ask never', () => {
+describe('R-5 — analyze-vomit alone reads intake_checks; the report and Ask never', () => {
   it('the scan has server sources to read (non-vacuity)', () => {
     expect(serverSources(ROOT).length).toBeGreaterThan(10);
   });
@@ -205,8 +208,21 @@ describe('R-5 — no Edge Function reads intake_checks yet; the report and Ask n
     expect(readerFindings(ROOT, READERS)).toEqual([]);
   });
 
-  it('the reader set is empty until PR-30q (C-32)', () => {
-    expect(Object.keys(READERS)).toEqual([]);
+  it('the reader set is exactly the vomit read (C-32)', () => {
+    expect(Object.keys(READERS)).toEqual(['supabase/functions/analyze-vomit/index.ts']);
+  });
+
+  it('the registered reader still reads the table, naming its columns (an entry is not a hole)', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'supabase/functions/analyze-vomit/index.ts'), 'utf8');
+    expect(findMentions(src).length).toBeGreaterThan(0);
+    expect(findUnlistedReads(src)).toEqual([]);
+    // The join the privacy review asked for (CUL-1723): id AND pet AND type AND a live vomit.
+    const blanked = blankComments(src);
+    const at = blanked.indexOf(".from('intake_checks')");
+    const chain = blanked.slice(at, blanked.indexOf(': Promise.resolve', at));
+    for (const clause of [".eq('event_id', eventId)", ".eq('pet_id', petId)", ".eq('events.pet_id', petId)", ".eq('events.event_type', 'vomit')", ".is('events.deleted_at', null)", ".is('deleted_at', null)", 'events!inner(']) {
+      expect(chain).toContain(clause);
+    }
   });
 
   describe('the detector (fixtures outside the tree)', () => {

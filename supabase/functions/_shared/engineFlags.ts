@@ -59,9 +59,12 @@ import { resolveAllowlistFlag } from './flags.ts'
 // every meal around a vomit was logged unrated, which is why the weight lane must be live with it.
 // The Signal half (Engines v3 PR-30s, CUL-1725) runs I5 in the intake lane: a cat that vomited
 // within the rapid band of a refused bowl on two days raises (or rides as a line on) the cat intake
-// card. It adds a finding, so it is a SIGNAL key. NOT SEEDED: absent reads as off. The flip waits
-// on EN-8 live ("ships only with EN-8"), the real-vet review (CUL-1312) and the client half
-// reaching a build.
+// card. It adds a finding, so it is a SIGNAL key. SEEDED OFF by migration 097 (PR-30m), in 075's
+// shape: absent or off reads as off. The question half (Engines v3 PR-30q, CUL-1724) asks "Has
+// she eaten?" under a cat's vomit read; an answer of No or A little fires the cat intake arm, and
+// it reaches a stored read through EN-4's refloor, so it raises only while engines_v3_en4 and
+// engines_v3_en3 are on. The flip waits on EN-8 live ("ships only with EN-8"), EN-4 and EN-3 on,
+// the real-vet review (CUL-1312) and the client half reaching a build.
 export const ENGINE_KEYS = ['engines_v3_en0', 'engines_v3_en3', 'engines_v3_en4', 'engines_v3_en5', 'engines_v3_en8', 'engines_v3_en9', 'engines_v3_en10', 'engines_v3_en11'] as const
 export type EngineKey = typeof ENGINE_KEYS[number]
 

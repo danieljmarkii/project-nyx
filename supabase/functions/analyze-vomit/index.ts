@@ -62,6 +62,7 @@ import {
   vomitAnchoredReads,
   vomitContextWindows,
   type ContextInput,
+  type IntakeAnswerRow,
   type IntakeRecord,
   type FloorRows,
   type VomitContextRows,
@@ -468,6 +469,13 @@ function unratedClause(record: IntakeRecord): string {
   return unrated === 1 ? ' Another one had no rating.' : ` Another ${unrated} had no rating.`
 }
 function en5IntakeRecordSentence(p: string, record: IntakeRecord): string {
+  if (record.window === 'answer') {
+    // The owner's own answer (PR-30q). Pinned to the vomit, never to a clock the server does
+    // not hold: the question named an hour a day before the vomit, in the owner's zone.
+    if (record.answerForm === 'free_fed') return `You said you'd seen ${p} refuse food since the day before this vomit.`
+    if (record.answer === 'a_little') return `You said ${p} had eaten only a little since the day before this vomit.`
+    return `You said ${p} hadn't eaten a meal since the day before this vomit.`
+  }
   const rated = record.mealsRated ?? 0
   if (record.window === 'last_rated') {
     const word = record.rating === 'picked' ? 'Picked' : 'Refused'
@@ -761,7 +769,7 @@ async function assembleContext(
   // Noticed predicate needs to set treats and bowls aside. Flag-off the selects are unchanged.
   const en5 = isEngineKeyOn(engineFlags, 'engines_v3_en5')
   const mealSelect = en5 ? 'occurred_at, meals(intake_rating, food_item_id, food_items(food_type))' : 'occurred_at, meals(intake_rating)'
-  const [vomitsRes, lethargyRes, mealEventsRes, anchoredVomitsRes, anchoredMealsRes, arrangementsRes] = await Promise.all([
+  const [vomitsRes, lethargyRes, mealEventsRes, anchoredVomitsRes, anchoredMealsRes, arrangementsRes, answersRes] = await Promise.all([
     userClient
       .from('events')
       .select('occurred_at')
@@ -797,6 +805,23 @@ async function assembleContext(
         .eq('method', 'free_choice')
         .is('deleted_at', null)
       : Promise.resolve({ data: [] as unknown[], error: null }),
+    // EN-5's question (PR-30q, migration 097): the owner's answers under THIS vomit, on the
+    // two intake forms. Joined to the event on its id AND its pet AND its type AND its live
+    // row (rls-privacy-reviewer, CUL-1723): an answer under a deleted or re-typed vomit, or a
+    // row naming another pet, counts for nothing. Explicit columns, never `*`
+    // (guards/intakeChecks.test.ts). A handful of rows per vomit, far below max-rows.
+    en5
+      ? userClient
+        .from('intake_checks')
+        .select('id, form, answer, answered_at, events!inner(id, pet_id, event_type, deleted_at)')
+        .eq('event_id', eventId)
+        .eq('pet_id', petId)
+        .in('form', ['meal_fed', 'free_fed'])
+        .is('deleted_at', null)
+        .eq('events.pet_id', petId)
+        .eq('events.event_type', 'vomit')
+        .is('events.deleted_at', null)
+      : Promise.resolve({ data: [] as unknown[], error: null }),
   ])
 
   const rows: VomitContextRows = {
@@ -814,11 +839,18 @@ async function assembleContext(
   // defensive "The meal log doesn't show …"). STATED BLIND SPOT: `error` is the only check; a
   // read PostgREST capped would pass it (C-42). The windows are days, far below max-rows.
   const failed = (r: unknown) => Boolean((r as { error?: unknown }).error)
-  const mealsFailed = failed(mealEventsRes) || failed(anchoredMealsRes) || failed(arrangementsRes)
+  // The answers read counts too: an answer of No the read could not see is a refusal unseen.
+  const mealsFailed = failed(mealEventsRes) || failed(anchoredMealsRes) || failed(arrangementsRes) || failed(answersRes)
   const contextFlags: EngineFlags = en5 && mealsFailed
     ? { ...engineFlags, on: engineFlags.on.filter((k) => k !== 'engines_v3_en5') }
     : engineFlags
   if (en5) {
+    rows.intakeAnswers = ((answersRes.data ?? []) as IntakeAnswerRow[]).map((r) => ({
+      id: r.id,
+      form: r.form,
+      answer: r.answer,
+      answered_at: r.answered_at,
+    }))
     rows.freeFedSpans = parseFreeFedIntakeSpans(
       ((arrangementsRes.data ?? []) as ArrangementSpanRow[]).map((r) => ({
         foodItemId: r.food_item_id,
