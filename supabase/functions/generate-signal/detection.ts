@@ -627,6 +627,13 @@ export interface IncidentAnalysisInput {
    * write under the key stores one.
    */
   call?: IncidentCall | null
+  /**
+   * Engines v3 PR-30c (CUL-1739): when the read row was last written (`event_ai_analysis.updated_at`),
+   * or null/absent. A call's "said at" instant is the later of this and `occurredAt`: a read
+   * raised to call now a day after its event (a re-floor, a late sync) was said when it was
+   * written, never on the event's day.
+   */
+  writtenAt?: string | null
 }
 
 /** A new-rule call on a per-incident read: the two tiers Home's safety band shows (spec §4). */
@@ -1967,6 +1974,11 @@ export interface IncidentRedFlagFinding extends FindingBase {
    *  call now changed nothing on Home (the adversarial pass's second round): the card says it as
    *  its own dated clause, so every call joins the band (K1 = A). */
   laterCallTodayIso?: string
+  /** Engines v3 PR-30c (CUL-1739): the freshest instant any in-window read at `tier` SAID its
+   *  call: per read the later of its occurred_at and its row's last write, the max over the
+   *  reads. Present only when `tier` is and some read carries a write time. The phone dates a
+   *  call now from this, a day after it; absent, it keeps "now" (the loud form). */
+  tierReadIso?: string
   /**
    * Present (true) when the family has NO photo flag and fires only because a new-rule read is a
    * call (K1 = A: every call joins Home's band, the contextual ones included). The card says only
@@ -7264,6 +7276,8 @@ export function detectIncidentRedFlags(
      *  tier, so a card is dated by a read that says its own words (never a quieter one's day). */
     call: IncidentCall | null
     latestAt: Record<IncidentCall, { ms: number; iso: string }>
+    /** PR-30c: the freshest "said at" instant per call tier (max of occurred and written). */
+    saidAt: Record<IncidentCall, { ms: number; iso: string }>
   }
   const byFamily = new Map<IncidentCategory, FamilyAcc>()
   const familyAcc = (cat: IncidentCategory): FamilyAcc => {
@@ -7276,6 +7290,7 @@ export function detectIncidentRedFlags(
         inWindow: [],
         call: null,
         latestAt: { call_now: { ms: -Infinity, iso: '' }, call_today: { ms: -Infinity, iso: '' } },
+        saidAt: { call_now: { ms: -Infinity, iso: '' }, call_today: { ms: -Infinity, iso: '' } },
       }
       byFamily.set(cat, acc)
     }
@@ -7304,6 +7319,13 @@ export function detectIncidentRedFlags(
     if (call !== null) {
       if (acc.call !== 'call_now') acc.call = call
       if (ms > acc.latestAt[call].ms) acc.latestAt[call] = { ms, iso: a.occurredAt }
+      // PR-30c: a read whose write time is unknown adds nothing here, so a family whose reads
+      // all lack one emits no `tierReadIso` and the phone keeps "now". Parsed, never text (C-40).
+      const writtenMs = typeof a.writtenAt === 'string' ? Date.parse(a.writtenAt) : NaN
+      if (Number.isFinite(writtenMs)) {
+        const said = writtenMs > ms ? { ms: writtenMs, iso: a.writtenAt as string } : { ms, iso: a.occurredAt }
+        if (said.ms > acc.saidAt[call].ms) acc.saidAt[call] = said
+      }
     }
     if (flagged) {
       for (const f of flags) acc.flagKinds.add(f)
@@ -7323,6 +7345,9 @@ export function detectIncidentRedFlags(
     acc.call === 'call_now' && acc.latestAt.call_today.ms > acc.latestAt.call_now.ms
       ? { laterCallTodayIso: acc.latestAt.call_today.iso }
       : {}
+  // PR-30c: when the card's call was last said, for the phone's dated form.
+  const tierRead = (acc: FamilyAcc): { tierReadIso?: string } =>
+    acc.call !== null && Number.isFinite(acc.saidAt[acc.call].ms) ? { tierReadIso: acc.saidAt[acc.call].iso } : {}
 
   const out: IncidentRedFlagFinding[] = []
   for (const cat of INCIDENT_CATEGORY_ORDER) {
@@ -7344,6 +7369,7 @@ export function detectIncidentRedFlags(
         tier: acc.call,
         tierIso: acc.latestAt[acc.call].iso,
         ...laterCallToday(acc),
+        ...tierRead(acc),
         callOnly: true,
       })
       continue
@@ -7380,6 +7406,7 @@ export function detectIncidentRedFlags(
       // PR-30a: the family's loudest new-rule call, or nothing (today's words).
       ...(acc.call !== null ? { tier: acc.call, tierIso: acc.latestAt[acc.call].iso } : {}),
       ...laterCallToday(acc),
+      ...tierRead(acc),
     })
   }
   return out

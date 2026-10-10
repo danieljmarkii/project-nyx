@@ -9,6 +9,7 @@ import {
   datedCallNowLabel,
   DATED_CALL_NOW_ACTION,
   recordDatedCallNow,
+  callNowSaidAt,
 } from './callNowDated';
 import { TIER_WORDS } from './incidentTierWords';
 
@@ -47,8 +48,8 @@ describe('the dated words quote the map and keep the ask', () => {
   });
 
   it('the record card keeps "now" in its first day and dates it after, still sending the owner to a vet', () => {
-    expect(recordDatedCallNow(READ, readMs + CALL_NOW_FIRST_DAY_MS - 1)).toBeNull();
-    const dated = recordDatedCallNow(READ, readMs + CALL_NOW_FIRST_DAY_MS)!;
+    expect(recordDatedCallNow(READ, READ, readMs + CALL_NOW_FIRST_DAY_MS - 1)).toBeNull();
+    const dated = recordDatedCallNow(READ, READ, readMs + CALL_NOW_FIRST_DAY_MS)!;
     expect(dated.label).toMatch(/^On [A-Z][a-z]{2} \d{1,2}, the read said: call your vet now$/);
     expect(dated.action).toBe(DATED_CALL_NOW_ACTION);
     expect(dated.action).toMatch(/call them now/);
@@ -59,8 +60,35 @@ describe('the dated words quote the map and keep the ask', () => {
   it('the record dates by the local day of the read', () => {
     const d = new Date(READ);
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    expect(recordDatedCallNow(READ, readMs + 2 * CALL_NOW_FIRST_DAY_MS)!.label).toBe(
+    expect(recordDatedCallNow(READ, READ, readMs + 2 * CALL_NOW_FIRST_DAY_MS)!.label).toBe(
       `On ${months[d.getMonth()]} ${d.getDate()}, the read said: call your vet now`,
     );
+  });
+});
+
+describe('the day counts from when the call was said (ruling 1a)', () => {
+  it('a call written a day after its event says "now" for a day from the write, and is dated by it', () => {
+    const vomit = '2026-10-08T08:00:00.000Z';
+    const refloor = '2026-10-09T09:00:00.000Z';
+    const w = Date.parse(refloor);
+    expect(callNowSaidAt(vomit, refloor)).toBe(refloor);
+    expect(recordDatedCallNow(vomit, refloor, w + 60_000)).toBeNull();
+    expect(recordDatedCallNow(vomit, refloor, w + CALL_NOW_FIRST_DAY_MS - 1)).toBeNull();
+    const d = new Date(refloor);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    expect(recordDatedCallNow(vomit, refloor, w + CALL_NOW_FIRST_DAY_MS)!.label).toBe(
+      `On ${months[d.getMonth()]} ${d.getDate()}, the read said: call your vet now`,
+    );
+  });
+
+  it('a write before the event (a read written at log time) counts from the event', () => {
+    expect(callNowSaidAt('2026-10-08T08:00:00.000Z', '2026-10-08T07:59:00.000Z')).toBe('2026-10-08T08:00:00.000Z');
+  });
+
+  it('either instant missing or unreadable dates nothing (the loud form)', () => {
+    const later = readMs + 5 * CALL_NOW_FIRST_DAY_MS;
+    expect(recordDatedCallNow(READ, null, later)).toBeNull();
+    expect(recordDatedCallNow(null, READ, later)).toBeNull();
+    expect(recordDatedCallNow(READ, 'garbage', later)).toBeNull();
   });
 });

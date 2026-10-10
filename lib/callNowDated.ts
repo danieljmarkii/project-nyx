@@ -7,13 +7,16 @@
 // the call with its day ("On Oct 3, the read said: call your vet now"). The card keeps the
 // full 14-day window, its rose and its place on Home: only the claim that it is "now" goes.
 //
-// THE BOUNDARY IS 24 HOURS FROM THE READ'S INSTANT, never the local day. "The read's instant" is
-// the occurred_at of the event it read (Home's `tierIso`, the record's floor anchor), the same
-// instant every surface already dates the read by, never the time the model ran: a log entered
-// a day late is dated as soon as it is shown, and still asks for the call. A local-day rule would
-// date an 11:40 pm call twenty minutes later, which reads calmer than "call now" inside its
-// first day. A 24-hour rule cannot. An instant the phone cannot parse, or one in the future
-// (a skewed clock), keeps "now": the loud form is the failure mode, never the quiet one.
+// THE BOUNDARY IS 24 HOURS FROM WHEN THE CALL WAS SAID, never the local day. "Said" is the later
+// of the event's occurred_at and the read row's last write (PM ruling 1a, 2026-10-10): a call
+// raised a day after its event (a re-floor when lethargy is logged, a late sync, a backdated log)
+// gets its own full day of "now" from when it first appears, and is dated by that day, so the
+// dated form never excuses an owner who called before the sign that raised it. A rewrite for any
+// other reason (an owner's edit, a failed re-read) restarts the day: the loud direction. Home
+// reads the instant from generate-signal (`tierReadIso`); the record from its own row. A local-day
+// rule would date an 11:40 pm call twenty minutes later, which reads calmer than "call now" inside
+// its first day. A 24-hour rule cannot. An instant the phone cannot parse, a missing one, or one
+// in the future (a skewed clock) keeps "now": the loud form is the failure mode, never the quiet one.
 //
 // The words are built from the tier-word map's own label (`TIER_WORDS.call_now`), never
 // restated, so the dated form can never drift from what the read said.
@@ -53,14 +56,30 @@ export const DATED_CALL_NOW_ACTION =
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+/** The later of two instants, as the ISO string that holds it; null when either cannot be read
+ *  (then nothing is dated: the loud form). Parsed, never compared as text (C-40). */
+export function callNowSaidAt(eventIso: string | null | undefined, writtenIso: string | null | undefined): string | null {
+  if (typeof eventIso !== 'string' || typeof writtenIso !== 'string') return null;
+  const e = Date.parse(eventIso);
+  const w = Date.parse(writtenIso);
+  if (!Number.isFinite(e) || !Number.isFinite(w)) return null;
+  return w > e ? writtenIso : eventIso;
+}
+
 /**
  * The record card's words for a new-rule call now, or null while it is in its first day (and
- * whenever the instant cannot be read): then the card keeps the map's "Call your vet now" and
- * its action line. The record dates the read by the phone's LOCAL day, the day its own header
- * shows for the event; Home's Signal surfaces date in UTC, as their eyebrow already does.
+ * whenever either instant cannot be read): then the card keeps the map's "Call your vet now" and
+ * its action line. The day is when the call was said (`callNowSaidAt`), by the phone's LOCAL day,
+ * as the record's own header dates the event; Home's Signal surfaces date in UTC, as their
+ * eyebrow already does.
  */
-export function recordDatedCallNow(readIso: string | null | undefined, nowMs: number): { label: string; action: string } | null {
-  if (!callNowIsDated(readIso, nowMs)) return null;
-  const d = new Date(readIso as string);
+export function recordDatedCallNow(
+  eventIso: string | null | undefined,
+  writtenIso: string | null | undefined,
+  nowMs: number,
+): { label: string; action: string } | null {
+  const said = callNowSaidAt(eventIso, writtenIso);
+  if (said === null || !callNowIsDated(said, nowMs)) return null;
+  const d = new Date(said);
   return { label: datedCallNowLabel(`${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`), action: DATED_CALL_NOW_ACTION };
 }

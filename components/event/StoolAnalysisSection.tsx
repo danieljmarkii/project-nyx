@@ -744,9 +744,10 @@ export function StoolAnalysisSection(
           onOpen: () => router.push(patternMembership.href),
         }
       : null;
-  // PR-30c (CUL-1739): a call now steps to its dated form a day after the event it read; the
-  // event's instant is the floor read's anchor, so an unanswered read keeps "now" (loud).
-  const datedCall = display === 'call_now' ? recordDatedCallNow(floorFacts?.anchor?.at ?? null, clockNow) : null;
+  // PR-30c (CUL-1739): a call now steps to its dated form a day after it was said: the later of
+  // the event (the floor read's anchor) and this row's last write, so a call raised late keeps
+  // "now" for its own day. An unanswered read keeps "now" (loud).
+  const datedCall = display === 'call_now' ? recordDatedCallNow(floorFacts?.anchor?.at ?? null, row.updated_at ?? null, clockNow) : null;
   const callLabel = datedCall?.label ?? incidentReadLabel(row);
   const readLabel = pattern ? PATTERN_WORDS.label : callLabel;
 

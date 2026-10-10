@@ -173,8 +173,8 @@ describe('a call now after its first day (PR-30c)', () => {
   const DAY = 24 * 60 * 60 * 1000;
   const firstDay = Date.parse(READ) + DAY - 1;
   const dayTwo = Date.parse(READ) + DAY;
-  const callNow = (over: Partial<IncidentRedFlagFinding> = {}) => card({ tier: 'call_now', tierIso: READ, ...over });
-  const callNowOnly = (over: Partial<IncidentRedFlagFinding> = {}) => recordCall({ tier: 'call_now', tierIso: READ, ...over });
+  const callNow = (over: Partial<IncidentRedFlagFinding> = {}) => card({ tier: 'call_now', tierIso: READ, tierReadIso: READ, ...over });
+  const callNowOnly = (over: Partial<IncidentRedFlagFinding> = {}) => recordCall({ tier: 'call_now', tierIso: READ, tierReadIso: READ, ...over });
 
   it('the Home row says "now" through the first day and the dated form at 24 hours', () => {
     expect(signalHomeLine(callNow(), null, firstDay)?.ask).toBe('call your vet now');
@@ -202,7 +202,7 @@ describe('a call now after its first day (PR-30c)', () => {
       expect(evidenceText(f, 'Nyx', later)).toBe(evidenceText(f, 'Nyx'));
       expect(incidentRedFlagSentenceAt(f, 'Nyx', 'server words', later)).toBe('server words');
     }
-    for (const f of EVERY_NEW_RULE_CARD.map((x) => ({ ...x, tierIso: READ }))) {
+    for (const f of EVERY_NEW_RULE_CARD.map((x) => ({ ...x, tierIso: READ, tierReadIso: READ }))) {
       expect(signalHomeLine(f, null, firstDay)).toEqual(signalHomeLine(f));
       expect(bannerCopy(f, 'Nyx', firstDay)).toEqual(bannerCopy(f, 'Nyx'));
       expect(evidenceText(f, 'Nyx', firstDay)).toBe(evidenceText(f, 'Nyx'));
@@ -219,7 +219,7 @@ describe('a call now after its first day (PR-30c)', () => {
   });
 
   it('every surface the clock reaches keeps the ask, quotes the call in the past tense, and never claims "now" for it', () => {
-    const dated = EVERY_NEW_RULE_CARD.filter((f) => f.tier === 'call_now').map((f) => ({ ...f, tierIso: READ }));
+    const dated = EVERY_NEW_RULE_CARD.filter((f) => f.tier === 'call_now').map((f) => ({ ...f, tierIso: READ, tierReadIso: READ }));
     expect(dated.length).toBeGreaterThan(0);
     for (const f of dated) {
       const words = [
@@ -240,7 +240,7 @@ describe('a call now after its first day (PR-30c)', () => {
     }
   });
 
-  it('the banner is dated and drops to the shipped red-flag rank after its first day (ruling (a))', () => {
+  it('the banner is dated and drops just under a live red flag after its first day (rulings (a), 2a)', () => {
     expect(bannerCopy(callNow(), 'Nyx', dayTwo).text).toBe('Nyx: on Oct 8, a vomit read said call your vet now.');
     const cached = (finding: IncidentRedFlagFinding): CachedFinding => ({ finding, rank: 0, text: '' });
     const today = card({ tier: 'call_today', tierIso: '2026-10-09T08:00:00.000Z' });
@@ -250,12 +250,52 @@ describe('a call now after its first day (PR-30c)', () => {
     ];
     // In its first day the call now leads from any place in the list.
     expect(selectCrossPetSafetyFinding(pets(today, callNow()), firstDay)?.pet.id).toBe('b');
-    // After it, it ties with the call today and the shipped order (first pet) stands.
+    // After it, a live call today on another pet takes the banner from it, whatever the order.
     expect(selectCrossPetSafetyFinding(pets(today, callNow()), dayTwo)?.pet.id).toBe('a');
-    expect(selectCrossPetSafetyFinding(pets(callNow(), today), dayTwo)?.pet.id).toBe('a');
+    expect(selectCrossPetSafetyFinding(pets(callNow(), today), dayTwo)?.pet.id).toBe('b');
+    // An earlier-rule red flag is live too.
+    expect(selectCrossPetSafetyFinding(pets(callNow(), card()), dayTwo)?.pet.id).toBe('b');
     // A fresh call now on another pet still takes the banner from a dated one.
-    const fresh = callNow({ tierIso: '2026-10-09T08:00:00.000Z' });
+    const fresh = callNow({ tierIso: '2026-10-09T08:00:00.000Z', tierReadIso: '2026-10-09T08:00:00.000Z' });
     expect(selectCrossPetSafetyFinding(pets(callNow(), fresh), dayTwo)?.pet.id).toBe('b');
+  });
+
+  it('within one pet, a fresh call in the other family takes the banner from a dated call now (2a)', () => {
+    const stoolToday = card({ incidentType: 'stool', tier: 'call_today', tierIso: '2026-10-09T08:00:00.000Z' });
+    const picked = selectCrossPetSafetyFinding(
+      [{ pet: { id: 'a' }, findings: [{ finding: callNow(), rank: 0, text: '' }, { finding: stoolToday, rank: 1, text: '' }] }],
+      dayTwo,
+    );
+    expect(picked?.finding).toBe(stoolToday);
+  });
+
+  it('a later call today under a dated call now is what the banner says (2a)', () => {
+    const f = callNow({ laterCallTodayIso: '2026-10-09T05:00:00.000Z' });
+    expect(bannerCopy(f, 'Nyx', dayTwo).text).toBe('Nyx: a vomit read says call your vet today.');
+    expect(validateBannerPhrasing(bannerCopy(f, 'Nyx', dayTwo).screened)).toBe(true);
+    // It ranks as a live red flag, so it ties a call today on another pet and order decides.
+    const today = card({ tier: 'call_today', tierIso: '2026-10-09T08:00:00.000Z' });
+    const cached = (finding: IncidentRedFlagFinding): CachedFinding => ({ finding, rank: 0, text: '' });
+    expect(selectCrossPetSafetyFinding([{ pet: { id: 'a' }, findings: [cached(f)] }, { pet: { id: 'b' }, findings: [cached(today)] }], dayTwo)?.pet.id).toBe('a');
+  });
+
+  it('a call said late (a re-floor) keeps "now" for a day from when it was said, then dates by that day (1a)', () => {
+    const refloor = '2026-10-09T09:00:00.000Z';
+    const f = callNowOnly({ tierReadIso: refloor });
+    // 26 hours after the vomit, 22 after the call: still "now", everywhere, and it still leads the banner.
+    expect(signalHomeLine(f, null, Date.parse(READ) + 26 * 3600_000)?.ask).toBe('call your vet now');
+    expect(bannerCopy(f, 'Nyx', Date.parse(READ) + 26 * 3600_000).text).toBe('Nyx: a vomit read says call your vet now.');
+    const dated = Date.parse(refloor) + DAY;
+    expect(signalHomeLine(f, null, dated)?.ask).toBe('on Oct 9, the read said: call your vet now');
+    expect(incidentRedFlagSentenceAt(f, 'Nyx', 'server words', dated)).toContain('On October 9, the read');
+  });
+
+  it('a card without the said-at instant (a cache from before the server half) is never dated', () => {
+    const f = callNowOnly({ tierReadIso: undefined });
+    const later = Date.parse(READ) + 10 * DAY;
+    expect(signalHomeLine(f, null, later)?.ask).toBe('call your vet now');
+    expect(bannerCopy(f, 'Nyx', later).text).toBe('Nyx: a vomit read says call your vet now.');
+    expect(incidentRedFlagSentenceAt(f, 'Nyx', 'server words', later)).toBe('server words');
   });
 
   it('the screen sentence and the arrival speech are re-phrased at the clock', () => {

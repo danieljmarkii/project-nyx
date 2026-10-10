@@ -1600,7 +1600,7 @@ describe('VomitAnalysisSection — the tier (EN-3)', () => {
     mockFloorFacts = { anchor: { at: vomitAt.toISOString(), confidence: 'witnessed' }, vomits: [], courses: [], vomitRows: [], lethargy: [] };
     try {
       mockMinuteNow = vomitAt.getTime() + 24 * 3600_000 - 60_000;
-      mockRow = row({ recommendation: 'worth_a_call', tier: 'call_now', engine_flags: EN3 });
+      mockRow = row({ recommendation: 'worth_a_call', tier: 'call_now', engine_flags: EN3, updated_at: vomitAt.toISOString() });
       const first = render(<VomitAnalysisSection eventId="t1d" petId="pet-1" petName="Rex" hasPhoto />);
       await first.findByText('Call your vet now');
       first.unmount();
@@ -1612,6 +1612,16 @@ describe('VomitAnalysisSection — the tier (EN-3)', () => {
       expect(later.queryByText('Call your vet now')).toBeNull();
       expect(flat(later.getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
       later.unmount();
+
+      // A call raised a day later (a re-floor): "now" for a day from the write, then dated by it.
+      mockRow = row({ recommendation: 'worth_a_call', tier: 'call_now', engine_flags: EN3, updated_at: new Date(2026, 9, 4, 23, 0).toISOString() });
+      const late = render(<VomitAnalysisSection eventId="t1g" petId="pet-1" petName="Rex" hasPhoto />);
+      await late.findByText('Call your vet now');
+      late.unmount();
+      mockMinuteNow = new Date(2026, 9, 5, 23, 0).getTime();
+      const lateDated = render(<VomitAnalysisSection eventId="t1h" petId="pet-1" petName="Rex" hasPhoto />);
+      await lateDated.findByText('On Oct 4, the read said: call your vet now');
+      lateDated.unmount();
 
       // The event's instant unread: the loud form stands.
       mockFloorFacts = null;
