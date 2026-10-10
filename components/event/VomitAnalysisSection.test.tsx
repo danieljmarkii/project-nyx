@@ -1611,14 +1611,18 @@ describe('VomitAnalysisSection — the tier (EN-3)', () => {
   });
 
   it('an UNSTAMPED quiet verdict beside a call tier draws the rose, never a grey card (round 2)', async () => {
-    for (const [i, over] of [
-      { recommendation: 'monitor', tier: 'call_now', engine_flags: [], read_text: 'Looks like a hairball.' },
-      { recommendation: 'not_enough_to_say', tier: 'call_today', engine_flags: null },
-    ].entries()) {
+    // A stored call now keeps its words over the flag-off write (CUL-1516, GAP-34); a stale
+    // call today on an unstamped row keeps the shipped words.
+    for (const [i, [over, words]] of ([
+      [{ recommendation: 'monitor', tier: 'call_now', engine_flags: [], read_text: 'Looks like a hairball.' }, 'Call your vet now'],
+      [{ recommendation: 'worth_a_call', tier: 'call_now', engine_flags: [] }, 'Call your vet now'],
+      [{ recommendation: 'not_enough_to_say', tier: 'call_today', engine_flags: null }, 'Worth a call'],
+    ] as const).entries()) {
       mockRow = row(over);
       for (const hasPhoto of [true, false]) {
         const view = render(<VomitAnalysisSection eventId={`u${i}${hasPhoto}`} petId="pet-1" petName="Rex" hasPhoto={hasPhoto} />);
-        await view.findByText('Worth a call');
+        await view.findByText(words);
+        expect(view.queryByText('Worth a call') === null).toBe(words !== 'Worth a call');
         expect(flat(view.getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
         view.unmount();
       }
