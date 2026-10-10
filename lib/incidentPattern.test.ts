@@ -30,9 +30,9 @@ const vomitReflection = (rank: number): CachedFinding => ({
     type: 'reflection',
     priorityClass: 'insight',
     symptomType: 'vomit',
-    currentCount: 1,
+    currentCount: 3,
     priorCount: 3,
-    direction: 'improving',
+    direction: 'flat',
     windowDays: 7,
   },
 });
@@ -149,6 +149,21 @@ describe('readPatternMembership: the record asks the screen the gallery is drawn
     expect(await ask('ev-tile', jest.fn().mockResolvedValue(ready(episodes({ tracksPattern: false }))))).toBeNull();
   });
 
+  it('a finding about improvement, a timing claim or a red flag is never asked (adversarial pass F1, F2)', async () => {
+    const improving: CachedFinding = { ...vomitReflection(0), finding: { ...vomitReflection(0).finding, direction: 'improving' } as CachedFinding['finding'] };
+    const timing: CachedFinding = {
+      rank: 0,
+      text: 'Soon after meals.',
+      finding: { type: 'postprandial_timing', priorityClass: 'insight', symptomType: 'vomit' } as unknown as CachedFinding['finding'],
+    };
+    for (const f of [improving, timing]) {
+      mockReadSignalCache.mockResolvedValue({ findings: [f] });
+      const load = jest.fn().mockResolvedValue(ready(episodes()));
+      expect(await ask('ev-tile', load)).toBeNull();
+      expect(load).not.toHaveBeenCalled();
+    }
+  });
+
   it('only a finding of the record\'s own sign is asked', async () => {
     mockReadSignalCache.mockResolvedValue({ findings: [itchReflection] });
     const load = jest.fn().mockResolvedValue(ready(episodes()));
@@ -171,6 +186,19 @@ describe('readPatternMembership: the record asks the screen the gallery is drawn
     expect(await ask('ev-tile', jest.fn())).toBeNull();
     mockReadSignalCache.mockResolvedValue({ findings: [vomitReflection(0)] });
     expect(await ask('ev-tile', jest.fn().mockRejectedValue(new Error('db')))).toBeNull();
+    warn.mockRestore();
+  });
+
+  it('a finding that cannot load never hides a lower-ranked one that counts the record (C-4)', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const burden: CachedFinding = {
+      rank: 1,
+      text: 'A lot of vomiting.',
+      finding: { type: 'symptom_burden', priorityClass: 'safety', symptomType: 'vomit' } as unknown as CachedFinding['finding'],
+    };
+    mockReadSignalCache.mockResolvedValue({ findings: [vomitReflection(0), burden] });
+    const load = jest.fn().mockRejectedValueOnce(new Error('register')).mockResolvedValueOnce(ready(episodes()));
+    expect((await ask('ev-tile', load))?.identity).toBe(foldIdentity(burden.finding));
     warn.mockRestore();
   });
 

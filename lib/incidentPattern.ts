@@ -19,6 +19,9 @@
 // the door it carries opens that screen. Every gate the screen keeps (Home's visibility
 // stack, the not-eating register, a masked or set-aside finding, an unsupported type) is
 // therefore the record's gate too, and a finding the screen will not draw marks nothing.
+// Which findings count as TRACKING, and so whose drawn episodes are their evidence, is
+// `findingTracksPattern` (the frequency findings; never one about improvement, a timing
+// claim, a correlation, a photo red flag or the stood-down line).
 //
 // ── WHICH WAY IT FAILS ───────────────────────────────────────────────────────────
 // The word is louder than "Keep an eye out" (a dashed pale rose against grey) and never a
@@ -108,26 +111,35 @@ export async function readPatternMembership(
   load: (petId: string, identity: string, nowMs: number) => Promise<SignalScreenLoad> = loadSignalScreen,
 ): Promise<PatternMembership | null> {
   const nowMs = input.nowMs ?? Date.now();
+  let row;
   try {
-    const { row } = await readSignalCacheOrLast(input.petId);
-    const candidates = [...(row?.findings ?? [])]
-      .sort((a, b) => a.rank - b.rank)
-      .filter((f) => findingTracksPattern(f.finding) && signalChartSymptomOf(f.finding) === input.eventType);
-    const asked = new Set<string>();
-    for (const c of candidates) {
-      const identity = foldIdentity(c.finding);
-      if (asked.has(identity)) continue;
-      asked.add(identity);
-      const screen = await load(input.petId, identity, nowMs);
-      if (screen.status !== 'ready') continue;
-      const { model } = screen;
-      if (!model.noun || !model.episodes?.tracksPattern) continue;
-      if (!evidenceIdsOf(model.episodes).has(input.eventId)) continue;
-      return { identity, noun: model.noun, href: signalScreenHref(input.petId, identity) };
-    }
-    return null;
+    ({ row } = await readSignalCacheOrLast(input.petId));
   } catch (e) {
-    console.warn('[incident-pattern] membership read failed:', e);
+    console.warn('[incident-pattern] signal cache read failed:', e);
     return null;
   }
+  const candidates = [...(row?.findings ?? [])]
+    .sort((a, b) => a.rank - b.rank)
+    .filter((f) => findingTracksPattern(f.finding) && signalChartSymptomOf(f.finding) === input.eventType);
+  const asked = new Set<string>();
+  for (const c of candidates) {
+    const identity = foldIdentity(c.finding);
+    if (asked.has(identity)) continue;
+    asked.add(identity);
+    // Each finding on its own: one that cannot load (offline with a pet the list lacks, an
+    // unanswered register) must not hide a lower-ranked one the gallery would mark (C-4).
+    let screen: SignalScreenLoad;
+    try {
+      screen = await load(input.petId, identity, nowMs);
+    } catch (e) {
+      console.warn('[incident-pattern] finding load failed:', e);
+      continue;
+    }
+    if (screen.status !== 'ready') continue;
+    const { model } = screen;
+    if (!model.noun || !model.episodes?.tracksPattern) continue;
+    if (!evidenceIdsOf(model.episodes).has(input.eventId)) continue;
+    return { identity, noun: model.noun, href: signalScreenHref(input.petId, identity) };
+  }
+  return null;
 }

@@ -68,7 +68,7 @@ import {
   type PhoneScriptMasking,
   type ScreenMasking,
 } from './screenMasking';
-import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, isStoodDown, reflectionExpandedExtras, symptomWord, type PhoneScriptCounting } from './signalCopy';
+import { DENSITY_WITHHELD, evidenceText, hasBannedSignalVocabulary, reflectionExpandedExtras, symptomWord, type PhoneScriptCounting } from './signalCopy';
 import { isFallingVomitPair, signalSaysNotEating, visibleFindings } from './signalVisible';
 import {
   compareGateCounts,
@@ -342,12 +342,50 @@ function episodesInWeeks(episodes: readonly SignalScreenEpisode[], weekly: Weekl
   });
 }
 
-/** Whether a finding is one Home is TRACKING (K2, CUL-1515): every finding the screen draws
- *  but the stood-down line, which says Home stopped. Every other gate is the loader's own
- *  (Home's visibility stack, masking, an unsupported type), so a finding the screen will not
- *  draw marks nothing. */
+/**
+ * Whether a finding is one Home is TRACKING (K2, CUL-1515): one whose episodes on this screen
+ * ARE its evidence, so a calm read among them is "Part of a pattern" (`lib/incidentPattern.ts`).
+ * An allowlist, exhaustive over the union, so a new type is a typecheck failure until someone
+ * decides (the `leadTakesChartCard` shape). Every other gate is the loader's own (Home's
+ * visibility stack, masking, an unsupported type).
+ *
+ *   • The frequency findings count every episode of the sign by the week, so every episode
+ *     drawn is their evidence: worsening, burden, chronicity, a flat reflection, a trial pair
+ *     that is not falling.
+ *   • NOT a finding about improvement (an improving reflection, a falling trial pair): a fresh
+ *     vomit is not "part of" a fall, and the door would open a screen saying the sign is
+ *     down. n=1 never reassures, so the read keeps "Keep an eye out" (adversarial pass, F1).
+ *   • NOT a timing finding, a correlation or a photo red flag: their claim is a time from a
+ *     meal, an hour, a food or a photo finding, and the bars count episodes the claim never
+ *     made (`leadTakesChartCard`'s own reading), so the drawn episodes are not their evidence
+ *     (spec §4, "in the live finding's evidence set"; adversarial pass, F2).
+ *   • NOT the stood-down line, which says Home stopped, nor intake decline (no episodes).
+ */
 export function findingTracksPattern(finding: SignalFinding): boolean {
-  return !isStoodDown(finding);
+  switch (finding.type) {
+    case 'symptom_worsening':
+    case 'symptom_burden':
+    case 'symptom_chronicity':
+      return true;
+    case 'reflection':
+      return finding.direction !== 'improving';
+    case 'trial_response':
+      return finding.comparisonDirection !== 'fewer_during_trial';
+    case 'postprandial_timing':
+    case 'timeofday_clustering':
+    case 'empty_stomach_timing':
+    case 'timing_story':
+    case 'food_symptom_correlation':
+    case 'incident_red_flag':
+    case 'intake_decline':
+    case 'stood_down':
+      return false;
+    default: {
+      const unknownType: never = finding;
+      void unknownType;
+      return false;
+    }
+  }
 }
 
 function galleryOf(

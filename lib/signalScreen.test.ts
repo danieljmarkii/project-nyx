@@ -1328,9 +1328,9 @@ describe('CUL-1216 — a falling pair on the screen carries its gates', () => {
       type: 'reflection',
       priorityClass: 'insight',
       symptomType: 'vomit',
-      currentCount: 1,
+      currentCount: 2,
       priorCount: 2,
-      direction: 'improving',
+      direction: 'flat',
       windowDays: 7,
     };
     const live = buildSignalScreenModel(benign({ cached: cachedOf(reflection), episodes: eps }));
@@ -1350,6 +1350,13 @@ describe('CUL-1216 — a falling pair on the screen carries its gates', () => {
     // Non-vacuity: the same episodes are drawn, so only the flag differs.
     expect(down.episodes?.tiles.map((t) => t.eventId)).toEqual(live.episodes?.tiles.map((t) => t.eventId));
     expect(down.episodes?.tracksPattern).toBe(false);
+    // Adversarial pass F1/F2: a finding about improvement, or a timing claim, is not tracking.
+    const improving = buildSignalScreenModel(benign({ cached: cachedOf({ ...reflection, direction: 'improving' }), episodes: eps }));
+    expect(improving.episodes?.tiles.length).toBeGreaterThan(0);
+    expect(improving.episodes?.tracksPattern).toBe(false);
+    const timing = buildSignalScreenModel(benign({ cached: cachedOf(postprandial()), episodes: eps }));
+    expect(timing.episodes?.tiles.length).toBeGreaterThan(0);
+    expect(timing.episodes?.tracksPattern).toBe(false);
   });
 
   // Adversarial pass F2: the trial lanes are a before/during pair; a falling split is one lane.
