@@ -648,11 +648,13 @@ const handler = async (req: Request): Promise<Response> => {
       // new-rule call in the record's words and carry a call the record raised (`newRuleCallOf`).
       // `updated_at` (PR-30c, CUL-1739) is when the read last wrote its call, so a call now raised
       // late (a re-floor, a late sync) says "now" for a full day from when it was said.
+      // `call_said_at` (CUL-1759, migration 099) is the row's own stamp of that, which no unrelated
+      // write moves; `updated_at` stays the fallback for a row not stamped since 099.
       fetchAll<IncidentAnalysisRow>('event_ai_analysis', (r) => r.event_id, (from, to) =>
         supabase
         .from('event_ai_analysis')
         .select(
-          'event_id, incident_type, status, blood_present, stool_blood_present, foreign_material_present, contents, bile_present, recommendation, tier, engine_flags, updated_at, events!inner(occurred_at)',
+          'event_id, incident_type, status, blood_present, stool_blood_present, foreign_material_present, contents, bile_present, recommendation, tier, engine_flags, updated_at, call_said_at, events!inner(occurred_at)',
           { count: 'exact' },
         )
         .eq('pet_id', petId)

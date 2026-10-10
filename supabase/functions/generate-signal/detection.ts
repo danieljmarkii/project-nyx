@@ -634,6 +634,13 @@ export interface IncidentAnalysisInput {
    * written, never on the event's day.
    */
   writtenAt?: string | null
+  /**
+   * CUL-1759: the row's own "call said at" stamp (`event_ai_analysis.call_said_at`, migration 099),
+   * which only moves when the read's call is said (a level change, or new flags at the same call).
+   * When present it REPLACES `writtenAt` as this read's write time; NULL on a row not stamped since
+   * 099, which keeps the `updated_at` fallback (ruling B's loud behaviour).
+   */
+  callSaidAt?: string | null
 }
 
 /** A new-rule call on a per-incident read: the two tiers Home's safety band shows (spec §4). */
@@ -7280,8 +7287,9 @@ export function detectIncidentRedFlags(
      *  tier, so a card is dated by a read that says its own words (never a quieter one's day). */
     call: IncidentCall | null
     latestAt: Record<IncidentCall, { ms: number; iso: string }>
-    /** PR-30c: the freshest "said at" instant per call tier (max of occurred and written). */
-    saidAt: Record<IncidentCall, { ms: number; iso: string }>
+    /** PR-30c: the freshest "said at" instant per call tier (max of occurred and written), and
+     *  whether that read's write time was the row's real stamp (CUL-1759) or `updated_at`. */
+    saidAt: Record<IncidentCall, { ms: number; iso: string; stamped: boolean }>
   }
   const byFamily = new Map<IncidentCategory, FamilyAcc>()
   const familyAcc = (cat: IncidentCategory): FamilyAcc => {
@@ -7294,7 +7302,7 @@ export function detectIncidentRedFlags(
         inWindow: [],
         call: null,
         latestAt: { call_now: { ms: -Infinity, iso: '' }, call_today: { ms: -Infinity, iso: '' } },
-        saidAt: { call_now: { ms: -Infinity, iso: '' }, call_today: { ms: -Infinity, iso: '' } },
+        saidAt: { call_now: { ms: -Infinity, iso: '', stamped: false }, call_today: { ms: -Infinity, iso: '', stamped: false } },
       }
       byFamily.set(cat, acc)
     }
@@ -7327,8 +7335,14 @@ export function detectIncidentRedFlags(
       // never text (C-40).
       // A read with no readable write time counts as said at its event (the third adversarial
       // pass: skipping it let an older read's write date a call now raised today).
-      const writtenMs = typeof a.writtenAt === 'string' ? Date.parse(a.writtenAt) : NaN
-      const said = Number.isFinite(writtenMs) && writtenMs > ms ? { ms: writtenMs, iso: a.writtenAt as string } : { ms, iso: a.occurredAt }
+      // CUL-1759: the row's own stamp when it has one (099), else `updated_at` (ruling B's fallback).
+      const stampMs = typeof a.callSaidAt === 'string' ? Date.parse(a.callSaidAt) : NaN
+      const stamped = Number.isFinite(stampMs)
+      const sourceIso = stamped ? (a.callSaidAt as string) : typeof a.writtenAt === 'string' ? a.writtenAt : null
+      const sourceMs = stamped ? stampMs : sourceIso !== null ? Date.parse(sourceIso) : NaN
+      const said = Number.isFinite(sourceMs) && sourceMs > ms
+        ? { ms: sourceMs, iso: sourceIso as string, stamped }
+        : { ms, iso: a.occurredAt, stamped }
       if (said.ms > acc.saidAt[call].ms) acc.saidAt[call] = said
     }
     if (flagged) {
@@ -7349,11 +7363,20 @@ export function detectIncidentRedFlags(
   // EVENT order, as PR-30a shipped it: event times never move on a rewrite, so neither a rewrite of
   // the call-today row (089's `may_wait` take-back) nor one of the call-now row (a Hide, an edit, a
   // failed re-read) can add or erase this clause. `updated_at` is not a "said at" stamp, so it never
-  // decides a word here (a dedicated stamp is the follow-up). The date is that event's.
-  const laterCallToday = (acc: FamilyAcc): { laterCallTodayIso?: string } =>
-    acc.call === 'call_now' && acc.latestAt.call_today.ms > acc.latestAt.call_now.ms
-      ? { laterCallTodayIso: acc.latestAt.call_today.iso }
-      : {}
+  // decides a word here. The date is that event's.
+  // CUL-1759 (PM ruling (a), 2026-10-10): when the freshest read at BOTH tiers carries the row's own
+  // stamp (099), which no unrelated write moves, "later" is ordered by when each call was SAID and
+  // dated by that instant: a call today written today on an older event reaches the card, and a call
+  // now raised after a call today never sits under a "later" one. Otherwise event order, as before.
+  const laterCallToday = (acc: FamilyAcc): { laterCallTodayIso?: string } => {
+    if (acc.call !== 'call_now') return {}
+    const now = acc.saidAt.call_now
+    const today = acc.saidAt.call_today
+    if (now.stamped && today.stamped && Number.isFinite(today.ms)) {
+      return today.ms > now.ms ? { laterCallTodayIso: today.iso } : {}
+    }
+    return acc.latestAt.call_today.ms > acc.latestAt.call_now.ms ? { laterCallTodayIso: acc.latestAt.call_today.iso } : {}
+  }
   // The rank half (ruling 2a), kept apart from the words: when the family's call today was last
   // said, under a call now. The phone ranks a dated call now as a live red flag when this is
   // fresher than the call now's own said-at. A rewrite can only raise that rank (the loud side),

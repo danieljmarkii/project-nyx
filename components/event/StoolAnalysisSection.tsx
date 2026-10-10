@@ -134,6 +134,8 @@ interface AnalysisRow extends IntakeCorrectionColumns {
   /** Bumped by trigger on every write (013). The landing announcement reads it to tell a
    *  read that was written from a wait that ended with nothing written (CUL-1275). */
   updated_at?: string | null;
+  /** CUL-1759: when this read's call was said (migration 099); NULL before then. */
+  call_said_at?: string | null;
   error: string | null;
   /** CUL-1611: the server's leave for call today to say "first thing tomorrow" (087). Only
    *  TRUE grants it, and only through `lib/mayWaitLine.ts`'s gates. */
@@ -174,7 +176,7 @@ const SELECT_COLS =
   'status, recommendation, read_text, description, stool_consistency, stool_colour, ' +
   'stool_content, stool_blood_present, stool_blood_type, stool_mucus_present, ' +
   'foreign_material_present, foreign_material_note, ai_raw_payload, edited_at, dismissed_at, ' +
-  'updated_at, error, engine_flags, contextual_flags, tier, ' +
+  'updated_at, call_said_at, error, engine_flags, contextual_flags, tier, ' +
   // CUL-1406: read so the shared card stays one shape; the server writes these on vomit rows only (085).
   'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all, ' +
   // CUL-1629: the server's leave to wait, and the photo set the row was stamped over (087, 075).
@@ -745,9 +747,10 @@ export function StoolAnalysisSection(
         }
       : null;
   // PR-30c (CUL-1739): a call now steps to its dated form a day after it was said: the later of
-  // the event (the floor read's anchor) and this row's last write, so a call raised late keeps
-  // "now" for its own day. An unanswered read keeps "now" (loud).
-  const datedCall = display === 'call_now' ? recordDatedCallNow(floorFacts?.anchor?.at ?? null, row.updated_at ?? null, clockNow) : null;
+  // the event (the floor read's anchor) and when this row's call was said: its own stamp
+  // (`call_said_at`, migration 099, CUL-1759), else its last write. A call raised late keeps "now"
+  // for its own day, and a Hide or an edit never restarts it. An unanswered read keeps "now" (loud).
+  const datedCall = display === 'call_now' ? recordDatedCallNow(floorFacts?.anchor?.at ?? null, row.call_said_at ?? row.updated_at ?? null, clockNow) : null;
   const callLabel = datedCall?.label ?? incidentReadLabel(row);
   const readLabel = pattern ? PATTERN_WORDS.label : callLabel;
 

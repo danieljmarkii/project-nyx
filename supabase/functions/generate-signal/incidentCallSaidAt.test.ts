@@ -163,3 +163,80 @@ Deno.test('laterCallTodayIso — with no write times it is the event order (the 
   )
   assert.equal(f.laterCallTodayIso, at(28, 9))
 })
+
+// ── CUL-1759: the row's own stamp (099) replaces updated_at, and orders "later" when both are stamped
+Deno.test('callSaidAt — a Hide that moves updated_at never moves the said-at of a stamped read', () => {
+  const [f] = detectIncidentRedFlags(
+    input([analysis({ call: 'call_now', occurredAt: at(26, 9), callSaidAt: at(26, 9), writtenAt: at(29, 12) })]), // hidden on the 29th
+  )
+  assert.equal(f.tierReadIso, at(26, 9))
+})
+
+Deno.test('callSaidAt — a call raised late is said at its stamp (the re-floor still gets its day)', () => {
+  const [f] = detectIncidentRedFlags(input([analysis({ call: 'call_now', occurredAt: at(26, 9), callSaidAt: at(27, 10), writtenAt: at(29, 12) })]))
+  assert.equal(f.tierReadIso, at(27, 10))
+})
+
+Deno.test('callSaidAt — both stamped: a call today written today on an OLDER event is later, in the words (variant A)', () => {
+  const [f] = detectIncidentRedFlags(
+    input([
+      analysis({ call: 'call_now', occurredAt: at(28, 9), callSaidAt: at(28, 9) }),
+      analysis({ call: 'call_today', occurredAt: at(27, 9), callSaidAt: at(30, 10) }), // a late sync
+    ]),
+  )
+  assert.equal(f.laterCallTodayIso, at(30, 10))
+})
+
+Deno.test('callSaidAt — both stamped: a call now raised after a call today has no "later" call today (variant B)', () => {
+  const [f] = detectIncidentRedFlags(
+    input([
+      analysis({ call: 'call_now', occurredAt: at(27, 9), callSaidAt: at(30, 10) }), // raised late
+      analysis({ call: 'call_today', occurredAt: at(28, 9), callSaidAt: at(28, 9) }),
+    ]),
+  )
+  assert.equal('laterCallTodayIso' in f, false)
+})
+
+Deno.test('callSaidAt — both stamped: a Hide on the call-now row never erases a genuinely later call today', () => {
+  const [f] = detectIncidentRedFlags(
+    input([
+      analysis({ call: 'call_now', occurredAt: at(21, 9), callSaidAt: at(21, 9), writtenAt: at(24, 12) }), // hidden on the 24th
+      analysis({ call: 'call_today', occurredAt: at(23, 10), callSaidAt: at(23, 10) }),
+    ]),
+  )
+  assert.equal(f.laterCallTodayIso, at(23, 10))
+  assert.equal(f.tierReadIso, at(21, 9))
+})
+
+Deno.test('callSaidAt — one side unstamped (a pre-099 row): "later" stays event order (ruling B)', () => {
+  const [f] = detectIncidentRedFlags(
+    input([
+      analysis({ call: 'call_now', occurredAt: at(27, 9), callSaidAt: at(30, 10) }),
+      analysis({ call: 'call_today', occurredAt: at(28, 9), writtenAt: at(28, 9) }), // no stamp
+    ]),
+  )
+  assert.equal(f.laterCallTodayIso, at(28, 9))
+})
+
+Deno.test('mapIncidentAnalyses — carries the row stamp as callSaidAt', () => {
+  const [a] = mapIncidentAnalyses([
+    {
+      event_id: 'e2',
+      incident_type: 'vomit',
+      status: 'completed',
+      blood_present: null,
+      stool_blood_present: null,
+      foreign_material_present: null,
+      contents: null,
+      bile_present: null,
+      tier: 'call_now',
+      recommendation: 'worth_a_call',
+      engine_flags: ['engines_v3_en3'],
+      updated_at: at(29, 10),
+      call_said_at: at(28, 9),
+      events: { occurred_at: at(28, 9) },
+    },
+  ])
+  assert.equal(a.callSaidAt, at(28, 9))
+  assert.equal(a.writtenAt, at(29, 10))
+})

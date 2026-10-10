@@ -1623,6 +1623,17 @@ describe('VomitAnalysisSection — the tier (EN-3)', () => {
       await lateDated.findByText('On Oct 4, the read said: call your vet now');
       lateDated.unmount();
 
+      // CUL-1759: a stamped read hidden this morning keeps its date; the Hide moved only updated_at.
+      mockMinuteNow = vomitAt.getTime() + 3 * 24 * 3600_000;
+      mockRow = row({
+        recommendation: 'worth_a_call', tier: 'call_now', engine_flags: EN3,
+        call_said_at: vomitAt.toISOString(),
+        updated_at: new Date(vomitAt.getTime() + 3 * 24 * 3600_000 - 3600_000).toISOString(),
+      });
+      const hidden = render(<VomitAnalysisSection eventId="t1i" petId="pet-1" petName="Rex" hasPhoto />);
+      await hidden.findByText('On Oct 3, the read said: call your vet now');
+      hidden.unmount();
+
       // The event's instant unread: the loud form stands.
       mockFloorFacts = null;
       const unread = render(<VomitAnalysisSection eventId="t1f" petId="pet-1" petName="Rex" hasPhoto />);
