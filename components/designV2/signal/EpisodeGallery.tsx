@@ -8,6 +8,7 @@ import { getSignedUrl } from '../../../lib/storage';
 import { localFileExists } from '../../../lib/localFile';
 import { resolveTilePhoto, tileNeedsRemote, TILE_PHOTO_FAILED_LABEL, type TileSource } from '../../../lib/tilePhoto';
 import { isCalmDisplay, NO_READ_WORDS, TIER_WORDS } from '../../../lib/incidentTierWords';
+import { isPatternRead, PATTERN_WORDS } from '../../../lib/incidentPattern';
 import { ThemedText } from '../../ui/ThemedText';
 
 // EpisodeGallery — the photographed episodes on the Signal's screen (D2-3 · CUL-1065;
@@ -28,6 +29,12 @@ import { ThemedText } from '../../ui/ThemedText';
 //     word on a list, and n=1 never reassures. The silence is decodable because every
 //     other state is said: a tile with nothing under its date is a photo that was read and
 //     flagged nothing. The record keeps its words one tap in.
+//   • EXCEPT "Part of a pattern" (K2, CUL-1515, `lib/incidentPattern.ts`): a new-rule
+//     `logged` read under a finding Home is tracking says it is part of that finding. Every
+//     tile here is that finding's evidence, so the tile takes the word whenever the screen's
+//     finding is tracked (`episodes.tracksPattern`). It is not a calm word and not a call:
+//     the secondary ink, never the rose (a call's colour carries the call, GAP-32). An
+//     earlier-rule `monitor` keeps its silence.
 //
 // A tile is a door to its record (`app/event/[id]`), where the photo is the hero and the
 // read is in full — the incident spec's D1: a photographed episode lands on its record.
@@ -61,15 +68,18 @@ const TILE_TRANSFORM = { width: 320, height: 320, resize: 'cover' as const };
 // tiles say exactly what they said before.
 
 /** The word under a tile, or null for a calm read, which draws none (CUL-1233). A tile with
- *  no verdict on the record (in flight, failed, capped, never read) says `NO_READ_WORDS`. */
-export function verdictWord(verdict: GalleryTile['verdict']): string | null {
+ *  no verdict on the record (in flight, failed, capped, never read) says `NO_READ_WORDS`. A
+ *  new-rule `logged` read under a tracked finding says "Part of a pattern" (K2). */
+export function verdictWord(verdict: GalleryTile['verdict'], tracksPattern: boolean): string | null {
+  if (isPatternRead(verdict, tracksPattern)) return PATTERN_WORDS.short;
   if (isCalmDisplay(verdict)) return null;
   return verdict ? TIER_WORDS[verdict].short : NO_READ_WORDS;
 }
 
 /** The tile in one sentence, for the screen reader. */
-export function tileA11yLabel(tile: GalleryTile): string {
+export function tileA11yLabel(tile: GalleryTile, tracksPattern: boolean): string {
   const when = tile.timeWord ? `${tile.dateWord}, ${tile.timeWord}` : tile.dateWord;
+  if (isPatternRead(tile.verdict, tracksPattern)) return `${when}, photographed, read as ${PATTERN_WORDS.label}`;
   if (isCalmDisplay(tile.verdict)) return `${when}, photographed`;
   return tile.verdict
     ? `${when}, photographed, read as ${TIER_WORDS[tile.verdict].label}`
@@ -96,7 +106,7 @@ export function EpisodeGallery({ episodes, headerRef }: Props) {
       {episodes.tiles.length > 0 ? (
         <View style={styles.grid}>
           {episodes.tiles.map((tile) => (
-            <Tile key={tile.eventId} tile={tile} />
+            <Tile key={tile.eventId} tile={tile} tracksPattern={episodes.tracksPattern} />
           ))}
         </View>
       ) : null}
@@ -104,7 +114,7 @@ export function EpisodeGallery({ episodes, headerRef }: Props) {
   );
 }
 
-function Tile({ tile }: { tile: GalleryTile }) {
+function Tile({ tile, tracksPattern }: { tile: GalleryTile; tracksPattern: boolean }) {
   const { localUri, storagePath } = tile.photo;
   // A stale cache path is no local file at all (CUL-1269): asked once per path, the way
   // the record screen asks before it trusts the same column.
@@ -144,14 +154,18 @@ function Tile({ tile }: { tile: GalleryTile }) {
   }, [needsRemote, storagePath]);
 
   const photo = resolveTilePhoto({ local, transform, raw }, failed);
-  const word = verdictWord(tile.verdict);
+  const word = verdictWord(tile.verdict, tracksPattern);
   const markFailed = (uri: string) => setFailed((prev) => (prev.has(uri) ? prev : new Set(prev).add(uri)));
 
   return (
     <Pressable
       onPress={() => router.push(`/event/${tile.eventId}`)}
       accessibilityRole="button"
-      accessibilityLabel={photo.kind === 'failed' ? `${tileA11yLabel(tile)}, ${TILE_PHOTO_FAILED_LABEL.toLowerCase()}` : tileA11yLabel(tile)}
+      accessibilityLabel={
+        photo.kind === 'failed'
+          ? `${tileA11yLabel(tile, tracksPattern)}, ${TILE_PHOTO_FAILED_LABEL.toLowerCase()}`
+          : tileA11yLabel(tile, tracksPattern)
+      }
       accessibilityHint="Opens this episode's record"
       style={styles.tile}
       testID={`episode-tile-${tile.eventId}`}

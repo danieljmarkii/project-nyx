@@ -251,6 +251,10 @@ export interface SignalScreenEpisodes {
   tiles: GalleryTile[];
   /** The episodes with no photo, each with its call: the count line's second clause. */
   photoless: PhotolessEpisode[];
+  /** Whether these episodes are evidence for a finding Home is TRACKING
+   *  (`findingTracksPattern`): where a new-rule `logged` read is drawn "Part of a pattern"
+   *  (K2, CUL-1515, `lib/incidentPattern.ts`). The record asks the same field. */
+  tracksPattern: boolean;
 }
 
 export interface SignalScreenModel {
@@ -338,7 +342,63 @@ function episodesInWeeks(episodes: readonly SignalScreenEpisode[], weekly: Weekl
   });
 }
 
-function galleryOf(inWeeks: readonly SignalScreenEpisode[], verdicts: SignalScreenInput['verdicts'], weeks: number): SignalScreenEpisodes {
+/**
+ * Whether a finding is one Home is TRACKING (K2, CUL-1515): one whose episodes on this screen
+ * ARE its evidence, so a calm read among them is "Part of a pattern" (`lib/incidentPattern.ts`).
+ * An allowlist, exhaustive over the union, so a new type is a typecheck failure until someone
+ * decides (the `leadTakesChartCard` shape). Every other gate is the loader's own (Home's
+ * visibility stack, masking, an unsupported type).
+ *
+ *   • The frequency findings count every episode of the sign by the week, so every episode
+ *     drawn is their evidence: worsening, burden, chronicity, a flat reflection, a trial pair
+ *     that is not falling.
+ *   • NOT a finding about improvement (an improving reflection, a falling trial pair): a fresh
+ *     vomit is not "part of" a fall, and the door would open a screen saying the sign is
+ *     down. n=1 never reassures, so the read keeps "Keep an eye out" (adversarial pass, F1).
+ *   • NOT a timing finding, a correlation or a photo red flag: their claim is a time from a
+ *     meal, an hour, a food or a photo finding, and the bars count episodes the claim never
+ *     made (`leadTakesChartCard`'s own reading), so the drawn episodes are not their evidence
+ *     (spec §4, "in the live finding's evidence set"; adversarial pass, F2).
+ *   • NOT the stood-down line, which says Home stopped, nor intake decline (no episodes).
+ *
+ * The evidence is the DRAWN weeks, which can be wider than a finding's own window: a 7-day
+ * burden is drawn over two weeks, and the screen reads episodes logged since the engine ran.
+ * Both over-include on the louder side, under a finding of the same sign, and the record and
+ * the gallery still agree because both read this one set (adversarial pass, round 2).
+ */
+export function findingTracksPattern(finding: SignalFinding): boolean {
+  switch (finding.type) {
+    case 'symptom_worsening':
+    case 'symptom_burden':
+    case 'symptom_chronicity':
+      return true;
+    case 'reflection':
+      return finding.direction !== 'improving';
+    case 'trial_response':
+      return finding.comparisonDirection !== 'fewer_during_trial';
+    case 'postprandial_timing':
+    case 'timeofday_clustering':
+    case 'empty_stomach_timing':
+    case 'timing_story':
+    case 'food_symptom_correlation':
+    case 'incident_red_flag':
+    case 'intake_decline':
+    case 'stood_down':
+      return false;
+    default: {
+      const unknownType: never = finding;
+      void unknownType;
+      return false;
+    }
+  }
+}
+
+function galleryOf(
+  inWeeks: readonly SignalScreenEpisode[],
+  verdicts: SignalScreenInput['verdicts'],
+  weeks: number,
+  tracksPattern: boolean,
+): SignalScreenEpisodes {
   const photographed = inWeeks
     .filter((e): e is SignalScreenEpisode & { photo: SignalScreenPhoto } => e.photo != null)
     .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt));
@@ -366,7 +426,7 @@ function galleryOf(inWeeks: readonly SignalScreenEpisode[], verdicts: SignalScre
     });
   const total = inWeeks.length;
   const n = photographed.length;
-  return { total, photographedCount: n, weeks, countLine: galleryCountLine(total, weeks, n, photoless), tiles, photoless };
+  return { total, photographedCount: n, weeks, countLine: galleryCountLine(total, weeks, n, photoless), tiles, photoless, tracksPattern };
 }
 
 /** A bout's rows as one key, the tile's own row among them. */
@@ -814,7 +874,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     lanes,
     // A masked record with nothing in the drawn weeks prints no "0 in these 5 weeks" (CUL-1440,
     // the adversarial pass): the gallery's count line is a count over those weeks too.
-    episodes: inWeeks.length === 0 && weeklyMaskOf(input.masking, weekly, input.today) ? null : galleryOf(inWeeks, input.verdicts, weekly.weeks.length),
+    episodes: inWeeks.length === 0 && weeklyMaskOf(input.masking, weekly, input.today) ? null : galleryOf(inWeeks, input.verdicts, weekly.weeks.length, findingTracksPattern(finding)),
     why,
     context: careContextLinesOf(finding),
     safety,

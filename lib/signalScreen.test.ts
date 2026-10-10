@@ -630,7 +630,10 @@ describe('what the screen may never say', () => {
   it('the model has no field for a summary verdict — the type is one read per tile', () => {
     const m = buildSignalScreenModel(mockInput());
     // `photoless` holds one call per episode with no photo (CUL-1200), never a summary.
-    expect(Object.keys(m.episodes ?? {}).sort()).toEqual(['countLine', 'photographedCount', 'photoless', 'tiles', 'total', 'weeks']);
+    // `tracksPattern` (CUL-1515) is a fact about the FINDING, not about any read: it decides
+    // only whether a tile's own `logged` read is drawn "Part of a pattern".
+    expect(Object.keys(m.episodes ?? {}).sort()).toEqual(['countLine', 'photographedCount', 'photoless', 'tiles', 'total', 'tracksPattern', 'weeks']);
+    expect(typeof m.episodes?.tracksPattern).toBe('boolean');
   });
 });
 
@@ -1315,6 +1318,53 @@ describe('CUL-1216 — a falling pair on the screen carries its gates', () => {
       expect(why).toContain('Counted from days you logged: 7 this week, 6 last.');
       expect(why).not.toMatch(/Two windows of/);
     }
+  });
+
+  // K2 (CUL-1389), CUL-1515: the gallery's episodes are evidence for a finding Home is
+  // tracking, except under the stood-down line, which says Home stopped.
+  it('CUL-1515: episodes are tracked evidence under a live finding, and not under the stood-down line', () => {
+    const eps = [-12, -9, -2].map((d) => episode(shift(THURSDAY, d), 9, { photo: { localUri: null, storagePath: `p/${d}.jpg` } }));
+    const reflection: CachedFinding['finding'] = {
+      type: 'reflection',
+      priorityClass: 'insight',
+      symptomType: 'vomit',
+      currentCount: 2,
+      priorCount: 2,
+      direction: 'flat',
+      windowDays: 7,
+    };
+    const live = buildSignalScreenModel(benign({ cached: cachedOf(reflection), episodes: eps }));
+    expect(live.episodes?.tiles.length).toBeGreaterThan(0);
+    expect(live.episodes?.tracksPattern).toBe(true);
+    const stoodDown: CachedFinding['finding'] = {
+      type: 'stood_down',
+      priorityClass: 'insight',
+      symptomType: 'vomit',
+      recencyDays: 14,
+      tier: 'standard',
+      lastEpisodeIso: `${shift(THURSDAY, -2)}T09:00:00.000Z`,
+      stoodDownAt: `${THURSDAY}T09:00:00.000Z`,
+      formerRank: 1,
+    };
+    const down = buildSignalScreenModel(benign({ cached: cachedOf(stoodDown), episodes: eps }));
+    // Non-vacuity: the same episodes are drawn, so only the flag differs.
+    expect(down.episodes?.tiles.map((t) => t.eventId)).toEqual(live.episodes?.tiles.map((t) => t.eventId));
+    expect(down.episodes?.tracksPattern).toBe(false);
+    // Adversarial pass F1/F2: a finding about improvement, or a timing claim, is not tracking.
+    const improving = buildSignalScreenModel(benign({ cached: cachedOf({ ...reflection, direction: 'improving' }), episodes: eps }));
+    expect(improving.episodes?.tiles.length).toBeGreaterThan(0);
+    expect(improving.episodes?.tracksPattern).toBe(false);
+    const timing = buildSignalScreenModel(benign({ cached: cachedOf(postprandial()), episodes: eps }));
+    expect(timing.episodes?.tiles.length).toBeGreaterThan(0);
+    expect(timing.episodes?.tracksPattern).toBe(false);
+  });
+
+  it('CUL-1515: a falling trial pair is not tracking; a rising one is', () => {
+    const { findingTracksPattern } = jest.requireActual('./signalScreen') as typeof import('./signalScreen');
+    const pair = (comparisonDirection: 'more_during_trial' | 'fewer_during_trial') =>
+      ({ type: 'trial_response', priorityClass: 'insight', comparisonDirection }) as unknown as CachedFinding['finding'];
+    expect(findingTracksPattern(pair('fewer_during_trial'))).toBe(false);
+    expect(findingTracksPattern(pair('more_during_trial'))).toBe(true);
   });
 
   // Adversarial pass F2: the trial lanes are a before/during pair; a falling split is one lane.

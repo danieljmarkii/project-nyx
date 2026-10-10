@@ -103,6 +103,7 @@ export function IncidentReadCard({
   watchFor,
   readText,
   correction,
+  pattern,
   onHide,
   arrival,
   onMeasure,
@@ -131,6 +132,12 @@ export function IncidentReadCard({
    *  (`lib/readCorrection.ts`). Under the words, never in place of them, and never a change
    *  to the verdict above. Hidden with the note, because it is part of the note. */
   correction?: { label: string; text: string } | null;
+  /** K2 (CUL-1515, `lib/incidentPattern.ts`): this quiet read is evidence for a finding Home
+   *  is tracking. The card draws in the dashed pale rose, never a call's fill or the rose
+   *  rail, says the one line, and carries the one door to the finding; the watch-for list
+   *  stays under it, because the read is not a call on its own (mock §02). Ignored on a
+   *  call: a call's own ask outranks a pointer to Home. */
+  pattern?: { line: string; door: string; onOpen: () => void } | null;
   /** Absent on a card with nothing stored to hide (Engines v3 PR-28b: the phone's own
    *  preview of a call, which no row holds yet). The control is then ABSENT, never
    *  disabled (C-7). */
@@ -149,6 +156,7 @@ export function IncidentReadCard({
   // earlier-rule call, and any call drawn without a tone, keeps today's filled card.
   const outline = attn && tone === 'call_outline';
   const quietTone = tone === 'neutral' || tone === 'muted' ? tone : verdict === 'monitor' ? 'neutral' : 'muted';
+  const inPattern = !attn && pattern != null;
   return (
     <View
       testID="incident-read-card"
@@ -156,6 +164,7 @@ export function IncidentReadCard({
       style={[
         styles.card,
         attn ? (outline ? styles.cardAttnOutline : styles.cardAttn)
+        : inPattern ? styles.cardPattern
         : quietTone === 'neutral' ? styles.cardNeutral : styles.cardMuted,
       ]}
     >
@@ -170,7 +179,7 @@ export function IncidentReadCard({
           testID="incident-read-rail"
           style={[
             styles.rail,
-            attn ? styles.railAttn : styles.railQuiet,
+            attn ? styles.railAttn : inPattern ? styles.railPattern : styles.railQuiet,
             styles.railOut,
             {
               height: arrival.height,
@@ -181,7 +190,7 @@ export function IncidentReadCard({
       ) : (
         <View
           testID="incident-read-rail"
-          style={[styles.rail, attn ? styles.railAttn : styles.railQuiet]}
+          style={[styles.rail, attn ? styles.railAttn : inPattern ? styles.railPattern : styles.railQuiet]}
         />
       )}
       <View style={arrival ? [styles.body, styles.bodyRailOut] : styles.body}>
@@ -196,6 +205,22 @@ export function IncidentReadCard({
           {label}
         </ThemedText>
         {attn && action ? <ThemedText style={styles.action}>{action}</ThemedText> : null}
+        {/* The line never restates Home's ask or quotes a care state, so it cannot disagree
+            with Home; the door is the only link (mock §02). No `hitSlop`: the box carries
+            the 44pt floor, so nothing it faces can share its reach (C-5). */}
+        {inPattern ? (
+          <View testID="incident-read-pattern" style={styles.pattern}>
+            <ThemedText style={styles.patternLine}>{pattern.line}</ThemedText>
+            <TouchableOpacity
+              onPress={pattern.onOpen}
+              accessibilityRole="button"
+              style={styles.patternDoor}
+              testID="incident-read-pattern-door"
+            >
+              <ThemedText style={styles.patternDoorText}>{pattern.door}</ThemedText>
+            </TouchableOpacity>
+          </View>
+        ) : null}
         {attn && tellThem ? (
           <View testID="incident-read-tell-them" accessible style={styles.tellThem}>
             <ThemedText style={styles.tellThemHeading}>{TELL_THEM_HEADING}</ThemedText>
@@ -273,6 +298,13 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorSurfaceSubtle,
     borderColor: theme.colorBorder,
   },
+  // "Part of a pattern" (K2): the dashed pale rose on the plain surface, no fill. Louder
+  // than grey and never a call: the fill and the full rose stay the calls' alone (GAP-32).
+  cardPattern: {
+    backgroundColor: theme.colorSurface,
+    borderColor: theme.colorEventSymptomBorder,
+    borderStyle: 'dashed',
+  },
   cardMuted: {
     backgroundColor: theme.colorSurfaceSubtle,
     borderColor: theme.colorBorder,
@@ -290,6 +322,7 @@ const styles = StyleSheet.create({
   },
   railAttn: { backgroundColor: theme.colorEventSymptom },
   railQuiet: { backgroundColor: theme.colorBorderStrong },
+  railPattern: { backgroundColor: theme.colorEventSymptomBorder },
   body: {
     flex: 1,
     padding: theme.space2,
@@ -309,6 +342,25 @@ const styles = StyleSheet.create({
   verdictAttn: { color: theme.colorEventSymptomInk },
   verdictNeutral: { color: theme.colorTextSecondary },
   verdictMuted: { color: theme.colorTextTertiary },
+  pattern: {
+    gap: theme.space0_5,
+  },
+  patternLine: {
+    fontSize: theme.textMD,
+    color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightBody,
+  },
+  patternDoor: {
+    minHeight: 44,
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+  },
+  patternDoorText: {
+    fontSize: theme.textMD,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorTextPrimary,
+    textDecorationLine: 'underline',
+  },
   action: {
     fontSize: theme.textMD,
     fontWeight: theme.fontWeightMedium,
