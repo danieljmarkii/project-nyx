@@ -47,6 +47,9 @@ export const PATTERN_WORDS = {
   short: 'Part of a pattern',
   /** The record's door to the finding (mock §02): the only link, never a restatement. */
   door: 'See what Home is tracking',
+  /** What a screen reader hears when such a read lands, after "{Pet}'s read: " (mock §04,
+   *  spoken through `readLandedLine`): "Nyx's read: part of a pattern Home is tracking." */
+  spoken: 'part of a pattern Home is tracking',
 } as const;
 
 /** The record's line under the chip (spec §2): "Home is tracking Nyx's vomiting, and this one

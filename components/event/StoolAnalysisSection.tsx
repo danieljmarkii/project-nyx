@@ -96,6 +96,9 @@ import { useEn3LiveSince } from '../../hooks/useEn3LiveSince';
 import { useNewSinceLine } from '../../hooks/useNewSinceLine';
 import { earlierRuleLineOf } from '../../lib/ruleSeam';
 import { useObservationFold } from './useObservationFold';
+import { router } from 'expo-router';
+import { usePatternMembership } from '../../hooks/usePatternMembership';
+import { PATTERN_WORDS, patternActionLine } from '../../lib/incidentPattern';
 
 // 'capped' / 'read_disabled' are the two states the analyze-stool function writes
 // into the row when the DESCRIPTIVE read is skipped (cap hit / flag off) AND no
@@ -216,6 +219,18 @@ export function StoolAnalysisSection(
   const newSince = useNewSinceLine(eventId, petId, petName, row ?? null, `${row?.updated_at ?? row?.status ?? ''}`);
   // The RECORD's pet (C-9): its species decides the wait line's intake re-check.
   const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
+  // K2 (CUL-1515): a new-rule `logged` read that a finding Home is tracking counts among its
+  // episodes says "Part of a pattern" (`lib/incidentPattern.ts`). The only stool sign a finding
+  // counts is diarrhea, and the evidence check is by row, so a `stool_normal` record (never in
+  // a diarrhea finding's episodes) marks nothing. Null until it answers.
+  const patternMembership = usePatternMembership(
+    { petId, eventId, eventType: 'diarrhea' },
+    // Asked while a read is in flight too: whether the finding counts this record does not
+    // depend on the verdict, so the answer is in hand on the landing's commit and the landing
+    // is spoken in the words the card then shows (mock §04), never "keep an eye out" first.
+    !!row && !row.dismissed_at && (working || row.status === 'pending' || tierDisplayOf(row) === 'logged'),
+    `${row?.updated_at ?? row?.status ?? ''}`,
+  );
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
   // the grid so a re-render of the block never resets what the owner folded, and fed the
@@ -719,6 +734,17 @@ export function StoolAnalysisSection(
           nowMs,
         })
       : null;
+  // K2: "Part of a pattern", on a new-rule `logged` read only, beside the finding that counts it.
+  const pattern =
+    display === 'logged' && patternMembership
+      ? {
+          line: patternActionLine(petName, patternMembership.noun),
+          door: PATTERN_WORDS.door,
+          onOpen: () => router.push(patternMembership.href),
+        }
+      : null;
+  const readLabel = pattern ? PATTERN_WORDS.label : incidentReadLabel(row);
+
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
   const editedSet = new Set<EditableStoolField>(
@@ -735,7 +761,12 @@ export function StoolAnalysisSection(
       // error-only write over a hidden Worth a call — or before that server change is
       // live. Saying "hidden" tells the owner something landed and where to find it,
       // without speaking what they chose to hide.
-      announcement={dismissed ? DISMISSED_LINE : heldDisclosure ? `${incidentReadLabel(row)}. ${heldDisclosure}` : incidentReadLabel(row)}
+      announcement={
+        dismissed ? DISMISSED_LINE
+        : heldDisclosure ? `${incidentReadLabel(row)}. ${heldDisclosure}`
+        : pattern ? PATTERN_WORDS.spoken
+        : incidentReadLabel(row)
+      }
       pending={false}
     >
       {dismissed ? (
@@ -751,7 +782,7 @@ export function StoolAnalysisSection(
           // The words live in lib/incidentReadState.ts since D2-4 (CUL-1066), so Home's spine
           // node and this card cannot name one verdict two ways; a verdict this build does
           // not know is spoken as the escalation, never blank (CUL-1277).
-          label={incidentReadLabel(row)}
+          label={readLabel}
           // EN-3: the tier's tone and action line from the map; both absent on an
           // earlier-rule read, which draws today's card.
           tone={display ? TIER_WORDS[display].tone : undefined}
@@ -779,6 +810,7 @@ export function StoolAnalysisSection(
           }
           tellThem={tellThemLine}
           disclosure={heldDisclosure}
+          pattern={pattern}
           ruleNote={ruleNote}
           readText={row.read_text}
             correction={intakeCorrectionDisplay(row, petName)}

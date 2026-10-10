@@ -96,6 +96,17 @@ jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 let mockLiveSince: string | null = null;
 jest.mock('../../hooks/useEn3LiveSince', () => ({ useEn3LiveSince: () => mockLiveSince }));
 
+// K2 (CUL-1515): the finding that counts this read, stubbed at the READ, never the rule (C-34):
+// the hook, the card's frame and the section's gate are the real ones. Null unless a test
+// names one, as on every phone with no tracked finding.
+let mockPattern: { identity: string; noun: string; href: string } | null = null;
+const mockReadPattern = jest.fn(async (_i: unknown) => mockPattern);
+jest.mock('../../lib/incidentPattern', () => ({
+  ...jest.requireActual('../../lib/incidentPattern'),
+  readPatternMembership: (i: unknown) => mockReadPattern(i),
+}));
+const mockRouterPush = jest.fn();
+jest.mock('expo-router', () => ({ router: { push: (h: string) => mockRouterPush(h) } }));
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
 import { AppState } from 'react-native';
@@ -1356,5 +1367,64 @@ describe('StoolAnalysisSection — the go-live day (CUL-1513)', () => {
     const after = render(<StoolAnalysisSection eventId="d2" petId="pet-1" petName="Rex" hasPhoto />);
     await after.findByText('Worth a call');
     expect(after.queryByTestId('incident-read-rule-note')).toBeNull();
+  });
+});
+
+// ── K2 (CUL-1515): "Part of a pattern" on a calm read a tracked finding counts ─────────
+describe('StoolAnalysisSection — "Part of a pattern" (K2)', () => {
+  const EN3 = ['engines_v3_en3'];
+  const PATTERN = { identity: 'reflection:diarrhea', noun: 'diarrhea', href: '/signal/reflection%3Adiarrhea?pet=pet-1' };
+  afterEach(() => {
+    mockRow = null;
+    mockPattern = null;
+    mockReadPattern.mockClear();
+    mockRouterPush.mockClear();
+  });
+
+  it('a new-rule logged read in a tracked finding says it, with the line and the door', async () => {
+    mockPattern = PATTERN;
+    mockRow = row({ recommendation: 'monitor', tier: 'logged', engine_flags: EN3, read_text: 'Yellow, foamy.' });
+    const view = render(<StoolAnalysisSection eventId="p1" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Part of a pattern')).toBeTruthy();
+    expect(view.getByText("Home is tracking Rex's diarrhea, and this one is part of it.")).toBeTruthy();
+    expect(view.queryByText('Keep an eye out')).toBeNull();
+    expect(mockReadPattern).toHaveBeenCalledWith({ petId: 'pet-1', eventId: 'p1', eventType: 'diarrhea' });
+    fireEvent.press(view.getByText('See what Home is tracking'));
+    expect(mockRouterPush).toHaveBeenCalledWith(PATTERN.href);
+  });
+
+  it('no tracked finding: "Keep an eye out", as shipped', async () => {
+    mockRow = row({ recommendation: 'monitor', tier: 'logged', engine_flags: EN3, read_text: 'Yellow, foamy.' });
+    const view = render(<StoolAnalysisSection eventId="p2" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    await waitFor(() => expect(mockReadPattern).toHaveBeenCalledTimes(1));
+    expect(view.queryByText('Part of a pattern')).toBeNull();
+  });
+
+  it('an earlier-rule monitor never asks and never takes it, finding or not', async () => {
+    mockPattern = PATTERN;
+    mockRow = row({ recommendation: 'monitor', read_text: 'Yellow, foamy.' });
+    const view = render(<StoolAnalysisSection eventId="p3" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    expect(view.queryByText('Part of a pattern')).toBeNull();
+    expect(mockReadPattern).not.toHaveBeenCalled();
+  });
+
+  it('a call never asks: its own ask stands', async () => {
+    mockPattern = PATTERN;
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3 });
+    const view = render(<StoolAnalysisSection eventId="p4" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Call your vet today')).toBeTruthy();
+    expect(view.queryByText('Part of a pattern')).toBeNull();
+    expect(mockReadPattern).not.toHaveBeenCalled();
+  });
+
+  it('not_enough_to_say never asks', async () => {
+    mockPattern = PATTERN;
+    mockRow = row({ recommendation: 'not_enough_to_say', tier: 'not_enough_to_say', engine_flags: EN3, read_text: 'Too blurry.' });
+    const view = render(<StoolAnalysisSection eventId="p5" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(view.queryByText('Not enough to say yet')).toBeTruthy());
+    expect(view.queryByText('Part of a pattern')).toBeNull();
+    expect(mockReadPattern).not.toHaveBeenCalled();
   });
 });

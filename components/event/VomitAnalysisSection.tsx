@@ -96,6 +96,9 @@ import { useIncidentArrival } from '../motion/arrivalMotion';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useObservationFold } from './useObservationFold';
+import { router } from 'expo-router';
+import { usePatternMembership } from '../../hooks/usePatternMembership';
+import { PATTERN_WORDS, patternActionLine } from '../../lib/incidentPattern';
 
 // 'capped' / 'read_disabled' are the two states the analyze-vomit function writes
 // into the row when the DESCRIPTIVE read is skipped (cap hit / flag off) AND no
@@ -221,6 +224,17 @@ export function VomitAnalysisSection(
   const newSince = useNewSinceLine(eventId, petId, petName, row ?? null, `${row?.updated_at ?? row?.status ?? ''}`);
   // The RECORD's pet (C-9): species and birthday decide which clauses its list carries.
   const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
+  // K2 (CUL-1515): a new-rule `logged` read that a finding Home is tracking counts among its
+  // episodes says "Part of a pattern" (`lib/incidentPattern.ts`). Asked only for such a read,
+  // and again when the read moves. Null until it answers: the read keeps "Keep an eye out".
+  const patternMembership = usePatternMembership(
+    { petId, eventId, eventType: 'vomit' },
+    // Asked while a read is in flight too: whether the finding counts this record does not
+    // depend on the verdict, so the answer is in hand on the landing's commit and the landing
+    // is spoken in the words the card then shows (mock §04), never "keep an eye out" first.
+    !!row && !row.dismissed_at && (working || row.status === 'pending' || tierDisplayOf(row) === 'logged'),
+    `${row?.updated_at ?? row?.status ?? ''}`,
+  );
 
   // Engines v3 PR-28b (CUL-1436; spec §8.5, §8.7) — the phone's own floor over its rows for
   // THIS read, shown where it is louder than the stored read (offline, or before the
@@ -836,6 +850,17 @@ export function VomitAnalysisSection(
         })
       : null;
 
+  // K2: "Part of a pattern", on a new-rule `logged` read only, beside the finding that counts it.
+  const pattern =
+    display === 'logged' && patternMembership
+      ? {
+          line: patternActionLine(petName, patternMembership.noun),
+          door: PATTERN_WORDS.door,
+          onOpen: () => router.push(patternMembership.href),
+        }
+      : null;
+  const readLabel = pattern ? PATTERN_WORDS.label : incidentReadLabel(row);
+
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
   const editedSet = new Set<EditableVomitField>(
@@ -852,7 +877,12 @@ export function VomitAnalysisSection(
       // error-only write over a hidden Worth a call — or before that server change is
       // live. Saying "hidden" tells the owner something landed and where to find it,
       // without speaking what they chose to hide.
-      announcement={dismissed ? DISMISSED_LINE : heldDisclosure ? `${incidentReadLabel(row)}. ${heldDisclosure}` : incidentReadLabel(row)}
+      announcement={
+        dismissed ? DISMISSED_LINE
+        : heldDisclosure ? `${incidentReadLabel(row)}. ${heldDisclosure}`
+        : pattern ? PATTERN_WORDS.spoken
+        : incidentReadLabel(row)
+      }
       pending={false}
     >
       {dismissed ? (
@@ -868,7 +898,7 @@ export function VomitAnalysisSection(
           // The words live in lib/incidentReadState.ts since D2-4 (CUL-1066), so Home's spine
           // node and this card cannot name one verdict two ways; a verdict this build does
           // not know is spoken as the escalation, never blank (CUL-1277).
-          label={incidentReadLabel(row)}
+          label={readLabel}
           // EN-3: the tier's tone and action line from the map; both absent on an
           // earlier-rule read, which draws today's card.
           tone={display ? TIER_WORDS[display].tone : undefined}
@@ -895,6 +925,7 @@ export function VomitAnalysisSection(
                 : null
           }
           disclosure={heldDisclosure}
+          pattern={pattern}
           ruleNote={ruleNote}
           tellThem={tellThemLine}
           watchFor={watchFor}
