@@ -195,18 +195,20 @@ export function careClaimReason(text: string): CareClaimReason | null {
 
 // The sign nouns a zero is counted in. Wide on purpose: an owner's word ("honking", "runny
 // poop", "hairballs") is still a sign, and an unlisted noun is caught by the generic arm below.
-const ZERO_NOUN = String.raw`(?:vomit\w*|throw(?:ing|s)?[- ]?ups?|retch\w*|regurgitat\w*|hairballs?|gag\w*|diarrh\w*|loose stools?|runny \w+|stools?|poops?|cough\w*|hack\w*|honk\w*|sneez\w*|itch\w*|scratch\w*|lick\w*|skin\w*|rash\w*|hives|symptoms?|episodes?|bouts?|accidents?|flare-?ups?|times|incidents?|events?|entr(?:y|ies)|days?)`
+const ZERO_NOUN = String.raw`(?:vomit\w*|throw(?:ing|s)?[- ]?ups?|retch\w*|regurgitat\w*|hairballs?|gag\w*|diarrh\w*|loose stools?|runny \w+|stools?|poops?|cough\w*|hack\w*|honk\w*|sneez\w*|itch\w*|scratch\w*|lick\w*|skin\w*|rash\w*|hives|symptoms?|episodes?|bouts?|accidents?|flare-?ups?|times|incidents?|events?|entr(?:y|ies))`
 const SIGN_VERB = String.raw`(?:vomit\w*|cough\w*|scratch\w*|itch\w*|sneez\w*|lick\w*|retch\w*|gag\w*|hack\w*|throwing up)`
-const NEG = String.raw`(?:\b(?:has|have|had|did|was|were|is|are|does|do|could|can|would)(?:n${APOS}t|\s+not)|${APOS}(?:ve|s|d)\s+not)`
+const NEG = String.raw`(?:\b(?:has|have|had|did|was|were|is|are|does|do|could|would|should|ai)(?:n${APOS}t|\s+not)|\b(?:can${APOS}t|cannot|can not|won${APOS}t|will not)|${APOS}(?:ve|s|d)\s+not)`
 
 const ZERO_RES: RegExp[] = [
   // "0 vomiting episodes", "zero coughs", "no vomiting", "no new episodes", "not a single
   // cough", "without vomiting", "no days with vomiting". The noun is required, so "no need",
   // "no more than 3 episodes" and "No, she…" pass.
   new RegExp(
-    String.raw`\b(?:0(?![.,:]\d)|zero|no|not (?:a single|one|any)|without(?:\s+(?:a|an|any))?)\s+(?:(?:new|more|further|other|logged|recorded|reported|single)\s+){0,2}(?:\w+\s+)?${ZERO_NOUN}\b`,
+    String.raw`\b(?:0(?![.,:]\d)|zero|no|not (?:a single|one|any)|without(?:\s+(?:a|an|any))?)\s+(?:(?:new|more|further|other|logged|recorded|reported|single)\s+){0,2}(?:\w+\s+)?${ZERO_NOUN}\b(?![-‐]free)`,
     'i',
   ),
+  // "no days with vomiting", "0 days of coughing".
+  new RegExp(String.raw`\b(?:no|0|zero)\s+days?\s+(?:with|of|when|where)\b`, 'i'),
   // "none logged", "Nothing's been logged", "none since", "nothing so far", "none of the
   // vomiting has come back", "she's had none", and a bare trailing "…, nothing."
   new RegExp(
@@ -219,14 +221,14 @@ const ZERO_RES: RegExp[] = [
   // "you've not logged any". An INTAKE absence ("hasn't eaten") never matches here, and a
   // sentence about meals or doses alone is set aside below.
   new RegExp(
-    String.raw`${NEG}\s+(?:\w+\s+){0,2}?(?:vomited|coughed|scratched|itched|sneezed|licked|retched|gagged|thrown up|threw up|been sick|had (?:a|an|any|another)\b|logged (?:a|an|any|another)\b|(?:see|find|spot)\s+any\b|been any\b|been (?:a|an)\s+(?:single\s+)?(?:\w+\s+)?${ZERO_NOUN}|(?:shown up|turned up|appeared)(?!\s+(?:as|less|more|fewer|quite|so)\b)|been (?:logged|recorded|seen|noted|reported)(?!\s+as\b)|recurred|returned|come back|came back|happened(?: again)?(?!\s+before)|happen\b(?: again)?(?!\s+before))`,
+    String.raw`${NEG}\s+(?:\w+\s+){0,2}?(?:vomited|coughed|scratched|itched|sneezed|licked|retched|gagged|thrown up|threw up|been sick|(?:vomit|cough|scratch|itch|sneeze|lick|retch|gag|throw up|be sick)\b|been (?:vomiting|coughing|scratching|itching|sneezing|licking|sick)|had (?:a|an|any|another)\b|logged (?:a|an|any|another)\b|(?:see|find|spot)\s+(?:any|a|an)\b|(?:include|contain|show|have)\s+any\b|come up\b|been any\b|been (?:a|an)\s+(?:single\s+)?(?:\w+\s+)?${ZERO_NOUN}|(?:shown up|turned up|appeared)(?!\s+(?:as|less|more|fewer|quite|so)\b)|(?:been\s+)?(?:logged|recorded|seen|noted|reported)(?!\s+as\b)|recurred|returned|come back|came back|happened(?: again)?(?!\s+before)|happen\b(?: again)?(?!\s+before))`,
     'i',
   ),
   // "has stopped vomiting", "the vomiting stopped". Not "stopped eating": an escalation.
   // "hasn't stopped vomiting" is the opposite claim, and never matches.
   new RegExp(String.raw`(?<!n${APOS}t\s|\bnot\s|\bnever\s|\bstill\s)\bstopped\s+${SIGN_VERB}|\b${SIGN_VERB}\s+(?:has\s+|have\s+|had\s+)?stopped\b`, 'i'),
   // "vomit-free", "symptom free", "clear of vomiting", "the log is clean / empty / quiet".
-  new RegExp(String.raw`\b(?:vomit\w*|cough\w*|symptom|itch\w*|diarrh\w*|scratch\w*|sneez\w*|episode)[- ]free\b|\bclear of\b`, 'i'),
+  new RegExp(String.raw`(?<!\bno\s)\b(?:vomit\w*|cough\w*|symptom|itch\w*|diarrh\w*|scratch\w*|sneez\w*|episode)[- ]free\b|\bclear of\b`, 'i'),
   new RegExp(
     String.raw`\b(?:log|logs|record|logging|it|things?)(?:${APOS}s)?\s+(?:(?:is|was|has been|have been|had been|looks?|stayed|been)\s+)?(?:\w+\s+)?(?:clean|empty|quiet|blank)\b`,
     'i',
@@ -243,9 +245,9 @@ const ZERO_RES: RegExp[] = [
   new RegExp(String.raw`\bno\s+\w+(?:\s+\w+)?\s+(?:logged|recorded|since|so far)\b`, 'i'),
   // Recall phrasings: "there's no record of vomiting", "the log shows nothing", "vomiting
   // doesn't appear", "Vomiting episodes in the last 14 days: none", "eaten well and not vomited".
-  new RegExp(String.raw`\bno (?:record|trace|mention|entry|entries) of\b|\bno signs? of (?:any\s+)?(?:more\s+)?${SIGN_VERB}|\b(?:vomit\w*|cough\w*|diarrh\w*|itch\w*|scratch\w*|sneez\w*|symptoms?|episodes?)\s+(?:is|are|was|were|has been|have been)\s+absent\b|\bnothing\s+(?:about|on|regarding|for)\s+(?:her\s+|his\s+|the\s+)?${SIGN_VERB}|\bno signs? of (?:illness|being sick|anything)\b|\bno logs? (?:for|of)\s+${SIGN_VERB}|\bshows? nothing\b|\b(?:doesn${APOS}t|does not|don${APOS}t|do not)\s+(?:appear|show up)\b|[:=]\s*(?:none|nothing)\b`, 'i'),
+  new RegExp(String.raw`\bno (?:record|trace|mention|entry|entries) of (?:any\s+)?(?:\w+\s+)?(?:${SIGN_VERB}|diarrh\w*|episodes?|symptoms?|throw(?:ing)?[- ]?ups?)|\bno signs? of (?:any\s+)?(?:more\s+)?${SIGN_VERB}|\b(?:vomit\w*|cough\w*|diarrh\w*|itch\w*|scratch\w*|sneez\w*|symptoms?|episodes?)\s+(?:is|are|was|were|has been|have been)\s+absent\b|\bnothing\s+(?:about|on|regarding|for)\s+(?:her\s+|his\s+|the\s+)?${SIGN_VERB}|\bno signs? of (?:illness|being sick|anything)\b|\bno logs? (?:for|of)\s+${SIGN_VERB}|\bshows? nothing\b|\b(?:doesn${APOS}t|does not|don${APOS}t|do not)\s+(?:appear|show up)\b|[:=]\s*(?:none|nothing)\b`, 'i'),
   // "none of those entries is vomiting", "Vomiting isn't among them".
-  new RegExp(String.raw`\bnone of (?:it|them|those|these|the)\b[^.;]{0,40}?\b(?:is|are|was|were)\b|\b(?:isn${APOS}t|is not|aren${APOS}t|are not|wasn${APOS}t|was not|weren${APOS}t|were not)\s+(?:among|in|on|part of)\s+(?:them|those|these|it|the (?:log|record|entries))\b`, 'i'),
+  new RegExp(String.raw`\bnone (?:of (?:it|them|those|these|the|this|her|his|their|\w+${APOS}s)\b[^.;]{0,40}?\b)?(?:is|are|was|were)\b|\bfree of\b|\bthere (?:aren${APOS}t|are not|weren${APOS}t|were not|isn${APOS}t|is not)\s+any\b|\bnot (?:once|one time|a single time)\b|\b(?:isn${APOS}t|is not|aren${APOS}t|are not|wasn${APOS}t|was not|weren${APOS}t|were not)\s+(?:among|in|on|part of)\s+(?:them|those|these|it|the (?:log|record|entries))\b`, 'i'),
   new RegExp(String.raw`(?<!\b(?:has|have|had|is|was|were|are)\s)\bnot\s+(?:vomited|coughed|scratched|itched|sneezed|licked|thrown up|been sick)\b`, 'i'),
 ]
 

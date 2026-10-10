@@ -47,7 +47,15 @@ Five isolated `adversarial-reviewer` passes ran, each against the previous push.
    - Four escalations regressed.
 
    Fixed: blanking is per clause, skipped in a clause naming a sign, and an all-days count is the zero.
-5. Verdict: see the outcome comment on CUL-1429.
+5. **FAIL.** Findings:
+   - Base-form verbs after "didn't" ("she didn't vomit after the visit").
+   - "wasn't logged", and a "can't" that the negation list misspelled.
+   - "none of this week's entries", "free of", "there aren't any", "not once".
+   - False positives on "no record of a follow-up visit", "without more days logged" and "no coughing-free stretch".
+
+   All fixed. Its third family ("the last vomiting logged was Sep 14, before her Sep 16 visit") is CUL-1745's scope question and was added there.
+
+**No pass returned PASS.**
 
 The pattern across the passes is the lesson. Each pass closes leaks and opens false positives at the edges of the arms it added, because a denylist is not paraphrase-proof. The structural answer, an allowlisted recount or a judge, is CUL-271's, and this screen's header says so. What a denylist can promise is that the prompt-shaped phrasings are covered and the common honest ones pass. The tests pin every counterexample the five passes produced.
 
@@ -55,8 +63,16 @@ Mutation proofs: disabling the `validateAnswer` arm reds both CUL-1429 validateA
 
 ## Found along the way
 
-- **CUL-1743 (Urgent): `main` is red.** #1147 merged after #1150 with a test asserting the opposite of #1150's ruling (`newRuleCallOf` on an unstamped stored `call_now`). It fails the required `Edge Functions (deno test)` check on `main` and on every PR, this one included. Which rule wins is a clinical call, so it was not ported here.
+- **`main` is red** (filed as CUL-1743, now a duplicate of CUL-1746, which PR-30b owns). #1147 merged after #1150 with a test asserting the opposite of #1150's ruling (`newRuleCallOf` on an unstamped stored `call_now`). It fails the required `Edge Functions (deno test)` check on `main` and on every PR, this one included. That file is PR-30b's lane, so nothing was ported here.
 - **CUL-1745 (Waiting on PM): a date that implies a zero** ("The most recent vomiting logged is Sep 12" beside a Sep 16 visit). Is it in AC 17's scope?
+
+## Where it stands
+
+The PR is left open for the PM, for two reasons:
+- `main` is red until PR-30b lands.
+- The Definition of Done's adversarial line has no PASS. Five passes each found a fresh ring of paraphrases or false positives, and all of them are now fixed and pinned. The screen catches every phrasing the passes produced, including the issue's two reproduced sentences, and lets the rule-10 forms, intake and dose escalations and routing advice through. It is still a denylist.
+
+Whether that is enough to gate turning `engines_v3_en10` on for every account, or whether CUL-271's structural check must come first, is the PM's call.
 
 ## Residuals
 

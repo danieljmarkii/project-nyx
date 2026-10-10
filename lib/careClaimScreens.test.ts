@@ -404,6 +404,36 @@ describe('zeroBesideCareReason (CUL-1429)', () => {
     expect(zeroBesideCareReason(text, NONE)).toBeNull();
   });
 
+  // Adversarial pass 5 (PR-45a).
+  it.each([
+    'She didn\'t vomit after the Sep 16 visit, per the log.',
+    'She did not vomit between the visit and today, according to her log.',
+    "On prednisolone, she didn't cough once this week, going by the log.",
+    "Vomiting wasn't logged after the visit.",
+    "On prednisolone, coughs weren't logged this week.",
+    "I can't find any vomiting logged since the visit.",
+    "On prednisolone, I don't see a cough logged this week.",
+    "On prednisolone, none of this week's entries are coughs.",
+    'On prednisolone, her log is free of coughing this week.',
+    "On prednisolone, she hasn't been coughing this week, per the log.",
+    "On prednisolone, the log doesn't include any coughing this week.",
+    "On prednisolone, there aren't any coughs in this week's log.",
+    "On prednisolone, coughing hasn't come up in the log this week.",
+    'Coughing on prednisolone? Not once this week, per the log.',
+    'Since the visit there is no record of vomiting.',
+  ])('refuses (adversarial pass 5): %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).not.toBeNull();
+  });
+
+  it.each([
+    'She vomited 3 times since Sep 16. There is no record of a follow-up visit.',
+    "She vomited 2 times since the Sep 16 visit. Without more days logged, a count this small can't show a trend.",
+    'On prednisolone she coughed on 5 of 7 days this week, 9 times in all, with no coughing-free stretch longer than a day.',
+    'She has vomited every day since the visit, with no day off.',
+  ])('passes (adversarial pass 5): %s', (text) => {
+    expect(zeroBesideCareReason(text, NONE)).toBeNull();
+  });
+
   it("refuses a zero beside the record's own course name, nickname or not", () => {
     const ctx = { knownNames: ["Buddy's tummy pills"], onBoardNames: [], visitInContext: false };
     expect(zeroBesideCareReason("No vomiting is logged since Buddy's tummy pills started.", ctx)).toBe(
