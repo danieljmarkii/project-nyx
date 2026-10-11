@@ -1,0 +1,497 @@
+<title>Dispatch Retro 4</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap">
+<style>
+/* Layout: one reading column; the decisions are the working surface, so they get the strongest frame. */
+:root {
+  --bg: #F4F5F8;
+  --surface: #FFFFFF;
+  --ink: #16142E;
+  --muted: #55536E;
+  --faint: #6E6C88;
+  --line: #E1E0EA;
+  --accent: #0B7B6C;
+  --accent-wash: #E3F7F3;
+  --harm: #9F1239;
+  --harm-wash: #FFE8EB;
+  --gate: #4B3FA8;
+  --gate-wash: #ECEAFB;
+  --park: #5E5D72;
+  --park-wash: #EEEEF3;
+  --chart-planned: #0FA08B;
+  --chart-follow: #6D5BD0;
+  --chart-surface: #FFFFFF;
+  --chart-grid: #ECECF2;
+  --font-display: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --font-body: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #13112E; --surface: #1B1840; --ink: #ECEAF6; --muted: #B3AFD6; --faint: #9A96C4;
+    --line: #2F2A62; --accent: #4FD8C4; --accent-wash: #16343A; --harm: #FB7185; --harm-wash: #3A1631;
+    --gate: #A99CF8; --gate-wash: #2A2463; --park: #B3AFD6; --park-wash: #262252;
+    --chart-planned: #1FA894; --chart-follow: #8573EE; --chart-surface: #1B1840; --chart-grid: #2B275A;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #13112E; --surface: #1B1840; --ink: #ECEAF6; --muted: #B3AFD6; --faint: #9A96C4;
+  --line: #2F2A62; --accent: #4FD8C4; --accent-wash: #16343A; --harm: #FB7185; --harm-wash: #3A1631;
+  --gate: #A99CF8; --gate-wash: #2A2463; --park: #B3AFD6; --park-wash: #262252;
+  --chart-planned: #1FA894; --chart-follow: #8573EE; --chart-surface: #1B1840; --chart-grid: #2B275A;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+.page { max-width: 760px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: flex; flex-direction: column; gap: 56px; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, input:focus-visible + span, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+h1, h2 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; letter-spacing: -0.01em; margin: 0; }
+h1 { font-size: clamp(2rem, 6vw, 2.75rem); line-height: 1.08; }
+h2 { font-size: 1.6rem; line-height: 1.2; }
+h3 { font-size: 1.02rem; font-weight: 600; margin: 0; }
+p { margin: 0; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.dek { font-size: 1.12rem; color: var(--muted); max-width: 62ch; }
+header { display: flex; flex-direction: column; gap: 14px; }
+section { display: flex; flex-direction: column; gap: 18px; }
+.section-head { display: flex; flex-direction: column; gap: 6px; }
+.section-head p { color: var(--muted); max-width: 62ch; }
+.mono { font-family: var(--font-mono); font-size: 0.9em; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--park-wash); padding: 1px 5px; border-radius: 4px; }
+
+.takeaways { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.takeaways li { padding-left: 16px; border-left: 2px solid var(--line); max-width: 66ch; }
+.takeaways b { font-weight: 600; }
+
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.stat .n { font-family: var(--font-mono); font-size: 1.45rem; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.stat .l { font-size: 0.86rem; color: var(--muted); line-height: 1.4; }
+
+.figure { background: var(--chart-surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 18px 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.figure-title { font-weight: 600; font-size: 0.98rem; }
+.figure-sub { font-size: 0.86rem; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.chart-wrap { position: relative; width: 100%; }
+.chart-wrap svg { display: block; width: 100%; height: auto; overflow: visible; }
+.axis-text { fill: var(--faint); font-family: var(--font-mono); font-size: 11px; }
+.note-text { fill: var(--muted); font-family: var(--font-body); font-size: 11px; }
+.grid { stroke: var(--chart-grid); stroke-width: 1; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 0.8rem; line-height: 1.35; padding: 7px 9px; border-radius: 6px; white-space: nowrap; transform: translate(-50%, -100%); opacity: 0; transition: opacity 0.12s; }
+.tip.on { opacity: 1; }
+details { font-size: 0.88rem; color: var(--muted); }
+details summary { cursor: pointer; }
+.table-scroll { overflow-x: auto; margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--ink); font-size: 0.82rem; }
+td.num, th.num { text-align: right; font-family: var(--font-mono); }
+
+.mech { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.mech article { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.mech .tag { font-family: var(--font-mono); font-size: 0.75rem; color: var(--faint); }
+.mech p { font-size: 0.93rem; color: var(--muted); }
+
+.doors { display: flex; flex-direction: column; gap: 10px; }
+.door { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.door > div { padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.door .what { border-right: 1px solid var(--line); }
+.door p { font-size: 0.9rem; color: var(--muted); }
+.chip { align-self: flex-start; font-family: var(--font-mono); font-size: 0.74rem; font-weight: 500; padding: 2px 8px; border-radius: 999px; letter-spacing: 0.02em; }
+.chip.harm { background: var(--harm-wash); color: var(--harm); }
+.chip.gate { background: var(--gate-wash); color: var(--gate); }
+.chip.row { background: var(--accent-wash); color: var(--accent); }
+.chip.park { background: var(--park-wash); color: var(--park); }
+@media (max-width: 560px) { .door { grid-template-columns: 1fr; } .door .what { border-right: 0; border-bottom: 1px solid var(--line); } }
+.rules { display: flex; flex-direction: column; gap: 12px; }
+.rules p { max-width: 66ch; }
+.digest { font-family: var(--font-mono); font-size: 0.82rem; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre; color: var(--ink); }
+.plain-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; max-width: 68ch; }
+
+.decision { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.decision .deciding { color: var(--muted); font-size: 0.95rem; }
+.options { display: flex; flex-direction: column; gap: 8px; border: 0; margin: 0; padding: 0; }
+.options legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.opt { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.opt input { margin-top: 4px; accent-color: var(--accent); }
+.opt .t { font-size: 0.93rem; }
+.opt .t b { font-weight: 600; }
+.opt.rec { border-color: var(--accent); background: var(--accent-wash); }
+.rec-tag { font-family: var(--font-mono); font-size: 0.72rem; color: var(--accent); margin-left: 6px; }
+.consequence { font-size: 0.88rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
+.ruling-bar { position: sticky; bottom: env(safe-area-inset-bottom, 0px); background: var(--ink); color: var(--bg); border-radius: 12px; padding: 12px 14px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.ruling-bar output { font-family: var(--font-mono); font-size: 0.85rem; min-width: 0; overflow-wrap: anywhere; }
+.ruling-bar button { font: inherit; font-weight: 600; font-size: 0.88rem; background: var(--bg); color: var(--ink); border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+
+.today { list-style: none; counter-reset: t; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.today li { counter-increment: t; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 14px 52px; position: relative; }
+.today li::before { content: counter(t); position: absolute; left: 16px; top: 13px; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-wash); color: var(--accent); font-family: var(--font-mono); font-size: 0.8rem; display: grid; place-items: center; }
+.today li p { font-size: 0.92rem; color: var(--muted); margin-top: 4px; }
+
+.sources { display: flex; flex-direction: column; gap: 10px; }
+.source { border-left: 2px solid var(--line); padding: 2px 0 2px 14px; display: flex; flex-direction: column; gap: 4px; max-width: 68ch; }
+.source q { font-style: italic; }
+.source .by { font-size: 0.84rem; color: var(--faint); }
+.source .verdict { font-size: 0.9rem; color: var(--muted); }
+
+.small { font-size: 0.86rem; color: var(--muted); }
+footer { border-top: 1px solid var(--line); padding-top: 18px; font-size: 0.85rem; color: var(--faint); display: flex; flex-direction: column; gap: 6px; }
+@media (prefers-reduced-motion: reduce) { .tip { transition: none; } }
+</style>
+
+<main class="page">
+  <header>
+    <div class="eyebrow">Workflow retro 4 · Oct 11, 2026 · <a href="https://linear.app/projectnyx/issue/CUL-1858">CUL-1858</a></div>
+    <h1>Dispatch found more work than it finished</h1>
+    <p class="dek">Engines v3, from dispatch's first run on 9/28 to the re-scope on 10/10: where the follow-ups came from, what they cost you, and a way to keep the flagging while only the findings that matter reach you.</p>
+  </header>
+
+  <section aria-labelledby="s-min">
+    <div class="section-head"><h2 id="s-min">In one minute</h2></div>
+    <ul class="takeaways">
+      <li><b>Dispatch did what its spec says, and its spec turns every finding into work.</b> The run order went from 47 rows to 85. From 10/5 to 10/9, 19 of 24 Engines merges were follow-up rows, and only 6 of the 28 follow-up rows that shipped were on the path to v3.0.</li>
+      <li><b>The scarce resource was your decisions, not session slots.</b> A traced follow-up row asked you for 3 to 7 typed decisions. Meanwhile the rulings that held the core aged 13 and 17 days.</li>
+      <li><b>You had built the valve; dispatch never read it.</b> "Follow-ups go to Wave 7 by default" lived only as prose on the project page. No child prompt carried it, and dispatch's offer of new issues reads page text, never milestones.</li>
+      <li><b>The triage ran backwards.</b> <a href="https://linear.app/projectnyx/issue/CUL-1438">CUL-1438</a>, a live false reassurance in the shipped Signal, has waited in Wave 7 since 9/30 while 22 off-path rows on mostly dark code shipped.</li>
+      <li><b>The wider workflow pays a fixed tax on every session.</b> A dispatched child loads about 37K tokens before it writes code, and about 3.5% of that is its own row. All six reviewers load the full CLAUDE.md, and each change is written up four times. Separately, <code>main</code> has no branch protection, though CLAUDE.md says it does.</li>
+      <li><b>The fix is a sort, not another queue.</b> Anything that could quiet a warning, leak or lose data is fixed now. A finding that blocks the goal becomes a row. Everything else parks and asks you nothing until pulled.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="s-what">
+    <div class="section-head">
+      <h2 id="s-what">What happened</h2>
+      <p>Measured from all 202 issues in Engines v3 and v3.1, 146 dispatch status updates, 74 merged PRs and 68 session records.</p>
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="n">47 → 85</span><span class="l">run-order rows, 9/28 to now; 29 of the 38 added came from follow-ups</span></div>
+      <div class="stat"><span class="n">19 of 24</span><span class="l">Engines merges on 10/5 to 10/9 were follow-up rows</span></div>
+      <div class="stat"><span class="n">6 of 28</span><span class="l">follow-up rows that shipped were on the v3.0 path</span></div>
+      <div class="stat"><span class="n">40 → 99</span><span class="l">open issues in the project; 151 born and 92 closed in 13 days</span></div>
+    </div>
+
+    <figure class="figure" style="margin:0">
+      <div>
+        <div class="figure-title">Merged Engines PRs per day, by kind of row</div>
+        <div class="figure-sub">The mix flipped after the cap went from 3 to 6. Lower panel: open issues in the project.</div>
+      </div>
+      <div class="legend" aria-hidden="true">
+        <span><i class="swatch" style="background:var(--chart-planned)"></i>Planned rows and other</span>
+        <span><i class="swatch" style="background:var(--chart-follow)"></i>Follow-up rows (filed mid-build)</span>
+      </div>
+      <div class="chart-wrap" id="chart" role="img" aria-label="Stacked columns of merged Engines PRs per day from September 26 to October 10. Planned rows dominate until October 3; from October 5 to 9, 19 of 24 merges are follow-up rows. Open issues rise from 40 to a peak of 102 on October 9, then 99."></div>
+      <details>
+        <summary>Show the numbers</summary>
+        <div class="table-scroll">
+          <table id="chart-table">
+            <thead><tr><th>Day</th><th class="num">Planned or other</th><th class="num">Follow-up rows</th><th class="num">Open issues</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </details>
+    </figure>
+  </section>
+
+  <section aria-labelledby="s-why">
+    <div class="section-head">
+      <h2 id="s-why">Why it happened</h2>
+      <p>Seven mechanisms. None of them is a child misbehaving: hand-launched sessions filed at about the same rate. Dispatch multiplied the sessions a filing rule ran under.</p>
+    </div>
+    <div class="mech">
+      <article><span class="tag">M1</span><h3>The add is mandated, and nothing offers "later"</h3><p>Every child files what it finds in the project, and dispatch offers each one back as a row until you type <code>add</code> or <code>skip</code>. You approved 35 additions one at a time and skipped 19 in one reply, once.</p></article>
+      <article><span class="tag">M2</span><h3>Your valve was prose</h3><p>The 10/9 "Wave 7 by default" rule lived only on the page. Children see only their row's build note, and dispatch's offer never reads milestones.</p></article>
+      <article><span class="tag">M3</span><h3>New slots went to what was ready</h3><p>The cap rose from 3 to 6 around 10/6. The core was held on your rulings, so the new capacity went to follow-ups: 24 of 27 launches from 10/8 to 10/10 were letter rows.</p></article>
+      <article><span class="tag">M4</span><h3>Each follow-up spends your decisions</h3><p>PR-27g took a ruling, <code>add</code>, <code>go</code>, a plan go, <code>apply 088</code> and <code>merge</code>, then filed the next link, added 12 minutes after its merge. Follow-ups filled the "waiting on you" limit (3 or 4 of 3) while W3 to W7 and D1 to D8 aged.</p></article>
+      <article><span class="tag">M5</span><h3>Stored decisions grew one stale path per PR</h3><p><code>may_wait</code> was briefed as two PRs plus the render, with a louder option B on the table. It took nine rows and six migration files, about a quarter of the children's asks of you.</p></article>
+      <article><span class="tag">M6</span><h3>Dark code got live-code rigor</h3><p>The PR-23 summary cascade hardened a path its own record called "inert today", while a live reassurance defect waited. The two-pass cap limits passes per PR, not which PRs run.</p></article>
+      <article><span class="tag">M7</span><h3>Done means absorbed the findings</h3><p>The old Done means included "Wave 7 drained", so every finding moved the finish line, and the progress line hid it because the denominator grew too.</p></article>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-sort">
+    <div class="section-head">
+      <h2 id="s-sort">The sort: flag everything, schedule only what blocks</h2>
+      <p>Each child tags a finding with the review's own words: QUIET if it can drop, soften or delay a warning; LOUD if it errs toward more warning. Untagged counts as QUIET. Then every finding goes through one of four doors.</p>
+    </div>
+    <div class="doors">
+      <div class="door">
+        <div class="what"><span class="chip harm">Live harm</span><h3>Could hurt an owner now</h3><p>QUIET, or it can leak or lose data, in code that runs for any account: a deployed function, an applied migration or policy, a key with anyone on its allowlist, or code waiting for the next cut. Code counts as live until proven dark.</p></div>
+        <div><h3>Fixed now</h3><p>Its own fix, launched from any project. If it needs your ruling, a stopgap ships first: the quieter output or the leaking path switched off. Clinical and privacy questions reach you at once.</p></div>
+      </div>
+      <div class="door">
+        <div class="what"><span class="chip gate">Dark gate</span><h3>The same, proven dark</h3><p>The dispatcher read every key it sits behind and found the allowlist empty in production, and no applied migration, trigger or policy is involved.</p></div>
+        <div><h3>Gates every go-live it sits behind</h3><p>A <code>blocks</code> relation and a <code>Gate:</code> label no prune can close. You decide it at the go-live: fix it, or cut the feature. Adding an account to the allowlist turns it into live harm.</p></div>
+      </div>
+      <div class="door">
+        <div class="what"><span class="chip row">Row</span><h3>Blocks the goal</h3><p>It stops a row on the Done means path from being correct, and says in one sentence what an owner would see.</p></div>
+        <div><h3>A proposed row</h3><p>Through a <code>blocks</code> relation to that row's issue. It waits for your typed <code>go</code> the first time.</p></div>
+      </div>
+      <div class="door">
+        <div class="what"><span class="chip park">Parked</span><h3>Anything else</h3><p>LOUD-only (even when false; your two-pass rule already lets it ship), polish, a hypothetical, a second-order guard, a process idea.</p></div>
+        <div><h3>Counted, not offered</h3><p><code>Backlog</code> in the project's <i>Found along the way</i> milestone, related to its source and never a sub-issue of a row. One line in the digest; one weekly sitting.</p></div>
+      </div>
+    </div>
+    <div class="rules">
+      <p><b>A ruling travels with its work.</b> A parked finding asks you nothing until it is pulled; its question then comes beside the proposed row, with the row's cost.</p>
+      <p><b>File the class, not the instance, and a forecast is a budget.</b> A ruled feature that reaches its forecast plus one row comes back to you before more is built, and so does any row that collects a third follow-up in seven days. No alarm holds a safety fix, and while a fork is re-posed the quieter output stays off.</p>
+      <p><b>Free slots stay free, and every row shows its price.</b> Off-path rows never launch on their own, each proposal says what it will ask of you, and when only off-path rows are ready the brief leads with the holds on the core.</p>
+      <p><b>Done means is fixed at kickoff</b>, names its rows, and never includes a findings pile. The progress line shows scope growth: planned, now, added this week.</p>
+    </div>
+    <div class="digest" aria-label="What a round's digest would say">Found since last run: 7 · 1 live fix (CUL-1746, main red) · 1 blocks PR-41 (proposed below)
+                         · 1 gate on en9's go-live · 4 parked (3 err loud, 1 polish)</div>
+    <div class="section-head" style="margin-top:6px"><h3>Replayed on Engines v3 (by hand, an estimate)</h3></div>
+    <ul class="plain-list">
+      <li>CUL-1438 is live harm on 9/30; its stopgap (no "improving" card while the drop could be a logging gap) ships while you rule.</li>
+      <li>The deferred EN-3 and EN-5 rows on PR-41's After list are unchanged: they block the go-live.</li>
+      <li>The <code>may_wait</code> findings gate en3's go-live instead of launching, and CUL-1611 comes back to you at its fourth row. Option B, the louder line, was available throughout.</li>
+      <li>The PR-23 family asks about the latch's design at its third follow-up, and its dark findings gate en9's go-live.</li>
+      <li>CUL-1741 parks, related to its source, so it never holds PR-41.</li>
+    </ul>
+    <p class="small">The design had two adversarial passes, the most your cap allows. Pass 1 caught an inverted LOUD/QUIET and live database code treated as dark; pass 2 found six more holes. All are closed in the text above. The build that implements it is clinical, so it is plan-gated and gets its own review on the code.</p>
+  </section>
+
+  <section aria-labelledby="s-wider">
+    <div class="section-head">
+      <h2 id="s-wider">The wider workflow: what every session pays</h2>
+      <p>From a read-only audit of the process files, git history since 9/20, and the 49 issues already in The workflow audit project, so nothing here re-proposes a ruled item.</p>
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="n">~37K</span><span class="l">tokens a dispatched child loads before code; ~67K if it follows the ritual's reads</span></div>
+      <div class="stat"><span class="n">270 B</span><span class="l">median size of the build note the row actually executes</span></div>
+      <div class="stat"><span class="n">593 lines</span><span class="l">CLAUDE.md, against Anthropic's target of under 200</span></div>
+      <div class="stat"><span class="n">13 of 295</span><span class="l">session records since 9/20 cited by name anywhere else</span></div>
+    </div>
+    <ul class="plain-list">
+      <li><b>Every reviewer loads everything.</b> None of the six subagents sets <code>omitClaudeMd</code>, including the vet-report cold read, whose definition requires zero build context. Adversarial review ran in 90 of 181 October sessions.</li>
+      <li><b>The guard moved the growth next door.</b> CLAUDE.md's byte guard held that file flat since 9/15 while about 190 KB of rules grew beside it: dispatch 14.9 to 72.2 KB, the groomer 18.5 to 61.5 KB.</li>
+      <li><b>The same story, four times:</b> the PR body, a session record, the outcome comment and the return block. 74 of 181 October records teach nothing.</li>
+      <li><b>Process share:</b> 34 of 302 merged PRs since 9/20 (11%) changed only workflow files, plus a hand port of each dispatch version into the operating kit.</li>
+      <li><b>Five contradictions</b> your existing rulings already settle: polling cadence, draft PRs (52 of 55 open PRs are drafts, the oldest from 6/12), device testing, Tier-2 doc edits, and the hand-ported kit. Filed as one cleanup issue; no decision needed.</li>
+      <li><b><code>main</code> has no branch protection.</b> CLAUDE.md says a ruleset blocks red merges. GitHub, asked with an admin token, returns no rulesets and <code>protected: false</code>. Retro 3 asked you to check on 10/5.</li>
+    </ul>
+    <p class="small"><b>Keep:</b> the 55 guards and merge-check, the claim and one sub-issue per PR, adversarial review under the two-pass cap, the production-write hook, and dispatch's scripted core.</p>
+  </section>
+
+  <section aria-labelledby="s-dec">
+    <div class="section-head">
+      <h2 id="s-dec">Decisions for you</h2>
+      <p>Each option you pick updates the ruling line at the bottom. Copy it and paste it back into the session.</p>
+    </div>
+
+    <article class="decision" data-d="D1">
+      <h3>D1 · Sort findings by what they can do</h3>
+      <p class="deciding">Deciding: whether every finding is offered as run-order work, or sorted so only findings that could hurt an owner or that block the goal ask for your attention now.</p>
+      <fieldset class="options"><legend>D1 options</legend>
+        <label class="opt rec"><input type="radio" name="D1" value="A" checked><span class="t"><b>A · The sort</b><span class="rec-tag">recommended</span><br>The four doors above. It is your 10/9 rule made mechanical, it reuses "gates are relations, not sentences", and it adds no queue for you to drain.</span></label>
+        <label class="opt"><input type="radio" name="D1" value="B"><span class="t"><b>B · Linear's Triage inbox</b><br>File every finding into Triage to accept, decline or snooze. Native and phone-friendly, but a second inbox where every finding still asks you something.</span></label>
+        <label class="opt"><input type="radio" name="D1" value="C"><span class="t"><b>C · Keep add and skip, add a "later" verb</b><br>Cheapest to build. Every finding still costs you a decision.</span></label>
+      </fieldset>
+      <p class="consequence">Consequence: A changes dispatch's steps 1, 5, 6 and 8, moves the no-row selection into the tested script, files findings in <code>Backlog</code> rather than <code>Todo</code>, and adds a <code>Done means (rows)</code> line to the page format. It narrows one clause of the <code>auto</code> ruling: an off-path row can no longer be <code>auto</code>.</p>
+    </article>
+
+    <article class="decision" data-d="D2">
+      <h3>D2 · A ruling travels with its work</h3>
+      <p class="deciding">Deciding: whether a parked finding asks for your ruling when it is filed, or only when it is pulled into a run order.</p>
+      <fieldset class="options"><legend>D2 options</legend>
+        <label class="opt rec"><input type="radio" name="D2" value="A" checked><span class="t"><b>A · Only when pulled</b><span class="rec-tag">recommended</span><br>Live harm still asks at once, and dark gates ask at their go-live. The children drew 14 decision issues and about 31 mid-build rulings; a ruling on work that may never be built goes stale (CUL-1663 carried two conflicting rulings 8 seconds apart).</span></label>
+        <label class="opt"><input type="radio" name="D2" value="B"><span class="t"><b>B · As today</b><br>Every clinical or privacy finding reaches your queue when it is filed.</span></label>
+      </fieldset>
+      <p class="consequence">Consequence: edits to <code>/wrap</code> step 4 and CLAUDE.md's backlog protocol; fewer arrivals in your queue (87 open against a cap of 30). Nothing leaves the never-list.</p>
+    </article>
+
+    <article class="decision" data-d="D3">
+      <h3>D3 · A forecast is a budget</h3>
+      <p class="deciding">Deciding: whether a ruled feature that outgrows its forecast comes back to you before more rows are built.</p>
+      <fieldset class="options"><legend>D3 options</legend>
+        <label class="opt rec"><input type="radio" name="D3" value="A" checked><span class="t"><b>A · Re-pose at forecast + 1</b><span class="rec-tag">recommended</span><br>Briefs that commit to building state a forecast in rows; work with no forecast trips the alarm at its third follow-up in seven days; children file a class once. <code>may_wait</code> took nine rows against a forecast of three.</span></label>
+        <label class="opt"><input type="radio" name="D3" value="B"><span class="t"><b>B · Judgment</b><br>Each new link is weighed on its own, as now.</span></label>
+      </fieldset>
+      <p class="consequence">Consequence: a <code>Forecast:</code> line in the decision-brief shape, a counter in the dispatch script, one line in the child prompt.</p>
+    </article>
+
+    <article class="decision" data-d="D4">
+      <h3>D4 · Freeze the process once this lands</h3>
+      <p class="deciding">Deciding: what process work is allowed after the build from this retro merges.</p>
+      <fieldset class="options"><legend>D4 options</legend>
+        <label class="opt rec"><input type="radio" name="D4" value="A" checked><span class="t"><b>A · Two-week freeze, then weekly batches</b><span class="rec-tag">recommended</span><br>Bug fixes only in dispatch, /wrap, the steward and the groomer for two weeks, then a short measured review, then process edits in one PR a week. Dispatch went from 15 KB to 72 KB in 13 days, and 11% of merged PRs were workflow-only.</span></label>
+        <label class="opt"><input type="radio" name="D4" value="B"><span class="t"><b>B · Freeze dispatch only</b></span></label>
+        <label class="opt"><input type="radio" name="D4" value="C"><span class="t"><b>C · Keep iterating</b><br>As issues appear.</span></label>
+      </fieldset>
+      <p class="consequence">Consequence: the six open dispatch issues are sorted once; genuine bugs proceed. CLAUDE.md stays outside the weekly batch, since Tier 1 updates it the moment a decision is made.</p>
+    </article>
+
+    <article class="decision" data-d="D5">
+      <h3>D5 · Split CLAUDE.md by when it is needed</h3>
+      <p class="deciding">Deciding: whether CLAUDE.md keeps every rule always loaded, or keeps what every session needs while each convention moves next to the code it governs. This revisits Tier 1's 9/12 rule that rules live in CLAUDE.md; path-scoped rules still load whenever their files are touched, and the guards still fail the build.</p>
+      <fieldset class="options"><legend>D5 options</legend>
+        <label class="opt rec"><input type="radio" name="D5" value="A" checked><span class="t"><b>A · A 45 KB core, conventions path-scoped</b><span class="rec-tag">recommended</span><br>Hard constraints, safety invariants, the never-list, commands and pointers stay. Conventions move to <code>.claude/rules/</code>; dispatched rows skip the "every session" reads; the byte ratchet covers <code>.claude/**/*.md</code> too. About 22K tokens less at every session start and reviewer call.</span></label>
+        <label class="opt"><input type="radio" name="D5" value="B"><span class="t"><b>B · As today</b><br>Extend the ratchet to <code>.claude/**/*.md</code> only.</span></label>
+      </fieldset>
+      <p class="consequence">Consequence: one build session, its own PR. Risk: an unguarded convention not loading when needed; the 15 guarded ones still fail CI.</p>
+    </article>
+
+    <article class="decision" data-d="D6">
+      <h3>D6 · Reviewers start cold</h3>
+      <p class="deciding">Deciding: whether the review subagents load the full CLAUDE.md.</p>
+      <fieldset class="options"><legend>D6 options</legend>
+        <label class="opt rec"><input type="radio" name="D6" value="A" checked><span class="t"><b>A · Cold where the review is meant to be</b><span class="rec-tag">recommended</span><br><code>omitClaudeMd</code> on the vet-report cold read, the product walk-through and the adversarial reviewer, with the safety invariants and LOUD/QUIET written into their own files. The code and RLS reviewers keep CLAUDE.md, since house rules are what they check. About 34K tokens less per call.</span></label>
+        <label class="opt"><input type="radio" name="D6" value="B"><span class="t"><b>B · As today</b></span></label>
+      </fieldset>
+      <p class="consequence">Consequence: three agent-file edits, after confirming the installed CLI supports the field.</p>
+    </article>
+
+    <article class="decision" data-d="D7">
+      <h3>D7 · One write-up per PR</h3>
+      <p class="deciding">Deciding: how many places a dispatched child writes its story.</p>
+      <fieldset class="options"><legend>D7 options</legend>
+        <label class="opt rec"><input type="radio" name="D7" value="A" checked><span class="t"><b>A · The PR body is the record</b><span class="rec-tag">recommended</span><br>A five-line DoD in the PR body; the Linear comment releases the claim with a link and the residual; a session record only for teach and discovery rows; steps machinery already does are dropped.</span></label>
+        <label class="opt"><input type="radio" name="D7" value="B"><span class="t"><b>B · As today</b></span></label>
+      </fieldset>
+      <p class="consequence">Consequence: narrows <code>/wrap --dispatched</code> (CUL-1505). The learning ledger is unaffected: a teach row still writes its record.</p>
+    </article>
+
+    <div class="ruling-bar">
+      <output id="ruling" for="D1 D2 D3 D4 D5 D6 D7">Retro 4 rulings: D1 A · D2 A · D3 A · D4 A · D5 A · D6 A · D7 A</output>
+      <button type="button" id="copy">Copy ruling</button>
+    </div>
+  </section>
+
+  <section aria-labelledby="s-today">
+    <div class="section-head">
+      <h2 id="s-today">Do today</h2>
+      <p>Each needs only your yes, or a minute. The first is a safety call; the next two unblock your v3.0 path; the last makes a safety net real.</p>
+    </div>
+    <ol class="today">
+      <li><b>Pull <a href="https://linear.app/projectnyx/issue/CUL-1438">CUL-1438</a> as a live fix.</b><p>The shipped Signal can show an "improving" card when an owner stops logging vomits but keeps logging meals: 1 in 3 synthetic pets in that scenario, measured on the flag-off engine. It is High, unlabelled, and parked in v3.1's Wave 7.</p></li>
+      <li><b>Free PR-41 from a parked finding.</b><p><a href="https://linear.app/projectnyx/issue/CUL-1741">CUL-1741</a>, a v3.1 finding that errs loud, is still a child of <a href="https://linear.app/projectnyx/issue/CUL-1432">CUL-1432</a>, which blocks PR-41 and cannot close while it is open. Unparent it, then close CUL-1432.</p></li>
+      <li><b>Point PR-41 at the real device check.</b><p>PR-41's After cell names <a href="https://linear.app/projectnyx/issue/CUL-1433">CUL-1433</a>, now a duplicate of <a href="https://linear.app/projectnyx/issue/CUL-1482">CUL-1482</a>. The planner clears only <code>Done</code> issues, so PR-41 would stay held forever. Replace it in the cell.</p></li>
+      <li><b>Close <a href="https://linear.app/projectnyx/issue/CUL-1752">CUL-1752</a> as a duplicate</b><p>of <a href="https://linear.app/projectnyx/issue/CUL-1754">CUL-1754</a>, which shipped the same stamp on 10/10.</p></li>
+      <li><b>Turn on a ruleset for <code>main</code>.</b><p>In Settings → Rules: require a pull request and the two required checks (App typecheck and jest, Edge Functions deno test), block force pushes and deletion, and leave the bypass list empty. Then CLAUDE.md's description of it becomes true.</p></li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="s-others">
+    <div class="section-head">
+      <h2 id="s-others">What others do</h2>
+      <p>Every quote re-opened on 10/11 and checked against its page.</p>
+    </div>
+    <div class="sources">
+      <div class="source"><q>If input grows faster than throughput, you have an accumulating failure.</q><span class="by"><a href="https://lucumr.pocoo.org/2026/2/13/the-final-bottleneck/">Armin Ronacher, The Final Bottleneck</a>, Feb 13, 2026</span><span class="verdict">The diagnosis in one line. His remedy is to throttle input; the sort throttles the inflow at the run order's door.</span></div>
+      <div class="source"><q>We eliminated the option of sending bugs to the backlog.</q><span class="by"><a href="https://linear.app/now/zero-bugs-policy">Linear, Zero-bugs policy</a>, Sep 24, 2025</span><span class="verdict">Borrow the forcing function: the sort makes the fix-now call at filing time. Parked items still get a sitting and a decay.</span></div>
+      <div class="source"><q>A reviewer prompted to find gaps will usually report some, even when the work is sound … Chasing every finding leads to over-engineering.</q><span class="by"><a href="https://code.claude.com/docs/en/best-practices">Anthropic, Claude Code best practices</a></span><span class="verdict">The generator behind M5 and M6, and why the review's LOUD and QUIET tags decide the door rather than its volume.</span></div>
+      <div class="source"><q>After the first review, suppress new nits and post Important findings only.</q><span class="by"><a href="https://code.claude.com/docs/en/code-review">Anthropic, Code Review docs</a></span><span class="verdict">Borrow for the second pass: your cap limits passes; this limits what the second pass may raise.</span></div>
+      <div class="source"><q>Inactivity turned out to be a poor stand-in for relevance.</q><span class="by"><a href="https://nextjs.org/blog/how-we-closed-1500-github-issues">Next.js, How we closed 1,500 GitHub issues in one month</a>, Sep 4, 2026</span><span class="verdict">Borrow for the weekly sitting: an agent researches a close queue, a person skims it, anyone can reopen. Age decay stays the backstop.</span></div>
+      <div class="source"><q>The cap only works if it stops dispatch, not pull request creation.</q><span class="by"><a href="https://developertoolkit.ai/en/teams/review-queue/">Michał Jaskólski, Running the review queue when agents open the PRs</a>, Sep 26, 2026</span><span class="verdict">Borrow the principle: the cap that matters counts your pending decisions, not sessions.</span></div>
+      <div class="source"><q>Whenever I get more than about 200 issues I start thinking about cleaning up, and I rarely let it go beyond 500.</q><span class="by"><a href="https://drss.io/reader/npub1na2ppcvpx7m7dg4d2rqelpq4xdj9z40cxu3avh4qcdq8dtupdcmqahmfge/Beads-Best-Practices">Steve Yegge, Beads Best Practices</a> (via a mirror), Nov 24, 2025</span><span class="verdict">The counterpoint, and it agrees: filing everything works when issues are cheap memory, pruned hard. Here each became a candidate row and a decision of yours.</span></div>
+      <div class="source"><q>Multi-agent systems typically consume 3 to 10 times more tokens than single-agent approaches for equivalent tasks.</q><span class="by"><a href="https://www.claude.com/blog/building-multi-agent-systems-when-and-how-to-use-them">Anthropic, Building multi-agent systems</a>, Jan 23, 2026</span><span class="verdict">Parallelism pays when work is independent. Engines' chains were sequential by construction: each row filed the next.</span></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Canonical copy: <span class="mono">docs/workflow-retro-2026-10.md</span> in the repo, with the method, every count's source and the caveats. The repo file wins where the two differ.</span>
+    <span>Draft PR <a href="https://github.com/danieljmarkii/project-nyx/pull/1190">#1190</a> · Prior retros: workflow 2026-07, workflow 2026-09, dispatch 2026-10.</span>
+  </footer>
+</main>
+
+<script>
+(function () {
+  var data = [
+    ["Sep 26", 8, 0, 40], ["Sep 27", 4, 0, 40], ["Sep 28", 10, 0, 49], ["Sep 29", 10, 1, 68], ["Sep 30", 6, 0, 73],
+    ["Oct 1", 0, 0, 77], ["Oct 2", 3, 0, 79], ["Oct 3", 4, 0, 88], ["Oct 4", 0, 0, 88], ["Oct 5", 2, 3, 92],
+    ["Oct 6", 0, 2, 96], ["Oct 7", 2, 2, 96], ["Oct 8", 1, 8, 98], ["Oct 9", 0, 4, 102], ["Oct 10", 8, 8, 99]
+  ];
+  var notes = { "Oct 6": "cap 3 → 6", "Oct 9": "Wave 7 default", "Oct 10": "re-scope" };
+  var NS = "http://www.w3.org/2000/svg";
+  var W = 700, padL = 30, padR = 12, top1 = 26, h1 = 170, gapPanels = 34, h2 = 70, bottom = 22;
+  var H = top1 + h1 + gapPanels + h2 + bottom;
+  var maxBar = 16, openMin = 0, openMax = 110;
+  var band = (W - padL - padR) / data.length, barW = Math.min(24, band * 0.62);
+  function el(name, attrs, text) { var e = document.createElementNS(NS, name); for (var k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; }
+  var svg = el("svg", { viewBox: "0 0 " + W + " " + H, "aria-hidden": "true" });
+  var y1 = function (v) { return top1 + h1 - (v / maxBar) * h1; };
+  [0, 4, 8, 12, 16].forEach(function (t) {
+    svg.appendChild(el("line", { x1: padL, x2: W - padR, y1: y1(t), y2: y1(t), class: "grid" }));
+    svg.appendChild(el("text", { x: padL - 8, y: y1(t) + 4, "text-anchor": "end", class: "axis-text" }, String(t)));
+  });
+  var top2 = top1 + h1 + gapPanels;
+  var y2 = function (v) { return top2 + h2 - ((v - openMin) / (openMax - openMin)) * h2; };
+  [0, 50, 100].forEach(function (t) {
+    svg.appendChild(el("line", { x1: padL, x2: W - padR, y1: y2(t), y2: y2(t), class: "grid" }));
+    svg.appendChild(el("text", { x: padL - 8, y: y2(t) + 4, "text-anchor": "end", class: "axis-text" }, String(t)));
+  });
+  svg.appendChild(el("text", { x: padL, y: top2 - 10, class: "note-text" }, "Open issues in the project"));
+  function colPath(x, yTop, yBot, w, roundTop) {
+    var r = roundTop ? Math.min(4, (yBot - yTop)) : 0;
+    if (yBot - yTop <= 0) return "";
+    return "M" + x + "," + yBot + " L" + x + "," + (yTop + r) + (r ? " Q" + x + "," + yTop + " " + (x + r) + "," + yTop : "") +
+      " L" + (x + w - r) + "," + yTop + (r ? " Q" + (x + w) + "," + yTop + " " + (x + w) + "," + (yTop + r) : "") + " L" + (x + w) + "," + yBot + " Z";
+  }
+  var pts = [];
+  var hits = [];
+  data.forEach(function (d, i) {
+    var cx = padL + band * i + band / 2, x = cx - barW / 2;
+    var p = d[1], f = d[2], o = d[3];
+    var yP = y1(p), yF = y1(p + f);
+    if (p > 0) svg.appendChild(el("path", { d: colPath(x, yP, y1(0), barW, f === 0), style: "fill:var(--chart-planned)" }));
+    if (f > 0) svg.appendChild(el("path", { d: colPath(x, yF, (p > 0 ? yP - 2 : y1(0)), barW, true), style: "fill:var(--chart-follow)" }));
+    if (notes[d[0]]) {
+      svg.appendChild(el("text", { x: cx, y: Math.min(yF, y1(0)) - 8, "text-anchor": "middle", class: "note-text" }, notes[d[0]]));
+    }
+    if (i % 2 === 0 || i === data.length - 1) svg.appendChild(el("text", { x: cx, y: H - 4, "text-anchor": "middle", class: "axis-text" }, d[0]));
+    pts.push([cx, y2(o)]);
+    hits.push({ cx: cx, d: d });
+  });
+  svg.appendChild(el("polyline", { points: pts.map(function (q) { return q.join(","); }).join(" "), fill: "none", style: "stroke:var(--ink);stroke-width:2;stroke-linejoin:round;stroke-linecap:round" }));
+  var last = pts[pts.length - 1], peak = pts[13];
+  svg.appendChild(el("circle", { cx: peak[0], cy: peak[1], r: 4, style: "fill:var(--ink);stroke:var(--chart-surface);stroke-width:2" }));
+  svg.appendChild(el("text", { x: peak[0], y: peak[1] - 9, "text-anchor": "middle", class: "note-text" }, "102"));
+  svg.appendChild(el("circle", { cx: last[0], cy: last[1], r: 4, style: "fill:var(--ink);stroke:var(--chart-surface);stroke-width:2" }));
+  hits.forEach(function (h) {
+    var r = el("rect", { x: h.cx - band / 2, y: top1, width: band, height: H - top1 - bottom, fill: "transparent" });
+    r.dataset.i = hits.indexOf(h);
+    svg.appendChild(r);
+  });
+  var wrap = document.getElementById("chart");
+  wrap.appendChild(svg);
+  var tip = document.createElement("div"); tip.className = "tip"; wrap.appendChild(tip);
+  svg.addEventListener("pointermove", function (ev) {
+    var t = ev.target; if (!t.dataset || t.dataset.i == null) { tip.classList.remove("on"); return; }
+    var d = data[+t.dataset.i];
+    tip.textContent = d[0] + ": " + (d[1] + d[2]) + " merged · " + d[2] + " follow-up · " + d[1] + " planned or other · " + d[3] + " open";
+    var box = wrap.getBoundingClientRect(), cx = hits[+t.dataset.i].cx * (box.width / W);
+    tip.style.left = Math.max(80, Math.min(box.width - 80, cx)) + "px";
+    tip.style.top = (y1(d[1] + d[2]) * (box.width / W) - 6) + "px";
+    tip.classList.add("on");
+  });
+  svg.addEventListener("pointerleave", function () { tip.classList.remove("on"); });
+  var tb = document.querySelector("#chart-table tbody");
+  data.forEach(function (d) {
+    var tr = document.createElement("tr");
+    tr.innerHTML = "<td>" + d[0] + "</td><td class='num'>" + d[1] + "</td><td class='num'>" + d[2] + "</td><td class='num'>" + d[3] + "</td>";
+    tb.appendChild(tr);
+  });
+
+  var out = document.getElementById("ruling");
+  function compose() {
+    var parts = [];
+    document.querySelectorAll(".decision").forEach(function (dec) {
+      var name = dec.dataset.d, sel = dec.querySelector("input[name='" + name + "']:checked");
+      if (sel) parts.push(name + " " + sel.value);
+    });
+    out.textContent = "Retro 4 rulings: " + parts.join(" · ");
+  }
+  document.addEventListener("change", function (e) { if (e.target.matches && e.target.matches(".decision input[type=radio]")) compose(); });
+  compose();
+  document.getElementById("copy").addEventListener("click", function () {
+    var text = out.textContent, btn = this;
+    function done(ok) { btn.textContent = ok ? "Copied" : "Select and copy"; setTimeout(function () { btn.textContent = "Copy ruling"; }, 1800); }
+    function fallback() { var r = document.createRange(); r.selectNodeContents(out); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); done(false); }
+    try { navigator.clipboard.writeText(text).then(function () { done(true); }, fallback); } catch (e) { fallback(); }
+  });
+})();
+</script>
