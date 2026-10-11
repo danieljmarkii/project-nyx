@@ -862,8 +862,13 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
  * are ≤14; every other above that, so a long window never crowds the axis (never a silent drop —
  * the range box + caption still carry the exact bounds).
  */
+/** Every other week past 14 — shared so the off-diet chart's day counts sit under exactly the dates drawn. */
+function weekAxisStride(n: number): number {
+  return n > 14 ? 2 : 1
+}
+
 function weekAxisLabels(bucketStartDates: string[], L: number, slot: number, n: number, BASE: number): string {
-  const stride = n > 14 ? 2 : 1
+  const stride = weekAxisStride(n)
   const parts: string[] = []
   for (let i = 0; i < n; i++) {
     if (i % stride !== 0) continue
@@ -1065,8 +1070,12 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
   // The day count under every in-scope column (CUL-1779, cold read): a `0` read without its coverage
   // looked identical at 4 of 7 days and at 7 of 7, and a bar on a thinly logged week read as low
   // exposure. Every column now carries the meal-days it rests on.
+  // Thinned on the date labels' stride (adversarial pass 2): on a long window every column's count
+  // collided, and "under each date" was true of only half of them. The floor, not the count, is what
+  // keeps a thin week from printing a zero, so a thinned count drops no protection.
+  const countStride = weekAxisStride(n)
   for (let i = 0; i < n; i++) {
-    if (offDietWeek(t, i) === 'outside') continue
+    if (offDietWeek(t, i) === 'outside' || i % countStride !== 0) continue
     parts.push(`<text class="xl dc num" x="${centerX(i).toFixed(1)}" y="${BASE + 28}" text-anchor="middle">${offDietDayCount(t, i)}</text>`)
   }
   // The alt text draws the same distinctions the bars do, and carries the same day counts — a week
@@ -1352,7 +1361,7 @@ function proteinTimelineSection(snap: ReportSnapshot): string {
         } &mdash; too few to read as a week without off-diet food.</div>`
     : ''
   const outsideNote = weeks.includes('outside')
-    ? `<div class="subnote"><em>pre-trial</em> and <em>post-trial</em> columns fall outside the trial (${scopeSpan}) and are not counted here: this chart counts only feedings inside it. Treats logged outside the trial are listed in appendix B.</div>`
+    ? `<div class="subnote"><em>pre-trial</em> and <em>post-trial</em> columns fall outside the trial (${scopeSpan}) and are not counted here: this chart counts only feedings inside it. Treats logged outside the trial are counted in appendix B&rsquo;s treat total, which covers the whole window.</div>`
     : ''
   return `
   <div class="sec">

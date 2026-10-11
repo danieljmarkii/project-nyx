@@ -3329,6 +3329,14 @@ Deno.test('CUL-748 item 4 — a fully logged three-day trailing part-week never 
   assert.ok(html.includes(`including a part-week shorter than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} days`), 'the note covers a fully logged stub (cold read r2)')
 })
 
+Deno.test('CUL-1779 — on a long window the day counts follow the date labels\' stride, so they never collide', () => {
+  const n = 20 // > 14: dates are drawn every other week
+  const t = offDietTimeline(new Array(n).fill(7), Array.from({ length: n }, (_, i) => [i === 0 ? 1 : 0]))
+  const svg = offDietSvg(renderReport(base({ proteinTimeline: t })))
+  assert.equal((svg.match(/ d<\/text>/g) ?? []).length, n / 2, 'one count per drawn date')
+  assert.equal((svg.match(/class="nub"/g) ?? []).length, n - 1, 'every clean week still draws its measured 0')
+})
+
 Deno.test('CUL-1779 — when page 1 withholds the clean-record statement, no week prints a measured 0', () => {
   // A cat refusing the trial diet every day: the meals are logged (7/7), nothing off-diet, and the
   // trial module withholds the clean read. The chart must not say per week what page 1 refuses to say.
