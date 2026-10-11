@@ -606,6 +606,63 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
     expect(input.exposures?.mayStateRecordClean).toBe(false);
   });
 
+  // CUL-1780 — Home's bare date waits for `supports`; the full card's "all N matched"
+  // keeps `partially_supports` because it prints its ratio. Driven through the real
+  // loader and `computeTrialFacts`, with the boundary derived from the shipped constant.
+  describe('the implied-clean gate (CUL-1780)', () => {
+    const { COVERAGE_SUPPORTS } = jest.requireActual('./dietTrial') as typeof import('./dietTrial');
+    // Day 1 is always logged, so coverage never clips an untracked head.
+    const loggedOn = (days: number[]) =>
+      days.map((d) => ({ id: `e${d}`, at: new Date(2026, 6, 3 + d, 8).toISOString(), food: 'f1' }));
+    const firstN = (n: number) => Array.from({ length: n }, (_, i) => i);
+
+    it('at the supports boundary, both gates pass', async () => {
+      const elapsed = 10;
+      const atBar = Math.ceil(COVERAGE_SUPPORTS * elapsed);
+      const input = await load(loggedOn(firstN(atBar)), new Date(2026, 6, 2 + elapsed, 20).getTime());
+      expect(input.coverage).toEqual({ daysLogged: atBar, daysElapsed: elapsed });
+      expect(input.exposures?.mayStateRecordClean).toBe(true);
+      expect(input.exposures?.mayImplyRecordClean).toBe(true);
+    });
+
+    it('one day under the bar, the stated claim stands and the implied one goes', async () => {
+      const elapsed = 10;
+      const underBar = Math.ceil(COVERAGE_SUPPORTS * elapsed) - 1;
+      const input = await load(loggedOn(firstN(underBar)), new Date(2026, 6, 2 + elapsed, 20).getTime());
+      expect(input.coverage).toEqual({ daysLogged: underBar, daysElapsed: elapsed });
+      expect(input.exposures?.mayStateRecordClean).toBe(true);
+      expect(input.exposures?.mayImplyRecordClean).toBe(false);
+    });
+
+    // The adversarial pass's head clip: first log on day 40 of 56, then eight days
+    // logged. Coverage reads 8 of 8 by design; the bare date must not.
+    it('a late first log does not lift a thin record to supports', async () => {
+      const input = await load(loggedOn([40, 41, 42, 43, 44, 45, 46, 47]), new Date(2026, 6, 3 + 47, 20).getTime());
+      expect(input.coverage).toEqual({ daysLogged: 8, daysElapsed: 8 });
+      expect(input.untrackedDaysBeforeFirstLog).toBe(40);
+      expect(input.exposures?.mayStateRecordClean).toBe(true);
+      expect(input.exposures?.mayImplyRecordClean).toBe(false);
+    });
+
+    // The ordinary clinic hand-off: two days before the first log, then every day.
+    it('a short hand-off head still clears the bar', async () => {
+      const days = Array.from({ length: 20 }, (_, i) => i + 2);
+      const input = await load(loggedOn(days), new Date(2026, 6, 3 + 21, 20).getTime());
+      expect(input.untrackedDaysBeforeFirstLog).toBe(2);
+      expect(input.exposures?.mayImplyRecordClean).toBe(true);
+    });
+
+    // The issue's counterexample: 30 of 56 days logged, nothing off-diet.
+    it('30 of 56 days logged never implies a clean record', async () => {
+      const days = firstN(56).filter((d) => d % 2 === 0).concat([1, 3]).slice(0, 30);
+      const input = await load(loggedOn(days), new Date(2026, 7, 27, 20).getTime());
+      expect(input.coverage).toEqual({ daysLogged: 30, daysElapsed: 56 });
+      expect(input.exposures?.offDiet).toBe(0);
+      expect(input.exposures?.mayStateRecordClean).toBe(true);
+      expect(input.exposures?.mayImplyRecordClean).toBe(false);
+    });
+  });
+
   it('withholds nothing on that account when there is no bowl', async () => {
     const input = await load(
       [{ id: 'e1', at: new Date(2026, 6, 5, 8).toISOString(), food: 'f1' }],

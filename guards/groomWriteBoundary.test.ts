@@ -129,6 +129,8 @@ const REPORT = [
   '15 · board count',
   '16 · prose target, closed target, `GA gate` with nothing named',
   '17 · orphaned follow-ups',
+  // CUL-1870 (retro 4 D1): the weekly parked sitting is report-only; the PM sits it.
+  '18 · the parked sitting',
 ];
 
 describe('backlog-groomer write boundary (CUL-1617)', () => {

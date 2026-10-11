@@ -1650,6 +1650,23 @@ export interface TrialFacts {
    * coverage.
    */
   coveredDayIndices: number[];
+  /**
+   * CUL-1855 — the logged days AFTER the coverage window closed, on an un-ended trial
+   * extended past its designed window (the B-422 tail clip bit:
+   * `range.coverageClippedAtWindowEnd`). `[]` everywhere else.
+   *
+   * A DRAWING FACT, NEVER A COUNT. These days are outside `coverage` by design
+   * (CUL-1038, TE-6: no owner action moves the printed ratio), and nothing may add
+   * them to it, compare them with it, or speak a ratio over them beside it. The one
+   * reader is the trial screen's ledger, which paints the extension weeks below a
+   * rule saying the count stops there (PM ruling on CUL-1855, option A).
+   *
+   * Same membership as `coveredDayIndices` (non-treat feedings, `intakeRating`
+   * unread), drawn from the same `loggedDays` walk, so the two sets cannot disagree
+   * about what a logged day is, only about which window holds it. Bounded to
+   * `(range.endDayIndex, evidenceEnd]`, ascending.
+   */
+  extensionCoveredDayIndices: number[];
   exposures: TrialExposureSummary;
   oralRoute: OralRouteExposure[];
   contamination: ContaminationFact[];
@@ -2293,6 +2310,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     exposureRange: null,
     coverage: null,
     coveredDayIndices: [],
+    extensionCoveredDayIndices: [],
     exposures: empty,
     oralRoute: [],
     contamination: trialContamination(ctx),
@@ -2941,6 +2959,10 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // by construction (line above), so the widget strip and the ratio can never
     // disagree about which days were covered.
     coveredDayIndices: [...coveredDays].sort((a, b) => a - b),
+    // CUL-1855: the days past the tail clip, from the same walk, never counted.
+    extensionCoveredDayIndices: range.coverageClippedAtWindowEnd
+      ? [...new Set(loggedDays.filter((d) => d > endDayIndex && d <= evidenceEnd))].sort((a, b) => a - b)
+      : [],
     exposures: {
       totalFeedings,
       offDiet,
