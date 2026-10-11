@@ -221,3 +221,40 @@ describe('CUL-94 — a refusal day never dilutes the normal the next day is judg
     expect(verdict('cat', thin, `${day(11)}T20:00:00-04:00`, NY)).toEqual(['consecutive_low']);
   });
 });
+
+describe('CUL-94 — the buffer day holds the onset: a good morning, then the refusals', () => {
+  // Adversarial pass 2. Each case fired before CUL-94 (its 24h cutoff fell inside the day by
+  // accident) and went quiet under a whole-day reading of it.
+  it.each([0, 1, 2, 3])('a marginal normal: an evening refusal never quiets the cat (%i refusals)', (k) => {
+    const ratings: IntakeRating[] = ['all', 'some', 'most', 'most', 'all', 'some', 'most', 'some'];
+    const meals: M[] = ratings.map((rating, i) => ({ iso: `${day(i + 1)}T08:00:00+00:00`, rating }));
+    meals.push({ iso: `${day(10)}T07:00:00+00:00`, rating: 'all' }, { iso: `${day(10)}T12:00:00+00:00`, rating: 'all' });
+    for (let i = 0; i < k; i++) meals.push({ iso: `${day(10)}T${20 + i}:00:00+00:00`, rating: 'refused' });
+    meals.push({ iso: `${day(11)}T08:00:00+00:00`, rating: 'some' });
+    expect(verdict('cat', meals, `${day(11)}T19:00:00+00:00`, 'UTC')).toContain('consecutive_low');
+  });
+
+  it.each([0, 1, 2, 3, 4])('a thin record, first week of logging (%i refusals)', (n) => {
+    const meals: M[] = [6, 7, 8].map((d) => ({ iso: `${day(d)}T08:00:00+00:00`, rating: 'all' as const }));
+    meals.push({ iso: `${day(10)}T07:00:00+00:00`, rating: 'all' });
+    for (let i = 0; i < n; i++) meals.push({ iso: `${day(10)}T${20 + i}:00:00+00:00`, rating: 'refused' });
+    meals.push({ iso: `${day(11)}T08:00:00+00:00`, rating: 'some' });
+    expect(verdict('cat', meals, `${day(11)}T19:00:00+00:00`, 'UTC')).toContain('consecutive_low');
+  });
+
+  it('a meal ageing out of the 14-day window at a clock hour does not drop the card (case 4)', () => {
+    // The raw window edge stays (see detection.ts); the buffer-day cuts carry this case.
+    const meals: M[] = [
+      { iso: '2026-09-27T20:00:00+00:00', rating: 'all' },
+      { iso: '2026-09-28T08:00:00+00:00', rating: 'all' },
+      { iso: '2026-09-29T08:00:00+00:00', rating: 'all' },
+      { iso: '2026-09-30T08:00:00+00:00', rating: 'all' },
+      { iso: `${day(10)}T20:00:00+00:00`, rating: 'refused' },
+      { iso: `${day(10)}T22:00:00+00:00`, rating: 'refused' },
+      { iso: `${day(11)}T08:00:00+00:00`, rating: 'some' },
+    ];
+    for (const at of ['19:00', '21:00', '23:30']) {
+      expect(verdict('cat', meals, `${day(11)}T${at}:00+00:00`, 'UTC')).toContain('consecutive_low');
+    }
+  });
+});

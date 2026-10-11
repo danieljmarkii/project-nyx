@@ -25,6 +25,7 @@ import { detectIntakeDecline as phoneDetect } from './analytics';
 import type { AnalyticsMeal, IntakeDeclineFlag } from './analytics';
 import { detectIntakeDecline as serverDetect } from '../supabase/functions/generate-signal/detection';
 import { parseFreeFedIntakeSpans, type FreeFedIntakeArrangement } from './freeFedIntake';
+import { localDayIndex } from './utils';
 import type {
   FeedingArrangement,
   IntakeDeclineFinding,
@@ -223,8 +224,8 @@ describe('intake-decline parity: phone and server over the same meals (CUL-1086)
     expect(fired).toBeGreaterThan(150);
     expect(filterDecided).toBeGreaterThan(150);
     // CUL-94: and enough records where the owner's day, not UTC's, decides the verdict, so the
-    // agreement is measured where the calendar matters. Measured at CUL-94: 577 fired, the bowls
-    // decided 435 and the zone 306. Fired rose from 352 mostly because a low day now holds its
+    // agreement is measured where the calendar matters. Measured at CUL-94: 578 fired, the bowls
+    // decided 434 and the zone 304. Fired rose from 352 mostly because a low day now holds its
     // card until the next day's first rated meal (ruling (a) on CUL-94).
     expect(zoneDecided).toBeGreaterThan(100);
   });
@@ -247,5 +248,43 @@ describe('intake-decline parity: phone and server over the same meals (CUL-1086)
     const phone = phoneVerdict(rec);
     expect(phone.map((v) => v.trigger)).toEqual(['consecutive_low']);
     expect(serverVerdict(rec, true)).toEqual(phone);
+  });
+});
+
+const RECORDS_FOR_PROPERTY = 8000;
+// Measured at CUL-94: 619 of 8000 records fire and carry a buffer-day meal to append after.
+const PROPERTY_FLOOR = 300;
+
+describe('CUL-94 property: an evening refusal on the buffer day never quiets the day-count card', () => {
+  // Both adversarial passes broke the same shape: the day before the judged days holds the
+  // onset (a good morning, then refusals), and a reading of that day that takes the refusals in
+  // whole or leaves the morning out lets ONE more refusal silence a card. The detectors read the
+  // day at every cut, so appending a refusal after the day's last meal leaves every earlier
+  // reading intact and can never remove the card. Driven over the generator, both detectors.
+  it('holds on every generated record that fires, in every zone', () => {
+    let checked = 0;
+    for (let seed = 1; seed <= RECORDS_FOR_PROPERTY; seed++) {
+      const rec = generate(seed);
+      const before = serverVerdict(rec, true);
+      if (!before.some((v) => v.trigger === 'consecutive_low')) continue;
+      // The buffer day as the detector defines it (anchor today if today has a rated meal).
+      const dayOf = (ms: number) => localDayIndex(ms, rec.zone);
+      const today = dayOf(rec.nowMs);
+      const rated = rec.meals.filter((m) => m.foodType === 'meal' && m.rating !== null && m.ms <= rec.nowMs);
+      const anchor = rated.some((m) => dayOf(m.ms) === today) ? today : today - 1;
+      const n = rec.species === 'cat' ? 1 : 2;
+      const buffer = anchor - n;
+      const onBuffer = rated.filter((m) => dayOf(m.ms) === buffer);
+      if (onBuffer.length === 0) continue;
+      const t = Math.max(...onBuffer.map((m) => m.ms)) + 60_000;
+      if (dayOf(t) !== buffer) continue;
+      const after = { ...rec, meals: [...rec.meals, { ms: t, foodItemId: 'f1', foodType: 'meal', rating: 'refused' as const }] };
+      const phone = phoneVerdict(after);
+      expect(serverVerdict(after, true)).toEqual(phone);
+      expect({ seed, triggers: phone.map((v) => v.trigger) }).toEqual({ seed, triggers: expect.arrayContaining(['consecutive_low']) });
+      checked++;
+    }
+    // Non-vacuity (C-36). Reverting to whole-day readings of the buffer reds this test (measured).
+    expect(checked).toBeGreaterThan(PROPERTY_FLOOR);
   });
 });

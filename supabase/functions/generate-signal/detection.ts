@@ -4349,8 +4349,14 @@ function detectIntakeDeclineCore(
   // (rating more meals wakes this detector); see detectRateMeals.
   if (ratedMeals.length < cfg.minRatedMealsForBaseline) return []
 
+  // The window edge stays a raw `now − 14×24h` (CUL-94 measured whole local days and kept this):
+  // a local-day edge only ever WIDENS the window, and the older meals it adds diluted a food's
+  // normally-eaten history under its floor (a differential seed lost its refusal card). The edge
+  // still ages a meal out at a clock hour; the buffer-day cuts below carry the case that made
+  // that silence a card (adversarial pass 2, case 4).
   const baselineWindowStart = nowMs - cfg.baselineWindowDays * MS_PER_DAY
   const windowMeals = ratedMeals.filter((m) => m.ms >= baselineWindowStart)
+  const todayDay = intakeDayOf(nowMs, input.timezone)
   if (windowMeals.length < cfg.minRatedMealsForBaseline) return []
 
   // B-213 — the conservative "last full meal" anchor, computed ONCE over the rated meals
@@ -4373,23 +4379,17 @@ function detectIntakeDeclineCore(
   // sensitivity on the day count only, never by reading absent data as a decline.
   const isCat = input.pet.species === 'cat'
   const consecutiveDays = isCat ? cfg.cat.consecutiveDaysBelowBaseline : cfg.consecutiveDaysBelowBaseline
-  // CUL-94 — days are the OWNER's local days, and baseline, buffer and recent TILE the meals.
-  // The old split was a raw `now - N×24h` cutoff for the baseline and UTC calendar days for
-  // the recent window, so every meal between 24h ago and UTC midnight was counted nowhere: a
-  // New York cat lost its card at 20:00 EDT with no new evidence, and a Pacific cat's full
-  // dinner landed in "today's" UTC bucket and lifted a genuinely low day over the ceiling.
-  // The recent window is N whole local days ending at the ANCHOR — today once today has a
-  // rated meal, else yesterday (between local midnight and breakfast nothing new is known, so
-  // the card holds). The baseline is every window meal before the day BEFORE the first of those
-  // days: one whole local day is a buffer, in neither half. Without it a cat that refused four
-  // times yesterday and ate "some" at breakfast folded yesterday into its own baseline and lost
-  // the card, more surely the harder it refused (the CUL-94 adversarial pass; B-090's shape). The
-  // day before a drop is the likeliest to hold its onset, and the old `now − N×24h` cutoff kept
-  // roughly that buffer by accident (the next comment reads the buffer day both ways). No valid zone ⇒ UTC days, the pre-CUL-94 calendar: this
-  // is a safety card, so a missing zone degrades the day boundary, never silences the detector
-  // (unlike ⑥ / I5).
+  // CUL-94 — days are the OWNER's local days. The old split was a raw `now − N×24h` cutoff for
+  // the baseline and UTC calendar days for the recent window, so every meal between 24h ago and
+  // UTC midnight was counted nowhere: a New York cat lost its card at 20:00 EDT with no new
+  // evidence, and a Pacific cat's full dinner landed in "today's" UTC bucket and lifted a
+  // genuinely low day over the ceiling. The recent window is N whole local days ending at the
+  // ANCHOR — today once today has a rated meal, else yesterday (between local midnight and
+  // breakfast nothing new is known, so the card holds). The baseline is every window meal before
+  // them, with the day just before them (the BUFFER) read at every cut, below. No valid zone ⇒
+  // UTC days, the pre-CUL-94 calendar: this is a safety card, so a missing zone degrades the day
+  // boundary, never silences the detector (unlike ⑥ / I5).
   const dayOfMeal = intakeDaysOf(windowMeals, input.timezone)
-  const todayDay = intakeDayOf(nowMs, input.timezone)
   const anchorDay = windowMeals.some((m) => dayOfMeal.get(m) === todayDay) ? todayDay : todayDay - 1
   const firstRecentDay = anchorDay - (consecutiveDays - 1)
   const bufferDay = firstRecentDay - 1
@@ -4404,19 +4404,25 @@ function detectIntakeDeclineCore(
     recentDays.push({ mean: dayMeals.reduce((sum, m) => sum + m.score, 0) / dayMeals.length })
   }
 
-  // The buffer day is read BOTH ways and the accusing reading stands. Out of the baseline, a
-  // refusal day cannot dilute the normal it is judged against (the case above); in it, a GOOD
-  // day keeps a thin record over the four-meal floor and its normal at full height (a dog's
-  // "all" on the day before two "some" days held the delta at 1.0, not 0.9). Which kind of day
-  // the buffer is cannot be known from the record, so neither reading may silence the other.
-  // Measured against the pre-CUL-94 split over 20,000 generated records (UTC): 2 lose this card,
-  // both where the old `now − N×24h` cutoff cut the buffer day at an hour that happened to keep
-  // its good meals and drop its bad one; no whole-day reading fires on either, and one keeps
-  // its refusal card. Read one way only, 17 lost it.
+  // The buffer day is read at EVERY cut and the accusing reading stands. It is the day most
+  // likely to hold the onset, and the usual onset is a good morning and a bad evening: whole and
+  // in the baseline, its refusals dilute the normal (more surely the harder she refused); whole
+  // and out, its good meals leave a thin or marginal normal short of the floor or the full point.
+  // The pre-CUL-94 `now − N×24h` cutoff fell somewhere inside this day by accident; reading
+  // every prefix of it (none of its meals, the first, the first two, … all) covers every hour
+  // that cutoff could land on, so an evening refusal after a good morning can never quiet a card
+  // that the good morning alone would raise (both adversarial passes on CUL-94; the property is
+  // pinned in lib/intakeDeclineLocalDay.test.ts). Each prefix is the same hypothesis under the
+  // same full-point rule, so the union adds little multiplicity. Measured against the pre-CUL-94
+  // detector over 100,000 generated records (UTC days, both triggers): none loses a card the old
+  // detector raised; 6,775 gain one, mostly the overnight hold. Residual, stated: a refusal day
+  // that has aged PAST the buffer still dilutes the normal (pre-CUL-94 too; CUL-1797).
   if (recentDays.length >= consecutiveDays) {
     const recentMean = recentDays.reduce((sum, d) => sum + d.mean, 0) / recentDays.length
-    for (const lastBaselineDay of [bufferDay - 1, bufferDay]) {
-      const baselineMeals = windowMeals.filter((m) => (dayOfMeal.get(m) as number) <= lastBaselineDay)
+    const beforeBuffer = windowMeals.filter((m) => (dayOfMeal.get(m) as number) < bufferDay)
+    const bufferMeals = windowMeals.filter((m) => dayOfMeal.get(m) === bufferDay) // ascending
+    for (let cut = 0; cut <= bufferMeals.length; cut++) {
+      const baselineMeals = cut === 0 ? beforeBuffer : [...beforeBuffer, ...bufferMeals.slice(0, cut)]
       if (baselineMeals.length < cfg.minRatedMealsForBaseline) continue
       const baselineScore =
         baselineMeals.reduce((sum, m) => sum + m.score, 0) / baselineMeals.length

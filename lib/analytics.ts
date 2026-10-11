@@ -1033,8 +1033,10 @@ export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineRes
   if (ratedMeals.length < DECLINE.minRatedMealsForBaseline) {
     return notEnoughData(ratedMeals.length, DECLINE.minRatedMealsForBaseline);
   }
+  // The raw 14×24h edge, as detection.ts (CUL-94 measured local-day edges and kept this).
   const baselineWindowStart = nowMs - DECLINE.baselineWindowDays * MS_PER_DAY;
   const windowMeals = ratedMeals.filter((m) => m.ms >= baselineWindowStart);
+  const todayDay = intakeDayOf(nowMs, input.timeZone);
   if (windowMeals.length < DECLINE.minRatedMealsForBaseline) {
     return notEnoughData(windowMeals.length, DECLINE.minRatedMealsForBaseline);
   }
@@ -1052,11 +1054,10 @@ export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineRes
   // mirror of detection.ts detector ② (see the comment there for the defect this closes). The
   // recent window is N whole local days ending at the ANCHOR — today once today has a rated
   // meal, else yesterday — and the baseline is every window meal before them, with the day just
-  // before them read both ways (out, so a refusal day cannot dilute the normal; in, so a good day
-  // keeps it). Change one
+  // before them read at every cut (so an evening refusal after a good morning can never quiet
+  // the card the morning alone would raise). Change one
   // surface, change both; `lib/intakeDeclineParity.test.ts` drives the two real detectors.
   const dayOfMeal = new Map(windowMeals.map((m) => [m, intakeDayOf(m.ms, input.timeZone)] as const));
-  const todayDay = intakeDayOf(nowMs, input.timeZone);
   const anchorDay = windowMeals.some((m) => dayOfMeal.get(m) === todayDay) ? todayDay : todayDay - 1;
   const firstRecentDay = anchorDay - (consecutiveDays - 1);
   const bufferDay = firstRecentDay - 1;
@@ -1066,11 +1067,13 @@ export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineRes
     if (dayMeals.length === 0) continue;
     recentDays.push({ mean: dayMeals.reduce((s, m) => s + m.score, 0) / dayMeals.length });
   }
-  // The buffer day read both ways, the accusing reading standing (see detection.ts).
+  // The buffer day read at every cut, the accusing reading standing (see detection.ts).
   if (recentDays.length >= consecutiveDays) {
     const recentMean = recentDays.reduce((s, d) => s + d.mean, 0) / recentDays.length;
-    for (const lastBaselineDay of [bufferDay - 1, bufferDay]) {
-      const baselineMeals = windowMeals.filter((m) => (dayOfMeal.get(m) as number) <= lastBaselineDay);
+    const beforeBuffer = windowMeals.filter((m) => (dayOfMeal.get(m) as number) < bufferDay);
+    const bufferMeals = windowMeals.filter((m) => dayOfMeal.get(m) === bufferDay); // ascending
+    for (let cut = 0; cut <= bufferMeals.length; cut++) {
+      const baselineMeals = cut === 0 ? beforeBuffer : [...beforeBuffer, ...bufferMeals.slice(0, cut)];
       if (baselineMeals.length < DECLINE.minRatedMealsForBaseline) continue;
       const baselineScore = baselineMeals.reduce((s, m) => s + m.score, 0) / baselineMeals.length;
       const allBelow = recentDays.every((d) => d.mean < baselineScore);
