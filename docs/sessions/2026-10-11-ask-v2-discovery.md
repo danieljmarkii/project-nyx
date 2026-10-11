@@ -1,6 +1,8 @@
 # Ask v2 discovery — why the Oct 10 treatment question was deflected, and Ask that answers in the pet's calendar
 
 **Date:** 2026-10-11
+**One thing:** P1 L1 — The strategy kernel: "Ask knows her numbers but not her calendar" is the diagnosis that orders all ten build steps · check: pending
+**One thing (re-ask):** P2 L1 — Reversibility: one-way and two-way doors (asked on today's rulings: which of the six is the one-way door?) · check: pending
 
 **Mode:** DISCOVERY ([CUL-1798](https://linear.app/projectnyx/issue/CUL-1798)). Deliverable: `docs/culprit-ask-v2-mockups.html` round 1, published at https://claude.ai/artifact/MzZzUzVWKVLLskLxYLUTyk. Shipped via #1182.
 
