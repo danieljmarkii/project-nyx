@@ -1,6 +1,8 @@
 # Vet report v2, round 2: code writes the words, the record draws the story (CUL-1859)
 
 **Date:** 2026-10-11
+**One thing (re-ask):** P2 L1 — Reversibility: one-way and two-way doors (asked again on today's B1: is letting a model write page-one words a one-way or a two-way door, and why?) · check: pending
+**One thing:** P6 L1 — Deciding to decide: an open question past its third session is a cost (the emerging-signals question, open since June, left Nyx's 19-of-20 treat pattern unprintable either way) · check: pending
 
 DISCOVERY session on [CUL-1859](https://linear.app/projectnyx/issue/CUL-1859), filed this session at the PM's direction (the exploration started from a chat prompt). No app or Edge Function code. Shipped via #1191, which names only its sub-issue [CUL-1862](https://linear.app/projectnyx/issue/CUL-1862) so the decision briefs stay open on the parent. Branch `claude/vet-report-redesign-ai-jddjxu`. The PR carries round 1's three commits from draft #815 (merge `77ea704`), which it supersedes; the squash message must drop that commit list so [CUL-847](https://linear.app/projectnyx/issue/CUL-847) does not close with its briefs unruled.
 
