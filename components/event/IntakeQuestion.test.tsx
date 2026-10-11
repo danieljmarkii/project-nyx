@@ -29,8 +29,32 @@ jest.mock('../../lib/intakeChecks', () => ({
 
 import { IntakeQuestion } from './IntakeQuestion';
 
-// The vomit, an hour ago: the question asks from 24 h before it, floored to the hour.
-const VOMIT = new Date(Date.now() - 60 * 60_000).toISOString();
+// The suite's clock is pinned (CUL-1778, C-29). The question asks from 24 h before the vomit,
+// so with a real-clock vomit an hour ago it asked from 25 h back: in the first hour after
+// local midnight that is the day before yesterday, and the heading named a weekday ("since
+// 11 PM Friday"). Both CI jobs went red on that for an hour a day each (00:00 UTC on the
+// main job, 10:00 to 11:15 UTC on the zone job). Local noon, built from local components, is
+// mid-day in every zone the matrix runs, and it falls after the stored `since` fixtures below.
+// Only Date is faked; the reads' promises and `act` stay real.
+const PINNED_NOW = new Date(2026, 9, 8, 12, 0);
+beforeAll(() => {
+  jest.useFakeTimers({
+    doNotFake: [
+      'hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame',
+      'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback', 'setImmediate',
+      'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
+    ],
+  });
+  jest.setSystemTime(PINNED_NOW);
+});
+afterAll(() => {
+  jest.useRealTimers();
+});
+
+// The vomit, an hour before the pinned noon: the question asks from 24 h before it, floored
+// to the hour. Built from the pinned instant, not Date.now(): module scope runs before
+// beforeAll pins the clock.
+const VOMIT = new Date(PINNED_NOW.getTime() - 60 * 60_000).toISOString();
 const props = { eventId: 'v1', petId: 'pet-a', occurredAt: VOMIT, petName: 'Nyx' };
 
 async function draw(over: Partial<typeof props> = {}) {
@@ -64,7 +88,8 @@ describe('flag off', () => {
 describe('which question', () => {
   it('a meal-fed cat: a heading and a radio group of four, never announced', async () => {
     await draw();
-    const heading = screen.getByText(/^Has Nyx eaten a meal since \d+ (AM|PM) (yesterday|today)\?$/);
+    // Exact now that the clock is pinned: 11 AM today, minus 24 h, floored to the hour.
+    const heading = screen.getByText('Has Nyx eaten a meal since 11 AM yesterday?');
     expect(heading.props.accessibilityRole).toBe('header');
     const radios = ['Yes, ate well', 'A little', 'No', 'Not sure'].map((l) => screen.getByLabelText(l));
     radios.forEach((r, i) => {

@@ -79,7 +79,7 @@ Plus ratification of the brief's §14 Tier-2 edits.
   | [CUL-1775](https://linear.app/projectnyx/issue/CUL-1775) | Listing copy pass |
   | [CUL-1776](https://linear.app/projectnyx/issue/CUL-1776) | Frozen-brief corrections |
   | [CUL-1777](https://linear.app/projectnyx/issue/CUL-1777) | Hands-on rival pass |
-  | [CUL-1778](https://linear.app/projectnyx/issue/CUL-1778) | IntakeQuestion test reds CI between midnight and 1 AM (found when this PR's CI ran at 00:30 UTC; not this PR's) |
+  | [CUL-1778](https://linear.app/projectnyx/issue/CUL-1778) | IntakeQuestion test reds CI between midnight and 1 AM (found when this PR's CI ran at 00:30 UTC). **Fixed in this PR at the PM's request** after it also reddened the zone job at 11:05 UTC and blocked the merge: the suite's clock is pinned to local noon, the heading asserted exactly. |
   | [CUL-1779](https://linear.app/projectnyx/issue/CUL-1779) | Vet report's weekly off-diet chart prints a measured 0 for a week with one logged meal-day (adversarial pass) |
   | [CUL-1780](https://linear.app/projectnyx/issue/CUL-1780) | Home trial card's bare end date reads as "nothing off-diet" at 50% coverage (adversarial pass; a clinical threshold call) |
 
@@ -93,6 +93,10 @@ Plus ratification of the brief's §14 Tier-2 edits.
   - [CUL-231](https://linear.app/projectnyx/issue/CUL-231): Vet Files never purges deleted files.
   - [CUL-598](https://linear.app/projectnyx/issue/CUL-598): D5.
   - [CUL-173](https://linear.app/projectnyx/issue/CUL-173): the listing section.
+
+## The CI fix that rode along
+
+The PM asked for the merge (`/wrap and merge`), and the head went red on `App (jest, non-UTC timezones)`: the same IntakeQuestion test, under Pacific/Chatham at 00:54 local. Rather than spend a second re-run, the PM asked for the fix, so [CUL-1778](https://linear.app/projectnyx/issue/CUL-1778) rides in this PR. The test now pins only `Date` to local noon on 2026-10-08 (the house pattern from `hooks/useEvents.test.ts`), builds its vomit from the pinned instant, and asserts the heading exactly ("since 11 AM yesterday"). The original was shown failing under Pacific/Tongatapu at 00:27 local and the fix passing in seven zones, then an adversarial review and an hour-of-day sweep across the CI zones ran before the push (outcome on the issue).
 
 ## Lessons
 
