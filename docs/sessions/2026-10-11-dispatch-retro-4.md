@@ -65,6 +65,21 @@ D1 A · D2 A · D3 A · D5 A · D6 A · D7 A, then D4 A in a tuned form. D4 firs
 - **The draft said none of retro 3's collision classes recurred.** [CUL-1746](https://linear.app/projectnyx/issue/CUL-1746)'s red `main` was one.
 - **The first plan size came from the page's "about 40 PRs".** The dispatch v1 dry run counts 47 rows on 9/28.
 
+## After the merge
+
+- **Applied at the wrap:** [CUL-1752](https://linear.app/projectnyx/issue/CUL-1752) closed as a duplicate of [CUL-1754](https://linear.app/projectnyx/issue/CUL-1754), which had already shipped the stamp (#1163, #1166). The `Waiting on PM` label held 90 open against a cap of 30, and the queue rule over the cap is to apply a low-risk call and log it.
+- **The PM then asked for do-today item 5, the `main` ruleset ([CUL-1491](https://linear.app/projectnyx/issue/CUL-1491)).** It could not be done from here. `POST /repos/danieljmarkii/project-nyx/rulesets` returned HTTP 403 from the session's proxy: "Write access to this GitHub API path is not permitted through this proxy." Reads work; repository administration writes do not. The wrap had said a session could create it. That was wrong, and the comment on CUL-1491 was corrected and now carries the click path.
+- **The visibility brief rested on a stale premise.** It said private with Pro keeps "enough Actions minutes". Measured from the Actions API for 9/27 to 10/11:
+  - 1,088 CI runs at 12 to 16 billable minutes each, 304 of them cancelled and still billing 6 to 18 minutes;
+  - about 30,000 to 40,000 minutes a month if private, against Pro's 3,000;
+  - about $170 to $230 a month at $0.006 a minute.
+
+  The volume that made private expensive is the same dispatch volume this retro measured. The PM ruled to stay public.
+- **Shipped via #1192 ([CUL-1878](https://linear.app/projectnyx/issue/CUL-1878), a child of CUL-1491, so the parent stays open):**
+  - `LICENSE`: all rights reserved, under "© 2026 Culprit" as in the website footer;
+  - `SECURITY.md`: private reports to support@getculprit.app.
+- **Still the PM's:** create the ruleset. After that, a session reads it back and makes CLAUDE.md's required-check line match.
+
 ## Teach
 
 Re-ask (P3, from this morning's ruling-sheet session; its question was not recorded, so it is asked fresh): if you could rule only one Engines question this week, which would free the most rows, and what would ruling it second instead cost?
