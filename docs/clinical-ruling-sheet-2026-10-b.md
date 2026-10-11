@@ -421,8 +421,8 @@ ruled on 2026-09-28. Briefs: `docs/nyx-weight-lane-requirements.md` §0 (`:39-75
 * **Counterexample tried:** a bout spanning three weeks. The disclosure prints on each continuing week, and the label
   never says "0 vomits". **Held.**
 * **A sibling, not ruled here:** the Signal card's own weekly line has the same onset blind spot
-  (`lib/signalWindows.ts:256-275`) and can print "0 this week · 1 last week" over vomiting six days ago. That one is
-  quieter and should be filed as its own issue.
+  (`lib/signalWindows.ts:256-275`) and can print "0 in the last 7 days · 1 in the 7 before" over vomiting six days
+  ago. That one is quieter; it is filed as CUL-1791 and follows this row's ruling.
 * **Direction:** louder. **Verdict:** adopt provisionally.
 
 ### Q13 · CUL-1358 · six calls on the not-eating gate
@@ -599,7 +599,7 @@ refusal face only (your ruling, 2026-09-27).
   the report dropped the word for (`render.ts:2337-2345`).
 * **Counterexample tried:** vomit leads and a chronic cough was last seen 27 days ago, still inside its recency
   window. "Recurring" stays true. **Held.** Not covered: a burden card plus another sign's chronicity course is also
-  left undisclosed; it should ride the same build.
+  left undisclosed; that is filed as CUL-1792, to ride the same build.
 * **Direction:** louder. **Verdict:** adopt provisionally. Same build session as Q22.
 
 ### Q22 · CUL-689 · ⑦ ordering has no recency term (half conflict)
@@ -929,7 +929,7 @@ concern cue on the dose row).
 
 **Unchanged from today, not introduced here:** a dark run in the middle of the compare window still reads at face value
 (Q23); the Signal card's weekly line has the same onset blind spot as the month (Q12); a burden card beside another
-sign's chronic course is not disclosed (Q21). The last two should be filed as their own issues.
+sign's chronic course is not disclosed (Q21). The last two are filed as CUL-1791 and CUL-1792.
 
 ## 7. Rulings received
 
