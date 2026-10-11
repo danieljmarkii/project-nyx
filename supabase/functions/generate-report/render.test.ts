@@ -14,7 +14,8 @@
 // deterministic and do not depend on detection thresholds.
 
 import { strict as assert } from 'node:assert'
-import { renderReport, SHIPPED_STYLE } from './render.ts'
+import { OFF_DIET_ZERO_MIN_MEAL_DAYS, renderReport, SHIPPED_STYLE } from './render.ts'
+import { COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 // CUL-1041 — the window-move fixtures below are built by the PRODUCTION derivation,
 // so this file cannot drift from `trial.ts` without going red.
 import { deriveWindowChange } from './trial.ts'
@@ -3190,7 +3191,7 @@ Deno.test('B-497 — an off-diet week that was logged but clean draws a measured
   )
   assert.ok(/class="nub"/.test(html), 'the observed-zero off-diet week draws a baseline nub (a measured clean week)')
   assert.ok(!/class="nolog"/.test(html), 'a meal-observed clean week is never rendered as no-data')
-  assert.ok(!/diet was not observed/.test(html), 'no no-data note when the diet was observed every week')
+  assert.ok(!/too few to read as a week without off-diet food/.test(html), 'no no-data note when the diet was observed every week')
 })
 
 Deno.test('B-497 — an off-diet week with NO meal logged draws a dashed no-data marker + a dash, never a "0"', () => {
@@ -3219,7 +3220,63 @@ Deno.test('B-497 — an off-diet week with NO meal logged draws a dashed no-data
   // The alt text names it as unlogged — the screen-reader path never voices absence as a zero.
   assert.ok(/aria-label="Off-diet protein exposure per week: 2, not logged, 1\./.test(html), 'aria names the unobserved bucket, never a 0')
   // The dash is explained where it is drawn.
-  assert.ok(/diet was not observed \(no meal logged\)/.test(html), 'the no-data marker is named as diet-not-observed, not left to read as a clean week')
+  assert.ok(/too few to read as a week without off-diet food/.test(html), 'the no-data marker is named as diet-not-observed, not left to read as a clean week')
+})
+
+// ── CUL-1779: one logged meal is not a week — the floor is the trial coverage floor over 7 days ──
+function offDietTimeline(mealDaysByBucket: number[], bins: number[][]): ReportSnapshot['proteinTimeline'] {
+  const n = mealDaysByBucket.length
+  const total = bins.reduce((a, w) => a + w.reduce((x, y) => x + y, 0), 0)
+  return {
+    weekStartDates: Array.from({ length: n }, (_, i) => `2026-06-${String(1 + i * 7).padStart(2, '0')}`),
+    proteins: ['chicken'],
+    bins,
+    unknownByWeek: new Array(n).fill(0),
+    mealDaysByBucket,
+    feedingsByWeek: bins.map((w) => w[0]),
+    totalByProtein: { chicken: total },
+    hasUnknown: false,
+    totalFeedings: total,
+    incompleteFeedings: 0,
+    humanFoodFeedings: 0,
+    incompleteHumanFoodFeedings: 0,
+    packagedReadable: 0,
+    packagedUnread: 0,
+  }
+}
+
+Deno.test('CUL-1779 — the floor is the trial coverage floor over seven days (4), not one meal', () => {
+  assert.equal(OFF_DIET_ZERO_MIN_MEAL_DAYS, Math.ceil(COVERAGE_FLOOR * 7))
+  assert.equal(OFF_DIET_ZERO_MIN_MEAL_DAYS, 4, 'a change to the coverage floor moves this chart too — re-run the cold read')
+})
+
+Deno.test('CUL-1779 — a zero-feeding week one meal-day under the floor draws not-observed; at the floor, a measured 0', () => {
+  const under = OFF_DIET_ZERO_MIN_MEAL_DAYS - 1
+  const html = renderReport(base({ proteinTimeline: offDietTimeline([7, under, OFF_DIET_ZERO_MIN_MEAL_DAYS], [[2], [0], [0]]) }))
+  assert.equal((html.match(/class="nolog"/g) ?? []).length, 1, 'only the under-floor week is drawn as not observed')
+  assert.equal((html.match(/class="nub"/g) ?? []).length, 1, 'the at-floor week is a measured clean week')
+  assert.ok(
+    new RegExp(`aria-label="Off-diet protein exposure per week: 2, meals logged on ${under} days only, 0\\.`).test(html),
+    'the alt text voices the thin week by its meal-days, never as 0',
+  )
+  assert.ok(
+    html.includes(`marks a week with meals logged on fewer than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} of its days`),
+    'the note names the floor where the marker is drawn',
+  )
+})
+
+Deno.test('CUL-1779 — a single logged meal-day reads as not observed, and is voiced in the singular', () => {
+  const html = renderReport(base({ proteinTimeline: offDietTimeline([7, 1], [[1], [0]]) }))
+  assert.ok(!/class="nub"/.test(html), 'one meal does not make a clean week')
+  assert.ok(/per week: 1, meals logged on 1 day only\./.test(html))
+})
+
+Deno.test('CUL-748 item 4 — a fully logged three-day trailing part-week never prints a measured 0 (CUL-1779)', () => {
+  // The window's last bucket can be 1–7 days. Held absolute, the floor means a three-day tail logged
+  // every day still cannot draw the nub a full week's measured zero draws.
+  const html = renderReport(base({ proteinTimeline: offDietTimeline([7, 7, 3], [[1], [0], [0]]) }))
+  assert.equal((html.match(/class="nub"/g) ?? []).length, 1, 'the full clean middle week keeps its 0')
+  assert.equal((html.match(/class="nolog"/g) ?? []).length, 1, 'the three-day tail is drawn as not observed')
 })
 
 Deno.test('cold-read coherence — a completed/stopped medication carries its end date on the meds line + Appendix D', () => {

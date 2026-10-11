@@ -2682,7 +2682,8 @@ export interface ProteinTimeline {
   bins: number[][]
   /** Per-week count of off-diet feedings with no recorded protein (disclosed, never dropped, §5.1). */
   unknownByWeek: number[]
-  /** Distinct local days with a MEAL-type event logged, per weekly bucket. This is the "was the DIET
+  /** Distinct local days with a non-treat MEAL-type event logged, per weekly bucket (CUL-1779: the
+   *  trial coverage tile's day predicate, `foodType !== 'treat'`). This is the "was the DIET
    *  observed?" signal — deliberately NOT the symptom chart's any-log `loggedDaysByBucket`, which
    *  would count a logged vomit as diet observation and assert a clean off-diet week over a diet
    *  nobody watched (B-497, adversarial-reviewer). A week with zero off-diet feedings AND a meal
@@ -4870,8 +4871,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   }
   // Distinct meal-days per bucket — the off-diet chart's "was the diet observed?" test (B-497). A
   // logged symptom is NOT diet observation, so this counts meal-type events only, never `loggedDayNums`.
+  // And a treat is not the diet either (CUL-1779): the day set is the trial coverage tile's own
+  // (`lib/dietTrial.ts` counts `foodType !== 'treat'`), because the chart's per-week floor mirrors
+  // that tile's floor — a permitted chew on an otherwise unlogged day must not buy a measured `0`.
   const mealDayNums = new Set<number>()
   for (const e of windowMeals) {
+    if (e.meal!.foodType === 'treat') continue
     const dn = eventDayNumber(e.occurredAt, tz)
     if (dn !== null) mealDayNums.add(dn)
   }

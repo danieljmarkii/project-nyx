@@ -89,6 +89,9 @@ import type { ContaminationFact } from './trial.ts'
 // Same list formatter the owner-facing contaminant copy uses — one spelling of
 // "chicken, salmon and beef" across the product (B-351 slice 5).
 import { proteinList } from '../../../lib/trialProtein.ts'
+// The off-diet chart's per-week floor mirrors the trial coverage floor (CUL-1779) — the same
+// question ("is this record dense enough to read an absence of off-diet food?"), one constant.
+import { COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 import { dateTimeFormat } from '../../../lib/utils.ts'
 
 // ── HTML escaping — EVERY interpolated data string flows through here ────────────
@@ -924,6 +927,30 @@ function proteinWeekTotal(t: import('./report.ts').ProteinTimeline, w: number): 
   return (t.bins[w]?.reduce((a, b) => a + b, 0) ?? 0) + (t.unknownByWeek[w] ?? 0)
 }
 
+/**
+ * The fewest diet-observed days a week needs before the off-diet chart may print a measured `0`
+ * for it (CUL-1779). Below it, a week with no off-diet feeding is drawn as NOT OBSERVED.
+ *
+ * One logged meal used to be enough: a 56-day trial logged one day a week printed seven clean
+ * `0`s while page one's coverage tile, over the same record, said "Not established". The report
+ * contradicted itself, and the reassuring half was the one drawn as data — §5.2's "no off-diet
+ * foods logged" said in a number instead of words.
+ *
+ * MIRRORED from `COVERAGE_FLOOR` (`lib/dietTrial.ts`) because it answers the same question as
+ * page one's tile: is the record dense enough that an absence of off-diet food may be read?
+ * Applied to a full seven-day week and held ABSOLUTE rather than scaled to a bucket's length, so a
+ * part-week (the window's trailing bucket is 1–7 days) needs the same four observed days — a
+ * three-day tail can never print a `0` that looks identical to a full week's (CUL-748 item 4).
+ * Exported so the tests derive their boundary from the shipped value (C-34).
+ */
+export const OFF_DIET_ZERO_MIN_MEAL_DAYS = Math.ceil(COVERAGE_FLOOR * 7)
+
+/** Whether a zero-feeding week was observed densely enough to print as a measured `0`. One
+ *  predicate for the bars, the alt text and the note, so the three cannot drift. */
+function offDietZeroIsMeasured(t: import('./report.ts').ProteinTimeline, w: number): boolean {
+  return (t.mealDaysByBucket[w] ?? 0) >= OFF_DIET_ZERO_MIN_MEAL_DAYS
+}
+
 function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string {
   const n = Math.max(1, t.weekStartDates.length)
   const L = 40
@@ -964,6 +991,10 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
   // absence this fix exists to kill, landing on the diet-trial owner who logs symptoms but not meals.
   // (Treats/human food are themselves off-diet feedings, so on a zero-total week the only meal-type
   // events left are on-diet meals — the right denominator.)
+  //
+  // AND ONE MEAL IS NOT A WEEK (CUL-1779). Observed means at least `OFF_DIET_ZERO_MIN_MEAL_DAYS`
+  // meal-days — the trial coverage floor over seven days. A week logged on fewer days is drawn
+  // exactly like an unobserved one: six unlogged days are not six clean ones.
   const unobservedWeeks: number[] = []
   for (let i = 0; i < n; i++) {
     const cx = centerX(i)
@@ -989,14 +1020,16 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
         )
       }
       parts.push(`<text class="cap num" x="${cx.toFixed(1)}" y="${(yFor(total) - 5).toFixed(1)}" text-anchor="middle">${total}</text>`)
-    } else if ((t.mealDaysByBucket[i] ?? 0) > 0) {
-      // A CLEAN week — a meal was logged, nothing off-diet was recorded. A measured zero, drawn as the
-      // symptom chart's observed-zero nub so "empty" reads the same across every chart on the page.
+    } else if (offDietZeroIsMeasured(t, i)) {
+      // A CLEAN week — meals were logged on enough of its days, nothing off-diet was recorded. A
+      // measured zero, drawn as the symptom chart's observed-zero nub so "empty" reads the same
+      // across every chart on the page.
       parts.push(`<rect class="nub" x="${x.toFixed(1)}" y="${BASE - 3}" width="${barW.toFixed(1)}" height="3" rx="1.5"/>`)
       parts.push(`<text class="z num" x="${cx.toFixed(1)}" y="${BASE - 7}" text-anchor="middle">0</text>`)
     } else {
-      // The diet was NOT observed that week (no meal logged) — never a measured `0`; a hollow marker
-      // + a dash keeps "diet not observed" distinct from "a week with zero off-diet food" (B-497).
+      // The diet was NOT observed that week (no meal logged, or too few meal-days to read) — never a
+      // measured `0`; a hollow marker + a dash keeps "diet not observed" distinct from "a week with
+      // zero off-diet food" (B-497, CUL-1779).
       unobservedWeeks.push(i)
       parts.push(
         `<rect class="nolog" x="${x.toFixed(1)}" y="${(BASE - 9).toFixed(1)}" width="${barW.toFixed(1)}" height="9" rx="2"/>`,
@@ -1007,9 +1040,12 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
   parts.push(weekAxisLabels(t.weekStartDates, L, slot, n, BASE))
   // The alt text draws the same three-way distinction the bars do — a week the diet was not observed
   // is named as unlogged, never voiced as a zero (B-497; the symptom chart's aria does the same).
-  const ariaWeeks = Array.from({ length: n }, (_, i) =>
-    weekTotal(i) > 0 ? String(weekTotal(i)) : (t.mealDaysByBucket[i] ?? 0) > 0 ? '0' : 'not logged',
-  ).join(', ')
+  const ariaWeeks = Array.from({ length: n }, (_, i) => {
+    if (weekTotal(i) > 0) return String(weekTotal(i))
+    if (offDietZeroIsMeasured(t, i)) return '0'
+    const md = t.mealDaysByBucket[i] ?? 0
+    return md === 0 ? 'not logged' : `meals logged on ${md} day${md === 1 ? '' : 's'} only`
+  }).join(', ')
   const aria = `Off-diet protein exposure per week: ${ariaWeeks}.`
   // print-color-adjust:exact inherits to the pattern fills so the bars survive a default clinic printer.
   return `<svg viewBox="0 0 648 148" role="img" aria-label="${h(aria)}" style="-webkit-print-color-adjust:exact;print-color-adjust:exact;"><defs>${defs}</defs>${parts.join('')}</svg>`
@@ -1253,15 +1289,16 @@ function proteinTimelineSection(snap: ReportSnapshot): string {
       .map((p, j) => `<span class="ptleg">${proteinSwatch(`pts-${j}`, PROTEIN_COLORS[j % PROTEIN_COLORS.length], j)}${h(capProtein(p))} ${num(t.totalByProtein[p] ?? 0)}</span>`)
       .join('') +
     (t.hasUnknown ? `<span class="ptleg">${proteinSwatch('pts-u', null, 0)}no recorded protein ${num(t.unknownByWeek.reduce((a, b) => a + b, 0))}</span>` : '')
-  // Name the dashed no-data marker where it is drawn (B-497). A week is unobserved iff no meal was
-  // logged in it AND no off-diet feeding fell in it — the same test the chart applies bar-by-bar.
+  // Name the dashed no-data marker where it is drawn (B-497). A week is unobserved iff no off-diet
+  // feeding fell in it AND its meal-days are under the floor — the same test the chart applies
+  // bar-by-bar (CUL-1779: one meal is not a week).
   // Deliberately rendered as HTML below the chart, NOT as in-SVG <text> like the symptom chart's
   // twin note: the protein SVG's viewBox has no vertical room for a legend line, and growing it would
   // change chart geometry (which wants its own PNG cold read) — an HTML caption is also more legible
   // to a screen reader. The two notes read identically to the reader; only their host element differs.
-  const anyUnobservedWeek = t.weekStartDates.some((_, i) => proteinWeekTotal(t, i) === 0 && (t.mealDaysByBucket[i] ?? 0) === 0)
+  const anyUnobservedWeek = t.weekStartDates.some((_, i) => proteinWeekTotal(t, i) === 0 && !offDietZeroIsMeasured(t, i))
   const noDataNote = anyUnobservedWeek
-    ? `<div class="subnote">&ndash; marks a week the diet was not observed (no meal logged) — not a week without off-diet food.</div>`
+    ? `<div class="subnote">&ndash; marks a week with meals logged on fewer than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} of its days &mdash; too few to read as a week without off-diet food.</div>`
     : ''
   return `
   <div class="sec">
