@@ -95,9 +95,12 @@ describe('§5.6 — each moment maps to its documented pattern', () => {
     expect(mockNotification).not.toHaveBeenCalled();
   });
 
-  it('the first-insight arrival plays the soft success tap (§4)', () => {
+  it('the first-insight arrival plays the SOFT TAP, never the success pattern (CUL-647)', () => {
+    // Every finding that can arrive names a symptom, so the arrival is news about
+    // something going wrong: acknowledged, never congratulated (rule 1).
     haptics.insightArrival();
-    expect(mockNotification).toHaveBeenCalledWith('success');
+    expect(mockImpact).toHaveBeenCalledWith('soft');
+    expect(mockNotification).not.toHaveBeenCalled();
   });
 });
 
