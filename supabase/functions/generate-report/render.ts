@@ -1039,8 +1039,11 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
       }
       parts.push(`<text class="cap num" x="${cx.toFixed(1)}" y="${(yFor(total) - 5).toFixed(1)}" text-anchor="middle">${total}</text>`)
     } else if (offDietWeek(t, i) === 'outside') {
-      // Outside the chart's scope: no marker at all. The off-diet set cannot hold a feeding here, so
-      // any glyph — a nub or a dash — would describe a week the chart never looked at.
+      // Outside the chart's scope: no marker — the off-diet set cannot hold a feeding here, so a nub
+      // or a dash would describe a week the chart never looked at. But an empty slot on a count axis
+      // reads as zero (cold read r2), so the column says what it is.
+      const firstInScope = t.scopeDaysByBucket.findIndex((d) => d > 0)
+      parts.push(`<text class="z" x="${cx.toFixed(1)}" y="${BASE - 6}" text-anchor="middle">${firstInScope === -1 || i < firstInScope ? 'pre-trial' : 'post-trial'}</text>`)
     } else if (offDietWeek(t, i) === 'zero') {
       // A CLEAN week — meals were logged on enough of its days, nothing off-diet was recorded. A
       // measured zero, drawn as the symptom chart's observed-zero nub so "empty" reads the same
@@ -1338,13 +1341,18 @@ function proteinTimelineSection(snap: ReportSnapshot): string {
   const dayCountNote = `<div class="subnote">Under each date: days with a meal logged, of the days that week ${
     t.trialScoped ? `covers inside the trial (${scopeSpan})` : 'covers'
   }. A treat alone does not count as a meal.</div>`
+  // A part-week shorter than the floor can never reach it however fully it was logged, so a "3/3 d"
+  // box needs its own clause or it reads as contradicting the note (cold read r2).
+  const shortUnreadWeek = weeks.some((w, i) => w === 'unread' && (t.scopeDaysByBucket[i] ?? 0) < OFF_DIET_ZERO_MIN_MEAL_DAYS)
   const noDataNote = weeks.includes('unread')
     ? t.zeroWithheld
-      ? `<div class="subnote">${unreadGlyph} &ndash; marks a week with no off-diet feeding recorded that is not read as clean: the clinical summary withholds the trial&rsquo;s clean-record statement, so no week here is drawn as a zero.</div>`
-      : `<div class="subnote">${unreadGlyph} &ndash; marks a week with meals logged on fewer than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} of its 7 days &mdash; too few to read as a week without off-diet food.</div>`
+      ? `<div class="subnote">${unreadGlyph}: a week with no off-diet feeding recorded that is still not read as clean. The clinical summary above withholds this trial&rsquo;s clean-record statement (see <em>Interpreting this record</em>), so no week here is drawn as a zero.</div>`
+      : `<div class="subnote">${unreadGlyph}: a week with meals logged on fewer than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} days${
+          shortUnreadWeek ? `, including a part-week shorter than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} days` : ''
+        } &mdash; too few to read as a week without off-diet food.</div>`
     : ''
   const outsideNote = weeks.includes('outside')
-    ? `<div class="subnote">Weeks with no day count fall outside the trial (${scopeSpan}); this chart counts only feedings inside it.</div>`
+    ? `<div class="subnote"><em>pre-trial</em> and <em>post-trial</em> columns fall outside the trial (${scopeSpan}) and are not counted here: this chart counts only feedings inside it. Treats logged outside the trial are listed in appendix B.</div>`
     : ''
   return `
   <div class="sec">
@@ -1366,8 +1374,12 @@ function proteinTimelineSection(snap: ReportSnapshot): string {
         snap.trial && !snap.trial.allowedSetUnavailable
           ? '(feedings not matched to the trial diet or the allowed list)'
           : '(treats + human food)'
-      } over ${num(n)} week${
-        n === 1 ? '' : 's'
+      } over ${
+        // CUL-1779 (cold read r2): a trial-scoped chart counts only the trial's days, so "over 8
+        // weeks" overstated its span by every pre-/post-trial week drawn beside it.
+        t.trialScoped && weeks.includes('outside')
+          ? `the ${num(t.scopeDaysByBucket.reduce((a, b) => a + b, 0))} trial days in this window (${scopeSpan})`
+          : `${num(n)} week${n === 1 ? '' : 's'}`
       }; each bar is one week, stacked by protein. A food containing several proteins counts once for each, so a week&rsquo;s stack can total more than its feedings.${
         t.incompleteFeedings > 0
           ? ` ${num(t.incompleteFeedings)} feeding${

@@ -3304,7 +3304,7 @@ Deno.test('CUL-1779 — a zero-feeding week one meal-day under the floor draws n
   // Every column carries its day count, so a 0 is never read without its coverage (cold read).
   assert.ok(svg.includes(`>${OFF_DIET_ZERO_MIN_MEAL_DAYS}/7 d<`) && svg.includes(`>${under}/7 d<`) && svg.includes('>7/7 d<'))
   assert.ok(
-    html.includes(`marks a week with meals logged on fewer than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} of its 7 days`),
+    html.includes(`a week with meals logged on fewer than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} days &mdash;`),
     'the note names the floor where the marker is drawn',
   )
 })
@@ -3325,6 +3325,8 @@ Deno.test('CUL-748 item 4 — a fully logged three-day trailing part-week never 
   assert.equal((svg.match(/class="nub"/g) ?? []).length, 1, 'the full clean middle week keeps its 0')
   assert.equal((svg.match(/class="nolog"/g) ?? []).length, 1, 'the three-day tail is drawn as not observed')
   assert.ok(svg.includes('>3/3 d<'), 'and its day count names the part-week')
+  const html = renderReport(base({ proteinTimeline: t }))
+  assert.ok(html.includes(`including a part-week shorter than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} days`), 'the note covers a fully logged stub (cold read r2)')
 })
 
 Deno.test('CUL-1779 — when page 1 withholds the clean-record statement, no week prints a measured 0', () => {
@@ -3336,7 +3338,7 @@ Deno.test('CUL-1779 — when page 1 withholds the clean-record statement, no wee
   const svg = offDietSvg(html)
   assert.ok(!/class="nub"/.test(svg), 'no measured zero under a withheld clean read')
   assert.equal((svg.match(/class="nolog"/g) ?? []).length, 2)
-  assert.ok(html.includes('the clinical summary withholds the trial&rsquo;s clean-record statement'), 'the note says why')
+  assert.ok(html.includes('The clinical summary above withholds this trial&rsquo;s clean-record statement'), 'the note says why')
 })
 
 Deno.test('CUL-1779 — a week outside the trial draws nothing, carries no day count, and is named as outside', () => {
@@ -3354,6 +3356,8 @@ Deno.test('CUL-1779 — a week outside the trial draws nothing, carries no day c
   assert.ok(svg.includes('per week: outside the trial, 1 (meals logged on 7 of 7 days), 0 (meals logged on 7 of 7 days).'))
   assert.equal((svg.match(/ d<\/text>/g) ?? []).length, 2, 'day counts under the two in-scope weeks only')
   assert.ok(html.includes('fall outside the trial (Jun 8 &ndash; Jun 21)'), 'the scope is stated where the reader meets it')
+  assert.ok(/<text class="z"[^>]*>pre-trial<\/text>/.test(svg), 'the empty column says what it is, so it never reads as a zero')
+  assert.ok(html.includes('over the <span class="num">14</span> trial days in this window (Jun 8 &ndash; Jun 21)'), 'the caption counts the trial span, not every drawn week')
 })
 
 Deno.test('cold-read coherence — a completed/stopped medication carries its end date on the meds line + Appendix D', () => {

@@ -3251,7 +3251,7 @@ Deno.test('CUL-1779 — a refusal-stopped trial withholds every measured off-die
   const svg = html.match(/<svg[^>]*aria-label="Off-diet protein exposure per week:[^"]*"[\s\S]*?<\/svg>/)
   assert.ok(svg, 'the off-diet chart rendered')
   assert.ok(!/class="nub"/.test(svg![0]), 'no week prints a measured zero')
-  assert.ok(html.includes('withholds the trial&rsquo;s clean-record statement'))
+  assert.ok(html.includes('withholds this trial&rsquo;s clean-record statement'))
 })
 
 // ── B-351 slice 5 — END-TO-END, from STORED COLUMN SHAPES to rendered HTML ─────
