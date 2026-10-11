@@ -13,15 +13,15 @@
 
 2. **Improving on the diet is not the diagnosis.** 6 of 19 dogs (32%) and 8 of 17 cats (47%) that improved on an elimination diet did not relapse when challenged (Sofou 2024; Noli 2021) `[E]`. A change of season, better flea control, a concurrent antipruritic or the diet's other properties draw the same improving curve `[E]`.
 
-3. **A skin challenge window is 14 days, and the cat's 7 days is weaker than it looks.** CAT(9) pools 315 canine and 72 feline positive challenges: dogs TTF50 5 days and TTF90 14; cats TTF50 4 and TTF90 7 `[E]`. The cat figure rests mostly on one retrospective series binned "days 1 to 7"; in the day-resolved studies of both species, roughly one positive challenge in six flared after day 7, and all had by day 14 (§3.3) `[A on E]`. By day 2 only 21% of dogs and 29% of cats had flared, so the 48-hour to 7-day windows of human apps would miss most pet flares `[E]`.
+3. **A dog skin challenge needs 14 days, and the evidence cannot separate the cat's 7 from 14.** CAT(9) pools 315 canine and 72 feline positive challenges: dogs TTF50 5 days and TTF90 14; cats TTF50 4 and TTF90 7 `[E]`. Each headline hangs on one binned study: without Scott & Miller 2013 (48 cat events in one "days 1 to 7" bin) the cat TTF90 rises to 14 days; the dog's 14 depends on how Leistra 2001's "days 8–14" bin is counted (spread evenly, 10 days) `[A on E, re-derived independently twice, §3.3]`. In the day-resolved dog studies 6 of 36 positive challenges flared after day 7, all by day 14 `[A on E]`. Every feline source that states a challenge length uses 10–14 days `[E]`. By day 2 only 21% of dogs and 29% of cats had flared, so the 48-hour to 7-day windows of human apps would miss most pet flares `[E]`.
 
-4. **An open single-food challenge is weak evidence that the food is the allergen.** In the only placebo-controlled challenge study, 6 of 12 food-allergic dogs met relapse criteria on a placebo week; placebo positivity (18–36%) overlapped food positivity (33–42%), p = 0.5 (Sofou 2026) `[E]`. Blinded human reintroductions show the same: a glucose control "triggered" symptoms in 26% of IBS patients, beside lactose at 28% and fructose at 27% `[E]`. The whole-diet provocation is the better-supported step; ingredient-level challenges are "not always practical or necessary" (MSD) `[E]`.
+4. **An open single-food challenge is weak evidence that the food is the allergen.** In the only placebo-controlled challenge study, 6 of 12 food-allergic dogs met relapse criteria on a placebo week; placebo positivity (18–36%) overlapped food positivity (33–42%), with no significant difference (Sofou 2026) `[E]`. Blinded human reintroductions show the same: a glucose control "triggered" symptoms in 26% of IBS patients, beside lactose at 28% and fructose at 27% `[E]`. The whole-diet provocation is the better-supported step; ingredient-level challenges are "not always practical or necessary" (MSD) `[E]`.
 
 5. **A flare is relative to the pet's own day 0, and fixed cut-offs miss most real ones.** The best-validated relapse definition is a more-than-doubled itch or lesion score from day 0, or the owner's own rating of moderate-to-severe deterioration. That owner rating alone caught 12 of 13 confirmed dogs (92.3%) (Sofou 2024) `[E]`. Absolute itch cut-offs would have called 25–92% of true whole-diet relapses negative `[E]`. The first itch can come within hours (61% of dogs within 12 h in one series), while a criterion-meeting relapse was recorded at 11 ± 3.8 days in another `[E]`. Elapsed time means nothing until the endpoint is named.
 
 6. **Every source gives the same stop rule and disagrees on everything else.** A flare means stop the challenge food, go back to the trial diet until the signs settle, and only then start the next challenge `[E]`. Owner handouts disagree on the method (whole diet plus treats, a 10–20% mix-in, or single proteins first), the window (1 to 4 weeks), the time per food (1 to 4 weeks), the settling time (1–2 to 2–4 weeks), the amount and the treats `[E]`. The prescribing vet's plan is the only authority on those parameters. Outside the skin time-to-flare data, no default has evidence behind it `[A]`.
 
-7. **The "10% re-challenge" figure is real, narrow and partly the vet's.** It is 8 of 77 owners in one Ontario survey of dogs with suspected or confirmed food allergy, filled in before a first dermatology visit (2014–15, Royal Canin-funded). Only 33% recalled their vet discussing a re-challenge, and willingness was never asked (Tiffany 2019) `[E]`. The human analog runs the same way: about a tenth of the 20,553 FoodMaestro app users who did the elimination tried even one challenge `[E]`. The reasons on record are fear of a flare, comfort, burden, never being given a plan, and "stay on it if it's working" `[E]`.
+7. **The "10% re-challenge" figure is real, narrow and partly the vet's.** It is 8 of 77 owners in one Ontario survey of dogs with suspected or confirmed food allergy, filled in before a first dermatology visit (2014–15, Royal Canin-funded). Only 33% recalled their vet discussing a re-challenge, and willingness was never asked (Tiffany 2019) `[E]`. The human analog runs the same way: 1,435 of the 20,553 FoodMaestro app users with restriction data (7.0%) went on to log even one challenge `[E]`. The reasons on record are fear of a flare, comfort, burden, never being given a plan, and "stay on it if it's working" `[E]`.
 
 8. **Owners already reintroduce on their own, because they want off the prescription food.** Prescription hydrolysed dry food listed at about twice the price per pound of over-the-counter food for dogs and three times for cats (PetSmart, 2026-10-11) `[E]`. Owners ask "am I stuck with this forever?", test foods with windows of "a couple days", see an early "no reaction" reversed by a late flare, conclude lifelong avoidance from one exposure, and buy hair or saliva tests whose results are indistinguishable from chance, fake fur and water included `[E]`.
 
@@ -95,21 +95,20 @@ The July brief records CAT(9) as "dogs TTF50 5d / TTF80 7d / TTF90 14d; cats TTF
 
 ### 3.3 The species gap rests mostly on two binned studies
 
-CAT(9)'s supplementary tables give each study's day counts. Rebuilding the curves with each binned range assigned to its end day, as CAT(9) did, reproduces the paper's cumulative rows exactly. Splitting them shows `[A on E]`:
+CAT(9)'s supplementary tables give each study's day counts. Lane A and the verifier each rebuilt the curves independently from the two spreadsheets, assigning each binned range to its last day as the authors' own formulas do; both reproduce the paper's cumulative rows exactly and agree on every number below `[A on E]`:
 
-<!-- VERIFY: table to be replaced with the verifier's independently re-derived numbers -->
 | Subset | n | By day 3 | By day 7 | By day 14 |
 |---|---|---|---|---|
-| Dogs, all (the CAT pool) | 315 | 47.6% | 81.3% | 99.0% |
-| Dogs without Leistra 2001 | 201 | 70.6% | 95.0% | 100% |
+| Dogs, all (the CAT pool) | 315 | 47.6% | 81.3% (256) | 99.0% (312) |
+| Dogs without Leistra 2001 | 201 | 70.6% | 95.0% (191) | 100% |
 | Leistra 2001 alone (3-week feeding of commercial selected-protein diets) | 114 | 7.0% | 57.0% | 97.4% |
-| Dogs, day-resolved studies | 36 | 33.3% | 83.3% | 100% |
-| Cats, all (the CAT pool) | 72 | 15.3% | 94.4% | 100% |
-| Cats without Scott & Miller 2013 | 24 | 45.8% | 83.3% | 100% |
+| Dogs, day-resolved studies | 36 | 33.3% | 83.3% (30) | 100% |
+| Cats, all (the CAT pool) | 72 | 15.3% | 94.4% (68) | 100% |
+| Cats without Scott & Miller 2013 | 24 | 45.8% | 83.3% (20) | 100% |
 
-- The dog TTF90 of 14 days depends on Leistra 2001, whose 46 events binned "days 8–14" are assigned to day 14. Those are recurrences during 3-week feeding of maintenance diets, plausibly low-dose or cross-reactive exposures, not provocations with the original diet `[E Leistra01; A]`.
-- The cat TTF90 of 7 days depends on Scott & Miller 2013, whose 48 events form one "1 to 7 days" bin `[E ScottMiller13]`.
-- In the day-resolved data of both species, about 83% of positive challenges had flared by day 7 and all by day 14 `[A]`. Every feline source that states a challenge length uses 10–14 days or a 14-day maximum `[E Noli21, BryanFrank10, ScottMiller13 narrative]`.
+- **Dogs.** The TTF90 of 14 days depends on Leistra 2001: 114 of the 315 events, 46 of them in one bin labelled "days 8–14" and assigned to day 14. Without Leistra the dog TTF90 is 5 days; with its bin spread evenly across days 8–14 it is 10 `[A on E]`. Leistra's events look mostly like recurrences during 3-week feeding of commercial limited-protein diets rather than provocations with the original diet (about 40 provocations and 74 recurrences, by arithmetic on its abstract) `[A on E Leistra01]`. The cleanest dog evidence, the 36 challenges from day-resolved studies, has 6 (16.7%) flaring after day 7 and all by day 14 `[A on E]`; AAHA's flowchart waits 14 days `[E AAHA23]`.
+- **Cats.** The TTF90 of 7 days depends on Scott & Miller 2013: 48 of the 72 events, all in one "days 1 to 7" bin `[E ScottMiller13]`. Without it the cat TTF90 is 14 days, and the cat TTF50 of 4 days is computed on the other 24 cats alone `[A on E]`. Whether the remaining feline data show late flares turns on one study: 4 of the 24 flared after day 7, all from Vogelnest 2013, whose single-cell "day 10" and "day 14" entries may themselves be "within two weeks" `[A]`; the two studies CAT(9) itself lists as day-resolved (Guaguère, Reedy) have 0 of 11 after day 7 `[A on E]`. **The honest reading for cats is that the data cannot separate 7 from 14.** Scott & Miller's own narrative says signs are "typically reproduced within 15 minutes to 7 days, with rare cats not reacting until 14 days", and every feline source that states a challenge length uses 10–14 days or a 14-day maximum `[E ScottMiller13, Noli21, BryanFrank10]`.
+- The "about one in six by day 7" figure holds for dogs (6 of 36) and for both species pooled (6 of 47, 12.8%, with the 11 strictly day-resolved cats); it does not hold for cats alone on the strict list `[A on E]`.
 - Culprit's code carries the species asymmetry as `CHALLENGE_WINDOW_DAYS` (dog 14, cat 7, other 14; `lib/dietTrial.ts:3090`), used only for the vet report's † marker, whose prose states "dog TTF90 14d, cat TTF90 7d" (`supabase/functions/generate-report/render.ts:318-320`) `[E]`.
 
 ### 3.4 What this does to any window
@@ -140,7 +139,7 @@ PVAS (an owner-scored 0–10 itch scale with behavioural anchors) and CADESI-04 
 
 ### 4.2 Open challenges over-call, in pets and in people
 
-- **Sofou 2026** (12 dogs; 8 foods at 40 g a day plus 2 placebos each, up to 7 days each, owners and investigators blinded): "six of 12 (50%) dogs were positive to either the first (two of six) or the second (four of six) placebo FC". Per food 33–42%; placebo 2/11 and 4/11. "There was no difference in the probability of positive FC to at least one food item compared to placebo (Fisher's exact test; n = 12, p = 0.5)." The authors' reading: "the most reasonable explanation is the normal temporal fluctuations in the severity of AD along with the subjective evaluation of response to FCs", and the accuracy of open single-food challenges "is questionable" `[E Sofou26]`.
+- **Sofou 2026** (12 dogs; 8 foods at 40 g a day plus 2 placebos each, up to 7 days each, owners and investigators blinded): "six of 12 (50%) dogs were positive to either the first (two of six) or the second (four of six) placebo FC". Per food 33.3–41.7%; placebo 2/11 and 4/11. "There was no difference in the probability of positive FC to at least one food item compared to placebo (Fisher's exact test; n = 12, p = 0.5)." The authors' reading: "the most reasonable explanation is the normal temporal fluctuations in the severity of AD along with the subjective evaluation of response to FCs", and the accuracy of the results of single-food challenges, in this study and in earlier open ones, "is questionable" `[E Sofou26]`. Two scope notes from the verifier: the doubt is about **single-food** challenges, not the whole-diet rechallenge, which every dog had passed to enter the study; and the reported p = 0.5 does not reproduce from the counts given (11 of 12 dogs positive to a food against 6 of 12 to a placebo gives Fisher p ≈ 0.07; per challenge, 34.7% against 27.3% gives p ≈ 0.62). Either way the difference is not significant `[A on E]`.
 - **The open whole-diet challenge looked different:** owner-rated moderate-to-severe deterioration appeared in 11 of 12 open two-week whole-diet challenges `[E Sofou26]`.
 - **People:** in a blinded nine-week FODMAP reintroduction, the glucose control triggered symptom recurrence in 26% of IBS patients, beside lactose 28%, fructose 27% and sorbitol 23% `[E VdH24]`. In a blinded gluten rechallenge, "Gluten-specific effects were observed in only 8% of participants", and "An order effect was observed" `[E Biesiekierski13]`. In FoodMaestro's own data, 424 users reported moderate-to-severe symptoms after a wheat-bread challenge but only 361 called it failed `[E FoodMaestro23]`.
 - **Observers who cannot ask the patient:** allergists note that infant reactions "can be difficult to interpret given infants' lack of ability to verbalize", and that clinginess or fussiness "may also be present in healthy infants not experiencing an allergic reaction" `[E Bird20]`. A blinded food challenge "is commonly considered to be positive only when objective symptoms occur" `[E Bird20]`. In pets, the owner who knows what was fed is the observer, so expectation bias runs toward "reacted" `[A]`.
@@ -217,7 +216,7 @@ Nineteen owner handouts and seven vet-facing pages were read (Lane B §3). The o
 | All 8 re-feeders saw signs return | Consistent with recall bias: an owner who saw a flare is likelier to remember the re-feed | `[E Tiffany19; A]` |
 | **33%** recalled a vet discussing a re-challenge; 17% could not recall | The authors: "half of the study participants did not discuss re-challenging with their veterinarian". Willingness "did not clarify" | `[E Tiffany19]` |
 | 40.1% reported full adherence to the elimination diet trial | 192 of 665 invited owners at one dermatology practice (2012–2017) responded. Knowledge and self-efficacy raised the odds of full adherence; perceived barriers lowered them | `[E Painter19]` |
-| About a tenth tried a challenge (human app) | FoodMaestro (King's College London): 49,061 consented → 21,462 logged symptoms → 20,553 with restriction data → **2,053** with at least one reintroduction challenge → 965 personalisation. "only a tenth" (authors) | `[E FoodMaestro23]` |
+| 7.0% of restriction users went on to a challenge (human app) | FoodMaestro (King's College London, Guy's and St Thomas', FoodMaestro Ltd; not Monash): 49,061 consented, 21,462 logged symptoms, 20,553 had restriction data, 2,053 logged at least one reintroduction challenge, 965 personalisation data. The stages are not nested: only 1,435 of the 2,053 challengers had done restriction (7.0% of 20,553), and 291 of the 965 skipped both earlier stages. The authors' summary: "only a tenth" | `[E FoodMaestro23; A on E]` |
 | 23% completed dietitian-led reintroduction (human) | A Monash-affiliated 7-year FODMAP cohort: 74 educated → 46 with documented Phase 2 education → 17 reviewed after Phase 3 | `[E Silva25]` |
 | 63% and 75% completed (human, endoscopy-gated) | Eosinophilic oesophagitis: 20 of 32 histologic responders went through systematic reintroduction; 97 of 130 completed the 2-4-6 study | `[E Gonsalves12, Molina18]` |
 
@@ -416,7 +415,7 @@ Evidence statements about what any design runs into. Not product decisions.
 
 1. **Skin and gut "challenges" are different objects** (§1). One flow with one vocabulary would misstate one of them, and the gut consensus does not define its transition as a test.
 2. **"Stayed on the trial diet" is a complete outcome** in both, endorsed by Cornell, VCA and Hill's sources (§1). Nothing in the evidence frames it as an unfinished trial.
-3. **A skin challenge window shorter than 14 days misses a measurable share of flares in both species** (§3.3–3.4); a 72-hour window misses about half.
+3. **A dog skin challenge window shorter than 14 days misses a measurable share of flares, and for cats the data cannot separate 7 days from 14** (§3.3–3.4); a 72-hour window misses about half of canine flares.
 4. **The endpoint must be named.** First itch, a ≥ 2-point PVAS rise and a doubled score are different events, hours to days apart (§4.1).
 5. **Relative criteria need a day-0 baseline**, and the owner's own global rating outperformed fixed numeric cut-offs (§4.1).
 6. **A single open positive single-food result is not a confirmed allergen** (§4.2), and a single quiet window is not tolerance: "lack of response … does not rule out overall food intolerance" (§8).
@@ -436,7 +435,38 @@ Evidence statements about what any design runs into. Not product decisions.
 
 ## §V Verification and corrections owed
 
-<!-- VERIFIER -->
+### V.1 The independent pass
+
+A separate verifier, with no access to the lanes' reports or scripts, re-fetched each load-bearing source and rebuilt the CAT(9) curves from the two supplementary spreadsheets with its own script `[E]`.
+
+| Claim | Verdict | Note |
+|---|---|---|
+| CAT(9) headline numbers (315 / 72 times to flare; day 1 8.6% of dogs, 27.3% of cats; TTF50/80/90 dogs 5/7/14, cats 4/7/7; "need to wait for 14 and 7 days") | Confirmed | Reproduced from the formulas in the supplementary tables |
+| The re-analysis (each headline hangs on one binned study; about one positive challenge in six flares after day 7) | **Holds for dogs; overstated for cats** | §3.3 now carries the verifier's numbers and the strict-list caveat (0 of 11 late flares in the two feline studies CAT(9) lists as day-resolved) |
+| Sofou 2026 (placebo 2/6 and 4/6; foods 33.3–41.7%; "25%–91.7%"; p = 0.5) | Confirmed, with a scope caveat | "Questionable" is about single-food challenges, not the whole-diet rechallenge; the 25–91.7% spans four PVAS-based criteria; p = 0.5 does not reproduce from the counts (§4.2) |
+| AAHA 2023 ("essential … the sole means of confirming"; the 14-day flowchart; lokivetmab "more than 60 days") | Confirmed | Checked in AAHA's own PDF, the flowchart read as an image |
+| Sofou 2024 (13 confirmed; 6 of 19 responders did not relapse) and Noli 2021 (8 of 17 cats) | Confirmed | The "OGACD = 3–4" wording comes from the 2026 paper; the 2024 full text was blocked |
+| Tiffany 2019 (8 of 77; 24.73% of 93; 51%; 75%) | Confirmed as printed | 77 is the number who answered the post-improvement items, not the 166 responses, the 93 analysed, or "owners who did a diet trial" (never reported); read through a rendering tool only |
+| FoodMaestro (49,061 → 21,462 → 20,553 → 2,053 → 965; not Monash) | Numbers confirmed; framing corrected | The stages are not nested: 1,435 of the 2,053 challengers had done restriction (7.0% of 20,553) |
+| MSD Veterinary Manual (five phrases) | Confirmed | The 2-week item spacing is framed as what "most clinicians believe" |
+| Scott & Miller 2013 (all 48 within 1 to 7 days; rechallenge "mandatory"; 91.7% commercial diet only) | Confirmed | The same paper notes rare cats reacting only at 14 days |
+| Udraite Vovk 2026 (every number) | Confirmed | Dose and day are fully confounded: the dose was fixed by day, so "60% at 30 g" is "60% on days 4–7" |
+| Van den Houte 2024 (glucose 26%, lactose 28%, fructose 27%) | Confirmed from the abstract | The denominator could not be checked (paywall) |
+
+### V.2 Corrections owed to earlier frozen briefs
+
+Under the convention for frozen briefs (a dated §V at the foot, the published wording kept, an inline ⚠ pointer at each corrected claim), these land on the old briefs in their own change, not here:
+
+| Brief | Claim as published | What the evidence says |
+|---|---|---|
+| `2026-05-feeding-windows-and-partial-eating.md` (lines 43–44, 50, 101) | Cutaneous rechallenge in dogs: "Median 12 hours; 98% within 7 days", cited to Olivry & Mueller 2020 | Not in CAT(9), which reports about 9% of dogs on day 1 and TTF50 5 days. The numbers match Shimakura & Kawano 2021 (46 dogs, positive challenges only, owner-recorded first itch: 60.9% within 12 h, one dog at day 10); "98%" is an inference from 45 of 46. The brief's conclusion (hour-level timestamp error is negligible) survives |
+| `2026-07-diet-trial-competitive-landscape.md` §5 (line 154) | "Monash's own real-world data: 11,689 users … 2,053 completed at least one food challenge"; a derived ~18% funnel | The study is FoodMaestro (King's College London), not Monash; 11,689 is the symptomatic-at-baseline subset; 1,435 of 20,553 restriction users (7.0%) went on to a challenge |
+| Same, §4.5 | CAVD's cat handout: "cats can develop serious liver issues if they go without food for 1-2 days so contact your veterinarian immediately if your cat refuses the food" | The handout says "Cats can develop serious liver issues if they don't consume enough food. Contact your veterinarian immediately if your cat refuses the food or only eats part of his meals." "1–2 days" is not in the text: a search-snippet error that could have become a timer |
+| Same, §9 research debt #11 | The Purina fecal-score chart's "score 2 is ideal", search-summary only | Settled: Nextmune's 2022 owner handout prints the scale "with 2 being normal", "adapted from www.purinainstitute.com" |
+| Same, §2 and §5; `docs/nyx-diet-trial-requirements.md` D8 | "only 10% of owners ever do it"; "25% of dogs in a 93-owner trial survey had access to unmonitored food sources"; "51% … 75%" | 8 of 77 respondents to a post-improvement question in one pre-referral survey of suspected or confirmed food allergy, where only 33% recalled their vet raising a re-challenge; 23 of 93 answered "yes" to a present-tense access question; 51% and 75% have no reconstructible denominator |
+| Same, §4.4 | MSD: "Antipruritic medications are permitted throughout the trial" | Not on the August 2025 page; its words are "food-allergic patients can receive any antipruritic medication necessary to control their signs during a dietary elimination trial". The meaning holds |
+
+Separately, Lane D found twelve corrections to the October competitive brief (§10), which was still on an open PR on the day of writing; they go to that brief's own issue.
 
 ---
 
