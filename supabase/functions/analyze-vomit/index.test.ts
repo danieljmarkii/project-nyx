@@ -34,7 +34,7 @@ import {
   type FunctionCaps,
 } from './index.ts'
 import { deriveIncidentFlags } from '../generate-signal/detection.ts'
-import { selectReadText as selectSharedReadText, shouldCollapsePartialRead } from '../_shared/incident-analysis.ts'
+import { gatedStatus, selectReadText as selectSharedReadText, shouldCollapsePartialRead, type GateState } from '../_shared/incident-analysis.ts'
 import type { IntakeRecord } from './context.ts'
 
 // ── Cap + flag gate (T2-3) ────────────────────────────────────────────────────
@@ -143,6 +143,52 @@ Deno.test('capped path — no contextual flag → floor is NOT an escalation (st
     contextualFlags: [],
   })
   assertStrictEquals(rec, 'not_enough_to_say')
+})
+
+// ── CUL-552 PR 2: a declined owner takes the capped path's shape ─────────────────────────
+// The load-bearing AC on CUL-552: declined = the capped-path shape. The model call is
+// skipped, the contextual flags are still computed and still force worth_a_call, and with
+// no flag the row is the shipped 'read_disabled' state (never 'capped', which would tell the
+// owner to wait out a limit). The pipeline suite drives the same branch end to end.
+
+Deno.test('declined path — a fired contextual flag still forces worth_a_call (mirrors the capped test above)', () => {
+  const declined: GateState = { allow: false, reason: 'consent_declined' }
+  assertStrictEquals(declined.allow, false)
+  // Exactly the call the gated branch makes: no model ran, so no visual flags.
+  const rec = applyEscalationFloor({
+    modelRecommendation: 'not_enough_to_say',
+    appearsToShowVomit: false,
+    hasPhoto: true,
+    visualFlags: [],
+    contextualFlags: ['repeated_vomiting'],
+  })
+  assertStrictEquals(rec, 'worth_a_call')
+  const read = selectReadText({
+    petName: 'Nyx',
+    recommendation: rec,
+    contextualFlags: ['repeated_vomiting'],
+    visualFlags: [],
+    modelReadText: 'this looks totally fine and healthy', // no model ran; never surfaces
+    photoUnreadable: false,
+    hasPhoto: true,
+  })
+  assertStrictEquals(read.includes('fine'), false)
+  assertStrictEquals(read.includes('healthy'), false)
+  assertStrictEquals(read, buildContextualReadText('Nyx', ['repeated_vomiting']))
+})
+
+Deno.test('declined path — no contextual flag: no escalation is fabricated, and the state is read_disabled', () => {
+  const rec = applyEscalationFloor({
+    modelRecommendation: 'not_enough_to_say',
+    appearsToShowVomit: false,
+    hasPhoto: true,
+    visualFlags: [],
+    contextualFlags: [],
+  })
+  assertStrictEquals(rec, 'not_enough_to_say')
+  assertStrictEquals(gatedStatus({ allow: false, reason: 'consent_declined' }), 'read_disabled')
+  assertStrictEquals(gatedStatus({ allow: false, reason: 'feature_disabled' }), 'read_disabled')
+  assertStrictEquals(gatedStatus({ allow: false, reason: 'cap_reached', cap: 'daily' }), 'capped')
 })
 
 // ── bytesToBase64 ─────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@
 import { assertEquals, assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   resolveGateState,
+  modelPhrasingAllowed,
   resolveFlagValue,
   resolveCaps,
   computeResetsAt,
@@ -490,4 +491,48 @@ Deno.test('CUL-1630 — the summary model call is reached only past modelMayPhra
   )
   // One summary model request in the file, so a second path cannot skip the gate.
   assertStrictEquals(src.split('system: SUMMARY_SYSTEM').length - 1, 1, 'a second summary model request exists')
+})
+
+// ── CUL-552 PR 2: no recorded yes, no phrasing call; the Signal is never blank ─────────────
+// D10 is the whole boundary, so the Signal's phrasing model joins the consent gate. Declined
+// (a no, no row, a failed read) is the phrasing-flag-off path: every finding and the summary
+// render their templates. The handler has no fake-client harness, so the wiring is pinned
+// on the source, as the EN-F pins above are; the read's own rule is aiConsent.test.ts's.
+
+Deno.test('CUL-552 — modelPhrasingAllowed needs the flag AND the owner\'s yes', () => {
+  assertStrictEquals(modelPhrasingAllowed(true, true), true)
+  assertStrictEquals(modelPhrasingAllowed(true, false), false)
+  assertStrictEquals(modelPhrasingAllowed(false, true), false)
+  assertStrictEquals(modelPhrasingAllowed(false, false), false)
+})
+
+Deno.test('CUL-552 wiring — consent is read service-role for the verified uid and decides every phrasing call', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  // The read: service-role, the uid getUser verified (never a body field).
+  assertStrictEquals(
+    /const consented = await readAiBoundaryConsent\(serviceClient\(\), user\.id\)/.test(src),
+    true,
+    'the consent read is not service-role for the verified uid',
+  )
+  assertStrictEquals(
+    /const phrasingEnabled = modelPhrasingAllowed\(phrasingFlag, consented\)/.test(src),
+    true,
+    'phrasing is no longer decided by the flag AND consent',
+  )
+  // Every phrasing call receives the gated value, and phrasing is reached only after it.
+  assertStrictEquals(/const phraseWithModel = phrasingEnabled && /.test(src), true, 'the finding phrasing no longer reads the gate')
+  assertStrictEquals(/phraseFinding\(r\.finding, result\.petName, phraseWithModel\)/.test(src), true, 'a finding is phrased without the gate')
+  assertStrictEquals(/phraseSummaryText\(result\.summaryPacket, phrasingEnabled\)/.test(src), true, 'the summary is phrased without the gate')
+  assertStrictEquals((src.match(/\bphraseFinding\(/g) ?? []).length, 2, 'a second phraseFinding call site exists')
+  assertStrictEquals((src.match(/\bphraseSummaryText\(/g) ?? []).length, 2, 'a second phraseSummaryText call site exists')
+  // Both functions return their template before any model request when the gate is shut,
+  // and the file makes no other model request.
+  for (const [name, ret] of [['phraseFinding', 'fallback'], ['phraseSummaryText', 'templated']] as const) {
+    const start = src.indexOf(`async function ${name}(`)
+    const body = src.slice(start, src.indexOf('api.anthropic.com', start))
+    assertStrictEquals(new RegExp(`if \\(!phrasingEnabled\\) return ${ret}\\b`).test(body), true, `${name} reaches the model with the gate shut`)
+    assertStrictEquals(/phrasingEnabled = true/.test(src.slice(start, start + 200)), false, `${name} defaults the gate open`)
+  }
+  assertStrictEquals(src.split('api.anthropic.com').length - 1, 2, 'a model request exists outside the two gated phrasing functions')
 })

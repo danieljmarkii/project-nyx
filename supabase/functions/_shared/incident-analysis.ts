@@ -56,6 +56,7 @@ import { fetchWithTimeout } from './http.ts'
 // and the one writer of every stamp migration 075 added (the rule is on engineStamps.ts).
 import { isEngineKeyOn, type EngineFlags, type EngineKey } from './engineFlags.ts'
 import { readEngineFlags } from './engineFlagsRead.ts'
+import { readAiBoundaryConsent } from './aiConsent.ts'
 import { buildIncidentStamps, stampIncidentWrite, type IncidentStamps } from './engineStamps.ts'
 // The ONE quiet-verdict list, shared with the phone (CUL-1277). Every guard below that
 // protects an escalation already in the RECORD reads it, so a verdict a later rule wrote
@@ -1071,6 +1072,19 @@ export type GateState =
   | { allow: true }
   | { allow: false; reason: 'feature_disabled' }
   | { allow: false; reason: 'cap_reached'; cap: 'daily' | 'monthly' }
+  // CUL-552 PR 2: the owner has not said yes to sending their data to Anthropic (a recorded
+  // no, no row at all, or a read that did not answer; aiConsent.ts). Decided before the flag
+  // and the counter, so a declined owner spends no unit. It takes the same branch as the
+  // flag-off state: no model call, the contextual escalation still written, and otherwise
+  // the 'read_disabled' row the client already renders.
+  | { allow: false; reason: 'consent_declined' }
+
+// The row status a no-read gate leaves when there is no escalation to write. Only the cap
+// says 'capped'; the flag and the owner's decline are both "reading is off" (the shipped
+// read_disabled state), never a cap the owner could wait out.
+export function gatedStatus(gate: Exclude<GateState, { allow: true }>): 'capped' | 'read_disabled' {
+  return gate.reason === 'cap_reached' ? 'capped' : 'read_disabled'
+}
 
 // The pure gate decision. `flagEnabled` is the resolved app_config flag (the
 // reader fails OPEN on a config read error — §4.2). `counts` are the
@@ -1923,11 +1937,18 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //    cap" branch, and the descriptive-read flag is moot with no read to disable).
     //    Flag off ⇒ NO increment (a flagged-off call burns no unit). Flag on ⇒
     //    increment-then-check.
+    //    The owner's consent comes first (CUL-552 PR 2): read through service_role, keyed
+    //    on the uid step 0 verified, failing closed. Declined ⇒ no flag read, no increment,
+    //    no download, no model call; the branch below still writes the escalation.
     let gate: GateState = { allow: true }
     if (hasPhoto) {
-      const { flagEnabled, caps } = await readGateConfig(userClient, descriptor)
-      const counts = flagEnabled ? await recordUsage(userClient, descriptor.functionKey) : null
-      gate = resolveGateState(flagEnabled, counts, caps)
+      if (!(await readAiBoundaryConsent(adminClient, user.id))) {
+        gate = { allow: false, reason: 'consent_declined' }
+      } else {
+        const { flagEnabled, caps } = await readGateConfig(userClient, descriptor)
+        const counts = flagEnabled ? await recordUsage(userClient, descriptor.functionKey) : null
+        gate = resolveGateState(flagEnabled, counts, caps)
+      }
     }
 
     // 5. Capped or flagged off (§5.4 step 4): SKIP the vision call. The escalation
@@ -1998,7 +2019,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // No recommendation, no read, no flags — nothing reassuring is written. A
         // pre-existing completed/edited analysis is left UNTOUCHED (the cap must
         // never downgrade a real read).
-        const status = gate.reason === 'feature_disabled' ? 'read_disabled' : 'capped'
+        const status = gatedStatus(gate)
         const { error: writeError } = await adminClient
           .from('event_ai_analysis')
           .upsert(
