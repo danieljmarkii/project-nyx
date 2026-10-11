@@ -126,3 +126,84 @@ describe('TrialLedger', () => {
     expect(flat(screen.getByTestId('trial-ledger')).opacity).toBe(1);
   });
 });
+
+// ── The extension band (CUL-1855, PM ruling option A) ───────────────────────
+
+/** Set for `initial` days, extended to `target`, meals logged through `today`. */
+function extended(initial: number, target: number, today: number): Model {
+  const feedings: TrialFeeding[] = [];
+  for (let d = 1; d <= today; d++) {
+    feedings.push({
+      eventId: `m${d}`, occurredAt: onDay(d), foodItemId: 'f1', foodKey: null,
+      label: 'Royal Canin Rabbit', foodType: 'meal', proteins: ['rabbit'], intakeRating: 'all',
+    });
+  }
+  const nowMs = new Date(2026, 6, 3 + today - 1, 20).getTime();
+  const trial = {
+    id: 't1', startedAt: START_KEY, endedAt: null, targetDurationDays: target,
+    targetDurationDaysInitial: initial, species: 'dog' as const,
+  };
+  const facts = computeTrialFacts({
+    trial,
+    allowedFoods: [{
+      foodItemId: 'f1', foodKey: null, label: 'Royal Canin Rabbit', role: 'primary_diet',
+      allowedFrom: START_KEY, allowedUntil: null, primaryProtein: 'rabbit', proteins: ['rabbit'],
+    }],
+    feedings,
+    doses: [],
+    arrangements: [],
+    nowMs,
+  });
+  const input: TrialCardInput = {
+    trial: { id: 't1', status: 'active', startedAt: START_KEY, endedAt: null, targetDurationDays: target },
+    nowMs,
+    petName: 'Mochi',
+    coverage: { daysLogged: facts.coverage!.daysLogged, daysElapsed: facts.coverage!.daysElapsed },
+  };
+  const ledger = buildTrialLedger({ input, facts });
+  if (!ledger || !ledger.extension) throw new Error('fixture drew no extension band');
+  return ledger;
+}
+
+describe('TrialLedger — the extension band (CUL-1855)', () => {
+  it('draws the count, the line where it stops, then the band with its own counts', () => {
+    render(<TrialLedger ledger={extended(56, 84, 78)} />);
+    for (let w = 1; w <= 8; w++) expect(screen.getByTestId(`trial-ledger-row-${w}`)).toBeTruthy();
+    for (let w = 9; w <= 12; w++) {
+      expect(screen.queryByTestId(`trial-ledger-row-${w}`)).toBeNull();
+      expect(screen.getByTestId(`trial-ledger-ext-row-${w}`)).toBeTruthy();
+    }
+    expect(screen.getByTestId('trial-ledger-end').props.children).toBe(
+      'Aug 27 · day 56, the end you first set. The count above stops here.',
+    );
+    expect(screen.getByText('Extended to Sep 24 · not in the count above')).toBeTruthy();
+    expect(screen.getByTestId('trial-ledger-extension-end').props.children).toBe('Sep 24 · day 84, the end you set');
+    expect(screen.getByText('1 of 1 so far')).toBeTruthy();
+    // Still ONE accessible element, its sentence naming the band after the count.
+    expect(screen.getByTestId('trial-ledger').props.accessibilityLabel).toContain('Extended weeks, not in the count:');
+  });
+
+  it('is a hairline box, never a fill, so a not-reached cell stays visible inside it', () => {
+    render(<TrialLedger ledger={extended(56, 84, 78)} />);
+    const band = flat(screen.getByTestId('trial-ledger-extension'));
+    expect(band.backgroundColor).toBeUndefined();
+    expect(band.borderWidth).toBe(1);
+    expect(flat(screen.getByTestId('trial-ledger-day-80')).backgroundColor).toBe(theme.colorSurfaceSubtle);
+  });
+
+  it("splits a week that straddles the designed end, keeping each day in its weekday column", () => {
+    // Designed 52 days (week 8 holds days 50–56), extended to 66.
+    render(<TrialLedger ledger={extended(52, 66, 60)} />);
+    const counted = screen.getByTestId('trial-ledger-row-8');
+    const band = screen.getByTestId('trial-ledger-ext-row-8');
+    expect(screen.getByTestId('trial-ledger-day-52')).toBeTruthy();
+    // The band's half of week 8 opens on day 53 after three empty columns.
+    const bandCells = band.findAll((n: { props: { testID?: unknown } }) => typeof n.props.testID === 'string' && n.props.testID.startsWith('trial-ledger-day-'), { deep: true });
+    expect(bandCells.map((n: { props: { testID?: unknown } }) => n.props.testID)).toEqual(
+      expect.arrayContaining(['trial-ledger-day-53', 'trial-ledger-day-56']),
+    );
+    expect(counted.findAll((n: { props: { testID?: unknown } }) => n.props.testID === 'trial-ledger-day-53')).toHaveLength(0);
+    expect(screen.getByText('3 of 3')).toBeTruthy();
+    expect(screen.getByText('4 of 4')).toBeTruthy();
+  });
+});
