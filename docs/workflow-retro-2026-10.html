@@ -284,7 +284,7 @@ footer { border-top: 1px solid var(--line); padding-top: 18px; font-size: 0.85re
   <section aria-labelledby="s-dec">
     <div class="section-head">
       <h2 id="s-dec">Decisions for you</h2>
-      <p><b>Ruled Oct 11:</b> D1, D2, D3, D5, D6 and D7 as recommended. D4 is open. Each option you pick updates the ruling line at the bottom.</p>
+      <p><b>Ruled Oct 11:</b> all seven as recommended, D4 in its tuned form (one week, friction counts as a bug). The ruling line below still works for a later revisit.</p>
     </div>
 
     <article class="decision" data-d="D1">
@@ -319,14 +319,14 @@ footer { border-top: 1px solid var(--line); padding-top: 18px; font-size: 0.85re
     </article>
 
     <article class="decision" data-d="D4">
-      <h3>D4 · Freeze the process once this lands</h3>
-      <p class="deciding">Deciding: whether to pause changes to the workflow tools themselves (dispatch, /wrap, the steward, the groomer) for two weeks after this build lands. The work they run keeps going. The pause lets you see whether the changes worked before the next round of changes, the way you taste one batch before changing the recipe again.</p>
+      <h3>D4 · Pause changes to the tools once this lands <span class="rec-tag">ruled A, tuned</span></h3>
+      <p class="deciding">Deciding: whether to pause changes to the workflow tools themselves (dispatch, /wrap, the steward, the groomer) after this build lands. Using them is never paused: the work they run keeps going.</p>
       <fieldset class="options"><legend>D4 options</legend>
-        <label class="opt rec"><input type="radio" name="D4" value="A" checked><span class="t"><b>A · Two-week freeze, then weekly batches</b><span class="rec-tag">recommended</span><br>Bug fixes only in dispatch, /wrap, the steward and the groomer for two weeks, then a short measured review, then process edits in one PR a week. Dispatch went from 15 KB to 72 KB in 13 days, and 11% of merged PRs were workflow-only.</span></label>
-        <label class="opt"><input type="radio" name="D4" value="B"><span class="t"><b>B · Freeze dispatch only</b></span></label>
-        <label class="opt"><input type="radio" name="D4" value="C"><span class="t"><b>C · Keep iterating</b><br>As issues appear.</span></label>
+        <label class="opt rec"><input type="radio" name="D4" value="A" checked><span class="t"><b>A · One week, friction counts as a bug</b><span class="rec-tag">ruled</span><br>For one week after the last build PR merges, the tools take bug and friction fixes only: anything that costs you a decision, stalls a row, or confuses a brief. Then a readout on three numbers, then tool changes in one PR a week.</span></label>
+        <label class="opt"><input type="radio" name="D4" value="B"><span class="t"><b>B · Pause dispatch only</b></span></label>
+        <label class="opt"><input type="radio" name="D4" value="C"><span class="t"><b>C · No pause</b><br>Improvements ship as they come.</span></label>
       </fieldset>
-      <p class="consequence">Consequence: the six open dispatch issues are sorted once; genuine bugs proceed. CLAUDE.md stays outside the weekly batch, since Tier 1 updates it the moment a decision is made.</p>
+      <p class="consequence">Consequence: the readout is filed as <a href="https://linear.app/projectnyx/issue/CUL-1876">CUL-1876</a>, blocked by the five build PRs, so it surfaces on its own. Safety fixes and CLAUDE.md updates from rulings are never held.</p>
     </article>
 
     <article class="decision" data-d="D5">

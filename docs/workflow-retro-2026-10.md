@@ -34,7 +34,7 @@ Prior retros: `docs/workflow-retro-2026-07.md`, `docs/workflow-retro-2026-09.md`
 
 **The fix is a sort, not another queue.** Keep flagging everything, and sort each finding by what it can do. Anything that could quiet a warning, leak data or lose data is fixed now, or, if the dispatcher proves its code dark, gates that feature's go-live. A finding that blocks the goal becomes a row. Everything else parks, counted, and asks you nothing until it is pulled. Section 5 has the design (two adversarial passes; the second found six holes, all closed), section 6 the wider workflow, section 8 seven decisions, and section 9 five things to do today.
 
-**Ruled 2026-10-11:** you took D1, D2, D3, D5, D6 and D7 as recommended. D4 is open. Section 11 records what each ruling set in motion.
+**Ruled 2026-10-11:** you took all seven. D1 to D3 and D5 to D7 were taken as written. D4 was taken in a tuned form: one week, and friction counts as a bug. Section 11 records what each ruling set in motion.
 
 ---
 
@@ -197,7 +197,7 @@ Sources were re-opened on 10/11 and each quote checked. The full list, with the 
 
 ## 8. Decisions for you
 
-> **Ruled 2026-10-11 by the PM:** D1, D2, D3, D5, D6 and D7, all A. D4 is open; its plainer explanation is in section 11.
+> **Ruled 2026-10-11 by the PM:** all seven, A. D4 was taken in the tuned form recorded in section 11.
 
 ### D1 · Sort findings by what they can do
 
@@ -224,14 +224,18 @@ Sources were re-opened on 10/11 and each quote checked. The full list, with the 
   - **B: judgment.** Each new link is weighed on its own merits, as now.
 - **Consequence:** a `Forecast:` line in CLAUDE.md's decision-brief shape, a counter in `scripts/dispatch/`, one line in the child prompt.
 
-### D4 · Freeze the process once this lands
+### D4 · Pause changes to the tools once this lands (ruled A, tuned)
 
-- **Deciding:** what process work is allowed after the build from this retro merges.
-- **Options:**
-  - **A, recommended: bug fixes only in dispatch, `/wrap`, the steward and the groomer for two weeks after that build merges,** then one short measured review (findings filed per merge, the share of launches on the Done means path, your typed decisions per merged row), and after it, process edits batch into one PR a week, safety defects exempt. *Why:* `dispatch.md` went from v1.0 to v1.7 and 15 KB to 72 KB in 13 days, and 11% of merged PRs since 9/20 changed only workflow files. Each version landed before the last one's effect could be measured, and retro 3's cap raise is part of why this retro exists. The groomer's own kill criterion says the same thing: when the queue does not shrink, the constraint is your time, and the answer is not more process.
-  - **B: freeze dispatch only.**
-  - **C: keep iterating** as issues appear.
-- **Consequence:** the open dispatch issues ([CUL-1620](https://linear.app/projectnyx/issue/CUL-1620), [CUL-1640](https://linear.app/projectnyx/issue/CUL-1640), [CUL-1653](https://linear.app/projectnyx/issue/CUL-1653), [CUL-1662](https://linear.app/projectnyx/issue/CUL-1662), [CUL-1693](https://linear.app/projectnyx/issue/CUL-1693), [CUL-1750](https://linear.app/projectnyx/issue/CUL-1750)) are sorted once: genuine bugs proceed, the rest wait for the review. CLAUDE.md stays outside the weekly batch, because Tier 1 updates it the moment a decision is made.
+- **Deciding:** whether to pause changes to the workflow tools themselves (dispatch, `/wrap`, the steward, the groomer) after this retro's build merges. Using them is never paused: the work they run keeps going.
+- **Options as first written:** A, bug fixes only for two weeks, a measured review, then weekly batches · B, pause dispatch only · C, keep iterating.
+- **Ruled: A, tuned in the session** after the PM asked for "an optimal dispatch experience":
+  - **One week, not two.** It starts the day the last of the five build PRs merges.
+  - **Friction counts as a bug.** Anything that costs you an extra decision, stalls a row, or makes a brief confusing is fixed during the week; only new features wait.
+  - **Then a readout** on three numbers: issues filed per merge, the share of launches on the Done means path, and your decisions per merged row.
+  - **After that,** tool changes ship as one PR a week.
+  - **Exempt:** safety fixes, and CLAUDE.md updates from rulings.
+- *Why:* `dispatch.md` went from v1.0 to v1.7 and from 15 KB to 72 KB in 13 days, and 11% of merged PRs since 9/20 changed only workflow files. Each version landed before the last one's effect could be measured, and retro 3's cap raise is part of why this retro exists.
+- **Consequence:** the open dispatch issues ([CUL-1620](https://linear.app/projectnyx/issue/CUL-1620), [CUL-1640](https://linear.app/projectnyx/issue/CUL-1640), [CUL-1653](https://linear.app/projectnyx/issue/CUL-1653), [CUL-1662](https://linear.app/projectnyx/issue/CUL-1662), [CUL-1693](https://linear.app/projectnyx/issue/CUL-1693), [CUL-1750](https://linear.app/projectnyx/issue/CUL-1750)) are sorted once: friction and bugs proceed, the rest wait for the readout.
 
 ### D5 · Split CLAUDE.md by when it is needed
 
@@ -278,13 +282,14 @@ Sources were re-opened on 10/11 and each quote checked. The full list, with the 
 
 ## 11. Rulings (PM, 2026-10-11)
 
-The PM typed `Retro 4 rulings: D1 A · D2 A · D3 A · D4 I don't really understand this one · D5 A · D6 A · D7 A` in this session.
+The PM typed `Retro 4 rulings: D1 A · D2 A · D3 A · D4 I don't really understand this one · D5 A · D6 A · D7 A` in this session. Then, after D4 was restated in plain words ("I want an optimal dispatch experience") and offered in a tuned form, the PM typed `A`.
 
 - **D1, D2, D3 (A):** the sort, rulings that travel with their work, and the forecast budget. Built as two PRs: the rules ([CUL-1870](https://linear.app/projectnyx/issue/CUL-1870)) and then the script ([CUL-1872](https://linear.app/projectnyx/issue/CUL-1872)), which carries the nine adversarial cases as named tests.
 - **D5 (A):** CLAUDE.md split by when it is needed ([CUL-1874](https://linear.app/projectnyx/issue/CUL-1874)), after the rules PR, because both edit CLAUDE.md.
 - **D6 (A):** cold reviewers ([CUL-1871](https://linear.app/projectnyx/issue/CUL-1871)). It can run beside anything.
 - **D7 (A):** one write-up per PR ([CUL-1873](https://linear.app/projectnyx/issue/CUL-1873)), after the rules PR, because both edit `dispatch.md`.
-- **D4, open.** Restated in plain words: it pauses changes to the workflow tools themselves (dispatch, `/wrap`, the steward, the groomer), never the work they run. For two weeks after this build merges, those tools take bug fixes only. Then a short check on three numbers (issues filed per merge, the share of launches on the goal path, decisions typed per merged row). After that, workflow changes ship in a weekly batch. Safety defects and CLAUDE.md updates from rulings are exempt. The recommendation stays A.
+- **D4 (A, tuned).** It pauses changing the tools, never using them. When the build's last PR merges, there is one week of bug and friction fixes only. Then the readout runs ([CUL-1876](https://linear.app/projectnyx/issue/CUL-1876), blocked by all five build PRs, with this retro's baselines). After that, changes ship weekly. [CUL-1870](https://linear.app/projectnyx/issue/CUL-1870) writes the pause into CLAUDE.md and `dispatch.md`.
+- **Applied under D2 the same day:** [CUL-1438](https://linear.app/projectnyx/issue/CUL-1438) is live and touches a safety invariant, so it now carries `Waiting on PM` and `Gate: clinical`.
 
 The build is one parent, [CUL-1869](https://linear.app/projectnyx/issue/CUL-1869), with one sub-issue per PR. The parent is never named in a PR.
 
