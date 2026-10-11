@@ -291,7 +291,9 @@ export const SIGNAL_PIPELINE_CORPUS: SignalPipelineCase[] = [
       meals: [...mealsDaily(2, 16, 'all'), meal(1, 'refused', KIBBLE, 8), meal(1, 'refused', KIBBLE, 18)],
     },
     prior: null,
-    expectedTypes: ['intake_decline'],
+    // Two intake cards: the refused food, and yesterday as a low day (CUL-94: with no rated meal
+    // yet today, the day-count arm judges yesterday instead of an empty UTC today).
+    expectedTypes: ['intake_decline', 'intake_decline'],
   },
   {
     // I5 (Engines v3 PR-30s, CUL-1725): the critique's alternate-night refuser. Breakfast eaten

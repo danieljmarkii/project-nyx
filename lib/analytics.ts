@@ -990,8 +990,10 @@ export interface IntakeDeclineInput {
 }
 
 /** Detector ②'s calendar, the client half (CUL-94): `localDayIndex` resolves a valid zone and
- *  falls back to the device zone otherwise. detection.ts's `intakeDayOf` falls back to UTC
- *  instead — on the server the "device" is UTC, so the two agree. */
+ *  falls back to the device zone otherwise. detection.ts's `intakeDayOf` reads the profile zone
+ *  and falls back to UTC. The phone stamps its zone into the profile on launch (lib/profile.ts),
+ *  so the two calendars match except while an owner has travelled and not yet reopened the app,
+ *  when each surface reads the day the owner was in at its last read. */
 function intakeDayOf(ms: number, timeZone: string | undefined): number {
   return localDayIndex(ms, timeZone);
 }

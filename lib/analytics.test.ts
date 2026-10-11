@@ -1074,8 +1074,8 @@ describe('detectIntakeDecline', () => {
         meal({ ms: at(0, 2 + i * 2), foodItemId: 'f1', foodLabel: 'Acme Dinner', intakeRating: 'refused' }),
       );
     for (const n of [1, 2, 3, 5]) {
-      const out = detectIntakeDecline({ timeZone: 'UTC',
-        species: 'dog', nowMs: NOW, meals: [...priorDays, ...refusalsToday(n)], freeFedSpans: [],
+      const out = detectIntakeDecline({
+        timeZone: 'UTC', species: 'dog', nowMs: NOW, meals: [...priorDays, ...refusalsToday(n)], freeFedSpans: [],
       });
       expect(out.status).toBe('watch'); // monotonic: never silent for a larger n
       if (out.status === 'watch') {
@@ -1106,8 +1106,8 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(5), foodItemId: 'f1', intakeRating: 'all' }),
       meal({ ms: at(0), foodItemId: 'f1', intakeRating: 'refused' }),
     ];
-    const out = detectIntakeDecline({ timeZone: 'UTC',
-      species: 'dog', nowMs: NOW, meals,
+    const out = detectIntakeDecline({
+      timeZone: 'UTC', species: 'dog', nowMs: NOW, meals,
       freeFedSpans: [{ foodItemId: 'f1', fromMs: -Infinity, untilMs: Infinity }],
     });
     expect(isNotEnoughData(out)).toBe(true);

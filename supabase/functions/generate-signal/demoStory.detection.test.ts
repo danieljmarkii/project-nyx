@@ -21,11 +21,14 @@
 //   • SURVIVAL at +24h/+48h/+96h — ① is durable (its matched-pair arithmetic is
 //     now-INDEPENDENT — the pure engine has no lookback bound of its own; the
 //     180-day window is the index.ts query's, and +96h is well inside it) while ②
-//     DECAYS at the next UTC midnight. That asymmetry is the
-//     measured justification for §8's standing re-seed cadence, not folklore.
-//   • THE UTC-MIDNIGHT SINGULARITY — ② physically cannot fire at exactly
-//     00:00:00 UTC (no elapsed time on today's UTC date for a past meal), so the
+//     DECAYS once a whole day with no rated meal has passed (CUL-94; it was the
+//     next UTC midnight). That asymmetry is the measured justification for §8's
+//     standing re-seed cadence, not folklore.
+//   • THE UTC-MIDNIGHT SINGULARITY — ② cannot fire at exactly 00:00:00 UTC: this
+//     suite reads without a zone (UTC days), today's dip meals clamp back onto
+//     yesterday, and the two judged days hold one dip day and one normal day. The
 //     seed-run-hour rule + the 5-min clamp exist for it. ① fires regardless.
+//   • THE PROFILE ZONE (CUL-94) — the live read is in local days; see the last test.
 //
 // This test imports the story module across the function boundary exactly as
 // generate-signal/index.ts already imports lib/dietTrial.ts — a proven graph
@@ -59,7 +62,7 @@ const STORY: DemoStory = buildDemoStory({
  * detection's `now` (when generate-signal RUNS). They differ only in the survival
  * test — everywhere else the seed is read at seed time.
  */
-function toInput(seedMs: number, readMs: number = seedMs): DetectionInput {
+function toInput(seedMs: number, readMs: number = seedMs, timezone?: string): DetectionInput {
   const symptomEvents: SymptomEvent[] = STORY.events
     .filter((e) => e.kind === 'vomit')
     .map((e) => ({
@@ -89,6 +92,7 @@ function toInput(seedMs: number, readMs: number = seedMs): DetectionInput {
     symptomEvents,
     mealEvents,
     now: new Date(readMs).toISOString(),
+    timezone,
   };
 }
 
@@ -254,4 +258,34 @@ Deno.test('demo story — under EN-11 the beef card is withheld and ② still fi
     assert.equal(on.intakeTrigger, off.intakeTrigger, `h=${h}: ② is untouched`);
     assert.deepEqual(on.findingTypes, off.findingTypes.filter((t) => t !== 'food_symptom_correlation'), `h=${h}`);
   }
+});
+
+// CUL-94: ② reads the profile's zone, and the seed writes one (emitSeedSql.ts, user_profiles), so
+// the live demo is read in LOCAL days while its dip stays UTC-anchored. Measured at CUL-94 over
+// seeds at 09:30…23:30 UTC in eight zones (US, Europe, Tokyo, Sydney, UTC+14): ② lasts 22–47h
+// after the seed, US zones at least 28h; under UTC days it lasted until the next UTC midnight,
+// under an hour for a 23:30 seed. The §8 seed-run-hour rule matters for one more reason now: in a
+// US zone a seed between 00:00 and ~04:00–07:00 UTC lands both dip days on ONE local day and the
+// dog's two-day ② stays silent, so the runbook's "or accept the clamp" escape is closed there.
+Deno.test('demo story — read in the profile zone, a rule-abiding seed keeps ② for 20h (CUL-94)', () => {
+  const zones = ['America/New_York', 'America/Los_Angeles', 'Pacific/Honolulu', 'Europe/London', 'Europe/Berlin', 'Asia/Tokyo'];
+  for (const tz of zones) {
+    for (let h = 9; h < 24; h++) {
+      const seed = UTC_MIDNIGHT + h * HOUR + 30 * 60_000;
+      for (let k = 0; k <= 20; k++) {
+        const ranked = detectSignals(toInput(seed, seed + k * HOUR, tz), DEFAULT_CONFIG);
+        assert.ok(
+          ranked.some((r) => r.finding.type === 'intake_decline'),
+          `② must fire in ${tz}, seeded ${h}:30 UTC, read +${k}h`,
+        );
+      }
+    }
+  }
+  // The window the rule exists for, pinned so a story change that closes it is noticed.
+  const early = UTC_MIDNIGHT + 1 * HOUR + 30 * 60_000;
+  assert.equal(
+    detectSignals(toInput(early, early, 'America/New_York'), DEFAULT_CONFIG).some((r) => r.finding.type === 'intake_decline'),
+    false,
+    'a 01:30 UTC seed read in New York has one local dip day (why the §8 rule binds)',
+  );
 });
