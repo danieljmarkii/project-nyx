@@ -207,11 +207,15 @@ Deno.test('demo story — the UTC-midnight singularity: ② cannot fire at 00:00
   assert.equal(s.beef!.tier, 'early');
 });
 
-Deno.test('demo story — survival: ① is durable, ② decays past the next UTC midnight (§8 cadence)', () => {
+Deno.test('demo story — survival: ① is durable, ② holds one day then decays (§8 cadence)', () => {
   // Seed the rows ONCE (fixed instants at CANONICAL), then re-read as `now`
   // advances — exactly what happens live between the seed and a later
   // generate-signal run. This is the measured survival window that justifies the
   // standing re-seed cadence (R-3/§8): ② must be refreshed, ① need not be.
+  //
+  // CUL-94 moved the window by a day: with no rated meal on the read day, ② judges the
+  // day before (nothing new is known), so at +24h the seeded dip still fires, and the
+  // card decays once a whole day with no rated meal has passed (+48h).
   const atSeed = analyze(CANONICAL, CANONICAL);
   assert.equal(atSeed.intakeTrigger, 'consecutive_low', 'at seed time ② fires');
   assert.ok(atSeed.beef, 'at seed time ① fires');
@@ -222,7 +226,11 @@ Deno.test('demo story — survival: ① is durable, ② decays past the next UTC
     assert.ok(s.beef, `① must still fire at read +${dh}h`);
     assert.equal(s.beef!.tier, 'early', `① still Early at read +${dh}h`);
     assert.equal(s.beef!.matchedPairs, 4, `① pairs=4 at read +${dh}h`);
-    // ② has decayed — the dip is no longer in the recent-2-day window.
+    if (dh === 24) {
+      assert.equal(s.intakeTrigger, 'consecutive_low', '② still fires at read +24h (CUL-94: the dip days are still the latest)');
+      continue;
+    }
+    // ② has decayed — a whole day with no rated meal sits between the dip and now.
     assert.equal(
       s.intakeTrigger,
       null,

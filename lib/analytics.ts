@@ -984,6 +984,16 @@ export interface IntakeDeclineInput {
   /** This pet's free-fed bowl spans, active and ended — a rating logged while its food's bowl
    *  was down is excluded (§11 #6, by date: CUL-1086, `lib/freeFedIntake.ts`). */
   freeFedSpans: readonly FreeFedIntakeSpan[];
+  /** The owner's IANA zone; the day boundary every per-day rule uses (CUL-94). Omitted, the
+   *  device's zone, which on the phone IS the owner's. Tests and the parity suite pin it. */
+  timeZone?: string;
+}
+
+/** Detector ②'s calendar, the client half (CUL-94): `localDayIndex` resolves a valid zone and
+ *  falls back to the device zone otherwise. detection.ts's `intakeDayOf` falls back to UTC
+ *  instead — on the server the "device" is UTC, so the two agree. */
+function intakeDayOf(ms: number, timeZone: string | undefined): number {
+  return localDayIndex(ms, timeZone);
 }
 
 interface RatedMeal {
@@ -1036,20 +1046,22 @@ export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineRes
   // SKIPPED, never read as a decline — a logging gap is not anorexia.
   const isCat = input.species === 'cat';
   const consecutiveDays = isCat ? DECLINE.cat.consecutiveDaysBelowBaseline : DECLINE.consecutiveDaysBelowBaseline;
-  // Raw ms offset (not calendar-aligned) ON PURPOSE — this and the utcDateKey day
-  // loop below are a faithful mirror of detection.ts detector ②, and they are
-  // mutually consistent (a meal can't be both in baseline and a recent-day bucket).
-  // Don't "fix" this to a calendar window in isolation without doing the same on the
-  // server, or the two surfaces' baseline/recent split would drift.
-  const recentCutoffMs = nowMs - consecutiveDays * MS_PER_DAY;
-  const baselineMeals = windowMeals.filter((m) => m.ms < recentCutoffMs);
+  // CUL-94 — the owner's local days, with baseline + recent PARTITIONING the meals: a byte
+  // mirror of detection.ts detector ② (see the comment there for the defect this closes). The
+  // recent window is N whole local days ending at the ANCHOR — today once today has a rated
+  // meal, else yesterday — and the baseline is every window meal before them. Change one
+  // surface, change both; `lib/intakeDeclineParity.test.ts` drives the two real detectors.
+  const dayOfMeal = new Map(windowMeals.map((m) => [m, intakeDayOf(m.ms, input.timeZone)] as const));
+  const todayDay = intakeDayOf(nowMs, input.timeZone);
+  const anchorDay = windowMeals.some((m) => dayOfMeal.get(m) === todayDay) ? todayDay : todayDay - 1;
+  const firstRecentDay = anchorDay - (consecutiveDays - 1);
+  const baselineMeals = windowMeals.filter((m) => (dayOfMeal.get(m) as number) < firstRecentDay);
 
   if (baselineMeals.length >= DECLINE.minRatedMealsForBaseline) {
     const baselineScore = baselineMeals.reduce((s, m) => s + m.score, 0) / baselineMeals.length;
     const recentDays: { mean: number }[] = [];
-    for (let i = 0; i < consecutiveDays; i++) {
-      const key = utcDateKey(nowMs - i * MS_PER_DAY);
-      const dayMeals = windowMeals.filter((m) => utcDateKey(m.ms) === key);
+    for (let day = anchorDay; day >= firstRecentDay; day--) {
+      const dayMeals = windowMeals.filter((m) => dayOfMeal.get(m) === day);
       if (dayMeals.length === 0) continue;
       recentDays.push({ mean: dayMeals.reduce((s, m) => s + m.score, 0) / dayMeals.length });
     }
@@ -1103,8 +1115,9 @@ export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineRes
     // can no longer disagree on a same-day re-logged refusal. The DECLINE constants
     // stay a byte-exact mirror of detection.ts DEFAULT_CONFIG.intakeDecline; keep the
     // refusal-arm logic in lock-step too: change one surface, change both.
-    const latestDayKey = utcDateKey(latest.ms);
-    const prior = sorted.filter((m) => utcDateKey(m.ms) !== latestDayKey);
+    // The owner's local day (CUL-94); a bout across LOCAL midnight still splits (CUL-1790).
+    const latestDay = dayOfMeal.get(latest);
+    const prior = sorted.filter((m) => dayOfMeal.get(m) !== latestDay);
     if (prior.length < DECLINE.normallyEatenMinSamples) continue;
     const priorMean = prior.reduce((s, m) => s + m.score, 0) / prior.length;
     if (priorMean < DECLINE.normallyEatenScoreFloor) continue;

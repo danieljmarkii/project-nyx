@@ -4146,6 +4146,16 @@ function utcDateKey(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10)
 }
 
+/** Detector ②'s calendar (CUL-94): the owner's local day index, or the UTC day with no valid
+ *  zone. Mirrored by `lib/analytics.ts` detectIntakeDecline; the parity suite pins the two. */
+function intakeDayOf(ms: number, timeZone: string | undefined): number {
+  return isValidTimeZone(timeZone) ? localDayIndex(ms, timeZone) : Math.floor(ms / MS_PER_DAY)
+}
+
+function intakeDaysOf(meals: readonly RatedMeal[], timeZone: string | undefined): Map<RatedMeal, number> {
+  return new Map(meals.map((m) => [m, intakeDayOf(m.ms, timeZone)]))
+}
+
 /** A rated meal reduced to the fields the intake-decline / coverage logic needs. */
 interface RatedMeal {
   ms: number
@@ -4363,20 +4373,32 @@ function detectIntakeDeclineCore(
   // sensitivity on the day count only, never by reading absent data as a decline.
   const isCat = input.pet.species === 'cat'
   const consecutiveDays = isCat ? cfg.cat.consecutiveDaysBelowBaseline : cfg.consecutiveDaysBelowBaseline
-  const recentCutoffMs = nowMs - consecutiveDays * MS_PER_DAY
-  const baselineMeals = windowMeals.filter((m) => m.ms < recentCutoffMs)
+  // CUL-94 — days are the OWNER's local days, and baseline + recent PARTITION the meals.
+  // The old split was a raw `now - N×24h` cutoff for the baseline and UTC calendar days for
+  // the recent window, so every meal between 24h ago and UTC midnight was counted nowhere: a
+  // New York cat lost its card at 20:00 EDT with no new evidence, and a Pacific cat's full
+  // dinner landed in "today's" UTC bucket and lifted a genuinely low day over the ceiling.
+  // The recent window is N whole local days ending at the ANCHOR — today once today has a
+  // rated meal, else yesterday (between local midnight and breakfast nothing new is known, so
+  // the card holds); the baseline is every window meal before the first of those days. No
+  // valid zone ⇒ UTC days, the pre-CUL-94 calendar: this is a safety card, so a missing zone
+  // degrades the day boundary, never silences the detector (unlike ⑥ / I5).
+  const dayOfMeal = intakeDaysOf(windowMeals, input.timezone)
+  const todayDay = intakeDayOf(nowMs, input.timezone)
+  const anchorDay = windowMeals.some((m) => dayOfMeal.get(m) === todayDay) ? todayDay : todayDay - 1
+  const firstRecentDay = anchorDay - (consecutiveDays - 1)
+  const baselineMeals = windowMeals.filter((m) => (dayOfMeal.get(m) as number) < firstRecentDay)
 
   if (baselineMeals.length >= cfg.minRatedMealsForBaseline) {
     const baselineScore =
       baselineMeals.reduce((sum, m) => sum + m.score, 0) / baselineMeals.length
 
-    // Per-day means for the last N calendar days that actually have a rated meal.
-    // A day with no rated meal is skipped, never treated as a decline — a logging
-    // gap must not masquerade as anorexia (§9 / B-027 data caveat).
+    // Per-day means for the N local days ending at the anchor. A day with no rated meal is
+    // skipped, never treated as a decline — a logging gap must not masquerade as anorexia
+    // (§9 / B-027 data caveat) — so a skipped day leaves the window short and the arm silent.
     const recentDays: { mean: number }[] = []
-    for (let i = 0; i < consecutiveDays; i++) {
-      const key = utcDateKey(nowMs - i * MS_PER_DAY)
-      const dayMeals = windowMeals.filter((m) => utcDateKey(m.ms) === key)
+    for (let day = anchorDay; day >= firstRecentDay; day--) {
+      const dayMeals = windowMeals.filter((m) => dayOfMeal.get(m) === day)
       if (dayMeals.length === 0) continue
       const mean = dayMeals.reduce((sum, m) => sum + m.score, 0) / dayMeals.length
       recentDays.push({ mean })
@@ -4436,8 +4458,10 @@ function detectIntakeDeclineCore(
     // safety failure (§9 / §11 #1). Ported from lib/analytics.ts detectIntakeDecline
     // (B-090): the client health-watch led with this fix; porting it here re-converges
     // the two decline surfaces so they can never disagree on a refusal.
-    const latestDayKey = utcDateKey(latest.ms)
-    const prior = sorted.filter((m) => utcDateKey(m.ms) !== latestDayKey)
+    // The owner's local day (CUL-94): a UTC day split a US-evening bout in two and left its
+    // first half in `prior`. Residual, stated: a bout across LOCAL midnight still splits (CUL-1790).
+    const latestDay = dayOfMeal.get(latest)
+    const prior = sorted.filter((m) => dayOfMeal.get(m) !== latestDay)
     if (prior.length < cfg.normallyEatenMinSamples) continue
     const priorMean = prior.reduce((sum, m) => sum + m.score, 0) / prior.length
     if (priorMean < cfg.normallyEatenScoreFloor) continue

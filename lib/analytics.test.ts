@@ -1003,7 +1003,7 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(1), intakeRating: 'some' }),
       meal({ ms: at(0), intakeRating: 'some' }),
     ];
-    return detectIntakeDecline({ species, nowMs: NOW, meals, freeFedSpans: [] });
+    return detectIntakeDecline({ timeZone: 'UTC', species, nowMs: NOW, meals, freeFedSpans: [] });
   }
 
   it('routes a declining trend to a HEALTH WATCH (consecutive_low)', () => {
@@ -1029,7 +1029,7 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(2), intakeRating: 'all' }),
       meal({ ms: at(0), intakeRating: 'some' }), // score 2 ≤ singleDayConcernCeiling
     ];
-    const out = detectIntakeDecline({ species: 'cat', nowMs: NOW, meals, freeFedSpans: [] });
+    const out = detectIntakeDecline({ timeZone: 'UTC', species: 'cat', nowMs: NOW, meals, freeFedSpans: [] });
     expect(out.status).toBe('watch');
   });
 
@@ -1041,7 +1041,7 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(2), intakeRating: 'all' }),
       meal({ ms: at(0), intakeRating: 'most' }), // score 3 > ceiling 2
     ];
-    const out = detectIntakeDecline({ species: 'cat', nowMs: NOW, meals, freeFedSpans: [] });
+    const out = detectIntakeDecline({ timeZone: 'UTC', species: 'cat', nowMs: NOW, meals, freeFedSpans: [] });
     expect(out.status).toBe('none');
   });
 
@@ -1052,7 +1052,7 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(5), foodItemId: 'f1', foodLabel: 'Acme Dinner', intakeRating: 'all' }),
       meal({ ms: at(0), foodItemId: 'f1', foodLabel: 'Acme Dinner', intakeRating: 'refused' }),
     ];
-    const out = detectIntakeDecline({ species: 'dog', nowMs: NOW, meals, freeFedSpans: [] });
+    const out = detectIntakeDecline({ timeZone: 'UTC', species: 'dog', nowMs: NOW, meals, freeFedSpans: [] });
     expect(out.status).toBe('watch');
     if (out.status !== 'watch') throw new Error('unreachable');
     const refusal = out.flags.find((f) => f.trigger === 'refused_normal_food');
@@ -1074,7 +1074,7 @@ describe('detectIntakeDecline', () => {
         meal({ ms: at(0, 2 + i * 2), foodItemId: 'f1', foodLabel: 'Acme Dinner', intakeRating: 'refused' }),
       );
     for (const n of [1, 2, 3, 5]) {
-      const out = detectIntakeDecline({
+      const out = detectIntakeDecline({ timeZone: 'UTC',
         species: 'dog', nowMs: NOW, meals: [...priorDays, ...refusalsToday(n)], freeFedSpans: [],
       });
       expect(out.status).toBe('watch'); // monotonic: never silent for a larger n
@@ -1093,7 +1093,7 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(3), intakeRating: 'all' }),
       meal({ ms: at(1), intakeRating: 'some' }), // yesterday only; nothing logged today
     ];
-    const out = detectIntakeDecline({ species: 'dog', nowMs: NOW, meals, freeFedSpans: [] });
+    const out = detectIntakeDecline({ timeZone: 'UTC', species: 'dog', nowMs: NOW, meals, freeFedSpans: [] });
     expect(out.status).toBe('none');
   });
 
@@ -1106,7 +1106,7 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(5), foodItemId: 'f1', intakeRating: 'all' }),
       meal({ ms: at(0), foodItemId: 'f1', intakeRating: 'refused' }),
     ];
-    const out = detectIntakeDecline({
+    const out = detectIntakeDecline({ timeZone: 'UTC',
       species: 'dog', nowMs: NOW, meals,
       freeFedSpans: [{ foodItemId: 'f1', fromMs: -Infinity, untilMs: Infinity }],
     });
@@ -1125,12 +1125,12 @@ describe('detectIntakeDecline', () => {
     ];
     // The bowl went down at 10:00 today, two hours after the refusal.
     const bowl = [{ foodItemId: 'f1', fromMs: at(0, 10), untilMs: Infinity }];
-    const out = detectIntakeDecline({ species: 'dog', nowMs: NOW, meals, freeFedSpans: bowl });
+    const out = detectIntakeDecline({ timeZone: 'UTC', species: 'dog', nowMs: NOW, meals, freeFedSpans: bowl });
     expect(out.status).toBe('watch');
     expect(out.status === 'watch' && out.flags.map((f) => f.trigger)).toEqual(['refused_normal_food']);
     // The same bowl opened before the refusal: the refusal is a bowl, and the lane is dormant.
     const earlier = [{ foodItemId: 'f1', fromMs: at(0, 6), untilMs: Infinity }];
-    expect(detectIntakeDecline({ species: 'dog', nowMs: NOW, meals, freeFedSpans: earlier }).status).not.toBe('watch');
+    expect(detectIntakeDecline({ timeZone: 'UTC', species: 'dog', nowMs: NOW, meals, freeFedSpans: earlier }).status).not.toBe('watch');
   });
 
   it('a bowl taken up counts again after its end: an ended span never excludes a later rating', () => {
@@ -1142,7 +1142,7 @@ describe('detectIntakeDecline', () => {
     ];
     // Down for a fortnight, taken up at the end of three days ago.
     const ended = [{ foodItemId: 'f1', fromMs: at(20), untilMs: (TODAY_IDX - 2) * DAY }];
-    const out = detectIntakeDecline({ species: 'dog', nowMs: NOW, meals: [
+    const out = detectIntakeDecline({ timeZone: 'UTC', species: 'dog', nowMs: NOW, meals: [
       ...meals,
       // Bowl-era ratings inside the span, which must NOT enter the prior mean.
       meal({ ms: at(4), foodItemId: 'f1', intakeRating: 'picked' }),
@@ -1154,13 +1154,13 @@ describe('detectIntakeDecline', () => {
     // With no span, the two "picked" bowl ratings drag the prior mean under the floor: the bowl
     // would have SUPPRESSED the refusal. The span keeps them out of the history.
     const openAfter = [{ foodItemId: 'f1', fromMs: at(4, 0), untilMs: (TODAY_IDX - 2) * DAY }];
-    const kept = detectIntakeDecline({ species: 'dog', nowMs: NOW, meals: [
+    const kept = detectIntakeDecline({ timeZone: 'UTC', species: 'dog', nowMs: NOW, meals: [
       ...meals,
       meal({ ms: at(4), foodItemId: 'f1', intakeRating: 'picked' }),
       meal({ ms: at(3), foodItemId: 'f1', intakeRating: 'picked' }),
     ], freeFedSpans: openAfter });
     expect(kept.status === 'watch' && kept.flags.map((f) => f.trigger)).toEqual(['refused_normal_food']);
-    const byNothing = detectIntakeDecline({ species: 'dog', nowMs: NOW, meals: [
+    const byNothing = detectIntakeDecline({ timeZone: 'UTC', species: 'dog', nowMs: NOW, meals: [
       ...meals,
       meal({ ms: at(4), foodItemId: 'f1', intakeRating: 'picked' }),
       meal({ ms: at(3), foodItemId: 'f1', intakeRating: 'picked' }),
@@ -1174,12 +1174,12 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(1), intakeRating: 'all' }),
       meal({ ms: at(2), intakeRating: 'all' }),
     ];
-    expect(isNotEnoughData(detectIntakeDecline({ species: 'dog', nowMs: NOW, meals, freeFedSpans: [] }))).toBe(true);
+    expect(isNotEnoughData(detectIntakeDecline({ timeZone: 'UTC', species: 'dog', nowMs: NOW, meals, freeFedSpans: [] }))).toBe(true);
   });
 
   it('enough data, steady intake → none (no false flag)', () => {
     const meals: AnalyticsMeal[] = [0, 1, 2, 3, 4].map((d) => meal({ ms: at(d), intakeRating: 'all' }));
-    expect(detectIntakeDecline({ species: 'dog', nowMs: NOW, meals, freeFedSpans: [] }).status).toBe('none');
+    expect(detectIntakeDecline({ timeZone: 'UTC', species: 'dog', nowMs: NOW, meals, freeFedSpans: [] }).status).toBe('none');
   });
 
   it('ignores unrated rows and treats (a logging gap / treat can never look like a decline)', () => {
@@ -1192,7 +1192,7 @@ describe('detectIntakeDecline', () => {
       meal({ ms: at(0, 9), foodType: 'treat', intakeRating: 'refused' }), // treat → ignored
     ];
     // No rated meal in the recent window → no decline.
-    expect(detectIntakeDecline({ species: 'dog', nowMs: NOW, meals, freeFedSpans: [] }).status).toBe('none');
+    expect(detectIntakeDecline({ timeZone: 'UTC', species: 'dog', nowMs: NOW, meals, freeFedSpans: [] }).status).toBe('none');
   });
 });
 
