@@ -40,6 +40,9 @@ interface Db {
   event_attachments: Row[]
   event_ai_analysis: Row[]
   app_config: Row[]
+  // CUL-552 PR 2: the owner's AI consent. Granted by default, so this suite keeps testing
+  // the read it was written for; the declined branch is the shared pipeline suite's.
+  ai_consent: Row[]
   user_profiles: Row[]
   reads: Record<string, number>
   dayCount: number
@@ -56,6 +59,7 @@ function makeDb(o: Partial<Db> = {}): Db {
     event_attachments: [],
     event_ai_analysis: [],
     app_config: [],
+    ai_consent: [{ user_id: 'owner-1', scope: 'ai_boundary', granted: true }],
     user_profiles: [{ id: 'owner-1', timezone: 'UTC' }],
     reads: {},
     dayCount: 1,

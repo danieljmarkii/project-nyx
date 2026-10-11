@@ -102,6 +102,8 @@ class FakeQuery {
     if (this.table === 'app_config') {
       return { data: w.keys.map((key) => ({ key, value: { enabled: false, allowlist: [OWNER] } })), error: null }
     }
+    // CUL-552 PR 2: the owner has said yes; the declined branch is _shared/incident-analysis.pipeline.test.ts's.
+    if (this.table === 'ai_consent') return { data: { granted: true }, error: null }
     if (this.table !== 'event_ai_analysis') throw new Error(`unexpected table ${this.table}`)
     const id = (this.mode === 'upsert' ? this.values.event_id : this.filters.event_id) as string
     const row = w.rows.get(id) ?? null

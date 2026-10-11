@@ -34,6 +34,7 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveAllowlistFlagFromRows } from '../_shared/flags.ts'
+import { readAiBoundaryConsent } from '../_shared/aiConsent.ts'
 // Abort each Claude tool-loop call after a bounded timeout (CUL-258). Per-call, so a
 // single hung iteration can't hold the function open; the loop stays bounded by
 // MAX_TOOL_ITERATIONS.
@@ -129,6 +130,30 @@ function capReachedResponse(grain: 'conversation' | 'message', cap: 'daily' | 'm
 }
 function featureDisabledResponse(): Response {
   return Response.json({ feature_disabled: true, function: 'ask' }, { headers: CORS_HEADERS })
+}
+
+// ── CUL-552 PR 2: the owner's AI consent ─────────────────────────────────────────────────
+
+// Service-role client for the consent read only (migration 100 §5: the gate reads ai_consent
+// through service_role, keyed on the verified uid). Every other read stays on the caller's
+// RLS-scoped client.
+function serviceClient(): SupabaseClient {
+  return createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+}
+
+// The declined answer: the consent_off deflection, led by the engine's live safety finding.
+// Reads only the pet's freshest Signal cache row (RLS-scoped). A failed read leads with
+// nothing, the same survivable-as-absence shape fetchContext gives it. Never throws.
+export async function consentOffAnswer(client: SupabaseClient, petId: string, petName: string): Promise<AskAnswerBody> {
+  let safetyLead: string | null = null
+  try {
+    const { data, error } = await client.from('ai_signals').select('findings').eq('pet_id', petId).order('generated_at', { ascending: false }).limit(1)
+    if (error) console.warn('ask: ai_signals read failed, no engine findings relayed:', error.message)
+    else safetyLead = leadingSafetyText(mapEngineFindings(data), petName)
+  } catch (err) {
+    console.warn('ask: ai_signals read threw, no engine findings relayed:', err instanceof Error ? err.message : String(err))
+  }
+  return { ...buildDeflection('consent_off', petName), safetyLead, conversationCredited: false }
 }
 
 // ── Usage I/O (§9) ────────────────────────────────────────────────────────────────
@@ -578,6 +603,21 @@ async function runLivePhotoRead(
   return photoReadOutcome(eventId, eventType, incidentType, 'unavailable')
 }
 
+// ai_signals.findings is CachedFinding[] = { rank, text, finding{ type, priorityClass, ... } }.
+// Map the freshest row to the engineFindings tool's relay shape (type + priorityClass +
+// verbatim payload). Shared by the full context read and the consent-declined answer, which
+// reads nothing but this (CUL-552 PR 2).
+export function mapEngineFindings(rows: unknown): NonNullable<AskDataContext['engineFindingsRaw']> {
+  const signalRow = first((Array.isArray(rows) ? rows : []) as { findings: unknown }[])
+  const rawFindings = Array.isArray(signalRow?.findings) ? (signalRow!.findings as { text?: unknown; finding?: Record<string, unknown> }[]) : []
+  return rawFindings
+    .map((f) => {
+      const finding = f.finding ?? {}
+      return { type: finding.type, priorityClass: finding.priorityClass, payload: { text: f.text, ...finding } }
+    })
+    .filter((f) => typeof f.type === 'string')
+}
+
 async function fetchContext(
   client: SupabaseClient,
   petId: string,
@@ -875,14 +915,7 @@ async function fetchContext(
 
   // ai_signals.findings is CachedFinding[] = { rank, text, finding{ type, priorityClass, ... } }.
   // Map to the engineFindings tool's relay shape (type + priorityClass + verbatim payload).
-  const signalRow = first((signalsRes.data ?? []) as { findings: unknown }[])
-  const rawFindings = Array.isArray(signalRow?.findings) ? (signalRow!.findings as { text?: unknown; finding?: Record<string, unknown> }[]) : []
-  const engineFindingsRaw = rawFindings
-    .map((f) => {
-      const finding = f.finding ?? {}
-      return { type: finding.type, priorityClass: finding.priorityClass, payload: { text: f.text, ...finding } }
-    })
-    .filter((f) => typeof f.type === 'string')
+  const engineFindingsRaw = mapEngineFindings(signalsRes.data)
 
   return {
     nowMs,
@@ -959,6 +992,15 @@ const handler = async (req: Request): Promise<Response> => {
     const askEnabled = resolveAllowlistFlagFromRows(cfgRows, ASK_FLAG, user.id, false)
     if (!askEnabled) return featureDisabledResponse()
     const generalEnabled = resolveAllowlistFlagFromRows(cfgRows, GENERAL_FLAG, user.id, false)
+
+    // 2b. CUL-552 PR 2 (D10, the whole boundary): no recorded yes, no model call. Read through
+    //     service_role for the uid step 0 verified, failing closed (a missing row or a failed
+    //     read is declined). BEFORE any cap read or increment, so a declined owner spends no
+    //     unit, and before any record read but the Signal cache: the designed deflection,
+    //     with the engine's live safety finding still leading it (escalations never hide).
+    if (!(await readAiBoundaryConsent(serviceClient(), user.id))) {
+      return answerResponse(await consentOffAnswer(client, petId, pet.name || 'your pet'))
+    }
     const caps = resolveAskCaps(cfgRows.find((r) => r.key === 'ai_caps')?.value)
 
     // 3. PRE-model cap gate (§9 / D9). Computed from the client-passed in-memory conversation

@@ -521,7 +521,13 @@ Deno.test('buildProvenance: recall/photo tap-through points at the event(s)', ()
 
 const DEFLECTION_REASONS = [
   'clinical_judgment', 'reassurance_fishing', 'general', 'bulk_export', 'unsupported', 'ambiguous', 'data_gap', 'llm_unavailable',
+  'consent_off',
 ] as const
+
+// CUL-552 PR 2: consent_off offers no chip, because every chip is a question re-sent to Ask
+// (AskAnswerCard's onAsk) and would land on this same deflection. Its next step is in the
+// detail line (the rundown, which works without the model); PR 3 adds the way to say yes.
+const NO_CHIP_REASONS: ReadonlySet<string> = new Set(['consent_off'])
 
 Deno.test('buildDeflection: every deflection is non-substantive, no-credit, and guardrail-clean', () => {
   for (const reason of DEFLECTION_REASONS) {
@@ -533,8 +539,27 @@ Deno.test('buildDeflection: every deflection is non-substantive, no-credit, and 
     const v = validateAnswer({ text, allowedNumerals: new Set(), mode: 'data' })
     assert.equal(v.ok, true, `${reason} deflection tripped the validator: ${JSON.stringify(v)}`)
     assert.ok(!text.includes('!'), `${reason} has an exclamation`)
-    assert.ok(d.followups.length >= 1, `${reason} must offer a next step (G3 drives the wedge)`)
+    if (NO_CHIP_REASONS.has(reason)) assert.equal(d.followups.length, 0, `${reason} offers a chip that loops back to itself`)
+    else assert.ok(d.followups.length >= 1, `${reason} must offer a next step (G3 drives the wedge)`)
   }
+})
+
+Deno.test('buildDeflection consent_off: a status, never a verdict, a retry or a blank (CUL-552 PR 2)', () => {
+  const d = buildDeflection('consent_off', 'Biscuit')
+  // Rendered by every shipped build (an outcome the client already knows).
+  assert.equal(d.outcome, 'unsupported')
+  assert.equal(d.substantive, false)
+  assert.ok(d.headline.length > 0 && d.detail.length > 0)
+  const text = `${d.headline} ${d.detail}`
+  // Names the recipient, says nothing was sent, and points at the rundown.
+  assert.match(text, /Anthropic/)
+  assert.match(text, /Nothing was sent/)
+  assert.match(text, /rundown/)
+  assert.match(text, /Biscuit/)
+  // Never "try again" (it would deflect the same way), never a word about how the pet is.
+  assert.doesNotMatch(text, /try again/i)
+  assert.doesNotMatch(text, /\b(fine|healthy|normal|nothing (wrong|to worry)|all clear|okay)\b/i)
+  assert.equal(validateAnswer({ text, allowedNumerals: new Set(), mode: 'data', safety: true }).ok, true)
 })
 
 Deno.test('buildDeflection: ambiguous uses the clarifier when provided', () => {

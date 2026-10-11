@@ -56,6 +56,7 @@ import { fetchWithTimeout } from './http.ts'
 // and the one writer of every stamp migration 075 added (the rule is on engineStamps.ts).
 import { isEngineKeyOn, type EngineFlags, type EngineKey } from './engineFlags.ts'
 import { readEngineFlags } from './engineFlagsRead.ts'
+import { readAiBoundaryConsent } from './aiConsent.ts'
 import { buildIncidentStamps, stampIncidentWrite, type IncidentStamps } from './engineStamps.ts'
 // The ONE quiet-verdict list, shared with the phone (CUL-1277). Every guard below that
 // protects an escalation already in the RECORD reads it, so a verdict a later rule wrote
@@ -1071,6 +1072,19 @@ export type GateState =
   | { allow: true }
   | { allow: false; reason: 'feature_disabled' }
   | { allow: false; reason: 'cap_reached'; cap: 'daily' | 'monthly' }
+  // CUL-552 PR 2: the owner has not said yes to sending their data to Anthropic (a recorded
+  // no, no row at all, or a read that did not answer; aiConsent.ts). Decided before the flag
+  // and the counter, so a declined owner spends no unit. It takes the same branch as the
+  // flag-off state: no model call, the contextual escalation still written, and otherwise
+  // the 'read_disabled' row the client already renders.
+  | { allow: false; reason: 'consent_declined' }
+
+// The row status a no-read gate leaves when there is no escalation to write. Only the cap
+// says 'capped'; the flag and the owner's decline are both "reading is off" (the shipped
+// read_disabled state), never a cap the owner could wait out.
+export function gatedStatus(gate: Exclude<GateState, { allow: true }>): 'capped' | 'read_disabled' {
+  return gate.reason === 'cap_reached' ? 'capped' : 'read_disabled'
+}
 
 // The pure gate decision. `flagEnabled` is the resolved app_config flag (the
 // reader fails OPEN on a config read error — §4.2). `counts` are the
@@ -1464,6 +1478,30 @@ export const LIVE_PIPELINE_DEPS: PipelineDeps = {
   vision: runVisionCall,
 }
 
+// ── A run that read no photo keeps the photo finding already on the row ─────────────────────
+// Shared by the two writers that escalate over a stored read without reading the photo: the
+// floor-only run and the gated branch (cap, flag off, the owner's decline; CUL-552 PR 2,
+// adversarial pass). Neither may take what the photo showed off the card: the cached
+// visual_flags are written back, the stored contextual flags are kept, and the read's words
+// still lead with the photo finding. An owner edit leaves the cached visual_flags stale on
+// purpose (Pattern 7), so an edited row's lead comes from its structured columns, the owner's
+// word (adversarial D5). presentFlagsFromStructured names foreign material
+// 'foreign_material'; the read's words know it as 'suspected_foreign_material'.
+export function storedPhotoFinding<TFlag extends string>(
+  descriptor: Pick<IncidentDescriptor<IncidentAnalysisBase, TFlag>, 'presentFlagsFromStructured'>,
+  existing: Record<string, unknown> & { edited_at?: string | null } | null,
+  cached: Record<string, unknown> | null,
+  contextualFlags: readonly TFlag[],
+): { visualFlags: string[]; leadFlags: string[]; storedContextual: TFlag[]; contextual: TFlag[] } {
+  const visualFlags = Array.isArray(cached?.visual_flags) ? (cached!.visual_flags as string[]) : []
+  const storedContextual = Array.isArray(cached?.contextual_flags) ? (cached!.contextual_flags as TFlag[]) : []
+  const leadFlags = existing?.edited_at
+    ? descriptor.presentFlagsFromStructured(existing).map((f) => (f === 'foreign_material' ? 'suspected_foreign_material' : f))
+    : visualFlags
+  const contextual = [...storedContextual, ...contextualFlags.filter((f) => !storedContextual.includes(f))]
+  return { visualFlags, leadFlags, storedContextual, contextual }
+}
+
 // ── EN-4's floor-only writes (Engines v3 PR-28, CUL-1134) ──────────────────────
 // docs/nyx-incident-tiers-requirements.md §8. Both are reached only through a request mode the
 // pipeline has already refused unless the descriptor has a floor and its key and the tier key
@@ -1505,16 +1543,7 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
     .eq('pet_id', p.petId)
     .maybeSingle<{ visual_flags: string[] | null; contextual_flags: string[] | null }>()
   if (cachedErr || !cached) throw new Error(`Floor read of the stored flags failed${cachedErr ? `: ${cachedErr.message}` : ''}`)
-  const storedContextual = (cached.contextual_flags ?? []) as TFlag[]
-  // An owner edit leaves the cached visual_flags stale on purpose (Pattern 7), so an edited
-  // row's photo finding comes from its structured columns, the owner's word (adversarial D5).
-  // presentFlagsFromStructured names foreign material 'foreign_material'; the read's words
-  // know it as 'suspected_foreign_material'.
-  const visualFlags = cached.visual_flags ?? []
-  const leadFlags = p.existing.edited_at
-    ? descriptor.presentFlagsFromStructured(p.existing).map((f) => (f === 'foreign_material' ? 'suspected_foreign_material' : f))
-    : visualFlags
-  const contextual = [...storedContextual, ...p.contextualFlags.filter((f) => !storedContextual.includes(f))]
+  const { visualFlags, leadFlags, storedContextual, contextual } = storedPhotoFinding(descriptor, p.existing, cached, p.contextualFlags)
 
   const next = raisedTier(tierForVerdict('worth_a_call'), { recommendation: 'worth_a_call', contextual_flags: contextual }, p.minTier)
   const addsFlag = contextual.length > storedContextual.length
@@ -1923,11 +1952,22 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //    cap" branch, and the descriptive-read flag is moot with no read to disable).
     //    Flag off ⇒ NO increment (a flagged-off call burns no unit). Flag on ⇒
     //    increment-then-check.
+    //    The owner's consent comes first (CUL-552 PR 2): read through service_role, keyed
+    //    on the uid step 0 verified, failing closed. Declined ⇒ no flag read, no increment,
+    //    no download, no model call; the branch below still writes the escalation.
     let gate: GateState = { allow: true }
     if (hasPhoto) {
-      const { flagEnabled, caps } = await readGateConfig(userClient, descriptor)
-      const counts = flagEnabled ? await recordUsage(userClient, descriptor.functionKey) : null
-      gate = resolveGateState(flagEnabled, counts, caps)
+      //    The caller's yes counts only for the caller's own pet. Under today's RLS the two are
+      //    always the same account; once a second person can reach a pet (B-292) the owner's
+      //    answer must join the caller's (CUL-552 binding rule 3), so until then a mismatch
+      //    fails closed rather than spending the caller's yes on someone else's pet.
+      if (ownerId !== user.id || !(await readAiBoundaryConsent(adminClient, user.id))) {
+        gate = { allow: false, reason: 'consent_declined' }
+      } else {
+        const { flagEnabled, caps } = await readGateConfig(userClient, descriptor)
+        const counts = flagEnabled ? await recordUsage(userClient, descriptor.functionKey) : null
+        gate = resolveGateState(flagEnabled, counts, caps)
+      }
     }
 
     // 5. Capped or flagged off (§5.4 step 4): SKIP the vision call. The escalation
@@ -1959,21 +1999,27 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // no structured data of its own to contribute, so an existing row has nothing
         // for it to overwrite and everything for it to lose.
         const preserveStructured = humanEdited || existingRealAnalysis || existing !== null
+        // What the photo already showed stays on the card (CUL-552 PR 2, adversarial pass):
+        // with the owner's decline this branch is every withdrawn owner's re-read, and writing
+        // `visual_flags: []` here replaced "fresh blood" with the context-only sentence.
+        const kept = storedPhotoFinding(descriptor, existing, existing, contextualFlags)
         const readText = selectReadText(copy, {
           petName,
           recommendation: cappedRec, // worth_a_call
-          contextualFlags,
-          visualFlags: [],
+          contextualFlags: kept.contextual,
+          visualFlags: kept.leadFlags,
           modelReadText: null,
           photoUnreadable: false,
           hasPhoto,
+          // A stored call with no flag behind it was the model's own: the photo finding still leads.
+          modelEscalated: !!existing && !existing.edited_at && kept.storedContextual.length === 0 && kept.visualFlags.length === 0 && existing.recommendation === 'worth_a_call',
         })
         // A capped run read no photo, so it never carries leave to wait (CUL-1611: a settled read).
         const readFields: AnalysisReadFields<TFlag> = withMayWait(tieredReadFields({
           recommendation: cappedRec,
           read_text: readText,
-          visual_flags: [],
-          contextual_flags: contextualFlags,
+          visual_flags: kept.visualFlags,
+          contextual_flags: kept.contextual,
           status: 'completed',
           error: null,
         }, tiersOn, minTier), null, existing?.may_wait)
@@ -1998,7 +2044,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // No recommendation, no read, no flags — nothing reassuring is written. A
         // pre-existing completed/edited analysis is left UNTOUCHED (the cap must
         // never downgrade a real read).
-        const status = gate.reason === 'feature_disabled' ? 'read_disabled' : 'capped'
+        const status = gatedStatus(gate)
         const { error: writeError } = await adminClient
           .from('event_ai_analysis')
           .upsert(
