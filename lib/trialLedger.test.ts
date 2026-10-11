@@ -504,6 +504,29 @@ describe('the extension weeks of a trial extended past its designed window (CUL-
     expect(earlier.ledger).not.toBeNull();
   });
 
+  it("withholds over a bowl in the COUNTED half of today's straddling week (adversarial pass)", async () => {
+    // Designed 52 (week 8 is days 50–56), extended to 66, today 55 in the band half.
+    const base = { target: 66, targetInitial: 52, mealDays: upTo(55), nowDay: 55 };
+    expect((await load(base)).ledger).not.toBeNull();
+    const bowl = await load({ ...base, extraMeals: [{ day: 50, hour: 18, rating: 'some' }] });
+    expect(bowl.ledger).toBeNull();
+  });
+
+  it("withholds when today is past the NEW end but today's week is still drawn (adversarial pass)", async () => {
+    // Set 56, extended to 80 (mid-week 12, days 78–84), bowls refused on days 79–80,
+    // today day 81. Days 78–80 are on the grid; they must not paint the refusals as logged.
+    const refusals = [79, 80].map((day) => ({ day, hour: 18, rating: 'refused' }));
+    const rec = { target: 80, targetInitial: 56, mealDays: upTo(81), extraMeals: refusals, nowDay: 81 };
+    const broke = await load(rec);
+    expect(broke.facts!.unfinishedMealDayIndices).toEqual(expect.arrayContaining([idx(79), idx(80)]));
+    expect(broke.ledger).toBeNull();
+    // The plain overrun's sibling (never extended) takes the same withhold.
+    expect((await load({ ...rec, targetInitial: null })).ledger).toBeNull();
+    // A week past the drawn grid is not today's drawn week: nothing to withhold over.
+    const later = await load({ ...rec, nowDay: 88, mealDays: upTo(88) });
+    if (later.ledger) assertInvariants(later.ledger, later.facts!, later.input);
+  });
+
   it('keeps the band off an ended trial, and off a trial past its new end too', async () => {
     const ended = await load({ target: 84, targetInitial: 56, mealDays: upTo(70), nowDay: 72, status: 'completed', endedDay: 70 });
     if (ended.ledger) expect(ended.ledger.extension).toBeNull();
@@ -679,7 +702,16 @@ describe('parity property: rows partition the coverage sentence on every drawn r
       if (rec.endedDay === nowDay) shapes.endedToday += 1;
       if (targetInitial !== null) shapes.movedWindow += 1;
       if (thisWeekLane(ledger, input)) shapes.lane += 1;
-      if (ledger.extension) shapes.band += 1;
+      if (ledger.extension) {
+        shapes.band += 1;
+        // The extension fact against the RECORD, not against itself: every non-treat
+        // logged day after the designed end, through today (adversarial pass).
+        const expectedExt = [...new Set([...mealDays, ...offMealDays])]
+          .filter((d) => d > targetInitial! && d <= nowDay)
+          .sort((a, b) => a - b)
+          .map((d) => idx(d));
+        expect(facts.extensionCoveredDayIndices).toEqual(expectedExt);
+      }
       if (ledger.rows.some((row) => row.count && row.extensionCount)) shapes.straddle += 1;
     }
     // Non-vacuity: the sweep is only evidence if it reached each shape it claims to.

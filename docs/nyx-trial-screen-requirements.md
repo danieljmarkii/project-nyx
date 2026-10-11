@@ -118,7 +118,7 @@ A pure projection, `lib/trialLedger.ts`, over `TrialFacts` and `getDietTrialProg
   - band days are painted from their own fact, `TrialFacts.extensionCoveredDayIndices` (the non-treat logged days past the tail clip, from the same walk as `coveredDayIndices`), with the same fills (*meals logged*, *none logged*, *today, open*, *not reached*) and the same off-diet overlay;
   - each band row carries its **own** count (`extensionCount`), never added to the row counts above the line, so the C-3 partition of the caption is unchanged; a week straddling the designed end is split at the line, each half counted on its own and kept in its weekday columns;
   - **no new aggregate** and no sentence over the band days (S2); the accessible sentence speaks them after the count: *Extended weeks, not in the count: …*;
-  - Home's lane stays off in the band (the lane is the counted ratio drawn), and §0.3's CUL-1344 withhold covers today's band week too: an unfinished rated bowl there withholds the whole ledger.
+  - Home's lane stays off in the band (the lane is the counted ratio drawn), and §0.3's CUL-1344 withhold covers today's trial week wherever it is drawn: a band week, or the last week of a window whose end fell mid-week once today is past it (on an extended trial and a plain overrun alike; the adversarial pass painted two refused bowls there as logged days). An unfinished rated bowl there withholds the whole ledger.
   The shortened-window mirror stays absent.
 - **Legend:** *meals logged · none logged · an off-diet feeding logged* (plus *not tracked* when present). Never *ate*, *eaten*, *clean* or *missed*.
 - **Caption:** the card's LOCKED coverage sentence (*Meals logged on 21 of 23 days.*), from the resolver.

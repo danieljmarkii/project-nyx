@@ -293,6 +293,7 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
     }
     const count = elapsed > 0 ? { covered: coveredCount, elapsed, soFar } : null;
     const extensionCount = extElapsed > 0 ? { covered: extCovered, elapsed: extElapsed, soFar: extSoFar } : null;
+    const firstExtension = days.find((x) => x.extension);
     rows.push({
       week,
       label: `Wk ${week}`,
@@ -302,10 +303,7 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
       countLabel: count ? countLabelOf(count) : null,
       extensionCount,
       extensionCountLabel: extensionCount ? countLabelOf(extensionCount) : null,
-      extensionFirstDate: (() => {
-        const first = days.find((x) => x.extension);
-        return first ? formatTrialDate(first.dayIndex, todayKey) : null;
-      })(),
+      extensionFirstDate: firstExtension ? formatTrialDate(firstExtension.dayIndex, todayKey) : null,
     });
   }
 
@@ -328,11 +326,15 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
   // floors exist to decide when to SPEAK a refusal, and this only withholds (S3). The WHOLE ledger, not the one row: a grid missing its current
   // row breaks S5 (every row carries its count) and the rows' partition of the caption
   // (C-3). Home's lane is this row, so it goes with it.
-  // The extension weeks owe the same withhold (CUL-1855): today sits past the counted
-  // range there, so `currentRowIndex` is null and the check above never ran. The wide
-  // set already reaches the evidence end (`tallyRefusal` walks to it).
+  // TODAY'S TRIAL WEEK, WHEREVER IT IS DRAWN (CUL-1855). `currentRowIndex` is null
+  // once today is past the counted range — in the extension band, and on any overrun —
+  // yet today's week can still be on the grid: the band's weeks, or the last week of a
+  // window whose end fell mid-week (extended to day 80, today day 81: days 78–80 are
+  // drawn). The adversarial pass painted two refused bowls there as logged days. So the
+  // check runs on today's row whenever that row is drawn at all, the plain overrun
+  // included. The wide set already reaches the evidence end (`tallyRefusal` walks to it).
   const refusalRowIndex =
-    currentRowIndex ?? (extended && todayIndex > range.endDayIndex && todayIndex <= lastIndex ? rowOf(todayIndex) : null);
+    currentRowIndex ?? (!ended && rowOf(todayIndex) <= rowOf(lastIndex) ? rowOf(todayIndex) : null);
   if (refusalRowIndex !== null) {
     const weekStart = startIndex + refusalRowIndex * 7;
     if (facts.unfinishedMealDayIndices.some((d) => d >= weekStart && d <= todayIndex)) return null;

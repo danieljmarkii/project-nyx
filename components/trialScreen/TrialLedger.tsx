@@ -140,6 +140,8 @@ export function TrialLedger({ ledger }: TrialLedgerProps) {
         <View style={styles.band} testID="trial-ledger-extension">
           <ThemedText style={[styles.edge, styles.bandHeader]}>{ledger.extension.headerLabel}</ThemedText>
           {ledger.rows.slice(ledger.endAfterRowIndex).map((row) => {
+            // From the end line's own row: it may straddle the designed end (its tail is
+            // drawn here) or be wholly counted (the end fell on a week boundary: skipped).
             const ext = row.days.filter((d) => d.extension);
             if (ext.length === 0) return null;
             return (
