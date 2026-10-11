@@ -1347,8 +1347,10 @@ function proteinTimelineSection(snap: ReportSnapshot): string {
   // `.key` sizes it: `.trend svg` otherwise stretches every svg in the block to the chart's width.
   const unreadGlyph =
     `<svg class="key" viewBox="0 0 16 10" aria-hidden="true"><rect class="nolog" x="1" y="1" width="14" height="8" rx="2"/></svg>`
-  const dayCountNote = `<div class="subnote">Under each date: days with a meal logged, of the days that week ${
-    t.trialScoped ? `covers inside the trial (${scopeSpan})` : 'covers'
+  const dayCountNote = `<div class="subnote">Under each date: days with a meal logged, of ${
+    // "the trial days this report covers", never "the trial (dates)": a running trial's span here ends
+    // at today, and naming it as the trial's own read as a trial that had ended (cold read r3).
+    t.trialScoped ? `that week&rsquo;s days within the trial days this report covers (${scopeSpan})` : 'the days that week covers'
   }. A treat alone does not count as a meal.</div>`
   // A part-week shorter than the floor can never reach it however fully it was logged, so a "3/3 d"
   // box needs its own clause or it reads as contradicting the note (cold read r2).
@@ -1360,8 +1362,15 @@ function proteinTimelineSection(snap: ReportSnapshot): string {
           shortUnreadWeek ? `, including a part-week shorter than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} days` : ''
         } &mdash; too few to read as a week without off-diet food.</div>`
     : ''
+  // Name only the labels actually drawn (cold read r3: "post-trial" explained beside no such column).
+  const firstInScope = t.scopeDaysByBucket.findIndex((d) => d > 0)
+  const outsideLabels = [
+    ...new Set(weeks.flatMap((w, i) => (w === 'outside' ? [firstInScope === -1 || i < firstInScope ? 'pre-trial' : 'post-trial'] : []))),
+  ]
   const outsideNote = weeks.includes('outside')
-    ? `<div class="subnote"><em>pre-trial</em> and <em>post-trial</em> columns fall outside the trial (${scopeSpan}) and are not counted here: this chart counts only feedings inside it. Treats logged outside the trial are counted in appendix B&rsquo;s treat total, which covers the whole window.</div>`
+    ? `<div class="subnote">${outsideLabels.map((l) => `<em>${l}</em>`).join(' and ')} column${
+        weeks.filter((w) => w === 'outside').length === 1 ? '' : 's'
+      } ${weeks.filter((w) => w === 'outside').length === 1 ? 'falls' : 'fall'} outside the trial days this report covers (${scopeSpan}) and are not counted here. Treats logged outside the trial are counted in appendix B&rsquo;s treat total, which covers the whole window.</div>`
     : ''
   return `
   <div class="sec">
