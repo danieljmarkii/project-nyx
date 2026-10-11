@@ -9,6 +9,7 @@
 - Four follow-up rows traced end to end through the dispatcher's own updates.
 - A repo-wide process audit: sizes, churn, ceremony, duplication.
 - A web research pass. Every source quoted here was re-opened on 10/11 and the quote checked against the page.
+- Two `adversarial-reviewer` passes on the triage design itself, the most the two-pass cap allows.
 
 Prior retros: `docs/workflow-retro-2026-07.md`, `docs/workflow-retro-2026-09.md` (its laws L1 to L7 are cited below), `docs/dispatch-retro-2026-10.md` (retro 3, CUL-1606).
 
@@ -29,7 +30,7 @@ Prior retros: `docs/workflow-retro-2026-07.md`, `docs/workflow-retro-2026-09.md`
 
 **The triage ran backwards.** CUL-1438, a live false-reassurance defect in the shipped Signal, has sat in Wave 7 since 9/30: an "improving" card when an owner stops logging vomits but keeps logging meals. Over the same days, 22 off-path follow-up rows shipped, most of them in code no owner can reach yet.
 
-**The fix is one door, not another queue.** Keep flagging everything. A finding becomes a row only through a `Live harm` label or a `blocks` relation to a row on the goal's path. Everything else parks, is counted, and asks you nothing until it is pulled. Section 5 has the design, section 8 the decisions, and section 9 four things to do today.
+**The fix is a sort, not another queue.** Keep flagging everything, and sort each finding by what it can do. Anything that could quiet a warning, leak data or lose data is fixed now, or, if the dispatcher proves its code dark, gates that feature's go-live. A finding that blocks the goal becomes a row. Everything else parks, counted, and asks you nothing until it is pulled. Section 5 has the design (two adversarial passes; the second found six holes, all closed), section 8 the decisions, and section 9 four things to do today.
 
 ---
 
@@ -104,26 +105,24 @@ Parallel sessions also filed duplicates: three issues for one red `main` in 25 m
 
 Five rules. Each is a field or a relation a script reads, because the prose version of rule 1 already existed and never fired (M2).
 
-**Rule 1 · One door into the run order.** A finding ships at once, or becomes a row, only through one of two doors:
-- **Door 1 · It can hurt an owner now, or at the next build or deploy.** The finding is about code that runs for any account: a deployed function; an applied migration, trigger, RLS or Storage policy; a stored row that any installed or flag-off reader reads; a key with any account on its allowlist, yours included; or unflagged code waiting for the next cut. And it can drop, soften or delay a warning, misstate the record, expose data, or write wrong or lost data. The child labels it `Live harm`. When the child cannot tell whether the code is live, it labels it `Live?` and the dispatcher settles it from `app_config` and the deploy record; unsettled counts as live. A `Live harm` finding ships as its own fix, launched with `--row` the way Wave 0's fixes were. It never waits on a run order, and no alarm holds it.
-- **Door 2 · It blocks the goal.** It carries a `blocks` relation to the issue of a row on the project's current Done means path, and says in one sentence what an owner would see if that row shipped without it. A row that enters this way waits for your typed `go` the first time, with its claim quoted.
+**Rule 1 · Sort each finding by what it can do. Only the harmless kinds wait.** The child tags every finding with its direction, in the review's own words (P-16): QUIET if it can drop, soften or delay a warning; LOUD if it errs toward an extra, earlier or louder warning; or neither. A finding with no tag counts as QUIET. Then it goes through one of four doors:
 
-Everything else parks: the project's *Found along the way* milestone, state `Backlog` (not `Todo`), no `Waiting on PM` label, counted in one digest line and never offered one by one.
+| What the finding can do | Where it goes |
+|---|---|
+| **Harm, live.** It is QUIET, or it can expose data, lose data or corrupt what a live reader shows, in code that runs for any account: a deployed function; an applied migration, trigger, RLS or Storage policy; data a live reader reads; a key with any account on its allowlist, yours included; or unflagged code waiting for the next cut. Code counts as live until the dispatcher proves it dark from production `app_config`. | **`Live harm`, fixed now.** Its own fix, launched with `--row` from any project. If the fix needs a ruling, a stopgap ships first: the quieter output, or the leaking path, switched off. A clinical or privacy question goes to you at once under `Waiting on PM`, and so does any `Live harm` left unclaimed for 24 hours. |
+| **Harm, proven dark.** The same, but the dispatcher has read every key it sits behind and found the allowlist empty in production, and no applied migration, trigger or policy is involved. | **A gate on every go-live it sits behind:** a `blocks` relation to each, plus its `Gate:` label so no prune can close it. It names the repair of any rows already written. You decide it at the go-live, by fixing it or cutting the feature. The dispatcher re-reads it every run; an allowlist addition makes it `Live harm`. |
+| **It blocks the goal.** It stops a row on the Done means path from being correct. | **A proposed row,** through a `blocks` relation to that row's issue and one sentence on what an owner would see. It waits for your typed `go` the first time. |
+| **Anything else.** LOUD-only (even when false: P-16 already lets it ship), polish, a hypothetical, a second-order guard, a process idea. | **Parked:** `Backlog` in the project's *Found along the way* milestone, `relatedTo` its source and never a sub-issue of a row's issue, counted in one digest line and never offered one by one. |
 
-Three refinements settle the edges:
-- **Direction comes from the review's own tags (P-16).** A break tagged QUIET (it can drop, soften or delay a warning) on live code is `Live harm` by definition. A residual tagged LOUD (it errs toward an extra, earlier or louder warning) parks, even when it is false: P-16 already lets it ship.
-- **A dark finding gates its flag's go-live.** A QUIET or never-list finding in code behind a flag that is off for every account gets a `blocks` relation to that flag's go-live issue, and names the repair of any rows already written. Adding an account to the allowlist counts as a go-live. A LOUD-only dark finding gets `relatedTo`, never `blocks`, so it cannot hold a go-live; CUL-1741 is this case.
-- **A class goes by its worst instance.** One live instance splits out of a parked class.
+A class goes by its worst instance, and one live instance splits out of it. This is your 10/9 rule made mechanical, with the burden of proof the safe way round: a finding that could quiet a warning, leak or lose data never waits on a guess that the code is dark. It reuses a principle you already ruled: gates are relations, not sentences (CUL-1617).
 
-This is your 10/9 rule made mechanical, and it reuses a principle you already ruled: gates are relations, not sentences (CUL-1617).
-
-**Rule 2 · A ruling travels with its work, except a live safety or privacy one.** A parked finding asks you nothing until it is pulled into a run order; its question then comes beside the proposed row, with the row's cost. The exception: a live finding that touches a safety invariant or privacy carries `Waiting on PM` at once, and its louder fix ships provisionally under E-6 while you rule. Never-list findings never expire (Pets > $): they leave the board by being fixed or by your ruling.
+**Rule 2 · A ruling travels with its work.** A parked finding asks you nothing until it is pulled into a run order; its question then comes beside the proposed row, with the row's cost. Rulings on live harm are asked at once (rule 1), and rulings on a dark gate at its go-live. Never-list findings never expire: they leave the board by being fixed or by your ruling (Pets > $).
 
 **Rule 3 · File the class, not the instance; a forecast is a budget.** The child prompt gains one line: before filing, check whether the finding is one instance of a class (another write path, another surface, another state that can move the same fact); if it is, file the class once, listing every instance found. The script adds two alarms. Either one stops dispatch proposing new rows under it and re-poses the decision with its real cost:
 - **A ruled feature passes its forecast.** A decision brief that commits to building states its forecast in rows. When the rows under that root reach forecast + 1, the fork comes back: "CUL-1611 forecast 3 rows. A fourth was just filed (CUL-1668, a migration of its own). Continue A at this cost, or take B, the louder line?"
 - **One row collects its third follow-up in seven days** (for work with no forecast): "PR-23 has three follow-ups since 10/3 (23a, 23b, 23c). Is the latch's design right before a fourth?"
 
-No alarm holds a `Live harm` or QUIET fix. While a fork is re-posed, the feature's quieter output stays off, so the louder behavior holds until you rule.
+No alarm holds a `Live harm` fix or a dark gate. While a fork is re-posed, the feature's quieter output is switched off wherever it is on, so the louder behavior holds until you rule.
 
 **Rule 4 · Free slots stay free, and every row shows its price.** A row off the goal path never launches `auto` or from the queue. Each proposed row shows "asks you ≈ N", computed from the gate predicate dispatch already reads (a pick, a plan go, an `apply` per migration, a production `merge`, a pending ruling). When only off-path rows are ready, the brief leads with the holds on the core instead of offering them.
 
@@ -132,16 +131,18 @@ No alarm holds a `Live harm` or QUIET fix. While a fork is re-posed, the feature
 **What you see instead of today's offers.** One line per round:
 
 ```
-Found since last run: 7 · 1 live fix (CUL-1746, main red) · 1 blocks PR-41 (proposed below) · 5 parked (4 err loud, 1 polish)
+Found since last run: 7 · 1 live fix (CUL-1746, main red) · 1 blocks PR-41 (proposed below) · 1 gate on en9's go-live · 4 parked (3 err loud, 1 polish)
 ```
 
-And, weekly or at a milestone boundary, one sitting on the parked pile (L6: a queue has the length of its sittings, not its rows). At most ten items, QUIET before LOUD and live before dark, each with a recommendation: promote, keep, or propose close; never-list items stay on it until ruled. The groomer's existing steps handle the long tail: 13c moves a closed project's leftovers, 13b's staleness decay prunes what nobody pulls, and the never-list exempts safety items from both.
+And, weekly or at a milestone boundary, one sitting on the parked pile (L6: a queue has the length of its sittings, not its rows). At most ten items, each with a recommendation: promote, keep, or propose close. Nothing that could quiet a warning is ever in this pile; rule 1 routes it elsewhere. The groomer's existing steps handle the long tail: 13c moves a closed project's leftovers, 13b's staleness decay prunes what nobody pulls, and the never-list exempts safety items from both.
 
 **What this would have done on Engines v3** (a replay by hand, so read it as an estimate):
-- 30b (`main` red) and the live findings: unchanged, shipped at once. CUL-1438's own text says it measures the shipped engine and breaks "absence is not wellness", so door 1 and rule 2's exception put it in front of you on 9/30, with its louder fix shipping meanwhile.
+- 30b (`main` red): unchanged, shipped at once.
+- CUL-1438: QUIET, on the shipped engine, so `Live harm` on 9/30. Its stopgap (no "improving" card while the drop could be a logging gap) ships while you rule, instead of waiting in Wave 7.
 - The deferred EN-3 and EN-5 rows on PR-41's After list (27m to 27p, 30a, 30c, 30m, 30q, 30s): unchanged; they block the go-live.
-- The `may_wait` chain: CUL-1668 (filed 10/8 11:13) is the fourth row under a three-row forecast, so CUL-1611 comes back to you before 27g, 27h, 27i, 27j and 27l are built. Option B was on the table the whole time, and it errs loud.
-- The PR-23 family: its third follow-up (23c, 10/5) asks about the latch's design before 23d to 23h. Under the Done means you ruled on 10/10, those rows sit in code behind `engines_v3_en9`, which v3.0 never turns on, so they park beside en9's go-live. Under the old Done means they would have qualified as blocking, which is why rule 5 carries as much weight as rule 1.
+- The `may_wait` chain: each stale-path finding is QUIET but dark (nothing read `may_wait` before en3), so it gates en3's go-live instead of becoming a row, and CUL-1668 (filed 10/8 11:13) is the fourth row under a three-row forecast, so CUL-1611 comes back to you before 27g to 27l are built. Option B was on the table the whole time, and it errs loud.
+- The PR-23 family: its third follow-up (23c, 10/5) asks about the latch's design before 23d to 23h, and the latch findings, dark behind `engines_v3_en9`, gate en9's go-live rather than launching. Under the old Done means, which included every key going live, they would have qualified as blocking; that is why rule 5 carries as much weight as rule 1.
+- CUL-1741: LOUD-only, so parked, related to its source rather than filed as a sub-issue of CUL-1432. PR-41 is never held by it (today it is: section 9, item 2).
 - Your attention: the holds on the core (W3 to W7, D1 to D8, the evaluation key, the drug list and S1, the device check) lead every brief while nothing on the path is ready, instead of sitting under a stream of follow-up picks.
 
 <!-- SECTION 6 (the wider workflow) is inserted here once the repo-wide audit lands -->
@@ -166,11 +167,11 @@ Sources were re-opened on 10/11 and each quote checked. The full list, with the 
 
 ## 8. Decisions for you
 
-### D1 · The one door into the run order
+### D1 · Sort findings by what they can do
 
-- **Deciding:** whether a finding becomes a run-order row by default, or only through a `blocks` relation or a `Live harm` label.
+- **Deciding:** whether every finding is offered as run-order work, or is sorted by what it can do, so only findings that could hurt an owner or that block the goal ask for your attention now.
 - **Options:**
-  - **A, recommended: the one door** (section 5, rules 1, 4 and 5). A finding that can hurt an owner now or at the next build (QUIET on live code, by P-16's own tag) ships as its own fix; a `blocks` relation to a row on the Done means path makes a row; a QUIET or never-list finding in dark code gates its flag's go-live; everything else parks in `Backlog` under the project's *Found along the way* milestone, counted in one digest line and reviewed in one weekly sitting. Off-path rows need your typed `go`, never `auto`; each proposed row shows what it will ask of you. *Why:* it is your 10/9 rule, made mechanical; it reuses "gates are relations" (CUL-1617); it adds no queue for you to drain.
+  - **A, recommended: the sort** (section 5, rules 1, 4 and 5). A finding that could quiet a warning, leak or lose data is fixed now if its code is live, and gates every go-live it sits behind if the dispatcher proves it dark; a `blocks` relation to a row on the Done means path makes a row; everything else (loud-only, polish, hypotheticals) parks in `Backlog` under the project's *Found along the way* milestone, counted in one digest line and reviewed in one weekly sitting. Off-path rows need your typed `go`, never `auto`; each proposed row shows what it will ask of you. *Why:* it is your 10/9 rule, made mechanical; it reuses "gates are relations" (CUL-1617); it adds no queue for you to drain.
   - **B: Linear's Triage inbox.** Turn on the Triage state and file every finding there to accept, decline or snooze. Native and phone-friendly, but it is a second inbox (L1), and every finding still asks you something.
   - **C: keep `add` and `skip`, add a `later` verb.** Cheapest to build; every finding still costs you a decision.
 - **Consequence:** A changes `dispatch.md` steps 1, 5, 6 and 8, moves the no-row selection into the tested script (retro 3's D4 put selection there), changes CLAUDE.md's issue shape (findings land in `Backlog`, not `Todo`) and `wrap.md` step 4, and adds a `Done means (rows):` line to the page format. It narrows one clause of the `auto` ruling (CUL-1409 (b), CUL-1508): a row on no critical path could be marked `auto`; under A it cannot.
@@ -214,7 +215,7 @@ Sources were re-opened on 10/11 and each quote checked. The full list, with the 
    - The Product Owner lens let a valve live only on a page (M2), and retro 3 itself counted "~16 follow-ups filed by children" as healthy work found mid-project without asking where they went.
    - The Dir. of Engineering lens did not ask, of `may_wait` or the latch, "what else can move?" before the first row, though C-38 asks exactly that of code.
    - Dr. Chen and the Data Scientist ran full rigor on dark code while a live reassurance defect (CUL-1438) waited.
-2. **What rule prevents that class?** Section 5's one door, as a relation and a label a script reads; "a forecast is a budget"; and "file the class, not the instance".
+2. **What rule prevents that class?** Section 5's sort, enforced by tags, relations and a production read a script checks, with the burden of proof on "dark"; "a forecast is a budget"; and "file the class, not the instance".
 3. **What is now over-process?** Offering every new issue as a row, one decision at a time (dispatch step 1's no-row offer, replaced by rule 1's digest line). Asking for rulings on work that is not scheduled (D2). See section 6 for the wider list.
 4. **What working file is bloating?** `dispatch.md` (15 KB at v1.0 by retro 3's count, 72 KB at v1.7 thirteen days later, plus a second full copy in `operating-kit/`), the Engines plan page (~96K characters raw), the dispatchers' context (459K to 728K tokens at hand-off), and the `Waiting on PM` label (87 against a cap of 30).
 
@@ -225,3 +226,4 @@ Sources were re-opened on 10/11 and each quote checked. The full list, with the 
 - **Asks of you** come from two partial sources: the session records (about 100 in-session asks) and four end-to-end traces through the dispatcher's updates. Neither sees every dispatcher turn, so the totals are floors.
 - **The replay in section 5 is by hand.** It shows what the rules would have routed, not what you would have ruled at each fork.
 - **Linear attributes every agent write to the PM's account**, so "who filed" is rebuilt from session records and branch names, never from Linear's creator field.
+- **The triage design had two adversarial passes, the cap.** Pass 1 failed it: the draft had inverted P-16's LOUD and QUIET, treated live database code behind a "dark" feature as dark, and let a loud-only finding hold a go-live. Pass 2 confirmed those fixes and found six more QUIET holes: dark decided from git when allowlists live only in production; a live finding outside the project with no launcher; no louder fix for a leak; a class spanning two flags; an alarm that cannot switch off output already on; an unlabelled gate a prune could close. Each is closed by the amendment pass 2 proposed, and section 5 states the result. No third pass ran. The build that implements D1 is clinical and plan-gated, carries those nine cases as named tests, and gets its own review on the code.
