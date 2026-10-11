@@ -36,13 +36,13 @@ Persona Conflict Protocol). There are four: Q18, Q19, Q22 (half) and Q38. E-6 st
 **Every row has the same shape:** the question; today's behaviour at file:line (checked on `main` at `5fb9cd3a`); the
 recommendation and its one-line why; the counterexample tried against it and whether it held; the direction versus
 today; the verdict E-6 gives that direction. **The isolated adversarial pass found 16 blocking breaks in the first draft,
-ten of them a quieter change labelled louder, neutral or safer.** Every break is rewritten below, and §6 records what each
-reviewer tried. The rows that need your **sign-off** or **explicit agree** rather than a default are marked in the
-table.
+ten of them a quieter change labelled louder, neutral or safer.** A second and final pass found 12 more in the
+rewrite. Every break is rewritten below, §6 records what each reviewer tried, and §6.2 lists the residuals that stand.
+The rows that need your **sign-off** or **explicit agree** rather than a default are marked in the table.
 
 **How to answer.** "All agree" takes every A and every provisional adoption, and signs off nothing: a row marked
-**sign-off** or **explicit agree** stays open until you name it. So: "All agree; sign off Q3.2, Q9; agree Q7, Q24;
-Q18 A, Q19 A, Q22 a, Q38 B". Conflict rows need a letter.
+**sign-off** or **explicit agree** stays open until you name it. So: "All agree; sign off Q9; agree Q7, Q13.5, Q16.2,
+Q24, Q26, Q30; Q18 A, Q19 A, Q22 a, Q38 B". Conflict rows need a letter.
 
 ---
 
@@ -55,28 +55,28 @@ Rows are grouped by what the ruling lets start, most first.
 | # | Issue | The question | A (recommended) | Other options | Direction | Verdict |
 |---|---|---|---|---|---|---|
 | **Q1** | CUL-1146 | E-4: how many healthy pets may see a chance insight card within 180 days? (gates PR-31, PR-33) | A ratchet: x = the worst case PR-31 measures at go-live size on the 13 ratified null scenarios with EN-11 as built, rounded up to the next 5 points; it may only fall. PR-31 also reports the cost of x = 10% and 20%, and the per-trial number for a trial started at a peak | B: x = 10% now · C: per-lane floors only | A neutral; B **quieter** | A agree · B **needs your sign-off** |
-| **Q2** | CUL-1537 | (a) The care state's 5% re-raise line counts the burden card, which no care state may quiet. (b) May a zero sit beside "Your vet knows"? (gates EN-9 going live) | (a) Count only the concern's own asks on **both** paired lines, the re-raise line and the doubling line; report the burden card's asks and catches on their own lines. (b) Withhold the zero when no symptom has been logged since the answer | (a) B: count the concern's asks on the re-raise line only (**quieter**: a silent care state passes) · C: keep, EN-9 never live. (b) B: keep the zero | (a) neutral (both lines move together) · (b) safer | (a) agree, and it re-pins the frozen line list · (b) adopt provisionally |
-| **Q3** | CUL-1544 | Four edges in the weight lane before `engines_v3_en8` turns on | 3.1: drop the exact-copy rule, as the first sheet's W1 ruled · 3.2: anchor across a plan with no weigh-in, firing only past the plan's target plus the noise margin · 3.3: a stand-down never moves a running plan's start · 3.4: the plan's start is stamped at the visit's weigh-in, one-day lookback | 3.1 B keep the rule until PR-37 · 3.2 B no anchor; C start anchors (built) · 3.3 B reset (built) · 3.4 B 7-day lookback | 3.1 louder than built · 3.2 **quieter** than built · 3.3 louder · 3.4 neutral with its condition | 3.1 adopt · 3.2 **needs your sign-off** · 3.3 adopt · 3.4 agree |
-| **Q4** | CUL-1390 | The weight lane's product calls W3 to W7 (gates PR-37) | W3 sources, the percentage, one change line on the report · W4 **keep** "(N%)" on Patterns · W5 a plain Home row asking for a second weigh-in · W6 a vet plan only · W7 a weight row on "How did it go?", on condition a relabel never lowers a raised row | W4 B remove it (**quieter**) · W5 B nothing · W6 B also an owner switch · W7 B correction only | W3, W4, W7 neutral · W5 louder · W6 louder than B (the quieting itself was signed off as the first sheet's W6) | Agree · adopt provisionally |
+| **Q2** | CUL-1537 | (a) The care state's 5% re-raise line counts the burden card, which no care state may quiet. (b) May a zero sit beside "Your vet knows"? (gates EN-9 going live) | (a) Count only the concern's own asks, in one predicate both scoring sites share, so all six EN-9 lines move together; report the burden card's asks and catches on their own lines. (b) Withhold the zero when no symptom has been logged since the answer | (a) B: change the 5% line only (**quieter**: a silent care state passes) · C: keep, EN-9 never live. (b) B: keep the zero | (a) neutral (every line moves together) · (b) safer | (a) agree, and it re-pins the frozen line list · (b) adopt provisionally |
+| **Q3** | CUL-1544 | Four edges in the weight lane before `engines_v3_en8` turns on | 3.1: drop the exact-copy rule, as the first sheet's W1 ruled · 3.2: keep the built anchor after a plan with no weigh-in · 3.3: a stand-down never moves a running plan's start · 3.4: one-day lookback that includes a weigh-in at the plan's start instant | 3.1 B keep the rule until PR-37 · 3.2 B a target-aware anchor; C no anchor · 3.3 B reset (built) · 3.4 B 7-day lookback | 3.1 louder, given W7's condition · 3.2 neutral (as built); B and C **quieter** · 3.3 louder · 3.4 neutral with its condition; B mixed | 3.1 adopt · 3.2 agree · 3.3 adopt · 3.4 agree |
+| **Q4** | CUL-1390 | The weight lane's product calls W3 to W7 (gates PR-37) | W3 sources, the percentage, one change line on the report · W4 **keep** "(N%)" on Patterns · W5 a plain Home row asking for a second weigh-in · W6 a vet plan only · W7 a weight row on "How did it go?", on condition that no vet-scale reading, added or relabelled, lowers a row the record raises without it | W4 B remove it (**quieter**) · W5 B nothing · W6 B also an owner switch · W7 B correction only | W3, W4, W7 neutral · W5 louder · W6 louder than B (the quieting itself was signed off as the first sheet's W6) | Agree · adopt provisionally |
 | **Q5** | CUL-684 | F-G: may the band's marker gate the Signal card? (gates the taxonomy spec's seam 2) | Rule 1 wins: the marker never gates the card | B: rule 3 wins · C: park §9a until W2a | A louder · B quieter · C neutral | A adopt provisionally |
-| **Q6** | CUL-944 | A row stuck in the sync queue shows in the app but not on the vet report: what does the banner do? (gates CUL-1173) | A tappable banner that opens the stuck entries and says they are not in the vet report yet | B: generic copy · C: copy per queue | Louder | Adopt provisionally |
-| **Q7** | CUL-1245 | History's day header says "meals not finished" for a refused meal and a half-eaten one alike: split them? | "N refused or picked at · N not finished", on the day header and on the Meal filter row, from the engine's refusal classes; land before CUL-1263 so Home inherits it | B: one count, as built | Louder; **amends your HV-9 call 3a's Meal row** | **Needs your explicit agree** |
-| **Q8** | CUL-1235 | Home's Today line counts treats as meals | Moot under CUL-1263 (a), ruled 2026-09-25: Home will use History's day header, which names no meals on the All-types view, so nothing can count a treat as a meal | B: add meals and treats to the header's All-types branch | Records a ruling | Agree |
+| **Q6** | CUL-944 | A row stuck in the sync queue shows in the app but not on the vet report: what does the banner do? (gates CUL-1173) | A tappable banner that opens the stuck entries and says they are not in the vet report or the Signal yet | B: generic copy · C: copy per queue | Louder | Adopt provisionally |
+| **Q7** | CUL-1245 | History's day header says "meals not finished" for a refused meal and a half-eaten one alike: split them? | "N refused or picked at · N left some", on the day header and on the Meal filter row, from the engine's refusal classes; land before CUL-1263 so Home inherits it | B: one count, as built | Louder; **amends your HV-9 call 3a's Meal row** | **Needs your explicit agree** |
+| **Q8** | CUL-1235 | Home's Today line and the Daily Recap count treats as meals | Home's half rides CUL-1263 (a), which replaces the line; the Daily Recap, which keeps the old chips, counts treats as treats | B: Home's half only (the Recap keeps saying "4 meals" over treats) | Louder | Adopt provisionally |
 
 ### Part B · Safety words on Home, the Signal, Ask and the trial
 
 | # | Issue | The question | A (recommended) | Other options | Direction | Verdict |
 |---|---|---|---|---|---|---|
 | **Q9** | CUL-1357 | A build before #952 can hide an unseen *Worth a call*, and on that build nothing else carries a call raised by context alone | Close it with the next TestFlight cut (an OTA if the installed build reports runtime 1.2.0, else the native cut); until then one read-only count of hidden escalation rows on your account | B: a server trigger refusing an unwitnessed hide (a migration) · C: an update plus a backfill | **Quieter residual** until the cut | **Needs your sign-off** · B is schema, **needs your typed go** |
-| **Q10** | CUL-1732 | Ask drops a read's call words when the read is hidden | Ask keeps the call, worded as the record words it ("the record marks this as worth a call; the note is hidden"), and drops only the read text | B: as built | Louder | Adopt provisionally |
+| **Q10** | CUL-1732 | Ask drops a read's call words when the read is hidden | On a call tier, Ask keeps the tier's own words ("the record marks this as worth a call; the note is hidden") and drops only the read text | B: as built | Louder | Adopt provisionally |
 | **Q11** | CUL-648 | The first-insight arrival can play under another pet's safety banner | Withhold the arrival while a cross-pet banner is on screen, and spend the once-ever marker anyway | B: withhold and defer the marker · C: leave it | Neutral (removes a celebration, mutes no ask) | Agree |
 | **Q12** | CUL-1539 | The Patterns month's weekly bar can read 0 over rose days when a bout crosses the week line | Keep counting onsets; disclose "a bout that began before this week continues here" | B: count vomit days · C: count vomits | Louder (a disclosure) | Adopt provisionally |
-| **Q13** | CUL-1358 | Six calls on the Signal's not-eating gate | 1 withhold falling diarrhea too · 2 keep the stood-down line whole and add the not-eating fact · 3 keep the phone script's compare and add the not-eating fact in the same line · 4 give the screen's not-eating line the 48-hour ask · 5 say the in-trial rapid-share shift in words, never a drawn compare · 6 a length cue on a "so far" week | each as shipped | 1 safer · 2 to 5 louder · 6 neutral | Adopt provisionally |
-| **Q14** | CUL-772 | A Signal rebuild whose push failed renews a 24-hour cache over a record missing the new rows | Unsent rows count as an incomplete read (the 1-hour expiry), except rows that are stuck or quarantined, which belong to Q6's banner | B: skip the rebuild while rows are unsent · C: accept | Louder | Adopt provisionally |
+| **Q13** | CUL-1358 | Six calls on the Signal's not-eating gate | 1 withhold falling diarrhea too · 2 keep the stood-down line whole and add the not-eating fact with its 48-hour ask · 3 the phone script gains the not-eating fact as its own row, and the fall stays withheld · 4 give the screen's not-eating line the 48-hour ask · 5 say the in-trial rapid-share shift in words, never a drawn compare · 6 a length cue on a "so far" week | each as shipped | 1 safer · 2 to 5 louder · 6 neutral; **row 5 extends your ruling (a)** | Adopt provisionally; row 5 **explicit agree** |
+| **Q14** | CUL-772 | A Signal rebuild whose push failed renews a 24-hour cache over a record missing the new rows | Unsent rows count as an incomplete read (the 1-hour expiry), except rows the server has refused, which belong to Q6's banner; a row the server never refused sets the flag at any age | B: skip the rebuild while rows are unsent · C: accept | Louder | Adopt provisionally |
 | **Q15** | CUL-1574 | On the milestone day a free-fed trial loses the bowl's watch line | Carry the bowl line alone on the milestone when a bowl is in force | B: leave it · C: Get ready only | Louder | Adopt provisionally |
 | **Q16** | CUL-1341 | *For the call*: a recent cluster blends into the trial count; the line vanishes off the refusal face; a missing count shows nothing | 1 a presence-only count since a named day · 2 the line follows "not eating" onto the stand-down and intake-decline faces · 3 a line saying the count is unavailable | each as shipped | Louder; **row 2 amends your 2026-09-27 trial-screen ruling** | Adopt provisionally; row 2 **explicit agree** |
 | **Q17** | CUL-1056 | Does the Change-the-window sheet restate a live refusal? | No: every route to it passes a safety block first | B: restate the refusal | Neutral | Agree |
-| **Q18** | CUL-1597 | TD-5: is a call-now "Not yet" asked once more that evening? | **No recommendation (conflict).** A, Dr. Chen: once more after 6 PM, on screen, never again · B, Jordan: as built, no timed re-ask | | A louder · B neutral | **Your letter** |
+| **Q18** | CUL-1597 | TD-5: is a call-now "Not yet" asked once more that evening? | **No recommendation (conflict).** A, Dr. Chen: one prompt that evening, after 6 PM, on screen, never again · B, Jordan: as built, the same buttons on every reopen and no timed prompt | | A louder · B neutral | **Your letter** |
 | **Q19** | CUL-1596 | Does the eight-week "Did your vet want to see her again?" ever reach an owner? | **No recommendation (conflict).** A, the team: keep it off · B, Dr. Chen: turn it on, once CUL-1531 lets it see a booked recheck · C: re-measure after CUL-1531 and Q2 | | A neutral · B louder | **Your letter** |
 
 ### Part C · The engine's chronicity lane and food findings
@@ -84,9 +84,9 @@ Rows are grouped by what the ruling lets start, most first.
 | # | Issue | The question | A (recommended) | Other options | Direction | Verdict |
 |---|---|---|---|---|---|---|
 | **Q20** | CUL-686 | A dense cough is silent for 21 days | The density arm Dr. Chen's Q5b already preferred: at least 10 cough days inside any 14, ongoing, priced at 0 of 200,000 null pets | B: a burden arm on vomit's shape (unmeasured) · C: accept and document | Louder | Adopt provisionally |
-| **Q21** | CUL-685 | One pet with two chronic courses: the cross-pet banner names one | Add "…and another recurring sign" | B: keep longest-span, documented | Louder | Adopt provisionally |
+| **Q21** | CUL-685 | One pet with two chronic courses: the cross-pet banner names one | Add "…and another recurring sign" (or "…and 2 other recurring signs") | B: keep longest-span, documented | Louder | Adopt provisionally |
 | **Q22** | CUL-689 | ⑦ ordering has no recency term | Move the cough-vomit adjacency mark to the most recent course (a tie keeps the current leader). **The ordering itself: no recommendation (conflict)** | ordering a: span first (Data Scientist) · ordering c: span first unless one course is quiet past a bound (Dr. Chen) | Mark neutral · ordering neutral | Mark agree · ordering **your letter** |
-| **Q23** | CUL-793 | The chronicity compare borrows the 7-day 0.7 density ratio for 28-day halves | Its own named constant at 0.7, plus: when the recent half's last 7 days hold no logged day, the pair carries its own sentence saying so | B: a stricter ratio · C: leave it | Louder | Adopt provisionally; the 7 days **No source** |
+| **Q23** | CUL-793 | The chronicity compare borrows the 7-day 0.7 density ratio for 28-day halves | Its own named constant at 0.7, plus: when the recent half's last 7 days hold no logged meal or symptom, the pair carries its own sentence saying so, as a disclosure only | B: a stricter ratio · C: leave it | Louder | Adopt provisionally; the 7 days **No source** |
 | **Q24** | CUL-203 | Under EN-11 two always-co-fed foods never yield a food finding, even when a corrected test passes | Accept it, stating the cost as never: it follows from your 2026-09-30 ruling (a food finding names one protein alone) and D5 = B. Name it in CUL-1486's GA-day marker | B: a "feed them apart" suggestion | **Quieter**, permanent for a co-fed pair | **Needs your explicit agree** |
 
 ### Part D · The vet report
@@ -94,7 +94,7 @@ Rows are grouped by what the ruling lets start, most first.
 | # | Issue | The question | A (recommended) | Other options | Direction | Verdict |
 |---|---|---|---|---|---|---|
 | **Q25** | CUL-1030 | An overnight discovery window prints as two clock times with no dates | Date each end of a range whose day differs from the row's, with the year when it differs | B: date by the earliest time · C: explain in the preamble | Neutral | Agree |
-| **Q26** | CUL-1004 | What does `Set it up` on the send bar open? | A mid-trial "this is the trial diet" write, offered only when the trial records a target protein and the food matches it | B: any food (**quieter**, see §4) · C: no button, as shipped, with a designed empty state | **Quieter** in a mis-set case; **re-opens §5.5 D-A** | **Needs your explicit agree** |
+| **Q26** | CUL-1004 | What does `Set it up` on the send bar open? | A mid-trial "this is the trial diet" write, offered only when the trial records a target protein and every protein on the food's label is that protein or a form of it, matched on the exact key | B: any food (**quieter**, see §4) · C: no button, as shipped, with a designed empty state | **Quieter** in a mis-set case; **re-opens §5.5 D-A** | **Needs your explicit agree** |
 | **Q27** | CUL-994 | Keep the dose-span sentence that shipped in place of the suppression the issue specified? | Keep it | B: restore the suppression · C: suppress on a day-count predicate | Neutral (ratifies what ships) | Agree |
 | **Q28** | CUL-1027 | "N changes overlap this window" counts agents while the chart draws starts and stops | Keep it: the shipped legend already names each mark | B: rename the noun · C: count starts and stops | Neutral (ratifies what ships) | Agree |
 | **Q29** | CUL-1018 | Removing a food from the trial's original allowed list draws no mark | Mark it when its date differs from both the trial's start and its recorded end | B: never (as built) · C: every removal | Louder | Adopt provisionally |
@@ -107,9 +107,9 @@ Rows are grouped by what the ruling lets start, most first.
 | **Q31** | CUL-913 | The spec says the look's refusal recency is 2 days; the code is 3 | Write 3 into T-20, naming the look's own constant | B: back to 2 | Neutral | Agree |
 | **Q32** | CUL-915 | Answering's per-week placement is computed and gated on, never shown | Print it on the row's sub-line ("answered 1 · 1 · 7 · 0 by week"), after a mock frame | B: raise the floor · C: accept and say so in §7 | Louder | Adopt provisionally |
 | **Q33** | CUL-1074 | Weight dots on Patterns: grey as shipped, or the round-4 teal? | Grey, as shipped | B: teal · C: primary ink | Neutral | Agree |
-| **Q34** | CUL-272 | Who writes the critical-drug list now that no vet review is coming? | The team drafts it from published references; a drug critical for one use counts as critical whenever the indication is blank | B: an owner toggle · C: keep `is_critical` dormant | Louder; **re-opens T17's "the team will not write it"** | Adopt provisionally; the list comes back for your agree |
+| **Q34** | CUL-272 | Who writes the critical-drug list now that no vet review is coming? | The team drafts it from published references; a drug critical for some use counts as critical unless its indication matches a listed non-critical use | B: an owner toggle · C: keep `is_critical` dormant | Louder; **re-opens T17's "the team will not write it"** | Adopt provisionally; the list comes back for your agree |
 | **Q35** | CUL-672 | The §15 vet question sheet: keep or drop? | Keep it as an errand for your own vet; merge #765 | B: drop it, close #765 | Neutral | Agree |
-| **Q36** | CUL-591 | Ask tells an owner an overrun trial is "complete" | Ask relays the trial screen's overrun words and never says complete | A as drafted: let it stand · B: gate Ask on `isTrialRunning` | Louder | Adopt provisionally |
+| **Q36** | CUL-591 | Ask tells an owner an overrun trial is "complete" | Ask relays the trial screen's overrun words and never says complete | B: gate Ask on `isTrialRunning` · C: let it stand (the first draft's pick; broke) | Louder | Adopt provisionally |
 | **Q37** | CUL-590 | The course-end prompt's "Your vet has the final say." | Keep it | B: a fuller deferral · C: drop it | Neutral | Agree |
 | **Q38** | CUL-595 | May a photo zoom past its real pixels? | **No recommendation (conflict).** A, Engineer and Designer: keep 2.5 · B, Dr. Chen: stop at 1 | | Neutral | **Your letter** |
 
@@ -150,21 +150,25 @@ items) and the per-PR device checks. Those are briefed in the staleness report o
 
 ### Q2 · CUL-1537 · the care state's re-raise line, and a zero beside "Your vet knows"
 
-* **Today (a):** the harness's `re_raise` lane matches any card on the sign that carries an ask
-  (`supabase/functions/generate-signal/eval/scorecard.ts:84-85`), and both of EN-9's paired lines read it: the 5%
-  re-raise line (`passLines.ts:102-115`) and the doubling line it is paired with (`:117-130`). The burden card,
-  which the care state may never quiet (care spec §4.4, AC 3), re-asks 18 of 30 stable cats on its own, so no care
-  state can pass the 5% line. The care spec's PR-23 waits on this (`docs/nyx-care-state-requirements.md:473`).
+* **Today (a):** two scoring sites count "an ask on the sign", and both count any card that carries one, burden card
+  included: the care tally's own check (`supabase/functions/generate-signal/eval/scorecard.ts:506-512`), which feeds
+  the 5% line (`passLines.ts:102-117`), its whole-horizon twin and the ask-evenings count; and the `re_raise` lane
+  (`scorecard.ts:84-85`), which feeds the doubling line it is paired with (`:119-134`), the doubling delay and the
+  scored rows. Six EN-9 lines in all. The burden card, which the care state may never quiet (care spec §4.4, AC 3),
+  re-asks 18 of 30 stable cats on its own, so no care state can pass the 5% line. The care spec's PR-23 waits on this
+  (`docs/nyx-care-state-requirements.md:473`).
 * **Today (b):** a zero is withheld only beside a masking drug, within 42 days of a visit, or over thin logging
   (`supabase/functions/generate-signal/careState.ts:1013-1019`); the test pins "0 episodes, with something logged on
   14 of 14" as honest (`careState.test.ts:449-450`).
-* **Recommendation (a), A:** both paired lines count only asks from the concern itself; the burden card's asks and
-  its catches are reported on their own lines beside them. **Why:** counting the net measures the net, not the care
-  state. Moving only the re-raise line (B) would let a care state that never re-raises its own concern score 0% there
-  while the never-quieted burden card props up the doubling line: silence passing, the exact hole the pairing exists
-  to close (`passLines.ts:11-14`). Even under A the concern alone re-asks 13 to 33%, so PR-16's frontier work still
-  has to reach 5%: this row makes the lines honest, not passed. The doubling line's own floor is still unruled (N3:
-  ruled with its wave), so EN-9 cannot go live on this row alone.
+* **Recommendation (a), A:** one predicate, "an ask from the concern itself", shared by both scoring sites with a test
+  that they agree, so all six lines move together; the burden card's asks and its catches are reported on their own
+  lines beside them. **Why:** counting the net measures the net, not the care state. Moving only the 5% line (B), or
+  fixing only one of the two sites, would let a care state that never re-raises its own concern score 0% there while
+  the never-quieted burden card props up the doubling line: silence passing, the exact hole the pairing exists to
+  close (`passLines.ts:11-14`). Even under A the concern alone re-asks 8 to 10 of 30 (27 to 33%,
+  `docs/sessions/2026-10-03-engines-v3-pr23-care-state.md:75`), so PR-16's frontier work still has to reach 5%: this
+  row makes the lines honest, not passed. The doubling line's own floor is still unruled (N3: ruled with its wave),
+  so EN-9 cannot go live on this row alone.
 * **Recommendation (b), A:** withhold the count when it is zero and no symptom has been logged since the answer;
   keep the window and the logging line. **Why:** next to "Your vet knows", a zero over a stream that may have stopped
   being logged reads as "it worked" (absence is not wellness).
@@ -173,46 +177,59 @@ items) and the per-PR device checks. Those are briefed in the staleness report o
   quieter. **(b):** a cat genuinely well for 20 days with meals logged daily loses its true zero. **Held:** the cost
   is a missing true zero, the safe direction. A cat whose owner logs one unrelated sneeze gets the zero back, which
   is still no worse than today.
-* **Direction:** (a) neutral: a test definition, both lines moving together. It changes the frozen line list, so it
+* **Direction:** (a) neutral: a test definition, every line moving together. It changes the frozen line list, so it
   re-pins the list's digest with your sign-off named beside it (`passLines.ts:22-24`); your agree here is that
-  sign-off. (b) safer: removes a reassuring number.
+  sign-off, for all six lines. (b) safer: removes a reassuring number.
 * **Verdict:** (a) agree. (b) adopt provisionally.
 
 ### Q3 · CUL-1544 · four edges in the weight lane
 
 Built dark in PR-19 (#1014, `lib/weightStory.ts`); `engines_v3_en8` is unseeded. The harness cannot see EN-8 until
 its synthetic rows feed it weights (`passLines.ts:54`), so **no quieter edge here has a harness proof**; each names
-its cost and a substitute.
+its cost and a substitute. Every weigh-in is written as a home-scale reading today (`lib/weight.ts:157`); vet-scale
+readings first arrive with PR-37 through W7, so every mixed-scale case below first becomes reachable there, and
+W7's condition (Q4) governs all of them.
 
 * **3.1 · Identical weigh-ins.** Today `EXACT_COPY_NEVER_PAIRS = true` (`lib/weightStory.ts:110`, :194-196): two
   weigh-ins equal to the gram never confirm. The code's own header calls it quieter than the first sheet and owed
   your sign-off (`:99-109`). **What it protects:** a pre-fill saved unchanged confirming a drop smaller than 0.6 kg.
-  A larger drop raises a card either way, because W2's 0.6 kg rule never consults the exact-copy test (`:504-524`).
+  A larger drop that also clears the line raises a card either way, because W2's 0.6 kg rule never consults the
+  exact-copy test (`:504-524`), which holds for pets under about 12 kg.
   **What it costs:** a repeated lower plateau never confirms (9.9 lb ×4 then 8.8 lb ×4, an 11% loss, is silent while
-  it repeats); a cat weighed again after a drop who reads the same (4.4, 4.38, then 3.9 and 3.9) stays unconfirmed
-  for as long as the readings match, which is exactly the second weigh-in W5's row asks for; a 1%-a-week loss weighed
-  monthly is caught 4 to 9 weeks later.
+  it repeats); a cat weighed again after a drop who reads the same (4.4, 4.38, then 3.9 and 3.9) stays at one
+  unconfirmed reading for as long as the readings match, which is exactly the second weigh-in W5's row asks for (with
+  the rule off it is a firm card); a 1%-a-week loss weighed monthly is caught 4 to 9 weeks later.
   **Recommendation (A): drop the rule now**, so the first sheet's W1 (two consecutive home readings confirm) stands
   as you signed it off. **Why:** its cost is silence on real losses and its protection is a false card on a small
-  pre-filled drop, the louder error; PR-37 removes the pre-fill in any case. **Louder than what is built. Adopt
-  provisionally.** B (keep it until PR-37, then for older rows only) is quieter and needs your sign-off.
+  pre-filled drop, the louder error; PR-37 removes the pre-fill in any case. **Louder than what is built, given W7's
+  condition.** Without it there is one quieter case: vet readings of 11.0 lb then 9.9 lb (a firm 10% loss), then a
+  home reading of 9.9 lb the next day; with the rule off the equal home reading becomes the latest low and the
+  mixed-scale margin turns firm into soft (`:330-338`). W7's condition (no home reading softens a vet-to-vet loss)
+  closes it, and PR-37 is where vet readings first exist. **Adopt provisionally.** B (keep it until PR-37, then for
+  older rows only) is quieter and needs your sign-off.
 * **3.2 · A finished plan with no weigh-in during it.** Today (built) the plan's start weight anchors after the plan
-  ends, so a prescribed 10% loss reads as an unplanned soft card the day the plan lapses. **Recommendation (A):**
-  keep the anchor across the plan, but fire only past the plan's target plus the noise margin. **Why:** it removes
-  the false card on the loss the vet asked for and keeps an over-target loss. B (no anchor across the plan, the first
-  draft's recommendation) never catches a loss during an unweighed plan: a cat on a 12-week plan, never weighed, that
-  loses 25% is a firm card today and silent forever under B. **Every option but the built one is quieter**, because
-  each suppresses the prescribed loss: A for a loss within target, past the plan's end, which extends the first
-  sheet's signed-off W6 (quiet while a plan runs) by one lapse. **Needs your sign-off.** Substitute proof: a fixture
-  pinning that an unweighed plan's loss past target plus margin fires after the lapse.
+  ends, on the ordinary lines, so a prescribed 10% loss reads as an unplanned soft card the day the plan lapses.
+  **Recommendation (A): keep that.** **Why:** its error is a false card on a loss the vet asked for, which the owner
+  can read against the plan they were given, and every alternative is quieter. B, a target-aware anchor (fire only
+  past the plan's target plus the noise margin), sits at about 14% for a 6 kg cat and 15% for a 3.5 kg cat with a
+  vet-weighed start, with the soft line off, and as drafted it has no end date: a failed plan (no loss during it)
+  followed by a 12 to 13% loss months later stays silent. C, no anchor across the plan, never catches a loss during an
+  unweighed plan at all: a cat on a 12-week plan, never weighed, that loses 25% is a firm card today and silent forever
+  under C. **Neutral (as built). Agree.** B or C need your sign-off; B's substitute proof would be a pair of fixtures,
+  one pinning the over-target catch and one pinning the failed-plan silence it accepts.
 * **3.3 · A stand-down mid-plan.** Today (built) a stand-down resets the plan's cumulative line, so a cat 14.7% below
   her start, past a 10% target, goes silent. **A:** a stand-down never moves a running plan's start weight.
   **Louder. Adopt provisionally.**
-* **3.4 · How old a start weigh-in may be.** Today the lookback is one day. **A:** keep one day, **on condition**
-  that PR-37's writer stamps the plan's start at the visit's weigh-in instant, never the time the form is saved.
+* **3.4 · How old a start weigh-in may be.** Today the lookback is one day, strictly before the plan's start
+  (`lib/weightStory.ts:280`). **A:** keep one day, **on two conditions**: PR-37's writer dates the plan's start from
+  the visit, never from the time the form is saved; and the lookback includes a weigh-in at the start instant itself.
   **Why:** a plan saved three days after the visit would miss the visit's 6.0 kg, and a cat at 5.2 kg three weeks
-  later (13% down) would read level. **Neutral with the condition**; without it A is quieter and B (a 7-day lookback)
-  is the louder option.
+  later (13% down) would read level; and a home weigh-in stamped at the very instant the plan starts never anchors
+  today (4.0 kg at the start, then 3.55 and 3.54, raises nothing; the same weigh-in a minute earlier is a firm card).
+  **Neutral with both conditions.** B (a 7-day lookback) is **mixed**, not louder: it helps when the last day holds no
+  weigh-in, and it hurts when an older, lower reading pairs with the visit's, because the start level is the lower of
+  the last two (`:262`): home 6.0 six days out, 6.5 on the visit day, then 5.75 and 5.74 is a firm card on one day's
+  lookback and nothing on seven.
 * **Recorded costs that stand provisionally** (louder, for the PMD-9 re-run, not for ruling): the 0.6 kg rule behaves
   like a single-reading rule above about 12 kg; a 30 kg dog with no birthday gets a soft card on about 0.23 kg; one
   mistyped weight can raise a firm card through the 0.6 kg rule; the 2%-a-week plan rate fires on 8 to 25% of cats
@@ -236,17 +253,22 @@ ruled on 2026-09-28. Briefs: `docs/nyx-weight-lane-requirements.md` §0 (`:39-75
   your sign-off; no harness reads Patterns copy.
 * **W5 · a drop on one reading. A:** a plain Home row with no vet ask: "One reading so far, on a home scale. Weigh her
   again this week to check." It leaves when a later reading decides the drop. Under Q3.1 A an identical later reading
-  confirms the drop and the row becomes the soft card; under Q3.1 B it would stay asking indefinitely, so rule the two
+  confirms the drop and the row becomes a raised card; under Q3.1 B it would stay asking indefinitely, so rule the two
   together. **Louder than nothing on Home.**
 * **W6 · who sets "planned loss". A:** a vet plan only, as a plan row on "How did it go?". **Louder than B** (also an
   owner switch, which lets an owner quiet the card on their own judgment). Against today, where nothing can set a
   plan, any writer switches on the planned-loss quieting you signed off as the first sheet's W6; A is the narrowest
   writer of it.
-* **W7 · a clinic weight. A:** an optional weight row on "How did it go?", **on condition that a relabel never lowers
-  a row already raised**: *That was the vet's scale* writes the source and the row holds until a new reading decides.
-  **Why:** without the condition the relabel path is quieter. Run on the predicate: home 4.2 and 4.19, then visit-day
-  home readings of 3.95 and 3.94, is a confirmed soft card; relabelling the 3.95 as the vet's adds the mixed-scale
-  margin and the card goes. **Neutral with the condition.**
+* **W7 · a clinic weight. A:** an optional weight row on "How did it go?", **on condition that no vet-scale reading,
+  added or relabelled, lowers a row the record would raise without it, and no home reading softens a loss measured
+  vet-to-vet**. One way to build it: compare each high with the latest low on its own scale as well as across scales,
+  and keep the louder. **Why:** the predicate's mixed-scale margin was written for readings PR-19 could not yet
+  produce, and run against it every vet-scale path can quiet a card. Four cases, each a fixture PR-37 owes:
+  (1) home 4.2 and 4.19, then visit-day 3.95 and 3.94 (a soft card), then the vet's 3.96: the card goes;
+  (2) relabelling that 3.95 as the vet's: the card goes; (3) vet 11.0 lb then 9.9 lb (a firm 10% loss), then home
+  10.0 and 10.05 lb: no row at all; (4) a vet plan with a 10% target, a vet-weighed start of 4.0, then 3.42 and 3.41
+  (14.5% down): no row, where a home-weighed start fires firm at 11.3%. **Neutral with the condition**; without it W7
+  is quieter and needs your sign-off.
 * **Counterexample tried:** W5 on a real 15% loss logged once on a home scale. The row asks for a second weigh-in, not
   a vet call; an owner who never weighs again gets nothing more. **Held as ruled:** that is PMD-9's trade (the first
   sheet's W1), which this row does not re-open.
@@ -279,8 +301,9 @@ ruled on 2026-09-28. Briefs: `docs/nyx-weight-lane-requirements.md` §0 (`:39-75
   old (`app/report.tsx:105-108`, :470-476, B-534), so the gap is the stuck and quarantined rows. History's "not saved"
   row waits on this ruling (CUL-1173).
 * **Recommendation (A):** a tappable banner that opens the stuck entries, works for all 21 queues, and says plainly
-  that they are not in the vet report yet. **Why:** the owner can only fix what they can find, and the report is the
-  place the gap costs most.
+  that they are not in the vet report or the Signal yet. **Why:** the owner can only fix what they can find, and the
+  report is the place the gap costs most. The Signal half matters too: a refused vomit sits under a calm Signal that has
+  not counted it, and Q14's flag cannot reach a row the server refused, so the banner is the only place that says so.
 * **Counterexample tried:** a stuck medication dose before a vet visit. Under A the banner names it as missing from
   the report and opens it. **Held**, provided the copy names the report (the condition is in A). A row pending under a
   day: the report screen's existing line covers it. **Held.**
@@ -292,16 +315,16 @@ ruled on 2026-09-28. Briefs: `docs/nyx-weight-lane-requirements.md` §0 (`:39-75
   day header and, since #1034, on the Meal filter row. The Patterns month keeps refused and left-some apart
   (`components/designV2/patterns/MonthInstrument.tsx:543-544`) but counts Picked as left-some
   (`lib/monthReads.ts:302-303`), while the engine counts Picked as refusal (`lib/intakeEvidence.ts:36-50`).
-* **Recommendation (A):** "N refused or picked at · N not finished" in the header's grey, on the All-types header
-  **and** the Meal filter row, from one predicate built on `intakeEvidence`'s classes; the month moves to the same
-  classes. Land it before CUL-1263 so Home inherits it. **Why:** intake is not preference: a refusal folded into "not
-  finished" reads as fussiness one level above the rows. The wording is the first sheet's R4 phrase and respects R15's
-  definitions (Refused, none eaten; Picked, a few bites), so the header never says "refused" over a row that says
-  "picked at".
-* **The Meal row must split, never shrink:** moving the Meal row to a Some-only "not finished" count would drop
-  refusals off it, which is quieter.
+* **Recommendation (A):** "N refused or picked at · N left some" in the header's grey, on the All-types header **and**
+  the Meal filter row, from one predicate built on `intakeEvidence`'s classes; the month moves to the same classes,
+  and its legend's "refused" becomes "refused or picked at" (`MonthInstrument.tsx:805`) when Picked moves in. Land it
+  before CUL-1263 so Home inherits it. **Why:** intake is not preference: a refusal folded into "not finished" reads as
+  fussiness one level above the rows. The wording is the first sheet's R4 phrase and respects R15's definitions
+  (Refused, none eaten; Picked, a few bites), so no surface says "refused" over a row that says "picked at".
+* **The Meal row must split, never shrink:** moving the Meal row to a left-some-only count would drop refusals off
+  it, which is quieter. Both parts count the same eligible meals as today (`historyDays.ts:347`).
 * **Counterexample tried:** a cat that picked at three bowls. The header reads "3 refused or picked at" over three
-  "picked at" rows. **Held.** A dog that left half of each of two bowls: "2 not finished". **Held.**
+  "picked at" rows. **Held.** A dog that left half of each of two bowls: "2 left some". **Held.**
 * **Direction:** louder. **Amends a ruling:** your HV-9 call 3a (CUL-1520 item 13, 2026-10-03) put one merged "not
   finished" count on the Meal row; this splits it. **Verdict: needs your explicit agree**, because it changes a line
   you ruled, not because it is quieter.
@@ -311,15 +334,19 @@ ruled on 2026-09-28. Briefs: `docs/nyx-weight-lane-requirements.md` §0 (`:39-75
 * **Today:** `countLine` (`lib/spineNode.ts:746`) over `buildCountChips` (`lib/daySummary.ts:441-470`) counts every
   meal-category row as a meal, treats included. The issue's other half, unfinished meals, was ruled (a) on 2026-09-25
   and is CUL-1263 (Todo): **Home uses History's day header** (`docs/nyx-history-v2-requirements.md:67`, :359).
-* **That ruling settles this one.** The header's All-types branch names the total, the symptoms, other rows and the
-  meals not finished, and no meal count at all (`lib/historyDays.ts:1198-1203`); meals and treats are split only under
-  the Meal filter (`mealSplitParts`, around `:1191`). Once CUL-1263 is built, Home has no line that could count a
-  treat as a meal.
-* **Recommendation (A):** close the treats half as moot under CUL-1263 (a). **B:** amend the All-types branch to name
-  meals and treats, which History would inherit.
+* **That ruling settles Home.** The header's All-types branch names the total, the symptoms, other rows and the meals
+  not finished, and no meal count at all (`lib/historyDays.ts:1198-1203`); meals and treats are split only under the
+  Meal filter (`mealSplitParts`, defined at `:808`, used at `:1182`). Once CUL-1263 is built, Home has no line that
+  could count a treat as a meal.
+* **It does not settle the Daily Recap.** The Recap builds its chips from the same `buildCountChips`
+  (`lib/daySummary.ts:253`), and CUL-1263 (a) leaves the Recap's line unchanged (`docs/nyx-history-v2-requirements.md:67`).
+  So the Recap would keep saying "4 meals" over a day of treats.
+* **Recommendation (A):** Home's half rides CUL-1263 and stays open until it is built; the Recap's chips count treats
+  as treats. **B:** Home's half only, leaving the Recap as it is.
 * **Counterexample tried:** a treats-only day (a cat eating only Churu). Today Home says "4 logged · 4 meals", which
-  reads as reassuring. Under CUL-1263 (a) it reads "4 logged", with no meal claim. **Held.**
-* **Direction:** records a ruling. **Verdict:** agree. Q7's split rides into Home through the same header.
+  reads as reassuring. Under CUL-1263 (a) Home reads "4 logged", and under A the Recap reads "4 treats". **Held.**
+  Under B the Recap still reads "4 meals". **B broke.**
+* **Direction:** louder. **Verdict:** adopt provisionally. Q7's split rides into Home through the same header.
 
 ---
 
@@ -328,8 +355,9 @@ ruled on 2026-09-28. Briefs: `docs/nyx-weight-lane-requirements.md` §0 (`:39-75
 ### Q9 · CUL-1357 · an old build can hide an unseen *Worth a call*
 
 * **Today:** the hide is a client-only compare-and-set (`lib/analysisDismissal.ts`, #952); builds before #952 hide
-  unconditionally. On `main`, History's rose survives a hide because dismissal is not an input to it
-  (`lib/readState.ts:66-71`). Nothing else carries a per-incident call through a hide: the vet report never carries an
+  unconditionally. On `main`, the surfaces built on the shared read state (History's rose, Home's Today card, the
+  month) keep the call through a hide, because dismissal is not an input to it (`lib/readState.ts:66-71`). Beyond those,
+  nothing carries a per-incident call through a hide: the vet report never carries an
   n=1 call at all (`supabase/functions/generate-report/report.ts:1832-1833`; its read selects no recommendation,
   `index.ts:1241-1247`), and Home's safety band carries one only for blood or foreign material, behind the unseeded
   `engines_v3_en3` (`supabase/functions/generate-signal/pipeline.ts:398-401`, :456-465).
@@ -341,9 +369,10 @@ ruled on 2026-09-28. Briefs: `docs/nyx-weight-lane-requirements.md` §0 (`:39-75
 * **Recommendation (A):** close it with the next TestFlight cut, which carries #952 and History v2: an OTA if the
   installed build reports runtime 1.2.0 (as `app.json:5` does today; the runbook's installed-build line predates that,
   so confirm in EAS first), otherwise the native cut. Until then, one read-only count of hidden escalation rows on
-  your account (owner-scoped per C-27), repeated if you hide a read. Un-hiding a row it finds is a service-role write
-  and needs your typed go. File "clear the hide when the read's words change" as its own issue. **Why:** the exposure
-  is one household's test build, and the cut closes it without a migration.
+  your account (owner-scoped per C-27), repeated if you hide a read; any row it finds can be un-hidden from the
+  record's own *Show* link (`components/event/VomitAnalysisSection.tsx:897-901`). A new read already clears an old hide
+  (`supabase/functions/_shared/incident-analysis.ts:498`, :508). **Why:** the exposure is one household's test build,
+  and the cut closes it without a migration.
 * **Counterexample tried:** a tester on the 08-29 build hides a calm-looking card whose re-read came back *Worth a
   call* on reduced intake alone. Nothing on that build shows the call. **Broke the first draft's claim** that three
   surfaces keep it; **the recommendation accepts this residual until the cut**, which is why it needs your sign-off.
@@ -356,9 +385,11 @@ ruled on 2026-09-28. Briefs: `docs/nyx-weight-lane-requirements.md` §0 (`:39-75
 
 * **Today:** `supabase/functions/ask/tools.ts:930-933` nulls both the read text and `tierWords` when a read is
   dismissed. History's rose keeps the call on `main`.
-* **Recommendation (A):** Ask keeps the call through a hide, worded the way the record shows it ("the record marks
-  this as worth a call; the note is hidden", matching the record's *AI note hidden*), and drops only the read text.
-  **Why:** a hide is about the note, never about the call (H-4a), and Ask should not be the one surface that loses it.
+* **Recommendation (A):** on a call tier, Ask keeps the call through a hide, in the tier's own words from
+  `TIER_WORDS` (`lib/incidentTierWords.ts:97-105`; "Call your vet now" for a call-now read), framed the way the record
+  shows it ("the record marks this as worth a call; the note is hidden", matching the record's *AI note hidden*), and
+  drops only the read text. A hidden *Keep an eye out* stays dropped. **Why:** a hide is about the note, never about
+  the call (H-4a), and Ask should not be the one surface that loses it.
 * **The exit is not built:** the one act that will stand the call down, the owner's "No, it's something else"
   (CUL-1107), does not exist yet (`lib/readState.ts:68-70`, "when it ships"). Until it does, A means the words stay.
 * **Counterexample tried:** the owner hid the note because the photo was of the other pet's vomit. Ask keeps saying
@@ -404,18 +435,22 @@ from that adversarial pass and its re-review, corrected by this sheet's pass.
 1. **Diarrhea too.** A falling diarrhea pair beside a not-eating record is withheld (less food in, less stool out),
    including diarrhea's chronicity compare rows (`chronicityCompareWithheld` is vomit-only today,
    `lib/signalCopy.ts:1414-1416`). **Safer.** Owes the §13a membership walk (C-11).
-2. **The stood-down line.** It stays whole, with the not-eating fact added before its ask: "No vomiting logged for
-   {pet} in 14 days — this card has stood down. That isn't an all-clear. {Pet} hasn't been eating normally. If you
-   haven't been, the visit is still worth booking." **Louder.** (The first draft withheld it, which would have removed
+2. **The stood-down line.** It stays whole, with the not-eating fact and row 4's 48-hour ask added before its own
+   ask: "No vomiting logged for {pet} in 14 days — this card has stood down. That isn't an all-clear. {Pet} hasn't been
+   eating normally, and if that has gone on for 48 hours, call your vet today. If you haven't been, the visit is still
+   worth booking." **Louder.** The template is pinned word for word (`standDown.ts:204-217`), so the voice pass re-runs
+   on it (C-28). (The first draft withheld it, which would have removed
    the line's visit ask and its "That isn't an all-clear", the two things CUL-786 and Dr. Chen's condition 3 built it
    to carry, `supabase/functions/generate-signal/standDown.ts:5-18`, :208-217.)
-3. **The phone script.** Keep the falling chronicity row read to the vet, with "and {pet} hasn't been eating
-   normally" in the same line, never a separate one. The owner's face stays withheld. **Louder.**
+3. **The phone script.** It gains "{Pet} hasn't been eating normally" as its own row, whenever the not-eating
+   register is on and whatever the pair beside it is doing; the falling row stays withheld from the script, as it is
+   today (`lib/signalCopy.ts:1409-1416`), under the script's own rule that it never reads aloud a fall the sentence
+   above it held back (`lib/signalScreen.ts:889-892`). The same holds for row 1's diarrhea rows. **Louder.**
 4. **The screen's not-eating line** gains the 48-hour ask when the intake card is not on the same screen. **Louder.**
 5. **The trial's timing lanes.** When the in-trial share of vomiting soon after meals rose, say so in words ("In the
    trial, more of the vomiting came soon after meals"), never the drawn "Before the trial · In the trial" totals, which
-   would show a falling count beside a pet that may not be eating. **Louder**, and within ruling (a): a sentence, not a
-   drawn compare.
+   would show a falling count beside a pet that may not be eating. **Louder, and it extends your ruling (a)**, whose
+   words are "the strip's sentence verbatim, or nothing": this adds a sentence the strip does not carry.
 6. **A "so far" week.** "0 this week so far · 4 last week" from Tuesday gains a length cue (B-775's form) saying the
    windows differ. **Neutral.**
 
@@ -424,7 +459,8 @@ from that adversarial pass and its re-review, corrected by this sheet's pass.
   a firm chronic-vomit card standing down while the cat refuses the trial diet: the visit ask survives. **Held.** Row
   5 on a cat refusing from day 1, 18 vomits before the trial and 3 in it, all soon after the few bites: no falling
   total is drawn. **Held.**
-* **Verdict:** adopt provisionally, all six.
+* **Verdict:** rows 1 to 4 and 6 adopt provisionally; row 5 needs your explicit agree, because it extends a ruling of
+  yours.
 
 ### Q14 · CUL-772 · a failed push renews a calm cache
 
@@ -434,15 +470,19 @@ from that adversarial pass and its re-review, corrected by this sheet's pass.
   (meals, Undo, the capture inbox, edits, the incident screen, Home's focus on a stale cache), but a later successful
   push of the rows triggers a rebuild only through the care-answer drain (`lib/sync.ts:3701`).
 * **Recommendation (A):** the client sends an "unsent rows" flag and the function adds it to `incompletePulls`, so the
-  existing 1-hour expiry applies, **except** rows that are stuck or quarantined, which never set the flag (they belong
-  to Q6's banner). **Why:** a calm card must not stand for a day over a vomit the server has not seen (CUL-989: an
-  incomplete read never reassures). The exception matters: a row stuck for good would otherwise shorten every expiry,
+  existing 1-hour expiry applies, **except** rows the server has refused (`sync_error` set), which never set the flag;
+  they belong to Q6's banner. A row the server never refused sets the flag at any age, because a network failure never
+  spends a retry (`lib/sync.ts:406`) and the row may land a minute later. **Why:** a calm card must not stand for a day
+  over a vomit the server has not seen (CUL-989: an incomplete read never reassures). The exception matters: a refused
+  row would otherwise shorten every expiry,
   Home would rebuild on every focus past the hour (`hooks/useSignal.ts:215-217`), and the per-pet cap of 12 a day
   would be spent, after which the function skips rebuilding entirely (`index.ts:500-518`) and a blood vomit logged
   that evening would wait for UTC midnight.
-* **Counterexample tried:** a phone offline for a day with a vomit logged: under A the card re-checks within an hour
-  of the row landing rather than a day. **Held.** A permanently quarantined row: with the exception it leaves the
-  expiry alone. **Held.**
+* **Counterexample tried:** a vomit logged at hour 2 of a 28-hour offline stretch; back on patchy signal, the push
+  times out but the rebuild's call gets through. The row was never refused, so it sets the flag, and the card re-checks
+  within an hour. **Held.** (Excluding every row pending past a day, as the first rewrite did, would have left a 24-hour
+  calm cache over it.) A row the server refused for good: it leaves the expiry alone, and Q6's banner names it.
+  **Held.**
 * **Direction:** louder. **Verdict:** adopt provisionally.
 
 ### Q15 · CUL-1574 · the milestone day loses the bowl's watch line
@@ -501,14 +541,15 @@ refusal face only (your ruling, 2026-09-27).
   held in the component, so the buttons and the read's call words are back on every later open (`:55-68`,
   :181-187). The care spec keeps TD-5 as its one open conflict. `engines_v3_en14` is unseeded, so no owner sees
   either version yet.
-* **A (Dr. Chen):** ask once more, on screen (a finding or an incident, care spec `:274`), after 6 PM that evening,
-  and never again for that escalation. **Louder.**
-* **B (Jordan, built):** nothing written, no timed re-ask, because a second ask invites a false "I've called". Its
-  cost: an owner who does not reopen the screen is not asked again; one who does sees the buttons and the call words
-  again.
+* **A (Dr. Chen):** one prompt that evening: the next time the screen opens after 6 PM (a finding or an incident,
+  care spec `:269-274`), and never again for that escalation. **Louder.**
+* **B (Jordan, built):** nothing written and no timed prompt, because a second ask invites a false "I've called"; the
+  same buttons and call words return on every reopen.
+* **What they share:** neither notifies, so under either an owner who never reopens the screen is not asked again. The
+  real difference is A's one evening prompt against B's unchanged buttons.
 * **Counterexample tried against A:** an owner who has decided to wait for morning taps "Not yet" twice. A records
-  nothing either time and asks no third time. **Held.** Against B: an owner distracted at 2 PM who never reopens the
-  record. **Held as B's stated cost.**
+  nothing either time and asks no third time. **Held.** Against B: an owner who reopens at 8 PM sees the same buttons
+  as at 2 PM, with nothing marking that the evening has come. **Held as B's stated cost.**
 * **Verdict:** your letter. Not urgent until en14 is seeded.
 
 ### Q19 · CUL-1596 · the eight-week recheck question (conflict)
@@ -538,7 +579,9 @@ refusal face only (your ruling, 2026-09-27).
   Design v2's GA (#1070).
 * **Recommendation (A):** build that arm. **Why:** it is the only option with a measured null cost and a clinical
   ruling behind it. The 21-day span stays the floor for sparse coughs; the arm adds a density route beside it. A
-  burden arm on vomit's shape (B) would need its numbers measured from scratch.
+  burden arm on vomit's shape (B) would need its numbers measured from scratch. **Build condition:** the arm's
+  "ongoing" is the same recency gate the stand-down reads, so a course that fired on density alone stands down with the
+  labelled stood-down line rather than vanishing; and its null price is re-read against N4's 13 null scenarios.
 * **Counterexample tried:** a dog with kennel cough, coughing daily for 12 days. The arm fires from day 10 and asks
   for a vet visit. **Held as the safe error.** A dog that reverse-sneezes, logged as cough once or twice a day: the arm
   needs ten days in fourteen, so a fortnight of daily logging fires it. **Held in the loud direction**; the null price
@@ -549,7 +592,8 @@ refusal face only (your ruling, 2026-09-27).
 
 * **Today:** the cross-pet banner keeps the first chronicity card the server sends (`lib/signalCopy.ts:2563-2573`,
   strict `<`); the server orders by span (`detection.ts:5472-5479`). Nothing says there is more than one course.
-* **Recommendation (A):** add "…and another recurring sign" when a second course is present. **Why:** it discloses
+* **Recommendation (A):** add "…and another recurring sign" when a second course is present ("…and 2 other recurring
+  signs" for three). **Why:** it discloses
   without inventing a severity order between two signs (C5), the team was unanimous, and "recurring" is the banner's
   own register (`signalCopy.ts:2732`). "Ongoing" would claim a current state for a course last seen weeks ago, the case
   the report dropped the word for (`render.ts:2337-2345`).
@@ -576,10 +620,12 @@ refusal face only (your ruling, 2026-09-27).
   best and more when the earlier half was itself thinly logged, including the run up to today. Both counts always
   print and the ask never moves, so nothing reassures on its own.
 * **Recommendation (A):** a named `CHRONICITY_COMPARE_MIN_RATIO` at 0.7 (no change in value), plus a trailing-dark
-  rule: when the recent half's last 7 days hold no logged day, the pair never reads at face value and carries its own
-  sentence ("Nothing was logged in the last 7 days, so the recent count may be low"). The existing "you also logged on
-  fewer days" line is not reused, because the recent half can hold more logged days than the earlier one and still end
-  in a dark week. **Why:** the ratio's value has no source either way, while a trailing dark run is the specific case
+  rule over the same logged-day count the compare already uses (`loggingDaysInWindow`, `detection.ts:4862`: meals,
+  symptoms and the sign itself): when the recent half's last 7 days hold none, the pair carries its own sentence ("No
+  meals or symptoms were logged in the last 7 days, so the recent count may be low"). It is a disclosure only: a rise
+  keeps its direction. The existing "you also logged on fewer days" line is not reused, because the recent half can
+  hold more logged days than the earlier one and still end in a dark week. Still unchanged from today: a dark run in the
+  middle of the window, or a trailing one broken by a single logged meal, reads at face value. **Why:** the ratio's value has no source either way, while a trailing dark run is the specific case
   the reviewer showed passing.
 * **Counterexample tried:** earlier half 12 logged days, recent half 18 with the last 7 dark, counts falling from 6 to
   3. The new sentence prints; the "fewer days" line does not. **Held.** An owner who logs nothing for a week because
@@ -636,14 +682,18 @@ refusal face only (your ruling, 2026-09-27).
   3. It widens the sanctioned proteins (`lib/dietTrial.ts:981`), which strips the protein name from other foods'
      feedings of that protein and the antigen records of permitted extras (`:1052-1056`, :1083-1086); the code calls
      that lost detection, the reassuring direction.
-* **Recommendation (A):** offer the write only when the trial records a target protein and the food's protein matches
-  it, dated today, never back-dated; the report's allowed list names it with "set as the trial diet on {date}". **Why:**
-  today the only fix for a trial set up without its diet is ending it, which loses its dates; the protein match keeps
-  points 2 and 3 to the protein the vet prescribed. The cost that remains: a different food of the right protein (a
-  duck kibble the vet did not prescribe, on a duck trial) is absorbed.
+* **Recommendation (A):** offer the write only when the trial records a target protein and every protein on the
+  food's label is that protein or a form of it, matched on the exact protein key (so intact chicken never matches a
+  hydrolysed-chicken target, `lib/protein.ts:217`); dated today, never back-dated; the report's allowed list names it
+  with "set as the trial diet on {date}". **Why:** today the only fix for a trial set up without its diet is ending it,
+  which loses its dates. A match on the main protein alone would not be enough: the sanctioned set takes every protein
+  on a trial-diet food's label (`lib/dietTrial.ts:645-669`), so a duck kibble listing chicken fat would sanction chicken
+  and strip "chicken ×N" from the chews. The cost that remains: a different food of exactly the right protein (a duck
+  kibble the vet did not prescribe, on a duck trial) is absorbed.
 * **Counterexample tried:** a duck trial, a chicken kibble marked as the trial diet on day 20, no target protein
-  recorded. Under A the button does not appear. **Held.** Under B (any food) the kibble's 19 earlier off-diet days
-  leave the count and the vet-approved chews lose "chicken ×N". **B broke.**
+  recorded. Under A the button does not appear. **Held.** A duck kibble whose label also lists chicken fat, on a duck
+  trial with duck recorded: under A it does not qualify. **Held.** Under B (any food) the chicken kibble's 19 earlier
+  off-diet days leave the count and the vet-approved chews lose "chicken ×N". **B broke.**
 * **Direction:** quieter in the mis-set case, and it re-opens a ruling. **Verdict: needs your explicit agree.** No
   harness reads the trial card or the report; the substitute proof is a test that a food set this way is named on the
   report with its date, and that the past feedings it excludes print as R13a's gap. Whatever you rule, `/trial-foods`
@@ -737,12 +787,14 @@ refusal face only (your ruling, 2026-09-27).
   team will not write it" (`docs/clinical-ruling-sheet-2026-10.md:1277-1278`); the vet review was then canceled, so
   T20 and T17's call-now half are held with no owner.
 * **Recommendation (A):** the team drafts the list from published references, qualified by indication where a drug is
-  critical for one use and not another, and brings it back as a row for your agree. A course whose indication is blank
-  (it is optional free text) counts as critical for any drug critical for some use. **Why:** it is the only route
-  left, and E-6 adopts the louder change provisionally. **This re-opens T17's "the team will not write it".**
+  critical for one use and not another, and brings it back as a row for your agree. A drug critical for some use counts
+  as critical unless the course's indication matches one of its listed non-critical uses; the indication is optional
+  free text, so a blank, a nickname ("her daily pill") or a misspelling all count as critical. **Why:** it is the only
+  route left, and E-6 adopts the louder change provisionally. **This re-opens T17's "the team will not write it".**
 * **Counterexample tried:** prednisolone, critical as replacement therapy and not as an anti-inflammatory. A drug-only
-  list would call on every missed dose; the qualifier fixes that. **Held.** An Addisonian dog on prednisolone with a
-  blank indication: counted as critical. **Held**, at the cost of a louder call for some anti-inflammatory courses.
+  list would call on every missed dose; the qualifier fixes that. **Held.** An Addisonian dog on prednisolone whose
+  indication reads "her daily pill": it matches no non-critical use, so it counts as critical. **Held**, at the cost of
+  a louder call for some anti-inflammatory courses whose indication is not written in the list's words.
 * **Direction:** louder. **Verdict:** adopt provisionally; the list itself comes back.
 
 ### Q35 · CUL-672 · the §15 vet question sheet
@@ -760,11 +812,11 @@ refusal face only (your ruling, 2026-09-27).
   On day 412 of a 56-day trial Ask can say the trial is complete. The trial screen says "Day 412 — 356 days past the
   window you set" and puts a decision in front of the owner (`lib/dietTrialCard.ts:2541`). The comment at
   `ask/index.ts:844-855` claims parity with the card; it is stale.
-* **Recommendation (C):** Ask relays the trial screen's overrun words and never says complete for a trial nobody
+* **Recommendation (A):** Ask relays the trial screen's overrun words and never says complete for a trial nobody
   ended. **Why:** "complete" is a success reading of a trial left running (B-422), and it contradicts the screen (G5).
-* **Options:** A as drafted, let it stand: **broke**, it lets the success reading through. B, gate Ask on
-  `isTrialRunning`: Ask would answer "no trial" about a trial on the owner's screen.
-* **Counterexample tried:** "how's the trial going?" on day 412 of 56. Under C Ask says the trial is 356 days past its
+* **Options:** B, gate Ask on `isTrialRunning`: Ask would answer "no trial" about a trial on the owner's screen. C, let
+  it stand (the first draft's recommendation): **broke**, it lets the success reading through.
+* **Counterexample tried:** "how's the trial going?" on day 412 of 56. Under A Ask says the trial is 356 days past its
   window and that the owner and vet decide what happens next. **Held.**
 * **Direction:** louder. **Verdict:** adopt provisionally. Not a gate.
 
@@ -791,7 +843,7 @@ refusal face only (your ruling, 2026-09-27).
 Three isolated `adversarial-reviewer` runs read the first draft cold, one per part, against the code at `5fb9cd3a`.
 Each verified every citation, checked every direction label, and tried its own counterexample per row. **All three
 failed the draft: 16 blocking breaks, ten of them a quieter change labelled louder, neutral or safer** (Q2 (a), Q3.4,
-Q4 W4 and W7, Q9, Q13.2, Q13.5, Q14, Q24, Q36), the one class E-6 exists to stop. Every break is rewritten above. The second and final pass (the two-pass cap) is recorded in §6.2.
+Q4 W4 and W7, Q9, Q13.2, Q13.5, Q14, Q24, Q36), the one class E-6 exists to stop. Every break was rewritten, and the second and final pass (the two-pass cap) is recorded in §6.2.
 
 ### 6.1 Pass 1
 
@@ -837,9 +889,47 @@ Q4 W4 and W7, Q9, Q13.2, Q13.5, Q14, Q24, Q36), the one class E-6 exists to stop
 | Q36 | "How's the trial going?" on day 412 of 56 | **Broke, quieter labelled neutral:** Ask says "complete" | Flipped to C |
 | Q15, Q33, Q35, Q37, Q38 | Each row's own case | Held | Citations corrected where needed |
 
-### 6.2 Pass 2
+### 6.2 Pass 2 (final)
 
-_To be filled by the second isolated pass over the rewritten rows._
+Two isolated reviewers attacked the rewritten rows, one for Part A and one for Parts B to E, running the weight cases
+on scratch copies of `lib/weightStory.ts`. Both failed the rewrite: **12 blocking findings, 11 of them quieter**, all
+fixable in text and all fixed above. The project caps adversarial passes at two per PR, so there is no third pass; what
+remains is stated below, and every residual either errs loud or sits on a row you rule explicitly.
+
+| Row | What the reviewer tried | Result | What changed |
+|---|---|---|---|
+| Q4 W7 | A vet reading added after a home-raised soft card; vet 11.0 then 9.9 lb, then home 10.0 lb | **Quieter on every vet-scale path:** the card goes, firm turns soft, a vet-to-vet 10% loss vanishes, a vet-weighed plan start silences 14.5% | The condition now covers added as well as relabelled readings, and home readings over a vet-to-vet loss; four fixtures owed by PR-37 |
+| Q3.1 | Vet 11.0 then 9.9 lb, then home 9.9 lb | **Quieter case:** without the rule, firm softens to soft | Tied to W7's condition, where vet readings first exist |
+| Q3.4 | A home weigh-in at the plan's start instant; a 7-day lookback with an older, lower reading | **Quieter:** the literal condition never anchors that weigh-in; B was labelled louder but is mixed | The lookback includes the start instant; B relabelled mixed |
+| Q3.2 | A failed plan, then a 12 to 13% loss months later, under the target-aware anchor | **Quieter, cost understated:** about 14 to 15% to fire, soft line off, no end date | Recommendation reverted to the built anchor (a loud error); the target-aware anchor is an option needing sign-off |
+| Q2 (a) | Read both scoring sites | **Wrong fact:** the 5% line has its own ask check; two sites feed six lines | One shared predicate, a test that the sites agree, all six lines named in the re-pin |
+| Q8 | A treats-only day after CUL-1263 | **Quieter residual:** the Daily Recap keeps counting treats as meals | The Recap's chips count treats as treats; Home rides CUL-1263 |
+| Q14 | A vomit logged at hour 2 of a 28-hour offline stretch | **Quieter:** the "stuck" exclusion left a 24-hour calm cache over it | Only rows the server refused are excluded; any other row sets the flag at any age |
+| Q13.3 | Read the script's masking rule | **Quieter half:** put a withheld fall back on the script read aloud | The not-eating fact becomes its own script row; the fall stays withheld |
+| Q26 | A duck kibble whose label lists chicken fat | **Wrong fact:** a main-protein match still sanctions chicken | Every protein on the label must match, on the exact key |
+| Q34 | An indication reading "her daily pill" | **Quieter residual:** unmatched text counted as not critical | Default flipped: critical unless a listed non-critical use matches |
+| Q36 | Read the option letters | **Quieter if misread:** "Q36 A" could select the broken option | The recommendation is A; the broken option is C |
+| Q18 | Compared the two sides' costs | **Leaned loud:** B's stated cost is shared by A | The shared cost is stated; the real difference is named |
+| Q9, Q10, Q13.2, Q13.5, Q20, Q21, Q23 | Wording and build conditions | Held on direction | Applied: the shared read state on `main`, the *Show* link, tier words, the 48-hour ask, ruling (a)'s extension, the density arm's stand-down, three courses, the logged-day count |
+| Q1, Q2 (b), Q4 W4 and W6, Q7, Q11, Q12, Q15, Q16, Q17, Q19, Q22, Q24, Q30, Q32 | Each row's own case | Held | None beyond wording |
+
+**Residuals that stand, all loud** (adopted provisionally with the rows that carry them):
+
+* Q3.1: until PR-37 removes the pre-fill, a pre-filled drop under 0.6 kg can confirm a false weight card.
+* Q3.2: a prescribed loss raises a soft card the day an unweighed plan lapses.
+* Q5: a card for a recurring, acknowledged sign is always present.
+* Q10: a note hidden because the photo was the wrong pet's keeps its call in Ask until CUL-1107 ships.
+* Q20: kennel cough, and a reverse-sneezing dog logged as cough, fire the density arm.
+* Q23: the dark-week disclosure prints over a real improvement.
+* Q34: an anti-inflammatory course whose indication is not written in the list's words calls on a missed dose.
+
+**Quieter residuals you rule knowingly** (each on a sign-off or explicit-agree row): Q9 (the old build until the next
+cut), Q24 (a co-fed pair, never named), Q26 (a different food of exactly the right protein is absorbed), Q30 (one
+concern cue on the dose row).
+
+**Unchanged from today, not introduced here:** a dark run in the middle of the compare window still reads at face value
+(Q23); the Signal card's weekly line has the same onset blind spot as the month (Q12); a burden card beside another
+sign's chronic course is not disclosed (Q21). The last two should be filed as their own issues.
 
 ## 7. Rulings received
 

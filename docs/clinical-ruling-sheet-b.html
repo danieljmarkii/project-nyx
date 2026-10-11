@@ -1,0 +1,592 @@
+<title>Clinical Ruling Sheet, Second Sitting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,650&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one narrow reading column; the E-6 key, the rows to rule first, then one ruling card per row by part, then the copy box. Same system as the first sheet's pages. */
+:root {
+  --bg: #f6f7f5;
+  --surface: #ffffff;
+  --ink: #1d2422;
+  --muted: #5d6965;
+  --line: #dde3e0;
+  --accent: #1f6f66;
+  --accent-soft: #e2f0ed;
+  --loud: #9a3b1f;
+  --loud-soft: #f8e6de;
+  --quiet: #6a4fa0;
+  --quiet-soft: #ece6f6;
+  --neutral-soft: #eceeed;
+  --conflict: #7a5b12;
+  --conflict-soft: #f4ecd6;
+  --font-display: "Literata", Georgia, "Times New Roman", serif;
+  --font-body: "Public Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121615; --surface: #1a201e; --ink: #e5ebe8; --muted: #9aa7a2; --line: #2c3532;
+    --accent: #6cc3b6; --accent-soft: #1d3330; --loud: #f0a07f; --loud-soft: #3a2219;
+    --quiet: #b9a3e6; --quiet-soft: #2a2238; --neutral-soft: #242b29;
+    --conflict: #e3c47a; --conflict-soft: #352c16; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121615; --surface: #1a201e; --ink: #e5ebe8; --muted: #9aa7a2; --line: #2c3532;
+  --accent: #6cc3b6; --accent-soft: #1d3330; --loud: #f0a07f; --loud-soft: #3a2219;
+  --quiet: #b9a3e6; --quiet-soft: #2a2238; --neutral-soft: #242b29;
+  --conflict: #e3c47a; --conflict-soft: #352c16; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15.5px; line-height: 1.55; }
+.wrap { max-width: 44rem; margin: 0 auto; padding-inline: 16px; padding-block: 28px 64px; display: flex; flex-direction: column; gap: 28px; }
+h1, h2 { font-family: var(--font-display); font-weight: 650; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: 1.9rem; line-height: 1.15; }
+h2 { font-size: 1.3rem; }
+p { margin: 0; }
+.eyebrow { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.lede { color: var(--muted); max-width: 40rem; }
+header { display: flex; flex-direction: column; gap: 10px; }
+.rules { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+.rule { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
+.rule b { font-weight: 600; }
+.pill { display: inline-flex; align-items: center; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.p-loud { background: var(--loud-soft); color: var(--loud); }
+.p-quiet { background: var(--quiet-soft); color: var(--quiet); }
+.p-neutral { background: var(--neutral-soft); color: var(--muted); }
+.p-conflict { background: var(--conflict-soft); color: var(--conflict); }
+.first { background: var(--surface); border: 1px solid var(--quiet); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.first ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.first a { display: inline-flex; align-items: center; min-height: 36px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); text-decoration: none; font-size: 0.85rem; font-weight: 500; }
+.first a .rid { margin-right: 6px; }
+.first a.is-conflict { border-color: var(--conflict); }
+.first a.is-sign { border-color: var(--quiet); }
+.list { display: flex; flex-direction: column; gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; scroll-margin-top: 16px; }
+.card.top { border-color: var(--quiet); }
+.card.conflict { border-color: var(--conflict); }
+.gate { font-family: var(--font-mono); font-size: 0.78rem; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.grp { display: flex; flex-direction: column; gap: 4px; padding-top: 10px; }
+.grp h2 { font-size: 1.15rem; }
+.card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rid { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 500; color: var(--accent); }
+.issue { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+.q { font-family: var(--font-display); font-size: 1.06rem; font-weight: 500; line-height: 1.4; }
+.rec { border-left: 3px solid var(--accent); padding-left: 10px; }
+.card.conflict .rec { border-left-color: var(--conflict); }
+.rec .lab, .opts .lab { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; display: block; }
+.opts { font-size: 0.92rem; color: var(--muted); }
+.verdict { font-size: 0.9rem; }
+.verdict b { font-weight: 600; }
+details { font-size: 0.9rem; }
+summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+details[open] summary { margin-bottom: 6px; }
+details p + p { margin-top: 6px; }
+.choose { display: flex; flex-wrap: wrap; gap: 6px; }
+.choose button { font: inherit; font-size: 0.85rem; font-weight: 500; padding: 6px 12px; min-height: 36px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+.choose button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+button:focus-visible, summary:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.out { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.out textarea { width: 100%; min-height: 11rem; font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; resize: vertical; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn { font: inherit; font-weight: 600; font-size: 0.9rem; padding: 8px 14px; min-height: 40px; border-radius: 8px; border: 0; background: var(--accent); color: var(--surface); cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+.status { font-size: 0.85rem; color: var(--muted); }
+.tally { font-variant-numeric: tabular-nums; }
+code { font-family: var(--font-mono); font-size: 0.85em; }
+.foot { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.foot a { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Second sitting · 38 rows · 2026-10-10</span>
+    <h1>The clinical ruling sheet, second sitting</h1>
+    <p class="lede">The 38 clinical calls that were waiting on you one issue at a time, gathered so you can rule them in one pass. Tap a choice on each card. <b>Agree</b> takes the team's recommendation. A card with a purple edge needs your sign-off or an explicit agree. A gold edge is a persona conflict with no recommendation, so it needs a letter.</p>
+  </header>
+
+  <section class="rules" aria-label="How E-6 sorts the rows">
+    <div class="rule"><span class="pill p-loud">Louder</span><span>Speaks up more. <b>Adopted provisionally</b> on your agree.</span></div>
+    <div class="rule"><span class="pill p-quiet">Quieter</span><span>Speaks up less. <b>Needs your sign-off</b> and proof. Without both, the louder behaviour stays.</span></div>
+    <div class="rule"><span class="pill p-neutral">Neutral</span><span>Wording, ordering or a ratification. <b>Your agree</b> is enough.</span></div>
+    <div class="rule"><span class="pill p-conflict">Conflict</span><span>The lenses disagree. <b>Your letter</b>; no recommendation is given.</span></div>
+  </section>
+
+  <p class="status">Harness fact: the synthetic test pets score EN-9 and EN-11 only. Weight, the per-incident tiers, the trial card, Ask and the vet report are unscored, so a quieter row there names a substitute proof. There is no real-vet list any more: a number with no veterinary source says so.</p>
+
+  <section class="first" aria-labelledby="first-h">
+    <h2 id="first-h">Rule these yourself</h2>
+    <p class="status">"Agree" on everything does not sign these off. Each needs your own pick.</p>
+    <ul id="firstList"></ul>
+  </section>
+
+  <div class="list" id="rows"></div>
+
+  <section class="out" aria-labelledby="out-h">
+    <h2 id="out-h">Your rulings</h2>
+    <p class="status">Your picks stay on this device. Copy them and paste them back to Claude, or into a comment on the PR.</p>
+    <p class="status tally" id="tally"></p>
+    <textarea id="out" readonly aria-label="Your rulings as text"></textarea>
+    <div class="row">
+      <button class="btn" id="copy" type="button">Copy rulings</button>
+      <button class="btn ghost" id="agreeRest" type="button">Agree to every open default</button>
+      <span class="status" id="copied" role="status"></span>
+    </div>
+  </section>
+
+  <div class="foot">
+    <p>The full sheet, with file and line citations and every counterexample: <code>docs/clinical-ruling-sheet-2026-10-b.md</code> on <a href="https://github.com/danieljmarkii/project-nyx/pull/1177">draft PR #1177</a>. Each card here is a short form of its row there; where they differ, the file wins.</p>
+    <p id="passNote">Two isolated adversarial passes ran. The first found 16 blocking breaks in the draft, ten of them a quieter change labelled louder, neutral or safer; the second, final pass found 12 more in the rewrite. All were fixed, and this page shows the result. The residuals that stand are listed in §6.2 of the file: each errs loud, or sits on a card you rule yourself.</p>
+  </div>
+</div>
+
+<script>
+const GROUPS = {
+  A: ["Part A · Rulings that gate a build or a go-live", "Rule these first if you rule only some."],
+  B: ["Part B · Safety words on Home, the Signal, Ask and the trial", ""],
+  C: ["Part C · The chronicity lane and food findings", ""],
+  D: ["Part D · The vet report", ""],
+  E: ["Part E · Records, words and ratifications", ""]
+};
+// choices: the buttons, in order. "Agree" takes A; "Sign off" signs a quieter A; letters pick an option.
+// top: needs your own pick (sign-off or explicit agree). conflict: no recommendation.
+const ROWS = [
+  // ── Part A
+  { id: "Q1", issue: "CUL-1146", part: "A", gate: "PR-31, PR-33", dir: "neutral", dirLabel: "A neutral · B quieter",
+    q: "E-4: how many healthy pets may see a chance insight card within 180 days?",
+    a: "A ratchet. x is the worst case PR-31 measures at go-live size (1,000 or more pets per scenario) on the 13 ratified null scenarios with EN-11 as built, rounded up to the next 5 points. It can only fall. PR-31 also reports what 10% and 20% would cost in detection, and the number for a trial started at a peak.",
+    opts: "B: x = 10% now (quieter, needs sign-off) · C: per-lane floors only", choices: ["Agree", "B", "C"],
+    verdict: "A: agree. B needs your sign-off, with detection above chance on EN-11.",
+    why: "No source names a number, and the insight-card rate under EN-11 has never been measured. The often-quoted 83% to 28% is false worsening cards, a safety lane outside this budget. The one insight figure on record is food cards, 44% to 0.",
+    tried: "A lane that is bad in one scenario only (the two-cat home): the worst-case ceiling binds it. Held. A blesses whatever EN-11 does today: it stops regression and is not claimed as a quality bar." },
+  { id: "Q2a", issue: "CUL-1537", part: "A", gate: "EN-9 go-live", dir: "neutral",
+    q: "The care state's 5% re-raise line counts the burden card, which no care state may quiet. Fix the count?",
+    a: "Count only the concern's own asks, in one predicate both scoring sites share, so all six EN-9 lines move together. Report the burden card's asks and catches on their own lines. This re-pins the frozen line list; your agree is the sign-off named beside it.",
+    opts: "B: change the 5% line only (quieter: a silent care state passes) · C: keep it; EN-9 never goes live", choices: ["Agree", "B", "C"],
+    verdict: "Agree. EN-9 still needs the doubling line's own floor (N3) before it goes live.",
+    why: "Today no care state can pass: the burden card alone re-asks 18 of 30 stable cats. Even under A the concern alone re-asks 8 to 10 of 30, so PR-16 still has to reach 5%.",
+    tried: "An EN-9 that never re-raises its concern: under A it fails both lines; under B it passes the re-raise line while the burden card props up doubling. B broke." },
+  { id: "Q2b", issue: "CUL-1537", part: "A", gate: "EN-9 go-live", dir: "loud", dirLabel: "Safer",
+    q: "May a zero sit beside “Your vet knows”?",
+    a: "Withhold the zero when no symptom has been logged since the answer. Keep the window and the logging line.",
+    opts: "B: keep the zero", choices: ["Agree", "B"],
+    verdict: "Adopt provisionally.",
+    why: "Beside “Your vet knows”, a zero over a stream that may have stopped being logged reads as “it worked”.",
+    tried: "A cat genuinely well for 20 days loses its true zero. That is the safe error. Held." },
+  { id: "Q3.1", issue: "CUL-1544", part: "A", gate: "EN-8 go-live", dir: "loud", dirLabel: "Louder, given W7's condition",
+    q: "Two weigh-ins identical to the gram never confirm a drop. Keep that rule?",
+    a: "Drop it now, so the first sheet's W1 (two consecutive home readings confirm) stands as you signed it off.",
+    opts: "B: keep it until PR-37 removes the log's pre-fill (quieter, needs sign-off)", choices: ["Agree", "B"],
+    verdict: "Adopt provisionally.",
+    why: "It only protects against a pre-filled drop under 0.6 kg; a bigger drop fires either way. It costs silence: an 11% plateau that repeats, and a cat re-weighed after a drop who reads the same, stay unconfirmed indefinitely.",
+    tried: "4.4, 4.38, then 3.9 and 3.9: one unconfirmed reading for as long as the readings match under B, a firm card under A. Vet readings of 11.0 then 9.9 lb, then home 9.9 lb: without W7's condition, firm would soften." },
+  { id: "Q3.2", issue: "CUL-1544", part: "A", gate: "EN-8 go-live", dir: "neutral", dirLabel: "Neutral (as built)",
+    q: "A finished weight-loss plan with no weigh-in during it: what anchors afterwards?",
+    a: "Keep what is built: the plan's start weight anchors after the plan, on the ordinary lines.",
+    opts: "B: a target-aware anchor (quieter, needs sign-off) · C: no anchor across the plan (quieter, needs sign-off)", choices: ["Agree", "B", "C"],
+    verdict: "Agree.",
+    why: "Its error is a false card on a loss the vet asked for, which the owner can read against the plan. B needs about 14 to 15% to fire for a vet-weighed cat, with the soft line off, and misses a failed plan followed by a later loss.",
+    tried: "A cat on a 12-week plan, never weighed, loses 25%: a firm card as built, silent forever under C." },
+  { id: "Q3.3", issue: "CUL-1544", part: "A", gate: "EN-8 go-live", dir: "loud",
+    q: "A stand-down mid-plan resets the plan's cumulative line. Should it?",
+    a: "No. A stand-down never moves a running plan's start weight.",
+    opts: "B: reset, as built", choices: ["Agree", "B"],
+    verdict: "Adopt provisionally.",
+    why: "As built, a cat 14.7% below her start, past a 10% target, goes silent.",
+    tried: "The same cat under A: the cumulative line still fires. Held." },
+  { id: "Q3.4", issue: "CUL-1544", part: "A", gate: "EN-8 go-live", dir: "neutral", dirLabel: "Neutral with its condition",
+    q: "How old may a plan's start weigh-in be?",
+    a: "One day, on two conditions: PR-37 dates the plan's start from the visit, never from when the form is saved; and the lookback includes a weigh-in at the start instant itself.",
+    opts: "B: a 7-day lookback (mixed: it can pair an older, lower reading with the visit's and go quiet)", choices: ["Agree", "B"],
+    verdict: "Agree.",
+    why: "A plan saved three days after the visit would miss the visit's 6.0 kg, and a cat at 5.2 kg three weeks later (13% down) would read level.",
+    tried: "A home weigh-in of 4.0 kg at the very instant the plan starts, then 3.55 and 3.54: nothing today; a firm card with the second condition." },
+  { id: "Q4 W3", issue: "CUL-1390", part: "A", gate: "PR-37", dir: "neutral",
+    q: "What does the vet report print about weight?",
+    a: "Each reading with its source, the percentage it already prints, and one change line naming both readings and whether each is confirmed. No finding row, no loss flag.",
+    opts: "B: also the Signal's weight finding · C: no change", choices: ["Agree", "B", "C"],
+    verdict: "Agree. A Tier-2 report-spec edit and a cold read follow.",
+    why: "A vet trusts two dated, sourced readings more than an app's verdict. The line reads the unfloored high, so a stand-down never shortens it.",
+    tried: "None beyond the cold read it owes." },
+  { id: "Q4 W4", issue: "CUL-1390", part: "A", gate: "PR-37", dir: "neutral", dirLabel: "Neutral (keeps what ships)",
+    q: "Keep the “(N%)” on the Patterns weight card?",
+    a: "Keep it. Whether the Signal's weight row should match goes to the Designer as a better-than-the-rule brief.",
+    opts: "B: remove it (quieter, needs sign-off)", choices: ["Agree", "B"],
+    verdict: "Agree.",
+    why: "It prints for every account since Design v2's GA. The code's own case: a 300 g kitten down 20 g reads “Down less than 0.1 lb” and needs the 7% to say what it is.",
+    tried: "The first draft recommended removing it and called that neutral. The kitten broke it." },
+  { id: "Q4 W5", issue: "CUL-1390", part: "A", gate: "PR-37", dir: "loud",
+    q: "A drop on one home reading: does Home show anything?",
+    a: "A plain row with no vet ask: “One reading so far, on a home scale. Weigh her again this week to check.” It leaves when a later reading decides the drop.",
+    opts: "B: nothing on Home", choices: ["Agree", "B"],
+    verdict: "Adopt provisionally. Rule it with Q3.1.",
+    why: "PMD-9 waits for a second reading; this is how the second reading gets asked for.",
+    tried: "Under Q3.1 B an identical second reading would leave the row asking forever. Under Q3.1 A it confirms the drop as a raised card." },
+  { id: "Q4 W6", issue: "CUL-1390", part: "A", gate: "PR-37", dir: "loud", dirLabel: "Louder than B",
+    q: "Who can set “planned weight loss”?",
+    a: "A vet's plan only, as a plan row on “How did it go?”.",
+    opts: "B: also an owner switch on the Pet tab", choices: ["Agree", "B"],
+    verdict: "Adopt provisionally.",
+    why: "The quieting itself was signed off as the first sheet's W6. A is the narrowest way to switch it on.",
+    tried: "An owner switch lets a self-set diet quiet a fast loss. A avoids that." },
+  { id: "Q4 W7", issue: "CUL-1390", part: "A", gate: "PR-37", dir: "neutral", dirLabel: "Neutral with its condition",
+    q: "How does a clinic weight get recorded?",
+    a: "An optional weight row on “How did it go?”, on condition that no vet-scale reading, added or relabelled, lowers a row the record would raise without it, and no home reading softens a loss measured vet-to-vet.",
+    opts: "B: correction on the weigh-in's own record only", choices: ["Agree", "B"],
+    verdict: "Agree.",
+    why: "Vet-scale readings first exist with PR-37, and the mixed-scale margin can quiet a card on every vet-scale path. PR-37 owes four fixtures.",
+    tried: "A soft card at 3.95 and 3.94, then the vet's 3.96: the card goes. Vet 11.0 then 9.9 lb (firm), then home 10.0 and 10.05: no row. Both fixed by the condition." },
+  { id: "Q5", issue: "CUL-684", part: "A", gate: "taxonomy seam 2", dir: "loud",
+    q: "F-G: may the band's marker gate the Signal card?",
+    a: "Rule 1 wins: the marker never gates the card.",
+    opts: "B: rule 3 wins (quieter) · C: park §9a until W2a", choices: ["Agree", "B", "C"],
+    verdict: "Adopt provisionally.",
+    why: "It keeps the fourth exit's backstop. Its cost, from the spec's own record: a card always present for a recurring, acknowledged sign can become wallpaper, and nothing damps it.",
+    tried: "A cat with recurring, acknowledged strain clusters keeps the card. Held in the loud direction." },
+  { id: "Q6", issue: "CUL-944", part: "A", gate: "CUL-1173", dir: "loud",
+    q: "A row stuck in the sync queue shows in the app but not on the vet report. What does the banner do?",
+    a: "A tappable banner that opens the stuck entries, works for all 21 queues, and says they are not in the vet report or the Signal yet.",
+    opts: "B: generic copy · C: copy per queue", choices: ["Agree", "B", "C"],
+    verdict: "Adopt provisionally.",
+    why: "The owner can only fix what they can find. Rows pending under a day are already disclosed on the report screen; stuck ones are not.",
+    tried: "A stuck dose before a vet visit: named as missing from the report. Held." },
+  { id: "Q7", issue: "CUL-1245", part: "A", gate: "before CUL-1263", dir: "loud", dirLabel: "Louder; amends HV-9 3a", top: true,
+    q: "History says “meals not finished” for a refused meal and a half-eaten one alike. Split them?",
+    a: "“N refused or picked at · N left some”, on the day header and the Meal filter row, from the engine's refusal classes. Land it before CUL-1263 so Home inherits it.",
+    opts: "B: one count, as built", choices: ["Agree", "B"],
+    verdict: "Needs your explicit agree: it changes the Meal row from your HV-9 call 3a.",
+    why: "Intake is not preference: a refusal folded into “not finished” reads as fussiness. The Meal row splits; it never shrinks to the half-eaten count.",
+    tried: "Three picked-at bowls: “3 refused or picked at” over three “picked at” rows. Held." },
+  { id: "Q8", issue: "CUL-1235", part: "A", gate: "CUL-1263", dir: "loud",
+    q: "Home's Today line and the Daily Recap count treats as meals.",
+    a: "Home's half rides CUL-1263 (a), which replaces the line. The Daily Recap, which keeps the old chips, counts treats as treats.",
+    opts: "B: Home's half only (the Recap keeps saying “4 meals” over treats)", choices: ["Agree", "B"],
+    verdict: "Adopt provisionally.",
+    why: "CUL-1263 puts History's header on Home, and it names no meal count. That ruling leaves the Recap unchanged, so it needs its own fix.",
+    tried: "A treats-only day: “4 logged · 4 meals” today; under A, Home reads “4 logged” and the Recap “4 treats”." },
+
+  // ── Part B
+  { id: "Q9", issue: "CUL-1357", part: "B", dir: "quiet", dirLabel: "Quieter residual", top: true,
+    q: "A build before #952 can hide an unseen Worth a call, and on that build nothing else carries a call raised by context alone.",
+    a: "Close it with the next TestFlight cut: an OTA if the installed build reports runtime 1.2.0 (confirm in EAS), otherwise the native cut. Until then, one read-only count of hidden escalation rows on your account.",
+    opts: "B: a server trigger refusing the hide (schema, needs your typed go) · C: an update plus a backfill", choices: ["Sign off", "B", "C"],
+    verdict: "Needs your sign-off. The substitute proof is the count reading zero.",
+    why: "Only TestFlight testers run that build. On main, History's rose, Home's Today card and the month keep the call through a hide. A row the count finds can be un-hidden from the record's own Show link.",
+    tried: "A tester hides a reduced-intake Worth a call on the 08-29 build: nothing on that build shows it. The first draft said three surfaces kept it; they don't." },
+  { id: "Q10", issue: "CUL-1732", part: "B", dir: "loud",
+    q: "Ask drops a read's call words when the read is hidden.",
+    a: "On a call tier, Ask keeps the tier's own words, framed as the record shows them (“the record marks this as worth a call; the note is hidden”), and drops only the read text. A hidden Keep an eye out stays dropped.",
+    opts: "B: as built", choices: ["Agree", "B"],
+    verdict: "Adopt provisionally. Rule it with Q9.",
+    why: "A hide is about the note, never the call. The exit that stands a call down (“No, it's something else”) is not built yet, so the words stay.",
+    tried: "The note was hidden because the photo was the other pet's: Ask keeps saying the record marks a call until that exit ships. Loud, held." },
+  { id: "Q11", issue: "CUL-648", part: "B", dir: "neutral",
+    q: "The first-insight arrival can play under another pet's safety banner.",
+    a: "Withhold the arrival while a cross-pet banner is on screen, and spend the once-ever marker anyway.",
+    opts: "B: withhold and defer the marker · C: leave it", choices: ["Agree", "B", "C"],
+    verdict: "Agree.",
+    why: "A celebration never decorates a visible concern. A deferred marker would play weeks later, out of context.",
+    tried: "The banner appears mid-play: the build should stop the arrival then too." },
+  { id: "Q12", issue: "CUL-1539", part: "B", dir: "loud", dirLabel: "Louder (a disclosure)",
+    q: "The Patterns month's weekly bar reads 0 over rose days when a bout crosses the week line.",
+    a: "Keep counting onsets, and on each affected week say “a bout that began before this week continues here”.",
+    opts: "B: count vomit days · C: count vomits", choices: ["Agree", "B", "C"],
+    verdict: "Adopt provisionally.",
+    why: "Zero new onsets is true; the disclosure says what a reader would misread. The Signal card's weekly line has the same blind spot and should be filed.",
+    tried: "A bout across three weeks: the line prints on each, and nothing says “0 vomits”. Held." },
+  { id: "Q13", issue: "CUL-1358", part: "B", dir: "loud", dirLabel: "Louder; row 5 extends a ruling", top: true,
+    q: "Six calls on the Signal's not-eating gate.",
+    a: "1. Withhold falling diarrhea too. 2. Keep the stood-down line whole and add the not-eating fact with its 48-hour ask. 3. The phone script gains “{Pet} hasn't been eating normally” as its own row; the fall stays withheld. 4. The screen's not-eating line gains the 48-hour ask. 5. A rise in vomiting soon after meals during the trial is said in words, never drawn as totals. 6. A length cue on a “so far” week.",
+    opts: "B: rows 1 to 4 and 6 only, so your ruling (a) stands · C: as shipped", choices: ["Agree", "B", "C"],
+    verdict: "Rows 1 to 4 and 6 adopt provisionally. Row 5 needs your explicit agree: it adds a sentence your ruling (a) of 2026-09-27 did not allow (“the strip's sentence verbatim, or nothing”).",
+    why: "The first draft withheld the stood-down line, which would have removed its visit ask and “That isn't an all-clear”. Row 5 never draws a falling count beside a pet that may not be eating.",
+    tried: "A firm chronic-vomit card stands down during a trial refusal: the visit ask survives. A day-1 refuser with 18 vomits before the trial and 3 in it: no falling total is drawn." },
+  { id: "Q14", issue: "CUL-772", part: "B", dir: "loud",
+    q: "A Signal rebuild whose push failed renews a 24-hour cache over a record missing the new rows.",
+    a: "Unsent rows count as an incomplete read, so the 1-hour expiry applies. Only rows the server has refused are left out; they belong to Q6's banner. Any other row sets the flag at any age.",
+    opts: "B: skip the rebuild while rows are unsent · C: accept", choices: ["Agree", "B", "C"],
+    verdict: "Adopt provisionally.",
+    why: "A calm card must not stand for a day over a vomit the server hasn't seen. Without the exception, a refused row would spend the 12-a-day rebuild cap and delay a later red flag to midnight.",
+    tried: "A vomit logged at hour 2 of a 28-hour offline stretch, whose push times out: it was never refused, so the card re-checks within the hour. A row the server refused: leaves the expiry alone. Held." },
+  { id: "Q15", issue: "CUL-1574", part: "B", dir: "loud",
+    q: "On the milestone day a free-fed trial loses the bowl's watch line.",
+    a: "Carry the bowl line alone on the milestone when a bowl is in force.",
+    opts: "B: leave it · C: Get ready only", choices: ["Agree", "B", "C"],
+    verdict: "Adopt provisionally.",
+    why: "It is the only option that covers a recheck booked for the milestone day.",
+    tried: "A refusal on the milestone outranks it, and day one already has the line. Held." },
+  { id: "Q16", issue: "CUL-1341", part: "B", dir: "loud", dirLabel: "Louder; row 2 amends a ruling", top: true,
+    q: "For the call: a recent cluster blends into the trial count, the line vanishes off the refusal face, and a missing count shows nothing.",
+    a: "1. A presence-only count since a named day (“3 of them since Sep 26”, counted from midnight that day). 2. The line follows “not eating” onto the stand-down and intake-decline faces. 3. A line saying the count is unavailable.",
+    opts: "B: rows 1 and 3 only, so your 2026-09-27 ruling stands · C: as shipped", choices: ["Agree", "B", "C"],
+    verdict: "Rows 1 and 3 adopt provisionally. Row 2 needs your explicit agree: it amends your 2026-09-27 ruling that the intake-decline face carries no For the call block.",
+    why: "A count must count what its words name, and a missing count should say so rather than look like none.",
+    tried: "A vomit at 08:00 on Sep 26, read at 10:00 on Sep 28: counted, because the window starts at midnight on the named day." },
+  { id: "Q17", issue: "CUL-1056", part: "B", dir: "neutral",
+    q: "Does the Change-the-window sheet restate a live refusal?",
+    a: "No. Every route to it passes a safety block first: For the call on the refusal face, the decline block on the decline face.",
+    opts: "B: restate the refusal", choices: ["Agree", "B"],
+    verdict: "Agree.",
+    why: "The sheet opens only from the trial screen. How the Replace row looks is a separate, non-clinical question for the Designer's next mock round.",
+    tried: "A refusal plus an intake decline: the sheet is reached past the decline block rather than For the call. Held." },
+  { id: "Q18", issue: "CUL-1597", part: "B", dir: "conflict", conflict: true,
+    q: "TD-5: is a call-now “Not yet” asked once more that evening?",
+    a: "A, Dr. Chen: one prompt that evening, the next time the screen opens after 6 PM, never again (louder). B, Jordan: as built, no timed prompt; the same buttons and call words return on every reopen.",
+    opts: "No recommendation", choices: ["A", "B"],
+    verdict: "Your letter. Not urgent until en14 is seeded.",
+    why: "Neither notifies, so under either an owner who never reopens the screen is not asked again. B's worry: a second ask invites a false “I've called”. The real difference is A's one evening prompt against B's unchanged buttons.",
+    tried: "An owner waiting for morning taps “Not yet” twice under A: nothing recorded, no third ask. Held." },
+  { id: "Q19", issue: "CUL-1596", part: "B", dir: "conflict", conflict: true,
+    q: "Does the eight-week “Did your vet want to see her again?” ever reach an owner?",
+    a: "A, the team: keep it off; it asks every pet on both sides. B, Dr. Chen: turn it on (louder), once CUL-1531 lets it see a booked recheck. C: re-measure after CUL-1531 and Q2.",
+    opts: "No recommendation", choices: ["A", "B", "C"],
+    verdict: "Your letter.",
+    why: "It is built and off today. Without CUL-1531 it would ask owners whose recheck is already booked.",
+    tried: "A recheck booked for week 9: B asks anyway until CUL-1531 lands." },
+
+  // ── Part C
+  { id: "Q20", issue: "CUL-686", part: "C", dir: "loud",
+    q: "A dense cough is silent for 21 days.",
+    a: "Build the density arm Dr. Chen preferred in ruling Q5b: at least 10 cough days inside any 14, while ongoing, priced at 0 of 200,000 healthy pets.",
+    opts: "B: a burden arm on vomit's shape (unmeasured) · C: accept and document", choices: ["Agree", "B", "C"],
+    verdict: "Adopt provisionally.",
+    why: "A cat coughing six times a day is silent until day 22. The arm speaks from day 10; the 21-day span stays the floor for sparse coughs. Built so a density-only course stands down with the labelled line, and re-priced on N4's 13 null scenarios.",
+    tried: "Kennel cough daily for 12 days: fires from day 10. A reverse-sneezing dog logged as cough: fires after a fortnight. Both loud errors, held." },
+  { id: "Q21", issue: "CUL-685", part: "C", dir: "loud",
+    q: "One pet with two chronic courses: the cross-pet banner names one.",
+    a: "Add “…and another recurring sign”, or “…and 2 other recurring signs” for three.",
+    opts: "B: keep the longest course only, documented", choices: ["Agree", "B"],
+    verdict: "Adopt provisionally. Same build as Q22.",
+    why: "It discloses without ranking two signs. “Recurring” is the banner's own word; “ongoing” would claim a current state.",
+    tried: "A cough last seen 27 days ago: “recurring” stays true. Held." },
+  { id: "Q22 mark", issue: "CUL-689", part: "C", dir: "neutral",
+    q: "Which course carries the cough-vomit adjacency mark?",
+    a: "The most recent course. A tie keeps the current leader.",
+    opts: "None", choices: ["Agree"],
+    verdict: "Agree.",
+    why: "Every lens endorsed it.",
+    tried: "Vomiting after coughing fits shares a last day: the tie-break keeps the leader." },
+  { id: "Q22 order", issue: "CUL-689", part: "C", dir: "conflict", conflict: true,
+    q: "The chronicity lane has no recency term: which chronic course leads?",
+    a: "a, Data Scientist: span first, documented. c, Dr. Chen: span first unless one course has been quiet past a bound (no source for the bound). Both reject a global reorder by recency.",
+    opts: "No recommendation", choices: ["a", "c"],
+    verdict: "Your letter.",
+    why: "Neither drops a card; only which one sits first changes.",
+    tried: "A month-quiet course leading one happening today: a keeps it first, c moves the active one up." },
+  { id: "Q23", issue: "CUL-793", part: "C", dir: "loud",
+    q: "The chronicity compare borrows a 7-day density ratio for 28-day halves.",
+    a: "Its own named constant at 0.7, plus: when the recent half's last 7 days hold no logged meal or symptom, the pair carries its own sentence (“No meals or symptoms were logged in the last 7 days, so the recent count may be low”). A disclosure only: a rise keeps its direction.",
+    opts: "B: a stricter ratio · C: leave it", choices: ["Agree", "B", "C"],
+    verdict: "Adopt provisionally. The 7 days have no veterinary source. It deploys on merge.",
+    why: "The ratio's value has no source either way; a trailing dark run is the case shown passing.",
+    tried: "A recent half better logged overall but dark for its last week: the new sentence prints, and the false “fewer days” line does not." },
+  { id: "Q24", issue: "CUL-203", part: "C", dir: "quiet", dirLabel: "Quieter, permanent", top: true,
+    q: "Under EN-11, two always-co-fed foods never yield a food finding, even when a corrected test passes.",
+    a: "Accept it, with the cost stated as never. It follows from your 2026-09-30 ruling (a food finding names one protein alone) and D5 = B. Say so in CUL-1486's GA-day marker.",
+    opts: "B: a “feed them apart” suggestion (an association claim your 2026-09-30 ruling rules out)", choices: ["Agree", "B"],
+    verdict: "Needs your explicit agree.",
+    why: "D5 priced a delay: a culprit named about week 8. For a co-fed pair it is never, and E2's 56-day proof cannot tell the difference.",
+    tried: "A dog truly reacting to one of two co-fed foods: nothing is named, ever. Not held, and stated so it is ruled rather than rediscovered." },
+
+  // ── Part D
+  { id: "Q25", issue: "CUL-1030", part: "D", dir: "neutral",
+    q: "An overnight discovery window prints as two clock times with no dates.",
+    a: "Date each end whose day differs from the row's, with the year when it differs.",
+    opts: "B: date by the earliest time · C: explain in the preamble", choices: ["Agree", "B", "C"],
+    verdict: "Agree.",
+    why: "“11:40 PM – 7:10 AM” on one dated row cannot tell a vet the order.",
+    tried: "A window over New Year carries its year. Held." },
+  { id: "Q26", issue: "CUL-1004", part: "D", dir: "quiet", dirLabel: "Quieter in a mis-set case", top: true,
+    q: "What does Set it up on the report's send bar open?",
+    a: "A mid-trial “this is the trial diet” write, dated today, offered only when the trial records a target protein and every protein on the food's label is that protein or a form of it, on the exact key. The report names it with the date it was set.",
+    opts: "B: any food (quieter: past contraband leaves the count) · C: no button, as shipped, with a designed empty state", choices: ["Agree", "B", "C"],
+    verdict: "Needs your explicit agree. It re-opens §5.5 D-A by design.",
+    why: "Today the only fix for a trial set up without its diet is ending it, which loses its dates. Any such write also removes that food's earlier feedings from the off-diet count (R13a) and strips its protein from other foods' records.",
+    tried: "A chicken kibble on a duck trial with no target protein: no button under A. A duck kibble that also lists chicken fat: does not qualify under A. Under B the chicken kibble's 19 earlier off-diet days leave the count. B broke." },
+  { id: "Q27", issue: "CUL-994", part: "D", dir: "neutral",
+    q: "Keep the dose-span sentence that shipped in place of the specified suppression?",
+    a: "Keep it.",
+    opts: "B: restore the suppression · C: suppress on a day-count predicate", choices: ["Agree", "B", "C"],
+    verdict: "Agree.",
+    why: "Every lens recommended it. It prints when a course has an end, a plan and a dose given, and hides nothing it prints for.",
+    tried: "A twice-daily course logged once a day: the shortfall sits in the sentence's subject. Held." },
+  { id: "Q28", issue: "CUL-1027", part: "D", dir: "neutral",
+    q: "“N changes overlap this window” counts agents while the chart draws starts and stops.",
+    a: "Keep it. The shipped legend already names each mark.",
+    opts: "B: rename the noun · C: count starts and stops", choices: ["Agree", "B", "C"],
+    verdict: "Agree.",
+    why: "The legend reads “dashed … started; flat-headed … stopped”, with both dates.",
+    tried: "A course with only a start beside one started and stopped: 2 changes over 3 marks, each named. Held." },
+  { id: "Q29", issue: "CUL-1018", part: "D", dir: "loud",
+    q: "Removing a food from the trial's original allowed list draws no mark.",
+    a: "Mark it when its date differs from both the trial's start and its recorded end, never the target date.",
+    opts: "B: never, as built · C: every removal", choices: ["Agree", "B", "C"],
+    verdict: "Adopt provisionally.",
+    why: "A dated diet change is what the chart exists to show. Day 1 is a setup fix; the end day is the trial ending.",
+    tried: "An overrun trial with a removal on the target day: the target isn't the end, so the mark draws. Held." },
+
+  // ── Part E
+  { id: "Q30", issue: "CUL-1231", part: "E", dir: "quiet", dirLabel: "Quieter on the dose row", top: true,
+    q: "A dose re-answered “given directly” still names the meal it was logged with.",
+    a: "The owner's answer wins in the words (“Prednisone · directly”). The pairing stays, so Unconfirmed stays.",
+    opts: "B: the link wins, as built · C: “directly, logged with the 1:00 PM meal”", choices: ["Agree", "B", "C"],
+    verdict: "Needs your explicit agree.",
+    why: "The row should say what the owner last told us. Removing the pairing instead would drop Unconfirmed too.",
+    tried: "A mistaken “directly” for a pill in a picked-at bowl: the dose row loses one concern cue, while the meal row and Unconfirmed keep it." },
+  { id: "Q31", issue: "CUL-913", part: "E", dir: "neutral",
+    q: "The spec says the look's refusal recency is 2 days; the code is 3.",
+    a: "Write 3 into T-20, naming the look's own constant, never the intake detector's.",
+    opts: "B: back to 2", choices: ["Agree", "B"],
+    verdict: "Agree. It rides CUL-1753's edit.",
+    why: "The spec's own adversarial gate moved the number.",
+    tried: "None needed." },
+  { id: "Q32", issue: "CUL-915", part: "E", dir: "loud", dirLabel: "Louder (a disclosure)",
+    q: "How answering spread across the weeks is computed and gated on, but never shown.",
+    a: "Print it on the row's sub-line (“answered 1 · 1 · 7 · 0 by week”), after a mock frame.",
+    opts: "B: raise the floor · C: accept and say so", choices: ["Agree", "B", "C"],
+    verdict: "Adopt provisionally, mock first.",
+    why: "A pair over answering bunched into one worried week reads the same as steady answering until the spread is shown.",
+    tried: "Seven days answered in one week and one in each of two others: it passes the floor, and the line shows the bunching." },
+  { id: "Q33", issue: "CUL-1074", part: "E", dir: "neutral",
+    q: "Weight dots on Patterns: grey as shipped, or the round-4 teal?",
+    a: "Grey, as shipped.",
+    opts: "B: teal · C: primary ink", choices: ["Agree", "B", "C"],
+    verdict: "Agree.",
+    why: "A weight mark never reads as good (B-186).",
+    tried: "None needed." },
+  { id: "Q34", issue: "CUL-272", part: "E", dir: "loud", dirLabel: "Louder; re-opens T17",
+    q: "Who writes the critical-drug list now that no vet review is coming?",
+    a: "The team drafts it from published references. A drug critical for some use counts as critical unless the course's indication matches a listed non-critical use, so a blank, a nickname or a misspelling counts as critical. The list comes back for your agree.",
+    opts: "B: an owner toggle · C: keep it dormant", choices: ["Agree", "B", "C"],
+    verdict: "Adopt provisionally. It re-opens T17's “the team will not write it”.",
+    why: "It is the only route left.",
+    tried: "An Addisonian dog on prednisolone whose indication reads “her daily pill”: counted as critical. Held, at the cost of louder calls for some anti-inflammatory courses." },
+  { id: "Q35", issue: "CUL-672", part: "E", dir: "neutral",
+    q: "The §15 vet question sheet: keep or drop?",
+    a: "Keep it as an errand for your own vet, sent with the CUL-598 report, and merge #765.",
+    opts: "B: drop it and close #765", choices: ["Agree", "B"],
+    verdict: "Agree.",
+    why: "Your GP visit is the one real-vet route left.",
+    tried: "None needed." },
+  { id: "Q36", issue: "CUL-591", part: "E", dir: "loud",
+    q: "Ask tells an owner an overrun trial is “complete”.",
+    a: "Ask relays the trial screen's overrun words and never says complete for a trial nobody ended.",
+    opts: "B: gate Ask on the running check (Ask would say there is no trial) · C: let it stand (the first draft's pick; broke)", choices: ["Agree", "B", "C"],
+    verdict: "Adopt provisionally.",
+    why: "On day 412 of 56, Ask's tool reports complete while the screen says 356 days past the window and asks for a decision.",
+    tried: "The first draft let it stand on a parity claim that turned out to be stale." },
+  { id: "Q37", issue: "CUL-590", part: "E", dir: "neutral",
+    q: "Keep “Your vet has the final say.” on the course-end prompt?",
+    a: "Keep it. A fuller deferral for critical drugs can follow Q34.",
+    opts: "B: a fuller deferral · C: drop it", choices: ["Agree", "B", "C"],
+    verdict: "Agree.",
+    why: "It guards against a taper being stopped early.",
+    tried: "Phenobarbital entered as a 30-day course gets the same one line. Held weakly, hence the follow-up." },
+  { id: "Q38", issue: "CUL-595", part: "E", dir: "conflict", conflict: true,
+    q: "May a photo zoom past its real pixels?",
+    a: "A, Engineer and Designer: keep 2.5; a dead pinch reads broken. B, Dr. Chen: stop at 1; magnified JPEG artifacts can read as texture on a blood or foreign-material photo.",
+    opts: "No recommendation", choices: ["A", "B"],
+    verdict: "Your letter, ideally after zooming an older photo on your phone.",
+    why: "Either way it is a one-line change.",
+    tried: "None; a conflict row." }
+];
+
+const DIR = { loud: ["p-loud", "Louder"], quiet: ["p-quiet", "Quieter"], neutral: ["p-neutral", "Neutral"], conflict: ["p-conflict", "Conflict"] };
+const KEY = "ruling-sheet-b-choices";
+let picks = {};
+try { picks = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { picks = {}; }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(picks)); } catch (e) {} }
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+function anchorOf(r) { return "r-" + r.id.toLowerCase().replace(/[^a-z0-9]+/g, "-"); }
+
+const firstList = document.getElementById("firstList");
+ROWS.filter((r) => r.top || r.conflict).forEach((r) => {
+  const li = el("li");
+  const a = el("a", r.conflict ? "is-conflict" : "is-sign");
+  a.href = "#" + anchorOf(r);
+  a.append(el("span", "rid", r.id), document.createTextNode(r.conflict ? "your letter" : (r.choices[0] === "Sign off" ? "sign-off" : "explicit agree")));
+  li.append(a);
+  firstList.append(li);
+});
+
+const list = document.getElementById("rows");
+const buttonsById = {};
+let lastPart = null;
+ROWS.forEach((r) => {
+  if (r.part !== lastPart) {
+    lastPart = r.part;
+    const g = GROUPS[r.part];
+    const sec = el("div", "grp");
+    sec.append(el("h2", null, g[0]));
+    if (g[1]) sec.append(el("p", "status", g[1]));
+    list.append(sec);
+  }
+  const card = el("article", "card" + (r.top ? " top" : "") + (r.conflict ? " conflict" : ""));
+  card.id = anchorOf(r);
+  const head = el("div", "card-head");
+  head.append(el("span", "rid", r.id), el("span", "issue", r.issue));
+  const d = DIR[r.dir];
+  head.append(el("span", "pill " + d[0], r.dirLabel || d[1]));
+  if (r.gate) head.append(el("span", "gate", "gates " + r.gate));
+  card.append(head, el("p", "q", r.q));
+  const rec = el("div", "rec");
+  rec.append(el("span", "lab", r.conflict ? "The sides" : "A, recommended"), el("p", null, r.a));
+  const opts = el("p", "opts"); opts.append(el("span", "lab", r.conflict ? "Recommendation" : "Other options")); opts.append(document.createTextNode(r.opts));
+  const ver = el("p", "verdict"); ver.append(el("b", null, "Verdict: "), document.createTextNode(r.verdict));
+  const det = el("details"); det.append(el("summary", null, "Why, and what was tried"), el("p", null, r.why), el("p", null, "Tried: " + r.tried));
+  const ch = el("div", "choose"); ch.setAttribute("role", "group"); ch.setAttribute("aria-label", "Your ruling on " + r.id);
+  buttonsById[r.id] = ch;
+  r.choices.forEach((c) => {
+    const b = el("button", null, c); b.type = "button"; b.id = "pick-" + anchorOf(r) + "-" + c.toLowerCase().replace(/\s+/g, "-");
+    b.setAttribute("aria-pressed", picks[r.id] === c ? "true" : "false");
+    b.addEventListener("click", () => {
+      if (picks[r.id] === c) delete picks[r.id]; else picks[r.id] = c;
+      save(); sync(r.id); render();
+    });
+    ch.append(b);
+  });
+  card.append(rec, opts, ver, det, ch);
+  list.append(card);
+});
+
+function sync(id) {
+  const ch = buttonsById[id];
+  ch.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", picks[id] === x.textContent ? "true" : "false"));
+}
+
+const out = document.getElementById("out");
+const tally = document.getElementById("tally");
+function render() {
+  const lines = ROWS.map((r) => r.id + " (" + r.issue + "): " + (picks[r.id] ? picks[r.id].toLowerCase() : "not ruled yet"));
+  const n = ROWS.filter((r) => picks[r.id]).length;
+  const own = ROWS.filter((r) => (r.top || r.conflict) && !picks[r.id]).length;
+  tally.textContent = n + " of " + ROWS.length + " cards ruled" + (own ? " · " + own + " still need your own pick" : "");
+  out.value = "Second-sitting rulings, " + n + " of " + ROWS.length + " cards ruled\n" + lines.join("\n");
+}
+render();
+
+document.getElementById("agreeRest").addEventListener("click", () => {
+  let changed = 0;
+  ROWS.forEach((r) => {
+    if (picks[r.id] || r.top || r.conflict || r.choices[0] !== "Agree") return;
+    picks[r.id] = "Agree"; changed += 1; sync(r.id);
+  });
+  save(); render();
+  document.getElementById("copied").textContent = changed
+    ? "Agreed to " + changed + " defaults. The sign-off, explicit-agree and conflict cards are left for you."
+    : "Nothing left to default. The remaining cards need your own pick.";
+});
+
+try {
+  const h = (location.hash || "").slice(1);
+  const t = h && document.getElementById(h);
+  if (t) t.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+} catch (e) {}
+
+document.getElementById("copy").addEventListener("click", () => {
+  const msg = document.getElementById("copied");
+  const done = () => { msg.textContent = "Copied. Paste it back to Claude."; };
+  const fallback = () => { out.focus(); out.select(); msg.textContent = "Selected. Copy it from the box."; };
+  try { navigator.clipboard.writeText(out.value).then(done, fallback); } catch (e) { fallback(); }
+});
+</script>
