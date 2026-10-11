@@ -44,7 +44,7 @@ import { computeTrialFacts, type TrialFacts } from './dietTrial';
 import { loadDietTrialFacts, loadTrialPredicateFacts } from './dietTrialFacts';
 import { withholdingReasons, type TrialCardInput } from './dietTrialCard';
 import { buildTrialLedger, thisWeekLane, type TrialLedger } from './trialLedger';
-import { localDayIndexOf } from './utils';
+import { localDayIndex, localDayIndexOf } from './utils';
 
 // ── The fixture record ───────────────────────────────────────────────────────
 
@@ -204,18 +204,52 @@ function assertInvariants(l: TrialLedger, facts: TrialFacts, input: TrialCardInp
     expect(r.days.length).toBeLessThanOrEqual(7);
   });
 
+  // CUL-1855 — the extension band: only on an un-ended trial whose tail clip bit,
+  // only past the designed end, never in `count`, painted from its own fact.
+  const ext = drawn.filter((d) => d.extension);
+  if (l.extension === null) {
+    expect(ext).toHaveLength(0);
+    l.rows.forEach((r) => expect(r.extensionCount).toBeNull());
+  } else {
+    expect(input.trial!.status).toBe('active');
+    expect(range.coverageClippedAtWindowEnd).toBe(true);
+    expect(ext.length).toBeGreaterThan(0);
+    ext.forEach((d) => {
+      expect(d.dayIndex).toBeGreaterThan(range.endDayIndex);
+      expect(d.dayIndex).toBeLessThanOrEqual(targetEnd);
+    });
+    // Every day after the designed end is in the band, and nothing before it.
+    expect(drawn.filter((d) => d.dayIndex > range.endDayIndex)).toEqual(ext);
+    expect(ext.filter((d) => d.fill === 'meals_logged').map((d) => d.dayIndex)).toEqual(
+      facts.extensionCoveredDayIndices.filter((d) => d <= targetEnd),
+    );
+    const today = localDayIndex(input.nowMs);
+    const reached = ext.filter((d) => d.dayIndex <= today);
+    const extCounts = l.rows.map((r) => r.extensionCount).filter((c): c is NonNullable<typeof c> => c !== null);
+    expect(extCounts.reduce((s, c) => s + c.elapsed, 0)).toBe(reached.length);
+    expect(extCounts.reduce((s, c) => s + c.covered, 0)).toBe(
+      reached.filter((d) => d.fill === 'meals_logged').length,
+    );
+    ext.filter((d) => d.dayIndex > today).forEach((d) => expect(d.fill).toBe('not_reached'));
+    // The end line sits on the designed end; the band carries the end set now.
+    expect(l.endAfterRowIndex).toBe(Math.floor((range.endDayIndex - startIndex) / 7));
+    expect(l.endLabel).toMatch(/, the end you first set\. The count above stops here\.$/);
+    expect(l.extension.endLabel).toMatch(new RegExp(`· day ${input.trial!.targetDurationDays}, the end you set$`));
+  }
+  const countedDays = drawn.filter((d) => !d.extension);
+
   // The untracked head is exactly the facts' head, never counted, never "none logged".
   const head = drawn.filter((d) => d.fill === 'not_tracked');
   expect(head.length).toBe(facts.untrackedDaysBeforeFirstLog);
   head.forEach((d) => expect(d.dayIndex).toBeLessThan(range.startDayIndex));
-  drawn
+  countedDays
     .filter((d) => d.fill === 'none_logged' || d.fill === 'today_open' || d.fill === 'meals_logged')
     .forEach((d) => {
       expect(d.dayIndex).toBeGreaterThanOrEqual(range.startDayIndex);
       expect(d.dayIndex).toBeLessThanOrEqual(range.endDayIndex);
     });
   // "meals logged" is coveredDayIndices, exactly.
-  expect(drawn.filter((d) => d.fill === 'meals_logged').map((d) => d.dayIndex)).toEqual(
+  expect(countedDays.filter((d) => d.fill === 'meals_logged').map((d) => d.dayIndex)).toEqual(
     facts.coveredDayIndices,
   );
 
@@ -366,13 +400,12 @@ describe('the ledger is absent', () => {
     expect(days(l).some((d) => d.offDiet)).toBe(false);
   });
 
-  it('on an extended trial past its designed window (PM ruling 1, CUL-1317)', async () => {
-    const all = Array.from({ length: 70 }, (_, i) => i + 1);
-    const { facts, ledger } = await load({ target: 84, targetInitial: 56, mealDays: all, nowDay: 70 });
-    expect(facts!.range!.endDayIndex).toBe(idx(56));
-    expect(ledger).toBeNull();
-    // Before the designed window closes, the extended trial still draws.
-    expect((await load({ target: 84, targetInitial: 56, mealDays: all.slice(0, 40), nowDay: 40 })).ledger).not.toBeNull();
+
+  it('before the designed window closes, an extended trial draws with no band (CUL-1855)', async () => {
+    const all = Array.from({ length: 40 }, (_, i) => i + 1);
+    const { input, facts, ledger } = await load({ target: 84, targetInitial: 56, mealDays: all, nowDay: 40 });
+    assertInvariants(ledger!, facts!, input);
+    expect(ledger!.extension).toBeNull();
   });
 
   it('on an un-ended trial whose window was SHORTENED below its designed length', async () => {
@@ -393,6 +426,110 @@ describe('the ledger is absent', () => {
     expect(buildTrialLedger({ input: { ...input, coverage: null }, facts })).toBeNull();
     expect(buildTrialLedger({ input, facts: null })).toBeNull();
     expect(buildTrialLedger({ input: { ...input, trial: null }, facts })).toBeNull();
+  });
+});
+
+// ── The extension weeks (CUL-1855, PM ruling option A) ──────────────────────
+
+describe('the extension weeks of a trial extended past its designed window (CUL-1855)', () => {
+  const upTo = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
+
+  it("draws the PM's record: 56 counted days, then the band to day 84", async () => {
+    // Set for 56, extended to 84, every day logged, today is day 78.
+    const { input, facts, ledger } = await load({
+      target: 84, targetInitial: 56, mealDays: upTo(78), offMealDays: [30, 61], nowDay: 78,
+    });
+    const l = ledger!;
+    expect(l).not.toBeNull();
+    assertInvariants(l, facts!, input);
+    expect(facts!.coverage).toMatchObject({ daysLogged: 56, daysElapsed: 56 });
+    expect(l.rows).toHaveLength(12);
+    expect(l.rows.map((r) => r.countLabel)).toEqual([...Array(8).fill('7 of 7'), null, null, null, null]);
+    expect(l.rows.map((r) => r.extensionCountLabel)).toEqual([
+      ...Array(8).fill(null), '7 of 7', '7 of 7', '7 of 7', '1 of 1 so far',
+    ]);
+    expect(l.endAfterRowIndex).toBe(7);
+    expect(l.endLabel).toBe('Aug 27 · day 56, the end you first set. The count above stops here.');
+    expect(l.extension).toEqual({
+      headerLabel: 'Extended to Sep 24 · not in the count above',
+      endLabel: 'Sep 24 · day 84, the end you set',
+    });
+    // The off-diet meal on day 61 is marked in the band; day 30's in the count.
+    const byDay = new Map(days(l).map((d) => [d.trialDay, d]));
+    expect(byDay.get(30)!.offDiet).toBe(true);
+    expect(byDay.get(61)).toMatchObject({ offDiet: true, extension: true });
+    expect(byDay.get(79)!.fill).toBe('not_reached');
+    // No lane on Home: the lane is the counted ratio drawn, and these days aren't in it.
+    expect(l.currentRowIndex).toBeNull();
+    expect(thisWeekLane(l, input)).toBeNull();
+    // A screen reader hears the band after the count, and never inside it.
+    expect(l.accessibilityLabel).toContain(
+      'week 8, meals logged 7 of 7 days. Extended weeks, not in the count: week 9, meals logged 7 of 7 days with an off-diet feeding logged on Sep 1;',
+    );
+    expect(l.accessibilityLabel).toContain('week 12, meals logged 1 of 1 day so far.');
+  });
+
+  it('paints a gap in the band hollow, and today open', async () => {
+    const mealDays = upTo(70).filter((d) => d !== 63);
+    // A treat-only day 63 is not a logged meal there, as it is not one in the count.
+    const { input, facts, ledger } = await load({ target: 84, targetInitial: 56, mealDays, treatDays: [63], nowDay: 71 });
+    assertInvariants(ledger!, facts!, input);
+    const byDay = new Map(days(ledger!).map((d) => [d.trialDay, d.fill]));
+    expect(byDay.get(63)).toBe('none_logged');
+    expect(byDay.get(71)).toBe('today_open');
+    expect(ledger!.rows[8].extensionCountLabel).toBe('6 of 7');
+    expect(ledger!.rows[10].extensionCountLabel).toBe('0 of 1 so far');
+  });
+
+  it('splits a week that straddles the designed end, each half counted on its own', async () => {
+    // Designed 52 days (ends mid-week 8), extended to 66.
+    const { input, facts, ledger } = await load({ target: 66, targetInitial: 52, mealDays: upTo(60), nowDay: 60 });
+    const l = ledger!;
+    assertInvariants(l, facts!, input);
+    const wk8 = l.rows[7];
+    expect(wk8.countLabel).toBe('3 of 3');
+    expect(wk8.extensionCountLabel).toBe('4 of 4');
+    expect(wk8.days.filter((d) => d.extension).map((d) => d.trialDay)).toEqual([53, 54, 55, 56]);
+    expect(wk8.extensionFirstDate).toBe('Aug 24');
+  });
+
+  it("withholds the whole ledger over an unfinished bowl in today's extension week (CUL-1344's rule)", async () => {
+    const base = { target: 84, targetInitial: 56, mealDays: upTo(66), nowDay: 66 };
+    expect((await load(base)).ledger).not.toBeNull();
+    const refused = await load({ ...base, extraMeals: [{ day: 65, hour: 18, rating: 'refused' }] });
+    expect(refused.facts!.unfinishedMealDayIndices).toContain(idx(65));
+    expect(refused.ledger).toBeNull();
+    // A bowl left in an earlier extension week does not withhold this week.
+    const earlier = await load({ ...base, extraMeals: [{ day: 58, hour: 18, rating: 'refused' }] });
+    expect(earlier.ledger).not.toBeNull();
+  });
+
+  it('keeps the band off an ended trial, and off a trial past its new end too', async () => {
+    const ended = await load({ target: 84, targetInitial: 56, mealDays: upTo(70), nowDay: 72, status: 'completed', endedDay: 70 });
+    if (ended.ledger) expect(ended.ledger.extension).toBeNull();
+    const past = await load({ target: 84, targetInitial: 56, mealDays: upTo(90), nowDay: 90 });
+    if (past.ledger) {
+      assertInvariants(past.ledger, past.facts!, past.input);
+      expect(Math.max(...days(past.ledger).map((d) => d.trialDay))).toBe(84);
+    }
+  });
+
+  it('stays absent on an overrun whose tail clip did not bite (no fact reaches those days)', async () => {
+    // Unreachable through the loaders, which always read the whole trial, so the clip
+    // always bites; pinned directly so the defensive gate cannot drift away unseen.
+    const { input, facts } = await load({ target: 84, targetInitial: 56, mealDays: upTo(70), nowDay: 70 });
+    expect(buildTrialLedger({ input, facts })).not.toBeNull();
+    const unclipped = { ...facts!, range: { ...facts!.range!, coverageClippedAtWindowEnd: false } };
+    expect(buildTrialLedger({ input, facts: unclipped })).toBeNull();
+  });
+
+  it('the extension fact is empty wherever the tail clip did not bite', async () => {
+    const plain = await load({ target: 56, mealDays: upTo(40), nowDay: 40 });
+    expect(plain.facts!.extensionCoveredDayIndices).toEqual([]);
+    const overrun = await load({ target: 56, mealDays: upTo(60), nowDay: 60 });
+    // An overrun of an UN-extended trial: no window to draw into, the grid ends at 56.
+    expect(Math.max(...days(overrun.ledger!).map((d) => d.trialDay))).toBe(56);
+    expect(overrun.ledger!.extension).toBeNull();
   });
 });
 
@@ -492,7 +629,7 @@ describe('parity property: rows partition the coverage sentence on every drawn r
   it('holds across 400 generated records, and the sweep reaches every shape', async () => {
     const shapes = {
       drawn: 0, head: 0, gap: 0, dots: 0, endedLate: 0, overrun: 0, partialRow: 0,
-      endedToday: 0, movedWindow: 0, lane: 0,
+      endedToday: 0, movedWindow: 0, lane: 0, band: 0, straddle: 0,
     };
     for (let seedValue = 1; seedValue <= 400; seedValue++) {
       const r = rng(seedValue);
@@ -506,7 +643,8 @@ describe('parity property: rows partition the coverage sentence on every drawn r
         : null;
       // A moved window: extended (designed < set) or shortened (designed > set).
       const moved = r();
-      const targetInitial = moved < 0.15 ? target - 14 : moved < 0.25 ? target + 14 : null;
+      // Half the extensions move a designed end that falls mid-week (CUL-1855's straddle).
+      const targetInitial = moved < 0.07 ? target - 17 : moved < 0.15 ? target - 14 : moved < 0.25 ? target + 14 : null;
       const firstLog = r() < 0.3 ? 1 + Math.floor(r() * 6) : 1;
       const density = 0.5 + r() * 0.5;
       const lastDay = endedDay ?? nowDay;
@@ -541,6 +679,8 @@ describe('parity property: rows partition the coverage sentence on every drawn r
       if (rec.endedDay === nowDay) shapes.endedToday += 1;
       if (targetInitial !== null) shapes.movedWindow += 1;
       if (thisWeekLane(ledger, input)) shapes.lane += 1;
+      if (ledger.extension) shapes.band += 1;
+      if (ledger.rows.some((row) => row.count && row.extensionCount)) shapes.straddle += 1;
     }
     // Non-vacuity: the sweep is only evidence if it reached each shape it claims to.
     expect(shapes.drawn).toBeGreaterThan(150);
@@ -553,6 +693,8 @@ describe('parity property: rows partition the coverage sentence on every drawn r
     expect(shapes.endedToday).toBeGreaterThan(3);
     expect(shapes.movedWindow).toBeGreaterThan(10);
     expect(shapes.lane).toBeGreaterThan(10);
+    expect(shapes.band).toBeGreaterThan(10);
+    expect(shapes.straddle).toBeGreaterThan(3);
   });
 });
 
