@@ -210,6 +210,7 @@
   .bar100 div { display: flex; align-items: center; justify-content: center; font-size: 11.5px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; }
   .barkey { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; color: var(--ink-2); max-width: 560px; }
   .barlab { font-size: 12.5px; font-weight: 600; color: var(--ink-2); margin: 14px 0 0; }
+  .limits { font-size: 12.5px; color: var(--ink-3); max-width: 72ch; margin: 10px 0 0; }
   .barkey i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; border-radius: 2px; }
   @media (max-width: 720px) { .sheet { font-size: 9px; padding: 22px 18px 30px; } .foot { left: 18px; right: 18px; } .frame-slot { width: 100%; } .fs .who { font-size: 20px; } }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -298,20 +299,19 @@
               <div class="flag"><div class="t">Chronicity</div><div class="d"><b>Itching on 16 days across 35</b>, first logged May 21, latest Jun 25. This window’s entries start May 21, so 35 days is a floor.</div></div>
             </div>
 
-            <p class="ans"><b>Diet trial, day 46 of 56:</b> Royal Canin HP (hydrolysed soy) from May 18, directed by Dr. A. Chen <span class="badge">owner-entered</span>. <b>Not a clean elimination:</b> chicken and cereal on at least 26 of 43 logged days, all via Pedigree Dentastix <span class="badge">AI label read · unconfirmed</span>, owner-listed as allowed Jun 8 <span class="eng">engine change: exposure days</span>. <b>Apoquel 16 mg daily throughout: no doses logged.</b></p>
+            <p class="ans"><b>Diet trial, day 46 of 56:</b> Royal Canin HP (hydrolysed soy) from May 18, directed by Dr. A. Chen <span class="badge">owner-entered</span>. <b>Not a clean elimination:</b> roast chicken (Jun 14, 27) and Pro Plan (Jun 21), owner-logged off the list; chicken and cereal on at least 26 of 43 logged days via Pedigree Dentastix <span class="badge">AI label read · unconfirmed</span>, owner-listed Jun 8 <span class="eng">engine change: exposure days</span>. <b>Apoquel 16 mg daily throughout: no doses logged.</b></p>
 
             <div class="sl">The record, one date axis <span>separate lanes · shared axis, not shared cause · hatched: no meal or sign logged</span></div>
             <div class="chart" data-chart="strip-dog"></div>
-            <p class="key">● ate all · ◐ ate most · ▮ dose given · tick: a protein fed that day · dashed box: a course, no doses logged · dotted line: a change begins</p>
-            <p class="note"><b>Reading it:</b> NexGard (Jun 5), daily chicken (Jun 8) and Apoquel (throughout, no doses logged) all overlap the itching, so no one of them can be credited with a difference. No protein reached the association threshold; chicken, fed daily from Jun 8, cannot be tested on this record.</p>
+            <p class="key">● ate all · ◐ ate most · ▮ dose given · tick: a protein fed that day · heavy tick: an owner-logged food off the allowed list</p>
+            <p class="note"><b>Reading it:</b> the trial diet (May 18), NexGard (Jun 5), daily chicken (Jun 8) and Apoquel (throughout, no doses logged) all overlap the itching, so no one of them can be credited with a difference. No protein reached the association threshold; chicken, fed daily from Jun 8, cannot be tested on this record.</p>
 
             <table class="kf">
               <tr><td>Medication</td><td><b>Apoquel</b> (oclacitinib) 16 mg PO once daily since Apr 30 · <b>no doses logged</b>; the course as recorded, not evidence it was given. <b>NexGard</b> (afoxolaner) 68 mg chew, given Jun 5 and Jul 2; flavour protein not recorded, so not in the exposure lanes.</td></tr>
-              <tr><td>Off the list</td><td>At least <b>4 of 154</b> logged feedings were off the allowed list: Dentastix Jun 2 (before it was listed), roast chicken Jun 14 and Jun 27, Pro Plan (salmon, chicken) Jun 21. A floor, not a total.</td></tr>
-              <tr><td>Weight</td><td>32.4 → 31.8 kg over 3 <b>home weigh-ins</b>, May 18 – Jun 29 · body condition not assessed</td></tr>
+              <tr><td>Off the list</td><td><b>4 feedings</b>, a floor: Dentastix Jun 2 (before it was listed), roast chicken Jun 14 and 27, Pro Plan (salmon, chicken) Jun 21. Later Dentastix count as listed: the owner added it Jun 8.</td></tr>
               <tr><td>Owner’s words</td><td>At send: “He gets his Apoquel every evening; I didn’t log the doses.” · Jun 18, on an itching entry: “flare after the chicken on Sunday.” · Jun 28, two entries typed as other: “Tipping ear down”, “Shaking her head - ear is bothering her” <span class="badge">owner’s words · not verified</span> <span class="eng">new: send line, opt-in · other entries shown (CUL-974)</span></td></tr>
             </table>
-            <p class="cansee"><b>This record cannot see:</b> unlogged doses · food from others or found outside · itch severity · the hatched days.</p>
+            <p class="cansee"><b>This record cannot see:</b> unlogged doses · food from others or found outside · itch severity · body condition · itching on days only food was logged · the hatched days.</p>
             <div class="foot"><span><b>Cooper</b> · REYES, Jordan · May 18 – Jul 2, 2026 · <b>Sheet 1 of 9</b> · report 7Q4K · every figure traces to sheets 2–9</span><span class="wm">Culprit</span></div>
           </div>
           <div class="fold"><span>US Letter ends</span></div>
@@ -332,7 +332,7 @@
 
             <div class="flags">
               <div class="fh">2 flags for review</div>
-              <div class="flag"><div class="t">Possible foreign material</div><div class="d"><b>May 23 vomit: “possible plastic fragment”</b> <span class="badge">AI photo read · unconfirmed</span> · photo not retained. <b>Vomiting logged on 5 of 8 logged days before it and 17 of 34 after, latest Jun 30.</b> <span class="eng">engine change: since-flag count</span></div></div>
+              <div class="flag"><div class="t">Possible foreign material</div><div class="d"><b>May 23 vomit: “possible plastic fragment”</b> <span class="badge">AI photo read · unconfirmed</span> · photo not retained. <b>Vomiting was logged from May 14, before this read, and on 17 of 34 logged days since, latest Jun 30.</b> <span class="eng">engine change: since-flag count</span></div></div>
               <div class="flag"><div class="t">Vomiting ongoing</div><div class="d"><b>On 23 of 43 logged days, May 14 – Jun 30</b>, never more than 3 days apart. May 14 is her first record of any kind, so onset is unknown.</div></div>
             </div>
 
@@ -367,11 +367,11 @@
       <li><b>Numbers in black, qualifiers in black.</b> No qualifier is lighter than its number (vet tech). The weight is printed values, not a line, so 2% looks like 2%.</li>
     </ul>
 
-    <h3>What the two reviews changed on these sheets</h3>
-    <div class="col"><p>Two isolated reviews read the first draw of these sheets: a cold read in Dr. Chen's chair (NOT READY on all three, each one or two lines from ready) and an adversarial pass (pass 1 of at most 2, FAIL, with records the draw would mislead on). Every finding is either fixed on the sheets above or carried as a binding rule under B3 in §06. The sheets grew from about 365 to 412 words (dog) and 308 to 334 (cat); each added word is a guard a reviewer showed was missing.</p></div>
+    <h3>What the three reviews changed on these sheets</h3>
+    <div class="col"><p>Three isolated reviews read these sheets. On the first draw: a cold read in Dr. Chen's chair (NOT READY on all three, each one or two lines from ready) and adversarial pass 1 (FAIL, with records the draw would mislead on). On the revised draw: adversarial pass 2, the last one allowed (FAIL on six quiet failures, each a wording or rule edit). Every finding is fixed on the sheets above or carried as a binding rule under B3 in §06. The sheets grew from about 365 to 420 words (dog) and 308 to 336 (cat); each added word is a guard a reviewer showed was missing.</p></div>
     <div class="tablewrap">
       <table class="spec">
-        <thead><tr><th>What the first draw did</th><th>Found by</th><th>Now</th></tr></thead>
+        <thead><tr><th>What a draw did</th><th>Found by</th><th>Now</th></tr></thead>
         <tbody>
           <tr><td>"The food test found no food association" beside the itching (dog) and under "no food could be isolated" (cat)</td><td>both</td><td>Deleted. The scoped wording keeps its limit in the same sentence: no protein reached the threshold, and chicken daily from Jun 8 cannot be tested.</td></tr>
           <tr><td>"The treat ticks and the vomiting days sit close because both are dense"</td><td>adversarial</td><td>Deleted. The engine computed no such reason, and on the fixture 19 of 20 treat days precede a vomit day against about 11 expected. No "because" the engine did not compute.</td></tr>
@@ -380,13 +380,20 @@
           <tr><td>Daily chicken drawn as an outlined "allowed" box; cereal missing</td><td>cold read</td><td>Exposure by protein: chicken and cereal on 26 of 43 logged days, all via Dentastix; salmon its own lane; a blank day is not a clean day.</td></tr>
           <tr><td>"Directed by Dr. A. Chen", "added to the allowed list", no tag on the label read</td><td>cold read</td><td>"Owner-entered" and "owner-listed"; the AI label read is tagged on the chicken claim itself.</td></tr>
           <tr><td>The owner's Jun 18 note and two Jun 28 ear entries typed as other appeared on no sheet</td><td>cold read</td><td>Quoted and marked unverified under Owner's words; the engine half is CUL-974.</td></tr>
-          <tr><td>"Since then: 17 more days" with no denominator; the flag named no material and read as onset</td><td>both</td><td>"Possible plastic fragment"; 5 of 8 logged days before it and 17 of 34 after; never a bare zero.</td></tr>
+          <tr><td>"Since then: 17 more days" with no denominator; the flag named no material and read as onset</td><td>both</td><td>"Possible plastic fragment"; vomiting logged from May 14, before the read, and on 17 of 34 logged days since; never a bare zero, never a before/after pair.</td></tr>
           <tr><td>A dashed line for "no weigh-ins"; a solid bowl that reads as eaten; 44% of the cat's axis hatched</td><td>both</td><td>Words, not a line; the bowl is "offered", open-edged and hatched; the 40 days before her first record shrink behind an axis break.</td></tr>
           <tr><td>Glyphs unexplained; the Jun 5 tuna "ate most" drawn full; letter-spaced headings</td><td>cold read</td><td>A key line under each strip; tuna drawn by intake; no letter-spacing on a printed sheet.</td></tr>
-          <tr><td>Records this draw does not show: Mira's refusals, partial doses, windowed times, four signs, a since-flag zero</td><td>adversarial</td><td>Carried as rules 1 to 11 under B3, to be re-tested on those fixtures by the build's own adversarial passes.</td></tr>
+          <tr><td>Records this draw does not show: Mira's refusals, partial doses, windowed times, four signs, a since-flag zero</td><td>adversarial</td><td>Carried as rules 1 to 12 under B3, to be re-tested on those fixtures by the build's own adversarial passes.</td></tr>
+          <tr><td>The concurrent changes named NexGard, chicken and Apoquel but not the trial diet, so a falling staircase of counts credited the diet</td><td>pass 2</td><td>The trial diet is named first, on sheet 1 and sheet 2.</td></tr>
+          <tr><td>"All via Dentastix" hid the owner-logged roast chicken and Pro Plan inside Dentastix days, resting the not-clean verdict on an AI read; "4 of 154" read as 97% adherence</td><td>pass 2</td><td>The answer line leads with the owner-logged off-list feedings; they draw as heavy ticks; the count is "4 feedings, a floor", with why the later Dentastix count as listed.</td></tr>
+          <tr><td>The cat's food sentence gave a reason the engine never computed, and turned the reader from the treat days</td><td>pass 2</td><td>The engine's own words: chicken is in most of what she is offered, so it can't be isolated. Treats carry 20 of 43 logged days and "a day without a tick is not a day without that food".</td></tr>
+          <tr><td>A before/after count around a foreign-material flag can read as the object passing</td><td>pass 2</td><td>The count since the flag only, with its denominator; a rule against the pair (a cat that stops eating vomits less).</td></tr>
+          <tr><td>Logged days include days only food was logged, so quiet itch days may be days nobody looked</td><td>pass 2</td><td>Named on sheet 1 ("itching on days only food was logged") and on sheet 2's stretch line; today's "meal logging is prompted and habitual" carried as a rule.</td></tr>
+          <tr><td>With nothing off-protein logged, a trial would draw no exposure lane and so no floor line</td><td>pass 2</td><td>Rule 3: in a trial the exposure lane is drawn even when empty, with its floor line.</td></tr>
         </tbody>
       </table>
     </div>
+    <p class="callout"><strong>Ships as stated, erring loud (pass 2's residuals).</strong> "Chicken, fed daily from Jun 8, cannot be tested on this record" is the sheet's inference, not an engine output (the engine names no staple for this dog), and it refuses to clear chicken. The owner's "flare after the chicken" sits on the same sheet as the chicken lane, quoted and unverified. Cereal ticks although the trial food contains rice, because "cereal" is the engine's coarse category. Not printed either way: on Nyx's record 19 of 20 treat days are followed by a vomit day, against about 11 expected; the engine reports only established associations, and whether a sub-threshold pattern may reach a page is the open emerging-signals question, a PM call.</p>
   </section>
 
   <!-- ══════════════════════════════════════════════════════════ -->
@@ -483,7 +490,7 @@
     <div class="bar100" role="img" aria-label="Of 99 scored cells: 34 percent kept intact, 43 percent kept the number but lost its scope, 17 percent dropped, 5 percent distorted.">
       <div style="width:34%;background:#0B7B6C">34% kept</div><div style="width:43%;background:#8A5A00">43% number only</div><div style="width:17%;background:#5F5C7A">17%</div><div style="width:6%;background:#B4123B">5%</div>
     </div>
-    <p class="barlab">The redesign's first draw, before the two reviews, same summarizer prompts, same judge rubric, scored blind to round 1</p>
+    <p class="barlab">The redesign's first draw, before the reviews: same summarizer prompts, same judge rubric, scored blind to round 1</p>
     <div class="bar100" role="img" aria-label="Of 99 scored cells on the redesign's first draw: 46 percent kept intact, 39 percent kept the number but lost its scope, 14 percent dropped, none distorted.">
       <div style="width:46%;background:#0B7B6C">46% kept</div><div style="width:39%;background:#8A5A00">39% number only</div><div style="width:14%;background:#5F5C7A">14%</div>
     </div>
@@ -495,7 +502,7 @@
       <li><b>What it taught:</b> a scope travels only when every copy of the fact carries it (lost 12 of 12 where one of two copies did), and coverage in brackets is pruned, so the revision writes it as the denominator. Sheet 2's scopes appeared in no summary, but its one incomplete line was copied into two of them: sheet 2 is quoted, so it must be exact, and it cannot rescue sheet 1.</li>
       <li><b>Clinic AIs add judgments:</b> one summary called the 68 mg NexGard an underdose for a 32 kg dog, a dosing call the report never makes, and another paired the loose stool with the Pro Plan meal the night before.</li>
     </ul>
-    <p class="todaycap">Limits: one run per fixture, model summarizers rather than clinic software, one judge; the judge's 24 edge calls span 40% to 66% kept. Moot-adjusted, kept rose from 39% to 52% of 88 cells.</p>
+    <p class="limits">Limits: one run per fixture, model summarizers rather than clinic software, one judge; the judge's 24 edge calls span 40% to 66% kept. Moot-adjusted, kept rose from 39% to 52% of 88 cells.</p>
     <p class="barlab">Today's report: the losses that would change a decision</p>
     <div class="tablewrap">
       <table class="spec">
@@ -542,12 +549,12 @@
               <div class="ln"><span class="id">F1</span><span class="t"><b>Chronicity:</b> itching on 16 days, <span class="nw">2026-05-21</span> to <span class="nw">2026-06-25</span> · span 35 days, a floor: this window’s entries start <span class="nw">2026-05-21</span> · owner-logged</span></div>
               <div class="grp">Signs</div>
               <div class="ln"><span class="id">S1</span><span class="t"><b>Itching</b> on 16 of 43 logged days · dates <span class="nw">05-21</span>, <span class="nw">05-22</span>, <span class="nw">05-23</span>, <span class="nw">05-25</span>, <span class="nw">05-26</span>, <span class="nw">05-28</span>, <span class="nw">05-30</span>, <span class="nw">05-31</span>, <span class="nw">06-02</span>, <span class="nw">06-04</span>, <span class="nw">06-06</span>, <span class="nw">06-11</span>, <span class="nw">06-16</span>, <span class="nw">06-18</span>, <span class="nw">06-19</span>, <span class="nw">06-25</span></span></div>
-              <div class="ln"><span class="id">S2</span><span class="t"><b>Itching by stretch:</b> 10 of 15 logged days before <span class="nw">06-05</span> · 1 of 3 in <span class="nw">06-05</span> to <span class="nw">06-07</span> · 5 of 25 from <span class="nw">06-08</span> · Apoquel throughout, no doses logged · NexGard from <span class="nw">06-05</span> · chicken daily from <span class="nw">06-08</span> (Dentastix) · a difference between the stretches cannot be attributed to any one of them alone</span></div>
+              <div class="ln"><span class="id">S2</span><span class="t"><b>Itching by stretch:</b> 10 of 15 logged days before <span class="nw">06-05</span> · 1 of 3 in <span class="nw">06-05</span> to <span class="nw">06-07</span> · 5 of 25 from <span class="nw">06-08</span> · the trial diet from <span class="nw">05-18</span> · NexGard from <span class="nw">06-05</span> · chicken daily from <span class="nw">06-08</span> (Dentastix) · Apoquel throughout, no doses logged · a difference between the stretches cannot be attributed to any one of them alone · logged days include days only food was logged; meal logging is prompted and habitual</span></div>
               <div class="ln"><span class="id">S3</span><span class="t"><b>Loose stool</b> on 1 of 43 logged days (<span class="nw">2026-06-22</span>)</span></div>
               <div class="grp">Diet trial</div>
               <div class="ln"><span class="id">T1</span><span class="t"><b>Trial:</b> Royal Canin Hydrolyzed Protein HP and HP Loaf (hydrolysed soy) from <span class="nw">2026-05-18</span> · day 46 of a 56-day target · directed by Dr. A. Chen (owner-entered)</span></div>
-              <div class="ln"><span class="id">T2</span><span class="t"><b>Not a clean elimination:</b> chicken and cereal on at least 26 of 43 logged trial days, every one through Pedigree Dentastix · the owner added it to the allowed list <span class="nw">2026-06-08</span> · Dentastix lists chicken and cereal (AI label read, unconfirmed)</span></div>
-              <div class="ln"><span class="id">T3</span><span class="t"><b>Off the allowed list:</b> at least 4 of 154 logged feedings · Dentastix <span class="nw">06-02</span> (before listed) · roast chicken <span class="nw">06-14</span>, <span class="nw">06-27</span> · Pro Plan, salmon and chicken, <span class="nw">06-21</span> · a floor, not a total</span></div>
+              <div class="ln"><span class="id">T2</span><span class="t"><b>Not a clean elimination:</b> roast chicken <span class="nw">06-14</span> and <span class="nw">06-27</span> and Pro Plan (salmon, chicken) <span class="nw">06-21</span>, off the allowed list, owner-logged · chicken and cereal on at least 26 of 43 logged trial days via Pedigree Dentastix, which lists them (AI label read, unconfirmed) · the owner added Dentastix to the allowed list <span class="nw">2026-06-08</span></span></div>
+              <div class="ln"><span class="id">T3</span><span class="t"><b>Off the allowed list:</b> 4 feedings logged, a floor · Dentastix <span class="nw">06-02</span> (before listed) · roast chicken <span class="nw">06-14</span>, <span class="nw">06-27</span> · Pro Plan, salmon and chicken, <span class="nw">06-21</span> · the 25 later Dentastix count as listed because the owner added it <span class="nw">06-08</span></span></div>
               <div class="ln"><span class="id">T4</span><span class="t"><b>Trial diet eaten:</b> finished on 42 of 43 logged days; ate most, not all, on <span class="nw">06-24</span> · portions not weighed, so not a measure of intake</span></div>
               <div class="grp">Medication</div>
               <div class="ln"><span class="id">M1</span><span class="t"><b>Apoquel</b> (oclacitinib) 16 mg by mouth once daily · since <span class="nw">2026-04-30</span>, no end recorded · <b>no doses logged</b> · adherence not tracked · the course as recorded, not evidence it was given</span></div>
@@ -645,21 +652,21 @@
 
     <div class="brief"><p class="bid">B3 · a new spec rule</p><h4>The overlay rule: how a stacked chart stays honest</h4>
       <p><strong>Deciding:</strong> the binding rule for any chart that puts food or exposures and signs on one axis.</p>
-      <ol><li><span class="rec">Recommended:</span> separate lanes, one mark shape per lane, a fixed lane order for every pet; unlogged days as a hatch through every lane of daily marks (signs, meals, exposures, doses), never across a recorded course, where it would read as stopped (the panel asked for every lane; this is the one carve-out), with what counts as a logged day set by CUL-1865; exposures as ticks by protein, permitted or not, never bars shaped like the symptom's; the association test's result on the food band, in today's scoped wording and in one sentence with its limit; "shared axis, not shared cause" under the panel. Why: readers saw effects in 16% to 84% of null charts, and every clinical lens raised this before being asked.</li><li>Overlay the series on one chart (a food curve over the vomit bars). Vetoed: a disguised two-axis chart.</li></ol>
+      <ol><li><span class="rec">Recommended:</span> separate lanes, one mark shape per lane, a fixed lane order for every pet; unlogged days as a hatch through every lane of daily marks (signs, meals, exposures, doses, the offered bowl), never across a recorded course, where it would read as stopped (the panel asked for every lane; this is the one carve-out), with what counts as a logged day set by CUL-1865; in a trial, exposures as ticks by protein, permitted or not, with owner-logged off-list foods marked, never bars shaped like the symptom's; without a trial, foods by food, each naming its protein; the association test's result on the food band, in today's scoped wording and in one sentence with its limit; "shared axis, not shared cause" under the panel. Why: readers saw effects in 16% to 84% of null charts, and every clinical lens raised this before being asked.</li><li>Overlay the series on one chart (a food curve over the vomit bars). Vetoed: a disguised two-axis chart.</li></ol>
       <p><strong>Consequence:</strong> a Tier-2 edit adding rule 13 to spec §5.</p></div>
 
-    <div class="callout"><strong>B3 also binds what the reviews found (the cold read; adversarial pass 1 of 2, FAIL on round 2's first draw; the second round trip), fixed on the sheets or carried here.</strong>
+    <div class="callout"><strong>B3 also binds what the reviews found (the cold read; both adversarial passes, each FAIL on the draw it read; the second round trip), fixed on the sheets or carried here.</strong>
       <ol class="tight">
         <li><b>Intake has five states</b> (all, most, some, picked at, refused), refused its own glyph, the worst meal of the day drawn; a free-fed bowl is drawn as offered, never as eaten, and hatches on unlogged days. Mira's refused trial must never draw as "ate some".</li>
         <li><b>An intake or refusal flag is never cut to one sentence:</b> its counts, dates, stop reason, weight change, "not a preference" and the feline 48 to 72 hour window all stay.</li>
-        <li><b>Absence is per lane.</b> An exposure lane says a blank day is not a clean day, and the answer line never says "clean": with nothing off-list recorded it says the record cannot establish a clean elimination (diet-trial spec §5.2).</li>
+        <li><b>Absence is per lane.</b> Every food and exposure lane says a blank day is not a clean day, and in a trial the exposure lane is drawn even when empty, with that line. The answer line never says "clean": with nothing off-list recorded it says the record cannot establish a clean elimination (diet-trial spec §5.2).</li>
         <li><b>Doses:</b> dose lanes hatch; given, partial, refused and unconfirmed each get a glyph; counts use Appendix D's split and CUL-1209's words; a course reads "as recorded, not evidence it was given".</li>
         <li><b>Sentences:</b> today's scoped wording; no trend verb where coverage differs; counts on either side of each change line; no change credited to one cause; no "because" the engine did not compute; a claim and its limit in one sentence, so a summarizer cannot split them.</li>
-        <li><b>Counts:</b> every count carries its logged days, the since-flag count included, which never prints as a bare zero; a max-gap claim counts only gaps whose days were all logged.</li>
+        <li><b>Counts:</b> every count carries its logged days, the since-flag count included, which never prints as a bare zero and never as a before/after pair: fewer entries after a foreign-material flag is not evidence it passed (a cat that stops eating vomits less). A max-gap claim counts only gaps whose days were all logged.</li>
         <li><b>Time:</b> a windowed or estimated time draws hollow across its window; same-minute heaps are flagged, never drawn as physiology.</li>
         <li><b>Labels</b> sit in the margin or an empty stretch, never over a mark; every lane carries a count; lane order is fixed, flagged signs first.</li>
-        <li><b>Today's guards carry over:</b> the scope basis and custom-range count, recorded conditions, the Noticed line, the multi-cat household line, "not a measure of recovery", the timing line where it prints today, the named foreign material, and owner entries typed as other (CUL-974).</li>
-        <li><b>A start that is not recorded</b> draws with an open edge; a food first logged mid-window starts at its first log, never at the window's edge.</li>
+        <li><b>Today's guards carry over:</b> the scope basis and custom-range count, recorded conditions, the Noticed line, the multi-cat household line, "not a measure of recovery", the timing line where it prints today, "meal logging is prompted and habitual", the named foreign material, and owner entries typed as other (CUL-974).</li>
+        <li><b>A start that is not recorded</b> draws with an open edge; a food first logged mid-window starts at its first log, never at the window's edge. An axis break may shorten only the stretch before a pet's first record, never a gap inside it.</li>
         <li><b>No letter-spaced headings</b> on a printed sheet: an extractor reads "M E D I C A T I O N".</li>
         <li><b>Every copy of a fact carries its scope, or the fact appears once;</b> coverage is the denominator ("10 of 15 logged days"), never a bracket. The round trip lost a scope 12 of 12 times where one of two copies carried it, and "(20 logged)" 3 of 3.</li>
       </ol>
@@ -839,7 +846,9 @@
     y += 14;
     // exposures by protein, not by permission: a permitted food that carries a protein ticks like any other
     out += rowLabel(y + 9, 'Chicken, cereal');
-    DOG.cc.forEach((v, i) => { if (v) out += `<rect x="${X(i) + dx / 2 - 1.2}" y="${y + 0.5}" width="2.4" height="12" fill="${INK}"/>`; });
+    // a heavy tick: an owner-logged food off the allowed list that day, so the verdict never rests on the AI label read alone
+    const OFF = [15, 27, 34, 40];
+    DOG.cc.forEach((v, i) => { if (v) { const w = OFF.includes(i) ? 5 : 2.4; out += `<rect x="${X(i) + dx / 2 - w / 2}" y="${y + 0.5}" width="${w}" height="12" fill="${INK}"/>`; } });
     y += 14;
     out += rowLabel(y + 9, 'Salmon');
     DOG.salmon.forEach((v, i) => { if (v) out += `<rect x="${X(i) + dx / 2 - 1.2}" y="${y + 0.5}" width="2.4" height="12" fill="${INK}"/>`; });
@@ -872,7 +881,7 @@
     out += label(LA, y + 8, 'No diet trial · no medication logged', { size: 7.2 });
     y += 14;
     out += bandHead(y, 'SIGNS', W); y += 15;
-    out += label(LX, y + 7, 'Vomiting on 23 of 43 logged days, May 14 – Jun 30 · 5 of 8 logged days before May 23, 17 of 34 after', { size: 7.2, weight: 600 });
+    out += label(LX, y + 7, 'Vomiting on 23 of 43 logged days, May 14 – Jun 30 · on 17 of 34 logged days after May 23', { size: 7.2, weight: 600 });
     y += 11;
     let h0 = y;
     out += rowLabel(y + 9, 'Vomiting');
@@ -888,26 +897,28 @@
     });
     y += 20;
     out += bandHead(y, 'FOOD TAKEN IN', W); y += 15;
-    out += label(LX, y + 7, 'No single food reached the association threshold: chicken is in her all-day kibble, so treat days cannot be tested apart from it', { size: 7.2, weight: 600 });
+    out += label(LX, y + 7, 'No single food reached the association threshold; chicken is in most of what she is offered, so it can’t be isolated', { size: 7.2, weight: 600 });
     y += 11;
     h0 = y;
     // offered, never drawn as eaten; the start is not recorded, so the left edge stays open
     out += rowLabel(y + 10, 'Offered all day');
     const x0 = X(0), x1 = X(N - 1) + dx;
     out += `<path d="M${x0} ${y + 1} H${x1} V${y + 15} H${x0}" fill="none" stroke="${INK}" stroke-width="1.2"/>`;
-    out += label(LA, y + 10.6, 'duck and chicken kibble · start not recorded · intake not observed', { size: 7, weight: 600 });
     y += 18;
-    out += rowLabel(y + 8.5, 'Treats, 20 days');
+    out += rowLabel(y + 8.5, 'Treats');
     CAT.treat.forEach((v, i) => { if (v) out += `<rect x="${X(i) + dx / 2 - 0.7}" y="${y + 1}" width="1.4" height="10" fill="${INK}"/>`; });
     y += 14;
-    out += rowLabel(y + 8.5, 'Tuna, 3 meals');
+    out += rowLabel(y + 8.5, 'Tuna meals');
     CAT.tuna.split('').forEach((m, i) => {
       const cx = X(i) + dx / 2, cy = y + 6;
       if (m === 'a') out += `<circle cx="${cx}" cy="${cy}" r="2.6" fill="${INK}"/>`;
       if (m === 'm') out += `<circle cx="${cx}" cy="${cy}" r="2.6" fill="#fff" stroke="${INK}" stroke-width="0.9"/><path d="M${cx} ${cy - 2.6} A2.6 2.6 0 0 1 ${cx} ${cy + 2.6} Z" fill="${INK}"/>`;
     });
     y += 14; hatch.push([h0, y]);
-    y += 2;
+    out += label(LX, y + 8, 'Offered all day: duck and chicken kibble, start not recorded, intake not observed.', { size: 6.8, fill: INK2 });
+    y += 10;
+    out += label(LX, y + 8, 'Temptations (chicken) on 20 of 43 logged days · Fancy Feast tuna on 3 · a day without a tick is not a day without that food.', { size: 6.8, fill: INK2 });
+    y += 13;
     // no weigh-ins: said in words, never a line (a flat line reads as "stable")
     out += rowLabel(y + 8.5, 'Weight, kg');
     out += label(LA, y + 8.6, 'no weigh-ins recorded', { size: 7.2, weight: 600 });
@@ -926,7 +937,7 @@
     ax += `<line x1="${X(0)}" y1="${bottom}" x2="${X(0)}" y2="${bottom + 3}" stroke="${INK}" stroke-width="0.6"/>` + txt(X(0), bottom + 11, 'Apr 4', { size: 7, anchor: 'start' });
     for (let i = B; i < N; i += 7) ax += `<line x1="${X(i)}" y1="${bottom}" x2="${X(i)}" y2="${bottom + 3}" stroke="${INK}" stroke-width="0.6"/>` + txt(X(i), bottom + 11, fmt(iso(CAT.start, i)), { size: 7, anchor: i === B ? 'start' : 'middle' });
     const H = bottom + 15;
-    return svgOpen(W, H, 'Nyx, Apr 4 to Jul 2. Apr 4 to May 13 is shortened behind an axis break: no entries. Vomiting on 23 of 43 logged days from May 14 to Jun 30, 5 of 8 logged days before May 23 and 17 of 34 after; possible plastic fragment May 23, AI photo read, unconfirmed; AI photo reads food to Jun 6, bile Jun 9 to 18, hair Jun 21, none legible after; duck and chicken kibble offered all day, start not recorded, intake not observed; Temptations chicken treats on 20 days; tuna 3 meals, one eaten mostly; no weigh-ins.') + g + rule + out + ax + '</svg>';
+    return svgOpen(W, H, 'Nyx, Apr 4 to Jul 2. Apr 4 to May 13 is shortened behind an axis break: no entries. Vomiting on 23 of 43 logged days from May 14 to Jun 30, on 17 of 34 logged days after May 23; possible plastic fragment May 23, AI photo read, unconfirmed; AI photo reads food to Jun 6, bile Jun 9 to 18, hair Jun 21, none legible after; duck and chicken kibble offered all day, start not recorded, intake not observed; Temptations chicken treats on 20 days; tuna 3 meals, one eaten mostly; no weigh-ins.') + g + rule + out + ax + '</svg>';
   }
 
   const mount = (name, html) => document.querySelectorAll(`[data-chart="${name}"]`).forEach(el => { el.innerHTML = html; });
