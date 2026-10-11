@@ -1,8 +1,10 @@
 # The vomit engine, 10x: discovery kickoff and mock round 1
 
 **Date:** 2026-10-11
+**One thing (re-ask):** D2 L1 — Types: a function can only use what it is handed (from 2026-10-10, PR-09's stack) · check: pending
+**One thing:** D3 L1 — Reading a test: a test that reads the real clock passes or fails by the hour it runs · check: pending
 
-DISCOVERY session on [CUL-1765](https://linear.app/projectnyx/issue/CUL-1765), opened from the PM's prompt rather than an issue. No app or engine code. Shipped via #1179.
+DISCOVERY session on [CUL-1765](https://linear.app/projectnyx/issue/CUL-1765), opened from the PM's prompt rather than an issue. No app or engine code. Shipped via #1179 (merged on the PM's `/wrap and merge`; the seven rulings stay open on the issue).
 
 ## The ask
 
@@ -35,7 +37,7 @@ Kickoff: two Explore/general agents mapped the read's fields to the UI and the p
 
 - [CUL-1782](https://linear.app/projectnyx/issue/CUL-1782): a cat's plant-material read gets the calm template and no lily question (first build after 1.2.0).
 - [CUL-1783](https://linear.app/projectnyx/issue/CUL-1783): a model-ID upgrade on any Claude call site breaks it silently.
-- [CUL-1784](https://linear.app/projectnyx/issue/CUL-1784): the IntakeQuestion test fails in the hour after local midnight (it reddened this PR's non-UTC job).
+- [CUL-1784](https://linear.app/projectnyx/issue/CUL-1784): the IntakeQuestion test fails in the hour after local midnight in each zone the non-UTC job runs (about 10:00 to 11:15 UTC). It reddened this PR's job twice; one re-run at 11:21 UTC passed.
 - [CUL-1785](https://linear.app/projectnyx/issue/CUL-1785): the shipped "Recognizable food 6h" line, waiting on D6.
 - [CUL-1786](https://linear.app/projectnyx/issue/CUL-1786): a vet-labelled photo set, the labelling successor to the canceled CUL-1312, waiting on D10.
 - [CUL-1787](https://linear.app/projectnyx/issue/CUL-1787): the Trust & Safety confirmation for D11.
