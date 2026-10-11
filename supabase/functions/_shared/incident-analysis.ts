@@ -1478,6 +1478,30 @@ export const LIVE_PIPELINE_DEPS: PipelineDeps = {
   vision: runVisionCall,
 }
 
+// ── A run that read no photo keeps the photo finding already on the row ─────────────────────
+// Shared by the two writers that escalate over a stored read without reading the photo: the
+// floor-only run and the gated branch (cap, flag off, the owner's decline; CUL-552 PR 2,
+// adversarial pass). Neither may take what the photo showed off the card: the cached
+// visual_flags are written back, the stored contextual flags are kept, and the read's words
+// still lead with the photo finding. An owner edit leaves the cached visual_flags stale on
+// purpose (Pattern 7), so an edited row's lead comes from its structured columns, the owner's
+// word (adversarial D5). presentFlagsFromStructured names foreign material
+// 'foreign_material'; the read's words know it as 'suspected_foreign_material'.
+export function storedPhotoFinding<TFlag extends string>(
+  descriptor: Pick<IncidentDescriptor<IncidentAnalysisBase, TFlag>, 'presentFlagsFromStructured'>,
+  existing: Record<string, unknown> & { edited_at?: string | null } | null,
+  cached: Record<string, unknown> | null,
+  contextualFlags: readonly TFlag[],
+): { visualFlags: string[]; leadFlags: string[]; storedContextual: TFlag[]; contextual: TFlag[] } {
+  const visualFlags = Array.isArray(cached?.visual_flags) ? (cached!.visual_flags as string[]) : []
+  const storedContextual = Array.isArray(cached?.contextual_flags) ? (cached!.contextual_flags as TFlag[]) : []
+  const leadFlags = existing?.edited_at
+    ? descriptor.presentFlagsFromStructured(existing).map((f) => (f === 'foreign_material' ? 'suspected_foreign_material' : f))
+    : visualFlags
+  const contextual = [...storedContextual, ...contextualFlags.filter((f) => !storedContextual.includes(f))]
+  return { visualFlags, leadFlags, storedContextual, contextual }
+}
+
 // ── EN-4's floor-only writes (Engines v3 PR-28, CUL-1134) ──────────────────────
 // docs/nyx-incident-tiers-requirements.md §8. Both are reached only through a request mode the
 // pipeline has already refused unless the descriptor has a floor and its key and the tier key
@@ -1519,16 +1543,7 @@ export async function writeFloorOverStoredRead<TAnalysis extends IncidentAnalysi
     .eq('pet_id', p.petId)
     .maybeSingle<{ visual_flags: string[] | null; contextual_flags: string[] | null }>()
   if (cachedErr || !cached) throw new Error(`Floor read of the stored flags failed${cachedErr ? `: ${cachedErr.message}` : ''}`)
-  const storedContextual = (cached.contextual_flags ?? []) as TFlag[]
-  // An owner edit leaves the cached visual_flags stale on purpose (Pattern 7), so an edited
-  // row's photo finding comes from its structured columns, the owner's word (adversarial D5).
-  // presentFlagsFromStructured names foreign material 'foreign_material'; the read's words
-  // know it as 'suspected_foreign_material'.
-  const visualFlags = cached.visual_flags ?? []
-  const leadFlags = p.existing.edited_at
-    ? descriptor.presentFlagsFromStructured(p.existing).map((f) => (f === 'foreign_material' ? 'suspected_foreign_material' : f))
-    : visualFlags
-  const contextual = [...storedContextual, ...p.contextualFlags.filter((f) => !storedContextual.includes(f))]
+  const { visualFlags, leadFlags, storedContextual, contextual } = storedPhotoFinding(descriptor, p.existing, cached, p.contextualFlags)
 
   const next = raisedTier(tierForVerdict('worth_a_call'), { recommendation: 'worth_a_call', contextual_flags: contextual }, p.minTier)
   const addsFlag = contextual.length > storedContextual.length
@@ -1942,7 +1957,11 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //    no download, no model call; the branch below still writes the escalation.
     let gate: GateState = { allow: true }
     if (hasPhoto) {
-      if (!(await readAiBoundaryConsent(adminClient, user.id))) {
+      //    The caller's yes counts only for the caller's own pet. Under today's RLS the two are
+      //    always the same account; once a second person can reach a pet (B-292) the owner's
+      //    answer must join the caller's (CUL-552 binding rule 3), so until then a mismatch
+      //    fails closed rather than spending the caller's yes on someone else's pet.
+      if (ownerId !== user.id || !(await readAiBoundaryConsent(adminClient, user.id))) {
         gate = { allow: false, reason: 'consent_declined' }
       } else {
         const { flagEnabled, caps } = await readGateConfig(userClient, descriptor)
@@ -1980,21 +1999,27 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
         // no structured data of its own to contribute, so an existing row has nothing
         // for it to overwrite and everything for it to lose.
         const preserveStructured = humanEdited || existingRealAnalysis || existing !== null
+        // What the photo already showed stays on the card (CUL-552 PR 2, adversarial pass):
+        // with the owner's decline this branch is every withdrawn owner's re-read, and writing
+        // `visual_flags: []` here replaced "fresh blood" with the context-only sentence.
+        const kept = storedPhotoFinding(descriptor, existing, existing, contextualFlags)
         const readText = selectReadText(copy, {
           petName,
           recommendation: cappedRec, // worth_a_call
-          contextualFlags,
-          visualFlags: [],
+          contextualFlags: kept.contextual,
+          visualFlags: kept.leadFlags,
           modelReadText: null,
           photoUnreadable: false,
           hasPhoto,
+          // A stored call with no flag behind it was the model's own: the photo finding still leads.
+          modelEscalated: !!existing && !existing.edited_at && kept.storedContextual.length === 0 && kept.visualFlags.length === 0 && existing.recommendation === 'worth_a_call',
         })
         // A capped run read no photo, so it never carries leave to wait (CUL-1611: a settled read).
         const readFields: AnalysisReadFields<TFlag> = withMayWait(tieredReadFields({
           recommendation: cappedRec,
           read_text: readText,
-          visual_flags: [],
-          contextual_flags: contextualFlags,
+          visual_flags: kept.visualFlags,
+          contextual_flags: kept.contextual,
           status: 'completed',
           error: null,
         }, tiersOn, minTier), null, existing?.may_wait)

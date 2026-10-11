@@ -11,13 +11,13 @@
       "ref": "CUL-552",
       "since": "2026-10-11",
       "reason": "CUL-552 PR 2 (CUL-1810) consent HOLD (client-first deploy ordering): this code reads the owner's ai_consent row before every Anthropic call and fails closed on a missing row. Today no account has a row, because the client that asks for one (the consent sheet, the first-open sheet, the backstop and the Settings toggle) is CUL-552 PR 3. Deploying this before that client build is live would turn off every photo read, every model-phrased Signal sentence, every Ask answer and every photo extraction for every account, with no way for an owner to say yes. Lift this hold (delete this entry) in the PR that ships PR 3's client, once that build is the live one; the merge that lifts it deploys the function. Holds on the same ref, lifted together: analyze-vomit, analyze-stool, ask, extract-food-from-photo, extract-medication-from-photo, generate-signal.",
-      "fingerprint": "sha256:b55894b74731d30c1902cc1eadd5e3e4057df9d83b02540f0440671ec2a08300"
+      "fingerprint": "sha256:62ecedd2800d17c5091b57c2632cfee4d2aeb1bcffd047a65db6f8e9740c0411"
     },
     "analyze-vomit": {
       "ref": "CUL-552",
       "since": "2026-10-11",
       "reason": "CUL-552 PR 2 (CUL-1810) consent HOLD (client-first deploy ordering): this code reads the owner's ai_consent row before every Anthropic call and fails closed on a missing row. Today no account has a row, because the client that asks for one (the consent sheet, the first-open sheet, the backstop and the Settings toggle) is CUL-552 PR 3. Deploying this before that client build is live would turn off every photo read, every model-phrased Signal sentence, every Ask answer and every photo extraction for every account, with no way for an owner to say yes. Lift this hold (delete this entry) in the PR that ships PR 3's client, once that build is the live one; the merge that lifts it deploys the function. Holds on the same ref, lifted together: analyze-vomit, analyze-stool, ask, extract-food-from-photo, extract-medication-from-photo, generate-signal.",
-      "fingerprint": "sha256:27145206e20c77744a48b27a4498d72179452a49685771de64251a379a281621"
+      "fingerprint": "sha256:d71c107724c2e6f2bf921a1d9806d316744405b1a947811a64a1a1a727d7c1da"
     },
     "ask": {
       "ref": "CUL-552",

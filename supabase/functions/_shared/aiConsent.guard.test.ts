@@ -16,7 +16,8 @@
 //   extract-*-from-photo/index.ts     the pins below
 //
 // Blind spots, stated so they do not read as coverage: a model call through a third-party
-// SDK that names neither the endpoint nor the key would not be discovered, and nothing here
+// SDK that names none of the endpoint, the key or the two headers would not be discovered,
+// nor would one in a `lib/` module a function imports (none calls a model today), and nothing here
 // proves the gate's result is USED beyond the order pins (the per-file suites do that).
 
 import { assertEquals, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
@@ -32,7 +33,10 @@ const REGISTERED: Record<string, string> = {
   'extract-medication-from-photo/index.ts': 'medication extraction: feature_disabled before the gate config, the counter and the download',
 }
 
-const REACHES_ANTHROPIC = /api\.anthropic\.com|ANTHROPIC_API_KEY/
+// The endpoint, the key, and the two headers every Anthropic request must carry: a URL or
+// a key name can be built out of pieces, the mandatory `anthropic-version` header and the
+// `x-api-key` header far less plausibly (rls-privacy-reviewer, proved by mutation).
+const REACHES_ANTHROPIC = /api\.anthropic\.com|ANTHROPIC_API_KEY|anthropic-version|x-api-key/i
 
 async function read(rel: string): Promise<string> {
   return blankComments(await Deno.readTextFile(new URL(rel, ROOT)))

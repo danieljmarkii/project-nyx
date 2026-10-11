@@ -61,6 +61,8 @@ interface World {
   downloads: number
   // The event was logged without a photo.
   noPhoto?: boolean
+  // The descriptor carries a photo-finding contextual sentence (vomit's and stool's do).
+  photoFindingCopy?: boolean
   aiReads: number
   aiWriteAttempts: number
   rpcCalls: number
@@ -232,7 +234,9 @@ function descriptorFor(w: World): IncidentDescriptor<TestAnalysis, Flag> {
   parseToolResult: () => null, // the model is injected as a parsed result
     appearsToShowSubject: (a) => a.appears,
     computeContextualFlags: () => Promise.resolve(w.contextFlags),
-    copy: COPY,
+    copy: w.photoFindingCopy
+      ? { ...COPY, contextualWithPhotoFinding: (pet, flags, visual) => `PHOTO_CTX:${pet}:${flags.join(',')}:${visual.join(',')}` }
+      : COPY,
     buildStructuredValues: (a) => ({
       ai_raw_payload: a,
       blood_col: a?.blood ?? null,
@@ -930,13 +934,58 @@ for (const [label, consent] of DECLINED_WORLDS) {
 }
 
 Deno.test('pipeline CUL-552 — the consent read is service-role, one scope, keyed on the JWT-verified uid', async () => {
-  // The caller the JWT names is not the pet's owner here, so a read keyed on the pet's
-  // owner (or on anything but getUser's id) would find the owner's yes and read the photo.
-  const w = makeWorld({ callerUid: 'caller-9', vision: () => CLEAN })
+  const w = makeWorld({ vision: () => CLEAN })
   await run(w)
-  assertEquals(w.consentReads, [{ filters: { user_id: 'caller-9', scope: 'ai_boundary' }, client: 'admin' }])
+  assertEquals(w.consentReads, [{ filters: { user_id: 'owner-1', scope: 'ai_boundary' }, client: 'admin' }])
+})
+
+Deno.test('pipeline CUL-552 — a caller who is not the pet\'s owner fails closed, whatever the owner said', async () => {
+  // Unreachable under today's RLS (the caller is always the owner). Once it is reachable
+  // (B-292), the caller's yes must not be spent on someone else's pet, and the owner's yes
+  // must not be borrowed by the caller: neither answer alone opens the read.
+  const w = makeWorld({ callerUid: 'caller-9', consent: { user_id: 'owner-1', scope: 'ai_boundary', granted: true }, vision: () => CLEAN })
+  await run(w)
+  assertEquals(w.consentReads, [])
   assertStrictEquals(w.visionCalls, 0)
+  assertStrictEquals(w.downloads, 0)
   assertStrictEquals(w.row?.status, 'read_disabled')
+})
+
+Deno.test('pipeline CUL-552 — withdrawal after a bloody read, then a context flag: the photo finding stays on the card', async () => {
+  // The adversarial pass's counterexample: the gated branch wrote visual_flags [] and the
+  // context-only sentence over a read that had named fresh blood.
+  const w = makeWorld({
+    consent: { user_id: 'owner-1', scope: 'ai_boundary', granted: false },
+    row: { recommendation: 'worth_a_call', status: 'completed', blood_col: 'yes', read_text: 'MODEL: blood', visual_flags: ['blood'], contextual_flags: [] },
+    contextFlags: ['ctx_flag'],
+    photoFindingCopy: true,
+    vision: () => CLEAN,
+  })
+  await run(w)
+  assertStrictEquals(w.visionCalls, 0)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  // The words still lead with what the photo showed (the shared photo-finding read), never
+  // the context-only sentence a photo-less log gets.
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:ctx_flag:blood')
+})
+
+Deno.test('pipeline CUL-552 — an owner-edited row keeps the owner\'s word as the lead, and its stored context flags', async () => {
+  const w = makeWorld({
+    consent: null,
+    row: { recommendation: 'worth_a_call', status: 'completed', edited_at: '2026-09-20T00:00:00Z', blood_col: 'yes', visual_flags: [], contextual_flags: ['ctx_flag'] },
+    contextFlags: ['ctx_flag'],
+    photoFindingCopy: true,
+    vision: () => CLEAN,
+  })
+  await run(w)
+  assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+  assertStrictEquals(w.row?.edited_at, '2026-09-20T00:00:00Z')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  // The owner's structured word (blood_col 'yes') leads, not the stale cached flags.
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:ctx_flag:blood')
 })
 
 Deno.test('pipeline CUL-552 — granted: the read runs exactly as before (the gate is not shut everywhere)', async () => {
