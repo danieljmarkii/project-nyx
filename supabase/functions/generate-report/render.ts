@@ -945,10 +945,28 @@ function proteinWeekTotal(t: import('./report.ts').ProteinTimeline, w: number): 
  */
 export const OFF_DIET_ZERO_MIN_MEAL_DAYS = Math.ceil(COVERAGE_FLOOR * 7)
 
-/** Whether a zero-feeding week was observed densely enough to print as a measured `0`. One
- *  predicate for the bars, the alt text and the note, so the three cannot drift. */
-function offDietZeroIsMeasured(t: import('./report.ts').ProteinTimeline, w: number): boolean {
-  return (t.mealDaysByBucket[w] ?? 0) >= OFF_DIET_ZERO_MIN_MEAL_DAYS
+/**
+ * What one column of the off-diet chart is allowed to say. ONE classifier for the bars, the alt
+ * text and the notes, so the three cannot drift (CUL-1779):
+ *   • `outside` — no day of the week is in the chart's scope (a week before or after the trial's
+ *     evidence range). The off-diet set cannot hold a feeding there, so nothing is drawn.
+ *   • `bar`     — off-diet feedings were recorded; the count is a floor, never a total.
+ *   • `zero`    — a measured clean week: enough meal-days AND the trial module permits a clean read.
+ *   • `unread`  — no off-diet feeding, but the week cannot be read as clean: too few meal-days, or
+ *                 page one withholds the clean-record statement (`zeroWithheld`).
+ */
+type OffDietWeek = 'outside' | 'bar' | 'zero' | 'unread'
+function offDietWeek(t: import('./report.ts').ProteinTimeline, w: number): OffDietWeek {
+  if ((t.scopeDaysByBucket[w] ?? 0) === 0 && proteinWeekTotal(t, w) === 0) return 'outside'
+  if (proteinWeekTotal(t, w) > 0) return 'bar'
+  if (!t.zeroWithheld && (t.mealDaysByBucket[w] ?? 0) >= OFF_DIET_ZERO_MIN_MEAL_DAYS) return 'zero'
+  return 'unread'
+}
+
+/** "5/7 d" — the meal-days of a week over the days it covers in scope (the cold read's per-column
+ *  denominator, CUL-1779). Printed under every in-scope column, so a `0` always carries its coverage. */
+function offDietDayCount(t: import('./report.ts').ProteinTimeline, w: number): string {
+  return `${t.mealDaysByBucket[w] ?? 0}/${t.scopeDaysByBucket[w] ?? 0} d`
 }
 
 function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string {
@@ -1020,7 +1038,10 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
         )
       }
       parts.push(`<text class="cap num" x="${cx.toFixed(1)}" y="${(yFor(total) - 5).toFixed(1)}" text-anchor="middle">${total}</text>`)
-    } else if (offDietZeroIsMeasured(t, i)) {
+    } else if (offDietWeek(t, i) === 'outside') {
+      // Outside the chart's scope: no marker at all. The off-diet set cannot hold a feeding here, so
+      // any glyph — a nub or a dash — would describe a week the chart never looked at.
+    } else if (offDietWeek(t, i) === 'zero') {
       // A CLEAN week — meals were logged on enough of its days, nothing off-diet was recorded. A
       // measured zero, drawn as the symptom chart's observed-zero nub so "empty" reads the same
       // across every chart on the page.
@@ -1038,17 +1059,28 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
     }
   }
   parts.push(weekAxisLabels(t.weekStartDates, L, slot, n, BASE))
-  // The alt text draws the same three-way distinction the bars do — a week the diet was not observed
-  // is named as unlogged, never voiced as a zero (B-497; the symptom chart's aria does the same).
+  // The day count under every in-scope column (CUL-1779, cold read): a `0` read without its coverage
+  // looked identical at 4 of 7 days and at 7 of 7, and a bar on a thinly logged week read as low
+  // exposure. Every column now carries the meal-days it rests on.
+  for (let i = 0; i < n; i++) {
+    if (offDietWeek(t, i) === 'outside') continue
+    parts.push(`<text class="xl dc num" x="${centerX(i).toFixed(1)}" y="${BASE + 28}" text-anchor="middle">${offDietDayCount(t, i)}</text>`)
+  }
+  // The alt text draws the same distinctions the bars do, and carries the same day counts — a week
+  // that cannot be read as clean is never voiced as a zero (B-497; the symptom chart's aria does the same).
   const ariaWeeks = Array.from({ length: n }, (_, i) => {
-    if (weekTotal(i) > 0) return String(weekTotal(i))
-    if (offDietZeroIsMeasured(t, i)) return '0'
     const md = t.mealDaysByBucket[i] ?? 0
-    return md === 0 ? 'not logged' : `meals logged on ${md} day${md === 1 ? '' : 's'} only`
+    const of = `meals logged on ${md} of ${t.scopeDaysByBucket[i] ?? 0} days`
+    switch (offDietWeek(t, i)) {
+      case 'outside': return 'outside the trial'
+      case 'bar': return `${weekTotal(i)} (${of})`
+      case 'zero': return `0 (${of})`
+      case 'unread': return `not read as clean (${of})`
+    }
   }).join(', ')
   const aria = `Off-diet protein exposure per week: ${ariaWeeks}.`
   // print-color-adjust:exact inherits to the pattern fills so the bars survive a default clinic printer.
-  return `<svg viewBox="0 0 648 148" role="img" aria-label="${h(aria)}" style="-webkit-print-color-adjust:exact;print-color-adjust:exact;"><defs>${defs}</defs>${parts.join('')}</svg>`
+  return `<svg viewBox="0 0 648 160" role="img" aria-label="${h(aria)}" style="-webkit-print-color-adjust:exact;print-color-adjust:exact;"><defs>${defs}</defs>${parts.join('')}</svg>`
 }
 
 /** Capitalise a protein label for the legend ("chicken" → "Chicken"), leaving multi-word casing alone. */
@@ -1296,16 +1328,32 @@ function proteinTimelineSection(snap: ReportSnapshot): string {
   // twin note: the protein SVG's viewBox has no vertical room for a legend line, and growing it would
   // change chart geometry (which wants its own PNG cold read) — an HTML caption is also more legible
   // to a screen reader. The two notes read identically to the reader; only their host element differs.
-  const anyUnobservedWeek = t.weekStartDates.some((_, i) => proteinWeekTotal(t, i) === 0 && !offDietZeroIsMeasured(t, i))
-  const noDataNote = anyUnobservedWeek
-    ? `<div class="subnote">&ndash; marks a week with meals logged on fewer than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} of its days &mdash; too few to read as a week without off-diet food.</div>`
+  const weeks = t.weekStartDates.map((_, i) => offDietWeek(t, i))
+  const scopeSpan = `${fmtDay(t.scopeStartDate)} &ndash; ${fmtDay(t.scopeEndDate)}`
+  // The legend shows the marker as DRAWN (cold read: the note printed a bare dash while the chart
+  // drew a dashed box) — same class, so it prints the same way.
+  // `.key` sizes it: `.trend svg` otherwise stretches every svg in the block to the chart's width.
+  const unreadGlyph =
+    `<svg class="key" viewBox="0 0 16 10" aria-hidden="true"><rect class="nolog" x="1" y="1" width="14" height="8" rx="2"/></svg>`
+  const dayCountNote = `<div class="subnote">Under each date: days with a meal logged, of the days that week ${
+    t.trialScoped ? `covers inside the trial (${scopeSpan})` : 'covers'
+  }. A treat alone does not count as a meal.</div>`
+  const noDataNote = weeks.includes('unread')
+    ? t.zeroWithheld
+      ? `<div class="subnote">${unreadGlyph} &ndash; marks a week with no off-diet feeding recorded that is not read as clean: the clinical summary withholds the trial&rsquo;s clean-record statement, so no week here is drawn as a zero.</div>`
+      : `<div class="subnote">${unreadGlyph} &ndash; marks a week with meals logged on fewer than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} of its 7 days &mdash; too few to read as a week without off-diet food.</div>`
+    : ''
+  const outsideNote = weeks.includes('outside')
+    ? `<div class="subnote">Weeks with no day count fall outside the trial (${scopeSpan}); this chart counts only feedings inside it.</div>`
     : ''
   return `
   <div class="sec">
     <h2>Off-diet protein exposure over time</h2>
     <div class="trend">
       ${proteinTimelineChart(t)}
+      ${dayCountNote}
       ${noDataNote}
+      ${outsideNote}
       <div class="ptlegend">${legend}</div>
       <div class="subnote">${num(t.totalFeedings)} off-diet feeding${
         t.totalFeedings === 1 ? '' : 's'
@@ -9507,6 +9555,7 @@ const STYLE = `
   .trend .big .delta{font-size:11px;color:var(--muted);margin-top:1px;}
   .trend .big .delta b{color:var(--ink);font-weight:700;}
   .trend svg{display:block;width:100%;height:auto;margin-top:4px;}
+  .trend svg.key{display:inline-block;width:16px;height:10px;margin:0 3px 0 0;vertical-align:-1px;}
   .trend .subnote{font-size:11px;color:var(--muted);margin:2px 0 6px;}
   svg .grid{stroke:var(--hair);stroke-width:1;}
   svg .axis{stroke:var(--ink);stroke-width:1.25;}

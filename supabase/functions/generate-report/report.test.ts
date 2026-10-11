@@ -3171,8 +3171,87 @@ Deno.test('CUL-1779 — the counterexample, end to end: one logged day a week ne
   assert.ok(svg, 'the off-diet chart rendered')
   assert.ok(!/class="nub"/.test(svg![0]), 'no week of this record draws the measured-zero nub')
   assert.equal((svg![0].match(/class="nolog"/g) ?? []).length, 7, 'the seven treat-free weeks draw the not-observed marker')
-  assert.ok(/aria-label="Off-diet protein exposure per week: meals logged on 1 day only, meals logged on 1 day only, 1,/.test(svg![0]), 'the alt text never voices a thin week as 0')
+  assert.ok(
+    svg![0].includes('per week: not read as clean (meals logged on 1 of 7 days), not read as clean (meals logged on 1 of 7 days), 1 (meals logged on 1 of 7 days),'),
+    'the alt text never voices a thin week as 0',
+  )
   assert.ok(/too few to read as a week without off-diet food/.test(html), 'the marker is named where it is drawn')
+})
+
+function cul1779Trial(over: Record<string, unknown> = {}): ReportInput['dietTrials'][number] {
+  return {
+    id: 'dt-1779', foodItemId: 'f-trial', startedAt: '2026-05-08', targetDurationDays: 56,
+    status: 'active', completedAt: null, vetName: 'Dr. Chen', foodLabel: 'Novel Duck',
+    primaryProtein: 'duck', proteins: ['duck'], ingredientsNotes: 'Duck, duck meal, brewers rice.',
+    extractionConfidence: { proteins: 0.9 }, targetProtein: null, targetProteinSetAt: null,
+    allowedFoods: [
+      {
+        foodItemId: 'f-trial', foodLabel: 'Novel Duck', role: 'primary_diet',
+        allowedFrom: '2026-05-08', allowedUntil: null, primaryProtein: 'duck',
+        brand: 'Brand', productName: 'Novel Duck', proteins: ['duck'],
+        ingredientsNotes: 'Duck, duck meal, brewers rice.', extractionConfidence: { proteins: 0.9 },
+      },
+    ],
+    ...over,
+  } as unknown as ReportInput['dietTrials'][number]
+}
+
+function dailyMeals(from: string, to: string, intakeRating: 'all' | 'some' | null = 'all'): ReportEventInput[] {
+  const out: ReportEventInput[] = []
+  for (let ms = Date.parse(`${from}T00:00:00Z`); ms <= Date.parse(`${to}T00:00:00Z`); ms += 86_400_000) {
+    out.push(proteinMeal({
+      occurredAt: at(new Date(ms).toISOString().slice(0, 10)), foodItemId: 'f-trial', foodType: 'meal',
+      format: 'dry_kibble', primaryProtein: 'duck', proteins: ['duck'], intakeRating,
+      ingredientsNotes: 'Duck, duck meal, brewers rice.', extractionConfidence: { proteins: 0.9 },
+    }))
+  }
+  return out
+}
+
+Deno.test('CUL-1779 — a window wider than the trial: pre-trial weeks of logged jerky are OUTSIDE the chart, never a measured 0', () => {
+  // The adversarial-reviewer's since-visit counterexample. The window opens two weeks before the
+  // trial; the owner logged a meal AND a chicken jerky every one of those days. The trial's off-diet
+  // set only exists over its evidence range, so those weeks used to print "0 off-diet" nubs.
+  const jerky: ReportEventInput[] = []
+  for (let d = 24; d <= 37; d++) {
+    const day = d <= 30 ? `2026-04-${d}` : `2026-05-0${d - 30}`
+    jerky.push(proteinMeal({ occurredAt: at(day, '18:00:00'), foodItemId: 'jerky', foodType: 'treat', format: 'treat', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken.', extractionConfidence: { proteins: 0.9 } }))
+  }
+  const trialTreat = proteinMeal({ occurredAt: at('2026-05-20', '18:00:00'), foodItemId: 'jerky', foodType: 'treat', format: 'treat', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken.', extractionConfidence: { proteins: 0.9 } })
+  const snap = assembleReport(baseInput({
+    requestedWindow: { startDate: '2026-04-24', endDate: '2026-06-04' }, // six weeks; the trial starts week 3
+    dietTrials: [cul1779Trial()],
+    events: [...dailyMeals('2026-04-24', '2026-06-04'), ...jerky, trialTreat],
+  }))
+  const pt = snap.proteinTimeline
+  assert.equal(pt.trialScoped, true, 'a trial-classified report scopes the chart to the trial')
+  assert.deepEqual(pt.scopeDaysByBucket.slice(0, 3), [0, 0, 7], 'the two pre-trial weeks hold no in-scope day')
+  assert.deepEqual(pt.mealDaysByBucket.slice(0, 2), [0, 0], 'their meals are not counted as observing the trial diet')
+  const html = renderReport(snap)
+  const svg = html.match(/aria-label="Off-diet protein exposure per week: ([^"]*)"/)
+  assert.ok(svg, 'the off-diet chart rendered')
+  assert.ok(svg![1].startsWith('outside the trial, outside the trial, '), `pre-trial weeks are outside, never 0: ${svg![1]}`)
+  assert.ok(html.includes('fall outside the trial'), 'the scope is stated beside the chart')
+})
+
+Deno.test('CUL-1779 — a refusal-stopped trial withholds every measured off-diet 0', () => {
+  // The cat would not eat the trial diet: every day is logged, nothing off-diet but one treat. Page 1
+  // withholds the clean-record statement for a refused diet; the chart may not make it week by week.
+  const snap = assembleReport(baseInput({
+    requestedWindow: { startDate: '2026-05-08', endDate: '2026-05-28' },
+    dietTrials: [cul1779Trial({ status: 'abandoned', stoppedReason: 'refused', endedAt: '2026-05-28' })],
+    events: [
+      ...dailyMeals('2026-05-08', '2026-05-28', 'some'),
+      proteinMeal({ occurredAt: at('2026-05-10', '18:00:00'), foodItemId: 'jerky', foodType: 'treat', format: 'treat', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken.', extractionConfidence: { proteins: 0.9 } }),
+    ],
+  }))
+  assert.equal(snap.trial?.mayStateRecordClean, false, 'non-vacuity: the trial module withholds the clean read')
+  assert.equal(snap.proteinTimeline.zeroWithheld, true)
+  const html = renderReport(snap)
+  const svg = html.match(/<svg[^>]*aria-label="Off-diet protein exposure per week:[^"]*"[\s\S]*?<\/svg>/)
+  assert.ok(svg, 'the off-diet chart rendered')
+  assert.ok(!/class="nub"/.test(svg![0]), 'no week prints a measured zero')
+  assert.ok(html.includes('withholds the trial&rsquo;s clean-record statement'))
 })
 
 // ── B-351 slice 5 — END-TO-END, from STORED COLUMN SHAPES to rendered HTML ─────
