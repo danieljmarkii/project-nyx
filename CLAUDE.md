@@ -7,7 +7,7 @@
 
 **The current state lives in Linear** (team **Culprit**, `linear.app/projectnyx`) — live tracks are projects, work is issues, and anything needing you is on the **`Waiting on PM`** label. **[`STATUS.md`](./STATUS.md)** is a ~60-line **pointer card** that says which of those to open, names the live tracks, and names the standing holds; it is not a state store and it is not written to every session. The narrative of what happened is `docs/sessions/`, one file per session. Run `/kickoff` and it assembles all three.
 
-**At a glance (2026-08-22):** shipping toward the **App Store** — the App Store Launch project (milestones M1–M6) is the dominant track. Build steps 1–10 finished August 2026 (what shipped: `STATUS.md` § Current phase). **No deploy hold gates a track** (verified 2026-09-23; `delete-account` alone waits, on its client build). Noticed is GA in code (CUL-876). See `STATUS.md` for the routing table.
+**At a glance (2026-10-11):** shipping toward the **App Store**: *App Store 1.2.0 · the first public release* (restarted 2026-10-11) is the dominant track. Build steps 1–10 finished August 2026 (what shipped: `STATUS.md` § Current phase). **Deploy holds:** `delete-account` and the six AI consent functions wait in `deploy-manifest.json` for that track's client work. Noticed is GA in code (CUL-876). See `STATUS.md` for the routing table.
 
 ---
 
