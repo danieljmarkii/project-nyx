@@ -42,7 +42,7 @@
 --                     trigger, RLS policies and grants. No existing column,
 --                     type, table or row is dropped, renamed, retyped or
 --                     altered.)
---   Rollback:     DROP TABLE IF EXISTS public.ai_consent;
+--   Rollback:     DROP TABLE IF EXISTS public.ai_consent;  (drops its trigger)
 --                 DROP FUNCTION IF EXISTS public.stamp_ai_consent_decided_at();
 --   Backfill:     N/A. Existing accounts get no row on purpose: absence is
 --                 "never asked", the gate fails closed on it and the backstop
@@ -158,8 +158,14 @@ CREATE POLICY "ai_consent_update_own" ON public.ai_consent
 -- ============================================================
 -- §4 Grants — the client writes the answer, never the time or the key
 -- ============================================================
--- Supabase's default privileges grant full INSERT / UPDATE / DELETE to
--- authenticated at CREATE time. Revoke them and re-grant by COLUMN:
+-- Supabase's default privileges grant authenticated EVERY table privilege at
+-- CREATE time, TRUNCATE / REFERENCES / TRIGGER included. TRUNCATE ignores RLS
+-- and fires no row trigger: left in place, any signed-in session running SQL
+-- under its own role could erase every account's answer at once
+-- (rls-privacy-reviewer, replayed on PG16). PostgREST has no TRUNCATE verb, so
+-- it is not reachable over the API today; it is revoked anyway, because "no
+-- client erases an answer" is the table's invariant, not PostgREST's. So:
+-- revoke ALL, give back SELECT (RLS scopes it), and re-grant writes by COLUMN:
 --   INSERT the five answer columns (user_id is pinned to auth.uid() by RLS);
 --   UPDATE the same five, because the upsert rewrites its keys (§2); the keys
 --   themselves never move, which §2's trigger enforces. decided_at is in
@@ -173,7 +179,8 @@ CREATE POLICY "ai_consent_update_own" ON public.ai_consent
 -- Extend the column list; never re-grant at the table level.
 
 REVOKE ALL ON public.ai_consent FROM anon;
-REVOKE INSERT, UPDATE, DELETE ON public.ai_consent FROM authenticated;
+REVOKE ALL ON public.ai_consent FROM authenticated;
+GRANT SELECT ON public.ai_consent TO authenticated;
 GRANT INSERT (user_id, scope, granted, copy_version, source) ON public.ai_consent TO authenticated;
 GRANT UPDATE (user_id, scope, granted, copy_version, source) ON public.ai_consent TO authenticated;
 

@@ -1,30 +1,48 @@
 // `ai_consent` (100, CUL-552, App Review 5.1.2(i)): the pins that keep the owner's answer
 // the owner's, in the owner's words, at the database's time.
 //
-// WHAT THE RULES ARE (each a pin over the migration FILES, replayed in order, because a
-// later migration that re-grants a verb or adds a policy would quietly undo what 100 set):
-//   1. COLUMN GRANTS ONLY. A table-level `GRANT INSERT | UPDATE | ALL` to a client role
-//      re-covers every column, `decided_at` included (032's maintenance warning, which
-//      until now nothing enforced). And no column grant may name `decided_at`.
-//   2. NO DELETE FOR CLIENTS. Withdrawal is `granted = false`. An erased row reads as
-//      "never asked" and destroys the record that the owner said no. So no DELETE
-//      policy, no `FOR ALL` policy, and no DELETE grant to a client role.
-//   3. THE TRIGGER. `stamp_ai_consent_decided_at`'s body is pinned by equality (a
-//      dropped key-freeze arm is the realistic regression: a PostgREST upsert needs the
-//      key columns granted for UPDATE, so the trigger is the only thing keeping `scope`
-//      from being relabelled), and its trigger must be live, BEFORE INSERT OR UPDATE.
-//   4. NO DEFAULT ON `granted`. A default would let an insert that forgot the answer
-//      record one, and absence must never read as yes.
+// WHAT THE RULES ARE (each a pin over the migration FILES numbered 100 and up, replayed in
+// order, because a later migration that re-grants a verb, adds a policy or re-creates the
+// trigger would quietly undo what 100 set):
+//   1. GRANTS. A client role (authenticated / anon / PUBLIC) holds SELECT and column-list
+//      INSERT / UPDATE only. Any other verb (DELETE, TRUNCATE, TRIGGER, REFERENCES, ALL), a
+//      table-level INSERT / UPDATE (which re-covers `decided_at`; 032's maintenance warning,
+//      which nothing enforced until now), a column list naming `decided_at`, a schema-wide
+//      `ON ALL TABLES IN SCHEMA`, or an `ALTER DEFAULT PRIVILEGES` handing a client role a
+//      write verb, reds. TRUNCATE is here because it ignores RLS and fires no row trigger
+//      (rls-privacy-reviewer, PG16 replay: one `TRUNCATE` erased every account's answer).
+//   2. RLS AND POLICIES. RLS stays enabled, and the table's policies are EXACTLY 100's three,
+//      statement for statement. A later permissive policy, an `ALTER POLICY`, a FOR DELETE or
+//      FOR ALL policy, or a dropped one, each reds: the set is pinned, not scanned for bad
+//      shapes, because "a permissive WITH CHECK (true)" has more spellings than a scan has.
+//   3. THE TRIGGER. `stamp_ai_consent_decided_at`'s whole CREATE statement is pinned by
+//      equality (a dropped key-freeze arm is the realistic regression: a PostgREST upsert
+//      needs the key columns granted for UPDATE, so the trigger is the only thing keeping
+//      `scope` from being relabelled; SECURITY DEFINER or a moved search_path would also
+//      change it), its CREATE TRIGGER is pinned the same way (BEFORE INSERT OR UPDATE, FOR
+//      EACH ROW, no WHEN, no UPDATE OF), and a later DROP / DISABLE / ALTER FUNCTION reds.
+//   4. NO DEFAULT ON `granted`. A default would let an insert that forgot the answer record
+//      one, and absence must never read as yes.
+//
+// HOW IT READS SQL. Comments are stripped (`stripSqlComments`). For rules 1, 2 and 4, string
+// literals and dollar-quoted bodies are then blanked line-preservingly in ONE pass, so a
+// `COMMENT ON` or `RAISE` string that quotes a GRANT is not a GRANT, and the text is split
+// into statements at `;`, so no match spans two statements. Rule 3 reads the comment-stripped
+// text, because the body it pins is inside the dollar quotes. A table reference matches with
+// or without `public.` and with or without double quotes.
 //
 // WHAT IT DOES NOT CLAIM (C-38: a blind spot left unstated reads as coverage):
-//   · It cannot execute plpgsql or RLS. The behavioural proof (17 attacks: cross-account
-//     insert and upsert, forged decided_at on insert and update, key moves, delete,
-//     anon, the service-role plant, the cascade, and the key-freeze mutant) ran on a
-//     PG16 replay and is recorded in the PR.
-//   · It reads migration files, so a grant or policy changed by hand in the dashboard
-//     (the B-505 class) is invisible here; `get_advisors` after apply covers that.
-//   · `ALTER TABLE … DISABLE TRIGGER` and `ALTER DEFAULT PRIVILEGES` are matched only in
-//     their plain spellings.
+//   · It cannot execute plpgsql or RLS. The behavioural proof (cross-account insert and
+//     upsert, the existence oracle, forged decided_at, key moves, delete, TRUNCATE, anon,
+//     the service-role plant, the cascade, and the key-freeze mutant) ran on PG16 replays
+//     and is recorded in the PR.
+//   · SQL built at runtime (`EXECUTE 'GRANT …'` inside a DO block) is blanked with its
+//     string and so is invisible. So is a grant or policy changed by hand in the dashboard
+//     (the B-505 class); `get_advisors` and the `\dp` check after apply cover that.
+//   · A GRANT to a role other than the three client roles is ignored, so a new role that
+//     PostgREST later switches into would need its own rule.
+//   · A file numbered below 100 that touches the table (which would mean the table existed
+//     before its own migration) is out of scope.
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -33,15 +51,31 @@ import { stripSqlComments } from './sqlComments';
 
 const ROOT = path.resolve(__dirname, '..');
 const MIGRATIONS_DIR = path.join(ROOT, 'supabase', 'migrations');
-const MIGRATION = '100_ai_consent.sql';
-const TABLE = 'ai_consent';
+const FIRST = 100;
 const FN = 'stamp_ai_consent_decided_at';
 const TRIGGER = 'trg_ai_consent_decided_at';
-const CLIENT_ROLES = /\b(authenticated|anon|public)\b/i;
 
 const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
 
-const FN_BODY = squash(`
+/** `ai_consent`, schema-qualified or not, quoted or not. */
+const T = String.raw`(?:"?public"?\s*\.\s*)?"?ai_consent"?(?![\w"])`;
+const CLIENT_ROLE = /(?:^|[\s,"])(authenticated|anon|public)(?=$|[\s,"])/i;
+
+const POLICIES: Readonly<Record<string, string>> = {
+  ai_consent_select_own:
+    'CREATE POLICY "ai_consent_select_own" ON public.ai_consent FOR SELECT TO authenticated USING (user_id = (select auth.uid()))',
+  ai_consent_insert_own:
+    'CREATE POLICY "ai_consent_insert_own" ON public.ai_consent FOR INSERT TO authenticated WITH CHECK (user_id = (select auth.uid()))',
+  ai_consent_update_own:
+    'CREATE POLICY "ai_consent_update_own" ON public.ai_consent FOR UPDATE TO authenticated USING (user_id = (select auth.uid())) WITH CHECK (user_id = (select auth.uid()))',
+};
+
+const FN_STATEMENT = squash(`
+CREATE OR REPLACE FUNCTION public.stamp_ai_consent_decided_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $$
 BEGIN
   IF TG_OP = 'UPDATE'
      AND (NEW.user_id IS DISTINCT FROM OLD.user_id
@@ -52,132 +86,205 @@ BEGIN
   NEW.decided_at := now();
   RETURN NEW;
 END;
+$$;
 `);
 
-/** The migration texts from 100 on, comments stripped, in apply order. */
-function migrationsFrom100(): string[] {
-  return fs
-    .readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql') && f >= MIGRATION)
-    .sort()
-    .map((f) => stripSqlComments(fs.readFileSync(path.join(MIGRATIONS_DIR, f), 'utf8')));
+const TRIGGER_STATEMENT =
+  'CREATE TRIGGER trg_ai_consent_decided_at BEFORE INSERT OR UPDATE ON public.ai_consent FOR EACH ROW EXECUTE FUNCTION public.stamp_ai_consent_decided_at()';
+
+/** The migration texts numbered 100 and up, comments stripped, in apply order. Numeric, not
+ *  lexical: `1000_x` sorts below `100_a` as text ('0' < '_'). */
+export function orderMigrations(names: string[], first: number): string[] {
+  return names
+    .filter((f) => f.endsWith('.sql') && Number.parseInt(f.split('_')[0], 10) >= first)
+    .sort((a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10) || a.localeCompare(b));
 }
 
-const T = `(?:public\\.)?${TABLE}\\b`;
+export function migrationsFrom(dir: string, first: number): string[] {
+  return orderMigrations(fs.readdirSync(dir), first).map((f) =>
+    stripSqlComments(fs.readFileSync(path.join(dir, f), 'utf8')),
+  );
+}
 
-/** Rule 1: every GRANT on the table to a client role that is not a column-list grant, or
- *  whose column list names decided_at. */
-export function findWideGrants(sqls: string[]): string[] {
-  const out: string[] = [];
-  const re = new RegExp(`GRANT\\s+([\\s\\S]*?)\\s+ON\\s+(?:TABLE\\s+)?${T}\\s+TO\\s+([^;]+);`, 'gi');
-  for (const sql of sqls) {
-    for (const m of sql.matchAll(re)) {
-      if (!CLIENT_ROLES.test(m[2])) continue;
-      // Split the privilege list into verbs, keeping each verb's column list with it.
-      const privs = m[1].split(/,(?![^()]*\))/).map((p) => p.trim());
-      for (const p of privs) {
-        const cols = /\(([^)]*)\)/.exec(p);
-        const verb = p.replace(/\([^)]*\)/, '').trim().toUpperCase();
-        if (verb === 'SELECT' && !cols) continue; // the read is RLS's, not the grant's
-        if (!cols || /\bdecided_at\b/i.test(cols[1])) out.push(squash(m[0]));
+/** Blank single-quoted strings, double-quoted identifiers' contents are KEPT (a table name
+ *  is one), and dollar-quoted bodies, in one left-to-right pass, keeping every newline. */
+export function blankLiterals(sql: string): string {
+  const blank = (s: string) => s.replace(/[^\n]/g, ' ');
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    const dollar = /^\$([A-Za-z_]\w*)?\$/.exec(sql.slice(i));
+    if (dollar) {
+      const tag = dollar[0];
+      const end = sql.indexOf(tag, i + tag.length);
+      const stop = end === -1 ? sql.length : end + tag.length;
+      out += blank(sql.slice(i, stop));
+      i = stop;
+      continue;
+    }
+    if (sql[i] === "'") {
+      let j = i + 1;
+      while (j < sql.length) {
+        if (sql[j] === "'" && sql[j + 1] === "'") j += 2;
+        else if (sql[j] === "'") break;
+        else j += 1;
       }
+      out += blank(sql.slice(i, j + 1));
+      i = j + 1;
+      continue;
     }
+    out += sql[i];
+    i += 1;
   }
   return out;
 }
 
-/** Rule 2: any client path to DELETE. */
-export function findDeletePaths(sqls: string[]): string[] {
+/** Literal-blanked statements across the files, in order, squashed. */
+export function statementsOf(sqls: string[]): string[] {
+  return sqls.flatMap((sql) => blankLiterals(sql).split(';').map(squash).filter(Boolean));
+}
+
+const reTable = new RegExp(T, 'i');
+
+/** Split a GRANT target or privilege list on commas outside parentheses. */
+const splitTop = (s: string) => s.split(/,(?![^()]*\))/).map((p) => p.trim()).filter(Boolean);
+
+/** Rule 1: every client grant on the table outside SELECT + column-list INSERT / UPDATE. */
+export function findGrantProblems(statements: string[]): string[] {
   const out: string[] = [];
-  const policy = new RegExp(`CREATE\\s+POLICY\\s+[\\s\\S]*?ON\\s+${T}\\s+(?:AS\\s+\\w+\\s+)?FOR\\s+(DELETE|ALL)\\b[^;]*;`, 'gi');
-  const grant = new RegExp(`GRANT\\s+([\\s\\S]*?)\\s+ON\\s+(?:TABLE\\s+)?${T}\\s+TO\\s+([^;]+);`, 'gi');
-  for (const sql of sqls) {
-    for (const m of sql.matchAll(policy)) out.push(squash(m[0]));
-    for (const m of sql.matchAll(grant)) {
-      if (CLIENT_ROLES.test(m[2]) && /\b(DELETE|ALL)\b/i.test(m[1])) out.push(squash(m[0]));
+  for (const st of statements) {
+    const g = /^GRANT\s+(.+?)\s+ON\s+(.+?)\s+TO\s+(.+?)(?:\s+WITH\s+GRANT\s+OPTION)?$/i.exec(st);
+    if (g) {
+      if (!CLIENT_ROLE.test(g[3])) continue;
+      const target = g[2].replace(/^TABLE\s+/i, '');
+      const schemaWide = /^ALL\s+TABLES\s+IN\s+SCHEMA\b/i.test(target);
+      const named = splitTop(target).some((t) => new RegExp(`^${T}$`, 'i').test(t));
+      if (!schemaWide && !named) continue;
+      for (const p of splitTop(g[1])) {
+        const cols = /\(([^)]*)\)/.exec(p);
+        const verb = squash(p.replace(/\([^)]*\)/, '')).toUpperCase();
+        const ok =
+          (verb === 'SELECT' && !cols) ||
+          ((verb === 'INSERT' || verb === 'UPDATE' || verb === 'SELECT') && cols !== null && !/\bdecided_at\b/i.test(cols[1]));
+        if (!ok) {
+          out.push(st);
+          break; // one finding per statement
+        }
+      }
+      continue;
     }
+    const d = /^ALTER\s+DEFAULT\s+PRIVILEGES\b.*?\bGRANT\s+(.+?)\s+ON\s+TABLES\s+TO\s+(.+)$/i.exec(st);
+    if (d && CLIENT_ROLE.test(d[2]) && splitTop(d[1]).some((v) => !/^SELECT$/i.test(v))) out.push(st);
   }
   return out;
+}
+
+interface PolicyState {
+  rlsEnabled: boolean;
+  policies: Map<string, string>;
+  altered: string[];
+}
+
+const unquote = (s: string) => s.replace(/^"|"$/g, '');
+
+/** Rule 2: RLS on, and the policy set after the replay. */
+export function replayPolicies(statements: string[]): PolicyState {
+  const st: PolicyState = { rlsEnabled: false, policies: new Map(), altered: [] };
+  for (const s of statements) {
+    const rls = new RegExp(`^ALTER\\s+TABLE\\s+(?:IF\\s+EXISTS\\s+)?(?:ONLY\\s+)?${T}\\s+(ENABLE|DISABLE)\\s+ROW\\s+LEVEL\\s+SECURITY$`, 'i').exec(s);
+    if (rls) st.rlsEnabled = rls[1].toUpperCase() === 'ENABLE';
+    const create = new RegExp(`^CREATE\\s+POLICY\\s+("[^"]+"|\\w+)\\s+ON\\s+${T}`, 'i').exec(s);
+    if (create) st.policies.set(unquote(create[1]), s);
+    const drop = new RegExp(`^DROP\\s+POLICY\\s+(?:IF\\s+EXISTS\\s+)?("[^"]+"|\\w+)\\s+ON\\s+${T}`, 'i').exec(s);
+    if (drop) st.policies.delete(unquote(drop[1]));
+    if (new RegExp(`^ALTER\\s+POLICY\\s+("[^"]+"|\\w+)\\s+ON\\s+${T}`, 'i').test(s)) st.altered.push(s);
+  }
+  return st;
 }
 
 interface TriggerState {
-  body: string | null;
-  live: boolean;
+  fn: string | null;
+  trigger: string | null;
+  tampered: string[];
 }
 
-/** Rule 3: the function's last body, and whether its trigger is still live and BEFORE
- *  INSERT OR UPDATE. */
+/** Rule 3: the last CREATE of the function (read with its dollar body intact) and of the
+ *  trigger, plus any later DROP / DISABLE / ALTER FUNCTION. */
 export function replayTrigger(sqls: string[]): TriggerState {
-  const state: TriggerState = { body: null, live: false };
+  const st: TriggerState = { fn: null, trigger: null, tampered: [] };
   for (const sql of sqls) {
     const events: { at: number; apply: () => void }[] = [];
     const on = (re: RegExp, apply: (m: RegExpMatchArray) => void) => {
       for (const m of sql.matchAll(re)) events.push({ at: m.index ?? 0, apply: () => apply(m) });
     };
-    on(new RegExp(`CREATE\\s+(?:OR\\s+REPLACE\\s+)?FUNCTION\\s+(?:public\\.)?${FN}\\s*\\(\\)[\\s\\S]*?\\$\\$([\\s\\S]*?)\\$\\$`, 'gi'), (m) => {
-      state.body = squash(m[1]);
+    // Any dollar tag; the body runs to the SAME tag, then to the statement's `;`.
+    on(new RegExp(String.raw`CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:"?public"?\.)?"?${FN}"?\s*\([\s\S]*?\$(\w*)\$[\s\S]*?\$\1\$[^;]*;`, 'gi'), (m) => {
+      st.fn = squash(m[0]);
     });
-    on(new RegExp(`DROP\\s+FUNCTION\\s+(?:IF\\s+EXISTS\\s+)?(?:public\\.)?${FN}\\b`, 'gi'), () => {
-      state.body = null;
-      state.live = false;
+    on(new RegExp(String.raw`(?:DROP|ALTER)\s+FUNCTION\s+(?:IF\s+EXISTS\s+)?(?:"?public"?\.)?"?${FN}"?\b[^;]*;`, 'gi'), (m) => {
+      st.tampered.push(squash(m[0]));
     });
-    on(new RegExp(`CREATE\\s+(?:OR\\s+REPLACE\\s+)?TRIGGER\\s+${TRIGGER}\\s+(BEFORE|AFTER)\\s+([\\w\\s]+?)\\s+ON\\s+${T}[\\s\\S]*?EXECUTE\\s+FUNCTION\\s+(?:public\\.)?(\\w+)`, 'gi'), (m) => {
-      state.live = m[1].toUpperCase() === 'BEFORE' && /INSERT\s+OR\s+UPDATE/i.test(m[2]) && m[3] === FN;
+    on(new RegExp(String.raw`CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+"?${TRIGGER}"?\b[^;]*;`, 'gi'), (m) => {
+      st.trigger = squash(m[0]).replace(/;$/, '');
     });
-    on(new RegExp(`DROP\\s+TRIGGER\\s+(?:IF\\s+EXISTS\\s+)?${TRIGGER}\\b`, 'gi'), () => {
-      state.live = false;
-    });
-    on(new RegExp(`ALTER\\s+TABLE\\s+(?:ONLY\\s+)?${T}\\s+DISABLE\\s+TRIGGER\\s+(${TRIGGER}|ALL)\\b`, 'gi'), () => {
-      state.live = false;
+    on(new RegExp(String.raw`(?:DROP\s+TRIGGER\s+(?:IF\s+EXISTS\s+)?"?${TRIGGER}"?\b|ALTER\s+TABLE\s+[^;]*?${T}[^;]*?DISABLE\s+TRIGGER\b)[^;]*;`, 'gi'), (m) => {
+      st.tampered.push(squash(m[0]));
     });
     events.sort((a, b) => a.at - b.at).forEach((e) => e.apply());
   }
-  return state;
+  return st;
 }
 
-/** Rule 4: does `granted` carry a DEFAULT anywhere (the CREATE, or a later ALTER)? */
-export function grantedHasDefault(sqls: string[]): boolean {
-  for (const sql of sqls) {
-    const create = new RegExp(`CREATE\\s+TABLE\\s+${T}\\s*\\(([\\s\\S]*?)\\n\\);`, 'i').exec(sql);
-    if (create && /\bgranted\b[^,\n]*\bDEFAULT\b/i.test(create[1])) return true;
-    if (new RegExp(`ALTER\\s+TABLE\\s+${T}[\\s\\S]*?ALTER\\s+(?:COLUMN\\s+)?granted\\s+SET\\s+DEFAULT`, 'i').test(sql)) return true;
+/** Rule 4: does `granted` carry a DEFAULT anywhere (its column definition, or an ALTER)? */
+export function grantedHasDefault(statements: string[]): boolean {
+  for (const s of statements) {
+    const create = new RegExp(`^CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?${T}\\s*\\((.*)\\)$`, 'i').exec(s);
+    if (create) {
+      const col = splitTop(create[1]).find((c) => /^"?granted"?\s/i.test(c));
+      if (col && /\bDEFAULT\b/i.test(col)) return true;
+    }
+    if (new RegExp(`^ALTER\\s+TABLE\\s+.*${T}.*\\bALTER\\s+(?:COLUMN\\s+)?"?granted"?\\s+SET\\s+DEFAULT\\b`, 'i').test(s)) return true;
   }
   return false;
 }
 
-describe('ai_consent — the owner\'s answer, at the database\'s time (CUL-552)', () => {
-  const sqls = migrationsFrom100();
+describe("ai_consent — the owner's answer, at the database's time (CUL-552)", () => {
+  const sqls = migrationsFrom(MIGRATIONS_DIR, FIRST);
+  const statements = statementsOf(sqls);
 
   it('reads the migration that creates the table (non-vacuity)', () => {
-    expect(sqls.length).toBeGreaterThanOrEqual(1);
-    expect(sqls[0]).toMatch(new RegExp(`CREATE\\s+TABLE\\s+${T}`, 'i'));
-    // The grants rule 1 judges exist at all: two column-list grants to authenticated.
-    expect(sqls[0].match(new RegExp(`GRANT\\s+(INSERT|UPDATE)\\s*\\([^)]*\\)\\s+ON\\s+${T}\\s+TO\\s+authenticated`, 'gi'))).toHaveLength(2);
+    expect(statements.filter((s) => new RegExp(`^CREATE\\s+TABLE\\s+${T}`, 'i').test(s))).toHaveLength(1);
+    // The grants rule 1 judges exist at all.
+    expect(statements.filter((s) => /^GRANT\b/i.test(s) && reTable.test(s))).toHaveLength(3);
   });
 
-  it('rule 1: client roles get column grants only, and never decided_at', () => {
-    expect(findWideGrants(sqls)).toEqual([]);
+  it('rule 1: client roles hold SELECT and column-list INSERT / UPDATE only, never decided_at', () => {
+    expect(findGrantProblems(statements)).toEqual([]);
   });
 
-  it('rule 2: no client path to DELETE', () => {
-    expect(findDeletePaths(sqls)).toEqual([]);
+  it('rule 2: RLS is on and the policies are exactly 100\'s three', () => {
+    const st = replayPolicies(statements);
+    expect(st.rlsEnabled).toBe(true);
+    expect(st.altered).toEqual([]);
+    expect(Object.fromEntries(st.policies)).toEqual(POLICIES);
   });
 
-  it('rule 3: the stamp-and-freeze trigger is live with its pinned body', () => {
-    const state = replayTrigger(sqls);
-    expect(state.body).toBe(FN_BODY);
-    expect(state.live).toBe(true);
+  it('rule 3: the stamp-and-freeze function and its trigger are as 100 wrote them', () => {
+    const st = replayTrigger(sqls);
+    expect(st.fn).toBe(FN_STATEMENT);
+    expect(st.trigger).toBe(TRIGGER_STATEMENT);
+    expect(st.tampered).toEqual([]);
   });
 
   it('rule 4: granted has no DEFAULT', () => {
-    expect(grantedHasDefault(sqls)).toBe(false);
+    expect(grantedHasDefault(statements)).toBe(false);
   });
 });
 
-// Each detector driven over the real migration text with one mutation applied: the
-// mutant must red, the original must not (C-18). In memory, so nothing is written.
+// Each detector driven over the real migration text with one mutation applied: the mutant
+// must red, the original must not (C-18). In memory, so nothing is written.
 describe('ai_consent guard — mutants, each killed', () => {
-  const base = migrationsFrom100();
+  const base = migrationsFrom(MIGRATIONS_DIR, FIRST);
   const plus = (extra: string) => [...base, extra];
   const mutate = (from: RegExp, to: string) => {
     const out = [...base];
@@ -185,39 +292,94 @@ describe('ai_consent guard — mutants, each killed', () => {
     out[0] = out[0].replace(from, to);
     return out;
   };
+  const grants = (sqls: string[]) => findGrantProblems(statementsOf(sqls));
+  const policies = (sqls: string[]) => replayPolicies(statementsOf(sqls));
 
-  it('a later table-level re-grant reds rule 1', () => {
-    expect(findWideGrants(plus('GRANT INSERT ON public.ai_consent TO authenticated;'))).toHaveLength(1);
-    expect(findWideGrants(plus('GRANT ALL ON ai_consent TO authenticated;'))).toHaveLength(1);
+  it.each([
+    'GRANT INSERT ON public.ai_consent TO authenticated;',
+    'GRANT ALL ON ai_consent TO authenticated;',
+    'GRANT INSERT, UPDATE ON public.ai_consent TO authenticated;',
+    'GRANT TRUNCATE ON public.ai_consent TO authenticated;',
+    'GRANT DELETE ON "public"."ai_consent" TO authenticated;',
+    'GRANT UPDATE ON TABLE public.pets, public.ai_consent TO authenticated;',
+    'GRANT UPDATE (granted, decided_at) ON public.ai_consent TO authenticated;',
+    'GRANT INSERT ON ALL TABLES IN SCHEMA public TO authenticated;',
+    'GRANT SELECT, TRIGGER ON public.ai_consent TO PUBLIC;',
+    'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO authenticated;',
+  ])('rule 1 reds on %s', (extra) => {
+    expect(grants(plus(extra))).toHaveLength(1);
   });
 
-  it('decided_at added to a column grant reds rule 1', () => {
-    expect(findWideGrants(plus('GRANT UPDATE (granted, decided_at) ON public.ai_consent TO authenticated;'))).toHaveLength(1);
+  it('rule 1 ignores service_role grants, other tables, and a GRANT quoted in a string', () => {
+    expect(grants(plus('GRANT ALL ON public.ai_consent TO service_role;'))).toEqual([]);
+    expect(grants(plus('GRANT ALL ON public.ai_consent_archive TO authenticated;'))).toEqual([]);
+    expect(grants(plus("COMMENT ON TABLE public.pets IS 'never GRANT ALL ON ai_consent TO authenticated;';"))).toEqual([]);
   });
 
-  it('a service_role grant is not a client grant', () => {
-    expect(findWideGrants(plus('GRANT ALL ON public.ai_consent TO service_role;'))).toEqual([]);
+  it('rule 1 reds on the original REVOKE dropped back to 100\'s first draft (TRUNCATE kept)', () => {
+    // The first draft revoked only INSERT / UPDATE / DELETE; the default grant is ALL. Model
+    // the default as the explicit grant it is and the draft's narrower revoke leaves it.
+    const draft = mutate(/REVOKE ALL ON public\.ai_consent FROM authenticated;\s*GRANT SELECT ON public\.ai_consent TO authenticated;/,
+      'GRANT ALL ON public.ai_consent TO authenticated;\nREVOKE INSERT, UPDATE, DELETE ON public.ai_consent FROM authenticated;');
+    expect(grants(draft).length).toBeGreaterThan(0);
   });
 
-  it('a DELETE policy, a FOR ALL policy or a DELETE grant reds rule 2', () => {
-    expect(findDeletePaths(plus('CREATE POLICY "x" ON public.ai_consent FOR DELETE TO authenticated USING (true);'))).toHaveLength(1);
-    expect(findDeletePaths(plus('CREATE POLICY "x" ON public.ai_consent FOR ALL TO authenticated USING (true);'))).toHaveLength(1);
-    expect(findDeletePaths(plus('GRANT DELETE ON public.ai_consent TO authenticated;'))).toHaveLength(1);
+  it.each([
+    'CREATE POLICY "x" ON public.ai_consent FOR DELETE TO authenticated USING (true);',
+    'CREATE POLICY "x" ON public.ai_consent AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK (true);',
+    'CREATE POLICY x ON "ai_consent" FOR ALL TO authenticated USING (true);',
+    'DROP POLICY "ai_consent_update_own" ON public.ai_consent;',
+  ])('rule 2 reds on %s', (extra) => {
+    expect(Object.fromEntries(policies(plus(extra)).policies)).not.toEqual(POLICIES);
   });
 
-  it('dropping the key-freeze arm reds rule 3', () => {
-    const m = mutate(/IF TG_OP = 'UPDATE'[\s\S]*?END IF;/, '');
-    expect(replayTrigger(m).body).not.toBe(FN_BODY);
+  it('rule 2 reds on ALTER POLICY and on RLS disabled', () => {
+    expect(policies(plus('ALTER POLICY "ai_consent_update_own" ON public.ai_consent WITH CHECK (true);')).altered).toHaveLength(1);
+    expect(policies(plus('ALTER TABLE public.ai_consent DISABLE ROW LEVEL SECURITY;')).rlsEnabled).toBe(false);
   });
 
-  it('a dropped, disabled or AFTER trigger reds rule 3', () => {
-    expect(replayTrigger(plus('DROP TRIGGER trg_ai_consent_decided_at ON public.ai_consent;')).live).toBe(false);
-    expect(replayTrigger(plus('ALTER TABLE public.ai_consent DISABLE TRIGGER trg_ai_consent_decided_at;')).live).toBe(false);
-    expect(replayTrigger(mutate(/BEFORE INSERT OR UPDATE ON public\.ai_consent/, 'BEFORE INSERT ON public.ai_consent')).live).toBe(false);
+  it('rule 2 is not fooled by a FOR ALL policy on another table before an ai_consent mention', () => {
+    const st = policies(plus('CREATE POLICY "p" ON public.pets FOR ALL USING (true); COMMENT ON TABLE public.ai_consent IS \'x\';'));
+    expect(Object.fromEntries(st.policies)).toEqual(POLICIES);
   });
 
-  it('a DEFAULT on granted reds rule 4', () => {
-    expect(grantedHasDefault(mutate(/granted\s+BOOLEAN NOT NULL,/, 'granted BOOLEAN NOT NULL DEFAULT false,'))).toBe(true);
-    expect(grantedHasDefault(plus('ALTER TABLE public.ai_consent ALTER COLUMN granted SET DEFAULT true;'))).toBe(true);
+  it('rule 3 reds on a dropped key-freeze arm, a $f$-tagged weaker body, and SECURITY DEFINER', () => {
+    expect(replayTrigger(mutate(/IF TG_OP = 'UPDATE'[\s\S]*?END IF;/, '')).fn).not.toBe(FN_STATEMENT);
+    // The tagged body must be READ (not merely missed), or this mutant is green over null.
+    const tagged = replayTrigger(plus(`CREATE OR REPLACE FUNCTION public.${FN}() RETURNS TRIGGER LANGUAGE plpgsql AS $f$ BEGIN RETURN NEW; END; $f$;`)).fn;
+    expect(tagged).toContain('$f$ BEGIN RETURN NEW; END; $f$');
+    expect(replayTrigger(mutate(/LANGUAGE plpgsql\nSET search_path/, 'LANGUAGE plpgsql\nSECURITY DEFINER\nSET search_path')).fn).not.toBe(FN_STATEMENT);
+  });
+
+  it.each([
+    [/BEFORE INSERT OR UPDATE ON/, 'BEFORE INSERT ON'],
+    [/BEFORE INSERT OR UPDATE ON/, 'BEFORE INSERT OR UPDATE OF granted ON'],
+    [/FOR EACH ROW EXECUTE/, 'FOR EACH STATEMENT EXECUTE'],
+    [/FOR EACH ROW EXECUTE/, 'FOR EACH ROW WHEN (false) EXECUTE'],
+  ])('rule 3 reds on the trigger %s -> %s', (from, to) => {
+    expect(replayTrigger(mutate(from, to)).trigger).not.toBe(TRIGGER_STATEMENT);
+  });
+
+  it.each([
+    `DROP TRIGGER ${TRIGGER} ON public.ai_consent;`,
+    `ALTER TABLE public.ai_consent DISABLE TRIGGER ${TRIGGER};`,
+    'ALTER TABLE public.ai_consent DISABLE TRIGGER ALL;',
+    `ALTER FUNCTION public.${FN}() SECURITY DEFINER;`,
+    `DROP FUNCTION public.${FN}() CASCADE;`,
+  ])('rule 3 reds on %s', (extra) => {
+    expect(replayTrigger(plus(extra)).tampered).toHaveLength(1);
+  });
+
+  it('rule 4 reds on a DEFAULT, on the same line, the next line, or a later ALTER', () => {
+    const st = (sqls: string[]) => grantedHasDefault(statementsOf(sqls));
+    expect(st(mutate(/granted\s+BOOLEAN NOT NULL,/, 'granted BOOLEAN NOT NULL DEFAULT false,'))).toBe(true);
+    expect(st(mutate(/granted\s+BOOLEAN NOT NULL,/, 'granted BOOLEAN NOT NULL\n    DEFAULT true,'))).toBe(true);
+    expect(st(plus('ALTER TABLE public.ai_consent ALTER COLUMN granted SET DEFAULT true;'))).toBe(true);
+  });
+
+  it('files are ordered by number, not text', () => {
+    // '1000_x' < '100_a' as text; numerically it is later and must be read.
+    expect(orderMigrations(['099_a.sql', '100_ai_consent.sql', '1000_x.sql', '101_b.sql', '100_aa.sql', 'README.md'], FIRST))
+      .toEqual(['100_aa.sql', '100_ai_consent.sql', '101_b.sql', '1000_x.sql']);
   });
 });
