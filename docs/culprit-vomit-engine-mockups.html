@@ -1,0 +1,872 @@
+<title>The vomit engine</title>
+<meta name="description" content="CUL-1765 mock round 1: the vomit read joined to the pet's record, R3 drawn three ways, the over-time profile, the vet report page, the heave question and the photo read underneath.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+  /* ============================================================
+     The vomit engine, mock round 1 (CUL-1765, discovery, 2026-10-11).
+     Visual system copied from docs/culprit-incident-tiers-mockups.html so the
+     rounds read as one family: the Design v2 device tokens outside the frames,
+     the app's real light tokens (constants/theme.ts) inside them.
+     Layout: a masthead ledger, one section per surface the case file touches,
+     options boxed beside the frame they compete with, then the decision briefs.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --note-ink: #7A4E00; --note-wash: #FDF3DC; --note-rule: #E3B85C;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    /* The app's own light tokens, inside the phone frames in both page themes. */
+    --app-ground: #FAFAFA; --app-card: #FFFFFF; --app-subtle: #F4F4F5; --app-ink: #0A0A0A;
+    --app-ink-2: #525252; --app-ink-3: #737373; --app-rule: #E7E5E4;
+    --app-rose: #F43F5E; --app-rose-ink: #B4123B; --app-rose-soft: #FBB6C3;
+    --app-teal: #00C2A8; --app-teal-ink: #0B7B6C; --app-teal-wash: #E0FBF7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A86BA;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --note-ink: #F5C26B; --note-wash: rgba(245,194,107,0.12); --note-rule: rgba(245,194,107,0.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A86BA;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --note-ink: #F5C26B; --note-wash: rgba(245,194,107,0.12); --note-rule: rgba(245,194,107,0.45);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  a { color: var(--teal-ink); text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 3px; border-radius: 3px; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 64ch; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 500; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.needs { color: var(--note-ink); background: var(--note-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+
+  /* The ledger: each critique finding, and what moved on the page */
+  .ledger { display: grid; gap: 0; margin: 26px 0 0; }
+  .ledger div { display: grid; grid-template-columns: 250px 1fr; gap: 16px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-block: 9px; }
+  .ledger div > b { color: var(--ink); font-weight: 500; }
+  @media (max-width: 680px) { .ledger div { grid-template-columns: 1fr; gap: 3px; } }
+  .rule-key { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 22px; font-size: 13.5px; color: var(--ink-2); }
+  .rule-key span { display: inline-flex; align-items: center; gap: 8px; }
+
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 36px 0 6px; }
+  p { margin: 0 0 14px; }
+  .col p:last-child { margin-bottom: 0; }
+
+  /* Frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 26px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 12px; width: 316px; max-width: 100%; }
+  .frame-cap { display: flex; flex-direction: column; gap: 5px; }
+  .frame-cap b { font-size: 14.5px; font-weight: 600; }
+  .frame-cap span, .frame-cap li { font-size: 13.5px; color: var(--ink-2); }
+  .frame-cap .pill { font-size: 10.5px; color: var(--teal-ink); }
+  .frame-cap .pill.dir { color: var(--ink-2); }
+  .frame-cap .pill.needs { color: var(--note-ink); }
+  .frame-cap ul { margin: 2px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+  .option { border: 1px dashed var(--rule); border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 14px; max-width: 100%; }
+  .option-head { display: flex; flex-direction: column; gap: 4px; }
+  .option-head::before { content: "Option, drawn for the decision, not the current proposal"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  .option-head b { font-size: 15px; }
+  .option-head span { font-size: 13.5px; color: var(--ink-2); max-width: 60ch; }
+  .option .frames { margin-top: 0; }
+  .side { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 26px; align-items: flex-start; }
+
+  /* The phone */
+  .phone { width: 316px; max-width: 100%; background: var(--app-ground); border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.14); padding: 14px 12px 16px; color: var(--app-ink); font-family: var(--sans); font-variant-numeric: tabular-nums; font-size: 13px; line-height: 1.4; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 10px; }
+  .phone.short { padding-bottom: 12px; }
+  .appbar { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 2px; }
+  .appbar .pet { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, #3a3a3a, #8a8a8a); }
+  .askpill { font-size: 12px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 10px; display: flex; align-items: center; gap: 5px; }
+  .askpill i { width: 6px; height: 6px; border-radius: 50%; background: var(--app-teal); display: inline-block; }
+  .card { background: var(--app-card); border-radius: 18px; padding: 14px 14px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); }
+  .zone-label { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-3); margin-bottom: 8px; }
+  .row-divider { height: 1px; background: var(--app-rule); margin: 11px 0; }
+  .zone-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; font-size: 10.5px; color: var(--app-ink-3); }
+  .zone-foot span:last-child { font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; white-space: nowrap; }
+  .fade-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 54px; background: linear-gradient(rgba(250,250,250,0), var(--app-ground)); pointer-events: none; }
+
+  /* Signal rows (CUL-1270 as built: headline, count, ask, door) */
+  .door { display: flex; align-items: center; gap: 10px; position: relative; }
+  .door .body { flex: 1; min-width: 0; }
+  .railed { border-left: 3px solid var(--app-rose); padding-left: 10px; }
+  .railed.watch { border-left-color: var(--app-rose-soft); }
+  .plain-row { padding-left: 13px; }
+  .eyebrow-s { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); font-weight: 500; }
+  .head { font-size: 14px; font-weight: 600; line-height: 1.3; }
+  .head.serif { font-family: var(--serif); font-weight: 500; font-size: 18px; line-height: 1.22; }
+  .asktxt { font-size: 12px; color: var(--app-rose-ink); font-weight: 500; margin-top: 2px; }
+  .sub { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .sub .ask-in { color: var(--app-rose-ink); }
+  .state { display: inline-block; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 4px; padding: 1px 5px; margin-right: 4px; vertical-align: 1px; }
+  .chev { width: 22px; height: 22px; flex-shrink: 0; color: var(--app-ink-3); }
+  .chev svg { display: block; }
+  .chev.big { width: 28px; height: 28px; border-radius: 50%; background: var(--app-subtle); display: grid; place-items: center; }
+  .lane { display: block; margin-top: 6px; }
+  .answers { display: flex; flex-wrap: wrap; column-gap: 16px; row-gap: 16px; margin-top: 9px; }
+  .answers span { font-size: 12px; font-weight: 500; border: 1px solid var(--app-rule); border-radius: 999px; padding: 6px 12px; min-height: 30px; display: inline-flex; align-items: center; color: var(--app-ink); background: var(--app-card); }
+  .answers span.pri { border-color: var(--app-ink); }
+
+  /* Strips (shipped register: context, never urgency) */
+  .strip { background: var(--app-card); border-radius: 14px; padding: 11px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .strip .sh { display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; }
+  .strip .sh i { font-style: normal; color: var(--app-ink-3); font-weight: 400; }
+  .strip .sl { font-size: 11.5px; color: var(--app-ink-2); margin-top: 2px; }
+  .strip .bar { height: 4px; background: var(--app-subtle); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+  .strip .bar b { display: block; height: 100%; background: var(--app-teal); border-radius: 2px; }
+  .strip .doors { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; font-weight: 500; color: var(--app-teal-ink); }
+  .ghost { display: grid; gap: 8px; padding: 2px 0; }
+  .ghost i { display: block; height: 8px; border-radius: 4px; background: var(--app-rule); }
+  .ghost i:nth-child(2) { width: 72%; } .ghost i:nth-child(3) { width: 84%; }
+
+  /* Screens (Design v2's Signal screen and forms) */
+  .screen-head { background: var(--app-card); border-radius: 18px; padding: 14px; }
+  .back { font-size: 20px; color: var(--app-ink-2); line-height: 1; margin-bottom: 8px; }
+  .screen-title { font-family: var(--serif); font-size: 21px; line-height: 1.2; letter-spacing: -0.005em; margin-bottom: 6px; }
+  .screen-sent { font-size: 12px; color: var(--app-ink-2); line-height: 1.45; }
+  .mini-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); margin: 12px 0 6px; }
+  .photo { height: 96px; border-radius: 10px; background: radial-gradient(circle at 38% 42%, #d8c9a8, #9c8a66 55%, #6e6048); position: relative; }
+  .photo::after { content: ""; position: absolute; left: 58%; top: 40%; width: 22px; height: 12px; border-radius: 4px; background: #4b4b52; transform: rotate(-18deg); }
+  .qblock { background: var(--app-subtle); border-radius: 12px; padding: 11px 12px 12px; margin-top: 12px; }
+  .qblock .q { font-size: 13px; font-weight: 600; line-height: 1.35; }
+  .qblock .qs { font-size: 11.5px; color: var(--app-ink-2); margin-top: 3px; }
+  .qblock .answers span { background: var(--app-card); }
+  .form-row { display: flex; flex-direction: column; gap: 2px; padding: 10px 0; border-top: 1px solid var(--app-rule); }
+  .form-row:first-of-type { border-top: 0; }
+  .form-row .fr-h { font-size: 13px; font-weight: 600; }
+  .form-row .fr-s { font-size: 11.5px; color: var(--app-ink-2); }
+  .seg { display: flex; gap: 0; margin-top: 7px; border: 1px solid var(--app-rule); border-radius: 10px; overflow: hidden; }
+  .seg span { flex: 1; text-align: center; font-size: 11.5px; font-weight: 500; padding: 7px 4px; min-height: 32px; display: grid; place-items: center; border-left: 1px solid var(--app-rule); }
+  .seg span:first-child { border-left: 0; }
+  .seg span.on { background: var(--app-ink); color: #fff; }
+  .read-pill { display: inline-block; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; border-radius: 999px; padding: 3px 9px; }
+  .read-pill.call { color: #fff; background: var(--app-rose); }
+  .read-pill.watchfor { color: var(--app-ink-2); background: var(--app-subtle); }
+  .obs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .obs span { font-size: 11px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 9px; color: var(--app-ink-2); }
+  .correction { margin-top: 10px; border-top: 1px solid var(--app-rule); padding-top: 9px; font-size: 11.5px; color: var(--app-ink-2); }
+  .correction b { color: var(--app-ink); font-weight: 600; }
+  .struck { color: var(--app-ink-3); }
+
+  /* The annotation layer: never app chrome. Marks a row the rules cannot draw yet. */
+  .needs-tag { display: inline-block; margin-bottom: 5px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em; color: #7A4E00; background: #FDF3DC; border: 1px solid #E3B85C; border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+  .needs-box { outline: 1.5px dashed #E3B85C; outline-offset: 4px; border-radius: 6px; }
+  .note { font-size: 13.5px; color: var(--ink-2); background: var(--note-wash); border-left: 3px solid var(--note-rule); padding: 10px 14px; border-radius: 0 6px 6px 0; max-width: 72ch; }
+  .note b { color: var(--ink); }
+
+  /* Briefs */
+  .briefs { display: grid; gap: 18px; margin-top: 24px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); display: flex; flex-direction: column; gap: 8px; }
+  .brief h4 { margin: 0; font-size: 16px; color: var(--ink); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .brief p { margin: 0; }
+  .brief b { color: var(--ink); }
+  .brief ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+  .conflict { border-left: 3px solid var(--rose-ink); padding-left: 12px; }
+  .next-list { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); font-size: 14.5px; max-width: 72ch; }
+  footer { margin-top: 64px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13.5px; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 8px 18px; }
+
+  /* Round 2: the loop diagram and the new screen parts */
+  .archive { margin-top: 18px; font-size: 14px; color: var(--ink-2); }
+  .archive summary { cursor: pointer; color: var(--ink-2); font-size: 13.5px; }
+  .archive summary:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 3px; border-radius: 3px; }
+  .ledger q { font-style: italic; quotes: "\201C" "\201D"; }
+  .diagram { margin: 28px 0 0; max-width: 980px; }
+  .diagram-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; color: var(--ink); }
+  .diagram-scroll svg { display: block; width: 100%; min-width: 760px; height: auto; }
+  .diagram figcaption { font-size: 13.5px; color: var(--ink-2); margin-top: 10px; max-width: 72ch; }
+  .d-lane { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; fill: var(--ink-3); }
+  .d-label { font-family: var(--sans); font-size: 13px; font-weight: 500; fill: var(--ink); }
+  .d-small { font-family: var(--sans); font-size: 11.5px; fill: var(--ink-2); }
+  .d-node { fill: var(--paper-2); stroke: var(--rule); stroke-width: 1.2; }
+  .d-node-raised { stroke: var(--rose-ink); }
+  .d-node-new { stroke: var(--teal-ink); stroke-dasharray: 4 3; }
+  .d-shipped { stroke: var(--ink-3); stroke-width: 1.4; fill: none; }
+  .d-shipped-fill { fill: var(--ink-3); }
+  .d-new { stroke: var(--teal-ink); stroke-width: 2; fill: none; }
+  .d-new-fill { fill: var(--teal-ink); }
+  .d-new-text { fill: var(--teal-ink); font-weight: 500; }
+  .d-boundary { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 4; }
+  .links { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; font-weight: 500; color: var(--app-teal-ink); }
+  .links span { min-height: 30px; display: inline-flex; align-items: center; }
+  .field { margin-top: 10px; border: 1px solid var(--app-rule); border-radius: 10px; padding: 10px; font-size: 12.5px; line-height: 1.45; min-height: 74px; color: var(--app-ink); }
+  .field.slim { min-height: 36px; color: var(--app-ink-3); }
+  .save { margin-top: 12px; background: var(--app-ink); color: #fff; border-radius: 12px; text-align: center; font-weight: 600; font-size: 13px; padding: 10px; }
+  .tick-row { display: flex; align-items: center; gap: 9px; font-size: 12.5px; min-height: 36px; border-top: 1px solid var(--app-rule); }
+  .tick-row i { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--app-ink-3); flex-shrink: 0; position: relative; }
+  .tick-row.on i { background: var(--app-teal-ink); border-color: var(--app-teal-ink); }
+  .tick-row.on i::after { content: ""; position: absolute; left: 5px; top: 1px; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+  .choice { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 44px; border-top: 1px solid var(--app-rule); font-size: 13px; font-weight: 500; }
+  .choice em { font-style: normal; font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; }
+  .vv-row { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; border-top: 1px solid var(--app-rule); font-size: 12px; color: var(--app-ink-2); }
+  .vv-row b { font-size: 13px; color: var(--app-ink); font-weight: 600; }
+  .vv-note { font-style: italic; color: var(--app-ink-2); }
+  .frame-cap code, .brief code, .col code { font-family: var(--mono); font-size: 0.86em; }
+
+  /* ── Round-specific: the tier chips (shape carries now vs today, never hue alone) ── */
+  .tier { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; line-height: 1.2; border-radius: 999px; padding: 3px 10px; border: 1.5px solid transparent; white-space: nowrap; }
+  .tier.now { background: var(--app-rose); color: #fff; }
+  .tier.today { background: var(--app-card); color: var(--app-rose-ink); border-color: var(--app-rose); }
+  .tier.pattern { background: var(--app-card); color: var(--app-ink); border-color: var(--app-rose-soft); border-style: dashed; }
+  .tier.eye { background: var(--app-subtle); color: var(--app-ink-2); }
+  .tier.nes { background: var(--app-subtle); color: var(--app-ink-3); }
+  .tier.legacy { background: var(--app-rose); color: #fff; }
+  .tier.legacy-calm { background: var(--app-subtle); color: var(--app-ink-2); }
+  .tier.page { font-size: 11px; }
+  .readcard { background: var(--app-card); border-radius: 16px; padding: 12px 14px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); display: flex; flex-direction: column; gap: 7px; }
+  .readcard.r-call { border-left: 3px solid var(--app-rose); }
+  .readcard.r-pattern { border-left: 3px dashed var(--app-rose-soft); }
+  .rc-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .rc-eyebrow { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); font-weight: 500; }
+  .rc-action { font-size: 13.5px; font-weight: 600; line-height: 1.35; }
+  .rc-why { font-size: 12px; color: var(--app-ink-2); line-height: 1.45; }
+  .rc-script { font-size: 11.5px; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 8px; padding: 7px 9px; line-height: 1.45; }
+  .rc-script b { color: var(--app-ink); font-weight: 600; }
+  .rc-foot { font-size: 10.5px; color: var(--app-ink-3); }
+  .rc-door { font-size: 12px; font-weight: 500; color: var(--app-teal-ink); min-height: 30px; display: inline-flex; align-items: center; }
+  .watch { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--app-rule); padding-top: 8px; }
+  .watch p { margin: 0; font-size: 12px; line-height: 1.45; color: var(--app-ink); }
+  .watch p b { font-weight: 600; }
+  .watch .static { color: var(--app-rose-ink); }
+  .disclose { font-size: 11.5px; color: var(--app-ink); background: var(--app-subtle); border-radius: 8px; padding: 8px 9px; line-height: 1.45; display: flex; flex-direction: column; gap: 3px; }
+  .disclose span { color: var(--app-teal-ink); font-weight: 500; }
+  .raised { font-size: 11.5px; color: var(--app-ink-2); border-top: 1px solid var(--app-rule); padding-top: 7px; }
+  .raised b { color: var(--app-ink); font-weight: 600; }
+  .seam { font-size: 11px; color: var(--app-ink-2); border: 1px solid var(--app-rule); border-radius: 8px; padding: 7px 9px; line-height: 1.45; }
+  .meta-line { font-size: 10.5px; color: var(--app-ink-3); }
+  .nophoto { height: 58px; border-radius: 10px; background: var(--app-subtle); display: grid; place-items: center; font-size: 11px; color: var(--app-ink-3); }
+  .rec-title { font-family: var(--serif); font-size: 19px; line-height: 1.2; }
+  .rec-sub { font-size: 11.5px; color: var(--app-ink-2); }
+  .hrow { display: flex; align-items: center; gap: 10px; min-height: 44px; border-top: 1px solid var(--app-rule); font-size: 12.5px; }
+  .hrow:first-of-type { border-top: 0; }
+  .hrow .t { width: 58px; flex-shrink: 0; color: var(--app-ink-3); font-size: 11.5px; }
+  .hrow .w { flex: 1; min-width: 0; }
+  .hrow .w small { display: block; color: var(--app-ink-3); font-size: 10.5px; }
+  .hdiv { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--app-ink-3); padding: 8px 0 4px; border-top: 1px dashed var(--app-rule); }
+  .complete { background: var(--app-ink); color: #fff; border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; }
+  .complete .c1 { font-size: 13.5px; font-weight: 600; }
+  .complete .c2 { font-size: 12px; color: #d4d4d4; line-height: 1.45; }
+  .complete .c3 { font-size: 12px; color: #7eecdc; font-weight: 500; }
+  .complete .c4 { font-size: 11.5px; color: #fbb6c3; font-weight: 600; }
+  .month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .month i { aspect-ratio: 1; max-width: 100%; border-radius: 6px; background: var(--app-subtle); font-style: normal; font-size: 9px; color: var(--app-ink-3); display: grid; place-items: start; padding: 2px 3px; position: relative; }
+  .month i.c { background: var(--app-rose); color: #fff; }
+  .month i.p { box-shadow: inset 0 0 0 1.5px var(--app-ink-3); }
+  .month i.seamday { box-shadow: inset 2px 0 0 0 var(--app-ink); }
+  .legend { display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; color: var(--app-ink-2); margin-top: 8px; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; background: var(--app-rose); display: inline-block; flex-shrink: 0; }
+  .legend i.pp { background: transparent; box-shadow: inset 0 0 0 1.5px var(--app-ink-3); }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .tile { border-radius: 10px; background: var(--app-card); box-shadow: 0 1px 2px rgba(0,0,0,0.06); padding: 5px; display: flex; flex-direction: column; gap: 4px; }
+  .tile .ph { height: 42px; border-radius: 7px; background: radial-gradient(circle at 40% 45%, #d8c9a8, #9c8a66 60%, #6e6048); }
+  .tile .tl { font-size: 9.5px; color: var(--app-ink-3); }
+  .tile .tier { font-size: 9.5px; padding: 2px 6px; white-space: normal; }
+
+  /* Page-level tables */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-top: 22px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-2); }
+  table.grid { border-collapse: collapse; width: 100%; font-size: 13px; color: var(--ink-2); min-width: 980px; }
+  table.grid th, table.grid td { text-align: left; vertical-align: top; padding: 9px 11px; border-top: 1px solid var(--rule-soft); }
+  table.grid thead th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; border-top: 0; background: var(--paper-2); position: sticky; top: 0; }
+  table.grid tbody th { color: var(--ink); font-weight: 600; font-size: 13px; min-width: 150px; }
+  table.grid td b { color: var(--ink); font-weight: 600; }
+  table.grid td small { display: block; color: var(--ink-3); font-size: 11.5px; margin-top: 2px; }
+  table.grid tr.contested td, table.grid tr.contested th { background: var(--note-wash); }
+  table.grid tr.held td, table.grid tr.held th { background: var(--rule-soft); }
+  .dir { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+  .dir.louder { color: var(--rose-ink); } .dir.same { color: var(--ink-3); } .dir.quieter { color: var(--note-ink); }
+  .speak { font-family: var(--serif); font-style: italic; color: var(--ink); }
+  .specimens { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-top: 18px; padding: 16px; border-radius: 12px; background: var(--app-ground); color: var(--app-ink); border: 1px solid var(--rule); }
+  .specimens figure { margin: 0; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+  .specimens figcaption { font-family: var(--mono); font-size: 10px; color: var(--app-ink-3); letter-spacing: 0.04em; }
+  ol.spec { margin: 14px 0 0; padding-left: 22px; display: grid; gap: 9px; color: var(--ink-2); font-size: 14.5px; max-width: 76ch; }
+  ol.spec b { color: var(--ink); }
+  .toc { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 4px 24px; margin-top: 18px; font-size: 14px; }
+  .toc a { text-decoration: none; color: var(--ink-2); padding: 3px 0; border-bottom: 1px solid var(--rule-soft); display: flex; gap: 10px; }
+  .toc a span { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+  .toc a:hover { color: var(--ink); }
+
+  /* ── This round's own parts (CUL-1765): the record lines, the grid, the profile, the report sheet ── */
+  .ctx { display: flex; flex-direction: column; gap: 5px; border-top: 1px solid var(--app-rule); padding-top: 8px; }
+  .ctx-label { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); font-weight: 500; }
+  .ctx p { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--app-ink); }
+  .ctx p.quiet { color: var(--app-ink-2); font-size: 12px; }
+  .ctx p.kind { background: var(--app-subtle); border-radius: 8px; padding: 7px 9px; font-size: 12px; }
+  .ctx .clock { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--app-teal); margin-right: 6px; vertical-align: 1px; }
+  .vis { display: grid; grid-template-columns: 96px 1fr; gap: 0; font-size: 12px; }
+  .vis div { display: contents; }
+  .vis dt, .vis dd { margin: 0; padding: 6px 0; border-top: 1px solid var(--app-rule); }
+  .vis dt { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); padding-top: 8px; }
+  .vis dd { color: var(--app-ink); }
+  .vis dd.new { color: var(--app-teal-ink); font-weight: 500; }
+  .vis-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; font-weight: 600; margin-top: 2px; }
+  .vis-head span { font-size: 11.5px; color: var(--app-teal-ink); font-weight: 500; }
+  .phone.tall { gap: 9px; }
+  .wordrow { display: flex; flex-direction: column; gap: 4px; background: var(--app-card); border-radius: 12px; padding: 10px 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .wordrow .wl { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); }
+  .wordrow .wv { font-size: 13px; }
+  .compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; margin-top: 22px; max-width: 760px; }
+  .compare .phone { width: 100%; }
+
+  /* The profile */
+  .prof-total { font-family: var(--serif); font-size: 18px; line-height: 1.25; }
+  .prof-sub { font-size: 11.5px; color: var(--app-ink-2); }
+  .pair { display: flex; gap: 14px; margin-top: 8px; }
+  .pair div { flex: 1; background: var(--app-subtle); border-radius: 10px; padding: 8px 10px; }
+  .pair b { display: block; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pair span { font-size: 10.5px; color: var(--app-ink-2); }
+  .fact { font-size: 12px; color: var(--app-ink); padding: 8px 0; border-top: 1px solid var(--app-rule); display: flex; flex-direction: column; gap: 2px; }
+  .fact .fl { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); }
+  .fact .door-s { font-size: 12px; color: var(--app-teal-ink); font-weight: 500; }
+  .prow { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 9px 0; border-top: 1px solid var(--app-rule); align-items: baseline; }
+  .prow .pn { font-size: 12.5px; font-weight: 600; line-height: 1.3; }
+  .prow .pc { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+  .prow .pd { grid-column: 1 / -1; font-size: 11px; color: var(--app-ink-2); line-height: 1.4; }
+  .prow.flag { border-left: 3px solid var(--app-rose); padding-left: 9px; margin-left: -12px; }
+  .prow.flag .pn { color: var(--app-rose-ink); }
+  .prow.minor .pn { font-weight: 500; color: var(--app-ink-2); }
+  .bar-row { height: 5px; border-radius: 3px; background: var(--app-subtle); grid-column: 1 / -1; overflow: hidden; }
+  .bar-row b { display: block; height: 100%; background: var(--app-ink-3); border-radius: 3px; }
+  .prov { font-size: 10.5px; color: var(--app-ink-3); line-height: 1.45; border-top: 1px solid var(--app-rule); padding-top: 8px; }
+  .album { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+  .album .tile .tl { line-height: 1.35; }
+  .album .tile .tl b { color: var(--app-ink); font-weight: 600; }
+
+  /* The vet report sheet: the PDF's register, black on white, no decoration */
+  .sheet { width: 520px; max-width: 100%; background: #FFFFFF; color: #111111; border: 1px solid var(--rule); border-radius: 4px; box-shadow: 0 10px 30px rgba(19,17,46,0.10); padding: 22px 24px 20px; font-family: var(--sans); font-size: 12px; line-height: 1.45; font-variant-numeric: tabular-nums; display: flex; flex-direction: column; gap: 10px; }
+  .sheet h5 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.01em; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; border-bottom: 1.5px solid #111111; padding-bottom: 6px; }
+  .sheet h5 span { font-weight: 400; color: #555555; font-size: 11.5px; }
+  .sheet .lead { color: #222222; }
+  .sheet table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+  .sheet th, .sheet td { text-align: left; vertical-align: top; padding: 5px 6px; border-top: 1px solid #DDDDDD; }
+  .sheet thead th { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: #555555; font-weight: 500; border-top: 0; }
+  .sheet td.n { text-align: right; white-space: nowrap; }
+  .sheet .months { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; align-items: end; height: 70px; border-bottom: 1px solid #111111; padding: 0 2px; }
+  .sheet .months i { display: block; background: #444444; border-radius: 1px 1px 0 0; }
+  .sheet .mlabels { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; font-size: 10px; color: #555555; text-align: center; margin-top: 3px; }
+  .sheet .mlabels span b { display: block; color: #111111; font-weight: 600; font-size: 11px; }
+  .sheet .foot { font-size: 10.5px; color: #555555; border-top: 1px solid #DDDDDD; padding-top: 7px; }
+  .sheet .photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .sheet .photos div { display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: #555555; }
+  .sheet .photos i { display: block; height: 58px; border-radius: 3px; background: radial-gradient(circle at 40% 45%, #d8c9a8, #9c8a66 60%, #6e6048); }
+  .sheet-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Numbers strip for §01 */
+  .nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0; margin-top: 24px; border-top: 1px solid var(--rule); max-width: 980px; }
+  .nums div { padding: 14px 18px 14px 0; border-bottom: 1px solid var(--rule); display: flex; flex-direction: column; gap: 4px; }
+  .nums b { font-family: var(--serif); font-weight: 500; font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .nums span { font-size: 13.5px; color: var(--ink-2); max-width: 30ch; }
+  .broke { margin: 14px 0 0; padding-left: 20px; display: grid; gap: 7px; color: var(--ink-2); font-size: 14.5px; max-width: 76ch; }
+  .broke b { color: var(--ink); }
+  .runorder { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 0; max-width: 900px; }
+  .runorder li { display: grid; grid-template-columns: 110px 1fr; gap: 14px; border-top: 1px solid var(--rule); padding: 10px 0; font-size: 14.5px; color: var(--ink-2); }
+  .runorder li b { color: var(--ink); font-weight: 600; }
+  .runorder .stage { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); padding-top: 3px; }
+  @media (max-width: 600px) { .runorder li { grid-template-columns: 1fr; gap: 3px; } }
+  .teamcalls { margin-top: 18px; }
+  .teamcalls div { display: grid; grid-template-columns: 220px 1fr; gap: 16px; font-size: 14px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-block: 9px; }
+  .teamcalls div > b { color: var(--ink); font-weight: 500; }
+  @media (max-width: 680px) { .teamcalls div { grid-template-columns: 1fr; gap: 3px; } }
+  /* The tiers round drew a dark object on every photo; here only a flagged read would carry one. */
+  .photo::after { content: none; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 1 · 2026-10-11</span><span>CUL-1765 · the vomit engine, 10x</span><span>Discovery · no code · build after 1.2.0 clears review</span></p>
+    <h1>Nyx's vomiting, read as a case</h1>
+    <p class="standfirst">You have logged 49 of Nyx's vomits, and the 50th read says what the 1st did. This round draws the alternative. The photo read stays blind to her history, and the app joins each read to her record: when it came up against her meals, how many there have been, and what her vomiting looks like over months, on a screen you can open and a page your vet can read. It also draws the one question that would tell her vet the most, and the decisions only you can make.</p>
+
+    <div class="ledger" aria-label="Your kickoff rulings, and what each one moved on this page">
+      <div><b>R1 · Both audiences, owner screen first</b><span>The incident read leads (§02 to §04). The profile (§05) and the report page (§06) reuse its pieces. <span class="pill">ruled · §02–§06</span></span></div>
+      <div><b>R2 · Reopen "calm copy stays generic" and "no timing clause"</b><span>Used for the timing line and the 7-day count. The evidence argues against the third use you ruled in, novelty lines ("first bile in six weeks"): see D2 in §09, which asks you to narrow R2. <span class="pill">ruled · §02</span> <span class="pill needs">re-ruling asked · D2</span></span></div>
+      <div><b>R3 · Name her recurring kinds on your screens?</b><span>You were unsure. Drawn three ways side by side in §04, with the persona conflict stated. <span class="pill open">open · §04, D1</span></span></div>
+      <div><b>R4 · Discovery now, build after 1.2.0</b><span>Nothing on this page touches the submission binary. One live safety gap (plant material in a cat's vomit, §08) is filed on its own issue. <span class="pill">ruled · §10</span></span></div>
+    </div>
+    <div class="rule-key">
+      <span><span class="pill">current</span> the proposal</span>
+      <span><span class="pill needs">needs X</span> waits on X before it can be built</span>
+      <span><span class="pill dir">today</span> what ships now, for comparison</span>
+    </div>
+    <p class="note" style="margin-top:22px"><b>What the frames are.</b> Nyx is the dogfood cat, and every count, date and time on her frames comes from a read-only replay of her record through the shipped timing rule (<code>lib/mealTiming.ts</code>), checked by an independent re-count. Pixel (Sam's cat) appears once, on an illustrative frame, because nothing on Nyx's record shows plant material. Frames marked <span class="needs-tag">needs …</span> carry a number or rule that is not final.</p>
+    <nav class="toc" aria-label="Sections">
+      <a href="#s01"><span>01</span>Why read 50 matches read 1</a>
+      <a href="#s02"><span>02</span>The read, with the record</a>
+      <a href="#s03"><span>03</span>How the timing line speaks</a>
+      <a href="#s04"><span>04</span>R3: name her kinds?</a>
+      <a href="#s05"><span>05</span>Her vomiting over time</a>
+      <a href="#s06"><span>06</span>The vet report page</a>
+      <a href="#s07"><span>07</span>Did she heave first?</a>
+      <a href="#s08"><span>08</span>The photo read underneath</a>
+      <a href="#s09"><span>09</span>Decisions</a>
+      <a href="#s10"><span>10</span>Proposed run order</a>
+    </nav>
+  </header>
+
+  <!-- ═══════════════════════════ 01 ═══════════════════════════ -->
+  <section id="s01">
+    <div class="sec-head"><span class="sec-num">01</span><h2>Why read 50 matches read 1</h2></div>
+    <div class="col">
+      <p>The read is built to be quiet. The model sees one photo and the words "Analyse this photo of pet vomit", and nothing else. Its own sentences reach you only when it raises a concern itself, so every calm read gets a fixed template. The useful facts the app does compute (meal timing, counts, what came up across many photos) show on Home and in the vet report, never on the screen you open after logging.</p>
+    </div>
+    <div class="nums" aria-label="Nyx's record, replayed">
+      <div><b>26 of 44</b><span>completed reads carry one of three fixed texts, the calm one on 17</span></div>
+      <div><b>41 of 44</b><span>reads say "partially digested food", whatever the time since her meal</span></div>
+      <div><b>9 of 11</b><span>timed vomits since Aug 2 came within 10 minutes of a logged feeding</span></div>
+      <div><b>0</b><span>screens that show her vomiting over time, beside her weight and how she's eating</span></div>
+    </div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone" aria-label="Nyx's vomit record today, a calm read">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Sep 21, 4:40 PM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+          <div class="photo"></div>
+          <div class="readcard">
+            <div class="rc-h"><span class="rc-eyebrow">AI read</span><span class="tier legacy-calm">Keep an eye out</span></div>
+            <div class="rc-why">A single photo on its own can't tell you how Nyx is doing. Keep an eye on Nyx. If it happens again, or Nyx seems unwell or goes off food, your vet is the best call.</div>
+            <div class="rc-foot">This is a quick read of a single moment, not a diagnosis.</div>
+          </div>
+          <div class="vis-head">What's visible <span>Edit</span></div>
+          <dl class="vis">
+            <div><dt>Colour</dt><dd>Tan</dd></div>
+            <div><dt>Consistency</dt><dd>Chunky</dd></div>
+            <div><dt>Contents</dt><dd>Partially digested food</dd></div>
+            <div><dt>Blood</dt><dd>None visible</dd></div>
+          </dl>
+        </div>
+        <div class="frame-cap"><b>Today <span class="pill dir">today</span></b><span>The same words on 17 of her reads, Jun 25 to Sep 21. The template's dash is split into two sentences here. The grid is this read's real values, which are also her most common read.</span></div>
+      </div>
+      <div class="frame" style="width: 420px">
+        <div class="frame-cap"><b>What the evidence broke at kickoff</b></div>
+        <ul class="broke">
+          <li><b>The digestion field can't carry a timing rule.</b> "Partially digested" is on 41 of 44 reads, including 13 of 14 within 10 minutes of eating. "Undigested" is on none of the 15 within 30 minutes.</li>
+          <li><b>The "empty-stomach bile" kind doesn't exist for Nyx.</b> Bile without food came up twice, both right after a meal or in the same bout.</li>
+          <li><b>"22 within 30 minutes" was a naive count.</b> The shipped rule counts 16. The other 6 were piles you found, whose time you didn't see.</li>
+          <li><b>A plain model upgrade breaks every read.</b> The newer models reject today's request shape, and the pipeline would show "couldn't read the photo" on every vomit. The request has to change first (§08).</li>
+          <li><b>The app can't see her weight loss.</b> The June 4.4 kg reading was overwritten on Sep 16, before the app kept old weights.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 02 ═══════════════════════════ -->
+  <section id="s02">
+    <div class="sec-head"><span class="sec-num">02</span><h2>The read, with the record</h2></div>
+    <div class="col">
+      <p>The read keeps its verdict and its forward-looking sentence, word for word. Under it, a short block states what the record knows about this vomit: when it came up against her last logged meal, and how many vomits were logged in the 7 days up to it. Every line is worked out when the screen opens and never stored, so a meal you log later corrects it. When the app can't time a vomit, it says why instead of guessing.</p>
+    </div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone" aria-label="Nyx's Sep 21 vomit with the record block">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Sep 21, 4:40 PM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+          <div class="photo"></div>
+          <div class="readcard">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier eye">Keep an eye out</span></div>
+            <div class="rc-why">Keep an eye on Nyx. If it happens again, or Nyx seems unwell or goes off food, your vet is the best call.</div>
+            <div class="ctx">
+              <span class="ctx-label">From Nyx's record</span>
+              <p><span class="clock"></span>5 minutes after the meal logged at 4:35 PM</p>
+              <p class="needs-box"><span class="needs-tag">needs EN-4 live · count per logged vomit (D3)</span><br>3rd vomit logged in the 7 days up to this one</p>
+              <p class="quiet">4 more logged since.</p>
+            </div>
+            <span class="rc-door">See Nyx's vomiting over time ›</span>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>A timed vomit <span class="pill">current · R3 option B</span></b><span>The timing line names the meal by its logged time, never the food: 10 of her 11 timed lines since Aug 2 would name the trial diet, which reads as blame. The count prints only once the EN-4 floor has worked out this vomit (D5), from 2 up, and never as "1st". Under a call tier it moves into "What to tell them".</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Nyx's Sep 7 found vomit, timing silent">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Sep 7, 6:00 AM</div><div class="rec-sub">Found · Nyx</div></div>
+          <div class="photo"></div>
+          <div class="readcard">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier eye">Keep an eye out</span></div>
+            <div class="rc-why">Keep an eye on Nyx. If it happens again, or Nyx seems unwell or goes off food, your vet is the best call.</div>
+            <div class="ctx">
+              <span class="ctx-label">From Nyx's record</span>
+              <p class="quiet">You found this one, so there's no exact time to set against her meals.</p>
+              <p class="needs-box"><span class="needs-tag">needs EN-4 live</span><br>2nd vomit logged in the 7 days up to this one</p>
+            </div>
+            <span class="rc-door">See Nyx's vomiting over time ›</span>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>A found pile <span class="pill">current</span></b><span>Half of her vomits are found piles, bouts already counted or logged before meals were. Each gets a reason, never a blank, so a missing line never reads as "nothing to say". The old kickoff rule would have printed "first yellow since Jun 27" here; that line is gone (D2).</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Nyx's Sep 25 vomit, the second in its bout">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="back">‹</div><div class="rec-title">Vomit · Sep 25, 8:10 PM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+          <div class="photo"></div>
+          <div class="readcard">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier legacy">Worth a call</span></div>
+            <div class="rc-why">Nyx has thrown up more than once in a short window. Repeated vomiting like that is worth a call to your vet.</div>
+            <div class="ctx">
+              <span class="ctx-label">From Nyx's record</span>
+              <p class="quiet">Same bout as the 7:08 PM vomit, which came 20 minutes after the meal logged at 6:48 PM.</p>
+            </div>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>A second vomit in one bout <span class="pill">current</span></b><span>This vomit's live verdict is unchanged; the record block only adds to it. Vomits under 3 hours apart are one bout for timing, so the second one points at the first rather than at a meal.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 03 ═══════════════════════════ -->
+  <section id="s03">
+    <div class="sec-head"><span class="sec-num">03</span><h2>How the timing line speaks</h2></div>
+    <div class="col">
+      <p>History and Home already print "5 min after eating" from the same rule. On Nyx's record that phrase claims two things the log doesn't hold. Her meals are presumed eaten unless you mark them otherwise, and only 3 of the 209 meals logged since Aug 17 carry a rating that says she ate. And 6 of her 16 quick-after-meal vomits were logged in the same sitting as the meal, so "1 min" is the gap between two taps, not between eating and vomiting. The rule stays the same; only the words change, and History would change with it.</p>
+    </div>
+    <div class="side">
+      <div class="option">
+        <div class="option-head"><b>Keep the shipped words</b><span>One voice with History today. Says "eating" over a bowl nobody rated.</span></div>
+        <div class="frames">
+          <div class="frame">
+            <div class="wordrow"><span class="wl">Sep 21, 4:40 PM</span><span class="wv">5 min after eating</span></div>
+            <div class="wordrow"><span class="wl">Oct 9, 2:53 PM · logged together</span><span class="wv">Under a minute after eating</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="frame">
+        <div class="wordrow"><span class="wl">Sep 21, 4:40 PM</span><span class="wv">5 minutes after the meal logged at 4:35 PM</span></div>
+        <div class="wordrow"><span class="wl">Oct 9, 2:53 PM · logged together</span><span class="wv">Within minutes of the meal logged at 2:53 PM. You logged them together, so the exact gap isn't known.</span></div>
+        <div class="wordrow"><span class="wl">A mid-gap vomit · illustrative time</span><span class="wv">2 hours after the last logged feeding</span></div>
+        <div class="wordrow"><span class="wl">After a refused bowl · illustrative times</span><span class="wv">40 minutes after the meal logged at 7:00 AM. The bowl offered after it was marked Refused.</span></div>
+        <div class="frame-cap"><b>The meal named by its logged time <span class="pill">current · D4</span></b><span>Says what was logged, not what was eaten. A refused bowl never sets the clock, and when it sits between the meal and the vomit, the line says so every time. History adopts the same words (D4).</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 04 ═══════════════════════════ -->
+  <section id="s04">
+    <div class="sec-head"><span class="sec-num">04</span><h2>R3: should the read name her recurring kinds?</h2></div>
+    <div class="col">
+      <p>All three frames are the same Sep 21 vomit. The counts are true for Nyx. The question is where "within 30 minutes of a logged feeding, 14 of 43" belongs.</p>
+      <p class="note conflict"><b>Dr. Chen:</b> that count is the long-term finding, and the main news on read 50. Put it where you'll see it. <br><b>Designer:</b> a familiar label on the read echoes the excuses vets record owners using ("he eats too fast", "it's just hairballs"). It also folds a first sign of something new, or a cat going off her food, into a row that looks like more of the same. <br><b>Team recommendation:</b> B. Dr. Chen dissents, and the replay backs his point; B answers it on the profile one tap away.</p>
+    </div>
+    <div class="side">
+      <div class="option">
+        <div class="option-head"><b>A · The kind on the read</b><span>The strongest form: a plain descriptor with its count and the total in one block, never the name alone.</span></div>
+        <div class="frames">
+          <div class="frame">
+            <div class="phone short" aria-label="Option A: the kind on the read">
+              <div><div class="rec-title">Vomit · Sep 21, 4:40 PM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+              <div class="readcard">
+                <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier eye">Keep an eye out</span></div>
+                <div class="rc-why">Keep an eye on Nyx. If it happens again, or Nyx seems unwell or goes off food, your vet is the best call.</div>
+                <div class="ctx">
+                  <span class="ctx-label">From Nyx's record</span>
+                  <p><span class="clock"></span>5 minutes after the meal logged at 4:35 PM</p>
+                  <p>3rd vomit logged in the 7 days up to this one</p>
+                  <p class="kind">Within 30 minutes of a logged feeding: 14 of the 43 times Nyx has vomited since May 14</p>
+                </div>
+                <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+              </div>
+            </div>
+            <div class="frame-cap"><span>Needs the voice and clinical rules amended to allow a kind on a read. Its risk: the 15th quick vomit looks like the 14th, even if this one is different.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="frame">
+        <div class="phone short" aria-label="Option B: timing and count on the read, kinds one tap away">
+          <div><div class="rec-title">Vomit · Sep 21, 4:40 PM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+          <div class="readcard">
+            <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier eye">Keep an eye out</span></div>
+            <div class="rc-why">Keep an eye on Nyx. If it happens again, or Nyx seems unwell or goes off food, your vet is the best call.</div>
+            <div class="ctx">
+              <span class="ctx-label">From Nyx's record</span>
+              <p><span class="clock"></span>5 minutes after the meal logged at 4:35 PM</p>
+              <p>3rd vomit logged in the 7 days up to this one</p>
+            </div>
+            <span class="rc-door">See Nyx's vomiting over time ›</span>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>B · Timing and count here, kinds one tap away <span class="pill">current · recommended</span></b><span>The kinds live on the profile (§05) and the vet report (§06), led by her total, weight and intake. Once EN-3 is live, a read covered by a Home finding also shows the shipped "Part of a pattern" door.</span></div>
+      </div>
+
+      <div class="option">
+        <div class="option-head"><b>C · Kinds in the vet report only</b><span>Same read as B with no door. The grouping reaches the vet and never you.</span></div>
+        <div class="frames">
+          <div class="frame">
+            <div class="phone short" aria-label="Option C: kinds only in the report">
+              <div><div class="rec-title">Vomit · Sep 21, 4:40 PM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+              <div class="readcard">
+                <div class="rc-h"><span class="rc-eyebrow">Nyx's read</span><span class="tier eye">Keep an eye out</span></div>
+                <div class="rc-why">Keep an eye on Nyx. If it happens again, or Nyx seems unwell or goes off food, your vet is the best call.</div>
+                <div class="ctx">
+                  <span class="ctx-label">From Nyx's record</span>
+                  <p><span class="clock"></span>5 minutes after the meal logged at 4:35 PM</p>
+                  <p>3rd vomit logged in the 7 days up to this one</p>
+                </div>
+                <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+              </div>
+            </div>
+            <div class="frame-cap"><span>In the report only: "Witnessed, within 30 minutes of the last logged feeding: 16 bouts, May 25 to Oct 9." You can't correct a grouping you never see, and your question goes unanswered.</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 05 ═══════════════════════════ -->
+  <section id="s05">
+    <div class="sec-head"><span class="sec-num">05</span><h2>Her vomiting over time</h2></div>
+    <div class="col">
+      <p>One screen for the long-term picture, opened from any vomit read. It leads with the total and a month-on-month pair, then her weight and how she's been eating, because a vomiting count without those is half a picture. Below, every bout lands in exactly one row, and the rows add up to the total. Row names describe time and content only: no causes, no "her usual", nothing that sounds settled. Nothing here is stored; it's worked out from the record each time it opens.</p>
+    </div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone tall" aria-label="Nyx's vomiting over time">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="back">‹</div>
+          <div class="card">
+            <div class="prof-total">Nyx's vomiting</div>
+            <div class="prof-sub">49 vomits logged, May 14 to Oct 9, in 46 bouts. Vomits under 3 hours apart count as one bout.</div>
+            <div class="pair"><div><b>9</b><span>bouts in September</span></div><div><b>5</b><span>bouts in August</span></div></div>
+            <div class="fact" style="margin-top:10px"><span class="fl">Weight</span>One weigh-in on file (3.73 kg, Sep 16), so there's nothing to compare it with yet.<span class="door-s">Add a weigh-in ›</span></div>
+            <div class="fact"><span class="fl">Eating</span>Bowls you marked Refused: 11. Most meals since Aug 17 have no rating.</div>
+          </div>
+          <div class="card">
+            <div class="zone-label">Every bout, in one row each</div>
+            <div class="prow flag"><span class="pn">Something the photo read flagged</span><span class="pc">1</span><span class="pd">Sep 22 · possible foreign material</span></div>
+            <div class="prow"><span class="pn">Within 30 minutes of a logged feeding</span><span class="pc">16</span><span class="pd">May 25 to Oct 9 · 15 within 10 minutes · food visible in 14 of 15 photo reads</span><span class="bar-row"><b style="width:35%"></b></span></div>
+            <div class="prow"><span class="pn">Found, time not seen</span><span class="pc">20</span><span class="pd">Last Sep 7 · food visible in 19 of 19 photo reads</span><span class="bar-row"><b style="width:43%"></b></span></div>
+            <div class="prow"><span class="pn">30 minutes to 6 hours after the last logged feeding</span><span class="pc">6</span><span class="pd">Last in June · all 6 timed from a treat, in weeks with few meals logged</span><span class="bar-row"><b style="width:13%"></b></span></div>
+            <div class="prow minor"><span class="pn">After a bowl you marked Refused</span><span class="pc">1</span><span class="pd">May 30</span></div>
+            <div class="prow minor"><span class="pn">No feeding logged in the 24 hours before</span><span class="pc">2</span><span class="pd">May 14, May 15</span></div>
+            <div class="prov">3 more vomits were in the same bout as one above. 5 have no completed photo read. These rows are sorted from the times you logged and the photo reads; tap any vomit to correct it.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>The profile <span class="pill">current · under R3 B</span> <span class="pill needs">needs EN-8 for weight change</span></b><span>The flagged row always leads and is named by its finding. A refused-bowl bout is its own row, so an intake decline can never pass as an "empty stomach" kind. The 30-minute row is shown as a named group only while the Signal's own timing lane is firing for Nyx (whether it fires today is unverified); otherwise it is a plain row. Rising pairs always show; there is no "steady" or "improving".</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone tall" aria-label="Nyx's vomit photos with their context">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Nyx</span><span class="askpill"><i></i>Ask</span></div>
+          <div class="card">
+            <div class="zone-label">Photos, newest first</div>
+            <div class="album">
+              <div class="tile"><div class="ph"></div><span class="tl"><b>Oct 9, 2:53 PM</b><br>Within minutes of the meal logged at 2:53 PM</span></div>
+              <div class="tile"><div class="ph"></div><span class="tl"><b>Sep 25, 7:08 PM</b><br>20 minutes after the meal logged at 6:48 PM</span></div>
+              <div class="tile"><div class="ph"></div><span class="tl"><b>Sep 22, 1:30 AM</b><br>Flagged: possible foreign material</span></div>
+              <div class="tile"><div class="ph"></div><span class="tl"><b>Sep 21, 4:40 PM</b><br>5 minutes after the meal logged at 4:35 PM</span></div>
+              <div class="tile"><div class="ph"></div><span class="tl"><b>Sep 7, 6:00 AM</b><br>Found</span></div>
+              <div class="tile"><div class="ph"></div><span class="tl"><b>Sep 4, 7:02 AM</b><br>Found</span></div>
+            </div>
+            <div class="rc-door">Pick photos for your vet ›</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>The album <span class="pill">current</span></b><span>Every photo carries its date and its timing line, so a vet scrolling it sees a timeline, not a pile of images. "Pick photos for your vet" chooses up to three for the report. Every tile is a real vomit from the replay.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 06 ═══════════════════════════ -->
+  <section id="s06">
+    <div class="sec-head"><span class="sec-num">06</span><h2>The vet report page</h2></div>
+    <div class="col">
+      <p>A vomiting-pattern page placed after the clinical summary and the safety lines, which never move. Descriptors and counts only, with the counting unit stated, weight and intake beside them, one photo per row, and no band word ("mild", "moderate"): those bands are scores for a diagnosed disease, and owner-logged counts run low, so the vet bands it. The existing "Hairball" group becomes "Hair".</p>
+    </div>
+    <div class="sheet-scroll" style="margin-top:24px">
+      <div class="sheet" aria-label="Vet report, vomiting pattern page">
+        <h5>Vomiting pattern <span>Nyx · cat · May 14 to Oct 9, 2026</span></h5>
+        <div class="lead">49 vomits logged by the owner; 46 bouts (vomits under 3 hours apart counted once). Photo reads completed on 44.</div>
+        <div>
+          <div class="months" aria-hidden="true"><i style="height:83%"></i><i style="height:100%"></i><i style="height:75%"></i><i style="height:42%"></i><i style="height:75%"></i><i style="height:8%"></i></div>
+          <div class="mlabels"><span><b>10</b>May*</span><span><b>12</b>Jun</span><span><b>9</b>Jul</span><span><b>5</b>Aug</span><span><b>9</b>Sep</span><span><b>1</b>Oct*</span></div>
+        </div>
+        <table>
+          <thead><tr><th>When, against the last logged feeding</th><th class="n">Bouts</th><th>In the photo reads</th></tr></thead>
+          <tbody>
+            <tr><td>Witnessed, within 30 min</td><td class="n">16</td><td>15 within 10 min; median 3.9 min. Meal logged in a separate sitting before the vomit: 8 of 16. Recognisable food 14 of 15; bile 3.</td></tr>
+            <tr><td>Witnessed, 30 min to 6 h</td><td class="n">7</td><td>6 in May and June, timed from a treat. Recognisable food 6 of 6; bile 4.</td></tr>
+            <tr><td>Witnessed, 6 h or more</td><td class="n">1</td><td>May 30; the bowl before it was marked Refused.</td></tr>
+            <tr><td>Found, time not seen</td><td class="n">20</td><td>Recognisable food 19 of 19; bile 6; hair 2.</td></tr>
+            <tr><td>No feeding logged in prior 24 h</td><td class="n">2</td><td>May 14, May 15.</td></tr>
+          </tbody>
+        </table>
+        <div>Hair seen: Jun 25, Jul 9, Jul 27. Weight on file: 3.73 kg (Sep 16); no earlier reading on file. Bowls marked Refused: 11.</div>
+        <div class="photos"><div><i></i>Within 30 min · Oct 9</div><div><i></i>Found · Sep 7</div><div><i></i>30 min to 6 h · Jun 27</div></div>
+        <div class="foot">* Partial months. One photo per row: the most recent photo read in that row. Counts are as logged by the owner and may be incomplete. Rows are grouped automatically from logged times and photo reads; the owner can correct any vomit.</div>
+      </div>
+    </div>
+    <p class="note" style="margin-top:18px"><b>Needs</b> a Tier-2 edit to the vet report spec, Dr. Chen's wording sign-off and a cold read by the report reviewer before it ships. The cough line already in the report stays where it is.</p>
+  </section>
+
+  <!-- ═══════════════════════════ 07 ═══════════════════════════ -->
+  <section id="s07">
+    <div class="sec-head"><span class="sec-num">07</span><h2>Did she heave first?</h2></div>
+    <div class="col">
+      <p>Whether a cat heaved before food came up is the fact that most changes what a vet does next: it separates vomiting (stomach or gut) from food coming back up without effort (the throat). A photo can't show it, and nothing in the log records it today. Nyx's quick-after-meal bouts can't be told apart without it. Asked after the save, it adds nothing at the moment you're cleaning up.</p>
+    </div>
+    <div class="side">
+      <div class="option">
+        <div class="option-head"><b>No new question</b><span>Today. The report can describe timing and content, never effort.</span></div>
+        <div class="frames">
+          <div class="frame">
+            <div class="phone short" aria-label="No question after saving">
+              <div><div class="rec-title">Vomit · Oct 9, 2:53 PM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+              <div class="photo"></div>
+              <div class="ghost"><i></i><i></i><i></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="frame">
+        <div class="phone short" aria-label="The heave question after saving">
+          <div><div class="rec-title">Vomit · Oct 9, 2:53 PM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+          <div class="photo"></div>
+          <div class="qblock">
+            <div class="q">Did you see Nyx heave before it came up?</div>
+            <div class="qs">Your vet may ask. You can skip this.</div>
+            <div class="answers"><span>Yes</span><span>No</span><span class="pri">Didn't see</span></div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>One optional tap after the save <span class="pill">current · D7</span> <span class="pill needs">needs a schema PR</span></b><span>It never blocks the save, starts on "Didn't see", and never echoes a label back. The report prints the answers as counts, with "didn't see" stated. Only shown on a witnessed vomit; a found pile isn't asked.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 08 ═══════════════════════════ -->
+  <section id="s08">
+    <div class="sec-head"><span class="sec-num">08</span><h2>The photo read underneath</h2></div>
+    <div class="col">
+      <p>The model work is real but smaller than it looks, and it comes in order. First the request changes shape (structured output, honest handling when the model refuses or runs out of room, the actual model stamped on each read), on today's model, because a newer model rejects today's request (CUL-1783). Then an evaluation over her photos with blinded labels and a vet pass on blood and foreign material, about $50 to $100. Only then new fields and a model change. "Re-run analysis" stops re-rolling the same photo. Species stays out of the prompt and drives the app's own rules instead. Reference images and fine-tuning are out for now.</p>
+    </div>
+    <div class="frames">
+      <div class="frame">
+        <div class="phone" aria-label="A read with the new present-only observations">
+          <div><div class="rec-title">Vomit · Sep 22, 1:30 AM</div><div class="rec-sub">Witnessed · Nyx</div></div>
+          <div class="vis-head">What's visible <span>Edit</span></div>
+          <dl class="vis">
+            <div><dt>Colour</dt><dd>Mixed</dd></div>
+            <div><dt>Contents</dt><dd>Recognisable food</dd></div>
+            <div><dt>Bile</dt><dd class="new">Visible</dd></div>
+            <div><dt>Blood</dt><dd>None visible</dd></div>
+            <div><dt>Not food</dt><dd>Possible. Looks like it's in the vomit, not beside it</dd></div>
+          </dl>
+          <div class="frame-cap" style="margin-top:4px"><span style="font-size:11.5px">Photo was dim.</span></div>
+        </div>
+        <div class="frame-cap"><b>Present-only observations <span class="pill">current</span> <span class="pill needs">needs the eval (CUL-1132)</span></b><span>Bile shows when it's there and never as "No bile", since food vomit often carries none. "Partially" and "undigested" collapse into "recognisable food", because the grade doesn't track time. New observations (tube-shaped, a hair mass, strands that could be worms or string, plant material, intact kibble) appear only when present, and the model writes no sentences of its own. Colour, contents, bile and blood are this read's real values; the in-or-beside wording and the photo note are drawn for EN-6.</span></div>
+      </div>
+
+      <div class="frame">
+        <div class="phone" aria-label="Pixel's read with plant material and the lily question">
+          <div class="appbar"><span class="pet"><i class="avatar"></i>Pixel</span><span class="askpill"><i></i>Ask</span></div>
+          <div><div class="rec-title">Vomit · Oct 14, 8:20 AM</div><div class="rec-sub">Found · Pixel</div></div>
+          <div class="photo"></div>
+          <div class="readcard r-call">
+            <div class="rc-h"><span class="rc-eyebrow">Pixel's read</span><span class="tier today">Call your vet today</span></div>
+            <div class="rc-why">There's plant material in this photo.</div>
+            <div class="watch"><p class="static"><b>Call your vet now</b> if there are lilies anywhere Pixel could reach, even in a vase. Pollen or vase water alone can harm a cat's kidneys, and early treatment matters.</p></div>
+            <div class="rc-foot">A quick read of a single moment, not a diagnosis.</div>
+          </div>
+        </div>
+        <div class="frame-cap"><b>Plant in a cat's vomit <span class="pill open">live gap · filed now</span> <span class="pill needs">needs Dr. Chen's tier and wording</span></b><span>Today a cat's plant-material read shows the calm template, and nothing asks about lilies. Neither the model nor an owner can name a plant species from a photo, so the line asks about exposure. Filed as CUL-1782 for the first build after 1.2.0 (D12). The tier shown is a draft.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 09 ═══════════════════════════ -->
+  <section id="s09">
+    <div class="sec-head"><span class="sec-num">09</span><h2>Decisions</h2></div>
+    <div class="col"><p>Five are yours. The rest are team calls inside rules already ratified, logged on CUL-1765 with the recommendation applied; any of them can be reversed.</p></div>
+    <div class="briefs">
+      <div class="brief conflict">
+        <h4>D1 · R3: name her kinds on your screens? <span class="pill open">yours · conflict</span></h4>
+        <p><b>Deciding:</b> whether "within 30 minutes of a logged feeding, 14 of 43" appears on each vomit read, one tap away, or only in the report (§04).</p>
+        <ul><li>A: on the read, with the total.</li><li><b>B: timing and count on the read, kinds on the profile and report.</b> Team recommendation; a familiar label lulls on the read.</li><li>C: report only.</li></ul>
+        <p><b>Dissent:</b> Dr. Chen wants A. The count is the long-term finding.</p>
+        <p><b>Consequence:</b> B makes the profile (§05) the home of the long-term finding, so it ships second and waits on the weight work (EN-8).</p>
+      </div>
+      <div class="brief">
+        <h4>D2 · Narrow R2: drop novelty lines <span class="pill needs">yours · re-ruling</span></h4>
+        <p><b>Deciding:</b> whether the read prints lines like "first bile in six weeks", which you reopened at kickoff.</p>
+        <ul><li>Keep them.</li><li><b>Drop them from the read; "last seen" dates live on every profile row.</b> On Nyx they fire on 7 of 29 vomits, 5 of the 9 lines rest on an absence nobody saw, and a read without one starts to mean "nothing new".</li></ul>
+        <p><b>Consequence:</b> unseats part of R2. Timing and counts keep the reopening; novelty moves to the profile.</p>
+      </div>
+      <div class="brief">
+        <h4>D7 · Ask "Did she heave first?" <span class="pill needs">yours · new capture</span></h4>
+        <p><b>Deciding:</b> one optional tap after saving a witnessed vomit (§07).</p>
+        <ul><li>No new question.</li><li><b>One tap, after the save, starting on "Didn't see".</b> The fact that separates vomiting from regurgitation, and the record can't tell without it.</li><li>An optional short video for the vet.</li></ul>
+        <p><b>Consequence:</b> one schema PR; the report prints the answers as counts.</p>
+      </div>
+      <div class="brief">
+        <h4>D10 · Fund the photo evaluation <span class="pill needs">yours · money</span></h4>
+        <p><b>Deciding:</b> whether any model or field change ships without a measured comparison.</p>
+        <ul><li><b>About $50 to $100 through batch, blinded labels from you plus a vet pass on blood and foreign material.</b> Your 3 edits on 44 reads can't be the answer key; they'd teach under-calling.</li><li>Your edits only.</li><li>Skip it and upgrade the model.</li></ul>
+        <p><b>Consequence:</b> the model change and new fields wait on the vet labels (CUL-1312, cancelled 10/2, would need reopening).</p>
+      </div>
+      <div class="brief">
+        <h4>D6 · When "food visible long after a meal" may be said <span class="pill needs">yours · clinical, changes a shipped line</span></h4>
+        <p><b>Deciding:</b> the shipped Signal line "Recognizable food 6h or more after eating" counts food inside normal cat digestion (half-emptying ran 3.5 to 12.8 hours in normal cats, Costello 1999).</p>
+        <ul><li>Keep 6 hours.</li><li><b>Keep 6 hours for the empty-stomach band; give food-visible its own 8-hour line, printed as a time, never as a sign.</b></li></ul>
+        <p><b>Consequence:</b> changes an owner-facing Signal line and corrects the 6-hour decision doc. Nothing Nyx sees moves; she has no eligible case.</p>
+      </div>
+    </div>
+    <h3>Team calls, applied and logged</h3>
+    <div class="teamcalls">
+      <div><b>D3 · What the count counts</b><span>Vomits logged in the 7 days up to this one, from 2, un-logged days disclosed. Never lower than any engine count; bouts go to the report.</span></div>
+      <div><b>D4 · Timing words</b><span>The meal named by its logged time (§03); History adopts the same words. A better-than-the-rule call, so it's yours to reverse.</span></div>
+      <div><b>D5 · What must be live first</b><span>Timing line first; the count waits for EN-4; the "goes off food" sentence stays until the watch-for list has an intake clause.</span></div>
+      <div><b>D8 · Species in the prompt</b><span>Kept out. It drives the app's own rules (lily for cats, bloat for dogs). Tested true, wrong and absent once dog photos exist.</span></div>
+      <div><b>D9 · Reference images</b><span>None in v1. Both ways of using them have a known failure mode; revisit after the evaluation.</span></div>
+      <div><b>D11 · Privacy of the profile</b><span>Worked out at render, nothing stored. A one-line Trust &amp; Safety confirmation is filed rather than assumed.</span></div>
+      <div><b>D12 · The lily gap</b><span>Filed now as CUL-1782, for the first build after 1.2.0.</span></div>
+      <div><b>D13 · Band words in the report</b><span>None. Weekly counts with coverage; the vet bands it.</span></div>
+      <div><b>D14 · Re-run analysis</b><span>Returns the stored read unless the photo, model or prompt changed; the record lines and floor still refresh.</span></div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════ 10 ═══════════════════════════ -->
+  <section id="s10">
+    <div class="sec-head"><span class="sec-num">10</span><h2>Proposed run order</h2></div>
+    <div class="col"><p>Everything starts after 1.2.0 clears review, except the lily issue, which takes the first build after it. The four lanes are independent except where named.</p></div>
+    <ol class="runorder">
+      <li><span class="stage">First</span><span><b>The lily question</b> on every cat plant read (and a plant line for dogs), CUL-1782. One server PR, Dr. Chen's wording.</span></li>
+      <li><span class="stage">Lane 1</span><span><b>The read, with the record</b> (§02, §03): a pure module for the timing line and count over the shipped rules, then the read card and present-only Bile, then a wider ban list in the no-reassurance test. About 3 client PRs, no migration. The count waits for EN-4 to be switched on for the pet.</span></li>
+      <li><span class="stage">Lane 2</span><span><b>The request, then the evaluation</b> (§08): structured output on today's model for vomit and stool, the full-request stamp, the evaluation harness, then the present-only schema in its own migration PR, then a model change chosen by the numbers. About 6 PRs, mostly server.</span></li>
+      <li><span class="stage">Lane 3</span><span><b>Her vomiting over time</b> (§05), after Lane 1 and after EN-8's weight history: the partition module with a test that rows sum to the total, the profile, the album, and a guard keeping it out of Ask. About 4 client PRs.</span></li>
+      <li><span class="stage">Lane 4</span><span><b>The report page</b> (§06) and, if you rule D7 yes, <b>the heave question</b> (§07). About 3 server PRs plus one schema PR.</span></li>
+    </ol>
+  </section>
+
+  <footer>
+    <span>The vomit engine · round 1 · 2026-10-11</span>
+    <span>Canonical: <code>docs/culprit-vomit-engine-mockups.html</code>; evidence <code>docs/research/2026-10-vomit-engine-evidence.md</code></span>
+    <span>CUL-1765 · CUL-1782 · CUL-1783</span>
+  </footer>
+</div>
