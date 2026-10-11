@@ -81,8 +81,9 @@ Deno.test('CUL-1086 — a free-fed bowl rated "ate it all" no longer hides a cat
   assert.equal(fixed[0].trigger, 'consecutive_low')
   assert.equal(fixed[0].baselineScore, 4)
   assert.equal(fixed[0].recentScore, 1)
-  // Nine wet meals before the recent cutoff; not a single kibble rating among them.
-  assert.equal(fixed[0].ratedMealsConsidered, 9)
+  // Eight wet meals before the day ahead of the judged one (CUL-94's buffer day, Jul 9, sits out
+  // of the reading that fires); not a single kibble rating among them.
+  assert.equal(fixed[0].ratedMealsConsidered, 8)
 })
 
 Deno.test('CUL-1086 — a free-fed bowl\'s rating no longer fires a decline the phone would never raise', () => {
@@ -160,9 +161,14 @@ Deno.test('CUL-1086 by instant — refusals after the bowl comes up count, the b
   r3.push(meal(8, 12, KIBBLE, 'picked'), meal(8, 20, KIBBLE, 'picked'), meal(9, 4, KIBBLE, 'picked'))
   r3.push(meal(10, 8, KIBBLE, 'some'), meal(10, 12, KIBBLE, 'some'))
   const upJul9 = bowl('2026-07-01T00:00:00.000Z', '2026-07-09T06:00:00.000Z')
-  assert.deepEqual(detectIntakeDecline(input('cat', r3, [upJul9])).map((f) => f.trigger), ['consecutive_low'])
-  // Without the bowl the picks sit in the baseline and the drop is silenced: the fixture reaches it.
-  assert.deepEqual(detectIntakeDecline(input('cat', r3)), [])
+  const withBowl = detectIntakeDecline(input('cat', r3, [upJul9]))
+  assert.deepEqual(withBowl.map((f) => f.trigger), ['consecutive_low'])
+  assert.equal(withBowl[0].baselineScore, 4, 'only the watched wet meals make the normal')
+  // Without the bowl the Jul 8 picks sit in the baseline and pull it under 4: the fixture reaches
+  // the span. (Before CUL-94 this silenced the drop; the buffer day now keeps Jul 9's pick out of
+  // the reading that fires, so the card holds either way and the normal is what differs.)
+  const noBowl = detectIntakeDecline(input('cat', r3))
+  assert.ok(noBowl[0].baselineScore < 4, `the picks reach the baseline (${noBowl[0].baselineScore})`)
   // Probe B (a dog): the bowl's picks must not spoil the food's normally-eaten history either.
   const b: MealEvent[] = [meal(7, 12, KIBBLE, 'picked'), meal(7, 20, KIBBLE, 'picked')]
   b.push(meal(8, 8, KIBBLE, 'all'), meal(9, 8, KIBBLE, 'all'), meal(9, 18, KIBBLE, 'all'), meal(10, 8, KIBBLE, 'refused'))

@@ -1048,28 +1048,32 @@ export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineRes
   // SKIPPED, never read as a decline — a logging gap is not anorexia.
   const isCat = input.species === 'cat';
   const consecutiveDays = isCat ? DECLINE.cat.consecutiveDaysBelowBaseline : DECLINE.consecutiveDaysBelowBaseline;
-  // CUL-94 — the owner's local days, with baseline + recent PARTITIONING the meals: a byte
+  // CUL-94 — the owner's local days, with baseline, buffer and recent tiling the meals: a byte
   // mirror of detection.ts detector ② (see the comment there for the defect this closes). The
   // recent window is N whole local days ending at the ANCHOR — today once today has a rated
-  // meal, else yesterday — and the baseline is every window meal before them. Change one
+  // meal, else yesterday — and the baseline is every window meal before them, with the day just
+  // before them read both ways (out, so a refusal day cannot dilute the normal; in, so a good day
+  // keeps it). Change one
   // surface, change both; `lib/intakeDeclineParity.test.ts` drives the two real detectors.
   const dayOfMeal = new Map(windowMeals.map((m) => [m, intakeDayOf(m.ms, input.timeZone)] as const));
   const todayDay = intakeDayOf(nowMs, input.timeZone);
   const anchorDay = windowMeals.some((m) => dayOfMeal.get(m) === todayDay) ? todayDay : todayDay - 1;
   const firstRecentDay = anchorDay - (consecutiveDays - 1);
-  const baselineMeals = windowMeals.filter((m) => (dayOfMeal.get(m) as number) < firstRecentDay);
-
-  if (baselineMeals.length >= DECLINE.minRatedMealsForBaseline) {
-    const baselineScore = baselineMeals.reduce((s, m) => s + m.score, 0) / baselineMeals.length;
-    const recentDays: { mean: number }[] = [];
-    for (let day = anchorDay; day >= firstRecentDay; day--) {
-      const dayMeals = windowMeals.filter((m) => dayOfMeal.get(m) === day);
-      if (dayMeals.length === 0) continue;
-      recentDays.push({ mean: dayMeals.reduce((s, m) => s + m.score, 0) / dayMeals.length });
-    }
-    if (recentDays.length >= consecutiveDays) {
+  const bufferDay = firstRecentDay - 1;
+  const recentDays: { mean: number }[] = [];
+  for (let day = anchorDay; day >= firstRecentDay; day--) {
+    const dayMeals = windowMeals.filter((m) => dayOfMeal.get(m) === day);
+    if (dayMeals.length === 0) continue;
+    recentDays.push({ mean: dayMeals.reduce((s, m) => s + m.score, 0) / dayMeals.length });
+  }
+  // The buffer day read both ways, the accusing reading standing (see detection.ts).
+  if (recentDays.length >= consecutiveDays) {
+    const recentMean = recentDays.reduce((s, d) => s + d.mean, 0) / recentDays.length;
+    for (const lastBaselineDay of [bufferDay - 1, bufferDay]) {
+      const baselineMeals = windowMeals.filter((m) => (dayOfMeal.get(m) as number) <= lastBaselineDay);
+      if (baselineMeals.length < DECLINE.minRatedMealsForBaseline) continue;
+      const baselineScore = baselineMeals.reduce((s, m) => s + m.score, 0) / baselineMeals.length;
       const allBelow = recentDays.every((d) => d.mean < baselineScore);
-      const recentMean = recentDays.reduce((s, d) => s + d.mean, 0) / recentDays.length;
       const material = baselineScore - recentMean >= DECLINE.minDeclineDelta;
       // Single-day (cat) path also requires the day to be genuinely low, not one notch.
       const meetsConcernFloor = consecutiveDays > 1 || recentMean <= DECLINE.cat.singleDayConcernCeiling;
@@ -1084,6 +1088,7 @@ export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineRes
           refusedFoodLabel: null,
           ratedMealsConsidered: baselineMeals.length,
         });
+        break;
       }
     }
   }

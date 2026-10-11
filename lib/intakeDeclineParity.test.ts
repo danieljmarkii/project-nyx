@@ -223,10 +223,9 @@ describe('intake-decline parity: phone and server over the same meals (CUL-1086)
     expect(fired).toBeGreaterThan(150);
     expect(filterDecided).toBeGreaterThan(150);
     // CUL-94: and enough records where the owner's day, not UTC's, decides the verdict, so the
-    // agreement is measured where the calendar matters. Measured at CUL-94: 565 fired, the bowls
-    // decided 437 and the zone 255 (fired rose from 352 because a low day now holds its card
-    // until the next day's first rated meal, ruling (a) on CUL-94; with UTC days alone and no
-    // carry the partition fix moves it to 349, i.e. it is neutral).
+    // agreement is measured where the calendar matters. Measured at CUL-94: 577 fired, the bowls
+    // decided 435 and the zone 306. Fired rose from 352 mostly because a low day now holds its
+    // card until the next day's first rated meal (ruling (a) on CUL-94).
     expect(zoneDecided).toBeGreaterThan(100);
   });
 

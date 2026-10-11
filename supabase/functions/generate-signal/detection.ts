@@ -4373,40 +4373,54 @@ function detectIntakeDeclineCore(
   // sensitivity on the day count only, never by reading absent data as a decline.
   const isCat = input.pet.species === 'cat'
   const consecutiveDays = isCat ? cfg.cat.consecutiveDaysBelowBaseline : cfg.consecutiveDaysBelowBaseline
-  // CUL-94 — days are the OWNER's local days, and baseline + recent PARTITION the meals.
+  // CUL-94 — days are the OWNER's local days, and baseline, buffer and recent TILE the meals.
   // The old split was a raw `now - N×24h` cutoff for the baseline and UTC calendar days for
   // the recent window, so every meal between 24h ago and UTC midnight was counted nowhere: a
   // New York cat lost its card at 20:00 EDT with no new evidence, and a Pacific cat's full
   // dinner landed in "today's" UTC bucket and lifted a genuinely low day over the ceiling.
   // The recent window is N whole local days ending at the ANCHOR — today once today has a
   // rated meal, else yesterday (between local midnight and breakfast nothing new is known, so
-  // the card holds); the baseline is every window meal before the first of those days. No
-  // valid zone ⇒ UTC days, the pre-CUL-94 calendar: this is a safety card, so a missing zone
-  // degrades the day boundary, never silences the detector (unlike ⑥ / I5).
+  // the card holds). The baseline is every window meal before the day BEFORE the first of those
+  // days: one whole local day is a buffer, in neither half. Without it a cat that refused four
+  // times yesterday and ate "some" at breakfast folded yesterday into its own baseline and lost
+  // the card, more surely the harder it refused (the CUL-94 adversarial pass; B-090's shape). The
+  // day before a drop is the likeliest to hold its onset, and the old `now − N×24h` cutoff kept
+  // roughly that buffer by accident (the next comment reads the buffer day both ways). No valid zone ⇒ UTC days, the pre-CUL-94 calendar: this
+  // is a safety card, so a missing zone degrades the day boundary, never silences the detector
+  // (unlike ⑥ / I5).
   const dayOfMeal = intakeDaysOf(windowMeals, input.timezone)
   const todayDay = intakeDayOf(nowMs, input.timezone)
   const anchorDay = windowMeals.some((m) => dayOfMeal.get(m) === todayDay) ? todayDay : todayDay - 1
   const firstRecentDay = anchorDay - (consecutiveDays - 1)
-  const baselineMeals = windowMeals.filter((m) => (dayOfMeal.get(m) as number) < firstRecentDay)
+  const bufferDay = firstRecentDay - 1
 
-  if (baselineMeals.length >= cfg.minRatedMealsForBaseline) {
-    const baselineScore =
-      baselineMeals.reduce((sum, m) => sum + m.score, 0) / baselineMeals.length
+  // Per-day means for the N local days ending at the anchor. A day with no rated meal is
+  // skipped, never treated as a decline — a logging gap must not masquerade as anorexia
+  // (§9 / B-027 data caveat) — so a skipped day leaves the window short and the arm silent.
+  const recentDays: { mean: number }[] = []
+  for (let day = anchorDay; day >= firstRecentDay; day--) {
+    const dayMeals = windowMeals.filter((m) => dayOfMeal.get(m) === day)
+    if (dayMeals.length === 0) continue
+    recentDays.push({ mean: dayMeals.reduce((sum, m) => sum + m.score, 0) / dayMeals.length })
+  }
 
-    // Per-day means for the N local days ending at the anchor. A day with no rated meal is
-    // skipped, never treated as a decline — a logging gap must not masquerade as anorexia
-    // (§9 / B-027 data caveat) — so a skipped day leaves the window short and the arm silent.
-    const recentDays: { mean: number }[] = []
-    for (let day = anchorDay; day >= firstRecentDay; day--) {
-      const dayMeals = windowMeals.filter((m) => dayOfMeal.get(m) === day)
-      if (dayMeals.length === 0) continue
-      const mean = dayMeals.reduce((sum, m) => sum + m.score, 0) / dayMeals.length
-      recentDays.push({ mean })
-    }
-
-    if (recentDays.length >= consecutiveDays) {
+  // The buffer day is read BOTH ways and the accusing reading stands. Out of the baseline, a
+  // refusal day cannot dilute the normal it is judged against (the case above); in it, a GOOD
+  // day keeps a thin record over the four-meal floor and its normal at full height (a dog's
+  // "all" on the day before two "some" days held the delta at 1.0, not 0.9). Which kind of day
+  // the buffer is cannot be known from the record, so neither reading may silence the other.
+  // Measured against the pre-CUL-94 split over 20,000 generated records (UTC): 2 lose this card,
+  // both where the old `now − N×24h` cutoff cut the buffer day at an hour that happened to keep
+  // its good meals and drop its bad one; no whole-day reading fires on either, and one keeps
+  // its refusal card. Read one way only, 17 lost it.
+  if (recentDays.length >= consecutiveDays) {
+    const recentMean = recentDays.reduce((sum, d) => sum + d.mean, 0) / recentDays.length
+    for (const lastBaselineDay of [bufferDay - 1, bufferDay]) {
+      const baselineMeals = windowMeals.filter((m) => (dayOfMeal.get(m) as number) <= lastBaselineDay)
+      if (baselineMeals.length < cfg.minRatedMealsForBaseline) continue
+      const baselineScore =
+        baselineMeals.reduce((sum, m) => sum + m.score, 0) / baselineMeals.length
       const allBelow = recentDays.every((d) => d.mean < baselineScore)
-      const recentMean = recentDays.reduce((sum, d) => sum + d.mean, 0) / recentDays.length
       const material = baselineScore - recentMean >= cfg.minDeclineDelta
       // On the single-day (cat) path, also require the day to be genuinely low — not
       // merely one notch down (e.g. "all"→"most") — so we stay sensitive without crying
@@ -4425,6 +4439,7 @@ function detectIntakeDeclineCore(
           ratedMealsConsidered: baselineMeals.length,
           lastFullMealIso,
         })
+        break
       }
     }
   }

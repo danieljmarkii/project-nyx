@@ -169,3 +169,55 @@ describe('CUL-94 — the server with no usable zone reads UTC days, never silenc
     expect(serverTriggers('cat', meals, nows[0], tz)).toEqual(['consecutive_low']);
   });
 });
+
+describe('CUL-94 — a refusal day never dilutes the normal the next day is judged against', () => {
+  // The adversarial pass's counterexample (S1c): with yesterday folded into the baseline, four
+  // re-offered refusals pulled the normal from 3.5 to 2.86 and a "some" breakfast (2) was no
+  // longer a full point below it. The harder she refused, the quieter the card went.
+  const cat: M[] = [];
+  for (let d = 1; d <= 9; d++) {
+    cat.push({ iso: `${day(d)}T08:00:00-04:00`, rating: 'all' });
+    cat.push({ iso: `${day(d)}T18:00:00-04:00`, rating: 'most' });
+  }
+  for (const t of ['07:30', '12:00', '18:00', '21:00']) cat.push({ iso: `${day(10)}T${t}:00-04:00`, rating: 'refused' });
+  const catWithBreakfast = [...cat, { iso: `${day(11)}T07:30:00-04:00`, rating: 'some' as const }];
+
+  it('the cat keeps its card on a still-low breakfast after a day of refusals', () => {
+    expect(verdict('cat', catWithBreakfast, `${day(11)}T08:00:00-04:00`, NY)).toEqual(['consecutive_low']);
+  });
+
+  it.each([1, 2, 3, 4, 5])('and refusing harder never quiets it (%i refusals)', (n) => {
+    const fewer = [
+      ...cat.filter((m) => m.rating !== 'refused'),
+      ...['07:30', '10:00', '12:00', '18:00', '21:00'].slice(0, n).map((t) => ({ iso: `${day(10)}T${t}:00-04:00`, rating: 'refused' as const })),
+      { iso: `${day(11)}T07:30:00-04:00`, rating: 'some' as const },
+    ];
+    expect(verdict('cat', fewer, `${day(11)}T08:00:00-04:00`, NY)).toEqual(['consecutive_low']);
+  });
+
+  it('the dog (S2): a refusal day before two low days stays out of its normal', () => {
+    const dog: M[] = [];
+    for (let d = 3; d <= 7; d++) {
+      dog.push({ iso: `${day(d)}T08:00:00-04:00`, rating: 'all' });
+      dog.push({ iso: `${day(d)}T18:00:00-04:00`, rating: 'most' });
+    }
+    for (const t of ['08:00', '12:00', '18:00', '21:00']) dog.push({ iso: `${day(8)}T${t}:00-04:00`, rating: 'refused' });
+    dog.push({ iso: `${day(9)}T08:00:00-04:00`, rating: 'some' }, { iso: `${day(9)}T18:00:00-04:00`, rating: 'some' });
+    dog.push({ iso: `${day(10)}T08:00:00-04:00`, rating: 'some' });
+    expect(verdict('dog', dog, `${day(10)}T09:00:00-04:00`, NY)).toEqual(['consecutive_low']);
+  });
+
+  it('and a GOOD day before the judged days still counts toward a thin normal', () => {
+    // Read with the day before excluded, this record has three baseline meals, under the floor
+    // of four; with it included the normal is 2.25 and the day's 1.0 is a full point under it.
+    const thin: M[] = [
+      { iso: `${day(5)}T08:00:00-04:00`, rating: 'refused' },
+      { iso: `${day(6)}T18:00:00-04:00`, rating: 'all' },
+      { iso: `${day(8)}T18:00:00-04:00`, rating: 'all' },
+      { iso: `${day(10)}T07:00:00-04:00`, rating: 'picked' },
+      { iso: `${day(11)}T08:00:00-04:00`, rating: 'picked' },
+      { iso: `${day(11)}T15:00:00-04:00`, rating: 'picked' },
+    ];
+    expect(verdict('cat', thin, `${day(11)}T20:00:00-04:00`, NY)).toEqual(['consecutive_low']);
+  });
+});
