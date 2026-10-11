@@ -2682,7 +2682,8 @@ export interface ProteinTimeline {
   bins: number[][]
   /** Per-week count of off-diet feedings with no recorded protein (disclosed, never dropped, §5.1). */
   unknownByWeek: number[]
-  /** Distinct local days with a MEAL-type event logged, per weekly bucket. This is the "was the DIET
+  /** Distinct local days with a non-treat MEAL-type event logged, per weekly bucket (CUL-1779: the
+   *  trial coverage tile's day predicate, `foodType !== 'treat'`). This is the "was the DIET
    *  observed?" signal — deliberately NOT the symptom chart's any-log `loggedDaysByBucket`, which
    *  would count a logged vomit as diet observation and assert a clean off-diet week over a diet
    *  nobody watched (B-497, adversarial-reviewer). A week with zero off-diet feedings AND a meal
@@ -2690,6 +2691,18 @@ export interface ProteinTimeline {
    *  (draw "not logged", never a `0`). Treats/human food are themselves off-diet feedings, so on a
    *  zero-total week the only meal-type events left are on-diet meals — exactly the right denominator. */
   mealDaysByBucket: number[]
+  /** Days of each bucket inside the chart's scope (CUL-1779): 7 for a full in-scope week, fewer for
+   *  a part-week or a week the trial's evidence range only partly covers, 0 for a week outside it.
+   *  The denominator under every column. */
+  scopeDaysByBucket: number[]
+  /** The chart's scope: the trial's evidence range ∩ the window on a trial-classified report (the
+   *  only span its off-diet set exists over), else the window. Stated in the caption. */
+  scopeStartDate: string
+  scopeEndDate: string
+  trialScoped: boolean
+  /** True when the trial module withholds the clean-record statement (`mayStateRecordClean`
+   *  false). No week may then print a measured `0` (CUL-1779). */
+  zeroWithheld: boolean
   /** Per-week count of off-diet FEEDINGS (each counted once) — the honest denominator
    *  behind a stack whose segments may now sum higher than the feedings that produced it. */
   feedingsByWeek: number[]
@@ -4868,15 +4881,37 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       if (j !== undefined) timelineBins[w][j]++
     }
   }
+  // THE CHART'S SCOPE IS ITS NUMERATOR'S SCOPE (CUL-1779, adversarial). On a trial-classified report
+  // the off-diet set is the trial's exposures, which exist only over the trial's EVIDENCE range — so
+  // a week before the trial began, or after it ended, has no off-diet feedings BY CONSTRUCTION, and
+  // counting its meals as diet observation printed a measured "0 off-diet" over weeks of logged
+  // jerky. Page one and Appendix C already state this range (B-600); this chart was the surface
+  // that kept counting the whole window. So every per-week fact below is clipped to the scope.
+  const offDietScopeStart = trialClassified
+    ? Math.max(startDayNum, dayNumber(trialBlock!.evidenceStartDate) ?? startDayNum)
+    : startDayNum
+  const offDietScopeEnd = trialClassified
+    ? Math.min(endDayNum, dayNumber(trialBlock!.evidenceEndDate) ?? endDayNum)
+    : endDayNum
+  const inOffDietScope = (dn: number): boolean => dn >= offDietScopeStart && dn <= offDietScopeEnd
   // Distinct meal-days per bucket — the off-diet chart's "was the diet observed?" test (B-497). A
   // logged symptom is NOT diet observation, so this counts meal-type events only, never `loggedDayNums`.
+  // And a treat is not the diet either (CUL-1779): the day set is the trial coverage tile's own
+  // (`lib/dietTrial.ts` counts `foodType !== 'treat'`), because the chart's per-week floor mirrors
+  // that tile's floor — a permitted chew on an otherwise unlogged day must not buy a measured `0`.
   const mealDayNums = new Set<number>()
   for (const e of windowMeals) {
+    if (e.meal!.foodType === 'treat') continue
     const dn = eventDayNumber(e.occurredAt, tz)
-    if (dn !== null) mealDayNums.add(dn)
+    if (dn !== null && inOffDietScope(dn)) mealDayNums.add(dn)
   }
   const mealDaysByBucket = new Array(numBuckets).fill(0)
   for (const dn of mealDayNums) mealDaysByBucket[bucketIndexOfDay(dn)]++
+  // The days of each bucket inside the scope — the denominator printed under every column (the
+  // cold read's "n/7 d"). A trailing part-week holds fewer than 7; a week wholly outside the
+  // trial holds 0, and the render draws it as outside the chart's scope rather than as a week.
+  const scopeDaysByBucket = new Array(numBuckets).fill(0)
+  for (let dn = offDietScopeStart; dn <= offDietScopeEnd; dn++) scopeDaysByBucket[bucketIndexOfDay(dn)]++
 
   const proteinTimeline: ProteinTimeline = {
     weekStartDates: bucketStartDates,
@@ -4884,6 +4919,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     bins: timelineBins,
     unknownByWeek,
     mealDaysByBucket,
+    scopeDaysByBucket,
+    scopeStartDate: dayKeyFromNumber(offDietScopeStart),
+    scopeEndDate: dayKeyFromNumber(offDietScopeEnd),
+    trialScoped: trialClassified,
+    // §5.2 is two-sided and the trial module says when the record may not be read as clean
+    // (a refused diet, an off-list bowl, sub-floor coverage …). The chart drawing a measured
+    // `0` is that clean statement made per week, so it obeys the same withhold (CUL-1779).
+    zeroWithheld: trialBlock !== null && !trialBlock.mayStateRecordClean,
     feedingsByWeek,
     totalByProtein: proteinExposureTally,
     hasUnknown: proteinUnknownCount > 0,
