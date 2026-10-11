@@ -904,7 +904,7 @@ Deno.test('(h2) a same-minute tie cannot decide a safety card (the order a read 
   // Ids chosen to sort on BOTH sides of the refusal's own id ('meal-…'), so each order is exercised.
   for (const twinId of ['0000-twin', 'zzzz-twin']) {
     const t = { ...twin, id: twinId }
-    assertEquals(types(payload({ ...cat, rows: { ...cat.rows, meals: [...cat.rows.meals, t] } })), ['intake_decline'], twinId)
+    assertEquals(types(payload({ ...cat, rows: { ...cat.rows, meals: [...cat.rows.meals, t] } })), cat.expectedTypes, twinId)
   }
 })
 
