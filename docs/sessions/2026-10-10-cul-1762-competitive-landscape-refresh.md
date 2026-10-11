@@ -1,9 +1,10 @@
 # Competitive landscape refresh, October 2026 (docs-only)
 
 **Date:** 2026-10-10 (verification and close-out 2026-10-11)
-**One thing:** none (discovery session; no teach row)
+**One thing:** P5 L1 — Pricing and value: a bounded job invites a bounded price · check: pending
+**One thing (re-ask):** D2 L1 — Types: a function can only use what it is handed (from 2026-10-10, run-open PR-09) · check: pending
 
-DISCOVERY mode for [CUL-1762](https://linear.app/projectnyx/issue/CUL-1762). Deliverable: `docs/culprit-competitive-landscape-2026-10.md`, a frozen, dated brief that supersedes the July read, published as an Artifact for phone reading. No app code, no schema, no deploys. Shipped via the session's PR ([CUL-1762](https://linear.app/projectnyx/issue/CUL-1762)).
+DISCOVERY mode for [CUL-1762](https://linear.app/projectnyx/issue/CUL-1762). Deliverable: `docs/culprit-competitive-landscape-2026-10.md`, a frozen, dated brief that supersedes the July read, published as an Artifact for phone reading. No app code, no schema, no deploys. Shipped via #1178.
 
 ## How it ran
 
