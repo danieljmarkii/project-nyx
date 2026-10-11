@@ -39,3 +39,7 @@ Every claim above was replayed on a scratch Postgres 16 with Supabase's default 
 - **CUL-1788**: the same TRUNCATE gap on `legal_acceptances` (032) and `notification_preferences` (050), by reading; not replayed.
 - PR 3 must read the history by naming columns (`select('*')` is refused: `id` is not granted), and B-041's export, when built, includes both tables plus `legal_acceptances`.
 - The guard reads files; a grant changed in the dashboard is the B-505 class, covered only by the post-apply privilege and owner checks in the PR body.
+
+## Applied
+
+Migration 100 applied to production 2026-10-11 on the PM's typed `apply 100`, via the Supabase MCP (`apply_migration`, name `ai_consent`), from the file byte-identical to the CI-green head (sha256 `90e715ca…`). Pre-apply: all four objects absent. Post-apply, read back live: `authenticated` holds table SELECT on the state plus column INSERT / UPDATE on the five answer columns, and column SELECT on the history without `id`; `service_role` holds INSERT / SELECT / UPDATE on the state and SELECT only on the history; `anon` nothing; both tables owned by `postgres`, RLS on, FORCE off; four policies, both triggers enabled, the logger SECURITY DEFINER with `search_path` pinned; 0 rows each. Advisors: no new security finding; one INFO (the new history index is unused, as expected on an empty table).
