@@ -61,7 +61,8 @@ interface World {
   downloads: number
   // The event was logged without a photo.
   noPhoto?: boolean
-  // The descriptor carries a photo-finding contextual sentence (vomit's and stool's do).
+  // The descriptor carries a photo-finding contextual sentence (EN-0 / EN-4 vomit's do; stool's
+  // and flag-off vomit's do not, so their words fall back to the context-only sentence).
   photoFindingCopy?: boolean
   aiReads: number
   aiWriteAttempts: number
@@ -1019,4 +1020,30 @@ Deno.test('pipeline CUL-552 — a declined photo-less log reads no consent and s
   assertEquals(w.consentReads, [])
   assertStrictEquals(w.visionCalls, 0)
   assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+})
+
+Deno.test('pipeline CUL-552 — a declined re-read keeps a stored context flag beside this run\'s new one', async () => {
+  const w = makeWorld({
+    consent: null,
+    row: { recommendation: 'worth_a_call', status: 'completed', blood_col: 'no', visual_flags: [], contextual_flags: ['old_flag'] },
+    contextFlags: ['ctx_flag'],
+    vision: () => CLEAN,
+  })
+  await run(w)
+  assertEquals(w.row?.contextual_flags, ['old_flag', 'ctx_flag'])
+  assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:old_flag,ctx_flag')
+})
+
+Deno.test('pipeline CUL-552 — a declined re-read over the model\'s own flagless call still leads with the photo', async () => {
+  // Unedited, worth_a_call, no flag of either kind: only the model writes that row.
+  const w = makeWorld({
+    consent: null,
+    row: { recommendation: 'worth_a_call', status: 'completed', blood_col: 'no', read_text: 'MODEL: closer look', visual_flags: [], contextual_flags: [] },
+    contextFlags: ['ctx_flag'],
+    photoFindingCopy: true,
+    vision: () => CLEAN,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:ctx_flag:')
 })
