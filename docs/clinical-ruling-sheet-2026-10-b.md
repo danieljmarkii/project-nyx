@@ -4,6 +4,8 @@
 by E2 = B′, `docs/clinical-ruling-sheet-2026-10.md` §2.0b) ·
 **Replaces:** 38 separate `Waiting on PM` issues, one ruling each, found by the 2026-10-10 staleness pass ·
 **Status:** 🧊 dated artifact. The input to a ruling, not a spec. Each row is superseded by the ruling it gets.
+**Linear:** CUL-1795 · **Read on a phone:** https://claude.ai/artifact/Jp6B9qsQBvoEkpaLcGDALT (source:
+`docs/clinical-ruling-sheet-b.html`), where each row is ruled with a tap and the rulings copied out as text.
 
 ## How to read this
 
