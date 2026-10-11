@@ -1,6 +1,7 @@
 # CUL-647 — the arrival moment's tap goes soft
 
 **Date:** 2026-10-10
+**One thing:** S1 L1 — Code vs build vs OTA: a change that touches only JavaScript can reach an installed build without a new binary · check: pending
 
 **Ruling.** The PM ruled (B) on CUL-647: the first-insight arrival plays a single soft impact, never the system Success notification.
 
@@ -14,3 +15,5 @@
 **Checks.** `tsc` clean; full jest 646 suites / 16,357 tests green.
 
 **Tier-2 edit, PM-approved 2026-10-10 and written in this PR.** `docs/nyx-app-polish-requirements.md` §4 ("one soft success tap at 900ms") and the §5.6 shipped-state note ("the §4 arrival's success tap") now read as a soft tap, never the success pattern; version 1.3 → 1.4. The same §5.6 note's verb count moved from eight to nine for `slideCross` (CUL-1278, landed 2026-10-09, after the note's GA snapshot), PM-approved in session.
+
+**Merge check:** CLEAN against `origin/main` @ 87aa4b4, six open PRs read (two after deepening the shallow clone). Merged by `/wrap and merge`.
