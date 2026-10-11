@@ -23,8 +23,8 @@ The PM ruled four calls in session (D1 to D4 on the new page): **straight to the
 
 **In Linear:**
 
-- The new project: 65 rows in seven waves (19 the PM's, 46 Claude Code sessions), in the /dispatch layout, with build notes, ordering rules and four critical paths. The stored page was parsed with `scripts/dispatch/page.ts` and reads identically to the local copy.
-- 32 new issues (CUL-1825 → CUL-1857; CUL-1855 went to another session), led by the **decision sheet, CUL-1825**: 17 calls with recommendations, two persona conflicts (D16 here, D1 on CUL-1768), and the 7 calls already filed on their own issues.
+- The new project: 66 rows in seven waves (19 the PM's, 47 Claude Code sessions), in the /dispatch layout, with build notes, ordering rules and four critical paths. The stored page was parsed with `scripts/dispatch/page.ts` and reads identically to the local copy.
+- 33 new issues (CUL-1825 → CUL-1857, less CUL-1855, which went to another session; and CUL-1868, added under § Two repos), led by the **decision sheet, CUL-1825**: 17 calls with recommendations, two persona conflicts (D16 here, D1 on CUL-1768), and the 7 calls already filed on their own issues.
 - 35 existing issues moved in, each with its wave. Owner model: a PM row is assigned to Dan; a Claude row is unassigned. `Waiting on PM` sits only on what the PM can act on today.
 - Every inherited PM issue opens with a dated **Now** line; every Claude row carries a restart comment. CUL-188's TL;DR had told the PM to accept the AI consent on the demo account, the one irreversible mistake under D13; it now says the opposite.
 - The cut (CUL-559), Submit (CUL-560) and Release (CUL-1830) carry real `blocks` relations; three stale August blockers were removed.
@@ -60,6 +60,20 @@ What the reviews changed, beyond wording:
 - Both research lanes recommended a TestFlight beta before the store; D1 ruled it out. The synthetic panels are the only pre-launch user signal, and week one (CUL-562) is the first real one.
 - The old submission guide and readiness register (`docs/app-store-submission-guide.md`, `docs/app-store-readiness.md`) still describe August's plan. A superseded banner on each is a proposed Tier-2 edit, not written.
 - `docs/dev-handoff-runbook.md` still records 1.1.0 (35) as the installed build; PR-60 (CUL-1850) corrects it when it records the 1.2.0 build number.
+
+## Two repos (the PM's follow-up, same day)
+
+The PM asked that every task say which directory a session starts in, since the work now moves between the app and the website. The website is its own repo, `culprit-web` (Astro on Cloudflare; a merge to its `main` deploys getculprit.app), with no CLAUDE.md of its own.
+
+- **The rule:** every session starts in `project-nyx`, website work included, and adds `culprit-web` when it needs it (cloud `add_repo`; local `claude --add-dir ../culprit-web`). The record still lands in the project-nyx PR, which is what `/dispatch` reads, and `docs/legal/` stays the source the site publishes. CLAUDE.md § Git Workflow carries it, paid for by trimming four redundant sentences (+56 B net).
+- **Marked by exception, not on every issue:** a new `Repo: culprit-web` label and a Where comment on the three website rows (CUL-1460, CUL-1769, CUL-200); the project page gains a *Where every session starts* paragraph, and PR-04's and PR-41's build notes now carry PR-01's add-the-repo clause. A line on all 66 rows would say the same thing 62 times and train the eye past the four that matter.
+- **Dispatch needed no code change:** it launches every child on `project-nyx` and passes the build note verbatim, so the clause reaches the child.
+- **The evidence it was needed:** the session drafting #1184 (CUL-1769) told the PM it "cannot reach culprit-web" and offered a hand paste; `add_repo` would have reached it.
+- **A missing row:** the website requirements' D4 swaps "Coming soon" for the App Store badge the day the app is live, and no row did it. CUL-1868 is PR-72 in Wave 6, merge-gated on 1.2.0 showing in the store.
+- **A tripwire in `culprit-web`:** a short CLAUDE.md there stops a session started in that repo alone (its own draft PR, for the PM to merge).
+- Linear's save mangled two bold spans in the page's opening, one into literal asterisks. Both were rewritten so no bold touches an issue mention, and the stored page re-parsed identically for every original row.
+
+Residuals: `/dispatch` cannot see `culprit-web`'s open PRs, so its collision checks stop at this repo; PR-01 and PR-04 are the only website rows allowed side by side, and they edit different pages. Whether a dispatched child's `add_repo` needs an approval click is unverified; if it does, the child stops and the dispatcher reports it.
 
 ## For the PM
 

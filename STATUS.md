@@ -35,7 +35,7 @@ The original **build sequence** is done end to end — steps 1–10, finished Au
 
 | Project | Where it stands |
 |---|---|
-| **App Store 1.2.0 · the first public release** | New (2026-10-11), replacing *App Store Launch* (closed). The dominant track: 65 rows in seven waves, from the decision sheet (CUL-1825, the PM's first move) to week one. **The project description carries the run order** in the /dispatch layout, the owners (a PM row is assigned to the PM; a numbered row is a Claude session) and the four synthetic panels (`docs/synthetic-testing-protocol.md`). Evidence: `docs/research/2026-10-app-store-requirements.md`. |
+| **App Store 1.2.0 · the first public release** | New (2026-10-11), replacing *App Store Launch* (closed). The dominant track: 66 rows in seven waves, from the decision sheet (CUL-1825, the PM's first move) to week one. **The project description carries the run order** in the /dispatch layout, the owners (a PM row is assigned to the PM; a numbered row is a Claude session) and the four synthetic panels (`docs/synthetic-testing-protocol.md`). Evidence: `docs/research/2026-10-app-store-requirements.md`. |
 | **Signals v2 — the record, decomposed** | Shipped + GA'd 2026-08-20. Both beta flags retired. Report-side adoption (CUL-564) has been live since the 2026-09-15 `generate-report` deploy. |
 | **The Daily Recap** | DR-0…DR-7 all shipped. Open: the §5.5 portfolio-slate reaction and the CUL-27 finish-pass briefs. |
 | **Backlog → Linear: operationalize the cutover** | The workflow rewiring. Remaining: CUL-522 (dual-source stragglers), CUL-530, CUL-563. |

@@ -205,8 +205,7 @@ Establish these from session one. Do not drift from them. When a new convention 
 ## Environment and Secrets
 
 - Client-side environment variables use Expo's `EXPO_PUBLIC_` convention: they are read directly via `process.env.EXPO_PUBLIC_*` and inlined into the bundle at Metro start. `lib/supabase.ts` fails fast with an actionable error if `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` are missing or still placeholders. Editing `.env.local` requires restarting Metro with `npx expo start -c` (the `-c` clears the cache so new values get inlined). Never hardcode keys or tokens in source files.
-- `.env.local` for local development. This file is gitignored — never commit it.
-- Supabase URL and anon key live in `.env.local` as `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`. The `EXPO_PUBLIC_` prefix makes them available client-side; anything without that prefix is server-only.
+- `.env.local` (gitignored, never committed) holds the local `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`; a variable without the `EXPO_PUBLIC_` prefix is server-only.
 - Edge Function secrets (service role key, Claude API key) are set via `supabase secrets set` and never stored in the repo.
 - When a new secret is required, document it here and flag to the PM to provision it in EAS Secrets before the next production build.
 
@@ -259,6 +258,7 @@ Single source of truth for every secret the project uses. Update this table inli
 - **Branches (CUL-1497):** merge `main` in only when a branch conflicts or needs code from it; never rebase a pushed branch (save a stack you created) or take one side of a file wholesale. A self-merge needs the PM's word (`/wrap and merge`) or a `/dispatch` child's prompt (one that deploys or edits the gate: the PM's only, CUL-1654) and the gate in `.claude/skills/steward/SKILL.md` §7 _(account: `docs/engineering-lessons.md` §P-15)_
 - Do not merge a PR if the issue's QA criteria are not yet met.
 - **One PR per session.** The end-of-session `docs/sessions/` record (and any STATUS.md / CLAUDE.md / doc edits) ride in the session's *existing* work PR — committed to its branch before merge — not a separate "record the merge" PR afterward. Write the session record's outcome as `shipped via #<n>` (the PR number is assigned at creation, drafts included), never as `merged to main (#<n>)` — the post-merge phrasing is what forces the second PR. **Exception:** if the work PR was already merged mid-session, the status update is a small standalone follow-up. (Mechanics in `/wrap`.)
+- **Two repos (2026-10-11):** every session starts in `project-nyx`, website work included. A `getculprit.app` change adds `culprit-web` to the session (cloud `add_repo` with push; local `claude --add-dir ../culprit-web`) and still lands its record in the session's project-nyx PR, the one `/dispatch` reads; `docs/legal/` stays the source the site publishes. Such issues carry `Repo: culprit-web`.
 
 **PR check-ins — arm at most one, never a standing chain (instituted 2026-07-25).** A session that opens a PR may schedule a self check-in to catch what webhooks miss. Bound it:
 
@@ -374,10 +374,10 @@ There are **two runtimes** the PM uses, and the handoff differs for each. Pick t
 
 The full, copy-pasteable command scripts for both runtimes — the one-time EAS/ngrok setup and the complete git "divergent branches" explanation — live in **`docs/dev-handoff-runbook.md`**. Read that file when emitting a handoff and paste the matching runtime's block. Quick reference:
 
-- **Runtime B** (the per-push default — Metro + tunnel, for one-off PR testing): `git fetch` → `git checkout <branch>` → `git pull --ff-only` → (once per Codespace) `ngrok authtoken <token>` → `npx expo start --tunnel`, scan the QR, press `r` to reload. This is what the PM uses to test a single pushed PR on-device.
-- **Runtime A** (TestFlight — a deliberate, separate "cut a new build" session, NOT per-push): `git fetch` → `git checkout <branch>` → `git pull --ff-only`, then **A-OTA** (`eas update --branch production`, JS-only) or **A-Native** (`eas build --platform ios --profile production --auto-submit`). **The channel is `production`, never `preview`**, and since the SDK-57 fence the next TestFlight cut must be A-Native. Traps + the installed-build state: `docs/dev-handoff-runbook.md` § Current build state. The PM kicks this off by hand, in its own session.
+- **Runtime B** (the per-push default — Metro + tunnel, for one-off PR testing): `git fetch` → `git checkout <branch>` → `git pull --ff-only` → (once per Codespace) `ngrok authtoken <token>` → `npx expo start --tunnel`, scan the QR, press `r` to reload.
+- **Runtime A** (TestFlight — a deliberate, separate "cut a new build" session, NOT per-push): `git fetch` → `git checkout <branch>` → `git pull --ff-only`, then **A-OTA** (`eas update --branch production`, JS-only) or **A-Native** (`eas build --platform ios --profile production --auto-submit`). **The channel is `production`, never `preview`**, and since the SDK-57 fence the next TestFlight cut must be A-Native. Traps + the installed-build state: `docs/dev-handoff-runbook.md` § Current build state.
 
-**Default to Runtime B in the handoff** — it's the per-push, test-one-PR path. Only emit a Runtime A block when the session's explicit goal is cutting a new TestFlight build. Emit only the runtime that matches the session; pull the exact commands + their explanations from the runbook.
+**Default to Runtime B in the handoff** — it's the per-push, test-one-PR path. Only emit a Runtime A block when the session's explicit goal is cutting a new TestFlight build.
 
 **The one non-negotiable git rule:** always `git checkout <the handoff branch>` *before* pulling. A bare `git pull` from a different branch triggers `fatal: Need to specify how to reconcile divergent branches`; the fix is never "merge vs rebase," it's switching to the right branch. The one-time `git config --global pull.ff only` kills that prompt for good.
 
