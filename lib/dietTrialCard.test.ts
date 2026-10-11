@@ -85,7 +85,7 @@ function activeInput(over: Partial<TrialCardInput> = {}): TrialCardInput {
     petName: 'Biscuit',
     species: 'dog',
     coverage: { daysLogged: 22, daysElapsed: 23 },
-    exposures: { mayStateRecordClean: true, totalFeedings: 68, offDiet: 0 },
+    exposures: { mayStateRecordClean: true, mayImplyRecordClean: true, totalFeedings: 68, offDiet: 0 },
     ...over,
   };
 }
@@ -3698,7 +3698,9 @@ describe('B-704 card + strip render the protein identity', () => {
 // state the card can reach, with the two lines that read as "the diet is working" armed.
 describe('the Design v2 trial line (CUL-1526)', () => {
   // A record the card may call clean at zero; above zero the flag is moot (the count leads).
-  const offDiet = (n: number) => ({ mayStateRecordClean: n === 0, totalFeedings: 68, offDiet: n });
+  const offDiet = (n: number) => ({
+    mayStateRecordClean: n === 0, mayImplyRecordClean: n === 0, totalFeedings: 68, offDiet: n,
+  });
 
   it('running, off-diet > 0: the end date, then the off-diet floor', () => {
     expect(resolveTrialStrip(activeInput({ exposures: offDiet(3) }))!.cardLine).toBe(
@@ -3759,6 +3761,29 @@ describe('the Design v2 trial line (CUL-1526)', () => {
     );
   });
 
+  // CUL-1780 — the full card may say "all N matched" at half the days logged because it
+  // prints the ratio above it; this line prints none, so it waits for `supports`.
+  it('a zero over a record logged on half its days says the check is incomplete', () => {
+    const partial = { mayStateRecordClean: true, mayImplyRecordClean: false, totalFeedings: 40, offDiet: 0 };
+    expect(resolveTrialStrip(activeInput({
+      coverage: { daysLogged: 30, daysElapsed: 56 }, exposures: partial,
+    }))!.cardLine).toBe('Ends Aug 27 · off-diet check incomplete');
+  });
+
+  it('below supports, a logged off-diet count still leads, with no suffix', () => {
+    expect(resolveTrialStrip(activeInput({
+      coverage: { daysLogged: 30, daysElapsed: 56 },
+      exposures: { mayStateRecordClean: false, mayImplyRecordClean: false, totalFeedings: 40, offDiet: 2 },
+    }))!.cardLine).toBe('Ends Aug 27 · 2 off-diet feedings logged');
+  });
+
+  // Fail loud: a construction site that never set the field loses the bare date.
+  it('an absent implied-clean gate is not a clean record', () => {
+    expect(resolveTrialStrip(activeInput({
+      exposures: { mayStateRecordClean: true, totalFeedings: 68, offDiet: 0 },
+    }))!.cardLine).toBe('Ends Aug 27 · off-diet check incomplete');
+  });
+
   // The reviewer's property: an unknown count and a clean count never render alike.
   it('unknown and clean never produce the same line', () => {
     const clean = resolveTrialStrip(activeInput())!.cardLine;
@@ -3767,6 +3792,7 @@ describe('the Design v2 trial line (CUL-1526)', () => {
       activeInput({ allowedSetUnavailable: true }),
       activeInput({ antigenArmDark: true }),
       activeInput({ exposures: { mayStateRecordClean: false, totalFeedings: 9, offDiet: 0 } }),
+      activeInput({ exposures: { mayStateRecordClean: true, mayImplyRecordClean: false, totalFeedings: 40, offDiet: 0 } }),
       activeInput({ freeFed: { loggedFeedings: 12 }, exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 0 } }),
       activeInput({ trialDietRefusal: REFUSING_NOW, exposures: { mayStateRecordClean: false, totalFeedings: 22, offDiet: 0 } }),
     ]) {
@@ -3806,7 +3832,7 @@ describe('the Design v2 trial line (CUL-1526)', () => {
   it.each(everyState)('a record the card will not call clean never gets the bare date — %s', (_name, input) => {
     const strip = resolveTrialStrip(input);
     if (!strip?.cardLine) return;
-    const clean = !input.allowedSetUnavailable && !input.antigenArmDark && input.exposures?.mayStateRecordClean === true;
+    const clean = !input.allowedSetUnavailable && !input.antigenArmDark && input.exposures?.mayImplyRecordClean === true;
     if (!clean && (input.exposures?.offDiet ?? 0) === 0) {
       expect(strip.cardLine).toMatch(/ · off-diet check incomplete$/);
     }
@@ -3816,7 +3842,7 @@ describe('the Design v2 trial line (CUL-1526)', () => {
     const reached = everyState.filter(([, i]) =>
       resolveTrialStrip(i)?.cardLine &&
       !i.allowedSetUnavailable && !i.antigenArmDark &&
-      i.exposures && i.exposures.offDiet === 0 && !i.exposures.mayStateRecordClean,
+      i.exposures && i.exposures.offDiet === 0 && !i.exposures.mayImplyRecordClean,
     );
     expect(reached.length).toBeGreaterThanOrEqual(1);
   });

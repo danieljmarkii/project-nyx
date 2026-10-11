@@ -48,6 +48,22 @@ interface World {
   duringVision?: (w: World) => void
   // What app_config returns (Engines v3 flag + the gate config), or a read error.
   appConfig?: Row[] | 'error'
+  // CUL-552 PR 2: the owner's ai_consent row as the service-role read sees it. Absent from
+  // the world = a recorded yes, so every suite above this PR keeps testing what it tested;
+  // null = no row (never asked), 'error' = a read that answered with an error, 'throw' =
+  // one that never answered.
+  consent?: Row | null | 'error' | 'throw'
+  // Every ai_consent read: its filters and which client made it.
+  consentReads: Array<{ filters: Row; client: 'user' | 'admin' }>
+  // The uid auth.getUser() verifies from the JWT (default: the pet's owner).
+  callerUid?: string
+  // Photo downloads from Storage (a declined owner's photo is never fetched).
+  downloads: number
+  // The event was logged without a photo.
+  noPhoto?: boolean
+  // The descriptor carries a photo-finding contextual sentence (EN-0 / EN-4 vomit's do; stool's
+  // and flag-off vomit's do not, so their words fall back to the context-only sentence).
+  photoFindingCopy?: boolean
   aiReads: number
   aiWriteAttempts: number
   rpcCalls: number
@@ -69,6 +85,8 @@ function makeWorld(o: Partial<World> & Pick<World, 'vision'>): World {
     rpcCalls: 0,
     visionCalls: 0,
     writes: [],
+    consentReads: [],
+    downloads: 0,
     ...o,
     row: o.row ? { ...OWN, ...o.row } : null,
   }
@@ -81,7 +99,7 @@ class FakeQuery {
   private cols = '*'
   private values: Row = {}
   private filters: Row = {}
-  constructor(private w: World, private table: string) {}
+  constructor(private w: World, private table: string, private who: 'user' | 'admin') {}
   select(cols = '*') { if (this.mode === 'select') this.cols = cols; return this }
   eq(column: string, value: unknown) { this.filters[column] = value; return this }
   is() { return this }
@@ -105,9 +123,18 @@ class FakeQuery {
         error: null,
       }
     }
-    if (this.table === 'event_attachments') return { data: [{ id: ATTACHMENT_ID, storage_path: 'pet-1/evt-1/a.jpg' }], error: null }
+    if (this.table === 'event_attachments') return { data: w.noPhoto ? [] : [{ id: ATTACHMENT_ID, storage_path: 'pet-1/evt-1/a.jpg' }], error: null }
     if (this.table === 'app_config') {
       return w.appConfig === 'error' ? { data: null, error: { message: 'app_config unreachable' } } : { data: w.appConfig ?? [], error: null }
+    }
+    if (this.table === 'ai_consent') {
+      w.consentReads.push({ filters: { ...this.filters }, client: this.who })
+      if (w.consent === 'throw') throw new Error('ai_consent unreachable')
+      if (w.consent === 'error') return { data: null, error: { message: 'ai_consent read failed' } }
+      // Migration 100's grain: one row per (user_id, scope). Only that pair answers.
+      const row = w.consent === undefined ? { user_id: 'owner-1', scope: 'ai_boundary', granted: true } : w.consent
+      const hit = row && Object.entries(this.filters).every(([k, v]) => row[k] === v) ? row : null
+      return { data: hit ? { granted: hit.granted } : null, error: null }
     }
     if (this.table !== 'event_ai_analysis') throw new Error(`unexpected table ${this.table}`)
 
@@ -149,17 +176,20 @@ class FakeQuery {
   }
 }
 
-function fakeClient(w: World): SupabaseClient {
+function fakeClient(w: World, who: 'user' | 'admin'): SupabaseClient {
   const client = {
-    auth: { getUser: () => Promise.resolve({ data: { user: { id: 'owner-1' } }, error: null }) },
-    from: (table: string) => new FakeQuery(w, table),
+    auth: { getUser: () => Promise.resolve({ data: { user: { id: w.callerUid ?? 'owner-1' } }, error: null }) },
+    from: (table: string) => new FakeQuery(w, table, who),
     rpc: () => {
       w.rpcCalls++
       return Promise.resolve({ data: { day_count: w.dayCount, month_count: w.dayCount }, error: null })
     },
     storage: {
       from: () => ({
-        download: () => Promise.resolve({ data: new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])]), error: null }),
+        download: () => {
+          w.downloads++
+          return Promise.resolve({ data: new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])]), error: null })
+        },
       }),
     },
   }
@@ -168,8 +198,8 @@ function fakeClient(w: World): SupabaseClient {
 
 function depsFor(w: World): PipelineDeps {
   return {
-    userClient: () => fakeClient(w),
-    adminClient: () => fakeClient(w),
+    userClient: () => fakeClient(w, 'user'),
+    adminClient: () => fakeClient(w, 'admin'),
     // deno-lint-ignore require-await
     vision: (async () => {
       w.visionCalls++
@@ -205,7 +235,9 @@ function descriptorFor(w: World): IncidentDescriptor<TestAnalysis, Flag> {
   parseToolResult: () => null, // the model is injected as a parsed result
     appearsToShowSubject: (a) => a.appears,
     computeContextualFlags: () => Promise.resolve(w.contextFlags),
-    copy: COPY,
+    copy: w.photoFindingCopy
+      ? { ...COPY, contextualWithPhotoFinding: (pet, flags, visual) => `PHOTO_CTX:${pet}:${flags.join(',')}:${visual.join(',')}` }
+      : COPY,
     buildStructuredValues: (a) => ({
       ai_raw_payload: a,
       blood_col: a?.blood ?? null,
@@ -853,4 +885,165 @@ Deno.test('pipeline EN-3 ROLLBACK — flag-off never lowers a call tier written 
   await run(raised)
   assertStrictEquals(raised.row?.recommendation, 'worth_a_call')
   assertStrictEquals(raised.row?.tier, 'logged')
+})
+
+// ── CUL-552 PR 2: the owner's AI consent gates the model call, never the escalation ──────
+// D10 (the whole boundary) and the binding rules on CUL-552 (2026-10-11): the gate reads the
+// 'ai_boundary' row through service_role, keyed on the JWT-verified uid; a missing row or a
+// failed read is declined; declined writes read_disabled while contextual escalation still
+// runs. The pipeline-level mirror of analyze-vomit/index.test.ts:67's capped-path invariant.
+
+const DECLINED_WORLDS: Array<[string, World['consent']]> = [
+  ['a recorded no', { user_id: 'owner-1', scope: 'ai_boundary', granted: false }],
+  ['no row (never asked)', null],
+  ['a read that errored', 'error'],
+  ['a read that threw', 'throw'],
+  ['a granted row filed under someone else', { user_id: 'someone-else', scope: 'ai_boundary', granted: true }],
+  ['a granted value that is not the boolean true', { user_id: 'owner-1', scope: 'ai_boundary', granted: 'true' }],
+]
+
+for (const [label, consent] of DECLINED_WORLDS) {
+  Deno.test(`pipeline CUL-552 — declined (${label}) + a contextual flag: worth_a_call written, no unit, no download, no model`, async () => {
+    const w = makeWorld({ consent, contextFlags: ['ctx_flag'], vision: () => BLOODY })
+    const r = await run(w)
+    assertStrictEquals(r.status, 200)
+    assertStrictEquals(r.body.gated, 'consent_declined')
+    assertStrictEquals(r.body.recommendation, 'worth_a_call')
+    assertStrictEquals(w.visionCalls, 0)
+    assertStrictEquals(w.rpcCalls, 0)
+    assertStrictEquals(w.downloads, 0)
+    assertStrictEquals(w.row?.status, 'completed')
+    assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+    assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:ctx_flag')
+    assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+    assertEquals(w.row?.visual_flags, [])
+  })
+
+  Deno.test(`pipeline CUL-552 — declined (${label}) + no flag: the read_disabled state, nothing reassuring`, async () => {
+    const w = makeWorld({ consent, vision: () => CLEAN })
+    const r = await run(w)
+    assertStrictEquals(r.status, 200)
+    assertStrictEquals(r.body.gated, 'consent_declined')
+    assertStrictEquals(r.body.recommendation, null)
+    assertStrictEquals(w.visionCalls, 0)
+    assertStrictEquals(w.rpcCalls, 0)
+    assertStrictEquals(w.downloads, 0)
+    assertStrictEquals(w.row?.status, 'read_disabled')
+    assertStrictEquals(w.row?.recommendation ?? null, null)
+    assertStrictEquals(w.row?.read_text ?? null, null)
+  })
+}
+
+Deno.test('pipeline CUL-552 — the consent read is service-role, one scope, keyed on the JWT-verified uid', async () => {
+  const w = makeWorld({ vision: () => CLEAN })
+  await run(w)
+  assertEquals(w.consentReads, [{ filters: { user_id: 'owner-1', scope: 'ai_boundary' }, client: 'admin' }])
+})
+
+Deno.test('pipeline CUL-552 — a caller who is not the pet\'s owner fails closed, whatever the owner said', async () => {
+  // Unreachable under today's RLS (the caller is always the owner). Once it is reachable
+  // (B-292), the caller's yes must not be spent on someone else's pet, and the owner's yes
+  // must not be borrowed by the caller: neither answer alone opens the read.
+  const w = makeWorld({ callerUid: 'caller-9', consent: { user_id: 'owner-1', scope: 'ai_boundary', granted: true }, vision: () => CLEAN })
+  await run(w)
+  assertEquals(w.consentReads, [])
+  assertStrictEquals(w.visionCalls, 0)
+  assertStrictEquals(w.downloads, 0)
+  assertStrictEquals(w.row?.status, 'read_disabled')
+})
+
+Deno.test('pipeline CUL-552 — withdrawal after a bloody read, then a context flag: the photo finding stays on the card', async () => {
+  // The adversarial pass's counterexample: the gated branch wrote visual_flags [] and the
+  // context-only sentence over a read that had named fresh blood.
+  const w = makeWorld({
+    consent: { user_id: 'owner-1', scope: 'ai_boundary', granted: false },
+    row: { recommendation: 'worth_a_call', status: 'completed', blood_col: 'yes', read_text: 'MODEL: blood', visual_flags: ['blood'], contextual_flags: [] },
+    contextFlags: ['ctx_flag'],
+    photoFindingCopy: true,
+    vision: () => CLEAN,
+  })
+  await run(w)
+  assertStrictEquals(w.visionCalls, 0)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertEquals(w.row?.visual_flags, ['blood'])
+  assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  // The words still lead with what the photo showed (the shared photo-finding read), never
+  // the context-only sentence a photo-less log gets.
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:ctx_flag:blood')
+})
+
+Deno.test('pipeline CUL-552 — an owner-edited row keeps the owner\'s word as the lead, and its stored context flags', async () => {
+  const w = makeWorld({
+    consent: null,
+    row: { recommendation: 'worth_a_call', status: 'completed', edited_at: '2026-09-20T00:00:00Z', blood_col: 'yes', visual_flags: [], contextual_flags: ['ctx_flag'] },
+    contextFlags: ['ctx_flag'],
+    photoFindingCopy: true,
+    vision: () => CLEAN,
+  })
+  await run(w)
+  assertEquals(w.row?.contextual_flags, ['ctx_flag'])
+  assertStrictEquals(w.row?.edited_at, '2026-09-20T00:00:00Z')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+  // The owner's structured word (blood_col 'yes') leads, not the stale cached flags.
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:ctx_flag:blood')
+})
+
+Deno.test('pipeline CUL-552 — granted: the read runs exactly as before (the gate is not shut everywhere)', async () => {
+  const w = makeWorld({ consent: { user_id: 'owner-1', scope: 'ai_boundary', granted: true }, vision: () => CLEAN })
+  const r = await run(w)
+  assertStrictEquals(r.status, 200)
+  assertStrictEquals(w.visionCalls, 1)
+  assertStrictEquals(w.rpcCalls, 1)
+  assertStrictEquals(w.downloads, 1)
+  assertStrictEquals(w.row?.status, 'completed')
+  assertStrictEquals(w.row?.recommendation, 'monitor')
+})
+
+Deno.test('pipeline CUL-552 — a decline after a real read leaves that read standing (never downgraded, never re-sent)', async () => {
+  const w = makeWorld({
+    consent: { user_id: 'owner-1', scope: 'ai_boundary', granted: false },
+    row: { recommendation: 'worth_a_call', status: 'completed', blood_col: 'yes', read_text: 'MODEL: blood', visual_flags: ['blood'] },
+    vision: () => CLEAN,
+  })
+  await run(w)
+  assertStrictEquals(w.visionCalls, 0)
+  assertEquals(w.writes, [])
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.blood_col, 'yes')
+})
+
+Deno.test('pipeline CUL-552 — a declined photo-less log reads no consent and still escalates on context', async () => {
+  // No photo, no model call, so nothing to gate: the byte-identical photo-less path.
+  const w = makeWorld({ consent: null, contextFlags: ['ctx_flag'], vision: () => CLEAN, noPhoto: true })
+  await run(w)
+  assertEquals(w.consentReads, [])
+  assertStrictEquals(w.visionCalls, 0)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+})
+
+Deno.test('pipeline CUL-552 — a declined re-read keeps a stored context flag beside this run\'s new one', async () => {
+  const w = makeWorld({
+    consent: null,
+    row: { recommendation: 'worth_a_call', status: 'completed', blood_col: 'no', visual_flags: [], contextual_flags: ['old_flag'] },
+    contextFlags: ['ctx_flag'],
+    vision: () => CLEAN,
+  })
+  await run(w)
+  assertEquals(w.row?.contextual_flags, ['old_flag', 'ctx_flag'])
+  assertStrictEquals(w.row?.read_text, 'CONTEXTUAL:Mochi:old_flag,ctx_flag')
+})
+
+Deno.test('pipeline CUL-552 — a declined re-read over the model\'s own flagless call still leads with the photo', async () => {
+  // Unedited, worth_a_call, no flag of either kind: only the model writes that row.
+  const w = makeWorld({
+    consent: null,
+    row: { recommendation: 'worth_a_call', status: 'completed', blood_col: 'no', read_text: 'MODEL: closer look', visual_flags: [], contextual_flags: [] },
+    contextFlags: ['ctx_flag'],
+    photoFindingCopy: true,
+    vision: () => CLEAN,
+  })
+  await run(w)
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:ctx_flag:')
 })

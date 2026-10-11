@@ -1408,6 +1408,7 @@ type DeflectionReason =
   | 'ambiguous'
   | 'data_gap'
   | 'llm_unavailable'
+  | 'consent_off'
 
 /** The four-way plan contract's non-answer outcomes, rendered as designed deflections
  *  (§7.4). Never blank, never an error toast; every one offers a next step (the rundown,
@@ -1495,6 +1496,20 @@ export function buildDeflection(reason: DeflectionReason, petName: string, clari
         `I couldn't answer that just now.`,
         `${p}'s record is still all here. Try again in a moment, or open the vet-visit rundown — it works without a connection.`,
         ['Put together a vet-visit rundown'],
+      )
+    case 'consent_off':
+      // CUL-552 PR 2: the owner has not said yes to sending data to Anthropic (a recorded no,
+      // or never asked), so Ask made no model call. A STATUS, never a verdict: it says what
+      // did not happen and that the record is untouched, never "try again" (a retry would
+      // deflect the same way) and never anything about how the pet is. The outcome reuses
+      // 'unsupported' so every shipped build renders it; no chips, because each chip is a
+      // question that would land here again. A live safety finding still leads it (the I/O
+      // layer attaches it). PR 3 adds the way to change the answer.
+      return base(
+        'unsupported',
+        `Ask is off while AI analysis is off.`,
+        `To answer, Ask sends your question and ${p}'s record to Anthropic, and you haven't said yes to that. Nothing was sent. ${p}'s record is all still here, and the vet-visit rundown works without it.`,
+        [],
       )
     case 'unsupported':
     default:

@@ -33,6 +33,7 @@
 // client-writable).
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { readAiBoundaryConsent } from '../_shared/aiConsent.ts'
 import {
   CORRELATION_SYMPTOM_TYPES,
   RED_FLAG_INCIDENT_TYPES,
@@ -149,7 +150,7 @@ interface ClaudeToolResponse {
 
 // Phrase one finding. Returns the model sentence if it passes validation,
 // otherwise the deterministic template — so this never throws and never blanks.
-async function phraseFinding(finding: Finding, petName: string, phrasingEnabled = true): Promise<string> {
+async function phraseFinding(finding: Finding, petName: string, phrasingEnabled: boolean): Promise<string> {
   // EN-9 (PR-23): a care state's sentence is template-only (AC 8). It names the owner's answer
   // and its date beside a count; a model given "with your vet" is one paraphrase away from
   // "under control" (BRK-13), so it never sees one.
@@ -266,7 +267,7 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
 // in the packet, any reassurance/causal/disease/preference drift, and (on a safety summary)
 // the silent removal of vet-routing. Any failure → the deterministic template. Never throws,
 // never reassures, never blank.
-async function phraseSummaryText(packet: SummaryFactPacket, phrasingEnabled = true): Promise<CachedSummary> {
+async function phraseSummaryText(packet: SummaryFactPacket, phrasingEnabled: boolean): Promise<CachedSummary> {
   // The deterministic form lives in ./pipeline.ts, so the harness and this function build it
   // one way. Every return below is it except the one validated model sentence.
   const templated = templateSummary(packet)
@@ -456,6 +457,19 @@ async function recordUsage(
   return { dayCount: row.day_count, monthCount: row.month_count }
 }
 
+// Whether this run may send anything to the phrasing model: the app-wide flag AND the
+// owner's recorded yes (CUL-552 PR 2). Either off ⇒ templates, never a blank Signal.
+export function modelPhrasingAllowed(phrasingFlag: boolean, consented: boolean): boolean {
+  return phrasingFlag && consented
+}
+
+// Service-role client for the consent read only (ai_consent is read through service_role,
+// keyed on the verified uid; migration 100 §5). Every other read here stays on the caller's
+// RLS-scoped client.
+function serviceClient(): SupabaseClient {
+  return createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 const handler = async (req: Request): Promise<Response> => {
@@ -502,7 +516,13 @@ const handler = async (req: Request): Promise<Response> => {
     //     its cached signal (no UI state ships — invisible by design). Checked BEFORE
     //     the expensive detection pipeline. The phrasing flag does NOT gate the
     //     function; it only forces template phrasing below.
-    const { flagEnabled: phrasingEnabled, caps } = await readGateConfig(supabase)
+    const { flagEnabled: phrasingFlag, caps } = await readGateConfig(supabase)
+    // CUL-552 PR 2 (D10, the whole boundary): no recorded yes, no phrasing call. The read is
+    // service-role, keyed on the uid getUser verified above, and fails closed; a decline
+    // costs the owner nothing they can see, because every finding and the summary already
+    // fall back to their templates when phrasing is off. Detection is never gated (§3).
+    const consented = await readAiBoundaryConsent(serviceClient(), user.id)
+    const phrasingEnabled = modelPhrasingAllowed(phrasingFlag, consented)
     const counts = await recordUsage(supabase, petId)
     const gate = resolveGateState(true, counts, caps) // flagEnabled=true: cap-only
     if (!gate.allow && gate.reason === 'cap_reached') {

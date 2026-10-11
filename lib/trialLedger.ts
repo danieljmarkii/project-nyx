@@ -6,7 +6,14 @@
 // is counted, `exposures.items` places the off-diet mark. Nothing here decides
 // what a meal, a day or an exposure is. A cell that cannot be read off a fact is
 // not drawn — which is why the ledger is ABSENT, rather than approximated, on the
-// records where the facts do not reach a drawn day (the extension weeks, below).
+// records where the facts do not reach a drawn day.
+//
+// THE EXTENSION WEEKS (CUL-1855, PM ruling option A, 2026-10-11). On an un-ended
+// trial extended past its designed window, coverage stays on the designed window
+// (CUL-1038, TE-6), so the days after it are drawn from their own fact,
+// `extensionCoveredDayIndices`, and carry their own count (`extensionCount`). They
+// are NEVER added to `count`: the counted rows still partition the caption, and the
+// end line under them says the count stops there.
 //
 // TWO INPUTS, ONE RECORD. The gates (not eating, free-fed, the milestone) live on
 // the card's input (`loadDietTrialFacts`); the day sets live on `TrialFacts`
@@ -54,6 +61,9 @@ export interface TrialLedgerDay {
   /** An off-diet feeding is logged on this day. A BOOLEAN, never a count: the
    *  exposure count is a floor (§5.2) and only the receipt states it. */
   offDiet: boolean;
+  /** CUL-1855 — after the designed window, on an extended trial: drawn in the band,
+   *  painted from `extensionCoveredDayIndices`, never in `count`. */
+  extension: boolean;
 }
 
 export interface TrialLedgerRowCount {
@@ -80,16 +90,36 @@ export interface TrialLedgerRow {
   count: TrialLedgerRowCount | null;
   /** `7 of 7`, `1 of 2 so far`, or null with `count`. */
   countLabel: string | null;
+  /** CUL-1855 — the row's extension days, counted on their own. Null when the row has
+   *  no reached extension day. A row straddling the designed end carries both. */
+  extensionCount: TrialLedgerRowCount | null;
+  extensionCountLabel: string | null;
+  /** The first extension day's date, for the band's half of a straddling row (the
+   *  host draws it as its own line under the end line). Null with no extension day. */
+  extensionFirstDate: string | null;
+}
+
+/** CUL-1855 — the band's two lines, present only on an extended trial. */
+export interface TrialLedgerExtension {
+  /** `Extended to Oct 17 · not in the count above` */
+  headerLabel: string;
+  /** `Oct 17 · day 84, the end you set` */
+  endLabel: string;
 }
 
 export interface TrialLedger {
   rows: TrialLedgerRow[];
   /** `Sep 4 · day 1` */
   startLabel: string;
-  /** `Oct 29 · day 56, the end you set` */
+  /** `Oct 29 · day 56, the end you set`; on an extended trial the designed end,
+   *  `Sep 19 · day 56, the end you first set. The count above stops here.` */
   endLabel: string;
+  /** CUL-1855 — the band, or null on every trial that was not extended. */
+  extension: TrialLedgerExtension | null;
   /** The row the end line draws under: the row holding the target's last day. On a
-   *  trial ended after its target (PM ruling on CUL-1298), later rows follow it. */
+   *  trial ended after its target (PM ruling on CUL-1298), later rows follow it. On an
+   *  extended trial, the row holding the DESIGNED last day; a straddling row is split
+   *  at the line by the host. */
   endAfterRowIndex: number;
   /** The row holding today, or null (an overrun or ended trial, the day it ended included). */
   currentRowIndex: number | null;
@@ -135,18 +165,18 @@ export interface BuildTrialLedgerArgs {
  *    fields the loader derives them from, so either read saying so is enough;
  *  • the milestone (a filled grid beside the stop decision, §12 finding 6), read
  *    off the card's own state switch rather than restated;
- *  • an un-ended trial whose coverage window and the window the owner set now
- *    disagree. Extended past its DESIGNED window (PM ruling on CUL-1298,
- *    2026-09-26; the drawn version is CUL-1317): coverage stays on the designed
- *    window (CUL-1038, TE-6), so the days since it closed have no fact to paint
- *    from. SHORTENED below it (latent: `changeTrialWindow` refuses a non-forward
- *    move, so only a synced or hand-edited row gets here): coverage runs past the
- *    end line, and drawing it would put counted rows under "the end you set",
- *    which §0.3 forbids. Same ruling, the mirror case, found by the adversarial
- *    pass;
+ *  • an un-ended trial whose window was SHORTENED below its designed length
+ *    (latent: `changeTrialWindow` refuses a non-forward move, so only a synced or
+ *    hand-edited row gets here): coverage runs past the end line, and drawing it
+ *    would put counted rows under "the end you set", which §0.3 forbids (PM ruling
+ *    on CUL-1298, found by the adversarial pass). Its mirror, the trial EXTENDED
+ *    past its designed window, used to be absent too; since CUL-1855 it draws the
+ *    extension weeks in their own band (see the module header);
+ *  • an overrun whose tail clip did not bite (no fact reaches the drawn days);
  *  • the two reads disagree about coverage;
- *  • a rated, unfinished bowl of the refusal lane's population sits in the current
- *    trial week, below the refusal fact's floors (CUL-1344).
+ *  • a rated, unfinished bowl of the refusal lane's population sits in today's
+ *    trial week, below the refusal fact's floors (CUL-1344) — the extension weeks
+ *    included (CUL-1855).
  */
 export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null {
   const { input, facts, timeZone } = args;
@@ -185,9 +215,12 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
   // would otherwise make the ledger think "ended" while the facts think "running",
   // and skip the shortened-window gate below.
   const ended = trial.status !== 'active';
-  // The extension weeks: un-ended, past the designed window, and the window the
-  // owner set now ends later than the one coverage is measured over.
-  if (range.closedByOverrun && range.endDayIndex < targetEnd) return null;
+  // The extension weeks (CUL-1855): un-ended, past the designed window, and the
+  // window the owner set now ends later than the one coverage is measured over.
+  // They draw only where the tail clip actually bit, because that is the only case
+  // `extensionCoveredDayIndices` describes; any other overrun keeps the old absence.
+  const extended = !ended && range.closedByOverrun && range.endDayIndex < targetEnd;
+  if (extended && !range.coverageClippedAtWindowEnd) return null;
   // The mirror: un-ended, and coverage reaches past the window the owner set.
   if (!ended && range.endDayIndex > targetEnd) return null;
 
@@ -203,6 +236,8 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
   // already returned, and on an overrun the two coincide (the tail clip, §R-5).
   const lastIndex = Math.max(targetEnd, range.endDayIndex);
   const covered = new Set(facts.coveredDayIndices);
+  const extensionCovered = new Set(extended ? facts.extensionCoveredDayIndices : []);
+  const isExtension = (d: number) => extended && d > range.endDayIndex;
   const offDietDays = new Set<number>();
   // No marks while the allowed set is unusable: every feeding would read off-diet
   // (§3.5; the strip zeroes the same count). Either read saying so is enough.
@@ -214,6 +249,13 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
   }
 
   const fillOf = (d: number): TrialLedgerFill => {
+    if (isExtension(d)) {
+      // Painted from the extension fact alone. The trial is un-ended here, so today
+      // can still be logged; a day after today is not reached.
+      if (d > todayIndex) return 'not_reached';
+      if (extensionCovered.has(d)) return 'meals_logged';
+      return d === todayIndex ? 'today_open' : 'none_logged';
+    }
     if (d > range.endDayIndex) return 'not_reached';
     if (d < range.startDayIndex) return 'not_tracked';
     if (covered.has(d)) return 'meals_logged';
@@ -227,25 +269,41 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
     let coveredCount = 0;
     let elapsed = 0;
     let soFar = false;
+    let extCovered = 0;
+    let extElapsed = 0;
+    let extSoFar = false;
     for (let d = rowStart; d < rowStart + 7 && d <= lastIndex; d++) {
       const fill = fillOf(d);
-      if (d >= range.startDayIndex && d <= range.endDayIndex) {
+      const extension = isExtension(d);
+      if (extension) {
+        // Its own count, never `count`: the counted rows partition the caption (C-3).
+        if (d <= todayIndex) {
+          extElapsed += 1;
+          if (fill === 'meals_logged') extCovered += 1;
+          if (d === todayIndex) extSoFar = true;
+        }
+      } else if (d >= range.startDayIndex && d <= range.endDayIndex) {
         elapsed += 1;
         if (fill === 'meals_logged') coveredCount += 1;
         // "So far" is a claim that the week is still being written: never on an
         // ended trial, even on the day it ended.
         if (d === todayIndex && !ended) soFar = true;
       }
-      days.push({ dayIndex: d, trialDay: d - startIndex + 1, fill, offDiet: offDietDays.has(d) });
+      days.push({ dayIndex: d, trialDay: d - startIndex + 1, fill, offDiet: offDietDays.has(d), extension });
     }
     const count = elapsed > 0 ? { covered: coveredCount, elapsed, soFar } : null;
+    const extensionCount = extElapsed > 0 ? { covered: extCovered, elapsed: extElapsed, soFar: extSoFar } : null;
+    const firstExtension = days.find((x) => x.extension);
     rows.push({
       week,
       label: `Wk ${week}`,
       firstDate: formatTrialDate(rowStart, todayKey),
       days,
       count,
-      countLabel: count ? `${count.covered} of ${count.elapsed}${count.soFar ? ' so far' : ''}` : null,
+      countLabel: count ? countLabelOf(count) : null,
+      extensionCount,
+      extensionCountLabel: extensionCount ? countLabelOf(extensionCount) : null,
+      extensionFirstDate: firstExtension ? formatTrialDate(firstExtension.dayIndex, todayKey) : null,
     });
   }
 
@@ -268,8 +326,17 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
   // floors exist to decide when to SPEAK a refusal, and this only withholds (S3). The WHOLE ledger, not the one row: a grid missing its current
   // row breaks S5 (every row carries its count) and the rows' partition of the caption
   // (C-3). Home's lane is this row, so it goes with it.
-  if (currentRowIndex !== null) {
-    const weekStart = startIndex + currentRowIndex * 7;
+  // TODAY'S TRIAL WEEK, WHEREVER IT IS DRAWN (CUL-1855). `currentRowIndex` is null
+  // once today is past the counted range — in the extension band, and on any overrun —
+  // yet today's week can still be on the grid: the band's weeks, or the last week of a
+  // window whose end fell mid-week (extended to day 80, today day 81: days 78–80 are
+  // drawn). The adversarial pass painted two refused bowls there as logged days. So the
+  // check runs on today's row whenever that row is drawn at all, the plain overrun
+  // included. The wide set already reaches the evidence end (`tallyRefusal` walks to it).
+  const refusalRowIndex =
+    currentRowIndex ?? (!ended && rowOf(todayIndex) <= rowOf(lastIndex) ? rowOf(todayIndex) : null);
+  if (refusalRowIndex !== null) {
+    const weekStart = startIndex + refusalRowIndex * 7;
     if (facts.unfinishedMealDayIndices.some((d) => d >= weekStart && d <= todayIndex)) return null;
   }
 
@@ -278,15 +345,40 @@ export function buildTrialLedger(args: BuildTrialLedgerArgs): TrialLedger | null
   if (drawn.some((d) => d.fill === 'not_tracked')) legend.push('not_tracked');
 
   const targetDays = targetEnd - startIndex + 1;
+  const endLabelFor = (d: number, setWords: string) =>
+    `${formatTrialDate(d, todayKey)} · day ${d - startIndex + 1}, ${setWords}`;
+  if (extended) {
+    // The end line moves to the DESIGNED end and says the count stops there; the
+    // band carries the window the owner set now (PM ruling on CUL-1855).
+    const designedEnd = range.endDayIndex;
+    return {
+      rows,
+      startLabel: `${formatTrialDate(startIndex, todayKey)} · day 1`,
+      endLabel: `${endLabelFor(designedEnd, 'the end you first set')}. The count above stops here.`,
+      extension: {
+        headerLabel: `Extended to ${formatTrialDate(targetEnd, todayKey)} · not in the count above`,
+        endLabel: endLabelFor(targetEnd, 'the end you set'),
+      },
+      endAfterRowIndex: rowOf(designedEnd),
+      currentRowIndex,
+      legend,
+      accessibilityLabel: ledgerSentence(input.petName, rows, todayKey),
+    };
+  }
   return {
     rows,
     startLabel: `${formatTrialDate(startIndex, todayKey)} · day 1`,
     endLabel: `${formatTrialDate(targetEnd, todayKey)} · day ${targetDays}, the end you set`,
+    extension: null,
     endAfterRowIndex: rowOf(targetEnd),
     currentRowIndex,
     legend,
     accessibilityLabel: ledgerSentence(input.petName, rows, todayKey),
   };
+}
+
+function countLabelOf(c: TrialLedgerRowCount): string {
+  return `${c.covered} of ${c.elapsed}${c.soFar ? ' so far' : ''}`;
 }
 
 /** This week's lane (§5.1): the ledger's current row, the SAME object, so the lane
@@ -335,33 +427,47 @@ export function thisWeekLane(ledger: TrialLedger | null, input: TrialCardInput):
 
 function ledgerSentence(petName: string, rows: TrialLedgerRow[], todayKey: string): string {
   const parts: string[] = [];
+  const extParts: string[] = [];
   // Trailing weeks that are wholly not reached collapse into one clause.
   let lastSpoken = rows.length - 1;
   while (lastSpoken >= 0 && rows[lastSpoken].days.every((d) => d.fill === 'not_reached')) {
     lastSpoken -= 1;
   }
+  const offDiet = (days: TrialLedgerDay[]) =>
+    days.filter((d) => d.offDiet).map((d) => formatTrialDate(d.dayIndex, todayKey));
   for (let i = 0; i <= lastSpoken; i++) {
     const row = rows[i];
-    const bits: string[] = [];
-    const untracked = row.days.filter((d) => d.fill === 'not_tracked').length;
-    if (untracked > 0) bits.push(`not tracked for ${untracked} ${untracked === 1 ? 'day' : 'days'}`);
-    if (row.count) {
-      const { covered, elapsed, soFar } = row.count;
-      bits.push(
-        `meals logged ${covered} of ${elapsed} ${elapsed === 1 ? 'day' : 'days'}${soFar ? ' so far' : ''}`,
-      );
+    const counted = row.days.filter((d) => !d.extension);
+    // CUL-1855: a week wholly in the extension is spoken only in the extension clause,
+    // after the count, so a listener never hears its days as part of it.
+    if (counted.length > 0) {
+      const bits: string[] = [];
+      const untracked = counted.filter((d) => d.fill === 'not_tracked').length;
+      if (untracked > 0) bits.push(`not tracked for ${untracked} ${untracked === 1 ? 'day' : 'days'}`);
+      if (row.count) bits.push(countPhrase(row.count));
+      const offDates = offDiet(counted);
+      let clause = `week ${row.week}, ${bits.join(', ') || 'not reached'}`;
+      if (offDates.length > 0) clause += ` with an off-diet feeding logged on ${joinAnd(offDates)}`;
+      parts.push(clause);
     }
-    const offDates = row.days.filter((d) => d.offDiet).map((d) => formatTrialDate(d.dayIndex, todayKey));
-    let clause = `week ${row.week}, ${bits.join(', ') || 'not reached'}`;
-    if (offDates.length > 0) clause += ` with an off-diet feeding logged on ${joinAnd(offDates)}`;
-    parts.push(clause);
+    if (row.extensionCount) {
+      const offDates = offDiet(row.days.filter((d) => d.extension));
+      let clause = `week ${row.week}, ${countPhrase(row.extensionCount)}`;
+      if (offDates.length > 0) clause += ` with an off-diet feeding logged on ${joinAnd(offDates)}`;
+      extParts.push(clause);
+    }
   }
   let sentence = `${petName}'s trial by week: ${parts.join('; ')}.`;
+  if (extParts.length > 0) sentence += ` Extended weeks, not in the count: ${extParts.join('; ')}.`;
   const firstUnreached = lastSpoken + 2;
   const lastWeek = rows.length;
   if (firstUnreached === lastWeek) sentence += ` Week ${lastWeek} not reached.`;
   else if (firstUnreached < lastWeek) sentence += ` Weeks ${firstUnreached} to ${lastWeek} not reached.`;
   return sentence;
+}
+
+function countPhrase(c: TrialLedgerRowCount): string {
+  return `meals logged ${c.covered} of ${c.elapsed} ${c.elapsed === 1 ? 'day' : 'days'}${c.soFar ? ' so far' : ''}`;
 }
 
 function joinAnd(items: string[]): string {

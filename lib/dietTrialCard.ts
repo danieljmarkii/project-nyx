@@ -94,9 +94,14 @@ import {
   // The now-fact's own recency span, reused to decide when a TERMINAL card's
   // copy of that fact is still live (CUL-1337) — see `terminalRefusalIsLive`.
   REFUSAL_WINDOW_DAYS,
+  interpretabilityOf,
+  leastReassuring,
+  mayStateRecordClean,
   trialViabilityHeadline,
   trialViabilityNote,
+  type TrialCoverage,
   type TrialDietRefusal,
+  type TrialFacts,
   type TrialIntakeRating,
 } from './dietTrial';
 import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
@@ -238,6 +243,19 @@ export interface TrialExposureFacts {
    */
   mayStateRecordClean: boolean;
   /**
+   * CUL-1780 — `mayImplyRecordClean(facts, opts)`: may a surface that prints NO
+   * coverage beside it let silence stand for "nothing off-diet"? Home's trial line
+   * is that surface: it shows the off-diet clause only above zero, so a bare
+   * "Ends Oct 17" is read daily as a clean record.
+   *
+   * OPTIONAL, and absent reads as FALSE: a missed construction site renders "off-diet
+   * check incomplete", never a bare date. That is the fail-loud direction, the same
+   * reasoning `unclassifiable` makes below, pointed the other way because here the
+   * default would otherwise be a claim. The one production writer is
+   * `lib/dietTrialFacts.ts`.
+   */
+  mayImplyRecordClean?: boolean;
+  /**
    * Feedings naming no food (`meals.food_item_id` null and no usable food key —
    * most often a food deleted out from under its meals). `computeTrialFacts`
    * excludes them from BOTH sides of `totalFeedings` / `offDiet` while coverage
@@ -266,6 +284,51 @@ export interface IntakeDeclineFact {
   /** The refused food's label (`refused_normal_food` only), or null when unnamed. */
   refusedFoodLabel: string | null;
   headline: string;
+}
+
+/**
+ * CUL-1780 — the gate for a clean record IMPLIED BY SILENCE, stricter than the one
+ * for a clean record STATED BESIDE ITS COVERAGE.
+ *
+ * `mayStateRecordClean` passes at `partially_supports` (from `COVERAGE_FLOOR`, half
+ * the days logged). That floor was set for sentences that print their ratio beside
+ * the verdict ("Meals logged on 30 of 56 days" above "all 68 matched"), so the reader
+ * weighs the claim against the coverage. A surface with no ratio beside it gives the
+ * reader nothing to weigh, so it asks for `supports` too (PM ruling 2026-10-11, the
+ * Dr. Chen + Designer recommendation). Reads `facts.interpretability`, the less
+ * reassuring of the designed and the live window (CUL-1038 R2), never a ratio the
+ * caller recomputes, so an extended trial cannot pass on its generous window.
+ *
+ * The residual it does not close: coverage saturates on the first meal of a day, so
+ * a once-a-day logger whose household slips an unlogged evening treat still reaches
+ * `supports` (`lib/dietTrial.ts`'s `COVERAGE_SUPPORTS` note). The bar narrows that
+ * hole; ratifying the bar itself stays Dr. Chen's question.
+ */
+export function mayImplyRecordClean(
+  facts: TrialFacts,
+  opts?: { stoppedForRefusal?: boolean },
+): boolean {
+  if (!mayStateRecordClean(facts, opts)) return false;
+  // THE UNTRACKED HEAD COUNTS AGAINST THIS GATE (adversarial-reviewer, CUL-1780).
+  // `coverage` starts at the first logged day by design (§10 S3), and the surfaces
+  // that print it say so beside the ratio. This one prints nothing, so a first log on
+  // day 40 of 56 followed by eight logged days read `supports` (8 of 8) and the bare
+  // date stood over 8 of 48 trial days. Here the head joins the denominator; a short
+  // clinic hand-off (two days before the first log) still clears the bar.
+  const head = facts.untrackedDaysBeforeFirstLog;
+  const withHead = (c: TrialCoverage | null): TrialCoverage | null =>
+    c && head > 0
+      ? {
+          ...c,
+          daysElapsed: c.daysElapsed + head,
+          fraction: c.daysLogged / (c.daysElapsed + head),
+        }
+      : c;
+  const verdict = leastReassuring(
+    facts.interpretability,
+    leastReassuring(interpretabilityOf(withHead(facts.coverage)), interpretabilityOf(withHead(facts.gateCoverage))),
+  );
+  return verdict === 'supports';
 }
 
 export interface TrialCardInput {
@@ -3103,17 +3166,19 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // be the app's own ignorance printed as a clean record (absence ≠ wellness), so the
   // line says the check is incomplete instead. The count, when there is one, still leads.
   //
-  // At zero the gate is the full card's own `mayStateRecordClean` (re-check of the same
-  // pass): the card refuses "all N matched" over a thin record, a refusal, a bowl or an
-  // unclassifiable feeding, so a bare date — which a daily reader learns means exactly
-  // that — may not say it either. One gate for both surfaces. The word is "incomplete",
-  // not "paused", because it must be true in week one and while the read loads too.
+  // At zero the gate is `mayImplyRecordClean`: everything the full card's
+  // `mayStateRecordClean` refuses (a thin record, a refusal, a bowl, an unclassifiable
+  // feeding) plus a record below `supports`. The full card may say "all N matched" at
+  // half the days logged because it prints the ratio above that sentence; this line
+  // prints none, so 30 of 56 days logged must not read like 56 of 56 (CUL-1780). The
+  // word is "incomplete", not "paused", because it must be true in week one, while the
+  // read loads, and on a record logged every other day.
   const ex = input.exposures;
   const offDietUnknown =
     !!input.allowedSetUnavailable ||
     !ex ||
     !!input.antigenArmDark ||
-    (stripOffDiet === 0 && !ex.mayStateRecordClean);
+    (stripOffDiet === 0 && ex.mayImplyRecordClean !== true);
   const cardLine =
     (overrunDays > 0 ? `Window ended ${endDate}` : `Ends ${endDate}`) +
     (stripOffDiet > 0
