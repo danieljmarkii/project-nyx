@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-11
 
-**Mode:** DISCOVERY ([CUL-1798](https://linear.app/projectnyx/issue/CUL-1798)). Deliverable: `docs/culprit-ask-v2-mockups.html` round 1, published at https://claude.ai/artifact/MzZzUzVWKVLLskLxYLUTyk. Shipped via #PR_NUMBER.
+**Mode:** DISCOVERY ([CUL-1798](https://linear.app/projectnyx/issue/CUL-1798)). Deliverable: `docs/culprit-ask-v2-mockups.html` round 1, published at https://claude.ai/artifact/MzZzUzVWKVLLskLxYLUTyk. Shipped via #1182.
 
 ## What happened at 7:24pm
 
