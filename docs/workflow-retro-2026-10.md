@@ -34,6 +34,8 @@ Prior retros: `docs/workflow-retro-2026-07.md`, `docs/workflow-retro-2026-09.md`
 
 **The fix is a sort, not another queue.** Keep flagging everything, and sort each finding by what it can do. Anything that could quiet a warning, leak data or lose data is fixed now, or, if the dispatcher proves its code dark, gates that feature's go-live. A finding that blocks the goal becomes a row. Everything else parks, counted, and asks you nothing until it is pulled. Section 5 has the design (two adversarial passes; the second found six holes, all closed), section 6 the wider workflow, section 8 seven decisions, and section 9 five things to do today.
 
+**Ruled 2026-10-11:** you took D1, D2, D3, D5, D6 and D7 as recommended. D4 is open. Section 11 records what each ruling set in motion.
+
 ---
 
 ## 1. What happened
@@ -195,6 +197,8 @@ Sources were re-opened on 10/11 and each quote checked. The full list, with the 
 
 ## 8. Decisions for you
 
+> **Ruled 2026-10-11 by the PM:** D1, D2, D3, D5, D6 and D7, all A. D4 is open; its plainer explanation is in section 11.
+
 ### D1 · Sort findings by what they can do
 
 - **Deciding:** whether every finding is offered as run-order work, or is sorted by what it can do, so only findings that could hurt an owner or that block the goal ask for your attention now.
@@ -271,6 +275,18 @@ Sources were re-opened on 10/11 and each quote checked. The full list, with the 
 2. **What rule prevents that class?** Section 5's sort, enforced by tags, relations and a production read a script checks, with the burden of proof on "dark"; "a forecast is a budget"; and "file the class, not the instance".
 3. **What is now over-process?** Offering every new issue as a row, one decision at a time (replaced by rule 1's digest line); asking for rulings on work that is not scheduled (D2); a session record for every dispatched row (D7); five steps machinery already does (section 6); and the "every session" reads for a row whose build note is its plan (D5).
 4. **What working file is bloating?** CLAUDE.md (593 lines against a target under 200), `dispatch.md` (15 KB at v1.0 by retro 3's count, 72 KB at v1.7 thirteen days later, plus a second full copy in `operating-kit/`), the groomer (61 KB), the Engines plan page (~96K characters raw), the dispatchers' context (459K to 728K tokens at hand-off), and the `Waiting on PM` label (87 against a cap of 30).
+
+## 11. Rulings (PM, 2026-10-11)
+
+The PM typed `Retro 4 rulings: D1 A · D2 A · D3 A · D4 I don't really understand this one · D5 A · D6 A · D7 A` in this session.
+
+- **D1, D2, D3 (A):** the sort, rulings that travel with their work, and the forecast budget. Built as two PRs: the rules ([CUL-1870](https://linear.app/projectnyx/issue/CUL-1870)) and then the script ([CUL-1872](https://linear.app/projectnyx/issue/CUL-1872)), which carries the nine adversarial cases as named tests.
+- **D5 (A):** CLAUDE.md split by when it is needed ([CUL-1874](https://linear.app/projectnyx/issue/CUL-1874)), after the rules PR, because both edit CLAUDE.md.
+- **D6 (A):** cold reviewers ([CUL-1871](https://linear.app/projectnyx/issue/CUL-1871)). It can run beside anything.
+- **D7 (A):** one write-up per PR ([CUL-1873](https://linear.app/projectnyx/issue/CUL-1873)), after the rules PR, because both edit `dispatch.md`.
+- **D4, open.** Restated in plain words: it pauses changes to the workflow tools themselves (dispatch, `/wrap`, the steward, the groomer), never the work they run. For two weeks after this build merges, those tools take bug fixes only. Then a short check on three numbers (issues filed per merge, the share of launches on the goal path, decisions typed per merged row). After that, workflow changes ship in a weekly batch. Safety defects and CLAUDE.md updates from rulings are exempt. The recommendation stays A.
+
+The build is one parent, [CUL-1869](https://linear.app/projectnyx/issue/CUL-1869), with one sub-issue per PR. The parent is never named in a PR.
 
 ## Appendix: method and caveats
 

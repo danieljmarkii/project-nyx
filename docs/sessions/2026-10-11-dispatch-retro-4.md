@@ -36,9 +36,13 @@ Shipped via #1190 ([CUL-1858](https://linear.app/projectnyx/issue/CUL-1858)). In
   - Each change is written up four times.
   - `main` has no ruleset, though CLAUDE.md says it does.
 
-## Decisions put to the PM (none ruled yet)
+## Decisions put to the PM
 
 D1 sort findings by what they can do · D2 a ruling travels with its work · D3 a forecast is a budget · D4 freeze the process once this lands · D5 split CLAUDE.md by when it is needed · D6 reviewers start cold · D7 one write-up per PR. Each has a recommendation in § 8 of the write-up.
+
+## Rulings (PM, in this session)
+
+D1 A · D2 A · D3 A · D5 A · D6 A · D7 A. D4: "I don't really understand this one". It was restated in plain words (it pauses changes to the workflow tools, not the work they run), and the recommendation stays A. The build is [CUL-1869](https://linear.app/projectnyx/issue/CUL-1869): [CUL-1871](https://linear.app/projectnyx/issue/CUL-1871) (D6), [CUL-1870](https://linear.app/projectnyx/issue/CUL-1870) (D1 to D3, the rules), [CUL-1872](https://linear.app/projectnyx/issue/CUL-1872) (the script), [CUL-1873](https://linear.app/projectnyx/issue/CUL-1873) (D7) and [CUL-1874](https://linear.app/projectnyx/issue/CUL-1874) (D5). C, D and E are blocked by the rules PR.
 
 ## Do today (the PM's yes, or a minute)
 
