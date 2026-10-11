@@ -256,6 +256,7 @@ Single source of truth for every secret the project uses. Update this table inli
 - **CI runs on every PR (B-390, `.github/workflows/ci.yml`):** `App (typecheck + jest)` and `Edge Functions (deno test)` are required checks on an Active `main` ruleset with an empty bypass list (plus `App (jest, non-UTC timezones)`; making it required is CUL-586), so a red check blocks the merge. The Deno job's `npm ci` and its `--allow-read=supabase/functions` are load-bearing, not cruft; actions are SHA-pinned (bump the SHA and its version comment together); never fix a red run by weakening the check (`--no-check`, `continue-on-error`, dropping a suite) without saying so in the PR.
 - Schema changes always get their own PR — never bundle a schema change with UI work.
 - Squash merge to keep `main` history clean and linear.
+- **Tool pause (retro 4 D4, PM 2026-10-11):** for a week after the last of CUL-1870–CUL-1874 merges, `/dispatch`, `/wrap`, the steward and the groomer take bug and friction fixes only (an extra PM decision, a stalled row, a confusing brief); then the CUL-1876 readout, then one tool PR a week. Safety fixes and ruling-driven CLAUDE.md edits are exempt.
 - **Branches (CUL-1497):** merge `main` in only when a branch conflicts or needs code from it; never rebase a pushed branch (save a stack you created) or take one side of a file wholesale. A self-merge needs the PM's word (`/wrap and merge`) or a `/dispatch` child's prompt (one that deploys or edits the gate: the PM's only, CUL-1654) and the gate in `.claude/skills/steward/SKILL.md` §7 _(account: `docs/engineering-lessons.md` §P-15)_
 - Do not merge a PR if the issue's QA criteria are not yet met.
 - **One PR per session.** The end-of-session `docs/sessions/` record (and any STATUS.md / CLAUDE.md / doc edits) ride in the session's *existing* work PR — committed to its branch before merge — not a separate "record the merge" PR afterward. Write the session record's outcome as `shipped via #<n>` (the PR number is assigned at creation, drafts included), never as `merged to main (#<n>)` — the post-merge phrasing is what forces the second PR. **Exception:** if the work PR was already merged mid-session, the status update is a small standalone follow-up. (Mechanics in `/wrap`.)
@@ -330,6 +331,7 @@ Whenever a PM decision is requested — an Open Questions row, a mock round's re
 - **Deciding:** one line on what actually changes based on the answer.
 - **Options:** the 2–4 real options, each ≤1 line, with the team's **recommendation marked and its one-line why**. If there's a genuine persona conflict, name the dissent instead of a recommendation (Conflict Protocol still applies).
 - **Consequence:** one line on what the ruling unblocks or forecloses (build scope, spec edits, deferrals). A re-ruling names every earlier ruling it unseats (CUL-1606 F5).
+- **Forecast:** on a brief that commits to building, its size in rows (`Forecast: 3 rows`). At forecast + 1 the fork returns to the PM before more is built (D3, CUL-1858).
 
 **Every `CUL-NNN` is a link (PM directive, 2026-10-10):** in chat, summaries, kickoff prompts, PR bodies and Linear text, write `[CUL-NNN](https://linear.app/projectnyx/issue/CUL-NNN)`, never a bare token. Code and commit messages are exempt.
 
@@ -534,7 +536,7 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 | Priority | Map `Now`→Urgent/High, `Next`→Medium, `Later`→Low (Linear's native field, no separate label needed). |
 | Project | A live project only if the issue extends its work; else **none** (standalone is fine) plus an `Area: *` label. **Never Legacy Backlog** — migrated rows only (PM, 2026-09-26, CUL-1284). |
 | Team | `Culprit` |
-| State | `Todo` for new items; `In Progress` / `Done` only for items filed retroactively about already-started work. |
+| State | A finding goes through `/dispatch` § The sort (D1, CUL-1858): parked → `Backlog`, not `Todo`. Asked-for work → `Todo`; `In Progress` / `Done` only when filed about started work. |
 
 **`view backlog` command:** when the PM types `view backlog`, `show backlog`, `what's in the backlog`, or any natural-language equivalent, use the Linear MCP `list_issues` tool (team `Culprit`) and present grouped by priority, surfacing anything whose description names a live track at the top. Linear is the whole answer — **do not also read `docs/backlog.md`** (frozen; it only holds the pre-migration history of already-ported rows). Do not invoke this proactively at every session start — only on request, or when a scan reveals an item that blocks a live track.
 
@@ -544,15 +546,16 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 - **Decide what is yours.** Off the never-list, copy inside `nyx-voice`, UX detail inside a ratified spec or mock round, and a doc edit that only matches shipped code are team calls: the persona decides, logs it on the issue, and the PM can reverse it. A persona conflict still escalates.
 - **One issue per review round**, never one per finding; **device checks file per TestFlight cut**, never per PR.
 - **WIP cap 30, counted on the label.** Over it, a low-risk call carrying your recommendation is applied and logged, not filed. The never-list always files: clinical, safety invariant, privacy/RLS, money / Pets > $, schema, App Store, irreversible.
+- **A ruling travels with its work (D2, CUL-1858).** A finding gets the label only when it is `Live harm` touching safety or privacy, or when pulled into a run order; a dark gate is ruled at its go-live. Never-list findings never expire.
 - Draining it (six lanes, the 72h default window, the dockets, the 21-day rule) is `backlog-groomer` step 12.
 
-**Working the issues in Linear — the per-issue trail (instituted 2026-08-16).** Now that the backlog lives in Linear, the decisions and scope changes that used to land only in `docs/sessions/` and backlog rows should also live **on the issue** — where the work is tracked and where the next session looks first. The convention for any session (or persona) building against a `CUL-NNN`:
+**Working the issues in Linear — the per-issue trail (instituted 2026-08-16).** Decisions and scope changes live **on the issue**, where the next session looks first:
 
 - **Scope change discovered mid-build** (the feature turns out bigger / smaller / different than the issue says) → **update the issue description** with `save_issue` (use its `patch` for a surgical edit) so the issue keeps describing the real work. Don't leave the description stale while the truth sits in a comment.
 - **Decisions, persona conflicts, and review findings** (a Conflict-Protocol call, an `adversarial-reviewer` / `pm-feature-review` / `rls-privacy-reviewer` verdict, a resolved Open Question that bears on this issue) → **post an issue comment** with `save_comment`. This is the deliberation trail, and it belongs where the work is.
-- **Genuinely new scope** (a real deferral, not a change to this issue) → **file a new Linear issue** (`save_issue`, team Culprit, `Todo`) — never a `docs/backlog.md` row, never silently folded into an unrelated issue. (Same "when to file" rule as above, restated for the build loop.)
+- **Genuinely new scope** (a real deferral, not a change to this issue) → **file a new Linear issue**, state per the issue shape — never folded into an unrelated issue.
 - **Attribute lightly.** An agent-authored comment names the lens and session behind it — e.g. `— Data Scientist lens, session 2026-08-16-<slug>` — so a human skimming the issue knows who "said" it.
-- **`docs/sessions/` stays.** This is *additive and per-issue*, not a replacement: `docs/sessions/` remains the **cross-issue narrative** (what the whole session did, across every issue it touched); the issue comments are the **per-issue** slice. `/wrap` Step 4 is where both get written.
+- **`docs/sessions/` stays** as the cross-issue narrative; the issue comments are the per-issue slice. `/wrap` step 4 writes both.
 
 ---
 
