@@ -29,12 +29,13 @@
 // (userId, petId, timezone, now) fully determines a materialized instance.
 //
 // UTC-ANCHORED, on purpose (§3.2 / R-3). Regular events sit at fixed UTC times of
-// day; the two intake-DIP days are anchored to UTC-date(now) and UTC-date(now)−1,
-// because `detectIntakeDecline` buckets recent days by UTC calendar date
-// (detection.ts) — NOT local midnight — so a locally-anchored dip run at an early
-// UTC hour produces no ② at all (the bug R-3 exists to prevent). Only detector ⑥
-// (out of scope) reads the timezone; ① and ② do not, so a UTC-anchored story is
-// the honest, zone-independent one.
+// day; the two intake-DIP days are anchored to UTC-date(now) and UTC-date(now)−1.
+// Since CUL-94 `detectIntakeDecline` buckets by the profile zone's LOCAL day (UTC
+// only when no valid zone is on file), and the seed writes a zone, so the live demo
+// is read in local days. Measured (demoStory.detection.test.ts): a seed under the §8
+// seed-run-hour rule keeps ② for at least 24h in every zone tested; a seed at
+// 00:00–~07:00 UTC in a US zone puts both dip days on one local day and ② stays
+// silent, so in a US zone the rule is binding, not advisory.
 
 import { uuidV5 } from './uuidv5.ts';
 

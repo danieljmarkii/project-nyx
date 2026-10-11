@@ -4146,6 +4146,16 @@ function utcDateKey(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10)
 }
 
+/** Detector ②'s calendar (CUL-94): the owner's local day index, or the UTC day with no valid
+ *  zone. Mirrored by `lib/analytics.ts` detectIntakeDecline; the parity suite pins the two. */
+function intakeDayOf(ms: number, timeZone: string | undefined): number {
+  return isValidTimeZone(timeZone) ? localDayIndex(ms, timeZone) : Math.floor(ms / MS_PER_DAY)
+}
+
+function intakeDaysOf(meals: readonly RatedMeal[], timeZone: string | undefined): Map<RatedMeal, number> {
+  return new Map(meals.map((m) => [m, intakeDayOf(m.ms, timeZone)]))
+}
+
 /** A rated meal reduced to the fields the intake-decline / coverage logic needs. */
 interface RatedMeal {
   ms: number
@@ -4339,8 +4349,14 @@ function detectIntakeDeclineCore(
   // (rating more meals wakes this detector); see detectRateMeals.
   if (ratedMeals.length < cfg.minRatedMealsForBaseline) return []
 
+  // The window edge stays a raw `now − 14×24h` (CUL-94 measured whole local days and kept this):
+  // a local-day edge only ever WIDENS the window, and the older meals it adds diluted a food's
+  // normally-eaten history under its floor (a differential seed lost its refusal card). The edge
+  // still ages a meal out at a clock hour; the buffer-day cuts below carry the case that made
+  // that silence a card (adversarial pass 2, case 4).
   const baselineWindowStart = nowMs - cfg.baselineWindowDays * MS_PER_DAY
   const windowMeals = ratedMeals.filter((m) => m.ms >= baselineWindowStart)
+  const todayDay = intakeDayOf(nowMs, input.timezone)
   if (windowMeals.length < cfg.minRatedMealsForBaseline) return []
 
   // B-213 — the conservative "last full meal" anchor, computed ONCE over the rated meals
@@ -4363,28 +4379,54 @@ function detectIntakeDeclineCore(
   // sensitivity on the day count only, never by reading absent data as a decline.
   const isCat = input.pet.species === 'cat'
   const consecutiveDays = isCat ? cfg.cat.consecutiveDaysBelowBaseline : cfg.consecutiveDaysBelowBaseline
-  const recentCutoffMs = nowMs - consecutiveDays * MS_PER_DAY
-  const baselineMeals = windowMeals.filter((m) => m.ms < recentCutoffMs)
+  // CUL-94 — days are the OWNER's local days. The old split was a raw `now − N×24h` cutoff for
+  // the baseline and UTC calendar days for the recent window, so every meal between 24h ago and
+  // UTC midnight was counted nowhere: a New York cat lost its card at 20:00 EDT with no new
+  // evidence, and a Pacific cat's full dinner landed in "today's" UTC bucket and lifted a
+  // genuinely low day over the ceiling. The recent window is N whole local days ending at the
+  // ANCHOR — today once today has a rated meal, else yesterday (between local midnight and
+  // breakfast nothing new is known, so the card holds). The baseline is every window meal before
+  // them, with the day just before them (the BUFFER) read at every cut, below. No valid zone ⇒
+  // UTC days, the pre-CUL-94 calendar: this is a safety card, so a missing zone degrades the day
+  // boundary, never silences the detector (unlike ⑥ / I5).
+  const dayOfMeal = intakeDaysOf(windowMeals, input.timezone)
+  const anchorDay = windowMeals.some((m) => dayOfMeal.get(m) === todayDay) ? todayDay : todayDay - 1
+  const firstRecentDay = anchorDay - (consecutiveDays - 1)
+  const bufferDay = firstRecentDay - 1
 
-  if (baselineMeals.length >= cfg.minRatedMealsForBaseline) {
-    const baselineScore =
-      baselineMeals.reduce((sum, m) => sum + m.score, 0) / baselineMeals.length
+  // Per-day means for the N local days ending at the anchor. A day with no rated meal is
+  // skipped, never treated as a decline — a logging gap must not masquerade as anorexia
+  // (§9 / B-027 data caveat) — so a skipped day leaves the window short and the arm silent.
+  const recentDays: { mean: number }[] = []
+  for (let day = anchorDay; day >= firstRecentDay; day--) {
+    const dayMeals = windowMeals.filter((m) => dayOfMeal.get(m) === day)
+    if (dayMeals.length === 0) continue
+    recentDays.push({ mean: dayMeals.reduce((sum, m) => sum + m.score, 0) / dayMeals.length })
+  }
 
-    // Per-day means for the last N calendar days that actually have a rated meal.
-    // A day with no rated meal is skipped, never treated as a decline — a logging
-    // gap must not masquerade as anorexia (§9 / B-027 data caveat).
-    const recentDays: { mean: number }[] = []
-    for (let i = 0; i < consecutiveDays; i++) {
-      const key = utcDateKey(nowMs - i * MS_PER_DAY)
-      const dayMeals = windowMeals.filter((m) => utcDateKey(m.ms) === key)
-      if (dayMeals.length === 0) continue
-      const mean = dayMeals.reduce((sum, m) => sum + m.score, 0) / dayMeals.length
-      recentDays.push({ mean })
-    }
-
-    if (recentDays.length >= consecutiveDays) {
+  // The buffer day is read at EVERY cut and the accusing reading stands. It is the day most
+  // likely to hold the onset, and the usual onset is a good morning and a bad evening: whole and
+  // in the baseline, its refusals dilute the normal (more surely the harder she refused); whole
+  // and out, its good meals leave a thin or marginal normal short of the floor or the full point.
+  // The pre-CUL-94 `now − N×24h` cutoff fell somewhere inside this day by accident; reading
+  // every prefix of it (none of its meals, the first, the first two, … all) covers every hour
+  // that cutoff could land on, so an evening refusal after a good morning can never quiet a card
+  // that the good morning alone would raise (both adversarial passes on CUL-94; the property is
+  // pinned in lib/intakeDeclineLocalDay.test.ts). Each prefix is the same hypothesis under the
+  // same full-point rule, so the union adds little multiplicity. Measured against the pre-CUL-94
+  // detector over 100,000 generated records (UTC days, both triggers): none loses a card the old
+  // detector raised; 6,775 gain one, mostly the overnight hold. Residual, stated: a refusal day
+  // that has aged PAST the buffer still dilutes the normal (pre-CUL-94 too; CUL-1797).
+  if (recentDays.length >= consecutiveDays) {
+    const recentMean = recentDays.reduce((sum, d) => sum + d.mean, 0) / recentDays.length
+    const beforeBuffer = windowMeals.filter((m) => (dayOfMeal.get(m) as number) < bufferDay)
+    const bufferMeals = windowMeals.filter((m) => dayOfMeal.get(m) === bufferDay) // ascending
+    for (let cut = 0; cut <= bufferMeals.length; cut++) {
+      const baselineMeals = cut === 0 ? beforeBuffer : [...beforeBuffer, ...bufferMeals.slice(0, cut)]
+      if (baselineMeals.length < cfg.minRatedMealsForBaseline) continue
+      const baselineScore =
+        baselineMeals.reduce((sum, m) => sum + m.score, 0) / baselineMeals.length
       const allBelow = recentDays.every((d) => d.mean < baselineScore)
-      const recentMean = recentDays.reduce((sum, d) => sum + d.mean, 0) / recentDays.length
       const material = baselineScore - recentMean >= cfg.minDeclineDelta
       // On the single-day (cat) path, also require the day to be genuinely low — not
       // merely one notch down (e.g. "all"→"most") — so we stay sensitive without crying
@@ -4403,6 +4445,7 @@ function detectIntakeDeclineCore(
           ratedMealsConsidered: baselineMeals.length,
           lastFullMealIso,
         })
+        break
       }
     }
   }
@@ -4436,8 +4479,10 @@ function detectIntakeDeclineCore(
     // safety failure (§9 / §11 #1). Ported from lib/analytics.ts detectIntakeDecline
     // (B-090): the client health-watch led with this fix; porting it here re-converges
     // the two decline surfaces so they can never disagree on a refusal.
-    const latestDayKey = utcDateKey(latest.ms)
-    const prior = sorted.filter((m) => utcDateKey(m.ms) !== latestDayKey)
+    // The owner's local day (CUL-94): a UTC day split a US-evening bout in two and left its
+    // first half in `prior`. Residual, stated: a bout across LOCAL midnight still splits (CUL-1790).
+    const latestDay = dayOfMeal.get(latest)
+    const prior = sorted.filter((m) => dayOfMeal.get(m) !== latestDay)
     if (prior.length < cfg.normallyEatenMinSamples) continue
     const priorMean = prior.reduce((sum, m) => sum + m.score, 0) / prior.length
     if (priorMean < cfg.normallyEatenScoreFloor) continue
