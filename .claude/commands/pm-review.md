@@ -18,7 +18,7 @@ Use it when a feature (or a cluster of PRs) is built and you want the "would a r
 
 4. **Offer to act on the tail:**
    - File the **📋 backlog candidates** into **Linear** (team Culprit, via `save_issue`) — per the Backlog Protocol, capture immediately, don't batch.
-   - Add the **❓ PM decisions** to the Open Questions table.
+   - Add the **❓ PM decisions** to `docs/open-questions.md`.
    - Tee up the **🐞 broken** items for a fixes branch (or hand to `/code-review` for correctness depth).
 
 ## Rules

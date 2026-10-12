@@ -59,7 +59,7 @@ CLAUDE.md (the stable operating manual) is the source of truth for the formats r
 
    There is **no** duplicate-ID check and **no** renumbering ritual: `CUL-NNN` IDs are assigned server-side and cannot collide, which is the entire reason that machinery is gone. (The reconciliation that used to be a `docs/backlog.md` grooming pass is now just "keep the touched issues honest"; the `backlog-groomer` skill is the on-demand Linear-hygiene version — reconcile issue status vs. shipped PRs, surface phase-blockers, flag stale `In Progress`.)
 
-5. **Emit the full Session Summary** in the exact format from CLAUDE.md (§ "Session End — Automatic Summary"): Build Phase, What Was Built, Decisions Made, Persona Flags Raised, Open Questions Surfaced, Known Issues / Tech Debt, PM Action Items, Recommended Next Steps, Next Session Kickoff, Documentation Updates. Name the persona lenses from `docs/personas.md` that applied.
+5. **Emit the full Session Summary** in the exact format in § Formats below: Build Phase, What Was Built, Decisions Made, Persona Flags Raised, Open Questions Surfaced, Known Issues / Tech Debt, PM Action Items, Recommended Next Steps, Next Session Kickoff, Documentation Updates. Name the persona lenses from `docs/personas.md` that applied.
 
 6. **Emit the Dev Handoff** if anything was pushed this session — pull the exact runtime commands from `docs/dev-handoff-runbook.md` (default to Runtime B; the installed build and the traps are that file's § Current build state) and include the numbered **Manual QA Script** tied to acceptance criteria.
 
@@ -105,3 +105,76 @@ What changes in the other steps:
 - Keep `STATUS.md` a pointer card; the long story belongs in the Session Summary, the `docs/sessions/` record, and the touched issues' Linear comments.
 
 $ARGUMENTS
+
+## Formats (moved from `CLAUDE.md` § Session Protocol, 2026-10-12, CUL-1874)
+
+### Next Session Kickoff format
+
+When a PR is opened or pushed that completes a chunk of work (a milestone ✓, an issue ✓, or a self-contained feature), emit a **Next Session Kickoff** block alongside the Dev Handoff. The PM uses these prompts to start the next session cleanly without re-explaining context.
+
+Format:
+
+```
+### Next Session Kickoff
+**Recommended first prompt:**
+> <copy-pasteable prompt, 1–3 sentences, names the issue (`CUL-NNN`) and concrete first task>
+
+**Alternate prompts (if priorities shift):**
+- <prompt for a parallel-track item>
+- <prompt for an open question that's now ready to decide>
+
+**Parallel / efficiencies (when the work can fan out):**
+- <tracks that are independent — disjoint files, no logical dependency — and can run concurrently as separate sessions/branches; name any shared-file collision to expect (STATUS.md is no longer one for most sessions — a wrap normally doesn't touch it)>
+- <a single decision that unblocks several tracks; batchable work; which items are ready-to-run vs. gated on a PM/expert call>
+```
+
+Rules:
+- The recommended prompt always points at the next issue in the live Linear project — its next milestone, or the project description's PR-by-PR run order — unless a blocking open question makes that impossible, in which case the prompt is "resolve open question X."
+- Each prompt is self-contained: it names the file, step number, or doc the next session should read first.
+- If a PM Action Item from this session is a prerequisite (e.g. "deploy function X first"), say so explicitly in the prompt.
+
+### Session Summary format
+
+Produce this summary automatically at the end of every session without being asked. If the session ends abruptly, produce a partial summary covering what was completed.
+
+**Shortcut:** run `/wrap` to produce the whole close-out deterministically — it runs the DoD, writes the `docs/sessions/` record, reconciles the touched Linear issues (and updates CLAUDE.md if a decision changed the manual, or `STATUS.md` if a track boundary moved), emits this summary and the Dev Handoff, and always finishes with a paste-ready Next Session Kickoff prompt. Use it every session so the wrap-up is identical each time.
+
+```
+## Session Summary — [Date]
+
+### Build Phase
+[Which step you were on. Whether it is now complete or still in progress.]
+
+### What Was Built
+[Concise list of completed work with file paths where relevant]
+
+### Decisions Made
+[Any architectural, design, or product decisions made this session]
+
+### Persona Flags Raised
+[Any conflicts or concerns surfaced by the team during the session, and how they were resolved or escalated]
+
+### Open Questions Surfaced
+[New questions that emerged and need PM input — add these to `docs/open-questions.md`]
+
+### Known Issues / Tech Debt
+[Anything intentionally deferred or left rough, with a note on why]
+
+### PM Action Items
+[Consolidated list of every action only the PM can take, deduplicated across the session. Examples: apply migration X; deploy Edge Function Y; provision secret Z; rule on open question W; run an on-device check.
+
+**Each one gets a Linear home before the wrap ends** — either a new issue (team Culprit, `Todo`, the **`Waiting on PM`** label, the single remaining step named in the first line) or a comment on the issue it belongs to. Then list them here as `CUL-NNN — <action>`, so the summary is a set of links rather than a second, drifting checklist. If there are none, write "None."]
+
+### Recommended Next Steps
+[Ordered list of what to tackle next session, with rationale for the ordering. **Explicitly surface parallelism + efficiencies** — which items are independent and can run concurrently (disjoint files / no logical dependency), which are gated on a PM/expert decision vs. ready-to-run, and any single decision that unblocks several tracks. Don't present a linear plan when the work can fan out.]
+
+### Next Session Kickoff
+[Copy-pasteable prompts the PM can paste into a new session — see Next Session Kickoff format above. Always include the recommended first prompt; include alternates if multiple tracks are live.]
+
+### Documentation Updates
+CLAUDE.md — [Changes made this session. Already applied inline.]
+
+/docs/ files — [Proposed edits with specific section and proposed change described. Needs PM confirmation before writing.]
+
+Project Brief (Claude.ai) — [Flag if the brief in project instructions needs updating. Remind PM this requires manual update via the protocol in the brief — it cannot be edited by Claude Code.]
+```

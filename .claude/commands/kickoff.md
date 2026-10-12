@@ -33,7 +33,7 @@ Produce a tight, skimmable orientation so a returning session (or the PM) can st
 
    (For a fuller reconcile, the `backlog-groomer` skill is the on-demand Linear-hygiene procedure.)
 
-3. **Check for blocking Open Questions** (CLAUDE.md § Open Questions → Open, cross-referenced from STATUS.md) that gate the current Phase. If one is blocking and unanswered, the recommended first action is "resolve open question X," not "build."
+3. **Check for blocking Open Questions** (`docs/open-questions.md` → Open, cross-referenced from STATUS.md) that gate the current Phase. If one is blocking and unanswered, the recommended first action is "resolve open question X," not "build."
 
 4. **Read the relevant docs for the confirmed step** (the CLAUDE.md "Read These Before Writing Any Code" table tells you which). Don't write code before this.
 
