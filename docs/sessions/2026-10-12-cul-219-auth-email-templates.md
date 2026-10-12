@@ -19,8 +19,13 @@
 - Magic link and Invite are drafted although the app sends neither, so no unbranded Supabase default can reach an owner.
 - Light only, inline styles, no images; the button is the app's primary button (`#0A0A0A`, white text), the wordmark text in brand night.
 
+## Device check, and what it found
+
+- The PM pasted all four templates. The reset email arrived in Gmail on the PM's iPad as drafted: sender Culprit, subject `Set a new Culprit password`, the same phone line, the PKCE verify link. Logged on CUL-66 (step 1 done) and CUL-219 (close condition met).
+- The same test exposed an app bug past the email. Auth logs show `/recover` 200, `/verify` 303, `/token?grant_type=pkce` **200**, yet the app showed "Couldn't finish that". auth-js 2.105.4 emits `PASSWORD_RECOVERY`, not `SIGNED_IN`, after a recovery exchange; `shouldAdoptSessionDuringRecovery` admits only `SIGNED_IN` during the window, so the session is dropped and the 20s watchdog fires. Filed as [CUL-1886](https://linear.app/projectnyx/issue/CUL-1886) (Urgent, App Store 1.2.0), not folded in: an auth change does not ride on a docs PR. The unit tests mocked the event as `SIGNED_IN`, the shape the spec assumed, which is why CI never saw it.
+
 ## Residuals
 
-- The paste and one received email are the PM's, in CUL-66 step 1 (comment posted there with the steps).
 - [CUL-1885](https://linear.app/projectnyx/issue/CUL-1885): the password changed notice, change email and reauthentication templates, filed Backlog.
+- [CUL-1887](https://linear.app/projectnyx/issue/CUL-1887): a design pass on these four emails, filed at the PM's ask (Todo, Medium, outside the App Store project).
 - STATUS.md unchanged: no track boundary moved.
