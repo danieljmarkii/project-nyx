@@ -9,6 +9,9 @@ import { planDispatch, type PlanInput } from './plan.ts';
 import { scopeFromIssues, scopeFromPlan, scopeLine } from './progress.ts';
 import { directionOf, inPopulation, keyDark, liveReasons, stopgapOf, type Candidate } from './sort.ts';
 
+// An open PR adding migration 104: the one shape a named migration can be dark in.
+const OPEN_104 = { number: 950, title: 'Engines v3 PR-27g: stale path', state: 'open' as const, headRef: 'claude/engines-v3-pr27g-1', createdAt: NOW, files: ['supabase/migrations/104_not_yet.sql'] };
+
 const run = (findings: Candidate[], over: Partial<PlanInput> = {}) => planDispatch(input({ findings, ...over })).sort!;
 const door = (findings: Candidate[], id: string, over: Partial<PlanInput> = {}) => run(findings, over).sorted.find((s) => s.id === id)?.door;
 
@@ -31,11 +34,11 @@ describe('retro 4 pass 1', () => {
     expect(door([f], 'CUL-1803')).toBe(1);
     // A migration only on main (depended on) is live too; one only in an open PR is not.
     expect(door([finding('CUL-1804', { blocks: ['CUL-1500'], migrations: ['101_engines_v3_en3_seed'] })], 'CUL-1804', { appliedMigrations: [] })).toBe(1);
-    expect(door([finding('CUL-1805', { blocks: ['CUL-1500'], migrations: ['104_not_yet'] })], 'CUL-1805')).toBe(2);
+    expect(door([finding('CUL-1805', { blocks: ['CUL-1500'], migrations: ['104_not_yet'] })], 'CUL-1805', { prs: [OPEN_104] })).toBe(2);
     // Applied in production but not on main (applied from a branch): live.
     expect(door([finding('CUL-1843', { blocks: ['CUL-1500'], migrations: ['103_hotfix_trigger'] })], 'CUL-1843', { appliedMigrations: ['hotfix_trigger'] })).toBe(1);
     // With the applied list unread, even that one cannot be proven unapplied.
-    expect(door([finding('CUL-1839', { blocks: ['CUL-1500'], migrations: ['104_not_yet'] })], 'CUL-1839', { appliedMigrations: undefined })).toBe(1);
+    expect(door([finding('CUL-1839', { blocks: ['CUL-1500'], migrations: ['104_not_yet'] })], 'CUL-1839', { appliedMigrations: undefined, prs: [OPEN_104] })).toBe(1);
     // A live surface the dispatcher names (a deployed function) is live whatever the keys say.
     expect(door([finding('CUL-1840', { blocks: ['CUL-1500'], liveSurfaces: ['generate-signal (deployed)'] })], 'CUL-1840')).toBe(1);
   });
@@ -105,7 +108,7 @@ describe('retro 4 pass 2', () => {
 
 describe('the three worst breaks of pass 2 (CUL-1872, from PR-B)', () => {
   it('1. {enabled:true, allowlist:[]} reads as live', () => {
-    expect(keyDark({ enabled: true, allowlist: [] })).toBe(false);
+    expect(keyDark({ enabled: true, allowlist: [] }, true)).toBe(false);
     expect(door([finding('CUL-1817', { keys: ['engines_v3_all'], blocks: ['CUL-1503'] })], 'CUL-1817')).toBe(1);
   });
 
@@ -207,17 +210,20 @@ describe('the tag and the dark read', () => {
     expect(directionOf('x\n**Direction:** QUIET\n')).toBe('QUIET');
     expect(directionOf('Direction: LOUD')).toBe('LOUD');
     expect(directionOf('Direction: neither')).toBe('neither');
-    expect(directionOf('Direction: quiet-ish')).toBeUndefined();
-    expect(directionOf('the Direction: LOUD is mentioned mid-sentence')).toBeUndefined();
+    expect(directionOf('Direction: perhaps')).toBeUndefined();
+    expect(directionOf('Directions to repro: LOUD bang')).toBeUndefined();
+    expect(directionOf('Direction of travel: LOUD')).toBeUndefined();
   });
   it('dark is only false, or enabled:false with a present, empty allowlist', () => {
     expect(keyDark(false)).toBe(true);
-    expect(keyDark({ enabled: false, allowlist: [] })).toBe(true);
-    for (const v of [true, { enabled: false }, { enabled: false, allowlist: [PM_UUID] }, { enabled: 'false', allowlist: [] }, null, 'false', 0, []]) expect(keyDark(v)).toBe(false);
+    expect(keyDark({ enabled: false, allowlist: [] }, true)).toBe(true);
+    for (const v of [true, { enabled: false }, { enabled: false, allowlist: [PM_UUID] }, { enabled: 'false', allowlist: [] }, { enabled: false, allowlist: [null] }, null, 'false', 0, []])
+      expect(keyDark(v, true)).toBe(false);
   });
   it('no key named is live', () => {
-    expect(liveReasons({ keys: [] }, APP_CONFIG, [], [])).toContain('no app_config key identified');
-    expect(liveReasons({ keys: ['engines_v3_en9'] }, APP_CONFIG, [], [])).toEqual([]);
+    const ctx = { appConfig: APP_CONFIG, appliedMigrations: [], mainMigrations: [], allowlistKeys: ['engines_v3_en9'] };
+    expect(liveReasons({ keys: [], arm: 'on' }, ctx)).toContain('no app_config key identified');
+    expect(liveReasons({ keys: ['engines_v3_en9'], arm: 'on' }, ctx)).toEqual([]);
   });
   it('an allowlist addition promotes a door-2 gate to a door-1 fix', () => {
     const f = finding('CUL-1821', { blocks: ['CUL-1500'], labels: ['Gate: clinical'] });
@@ -356,5 +362,87 @@ describe('the scope line (rule 5)', () => {
   it('a project with no table says so, and an issue project counts its issues', () => {
     expect(scopeLine(scopeFromIssues([{ id: 'CUL-1', stateType: 'started', createdAt: NOW }, { id: 'CUL-2', stateType: 'canceled', createdAt: NOW }], NOW))).toBe('Scope: no Done means line · 1 now (+1 added this week)');
     expect(scopeLine()).toBe('Scope: not read');
+  });
+});
+
+describe('adversarial pass 1 (CUL-1872): the breaks, each a named test', () => {
+  it('B1 a neither or LOUD finding that can expose, lose or corrupt data is harm, not parked', () => {
+    const leak = finding('CUL-1911', { description: tagged('neither'), harm: 'exposure', keys: [], liveSurfaces: ['deployed function ask'] });
+    const corrupt = finding('CUL-1912', { description: tagged('LOUD'), harm: 'corruption', keys: [] });
+    expect(door([leak], 'CUL-1911')).toBe(1);
+    expect(door([corrupt], 'CUL-1912')).toBe(1);
+    expect(run([leak]).liveFixes[0].stopgap).toContain('leaking path off');
+  });
+
+  it('B2 a kill switch under the object shape is on for everyone: dark only through the allowlist resolver', () => {
+    const cfg = { ...APP_CONFIG, ai_vomit_read_enabled: { enabled: false, allowlist: [] } };
+    const f = finding('CUL-1913', { keys: ['ai_vomit_read_enabled'], blocks: ['CUL-1504'] });
+    const over = { appConfig: cfg, goLives: { ai_vomit_read_enabled: 'CUL-1504' } };
+    const p = input(over);
+    p.issues['CUL-1504'] = { id: 'CUL-1504', state: 'Todo' };
+    const r = planDispatch({ ...p, findings: [f] }).sort!;
+    expect(r.sorted[0].door).toBe(1);
+    expect(r.sorted[0].why.join(' ')).toContain('not read through the allowlist resolver');
+    // The same key set to false is dark.
+    const off = planDispatch({ ...p, appConfig: { ...cfg, ai_vomit_read_enabled: false }, findings: [f] }).sort!;
+    expect(off.sorted[0].door).toBe(2);
+  });
+
+  it('B3 a named trigger or policy, or a migration name that matches no unmerged file, is live', () => {
+    for (const m of ['trigger incidents_set_may_wait', 'policy "owners read pets"', '095a_hotfix', 'add-flag'])
+      expect(door([finding('CUL-1914', { blocks: ['CUL-1500'], migrations: [m] })], 'CUL-1914', { prs: [OPEN_104] })).toBe(1);
+    // `095a_hotfix.sql` against an applied `hotfix`, and `add-flag` against `add_flag`, normalise.
+    const r = run([finding('CUL-1915', { blocks: ['CUL-1500'], migrations: ['095a_hotfix.sql', 'add-flag'] })], { appliedMigrations: ['hotfix', 'add_flag'] });
+    expect(r.sorted[0].why).toEqual(expect.arrayContaining(['migration 095a_hotfix.sql is applied', 'migration add-flag is applied']));
+  });
+
+  it('B4 B5 B6 two Direction lines, a mixed tag or a lowercase QUIET: the worst instance wins', () => {
+    expect(directionOf('Direction: LOUD\n\nInstance 2: Direction: QUIET')).toBe('QUIET');
+    expect(directionOf('Direction: LOUD/QUIET')).toBe('QUIET');
+    expect(directionOf('Direction: LOUD-ish, could be QUIET')).toBe('QUIET');
+    expect(directionOf('Direction: quiet')).toBe('QUIET');
+    expect(directionOf('Direction: Quiet')).toBe('QUIET');
+    expect(directionOf('direction: loud')).toBe('LOUD');
+    expect(directionOf('Direction: LOUD\nDirection: neither')).toBe('LOUD');
+    // A lowercase QUIET with a reading is still QUIET: a reading never applies to a tag.
+    expect(door([finding('CUL-1916', { description: 'x\nDirection: quiet', keys: [], reading: { kind: 'polish', quote: 'a typo' } })], 'CUL-1916')).toBe(1);
+  });
+
+  it('B7 a Direction tag as a list item, a heading, a table cell or mid-line makes it a finding', () => {
+    for (const d of ['1. Direction: QUIET', '### Direction: QUIET', '| Direction | QUIET |', 'TL;DR: the card can lie. Direction: QUIET'])
+      expect(run([finding('CUL-1917', { description: d, relatedTo: [], keys: [] })]).sorted[0]).toMatchObject({ finding: true, door: 1 });
+    // Outside the project, since 10-11, with no relatedTo or label: still read.
+    expect(inPopulation(finding('CUL-1918', { description: '- Direction: QUIET', inProject: false, relatedTo: [] }))).toBe(true);
+  });
+
+  it("B8 code in the flag's off arm, or with its arm unstated, is live whatever the key says", () => {
+    expect(door([finding('CUL-1919', { blocks: ['CUL-1500'], arm: 'off' })], 'CUL-1919')).toBe(1);
+    expect(door([finding('CUL-1920', { blocks: ['CUL-1500'], arm: 'both' })], 'CUL-1920')).toBe(1);
+    expect(door([finding('CUL-1921', { blocks: ['CUL-1500'], arm: undefined })], 'CUL-1921')).toBe(1);
+  });
+
+  it('B10 the older Gate: design / device / deploy labels are not harm labels', () => {
+    const old = finding('CUL-1922', { description: tagged('neither'), labels: ['Gate: deploy'], relatedTo: [], inProject: false, createdAt: '2026-08-01T00:00:00Z' });
+    expect(inPopulation(old)).toBe(false);
+    // A door-2 finding carrying only Gate: deploy still gets its Gate: clinical.
+    const r = run([finding('CUL-1923', { blocks: ['CUL-1500'], labels: ['Gate: deploy'] })]);
+    expect(r.writes).toContainEqual(expect.objectContaining({ issue: 'CUL-1923', write: 'add label Gate: clinical' }));
+  });
+
+  it('B11 asksOf counts one apply per migration file the note names', () => {
+    const desc = input().project.description.replace(
+      '**PR-27e:** the read, per CUL-1611 option A.',
+      '**PR-27e:** the read. Migrations `supabase/migrations/105_a.sql` and `supabase/migrations/106_b.sql`.',
+    );
+    const p = input();
+    p.project = { ...p.project, description: desc };
+    expect(planDispatch(p).verdicts.find((v) => v.row === '27e')!.asks.parts.filter((x) => x === 'apply <NNN>')).toHaveLength(2);
+  });
+
+  it('CR-1 a follow-up that is also an issue fact keeps its blocks and relatedTo', () => {
+    const fs = ['CUL-1701', 'CUL-1702', 'CUL-1703'].map((id) => finding(id, { description: tagged('LOUD'), relatedTo: ['CUL-1300'] }));
+    const p = input({ findings: fs });
+    for (const f of fs) p.issues[f.id] = { id: f.id, state: 'Backlog', createdAt: f.createdAt };
+    expect(planDispatch(p).alarms).toEqual([expect.objectContaining({ kind: 'follow-up', rootRow: '23', count: 3 })]);
   });
 });

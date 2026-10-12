@@ -24,6 +24,13 @@
 //     warning parks; the source PR's adversarial pass is what checks the tag.
 //   - Which keys, migrations and live surfaces a finding sits behind is the dispatcher's
 //     reading of its code. A key it never names is invisible, so NO key named reads live.
+//   - Which arm of a flag the code is in is the dispatcher's reading too. Only code read as
+//     the ON arm can be dark: the off arm is what every account not on an allowlist runs,
+//     so an unstated arm reads live.
+//   - Only `Gate: clinical` and `Gate: privacy` are harm labels (the two door 2 writes); the
+//     older `Gate: design` / `device` / `deploy` labels gate other things and are not read.
+//   - A finding filed with a LOUD tag over a quieting effect parks unless it names a `harm`
+//     kind or carries a harm label; a second `Direction:` line naming QUIET wins.
 //   - An issue with no `Direction:` line, no `relatedTo`, no gate label and no findings
 //     milestone, filed outside the project, is not in the population (the groomer's
 //     *Misrouted* report is its only reader).
@@ -36,6 +43,7 @@ export const SORT_START = '2026-10-11T00:00:00Z'; // team-wide Direction / relat
 export const LIVE_HARM = 'Live harm';
 export const WAITING_ON_PM = 'Waiting on PM';
 export const FINDINGS_MILESTONE = /found along the way/i;
+export const HARM_GATES = ['Gate: clinical', 'Gate: privacy'];
 const DAY = 24 * 3600 * 1000;
 
 export type Direction = 'QUIET' | 'LOUD' | 'neither';
@@ -60,7 +68,10 @@ export type Candidate = {
   keys?: string[]; // app_config keys the code sits behind
   migrations?: string[]; // migrations, triggers or policies it names or its code depends on
   liveSurfaces?: string[]; // a deployed function, data a live reader reads, unflagged code
-  harm?: HarmKind; // what it can do; default 'quiet'
+  arm?: 'on' | 'off' | 'both'; // which arm of its flag the code is in; only 'on' can be dark
+  // What it can do. Any value makes it harm whatever its tag: a `neither` or LOUD finding
+  // that can expose, lose or corrupt data is door 1 or 2 (§ The sort, door 1's first cell).
+  harm?: HarmKind;
   reading?: { kind: 'loud' | 'polish' | 'other'; quote: string }; // untagged only, quoted
   kind?: 'polish' | 'other'; // a `neither` finding's parked kind
 };
@@ -92,6 +103,8 @@ export type SortInput = {
   appConfig?: Record<string, unknown> | null; // production; absent or null: the read failed
   appliedMigrations?: string[];
   mainMigrations: string[];
+  unmergedMigrations?: string[]; // migration files only in open PRs
+  allowlistKeys?: string[]; // keys the code reads through the allowlist resolver
   goLives?: Record<string, string>; // key → its go-live issue
   issueStates?: Record<string, string>; // Linear state names, for go-lives
   rowIssues: Map<string, RowId>; // issue id → unmerged row, this project
@@ -111,7 +124,7 @@ export type SortResult = {
 };
 
 const ms = (iso: string) => new Date(iso).getTime(); // parsed, never lexical (C-40)
-const hasGate = (labels: string[]) => labels.some((l) => /^Gate:/.test(l));
+const hasGate = (labels: string[]) => labels.some((l) => HARM_GATES.includes(l));
 
 // Step 1's population: the project's issues since 10-03, every open team-wide issue
 // labelled `Live harm` or `Gate:` (no date window), and every open issue since 10-11
@@ -123,15 +136,25 @@ export function inPopulation(c: Candidate): boolean {
   return ms(c.createdAt) >= ms(SORT_START) && (hasDirectionLine(c.description) || !!c.relatedTo?.length);
 }
 
-const DIRECTION_LINE = /^[\s>*_-]*Direction:?[*_]*\s*/im;
-const hasDirectionLine = (d: string) => DIRECTION_LINE.test(d);
+// `Direction: QUIET`, in any shape a filer writes it: bold, a list item, a heading, a table
+// cell (`| Direction | QUIET |`), mid-line after a TL;DR. `Directions` and `Direction of`
+// are prose, never a tag.
+const DIRECTION = /\bDirection\b[*_`\s]*[:|][*_`|\s]*([^\n|]*)/gi;
+const hasDirectionLine = (d: string) => new RegExp(DIRECTION.source, 'i').test(d);
 
-// `Direction: QUIET` on its own line (bold or not). A malformed value is no tag, so QUIET.
+// A class goes by its worst instance: any value naming QUIET is QUIET, whatever else the
+// lines say; a value naming neither LOUD nor neither is no tag, which counts as QUIET.
 export function directionOf(description: string): Direction | undefined {
-  const m = /^[\s>*_-]*Direction:?[*_]*\s*[*_`]*\s*(QUIET|LOUD|neither)\b/im.exec(description);
-  if (!m) return undefined;
-  const v = m[1];
-  return v === 'QUIET' || v === 'LOUD' ? v : v.toLowerCase() === 'neither' ? 'neither' : undefined;
+  const values = [...description.matchAll(DIRECTION)].map((m) => m[1]);
+  if (!values.length) return undefined;
+  let loud = false;
+  for (const v of values) {
+    if (/\bquiet\b/i.test(v)) return 'QUIET';
+    const l = /\bloud\b/i.test(v);
+    if (!l && !/\bneither\b/i.test(v)) return undefined;
+    loud ||= l;
+  }
+  return loud ? 'LOUD' : 'neither';
 }
 
 export function isFinding(c: Candidate): boolean {
@@ -145,41 +168,60 @@ export function isFinding(c: Candidate): boolean {
 }
 
 // A key is dark only when its production value is `false`, or `{"enabled": false}` with an
-// allowlist that is present and empty. `{"enabled": true, "allowlist": []}` is on for
-// everyone; an allowlist naming any account, the PM's included, is live.
-export function keyDark(value: unknown): boolean {
+// allowlist that is present and empty AND the code reads the key through the allowlist
+// resolver. `{"enabled": true, "allowlist": []}` is on for everyone; an allowlist naming
+// any account, the PM's included, is live. A kill switch read by `resolveFlagValue` (every
+// non-boolean resolves to its fallback, `true` for the AI-read gates) is on for everyone
+// under the object shape, so the object counts only for an allowlist-read key.
+export function keyDark(value: unknown, allowlistRead = false): boolean {
   if (value === false) return true;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (!allowlistRead || !value || typeof value !== 'object' || Array.isArray(value)) return false;
   const o = value as Record<string, unknown>;
   return o.enabled === false && Array.isArray(o.allowlist) && o.allowlist.length === 0;
 }
 
-const migrationKey = (m: string) => m.replace(/^.*\//, '').replace(/\.sql$/, '').replace(/^\d+_/, '').toLowerCase();
+const migrationKey = (m: string) =>
+  m.replace(/^.*\//, '').replace(/\.sql$/, '').replace(/^\d+[a-z]?_/, '').replace(/-/g, '_').toLowerCase();
 
-// Why the code is live, or [] when the production read proves it dark.
-export function liveReasons(
-  c: Pick<Candidate, 'keys' | 'migrations' | 'liveSurfaces'>,
-  appConfig: Record<string, unknown> | null | undefined,
-  appliedMigrations: string[] | undefined,
-  mainMigrations: string[],
-): string[] {
+export type LiveFacts = Pick<Candidate, 'keys' | 'migrations' | 'liveSurfaces' | 'arm'>;
+export type DarkContext = {
+  appConfig?: Record<string, unknown> | null;
+  appliedMigrations?: string[];
+  mainMigrations: string[];
+  unmergedMigrations?: string[];
+  allowlistKeys?: string[];
+};
+
+// Why the code is live, or [] when the production read proves it dark. Every branch that
+// cannot prove dark says live: the burden of proof is on dark.
+export function liveReasons(c: LiveFacts, ctx: DarkContext): string[] {
   const why: string[] = [];
   for (const s of c.liveSurfaces ?? []) why.push(`live surface: ${s}`);
+  if (c.arm === 'off' || c.arm === 'both') why.push("the code is in the flag's off arm, which every account not on an allowlist runs");
+  else if (c.arm !== 'on') why.push('which arm of the flag the code is in is not stated (the off arm runs for every account)');
   const keys = c.keys ?? [];
   if (!keys.length) why.push('no app_config key identified');
-  if (!appConfig) why.push('the production app_config read failed or was not taken');
+  const allowlist = new Set(ctx.allowlistKeys ?? []);
+  if (!ctx.appConfig) why.push('the production app_config read failed or was not taken');
   else
     for (const k of keys) {
-      if (!Object.prototype.hasOwnProperty.call(appConfig, k)) why.push(`${k} is missing from production app_config`);
-      else if (!keyDark(appConfig[k])) why.push(`${k} is ${JSON.stringify(appConfig[k])} in production`);
+      if (!Object.prototype.hasOwnProperty.call(ctx.appConfig, k)) why.push(`${k} is missing from production app_config`);
+      else if (!keyDark(ctx.appConfig[k], allowlist.has(k)))
+        why.push(`${k} is ${JSON.stringify(ctx.appConfig[k])} in production${allowlist.has(k) ? '' : ' (not read through the allowlist resolver, so only false is dark)'}`);
     }
-  const onMain = new Set(mainMigrations.map(migrationKey));
-  const applied = appliedMigrations ? new Set(appliedMigrations.map(migrationKey)) : undefined;
+  // A named migration is dark only when it matches a migration file that is still only in
+  // an open PR and is not applied. A trigger, a policy, or a name that matches no file reads
+  // live: an applied trigger or policy is always live, and an unmatched name cannot be shown
+  // unapplied.
+  const onMain = new Set(ctx.mainMigrations.map(migrationKey));
+  const unmerged = new Set((ctx.unmergedMigrations ?? []).map(migrationKey));
+  const applied = ctx.appliedMigrations ? new Set(ctx.appliedMigrations.map(migrationKey)) : undefined;
   for (const m of c.migrations ?? []) {
     const k = migrationKey(m);
     if (!applied) why.push(`migration ${m}: the applied list was not read`);
     else if (applied.has(k)) why.push(`migration ${m} is applied`);
     else if (onMain.has(k)) why.push(`migration ${m} is on main`);
+    else if (!unmerged.has(k)) why.push(`${m} matches no unmerged migration file, so it cannot be shown unapplied`);
   }
   return why;
 }
@@ -211,14 +253,15 @@ export function sortFindings(input: SortInput): SortResult {
       const labelled = c.labels.includes(LIVE_HARM) || hasGate(c.labels);
       // A reading applies only to an untagged finding: an explicit QUIET is harm above it.
       const readAway = !!c.reading && c.reading.quote.trim().length > 0;
-      s.harm = labelled || tag === 'QUIET' || (!tag && !readAway);
-      if (labelled) s.why.push(`labelled ${c.labels.filter((l) => l === LIVE_HARM || /^Gate:/.test(l)).join(', ')}`);
+      s.harm = labelled || tag === 'QUIET' || (!tag && !readAway) || c.harm !== undefined;
+      if (labelled) s.why.push(`labelled ${c.labels.filter((l) => l === LIVE_HARM || HARM_GATES.includes(l)).join(', ')}`);
       if (tag === 'QUIET') s.why.push('tagged QUIET');
+      if (c.harm !== undefined) s.why.push(`it can ${c.harm === 'quiet' ? 'quiet a warning' : c.harm === 'corruption' ? 'corrupt what a live reader shows' : c.harm === 'exposure' ? 'expose data' : 'lose data'}`);
       if (!tag && !readAway) s.why.push('untagged, so QUIET');
       if (!tag && readAway) s.why.push(`untagged, read as ${c.reading!.kind}: "${c.reading!.quote.trim()}"`);
 
       if (s.harm) {
-        const live = liveReasons(c, input.appConfig, input.appliedMigrations, input.mainMigrations);
+        const live = liveReasons(c, input);
         const goLives = [...new Set((c.keys ?? []).map((k) => input.goLives?.[k]))];
         const missingGoLive = (c.keys ?? []).filter((k) => !input.goLives?.[k]).map((k) => `${k} has no go-live issue`);
         const closed = goLives
@@ -264,8 +307,8 @@ export function sortFindings(input: SortInput): SortResult {
         continue;
       }
       s.door = 4;
-      const k = tag === 'LOUD' || c.reading?.kind === 'loud' ? 'err loud' : tag === 'neither' ? c.kind ?? 'other' : c.reading?.kind ?? 'other';
-      s.park = k as ParkKind;
+      const k: ParkKind = tag === 'LOUD' || c.reading?.kind === 'loud' ? 'err loud' : tag === 'neither' ? c.kind ?? 'other' : c.reading?.kind ?? 'other';
+      s.park = k;
       const targets = [...(c.parentId ? [c.parentId] : []), ...(c.blocks ?? [])];
       if (targets.length) s.unlink = targets;
       s.why.push(`parked (${s.park})`);
@@ -295,7 +338,7 @@ export function sortFindings(input: SortInput): SortResult {
     const own = /\bPR-(\d{2}[a-z]?)\b/.exec(c.title)?.[1];
     if (own && !taken.has(normRow(own))) pr = normRow(own);
     else if (source) {
-      const base = source.replace(/[a-z]$/, '');
+      const base = normRow(source.split(' + ')[0]).replace(/[a-z]$/, '');
       for (const l of 'abcdefghijklmnopqrstuvwxyz')
         if (!taken.has(`${base}${l}`)) {
           pr = `${base}${l}`;

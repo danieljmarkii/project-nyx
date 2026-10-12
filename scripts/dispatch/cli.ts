@@ -21,10 +21,12 @@
 // candidate step 1's three reads returned: `Candidate` in sort.ts, with the dispatcher's
 // reading of the keys, migrations and live surfaces each one's code sits behind),
 // `appConfig` (production `select key, value from app_config`, read-only through the
-// production-read hook, as `{ key: value }`; `null` when the read failed), `goLives` (key →
-// its go-live issue), `roots` (each issue with a `Forecast:` line: id and description),
-// `keysOf` (a row's issue → the keys its output sits behind), `lastRun`, and each issue's
-// `createdAt` (the scope line, the follow-up alarm). The script decides every door; the
+// production-read hook, as `{ key: value }`; `null` when the read failed), `allowlistKeys`
+// (keys the code reads through the allowlist resolver: the `{enabled, allowlist}` object is
+// dark only for these, since `resolveFlagValue` turns any non-boolean into its fallback),
+// `goLives` (key → its go-live issue), `roots` (each issue with a `Forecast:` line: id,
+// description and what its output sits behind), `rowOutputs` (a row's issue → the same),
+// `lastRun`, and each issue's `createdAt` (the scope line, the follow-up alarm). The script decides every door; the
 // dispatcher makes the writes it prints, with the reasons it prints.
 //
 // `--for-pr [CUL-NNN …]` breaks every issue id but the ones listed, so the output can be

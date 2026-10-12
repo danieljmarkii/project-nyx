@@ -67,6 +67,8 @@ export function input(over: Partial<PlanInput> = {}): PlanInput {
     mainMigrations: ['supabase/migrations/101_engines_v3_en3_seed.sql'],
     appliedMigrations: ['engines_v3_en3_seed'],
     appConfig: APP_CONFIG,
+    // The rollout keys go through the allowlist resolver; a kill switch would not be listed.
+    allowlistKeys: ['engines_v3_en9', 'engines_v3_en3', 'engines_v3_all'],
     goLives: GO_LIVES,
     findings: [],
     ...over,
@@ -86,6 +88,7 @@ export function finding(id: string, over: Partial<Candidate> = {}): Candidate {
     labels: [],
     relatedTo: ['CUL-1300'],
     keys: ['engines_v3_en9'],
+    arm: 'on',
     ...over,
   };
 }

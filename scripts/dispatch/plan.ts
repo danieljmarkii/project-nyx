@@ -24,7 +24,7 @@
 
 import { findAlarms, type Alarm, type FollowUpFact, type Root } from './alarms.ts';
 import { aliasOf, normRow, parsePage, slugOf, type AfterItem, type Page, type PageRow, type RowId } from './page.ts';
-import { LIVE_HARM, WAITING_ON_PM, sortFindings, type Candidate, type SortResult } from './sort.ts';
+import { LIVE_HARM, WAITING_ON_PM, liveReasons, sortFindings, type Candidate, type LiveFacts, type SortResult } from './sort.ts';
 
 export const CAP = 6;
 export const SUB_LIMITS = { waitingOnPm: 3, writesProduction: 3, migrations: 1 } as const;
@@ -90,9 +90,10 @@ export type PlanInput = {
   // before, and prints that the sort did not run.
   findings?: Candidate[]; // step 1's population reads, every candidate (sort.ts decides)
   appConfig?: Record<string, unknown> | null; // production `select key, value from app_config`; null = the read failed
+  allowlistKeys?: string[]; // keys the code reads through the allowlist resolver (the object shape counts only for these)
   goLives?: Record<string, string>; // app_config key → its go-live issue
   roots?: Root[]; // issues carrying a `Forecast:` line the page or a build note names
-  keysOf?: Record<string, string[]>; // a row's issue → the keys its output sits behind
+  rowOutputs?: Record<string, LiveFacts>; // a row's issue → what its output sits behind
   lastRun?: string; // the newest `**/dispatch run**` update's time
   index?: string; // the ruling index id
 };
@@ -214,7 +215,9 @@ export function asksOf(
   const parts: string[] = [];
   if (!opts.autoConfirmed) parts.push('the pick');
   if (gate.planGated.length) parts.push(`its plan, then a go typed in its session (plan-gated: ${gate.planGated.join(', ')})`);
-  if (gate.migration) parts.push('apply <NNN>');
+  // One `apply` per migration file the note names (at least one when the row is a migration).
+  const files = new Set([...`${row.what} ${row.note}`.matchAll(/supabase\/migrations\/(\d+[a-z]?)_/g)].map((m) => m[1]));
+  if (gate.migration) for (let i = 0; i < Math.max(1, files.size); i++) parts.push('apply <NNN>');
   const t = `${row.what} ${row.note}`;
   if (PRODUCTION_MERGE.test(t) || (opts.productionLib ?? []).some((f) => t.includes(f))) parts.push('merge');
   for (let i = 0; i < opts.rulings; i++) parts.push('the pending ruling');
@@ -603,14 +606,24 @@ export function planDispatch(input: PlanInput): Plan {
   // ---- the sort and the two alarms (CUL-1872) ------------------------------------------
   const rowIssues = new Map<string, RowId>();
   for (const r of me.page.rows) if (r.id) for (const i of r.issues) rowIssues.set(i, r.id);
+  // A migration only in an open PR is the one migration that can be shown unapplied.
+  const unmergedMigrations = input.prs
+    .filter((p) => p.state === 'open')
+    .flatMap((p) => migrationsIn(p.files).map((m) => m.file))
+    .filter((f) => !input.mainMigrations.some((x) => x.endsWith(f.replace(/^supabase\/migrations\//, ''))));
+  const darkCtx = {
+    appConfig: input.appConfig,
+    appliedMigrations: input.appliedMigrations,
+    mainMigrations: input.mainMigrations,
+    unmergedMigrations,
+    allowlistKeys: input.allowlistKeys,
+  };
   const sort = input.findings
     ? sortFindings({
         now: input.now,
         page: me.page,
         candidates: input.findings,
-        appConfig: input.appConfig,
-        appliedMigrations: input.appliedMigrations,
-        mainMigrations: input.mainMigrations,
+        ...darkCtx,
         goLives: input.goLives,
         issueStates: Object.fromEntries(Object.entries(input.issues).map(([k, f]) => [k, f.state])),
         rowIssues,
@@ -625,25 +638,35 @@ export function planDispatch(input: PlanInput): Plan {
     ...(input.findings ?? []).filter((c) => c.labels.includes(LIVE_HARM)).map((c) => c.id),
     ...(sort?.sorted ?? []).filter((x) => x.door === 1 || x.door === 2).map((x) => x.id),
   ]);
-  const followUps: FollowUpFact[] = [
-    ...(input.findings ?? []),
-    ...Object.entries(input.issues)
-      .filter(([, f]) => f.createdAt)
-      .map(([id, f]) => ({ id, createdAt: f.createdAt!, parentId: f.parentId })),
+  // One entry per id: an issue in both lists keeps the finding's relations, and the issue
+  // fact fills only what the finding lacks.
+  const byId = new Map<string, FollowUpFact>();
+  for (const [id, f] of Object.entries(input.issues)) if (f.createdAt) byId.set(id, { id, createdAt: f.createdAt, parentId: f.parentId });
+  for (const c of input.findings ?? []) {
+    const prior = byId.get(c.id);
+    byId.set(c.id, { id: c.id, createdAt: c.createdAt, parentId: c.parentId ?? prior?.parentId, blocks: c.blocks, relatedTo: c.relatedTo });
+  }
+  const followUps = [...byId.values()];
+  const rowIssueSet = new Set(me.page.rows.flatMap((r) => r.issues));
+  // The forecast counts every door-3 finding under a root, offered or covered (a Skipped or
+  // Waiting on PM one is still a row the feature will cost), but never a row's own issue.
+  const door3 = [
+    ...(sort?.noRow ?? []).map((n) => ({ id: n.id, blocks: n.blocks })),
+    ...(sort?.sorted ?? []).filter((x) => x.door === 'covered' && x.blocksRow && !rowIssueSet.has(x.id)).map((x) => ({ id: x.id, blocks: x.blocksRow! })),
   ];
   const alarms = findAlarms({
     now: input.now,
     page: me.page,
     roots: input.roots ?? [],
     followUps,
-    door3: (sort?.noRow ?? []).map((n) => ({ id: n.id, blocks: n.blocks })),
+    door3,
     rowState: (r) => {
       const k = states.get(r)?.kind;
       return k === 'merged' ? 'merged' : k === 'none' ? 'unlaunched' : 'launched';
     },
     liveHarm,
-    appConfig: input.appConfig,
-    keysOf: input.keysOf,
+    liveOf: (facts) => liveReasons(facts, darkCtx),
+    rowOutputs: input.rowOutputs,
   });
   const alarmHeld: Record<string, string> = {};
   for (const a of alarms) {

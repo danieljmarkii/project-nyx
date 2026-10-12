@@ -146,7 +146,7 @@ export function scopeFromPlan(plan: Plan, createdAt: Record<string, string | und
 }
 
 export function scopeFromIssues(issues: ProjectIssue[], now: string): Scope {
-  const counted = issues.filter((i) => i.stateType !== 'canceled' && i.stateType !== 'duplicate');
+  const counted = issues.filter((i) => i.stateType !== 'canceled');
   const known = counted.filter((i) => i.createdAt);
   return {
     planned: null,
