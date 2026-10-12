@@ -1,6 +1,6 @@
 # 2026-10-12 · CLAUDE.md split by when it is needed (CUL-1874, retro 4 D5)
 
-**Outcome:** shipped via the session's draft PR (the PR number is in the Linear outcome comment). Mode BUILD, plan-gated; the PM typed `Go` on the posted plan.
+**Outcome:** shipped via #1198. Mode BUILD, plan-gated; the PM typed `Go` on the posted plan.
 
 ## What changed
 - **CLAUDE.md 136,073 B → 49,068 B** (596 → 392 lines). It keeps the always-on core: status, product, personas and protocol, the nine principles, hard constraints, the safety invariants, general conventions, Git workflow, the launch ritual, decision briefs, the DoD, the Tier rules, the backlog rules, and an index of the rule files.
