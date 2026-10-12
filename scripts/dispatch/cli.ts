@@ -21,9 +21,8 @@
 // candidate step 1's three reads returned: `Candidate` in sort.ts, with the dispatcher's
 // reading of the keys, migrations and live surfaces each one's code sits behind),
 // `appConfig` (production `select key, value from app_config`, read-only through the
-// production-read hook, as `{ key: value }`; `null` when the read failed), `allowlistKeys`
-// (keys the code reads through the allowlist resolver: the `{enabled, allowlist}` object is
-// dark only for these, since `resolveFlagValue` turns any non-boolean into its fallback),
+// production-read hook, as `{ key: value }`; `null` when the read failed; the keys read
+// through the allowlist resolver come from the code, never the facts file, below),
 // `goLives` (key → its go-live issue), `roots` (each issue with a `Forecast:` line: id,
 // description and what its output sits behind), `rowOutputs` (a row's issue → the same),
 // `lastRun`, and each issue's `createdAt` (the scope line, the follow-up alarm). The script decides every door; the
@@ -37,6 +36,7 @@ import * as fs from 'node:fs';
 import { renderBoard, validateBoard, type BoardShape } from './board.ts';
 import { autoEligible, planDispatch, type PlanInput, type ProjectInput } from './plan.ts';
 import { cyclesFrom, holdsFromPlan, nextFromPlan, nextFromQueued, progressEmail, renderProgress, scopeFromIssues, scopeFromPlan, scopeLine, sinceOf, unitsFromIssues, unitsFromPlan, type ProjectIssue } from './progress.ts';
+import { allowlistKeysFromCode } from './codeFacts.ts';
 import { LIVE_HARM } from './sort.ts';
 import { CI_WAIT_CHECK_IN_MIN, checksOf, findStalls, type CheckRun, type Note, type Wake } from './stall.ts';
 import { checkInFrom, closingLines, memoryCheck, prSafe, validateStatusUpdate, type Trigger } from './status.ts';
@@ -65,7 +65,7 @@ function fail(msg: string): never {
 }
 
 function load(file: string): Facts {
-  const f = JSON.parse(fs.readFileSync(file, 'utf8')) as Facts;
+  const f = { ...(JSON.parse(fs.readFileSync(file, 'utf8')) as Facts), allowlistKeys: allowlistKeysFromCode() ?? fail('could not read ALLOWLIST_FLAG_KEYS and ENGINE_KEYS from the code') };
   const desc = (p: ProjectInput & { descriptionFile?: string }) => ({
     ...p,
     description: p.description ?? (p.descriptionFile ? fs.readFileSync(p.descriptionFile, 'utf8') : fail(`no description for ${p.name}`)),

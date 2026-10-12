@@ -127,6 +127,19 @@ describe('Q5: an alarm that cannot switch off output already on', () => {
     expect(plan({ roots: [trig], findings: [CUL_1668] }).alarms[0]).toMatchObject({ stopgap: true, stopgapWhy: expect.stringContaining('is applied') });
   });
 
+  it("Q3 a follow-up alarm's stopgap reads every one of the row's issues", () => {
+    const desc = input().project.description.replace('| 23 | CUL-1300 |', '| 23 | CUL-1300, CUL-1301 |');
+    const fs = ['CUL-1701', 'CUL-1702', 'CUL-1703'].map((id) => finding(id, { description: tagged('LOUD'), relatedTo: ['CUL-1301'] }));
+    const i = input({ findings: fs, rowOutputs: { 'CUL-1300': { keys: ['engines_v3_en9'], arm: 'on' }, 'CUL-1301': { keys: ['engines_v3_en9'], arm: 'on', liveSurfaces: ['generate-signal deployed'] } } });
+    i.project = { ...i.project, description: desc };
+    expect(planDispatch(i).alarms[0]).toMatchObject({ stopgap: true, stopgapWhy: expect.stringContaining('generate-signal deployed') });
+  });
+
+  it("Q4 a forecast alarm's stopgap reads the rows under the root as well as the root", () => {
+    const p = plan({ roots: [ROOT], findings: [CUL_1668], rowOutputs: { 'CUL-1601': { keys: ['engines_v3_en9'], arm: 'on', liveSurfaces: ['analyze-vomit deployed'] } } });
+    expect(p.alarms[0]).toMatchObject({ stopgap: true, stopgapWhy: expect.stringContaining('analyze-vomit deployed') });
+  });
+
   it("the quieter output on for any account (the PM's included) means a Live harm stopgap is filed", () => {
     const on = { ...ROOT, keys: ['engines_v3_en3'] }; // allowlist names the PM
     expect(plan({ roots: [on], findings: [CUL_1668] }).alarms[0]).toMatchObject({ stopgap: true, stopgapWhy: expect.stringContaining('engines_v3_en3') });

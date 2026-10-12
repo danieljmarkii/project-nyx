@@ -27,6 +27,12 @@
 //   - Which arm of a flag the code is in is the dispatcher's reading too. Only code read as
 //     the ON arm can be dark: the off arm is what every account not on an allowlist runs,
 //     so an unstated arm reads live.
+//   - Which keys are read through the allowlist resolver comes from the code (cli.ts derives
+//     it from `lib/appConfig.ts` ALLOWLIST_FLAG_KEYS and `_shared/engineFlags.ts`
+//     ENGINE_KEYS). A key read through `resolveFlagValue` somewhere else as well would be on
+//     under the object shape there; the object shape is honoured only for those lists.
+//   - Once any Direction tag is present, "quiet" anywhere in the text makes it QUIET: a LOUD
+//     finding that mentions a quiet arm reads QUIET and goes to door 1 (loud, by design).
 //   - Only `Gate: clinical` and `Gate: privacy` are harm labels (the two door 2 writes); the
 //     older `Gate: design` / `device` / `deploy` labels gate other things and are not read.
 //   - A finding filed with a LOUD tag over a quieting effect parks unless it names a `harm`
@@ -124,7 +130,11 @@ export type SortResult = {
 };
 
 const ms = (iso: string) => new Date(iso).getTime(); // parsed, never lexical (C-40)
-const hasGate = (labels: string[]) => labels.some((l) => HARM_GATES.includes(l));
+// Labels compare case- and space-insensitively: `gate: clinical`, `Gate:clinical` and
+// `live harm` are the same label to a reader, so they are to the sort.
+const labelKey = (l: string) => l.toLowerCase().replace(/\s+/g, '');
+const hasLabel = (labels: string[], want: string) => labels.some((l) => labelKey(l) === labelKey(want));
+const hasGate = (labels: string[]) => HARM_GATES.some((g) => hasLabel(labels, g));
 
 // Step 1's population: the project's issues since 10-03, every open team-wide issue
 // labelled `Live harm` or `Gate:` (no date window), and every open issue since 10-11
@@ -132,24 +142,32 @@ const hasGate = (labels: string[]) => labels.some((l) => HARM_GATES.includes(l))
 export function inPopulation(c: Candidate): boolean {
   if (!c.open) return false;
   if (c.inProject && ms(c.createdAt) >= ms(V12_START)) return true;
-  if (c.labels.includes(LIVE_HARM) || hasGate(c.labels)) return true;
+  if (hasLabel(c.labels, LIVE_HARM) || hasGate(c.labels)) return true;
   return ms(c.createdAt) >= ms(SORT_START) && (hasDirectionLine(c.description) || !!c.relatedTo?.length);
 }
 
 // `Direction: QUIET`, in any shape a filer writes it: bold, a list item, a heading, a table
-// cell (`| Direction | QUIET |`), mid-line after a TL;DR. `Directions` and `Direction of`
-// are prose, never a tag.
+// cell (`| Direction | QUIET |`) or a table column headed `Direction`, mid-line after a
+// TL;DR, and with any separator or none (`Direction — QUIET`, `Direction = LOUD`,
+// `**Direction** neither`). `Directions` and `Direction of travel` are prose, never a tag.
 const DIRECTION = /\bDirection\b[*_`\s]*[:|][*_`|\s]*([^\n|]*)/gi;
-const hasDirectionLine = (d: string) => new RegExp(DIRECTION.source, 'i').test(d);
+const DIRECTION_LOOSE = /\bDirection\b[*_`\s]*(?:[—–=-]+[*_`\s]*)?(QUIET|LOUD|neither)\b/gi;
+const DIRECTION_COLUMN = /^\s*\|.*\|\s*Direction\s*\|/im;
+const hasDirectionLine = (d: string) =>
+  new RegExp(DIRECTION.source, 'i').test(d) || new RegExp(DIRECTION_LOOSE.source, 'i').test(d) || DIRECTION_COLUMN.test(d);
 
-// A class goes by its worst instance: any value naming QUIET is QUIET, whatever else the
-// lines say; a value naming neither LOUD nor neither is no tag, which counts as QUIET.
+// A class goes by its worst instance, and the burden is on LOUD: once any Direction tag is
+// present, the word "quiet" (or "quieter", "quiets") ANYWHERE in the issue makes it QUIET,
+// whatever order the lines come in; a tag value that names neither LOUD nor neither is no
+// tag, which counts as QUIET. Only a description whose every tag value is LOUD or neither,
+// and which never says quiet, is LOUD or neither.
 export function directionOf(description: string): Direction | undefined {
-  const values = [...description.matchAll(DIRECTION)].map((m) => m[1]);
-  if (!values.length) return undefined;
+  if (!hasDirectionLine(description)) return undefined;
+  if (/\bquiet/i.test(description)) return 'QUIET';
+  if (DIRECTION_COLUMN.test(description)) return undefined; // a column of values is not read
+  const values = [...description.matchAll(DIRECTION)].map((m) => m[1]).concat([...description.matchAll(DIRECTION_LOOSE)].map((m) => m[1]));
   let loud = false;
   for (const v of values) {
-    if (/\bquiet\b/i.test(v)) return 'QUIET';
     const l = /\bloud\b/i.test(v);
     if (!l && !/\bneither\b/i.test(v)) return undefined;
     loud ||= l;
@@ -160,7 +178,7 @@ export function directionOf(description: string): Direction | undefined {
 export function isFinding(c: Candidate): boolean {
   return (
     hasDirectionLine(c.description) ||
-    c.labels.includes(LIVE_HARM) ||
+    hasLabel(c.labels, LIVE_HARM) ||
     hasGate(c.labels) ||
     !!c.relatedTo?.length ||
     (!!c.milestone && FINDINGS_MILESTONE.test(c.milestone))
@@ -237,7 +255,7 @@ export function sortFindings(input: SortInput): SortResult {
   };
   // (c) Covered and skipped suppress only a door-3 offer, never the harm read above it.
   const offerSuppressed = (c: Candidate) =>
-    new RegExp(`\\b${c.id}\\b`).test(input.page.plain) || !!c.skipped || c.labels.includes(WAITING_ON_PM) || c.id === input.index;
+    new RegExp(`\\b${c.id}\\b`).test(input.page.plain) || !!c.skipped || hasLabel(c.labels, WAITING_ON_PM) || c.id === input.index;
 
   const sorted: Sorted[] = [];
   const writes: Write[] = [];
@@ -250,11 +268,11 @@ export function sortFindings(input: SortInput): SortResult {
 
     if (finding) {
       // (a) The harm read, first, on every finding: nothing below can cover, skip or park it.
-      const labelled = c.labels.includes(LIVE_HARM) || hasGate(c.labels);
+      const labelled = hasLabel(c.labels, LIVE_HARM) || hasGate(c.labels);
       // A reading applies only to an untagged finding: an explicit QUIET is harm above it.
       const readAway = !!c.reading && c.reading.quote.trim().length > 0;
       s.harm = labelled || tag === 'QUIET' || (!tag && !readAway) || c.harm !== undefined;
-      if (labelled) s.why.push(`labelled ${c.labels.filter((l) => l === LIVE_HARM || HARM_GATES.includes(l)).join(', ')}`);
+      if (labelled) s.why.push(`labelled ${c.labels.filter((l) => labelKey(l) === labelKey(LIVE_HARM) || HARM_GATES.some((g) => labelKey(g) === labelKey(l))).join(', ')}`);
       if (tag === 'QUIET') s.why.push('tagged QUIET');
       if (c.harm !== undefined) s.why.push(`it can ${c.harm === 'quiet' ? 'quiet a warning' : c.harm === 'corruption' ? 'corrupt what a live reader shows' : c.harm === 'exposure' ? 'expose data' : 'lose data'}`);
       if (!tag && !readAway) s.why.push('untagged, so QUIET');
@@ -285,11 +303,11 @@ export function sortFindings(input: SortInput): SortResult {
         }
 
         if (s.door === 1) {
-          if (!c.labels.includes(LIVE_HARM)) writes.push({ issue: c.id, write: `add label ${LIVE_HARM}`, why: s.why.join('; ') });
+          if (!hasLabel(c.labels, LIVE_HARM)) writes.push({ issue: c.id, write: `add label ${LIVE_HARM}`, why: s.why.join('; ') });
           const unclaimed = !input.claimed.has(c.id) && now - ms(c.createdAt) >= DAY;
-          if (unclaimed && !c.labels.includes(WAITING_ON_PM)) writes.push({ issue: c.id, write: `add label ${WAITING_ON_PM}`, why: `${LIVE_HARM} with no live claim 24 hours after it was filed` });
+          if (unclaimed && !hasLabel(c.labels, WAITING_ON_PM)) writes.push({ issue: c.id, write: `add label ${WAITING_ON_PM}`, why: `${LIVE_HARM} with no live claim 24 hours after it was filed` });
         } else {
-          if (c.labels.includes(LIVE_HARM)) writes.push({ issue: c.id, write: `remove label ${LIVE_HARM}`, why: s.why.join('; ') });
+          if (hasLabel(c.labels, LIVE_HARM)) writes.push({ issue: c.id, write: `remove label ${LIVE_HARM}`, why: s.why.join('; ') });
           if (!hasGate(c.labels)) {
             const g = c.harm === 'exposure' || c.harm === 'loss' ? 'Gate: privacy' : 'Gate: clinical';
             writes.push({ issue: c.id, write: `add label ${g}`, why: 'a door-2 gate carries its Gate: label so no prune can close it' });

@@ -7,6 +7,7 @@ import { APP_CONFIG, NOW, PM_UUID, UNTAGGED, finding, input, tagged } from './fi
 import { parsePage } from './page.ts';
 import { planDispatch, type PlanInput } from './plan.ts';
 import { scopeFromIssues, scopeFromPlan, scopeLine } from './progress.ts';
+import { allowlistKeysFromCode } from './codeFacts.ts';
 import { directionOf, inPopulation, keyDark, liveReasons, stopgapOf, type Candidate } from './sort.ts';
 
 // An open PR adding migration 104: the one shape a named migration can be dark in.
@@ -444,5 +445,58 @@ describe('adversarial pass 1 (CUL-1872): the breaks, each a named test', () => {
     const p = input({ findings: fs });
     for (const f of fs) p.issues[f.id] = { id: f.id, state: 'Backlog', createdAt: f.createdAt };
     expect(planDispatch(p).alarms).toEqual([expect.objectContaining({ kind: 'follow-up', rootRow: '23', count: 3 })]);
+  });
+});
+
+describe('adversarial pass 2 (CUL-1872): the QUIET breaks, each a named test', () => {
+  it('Q1 an unreadable tag value never hides a later QUIET, in any order or shape', () => {
+    expect(directionOf('Direction: TBD\nDirection: QUIET')).toBe('QUIET');
+    expect(directionOf('TL;DR … Direction: see the table.\n| Direction | QUIET |')).toBe('QUIET');
+    expect(directionOf('| Instance | Direction |\n|---|---|\n| a | QUIET |')).toBe('QUIET');
+    expect(directionOf('Direction: LOUD\n\n| Instance | Direction |\n|---|---|\n| a | QUIET |')).toBe('QUIET');
+    // A column of values with no QUIET is no tag (QUIET by default), never LOUD.
+    expect(directionOf('| Instance | Direction |\n|---|---|\n| a | LOUD |')).toBeUndefined();
+    // With a reading, an explicit QUIET still never parks.
+    expect(door([finding('CUL-1930', { description: 'Direction: TBD\nDirection: QUIET', keys: [], reading: { kind: 'polish', quote: 'typo only' } })], 'CUL-1930')).toBe(1);
+  });
+
+  it('Q2 a Direction tag with no colon is still a tag and still a finding', () => {
+    for (const d of ['Direction — QUIET', 'Direction - QUIET', 'Direction = QUIET', '**Direction** QUIET', 'Direction QUIET']) {
+      expect(directionOf(d)).toBe('QUIET');
+      expect(run([finding('CUL-1931', { description: d, relatedTo: [], keys: [] })]).sorted[0]).toMatchObject({ finding: true, door: 1 });
+      expect(inPopulation(finding('CUL-1932', { description: d, inProject: false, relatedTo: [] }))).toBe(true);
+    }
+    expect(directionOf('Direction — LOUD')).toBe('LOUD');
+  });
+
+  it('Q6 a word built on quiet anywhere in a tagged issue makes it QUIET', () => {
+    expect(directionOf('Direction: LOUD, quieter for cats')).toBe('QUIET');
+    expect(directionOf('Direction: LOUD; it QUIETs the cat card')).toBe('QUIET');
+    expect(directionOf('Direction: LOUD\n\nThe body says the card goes quiet.')).toBe('QUIET');
+  });
+
+  it('labels compare case- and space-insensitively', () => {
+    for (const l of ['gate: clinical', 'Gate:clinical', 'live harm'])
+      expect(door([finding('CUL-1933', { description: tagged('LOUD'), labels: [l], keys: [] })], 'CUL-1933')).toBe(1);
+  });
+
+  it('a migration on main and an off-arm finding say why they are live', () => {
+    const main = run([finding('CUL-1934', { blocks: ['CUL-1500'], migrations: ['101_engines_v3_en3_seed'] })], { appliedMigrations: [] });
+    expect(main.sorted[0].why).toContain('migration 101_engines_v3_en3_seed is on main');
+    const off = run([finding('CUL-1935', { blocks: ['CUL-1500'], arm: 'off' })]);
+    expect(off.sorted[0].why).toContain("the code is in the flag's off arm, which every account not on an allowlist runs");
+  });
+
+  it("a migration only in a CLOSED PR is not shown unapplied: only an open PR's can be", () => {
+    const closed = { ...OPEN_104, state: 'closed' as const };
+    expect(door([finding('CUL-1936', { blocks: ['CUL-1500'], migrations: ['104_not_yet'] })], 'CUL-1936', { prs: [closed] })).toBe(1);
+  });
+});
+
+describe('Q5: the allowlist-read keys come from the code', () => {
+  it('reads ALLOWLIST_FLAG_KEYS and ENGINE_KEYS, and a kill switch is in neither', () => {
+    const keys = allowlistKeysFromCode()!;
+    expect(keys).toEqual(expect.arrayContaining(['ask_enabled', 'widget_enabled', 'engines_v3_en3', 'engines_v3_en9', 'engines_v3_en0']));
+    expect(keys).not.toContain('ai_vomit_read_enabled');
   });
 });

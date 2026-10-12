@@ -88,8 +88,11 @@ export function rootOfRow(row: PageRow, roots: Root[]): Root | undefined {
   return roots.find((r) => forecastOf(r.description) !== undefined && new RegExp(`\\b${r.id}\\b`).test(text));
 }
 
-function stopgapFor(facts: LiveFacts | undefined, liveOf: AlarmInput['liveOf']): { stopgap: boolean; why: string } {
-  const why = liveOf(facts ?? {});
+// The stopgap is skipped only when EVERY output under the root is proven dark: the root's
+// own facts and each row issue's. A row issue with no facts reads as on (liveOf({}) names no
+// key), so an unread half never quiets the stopgap.
+function stopgapFor(all: (LiveFacts | undefined)[], liveOf: AlarmInput['liveOf']): { stopgap: boolean; why: string } {
+  const why = [...new Set(all.flatMap((f) => liveOf(f ?? {})))];
   return why.length ? { stopgap: true, why: `its output reads as on: ${why.join('; ')}` } : { stopgap: false, why: 'its output is proven dark in production' };
 }
 
@@ -116,7 +119,8 @@ export function findAlarms(input: AlarmInput): Alarm[] {
     });
     const count = under.length + cands.length;
     if (count < forecast + 1) continue;
-    const s = stopgapFor(root, input.liveOf);
+    const rowFacts = under.flatMap((r) => r.issues.map((i) => input.rowOutputs?.[i])).filter((f): f is LiveFacts => !!f);
+    const s = stopgapFor([root, ...rowFacts], input.liveOf);
     const named = [...under.map((r) => `PR-${r.id}`), ...cands.map((c) => c.id)].join(', ');
     alarms.push({
       kind: 'forecast',
@@ -155,7 +159,7 @@ export function findAlarms(input: AlarmInput): Alarm[] {
     const parentOf = new Map(input.followUps.map((f) => [f.id, f.parentId]));
     const underRows = rows.filter((x) => x !== r && x.issues.some((i) => upIds.has(i) || own.has(parentOf.get(i) ?? '')));
     const cands = input.door3.filter((d) => upIds.has(d.id) || normRow(d.blocks) === normRow(r.id));
-    const s = stopgapFor(input.rowOutputs?.[r.issues[0]], input.liveOf);
+    const s = stopgapFor(r.issues.map((i) => input.rowOutputs?.[i]), input.liveOf);
     alarms.push({
       kind: 'follow-up',
       root: r.issues[0],
