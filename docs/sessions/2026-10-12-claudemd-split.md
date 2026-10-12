@@ -9,7 +9,7 @@
 - **Moved:** Open Questions → `docs/open-questions.md`; the Secrets Register → `docs/secrets-register.md`; the Dev Handoff rules → `docs/dev-handoff-runbook.md`; the Session Summary and Next Session Kickoff formats → `wrap.md` § Formats. Pointers re-aimed in `/kickoff`, `/wrap`, `/pm-review`, `pm-coach`, the groomer, `supabase-sync`, `STATUS.md`, and the dispatch hotspot list.
 - **Dispatched rows** skip the every-session reads (launch ritual step 1).
 - **Tier 1** now spans CLAUDE.md plus the rule files (it replaces the 2026-09-12 rule).
-- **`guards/claudeMdBudget.test.ts`:** the core ceiling is 49,068 B. A second two-way ratchet caps CLAUDE.md + every `.claude/**/*.md` + the three moved docs at 466,421 B, down from 475,109 B for the same set before the split. A rule-index check requires every rule file to be named in § Code Conventions, every name to exist, and every file to carry `paths:`.
+- **`guards/claudeMdBudget.test.ts`:** the core ceiling is 49,068 B. A second two-way ratchet caps CLAUDE.md + every `.claude/**/*.md` + the three moved docs at 469,080 B. The same set weighed 475,109 B before the split and 466,421 B after it; #1197, merged in, added 2,659 B before this ratchet existed. A rule-index check requires every rule file to be named in § Code Conventions, every name to exist, and every file to carry `paths:`.
 
 ## Verification
 - Path scoping works on the installed CLI (2.1.296). Scratch repo: a rule loaded when `src/a.ts` was read and stayed out for `other/b.ts`. On the real repo in headless sessions: `components/ui/ChipGroup.tsx` loaded `ui.md` + `counts-and-claims.md`; the newest migration loaded `migrations.md`; `guards/haptics.test.ts` loaded `guards-and-tests.md`; `package.json` loaded none.

@@ -215,9 +215,11 @@ const totalBytes = totalFiles.reduce((sum, f) => sum + fs.statSync(path.join(REP
 /**
  * The ceiling on the TOTAL, in bytes. Before CUL-1874 the same set weighed 475,109 B
  * (CLAUDE.md 136,073 + `.claude/**\/*.md` 323,482 + the runbook 15,554); after the
- * split it weighs this. Same ratchet discipline: lower it after a trim, never raise it.
+ * split it weighed 466,421 B, and 469,080 B once CUL-1873 (#1197, which grew `wrap.md`
+ * before this ratchet existed) was merged in. That merged figure is the starting value.
+ * Same ratchet discipline: lower it after a trim, never raise it.
  */
-const TOTAL_CEILING_BYTES = 466_421;
+const TOTAL_CEILING_BYTES = 469_080;
 
 /** Wider than the core's slack: the total spans ~40 files edited by many sessions. */
 const TOTAL_SLACK_BYTES = 4_096;
