@@ -250,7 +250,7 @@ Two one-word consistency fixes rode along: "plainer" became "simpler" on B (to m
 
 **Residuals, stated:**
 
-- **A quiet read still feels a little reassuring** even to owners who can recite that it isn't. Copy on a consent screen can't remove that; the read card's watch-for list is the next defence, and it shows only where EN-3's rules are on.
+- **A quiet read still feels a little reassuring** even to owners who can recite that it isn't. Copy on a consent screen can't remove that. The next defence is the read itself: the shipped quiet read already says "A single photo on its own can't tell you how {pet} is doing. Keep an eye on {pet}: if it happens again, or {pet} seems unwell or goes off food, your vet is the best call" (`supabase/functions/analyze-vomit/index.ts:405`), and EN-3's watch-for list adds call-now and call-today signs once EN-3 is live (it is dark today, PM allowlist only).
 - **Items 1 to 3 stay partial for skimmers** (7, 3 and 3 of 12 in round 2): the grey disclosure is read by those who look for it. The real teach-back after launch (protocol §5) is the only way to know how many real owners do.
 - **"It can't tell you Mochi is fine. Then what's it for?"** An honesty cost to the benefit, accepted.
 
