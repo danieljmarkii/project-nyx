@@ -96,3 +96,102 @@ The worst-case reader (P11) reads every frame in order with the same notes, then
 - **Stimulus:** `node scripts/design-critique/render.mjs docs/culprit-ai-consent-mockups.html <out> --frames ".phone" --max-buttons 0` at a432b07: 13 phone frames at 390pt, 2x, Reduce Motion on, with no captions (the designer notes under each frame never reach a participant). Files are renamed to neutral names per persona folder (`01-screen.png`, `whats-sent.png`, `later-1.png`) so no file name carries the designer's intent. Glance images are the same frames at 25% width.
 - **Model:** the Claude model serving this session; the harness withholds model identifiers from repo artifacts, so the id is recorded in the session chat, not here. Date: 2026-10-12.
 - **Prompts:** the participant prompt is the protocol's Appendix B skeleton plus §1.4 above, with the persona card and the scenario filled in; the full text of each persona's prompt is in §5 once the runs are in.
+
+---
+
+## 2. Round 1 results (24 runs, 2026-10-12)
+
+### 2.1 Teach-back, N of 24 runs
+
+Item 7 counts the lower of the teach-back answer and the probe.
+
+| # | Item | Correct | Partial | Wrong or absent | Wrong in |
+|---|---|---|---|---|---|
+| 1 | What is sent | 16 | 8 | 0 | |
+| 2 | To whom | 21 | 3 | 0 | |
+| 3 | Used to train AI? | 20 | 2 | 2 absent | |
+| 4 | What still works after a no | 15 | 9 | 0 | |
+| 5 | Is no a fine answer? | 18 | 4 | **2** | P10 ×2 (the 2 a.m. owner) |
+| 6 | How to change their mind | 12 | 12 | 0 | |
+| 7 | What the AI does and doesn't do | **0** | 7 | **17** | P1 ×3, P3 ×2, P7 ×3, P10 ×3, P13 ×3, POW ×3 |
+
+**By door** (correct / partial / wrong or absent, per item 1 to 7):
+
+| Door | Runs | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| Food sheet (A) | 6 | 6/0/0 | 6/0/0 | 6/0/0 | 3/3/0 | 6/0/0 | 6/0/0 | 0/3/3 |
+| Vomit record (D0, D) | 9 | 4/5/0 | 6/3/0 | 6/1/2 | 6/3/0 | 3/4/2 | 0/9/0 | 0/1/8 |
+| Stool record (E) | 3 | 0/3/0 | 3/0/0 | 2/1/0 | 0/3/0 | 3/0/0 | 0/3/0 | 0/0/3 |
+| Settings (I, L) | 3 | 3/0/0 | 3/0/0 | 3/0/0 | 3/0/0 | 3/0/0 | 3/0/0 | 0/0/3 |
+| Every frame (P11) | 3 | 3/0/0 | 3/0/0 | 3/0/0 | 3/0/0 | 3/0/0 | 3/0/0 | 0/3/0 |
+
+What the table says, read through §0 of the protocol (a correct answer proves nothing; a wrong one is a lead):
+
+- **Item 7 is the finding.** No run in 24 could say the AI is not a vet check and that a read with no flag doesn't mean the pet is fine, because no frame says it. The probe ("a read came back without flagging anything: what would that tell you about Mochi?") drew an all-clear, a "no need to call" or a "wait till morning" in 17 of 21 runs; the three that answered correctly (P6, the privacy skeptic) each named the same phrase as the trap for everyone else.
+- **Item 5 is wrong in 2 runs**, both the 2 a.m. owner, and both rest on item 7: a no "means losing the one thing that might tell me if I need to go in".
+- **The record card teaches less than the sheet.** At the vomit and stool doors item 6 (where to change it) is partial in 12 of 12 runs, and item 1 partial in 8 of 12: the card names label photos, but not the pet's name with the patterns, and not Settings.
+- **Item 4 is partial wherever B (What's sent) went unopened**: the food sheet and the record card never say that the checks needing no photo keep working.
+
+Decisions, for the record and not as evidence (protocol §0): Allow 14, Don't allow 8, Not now or ignored 2.
+
+### 2.2 Flags
+
+- **False reassurance:** the probe drew an all-clear in 17 of 21 runs. Separately, the vomit record's reader was taken for a vet, a vet nurse, the clinic or a person in 14 runs (P10 ×3, P7 ×3, P13 ×3, P3 ×2, P1 ×1, plus the D0 "Read by who?" in 2 more).
+- **Coercion:** the 2 a.m. owner said a no felt unsafe in 2 of 3 runs ("Saying no feels like turning down the only help on offer"); the plain-language reader said the same in 3 of 3, but the verifier traced two of those to her card (below).
+
+## 3. Verification (isolated expert verifier, round 1)
+
+The verifier saw the frames, the mock source, the persona cards, every run note, the answer key, `docs/legal/privacy-policy.md` §3, `docs/app-privacy-answers.md` and the server code that calls Anthropic. It tried to refute each finding.
+
+| # | Finding | Verdict | Class | Mechanism |
+|---|---|---|---|---|
+| F1 | A read that flags nothing is taken as an all-clear | CONFIRMED | false reassurance | "whether it's worth a call" (A, J, K, L) and "flag it if it looks worth a call" (D, E) promise a verdict the engine never gives: its quiet label is "Keep an eye out" (`lib/incidentTierWords.ts`). No frame said the read isn't a vet check |
+| F2 | The reader taken for a vet or a person | CONFIRMED | false reassurance | D0 names no reader; on D and E, "AI" was only in the grey print |
+| F3 | A no that feels unsafe | PLAUSIBLE | coercion | Rests on F1 plus the card's missing still-works line. P7-1 and P7-3 discounted (card echo); P7-2's fear (a photo not read) is a true cost |
+| F4 | "Until then … check in with your vet" | CONFIRMED | both | Ties the vet line to the pending answer: it applies until Allow, or the AI watches after it |
+| F5 | No screen an owner decides on says what still works | PLAUSIBLE | coercion by omission | Only B (behind a link) and K said it; D and E broke the mock's own Brief B ruling (a "Without it" line on every ask) |
+| F6 | No Not now on the record card | PLAUSIBLE (D, E); REFUTED (L) | coercion | Ignoring the card was the Not now, but nothing said so; Don't allow read as permanent |
+| F7 | H looked read and dropped the vet line | CONFIRMED | false reassurance | "AI reading is on" in teal over an unread photo; broke §3's own rule |
+| F8 | The "Photo read" label over states where nothing was read | PLAUSIBLE (low) | false reassurance | Reads as past tense |
+| F9 | Turn on sat under a warning; "this advice comes from the log, not the photo" | PLAUSIBLE | coercion | Guilt, or waiting for the AI before calling |
+| F10 | Off said "Nothing new is sent" to owners who never said yes | CONFIRMED | accuracy | K drawn for an owner who said yes, rendered for every owner |
+| F11 | "Sent … when you open a record" read as a send before any yes | PLAUSIBLE | accuracy | True only after a yes |
+| F12 | The record card under-disclosed what a yes covers | CONFIRMED | 5.1.2(i) disclosure | One `ai_boundary` scope covers phrasing with the pet's name and Ask; D and E named label photos only |
+| F13 | "A short time" has no number | PLAUSIBLE | none | The policy gives none either; team call, add a number only when Anthropic's terms and the policy both state it |
+| F14 | Two names for one act ("Turn on AI reading", "Read this photo") | CONFIRMED | feeds F7 | |
+| F15 | Literal idioms ("seems off", "check in", "trains", "Rx") | PLAUSIBLE | none | |
+| F16 | The escalation doesn't say how urgent at night | PLAUSIBLE | out of scope | Shipped engine copy; EN-3's tiers own it (CUL-1133, CUL-1611) |
+| F17 | "Still tell you when to call your vet" claims too much | PLAUSIBLE (low) | false reassurance | A vomit with no photo is only checked when its record opens (`_shared/vomitRepeat.ts`) |
+| F18 | Not now vs Don't allow unexplained | PLAUSIBLE (low) | none | Team call |
+| F19 | Allow filled, Don't allow outlined | REFUTED as coercion | | A PM ruling; both buttons are full size; the "app wants it" reading came from P7's card |
+| S1–S5 | Times and dates; I "On" vs L "Not set"; "Jordan"; J's date; B's crop and missing policy link | STIMULUS_ARTIFACT (S5 partly a mock defect) | | |
+
+**The persona card effect, stated plainly:** P7's card said "You'd say yes if it seems to help Mochi and the app seems to want it", and two of her runs echoed it. That card line was a protocol error (§1.2 of the research brief warns against exactly this); round 2 did not reuse P7.
+
+### 3.1 Consistency audit: the mock against the code and the policy
+
+1. **Policy §3 is behind the code in three places** (all already CUL-1769's scope, now with line numbers): symptom photos are sent automatically after a yes, not "when you request an AI read" (`privacy-policy.md:60`; `lib/simpleEvent.ts:238-241`, `components/event/VomitAnalysisSection.tsx:415-425`); pattern phrasing sends the pet's name (`privacy-policy.md:61`; `generate-signal/phrasing.ts`, `index.ts:241`); Ask is not listed (if any real account is allowlisted, the label needs it too).
+2. **"Checks that need no photo still work" holds on the server:** the vomit and stool reads compute their contextual flags before the consent gate and still write the escalation when declined (`_shared/incident-analysis.ts`); Signal detection is never gated, only its phrasing; Ask leads its decline with the live safety finding. **It depends on the phone still calling the read for an owner who declined**, so CUL-1834 must not add a client-side skip.
+3. **The extractors are gated** (`extract-food-from-photo/index.ts:638`, `extract-medication-from-photo/index.ts:482`).
+4. **One edge case for CUL-1835:** a photo logged while reading was off whose upload or read call failed has no `read_disabled` row, so after a later yes, opening that record sends it without the tap B and H promise (`VomitAnalysisSection.tsx:402-425`).
+
+## 4. What round 4 of the mock changed
+
+PM ruling, 2026-10-12, in session: fix every verified round 1 finding in this PR, and run a reduced round 2 (option a). Every CONFIRMED or PLAUSIBLE coercion or false reassurance is fixed, plus F10, F11, F12, F14, F15 and S2 to S5 in the mock itself. Only words moved, plus a Not now on the record card; the layout, the buttons and every earlier ruling stand.
+
+| Finding | Round 3 | Round 4 |
+|---|---|---|
+| F1 | "What's in a vomit or stool photo, and whether it's worth a call." | "Says what's in a vomit or stool photo and points out some signs to call your vet about. It can't tell you Mochi is fine." (A, J, K, L) |
+| F1, F2 | D, E: "Claude can describe what's in Mochi's photo and flag it if it looks worth a call to your vet." | "Claude, an AI, can say what's in Mochi's photo and point out some signs to call your vet about. It isn't a vet, and it can't tell you Mochi is fine." |
+| F2 | D0: "Photo saved. Want it read?" | "Photo saved. Want an AI to describe it?" |
+| F4, F15 | D: "Until then, if Mochi keeps vomiting, brings up something unusual, or seems off, check in with your vet." | "Whatever you choose, if Mochi keeps vomiting, brings up something unusual, or seems unwell, call your vet." (E to match; F and H take "seems unwell" and "call") |
+| F5 | A, C, L: "Without it, you type labels in and Mochi's photos are kept but not read." D, E: no such line | Every ask adds "Checks that need no photo, like repeated vomiting, still work." D and E gain their own "Without it" line |
+| F6, F12 | D, E: two buttons; "Allowing also covers label photos" | A Not now under the pair (writes nothing); "Allowing also covers food and medicine label photos, and Mochi's name with the patterns Culprit spots. Change it any time in Settings." |
+| F7 | H: "AI reading is on" (teal), no vet line | "Not read yet" (hollow dot); the vet line |
+| F8 | "Photo read" label over D to H | Removed where nothing was read |
+| F9, F14 | F: "…flags anything worth a call." G: "this advice comes from Mochi's log, not the photo" + Turn on AI reading | F: "If you turn AI reading on, you can send this photo to Claude, an AI, for a read." G: "AI reading is off. Mochi's log alone is reason to call your vet." with no Turn on link under a warning |
+| F10 | K: "Off. Nothing new is sent. … Reads that already ran stay on their records." | "Off. Nothing is sent." The reads line only for owners with reads; the disclosure under Off reads "When AI reading is on, …" |
+| F11, F17, S5 | B: "What's sent, and when"; "still tell you when to call your vet" | "What's sent if you allow"; "still work and can tell you to call your vet"; a privacy policy link at the foot |
+| F12, S2, S4 | I: "Label scans and photo reads · On"; J: "On since 12 Oct" | I: "Photos, labels and patterns · Not set" (the demo account's path); J: 14 Oct |
+
+Not changed, on purpose: Allow stays the primary button (F19, a PM ruling the verifier did not overturn); "train" stays, because CUL-552 keeps the training line near verbatim and the panel understood it; retention gets no number until Anthropic's terms and the policy both state one (F13); the escalation's own words are EN-3's (F16).

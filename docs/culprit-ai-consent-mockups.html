@@ -96,21 +96,21 @@
   .grab { width: 36px; height: 4px; border-radius: 2px; background: #D4D4D4; margin: 0 auto 2px; flex-shrink: 0; }
   .ptop { display: flex; justify-content: flex-end; height: 22px; flex-shrink: 0; }
   .ptop span { font-size: 13px; font-weight: 500; color: #525252; }
-  .art { height: 112px; border-radius: 18px; background: #E0FBF7; position: relative; overflow: hidden; flex-shrink: 0; margin-bottom: 14px; }
-  .art .tile { position: absolute; left: 22px; top: 16px; width: 78px; height: 82px; border-radius: 12px; background: #FFFFFF; box-shadow: 0 6px 16px rgba(11,123,108,0.18); padding: 10px 9px; display: grid; align-content: start; gap: 6px; transform: rotate(-4deg); }
+  .art { height: 84px; border-radius: 18px; background: #E0FBF7; position: relative; overflow: hidden; flex-shrink: 0; margin-bottom: 12px; }
+  .art .tile { position: absolute; left: 22px; top: 10px; width: 70px; height: 74px; border-radius: 12px; background: #FFFFFF; box-shadow: 0 6px 16px rgba(11,123,108,0.18); padding: 10px 9px; display: grid; align-content: start; gap: 6px; transform: rotate(-4deg); }
   .art .tile i { display: block; height: 5px; border-radius: 3px; background: #CFEAE5; }
   .art .tile i.b { background: #0B7B6C; width: 70%; height: 6px; }
   .art .tile.photo { background: repeating-linear-gradient(135deg, #8B7D70 0 8px, #95877A 8px 16px); padding: 0; }
   .art .tile.chat { background: #FFFFFF; }
-  .art .scan { position: absolute; left: 18px; top: 52px; width: 88px; height: 2px; background: #00C2A8; box-shadow: 0 0 10px 2px rgba(0,194,168,0.55); transform: rotate(-4deg); }
-  .art .chips { position: absolute; left: 116px; right: 14px; top: 22px; display: grid; gap: 7px; }
-  .art .chip { background: #FFFFFF; border-radius: 9px; padding: 6px 9px; font-size: 10.5px; color: #0A0A0A; box-shadow: 0 3px 10px rgba(11,123,108,0.12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .art .scan { position: absolute; left: 18px; top: 44px; width: 88px; height: 2px; background: #00C2A8; box-shadow: 0 0 10px 2px rgba(0,194,168,0.55); transform: rotate(-4deg); }
+  .art .chips { position: absolute; left: 108px; right: 14px; top: 10px; display: grid; gap: 6px; }
+  .art .chip { background: #FFFFFF; border-radius: 9px; padding: 4px 9px; font-size: 10.5px; color: #0A0A0A; box-shadow: 0 3px 10px rgba(11,123,108,0.12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .art .chip small { display: block; font-size: 8.5px; letter-spacing: 0.1em; text-transform: uppercase; color: #0B7B6C; font-weight: 600; margin-bottom: 1px; }
   .art .bubble { position: absolute; background: #FFFFFF; border-radius: 12px; padding: 7px 10px; font-size: 10.5px; box-shadow: 0 3px 10px rgba(11,123,108,0.12); }
-  .art .bubble.me { right: 16px; top: 18px; background: #101312; color: #FFFFFF; border-bottom-right-radius: 4px; }
-  .art .bubble.it { left: 16px; top: 54px; right: 50px; border-bottom-left-radius: 4px; color: #525252; }
-  .ptitle { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; margin: 0 0 12px; text-wrap: balance; }
-  .bens { display: grid; gap: 10px; margin-bottom: 12px; }
+  .art .bubble.me { right: 16px; top: 12px; background: #101312; color: #FFFFFF; border-bottom-right-radius: 4px; }
+  .art .bubble.it { left: 16px; top: 44px; right: 50px; border-bottom-left-radius: 4px; color: #525252; }
+  .ptitle { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; margin: 0 0 10px; text-wrap: balance; }
+  .bens { display: grid; gap: 8px; margin-bottom: 10px; }
   .ben { display: flex; gap: 10px; align-items: flex-start; }
   .ben .ic { width: 28px; height: 28px; border-radius: 9px; background: #E0FBF7; color: #0B7B6C; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .ben .ic svg { width: 16px; height: 16px; }
@@ -119,12 +119,12 @@
   .disc { font-size: 11.5px; line-height: 1.45; color: #525252; background: #F6F6F6; border-radius: 12px; padding: 9px 11px; }
   .disc b { color: #0A0A0A; font-weight: 600; }
   .disc .lk { color: #0B7B6C; font-weight: 600; white-space: nowrap; }
-  .without { font-size: 11.5px; line-height: 1.42; color: #737373; margin: 10px 2px 0; }
+  .without { font-size: 11.5px; line-height: 1.42; color: #737373; margin: 8px 2px 0; }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 22px; flex-shrink: 0; }
   .btn { height: 46px; border-radius: 12px; border: 1.5px solid #0A0A0A; background: #FFFFFF; color: #0A0A0A; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
   .btn.pri { background: #0A0A0A; color: #FFFFFF; }
   .pair.withnn { margin-bottom: 4px; }
-  .nn { height: 44px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #525252; margin-bottom: 14px; flex-shrink: 0; }
+  .nn { height: 40px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #525252; margin-bottom: 10px; flex-shrink: 0; }
 
   /* Details sheet */
   .sheet { position: absolute; left: 0; right: 0; bottom: 0; top: 54px; background: #FFFFFF; border-radius: 24px 24px 0 0; padding: 10px 20px 20px; display: flex; flex-direction: column; gap: 11px; overflow: hidden; }
@@ -186,11 +186,12 @@
   .rhead .bk { font-size: 18px; color: #525252; }
   .rhead .more { font-size: 16px; color: #737373; }
   .hero { height: 150px; border-radius: 14px; background: repeating-linear-gradient(135deg, #5C5248 0 10px, #655A4F 10px 20px); margin: 6px -4px 10px; flex-shrink: 0; position: relative; }
+  .hero.short { height: 80px; }
   .hero span { position: absolute; left: 10px; bottom: 9px; font-size: 10.5px; color: rgba(255,255,255,0.85); }
   .rtitle { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
   .rsub { font-size: 12px; color: #737373; margin: 2px 0 12px; }
   .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #737373; margin: 2px 0 7px; }
-  .askcard { background: #FFFFFF; border-radius: 16px; padding: 14px; display: grid; gap: 9px; box-shadow: inset 0 0 0 1.5px #BDEFE7; }
+  .askcard { background: #FFFFFF; border-radius: 16px; padding: 13px 14px 8px; display: grid; gap: 7px; box-shadow: inset 0 0 0 1.5px #BDEFE7; }
   .askcard .h { display: flex; gap: 10px; align-items: center; }
   .askcard .h .ic { width: 30px; height: 30px; border-radius: 10px; background: #E0FBF7; color: #0B7B6C; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .askcard .h .ic svg { width: 17px; height: 17px; }
@@ -200,6 +201,7 @@
   .askcard .fine .lk { color: #0B7B6C; font-weight: 600; }
   .askcard .pair { margin: 2px 0 0; }
   .askcard .btn { height: 40px; font-size: 14px; border-radius: 11px; }
+  .cardnn { height: 32px; display: flex; align-items: center; justify-content: center; font-size: 13.5px; font-weight: 600; color: #525252; margin-top: -2px; }
   .guide { font-size: 11.8px; line-height: 1.45; color: #525252; margin: 10px 2px 0; padding-left: 10px; border-left: 2px solid #E5E5E5; }
   .offbox { background: #FFFFFF; border-radius: 14px; padding: 13px 14px; display: grid; gap: 8px; }
   .offbox .st { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: #0A0A0A; }
@@ -226,9 +228,9 @@
 <div class="wrap">
 
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 3 · approved</span><span>CUL-1832 · PR-10</span><span>App Store 1.2.0</span><span>2026-10-12</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 4 · panel 1 fixes, for approval</span><span>CUL-1832 · CUL-1833</span><span>App Store 1.2.0</span><span>2026-10-12</span></p>
     <h1>AI reading: asked when it's needed</h1>
-    <p class="standfirst">Round 3 refines round 2 (Not now in reach, Allow as the primary button, two benefits instead of three). Round 2 replaced round 1. The onboarding step is gone. Culprit asks <strong>the first time AI would help</strong>: a permission sheet before a label photo, a card where a vomit or stool photo's read would sit, a sheet before Ask. Every ask leads with what the owner and their pet get, then says plainly who receives what. One answer covers all of it, and Settings changes it.</p>
+    <p class="standfirst"><strong>Round 4 applies synthetic panel 1 (CUL-1833) to the approved round 3 frames</strong>, for your approval on CUL-1834 before PR-13 starts: 24 simulated owners read these screens once and explained them back, and every misreading an isolated verifier could not refute is fixed below (the ledger's last rows; the review is <code>docs/consent-panel-1-2026-10.md</code>). The layout, the buttons and every ruling stand; only words moved, plus a Not now on the record card. Round 3 refined round 2 (Not now in reach, Allow as the primary button, two benefits instead of three). Round 2 replaced round 1. The onboarding step is gone. Culprit asks <strong>the first time AI would help</strong>: a permission sheet before a label photo, a card where a vomit or stool photo's read would sit, a sheet before Ask. Every ask leads with what the owner and their pet get, then says plainly who receives what. One answer covers all of it, and Settings changes it.</p>
   </header>
 
   <div class="col">
@@ -246,6 +248,15 @@
         <tr><td><b>Round 2:</b> what does "patterns in plain words" mean?</td><td>Team call</td><td>Out of the benefits. It meant Claude writes the sentence on a Home pattern card; without it the card uses a simpler built-in sentence, which an owner barely notices. The disclosure still says the pet's name and patterns are sent, because they are</td></tr>
         <tr><td><b>Round 3:</b> Brief D, and the frames</td><td>Ruled: (a) nothing asks at launch; frames approved (PM, 2026-10-12)</td><td>The reviewer notes and a recording point App Review at Settings → AI reading and a vomit log with a photo</td></tr>
         <tr><td><b>Round 2:</b> Allow should be the primary button</td><td>Ruled. Replaces the issue's "equal weight" line</td><td>Allow filled, Don't allow a full-size outlined button beside it, Not now below. Trust and Safety's condition: Don't allow never shrinks to a link and both stay one tap</td></tr>
+        <tr><td><b>Panel 1:</b> a read that flags nothing was taken as an all-clear (17 of 21 runs), from "whether it's worth a call"</td><td>Verified: false reassurance. Mandatory</td><td>Every benefit line and the record card: "points out some signs to call your vet about. It can't tell you Mochi is fine." "Whether it's worth a call" and "flags anything" are gone (A, D, E, F, J, K, L)</td></tr>
+        <tr><td><b>Panel 1:</b> "Claude" read as a person or a vet nurse; "Want it read?" named no reader</td><td>Verified: false reassurance. Mandatory</td><td>D and E open "Claude, an AI,"; D0 asks "Want an AI to describe it?"</td></tr>
+        <tr><td><b>Panel 1:</b> "Until then" made the vet line apply only until Allow, or the AI watch after it</td><td>Verified: both. Mandatory</td><td>"Whatever you choose, … call your vet" (D, E). "Call" replaces "check in", and "seems unwell" replaces "seems off", on every record</td></tr>
+        <tr><td><b>Panel 1:</b> no screen an owner decides on said what still works after a no; at 2 a.m. a no felt like "turning down the only help on offer"</td><td>Verified: coercion by omission. Mandatory</td><td>A "Without it" line on every ask, D and E included: "Checks that need no photo, like repeated vomiting, still work" (A, C, D, E, L)</td></tr>
+        <tr><td><b>Panel 1:</b> the record card had no Not now, so Don't allow read as permanent</td><td>Verified. Mandatory</td><td>D and E gain Not now (writes nothing) and "Change it any time in Settings"</td></tr>
+        <tr><td><b>Panel 1:</b> H looked read ("AI reading is on", teal) and dropped the vet line</td><td>Verified: false reassurance. Mandatory</td><td>H: "Not read yet", a hollow dot, the vet line back</td></tr>
+        <tr><td><b>Panel 1:</b> the "Photo read" label sat over states where nothing was read; Turn on sat under a warning</td><td>Verified. Mandatory</td><td>The label leaves D to H. G keeps one action, the call: "Mochi's log alone is reason to call your vet"</td></tr>
+        <tr><td><b>Panel 1:</b> Off said "Nothing new is sent" to owners who never said yes</td><td>Verified: accuracy</td><td>K: "Off. Nothing is sent." The reads line only for owners with reads; the disclosure under Off is conditional</td></tr>
+        <tr><td><b>Panel 1:</b> the record card didn't say a yes also covers the pet's name with patterns</td><td>Verified: 5.1.2(i) disclosure</td><td>D and E name label photos and Mochi's name with patterns; the row reads "Photos, labels and patterns"; B is "What's sent if you allow" and links the privacy policy</td></tr>
       </table>
     </div>
   </div>
@@ -298,10 +309,10 @@
             <p class="ptitle">Snap the label, skip the typing</p>
             <div class="bens">
               <div class="ben"><span class="ic"><svg><use href="#i-label"/></svg></span><div><div class="t">Foods and medicines filled in</div><div class="d">Name, brand, ingredients or dose, read from the photo.</div></div></div>
-              <div class="ben"><span class="ic"><svg><use href="#i-eye"/></svg></span><div><div class="t">A read on Mochi's photos</div><div class="d">What's in a vomit or stool photo, and whether it's worth a call.</div></div></div>
+              <div class="ben"><span class="ic"><svg><use href="#i-eye"/></svg></span><div><div class="t">A read on Mochi's photos</div><div class="d">Says what's in a vomit or stool photo and points out some signs to call your vet about. It can't tell you Mochi is fine.</div></div></div>
             </div>
             <div class="disc">To do this, Culprit sends these photos to <b>Claude, an AI made by Anthropic</b>. It also sends Mochi's name with the patterns Culprit spots, so Home can describe them in a sentence. Anthropic never trains its AI on any of it. One answer covers all of this; change it in Settings. <span class="lk">What's sent</span></div>
-            <p class="without">Without it, you type labels in and Mochi's photos are kept but not read.</p>
+            <p class="without">Without it, you type labels in and Mochi's photos are kept but not read. Checks that need no photo, like repeated vomiting, still work.</p>
             <div class="grow"></div>
             <div class="pair withnn"><div class="btn">Don't allow</div><div class="btn pri">Allow</div></div>
             <div class="nn">Not now, I'll type it in</div>
@@ -320,13 +331,14 @@
           <div class="dim"></div>
           <div class="sheet">
             <div class="grab"></div>
-            <div class="shead"><span class="t">What's sent, and when</span><span class="x">Done</span></div>
-            <div class="item"><div class="k">Vomit and stool photos</div><div class="v">Sent when you log one with a photo, and when you open a record whose read hasn't run. A photo logged while reading was off is sent only if you tap Read this photo.</div></div>
+            <div class="shead"><span class="t">What's sent if you allow</span><span class="x">Done</span></div>
+            <div class="item"><div class="k">Vomit and stool photos</div><div class="v">Sent when you log one with a photo, or when you next open its record if that send didn't finish. A photo logged while AI reading was off is sent only if you tap Read this photo.</div></div>
             <div class="item"><div class="k">Food package and prescription label photos</div><div class="v">Sent when you add a food or medicine by photo. A prescription label can show your name, your clinic and an Rx number.</div></div>
             <div class="item"><div class="k">Mochi's patterns</div><div class="v">Mochi's name with the symptom, food and counts in a pattern. Your full log and your photos are never sent for this.</div></div>
             <div class="item"><div class="k">Ask, where it's turned on</div><div class="v">Your question and the parts of Mochi's record it needs.</div></div>
             <div class="item"><div class="k">At Anthropic</div><div class="v">Kept only for a short time, to check for misuse. Never used to train AI.</div></div>
-            <div class="item no"><div class="k">If you don't allow</div><div class="v">Nothing is sent. You type foods and medicines in, photos are kept but not read, and patterns use plainer wording. Checks that need no photo, like repeated vomiting, still tell you when to call your vet.</div></div>
+            <div class="item no"><div class="k">If you don't allow</div><div class="v">Nothing is sent. You type foods and medicines in, photos are kept but not read, and patterns use plainer wording. Checks that need no photo, like repeated vomiting, still work and can tell you to call your vet.</div></div>
+            <p class="info"><span class="lk">Privacy policy</span></p>
           </div>
         </div>
         <p class="frame-cap"><b>B · What's sent</b>Every trigger, the label risk, retention, training, and what a no changes. The privacy policy link sits at the foot.</p>
@@ -352,7 +364,7 @@
               <div class="ben"><span class="ic"><svg><use href="#i-label"/></svg></span><div><div class="t">Labels filled in, photos read</div><div class="d">The same answer turns these on too.</div></div></div>
             </div>
             <div class="disc">To do this, Culprit sends your question and the parts of Mochi's record it needs to <b>Claude, an AI made by Anthropic</b>, along with label and symptom photos, and the patterns it spots so Home can describe them. Anthropic never trains its AI on them. Change it in Settings. <span class="lk">What's sent</span></div>
-            <p class="without">Without it, Ask stays closed and photos aren't read.</p>
+            <p class="without">Without it, Ask stays closed and photos aren't read. Checks that need no photo, like repeated vomiting, still work.</p>
             <div class="grow"></div>
             <div class="pair withnn"><div class="btn">Don't allow</div><div class="btn pri">Allow</div></div>
             <div class="nn">Not now</div>
@@ -383,7 +395,7 @@
           <div class="scrim"></div>
           <div class="ncard">
             <div class="row"><span class="chk">✓</span><div><div class="ttl">Vomit logged · 7:42 am</div><div class="sub">With a photo</div></div></div>
-            <div class="live"><span>Photo saved. Want it read?</span><span class="open">Open</span></div>
+            <div class="live"><span>Photo saved. Want an AI to describe it?</span><span class="open">Open</span></div>
           </div>
         </div>
         <p class="frame-cap"><b>D0 · Right after the log</b>The completion card says the photo is saved and offers the read. It doesn't ask the question itself. The record opens as usual after a photographed log.</p>
@@ -394,20 +406,21 @@
           <div class="notch"></div>
           <div class="screen">
             <div class="rhead"><span class="bk">‹</span><span class="more">···</span></div>
-            <div class="hero"><span>Photo · 7:42 am</span></div>
+            <div class="hero short"><span>Photo · 7:42 am</span></div>
             <p class="rtitle">Vomit</p>
             <p class="rsub">Mochi · Tue 13 Oct, 7:42 am</p>
-            <div class="seclabel">Photo read</div>
             <div class="askcard">
               <div class="h"><span class="ic"><svg><use href="#i-eye"/></svg></span><b>Want a read of this photo?</b></div>
-              <p class="tx">Claude can describe what's in Mochi's photo and flag it if it looks worth a call to your vet.</p>
-              <p class="fine">Claude is an AI made by Anthropic. Allowing also covers label photos, and Anthropic never trains on any of it. <span class="lk">What's sent</span></p>
+              <p class="tx">Claude, an AI, can say what's in Mochi's photo and point out some signs to call your vet about. It isn't a vet, and it can't tell you Mochi is fine.</p>
+              <p class="fine">Claude is made by Anthropic, which never trains its AI on any of it. Allowing also covers food and medicine label photos, and Mochi's name with the patterns Culprit spots. Change it any time in Settings. <span class="lk">What's sent</span></p>
+              <p class="fine">Without it, the photo is kept but not read. Checks that need no photo, like repeated vomiting, still work.</p>
               <div class="pair"><div class="btn">Don't allow</div><div class="btn pri">Allow</div></div>
+              <div class="cardnn">Not now</div>
             </div>
-            <p class="guide">Until then, if Mochi keeps vomiting, brings up something unusual, or seems off, check in with your vet.</p>
+            <p class="guide">Whatever you choose, if Mochi keeps vomiting, brings up something unusual, or seems unwell, call your vet.</p>
           </div>
         </div>
-        <p class="frame-cap"><b>D · Vomit, not answered yet</b>Allow runs the read right here. Ignoring the card writes nothing; it's still here next time. Source <code>backstop</code>.</p>
+        <p class="frame-cap"><b>D · Vomit, not answered yet</b>Allow runs the read right here. Not now, or ignoring the card, writes nothing; it's still here next time. Source <code>backstop</code>. Round 4: the AI is named in the main sentence, the read says what it can't do, the card carries its own "Without it" line and a Not now, and the vet line holds whatever the answer.</p>
       </div>
 
       <div class="frame-slot">
@@ -415,17 +428,18 @@
           <div class="notch"></div>
           <div class="screen">
             <div class="rhead"><span class="bk">‹</span><span class="more">···</span></div>
-            <div class="hero"><span>Photo · 4:10 pm</span></div>
+            <div class="hero short"><span>Photo · 4:10 pm</span></div>
             <p class="rtitle">Loose stool</p>
             <p class="rsub">Mochi · Tue 13 Oct, 4:10 pm</p>
-            <div class="seclabel">Photo read</div>
             <div class="askcard">
               <div class="h"><span class="ic"><svg><use href="#i-eye"/></svg></span><b>Want a read of this photo?</b></div>
-              <p class="tx">Claude can describe what's in Mochi's photo and flag it if it looks worth a call to your vet.</p>
-              <p class="fine">Claude is an AI made by Anthropic. Allowing also covers label photos, and Anthropic never trains on any of it. <span class="lk">What's sent</span></p>
+              <p class="tx">Claude, an AI, can say what's in Mochi's photo and point out some signs to call your vet about. It isn't a vet, and it can't tell you Mochi is fine.</p>
+              <p class="fine">Claude is made by Anthropic, which never trains its AI on any of it. Allowing also covers food and medicine label photos, and Mochi's name with the patterns Culprit spots. Change it any time in Settings. <span class="lk">What's sent</span></p>
+              <p class="fine">Without it, the photo is kept but not read. Checks that need no photo, like repeated loose stool, still work.</p>
               <div class="pair"><div class="btn">Don't allow</div><div class="btn pri">Allow</div></div>
+              <div class="cardnn">Not now</div>
             </div>
-            <p class="guide">Until then, if Mochi's stool keeps looking off, you see anything unusual in it, or Mochi seems unwell, check in with your vet.</p>
+            <p class="guide">Whatever you choose, if Mochi's stool stays unusual, has something odd in it, or Mochi seems unwell, call your vet.</p>
           </div>
         </div>
         <p class="frame-cap"><b>E · Stool, not answered yet</b>Same card. The guidance stays event neutral for every stool type.</p>
@@ -439,13 +453,12 @@
             <div class="hero"><span>Photo · 7:42 am</span></div>
             <p class="rtitle">Vomit</p>
             <p class="rsub">Mochi · Tue 13 Oct, 7:42 am</p>
-            <div class="seclabel">Photo read</div>
             <div class="offbox">
               <div class="st"><i></i>AI reading is off</div>
-              <p class="tx">Mochi's photo is saved but wasn't read. Turn reading on and Claude describes photos like this one and flags anything worth a call.</p>
+              <p class="tx">Mochi's photo is saved but wasn't read. If you turn AI reading on, you can send this photo to Claude, an AI, for a read.</p>
               <div class="act">Turn on AI reading</div>
             </div>
-            <p class="guide">If Mochi keeps vomiting, brings up something unusual, or seems off, check in with your vet.</p>
+            <p class="guide">If Mochi keeps vomiting, brings up something unusual, or seems unwell, call your vet.</p>
           </div>
         </div>
         <p class="frame-cap"><b>F · Vomit, the owner said no</b>No card, no re-ask: a quiet status and a way back. A hollow dot, never a tick or a colour. The stool record is the same with E's guidance.</p>
@@ -459,19 +472,17 @@
             <div class="hero"><span>Photo · 9:15 pm</span></div>
             <p class="rtitle">Vomit</p>
             <p class="rsub">Mochi · Tue 13 Oct, 9:15 pm</p>
-            <div class="seclabel">Photo read</div>
             <div class="escal">
               <div class="v">Worth a call</div>
               <div class="why">Mochi has thrown up more than once in a short window. Repeated vomiting like that is worth a call to your vet.</div>
             </div>
             <div class="offbox">
               <div class="st"><i></i>The photo wasn't read</div>
-              <p class="tx">AI reading is off, so this advice comes from Mochi's log, not the photo.</p>
-              <div class="act">Turn on AI reading</div>
+              <p class="tx">AI reading is off. Mochi's log alone is reason to call your vet.</p>
             </div>
           </div>
         </div>
-        <p class="frame-cap"><b>G · Said no, and a check fired anyway</b>The photoless escalation leads exactly as today. With no answer yet, the D card sits under it instead of the off line.</p>
+        <p class="frame-cap"><b>G · Said no, and a check fired anyway</b>The photoless escalation leads exactly as today; its words follow EN-3's tiers wherever those are on. Round 4: no Turn on link under a warning, so the one action is the call, and the off line backs the log instead of discounting it. With no answer yet, the D card sits under it instead of the off line.</p>
       </div>
 
       <div class="frame-slot">
@@ -482,15 +493,15 @@
             <div class="hero"><span>Photo · 7:42 am</span></div>
             <p class="rtitle">Vomit</p>
             <p class="rsub">Mochi · Tue 13 Oct, 7:42 am</p>
-            <div class="seclabel">Photo read</div>
             <div class="offbox">
-              <div class="st"><i style="border-color:#0B7B6C"></i>AI reading is on</div>
-              <p class="tx">This photo was logged while reading was off. It goes to Claude only if you ask.</p>
+              <div class="st"><i></i>Not read yet</div>
+              <p class="tx">This photo was logged while AI reading was off. It goes to Claude only if you tap below.</p>
               <div class="readbtn">Read this photo</div>
             </div>
+            <p class="guide">If Mochi keeps vomiting, brings up something unusual, or seems unwell, call your vet.</p>
           </div>
         </div>
-        <p class="frame-cap"><b>H · After turning it on</b>One tap per record, never a silent batch over old photos (CUL-1835).</p>
+        <p class="frame-cap"><b>H · After turning it on</b>One tap per record, never a silent batch over old photos (CUL-1835). Round 4: the heading says what happened to this photo, not the setting, with a hollow dot, and the vet line stays, as §3 requires of every state that isn't a read.</p>
       </div>
     </div>
   </section>
@@ -515,7 +526,7 @@
             <div class="group-l">Preferences</div>
             <div class="card">
               <div class="srow"><div class="lb"><div class="a">Notifications</div><div class="s">A summary of the day, every evening</div></div><span class="chev">›</span></div>
-              <div class="srow hi"><div class="lb"><div class="a">AI reading</div><div class="s">Label scans and photo reads</div></div><span class="val">On</span><span class="chev">›</span></div>
+              <div class="srow hi"><div class="lb"><div class="a">AI reading</div><div class="s">Photos, labels and patterns</div></div><span class="val">Not set</span><span class="chev">›</span></div>
               <div class="srow"><div class="lb"><div class="a">Early access</div><div class="s">Try new features early</div></div><span class="chev">›</span></div>
             </div>
             <div class="group-l">Support</div>
@@ -524,7 +535,7 @@
             </div>
           </div>
         </div>
-        <p class="frame-cap"><b>I · The row</b>Value reads <em>On</em>, <em>Off</em> or <em>Not set</em>.</p>
+        <p class="frame-cap"><b>I · The row</b>Value reads <em>On</em>, <em>Off</em> or <em>Not set</em>; drawn <em>Not set</em>, the demo account's path into L. Round 4: the sub line names all three things one answer covers.</p>
       </div>
 
       <div class="frame-slot">
@@ -536,9 +547,9 @@
               <div class="srow"><div class="lb"><div class="a">AI reading</div></div><div class="sw on"></div></div>
               <div class="sbens">
                 <div class="ben"><span class="ic"><svg><use href="#i-label"/></svg></span><div><div class="t">Labels filled in for you</div><div class="d">Snap a food or medicine and skip the typing.</div></div></div>
-                <div class="ben"><span class="ic"><svg><use href="#i-eye"/></svg></span><div><div class="t">A read on Mochi's photos</div><div class="d">What's in a vomit or stool photo, and whether it's worth a call.</div></div></div>
+                <div class="ben"><span class="ic"><svg><use href="#i-eye"/></svg></span><div><div class="t">A read on Mochi's photos</div><div class="d">Says what's in a vomit or stool photo and points out some signs to call your vet about. It can't tell you Mochi is fine.</div></div></div>
               </div>
-              <div class="state"><b>On</b> since 12 Oct 2026.</div>
+              <div class="state"><b>On</b> since 14 Oct 2026.</div>
             </div>
             <p class="info">Culprit sends these photos to Claude, an AI made by Anthropic, plus Mochi's name with the patterns it spots, so Home can describe them in a sentence. Anthropic never trains its AI on any of it. <span class="lk">What's sent</span></p>
           </div>
@@ -555,14 +566,14 @@
               <div class="srow"><div class="lb"><div class="a">AI reading</div></div><div class="sw"></div></div>
               <div class="sbens dim2">
                 <div class="ben"><span class="ic"><svg><use href="#i-label"/></svg></span><div><div class="t">Labels filled in for you</div><div class="d">Snap a food or medicine and skip the typing.</div></div></div>
-                <div class="ben"><span class="ic"><svg><use href="#i-eye"/></svg></span><div><div class="t">A read on Mochi's photos</div><div class="d">What's in a vomit or stool photo, and whether it's worth a call.</div></div></div>
+                <div class="ben"><span class="ic"><svg><use href="#i-eye"/></svg></span><div><div class="t">A read on Mochi's photos</div><div class="d">Says what's in a vomit or stool photo and points out some signs to call your vet about. It can't tell you Mochi is fine.</div></div></div>
               </div>
-              <div class="state"><b>Off.</b> Nothing new is sent. You type labels in, Mochi's photos are kept but not read, and patterns on Home use simpler wording. Checks that need no photo still tell you when to call your vet. Reads that already ran stay on their records.</div>
+              <div class="state"><b>Off.</b> Nothing is sent. You type labels in, Mochi's photos are kept but not read, and patterns on Home use simpler wording. Checks that need no photo still work and can tell you to call your vet.</div>
             </div>
-            <p class="info">Culprit sends these photos to Claude, an AI made by Anthropic, plus Mochi's name with the patterns it spots, so Home can describe them in a sentence. Anthropic never trains its AI on any of it. <span class="lk">What's sent</span></p>
+            <p class="info">When AI reading is on, Culprit sends these photos to Claude, an AI made by Anthropic, plus Mochi's name with the patterns it spots, so Home can describe them in a sentence. Anthropic never trains its AI on any of it. <span class="lk">What's sent</span></p>
           </div>
         </div>
-        <p class="frame-cap"><b>K · Off</b>The benefits dim and the state line says what the owner is going without. Flipping on writes a yes and a <code>legal_acceptances</code> row against the copy on screen.</p>
+        <p class="frame-cap"><b>K · Off</b>The benefits dim and the state line says what the owner is going without. Flipping on writes a yes and a <code>legal_acceptances</code> row against the copy on screen. Round 4: drawn for an owner who never said yes. An owner who did also sees "Reads that already ran stay on their records."; nothing says "new" to someone who never sent anything, and the disclosure under Off is conditional.</p>
       </div>
 
       <div class="frame-slot">
@@ -574,11 +585,11 @@
               <div class="srow"><div class="lb"><div class="a">AI reading</div><div class="s">Not set</div></div></div>
               <div class="sbens">
                 <div class="ben"><span class="ic"><svg><use href="#i-label"/></svg></span><div><div class="t">Labels filled in for you</div><div class="d">Snap a food or medicine and skip the typing.</div></div></div>
-                <div class="ben"><span class="ic"><svg><use href="#i-eye"/></svg></span><div><div class="t">A read on your pet's photos</div><div class="d">What's in a vomit or stool photo, and whether it's worth a call.</div></div></div>
+                <div class="ben"><span class="ic"><svg><use href="#i-eye"/></svg></span><div><div class="t">A read on your pet's photos</div><div class="d">Says what's in a vomit or stool photo and points out some signs to call your vet about. It can't tell you your pet is fine.</div></div></div>
               </div>
             </div>
             <p class="info">Culprit sends these photos to Claude, an AI made by Anthropic, plus your pet's name with the patterns it spots, so Home can describe them in a sentence. Anthropic never trains its AI on any of it. <span class="lk">What's sent</span></p>
-            <p class="info">Without it, you type labels in and photos are kept but not read.</p>
+            <p class="info">Without it, you type labels in and photos are kept but not read. Checks that need no photo, like repeated vomiting, still work.</p>
             <div class="grow"></div>
             <div class="pair"><div class="btn">Don't allow</div><div class="btn pri">Allow</div></div>
           </div>
@@ -611,7 +622,7 @@
           <tr><th>From the issue, as ruled in round 2</th><th>Where</th><th></th></tr>
           <tr><td>One ask: headline, short benefit lines, Allow primary with Don't allow a full-size button beside it (PM, round 3), nothing preselected</td><td>A, C, D, L</td><td class="ok">holds</td></tr>
           <tr><td>Details one tap away</td><td>B</td><td class="ok">holds</td></tr>
-          <tr><td>Not now writes nothing (D13)</td><td>A, C, D, §1</td><td class="ok">holds</td></tr>
+          <tr><td>Not now writes nothing (D13)</td><td>A, C, D, E, §1</td><td class="ok">holds</td></tr>
           <tr><td>Anthropic named at every ask and in Settings</td><td>A, C, D, J, K, L</td><td class="ok">holds</td></tr>
           <tr><td>Every trigger named, the label's name, clinic and Rx number included</td><td>B</td><td class="ok">holds</td></tr>
           <tr><td>Never "a no keeps every check"; the true line instead</td><td>B, K, G</td><td class="ok">holds</td></tr>
@@ -619,14 +630,17 @@
           <tr><td>Settings switch both ways</td><td>I to L</td><td class="ok">holds</td></tr>
           <tr><td>Reading off states on vomit and stool</td><td>D to H</td><td class="ok">holds</td></tr>
           <tr><td>No ask over a symptom photo at the moment of logging</td><td>D0, D</td><td class="ok">holds</td></tr>
+          <tr><td><b>Panel 1:</b> no line promises an answer the read never gives; every ask says it can't tell you the pet is fine</td><td>A, D, E, J, K, L</td><td class="ok">holds</td></tr>
+          <tr><td><b>Panel 1:</b> a "Without it" line, with what still works, on every ask</td><td>A, C, D, E, L</td><td class="ok">holds</td></tr>
+          <tr><td><b>Panel 1:</b> every state that isn't a read carries the vet line</td><td>D, E, F, H (G leads with the warning)</td><td class="ok">holds</td></tr>
         </table>
       </div>
 
       <h3>Lens notes</h3>
       <ul class="tight">
         <li><strong>Designer:</strong> the record card shows up as the record opens after a log, which is close to the moment of the event. It holds Principle 1 because the log is already saved, the card is never modal, and ignoring it costs nothing.</li>
-        <li><strong>Dr. Chen:</strong> tried an owner who never answers and photographs vomit with something unusual in it. Frame D's guidance names repeat vomiting, something unusual and seeming off, and points at the vet. No frame reads as "nothing found". Tried repeated vomiting while declined, and the escalation still leads (G). Blood left the consent copy. On the record it now sits inside "something unusual", and panel 1 checks whether owners still read that as a reason to call.</li>
-        <li><strong>Trust and Safety:</strong> the benefit framing stays factual and every ask names the cost of a no without fear. The food door asks for all three uses at once; panel 1 checks whether owners understand that one answer covers photos and patterns too.</li>
+        <li><strong>Dr. Chen:</strong> tried an owner who never answers and photographs vomit with something unusual in it. Frame D's guidance names repeat vomiting, something unusual and seeming off, and points at the vet. No frame reads as "nothing found". Tried repeated vomiting while declined, and the escalation still leads (G). Blood left the consent copy. On the record it now sits inside "something unusual", and panel 1 checks whether owners still read that as a reason to call. <b>Round 4:</b> panel 1 showed the bigger risk was upstream: "whether it's worth a call" promised a verdict the engine never gives (its quiet label is "Keep an eye out"), so a read with no flag sounded like permission not to call. Every ask now says the read can't tell you the pet is fine.</li>
+        <li><strong>Trust and Safety:</strong> the benefit framing stays factual and every ask names the cost of a no without fear. The food door asks for all three uses at once; panel 1 checks whether owners understand that one answer covers photos and patterns too. <b>Round 4:</b> it did on the food sheet (item 1 correct in 6 of 6 runs) and didn't on the record card, which named label photos only; D and E now name the pet's name with patterns and Settings. Allow as the primary button was not the root of any verified coercion (the verifier traced the "app wants it" reading to a persona card), so the ruling stands.</li>
       </ul>
     </div>
   </section>
