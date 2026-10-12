@@ -1,8 +1,9 @@
 # CUL-1832: the AI consent screen, mock round 1
 
 **Date:** 2026-10-12
+**One thing:** P2 L1 — Reversibility: a mock round is a two-way door, the consent copy in the 1.2.0 binary is close to one-way · check: pending
 
-DISCOVERY, PR-10 of *App Store 1.2.0 · the first public release*. Shipped via the session's draft PR (the mock page only, no code).
+DISCOVERY, PR-10 of *App Store 1.2.0 · the first public release*. Shipped via #1204 (the mock page and this record, no code).
 
 ## What was drawn
 
