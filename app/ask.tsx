@@ -33,6 +33,8 @@ import {
   type AskSuggestions,
 } from '../lib/ask';
 import { askCapCopy } from '../constants/monetizationCopy';
+import { useAiConsentDoor } from '../hooks/useAiConsentDoor';
+import { AiConsentSheet } from '../components/consent/AiConsentSheet';
 import { reducedMotionNow } from '../store/reducedMotionStore';
 
 // Ask — the client surface (B-228, PR A5; requirements §3, §4, §9.3). Owner-initiated
@@ -77,6 +79,28 @@ export default function AskScreen() {
   const petName = activePet?.name ?? 'your pet';
 
   const [input, setInput] = useState('');
+
+  // CUL-1834 (mock frame C): Ask's first open asks for AI consent while no answer is
+  // on file, and never answers a question before the owner answers this. Ask is only
+  // reachable where `ask_enabled` resolves on (HomeHeader), so the door needs no flag
+  // check of its own. Don't allow and Not now close Ask ("Without it, Ask stays
+  // closed"), and so does a no already on file: Ask stays closed until Settings turns
+  // AI reading on. The owner lands back on Home, whose Signal carries the same safety
+  // finding Ask's consent-off answer would have led with.
+  const consentDoor = useAiConsentDoor('ask');
+  const askConsent = consentDoor.ask;
+  const consentAsked = useRef(false);
+  useEffect(() => {
+    if (consentAsked.current) return;
+    consentAsked.current = true;
+    askConsent().then((outcome) => {
+      if (outcome !== 'declined' && outcome !== 'not_now') return;
+      // A cold link into Ask has no screen behind it, so back would do nothing and
+      // leave the owner on a closed Ask.
+      if (router.canGoBack()) router.back();
+      else router.replace('/(tabs)');
+    }).catch((e) => console.warn('[Ask] consent door failed:', e));
+  }, [askConsent]);
   const [suggestions, setSuggestions] = useState<AskSuggestions>({ total: 0, chips: [], hasLooks: false });
   const scrollRef = useRef<ScrollView>(null);
 
@@ -115,7 +139,7 @@ export default function AskScreen() {
   const send = useCallback(
     async (raw: string) => {
       const question = raw.trim();
-      if (!question || thinking || !petId) return;
+      if (!question || thinking || !petId || consentDoor.settling) return;
       setInput('');
 
       // Rundown-intent (a deflection follow-up or the offline CTA) opens the deterministic
@@ -148,7 +172,7 @@ export default function AskScreen() {
       else if ('capped' in res) resolveCapped(res.capped);
       else resolveDisabled();
     },
-    [thinking, petId, online, petName, pushQuestion, resolveAnswer, resolveCapped, resolveDisabled],
+    [thinking, petId, online, petName, pushQuestion, resolveAnswer, resolveCapped, resolveDisabled, consentDoor.settling],
   );
 
   const goTapThrough = useCallback((nav: AskNav) => {
@@ -272,6 +296,7 @@ export default function AskScreen() {
           </View>
         ) : null}
       </KeyboardAvoidingView>
+      <AiConsentSheet {...consentDoor.sheetProps} />
     </SafeAreaView>
   );
 }

@@ -51,6 +51,8 @@ import {
   type TrialProteinContext,
 } from '../lib/trialContaminant';
 import { useAppConfig } from '../hooks/useAppConfig';
+import { useAiConsentDoor } from '../hooks/useAiConsentDoor';
+import { AiConsentSheet } from '../components/consent/AiConsentSheet';
 import { parseGateResponse } from '../lib/appConfig';
 import { EARLY_ACCESS_LABEL, foodCapCopy, careFirstLine } from '../constants/monetizationCopy';
 
@@ -135,6 +137,7 @@ export default function FoodCaptureScreen() {
   // B-329 flag-aware state. Render-only: the Edge Function re-checks the flag + cap
   // server-side (B-252), so this only shapes what's shown, never what's allowed.
   const config = useAppConfig();
+  const consentDoor = useAiConsentDoor('label');
   const extractionEnabled = config.ai_food_extraction_enabled;
 
   const [step, setStep] = useState<CaptureStep>('intro');
@@ -324,7 +327,16 @@ export default function FoodCaptureScreen() {
     };
   }
 
+  // CUL-1834 (mock frame A): the AI consent door sits BEFORE the picker, camera and
+  // library alike (a library pick is sent to Anthropic too), so no photo is ever taken
+  // and then held behind a question. Only the front slot asks: every later slot is
+  // reached after this one. Don't allow and Not now both open the typed form.
   async function handleSnapFront(source: 'camera' | 'library') {
+    const answer = await consentDoor.ask();
+    if (answer === 'declined' || answer === 'not_now') {
+      handleManualEntry();
+      return;
+    }
     const photo = await pickPhoto('front', source);
     if (!photo) return;
     setFrontPhoto(photo);
@@ -873,6 +885,7 @@ export default function FoodCaptureScreen() {
             <ThemedText style={styles.linkBtnText}>Enter manually</ThemedText>
           </TouchableOpacity>
         </ScrollView>
+        <AiConsentSheet {...consentDoor.sheetProps} />
       </SafeAreaView>
     );
   }

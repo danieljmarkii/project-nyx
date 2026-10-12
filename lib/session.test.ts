@@ -84,6 +84,7 @@ import { useMomentStore } from '../store/momentStore';
 import { useSnackbarStore } from '../store/snackbarStore';
 import { useAskStore } from '../store/askStore';
 import { useHistoryListStore } from '../store/historyListStore';
+import { useAiConsentStore } from '../store/aiConsentStore';
 
 const GATE_KEY = 'nyx.recoveryInProgress';
 const t0 = 1_700_000_000_000;
@@ -312,6 +313,16 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect(useSyncStore.getState()).toMatchObject({
       pendingCount: 0, oldestPendingAt: null, quarantinedCount: 0,
     });
+  });
+
+  // CUL-1834: the cached AI consent answer is the previous owner's answer to a privacy
+  // question. Keyed by user id already, and still not left on a shared phone.
+  it("clears the previous account's cached AI consent answer", async () => {
+    useAiConsentStore.getState().setRow('user-a', {
+      granted: true, copyVersion: '2026-10-12', source: 'backstop', decidedAt: '2026-10-14T09:00:00+00:00',
+    });
+    await wipeLocalSession();
+    expect(useAiConsentStore.getState()).toMatchObject({ userId: null, row: undefined });
   });
 
   it('a store that throws while clearing never keeps the others, or the teardown, from running', async () => {
@@ -637,6 +648,7 @@ describe('every store is classified against the sign-out wipe (CUL-1255)', () =>
   const STORE_DIR = path.join(__dirname, '..', 'store');
 
   const WIPED: Record<string, string> = {
+    aiConsentStore: 'useAiConsentStore',
     askStore: 'useAskStore',
     eventStore: 'useEventStore',
     historyListStore: 'useHistoryListStore',

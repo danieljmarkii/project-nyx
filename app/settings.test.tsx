@@ -10,6 +10,9 @@ import { useBetaOptInStore } from '../lib/betaFeatures';
 import { JS_UPDATE_ID, JS_CHANNEL, JS_IS_EMBEDDED } from '../lib/appInfo';
 import { formatAppVersion, formatJsBundle } from '../lib/support';
 import { APP_VERSION, APP_BUILD } from '../lib/appInfo';
+import { router } from 'expo-router';
+import { fireEvent } from '@testing-library/react-native';
+import { useAiConsentStore, loadAiConsent } from '../store/aiConsentStore';
 
 // Pins the B-747 fix at its fix SITE — the "You" screen's Beta-features row:
 //   • the row's visibility is an OR over the WHOLE registry (the shipped bug
@@ -31,6 +34,16 @@ jest.mock('expo-router', () => ({
     canGoBack: jest.fn(() => true),
     push: jest.fn(),
   },
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const { useEffect } = require('react');
+    useEffect(() => cb(), [cb]);
+  },
+}));
+// CUL-1834: the AI reading row reads the consent cache; the read is stubbed so the
+// row's three values can be set directly.
+jest.mock('../store/aiConsentStore', () => ({
+  ...jest.requireActual('../store/aiConsentStore'),
+  loadAiConsent: jest.fn(async () => ({ status: 'error' })),
 }));
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
@@ -73,6 +86,7 @@ function setAllowlist(over: Partial<AllowlistFlagValues>): void {
 
 beforeEach(() => {
   useBetaOptInStore.getState().reset();
+  useAiConsentStore.getState().reset();
   setAllowlist({});
 });
 
@@ -142,5 +156,51 @@ describe('Settings — the version foot names the JS bundle (CUL-690)', () => {
     const { getByText } = render(<SettingsScreen />);
     getByText(`Culprit v${formatAppVersion(APP_VERSION, APP_BUILD)}`);
     getByText(formatJsBundle(JS_UPDATE_ID, JS_IS_EMBEDDED, JS_CHANNEL, { abbreviate: true }));
+  });
+});
+
+// CUL-1834 (frame I): the AI reading row is always present (the App Review notes name
+// this path), and its value says On, Off or Not set only once a read has answered for
+// THIS account.
+describe('Settings — the AI reading row (CUL-1834)', () => {
+  const row = { copyVersion: '2026-10-12', source: 'settings', decidedAt: '2026-10-14T09:00:00+00:00' };
+
+  it('is always present, reads on focus, and opens the AI reading screen', () => {
+    const { getByText } = render(<SettingsScreen />);
+    expect(getByText('AI reading')).toBeTruthy();
+    expect(getByText('Photos, labels and patterns')).toBeTruthy();
+    expect(loadAiConsent).toHaveBeenCalledWith('pm-uid');
+    fireEvent.press(getByText('AI reading'));
+    expect(router.push).toHaveBeenCalledWith('/settings/ai-reading');
+  });
+
+  it('shows no value before a read answers: Not set is a claim, never a loading state', () => {
+    const { queryByText } = render(<SettingsScreen />);
+    expect(queryByText('Not set')).toBeNull();
+    expect(queryByText('On')).toBeNull();
+    expect(queryByText('Off')).toBeNull();
+  });
+
+  it('says Not set, On or Off from the cached answer', () => {
+    useAiConsentStore.getState().setRow('pm-uid', null);
+    const first = render(<SettingsScreen />);
+    expect(first.getByText('Not set')).toBeTruthy();
+    first.unmount();
+
+    useAiConsentStore.getState().setRow('pm-uid', { ...row, granted: true });
+    const second = render(<SettingsScreen />);
+    expect(second.getByText('On')).toBeTruthy();
+    expect(second.getByLabelText('AI reading, On')).toBeTruthy();
+    second.unmount();
+
+    useAiConsentStore.getState().setRow('pm-uid', { ...row, granted: false });
+    const third = render(<SettingsScreen />);
+    expect(third.getByText('Off')).toBeTruthy();
+  });
+
+  it("never shows another account's cached answer", () => {
+    useAiConsentStore.getState().setRow('someone-else', { ...row, granted: true });
+    const { queryByText } = render(<SettingsScreen />);
+    expect(queryByText('On')).toBeNull();
   });
 });
