@@ -224,3 +224,45 @@ Reduced by the PM's ruling (option a): P1 Jordan on the food sheet, P10 the 2 a.
 - **"It can't tell you Mochi is fine. Then what's it for?"** (5 of 9 non-P11 runs; at 2 a.m. "a little hollow", "a bait and switch, even if it's honest"). An honesty cost to the benefit, not coercion or false reassurance. Not changed: the obvious fix ("check it for warning signs") would bring F1 back.
 - **"Not now" vs "Don't allow" is still unexplained** (F18; P1, P10, POW, P11). A team call left for the build.
 - **The worst-case reader's highest remaining items** are the PM's rulings (one answer covers every use, D10; Allow as the primary button), a true cost read as a threat ("Checks that need no photo … still work" implies photo checks stop: they do), and the record's vet line being vague ("something unusual", "something odd").
+
+## 6. Verification, round 2
+
+A second isolated verifier read the round 2 runs, the round 4 frames and the round 1 verdicts. **Verdict: no CONFIRMED or PLAUSIBLE coercion or false reassurance caused by the current copy remains.** The one confirmed round 2 finding (Ask lacked the not-a-vet line) was fixed before this verdict and checked on the frame.
+
+| Round 2 finding | Verdict | Why |
+|---|---|---|
+| The probe still draws some relief (3 wrong, 5 partial of 9) | ACCEPTED RESIDUAL, not caused by the copy | Every run recalled the rule; nothing on the frames now promises an all-clear. The probe says "without flagging anything", a word no frame uses any more, and participants never saw the real quiet result: "Keep an eye out" with a "Watch for these:" list of call-now and call-today signs (`lib/incidentFloorWords.ts`), which is what P10-3 asked for |
+| "Checks that need no photo still work" read as "photo checks are lost" | ACCEPTED RESIDUAL (a true cost) | With a no, nothing in a photo is pointed out; Brief B ruled for factual loss framing |
+| "Something unusual" and "something odd" are vague | REFUTED as a flag; plausibly unclear | It applies whatever the owner chooses. A sharper line ("throws up more than once in a few hours", the engine's own rule) is a Dr. Chen call, offered to the PM on CUL-1834 |
+| Ask lacked the not-a-vet line | CONFIRMED, fixed | True of Ask as well: its validator rejects a reassuring answer (`docs/nyx-ask-requirements.md` G2) |
+| Bundling; Allow as the primary button | ACCEPTED RESIDUAL (PM rulings) | No yes in round 2 was driven by fear; 5 of 12 runs declined or deferred, none called a no unsafe |
+| "Describe it" (D0) vs "point out signs" (D) | REFUTED | "Describe" promises less, and D corrects it before any decision |
+
+Two one-word consistency fixes rode along: "plainer" became "simpler" on B (to match K), and §3 of the mock now says what the vet line actually names.
+
+## 7. Residuals, conditions and follow-ups
+
+**Conditions on the build (CUL-1834), from the consistency audit:**
+
+1. **Keep calling the read for an owner who declined or hasn't answered.** The server computes the photoless checks inside that call and skips only the Anthropic half; a client-side skip would make "Checks that need no photo still work" false.
+2. **Not now vs Don't allow** stays unexplained on screen (F18). Both open the typed form; the difference is whether a door asks again. A team call for the build.
+3. **Settings never names Ask.** Where Ask is on for the account, J and K should list it, since one switch governs it.
+
+**Residuals, stated:**
+
+- **A quiet read still feels a little reassuring** even to owners who can recite that it isn't. Copy on a consent screen can't remove that; the read card's watch-for list is the next defence, and it shows only where EN-3's rules are on.
+- **Items 1 to 3 stay partial for skimmers** (7, 3 and 3 of 12 in round 2): the grey disclosure is read by those who look for it. The real teach-back after launch (protocol §5) is the only way to know how many real owners do.
+- **"It can't tell you Mochi is fine. Then what's it for?"** An honesty cost to the benefit, accepted.
+
+**Routed, not filed (each has a home):** the policy's three lines behind the code → CUL-1769; the failed-upload edge case → CUL-1835; the escalation's urgency at night → EN-3 (CUL-1133, CUL-1611).
+
+## 8. What this panel cannot tell us
+
+Whether real owners read the screen at all, how many will decline, or how App Review will judge it (protocol T1). The cards were thinly grounded (no Reddit), one card leaked a reading into two runs, and a model reads every word a skimmer would skip, so every correct answer above is an upper bound. Calibration against week one's real signals is protocol §5's job.
+
+## 9. Frozen inputs, recorded
+
+- **Round 1 stimulus:** `docs/culprit-ai-consent-mockups.html` at a432b07, rendered as §1.6 says; 38 participant-facing images, hashed in the session's scratchpad.
+- **Round 2 stimulus:** the same page at this branch's round 4 commit, the same render; 22 images.
+- **Prompts:** the protocol's Appendix B skeleton with §1.4's steps, one sheet per persona; the cards are §1.3's table plus three to five paraphrased owner lines each, kept out of the repo (CUL-1491). Round 2's sheets differ from round 1's by one line (names, times and dates are placeholders).
+- **Verifiers:** two isolated passes (round 1: 19 findings and 5 stimulus checks; round 2: 6 findings), each with read access to the frames, the mock, the run notes, the cards, the policy and the server code, and no edit rights.
