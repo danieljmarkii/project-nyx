@@ -38,3 +38,7 @@ This unseats CUL-552's onboarding step and first-open sheet. CUL-1834 and CUL-18
 ## Round 3 (same session)
 
 PM reactions to round 2: liked the "Skip the typing" sheet; Not now was hard to reach top right; "patterns in plain words" didn't mean anything to an owner; Allow should be the primary button. Round 3: Not now is a full-width text button under the pair ("Not now, I'll type it in" on the food door); Allow is filled and Don't allow stays a same-size outlined button (PM ruling, replacing the issue's "equal weight" line; T&S condition: Don't allow never shrinks to a link); the patterns benefit is out, and the disclosure still says the pet's name and patterns are sent. Brief D (first launch) still open.
+
+## Approved
+
+PM approved the round 3 frames and ruled Brief D (a): nothing asks at first launch; the reviewer notes and a recording point App Review at Settings → AI reading and at a vomit log with a photo. CUL-1834 and CUL-1835 descriptions were rewritten to the approved frames. Synthetic panel 1 (CUL-1833) still runs on them before CUL-1834 starts; a verified coercion or false-reassurance finding goes back into the mock.
