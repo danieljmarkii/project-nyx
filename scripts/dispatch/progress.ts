@@ -1,5 +1,5 @@
-// /dispatch's progress update (CUL-1624): five lines a PM reads cold, at the top of every
-// round digest and once each weekday at 07:45 CT. How far along, what moved, what is next,
+// /dispatch's progress update (CUL-1624; the scope line CUL-1872): six lines a PM reads cold, at the top of every
+// round digest and once each weekday at 07:45 CT. How far along, how much the scope grew, what moved, what is next,
 // what waits on the PM, and roughly how much running time is left.
 //
 // WHY. The digests say what just happened; nothing said how far along a project is or how
@@ -28,7 +28,7 @@ export type { Wake };
 export const MIN_CYCLES = 3;
 export const BAR_WIDTH = 10;
 export const PROGRESS_HEAD = '**/dispatch progress**';
-export const LABELS = ['Progress:', 'Moved since', 'Next:', 'On you:', 'Estimate:'] as const;
+export const LABELS = ['Progress:', 'Scope:', 'Moved since', 'Next:', 'On you:', 'Estimate:'] as const;
 const PM_LABEL = 'Waiting on PM';
 const ZONE = 'America/Chicago';
 
@@ -52,7 +52,15 @@ export type ProgressInput = {
   holds: HoldLine[];
   index?: string;
   slots: number; // usable by this project: free slots plus its own rows in flight
+  scope?: Scope; // absent: the line says it was not read
 };
+
+// The scope line (retro 4 rule 5, CUL-1872): growth shows instead of hiding in the
+// denominator. Planned is the `Done means (rows):` line, fixed at kickoff; now is every row
+// on the page; added this week is rows whose issue was created in the last seven days.
+// Blind spot: an older issue added to the page this week is not counted as added.
+export type Scope = { planned: number | null; now: number; added: number | null };
+const WEEK = 7 * 24 * 3600_000;
 
 const ms = (t: string) => new Date(t).getTime(); // parsed, never lexical (C-40)
 
@@ -127,10 +135,37 @@ export function nextFromPlan(plan: Plan): NextItem[] {
   return out;
 }
 
+export function scopeFromPlan(plan: Plan, createdAt: Record<string, string | undefined>, now: string): Scope {
+  const rows = plan.page.rows.filter((r) => r.id);
+  const known = rows.filter((r) => r.issues[0] && createdAt[r.issues[0]]);
+  return {
+    planned: plan.page.doneMeans ? plan.page.doneMeans.length : null,
+    now: rows.length,
+    added: known.length ? rows.filter((r) => r.issues[0] && createdAt[r.issues[0]] && ms(now) - ms(createdAt[r.issues[0]]!) <= WEEK).length : null,
+  };
+}
+
+export function scopeFromIssues(issues: ProjectIssue[], now: string): Scope {
+  const counted = issues.filter((i) => i.stateType !== 'canceled');
+  const known = counted.filter((i) => i.createdAt);
+  return {
+    planned: null,
+    now: counted.length,
+    added: known.length ? known.filter((i) => ms(now) - ms(i.createdAt!) <= WEEK).length : null,
+  };
+}
+
+export function scopeLine(s?: Scope): string {
+  if (!s) return 'Scope: not read';
+  const planned = s.planned === null ? 'no Done means line' : `${s.planned} planned`;
+  const added = s.added === null ? 'added this week not read' : `+${s.added} added this week`;
+  return `Scope: ${planned} · ${s.now} now (${added})`;
+}
+
 export const holdsFromPlan = (plan: Plan): HoldLine[] =>
   plan.pmHolds.map((h) => ({ text: h.text, frees: h.freesOutright.length, holds: h.rowsHeld.length }));
 
-export type ProjectIssue = { id: string; stateType: string; milestone?: string | null; labels?: string[]; parentId?: string | null };
+export type ProjectIssue = { id: string; stateType: string; milestone?: string | null; labels?: string[]; parentId?: string | null; createdAt?: string };
 
 export function unitsFromIssues(issues: ProjectIssue[], launches: Launch[], prs: PrFact[], queued: string[] = []): Unit[] {
   const parents = new Set(issues.map((i) => i.parentId).filter(Boolean));
@@ -248,10 +283,10 @@ export function estimateLine(input: ProgressInput): string {
 }
 
 export function renderProgress(input: ProgressInput): string {
-  return [progressLine(input.units), movedLine(input), nextLine(input.next), onYouLine(input.holds, input.index), estimateLine(input)].join('\n');
+  return [progressLine(input.units), scopeLine(input.scope), movedLine(input), nextLine(input.next), onYouLine(input.holds, input.index), estimateLine(input)].join('\n');
 }
 
-// The update is five lines, in order, plain ids: anything else is not the update.
+// The update is six lines, in order, plain ids: anything else is not the update.
 export function validateProgress(text: string): string[] {
   const lines = text.split('\n');
   const errors: string[] = [];
@@ -264,12 +299,12 @@ export function validateProgress(text: string): string[] {
 }
 
 // The email exception (CUL-1624, § Authority): one recipient, the PM's own address read
-// from the dispatcher's session context; the body is the five lines and nothing else.
+// from the dispatcher's session context; the body is the six lines and nothing else.
 export type ProgressEmail = { to: string; subject: string; body: string };
 const ADDRESS = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
 export function progressEmail(text: string, alias: string, now: string, owner?: string): ProgressEmail | { skipped: string } {
   if (!owner || !ADDRESS.test(owner.trim())) return { skipped: 'no owner address in the session context' };
   const errors = validateProgress(text);
-  if (errors.length) return { skipped: `not the five-line update (${errors.join('; ')})` };
+  if (errors.length) return { skipped: `not the six-line update (${errors.join('; ')})` };
   return { to: owner.trim(), subject: `/dispatch progress · ${alias} · ${localTime(now)}`, body: text };
 }
