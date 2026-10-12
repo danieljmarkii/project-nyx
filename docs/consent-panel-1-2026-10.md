@@ -194,4 +194,33 @@ PM ruling, 2026-10-12, in session: fix every verified round 1 finding in this PR
 | F11, F17, S5 | B: "What's sent, and when"; "still tell you when to call your vet" | "What's sent if you allow"; "still work and can tell you to call your vet"; a privacy policy link at the foot |
 | F12, S2, S4 | I: "Label scans and photo reads · On"; J: "On since 12 Oct" | I: "Photos, labels and patterns · Not set" (the demo account's path); J: 14 Oct |
 
+**After round 2 (one line):** the Ask sheet (C) gained the record card's "It isn't a vet, and it can't tell you Mochi is fine." All three worst-case runs in round 2 found it missing there; the sentence is the one round 2 tested on D and E.
+
 Not changed, on purpose: Allow stays the primary button (F19, a PM ruling the verifier did not overturn); "train" stays, because CUL-552 keeps the training line near verbatim and the panel understood it; retention gets no number until Anthropic's terms and the policy both state one (F13); the escalation's own words are EN-3's (F16).
+
+## 5. Round 2 results (12 runs on round 4, 2026-10-12)
+
+Reduced by the PM's ruling (option a): P1 Jordan on the food sheet, P10 the 2 a.m. owner on the vomit record, POW the off-wedge owner on the stool card, and P11 the worst-case reader on every frame, 3 runs each, with the round 1 cards unchanged. The sheets added one line, "The account name, the times and the dates shown on the screens are placeholders", which removes S1 and S3; S2 and S4 were fixed in the mock.
+
+### 5.1 The same four personas, round 1 against round 2 (N of 12 runs)
+
+| # | Item | Round 1 correct / partial / wrong or absent | Round 2 correct / partial / wrong or absent |
+|---|---|---|---|
+| 1 | What is sent | 6 / 6 / 0 | 5 / 7 / 0 |
+| 2 | To whom | 9 / 3 / 0 | 9 / 3 / 0 |
+| 3 | Used to train AI? | 8 / 2 / 2 | 7 / 3 / 2 |
+| 4 | What still works after a no | 3 / 9 / 0 | **10** / 2 / 0 |
+| 5 | Is no a fine answer? | 9 / 1 / **2** | 10 / 2 / **0** |
+| 6 | How to change their mind | 6 / 6 / 0 | **11** / 1 / 0 |
+| 7 | What the AI does and doesn't do | **0** / 3 / **9** | 4 / 5 / 3 |
+
+- **Item 7's teach-back is fixed; the probe is not, entirely.** In round 2, 9 of 9 runs that met a door said the read can't tell them the pet is fine, and most added that it isn't a vet (round 1: 0 of 9). Asked what a read with no flag would mean, 1 of 9 answered cleanly, 5 recalled the rule and admitted some relief, and 3 still leaned toward not calling ("I'd probably feel like she's okay and stop thinking about it"; "at 2 a.m. I'd … lean toward waiting till morning"). The consent screen now states the limit; the moment a quiet result arrives is the read card's (see §6).
+- **Item 5 is fixed.** No run read a no as unsafe. The 2 a.m. owner still wanted help ("at 2 a.m. I want every bit of help I can get") but said "no doesn't seem dangerous", and on G all three runs read "Mochi's log alone is reason to call your vet" as proof the no hid nothing.
+- **Items 4 and 6 moved most**, from the new "Without it" line and "Change it any time in Settings" on the card.
+- **Items 1 to 3 didn't move**, because they live in grey text skimmers skip. That is the known limit of any consent screen (Obar), and What's sent carries the full list.
+
+### 5.2 What round 2 raised that round 1 didn't
+
+- **"It can't tell you Mochi is fine. Then what's it for?"** (5 of 9 non-P11 runs; at 2 a.m. "a little hollow", "a bait and switch, even if it's honest"). An honesty cost to the benefit, not coercion or false reassurance. Not changed: the obvious fix ("check it for warning signs") would bring F1 back.
+- **"Not now" vs "Don't allow" is still unexplained** (F18; P1, P10, POW, P11). A team call left for the build.
+- **The worst-case reader's highest remaining items** are the PM's rulings (one answer covers every use, D10; Allow as the primary button), a true cost read as a threat ("Checks that need no photo … still work" implies photo checks stop: they do), and the record's vet line being vague ("something unusual", "something odd").

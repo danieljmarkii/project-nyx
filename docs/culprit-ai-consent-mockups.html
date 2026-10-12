@@ -4,9 +4,11 @@
 <style>
   /* ============================================================
      The AI consent screen (CUL-1832, PR-10 of App Store 1.2.0).
-     Mock ROUND 2. Current-proposal page: republish to the SAME artifact
-     URL; git is the history (round 1 is commit 29cc8d9). Feeds synthetic
-     panel 1 (CUL-1833), then consent PR 3a (CUL-1834) and 3b (CUL-1835).
+     Mock ROUND 4: round 3 (approved, #1204) with synthetic panel 1's
+     verified fixes (CUL-1833, docs/consent-panel-1-2026-10.md). Current-
+     proposal page: republish to the SAME artifact URL; git is the history
+     (round 1 is commit 29cc8d9). Feeds consent PR 3a (CUL-1834) and 3b
+     (CUL-1835).
 
      Layout: a document column of rulings and briefs, broken by rows of
      phone frames. Document chrome is theme-aware; DEVICE FRAMES stay light
@@ -360,7 +362,7 @@
             </div>
             <p class="ptitle">Ask about Mochi's record</p>
             <div class="bens">
-              <div class="ben"><span class="ic"><svg><use href="#i-ask"/></svg></span><div><div class="t">Answers from what you logged</div><div class="d">Meals, symptoms and dates, pulled together for you.</div></div></div>
+              <div class="ben"><span class="ic"><svg><use href="#i-ask"/></svg></span><div><div class="t">Answers from what you logged</div><div class="d">Meals, symptoms and dates, pulled together for you. It isn't a vet, and it can't tell you Mochi is fine.</div></div></div>
               <div class="ben"><span class="ic"><svg><use href="#i-label"/></svg></span><div><div class="t">Labels filled in, photos read</div><div class="d">The same answer turns these on too.</div></div></div>
             </div>
             <div class="disc">To do this, Culprit sends your question and the parts of Mochi's record it needs to <b>Claude, an AI made by Anthropic</b>, along with label and symptom photos, and the patterns it spots so Home can describe them. Anthropic never trains its AI on them. Change it in Settings. <span class="lk">What's sent</span></div>
@@ -370,7 +372,7 @@
             <div class="nn">Not now</div>
           </div>
         </div>
-        <p class="frame-cap"><b>C · Before Ask, where it's on</b>Ask is allowlisted today, so most owners never see this door. Drawn so the build has it.</p>
+        <p class="frame-cap"><b>C · Before Ask, where it's on</b>Ask is allowlisted today, so most owners never see this door. Drawn so the build has it. After panel 1's round 2: Ask carries the same "isn't a vet" line as the record card (all three worst-case runs found it missing here).</p>
       </div>
     </div>
   </section>
