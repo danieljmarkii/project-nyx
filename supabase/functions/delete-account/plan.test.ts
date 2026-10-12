@@ -7,7 +7,7 @@
 // after every purge). The DB reads, the Storage remove() calls, and the auth
 // delete are I/O and verified by curl against a throwaway account.
 
-import { assert, assertEquals, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts'
+import { assert, assertEquals, assertRejects, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   cleanPaths,
   scopeMedicationPaths,
@@ -18,11 +18,16 @@ import {
   buildDeletionPlan,
   chunk,
   extractPassword,
+  listPrefixRecursive,
   STORAGE_BUCKETS,
+  STORAGE_LIST_MAX_DEPTH,
+  STORAGE_LIST_PAGE,
   PRESERVED_BUCKETS,
   STORAGE_REMOVE_CHUNK,
   type OwnedStoragePaths,
   type DeletionStep,
+  type StorageListEntry,
+  type StorageLister,
 } from './plan.ts'
 
 // emptyOwned's ownerUserId is 'user-1', matching the `user-1/med-9/label.jpg`
@@ -819,4 +824,128 @@ Deno.test('extractPassword — missing key / non-object body fails closed', () =
   assertEquals(extractPassword('hunter2'), null) // whole body a bare string
   assertEquals(extractPassword(5), null)
   assertEquals(extractPassword(true), null)
+})
+
+// ── listPrefixRecursive (CUL-1764) ────────────────────────────────────────────
+//
+// A fake bucket: a flat set of object keys, listed one level at a time the way
+// storage-api does (direct children only, folders with a null id, name-sorted,
+// paged by offset/limit). Records every call so paging can be asserted.
+function fakeBucket(objectKeys: string[], opts: { pageCap?: number; failOn?: string } = {}) {
+  const calls: { prefix: string; offset: number; limit: number }[] = []
+  const lister: StorageLister = (prefix, offset, limit) => {
+    calls.push({ prefix, offset, limit })
+    if (opts.failOn !== undefined && prefix === opts.failOn) {
+      return Promise.reject(new Error(`list failed at ${prefix}`))
+    }
+    const children = new Map<string, StorageListEntry>()
+    for (const key of objectKeys) {
+      if (!key.startsWith(`${prefix}/`)) continue
+      const rest = key.slice(prefix.length + 1).split('/')
+      const name = rest[0]
+      children.set(name, { name, id: rest.length === 1 ? `obj-${key}` : null })
+    }
+    const sorted = [...children.values()].sort((a, b) => a.name.localeCompare(b.name))
+    const size = Math.min(limit, opts.pageCap ?? limit)
+    return Promise.resolve(sorted.slice(offset, offset + size))
+  }
+  return { lister, calls }
+}
+
+Deno.test('listPrefixRecursive — an abandoned capture with no row is found under {uid}/', async () => {
+  const { lister } = fakeBucket([
+    'user-1/med-orphan/0-label.jpg',
+    'user-1/med-9/0-label.jpg',
+    'user-1/med-9/1-back.jpg',
+    'user-2/med-x/0-label.jpg',
+  ])
+  const keys = await listPrefixRecursive(lister, 'user-1')
+  assertEquals(keys.sort(), [
+    'user-1/med-9/0-label.jpg',
+    'user-1/med-9/1-back.jpg',
+    'user-1/med-orphan/0-label.jpg',
+  ])
+})
+
+Deno.test('listPrefixRecursive — the listed orphan reaches the medication purge (end to end over the plan)', async () => {
+  const { lister } = fakeBucket(['user-1/med-orphan/0-label.jpg'])
+  const listed = await listPrefixRecursive(lister, 'user-1')
+  // No medication_items row names it: rows contribute nothing, the listing everything.
+  const plan = buildDeletionPlan(owned({ medicationPhotoPaths: listed }))
+  assertEquals(plan[0], {
+    kind: 'purge-bucket',
+    bucket: STORAGE_BUCKETS.medicationPhotos,
+    paths: ['user-1/med-orphan/0-label.jpg'],
+  })
+  assertEquals(plan[plan.length - 1], { kind: 'delete-auth-user' })
+})
+
+Deno.test('listPrefixRecursive — a row path and the same listed path purge once', () => {
+  const plan = buildDeletionPlan(owned({
+    medicationPhotoPaths: ['user-1/med-9/0-label.jpg', 'user-1/med-9/0-label.jpg', 'user-1/med-orphan/0-label.jpg'],
+  }))
+  assertEquals(plan[0], {
+    kind: 'purge-bucket',
+    bucket: STORAGE_BUCKETS.medicationPhotos,
+    paths: ['user-1/med-9/0-label.jpg', 'user-1/med-orphan/0-label.jpg'],
+  })
+})
+
+Deno.test('listPrefixRecursive — pages past one page and advances by rows received', async () => {
+  const keys = Array.from({ length: STORAGE_LIST_PAGE * 2 + 7 }, (_, i) => `user-1/med-${String(i).padStart(4, '0')}/0-label.jpg`)
+  const { lister, calls } = fakeBucket(keys)
+  const listed = await listPrefixRecursive(lister, 'user-1')
+  assertEquals(listed.length, keys.length)
+  const rootCalls = calls.filter((c) => c.prefix === 'user-1')
+  assertEquals(rootCalls.map((c) => c.offset), [0, STORAGE_LIST_PAGE, STORAGE_LIST_PAGE * 2, STORAGE_LIST_PAGE * 2 + 7])
+})
+
+Deno.test('listPrefixRecursive — a server that caps pages below the request still completes', async () => {
+  const keys = Array.from({ length: 25 }, (_, i) => `user-1/med-${String(i).padStart(2, '0')}/0-label.jpg`)
+  // A page cap of 10 returns short pages; a "short page ends the walk" loop would stop at 10.
+  const { lister } = fakeBucket(keys, { pageCap: 10 })
+  assertEquals((await listPrefixRecursive(lister, 'user-1')).length, 25)
+})
+
+Deno.test('listPrefixRecursive — a list error rejects (the run aborts, the account survives)', async () => {
+  const { lister } = fakeBucket(['user-1/med-9/0-label.jpg'], { failOn: 'user-1/med-9' })
+  await assertRejects(() => listPrefixRecursive(lister, 'user-1'), Error, 'list failed')
+})
+
+Deno.test('listPrefixRecursive — a blank or multi-segment root fails closed (never the bucket top level)', async () => {
+  const { lister, calls } = fakeBucket(['user-1/med-9/0-label.jpg'])
+  for (const root of ['', '   ', '..', 'user-1/..', 'a/b']) {
+    await assertRejects(() => listPrefixRecursive(lister, root), Error, 'single-segment root')
+  }
+  assertEquals(calls.length, 0)
+})
+
+Deno.test('listPrefixRecursive — dot, dot-dot and slashed names are neither emitted nor walked', async () => {
+  const lister: StorageLister = (prefix) => {
+    if (prefix !== 'user-1') return Promise.resolve([])
+    return Promise.resolve([
+      { name: '..', id: null },
+      { name: '.', id: 'f1' },
+      { name: '', id: 'f2' },
+      { name: 'a/../b', id: 'f3' },
+      { name: 'ok.jpg', id: 'f4' },
+    ])
+  }
+  const calls: string[] = []
+  const tracking: StorageLister = (prefix, o, l) => { calls.push(prefix); return o === 0 ? lister(prefix, o, l) : Promise.resolve([]) }
+  assertEquals(await listPrefixRecursive(tracking, 'user-1'), ['user-1/ok.jpg'])
+  assert(!calls.includes('user-1/..'))
+})
+
+Deno.test('listPrefixRecursive — a tree deeper than the cap fails loud rather than truncating', async () => {
+  const deep = ['user-1', ...Array.from({ length: STORAGE_LIST_MAX_DEPTH + 1 }, (_, i) => `d${i}`), 'x.jpg'].join('/')
+  const { lister } = fakeBucket([deep])
+  await assertRejects(() => listPrefixRecursive(lister, 'user-1'), Error, 'deeper than')
+})
+
+Deno.test('listPrefixRecursive — a crafted cross-tenant key from a lister is still dropped by the {uid}/ guard', () => {
+  // Defense in depth: even if a listing ever returned a key outside the root,
+  // scopeMedicationPaths keeps only the deleting user's own prefix.
+  const plan = buildDeletionPlan(owned({ medicationPhotoPaths: ['user-2/med-x/0-label.jpg', 'user-12/m/0-label.jpg'] }))
+  assertEquals(plan, [{ kind: 'delete-auth-user' }])
 })

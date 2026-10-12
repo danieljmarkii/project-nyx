@@ -410,6 +410,72 @@ export function collectStoragePaths(input: OwnedStoragePaths): BucketPurge[] {
   return candidates.filter((c) => c.paths.length > 0)
 }
 
+// ── Prefix listing (CUL-1764) ─────────────────────────────────────────────────
+//
+// Rows alone cannot find every label photo. `app/medication-capture.tsx` uploads
+// `{uid}/{itemId}/0-label.jpg` BEFORE any `medication_items` row exists, so an
+// owner who backs out leaves a prescription label (owner, pet, clinic, Rx number)
+// that no row points at. The PM ruled fix (b) 2026-10-12: deletion also lists the
+// account's whole `{uid}/` folder in `nyx-medication-photos` and purges what it
+// finds. Migration 021's RLS pins the first folder to the uploader's uid, so that
+// folder is exactly this account's objects.
+//
+// Storage `list()` returns one level (folders come back with `id === null`), so
+// this walks the tree. It is pure over an injected lister so the walk, paging and
+// failure modes are unit-tested offline; index.ts supplies the real Storage call.
+export interface StorageListEntry {
+  name: string
+  // null marks a folder (storage-api's convention); a file carries its object id.
+  id: string | null
+}
+// Returns one page of a folder's direct children. Throws on any error: a listing
+// that silently came back short would read exactly like a complete one.
+export type StorageLister = (prefix: string, offset: number, limit: number) => Promise<StorageListEntry[]>
+
+export const STORAGE_LIST_PAGE = 100
+// Legitimate keys are three segments deep ({uid}/{itemId}/{slot}.jpg). The cap only
+// stops a pathological tree from walking forever, and it fails LOUD rather than
+// truncating: an erasure path never reports success over objects it did not reach.
+export const STORAGE_LIST_MAX_DEPTH = 8
+
+// A name segment that could change which object a key addresses once joined. The
+// listing comes from the server, so none should exist; such an entry is skipped
+// (never descended into, never emitted) rather than trusted to stay opaque.
+function isUnsafeSegment(name: string): boolean {
+  return name.length === 0 || name === '.' || name === '..' || name.includes('/')
+}
+
+export async function listPrefixRecursive(list: StorageLister, root: string): Promise<string[]> {
+  // A blank root would list the bucket's top level, i.e. every account's folder.
+  // index.ts always passes the verified-JWT uid; this fails CLOSED anyway.
+  if (!root || root.trim().length === 0 || isUnsafeSegment(root)) {
+    throw new Error('listPrefixRecursive: a single-segment root is required')
+  }
+  const keys: string[] = []
+  const walk = async (prefix: string, depth: number): Promise<void> => {
+    if (depth > STORAGE_LIST_MAX_DEPTH) {
+      throw new Error(`listPrefixRecursive: ${prefix} is deeper than ${STORAGE_LIST_MAX_DEPTH} levels`)
+    }
+    const folders: string[] = []
+    // Advance by the rows RECEIVED and stop only on an empty page (C-42): sound
+    // even if the server caps a page below the size asked for.
+    for (let offset = 0; ; ) {
+      const page = await list(prefix, offset, STORAGE_LIST_PAGE)
+      if (page.length === 0) break
+      offset += page.length
+      for (const entry of page) {
+        if (typeof entry?.name !== 'string' || isUnsafeSegment(entry.name)) continue
+        const key = `${prefix}/${entry.name}`
+        if (entry.id === null) folders.push(key)
+        else keys.push(key)
+      }
+    }
+    for (const folder of folders) await walk(folder, depth + 1)
+  }
+  await walk(root, 1)
+  return keys
+}
+
 // ── Ordering ──────────────────────────────────────────────────────────────────
 
 // The ordered destructive plan. FR-6's load-bearing invariant: every Storage
