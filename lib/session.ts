@@ -12,6 +12,7 @@ import { useSnackbarStore } from '../store/snackbarStore';
 import { useAskStore } from '../store/askStore';
 import { useHistoryListStore } from '../store/historyListStore';
 import { useSyncStore } from '../store/syncStore';
+import { useAiConsentStore } from '../store/aiConsentStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 import { clearCachedAppConfig } from './appConfig';
 import { clearBetaOptIns } from './betaFeatures';
@@ -255,6 +256,10 @@ export async function wipeLocalSession(): Promise<void> {
     // banner said its entries were waiting until its own first cycle finished. The
     // wipe above emptied the queue, so zero is the truth.
     ['sync counts', () => useSyncStore.getState().setPendingStatus(0, null, 0)],
+    // CUL-1834: the cached AI consent answer. Keyed by user id already, so a stale
+    // entry could not answer for the next account, but it is that account's answer to
+    // a privacy question and it does not stay on a shared phone (FR-9 parity).
+    ['ai consent', () => useAiConsentStore.getState().reset()],
   ];
   for (const [what, clear] of inMemory) {
     try {

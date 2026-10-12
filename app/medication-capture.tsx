@@ -52,6 +52,8 @@ import {
 } from '../lib/storage';
 import { uuid } from '../lib/utils';
 import { useAppConfig } from '../hooks/useAppConfig';
+import { useAiConsentDoor } from '../hooks/useAiConsentDoor';
+import { AiConsentSheet } from '../components/consent/AiConsentSheet';
 import { parseGateResponse } from '../lib/appConfig';
 import { EARLY_ACCESS_LABEL, medicationCapCopy, careFirstLine } from '../constants/monetizationCopy';
 
@@ -97,6 +99,7 @@ export default function MedicationCaptureScreen() {
   // server-side (B-252). The §6.5 strength-confirm safety gate is independent of all
   // of this and always applies.
   const config = useAppConfig();
+  const consentDoor = useAiConsentDoor('label');
   const extractionEnabled = config.ai_med_extraction_enabled;
 
   const [step, setStep] = useState<CaptureStep>('intro');
@@ -218,7 +221,15 @@ export default function MedicationCaptureScreen() {
     };
   }
 
+  // CUL-1834 (mock frame A): the AI consent door sits before the picker, camera and
+  // library alike, so no label is photographed and then held behind a question.
+  // Don't allow and Not now both open the typed form.
   async function handleSnap(source: 'camera' | 'library') {
+    const answer = await consentDoor.ask();
+    if (answer === 'declined' || answer === 'not_now') {
+      handleManualEntry();
+      return;
+    }
     const photo = await pickPhoto(source);
     if (!photo) return;
     setLabelPhoto(photo);
@@ -515,6 +526,7 @@ export default function MedicationCaptureScreen() {
             <ThemedText style={styles.linkBtnText}>Enter manually</ThemedText>
           </TouchableOpacity>
         </ScrollView>
+        <AiConsentSheet {...consentDoor.sheetProps} />
       </SafeAreaView>
     );
   }

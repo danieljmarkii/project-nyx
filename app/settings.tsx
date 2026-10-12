@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { Card, Header } from '../components/ui';
@@ -32,6 +32,14 @@ import { flushForSignOut, unsentSignOutWarning } from '../lib/session';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useBetaShelf } from '../hooks/useBetaShelf';
+import { useAiConsentStore, loadAiConsent } from '../store/aiConsentStore';
+import {
+  SETTINGS_ROW_LABEL,
+  SETTINGS_ROW_SUBLABEL,
+  SETTINGS_VALUE_NOT_SET,
+  SETTINGS_VALUE_OFF,
+  SETTINGS_VALUE_ON,
+} from '../constants/aiConsentCopy';
 
 // "You" — the owner's account & settings home (B-283, spec §4). A doorway from
 // the Home-header avatar (§4.1), NOT a fifth tab: the user actions that used to
@@ -67,6 +75,23 @@ export default function SettingsScreen() {
   const { eligible: eligibleBetas, activeCount: activeBetaCount } = useBetaShelf();
   const betaEligible = eligibleBetas.length > 0;
   const [deleteVisible, setDeleteVisible] = useState(false);
+  // CUL-1834 (frame I): the AI reading row's value, from the consent cache for THIS
+  // account. Re-read on every focus so it is right after a change on another phone or
+  // on the pushed screen. Until a read answers the value is left blank rather than
+  // guessed (C-12): "Not set" is a claim about the record, not a loading state.
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  const consentUserId = useAiConsentStore((s) => s.userId);
+  const consentRow = useAiConsentStore((s) => s.row);
+  useFocusEffect(
+    useCallback(() => {
+      if (userId) loadAiConsent(userId).catch((e) => console.warn('[Settings] consent read failed:', e));
+    }, [userId]),
+  );
+  const aiReadingValue =
+    !userId || consentUserId !== userId || consentRow === undefined ? null
+      : consentRow === null ? SETTINGS_VALUE_NOT_SET
+        : consentRow.granted ? SETTINGS_VALUE_ON
+          : SETTINGS_VALUE_OFF;
   // B-430 — the pre-sign-out flush is a network round trip; disable the row while
   // it runs so a second tap can't start a parallel drain.
   const [signingOut, setSigningOut] = useState(false);
@@ -242,6 +267,17 @@ export default function SettingsScreen() {
             chevron
             onPress={() => router.push('/settings/notifications')}
             accessibilityHint="Opens your notification settings"
+          />
+          {/* CUL-1834 (frame I): always present, for every account. This is the path
+              the App Review notes name, so it never hides behind a flag. */}
+          <SettingsRow
+            label={SETTINGS_ROW_LABEL}
+            sublabel={SETTINGS_ROW_SUBLABEL}
+            chevron
+            trailing={aiReadingValue ? <Text style={styles.rowValue}>{aiReadingValue}</Text> : undefined}
+            onPress={() => router.push('/settings/ai-reading')}
+            accessibilityLabel={aiReadingValue ? `${SETTINGS_ROW_LABEL}, ${aiReadingValue}` : undefined}
+            accessibilityHint="Opens your AI reading setting"
           />
           {/* Early access (B-712) — rendered ONLY for an eligible account (Gate 1).
               Points at the self-serve opt-in shelf. The "N on" count (OPEN-2,
@@ -454,6 +490,11 @@ const styles = StyleSheet.create({
     fontFamily: theme.fontBody,
     fontSize: theme.textSM,
     color: theme.colorAccentInk,
+  },
+  rowValue: {
+    fontFamily: theme.fontBody,
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
   },
 
   // ── Medical disclaimer ──

@@ -349,6 +349,7 @@ export default function RootLayout() {
         <Stack.Screen name="rundown" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="settings/notifications" />
+        <Stack.Screen name="settings/ai-reading" />
         <Stack.Screen name="settings/beta" />
         <Stack.Screen name="settings/feedback" />
         <Stack.Screen name="settings/password" />
