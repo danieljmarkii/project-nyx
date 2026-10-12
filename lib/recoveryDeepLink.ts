@@ -47,14 +47,13 @@ const RECOVERY_ROUTE = '/(auth)/reset-password' as const;
 // Guards a cold-start launch URL and a warm `url` event from BOTH processing the
 // same single-use link — the second attempt would find the code spent and wipe the
 // device for a `link_unusable`. Set at ENTRY (before any await) so a concurrent
-// re-entry for the same URL is refused synchronously. The §5.6 "Try again" does NOT
-// route back through here — it calls `retryRecoveryExchange` directly — so this
-// guard never blocks a deliberate retry.
+// re-entry for the same URL is refused synchronously. There is no same-code retry to
+// let through (CUL-1888): auth-js deletes the verifier on any failed exchange.
 let lastHandledUrl: string | null = null;
 
 /**
  * Steps 5–8: exchange the code, then finalize. Assumes the gate is ARMED and local
- * data is already wiped (or empty). Shared by the full handler and the §5.6 retry.
+ * data is already wiped (or empty).
  */
 async function runExchangeAndFinalize(code: string): Promise<void> {
   const store = useAuthStore.getState();
@@ -187,19 +186,6 @@ export async function handleRecoveryDeepLink(
 
   // steps 5–8.
   await runExchangeAndFinalize(link.code);
-}
-
-/**
- * The §5.6 "Try again" for a `failed` (transport/server) exchange: re-attempt the
- * exchange with the same code, WITHOUT re-checking provenance (step 4's wipe has
- * already cleared the marker) or re-wiping (local is already clean). Re-arms the
- * gate so a success routes to the form, then runs steps 5–8.
- */
-export async function retryRecoveryExchange(code: string): Promise<void> {
-  await armRecoveryGate();
-  useAuthStore.getState().setRecoveryScreen(null);
-  router.replace(RECOVERY_ROUTE);
-  await runExchangeAndFinalize(code);
 }
 
 // Test seam only: reset the double-fire guard between cases.
