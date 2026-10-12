@@ -21,7 +21,7 @@ _Moved here from `STATUS.md` → Runtime in Use (2026-08-22), because it is read
 
 **TestFlight (real iOS builds) is the primary on-device target** since 2026-06-07. Runtime B (Metro + tunnel in the **custom dev client** — Expo Go retired at W2/SDK 57) remains the per-push daily driver.
 
-**Installed TestFlight build: 1.1.0 (35), 2026-07-25.** The first binary since SDK 57, the first carrying the widget + App Group, the first iPhone-only, min iOS 16.4. Previous: 1.0.0 (34), 2026-07-18.
+**Installed TestFlight build: the 1.2.0 cut of 2026-08-29 (#730, `76d27a1`); build number not recorded, so record it at the next cut (CUL-559).** Before it: 1.1.0 (35), 2026-07-25, first since SDK 57.
 
 **OTA to the installed build:** `eas update --branch production` — the build's channel is `production`, **not** `preview`.
 
