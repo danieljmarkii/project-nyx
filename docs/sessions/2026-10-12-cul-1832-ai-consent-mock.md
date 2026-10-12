@@ -26,3 +26,11 @@ The privacy policy §3 says pattern phrasing sends only the computed finding, bu
 ## Next
 
 Synthetic panel 1 (CUL-1833) on these frames, then the PM approves the final frames on CUL-1834.
+
+## Round 2 (same session, after the PM's reactions)
+
+PM rulings on round 1: no onboarding step, ask in the flow like other permissions; benefit-first copy, Settings included; no blood callout; Brief B as factual loss framing; Brief C functional only (D18). Brief A is superseded.
+
+Round 2 republished to the same URL. The doors: a permission sheet before a food or label photo and before Ask; a card in the record's read slot for a vomit or stool photo, after the save and never modal; Settings. The Signal never asks. The sheet was redesigned (illustration, three benefits with icons, one disclosure block, a "Without it" line). The Settings screen lists the benefits under the switch. The record's vet guidance names several signs, never blood alone.
+
+This unseats CUL-552's onboarding step and first-open sheet. CUL-1834 and CUL-1835 trade scope (heads-up posted on both). One new brief (D): whether anything asks at first launch; recommended nothing, with the reviewer notes and video pointing App Review at Settings. Team call: in-context doors write `source = 'backstop'`, so no migration.
