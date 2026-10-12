@@ -80,7 +80,6 @@ export function AiConsentPanel({ door, petName, onChoose, onNotNow, saving, erro
         <TouchableOpacity
           onPress={() => setShowWhatsSent(true)}
           accessibilityRole="button"
-          hitSlop={8}
           style={styles.linkWrap}
         >
           <ThemedText style={styles.link}>{WHATS_SENT_LINK}</ThemedText>
@@ -152,7 +151,7 @@ export function WhatsSentPanel({ petName, onDone }: { petName: string | null; on
     <View>
       <View style={styles.whatsSentHead}>
         <ThemedText style={styles.whatsSentTitle} accessibilityRole="header">{WHATS_SENT_TITLE}</ThemedText>
-        <TouchableOpacity onPress={onDone} accessibilityRole="button" hitSlop={8} testID="whats-sent-done">
+        <TouchableOpacity onPress={onDone} accessibilityRole="button" style={styles.doneWrap} testID="whats-sent-done">
           <ThemedText style={styles.link}>{WHATS_SENT_DONE}</ThemedText>
         </TouchableOpacity>
       </View>
@@ -162,7 +161,7 @@ export function WhatsSentPanel({ petName, onDone }: { petName: string | null; on
           <ThemedText style={styles.sectionBody}>{s.body}</ThemedText>
         </View>
       ))}
-      <TouchableOpacity onPress={openPolicy} accessibilityRole="link" hitSlop={8} style={styles.policy}>
+      <TouchableOpacity onPress={openPolicy} accessibilityRole="link" style={styles.policy}>
         <ThemedText style={styles.link}>{PRIVACY_POLICY_LINK}</ThemedText>
       </TouchableOpacity>
     </View>
@@ -288,9 +287,17 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
   },
+  // 44pt targets (C-5): these are the consent's own details and policy links.
   linkWrap: {
     alignSelf: 'flex-start',
-    marginTop: theme.space1,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  doneWrap: {
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   link: {
     fontSize: theme.textSM,
@@ -352,6 +359,8 @@ const styles = StyleSheet.create({
   },
   policy: {
     alignSelf: 'flex-start',
+    minHeight: 44,
+    justifyContent: 'center',
     marginBottom: theme.space2,
   },
 });

@@ -1,8 +1,9 @@
 import {
+  CONSENT_READ_TIMEOUT_MS,
   cachedAiConsent,
   clearAiConsent,
   loadAiConsent,
-  needsAiConsentAsk,
+  consentDoorState,
   saveAiConsent,
   useAiConsentStore,
 } from './aiConsentStore';
@@ -31,32 +32,37 @@ beforeEach(() => {
   signIn('a');
 });
 
-describe('needsAiConsentAsk: only a fresh "no answer" asks', () => {
+describe('consentDoorState: only a fresh "no answer" asks', () => {
   it('asks when the server has no row', async () => {
     fetchMock.mockResolvedValue({ status: 'ok', row: null });
-    await expect(needsAiConsentAsk('a')).resolves.toBe(true);
+    await expect(consentDoorState('a')).resolves.toBe('ask');
   });
 
-  it('never asks an owner who answered, either way', async () => {
+  it('honours a recorded no and never re-asks it', async () => {
     fetchMock.mockResolvedValue({ status: 'ok', row: NO });
-    await expect(needsAiConsentAsk('a')).resolves.toBe(false);
+    await expect(consentDoorState('a')).resolves.toBe('declined');
+  });
+
+  it('proceeds on a recorded yes', async () => {
+    fetchMock.mockResolvedValue({ status: 'ok', row: YES });
+    await expect(consentDoorState('a')).resolves.toBe('proceed');
   });
 
   it('never asks on a failed read: re-asking an owner who answered is the worse error', async () => {
     fetchMock.mockResolvedValue({ status: 'error' });
-    await expect(needsAiConsentAsk('a')).resolves.toBe(false);
+    await expect(consentDoorState('a')).resolves.toBe('proceed');
   });
 
   it('trusts a cached answer without a read (a row can never be deleted)', async () => {
-    useAiConsentStore.getState().setRow('a', YES);
-    await expect(needsAiConsentAsk('a')).resolves.toBe(false);
+    useAiConsentStore.getState().setRow('a', NO);
+    await expect(consentDoorState('a')).resolves.toBe('declined');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('re-reads a cached "no answer" before asking: it may have been answered on another phone', async () => {
     useAiConsentStore.getState().setRow('a', null);
     fetchMock.mockResolvedValue({ status: 'ok', row: YES });
-    await expect(needsAiConsentAsk('a')).resolves.toBe(false);
+    await expect(consentDoorState('a')).resolves.toBe('proceed');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
@@ -100,5 +106,30 @@ describe('keyed by user id', () => {
     useAiConsentStore.getState().setRow('a', YES);
     clearAiConsent();
     expect(useAiConsentStore.getState()).toMatchObject({ userId: null, row: undefined });
+  });
+
+  it('a read that started before a saved write never puts the older answer back', async () => {
+    let release: (v: unknown) => void = () => {};
+    fetchMock.mockReturnValue(new Promise((r) => { release = r; }));
+    writeMock.mockResolvedValue({ status: 'saved', row: NO });
+    const pending = loadAiConsent('a');
+    await saveAiConsent('a', false, 'settings');
+    release({ status: 'ok', row: YES });
+    await pending;
+    expect(cachedAiConsent('a')).toEqual(NO);
+  });
+});
+
+describe('a stalled read', () => {
+  it('stops waiting and does not ask', async () => {
+    jest.useFakeTimers();
+    try {
+      fetchMock.mockReturnValue(new Promise(() => {}));
+      const pending = consentDoorState('a');
+      jest.advanceTimersByTime(CONSENT_READ_TIMEOUT_MS + 1);
+      await expect(pending).resolves.toBe('proceed');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

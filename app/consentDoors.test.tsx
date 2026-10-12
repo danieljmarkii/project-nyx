@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import FoodCaptureScreen from './food-capture';
 import MedicationCaptureScreen from './medication-capture';
-import { needsAiConsentAsk, saveAiConsent } from '../store/aiConsentStore';
+import { consentDoorState, saveAiConsent } from '../store/aiConsentStore';
 import { useAuthStore } from '../store/authStore';
 import { usePetStore } from '../store/petStore';
 
@@ -35,7 +35,7 @@ jest.mock('../lib/storage', () => ({ uploadPhoto: jest.fn(), compressForUpload: 
 jest.mock('../hooks/useReducedMotion', () => ({ useReducedMotion: jest.fn(() => true) }));
 jest.mock('../hooks/useAppActive', () => ({ useAppActive: jest.fn(() => true) }));
 jest.mock('../store/aiConsentStore', () => ({
-  needsAiConsentAsk: jest.fn(),
+  consentDoorState: jest.fn(),
   saveAiConsent: jest.fn(),
 }));
 // Both capture screens skip to the typed form when their extraction flag is off, and
@@ -49,7 +49,7 @@ jest.mock('../hooks/useAppConfig', () => ({
   }),
 }));
 
-const needsMock = needsAiConsentAsk as jest.Mock;
+const needsMock = consentDoorState as jest.Mock;
 const saveMock = saveAiConsent as jest.Mock;
 
 beforeEach(() => {
@@ -70,7 +70,7 @@ for (const { name, Screen } of SCREENS) {
   describe(`${name} capture: the consent door`, () => {
     for (const source of ['Take a photo', 'Choose from library'] as const) {
       it(`${source}: no picker opens before an answer, and Not now writes nothing`, async () => {
-        needsMock.mockResolvedValue(true);
+        needsMock.mockResolvedValue('ask');
         const { getByText, queryByText } = render(<Screen />);
         await act(async () => { fireEvent.press(getByText(source)); });
         expect(getByText('Snap the label, skip the typing')).toBeTruthy();
@@ -86,7 +86,7 @@ for (const { name, Screen } of SCREENS) {
     }
 
     it('Allow saves a yes, then opens the picker', async () => {
-      needsMock.mockResolvedValue(true);
+      needsMock.mockResolvedValue('ask');
       saveMock.mockResolvedValue({ status: 'saved', row: {} });
       const { getByText } = render(<Screen />);
       await act(async () => { fireEvent.press(getByText('Take a photo')); });
@@ -96,7 +96,7 @@ for (const { name, Screen } of SCREENS) {
     });
 
     it("Don't allow saves a no and opens the typed form, never the picker", async () => {
-      needsMock.mockResolvedValue(true);
+      needsMock.mockResolvedValue('ask');
       saveMock.mockResolvedValue({ status: 'saved', row: {} });
       const { getByText, queryByText } = render(<Screen />);
       await act(async () => { fireEvent.press(getByText('Take a photo')); });
@@ -106,8 +106,18 @@ for (const { name, Screen } of SCREENS) {
       expect(ImagePicker.launchCameraAsync).not.toHaveBeenCalled();
     });
 
-    it('an owner who already answered goes straight to the picker', async () => {
-      needsMock.mockResolvedValue(false);
+    it('an owner who already said no gets the typed form, no sheet and no picker', async () => {
+      needsMock.mockResolvedValue('declined');
+      const { getByText, queryByText } = render(<Screen />);
+      await act(async () => { fireEvent.press(getByText('Take a photo')); });
+      expect(queryByText('Snap the label, skip the typing')).toBeNull();
+      await waitFor(() => expect(queryByText('Take a photo')).toBeNull(), { timeout: 5000 });
+      expect(ImagePicker.launchCameraAsync).not.toHaveBeenCalled();
+      expect(saveMock).not.toHaveBeenCalled();
+    });
+
+    it('an owner who already said yes goes straight to the picker', async () => {
+      needsMock.mockResolvedValue('proceed');
       const { getByText, queryByText } = render(<Screen />);
       await act(async () => { fireEvent.press(getByText('Take a photo')); });
       expect(queryByText('Snap the label, skip the typing')).toBeNull();
@@ -117,7 +127,7 @@ for (const { name, Screen } of SCREENS) {
 }
 
 it('the close control still leaves without answering', async () => {
-  needsMock.mockResolvedValue(true);
+  needsMock.mockResolvedValue('ask');
   const { getByLabelText } = render(<FoodCaptureScreen />);
   fireEvent.press(getByLabelText('Close'));
   expect(router.back).toHaveBeenCalledTimes(1);

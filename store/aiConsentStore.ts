@@ -47,22 +47,50 @@ export function cachedAiConsent(userId: string): AiConsentRow | null | undefined
 
 // Reads the server row into the cache. A stale response (the account changed while
 // it was in flight) still returns to its caller but never lands in the cache.
+// Bumped by every saved write. A read that started before a write landed carries
+// the older answer, so it never overwrites the newer one in the cache (a focus read
+// racing a Settings flip would otherwise put the previous answer back).
+let writeSeq = 0;
+
 export async function loadAiConsent(userId: string): Promise<AiConsentRead> {
+  const seqAtStart = writeSeq;
   const read = await fetchAiConsent(userId);
-  if (read.status === 'ok' && isCurrentUser(userId)) {
+  if (read.status === 'ok' && isCurrentUser(userId) && writeSeq === seqAtStart) {
     useAiConsentStore.getState().setRow(userId, read.row);
   }
   return read;
 }
 
-// Whether a door should put the permission sheet up. True only on a fresh read that
-// found no answer. A failed read never asks: the server fails closed on its own, and
-// re-asking an owner who already answered is the worse error at a door.
-export async function needsAiConsentAsk(userId: string): Promise<boolean> {
+// What a door does. 'ask' only on a fresh read that found no answer. 'declined' on a
+// recorded no: the door honours it on the phone too, so a photo that will never be
+// read is never taken, and nothing is sent even while a server function runs without
+// its gate (the six CUL-552 holds lift in PR-17, after this client ships). 'proceed'
+// on a yes, and on a failed or stalled read: the server's gate fails closed on its
+// own, and re-asking an owner who already answered is the worse error at a door.
+export type ConsentDoorState = 'ask' | 'declined' | 'proceed';
+
+// A door waits at most this long for the read; past it, the door proceeds as on a
+// failed read, because a tap that does nothing on a stalled network is worse.
+export const CONSENT_READ_TIMEOUT_MS = 4000;
+
+function doorStateOf(row: AiConsentRow | null): ConsentDoorState {
+  if (row === null) return 'ask';
+  return row.granted ? 'proceed' : 'declined';
+}
+
+export async function consentDoorState(userId: string): Promise<ConsentDoorState> {
   const cached = cachedAiConsent(userId);
-  if (cached) return false;
-  const read = await loadAiConsent(userId);
-  return read.status === 'ok' && read.row === null;
+  if (cached) return doorStateOf(cached);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timedOut = new Promise<AiConsentRead>((resolve) => {
+    timer = setTimeout(() => resolve({ status: 'error' }), CONSENT_READ_TIMEOUT_MS);
+  });
+  try {
+    const read = await Promise.race([loadAiConsent(userId), timedOut]);
+    return read.status === 'ok' ? doorStateOf(read.row) : 'proceed';
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 // Saves Allow or Don't allow. Not now never reaches here.
@@ -72,6 +100,7 @@ export async function saveAiConsent(
   source: AiConsentSource,
 ): Promise<AiConsentWrite> {
   const result = await writeAiConsent({ userId, granted, source });
+  if (result.status === 'saved') writeSeq += 1;
   if (result.status === 'saved' && isCurrentUser(userId)) {
     useAiConsentStore.getState().setRow(userId, result.row);
   }

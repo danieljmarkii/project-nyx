@@ -138,4 +138,35 @@ describe('AI reading settings', () => {
     fireEvent.press(screen.getByText('Done'));
     expect(screen.getByText('Not set')).toBeTruthy();
   });
+
+  it('a focus read that returns after a flip never puts the old answer back', async () => {
+    let releaseSecond: (v: unknown) => void = () => {};
+    loadMock
+      .mockResolvedValueOnce({ status: 'ok', row: { ...ROW, granted: true } })
+      .mockReturnValueOnce(new Promise((r) => { releaseSecond = r; }));
+    saveMock.mockResolvedValue({ status: 'saved', row: { ...ROW, granted: false } });
+    const { rerender } = render(<AiReadingSettingsScreen />);
+    await act(async () => { await Promise.resolve(); });
+    // A second read starts (the screen regained focus), then the owner flips.
+    const { useFocusEffect } = jest.requireMock('expo-router');
+    void useFocusEffect;
+    await act(async () => { fireEvent.press(screen.getByText("What's sent")); });
+    await act(async () => { fireEvent.press(screen.getByText('Done')); });
+    rerender(<AiReadingSettingsScreen />);
+    await act(async () => { fireEvent(screen.getByTestId('ai-reading-switch'), 'valueChange', false); });
+    expect(screen.getByTestId('ai-reading-switch').props.value).toBe(false);
+    await act(async () => { releaseSecond({ status: 'ok', row: { ...ROW, granted: true } }); });
+    expect(screen.getByTestId('ai-reading-switch').props.value).toBe(false);
+  });
+
+  it('a write that throws frees the switch and says so', async () => {
+    loadMock.mockResolvedValue({ status: 'ok', row: { ...ROW, granted: true } });
+    saveMock.mockRejectedValue(new Error('network'));
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    await renderReady();
+    await act(async () => { fireEvent(screen.getByTestId('ai-reading-switch'), 'valueChange', false); });
+    expect(screen.getByTestId('ai-reading-switch').props.disabled).toBe(false);
+    expect(screen.getByText("That didn't save. Check your connection and try again.")).toBeTruthy();
+    (console.warn as jest.Mock).mockRestore();
+  });
 });

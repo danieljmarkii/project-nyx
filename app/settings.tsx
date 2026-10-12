@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { theme } from '../constants/theme';
-import { Card, Header } from '../components/ui';
+import { Card, Header, ThemedText } from '../components/ui';
 import { OwnerAvatar } from '../components/settings/OwnerAvatar';
 import { SettingsRow } from '../components/settings/SettingsRow';
 import { ComingSoonLabel } from '../components/settings/ComingSoonLabel';
@@ -274,7 +274,7 @@ export default function SettingsScreen() {
             label={SETTINGS_ROW_LABEL}
             sublabel={SETTINGS_ROW_SUBLABEL}
             chevron
-            trailing={aiReadingValue ? <Text style={styles.rowValue}>{aiReadingValue}</Text> : undefined}
+            trailing={aiReadingValue ? <ThemedText style={styles.rowValue}>{aiReadingValue}</ThemedText> : undefined}
             onPress={() => router.push('/settings/ai-reading')}
             accessibilityLabel={aiReadingValue ? `${SETTINGS_ROW_LABEL}, ${aiReadingValue}` : undefined}
             accessibilityHint="Opens your AI reading setting"

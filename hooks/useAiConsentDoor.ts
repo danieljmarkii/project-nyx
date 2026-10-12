@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { usePetStore } from '../store/petStore';
-import { needsAiConsentAsk, saveAiConsent } from '../store/aiConsentStore';
+import { consentDoorState, saveAiConsent, type ConsentDoorState } from '../store/aiConsentStore';
 import { CONSENT_WRITE_FAILED, consentPetName, type ConsentDoor } from '../constants/aiConsentCopy';
 import type { ConsentChoice } from '../components/consent/AiConsentSheet';
 
@@ -10,11 +10,13 @@ import type { ConsentChoice } from '../components/consent/AiConsentSheet';
 // screen awaits `ask()` at the moment AI would help and branches on the outcome;
 // this hook owns the read, the sheet and the write.
 //
-//   'proceed'  an answer was already on file (either way), or the read failed. The
-//              server's gate decides what a declined or unknown owner gets, so a door
-//              never second-guesses it, and never re-asks an owner who answered.
+//   'proceed'  a yes is on file, or the read failed or stalled. The server's gate
+//              fails closed for an unknown owner, and a door never re-asks an owner
+//              who answered.
 //   'allowed'  the owner tapped Allow and the yes is saved.
-//   'declined' the owner tapped Don't allow and the no is saved.
+//   'declined' the owner tapped Don't allow and the no is saved, or a no was already
+//              on file. A recorded no is honoured here as well as on the server
+//              (rls-privacy-reviewer F1), with no sheet: the owner already answered.
 //   'not_now'  nothing was written (D13); the next door asks again.
 //
 // Every door writes source 'backstop' (team call on CUL-1832, no migration).
@@ -60,6 +62,7 @@ export function useAiConsentDoor(door: ConsentDoor) {
     setVisible(false);
     setSaving(null);
     setError(null);
+    if (fallbackRef.current) clearTimeout(fallbackRef.current);
     if (Platform.OS === 'ios') {
       fallbackRef.current = setTimeout(finish, DISMISS_FALLBACK_MS);
     } else {
@@ -67,37 +70,59 @@ export function useAiConsentDoor(door: ConsentDoor) {
     }
   }, [finish]);
 
+  // Unmounting inside the iOS window clears the timer without resolving: the awaiting
+  // handler belongs to a screen that is gone, so there is nothing left to continue.
   useEffect(() => () => {
     if (fallbackRef.current) clearTimeout(fallbackRef.current);
   }, []);
 
+  // Set synchronously, before the first await, so a double tap during the read starts
+  // one door, not two (a second resolver would orphan the first tap's handler).
+  const inFlightRef = useRef(false);
+  // Same for a write: a fast double tap on Allow sends one answer.
+  const writingRef = useRef(false);
+
   const ask = useCallback(async (): Promise<ConsentDoorOutcome> => {
-    // A second tap while a door is open joins nothing: it simply does not proceed.
-    if (resolverRef.current) return 'not_now';
+    // A second tap while a door is reading or open joins nothing: it does not proceed.
+    if (inFlightRef.current) return 'not_now';
     if (!userId) return 'proceed';
+    inFlightRef.current = true;
     setSettling(true);
-    let needs = false;
+    let state: ConsentDoorState = 'proceed';
     try {
-      needs = await needsAiConsentAsk(userId);
+      state = await consentDoorState(userId);
     } catch (e) {
       console.warn('[useAiConsentDoor] consent read failed:', e);
     }
-    if (!needs) {
+    if (state !== 'ask') {
+      inFlightRef.current = false;
       setSettling(false);
-      return 'proceed';
+      return state === 'declined' ? 'declined' : 'proceed';
     }
     return new Promise<ConsentDoorOutcome>((resolve) => {
-      resolverRef.current = resolve;
+      resolverRef.current = (outcome) => {
+        inFlightRef.current = false;
+        resolve(outcome);
+      };
       setVisible(true);
     });
   }, [userId]);
 
   const onChoose = useCallback(async (choice: ConsentChoice) => {
-    if (!userId) return;
+    if (!userId || writingRef.current) return;
+    writingRef.current = true;
     setSaving(choice);
     setError(null);
-    const result = await saveAiConsent(userId, choice === 'allow', 'backstop');
-    if (result.status === 'error') {
+    let saved = false;
+    try {
+      const result = await saveAiConsent(userId, choice === 'allow', 'backstop');
+      saved = result.status === 'saved';
+    } catch (e) {
+      console.warn('[useAiConsentDoor] consent write failed:', e);
+    } finally {
+      writingRef.current = false;
+    }
+    if (!saved) {
       setSaving(null);
       setError(CONSENT_WRITE_FAILED);
       return;

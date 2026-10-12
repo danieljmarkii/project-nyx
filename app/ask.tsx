@@ -84,8 +84,9 @@ export default function AskScreen() {
   // on file, and never answers a question before the owner answers this. Ask is only
   // reachable where `ask_enabled` resolves on (HomeHeader), so the door needs no flag
   // check of its own. Don't allow and Not now close Ask ("Without it, Ask stays
-  // closed"). An owner who already said no gets Ask as before: the server leads its
-  // consent-off answer with the live safety finding.
+  // closed"), and so does a no already on file: Ask stays closed until Settings turns
+  // AI reading on. The owner lands back on Home, whose Signal carries the same safety
+  // finding Ask's consent-off answer would have led with.
   const consentDoor = useAiConsentDoor('ask');
   const askConsent = consentDoor.ask;
   const consentAsked = useRef(false);
@@ -93,7 +94,11 @@ export default function AskScreen() {
     if (consentAsked.current) return;
     consentAsked.current = true;
     askConsent().then((outcome) => {
-      if (outcome === 'declined' || outcome === 'not_now') router.back();
+      if (outcome !== 'declined' && outcome !== 'not_now') return;
+      // A cold link into Ask has no screen behind it, so back would do nothing and
+      // leave the owner on a closed Ask.
+      if (router.canGoBack()) router.back();
+      else router.replace('/(tabs)');
     }).catch((e) => console.warn('[Ask] consent door failed:', e));
   }, [askConsent]);
   const [suggestions, setSuggestions] = useState<AskSuggestions>({ total: 0, chips: [], hasLooks: false });

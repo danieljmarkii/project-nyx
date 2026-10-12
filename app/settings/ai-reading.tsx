@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -64,16 +64,23 @@ export default function AiReadingSettingsScreen() {
   const [writeError, setWriteError] = useState<string | null>(null);
   const [showWhatsSent, setShowWhatsSent] = useState(false);
 
+  // Every read and every write takes a ticket; a read lands only if nothing newer
+  // started after it. Without this, a focus read in flight when the owner flips the
+  // switch would put the previous answer back on screen once it returned.
+  const ticket = useRef(0);
+
   const read = useCallback(async () => {
     if (!userId) {
       setLoad({ kind: 'error' });
       return;
     }
+    const mine = ++ticket.current;
     setLoad({ kind: 'loading' });
     const [current, everGranted] = await Promise.all([
       loadAiConsent(userId),
       hasEverGrantedAiConsent(userId),
     ]);
+    if (mine !== ticket.current) return;
     if (current.status === 'error') {
       setLoad({ kind: 'error' });
       return;
@@ -94,10 +101,17 @@ export default function AiReadingSettingsScreen() {
 
   async function write(granted: boolean) {
     if (!userId || saving !== null) return;
+    ++ticket.current;
     setSaving(granted);
     setWriteError(null);
-    const result = await saveAiConsent(userId, granted, 'settings');
-    setSaving(null);
+    let result: Awaited<ReturnType<typeof saveAiConsent>> = { status: 'error' };
+    try {
+      result = await saveAiConsent(userId, granted, 'settings');
+    } catch (e) {
+      console.warn('[settings/ai-reading] write failed:', e);
+    } finally {
+      setSaving(null);
+    }
     if (result.status === 'error') {
       // The switch never moved: it renders from the saved row, so a failed write
       // leaves it where the server is, and the line under it says so.
@@ -153,7 +167,6 @@ export default function AiReadingSettingsScreen() {
             <TouchableOpacity
               onPress={() => { read().catch(() => setLoad({ kind: 'error' })); }}
               accessibilityRole="button"
-              hitSlop={8}
               style={styles.retry}
             >
               <ThemedText style={styles.link}>{SETTINGS_RETRY}</ThemedText>
@@ -215,7 +228,6 @@ export default function AiReadingSettingsScreen() {
               <TouchableOpacity
                 onPress={() => setShowWhatsSent(true)}
                 accessibilityRole="button"
-                hitSlop={8}
                 style={styles.linkWrap}
               >
                 <ThemedText style={styles.link}>{WHATS_SENT_LINK}</ThemedText>
@@ -335,7 +347,8 @@ const styles = StyleSheet.create({
   },
   linkWrap: {
     alignSelf: 'flex-start',
-    marginTop: theme.space1,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   link: {
     fontSize: theme.textSM,
@@ -349,7 +362,8 @@ const styles = StyleSheet.create({
   },
   retry: {
     alignSelf: 'flex-start',
-    marginTop: theme.space1,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   pair: {
     flexDirection: 'row',
