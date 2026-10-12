@@ -6,8 +6,9 @@
 // handed a customer's pair (the critique's GAP-25: a beta tester reports a false alarm,
 // and a session replays her record into its context and the page it produces).
 //
-// The rule, until the privacy policy and the App Store label name an evaluation purpose
-// (PMD-12, CUL-1313): every evaluation input is the PM's own pet or a synthetic record.
+// The rule, until a separate in-app opt in exists (D18, CUL-1825; the policy line is
+// CUL-1313's): every evaluation input is the PM's own pet or a synthetic record. A policy
+// edit alone never widens it.
 // This list is that rule, written down twice:
 //   · export.sql's CTEs match only these ids, so run as committed, an unlisted pet comes
 //     back as `subjects: 0` and none of its rows leave the database;
@@ -25,7 +26,7 @@
 // the PM's), 2026-09-26. Adding a pet is a reviewed PR that changes this file and both
 // CTEs together. A synthetic record that lives in the database joins the list the same
 // way; loosening subject.ts to admit one is the wrong fix. Another owner's pet waits for
-// CUL-1313's notice, and a consent "no" outranks the list.
+// that owner's yes to the separate opt in, and a consent "no" outranks the list.
 
 export interface EvaluationSubject {
   petId: string

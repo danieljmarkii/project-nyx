@@ -51,6 +51,8 @@ A note on scope: almost everything Culprit stores is information **about your pe
 
 We do not sell your data. We do not share it with advertisers or data brokers. We do not use your data to train AI models, and our AI provider does not either (Section 3).
 
+We do not use your records, photos, or anything the app writes for you (photo reads, pattern findings, warnings, Ask answers, and what you tell the app your vet said) to test how accurate the app is. We test on records we make up for that purpose and on our own pets' records. If you write to us about something the app told you and ask us to look, we look at your record only to answer you. If we ever want to use your records for testing, the app will ask you first, as a separate choice you can decline, and declining changes nothing the app does for you.
+
 ## 3. AI features and what leaves our infrastructure
 
 Some features send specific data to **Anthropic**, the AI provider whose Claude models power Culprit's AI features. Each is triggered by an action you take:

@@ -1,6 +1,6 @@
 # Nyx Care State and Outcome Loop — Requirements (EN-9 + EN-14)
 
-**Version:** 1.3 — **BUILD-READY** (PMD-4, the tolerance and AC 10 ruled 2026-09-28; D6's vocabulary 2026-10-01) | **Date:** 2026-10-05 | **Issues:** CUL-1139 (EN-9, the care state), CUL-1144 (EN-14, the outcome loop); project *Engines v3: the accountable engine*, Wave 3, PR-20 | **Status:** every ruling the build rests on is in §0.1 and §0.3. The one conflict left, TD-5, is decided at PR-36. Design authority: `docs/culprit-engines-v3-mockups.html` **round 3** (published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY; the repo file wins on divergence). Everything an owner sees ships dark behind the Engines v3 flag (EN-F, CUL-1267).
+**Version:** 1.4 — **BUILD-READY** (PMD-4, the tolerance and AC 10 ruled 2026-09-28; D6's vocabulary 2026-10-01) | **Date:** 2026-10-12 | **Issues:** CUL-1139 (EN-9, the care state), CUL-1144 (EN-14, the outcome loop); project *Engines v3: the accountable engine*, Wave 3, PR-20 | **Status:** every ruling the build rests on is in §0.1 and §0.3. The one conflict left, TD-5, is decided at PR-36. Design authority: `docs/culprit-engines-v3-mockups.html` **round 3** (published at https://claude.ai/artifact/XrAawavFSUgbBKdWdxFsdY; the repo file wins on divergence). Everything an owner sees ships dark behind the Engines v3 flag (EN-F, CUL-1267).
 
 **Read with:** `docs/engines-v3-critique-2026-09.md` (R-2, BRK-4, GAP-15/16/17/19/23/27/29/32/33, MFU-3, PMD-4/5/6) · `docs/nyx-vet-visits-requirements.md` (AC 10, §5.6, "How did it go?") · `docs/nyx-signal-fold-requirements.md` (DF-5, DF-8, FS-3, FS-10, §3.3, §5.3, §7) · `docs/nyx-notification-foundation-requirements.md` (D2, D3, G1–G6) · `docs/nyx-diet-trial-requirements.md` · `supabase/migrations/075_engines_v3_stamps.sql` (the shown log).
 
@@ -30,7 +30,7 @@ The second half is the **outcome loop**. When the app says "call your vet" and t
 | **AC 10 = amend** the engine's shell may read owner answers and appointment dates; no visit enters a count | 2026-09-26 PM (plan review defaults) | §12 carries the wording for approval. |
 | **"My vet knows" acknowledges, per sign, as a dated fact** | 2026-09-26 PM (plan review) | §3.2 source `my_vet_knows`. |
 | **Never lower a stored escalation automatically** | 2026-09-26 PM | An answer never lowers a tier or removes an ask on an escalation (§6.1). |
-| **PMD-12** evaluation purpose published before outcome data from any account but the PM's is used | 2026-09-26 PM (CUL-1313) | §6.6. |
+| **PMD-12 → D18** outcome data from any account but the PM's waits for a separate in-app opt in; the policy says so and never unlocks it alone | 2026-09-26 PM (CUL-1313), re-ruled 2026-10-12 (D18 (a), CUL-1825) | §6.6. Supersedes migration 075's header comment ("waits on PMD-12's stated purpose"), which stays as applied. |
 | **Pinned by the plan review** | 2026-09-26 comments on CUL-1139 / CUL-1144 | Draw Jordan's case; a care state never quiets safety lanes (a test pins it); `careState` computed inside PR-11b's pure pipeline; pass lines fixed in advance by PR-16; the call record is its own table; append-only by RLS alone; local-first; `visitReaders` registration in PR-22; PR-35 builds in `components/designV2/` right after PR-23. |
 
 ### 0.2 Calls this spec makes (no ruling needed; reverse any by comment)
@@ -292,7 +292,7 @@ A logged-tier read ("keep an eye out") gets no follow-up in v1, so misses are ne
 
 ### 6.6 What the answers are for
 
-Labels, per escalation, joined to the tier and the read's rule-version stamp (075). "Right" is defined per tier at design time (a call-now read is right if the vet wanted to see the pet or thought the call worthwhile; a sampled logged read is wrong if the vet wanted to see the pet). Used **only in aggregate**, **only at design time**, and **only from the PM's own account** until PMD-12's published purpose (CUL-1313). Nothing leaves the owner's record (FR-7 Tier 0). No model reads a note.
+Labels, per escalation, joined to the tier and the read's rule-version stamp (075). "Right" is defined per tier at design time (a call-now read is right if the vet wanted to see the pet or thought the call worthwhile; a sampled logged read is wrong if the vet wanted to see the pet). Used **only in aggregate**, **only at design time**, and **only from the PM's own account** until a separate in-app opt in exists (D18, CUL-1825; the policy line is CUL-1313's). Nothing leaves the owner's record (FR-7 Tier 0). No model reads a note.
 
 ---
 
@@ -472,7 +472,7 @@ Verdict on the first draft: **FAIL, eleven counterexamples, all taken into this 
 | 22 | CUL-1140 | EN-10 server lines (§5), the drug-class table stub, Ask's rule 10 in the prompt, `visitReaders` registration of the shell, the AC 10 text (§12) | PR-20 · PR-11b |
 | 23 | CUL-1139 | `careState` in the pipeline (§3.3), the §4.2 test, ranking, Ask handling + fixtures, the report guard | PR-21 · PR-22 · CUL-1311 pt 2 live with its threshold recorded (§4.4) · the tolerance ruled and met on PR-16 · EN-8 live or the weight line (§4.1) |
 | 35 | CUL-1139 | Client: answers on the finding and incident screens, PMD-4's question, tickable rows at the vet, the past-visit question, the rows (in `components/designV2/`) | PR-23 |
-| 36 | CUL-1144 | Client: the call record, the follow-up screen and Home line, the `follow_ups` category, TD-5 | PR-35 · CUL-1313 for any account but the PM's |
+| 36 | CUL-1144 | Client: the call record, the follow-up screen and Home line, the `follow_ups` category, TD-5 | PR-35 · the D18 opt in for any account but the PM's |
 
 This spec's Read-These row in CLAUDE.md lands with PR-21 (CLAUDE.md is at its byte ceiling; the row is paid for by a trim there).
 
@@ -482,6 +482,7 @@ This spec's Read-These row in CLAUDE.md lands with PR-21 (CLAUDE.md is at its by
 
 | Version | Date | Change |
 |---|---|---|
+| 1.4 | 2026-10-12 | D18 (a), PM on CUL-1825: outcome data from other accounts waits for a separate opt in, not a published purpose (§0.1, §6.6, row 36). CUL-1904. |
 | 1.3 | 2026-10-05 | §4.8: CUL-1290's eight-week question, built off (PR-34). The improvement gate was removed after the adversarial pass; the two-sided measurement and the DF-5 brief are recorded; the ruling is pending. §4.1's known gap points at it. |
 | 1.2 | 2026-10-03 | D6 (PM, 2026-10-01 on CUL-1440): the tag reads **Your vet knows**, with one line on what it does (§0.2 call 1, §3.3, §7); the server's cached sentence opens "…, your vet knows." Written with PR-35 (CUL-1418). |
 | 1.1 | 2026-09-28 | PM rulings: PMD-4 A, tolerance A, AC 10 approved (§0.3); the AC 10 text written into the vet visits spec. |
