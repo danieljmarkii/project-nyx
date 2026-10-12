@@ -1,5 +1,8 @@
 # 2026-10-12 · CLAUDE.md split by when it is needed (CUL-1874, retro 4 D5)
 
+**Date:** 2026-10-12
+**One thing:** D4 L1 — A ratchet only moves down, and its own check must be measured against the repo, not against itself · check: pending
+
 **Outcome:** shipped via #1198. Mode BUILD, plan-gated; the PM typed `Go` on the posted plan.
 
 ## What changed
@@ -21,5 +24,3 @@
 - A session that reads no code file never sees a surface rule. The index names each file so a review or planning session can read it by hand. This is the D5 risk the PM accepted.
 - `operating-kit/` still has the old shape: CUL-1881 (Backlog).
 - Subagents: not tested whether path rules load inside a subagent's own reads. `code-reviewer` and `rls-privacy-reviewer` keep CLAUDE.md, which now points at the rule files.
-
-One thing: none.
