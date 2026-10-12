@@ -1,0 +1,541 @@
+<title>AI Consent Screen</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap">
+<style>
+  /* ============================================================
+     The AI consent screen (CUL-1832, PR-10 of App Store 1.2.0).
+     Mock ROUND 1. Current-proposal page: republish to the SAME artifact
+     URL; git is the history. Feeds synthetic panel 1 (CUL-1833), then
+     consent PR 3a (CUL-1834) and 3b (CUL-1835).
+
+     Layout: a document column of rulings and briefs, broken by rows of
+     phone frames. Document chrome is theme-aware; DEVICE FRAMES stay light
+     in both themes (they render the app's light surfaces). Frame values are
+     the real tokens from constants/theme.ts: neutral light #F5F5F5, text
+     #0A0A0A / #525252 / #737373, accent ink #0B7B6C, teal #00C2A8,
+     symptom rose #F43F5E / ink #9F1239 / light #FFE4E6.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --amber-wash: #FFF4DA; --amber-ink: #8A5A00;
+    --serif: "Fraunces", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A85BE;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --amber-wash: rgba(255,196,80,0.13); --amber-ink: #F2C26B;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8A85BE;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --amber-wash: rgba(255,196,80,0.13); --amber-ink: #F2C26B;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 20px; }
+  .col { max-width: 70ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 32px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 4.4vw, 44px); line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 64ch; }
+  .standfirst strong { color: var(--ink); font-weight: 600; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 11px; }
+  .roundtag.opt { color: var(--amber-ink); background: var(--amber-wash); }
+  section { margin-top: 64px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 2.6vw, 28px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 30px 0 8px; }
+  p { margin: 0 0 14px; }
+  strong { font-weight: 600; }
+  code { font-family: var(--mono); font-size: 0.855em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; }
+  .callout { border-left: 2px solid var(--teal); padding: 2px 0 2px 20px; margin: 22px 0; color: var(--ink-2); font-size: 15.5px; }
+  .callout strong { color: var(--ink); }
+  .callout.warn { border-left-color: var(--rose); }
+  .brief { margin: 22px 0 8px; padding: 20px 24px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; }
+  .brief .bid { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); margin: 0 0 8px; }
+  .brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 8px; }
+  .brief p:last-child { margin-bottom: 0; }
+  .brief p strong { color: var(--ink); }
+  .brief .rec { color: var(--teal-ink); font-weight: 600; }
+  .tablewrap { overflow-x: auto; }
+  table.spec { border-collapse: collapse; width: 100%; font-size: 14px; margin: 16px 0 8px; min-width: 560px; }
+  table.spec th, table.spec td { text-align: left; vertical-align: top; padding: 9px 10px; border-top: 1px solid var(--rule); }
+  table.spec th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  table.spec td.ok { color: var(--teal-ink); font-weight: 600; white-space: nowrap; }
+  ul.tight { margin: 0 0 14px; padding-left: 20px; }
+  ul.tight li { margin-bottom: 6px; }
+
+  /* ── Phone frames ─────────────────────────────────────────── */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 28px; align-items: flex-start; }
+  .frame-slot { width: 316px; max-width: 100%; min-width: 0; }
+  .frame-slot.option { padding: 14px; border: 1.5px dashed var(--amber-ink); border-radius: 14px; width: 346px; }
+  .frame-tag { margin: 0 0 12px; }
+  .frame-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .frame-cap b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 2px; font-size: 13px; }
+  .phone { position: relative; width: 316px; max-width: 100%; height: 660px; background: #F5F5F5; border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); padding: 12px 18px 0; color: #0A0A0A; font-family: var(--sans); overflow: hidden; display: flex; flex-direction: column; }
+  .notch { width: 96px; height: 22px; background: #0B0B12; border-radius: 12px; margin: 0 auto 10px; flex-shrink: 0; }
+  .screen { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+  /* Onboarding chrome */
+  .obar { display: flex; align-items: center; gap: 10px; height: 30px; flex-shrink: 0; }
+  .obar .back { font-size: 18px; color: #525252; width: 18px; }
+  .obar .prog { flex: 1; height: 3px; border-radius: 2px; background: #E5E5E5; overflow: hidden; }
+  .obar .prog i { display: block; height: 100%; background: #0A0A0A; }
+  .obar .notnow { font-size: 13px; font-weight: 500; color: #525252; padding: 6px 0 6px 6px; }
+  .grow { flex: 1; min-height: 12px; }
+  .ceyebrow { font-size: 10.5px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #0B7B6C; margin-bottom: 10px; }
+  .ctitle { font-size: 24px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.2; margin: 0 0 16px; text-wrap: balance; }
+  .clines { display: grid; gap: 12px; }
+  .cl { font-size: 14px; line-height: 1.45; color: #525252; margin: 0; }
+  .cl b { color: #0A0A0A; font-weight: 500; }
+  .clink { font-size: 14px; font-weight: 500; color: #0B7B6C; text-decoration: underline; text-underline-offset: 3px; margin-top: 14px; display: inline-block; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0 22px; flex-shrink: 0; }
+  .btn { height: 48px; border-radius: 12px; border: 1.5px solid #0A0A0A; background: #FFFFFF; color: #0A0A0A; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+  .foot { font-size: 11px; color: #737373; text-align: center; margin: -10px 0 18px; }
+
+  /* Sheet */
+  .dim { position: absolute; inset: 0; background: rgba(10,10,10,0.38); }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; top: 64px; background: #FFFFFF; border-radius: 22px 22px 0 0; padding: 10px 20px 20px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+  .grab { width: 36px; height: 4px; border-radius: 2px; background: #D4D4D4; margin: 0 auto 4px; }
+  .shead { display: flex; justify-content: space-between; align-items: baseline; }
+  .shead .t { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+  .shead .x { font-size: 13px; font-weight: 500; color: #0B7B6C; }
+  .item { border-top: 1px solid #EDEDED; padding-top: 9px; }
+  .item .k { font-size: 12.5px; font-weight: 600; color: #0A0A0A; margin-bottom: 2px; }
+  .item .v { font-size: 11.8px; line-height: 1.42; color: #525252; }
+  .item.no { background: #F7F7F7; border: none; border-radius: 10px; padding: 9px 11px; }
+
+  /* Settings */
+  .nav { display: flex; align-items: center; justify-content: space-between; height: 34px; flex-shrink: 0; margin-bottom: 8px; }
+  .nav .bk { font-size: 14px; color: #0B7B6C; font-weight: 500; }
+  .nav .nt { font-size: 15px; font-weight: 600; }
+  .nav .sp { width: 44px; }
+  .group-l { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #737373; margin: 14px 4px 6px; }
+  .card { background: #FFFFFF; border-radius: 14px; overflow: hidden; }
+  .srow { display: flex; align-items: center; gap: 10px; padding: 11px 14px; min-height: 50px; }
+  .srow + .srow { border-top: 1px solid #EFEFEF; }
+  .srow .lb { flex: 1; min-width: 0; }
+  .srow .lb .a { font-size: 14px; color: #0A0A0A; }
+  .srow .lb .s { font-size: 11.5px; color: #737373; margin-top: 1px; }
+  .srow .val { font-size: 13px; color: #737373; }
+  .srow .chev { color: #A3A3A3; font-size: 14px; }
+  .srow.hi { box-shadow: inset 0 0 0 2px #00C2A8; border-radius: 14px; }
+  .sw { width: 46px; height: 28px; border-radius: 14px; background: #D4D4D4; position: relative; flex-shrink: 0; }
+  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.25); }
+  .sw.on { background: #00C2A8; }
+  .sw.on::after { left: 21px; }
+  .state { font-size: 12px; line-height: 1.45; color: #525252; padding: 10px 14px 12px; border-top: 1px solid #EFEFEF; }
+  .state b { color: #0A0A0A; font-weight: 500; }
+  .info { font-size: 13px; line-height: 1.45; color: #525252; margin: 0 4px 10px; }
+
+  /* Record */
+  .rhead { display: flex; align-items: center; justify-content: space-between; height: 30px; flex-shrink: 0; }
+  .rhead .bk { font-size: 18px; color: #525252; }
+  .rhead .more { font-size: 16px; color: #737373; }
+  .hero { height: 168px; border-radius: 14px; background: repeating-linear-gradient(135deg, #5C5248 0 10px, #655A4F 10px 20px); margin: 6px -4px 10px; flex-shrink: 0; position: relative; }
+  .hero span { position: absolute; left: 10px; bottom: 9px; font-size: 10.5px; color: rgba(255,255,255,0.85); }
+  .rtitle { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+  .rsub { font-size: 12px; color: #737373; margin: 2px 0 12px; }
+  .seclabel { font-size: 10px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: #737373; margin: 4px 0 7px; }
+  .offbox { background: #FFFFFF; border-radius: 14px; padding: 13px 14px; display: grid; gap: 8px; }
+  .offbox .st { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: #0A0A0A; }
+  .offbox .st i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid #737373; flex-shrink: 0; }
+  .offbox .tx { font-size: 12.5px; line-height: 1.45; color: #525252; margin: 0; }
+  .offbox .act { font-size: 13px; font-weight: 600; color: #0B7B6C; padding-top: 2px; }
+  .escal { background: #FFFFFF; border-radius: 14px; padding: 12px 14px; border-left: 3px solid #F43F5E; display: grid; gap: 5px; margin-bottom: 10px; }
+  .escal .v { font-size: 15px; font-weight: 600; color: #9F1239; }
+  .escal .why { font-size: 12.5px; color: #525252; line-height: 1.42; }
+  .readbtn { height: 42px; border-radius: 11px; background: #0A0A0A; color: #FFFFFF; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+  .facts { margin-top: 12px; display: grid; gap: 0; }
+  .facts .f { display: flex; justify-content: space-between; font-size: 12.5px; padding: 8px 2px; border-top: 1px solid #E8E8E8; color: #525252; }
+  .facts .f b { color: #0A0A0A; font-weight: 500; }
+  .toast { position: absolute; left: 16px; right: 16px; bottom: 22px; background: #101312; color: #FFFFFF; border-radius: 13px; padding: 11px 13px; font-size: 12.5px; }
+
+  .anno { font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; background: var(--amber-wash); color: var(--amber-ink); border-radius: 4px; padding: 1px 5px; }
+
+  @media (max-width: 420px) {
+    .frame-slot.option { width: 100%; padding: 10px; }
+    .phone { width: 100%; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 1 · current</span><span>CUL-1832 · PR-10</span><span>App Store 1.2.0</span><span>2026-10-12</span></p>
+    <h1>Can an AI help read what you log?</h1>
+    <p class="standfirst">The AI consent screen Apple's rule 5.1.2(i) requires, drawn as <strong>one screen</strong> used at all three doors (onboarding, the first open after the update, Settings), plus <strong>the Settings switch</strong> both ways and <strong>what a vomit or stool record says when reading is off</strong>. Next stop: synthetic panel 1 (CUL-1833) tests whether owners can teach it back; then you approve the final frames on CUL-1834.</p>
+  </header>
+
+  <div class="col">
+    <h3>What you are approving</h3>
+    <ul class="tight">
+      <li><strong>The copy</strong> on the screen and its details sheet (§1). Every word ships in the 1.2.0 binary and is versioned as <code>copy_version</code>.</li>
+      <li><strong>Where it sits in onboarding</strong>: right after <em>Before you start</em> (current) or after the pet is named (the option box). Brief A.</li>
+      <li><strong>The Settings switch</strong> (§2) and <strong>the reading off states</strong> (§3), which CUL-1835 builds.</li>
+    </ul>
+  </div>
+
+  <!-- ─────────────────────────────── §1 ─────────────────────────────── -->
+  <section id="screen">
+    <div class="sec-head"><span class="sec-num">§1</span><h2>The screen</h2></div>
+    <div class="col">
+      <p>A headline, three short lines, Allow and Don't allow side by side in the same style with nothing preselected, the details one tap away, and <strong>Not now</strong> in the corner. Allow and Don't allow each write a row. Not now writes nothing.</p>
+    </div>
+
+    <div class="frames">
+      <div class="frame-slot">
+        <p class="frame-tag"><span class="roundtag">current</span></p>
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="obar"><span class="back">‹</span><span class="prog"><i style="width:22%"></i></span><span class="notnow">Not now</span></div>
+            <div class="grow"></div>
+            <div class="ceyebrow">AI reading</div>
+            <p class="ctitle">Can an AI help read what you log?</p>
+            <div class="clines">
+              <p class="cl">To read your photos and put your pet's patterns into words, Culprit sends them to <b>Claude, an AI made by Anthropic</b>.</p>
+              <p class="cl">Anthropic doesn't train its AI on what we send. You can change your answer in Settings at any time.</p>
+              <p class="cl">If you say no, checks that don't need a photo still warn you. Photos won't be read, so watch for blood yourself.</p>
+            </div>
+            <span class="clink">What's sent, and when</span>
+            <div class="grow"></div>
+            <div class="pair"><div class="btn">Don't allow</div><div class="btn">Allow</div></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>A · Onboarding, after Before you start</b>The step after the disclaimer, before pet setup. The same screen opens on first launch after the update for accounts with no answer (no back arrow there) and from Settings while unanswered (frame H).</p>
+      </div>
+
+      <div class="frame-slot">
+        <p class="frame-tag"><span class="roundtag">current</span></p>
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen" style="opacity:.35">
+            <div class="obar"><span class="back">‹</span><span class="prog"><i style="width:22%"></i></span><span class="notnow">Not now</span></div>
+          </div>
+          <div class="dim"></div>
+          <div class="sheet">
+            <div class="grab"></div>
+            <div class="shead"><span class="t">What's sent, and when</span><span class="x">Done</span></div>
+            <div class="item"><div class="k">Vomit and stool photos</div><div class="v">Sent when you log one with a photo, and when you open a record whose photo hasn't been read yet. Claude describes what it can see in that one photo.</div></div>
+            <div class="item"><div class="k">Food package and prescription label photos</div><div class="v">Sent when you add a food or medicine by photo, to fill in its details. A prescription label can show your name, your clinic and an Rx number.</div></div>
+            <div class="item"><div class="k">Your pet's patterns</div><div class="v">Your pet's name with the symptom, food and counts in a pattern, so the Signal can say it in a sentence. Your full log and photos are never sent for this.</div></div>
+            <div class="item"><div class="k">Ask, where it's turned on</div><div class="v">Your question and the parts of your pet's record needed to answer it.</div></div>
+            <div class="item"><div class="k">At Anthropic</div><div class="v">Kept only for a short time, to check for misuse. Never used to train AI.</div></div>
+            <div class="item no"><div class="k">If you don't allow</div><div class="v">Nothing is sent. Patterns still show, in plainer words. Checks that need no photo, like repeated vomiting, still tell you when to call your vet. Photos are saved but not read, and you type foods and medicines in.</div></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>B · The details, one tap away</b>Every trigger named, the label risk named, training and retention named, and what a no costs said plainly. A link to the privacy policy sits at the sheet's foot (below the fold here).</p>
+      </div>
+
+      <div class="frame-slot option">
+        <p class="frame-tag"><span class="roundtag opt">option, drawn for Brief A, not the current proposal</span></p>
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="obar"><span class="back">‹</span><span class="prog"><i style="width:48%"></i></span><span class="notnow">Not now</span></div>
+            <div class="grow"></div>
+            <div class="ceyebrow">AI reading</div>
+            <p class="ctitle">Can an AI help read what you log for Mochi?</p>
+            <div class="clines">
+              <p class="cl">To read Mochi's photos and put Mochi's patterns into words, Culprit sends them to <b>Claude, an AI made by Anthropic</b>.</p>
+              <p class="cl">Anthropic doesn't train its AI on what we send. You can change your answer in Settings at any time.</p>
+              <p class="cl">If you say no, checks that don't need a photo still warn you. Mochi's photos won't be read, so watch for blood yourself.</p>
+            </div>
+            <span class="clink">What's sent, and when</span>
+            <div class="grow"></div>
+            <div class="pair"><div class="btn">Don't allow</div><div class="btn">Allow</div></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>A′ · After the pet is named</b>Same screen, one step later, with <code>{name}</code> threaded through. The headline still says "what you log", so a no reads as covering the Signal and Ask too (D10, whole boundary).</p>
+      </div>
+    </div>
+
+    <div class="col">
+      <h3>What each answer writes</h3>
+      <div class="tablewrap">
+        <table class="spec">
+          <tr><th>Tap</th><th><code>ai_consent</code></th><th><code>legal_acceptances</code></th><th>Then</th></tr>
+          <tr><td>Allow</td><td><code>granted = true</code>, source by door</td><td>one row, <code>document = 'ai_consent'</code></td><td>Onboarding continues. Reads run from the next log.</td></tr>
+          <tr><td>Don't allow</td><td><code>granted = false</code>, source by door</td><td>none</td><td>Onboarding continues. Records show §3's off state.</td></tr>
+          <tr><td>Not now</td><td>nothing</td><td>nothing</td><td>Onboarding continues. The server reads no row as declined (fails closed). The record offers the choice quietly (frame L); CUL-1835's sheet asks before a food or label upload, never over a symptom photo.</td></tr>
+        </table>
+      </div>
+      <p>Sources are the four the CHECK admits: <code>onboarding</code>, <code>first_open</code>, <code>backstop</code>, <code>settings</code>. Not now is what keeps the demo account at zero rows (D13): a reviewer who taps it sees the off states, and a reviewer who answers sees the real thing.</p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── §2 ─────────────────────────────── -->
+  <section id="settings">
+    <div class="sec-head"><span class="sec-num">§2</span><h2>The Settings switch</h2></div>
+    <div class="col">
+      <p>A row in Preferences opens the full screen, so the reviewer's guaranteed path is two taps from Home's avatar. Once answered, the answer becomes a switch that writes on each flip, with no confirm in either direction: taking consent back is exactly as easy as giving it. While unanswered there is no switch, because a switch has to sit at on or off and either one would look like an answer.</p>
+    </div>
+
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="nav"><span class="bk">‹ Home</span><span class="nt">You</span><span class="sp"></span></div>
+            <div class="group-l">Account</div>
+            <div class="card">
+              <div class="srow"><div class="lb"><div class="a">Jordan</div><div class="s">jordan@example.com</div></div><span class="chev">›</span></div>
+              <div class="srow"><div class="lb"><div class="a">Change password</div></div><span class="chev">›</span></div>
+            </div>
+            <div class="group-l">Preferences</div>
+            <div class="card">
+              <div class="srow"><div class="lb"><div class="a">Notifications</div><div class="s">A summary of the day, every evening</div></div><span class="chev">›</span></div>
+              <div class="srow hi"><div class="lb"><div class="a">AI reading</div><div class="s">Claude, by Anthropic, reads your photos</div></div><span class="val">On</span><span class="chev">›</span></div>
+              <div class="srow"><div class="lb"><div class="a">Early access</div><div class="s">Try new features early</div></div><span class="chev">›</span></div>
+            </div>
+            <div class="group-l">Support</div>
+            <div class="card">
+              <div class="srow"><div class="lb"><div class="a">Contact support</div></div><span class="chev">›</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>E · The row</b>Value reads <em>On</em>, <em>Off</em> or <em>Not set</em>. The sub-line names the company in every state.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="nav"><span class="bk">‹ You</span><span class="nt">AI reading</span><span class="sp"></span></div>
+            <p class="info">Culprit sends your photos and your pet's patterns to Claude, an AI made by Anthropic, to read them and put them into words. Anthropic doesn't train its AI on what we send.</p>
+            <div class="card">
+              <div class="srow"><div class="lb"><div class="a">Let Claude read what I log</div></div><div class="sw on"></div></div>
+              <div class="state"><b>On</b> since 12 Oct 2026.</div>
+            </div>
+            <p class="info" style="margin-top:12px">If you turn this off, checks that don't need a photo still warn you. Photos won't be read, so watch for blood yourself.</p>
+            <span class="clink" style="margin:0 4px">What's sent, and when</span>
+          </div>
+        </div>
+        <p class="frame-cap"><b>F · On</b>The same three lines as the screen, as information. One flip turns it off.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="nav"><span class="bk">‹ You</span><span class="nt">AI reading</span><span class="sp"></span></div>
+            <p class="info">Culprit sends your photos and your pet's patterns to Claude, an AI made by Anthropic, to read them and put them into words. Anthropic doesn't train its AI on what we send.</p>
+            <div class="card">
+              <div class="srow"><div class="lb"><div class="a">Let Claude read what I log</div></div><div class="sw"></div></div>
+              <div class="state"><b>Off.</b> Nothing new is sent. Photos you log are saved but not read, and patterns show in plainer words. Reads that already ran stay on their records.</div>
+            </div>
+            <p class="info" style="margin-top:12px">Checks that don't need a photo still warn you. Photos won't be read, so watch for blood yourself.</p>
+            <span class="clink" style="margin:0 4px">What's sent, and when</span>
+          </div>
+          <div class="toast">AI reading is off.</div>
+        </div>
+        <p class="frame-cap"><b>G · Off, just flipped</b>The state line says what stops and what stays. Flipping back on writes a yes and a new <code>legal_acceptances</code> row against the copy on screen.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="nav"><span class="bk">‹ You</span><span class="nt">AI reading</span><span class="sp"></span></div>
+            <div class="grow"></div>
+            <div class="ceyebrow">AI reading · not set</div>
+            <p class="ctitle">Can an AI help read what you log?</p>
+            <div class="clines">
+              <p class="cl">To read your photos and put your pet's patterns into words, Culprit sends them to <b>Claude, an AI made by Anthropic</b>.</p>
+              <p class="cl">Anthropic doesn't train its AI on what we send. You can change your answer here at any time.</p>
+              <p class="cl">If you say no, checks that don't need a photo still warn you. Photos won't be read, so watch for blood yourself.</p>
+            </div>
+            <span class="clink">What's sent, and when</span>
+            <div class="grow"></div>
+            <div class="pair"><div class="btn">Don't allow</div><div class="btn">Allow</div></div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>H · Not set</b>The full screen, writing <code>source = 'settings'</code>. No Not now here: the back arrow already is one. This is the frame the reviewer reaches on the demo account.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── §3 ─────────────────────────────── -->
+  <section id="record">
+    <div class="sec-head"><span class="sec-num">§3</span><h2>When reading is off: the vomit and stool record</h2></div>
+    <div class="col">
+      <p>Today <code>read_disabled</code> renders nothing (<code>VomitAnalysisSection.tsx:689</code>, <code>StoolAnalysisSection.tsx:631</code>). With the gate live, that blank would be every declined owner's photographed record, and a blank where a read should be reads as "nothing found". Each frame is a <strong>status, never a verdict</strong>: it says the photo wasn't looked at, carries the when to call guidance a photoless log gets, and offers the way back in one quiet line. The stool line stays event neutral, because the state renders for a normal stool too (the <code>stoolCapCopy</code> rule).</p>
+    </div>
+
+    <div class="frames">
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="rhead"><span class="bk">‹</span><span class="more">···</span></div>
+            <div class="hero"><span>Photo · 7:42 am</span></div>
+            <p class="rtitle">Vomit</p>
+            <p class="rsub">Mochi · Tue 13 Oct, 7:42 am</p>
+            <div class="seclabel">Photo read</div>
+            <div class="offbox">
+              <div class="st"><i></i>AI reading is off</div>
+              <p class="tx">Culprit didn't check this photo for blood or anything unusual. If Mochi keeps vomiting, you see blood, or Mochi seems off, check in with your vet.</p>
+              <div class="act">Turn on AI reading</div>
+            </div>
+            <div class="facts">
+              <div class="f"><span>Contents</span><b>Partly digested food</b></div>
+              <div class="f"><span>Before it</span><b>Breakfast, 6:55 am</b></div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>I · Vomit, the owner said no</b>A hollow dot, never a tick or a colour. "Turn on AI reading" opens frame F.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="rhead"><span class="bk">‹</span><span class="more">···</span></div>
+            <div class="hero"><span>Photo · 4:10 pm</span></div>
+            <p class="rtitle">Loose stool</p>
+            <p class="rsub">Mochi · Tue 13 Oct, 4:10 pm</p>
+            <div class="seclabel">Photo read</div>
+            <div class="offbox">
+              <div class="st"><i></i>AI reading is off</div>
+              <p class="tx">Culprit didn't check this photo for blood or anything unusual. If Mochi's stool keeps looking off, you see blood, or Mochi seems unwell, check in with your vet.</p>
+              <div class="act">Turn on AI reading</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>J · Stool, the owner said no</b>Same frame for every stool type, normal included; the line never presumes diarrhea.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="rhead"><span class="bk">‹</span><span class="more">···</span></div>
+            <div class="hero"><span>Photo · 9:15 pm</span></div>
+            <p class="rtitle">Vomit</p>
+            <p class="rsub">Mochi · Tue 13 Oct, 9:15 pm</p>
+            <div class="seclabel">Photo read</div>
+            <div class="escal">
+              <div class="v">Worth a call</div>
+              <div class="why">Mochi has thrown up more than once in a short window. Repeated vomiting like that is worth a call to your vet.</div>
+            </div>
+            <div class="offbox">
+              <div class="st"><i></i>The photo wasn't read</div>
+              <p class="tx">AI reading is off, so this advice comes from Mochi's log, not the photo.</p>
+              <div class="act">Turn on AI reading</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>K · Said no, and a check fired anyway</b>The photoless escalation renders exactly as today and leads. The off line sits under it, so nobody reads the call as coming from the photo.</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="rhead"><span class="bk">‹</span><span class="more">···</span></div>
+            <div class="hero"><span>Photo · 7:42 am</span></div>
+            <p class="rtitle">Vomit</p>
+            <p class="rsub">Mochi · Tue 13 Oct, 7:42 am</p>
+            <div class="seclabel">Photo read</div>
+            <div class="offbox">
+              <div class="st"><i></i>This photo wasn't read</div>
+              <p class="tx">You haven't decided about AI reading yet, so nothing was sent. If Mochi keeps vomiting, you see blood, or Mochi seems off, check in with your vet.</p>
+              <div class="act">Decide about AI reading</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>L · Not now (no answer yet)</b>Same status, honest about why. Opens frame H. Never a sheet over the photo at the moment of logging (Principle 1).</p>
+      </div>
+
+      <div class="frame-slot">
+        <div class="phone">
+          <div class="notch"></div>
+          <div class="screen">
+            <div class="rhead"><span class="bk">‹</span><span class="more">···</span></div>
+            <div class="hero"><span>Photo · 7:42 am</span></div>
+            <p class="rtitle">Vomit</p>
+            <p class="rsub">Mochi · Tue 13 Oct, 7:42 am</p>
+            <div class="seclabel">Photo read</div>
+            <div class="offbox">
+              <div class="st"><i style="border-color:#0B7B6C"></i>AI reading is on</div>
+              <p class="tx">This photo was logged while reading was off. It's sent to Claude only if you ask.</p>
+              <div class="readbtn">Read this photo</div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-cap"><b>M · After turning it on</b>One tap per record, never a silent batch over old photos (CUL-1835). Then the normal read arrives in place.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── §4 ─────────────────────────────── -->
+  <section id="briefs">
+    <div class="sec-head"><span class="sec-num">§4</span><h2>Decisions for you</h2></div>
+    <div class="col">
+      <div class="brief">
+        <p class="bid">Brief A · where the step sits</p>
+        <p><strong>Deciding:</strong> whether onboarding asks right after <em>Before you start</em> (A) or after the pet is named (A′).</p>
+        <p><strong>Options:</strong> (a) after the disclaimer: sits with the other deliberate choices, the pet isn't named yet. <span class="rec">(b) Recommended: after the pet is named.</span> "Mochi's photos" makes the trade concrete, and a choice read next to a legal acknowledgment gets tapped through like one.</p>
+        <p><strong>Consequence:</strong> (b) moves the step one screen later in CUL-1834 and threads <code>{name}</code> through three lines; panel 1 tests the version you pick. Neither touches the demo account, which meets the screen on first open, not in onboarding.</p>
+      </div>
+      <div class="brief">
+        <p class="bid">Brief B · the no line on the face of the screen</p>
+        <p><strong>Deciding:</strong> whether "Photos won't be read, so watch for blood yourself" is one of the three lines or lives only in the details.</p>
+        <p><strong>Options:</strong> <span class="rec">(a) Recommended: on the screen.</span> It is the one true cost of a no, and consent without it isn't informed. (b) In the details only: softer, and lets a no feel free when it isn't quite.</p>
+        <p><strong>Consequence:</strong> panel 1 scores (a) for coercion. If owners read it as a scare into yes, it moves to the details before CUL-1834 starts, whatever the count.</p>
+      </div>
+      <div class="brief">
+        <p class="bid">Brief C · the engines evaluation line (CUL-1313)</p>
+        <p><strong>Deciding:</strong> whether this copy, frozen into 1.2.0, also asks to use records to measure whether warnings were right.</p>
+        <p><strong>Options:</strong> <span class="rec">(a) Recommended: no, functional only (D18).</span> One screen asking for one thing is what a reviewer and an owner can both read. (b) Add one line: stretches the screen past three lines and mixes two purposes under one yes.</p>
+        <p><strong>Consequence:</strong> (a) leaves CUL-1313 needing its own opt in later; (b) needs that line drafted, reviewed and run through panel 1 before CUL-1834.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── §5 ─────────────────────────────── -->
+  <section id="holds">
+    <div class="sec-head"><span class="sec-num">§5</span><h2>Must hold, checked</h2></div>
+    <div class="col">
+      <div class="tablewrap">
+        <table class="spec">
+          <tr><th>From the issue</th><th>Where</th><th></th></tr>
+          <tr><td>One screen: headline, three short lines, Allow and Don't allow with equal weight, nothing preselected</td><td>A, H</td><td class="ok">holds</td></tr>
+          <tr><td>Details one tap away</td><td>B</td><td class="ok">holds</td></tr>
+          <tr><td>Not now writes nothing (D13)</td><td>A, §1 table, L</td><td class="ok">holds</td></tr>
+          <tr><td>Anthropic named</td><td>A, B, E, F</td><td class="ok">holds</td></tr>
+          <tr><td>Every trigger named: vomit and stool photos when logged and when opened; food and label photos with the name, clinic and Rx risk; pet name with symptom, food and counts; Ask where on</td><td>B</td><td class="ok">holds</td></tr>
+          <tr><td>Never "a no keeps every check"; the true line instead</td><td>A, B, F, G, K</td><td class="ok">holds</td></tr>
+          <tr><td>Never used for training</td><td>A, B, F</td><td class="ok">holds</td></tr>
+          <tr><td>Option box after the pet is named</td><td>A′</td><td class="ok">holds</td></tr>
+          <tr><td>Settings switch both ways</td><td>E, F, G, H</td><td class="ok">holds</td></tr>
+          <tr><td>Reading off states on vomit and stool</td><td>I to M</td><td class="ok">holds</td></tr>
+        </table>
+      </div>
+
+      <h3>Lens notes</h3>
+      <ul class="tight">
+        <li><strong>Dr. Chen (clinical guardrails):</strong> tried the owner who said no and photographs bloody vomit with no other flag. Frame I says nothing checked the photo, names blood, and points at the vet; no frame says "nothing found", "clear" or "normal". Tried repeated vomiting in a short window while declined: frame K's escalation still leads.</li>
+        <li><strong>Trust and Safety:</strong> withdrawal is one flip with no confirm, and G says reads already made stay on their records (true of the build; deleting them on withdrawal is not in scope). The details name the Rx label risk and Anthropic's short retention, which match policy §3.</li>
+        <li><strong>Voice:</strong> second person, no exclamation marks, pet named where the screen knows the name, "AI reading" used as the one name on every surface.</li>
+      </ul>
+      <div class="callout warn"><strong>Found while drawing, for the policy edit (CUL-1769):</strong> policy §3 says a symptom photo goes to Anthropic "when you request an AI read". Reads run automatically on log and on open, as this screen says. §3 also says pattern phrasing sends "only the computed finding", but the pet's name goes with it. The screen states what the code does; the policy needs to match before the cut.</div>
+    </div>
+  </section>
+
+</div>
