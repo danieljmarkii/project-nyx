@@ -289,7 +289,7 @@ Each grooming pass leaves an outcome issue carrying the calls it deliberately st
 
 ## Hard rules
 
-- **Do not invent scope.** Grooming reconciles and re-orders existing issues; it never adds new product scope. If grooming reveals a real decision, that belongs in CLAUDE.md → Open Questions, surfaced to the PM — NOT resolved by a status edit. (Filing a genuinely-new *deferral* as a new Linear issue is still proactive and fine — that's the Backlog Protocol; it's *scope decisions* that route to the PM.)
+- **Do not invent scope.** Grooming reconciles and re-orders existing issues; it never adds new product scope. If grooming reveals a real decision, that belongs in `docs/open-questions.md` → Open Questions, surfaced to the PM — NOT resolved by a status edit. (Filing a genuinely-new *deferral* as a new Linear issue is still proactive and fine — that's the Backlog Protocol; it's *scope decisions* that route to the PM.)
 - **Do not re-prioritize against the PM's explicit ordering** without surfacing it as a question first.
 - **Closing keeps the issue.** Move it to `Done` with a resolving PR/session reference; Linear keeps the record.
 - **A cancel only ever follows an unvetoed `Propose close`** (steps 13–14). Never cancel on the day you propose, never past an exemption in step 13, and never to make the board count look better. Superseded the 2026-08 rule "never cancel an item just to clear the board" (PM, 2026-10-02, CUL-1448): pruning is now a step, and the veto window is its safety net.

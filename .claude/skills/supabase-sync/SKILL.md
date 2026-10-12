@@ -77,7 +77,7 @@ export async function uploadPhoto(
 
 **RULE:** A bucket created with `INSERT INTO storage.buckets` has `owner = null`. Even RLS policies on `storage.objects` that look syntactically correct will silently fail (uploads return 42501; reads 400). Buckets must be created via the Supabase dashboard Storage UI (or the JS admin client) so the row is fully initialized — then apply RLS policies via migration.
 
-**CANONICAL REFERENCE:** `Claude/...nyx-pet-photos` is the open item that bit us first (CLAUDE.md Open Questions table). `nyx-food-photos` was resolved the same way (CLAUDE.md Resolved Questions). The pattern: PM creates the bucket via dashboard between sessions; we apply the `*_rls.sql` migration after.
+**CANONICAL REFERENCE:** `Claude/...nyx-pet-photos` is the open item that bit us first (`docs/open-questions.md`). `nyx-food-photos` was resolved the same way (CLAUDE.md Resolved Questions). The pattern: PM creates the bucket via dashboard between sessions; we apply the `*_rls.sql` migration after.
 
 **ANTI-PATTERN:** Putting `INSERT INTO storage.buckets (id, name, public) VALUES ('nyx-foo', 'nyx-foo', false);` in a migration. Will appear to work, will then 42501 on the first authenticated upload, and the policy SQL will look correct in the dashboard. Add a PM Action Item to create the bucket via dashboard UI — block the feature on it rather than working around it.
 
