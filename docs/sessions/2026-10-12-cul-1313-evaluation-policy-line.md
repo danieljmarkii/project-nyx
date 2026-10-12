@@ -1,8 +1,9 @@
 # CUL-1313: the policy line on evaluating the engines, and the D18 gates
 
 **Date:** 2026-10-12
+**One thing:** P2 L1 — A published privacy promise is a one-way door; the code comments behind it are two-way · check: pending
 
-**Issues:** CUL-1313 (PR-12 of *App Store 1.2.0 · the first public release*), CUL-1904 (Engines v3). Shipped via the PR this record rides in.
+**Issues:** CUL-1313 (PR-12 of *App Store 1.2.0 · the first public release*), CUL-1904 (Engines v3). Shipped via #1207.
 
 ## What happened
 
