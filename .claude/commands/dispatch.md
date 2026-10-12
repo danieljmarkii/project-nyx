@@ -4,7 +4,7 @@ description: Read a Linear project's run order, reopen what a merge wrongly clos
 
 # /dispatch — Propose the ready rows of a run order, launch the ones the PM picks
 
-**Version:** 1.9 (2026-10-12, CUL-1872: the sort's doors, the dark proof, both alarms, the cost line and the scope line are `scripts/dispatch/sort.ts`, `alarms.ts`, `plan.ts` and `progress.ts`, tested; the progress block is six lines). 1.8 (2026-10-11, CUL-1870: retro 4's D1 to D3, ruled A by the PM, CUL-1858; § The sort routes every finding, a ruling travels with its work, a forecast is a budget; steps 1, 5, 6, 7b and the page format read it). 1.7 (2026-10-10, CUL-1654: a merge that deploys or edits the gate's files waits for the PM's typed `merge`; the ⚠ flag is now *waits for your merge*). 1.6 (2026-10-06, CUL-1624: a five-line progress block atop every digest, a weekday 07:45 CT update, and § Authority's one carve-out from the never-line for it). 1.5 (2026-10-06, CUL-1623: a child idle on a green PR is woken, by its own CI-wait stop or by the dispatcher's stalled-child note). 1.4 (2026-10-06, CUL-1614: the repo-wide cap and reservations, the wake fix, the plan gate only where it matters, authority that never travels; rulings D1 to D3 of the CUL-1606 retro). Since CUL-1615 (D4) the deterministic half (steps 3–4, the gate predicate, the Board, the status lines, the memory check) is `scripts/dispatch/`, tested; this file keeps the reads, the judgment and the writes.
+**Version:** 1.10 (2026-10-12, CUL-1873: retro 4's D7; step 5's close-out makes the PR body the child's one record, a session record only for a DISCOVERY or teach row, a three-line outcome comment, and drops the mode, `In Review` and the child's post-merge conflict report). 1.9 (2026-10-12, CUL-1872: the sort's doors, the dark proof, both alarms, the cost line and the scope line are `scripts/dispatch/sort.ts`, `alarms.ts`, `plan.ts` and `progress.ts`, tested; the progress block is six lines). 1.8 (2026-10-11, CUL-1870: retro 4's D1 to D3, ruled A by the PM, CUL-1858; § The sort routes every finding, a ruling travels with its work, a forecast is a budget; steps 1, 5, 6, 7b and the page format read it). 1.7 (2026-10-10, CUL-1654: a merge that deploys or edits the gate's files waits for the PM's typed `merge`; the ⚠ flag is now *waits for your merge*). 1.6 (2026-10-06, CUL-1624: a five-line progress block atop every digest, a weekday 07:45 CT update, and § Authority's one carve-out from the never-line for it). 1.5 (2026-10-06, CUL-1623: a child idle on a green PR is woken, by its own CI-wait stop or by the dispatcher's stalled-child note). 1.4 (2026-10-06, CUL-1614: the repo-wide cap and reservations, the wake fix, the plan gate only where it matters, authority that never travels; rulings D1 to D3 of the CUL-1606 retro). Since CUL-1615 (D4) the deterministic half (steps 3–4, the gate predicate, the Board, the status lines, the memory check) is `scripts/dispatch/`, tested; this file keeps the reads, the judgment and the writes.
 
 `/dispatch <project>` does in a few minutes what the 2026-09-28 Engines v3 batch took an hour to do by hand: reconcile the plan page and Linear against GitHub, work out which rows can safely start, propose the page fixes that would free held rows, write their prompts, and launch them as Claude Code sessions. **It proposes; the PM decides**, except for rows the page marks `auto` (step 6). Anything it cannot read with certainty is shown as *held*, with the reason, and never launched. Since v1.2 the session that runs it **stays on as the dispatcher**: each launched session messages it when it stops and when it finishes, and that message wakes it for the next round (step 9), so the PM types `/dispatch` once per stretch of work, not once per round. Spec, review and the rulings behind every rule below: CUL-1395, CUL-1397, CUL-1409, CUL-1503 to CUL-1508, CUL-1546 and CUL-1606 (descriptions and comments).
 
@@ -163,7 +163,8 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
 
    Your spec is <CUL-NNN> (its description and comments; newest comment wins) plus the
    plan excerpt below<, and <CUL-PPP>, its parent, for context>. Mode: <BUILD | DISCOVERY>.
-   Run the CLAUDE.md "Starting from a Linear issue" ritual. /dispatch pre-claimed <CUL-NNN>
+   Run the CLAUDE.md "Starting from a Linear issue" ritual, without naming the mode (it
+   is set above). /dispatch pre-claimed <CUL-NNN>
    for branch `<outcome branch>` at <UTC>; if your working branch is that branch, that claim
    is yours. If it is not, post your own claim naming your real branch and say in it that
    the /dispatch claim is superseded. A branch name closes every issue it names on merge:
@@ -226,11 +227,15 @@ While a fork is re-posed, the feature's **quieter output is replaced by its stop
    Commit and push early. If you can't reach something you need, say exactly what's
    missing and stop; don't mock or guess.
 
-   Close out with `/wrap --dispatched`, in its order: `/wrap`'s steps 1–4 (the DoD, the
-   record, the issue status, the outcome comment) before you merge, then the merge or the
-   stop, then the read-back, then its return block. Merge through the steward skill §7's
-   sequence, and put any open PR it says now conflicts with `main` in your Residual line.< Teach: yes —
-   this round's One thing is yours to write (teach row only).>
+   Close out with `/wrap --dispatched`, in its order. Your PR body is the record: its
+   five-line Definition of Done (acceptance criteria, CI, the adversarial verdict at its
+   commit, the QA script, the PM actions filed) and the QA script below it. Write a
+   docs/sessions/ record only if this row is DISCOVERY or carries Teach: yes. Your outcome
+   comment on <CUL-NNN> is three lines: the claim release, the PR link, the residual. Do
+   not set In Review by hand. Then the merge or the stop, through the steward skill §7's
+   sequence without its post-merge conflict report (the dispatcher runs it), then the
+   read-back, then the return block.< Teach: yes — this round's One thing is yours to
+   write (teach row only).>
 
    Report to the dispatcher with send_message, at most two messages, and none when your
    PR opens. The first time you stop to wait on anyone (a plan go, a question, a merge
