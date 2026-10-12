@@ -72,14 +72,14 @@ async function runExchangeAndFinalize(code: string): Promise<void> {
       message: e instanceof Error ? e.message : 'exchange failed',
     });
   }
-  // The exchange has resolved: its SIGNED_IN(B) (on success) has already been adopted,
+  // The exchange has resolved: its PASSWORD_RECOVERY(B) (on success) has already been adopted,
   // and A's tokens are gone from auth-js (overwritten by the exchange, or purged by
   // the reconcile below). Close the adoption window so B's own later TOKEN_REFRESHED
   // and a resume are adopted normally.
   store.setRecoveryExchangePending(false);
 
   if (outcome === 'success') {
-    // step 6/7: the SIGNED_IN from the exchange sets the session; the FR-6 branch in
+    // step 6/7: the exchange's PASSWORD_RECOVERY sets the session; the FR-6 branch in
     // onAuthStateChange routes to the set-password form (session + gate). No signOut
     // here — the exchange already replaced A's tokens with B's in auth-js storage.
     // Clear any failure state a slow-exchange watchdog may have set on the screen, so
@@ -170,7 +170,7 @@ export async function handleRecoveryDeepLink(
   // until B's session arrives from the exchange. `recoveryExchangePending` closes the
   // sibling window the rls re-review found — auth-js's autoRefresh re-emitting A as a
   // `TOKEN_REFRESHED` during the flush and the root listener re-adopting it; while it
-  // is set the listener adopts ONLY the exchange's `SIGNED_IN`. Nulling the STORE (not
+  // is set the listener adopts ONLY the exchange's own emission (`PASSWORD_RECOVERY`, CUL-1886). Nulling the STORE (not
   // auth-js) does not touch the flush, which drains A's queue under auth-js's own
   // still-valid session at step 4.
   store.setRecoveryExchangePending(true);

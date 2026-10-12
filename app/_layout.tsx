@@ -266,15 +266,15 @@ export default function RootLayout() {
       // getSession callback / autoRefresh and needlessly tear down sync. So set only
       // when present; otherwise leave the last-known session untouched.
       if (session) {
-        // During the recovery exchange window, adopt ONLY the exchange's SIGNED_IN(B)
-        // — never a TOKEN_REFRESHED re-emission of the pre-recovery owner A that
+        // During the recovery exchange window, adopt ONLY the exchange's own emission of
+        // B (PASSWORD_RECOVERY for a reset link, CUL-1886) — never a TOKEN_REFRESHED re-emission of the pre-recovery owner A that
         // auth-js's autoRefresh can fire mid-flush (rls-privacy re-review). Inert
         // outside that window, so normal auth is untouched.
         if (!shouldAdoptSessionDuringRecovery(event, useAuthStore.getState().recoveryExchangePending)) {
           return;
         }
         setSession(session);
-        // FR-6 / Trap 1: a recovery-exchange SIGNED_IN must land on set-password,
+        // FR-6 / Trap 1: the recovery exchange's session must land on set-password,
         // never fall through to Home. The Landing guard and the §6.5 tabs gate also
         // enforce this, but pinning it here routes the recovery session correctly the
         // instant it is adopted, regardless of which screen was foreground. Returns

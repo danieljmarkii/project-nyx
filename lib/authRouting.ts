@@ -54,8 +54,12 @@ export type SignedOutRoute = {
 };
 
 // During the recovery EXCHANGE WINDOW — from when the handler nulls the store
-// session (§6.4 step 3) until the exchange's `SIGNED_IN` arrives — the ONLY session
-// that may enter the store is the exchange's own `SIGNED_IN` (the new owner, B). A
+// session (§6.4 step 3) until the exchange resolves — the ONLY session that may enter
+// the store is the exchange's own (the new owner, B). auth-js names that emission
+// `PASSWORD_RECOVERY`, not `SIGNED_IN`, because `resetPasswordForEmail` stores its PKCE
+// verifier with a `/recovery` suffix and `exchangeCodeForSession` reads it back
+// (CUL-1886: admitting only `SIGNED_IN` dropped B and every reset timed out). `SIGNED_IN`
+// stays admitted for a verifier without the suffix. Both come only from the exchange. A
 // `TOKEN_REFRESHED` / `INITIAL_SESSION` emission in that window is the PRE-recovery
 // owner (A), whose auth-js tokens are still live and whose `autoRefresh` can fire
 // mid-flush — and adopting it would re-render the set-password form against A, a
@@ -67,7 +71,7 @@ export function shouldAdoptSessionDuringRecovery(
   recoveryExchangePending: boolean,
 ): boolean {
   if (!recoveryExchangePending) return true;
-  return event === 'SIGNED_IN';
+  return event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY';
 }
 
 export function signedOutRoute(input: {
