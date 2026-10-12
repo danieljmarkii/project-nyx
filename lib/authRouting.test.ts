@@ -66,13 +66,16 @@ describe('shouldAdoptSessionDuringRecovery (B-280 rls re-review)', () => {
     expect(shouldAdoptSessionDuringRecovery('INITIAL_SESSION', false)).toBe(true);
   });
 
-  it('during the exchange window, adopts ONLY the exchange SIGNED_IN — never A re-emitted', () => {
+  it('during the exchange window, adopts ONLY the exchange emission — never A re-emitted', () => {
     // The Trap-2 sub-window: auth-js autoRefresh re-emits the pre-recovery owner A.
     expect(shouldAdoptSessionDuringRecovery('TOKEN_REFRESHED', true)).toBe(false);
     expect(shouldAdoptSessionDuringRecovery('INITIAL_SESSION', true)).toBe(false);
     expect(shouldAdoptSessionDuringRecovery('USER_UPDATED', true)).toBe(false);
-    // The exchange's own SIGNED_IN(B) is the one session recovery adopts.
-    expect(shouldAdoptSessionDuringRecovery('SIGNED_IN', true)).toBe(true);
+    // _recoverAndRefresh emits SIGNED_IN carrying the STORED session, which on a cold
+    // start from a reset link is A (CUL-1886 rls review).
+    expect(shouldAdoptSessionDuringRecovery('SIGNED_IN', true)).toBe(false);
+    // The reset link exchange's PASSWORD_RECOVERY(B) is the one session recovery adopts.
+    expect(shouldAdoptSessionDuringRecovery('PASSWORD_RECOVERY', true)).toBe(true);
   });
 });
 
