@@ -1,6 +1,8 @@
 # 2026-10-12 · CUL-1768 · the October competitive decision round, ruled
 
-**Date:** 2026-10-12 · **Mode:** DISCOVERY · **Branch:** `claude/vibrant-maxwell-8wcrap` · **Track:** App Store 1.2.0 · the first public release · **Outcome:** shipped via the session's draft PR (CUL-1768, CUL-1776)
+**Date:** 2026-10-12 · **Mode:** DISCOVERY · **Branch:** `claude/vibrant-maxwell-8wcrap` · **Track:** App Store 1.2.0 · the first public release · **Outcome:** shipped via #1200 (CUL-1768, CUL-1776)
+
+**One thing:** P2 L1 — A public promise is a one-way door: leaving "stay free" off the listing kept the pricing call reversible · check: pending
 
 ## What happened
 
