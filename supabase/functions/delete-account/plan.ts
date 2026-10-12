@@ -439,8 +439,11 @@ export const STORAGE_LIST_PAGE = 100
 export const STORAGE_LIST_MAX_DEPTH = 8
 
 // A name segment that could change which object a key addresses once joined. The
-// listing comes from the server, so none should exist; such an entry is skipped
-// (never descended into, never emitted) rather than trusted to stay opaque.
+// app never writes one, but the raw Storage API accepts `{uid}//x.jpg` and RLS 021
+// passes it (the first folder is still the uid). Such an entry is never joined,
+// walked or emitted: the walk THROWS, because skipping it would leave the object
+// behind under an `ok: true` (rls-privacy-reviewer, PR-05). Production held zero
+// such keys on 2026-10-12, so the throw blocks only a hand-built tree, loudly.
 function isUnsafeSegment(name: string): boolean {
   return name.length === 0 || name === '.' || name === '..' || name.includes('/')
 }
@@ -464,7 +467,9 @@ export async function listPrefixRecursive(list: StorageLister, root: string): Pr
       if (page.length === 0) break
       offset += page.length
       for (const entry of page) {
-        if (typeof entry?.name !== 'string' || isUnsafeSegment(entry.name)) continue
+        if (typeof entry?.name !== 'string' || isUnsafeSegment(entry.name)) {
+          throw new Error(`listPrefixRecursive: unsafe object name under ${prefix}`)
+        }
         const key = `${prefix}/${entry.name}`
         if (entry.id === null) folders.push(key)
         else keys.push(key)

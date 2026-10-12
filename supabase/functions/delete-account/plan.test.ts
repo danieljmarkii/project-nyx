@@ -920,21 +920,23 @@ Deno.test('listPrefixRecursive — a blank or multi-segment root fails closed (n
   assertEquals(calls.length, 0)
 })
 
-Deno.test('listPrefixRecursive — dot, dot-dot and slashed names are neither emitted nor walked', async () => {
-  const lister: StorageLister = (prefix) => {
-    if (prefix !== 'user-1') return Promise.resolve([])
-    return Promise.resolve([
-      { name: '..', id: null },
-      { name: '.', id: 'f1' },
-      { name: '', id: 'f2' },
-      { name: 'a/../b', id: 'f3' },
-      { name: 'ok.jpg', id: 'f4' },
-    ])
+Deno.test('listPrefixRecursive — an empty, dot, dot-dot or slashed name fails loud, never skipped or walked', async () => {
+  for (const bad of [
+    { name: '', id: null },
+    { name: '..', id: null },
+    { name: '.', id: 'f1' },
+    { name: 'a/../b', id: 'f3' },
+  ] as StorageListEntry[]) {
+    const calls: string[] = []
+    const lister: StorageLister = (prefix, offset) => {
+      calls.push(prefix)
+      if (prefix !== 'user-1' || offset > 0) return Promise.resolve([])
+      return Promise.resolve([{ name: 'ok.jpg', id: 'f4' }, bad])
+    }
+    await assertRejects(() => listPrefixRecursive(lister, 'user-1'), Error, 'unsafe object name')
+    // Never descended into: a skipped-but-walked `..` would list `user-1/..`.
+    assertEquals(calls.filter((c) => c !== 'user-1'), [])
   }
-  const calls: string[] = []
-  const tracking: StorageLister = (prefix, o, l) => { calls.push(prefix); return o === 0 ? lister(prefix, o, l) : Promise.resolve([]) }
-  assertEquals(await listPrefixRecursive(tracking, 'user-1'), ['user-1/ok.jpg'])
-  assert(!calls.includes('user-1/..'))
 })
 
 Deno.test('listPrefixRecursive — a tree deeper than the cap fails loud rather than truncating', async () => {
