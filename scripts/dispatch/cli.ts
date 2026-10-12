@@ -17,6 +17,16 @@
 // `get_check_runs` list), `headShas` (PR number → head sha), `wakes` (the children's
 // `/dispatch wake` messages this session received) and `notes` (the `/dispatch note`s it sent).
 //
+// The sort and the alarms (CUL-1872; dispatch.md § The sort, step 1): `findings` (every
+// candidate step 1's three reads returned: `Candidate` in sort.ts, with the dispatcher's
+// reading of the keys, migrations and live surfaces each one's code sits behind),
+// `appConfig` (production `select key, value from app_config`, read-only through the
+// production-read hook, as `{ key: value }`; `null` when the read failed), `goLives` (key →
+// its go-live issue), `roots` (each issue with a `Forecast:` line: id and description),
+// `keysOf` (a row's issue → the keys its output sits behind), `lastRun`, and each issue's
+// `createdAt` (the scope line, the follow-up alarm). The script decides every door; the
+// dispatcher makes the writes it prints, with the reasons it prints.
+//
 // `--for-pr [CUL-NNN …]` breaks every issue id but the ones listed, so the output can be
 // pasted into a PR body without its merge closing them (status.ts, prSafe).
 
@@ -24,7 +34,8 @@ import * as fs from 'node:fs';
 
 import { renderBoard, validateBoard, type BoardShape } from './board.ts';
 import { autoEligible, planDispatch, type PlanInput, type ProjectInput } from './plan.ts';
-import { cyclesFrom, holdsFromPlan, nextFromPlan, nextFromQueued, progressEmail, renderProgress, sinceOf, unitsFromIssues, unitsFromPlan, type ProjectIssue } from './progress.ts';
+import { cyclesFrom, holdsFromPlan, nextFromPlan, nextFromQueued, progressEmail, renderProgress, scopeFromIssues, scopeFromPlan, scopeLine, sinceOf, unitsFromIssues, unitsFromPlan, type ProjectIssue } from './progress.ts';
+import { LIVE_HARM } from './sort.ts';
 import { CI_WAIT_CHECK_IN_MIN, checksOf, findStalls, type CheckRun, type Note, type Wake } from './stall.ts';
 import { checkInFrom, closingLines, memoryCheck, prSafe, validateStatusUpdate, type Trigger } from './status.ts';
 
@@ -77,18 +88,43 @@ function plan(f: Facts, shape: BoardShape): string {
   if (shared.length) say(`Files held twice: ${shared.map((r) => `${r.file} (${r.holders.join(', ')})`).join('; ')}`);
   say(`Holding rows on you: ${p.pmHolds.slice(0, 3).map((h) => `${h.text} (frees ${h.freesOutright.length}, holds ${h.rowsHeld.length})`).join('; ') || 'nothing'}`);
   if (p.gateHolds.length) say(`Release and GA gates: ${p.gateHolds.map((h) => `${h.text} (holds ${h.rowsHeld.map((r) => `PR-${r}`).join(', ')})`).join('; ')}`);
+  const scope = scopeFromPlan(p, Object.fromEntries(Object.entries(f.issues).map(([k, i]) => [k, i.createdAt])), f.now);
+  say(scopeLine(scope));
+  say(p.sort ? p.sort.digest : 'Found since last run: the sort did not run (no findings in the facts file)');
+  for (const a of p.alarms) {
+    say(`Alarm (${a.kind}): ${a.fork}`);
+    say(`    holds ${[...a.holdsRows.map((r) => `PR-${r}`), ...a.holdsCandidates].join(', ') || 'nothing unlaunched'}; ${a.stopgap ? `file a ${LIVE_HARM} stopgap issue (${a.stopgapWhy})` : `no stopgap (${a.stopgapWhy})`}`);
+  }
   say();
   say(`Proposed (rank order): ${p.proposal.map((r) => `PR-${r}`).join(', ') || 'none'}`);
+  say(`Recommended (on the path): ${p.recommended.map((r) => `PR-${r}`).join(', ') || (p.page.doneMeans ? 'none' : 'none: the page has no Done means (rows): line (Unblock kind g)')}`);
   for (const r of p.proposal) {
     const v = p.verdicts.find((x) => x.row === r)!;
     const g = v.gate;
     say(` PR-${r}  ${v.what}  · ${g.mode.toLowerCase()}`);
-    say(`    ${g.planGated.length ? `plan-gated: ${g.planGated.join(', ')}` : 'routine'}${g.copyBearing.length ? ` · copy-bearing (${g.copyBearing.join(', ')})` : ''} · auto-eligible: ${autoEligible(g) ? 'yes' : 'no'}${v.flags.length ? ` · ⚠ ${v.flags.join(' · ')}` : ''}`);
+    say(`    ${v.onPath ? 'on the path' : 'off the path (never recommended, auto or queued)'}. Asks you ≈ ${v.asks.n}: ${v.asks.parts.join(', ') || 'nothing unless it stops'}.`);
+    say(`    ${g.planGated.length ? `plan-gated: ${g.planGated.join(', ')}` : 'routine'}${g.copyBearing.length ? ` · copy-bearing (${g.copyBearing.join(', ')})` : ''} · auto-eligible: ${autoEligible(g) && v.onPath ? 'yes' : 'no'}${v.flags.length ? ` · ⚠ ${v.flags.join(' · ')}` : ''}`);
   }
   say(`Ready but over the cap: ${p.overCap.map((r) => `PR-${r}`).join(', ') || 'none'}`);
   say('Held:');
   for (const v of p.verdicts.filter((x) => x.row && !x.ready && x.state.kind !== 'merged')) say(` PR-${v.row} — ${v.reasons.join('; ')}`);
   say(`Auto (confirmed, unmerged): ${p.autoRows.map((r) => `PR-${r}`).join(', ') || 'none'}`);
+  const offAuto = p.autoRows.filter((r) => !p.verdicts.find((v) => v.row === r)?.onPath);
+  if (offAuto.length) say(`    off the path, so never launched auto: ${offAuto.map((r) => `PR-${r}`).join(', ')}`);
+  if (p.sort) {
+    const s = p.sort;
+    say();
+    say(`No row on the page (door 3 only): ${s.noRow.length ? '' : 'nothing'}`);
+    for (const n of s.noRow)
+      say(` ${n.id} — ${n.title} → proposed PR-${n.pr}${n.after ? `, after ${n.after}` : ''}, blocks PR-${n.blocks}${n.migration ? ' ⚠ migration' : ''}${n.outside ? ' (filed outside the project)' : ''}${p.alarmHeld[n.id] ? ` · held: ${p.alarmHeld[n.id]}` : ''}`);
+    say(`Live fixes (door 1, "go CUL-NNN" launches via --row): ${s.liveFixes.length ? '' : 'nothing'}`);
+    for (const l of s.liveFixes) say(` ${l.id} — ${l.title}, ${l.project}, ${l.claimed ? 'claimed' : `unclaimed since ${l.since}`}; prompt line: ${l.stopgap}`);
+    if (s.unlink.length) say(`Parked but holding a row ("unlink CUL-NNN"): ${s.unlink.map((u) => `${u.id} — ${u.targets.join(', ')}`).join('; ')}`);
+    say(`Sort writes (each with its comment quoting why): ${s.writes.length ? '' : 'nothing'}`);
+    for (const w of s.writes) say(` ${w.issue}: ${w.write} — ${w.why}`);
+    say('The read, per finding:');
+    for (const x of s.sorted.filter((y) => y.finding)) say(` ${x.id} — door ${x.door}${x.park ? ` (${x.park})` : ''}: ${x.why.join('; ')}`);
+  }
   // CUL-1623: a child idle on a green, mergeable PR never wakes on its own. Its checks are
   // read here from the raw runs, never judged by hand (one passed run is not a green PR).
   if (f.checkRuns) {
@@ -171,6 +207,9 @@ function progress(f: ProgressFacts): { alias: string; text: string } {
       : (f.projectIssues ?? []).filter((i) => i.labels?.includes('Waiting on PM') && !['completed', 'canceled', 'duplicate'].includes(i.stateType)).map((i) => ({ text: `${i.id} (Waiting on PM)` })),
     index: f.index,
     slots: p.slots + flying,
+    scope: table
+      ? scopeFromPlan(p, Object.fromEntries(Object.entries(f.issues).map(([k, i]) => [k, i.createdAt])), f.now)
+      : scopeFromIssues(f.projectIssues ?? [], f.now),
   });
   return { alias: p.alias, text };
 }
