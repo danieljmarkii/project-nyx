@@ -25,12 +25,6 @@
       "reason": "CUL-552 PR 2 (CUL-1810) consent HOLD (client-first deploy ordering): this code reads the owner's ai_consent row before every Anthropic call and fails closed on a missing row. Today no account has a row, because the client that asks for one (the consent sheet, the first-open sheet, the backstop and the Settings toggle) is CUL-552 PR 3. Deploying this before that client build is live would turn off every photo read, every model-phrased Signal sentence, every Ask answer and every photo extraction for every account, with no way for an owner to say yes. Lift this hold (delete this entry) in the PR that ships PR 3's client, once that build is the live one; the merge that lifts it deploys the function. Holds on the same ref, lifted together: analyze-vomit, analyze-stool, ask, extract-food-from-photo, extract-medication-from-photo, generate-signal.",
       "fingerprint": "sha256:9624813b938f79af0d1138f0f06afc9d2467c56703c88dc73a6b3c0266a356b9"
     },
-    "delete-account": {
-      "ref": "CUL-215",
-      "since": "2026-08-20",
-      "reason": "B-119 / CUL-215 re-auth HOLD (client-first deploy ordering): the function now fails closed (reauth_required 401) when a request body carries no password, and the CURRENT shipped client sends none. Deploying this BEFORE a client build carrying the password field is the live/minimum build would 401 every current-client deletion — an Apple 5.1.1(v) erasure regression. Lift this hold (delete this entry) only after that client build is the live one; the merge that lifts it deploys the function.",
-      "fingerprint": "sha256:99ac95836a4ce9ae813959e933e6ba5112995e7e987233a827027c2b1b7e2ccf"
-    },
     "extract-food-from-photo": {
       "ref": "CUL-552",
       "since": "2026-10-11",
