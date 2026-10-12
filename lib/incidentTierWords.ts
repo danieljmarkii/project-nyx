@@ -2,8 +2,11 @@
 // (EN-3, CUL-1133; Engines v3 PR-27; docs/nyx-incident-tiers-requirements.md §2).
 //
 // `lib/incidentTier.ts` holds the ORDER and no words, so the Edge Functions can import it.
-// This file holds the WORDS and is client-only: nothing under supabase/functions imports it,
-// so a label edit never redeploys analyze-* (C-26). Every surface that names a read (the
+// This file holds the WORDS. One Edge Function imports it, `ask`, because Ask quotes the
+// words the record shows (spec §4, CUL-1512), so a label edit redeploys Ask and nothing
+// else: analyze-* never import it, and a label edit never redeploys them (C-26). It imports
+// only the two import-free rule modules, with explicit `.ts` paths so Deno can load it.
+// Every surface that names a read (the
 // record's card, the gallery tiles, the History and Home row, the month and its chart text)
 // asks `tierDisplayOf` which words stand and reads them from `TIER_WORDS`. A build guard
 // (`guards/incidentTierWords.test.ts`) fails on the literal "worth a call" outside this
@@ -21,7 +24,9 @@
 //      a photo nothing has read. The resolver returns null there, and each surface draws
 //      its own honest not-read frame.
 //   3. NEW WORDS ONLY ON A NEW-RULE ROW. A row is new-rule when the server stamped it under
-//      the EN-3 key (`engine_flags`); the stamp decides, never a tier's presence (spec §1).
+//      the EN-3 key (`engine_flags`); the stamp decides, never a tier's presence (spec §1),
+//      save a stored `call_now`, which keeps its words over a later flag-off write (GAP-34,
+//      CUL-1516; `isTieredRow`).
 //      Every other row is an earlier-rule
 //      read and keeps today's words to the byte: an old "Worth a call" is never relabelled
 //      "call now" or "call today", because nobody knows which it would have been (spec §5).
@@ -40,8 +45,8 @@
 // "what to tell them" line are generated from the floor's rows in
 // `lib/incidentFloorWords.ts` (CUL-1510), never hand-written here (spec §3, BRK-3).
 
-import { effectiveTierRank, isIncidentTier, TIER_RANK } from './incidentTier';
-import { isQuietVerdict } from './incidentVerdict';
+import { effectiveTierRank, isIncidentTier, TIER_RANK } from './incidentTier.ts';
+import { isQuietVerdict } from './incidentVerdict.ts';
 
 /** The key a new-rule read is stamped with (`engine_flags`). One key covers EN-3's server
  *  half and EN-7, which ship together (PR-26); `lib/stoolForm.ts` names the same string for
@@ -103,11 +108,11 @@ export const TIER_WORDS: Readonly<Record<TierDisplay, TierWords>> = {
     label: 'Call your vet today',
     short: 'Call today',
     readAs: 'call today',
-    // No leave to wait (CUL-1510): "first thing tomorrow" is safe only over a call the
-    // record alone raised, with no call-now sign met around it, and only the server can see
-    // that (four adversarial passes on PR-27b broke every client-side proof). So the line
-    // takes call now's after-hours path: louder than the spec, never calmer than "Worth a
-    // call". The late-day resolution lands server-side.
+    // The louder line, and what every surface but the record says (CUL-1510): "first thing
+    // tomorrow" is safe only over a call the record alone raised, with no call-now sign met
+    // around it, and only the server can see that. The record's card resolves the late-day
+    // line through `lib/mayWaitLine.ts`, on the server's stored `may_wait` fact alone
+    // (CUL-1629), and falls back to these words whenever any gate there refuses.
     action: "Call your vet today. If they're closed, call an emergency clinic.",
     tone: 'call_outline',
     call: true,
@@ -223,12 +228,25 @@ function engineKeys(value: unknown): readonly unknown[] {
   return [];
 }
 
-/** Whether the row's words were written under the new rule: the rule-version STAMP decides,
- *  never the presence of a tier (spec §1). A rolled-back build's write leaves a stale tier
- *  beside a stamp without the key; that row is an earlier-rule read, and its words and its
- *  month population follow the stamp. The tier still counts toward the louder column. */
+/** Whether the row speaks the new rule's words: the rule-version STAMP decides, never the
+ *  presence of a tier (spec §1), with ONE exception, a stored `call_now`.
+ *
+ *  A rolled-back build's write, or any write while the key is off, leaves a stale tier
+ *  beside a stamp without the key. A quiet or call-today tier there is an earlier-rule read:
+ *  its words and its month population follow the stamp, and the tier still counts toward the
+ *  louder column.
+ *
+ *  A stored `call_now` is different (CUL-1516, GAP-34). Nothing writes a tier but a write
+ *  under the key, so a `call_now` in the column is a call the owner was shown as "Call your
+ *  vet now", and a later flag-off write that leaves it there (it never names the column)
+ *  must not step the words down to "Worth a call" under the same filled rose and the same
+ *  rank. The shown call is stored; only the owner's own act lowers it (spec §1). So the row
+ *  keeps the new rule's words, and every surface that switches on this (the record's card
+ *  and its action line, the month's population, the rule seam, Ask) moves with it. Louder
+ *  only: the exception can raise a row's words to the stored call now and never lower any. */
 export function isTieredRow(row: TierRow | null | undefined): boolean {
   if (!row) return false;
+  if (row.tier === 'call_now') return true;
   return engineKeys(row.engine_flags).includes(EN3_ENGINE_KEY);
 }
 
@@ -243,9 +261,9 @@ export function tierDisplayOf(row: TierRow | null | undefined): TierDisplay | nu
   if (tier === null && rec === null) return null;
 
   if (effectiveTierRank(row) !== TIER_RANK.quiet) {
-    // A call now is spoken as one only on a new-rule row; an unstamped stale call now (a
-    // rollback) is still the louder column's call, in the shipped words.
-    if (tier === 'call_now' && isTieredRow(row)) return 'call_now';
+    // A stored call now is spoken as one whatever the stamp says (`isTieredRow`, CUL-1516):
+    // a flag-off write over it never steps its words down.
+    if (tier === 'call_now') return 'call_now';
     // A value this build does not know, in either column, keeps the shipped words.
     if (tier !== null && !isIncidentTier(tier)) return 'worth_a_call';
     if (rec !== null && !KNOWN_VERDICTS.includes(rec)) return 'worth_a_call';

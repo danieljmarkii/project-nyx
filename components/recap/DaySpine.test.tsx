@@ -4,7 +4,7 @@
 // reads in visual order (title · detail · format-tag … sub-line … time).
 import { fireEvent, render } from '@testing-library/react-native';
 import { Dimensions, PixelRatio, StyleSheet, Text, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
-import { DaySpine, RAIL_W, SpineRowFrame, TIME_W, timeColumnText } from './DaySpine';
+import { DaySpine, RAIL_W, SPINE_THREAD, SpineRowFrame, TIME_W, timeColumnText } from './DaySpine';
 import type { DaySummaryRow } from '../../lib/daySummary';
 
 function row(over: Partial<DaySummaryRow> & { id: string; category: DaySummaryRow['category'] }): DaySummaryRow {
@@ -256,5 +256,48 @@ describe('SpineRowFrame with a time tag — the tag rides the column under the s
     );
     const time = t.getByText(timeColumnText('09:15 AM'), RAW) as unknown as { props: { style?: unknown } };
     expect(flat(time.props.style).width).toBe(TIME_W);
+  });
+});
+
+// ── The thread between beads (CUL-1718) ─────────────────────────────────────────
+// The test renderer does no layout, so the arithmetic is pinned instead: the column
+// stretches to the row, the bottom segment runs through the row's bottom padding (the one
+// constant both read), and the last row draws no bottom segment.
+describe('SpineRowFrame — the thread reaches the next bead (CUL-1718)', () => {
+  const flat = (style: unknown): ViewStyle =>
+    (StyleSheet.flatten(style as StyleProp<ViewStyle>) ?? {}) as ViewStyle;
+
+  function frame(isFirst: boolean, isLast: boolean) {
+    return render(
+      <SpineRowFrame ground="day" category="meal" isFirst={isFirst} isLast={isLast} time="9:00 AM">
+        <Text>Meal</Text>
+      </SpineRowFrame>,
+    );
+  }
+
+  it('the bead column stretches to the row, so its segments are not confined to the dot', () => {
+    const rail = flat(frame(false, false).getByTestId('spine-rail').props.style);
+    expect(rail.alignSelf).toBe('stretch');
+  });
+
+  it('the bottom segment runs through the row’s bottom padding, to the next row’s top', () => {
+    const t = frame(false, false);
+    const rail = t.getByTestId('spine-rail');
+    let at = rail.parent;
+    while (at && flat(at.props.style).flexDirection !== 'row') at = at.parent;
+    const row = flat(at?.props.style);
+    const bottom = flat(t.getByTestId('spine-thread-bottom').props.style);
+    expect(row.paddingBottom).toBe(SPINE_THREAD.rowGapPad);
+    expect(SPINE_THREAD.rowGapPad).toBeGreaterThan(0);
+    expect(bottom.position).toBe('absolute');
+    // The rail's foot is the row's content edge; the row's border edge is PAD below it.
+    expect(bottom.bottom).toBe(-(row.paddingBottom as number));
+    // The next row's top segment starts at its own top, so the two meet.
+    expect(flat(t.getByTestId('spine-thread-top').props.style).top).toBe(0);
+  });
+
+  it('the last row keeps no bottom segment, and the first no top one', () => {
+    expect(frame(false, true).queryByTestId('spine-thread-bottom')).toBeNull();
+    expect(frame(true, false).queryByTestId('spine-thread-top')).toBeNull();
   });
 });

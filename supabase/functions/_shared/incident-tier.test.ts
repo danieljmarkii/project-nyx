@@ -176,12 +176,18 @@ Deno.test('EN-7 — the post-read hook can take away only a flag named withdrawa
   assertEquals(mergeAfterRead({ flags: ['a', 'b'], copy: COPY, withdrawable: ['b'] }, { flags: ['b'], copy: COPY }).flags, ['a', 'b'])
 })
 
-// ── Ask never sees the raw tier (spec §4; the PR-25 privacy note) ──────────────────────
+// ── Ask reads the tier to quote the map's words (spec §4; CUL-1512, PR-27m) ─────────────
+// Until PR-27m this guard held `tier` OUT of Ask's select, because nothing turned it into
+// words. Now `projectCachedRead` resolves the record's words through the one map, so Ask
+// reads the two columns the resolver needs. The raw values never reach the model; that half
+// is pinned in ask/tools.test.ts and ask/answer.test.ts.
 
-Deno.test('EN-3 — Ask selects no `tier` column until the tier-word map reaches it (PR-27)', async () => {
+Deno.test('EN-3 — Ask selects `tier` and `engine_flags`, the resolver\'s inputs (PR-27m)', async () => {
   const src = await Deno.readTextFile(new URL('../ask/index.ts', import.meta.url))
   const cols = /const READ_COLS\s*=\s*\n?\s*'([^']*)'/.exec(src)
   assertStrictEquals(cols !== null, true, 'READ_COLS moved; re-anchor this guard')
-  assertStrictEquals(cols![1].split(',').map((c) => c.trim()).includes('tier'), false)
-  assertStrictEquals(cols![1].includes('recommendation'), true) // the anchor is the real column list
+  const list = cols![1].split(',').map((c) => c.trim())
+  assertStrictEquals(list.includes('tier'), true)
+  assertStrictEquals(list.includes('engine_flags'), true)
+  assertStrictEquals(list.includes('recommendation'), true) // the louder column still counts
 })

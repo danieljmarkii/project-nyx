@@ -1,6 +1,7 @@
 import type { CachedFinding } from './signal';
 import { careStateQuietsAsk } from './careState';
 import { foldIdentity } from './signalFold';
+import { incidentRedFlagSentenceAt } from './signalCopy';
 
 // GAP-13 (CUL-1566; PMD-21 ruled (a), PM 2026-10-04): an escalation that reaches a focused
 // Home is SPOKEN once. "Safety is silent" means no sound and no haptic, never no speech: the
@@ -52,10 +53,17 @@ function namesPet(sentence: string, name: string): boolean {
  * said as they are, and a set that never names the pet is led by the name. Null when there
  * is nothing to say.
  */
-export function safetyArrivalSpoken(petName: string | null, arriving: CachedFinding[]): string | null {
+export function safetyArrivalSpoken(
+  petName: string | null,
+  arriving: CachedFinding[],
+  /** The clock a call now is read against (PR-30c, CUL-1739): past its first day it is said in
+   *  its dated form, as the screen shows it. Absent keeps the server's sentence. */
+  nowMs?: number,
+): string | null {
+  const named = petName?.trim() ? petName.trim() : null;
   const sentences = [...arriving]
     .sort((a, b) => a.rank - b.rank)
-    .map((f) => f.text.trim())
+    .map((f) => (named ? incidentRedFlagSentenceAt(f.finding, named, f.text, nowMs) : f.text).trim())
     .filter((t) => t.length > 0);
   if (sentences.length === 0) return null;
   const name = petName?.trim() ?? '';

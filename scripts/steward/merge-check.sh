@@ -12,6 +12,9 @@
 #      cause, and does any of them add a migration with the same number as this branch?
 #   4. Is main's own CI red right now? Landing on a red main buries the failure under
 #      one more merge (2026-10-03: an hour red while children kept merging, CUL-1522).
+#   5. Is landing it a production write: does it deploy an Edge Function, or edit the
+#      production gate, the deploy path or this check (CUL-1654)? Then a self-merge waits
+#      for the PM's typed `merge`, and no writing clears it.
 #
 # WHY THIS FILE EXISTS. Sessions end with `/wrap and merge`, and until this script the
 # "and merge" half was improvised. Clean merges were never the risk; the resolution is,
@@ -38,7 +41,9 @@
 #   MERGE CHECK: CONFLICT   1  conflicts with the base: merge it in, resolve, run this again
 #   MERGE CHECK: REVIEW     2  lands clean, but read the lost or resurrected lines, the
 #                              duplicate migration numbers (with main or another open PR),
-#                              the conflict markers, or main's red or unread CI first
+#                              the conflict markers, or main's red or unread CI first;
+#                              or a `production:` line, which only the PM's typed merge
+#                              clears (the steward skill §7)
 #   (exit 3)                   could not check (usage, environment, a shallow clone, a file
 #                              name it cannot read), on stderr. Never a pass.
 #
@@ -80,6 +85,11 @@
 #   - A changed path that git still quotes with core.quotePath off (a tab, a quote or a
 #     backslash in its name) stops the check with exit 3 rather than being skipped.
 #   - The check reads commits. Uncommitted work is not checked; a note says so.
+#   - The production line compares the base with the landed tree, never the deploy
+#     records. It covers the gap with main's latest decisive deploy run (failed, manual
+#     or unread is REVIEW), so a function whose record is wrong while that run passed
+#     on a push goes out on the next merge unreported. A branch that edits this check
+#     runs its own copy, so the line it prints about itself is only as honest as the edit.
 #   - It finds textual collisions only. Two PRs that merge clean and break each other at
 #     runtime are CI's to catch on main.
 
@@ -102,6 +112,7 @@ base_ref="origin/main"
 # Read only by the CI section, and only through `gh api`: the guard puts a stub `gh` on
 # PATH, and production uses whatever `gh` the session has.
 ci_workflow="ci.yml"
+deploy_workflow="edge-deploy.yml"
 head_ref="HEAD"
 fetch=1
 max_list=20
@@ -138,6 +149,10 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+# The deploy helper lives beside this script, in the repository that holds the script,
+# which in the guard's fixtures is not the repository being checked. Read before the cd.
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || die "cannot find this script's directory"
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "not inside a git work tree"
 # Pathspecs are relative to the working directory, and `diff --name-only` prints paths
@@ -569,6 +584,72 @@ else
 fi
 echo "$ci_line"
 
+# ---- 5. Is landing it a production write? ------------------------------------------------
+
+# Merging to main runs the deploy workflow (CUL-1147), and the gate's own files decide
+# what every later session may do unasked (CUL-1616). A self-merge that does either waits
+# for the PM's typed `merge` (CUL-1654, PM ruling 2026-10-10), and nothing written in the
+# PR clears it: the steward skill §7 says who may.
+#
+# GATE_PATHS: the production gate (.claude/hooks/, .claude/settings*.json), the deploy
+# path (the workflow, the planner, the upload script; the manifest's holds are judged by
+# function below), and this check with its helper and the three files that say who may
+# merge (the steward skill, dispatch.md, wrap.md), so a branch cannot quietly edit the
+# rule it is judged by. A branch that edits this script still runs its own copy; the line
+# below is what an honest copy says about it.
+GATE_PATHS='^\.claude/hooks/|^\.claude/settings[^/]*\.json$|^\.github/workflows/edge-deploy\.yml$|^scripts/deploy-edge\.sh$|^scripts/edge-deploy/|^scripts/steward/(merge-check\.sh|deploys(-cli)?\.ts)$|^\.claude/skills/steward/SKILL\.md$|^\.claude/commands/(dispatch|wrap)\.md$'
+production=0
+production_next="next: a production line is never cleared in writing; only the PM's typed merge, in the session that merges, clears it (the steward skill §7)"
+if [ -n "$landed_tree" ] && [ "$merged" -eq 0 ]; then
+  gate_files=$(printf '%s\n' "$landed_files" | grep -E "$GATE_PATHS" || true)
+  deploy_err="$tmp/deploys.err"
+  # The failure is keyed on the exit status, never on stderr: a helper killed by a signal
+  # or out of memory says nothing, and silence is not "deploys nothing" (code review).
+  deploy_unknown=""
+  deploy_lines=$(node --experimental-strip-types --no-warnings "$script_dir/deploys-cli.ts" "$base" "$landed_tree" 2>"$deploy_err")
+  deploy_rc=$?
+  if [ "$deploy_rc" -eq 0 ]; then
+    deploy_fns=$(printf '%s\n' "$deploy_lines" | sed '/^$/d' | cut -f1)
+  else
+    deploy_fns=""
+    deploy_unknown=$(head -c 200 "$deploy_err" | tr '\n' ' ')
+    [ -n "$deploy_unknown" ] || deploy_unknown="the helper exited $deploy_rc with no message"
+  fi
+  # The diff is not the whole answer: the workflow deploys every function main changed
+  # since its last RECORDED deploy, so after a failed deploy run, or a manual one (a
+  # rollback, a single redeploy), the next merge redeploys what main holds whatever it
+  # touches. The latest decisive run of the workflow on main says whether that is so.
+  deploy_state=""
+  if ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+    deploy_state="main's last deploy run could not be read (needs gh and jq on PATH)"
+  elif ! gh api "repos/$(repo_slug)/actions/workflows/$deploy_workflow/runs?branch=$(branch_on_origin "$base_ref")&status=completed&per_page=30" \
+    >"$tmp/deploy-runs.json" 2>"$tmp/gh-deploy.err" || ! jq -e '.workflow_runs | type == "array"' "$tmp/deploy-runs.json" >/dev/null 2>&1; then
+    deploy_state="main's last deploy run could not be read ($(head -c 120 "$tmp/gh-deploy.err" | tr '\n' ' '))"
+  else
+    read -r d_concl d_event d_url < <(jq -r '[.workflow_runs[]? | select(.status == "completed")
+        | select(.conclusion == "success" or .conclusion == "failure"
+                 or .conclusion == "timed_out" or .conclusion == "startup_failure")][0]
+        | select(. != null) | [.conclusion, .event, .html_url] | @tsv' "$tmp/deploy-runs.json")
+    if [ -z "${d_concl:-}" ]; then
+      deploy_state="main's last deploy run could not be read (no passed or failed run in the latest page)"
+    elif [ "$d_concl" != "success" ]; then
+      deploy_state="main's last deploy run did not pass ($d_url, $d_concl): this merge redeploys what it left behind"
+    elif [ "$d_event" != "push" ]; then
+      deploy_state="main's last deploy run was a manual one ($d_url): this merge redeploys every function main changed since its last recorded deploy, a rollback included"
+    fi
+  fi
+  if [ -z "$gate_files" ] && [ -z "$deploy_fns" ] && [ -z "$deploy_unknown" ] && [ -z "$deploy_state" ]; then
+    echo "production: landing deploys no Edge Function and edits no gate file"
+  else
+    production=1
+    echo "production: landing it is a production write; a self-merge waits for the PM's typed merge"
+    [ -n "$deploy_fns" ] && echo "  deploys   $(printf '%s\n' "$deploy_lines" | sed '/^$/d' | awk -F'\t' '{ printf "%s%s (%s)", (NR > 1 ? ", " : ""), $1, $2 } END { print "" }')"
+    [ -n "$deploy_unknown" ] && echo "  deploys   could not tell, treated as deploying: ${deploy_unknown}"
+    [ -n "$deploy_state" ] && echo "  deploys   $deploy_state"
+    [ -n "$gate_files" ] && echo "  edits     $(short_list "$gate_files")"
+  fi
+fi
+
 for n in ${notes[@]+"${notes[@]}"}; do
   echo "note: $n"
 done
@@ -581,6 +662,13 @@ fi
 if [ "$lost_total" -gt 0 ] || [ "$back_total" -gt 0 ] || [ -n "$new_dups" ] || [ ${#mig_clash[@]} -gt 0 ] ||
   [ ${#others_unread[@]} -gt 0 ] || [ "$markers" -gt 0 ] || [ "$ci_red" -eq 1 ]; then
   echo "next: restore each lost line, or say in the PR why it goes; delete each resurrected line, or say why it returns; renumber a duplicate migration (the steward skill §4); remove every conflict marker; wait for main to go green, or land its fix"
+  [ "$production" -eq 1 ] && echo "$production_next"
+  echo "MERGE CHECK: REVIEW"
+  exit 2
+fi
+# Last, and alone: a production write is REVIEW whatever else passed.
+if [ "$production" -eq 1 ]; then
+  echo "$production_next"
   echo "MERGE CHECK: REVIEW"
   exit 2
 fi

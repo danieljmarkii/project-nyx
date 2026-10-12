@@ -320,12 +320,15 @@ export function useCrossPetSafetyBanner(): CrossPetBanner | null {
           const byPet = await readSignalsAndRefresh(others.map((p) => p.id));
           if (cancelled) return;
           const candidates = others.map((pet) => ({ pet, findings: byPet.get(pet.id) ?? [] }));
-          const selected = selectCrossPetSafetyFinding(candidates);
+          // PR-30c (CUL-1739): one clock for the pick and the words, so a call now past its
+          // first day is ranked and dated by the same instant. Read on each focus, as the cache is.
+          const nowMs = Date.now();
+          const selected = selectCrossPetSafetyFinding(candidates, nowMs);
           if (!selected) {
             setBanner(null);
             return;
           }
-          const copy = bannerCopy(selected.finding, selected.pet.name);
+          const copy = bannerCopy(selected.finding, selected.pet.name, nowMs);
           // Defense-in-depth (§4): suppress on any guardrail drift — fail safe to
           // silence, never a bad escalation, never a reassurance. The screen reads the
           // TEMPLATE (`screened`), never the owner's words: a food called "Healthy

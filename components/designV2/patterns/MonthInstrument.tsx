@@ -7,6 +7,8 @@ import { useAppActive } from '../../../hooks/useAppActive';
 import { useReducedMotion } from '../../../hooks/useReducedMotion';
 import { dayMarkDateWord } from '../../../lib/chartCopy';
 import { TIER_WORDS, TIERED_CALLS_READ_AS } from '../../../lib/incidentTierWords';
+import { datedCallLinesOf } from '../../../lib/ruleSeam';
+import { useEn3LiveSince } from '../../../hooks/useEn3LiveSince';
 import {
   buildMonthModel,
   carryMonthRoses,
@@ -248,6 +250,10 @@ export function MonthInstrument({
         : null,
     [facts, shown, today, trialMark, lens, words.noun, words.rowNoun],
   );
+  // EN-3's go-live day (CUL-1513): dates the two call lines and marks the seam, only where
+  // the month straddles the change and each line's days sit on its own side.
+  const liveSince = useEn3LiveSince();
+  const dated = useMemo(() => (model ? datedCallLinesOf(model, liveSince) : null), [model, liveSince]);
 
   // The record's first month bounds paging backward; without a record there is nowhere
   // to page to.
@@ -431,7 +437,7 @@ export function MonthInstrument({
             ))}
           </View>
 
-          <ThemedText style={styles.line} accessibilityLabel={layers.vomit ? monthA11yLabel(model, layers) : undefined} testID="month-line">
+          <ThemedText style={styles.line} accessibilityLabel={layers.vomit ? monthA11yLabel(model, layers, liveSince) : undefined} testID="month-line">
             {layers.vomit ? model.line : model.coverageLine}
           </ThemedText>
 
@@ -458,6 +464,7 @@ export function MonthInstrument({
                         noun={words.noun}
                         episodes={lens === VOMIT_LENS}
                         selected={openDay === day.key}
+                        seam={dated !== null && day.key === dated.seamKey && !day.outsideMonth}
                         onPress={() => void openDayInPlace(day.key)}
                       />
                     ))}
@@ -477,7 +484,7 @@ export function MonthInstrument({
             })}
           </View>
 
-          <Legend model={model} layers={layers} dayNoun={lens === VOMIT_LENS ? words.rowNoun : words.noun} episodes={lens === VOMIT_LENS} />
+          <Legend model={model} layers={layers} dated={dated} dayNoun={lens === VOMIT_LENS ? words.rowNoun : words.noun} episodes={lens === VOMIT_LENS} />
         </>
       )}
     </View>
@@ -494,6 +501,7 @@ function GridDay({
   noun,
   episodes,
   selected,
+  seam,
   onPress,
 }: {
   day: MonthDay;
@@ -503,6 +511,9 @@ function GridDay({
   /** Vomiting counts episodes; every other lens counts entries (CUL-1217, GC-3). */
   episodes: boolean;
   selected: boolean;
+  /** EN-3's go-live day (CUL-1513): a thin rule on its leading edge, named by the legend's
+   *  two dated lines. Drawn only when those lines are dated. */
+  seam: boolean;
   onPress: () => void;
 }) {
   if (day.coverage === 'before_record') {
@@ -558,6 +569,15 @@ function GridDay({
       </View>
     );
   }
+  if (seam) {
+    // Out of the flow and inert: the mark keeps its box, its hit area and its label.
+    return (
+      <View style={styles.seamDay} testID="month-seam-day">
+        {mark}
+        <View pointerEvents="none" style={styles.seamRule} testID="month-seam-mark" />
+      </View>
+    );
+  }
   return mark;
 }
 
@@ -594,25 +614,24 @@ function DaySlot({
   const onLayout = (e: LayoutChangeEvent) => motion.onSlotLayout(e.nativeEvent.layout.height);
   const railOut = motion.inFlight && motion.railHeight != null;
   const items = load && 'rows' in load ? describeDayEventDoors(load.rows) : [];
-  // The fold's anatomy: idle, the shipped tree to the byte — a plain rail, plain rows, no
-  // wrapper. In flight, the rail is an `Animated.View` out of the flow with an explicit
-  // height, and the rows sit in an `Animated.View` that mounts only while they are
-  // arriving or leaving (an animated wrapper left mounted across an idle state keeps a
-  // stale node attached to its value, and the next beat starts against it).
-  const rowsWrapped = motion.phase !== 'open';
+  // The fold's anatomy: idle, a plain rail and plain rows. In flight, the rail leaves the
+  // flow with an explicit height. Each node keeps ONE element type across every phase
+  // (CUL-1721): the rail is always an `Animated.View` and the rows always sit in the one
+  // animated stage, so nothing in the day remounts at either end of a transition — a row
+  // VoiceOver is on keeps its focus. The values rest at 1 / 0 whenever the slot is idle.
   const rowsStyle = { opacity: motion.values.rowsOpacity, transform: [{ translateY: motion.values.rowsShift }] };
   return (
     <View style={[styles.slot, { minHeight: motion.slotMinHeight }]} onLayout={onLayout} testID="day-slot">
-      {railOut ? (
-        <Animated.View
-          testID="day-rail"
-          style={[styles.rail, styles.railOut, { height: motion.railHeight as number, transform: [{ scaleY: motion.values.railScale }] }]}
-        />
-      ) : (
-        <View style={styles.rail} testID="day-rail" />
-      )}
+      <Animated.View
+        testID="day-rail"
+        style={
+          railOut
+            ? [styles.rail, styles.railOut, { height: motion.railHeight as number, transform: [{ scaleY: motion.values.railScale }] }]
+            : styles.rail
+        }
+      />
       {motion.rowsMounted && (
-        <RowsStage wrapped={rowsWrapped} style={rowsStyle}>
+        <RowsStage style={rowsStyle}>
           <ThemedText style={styles.dayTitle}>{dayMarkDateWord(aboutKey)}</ThemedText>
           {load == null ? (
             <ThemedText style={styles.daySubtitle}>Loading…</ThemedText>
@@ -692,24 +711,18 @@ function DaySlot({
   );
 }
 
-/** The rows' stage: an animated wrapper while they arrive or leave, a plain View at rest. */
+/** The rows' stage: the one animated wrapper, mounted with the rows (CUL-1721). */
 function RowsStage({
-  wrapped,
   style,
   children,
 }: {
-  wrapped: boolean;
   style: { opacity: Animated.Value; transform: { translateY: Animated.Value }[] };
   children: ReactNode;
 }) {
-  return wrapped ? (
+  return (
     <Animated.View style={[styles.slotContent, style]} testID="day-detail">
       {children}
     </Animated.View>
-  ) : (
-    <View style={styles.slotContent} testID="day-detail">
-      {children}
-    </View>
   );
 }
 
@@ -724,11 +737,15 @@ function RowsStage({
 function Legend({
   model,
   layers,
+  dated,
   dayNoun,
   episodes,
 }: {
   model: MonthModel;
   layers: MonthLayers;
+  /** The two call lines' dated lead-ins and the seam's day (CUL-1513), or null for today's
+   *  undated lines (`datedCallLinesOf`). */
+  dated: { before: string; from: string } | null;
   /** What a rose day is called: "vomit day", "itching day" — the chip's word, not the
    *  log's "itch/scratch". */
   dayNoun: string;
@@ -762,7 +779,7 @@ function Legend({
         <View style={styles.legendItem} testID="month-legend-call">
           <View style={[styles.legendDiamond, styles.legendDotPhotoCall]} testID="month-legend-mark-call" />
           <ThemedText style={styles.legendText}>
-            read as {TIER_WORDS.worth_a_call.readAs} · {dayWord(calledDays)}
+            {dated ? dated.before : 'read as'} {TIER_WORDS.worth_a_call.readAs} · {dayWord(calledDays)}
           </ThemedText>
         </View>
       ) : null}
@@ -770,7 +787,7 @@ function Legend({
         <View style={styles.legendItem} testID="month-legend-call-tiered">
           <View style={[styles.legendDiamond, styles.legendDotPhotoCall]} testID="month-legend-mark-call" />
           <ThemedText style={styles.legendText}>
-            read as {TIERED_CALLS_READ_AS} · {dayWord(tieredDays)}
+            {dated ? dated.from : 'read as'} {TIERED_CALLS_READ_AS} · {dayWord(tieredDays)}
           </ThemedText>
         </View>
       ) : null}
@@ -889,6 +906,20 @@ const styles = StyleSheet.create({
   // an opacity, which took its date to 2.14:1 (CUL-1224, BRK-32).
   outsideMonth: {
     flex: 1,
+  },
+  seamDay: {
+    flex: 1,
+  },
+  // The mock's inset 2pt rule on the go-live day's leading edge, in the ink: a date mark,
+  // never a tier colour.
+  seamRule: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 2,
+    borderRadius: 1,
+    backgroundColor: theme.colorTextPrimary,
   },
   beforeRecord: {
     flex: 1,

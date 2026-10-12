@@ -19,7 +19,7 @@ import { configure, fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { WeightCard } from './WeightCard';
-import { WeightDots } from '../../charts/WeightDots';
+import { LABEL_ROOM, WeightDots } from '../../charts/WeightDots';
 import { HOME_SCALE_CAVEAT } from '../../../lib/chartCopy';
 import { theme } from '../../../constants/theme';
 
@@ -30,7 +30,7 @@ const flat = (style: unknown): Record<string, number> => StyleSheet.flatten(styl
 // date, so a UTC literal would read "Jul 2" in Honolulu and "Jul 3" in Kiritimati.
 const at = (y: number, m: number, d: number) => new Date(y, m - 1, d, 8, 0).toISOString();
 const r = (weightKg: number, occurredAt: string) => ({ weightKg, occurredAt });
-const PLOT_HEIGHT = 56;
+const PLOT_HEIGHT = 96;
 
 function measured(ui: React.ReactElement, width = 340) {
   const api = render(ui);
@@ -81,7 +81,8 @@ describe('WeightCard (Design v2)', () => {
       return st.left + st.width / 2;
     };
     expect((cx(1) - cx(0)) / (cx(5) - cx(0))).toBeCloseTo(17 / 71, 2);
-    expect(cx(5) - cx(0)).toBeCloseTo(plotW, 0);
+    // The first dot is inset by the last dot's radius, so it is never half off the card.
+    expect(cx(5) - cx(0)).toBeCloseTo(plotW - 4, 0);
     // The band's edges are drawn and labelled.
     expect(getByTestId('weight-edge-hi').props.children).toBe('+10%');
     expect(getByTestId('weight-edge-lo').props.children).toBe('−10%');
@@ -106,8 +107,8 @@ describe('WeightCard (Design v2)', () => {
     const moveFrac = (y5 - y0) / PLOT_HEIGHT;
     expect(moveFrac).toBeGreaterThan(0.1);
     expect(moveFrac).toBeLessThan(0.3);
-    // And the first reading sits on the band's centre line.
-    expect(y0).toBeCloseTo(PLOT_HEIGHT / 2, 0);
+    // And the first reading sits on the band's centre line (below the label room).
+    expect(y0).toBeCloseTo(LABEL_ROOM + PLOT_HEIGHT / 2, 0);
   });
 
   it('no fill: no area node in the tree', () => {

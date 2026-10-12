@@ -7,6 +7,7 @@ import {
   CHIP_COLUMN_GAP,
   CHIP_ROW_GAP,
 } from './AdherenceChipRow';
+import { theme } from '../../constants/theme';
 
 const TAP_TARGET_FLOOR = 44; // iOS HIG
 
@@ -96,6 +97,34 @@ describe('AdherenceChipRow', () => {
     // is exactly where the slop lives. The row gap has to clear both sides' reach.
     it('the row gap clears two wrapped lines of vertical slop', () => {
       expect(CHIP_ROW_GAP).toBeGreaterThanOrEqual(CHIP_HITSLOP.bottom + CHIP_HITSLOP.top);
+    });
+  });
+
+  // CUL-1691 PR 1 (spec §1): the selected fill is the INK of each family, for every
+  // caller (the completion card, the dose record, edit-event). White on the bright
+  // colorAccent / colorEventSymptom was 2.26:1 / 3.67:1; on the inks it is 5.17 / 8.02.
+  // Read off the rendered node, never the helper, so a chip wired past it still reds.
+  describe('the selected fill (CUL-1691)', () => {
+    const cases: ReadonlyArray<[value: 'given' | 'partial' | 'missed' | 'refused', label: string, fill: string]> = [
+      ['given', 'Given', theme.colorAccentInk],
+      ['partial', 'Partial', theme.colorEventSymptomInk],
+      ['missed', 'Missed', theme.colorEventSymptomInk],
+      ['refused', 'Refused', theme.colorEventSymptomInk],
+    ];
+
+    it.each(cases)('%s fills and borders in its ink, label white', (value, label, fill) => {
+      const { getByText } = render(<AdherenceChipRow value={value} onChange={() => {}} />);
+      const chip = StyleSheet.flatten(chipHost(getByText, label).props.style);
+      expect(chip.backgroundColor).toBe(fill);
+      expect(chip.borderColor).toBe(fill);
+      expect(StyleSheet.flatten((getByText(label) as unknown as Node).props.style).color).toBe(theme.colorTextOnDark);
+    });
+
+    it('leaves the unselected chips on the light ground', () => {
+      const { getByText } = render(<AdherenceChipRow value="given" onChange={() => {}} />);
+      const chip = StyleSheet.flatten(chipHost(getByText, 'Refused').props.style);
+      expect(chip.backgroundColor).toBe(theme.colorSurface);
+      expect(chip.borderColor).toBe(theme.colorBorder);
     });
   });
 });

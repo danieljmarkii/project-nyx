@@ -54,18 +54,39 @@
 // correcting a pointer or rewording a rule does not red the build, while removing
 // anything structural does — and then the ceiling follows it down.
 //
+// THE SECOND RATCHET (CUL-1874, retro 4 D5, 2026-10-12). The first one held
+// CLAUDE.md flat from 9/15 while about 190 KB of rules grew in the files beside it
+// (`dispatch.md` 14.9 → 72.2 KB, the groomer 18.5 → 61.5 KB): retro 2's L3 again, a
+// budget without a structural fix moved the growth next door. D5 split CLAUDE.md into
+// a core plus path-scoped `.claude/rules/` files, so a second ratchet, built the same
+// way (both directions), caps the TOTAL of CLAUDE.md, every `.claude/**/*.md`, and the
+// docs moved out of CLAUDE.md that sessions still read (MOVED_DOCS). Moving a rule out
+// of the core into a rule file then saves nothing on the total; only deleting does.
+//
+// THE RULE INDEX. CLAUDE.md § Code Conventions lists every rule file. A rule file the
+// index does not name is a rule no session that skips its paths will ever learn
+// exists, and an indexed file that is missing (or has no `paths:`) is a pointer to
+// nothing, or a file that loads on every session and undoes the split. Both directions
+// are asserted below.
+//
 // SCOPE BOUNDARY (stated, because an undocumented blind spot reads as coverage):
 // this guards SIZE, not VALUE. It cannot tell a session that deleted the wrong 3 KB
-// from one that deleted the right 3 KB, and it has nothing to say about `docs/`,
-// `.claude/`, or `STATUS.md` — a rule moved out of CLAUDE.md into a file a session
-// still reads has not reduced what that session loads. It closes one measured failure
-// mode: this file silently regrowing between trims.
+// from one that deleted the right 3 KB. It does not cover `docs/` beyond MOVED_DOCS
+// (the specs and `docs/engineering-lessons.md` are read on demand, not at session
+// start), nor `STATUS.md` (a pointer card with its own rule), nor `operating-kit/`
+// (a hand-ported copy). It cannot check that a rule file's `paths:` are the RIGHT
+// globs, only that it has some: that a rule loads when its surface is touched was
+// verified on the installed CLI (CUL-1874's session record), not here.
 
 import * as fs from 'fs';
 import * as path from 'path';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const MANUAL = 'CLAUDE.md';
+const RULES_DIR = '.claude/rules';
+
+/** Docs moved out of CLAUDE.md by CUL-1874 that a session still reads by pointer. */
+const MOVED_DOCS = ['docs/open-questions.md', 'docs/secrets-register.md', 'docs/dev-handoff-runbook.md'];
 
 /**
  * The ceiling, in BYTES on disk (what `wc -c CLAUDE.md` reports) — not characters.
@@ -74,12 +95,12 @@ const MANUAL = 'CLAUDE.md';
  * units — NOT code points; this file holds 26 astral chars, so a code-point count
  * disagrees by 26), a gap of 1,153 B.
  *
- * Set 2026-09-12 (CUL-920) to the size of the file once § Version History (14,662 B)
- * and § Build Sequence (2,770 B) were deleted and the pointers they dangled were
- * repaired — 153,050 B down to this. It is a RATCHET: lower it whenever a trim
- * lands, and never raise it.
+ * Set 2026-09-12 (CUL-920) at 136,093 B once § Version History and § Build Sequence
+ * were deleted; lowered 2026-10-12 (CUL-1874) when the conventions, the Secrets
+ * Register, Open Questions and Dev Handoff moved out and the Read-These table went to
+ * one line per row. It is a RATCHET: lower it whenever a trim lands, and never raise it.
  */
-const CEILING_BYTES = 136_093;
+const CEILING_BYTES = 49_068;
 
 /** How far below the ceiling the file may sit before the ceiling is stale. */
 const SLACK_BYTES = 2_048;
@@ -104,9 +125,9 @@ describe('CLAUDE.md byte ratchet (CUL-920)', () => {
   it('measures the real CLAUDE.md, in bytes', () => {
     expect(fs.existsSync(manualPath)).toBe(true);
 
-    // The manual, not an empty or truncated read. Any plausible CLAUDE.md is far
-    // above this; a wrong path or a zero-length read is far below it.
-    expect(sizeBytes).toBeGreaterThan(50_000);
+    // The manual, not an empty or truncated read. The post-split core (CUL-1874) is ~49 KB;
+    // a wrong path or a zero-length read is far below this floor.
+    expect(sizeBytes).toBeGreaterThan(30_000);
 
     // It really is the manual, not some other markdown file at that path.
     const head = manual.subarray(0, 200).toString('utf8');
@@ -171,5 +192,112 @@ describe('CLAUDE.md byte ratchet (CUL-920)', () => {
       );
     }
     expect(underBy).toBeLessThanOrEqual(SLACK_BYTES);
+  });
+});
+
+// ── The second ratchet: CLAUDE.md + `.claude/**/*.md` + MOVED_DOCS ───────────────
+
+/** Every `.md` under `.claude/`, found by walking the REPOSITORY, never from a list. */
+function walkMarkdown(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(path.join(REPO_ROOT, dir), { withFileTypes: true })) {
+    const rel = path.posix.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkMarkdown(rel));
+    else if (entry.name.endsWith('.md')) out.push(rel);
+  }
+  return out.sort();
+}
+
+const dotClaude = walkMarkdown('.claude');
+const totalFiles = [MANUAL, ...dotClaude, ...MOVED_DOCS];
+const totalBytes = totalFiles.reduce((sum, f) => sum + fs.statSync(path.join(REPO_ROOT, f)).size, 0);
+
+/**
+ * The ceiling on the TOTAL, in bytes. Before CUL-1874 the same set weighed 475,109 B
+ * (CLAUDE.md 136,073 + `.claude/**\/*.md` 323,482 + the runbook 15,554); after the
+ * split it weighed 466,421 B, and 469,080 B once CUL-1873 (#1197, which grew `wrap.md`
+ * before this ratchet existed) was merged in. That merged figure is the starting value.
+ * Same ratchet discipline: lower it after a trim, never raise it.
+ */
+const TOTAL_CEILING_BYTES = 469_080;
+
+/** Wider than the core's slack: the total spans ~40 files edited by many sessions. */
+const TOTAL_SLACK_BYTES = 4_096;
+
+describe('the always-read instruction set: byte ratchet (CUL-1874)', () => {
+  // NON-VACUITY FLOOR. The walk is the thing that could silently measure nothing: a
+  // wrong root or a dropped directory shrinks the total and the ceiling test passes.
+  // So the expected members are named here as REPO facts, not taken from the walk.
+  it('counts CLAUDE.md, the rule files, the commands, the skills, the agents and the moved docs', () => {
+    for (const must of [
+      '.claude/rules/ui.md',
+      '.claude/commands/dispatch.md',
+      '.claude/commands/wrap.md',
+      '.claude/skills/backlog-groomer/SKILL.md',
+      '.claude/agents/code-reviewer.md',
+    ]) {
+      expect(dotClaude).toContain(must);
+    }
+    for (const doc of MOVED_DOCS) expect(fs.existsSync(path.join(REPO_ROOT, doc))).toBe(true);
+    // Far above any plausible core alone, so a walk that found nothing reds here.
+    expect(totalBytes).toBeGreaterThan(sizeBytes + 200_000);
+  });
+
+  it(`totals at or under ${TOTAL_CEILING_BYTES.toLocaleString('en-US')} B`, () => {
+    if (totalBytes > TOTAL_CEILING_BYTES) {
+      throw new Error(
+        [
+          `CLAUDE.md + .claude/**/*.md + ${MOVED_DOCS.join(', ')} total ${totalBytes.toLocaleString('en-US')} B, ` +
+            `${(totalBytes - TOTAL_CEILING_BYTES).toLocaleString('en-US')} B over ${TOTAL_CEILING_BYTES.toLocaleString('en-US')} B.`,
+          '',
+          'Moving text between CLAUDE.md and a rule, command or skill file does not change this',
+          'total; only deleting does. Delete at least that much from any file in the set (the',
+          'story behind a rule belongs in docs/engineering-lessons.md, which is not counted).',
+          'DO NOT raise TOTAL_CEILING_BYTES to go green.',
+        ].join('\n'),
+      );
+    }
+    expect(totalBytes).toBeLessThanOrEqual(TOTAL_CEILING_BYTES);
+  });
+
+  it('has a total ceiling that still tracks the files (lower it after a trim)', () => {
+    const under = TOTAL_CEILING_BYTES - totalBytes;
+    if (under > TOTAL_SLACK_BYTES) {
+      throw new Error(
+        `The set is ${under.toLocaleString('en-US')} B below TOTAL_CEILING_BYTES. Set it to ` +
+          `${totalBytes.toLocaleString('en-US')} in guards/claudeMdBudget.test.ts in this same PR.`,
+      );
+    }
+    expect(under).toBeLessThanOrEqual(TOTAL_SLACK_BYTES);
+  });
+});
+
+describe('the rule index (CUL-1874)', () => {
+  const ruleFiles = fs
+    .readdirSync(path.join(REPO_ROOT, RULES_DIR))
+    .filter((f) => f.endsWith('.md'))
+    .map((f) => `${RULES_DIR}/${f}`)
+    .sort();
+  const manualText = manual.toString('utf8');
+  const conventions = manualText.slice(
+    manualText.indexOf('## Code Conventions'),
+    manualText.indexOf('\n## ', manualText.indexOf('## Code Conventions') + 1),
+  );
+  const indexed = Array.from(new Set(conventions.match(/\.claude\/rules\/[a-z-]+\.md/g) ?? [])).sort();
+
+  it('finds the rule files and the index (non-vacuity)', () => {
+    expect(ruleFiles.length).toBeGreaterThanOrEqual(5);
+    expect(conventions.length).toBeGreaterThan(500);
+  });
+
+  it('names every rule file in CLAUDE.md § Code Conventions, and only real ones', () => {
+    expect(indexed).toEqual(ruleFiles);
+  });
+
+  it('scopes every rule file by paths, so none loads on every session', () => {
+    for (const f of ruleFiles) {
+      const head = fs.readFileSync(path.join(REPO_ROOT, f), 'utf8');
+      expect({ f, scoped: /^---\npaths:\n(\s+- "[^"]+"\n)+---\n/.test(head) }).toEqual({ f, scoped: true });
+    }
   });
 });

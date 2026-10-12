@@ -103,6 +103,13 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
     definer: true, pinned: true, execute: [],
     why: 'CUL-1415 / CUL-1416 (082) — DEFINER so the parent lookups are not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
   },
+  // 097 (CUL-1723): intake_checks' same-pet guard. The INSERT arm is the lookup
+  // (DEFINER) with 082's ownership arm; the UPDATE arm freezes identity and reads
+  // nothing.
+  enforce_intake_check_same_pet: {
+    definer: true, pinned: true, execute: [],
+    why: 'CUL-1723 (097) — DEFINER so the insert lookup is not RLS-filtered; revoked so it is not RPC-callable (the B-520 class, from birth).',
+  },
   // 075 (CUL-1201 part 3): event_ai_analysis's updated_at, strictly increasing.
   // Reads nothing, so INVOKER; a trigger fires without an EXECUTE check, so no
   // client role needs it.
@@ -131,6 +138,12 @@ const EXPECTED: Readonly<Record<string, Expectation>> = {
   take_back_may_wait_on_record_change: {
     definer: false, pinned: true, execute: [],
     why: 'CUL-1671 (089) — must stay INVOKER (RLS must bound the sweep a client write fires); pinned and revoked so it is not RPC-callable.',
+  },
+  // 092 (CUL-1682): a photo landing, leaving or moving lowers may_wait. 089's
+  // posture and reason: RLS bounds a client's sweep to its own rows.
+  take_back_may_wait_on_photo_change: {
+    definer: false, pinned: true, execute: [],
+    why: 'CUL-1682 (092) — must stay INVOKER (RLS must bound the sweep a client attachment write fires); pinned and revoked so it is not RPC-callable.',
   },
 
   // 085 (CUL-1406): the dated correction beside a stored vomit read. The count

@@ -324,6 +324,10 @@ export const SYNC_QUEUES: readonly SyncQueue[] = [
   // check_in to have landed), because the server's trg_looks_same_pet refuses a child
   // whose parent it cannot see.
   { table: 'looks', pendingSince: 'updated_at' },
+  // Engines v3 PR-30q (CUL-1724) — the answer to "Has she eaten?" under a vomit read.
+  // LWW on updated_at (Change edits the row). PARENT-GATED: 097's same-pet guard runs
+  // before the foreign key, so an answer sent ahead of its vomit is a TERMINAL 23514.
+  { table: 'intake_checks', pendingSince: 'updated_at' },
   // Insert-only: no updated_at column exists (an attachment row is never edited
   // in place), so created_at is the honest and only age.
   { table: 'event_attachments', pendingSince: 'created_at' },
@@ -516,6 +520,10 @@ export const PARENT_GATED_QUEUES = {
   //   owed by a delete also waits for the tombstone to land. A meal's rating lives on
   //   `meals`, keyed by event_id rather than id, so its gate is the drain's own clause.
   incident_floor_queue: [{ parent: 'events', column: 'event_id' }],
+  // • intake_checks (Engines v3 PR-30q) → the vomit it answers under. 097's same-pet guard
+  //   runs BEFORE the foreign key, so an answer under a vomit logged a minute ago offline
+  //   would otherwise be refused with a TERMINAL 23514, not a retryable 23503.
+  intake_checks: [{ parent: 'events', column: 'event_id' }],
 } as const satisfies Record<string, readonly { parent: string; column: string }[]>;
 export type ParentGatedQueue = keyof typeof PARENT_GATED_QUEUES;
 
@@ -547,12 +555,17 @@ export function parentLandedSql(child: ParentGatedQueue): string {
  * marker's column the generic gate joins on, and the server's re-floor reads the rating
  * through the vomit read's intake flag: sent first, the check would floor over the rating
  * the owner had just replaced. The same "a quarantined parent holds nothing" rule.
+ * EN-5's answer under a vomit (`intake_checks`, PR-30q) is keyed the same way and read by
+ * the same flag, so a re-check owed by an answer waits for the answer too.
  */
 export function floorTriggerLandedSql(): string {
   return `${parentLandedSql('incident_floor_queue')}
      AND NOT EXISTS (SELECT 1 FROM meals gate_m
      WHERE gate_m.event_id = incident_floor_queue.event_id
-       AND gate_m.synced = 0 AND gate_m.sync_error IS NULL)`;
+       AND gate_m.synced = 0 AND gate_m.sync_error IS NULL)
+     AND NOT EXISTS (SELECT 1 FROM intake_checks gate_i
+     WHERE gate_i.event_id = incident_floor_queue.event_id
+       AND gate_i.synced = 0 AND gate_i.sync_error IS NULL)`;
 }
 
 /** The re-check drain's queue read, exported so `syncQueue.visitLink.test.ts` replays the

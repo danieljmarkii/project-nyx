@@ -1,5 +1,5 @@
 # Culprit — App Polish Requirements (Aug 2026)
-**Version:** 1.2 | **Status:** BUILD-READY | **Last Updated:** 2026-10-05
+**Version:** 1.4 | **Status:** BUILD-READY | **Last Updated:** 2026-10-10
 
 The build contract for the **Aug. 2026 Design Polish** track (Linear project, team Culprit). Born from the 2026-08-22 design/UX session: a four-lens audit (Jordan capture · Sam multi-pet · Designer periphery · PO Linear reconciliation) → three mock rounds, every decision PM-ruled same day. This doc is canonical; the Linear project links it as a Resource and the repo file wins on divergence.
 
@@ -55,7 +55,7 @@ Out of scope for this track, held in round 1's appendix for their own selection:
 `components/home/SignalZone.tsx`, local `Animated` values, no new deps. PM-locked spec:
 
 - **Trigger:** the Signal cache transitions building → live with ≥1 finding AND the per-pet arrival marker is unset.
-- **Sequence (~1.2s):** 0ms rail turns live → 250ms the wash begins (teal into a breath of moment-gold, left-to-right, 900ms, ease-out) → building rows dissolve as the first headline crossfades in (400–900ms) → sub-line fades at 1200ms. One soft success tap at 900ms.
+- **Sequence (~1.2s):** 0ms rail turns live → 250ms the wash begins (teal into a breath of moment-gold, left-to-right, 900ms, ease-out) → building rows dissolve as the first headline crossfades in (400–900ms) → sub-line fades at 1200ms. One soft tap at 900ms, never the success pattern (CUL-647, PM 2026-10-10: every finding that can arrive names a symptom, so it is acknowledged, never congratulated).
 - **Once per pet, ever:** AsyncStorage marker `signal_arrival_played:<petId>`, registered in `wipeLocalSession` (B-402 rule — a shared device never replays another account's moment). Device-local; a reinstall may replay once (accepted, harmless).
 - **Never for a safety finding:** if the first-ever finding leads the safety band, the card appears plainly and instantly (S1 — plainness is the severity signal) and the marker is set anyway.
 - **Reduced motion:** plain crossfade, no sweep; the haptic still fires (touch is not motion). Uses `hooks/useReducedMotion` + pauses on blur per the loading-system convention.
@@ -65,7 +65,7 @@ Out of scope for this track, held in round 1's appendix for their own selection:
 
 Six registers today (named meal card / dose card / MedStrip teal line / full-white takeover / sheet beat / capture-screen ✓ glyph) → **two**:
 
-- **R1 · The named card** — the `MealCompletionCard` anatomy generalized: every full-screen commit (symptom, weight, capture-path meals/doses) lands a warm dark bottom card over a **dimmed** Home (never a white flash). It speaks the record's own sentence via `lib/logCopy` (`"Vomit · found by 5:33 PM"`, `"Weight · 12.4 lb"`) + `Saved to {pet}'s record`, and carries **Undo** + Change time. Symptom tone: calm — no gold, single soft tap.
+- **R1 · The named card** — the `MealCompletionCard` anatomy generalized: every full-screen commit (symptom, weight, capture-path meals/doses) lands a daylight bottom card over a dimmed Home (never a full-screen white takeover). Its ground and motion: `docs/nyx-completion-card-requirements.md` (CUL-1691 D1, PM-ruled 2026-10-09). It speaks the record's own sentence via `lib/logCopy` (`"Vomit · found by 5:33 PM"`, `"Weight · 12.4 lb"`) + `Saved to {pet}'s record`, and carries **Undo** + Change time. Symptom tone: calm — no gold, single soft tap.
 - **R2 · The in-place beat** — the sheet's mint check, for commits inside a surface (sheet confirm, MedStrip one-tap). Inherits the sentence **and carries Undo** (PM-ruled 2026-09-14, CUL-964); MedStrip's confirm gains the mark + haptic. **Undo is a property of the REGISTER, not of a card:** a beat painted inside a surface is still a `momentStore` presentation, so it reaches the one shared reversal and inherits the dwell, the touch pause and the commit haptic with it. Its dwell is the one exception to the 5s below — an in-sheet beat holds the owner's screen, so it keeps the ≤2s earned-moment cap (1800ms) and buys time through the pause instead.
 
 **Rules:**
@@ -101,7 +101,7 @@ One `lib/haptics.ts`, seven verbs, consumed at the moment stores so a new log pa
 
 iOS system haptic settings are respected automatically; `expo-haptics` (managed-workflow safe) is the one new dependency.
 
-**⚠ Shipped state at Design v2's GA (2026-10-05, CUL-1071).** `lib/haptics.ts` exports **eight** verbs, the table's six plus two added since, each its own moment: `commitVisit` (a saved vet visit, a single soft tap like a symptom, for a different reason; CUL-902) and `insightArrival` (the §4 arrival's success tap, fired only by `SignalZone`, the scan's one exemption; CUL-601). The silence rule is enforced by `guards/haptics.test.ts`, and the Design v2 spine row (`components/dayRow/SpineNodeRow.tsx`) is in its `ALWAYS_SCANNED` set: a read landing *Worth a call* on Home buzzes nothing. On Home under Design v2:
+**⚠ Shipped state at Design v2's GA (2026-10-05, CUL-1071).** `lib/haptics.ts` exports **nine** verbs (eight at GA; the ninth landed 2026-10-09), the table's six plus three added since, each its own moment: `commitVisit` (a saved vet visit, a single soft tap like a symptom, for a different reason; CUL-902), `insightArrival` (the §4 arrival's soft tap, never the success pattern since CUL-647, fired only by `SignalZone`, the scan's one exemption; CUL-601) and `slideCross` (a thumb sliding across a FAB fan pill, a selection tick that carries no news; CUL-1278). The silence rule is enforced by `guards/haptics.test.ts`, and the Design v2 spine row (`components/dayRow/SpineNodeRow.tsx`) is in its `ALWAYS_SCANNED` set: a read landing *Worth a call* on Home buzzes nothing. On Home under Design v2:
 - **The look header** (`components/designV2/home/LookHeader.tsx`) plays `selectChip` once per tap, and the tap is the save, so a look has no commit haptic (the daily-look spec's T-10). Opening *More…*, *Add a look* or the intake door plays `openMenu`.
 - **Pull-to-refresh** plays `pullThreshold` from `app/(tabs)/index.tsx`.
 - **The medication strip's confirm is gone with the strip** (deleted at GA), so the R2 beat it carried (§5) no longer appears on Home; the look header's beat is the in-place beat Home hosts, a `momentStore` presentation (`showLook`, `LOOK_DWELL_MS` 5000ms, 30s under a screen reader, CUL-1224) whose Undo reaches the shared reversal. Its dwell is the R1 five seconds, not R2's 1800ms in-sheet cap: the header is not a sheet. No ruling names which register's dwell rule the header follows; this records the code.
@@ -160,3 +160,4 @@ Project **"Aug. 2026 Design Polish"** (team Culprit). 18 PRs, one PR = one sessi
 | v1.0 | 2026-08-22 | Initial build contract. All decisions PM-ruled across mock rounds 1–3 same day; session `docs/sessions/2026-08-22-design-ux-opportunities.md`. |
 | v1.1 | 2026-09-14 | §5 R2 gains Undo, and the unconditional-Undo rule is stated for both registers (CUL-964, PM-ruled 2026-09-14). Dwell exception for an in-sheet beat recorded: 1800ms, with the touch pause rather than a longer base. |
 | v1.2 | 2026-10-05 | Design v2 GA (CUL-1071, PM-approved): §2 records the date at the head of the header's right cluster (CUL-1221, `HeaderDate`, still one row, the name's budget pays for it); §5.6 records the shipped haptic state (eight verbs; the look header ticks, the med strip is gone); §10 edit 1 marked written. Inline under ⚠ GA markers. |
+| v1.3 | 2026-10-09 | §5 R1 reworded (CUL-1691 D1, PM-ruled 2026-10-09): the named card is a daylight bottom card over a dimmed Home, never a full-screen white takeover; was "a warm dark bottom card over a dimmed Home (never a white flash)". |

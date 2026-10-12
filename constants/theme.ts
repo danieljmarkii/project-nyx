@@ -294,13 +294,17 @@ export const theme = {
   // is matched to what the record actually knows — a label tension, not harm — so
   // it is deliberately amber, never the rose "danger" pair above (the same call the
   // PM made on B-693's log-time trial-list heads-up, which uses this register on the
-  // dark card via colorMomentGlowFillOnDark). First consumed by the B-704 §6 day-0
-  // trial-protein mismatch heads-up (a light surface, so it needs its own trio).
+  // completion card's panel). First consumed by the B-704 §6 day-0 trial-protein
+  // mismatch heads-up.
   // No icon, no colour-only meaning: the copy carries the fact in words, so the
   // panel survives a greyscale screenshot. Ink contrast 7.3:1 on the fill (WCAG AA).
   colorAttentionInk: '#6B4A0E',    // text ink on the wash
   colorAttentionLight: '#FDF3DC',  // amber-50 wash — panel fill
   colorAttentionBorder: '#F2DFB3', // amber hairline
+  // CUL-1691 PR 1 — the completion card's trial panel's 3pt rail. Not colorMomentGlow:
+  // the bright gold is 1.51:1 on the wash and vanishes; this ochre clears the 3:1
+  // non-text target on colorAttentionLight (3.30:1, pinned in theme.contrast.test.ts).
+  colorAttentionRail: '#B7791F',
 
   // Modal scrim — one value for every bottom-sheet/confirm overlay so stacked
   // surfaces dim identically (switcher sheet, archive confirm, the log sheet). Since
@@ -312,14 +316,6 @@ export const theme = {
   // Completion "moment" — consumed by PR 4 (gold ring in app/log.tsx).
   colorMomentGlow: '#FBBF24',
   colorMomentConfirm: '#00C2A8',
-  // B-693 — the amber "attention" wash behind the log-time trial-list heads-up,
-  // rendered as an inset panel on the DARK completion card. The moment-glow gold at
-  // 0.12 (the same gold already haloing this card's check badge), so the warning
-  // breaks the card's calm stack and can't be read past, while its claim-strength
-  // stays matched to what the record knows — list-absence, not harm (mock round 2,
-  // PM-ruled amber over a rose "danger" rendering). The bar + eyebrow reuse
-  // colorMomentGlow at full strength; only the fill is softened.
-  colorMomentGlowFillOnDark: 'rgba(251, 191, 36, 0.12)',
   // CUL-601 (§4) — the moment-gold's tinted SURFACE, the light-ground sibling of
   // colorMomentGlow. Used as the warm half of the arrival sweep's gradient (teal into
   // a breath of gold, across the Signal card's paper). Deliberately not

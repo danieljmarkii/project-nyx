@@ -36,6 +36,8 @@ import {
   sanitizeFollowups,
   strayNumerals,
   validateAnswer,
+  careNamesFrom,
+  screenProvenanceZero,
   planPhotoRead,
   buildPhotoReadResult,
   buildReadLine,
@@ -44,6 +46,9 @@ import {
   mentionsPhotoAppearance,
   SCRUBBED_READ_HEADLINE,
   SYSTEM_PROMPT,
+  GENERAL_SYSTEM_PROMPT,
+  TIER_DEFINITIONS,
+  callWordsOf,
   screenedClarifier,
   photoReadIncidentType,
   PHOTO_READ_EVENT_TYPES,
@@ -56,6 +61,7 @@ import {
 } from './answer.ts'
 import type { AskCachedReadRow, ProjectedRead } from './tools.ts'
 import { projectCachedRead } from './tools.ts'
+import { TIER_WORDS, type TierDisplay } from '../../../lib/incidentTierWords.ts'
 
 // ── A minimal fetched context for dispatch tests ──────────────────────────────────
 const NOW = Date.UTC(2026, 6, 18, 12, 0, 0) // 2026-07-18T12:00:00Z
@@ -515,7 +521,13 @@ Deno.test('buildProvenance: recall/photo tap-through points at the event(s)', ()
 
 const DEFLECTION_REASONS = [
   'clinical_judgment', 'reassurance_fishing', 'general', 'bulk_export', 'unsupported', 'ambiguous', 'data_gap', 'llm_unavailable',
+  'consent_off',
 ] as const
+
+// CUL-552 PR 2: consent_off offers no chip, because every chip is a question re-sent to Ask
+// (AskAnswerCard's onAsk) and would land on this same deflection. Its next step is in the
+// detail line (the rundown, which works without the model); PR 3 adds the way to say yes.
+const NO_CHIP_REASONS: ReadonlySet<string> = new Set(['consent_off'])
 
 Deno.test('buildDeflection: every deflection is non-substantive, no-credit, and guardrail-clean', () => {
   for (const reason of DEFLECTION_REASONS) {
@@ -527,8 +539,27 @@ Deno.test('buildDeflection: every deflection is non-substantive, no-credit, and 
     const v = validateAnswer({ text, allowedNumerals: new Set(), mode: 'data' })
     assert.equal(v.ok, true, `${reason} deflection tripped the validator: ${JSON.stringify(v)}`)
     assert.ok(!text.includes('!'), `${reason} has an exclamation`)
-    assert.ok(d.followups.length >= 1, `${reason} must offer a next step (G3 drives the wedge)`)
+    if (NO_CHIP_REASONS.has(reason)) assert.equal(d.followups.length, 0, `${reason} offers a chip that loops back to itself`)
+    else assert.ok(d.followups.length >= 1, `${reason} must offer a next step (G3 drives the wedge)`)
   }
+})
+
+Deno.test('buildDeflection consent_off: a status, never a verdict, a retry or a blank (CUL-552 PR 2)', () => {
+  const d = buildDeflection('consent_off', 'Biscuit')
+  // Rendered by every shipped build (an outcome the client already knows).
+  assert.equal(d.outcome, 'unsupported')
+  assert.equal(d.substantive, false)
+  assert.ok(d.headline.length > 0 && d.detail.length > 0)
+  const text = `${d.headline} ${d.detail}`
+  // Names the recipient, says nothing was sent, and points at the rundown.
+  assert.match(text, /Anthropic/)
+  assert.match(text, /Nothing was sent/)
+  assert.match(text, /rundown/)
+  assert.match(text, /Biscuit/)
+  // Never "try again" (it would deflect the same way), never a word about how the pet is.
+  assert.doesNotMatch(text, /try again/i)
+  assert.doesNotMatch(text, /\b(fine|healthy|normal|nothing (wrong|to worry)|all clear|okay)\b/i)
+  assert.equal(validateAnswer({ text, allowedNumerals: new Set(), mode: 'data', safety: true }).ok, true)
 })
 
 Deno.test('buildDeflection: ambiguous uses the clarifier when provided', () => {
@@ -590,6 +621,125 @@ Deno.test('sanitizeFollowups: drops a chip asserting containment or effect, keep
     'Is the prednisone working?', // a QUESTION about effect → kept
   ])
   assert.deepEqual(out, ['Is the prednisone working?'])
+})
+
+// ── CUL-1429: no zero beside a visit or a masking drug ───────────────────────────
+// The two sentences the CUL-1420 adversarial pass reproduced passing every Ask screen. Every
+// numeral is allowed, so the numeral-subset check cannot be what rejects them.
+Deno.test('validateAnswer: refuses a zero beside a visit or a masking drug, in BOTH modes (CUL-1429)', () => {
+  const allowed = new Set(['0', '16', '10'])
+  const cases: [string, string][] = [
+    ['Since the Sep 16 visit, 0 vomiting episodes are logged.', 'zero_beside_visit'],
+    ['Since the Sep 16 visit, no vomiting episodes are logged.', 'zero_beside_visit'],
+    ['Prednisone started Sep 10; no coughing episodes are logged since.', 'zero_beside_medication'],
+  ]
+  for (const [text, reason] of cases) {
+    for (const mode of ['data', 'general'] as const) {
+      const r = validateAnswer({ text, allowedNumerals: allowed, mode })
+      assert.deepEqual(r, { ok: false, reason }, `${mode}: ${text}`)
+    }
+  }
+})
+
+Deno.test('validateAnswer: an on-board course from the record withholds a zero the answer does not tie to it (CUL-1429)', () => {
+  const captured = [
+    {
+      name: 'medications',
+      result: {
+        kind: 'medications',
+        window: '30d',
+        windowLabel: 'the last 30 days',
+        medications: [
+          { medicationId: 'm1', drugLabel: 'Prednisolone', active: true, doseAmount: null, lastDoseAt: null, dosesGiven: 9, dosesMissed: 0, dosesPartial: 0, dosesUnconfirmed: 0 },
+          // Ended long ago, no dose in the window: not on board.
+          { medicationId: 'm2', drugLabel: 'Cerenia', active: false, doseAmount: null, lastDoseAt: null, dosesGiven: 0, dosesMissed: 0, dosesPartial: 0, dosesUnconfirmed: 0 },
+        ],
+      },
+    },
+  ]
+  const care = careNamesFrom(captured, { regimens: [], nowMs: Date.UTC(2026, 9, 10, 12), timezone: 'UTC', question: 'Has Nyx coughed?' })
+  assert.deepEqual(care.onBoardNames, ['Prednisolone'])
+  assert.deepEqual([...care.knownNames].sort(), ['Cerenia', 'Prednisolone'])
+  const text = 'No coughing is logged in the last 30 days.'
+  assert.deepEqual(validateAnswer({ text, allowedNumerals: new Set(['30']), mode: 'data', care }), {
+    ok: false,
+    reason: 'zero_beside_medication',
+  })
+  // Without the record's course the same sentence is a zero beside nothing.
+  assert.deepEqual(validateAnswer({ text, allowedNumerals: new Set(['30']), mode: 'data' }), { ok: true })
+})
+
+Deno.test('careNamesFrom: a regimen on board or in its tail is beside every zero, whatever tools ran (CUL-1429)', () => {
+  const nowMs = Date.UTC(2026, 9, 10, 12)
+  const reg = (id: string, drugLabel: string, status: string, startedAt: string | null, endedAt: string | null) => ({
+    id, drugLabel, status, startedAt, endedAt, doseAmount: null, deletedAt: null,
+  })
+  const care = careNamesFrom([], {
+    nowMs,
+    timezone: 'UTC',
+    question: 'Has she vomited this week?',
+    regimens: [
+      reg('a', 'Prednisolone', 'active', '2026-10-01', null),
+      // Ended 10 days ago: inside the 42-day tail, the Signal still withholds its zero.
+      reg('b', 'Cerenia', 'ended', '2026-09-20', '2026-09-30'),
+      // Ended long ago: out of the tail.
+      reg('c', 'Apoquel', 'ended', '2026-01-01', '2026-02-01'),
+    ],
+  })
+  assert.deepEqual([...care.onBoardNames].sort(), ['Cerenia', 'Prednisolone'])
+  assert.deepEqual([...care.knownNames].sort(), ['Apoquel', 'Cerenia', 'Prednisolone'])
+  // The model called only count_symptom; the steroid still withholds the zero.
+  assert.deepEqual(
+    validateAnswer({ text: 'No vomiting is logged in the last 7 days.', allowedNumerals: new Set(['7']), mode: 'data', care }),
+    { ok: false, reason: 'zero_beside_medication' },
+  )
+})
+
+Deno.test('careNamesFrom: a course whose tail touches the widest window read joins, and the question carries a visit (CUL-1429)', () => {
+  const nowMs = Date.UTC(2026, 9, 10, 12)
+  // Ended Aug 11 (60 days ago): its tail ran to Sep 22, inside a 30-day window, outside a 7-day one.
+  const regimens = [{ id: 'a', drugLabel: 'Prednisolone', status: 'ended', startedAt: '2026-07-20', endedAt: '2026-08-11', doseAmount: null, deletedAt: null }]
+  const read30 = [{ name: 'count_symptom', result: { kind: 'count_symptom', window: '30d', count: 0 } }]
+  const read7 = [{ name: 'count_symptom', result: { kind: 'count_symptom', window: '7d', count: 0 } }]
+  const q = 'How many times has she vomited?'
+  assert.deepEqual(careNamesFrom(read30, { regimens, nowMs, timezone: 'UTC', question: q }).onBoardNames, ['Prednisolone'])
+  assert.deepEqual(careNamesFrom(read7, { regimens, nowMs, timezone: 'UTC', question: q }).onBoardNames, [])
+  assert.equal(careNamesFrom(read7, { regimens: [], nowMs, timezone: 'UTC', question: 'Has she vomited since her vet visit?' }).visitInContext, true)
+  assert.equal(careNamesFrom(read7, { regimens: [], nowMs, timezone: 'UTC', question: 'Should I call the clinic?' }).visitInContext, false)
+})
+
+Deno.test('screenProvenanceZero: the "0 events" line beside a visit keeps only its logging (CUL-1429)', () => {
+  const none = { knownNames: [], onBoardNames: [], visitInContext: false }
+  const prov = { window: 'since the visit', denominator: '0 events · logging on 7 of 7 days', tapThrough: null }
+  const text = 'Since the Sep 16 visit, 7 days, with something logged on 7 of them.'
+  assert.equal(screenProvenanceZero(prov, text, none)?.denominator, 'logging on 7 of 7 days')
+  // A zero beside nothing keeps its count; a non-zero count beside a visit keeps it too.
+  assert.equal(screenProvenanceZero(prov, 'In the last 7 days:', none)?.denominator, prov.denominator)
+  const four = { ...prov, denominator: '4 events · logging on 7 of 7 days' }
+  assert.equal(screenProvenanceZero(four, text, none)?.denominator, four.denominator)
+  // An on-board steroid drops the count even when the answer names nothing.
+  assert.equal(
+    screenProvenanceZero(prov, 'In the last 7 days:', { knownNames: [], onBoardNames: ['Prednisone'], visitInContext: false })?.denominator,
+    'logging on 7 of 7 days',
+  )
+})
+
+Deno.test('validateAnswer: the window-and-logging form and a non-zero count beside a visit pass (CUL-1429)', () => {
+  const allowed = new Set(['16', '11', '4', '10', '3'])
+  for (const text of [
+    'Since the Sep 16 visit, 11 days, with something logged on 11 of them.',
+    'Your vet saw Nyx on Sep 16; 4 vomiting episodes are logged since.',
+    'Carprofen started Sep 10; no coughing is logged since.',
+  ]) {
+    assert.deepEqual(validateAnswer({ text, allowedNumerals: allowed, mode: 'data' }), { ok: true }, text)
+  }
+})
+
+Deno.test('sanitizeFollowups: drops a chip putting a zero beside a visit (CUL-1429)', () => {
+  assert.deepEqual(
+    sanitizeFollowups(['Why is there no vomiting logged since the visit?', 'When did Nyx last vomit?']),
+    ['When did Nyx last vomit?'],
+  )
 })
 
 Deno.test('buildDeflection: a model clarifier passes the phrasing gate or falls back (CUL-1271)', () => {
@@ -776,6 +926,7 @@ function readRow(over: Partial<AskCachedReadRow> & { eventId: string }): AskCach
     stoolBloodPresent: null,
     stoolMucusPresent: null,
     recommendation: null,
+    tierWords: null,
     readText: null,
     readCorrection: null,
     ...over,
@@ -867,7 +1018,7 @@ Deno.test('buildPhotoReadResult: each non-run plan maps to the right status; onl
     assert.equal(r.read, null) // no relayable read on any non-cached, non-run path
   }
   // relay_cached carries the projected read.
-  const relayed = buildPhotoReadResult({ action: 'relay_cached', eventId: 'e1', eventType: 'vomit', incidentType: 'vomit', read: { incidentType: 'vomit', status: 'completed', edited: false, description: null, flags: [], readText: null, recommendation: 'monitor', fields: { colour: 'yellow', contents: null, consistency: null, bloodPresent: 'none_visible', bilePresent: 'yes', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } } })
+  const relayed = buildPhotoReadResult({ action: 'relay_cached', eventId: 'e1', eventType: 'vomit', incidentType: 'vomit', read: { incidentType: 'vomit', status: 'completed', edited: false, description: null, flags: [], readText: null, tierWords: 'Keep an eye out', fields: { colour: 'yellow', contents: null, consistency: null, bloodPresent: 'none_visible', bilePresent: 'yes', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } } })
   assert.equal(relayed.status, 'cached')
   assert.equal(relayed.ranLiveRead, false)
   assert.ok(relayed.read)
@@ -906,7 +1057,7 @@ function projected(over: Partial<ProjectedRead> = {}): ProjectedRead {
     description: null,
     flags: [],
     readText: null,
-    recommendation: 'monitor',
+    tierWords: 'Keep an eye out',
     fields: { colour: 'yellow', contents: ['bile'], consistency: null, bloodPresent: 'none_visible', bilePresent: 'yes', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null },
     ...over,
   }
@@ -920,7 +1071,7 @@ Deno.test('buildReadLine: EVERY status is deterministic and passes the never-rea
   const cases: PhotoReadResult[] = [
     photoResult('ran', projected({ readText: monitorText })), // no-flag fresh read (the reassurance-on-absence risk)
     photoResult('cached', projected({ readText: monitorText })),
-    photoResult('ran', projected({ flags: ['blood'], recommendation: 'worth_a_call', readText: 'I can see what looks like blood in this photo. That is worth a call to your vet about Biscuit.', fields: { colour: 'pink_red', contents: null, consistency: null, bloodPresent: 'fresh_red', bilePresent: 'unsure', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } })),
+    photoResult('ran', projected({ flags: ['blood'], tierWords: 'Worth a call', readText: 'I can see what looks like blood in this photo. That is worth a call to your vet about Biscuit.', fields: { colour: 'pink_red', contents: null, consistency: null, bloodPresent: 'fresh_red', bilePresent: 'unsure', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } })),
     photoResult('ran', projected({ readText: null })), // dismissed no-flag read → safe generic tail
     photoResult('no_photo'),
     photoResult('capped'),
@@ -940,7 +1091,7 @@ Deno.test('buildReadLine: EVERY status is deterministic and passes the never-rea
 })
 
 Deno.test('buildReadLine: a present red flag is NAMED (escalate-on-presence), a no-flag read never asserts wellness', () => {
-  const bloody = buildReadLine(photoResult('ran', projected({ flags: ['blood'], recommendation: 'worth_a_call', readText: 'I can see what looks like blood in this photo. That is worth a call to your vet about Biscuit.', fields: { colour: 'pink_red', contents: null, consistency: null, bloodPresent: 'fresh_red', bilePresent: 'unsure', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } })), 'Biscuit')!
+  const bloody = buildReadLine(photoResult('ran', projected({ flags: ['blood'], tierWords: 'Worth a call', readText: 'I can see what looks like blood in this photo. That is worth a call to your vet about Biscuit.', fields: { colour: 'pink_red', contents: null, consistency: null, bloodPresent: 'fresh_red', bilePresent: 'unsure', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } })), 'Biscuit')!
   assert.match(bloody, /blood/i)
   assert.match(bloody, /vet/i)
   const noFlag = buildReadLine(photoResult('ran', projected({ readText: 'A single photo on its own can\'t tell you how Biscuit is doing. If it happens again or Biscuit seems unwell, your vet is the best call.' })), 'Biscuit')!
@@ -1068,13 +1219,13 @@ const CORRECTION = "Corrected Oct 7, 2026. The note \"hasn't eaten a full meal r
 // Driven through the real projection (C-34): the pairing lives in projectCachedRead, so a test
 // that hands buildReadLine a pre-joined string would be green over a projection that dropped it.
 Deno.test('buildReadLine (CUL-1406): the stored words, then their correction; the verdict untouched', () => {
-  const projectedRead = projectCachedRead(readRow({ eventId: 'e1', recommendation: 'worth_a_call', readText: OLD_INTAKE, readCorrection: CORRECTION }))
+  const projectedRead = projectCachedRead(readRow({ eventId: 'e1', recommendation: 'worth_a_call', tierWords: 'Worth a call', readText: OLD_INTAKE, readCorrection: CORRECTION }))
   const line = buildReadLine(photoResult('cached', projectedRead), 'Nyx')
   assert.ok(line)
   const at = line!.indexOf(OLD_INTAKE)
   assert.ok(at >= 0, 'the stored words are relayed verbatim')
   assert.ok(line!.indexOf(CORRECTION) > at, 'the correction follows them')
-  assert.equal(projectedRead.recommendation, 'worth_a_call')
+  assert.equal(projectedRead.tierWords, 'Worth a call')
   assert.equal(validateAnswer({ text: line!, allowedNumerals: new Set(['4', '7', '24', '2026']), mode: 'data' }).ok, true)
 })
 
@@ -1097,4 +1248,69 @@ Deno.test('buildReadLine (CUL-1406): the correction names its sentence; a foreig
   assert.ok(recount >= 0 && recount < line.indexOf(OLD_INTAKE), 'the red-flag recount leads, unchanged')
   assert.ok(!/words above/i.test(line), 'nothing in the correction can reach back over the recount')
   assert.ok(line.includes('The note "hasn\'t eaten a full meal recently" went further'))
+})
+
+// ── CUL-1512 (PR-27m): the model gets the record's words and their meanings, never a raw value ──
+
+Deno.test('SYSTEM_PROMPT — defines every word the map draws, once each, and names no raw value', () => {
+  for (const prompt of [SYSTEM_PROMPT, GENERAL_SYSTEM_PROMPT]) {
+    for (const key of Object.keys(TIER_WORDS) as TierDisplay[]) {
+      const label = TIER_WORDS[key].label
+      assert.ok(prompt.includes(`"${label}" means ${TIER_DEFINITIONS[key]}.`), `no definition for ${label}`)
+      assert.equal(prompt.split(`"${label}" means `).length - 1, 1, `${label} defined more than once`)
+    }
+    for (const raw of ['call_now', 'call_today', 'not_enough_to_say', 'worth_a_call', 'engines_v3']) {
+      assert.equal(prompt.includes(raw), false, `the prompt names the raw value ${raw}`)
+    }
+  }
+})
+
+Deno.test('TIER_DEFINITIONS — no definition reassures (clinical-guardrails Pattern 1)', () => {
+  for (const def of Object.values(TIER_DEFINITIONS)) {
+    const v = validateAnswer({ text: `The read says this: ${def}.`, allowedNumerals: new Set(), mode: 'data' })
+    assert.equal(v.ok, true, `definition fails the answer gate: ${def}`)
+  }
+  // The quiet words say what the read did not find, and say it is not wellness.
+  for (const key of ['logged', 'monitor', 'not_enough_to_say'] as const) assert.match(TIER_DEFINITIONS[key], /never means the pet is well/)
+})
+
+Deno.test('callWordsOf — only the map\'s call words pass; quiet words and strangers do not', () => {
+  assert.equal(callWordsOf(TIER_WORDS.call_now.label), 'Call your vet now')
+  assert.equal(callWordsOf(TIER_WORDS.call_today.label), 'Call your vet today')
+  assert.equal(callWordsOf(TIER_WORDS.worth_a_call.label), 'Worth a call')
+  assert.equal(callWordsOf(TIER_WORDS.logged.label), null)
+  assert.equal(callWordsOf(TIER_WORDS.not_enough_to_say.label), null)
+  assert.equal(callWordsOf('Call me maybe'), null)
+  assert.equal(callWordsOf(null), null)
+})
+
+Deno.test('redactReadForModel — a call with no photo flag still reaches the model, in its words (escalate-only)', () => {
+  const call = redactReadForModel(photoResult('cached', projected({ tierWords: 'Call your vet now' })))
+  assert.equal(call.read_words, 'Call your vet now')
+  assert.equal('red_flags' in call, false) // no flag invented beside a record-raised call
+  assert.match(String(call.guidance), /"Call your vet now"/)
+  // A call with a flag carries both.
+  const both = redactReadForModel(photoResult('ran', projected({ tierWords: 'Call your vet today', flags: ['blood'] })))
+  assert.deepEqual(both.red_flags, ['blood'])
+  assert.equal(both.read_words, 'Call your vet today')
+  // A quiet read hands the model nothing: no words, no absence hook.
+  for (const words of ['Keep an eye out', 'Not enough to say yet', null]) {
+    const quiet = redactReadForModel(photoResult('cached', projected({ tierWords: words })))
+    assert.equal('read_words' in quiet, false)
+    assert.equal('red_flags' in quiet, false)
+    assert.equal(JSON.stringify(quiet).includes('Keep an eye out'), false)
+  }
+  // No read, no words, whatever the projection holds.
+  assert.equal('read_words' in redactReadForModel(photoResult('capped', projected({ tierWords: 'Call your vet now' }))), false)
+})
+
+Deno.test('featuredNonEscalatingRead — a call the record raised with no photo flag is an escalation, so its headline is never scrubbed (CUL-1512)', () => {
+  for (const words of ['Call your vet now', 'Call your vet today', 'Worth a call']) {
+    assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('cached', projected({ flags: [], tierWords: words })) }]), false, words)
+  }
+  // Quiet words keep the bar on; a call's words on a read that did not come back do not lift it.
+  for (const words of ['Keep an eye out', 'Not enough to say yet', null]) {
+    assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('cached', projected({ flags: [], tierWords: words })) }]), true, String(words))
+  }
+  assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('capped', projected({ tierWords: 'Call your vet now' })) }]), true)
 })

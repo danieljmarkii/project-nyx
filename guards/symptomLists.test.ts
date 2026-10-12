@@ -71,6 +71,8 @@ const REGISTERED: Record<string, string> = {
     'coSignsFor — EN-9\'s C1a co-signs (CUL-1417, ruled 2026-10-02): which OTHER sign returns a watched concern (diarrhea ↔ vomiting, lethargy for either). Presence only, never a count on the concern\'s row; its walk row is in constants/eventTypes.membership.test.ts',
   'lib/careState.ts':
     'CARE_SIGNS — the signs EN-9\'s client offers an answer on (CUL-1418): 082\'s care_acknowledgements CHECK, held equal to it by lib/careState.test.ts. Decides where an answer is offered, never what is counted; its walk row is in constants/eventTypes.membership.test.ts',
+  'lib/careClaimScreens.ts':
+    'SIGN_WORDS — Ask\'s zero screen (CUL-1429): which sign a zero in a sentence counts, so the shared drug table can say whether a named drug may hide it. Decides when an Ask answer is refused, never what is counted; its walk row is in constants/eventTypes.membership.test.ts',
   'lib/maskingSpans.ts':
     'MaskSign + ALL_SIGNS + DRUG_CLASS_EFFECTS — EN-10\'s drug table, shared by the server lines and the app\'s charts (CUL-1420, lifted here by CUL-1440): which signs a course is shown beside and may mask. Decides where a context line is DRAWN and when a zero is withheld, never what is counted; its walk row is in constants/eventTypes.membership.test.ts',
   'supabase/functions/generate-report/report.ts': 'REPORT_SYMPTOM_TYPES — the report frequency section (3b co-work)',

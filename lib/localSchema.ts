@@ -114,6 +114,34 @@ export const BASE_SCHEMA_SQL = `
       sync_error    TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS intake_checks (
+      -- EN-5's local mirror (Engines v3 PR-30q, CUL-1724; migration 097 is the server
+      -- side): the owner's answer to the one question under a vomit read. Its own fact
+      -- about ONE vomit, never a meal row. Mutable (Change edits the row) and soft-deleted
+      -- by deleted_at; a deleted VOMIT is read through events.deleted_at, so every reader
+      -- joins events. No uniqueness on event_id, as on the server (two devices may answer
+      -- offline): the newest live row per (event, form) by answered_at, then id, wins.
+      -- No free text: form and answer are fixed sets the server CHECKs; no local CHECK,
+      -- as elsewhere in this mirror. No local FK (the vet_calls reasoning): the drain holds
+      -- a row until its vomit has landed (parentLandedSql), because 097's guard answers an
+      -- unseen parent with a TERMINAL 23514, and every reader joins events. In
+      -- LOCAL_WIPE_TABLES before events.
+      id            TEXT PRIMARY KEY,
+      pet_id        TEXT NOT NULL,
+      event_id      TEXT NOT NULL,
+      since         TEXT NOT NULL,
+      form          TEXT NOT NULL,
+      answer        TEXT NOT NULL,
+      answered_at   TEXT NOT NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at    TEXT,
+      synced        INTEGER NOT NULL DEFAULT 0,
+      sync_attempts INTEGER NOT NULL DEFAULT 0,
+      sync_error    TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_intake_checks_event ON intake_checks(event_id, answered_at);
+
     CREATE TABLE IF NOT EXISTS food_items_cache (
       id              TEXT PRIMARY KEY,
       brand           TEXT NOT NULL,

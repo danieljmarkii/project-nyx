@@ -22,7 +22,9 @@
 //   - Other projects' rows count only through their launches and their open PRs; their
 //     pages are read only to find a parked PR's gate.
 
+import { findAlarms, type Alarm, type FollowUpFact, type Root } from './alarms.ts';
 import { aliasOf, normRow, parsePage, slugOf, type AfterItem, type Page, type PageRow, type RowId } from './page.ts';
+import { LIVE_HARM, WAITING_ON_PM, liveReasons, sortFindings, type Candidate, type LiveFacts, type SortResult } from './sort.ts';
 
 export const CAP = 6;
 export const SUB_LIMITS = { waitingOnPm: 3, writesProduction: 3, migrations: 1 } as const;
@@ -53,6 +55,7 @@ export type IssueFact = {
   blockedBy?: { id: string; open: boolean; waitingOnPm?: boolean }[];
   // A hold the dispatcher read in a comment (judgment): quoted, and it can only hold.
   waits?: string;
+  createdAt?: string; // for the scope line's "added this week" and the follow-up alarm
 };
 
 export type ClaimFact = { issue: string; branch: string; at: string; released?: boolean; session?: string };
@@ -83,6 +86,16 @@ export type PlanInput = {
   productionLib?: string[]; // the lib/ closure Edge Functions import (CLAUDE.md C-26)
   previousAuto?: string[]; // the newest status update's `Auto:` rows
   cap?: number;
+  // The sort and the alarms (CUL-1872). All optional: a facts file without them plans as
+  // before, and prints that the sort did not run.
+  findings?: Candidate[]; // step 1's population reads, every candidate (sort.ts decides)
+  appConfig?: Record<string, unknown> | null; // production `select key, value from app_config`; null = the read failed
+  allowlistKeys?: string[]; // keys the code reads through the allowlist resolver (the object shape counts only for these)
+  goLives?: Record<string, string>; // app_config key → its go-live issue
+  roots?: Root[]; // issues carrying a `Forecast:` line the page or a build note names
+  rowOutputs?: Record<string, LiveFacts>; // a row's issue → what its output sits behind
+  lastRun?: string; // the newest `**/dispatch run**` update's time
+  index?: string; // the ruling index id
 };
 
 export type Gate = {
@@ -113,7 +126,13 @@ export type Verdict = {
   rank: number; // lower first; Infinity when on no critical path
   waitsOnPmIfLaunched: boolean;
   writesProduction: boolean;
+  onPath: boolean; // on the page's `Done means (rows):` line (§ The sort rule 6)
+  asks: Asks;
 };
+
+// "Asks you ≈ N" (§ The sort rule 4): the typed PM decisions a row will need, from the
+// gate predicate. A forecast, printed so the PM sees the price before the pick.
+export type Asks = { n: number; parts: string[] };
 
 export type Hold = { key: string; kind: 'ruling' | 'pm' | 'waits' | 'release' | 'ga'; text: string };
 
@@ -150,6 +169,10 @@ export type Plan = {
   pmHolds: { key: string; text: string; rowsHeld: RowId[]; freesOutright: RowId[] }[];
   gateHolds: { key: string; text: string; rowsHeld: RowId[] }[];
   autoRows: RowId[]; // confirmed auto rows that have not merged
+  recommended: RowId[]; // the proposal, on-path rows only (D1 rule 4)
+  sort?: SortResult;
+  alarms: Alarm[];
+  alarmHeld: Record<string, string>; // a door-3 candidate the alarms hold → why
 };
 
 // ---------------------------------------------------------------------------------
@@ -178,6 +201,27 @@ export function gateOf(row: Pick<PageRow, 'what' | 'note' | 'migration'>, issue?
 // A row may carry `auto` only when this holds (dispatch.md step 5).
 export function autoEligible(g: Gate): boolean {
   return g.mode === 'BUILD' && !g.planGated.length && !g.copyBearing.length && !g.privileged.length && !g.migration;
+}
+
+// A merge the check will print `production:` for: a landing that deploys an Edge Function
+// or edits the gate's files (CUL-1654). The check on the head decides; this forecasts it.
+const PRODUCTION_MERGE = /supabase\/functions\/|\bEdge Functions?\b|\bredeploys?\b|\.claude\/hooks\/|\.claude\/settings|edge-deploy|deploy-edge|merge-check/i;
+
+export function asksOf(
+  row: Pick<PageRow, 'what' | 'note' | 'migration'>,
+  gate: Gate,
+  opts: { autoConfirmed: boolean; rulings: number; productionLib?: string[] },
+): Asks {
+  const parts: string[] = [];
+  if (!opts.autoConfirmed) parts.push('the pick');
+  if (gate.planGated.length) parts.push(`its plan, then a go typed in its session (plan-gated: ${gate.planGated.join(', ')})`);
+  // One `apply` per migration file the note names (at least one when the row is a migration).
+  const files = new Set([...`${row.what} ${row.note}`.matchAll(/supabase\/migrations\/(\d+[a-z]?)_/g)].map((m) => m[1]));
+  if (gate.migration) for (let i = 0; i < Math.max(1, files.size); i++) parts.push('apply <NNN>');
+  const t = `${row.what} ${row.note}`;
+  if (PRODUCTION_MERGE.test(t) || (opts.productionLib ?? []).some((f) => t.includes(f))) parts.push('merge');
+  for (let i = 0; i < opts.rulings; i++) parts.push('the pending ruling');
+  return { n: parts.length, parts };
 }
 
 // ---------------------------------------------------------------------------------
@@ -472,10 +516,13 @@ export function planDispatch(input: PlanInput): Plan {
   for (const r of me.page.rows.filter((r) => r.id && states.get(r.id)?.kind !== 'merged'))
     for (const i of r.issues) issueRows.set(i, [...(issueRows.get(i) ?? []), r.id]);
 
+  const onPathSet = new Set(me.page.doneMeans ?? []);
+  const confirmedAuto = new Set((input.previousAuto ?? []).map(normRow));
   for (const row of me.page.rows) {
     const issue = row.issues[0];
     const gate = gateOf(row, issue ? input.issues[issue] : undefined);
     const state = row.id ? states.get(row.id)! : ({ kind: 'none' } as RowState);
+    const onPath = !!row.id && partsOf(row.id).some((p) => onPathSet.has(p));
     const v: Verdict = {
       row: row.id,
       issue,
@@ -489,6 +536,13 @@ export function planDispatch(input: PlanInput): Plan {
       rank: row.id ? rankOf(row.id) : Infinity,
       waitsOnPmIfLaunched: gate.planGated.length > 0 || !!row.mergeGate || row.migration,
       writesProduction: noteWritesProduction(row, lib),
+      onPath,
+      // An off-path row never launches `auto` (D1 rule 4), so its pick is always typed.
+      asks: asksOf(row, gate, {
+        autoConfirmed: onPath && row.auto && confirmedAuto.has(normRow(row.id)) && autoEligible(gate),
+        rulings: row.issues.filter((i) => input.issues[i]?.labels?.includes(WAITING_ON_PM)).length,
+        productionLib: lib,
+      }),
     };
     verdicts.push(v);
     if (!row.id) {
@@ -547,6 +601,77 @@ export function planDispatch(input: PlanInput): Plan {
     if (row.migration) v.flags.push('migration');
     if (row.mergeGate) v.flags.push(`merge gate: ${row.mergeGate}`);
     if (gate.privileged.length) v.flags.push(...gate.privileged.map((s) => `privileged verb in excerpt ("${s}")`));
+  }
+
+  // ---- the sort and the two alarms (CUL-1872) ------------------------------------------
+  const rowIssues = new Map<string, RowId>();
+  for (const r of me.page.rows) if (r.id) for (const i of r.issues) rowIssues.set(i, r.id);
+  // A migration only in an open PR is the one migration that can be shown unapplied.
+  const unmergedMigrations = input.prs
+    .filter((p) => p.state === 'open')
+    .flatMap((p) => migrationsIn(p.files).map((m) => m.file))
+    .filter((f) => !input.mainMigrations.some((x) => x.endsWith(f.replace(/^supabase\/migrations\//, ''))));
+  const darkCtx = {
+    appConfig: input.appConfig,
+    appliedMigrations: input.appliedMigrations,
+    mainMigrations: input.mainMigrations,
+    unmergedMigrations,
+    allowlistKeys: input.allowlistKeys,
+  };
+  const sort = input.findings
+    ? sortFindings({
+        now: input.now,
+        page: me.page,
+        candidates: input.findings,
+        ...darkCtx,
+        goLives: input.goLives,
+        issueStates: Object.fromEntries(Object.entries(input.issues).map(([k, f]) => [k, f.state])),
+        rowIssues,
+        rowState: (r) => (mergedRow(r) ? 'merged' : 'unmerged'),
+        claimed: new Set(claims.map((c) => c.issue)),
+        lastRun: input.lastRun,
+        index: input.index,
+      })
+    : undefined;
+  const liveHarm = new Set<string>([
+    ...Object.entries(input.issues).filter(([, f]) => f.labels?.includes(LIVE_HARM)).map(([k]) => k),
+    ...(input.findings ?? []).filter((c) => c.labels.includes(LIVE_HARM)).map((c) => c.id),
+    ...(sort?.sorted ?? []).filter((x) => x.door === 1 || x.door === 2).map((x) => x.id),
+  ]);
+  // One entry per id: an issue in both lists keeps the finding's relations, and the issue
+  // fact fills only what the finding lacks.
+  const byId = new Map<string, FollowUpFact>();
+  for (const [id, f] of Object.entries(input.issues)) if (f.createdAt) byId.set(id, { id, createdAt: f.createdAt, parentId: f.parentId });
+  for (const c of input.findings ?? []) {
+    const prior = byId.get(c.id);
+    byId.set(c.id, { id: c.id, createdAt: c.createdAt, parentId: c.parentId ?? prior?.parentId, blocks: c.blocks, relatedTo: c.relatedTo });
+  }
+  const followUps = [...byId.values()];
+  const rowIssueSet = new Set(me.page.rows.flatMap((r) => r.issues));
+  // The forecast counts every door-3 finding under a root, offered or covered (a Skipped or
+  // Waiting on PM one is still a row the feature will cost), but never a row's own issue.
+  const door3 = [
+    ...(sort?.noRow ?? []).map((n) => ({ id: n.id, blocks: n.blocks })),
+    ...(sort?.sorted ?? []).filter((x) => x.door === 'covered' && x.blocksRow && !rowIssueSet.has(x.id)).map((x) => ({ id: x.id, blocks: x.blocksRow! })),
+  ];
+  const alarms = findAlarms({
+    now: input.now,
+    page: me.page,
+    roots: input.roots ?? [],
+    followUps,
+    door3,
+    rowState: (r) => {
+      const k = states.get(r)?.kind;
+      return k === 'merged' ? 'merged' : k === 'none' ? 'unlaunched' : 'launched';
+    },
+    liveHarm,
+    liveOf: (facts) => liveReasons(facts, darkCtx),
+    rowOutputs: input.rowOutputs,
+  });
+  const alarmHeld: Record<string, string> = {};
+  for (const a of alarms) {
+    for (const r of a.holdsRows) verdicts.find((v) => v.row === r)?.reasons.push(a.reason);
+    for (const c of a.holdsCandidates) alarmHeld[c] = a.reason;
   }
 
   // Sub-limits hold an otherwise ready row; a row that will wait on the PM, write
@@ -612,6 +737,10 @@ export function planDispatch(input: PlanInput): Plan {
     pmHolds,
     gateHolds: [...gateMap.values()].map(({ key, text, rowsHeld }) => ({ key, text, rowsHeld })),
     autoRows,
+    recommended: proposal.filter((r) => verdicts.find((v) => v.row === r)!.onPath),
+    sort,
+    alarms,
+    alarmHeld,
   };
 }
 

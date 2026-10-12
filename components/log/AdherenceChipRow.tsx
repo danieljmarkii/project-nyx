@@ -22,7 +22,7 @@ export const ADHERENCE_OPTIONS: { value: DoseAdherence; label: string }[] = [
 ];
 
 // The recolor (vs IntakeChipRow's single accent): `given` is the on-track state
-// and lights in the brand accent; every "less than fully given" state lights in
+// and lights in the brand teal; every "less than fully given" state lights in
 // the symptom rose — a calm, honest flag that the dose matters clinically, NOT an
 // alarm (Principle 4). This is the colour reflex of "refusal is a signal" (§6.2):
 // downgrading off `given` visibly shifts teal → rose so a missed/refused dose is
@@ -34,7 +34,7 @@ const CONCERN: ReadonlySet<DoseAdherence> = new Set(['partial', 'missed', 'refus
 // medication completion card these chips are the SOLE surface for resolving a
 // dose the record is unsure about — so a missed tap is a dose left in doubt.
 // The floor is reached with vertical-only slop rather than a taller pill,
-// because the pill's height is the card's design: FilterChip on this same dark
+// because the pill's height is the card's design: FilterChip on this same
 // card already documents and applies exactly this fix (identical geometry —
 // 12/6 padding, 1pt border, a 13pt medium label).
 //
@@ -77,8 +77,6 @@ interface Props {
   // so the owner can't leave it unrated by skipping the row.
   label?: string | null;
   size?: 'default' | 'compact';
-  // Flip to true on a dark parent surface (the completion card).
-  onDark?: boolean;
 }
 
 export function AdherenceChipRow({
@@ -86,7 +84,6 @@ export function AdherenceChipRow({
   onChange,
   label = 'Did they take it?',
   size = 'default',
-  onDark = false,
 }: Props) {
   const readOnly = onChange === undefined;
 
@@ -100,7 +97,7 @@ export function AdherenceChipRow({
     const concern = CONCERN.has(value!);
     return (
       <View style={styles.readOnlyWrap} pointerEvents="none">
-        <Chip label={opt.label} active concern={concern} onDark={onDark} onPress={() => {}} />
+        <Chip label={opt.label} active concern={concern} onPress={() => {}} />
       </View>
     );
   }
@@ -109,10 +106,7 @@ export function AdherenceChipRow({
   return (
     <View style={size === 'compact' ? styles.compactWrap : styles.wrap}>
       {showLabel && (
-        <ThemedText style={[
-          size === 'compact' ? styles.labelCompact : styles.label,
-          onDark && styles.labelOnDark,
-        ]}>
+        <ThemedText style={size === 'compact' ? styles.labelCompact : styles.label}>
           {label}
         </ThemedText>
       )}
@@ -123,7 +117,6 @@ export function AdherenceChipRow({
             label={opt.label}
             active={value === opt.value}
             concern={CONCERN.has(opt.value)}
-            onDark={onDark}
             onPress={() => onChange(opt.value)}
           />
         ))}
@@ -133,23 +126,32 @@ export function AdherenceChipRow({
 }
 
 // One adherence chip. Built standalone rather than via FilterChip so the active
-// fill can be accent (given) OR rose (concern states) — a per-state colour
-// FilterChip's three fixed variants don't express.
+// fill can be teal (given) OR rose (concern states) — a per-state colour
+// FilterChip's fixed variants don't express.
+//
+// The fill is the INK of each family, for every caller (CUL-1691 PR 1, spec §1): the
+// white label on the bright colorAccent / colorEventSymptom was 2.26:1 / 3.67:1 on any
+// ground, under the 4.5:1 text floor. On the inks it is 5.17:1 / 8.02:1 (pinned in
+// theme.contrast.test.ts). Shared on purpose, never behind a card-only prop: the dose
+// record and edit-event repaint with the card.
+export function adherenceActiveFill(concern: boolean): string {
+  return concern ? theme.colorEventSymptomInk : theme.colorAccentInk;
+}
+
 function Chip({
-  label, active, concern, onDark, onPress,
+  label, active, concern, onPress,
 }: {
   label: string;
   active: boolean;
   concern: boolean;
-  onDark: boolean;
   onPress: () => void;
 }) {
-  const activeFill = concern ? theme.colorEventSymptom : theme.colorAccent;
+  const activeFill = adherenceActiveFill(concern);
   return (
     <TouchableOpacity
       style={[
         styles.chip,
-        onDark ? styles.chipOnDark : styles.chipLight,
+        styles.chipLight,
         active && { backgroundColor: activeFill, borderColor: activeFill },
       ]}
       onPress={onPress}
@@ -161,7 +163,7 @@ function Chip({
       <ThemedText
         style={[
           styles.chipLabel,
-          onDark ? styles.chipLabelOnDark : styles.chipLabelLight,
+          styles.chipLabelLight,
           active && styles.chipLabelActive,
         ]}
       >
@@ -190,9 +192,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: theme.trackingWidest,
   },
-  labelOnDark: {
-    color: theme.colorTextOnDarkSubtle,
-  },
   row: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -217,22 +216,12 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorder,
     backgroundColor: theme.colorSurface,
   },
-  // Inactive chip on an UNKNOWN dark parent: the translucent white border +
-  // label (below) stay literals on purpose (B-168) — a token would assert a
-  // fixed colour this reusable row can't promise. The ACTIVE label is the token.
-  chipOnDark: {
-    borderColor: 'rgba(255,255,255,0.3)',
-    backgroundColor: 'transparent',
-  },
   chipLabel: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
   },
   chipLabelLight: {
     color: theme.colorTextSecondary,
-  },
-  chipLabelOnDark: {
-    color: 'rgba(255,255,255,0.85)', // translucent over an unknown dark card — literal on purpose (B-168)
   },
   chipLabelActive: {
     color: theme.colorTextOnDark,

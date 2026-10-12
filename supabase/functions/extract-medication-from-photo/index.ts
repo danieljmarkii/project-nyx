@@ -35,6 +35,7 @@
 //    reaches the catalog without passing that gate.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { readAiBoundaryConsent } from '../_shared/aiConsent.ts'
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts'
 // Abort the Claude vision call after a bounded timeout (CUL-258) — an unbounded
 // fetch lets a hung upstream hold the function open to Supabase's ceiling.
@@ -458,8 +459,8 @@ const handler = async (req: Request): Promise<Response> => {
     Deno.env.get('SUPABASE_ANON_KEY')!,
     { global: { headers: { Authorization: authHeader } } },
   )
-  // Service-role client: storage download only (the proven extract-food /
-  // analyze-vomit pattern). It is ONLY ever pointed at a uid-derived path, so it
+  // Service-role client: storage download and the consent read (CUL-552) only (the proven
+  // extract-food / analyze-vomit pattern). It is ONLY ever pointed at a uid-derived path, so it
   // can never become a confused deputy for another owner's label. It writes
   // nothing — this function is read-only.
   const adminClient = createClient(
@@ -473,6 +474,12 @@ const handler = async (req: Request): Promise<Response> => {
     if (authErr || !user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
     }
+
+    // 1a. CUL-552 PR 2 (D10, the whole boundary): no recorded yes, no label leaves for
+    //     Anthropic. Read through service_role for the uid verified above, failing closed.
+    //     Declined takes the flag-off shape below: the typed feature_disabled 200, no unit,
+    //     no download, so every shipped client routes to manual entry with the photo kept.
+    if (!(await readAiBoundaryConsent(adminClient, user.id))) return featureDisabledResponse()
 
     // 1b. Flag → cap → Anthropic call (§5.2). Stateless function: on flag-off /
     //     cap the client routes to manual entry with the label photo still saved

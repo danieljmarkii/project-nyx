@@ -33,9 +33,8 @@
 // client-writable).
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { readAiBoundaryConsent } from '../_shared/aiConsent.ts'
 import {
-  DEFAULT_CONFIG,
-  EN11_CONFIG,
   CORRELATION_SYMPTOM_TYPES,
   RED_FLAG_INCIDENT_TYPES,
   type Finding,
@@ -68,6 +67,7 @@ import {
   type SymptomRow,
   mapWeightCheckRows,
   type WeightCheckRow,
+  signalDetectionConfig,
 } from './pipeline.ts'
 // Abort the Claude phrasing/summary calls after a bounded timeout (CUL-258). Both
 // callers already fall back to the deterministic template on any throw, so a timeout
@@ -132,7 +132,7 @@ const PHRASING_MODEL = 'claude-haiku-4-5'
 // DEFAULT_CONFIG, the phrasing model and the Engines flags; engineStamps.ts). Bump it with
 // any change to detection, curation, decoration or phrasing that can change what a pet's
 // Signal says: the fingerprint cannot see a code change this number does not record.
-export const SIGNAL_ENGINE_VERSION = 'signal.8' // signal.8: PR-19 (CUL-1413), EN-8's weight lane behind engines_v3_en8 (flag off unchanged). signal.7: PR-23 (CUL-1417), EN-9's care state behind engines_v3_en9 (flag off unchanged). signal.6: PR-32 (CUL-1141), EN-11 behind engines_v3_en11 (flag off unchanged). signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
+export const SIGNAL_ENGINE_VERSION = 'signal.9' // signal.9: PR-30s (CUL-1725), I5's refused-then-vomited intake card behind engines_v3_en5 (flag off unchanged). signal.8: PR-19 (CUL-1413), EN-8's weight lane behind engines_v3_en8 (flag off unchanged). signal.7: PR-23 (CUL-1417), EN-9's care state behind engines_v3_en9 (flag off unchanged). signal.6: PR-32 (CUL-1141), EN-11 behind engines_v3_en11 (flag off unchanged). signal.5: PR-14e (CUL-1195), the long band carries and says its refused-bowl subset. signal.4: PR-22 (CUL-1420), Ask's rule 10 in the phrasing prompt and EN-10's context lines behind engines_v3_en10. signal.3: CUL-989, paged newest-first reads and the incomplete-read rule. signal.2: CUL-1086, the intake lane excludes free-fed bowls by date (and PR-14's refusal rule, CUL-1190, which shipped under signal.1)
 
 const MS_PER_DAY = 86_400_000
 
@@ -150,7 +150,7 @@ interface ClaudeToolResponse {
 
 // Phrase one finding. Returns the model sentence if it passes validation,
 // otherwise the deterministic template — so this never throws and never blanks.
-async function phraseFinding(finding: Finding, petName: string, phrasingEnabled = true): Promise<string> {
+async function phraseFinding(finding: Finding, petName: string, phrasingEnabled: boolean): Promise<string> {
   // EN-9 (PR-23): a care state's sentence is template-only (AC 8). It names the owner's answer
   // and its date beside a count; a model given "with your vet" is one paraphrase away from
   // "under control" (BRK-13), so it never sees one.
@@ -194,7 +194,12 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
     finding.type === 'incident_red_flag' ||
     // Engines v3 PR-19 (EN-8, CUL-1413) — the weight row: two readings, their sources and the
     // tier's ask. Template-only, which also saves the call (validatePhrasing refuses it anyway).
-    finding.type === 'weight_loss'
+    finding.type === 'weight_loss' ||
+    // Engines v3 PR-30s (I5, CUL-1725): an intake card carrying the refused-then-vomited facts, on
+    // its own card or riding ②'s. The load is a sequence the model would turn into a cause ("because
+    // she refused") or a mechanism ("nausea", "an empty stomach"), and the intake screens catch
+    // neither (adversarial pass D1). validatePhrasing refuses every model sentence here too.
+    (finding.type === 'intake_decline' && finding.refusedThenVomited !== undefined)
   ) {
     return fallback
   }
@@ -262,7 +267,7 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
 // in the packet, any reassurance/causal/disease/preference drift, and (on a safety summary)
 // the silent removal of vet-routing. Any failure → the deterministic template. Never throws,
 // never reassures, never blank.
-async function phraseSummaryText(packet: SummaryFactPacket, phrasingEnabled = true): Promise<CachedSummary> {
+async function phraseSummaryText(packet: SummaryFactPacket, phrasingEnabled: boolean): Promise<CachedSummary> {
   // The deterministic form lives in ./pipeline.ts, so the harness and this function build it
   // one way. Every return below is it except the one validated model sentence.
   const templated = templateSummary(packet)
@@ -452,6 +457,19 @@ async function recordUsage(
   return { dayCount: row.day_count, monthCount: row.month_count }
 }
 
+// Whether this run may send anything to the phrasing model: the app-wide flag AND the
+// owner's recorded yes (CUL-552 PR 2). Either off ⇒ templates, never a blank Signal.
+export function modelPhrasingAllowed(phrasingFlag: boolean, consented: boolean): boolean {
+  return phrasingFlag && consented
+}
+
+// Service-role client for the consent read only (ai_consent is read through service_role,
+// keyed on the verified uid; migration 100 §5). Every other read here stays on the caller's
+// RLS-scoped client.
+function serviceClient(): SupabaseClient {
+  return createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 const handler = async (req: Request): Promise<Response> => {
@@ -498,7 +516,13 @@ const handler = async (req: Request): Promise<Response> => {
     //     its cached signal (no UI state ships — invisible by design). Checked BEFORE
     //     the expensive detection pipeline. The phrasing flag does NOT gate the
     //     function; it only forces template phrasing below.
-    const { flagEnabled: phrasingEnabled, caps } = await readGateConfig(supabase)
+    const { flagEnabled: phrasingFlag, caps } = await readGateConfig(supabase)
+    // CUL-552 PR 2 (D10, the whole boundary): no recorded yes, no phrasing call. The read is
+    // service-role, keyed on the uid getUser verified above, and fails closed; a decline
+    // costs the owner nothing they can see, because every finding and the summary already
+    // fall back to their templates when phrasing is off. Detection is never gated (§3).
+    const consented = await readAiBoundaryConsent(serviceClient(), user.id)
+    const phrasingEnabled = modelPhrasingAllowed(phrasingFlag, consented)
     const counts = await recordUsage(supabase, petId)
     const gate = resolveGateState(true, counts, caps) // flagEnabled=true: cap-only
     if (!gate.allow && gate.reason === 'cap_reached') {
@@ -640,11 +664,17 @@ const handler = async (req: Request): Promise<Response> => {
       // from the structured fields (override-aware), never the cached visual_flags. `status`,
       // `contents` + `bile_present` are added for L3 photo composition (CUL-9), which reads the same
       // rows but filters to completed VOMIT reads itself (computePhotoComposition). Empty ⇒ silent.
+      // `recommendation`, `tier` + `engine_flags` (Engines v3 PR-30a, CUL-1511) let the lane say a
+      // new-rule call in the record's words and carry a call the record raised (`newRuleCallOf`).
+      // `updated_at` (PR-30c, CUL-1739) is when the read last wrote its call, so a call now raised
+      // late (a re-floor, a late sync) says "now" for a full day from when it was said.
+      // `call_said_at` (CUL-1759, migration 099) is the row's own stamp of that, which no unrelated
+      // write moves; `updated_at` stays the fallback for a row not stamped since 099.
       fetchAll<IncidentAnalysisRow>('event_ai_analysis', (r) => r.event_id, (from, to) =>
         supabase
         .from('event_ai_analysis')
         .select(
-          'event_id, incident_type, status, blood_present, stool_blood_present, foreign_material_present, contents, bile_present, events!inner(occurred_at)',
+          'event_id, incident_type, status, blood_present, stool_blood_present, foreign_material_present, contents, bile_present, recommendation, tier, engine_flags, updated_at, call_said_at, events!inner(occurred_at)',
           { count: 'exact' },
         )
         .eq('pet_id', petId)
@@ -726,7 +756,7 @@ const handler = async (req: Request): Promise<Response> => {
       engine: 'generate-signal',
       version: SIGNAL_ENGINE_VERSION,
       // The config this run detects with: EN-11's under its key (runSignalPipeline picks the same).
-      config: isEngineKeyOn(engineFlags, 'engines_v3_en11') ? EN11_CONFIG : DEFAULT_CONFIG,
+      config: signalDetectionConfig(engineFlags),
       phrasingModel: PHRASING_MODEL,
       engineFlags: engineFlags.on,
     })

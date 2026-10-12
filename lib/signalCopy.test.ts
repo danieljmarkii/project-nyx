@@ -66,6 +66,7 @@ import {
   timingStoryClockLaneModel,
   timingStoryControlDisclosure,
   timingStoryRefusalLine,
+  REFUSAL_VET_TAIL,
   photoCompositionLines,
   timingStoryVetLine,
   DOT_LANE_MAX,
@@ -80,6 +81,15 @@ import {
   trialResponseDietStructureLine,
   type BannerSafetyFinding,
 } from './signalCopy';
+import {
+  intakeRefusedThenVomitedFaceLine,
+  refusedThenVomitedLine,
+  STRIP_ASKS,
+  stripAskLine,
+  stripCountLine,
+  stripNameLine,
+} from './signalCopy';
+import { refusedThenVomitedSentence as serverRefusedThenVomitedSentence } from '../supabase/functions/generate-signal/phrasing';
 import type {
   CachedFinding,
   CorrelationFinding,
@@ -257,7 +267,8 @@ const cached = (
     | PostprandialTimingFinding
     | TimeOfDayClusteringFinding
     | EmptyStomachTimingFinding
-    | TimingStoryFinding,
+    | TimingStoryFinding
+    | SymptomBurdenFinding,
   rank = 0,
 ): CachedFinding => ({
   rank,
@@ -1886,6 +1897,23 @@ describe('selectCrossPetSafetyFinding', () => {
     expect(selectCrossPetSafetyFinding([declineVsChronic])?.finding.type).toBe('intake_decline');
   });
 
+  it('I5 (PR-30s, adversarial D2): a refused-then-vomited card yields to a burden card and leads chronicity', () => {
+    const i5 = intakeDecline({
+      trigger: 'refused_then_vomited',
+      daysBelowBaseline: 0,
+      ratedMealsConsidered: 0,
+      refusedThenVomited: { episodeCount: 2, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', firstLocalDay: '2026-09-06', windowMinutes: 30 },
+    });
+    const i5Pet = candidate('i5', [i5]);
+    const burdenPet = candidate('burden', [burden()]);
+    expect(selectCrossPetSafetyFinding([i5Pet, burdenPet])?.pet.id).toBe('burden');
+    expect(selectCrossPetSafetyFinding([burdenPet, i5Pet])?.pet.id).toBe('burden');
+    expect(selectCrossPetSafetyFinding([candidate('A', [burden(), i5])])?.finding.type).toBe('symptom_burden');
+    expect(selectCrossPetSafetyFinding([candidate('B', [chronicity(), i5])])?.finding.type).toBe('intake_decline');
+    // ②'s own cards keep their place above burden.
+    expect(selectCrossPetSafetyFinding([candidate('C', [burden(), intakeDecline()])])?.finding.type).toBe('intake_decline');
+  });
+
   it('across two pets, intake_decline outranks worsening regardless of list order (§4)', () => {
     const declinePet = candidate('decline', [intakeDecline()]);
     const worsenPet = candidate('worsen', [worsening()]);
@@ -2562,11 +2590,11 @@ describe('trialResponseCompareRows (CUL-13 / B-766 — the two-sided count rows)
 describe('CUL-1195 — the long band says when its vomits followed a refused bowl (provisional wording)', () => {
   it('the timing card: the subset beside the long count, on either shape', () => {
     expect(timingStoryRefusalLine(emptyStomach({ longCount: 11, eligibleCount: 11, longAfterRefusalCount: 11 }))).toBe(
-      '11 of the 11 episodes 6h or more after eating followed a refused meal.',
+      "11 of the 11 episodes 6h or more after eating followed a refused meal. That's worth mentioning to your vet.",
     );
     const story = timingStory();
     expect(timingStoryRefusalLine(timingStory({ long: { ...story.long, afterRefusalCount: 1 } }))).toBe(
-      `1 of the ${story.long.count} episodes 6h or more after eating followed a refused meal.`,
+      `1 of the ${story.long.count} episodes 6h or more after eating followed a refused meal. That's worth mentioning to your vet.`,
     );
   });
   it('the timing card: nothing at zero, on an old cache, or on a non-number — never "none followed"', () => {
@@ -2580,14 +2608,14 @@ describe('CUL-1195 — the long band says when its vomits followed a refused bow
   it('the trial card: each window that has one, a subset of the long row', () => {
     expect(
       trialResponseRefusalLine(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 2 } })),
-    ).toBe('Of those 6h or more after eating, 3 in the trial · 2 before it followed a refused meal.');
+    ).toBe("Of those 6 hours or more after eating, these followed a refused meal: 3 in the trial · 2 before it. That's worth mentioning to your vet.");
     expect(
       trialResponseRefusalLine(trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 0 } })),
-    ).toBe('Of those 6h or more after eating, 3 in the trial followed a refused meal.');
+    ).toBe("Of those 6 hours or more after eating, these followed a refused meal: 3 in the trial. That's worth mentioning to your vet.");
   });
   it('the trial card: a window with none is never printed as a zero (a fall would read as the trial fixing it)', () => {
     const line = trialResponseRefusalLine(trialResponse({ long: { trial: 2, baseline: 7 }, longAfterRefusal: { trial: 0, baseline: 2 } }));
-    expect(line).toBe('Of those 6h or more after eating, 2 before it followed a refused meal.');
+    expect(line).toBe("Of those 6 hours or more after eating, these followed a refused meal: 2 before it. That's worth mentioning to your vet.");
     expect(line).not.toMatch(/\b0\b/);
   });
   it('the trial card: nothing when neither window has one, or on an old cache; clamped per window', () => {
@@ -2595,7 +2623,7 @@ describe('CUL-1195 — the long band says when its vomits followed a refused bow
     expect(trialResponseRefusalLine(trialResponse())).toBeNull();
     // long.trial is 0 in the fixture, so a malformed trial count clamps to zero and only the baseline speaks.
     expect(trialResponseRefusalLine(trialResponse({ longAfterRefusal: { trial: 5, baseline: 2 } }))).toBe(
-      'Of those 6h or more after eating, 2 before it followed a refused meal.',
+      "Of those 6 hours or more after eating, these followed a refused meal: 2 before it. That's worth mentioning to your vet.",
     );
   });
 });
@@ -2818,5 +2846,77 @@ describe('symptom-chronicity — the counted 4-week compare (v1.1-b, CUL-787)', 
         expect(str.includes('!')).toBe(false);
       }
     }
+  });
+});
+
+describe('I4 (ruling sheet §2.7): every card surface that prints the refused-bowl count ends on the vet tail', () => {
+  const tail = REFUSAL_VET_TAIL;
+  it('the tail is a whole sentence of its own, never a fragment', () => {
+    expect(tail).toBe("That's worth mentioning to your vet.");
+  });
+  it('the timing card face, the trial card and the Patterns panel all end on it', () => {
+    expect(timingStoryRefusalLine(emptyStomach({ longCount: 3, eligibleCount: 4, longAfterRefusalCount: 2 }))).toMatch(
+      new RegExp(`refused meal\\. ${tail.replace(/[.']/g, (c) => `\\${c}`)}$`),
+    );
+    const trial = trialResponseRefusalLine(
+      trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 2 } }),
+    );
+    expect(trial?.endsWith(` ${tail}`)).toBe(true);
+  });
+  it('the trial card states the claim BEFORE the middot, so no window can read as exempt from it', () => {
+    const trial = trialResponseRefusalLine(
+      trialResponse({ long: { trial: 3, baseline: 7 }, longAfterRefusal: { trial: 3, baseline: 2 } }),
+    )!;
+    expect(trial.indexOf('followed a refused meal')).toBeLessThan(trial.indexOf('·'));
+  });
+});
+
+describe('I5 (Engines v3 PR-30s): refused, then vomited within minutes, on every client surface', () => {
+  const facts = { episodeCount: 2, dayCount: 2, firstIso: '2026-09-06T18:20:00.000Z', firstLocalDay: '2026-09-06', windowMinutes: 30 };
+  const alone = intakeDecline({ trigger: 'refused_then_vomited', daysBelowBaseline: 0, ratedMealsConsidered: 0, refusedThenVomited: facts });
+  const riding = intakeDecline({ refusedThenVomited: { ...facts, episodeCount: 3 } });
+  const SENTENCE = "Pixel vomited within 30 minutes of turning down a meal on 2 days since September 6. That's worth mentioning to your vet.";
+
+  it('the line is the server’s sentence, character for character (one sentence, two modules)', () => {
+    expect(refusedThenVomitedLine(alone, 'Pixel')).toBe(SENTENCE);
+    expect(refusedThenVomitedLine(alone, 'Pixel')).toBe(serverRefusedThenVomitedSentence(facts, 'Pixel'));
+    const three = { ...facts, episodeCount: 3 };
+    expect(refusedThenVomitedLine(riding, 'Pixel')).toBe(serverRefusedThenVomitedSentence(three, 'Pixel'));
+    expect(refusedThenVomitedLine(riding, 'Pixel')).toContain('3 times, on 2 days');
+  });
+
+  it('absent, malformed or zero facts say nothing, never a zero (absence says nothing about her eating)', () => {
+    expect(refusedThenVomitedLine(intakeDecline(), 'Pixel')).toBeNull();
+    for (const bad of [0, Number.NaN, -1]) {
+      expect(refusedThenVomitedLine(intakeDecline({ refusedThenVomited: { ...facts, episodeCount: bad } }), 'Pixel')).toBeNull();
+    }
+  });
+
+  it('the face line rides only on the cards whose own claim is something else', () => {
+    expect(intakeRefusedThenVomitedFaceLine(alone, 'Pixel')).toBeNull();
+    expect(intakeRefusedThenVomitedFaceLine(riding, 'Pixel')).toContain('within 30 minutes of turning down a meal');
+    expect(intakeRefusedThenVomitedFaceLine(intakeDecline(), 'Pixel')).toBeNull();
+  });
+
+  it('every branch names the new trigger: none falls through to “eating less than usual”', () => {
+    expect(stripNameLine(alone)).toBe('Vomited after a refused meal');
+    expect(stripAskLine(alone)).toBe(STRIP_ASKS.tell);
+    expect(stripCountLine(alone)).toBe('On 2 days · since Sep 6');
+    expect(sampleLine(alone)).toBe('2 episodes you saw, each soon after a refused meal');
+    expect(evidenceText(alone, 'Pixel')).toContain(SENTENCE);
+    expect(bannerCopy(alone, 'Pixel').text).toBe('Pixel vomited soon after turning down a meal on more than one day — worth a look.');
+    const script = phoneScript(alone, 'Pixel', false, null, null)!;
+    expect(script.map((f) => f.label)).toEqual(['Concern', 'Vomited soon after a refused meal', 'Within', 'First']);
+    for (const s of [stripNameLine(alone), sampleLine(alone), evidenceText(alone, 'Pixel'), bannerCopy(alone, 'Pixel').text, ...script.map((f) => f.value)]) {
+      expect(s).not.toMatch(/eat(en|ing) less|below the usual|nause|picky|fussy|because|caus/i);
+      expect(s).not.toContain('!');
+    }
+  });
+
+  it('on a ② card the facts follow the card’s own reason, in the expand and the phone script', () => {
+    expect(evidenceText(riding, 'Pixel')).toMatch(/if it carries on\. Pixel vomited within 30 minutes/);
+    const labels = phoneScript(riding, 'Pixel', false, null, null)!.map((f) => f.label);
+    expect(labels.slice(0, 3)).toEqual(['Concern', 'How long', 'Compared with']);
+    expect(labels).toContain('Vomited soon after a refused meal');
   });
 });

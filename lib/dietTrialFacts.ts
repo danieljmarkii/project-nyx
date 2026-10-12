@@ -73,7 +73,12 @@ import {
 import { antigenPausedNote, loadTrialProteinContext, trialDietNote } from './trialContaminant';
 import { trialTargetProtein } from './trialProtein';
 import { dayKeyFromIndex, localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
-import type { IntakeDeclineFact, TrialCardInput, TrialCardTrial } from './dietTrialCard';
+import {
+  mayImplyRecordClean,
+  type IntakeDeclineFact,
+  type TrialCardInput,
+  type TrialCardTrial,
+} from './dietTrialCard';
 import { trialStartDayKey } from './trialWindowDates';
 
 export interface DietTrialFactsPet {
@@ -556,6 +561,10 @@ export async function loadDietTrialFacts(args: {
           // because the pet would not eat it can never have its days read as
           // clean ones.
           mayStateRecordClean: mayStateRecordClean(readable, {
+            stoppedForRefusal: core.stoppedForRefusal,
+          }),
+          // CUL-1780 — the stricter gate for Home's line, which prints no ratio.
+          mayImplyRecordClean: mayImplyRecordClean(readable, {
             stoppedForRefusal: core.stoppedForRefusal,
           }),
         }

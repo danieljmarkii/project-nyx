@@ -22,7 +22,8 @@ import {
 import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import type { FreeFedSpan, OnsetConfidence } from './mealTiming';
 import type { MonthRow } from './monthCoverage';
-import type { SpineAnalysisRow } from './spineNode';
+import type { VomitSpan } from './spineCompaction';
+import { vomitSpanOf, type SpineAnalysisRow } from './spineNode';
 
 // ── C-40: two ISO spellings of one instant do not compare as TEXT ─────────────
 // A local write stores `…T04:00:00.000Z`; a hydrated row stores PostgREST's
@@ -74,19 +75,27 @@ export async function readFeedingsSince(petId: string, sinceIso: string): Promis
 export async function readVomitOnsetsSince(
   petId: string,
   sinceIso: string,
-): Promise<{ ms: number; confidence: OnsetConfidence | null }[]> {
+): Promise<{ ms: number; confidence: OnsetConfidence | null; span: VomitSpan }[]> {
   const { sqlSince, sinceMs } = sqlBoundFor(sinceIso);
-  const rows = await getDb().getAllAsync<{ occurred_at: string; occurred_at_confidence: string | null }>(
-    `SELECT occurred_at, occurred_at_confidence FROM events
+  const rows = await getDb().getAllAsync<{
+    occurred_at: string;
+    occurred_at_confidence: string | null;
+    occurred_at_earliest: string | null;
+    occurred_at_latest: string | null;
+  }>(
+    `SELECT occurred_at, occurred_at_confidence, occurred_at_earliest, occurred_at_latest FROM events
      WHERE pet_id = ? AND event_type = ? AND deleted_at IS NULL AND occurred_at >= ?`,
     [petId, TIMING_SYMPTOM_TYPE, sqlSince],
   );
-  return rows
-    .map((r) => ({
-      ms: Date.parse(r.occurred_at),
-      confidence: (r.occurred_at_confidence as OnsetConfidence | null) ?? null,
-    }))
-    .filter((r) => Number.isFinite(r.ms) && r.ms >= sinceMs);
+  return rows.flatMap((r) => {
+    const ms = Date.parse(r.occurred_at);
+    // The vomit's span for rule B's before-vomit break (CUL-1737): History reads it here, the
+    // read that already spans from the loaded days on with no upper bound and no filter, so a
+    // 12:10 AM vomit on a day outside the window or the filter still reaches the card before.
+    const span = vomitSpanOf({ id: '', pet_id: petId, event_type: TIMING_SYMPTOM_TYPE, ...r });
+    if (!Number.isFinite(ms) || ms < sinceMs || span === null) return [];
+    return [{ ms, confidence: (r.occurred_at_confidence as OnsetConfidence | null) ?? null, span }];
+  });
 }
 
 export { readFreeFedSpans };

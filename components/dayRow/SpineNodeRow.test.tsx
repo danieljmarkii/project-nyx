@@ -8,9 +8,10 @@
 // reduced motion, the breath; AC 24's resting half (an arrival ends in exactly the row a
 // fresh render of that state draws); VoiceOver hearing the whole row as one sentence in
 // reading order (C-8); and open in place, the static half (AC 17: every member of a run of
-// 2, 5, 9 and 12 drawn as a full row, nothing capped or clipped) and its motion (HV-10,
-// `openInPlace`: the month's choreography on the thread, its Reduce Motion form, and
-// VoiceOver staying on the run).
+// 2, 5, 9 and 12 drawn as a full row, nothing capped or clipped) and its motion (CUL-1734,
+// `openInPlace`: the run's own open, its Reduce Motion form, and VoiceOver staying on the
+// run; the beats themselves are pinned in `components/motion/runOpenMotion.test.ts`), and
+// the stack a folded run carries (CUL-1736: the count's mark, never the meals' rating).
 
 const mockUseReducedMotion = jest.fn(() => false);
 jest.mock('../../hooks/useReducedMotion', () => ({
@@ -20,25 +21,38 @@ const mockUseAppActive = jest.fn(() => true);
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => mockUseAppActive() }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { AccessibilityInfo, Animated, LayoutAnimation, StyleSheet } from 'react-native';
 import { ChevronDown, ChevronRight, ChevronUp } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { FOLD_LAYOUT, FOLD_MOTION, UNFOLD_LAYOUT } from '../motion/foldMotion';
-import { OPEN_IN_PLACE_LEAD_PT } from '../motion/openInPlaceMotion';
+import {
+  RUN_CLOSE_BUDGET_MS,
+  RUN_CLOSE_LAYOUT,
+  RUN_MOTION,
+  RUN_OPEN_LAYOUT,
+  runLandStarts,
+  runOpenBudgetMs,
+  runOpenIdleMs,
+} from '../motion/runOpenMotion';
+import { RunRevealContext, type RunRevealMeasure } from '../motion/runRevealMotion';
+import { OpenInPlaceReset } from '../motion/openInPlaceMotion';
 import { useState } from 'react';
 import { TICK_BREATH } from '../motion/arrivalMotion';
 import type { NodeRead, SpineCompactNode, SpineDose, SpineEventNode } from '../../lib/spineNode';
 import {
   PHOTOGRAPHED_LABEL,
+  RUN_STACK_STEP_PT,
   SPINE_READ_PENDING_LABEL,
   SPINE_TICK_HEIGHT,
   SpineCompactRow,
   SpineEventRow,
   THREAD_X,
   eventRowLabel,
+  runRowLabel,
+  runStackBeads,
 } from './SpineNodeRow';
-import { RAIL_W, TIME_W } from '../recap/DaySpine';
+import { RAIL_W, SPINE_THREAD, TIME_W } from '../recap/DaySpine';
 import { RowSpeechContext, readLandedSpoken, type RowSpeech } from './rowSpeech';
 
 const FRAME_MS = 20;
@@ -626,9 +640,94 @@ describe('a run opens in place: every member, a full row, nothing capped (AC 17,
   });
 });
 
+// ── The member form (CUL-1733; spec §3.6, D2 ruled on CUL-1715) ────────────────────────
+
+describe('an opened run\'s member: the difference first, the brand and product on line 2', () => {
+  const PRODUCT = 'Royal Canin · Selected Protein PR';
+  /** A run of `intakes.length` meals, one rating each (null for unrated), alternating format. */
+  function ratedRun(intakes: (string | null)[]): SpineCompactNode {
+    const rows = intakes.map((intake, i) =>
+      meal(`m${i}`, TIMES[i], { intake, formatTag: i % 2 === 0 ? 'WET' : 'DRY' }),
+    );
+    return { ...run(intakes.length), rows };
+  }
+  const open = (node: SpineCompactNode) =>
+    render(<SpineCompactRow node={node} isFirst isLast expanded onToggle={jest.fn()} onOpen={jest.fn()} />);
+
+  it.each([
+    ['two meals', ['all', 'most']],
+    ['four meals, two rated', ['all', null, 'most', null]],
+  ] as const)('%s: line 1 carries the meal word, the format and the chip; line 2 the product', (_name, intakes) => {
+    const node = ratedRun([...intakes]);
+    const t = open(node);
+    node.rows.forEach((row, i) => {
+      const line1 = within(t.getByTestId(`spine-member-line1-${row.id}`));
+      expect(line1.getByText('Meal')).toBeTruthy();
+      expect(line1.getByText(row.formatTag as string)).toBeTruthy();
+      // Nothing of the product rides line 1.
+      expect(line1.queryByText(/Royal Canin/)).toBeNull();
+      expect(line1.queryByText(/Selected Protein/)).toBeNull();
+      // The chip is a line-1 sibling when the meal is rated, and absent when it is not.
+      const want = intakes[i] === 'all' ? 'All' : intakes[i] === 'most' ? 'Most' : null;
+      if (want) expect(within(line1.getByTestId(`spine-chip-${row.id}`)).getByText(want)).toBeTruthy();
+      else expect(line1.queryByTestId(`spine-chip-${row.id}`)).toBeNull();
+      // Line 2: the brand and product, in the run's own second-line register.
+      const food = t.getByTestId(`spine-member-food-${row.id}`);
+      expect(food.props.children).toBe(PRODUCT);
+      expect(styleOf(food)).toMatchObject({ fontSize: theme.textXS, color: theme.colorTextSecondary });
+      expect(styleOf(food)).toEqual(styleOf(t.getByTestId(`spine-formats-${node.id}`)));
+    });
+  });
+
+  it('VoiceOver still hears the whole row, the product included, in its reading order', () => {
+    const node = ratedRun(['all', 'most']);
+    const t = open(node);
+    for (const row of node.rows) {
+      const label = t.getByTestId(`spine-node-${row.id}`).props.accessibilityLabel as string;
+      expect(label).toBe(eventRowLabel(row));
+      expect(label).toMatch(/^Meal, Royal Canin, Selected Protein PR, (wet|dry), (all|most) eaten, /);
+    }
+  });
+
+  it('the member bead is 9pt, centred where the 11pt bead centres; the time takes the secondary ink', () => {
+    const node = ratedRun(['all', 'most']);
+    const t = open(node);
+    const dots = t.getAllByTestId('spine-dot-member');
+    expect(dots).toHaveLength(2);
+    // The run's own bead, the single-row geometry, is the rail's last child.
+    const runRail = t.getAllByTestId('spine-rail')[0];
+    const runDot = styleOf(runRail.children[runRail.children.length - 1] as never);
+    const d = styleOf(dots[0]);
+    expect(d.width).toBe(9);
+    expect(d.height).toBe(9);
+    expect(d.borderWidth).toBe(runDot.borderWidth);
+    expect((d.marginTop as number) + (d.width as number) / 2).toBe(
+      (runDot.marginTop as number) + (runDot.width as number) / 2,
+    );
+    expect(d.backgroundColor).toBe(runDot.backgroundColor);
+    expect(styleOf(t.getByText('6:02\u00a0AM')).color).toBe(theme.colorTextSecondary);
+    // The run's range keeps the tertiary time.
+    expect(styleOf(t.getByText(/^6:02\sAM\s– /)).color).toBe(theme.colorTextTertiary);
+  });
+
+  it('a single row is untouched: the product on line 1, the 11pt bead, the tertiary time, no member form', () => {
+    const row = meal('s1', '9:15 AM', { intake: 'most' });
+    const t = render(<SpineEventRow node={row} isFirst isLast onOpen={jest.fn()} />);
+    expect(t.queryByTestId('spine-member-line1-s1')).toBeNull();
+    expect(t.queryByTestId('spine-member-food-s1')).toBeNull();
+    expect(t.queryByTestId('spine-dot-member')).toBeNull();
+    expect(t.getByText(` · ${PRODUCT}`)).toBeTruthy();
+    const rail = t.getByTestId('spine-rail');
+    const dot = styleOf(rail.children[rail.children.length - 1] as never);
+    expect(dot.width).toBe(11);
+    expect(styleOf(t.getByText('9:15\u00a0AM')).color).toBe(theme.colorTextTertiary);
+    expect(t.getByTestId('spine-node-s1').props.accessibilityLabel).toBe(eventRowLabel(row));
+  });
+});
+
 // ── Open in place, the motion (HV-10 / CUL-1167; spec §4 "Open a run", AC 32) ─────────
 
-describe('open in place (HV-10): the one choreography the month uses, on the thread', () => {
+describe('open in place: the run\'s own motion (CUL-1734, D1)', () => {
   /** A host that owns the open state, as a day card and Home's spine do. */
   function InPlace({ node, initial = false }: { node: SpineCompactNode; initial?: boolean }) {
     const [expanded, setExpanded] = useState(initial);
@@ -648,78 +747,149 @@ describe('open in place (HV-10): the one choreography the month uses, on the thr
     act(() => {
       jest.advanceTimersByTime(ms);
     });
-  const settleOpen = () => advance(FOLD_MOTION.railLagMs + FOLD_MOTION.openMs + FOLD_MOTION.landMs + FOLD_MOTION.settleSlackMs * 3);
+  const openBudget = (n: number) => RUN_MOTION.mountFrameMs + Math.ceil(runOpenIdleMs(runLandStarts(n)));
+  /** The chevron's drawn turn (the host's resolved style, or the interpolation behind it). */
+  const rotationOf = (el: { props: { style?: unknown } }) => {
+    const r = (styleOf(el).transform as { rotate: unknown }[])[0].rotate;
+    return typeof r === 'string' ? r : (r as { __getValue: () => string }).__getValue();
+  };
 
-  it('a tap: the rail leads along the thread with no member yet; the box follows on the fold\'s spring; the members land; at rest, the shipped shape', () => {
+  it('a tap: the box mounts shut with every meal inside it, the line at the bead; one frame later ONE configured commit lets it go; at rest, nothing clipped', () => {
     const node = run(3);
     const t = render(<InPlace node={node} />);
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
-    // Beat 1: the slot is there at the lead height, its rail out of the flow and growing;
-    // no member is mounted, and nothing has touched the layout yet.
-    expect(styleOf(t.getByTestId('spine-members-compact:m0')).minHeight).toBe(OPEN_IN_PLACE_LEAD_PT);
-    const leadRail = styleOf(t.getByTestId('spine-run-rail-compact:m0'));
-    expect(leadRail.height).toBe(OPEN_IN_PLACE_LEAD_PT);
-    expect(leadRail.transformOrigin).toBe('top');
-    expect(t.queryByTestId('spine-node-m0')).toBeNull();
+    // t=0: the box is there, SHUT and clipped, every meal already mounted inside it (so none
+    // remounts later); nothing in the flow has moved, so nothing is configured.
+    const shut = styleOf(t.getByTestId('spine-members-compact:m0'));
+    expect(shut.height).toBe(0);
+    expect(shut.overflow).toBe('hidden');
+    for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
     expect(configureNext).not.toHaveBeenCalled();
-    // Beat 2: railLagMs later, ONE layout commit on the fold's unfold spring, and the members
-    // mount in their animated stage.
-    advance(FOLD_MOTION.railLagMs);
+    // The lead: out of the run's own bead, its own frame (explicit top and height), the glyph tint.
+    const lead = styleOf(t.getByTestId('spine-run-lead-compact:m0'));
+    // From the bead's foot (its centre plus half the 11pt bead), over the header's grey thread.
+    expect(lead.top).toBe(SPINE_THREAD.dotCenterY + 11 / 2);
+    expect(typeof lead.height).toBe('number');
+    expect(lead.bottom).toBeUndefined();
+    expect(lead.transformOrigin).toBe('top');
+    expect(lead.backgroundColor).toBe(theme.colorAccentGlyph);
+    expect((lead.left as number) + (lead.width as number) / 2).toBe(THREAD_X);
+    // One frame later: ONE layout commit on the run's own ease, the box's height let go.
+    advance(RUN_MOTION.mountFrameMs);
     expect(configureNext).toHaveBeenCalledTimes(1);
-    expect(configureNext).toHaveBeenCalledWith(UNFOLD_LAYOUT);
-    expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
-    for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
-    // At rest: no stage, the rail back on the thread with no explicit height, every member a
-    // full row, nothing capping the box (AC 17 under the motion too).
-    settleOpen();
-    expect(t.queryByTestId('spine-members-stage-compact:m0')).toBeNull();
-    const rail = styleOf(t.getByTestId('spine-run-rail-compact:m0'));
-    expect(rail.height).toBeUndefined();
-    expect((rail.left as number) + (rail.width as number) / 2).toBe(THREAD_X);
+    expect(configureNext).toHaveBeenLastCalledWith(RUN_OPEN_LAYOUT);
+    expect(styleOf(t.getByTestId('spine-members-compact:m0')).height).toBeUndefined();
+    // At rest: no clip, the line on the thread in the glyph tint, no transform on it.
+    advance(openBudget(3));
     const box = styleOf(t.getByTestId('spine-members-compact:m0'));
-    expect(box.maxHeight).toBeUndefined();
-    expect(box.height).toBeUndefined();
     expect(box.overflow).not.toBe('hidden');
+    expect(box.height).toBeUndefined();
+    const rail = styleOf(t.getByTestId('spine-run-rail-compact:m0'));
+    expect(rail.backgroundColor).toBe(theme.colorAccentGlyph);
+    expect(rail.transform).toBeUndefined();
+    expect(rail.top).toBe(0);
+    expect((rail.left as number) + (rail.width as number) / 2).toBe(THREAD_X);
+    expect(rotationOf(t.getByTestId('spine-run-chevron-compact:m0'))).toBe('180deg');
     for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
+  });
+
+  it('the chevron turns: one glyph, rotated, never swapped (so a turn reverses from where it is)', () => {
+    const t = render(<InPlace node={run(2)} />);
+    const chev = t.getByTestId('spine-run-chevron-compact:m0');
+    expect(rotationOf(chev)).toBe('0deg');
+    expect(within(chev).UNSAFE_queryByType(ChevronUp)).toBeNull();
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(openBudget(2));
+    expect(t.getByTestId('spine-run-chevron-compact:m0')).toBe(chev);
+    expect(within(chev).UNSAFE_queryByType(ChevronUp)).toBeNull();
+    expect(within(chev).UNSAFE_getByType(ChevronDown)).toBeTruthy();
+  });
+
+  it('the line reaches the last meal\'s bead once the meals have measured', () => {
+    const node = run(3);
+    const t = render(<InPlace node={node} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    layout(t.getByTestId('spine-members-stage-compact:m0') as never, 180);
+    fireEvent(t.getByTestId('spine-member-wrap-m2'), 'layout', { nativeEvent: { layout: { x: 0, y: 120, width: 300, height: 60 } } });
+    advance(RUN_MOTION.mountFrameMs);
+    expect(styleOf(t.getByTestId('spine-run-rail-compact:m0')).bottom).toBe(180 - (120 + SPINE_THREAD.dotCenterY));
   });
 
   it('VoiceOver stays on the run: the same element before and after, now saying it hides them', () => {
     const t = render(<InPlace node={run(3)} />);
     const before = t.getByTestId('spine-node-compact:m0');
     fireEvent.press(before);
-    settleOpen();
+    advance(openBudget(3));
     const after = t.getByTestId('spine-node-compact:m0');
     expect(after).toBe(before);
     expect(after.props.accessibilityState).toEqual({ expanded: true });
     expect(after.props.accessibilityLabel).toMatch(/Hides each one$/);
   });
 
-  it('closing: the members leave, then the box closes on the fold\'s ease, then the rail trails and the slot goes', () => {
+  it('closing: ONE configured commit takes the box to zero on the tap, clipped, the meals still mounted; the box unmounts at 280', () => {
     const t = render(<InPlace node={run(3)} initial />);
     expect(t.getByTestId('spine-node-m0')).toBeTruthy();
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
-    // Beat 1: the members fade out in their stage, still mounted; no layout commit yet.
-    expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
-    expect(configureNext).not.toHaveBeenCalled();
-    advance(FOLD_MOTION.leaveMs);
-    expect(configureNext).toHaveBeenCalledWith(FOLD_LAYOUT);
-    advance(FOLD_MOTION.closeMs + FOLD_MOTION.railLagMs + FOLD_MOTION.railTrailMs + FOLD_MOTION.settleSlackMs * 3);
+    expect(configureNext).toHaveBeenCalledTimes(1);
+    expect(configureNext).toHaveBeenLastCalledWith(RUN_CLOSE_LAYOUT);
+    const closing = styleOf(t.getByTestId('spine-members-compact:m0'));
+    expect(closing.height).toBe(0);
+    expect(closing.overflow).toBe('hidden');
+    expect(t.getByTestId('spine-node-m0')).toBeTruthy();
+    advance(RUN_CLOSE_BUDGET_MS - 1);
+    expect(t.getByTestId('spine-members-compact:m0')).toBeTruthy();
+    advance(1);
     expect(t.queryByTestId('spine-members-compact:m0')).toBeNull();
+    expect(t.queryByTestId('spine-run-lead-compact:m0')).toBeNull();
   });
 
-  it('Reduce Motion (known on the first render): the box at once, the members fade in over 150ms, no layout keyframe', () => {
+  it('Reduce Motion (known on the first render): the box at once, the line and the meals fade in over 150ms, no layout keyframe', () => {
     mockUseReducedMotion.mockReturnValue(true);
     const node = run(3);
     const t = render(<InPlace node={node} />);
     fireEvent.press(t.getByTestId('spine-node-compact:m0'));
-    // Geometry at once: every member mounted on the same frame as the tap, in the fading stage.
     for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
-    expect(t.getByTestId('spine-members-stage-compact:m0')).toBeTruthy();
+    expect(styleOf(t.getByTestId('spine-members-compact:m0')).height).toBeUndefined();
     expect(configureNext).not.toHaveBeenCalled();
-    advance(theme.durationFast + FOLD_MOTION.settleSlackMs);
+    const member = t.getByTestId(`spine-node-${node.rows[0].id}`);
+    advance(theme.durationFast);
     expect(theme.durationFast).toBe(150);
-    expect(t.queryByTestId('spine-members-stage-compact:m0')).toBeNull();
+    expect(t.getByTestId(`spine-node-${node.rows[0].id}`)).toBe(member);
+    expect(rotationOf(t.getByTestId('spine-run-chevron-compact:m0'))).toBe('180deg');
     expect(configureNext).not.toHaveBeenCalled();
+  });
+
+  it('CUL-1721: a meal, its wrapper, the line and the lead are the SAME elements from the box\'s mount to its unmount', () => {
+    const node = run(3);
+    const t = render(<InPlace node={node} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    const ids = ['spine-node-m1', 'spine-member-wrap-m1', 'spine-run-rail-compact:m0', 'spine-run-lead-compact:m0', 'spine-members-stage-compact:m0'];
+    const first = ids.map((id) => t.getByTestId(id));
+    advance(RUN_MOTION.mountFrameMs);
+    expect(ids.map((id) => t.getByTestId(id))).toEqual(first);
+    advance(openBudget(3));
+    expect(ids.map((id) => t.getByTestId(id))).toEqual(first);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(RUN_CLOSE_BUDGET_MS - 1);
+    ids.forEach((id, i) => expect(t.getByTestId(id)).toBe(first[i]));
+  });
+
+  it.each([2, 8, 12])('a %d-meal run is at rest inside its budget (never past 400ms), and closes inside 280', (n) => {
+    const node = run(n);
+    const t = render(<InPlace node={node} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(openBudget(n));
+    expect(runOpenBudgetMs(runLandStarts(n))).toBeLessThanOrEqual(400);
+    expect(styleOf(t.getByTestId('spine-members-compact:m0')).overflow).not.toBe('hidden');
+    for (const m of node.rows) expect(t.getByTestId(`spine-node-${m.id}`)).toBeTruthy();
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(RUN_CLOSE_BUDGET_MS);
+    expect(t.queryByTestId('spine-members-compact:m0')).toBeNull();
+  });
+
+  it('no haptic: the row\'s open imports nothing from lib/haptics (C-16)', () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '../motion/runOpenMotion.ts'), 'utf8') as string;
+    expect(src).not.toMatch(/lib\/haptics|expo-haptics/);
   });
 
   it('without `openInPlace` the shipped open is untouched: no stage, no lead, the fold\'s config on the tap', () => {
@@ -732,8 +902,288 @@ describe('open in place (HV-10): the one choreography the month uses, on the thr
     expect(configureNext).toHaveBeenCalledWith(UNFOLD_LAYOUT);
     expect(t.getByTestId('spine-node-m0')).toBeTruthy();
     expect(t.queryByTestId('spine-members-stage-compact:m0')).toBeNull();
-    expect(styleOf(t.getByTestId('spine-members-compact:m0')).minHeight).toBeUndefined();
+    expect(t.queryByTestId('spine-run-lead-compact:m0')).toBeNull();
+    expect(t.queryByTestId('spine-run-chevron-compact:m0')).toBeNull();
+    expect(styleOf(t.getByTestId('spine-run-rail-compact:m0')).backgroundColor).toBe(theme.colorEventMeal);
     advance(1_000);
     expect(configureNext).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── The reveal (CUL-1735, D3): the run asks its list once per open, never on a close ──────
+
+describe('the reveal: the run asks its list to show its first meal, once per open', () => {
+  function Hosted({ node, request }: { node: SpineCompactNode; request: jest.Mock }) {
+    const [expanded, setExpanded] = useState(false);
+    return (
+      <RunRevealContext.Provider value={request}>
+        <SpineCompactRow
+          node={node}
+          isFirst
+          isLast
+          expanded={expanded}
+          onToggle={() => setExpanded((e) => !e)}
+          onOpen={jest.fn()}
+          openInPlace
+        />
+      </RunRevealContext.Provider>
+    );
+  }
+  const advance = (ms: number) =>
+    act(() => {
+      jest.advanceTimersByTime(ms);
+    });
+  const host = () => {
+    const cancel = jest.fn();
+    const request = jest.fn((_m: RunRevealMeasure) => cancel);
+    return { request, cancel };
+  };
+
+  it('an open asks once, on the box\'s commit; the close asks nothing and drops what is pending', () => {
+    const { request, cancel } = host();
+    const t = render(<Hosted node={run(3)} request={request} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    expect(request).not.toHaveBeenCalled();
+    advance(RUN_MOTION.mountFrameMs);
+    expect(request).toHaveBeenCalledTimes(1);
+    advance(1_000);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(1_000);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('a reversal mid-open (a second tap) cancels the reveal, and the turn back never asks again', () => {
+    const { request, cancel } = host();
+    const t = render(<Hosted node={run(3)} request={request} />);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(RUN_MOTION.mountFrameMs + 40);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    expect(cancel).toHaveBeenCalledTimes(1);
+    advance(60);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(1_000);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+  it("a host's reset under an opening run drops its reveal: the list never moves for a run that closed", () => {
+    const { request, cancel } = host();
+    // The host owns the open state; a reset (a filter change) closes its runs and bumps the
+    // generation in one render, with no tap on the run.
+    function Reset({ gen, expanded }: { gen: number; expanded: boolean }) {
+      return (
+        <OpenInPlaceReset.Provider value={gen}>
+          <RunRevealContext.Provider value={request}>
+            <SpineCompactRow
+              node={run(3)}
+              isFirst
+              isLast
+              expanded={expanded}
+              onToggle={jest.fn()}
+              onOpen={jest.fn()}
+              openInPlace
+            />
+          </RunRevealContext.Provider>
+        </OpenInPlaceReset.Provider>
+      );
+    }
+    const t = render(<Reset gen={0} expanded={false} />);
+    t.rerender(<Reset gen={0} expanded />);
+    advance(RUN_MOTION.mountFrameMs);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(cancel).not.toHaveBeenCalled();
+    t.rerender(<Reset gen={1} expanded={false} />);
+    expect(cancel).toHaveBeenCalled();
+    advance(1_000);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── The stack (CUL-1736, D4) ──────────────────────────────────────────────────────
+
+describe('the stack: a folded run carries "several", and only that (CUL-1736, D4)', () => {
+  function InPlace({ node, initial = false }: { node: SpineCompactNode; initial?: boolean }) {
+    const [expanded, setExpanded] = useState(initial);
+    return (
+      <SpineCompactRow
+        node={node}
+        isFirst
+        isLast
+        expanded={expanded}
+        onToggle={() => setExpanded((e) => !e)}
+        onOpen={jest.fn()}
+        openInPlace
+      />
+    );
+  }
+  const advance = (ms: number) =>
+    act(() => {
+      jest.advanceTimersByTime(ms);
+    });
+  /** A run of `n` meals, every one rated `intake` (or every one unrated). */
+  const ratedRun = (n: number, intake: string | null): SpineCompactNode => {
+    const base = run(n);
+    return { ...base, rows: base.rows.map((r) => ({ ...r, intake })) };
+  };
+  const stackBeads = (t: ReturnType<typeof render>, id = 'compact:m0') =>
+    t.queryAllByTestId(new RegExp(`^spine-run-stack-bead-${id}-`), { includeHiddenElements: true });
+  const translateOf = (el: { props: { style?: unknown } }) => {
+    const ty = (styleOf(el).transform as { translateY: unknown }[])[0].translateY;
+    return typeof ty === 'number' ? ty : (ty as { __getValue: () => number }).__getValue();
+  };
+  /** A rendered node (the renderer's own instance type, derived rather than imported). */
+  type Instance = ReturnType<typeof render>['root'];
+  const opacityOf = (el: { props: { style?: unknown } }) => {
+    const o = styleOf(el).opacity;
+    return typeof o === 'number' ? o : (o as { __getValue: () => number }).__getValue();
+  };
+  /** Everything the stack draws: each bead's frame, colours, offset and opacity. */
+  const stackShape = (t: ReturnType<typeof render>) =>
+    stackBeads(t).map((b) => ({ ...styleOf(b), transform: translateOf(b), opacity: opacityOf(b) }));
+
+  it('two beads at two meals, three at three, three at twelve; none for one', () => {
+    expect([1, 2, 3, 4, 12].map(runStackBeads)).toEqual([0, 2, 3, 3, 3]);
+    // Drawn: the front bead is the frame's own, so the stack draws the BACK beads.
+    for (const [n, back] of [
+      [2, 1],
+      [3, 2],
+      [12, 2],
+    ] as const) {
+      const t = render(<InPlace node={run(n)} />);
+      const beads = stackBeads(t);
+      expect(beads).toHaveLength(back);
+      // Each back bead 4pt further down the thread, the deepest drawn first (so it lies under).
+      expect(beads.map(translateOf)).toEqual(Array.from({ length: back }, (_, i) => (back - i) * RUN_STACK_STEP_PT));
+      t.unmount();
+    }
+  });
+
+  it('a back bead is the bead itself: its fill, its ring, its frame, on the thread and under the front bead', () => {
+    // A run mid-day, so both thread segments are drawn.
+    const t = render(
+      <SpineCompactRow node={run(4)} isFirst={false} isLast={false} expanded={false} onToggle={jest.fn()} openInPlace />,
+    );
+    const rail = within(t.getByTestId('spine-node-compact:m0')).getByTestId('spine-rail', { includeHiddenElements: true });
+    // Paint order inside the rail: the thread, then the stack, then the front bead on top.
+    const kids = (rail.children as (Instance | string)[]).filter((k): k is Instance => typeof k !== 'string');
+    const idOf = (k: Instance): string =>
+      k.props.testID ?? k.findAll((n: Instance) => typeof n.type === 'string' && !!n.props.testID)[0]?.props.testID ?? 'bead';
+    expect(kids.map(idOf)).toEqual(['spine-thread-top', 'spine-thread-bottom', 'spine-run-stack-compact:m0', 'bead']);
+    const f = styleOf(kids[kids.length - 1]);
+    for (const b of stackBeads(t)) {
+      const st = styleOf(b);
+      for (const k of ['width', 'height', 'borderRadius', 'borderWidth', 'backgroundColor', 'borderColor'] as const) {
+        expect(st[k]).toBe(f[k]);
+      }
+      expect(st.borderWidth).toBe(2);
+      expect(st.top).toBe(f.marginTop);
+      expect((st.left as number) + (st.width as number) / 2).toBe(RAIL_W / 2);
+    }
+  });
+
+  it('never on a single row, and never where the run does not open in place', () => {
+    const one = render(<SpineEventRow node={meal('m0', '8:00 AM', { intake: 'all' })} isFirst isLast onOpen={jest.fn()} />);
+    expect(one.queryByTestId(/^spine-run-stack/, { includeHiddenElements: true })).toBeNull();
+    const shipped = render(<SpineCompactRow node={run(4)} isFirst isLast expanded={false} onToggle={jest.fn()} />);
+    expect(shipped.queryByTestId(/^spine-run-stack/, { includeHiddenElements: true })).toBeNull();
+  });
+
+  it('condition 2: the same stack for an All run, an unrated run, a Most run, a mixed run and a wet run', () => {
+    const allRun = render(<InPlace node={ratedRun(4, 'all')} />);
+    const shape = stackShape(allRun);
+    expect(shape).toHaveLength(2);
+    const others = [
+      ratedRun(4, null),
+      ratedRun(4, 'most'),
+      run(4),
+      { ...run(4), formats: '1 wet · 3 dry', rows: run(4).rows.map((r) => ({ ...r, formatTag: 'WET' })) },
+    ];
+    for (const node of others) {
+      const t = render(<InPlace node={node} />);
+      expect(stackShape(t)).toEqual(shape);
+      t.unmount();
+    }
+  });
+
+  it('condition 1: VoiceOver reads nothing new; the run\'s one label is byte-identical with and without the stack', () => {
+    const node = run(5);
+    const withStack = render(<InPlace node={node} />);
+    const without = render(<SpineCompactRow node={node} isFirst isLast expanded={false} onToggle={jest.fn()} />);
+    expect(withStack.queryByTestId('spine-run-stack-compact:m0', { includeHiddenElements: true })).toBeTruthy();
+    expect(without.queryByTestId('spine-run-stack-compact:m0', { includeHiddenElements: true })).toBeNull();
+    const a = withStack.getByTestId('spine-node-compact:m0').props;
+    const b = without.getByTestId('spine-node-compact:m0').props;
+    expect(a.accessibilityLabel).toBe(b.accessibilityLabel);
+    expect(a.accessibilityLabel).toBe(runRowLabel(node, false));
+    expect(a.accessibilityState).toEqual(b.accessibilityState);
+    // The words keep the count.
+    expect(a.accessibilityLabel).toMatch(/^5 meals, /);
+    const stack = withStack.getByTestId('spine-run-stack-compact:m0', { includeHiddenElements: true });
+    expect(stack.props.accessibilityElementsHidden).toBe(true);
+    expect(stack.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(stack.props.pointerEvents).toBe('none');
+  });
+
+  it('the tuck rides the line: the beads move on the lead\'s own value, tucked once it has grown, back out once it retracts', () => {
+    const t = render(<InPlace node={run(4)} />);
+    expect(stackBeads(t).map(translateOf)).toEqual([8, 4]);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    // Never a clock of its own: each bead's offset is an interpolation of the value the lead
+    // scales on (0 to 80ms out, 200 to 280ms back, `RUN_MOTION`), so the beats are the line's.
+    // Read off the Animated components (the host holds only the resolved numbers).
+    const animated = (testID: string | RegExp) =>
+      t.UNSAFE_root.findAll(
+        (n: Instance) => typeof n.type !== 'string' && (typeof testID === 'string' ? n.props.testID === testID : testID.test(n.props.testID ?? '')),
+      ).filter((n: Instance, i: number, all: Instance[]) => all.findIndex((m) => m.props.testID === n.props.testID) === i);
+    const [leadView] = animated('spine-run-lead-compact:m0');
+    const leadScale = (StyleSheet.flatten(leadView.props.style).transform as { scaleY: unknown }[])[0].scaleY;
+    expect(leadScale).toBeInstanceOf(Animated.Value);
+    const beadViews = animated(/^spine-run-stack-bead-compact:m0-/);
+    expect(beadViews).toHaveLength(2);
+    for (const b of beadViews) {
+      const ty = (StyleSheet.flatten(b.props.style).transform as { translateY: { _parent?: unknown } }[])[0].translateY;
+      expect(ty._parent).toBe(leadScale);
+    }
+    advance(RUN_MOTION.mountFrameMs + Math.ceil(runOpenIdleMs(runLandStarts(4))) + FRAME_MS);
+    expect(stackBeads(t).map(translateOf)).toEqual([0, 0]);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    // Still tucked while the box closes: the line has not begun to retract.
+    advance(RUN_MOTION.retractDelayMs - FRAME_MS);
+    expect(stackBeads(t).map(translateOf)).toEqual([0, 0]);
+    advance(RUN_CLOSE_BUDGET_MS);
+    expect(t.queryByTestId('spine-members-compact:m0')).toBeNull();
+    expect(stackBeads(t).map(translateOf)).toEqual([8, 4]);
+    expect(stackBeads(t).map(opacityOf)).toEqual([1, 1]);
+  });
+
+  it('Reduce Motion: nothing slides; the stack crossfades out with the line and back as it leaves', () => {
+    mockUseReducedMotion.mockReturnValue(true);
+    const t = render(<InPlace node={run(3)} />);
+    expect(stackBeads(t).map(opacityOf)).toEqual([1, 1]);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(RUN_MOTION.crossfadeMs + FRAME_MS);
+    expect(stackBeads(t).map(translateOf)).toEqual([8, 4]);
+    expect(stackBeads(t).map(opacityOf)).toEqual([0, 0]);
+    fireEvent.press(t.getByTestId('spine-node-compact:m0'));
+    advance(RUN_MOTION.crossfadeMs + FRAME_MS);
+    expect(stackBeads(t).map(translateOf)).toEqual([8, 4]);
+    expect(stackBeads(t).map(opacityOf)).toEqual([1, 1]);
+  });
+
+  it('Reduce Motion: no blink as a close lands — the line pinned back before the phase commits never hides the stack', () => {
+    mockUseReducedMotion.mockReturnValue(true);
+    const t = render(<InPlace node={run(3)} initial />);
+    const animatedBeads = t.UNSAFE_root.findAll(
+      (n: Instance) => typeof n.type !== 'string' && /^spine-run-stack-bead-compact:m0-/.test(n.props.testID ?? ''),
+    );
+    const opacityNode = (StyleSheet.flatten(animatedBeads[0].props.style) as { opacity: { __getValue: () => number } }).opacity;
+    expect(opacityNode.__getValue()).toBe(0);
+    // The close's last write, `rest(false)`, before React commits `closed`: the lead to 0 and
+    // the line back to 1 in one tick, with the render still in its open phase.
+    const [leadView] = t.UNSAFE_root.findAll(
+      (n: Instance) => typeof n.type !== 'string' && n.props.testID === 'spine-run-lead-compact:m0',
+    );
+    const leadScale = (StyleSheet.flatten(leadView.props.style).transform as { scaleY: Animated.Value }[])[0].scaleY;
+    leadScale.setValue(0);
+    expect(opacityNode.__getValue()).toBe(1);
   });
 });

@@ -53,6 +53,8 @@ import type {
   SymptomAggregate,
   VomitContentCategory,
   StoolCharacteristics,
+  StoolPeriodCounts,
+  StoolShortcutSplit,
   WeightSection,
   DietSummary,
   MedicationAdherence,
@@ -87,6 +89,9 @@ import type { ContaminationFact } from './trial.ts'
 // Same list formatter the owner-facing contaminant copy uses — one spelling of
 // "chicken, salmon and beef" across the product (B-351 slice 5).
 import { proteinList } from '../../../lib/trialProtein.ts'
+// The off-diet chart's per-week floor mirrors the trial coverage floor (CUL-1779) — the same
+// question ("is this record dense enough to read an absence of off-diet food?"), one constant.
+import { COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 import { dateTimeFormat } from '../../../lib/utils.ts'
 
 // ── HTML escaping — EVERY interpolated data string flows through here ────────────
@@ -857,8 +862,13 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
  * are ≤14; every other above that, so a long window never crowds the axis (never a silent drop —
  * the range box + caption still carry the exact bounds).
  */
+/** Every other week past 14 — shared so the off-diet chart's day counts sit under exactly the dates drawn. */
+function weekAxisStride(n: number): number {
+  return n > 14 ? 2 : 1
+}
+
 function weekAxisLabels(bucketStartDates: string[], L: number, slot: number, n: number, BASE: number): string {
-  const stride = n > 14 ? 2 : 1
+  const stride = weekAxisStride(n)
   const parts: string[] = []
   for (let i = 0; i < n; i++) {
     if (i % stride !== 0) continue
@@ -922,6 +932,48 @@ function proteinWeekTotal(t: import('./report.ts').ProteinTimeline, w: number): 
   return (t.bins[w]?.reduce((a, b) => a + b, 0) ?? 0) + (t.unknownByWeek[w] ?? 0)
 }
 
+/**
+ * The fewest diet-observed days a week needs before the off-diet chart may print a measured `0`
+ * for it (CUL-1779). Below it, a week with no off-diet feeding is drawn as NOT OBSERVED.
+ *
+ * One logged meal used to be enough: a 56-day trial logged one day a week printed seven clean
+ * `0`s while page one's coverage tile, over the same record, said "Not established". The report
+ * contradicted itself, and the reassuring half was the one drawn as data — §5.2's "no off-diet
+ * foods logged" said in a number instead of words.
+ *
+ * MIRRORED from `COVERAGE_FLOOR` (`lib/dietTrial.ts`) because it answers the same question as
+ * page one's tile: is the record dense enough that an absence of off-diet food may be read?
+ * Applied to a full seven-day week and held ABSOLUTE rather than scaled to a bucket's length, so a
+ * part-week (the window's trailing bucket is 1–7 days) needs the same four observed days — a
+ * three-day tail can never print a `0` that looks identical to a full week's (CUL-748 item 4).
+ * Exported so the tests derive their boundary from the shipped value (C-34).
+ */
+export const OFF_DIET_ZERO_MIN_MEAL_DAYS = Math.ceil(COVERAGE_FLOOR * 7)
+
+/**
+ * What one column of the off-diet chart is allowed to say. ONE classifier for the bars, the alt
+ * text and the notes, so the three cannot drift (CUL-1779):
+ *   • `outside` — no day of the week is in the chart's scope (a week before or after the trial's
+ *     evidence range). The off-diet set cannot hold a feeding there, so nothing is drawn.
+ *   • `bar`     — off-diet feedings were recorded; the count is a floor, never a total.
+ *   • `zero`    — a measured clean week: enough meal-days AND the trial module permits a clean read.
+ *   • `unread`  — no off-diet feeding, but the week cannot be read as clean: too few meal-days, or
+ *                 page one withholds the clean-record statement (`zeroWithheld`).
+ */
+type OffDietWeek = 'outside' | 'bar' | 'zero' | 'unread'
+function offDietWeek(t: import('./report.ts').ProteinTimeline, w: number): OffDietWeek {
+  if ((t.scopeDaysByBucket[w] ?? 0) === 0 && proteinWeekTotal(t, w) === 0) return 'outside'
+  if (proteinWeekTotal(t, w) > 0) return 'bar'
+  if (!t.zeroWithheld && (t.mealDaysByBucket[w] ?? 0) >= OFF_DIET_ZERO_MIN_MEAL_DAYS) return 'zero'
+  return 'unread'
+}
+
+/** "5/7 d" — the meal-days of a week over the days it covers in scope (the cold read's per-column
+ *  denominator, CUL-1779). Printed under every in-scope column, so a `0` always carries its coverage. */
+function offDietDayCount(t: import('./report.ts').ProteinTimeline, w: number): string {
+  return `${t.mealDaysByBucket[w] ?? 0}/${t.scopeDaysByBucket[w] ?? 0} d`
+}
+
 function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string {
   const n = Math.max(1, t.weekStartDates.length)
   const L = 40
@@ -962,6 +1014,10 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
   // absence this fix exists to kill, landing on the diet-trial owner who logs symptoms but not meals.
   // (Treats/human food are themselves off-diet feedings, so on a zero-total week the only meal-type
   // events left are on-diet meals — the right denominator.)
+  //
+  // AND ONE MEAL IS NOT A WEEK (CUL-1779). Observed means at least `OFF_DIET_ZERO_MIN_MEAL_DAYS`
+  // meal-days — the trial coverage floor over seven days. A week logged on fewer days is drawn
+  // exactly like an unobserved one: six unlogged days are not six clean ones.
   const unobservedWeeks: number[] = []
   for (let i = 0; i < n; i++) {
     const cx = centerX(i)
@@ -987,14 +1043,22 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
         )
       }
       parts.push(`<text class="cap num" x="${cx.toFixed(1)}" y="${(yFor(total) - 5).toFixed(1)}" text-anchor="middle">${total}</text>`)
-    } else if ((t.mealDaysByBucket[i] ?? 0) > 0) {
-      // A CLEAN week — a meal was logged, nothing off-diet was recorded. A measured zero, drawn as the
-      // symptom chart's observed-zero nub so "empty" reads the same across every chart on the page.
+    } else if (offDietWeek(t, i) === 'outside') {
+      // Outside the chart's scope: no marker — the off-diet set cannot hold a feeding here, so a nub
+      // or a dash would describe a week the chart never looked at. But an empty slot on a count axis
+      // reads as zero (cold read r2), so the column says what it is.
+      const firstInScope = t.scopeDaysByBucket.findIndex((d) => d > 0)
+      parts.push(`<text class="z" x="${cx.toFixed(1)}" y="${BASE - 6}" text-anchor="middle">${firstInScope === -1 || i < firstInScope ? 'pre-trial' : 'post-trial'}</text>`)
+    } else if (offDietWeek(t, i) === 'zero') {
+      // A CLEAN week — meals were logged on enough of its days, nothing off-diet was recorded. A
+      // measured zero, drawn as the symptom chart's observed-zero nub so "empty" reads the same
+      // across every chart on the page.
       parts.push(`<rect class="nub" x="${x.toFixed(1)}" y="${BASE - 3}" width="${barW.toFixed(1)}" height="3" rx="1.5"/>`)
       parts.push(`<text class="z num" x="${cx.toFixed(1)}" y="${BASE - 7}" text-anchor="middle">0</text>`)
     } else {
-      // The diet was NOT observed that week (no meal logged) — never a measured `0`; a hollow marker
-      // + a dash keeps "diet not observed" distinct from "a week with zero off-diet food" (B-497).
+      // The diet was NOT observed that week (no meal logged, or too few meal-days to read) — never a
+      // measured `0`; a hollow marker + a dash keeps "diet not observed" distinct from "a week with
+      // zero off-diet food" (B-497, CUL-1779).
       unobservedWeeks.push(i)
       parts.push(
         `<rect class="nolog" x="${x.toFixed(1)}" y="${(BASE - 9).toFixed(1)}" width="${barW.toFixed(1)}" height="9" rx="2"/>`,
@@ -1003,14 +1067,32 @@ function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string 
     }
   }
   parts.push(weekAxisLabels(t.weekStartDates, L, slot, n, BASE))
-  // The alt text draws the same three-way distinction the bars do — a week the diet was not observed
-  // is named as unlogged, never voiced as a zero (B-497; the symptom chart's aria does the same).
-  const ariaWeeks = Array.from({ length: n }, (_, i) =>
-    weekTotal(i) > 0 ? String(weekTotal(i)) : (t.mealDaysByBucket[i] ?? 0) > 0 ? '0' : 'not logged',
-  ).join(', ')
+  // The day count under every in-scope column (CUL-1779, cold read): a `0` read without its coverage
+  // looked identical at 4 of 7 days and at 7 of 7, and a bar on a thinly logged week read as low
+  // exposure. Every column now carries the meal-days it rests on.
+  // Thinned on the date labels' stride (adversarial pass 2): on a long window every column's count
+  // collided, and "under each date" was true of only half of them. The floor, not the count, is what
+  // keeps a thin week from printing a zero, so a thinned count drops no protection.
+  const countStride = weekAxisStride(n)
+  for (let i = 0; i < n; i++) {
+    if (offDietWeek(t, i) === 'outside' || i % countStride !== 0) continue
+    parts.push(`<text class="xl dc num" x="${centerX(i).toFixed(1)}" y="${BASE + 28}" text-anchor="middle">${offDietDayCount(t, i)}</text>`)
+  }
+  // The alt text draws the same distinctions the bars do, and carries the same day counts — a week
+  // that cannot be read as clean is never voiced as a zero (B-497; the symptom chart's aria does the same).
+  const ariaWeeks = Array.from({ length: n }, (_, i) => {
+    const md = t.mealDaysByBucket[i] ?? 0
+    const of = `meals logged on ${md} of ${t.scopeDaysByBucket[i] ?? 0} days`
+    switch (offDietWeek(t, i)) {
+      case 'outside': return 'outside the trial'
+      case 'bar': return `${weekTotal(i)} (${of})`
+      case 'zero': return `0 (${of})`
+      case 'unread': return `not read as clean (${of})`
+    }
+  }).join(', ')
   const aria = `Off-diet protein exposure per week: ${ariaWeeks}.`
   // print-color-adjust:exact inherits to the pattern fills so the bars survive a default clinic printer.
-  return `<svg viewBox="0 0 648 148" role="img" aria-label="${h(aria)}" style="-webkit-print-color-adjust:exact;print-color-adjust:exact;"><defs>${defs}</defs>${parts.join('')}</svg>`
+  return `<svg viewBox="0 0 648 160" role="img" aria-label="${h(aria)}" style="-webkit-print-color-adjust:exact;print-color-adjust:exact;"><defs>${defs}</defs>${parts.join('')}</svg>`
 }
 
 /** Capitalise a protein label for the legend ("chicken" → "Chicken"), leaving multi-word casing alone. */
@@ -1251,22 +1333,53 @@ function proteinTimelineSection(snap: ReportSnapshot): string {
       .map((p, j) => `<span class="ptleg">${proteinSwatch(`pts-${j}`, PROTEIN_COLORS[j % PROTEIN_COLORS.length], j)}${h(capProtein(p))} ${num(t.totalByProtein[p] ?? 0)}</span>`)
       .join('') +
     (t.hasUnknown ? `<span class="ptleg">${proteinSwatch('pts-u', null, 0)}no recorded protein ${num(t.unknownByWeek.reduce((a, b) => a + b, 0))}</span>` : '')
-  // Name the dashed no-data marker where it is drawn (B-497). A week is unobserved iff no meal was
-  // logged in it AND no off-diet feeding fell in it — the same test the chart applies bar-by-bar.
+  // Name the dashed no-data marker where it is drawn (B-497). A week is unobserved iff no off-diet
+  // feeding fell in it AND its meal-days are under the floor — the same test the chart applies
+  // bar-by-bar (CUL-1779: one meal is not a week).
   // Deliberately rendered as HTML below the chart, NOT as in-SVG <text> like the symptom chart's
   // twin note: the protein SVG's viewBox has no vertical room for a legend line, and growing it would
   // change chart geometry (which wants its own PNG cold read) — an HTML caption is also more legible
   // to a screen reader. The two notes read identically to the reader; only their host element differs.
-  const anyUnobservedWeek = t.weekStartDates.some((_, i) => proteinWeekTotal(t, i) === 0 && (t.mealDaysByBucket[i] ?? 0) === 0)
-  const noDataNote = anyUnobservedWeek
-    ? `<div class="subnote">&ndash; marks a week the diet was not observed (no meal logged) — not a week without off-diet food.</div>`
+  const weeks = t.weekStartDates.map((_, i) => offDietWeek(t, i))
+  const scopeSpan = `${fmtDay(t.scopeStartDate)} &ndash; ${fmtDay(t.scopeEndDate)}`
+  // The legend shows the marker as DRAWN (cold read: the note printed a bare dash while the chart
+  // drew a dashed box) — same class, so it prints the same way.
+  // `.key` sizes it: `.trend svg` otherwise stretches every svg in the block to the chart's width.
+  const unreadGlyph =
+    `<svg class="key" viewBox="0 0 16 10" aria-hidden="true"><rect class="nolog" x="1" y="1" width="14" height="8" rx="2"/></svg>`
+  const dayCountNote = `<div class="subnote">Under each date: days with a meal logged, of ${
+    // "the trial days this report covers", never "the trial (dates)": a running trial's span here ends
+    // at today, and naming it as the trial's own read as a trial that had ended (cold read r3).
+    t.trialScoped ? `that week&rsquo;s days within the trial days this report covers (${scopeSpan})` : 'the days that week covers'
+  }. A treat alone does not count as a meal.</div>`
+  // A part-week shorter than the floor can never reach it however fully it was logged, so a "3/3 d"
+  // box needs its own clause or it reads as contradicting the note (cold read r2).
+  const shortUnreadWeek = weeks.some((w, i) => w === 'unread' && (t.scopeDaysByBucket[i] ?? 0) < OFF_DIET_ZERO_MIN_MEAL_DAYS)
+  const noDataNote = weeks.includes('unread')
+    ? t.zeroWithheld
+      ? `<div class="subnote">${unreadGlyph}: a week with no off-diet feeding recorded that is still not read as clean. The clinical summary above withholds this trial&rsquo;s clean-record statement (see <em>Interpreting this record</em>), so no week here is drawn as a zero.</div>`
+      : `<div class="subnote">${unreadGlyph}: a week with meals logged on fewer than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} days${
+          shortUnreadWeek ? `, including a part-week shorter than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} days` : ''
+        } &mdash; too few to read as a week without off-diet food.</div>`
+    : ''
+  // Name only the labels actually drawn (cold read r3: "post-trial" explained beside no such column).
+  const firstInScope = t.scopeDaysByBucket.findIndex((d) => d > 0)
+  const outsideLabels = [
+    ...new Set(weeks.flatMap((w, i) => (w === 'outside' ? [firstInScope === -1 || i < firstInScope ? 'pre-trial' : 'post-trial'] : []))),
+  ]
+  const outsideNote = weeks.includes('outside')
+    ? `<div class="subnote">${outsideLabels.map((l) => `<em>${l}</em>`).join(' and ')} column${
+        weeks.filter((w) => w === 'outside').length === 1 ? '' : 's'
+      } ${weeks.filter((w) => w === 'outside').length === 1 ? 'falls' : 'fall'} outside the trial days this report covers (${scopeSpan}) and are not counted here. Treats logged outside the trial are counted in appendix B&rsquo;s treat total, which covers the whole window.</div>`
     : ''
   return `
   <div class="sec">
     <h2>Off-diet protein exposure over time</h2>
     <div class="trend">
       ${proteinTimelineChart(t)}
+      ${dayCountNote}
       ${noDataNote}
+      ${outsideNote}
       <div class="ptlegend">${legend}</div>
       <div class="subnote">${num(t.totalFeedings)} off-diet feeding${
         t.totalFeedings === 1 ? '' : 's'
@@ -1279,8 +1392,12 @@ function proteinTimelineSection(snap: ReportSnapshot): string {
         snap.trial && !snap.trial.allowedSetUnavailable
           ? '(feedings not matched to the trial diet or the allowed list)'
           : '(treats + human food)'
-      } over ${num(n)} week${
-        n === 1 ? '' : 's'
+      } over ${
+        // CUL-1779 (cold read r2): a trial-scoped chart counts only the trial's days, so "over 8
+        // weeks" overstated its span by every pre-/post-trial week drawn beside it.
+        t.trialScoped && weeks.includes('outside')
+          ? `the ${num(t.scopeDaysByBucket.reduce((a, b) => a + b, 0))} trial days in this window (${scopeSpan})`
+          : `${num(n)} week${n === 1 ? '' : 's'}`
       }; each bar is one week, stacked by protein. A food containing several proteins counts once for each, so a week&rsquo;s stack can total more than its feedings.${
         t.incompleteFeedings > 0
           ? ` ${num(t.incompleteFeedings)} feeding${
@@ -5811,6 +5928,48 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     .map((c) => `${single ? '' : `<span class="sw" style="background:${c.bg}"></span>`}${c.label} &times;${c.n}`)
     .join('&nbsp;&middot;&nbsp; ')
 
+  // CUL-1658 (FAB PR-29c) — the day a normal stool got its own shortcut in the owner's fan, when
+  // it reaches into the window. Easier logging moves what gets RECORDED, not what the pet did, so
+  // the normal count and the normal to loose ratio can shift across that date for no clinical
+  // reason; the report cannot see that from the rows, so it says so beside them. It DISCLOSES and
+  // never adjusts: the counts above are untouched.
+  //
+  // THE LAST SENTENCE IS THE ONE THAT PROTECTS THE PATIENT, and it names BOTH directions. Loose
+  // stool had its own entry before and after, so a RISE in loose stools cannot come from this
+  // change; a FALL can, because a borderline stool that once took the only cheap door (Loose) can
+  // now take Normal (adversarial F1). The cold read (round 2) found a rise-only sentence left an
+  // observed 4 → 2 fall reading as improvement, so the fall is said plainly. Never "the loose count
+  // is unaffected"; never "one tap" (each half of the split pill opens a confirm, F4). Year stamped
+  // once, only when it differs from the window's (CUL-69). One idea per line, so a 60-second scan
+  // meets the change, then each period's counts, then the direction of the bias.
+  const shortcutTail =
+    '<br/>Loose stools had their own entry throughout, so a rise in loose stools is not explained by this change, but a fall may partly reflect borderline stools now logged as normal.'
+  const ns = st.normalShortcut
+  const nsDay = (iso: string) => h(fmtLocalDayScoped(iso, snap.timezone, snap.scope.endDate))
+  // Ruling 1a (PM, 2026-10-09): the counts on each side of the day, beside the pooled ones, so
+  // the ratio is read inside each logging regime. Loose first: it is the count a vet reads across
+  // the date. The day string is decided ONCE and reused, so the head and both labels carry the
+  // same year decision (CUL-69).
+  const period = (label: string, p: StoolPeriodCounts) =>
+    `<br/>${label} (${num(p.loggedDays)} of ${num(p.days)} day${p.days === 1 ? '' : 's'} had any log): loose &times;${num(
+      p.loose,
+    )} &middot; normal &times;${num(p.normal)}`
+  const splitLine = (day: string, sp: StoolShortcutSplit | null) =>
+    sp ? `${period(`Before ${day}`, sp.before)}${period(`From ${day}`, sp.from)}` : ''
+  const changeLine = !ns
+    ? ''
+    : ns.kind === 'on'
+    ? `<br/><b>Logging changed on ${nsDay(ns.at)}:</b> the owner's app added a dedicated normal-stool entry, so normal stools before that date are under-recorded and the normal to loose ratio is not comparable across it.${splitLine(nsDay(ns.at), ns.split)}${shortcutTail}`
+    : ns.kind === 'since'
+    ? `<br/><b>Logging changed ${ns.exact ? 'on' : 'by'} ${nsDay(ns.at)}, before this window:</b> the owner's app added a dedicated normal-stool entry. Within this window the counts are comparable; against a report covering any period before ${nsDay(ns.at)}, which under-records normal stools, the normal share here will look better from the change alone.${shortcutTail}`
+    : ns.kind === 'between'
+    ? `<br/><b>Logging changed between ${nsDay(ns.from)} and ${nsDay(ns.to)}:</b> the owner's app added a dedicated normal-stool entry in that span (the phone's and the server's clocks disagree on the day), so normal stools before it are under-recorded and the normal to loose ratio is not comparable across it.${shortcutTail}`
+    : ns.kind === 'by'
+    ? `<br/><b>Logging changed on or before ${nsDay(ns.at)}:</b> by that date the owner's app had added a dedicated normal-stool entry, so normal stools earlier in this window are likely under-recorded and the normal to loose ratio is not comparable across it.${shortcutTail}`
+    : ns.kind === 'spans'
+    ? `<br/><b>Logging changed, date not fixed:</b> the owner's app added a dedicated normal-stool entry at a date the record cannot place within this window, so the normal to loose ratio may not be comparable across it.${shortcutTail}`
+    : `<br/><b>Logging change not checked:</b> whether the owner's app added a dedicated normal-stool entry during this window could not be read, so the normal to loose ratio may shift for that reason. If it did, a fall in loose stools may partly reflect borderline stools now logged as normal.`
+
   const ai = st.ai
   const aiTag = ai
     ? '<span class="aitag">Automated photo analysis &middot; owner-reviewable</span>'
@@ -5895,7 +6054,7 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     <div class="pheno">
       <div>
         ${barHtml}
-        <div class="mixkey">${keyLine}<br/>Owner-described${
+        <div class="mixkey">${keyLine}${changeLine}<br/>Owner-described${
     // C-3: a coverage density beside a count is the UN-LOGGED days only, and nothing when
     // fully covered. "Owner-described over 43 of 46 days logged" read as a stool denominator
     // (the R-11 cold read: one loose stool out of forty-three), when 43/46 was record coverage.
@@ -9426,6 +9585,7 @@ const STYLE = `
   .trend .big .delta{font-size:11px;color:var(--muted);margin-top:1px;}
   .trend .big .delta b{color:var(--ink);font-weight:700;}
   .trend svg{display:block;width:100%;height:auto;margin-top:4px;}
+  .trend svg.key{display:inline-block;width:16px;height:10px;margin:0 3px 0 0;vertical-align:-1px;}
   .trend .subnote{font-size:11px;color:var(--muted);margin:2px 0 6px;}
   svg .grid{stroke:var(--hair);stroke-width:1;}
   svg .axis{stroke:var(--ink);stroke-width:1.25;}

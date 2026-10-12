@@ -45,6 +45,7 @@ function auditInput(over: Partial<ProgressInput> = {}): ProgressInput {
 
 const AUDIT_2356 = [
   'Progress: 25 of 38 merged (66%) ▓▓▓▓▓▓░░░░ · W-A 3/3 · W-B 1/2 · W-C 0/1 · W-D 0/1 · W-E 0/2 · no milestone 21/29 · 3 in flight',
+  'Scope: not read',
   'Moved since Oct 5 18:56 CT: merged CUL-1613 (#1080), CUL-1522 (#1081), CUL-1617 (#1079), CUL-1614 (#1082), CUL-1615 (#1083), CUL-1621 (#1084), CUL-1622 (#1084) · stopped CUL-1616 (Auto mode blocks hook edits) · launched CUL-1522, CUL-1613, CUL-1616, CUL-1617, CUL-1614, CUL-1615, CUL-1621, CUL-1622, CUL-1623, CUL-1624, CUL-1517',
   'Next: on CUL-1623 merging (its merge gate): CUL-1624 · on CUL-1623 + CUL-1624 merging (its merge gate): CUL-1517',
   'On you: CUL-1616 (Waiting on PM); CUL-955 (Waiting on PM)',
@@ -52,7 +53,7 @@ const AUDIT_2356 = [
 ].join('\n');
 
 describe('The workflow audit at 23:56Z on 10/6 (the dry run)', () => {
-  it('prints the five lines, and they validate', () => {
+  it('prints the six lines, and they validate', () => {
     const text = renderProgress(auditInput());
     expect(text).toBe(AUDIT_2356);
     expect(validateProgress(text)).toEqual([]);
@@ -197,7 +198,7 @@ describe('the estimate', () => {
 });
 
 describe('moved since', () => {
-  const moved = (over: Partial<ProgressInput>) => renderProgress(auditInput(over)).split('\n')[1];
+  const moved = (over: Partial<ProgressInput>) => renderProgress(auditInput(over)).split('\n')[2];
 
   it('only what happened inside the window', () => {
     expect(moved({ since: '2026-10-06T17:00:00Z' })).toBe(
@@ -245,22 +246,22 @@ describe('the lines', () => {
 
   it('on you: the top three, then a count, then the index', () => {
     const holds = ['a', 'b', 'c', 'd'].map((t, i) => ({ text: t, frees: i, holds: i + 1 }));
-    expect(renderProgress(auditInput({ holds, index: 'CUL-9' })).split('\n')[3]).toBe('On you: a (frees 0, holds 1); b (frees 1, holds 2); c (frees 2, holds 3) and 1 more → CUL-9');
-    expect(renderProgress(auditInput({ holds: [] })).split('\n')[3]).toBe('On you: nothing');
+    expect(renderProgress(auditInput({ holds, index: 'CUL-9' })).split('\n')[4]).toBe('On you: a (frees 0, holds 1); b (frees 1, holds 2); c (frees 2, holds 3) and 1 more → CUL-9');
+    expect(renderProgress(auditInput({ holds: [] })).split('\n')[4]).toBe('On you: nothing');
   });
 
   it('next, when nothing waits to start', () => {
-    expect(renderProgress(auditInput({ next: [] })).split('\n')[2]).toBe('Next: nothing queued; the next ruling or added row starts the next round');
+    expect(renderProgress(auditInput({ next: [] })).split('\n')[3]).toBe('Next: nothing queued; the next ruling or added row starts the next round');
   });
 
-  it('a validator refuses anything but the five lines, in order, with plain ids', () => {
-    expect(validateProgress(AUDIT_2356 + '\nPR body: …')).toContain('6 lines, not 5');
+  it('a validator refuses anything but the six lines, in order, with plain ids', () => {
+    expect(validateProgress(AUDIT_2356 + '\nPR body: …')).toContain('7 lines, not 6');
     expect(validateProgress(AUDIT_2356.split('\n').reverse().join('\n'))).toContain('line 1 does not start "Progress:"');
     expect(validateProgress(AUDIT_2356.replace('CUL-1616', '<issue id="x">CUL-1616</issue>'))).toContain('a link tag; write plain ids');
   });
 });
 
-describe('the email (dispatcher only, self only, the five lines only)', () => {
+describe('the email (dispatcher only, self only, the six lines only)', () => {
   const OWNER = 'pm@example.test';
 
   it('one recipient, the owner given; the body is the update, unchanged', () => {
@@ -278,8 +279,8 @@ describe('the email (dispatcher only, self only, the five lines only)', () => {
     expect(progressEmail(AUDIT_2356, F.ALIAS, F.NOW, `${OWNER};other@example.test`)).toHaveProperty('skipped');
   });
 
-  it('anything beyond the five lines is not sent', () => {
+  it('anything beyond the six lines is not sent', () => {
     const e = progressEmail(`${AUDIT_2356}\nFrom the children: …`, F.ALIAS, F.NOW, OWNER);
-    expect(e).toEqual({ skipped: 'not the five-line update (6 lines, not 5)' });
+    expect(e).toEqual({ skipped: 'not the six-line update (7 lines, not 6)' });
   });
 });

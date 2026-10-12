@@ -58,11 +58,13 @@ import {
   type ReportFeedingArrangementInput,
   type ReportConditionInput,
   type ReportAttachmentInput,
+  type ReportCaptureChangeInput,
   type IncidentPhoto,
   type ReportAudience,
   type ReportLookInput,
   type Household,
   TRIAL_ANCHOR_GRACE_DAYS,
+  FAB_STOOL_SPLIT_KEY,
 } from './report.ts'
 import { renderReport } from './render.ts'
 // B-613 — the ONE "which trial is this report about?" predicate. Imported rather than
@@ -373,6 +375,13 @@ interface ConditionRow {
   condition_name: string
   status: string
   diagnosed_at: string | null
+}
+
+/** CUL-1658 — a `capture_changes` row (migration 091), the columns the report reads. */
+interface CaptureChangeRow {
+  change_key: string
+  first_seen_at: string
+  created_at: string
 }
 
 interface AttachmentRow {
@@ -816,6 +825,14 @@ export function mapAttachmentRows(rows: AttachmentRow[]): ReportAttachmentInput[
   }))
 }
 
+export function mapCaptureChangeRows(rows: CaptureChangeRow[]): ReportCaptureChangeInput[] {
+  return rows.map((r) => ({
+    changeKey: r.change_key,
+    firstSeenAt: r.first_seen_at,
+    createdAt: r.created_at,
+  }))
+}
+
 // ── PR 7 — incident-photo fetch/strip/embed (the ONLY I/O between assemble + render) ──
 
 type PhotoMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
@@ -1187,6 +1204,7 @@ export async function generateReportForPet(
     conditionsPull,
     attachmentsPull,
     looksRes,
+    captureChangeRes,
   ] = await Promise.all([
     // All non-deleted events over the lookback (every type — report.ts scopes,
     // dedups and filters by type internally; meals carry their food join).
@@ -1342,6 +1360,17 @@ export async function generateReportForPet(
       .order('local_day', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(LOOK_PULL_CAP),
+    // CUL-1658 (FAB PR-29c) — the day this pet's fan made a normal stool one tap to log
+    // (migration 091). `.maybeSingle()` cannot truncate: the table's UNIQUE (pet_id,
+    // change_key) means at most one row matches. Caller-JWT like every read here; the
+    // `capture_changes_read_own` policy scopes it to the caller's pets, and the pet itself
+    // was ownership-checked above.
+    supabase
+      .from('capture_changes')
+      .select('change_key, first_seen_at, created_at')
+      .eq('pet_id', petId)
+      .eq('change_key', FAB_STOOL_SPLIT_KEY)
+      .maybeSingle(),
   ])
 
   // weight_checks / medication_administrations carry no occurred_at column (it lives on
@@ -1386,6 +1415,18 @@ export async function generateReportForPet(
     medicationItems = mapMedicationItemRows(medItemsPull.rows)
     medicationItemsComplete = medItemsPull.complete
   }
+
+  // CUL-1658 — a failed read here neither refuses the report nor drops the line silently. It
+  // costs the stool strip one disclosure, never a count, so refusing would hand an owner at a
+  // clinic no report to protect a sentence, and the page-wide partial-record banner would tell
+  // the vet every count is a minimum, which is false here. So the strip itself says the change
+  // could not be checked, and the error is logged for us.
+  if (captureChangeRes.error) {
+    console.error('generate-report capture_changes read failed:', captureChangeRes.error.message)
+  }
+  const captureChanges: ReportCaptureChangeInput[] | 'unreadable' = captureChangeRes.error
+    ? 'unreadable'
+    : mapCaptureChangeRows(captureChangeRes.data ? [captureChangeRes.data as CaptureChangeRow] : [])
 
   const rawLookRows = rowsOrThrow<LookRow>(looksRes, 'looks')
   const lookRows = mapLookRows(rawLookRows)
@@ -1512,6 +1553,7 @@ export async function generateReportForPet(
     feedingArrangements: mapFeedingArrangementRows(arrangementsPull.rows),
     conditions: mapConditionRows(conditionsPull.rows),
     attachments: mapAttachmentRows(attachmentsPull.rows),
+    captureChanges,
     // B-613 — how far back `events` actually reaches, so assembly can tell "nothing was
     // logged in the cropped trial days" apart from "the cropped days were never pulled".
     //

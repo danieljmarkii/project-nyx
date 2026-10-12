@@ -21,6 +21,10 @@ jest.mock('../../../lib/sync', () => ({
 }));
 jest.mock('../../../lib/db', () => ({ getDb: () => ({}), getTimeline: jest.fn() }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
+// EN-3's go-live day (CUL-1513); its gate is `hooks/useEn3LiveSince.test.ts`'s. Unseeded here
+// unless a test names one, as on every phone today.
+let mockLiveSince: string | null = null;
+jest.mock('../../../hooks/useEn3LiveSince', () => ({ useEn3LiveSince: () => mockLiveSince }));
 
 import { act, configure, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { LayoutAnimation, StyleSheet } from 'react-native';
@@ -89,6 +93,7 @@ function mount(readFacts: ReadFacts = jest.fn(async () => facts()), readDay: Rea
 }
 
 beforeEach(() => {
+  mockLiveSince = null;
   jest.spyOn(LayoutAnimation, 'configureNext').mockImplementation(() => undefined);
 });
 afterEach(() => jest.restoreAllMocks());
@@ -275,6 +280,43 @@ describe('MonthInstrument', () => {
     expect(quiet.queryByTestId('month-legend-call')).toBeNull();
     expect(quiet.queryByTestId('month-legend-call-tiered')).toBeNull();
     expect(quiet.queryAllByTestId(/^daymark-layer-photo-(worth_a_call|call_now|call_today)$/)).toHaveLength(0);
+  });
+
+  it('CUL-1513: a month straddling the go-live day dates both lines and marks the seam; unseeded, today\'s lines', async () => {
+    const straddle = () => facts({
+      photoDays: [],
+      callReads: [
+        { eventId: 'old', day: '2026-09-02', verdict: 'worth_a_call' },
+        { eventId: 'new', day: '2026-09-11', verdict: 'call_today' },
+      ],
+    });
+    const before = mount(jest.fn(async () => straddle()));
+    await waitFor(() => expect(before.getByTestId('month-legend')).toBeTruthy());
+    expect(before.getByText('read as worth a call · 1 day')).toBeTruthy();
+    expect(before.queryByTestId('month-seam-mark')).toBeNull();
+    before.unmount();
+
+    mockLiveSince = '2026-09-10';
+    const v = mount(jest.fn(async () => straddle()));
+    await waitFor(() => expect(v.getByTestId('month-legend')).toBeTruthy());
+    expect(v.getByText('Before Sep 10, read as worth a call · 1 day')).toBeTruthy();
+    expect(v.getByText('From Sep 10, read as call now or call today · 1 day')).toBeTruthy();
+    // One seam, on the day itself, inert: the day keeps its own mark and its own press.
+    expect(v.getAllByTestId('month-seam-mark')).toHaveLength(1);
+    const seamDay = v.getByTestId('month-seam-day');
+    expect(within(seamDay).getByLabelText(/September 10, /)).toBeTruthy();
+    expect(v.getByTestId('month-seam-mark').props.pointerEvents).toBe('none');
+    // The ear hears what the eye reads.
+    const spoken = v.getByTestId('month-line').props.accessibilityLabel as string;
+    expect(spoken).toContain('Before Sep 10, read as worth a call on 1 day.');
+    expect(spoken).toContain('From Sep 10, read as call now or call today on 1 day.');
+    v.unmount();
+
+    // A month wholly on one side keeps its one line as today, with no seam.
+    const one = mount(jest.fn(async () => facts({ photoDays: [], callReads: [{ eventId: 'old', day: '2026-09-02', verdict: 'worth_a_call' }] })));
+    await waitFor(() => expect(one.getByTestId('month-legend')).toBeTruthy());
+    expect(one.getByText('read as worth a call · 1 day')).toBeTruthy();
+    expect(one.queryByTestId('month-seam-mark')).toBeNull();
   });
 
   it('EN-3: the legend counts the two rules on two lines, never one sum; a new-rule month shows one', async () => {

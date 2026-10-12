@@ -44,7 +44,7 @@ async function runtimeDb(): Promise<Db> {
 
 /** A drain's row-selection statement exactly as lib/sync.ts ships it. */
 function shippedSelect(
-  table: Exclude<VisitLinkedTable, 'diet_trials'> | 'medication_administrations' | 'vet_calls' | 'vet_call_follow_ups',
+  table: Exclude<VisitLinkedTable, 'diet_trials'> | 'medication_administrations' | 'vet_calls' | 'vet_call_follow_ups' | 'intake_checks',
 ): string {
   // A drain may SELECT its named columns rather than `*`, so the anchor is the table
   // and its queue predicate; the column list ahead of it is the drain's own business.
@@ -210,6 +210,7 @@ const CHILD_PUSH_QUEUE_SQL: Record<ParentGatedQueue, () => string> = {
   vet_calls: () => shippedSelect('vet_calls'),
   vet_call_follow_ups: () => shippedSelect('vet_call_follow_ups'),
   incident_floor_queue: () => incidentFloorPushQueueSql(),
+  intake_checks: () => shippedSelect('intake_checks'),
 };
 
 function pickedChildren(db: Db, child: ParentGatedQueue): string[] {

@@ -46,6 +46,7 @@ import {
   doseToMedicationWindow,
   DEFAULT_CONFIG,
   EN11_CONFIG,
+  withEn5Config,
   type Finding,
   type CoverageDiagnostic,
   type SymptomEvent,
@@ -58,6 +59,7 @@ import {
   type Species,
   type OccurredAtConfidence,
   type IncidentAnalysisInput,
+  type IncidentCall,
   type DetectionInput,
   type DetectionConfig,
   type ReflectionDensity,
@@ -81,6 +83,7 @@ import {
 // the vomit timing findings AFTER detection, so the engine's output is untouched.
 import { computePhotoComposition, type PhotoAnalysisInput } from './photoComposition.ts'
 import { findingIdentity } from '../../../lib/findingIdentity.ts'
+import { isTieredRow, tierDisplayOf } from '../../../lib/incidentTierWords.ts'
 // B-422's effective end, from the ONE module that owns it. Imported across the
 // function boundary exactly as `./protein.ts` already re-exports `lib/protein.ts`
 // — a second copy of `start + target + grace` living here is the failure mode.
@@ -406,6 +409,17 @@ export interface IncidentAnalysisRow {
   foreign_material_present: string | null // shared across families (013)
   contents: string[] | null // vomit_content[] — L3 hair/retained-food (CUL-9); null on non-vomit / illegible
   bile_present: string | null // vomit_tristate — L3 bile (CUL-9); the authoritative bile field (013)
+  // Engines v3 PR-30a (CUL-1511): the read's verdict, its tier and its rule stamp, so the red-flag
+  // lane can say a new-rule call in the record's own words and carry a call the record raised.
+  // Optional: a row read without them resolves to no call, which is today's lane exactly.
+  recommendation?: string | null
+  tier?: string | null
+  engine_flags?: string[] | string | null
+  // PR-30c (CUL-1739): when this row was last written. A call now's clock runs from the later of
+  // this and the event, so a call raised after its event is never dated on its first render.
+  updated_at?: string | null
+  // CUL-1759: the row's own "call said at" stamp (099); NULL on a row not stamped since then.
+  call_said_at?: string | null
   events: IncidentEventJoin
 }
 
@@ -421,9 +435,34 @@ export function mapIncidentAnalyses(rows: IncidentAnalysisRow[]): IncidentAnalys
       bloodPresent: r.blood_present, // read only for the vomit family
       stoolBloodPresent: r.stool_blood_present, // read only for the stool family (B-364)
       foreignMaterialPresent: r.foreign_material_present,
+      call: newRuleCallOf(r),
+      writtenAt: r.updated_at ?? null,
+      callSaidAt: r.call_said_at ?? null,
     })
   }
   return out
+}
+
+/**
+ * The call a NEW-RULE read stands on, in the record's own resolution (`tierDisplayOf`, the one the
+ * record, History and Ask use), or null. A stamped row holding a value this build does not know is
+ * call now. An earlier-rule call (`worth_a_call`, or a value this build does not know, on an
+ * unstamped row) is null here on purpose: it keeps today's lane and today's words (spec §4, §5).
+ * The one unstamped row that IS a call is a stored `tier = 'call_now'` (CUL-1516, GAP-34): only a
+ * write under `engines_v3_en3` stores one, so the owner was shown it, and the record keeps its
+ * words over a later flag-off write. Home follows the record. Nothing on Home moves until a read
+ * has been written under the key (CUL-1407).
+ */
+export function newRuleCallOf(r: Pick<IncidentAnalysisRow, 'status' | 'recommendation' | 'tier' | 'engine_flags'>): IncidentCall | null {
+  // The row itself, never a rebuilt literal: the stamp is only READ here, and the one-writer guard
+  // (`_shared/engineStamps.guard.test.ts`) reads a stamp key in an object literal as a write.
+  const display = tierDisplayOf(r)
+  if (display === 'call_now' || display === 'call_today') return display
+  // A stamped row whose value this build does not know: the record draws it as a call
+  // ("Worth a call", CUL-1277), and spec §1 ranks an unknown value as call now. Home must not be
+  // silent beside it (adversarial pass, #8), so it carries the loudest call.
+  if (display === 'worth_a_call' && isTieredRow(r)) return 'call_now'
+  return null
 }
 
 /**
@@ -582,6 +621,14 @@ export interface SignalPipelineResult {
 
 // ── The pipeline ──────────────────────────────────────────────────────────────
 
+/** The one detection config for a run's flags: EN-11's under `engines_v3_en11`, plus I5 under
+ *  `engines_v3_en5` (PR-30s, CUL-1725). Shared by the pipeline and the shell's fingerprint, so the
+ *  config fingerprinted is the config detected with. Both flags off, DEFAULT_CONFIG itself. */
+export function signalDetectionConfig(engineFlags: EngineFlags, en11Config: DetectionConfig = EN11_CONFIG): DetectionConfig {
+  const base = isEngineKeyOn(engineFlags, 'engines_v3_en11') ? en11Config : DEFAULT_CONFIG
+  return isEngineKeyOn(engineFlags, 'engines_v3_en5') ? withEn5Config(base) : base
+}
+
 // `careContextStep` exists for the flag-off guard, which hands in a step that changes every
 // finding so its running is always visible; production always takes EN10_CONTEXT_STEP.
 // `en11Config` likewise (Engines v3 PR-32, CUL-1141): the guard hands in a config that throws on
@@ -695,7 +742,7 @@ export function runSignalPipeline(
   }
   // EN-11 (Engines v3 PR-32, CUL-1141): the one config every step below reads. DEFAULT_CONFIG
   // unless `engines_v3_en11` is on, so flag off is the same object as before.
-  const config = isEngineKeyOn(engineFlags, 'engines_v3_en11') ? en11Config : DEFAULT_CONFIG
+  const config = signalDetectionConfig(engineFlags, en11Config)
   // Engines v3 PR-14d (CUL-1410): one card per sign where the burden card and ④ say the same week.
   const detected = suppressWorseningUnderBurden(detectSignals(input, config))
   // CUL-989 step 3, BEFORE curation so a withheld card never holds a slot under the cap.

@@ -110,3 +110,22 @@ export function touchableToken(node: TreeNode | null | undefined): string {
   }
   return token;
 }
+
+// ── The opaque ground under a shadow (CUL-1691 PR 1, spec §1) ────────────────
+//
+// iOS traces a layer shadow off the composite alpha, so a shadow over a translucent
+// layer grains (#1125). Every daylight bottom surface pins that its shadow sits on an
+// opaque ground. Keyed on `shadowColor`, never `elevation`: each wrapper carries
+// `elevation` for Android stacking and has no ground. Never "every backgroundColor is
+// opaque": the named card's scrim is translucent by design.
+
+/** The `backgroundColor` of every rendered node whose flattened style carries a
+ *  `shadowColor`. Assert the list is non-empty, then that each is `#RRGGBB`. */
+export function shadowedGrounds(root: { findAll: (p: (n: TreeNode) => boolean) => TreeNode[] }): (string | undefined)[] {
+  const style = (n: TreeNode) =>
+    (StyleSheet.flatten(n.props?.style as StyleProp<ViewStyle>) ?? {}) as { shadowColor?: string; backgroundColor?: string };
+  return root.findAll((n) => style(n).shadowColor !== undefined).map((n) => style(n).backgroundColor);
+}
+
+/** An opaque six-digit hex: not absent, not `rgba`, not eight-digit hex. */
+export const OPAQUE_HEX = /^#[0-9A-Fa-f]{6}$/;

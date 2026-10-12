@@ -1,0 +1,1063 @@
+<title>Grouped Meals, Opened</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     Grouped Meals, Opened. The run that opens in place (CUL-1715, the
+     PM's convening of 2026-10-09). Round 2 (2026-10-10) folds in the PM's
+     reaction: every opened meal keeps its brand and every fact. House system: the
+     FAB round's tokens; the phone frames draw the app's real light
+     tokens (constants/theme.ts) at 1pt = 1px, in both page themes.
+     One timing engine drives every phone, frame strip and beat chart,
+     so the three can never disagree. Today's phone (A) is rebuilt from
+     openInPlaceMotion.ts; the proposal (P, B, C) from the six seats.
+     Layout: one column of prose at 68ch, phones in a wrapping row.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --night: #13112E; --night-2: #251F57; --action: #3F35A0; --action-wash: #ECEAF8;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    /* The app's own light tokens. Used inside every phone frame in both page themes. */
+    --app-ground: #FAFAFA; --app-card: #FFFFFF; --app-subtle: #F5F5F5; --app-ink: #0A0A0A;
+    --app-ink-2: #525252; --app-ink-3: #737373; --app-rule: #EAEAEA; --app-rule-strong: #D4D4D4;
+    --app-meal: #00C2A8; --app-meal-ink: #0B7B6C; --app-meal-wash: #E0FBF7;
+    --app-sym: #F43F5E; --app-sym-ink: #9F1239; --app-sym-wash: #FFE4E6;
+    --app-action: #251F57; --app-glyph: #0FA08B;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BE;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --action: #B9B3F0; --action-wash: rgba(185,179,240,0.14);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #8C87BE;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --action: #B9B3F0; --action-wash: rgba(185,179,240,0.14);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1220px; margin: 0 auto; padding-block: 56px 96px; padding-inline: 28px; }
+  @media (max-width: 520px) { .wrap { padding-inline: 16px; padding-block: 32px 64px; } }
+  .col { max-width: 68ch; }
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 64ch; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--rose-ink); background: var(--rose-wash); border-radius: 999px; padding: 4px 11px; }
+  a { color: var(--teal-ink); }
+  .ask { margin: 26px 0 0; border-left: 3px solid var(--rule); padding: 2px 0 2px 16px; max-width: 64ch; color: var(--ink-2); font-size: 15px; }
+  .ask q { font-style: italic; color: var(--ink); quotes: "\201C" "\201D"; }
+  .ledger { display: grid; gap: 8px; margin: 22px 0 0; max-width: 92ch; }
+  .ledger div { display: grid; grid-template-columns: 220px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  @media (max-width: 640px) { .ledger div { grid-template-columns: 1fr; gap: 4px; } }
+  .ledger b { color: var(--ink); }
+  .ledger q, .brief q { font-style: italic; color: var(--ink); quotes: "\201C" "\201D"; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; vertical-align: middle; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.dir { color: var(--ink-2); background: var(--rule-soft); }
+  .pill.cur { color: var(--action); background: var(--action-wash); }
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-weight: 600; font-size: 15px; margin: 32px 0 8px; }
+  p { margin: 0 0 16px; }
+  .col p:last-child { margin-bottom: 0; }
+  code { font-family: var(--mono); font-size: 0.86em; background: var(--rule-soft); border-radius: 4px; padding: 1px 5px; overflow-wrap: anywhere; }
+
+  /* Seams list */
+  .seams { display: grid; gap: 10px; margin: 22px 0 0; padding: 0; list-style: none; counter-reset: seam; max-width: 78ch; }
+  .seams li { display: grid; grid-template-columns: 30px 1fr; gap: 2px 12px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; font-size: 14.5px; color: var(--ink-2); }
+  .seams li::before { counter-increment: seam; content: counter(seam); font-family: var(--serif); font-size: 22px; line-height: 1.1; color: var(--rose-ink); grid-row: span 2; }
+  .seams li b { color: var(--ink); }
+  .seams li .where { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); overflow-wrap: anywhere; }
+
+  /* Controls */
+  .ctrl { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 18px; align-items: center; }
+  .ctrl .grp { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .ctrl .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-right: 2px; }
+  .ctrl button { font-family: var(--sans); font-size: 13px; border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink); border-radius: 999px; padding: 6px 13px; cursor: pointer; min-height: 34px; }
+  .ctrl button.primary { background: var(--action); border-color: var(--action); color: var(--paper-2); }
+  .ctrl button[aria-pressed="true"] { border-color: var(--action); color: var(--action); background: var(--action-wash); }
+  .ctrl button:focus-visible, .scrub input:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+  .scrub { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; color: var(--ink-2); }
+  .scrub input[type="range"] { width: min(360px, 100%); accent-color: var(--action); }
+  .scrub output { font-family: var(--mono); font-size: 12px; min-width: 64px; color: var(--ink); }
+
+  /* Phones */
+  .demo-row { display: flex; flex-wrap: wrap; gap: 32px 22px; margin-top: 26px; align-items: flex-start; }
+  .demo { display: flex; flex-direction: column; gap: 12px; width: 358px; max-width: 100%; min-width: 0; }
+  .demo-cap { display: flex; flex-direction: column; gap: 4px; }
+  .demo-cap b { font-size: 15px; }
+  .demo-cap span { font-size: 13.5px; color: var(--ink-2); }
+  .ph { position: relative; width: 358px; max-width: 100%; height: 664px; background: var(--app-ground); border-radius: 34px; border: 1px solid rgba(27,26,46,0.16); box-shadow: 0 18px 44px rgba(19,17,46,0.16); overflow: hidden; color: var(--app-ink); font-family: var(--sans); font-size: 13px; line-height: 1.3; -webkit-font-smoothing: antialiased; }
+  .ph.short { height: 470px; }
+  .ph-top { position: absolute; left: 0; right: 0; top: 0; height: 54px; display: flex; align-items: center; gap: 8px; padding: 8px 14px 0; background: var(--app-card); border-bottom: 1px solid var(--app-rule); z-index: 6; }
+  .ph-top .pet { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 16px; flex: 1; }
+  .ph-top .pet small { color: var(--app-ink-2); font-weight: 400; font-size: 12px; }
+  .ph-top .date { font-size: 11px; color: var(--app-ink-2); }
+  .ph-top .askp { font-size: 12px; border: 1px solid var(--app-rule); border-radius: 999px; padding: 3px 10px; display: flex; align-items: center; gap: 5px; font-weight: 500; }
+  .ph-top .askp i { width: 6px; height: 6px; border-radius: 50%; background: var(--app-meal); display: inline-block; }
+  .ph-top .me { width: 26px; height: 26px; border-radius: 50%; background: #0A0A0A; color: #FFFFFF; display: grid; place-items: center; font-size: 11px; font-weight: 600; }
+  .avatar { width: 24px; height: 24px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #8a7a6a, #3a332c 70%); flex-shrink: 0; display: inline-block; }
+  .ph-scroll { position: absolute; left: 0; right: 0; top: 54px; bottom: 62px; overflow-y: auto; overflow-x: hidden; padding: 12px 12px 120px; scrollbar-width: none; }
+  .ph-scroll::-webkit-scrollbar { display: none; }
+  .ph-card { background: var(--app-card); border-radius: 16px; padding: 16px 16px 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); }
+  .ph-label { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-3); }
+  .ph-q { font-family: var(--serif); font-size: 18px; line-height: 1.25; margin: 2px 0 10px; color: var(--app-ink); }
+  .ph-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ph-chips span { border: 1px solid var(--app-rule); border-radius: 999px; padding: 6px 11px; font-size: 11.5px; font-weight: 500; color: var(--app-ink); }
+  .ph-chips span.more { border: 0; color: var(--app-meal-ink); padding-inline: 4px; }
+  .ph-div { height: 1px; background: var(--app-rule); margin: 14px 0 12px; }
+  .ph-count { font-size: 13px; color: var(--app-ink-2); margin-bottom: 14px; }
+  .ph-count b { color: var(--app-ink); font-weight: 600; }
+  .ph-tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 62px; background: var(--app-card); border-top: 1px solid var(--app-rule); display: flex; justify-content: space-around; align-items: center; font-size: 10px; color: var(--app-ink-3); padding-bottom: 8px; z-index: 6; }
+  .ph-tabs b { color: var(--app-ink); font-weight: 600; }
+  .ph-fab { position: absolute; right: 16px; bottom: 74px; width: 50px; height: 50px; border-radius: 50%; background: var(--app-action); display: grid; place-items: center; box-shadow: 0 6px 18px rgba(19,17,46,0.32); z-index: 7; }
+  .ph-fab svg { width: 18px; height: 18px; }
+
+  /* The spine: the app's row frame (components/recap/DaySpine.tsx) */
+  .sp { position: relative; }
+  .rw { position: relative; display: flex; align-items: flex-start; gap: 8px; min-height: 44px; padding-bottom: 16px; }
+  .rw.lastnode { padding-bottom: 2px; }
+  .optA .rw { z-index: 1; }
+  .rw .tm { width: 60px; flex-shrink: 0; padding-top: 2px; text-align: right; font-size: 11px; line-height: 13px; color: var(--app-ink-3); font-variant-numeric: tabular-nums; }
+  .rw .rl { width: 18px; flex-shrink: 0; position: relative; display: flex; justify-content: center; align-self: flex-start; height: 14px; }
+  .thread-fixed .rw .rl { align-self: stretch; height: auto; }
+  .thread-fixed .rw .ln.b { bottom: -16px; }
+  .rw .ln { position: absolute; left: 8px; width: 2px; background: var(--app-rule); z-index: 0; }
+  .rw .ln.t { top: 0; height: 8.5px; }
+  .rw .ln.b { top: 8.5px; bottom: 0; }
+  .rw.firstnode .ln.t, .rw.lastnode .ln.b { display: none; }
+  .rw .bd { margin-top: 3px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--app-card); background: var(--app-meal); position: relative; z-index: 3; flex-shrink: 0; }
+  .rw .bd.vomit { background: var(--app-sym); }
+  .rw .bx { flex: 1; min-width: 0; }
+  .rw .tl { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; row-gap: 2px; }
+  .rw .ti { font-size: 13px; line-height: 15px; font-weight: 500; color: var(--app-ink); min-width: 0; }
+  .rw .ti .de { font-weight: 400; color: var(--app-ink-2); }
+  .rw .ft { font-size: 11px; line-height: 13px; font-weight: 500; letter-spacing: 0.4px; color: var(--app-ink-3); text-transform: uppercase; flex-shrink: 0; }
+  .rw .cam { display: inline-flex; color: var(--app-ink-3); }
+  .rw .tm .tt { display: block; margin-top: 3px; font-size: 10px; line-height: 12px; font-weight: 500; letter-spacing: 0.4px; text-transform: uppercase; color: var(--app-ink-3); }
+  .frames.d5 { margin-top: 18px; }
+  .rw .chip { font-size: 11px; line-height: 13px; font-weight: 500; letter-spacing: 0.4px; text-transform: uppercase; color: var(--app-meal-ink); background: var(--app-meal-wash); border-radius: 999px; padding: 2px 8px; flex-shrink: 0; }
+  .rw .cam svg { width: 11px; height: 11px; }
+  .rw .l2 { margin-top: 2px; font-size: 11px; line-height: 14px; color: var(--app-ink-2); }
+  .rw .rd { display: flex; gap: 8px; align-items: stretch; margin-top: 4px; }
+  .rw .rd i { width: 3px; border-radius: 2px; background: var(--app-sym); }
+  .rw .rd span { font-size: 11px; line-height: 14px; font-weight: 600; color: var(--app-sym-ink); padding: 2px 0; }
+  .rw .tr { flex-shrink: 0; padding-top: 0; color: var(--app-meal-ink); }
+  .rw .tr svg { width: 15px; height: 15px; display: block; }
+  .rw.head { cursor: pointer; border-radius: 8px; }
+  .rw.head.pressed { background: var(--app-subtle); }
+  .rw.head:focus-visible { outline: 2px solid var(--app-meal-ink); outline-offset: 2px; }
+  .rw.head .chev { display: block; transform-origin: 50% 50%; }
+  /* The members' slot (SpineNodeRow.tsx RunInPlace) */
+  .slot { position: relative; height: 0; }
+  .slot.clip { overflow: hidden; }
+  .slot .rail-a { position: absolute; left: 75px; top: 0; width: 4px; border-radius: 2px; background: var(--app-meal); transform-origin: top; z-index: 0; display: none; }
+  .slot .rail-s { position: absolute; left: 75px; top: 0; width: 4px; border-radius: 0 0 2px 2px; background: var(--app-meal); z-index: 1; display: none; }
+  .rw .lead { position: absolute; left: 7px; top: 8.5px; bottom: -16px; width: 4px; border-radius: 0; background: var(--app-glyph); transform-origin: top; transform: scaleY(0); z-index: 1; display: none; }
+  .optP .rw .lead { display: block; }
+  .optP .slot .rail-s { display: block; background: var(--app-glyph); }
+  .nested .slot .rw .bd { width: 9px; height: 9px; border-width: 2px; margin-top: 4px; }
+  .nested .slot .rw .tm { color: var(--app-ink-2); }
+  .rw .stk { position: absolute; left: 0; top: 0; width: 18px; height: 0; z-index: 2; }
+  .rw .stk i { position: absolute; left: 3.5px; top: 3px; width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--app-card); background: var(--app-meal); }
+
+  /* Frame strips */
+  .strip-wrap { overflow-x: auto; margin-top: 22px; padding-bottom: 6px; }
+  .strip { display: flex; gap: 14px; width: max-content; }
+  .fr { display: flex; flex-direction: column; gap: 8px; width: 208px; }
+  .fr .box { width: 208px; overflow: hidden; background: var(--app-card); border-radius: 12px; border: 1px solid rgba(27,26,46,0.12); position: relative; }
+  .fr .box .mini { width: 334px; transform: scale(0.623); transform-origin: 0 0; padding: 12px 16px 0; color: var(--app-ink); font-family: var(--sans); font-size: 13px; line-height: 1.3; }
+  .fr .t { font-family: var(--mono); font-size: 11px; color: var(--ink); }
+  .fr .t .seam { color: var(--rose-ink); font-weight: 600; }
+  .fr .c { font-size: 12.5px; color: var(--ink-2); line-height: 1.4; }
+
+  /* Static frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 32px 26px; margin-top: 26px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 12px; width: 358px; max-width: 100%; min-width: 0; }
+  .frame .card { background: var(--app-card); border-radius: 16px; border: 1px solid rgba(27,26,46,0.12); padding: 14px 12px 6px; color: var(--app-ink); font-family: var(--sans); font-size: 13px; line-height: 1.3; overflow: hidden; }
+  .frame .card > div { width: 302px; max-width: 100%; margin: 0 auto; }
+  .frame.option { border: 1px dashed var(--ink-3); border-radius: 18px; padding: 12px; width: 384px; }
+  .frame.option > .demo-cap::before { content: "Option, drawn for the decision, not the current proposal"; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+
+  /* Beat charts */
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 22px; margin-top: 24px; }
+  .chart { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 14px 8px; min-width: 0; }
+  .chart h4 { margin: 0 0 2px; font-size: 14.5px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .chart h4 small { font-family: var(--mono); font-size: 11px; color: var(--ink-3); font-weight: 400; }
+  .chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .chart .ax { stroke: var(--rule); stroke-width: 1; }
+  .chart .tick { fill: var(--ink-3); font-family: var(--mono); font-size: 10px; }
+  .chart .rowlbl { fill: var(--ink-2); font-family: var(--sans); font-size: 11.5px; }
+  .chart .bar { fill: var(--teal-ink); }
+  .chart .bar.held { fill: var(--teal-ink); opacity: 0.3; }
+  .chart .seam { fill: var(--rose-ink); }
+  .chart .seamlbl { fill: var(--rose-ink); font-family: var(--sans); font-size: 10.5px; font-weight: 600; }
+  .chart .note { fill: var(--ink-3); font-family: var(--sans); font-size: 10.5px; }
+  .chart .done { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; }
+  .chart .donelbl { fill: var(--ink); font-family: var(--mono); font-size: 10.5px; }
+
+  /* Briefs, voices, ideas */
+  .briefs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; margin-top: 24px; }
+  .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .brief h4 { margin: 0 0 8px; font-size: 15.5px; color: var(--ink); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .brief p { margin: 0 0 6px; }
+  .brief b { color: var(--ink); }
+  .conflict { border-left: 3px solid var(--rose-ink); padding-left: 12px; margin: 8px 0; }
+  .voices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 14px; margin-top: 22px; }
+  .voice { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 14px 16px; font-size: 14px; color: var(--ink-2); min-width: 0; }
+  .voice b.who { display: block; color: var(--ink); font-size: 14.5px; margin-bottom: 6px; }
+  .voice .v { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 6px; }
+  .nots { display: grid; gap: 10px; margin-top: 18px; max-width: 78ch; }
+  .nots div { display: grid; grid-template-columns: 22px 1fr; gap: 10px; font-size: 14.5px; color: var(--ink-2); }
+  .nots div::before { content: "\00D7"; font-family: var(--serif); font-size: 20px; line-height: 1; color: var(--ink-3); }
+  .nots b { color: var(--ink); }
+  .tablewrap { overflow-x: auto; margin-top: 22px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-2); }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--rule-soft); }
+  th { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+  td { color: var(--ink-2); }
+  td b { color: var(--ink); }
+  tr:last-child td { border-bottom: 0; }
+  .summary { margin: 26px 0 0; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px; max-width: 78ch; font-size: 15px; color: var(--ink-2); }
+  .summary b { color: var(--ink); }
+  .summary p { margin: 0 0 8px; }
+  .summary p:last-child { margin-bottom: 0; }
+  .found { display: grid; gap: 10px; margin-top: 18px; max-width: 80ch; }
+  .found div { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; font-size: 14.5px; color: var(--ink-2); }
+  .found b { color: var(--ink); }
+  .stackrow { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 22px; }
+  .beads { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 22px; }
+  .beads figure { margin: 0; width: 150px; display: flex; flex-direction: column; align-items: center; gap: 8px; background: var(--app-card); border: 1px solid rgba(27,26,46,0.12); border-radius: 12px; padding: 12px 8px 10px; }
+  .beads svg { width: 72px; height: 120px; display: block; }
+  .beads .thr { stroke: var(--app-rule); stroke-width: 8; }
+  .beads .ring { fill: var(--app-card); }
+  .beads .fill { fill: var(--app-meal); }
+  .beads figcaption { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 2px; color: var(--app-ink); }
+  .beads figcaption b { font-size: 12.5px; font-weight: 600; }
+  .beads figcaption span { font-size: 11.5px; color: var(--app-ink-2); }
+  .placeholder { border: 1px dashed var(--rule); border-radius: 6px; padding: 14px 16px; color: var(--ink-3); font-size: 14px; margin-top: 18px; }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow"><span class="roundtag">Round 2.2 · your reactions folded in · every decision ruled</span><span>Grouped meals · CUL-1715</span><span>2026-10-10</span></p>
+    <h1>The grouped meals line, opened in place</h1>
+    <p class="standfirst">On Home and History, meals of one food logged back to back share one line, and tapping it opens the meals underneath. You called that opening a first version and asked the whole team what would make it delightful, since owners open these lines many times a day. This page rebuilds today's opening from the code and slows it down so you can see its seams, draws the team's proposal beside it on the same day, and carries the discussion and the decisions.</p>
+    <p class="ask"><q>I have a v1 animation here that I'd love for us to turbocharge… I feel like this is an interaction that happens frequently and because of that it should be delightful. So. What can we do to improve this experience. Let's gather the full team and discuss.</q><br>Your message, with the Home screenshot of Fri, Oct 9.</p>
+    <div class="ledger" id="ledger">
+      <div><b>1 · What you see once it is open</b><span><q>I like everything you have except 04.. what you see when it's open. I'd like for you to ensure brand and other info is still available on the meal when it's expanded.</q> Ruled: every opened meal keeps its brand, product, format, rating and time, as today's row does. The team kept what removes nothing: the line from the run's own bead, a smaller bead on it, a darker time, and the time and format first with the brand and product on the meal's second line. If you'd rather each meal look exactly like today's row, that is the boxed option in §02 and §04. Round 1's meals without the brand have left the page; commit 5169716 keeps them. <span class="pill">ruled · D2 · §04</span></span></div>
+      <div><b>2 · Everything else</b><span><q>I like everything you have</q> Read as yes to D1 (build the proposal, the thread first) and D3 (the bounded reveal scroll). D4 (the stack) had no recommendation to like and D5 is a clinical rule change, so both needed your word; both have it now (3 and 4). <span class="pill">D1 · D3 ruled</span></span></div>
+      <div><b>3 · A mark for "several"</b><span><q>FWIW.. I like the concept of a mark or indicator for multiple meals. The little radiating arcs.</q> Ruled D4 (b): the arcs are §06's stack, up to three beads down the thread behind the front one, tucking as the line leaves and sliding back out as it returns. Every proposal phone on the page now carries it, folded; today's phones do not. The dissent is recorded under D4 and its three conditions ride the build: the words keep the count, the mark never changes with a rating, and the phone check asks an owner what it says. The owners' tick per meal idea (option c) has left the page; commit 818c5e0 keeps it. <span class="pill">ruled · D4 · §06</span></span></div>
+      <div><b>4 · A meal minutes before a vomit</b><span><q>D5 yes, go with (a)</q> Ruled: any meal eaten within 30 minutes before a vomit keeps its own row, whether the vomit was seen or found, the first of a bout or not. It is drawn under D5 in §07, before and after, on a day with a found vomit, which the timing lane never times. The reveal scroll in §05, ruled in 2, also leaves its option box. <span class="pill">ruled · D5 · §07</span> <span class="pill">every decision ruled</span></span></div>
+    </div>
+    <div class="summary">
+      <p><b>The team's answer, from round 1.</b> Six seats read your screenshot and the code in isolation, and they agree on the shape of it.</p>
+      <p>Today's opening is not short of a flourish; it has seams. The rows below jump 44pt, then bounce about 12% past their place, then the teal line pops to its length after everything has stopped, and the close ends with another jump.</p>
+      <p>The proposal (§02) takes every seam out. The line grows out of the bead you tapped, the box opens from nothing on an ease with no bounce, each meal lands where the box's edge reaches it, the close is faster than the open, and the meals nest under their line, each still carrying its brand and every fact. It is at rest in about a third of a second. Folded, the line's bead carries a small stack that says "several", and a meal eaten within 30 minutes before a vomit never folds into it.</p>
+      <p>One idea split the team: that stack (§06). You ruled for it, and the dissent's conditions ride the build. And your screenshot showed something bigger than the animation: the grey thread that should join every bead is not drawn at all (§01, filed).</p>
+    </div>
+  </header>
+
+  <!-- §01 -->
+  <section id="today">
+    <div class="sec-head"><span class="sec-num">01</span><h2>Today's opening, slowed down</h2></div>
+    <div class="col">
+      <p>This phone plays the opening exactly as the app does it today, rebuilt beat for beat from <code>openInPlaceMotion.ts</code> and <code>SpineNodeRow.tsx</code>, at a quarter of real speed. Tap the <b>2 meals</b> line to open it and again to close it. At full speed each direction lasts about half a second, which is why it reads as "a bit off" rather than as any one bug. The seams are ranked by how visible they are on a phone.</p>
+    </div>
+    <div class="ctrl" id="ctrl-a">
+      <span class="grp"><span class="lbl">Speed</span>
+        <button type="button" data-speed="1">1×</button>
+        <button type="button" data-speed="0.5">½×</button>
+        <button type="button" data-speed="0.25" aria-pressed="true">¼×</button>
+        <button type="button" data-speed="0.1">⅒×</button></span>
+      <span class="grp"><button type="button" class="primary" data-act="toggle">Open or close</button></span>
+    </div>
+    <div class="demo-row">
+      <div class="demo">
+        <div class="ph optA" id="ph-solo" data-opt="A"></div>
+      </div>
+      <div class="col" style="flex:1; min-width: min(100%, 320px);">
+        <ol class="seams">
+          <li><b>The close ends with a slam.</b><span>The box closes to a 44pt empty band, and the band is removed with no animation after everything else has stopped, so the last thing you see is a jump. <span class="where">openInPlaceMotion.ts:257-260, 323</span></span></li>
+          <li><b>The open starts with a jump.</b><span>Everything below drops 44pt in one frame before any line shows, then moves again 80ms later on a different curve: two moves for one tap. <span class="where">openInPlaceMotion.ts:188-192 · pinned by openInPlaceMotion.test.ts:44-49</span></span></li>
+          <li><b>The box bounces.</b><span>React Native's layout spring reaches full height in 65ms and swings 11.6% past it at about 100ms: roughly 10pt here and 85pt on a run of twelve, with <i>Worth a call</i> riding it. The code expects about 4pt. <span class="where">react-native …/animations/utils.cpp:53-63 · foldMotion.ts:73-81</span></span></li>
+          <li><b>The line pops.</b><span>It holds 44pt through the whole spring and jumps to full length at about 480ms, alone in a still field. <span class="where">openInPlaceMotion.ts:191, 212-217</span></span></li>
+          <li><b>The close's line snaps short, or spills.</b><span>After an open, the machine never learns the box's height, so the close cuts the line to 44pt on its first frame. On a card that mounted already open (History after scrolling back), the opposite: the line runs past the closing box over the next row's bead. <span class="where">openInPlaceMotion.ts:236-238, 315-318 · SpineNodeRow.tsx:693</span></span></li>
+          <li><b>A second tap mid flight snaps.</b><span>The run jumps to the end of what it was doing, then plays the other direction from the start. <span class="where">openInPlaceMotion.ts:290-296</span></span></li>
+          <li><b>The arrow flips before anything moves.</b><span>The chevron is swapped for its opposite; History v2's mock turned it over 200ms. <span class="where">SpineNodeRow.tsx:472</span></span></li>
+          <li><b>The meals land as one block, and remount at both ends.</b><span>The remount is invisible, but it drops VoiceOver's place on a meal and a tap in that frame. <span class="where">SpineNodeRow.tsx:572-583</span></span></li>
+        </ol>
+        <div class="found" style="margin-top:14px;"><div><b>And the thread is missing.</b> Not the opening's fault, and the biggest find in your screenshot: the grey line that should join every bead renders only as 3pt stubs, because the bead's column never stretches to the row's height. The first paint draws a thread down the day, and then it vanishes. Phone A draws it as it ships; the proposal draws it the way the frame meant it. Filed as <b>CUL-1718</b>.</div></div>
+      </div>
+    </div>
+    <h3>Frame by frame: today's opening</h3>
+    <div class="strip-wrap"><div class="strip" id="strip-open"></div></div>
+    <h3>Frame by frame: today's closing</h3>
+    <div class="strip-wrap"><div class="strip" id="strip-close"></div></div>
+  </section>
+
+  <!-- §02 -->
+  <section id="side">
+    <div class="sec-head"><span class="sec-num">02</span><h2>The proposal, beside today</h2></div>
+    <div class="col">
+      <p>Three phones on the same day. Tap any <b>meals</b> line, or play all three together, and use the slider to stop every phone on the same instant. The middle phone is the team's proposal. The right one is the same motion with today's rows exactly, if you'd rather the meals not change at all (§07, D2).</p>
+    </div>
+    <div class="ctrl" id="ctrl-all">
+      <span class="grp"><button type="button" class="primary" data-act="open">Open all three</button><button type="button" data-act="close">Close all three</button></span>
+      <span class="grp"><span class="lbl">Speed</span>
+        <button type="button" data-speed="1" aria-pressed="true">1×</button>
+        <button type="button" data-speed="0.5">½×</button>
+        <button type="button" data-speed="0.25">¼×</button></span>
+      <span class="grp"><span class="lbl">Meals in the run</span>
+        <button type="button" data-n="2" aria-pressed="true">2</button>
+        <button type="button" data-n="4">4</button>
+        <button type="button" data-n="8">8</button>
+        <button type="button" data-n="12">12</button></span>
+      <span class="grp"><span class="lbl">Reduce Motion</span>
+        <button type="button" data-rm="1" id="rm-btn" aria-pressed="false">Off</button></span>
+    </div>
+    <div class="scrub" id="scrub">
+      <label for="scrub-t">Stop every phone at</label>
+      <input type="range" id="scrub-t" min="0" max="600" step="4" value="0">
+      <output id="scrub-out" for="scrub-t">0 ms</output>
+      <span class="ctrl" style="margin:0;"><span class="grp"><button type="button" class="sbtn" data-sdir="open" aria-pressed="true">of the opening</button><button type="button" class="sbtn" data-sdir="close" aria-pressed="false">of the closing</button></span></span>
+    </div>
+    <div class="demo-row" id="trio">
+      <div class="demo">
+        <div class="ph optA" data-opt="A"></div>
+        <div class="demo-cap"><b>Today</b><span>The opening as it ships, every seam of §01 included.</span></div>
+      </div>
+      <div class="demo">
+        <div class="ph optP thread-fixed nested" data-opt="P"></div>
+        <div class="demo-cap"><b>The proposal <span class="pill cur">current</span></b><span>The line grows out of the bead you tapped, the box opens from nothing with no bounce and clips while it moves, each meal lands where the box's edge reaches it, the arrow turns, and nothing jumps at either end. The meals nest under their line, each keeping its brand and every fact. Folded, its bead carries the stack (§06).</span></div>
+      </div>
+      <div class="demo frame option" style="width:384px;">
+        <div class="ph optP thread-fixed" data-opt="B"></div>
+        <div class="demo-cap"><b>The same motion, today's rows exactly</b><span>Every fact as today, with the product first on each meal: three lines a meal, and a run of twelve <span class="js-taller">taller</span>.</span></div>
+      </div>
+    </div>
+    <h3>Frame by frame: the proposal's opening</h3>
+    <div class="strip-wrap"><div class="strip" id="strip-prop"></div></div>
+  </section>
+
+  <!-- §03 -->
+  <section id="beats">
+    <div class="sec-head"><span class="sec-num">03</span><h2>The beats, to scale</h2></div>
+    <div class="col">
+      <p>Each bar is one beat, drawn from the same numbers the phones run on; a pale bar is a beat holding still or riding another. Rose diamonds are seams: a frame where something on screen jumps instead of moving. The dashed line is when the last thing stops. The charts follow the meal count chosen in §02.</p>
+    </div>
+    <div class="charts" id="charts"></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>What you feel</th><th>Today</th><th>The proposal</th><th>Who asked for it</th></tr></thead>
+        <tbody id="budget"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- §04 -->
+  <section id="rest">
+    <div class="sec-head"><span class="sec-num">04</span><h2>What you see once it is open</h2></div>
+    <div class="col">
+      <p>The motion is half of it; the other half is what the open run says when it stops. Your ruling: every meal keeps its brand, product, format, rating and time. What the proposal changes is the order and the weight, never the facts. Each meal leads with what differs from its neighbours, its time and its format (and its rating when it has one), and carries the brand and product on its second line, in the same small type the run's own second line uses. The meals sit on a smaller bead on the run's line, the line starts at the run's own bead and ends at its last meal, and the time is a step darker. The 2:52 PM meal, which is its own row, now plainly sits outside the group. VoiceOver reads each meal in full.</p>
+    </div>
+    <div class="frames" id="rest-frames"></div>
+  </section>
+
+  <!-- §05 -->
+  <section id="edges">
+    <div class="sec-head"><span class="sec-num">05</span><h2>When it opens out of sight</h2></div>
+    <div class="col">
+      <p>A run near the bottom of the screen opens under the plus and the tab bar, and the tap seems to do nothing but turn the arrow, which itself sits in the plus's column. The phone on the right moves the list just far enough to show the first meal, never past the run's own line, and never on a close (§07, D3).</p>
+    </div>
+    <div class="demo-row" id="edge-row"></div>
+  </section>
+
+  <!-- §06 -->
+  <section id="several">
+    <div class="sec-head"><span class="sec-num">06</span><h2>A mark for "several": ruled</h2></div>
+    <div class="col">
+      <p>Today a folded run of four meals draws one bead, the same bead a single meal draws, so the thread shows three beads under "4 logged". You ruled for the mark: up to three beads stacked down the thread behind the front one, each showing as an arc below it, tucking under the front bead as the line leaves and sliding back out as it returns. Two meals draw two beads, an exact count; three or more draw three, which says "several" and leaves the number to the words. The Data Scientist, Dr. Chen and the owner panel dissented (§07, D4): a capped stack cannot tell four meals from eight, and a mark that only ever appears on meals eaten normally or unrated could teach owners that it means "fine". Their conditions ride the build. The flying version, where the beads travel down to their meals, stays cut.</p>
+    </div>
+    <div class="beads" role="img" aria-label="Close-ups of the bead at four times size: one meal, two meals as today, two meals as a stack, and four or more meals as a stack capped at three">
+      <figure><svg viewBox="0 0 72 120"><line x1="36" y1="0" x2="36" y2="120" class="thr"/><circle cx="36" cy="34" r="22" class="ring"/><circle cx="36" cy="34" r="14" class="fill"/></svg><figcaption><b>1 meal</b><span>today and proposed</span></figcaption></figure>
+      <figure><svg viewBox="0 0 72 120"><line x1="36" y1="0" x2="36" y2="120" class="thr"/><circle cx="36" cy="34" r="22" class="ring"/><circle cx="36" cy="34" r="14" class="fill"/></svg><figcaption><b>2 meals, today</b><span>the same single bead</span></figcaption></figure>
+      <figure><svg viewBox="0 0 72 120"><line x1="36" y1="0" x2="36" y2="120" class="thr"/><circle cx="36" cy="50" r="22" class="ring"/><circle cx="36" cy="50" r="14" class="fill"/><circle cx="36" cy="34" r="22" class="ring"/><circle cx="36" cy="34" r="14" class="fill"/></svg><figcaption><b>2 meals, stacked</b><span>an exact count</span></figcaption></figure>
+      <figure><svg viewBox="0 0 72 120"><line x1="36" y1="0" x2="36" y2="120" class="thr"/><circle cx="36" cy="66" r="22" class="ring"/><circle cx="36" cy="66" r="14" class="fill"/><circle cx="36" cy="50" r="22" class="ring"/><circle cx="36" cy="50" r="14" class="fill"/><circle cx="36" cy="34" r="22" class="ring"/><circle cx="36" cy="34" r="14" class="fill"/></svg><figcaption><b>3 meals or more, stacked</b><span>capped: 4, 8 and 12 look like this</span></figcaption></figure>
+    </div>
+    <div class="strip-wrap"><div class="strip" id="strip-stack"></div></div>
+    <div class="demo-row">
+      <div class="demo">
+        <div class="ph optP thread-fixed nested" data-opt="C" id="ph-stack"></div>
+        <div class="demo-cap"><b>The stack, live <span class="pill cur">current</span></b><span>Four meals. The back beads tuck under the front one while the line leaves the bead, and slide back out as it returns. It is the proposal, the same as §02.</span></div>
+      </div>
+      <div class="col" style="flex:1; min-width: min(100%, 320px);">
+        <p><b>The dissent's conditions, carried into the build (CUL-1736).</b></p>
+        <p><b>1 · The words keep the count.</b> The line's number and its spoken label are unchanged, and the mark adds nothing to what VoiceOver reads.</p>
+        <p><b>2 · The mark never changes with a rating,</b> a format or anything else in the run, so it can say "several" and never "how it went".</p>
+        <p><b>3 · The phone check asks one owner, cold, what the arcs say.</b> An answer about how the meals went, rather than how many, brings it back to you.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- §07 -->
+  <section id="decide">
+    <div class="sec-head"><span class="sec-num">07</span><h2>The decisions, ruled</h2></div>
+    <div class="briefs" id="briefs">
+      <div class="brief">
+        <h4>D1 · Build the proposal: take the seams out <span class="pill">ruled yes · 2026-10-10</span></h4>
+        <p><b>Ruled:</b> <q>I like everything you have</q>, read as (a).</p>
+        <p><b>Deciding:</b> whether the team replaces today's opening with §02's proposal on Home and History, with its mechanism fixes reaching the Patterns month.</p>
+        <p><b>Options:</b> (a) <b>Build it, the thread first</b> (recommended: all six seats converged on removing seams rather than adding a flourish, and the fix reaches three surfaces); (b) fix only the two 44pt jumps and the clip, and keep the bounce, the pop and the swap; (c) leave it.</p>
+        <p><b>Consequence:</b> three PRs in order: the thread (CUL-1718), the shared machine (CUL-1721), then the run's own motion (CUL-1734). The run gets its own box curve, so the daily look and a read's arrival keep theirs. Done when it is filmed on Home, History and the month with a run of twelve and a run under the plus.</p>
+      </div>
+      <div class="brief">
+        <h4>D2 · What each opened meal shows <span class="pill">ruled · 2026-10-10</span></h4>
+        <p><b>Ruled:</b> <q>I'd like for you to ensure brand and other info is still available on the meal when it's expanded.</q> Every opened meal keeps its brand, product, format, rating and time, so GAP-8's "every fact" holds and nothing is dropped. The team's recommendation to drop the product is withdrawn.</p>
+        <p><b>The team's form inside the ruling:</b> each meal's first line is what differs (its time beside it, "Meal", its format, its rating when it has one); its second line is the brand and product, in the same small type the run's own second line uses; the meal sits on a smaller bead on the run's line, and its time is a step darker. Two lines a meal instead of three, every fact on screen, and VoiceOver reads each meal in full.</p>
+        <p><b>Option:</b> today's rows exactly (the boxed phone in §02 and the boxed frame in §04), if you'd rather the meals not change at all.</p>
+        <p><b>Consequence:</b> the shared row gains a member form and History v2's spec gains a §3.6 note; nothing reaches the vet report, the engine or any count. Build: CUL-1733.</p>
+      </div>
+      <div class="brief">
+        <h4>D3 · Show what opened when it opens out of sight <span class="pill">ruled yes · 2026-10-10</span><span class="pill dir">better than the rule</span></h4>
+        <p><b>Ruled:</b> <q>I like everything you have</q>, read as (a).</p>
+        <p><b>The rule:</b> GAP-8 also said "Opening never scrolls the list", to keep the owner's place.</p>
+        <p><b>The better thing:</b> only when the first meal would land under the plus or off screen, move the list just far enough to show it, never past the run's own line, never on a close, and as a jump under Reduce Motion. Today the tap's only feedback is the arrow, in the plus's column.</p>
+        <p><b>Options:</b> (a) <b>Approve, bounded as above</b> (recommended: the owner panel, Motion &amp; IA and Engineering); (b) keep "never scrolls".</p>
+        <p><b>Consequence:</b> a programmatic scroll under <code>guards/programmaticScroll.test.ts</code>, and a new row in History v2's §4 motion table. No platform precedent was found either way. Build: CUL-1735, after CUL-1734.</p>
+      </div>
+      <div class="brief">
+        <h4>D4 · A mark for "several" on the folded line <span class="pill">ruled (b) · 2026-10-10</span><span class="pill">persona conflict</span></h4>
+        <p><b>Ruled:</b> <q>FWIW.. I like the concept of a mark or indicator for multiple meals. The little radiating arcs.</q> Read as (b), the still stack: the arcs are its back beads showing under the front one. The dissent below is the record, and its conditions ride the build (§06).</p>
+        <div class="conflict">
+          <p><b>Designer and Motion &amp; IA:</b> a still stack of up to three beads says "several" at the bead, outside the plus's column, and gives Principle 8 a mark per meal exactly where most runs are (two and three meals).</p>
+          <p><b>Data Scientist, Dr. Chen and the owner panel:</b> a capped stack cannot tell four from eight, fails the covered caption test, and is a glyph that only ever appears on calm meals, most of them unrated, so it teaches "fine".</p>
+          <p><b>Asked:</b> is a "several" mark worth a mark that stops counting at three? <b>Answered:</b> yes; the words keep the number.</p>
+        </div>
+        <p><b>Options:</b> (a) no mark; the words carry the count; (b) the still stack, capped at three, tucking as the line leaves, after a phone check; (c) park it, and draw the owners' tick per meal idea next round.</p>
+        <p><b>Consequence:</b> the shared row frame changes for runs only, never on the month or the report. Build: CUL-1736, after the open it rides (CUL-1734).</p>
+      </div>
+      <div class="brief">
+        <h4>D5 · A meal minutes before any vomit keeps its own row <span class="pill">ruled yes · 2026-10-10</span><span class="pill">clinical</span></h4>
+        <p><b>Ruled:</b> <q>D5 yes, go with (a)</q></p>
+        <p><b>Deciding:</b> whether rule B also keeps out of a run a meal eaten within 30 minutes before a vomit the timing lane did not measure from (a found vomit, a second vomit in one bout, a free fed span). Today such a meal can fold into "3 meals" right above the vomit.</p>
+        <p><b>Options:</b> (a) <b>Yes</b> (recommended by the Data Scientist with Dr. Chen: runs only break more on bad days, which are the days a vet reads); (b) no, keep rule B as ruled (CUL-1163).</p>
+        <p><b>Consequence:</b> a rule B change in <code>lib/spineCompaction.ts</code> and a History v2 §3.6 edit, with Dr. Chen signing off the window. Independent of D1 to D4. Build: CUL-1737, with an adversarial review.</p>
+        <div class="frames d5" id="d5-frames"></div>
+      </div>
+      <div class="brief">
+        <h4>Team defaults <span class="pill">you can reverse any</span></h4>
+        <p><b>No bounce.</b> The run's box eases to rest with no overshoot, on its own constants with the reason written down; the settle lives in the meals' 4pt landing. A box with no size cap that overshoots by a share of its travel bounces hardest on the longest runs.</p>
+        <p><b>The time budget.</b> The line and the arrow answer on the tap's frame; the open is at rest by about 320ms for two meals and never past 400ms at any size; the close is at rest by about 280ms.</p>
+        <p><b>A second tap reverses from where the motion is,</b> never finishing the old direction first.</p>
+        <p><b>The line</b> starts at the bead you tapped and ends at the last meal's bead, in the darker teal mark colour (3.27:1 on white, <code>colorAccentGlyph</code>), so the group reads as one shape.</p>
+        <p><b>Each meal lands where the box's edge reaches it,</b> so the reveal runs in time order without a per meal timer that grows with the count. History's look order (CUL-1719) is fixed before this lands on History.</p>
+        <p><b>Reduce Motion:</b> the box is there at once, the line, the stack and the meals crossfade over 150ms, and the arrow swaps.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- §08 -->
+  <section id="team">
+    <div class="sec-head"><span class="sec-num">08</span><h2>What the team said</h2></div>
+    <div class="col"><p>Six seats read one shared briefing in isolation, with your screenshot and the code. None saw another's answer.</p></div>
+    <div class="voices">
+      <div class="voice"><b class="who">Sr. Product Designer</b><span class="v">Fix the seams, then nest</span>"It reads v1 because of its seams, not because it lacks a flourish." The gesture starts and ends with a jolt, the line lags and then pops, and the arrow cuts under the finger. Once open it does not read as a group: same bead, the product three times, three lines each. Wants the meals nested on smaller beads, the line from the tapped bead in the mark colour, and the bar for something used many times a day: "it answers on the first frame and never jolts… one detail that rewards the tenth look". Proposes the still stack, capped at three; cut the flying deal.</div>
+      <div class="voice"><b class="who">Motion &amp; IA</b><span class="v">One physics, no bounce</span>The box's "spring" is React Native's approximation: full height in 65ms, 11.6% past it at about 100ms, about 85pt on twelve meals, which is neither the 4pt the code expects nor the flight's real spring, so "the app runs two physics on a phone". Lead the line linearly at the box's opening speed so its tip never stalls, ease the box with no overshoot, land each meal as the edge reaches it, close faster than you open. The deal only counts as open in place if the beads ride the line; the real gain is a still stack, which says "several" outside the plus's column.</div>
+      <div class="voice"><b class="who">Owner panel · Jordan and Sam</b><span class="v">Needs work · design for Sam</span>Jordan: "I tap and everything below jerks down, then springs. I get the product three times and have to hunt for 6:20 in small grey type." Sam opens a run of eight to see whether Pixel stopped eating this afternoon: "I get eight three-line copies, mostly below the fold, and the times are the faintest thing on them." Readable by about 250ms, nothing still moving after I look away, open where I'm looking. Cut the stack: "it can't tell 4 meals from 8, and flying dots look like my record changing". Their idea: a tick per meal at its time.</div>
+      <div class="voice"><b class="who">Dr. Chen with the Data Scientist</b><span class="v">Seamless, never celebratory</span>Rule B keeps every recorded concern out of a run, but not every worrying record: they reproduced History printing a 9:00 AM look below a run's 10:45 AM meal (filed), and a meal minutes before an unmeasured vomit folding into a run (D5). A run means "logged, nothing recorded against it", not "eaten normally": most members are unrated. So the open must never be richer over calm content than over anything else, no mark grows with the number of logs, and nothing animates "in time order" over a list that is not. Nesting is safe: nothing reaches the vet report, the engine or a count.</div>
+      <div class="voice"><b class="who">Engineering, QA and accessibility</b><span class="v">Buildable, thread first</span>The proposal builds on the two engines the app already uses, with no Reanimated, if every view has one engine: the lead is a native transform on a frame no layout touches, the ride is a plain line the box's own keyframe carries. Confirmed the missing thread and its two part fix, and corrected the close (the line snaps short on the common path; the spill needs a remounted card). Found the meals' remount drops VoiceOver focus, and that History's filter change animates a close it should not. Three PRs; tests pin "no geometry without its animation" and the budget at twelve rows.</div>
+      <div class="voice"><b class="who">Research consultant</b><span class="v">Continuity and speed</span>"For something people look at many times a day, delight means continuity and speed." Compose's default expand fades and grows from zero, clipped, with no bounce, and restarts an interruption from where it is; Apple says "when you're not sure, use a spring with bounce 0", and its HIG says to "generally avoid adding motion to UI interactions that occur frequently" and to "let people cancel motion". Mail, Reminders and Day One lead a group with its count. iOS notification stacks are the nearest thing to the stack, and Apple offers Count separately from Stack.</div>
+    </div>
+  </section>
+
+  <!-- §09 -->
+  <section id="nots">
+    <div class="sec-head"><span class="sec-num">09</span><h2>What the team will not do</h2></div>
+    <div class="nots">
+      <div><span><b>No haptic.</b> Opening a group is not a commit, and the row this lives in paints <i>Worth a call</i>; the haptics guard forbids one by design.</span></div>
+      <div><span><b>No bounce on the rows below,</b> and never on <i>Worth a call</i>, which rides the same geometry.</span></div>
+      <div><span><b>No flying beads, glow, pulse, count up or celebration.</b> A run of meals is the calmest thing on the day, and "8 meals" is not a score for a cat that may be eating less.</span></div>
+      <div><span><b>No decoration that only ever plays over calm content,</b> save the one mark you ruled for. Runs hold only meals eaten normally or unrated, so the stack (D4) is built to say how many and never how it went (§06's conditions).</span></div>
+      <div><span><b>No duration that grows with the number of meals.</b> Twelve meals settle inside the same 400ms as two.</span></div>
+      <div><span><b>Nothing drawn over another record.</b> The box clips while it moves; the teal line never crosses a rose bead.</span></div>
+      <div><span><b>Nothing run only on the Patterns month.</b> It shares the mechanism fixes and keeps one motion for every verdict.</span></div>
+      <div><span><b>No new animation library.</b> The two engines the app already uses are enough.</span></div>
+    </div>
+  </section>
+
+  <!-- §10 -->
+  <section id="found">
+    <div class="sec-head"><span class="sec-num">10</span><h2>Found along the way</h2></div>
+    <div class="found">
+      <div><b>CUL-1718 · The day's thread is not drawn.</b> Home, History and the Daily Recap show 3pt stubs instead of a line; the first paint draws a thread and then erases it. The fix stretches the bead's column and runs the segment through the row's 16pt gap. High; it comes first because the proposal's line leads along it.</div>
+      <div><b>CUL-1719 · History prints a look out of time order beside a run.</b> A 9:00 AM "Off" lands under a run's 10:45 AM meal, on screen and to VoiceOver. Fix: a look breaks a run, as rule B's own sentence says any row between meals does.</div>
+      <div><b>CUL-1721 · The shipped seams,</b> every one of §01's eight with its line of code, plus History's filter change animating a close, opening during the first paint, and a run whose id changes snapping shut. D1 ruled the full proposal: these fixes go into the shared machine, and the run's own motion is CUL-1734.</div>
+      <div><b>CUL-1720 · "0 min after eating" beside 2:52 and 2:53 PM.</b> The timing line rounds a gap under a minute down to zero while the times print a minute apart. Low.</div>
+      <div><b>Noted, not filed.</b> Editing one meal so it splits a run closes the later half (its id is its first meal's). The History v2 device pass that would have caught §01 was canceled; your production checks now cover it.</div>
+    </div>
+  </section>
+
+  <!-- §11 -->
+  <section id="method">
+    <div class="sec-head"><span class="sec-num">11</span><h2>How this page was made</h2></div>
+    <div class="col">
+      <p><b>Today's phone is rebuilt from the code.</b> Every beat is the shipped constant: the 160ms lead, 80ms lag, 370ms spring at damping 0.7, 40ms and 300ms landing, 180ms leave, 300ms close, 220ms trail, 30ms slack and the 44pt band. The box's spring and ease are React Native's own layout curves, taken from its source. The rows are the app's frame: a 60pt time column, an 18pt bead column with an 11pt bead and a 2pt ring, 13pt titles, the 44pt floor and the 16pt gap, with the thread drawn as it ships.</p>
+      <p><b>The proposal's numbers come from the seats:</b> an 80ms linear lead, a 240ms ease out box, a 150ms landing with a 4pt drift where the box's edge reaches each meal (never starting after 250ms), a 100ms leave, a 200ms close and an 80ms retract.</p>
+      <p><b>Round 2 (2026-10-10)</b> changes only what an opened meal shows, after your reaction to §04: the brand and product are back on every meal. The motion, the beats and the charts are round 1's.</p>
+      <p><b>Round 2.1 (2026-10-10)</b> folds in your word on D4: every proposal phone now carries the stack, folded, and its tuck rides the line's lead and retract, so the charts gain a Stack row. Nothing else moved.</p>
+      <p><b>Round 2.2 (2026-10-10)</b> folds in your word on D5 and draws it under its brief, before and after. The reveal scroll in §05, ruled in round 2, leaves its option box.</p>
+      <p><b>Only a phone can judge motion.</b> This page shows the order, the timing and the seams. How a curve feels under a thumb at 120Hz, beside a real scroll, is the device's call. Principle 9: "a motion or a haptic is verified on a phone, never in a test."</p>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ── Curves ────────────────────────────────────────────────────────────────
+  var clamp01 = function (x) { return x < 0 ? 0 : x > 1 ? 1 : x; };
+  var outQuad = function (x) { return 1 - (1 - x) * (1 - x); };
+  var outCubic = function (x) { return 1 - Math.pow(1 - x, 3); };
+  var inOutQuad = function (x) { return x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; };
+  // React Native's layout curves on the new architecture (react/renderer/animations/utils.cpp).
+  var rnSpring = function (x, damping) { if (x <= 0) return 0; if (x >= 1) return 1; return 1 + Math.pow(2, -10 * x) * Math.sin((x - damping / 4) * Math.PI * 2 / damping); };
+  var rnEaseInOut = function (x) { x = clamp01(x); return (1 - Math.cos(Math.PI * x)) / 2; };
+  var rnEaseOut = function (x) { x = clamp01(x); return 1 - (1 - x) * (1 - x); };
+  var lerp = function (a, b, p) { return a + (b - a) * p; };
+
+  // ── Today's beats (foldMotion.ts FOLD_MOTION; openInPlaceMotion.ts) ──────────
+  var FRAME = 16; // the passive effect that starts the machine lands a frame after the tap
+  var SHIP = { railLeadMs: 160, railLagMs: 80, openMs: 370, landDelayMs: 40, landMs: 300, leaveMs: 180, closeMs: 300, railTrailMs: 220, settleSlackMs: 30, leadPt: 44, drift: 8, fastMs: 150, damping: 0.7 };
+  var SHIP_OPEN_END = FRAME + SHIP.railLagMs + SHIP.landDelayMs + SHIP.landMs + 2 * SHIP.settleSlackMs; // 496
+  var SHIP_CLOSE_END = SHIP.leaveMs + SHIP.railLagMs + SHIP.railTrailMs + SHIP.settleSlackMs; // 510
+
+  // ── The proposal's beats (the convening's seats, CUL-1715) ──────────────────
+  var PR = {
+    chevMs: 200, leadMs: 80, boxAt: 80, boxMs: 240,
+    landMs: 150, landDrift: 4, landAhead: 8, landCap: 250,
+    leaveMs: 100, leaveDrift: 4, closeAt: 40, closeMs: 200, retractAt: 200, retractMs: 80, rmMs: 150
+  };
+  var STACK_MAX = 3, STACK_STEP = 4;
+
+  // ── The day ──────────────────────────────────────────────────────────────────
+  var PRODUCT = 'Royal Canin · Selected Protein PR';
+  var NBSP = ' ';
+  var DAYS = {
+    2: { m: [['6:20 AM', 'WET'], ['10:45 AM', 'DRY']], range: '6:20 – 10:45 AM', formats: '1 wet · 1 dry', count: ['4', 'logged · 1 vomit · 3 meals'] },
+    4: { m: [['6:20 AM', 'WET'], ['8:05 AM', 'DRY', 'All'], ['9:30 AM', 'DRY', 'Most'], ['10:45 AM', 'DRY']], range: '6:20 – 10:45 AM', formats: '1 wet · 3 dry', count: ['6', 'logged · 1 vomit · 5 meals'] },
+    8: { m: [['6:20 AM', 'WET'], ['7:15 AM', 'DRY'], ['8:05 AM', 'DRY'], ['8:50 AM', 'WET'], ['9:30 AM', 'DRY'], ['10:05 AM', 'DRY'], ['10:45 AM', 'DRY'], ['11:40 AM', 'DRY']], range: '6:20 – 11:40 AM', formats: '2 wet · 6 dry', count: ['10', 'logged · 1 vomit · 9 meals'] },
+    12: { m: [['6:20 AM', 'WET'], ['6:55 AM', 'DRY'], ['7:30 AM', 'DRY'], ['8:05 AM', 'DRY'], ['8:40 AM', 'WET'], ['9:15 AM', 'DRY'], ['9:50 AM', 'DRY'], ['10:25 AM', 'DRY'], ['11:00 AM', 'DRY'], ['11:35 AM', 'WET'], ['12:10 PM', 'DRY'], ['12:45 PM', 'DRY']], range: '6:20 AM – 12:45 PM', formats: '3 wet · 9 dry', count: ['14', 'logged · 1 vomit · 13 meals'] }
+  };
+  // DaySpine.tsx timeColumnText: a time never splits from its meridiem; a range breaks after its dash.
+  var timeText = function (s) { return s.replace(/(\d{1,2}:\d{2}) (?=[AP]M)/g, '$1' + NBSP).replace(/ – /g, NBSP + '– '); };
+  var esc = function (s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); };
+
+  var CHEV_DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+  var CHEV_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>';
+  var CAMERA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>';
+  var PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+
+  function row(o) {
+    var stack = '';
+    if (o.stack) { for (var k = o.stack - 1; k >= 1; k--) stack += '<i style="top:' + (3 + k * STACK_STEP) + 'px"></i>'; stack = '<span class="stk" aria-hidden="true">' + stack + '</span>'; }
+    return '<div class="rw' + (o.cls ? ' ' + o.cls : '') + '"' + (o.attrs || '') + '>' +
+      '<div class="tm">' + esc(timeText(o.time)) + (o.ttag ? '<span class="tt">' + esc(o.ttag) + '</span>' : '') + '</div>' +
+      '<div class="rl"><i class="ln t"></i><i class="ln b"></i>' + stack + '<i class="bd' + (o.vomit ? ' vomit' : '') + '"></i>' + (o.lead ? '<i class="lead"></i>' : '') + '</div>' +
+      '<div class="bx"><div class="tl"><span class="ti">' + esc(o.title) + (o.detail ? '<span class="de"> · ' + esc(o.detail) + '</span>' : '') + '</span>' +
+      (o.tag ? '<span class="ft">' + esc(o.tag) + '</span>' : '') + (o.photo ? '<span class="cam" aria-hidden="true">' + CAMERA + '</span>' : '') + (o.chip ? '<span class="chip">' + esc(o.chip) + '</span>' : '') + '</div>' +
+      (o.line2 ? '<div class="l2">' + esc(o.line2) + '</div>' : '') +
+      (o.read ? '<div class="rd"><i></i><span>' + esc(o.read) + '</span></div>' : '') + '</div>' +
+      (o.chev ? '<div class="tr"><span class="chev">' + CHEV_DOWN + '</span></div>' : '') + '</div>';
+  }
+
+  // A member in the proposal's form keeps every fact a single row carries (the PM's
+  // ruling on D2): what differs leads, the brand and product sit on its second line.
+  function spineHTML(n, form, stack) {
+    var d = DAYS[n];
+    var label = n + ' meals, ' + PRODUCT.replace(' · ', ', ') + ', ' + d.formats.replace(' · ', ', ') + ', ' + d.range + '. Shows each one';
+    var h = row({ cls: 'head firstnode', attrs: ' role="button" tabindex="0" aria-expanded="false" aria-label="' + esc(label) + '"', time: d.range, title: n + ' meals', detail: PRODUCT, line2: d.formats, chev: true, lead: true, stack: stack ? Math.min(n, STACK_MAX) : 0 });
+    var members = d.m.map(function (m) {
+      return form === 'nested'
+        ? row({ cls: 'mem', time: m[0], title: 'Meal', tag: m[1], chip: m[2], line2: PRODUCT })
+        : row({ cls: 'mem', time: m[0], title: 'Meal', detail: PRODUCT, tag: m[1], chip: m[2] });
+    }).join('');
+    var single = row({ time: '2:52 PM', title: 'Meal', detail: PRODUCT, tag: 'DRY' });
+    var vomit = row({ cls: 'lastnode', time: '2:53 PM', title: 'Vomit', detail: '0 min after eating', photo: true, vomit: true, read: 'Worth a call' });
+    return '<div class="sp">' + h + '<div class="slot"><i class="rail-a"></i><i class="rail-s"></i>' + members + '</div>' + single + vomit + '</div>';
+  }
+
+  function chrome(n, inner, tall) {
+    var d = DAYS[n];
+    return '<div class="ph-top"><span class="pet"><span class="avatar"></span>Nyx <small>⌄</small></span><span class="date">Fri, Oct 9</span><span class="askp"><i></i>Ask</span><span class="me">D</span></div>' +
+      '<div class="ph-scroll"><div class="ph-card"><div class="ph-label">Today</div><div class="ph-q">How does Nyx seem today?</div>' +
+      '<div class="ph-chips"><span>Left her food ›</span><span>Off</span><span>Sleeping more</span><span>Hiding</span>' + (tall ? '<span>Not grooming</span><span>Lip-licking</span><span>Outside the box</span><span>Lively</span><span>Played</span><span>Nothing unusual</span>' : '') + '<span class="more">More…</span></div>' +
+      '<div class="ph-div"></div><div class="ph-count"><b>' + d.count[0] + '</b> ' + d.count[1] + '</div>' + inner + '</div></div>' +
+      '<div class="ph-fab" aria-hidden="true">' + PLUS + '</div><div class="ph-tabs"><b>Home</b><span>History</span><span>Foods</span><span>Nyx</span></div>';
+  }
+
+  // ── State at time t ────────────────────────────────────────────────────────
+  // Plain numbers, so an interrupted proposal can blend from wherever it was (it
+  // reverses from where it is). Every phone, frame strip and chart reads these.
+  function fill(n, v) { var a = []; for (var i = 0; i < n; i++) a.push(v); return a; }
+  function closedState(g) {
+    return { S: 0, clip: true, chev: 0, swap: false, rowOp: 1, rowShift: 0, words: fill(g.n, 0), shift: fill(g.n, 0),
+      railA: null, lead: 0, leadOp: 1, railOp: 1, tuck: 1, stackOp: 1 };
+  }
+
+  function stateA(dir, t, g, rm, hang) {
+    var st = closedState(g); st.clip = false; st.swap = true;
+    st.chev = dir === 'open' ? 180 : 0;
+    if (rm) {
+      if (dir === 'open') {
+        if (t < FRAME) return st;
+        st.S = g.Sfull; st.rowOp = outQuad(clamp01((t - FRAME) / SHIP.fastMs)); st.railA = { h: g.Sfull - 16, s: 1 }; st.words = fill(g.n, 1);
+      } else {
+        var q = clamp01(t / SHIP.fastMs);
+        if (q < 1) { st.S = g.Sfull; st.rowOp = 1 - outQuad(q); st.railA = { h: g.Sfull - 16, s: 1 }; st.words = fill(g.n, 1); }
+      }
+      return st;
+    }
+    if (dir === 'open') {
+      if (t < FRAME) return st;
+      var tl = t - FRAME;
+      st.words = fill(g.n, 1);
+      if (tl >= SHIP_OPEN_END - FRAME) { st.S = g.Sfull; st.railA = { h: g.Sfull - 16, s: 1 }; return st; }
+      st.S = tl < SHIP.railLagMs ? SHIP.leadPt : lerp(SHIP.leadPt, g.Sfull, rnSpring((tl - SHIP.railLagMs) / SHIP.openMs, SHIP.damping));
+      st.railA = { h: SHIP.leadPt, s: outCubic(clamp01(tl / SHIP.railLeadMs)) };
+      if (tl < SHIP.railLagMs) { st.rowOp = 0; st.words = fill(g.n, 0); }
+      else { var pl = clamp01((tl - SHIP.railLagMs - SHIP.landDelayMs) / SHIP.landMs); st.rowOp = outQuad(pl); st.rowShift = -SHIP.drift * (1 - outCubic(pl)); }
+      return st;
+    }
+    // The close. After a fresh open the machine never recorded the box's height, so the
+    // line is cut to the 44pt band on the first frame; a card mounted already open
+    // (hang) keeps the measured height, and nothing clips it.
+    var railH = hang ? g.Sfull : SHIP.leadPt;
+    if (t >= SHIP_CLOSE_END) return st;
+    if (t < SHIP.leaveMs) {
+      var pv = clamp01(t / SHIP.leaveMs);
+      st.S = g.Sfull; st.words = fill(g.n, 1); st.rowOp = 1 - outQuad(pv); st.rowShift = -SHIP.drift * outQuad(pv);
+      st.railA = { h: railH, s: 1 }; return st;
+    }
+    st.words = fill(g.n, 0);
+    var tc = t - SHIP.leaveMs;
+    st.S = tc < SHIP.closeMs ? lerp(g.Sfull, SHIP.leadPt, rnEaseInOut(tc / SHIP.closeMs)) : SHIP.leadPt;
+    var tr = tc - SHIP.railLagMs;
+    st.railA = { h: railH, s: tr < 0 ? 1 : 1 - inOutQuad(clamp01(tr / SHIP.railTrailMs)) };
+    return st;
+  }
+
+  // When the box's edge (Fabric's ease out) reaches meal i, capped so twelve meals still finish in budget.
+  function landStart(i, g) {
+    var p = clamp01((g.memTop[i] + PR.landAhead) / g.Sfull);
+    return Math.min(PR.boxAt + PR.boxMs * (1 - Math.sqrt(1 - p)), PR.landCap);
+  }
+
+  function stateP(dir, t, g, rm) {
+    var N = g.n, st = closedState(g), i;
+    if (rm) {
+      // Reduce Motion: the geometry at once; what enters or leaves crossfades over 150ms; the arrow swaps.
+      st.swap = true; st.chev = dir === 'open' ? 180 : 0;
+      var p = clamp01(t / PR.rmMs);
+      var o = dir === 'open' ? outQuad(p) : 1 - outQuad(p);
+      var gone = dir === 'close' && p >= 1;
+      st.S = gone ? 0 : g.Sfull; st.lead = gone ? 0 : 1; st.leadOp = o; st.railOp = o; st.words = fill(N, o);
+      st.tuck = 1; st.stackOp = 1 - o;
+      return st;
+    }
+    if (dir === 'open') {
+      st.chev = 180 * outCubic(clamp01(t / PR.chevMs));
+      st.lead = clamp01(t / PR.leadMs);              // linear: the box's own opening speed, so the tip never stalls
+      st.tuck = 1 - clamp01(t / PR.leadMs);
+      st.S = t < PR.boxAt ? 0 : g.Sfull * rnEaseOut((t - PR.boxAt) / PR.boxMs);
+      for (i = 0; i < N; i++) {
+        var pw = clamp01((t - landStart(i, g)) / PR.landMs);
+        st.words[i] = outQuad(pw); st.shift[i] = -PR.landDrift * (1 - outCubic(pw));
+      }
+      return st;
+    }
+    st.chev = 180 * (1 - outCubic(clamp01(t / PR.chevMs)));
+    var pl = clamp01(t / PR.leaveMs);
+    for (i = 0; i < N; i++) { st.words[i] = 1 - outQuad(pl); st.shift[i] = -PR.leaveDrift * outQuad(pl); }
+    st.S = t < PR.closeAt ? g.Sfull : g.Sfull * (1 - rnEaseInOut((t - PR.closeAt) / PR.closeMs));
+    st.lead = t < PR.retractAt ? 1 : 1 - clamp01((t - PR.retractAt) / PR.retractMs);
+    st.tuck = t < PR.retractAt ? 0 : clamp01((t - PR.retractAt) / PR.retractMs);
+    return st;
+  }
+
+  function stateAt(opt, dir, t, g, rm, hang) { return opt === 'A' ? stateA(dir, t, g, rm, hang) : stateP(dir, t, g, rm); }
+  function restState(opt, open, g) { return stateAt(opt, open ? 'open' : 'close', 100000, g, false); }
+  function endOf(opt, dir, g, rm) {
+    if (rm) return opt === 'A' ? FRAME + SHIP.fastMs : PR.rmMs;
+    if (opt === 'A') return dir === 'open' ? SHIP_OPEN_END : SHIP_CLOSE_END;
+    if (dir === 'open') { var last = 0; for (var i = 0; i < g.n; i++) last = Math.max(last, landStart(i, g) + PR.landMs); return Math.max(PR.chevMs, PR.boxAt + PR.boxMs, last); }
+    return Math.max(PR.chevMs, PR.closeAt + PR.closeMs, PR.retractAt + PR.retractMs);
+  }
+
+  // ── A phone ───────────────────────────────────────────────────────────────
+  function Phone(el, o) {
+    this.el = el; this.o = o || {}; this.opt = el.getAttribute('data-opt') || this.o.opt;
+    this.n = this.o.n || 2; this.open = !!this.o.open; this.flight = null; this.snap = null; this.view = null;
+    this.build();
+  }
+  Phone.prototype.build = function () {
+    var form = this.opt === 'P' || this.opt === 'C' ? 'nested' : 'full';
+    var inner = spineHTML(this.n, form, this.opt !== 'A');
+    if (this.o.mini) this.el.innerHTML = '<div class="ph-count"><b>' + DAYS[this.n].count[0] + '</b> ' + DAYS[this.n].count[1] + '</div>' + inner;
+    else this.el.innerHTML = chrome(this.n, inner, !!this.o.tall);
+    var q = this.q = {
+      head: this.el.querySelector('.rw.head'), slot: this.el.querySelector('.slot'),
+      railA: this.el.querySelector('.rail-a'), railS: this.el.querySelector('.rail-s'), lead: this.el.querySelector('.rw.head .lead'),
+      chev: this.el.querySelector('.rw.head .chev'), mems: Array.prototype.slice.call(this.el.querySelectorAll('.slot .rw')),
+      stack: Array.prototype.slice.call(this.el.querySelectorAll('.rw.head .stk i')), scroll: this.el.querySelector('.ph-scroll')
+    };
+    q.memParts = q.mems.map(function (m) { return [m.querySelector('.tm'), m.querySelector('.bx'), m.querySelector('.bd')]; });
+    var self = this;
+    if (!this.o.static) {
+      q.head.addEventListener('pointerdown', function () { q.head.classList.add('pressed'); });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) { q.head.addEventListener(ev, function () { setTimeout(function () { q.head.classList.remove('pressed'); }, 90); }); });
+      q.head.addEventListener('click', function () { self.tap(); });
+      q.head.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); self.tap(); } });
+    } else { q.head.removeAttribute('tabindex'); q.head.removeAttribute('role'); }
+    this.measure();
+    this.paint(restState(this.opt, this.open, this.g));
+  };
+  Phone.prototype.measure = function () {
+    // Lay the meals out once at full height to read where they sit; the slot's own top
+    // never moves while it opens, so these hold for the whole motion.
+    var slot = this.q.slot, prevH = slot.style.height;
+    slot.style.height = 'auto';
+    this.q.mems.forEach(function (m) { m.style.display = ''; m.style.opacity = ''; m.style.transform = ''; });
+    var headH = this.q.head.offsetHeight, Sfull = slot.offsetHeight;
+    var memTop = this.q.mems.map(function (m) { return m.offsetTop; });
+    var memberY = memTop.map(function (y) { return headH + y + 8.5; });
+    var memH = this.q.mems.map(function (m) { return m.offsetHeight; });
+    slot.style.height = prevH;
+    this.g = { n: this.n, headH: headH, Sfull: Sfull, memTop: memTop, memberY: memberY, memH: memH };
+  };
+  Phone.prototype.paint = function (st) {
+    var q = this.q, g = this.g, i;
+    this.last = st;
+    q.slot.style.height = Math.max(0, st.S).toFixed(2) + 'px';
+    q.slot.classList.toggle('clip', !!st.clip);
+    q.slot.setAttribute('aria-hidden', st.S <= 0.5 ? 'true' : 'false');
+    var expanded = st.chev >= 90;
+    if (st.swap) { if (q.chev.dataset.up !== String(expanded)) { q.chev.innerHTML = expanded ? CHEV_UP : CHEV_DOWN; q.chev.dataset.up = String(expanded); } q.chev.style.transform = ''; }
+    else { if (q.chev.dataset.up === 'true') { q.chev.innerHTML = CHEV_DOWN; q.chev.dataset.up = 'false'; } q.chev.style.transform = 'rotate(' + st.chev.toFixed(2) + 'deg)'; }
+    if (q.head.hasAttribute('role')) { q.head.setAttribute('aria-expanded', String(expanded)); q.head.setAttribute('aria-label', q.head.getAttribute('aria-label').replace(expanded ? 'Shows' : 'Hides', expanded ? 'Hides' : 'Shows')); }
+    if (this.opt === 'A') {
+      var mounted = st.words[0] > 0;
+      q.mems.forEach(function (m) { m.style.display = mounted ? '' : 'none'; m.style.opacity = st.rowOp; m.style.transform = st.rowShift ? 'translateY(' + st.rowShift.toFixed(2) + 'px)' : ''; });
+      if (st.railA) { q.railA.style.display = 'block'; q.railA.style.height = st.railA.h + 'px'; q.railA.style.transform = 'scaleY(' + st.railA.s.toFixed(4) + ')'; }
+      else q.railA.style.display = 'none';
+      return;
+    }
+    // The proposal: the clip reveals the line, the thread and the beads; only the words fade.
+    q.railS.style.height = Math.max(0, g.memberY[g.n - 1] - g.headH + 3).toFixed(2) + 'px';
+    q.railS.style.opacity = st.railOp;
+    q.lead.style.transform = 'scaleY(' + clamp01(st.lead).toFixed(4) + ')';
+    q.lead.style.opacity = st.leadOp;
+    for (i = 0; i < q.mems.length; i++) {
+      var parts = q.memParts[i], w = st.words[i], sh = st.shift[i] ? 'translateY(' + st.shift[i].toFixed(2) + 'px)' : '';
+      parts[0].style.opacity = w; parts[1].style.opacity = w; parts[0].style.transform = sh; parts[1].style.transform = sh;
+      parts[2].style.opacity = st.railOp;
+    }
+    for (i = 0; i < q.stack.length; i++) {
+      var k = q.stack.length - i; // the back coins are written farthest first
+      q.stack[i].style.transform = 'translateY(' + (-k * STACK_STEP * (1 - clamp01(st.tuck))).toFixed(2) + 'px)';
+      q.stack[i].style.opacity = st.stackOp;
+    }
+  };
+  Phone.prototype.renderAt = function (dir, t, rm) { this.view = { dir: dir, t: t, rm: rm }; this.paint(stateAt(this.opt, dir, t, this.g, rm, !!this.o.hang)); };
+  Phone.prototype.tap = function () { this.go(!this.open); };
+  Phone.prototype.go = function (open) {
+    var dir = open ? 'open' : 'close';
+    if (this.flight && this.flight.dir === dir) return;
+    if (!this.flight && open === this.open) return;
+    if (this.flight) {
+      if (this.opt === 'A') { this.paint(restState('A', this.flight.dir === 'open', this.g)); this.snap = null; } // today: finish the old direction first
+      else this.snap = this.last; // the proposal: reverse from where it is
+    } else this.snap = null;
+    this.open = open; this.view = null;
+    this.flight = { dir: dir, t: 0, rm: RM.on, end: endOf(this.opt, dir, this.g, RM.on) };
+    if (open && this.o.reveal) this.reveal();
+    LOOP.add(this);
+  };
+  Phone.prototype.reveal = function () {
+    // Only when the first meal would land under the plus or off screen; just far enough to
+    // show it; never past the run's own line; a jump under Reduce Motion.
+    var sc = this.q.scroll; if (!sc) return;
+    var head = this.q.head.getBoundingClientRect(), box = sc.getBoundingClientRect();
+    var firstBottom = head.bottom - box.top + this.g.memH[0];
+    var need = firstBottom - (sc.clientHeight - 70);
+    var room = head.top - box.top - 12;
+    var delta = Math.min(need, room);
+    if (delta <= 2) return;
+    var from = sc.scrollTop, to = from + delta;
+    if (RM.on) { sc.scrollTop = to; return; }
+    var t0 = null, dur = (PR.boxMs + PR.boxAt) / SPEED.of(this);
+    var step = function (ts) { if (t0 === null) t0 = ts; var p = clamp01((ts - t0) / dur); sc.scrollTop = lerp(from, to, rnEaseOut(p)); if (p < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  };
+  Phone.prototype.tick = function (dt) {
+    var f = this.flight; if (!f) return false;
+    f.t += dt * SPEED.of(this);
+    var st = stateAt(this.opt, f.dir, f.t, this.g, f.rm, !!this.o.hang);
+    if (this.snap) { var b = outCubic(clamp01(f.t / 120)); st = blend(this.snap, st, b); if (b >= 1) this.snap = null; }
+    this.paint(st);
+    if (f.t >= f.end + 20) { this.flight = null; this.snap = null; this.paint(restState(this.opt, f.dir === 'open', this.g)); return false; }
+    return true;
+  };
+  Phone.prototype.rebuild = function (n) { this.n = n; this.flight = null; this.snap = null; this.view = null; this.build(); };
+
+  function blend(a, b, p) {
+    var o = {}, k;
+    for (k in b) o[k] = b[k];
+    ['S', 'chev', 'lead', 'leadOp', 'railOp', 'rowOp', 'rowShift', 'tuck', 'stackOp'].forEach(function (key) { if (typeof a[key] === 'number' && typeof b[key] === 'number') o[key] = lerp(a[key], b[key], p); });
+    ['words', 'shift'].forEach(function (key) { if (a[key] && b[key]) o[key] = b[key].map(function (v, i) { return lerp(a[key][i], v, p); }); });
+    return o;
+  }
+
+  // ── The clock ─────────────────────────────────────────────────────────────
+  var LOOP = {
+    live: [], last: 0, raf: 0,
+    add: function (ph) { if (this.live.indexOf(ph) < 0) this.live.push(ph); if (!this.raf) { this.last = performance.now(); this.raf = requestAnimationFrame(this.frame); } },
+    frame: function (ts) {
+      var dt = Math.min(64, ts - LOOP.last); LOOP.last = ts;
+      LOOP.live = LOOP.live.filter(function (ph) { return ph.tick(dt); });
+      LOOP.raf = LOOP.live.length ? requestAnimationFrame(LOOP.frame) : 0;
+    }
+  };
+  var SPEED = { solo: 0.25, all: 1, of: function (ph) { return ph.group === 'solo' ? this.solo : this.all; } };
+  var prefersRM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var RM = { on: prefersRM };
+
+  // ── The page ──────────────────────────────────────────────────────────────
+  var phones = [];
+  function make(el, o, group) { var p = new Phone(el, o || {}); p.group = group || 'all'; phones.push(p); return p; }
+  function setPressed(container, attr, value) { container.querySelectorAll('[' + attr + ']').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute(attr) === String(value))); }); }
+
+  var SCALE = 0.623;
+  function strip(host, frames) {
+    host.innerHTML = frames.map(function (f) {
+      return '<div class="fr"><div class="box"><div class="mini ' + (f.cls || 'optA') + '" data-opt="' + f.opt + '"></div></div><div class="t">' + (f.label || (f.t + ' ms')) + (f.seam ? ' <span class="seam">· seam ' + f.seam + '</span>' : '') + '</div><div class="c">' + f.c + '</div></div>';
+    }).join('');
+    var cells = host.querySelectorAll('.fr'), tallest = 0, boxes = [];
+    frames.forEach(function (f, i) {
+      var mini = cells[i].querySelector('.mini');
+      var p = new Phone(mini, { mini: true, static: true, open: true, n: f.n || 2, hang: !!f.hang });
+      if (f.rest !== undefined) p.paint(restState(p.opt, f.rest, p.g)); else p.renderAt(f.dir, f.t, false);
+      tallest = Math.max(tallest, mini.scrollHeight); // the frame as drawn, so a strip of closed runs stays short
+      boxes.push(cells[i].querySelector('.box'));
+    });
+    boxes.forEach(function (b) { b.style.height = Math.ceil((tallest + 8) * SCALE) + 'px'; });
+  }
+
+  function chart(opt, dir, g) {
+    var W = 640, L = 118, R = 616, X = function (ms) { return L + (R - L) * ms / 600; };
+    var rows = [], seams = [], done = endOf(opt, dir, g, false), i;
+    if (opt === 'A' && dir === 'open') {
+      rows = [['Arrow', [], 'swaps at once'], ['Room below', [[FRAME, FRAME + SHIP.railLagMs, 'held']], 'a 44pt band'],
+        ['Line', [[FRAME, FRAME + SHIP.railLeadMs], [FRAME + SHIP.railLeadMs, SHIP_OPEN_END, 'held']], ''],
+        ['Box', [[FRAME + SHIP.railLagMs, FRAME + SHIP.railLagMs + SHIP.openMs * 0.6]], '12% past, back'],
+        ['Meals', [[FRAME + SHIP.railLagMs + SHIP.landDelayMs, FRAME + SHIP.railLagMs + SHIP.landDelayMs + SHIP.landMs]], 'all at once']];
+      seams = [[0, 0, ''], [FRAME, 1, 'drops 44pt'], [FRAME + SHIP.railLagMs + 102, 3, 'overshoot'], [SHIP_OPEN_END, 2, 'pops to length']];
+    } else if (opt === 'A') {
+      rows = [['Arrow', [], 'swaps at once'], ['Line', [[0, SHIP.leaveMs + SHIP.railLagMs, 'held'], [SHIP.leaveMs + SHIP.railLagMs, SHIP.leaveMs + SHIP.railLagMs + SHIP.railTrailMs]], ''],
+        ['Meals', [[0, SHIP.leaveMs]], ''], ['Box', [[SHIP.leaveMs, SHIP.leaveMs + SHIP.closeMs]], 'to the 44pt band'],
+        ['Room below', [[SHIP.leaveMs + SHIP.closeMs, SHIP_CLOSE_END, 'held']], '']];
+      seams = [[0, 0, ''], [0, 1, 'snaps to 44pt'], [SHIP_CLOSE_END, 4, 'jumps up 44pt']];
+    } else if (dir === 'open') {
+      rows = [['Arrow', [[0, PR.chevMs]], 'turns'], ['Line', [[0, PR.leadMs], [PR.boxAt, PR.boxAt + PR.boxMs, 'held']], 'leads, then rides the box'],
+        ['Stack', [[0, PR.leadMs]], 'tucks with the line'],
+        ['Box', [[PR.boxAt, PR.boxAt + PR.boxMs]], 'from nothing, no bounce'],
+        ['Meals', range(g.n).map(function (k) { var a = landStart(k, g); return [a, a + PR.landMs]; }), 'as the edge reaches each']];
+    } else {
+      rows = [['Arrow', [[0, PR.chevMs]], 'turns back'], ['Meals', [[0, PR.leaveMs]], 'leave first'],
+        ['Box', [[PR.closeAt, PR.closeAt + PR.closeMs]], 'closes, clipped'], ['Line', [[PR.retractAt, PR.retractAt + PR.retractMs]], 'back into the bead'],
+        ['Stack', [[PR.retractAt, PR.retractAt + PR.retractMs]], 'back out with the line']];
+    }
+    var RH = 30, top = 22, H = top + rows.length * RH + 34;
+    var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc((opt === 'A' ? 'Today' : 'The proposal') + ', ' + (dir === 'open' ? 'opening' : 'closing') + ': at rest at ' + Math.round(done) + ' ms') + '">';
+    for (i = 0; i <= 6; i++) { var x = X(i * 100); s += '<line class="ax" x1="' + x + '" x2="' + x + '" y1="' + (top - 6) + '" y2="' + (top + rows.length * RH) + '"></line><text class="tick" x="' + x + '" y="' + (top + rows.length * RH + 14) + '" text-anchor="middle">' + (i * 100) + '</text>'; }
+    s += '<text class="tick" x="' + R + '" y="' + (top + rows.length * RH + 28) + '" text-anchor="end">ms after the tap</text>';
+    rows.forEach(function (r, ri) {
+      var y = top + ri * RH + 9, lastEnd = 0;
+      s += '<text class="rowlbl" x="0" y="' + (y + 9) + '">' + r[0] + '</text>';
+      r[1].forEach(function (b) {
+        var w = Math.max(3, X(b[1]) - X(b[0]));
+        s += '<rect class="bar' + (b[2] === 'held' ? ' held' : '') + '" x="' + X(b[0]).toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="11" rx="4"><title>' + esc(r[0] + ': ' + Math.round(b[0]) + ' to ' + Math.round(b[1]) + ' ms') + '</title></rect>';
+        lastEnd = Math.max(lastEnd, b[1]);
+      });
+      if (r[2]) { var nx = X(lastEnd) + 8, end = nx > 520; s += '<text class="note" x="' + (end ? R : nx).toFixed(1) + '" y="' + (end ? y - 2 : y + 9) + '" text-anchor="' + (end ? 'end' : 'start') + '">' + esc(r[2]) + '</text>'; }
+    });
+    seams.forEach(function (sm) {
+      var x = X(sm[0]), y = top + sm[1] * RH + 14.5, right = sm[0] > 420;
+      s += '<path class="seam" d="M' + x + ' ' + (y - 6) + ' l6 6 l-6 6 l-6 -6 z"><title>' + esc('Seam: ' + sm[2] + ' at ' + Math.round(sm[0]) + ' ms') + '</title></path>';
+      if (sm[2]) s += '<text class="seamlbl" x="' + (x + (right ? -9 : 9)) + '" y="' + (y - 7) + '" text-anchor="' + (right ? 'end' : 'start') + '">' + esc(sm[2]) + '</text>';
+    });
+    var dx = X(done);
+    s += '<line class="done" x1="' + dx + '" x2="' + dx + '" y1="' + (top - 12) + '" y2="' + (top + rows.length * RH) + '"></line><text class="donelbl" x="' + dx + '" y="' + (top - 14) + '" text-anchor="middle">at rest ' + Math.round(done) + '</text>';
+    return s + '</svg>';
+  }
+  function range(n) { var a = []; for (var i = 0; i < n; i++) a.push(i); return a; }
+
+  var STATE = { n: 2, sdir: 'open' };
+  var solo, trio = [];
+
+  function drawCharts() {
+    var gA = trio[0].g, gP = trio[1].g, html = '';
+    [['open', 'opening'], ['close', 'closing']].forEach(function (d) {
+      html += '<div class="chart"><h4>Today <small>' + d[1] + ' · ' + STATE.n + ' meals</small></h4>' + chart('A', d[0], gA) + '</div>';
+      html += '<div class="chart"><h4>The proposal <small>' + d[1] + ' · ' + STATE.n + ' meals</small></h4>' + chart('P', d[0], gP) + '</div>';
+    });
+    document.getElementById('charts').innerHTML = html;
+    var openP = Math.round(endOf('P', 'open', gP, false)), closeP = Math.round(endOf('P', 'close', gP, false));
+    var bounce = Math.round((gA.Sfull - SHIP.leadPt) * 0.116);
+    document.getElementById('budget').innerHTML = [
+      ['Answers on the tap\'s frame', 'The arrow flips; nothing else moves for a frame', 'The arrow turns and the line leaves the bead', 'Research, Designer'],
+      ['The rows below', 'Move three times: drop 44pt, spring ' + bounce + 'pt past their place and back, then jump at the close', 'Move once each way, eased, no bounce', 'Motion &amp; IA, Research'],
+      ['At rest, ' + STATE.n + ' meals, opening', SHIP_OPEN_END + 'ms', openP + 'ms', 'Owners: readable by about 250ms'],
+      ['At rest, closing', SHIP_CLOSE_END + 'ms, ending in a jump', closeP + 'ms, nothing left to snap', 'Research: 250ms or less'],
+      ['A second tap mid flight', 'Jumps to the end, then starts over', 'Reverses from where it is', 'HIG: "let people cancel motion"'],
+      ['Reduce Motion', 'The box at once; the meals fade in over 150ms; the arrow swaps', 'The same, and the line and the stack crossfade with the meals', 'Principle 9\'s three way rule']
+    ].map(function (r) { return '<tr><td><b>' + r[0] + '</b></td><td>' + r[1] + '</td><td>' + r[2] + '</td><td>' + r[3] + '</td></tr>'; }).join('');
+  }
+
+  function restFrames() {
+    var host = document.getElementById('rest-frames');
+    host.innerHTML =
+      '<div class="frame"><div class="card"><div class="optA" data-opt="A"></div></div><div class="demo-cap"><b>Today, open</b><span>The product three times; the meals look like the 2:52 PM meal; the thread is stubs.</span></div></div>' +
+      '<div class="frame"><div class="card"><div class="optP thread-fixed nested" data-opt="P"></div></div><div class="demo-cap"><b>The proposal, open <span class="pill cur">current</span></b><span>Every fact on every meal: its time and format first, its brand and product second, on a smaller bead on one line from the run\'s bead to its last meal. The 2:52 PM meal plainly sits outside.</span></div></div>' +
+      '<div class="frame option"><div class="card"><div class="optP thread-fixed" data-opt="B"></div></div><div class="demo-cap"><b>Option: today\'s rows exactly</b><span>The same facts, with the product first on each meal and three lines a meal.</span></div></div>';
+    host.insertAdjacentHTML('beforeend', '<div class="frame"><div class="card"><div class="optP thread-fixed nested" data-opt="P" data-n="4"></div></div><div class="demo-cap"><b>The proposal, four meals, two rated <span class="pill cur">current</span></b><span>A rating keeps its chip on the meal\'s first line, beside the format, so All and Most still tell apart at a glance.</span></div></div>');
+    host.querySelectorAll('.card > div').forEach(function (el) { new Phone(el, { mini: true, static: true, open: true, n: parseInt(el.getAttribute('data-n') || '2', 10) }); });
+  }
+
+  // D5, ruled: a meal within 30 minutes before any vomit keeps its own row. Drawn on a day
+  // whose vomit was found, which the timing lane never times, so nothing kept the meal out.
+  function d5Frames() {
+    var host = document.getElementById('d5-frames');
+    if (!host) return;
+    var vomit = row({ cls: 'lastnode', time: '1:30 PM', ttag: 'Found', title: 'Vomit', vomit: true });
+    var count = '<div class="ph-count"><b>4</b> logged · 1 vomit · 3 meals</div>';
+    var before = row({ cls: 'head firstnode', time: '8:00 AM – 1:05 PM', title: '3 meals', detail: PRODUCT, line2: '1 wet · 2 dry', chev: true, stack: 3 }) + vomit;
+    var after = row({ cls: 'head firstnode', time: '8:00 AM – 12:30 PM', title: '2 meals', detail: PRODUCT, line2: '1 wet · 1 dry', chev: true, stack: 2 }) +
+      row({ time: '1:05 PM', title: 'Meal', detail: PRODUCT, tag: 'DRY' }) + vomit;
+    var frame = function (inner, cap) { return '<div class="frame"><div class="card"><div class="optP thread-fixed nested">' + count + '<div class="sp">' + inner + '</div></div></div><div class="demo-cap">' + cap + '</div></div>'; };
+    host.innerHTML =
+      frame(before, '<b>Today</b><span>The 1:05 PM meal, 25 minutes before a vomit found at 1:30, folds into "3 meals" right above it. The lane never times a found vomit, so nothing kept that meal out.</span>') +
+      frame(after, '<b>With D5 <span class="pill cur">current</span></b><span>Any meal eaten within 30 minutes before a vomit keeps its own row, seen or found, first of a bout or not. The other two meals still share a line.</span>');
+  }
+
+  function edgeRow() {
+    var host = document.getElementById('edge-row');
+    host.innerHTML =
+      '<div class="demo"><div class="ph short optA" data-opt="A" id="ph-low-a"></div><div class="demo-cap"><b>Today: it opens out of sight</b><span>Tap the 2 meals line near the bottom.</span></div></div>' +
+      '<div class="demo"><div class="ph short optP thread-fixed nested" data-opt="P" id="ph-low-b"></div><div class="demo-cap"><b>The proposal with a reveal scroll <span class="pill cur">current</span></b><span>The list moves just far enough to show the first meal; under Reduce Motion it jumps; on a close it stays.</span></div></div>';
+    var a = make(document.getElementById('ph-low-a'), { tall: true });
+    var b = make(document.getElementById('ph-low-b'), { tall: true, reveal: true });
+    [a, b].forEach(function (p) { var sc = p.q.scroll; sc.scrollTop = 0; var at = p.q.head.getBoundingClientRect().top - sc.getBoundingClientRect().top; sc.scrollTop = Math.max(0, at - (sc.clientHeight - 116)); });
+  }
+
+  function init() {
+    solo = make(document.getElementById('ph-solo'), {}, 'solo');
+    document.querySelectorAll('#trio .ph').forEach(function (el) { trio.push(make(el)); });
+    strip(document.getElementById('strip-open'), [
+      { opt: 'A', dir: 'open', t: 0, seam: 7, c: 'The tap. The arrow already points up; nothing else has moved.' },
+      { opt: 'A', dir: 'open', t: 17, seam: 2, c: 'A frame later everything below drops 44pt at once.' },
+      { opt: 'A', dir: 'open', t: 70, c: 'The line grows inside an empty band.' },
+      { opt: 'A', dir: 'open', t: 198, seam: 3, c: 'The box has swung past its size; the rows below with it.' },
+      { opt: 'A', dir: 'open', t: 330, c: 'The meals fade in, all at once. The line is still 44pt.' },
+      { opt: 'A', dir: 'open', t: 494, c: 'The last frame before the line pops.' },
+      { opt: 'A', dir: 'open', t: 498, seam: 4, c: 'The line jumps to its full length.' }
+    ]);
+    strip(document.getElementById('strip-close'), [
+      { opt: 'A', rest: true, label: 'before', c: 'Open, at rest.' },
+      { opt: 'A', dir: 'close', t: 1, seam: 5, c: 'The tap. The arrow flips and the line snaps to 44pt.' },
+      { opt: 'A', dir: 'close', t: 100, c: 'The words leave.' },
+      { opt: 'A', dir: 'close', t: 300, c: 'The box closes toward its 44pt band.' },
+      { opt: 'A', dir: 'close', t: 505, c: 'An empty 44pt band is left.' },
+      { opt: 'A', dir: 'close', t: 512, seam: 1, c: 'Everything below jumps up.' },
+      { opt: 'A', dir: 'close', t: 300, hang: true, seam: 5, label: 'remounted card · 300 ms', c: 'On a card that mounted open, the line runs past the box over the next bead.' }
+    ]);
+    strip(document.getElementById('strip-prop'), [
+      { opt: 'P', cls: 'optP thread-fixed nested', dir: 'open', t: 0, c: 'The tap. The arrow starts to turn; nothing below has moved.' },
+      { opt: 'P', cls: 'optP thread-fixed nested', dir: 'open', t: 50, c: 'The line leaves the bead you tapped, down the thread; the stack tucks under the bead.' },
+      { opt: 'P', cls: 'optP thread-fixed nested', dir: 'open', t: 110, c: 'The box opens from nothing; the first meal lands.' },
+      { opt: 'P', cls: 'optP thread-fixed nested', dir: 'open', t: 170, c: 'The edge reaches the second meal; it lands.' },
+      { opt: 'P', cls: 'optP thread-fixed nested', dir: 'open', t: 240, c: 'The box slows into place, no swing past it.' },
+      { opt: 'P', cls: 'optP thread-fixed nested', dir: 'open', t: 330, c: 'At rest.' }
+    ]);
+    strip(document.getElementById('strip-stack'), [
+      { opt: 'A', n: 4, rest: false, label: 'today · 4 meals', c: 'One bead, the same as a single meal.' },
+      { opt: 'C', cls: 'optP thread-fixed nested', n: 2, rest: false, label: 'stack · 2 meals', c: 'Two beads: an exact count.' },
+      { opt: 'C', cls: 'optP thread-fixed nested', n: 4, rest: false, label: 'stack · 4 meals', c: 'Three beads: "several", not four.' },
+      { opt: 'C', cls: 'optP thread-fixed nested', n: 8, rest: false, label: 'stack · 8 meals', c: 'Still three. The words carry the count.' }
+    ]);
+    make(document.getElementById('ph-stack'), { n: 4 });
+    drawCharts(); restFrames(); edgeRow(); d5Frames();
+    // The option's caption states the measured cost of today's rows at twelve meals.
+    var probe = document.createElement('div'); probe.style.cssText = 'position:absolute;left:-9999px;top:0;width:302px;';
+    probe.innerHTML = '<div class="optP thread-fixed nested" data-opt="P"></div><div class="optP thread-fixed" data-opt="B"></div>';
+    document.body.appendChild(probe);
+    var hP = new Phone(probe.children[0], { mini: true, static: true, n: 12 }).g.Sfull, hB = new Phone(probe.children[1], { mini: true, static: true, n: 12 }).g.Sfull;
+    document.body.removeChild(probe);
+    document.querySelectorAll('.js-taller').forEach(function (el) { el.textContent = 'about ' + Math.round(hB - hP) + 'pt taller (' + Math.round(hB) + 'pt against ' + Math.round(hP) + 'pt)'; });
+
+    var ca = document.getElementById('ctrl-a');
+    ca.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.speed) { SPEED.solo = parseFloat(b.dataset.speed); setPressed(ca, 'data-speed', b.dataset.speed); }
+      if (b.dataset.act === 'toggle') solo.tap();
+    });
+    var cc = document.getElementById('ctrl-all');
+    cc.addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.speed) { SPEED.all = parseFloat(b.dataset.speed); setPressed(cc, 'data-speed', b.dataset.speed); }
+      if (b.dataset.act === 'open') trio.forEach(function (p) { p.go(true); });
+      if (b.dataset.act === 'close') trio.forEach(function (p) { p.go(false); });
+      if (b.dataset.n) { STATE.n = parseInt(b.dataset.n, 10); setPressed(cc, 'data-n', b.dataset.n); trio.forEach(function (p) { p.rebuild(STATE.n); }); drawCharts(); }
+      if (b.dataset.rm) { RM.on = !RM.on; b.setAttribute('aria-pressed', String(RM.on)); b.textContent = RM.on ? 'On' : 'Off'; }
+    });
+    var rmBtn = document.getElementById('rm-btn'); rmBtn.setAttribute('aria-pressed', String(RM.on)); rmBtn.textContent = RM.on ? 'On' + (prefersRM ? ' (your setting)' : '') : 'Off';
+    var slider = document.getElementById('scrub-t'), out = document.getElementById('scrub-out');
+    var scrub = function () {
+      var t = parseInt(slider.value, 10); out.textContent = t + ' ms';
+      trio.forEach(function (p) {
+        p.flight = null; p.snap = null; LOOP.live = LOOP.live.filter(function (x) { return x !== p; });
+        p.open = STATE.sdir === 'open'; p.renderAt(STATE.sdir, t, RM.on);
+      });
+    };
+    slider.addEventListener('input', scrub);
+    document.querySelectorAll('#scrub .sbtn').forEach(function (b) {
+      b.addEventListener('click', function () { STATE.sdir = b.dataset.sdir; document.querySelectorAll('#scrub .sbtn').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); }); scrub(); });
+    });
+    var lastW = window.innerWidth;
+    window.addEventListener('resize', function () {
+      if (window.innerWidth === lastW) return; // a height change moves nothing inside a phone
+      lastW = window.innerWidth;
+      phones.forEach(function (p) { if (p.flight) return; p.measure(); if (p.view) p.renderAt(p.view.dir, p.view.t, p.view.rm); else p.paint(restState(p.opt, p.open, p.g)); });
+    });
+  }
+
+  var start = function () { try { init(); } catch (err) { console.error(err); } };
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(start); else window.addEventListener('load', start);
+})();
+</script>

@@ -53,6 +53,7 @@ import {
 import { isEngineKeyOn, type EngineFlags } from '../_shared/engineFlags.ts'
 import { meetsVomitRepeatRuleAt } from '../_shared/vomitRepeat.ts'
 import type { FloorResult, FloorTier } from '../../../lib/incidentFloor.ts'
+import { parseFreeFedIntakeSpans } from '../../../lib/freeFedIntake.ts'
 import {
   buildFloor,
   buildVomitContext,
@@ -61,6 +62,7 @@ import {
   vomitAnchoredReads,
   vomitContextWindows,
   type ContextInput,
+  type IntakeAnswerRow,
   type IntakeRecord,
   type FloorRows,
   type VomitContextRows,
@@ -319,7 +321,10 @@ export function computeContextualFlags(input: ContextInput): ContextualFlag[] {
 
   // Cat + vomiting + no full/most meal within the window. Only for owners who
   // track intake, so absence-of-log never masquerades as anorexia.
-  if (input.species === 'cat' && input.tracksIntake && !input.hasRecentPositiveIntake) {
+  // EN-5 (engines_v3_en5): when its step ran, its answer decides the arm (context.ts
+  // EN5_CONTEXT_STEP: unrated meals are unknown). Absent, the shipped rule stands.
+  const felineIntake = input.en5IntakeFires ?? (input.tracksIntake && !input.hasRecentPositiveIntake)
+  if (input.species === 'cat' && felineIntake) {
     flags.push('feline_reduced_intake')
   }
 
@@ -452,7 +457,64 @@ const VOMIT_COPY: IncidentCopy<ContextualFlag> = {
 // so the words stay true once stored; none is relative to the day the owner reads them
 // (critique GAP-1). The escalation is unchanged: the
 // feline flag still forces worth_a_call.
+// EN-5's sentences (CUL-1722): the same past tense, pinned to the read, over RATED meals only.
+// Each says how many meals carried a rating and how many more had none, so an unrated meal is
+// stated as unknown rather than folded into "didn't eat" or left out of the count unseen.
+function count(n: number, one: string, many: string): string {
+  return n === 1 ? `one ${one}` : `${n} ${many}`
+}
+function unratedClause(record: IntakeRecord): string {
+  const unrated = record.mealsLogged - (record.mealsRated ?? 0)
+  if (unrated <= 0) return ''
+  return unrated === 1 ? ' Another one had no rating.' : ` Another ${unrated} had no rating.`
+}
+function en5IntakeRecordSentence(p: string, record: IntakeRecord): string {
+  if (record.window === 'answer') {
+    // The owner's own answer (PR-30q). Pinned to the vomit, never to a clock the server does
+    // not hold: the question named an hour a day before the vomit, in the owner's zone. And
+    // pinned to the READ, like every sentence here ("When I read this"): a stored call is held
+    // over a later, quieter run (never lowered), so the words it keeps must stay true after
+    // the owner changes her answer (the privacy pass on PR-30q, attack 5). These words may
+    // reach Ask, which relays a read's words: ruled A by the PM, 2026-10-10 (CUL-1724). Ask
+    // still never reads intake_checks itself (guards/intakeChecks.test.ts).
+    if (record.answerForm === 'free_fed') return `When I read this, you'd said you had seen ${p} refuse food since the day before this vomit.`
+    if (record.answer === 'a_little') return `When I read this, you'd said ${p} had eaten only a little since the day before this vomit.`
+    return `When I read this, you'd said ${p} hadn't eaten a meal since the day before this vomit.`
+  }
+  const rated = record.mealsRated ?? 0
+  if (record.window === 'last_rated') {
+    const word = record.rating === 'picked' ? 'Picked' : 'Refused'
+    const hours = record.hoursBefore ?? 0
+    const when =
+      hours < 1 ? 'less than an hour' : hours === 1 ? 'about an hour' : hours < 48 ? `about ${hours} hours` : `about ${Math.round(hours / 24)} days`
+    const aside = record.setAside ? ', not counting treats or free-fed bowls' : ''
+    const n = record.unratedSince ?? 0
+    // Bounded by the vomit, like the count it states (round 5, S3).
+    const since = n === 0 ? '' : n === 1 ? ' One meal logged after it, before this vomit, had no rating.' : ` ${n} meals logged after it, before this vomit, had no rating.`
+    return `The last rated meal logged for ${p} before this vomit${aside}, ${when} earlier, was marked ${word}.${since}`
+  }
+  if (record.window === 'noticed') {
+    // Anchored to the instant the predicate fired, never to the read alone: a cat that refused
+    // twice before the vomit and ate after it is described as she was before the vomit.
+    const k = record.refusedOrPicked ?? 0
+    const lastN = `the last ${count(rated, 'rated meal', 'rated meals')}`
+    if (record.at === 'vomit') return `Of ${lastN} logged for ${p} before this vomit, ${k} had been marked Refused or Picked.`
+    if (record.at === 'after_vomit_24h') return `Of ${lastN} logged for ${p} by 24 hours after this vomit, ${k} had been marked Refused or Picked.`
+    return `When I read this, ${k} of ${lastN} logged for ${p} had been marked Refused or Picked.`
+  }
+  const span =
+    record.window === 'before_vomit'
+      ? 'in the 24 hours before this vomit'
+      : record.window === 'after_vomit'
+        ? record.cappedAt24h ? 'in the 24 hours after this vomit' : 'since this vomit'
+        : 'in the 24 hours before then'
+  const verb = record.window !== 'before_vomit' ? 'had been' : rated === 1 ? 'was' : 'were'
+  const tail = rated === 1 ? "and it wasn't marked Most or All." : 'and none was marked Most or All.'
+  return `When I read this, ${count(rated, 'rated meal', 'rated meals')} ${verb} logged for ${p} ${span}, ${tail}${unratedClause(record)}`
+}
+
 function intakeRecordSentence(p: string, record: IntakeRecord): string {
+  if (record.mealsRated !== undefined) return en5IntakeRecordSentence(p, record)
   // Past tense, pinned to the moment of the read: a meal back-filled later cannot make it
   // false (the adversarial pass on this PR: "are logged" went false beside a held
   // escalation once the morning's meals landed).
@@ -510,7 +572,9 @@ export function vomitContextualRun(
   engineFlags: EngineFlags,
 ): ContextualFlag[] | ContextualRun<ContextualFlag> {
   const flags = computeContextualFlags(context)
-  const en0 = isEngineKeyOn(engineFlags, 'engines_v3_en0')
+  // EN-5 states its record through EN-0's copy: the shipped "hasn't eaten a full meal
+  // recently" is the conclusion both exist to stop drawing.
+  const en0 = isEngineKeyOn(engineFlags, 'engines_v3_en0') || isEngineKeyOn(engineFlags, 'engines_v3_en5')
   // EN-4: `floor` is set only when its keys are on (assembleContext), and adds only when it
   // names a tier, so every other run is exactly the one above.
   if (context.floor?.tier) {
@@ -673,6 +737,14 @@ export function presentFlagsFromStructured(row: Record<string, unknown>): string
 // The reads only. What they mean is ./context.ts's (buildVomitContext), which is pure,
 // so the harness and the guard corpus can drive it without a database.
 
+interface ArrangementSpanRow {
+  food_item_id: string | null
+  created_at: string | null
+  active_from: string | null
+  active_until: string | null
+  ended_at: string | null
+}
+
 async function assembleContext(
   userClient: SupabaseClient,
   eventId: string,
@@ -698,7 +770,11 @@ async function assembleContext(
         .lt('occurred_at', r.beforeIso)
       : Promise.resolve({ data: [] as unknown[] })
 
-  const [vomitsRes, lethargyRes, mealEventsRes, anchoredVomitsRes, anchoredMealsRes] = await Promise.all([
+  // EN-5 (engines_v3_en5) reads each meal's food and the pet's free-fed bowls, which the
+  // Noticed predicate needs to set treats and bowls aside. Flag-off the selects are unchanged.
+  const en5 = isEngineKeyOn(engineFlags, 'engines_v3_en5')
+  const mealSelect = en5 ? 'occurred_at, meals(intake_rating, food_item_id, food_items(food_type))' : 'occurred_at, meals(intake_rating)'
+  const [vomitsRes, lethargyRes, mealEventsRes, anchoredVomitsRes, anchoredMealsRes, arrangementsRes, answersRes] = await Promise.all([
     userClient
       .from('events')
       .select('occurred_at')
@@ -717,13 +793,40 @@ async function assembleContext(
     // Meal events in the intake baseline window, with their intake rating.
     userClient
       .from('events')
-      .select('occurred_at, meals(intake_rating)')
+      .select(mealSelect)
       .eq('pet_id', petId)
       .eq('event_type', 'meal')
       .is('deleted_at', null)
       .gte('occurred_at', w.intakeBaselineSinceIso),
     anchoredRead('vomit', 'occurred_at', anchored?.vomits ?? null),
-    anchoredRead('meal', 'occurred_at, meals(intake_rating)', anchored?.meals ?? null),
+    anchoredRead('meal', mealSelect, anchored?.meals ?? null),
+    // Every free_choice bowl, active or ended (a bowl's span decides which ratings it covers;
+    // lib/freeFedIntake.ts). A pet holds a handful, far below PostgREST's max-rows.
+    en5
+      ? userClient
+        .from('feeding_arrangements')
+        .select('food_item_id, created_at, active_from, active_until, ended_at')
+        .eq('pet_id', petId)
+        .eq('method', 'free_choice')
+        .is('deleted_at', null)
+      : Promise.resolve({ data: [] as unknown[], error: null }),
+    // EN-5's question (PR-30q, migration 097): the owner's answers under THIS vomit, on the
+    // two intake forms. Joined to the event on its id AND its pet AND its type AND its live
+    // row (rls-privacy-reviewer, CUL-1723): an answer under a deleted or re-typed vomit, or a
+    // row naming another pet, counts for nothing. Explicit columns, never `*`
+    // (guards/intakeChecks.test.ts). A handful of rows per vomit, far below max-rows.
+    en5
+      ? userClient
+        .from('intake_checks')
+        .select('id, form, answer, answered_at, events!inner(id, pet_id, event_type, deleted_at)')
+        .eq('event_id', eventId)
+        .eq('pet_id', petId)
+        .in('form', ['meal_fed', 'free_fed'])
+        .is('deleted_at', null)
+        .eq('events.pet_id', petId)
+        .eq('events.event_type', 'vomit')
+        .is('events.deleted_at', null)
+      : Promise.resolve({ data: [] as unknown[], error: null }),
   ])
 
   const rows: VomitContextRows = {
@@ -731,7 +834,42 @@ async function assembleContext(
     lethargy: (lethargyRes.data ?? []) as VomitContextRows['lethargy'],
     meals: [...(mealEventsRes.data ?? []), ...(anchoredMealsRes.data ?? [])] as VomitContextRows['meals'],
   }
-  const context = buildVomitContext({ rows, thisEventOccurredAt, species, nowMs, engineFlags })
+  // EN-5 reads absence of a refusal as quiet, so it never runs over a read that did not answer:
+  // the CONTEXT falls back to the rule without it (EN-0's or the shipped), which reads the same
+  // failed read the way it always has. The bowl read counts too: a free-fed rating that should
+  // have been set aside can push a refusal out of the Noticed predicate's last three (the
+  // adversarial pass, K). Two things still say EN-5 on such a row, stated rather than hidden:
+  // its engine_flags stamp (built from the owner's keys by the shared pipeline) and its copy
+  // (vomitContextualRun picks EN-0's words, whose intake line without a record is the
+  // defensive "The meal log doesn't show …"). STATED BLIND SPOT: `error` is the only check; a
+  // read PostgREST capped would pass it (C-42). The windows are days, far below max-rows.
+  const failed = (r: unknown) => Boolean((r as { error?: unknown }).error)
+  // The answers read is NOT in this set (the adversarial pass on PR-30q, B1): falling back to
+  // the rule without EN-5 is not "the louder rule" for every record, because EN-5's Noticed and
+  // last-rated halves fire where the shipped arm and EN-0 do not. A failed answers read is read
+  // as UNANSWERED instead, below: exactly PR-30's EN-5, which an answer can only add to.
+  const mealsFailed = failed(mealEventsRes) || failed(anchoredMealsRes) || failed(arrangementsRes)
+  const contextFlags: EngineFlags = en5 && mealsFailed
+    ? { ...engineFlags, on: engineFlags.on.filter((k) => k !== 'engines_v3_en5') }
+    : engineFlags
+  if (en5) {
+    rows.intakeAnswers = (failed(answersRes) ? [] : (answersRes.data ?? []) as IntakeAnswerRow[]).map((r) => ({
+      id: r.id,
+      form: r.form,
+      answer: r.answer,
+      answered_at: r.answered_at,
+    }))
+    rows.freeFedSpans = parseFreeFedIntakeSpans(
+      ((arrangementsRes.data ?? []) as ArrangementSpanRow[]).map((r) => ({
+        foodItemId: r.food_item_id,
+        createdAt: r.created_at,
+        activeFrom: r.active_from,
+        activeUntil: r.active_until,
+        endedAt: r.ended_at,
+      })),
+    )
+  }
+  const context = buildVomitContext({ rows, thisEventOccurredAt, species, nowMs, engineFlags: contextFlags })
   if (!floorIsOn(engineFlags)) return context
   return { ...context, floor: buildFloor(await readFloorRows(userClient, petId, thisEventOccurredAt), eventId, thisEventOccurredAt, species) }
 }
@@ -807,7 +945,13 @@ export const VOMIT_DESCRIPTOR: IncidentDescriptor<VomitAnalysis, ContextualFlag>
   // derivation is vomit1's, and their engine_flags stamp ('{}') says so.
   // 'vomit3': EN-4's floor (CUL-1134), which adds flags and a tier only under
   // engines_v3_en4 + engines_v3_en3; flag-off rows carry it too and derive as vomit2 did.
-  ruleVersion: 'vomit3',
+  // 'vomit4': EN-5's intake evidence (CUL-1722): unrated meals are unknown and the Noticed
+  // predicate joins the cat intake arm, only under engines_v3_en5; flag-off rows carry it too
+  // and derive as vomit3 did. The floor itself is unchanged.
+  // 'vomit5': EN-5's question (PR-30q, CUL-1724): the owner's answer of No or A little under
+  // this vomit fires the cat intake arm, only under engines_v3_en5; flag-off rows derive as
+  // vomit4 did.
+  ruleVersion: 'vomit5',
   floorEngineKey: 'engines_v3_en4',
   parseToolResult: parseAnalysisToolResult,
   appearsToShowSubject: (analysis) => analysis.appears_to_show_vomit,

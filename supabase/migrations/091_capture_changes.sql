@@ -48,13 +48,19 @@
 --
 -- ONE ROW PER (pet_id, change_key), FIRST TO ARRIVE WINS
 --   The UNIQUE makes the row the single fact a reader needs. Its cost, stated: two
---   phones on one account that both show the change while offline each write a
---   row, and the server keeps whichever lands first, not the earlier clock. That
---   errs by the gap between the two phones' first showings, days at most, and
---   needs both to be offline at the update. A sign-out wipe followed by the fan
---   writing again meets the same 23505 and keeps the original date, which is right.
---   The client counts a 23505 as landed (the care-answers contract, 082): the fact
---   is on the server either way.
+--   phones on one account that both show the change each write a row, and the
+--   server keeps whichever lands first, not the earlier clock.
+--   ⚠ CORRECTED 2026-10-09 (CUL-1701; comment only, no statement changed). This
+--   paragraph first said the case "needs both to be offline at the update" and errs
+--   by "days at most". Both understate it: only the EARLIER phone needs to be
+--   unsynced (a later phone online lands first), and the error lasts as long as
+--   that phone stays offline. Migration 093 fixes it: the push now calls
+--   record_capture_change, which keeps the EARLIER first_seen_at on conflict. A
+--   build that predates 093's client still does the plain INSERT below and keeps
+--   first-wins.
+--   A sign-out wipe followed by the fan writing again meets the same 23505 and keeps
+--   the original date, which is right. The plain-INSERT client counts a 23505 as
+--   landed (the care-answers contract, 082): the fact is on the server either way.
 --
 -- APPEND-ONLY BY RLS ALONE (the 082 / 075 / 032 shape). A SELECT policy and an
 -- INSERT policy and nothing else. UPDATE, DELETE and TRUNCATE are revoked from
@@ -64,6 +70,8 @@
 -- authenticated INSERTs only the writer's columns: created_at is left out so the
 -- server's clock is the one stamped there. The push is a plain INSERT, never a
 -- merge upsert (ON CONFLICT DO UPDATE needs UPDATE, which no role holds).
+-- ⚠ Since 093 (CUL-1701) the push calls record_capture_change, a SECURITY DEFINER
+-- function whose ON CONFLICT may only LOWER first_seen_at; still no role holds UPDATE.
 --
 -- NO TRIGGER, ON PURPOSE (and so no C-31 message to police). The only link is
 -- pet_id. RLS WITH CHECK runs before the foreign key is checked, so a pet of

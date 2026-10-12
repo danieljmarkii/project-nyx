@@ -198,7 +198,7 @@ describe('CUL-1195 — the trial panel says when a long-band vomit followed a re
     const m = buildTrialSoFar(scenario({ feedings: [...base.feedings, refusedBefore] }))!;
     expect(m.phenotype.bandRows.map((r) => r.count)).toEqual([1, 1, 1]);
     expect(m.phenotype.longAfterRefusalCount).toBe(1);
-    expect(trialPhenotypeRefusalLine(m.phenotype, m.config)).toBe('1 of the 1 episode 6h or more after eating followed a refused meal.');
+    expect(trialPhenotypeRefusalLine(m.phenotype, m.config)).toBe("1 of the 1 episode 6h or more after eating followed a refused meal. That's worth mentioning to your vet.");
   });
 
   it('nothing without a refused bowl — never a "none followed" line', () => {

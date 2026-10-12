@@ -191,7 +191,7 @@ function parse(rel: string, root: string): Parsed {
   const visit = (n: import('typescript').Node): void => {
     // Named style blocks: `const <obj> = StyleSheet.create({ label: { … } })`. The
     // object's own name is captured, NOT assumed to be `styles` — `FilterChip.tsx`
-    // alone has three (`defaultVariant` / `filledVariant` / `onDarkVariant`).
+    // alone has two (`defaultVariant` / `filledVariant`) beside `styles`.
     if (
       ts.isVariableDeclaration(n) &&
       ts.isIdentifier(n.name) &&
@@ -311,7 +311,7 @@ function hasExplicitFamily(
  * AST-resolved, like `hasExplicitFamily` — and that symmetry is the point. A first
  * version pulled block names out of the attribute TEXT with `/styles\.(\w+)/`, which
  * only ever matched a style sheet literally named `styles`. `FilterChip.tsx` alone
- * breaks that (`defaultVariant`, `filledVariant`, `onDarkVariant`), and the failure was
+ * breaks that (`defaultVariant`, `filledVariant`), and the failure was
  * silent in the worst possible way: assertion 4 went GREEN over a real inert-weight
  * regression, including one carrying a `geist-ok` marker — defeating the very test
  * written to prove a marker cannot excuse a lost weight. Found by probing the guard,
@@ -713,7 +713,7 @@ describe('the detector itself', () => {
   it('resolves a style sheet NOT named `styles`', () => {
     // Found by a code review probing the guard rather than reading it. `declaresWeight`
     // used to pull block names out of the attribute text with `/styles\.(\w+)/`, so any
-    // other style-sheet identifier — `FilterChip.tsx` has three — made assertion 4 blind.
+    // other style-sheet identifier — `FilterChip.tsx` has two — made assertion 4 blind.
     write(
       `const nightVariant = StyleSheet.create({ big: { fontWeight: theme.weightSemibold }, sub: { fontWeight: theme.weightRegular } });\n` +
         `export const X = () => <ThemedText style={nightVariant.big}>37% <Text style={nightVariant.sub}>finished</Text></ThemedText>;\n`,

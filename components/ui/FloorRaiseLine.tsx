@@ -8,6 +8,7 @@ import { ThemedText } from './ThemedText';
 // A read this log raised to a call, said on the log's completion card (Engines v3 PR-28b,
 // CUL-1436; docs/nyx-incident-tiers-requirements.md §6 item 3, §8.5). One block for the
 // named card, the meal card and the sheet's beat, so the three cannot say it three ways.
+// All three are daylight grounds (CUL-1691 PR 1), so the block has one set of inks.
 //
 // The whole block is the door to the read ("Open the read"): one control, no hitSlop, a
 // 44pt floor, and its own row above the card's action row, whose Undo reaches 12pt up. The
@@ -20,15 +21,11 @@ export function FloorRaiseLine({
   line,
   petName,
   onOpen,
-  ground = 'dark',
 }: {
   line: FloorAnnouncement;
   petName: string | null | undefined;
   onOpen: () => void;
-  /** The named and meal cards are dark; the sheet's beat sits on the sheet's light ground. */
-  ground?: 'dark' | 'light';
 }) {
-  const light = ground === 'light';
   const text = raisedReadLine({ petName, tier: line.tier, vomitAt: line.vomitAt, self: line.self, nowMs: Date.now() });
   const phone = line.device ? phoneWorkedOutLine(petName) : null;
   const spoken = phone ? `${text} ${phone}` : text;
@@ -42,9 +39,9 @@ export function FloorRaiseLine({
         accessibilityLabel={`${spoken} ${OPEN_THE_READ}`}
         activeOpacity={0.8}
       >
-        <ThemedText style={[styles.line, light && styles.lineLight]}>{text}</ThemedText>
-        {phone ? <ThemedText style={[styles.phone, light && styles.phoneLight]}>{phone}</ThemedText> : null}
-        <ThemedText style={[styles.open, light && styles.lineLight]}>{OPEN_THE_READ}</ThemedText>
+        <ThemedText style={styles.line}>{text}</ThemedText>
+        {phone ? <ThemedText style={styles.phone}>{phone}</ThemedText> : null}
+        <ThemedText style={styles.open}>{OPEN_THE_READ}</ThemedText>
       </TouchableOpacity>
     </View>
   );
@@ -58,23 +55,17 @@ const styles = StyleSheet.create({
   },
   line: {
     fontSize: theme.textMD,
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
     fontWeight: theme.weightSemibold,
   },
   phone: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSubtle,
-    fontWeight: theme.weightRegular,
-  },
-  lineLight: {
-    color: theme.colorNeutralDark,
-  },
-  phoneLight: {
     color: theme.colorTextSecondary,
+    fontWeight: theme.weightRegular,
   },
   open: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
     fontWeight: theme.weightMedium,
     textDecorationLine: 'underline',
   },

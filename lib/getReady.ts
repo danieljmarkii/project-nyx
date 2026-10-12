@@ -238,6 +238,8 @@ export function localIntakeDeclines(
 export const INTAKE_TRIGGER_ORDER: Readonly<Record<IntakeDeclineTrigger, number>> = {
   refused_normal_food: 0,
   consecutive_low: 1,
+  // I5 (PR-30s): the server-only trigger. The device never holds it, so no local row ranks here.
+  refused_then_vomited: 2,
 };
 
 export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {

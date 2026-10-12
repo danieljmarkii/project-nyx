@@ -16,11 +16,21 @@ let mockUpdateGate: Promise<void> | null = null;
 // CUL-1510: the record around the vomit, as the floor's words read it. Null (the read has
 // not answered) unless a test sets it, so every other test draws no floor line.
 let mockFloorFacts: import('../../lib/incidentFloorFacts').IncidentFloorFacts | null = null;
-jest.mock('../../hooks/useIncidentFloorFacts', () => ({ useIncidentFloorFacts: () => mockFloorFacts, useMinuteNow: () => Date.now() }));
+// CUL-1629: a test may hold the minute clock still, as the real one holds while backgrounded.
+let mockMinuteNow: number | null = null;
+jest.mock('../../hooks/useIncidentFloorFacts', () => ({ useIncidentFloorFacts: () => mockFloorFacts, useMinuteNow: () => mockMinuteNow ?? Date.now() }));
+// CUL-1629: the phone's read behind call today's wait line (null = not answered).
+let mockMayWaitFacts: import('../../lib/mayWaitLine').MayWaitFacts | null = null;
+jest.mock('../../hooks/useMayWaitFacts', () => ({ useMayWaitFacts: () => mockMayWaitFacts }));
+// CUL-1629: row reads the test answers by hand (a slow network), or null for at once.
+let mockReadQueue: ((r: { data: unknown; error: null }) => void)[] | null = null;
 jest.mock('../../lib/supabase', () => ({
   supabase: {
     from: () => ({
-      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: mockRow, error: null }) }) }),
+      // CUL-1629: with `mockReadQueue` set, each row read waits for the test to answer it.
+      select: () => ({ eq: () => ({ maybeSingle: () => (mockReadQueue
+        ? new Promise((resolve) => mockReadQueue!.push(resolve))
+        : Promise.resolve({ data: mockRow, error: null })) }) }),
       // Answers both write shapes Hide / Show has had: `await .update().eq()`, and
       // CUL-1323's compare-and-set, `.eq().eq|is|filter().select()` (lib/analysisDismissal),
       // which reads one written row back as "the words on screen were still the record's".
@@ -80,14 +90,35 @@ jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 // records as shown. Off and empty unless a test sets them.
 let mockFloorOn = false;
 jest.mock('../../hooks/useFloorOn', () => ({ useFloorOn: () => mockFloorOn }));
+// EN-3's go-live day (CUL-1513): unseeded unless a test names one, as on every phone today.
+let mockLiveSince: string | null = null;
+jest.mock('../../hooks/useEn3LiveSince', () => ({ useEn3LiveSince: () => mockLiveSince }));
+let mockSeamReads: unknown[] = [];
+const mockReadSeam = jest.fn(async () => mockSeamReads);
+jest.mock('../../lib/readCopy', () => ({
+  ...jest.requireActual('../../lib/readCopy'),
+  readPetSeamReads: () => mockReadSeam(),
+}));
 let mockShownTier: 'call_now' | 'call_today' | null = null;
 jest.mock('../../hooks/useShownTier', () => ({ useShownTier: () => mockShownTier }));
 const mockRecordShown = jest.fn(async (_w: unknown) => undefined);
 jest.mock('../../lib/incidentTierShown', () => ({ recordShownTiers: (w: unknown) => mockRecordShown(w) }));
 
+// K2 (CUL-1515): the finding that counts this read, stubbed at the READ, never the rule (C-34):
+// the hook, the card's frame and the section's gate are the real ones. Null unless a test
+// names one, as on every phone with no tracked finding.
+let mockPattern: { identity: string; noun: string; href: string } | null = null;
+const mockReadPattern = jest.fn(async (_i: unknown) => mockPattern);
+jest.mock('../../lib/incidentPattern', () => ({
+  ...jest.requireActual('../../lib/incidentPattern'),
+  readPatternMembership: (i: unknown) => mockReadPattern(i),
+}));
+const mockRouterPush = jest.fn();
+jest.mock('expo-router', () => ({ router: { push: (h: string) => mockRouterPush(h) } }));
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { readObservationFold, setObservationFold } from '../../lib/observationFold';
 import { render, waitFor, act, fireEvent } from '@testing-library/react-native';
+import { AppState } from 'react-native';
 import { Alert, LayoutAnimation, StyleSheet } from 'react-native';
 import { FOLD_MOTION } from '../motion/foldMotion';
 import { VomitAnalysisSection } from './VomitAnalysisSection';
@@ -95,6 +126,7 @@ import { theme } from '../../constants/theme';
 import { readLandedCopy } from './useReadLandingAnnouncement';
 import { EARLIER_READ_LABEL, HELD_CALL_DISCLOSURE } from '../../lib/incidentTierWords';
 import { usePetStore } from '../../store/petStore';
+import { useMomentStore } from '../../store/momentStore';
 import { watchAnalysisRow, awaitAnalysisChain, triggerVomitAnalysis } from '../../lib/analysis';
 import { __resetReducedMotionForTest, useReducedMotionStore } from '../../store/reducedMotionStore';
 import { facing, flat, owningTouchable, touchableToken } from '../../testUtils/tree';
@@ -1143,7 +1175,24 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await land(row({ recommendation: 'worth_a_call', read_text: 'Blood in it is worth a vet’s eye today.' }));
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(announce).toHaveBeenCalledTimes(1);
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
+    // CUL-1514: the record's pet, by name, in the literal sentence the hook speaks.
+    expect(announce).toHaveBeenCalledWith("Rex's read: worth a call.");
+  });
+
+  // K2 (CUL-1515), mock §04: the membership is asked while the read is in flight, so the
+  // landing is spoken in the card's words, never "keep an eye out" first. Literal string.
+  it('a calm read a tracked finding counts lands as "part of a pattern Home is tracking"', async () => {
+    mockPattern = { identity: 'reflection:vomit', noun: 'vomiting', href: '/signal/x?pet=pet-1' };
+    mockRow = row({ status: 'pending', recommendation: null });
+    const view = render(<VomitAnalysisSection eventId="an-k2" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockReadPattern).toHaveBeenCalled());
+    await land(row({ recommendation: 'monitor', tier: 'logged', engine_flags: ['engines_v3_en3'], read_text: 'Yellow, foamy.' }));
+    expect(await view.findByText('Part of a pattern')).toBeTruthy();
+    expect(announce.mock.calls).toEqual([["Rex's read: part of a pattern Home is tracking."]]);
+    mockPattern = null;
+    mockReadPattern.mockClear();
   });
 
   it('a calm read is spoken in the same form — silence must never mean "calm"', async () => {
@@ -1151,7 +1200,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     render(<VomitAnalysisSection eventId="an-2" petId="pet-1" petName="Rex" hasPhoto />);
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     await land(row({ recommendation: 'monitor', read_text: 'Yellow, foamy, mostly bile.' }));
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Keep an eye out'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Keep an eye out'));
   });
 
   it('a PHOTOLESS contextual escalation is spoken — it never showed a pending box, so the arrival never runs', async () => {
@@ -1166,7 +1215,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     expect(await view.findByText('Worth a call')).toBeTruthy();
     await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
     expect(configureNext).not.toHaveBeenCalled(); // no arrival…
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call')); // …and still spoken
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call')); // …and still spoken
   });
 
   it('a re-read over an owner’s EDIT is spoken — the arrival is suppressed there, the words are still new', async () => {
@@ -1179,7 +1228,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await land(row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', edited_at: '2026-09-20T10:00:00.000Z' }));
     await act(async () => { await new Promise((r) => setTimeout(r, FOLD_MOTION.railLagMs + 20)); });
     expect(configureNext).not.toHaveBeenCalled();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   it('a failed read is spoken too — the wait ended, and the owner is told how', async () => {
@@ -1187,7 +1236,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     render(<VomitAnalysisSection eventId="an-5" petId="pet-1" petName="Rex" hasPhoto />);
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     await land(row({ status: 'failed', recommendation: null }));
-    expect(announce).toHaveBeenCalledWith(readLandedCopy("Couldn't finish reading this one."));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', "Couldn't finish reading this one."));
   });
 
   it('a read already in the record on open says NOTHING — it did not land, it was there', async () => {
@@ -1259,7 +1308,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     await land(row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', dismissed_at: '2026-09-19T08:00:00.000Z' }));
     expect(await view.findByText('AI note hidden')).toBeTruthy();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('AI note hidden'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'AI note hidden'));
   });
 
   // ── The second adversarial pass (CUL-1275) ──────────────────────────────────
@@ -1291,7 +1340,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: '2026-09-26T12:00:40.000Z' });
     await act(async () => { await check(); });
     expect(await view.findByText('Worth a call')).toBeTruthy();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   // ── The third adversarial pass (CUL-1275) ───────────────────────────────────
@@ -1308,7 +1357,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     await land(unseen); // skipped: nothing new written
     expect(await view.findByText('Worth a call')).toBeTruthy();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   it('…and from the not-enough frame after a give-up (R2)', async () => {
@@ -1324,7 +1373,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await land(held);
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(announce).toHaveBeenCalledTimes(1);
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   it('a FAILED re-run trigger never parks the section on "Reading the photo…" over a stored Worth a call (R3)', async () => {
@@ -1353,7 +1402,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     mockExpectLanding.mockClear();
     await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
     expect(await view.findByText('Worth a call')).toBeTruthy();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
     // Told outright, so a batched commit cannot drop it (F1).
     expect(mockExpectLanding).toHaveBeenCalledTimes(1);
     alert.mockRestore();
@@ -1376,7 +1425,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await waitFor(() => expect(alert).toHaveBeenCalledWith('Could not start analysis', 'Try again in a moment.'));
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(view.queryByText('Reading the photo…')).toBeNull();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
     alert.mockRestore();
   });
 
@@ -1422,8 +1471,8 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await act(async () => { fireEvent.press(tryIt); });
     expect(await view.findByText("Couldn't finish reading this one.")).toBeTruthy();
     expect(view.queryByText('Keep an eye out')).toBeNull();
-    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Keep an eye out'));
-    expect(announce).toHaveBeenCalledWith(readLandedCopy("Couldn't finish reading this one."));
+    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Rex', 'Keep an eye out'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', "Couldn't finish reading this one."));
     alert.mockRestore();
   });
 
@@ -1436,7 +1485,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     failWritingFailure(row({ status: 'failed', recommendation: 'monitor', read_text: 'Yellow.', updated_at: '2026-09-26T12:00:09.000Z' }));
     await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
     expect(await view.findByText("Couldn't finish reading this one.")).toBeTruthy();
-    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Keep an eye out'));
+    expect(announce).not.toHaveBeenCalledWith(readLandedCopy('Rex', 'Keep an eye out'));
     alert.mockRestore();
   });
 
@@ -1476,7 +1525,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     });
     await act(async () => { fireEvent.press(view.getByText('Re-run analysis')); });
     expect(await view.findByText('Worth a call')).toBeTruthy();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
     alert.mockRestore();
   });
 
@@ -1497,7 +1546,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await act(async () => { fireEvent.press(tryAgain); });
     expect(await view.findByText('Worth a call')).toBeTruthy();
     expect(view.queryByText('AI note hidden')).toBeNull();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
     alert.mockRestore();
   });
 
@@ -1510,7 +1559,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     await land(row({ recommendation: 'call_today', read_text: 'Call your vet today.' }));
     expect(await view.findByText('Worth a call')).toBeTruthy();
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   it('is spoken on ANDROID too — the section carries no live region to cover it', async () => {
@@ -1519,7 +1568,7 @@ describe('VomitAnalysisSection — the landing is announced (CUL-1275)', () => {
     render(<VomitAnalysisSection eventId="an-8" petId="pet-1" petName="Rex" hasPhoto />);
     await waitFor(() => expect(watchAnalysisRow as jest.Mock).toHaveBeenCalledTimes(1));
     await land(row({ recommendation: 'worth_a_call', read_text: 'Worth a call.' }));
-    expect(announce).toHaveBeenCalledWith(readLandedCopy('Worth a call'));
+    expect(announce).toHaveBeenCalledWith(readLandedCopy('Rex', 'Worth a call'));
   });
 
   it('the section’s label is a heading, so the rotor can jump to the read', async () => {
@@ -1542,6 +1591,57 @@ describe('VomitAnalysisSection — the tier (EN-3)', () => {
     expect(queryByText('Worth a call')).toBeNull();
     // The filled rose: today's worth-a-call card, not the outline.
     expect(flat(getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
+  });
+
+  // Engines v3 PR-30c (CUL-1739): after its first day a call now quotes the read with its day, and
+  // still sends the owner to a vet; inside the day, and while the event's instant is unread, "now".
+  it('a call now a day after its event steps to the dated form, keeping the rose and the ask', async () => {
+    const vomitAt = new Date(2026, 9, 3, 23, 40);
+    mockFloorFacts = { anchor: { at: vomitAt.toISOString(), confidence: 'witnessed' }, vomits: [], courses: [], vomitRows: [], lethargy: [] };
+    try {
+      mockMinuteNow = vomitAt.getTime() + 24 * 3600_000 - 60_000;
+      mockRow = row({ recommendation: 'worth_a_call', tier: 'call_now', engine_flags: EN3, updated_at: vomitAt.toISOString() });
+      const first = render(<VomitAnalysisSection eventId="t1d" petId="pet-1" petName="Rex" hasPhoto />);
+      await first.findByText('Call your vet now');
+      first.unmount();
+
+      mockMinuteNow = vomitAt.getTime() + 24 * 3600_000;
+      const later = render(<VomitAnalysisSection eventId="t1e" petId="pet-1" petName="Rex" hasPhoto />);
+      await later.findByText('On Oct 3, the read said: call your vet now');
+      expect(later.queryByText("If you haven't spoken to your vet since, call them now. If they're closed, call an emergency clinic.")).toBeTruthy();
+      expect(later.queryByText('Call your vet now')).toBeNull();
+      expect(flat(later.getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
+      later.unmount();
+
+      // A call raised a day later (a re-floor): "now" for a day from the write, then dated by it.
+      mockRow = row({ recommendation: 'worth_a_call', tier: 'call_now', engine_flags: EN3, updated_at: new Date(2026, 9, 4, 23, 0).toISOString() });
+      const late = render(<VomitAnalysisSection eventId="t1g" petId="pet-1" petName="Rex" hasPhoto />);
+      await late.findByText('Call your vet now');
+      late.unmount();
+      mockMinuteNow = new Date(2026, 9, 5, 23, 0).getTime();
+      const lateDated = render(<VomitAnalysisSection eventId="t1h" petId="pet-1" petName="Rex" hasPhoto />);
+      await lateDated.findByText('On Oct 4, the read said: call your vet now');
+      lateDated.unmount();
+
+      // CUL-1759: a stamped read hidden this morning keeps its date; the Hide moved only updated_at.
+      mockMinuteNow = vomitAt.getTime() + 3 * 24 * 3600_000;
+      mockRow = row({
+        recommendation: 'worth_a_call', tier: 'call_now', engine_flags: EN3,
+        call_said_at: vomitAt.toISOString(),
+        updated_at: new Date(vomitAt.getTime() + 3 * 24 * 3600_000 - 3600_000).toISOString(),
+      });
+      const hidden = render(<VomitAnalysisSection eventId="t1i" petId="pet-1" petName="Rex" hasPhoto />);
+      await hidden.findByText('On Oct 3, the read said: call your vet now');
+      hidden.unmount();
+
+      // The event's instant unread: the loud form stands.
+      mockFloorFacts = null;
+      const unread = render(<VomitAnalysisSection eventId="t1f" petId="pet-1" petName="Rex" hasPhoto />);
+      await unread.findByText('Call your vet now');
+    } finally {
+      mockFloorFacts = null;
+      mockMinuteNow = null;
+    }
   });
 
   it('a new-rule call today: its own words, and the rose OUTLINE on the plain surface', async () => {
@@ -1588,14 +1688,18 @@ describe('VomitAnalysisSection — the tier (EN-3)', () => {
   });
 
   it('an UNSTAMPED quiet verdict beside a call tier draws the rose, never a grey card (round 2)', async () => {
-    for (const [i, over] of [
-      { recommendation: 'monitor', tier: 'call_now', engine_flags: [], read_text: 'Looks like a hairball.' },
-      { recommendation: 'not_enough_to_say', tier: 'call_today', engine_flags: null },
-    ].entries()) {
+    // A stored call now keeps its words over the flag-off write (CUL-1516, GAP-34); a stale
+    // call today on an unstamped row keeps the shipped words.
+    for (const [i, [over, words]] of ([
+      [{ recommendation: 'monitor', tier: 'call_now', engine_flags: [], read_text: 'Looks like a hairball.' }, 'Call your vet now'],
+      [{ recommendation: 'worth_a_call', tier: 'call_now', engine_flags: [] }, 'Call your vet now'],
+      [{ recommendation: 'not_enough_to_say', tier: 'call_today', engine_flags: null }, 'Worth a call'],
+    ] as const).entries()) {
       mockRow = row(over);
       for (const hasPhoto of [true, false]) {
         const view = render(<VomitAnalysisSection eventId={`u${i}${hasPhoto}`} petId="pet-1" petName="Rex" hasPhoto={hasPhoto} />);
-        await view.findByText('Worth a call');
+        await view.findByText(words);
+        expect(view.queryByText('Worth a call') === null).toBe(words !== 'Worth a call');
         expect(flat(view.getByTestId('incident-read-card')).backgroundColor).toBe(theme.colorEventSymptomLight);
         view.unmount();
       }
@@ -1830,5 +1934,270 @@ describe('VomitAnalysisSection — the offline preview (PR-28b)', () => {
     const view = render(<VomitAnalysisSection eventId="p1" petId="pet-1" petName="Rex" hasPhoto={false} />);
     await waitFor(() => expect(view.toJSON()).toBeNull());
     expect(mockRecordShown).not.toHaveBeenCalled();
+  });
+});
+
+// ── CUL-1629: "first thing tomorrow" only on the server's stored fact ───────────────────────
+describe('VomitAnalysisSection — call today\'s wait line (CUL-1629)', () => {
+  const STAMP = ['engines_v3_en3', 'engines_v3_en4'];
+  const PHOTO = '6f1c0d2e-1111-4a5b-9c3d-000000000001';
+  const AT = new Date(2026, 6, 15, 21, 0);
+  const iso = (d: Date) => d.toISOString();
+  let nowSpy: jest.SpyInstance;
+  const waitRow = (over: Record<string, unknown> = {}) => row({
+    recommendation: 'worth_a_call', tier: 'call_today', engine_flags: STAMP, contextual_flags: ['repeated_vomiting'],
+    may_wait: true, photo_set_key: PHOTO, updated_at: iso(new Date(2026, 6, 15, 21, 30)),
+    ai_raw_payload: { appears_to_show_vomit: true, recommendation: 'monitor', read_photo_set_key: PHOTO }, ...over,
+  });
+  beforeEach(() => {
+    nowSpy = jest.spyOn(Date, 'now').mockReturnValue(new Date(2026, 6, 15, 22, 0).getTime());
+    usePetStore.setState({
+      pets: [{ id: 'pet-1', name: 'Rex', species: 'dog', breed: null, date_of_birth: '2020-01-01', date_of_birth_precision: 'exact', sex: 'male', weight_kg: null, photo_path: null }],
+    });
+    mockMayWaitFacts = {
+      readAt: new Date(2026, 6, 15, 22, 0).getTime(),
+      anchorAt: iso(AT), serverAttachmentIds: [PHOTO], localAttachmentIds: [PHOTO], unsynced: false,
+      vomits: [{ at: iso(new Date(2026, 6, 15, 15, 0)), confidence: 'witnessed' }, { at: iso(AT), confidence: 'witnessed' }],
+      stoolAt: [], lethargyAt: [], meals: [],
+    };
+  });
+  afterEach(() => {
+    nowSpy.mockRestore();
+    mockRow = null;
+    mockMayWaitFacts = null;
+    mockReadQueue = null;
+    usePetStore.setState({ pets: [] });
+  });
+
+  it('a stored TRUE at 10 PM: first thing tomorrow, the call-now signs named as the exception', async () => {
+    mockRow = waitRow();
+    const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    // The wait line lands after the fresh re-read answers (an async gate), so wait for it rather
+    // than racing it: under a loaded run the assertion could land a tick before the answer.
+    expect(await view.findByText(/^Call your vet first thing tomorrow, or an emergency clinic tonight /)).toBeTruthy();
+    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeNull();
+  });
+
+  it.each([false, null, undefined])('may_wait = %p keeps the louder line', async (value) => {
+    mockRow = waitRow({ may_wait: value });
+    const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText("Call your vet today. If they're closed, call an emergency clinic.")).toBeTruthy();
+    expect(view.queryByText(/first thing/)).toBeNull();
+  });
+
+  it('a TRUE before the phone\'s read answers keeps the louder line', async () => {
+    mockRow = waitRow();
+    mockMayWaitFacts = null;
+    const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText(/first thing/)).toBeNull();
+  });
+
+  it('a take-back the server writes while the record is open reaches it (adversarial finding 2)', async () => {
+    mockRow = waitRow();
+    const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText(/^Call your vet first thing tomorrow/);
+    // A neighbour's blood photo is read; the server lowers this row's leave (090, revalidate).
+    mockRow = waitRow({ may_wait: null, updated_at: new Date(2026, 6, 15, 21, 50).toISOString() });
+    // The owner logged that neighbour over this record: the completion card's payload moves.
+    act(() => { useMomentStore.setState({ payload: { kind: 'named' } as never }); });
+    await view.findByText("Call your vet today. If they're closed, call an emergency clinic.");
+    expect(view.queryByText(/first thing/)).toBeNull();
+    act(() => { useMomentStore.setState({ payload: null }); });
+  });
+
+  // ── The wiring the third adversarial pass found unpinned (T1) ──────────────────────────
+  const LOUD = "Call your vet today. If they're closed, call an emergency clinic.";
+  const WAIT = /^Call your vet first thing tomorrow/;
+  const at = (min: number) => new Date(2026, 6, 15, 22, min).getTime();
+  const freshFacts = (readAt: number) => { mockMayWaitFacts = { ...mockMayWaitFacts!, readAt }; };
+
+  it('a fresh-row read that hangs past two minutes leaves the louder line, not the old answer', async () => {
+    mockRow = waitRow();
+    const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText(WAIT);
+    mockReadQueue = [];
+    nowSpy.mockReturnValue(at(3));
+    freshFacts(at(3));
+    view.rerender(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText(LOUD);
+    mockReadQueue = null;
+  });
+
+  it('an answer read before a log this phone just committed leaves the louder line', async () => {
+    mockRow = waitRow();
+    const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText(WAIT);
+    nowSpy.mockReturnValue(at(0) + 10_000);
+    // The facts were read at 22:00; the log lands ten seconds later.
+    act(() => { useMomentStore.setState({ payload: { kind: 'named' } as never }); });
+    await view.findByText(LOUD);
+    act(() => { useMomentStore.setState({ payload: null }); });
+  });
+
+  it('back from the background, the record re-reads at once rather than standing on old answers', async () => {
+    // Every subscriber hears the change, as on the device (the section holds several).
+    const handlers: ((s: string) => void)[] = [];
+    const onChange = (state: string) => handlers.forEach((h) => h(state));
+    // Swapped by hand, not spied: the test environment's AppState listener is itself a mock, and
+    // restoring a spy over it leaves the next test's `useAppActive` with nothing to call.
+    const target = AppState as unknown as { addEventListener: unknown };
+    const original = target.addEventListener;
+    target.addEventListener = (_t: string, h: (s: string) => void) => {
+      handlers.push(h);
+      return { remove: () => undefined };
+    };
+    try {
+      mockRow = waitRow();
+      // The minute clock stands still while backgrounded: only the foreground itself re-reads.
+      mockMinuteNow = at(0);
+      const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
+      await view.findByText(WAIT);
+      act(() => { onChange('background'); });
+      nowSpy.mockReturnValue(at(3));
+      freshFacts(at(3));
+      // Foreground: the old fresh-row answer is 3 minutes old; a new read answers at once.
+      act(() => { onChange('active'); });
+      await view.findByText(WAIT);
+    } finally {
+      target.addEventListener = original;
+      mockMinuteNow = null;
+    }
+  });
+
+  it('an older fresh-row read landing after a newer one never replaces it', async () => {
+    mockRow = waitRow();
+    const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText(WAIT);
+    mockReadQueue = [];
+    nowSpy.mockReturnValue(at(1));
+    freshFacts(at(1));
+    view.rerender(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />); // read A
+    nowSpy.mockReturnValue(at(2));
+    freshFacts(at(2));
+    view.rerender(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />); // read B
+    const [a, b] = mockReadQueue;
+    await act(async () => { b({ data: mockRow, error: null }); });
+    await view.findByText(WAIT);
+    // A, started first, answers last with the leave gone and the same stamp: it is older news.
+    await act(async () => { a({ data: { ...(mockRow as object), may_wait: null }, error: null }); });
+    expect(view.queryByText(WAIT)).toBeTruthy();
+    mockReadQueue = null;
+  });
+
+  it('a TRUE over an owner edit keeps the louder line', async () => {
+    mockRow = waitRow({ edited_at: iso(new Date(2026, 6, 15, 21, 45)) });
+    const view = render(<VomitAnalysisSection eventId="v-wait" petId="pet-1" petName="Rex" hasPhoto />);
+    await view.findByText('Call your vet today');
+    expect(view.queryByText(/first thing/)).toBeNull();
+  });
+});
+
+// ── CUL-1513 (tiers spec §5): the go-live day's lines on the record ─────────────
+describe('VomitAnalysisSection — the go-live day (CUL-1513)', () => {
+  const EN3 = ['engines_v3_en3'];
+  const BEFORE = new Date(2026, 8, 22, 1, 30).toISOString();
+  afterEach(() => {
+    mockRow = null;
+    mockLiveSince = null;
+    mockSeamReads = [];
+    mockReadSeam.mockClear();
+  });
+
+  it('an earlier-rule read keeps its card and gains one meta line, only once the day is seeded', async () => {
+    mockRow = row({ recommendation: 'worth_a_call', read_text: 'Worth a call.', updated_at: BEFORE });
+    const dark = render(<VomitAnalysisSection eventId="g1" petId="pet-1" petName="Rex" hasPhoto />);
+    await dark.findByText('Worth a call');
+    expect(dark.queryByTestId('incident-read-rule-note')).toBeNull();
+    dark.unmount();
+    mockLiveSince = '2026-10-20';
+    const lit = render(<VomitAnalysisSection eventId="g1" petId="pet-1" petName="Rex" hasPhoto />);
+    await lit.findByText('Worth a call');
+    expect(lit.getByTestId('incident-read-rule-note').props.children).toBe('Read under the earlier rule, before Oct 20.');
+    // No read of the pet's record is issued for an earlier-rule read.
+    expect(mockReadSeam).not.toHaveBeenCalled();
+  });
+
+  it("the pet's first new-rule read says what changed; a later one does not", async () => {
+    mockLiveSince = '2026-10-20';
+    mockSeamReads = [
+      { event_id: 'old', occurred_at: '2026-09-22T05:30:00.000Z', updated_at: BEFORE, status: 'completed', recommendation: 'worth_a_call', tier: null, engine_flags: '[]' },
+      { event_id: 'g2', occurred_at: '2026-10-21T00:05:00.000Z', updated_at: new Date(2026, 9, 21).toISOString(), status: 'completed', recommendation: 'monitor', tier: 'logged', engine_flags: JSON.stringify(EN3) },
+      { event_id: 'g3', occurred_at: '2026-10-23T00:05:00.000Z', updated_at: new Date(2026, 9, 23).toISOString(), status: 'completed', recommendation: 'worth_a_call', tier: 'call_today', engine_flags: JSON.stringify(EN3) },
+    ];
+    mockRow = row({ recommendation: 'monitor', tier: 'logged', engine_flags: EN3, updated_at: new Date(2026, 9, 21).toISOString() });
+    const first = render(<VomitAnalysisSection eventId="g2" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() =>
+      expect(first.getByTestId('incident-read-rule-note').props.children).toBe(
+        "New since Oct 20: reads say how soon to call. Rex's earlier reads keep the words they had.",
+      ),
+    );
+    first.unmount();
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3, updated_at: new Date(2026, 9, 23).toISOString() });
+    const later = render(<VomitAnalysisSection eventId="g3" petId="pet-1" petName="Rex" hasPhoto />);
+    await later.findByText('Call your vet today');
+    await waitFor(() => expect(mockReadSeam).toHaveBeenCalledTimes(2));
+    expect(later.queryByTestId('incident-read-rule-note')).toBeNull();
+  });
+});
+
+// ── K2 (CUL-1515): "Part of a pattern" on a calm read a tracked finding counts ─────────
+describe('VomitAnalysisSection — "Part of a pattern" (K2)', () => {
+  const EN3 = ['engines_v3_en3'];
+  const PATTERN = { identity: 'reflection:vomit', noun: 'vomiting', href: '/signal/reflection%3Avomit?pet=pet-1' };
+  afterEach(() => {
+    mockRow = null;
+    mockPattern = null;
+    mockReadPattern.mockClear();
+    mockRouterPush.mockClear();
+  });
+
+  it('a new-rule logged read in a tracked finding says it, with the line and the door', async () => {
+    mockPattern = PATTERN;
+    mockRow = row({ recommendation: 'monitor', tier: 'logged', engine_flags: EN3, read_text: 'Yellow, foamy.' });
+    const view = render(<VomitAnalysisSection eventId="p1" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Part of a pattern')).toBeTruthy();
+    expect(view.getByText("Home is tracking Rex's vomiting, and this one is part of it.")).toBeTruthy();
+    expect(view.queryByText('Keep an eye out')).toBeNull();
+    expect(mockReadPattern).toHaveBeenCalledWith({ petId: 'pet-1', eventId: 'p1', eventType: 'vomit' });
+    fireEvent.press(view.getByText('See what Home is tracking'));
+    expect(mockRouterPush).toHaveBeenCalledWith(PATTERN.href);
+  });
+
+  it('no tracked finding: "Keep an eye out", as shipped', async () => {
+    mockRow = row({ recommendation: 'monitor', tier: 'logged', engine_flags: EN3, read_text: 'Yellow, foamy.' });
+    const view = render(<VomitAnalysisSection eventId="p2" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    await waitFor(() => expect(mockReadPattern).toHaveBeenCalledTimes(1));
+    expect(view.queryByText('Part of a pattern')).toBeNull();
+  });
+
+  it('an earlier-rule monitor never asks and never takes it, finding or not', async () => {
+    mockPattern = PATTERN;
+    mockRow = row({ recommendation: 'monitor', read_text: 'Yellow, foamy.' });
+    const view = render(<VomitAnalysisSection eventId="p3" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Keep an eye out')).toBeTruthy();
+    expect(view.queryByText('Part of a pattern')).toBeNull();
+    expect(mockReadPattern).not.toHaveBeenCalled();
+  });
+
+  it('a call never asks: its own ask stands', async () => {
+    mockPattern = PATTERN;
+    mockRow = row({ recommendation: 'worth_a_call', tier: 'call_today', engine_flags: EN3 });
+    const view = render(<VomitAnalysisSection eventId="p4" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await view.findByText('Call your vet today')).toBeTruthy();
+    expect(view.queryByText('Part of a pattern')).toBeNull();
+    expect(mockReadPattern).not.toHaveBeenCalled();
+  });
+
+  it('not_enough_to_say never asks', async () => {
+    mockPattern = PATTERN;
+    mockRow = row({ recommendation: 'not_enough_to_say', tier: 'not_enough_to_say', engine_flags: EN3, read_text: 'Too blurry.' });
+    const view = render(<VomitAnalysisSection eventId="p5" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(view.queryByText('Not enough to say yet')).toBeTruthy());
+    expect(view.queryByText('Part of a pattern')).toBeNull();
+    expect(mockReadPattern).not.toHaveBeenCalled();
   });
 });

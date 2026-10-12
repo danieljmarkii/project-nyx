@@ -36,7 +36,8 @@ export type DrugClass =
   | 'nsaid'
   | 'gi_upset_other'
 
-const ALL_SIGNS: readonly MaskSign[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze']
+/** Every sign a course may mask; a systemic steroid masks all of them. */
+export const ALL_SIGNS: readonly MaskSign[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'cough', 'sneeze']
 const VOMIT_DIARRHEA: readonly MaskSign[] = ['vomit', 'diarrhea']
 
 /** What each class can do to a sign: hide it (`masks`) or bring it on (`causes`). */

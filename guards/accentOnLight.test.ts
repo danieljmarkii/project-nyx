@@ -20,15 +20,16 @@
 // So it does not decide the ground. It requires that somebody DID. An accent-coloured
 // text node either uses the ink — settling it — or carries an inline marker naming the
 // dark ground it sits on and the ratio that makes it correct. That turns "81 sites, ground
-// unknown per site" into "5 sites, each argued in place", and a new light-ground accent
+// unknown per site" into "5 sites, each argued in place" (4 since CUL-1691 PR 1 moved the
+// Snackbar to daylight), and a new light-ground accent
 // label fails the build the day it is written rather than in the fourth audit.
 //
 // ESCAPE HATCH: an inline `// accent-on-dark-ok: <reason>` within 10 lines above the site
 // (or trailing on it). The reason is mandatory. ONE MARKER COVERS EXACTLY ONE SITE — the
-// `geist-ok` discipline, and it is load-bearing here rather than tidy: `FilterChip.tsx`
-// holds three `activeLabel` declarations across three variants, two of which are on dark.
-// A file-wide exemption there would silently pre-approve the third, which is the one that
-// was broken.
+// `geist-ok` discipline, and it is load-bearing here rather than tidy: when CUL-744 ran,
+// `FilterChip.tsx` held one `activeLabel` per variant, and a file-wide exemption for its
+// dark ones would have silently pre-approved the light one, which was the one that was
+// broken.
 //
 // WHAT IT DOES NOT CLAIM. That every remaining accent text is legible — a marker is an
 // argument, and a wrong one is wrong. What it removes is the SILENT site: the one nobody
@@ -43,7 +44,8 @@
 // A glyph's floor is 3:1, and the bright teal misses that on white too (2.26:1), so the
 // question CUL-1664 asked was whether to scan glyph tints as well. The count says no:
 //   - `color={…}` / `tint={…}` props naming one of the three names: 29 sites (the auth
-//     heroes, chevrons, ScopeMenu's checks, the completion cards' checks on dark …);
+//     heroes, chevrons, ScopeMenu's checks, the completion cards' checks, on dark until
+//     CUL-1691 PR 1 …);
 //   - object values under a non-`*Color` key: 22 more — nine Switch tracks, and tint maps
 //     and chart tokens that are mostly FILLS (the Signal rails and band, a composition
 //     bar), which a grep cannot tell from a glyph.
@@ -200,14 +202,14 @@ describe('CUL-744 — the brand accent is never the colour of text on a light gr
   });
 
   it('still detects — and still exempts — the known dark-ground site', () => {
-    // `Snackbar.action` is teal on colorNeutralDark at 8.75:1: correct as shipped, and
-    // the site CUL-578 spot-checked. Pinning one REAL site as detected-and-exempt proves
-    // both halves at once — that the pattern has not drifted off the live source, and
+    // `DailyRecapOffer.turnOn` is teal on colorBrandNightElevated at 6.57:1: correct as
+    // shipped (the Snackbar held this pin until CUL-1691 PR 1 moved it to daylight and
+    // the ink). Pinning one REAL site as detected-and-exempt proves both halves at once — that the pattern has not drifted off the live source, and
     // that the marker mechanism still reaches a site. A detector that matches nothing and
     // an exemption that matches everything are both green without this.
-    const snackbar = sites.filter((s) => s.file === path.join('components', 'ui', 'Snackbar.tsx'));
-    expect(snackbar).toHaveLength(1);
-    expect(snackbar[0].exempt).toBe(true);
+    const recap = sites.filter((s) => s.file === path.join('components', 'recap', 'DailyRecapOffer.tsx'));
+    expect(recap).toHaveLength(1);
+    expect(recap[0].exempt).toBe(true);
   });
 
   it('no accent-coloured text ships without a ground decision', () => {
@@ -294,8 +296,8 @@ describe('the detector, proven by mutation', () => {
   });
 
   it('spends one marker on exactly one site', () => {
-    // The FilterChip shape: three variants declare `activeLabel`, two on dark. A
-    // file-wide (or reusable) exemption pre-approves the third — the broken one.
+    // The CUL-744 FilterChip shape: one `activeLabel` per variant, some on dark. A
+    // file-wide (or reusable) exemption pre-approves the light one — the broken one.
     const sites = scan(
       'const s = {\n  // accent-on-dark-ok: the dark variant\n  a: { color: theme.colorAccent },\n  b: { color: theme.colorAccent },\n};',
     );

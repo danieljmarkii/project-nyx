@@ -119,6 +119,19 @@ export function selectChip(): void {
 }
 
 /**
+ * A hold-and-slide over the FAB's fan crossed onto a new pill (CUL-1278).
+ *
+ * The selection tick, the same pattern as `selectChip`, as its own verb because it is
+ * a different moment (C-34): nothing is chosen yet, the thumb is passing over a row. It
+ * fires on ARRIVING at a pill, never on leaving one for empty space, so a slide across
+ * the column ticks once per row and a slide off the fan is silent. A food logged by the
+ * slide still plays its commit through the card's reveal, as on every meal path.
+ */
+export function slideCross(): void {
+  play(() => Haptics.selectionAsync());
+}
+
+/**
  * A menu-class interaction — opening the FAB, or picking a pet in the switcher.
  *
  * Light impact: it marks a navigational move, not a commitment. Same verb for both
@@ -169,16 +182,28 @@ export function destructiveConfirm(): void {
  * The first insight arrived — the once-ever dawn sweep on the Signal card
  * (CUL-601 · `docs/nyx-app-polish-requirements.md` §4).
  *
- * The system SUCCESS notification, matching §4's "one soft success tap at 900ms",
+ * A SINGLE SOFT TAP at 900ms, never the success pattern (CUL-647, PM ruling (B)),
  * fired at the sweep's end rather than at its start: the tap punctuates the moment,
  * it does not announce it.
  *
- * WHY THIS IS ITS OWN VERB rather than a reuse of `commitRoutine`. Nothing was
+ * WHY SOFT, AND WHY UNCONDITIONALLY. §4 first shipped the system Success
+ * notification here. But every finding that can reach this line names a symptom:
+ * the safety gate and the stood-down exclusion upstream leave only insight-class
+ * findings, and each of those is about a symptom (all but `trial_response` carry
+ * `symptomType`; `trial_response` counts vomiting episodes). So the arrival is always
+ * the arrival of news about something going wrong, and rule 1 above already ruled
+ * that such news is acknowledged, never congratulated. No predicate picks the tone,
+ * because there is no false branch for it to take: the one reading that looks like
+ * good news (`trial_response` with fewer episodes during the trial) is a reassuring
+ * read the app must not celebrate either. A future finding type that is genuinely
+ * good news reopens this question at that time; it does not get a Success tap by default.
+ *
+ * WHY THIS IS ITS OWN VERB rather than a reuse of `commitSymptom`. Nothing was
  * committed here — the owner did not act at all; the engine finished thinking. The
- * two moments happen to share a pattern today, and a call site reading
- * `commitRoutine()` on the Signal card would be a small lie that survives every
- * future retune of either one. The module's whole premise is that a verb names the
- * MOMENT, so a new moment gets a new verb even when the payload matches.
+ * two moments share a pattern today, and a call site reading `commitSymptom()` on
+ * the Signal card would be a small lie that survives every future retune of either
+ * one. The module's whole premise is that a verb names the MOMENT, so a new moment
+ * gets a new verb even when the payload matches (the `commitVisit` precedent).
  *
  * THIS DOES NOT BREAK RULE 2 (silence on safety), and the reason is a gate rather
  * than an intention: the arrival never plays when a safety finding is in the set —
@@ -189,7 +214,7 @@ export function destructiveConfirm(): void {
  * carries the one `haptics-guard-ok` exemption in the codebase.
  */
 export function insightArrival(): void {
-  play(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success));
+  play(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft));
 }
 
 // The moment with NO verb — a safety card arriving, a red-flag read landing — is last

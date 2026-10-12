@@ -177,3 +177,60 @@ describe('IncidentReadCard — the dated correction (CUL-1406, C-A)', () => {
     expect(queryByTestId('incident-read-correction')).toBeNull();
   });
 });
+
+// K2 (CUL-1389), CUL-1515: a calm read that is evidence for a finding Home is tracking.
+describe('IncidentReadCard: "Part of a pattern" (K2)', () => {
+  const { StyleSheet } = require('react-native');
+  const pattern = (onOpen = jest.fn()) => ({
+    line: "Home is tracking Nyx's vomiting, and this one is part of it.",
+    door: 'See what Home is tracking',
+    onOpen,
+  });
+
+  it('a quiet read draws the dashed pale rose, the line and the door, and the door opens', () => {
+    const onOpen = jest.fn();
+    const view = render(
+      <IncidentReadCard verdict="monitor" label="Part of a pattern" tone="neutral" pattern={pattern(onOpen)} onHide={() => {}} />,
+    );
+    const card = StyleSheet.flatten(view.getByTestId('incident-read-card').props.style);
+    expect(card.borderStyle).toBe('dashed');
+    expect(card.borderColor).toBe(theme.colorEventSymptomBorder);
+    // Never a call's fill, never the call's rail.
+    expect(card.backgroundColor).not.toBe(theme.colorEventSymptomLight);
+    expect(railStyle(view.getByTestId).backgroundColor).toBe(theme.colorEventSymptomBorder);
+    expect(railStyle(view.getByTestId).backgroundColor).not.toBe(theme.colorEventSymptom);
+    expect(view.getByText("Home is tracking Nyx's vomiting, and this one is part of it.")).toBeTruthy();
+    const door = view.getByTestId('incident-read-pattern-door');
+    expect(door.props.accessibilityRole).toBe('button');
+    expect(StyleSheet.flatten(door.props.style).minHeight).toBeGreaterThanOrEqual(44);
+    fireEvent.press(view.getByText('See what Home is tracking'));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the watch-for list under it: the read is not a call on its own', () => {
+    const view = render(
+      <IncidentReadCard
+        verdict="monitor"
+        label="Part of a pattern"
+        tone="neutral"
+        pattern={pattern()}
+        watchFor={{ emergency: null, lines: ['Call your vet today if she vomits again.'], clauses: [], ageNote: null }}
+      />,
+    );
+    expect(view.getByTestId('incident-read-watch-for')).toBeTruthy();
+  });
+
+  it('a call ignores it: its own ask outranks a pointer to Home', () => {
+    const view = render(
+      <IncidentReadCard verdict="worth_a_call" label="Call your vet now" tone="call_filled" pattern={pattern()} />,
+    );
+    expect(view.queryByTestId('incident-read-pattern')).toBeNull();
+    expect(railStyle(view.getByTestId).backgroundColor).toBe(theme.colorEventSymptom);
+  });
+
+  it('absent, the quiet card is exactly as before', () => {
+    const view = render(<IncidentReadCard verdict="monitor" label="Keep an eye out" tone="neutral" />);
+    expect(view.queryByTestId('incident-read-pattern')).toBeNull();
+    expect(railStyle(view.getByTestId).backgroundColor).toBe(theme.colorBorderStrong);
+  });
+});

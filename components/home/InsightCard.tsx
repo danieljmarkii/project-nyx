@@ -61,6 +61,7 @@ import {
   timingStoryControlDisclosure,
   timingStoryMealLaneModel,
   timingStoryRefusalLine,
+  intakeRefusedThenVomitedFaceLine,
   timingStorySampleLine,
   timingStoryVetLine,
   trialResponseCompareRows,
@@ -130,9 +131,11 @@ interface InsightBodyProps {
   // Subsequent findings stay in the body face so the surface reads as one calm
   // headline + supporting rows, never a column of competing serif headlines.
   isLead: boolean;
+  /** The card's pet, for a face line that names it (I5's refused-then-vomited line). */
+  petName: string;
 }
 
-function SentenceBody({ cached, isLead }: InsightBodyProps) {
+function SentenceBody({ cached, isLead, petName }: InsightBodyProps) {
   const finding = cached.finding;
   const tag = confidenceTag(finding);
   // Client-derived `New` for a worsening finding whose prior week held zero episodes
@@ -152,6 +155,7 @@ function SentenceBody({ cached, isLead }: InsightBodyProps) {
     : isReflectionDensityWithheld(finding)
       ? reflectionWithheldSampleLine(finding)
       : sampleLine(finding);
+  const i5Line = intakeRefusedThenVomitedFaceLine(finding, petName);
   return (
     <View style={styles.body}>
       <ThemedText style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</ThemedText>
@@ -159,6 +163,9 @@ function SentenceBody({ cached, isLead }: InsightBodyProps) {
         <LinkedPair proteins={proteinCluster(finding)} />
       )}
       <CardFaceReceipt finding={finding} />
+      {/* I5 (Engines v3 PR-30s): on an intake card whose own claim is something else, the
+          refused-then-vomited facts ride as a line under the sentence (null otherwise). */}
+      {i5Line ? <ThemedText style={styles.sample}>{i5Line}</ThemedText> : null}
       {/* SR-5 (§5.4) — the medication-on-board context line on correlation + timing cards,
           when a course is active in the finding window. Returns null for other types and
           when the composed line trips the guardrail screen. */}
@@ -685,6 +692,9 @@ export function InsightCard({
   } else {
     receiptA11y = cardFaceReceiptA11y(cached.finding);
     faceMedLine = medContextLine(cached.finding);
+    // I5's face line is a child of this one button, so VoiceOver hears it only through the label.
+    const i5Line = intakeRefusedThenVomitedFaceLine(cached.finding, petName);
+    if (i5Line) receiptA11y = receiptA11y ? `${receiptA11y} ${i5Line}` : i5Line;
   }
   let accessibilityLabel = receiptA11y ? `${cached.text}. ${receiptA11y}` : cached.text;
   if (faceMedLine) accessibilityLabel = `${accessibilityLabel}. ${faceMedLine}`;
@@ -822,7 +832,7 @@ export function InsightCard({
           testID="insight-face"
         >
           {backBecauseLine ? <ThemedText style={styles.backBecause}>{backBecauseLine}</ThemedText> : null}
-          <Body cached={cached} isLead={isLead} />
+          <Body cached={cached} isLead={isLead} petName={petName} />
           {expanded && (
             <>
               <ThemedText style={styles.evidence}>{evidenceText(cached.finding, petName)}</ThemedText>

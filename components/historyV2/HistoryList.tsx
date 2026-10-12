@@ -69,6 +69,7 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AppState,
+  Dimensions,
   LayoutAnimation,
   RefreshControl,
   SectionList,
@@ -126,6 +127,7 @@ import {
   type QuietState,
 } from '../../lib/historyScreen';
 import { recordWeekday } from '../../lib/recordDates';
+import { carryOpenRuns } from '../../lib/openRunCarry';
 import { mayCarryRead } from '../../lib/spineNode';
 import { readAnalysisRows } from '../../lib/spineReads';
 import { syncNow } from '../../lib/sync';
@@ -142,9 +144,11 @@ import {
 import { effectiveSearch, filterId, useHistoryScopeStore, type HistoryScope } from '../../store/historyScopeStore';
 import { usePetStore } from '../../store/petStore';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
+import { RunRevealContext, useRunRevealHost } from '../motion/runRevealMotion';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useSyncStore } from '../../store/syncStore';
 import { FOLD_LAYOUT, FOLD_MOTION } from '../motion/foldMotion';
+import { OpenInPlaceReset } from '../motion/openInPlaceMotion';
 import { createPaintLedger } from '../motion/threadMotion';
 import { EmptyState } from '../ui/EmptyState';
 import { Skeleton } from '../ui/Skeleton';
@@ -357,12 +361,16 @@ export function HistoryList() {
 
   // A new scope: read it, close every run, and start at the top without a glide (§4).
   const [openRuns, setOpenRuns] = useState<ReadonlySet<string>>(NO_OPEN);
+  // The runs close with the scope in the same commit and with no choreography: a close's
+  // beats would run over the reload, and its layout commit could land on it (CUL-1721).
+  const [runReset, setRunReset] = useState(0);
   // The mount's request reads the record fresh; a later one is a new scope, a new day or a
   // new pet, and only a new scope can find a record to reuse (the store keys it on the pet
   // and the day, and a switch drops it).
   const requestedOnce = useRef(false);
   useEffect(() => {
     setOpenRuns(NO_OPEN);
+    setRunReset((n) => n + 1);
     // Nothing from the old list carries over: no fold half done, no focus waiting on a
     // day of the old scope.
     cancelFold();
@@ -585,10 +593,22 @@ export function HistoryList() {
             days: snapshot.wholeDays,
             reads: { analysis: snapshot.analysis, answered: snapshot.answered, working },
             timing: snapshot.timing,
+            // The looks each card draws among its rows break a run they fall inside (CUL-1719).
+            // The read's looks, not the removal-filtered ones: like the rows, the nodes hold
+            // until the next read, so a removal never re-folds a run or moves its id.
+            looks: snapshot.looks,
           })
         : NO_NODES_BY_DAY,
     [snapshot, working],
   );
+  // A re-keyed run (an earlier meal logged, its first meal deleted) stays open: carried in
+  // the render that brings the new nodes, so its row never mounts closed (CUL-1757).
+  const [carriedFrom, setCarriedFrom] = useState(nodesByDay);
+  if (carriedFrom !== nodesByDay) {
+    setCarriedFrom(nodesByDay);
+    const carried = carryOpenRuns(openRuns, [...carriedFrom.values()].flat(), [...nodesByDay.values()].flat());
+    if (carried !== openRuns) setOpenRuns(carried);
+  }
 
   // The rows a removal could fold, read by the focus callback when the owner comes back.
   foldable.current = useMemo(
@@ -754,6 +774,30 @@ export function HistoryList() {
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     viewport.current = e.nativeEvent.layout.height;
   }, []);
+  /** The sticky day header's height, as last laid out (every day's header is one height). */
+  const stickyHeaderH = useRef(0);
+  const onStickyHeaderLayout = useCallback((e: LayoutChangeEvent) => {
+    stickyHeaderH.current = e.nativeEvent.layout.height;
+  }, []);
+  // A run that opens out of sight moves the list just far enough to show its first meal
+  // (CUL-1735, D3): bounded so the run's own line stays on screen, never on a close.
+  const runReveal = useRunRevealHost({
+    // The day header pins over the list's top: the run's line must rest clear of it.
+    topInset: () => stickyHeaderH.current,
+    measureViewport: (done) =>
+      listRef.current
+        ?.getScrollResponder()
+        ?.getNativeScrollRef()
+        ?.measureInWindow((_x, y, _w, h) => done(y, y + h)),
+    scrollBy: (dy) =>
+      listRef.current?.getScrollResponder()?.scrollTo({ y: scrollY.current + dy, animated: !reducedMotionNow() }),
+    windowHeight: () => Dimensions.get('window').height,
+  });
+  const cancelReveal = runReveal.cancel;
+  const onDragBegin = useCallback(() => {
+    cancelReveal();
+    onScrollBeginDrag();
+  }, [cancelReveal, onScrollBeginDrag]);
 
   // A second tap on the History tab: back to today (§3.1), and VoiceOver onto today's
   // header (the list's first day's, when a filter hides today).
@@ -785,20 +829,22 @@ export function HistoryList() {
       const m = section.model;
       if (m.kind !== 'day' && m.kind !== 'today-open') return null;
       return (
-        <DayCardHeader
-          day={m.day}
-          today={snapshot.today}
-          facts={dayFactsOn(snapshot.facts.days, m.day)}
-          filter={snapshot.filter}
-          search={snapshot.search !== null}
-          landed={landedDay === m.day}
-          hasItems={snapshot.items.has(m.day)}
-          withCounts={m.kind === 'day'}
-          focusRef={focusRefFor(section.key, m.day, m.day)}
-        />
+        <View onLayout={onStickyHeaderLayout}>
+          <DayCardHeader
+            day={m.day}
+            today={snapshot.today}
+            facts={dayFactsOn(snapshot.facts.days, m.day)}
+            filter={snapshot.filter}
+            search={snapshot.search !== null}
+            landed={landedDay === m.day}
+            hasItems={snapshot.items.has(m.day)}
+            withCounts={m.kind === 'day'}
+            focusRef={focusRefFor(section.key, m.day, m.day)}
+          />
+        </View>
       );
     },
-    [snapshot, landedDay, focusRefFor],
+    [snapshot, landedDay, focusRefFor, onStickyHeaderLayout],
   );
 
   const renderItem = useCallback(
@@ -975,38 +1021,43 @@ export function HistoryList() {
 
   return (
     <CellLaidOut.Provider value={onCellLaidOut}>
-      <SectionList<HistorySection, ListSection>
-        ref={listRef}
-        style={styles.list}
-        sections={sections}
-        keyExtractor={(m) => `body:${sectionKeyOf(m)}`}
-        renderSectionHeader={renderSectionHeader}
-        renderItem={renderItem}
-        stickySectionHeadersEnabled
-        // A drag through search results puts the keyboard away, as the platform's own lists do.
-        keyboardDismissMode="on-drag"
-        // A week of days on the first paint (a day is three cells: its header, its body, its
-        // footer): the strip shows this week, so a landing from it never waits on a measure.
-        initialNumToRender={INITIAL_CELLS}
-        ListHeaderComponent={header}
-        ListEmptyComponent={empty}
-        ListFooterComponent={footer}
-        onEndReached={() => {
-          if (snapshot?.pages.next) void useHistoryListStore.getState().loadMore();
-        }}
-        onEndReachedThreshold={0.5}
-        onScrollBeginDrag={onScrollBeginDrag}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        onLayout={onLayout}
-        onScrollToIndexFailed={onScrollToIndexFailed}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colorTextSecondary} />
-        }
-        contentContainerStyle={[styles.content, sections.length === 0 && styles.contentEmpty]}
-        CellRendererComponent={HistoryCell}
-        testID="history-list"
-      />
+      <OpenInPlaceReset.Provider value={runReset}>
+        <RunRevealContext.Provider value={runReveal.request}>
+          <SectionList<HistorySection, ListSection>
+            ref={listRef}
+            style={styles.list}
+            sections={sections}
+            keyExtractor={(m) => `body:${sectionKeyOf(m)}`}
+            renderSectionHeader={renderSectionHeader}
+            renderItem={renderItem}
+            stickySectionHeadersEnabled
+            // A drag through search results puts the keyboard away, as the platform's own lists do.
+            keyboardDismissMode="on-drag"
+            // A week of days on the first paint (a day is three cells: its header, its body, its
+            // footer): the strip shows this week, so a landing from it never waits on a measure.
+            initialNumToRender={INITIAL_CELLS}
+            ListHeaderComponent={header}
+            ListEmptyComponent={empty}
+            ListFooterComponent={footer}
+            onEndReached={() => {
+              if (snapshot?.pages.next) void useHistoryListStore.getState().loadMore();
+            }}
+            onEndReachedThreshold={0.5}
+            onScrollBeginDrag={onDragBegin}
+            onScroll={onScroll}
+            scrollEventThrottle={16}
+            onLayout={onLayout}
+            onScrollToIndexFailed={onScrollToIndexFailed}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colorTextSecondary} />
+            }
+            contentContainerStyle={[styles.content, sections.length === 0 && styles.contentEmpty]}
+            CellRendererComponent={HistoryCell}
+            onContentSizeChange={runReveal.onContentSizeChange}
+            testID="history-list"
+          />
+        </RunRevealContext.Provider>
+      </OpenInPlaceReset.Provider>
     </CellLaidOut.Provider>
   );
 }

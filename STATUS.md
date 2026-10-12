@@ -15,7 +15,7 @@ _A **pointer card**, not a state store._ The volatile working state lives in **L
 | What should I pick up next? | **Linear** — `Todo` at Urgent/High priority | `list_issues` |
 | What is waiting on the PM? | **Linear — the `Waiting on PM` label** | one view; every issue there names its single remaining step |
 | What shipped last, and why? | **`docs/sessions/`** — one file per session, never edited | `ls docs/sessions/ \| sort -r \| head -3` |
-| What decision is still open? | **`CLAUDE.md` § Open Questions** (resolved ones: `docs/decisions-archive.md`) | already auto-loaded every session |
+| What decision is still open? | **`docs/open-questions.md`** (resolved ones: `docs/decisions-archive.md`) | `/kickoff` reads it |
 | How do I build this correctly? | **`docs/`** — the `*-requirements.md` specs, `supabase/migrations/`, the design principles | `CLAUDE.md` § "Read These Before Writing Any Code" |
 | How do I get a build on a phone? | **`docs/dev-handoff-runbook.md`** — both runtimes, the installed build, the traps | |
 | How do I deploy an Edge Function / migration? | **Merge it**: Edge Functions deploy on merge (Actions → Deploy Edge Functions); holds live in `supabase/functions/deploy-manifest.json`. Migrations and the rest: **`docs/edge-deploy-runbook.md`** | |
@@ -27,7 +27,7 @@ The rule behind the table (`CLAUDE.md` § Documentation Update Protocol): **read
 
 ## Current phase
 
-**Shipping toward the App Store.** The product is feature-complete for v1; the remaining work is submission mechanics, device verification, and one owed `generate-report` deploy.
+**Shipping toward the App Store.** The product is feature-complete for v1; the remaining work is the AI consent screen, the first day's fixes, the store side and the cut (*App Store 1.2.0*, below).
 
 The original **build sequence** is done end to end — steps 1–10, finished August 2026 (`CLAUDE.md` § Where the Work Is Tracked): the **vet report** has Phase 1 + the owner-facing MVP + authenticated photos live, with the public share link (PR 6) deliberately unshipped; the **AI Signal** shipped and has since been superseded by Signals v2, which GA'd 2026-08-20.
 
@@ -35,7 +35,7 @@ The original **build sequence** is done end to end — steps 1–10, finished Au
 
 | Project | Where it stands |
 |---|---|
-| **App Store Launch** | The dominant track. Milestones M1–M6: the 5.1.2(i) AI-consent gate, QA and dashboard close-outs, the demo-account live seed, listing, build cut, submission, review-week ops. |
+| **App Store 1.2.0 · the first public release** | New (2026-10-11), replacing *App Store Launch* (closed). The dominant track: 67 rows in seven waves, from the decision sheet (CUL-1825, the PM's first move) to week one. **The project description carries the run order** in the /dispatch layout, the owners (a PM row is assigned to the PM; a numbered row is a Claude session) and the four synthetic panels (`docs/synthetic-testing-protocol.md`). Evidence: `docs/research/2026-10-app-store-requirements.md`. |
 | **Signals v2 — the record, decomposed** | Shipped + GA'd 2026-08-20. Both beta flags retired. Report-side adoption (CUL-564) has been live since the 2026-09-15 `generate-report` deploy. |
 | **The Daily Recap** | DR-0…DR-7 all shipped. Open: the §5.5 portfolio-slate reaction and the CUL-27 finish-pass briefs. |
 | **Backlog → Linear: operationalize the cutover** | The workflow rewiring. Remaining: CUL-522 (dual-source stragglers), CUL-530, CUL-563. |
@@ -53,6 +53,7 @@ The original **build sequence** is done end to end — steps 1–10, finished Au
 | **Diet trial — its own screen** | New (2026-09-26). Home's trial strip opens the trial's own screen (the day ledger, *What {pet} can eat*, the facts) instead of the Pet tab; dark behind `trial_screen`. Spec `docs/nyx-trial-screen-requirements.md` v1.1 (PM R-1…R-3, team T-1…T-6, adversarial-reviewed); design authority `docs/culprit-trial-screen-mockups.html` round 2; discovery CUL-1291. **The project description carries the run order**: twelve PRs in five steps. Steps 1 and 1b shipped (TS-0 → TS-3, CUL-1292); the screen itself (TS-4, CUL-1300) merged dark ahead of the submission cut at the PM's call. TS-5 (CUL-1301, #948) made Home's strip the door and TS-6 (CUL-1302, #950) the Pet tab's, the recap's and the widget's, still dark. TS-7 (#949), TS-8 (#951) and TS-9 (CUL-1305, #955) followed. Next: the device pass (CUL-1306), then GA (CUL-1307). |
 | **Engines v3: the accountable engine** | New (2026-09-26). Makes the Signal and the per-incident read measured, calibrated, accountable and whole-animal; everything an owner sees ships dark behind the server-read EN-F flag. About 40 PRs over waves 0–6; **the project description carries the run order, the lanes and the bundle prompts.** Wave 0 shipped; Wave 1's stamps migration (075) is live (PR-10, #963). Design authority `docs/culprit-engines-v3-mockups.html`; critique `docs/engines-v3-critique-2026-09.md`. On `Waiting on PM`: CUL-1313 (PMD-12's privacy wording, before the 1.2.0 cut). |
 | **The FAB, round 2** | New (2026-10-07). The plus button's second round, from the PM's device reactions and the 2026-10-06 convening (CUL-1625): the white plus, a touch more bounce and a calm Other log (PR-01, #1088), then a tap that always logs what the owner meant, the log sheet rising under one veil, the meal landing in its card, recents that hold still for the day, a one tap Normal stool (its start date kept for the vet report), and hold and slide last. Every brief is ruled (CUL-1625 closed 2026-10-07: the veil is grey, the Normal stool option is in). Design authority `docs/culprit-fab-mockups.html` round 2; **the project description carries the run order** (17 rows over four waves, in the /dispatch layout). On `Waiting on PM`: CUL-1287, the device sitting, run on each build the PM cuts (no phone check before a merge, PM 2026-10-07). |
+| **Run open: the grouped meals line that opens in place** | New (2026-10-10). The grouped meals line on Home and History, opened without seams, from the 2026-10-09 convening (CUL-1715, every brief ruled): the thread drawn, the opening machine's jumps fixed, the run's own eased motion, every fact on each opened meal, the reveal scroll, the stack, and a meal minutes before a vomit kept on its own row. Design authority `docs/culprit-run-open-mockups.html` round 2.2; **the project description carries the run order** (nine rows in the /dispatch layout). No phone check before a landing: the device check rides each TestFlight cut's sitting. |
 | **Legacy Backlog** | The migrated `B-NNN` rows only. Not a track, and **closed to new issues** (CUL-1284): a new issue joins a live project or takes none. |
 
 ### Standing holds

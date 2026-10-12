@@ -73,6 +73,7 @@ import { isCallDisplay, louderCall, TIER_WORDS, TIERED_CALLS_READ_AS, type CallD
 import { dayKeyFromIndex, localDayIndexOf, MONTHS } from './utils';
 import { weekdayOfIndex, weekStartIndex, weeklyBuckets, type WeeklyBucketsModel } from './chartModels';
 import { dateWord } from './chartCopy';
+import { datedCallLinesOf } from './ruleSeam';
 
 /** The nine weeks §04 draws over the month. */
 export const MONTH_WEEKS = 9;
@@ -723,6 +724,9 @@ export function monthCallDays(model: Pick<MonthModel, 'days'>): { earlier: numbe
 export function monthA11yLabel(
   model: MonthModel,
   layers: { meds: boolean; photos: boolean; meals?: boolean } = { meds: true, photos: true },
+  /** EN-3's go-live day (CUL-1513): the two lines are dated as the legend dates them, and
+   *  only where the legend does (`datedCallLinesOf`). Null or absent: today's lines. */
+  liveSince: string | null = null,
 ): string {
   const dosed = model.days.filter((d) => d.medication).length;
   const photographed = model.days.filter((d) => d.photo !== 'none').length;
@@ -734,8 +738,9 @@ export function monthA11yLabel(
   // The calls lead, spoken whatever the layers say, photo or not (CUL-1200, ruling (b)):
   // the grid draws them on every layer and the ear hears what the eye sees. Nothing is
   // said when there are none: "no calls" would read as an all-clear the record cannot give.
-  if (earlier > 0) parts.push(`Read as ${TIER_WORDS.worth_a_call.readAs} on ${earlier} ${plural(earlier, 'day')}.`);
-  if (tiered > 0) parts.push(`Read as ${TIERED_CALLS_READ_AS} on ${tiered} ${plural(tiered, 'day')}.`);
+  const dated = datedCallLinesOf(model, liveSince);
+  if (earlier > 0) parts.push(`${dated ? dated.before : 'Read as'} ${TIER_WORDS.worth_a_call.readAs} on ${earlier} ${plural(earlier, 'day')}.`);
+  if (tiered > 0) parts.push(`${dated ? dated.from : 'Read as'} ${TIERED_CALLS_READ_AS} on ${tiered} ${plural(tiered, 'day')}.`);
   // The Meals layer's two counts over one denominator, as the legend prints them (CUL-1553).
   if (layers.meals === true && model.ratedMeals > 0 && (model.refusedMeals > 0 || model.leftSomeMeals > 0)) {
     const of = `of ${model.ratedMeals} rated ${plural(model.ratedMeals, 'meal')}`;

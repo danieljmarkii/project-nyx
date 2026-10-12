@@ -20,6 +20,7 @@ jest.mock('./supabase', () => ({ supabase: { from: jest.fn() } }));
 
 import {
   buildSpine,
+  clockMinuteGap,
   countLine,
   nodeReadOf,
   runFormatsLine,
@@ -31,6 +32,7 @@ import {
   type SpineInput,
 } from './spineNode';
 import { DEFAULT_MEAL_TIMING_CONFIG, type FeedingInput, type IntakeRating } from './mealTiming';
+import { formatTime } from './utils';
 
 const BASE = new Date(2026, 8, 17, 0, 0, 0, 0).getTime();
 const MIN = 60_000;
@@ -344,11 +346,75 @@ describe('timingLine', () => {
     expect(timingLine(120, 'mid')).toBe('2 h after eating');
     expect(timingLine(124, 'mid')).toBe('2 h after eating');
     expect(timingLine(140, 'mid')).toBe('2 h 20 min after eating');
-    expect(timingLine(-1, 'rapid')).toBe('0 min after eating');
+    expect(timingLine(-1, 'rapid')).toBe('under a minute after eating');
+  });
+  it('a zero gap is "under a minute", never "0 min" (CUL-1720)', () => {
+    expect(timingLine(0, 'rapid')).toBe('under a minute after eating');
+    expect(timingLine(1, 'rapid')).toBe('1 min after eating');
   });
   it('the long band is the lane\u2019s label, whatever the number', () => {
     expect(timingLine(360, 'long')).toBe('6h or more after eating');
     expect(timingLine(1440, 'long')).toBe('6h or more after eating');
+  });
+});
+
+describe('the timing line agrees with the printed times (CUL-1720)', () => {
+  const cfg = DEFAULT_MEAL_TIMING_CONFIG;
+  /** A local instant with seconds, on the fixtures' day. */
+  const atS = (h: number, m: number, sec: number): string => new Date(BASE + (h * 60 + m) * MIN + sec * 1000).toISOString();
+  /** The minutes a reader gets by subtracting the two printed clock times. */
+  const printedGap = (from: string, to: string): number => {
+    const mins = (iso: string) => {
+      const d = new Date(iso);
+      return d.getHours() * 60 + d.getMinutes();
+    };
+    return mins(to) - mins(from);
+  };
+  const pair = (mealAt: string, vomitAt: string) => {
+    const rows = [
+      row('m', 'meal', 0, 0, { ...PR, occurred_at: mealAt }),
+      row('v', 'vomit', 0, 0, { occurred_at: vomitAt }),
+    ];
+    return timingsByRow(rows, [], feedingsOf(rows), [], cfg).get('v');
+  };
+
+  it('the convening’s 2:52 PM meal and 2:53 PM vomit, 20 seconds apart, read 1 min, never 0', () => {
+    const meal = atS(14, 52, 50);
+    const vomit = atS(14, 53, 10);
+    expect(formatTime(new Date(meal))).toMatch(/0?2:52/);
+    expect(formatTime(new Date(vomit))).toMatch(/0?2:53/);
+    expect(pair(meal, vomit)).toEqual({ text: '1 min after eating', mealId: 'm' });
+    expect(printedGap(meal, vomit)).toBe(1);
+  });
+
+  it('the reverse: 2:52:10 and 2:53:50 round to 2 min, but the times say 1, and so does the line', () => {
+    const meal = atS(14, 52, 10);
+    const vomit = atS(14, 53, 50);
+    expect(printedGap(meal, vomit)).toBe(1);
+    expect(pair(meal, vomit)?.text).toBe('1 min after eating');
+    // The old rounding read the true 100 seconds as 2.
+    expect(pair(meal, vomit)?.text).not.toBe('2 min after eating');
+  });
+
+  it('both inside one printed minute: "under a minute", since the times read the same', () => {
+    const meal = atS(14, 52, 5);
+    const vomit = atS(14, 52, 55);
+    expect(printedGap(meal, vomit)).toBe(0);
+    expect(pair(meal, vomit)?.text).toBe('under a minute after eating');
+  });
+
+  it('an hour figure subtracts the printed times too: 12:00:50 → 2:20:10 reads 2 h 20 min', () => {
+    const meal = atS(12, 0, 50);
+    const vomit = atS(14, 20, 10);
+    expect(printedGap(meal, vomit)).toBe(140);
+    expect(pair(meal, vomit)?.text).toBe('2 h 20 min after eating');
+  });
+
+  it('clockMinuteGap cuts each instant to its minute before subtracting', () => {
+    expect(clockMinuteGap(at(14, 52) + 50_000, at(14, 53) + 10_000)).toBe(1);
+    expect(clockMinuteGap(at(14, 52) + 10_000, at(14, 53) + 50_000)).toBe(1);
+    expect(clockMinuteGap(at(14, 52), at(14, 52) + 59_999)).toBe(0);
+    expect(clockMinuteGap(at(14, 52) + 59_999, at(14, 53))).toBe(1);
   });
 });
 

@@ -36,7 +36,7 @@ function episodes(localUri: string | null): SignalScreenEpisodes {
     verdict: 'worth_a_call',
     photo: { localUri, storagePath: 'pet/ev-1/photo.jpg' },
   };
-  return { total: 1, photographedCount: 1, weeks: 1, countLine: '1, one photographed', tiles: [tile], photoless: [] };
+  return { total: 1, photographedCount: 1, weeks: 1, countLine: '1, one photographed', tiles: [tile], photoless: [], tracksPattern: false };
 }
 
 function photoUri(view: ReturnType<typeof render>): string | undefined {
@@ -96,12 +96,12 @@ describe('EpisodeGallery tile photo (CUL-1269)', () => {
 describe('EN-3: the tile speaks the tier-word map', () => {
   it('a call now tile shows the short chip, in the ink, and its sentence says the full phrase', () => {
     const { verdictWord, tileA11yLabel } = jest.requireActual('./EpisodeGallery') as typeof import('./EpisodeGallery');
-    expect(verdictWord('call_now')).toBe('Call now');
-    expect(verdictWord('call_today')).toBe('Call today');
+    expect(verdictWord('call_now', false)).toBe('Call now');
+    expect(verdictWord('call_today', false)).toBe('Call today');
     // An earlier-rule call says exactly what it said before.
-    expect(verdictWord('worth_a_call')).toBe('Worth a call');
+    expect(verdictWord('worth_a_call', false)).toBe('Worth a call');
     const tile = { eventId: 'e', dateWord: 'Oct 22', timeWord: '1:30 AM', verdict: 'call_now' } as unknown as GalleryTile;
-    expect(tileA11yLabel(tile)).toBe('Oct 22, 1:30 AM, photographed, read as Call your vet now');
+    expect(tileA11yLabel(tile, false)).toBe('Oct 22, 1:30 AM, photographed, read as Call your vet now');
   });
 });
 
@@ -112,16 +112,16 @@ describe('the read words: a calm read draws none (CUL-1233), an unclear one says
 
   it('a calm read, under either rule, draws no word and speaks none', () => {
     for (const calm of ['logged', 'monitor'] as const) {
-      expect(verdictWord(calm)).toBeNull();
-      expect(tileA11yLabel(at(calm))).toBe('Oct 22, 1:30 AM, photographed');
+      expect(verdictWord(calm, false)).toBeNull();
+      expect(tileA11yLabel(at(calm), false)).toBe('Oct 22, 1:30 AM, photographed');
     }
   });
 
   it('an unclear read says "Not enough to say yet"; no completed read says "No read yet"', () => {
-    expect(verdictWord('not_enough_to_say')).toBe('Not enough to say yet');
-    expect(tileA11yLabel(at('not_enough_to_say'))).toBe('Oct 22, 1:30 AM, photographed, read as Not enough to say yet');
-    expect(verdictWord(null)).toBe('No read yet');
-    expect(tileA11yLabel(at(null))).toBe('Oct 22, 1:30 AM, photographed, no read yet');
+    expect(verdictWord('not_enough_to_say', false)).toBe('Not enough to say yet');
+    expect(tileA11yLabel(at('not_enough_to_say'), false)).toBe('Oct 22, 1:30 AM, photographed, read as Not enough to say yet');
+    expect(verdictWord(null, false)).toBe('No read yet');
+    expect(tileA11yLabel(at(null), false)).toBe('Oct 22, 1:30 AM, photographed, no read yet');
   });
 
   it('a rendered calm tile carries its photo and date and no verdict node', () => {
@@ -142,5 +142,50 @@ describe('CUL-1224 (BRK-27): a tile never cuts its words', () => {
     const view = render(<EpisodeGallery episodes={episodes('file:///cache/a.jpg')} />);
     expect(view.getByTestId('episode-verdict-ev-1').props.numberOfLines).toBeUndefined();
     expect(view.getByText('Sep 22').props.numberOfLines).toBeUndefined();
+  });
+});
+
+// K2 (CUL-1389), CUL-1515: a new-rule calm read under a finding Home is tracking.
+describe('"Part of a pattern" on a calm read in a tracked finding (K2)', () => {
+  const { verdictWord, tileA11yLabel } = jest.requireActual('./EpisodeGallery') as typeof import('./EpisodeGallery');
+  const at = (verdict: GalleryTile['verdict']) =>
+    ({ eventId: 'e', dateWord: 'Oct 22', timeWord: '1:30 AM', verdict }) as unknown as GalleryTile;
+
+  it('a new-rule logged read takes the word, and its sentence says it', () => {
+    expect(verdictWord('logged', true)).toBe('Part of a pattern');
+    expect(tileA11yLabel(at('logged'), true)).toBe('Oct 22, 1:30 AM, photographed, read as Part of a pattern');
+  });
+
+  it('an earlier-rule monitor keeps its silence: K2 names `logged` only', () => {
+    expect(verdictWord('monitor', true)).toBeNull();
+    expect(tileA11yLabel(at('monitor'), true)).toBe('Oct 22, 1:30 AM, photographed');
+  });
+
+  it('a call, an unclear read and no read keep their own words', () => {
+    expect(verdictWord('call_now', true)).toBe('Call now');
+    expect(verdictWord('call_today', true)).toBe('Call today');
+    expect(verdictWord('worth_a_call', true)).toBe('Worth a call');
+    expect(verdictWord('not_enough_to_say', true)).toBe('Not enough to say yet');
+    expect(verdictWord(null, true)).toBe('No read yet');
+  });
+
+  it('renders the word on the tile, in the secondary ink and never the rose', () => {
+    const base = episodes('file:///cache/a.jpg');
+    const view = render(
+      <EpisodeGallery episodes={{ ...base, tracksPattern: true, tiles: [{ ...base.tiles[0], verdict: 'logged' }] }} />,
+    );
+    const word = view.getByTestId('episode-verdict-ev-1');
+    expect(word.props.children).toBe('Part of a pattern');
+    const flat = Object.assign({}, ...[word.props.style].flat(3).filter(Boolean));
+    expect(flat.color).not.toBe(require('../../../constants/theme').theme.colorEventSymptomInk);
+    expect(view.getByTestId('episode-tile-ev-1').props.accessibilityLabel).toBe(
+      'Sep 22, 10:00 AM, photographed, read as Part of a pattern',
+    );
+  });
+
+  it('a finding Home is not tracking draws the calm tile as before', () => {
+    const base = episodes('file:///cache/a.jpg');
+    const view = render(<EpisodeGallery episodes={{ ...base, tiles: [{ ...base.tiles[0], verdict: 'logged' }] }} />);
+    expect(view.queryByTestId('episode-verdict-ev-1')).toBeNull();
   });
 });

@@ -276,7 +276,8 @@ function LookLine({ row, isFirst, isLast }: { row: HistoryRow; isFirst: boolean;
       style={({ pressed }) => [styles.lookDoor, pressed && styles.pressed]}
       testID={`history-look-${row.id}`}
     >
-      <View style={[styles.itemRow, isLast ? styles.itemRowLast : styles.itemRowGap]}>
+      {/* The row fills the 44pt door, as the visit's does, so the thread reaches the next bead (CUL-1751). */}
+      <View style={[styles.itemRow, isLast ? styles.itemRowLast : styles.itemRowGap, styles.itemRowFill]}>
         <ThemedText style={styles.lookTime}>{timeColumnText(d.time)}</ThemedText>
         <View style={styles.rail}>
           {!isFirst ? <View style={[styles.thread, styles.threadTop]} /> : null}
@@ -511,7 +512,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: theme.space1,
   },
-  itemRowGap: { paddingBottom: theme.space2 },
+  itemRowGap: { paddingBottom: SPINE_THREAD.rowGapPad },
   itemRowLast: { paddingBottom: theme.spaceMicro },
   // Inside the visit's 44pt door the row grows with it, so the thread reaches the next row.
   itemRowFill: { flexGrow: 1 },
@@ -524,7 +525,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorBorder,
   },
   threadTop: { top: 0, height: MARK_CENTER_Y },
-  threadBottom: { top: MARK_CENTER_Y, bottom: 0 },
+  // Through the row's bottom padding to the next row, as the frame's own (CUL-1718).
+  threadBottom: { top: MARK_CENTER_Y, bottom: -SPINE_THREAD.rowGapPad },
   mark: { zIndex: 1 },
   markSquare: {
     marginTop: MARK_CENTER_Y - MARK / 2,

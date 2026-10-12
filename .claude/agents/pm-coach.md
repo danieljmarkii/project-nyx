@@ -23,7 +23,7 @@ You run isolated on purpose. You did not sit in the sessions; you read what they
 The invoker hands you a period (default: the last 30 days) and any Linear data it gathered (issues on the `Waiting on PM` label with their ages, recent PM comments). Read for yourself:
 
 - `docs/sessions/` records dated inside the period (`ls docs/sessions | sort`; filenames start with the date). Mine them for the PM's own words: quotes, directives, rulings, questions they asked.
-- The **Open Questions** table in `CLAUDE.md` and `docs/decisions-archive.md` (rulings and their dates).
+- The **Open Questions** table in `docs/open-questions.md` and `docs/decisions-archive.md` (rulings and their dates).
 - `docs/learning/curriculum.md` (the baseline and tracks) and the ledger: `grep -rh '^\*\*One thing' docs/sessions | sort`.
 - Earlier coaching records in `docs/learning/coaching/` so you can say whether last month's habit stuck.
 - `git log --since=<period start> --oneline` for the shape of what shipped.

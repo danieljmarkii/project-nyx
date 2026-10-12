@@ -73,6 +73,7 @@ import {
   classifyEpisodeSet,
   collapseEpisodes,
   feedingIsEatingAnchor,
+  minutesAfterLastRefusal,
   timedEligibleFeedings,
   type FeedingInput,
   type FreeFedSpan,
@@ -573,7 +574,10 @@ export interface MedicationWindow {
  * path deliberately does NOT refresh on an owner override (lib/analysis.ts / B-339). Deriving
  * from the structured fields is what makes an owner override that clears the fact clear the Home
  * card BY CONSTRUCTION — the same derivation generate-report already uses (unionPresentFlags),
- * so the two override-aware surfaces agree.
+ * so the two override-aware surfaces agree. EXCEPT a NEW-RULE call (Engines v3 PR-30a, `call`):
+ * an owner edit never moves `tier`, so a call the owner's edit leaves standing on the record also
+ * stands on Home, as a card that says a read says to call (`callOnly`) and names no photo
+ * finding. Home is never calmer than the record; lowering a call is the owner's own act (GAP-34).
  *
  * CONTRACT: the caller passes only rows whose analyzed event is NON-soft-deleted and within the
  * lookback (the join is in generate-signal/index.ts). Values are the raw enum strings from the DB;
@@ -615,7 +619,32 @@ export interface IncidentAnalysisInput {
    * derivation reads it for both. PRESENT-ONLY — only 'yes' is a red flag; 'no'/'unsure'/null is NOT.
    */
   foreignMaterialPresent: string | null
+  /**
+   * Engines v3 PR-30a (CUL-1511): the call this read stands on under the NEW rule, resolved by the
+   * record's own `tierDisplayOf` (pipeline.ts `newRuleCallOf`), or null/absent. An earlier-rule call
+   * is null here, so the lane keeps today's words and today's trigger for every unstamped read but
+   * one: a stored `tier = 'call_now'` is a call whatever the stamp (CUL-1516, GAP-34), since only a
+   * write under the key stores one.
+   */
+  call?: IncidentCall | null
+  /**
+   * Engines v3 PR-30c (CUL-1739): when the read row was last written (`event_ai_analysis.updated_at`),
+   * or null/absent. A call's "said at" instant is the later of this and `occurredAt`: a read
+   * raised to call now a day after its event (a re-floor, a late sync) was said when it was
+   * written, never on the event's day.
+   */
+  writtenAt?: string | null
+  /**
+   * CUL-1759: the row's own "call said at" stamp (`event_ai_analysis.call_said_at`, migration 099),
+   * which only moves when the read's call is said (a level change, or new flags at the same call).
+   * When present it REPLACES `writtenAt` as this read's write time; NULL on a row not stamped since
+   * 099, which keeps the `updated_at` fallback (ruling B's loud behaviour).
+   */
+  callSaidAt?: string | null
 }
+
+/** A new-rule call on a per-incident read: the two tiers Home's safety band shows (spec §4). */
+export type IncidentCall = 'call_now' | 'call_today'
 
 /** A logged dose reduced to what doseToMedicationWindow needs (the caller's DB-row projection). */
 export interface DoseEventInput {
@@ -1104,7 +1133,29 @@ export interface CorrelationFinding extends FindingBase {
   medContext?: MedOnBoardContext
 }
 
-export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food'
+// `refused_then_vomited` (I5, CUL-1196; Engines v3 PR-30s): a cat who vomited minutes after turning
+// down a bowl, on at least two days. It is emitted ONLY under `engines_v3_en5` (config.en5), and only
+// when the other two are quiet: when either fires, the same facts ride on it as `refusedThenVomited`
+// instead (ruling sheet §2.7 I5 = a line on the cat intake card, not a new card; PM option A, 10/09).
+export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food' | 'refused_then_vomited'
+
+/**
+ * I5's facts: how many collapsed vomit episodes followed a refused bowl within `windowMinutes`, on
+ * how many of the owner's days, and the first one's onset. A COUNT over a named population, never
+ * a rate: the record cannot say how many refusals were NOT followed by a vomit in a way an owner
+ * should read as reassurance (ratings are exception-only, CUL-1118), so no denominator is offered.
+ */
+export interface RefusedThenVomitedFacts {
+  episodeCount: number
+  dayCount: number
+  /** ISO onset of the earliest counted episode. */
+  firstIso: string
+  /** That onset's day in the owner's zone (YYYY-MM-DD), the "since" date the line prints, so the
+   *  date and the day count read the same calendar (adversarial pass D5). */
+  firstLocalDay: string
+  /** The rapid band's minutes (`rapidWindowMinutes`), carried so no surface restates the 30. */
+  windowMinutes: number
+}
 
 /**
  * Calm intake-decline safety flag (②). NEVER softened into "picky", NEVER reassures,
@@ -1137,6 +1188,12 @@ export interface IntakeDeclineFinding extends FindingBase {
    * span; this stays a raw structured fact (no Date.now-relative arithmetic in the finding).
    */
   lastFullMealIso: string | null
+  /**
+   * I5 (Engines v3 PR-30s): present only under `engines_v3_en5`, on a cat, at or above the floor.
+   * On a `refused_then_vomited` finding it is the whole claim; on the other two triggers it is the
+   * extra line the card prints. Absent says nothing (a record that rates bowls by exception).
+   */
+  refusedThenVomited?: RefusedThenVomitedFacts
 }
 
 /** A reflection only ever describes a FLAT ("same as last week") or IMPROVING (falling) trend. */
@@ -1906,6 +1963,44 @@ export interface IncidentRedFlagFinding extends FindingBase {
   flaggedIncidentCount: number
   /** The recency window in days actually applied (a flag older than this no longer leads Home). */
   windowDays: number
+  /**
+   * Engines v3 PR-30a (CUL-1511; docs/nyx-incident-tiers-requirements.md §4, K1 = A): the loudest
+   * NEW-RULE call among this family's in-window reads, in the record's own resolution. Present ⇒ the
+   * card's ask is that tier's words ("call your vet now" / "call your vet today"); absent ⇒ every
+   * read here is earlier-rule and the card keeps today's "worth a call to your vet", to the byte.
+   * It never lowers anything: it is set only from a call, and a family with a photo flag fires
+   * whether or not it is set.
+   */
+  tier?: IncidentCall
+  /** ISO-8601 UTC occurred_at of the most recent read at `tier`: the read whose words the ask is.
+   *  On a photo card it can be a different read from the flagged photo, and the sentence says so
+   *  rather than pinning the louder call on the older photo. Present exactly when `tier` is. */
+  tierIso?: string
+  /** A LATER read in the family that says call today, when the card's tier is call now from an
+   *  older read: its occurred_at. Present only then. Without it a fresh call today under an older
+   *  call now changed nothing on Home (the adversarial pass's second round): the card says it as
+   *  its own dated clause, so every call joins the band (K1 = A). */
+  laterCallTodayIso?: string
+  /** Engines v3 PR-30c (CUL-1739): the freshest instant any in-window read at `tier` SAID its
+   *  call: per read the later of its occurred_at and its row's last write (its event when the
+   *  write is unknown), the max over the reads. Present exactly when `tier` is. The phone dates a
+   *  call now from this, a day after it; absent (a cache from before PR-30c), it keeps "now". */
+  tierReadIso?: string
+  /** PR-30c (ruling 2a's rank half): under a call now, when the family's call today was last
+   *  said. Ranks only: the phone keeps a dated call now at a live red flag's rank while this is
+   *  fresher than `tierReadIso`. Never a word on any surface (`laterCallTodayIso` carries those). */
+  callTodaySaidIso?: string
+  /**
+   * Present (true) when the family has NO photo flag and fires only because a new-rule read is a
+   * call (K1 = A: every call joins Home's band, the contextual ones included). The card says only
+   * that a read says to call: never where the call came from, because the row cannot say (the
+   * model's own escalation on a clean photo, a contextual sign, and a call whose blood the owner
+   * cleared all look alike here; the record's card names the reason). Then `flags` is empty,
+   * `flaggedIncidentCount` counts the CALLED reads (clustered as B-368 does), and
+   * `mostRecentFlaggedIso` is `tierIso`. Absent on every card a photo flag raised. Never present
+   * without `tier`.
+   */
+  callOnly?: true
 }
 
 export type Finding =
@@ -2118,6 +2213,25 @@ export interface DetectionConfig {
     cat: {
       consecutiveDaysBelowBaseline: number
       singleDayConcernCeiling: number
+    }
+  }
+  /**
+   * EN-5's Signal half (Engines v3 PR-30s, CUL-1725), behind `engines_v3_en5`. ABSENT on
+   * DEFAULT_CONFIG and EN11_CONFIG, so the intake lane is byte-identical for an account without
+   * the key; the shells add it with `withEn5Config` only while the key is on. Present, it runs
+   * I5 (refused, then vomited within minutes) on cats and nothing else.
+   */
+  en5?: {
+    refusedThenVomited: {
+      /** Look back this many days for qualifying episodes. */
+      windowDays: number
+      /** At least this many collapsed vomit episodes... */
+      minEpisodes: number
+      /** ...on at least this many of the owner's local days. */
+      minDays: number
+      /** ...and the first and last counted onsets at least this many hours apart, so one night
+       *  that crosses midnight never meets a two-day floor (adversarial pass D3). */
+      minSpanHours: number
     }
   }
   reflection: {
@@ -4032,6 +4146,16 @@ function utcDateKey(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10)
 }
 
+/** Detector ②'s calendar (CUL-94): the owner's local day index, or the UTC day with no valid
+ *  zone. Mirrored by `lib/analytics.ts` detectIntakeDecline; the parity suite pins the two. */
+function intakeDayOf(ms: number, timeZone: string | undefined): number {
+  return isValidTimeZone(timeZone) ? localDayIndex(ms, timeZone) : Math.floor(ms / MS_PER_DAY)
+}
+
+function intakeDaysOf(meals: readonly RatedMeal[], timeZone: string | undefined): Map<RatedMeal, number> {
+  return new Map(meals.map((m) => [m, intakeDayOf(m.ms, timeZone)]))
+}
+
 /** A rated meal reduced to the fields the intake-decline / coverage logic needs. */
 interface RatedMeal {
   ms: number
@@ -4099,9 +4223,119 @@ function lastFullMeal(meals: RatedMeal[]): string | null {
   return null
 }
 
+/**
+ * Detector ②, the intake lane. Under `engines_v3_en5` (config.en5) it also runs I5, refused then
+ * vomited within minutes (Engines v3 PR-30s, CUL-1725): when ② fires, I5's facts ride on its
+ * leading card as a line; when ② is quiet, I5 raises the cat intake card by itself (PM option A,
+ * 10/09), because the cat it exists for (one refusal a night) never trips ②. Flag off, this is
+ * `detectIntakeDeclineCore` and nothing else.
+ */
 export function detectIntakeDecline(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
+): IntakeDeclineFinding[] {
+  const findings = detectIntakeDeclineCore(input, config)
+  if (!config.en5) return findings
+  const facts = refusedThenVomitedFacts(input, config, config.en5.refusedThenVomited)
+  if (!facts) return findings
+  if (findings.length > 0) {
+    // One line, on the card that leads (the ranker's own trigger order), so two intake cards
+    // never print it twice.
+    const lead = findings.reduce((a, b) => (INTAKE_TRIGGER_RANK[b.trigger] < INTAKE_TRIGGER_RANK[a.trigger] ? b : a))
+    return findings.map((f) => (f === lead ? { ...f, refusedThenVomited: facts } : f))
+  }
+  return [
+    {
+      type: 'intake_decline',
+      priorityClass: 'safety',
+      trigger: 'refused_then_vomited',
+      species: input.pet.species,
+      // No baseline is involved: the claim is a count of episodes, so the score fields hold the
+      // refusal's score and no comparison, and no surface reads them for this trigger.
+      baselineScore: intakeScore('refused'),
+      recentScore: intakeScore('refused'),
+      daysBelowBaseline: 0,
+      refusedFoodLabel: null,
+      ratedMealsConsidered: 0,
+      lastFullMealIso: lastFullMeal(classifyRatedMeals(input.mealEvents, intakeFreeFedSpans(input))),
+      refusedThenVomited: facts,
+    },
+  ]
+}
+
+/** The ranker's order within intake_decline (refused_normal_food leads), shared with the line's
+ *  placement so the line always sits on the card that leads. */
+const INTAKE_TRIGGER_RANK: Readonly<Record<IntakeDeclineTrigger, number>> = {
+  refused_normal_food: 0,
+  consecutive_low: 1,
+  refused_then_vomited: 2,
+}
+
+/**
+ * I5 (ruling sheet §2.7, CUL-1196): the collapsed vomit episodes in the last `windowDays` whose last
+ * bowl was rated Refused within the rapid band's minutes (`minutesAfterLastRefusal`, the timing
+ * lane's own evidence bars). Cats only, provisionally (species is on the real-vet list). Null below
+ * the floor: the absence of this line says nothing about her eating, and nothing renders it.
+ *
+ * Days are the owner's local days. With no valid zone on file I5 is SILENT, as ⑥ is: a UTC day
+ * would split an American evening in two and print a count the owner never lived. And the counted
+ * onsets must span `minSpanHours`, so one night across local midnight never meets the floor.
+ */
+function refusedThenVomitedFacts(
+  input: DetectionInput,
+  config: DetectionConfig,
+  rule: NonNullable<DetectionConfig['en5']>['refusedThenVomited'],
+): RefusedThenVomitedFacts | null {
+  if (input.pet.species !== 'cat') return null
+  if (!isValidTimeZone(input.timezone)) return null
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return null
+  const timingConfig = timingConfigFor(config)
+  const feedings = timingFeedingsOf(input)
+  const freeFedSpans = timingFreeFedSpansOf(input)
+  const windowStart = nowMs - rule.windowDays * MS_PER_DAY
+  // Collapse on the full list, then window (the timing lane's wiring rule).
+  const episodes = collapseEpisodes(
+    input.symptomEvents
+      .filter((e) => e.type === POSTPRANDIAL_SYMPTOM_TYPE)
+      .map((e) => ({ ms: Date.parse(e.occurredAt), confidence: e.occurredAtConfidence ?? null }))
+      .filter((e) => Number.isFinite(e.ms)),
+    config.symptomEpisodeGapHours,
+  ).filter((e) => e.ms >= windowStart && e.ms <= nowMs)
+  const counted = episodes.filter((e) => {
+    const minutes = minutesAfterLastRefusal({ onsetMs: e.ms, confidence: e.confidence }, feedings, freeFedSpans, timingConfig)
+    return minutes !== null && minutes <= timingConfig.rapidWindowMinutes
+  })
+  const days = new Set(counted.map((e) => localIsoDay(new Date(e.ms).toISOString(), input.timezone)))
+  if (counted.length < rule.minEpisodes || days.size < rule.minDays) return null
+  if (counted[counted.length - 1].ms - counted[0].ms < rule.minSpanHours * MS_PER_HOUR) return null
+  const firstIso = new Date(counted[0].ms).toISOString()
+  return {
+    episodeCount: counted.length,
+    dayCount: days.size,
+    firstIso,
+    firstLocalDay: localIsoDay(firstIso, input.timezone),
+    windowMinutes: timingConfig.rapidWindowMinutes,
+  }
+}
+
+/** I5's provisional values (ruling sheet §2.7: the rapid band, two episodes on two days; the window
+ *  is the intake baseline's 14 days). All three are on the real-vet list (CUL-1312). */
+export const EN5_SETTINGS: NonNullable<DetectionConfig['en5']> = {
+  // 14 hours: one bad night rarely runs past about 12, so it never clears this, while two evenings
+  // with a late first dinner (22:00, then 17:30 the next day: 19.5 hours) do. The first draft had
+  // 20, and the re-review silenced that refuser with it; the quiet side is the one that misses a cat.
+  refusedThenVomited: { windowDays: 14, minEpisodes: 2, minDays: 2, minSpanHours: 14 },
+}
+
+/** The config under `engines_v3_en5`: the caller's config plus I5, so it composes with EN-11's. */
+export function withEn5Config(config: DetectionConfig): DetectionConfig {
+  return { ...config, en5: EN5_SETTINGS }
+}
+
+function detectIntakeDeclineCore(
+  input: DetectionInput,
+  config: DetectionConfig,
 ): IntakeDeclineFinding[] {
   const cfg = config.intakeDecline
   const nowMs = Date.parse(input.now)
@@ -4115,8 +4349,14 @@ export function detectIntakeDecline(
   // (rating more meals wakes this detector); see detectRateMeals.
   if (ratedMeals.length < cfg.minRatedMealsForBaseline) return []
 
+  // The window edge stays a raw `now − 14×24h` (CUL-94 measured whole local days and kept this):
+  // a local-day edge only ever WIDENS the window, and the older meals it adds diluted a food's
+  // normally-eaten history under its floor (a differential seed lost its refusal card). The edge
+  // still ages a meal out at a clock hour; the buffer-day cuts below carry the case that made
+  // that silence a card (adversarial pass 2, case 4).
   const baselineWindowStart = nowMs - cfg.baselineWindowDays * MS_PER_DAY
   const windowMeals = ratedMeals.filter((m) => m.ms >= baselineWindowStart)
+  const todayDay = intakeDayOf(nowMs, input.timezone)
   if (windowMeals.length < cfg.minRatedMealsForBaseline) return []
 
   // B-213 — the conservative "last full meal" anchor, computed ONCE over the rated meals
@@ -4139,28 +4379,54 @@ export function detectIntakeDecline(
   // sensitivity on the day count only, never by reading absent data as a decline.
   const isCat = input.pet.species === 'cat'
   const consecutiveDays = isCat ? cfg.cat.consecutiveDaysBelowBaseline : cfg.consecutiveDaysBelowBaseline
-  const recentCutoffMs = nowMs - consecutiveDays * MS_PER_DAY
-  const baselineMeals = windowMeals.filter((m) => m.ms < recentCutoffMs)
+  // CUL-94 — days are the OWNER's local days. The old split was a raw `now − N×24h` cutoff for
+  // the baseline and UTC calendar days for the recent window, so every meal between 24h ago and
+  // UTC midnight was counted nowhere: a New York cat lost its card at 20:00 EDT with no new
+  // evidence, and a Pacific cat's full dinner landed in "today's" UTC bucket and lifted a
+  // genuinely low day over the ceiling. The recent window is N whole local days ending at the
+  // ANCHOR — today once today has a rated meal, else yesterday (between local midnight and
+  // breakfast nothing new is known, so the card holds). The baseline is every window meal before
+  // them, with the day just before them (the BUFFER) read at every cut, below. No valid zone ⇒
+  // UTC days, the pre-CUL-94 calendar: this is a safety card, so a missing zone degrades the day
+  // boundary, never silences the detector (unlike ⑥ / I5).
+  const dayOfMeal = intakeDaysOf(windowMeals, input.timezone)
+  const anchorDay = windowMeals.some((m) => dayOfMeal.get(m) === todayDay) ? todayDay : todayDay - 1
+  const firstRecentDay = anchorDay - (consecutiveDays - 1)
+  const bufferDay = firstRecentDay - 1
 
-  if (baselineMeals.length >= cfg.minRatedMealsForBaseline) {
-    const baselineScore =
-      baselineMeals.reduce((sum, m) => sum + m.score, 0) / baselineMeals.length
+  // Per-day means for the N local days ending at the anchor. A day with no rated meal is
+  // skipped, never treated as a decline — a logging gap must not masquerade as anorexia
+  // (§9 / B-027 data caveat) — so a skipped day leaves the window short and the arm silent.
+  const recentDays: { mean: number }[] = []
+  for (let day = anchorDay; day >= firstRecentDay; day--) {
+    const dayMeals = windowMeals.filter((m) => dayOfMeal.get(m) === day)
+    if (dayMeals.length === 0) continue
+    recentDays.push({ mean: dayMeals.reduce((sum, m) => sum + m.score, 0) / dayMeals.length })
+  }
 
-    // Per-day means for the last N calendar days that actually have a rated meal.
-    // A day with no rated meal is skipped, never treated as a decline — a logging
-    // gap must not masquerade as anorexia (§9 / B-027 data caveat).
-    const recentDays: { mean: number }[] = []
-    for (let i = 0; i < consecutiveDays; i++) {
-      const key = utcDateKey(nowMs - i * MS_PER_DAY)
-      const dayMeals = windowMeals.filter((m) => utcDateKey(m.ms) === key)
-      if (dayMeals.length === 0) continue
-      const mean = dayMeals.reduce((sum, m) => sum + m.score, 0) / dayMeals.length
-      recentDays.push({ mean })
-    }
-
-    if (recentDays.length >= consecutiveDays) {
+  // The buffer day is read at EVERY cut and the accusing reading stands. It is the day most
+  // likely to hold the onset, and the usual onset is a good morning and a bad evening: whole and
+  // in the baseline, its refusals dilute the normal (more surely the harder she refused); whole
+  // and out, its good meals leave a thin or marginal normal short of the floor or the full point.
+  // The pre-CUL-94 `now − N×24h` cutoff fell somewhere inside this day by accident; reading
+  // every prefix of it (none of its meals, the first, the first two, … all) covers every hour
+  // that cutoff could land on, so an evening refusal after a good morning can never quiet a card
+  // that the good morning alone would raise (both adversarial passes on CUL-94; the property is
+  // pinned in lib/intakeDeclineLocalDay.test.ts). Each prefix is the same hypothesis under the
+  // same full-point rule, so the union adds little multiplicity. Measured against the pre-CUL-94
+  // detector over 100,000 generated records (UTC days, both triggers): none loses a card the old
+  // detector raised; 6,775 gain one, mostly the overnight hold. Residual, stated: a refusal day
+  // that has aged PAST the buffer still dilutes the normal (pre-CUL-94 too; CUL-1797).
+  if (recentDays.length >= consecutiveDays) {
+    const recentMean = recentDays.reduce((sum, d) => sum + d.mean, 0) / recentDays.length
+    const beforeBuffer = windowMeals.filter((m) => (dayOfMeal.get(m) as number) < bufferDay)
+    const bufferMeals = windowMeals.filter((m) => dayOfMeal.get(m) === bufferDay) // ascending
+    for (let cut = 0; cut <= bufferMeals.length; cut++) {
+      const baselineMeals = cut === 0 ? beforeBuffer : [...beforeBuffer, ...bufferMeals.slice(0, cut)]
+      if (baselineMeals.length < cfg.minRatedMealsForBaseline) continue
+      const baselineScore =
+        baselineMeals.reduce((sum, m) => sum + m.score, 0) / baselineMeals.length
       const allBelow = recentDays.every((d) => d.mean < baselineScore)
-      const recentMean = recentDays.reduce((sum, d) => sum + d.mean, 0) / recentDays.length
       const material = baselineScore - recentMean >= cfg.minDeclineDelta
       // On the single-day (cat) path, also require the day to be genuinely low — not
       // merely one notch down (e.g. "all"→"most") — so we stay sensitive without crying
@@ -4179,6 +4445,7 @@ export function detectIntakeDecline(
           ratedMealsConsidered: baselineMeals.length,
           lastFullMealIso,
         })
+        break
       }
     }
   }
@@ -4212,8 +4479,10 @@ export function detectIntakeDecline(
     // safety failure (§9 / §11 #1). Ported from lib/analytics.ts detectIntakeDecline
     // (B-090): the client health-watch led with this fix; porting it here re-converges
     // the two decline surfaces so they can never disagree on a refusal.
-    const latestDayKey = utcDateKey(latest.ms)
-    const prior = sorted.filter((m) => utcDateKey(m.ms) !== latestDayKey)
+    // The owner's local day (CUL-94): a UTC day split a US-evening bout in two and left its
+    // first half in `prior`. Residual, stated: a bout across LOCAL midnight still splits (CUL-1790).
+    const latestDay = dayOfMeal.get(latest)
+    const prior = sorted.filter((m) => dayOfMeal.get(m) !== latestDay)
     if (prior.length < cfg.normallyEatenMinSamples) continue
     const priorMean = prior.reduce((sum, m) => sum + m.score, 0) / prior.length
     if (priorMean < cfg.normallyEatenScoreFloor) continue
@@ -5380,6 +5649,27 @@ function timingConfigFor(config: DetectionConfig): MealTimingConfig {
   }
 }
 
+/** The pet's feedings as the timing lane reads them: the event id, the instant, the intake rating,
+ *  the evidence-only form. The NULL-tolerant witnessed filter, the refusal rule and the sort live in
+ *  `lib/mealTiming.ts`, so no caller can anchor a claim on an estimated or refused feeding. Shared
+ *  by ⑤/L1's scan and I5, so the two read one feeding list. */
+function timingFeedingsOf(input: DetectionInput): FeedingInput[] {
+  return input.mealEvents.map((m) => ({
+    id: m.id,
+    ms: Date.parse(m.occurredAt),
+    confidence: m.occurredAtConfidence ?? null,
+    intakeRating: m.intakeRating,
+    form: m.foodLabel ?? m.foodType ?? null,
+  }))
+}
+
+/** Free-fed standing facts (B-040): a bowl available in the preceding window makes "minutes since
+ *  last logged feeding" fiction. classifyArrangements parses + drops garbage/inverted spans
+ *  (untilMs > fromMs), satisfying isFreeFedNear's valid-span precondition. */
+function timingFreeFedSpansOf(input: DetectionInput): FreeFedSpan[] {
+  return classifyArrangements(input.feedingArrangements ?? []).map((s) => ({ fromMs: s.fromMs, untilMs: s.untilMs }))
+}
+
 /** The shared vomit-timing scan ⑤ and L1 both read — ONE distribution over ONE eligible set. */
 interface TimingScan {
   /** The banded eligible episodes + bandCounts (rapid/mid/long) over the eligible denominator. */
@@ -5413,19 +5703,8 @@ function scanVomitTiming(input: DetectionInput, config: DetectionConfig): Timing
   // evidence-only form). The NULL-tolerant witnessed filter, the refusal rule (a Refused bowl never
   // anchors — CUL-1122) and the sort all live in `lib/mealTiming.ts` (`classifyEpisodeSet` prepares
   // them once), so a caller can't forget one and anchor a claim on an estimated or refused feeding.
-  const feedings: FeedingInput[] = input.mealEvents.map((m) => ({
-    id: m.id,
-    ms: Date.parse(m.occurredAt),
-    confidence: m.occurredAtConfidence ?? null,
-    intakeRating: m.intakeRating,
-    form: m.foodLabel ?? m.foodType ?? null,
-  }))
-  // Free-fed standing facts (B-040): a bowl available in the preceding window makes
-  // "minutes since last logged feeding" fiction. classifyArrangements parses + drops garbage/
-  // inverted spans (untilMs > fromMs), satisfying isFreeFedNear's valid-span precondition.
-  const freeFedSpans: FreeFedSpan[] = classifyArrangements(input.feedingArrangements ?? []).map(
-    (s) => ({ fromMs: s.fromMs, untilMs: s.untilMs }),
-  )
+  const feedings = timingFeedingsOf(input)
+  const freeFedSpans = timingFreeFedSpansOf(input)
 
   const vomitEvents = input.symptomEvents
     .filter((s) => s.type === POSTPRANDIAL_SYMPTOM_TYPE)
@@ -7048,13 +7327,33 @@ export function detectIncidentRedFlags(
     flagKinds: Set<IncidentFlagKind>
     mostRecentMs: number
     mostRecentIso: string
-    inWindow: { ms: number; flagged: boolean }[]
+    inWindow: { ms: number; flagged: boolean; called: boolean }[]
+    /** PR-30a: the loudest new-rule call in the window, and the most recent read at EACH call
+     *  tier, so a card is dated by a read that says its own words (never a quieter one's day). */
+    call: IncidentCall | null
+    latestAt: Record<IncidentCall, { ms: number; iso: string }>
+    /** PR-30c: the freshest "said at" instant per call tier (max of occurred and written), and
+     *  whether that read's write time was the row's real stamp (CUL-1759) or `updated_at`. */
+    saidAt: Record<IncidentCall, { ms: number; iso: string; stamped: boolean }>
+    /** CUL-1759: every call read in the family carries the row's own stamp. Only then does "later"
+     *  follow said order: a Hide moves an unstamped sibling's updated_at but never whether it is
+     *  stamped, so no unrelated write can switch the words (the adversarial pass, P2). */
+    allCallsStamped: boolean
   }
   const byFamily = new Map<IncidentCategory, FamilyAcc>()
   const familyAcc = (cat: IncidentCategory): FamilyAcc => {
     let acc = byFamily.get(cat)
     if (!acc) {
-      acc = { flagKinds: new Set(), mostRecentMs: -Infinity, mostRecentIso: '', inWindow: [] }
+      acc = {
+        flagKinds: new Set(),
+        mostRecentMs: -Infinity,
+        mostRecentIso: '',
+        inWindow: [],
+        call: null,
+        latestAt: { call_now: { ms: -Infinity, iso: '' }, call_today: { ms: -Infinity, iso: '' } },
+        saidAt: { call_now: { ms: -Infinity, iso: '', stamped: false }, call_today: { ms: -Infinity, iso: '', stamped: false } },
+        allCallsStamped: true,
+      }
       byFamily.set(cat, acc)
     }
     return acc
@@ -7075,7 +7374,28 @@ export function detectIncidentRedFlags(
     const flags = deriveIncidentFlags(a)
     const flagged = flags.length > 0 // no PRESENT flag ⇒ silence, never a "clear"; but it still
     const acc = familyAcc(cat)
-    acc.inWindow.push({ ms, flagged }) // participates in clustering as a possible re-log anchor
+    // PR-30a: a new-rule call, in the record's own words. call now outranks call today; nothing
+    // quiet is ever recorded here, so this can only add a card or raise an ask.
+    const call = a.call === 'call_now' || a.call === 'call_today' ? a.call : null
+    acc.inWindow.push({ ms, flagged, called: call !== null }) // participates in clustering as a possible re-log anchor
+    if (call !== null) {
+      if (acc.call !== 'call_now') acc.call = call
+      if (ms > acc.latestAt[call].ms) acc.latestAt[call] = { ms, iso: a.occurredAt }
+      // PR-30c: when this call was said, the later of the event and the row's write. Parsed,
+      // never text (C-40).
+      // A read with no readable write time counts as said at its event (the third adversarial
+      // pass: skipping it let an older read's write date a call now raised today).
+      // CUL-1759: the row's own stamp when it has one (099), else `updated_at` (ruling B's fallback).
+      const stampMs = typeof a.callSaidAt === 'string' ? Date.parse(a.callSaidAt) : NaN
+      const stamped = Number.isFinite(stampMs)
+      const sourceIso = stamped ? (a.callSaidAt as string) : typeof a.writtenAt === 'string' ? a.writtenAt : null
+      const sourceMs = stamped ? stampMs : sourceIso !== null ? Date.parse(sourceIso) : NaN
+      const said = Number.isFinite(sourceMs) && sourceMs > ms
+        ? { ms: sourceMs, iso: sourceIso as string, stamped }
+        : { ms, iso: a.occurredAt, stamped }
+      if (said.ms > acc.saidAt[call].ms) acc.saidAt[call] = said
+      if (!stamped) acc.allCallsStamped = false
+    }
     if (flagged) {
       for (const f of flags) acc.flagKinds.add(f)
       if (ms > acc.mostRecentMs) {
@@ -7087,11 +7407,63 @@ export function detectIncidentRedFlags(
 
   // Emit one finding per family with ≥1 flagged in-window incident, in a DETERMINISTIC family order
   // (vomit before stool) — the ranker also breaks the incident_red_flag/incident_red_flag tie this
-  // way, so the two agree. A family with no flagged incident emits nothing (silence, never a "clear").
+  // way, so the two agree. A family with no flagged incident emits nothing (silence, never a "clear"),
+  // unless a new-rule read in it is a call (PR-30a, K1 = A), which emits a `callOnly` card.
+  // PR-30a: a call today newer than the call now the card speaks, as its own dated clause.
+  // PR-30c (CUL-1739; PM ruling B after the fourth adversarial pass). A call today is LATER by
+  // EVENT order, as PR-30a shipped it: event times never move on a rewrite, so neither a rewrite of
+  // the call-today row (089's `may_wait` take-back) nor one of the call-now row (a Hide, an edit, a
+  // failed re-read) can add or erase this clause. `updated_at` is not a "said at" stamp, so it never
+  // decides a word here. The date is that event's.
+  // CUL-1759 (PM ruling (a), 2026-10-10): when EVERY call read in the family carries the row's own
+  // stamp (099), which no unrelated write moves, "later" is ordered by when each call was SAID and
+  // dated by that instant: a call today written today on an older event reaches the card, and a call
+  // now raised after a call today never sits under a "later" one. Otherwise event order, as before.
+  const laterCallToday = (acc: FamilyAcc): { laterCallTodayIso?: string } => {
+    if (acc.call !== 'call_now') return {}
+    const now = acc.saidAt.call_now
+    const today = acc.saidAt.call_today
+    if (acc.allCallsStamped && now.stamped && today.stamped && Number.isFinite(today.ms)) {
+      return today.ms > now.ms ? { laterCallTodayIso: today.iso } : {}
+    }
+    return acc.latestAt.call_today.ms > acc.latestAt.call_now.ms ? { laterCallTodayIso: acc.latestAt.call_today.iso } : {}
+  }
+  // The rank half (ruling 2a), kept apart from the words: when the family's call today was last
+  // said, under a call now. The phone ranks a dated call now as a live red flag when this is
+  // fresher than the call now's own said-at. A rewrite can only raise that rank (the loud side),
+  // never change a word.
+  const callTodaySaid = (acc: FamilyAcc): { callTodaySaidIso?: string } =>
+    acc.call === 'call_now' && Number.isFinite(acc.saidAt.call_today.ms) ? { callTodaySaidIso: acc.saidAt.call_today.iso } : {}
+  // PR-30c: when the card's call was last said, for the phone's dated form.
+  const tierRead = (acc: FamilyAcc): { tierReadIso?: string } =>
+    acc.call !== null && Number.isFinite(acc.saidAt[acc.call].ms) ? { tierReadIso: acc.saidAt[acc.call].iso } : {}
+
   const out: IncidentRedFlagFinding[] = []
   for (const cat of INCIDENT_CATEGORY_ORDER) {
     const acc = byFamily.get(cat)
-    if (!acc || acc.flagKinds.size === 0) continue
+    if (!acc) continue
+    // PR-30a (K1 = A): a family with no photo flag still fires when a new-rule read in the window is
+    // a call the record raised. Its card counts and dates the CALLED reads (`callOnly`).
+    if (acc.flagKinds.size === 0) {
+      if (acc.call === null) continue
+      out.push({
+        type: 'incident_red_flag',
+        priorityClass: 'safety',
+        incidentType: cat,
+        flags: [],
+        // Dated by the most recent read that says the card's own words (adversarial pass, #4).
+        mostRecentFlaggedIso: acc.latestAt[acc.call].iso,
+        flaggedIncidentCount: countFlaggedClusters(acc.inWindow.map((x) => ({ ms: x.ms, flagged: x.called }))),
+        windowDays: config.incidentRedFlag.windowDays,
+        tier: acc.call,
+        tierIso: acc.latestAt[acc.call].iso,
+        ...laterCallToday(acc),
+        ...tierRead(acc),
+        ...callTodaySaid(acc),
+        callOnly: true,
+      })
+      continue
+    }
 
     // B-368 — collapse NEAR-DUPLICATE re-logs of one incident so the count (and its singular/plural
     // "logged photo(s)" copy) describes distinct flagged incidents, not raw analysis rows: the same
@@ -7121,9 +7493,19 @@ export function detectIncidentRedFlags(
       mostRecentFlaggedIso: acc.mostRecentIso,
       flaggedIncidentCount,
       windowDays: config.incidentRedFlag.windowDays,
+      // PR-30a: the family's loudest new-rule call, or nothing (today's words).
+      ...(acc.call !== null ? { tier: acc.call, tierIso: acc.latestAt[acc.call].iso } : {}),
+      ...laterCallToday(acc),
+      ...tierRead(acc),
+      ...callTodaySaid(acc),
     })
   }
   return out
+}
+
+/** A red-flag card's new-rule call as a rank: call now 2, call today 1, none 0. */
+function redFlagCallRank(f: IncidentRedFlagFinding): number {
+  return f.tier === 'call_now' ? 2 : f.tier === 'call_today' ? 1 : 0
 }
 
 // ── Detector registry (§4) ──────────────────────────────────────────────────
@@ -7278,6 +7660,19 @@ export const SAFETY_TYPE_ORDER: Readonly<Record<SafetyFindingType, number>> = {
 }
 
 /**
+ * A safety finding's place in SAFETY_TYPE_ORDER. One exception, by finding rather than by type:
+ * I5's `refused_then_vomited` intake card (Engines v3 PR-30s) sits BELOW the burden and weight
+ * cards and above chronicity. ②'s place above burden is the 48-hour feline liver window for a cat
+ * not eating; I5's card asks only "worth mentioning to your vet", and ranking it as ② let it take
+ * the lead from a "worth a call to your vet today" burden card (adversarial pass D2). PROVISIONAL,
+ * with I5's other values on the real-vet list. Mirrored in the client banner (lib/signalCopy.ts).
+ */
+export function safetyRankOf(f: Finding): number {
+  if (f.type === 'intake_decline' && f.trigger === 'refused_then_vomited') return 3.5
+  return (SAFETY_TYPE_ORDER as Readonly<Record<string, number>>)[f.type] ?? 9
+}
+
+/**
  * Orders findings per §5: safety first, then the context-lead insight, then the
  * rest by evidence tier (Established before Early) and effect strength. Returns
  * findings tagged with their resolved rank.
@@ -7299,24 +7694,25 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
     // (SAFETY_TYPE_ORDER); within intake-decline, an outright refusal of a normally-eaten
     // food leads.
     if (x.priorityClass === 'safety' && y.priorityClass === 'safety') {
-      const order = SAFETY_TYPE_ORDER as Readonly<Record<string, number>>
-      const safetyDiff = (order[x.type] ?? 9) - (order[y.type] ?? 9)
+      const safetyDiff = safetyRankOf(x) - safetyRankOf(y)
       if (safetyDiff !== 0) return safetyDiff
       // Two per-incident red-flag cards (a bloody vomit AND a bloody stool, B-364): both lead every
       // other safety lane; between the two, vomit leads stool — a fixed, deterministic order (also
       // the detector's emission order), so the surface never reorders on re-run. Neither is dropped.
       if (x.type === 'incident_red_flag' && y.type === 'incident_red_flag') {
+        // Engines v3 PR-30a (CUL-1511): the louder new-rule call leads first (mock §03: call now
+        // "ranks first"), so a stool call now never sits under a vomit call today, and the pet's
+        // own band agrees with the cross-pet banner's pick (`bannerRankOf`). Family order breaks
+        // a tie, as it always has.
+        const callDiff = redFlagCallRank(y) - redFlagCallRank(x)
+        if (callDiff !== 0) return callDiff
         return (
           INCIDENT_CATEGORY_ORDER.indexOf(x.incidentType) -
           INCIDENT_CATEGORY_ORDER.indexOf(y.incidentType)
         )
       }
       if (x.type === 'intake_decline' && y.type === 'intake_decline') {
-        const order: Record<IntakeDeclineTrigger, number> = {
-          refused_normal_food: 0,
-          consecutive_low: 1,
-        }
-        return order[x.trigger] - order[y.trigger]
+        return INTAKE_TRIGGER_RANK[x.trigger] - INTAKE_TRIGGER_RANK[y.trigger]
       }
       // Two chronicity cards (R4 both-stated, CUL-676) — the same shape as the two
       // red-flags above, and stated EXPLICITLY for the same reason: the detector already

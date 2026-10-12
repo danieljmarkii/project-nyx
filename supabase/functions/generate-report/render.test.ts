@@ -14,7 +14,8 @@
 // deterministic and do not depend on detection thresholds.
 
 import { strict as assert } from 'node:assert'
-import { renderReport, SHIPPED_STYLE } from './render.ts'
+import { OFF_DIET_ZERO_MIN_MEAL_DAYS, renderReport, SHIPPED_STYLE } from './render.ts'
+import { COVERAGE_FLOOR } from '../../../lib/dietTrial.ts'
 // CUL-1041 — the window-move fixtures below are built by the PRODUCTION derivation,
 // so this file cannot drift from `trial.ts` without going red.
 import { deriveWindowChange } from './trial.ts'
@@ -269,6 +270,11 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       bins: [],
       unknownByWeek: [],
       mealDaysByBucket: [],
+      scopeDaysByBucket: [],
+      scopeStartDate: '2026-06-01',
+      scopeEndDate: '2026-06-28',
+      trialScoped: false,
+      zeroWithheld: false,
       feedingsByWeek: [],
       totalByProtein: {},
       hasUnknown: false,
@@ -1428,7 +1434,7 @@ Deno.test('an out-of-range date degrades to the raw string, never leaks "undefin
 // ── Coverage: stool characteristics (present-only for blood/mucus) ─────────────────
 
 Deno.test('stool: no photo read → owner-described bar + the pre-AI limitation note', () => {
-  const html = renderReport(base({ stool: { total: 6, normalCount: 4, looseCount: 2, windowDays: 52, loggedDays: 48, ai: null } }))
+  const html = renderReport(base({ stool: { total: 6, normalCount: 4, looseCount: 2, windowDays: 52, loggedDays: 48, normalShortcut: null, ai: null } }))
   assert.ok(/Stool characteristics/.test(html))
   assert.ok(/owner-described/.test(html))
   assert.ok(/No photos were read/.test(html), 'pre-AI limitation note stands when ai is null')
@@ -1438,7 +1444,7 @@ Deno.test('stool: no photo read → owner-described bar + the pre-AI limitation 
 Deno.test('stool: AI read, nothing present → Bristol line + "not a clearance" (never "0 of N")', () => {
   const html = renderReport(base({
     stool: {
-      total: 4, normalCount: 3, looseCount: 1, windowDays: 30, loggedDays: 28,
+      total: 4, normalCount: 3, looseCount: 1, windowDays: 30, loggedDays: 28, normalShortcut: null,
       ai: {
         totalIncidents: 4, withAnalysis: 3,
         states: { completed: 3, uncertain: 0, failed: 0, pending: 0 }, assessedCount: 3,
@@ -1459,7 +1465,7 @@ Deno.test('stool: AI read, nothing present → Bristol line + "not a clearance" 
 Deno.test('stool: melena blood + mucus present → present findings, melena named, mucus is monitor-tier', () => {
   const html = renderReport(base({
     stool: {
-      total: 2, normalCount: 0, looseCount: 2, windowDays: 14, loggedDays: 10,
+      total: 2, normalCount: 0, looseCount: 2, windowDays: 14, loggedDays: 10, normalShortcut: null,
       ai: {
         totalIncidents: 2, withAnalysis: 2,
         states: { completed: 2, uncertain: 0, failed: 0, pending: 0 }, assessedCount: 2,
@@ -1484,7 +1490,7 @@ Deno.test('stool: melena blood + mucus present → present findings, melena name
 Deno.test('stool: haematochezia (fresh_red) blood named distinctly from melena', () => {
   const html = renderReport(base({
     stool: {
-      total: 1, normalCount: 0, looseCount: 1, windowDays: 7, loggedDays: 7,
+      total: 1, normalCount: 0, looseCount: 1, windowDays: 7, loggedDays: 7, normalShortcut: null,
       ai: {
         totalIncidents: 1, withAnalysis: 1,
         states: { completed: 1, uncertain: 0, failed: 0, pending: 0 }, assessedCount: 1,
@@ -2883,6 +2889,11 @@ Deno.test('#9 protein-over-time section renders with a hue+texture legend when o
         bins: [[2, 0], [3, 1], [0, 0]],
         unknownByWeek: [0, 1, 0],
         mealDaysByBucket: [7, 7, 7],
+        scopeDaysByBucket: [7, 7, 7],
+        scopeStartDate: '2026-06-01',
+        scopeEndDate: '2026-06-28',
+        trialScoped: false,
+        zeroWithheld: false,
         feedingsByWeek: [2, 5, 0],
         totalByProtein: { chicken: 5, turkey: 1 },
         hasUnknown: true,
@@ -2919,6 +2930,11 @@ Deno.test('B-444 — every protein band carries a texture; solid fill is reserve
         bins: [[4, 1], [2, 0]],
         unknownByWeek: [1, 0],
         mealDaysByBucket: [7, 7],
+        scopeDaysByBucket: [7, 7],
+        scopeStartDate: '2026-06-01',
+        scopeEndDate: '2026-06-28',
+        trialScoped: false,
+        zeroWithheld: false,
         feedingsByWeek: [6, 2],
         totalByProtein: { chicken: 6, turkey: 1 },
         hasUnknown: true,
@@ -3176,6 +3192,11 @@ Deno.test('B-497 — an off-diet week that was logged but clean draws a measured
         bins: [[2], [0], [1]],
         unknownByWeek: [0, 0, 0],
         mealDaysByBucket: [7, 7, 7], // a meal was logged every week; the middle week is a genuine clean week
+        scopeDaysByBucket: [7, 7, 7],
+        scopeStartDate: '2026-06-01',
+        scopeEndDate: '2026-06-28',
+        trialScoped: false,
+        zeroWithheld: false,
         feedingsByWeek: [2, 0, 1],
         totalByProtein: { chicken: 3 },
         hasUnknown: false,
@@ -3190,7 +3211,7 @@ Deno.test('B-497 — an off-diet week that was logged but clean draws a measured
   )
   assert.ok(/class="nub"/.test(html), 'the observed-zero off-diet week draws a baseline nub (a measured clean week)')
   assert.ok(!/class="nolog"/.test(html), 'a meal-observed clean week is never rendered as no-data')
-  assert.ok(!/diet was not observed/.test(html), 'no no-data note when the diet was observed every week')
+  assert.ok(!/too few to read as a week without off-diet food/.test(html), 'no no-data note when the diet was observed every week')
 })
 
 Deno.test('B-497 — an off-diet week with NO meal logged draws a dashed no-data marker + a dash, never a "0"', () => {
@@ -3202,6 +3223,11 @@ Deno.test('B-497 — an off-diet week with NO meal logged draws a dashed no-data
         bins: [[2], [0], [1]],
         unknownByWeek: [0, 0, 0],
         mealDaysByBucket: [7, 0, 7], // the middle week had NO meal logged (diet not observed)
+        scopeDaysByBucket: [7, 7, 7],
+        scopeStartDate: '2026-06-01',
+        scopeEndDate: '2026-06-28',
+        trialScoped: false,
+        zeroWithheld: false,
         feedingsByWeek: [2, 0, 1],
         totalByProtein: { chicken: 3 },
         hasUnknown: false,
@@ -3214,12 +3240,133 @@ Deno.test('B-497 — an off-diet week with NO meal logged draws a dashed no-data
       },
     }),
   )
-  assert.ok(/class="nolog"/.test(html), 'the unobserved week draws its own hollow dashed marker')
-  assert.equal((html.match(/class="nolog"/g) ?? []).length, 1, 'exactly the one week no meal was logged')
-  // The alt text names it as unlogged — the screen-reader path never voices absence as a zero.
-  assert.ok(/aria-label="Off-diet protein exposure per week: 2, not logged, 1\./.test(html), 'aria names the unobserved bucket, never a 0')
+  const svg = offDietSvg(html)
+  assert.ok(/class="nolog"/.test(svg), 'the unobserved week draws its own hollow dashed marker')
+  assert.equal((svg.match(/class="nolog"/g) ?? []).length, 1, 'exactly the one week no meal was logged')
+  // The alt text names it as not read — the screen-reader path never voices absence as a zero.
+  assert.ok(
+    svg.includes('aria-label="Off-diet protein exposure per week: 2 (meals logged on 7 of 7 days), not read as clean (meals logged on 0 of 7 days), 1 (meals logged on 7 of 7 days)."'),
+    'aria names the unobserved bucket, never a 0',
+  )
   // The dash is explained where it is drawn.
-  assert.ok(/diet was not observed \(no meal logged\)/.test(html), 'the no-data marker is named as diet-not-observed, not left to read as a clean week')
+  assert.ok(/too few to read as a week without off-diet food/.test(html), 'the no-data marker is named as diet-not-observed, not left to read as a clean week')
+})
+
+/** The off-diet chart's own SVG — sliced so a count of its marks never includes the note's legend glyph. */
+function offDietSvg(html: string): string {
+  const m = html.match(/<svg[^>]*aria-label="Off-diet protein exposure per week:[^"]*"[\s\S]*?<\/svg>/)
+  assert.ok(m, 'the off-diet chart rendered')
+  return m![0]
+}
+
+// ── CUL-1779: one logged meal is not a week — the floor is the trial coverage floor over 7 days ──
+function offDietTimeline(mealDaysByBucket: number[], bins: number[][]): ReportSnapshot['proteinTimeline'] {
+  const n = mealDaysByBucket.length
+  const total = bins.reduce((a, w) => a + w.reduce((x, y) => x + y, 0), 0)
+  return {
+    weekStartDates: Array.from({ length: n }, (_, i) => `2026-06-${String(1 + i * 7).padStart(2, '0')}`),
+    proteins: ['chicken'],
+    bins,
+    unknownByWeek: new Array(n).fill(0),
+    mealDaysByBucket,
+    scopeDaysByBucket: new Array(n).fill(7),
+    scopeStartDate: '2026-06-01',
+    scopeEndDate: '2026-06-28',
+    trialScoped: false,
+    zeroWithheld: false,
+    feedingsByWeek: bins.map((w) => w[0]),
+    totalByProtein: { chicken: total },
+    hasUnknown: false,
+    totalFeedings: total,
+    incompleteFeedings: 0,
+    humanFoodFeedings: 0,
+    incompleteHumanFoodFeedings: 0,
+    packagedReadable: 0,
+    packagedUnread: 0,
+  }
+}
+
+Deno.test('CUL-1779 — the floor is the trial coverage floor over seven days (4), not one meal', () => {
+  assert.equal(OFF_DIET_ZERO_MIN_MEAL_DAYS, Math.ceil(COVERAGE_FLOOR * 7))
+  assert.equal(OFF_DIET_ZERO_MIN_MEAL_DAYS, 4, 'a change to the coverage floor moves this chart too — re-run the cold read')
+})
+
+Deno.test('CUL-1779 — a zero-feeding week one meal-day under the floor draws not-observed; at the floor, a measured 0', () => {
+  const under = OFF_DIET_ZERO_MIN_MEAL_DAYS - 1
+  const html = renderReport(base({ proteinTimeline: offDietTimeline([7, under, OFF_DIET_ZERO_MIN_MEAL_DAYS], [[2], [0], [0]]) }))
+  const svg = offDietSvg(html)
+  assert.equal((svg.match(/class="nolog"/g) ?? []).length, 1, 'only the under-floor week is drawn as not observed')
+  assert.equal((svg.match(/class="nub"/g) ?? []).length, 1, 'the at-floor week is a measured clean week')
+  assert.ok(
+    svg.includes(`not read as clean (meals logged on ${under} of 7 days), 0 (meals logged on ${OFF_DIET_ZERO_MIN_MEAL_DAYS} of 7 days).`),
+    'the alt text voices the thin week by its meal-days, never as 0',
+  )
+  // Every column carries its day count, so a 0 is never read without its coverage (cold read).
+  assert.ok(svg.includes(`>${OFF_DIET_ZERO_MIN_MEAL_DAYS}/7 d<`) && svg.includes(`>${under}/7 d<`) && svg.includes('>7/7 d<'))
+  assert.ok(
+    html.includes(`a week with meals logged on fewer than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} days &mdash;`),
+    'the note names the floor where the marker is drawn',
+  )
+})
+
+Deno.test('CUL-1779 — a single logged meal-day reads as not observed, and is voiced with its day count', () => {
+  const html = renderReport(base({ proteinTimeline: offDietTimeline([7, 1], [[1], [0]]) }))
+  const svg = offDietSvg(html)
+  assert.ok(!/class="nub"/.test(svg), 'one meal does not make a clean week')
+  assert.ok(svg.includes('not read as clean (meals logged on 1 of 7 days).'))
+})
+
+Deno.test('CUL-748 item 4 — a fully logged three-day trailing part-week never prints a measured 0 (CUL-1779)', () => {
+  // The window's last bucket can be 1–7 days. Held absolute, the floor means a three-day tail logged
+  // every day still cannot draw the nub a full week's measured zero draws.
+  const t = offDietTimeline([7, 7, 3], [[1], [0], [0]])
+  t.scopeDaysByBucket = [7, 7, 3]
+  const svg = offDietSvg(renderReport(base({ proteinTimeline: t })))
+  assert.equal((svg.match(/class="nub"/g) ?? []).length, 1, 'the full clean middle week keeps its 0')
+  assert.equal((svg.match(/class="nolog"/g) ?? []).length, 1, 'the three-day tail is drawn as not observed')
+  assert.ok(svg.includes('>3/3 d<'), 'and its day count names the part-week')
+  const html = renderReport(base({ proteinTimeline: t }))
+  assert.ok(html.includes(`including a part-week shorter than ${OFF_DIET_ZERO_MIN_MEAL_DAYS} days`), 'the note covers a fully logged stub (cold read r2)')
+})
+
+Deno.test('CUL-1779 — on a long window the day counts follow the date labels\' stride, so they never collide', () => {
+  const n = 20 // > 14: dates are drawn every other week
+  const t = offDietTimeline(new Array(n).fill(7), Array.from({ length: n }, (_, i) => [i === 0 ? 1 : 0]))
+  const svg = offDietSvg(renderReport(base({ proteinTimeline: t })))
+  assert.equal((svg.match(/ d<\/text>/g) ?? []).length, n / 2, 'one count per drawn date')
+  assert.equal((svg.match(/class="nub"/g) ?? []).length, n - 1, 'every clean week still draws its measured 0')
+})
+
+Deno.test('CUL-1779 — when page 1 withholds the clean-record statement, no week prints a measured 0', () => {
+  // A cat refusing the trial diet every day: the meals are logged (7/7), nothing off-diet, and the
+  // trial module withholds the clean read. The chart must not say per week what page 1 refuses to say.
+  const t = offDietTimeline([7, 7, 7], [[1], [0], [0]])
+  t.zeroWithheld = true
+  const html = renderReport(base({ proteinTimeline: t }))
+  const svg = offDietSvg(html)
+  assert.ok(!/class="nub"/.test(svg), 'no measured zero under a withheld clean read')
+  assert.equal((svg.match(/class="nolog"/g) ?? []).length, 2)
+  assert.ok(html.includes('The clinical summary above withholds this trial&rsquo;s clean-record statement'), 'the note says why')
+})
+
+Deno.test('CUL-1779 — a week outside the trial draws nothing, carries no day count, and is named as outside', () => {
+  // A since-visit window wider than the trial: the off-diet set exists only over the trial's evidence
+  // range, so a pre-trial week of logged meals must not read as a clean week.
+  const t = offDietTimeline([0, 7, 7], [[0], [1], [0]])
+  t.scopeDaysByBucket = [0, 7, 7]
+  t.trialScoped = true
+  t.scopeStartDate = '2026-06-08'
+  t.scopeEndDate = '2026-06-21'
+  const html = renderReport(base({ proteinTimeline: t }))
+  const svg = offDietSvg(html)
+  assert.equal((svg.match(/class="nub"/g) ?? []).length, 1, 'only the in-trial clean week prints 0')
+  assert.ok(!/class="nolog"/.test(svg), 'the outside week draws no marker at all')
+  assert.ok(svg.includes('per week: outside the trial, 1 (meals logged on 7 of 7 days), 0 (meals logged on 7 of 7 days).'))
+  assert.equal((svg.match(/ d<\/text>/g) ?? []).length, 2, 'day counts under the two in-scope weeks only')
+  assert.ok(html.includes('<em>pre-trial</em> column falls outside the trial days this report covers (Jun 8 &ndash; Jun 21)'), 'the scope is stated where the reader meets it, and never as the trial\'s own end')
+  assert.ok(!html.includes('post-trial'), 'no label is explained that is not drawn')
+  assert.ok(/<text class="z"[^>]*>pre-trial<\/text>/.test(svg), 'the empty column says what it is, so it never reads as a zero')
+  assert.ok(html.includes('over the <span class="num">14</span> trial days in this window (Jun 8 &ndash; Jun 21)'), 'the caption counts the trial span, not every drawn week')
 })
 
 Deno.test('cold-read coherence — a completed/stopped medication carries its end date on the meds line + Appendix D', () => {
@@ -3757,6 +3904,11 @@ Deno.test('B-351 D10 — an under-counted protein tally is disclosed as a FLOOR'
         bins: [[3]],
         unknownByWeek: [0],
         mealDaysByBucket: [7],
+        scopeDaysByBucket: [7],
+        scopeStartDate: '2026-06-01',
+        scopeEndDate: '2026-06-28',
+        trialScoped: false,
+        zeroWithheld: false,
         feedingsByWeek: [4],
         totalByProtein: { chicken: 3 },
         hasUnknown: false,
@@ -3791,6 +3943,11 @@ Deno.test('B-351 §9 — the exposure chart states that one feeding can fill sev
         bins: [[2, 2], [1, 0]],
         unknownByWeek: [0, 0],
         mealDaysByBucket: [7, 7],
+        scopeDaysByBucket: [7, 7],
+        scopeStartDate: '2026-06-01',
+        scopeEndDate: '2026-06-28',
+        trialScoped: false,
+        zeroWithheld: false,
         feedingsByWeek: [2, 1],
         totalByProtein: { chicken: 3, duck: 2 },
         hasUnknown: false,
@@ -4045,6 +4202,11 @@ function breachedTrialSnap() {
       bins: [[7]],
       unknownByWeek: [0],
       mealDaysByBucket: [7],
+      scopeDaysByBucket: [7],
+      scopeStartDate: '2026-06-01',
+      scopeEndDate: '2026-06-28',
+      trialScoped: false,
+      zeroWithheld: false,
       feedingsByWeek: [7],
       totalByProtein: { chicken: 7 },
       hasUnknown: false,
@@ -5728,7 +5890,7 @@ function everythingOnSnap(): ReportSnapshot {
       [mhEntry({ drugName: 'Metronidazole', startedDay: '2026-05-08', isActive: true, dosesLogged: 82, plannedDoses: 90, dosesPerDay: 2 })],
       '2026-05-08',
     ),
-    stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 91, loggedDays: 30, ai: null },
+    stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 91, loggedDays: 30, normalShortcut: null, ai: null },
     vomitPhenotype: emptyPhenotype(),
     incidentPhotos: [photo({ eventId: 'ev-p1', occurredAt: '2026-06-01T10:00:00Z', dataUri: PNG_1PX })],
     concurrentChanges: [
@@ -5846,12 +6008,12 @@ Deno.test('CUL-993 A.4 — a single entry reads "1 entry", never "1 entries"', (
 
 // ── A.6: a proportion bar of one category is a number ──
 Deno.test('CUL-993 A.6 — a one-category stool distribution is a count line, not a full-width bar', () => {
-  const one = renderReport(base({ stool: { total: 1, normalCount: 0, looseCount: 1, windowDays: 91, loggedDays: 30, ai: null } }))
+  const one = renderReport(base({ stool: { total: 1, normalCount: 0, looseCount: 1, windowDays: 91, loggedDays: 30, normalShortcut: null, ai: null } }))
   const sec = one.slice(one.indexOf('<h2>Stool characteristics'), one.indexOf('<h2>Diet, feeding'))
   assert.ok(!/class="barmix"/.test(sec), 'no proportion bar for one category')
   assert.ok(!/class="sw"/.test(sec), 'no swatch without a bar to key')
   assert.ok(/Normal \/ formed &times;0&nbsp;&middot;&nbsp; Loose \/ watery &times;1/.test(sec), 'BOTH counts stand — one loose of one, never one loose of an unstated many')
-  const two = renderReport(base({ stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 91, loggedDays: 30, ai: null } }))
+  const two = renderReport(base({ stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 91, loggedDays: 30, normalShortcut: null, ai: null } }))
   const sec2 = two.slice(two.indexOf('<h2>Stool characteristics'), two.indexOf('<h2>Diet, feeding'))
   assert.equal((sec2.match(/class="seg"/g) ?? []).length, 2, 'two categories draw the bar')
   assert.equal((sec2.match(/class="sw"/g) ?? []).length, 2, 'and key it')
@@ -6141,10 +6303,10 @@ Deno.test('CUL-993 A.3 — the marker line is drawn in two segments that leave t
 })
 
 Deno.test('R-11 cold read — the stool strip\'s coverage is the un-logged days only, never a ratio that reads as a stool denominator (C-3)', () => {
-  const partial = renderReport(base({ stool: { total: 1, normalCount: 0, looseCount: 1, windowDays: 46, loggedDays: 43, ai: null } }))
+  const partial = renderReport(base({ stool: { total: 1, normalCount: 0, looseCount: 1, windowDays: 46, loggedDays: 43, normalShortcut: null, ai: null } }))
   assert.ok(/Owner-described; nothing of any kind was logged on <span class="num">3<\/span> of <span class="num">46<\/span> days, so a stool on those days is not in this count\. Loose-stool events/.test(partial))
   assert.ok(!/Owner-described over/.test(partial), 'the "over 43 of 46 days logged" ratio is gone')
-  const full = renderReport(base({ stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 46, loggedDays: 46, ai: null } }))
+  const full = renderReport(base({ stool: { total: 4, normalCount: 3, looseCount: 1, windowDays: 46, loggedDays: 46, normalShortcut: null, ai: null } }))
   assert.ok(/Owner-described\. Loose-stool events/.test(full), 'nothing when fully covered')
 })
 
@@ -8094,4 +8256,54 @@ Deno.test('CUL-1274 — appendix E states the unrecorded remainder, and a fully 
   assert.ok(/^12 logged meals across 1 food ·/.test(appendixECaption(all)), appendixECaption(all))
   assert.ok(!/recorded/.test(appendixECaption(all)))
   assert.equal(appendixEMealRows(all)[0][4], 'Ate it all ×12', 'no "not recorded" cell when there is none')
+})
+
+// ── CUL-1658 — the normal-shortcut line: its four arms, year stamping, both strip shapes ──────
+
+const NS_STOOL = { total: 4, normalCount: 3, looseCount: 1, windowDays: 91, loggedDays: 80, ai: null }
+
+Deno.test('stool: the normal-shortcut line carries the year only when it differs from the window end', () => {
+  const same = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'on', at: '2026-05-10T15:00:00Z', split: null } } }))
+  assert.ok(/Logging changed on May 10:<\/b>/.test(same), 'same year as the window end ⇒ no year')
+  const cross = base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'on', at: '2025-12-20T15:00:00Z', split: null } } })
+  cross.scope = { ...cross.scope, startDate: '2025-12-01', endDate: '2026-01-15' }
+  assert.ok(/Logging changed on Dec 20, 2025:<\/b>/.test(renderReport(cross)), 'a different year ⇒ stamped')
+})
+
+Deno.test('stool: each normal-shortcut arm prints its own head, and every dated arm keeps the protecting tail', () => {
+  const by = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'by', at: '2026-05-10T15:00:00Z' } } }))
+  assert.ok(/Logging changed on or before May 10:<\/b>/.test(by))
+  const spans = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'spans' } } }))
+  assert.ok(/Logging changed, date not fixed:<\/b>/.test(spans))
+  for (const html of [by, spans]) assert.ok(/a rise in loose stools is not explained by this change, but a fall may partly reflect borderline stools now logged as normal\./.test(html))
+  const unknown = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'unknown' } } }))
+  assert.ok(/Logging change not checked:<\/b>/.test(unknown))
+  assert.ok(/If it did, a fall in loose stools may partly reflect borderline stools now logged as normal\./.test(unknown))
+})
+
+Deno.test('stool: the normal-shortcut line prints in the single-category shape too, and never without the field', () => {
+  const single = renderReport(base({ stool: { ...NS_STOOL, total: 2, normalCount: 0, looseCount: 2, normalShortcut: { kind: 'on', at: '2026-05-10T15:00:00Z', split: null } } }))
+  assert.ok(/Logging changed on May 10/.test(single))
+  const off = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: null } }))
+  assert.ok(!/Logging change/.test(off))
+})
+
+Deno.test('stool: ruling 1a — the line gives the counts on each side of the day, with the coverage of each', () => {
+  const html = renderReport(base({ stool: { ...NS_STOOL, total: 30, normalCount: 24, looseCount: 6, normalShortcut: {
+    kind: 'on', at: '2026-06-10T15:00:00Z',
+    split: { before: { normal: 4, loose: 4, days: 68, loggedDays: 7 }, from: { normal: 20, loose: 2, days: 23, loggedDays: 23 } },
+  } } }))
+  const flat = html.replace(/<span class="num">(\d+)<\/span>/g, '$1')
+  assert.ok(/<br\/>Before Jun 10 \(7 of 68 days had any log\): loose &times;4 &middot; normal &times;4<br\/>From Jun 10 \(23 of 23 days had any log\): loose &times;2 &middot; normal &times;20<br\/>/.test(flat))
+  // The pooled counts are still printed, untouched: the split sits beside them, never in place of them.
+  assert.ok(/Normal \/ formed &times;24/.test(flat) && /Loose \/ watery &times;6/.test(flat))
+})
+
+Deno.test('stool: ruling 2a — a change before the window says so, naming the server day, with the protecting tail', () => {
+  const exact = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: true } } }))
+  assert.ok(/<b>Logging changed on Mar 20, before this window:<\/b> the owner's app added a dedicated normal-stool entry\./.test(exact))
+  // "covering any period before", never "from before that date", which reads as the date a report was MADE.
+  assert.ok(/Within this window the counts are comparable; against a report covering any period before Mar 20, which under-records normal stools, the normal share here will look better from the change alone\.<br\/>Loose stools had their own entry throughout/.test(exact))
+  const by = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: false } } }))
+  assert.ok(/Logging changed by Mar 20, before this window:/.test(by))
 })

@@ -4,11 +4,12 @@ jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 
-import { StyleSheet } from 'react-native';
+import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { DayCardBody, DayCardHeader, TODAY_NOTHING_YET } from './DayCard';
+import { RAIL_W, SPINE_THREAD } from '../recap/DaySpine';
 import { emptyDayFacts, type DateOnlyItem, type DayFacts } from '../../lib/historyDays';
 import type { HistoryRow } from '../../lib/historyQueries';
 import { historyNodesByDay } from '../../lib/historyScreen';
@@ -141,6 +142,48 @@ describe('DayCardBody', () => {
     expect(screen.getByText('Prednisone started')).toBeTruthy();
   });
 
+  it('CUL-1718: a date-only item’s thread runs through its bottom padding to the next row', () => {
+    const rows = [row('m1', 'meal', 9)];
+    render(<DayCardBody {...bodyProps} day="2026-09-17" items={[start]} nodes={nodesOf(rows)} shownRows={rows} noticed={false} />);
+    type Node = { props: { style?: unknown }; children: unknown[]; findAll: (p: (n: Node) => boolean) => Node[] };
+    const item = screen.getByTestId('history-item-course-start-2026-09-17') as unknown as Node;
+    const flat = (n: Node): ViewStyle => StyleSheet.flatten(n.props.style as StyleProp<ViewStyle>) ?? {};
+    const [rail] = item.findAll((n) => typeof n.props.style !== 'undefined' && flat(n).width === RAIL_W);
+    expect(flat(rail).alignSelf).toBe('stretch');
+    const itemRow = item.findAll((n) => n.children.includes(rail as never))[0];
+    const pad = flat(itemRow).paddingBottom;
+    expect(pad).toBe(SPINE_THREAD.rowGapPad);
+    // The item is first and not last: one segment, the bottom one, carried through the pad.
+    const segments = rail.findAll((n) => flat(n).position === 'absolute');
+    const bottoms = segments.filter((n) => flat(n).bottom !== undefined).map((n) => flat(n).bottom);
+    expect(new Set(bottoms)).toEqual(new Set([-(pad as number)]));
+  });
+
+  it('CUL-1751: a look’s row fills its 44pt door, so the thread runs through it to the next row', () => {
+    const rows = [row('m1', 'meal', 8), row('v1', 'vomit', 20)];
+    const look = row('lk', 'check_in', 12, { look_outcome: 'observed', look_words: null, look_note: null } as Partial<HistoryRow>);
+    render(
+      <DayCardBody {...bodyProps} day="2026-09-17" items={[]} nodes={nodesOf(rows)} shownRows={rows} looks={[look]} noticed={false} />,
+    );
+    type Node = { props: { style?: unknown }; children: unknown[]; findAll: (p: (n: Node) => boolean) => Node[] };
+    const door = screen.getByTestId('history-look-lk') as unknown as Node;
+    const flat = (n: Node): ViewStyle => StyleSheet.flatten(n.props.style as StyleProp<ViewStyle>) ?? {};
+    // The door is taller than a look's text plus its pad; the row must grow to the door's foot.
+    expect(flat(door).minHeight).toBeGreaterThanOrEqual(44);
+    const [rail] = door.findAll((n) => typeof n.props.style !== 'undefined' && flat(n).width === RAIL_W);
+    expect(flat(rail).alignSelf).toBe('stretch');
+    const itemRow = door.findAll((n) => n.children.includes(rail as never))[0];
+    expect(flat(itemRow).flexGrow).toBe(1);
+    // Between two rows, both segments, the bottom one carried through the pad.
+    const pad = flat(itemRow).paddingBottom;
+    expect(pad).toBe(SPINE_THREAD.rowGapPad);
+    const segments = rail.findAll((n) => flat(n).position === 'absolute');
+    const bottoms = segments.filter((n) => flat(n).bottom !== undefined).map((n) => flat(n).bottom);
+    expect(new Set(bottoms)).toEqual(new Set([-(pad as number)]));
+    // Not first: the top segment is drawn too (findAll returns composite and host alike, so count tops).
+    expect(new Set(segments.map((n) => flat(n).top)).size).toBe(2);
+  });
+
   it('a filter hides rows, never builds them another way: only the shown row is drawn', () => {
     const rows = [row('m1', 'meal', 8), row('v1', 'vomit', 9), row('m2', 'meal', 10)];
     render(<DayCardBody {...bodyProps} day="2026-09-17" items={[]} nodes={nodesOf(rows)} shownRows={[rows[1]]} noticed={false} />);
@@ -189,5 +232,50 @@ describe('DayCardBody', () => {
       <DayCardBody {...bodyProps} day={TODAY} items={[]} nodes={[]} shownRows={[]} noticed={false} emptyLine={TODAY_NOTHING_YET} />,
     );
     expect(screen.getByText('Nothing logged yet today.')).toBeTruthy();
+  });
+});
+
+// CUL-1719: a look drawn among the rows breaks a run of meals it falls inside. The pipeline
+// leaves looks out of its rows and the card threads each look in by its time, so a run
+// folded over a 9:00 AM look printed it after the run's 10:45 AM meal.
+describe('DayCardBody — a look inside a run’s span (CUL-1719)', () => {
+  const PR = { food_type: 'meal', food_brand: 'Royal Canin', food_product_name: 'Selected Protein PR' } as Partial<HistoryRow>;
+  const at = (id: string, event_type: string, h: number, m: number, extra: Partial<HistoryRow> = {}): HistoryRow => {
+    const iso = new Date(2026, 8, 17, h, m, 0, 0).toISOString();
+    return { ...row(id, event_type, h, extra), occurred_at: iso, created_at: iso, updated_at: iso };
+  };
+  const lookAt = (h: number, m: number) =>
+    at('lk', 'check_in', h, m, { look_outcome: 'observed', look_words: null, look_note: null } as Partial<HistoryRow>);
+  const MEALS = [at('m1', 'meal', 6, 20, PR), at('m2', 'meal', 10, 45, PR)];
+
+  /** The day as the list builds it: its nodes over the whole day, the looks it draws as breaks. */
+  const drawn = (looks: HistoryRow[]) => {
+    const day = '2026-09-17';
+    const nodes =
+      historyNodesByDay({
+        days: new Map([[day, MEALS]]),
+        reads: { analysis: new Map(), answered: new Set(), working: new Set() },
+        timing: { feedings: [], freeFedSpans: [], onsets: [] },
+        looks: new Map([[day, looks]]),
+      }).get(day) ?? [];
+    render(<DayCardBody {...bodyProps} day={day} items={[]} nodes={nodes} shownRows={MEALS} looks={looks} noticed={false} />);
+    const body = screen.getByTestId('history-day-body-2026-09-17');
+    const ids = (body as unknown as { findAll: (p: (n: { props: { testID?: string } }) => boolean) => { props: { testID: string } }[] })
+      .findAll((n) => typeof n.props.testID === 'string' && /^(spine-node|history-look)-/.test(n.props.testID))
+      .map((n) => n.props.testID);
+    return ids.filter((id, i) => ids.indexOf(id) === i);
+  };
+
+  it('the convening’s day plus a 9:00 AM look: the 6:20 AM meal, the look, then the 10:45 AM meal, and no run', () => {
+    expect(drawn([lookAt(9, 0)])).toEqual(['spine-node-m1', 'history-look-lk', 'spine-node-m2']);
+  });
+
+  it('the same day with no look is unchanged: one run', () => {
+    expect(drawn([])).toEqual(['spine-node-compact:m1']);
+  });
+
+  it('a look before or after the run’s span leaves the run whole', () => {
+    expect(drawn([lookAt(5, 30)])).toEqual(['history-look-lk', 'spine-node-compact:m1']);
+    expect(drawn([lookAt(14, 0)])).toEqual(['spine-node-compact:m1', 'history-look-lk']);
   });
 });

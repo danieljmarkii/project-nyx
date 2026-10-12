@@ -60,9 +60,24 @@ const DOT = NODE_DOT_SIZE;
 const LINE_W = 2;
 const DOT_TOP = 3; // marginTop lifting the dot to the title's first line
 const DOT_CENTER_Y = DOT_TOP + DOT / 2;
+/**
+ * An opened run's member bead (CUL-1733): 9pt, the same 2pt ground ring round a 5pt fill,
+ * centred where the 11pt bead centres, so it sits on the run's line a size below the run's
+ * own bead. Derived from the full bead's centre, never retyped, so the two cannot drift.
+ */
+export const MEMBER_DOT = 9;
+const MEMBER_DOT_TOP = DOT_CENTER_Y - MEMBER_DOT / 2;
 const LINE_LEFT = (RAIL_W - LINE_W) / 2;
 /** The row's gap between its three columns (`styles.row.gap`). */
 const ROW_GAP = theme.space1;
+/**
+ * The space under every row but the last (`styles.rowGap`), and how far past its rail the
+ * bottom segment runs (CUL-1718). The rail stretches to the row's CONTENT box, which ends
+ * above this padding, so a segment ending at the rail's foot stops this far short of the
+ * next row's bead. One constant for both, so the carry cannot drift from the gap it
+ * crosses. History's date-only items read it as `SPINE_THREAD.rowGapPad`.
+ */
+const ROW_GAP_PAD = theme.space2;
 
 /** The per-ground colours the frame and the default body read. The night set is the
  *  shipped one, verbatim; the day set is Home's light ground (D2-4), where small
@@ -106,6 +121,8 @@ export const SPINE_THREAD = {
   x: TIME_W + ROW_GAP + RAIL_W / 2,
   dotCenterY: DOT_CENTER_Y,
   lineW: LINE_W,
+  /** The row's bottom padding, which a bottom segment runs through to the next row. */
+  rowGapPad: ROW_GAP_PAD,
   dayColor: GROUND.day.thread,
 } as const;
 
@@ -179,7 +196,26 @@ export interface SpineRowFrameProps {
   trailing?: ReactNode;
   /** Pressed-state styling, passed through from the enclosing Pressable. */
   pressed?: boolean;
+  /** An opened run's member (CUL-1733): the smaller bead on the run's line, and the time a
+   *  step darker (the secondary ink), because it is the fact the owner opened the run to
+   *  read. Absent, the frame is exactly what it was. */
+  member?: boolean;
+  /** Drawn in the rail on the thread and UNDER the bead (CUL-1736: a folded run's back
+   *  beads), handed the bead's own colours and frame so it never retypes them. Absent, the
+   *  rail is exactly what it was. */
+  underBead?: (bead: SpineBead) => ReactNode;
   style?: StyleProp<ViewStyle>;
+}
+
+/** The full bead as the rail draws it: its colours, and its frame inside the rail column
+ *  (left edge, top edge, diameter, ring width). */
+export interface SpineBead {
+  fill: string;
+  ring: string;
+  left: number;
+  top: number;
+  size: number;
+  ringWidth: number;
 }
 
 /**
@@ -197,9 +233,12 @@ export function SpineRowFrame({
   children,
   trailing,
   pressed = false,
+  member = false,
+  underBead,
   style,
 }: SpineRowFrameProps) {
   const g = GROUND[ground];
+  const timeColor = member ? g.detail : g.time;
   // CUL-869 — fill and ring come from the shared rule rather than from this
   // component, so a look is the hollow bead on the spine that the lane already
   // draws (nodeTints.ts). `styles.dot` still supplies the geometry and every other
@@ -223,17 +262,25 @@ export function SpineRowFrame({
         // The tag rides in the time's own fixed column, under it, held to the same rules:
         // no line cap, nothing that clips, free to grow downward (AC 19).
         <View style={styles.timeColumn}>
-          <ThemedText style={[styles.timeInColumn, { color: g.time }]}>{timeColumnText(time)}</ThemedText>
+          <ThemedText style={[styles.timeInColumn, { color: timeColor }]}>{timeColumnText(time)}</ThemedText>
           <ThemedText style={[styles.timeTag, { color: g.detail }]}>{timeTag}</ThemedText>
         </View>
       ) : (
-        <ThemedText style={[styles.time, { color: g.time }]}>{timeColumnText(time)}</ThemedText>
+        <ThemedText style={[styles.time, { color: timeColor }]}>{timeColumnText(time)}</ThemedText>
       )}
 
-      <View style={styles.rail}>
-        {!isFirst && <View style={[styles.line, styles.lineTop, { backgroundColor: g.thread }]} />}
-        {!isLast && <View style={[styles.line, styles.lineBottom, { backgroundColor: g.thread }]} />}
-        <View style={[styles.dot, { backgroundColor: fill, borderColor: ring }]} />
+      <View style={styles.rail} testID="spine-rail">
+        {!isFirst && <View testID="spine-thread-top" style={[styles.line, styles.lineTop, { backgroundColor: g.thread }]} />}
+        {!isLast && <View testID="spine-thread-bottom" style={[styles.line, styles.lineBottom, { backgroundColor: g.thread }]} />}
+        {underBead?.({ fill, ring, left: (RAIL_W - DOT) / 2, top: DOT_TOP, size: DOT, ringWidth: NODE_DOT_RING })}
+        {member ? (
+          <View
+            style={[styles.dot, styles.dotMember, { backgroundColor: fill, borderColor: ring }]}
+            testID="spine-dot-member"
+          />
+        ) : (
+          <View style={[styles.dot, { backgroundColor: fill, borderColor: ring }]} />
+        )}
       </View>
 
       <View style={styles.body}>{children}</View>
@@ -327,7 +374,7 @@ const styles = StyleSheet.create({
     // every row without a hitSlop that would overlap the adjacent row's target.
     minHeight: 44,
   },
-  rowGap: { paddingBottom: theme.space2 },
+  rowGap: { paddingBottom: ROW_GAP_PAD },
   rowLast: { paddingBottom: theme.spaceMicro },
 
   time: {
@@ -354,14 +401,17 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
 
-  rail: { width: RAIL_W, alignItems: 'center' },
+  // Stretched (CUL-1718): under the row's `alignItems: 'flex-start'` the column was only as
+  // tall as the dot, so its segments were confined to 14pt and the dot covered them.
+  rail: { width: RAIL_W, alignItems: 'center', alignSelf: 'stretch' },
   line: {
     position: 'absolute',
     left: LINE_LEFT,
     width: LINE_W,
   },
   lineTop: { top: 0, height: DOT_CENTER_Y },
-  lineBottom: { top: DOT_CENTER_Y, bottom: 0 },
+  // Through the row's bottom padding to the next row's top, where its `lineTop` begins.
+  lineBottom: { top: DOT_CENTER_Y, bottom: -ROW_GAP_PAD },
   dot: {
     marginTop: DOT_TOP,
     width: DOT,
@@ -370,6 +420,12 @@ const styles = StyleSheet.create({
     borderWidth: NODE_DOT_RING,
     // The ground-coloured ring makes the node read as a bead cutting the thread.
     zIndex: 1,
+  },
+  dotMember: {
+    marginTop: MEMBER_DOT_TOP,
+    width: MEMBER_DOT,
+    height: MEMBER_DOT,
+    borderRadius: MEMBER_DOT / 2,
   },
 
   body: { flex: 1, minWidth: 0 },

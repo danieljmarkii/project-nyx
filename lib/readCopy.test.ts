@@ -205,8 +205,10 @@ import {
   pullReadCopies,
   pullReadCopyFor,
   readCopies,
+  readPetSeamReads,
   writeCopies,
 } from './readCopy';
+import { newSinceLineOf } from './ruleSeam';
 
 const never = () => false;
 
@@ -948,5 +950,39 @@ describe('the tier (EN-3, CUL-1133)', () => {
 
   it('the watermark key moved, so every phone re-pulls once and gains the tier', () => {
     expect(READ_COPY_WATERMARK_KEY).toBe('event_ai_verdicts:v3');
+  });
+});
+
+describe('readPetSeamReads — the pet\'s reads for EN-3\'s "New since" line (CUL-1513)', () => {
+  function event(id: string, petId: string, occurredAt: string, deletedAt: string | null = null) {
+    mockDb
+      .prepare('INSERT INTO events (id, pet_id, event_type, occurred_at, deleted_at) VALUES (?, ?, ?, ?, ?)')
+      .run(id, petId, 'vomit', occurredAt, deletedAt);
+  }
+
+  it("reads this pet's live events only, and the line lands on the first new-rule read", async () => {
+    event('old', 'nyx', '2026-09-22T05:30:00.000Z');
+    event('first', 'nyx', '2026-10-21T00:05:00.000Z');
+    event('later', 'nyx', '2026-10-23T00:05:00.000Z');
+    event('gone', 'nyx', '2026-10-20T12:00:00.000Z', '2026-10-20T13:00:00.000Z');
+    event('other', 'milo', '2026-10-19T00:00:00.000Z');
+    await writeCopies(
+      mockAdapter,
+      [
+        stamped('old', '2026-09-22T05:31:00+00:00', { recommendation: 'worth_a_call' }),
+        stamped('first', '2026-10-21T00:06:00+00:00', { recommendation: 'monitor', engine_flags: ['engines_v3_en3'], tier: 'logged' } as Partial<ServerRow>),
+        stamped('later', '2026-10-23T00:06:00+00:00', { recommendation: 'worth_a_call', engine_flags: ['engines_v3_en3'], tier: 'call_today' } as Partial<ServerRow>),
+        // A deleted event's tiered read is not the pet's, so it cannot take the line.
+        stamped('gone', '2026-10-20T12:01:00+00:00', { recommendation: 'monitor', engine_flags: ['engines_v3_en3'], tier: 'logged' } as Partial<ServerRow>),
+        stamped('other', '2026-10-19T00:01:00+00:00', { recommendation: 'monitor', engine_flags: ['engines_v3_en3'], tier: 'logged' } as Partial<ServerRow>),
+      ],
+      never,
+    );
+    const reads = await readPetSeamReads('nyx');
+    expect(reads.map((r) => r.event_id).sort()).toEqual(['first', 'later', 'old']);
+    expect(newSinceLineOf('first', reads, '2026-10-20', 'Nyx')).toMatch(/^New since /);
+    expect(newSinceLineOf('later', reads, '2026-10-20', 'Nyx')).toBeNull();
+    // Milo has only new-rule reads: nothing to keep its words, so no line.
+    expect(newSinceLineOf('other', await readPetSeamReads('milo'), '2026-10-20', 'Milo')).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AppState, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { AppState, Dimensions, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from 'expo-router';
 import { useEvents } from '../../hooks/useEvents';
@@ -25,6 +25,7 @@ import { HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
 import { reducedMotionNow } from '../../store/reducedMotionStore';
 import { useUiStore } from '../../store/uiStore';
 import { RowSpeechContext, type RowSpeech } from '../../components/dayRow/rowSpeech';
+import { RunRevealContext, useRunRevealHost } from '../../components/motion/runRevealMotion';
 
 /**
  * The slice of the tab navigator this screen needs to hear a Home-tab re-tap.
@@ -74,6 +75,14 @@ export default function HomeScreen() {
     if (gridOpen) setScrollY(scrollYRef.current);
   }, [gridOpen]);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  // A run that opens out of sight moves the feed just far enough to show its first meal
+  // (CUL-1735, D3). The body View is the scroll's frame, so it is the viewport measured.
+  const bodyRef = useRef<View>(null);
+  const runReveal = useRunRevealHost({
+    measureViewport: (done) => bodyRef.current?.measureInWindow((_x, y, _w, h) => done(y, y + h)),
+    scrollBy: (dy) => scrollRef.current?.scrollTo({ y: scrollYRef.current + dy, animated: !reducedMotionNow() }),
+    windowHeight: () => Dimensions.get('window').height,
+  });
 
   // Re-tapping the Home tab scrolls the feed back to the Signal (spec §2 SHOULD).
   // NyxTabBar already emits `tabPress` on every press, addressed to the tapped
@@ -222,6 +231,7 @@ export default function HomeScreen() {
       {/* Relative wrapper so the pull-to-refresh night band overlays the top of the
           feed (below the pinned header, so it's already clear of the safe-area inset). */}
       <View
+        ref={bodyRef}
         style={styles.body}
         onLayout={(e) => setViewportHeight(e.nativeEvent.layout.height)}
       >
@@ -238,6 +248,9 @@ export default function HomeScreen() {
           // at two thresholds; 100ms is under the eye's tolerance for a control
           // appearing and costs a fraction of the bridge traffic.
           scrollEventThrottle={100}
+          onContentSizeChange={runReveal.onContentSizeChange}
+          // The owner has taken the feed: a reveal not yet landed never does.
+          onScrollBeginDrag={runReveal.cancel}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -293,13 +306,15 @@ export default function HomeScreen() {
               pinned exits (T-21). `trialNotEating` is the trial's own refusal register,
               THREE-STATE (CUL-873); see its declaration above. */}
           <RowSpeechContext.Provider value={rowSpeech}>
-            <TodayCard
-              trialNotEating={trialNotEating}
-              onLayout={(e) => setTodayCardBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })}
-              onLookLayout={(e) =>
-                setLookHeaderBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
-              }
-            />
+            <RunRevealContext.Provider value={runReveal.request}>
+              <TodayCard
+                trialNotEating={trialNotEating}
+                onLayout={(e) => setTodayCardBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })}
+                onLookLayout={(e) =>
+                  setLookHeaderBox({ y: e.nativeEvent.layout.y, height: e.nativeEvent.layout.height })
+                }
+              />
+            </RunRevealContext.Provider>
           </RowSpeechContext.Provider>
           <CoverageDoor />
         </ScrollView>

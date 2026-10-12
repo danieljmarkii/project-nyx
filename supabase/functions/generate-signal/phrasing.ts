@@ -19,6 +19,7 @@ import type {
   Finding,
   CorrelationFinding,
   IntakeDeclineFinding,
+  RefusedThenVomitedFacts,
   ReflectionFinding,
   SymptomWorseningFinding,
   SymptomBurdenFinding,
@@ -38,6 +39,7 @@ import type {
 } from './detection.ts'
 import { careClaimReason } from '../../../lib/careClaimScreens.ts'
 import { kgToLbsNum } from '../../../lib/weightUnits.ts'
+import { TIER_WORDS } from '../../../lib/incidentTierWords.ts'
 
 // §3.2 visible-card cap: governs the LOW/MEDIUM-priority insight set only.
 // Safety/concern findings are exempt — never withheld to honor the cap.
@@ -114,9 +116,24 @@ export function templateCorrelation(f: CorrelationFinding, petName: string): str
   return `${petName}'s ${symptom} has tended to follow meals with ${f.protein} within about ${window} hours — an early pattern worth keeping an eye on as you keep logging.`
 }
 
+// I5 (Engines v3 PR-30s, CUL-1725; ruling sheet §2.7, nyx-voice): refused, then vomited within
+// minutes. Mirrored on the client (`refusedThenVomitedLine`, lib/signalCopy.ts); keep the two in
+// sync. "Within N minutes of turning down a meal" is SEQUENCE, never cause (CAUSAL_RE), never
+// "nausea" (a mechanism the record cannot see), never "picky" (intake is not preference). Counts
+// and a date, so the owner can check it; the vet tail is the ask, the same words as I4's. When the
+// count equals the day count the times are implied by the days ("on 2 days"), so only a second
+// vomit on one day adds "3 times,".
+export function refusedThenVomitedSentence(r: RefusedThenVomitedFacts, petName: string): string {
+  const times = r.episodeCount === r.dayCount ? '' : `${r.episodeCount} times, `
+  return `${petName} vomited within ${r.windowMinutes} minutes of turning down a meal ${times}on ${r.dayCount} days since ${onsetDay(r.firstLocalDay)}. That's worth mentioning to your vet.`
+}
+
 export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string): string {
   // Safety finding: calm, clear, points toward keeping an eye on it + the vet.
   // Never reassures, never frames reduced eating as fussiness.
+  if (f.trigger === 'refused_then_vomited' && f.refusedThenVomited) {
+    return refusedThenVomitedSentence(f.refusedThenVomited, petName)
+  }
   if (f.trigger === 'refused_normal_food') {
     const food = f.refusedFoodLabel ?? 'a food they usually finish'
     return `${petName} just turned down ${food}, which ${petName} normally eats — worth keeping an eye on, and a word with your vet if it carries on.`
@@ -295,7 +312,48 @@ const INCIDENT_NOUN: Record<IncidentCategory, string> = {
   stool: 'stool',
 }
 
+// Engines v3 PR-30a (CUL-1511; docs/nyx-incident-tiers-requirements.md §2, §4). A card whose
+// family holds a NEW-RULE call asks in the tier-word map's own words, lower-cased mid-sentence
+// ("call your vet now" / "call your vet today"); every other card keeps the shipped "worth a call
+// to your vet" to the byte, because an earlier-rule call is never relabelled (spec §5). The words
+// are read from the map, never restated, so Home, the banner and the record cannot drift apart.
+const RED_FLAG_LEGACY_ASK = 'worth a call to your vet'
+
+function lowerFirst(s: string): string {
+  return s.charAt(0).toLowerCase() + s.slice(1)
+}
+
+/** The red-flag card's ask, verbatim as its sentence says it. */
+export function incidentRedFlagAsk(f: Pick<IncidentRedFlagFinding, 'tier'>): string {
+  return f.tier === 'call_now' || f.tier === 'call_today' ? lowerFirst(TIER_WORDS[f.tier].label) : RED_FLAG_LEGACY_ASK
+}
+
+/** A read's noun by family ("a vomit read", "a stool read"), for the card a record call raised. */
+const INCIDENT_READ_NOUN: Record<IncidentCategory, string> = {
+  vomit: 'vomit',
+  stool: 'stool',
+}
+
+/** True when the card fires only on a call the record raised: no photo flag, a new-rule tier. */
+function isCallOnly(f: IncidentRedFlagFinding): boolean {
+  return f.callOnly === true && f.flags.length === 0 && (f.tier === 'call_now' || f.tier === 'call_today')
+}
+
 export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: string): string {
+  const ask = incidentRedFlagAsk(f)
+  if (isCallOnly(f)) {
+    // PR-30a (K1 = A): a read that says to call, with no photo finding on the card. It names the
+    // read, its day and the ask, and NEVER where the call came from: the row cannot tell a
+    // contextual sign from the model's own call on a clean photo or a call whose blood the owner
+    // cleared, so any source named here could be false (adversarial pass, #1/#2). The record's
+    // card says why. Dated by the read whose words the ask is (`tierIso`).
+    const noun = INCIDENT_READ_NOUN[f.incidentType]
+    return `The read of ${petName}'s ${noun} on ${onsetDay(f.tierIso ?? f.mostRecentFlaggedIso)} says to ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
+  }
+  return templateIncidentRedFlagPhoto(f, petName, ask)
+}
+
+function templateIncidentRedFlagPhoto(f: IncidentRedFlagFinding, petName: string, ask: string): string {
   // Detector — per-incident visual red flag (B-340). SAFETY class, template-only (no LLM, like
   // ③–⑦) — a structural never-reassure guarantee. ESCALATE-ON-PRESENCE: it names what the photo
   // showed and routes to the vet. NEVER reassures, NEVER diagnoses, NEVER assigns a cause ("showed
@@ -315,7 +373,20 @@ export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: stri
     f.flaggedIncidentCount === 1 && !f.countIsFloor
       ? `A photo you logged of ${petName}'s ${symptom} showed ${phrase}, on ${when}`
       : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}, most recently on ${when}`
-  return `${lead} — worth a call to your vet. This is a read of your logs, not a diagnosis.`
+  // PR-30a: when the louder call is a DIFFERENT read from the flagged photo, the sentence says so
+  // and dates it, rather than pinning the call on the older photo (adversarial pass, #3).
+  // Instants compared parsed, never as text (C-40).
+  if (f.tierIso !== undefined && Date.parse(f.tierIso) !== Date.parse(f.mostRecentFlaggedIso)) {
+    return `${lead}. A read on ${onsetDay(f.tierIso)} says to ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
+  }
+  return `${lead} — ${ask}.${laterCallTodayClause(f)} This is a read of your logs, not a diagnosis.`
+}
+
+/** PR-30a: a call today newer than the card's call now, said as its own dated sentence (with a
+ *  leading space), or nothing. The words are the map's, like the card's own ask. */
+function laterCallTodayClause(f: IncidentRedFlagFinding): string {
+  if (f.tier !== 'call_now' || f.laterCallTodayIso === undefined) return ''
+  return ` A later read, on ${onsetDay(f.laterCallTodayIso)}, says to ${lowerFirst(TIER_WORDS.call_today.label)}.`
 }
 
 // The §9 adjacency note opens by naming the sign the card is NOT about, so an owner reading
@@ -586,13 +657,17 @@ export function templateCarried(f: Finding, petName: string, carriedFromIso: str
         : f.type === 'intake_decline'
           ? f.trigger === 'refused_normal_food'
             ? 'turning down a food they usually eat'
-            : 'eating less than usual'
+            : f.trigger === 'refused_then_vomited'
+              ? 'vomiting soon after turning down a meal'
+              : 'eating less than usual'
           : f.type === 'incident_red_flag'
-            ? `a photo of ${INCIDENT_NOUN[f.incidentType]} showing ${f.flags.map((k) => INCIDENT_FLAG_PHRASE[k]).join(' and ')}`
+            ? isCallOnly(f)
+              ? `a ${INCIDENT_READ_NOUN[f.incidentType]} read that called for your vet`
+              : `a photo of ${INCIDENT_NOUN[f.incidentType]} showing ${f.flags.map((k) => INCIDENT_FLAG_PHRASE[k]).join(' and ')}`
             : 'a pattern'
   const ask =
     f.type === 'incident_red_flag'
-      ? 'worth a call to your vet'
+      ? incidentRedFlagAsk(f)
       : f.type === 'symptom_burden'
         ? f.tier === 'today'
           ? 'worth a call to your vet'
@@ -631,13 +706,15 @@ export function canRenderCarried(f: unknown): boolean {
       return known(CARRYABLE_WEIGHT_TIERS, x.tier)
     case 'intake_decline':
       return x.trigger === undefined || typeof x.trigger === 'string'
-    case 'incident_red_flag':
-      return (
-        known(INCIDENT_NOUN, x.incidentType) &&
-        Array.isArray(x.flags) &&
-        x.flags.length > 0 &&
-        x.flags.every((k) => known(INCIDENT_FLAG_PHRASE, k))
-      )
+    case 'incident_red_flag': {
+      // PR-30a: a tier, when present, must be one this build can say; a card with no photo flag is
+      // carryable only as a record call, which always carries one.
+      const r = f as { tier?: unknown; callOnly?: unknown }
+      const tierOk = r.tier === undefined || r.tier === 'call_now' || r.tier === 'call_today'
+      if (!tierOk || !known(INCIDENT_NOUN, x.incidentType) || !Array.isArray(x.flags)) return false
+      if (x.flags.length === 0) return r.callOnly === true && r.tier !== undefined
+      return x.flags.every((k) => known(INCIDENT_FLAG_PHRASE, k))
+    }
     default:
       return false
   }
@@ -754,6 +831,13 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
   if (finding.priorityClass === 'safety') {
     // Never reassure on a safety flag; never reframe a decline as fussiness.
     if (REASSURANCE_RE.test(t) || DISMISSIVE_RE.test(t)) return false
+  }
+  if (finding.type === 'intake_decline' && finding.refusedThenVomited !== undefined) {
+    // Engines v3 PR-30s (I5): NO MODEL SENTENCE IS EVER ACCEPTED while the card carries the
+    // refused-then-vomited facts. A free sentence over "she vomited soon after refusing" slides to
+    // "because she refused" or "a sign of nausea", which REASSURANCE_RE and DISMISSIVE_RE do not
+    // read (adversarial pass D1). index.ts routes the card to its template; this is the backstop.
+    return false
   }
   if (finding.type === 'weight_loss') {
     // Engines v3 PR-19 (EN-8, CUL-1413): NO MODEL SENTENCE IS EVER ACCEPTED, for the burden card's
@@ -1096,6 +1180,7 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       incident: INCIDENT_NOUN[finding.incidentType],
       flags: finding.flags, // ('blood' | 'foreign_material')[]
       flagged_incident_count: finding.flaggedIncidentCount,
+      tier: finding.tier ?? null, // PR-30a: a new-rule call's tier, or null (the shipped ask)
       relationship: 'visible_finding', // what the photo showed — NOT a cause, NOT a diagnosis
       severity: 'calm_safety_flag', // surface clearly, route to vet, never reassure
     }
@@ -1103,6 +1188,7 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
   return {
     insight_type: 'intake_decline',
     pet_name: petName,
+    // 'refused_then_vomited' (I5) never reaches the model: it is template-only (index.ts).
     trigger: finding.trigger, // 'consecutive_low' | 'refused_normal_food'
     species: finding.species,
     days_eating_less: finding.daysBelowBaseline,

@@ -223,7 +223,9 @@ describe('and on a DARK ground the pairing INVERTS — which is why the sweep wa
   // green diff and a green test run. Pinning the inversion here is what stops a later
   // "simplify to one accent token" pass from looking free.
   const darkGrounds: ReadonlyArray<[label: string, ground: string]> = [
-    ['the snackbar / dark-button ground', theme.colorNeutralDark],
+    // No accent text sits on it since CUL-1691 PR 1 moved the Snackbar to daylight;
+    // the inversion is kept so a later sweep still meets it.
+    ['the dark-button ground', theme.colorNeutralDark],
     ['the brand night ground (Landing, Day Summary)', theme.colorBrandNight],
     ['the elevated brand night (the recap offer card)', theme.colorBrandNightElevated],
   ];
@@ -236,13 +238,61 @@ describe('and on a DARK ground the pairing INVERTS — which is why the sweep wa
     expect(contrastRatio(theme.colorAccentInk, ground)).toBeLessThan(AA_NORMAL_TEXT);
   });
 
-  it('records the measured ratios behind the five keeps', () => {
+  it('records the measured ratios behind the four night-ground keeps', () => {
+    // The dark-button ground's inversion, not a keep (the Snackbar left it, CUL-1691).
     expect(contrastRatio(theme.colorAccent, theme.colorNeutralDark)).toBeCloseTo(8.75, 2);
     expect(contrastRatio(theme.colorAccent, theme.colorBrandNight)).toBeCloseTo(8.09, 2);
     expect(contrastRatio(theme.colorAccent, theme.colorBrandNightElevated)).toBeCloseTo(6.57, 2);
     // The counterfactual, so the cost of a blind sweep is a number and not an adjective.
+    // The dark-button ground's inversion, not a keep.
     expect(contrastRatio(theme.colorAccentInk, theme.colorNeutralDark)).toBeCloseTo(3.83, 2);
     expect(contrastRatio(theme.colorAccentInk, theme.colorBrandNightElevated)).toBeCloseTo(2.88, 2);
+  });
+});
+
+// ── The completion card's daylight ground (CUL-1691 PR 1, spec §1) ─────────────────
+// The three completion cards and the Snackbar moved from colorNeutralDark to white. Every
+// pair the spec's colour map cites is measured here, so a token edit that moves one is a
+// visible diff. Text pairs clear 4.5:1; the disc, the check and the panel's rail are
+// non-text and clear 3:1.
+describe('the completion card on its daylight ground (CUL-1691)', () => {
+  const NON_TEXT = 3;
+  const WHITE = '#FFFFFF';
+
+  const text: ReadonlyArray<[label: string, ink: string, ground: string, ratio: number]> = [
+    ['title, Undo, Change time, the Snackbar message on the card', theme.colorTextPrimary, theme.colorSurface, 19.8],
+    ['sub-line, prompts, combo row, Removed detail', theme.colorTextSecondary, theme.colorSurface, 7.81],
+    ['in-doubt reason, vehicle label', theme.colorTextTertiary, theme.colorSurface, 4.74],
+    ['the Snackbar action', theme.colorAccentInk, theme.colorSurface, 5.17],
+    ['the selected intake / vehicle chip (white on the near-black pill)', WHITE, theme.colorNeutralDark, 19.8],
+    ['the selected adherence chip, Given (white on the teal ink)', WHITE, theme.colorAccentInk, 5.17],
+    ['the selected adherence chip, Partial / Missed / Refused (white on the rose ink)', WHITE, theme.colorEventSymptomInk, 8.02],
+    ['the trial panel eyebrow on its wash', theme.colorAttentionInk, theme.colorAttentionLight, 7.29],
+  ];
+
+  it.each(text)('%s clears AA', (_label, ink, ground, ratio) => {
+    expect(contrastRatio(ink, ground)).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+    expect(contrastRatio(ink, ground)).toBeCloseTo(ratio, 1);
+  });
+
+  const nonText: ReadonlyArray<[label: string, fg: string, ground: string, ratio: number]> = [
+    ['the disc on the card', theme.colorAccentGlyph, theme.colorSurface, 3.27],
+    ['the knocked-out check on the disc', WHITE, theme.colorAccentGlyph, 3.27],
+    ['the trial panel rail on its wash', theme.colorAttentionRail, theme.colorAttentionLight, 3.3],
+  ];
+
+  it.each(nonText)('%s clears the 3:1 non-text target', (_label, fg, ground, ratio) => {
+    expect(contrastRatio(fg, ground)).toBeGreaterThanOrEqual(NON_TEXT);
+    expect(contrastRatio(fg, ground)).toBeCloseTo(ratio, 1);
+  });
+
+  // The defects the move fixed, recorded as numbers: white on the bright accent was
+  // the adherence chip's selected label on every ground, and the bright gold rail
+  // would vanish on the amber wash.
+  it('the fills and rail it replaced fail', () => {
+    expect(contrastRatio(WHITE, theme.colorAccent)).toBeLessThan(AA_NORMAL_TEXT);
+    expect(contrastRatio(WHITE, theme.colorEventSymptom)).toBeLessThan(AA_NORMAL_TEXT);
+    expect(contrastRatio(theme.colorMomentGlow, theme.colorAttentionLight)).toBeLessThan(NON_TEXT);
   });
 });
 

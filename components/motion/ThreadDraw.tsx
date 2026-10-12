@@ -33,7 +33,7 @@ import { Animated, Easing, StyleSheet, View, type LayoutChangeEvent, type StyleP
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { FOLD_MOTION } from './foldMotion';
-import { useThreadDraw, type ThreadRowStyle } from './threadMotion';
+import { ThreadDrawing, useThreadDraw, type ThreadRowStyle } from './threadMotion';
 
 export interface ThreadRow {
   key: string;
@@ -104,18 +104,20 @@ export function ThreadDraw({ rows, token, claim, thread, leaving = NO_LEAVING, s
   return (
     <View style={style} testID={testID}>
       {line}
-      {rows.map((row, i) => (
-        <ThreadRowStage
-          key={row.key}
-          land={draw.rowStyle(i)}
-          leaving={leaving.has(row.key)}
-          reducedMotion={reducedMotion}
-          onLayout={(e) => measure(row.key, e)}
-          testID={`${testID}-row-${row.key}`}
-        >
-          {row.node}
-        </ThreadRowStage>
-      ))}
+      <ThreadDrawing.Provider value={draw.drawing}>
+        {rows.map((row, i) => (
+          <ThreadRowStage
+            key={row.key}
+            land={draw.rowStyle(i)}
+            leaving={leaving.has(row.key)}
+            reducedMotion={reducedMotion}
+            onLayout={(e) => measure(row.key, e)}
+            testID={`${testID}-row-${row.key}`}
+          >
+            {row.node}
+          </ThreadRowStage>
+        ))}
+      </ThreadDrawing.Provider>
     </View>
   );
 }

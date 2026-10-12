@@ -57,6 +57,7 @@ const SERVER_OWNED = [
   'may_wait', // 087, CUL-1627 (088: TRUE -> NULL open, lower-only)
   'ai_raw_payload', // 088, CUL-1668 (013's column; PM ruled A)
   'visual_flags', // 088, CUL-1668 (013's column; PM ruled A)
+  'may_wait_decided_at', // 094, CUL-1707
 ] as const;
 
 // The one exception the freeze carries: a client may lower `may_wait` TRUE ->

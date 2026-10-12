@@ -21,7 +21,7 @@
 // with plain language ("Soft and mushy") and shows the numeric Bristol type only as
 // a small, muted secondary annotation — owners don't think in the Bristol scale, so
 // the number is a detail for relaying to a vet, never the primary framing.
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
@@ -60,12 +60,17 @@ import {
   TIER_WORDS,
   tierDisplayOf,
 } from '../../lib/incidentTierWords';
+import { recordDatedCallNow } from '../../lib/callNowDated';
 import { needsEn7Recheck } from '../../lib/stoolForm';
 import {
   stoolFindings,
   tellThem,
 } from '../../lib/incidentFloorWords';
 import { FLOOR_FACTS_REFRESH_MS, useIncidentFloorFacts, useMinuteNow } from '../../hooks/useIncidentFloorFacts';
+import { useMayWaitFacts } from '../../hooks/useMayWaitFacts';
+import { useMomentStore } from '../../store/momentStore';
+import { usePetStore } from '../../store/petStore';
+import { callTodayActionOf } from '../../lib/mayWaitLine';
 import { StoolFieldsEditor } from './StoolFieldsEditor';
 import { stoolCapCopy } from '../../constants/monetizationCopy';
 import {
@@ -88,7 +93,13 @@ import { ObservationGrid } from './ObservationGrid';
 import { useIncidentArrival } from '../motion/arrivalMotion';
 import { useAppActive } from '../../hooks/useAppActive';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { useEn3LiveSince } from '../../hooks/useEn3LiveSince';
+import { useNewSinceLine } from '../../hooks/useNewSinceLine';
+import { earlierRuleLineOf } from '../../lib/ruleSeam';
 import { useObservationFold } from './useObservationFold';
+import { router } from 'expo-router';
+import { usePatternMembership } from '../../hooks/usePatternMembership';
+import { PATTERN_WORDS, patternActionLine } from '../../lib/incidentPattern';
 
 // 'capped' / 'read_disabled' are the two states the analyze-stool function writes
 // into the row when the DESCRIPTIVE read is skipped (cap hit / flag off) AND no
@@ -123,7 +134,15 @@ interface AnalysisRow extends IntakeCorrectionColumns {
   /** Bumped by trigger on every write (013). The landing announcement reads it to tell a
    *  read that was written from a wait that ended with nothing written (CUL-1275). */
   updated_at?: string | null;
+  /** CUL-1759: when this read's call was said (migration 099); NULL before then. */
+  call_said_at?: string | null;
   error: string | null;
+  /** CUL-1611: the server's leave for call today to say "first thing tomorrow" (087). Only
+   *  TRUE grants it, and only through `lib/mayWaitLine.ts`'s gates. */
+  may_wait?: boolean | null;
+  may_wait_decided_at?: string | null;
+  /** The photo set the row's last write was stamped over (075). */
+  photo_set_key?: string | null;
   /** EN-7's re-check on an owner edit (CUL-1408, lib/stoolForm.ts): the key the read was
    *  written under, and whether its vomiting call stands. Optional: a row read before they
    *  were selected carries neither, and then no re-check fires. */
@@ -157,9 +176,11 @@ const SELECT_COLS =
   'status, recommendation, read_text, description, stool_consistency, stool_colour, ' +
   'stool_content, stool_blood_present, stool_blood_type, stool_mucus_present, ' +
   'foreign_material_present, foreign_material_note, ai_raw_payload, edited_at, dismissed_at, ' +
-  'updated_at, error, engine_flags, contextual_flags, tier, ' +
+  'updated_at, call_said_at, error, engine_flags, contextual_flags, tier, ' +
   // CUL-1406: read so the shared card stays one shape; the server writes these on vomit rows only (085).
-  'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all';
+  'intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all, ' +
+  // CUL-1629: the server's leave to wait, and the photo set the row was stamped over (087, 075).
+  'may_wait, may_wait_decided_at, photo_set_key';
 
 export function StoolAnalysisSection(
   { eventId, petId, petName, hasPhoto }:
@@ -182,6 +203,37 @@ export function StoolAnalysisSection(
   // CUL-1510: the record around this stool (the vomits beside it, the courses on board),
   // for "What to tell them" under a call. Re-read when the row moves.
   const floorFacts = useIncidentFloorFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}|${Math.floor(clockNow / FLOOR_FACTS_REFRESH_MS)}`);
+  // CUL-1629: the phone's read behind call today's wait line, only when the stored fact could
+  // grant it (a new-rule call today with `may_wait` TRUE); every other read costs nothing.
+  // Re-read every minute and on every log this phone commits (the completion card's payload
+  // moves on each), so a vomit or lethargy logged over this record reaches the line at once.
+  const waitCandidate = !!row && row.tier === 'call_today' && row.may_wait === true && isTieredRow(row);
+  const lastLogged = useMomentStore((s) => s.payload);
+  // When that log landed: an answer read before it cannot have seen it (the `stale` gate).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const lastLoggedAt = useMemo(() => (lastLogged ? Date.now() : null), [lastLogged]);
+  // Back from the background re-reads and re-renders at once, never on the next interval.
+  const waitActive = useAppActive();
+  const waitTick = `${Math.floor(clockNow / 60_000)}|${waitActive}`;
+  const mayWaitFacts = useMayWaitFacts(eventId, petId, `${row?.updated_at ?? row?.status ?? ''}`, waitTick, lastLogged, waitCandidate);
+  // CUL-1513 (tiers spec §5): the go-live day's lines. Both null until the key's own
+  // `app_config` value carries a day for this owner, so the card is today's to the byte.
+  const liveSince = useEn3LiveSince();
+  const newSince = useNewSinceLine(eventId, petId, petName, row ?? null, `${row?.updated_at ?? row?.status ?? ''}`);
+  // The RECORD's pet (C-9): its species decides the wait line's intake re-check.
+  const recordPet = usePetStore((s) => s.pets.find((p) => p.id === petId) ?? null);
+  // K2 (CUL-1515): a new-rule `logged` read that a finding Home is tracking counts among its
+  // episodes says "Part of a pattern" (`lib/incidentPattern.ts`). The only stool sign a finding
+  // counts is diarrhea, and the evidence check is by row, so a `stool_normal` record (never in
+  // a diarrhea finding's episodes) marks nothing. Null until it answers.
+  const patternMembership = usePatternMembership(
+    { petId, eventId, eventType: 'diarrhea' },
+    // Asked while a read is in flight too: whether the finding counts this record does not
+    // depend on the verdict, so the answer is in hand on the landing's commit and the landing
+    // is spoken in the words the card then shows (mock §04), never "keep an eye out" first.
+    !!row && !row.dismissed_at && (working || row.status === 'pending' || tierDisplayOf(row) === 'logged'),
+    `${row?.updated_at ?? row?.status ?? ''}`,
+  );
 
   // §5.3 — the observations fold, device-local per pet per event. Held here rather than in
   // the grid so a re-render of the block never resets what the owner folded, and fed the
@@ -230,6 +282,7 @@ export function StoolAnalysisSection(
     awaitingRead,
     identity: eventId,
     version: row?.updated_at ?? null,
+    petName,
   });
 
   const fetchRow = useCallback(async (): Promise<AnalysisRow | null> => {
@@ -240,6 +293,38 @@ export function StoolAnalysisSection(
       .maybeSingle();
     return (data as AnalysisRow | null) ?? null;
   }, [eventId]);
+
+  // CUL-1629: the stored fact re-read from the server on the same cadence, for the wait line
+  // alone. A resolved row is otherwise fetched once, so a take-back the server writes for a
+  // neighbour's finding (088–092) would never reach an open record. The line stands only
+  // while this copy and the one on screen agree; a newer one is shown, not just obeyed.
+  const [freshWait, setFreshWait] = useState<{ row: AnalysisRow | null; readAt: number } | null>(null);
+  // Cleared when the row on screen moves, never on the tick: the line does not blink to the
+  // louder words every minute over a copy that still agrees. A read is never cancelled by
+  // the next tick either (a slow network would then starve every answer); each answer carries
+  // the time its read started, and the newest started read wins.
+  const freshSeq = useRef(0);
+  const latestFreshSeq = useRef(0);
+  const freshScope = useRef(0);
+  useEffect(() => {
+    // A new question: every read already in flight answers the old one. Defense in depth: an
+    // old-scope answer would also fail the gate's `updated_at` match, so this only ever spares
+    // the line a louder blink (adversarial pass 3, mutant M1).
+    freshScope.current = freshSeq.current;
+    setFreshWait(null);
+  }, [eventId, waitCandidate, row?.updated_at]);
+  useEffect(() => {
+    if (!waitCandidate) return;
+    const seq = ++freshSeq.current;
+    const readAt = Date.now();
+    void fetchRow().then((next) => {
+      if (cancelled.current || seq <= freshScope.current || seq < latestFreshSeq.current) return;
+      latestFreshSeq.current = seq;
+      setFreshWait({ row: next, readAt });
+      const shown = latestRow.current;
+      if (next && next.status !== 'pending' && shown && next.updated_at !== shown.updated_at) setRow(next);
+    });
+  }, [waitCandidate, row?.updated_at, waitTick, lastLogged, fetchRow]);
 
   // Re-read the row and resolve if the analysis has moved off 'pending'. Returns
   // true once resolved — the realtime watch tears down on true. Guards its state
@@ -628,6 +713,9 @@ export function StoolAnalysisSection(
   // tone/action (it keeps today's card), never null for a call.
   const tiered = isTieredRow(row);
   const display = tiered ? tierDisplayOf(row) : null;
+  // One meta line about the rule: the first new-rule read's "New since", or an earlier-rule
+  // read's "before {date}" (that one only when the read was last written before the day).
+  const ruleNote = tiered ? newSince : earlierRuleLineOf(row, liveSince);
   // CUL-819 (a): a call whose latest run did not finish says so beside the verdict, never
   // reverted. True only since the server's hold clears a stale `error` (CUL-1509): before
   // that, a later run that finished calm and was held left the old error standing, and the
@@ -649,6 +737,23 @@ export function StoolAnalysisSection(
           nowMs,
         })
       : null;
+  // K2: "Part of a pattern", on a new-rule `logged` read only, beside the finding that counts it.
+  const pattern =
+    display === 'logged' && patternMembership
+      ? {
+          line: patternActionLine(petName, patternMembership.noun),
+          door: PATTERN_WORDS.door,
+          onOpen: () => router.push(patternMembership.href),
+        }
+      : null;
+  // PR-30c (CUL-1739): a call now steps to its dated form a day after it was said: the later of
+  // the event (the floor read's anchor) and when this row's call was said: its own stamp
+  // (`call_said_at`, migration 099, CUL-1759), else its last write. A call raised late keeps "now"
+  // for its own day, and a Hide or an edit never restarts it. An unanswered read keeps "now" (loud).
+  const datedCall = display === 'call_now' ? recordDatedCallNow(floorFacts?.anchor?.at ?? null, row.call_said_at ?? row.updated_at ?? null, clockNow) : null;
+  const callLabel = datedCall?.label ?? incidentReadLabel(row);
+  const readLabel = pattern ? PATTERN_WORDS.label : callLabel;
+
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
   const editedSet = new Set<EditableStoolField>(
@@ -665,7 +770,12 @@ export function StoolAnalysisSection(
       // error-only write over a hidden Worth a call — or before that server change is
       // live. Saying "hidden" tells the owner something landed and where to find it,
       // without speaking what they chose to hide.
-      announcement={dismissed ? DISMISSED_LINE : heldDisclosure ? `${incidentReadLabel(row)}. ${heldDisclosure}` : incidentReadLabel(row)}
+      announcement={
+        dismissed ? DISMISSED_LINE
+        : heldDisclosure ? `${callLabel}. ${heldDisclosure}`
+        : pattern ? PATTERN_WORDS.spoken
+        : callLabel
+      }
       pending={false}
     >
       {dismissed ? (
@@ -681,13 +791,38 @@ export function StoolAnalysisSection(
           // The words live in lib/incidentReadState.ts since D2-4 (CUL-1066), so Home's spine
           // node and this card cannot name one verdict two ways; a verdict this build does
           // not know is spoken as the escalation, never blank (CUL-1277).
-          label={incidentReadLabel(row)}
+          label={readLabel}
           // EN-3: the tier's tone and action line from the map; both absent on an
           // earlier-rule read, which draws today's card.
           tone={display ? TIER_WORDS[display].tone : undefined}
-          action={display ? TIER_WORDS[display].action : null}
+          action={
+            display === 'call_today'
+              // CUL-1629: "first thing tomorrow" only on the server's stored fact, and only
+              // while every gate the phone can check still holds; else the louder line.
+              ? callTodayActionOf({
+                  row,
+                  facts: mayWaitFacts,
+                  freshRow: freshWait?.row ?? null,
+                  freshReadAt: freshWait?.readAt ?? null,
+                  lastLoggedAt,
+                  kind: 'stool',
+                  petName,
+                  species: recordPet?.species ?? null,
+                  birthDate: recordPet?.date_of_birth ?? null,
+                  // The live clock, not the minute tick: a phone back from the background
+                  // must not judge the night's end on the minute it was put away.
+                  nowMs: Date.now(),
+                })
+              : datedCall
+                ? datedCall.action
+                : display
+                  ? TIER_WORDS[display].action
+                  : null
+          }
           tellThem={tellThemLine}
           disclosure={heldDisclosure}
+          pattern={pattern}
+          ruleNote={ruleNote}
           readText={row.read_text}
             correction={intakeCorrectionDisplay(row, petName)}
           onHide={() => setDismissed(true)}

@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Animated, Alert, LayoutAnimation } from 'react-native';
 import { theme, shadows } from '../../constants/theme';
 import { ThemedText } from './ThemedText';
-import { CompletionMark } from './CompletionMark';
+import { COMPLETION_GROUND, CompletionMark } from './CompletionMark';
 import { useLiveRegionAnnouncement } from '../../hooks/useLiveRegionAnnouncement';
 import { sourceAfterPointEdit } from '../../lib/eventTimeEdit';
 import { TimeEditSheet } from './TimeEditSheet';
 import {
   removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
 } from '../../lib/completionCard';
-import { useMomentStore } from '../../store/momentStore';
+import { useMomentStore, completionTone } from '../../store/momentStore';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { useAppActive } from '../../hooks/useAppActive';
+import { COMPLETION_MOTION, useCompletionArrival } from '../motion/completionMotion';
+import { FOLD_LAYOUT } from '../motion/foldMotion';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { getDoubleDoseFlag, getEventSource, updateEvent } from '../../lib/db';
@@ -60,17 +64,23 @@ const CHIP_CONFIRM_HOLD_MS = 1500;
 // stays a REVERSAL and never becomes a second path to an affirmative — removing a
 // dose can only reduce what the record claims, and an unanswered card still lands
 // `unconfirmed`, exactly as before.
+//
+// The ground is daylight (CUL-1691 PR 1, D1), the meal card's: a white card lifted by
+// shadows.lg, no outline. It is OPAQUE on purpose: iOS traces a layer shadow off the
+// composite alpha, so a translucent card would grain its own shadow (#1125). The test
+// pins it.
 export function MedicationCompletionCard() {
   const {
-    visible, payload, removed, hide, undo, patchOccurredAt, patchAdherence, patchHowGiven,
-    patchDoubleDose, rescheduleHide, pauseDwell, resumeDwell,
+    visible, payload, removed, undoing, hide, undo, patchOccurredAt, patchAdherence, patchHowGiven,
+    patchDoubleDose, rescheduleHide, pauseDwell, resumeDwell, armRemovedDwell,
   } = useMomentStore();
   const { patchInToday } = useEventStore();
   const { pets } = usePetStore();
 
-  const translateY = useRef(new Animated.Value(80)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
-  const checkScale = useRef(new Animated.Value(0.6)).current;
+  // Read in the render, as the meal card does: the store has the OS answer before the
+  // first frame (CUL-1123), and unknown reads as still (C-43).
+  const reduced = useReducedMotion();
+  const appActive = useAppActive();
 
   // The eventId the picker was OPENED for; null while closed (CUL-709) — see the
   // meal card's savePicker for the full argument. `present()` swaps the payload in
@@ -83,35 +93,106 @@ export function MedicationCompletionCard() {
   const isMedication = payload?.kind === 'medication';
   const shown = visible && isMedication;
 
+  // CUL-1691 §2 — the motion: the meal card's hook, which also gives this card the Reduce
+  // Motion branch it lacked (a crossfade, the mark at rest). The tone is `completionTone`
+  // (`doseCelebrates`), read from the store when a beat is due, never from this render.
+  const doseNow = isMedication ? payload : null;
+  // THE GOLD WAITS ON THE DOUBLE-DOSE CHECK (§2.3). While `doubleDoseSettled` is absent
+  // the halo holds at 0; if it is still absent when the gold is due (`haloDelayMs` into
+  // the arrival), the gold stays absent for THIS arrival, latched to the dose and the
+  // answer it was due on. A late "no conflict" never blooms gold after the fact; a chip
+  // tap changes the answer, frees the latch, and its own recheck decides from there.
+  const forfeit = useRef<{ id: string; adherence: DoseAdherence | null } | null>(null);
+  // Bumped when the latch is set, so the render's `celebrate` re-reads it.
+  const [, setForfeitTick] = useState(0);
+  const forfeited = (p: { eventId: string; adherence: DoseAdherence | null }) =>
+    forfeit.current !== null && forfeit.current.id === p.eventId && forfeit.current.adherence === p.adherence;
+  const arrival = useCompletionArrival({
+    identity: doseNow ? doseNow.eventId : null,
+    shown,
+    removed,
+    flying: false,
+    reducedMotion: reduced,
+    appActive,
+    celebrate: doseNow
+      ? completionTone(doseNow) === 'celebrate' && Boolean(doseNow.doubleDoseSettled) && !forfeited(doseNow)
+      : false,
+    celebrateNow: () => {
+      const p = useMomentStore.getState().payload;
+      return p?.kind === 'medication' && completionTone(p) === 'celebrate' && !forfeited(p);
+    },
+    haloPending: () => {
+      const p = useMomentStore.getState().payload;
+      return p?.kind === 'medication' && !p.doubleDoseSettled;
+    },
+    currentIdentity: () => useMomentStore.getState().payload?.eventId,
+    onRemovedLanded: (id) => armRemovedDwell(id),
+    endFlight: () => undefined,
+  });
+  const upId = shown && !removed && doseNow ? doseNow.eventId : null;
   useEffect(() => {
-    Animated.parallel([
-      Animated.spring(translateY, {
-        toValue: shown ? 0 : 80,
-        useNativeDriver: true,
-        tension: 80,
-        friction: 11,
-      }),
-      Animated.timing(opacity, {
-        toValue: shown ? 1 : 0,
-        duration: shown ? 180 : 140,
-        useNativeDriver: true,
-      }),
-      Animated.spring(checkScale, {
-        toValue: shown ? 1 : 0.6,
-        useNativeDriver: true,
-        tension: 60,
-        friction: 7,
-      }),
-    ]).start();
-  }, [shown, translateY, opacity, checkScale]);
+    // Reduce Motion has no bloom to forfeit: the gold is pinned the moment the check lets it.
+    if (upId === null || reduced) return;
+    const id = upId;
+    const t = setTimeout(() => {
+      const p = useMomentStore.getState().payload;
+      if (p?.kind !== 'medication' || p.eventId !== id || p.doubleDoseSettled) return;
+      forfeit.current = { id, adherence: p.adherence };
+      setForfeitTick((n) => n + 1);
+    }, COMPLETION_MOTION.haloDelayMs);
+    return () => clearTimeout(t);
+  }, [upId, reduced]);
+
+  // INERT FROM THE UNDO TAP (§2.3). Read from the store at the tap, so a chip or Change
+  // time pressed in the same frame as Undo is refused before the reversal's await
+  // resolves: the adherence chips are the B-156 G1 fail-safe surface, and a write
+  // against a dose that is leaving the record is the one thing they must never do.
+  function inertNow(eventId: string): boolean {
+    const st = useMomentStore.getState();
+    return st.undoing === eventId || (st.removed && st.payload?.eventId === eventId);
+  }
+  const inert = doseNow ? undoing === doseNow.eventId || removed : false;
+
+  // A DOUBLE-DOSE NOTE PATCHED IN AFTER THE REVEAL (§2.3): finish the arrival, fire
+  // FOLD_LAYOUT (app-global), lay the note out, then the tone decides (a conflict is calm,
+  // so a standing halo leaves). One within `labelBeatMs` of the reveal lays out with it.
+  const revealedAt = useRef<{ id: string | null; at: number }>({ id: null, at: 0 });
+  if (upId !== null && revealedAt.current.id !== upId) revealedAt.current = { id: upId, at: Date.now() };
+  const [laid, setLaid] = useState<{ id: string | null; doubleDose: unknown }>({ id: null, doubleDose: null });
+  const pendingSettle = useRef(false);
+  const liveDouble = doseNow?.doubleDose ?? null;
+  useEffect(() => {
+    if (!doseNow) return;
+    const id = doseNow.eventId;
+    if (laid.id === id && laid.doubleDose === liveDouble) return;
+    const next = { id, doubleDose: liveDouble };
+    const atReveal = laid.id !== id || Date.now() - revealedAt.current.at <= COMPLETION_MOTION.labelBeatMs;
+    if (atReveal || upId === null) {
+      setLaid(next);
+      return;
+    }
+    arrival.finishForPatch();
+    LayoutAnimation.configureNext(FOLD_LAYOUT);
+    pendingSettle.current = true;
+    setLaid(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doseNow?.eventId, liveDouble]);
+  const settleHaloRef = useRef(arrival.settleHalo);
+  settleHaloRef.current = arrival.settleHalo;
+  useEffect(() => {
+    if (!pendingSettle.current) return;
+    pendingSettle.current = false;
+    settleHaloRef.current();
+  }, [laid]);
+  const layDouble = (doseNow !== null && laid.id === doseNow.eventId ? laid.doubleDose : liveDouble) as typeof liveDouble;
 
   function openPicker() {
-    if (!isMedication) return;
+    if (!isMedication || inertNow(payload.eventId)) return;
     setPickerFor(payload.eventId);
   }
 
   async function savePicker(next: Date) {
-    if (!isMedication) return;
+    if (!isMedication || inertNow(payload.eventId)) return;
     // The card moved on to another dose while the sheet was open: write nothing
     // and close (CUL-709; mirrors the meal card).
     if (pickerFor !== payload.eventId) { setPickerFor(null); return; }
@@ -161,7 +242,7 @@ export function MedicationCompletionCard() {
   }
 
   async function handleAdherenceChange(next: DoseAdherence) {
-    if (!isMedication) return;
+    if (!isMedication || inertNow(payload.eventId)) return;
     const eventId = payload.eventId;
     const prev = payload.adherence;
     // Captured up front, before any await: the payload read after the write is the
@@ -198,7 +279,11 @@ export function MedicationCompletionCard() {
     // slower recheck from an earlier tap can never overwrite a later tap's verdict.
     getDoubleDoseFlag({ eventId, petId, medicationItemId, occurredAt, adherence: next })
       .then((flag) => patchDoubleDose(eventId, flag, next))
-      .catch((e) => console.warn('[medication-card] double-dose recheck failed:', e));
+      .catch((e) => {
+        // A failed recheck never settles the gold's wait: an unknown is not a clear
+        // check, so a Given whose recheck failed stays calm (§2.3, fails toward calm).
+        console.warn('[medication-card] double-dose recheck failed:', e);
+      });
   }
 
   // The descriptive twin of handleAdherenceChange (B-156 Slice B). The vehicle is
@@ -207,7 +292,7 @@ export function MedicationCompletionCard() {
   // intake row uses, never an escalation. It never blocks the card's auto-dismiss:
   // an unanswered vehicle simply stays null ("not recorded").
   async function handleVehicleChange(next: DoseVehicle | null) {
-    if (!isMedication) return;
+    if (!isMedication || inertNow(payload.eventId)) return;
     const eventId = payload.eventId;
     const prev = payload.howGiven;
     if (next === prev) return;
@@ -268,8 +353,13 @@ export function MedicationCompletionCard() {
   // naming none — see store/petStore.ts for the full argument.
   const petName = dose ? resolveRecordPetName(pets, dose.petId) : '';
   const notice = dose && removed ? removedNoticeCopy(petName) : null;
-  // ONE string per state: the header's summary label and what VoiceOver is told.
-  const summaryLabel = notice ? notice.a11yLabel : `${title}. ${subLabel}`;
+  // The header always speaks the LOGGED sentence, never "Removed" (§2.3): through the
+  // collapse the old body is hidden from assistive tech, and the Removed label belongs to
+  // the removal node and the announcement alone.
+  const headerLabel = `${title}. ${subLabel}`;
+  // What VoiceOver is told: iOS speaks "Removed" through this hook on the `removed`
+  // fact; Android through the removal node's live region when it mounts. Once each.
+  const summaryLabel = notice ? notice.a11yLabel : headerLabel;
 
   // CUL-1275 — the removal line's `accessibilityLiveRegion` is Android-only, and the
   // header had no live region at all, so this card confirmed a dose on NEITHER platform
@@ -315,18 +405,37 @@ export function MedicationCompletionCard() {
   // adherence and the detector requires 'given', so the two are mutually exclusive by
   // construction. Resolving an in-doubt dose UP to 'given' can surface this note, at
   // which point the in-doubt line is already gone.
-  const doubleDoseCopy = payload.doubleDose?.conflict
+  const doubleDoseCopy = layDouble?.conflict
     ? doubleDoseNote({
         drugName: payload.drugName,
-        gapMinutes: payload.doubleDose.gapMinutes ?? 0,
+        gapMinutes: layDouble.gapMinutes ?? 0,
       })
     : null;
+
+  // The collapse (§2.3): the body stays, frozen and hidden from assistive tech, until
+  // "Removed" lands; under Reduce Motion both are mounted for a true crossfade.
+  const bodyUp = !(removed && arrival.collapse === 'landed');
+  const noticeUp = notice !== null && (arrival.collapse === 'landed' || (arrival.collapse === 'leaving' && reduced));
+  // Never `disabled` (it announces "dimmed", C-7): hidden from assistive tech, because
+  // TalkBack's double-tap reaches `onPress` through `pointerEvents="none"`.
+  const leavingBody = removed
+    ? ({ pointerEvents: 'none', accessibilityElementsHidden: true, importantForAccessibility: 'no-hide-descendants' } as const)
+    : null;
+
+  function touchStart() {
+    pauseDwell();
+    arrival.finishForTouch();
+  }
+  function touchEnd() {
+    resumeDwell();
+    arrival.settleForTouch();
+  }
 
   return (
     <>
     <Animated.View
-      pointerEvents={shown ? 'box-none' : 'none'}
-      style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
+      pointerEvents={shown && !inert ? 'box-none' : 'none'}
+      style={[styles.wrapper, { opacity: arrival.cardOpacity, transform: [{ translateY: arrival.cardTranslateY }] }]}
     >
       {/* CUL-614 / §5 "Dwell" — the auto-dismiss stops while a finger is on the card
           and any interaction resets it. Wired at the ROOT because touch events bubble
@@ -334,55 +443,45 @@ export function MedicationCompletionCard() {
           pause between two chip taps; a per-control version would only ever cover the
           taps themselves, which were never the part being lost. onTouchCancel matters
           as much as onTouchEnd: a gesture the responder system takes away (a scroll
-          claiming it, a Modal mounting over it) ends there and nowhere else.
+          claiming it, a Modal mounting over it) ends there and nowhere else. The same
+          touch finishes the motion, and lifting it lets the tone settle the halo (§2.3).
 
-          NOT wired over the CUL-612 removal line, deliberately. That state has nothing
-          to read, tap or answer — it is the one card state the pause is not for — and
-          resuming arms a full interactive window, which would let a stray touch stretch
-          a 2.4s "Removed" past the dwell chosen so a reversal does not outstay the log
-          it reversed. */}
+          NOT wired from the Undo tap on (CUL-612, CUL-1691 §2.3), deliberately. That
+          state has nothing to read, tap or answer — it is the one card state the pause
+          is not for — and resuming arms a full interactive window, which would let a
+          stray touch stretch a 2.4s "Removed" past the dwell chosen so a reversal does
+          not outstay the log it reversed. */}
       <View
         style={styles.card}
         testID="medication-card-surface"
-        onTouchStart={notice ? undefined : pauseDwell}
-        onTouchEnd={notice ? undefined : resumeDwell}
-        onTouchCancel={notice ? undefined : resumeDwell}
+        pointerEvents={inert ? 'none' : 'auto'}
+        onTouchStart={inert ? undefined : touchStart}
+        onTouchEnd={inert ? undefined : touchEnd}
+        onTouchCancel={inert ? undefined : touchEnd}
       >
-        {notice ? (
-          /* The removal line — no mark, no chips, no note. The adherence row in
-             particular must go: it is a question about a dose that is no longer in
-             the record. Announced politely; this state has no other confirmation
-             for a screen-reader owner. */
-          <View
-            style={styles.labelCol}
-            // `accessible` is load-bearing: without it the label never applies and
-            // the two lines stay two separate stops (SheetLogBeat, CUL-682).
-            accessible
-            accessibilityRole="summary"
-            accessibilityLiveRegion="polite"
-            accessibilityLabel={summaryLabel}
-          >
-            <ThemedText style={styles.title}>{notice.title}</ThemedText>
-            <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
-          </View>
-        ) : (
-        <>
+        {bodyUp && (
+        <View style={styles.body} testID="medication-card-body" {...leavingBody}>
         <View style={styles.headerRow}>
-          <Animated.View testID="med-card-check" style={{ transform: [{ scale: checkScale }] }}>
-            <CompletionMark halo />
-          </Animated.View>
+          {/* The gold is `completionTone` (`doseCelebrates`): only a dose the owner said
+              was given, with no double-dose conflict, and never before the log-time
+              check has settled. Calm is the never-wrong direction while the card is
+              asking a question. */}
+          <View testID="med-card-check">
+            <CompletionMark halo={arrival.haloMode !== 'off'} motion={arrival.mark} />
+          </View>
           {/* One summary node, as on the named card: what was given and when (or
-              what it rode in) is one announcement, not two orphan lines. */}
-          <View
-            style={styles.labelCol}
+              what it rode in) is one announcement, not two orphan lines. The words
+              land on their own beat; the node itself is never split. */}
+          <Animated.View
+            style={[styles.labelCol, { opacity: arrival.wordsOpacity }]}
             accessible
             accessibilityRole="summary"
-            accessibilityLiveRegion="polite"
-            accessibilityLabel={summaryLabel}
+            accessibilityLiveRegion={removed ? undefined : 'polite'}
+            accessibilityLabel={headerLabel}
           >
             <ThemedText style={styles.title} numberOfLines={1}>{title}</ThemedText>
             <ThemedText style={styles.subLabel} numberOfLines={1}>{subLabel}</ThemedText>
-          </View>
+          </Animated.View>
           {/* "Change time" is scoped to a STANDALONE dose — where the subLabel IS the
               logged time, giving the exact 1:1 with the meal card (the button sits next
               to a shown time). A combo dose repurposes the subLabel to name the pairing
@@ -394,7 +493,7 @@ export function MedicationCompletionCard() {
               another card, against a meal), so the one place a reversal is most
               likely needed is the one place the time picker withholds itself.
               Grouped so the header's wide gap applies once, to the pair. */}
-          <View style={styles.actionPair}>
+          <Animated.View style={[styles.actionPair, { opacity: arrival.bodyOpacity }]}>
             <TouchableOpacity
               onPress={handleUndo}
               hitSlop={HITSLOP_ACTION_LEFT}
@@ -415,8 +514,9 @@ export function MedicationCompletionCard() {
                 <ThemedText style={styles.action}>Change time</ThemedText>
               </TouchableOpacity>
             )}
-          </View>
+          </Animated.View>
         </View>
+        <Animated.View style={[styles.body, { opacity: arrival.bodyOpacity }]}>
         <View style={styles.adherenceWrap}>
           {/* B-172 — confirm-to-correct. A pre-lit state the OWNER asserted is RESTATED with
               the correction named ("Pixel took it — tap to change."), not re-asked. It still
@@ -447,7 +547,6 @@ export function MedicationCompletionCard() {
             onChange={handleAdherenceChange}
             label={null}
             size="compact"
-            onDark
           />
         </View>
         {/* B-157 (CUL-284) — the calm double-dose check, at log time. Sits BELOW the
@@ -458,11 +557,11 @@ export function MedicationCompletionCard() {
 
             Non-interactive, and read as one summary node so a screen reader speaks the
             fact and its "worth double-checking" tail together instead of as an orphan
-            line. Divider-only on the card's dark ground, mirroring the detail screen's
+            line. Divider-only on the card, mirroring the detail screen's
             deliberate NOT-the-rose-tint ruling: §6.4 is a flag, never an alarm, and the
             record cannot yet distinguish a mistaken second tap from a real second dose.
             The correction lives where it can be made properly — the chips here for the
-            adherence, the dose's detail screen for a removal. */}
+            adherence, the dose's detail screen for a removal. No motion of its own. */}
         {doubleDoseCopy && (
           <View
             style={styles.doubleDoseWrap}
@@ -482,11 +581,29 @@ export function MedicationCompletionCard() {
             onChange={handleVehicleChange}
             label={null}
             size="compact"
-            onDark
           />
         </View>
-        </>
+        </Animated.View>
+        </View>
         )}
+        {noticeUp && notice ? (
+          /* The removal line — no mark, no chips, no note. The adherence row in
+             particular must go: it is a question about a dose that is no longer in
+             the record. From the frame it mounts it is the card's only live region
+             (Android speaks it here; iOS through the hook above). */
+          <Animated.View
+            style={[styles.labelCol, !bodyUp ? null : styles.noticeOverlay, { opacity: arrival.noticeOpacity }]}
+            // `accessible` is load-bearing: without it the label never applies and
+            // the two lines stay two separate stops (SheetLogBeat, CUL-682).
+            accessible
+            accessibilityRole="summary"
+            accessibilityLiveRegion="polite"
+            accessibilityLabel={notice.a11yLabel}
+          >
+            <ThemedText style={styles.title}>{notice.title}</ThemedText>
+            <ThemedText style={styles.subLabel}>{notice.detail}</ThemedText>
+          </Animated.View>
+        ) : null}
       </View>
     </Animated.View>
 
@@ -524,13 +641,26 @@ const styles = StyleSheet.create({
     zIndex: 50,
     elevation: 12,
   },
+  // Opaque under its shadow (see the header): the shadow lives here, never on the
+  // transparent wrapper, and the ground is the one the mark's check is knocked out in.
   card: {
-    backgroundColor: theme.colorNeutralDark,
+    backgroundColor: COMPLETION_GROUND,
     paddingHorizontal: theme.space2,
     paddingVertical: 12,
     borderRadius: theme.radiusLarge,
     gap: theme.space1,
-    ...shadows.md,
+    ...shadows.lg,
+  },
+  body: {
+    gap: theme.space1,
+  },
+  // Reduce Motion's true crossfade: "Removed" over the leaving body, in the card's
+  // padding box, until the body goes and the height snaps.
+  noticeOverlay: {
+    position: 'absolute',
+    top: 12,
+    left: theme.space2,
+    right: theme.space2,
   },
   headerRow: {
     flexDirection: 'row',
@@ -544,12 +674,12 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: theme.textMD,
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
     fontWeight: theme.weightMedium,
   },
   subLabel: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSubtle,
+    color: theme.colorTextSecondary,
     fontWeight: theme.weightRegular,
   },
   // 44pt min touch target (the 3am-test rule) — the underlined label alone is
@@ -567,26 +697,26 @@ const styles = StyleSheet.create({
   },
   action: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDark,
+    color: theme.colorTextPrimary,
     fontWeight: theme.weightMedium,
     textDecorationLine: 'underline',
   },
   adherenceWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorDividerOnDark,
+    borderTopColor: theme.colorBorderStrong,
     paddingTop: theme.space1,
     gap: 6,
   },
   adherenceLabel: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkSubtle,
+    color: theme.colorTextSecondary,
     fontWeight: theme.weightRegular,
   },
   // The in-doubt reason line — fainter than the prompt, sits between it and the chips.
   // Calm, never an alarm colour: the rose flag lives on the chip-row downgrade, not here.
   inDoubtReason: {
     fontSize: theme.textXS,
-    color: theme.colorTextOnDarkFaint,
+    color: theme.colorTextTertiary,
     fontWeight: theme.weightRegular,
   },
   // B-157 — the double-dose note block. Same top-divider treatment as its siblings so
@@ -595,13 +725,13 @@ const styles = StyleSheet.create({
   // to the adherence question but must not read as fine print.
   doubleDoseWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorDividerOnDark,
+    borderTopColor: theme.colorBorderStrong,
     paddingTop: theme.space1,
   },
   doubleDoseText: {
     fontSize: theme.textSM,
     lineHeight: theme.textSM * 1.4,
-    color: theme.colorTextOnDarkSubtle,
+    color: theme.colorTextSecondary,
     fontWeight: theme.weightRegular,
   },
   // Subordinate to the adherence block: a fainter divider + dimmer label so the
@@ -609,13 +739,13 @@ const styles = StyleSheet.create({
   // it?" question, never a peer of it.
   vehicleWrap: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colorDividerOnDark,
+    borderTopColor: theme.colorBorderStrong,
     paddingTop: theme.space1,
     gap: 6,
   },
   vehicleLabel: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnDarkFaint,
+    color: theme.colorTextTertiary,
     fontWeight: theme.weightRegular,
   },
 

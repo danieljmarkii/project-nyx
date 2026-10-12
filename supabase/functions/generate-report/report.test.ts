@@ -24,6 +24,9 @@ import {
   FALLBACK_DAYS,
   INTAKE_LOG_CAP,
   summariseIntake,
+  normalShortcutDisclosure,
+  FAB_STOOL_SPLIT_KEY,
+  NORMAL_SHORTCUT_SINCE_DAYS,
   type ReportInput,
   type ReportEventInput,
   type ReportAiAnalysisInput,
@@ -3115,6 +3118,8 @@ Deno.test('B-497 — mealDaysByBucket counts MEALS, not any log: a logged sympto
       requestedWindow: { startDate: '2026-06-01', endDate: '2026-06-14' }, // 14 d → 2 weekly buckets
       events: [
         proteinMeal({ occurredAt: at('2026-06-02'), foodType: 'treat', primaryProtein: 'chicken', proteins: ['chicken'] }),
+        // A real meal in week 0 — since CUL-1779 a treat alone is not diet observation.
+        proteinMeal({ occurredAt: at('2026-06-03'), foodType: 'meal', format: 'dry_kibble', primaryProtein: 'salmon', proteins: ['salmon'] }),
         makeEvent({ type: 'vomit', occurredAt: at('2026-06-10') }),
       ],
     }),
@@ -3129,6 +3134,124 @@ Deno.test('B-497 — mealDaysByBucket counts MEALS, not any log: a logged sympto
   const vomit = snap.symptoms.find((s) => s.type === 'vomit')
   assert.ok(vomit, 'the vomit aggregate exists')
   assert.ok(vomit!.loggedDaysByBucket[1] > 0, 'any-log fires on the vomit week — the OLD, wrong signal')
+})
+
+Deno.test('CUL-1779 — a treat is not diet observation: a treat-only day never counts toward mealDaysByBucket', () => {
+  // The chart's per-week floor mirrors the trial coverage tile, which counts `foodType !== 'treat'`.
+  // A permitted chew on an otherwise unlogged day must not count as a day the diet was watched.
+  const snap = assembleReport(
+    baseInput({
+      requestedWindow: { startDate: '2026-06-01', endDate: '2026-06-14' },
+      events: [
+        proteinMeal({ occurredAt: at('2026-06-02'), foodType: 'treat', primaryProtein: 'chicken', proteins: ['chicken'] }),
+        proteinMeal({ occurredAt: at('2026-06-09'), foodType: 'treat', primaryProtein: 'chicken', proteins: ['chicken'] }),
+        proteinMeal({ occurredAt: at('2026-06-10'), foodType: 'meal', format: 'dry_kibble', primaryProtein: 'salmon', proteins: ['salmon'] }),
+      ],
+    }),
+  )
+  assert.deepEqual(snap.proteinTimeline.mealDaysByBucket, [0, 1], 'only the non-treat meal-day counts')
+})
+
+Deno.test('CUL-1779 — the counterexample, end to end: one logged day a week never prints a measured off-diet 0', () => {
+  // The adversarial-reviewer's record: 56 days, a meal logged on ONE day each week, one treat in
+  // week 3. Before the fix the chart printed `0` over the seven other weeks — six unlogged days a
+  // week drawn as clean — while page one's coverage tile (8 of 56 days, under the 50% floor) said
+  // "Not established". The chart must agree with the tile: no measured zero anywhere.
+  const mealDays = ['2026-05-01', '2026-05-08', '2026-05-15', '2026-05-22', '2026-05-29', '2026-06-05', '2026-06-12', '2026-06-19']
+  const events: ReportEventInput[] = mealDays.map((d) =>
+    proteinMeal({ occurredAt: at(d), foodType: 'meal', format: 'dry_kibble', primaryProtein: 'salmon', proteins: ['salmon'] }),
+  )
+  events.push(proteinMeal({ occurredAt: at('2026-05-16'), foodType: 'treat', primaryProtein: 'chicken', proteins: ['chicken'] }))
+  const snap = assembleReport(baseInput({ requestedWindow: { startDate: '2026-05-01', endDate: '2026-06-25' }, events }))
+  const pt = snap.proteinTimeline
+  assert.equal(pt.weekStartDates.length, 8, 'eight weekly buckets over 56 days')
+  assert.deepEqual(pt.mealDaysByBucket, [1, 1, 1, 1, 1, 1, 1, 1], 'one meal-day a week (the treat day adds none)')
+  const html = renderReport(snap)
+  const svg = html.match(/<svg[^>]*aria-label="Off-diet protein exposure per week:[^"]*"[\s\S]*?<\/svg>/)
+  assert.ok(svg, 'the off-diet chart rendered')
+  assert.ok(!/class="nub"/.test(svg![0]), 'no week of this record draws the measured-zero nub')
+  assert.equal((svg![0].match(/class="nolog"/g) ?? []).length, 7, 'the seven treat-free weeks draw the not-observed marker')
+  assert.ok(
+    svg![0].includes('per week: not read as clean (meals logged on 1 of 7 days), not read as clean (meals logged on 1 of 7 days), 1 (meals logged on 1 of 7 days),'),
+    'the alt text never voices a thin week as 0',
+  )
+  assert.ok(/too few to read as a week without off-diet food/.test(html), 'the marker is named where it is drawn')
+})
+
+function cul1779Trial(over: Record<string, unknown> = {}): ReportInput['dietTrials'][number] {
+  return {
+    id: 'dt-1779', foodItemId: 'f-trial', startedAt: '2026-05-08', targetDurationDays: 56,
+    status: 'active', completedAt: null, vetName: 'Dr. Chen', foodLabel: 'Novel Duck',
+    primaryProtein: 'duck', proteins: ['duck'], ingredientsNotes: 'Duck, duck meal, brewers rice.',
+    extractionConfidence: { proteins: 0.9 }, targetProtein: null, targetProteinSetAt: null,
+    allowedFoods: [
+      {
+        foodItemId: 'f-trial', foodLabel: 'Novel Duck', role: 'primary_diet',
+        allowedFrom: '2026-05-08', allowedUntil: null, primaryProtein: 'duck',
+        brand: 'Brand', productName: 'Novel Duck', proteins: ['duck'],
+        ingredientsNotes: 'Duck, duck meal, brewers rice.', extractionConfidence: { proteins: 0.9 },
+      },
+    ],
+    ...over,
+  } as unknown as ReportInput['dietTrials'][number]
+}
+
+function dailyMeals(from: string, to: string, intakeRating: 'all' | 'some' | null = 'all'): ReportEventInput[] {
+  const out: ReportEventInput[] = []
+  for (let ms = Date.parse(`${from}T00:00:00Z`); ms <= Date.parse(`${to}T00:00:00Z`); ms += 86_400_000) {
+    out.push(proteinMeal({
+      occurredAt: at(new Date(ms).toISOString().slice(0, 10)), foodItemId: 'f-trial', foodType: 'meal',
+      format: 'dry_kibble', primaryProtein: 'duck', proteins: ['duck'], intakeRating,
+      ingredientsNotes: 'Duck, duck meal, brewers rice.', extractionConfidence: { proteins: 0.9 },
+    }))
+  }
+  return out
+}
+
+Deno.test('CUL-1779 — a window wider than the trial: pre-trial weeks of logged jerky are OUTSIDE the chart, never a measured 0', () => {
+  // The adversarial-reviewer's since-visit counterexample. The window opens two weeks before the
+  // trial; the owner logged a meal AND a chicken jerky every one of those days. The trial's off-diet
+  // set only exists over its evidence range, so those weeks used to print "0 off-diet" nubs.
+  const jerky: ReportEventInput[] = []
+  for (let d = 24; d <= 37; d++) {
+    const day = d <= 30 ? `2026-04-${d}` : `2026-05-0${d - 30}`
+    jerky.push(proteinMeal({ occurredAt: at(day, '18:00:00'), foodItemId: 'jerky', foodType: 'treat', format: 'treat', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken.', extractionConfidence: { proteins: 0.9 } }))
+  }
+  const trialTreat = proteinMeal({ occurredAt: at('2026-05-20', '18:00:00'), foodItemId: 'jerky', foodType: 'treat', format: 'treat', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken.', extractionConfidence: { proteins: 0.9 } })
+  const snap = assembleReport(baseInput({
+    requestedWindow: { startDate: '2026-04-24', endDate: '2026-06-04' }, // six weeks; the trial starts week 3
+    dietTrials: [cul1779Trial()],
+    events: [...dailyMeals('2026-04-24', '2026-06-04'), ...jerky, trialTreat],
+  }))
+  const pt = snap.proteinTimeline
+  assert.equal(pt.trialScoped, true, 'a trial-classified report scopes the chart to the trial')
+  assert.deepEqual(pt.scopeDaysByBucket.slice(0, 3), [0, 0, 7], 'the two pre-trial weeks hold no in-scope day')
+  assert.deepEqual(pt.mealDaysByBucket.slice(0, 2), [0, 0], 'their meals are not counted as observing the trial diet')
+  const html = renderReport(snap)
+  const svg = html.match(/aria-label="Off-diet protein exposure per week: ([^"]*)"/)
+  assert.ok(svg, 'the off-diet chart rendered')
+  assert.ok(svg![1].startsWith('outside the trial, outside the trial, '), `pre-trial weeks are outside, never 0: ${svg![1]}`)
+  assert.ok(html.includes('fall outside the trial'), 'the scope is stated beside the chart')
+})
+
+Deno.test('CUL-1779 — a refusal-stopped trial withholds every measured off-diet 0', () => {
+  // The cat would not eat the trial diet: every day is logged, nothing off-diet but one treat. Page 1
+  // withholds the clean-record statement for a refused diet; the chart may not make it week by week.
+  const snap = assembleReport(baseInput({
+    requestedWindow: { startDate: '2026-05-08', endDate: '2026-05-28' },
+    dietTrials: [cul1779Trial({ status: 'abandoned', stoppedReason: 'refused', endedAt: '2026-05-28' })],
+    events: [
+      ...dailyMeals('2026-05-08', '2026-05-28', 'some'),
+      proteinMeal({ occurredAt: at('2026-05-10', '18:00:00'), foodItemId: 'jerky', foodType: 'treat', format: 'treat', primaryProtein: 'chicken', proteins: ['chicken'], ingredientsNotes: 'Chicken.', extractionConfidence: { proteins: 0.9 } }),
+    ],
+  }))
+  assert.equal(snap.trial?.mayStateRecordClean, false, 'non-vacuity: the trial module withholds the clean read')
+  assert.equal(snap.proteinTimeline.zeroWithheld, true)
+  const html = renderReport(snap)
+  const svg = html.match(/<svg[^>]*aria-label="Off-diet protein exposure per week:[^"]*"[\s\S]*?<\/svg>/)
+  assert.ok(svg, 'the off-diet chart rendered')
+  assert.ok(!/class="nub"/.test(svg![0]), 'no week prints a measured zero')
+  assert.ok(html.includes('withholds this trial&rsquo;s clean-record statement'))
 })
 
 // ── B-351 slice 5 — END-TO-END, from STORED COLUMN SHAPES to rendered HTML ─────
@@ -5113,4 +5236,172 @@ Deno.test('EN-11 — the report drops the 2-vs-0 worsening flag only under engin
     assert.deepEqual(assembleReport(en11Input([k])), off, k)
   }
   assert.deepEqual(assembleReport(en11Input([], false)), off, 'a failed read')
+})
+
+// ── CUL-1658 (FAB PR-29c) — the day a normal stool got its own shortcut, beside the stool counts ──
+//
+// The report reads PR-29's `capture_changes` row and, when the span between its two clocks reaches
+// into the window, carries a disclosure on `stool.normalShortcut` for the strip's line. Fixtures
+// are local-day honest (B-514): TZ is America/New_York, and the instants that matter are chosen so
+// their UTC day and their local day differ.
+
+const STOOL_FIXTURE = [
+  makeEvent({ id: 'sn1', type: 'stool_normal', occurredAt: at('2026-05-02') }),
+  makeEvent({ id: 'sn2', type: 'stool_normal', occurredAt: at('2026-06-20') }),
+  makeEvent({ id: 'sn3', type: 'stool_normal', occurredAt: at('2026-06-21') }),
+  makeEvent({ id: 'sl1', type: 'diarrhea', occurredAt: at('2026-05-03') }),
+]
+
+function splitRow(firstSeenAt: string, createdAt = firstSeenAt, changeKey = FAB_STOOL_SPLIT_KEY) {
+  return { changeKey, firstSeenAt, createdAt }
+}
+
+function stoolWith(captureChanges?: ReturnType<typeof splitRow>[] | 'unreadable') {
+  return assembleReport(baseInput({ events: STOOL_FIXTURE, ...(captureChanges ? { captureChanges } : {}) }))
+}
+
+Deno.test('normal shortcut: a change inside the window is carried, and NOTHING else in the snapshot moves', () => {
+  const without = stoolWith()
+  // 03:30Z on Jun 11 is Jun 10 in New York: the UTC and local days differ on purpose.
+  const withRow = stoolWith([splitRow('2026-06-11T03:30:00.000Z')])
+  assert.equal(without.stool!.normalShortcut, null)
+  const ns = withRow.stool!.normalShortcut
+  assert.ok(ns && ns.kind === 'on' && ns.split)
+  assert.equal(ns.at, '2026-06-11T03:30:00.000Z')
+  // Ruling 1a — the split is the strip's own population on each side of the LOCAL day (Jun 10):
+  // May 2 normal + May 3 loose before; Jun 20 + Jun 21 normal from. Before + from = the totals,
+  // and the two periods' days tile the window exactly.
+  assert.deepEqual(ns.split.before, { ...ns.split.before, normal: 1, loose: 1, loggedDays: 2 })
+  assert.deepEqual(ns.split.from, { ...ns.split.from, normal: 2, loose: 0, loggedDays: 2 })
+  assert.equal(ns.split.before.days + ns.split.from.days, withRow.scope.windowDays)
+  assert.equal(ns.split.before.normal + ns.split.from.normal, withRow.stool!.normalCount)
+  assert.equal(ns.split.before.loose + ns.split.from.loose, withRow.stool!.looseCount)
+  // The line discloses, it never adjusts: the whole snapshot is identical bar the one field.
+  assert.deepEqual({ ...withRow, stool: { ...withRow.stool!, normalShortcut: null } }, without)
+  assert.equal(withRow.stool!.normalCount, 3)
+  assert.equal(withRow.stool!.looseCount, 1)
+})
+
+Deno.test('normal shortcut: before the window, after it, no row, another key ⇒ no disclosure', () => {
+  const scope = stoolWith().scope
+  assert.ok(scope.startDate < '2026-06-11' && scope.endDate > '2026-06-11', 'fixture sanity: Jun 11 is inside the window')
+  assert.equal(stoolWith([splitRow('2025-12-01T15:00:00.000Z')]).stool!.normalShortcut, null, 'before (both clocks), over 180 days before the window end: nothing')
+  assert.equal(stoolWith([splitRow('2026-07-05T15:00:00.000Z')]).stool!.normalShortcut, null, 'after (both clocks): no window day had it')
+  assert.equal(stoolWith([]).stool!.normalShortcut, null, 'no row')
+  assert.equal(stoolWith([splitRow('2026-06-11T15:00:00.000Z', '2026-06-11T15:00:00.000Z', 'some_other_change')]).stool!.normalShortcut, null, 'only the stool split speaks to the stool strip')
+})
+
+Deno.test('normal shortcut: the window bounds are LOCAL days, both inclusive', () => {
+  const { startDate, endDate } = stoolWith().scope
+  const scope = { startDate, endDate }
+  // Local 00:30 on the first day (04:30Z in EDT) is in; local 23:30 the day before (03:30Z on the
+  // first day, which a UTC-day reader would wrongly let in) is out.
+  assert.equal(normalShortcutDisclosure([splitRow(`${startDate}T04:30:00.000Z`)], scope, TZ)?.kind, 'on', 'first local day ⇒ disclosed')
+  assert.equal(normalShortcutDisclosure([splitRow(`${startDate}T03:30:00.000Z`)], scope, TZ)?.kind, 'since', 'the local day before ⇒ the before-the-window arm (ruling 2a), never the in-window one')
+  // Local 23:30 on the last day is 03:30Z the next UTC day: still in. Local 00:30 the day after is out.
+  const nextUtc = new Date(Date.parse(`${endDate}T00:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10)
+  assert.equal(normalShortcutDisclosure([splitRow(`${nextUtc}T03:30:00.000Z`)], scope, TZ)?.kind, 'on', 'last local day ⇒ disclosed')
+  assert.equal(normalShortcutDisclosure([splitRow(`${nextUtc}T04:30:00.000Z`)], scope, TZ), null, 'the local day after ⇒ not disclosed')
+})
+
+Deno.test('normal shortcut: the two clocks bound a SPAN, and any reach into the window discloses', () => {
+  const scope = { startDate: '2026-09-10', endDate: '2026-10-09' }
+  // Both clocks on one day ⇒ the day is known: `on`, and assembly may split there.
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-09-15T13:00:00.000Z', '2026-09-15T13:00:04+00:00')], scope, TZ),
+    { kind: 'on', at: '2026-09-15T13:00:00.000Z', split: null },
+  )
+  // ROUND 2, M1 — the clocks disagree on the day (a phone 5 days slow, or an honest phone and a
+  // late push: indistinguishable). Neither day is the day, so the span is named and NOT split.
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-09-15T15:00:00.000Z', '2026-09-20T15:00:00+00:00')], scope, TZ),
+    { kind: 'between', from: '2026-09-15T15:00:00.000Z', to: '2026-09-20T15:00:00+00:00' },
+  )
+  // A late push past the window's end: still disclosed, as the span.
+  assert.equal(
+    normalShortcutDisclosure([splitRow('2026-09-15T15:00:00.000Z', '2026-10-20T15:00:00+00:00')], scope, TZ)?.kind,
+    'between',
+  )
+  // A fast phone clock claims a day after the window; the server received it inside.
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-10-20T15:00:00.000Z', '2026-09-15T15:00:00+00:00')], scope, TZ),
+    { kind: 'between', from: '2026-09-15T15:00:00+00:00', to: '2026-10-20T15:00:00.000Z' },
+  )
+  // ADVERSARIAL F2 — a phone a week SLOW dates a Sep 15 change Sep 8, before the window. The
+  // earlier-clock rule alone hid the line here; the server's day keeps it, as "on or before".
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-09-08T15:00:00.000Z', '2026-09-15T15:00:00+00:00')], scope, TZ),
+    { kind: 'by', at: '2026-09-15T15:00:00+00:00' },
+  )
+  // A slow clock AND a late push straddle the whole window: disclosed, with no date.
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-08-01T15:00:00.000Z', '2026-10-20T15:00:00+00:00')], scope, TZ),
+    { kind: 'spans' },
+  )
+  // C-40: two spellings of one instant, which order the wrong way as text, are one instant.
+  assert.ok('2026-09-15T04:00:00+00:00' < '2026-09-15T04:00:00.000Z', 'fixture sanity: the spellings differ as text')
+  assert.equal(
+    normalShortcutDisclosure([splitRow('2026-09-15T04:00:00.000Z', '2026-09-15T04:00:00+00:00')], scope, TZ)?.kind,
+    'on',
+  )
+  // One unreadable clock falls back to the other; both unreadable ⇒ the change exists, its date does not.
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('not a date', '2026-09-15T15:00:00Z')], scope, TZ),
+    { kind: 'on', at: '2026-09-15T15:00:00Z', split: null },
+  )
+  assert.deepEqual(normalShortcutDisclosure([splitRow('not a date', 'nor this')], scope, TZ), { kind: 'unknown' })
+})
+
+Deno.test('normal shortcut: a FAILED read is unknown, never silence, and never the page-wide banner', () => {
+  const snap = stoolWith('unreadable')
+  assert.deepEqual(snap.stool!.normalShortcut, { kind: 'unknown' })
+  assert.deepEqual(snap.incompletePulls, [], 'counts are complete; the banner would call them minimums')
+})
+
+Deno.test('normal shortcut: rendered beside the stool counts, dated in the owner\'s zone, only when it reaches the window', () => {
+  const html = renderReport(stoolWith([splitRow('2026-06-11T03:30:00.000Z')]))
+  const sec = plainText(html.slice(html.indexOf('<h2>Stool characteristics'), html.indexOf('<h2>Diet, feeding')))
+  assert.match(sec, /Logging changed on Jun 10: the owner's app added a dedicated normal-stool entry/)
+  // F1 + cold read round 2: both directions, and never the absolute claim that reassured.
+  assert.match(sec, /a rise in loose stools is not explained by this change, but a fall may partly reflect borderline stools now logged as normal\./)
+  assert.ok(!/does not affect|unaffected|one tap/.test(sec))
+  // The line sits after the counts and before the owner-described clause.
+  assert.ok(sec.indexOf('Loose / watery') < sec.indexOf('Logging changed') && sec.indexOf('Logging changed') < sec.indexOf('Owner-described'))
+  const none = plainText(renderReport(stoolWith([splitRow('2025-12-01T15:00:00.000Z')])))
+  assert.ok(!/Logging change|normal-stool entry/.test(none), 'a change over 180 days before the window end prints nothing')
+  const unknown = plainText(renderReport(stoolWith('unreadable')))
+  assert.match(unknown, /Logging change not checked:/)
+  assert.ok(!/Partial record/.test(unknown))
+})
+
+Deno.test('normal shortcut: ruling 2a — wholly before the window ⇒ `since` for 180 days, then nothing', () => {
+  const scope = { startDate: '2026-09-10', endDate: '2026-10-09' }
+  // Server day Aug 1: the window ends 69 days later.
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-08-01T15:00:00.000Z', '2026-08-01T15:00:05+00:00')], scope, TZ),
+    { kind: 'since', at: '2026-08-01T15:00:05+00:00', exact: true },
+  )
+  // The phone a week slow: the server's day is still named, as "by".
+  assert.deepEqual(
+    normalShortcutDisclosure([splitRow('2026-07-25T15:00:00.000Z', '2026-08-01T15:00:05+00:00')], scope, TZ),
+    { kind: 'since', at: '2026-08-01T15:00:05+00:00', exact: false },
+  )
+  // The bound, derived from the shipped constant (C-34): end − server day = 180 ⇒ in; 181 ⇒ out.
+  const dayBefore = (n: number) => new Date(Date.parse(`${scope.endDate}T15:00:00Z`) - n * 86_400_000).toISOString()
+  assert.equal(normalShortcutDisclosure([splitRow(dayBefore(NORMAL_SHORTCUT_SINCE_DAYS))], scope, TZ)?.kind, 'since')
+  assert.equal(normalShortcutDisclosure([splitRow(dayBefore(NORMAL_SHORTCUT_SINCE_DAYS + 1))], scope, TZ), null)
+})
+
+Deno.test('normal shortcut: ruling 1a — no split when the change is on the window\'s first day (no "before")', () => {
+  const start = stoolWith().scope.startDate
+  const snap = stoolWith([splitRow(`${start}T16:00:00.000Z`)])
+  assert.deepEqual(snap.stool!.normalShortcut, { kind: 'on', at: `${start}T16:00:00.000Z`, split: null })
+})
+
+Deno.test('normal shortcut: round 2 M1 — clocks a few days apart inside the window ⇒ named span, never a split', () => {
+  const snap = stoolWith([splitRow('2026-06-05T15:00:00.000Z', '2026-06-11T15:00:00+00:00')])
+  assert.deepEqual(snap.stool!.normalShortcut, { kind: 'between', from: '2026-06-05T15:00:00.000Z', to: '2026-06-11T15:00:00+00:00' })
+  const sec = plainText(renderReport(snap))
+  assert.match(sec, /Logging changed between Jun 5 and Jun 11:/)
+  assert.ok(!/Before Jun|From Jun/.test(sec), 'no split at an unconfirmed day')
 })

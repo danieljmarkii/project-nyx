@@ -45,3 +45,34 @@ export function measureNodeInWindow(
   const grace = setTimeout(() => once(null), graceMs);
   target.measureInWindow((x, y, width, height) => once({ x, y, width, height }));
 }
+
+type PageMeasurable = {
+  measure?: (cb: (x: number, y: number, width: number, height: number, pageX: number, pageY: number) => void) => void;
+};
+
+/** Ask the platform for `node`'s frame in PAGE coordinates: the space a touch event's
+ *  `pageX` / `pageY` are reported in (CUL-1278). Not the window: on an Android root that
+ *  draws under the status bar, `measureInWindow` and a touch's page point can disagree by
+ *  the bar's height, and a hit-test across the two would land a pill off. Same contract as
+ *  `measureNodeInWindow`: `null` for no node, no API or no answer inside `graceMs`, and
+ *  `cb` called exactly once. */
+export function measureNodeOnPage(
+  node: Component | null | undefined,
+  cb: (rect: WindowRect | null) => void,
+  graceMs: number = MEASURE_GRACE_MS,
+): void {
+  const target = node as unknown as PageMeasurable | null | undefined;
+  if (!target || typeof target.measure !== 'function') {
+    cb(null);
+    return;
+  }
+  let answered = false;
+  const once = (rect: WindowRect | null) => {
+    if (answered) return;
+    answered = true;
+    clearTimeout(grace);
+    cb(rect);
+  };
+  const grace = setTimeout(() => once(null), graceMs);
+  target.measure((_x, _y, width, height, pageX, pageY) => once({ x: pageX, y: pageY, width, height }));
+}

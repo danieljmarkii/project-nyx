@@ -59,7 +59,7 @@
 // No haptic here and none may be added: the rows that land include a photographed vomit's
 // `worth_a_call`, and this file is named in `guards/haptics.test.ts`'s ALWAYS_SCANNED.
 
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
+import { createContext, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import { Animated, Easing } from 'react-native';
 import { theme } from '../../constants/theme';
 import { FOLD_MOTION } from './foldMotion';
@@ -172,6 +172,16 @@ export function createPaintLedger(): PaintLedger {
 }
 
 // ── The draw ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Whether the thread a row sits on is drawing (CUL-1757). A row that animates its own layout
+ * (a run opening in place) holds its commit while this is true: a layout keyframe on a row
+ * whose wrapper carries the draw's in-flight native opacity and drift re-applies the props
+ * the wrapper was committed with when it ends, and the draw snaps back to its start (the
+ * Fabric rule, `foldMotion.ts`'s header). The wrappers sit in the flow, so they cannot hold
+ * explicit geometry instead. False outside a thread.
+ */
+export const ThreadDrawing = createContext(false);
 
 export interface ThreadRowStyle {
   opacity: Animated.Value;

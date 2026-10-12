@@ -15,7 +15,7 @@ interface Props {
   // optional fields — medication form/route, where "unset" is a legitimate state;
   // false for required fields — food format, where one option is always chosen.
   allowDeselect?: boolean;
-  variant?: 'default' | 'filled' | 'onDark';
+  variant?: 'default' | 'filled';
   // Announced as the radio group's label (e.g. "Form", "Route", "Format"); pairs
   // with the on-screen SectionLabel above the group.
   accessibilityLabel?: string;

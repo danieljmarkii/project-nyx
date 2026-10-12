@@ -27,6 +27,14 @@ interface World {
   vomitMs: number
   others: { event_type: string; occurred_at: string; rating?: string | null }[]
   en0: boolean
+  // EN-5 (PR-30): its key, and a meal read that answers with an error.
+  en5?: boolean
+  mealsError?: 'anchored'
+  bowlError?: boolean
+  // EN-5's question (PR-30q): the answers under this vomit the read returns, and a read that
+  // answers with an error.
+  answers?: { id: string; form: string; answer: string; answered_at: string }[]
+  answersError?: boolean
   vision: VomitAnalysis
   row: Row | null
   writes: number
@@ -69,6 +77,12 @@ class FakeQuery {
         error: null,
       }
     }
+    if (this.table === 'events' && this.filters.event_type === 'meal' && w.mealsError === 'anchored' && this.before !== null) {
+      return { data: null, error: { message: 'meal read failed' } } as unknown as { data: unknown; error: null }
+    }
+    if (this.table === 'feeding_arrangements') {
+      return (w.bowlError ? { data: null, error: { message: 'bowl read failed' } } : { data: [], error: null }) as { data: unknown; error: null }
+    }
     if (this.table === 'events') {
       const all = [{ event_type: 'vomit', occurred_at: iso(w.vomitMs) }, ...w.others]
       const rows = all
@@ -79,10 +93,18 @@ class FakeQuery {
         .map((e) => (e.event_type === 'meal' ? { occurred_at: e.occurred_at, meals: { intake_rating: e.rating ?? null } } : { id: 'x', occurred_at: e.occurred_at }))
       return { data: rows, error: null }
     }
+    if (this.table === 'intake_checks') {
+      return (w.answersError
+        ? { data: null, error: { message: 'answers read failed' } }
+        : { data: w.answers ?? [], error: null }) as { data: unknown; error: null }
+    }
     if (this.table === 'event_attachments') return { data: [{ id: '0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b', storage_path: 'pet-1/evt-1/a.jpg' }], error: null }
     if (this.table === 'app_config') {
-      return { data: w.en0 ? [{ key: 'engines_v3_en0', value: { enabled: false, allowlist: [OWNER] } }] : [], error: null }
+      const on = (key: string) => ({ key, value: { enabled: false, allowlist: [OWNER] } })
+      return { data: [...(w.en0 ? [on('engines_v3_en0')] : []), ...(w.en5 ? [on('engines_v3_en5')] : [])], error: null }
     }
+    // CUL-552 PR 2: the owner has said yes; the declined branch is _shared/incident-analysis.pipeline.test.ts's.
+    if (this.table === 'ai_consent') return { data: { granted: true }, error: null }
     if (this.table !== 'event_ai_analysis') throw new Error(`unexpected table ${this.table}`)
     if (this.mode === 'select') return { data: w.row ? { ...w.row } : null, error: null }
     w.writes++
@@ -171,7 +193,7 @@ Deno.test('pipeline diff A · 8/19: a late read over unrated meals — same verd
   assertEquals([off.recommendation, on.recommendation], ['worth_a_call', 'worth_a_call'])
   assertEquals(off.engine_flags, [])
   assertEquals(on.engine_flags, ['engines_v3_en0'])
-  assertStrictEquals(on.rule_version, 'f3.vomit3')
+  assertStrictEquals(on.rule_version, 'f3.vomit5')
 })
 
 Deno.test('pipeline diff B · 9/22: foreign material and the intake flag — the photo finding leads, the model\'s words stay out', async () => {
@@ -280,4 +302,162 @@ Deno.test('pipeline · the anchored reads never re-read a row the shipped read a
   })
   assertEquals(row.contextual_flags, [])
   assertStrictEquals(row.recommendation, 'monitor')
+})
+
+// ── EN-5 (Engines v3 PR-30, CUL-1722): unrated meals are unknown ─────────────────────────
+
+Deno.test('pipeline EN-5 · 9/4: four unrated meals, a calm photo: the intake warning goes, and the read says nothing about eating', async () => {
+  const world = () => {
+    const vomitMs = Date.now() - 10 * 60_000
+    return {
+      species: 'cat' as const, vomitMs, vision: CLEAN,
+      others: [
+        ...[4, 9, 14, 19].map((h) => ({ event_type: 'meal', occurred_at: iso(vomitMs - h * H), rating: null })),
+        { event_type: 'meal', occurred_at: iso(vomitMs - 72 * H), rating: 'some' },
+      ],
+    }
+  }
+  const off = await read({ ...world(), en0: false, row: null, writes: 0 })
+  const on = await read({ ...world(), en0: false, en5: true, row: null, writes: 0 })
+  assertEquals(off.contextual_flags, ['feline_reduced_intake'])
+  assertStrictEquals(off.recommendation, 'worth_a_call')
+  assertEquals(on.contextual_flags, [])
+  assertStrictEquals(on.recommendation, 'monitor')
+  assertEquals(on.engine_flags, ['engines_v3_en5'])
+  assertStrictEquals(on.rule_version, 'f3.vomit5')
+})
+
+Deno.test('pipeline EN-5 · a meal read that fails never reads as quiet: the rule without EN-5 stands', async () => {
+  // A vomit eight days old, re-read now: the meals before it come only from the anchored read,
+  // and that read fails. EN-5 would see no meals before the vomit and stay quiet; the rule without
+  // it fires on the week it can see (a Some three days ago, nothing eaten well since). On a failed
+  // read the louder rule stands (the CUL-815 posture).
+  const world = () => {
+    const vomitMs = Date.now() - 8 * 24 * H
+    return {
+      species: 'cat' as const, vomitMs, vision: CLEAN,
+      others: [
+        ...[2, 3, 4].map((h) => ({ event_type: 'meal', occurred_at: iso(vomitMs - h * H), rating: 'refused' })),
+        { event_type: 'meal', occurred_at: iso(Date.now() - 72 * H), rating: 'some' },
+        { event_type: 'meal', occurred_at: iso(Date.now() - 5 * H), rating: null },
+      ],
+    }
+  }
+  const off = await read({ ...world(), en0: false, mealsError: 'anchored', row: null, writes: 0 })
+  const on = await read({ ...world(), en0: false, en5: true, mealsError: 'anchored', row: null, writes: 0 })
+  assertEquals(off.contextual_flags, ['feline_reduced_intake'])
+  assertEquals(on.contextual_flags, ['feline_reduced_intake'])
+  // And with the read answering, EN-5 reads the refusals before the vomit itself.
+  const answered = await read({ ...world(), en0: false, en5: true, row: null, writes: 0 })
+  assertEquals(answered.contextual_flags, ['feline_reduced_intake'])
+  assertStrictEquals(String(answered.read_text).startsWith('When I read this, 3 rated meals were logged for Nyx in the 24 hours before this vomit'), true)
+})
+
+Deno.test('pipeline EN-5 · 7/27-shaped refusals stay a call, stated over rated meals', async () => {
+  const vomitMs = Date.now() - 15 * 60_000
+  const on = await read({
+    species: 'cat', vomitMs, vision: CLEAN, en0: false, en5: true, row: null, writes: 0,
+    others: (['refused', 'refused', 'picked'] as const).map((rating, i) => ({ event_type: 'meal', occurred_at: iso(vomitMs - (2 + i * 4) * H), rating })),
+  })
+  assertEquals(on.contextual_flags, ['feline_reduced_intake'])
+  assertStrictEquals(on.recommendation, 'worth_a_call')
+  assertStrictEquals(
+    on.read_text,
+    "When I read this, 3 rated meals were logged for Nyx in the 24 hours before this vomit, and none was marked Most or All. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
+})
+
+Deno.test('pipeline EN-5 · a failed bowl read never reads as quiet either (the adversarial pass, K)', async () => {
+  // 9/4's shape, which EN-5 reads as quiet on a complete read. With the bowl read failing, the
+  // rule without EN-5 stands and the shipped warning is kept.
+  const world = () => {
+    const vomitMs = Date.now() - 10 * 60_000
+    return {
+      species: 'cat' as const, vomitMs, vision: CLEAN,
+      others: [
+        ...[4, 9, 14, 19].map((h) => ({ event_type: 'meal', occurred_at: iso(vomitMs - h * H), rating: null })),
+        { event_type: 'meal', occurred_at: iso(vomitMs - 72 * H), rating: 'some' },
+      ],
+    }
+  }
+  const failed = await read({ ...world(), en0: false, en5: true, bowlError: true, row: null, writes: 0 })
+  assertEquals(failed.contextual_flags, ['feline_reduced_intake'])
+  const answered = await read({ ...world(), en0: false, en5: true, row: null, writes: 0 })
+  assertEquals(answered.contextual_flags, [])
+})
+
+// ── EN-5's question (Engines v3 PR-30q, CUL-1724): the owner's answer under this vomit ────
+
+Deno.test('pipeline EN-5 · 9/4\'s shape, then the owner answers No: a call today, said in her words', async () => {
+  const world = (answers: World['answers']) => {
+    const vomitMs = Date.now() - 2 * H
+    return {
+      species: 'cat' as const, vomitMs, vision: CLEAN, en0: false, en5: true, row: null, writes: 0, answers,
+      others: [
+        ...[4, 9, 14, 19].map((h) => ({ event_type: 'meal', occurred_at: iso(vomitMs - h * H), rating: null })),
+        { event_type: 'meal', occurred_at: iso(vomitMs - 72 * H), rating: 'some' },
+      ],
+    }
+  }
+  const unanswered = await read(world([]))
+  assertEquals(unanswered.contextual_flags, [])
+  const no = await read(world([{ id: 'a1', form: 'meal_fed', answer: 'no', answered_at: iso(Date.now() - H) }]))
+  assertEquals(no.contextual_flags, ['feline_reduced_intake'])
+  assertStrictEquals(no.recommendation, 'worth_a_call')
+  assertStrictEquals(
+    no.read_text,
+    "When I read this, you'd said Nyx hadn't eaten a meal since the day before this vomit. In a cat that's vomiting, that's worth a call to your vet sooner rather than later.",
+  )
+  // "A little" stores as Picked (I3) and fires on its own, as one Picked meal does (threshold A).
+  const little = await read(world([{ id: 'a1', form: 'meal_fed', answer: 'a_little', answered_at: iso(Date.now() - H) }]))
+  assertEquals(little.contextual_flags, ['feline_reduced_intake'])
+  // Yes and Not sure add nothing: the read stays as the record left it.
+  for (const answer of ['yes', 'not_observable']) {
+    const r = await read(world([{ id: 'a1', form: 'meal_fed', answer, answered_at: iso(Date.now() - H) }]))
+    assertEquals(r.contextual_flags, [], answer)
+  }
+})
+
+Deno.test('pipeline EN-5 · flag off, an answer is never read', async () => {
+  const vomitMs = Date.now() - 2 * H
+  const r = await read({
+    species: 'cat', vomitMs, vision: CLEAN, en0: false, en5: false, row: null, writes: 0,
+    answers: [{ id: 'a1', form: 'meal_fed', answer: 'no', answered_at: iso(Date.now() - H) }],
+    others: [],
+  })
+  assertEquals(r.contextual_flags, [])
+})
+
+Deno.test('pipeline EN-5 · an answers read that fails reads as UNANSWERED, never as the rule without EN-5 (the adversarial pass, B1)', async () => {
+  // B1's counterexample: two refusals, then a Most, before the vomit. EN-5's Noticed half fires
+  // (2 of the last 3); the shipped arm and EN-0 do not (a Most in the 24 h before). Falling back
+  // to the rule without EN-5 on a failed answers read wrote "monitor" here.
+  const world = (answersError: boolean, en0: boolean) => {
+    const vomitMs = Date.now() - 60 * 60_000
+    return {
+      species: 'cat' as const, vomitMs, vision: CLEAN, en0, en5: true, answersError, row: null, writes: 0,
+      others: [
+        { event_type: 'meal', occurred_at: iso(vomitMs - 40 * H), rating: 'refused' },
+        { event_type: 'meal', occurred_at: iso(vomitMs - 30 * H), rating: 'refused' },
+        { event_type: 'meal', occurred_at: iso(vomitMs - 10 * H), rating: 'most' },
+      ],
+    }
+  }
+  for (const en0 of [false, true]) {
+    const answered = await read(world(false, en0))
+    const failed = await read(world(true, en0))
+    assertEquals(answered.contextual_flags, ['feline_reduced_intake'])
+    assertEquals(failed.contextual_flags, answered.contextual_flags)
+    assertStrictEquals(failed.recommendation, 'worth_a_call')
+  }
+  // And on 9/4's shape (quiet unanswered under EN-5), a failed answers read is the same quiet.
+  const vomitMs = Date.now() - 10 * 60_000
+  const nineFour = (answersError: boolean) => read({
+    species: 'cat', vomitMs, vision: CLEAN, en0: false, en5: true, answersError, row: null, writes: 0,
+    others: [
+      ...[4, 9, 14, 19].map((h) => ({ event_type: 'meal', occurred_at: iso(vomitMs - h * H), rating: null })),
+      { event_type: 'meal', occurred_at: iso(vomitMs - 72 * H), rating: 'some' },
+    ],
+  })
+  assertEquals((await nineFour(true)).contextual_flags, (await nineFour(false)).contextual_flags)
 })

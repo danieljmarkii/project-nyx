@@ -18,6 +18,7 @@
 // account's row — including the catch-block 'failed' status stamp.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { readAiBoundaryConsent } from '../_shared/aiConsent.ts'
 // B-351 Phase A PR 2 — the shared protein-keying module (lib/protein.ts) is the
 // single source of truth for how a protein name is keyed everywhere. Imported by
 // relative path across the function directory, exactly like generate-signal's
@@ -629,6 +630,12 @@ const handler = async (req: Request): Promise<Response> => {
     console.warn(`extract-food-from-photo: ownership denied (${ownership.reason}) for ${food_item_id}`)
     return Response.json({ error: 'food_item not found' }, { status: 404, headers: CORS_HEADERS })
   }
+
+  // CUL-552 PR 2 (D10, the whole boundary): no recorded yes, no photo leaves for Anthropic.
+  // Read through service_role for the uid verified above, failing closed. Declined takes the
+  // flag-off shape below exactly: the typed feature_disabled 200, no unit spent, no photo
+  // fetched, ai_extraction_status untouched, so every shipped client routes to manual entry.
+  if (!(await readAiBoundaryConsent(adminClient, user.id))) return featureDisabledResponse()
 
   // Flag → (nothing to preserve for extraction) → cap → Anthropic call (§5.1).
   // Flag off: return the typed 200 WITHOUT touching ai_extraction_status — the

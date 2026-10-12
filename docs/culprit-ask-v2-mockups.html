@@ -1,0 +1,684 @@
+<title>Ask That Knows Nyx</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap">
+<style>
+  /* Layout: a long-form brief. The page chrome follows the viewer's theme; every phone
+     frame uses FIXED Culprit app tokens (constants/theme.ts) so the app always looks like
+     the app. Round 1 of the Ask v2 proposal (CUL-1798), Oct 11, 2026. */
+  :root {
+    --canvas: #F2F5F4;
+    --panel: #FFFFFF;
+    --ink: #15201E;
+    --ink-soft: #485552;
+    --ink-faint: #6F7C78;
+    --line: #DFE7E4;
+    --accent: #0B7B6C;
+    --accent-tint: #E2F2EF;
+    --amber: #8A5E00;
+    --amber-tint: #F5ECD5;
+    --rose: #A2303A;
+    --rose-tint: #F8E2E4;
+    --shadow: 0 1px 2px rgba(20,40,36,.05), 0 10px 30px rgba(20,40,36,.07);
+    --f-display: "Newsreader", Georgia, "Times New Roman", serif;
+    --f-body: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --f-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --canvas: #0D1312; --panel: #141C1A; --ink: #E7EEEB; --ink-soft: #A5B2AE; --ink-faint: #74817D;
+      --line: #25312D; --accent: #3CCDB5; --accent-tint: #12302B; --amber: #E2AC4C; --amber-tint: #2D2513;
+      --rose: #F18D88; --rose-tint: #351D1D; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 34px rgba(0,0,0,.42);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --canvas: #0D1312; --panel: #141C1A; --ink: #E7EEEB; --ink-soft: #A5B2AE; --ink-faint: #74817D;
+    --line: #25312D; --accent: #3CCDB5; --accent-tint: #12302B; --amber: #E2AC4C; --amber-tint: #2D2513;
+    --rose: #F18D88; --rose-tint: #351D1D; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 34px rgba(0,0,0,.42);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  code { font-family: var(--f-mono); font-size: .86em; background: var(--accent-tint); color: var(--ink); padding: 1px 5px; border-radius: 4px; }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding-inline: clamp(16px, 4vw, 44px); padding-block: clamp(28px, 5vw, 64px) 96px; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
+  h1 { font-family: var(--f-display); font-weight: 400; font-size: clamp(34px, 6vw, 58px); line-height: 1.02; letter-spacing: -.02em; margin: 0 0 18px; text-wrap: balance; max-width: 16ch; }
+  .lede { font-size: clamp(16px, 2vw, 18.5px); color: var(--ink-soft); max-width: 64ch; margin: 0; }
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  .status { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-soft); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; }
+  .pill b { color: var(--ink); font-weight: 600; }
+
+  section { margin-top: clamp(56px, 8vw, 96px); }
+  .sec-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px; }
+  h2 { font-family: var(--f-display); font-weight: 400; font-size: clamp(26px, 3.6vw, 36px); line-height: 1.1; letter-spacing: -.015em; margin: 0 0 12px; text-wrap: balance; max-width: 26ch; }
+  h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+  .sec-lede { color: var(--ink-soft); max-width: 66ch; margin: 0; }
+  .prose { max-width: 70ch; color: var(--ink-soft); }
+  .prose p { margin: 0 0 12px; }
+  .prose b { color: var(--ink); font-weight: 600; }
+
+  .tag { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; white-space: nowrap; vertical-align: middle; }
+  .tag.now { background: var(--accent-tint); color: var(--accent); }
+  .tag.then { background: var(--line); color: var(--ink-soft); }
+  .tag.open { background: var(--amber-tint); color: var(--amber); }
+  .tag.guard { background: var(--rose-tint); color: var(--rose); }
+  .tag.draft { background: var(--amber-tint); color: var(--amber); }
+
+  /* ── the hero pair ─────────────────────────────────────────── */
+  .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: clamp(24px, 4vw, 48px); margin-top: 30px; align-items: start; }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 18px; min-width: 0; }
+  .col-cap { text-align: center; max-width: 40ch; }
+  .col-cap .k { font-weight: 600; font-size: 15px; display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .col-cap p { margin: 6px 0 0; font-size: 13.5px; color: var(--ink-soft); }
+  .notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; width: 100%; max-width: 380px; }
+  .notes li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; font-size: 13.5px; color: var(--ink-soft); line-height: 1.5; }
+  .notes li .n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--panel); border: 1px solid var(--line); color: var(--ink); }
+  .notes li b { color: var(--ink); font-weight: 600; }
+
+  /* ── phone frame (fixed app tokens) ─────────────────────────── */
+  .phone {
+    --a-bg: #FAFAFA; --a-surface: #FFFFFF; --a-subtle: #F5F5F5;
+    --a-text: #0A0A0A; --a-text2: #525252; --a-text3: #737373;
+    --a-border: #EAEAEA; --a-border-strong: #D4D4D4;
+    --a-accent: #00C2A8; --a-accent-ink: #0B7B6C; --a-accent-light: #E0FBF7;
+    --a-sym-light: #FFE4E6; --a-sym-border: #FBCFD6; --a-sym-ink: #9F1239; --a-sym: #F43F5E;
+    --a-dark: #111111;
+    width: 340px; max-width: 100%; background: var(--a-bg); color: var(--a-text);
+    border-radius: 34px; border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden;
+    font-family: var(--f-body); font-size: 14px; line-height: 1.45;
+  }
+  .phone.sm { width: 310px; }
+  .ph-head { display: grid; grid-template-columns: 28px 1fr 28px; align-items: center; padding: 14px 14px 10px; background: var(--a-surface); border-bottom: 1px solid var(--a-border); }
+  .ph-head .chev { width: 9px; height: 9px; border-left: 2px solid var(--a-text2); border-bottom: 2px solid var(--a-text2); transform: rotate(45deg); margin-left: 6px; }
+  .ph-head .t { text-align: center; line-height: 1.15; }
+  .ph-head .t b { display: block; font-family: var(--f-display); font-weight: 400; font-size: 17px; }
+  .ph-head .t span { font-size: 11px; color: var(--a-text3); }
+  .ph-body { padding: 14px 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+
+  .q { align-self: flex-end; max-width: 92%; background: var(--a-subtle); border: 1px solid var(--a-border); border-radius: 16px; padding: 9px 12px; font-size: 12.5px; line-height: 1.45; }
+  .q .tiny { display: block; margin-top: 4px; font-size: 10px; color: var(--a-text3); }
+  .safety { background: var(--a-sym-light); border: 1px solid var(--a-sym-border); border-radius: 14px; padding: 11px 12px; font-size: 12.5px; line-height: 1.45; color: var(--a-text); }
+  .safety.compact .more { display: inline-block; margin-top: 6px; font-weight: 600; color: var(--a-sym-ink); font-size: 12px; }
+  .card { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .hl { font-family: var(--f-display); font-size: 17px; line-height: 1.28; letter-spacing: -.3px; margin: 0; }
+  .hl.urgent { color: var(--a-sym-ink); }
+  .dt { font-size: 12.5px; color: var(--a-text2); margin: 0; }
+  .dt.ghost { color: var(--a-text3); font-style: italic; }
+  .sub { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--a-text3); margin: 4px 0 0; }
+  .rows { display: flex; flex-direction: column; border-top: 1px solid var(--a-border); }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 7px 0; border-bottom: 1px solid var(--a-border); font-size: 12.5px; }
+  .row .l { font-weight: 500; min-width: 0; }
+  .row .v { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; white-space: nowrap; }
+  .row .m { grid-column: 1 / -1; font-size: 11px; color: var(--a-text3); }
+  .row .m .mask { color: var(--a-sym-ink); }
+  .fine { font-size: 11px; color: var(--a-text3); margin: 0; line-height: 1.45; }
+  .cav { font-size: 12px; color: var(--a-text2); background: var(--a-subtle); border-radius: 10px; padding: 8px 10px; margin: 0; }
+  .verdict { font-size: 12.5px; color: var(--a-text); margin: 0; }
+  .prov { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--a-border); padding-top: 9px; font-size: 10.5px; color: var(--a-text3); }
+  .prov a, .prov span.go { color: var(--a-accent-ink); font-weight: 600; font-size: 12px; white-space: nowrap; text-decoration: none; }
+  .week { background: var(--a-surface); border: 1px dashed var(--a-border-strong); border-radius: 12px; padding: 9px 11px; font-size: 12px; }
+  .week .e { display: block; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--a-text3); margin-bottom: 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid var(--a-border-strong); background: var(--a-surface); border-radius: 999px; padding: 6px 11px; font-size: 12px; font-weight: 500; }
+  .chips.block { flex-direction: column; }
+  .chips.block .chip { border-radius: 12px; text-align: left; }
+  .doors { display: flex; flex-direction: column; gap: 6px; }
+  .door { border-radius: 12px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; text-align: center; }
+  .door.primary { background: var(--a-dark); color: #FFFFFF; }
+  .door.secondary { border: 1px solid var(--a-border-strong); background: var(--a-surface); color: var(--a-text); }
+  .door.option { border: 1px dashed var(--a-border-strong); background: transparent; color: var(--a-text2); font-weight: 500; }
+  .pips { display: flex; flex-direction: column; gap: 6px; }
+  .pip-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; font-size: 11.5px; }
+  .pip-row .dots { display: flex; gap: 3px; flex-wrap: wrap; justify-content: flex-end; }
+  .pip { width: 10px; height: 10px; border-radius: 50%; }
+  .pip.f { background: var(--a-sym); }
+  .pip.o { border: 1.5px solid var(--a-text3); }
+  .pip.d { border: 1.5px dashed var(--a-border-strong); }
+  .month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .month .h { font-size: 9px; color: var(--a-text3); text-align: center; }
+  .month .d { aspect-ratio: 1; max-width: 100%; border-radius: 5px; background: #F0F0F0; position: relative; font-size: 8.5px; color: var(--a-text3); display: grid; place-items: center; }
+  .month .d.x { background: var(--a-sym); color: #FFFFFF; font-weight: 700; }
+  .month .d.e { background: transparent; }
+  .month .d em { position: absolute; top: 1px; right: 2px; font-style: normal; font-size: 7.5px; font-weight: 700; line-height: 1; }
+  .opt-box { border: 1px dashed var(--amber); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .opt-box .lbl { font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #8A5E00; }
+
+  .today { width: 100%; max-width: 340px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 12px 14px; font-size: 13px; color: var(--ink-soft); }
+  .today .lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint); display: block; margin-bottom: 4px; }
+  .today .said { color: var(--ink); }
+  .today .why { display: block; margin-top: 6px; font-size: 12.5px; }
+
+  /* ── gallery ───────────────────────────────────────────────── */
+  .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: clamp(28px, 4vw, 44px) clamp(20px, 3vw, 32px); margin-top: 30px; align-items: start; }
+  .ex { display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; }
+  .ex-head { width: 100%; max-width: 340px; }
+  .ex-head .cls { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); }
+  .ex-head h3 { font-size: 16px; margin: 3px 0 0; }
+  .ex-foot { width: 100%; max-width: 340px; font-size: 12.5px; color: var(--ink-soft); margin: 0; }
+
+  /* ── tables, cards ─────────────────────────────────────────── */
+  .tbl-wrap { overflow-x: auto; margin-top: 24px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  th { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; background: var(--canvas); }
+  tr:last-child td { border-bottom: 0; }
+  td.id { font-family: var(--f-mono); font-size: 12px; color: var(--ink-faint); white-space: nowrap; }
+  td .q-in { color: var(--ink); }
+  td .muted { color: var(--ink-faint); }
+  tr.hot td { background: var(--accent-tint); }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; margin-top: 24px; }
+  .hz { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; color: var(--ink-soft); min-width: 0; }
+  .hz h3 { color: var(--ink); font-size: 14.5px; line-height: 1.35; }
+  .hz .foot { margin-top: auto; padding-top: 6px; font-size: 12.5px; }
+  .hz .num { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+
+  .layers { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-top: 24px; }
+  .layer { border-top: 2px solid var(--accent); padding-top: 12px; font-size: 13.5px; color: var(--ink-soft); }
+  .layer h3 { color: var(--ink); font-family: var(--f-display); font-weight: 400; font-size: 20px; margin-bottom: 6px; }
+
+  .never { columns: 2 320px; column-gap: 32px; margin: 22px 0 0; padding-left: 20px; color: var(--ink-soft); font-size: 13.5px; max-width: 980px; }
+  .never li { break-inside: avoid; margin-bottom: 8px; }
+  .never li b { color: var(--ink); font-weight: 600; }
+
+  .briefs { display: grid; gap: 14px; margin-top: 24px; }
+  .brief { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 6px; font-size: 13.5px; color: var(--ink-soft); max-width: 900px; }
+  .brief h3 { color: var(--ink); font-size: 15.5px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .brief .k { color: var(--ink); font-weight: 600; }
+  .brief ul { margin: 2px 0 0; padding-left: 18px; }
+  .brief li { margin-bottom: 3px; }
+  .brief .conf { font-size: 13px; background: var(--canvas); border-radius: 10px; padding: 10px 12px; }
+  .brief .conf p { margin: 0 0 6px; }
+  .brief .conf p:last-child { margin: 0; }
+  .side { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 24px; margin-top: 10px; justify-items: center; }
+  .side .col-cap { max-width: 34ch; }
+
+  .method { margin-top: 26px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .method .hz { font-size: 13px; }
+
+  footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-faint); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .phone { transition: transform .2s ease; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Ask v2 · round 1 · Oct 11, 2026 · <a href="https://linear.app/projectnyx/issue/CUL-1798">CUL-1798</a></p>
+    <h1>Ask that knows Nyx</h1>
+    <p class="lede">On Oct 10 at 7:24pm you asked Ask whether Nyx's prednisolone or her diet trial was helping her vomiting and cough. It answered <b>"Quick check so I get it right"</b> and offered This week, This month, All time. The Signal had worked out the answer 54 minutes earlier. This page shows what happened, the family of questions that fail the same way, and an Ask that answers in her calendar and never says whether a treatment works.</p>
+    <div class="status">
+      <span class="pill"><b>Current proposal</b>, one page, round 1</span>
+      <span class="pill">Extends <code>docs/ask-mockups.html</code> (v1, design-locked)</span>
+      <span class="pill">Every number is from Nyx's record, read Oct 11</span>
+      <span class="pill">Six rulings at the bottom</span>
+    </div>
+  </header>
+
+  <!-- ══ 1. the question ══════════════════════════════════════════ -->
+  <section id="question">
+    <p class="sec-eyebrow">The question</p>
+    <h2>What you saw, and what Ask should have said</h2>
+    <p class="sec-lede">Left is the reply Ask returned, rebuilt from the server's response. Right is the proposed reply to the same question. Every number on the right comes from the Signal's cached read or the record. None is written by the model.</p>
+
+    <div class="pair">
+      <div class="col">
+        <div class="col-cap"><span class="k">What you saw <span class="tag then">Oct 10, 7:24pm</span></span><p>The outcome was <code>ambiguous</code>. No conversation credit was charged.</p></div>
+        <div class="phone">
+          <div class="ph-head"><span class="chev"></span><div class="t"><b>Ask</b><span>about Nyx</span></div><span></span></div>
+          <div class="ph-body">
+            <div class="q">Since Nyx's vet visit on Sep 16 she's been on prednisolone (started Sep 21) and she's on day 77 of the diet trial. Is either one actually helping her vomiting and her coughing, or is it still too early to tell? I want to know what to tell the vet.<span class="tiny">Reconstructed. The real question was about 280 characters on this topic.</span></div>
+            <div class="safety">We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis.</div>
+            <div class="card">
+              <p class="hl">Quick check so I get it right.</p>
+              <p class="dt ghost">Which symptom did you mean, and over what stretch of time?</p>
+            </div>
+            <div class="chips"><span class="chip">This week</span><span class="chip">This month</span><span class="chip">All time</span></div>
+          </div>
+        </div>
+        <ol class="notes">
+          <li><span class="n">1</span><span><b>One safety card, not two.</b> Ask attaches only the first. Nyx's coughing card, also a safety finding, was dropped.</span></li>
+          <li><span class="n">2</span><span><b>The clarifier was written by the model.</b> Its text isn't stored anywhere. The default it replaced is shown in grey.</span></li>
+          <li><span class="n">3</span><span><b>The chips are always the same.</b> Tapping "This week" would most likely have ended at "I can't answer that from Nyx's record." There are zero coughs in those 7 days, and Ask refuses a zero beside a steroid.</span></li>
+          <li><span class="n">4</span><span><b>The server kept nothing.</b> No question text, outcome, tool trace or decline reason. This reply was rebuilt from the response size: only this reply comes to 637 bytes.</span></li>
+        </ol>
+      </div>
+
+      <div class="col">
+        <div class="col-cap"><span class="k">Proposed <span class="tag now">current proposal</span></span><p>A care ledger built by the server, every safety card, one fixed verdict sentence, and a door.</p></div>
+        <div class="phone">
+          <div class="ph-head"><span class="chev"></span><div class="t"><b>Ask</b><span>about Nyx</span></div><span></span></div>
+          <div class="ph-body">
+            <div class="q">Since Nyx's vet visit on Sep 16 she's been on prednisolone … Is either one actually helping her vomiting and her coughing, or is it still too early to tell?</div>
+            <div class="safety">We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis.</div>
+            <div class="safety">We've logged coughing for Nyx across 6 of the last 8 weeks — 14 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</div>
+            <div class="card">
+              <p class="hl">Here's what Nyx's record shows since each one started.</p>
+              <p class="sub">Vomiting</p>
+              <div class="rows">
+                <div class="row"><span class="l">Prednisolone, since Sep 21</span><span class="v">3 in 19 days</span><span class="m">Logged on 19 of 19 days · <span class="mask">It can hide vomiting.</span></span></div>
+                <div class="row"><span class="l">Diet trial, day 77 of 84</span><span class="v">16 in 77 days</span><span class="m">Logged on 76 of 77 days</span></div>
+                <div class="row"><span class="l">Since the Sep 16 visit</span><span class="v">6 in 24 days</span><span class="m">Logged on 23 of 24 days · Anything given at the visit isn't in the record.</span></div>
+              </div>
+              <p class="sub">Coughing</p>
+              <div class="rows">
+                <div class="row"><span class="l">Prednisolone, since Sep 21</span><span class="v">3 in 19 days</span><span class="m">Logged on 19 of 19 days · <span class="mask">It can hide coughing.</span></span></div>
+                <div class="row"><span class="l">Since the Sep 16 visit</span><span class="v">4 in 24 days</span><span class="m">Logged on 23 of 24 days</span></div>
+              </div>
+              <p class="fine">The diet trial was set up for stomach and gut signs, so it has no coughing line. Also given from Sep 21: Motozol, 7 doses logged outside a course. These lines can't see it.</p>
+              <p class="cav">Prednisolone can hide vomiting and coughing, so a low count since she started it says little on its own. Quiet stretches also happen by themselves, so each line stands alone and is never set against the weeks before.</p>
+              <p class="dt">15 prednisolone doses are logged, the first on Sep 21, all in food: 4 given, 11 not fully taken — worth a word with your vet.</p>
+              <p class="verdict">The record can show dates and counts. What they mean for Nyx is her vet's call, and these are the numbers to bring.</p>
+              <div class="prov"><span>From the Signal's read, Oct 10, 6:30pm · repeats within 3 hours count as one</span><span class="go">History →</span></div>
+            </div>
+            <div class="week"><span class="e">This week</span>Day 84 of the trial is Oct 17, the end you set. No recheck is booked.</div>
+            <div class="doors"><span class="door primary">Book her recheck, with this question</span><span class="door secondary">Send the vet report since Sep 16</span></div>
+            <div class="chips"><span class="chip">Soon after meals?</span><span class="chip">Her weigh-ins</span></div>
+          </div>
+        </div>
+        <ol class="notes">
+          <li><span class="n">1</span><span><b>Both safety cards, in full.</b> Whether the second one compacts is ruling 6.</span></li>
+          <li><span class="n">2</span><span><b>The ledger is the Signal's own lines,</b> drawn from the same cached object (<code>careContext</code>). The course line sits above the trial line, never before/after, never a zero.</span></li>
+          <li><span class="n">3</span><span><b>"Helping" is never echoed.</b> The verdict is one fixed sentence, the shape rule (10) already prescribes. It passes the shipped validator.</span></li>
+          <li><span class="n">4</span><span><b>"This week" is composed on the phone</b> from the local trial and appointment tables. It is never sent to the model. Ask still reads no vet tables.</span></li>
+          <li><span class="n">5</span><span><b>The door carries your words.</b> It opens booking with your question held for Your questions. Ask writes nothing.</span></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 2. why ═══════════════════════════════════════════════════ -->
+  <section id="why">
+    <p class="sec-eyebrow">Why it went wrong</p>
+    <h2>The answer existed. Ask had no way to say it.</h2>
+    <div class="prose">
+      <p><b>Ask can only count over a fixed set of windows:</b> 7, 14 or 30 days, all time, or since the trial started. Your question named three dates: the visit on Sep 16, prednisolone from Sep 21, and the trial from Jul 26. Only the trial maps. The tool Ask uses to decline offers "unclear window" as a reason, so the model took it.</p>
+      <p><b>It may also have read the answer and declined anyway.</b> Ask's own instructions send the model to the Signal's findings before any symptom answer, and those findings carry all five "since" lines. If the model read them, it still had to fit two signs, two treatments and a visit into one headline and two sentences, without echoing "helping". Declining was the safe exit. Nothing records which happened, and that is a finding in itself. Both explanations lead to the same fix: the server builds the ledger and the model only frames it.</p>
+      <p><b>The irony.</b> The Signal composed these lines at 6:30pm and showed them on your Signal screen under <i>Around this</i>. Ask received them inside the same object it drew the safety card from, and showed only the first card's text.</p>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Claim</th><th>Evidence</th><th>Confidence</th></tr></thead>
+        <tbody>
+          <tr><td>Ask returned <code>ambiguous</code> for Nyx, under the vomiting card</td><td>The 637-byte response matches exactly one of Ask's fixed replies, across both pets, with or without a safety card. Every other reply is at least 67 bytes off. The usage counters show a message charged and no conversation credit, which means no answer was given. No warning was logged, so the answer didn't fail validation.</td><td>High</td></tr>
+          <tr><td>The model chose it on purpose</td><td><code>ambiguous</code> is reachable only when the model calls <code>decline</code> (<code>ask/index.ts:261</code>). Every failure path lands on <code>unsupported</code> instead.</td><td>High</td></tr>
+          <tr><td>The question was about treatment effect, about 280 characters</td><td>You confirmed the topic. The request was 393 bytes, minus 110 bytes of envelope, with an empty conversation.</td><td>High on topic, low on wording</td></tr>
+          <tr><td>Why the model picked it: the missing window, or the shape of the answer</td><td>No tool trace is stored. 4.1 seconds fits one or two model calls. Settled only by replaying the question about 20 times (<a href="https://linear.app/projectnyx/issue/CUL-1804">CUL-1804</a>).</td><td>Unknown</td></tr>
+          <tr><td>The deployed code matches the repo</td><td>Deploy record <code>eeed3be</code>, about 8 hours before the call. No later change touches Ask.</td><td>High</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══ 3. found on the way ══════════════════════════════════════ -->
+  <section id="hazards">
+    <p class="sec-eyebrow">Found on the way</p>
+    <h2>Six things found in Nyx's record along the way</h2>
+    <p class="sec-lede">Each one was checked against the database by hand. The three that can soften or skew a warning are filed as bugs.</p>
+    <div class="cards">
+      <div class="hz"><span class="tag guard">High · safety card</span><h3>"5 of the last 8 weeks" is really 7 of 8</h3><p>Vomiting falls in <span class="num">7 of 8</span> calendar weeks and coughing in <span class="num">8 of 8</span>. The cards say 5 and 6, because the number comes from the measure that decides whether a sign is chronic. That measure was never meant to be read aloud.</p><span class="foot"><a href="https://linear.app/projectnyx/issue/CUL-1799">CUL-1799</a></span></div>
+      <div class="hz"><span class="tag guard">High · Ask, live</span><h3>Ask hands the model "9, then 5" for her cough under prednisolone</h3><p>The Signal screen deliberately hides a falling comparison while a steroid is on board. Ask passes the raw numbers to the model, and nothing stops "five, down from nine". This ships first.</p><span class="foot"><a href="https://linear.app/projectnyx/issue/CUL-1800">CUL-1800</a></span></div>
+      <div class="hz"><span class="tag open">Medium · care lines</span><h3>Motozol from Sep 21 is invisible</h3><p>Motozol was dosed <span class="num">7</span> times from Sep 21 to 27, starting 55 minutes before the first prednisolone. It was logged without a course, so "Prednisolone since Sep 21" reads as the only new medicine that day.</p><span class="foot"><a href="https://linear.app/projectnyx/issue/CUL-1801">CUL-1801</a></span></div>
+      <div class="hz"><span class="tag open">Ask prompt</span><h3>Ask's example sentence is about Nyx, with the wrong number</h3><p>Rule (10) teaches by example: "Your vet saw Nyx on Sep 16; 4 vomiting episodes are logged since." The record holds <span class="num">6</span>; 4 is the cough count. On your account, the model is primed with a visit date it has no tool for.</p><span class="foot">In the relay slice, <a href="https://linear.app/projectnyx/issue/CUL-1803">CUL-1803</a></span></div>
+      <div class="hz"><span class="tag open">Held lane</span><h3>Two weigh-ins, 4.40 kg then 3.73 kg, and nothing raises it</h3><p>Weighed Jun 15 and Sep 16, with none in the 25 days since, during a steroid course. The weight lane is built but waits on four rulings, so no surface mentions it. Worth raising at the recheck either way.</p><span class="foot">Data point added to <a href="https://linear.app/projectnyx/issue/CUL-1544">CUL-1544</a></span></div>
+      <div class="hz"><span class="tag then">Note</span><h3>Prednisolone reached its 15-dose target on Oct 10 and still reads active</h3><p>Only an owner action ends a course, so the steroid's masking window keeps running. That errs loud, which is the safe direction. It is also why Ask must never call it finished or a taper.</p><span class="foot">No issue; by design (med history H1)</span></div>
+    </div>
+  </section>
+
+  <!-- ══ 4. the family ════════════════════════════════════════════ -->
+  <section id="family">
+    <p class="sec-eyebrow">The same failure, elsewhere</p>
+    <h2>Rich, personal questions fail in about twenty ways</h2>
+    <p class="sec-lede">They share one cause. Ask knows Nyx's numbers but not her calendar, and it allows one outcome per question. Rows in tint are the ones the first two slices fix.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Class</th><th>Owner asks</th><th>Today</th><th>Fixed by</th></tr></thead>
+        <tbody>
+          <tr class="hot"><td class="id">F1</td><td>Treatment effect</td><td><span class="q-in">"Is the prednisolone or the trial helping?"</span></td><td>Clarifier with generic chips</td><td>Relay slice, then the ledger</td></tr>
+          <tr class="hot"><td class="id">F2</td><td>Count since a care event</td><td><span class="q-in">"How many times since she started the pred?"</span></td><td>Clarifier, or a 30-day guess that includes days before the first dose</td><td>Relay slice; anchored windows</td></tr>
+          <tr><td class="id">F3</td><td>Compound question</td><td><span class="q-in">"Vomiting and cough since the pred, her weight, her doses?"</span></td><td>One part answered, the rest dropped, or a clarifier</td><td>Composite answers</td></tr>
+          <tr><td class="id">F4</td><td>Calendar range</td><td><span class="q-in">"In September? Since Tuesday?"</span></td><td>"This month" means the last 30 UTC days. The model doesn't know today's date.</td><td>Calendar windows</td></tr>
+          <tr class="hot"><td class="id">F5</td><td>A masked fall read as change</td><td><span class="q-in">"Is her cough getting better on the steroid?"</span></td><td>"9, then 5" can reach the model</td><td><a href="https://linear.app/projectnyx/issue/CUL-1800">CUL-1800</a></td></tr>
+          <tr><td class="id">F6</td><td>Two numbers for one question</td><td><span class="q-in">"How many since the visit?"</span></td><td>Ask counts 7 rows on UTC days; the Signal counts 6 episodes on local days</td><td>One shared counter</td></tr>
+          <tr class="hot"><td class="id">F7</td><td>Answerable but refused</td><td><span class="q-in">"Has she coughed this week?"</span></td><td>"I can't answer that", which is false</td><td>Honest fallback; record chips</td></tr>
+          <tr><td class="id">F8</td><td>The follow-up loses the anchor</td><td><span class="q-in">"And the cough?" "What about before?"</span></td><td>The model starts over; the visit drops out</td><td>Anchor carried; before/after hold</td></tr>
+          <tr class="hot"><td class="id">F9</td><td>Two signs together</td><td><span class="q-in">"Is the cough what's making her throw up?"</span></td><td>A diagnosis refusal; the cough card is dropped</td><td>Every safety card; the ledger</td></tr>
+          <tr><td class="id">F10</td><td>Food and meal timing</td><td><span class="q-in">"Does she throw up right after eating?"</span></td><td>A diagnosis refusal, though the Signal holds "7 of 8 within 30 minutes"</td><td>Relay the timing finding (ruling 4)</td></tr>
+          <tr><td class="id">F11</td><td>Getting ready for the vet</td><td><span class="q-in">"What should I bring up at her recheck?"</span></td><td>A dead end, or a rundown hard-coded to 30 days</td><td>Doors to Get ready</td></tr>
+          <tr><td class="id">F12</td><td>Course status</td><td><span class="q-in">"She's had all 15 doses. Is it finished?"</span></td><td>No start, end or dose target reaches Ask</td><td>care_timeline</td></tr>
+          <tr><td class="id">F13</td><td>Things Ask can't see</td><td><span class="q-in">"More like herself since the steroid?" "Is Schrodinger sick too?"</span></td><td>"I can't answer that", with no door</td><td>Blind-spot and pet-switch doors</td></tr>
+          <tr><td class="id">F14</td><td>Invisible deflections</td><td><span class="muted">The team asks: how often does Ask deflect?</span></td><td>Unknowable today</td><td><a href="https://linear.app/projectnyx/issue/CUL-1804">CUL-1804</a></td></tr>
+          <tr><td class="id">F15</td><td>Care the engine can't see</td><td><span class="q-in">"Is the prednisolone helping?"</span></td><td>Motozol and cetirizine doses logged outside a course appear nowhere</td><td><a href="https://linear.app/projectnyx/issue/CUL-1801">CUL-1801</a></td></tr>
+          <tr><td class="id">F16</td><td>An engine mistake relayed as fact</td><td><span class="q-in">any question that quotes a card</span></td><td>"5 of the last 8 weeks" would be quoted word for word</td><td><a href="https://linear.app/projectnyx/issue/CUL-1799">CUL-1799</a>; parity tests</td></tr>
+          <tr><td class="id">F17</td><td>The Signal is silent</td><td><span class="q-in">"Sneezing since the pred?" for the other cat</span></td><td>Relaying adds nothing where no finding exists</td><td>Anchored windows over the shared counter</td></tr>
+          <tr class="hot"><td class="id">F18</td><td>An emergency at 7pm</td><td><span class="q-in">"Four times in the last hour and won't eat"</span></td><td>"A diagnosis needs an exam and bloodwork"</td><td><a href="https://linear.app/projectnyx/issue/CUL-1806">CUL-1806</a></td></tr>
+          <tr><td class="id">F19</td><td>A false premise</td><td><span class="q-in">"She hasn't vomited since the steroid, so it's working?"</span></td><td>"Nyx's record can't rule that out." Three are logged since (Sep 22, 25, Oct 9).</td><td>The ledger, which states the count</td></tr>
+          <tr><td class="id">F20</td><td>Eating under a steroid</td><td><span class="q-in">"Is she eating better since the pred?"</span></td><td>91 of 95 meals logged since Sep 21 have no intake answer, and steroids raise appetite, so meal counts would read as eating well.</td><td>Intake stays a health signal (golden test)</td></tr>
+          <tr class="hot"><td class="id">F21</td><td>The prompt's example is this pet</td><td><span class="muted">every visit question on your account</span></td><td>Primed with "Nyx on Sep 16; 4 vomiting"</td><td><a href="https://linear.app/projectnyx/issue/CUL-1803">CUL-1803</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="gallery">
+
+      <!-- G1 clarifier -->
+      <div class="ex">
+        <div class="ex-head"><span class="cls">F2 · a clarifier that's still needed</span><h3>Ask which one, from her record</h3></div>
+        <div class="today"><span class="lbl">Today</span><span class="said">"Quick check so I get it right." · Which symptom did you mean, and over what stretch of time? · This week / This month / All time</span></div>
+        <div class="phone sm">
+          <div class="ph-body">
+            <div class="q">Has it been any better since she started it?</div>
+            <div class="card">
+              <p class="hl">Quick check so I get it right: which one, and for which symptom?</p>
+              <p class="dt">Nyx's record has prednisolone since Sep 21 and the diet trial, on day 77 of 84. Tap the one you meant and I'll show what's logged since it started.</p>
+            </div>
+            <div class="chips block"><span class="chip">Vomiting · since prednisolone, Sep 21</span><span class="chip">Coughing · since prednisolone, Sep 21</span><span class="chip">Vomiting · trial so far, day 77</span></div>
+          </div>
+        </div>
+        <p class="ex-foot">"Better" is never echoed. There is no coughing-on-the-trial chip, because the trial is for stomach and gut signs. Each chip carries its intent, so a tap needs no second guess. <a href="https://linear.app/projectnyx/issue/CUL-1805">CUL-1805</a></p>
+      </div>
+
+      <!-- G2 compound -->
+      <div class="ex">
+        <div class="ex-head"><span class="cls">F3 · compound</span><h3>Answer every part</h3></div>
+        <div class="today"><span class="lbl">Today</span><span class="said">"Quick check so I get it right."</span><span class="why">The question asks three things, and Ask allows one outcome.</span></div>
+        <div class="phone sm">
+          <div class="ph-body">
+            <div class="q">How have her vomiting and cough been since she started the prednisolone, is she keeping her weight on, and is she actually getting her doses?</div>
+            <div class="card">
+              <p class="hl">Here's what Nyx's record shows around her prednisolone, and on her weight and doses.</p>
+              <p class="sub">Since prednisolone, Sep 21</p>
+              <div class="rows">
+                <div class="row"><span class="l">Vomiting</span><span class="v">3 in 19 days</span></div>
+                <div class="row"><span class="l">Coughing</span><span class="v">3 in 19 days</span><span class="m">Logged on 19 of 19 days · <span class="mask">It can hide both.</span></span></div>
+              </div>
+              <p class="sub">Weigh-ins</p>
+              <div class="rows">
+                <div class="row"><span class="l">Jun 15</span><span class="v">4.40 kg</span></div>
+                <div class="row"><span class="l">Sep 16</span><span class="v">3.73 kg</span><span class="m">None logged since</span></div>
+              </div>
+              <p class="sub">Doses</p>
+              <div class="rows">
+                <div class="row"><span class="l">Prednisolone, 15 logged</span><span class="v">4 given</span><span class="m">11 not fully taken — worth a word with your vet</span></div>
+              </div>
+              <p class="dt">Not in the record: her weight since prednisolone started. The weight drop before it and the 11 doses not fully taken are both worth a word with her vet.</p>
+            </div>
+            <div class="doors"><span class="door secondary">Log a weigh-in</span></div>
+          </div>
+        </div>
+        <p class="ex-foot">Each part is checked against its own source, then the joined card is screened once. Two readings are shown as dated values; Ask never subtracts them.</p>
+      </div>
+
+      <!-- G3 food timing -->
+      <div class="ex">
+        <div class="ex-head"><span class="cls">F10 · food and timing</span><h3>Relay what the Signal measured</h3></div>
+        <div class="today"><span class="lbl">Today</span><span class="said">"That's one for Nyx's vet." · A diagnosis needs an exam and bloodwork, not just a log.</span></div>
+        <div class="phone sm">
+          <div class="ph-body">
+            <div class="q">Does she throw up right after she eats? Is it the rabbit dry food doing it?</div>
+            <div class="card">
+              <p class="hl">7 of the 8 vomiting episodes with a known time came within 30 minutes of eating, including the last two.</p>
+              <div class="pips">
+                <div class="pip-row"><span>Within 30 min of eating</span><span class="dots"><i class="pip f"></i><i class="pip f"></i><i class="pip f"></i><i class="pip f"></i><i class="pip f"></i><i class="pip f"></i><i class="pip f"></i></span></div>
+                <div class="pip-row"><span>Timed, but later</span><span class="dots"><i class="pip o"></i></span></div>
+                <div class="pip-row"><span>Rough time only</span><span class="dots"><i class="pip d"></i><i class="pip d"></i><i class="pip d"></i><i class="pip d"></i></span></div>
+              </div>
+              <p class="dt">That timing is worth raising with Nyx's vet, and what it means is for them to judge. She's on day 77 of 84 of her diet trial, so talk to them before changing what she eats.</p>
+              <p class="cav">Prednisolone since Sep 21 falls inside these 60 days and can hide vomiting. The 4 with only a rough time can't be set against a meal.</p>
+            </div>
+          </div>
+        </div>
+        <p class="ex-foot">No food is named beside a vomit. Whether Ask gets its own food-and-symptom tool is ruling 4, a real disagreement on the team.</p>
+      </div>
+
+      <!-- G4 calendar -->
+      <div class="ex">
+        <div class="ex-head"><span class="cls">F4 · calendar range</span><h3>September means September</h3></div>
+        <div class="today"><span class="lbl">Today</span><span class="said">"I can't answer that from Nyx's record."</span><span class="why">The zero coughs since Tuesday fail the steroid screen, and the whole card falls back.</span></div>
+        <div class="phone sm">
+          <div class="ph-body">
+            <div class="q">How many times did she throw up in September, and has she coughed at all since Tuesday?</div>
+            <div class="card">
+              <p class="hl">Vomiting is logged 10 times for Nyx in September, on 7 days.</p>
+              <div class="month" aria-label="September 2026, vomiting days marked">
+                <span class="h">M</span><span class="h">T</span><span class="h">W</span><span class="h">T</span><span class="h">F</span><span class="h">S</span><span class="h">S</span>
+                <span class="d e"></span><span class="d">1</span><span class="d">2</span><span class="d">3</span><span class="d x">4</span><span class="d">5</span><span class="d">6</span>
+                <span class="d x">7<em>2</em></span><span class="d">8</span><span class="d">9</span><span class="d">10</span><span class="d">11</span><span class="d x">12</span><span class="d">13</span>
+                <span class="d">14</span><span class="d">15</span><span class="d">16</span><span class="d x">17<em>2</em></span><span class="d">18</span><span class="d">19</span><span class="d">20</span>
+                <span class="d x">21</span><span class="d x">22</span><span class="d">23</span><span class="d">24</span><span class="d x">25<em>2</em></span><span class="d">26</span><span class="d">27</span>
+                <span class="d">28</span><span class="d">29</span><span class="d">30</span><span class="d e"></span><span class="d e"></span><span class="d e"></span><span class="d e"></span>
+              </div>
+              <p class="dt">Since Tuesday, Oct 6, something is logged for Nyx on all 5 days, and prednisolone, started Sep 21, can hide coughing.</p>
+              <p class="cav">Motozol from Jul 16 may hide vomiting. Prednisolone from Sep 21 can hide vomiting. Anything given at the Sep 16 visit isn't in the record.</p>
+              <div class="prov"><span>Your local days · 10 entries</span><span class="go">Open in History →</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="ex-foot">The cough question gets the window and the logging, never a zero beside the steroid. A rose square is a day with vomiting logged; a small 2 marks the three days with two entries. Raw entries, so the grid matches History.</p>
+      </div>
+
+      <!-- G5 follow-up hold -->
+      <div class="ex">
+        <div class="ex-head"><span class="cls">F8 · the follow-up</span><h3>Hold the line on before/after</h3></div>
+        <div class="today"><span class="lbl">Today</span><span class="said">"That's one for Nyx's vet."</span><span class="why">The model starts again from scratch, and the anchor from the first answer is lost.</span></div>
+        <div class="phone sm">
+          <div class="ph-body">
+            <div class="q">And what about before the prednisolone, was she worse then?</div>
+            <div class="card">
+              <p class="hl">I keep each stretch on its own rather than setting it against the weeks before.</p>
+              <p class="dt">Prednisolone can hide both signs, and a calmer or busier stretch can happen on its own. Nyx's vet can line the stretches up.</p>
+            </div>
+            <div class="doors"><span class="door primary">Add this to your questions for the vet</span><span class="door secondary">Send the vet report</span></div>
+            <div class="opt-box"><span class="lbl">Option, drawn for ruling 5 · not the current proposal</span><span class="door option">See Sep 1–20 in History</span></div>
+          </div>
+        </div>
+        <p class="ex-foot">"Worse" is never echoed. The dashed door is the comparison one tap away. The designer wants it; Dr. Chen and the data scientist don't.</p>
+      </div>
+
+      <!-- G6 still a deflection -->
+      <div class="ex">
+        <div class="ex-head"><span class="cls">F12 · still a deflection</span><h3>Decline, but bring the record</h3></div>
+        <div class="today"><span class="lbl">Today</span><span class="said">"That's one for Nyx's vet." · A diagnosis needs an exam and bloodwork, not just a log.</span></div>
+        <div class="phone sm">
+          <div class="ph-body">
+            <div class="q">She's had all 15 prednisolone doses now. Can I stop it, and does this mean she has IBD?</div>
+            <div class="card">
+              <p class="hl">Nyx's record can't answer either of those.</p>
+              <p class="dt">What the vomiting and the cough mean is for Nyx's vet to judge, and any change to her medication goes through her vet.</p>
+              <p class="sub">Prednisolone, started Sep 21</p>
+              <div class="rows">
+                <div class="row"><span class="l">Dose 15 of 15 was logged on Oct 10</span><span class="v"></span></div>
+                <div class="row"><span class="l">11 doses not fully taken — worth a word with your vet</span><span class="v"></span></div>
+              </div>
+              <p class="fine">Not in the record: how much of each dose reached her.</p>
+            </div>
+            <div class="doors"><span class="door primary">Book Nyx's next visit</span><span class="door secondary">Send the vet report</span></div>
+          </div>
+        </div>
+        <p class="ex-foot">No completion language, no progress bar (a full bar reads as done), no disease named. The course quote is the regimen card's own line.</p>
+      </div>
+
+      <!-- G7 urgent -->
+      <div class="ex">
+        <div class="ex-head"><span class="cls">F18 · an emergency <span class="tag draft">draft · not yet reviewed</span></span><h3>Lead with the call</h3></div>
+        <div class="today"><span class="lbl">Today, most likely</span><span class="said">"That's one for Nyx's vet." · A diagnosis needs an exam and bloodwork, not just a log.</span></div>
+        <div class="phone sm">
+          <div class="ph-body">
+            <div class="q">She's thrown up four times in the last hour and won't eat.</div>
+            <div class="safety"><p class="hl urgent">Call your vet now.</p>If they're closed, an emergency clinic. Vomiting again and again in a short time, and not eating, is the kind of thing to call about tonight.</div>
+            <div class="doors"><span class="door secondary">Log what's happening</span></div>
+          </div>
+        </div>
+        <p class="ex-foot">This uses the app's existing call-now wording. It escalates only, is never metered, and needs clinical guardrails plus Dr. Chen before it ships. <a href="https://linear.app/projectnyx/issue/CUL-1806">CUL-1806</a></p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══ 5. the vision ════════════════════════════════════════════ -->
+  <section id="vision">
+    <p class="sec-eyebrow">The vision</p>
+    <h2>Personal means her calendar, her week, and the next step</h2>
+    <p class="sec-lede">Every pet AI on the market answers general questions. Only Culprit holds the pet's longitudinal record, so only Culprit can answer in it. The work splits into five layers. The first ships without an app release.</p>
+    <div class="layers">
+      <div class="layer"><h3>Knows her calendar</h3>Since the steroid, since the visit, day 77 of 84. Windows come from the pet's own care events, through one counter shared with the Signal, Get ready and History. The model never picks a date.</div>
+      <div class="layer"><h3>Knows her week</h3>What ends or falls due: trial day 84, a course reaching its dose target, no recheck booked, a weigh-in gap. Composed on the phone from local data, never read by a model.</div>
+      <div class="layer"><h3>Answers every part</h3>Each part is checked against its own source. It says "I can't answer that" only when the record truly can't, and names what it can't see.</div>
+      <div class="layer"><h3>Finishes the job</h3>Every reply ends on a door: book the recheck with your question, Get ready, the trial screen, the report since the visit. Ask itself writes nothing.</div>
+      <div class="layer"><h3>Sees its own misses</h3>Deflection diagnostics and a golden question set, without storing anything the owner typed. A prompt change's effect becomes measurable.</div>
+    </div>
+
+    <h3 style="margin-top:40px">Where personalization stops</h3>
+    <p class="sec-lede">These held through the adversarial pass on all eleven responses. They are what make the answers safe to make personal.</p>
+    <ul class="never">
+      <li><b>No effect words, either direction.</b> Never "helping", "working" or "better", including echoes of the owner's own word.</li>
+      <li><b>No before/after around a care event.</b> A steroid hides the sign it would compare. The vet report owns that comparison, with every confounder listed.</li>
+      <li><b>No zero, and no date that implies one,</b> beside a course or inside a visit's window. That rules out "last cough Oct 4".</li>
+      <li><b>The course line sits above the trial line.</b> The diet is never the first explanation a reader meets, and no food is named beside a vomit.</li>
+      <li><b>No completion or compliance language.</b> Never "finished", "done", "as prescribed" or "none missed".</li>
+      <li><b>No model reads</b> visit notes, Your questions, look notes or call notes.</li>
+      <li><b>Looks never become a count</b> or an improvement signal.</li>
+      <li><b>No comparing pets,</b> and never two pets on one card.</li>
+      <li><b>No advice to change a medicine or a diet.</b> The one sanctioned sentence: any change goes through her vet.</li>
+      <li><b>No interpreting weight.</b> Two dated readings, never a subtracted delta.</li>
+      <li><b>No memory past the conversation,</b> no persona, no flattery, and no Ask that speaks first.</li>
+    </ul>
+  </section>
+
+  <!-- ══ 6. build order ═══════════════════════════════════════════ -->
+  <section id="build">
+    <p class="sec-eyebrow">Build order</p>
+    <h2>The first fix needs no new clinical logic</h2>
+    <p class="sec-lede">Relay before you reason. Steps 0 and 1 are server only, and Edge Functions deploy on merge, so they reach your installed build with no app release. The parent issue holds the run order: <a href="https://linear.app/projectnyx/issue/CUL-1802">CUL-1802</a>.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Step</th><th>What</th><th>Issue</th><th>Gate</th></tr></thead>
+        <tbody>
+          <tr class="hot"><td class="id">0</td><td>Withhold the masked comparison from the model</td><td><a href="https://linear.app/projectnyx/issue/CUL-1800">CUL-1800</a></td><td>None. Ships first.</td></tr>
+          <tr class="hot"><td class="id">1</td><td>Relay slice: every safety card, the care lines under the answer, honest fallback copy, an example sentence that doesn't name Nyx</td><td><a href="https://linear.app/projectnyx/issue/CUL-1803">CUL-1803</a></td><td>After step 0; <a href="https://linear.app/projectnyx/issue/CUL-1801">CUL-1801</a> or a disclosure</td></tr>
+          <tr><td class="id">2</td><td>Deflection diagnostics and the golden set</td><td><a href="https://linear.app/projectnyx/issue/CUL-1804">CUL-1804</a></td><td>None</td></tr>
+          <tr><td class="id">3</td><td>Clarifiers built from the record</td><td><a href="https://linear.app/projectnyx/issue/CUL-1805">CUL-1805</a></td><td>After step 1</td></tr>
+          <tr><td class="id">4</td><td>Urgent route for red flags the owner states</td><td><a href="https://linear.app/projectnyx/issue/CUL-1806">CUL-1806</a></td><td>Clinical sign-off</td></tr>
+          <tr><td class="id">5</td><td>The care ledger as its own outcome, plus doors</td><td>Under <a href="https://linear.app/projectnyx/issue/CUL-1802">CUL-1802</a></td><td>Ruling 1; Ask spec amendment</td></tr>
+          <tr><td class="id">6</td><td>One counter, care_timeline, anchored and calendar windows</td><td>Under <a href="https://linear.app/projectnyx/issue/CUL-1802">CUL-1802</a></td><td><a href="https://linear.app/projectnyx/issue/CUL-1748">CUL-1748</a>, <a href="https://linear.app/projectnyx/issue/CUL-1251">CUL-1251</a>, <a href="https://linear.app/projectnyx/issue/CUL-1351">CUL-1351</a>; ruling 2</td></tr>
+          <tr><td class="id">7</td><td>Composite answers, checked one part at a time</td><td>Under <a href="https://linear.app/projectnyx/issue/CUL-1802">CUL-1802</a></td><td>Ruling 1</td></tr>
+          <tr><td class="id">8</td><td>Follow-ups keep the anchor; the before/after hold</td><td>Under <a href="https://linear.app/projectnyx/issue/CUL-1802">CUL-1802</a></td><td>Steps 6 and 7; ruling 5</td></tr>
+          <tr><td class="id">9</td><td>"Ask about this" from a finding, the trial strip or a course card</td><td><a href="https://linear.app/projectnyx/issue/CUL-160">CUL-160</a></td><td>Steps 3 and 5</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══ 7. your calls ════════════════════════════════════════════ -->
+  <section id="calls">
+    <p class="sec-eyebrow">Your calls</p>
+    <h2>Six rulings</h2>
+    <p class="sec-lede">Steps 0 to 4 need none of these. The team decided the low-risk calls and logged them on the decision issue, where you can reverse any.</p>
+    <div class="briefs">
+
+      <div class="brief">
+        <h3>1 · Ledger answers and windows anchored on care events <span class="tag now">recommend (a)</span></h3>
+        <p><span class="k">Deciding:</span> whether Ask may return a composite answer built by the server and count from a course start, the trial or the last visit.</p>
+        <ul>
+          <li><b>(a)</b> One amendment to the Ask spec adds the ledger outcome, parts, anchored and calendar windows, and the before/after hold. <b>Recommended:</b> every protection holds, and the numbers bypass the model entirely, which is stronger than today.</li>
+          <li>(b) Amend for the ledger only; windows and parts later.</li>
+          <li>(c) Keep one outcome per question and rely on the relay.</li>
+        </ul>
+        <p><span class="k">Rule bent:</span> Ask §5.3, "exactly one outcome per question", and the fixed window list (Jun 13, kept Jul 18). They protected against guessed answers and model-picked ranges that hide a spike. Both still hold, because anchors come from the record. <span class="k">Unblocks</span> steps 5, 7 and 8.</p>
+      </div>
+
+      <div class="brief">
+        <h3>2 · Does "since" count the anchor day? <span class="tag now">recommend (a)</span></h3>
+        <p><span class="k">Deciding:</span> one convention for the Signal, Get ready, History, the rundown, the report and Ask.</p>
+        <ul>
+          <li><b>(a)</b> Count the anchor day. <b>Recommended (data scientist):</b> it errs loud. Prednisolone becomes 4 in 20, catching the Sep 21 vomit 3h40m after the first dose, and it matches History.</li>
+          <li>(b) Keep the engine's day-after rule, so the Signal and History keep disagreeing.</li>
+          <li>(c) Day-after for courses, visit day included for visits.</li>
+        </ul>
+        <p><span class="k">Cost:</span> it rewords live Signal and Get ready lines and reopens an adversarial pass on the care-line composer. <span class="k">Unblocks</span> step 6.</p>
+      </div>
+
+      <div class="brief">
+        <h3>3 · Seeing why Ask deflects, without storing what you typed <span class="tag now">recommend (a)</span></h3>
+        <p><span class="k">Deciding:</span> whether a content-free outcome log follows the temporary diagnostics.</p>
+        <ul>
+          <li><b>(a)</b> Diagnostics now, on your account only (<a href="https://linear.app/projectnyx/issue/CUL-1804">CUL-1804</a>). An outcome-only log, with no text and no parameters, deletable, 90-day retention, arrives at the general-release gate after a Trust &amp; Safety ruling. <b>Recommended:</b> with one real user the log buys nothing yet; at release it replaces forensics like this page's.</li>
+          <li>(b) Diagnostics only, never a log.</li>
+          <li>(c) Nothing.</li>
+        </ul>
+        <p><span class="k">Rule bent:</span> Ask §10, "no transcripts, no query log" (Jul 18). The question-text protection holds in full; whether decline reasons count as health-adjacent metadata is the Trust &amp; Safety call.</p>
+      </div>
+
+      <div class="brief">
+        <h3>4 · A food-and-symptom tool for Ask <span class="tag open">team split</span></h3>
+        <div class="conf">
+          <p><b>Data scientist:</b> answer "is it the dry food?" with the food's exposure denominator: 220 of 317 meals in the 60 days before you asked, fed on 58 of 60 days. That is honest, and relaying alone leaves the owner guessing.</p>
+          <p><b>Dir. of Engineering:</b> that is a second food-by-onset composer beside the engine's, and the unruled emerging-signals class. Relay the engine's timing finding and nothing more.</p>
+          <p><b>Designer, with Sam:</b> on trial day 77, naming the vet's chosen staple beside every quick vomit reads as cause, whatever denominator sits next to it.</p>
+          <p><b>Your call:</b> exposure-honest food tools, or relay only? Until you rule, the build relays only and never names a food beside a vomit.</p>
+        </div>
+      </div>
+
+      <div class="brief">
+        <h3>5 · A History door to the weeks before the anchor <span class="tag open">team split · drawn in F8</span></h3>
+        <div class="conf">
+          <p><b>Designer:</b> "See Sep 1–20 in History" is navigation, and Ask states no comparison. A dead end is the failure we're fixing.</p>
+          <p><b>Dr. Chen, with the data scientist:</b> placed under "I won't set these against the weeks before", that door is the comparison one tap away, under a steroid that hides both signs. History also counts rows, not episodes.</p>
+          <p><b>Your call:</b> allow the door? Until you rule, doors go to Get ready and the vet report only. The F8 frame above shows it as a dashed option.</p>
+        </div>
+      </div>
+
+      <div class="brief">
+        <h3>6 · The second safety card: full or compact <span class="tag open">team split · drawn below</span></h3>
+        <div class="conf">
+          <p><b>Motion &amp; IA:</b> two full cards push the answer below the fold on a 390pt phone, and the vomiting card already says "Mention both".</p>
+          <p><b>Dr. Chen:</b> safety is never dropped to honour a layout cap. A card whose "worth booking a vet visit" sits behind a tap is dropped in practice.</p>
+          <p><b>Your call:</b> full or compact? Until you rule, the code renders both cards in full.</p>
+        </div>
+        <div class="side">
+          <div class="col">
+            <div class="phone sm"><div class="ph-body">
+              <div class="safety">We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis.</div>
+              <div class="safety">We've logged coughing for Nyx across 6 of the last 8 weeks — 14 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. This is a read of your logs, not a diagnosis.</div>
+              <div class="card"><p class="hl">Here's what Nyx's record shows since each one started.</p></div>
+            </div></div>
+            <div class="col-cap"><span class="k">Full <span class="tag now">interim default</span></span><p>Both cards in full, word for word.</p></div>
+          </div>
+          <div class="col">
+            <div class="phone sm"><div class="ph-body">
+              <div class="safety">We've logged vomiting for Nyx across 5 of the last 8 weeks — 12 episodes since August. A symptom that keeps recurring over weeks is worth booking a vet visit. Coughing is logged too — a cough can look like retching or end in vomiting. Mention both. This is a read of your logs, not a diagnosis.</div>
+              <div class="safety compact">We've logged coughing for Nyx across 6 of the last 8 weeks — 14 episodes since August.<br><span class="more">Read the rest</span></div>
+              <div class="card"><p class="hl">Here's what Nyx's record shows since each one started.</p></div>
+            </div></div>
+            <div class="col-cap"><span class="k">Compact <span class="tag open">option</span></span><p>First sentence shown, the rest behind a tap. The ledger starts higher on the screen.</p></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══ 8. method ════════════════════════════════════════════════ -->
+  <section id="method">
+    <p class="sec-eyebrow">How this was made</p>
+    <h2>What's verified and what's inferred</h2>
+    <div class="method">
+      <div class="hz"><h3>Checked by hand</h3><p>The byte match and the usage counters. The weekly vomiting and cough counts. The doses since Sep 1, Motozol included. Both weigh-ins. The live flag settings. The engine's cached lines for Oct 10, 6:30pm.</p></div>
+      <div class="hz"><h3>Inferred</h3><p>The exact wording of your question. Why the model chose a clarifier. The "today" reply in each gallery frame is the most likely outcome for a sampled model, backed by code citations, and has not been replayed.</p></div>
+      <div class="hz"><h3>Reviewed</h3><p>32 agents: five readers, three independent designers (owner, clinician, architecture), a synthesizer, eleven writers, an adversarial verifier per response, and a completeness critic. All eleven responses needed fixes, and none were rejected. The urgent frame is a draft added afterwards and has not been reviewed.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    Ask v2 · round 1 · current proposal. Committed as <code>docs/culprit-ask-v2-mockups.html</code>. Extends the design-locked <code>docs/ask-mockups.html</code>. Discovery issue <a href="https://linear.app/projectnyx/issue/CUL-1798">CUL-1798</a> · run order <a href="https://linear.app/projectnyx/issue/CUL-1802">CUL-1802</a>.
+  </footer>
+</div>

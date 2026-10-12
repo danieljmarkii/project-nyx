@@ -34,6 +34,7 @@
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveAllowlistFlagFromRows } from '../_shared/flags.ts'
+import { readAiBoundaryConsent } from '../_shared/aiConsent.ts'
 // Abort each Claude tool-loop call after a bounded timeout (CUL-258). Per-call, so a
 // single hung iteration can't hold the function open; the loop stays bounded by
 // MAX_TOOL_ITERATIONS.
@@ -42,7 +43,7 @@ import { fetchWithTimeout } from '../_shared/http.ts'
 import { fetchAll, incompletePullNames } from '../_shared/pull.ts'
 import { resolveIanaZone } from '../../../lib/utils.ts'
 import { intakeCorrectionOf, intakeCorrectionSentence, type IntakeCorrectionColumns } from '../../../lib/readCorrection.ts'
-import { projectCachedRead } from './tools.ts'
+import { projectCachedRead, tierWordsOf } from './tools.ts'
 import type {
   AskEventRow,
   AskMealRow,
@@ -70,6 +71,8 @@ import {
   mentionsPhotoAppearance,
   SCRUBBED_READ_HEADLINE,
   validateAnswer,
+  careNamesFrom,
+  screenProvenanceZero,
   collectNumerals,
   buildProvenance,
   buildComponent,
@@ -127,6 +130,30 @@ function capReachedResponse(grain: 'conversation' | 'message', cap: 'daily' | 'm
 }
 function featureDisabledResponse(): Response {
   return Response.json({ feature_disabled: true, function: 'ask' }, { headers: CORS_HEADERS })
+}
+
+// ── CUL-552 PR 2: the owner's AI consent ─────────────────────────────────────────────────
+
+// Service-role client for the consent read only (migration 100 §5: the gate reads ai_consent
+// through service_role, keyed on the verified uid). Every other read stays on the caller's
+// RLS-scoped client.
+function serviceClient(): SupabaseClient {
+  return createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+}
+
+// The declined answer: the consent_off deflection, led by the engine's live safety finding.
+// Reads only the pet's freshest Signal cache row (RLS-scoped). A failed read leads with
+// nothing, the same survivable-as-absence shape fetchContext gives it. Never throws.
+export async function consentOffAnswer(client: SupabaseClient, petId: string, petName: string): Promise<AskAnswerBody> {
+  let safetyLead: string | null = null
+  try {
+    const { data, error } = await client.from('ai_signals').select('findings').eq('pet_id', petId).order('generated_at', { ascending: false }).limit(1)
+    if (error) console.warn('ask: ai_signals read failed, no engine findings relayed:', error.message)
+    else safetyLead = leadingSafetyText(mapEngineFindings(data), petName)
+  } catch (err) {
+    console.warn('ask: ai_signals read threw, no engine findings relayed:', err instanceof Error ? err.message : String(err))
+  }
+  return { ...buildDeflection('consent_off', petName), safetyLead, conversationCredited: false }
 }
 
 // ── Usage I/O (§9) ────────────────────────────────────────────────────────────────
@@ -340,7 +367,7 @@ function finalizeAnswer(
   ctx: AskDataContext,
   generalEnabled: boolean,
   sawSafetyFinding: boolean,
-  _question: string,
+  question: string,
 ): AskAnswerBody {
   const petName = ctx.petName
   const input = terminal.input ?? {}
@@ -381,7 +408,14 @@ function finalizeAnswer(
     if (mentionsPhotoAppearance(detail)) detailOut = ''
   }
   const combined = `${headlineOut} ${detailOut}`.trim()
-  const verdict = validateAnswer({ text: combined, allowedNumerals, mode, safety: sawSafetyFinding })
+  const care = careNamesFrom(captured, { ...ctx, question })
+  const verdict = validateAnswer({
+    text: combined,
+    allowedNumerals,
+    mode,
+    safety: sawSafetyFinding,
+    care,
+  })
   if (!verdict.ok) {
     console.warn(`ask: answer failed validation (${verdict.reason}) — using deflection fallback`)
     // A failed model sentence never reaches the owner (never blank, never unguarded). Route to
@@ -394,7 +428,8 @@ function finalizeAnswer(
   // Server-built provenance + component from the FEATURED tool result (never model-authored
   // numbers, so the denominator/window is present by construction — AC-8).
   const featured = pickFeatured(featureName, captured)
-  const provenance = featured ? buildProvenance(featured) : null
+  // CUL-1429: the server-built count beside the answer obeys the same zero rule as its text.
+  const provenance = screenProvenanceZero(featured ? buildProvenance(featured) : null, combined, care)
   const component: ComponentDescriptor | null = featured ? buildComponent(featured) : null
 
   // The photo read's owner-facing content is DETERMINISTIC (never the model's prose — the
@@ -472,11 +507,13 @@ function first<T>(v: T | T[] | null | undefined): T | null {
 
 // The event_ai_analysis columns Ask relays (§6.2 mode 2 — the override-aware structured
 // fields + the dismissible n=1 read, and since CUL-1406 the facts behind a dated correction
-// beside it, migration 085). One literal, so supabase-js can type the select. Shared by
+// beside it, migration 085). Since CUL-1512 it also reads `tier` (079) and `engine_flags`
+// (075): the two columns the tier-word map needs to resolve the words the record shows.
+// Neither is relayed raw: `mapReadRow` turns them into those words (`tierWordsOf`). One literal, so supabase-js can type the select. Shared by
 // fetchContext (the cached-read snapshot) and
 // runLivePhotoRead (the post-run re-read), so both project from the identical column set.
 const READ_COLS =
-  'event_id, incident_type, status, dismissed_at, edited_at, description, colour, contents, consistency, blood_present, bile_present, foreign_material_present, foreign_material_note, stool_consistency, stool_blood_present, stool_mucus_present, recommendation, read_text, intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all'
+  'event_id, incident_type, status, dismissed_at, edited_at, description, colour, contents, consistency, blood_present, bile_present, foreign_material_present, foreign_material_note, stool_consistency, stool_blood_present, stool_mucus_present, recommendation, tier, engine_flags, read_text, intake_correction_at, intake_correction_meals, intake_correction_unrated, intake_correction_most_or_all'
 
 type ReadRowDb = Record<string, unknown> & { event_id: string; incident_type: string; status: string }
 
@@ -503,6 +540,7 @@ function mapReadRow(r: ReadRowDb, words: { petName: string; timezone: string | n
     stoolBloodPresent: (r.stool_blood_present as string) ?? null,
     stoolMucusPresent: (r.stool_mucus_present as string) ?? null,
     recommendation: (r.recommendation as string) ?? null,
+    tierWords: tierWordsOf(r),
     readText: (r.read_text as string) ?? null,
     readCorrection: correction ? intakeCorrectionSentence(correction, words.petName, words.timezone ?? undefined) : null,
   }
@@ -563,6 +601,21 @@ async function runLivePhotoRead(
   }
   if (row.status === 'capped') return photoReadOutcome(eventId, eventType, incidentType, 'capped')
   return photoReadOutcome(eventId, eventType, incidentType, 'unavailable')
+}
+
+// ai_signals.findings is CachedFinding[] = { rank, text, finding{ type, priorityClass, ... } }.
+// Map the freshest row to the engineFindings tool's relay shape (type + priorityClass +
+// verbatim payload). Shared by the full context read and the consent-declined answer, which
+// reads nothing but this (CUL-552 PR 2).
+export function mapEngineFindings(rows: unknown): NonNullable<AskDataContext['engineFindingsRaw']> {
+  const signalRow = first((Array.isArray(rows) ? rows : []) as { findings: unknown }[])
+  const rawFindings = Array.isArray(signalRow?.findings) ? (signalRow!.findings as { text?: unknown; finding?: Record<string, unknown> }[]) : []
+  return rawFindings
+    .map((f) => {
+      const finding = f.finding ?? {}
+      return { type: finding.type, priorityClass: finding.priorityClass, payload: { text: f.text, ...finding } }
+    })
+    .filter((f) => typeof f.type === 'string')
 }
 
 async function fetchContext(
@@ -862,14 +915,7 @@ async function fetchContext(
 
   // ai_signals.findings is CachedFinding[] = { rank, text, finding{ type, priorityClass, ... } }.
   // Map to the engineFindings tool's relay shape (type + priorityClass + verbatim payload).
-  const signalRow = first((signalsRes.data ?? []) as { findings: unknown }[])
-  const rawFindings = Array.isArray(signalRow?.findings) ? (signalRow!.findings as { text?: unknown; finding?: Record<string, unknown> }[]) : []
-  const engineFindingsRaw = rawFindings
-    .map((f) => {
-      const finding = f.finding ?? {}
-      return { type: finding.type, priorityClass: finding.priorityClass, payload: { text: f.text, ...finding } }
-    })
-    .filter((f) => typeof f.type === 'string')
+  const engineFindingsRaw = mapEngineFindings(signalsRes.data)
 
   return {
     nowMs,
@@ -946,6 +992,15 @@ const handler = async (req: Request): Promise<Response> => {
     const askEnabled = resolveAllowlistFlagFromRows(cfgRows, ASK_FLAG, user.id, false)
     if (!askEnabled) return featureDisabledResponse()
     const generalEnabled = resolveAllowlistFlagFromRows(cfgRows, GENERAL_FLAG, user.id, false)
+
+    // 2b. CUL-552 PR 2 (D10, the whole boundary): no recorded yes, no model call. Read through
+    //     service_role for the uid step 0 verified, failing closed (a missing row or a failed
+    //     read is declined). BEFORE any cap read or increment, so a declined owner spends no
+    //     unit, and before any record read but the Signal cache: the designed deflection,
+    //     with the engine's live safety finding still leading it (escalations never hide).
+    if (!(await readAiBoundaryConsent(serviceClient(), user.id))) {
+      return answerResponse(await consentOffAnswer(client, petId, pet.name || 'your pet'))
+    }
     const caps = resolveAskCaps(cfgRows.find((r) => r.key === 'ai_caps')?.value)
 
     // 3. PRE-model cap gate (§9 / D9). Computed from the client-passed in-memory conversation

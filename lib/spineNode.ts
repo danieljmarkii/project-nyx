@@ -87,7 +87,7 @@ import {
   type OnsetConfidence,
   type TimingBand,
 } from './mealTiming';
-import { compactSpine, type CompactableNode } from './spineCompaction';
+import { compactSpine, eatenBeforeVomit, type CompactableNode, type VomitSpan } from './spineCompaction';
 import { TIMING_SYMPTOM_TYPE, timingBandLabel } from './patternsTiming';
 import { localDayIndex } from './utils';
 import { kgToLbs } from './weightUnits';
@@ -155,6 +155,14 @@ export interface SpineInput {
   /** Meal ids a timing line on ANOTHER day measures from (`DayTimings.timedElsewhere`):
    *  each keeps its own row here too. */
   timedElsewhere?: ReadonlySet<string>;
+  /** Instants (ms) of rows the surface draws among the nodes without handing them over as
+   *  rows here: History's daily looks (CUL-1719). A run never crosses one
+   *  (`compactSpine`'s `breaks`). Home leaves it out: its look is the header. */
+  runBreaks?: readonly number[];
+  /** The vomits on OTHER days, as spans (`vomitSpanOf`), so a meal at 11:50 PM before a
+   *  12:10 AM vomit keeps its row on the earlier card (CUL-1737; `DayTimings.vomitsElsewhere`).
+   *  Home leaves it out: it draws today alone. */
+  vomitsElsewhere?: readonly VomitSpan[];
 }
 
 // ── Outputs ─────────────────────────────────────────────────────────────────────
@@ -310,17 +318,33 @@ export function nodeReadOf(
 
 // ── Timing ──────────────────────────────────────────────────────────────────────
 
-/** "3 min after eating" · "2 h after eating" · "2 h 20 min after eating", for the rapid
- *  and mid bands. The LONG band takes the lane's own band label rather than a number:
- *  "12 h after eating" off a breakfast-only logger is a claim about an unlogged dinner.
- *  Minutes are rounded; an hour figure drops a remainder under five minutes. */
+/** "under a minute after eating" · "3 min after eating" · "2 h after eating" · "2 h 20 min
+ *  after eating", for the rapid and mid bands. The LONG band takes the lane's own band label
+ *  rather than a number: "12 h after eating" off a breakfast-only logger is a claim about an
+ *  unlogged dinner. `minutes` is the CLOCK gap (`clockMinuteGap`): the minutes a reader gets by
+ *  subtracting the two printed times, so the line and the time column never disagree
+ *  (CUL-1720). Zero means both rows print the same minute, which is "under a minute", never
+ *  "0 min". An hour figure drops a remainder under five minutes. */
 export function timingLine(minutes: number, band: TimingBand, config: MealTimingConfig = DEFAULT_MEAL_TIMING_CONFIG): string {
   if (band === 'long') return timingBandLabel(band, config);
   const m = Math.max(0, Math.round(minutes));
+  if (m === 0) return 'under a minute after eating';
   if (m < 60) return `${m} min after eating`;
   const h = Math.floor(m / 60);
   const r = m % 60;
   return r >= 5 ? `${h} h ${r} min after eating` : `${h} h after eating`;
+}
+
+/** Whole minutes between two instants as the time column prints them: each instant cut to its
+ *  minute (`formatTime` drops the seconds), then subtracted. A meal at 2:52:50 and a vomit at
+ *  2:53:10 are 20 seconds apart and read 1 min, because the rows say 2:52 and 2:53; 2:52:10
+ *  and 2:53:50 read 1 min too, never the rounded 2 (CUL-1720). Every zone's offset is a whole
+ *  number of minutes, so cutting the epoch instant cuts the local one at the same place. The
+ *  band is still the lane's, off the true gap; only the spoken number follows the clock. */
+const MS_PER_MINUTE = 60_000;
+
+export function clockMinuteGap(fromMs: number, toMs: number): number {
+  return Math.floor(toMs / MS_PER_MINUTE) - Math.floor(fromMs / MS_PER_MINUTE);
 }
 
 /** A vomit row's timing line: the words, and the meal they are measured from. The meal id is
@@ -378,6 +402,7 @@ export function timingsByRow(
     freeFedSpans,
     config,
   );
+  const feedingMs = new Map(feedings.map((f) => [f.id, f.ms]));
   const out = new Map<string, SpineTimingLine>();
   for (const eligible of dist.eligible) {
     // Keyed back through the episode that carries this onset: the row the collapse
@@ -385,12 +410,20 @@ export function timingsByRow(
     const opener = episodes.find((e) => e.ms === eligible.onsetMs);
     if (opener?.id) {
       out.set(opener.id, {
-        text: timingLine(eligible.minutesSinceFeeding, eligible.band, config),
+        text: timingLine(spokenMinutes(eligible, feedingMs.get(eligible.feedingId)), eligible.band, config),
         mealId: eligible.feedingId,
       });
     }
   }
   return out;
+}
+
+/** The minutes a timing line speaks: the clock gap to the anchor feeding the lane named. The
+ *  lane always names one of `feedings`; were it ever missing, the true gap cut to whole minutes
+ *  is the honest fallback (never rounded up past what the clock could show). */
+function spokenMinutes(eligible: { onsetMs: number; minutesSinceFeeding: number }, fedMs: number | undefined): number {
+  if (fedMs === undefined || !Number.isFinite(fedMs)) return Math.floor(eligible.minutesSinceFeeding);
+  return clockMinuteGap(fedMs, eligible.onsetMs);
 }
 
 // ── Rows → nodes ─────────────────────────────────────────────────────────────────
@@ -555,8 +588,37 @@ function eventNode(row: SpineEventInput, input: SpineInput, ctx: DayContext): Sp
   };
 }
 
+/** The one event type a meal's before-vomit break reads (CUL-1737: vomit only, as ruled;
+ *  another type is a new clinical call, never a build detail). */
+const BEFORE_VOMIT_TYPE = 'vomit';
+
+/**
+ * A vomit row's time as rule B's before-vomit break reads it; null off a vomit or on a row
+ * whose instant cannot be parsed. A seen or estimated vomit is its recorded instant. A FOUND
+ * one (`window`) is its owner's window, earliest bound to latest; a bound that is missing or
+ * unparseable falls back to the recorded time, and the span always holds the recorded time,
+ * so a malformed window is never narrower than the point rule (it errs toward a break).
+ */
+export function vomitSpanOf(row: SpineEventInput): VomitSpan | null {
+  if (row.event_type !== BEFORE_VOMIT_TYPE) return null;
+  const ms = Date.parse(row.occurred_at);
+  if (!Number.isFinite(ms)) return null;
+  if (row.occurred_at_confidence !== 'window') return { fromMs: ms, toMs: ms };
+  const bound = (v: string | null | undefined) => {
+    const b = v ? Date.parse(v) : NaN;
+    return Number.isFinite(b) ? b : ms;
+  };
+  return { fromMs: Math.min(ms, bound(row.occurred_at_earliest)), toMs: Math.max(ms, bound(row.occurred_at_latest)) };
+}
+
 /** The facts rule B reads, derived from the node and its row (`lib/spineCompaction.ts`). */
-function runFactsOf(node: SpineEventNode, row: SpineEventInput, ctx: DayContext, timed: ReadonlySet<string>) {
+function runFactsOf(
+  node: SpineEventNode,
+  row: SpineEventInput,
+  ctx: DayContext,
+  timed: ReadonlySet<string>,
+  vomits: readonly VomitSpan[],
+) {
   const isMeal = node.category === 'meal';
   return {
     id: node.id,
@@ -572,6 +634,7 @@ function runFactsOf(node: SpineEventNode, row: SpineEventInput, ctx: DayContext,
     noted: !!row.notes?.trim(),
     vehicle: ctx.dosesIn.has(node.id) || (row.paired_dose_count ?? 0) > 0,
     timed: timed.has(node.id),
+    beforeVomit: isMeal && eatenBeforeVomit(node.timeMs, vomits),
     approximate: node.timeTag !== null,
     node,
   } satisfies CompactableNode & { node: SpineEventNode };
@@ -660,7 +723,16 @@ export function buildSpine(input: SpineInput): SpineModel {
   const ctx = dayContext(rows, timing);
   const timed = new Set([...[...timing.values()].map((t) => t.mealId), ...(input.timedElsewhere ?? [])]);
   const nodes = rows.map((r) => eventNode(r, input, ctx));
-  const groups = compactSpine(nodes.map((n) => runFactsOf(n, ctx.byId.get(n.id) as SpineEventInput, ctx, timed)));
+  // Every vomit on the day, seen or found, timed or not, first of a bout or later, plus the
+  // ones a surface hands in from another day (CUL-1737).
+  const vomits = [
+    ...rows.map(vomitSpanOf).filter((v): v is VomitSpan => v !== null),
+    ...(input.vomitsElsewhere ?? []),
+  ];
+  const groups = compactSpine(
+    nodes.map((n) => runFactsOf(n, ctx.byId.get(n.id) as SpineEventInput, ctx, timed, vomits)),
+    input.runBreaks,
+  );
   const lines: SpineNode[] = groups.map((g) =>
     g.kind === 'compact' ? compactNode(g.nodes.map((x) => x.node)) : g.node.node,
   );

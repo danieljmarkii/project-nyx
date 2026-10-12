@@ -636,6 +636,18 @@ export interface ReportAttachmentInput {
 }
 
 /**
+ * CUL-1658 (FAB PR-29c) — a `capture_changes` row (migration 091): the day this pet's capture
+ * surface first offered a change. The report reads one key today, `fab_stool_split`, the day the
+ * fan's stool pill split into Normal and Loose and a normal stool became one tap to log.
+ * `firstSeenAt` is the phone's clock, `createdAt` the server's; see `normalShortcutDisclosure`.
+ */
+export interface ReportCaptureChangeInput {
+  changeKey: string
+  firstSeenAt: string
+  createdAt: string
+}
+
+/**
  * The full pure-assembly input. The caller pulls a GENEROUS lookback (≥ the
  * report window; the live Signal pulls 180d) so the detection reuse has enough
  * history for its natural sub-windows; report.ts scopes everything to the resolved
@@ -688,6 +700,15 @@ export interface ReportInput {
    * absent ⇒ no incident photos (an empty Appendix E, which simply does not render).
    */
   attachments?: ReportAttachmentInput[]
+  /**
+   * CUL-1658 — this pet's `capture_changes` rows, or `'unreadable'` when the read FAILED.
+   * Optional so every earlier fixture and the `resolveScope` pre-pull keep compiling; ABSENT ⇒
+   * no row ⇒ no disclosure, which is the report for a pet whose fan never changed. A failed read
+   * is never absent: the stool strip then says the change could not be checked, in place of the
+   * dated line (adversarial F5: the page-wide partial-record banner calls every count a minimum,
+   * which is false when only this date is missing).
+   */
+  captureChanges?: ReportCaptureChangeInput[] | 'unreadable'
   /**
    * B-613 — the instant `events` was pulled from (`index.ts`'s `computeLookbackIso`).
    *
@@ -797,6 +818,142 @@ function localDayKey(iso: string, tz: string | null): string | null {
     }
   }
   return new Date(ms).toISOString().slice(0, 10)
+}
+
+/** The `capture_changes` key for the fan's split stool pill (migration 091's CHECK). */
+export const FAB_STOOL_SPLIT_KEY = 'fab_stool_split'
+
+/**
+ * CUL-1658 — what the stool strip says about the fan's split stool pill:
+ *   `on`       the change's day is known (both clocks agree on it) and inside the window
+ *   `between`  the earlier clock's day is inside the window but the clocks disagree on the day
+ *   `by`       only the server's clock is inside: the change landed on or before that day
+ *   `spans`    the two clocks straddle the whole window, so the day cannot be placed in it
+ *   `unknown`  the read failed: the strip says the change could not be checked
+ */
+export type NormalShortcutDisclosure =
+  | { kind: 'on'; at: string; split: StoolShortcutSplit | null }
+  | { kind: 'between'; from: string; to: string }
+  | { kind: 'by'; at: string }
+  | { kind: 'spans' }
+  | { kind: 'since'; at: string; exact: boolean }
+  | { kind: 'unknown' }
+
+/**
+ * CUL-1658 ruling 1a (PM, 2026-10-09) — the strip's counts on each side of the change day, so a
+ * vet reads the ratio inside each logging regime rather than the pooled bar (the cold read: a
+ * 4 / 4 then 20 / 2 record pooled to "20% loose", which described neither period). Same
+ * population as the strip's totals (collapsed in-window incidents), so before + from always sums
+ * to them; `loggedDays` is the strip's own coverage measure (a day with any log), split the same
+ * way, because coverage moves across the date too. Only when the day is KNOWN (`on`): an "on or
+ * before" day would put post-change stools on the before side.
+ */
+export interface StoolShortcutSplit {
+  before: StoolPeriodCounts
+  from: StoolPeriodCounts
+}
+export interface StoolPeriodCounts {
+  normal: number
+  loose: number
+  days: number
+  loggedDays: number
+}
+
+/**
+ * CUL-1658 ruling 2a (PM, 2026-10-09) — how long after the change a report whose whole window
+ * is after it still says so, because a vet compares it with a report from before (adversarial
+ * F3: Aug 10 normal / 8 loose against Oct 40 / 8 reads as improvement). 180 days covers the
+ * usual recheck interval; measured from the change's server day to the window's last day.
+ */
+export const NORMAL_SHORTCUT_SINCE_DAYS = 180
+
+/**
+ * CUL-1658 — the stool strip's disclosure for the fan's split stool pill, from the pet's
+ * `capture_changes` row and the window.
+ *
+ * THE TWO CLOCKS BOUND A SPAN, they are not two guesses at a point. `first_seen_at` is the
+ * phone's clock, which can run fast OR slow; `created_at` is the server's, which is never early
+ * but can be days late (an offline push). Migration 091's rule (disclose the EARLIER) is safe at
+ * the window's END and unsafe at its START: a phone a week slow dates a mid-window change before
+ * the window and the line vanishes (adversarial F2). So the line prints whenever the span
+ * [earlier, later] reaches into the window, and names the earlier day only when that day is
+ * itself inside; otherwise it says "on or before" the later one, which the server's clock makes
+ * true. Over-disclosing a change that in fact preceded the window costs a sentence; missing one
+ * costs a vet a ratio read across two logging regimes.
+ *
+ * BEFORE the window (both clocks) ⇒ `since`, for NORMAL_SHORTCUT_SINCE_DAYS (ruling 2a), then
+ * null. AFTER (both) ⇒ null: no window day had it. `on`'s split is filled by assembly, which
+ * holds the events. Instants are parsed, never compared as text (C-40). Day keys are fixed-width
+ * `YYYY-MM-DD`, so comparing them as text is comparing days.
+ */
+export function normalShortcutDisclosure(
+  rows: ReportCaptureChangeInput[] | 'unreadable' | undefined,
+  scope: Pick<ReportScope, 'startDate' | 'endDate'>,
+  tz: string | null,
+): NormalShortcutDisclosure | null {
+  if (rows === 'unreadable') return { kind: 'unknown' }
+  const row = (rows ?? []).find((r) => r.changeKey === FAB_STOOL_SPLIT_KEY)
+  if (!row) return null
+  const clocks = [row.firstSeenAt, row.createdAt]
+    .map((iso) => ({ iso, ms: parseMs(iso) }))
+    .filter((c): c is { iso: string; ms: number } => c.ms !== null)
+    .sort((x, y) => x.ms - y.ms)
+  // Neither clock readable: the row exists, so the change happened, and when is unknown.
+  if (clocks.length === 0) return { kind: 'unknown' }
+  const early = clocks[0]
+  const late = clocks[clocks.length - 1]
+  const earlyDay = localDayKey(early.iso, tz)
+  const lateDay = localDayKey(late.iso, tz)
+  if (earlyDay === null || lateDay === null) return { kind: 'unknown' }
+  if (earlyDay > scope.endDate) return null
+  if (lateDay < scope.startDate) {
+    // Wholly before the window: within one report the counts share a footing, but a vet holding
+    // an earlier report does not (ruling 2a). The LATER clock's day is named (the server's, or a
+    // fast phone's): neither clock can precede the change, so "by" that day is true either way.
+    const lateNum = dayNumber(lateDay)
+    const endNum = dayNumber(scope.endDate)
+    if (lateNum === null || endNum === null || endNum - lateNum > NORMAL_SHORTCUT_SINCE_DAYS) return null
+    return { kind: 'since', at: late.iso, exact: earlyDay === lateDay }
+  }
+  // The day is KNOWN only when both clocks agree on it. When they disagree, neither can be trusted
+  // as the day (a slow phone and a late push look identical), so the span is named and nothing is
+  // split: a split at either end would put days of one logging regime on the other side
+  // (adversarial round 2, M1).
+  if (earlyDay >= scope.startDate) {
+    return earlyDay === lateDay ? { kind: 'on', at: early.iso, split: null } : { kind: 'between', from: early.iso, to: late.iso }
+  }
+  if (lateDay <= scope.endDate) return { kind: 'by', at: late.iso }
+  return { kind: 'spans' }
+}
+
+/**
+ * CUL-1658 ruling 1a — fill `on`'s split from the strip's own incidents and logged days. No split
+ * when the change falls on the window's first day: there is no "before" to show.
+ */
+function withStoolSplit(
+  d: NormalShortcutDisclosure | null,
+  stoolIncidents: Array<{ type: string; occurredAt: string }>,
+  loggedDayNums: Set<number>,
+  scope: Pick<ReportScope, 'startDayNum' | 'endDayNum'>,
+  tz: string | null,
+): NormalShortcutDisclosure | null {
+  if (!d || d.kind !== 'on') return d
+  const changeNum = eventDayNumber(d.at, tz)
+  if (changeNum === null || changeNum <= scope.startDayNum) return d
+  const period = (lo: number, hi: number): StoolPeriodCounts => {
+    const inside = (dn: number | null) => dn !== null && dn >= lo && dn <= hi
+    const rows = stoolIncidents.filter((e) => inside(eventDayNumber(e.occurredAt, tz)))
+    return {
+      normal: rows.filter((e) => e.type === STOOL_NORMAL_TYPE).length,
+      loose: rows.filter((e) => e.type === DIARRHEA_TYPE).length,
+      days: hi - lo + 1,
+      loggedDays: [...loggedDayNums].filter((dn) => inside(dn)).length,
+    }
+  }
+  return {
+    ...d,
+    split: { before: period(scope.startDayNum, changeNum - 1), from: period(changeNum, scope.endDayNum) },
+  }
 }
 
 /** A calendar-day key ('YYYY-MM-DD', already a local day OR a DATE column) → an integer day index. */
@@ -1597,6 +1754,14 @@ export interface StoolCharacteristics {
   looseCount: number
   windowDays: number
   loggedDays: number
+  /**
+   * CUL-1658 — whether, and when, a normal stool got its own shortcut in the owner's fan inside
+   * this window (`capture_changes.fab_stool_split`); null when the change sits wholly outside the
+   * window or the pet has no row. The counts above are never adjusted for it: the line beside them
+   * discloses, it never corrects. REQUIRED, so a fixture or a new builder decides rather than
+   * inheriting silence. See `normalShortcutDisclosure` for the four arms.
+   */
+  normalShortcut: NormalShortcutDisclosure | null
   /**
    * AI photo-read enrichment (migration 034 / analyze-stool). Null when NO stool incident has a
    * photo the AI could read — the section then renders the owner-described counts + an honest "not
@@ -2517,7 +2682,8 @@ export interface ProteinTimeline {
   bins: number[][]
   /** Per-week count of off-diet feedings with no recorded protein (disclosed, never dropped, §5.1). */
   unknownByWeek: number[]
-  /** Distinct local days with a MEAL-type event logged, per weekly bucket. This is the "was the DIET
+  /** Distinct local days with a non-treat MEAL-type event logged, per weekly bucket (CUL-1779: the
+   *  trial coverage tile's day predicate, `foodType !== 'treat'`). This is the "was the DIET
    *  observed?" signal — deliberately NOT the symptom chart's any-log `loggedDaysByBucket`, which
    *  would count a logged vomit as diet observation and assert a clean off-diet week over a diet
    *  nobody watched (B-497, adversarial-reviewer). A week with zero off-diet feedings AND a meal
@@ -2525,6 +2691,18 @@ export interface ProteinTimeline {
    *  (draw "not logged", never a `0`). Treats/human food are themselves off-diet feedings, so on a
    *  zero-total week the only meal-type events left are on-diet meals — exactly the right denominator. */
   mealDaysByBucket: number[]
+  /** Days of each bucket inside the chart's scope (CUL-1779): 7 for a full in-scope week, fewer for
+   *  a part-week or a week the trial's evidence range only partly covers, 0 for a week outside it.
+   *  The denominator under every column. */
+  scopeDaysByBucket: number[]
+  /** The chart's scope: the trial's evidence range ∩ the window on a trial-classified report (the
+   *  only span its off-diet set exists over), else the window. Stated in the caption. */
+  scopeStartDate: string
+  scopeEndDate: string
+  trialScoped: boolean
+  /** True when the trial module withholds the clean-record statement (`mayStateRecordClean`
+   *  false). No week may then print a measured `0` (CUL-1779). */
+  zeroWithheld: boolean
   /** Per-week count of off-diet FEEDINGS (each counted once) — the honest denominator
    *  behind a stack whose segments may now sum higher than the feedings that produced it. */
   feedingsByWeek: number[]
@@ -3664,7 +3842,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
             reviewedCount,
           }
         : null
-    stool = { total: stoolNormal + stoolLoose, normalCount: stoolNormal, looseCount: stoolLoose, windowDays, loggedDays, ai }
+    stool = {
+      total: stoolNormal + stoolLoose,
+      normalCount: stoolNormal,
+      looseCount: stoolLoose,
+      windowDays,
+      loggedDays,
+      normalShortcut: withStoolSplit(normalShortcutDisclosure(input.captureChanges, scope, tz), stoolIncidents, loggedDayNums, scope, tz),
+      ai,
+    }
   }
 
   // ── Weight (§3.3, B-186) ──────────────────────────────────────────────────────
@@ -4695,15 +4881,37 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       if (j !== undefined) timelineBins[w][j]++
     }
   }
+  // THE CHART'S SCOPE IS ITS NUMERATOR'S SCOPE (CUL-1779, adversarial). On a trial-classified report
+  // the off-diet set is the trial's exposures, which exist only over the trial's EVIDENCE range — so
+  // a week before the trial began, or after it ended, has no off-diet feedings BY CONSTRUCTION, and
+  // counting its meals as diet observation printed a measured "0 off-diet" over weeks of logged
+  // jerky. Page one and Appendix C already state this range (B-600); this chart was the surface
+  // that kept counting the whole window. So every per-week fact below is clipped to the scope.
+  const offDietScopeStart = trialClassified
+    ? Math.max(startDayNum, dayNumber(trialBlock!.evidenceStartDate) ?? startDayNum)
+    : startDayNum
+  const offDietScopeEnd = trialClassified
+    ? Math.min(endDayNum, dayNumber(trialBlock!.evidenceEndDate) ?? endDayNum)
+    : endDayNum
+  const inOffDietScope = (dn: number): boolean => dn >= offDietScopeStart && dn <= offDietScopeEnd
   // Distinct meal-days per bucket — the off-diet chart's "was the diet observed?" test (B-497). A
   // logged symptom is NOT diet observation, so this counts meal-type events only, never `loggedDayNums`.
+  // And a treat is not the diet either (CUL-1779): the day set is the trial coverage tile's own
+  // (`lib/dietTrial.ts` counts `foodType !== 'treat'`), because the chart's per-week floor mirrors
+  // that tile's floor — a permitted chew on an otherwise unlogged day must not buy a measured `0`.
   const mealDayNums = new Set<number>()
   for (const e of windowMeals) {
+    if (e.meal!.foodType === 'treat') continue
     const dn = eventDayNumber(e.occurredAt, tz)
-    if (dn !== null) mealDayNums.add(dn)
+    if (dn !== null && inOffDietScope(dn)) mealDayNums.add(dn)
   }
   const mealDaysByBucket = new Array(numBuckets).fill(0)
   for (const dn of mealDayNums) mealDaysByBucket[bucketIndexOfDay(dn)]++
+  // The days of each bucket inside the scope — the denominator printed under every column (the
+  // cold read's "n/7 d"). A trailing part-week holds fewer than 7; a week wholly outside the
+  // trial holds 0, and the render draws it as outside the chart's scope rather than as a week.
+  const scopeDaysByBucket = new Array(numBuckets).fill(0)
+  for (let dn = offDietScopeStart; dn <= offDietScopeEnd; dn++) scopeDaysByBucket[bucketIndexOfDay(dn)]++
 
   const proteinTimeline: ProteinTimeline = {
     weekStartDates: bucketStartDates,
@@ -4711,6 +4919,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     bins: timelineBins,
     unknownByWeek,
     mealDaysByBucket,
+    scopeDaysByBucket,
+    scopeStartDate: dayKeyFromNumber(offDietScopeStart),
+    scopeEndDate: dayKeyFromNumber(offDietScopeEnd),
+    trialScoped: trialClassified,
+    // §5.2 is two-sided and the trial module says when the record may not be read as clean
+    // (a refused diet, an off-list bowl, sub-floor coverage …). The chart drawing a measured
+    // `0` is that clean statement made per week, so it obeys the same withhold (CUL-1779).
+    zeroWithheld: trialBlock !== null && !trialBlock.mayStateRecordClean,
     feedingsByWeek,
     totalByProtein: proteinExposureTally,
     hasUnknown: proteinUnknownCount > 0,

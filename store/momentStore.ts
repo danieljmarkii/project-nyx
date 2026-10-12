@@ -10,6 +10,7 @@ import type { LogTimeTrialFlag } from '../lib/trialContaminant';
 import type { LoggedRecord } from '../lib/completionCard';
 import type { FloorAnnouncement } from '../lib/incidentFloorPreview';
 import { recordShownTiers } from '../lib/incidentTierShown';
+import { doseCelebrates } from '../lib/commitTone';
 
 // The earned completion surface, played after a successful log on any path so
 // the fastest taps get the same closure as the full flow (B-063). One store
@@ -223,6 +224,12 @@ export interface MedicationPayload {
   // already saved, the note asks nothing, and its durable home is the dose's detail
   // screen, which recomputes it on every focus.
   doubleDose?: DoubleDoseResult | null;
+  // CUL-1691 §2.3 — the log-time double-dose check has finished, whatever it found
+  // (a conflict, nothing, a failure, a result dropped because the owner changed the
+  // answer). The one read the gold waits on: a given dose's halo never mounts before
+  // this, so a conflict landing a beat later cannot take back gold the card just gave.
+  // Absent means "not yet", which fails toward calm.
+  doubleDoseSettled?: boolean;
 }
 
 export interface LookPayload {
@@ -294,6 +301,19 @@ interface MomentState {
   // CUL-612 — the card has been undone and is showing its removal line instead of
   // its confirmation. Reset by present(), so it describes THIS card only.
   removed: boolean;
+  // CUL-1691 §2.3 — the record an Undo has been tapped on, from the tap (set in the
+  // same synchronous block as the in-flight latch, before its await) until the next
+  // card or a failed reversal. While it names the card's record, the card is inert:
+  // every write and door returns early, and nothing visual changes, because a
+  // reversal is never shown before it has happened (CUL-612). `removed` takes over
+  // once it has.
+  undoing: string | null;
+  // CUL-1691 §2.5 — re-arm the "Removed" dwell from the frame the line LANDS. Refused
+  // unless this exact card is visible and undone: the store decides from the `removed`
+  // fact, never from a flag the caller passes (B-157). Arms through `armHide` directly,
+  // never `rescheduleHide`, whose double-dose (7s) and floor-line (8s) floors would hold
+  // a 2.4s "Removed" far past the log it reversed.
+  armRemovedDwell: (eventId: string) => void;
   // The R1 named card (CUL-606) — symptom logs + weight checks. Takes the
   // RECORD, not a sentence: the card derives what it says (§5's sentence rule).
   showNamed: (payload: Omit<NamedPayload, 'kind'>, opts?: ShowOpts) => void;
@@ -418,6 +438,10 @@ interface MomentState {
   // While the dwell is PAUSED this banks the duration instead of arming a timer
   // (see pauseDwell), so a chip's confirm hold cannot restart the clock under the
   // owner's own finger.
+  // CUL-1691 §2.3 — the log-time double-dose check reports it has finished, on every
+  // exit path. Refused unless this dose's card is visible and not undone, as the
+  // conflict patch is.
+  markDoubleDoseSettled: (eventId: string) => void;
   rescheduleHide: (durationMs: number) => void;
   // CUL-614 / §5 "Dwell" — the auto-dismiss stops while the owner is touching the
   // card, and any interaction resets it. Called from the card's root touch handlers,
@@ -718,6 +742,43 @@ function carriesSafetyNote(payload: MomentPayload): boolean {
   return false;
 }
 
+/**
+ * The completion card's tone (CUL-1691 §2.1): whether the mark carries the gold. ONE
+ * predicate the cards, the halo beat and the finish all read; no card computes its own.
+ *
+ * - Meal: celebrate unless the intake was declined (an unrated meal celebrates). A trial
+ *   heads-up never changes it (D5): the evaluator returns null when unsure and on a
+ *   repeat, and null is never an all-clear, so withholding gold beside a heads-up would
+ *   make gold read as "on the diet".
+ * - Named: its own `tone`.
+ * - Any card carrying a vet-call line is calm (team call, reversible; Dr. Chen confirms
+ *   on CUL-1712).
+ *
+ * - Dose: `doseCelebrates` (`lib/commitTone.ts`): an asserted, given dose with no
+ *   double-dose conflict. The card's halo also waits on `doubleDoseSettled`; that wait is
+ *   the arrival's, not the tone's.
+ */
+export function completionTone(payload: MealPayload | NamedPayload | MedicationPayload): MomentTone {
+  if (payload.kind === 'medication') {
+    return doseCelebrates({
+      adherence: payload.adherence,
+      isCombo: Boolean(payload.pairedFoodName),
+      vehicleIntake: payload.vehicleIntake ?? null,
+      doubleDose: payload.doubleDose,
+    }) ? 'celebrate' : 'calm';
+  }
+  if (carriesFloorLine(payload)) return 'calm';
+  if (payload.kind === 'meal') return isIntakeDecline(payload.intakeRating) ? 'calm' : 'celebrate';
+  return payload.tone;
+}
+
+/** The dim behind the named card is up (CUL-1691 R4-2): the scrim's target and the look
+ *  chips under it both read this. True through "Removed" (`undo` keeps `visible`), false
+ *  on the exit's first frame. Read with `getState()` at a tap, never from a closure. */
+export function isNamedDimUp(s: { visible: boolean; payload: MomentPayload | null }): boolean {
+  return s.visible && s.payload?.kind === 'named';
+}
+
 /** A completion card is on screen in the FAB's corner (CUL-1635). */
 export function isCornerCardUp(s: { visible: boolean; payload: MomentPayload | null }): boolean {
   return s.visible && s.payload !== null && CORNER_KINDS.has(s.payload.kind);
@@ -746,7 +807,7 @@ function present(
     // removal line leaking onto the next log. A card that was undone keeps its
     // payload through the fade, so a second log arriving during that fade would
     // otherwise render its own confirmation under the word "Removed".
-    set({ visible: true, payload, removed: false });
+    set({ visible: true, payload, removed: false, undoing: null });
     // Engines v3 PR-28b — a card revealed carrying a floor line has now said it.
     if (payload.kind === 'named' || payload.kind === 'sheetBeat' || payload.kind === 'meal') recordFloorLineShown(payload.floorLine);
     // A new card is a new undo target, so the previous card's in-flight latch must
@@ -763,6 +824,7 @@ export const useMomentStore = create<MomentState>((set) => ({
   visible: false,
   payload: null,
   removed: false,
+  undoing: null,
   showNamed: (payload, opts) =>
     present(set, { kind: 'named', ...payload }, opts, payload.floorLine ? FLOOR_LINE_DWELL_MS : NAMED_DURATION_MS),
   showMeal: (payload, opts) =>
@@ -807,6 +869,9 @@ export const useMomentStore = create<MomentState>((set) => ({
     // The card that rendered this control must still be the card on screen.
     if (payload.eventId !== eventId) return 'ignored';
     undoInFlight = true;
+    // CUL-1691 §2.3 — the card is inert from this tap, before the await below: a chip or
+    // a door pressed in the same frame as Undo must not write to a meal being removed.
+    set({ undoing: payload.eventId });
     // Rigid, on the tap — because on this surface the tap IS the destructive
     // confirm (§5.6). The History/detail Remove withholds it until the alert's
     // confirm for the opposite reason: there, a live Cancel is still on screen.
@@ -836,6 +901,8 @@ export const useMomentStore = create<MomentState>((set) => ({
     } catch (e) {
       console.error('[moment] undo failed:', e);
       undoInFlight = false;
+      // A failed reversal leaves the card as it was, controls live.
+      if (useMomentStore.getState().undoing === payload.eventId) set({ undoing: null });
       // Leave the card exactly as it was — including its controls — and give the
       // owner a fresh window to read the alert and try again. Showing the removal
       // line here would be the one unrecoverable lie this surface can tell: the
@@ -878,6 +945,11 @@ export const useMomentStore = create<MomentState>((set) => ({
   // ledger budget on a card nobody can act on. The rest are only reachable from
   // controls the removal line unmounts, and are guarded anyway: an invariant with
   // exceptions is one nobody can check.
+  armRemovedDwell: (eventId) => {
+    const s = useMomentStore.getState();
+    if (!s.visible || !s.removed || s.payload?.eventId !== eventId) return;
+    armHide(set, REMOVED_DURATION_MS);
+  },
   patchOccurredAt: (occurredAt) =>
     set((state) =>
       state.payload && !state.removed
@@ -937,11 +1009,18 @@ export const useMomentStore = create<MomentState>((set) => ({
     const s = useMomentStore.getState();
     if (s.payload?.kind !== 'medication' || s.removed) return;
     selectChip();
-    set((state) =>
-      state.payload?.kind === 'medication'
-        ? { payload: { ...state.payload, adherence } }
-        : {}
-    );
+    set((state) => {
+      if (state.payload?.kind !== 'medication') return {};
+      // CUL-1691 §2.3 — an answer moving TO 'given' re-arms the gold's wait: the check
+      // that settled was computed for the old answer (an in-doubt dose's check cannot
+      // flag a repeat), so the gold holds at 0 until the card's own recheck lands.
+      // Without this an in-doubt dose answered Given flashed gold for one local read
+      // before its conflict arrived.
+      const rearm = adherence === 'given' && state.payload.adherence !== 'given';
+      return {
+        payload: { ...state.payload, adherence, ...(rearm ? { doubleDoseSettled: false } : {}) },
+      };
+    });
   },
   patchHowGiven: (howGiven) => {
     const s = useMomentStore.getState();
@@ -964,12 +1043,19 @@ export const useMomentStore = create<MomentState>((set) => ({
     if (!state.visible || state.removed) return false;
     // The result must describe the dose as it now stands (see the interface note).
     if (state.payload.adherence !== computedForAdherence) return false;
-    set({ payload: { ...state.payload, doubleDose } });
+    // A result for the answer on screen is the check settling for it (§2.3).
+    set({ payload: { ...state.payload, doubleDose, doubleDoseSettled: true } });
     // Only a CONFLICT buys more time. The clear path (a downgrade off 'given' retiring
     // the note) must leave the chip-tap's own shorter confirm hold alone — extending
     // the dwell to read a note that just disappeared would be the opposite of calm.
     if (doubleDose.conflict) useMomentStore.getState().rescheduleHide(MEDICATION_FLAGGED_DURATION_MS);
     return true;
+  },
+  markDoubleDoseSettled: (eventId) => {
+    const state = useMomentStore.getState();
+    if (state.payload?.kind !== 'medication' || state.payload.eventId !== eventId) return;
+    if (!state.visible || state.removed || state.payload.doubleDoseSettled === true) return;
+    set({ payload: { ...state.payload, doubleDoseSettled: true } });
   },
   rescheduleHide: (durationMs) => {
     // B-157 (CUL-284) — a card carrying an unread safety note has a FLOOR on its dwell,

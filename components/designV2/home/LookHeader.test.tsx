@@ -71,6 +71,7 @@ import {
   HEADER_CHIP_ROW_GAP,
   LINE_CLEARANCE,
   LOOK_ADD,
+  LOOK_CHIP_DIM_HINT,
   LOOK_DWELL_SCREEN_READER_MS,
   LOOK_MORE,
   LookHeader,
@@ -647,5 +648,97 @@ describe('the withheld read follows the record, and never hides a concern while 
     const t = render(<LookHeader />);
     await waitFor(() => expect(t.getByText('Lively')).toBeTruthy());
     expect(t.getByText('1 more today ›')).toBeTruthy();
+  });
+});
+
+describe('dimmed means inactive (CUL-1691 R4-2)', () => {
+  // The named card's dim is up: a symptom card over Home.
+  function dimUp() {
+    useMomentStore.setState({
+      visible: true,
+      removed: false,
+      payload: {
+        kind: 'named', tone: 'calm', eventId: 'n1', petId: 'p1', occurredAt: '2026-09-17T22:00:00.000Z',
+        record: { kind: 'event', typeLabel: 'Vomit', confidence: 'witnessed', earliest: null, latest: null },
+      },
+    });
+  }
+  const WRITER_IDS = (more: boolean) => [
+    ...LOOK_HEAD_WORDS.cat.map((k) => `look-header-chip-${k}`),
+    'look-header-absence',
+    ...(more ? ['look-header-opening', 'look-header-grid-chip-clingy'] : []),
+  ];
+  /** The composite chip, so its `onPress` prop can be called directly: a disabled
+   *  `Pressable` drops `fireEvent.press`, which would pass with no guard in `write()`. */
+  function chipOnPress(t: ReturnType<typeof render>, testID: string): () => void {
+    // Walk up from the host to the first ancestor holding the chip's `onPress`.
+    let n: ReactTestInstance | null = t.getByTestId(testID);
+    while (n && typeof n.props.onPress !== 'function') n = n.parent;
+    if (!n) throw new Error(`no chip ${testID}`);
+    return n.props.onPress as () => void;
+  }
+
+  it('every writing chip is disabled with the reason as its hint, compact and with More… open', () => {
+    const t = render(<LookHeader />);
+    fireEvent.press(t.getByTestId('look-header-more'));
+    act(() => dimUp());
+    for (const id of WRITER_IDS(true)) {
+      const host = t.getByTestId(id);
+      expect(host.props.accessibilityState?.disabled).toBe(true);
+      expect(host.props.accessibilityHint).toBe(LOOK_CHIP_DIM_HINT);
+    }
+  });
+
+  it('the label is unchanged under the dim, and the gloss comes back with the card gone', () => {
+    const t = render(<LookHeader />);
+    const label = t.getByTestId('look-header-chip-subdued').props.accessibilityLabel;
+    act(() => dimUp());
+    expect(t.getByTestId('look-header-chip-subdued').props.accessibilityLabel).toBe(label);
+    act(() => useMomentStore.getState().hide());
+    const chip = t.getByTestId('look-header-chip-subdued');
+    expect(chip.props.accessibilityHint).toBe('flat, lying about');
+    expect(chip.props.accessibilityState?.disabled).toBeFalsy();
+  });
+
+  it('a chip\'s onPress called directly under the dim writes nothing and gives no press tick', async () => {
+    const t = render(<LookHeader />);
+    fireEvent.press(t.getByTestId('look-header-more'));
+    act(() => dimUp());
+    for (const id of WRITER_IDS(true)) {
+      await act(async () => {
+        chipOnPress(t, id)();
+      });
+    }
+    expect(mockInsertLook).not.toHaveBeenCalled();
+    expect(mockHaptics.selectChip).not.toHaveBeenCalled();
+  });
+
+  it('through "Removed" the chips stay off', async () => {
+    const t = render(<LookHeader />);
+    act(() => {
+      dimUp();
+      useMomentStore.setState({ removed: true });
+    });
+    expect(t.getByTestId('look-header-chip-subdued').props.accessibilityState?.disabled).toBe(true);
+    await act(async () => {
+      chipOnPress(t, 'look-header-chip-subdued')();
+    });
+    expect(mockInsertLook).not.toHaveBeenCalled();
+  });
+
+  it('the doors stay live: the intake door, More… and the emergency door', async () => {
+    const t = render(<LookHeader />);
+    act(() => dimUp());
+    fireEvent.press(t.getByTestId('look-header-intake-door'));
+    expect(useUiStore.getState().intakeDoor).toMatchObject({ petId: 'p1' });
+    fireEvent.press(t.getByTestId('look-header-more'));
+    expect(t.getByTestId('look-header-grid')).toBeTruthy();
+    expect(t.getByTestId('look-header-fewer').props.accessibilityState?.disabled).toBeFalsy();
+    await act(async () => {
+      fireEvent.press(t.getByTestId('look-header-emergency-door'));
+    });
+    // The sheet opened: its subject line names the pet.
+    expect(await t.findByText('For Nyx')).toBeTruthy();
+    expect(mockInsertLook).not.toHaveBeenCalled();
   });
 });

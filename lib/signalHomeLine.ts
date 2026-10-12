@@ -26,8 +26,9 @@
 import { careStateQuietsAsk } from './careState';
 import type { SignalFinding } from './signal';
 import { countedHomeCount, isCountedFinding } from './signalCounts';
-import { stripDayUTC, symptomWord } from './signalCopy';
+import { callFromOtherRead, incidentCallNowDated, incidentRedFlagAsk, isCallOnlyFinding, laterCallTodayIsoOf, refusedThenVomitedOf, stripDayUTC, symptomWord } from './signalCopy';
 import { riseKeptSentence } from './screenMasking';
+import { localCallDay } from './callNowDated';
 import type { SignalScreenModel } from './signalScreen';
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
 import type { SignalTrialWindow } from './signalWindows';
@@ -63,10 +64,13 @@ function numWord(n: number): string {
  *   intake       "worth keeping an eye on, and a word with your vet if it carries on" (both)
  * The conditional asks keep their lead-in: cut to "a word with your vet if it carries on"
  * they read as a fragment with no verb (pm-feature-review).
- *   red flag     "worth a call to your vet"
+ *   red flag     "worth a call to your vet"; a NEW-RULE call (Engines v3 PR-30a, CUL-1511) asks in
+ *                the tier-word map's words, "call your vet now" / "call your vet today"; after
+ *                its first day a call now is dated, "on Oct 3, the read said: call your vet now"
+ *                (PR-30c, CUL-1739), when the caller hands the clock
  *   burden       today "worth a call to your vet today" · soon "worth booking a vet visit soon"
  */
-export function signalHomeAsk(finding: SignalFinding): string | null {
+export function signalHomeAsk(finding: SignalFinding, nowMs?: number): string | null {
   switch (finding.type) {
     case 'symptom_chronicity':
       return finding.tier === 'firm' ? 'worth booking a vet visit' : 'worth a word with your vet';
@@ -77,9 +81,11 @@ export function signalHomeAsk(finding: SignalFinding): string | null {
           ? 'worth keeping an eye on, and a word with your vet if it carries on'
           : 'worth a word with your vet';
     case 'intake_decline':
+      // I5 (PR-30s): its sentence ends on I4's tail, so its ask is that tail's words.
+      if (finding.trigger === 'refused_then_vomited') return 'worth mentioning to your vet';
       return 'worth keeping an eye on, and a word with your vet if it carries on';
     case 'incident_red_flag':
-      return 'worth a call to your vet';
+      return incidentRedFlagAsk(finding, nowMs);
     case 'symptom_burden':
       return finding.tier === 'today' ? 'worth a call to your vet today' : 'worth booking a vet visit soon';
     default:
@@ -87,7 +93,7 @@ export function signalHomeAsk(finding: SignalFinding): string | null {
   }
 }
 
-function countLine(finding: SignalFinding): string | null {
+function countLine(finding: SignalFinding, nowMs: number | undefined): string | null {
   switch (finding.type) {
     case 'symptom_burden':
       // The 'today' headline names the run; when the count arm also holds, the sentence says
@@ -161,10 +167,38 @@ function countLine(finding: SignalFinding): string | null {
       // The sentence's own time anchor ("just turned down …"), with the food it names — said
       // without "down", a word the row's verdict screen reads as a direction.
       if (finding.trigger === 'refused_normal_food') return finding.refusedFoodLabel ? `${finding.refusedFoodLabel}, just now` : 'Just now';
+      // I5 (PR-30s): the count the headline names, never a rate.
+      if (finding.trigger === 'refused_then_vomited') {
+        // Through the copy module's guard, so a malformed cache reads as absent (never "NaN days").
+        const r = refusedThenVomitedOf(finding);
+        // The sentence's own form: the times only when they differ from the days.
+        if (!r) return null;
+        return r.episodeCount === r.dayCount ? `On ${plural(r.dayCount, 'day', 'days')}` : `${plural(r.episodeCount, 'time', 'times')}, on ${plural(r.dayCount, 'day', 'days')}`;
+      }
       return finding.daysBelowBaseline <= 1 ? 'Today' : `The last ${numWord(finding.daysBelowBaseline)} days`;
     case 'incident_red_flag':
-      // The headline and the eyebrow carry it: the phrase, the family and the date.
-      return null;
+      // The headline and the eyebrow carry it: the phrase, the family and the date. PR-30a: a
+      // call from a different read than the flagged photo carries that read's day here, so the
+      // ask is never pinned on the older photo (the adversarial pass, #3).
+      // Second round: a later call today under an older call now is said here too, so a fresh call
+      // always changes the row. Instants compared parsed (C-40, inside the helpers).
+      {
+        const parts: string[] = [];
+        // PR-30c: a dated call now already says its read's day in the ask, so the row does not
+        // say it twice.
+        if (finding.tierIso !== undefined && callFromOtherRead(finding) && !incidentCallNowDated(finding, nowMs)) {
+          // PR-30c: the local day, as the later call today beside it prints (one zone per row).
+          const d = localCallDay(finding.tierIso);
+          parts.push(d ? `The call is from a read on ${d.short}` : 'The call is from a later read');
+        }
+        const later = laterCallTodayIsoOf(finding);
+        if (later !== null) {
+          // PR-30c: the local day, as the dated call-now ask prints (one zone per row).
+          const d = localCallDay(later);
+          parts.push(d ? `A later read on ${d.short} says call today` : 'A later read says call today');
+        }
+        return parts.length > 0 ? parts.join(' · ') : null;
+      }
     default:
       return null;
   }
@@ -174,6 +208,12 @@ function eyebrow(finding: SignalFinding): string | null {
   if (finding.type !== 'incident_red_flag') return null;
   // The photo record's own day, UTC like the sentence ("on September 22") and the phone
   // script — never a local day that could disagree with the screen by one.
+  // PR-30a: a call-only card is dated by the read whose words its ask is, and its eyebrow never
+  // says a photo found something.
+  if (isCallOnlyFinding(finding)) {
+    const d = stripDayUTC(finding.tierIso ?? finding.mostRecentFlaggedIso);
+    return d ? `Read · ${d.short}` : 'Read';
+  }
   const day = stripDayUTC(finding.mostRecentFlaggedIso);
   if (!day) return finding.flaggedIncidentCount === 1 ? 'Photo read' : 'Photo reads';
   return finding.flaggedIncidentCount === 1 ? `Photo read · ${day.short}` : `Photo reads · latest ${day.short}`;
@@ -183,16 +223,21 @@ function eyebrow(finding: SignalFinding): string | null {
  * The row's words for one finding. Null for a finding that is not a row (the stand-down
  * marker keeps its own line), so a caller can never draw a blank door.
  */
-export function signalHomeLine(finding: SignalFinding, trial: SignalTrialWindow | null = null): SignalHomeLine | null {
+export function signalHomeLine(
+  finding: SignalFinding,
+  trial: SignalTrialWindow | null = null,
+  /** The clock a call now is read against (PR-30c). Home's row passes it; absent keeps "now". */
+  nowMs?: number,
+): SignalHomeLine | null {
   if (finding.type === 'stood_down' || !hasSignalTitleRule(finding)) return null;
   const headline = signalTitle(finding, trial);
   return {
     eyebrow: eyebrow(finding),
     headline,
-    count: countLine(finding),
+    count: countLine(finding, nowMs),
     // EN-9 (PR-23): a concern the owner said the vet knows about asks nothing until a tested
     // change brings it back (`raised_again` keeps the lane's ask word for word).
-    ask: finding.priorityClass === 'safety' && !careStateQuietsAsk(finding) ? signalHomeAsk(finding) : null,
+    ask: finding.priorityClass === 'safety' && !careStateQuietsAsk(finding) ? signalHomeAsk(finding, nowMs) : null,
   };
 }
 

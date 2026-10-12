@@ -27,7 +27,7 @@ import { commitRoutine, commitSymptom, destructiveConfirm, selectChip } from '..
 import { reverseLoggedEvent } from '../lib/undoLog';
 import { forgetFlaggedFoodInTrial } from '../lib/trialContaminant';
 import {
-  useMomentStore, whenMealCardVisible, whenMedicationCardVisible,
+  useMomentStore, whenMealCardVisible, whenMedicationCardVisible, completionTone, isNamedDimUp,
   MEDICATION_FLAGGED_DURATION_MS, REMOVED_DURATION_MS, SHEET_BEAT_DWELL_MS,
 } from './momentStore';
 import type { MealPayload, MedicationPayload, NamedPayload, SheetBeatPayload } from './momentStore';
@@ -1507,5 +1507,207 @@ describe('dismissCornerCard (CUL-1635)', () => {
     } as never);
     expect(useMomentStore.getState().dismissCornerCard()).toBe('clear');
     expect(useMomentStore.getState().visible).toBe(true);
+  });
+});
+
+// ── CUL-1691 PR 2 (spec §2.1, §2.3, §2.5) ─────────────────────────────────────────
+describe('completionTone — the one tone predicate', () => {
+  const { completionTone } = jest.requireActual<typeof import('./momentStore')>('./momentStore');
+  const FLOOR = {
+    eventId: 'v1', vomitAt: '2026-10-08T08:00:00.000Z', tier: 'call_today', self: false, device: true, petId: 'p1',
+    raised: [{ eventId: 'v1', tier: 'call_today' }],
+  } as unknown as NonNullable<MealPayload['floorLine']>;
+
+  it('a meal celebrates unless its intake was declined; unrated celebrates', () => {
+    expect(completionTone({ kind: 'meal', ...mealPayload({ intakeRating: null }) })).toBe('celebrate');
+    expect(completionTone({ kind: 'meal', ...mealPayload({ intakeRating: 'all' }) })).toBe('celebrate');
+    expect(completionTone({ kind: 'meal', ...mealPayload({ intakeRating: 'refused' }) })).toBe('calm');
+    expect(completionTone({ kind: 'meal', ...mealPayload({ intakeRating: 'picked' }) })).toBe('calm');
+  });
+
+  // D5 — a trial heads-up never changes the tone (mutation: make the predicate read
+  // `trialFlag` and this reds).
+  it('a trial heads-up never changes a meal’s tone (D5)', () => {
+    const flag = { kind: 'off_trial_list', trialId: 't', foodId: 'f', trialStartedAt: '2026-06-01', trialTargetDurationDays: 56 };
+    expect(completionTone({ kind: 'meal', ...mealPayload({ trialFlag: flag as never }) })).toBe('celebrate');
+    expect(completionTone({ kind: 'meal', ...mealPayload({ intakeRating: 'refused', trialFlag: flag as never }) })).toBe('calm');
+  });
+
+  it('any card carrying a vet-call line is calm', () => {
+    expect(completionTone({ kind: 'meal', ...mealPayload({ floorLine: FLOOR }) })).toBe('calm');
+    expect(completionTone({ kind: 'named', ...namedPayload({ tone: 'celebrate', floorLine: FLOOR }) })).toBe('calm');
+    expect(completionTone({ kind: 'named', ...namedPayload({ tone: 'celebrate' }) })).toBe('celebrate');
+  });
+});
+
+describe('undoing — inert from the Undo tap (§2.3)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    useMomentStore.getState().hide();
+    useMomentStore.setState({ payload: null, removed: false, undoing: null });
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it('is set in the same synchronous block as the latch, before the reversal resolves', async () => {
+    let resolve: () => void = () => {};
+    (reverseLoggedEvent as jest.Mock).mockImplementationOnce(() => new Promise<void>((r) => { resolve = r; }));
+    useMomentStore.getState().showMeal(mealPayload());
+    const p = useMomentStore.getState().undo('e1');
+    expect(useMomentStore.getState().undoing).toBe('e1');
+    expect(useMomentStore.getState().removed).toBe(false);
+    resolve();
+    await p;
+    expect(useMomentStore.getState().removed).toBe(true);
+  });
+
+  it('a failed reversal clears it, leaving the card live', async () => {
+    (reverseLoggedEvent as jest.Mock).mockRejectedValueOnce(new Error('disk'));
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    useMomentStore.getState().showMeal(mealPayload());
+    expect(await useMomentStore.getState().undo('e1')).toBe('failed');
+    expect(useMomentStore.getState().undoing).toBeNull();
+    err.mockRestore();
+  });
+
+  it('the next card clears it', async () => {
+    useMomentStore.getState().showMeal(mealPayload());
+    await useMomentStore.getState().undo('e1');
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e2' }));
+    expect(useMomentStore.getState().undoing).toBeNull();
+  });
+});
+
+describe('armRemovedDwell — "Removed" holds 2.4s from the frame it lands (§2.5)', () => {
+  const FLOOR = {
+    eventId: 'v1', vomitAt: '2026-10-08T08:00:00.000Z', tier: 'call_today', self: false, device: true, petId: 'p1',
+    raised: [{ eventId: 'v1', tier: 'call_today' }],
+  } as unknown as NonNullable<MealPayload['floorLine']>;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    useMomentStore.getState().hide();
+    useMomentStore.setState({ payload: null, removed: false, undoing: null });
+  });
+  afterEach(() => jest.useRealTimers());
+
+  it('is refused on a card that was not undone', () => {
+    useMomentStore.getState().showMeal(mealPayload());
+    useMomentStore.getState().armRemovedDwell('e1');
+    // The meal's own 5s dwell stands: a 2.4s re-arm would have ended it early.
+    jest.advanceTimersByTime(REMOVED_DURATION_MS + 100);
+    expect(useMomentStore.getState().visible).toBe(true);
+  });
+
+  it('is refused after a second log replaced the undone card', async () => {
+    useMomentStore.getState().showMeal(mealPayload());
+    await useMomentStore.getState().undo('e1');
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e2' }));
+    useMomentStore.getState().armRemovedDwell('e1');
+    jest.advanceTimersByTime(REMOVED_DURATION_MS + 100);
+    expect(useMomentStore.getState().visible).toBe(true);
+    expect(useMomentStore.getState().payload?.eventId).toBe('e2');
+  });
+
+  // Mutation-proven: delete the `removed` check in armRemovedDwell and the first test
+  // above reds; route it through `rescheduleHide` and the two below hold 8s / 7s.
+  it('an undone card carrying a vet-call line holds "Removed" 2.4s from the landing, not 8s', async () => {
+    useMomentStore.getState().showMeal(mealPayload({ floorLine: FLOOR }));
+    await useMomentStore.getState().undo('e1');
+    jest.advanceTimersByTime(400); // the collapse, then "Removed" lands
+    useMomentStore.getState().armRemovedDwell('e1');
+    jest.advanceTimersByTime(REMOVED_DURATION_MS - 1);
+    expect(useMomentStore.getState().visible).toBe(true);
+    jest.advanceTimersByTime(1);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('an undone dose carrying a double-dose conflict holds "Removed" 2.4s from the landing, not 7s', async () => {
+    useMomentStore.getState().showMedication(
+      medicationPayload({ doubleDose: { conflict: true, otherEventId: 'm0', gapMinutes: 95 } as never }),
+    );
+    const id = useMomentStore.getState().payload!.eventId;
+    await useMomentStore.getState().undo(id);
+    jest.advanceTimersByTime(400);
+    useMomentStore.getState().armRemovedDwell(id);
+    jest.advanceTimersByTime(REMOVED_DURATION_MS - 1);
+    expect(useMomentStore.getState().visible).toBe(true);
+    jest.advanceTimersByTime(1);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  // The haptics guard's stated blind spot (`guards/haptics.test.ts`): this store imports
+  // `lib/haptics` by design, so a vet-call line arriving through `patchFloorLine` is
+  // beyond the scan. Pinned here instead: the arrival of the line is silent.
+  it('a vet-call line patched onto a card plays no haptic verb', () => {
+    useMomentStore.getState().showMeal(mealPayload());
+    jest.clearAllMocks();
+    expect(useMomentStore.getState().patchFloorLine('e1', FLOOR)).toBe(true);
+    expect(commitRoutine).not.toHaveBeenCalled();
+    expect(commitSymptom).not.toHaveBeenCalled();
+    expect(selectChip).not.toHaveBeenCalled();
+    expect(destructiveConfirm).not.toHaveBeenCalled();
+  });
+});
+
+describe('PR 3 (CUL-1691): the dose tone, the settled flag, the dim', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    useMomentStore.getState().hide();
+    useMomentStore.setState({ payload: null });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  function med(): MedicationPayload {
+    const p = useMomentStore.getState().payload;
+    if (p?.kind !== 'medication') throw new Error('expected medication payload');
+    return p;
+  }
+
+  it('completionTone reads doseCelebrates for a dose', () => {
+    useMomentStore.getState().showMedication(medicationPayload());
+    expect(completionTone(med())).toBe('celebrate');
+    useMomentStore.getState().showMedication(medicationPayload({ adherence: 'refused' }));
+    expect(completionTone(med())).toBe('calm');
+    useMomentStore.getState().showMedication(medicationPayload({ pairedFoodName: 'Kibble', vehicleIntake: null }));
+    expect(completionTone(med())).toBe('calm');
+    useMomentStore.getState().showMedication(
+      medicationPayload({ doubleDose: { conflict: true, otherEventId: 'm0', gapMinutes: 30 } }),
+    );
+    expect(completionTone(med())).toBe('calm');
+  });
+
+  it('markDoubleDoseSettled lands on the showing dose only', () => {
+    useMomentStore.getState().showMedication(medicationPayload({ eventId: 'm1' }));
+    useMomentStore.getState().markDoubleDoseSettled('m-other');
+    expect(med().doubleDoseSettled).toBeUndefined();
+    useMomentStore.getState().markDoubleDoseSettled('m1');
+    expect(med().doubleDoseSettled).toBe(true);
+  });
+
+  it('markDoubleDoseSettled is refused on a hidden or undone card', async () => {
+    useMomentStore.getState().showMedication(medicationPayload({ eventId: 'm1' }));
+    useMomentStore.getState().hide();
+    useMomentStore.getState().markDoubleDoseSettled('m1');
+    expect(med().doubleDoseSettled).toBeUndefined();
+
+    useMomentStore.getState().showMedication(medicationPayload({ eventId: 'm2' }));
+    await useMomentStore.getState().undo('m2');
+    expect(useMomentStore.getState().removed).toBe(true);
+    useMomentStore.getState().markDoubleDoseSettled('m2');
+    expect(med().doubleDoseSettled).toBeUndefined();
+  });
+
+  it('isNamedDimUp holds for a visible named card, through Removed, and drops on hide', async () => {
+    expect(isNamedDimUp(useMomentStore.getState())).toBe(false);
+    useMomentStore.getState().showNamed(namedPayload({ eventId: 'n1' }));
+    expect(isNamedDimUp(useMomentStore.getState())).toBe(true);
+    await useMomentStore.getState().undo('n1');
+    expect(isNamedDimUp(useMomentStore.getState())).toBe(true);
+    useMomentStore.getState().hide();
+    expect(isNamedDimUp(useMomentStore.getState())).toBe(false);
+    useMomentStore.getState().showMeal(mealPayload());
+    expect(isNamedDimUp(useMomentStore.getState())).toBe(false);
   });
 });

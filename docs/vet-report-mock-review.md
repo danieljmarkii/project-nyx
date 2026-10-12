@@ -72,4 +72,5 @@ _Recruit 5–8 real practicing GPs (discovery §10). Capture per reviewer; this 
 
 | Reviewer (role) | R1 — would you act on it / want it again? | R2 — how would you receive it (phone/print/email)? | Other |
 |---|---|---|---|
-| _…_ | | | |
+| GP clinic (cat), July 2026, by email; reply relayed by front-desk staff for the vet. Report: the owner's PDF of May 2026 (pre-v15). | **Acted on it:** prescribed a novel-protein elimination trial (8 to 12 weeks, nothing else). Read the report's photos clinically: "many pictures … included hairballs and instances of regurgitation", and gave separate advice for each (trial-compatible hairball products; slow feeding for eating too fast). | Email, as a PDF attachment. A follow-up nudge was needed before a reply. | Nothing on layout, legibility or trust. |
+| Same clinic, in person, at the pet's latest visit. | Did not comment on the report itself; went through the data with the owner, which made the conversation more data-informed. | Printed PDF, brought by the owner. | First real-vet evidence (CUL-598, closed 2026-10-12). Still open: a vet's read of the v15+ report, and a cold read by a vet who has not met the pet (CUL-1312). |
