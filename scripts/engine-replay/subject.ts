@@ -42,8 +42,8 @@ export function subjectProblem(record: RecordSubject, meals: MealsSubject): stri
     return 'the record and meals exports are for different pets. Run both queries with the same pair'
   }
   if (!EVALUATION_SUBJECTS.some((s) => s.petId === record.pet_id)) {
-    return `pet ${String(record.pet_id)} is not an evaluation subject. Until the privacy policy names an ` +
-      "evaluation purpose (PMD-12, CUL-1313), only the PM's own pets and synthetic records may be replayed. " +
+    return `pet ${String(record.pet_id)} is not an evaluation subject. Until a separate opt in exists ` +
+      "(PMD-12 as re-ruled by D18, CUL-1825), only the PM's own pets and synthetic records may be replayed. " +
       'The list is scripts/engine-replay/evaluationSubjects.ts, and adding to it is a reviewed PR'
   }
   if (record.pet == null) return 'the record export has no pet'
