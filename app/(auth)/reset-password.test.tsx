@@ -1,6 +1,5 @@
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import { Alert } from 'react-native';
-import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
@@ -14,11 +13,9 @@ import ResetPasswordScreen from './reset-password';
 // a login form), and the FR-16 escape.
 
 jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }));
-jest.mock('expo-linking', () => ({ useLinkingURL: jest.fn(() => null) }));
 jest.mock('../../lib/supabase', () => ({
   supabase: { auth: { updateUser: jest.fn(), signOut: jest.fn() } },
 }));
-jest.mock('../../lib/recoveryDeepLink', () => ({ retryRecoveryExchange: jest.fn() }));
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View };
@@ -32,7 +29,6 @@ const B_SESSION = { user: { id: 'user-b' } } as never;
 beforeEach(async () => {
   jest.clearAllMocks();
   await AsyncStorage.clear();
-  (Linking.useLinkingURL as jest.Mock).mockReturnValue(null);
   mockUpdateUser.mockResolvedValue({ error: null });
   mockSignOut.mockResolvedValue({ error: null });
   useAuthStore.setState({
@@ -67,6 +63,21 @@ describe('ResetPasswordScreen — terminal states', () => {
     });
   });
 
+  it('renders §5.6 failed with a pre-filled new link, never a same-code retry (CUL-1888)', () => {
+    // auth-js deletes the verifier on any failed exchange (lib/recoveryVerifierContract.test.ts),
+    // so the only action this phone can honour is a fresh link.
+    useAuthStore.setState({ recoveryScreen: 'failed', recoveryEmail: 'jordan@email.com' });
+    const utils = render(<ResetPasswordScreen />);
+    expect(utils.getByText("Couldn't finish that")).toBeTruthy();
+    expect(utils.queryByText('Try again')).toBeNull();
+    expect(utils.getByText('Send a new link')).toBeTruthy();
+    fireEvent.press(utils.getByTestId('reset-failed-primary'));
+    expect(mockReplace).toHaveBeenCalledWith({
+      pathname: '/(auth)/forgot-password',
+      params: { email: 'jordan@email.com' },
+    });
+  });
+
   it('shows the working spinner when the exchange is in flight (gate armed, no session)', () => {
     useAuthStore.setState({ recoveryInProgress: true, session: null, recoveryScreen: null });
     const utils = render(<ResetPasswordScreen />);
@@ -80,7 +91,7 @@ describe('ResetPasswordScreen — terminal states', () => {
       const utils = render(<ResetPasswordScreen />);
       expect(utils.getByTestId('reset-working')).toBeTruthy();
       // A stalled exchange never resolves; the watchdog gives the one exit-less state
-      // an exit (§5.6 failed → Try again / Back to log in).
+      // an exit (§5.6 failed → Send a new link / Back to log in).
       act(() => {
         jest.advanceTimersByTime(20_000);
       });

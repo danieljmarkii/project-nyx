@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import * as Linking from 'expo-linking';
 import { MailOpen, Smartphone, RefreshCw } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
 import { theme } from '../../constants/theme';
@@ -22,8 +21,6 @@ import { authErrorCopy, isOffline } from '../../lib/authErrors';
 import { useAuthStore, releaseRecoveryGate } from '../../store/authStore';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { usePetStore } from '../../store/petStore';
-import { parseRecoveryLink } from '../../lib/passwordRecovery';
-import { retryRecoveryExchange } from '../../lib/recoveryDeepLink';
 import { ThemedText } from '../../components/ui/ThemedText';
 
 // The set-new-password screen and every terminal state the exchange can produce
@@ -51,9 +48,6 @@ export default function ResetPasswordScreen() {
   const recoveryInProgress = useAuthStore((s) => s.recoveryInProgress);
   const recoveryEmail = useAuthStore((s) => s.recoveryEmail);
   const pets = usePetStore((s) => s.pets);
-  // The launch/warm URL still carries the code, so a `failed` (transport) exchange
-  // can retry the SAME code (§5.6) rather than forcing a whole new link.
-  const url = Linking.useLinkingURL();
 
   const [password, setPassword] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -64,7 +58,7 @@ export default function ResetPasswordScreen() {
   // of its own, so it must never be a dead end. `exchangeCodeForSession` makes a
   // network call that RN's fetch does not time out, so a stalled-but-open connection
   // could hang it. If no outcome arrives within the window, fall to the §5.6 failed
-  // state (which has Try again + Back to log in). Generous (a normal exchange is
+  // state (Send a new link + Back to log in). Generous (a normal exchange is
   // ~1-2s) and SAFE: it does not cancel the in-flight exchange — if that resolves,
   // its outcome overrides this, and this does not fire once a session or a failure
   // state has landed. (pm-feature-review: the one exit-less state.)
@@ -156,20 +150,6 @@ export default function ResetPasswordScreen() {
     router.replace('/(auth)/login');
   }
 
-  // §5.6 "Try again" for a `failed` exchange: retry the same code if the URL still
-  // carries one; otherwise the honest fallback is to send a fresh link.
-  async function retryFailed() {
-    if (busy) return;
-    const link = parseRecoveryLink(url);
-    if (link.kind !== 'valid') {
-      sendNewLink();
-      return;
-    }
-    setBusy(true);
-    await retryRecoveryExchange(link.code);
-    setBusy(false);
-  }
-
   // ── §5.5b — wrong device (PKCE verifier absent, or no local request) ───────────
   if (recoveryScreen === 'wrong_device') {
     return (
@@ -200,16 +180,20 @@ export default function ResetPasswordScreen() {
     );
   }
 
-  // ── §5.6 — the exchange failed on transport (the link may still be good) ───────
+  // ── §5.6 — the exchange failed on transport, or the watchdog gave up ───────────
+  // No "Try again" (CUL-1888): auth-js deletes the PKCE verifier on EVERY failed
+  // exchange, network failures included, and the step 8 reconcile signOut deletes it
+  // again, so a retry of the same code can only come back `wrong_device`. The one
+  // forward action this phone can honour is a fresh link, pre-filled (FR-12).
+  // Pinned against the real library by lib/recoveryVerifierContract.test.ts.
   if (recoveryScreen === 'failed') {
     return (
       <StateScreen
         icon={<RefreshCw size={44} color={theme.colorAccent} strokeWidth={1.5} />}
         title="Couldn't finish that"
-        body="Something interrupted the connection. Your link may still be good — try again in a moment."
-        primaryLabel="Try again"
-        onPrimary={retryFailed}
-        primaryLoading={busy}
+        body="Something interrupted the connection, and a reset link can't be tried twice. Send yourself a fresh one."
+        primaryLabel="Send a new link"
+        onPrimary={sendNewLink}
         onBack={backToLogin}
         testID="reset-failed"
       />
@@ -309,7 +293,6 @@ function StateScreen({
   body,
   primaryLabel,
   onPrimary,
-  primaryLoading,
   onBack,
   testID,
 }: {
@@ -318,7 +301,6 @@ function StateScreen({
   body: string;
   primaryLabel: string;
   onPrimary: () => void;
-  primaryLoading?: boolean;
   onBack: () => void;
   testID: string;
 }) {
@@ -334,7 +316,6 @@ function StateScreen({
           <PrimaryButton
             label={primaryLabel}
             onPress={onPrimary}
-            loading={primaryLoading}
             testID={`${testID}-primary`}
           />
           <TouchableOpacity
