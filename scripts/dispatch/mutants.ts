@@ -178,9 +178,7 @@ const MUTANTS: Mutant[] = [
   { check: 'one apply per migration file', file: 'plan.ts', from: 'Math.max(1, files.size)', to: '1' },
   { check: 'only a migration in an open PR can be shown unapplied', file: 'plan.ts', from: ".filter((p) => p.state === 'open')\n    .flatMap((p) => migrationsIn(p.files)", to: ".flatMap((p) => migrationsIn(p.files)" },
   // Adversarial pass 2 (CUL-1872).
-  { check: 'a Direction tag needs no colon', file: 'sort.ts', from: "new RegExp(DIRECTION.source, 'i').test(d) || new RegExp(DIRECTION_LOOSE.source, 'i').test(d) ||", to: "new RegExp(DIRECTION.source, 'i').test(d) ||" },
-  { check: 'a Direction column is a tag', file: 'sort.ts', from: ' || DIRECTION_COLUMN.test(d);', to: ';' },
-  { check: 'a column of values is never read as LOUD', file: 'sort.ts', from: '  if (DIRECTION_COLUMN.test(description)) return undefined; // a column of values is not read\n', to: '' },
+  { check: 'a Direction tag needs no colon', file: 'sort.ts', from: " || new RegExp(DIRECTION_LOOSE.source, 'i').test(d);", to: ';' },
   { check: 'labels compare case-insensitively', file: 'sort.ts', from: "const labelKey = (l: string) => l.toLowerCase().replace(/\\s+/g, '');", to: 'const labelKey = (l: string) => l;' },
   { check: "a forecast stopgap reads the rows under the root", file: 'alarms.ts', from: 'const s = stopgapFor([root, ...rowFacts], input.liveOf);', to: 'const s = stopgapFor([root], input.liveOf);' },
   { check: "a follow-up stopgap reads every one of the row's issues", file: 'alarms.ts', from: 'const s = stopgapFor(r.issues.map((i) => input.rowOutputs?.[i]), input.liveOf);', to: 'const s = stopgapFor([input.rowOutputs?.[r.issues[0]]], input.liveOf);' },

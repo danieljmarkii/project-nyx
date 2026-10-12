@@ -147,14 +147,14 @@ export function inPopulation(c: Candidate): boolean {
 }
 
 // `Direction: QUIET`, in any shape a filer writes it: bold, a list item, a heading, a table
-// cell (`| Direction | QUIET |`) or a table column headed `Direction`, mid-line after a
+// cell (`| Direction | QUIET |`) or a table column headed `Direction` (the `|` after it is
+// a separator, and a column's first value is the `---` rule, which no tag reads), mid-line after a
 // TL;DR, and with any separator or none (`Direction — QUIET`, `Direction = LOUD`,
 // `**Direction** neither`). `Directions` and `Direction of travel` are prose, never a tag.
 const DIRECTION = /\bDirection\b[*_`\s]*[:|][*_`|\s]*([^\n|]*)/gi;
 const DIRECTION_LOOSE = /\bDirection\b[*_`\s]*(?:[—–=-]+[*_`\s]*)?(QUIET|LOUD|neither)\b/gi;
-const DIRECTION_COLUMN = /^\s*\|.*\|\s*Direction\s*\|/im;
 const hasDirectionLine = (d: string) =>
-  new RegExp(DIRECTION.source, 'i').test(d) || new RegExp(DIRECTION_LOOSE.source, 'i').test(d) || DIRECTION_COLUMN.test(d);
+  new RegExp(DIRECTION.source, 'i').test(d) || new RegExp(DIRECTION_LOOSE.source, 'i').test(d);
 
 // A class goes by its worst instance, and the burden is on LOUD: once any Direction tag is
 // present, the word "quiet" (or "quieter", "quiets") ANYWHERE in the issue makes it QUIET,
@@ -164,7 +164,6 @@ const hasDirectionLine = (d: string) =>
 export function directionOf(description: string): Direction | undefined {
   if (!hasDirectionLine(description)) return undefined;
   if (/\bquiet/i.test(description)) return 'QUIET';
-  if (DIRECTION_COLUMN.test(description)) return undefined; // a column of values is not read
   const values = [...description.matchAll(DIRECTION)].map((m) => m[1]).concat([...description.matchAll(DIRECTION_LOOSE)].map((m) => m[1]));
   let loud = false;
   for (const v of values) {
