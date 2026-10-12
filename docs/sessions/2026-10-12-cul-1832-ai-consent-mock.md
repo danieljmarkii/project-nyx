@@ -34,3 +34,7 @@ PM rulings on round 1: no onboarding step, ask in the flow like other permission
 Round 2 republished to the same URL. The doors: a permission sheet before a food or label photo and before Ask; a card in the record's read slot for a vomit or stool photo, after the save and never modal; Settings. The Signal never asks. The sheet was redesigned (illustration, three benefits with icons, one disclosure block, a "Without it" line). The Settings screen lists the benefits under the switch. The record's vet guidance names several signs, never blood alone.
 
 This unseats CUL-552's onboarding step and first-open sheet. CUL-1834 and CUL-1835 trade scope (heads-up posted on both). One new brief (D): whether anything asks at first launch; recommended nothing, with the reviewer notes and video pointing App Review at Settings. Team call: in-context doors write `source = 'backstop'`, so no migration.
+
+## Round 3 (same session)
+
+PM reactions to round 2: liked the "Skip the typing" sheet; Not now was hard to reach top right; "patterns in plain words" didn't mean anything to an owner; Allow should be the primary button. Round 3: Not now is a full-width text button under the pair ("Not now, I'll type it in" on the food door); Allow is filled and Don't allow stays a same-size outlined button (PM ruling, replacing the issue's "equal weight" line; T&S condition: Don't allow never shrinks to a link); the patterns benefit is out, and the disclosure still says the pet's name and patterns are sent. Brief D (first launch) still open.

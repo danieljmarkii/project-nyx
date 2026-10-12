@@ -122,6 +122,9 @@
   .without { font-size: 11.5px; line-height: 1.42; color: #737373; margin: 10px 2px 0; }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 22px; flex-shrink: 0; }
   .btn { height: 46px; border-radius: 12px; border: 1.5px solid #0A0A0A; background: #FFFFFF; color: #0A0A0A; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+  .btn.pri { background: #0A0A0A; color: #FFFFFF; }
+  .pair.withnn { margin-bottom: 4px; }
+  .nn { height: 44px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #525252; margin-bottom: 14px; flex-shrink: 0; }
 
   /* Details sheet */
   .sheet { position: absolute; left: 0; right: 0; bottom: 0; top: 54px; background: #FFFFFF; border-radius: 24px 24px 0 0; padding: 10px 20px 20px; display: flex; flex-direction: column; gap: 11px; overflow: hidden; }
@@ -223,13 +226,13 @@
 <div class="wrap">
 
   <header class="mast">
-    <p class="eyebrow"><span class="roundtag">Round 2 · current</span><span>CUL-1832 · PR-10</span><span>App Store 1.2.0</span><span>2026-10-12</span></p>
+    <p class="eyebrow"><span class="roundtag">Round 3 · current</span><span>CUL-1832 · PR-10</span><span>App Store 1.2.0</span><span>2026-10-12</span></p>
     <h1>AI reading: asked when it's needed</h1>
-    <p class="standfirst">Round 2 replaces round 1. The onboarding step is gone. Culprit asks <strong>the first time AI would help</strong>: a permission sheet before a label photo, a card where a vomit or stool photo's read would sit, a sheet before Ask. Every ask leads with what the owner and their pet get, then says plainly who receives what. One answer covers all of it, and Settings changes it.</p>
+    <p class="standfirst">Round 3 refines round 2 (Not now in reach, Allow as the primary button, two benefits instead of three). Round 2 replaced round 1. The onboarding step is gone. Culprit asks <strong>the first time AI would help</strong>: a permission sheet before a label photo, a card where a vomit or stool photo's read would sit, a sheet before Ask. Every ask leads with what the owner and their pet get, then says plainly who receives what. One answer covers all of it, and Settings changes it.</p>
   </header>
 
   <div class="col">
-    <h3>Your round 1 reactions, and what moved</h3>
+    <h3>Your reactions, and what moved</h3>
     <div class="tablewrap">
       <table class="spec">
         <tr><th>Reaction</th><th>Ruled</th><th>On the page</th></tr>
@@ -239,6 +242,9 @@
         <tr><td>Remove the focus on blood</td><td>Ruled</td><td>No ask or Settings line names blood. The record's vet guidance names several signs, never blood alone (§3)</td></tr>
         <tr><td>Brief B: say what you miss, carefully</td><td>Ruled: loss framing, factual</td><td>A "Without it" line on every ask and on Off</td></tr>
         <tr><td>Brief C: functional only</td><td>Ruled (D18)</td><td>No evaluation line; CUL-1313 needs its own opt in later</td></tr>
+        <tr><td><b>Round 2:</b> Not now is hard to reach in the top right</td><td>Team call</td><td>A full-width text button under the pair, in the thumb zone. On the food door it reads "Not now, I'll type it in"</td></tr>
+        <tr><td><b>Round 2:</b> what does "patterns in plain words" mean?</td><td>Team call</td><td>Out of the benefits. It meant Claude writes the sentence on a Home pattern card; without it the card uses a simpler built-in sentence, which an owner barely notices. The disclosure still says the pet's name and patterns are sent, because they are</td></tr>
+        <tr><td><b>Round 2:</b> Allow should be the primary button</td><td>Ruled. Replaces the issue's "equal weight" line</td><td>Allow filled, Don't allow a full-size outlined button beside it, Not now below. Trust and Safety's condition: Don't allow never shrinks to a link and both stay one tap</td></tr>
       </table>
     </div>
   </div>
@@ -266,7 +272,7 @@
   <section id="sheet">
     <div class="sec-head"><span class="sec-num">§2</span><h2>The permission sheet</h2></div>
     <div class="col">
-      <p>One sheet, styled like a system permission, so it reads as a choice and not a hurdle. A small picture of the thing it does, a headline for this moment, three benefits, then one grey block that says who gets what. Don't allow and Allow share one style and nothing is preselected. Not now sits top right, and on the food door it means "type it in instead".</p>
+      <p>One sheet, styled like a system permission, so it reads as a choice and not a hurdle. A small picture of the thing it does, a headline for this moment, two benefits, then one grey block that says who gets what. Allow is the primary button; Don't allow sits beside it at the same size, and nothing is preselected. Not now sits under them in the thumb zone, and on the food door it reads "Not now, I'll type it in".</p>
     </div>
 
     <div class="frames">
@@ -280,8 +286,7 @@
           <div class="dim"></div>
           <div class="psheet">
             <div class="grab"></div>
-            <div class="ptop"><span>Not now</span></div>
-            <div class="art">
+                        <div class="art">
               <div class="tile"><i class="b"></i><i></i><i></i><i style="width:60%"></i><i></i></div>
               <div class="scan"></div>
               <div class="chips">
@@ -293,12 +298,12 @@
             <div class="bens">
               <div class="ben"><span class="ic"><svg><use href="#i-label"/></svg></span><div><div class="t">Foods and medicines filled in</div><div class="d">Name, brand, ingredients or dose, read from the photo.</div></div></div>
               <div class="ben"><span class="ic"><svg><use href="#i-eye"/></svg></span><div><div class="t">A read on Mochi's photos</div><div class="d">What's in a vomit or stool photo, and whether it's worth a call.</div></div></div>
-              <div class="ben"><span class="ic"><svg><use href="#i-words"/></svg></span><div><div class="t">Mochi's patterns in plain words</div><div class="d">What Culprit finds, said in a sentence.</div></div></div>
             </div>
-            <div class="disc">To do this, Culprit sends these photos, and Mochi's name with what it finds, to <b>Claude, an AI made by Anthropic</b>. Anthropic never trains its AI on them. One answer covers all three; change it in Settings. <span class="lk">What's sent</span></div>
-            <p class="without">Without it, you type labels in, Mochi's photos are kept but not read, and patterns use plainer wording.</p>
+            <div class="disc">To do this, Culprit sends these photos to <b>Claude, an AI made by Anthropic</b>. It also sends Mochi's name with the patterns Culprit spots, so Home can describe them in a sentence. Anthropic never trains its AI on any of it. One answer covers all of this; change it in Settings. <span class="lk">What's sent</span></div>
+            <p class="without">Without it, you type labels in and Mochi's photos are kept but not read.</p>
             <div class="grow"></div>
-            <div class="pair"><div class="btn">Don't allow</div><div class="btn">Allow</div></div>
+            <div class="pair withnn"><div class="btn">Don't allow</div><div class="btn pri">Allow</div></div>
+            <div class="nn">Not now, I'll type it in</div>
           </div>
         </div>
         <p class="frame-cap"><b>A · Before a food or label photo</b>The headline and picture fit this door; the benefits and the disclosure are the same at every door, because one answer covers them all. Allow opens the camera. Don't allow and Not now open the typed form.</p>
@@ -336,8 +341,7 @@
           <div class="dim"></div>
           <div class="psheet">
             <div class="grab"></div>
-            <div class="ptop"><span>Not now</span></div>
-            <div class="art">
+                        <div class="art">
               <div class="bubble me">Is Mochi eating less this week?</div>
               <div class="bubble it">Mochi finished 9 of 14 meals this week, down from 13 of 14 last week…</div>
             </div>
@@ -345,12 +349,12 @@
             <div class="bens">
               <div class="ben"><span class="ic"><svg><use href="#i-ask"/></svg></span><div><div class="t">Answers from what you logged</div><div class="d">Meals, symptoms and dates, pulled together for you.</div></div></div>
               <div class="ben"><span class="ic"><svg><use href="#i-label"/></svg></span><div><div class="t">Labels filled in, photos read</div><div class="d">The same answer turns these on too.</div></div></div>
-              <div class="ben"><span class="ic"><svg><use href="#i-words"/></svg></span><div><div class="t">Mochi's patterns in plain words</div><div class="d">What Culprit finds, said in a sentence.</div></div></div>
             </div>
-            <div class="disc">To do this, Culprit sends your question and the parts of Mochi's record it needs, plus photos and patterns, to <b>Claude, an AI made by Anthropic</b>. Anthropic never trains its AI on them. Change it in Settings. <span class="lk">What's sent</span></div>
+            <div class="disc">To do this, Culprit sends your question and the parts of Mochi's record it needs to <b>Claude, an AI made by Anthropic</b>, along with label and symptom photos, and the patterns it spots so Home can describe them. Anthropic never trains its AI on them. Change it in Settings. <span class="lk">What's sent</span></div>
             <p class="without">Without it, Ask stays closed and photos aren't read.</p>
             <div class="grow"></div>
-            <div class="pair"><div class="btn">Don't allow</div><div class="btn">Allow</div></div>
+            <div class="pair withnn"><div class="btn">Don't allow</div><div class="btn pri">Allow</div></div>
+            <div class="nn">Not now</div>
           </div>
         </div>
         <p class="frame-cap"><b>C · Before Ask, where it's on</b>Ask is allowlisted today, so most owners never see this door. Drawn so the build has it.</p>
@@ -396,8 +400,8 @@
             <div class="askcard">
               <div class="h"><span class="ic"><svg><use href="#i-eye"/></svg></span><b>Want a read of this photo?</b></div>
               <p class="tx">Claude can describe what's in Mochi's photo and flag it if it looks worth a call to your vet.</p>
-              <p class="fine">Claude is an AI made by Anthropic. Allowing also covers labels and patterns, and Anthropic never trains on them. <span class="lk">What's sent</span></p>
-              <div class="pair"><div class="btn">Don't allow</div><div class="btn">Allow</div></div>
+              <p class="fine">Claude is an AI made by Anthropic. Allowing also covers label photos, and Anthropic never trains on any of it. <span class="lk">What's sent</span></p>
+              <div class="pair"><div class="btn">Don't allow</div><div class="btn pri">Allow</div></div>
             </div>
             <p class="guide">Until then, if Mochi keeps vomiting, brings up something unusual, or seems off, check in with your vet.</p>
           </div>
@@ -417,8 +421,8 @@
             <div class="askcard">
               <div class="h"><span class="ic"><svg><use href="#i-eye"/></svg></span><b>Want a read of this photo?</b></div>
               <p class="tx">Claude can describe what's in Mochi's photo and flag it if it looks worth a call to your vet.</p>
-              <p class="fine">Claude is an AI made by Anthropic. Allowing also covers labels and patterns, and Anthropic never trains on them. <span class="lk">What's sent</span></p>
-              <div class="pair"><div class="btn">Don't allow</div><div class="btn">Allow</div></div>
+              <p class="fine">Claude is an AI made by Anthropic. Allowing also covers label photos, and Anthropic never trains on any of it. <span class="lk">What's sent</span></p>
+              <div class="pair"><div class="btn">Don't allow</div><div class="btn pri">Allow</div></div>
             </div>
             <p class="guide">Until then, if Mochi's stool keeps looking off, you see anything unusual in it, or Mochi seems unwell, check in with your vet.</p>
           </div>
@@ -494,7 +498,7 @@
   <section id="settings">
     <div class="sec-head"><span class="sec-num">§4</span><h2>Settings</h2></div>
     <div class="col">
-      <p>The row says what the owner gets. The screen lists the three benefits, with the switch above them. Each flip saves on the spot, with no confirm in either direction. While there's no answer, the screen shows Allow and Don't allow instead, because a switch has to sit at on or off and either would look like an answer.</p>
+      <p>The row says what the owner gets. The screen lists the two benefits, with the switch above them. Each flip saves on the spot, with no confirm in either direction. While there's no answer, the screen shows Allow and Don't allow instead, because a switch has to sit at on or off and either would look like an answer.</p>
     </div>
 
     <div class="frames">
@@ -510,7 +514,7 @@
             <div class="group-l">Preferences</div>
             <div class="card">
               <div class="srow"><div class="lb"><div class="a">Notifications</div><div class="s">A summary of the day, every evening</div></div><span class="chev">›</span></div>
-              <div class="srow hi"><div class="lb"><div class="a">AI reading</div><div class="s">Label scans, photo reads, patterns in words</div></div><span class="val">On</span><span class="chev">›</span></div>
+              <div class="srow hi"><div class="lb"><div class="a">AI reading</div><div class="s">Label scans and photo reads</div></div><span class="val">On</span><span class="chev">›</span></div>
               <div class="srow"><div class="lb"><div class="a">Early access</div><div class="s">Try new features early</div></div><span class="chev">›</span></div>
             </div>
             <div class="group-l">Support</div>
@@ -532,11 +536,10 @@
               <div class="sbens">
                 <div class="ben"><span class="ic"><svg><use href="#i-label"/></svg></span><div><div class="t">Labels filled in for you</div><div class="d">Snap a food or medicine and skip the typing.</div></div></div>
                 <div class="ben"><span class="ic"><svg><use href="#i-eye"/></svg></span><div><div class="t">A read on Mochi's photos</div><div class="d">What's in a vomit or stool photo, and whether it's worth a call.</div></div></div>
-                <div class="ben"><span class="ic"><svg><use href="#i-words"/></svg></span><div><div class="t">Mochi's patterns in plain words</div><div class="d">What Culprit finds, said in a sentence.</div></div></div>
               </div>
               <div class="state"><b>On</b> since 12 Oct 2026.</div>
             </div>
-            <p class="info">Culprit sends these photos, and Mochi's name with what it finds, to Claude, an AI made by Anthropic. Anthropic never trains its AI on them. <span class="lk">What's sent</span></p>
+            <p class="info">Culprit sends these photos to Claude, an AI made by Anthropic, plus Mochi's name with the patterns it spots, so Home can describe them in a sentence. Anthropic never trains its AI on any of it. <span class="lk">What's sent</span></p>
           </div>
         </div>
         <p class="frame-cap"><b>J · On</b>The benefits are the screen. Who receives what sits under them, always visible.</p>
@@ -552,11 +555,10 @@
               <div class="sbens dim2">
                 <div class="ben"><span class="ic"><svg><use href="#i-label"/></svg></span><div><div class="t">Labels filled in for you</div><div class="d">Snap a food or medicine and skip the typing.</div></div></div>
                 <div class="ben"><span class="ic"><svg><use href="#i-eye"/></svg></span><div><div class="t">A read on Mochi's photos</div><div class="d">What's in a vomit or stool photo, and whether it's worth a call.</div></div></div>
-                <div class="ben"><span class="ic"><svg><use href="#i-words"/></svg></span><div><div class="t">Mochi's patterns in plain words</div><div class="d">What Culprit finds, said in a sentence.</div></div></div>
               </div>
-              <div class="state"><b>Off.</b> Nothing new is sent. You type labels in, Mochi's photos are kept but not read, and patterns use plainer wording. Checks that need no photo still tell you when to call your vet. Reads that already ran stay on their records.</div>
+              <div class="state"><b>Off.</b> Nothing new is sent. You type labels in, Mochi's photos are kept but not read, and patterns on Home use simpler wording. Checks that need no photo still tell you when to call your vet. Reads that already ran stay on their records.</div>
             </div>
-            <p class="info">Culprit sends these photos, and Mochi's name with what it finds, to Claude, an AI made by Anthropic. Anthropic never trains its AI on them. <span class="lk">What's sent</span></p>
+            <p class="info">Culprit sends these photos to Claude, an AI made by Anthropic, plus Mochi's name with the patterns it spots, so Home can describe them in a sentence. Anthropic never trains its AI on any of it. <span class="lk">What's sent</span></p>
           </div>
         </div>
         <p class="frame-cap"><b>K · Off</b>The benefits dim and the state line says what the owner is going without. Flipping on writes a yes and a <code>legal_acceptances</code> row against the copy on screen.</p>
@@ -572,13 +574,12 @@
               <div class="sbens">
                 <div class="ben"><span class="ic"><svg><use href="#i-label"/></svg></span><div><div class="t">Labels filled in for you</div><div class="d">Snap a food or medicine and skip the typing.</div></div></div>
                 <div class="ben"><span class="ic"><svg><use href="#i-eye"/></svg></span><div><div class="t">A read on your pet's photos</div><div class="d">What's in a vomit or stool photo, and whether it's worth a call.</div></div></div>
-                <div class="ben"><span class="ic"><svg><use href="#i-words"/></svg></span><div><div class="t">Patterns in plain words</div><div class="d">What Culprit finds, said in a sentence.</div></div></div>
               </div>
             </div>
-            <p class="info">Culprit sends these photos, and your pet's name with what it finds, to Claude, an AI made by Anthropic. Anthropic never trains its AI on them. <span class="lk">What's sent</span></p>
-            <p class="info">Without it, you type labels in, photos are kept but not read, and patterns use plainer wording.</p>
+            <p class="info">Culprit sends these photos to Claude, an AI made by Anthropic, plus your pet's name with the patterns it spots, so Home can describe them in a sentence. Anthropic never trains its AI on any of it. <span class="lk">What's sent</span></p>
+            <p class="info">Without it, you type labels in and photos are kept but not read.</p>
             <div class="grow"></div>
-            <div class="pair"><div class="btn">Don't allow</div><div class="btn">Allow</div></div>
+            <div class="pair"><div class="btn">Don't allow</div><div class="btn pri">Allow</div></div>
           </div>
         </div>
         <p class="frame-cap"><b>L · Not set</b>The reviewer's guaranteed path on the demo account. Writes <code>source = 'settings'</code>. Shown with the "your pet" fallback.</p>
@@ -607,7 +608,7 @@
       <div class="tablewrap">
         <table class="spec">
           <tr><th>From the issue, as ruled in round 2</th><th>Where</th><th></th></tr>
-          <tr><td>One ask: headline, short benefit lines, Allow and Don't allow with equal weight, nothing preselected</td><td>A, C, D, L</td><td class="ok">holds</td></tr>
+          <tr><td>One ask: headline, short benefit lines, Allow primary with Don't allow a full-size button beside it (PM, round 3), nothing preselected</td><td>A, C, D, L</td><td class="ok">holds</td></tr>
           <tr><td>Details one tap away</td><td>B</td><td class="ok">holds</td></tr>
           <tr><td>Not now writes nothing (D13)</td><td>A, C, D, §1</td><td class="ok">holds</td></tr>
           <tr><td>Anthropic named at every ask and in Settings</td><td>A, C, D, J, K, L</td><td class="ok">holds</td></tr>
