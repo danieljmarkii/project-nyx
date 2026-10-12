@@ -71,11 +71,11 @@ describe('shouldAdoptSessionDuringRecovery (B-280 rls re-review)', () => {
     expect(shouldAdoptSessionDuringRecovery('TOKEN_REFRESHED', true)).toBe(false);
     expect(shouldAdoptSessionDuringRecovery('INITIAL_SESSION', true)).toBe(false);
     expect(shouldAdoptSessionDuringRecovery('USER_UPDATED', true)).toBe(false);
-    // The exchange's own emission of B is the one session recovery adopts. A reset
-    // link's exchange emits PASSWORD_RECOVERY (CUL-1886); SIGNED_IN covers a verifier
-    // stored without the recovery suffix.
+    // _recoverAndRefresh emits SIGNED_IN carrying the STORED session, which on a cold
+    // start from a reset link is A (CUL-1886 rls review).
+    expect(shouldAdoptSessionDuringRecovery('SIGNED_IN', true)).toBe(false);
+    // The reset link exchange's PASSWORD_RECOVERY(B) is the one session recovery adopts.
     expect(shouldAdoptSessionDuringRecovery('PASSWORD_RECOVERY', true)).toBe(true);
-    expect(shouldAdoptSessionDuringRecovery('SIGNED_IN', true)).toBe(true);
   });
 });
 

@@ -39,8 +39,8 @@ interface AuthState {
   recoveryScreen: 'link_unusable' | 'wrong_device' | 'failed' | null;
   // In-memory window flag (B-280, rls-privacy re-review): true from just before the
   // §6.4 handler nulls the store session until the exchange resolves. While set, the
-  // root listener adopts ONLY the exchange's `SIGNED_IN` — never a `TOKEN_REFRESHED`
-  // re-emission of the PRE-recovery owner, which auth-js's autoRefresh can fire in the
+  // root listener adopts ONLY the exchange's `PASSWORD_RECOVERY` (CUL-1886) — never a
+  // `SIGNED_IN` / `TOKEN_REFRESHED` emission of the PRE-recovery owner, which auth-js's autoRefresh can fire in the
   // flush→exchange window and which would otherwise re-render the set-password form
   // against the wrong account. Not persisted: a force-quit ends the window (the gate,
   // which IS persisted, governs the resume).

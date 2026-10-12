@@ -31,7 +31,7 @@ const SESSION_BODY = {
   refresh_token: 'refresh-b',
   token_type: 'bearer',
   expires_in: 3600,
-  expires_at: Math.floor(Date.now() / 1000) + 3600,
+  expires_at: 4_102_444_800, // 2100-01-01, so no clock reading decides a refresh
   user: { id: 'user-b', aud: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: '2026-10-12T00:00:00Z' },
 };
 
