@@ -242,7 +242,7 @@ describe('MealCompletionCard — Undo', () => {
     seedMeal();
     const view = render(<MealCompletionCard />);
     await pressUndo(view);
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', { purgePhotos: true });
     view.getByText('Removed');
     view.getByText('Taken out of Biscuit’s record');
   });

@@ -152,7 +152,7 @@ describe('Undo (CUL-964 — the R1 rule, inherited)', () => {
     // well as the count, because the id is what the register checks its own payload
     // against — a beat that removed some other row would satisfy a bare count.
     expect(reverseLoggedEvent).toHaveBeenCalledTimes(1);
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', { purgePhotos: true });
     // The rigid tap fires on the confirm, and the confirm here IS the tap (§5.6).
     expect(destructiveConfirm).toHaveBeenCalledTimes(1);
   });

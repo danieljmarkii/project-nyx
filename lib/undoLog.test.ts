@@ -16,12 +16,17 @@ jest.mock('./db', () => ({
   getEventPetId: jest.fn(async () => 'pet-1'),
 }));
 jest.mock('./signal', () => ({ triggerSignalRegenDebounced: jest.fn() }));
-jest.mock('./sync', () => ({ syncPendingEvents: jest.fn(async () => {}) }));
+jest.mock('./sync', () => ({
+  syncPendingEvents: jest.fn(async () => {}),
+  syncPendingAttachments: jest.fn(async () => {}),
+}));
+jest.mock('./attachments', () => ({ queueRemovedLogPhotosForPurge: jest.fn(async () => {}) }));
 jest.mock('./weight', () => ({ reconcileWeightSnapshotAfterDelete: jest.fn(async () => null) }));
 
 import { getEventPetId, softDeleteEvent } from './db';
 import { triggerSignalRegenDebounced } from './signal';
-import { syncPendingEvents } from './sync';
+import { syncPendingAttachments, syncPendingEvents } from './sync';
+import { queueRemovedLogPhotosForPurge } from './attachments';
 import { reconcileWeightSnapshotAfterDelete } from './weight';
 import { reverseLoggedEvent } from './undoLog';
 import { useRecordChangeStore } from '../store/recordChangeStore';
@@ -74,12 +79,19 @@ describe('reverseLoggedEvent', () => {
     // Engines v3 PR-28b (CUL-1436) added `writeOwingFloorCheck`: the soft delete runs inside
     // it so a re-check marker shares its transaction. The marker asks the server to re-floor
     // the reads around the deleted log; it writes no adherence and no event field.
+    // CUL-639 added `syncPendingAttachments` and `queueRemovedLogPhotosForPurge`: on the
+    // completion card's Undo only (`purgePhotos`), the undone log's photo is put back in
+    // the queue, whose purge deletes it from the server (PM ruling (a)). That is a real
+    // widening, a hard delete reached from a reversal, and it is bounded on purpose: it
+    // touches only the photo of the event just removed, never a record row, and every
+    // other caller passes no flag. Its tests are below ("an undone log's photo").
     expect(imports.join('\n')).toBe(
       "import { useRecordChangeStore } from '../store/recordChangeStore';\n" +
       "import { getEventPetId, softDeleteEvent } from './db';\n" +
       "import { noteRemoval } from './removalNotice';\n" +
       "import { triggerSignalRegenDebounced } from './signal';\n" +
-      "import { syncPendingEvents } from './sync';\n" +
+      "import { syncPendingAttachments, syncPendingEvents } from './sync';\n" +
+      "import { queueRemovedLogPhotosForPurge } from './attachments';\n" +
       "import { writeOwingFloorCheck } from './incidentFloorQueue';\n" +
       "import { reconcileWeightSnapshotAfterDelete } from './weight';",
     );
@@ -104,6 +116,48 @@ describe('reverseLoggedEvent', () => {
     expect(body()).not.toMatch(/insert|update[A-Z]|\bDELETE\b/);
     expect(body()).toMatch(/reconcileWeightSnapshotAfterDelete/);
     expect(body()).toMatch(/triggerSignalRegenDebounced/);
+  });
+
+  // ── CUL-639: an undone log's photo ─────────────────────────────────────────
+  describe("an undone log's photo (CUL-639)", () => {
+    beforeEach(() => {
+      (queueRemovedLogPhotosForPurge as jest.Mock).mockClear().mockResolvedValue(undefined);
+      (syncPendingAttachments as jest.Mock).mockClear().mockResolvedValue(undefined);
+    });
+
+    it('Undo (purgePhotos) queues the photo for deletion AFTER the soft delete, and kicks the queue', async () => {
+      // After, because the queue purges an unsynced photo only once its event reads
+      // as deleted: queued first, a drain in between would push it as a live one.
+      const order: string[] = [];
+      (softDeleteEvent as jest.Mock).mockImplementation(async () => { order.push('delete'); });
+      (queueRemovedLogPhotosForPurge as jest.Mock).mockImplementation(async () => { order.push('queue'); });
+      await reverseLoggedEvent('ev-1', { purgePhotos: true });
+      expect(order).toEqual(['delete', 'queue']);
+      expect(queueRemovedLogPhotosForPurge).toHaveBeenCalledWith('ev-1');
+      expect(syncPendingAttachments).toHaveBeenCalledTimes(1);
+    });
+
+    it('every other removal leaves an uploaded photo where it is (for Recently deleted, CUL-707)', async () => {
+      await reverseLoggedEvent('ev-1');
+      await reverseLoggedEvent('ev-2', { restoreWeightSnapshotToKg: 4.2 });
+      expect(queueRemovedLogPhotosForPurge).not.toHaveBeenCalled();
+      expect(syncPendingAttachments).not.toHaveBeenCalled();
+    });
+
+    it('a failed re-queue never fails the reversal: the log is already gone', async () => {
+      (queueRemovedLogPhotosForPurge as jest.Mock).mockRejectedValueOnce(new Error('disk'));
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      await expect(reverseLoggedEvent('ev-1', { purgePhotos: true })).resolves.toBeUndefined();
+      expect(syncPendingAttachments).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
+    it('purgePhotos does not read as a weight restore', async () => {
+      // `restoreWeightSnapshotToKg` absent is not `null`; the reconcile must get no opts.
+      await reverseLoggedEvent('ev-1', { purgePhotos: true });
+      expect(reconcileWeightSnapshotAfterDelete).toHaveBeenCalledWith('ev-1', undefined);
+    });
   });
 
   // ── CUL-1665: the record's change counter ──────────────────────────────────
