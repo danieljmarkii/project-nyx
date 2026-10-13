@@ -74,6 +74,7 @@ jest.mock('./attachments', () => ({
   attachmentStillWanted: (...a: unknown[]) => mockStillWanted(...a),
   markAttachmentSyncedIfLive: (...a: unknown[]) => mockMarkLive(...a),
   purgeRemovedAttachment: (...a: unknown[]) => mockPurge(...a),
+  withUploadInFlight: (_id: string, chain: () => Promise<unknown>) => chain(),
 }));
 
 let mockIdCounter = 0;

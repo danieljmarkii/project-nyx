@@ -127,6 +127,29 @@ export async function detachOtherEventAttachments(
 
 type Db = ReturnType<typeof getDb>;
 
+// The photos whose upload chain (lib/simpleEvent.ts) is running right now. The
+// queue's purge leaves these to the chain: purging one mid-upload deletes its
+// local row, and the chain's own clean-up of the object it is about to land then
+// gets one try with nothing left to retry from (rls-privacy-reviewer, CUL-639 F3).
+// Left alone, the row survives until the chain ends; if the chain's purge fails,
+// the queue finds the row on its next cycle. In memory on purpose: a chain does
+// not outlive the process, so neither does its entry.
+const uploadsInFlight = new Set<string>();
+
+/** Run `chain` with `attachmentId` held out of the queue's purge until it settles. */
+export async function withUploadInFlight<T>(attachmentId: string, chain: () => Promise<T>): Promise<T> {
+  uploadsInFlight.add(attachmentId);
+  try {
+    return await chain();
+  } finally {
+    uploadsInFlight.delete(attachmentId);
+  }
+}
+
+export function isUploadInFlight(attachmentId: string): boolean {
+  return uploadsInFlight.has(attachmentId);
+}
+
 /**
  * Does this photo still belong on the server? False when its local row is gone
  * (removed or purged mid-upload) or its parent event has been removed.

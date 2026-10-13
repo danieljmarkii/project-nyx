@@ -546,7 +546,7 @@ describe('NamedCompletionCard — Undo', () => {
     const view = render(<NamedCompletionCard />);
     seed();
     await pressUndo(view);
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', { purgePhotos: true });
     view.getByText('Removed');
     view.getByText('Taken out of Biscuit’s record');
   });
@@ -716,7 +716,7 @@ describe('NamedCompletionCard — Undo asks first when a photo rides along', () 
     seed({ hasAttachment: true });
     await tapUndo(view);
     await press(alert, 'Remove');
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', { purgePhotos: true });
     view.getByText('Removed');
     alert.mockRestore();
   });
@@ -740,7 +740,7 @@ describe('NamedCompletionCard — Undo asks first when a photo rides along', () 
     seed();
     await tapUndo(view);
     expect(alert).not.toHaveBeenCalled();
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', { purgePhotos: true });
     view.getByText('Removed');
     alert.mockRestore();
   });
@@ -776,7 +776,7 @@ describe('NamedCompletionCard — Undo asks first when a photo rides along', () 
     // Well past the 5s dwell the card was revealed with.
     await act(async () => { jest.advanceTimersByTime(12000); });
     await press(alert, 'Remove');
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', { purgePhotos: true });
     view.getByText('Removed');
     alert.mockRestore();
   });
@@ -831,7 +831,7 @@ describe('Undo — the note gate (CUL-869)', () => {
     seed();
     await tapUndo(view);
     expect(alert).not.toHaveBeenCalled();
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', { purgePhotos: true });
     alert.mockRestore();
   });
 
@@ -852,7 +852,7 @@ describe('Undo — the note gate (CUL-869)', () => {
     seed({ hasNote: true });
     await tapUndo(view);
     await press(alert, 'Remove');
-    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', undefined);
+    expect(reverseLoggedEvent).toHaveBeenCalledWith('e1', { purgePhotos: true });
     alert.mockRestore();
   });
 

@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { getDb, getWatermark, setWatermark } from './db';
-import { markAttachmentSyncedIfLive, purgeRemovedAttachment } from './attachments';
+import { isUploadInFlight, markAttachmentSyncedIfLive, purgeRemovedAttachment } from './attachments';
 import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
 import { uploadPhoto, compressForUpload } from './storage';
 import {
@@ -1713,7 +1713,11 @@ async function drainEventAttachmentsQueue(): Promise<void> {
       WHERE a.synced = 0 AND e.deleted_at IS NOT NULL
       LIMIT 20`,
   );
-  for (const att of removed) await purgeRemovedAttachment(att);
+  // A photo whose upload chain is still running is the chain's to finish
+  // (lib/attachments.ts, withUploadInFlight); the next cycle picks it up if not.
+  for (const att of removed) {
+    if (!isUploadInFlight(att.id)) await purgeRemovedAttachment(att);
+  }
 
   // Only a live log's photo is pushed. LEFT JOIN, so a photo whose event row is
   // not on this device still goes up as it always did; only a KNOWN removal holds it.
@@ -1774,7 +1778,7 @@ export async function ensureEventAttachmentsSynced(eventId: string): Promise<voi
   const atts = await db.getAllAsync<{
     id: string; event_id: string; pet_id: string;
     local_uri: string; storage_path: string;
-    mime_type: string; taken_at: string | null;
+    mime_type: string; taken_at: string | null; synced: number;
   }>(
     // CUL-639 — never for a removed log: this runs ahead of every per-incident
     // read and re-uploads the photo, so without the join a read on a removed
@@ -1809,7 +1813,13 @@ export async function ensureEventAttachmentsSynced(eventId: string): Promise<voi
       await recordPushFailure(db, 'event_attachments', att, error);
       continue;
     }
-    if (!(await markAttachmentSyncedIfLive(db, att.id))) await purgeRemovedAttachment(att);
+    // A refusal purges only a photo that was still unsynced: one that had reached
+    // the server before its log was removed from the event screen is kept, so
+    // Recently deleted (CUL-707) can restore it (PM ruling (a); F1 of the privacy
+    // review). Re-uploaded here only because a read was asked for, it is not in flight.
+    if (!(await markAttachmentSyncedIfLive(db, att.id)) && att.synced === 0) {
+      await purgeRemovedAttachment(att);
+    }
   }
 }
 

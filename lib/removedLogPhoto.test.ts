@@ -77,6 +77,7 @@ import {
   attachmentStillWanted,
   markAttachmentSyncedIfLive,
   queueRemovedLogPhotosForPurge,
+  withUploadInFlight,
 } from './attachments';
 
 const PATH = 'p1/e1/a1.jpg';
@@ -221,6 +222,22 @@ describe('the photo queue (drainEventAttachmentsQueue)', () => {
   });
 });
 
+describe('the privacy review’s findings (CUL-639 F1, F3)', () => {
+  it('F3: a photo whose upload chain is running is left to the chain, and retried after', async () => {
+    // Purging it mid-upload would delete the local row, leaving the chain's own
+    // clean-up of the object it is about to land one try with nothing to retry from.
+    seed({ deleted: true });
+    await withUploadInFlight('a1', async () => {
+      await syncPendingAttachments();
+      expect(localRow()).toBeDefined();
+    });
+    // The chain is over and the row is still here (its purge failed, say): the
+    // next cycle finishes it.
+    await syncPendingAttachments();
+    expect(localRow()).toBeUndefined();
+  });
+});
+
 describe('Undo re-queues its photo, and the queue deletes it', () => {
   it('an uploaded photo of an undone log is deleted from the server and the phone', async () => {
     seed({ synced: 1 });
@@ -248,6 +265,20 @@ describe('ensureEventAttachmentsSynced (ahead of every per-incident read)', () =
     await ensureEventAttachmentsSynced('e1');
     expect(mockUpload).not.toHaveBeenCalled();
     expect(mockRemoteRows.size).toBe(0);
+  });
+
+  it('F1: a log removed from the event screen during a read keeps its uploaded photo', async () => {
+    // An old, synced photo is re-uploaded only because a read was asked for. The
+    // owner removes the log meanwhile; ruling (a) keeps that photo for Recently
+    // deleted (CUL-707), so the refused mark must not purge it.
+    seed({ synced: 1 });
+    mockObjects.add(PATH);
+    mockRemoteRows.add('a1');
+    mockOnUpsert = removeLog;
+    await ensureEventAttachmentsSynced('e1');
+    expect(mockObjects.has(PATH)).toBe(true);
+    expect(mockRemoteRows.has('a1')).toBe(true);
+    expect(localRow()).toBeDefined();
   });
 
   it('still re-uploads a live log’s photo', async () => {

@@ -30,7 +30,12 @@ import { triggerSignalRegenDebounced } from './signal';
 import { triggerVomitAnalysis, triggerStoolAnalysis, claimAnalysisChain } from './analysis';
 import { uploadPhoto, compressForUpload, persistCapture } from './storage';
 import { uuid, OccurredConfidence } from './utils';
-import { attachmentStillWanted, markAttachmentSyncedIfLive, purgeRemovedAttachment } from './attachments';
+import {
+  attachmentStillWanted,
+  markAttachmentSyncedIfLive,
+  purgeRemovedAttachment,
+  withUploadInFlight,
+} from './attachments';
 import { isStoolEvent } from '../constants/eventTypes';
 import { floorOnNow, insertFloorMarker, kickFloorChecks, owesFloorCheck, runOwingCheck } from './incidentFloorQueue';
 import { previewFloorAfterWrite, type FloorAnnouncement } from './incidentFloorPreview';
@@ -215,7 +220,7 @@ async function attachPhotoBestEffort(
     // Async so it doesn't delay the caller's completion beat. Self-contained: a
     // failure here is logged and dropped (the local row stays synced=0 and the
     // queue retries; the lazy detail-open trigger analyzes once the row is up).
-    void (async () => {
+    void withUploadInFlight(attId, async () => {
       let invoked = false;
       // CUL-639 — the owner can remove this log (Undo, History, the event screen)
       // at any point in this chain, and a removed log's photo must not reach the
@@ -274,7 +279,7 @@ async function attachPhotoBestEffort(
         // going to write.
         readClaim?.settle(invoked);
       }
-    })();
+    });
   } catch (e) {
     // The attachment ROW insert failed — the event is already committed, so keep
     // the log and drop the photo rather than surface a false "log failed".
