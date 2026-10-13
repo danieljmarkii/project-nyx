@@ -496,3 +496,26 @@ describe('the VoiceOver announcement (CUL-1275)', () => {
     expect(announce).not.toHaveBeenCalled();
   });
 });
+
+// CUL-1835, frame D0 — the sheet is the default symptom path, so its beat offers the read too.
+describe('SheetLogBeat — the read offer (frame D0)', () => {
+  it('offers the read and hands the record to the host as the landing', () => {
+    const onOpen = jest.fn();
+    act(() => {
+      useMomentStore.getState().showSheetBeat({
+        tone: 'calm', eventId: 'e1', occurredAt: '2026-09-14T17:33:00.000Z', hasAttachment: true, offerRead: true,
+      });
+    });
+    const view = render(
+      <SheetLogBeat onOpenRaisedRead={onOpen} tone="calm" title={SENTENCE} petName="Nyx" eventId="e1" onDone={jest.fn()} />,
+    );
+    expect(view.getByText('Photo saved. Want an AI to describe it?')).toBeTruthy();
+    fireEvent.press(view.getByTestId('named-card-read-offer'));
+    expect(onOpen).toHaveBeenCalledWith('e1');
+  });
+
+  it('absent without the flag', () => {
+    const view = showAndRender({ hasAttachment: true });
+    expect(view.queryByTestId('named-card-read-offer')).toBeNull();
+  });
+});

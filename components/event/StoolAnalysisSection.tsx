@@ -100,6 +100,23 @@ import { useObservationFold } from './useObservationFold';
 import { router } from 'expo-router';
 import { usePatternMembership } from '../../hooks/usePatternMembership';
 import { PATTERN_WORDS, patternActionLine } from '../../lib/incidentPattern';
+import { useRecordConsent } from '../../hooks/useRecordConsent';
+import { mountSendFor } from '../../lib/recordConsentRead';
+import {
+  besideCallOf,
+  cappedFrameOf,
+  photoUnreadUnderCall,
+  unreadFrameOf,
+  type MountSend,
+  type UnreadFrame,
+} from '../../lib/recordConsent';
+import { RecordAskCard, RecordOffBesideCall, RecordUnreadStatus } from '../consent/RecordConsentFrames';
+import {
+  RECORD_ASK_TITLE,
+  RECORD_NOT_READ_YET_HEADING,
+  RECORD_OFF_HEADING,
+  RECORD_UNREAD_HEADING,
+} from '../../constants/aiConsentCopy';
 
 // 'capped' / 'read_disabled' are the two states the analyze-stool function writes
 // into the row when the DESCRIPTIVE read is skipped (cap hit / flag off) AND no
@@ -199,6 +216,12 @@ export function StoolAnalysisSection(
   const latestRow = useRef<AnalysisRow | null | undefined>(undefined);
   latestRow.current = row;
   const watchTeardown = useRef<(() => void) | null>(null);
+  // CUL-1835 — the owner's AI consent and the mount trigger's gate; the vomit record's
+  // twin (VomitAnalysisSection.tsx carries the reasoning).
+  const consent = useRecordConsent();
+  const [held, setHeld] = useState<Exclude<MountSend, 'send'> | null>(null);
+  const [checkingSend, setCheckingSend] = useState(false);
+  const [askDismissed, setAskDismissed] = useState(false);
   const clockNow = useMinuteNow();
   // CUL-1510: the record around this stool (the vomits beside it, the courses on board),
   // for "What to tell them" under a call. Re-read when the row moves.
@@ -372,6 +395,16 @@ export function StoolAnalysisSection(
     // then, we trigger, so a suppressed trigger can never leave this incident
     // with no read and no escalation.
     setRow(first ?? null);
+    // CUL-1835 — a photo logged while AI reading was off is sent only on a tap.
+    setCheckingSend(true);
+    const send = await mountSendFor(eventId).catch((): MountSend => 'hold_unknown');
+    if (cancelled.current) return;
+    setCheckingSend(false);
+    if (send !== 'send') {
+      setHeld(send);
+      return;
+    }
+    setHeld(null);
     setWorking(true);
     const readAlreadyRunning = await awaitAnalysisChain(eventId);
     if (!readAlreadyRunning) {
@@ -404,6 +437,8 @@ export function StoolAnalysisSection(
 
   async function handleRetry() {
     setRetrying(true);
+    // A tap is the owner asking for this photo's read, so a held photo is held no longer.
+    setHeld(null);
     cancelled.current = false;
     // What the owner is looking at when they tap — the render this handler came from.
     const shown = row ?? null;
@@ -570,7 +605,7 @@ export function StoolAnalysisSection(
   // First load, nothing known yet. Only shown WITH a photo — a photoless event
   // stays silent until it resolves (to an escalation, or to nothing), so the
   // section never appears-then-vanishes on the common photoless path (B-363).
-  if (hasPhoto && row === undefined && !working) {
+  if (hasPhoto && ((row === undefined && !working) || checkingSend)) {
     return <IncidentReadSection arrival={arrival} announcer={announcer} pending />;
   }
 
@@ -584,6 +619,42 @@ export function StoolAnalysisSection(
   // visit with nothing watching and no control to press. A row still marked pending with
   // nothing in flight falls through to the frames below, each of which carries a retry.
   const reading = working || retrying;
+
+  // CUL-1835 — what sits where an unread photo's read would (frames E, F, H).
+  const consentPet = petName?.trim() || null;
+  function unreadSlot(frame: UnreadFrame, onTryAgain?: () => void) {
+    if (frame === 'ask' && !askDismissed) {
+      return (
+        <IncidentReadSection arrival={arrival} announcer={announcer} announcement={RECORD_ASK_TITLE} pending={false}>
+          <RecordAskCard kind="stool" petName={consentPet} onAllowed={handleRetry} onNotNow={() => setAskDismissed(true)} />
+        </IncidentReadSection>
+      );
+    }
+    const variant = frame === 'ask' ? 'unread' : frame;
+    const heading =
+      variant === 'off' ? RECORD_OFF_HEADING
+      : variant === 'read_this' ? RECORD_NOT_READ_YET_HEADING
+      : RECORD_UNREAD_HEADING;
+    return (
+      <IncidentReadSection arrival={arrival} announcer={announcer} announcement={heading} pending={false}>
+        <RecordUnreadStatus
+          kind="stool"
+          variant={variant}
+          petName={consentPet}
+          onTurnOn={() => router.push('/settings/ai-reading')}
+          onRead={handleRetry}
+          reading={retrying}
+          onTryAgain={onTryAgain}
+        />
+      </IncidentReadSection>
+    );
+  }
+
+  if (held && !reading && (!row || row.status === 'pending')) {
+    return held === 'hold_pre_yes'
+      ? unreadSlot(unreadFrameOf(consent))
+      : unreadSlot('unread', () => { setHeld(null); void start(); });
+  }
 
   // Pending / actively working — UNLESS the record already holds an escalation, which
   // stays on screen through the re-read with the re-read shown in place beside it
@@ -629,7 +700,7 @@ export function StoolAnalysisSection(
   // No dead "Try again", no empty frame. (If a flag had fired, the row is a normal
   // 'completed' escalation and falls through to the render below.)
   if (status === 'read_disabled') {
-    return null;
+    return unreadSlot(unreadFrameOf(consent));
   }
 
   // Cap reached with NO escalation flags fired → the calm cap state. Never error
@@ -638,6 +709,8 @@ export function StoolAnalysisSection(
   // is in the copy. The row carries no daily/monthly discriminator, so we use the
   // daily wording — the monthly cap (200) is effectively unreachable at the daily
   // cap of 10.
+  const cappedFrame = status === 'capped' ? cappedFrameOf(consent) : null;
+  if (cappedFrame) return unreadSlot(cappedFrame);
   if (status === 'capped') {
     return (
       <IncidentReadSection
@@ -754,6 +827,8 @@ export function StoolAnalysisSection(
   const callLabel = datedCall?.label ?? incidentReadLabel(row);
   const readLabel = pattern ? PATTERN_WORDS.label : callLabel;
 
+  const besideCall = isCallRow(row) && photoUnreadUnderCall(row, hasPhoto) ? besideCallOf(consent) : null;
+
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
   const editedSet = new Set<EditableStoolField>(
@@ -830,6 +905,14 @@ export function StoolAnalysisSection(
           onMeasure={arrival.onContentLayout}
         />
       )}
+
+      {/* CUL-1835, frame G — see the vomit record. */}
+      {besideCall === 'off_line' ? <RecordOffBesideCall petName={consentPet} /> : null}
+      {besideCall === 'ask' && !askDismissed ? (
+        <View style={styles.besideCallAsk}>
+          <RecordAskCard kind="stool" petName={consentPet} onAllowed={handleRetry} onNotNow={() => setAskDismissed(true)} />
+        </View>
+      ) : null}
 
       {!dismissed && (observations.length > 0 || canEdit) ? (
         <ObservationGrid
@@ -1010,6 +1093,9 @@ function formatEditedDate(iso: string): string {
 }
 
 const styles = StyleSheet.create({
+  besideCallAsk: {
+    marginTop: theme.space2,
+  },
   neutralCard: {
     backgroundColor: theme.colorSurfaceSubtle,
     borderColor: theme.colorBorder,

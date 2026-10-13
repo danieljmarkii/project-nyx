@@ -1200,3 +1200,31 @@ describe('NamedCompletionCard — a vet-call line patched in after the reveal (C
     }
   });
 });
+
+// CUL-1835, frame D0 — the card offers a photographed vomit or stool's read to an owner who
+// has not answered. It opens the record; it never asks the question itself.
+describe('NamedCompletionCard — the read offer (frame D0)', () => {
+  it('offers the read and opens the record through the shared door', () => {
+    mockPathname = '/event/e1';
+    const view = render(<NamedCompletionCard />);
+    seed({ hasAttachment: true, offerRead: true });
+    expect(view.getByText('Photo saved. Want an AI to describe it?')).toBeTruthy();
+    fireEvent.press(view.getByTestId('named-card-read-offer'));
+    expect(mockOpenRaised).toHaveBeenCalledWith('e1', '/event/e1', expect.any(Function));
+    // No answer is ever given on the card.
+    expect(view.queryByText('Allow')).toBeNull();
+    expect(view.queryByText("Don't allow")).toBeNull();
+  });
+
+  it('absent unless the log path asks for it', () => {
+    const view = render(<NamedCompletionCard />);
+    seed({ hasAttachment: true });
+    expect(view.queryByTestId('named-card-read-offer')).toBeNull();
+  });
+
+  it('a call keeps the slot: never beside a floor line', () => {
+    const view = render(<NamedCompletionCard />);
+    seed({ hasAttachment: true, offerRead: true, floorLine: LINE });
+    expect(view.queryByTestId('named-card-read-offer')).toBeNull();
+  });
+});

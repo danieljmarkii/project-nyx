@@ -2,13 +2,35 @@
 // render branches. A render-order regression here is exactly the class the pure
 // decode tests can't catch, so the clinical invariant is pinned as a component test:
 //   • capped (no flags) → the calm §7.3 cap state: no retry, no reassurance (row 5)
-//   • read_disabled (no flags) → renders nothing, no dead affordance
+//   • read_disabled (no flags) → the consent frames (CUL-1835): the ask, the off state, Read this photo
 //   • a fired contextual flag → the server writes a normal `completed` escalation,
 //     so the client renders "Worth a call" even though the incident was capped/off
 //     (rows 6/7 — never-reassure survives the cap by construction)
 
 // A `mock`-prefixed holder the hoisted supabase mock closes over; each test sets it.
 let mockRow: Record<string, unknown> | null = null;
+// CUL-1835: the owner's AI consent as the record renders it, and the mount trigger's
+// consent gate, stubbed at the READS (C-34): the frame decisions are the real ones. A yes
+// and 'send' unless a test says otherwise, so every older test reads as it always has.
+let mockConsent: import('../../lib/recordConsent').RecordConsent = 'granted';
+jest.mock('../../hooks/useRecordConsent', () => ({ useRecordConsent: () => mockConsent }));
+let mockMountSend: import('../../lib/recordConsent').MountSend = 'send';
+const mockMountSendFor = jest.fn(async (_id: string) => mockMountSend);
+jest.mock('../../lib/recordConsentRead', () => ({ mountSendFor: (id: string) => mockMountSendFor(id) }));
+const mockSaveAiConsent = jest.fn(async (_u: string, granted: boolean, _s: string) => ({
+  status: 'saved' as const,
+  row: { granted, copyVersion: '2026-10-12', source: 'backstop', decidedAt: '2026-10-12T10:00:00Z' },
+}));
+jest.mock('../../store/aiConsentStore', () => ({
+  ...jest.requireActual('../../store/aiConsentStore'),
+  saveAiConsent: (u: string, g: boolean, s: string) => mockSaveAiConsent(u, g, s),
+}));
+afterEach(() => {
+  mockConsent = 'granted';
+  mockMountSend = 'send';
+  // The consent tests open read watches; later suites count watches from zero.
+  (jest.requireMock('../../lib/analysis') as { watchAnalysisRow: jest.Mock }).watchAnalysisRow.mockClear();
+});
 // Set to make a Hide / Show write fail, and to hold it until the test lets it answer
 // (CUL-827's R7 case: the write must fail AFTER a re-run's restore has landed).
 let mockUpdateError: { message: string } | null = null;
@@ -184,10 +206,137 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     expect(queryByText(REASSURANCE)).toBeNull();
   });
 
-  it('read_disabled (no flags): renders nothing — no dead affordance', async () => {
+  // CUL-1835 — read_disabled never renders a blank where the read would be. Each frame is a
+  // status with the vet line, never a verdict and never a reassurance.
+  it('read_disabled, unanswered: the ask card (frame D), with the vet line whatever the answer', async () => {
+    mockConsent = 'unasked';
     mockRow = row({ status: 'read_disabled' });
-    const { toJSON } = render(<VomitAnalysisSection eventId="e2" petId="pet-1" petName="Rex" hasPhoto />);
-    await waitFor(() => expect(toJSON()).toBeNull());
+    const { findByText, getByTestId, toJSON } = render(<VomitAnalysisSection eventId="e2" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await findByText('Want a read of this photo?')).toBeTruthy();
+    expect(getByTestId('record-consent-allow')).toBeTruthy();
+    expect(getByTestId('record-consent-dont-allow')).toBeTruthy();
+    expect(getByTestId('record-consent-not-now')).toBeTruthy();
+    expect(await findByText(/^Whatever you choose, if Rex/)).toBeTruthy();
+    // The one "fine" on the card is the negation panel 1 asked for; nothing else reassures.
+    expect(await findByText(/It isn't a vet, and it can't tell you Rex is fine\./)).toBeTruthy();
+    expect(REASSURANCE.test(JSON.stringify(toJSON()).replace("can't tell you Rex is fine", ''))).toBe(false);
+  });
+
+  it('read_disabled, unanswered: Not now writes nothing and leaves the unread status and the vet line', async () => {
+    mockConsent = 'unasked';
+    mockRow = row({ status: 'read_disabled' });
+    const { findByTestId, findByText, queryByTestId } = render(<VomitAnalysisSection eventId="e2b" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await findByTestId('record-consent-not-now'));
+    expect(queryByTestId('record-consent-ask')).toBeNull();
+    expect(await findByText("The photo wasn't read")).toBeTruthy();
+    expect(await findByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.')).toBeTruthy();
+    expect(mockSaveAiConsent).not.toHaveBeenCalled();
+  });
+
+  it('read_disabled, unanswered: Allow saves a backstop yes, then reads this photo in place', async () => {
+    const { useAuthStore } = require('../../store/authStore');
+    useAuthStore.setState({ user: { id: 'u-1' } });
+    mockConsent = 'unasked';
+    mockRow = row({ status: 'read_disabled' });
+    const trigger = triggerVomitAnalysis as jest.Mock;
+    trigger.mockClear();
+    const { findByTestId } = render(<VomitAnalysisSection eventId="e2c" petId="pet-1" petName="Rex" hasPhoto />);
+    fireEvent.press(await findByTestId('record-consent-allow'));
+    await waitFor(() => expect(mockSaveAiConsent).toHaveBeenCalledWith('u-1', true, 'backstop'));
+    await waitFor(() => expect(trigger).toHaveBeenCalledWith('e2c'));
+    useAuthStore.setState({ user: null });
+  });
+
+  it('read_disabled, a recorded no: frame F, the way back, no ask', async () => {
+    mockConsent = 'declined';
+    mockRow = row({ status: 'read_disabled' });
+    const { findByText, queryByTestId, getByTestId } = render(<VomitAnalysisSection eventId="e2d" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await findByText('AI reading is off')).toBeTruthy();
+    expect(await findByText(/^Rex's photo is saved but wasn't read\./)).toBeTruthy();
+    expect(await findByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.')).toBeTruthy();
+    fireEvent.press(getByTestId('record-consent-turn-on'));
+    expect(mockRouterPush).toHaveBeenCalledWith('/settings/ai-reading');
+    expect(queryByTestId('record-consent-ask')).toBeNull();
+  });
+
+  it('read_disabled after a yes: frame H, and the tap is what sends it', async () => {
+    mockConsent = 'granted';
+    mockRow = row({ status: 'read_disabled' });
+    const trigger = triggerVomitAnalysis as jest.Mock;
+    const { findByText, findByTestId } = render(<VomitAnalysisSection eventId="e2e" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await findByText('Not read yet')).toBeTruthy();
+    expect(await findByText('If Rex keeps vomiting, brings up something unusual, or seems unwell, call your vet.')).toBeTruthy();
+    // Opening the record sent nothing: a resolved row is never re-invoked on mount.
+    expect(trigger).not.toHaveBeenCalledWith('e2e');
+    fireEvent.press(await findByTestId('record-consent-read-this'));
+    await waitFor(() => expect(trigger).toHaveBeenCalledWith('e2e'));
+  });
+
+  it('capped, then a no: the off state replaces the cap copy, which promised a read tomorrow', async () => {
+    mockConsent = 'declined';
+    mockRow = row({ status: 'capped' });
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e2f" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await findByText('AI reading is off')).toBeTruthy();
+    expect(queryByText(/will run tomorrow/)).toBeNull();
+  });
+
+  // The panel 1 edge case (CUL-1833 → CUL-1835): no row, and the photo predates the yes.
+  it('no row and a photo from before the yes: held for the tap, never sent on open', async () => {
+    mockConsent = 'granted';
+    mockMountSend = 'hold_pre_yes';
+    mockRow = null;
+    const trigger = triggerVomitAnalysis as jest.Mock;
+    trigger.mockClear();
+    const { findByText, findByTestId } = render(<VomitAnalysisSection eventId="e2g" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await findByText('Not read yet')).toBeTruthy();
+    expect(trigger).not.toHaveBeenCalled();
+    fireEvent.press(await findByTestId('record-consent-read-this'));
+    await waitFor(() => expect(trigger).toHaveBeenCalledWith('e2g'));
+  });
+
+  it('no row and a send that could not be decided: nothing sent, Try again asks again', async () => {
+    mockMountSend = 'hold_unknown';
+    mockRow = null;
+    const trigger = triggerVomitAnalysis as jest.Mock;
+    trigger.mockClear();
+    mockMountSendFor.mockClear();
+    const { findByText, findByTestId } = render(<VomitAnalysisSection eventId="e2h" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await findByText("The photo wasn't read")).toBeTruthy();
+    expect(trigger).not.toHaveBeenCalled();
+    mockMountSend = 'send';
+    fireEvent.press(await findByTestId('record-consent-try-again'));
+    await waitFor(() => expect(trigger).toHaveBeenCalledWith('e2h'));
+    expect(mockMountSendFor).toHaveBeenCalledTimes(2);
+  });
+
+  // Frame G: a no never quiets an escalation.
+  it('a call over an unread photo while off: the call leads, the off line follows, no Turn on link', async () => {
+    mockConsent = 'declined';
+    mockRow = row({ status: 'completed', recommendation: 'worth_a_call', read_text: 'Repeated, worth a call.', ai_raw_payload: null });
+    const { findByText, getByTestId, queryByTestId, toJSON } = render(<VomitAnalysisSection eventId="e2i" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await findByText('Worth a call')).toBeTruthy();
+    expect(getByTestId('record-consent-beside-call')).toBeTruthy();
+    expect(await findByText("AI reading is off. Rex's log alone is reason to call your vet.")).toBeTruthy();
+    expect(queryByTestId('record-consent-turn-on')).toBeNull();
+    const text = JSON.stringify(toJSON());
+    expect(text.indexOf('Worth a call')).toBeLessThan(text.indexOf("The photo wasn't read"));
+  });
+
+  it('a call over an unread photo while unanswered: the ask card sits under the call', async () => {
+    mockConsent = 'unasked';
+    mockRow = row({ status: 'completed', recommendation: 'worth_a_call', read_text: 'Repeated, worth a call.', ai_raw_payload: null });
+    const { findByText, getByTestId } = render(<VomitAnalysisSection eventId="e2j" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await findByText('Worth a call')).toBeTruthy();
+    expect(getByTestId('record-consent-ask')).toBeTruthy();
+  });
+
+  it('a read that ran before a later no shows as a read, with nothing added', async () => {
+    mockConsent = 'declined';
+    mockRow = row({ status: 'completed', recommendation: 'worth_a_call', read_text: 'Fresh blood visible.', ai_raw_payload: { confidence: 'high' } });
+    const { findByText, queryByTestId } = render(<VomitAnalysisSection eventId="e2k" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await findByText('Worth a call')).toBeTruthy();
+    expect(queryByTestId('record-consent-beside-call')).toBeNull();
+    expect(queryByTestId('record-consent-off')).toBeNull();
   });
 
   it('rows 6/7 — a fired contextual flag still escalates (server writes it completed)', async () => {

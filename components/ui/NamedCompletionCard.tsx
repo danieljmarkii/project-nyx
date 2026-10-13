@@ -22,6 +22,7 @@ import { ThemedText } from './ThemedText';
 import { COMPLETION_GROUND, CompletionMark } from './CompletionMark';
 import { TimeEditSheet } from './TimeEditSheet';
 import { FloorRaiseLine } from './FloorRaiseLine';
+import { ReadOfferLine } from './ReadOfferLine';
 import { openRaisedRead } from './openRaisedRead';
 import { COMPLETION_MOTION, useCompletionArrival } from '../motion/completionMotion';
 import { FOLD_LAYOUT } from '../motion/foldMotion';
@@ -458,6 +459,19 @@ export function NamedCompletionCard() {
                 onOpen={() => {
                   if (inertNow(payload.eventId)) return;
                   openRaisedRead(raisedId, pathnameRef.current, hide);
+                }}
+              />
+            </Animated.View>
+          ) : null}
+
+          {/* CUL-1835, frame D0 — the read offered, never asked. Same door as the floor
+              line: over the record it only steps aside. Never beside a floor line. */}
+          {!layFloor && named?.offerRead ? (
+            <Animated.View style={{ opacity: arrival.bodyOpacity }}>
+              <ReadOfferLine
+                onOpen={() => {
+                  if (inertNow(named.eventId)) return;
+                  openRaisedRead(named.eventId, pathnameRef.current, hide);
                 }}
               />
             </Animated.View>

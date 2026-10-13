@@ -123,6 +123,11 @@ export interface NamedPayload {
   // server's re-check lands (`patchFloorLine`). Absent means nothing to say, and is never
   // an all-clear: the floor is raise-only and says nothing calm.
   floorLine?: FloorAnnouncement | null;
+  // CUL-1835, frame D0 — a photographed vomit or stool logged while the owner has not
+  // answered the AI question. The card offers the read ("Photo saved. Want an AI to
+  // describe it?") and opens the record, where the question is asked; the card never asks
+  // it. Absent means no offer. A floor line outranks it: a call keeps the card's one slot.
+  offerRead?: boolean;
 }
 
 export interface MealPayload {
@@ -274,6 +279,8 @@ export interface SheetBeatPayload {
   hasNote?: boolean;
   // Engines v3 PR-28b — NamedPayload's field, for the sheet's own vomit and lethargy logs.
   floorLine?: FloorAnnouncement | null;
+  // CUL-1835, frame D0 — NamedPayload's field: the sheet is the default symptom path.
+  offerRead?: boolean;
 }
 
 export type MomentPayload =

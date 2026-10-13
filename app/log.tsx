@@ -27,6 +27,7 @@ import { useWidgetPetLink } from '../hooks/useWidgetPetLink';
 import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { useAppActive } from '../hooks/useAppActive';
 import { useAuthStore } from '../store/authStore';
+import { cachedAiConsent, loadAiConsent } from '../store/aiConsentStore';
 import { useEventStore } from '../store/eventStore';
 import { useMomentStore } from '../store/momentStore';
 import { getActiveRegimenForDrug, getMealForEvent, PickerFood, PickerMedication } from '../lib/db';
@@ -203,6 +204,13 @@ export default function LogModal() {
 
   // Skip type selection when a type is pre-selected via route param (e.g. FAB
   // "Log food" → meal, or the Vomit / Loose stool quick taps → vomit / diarrhea)
+  // CUL-1835 (frame D0) — the completion card offers the photo's read only to an owner who
+  // has not answered, so the answer is read here, before the save, never at it: the log
+  // never waits on the network. Not known by the save = no offer (the record still asks).
+  useEffect(() => {
+    if (user?.id && cachedAiConsent(user.id) === undefined) void loadAiConsent(user.id).catch(() => undefined);
+  }, [user?.id]);
+
   useEffect(() => {
     if (!typeParam) return;
     if (typeParam === 'meal') {
@@ -960,6 +968,9 @@ export default function LogModal() {
           // earlier in this very flow — guard what cannot be recreated.
           hasAttachment: !!attachmentUri,
           floorLine: floor,
+          // CUL-1835, frame D0: only for a photo whose read the record would ask about.
+          offerRead:
+            !!attachmentUri && hasPerIncidentRead(selectedType) && !!user?.id && cachedAiConsent(user.id) === null,
         },
         { delayMs: 300 },
       );

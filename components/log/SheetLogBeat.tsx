@@ -10,6 +10,7 @@ import { useMomentStore } from '../../store/momentStore';
 import { removedNoticeCopy, undoGateCopy, HITSLOP_ACTION_SOLO } from '../../lib/completionCard';
 import type { MomentTone } from '../../store/momentStore';
 import { FloorRaiseLine } from '../ui/FloorRaiseLine';
+import { ReadOfferLine } from '../ui/ReadOfferLine';
 
 // The completion beat that lands IN the sheet (B-745 PR 3). The root <CompletionMoment/>
 // can't be reused here: it's absoluteFill at the app root, so it renders UNDER the
@@ -130,6 +131,8 @@ export function SheetLogBeat({ tone, title, petName, eventId, onDone, onOpenRais
   const mine = minePayload !== null;
   const removed = mine && storeRemoved;
   const floorLine = !removed ? minePayload?.floorLine ?? null : null;
+  // CUL-1835, frame D0: the read offered, never beside a floor line (a call keeps the slot).
+  const offerRead = !removed && !floorLine && minePayload?.offerRead === true;
 
   const checkScale = useRef(new Animated.Value(reduced ? 1 : 0.6)).current;
   const surfaceOpacity = useRef(new Animated.Value(reduced ? 1 : 0)).current;
@@ -333,6 +336,9 @@ export function SheetLogBeat({ tone, title, petName, eventId, onDone, onOpenRais
           onOpen={() => onOpenRaisedRead(floorLine.eventId)}
         />
       ) : null}
+      {/* CUL-1835, frame D0 — opens this log's record, where the question is asked. The
+          same door and the same spacing as the floor line above. */}
+      {offerRead ? <ReadOfferLine onOpen={() => onOpenRaisedRead(eventId)} /> : null}
       {/* Undo renders UNCONDITIONALLY while the row is still there — the R1 rule,
           inherited rather than restated: the records with no other in-place way back
           are exactly the ones a conditional affordance would drop. Once removed it is

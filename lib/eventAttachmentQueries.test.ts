@@ -16,6 +16,7 @@ import {
   EVENT_ATTACHMENT_QUERY,
   EVENT_ATTACHMENTS_QUERY,
   EVENT_ATTACHMENT_ORDER,
+  EVENT_PHOTO_TIMES_QUERY,
 } from './eventAttachmentQueries';
 
 const EVENT = 'e1';
@@ -180,5 +181,18 @@ describe('event attachment ordering (B-105)', () => {
     // silently detach the row being displayed.
     expect(EVENT_ATTACHMENT_QUERY).toContain(EVENT_ATTACHMENT_ORDER);
     expect(EVENT_ATTACHMENTS_QUERY).toContain(EVENT_ATTACHMENT_ORDER);
+  });
+});
+
+// CUL-1835 — the consent gate reads every photo's attach time; the minimum is the caller's,
+// taken after parsing (lib/recordConsentRead.ts), so this read must return them all.
+describe('EVENT_PHOTO_TIMES_QUERY', () => {
+  it("returns every photo's stamp on the event, and only that event's", () => {
+    const db = freshDb();
+    addAttachment(db, 'a', '2026-10-12T10:00:00+00:00');
+    addAttachment(db, 'b', '2026-10-12T09:00:00.000Z');
+    addAttachment(db, 'c', '2026-10-12T08:00:00.000Z', { eventId: 'e2' });
+    const rows = db.prepare(EVENT_PHOTO_TIMES_QUERY).all(EVENT) as { created_at: string }[];
+    expect(rows.map((r) => r.created_at).sort()).toEqual(['2026-10-12T09:00:00.000Z', '2026-10-12T10:00:00+00:00']);
   });
 });

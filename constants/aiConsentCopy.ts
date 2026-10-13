@@ -184,3 +184,68 @@ export function offLine(pet: string | null, askOn: boolean): string {
 export const READS_STAY_LINE = 'Reads that already ran stay on their records.';
 
 export const SETTINGS_WITHOUT = 'Without it, you type labels in and photos are kept but not read. Checks that need no photo, like repeated vomiting, still work.';
+
+// ── The vomit and stool record (frames D0, D, E, F, G, H; CUL-1835) ──
+//
+// Here the pet is the RECORD's pet (C-9), never `consentPetName`: the card sits on one
+// animal's record and speaks about that animal's photo. The account-wide clause
+// ("{pet}'s name with the patterns") names the same pet, as the mock draws it.
+//
+// The vet line rides every state that isn't a read (mock §3), so a photo that wasn't
+// read never looks like a photo that was checked. Vomit names three things (keeps
+// vomiting, something unusual, seems unwell) and never blood alone (PM, 2026-10-12);
+// stool stays event neutral, because the same line renders over a normal stool.
+
+export type RecordKind = 'vomit' | 'stool';
+
+export const RECORD_ASK_TITLE = 'Want a read of this photo?';
+export const RECORD_OFF_HEADING = 'AI reading is off';
+export const RECORD_OFF_LINK = 'Turn on AI reading';
+export const RECORD_UNREAD_HEADING = 'The photo wasn\'t read';
+export const RECORD_NOT_READ_YET_HEADING = 'Not read yet';
+export const RECORD_NOT_READ_YET_BODY = 'This photo was logged while AI reading was off. It goes to Claude only if you tap below.';
+export const RECORD_READ_THIS_PHOTO = 'Read this photo';
+export const RECORD_NOT_NOW = 'Not now';
+export const RECORD_TRY_AGAIN = 'Try again';
+// D0: the completion card offers the read and never asks the question itself.
+export const COMPLETION_READ_OFFER = 'Photo saved. Want an AI to describe it?';
+export const COMPLETION_READ_OPEN = 'Open';
+
+export interface RecordAskCopy {
+  title: string;
+  body: string;
+  disclosure: string;
+  without: string;
+  vetLine: string;
+}
+
+/** The "when to call" line, on its own (frames F and H). */
+export function recordVetLine(kind: RecordKind, pet: string | null): string {
+  return kind === 'vomit'
+    ? `If ${petIs(pet)} keeps vomiting, brings up something unusual, or seems unwell, call your vet.`
+    : `If ${petOf(pet)} stool stays unusual, has something odd in it, or ${petIs(pet)} seems unwell, call your vet.`;
+}
+
+/** Frames D (vomit) and E (stool). */
+export function recordAskCopy(kind: RecordKind, pet: string | null): RecordAskCopy {
+  const check = kind === 'vomit' ? 'repeated vomiting' : 'repeated loose stool';
+  const vet = recordVetLine(kind, pet);
+  return {
+    title: RECORD_ASK_TITLE,
+    body: `Claude, an AI, can say what's in ${petOf(pet)} photo and point out some signs to call your vet about. It isn't a vet, and it can't tell you ${petIs(pet)} is fine.`,
+    disclosure: `Claude is made by Anthropic, which never trains its AI on any of it. Allowing also covers food and medicine label photos, and ${petOf(pet)} name with the patterns Culprit spots. Change it any time in Settings.`,
+    without: `Without it, the photo is kept but not read. Checks that need no photo, like ${check}, still work.`,
+    // "Whatever you choose, if …": the vet line holds whatever the answer (round 4).
+    vetLine: `Whatever you choose, ${vet.charAt(0).toLowerCase()}${vet.slice(1)}`,
+  };
+}
+
+/** Frame F's body. */
+export function recordOffBody(pet: string | null): string {
+  return `${PetOf(pet)} photo is saved but wasn't read. If you turn AI reading on, you can send this photo to Claude, an AI, for a read.`;
+}
+
+/** Frame G's off line, under a warning: it backs the log and offers no link. */
+export function recordOffBesideCall(pet: string | null): string {
+  return `AI reading is off. ${PetOf(pet)} log alone is reason to call your vet.`;
+}
