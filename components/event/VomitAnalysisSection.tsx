@@ -100,6 +100,21 @@ import { useObservationFold } from './useObservationFold';
 import { router } from 'expo-router';
 import { usePatternMembership } from '../../hooks/usePatternMembership';
 import { PATTERN_WORDS, patternActionLine } from '../../lib/incidentPattern';
+import { useRecordConsent } from '../../hooks/useRecordConsent';
+import {
+  besideCallOf,
+  cappedFrameOf,
+  photoUnreadUnderCall,
+  unreadFrameOf,
+  type UnreadFrame,
+} from '../../lib/recordConsent';
+import { RecordAskCard, RecordOffBesideCall, RecordUnreadStatus } from '../consent/RecordConsentFrames';
+import {
+  RECORD_ASK_TITLE,
+  RECORD_NOT_READ_YET_HEADING,
+  RECORD_OFF_HEADING,
+  RECORD_UNREAD_HEADING,
+} from '../../constants/aiConsentCopy';
 
 // 'capped' / 'read_disabled' are the two states the analyze-vomit function writes
 // into the row when the DESCRIPTIVE read is skipped (cap hit / flag off) AND no
@@ -204,6 +219,10 @@ export function VomitAnalysisSection(
   const latestRow = useRef<AnalysisRow | null | undefined>(undefined);
   latestRow.current = row;
   const watchTeardown = useRef<(() => void) | null>(null);
+  // CUL-1835 — the owner's AI consent, for what sits where an unread photo's read would.
+  const consent = useRecordConsent();
+  // Not now on the ask card: hidden for this visit, nothing written (D13).
+  const [askDismissed, setAskDismissed] = useState(false);
   const clockNow = useMinuteNow();
   // CUL-1510: the record around this vomit, for the floor's words under the read. Re-read
   // when the row moves, so a read raised by a neighbouring log counts that log.
@@ -472,7 +491,9 @@ export function VomitAnalysisSection(
     // today, but the pending mark above must come off on every path that did not start a
     // read, not only on the ones that return an error: a throw here would skip the restore
     // below and leave `retrying` set, which renders as a re-read that never ends.
-    const { error } = await triggerVomitAnalysis(eventId).catch((e: unknown) => ({
+    // CUL-1835: every path here is a tap (Read this photo, Allow, Re-run, Try again), so the
+    // server may read a photo logged before the owner's current yes.
+    const { error } = await triggerVomitAnalysis(eventId, { ownerTap: true }).catch((e: unknown) => ({
       error: e instanceof Error ? e.message : String(e),
     }));
     // Navigated away mid-trigger — don't setState or open a watch on an
@@ -634,6 +655,37 @@ export function VomitAnalysisSection(
 
   const status: Status | undefined = row?.status;
 
+  // CUL-1835 — what sits where an unread photo's read would: the ask (frame D), a recorded
+  // no (F), a yes over a photo still unread (H), or, while the consent is not known, the
+  // heading and the vet line. A status, never a verdict.
+  const consentPet = petName?.trim() || null;
+  function unreadSlot(frame: UnreadFrame) {
+    if (frame === 'ask' && !askDismissed) {
+      return (
+        <IncidentReadSection arrival={arrival} announcer={announcer} announcement={RECORD_ASK_TITLE} pending={false}>
+          <RecordAskCard kind="vomit" petName={consentPet} onAllowed={handleRetry} onNotNow={() => setAskDismissed(true)} />
+        </IncidentReadSection>
+      );
+    }
+    const variant = frame === 'ask' ? 'unread' : frame;
+    const heading =
+      variant === 'off' ? RECORD_OFF_HEADING
+      : variant === 'read_this' ? RECORD_NOT_READ_YET_HEADING
+      : RECORD_UNREAD_HEADING;
+    return (
+      <IncidentReadSection arrival={arrival} announcer={announcer} announcement={heading} pending={false}>
+        <RecordUnreadStatus
+          kind="vomit"
+          variant={variant}
+          petName={consentPet}
+          onTurnOn={() => router.push('/settings/ai-reading')}
+          onRead={handleRetry}
+          reading={retrying}
+        />
+      </IncidentReadSection>
+    );
+  }
+
   // A read is being produced: the server was asked and is being watched (`working`), or
   // the owner's Re-run is under way (`retrying`, from the tap: its first step is a read
   // that can hang for a fetch timeout, and a calm verdict must not stand beside a re-read
@@ -642,6 +694,7 @@ export function VomitAnalysisSection(
   // visit with nothing watching and no control to press. A row still marked pending with
   // nothing in flight falls through to the frames below, each of which carries a retry.
   const reading = working || retrying;
+
 
   // Pending / actively working — UNLESS the record already holds an escalation, which
   // stays on screen through the re-read with the re-read shown in place beside it
@@ -686,8 +739,10 @@ export function VomitAnalysisSection(
   // Descriptive read flagged off with NO escalation flags fired (§4.5) → render
   // nothing. No dead "Try again", no empty frame. (If a flag had fired, the row is a
   // normal 'completed' escalation and falls through to the render below.)
+  // Only over a photo: the consent frames speak about a photo, and a photoless record
+  // keeps its shipped silence (the server gates only photographed reads).
   if (status === 'read_disabled') {
-    return null;
+    return hasPhoto ? unreadSlot(unreadFrameOf(consent)) : null;
   }
 
   // Cap reached with NO escalation flags fired → the calm §7.3 cap state. Never
@@ -696,6 +751,10 @@ export function VomitAnalysisSection(
   // guidance is in the copy. The row carries no daily/monthly discriminator, so we
   // use the daily wording — the monthly cap (200) is effectively unreachable at the
   // daily cap of 10.
+  // A cap's copy promises a read tomorrow. Under a no it will not run, and unanswered the
+  // next run is gated, so those take the unread frames instead (capped then declined).
+  const cappedFrame = status === 'capped' && hasPhoto ? cappedFrameOf(consent) : null;
+  if (cappedFrame) return unreadSlot(cappedFrame);
   if (status === 'capped') {
     return (
       <IncidentReadSection
@@ -870,6 +929,8 @@ export function VomitAnalysisSection(
   const callLabel = datedCall?.label ?? incidentReadLabel(row);
   const readLabel = pattern ? PATTERN_WORDS.label : callLabel;
 
+  const besideCall = isCallRow(row) && photoUnreadUnderCall(row, hasPhoto) ? besideCallOf(consent) : null;
+
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
   const editedSet = new Set<EditableVomitField>(
@@ -947,6 +1008,17 @@ export function VomitAnalysisSection(
           onMeasure={arrival.onContentLayout}
         />
       )}
+
+      {/* CUL-1835, frame G — a check that needs no photo fired while the photo went unread.
+          The call above leads exactly as before; under it, the off line (no Turn on link
+          under a warning) or, with no answer yet, the ask card. Shown over a hidden note too:
+          it says what happened to the photo, not what the read said. */}
+      {besideCall === 'off_line' ? <RecordOffBesideCall petName={consentPet} /> : null}
+      {besideCall === 'ask' && !askDismissed ? (
+        <View style={styles.besideCallAsk}>
+          <RecordAskCard kind="vomit" petName={consentPet} besideCall onAllowed={handleRetry} onNotNow={() => setAskDismissed(true)} />
+        </View>
+      ) : null}
 
       {!dismissed && (observations.length > 0 || canEdit) ? (
         <ObservationGrid
@@ -1109,6 +1181,9 @@ function formatEditedDate(iso: string): string {
 }
 
 const styles = StyleSheet.create({
+  besideCallAsk: {
+    marginTop: theme.space2,
+  },
   neutralCard: {
     backgroundColor: theme.colorSurfaceSubtle,
     borderColor: theme.colorBorder,

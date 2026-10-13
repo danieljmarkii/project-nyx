@@ -81,7 +81,7 @@ class FakeQuery {
     if (this.table === 'events' && this.filters.id !== undefined) {
       const e = w.events.find((x) => x.id === this.filters.id && !(this.liveOnly && x.deleted))
       return {
-        data: e ? { ...e, pet_id: PET_ID, deleted_at: null, pets: { name: 'Nyx', species: w.species, user_id: OWNER } } : null,
+        data: e ? { created_at: e.occurred_at, ...e, pet_id: PET_ID, deleted_at: null, pets: { name: 'Nyx', species: w.species, user_id: OWNER } } : null,
         error: null,
       }
     }
@@ -97,13 +97,16 @@ class FakeQuery {
     if (this.table === 'pets') return { data: { date_of_birth: w.birthDate }, error: null }
     if (this.table === 'event_attachments') {
       const e = w.events.find((x) => x.id === this.filters.event_id)
-      return { data: e?.photo ? [{ id: '0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b', storage_path: `pet-1/${e.id}/a.jpg` }] : [], error: null }
+      return { data: e?.photo ? [{ id: '0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b', storage_path: `pet-1/${e.id}/a.jpg`, created_at: '2020-06-01T00:00:00+00:00' }] : [], error: null }
     }
     if (this.table === 'app_config') {
       return { data: w.keys.map((key) => ({ key, value: { enabled: false, allowlist: [OWNER] } })), error: null }
     }
     // CUL-552 PR 2: the owner has said yes; the declined branch is _shared/incident-analysis.pipeline.test.ts's.
     if (this.table === 'ai_consent') return { data: { granted: true }, error: null }
+    // CUL-1835: one yes long before any event here, so the photo is read as these suites expect;
+    // the held branch is _shared/incident-analysis.pipeline.test.ts's.
+    if (this.table === 'ai_consent_events') return { data: [{ granted: true, decided_at: '2020-01-01T00:00:00+00:00' }], error: null }
     if (this.table !== 'event_ai_analysis') throw new Error(`unexpected table ${this.table}`)
     const id = (this.mode === 'upsert' ? this.values.event_id : this.filters.event_id) as string
     const row = w.rows.get(id) ?? null

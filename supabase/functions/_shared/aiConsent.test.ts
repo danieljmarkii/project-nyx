@@ -5,7 +5,7 @@
 // scope, is a yes. Everything else, including a read that did not answer, is declined.
 
 import { assertEquals, assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
-import { AI_CONSENT_SCOPE, consentAllows, readAiBoundaryConsent } from './aiConsent.ts'
+import { AI_CONSENT_SCOPE, consentAllows, consentOnSince, photoNeedsTap, readAiBoundaryConsent } from './aiConsent.ts'
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 Deno.test('consentAllows — only granted === true is a yes', () => {
@@ -68,4 +68,56 @@ Deno.test('readAiBoundaryConsent — an empty uid never queries and is declined'
   const { client, calls } = fakeAdmin(() => ({ data: { granted: true }, error: null }))
   assertStrictEquals(await readAiBoundaryConsent(client, ''), false)
   assertEquals(calls, [])
+})
+
+
+// ── CUL-1835: when the current yes began, and whether a photo waits for a tap ─────────────
+
+const at = (iso: string) => Date.parse(iso)
+
+Deno.test('consentOnSince — the first yes after the latest no, read on parsed times', () => {
+  const h = [
+    { granted: true, decided_at: '2026-10-12T12:00:00+00:00' }, // a re-save
+    { granted: true, decided_at: '2026-10-12T10:00:00.000Z' },
+    { granted: false, decided_at: '2026-10-12T09:00:00Z' },
+    { granted: true, decided_at: '2026-10-12T08:00:00Z' },
+  ]
+  assertStrictEquals(consentOnSince(h), at('2026-10-12T10:00:00Z'))
+  // Order in, order out does not matter: the times decide.
+  assertStrictEquals(consentOnSince([...h].reverse()), at('2026-10-12T10:00:00Z'))
+})
+
+Deno.test('consentOnSince — no yes now, empty, or unreadable is null', () => {
+  assertStrictEquals(consentOnSince([{ granted: false, decided_at: '2026-10-12T10:00:00Z' }, { granted: true, decided_at: '2026-10-12T09:00:00Z' }]), null)
+  assertStrictEquals(consentOnSince([]), null)
+  assertStrictEquals(consentOnSince(null), null)
+  assertStrictEquals(consentOnSince([{ granted: true, decided_at: 'nope' }]), null)
+  assertStrictEquals(consentOnSince([{ granted: 'true', decided_at: '2026-10-12T10:00:00Z' }]), null)
+})
+
+const NOW = at('2026-10-12T12:00:00Z')
+const UP = ['2026-10-12T10:30:00+00:00'] // the photo reached the server inside the yes
+
+Deno.test('photoNeedsTap — logged before the yes waits; inside it does not; unknown waits', () => {
+  const since = at('2026-10-12T10:00:00Z')
+  assertStrictEquals(photoNeedsTap('2026-10-12T09:59:59.000Z', UP, since, NOW), true)
+  assertStrictEquals(photoNeedsTap('2026-10-12T10:00:00.000Z', UP, since, NOW), false)
+  assertStrictEquals(photoNeedsTap('2026-10-12T10:00:01+00:00', UP, since, NOW), false)
+  assertStrictEquals(photoNeedsTap(null, UP, since, NOW), true)
+  assertStrictEquals(photoNeedsTap('garbage', UP, since, NOW), true)
+  assertStrictEquals(photoNeedsTap('2026-10-12T11:00:00Z', UP, null, NOW), true)
+})
+
+// rls-privacy pass 2: a phone running ahead stamps a photo logged while off AFTER the yes.
+// The upload time is the database's own clock, and a stamp from the future gives it away.
+Deno.test('photoNeedsTap — a phone clock running ahead is caught by the upload time or the future stamp', () => {
+  const since = at('2026-10-12T10:00:00Z')
+  // Logged at real 09:50 while off, phone 20 min fast; uploaded at 09:51 (database clock).
+  assertStrictEquals(photoNeedsTap('2026-10-12T10:10:00.000Z', ['2026-10-12T09:51:00+00:00'], since, NOW), true)
+  // A stamp hours ahead of the database's now.
+  assertStrictEquals(photoNeedsTap('2026-10-12T15:00:00.000Z', UP, since, NOW), true)
+  // Within the tolerance, a fresh log is not mistaken for a fast clock.
+  assertStrictEquals(photoNeedsTap('2026-10-12T12:04:00.000Z', ['2026-10-12T12:04:30+00:00'], since, NOW), false)
+  // An upload time that cannot be read holds.
+  assertStrictEquals(photoNeedsTap('2026-10-12T10:10:00.000Z', [null], since, NOW), true)
 })

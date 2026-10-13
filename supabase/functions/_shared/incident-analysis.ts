@@ -56,7 +56,7 @@ import { fetchWithTimeout } from './http.ts'
 // and the one writer of every stamp migration 075 added (the rule is on engineStamps.ts).
 import { isEngineKeyOn, type EngineFlags, type EngineKey } from './engineFlags.ts'
 import { readEngineFlags } from './engineFlagsRead.ts'
-import { readAiBoundaryConsent } from './aiConsent.ts'
+import { photoNeedsTap, readAiBoundaryConsent, readConsentOnSince } from './aiConsent.ts'
 import { buildIncidentStamps, stampIncidentWrite, type IncidentStamps } from './engineStamps.ts'
 // The ONE quiet-verdict list, shared with the phone (CUL-1277). Every guard below that
 // protects an escalation already in the RECORD reads it, so a verdict a later rule wrote
@@ -1078,6 +1078,11 @@ export type GateState =
   // flag-off state: no model call, the contextual escalation still written, and otherwise
   // the 'read_disabled' row the client already renders.
   | { allow: false; reason: 'consent_declined' }
+  // CUL-1835 (PM, CUL-1913): a yes is on file, but the event was logged before that yes
+  // began and the owner did not tap for this photo. The same branch as a decline: the photo
+  // is skipped, the contextual escalation still written, and otherwise 'read_disabled',
+  // which the record renders as "Not read yet · Read this photo".
+  | { allow: false; reason: 'photo_predates_consent' }
 
 // The row status a no-read gate leaves when there is no escalation to write. Only the cap
 // says 'capped'; the flag and the owner's decline are both "reading is off" (the shipped
@@ -1433,6 +1438,8 @@ interface RequestBody {
   // default-off, so analyze-vomit/analyze-stool behaviour is unchanged for every existing
   // caller — the regression proof (each function's index.test.ts passing unmodified) holds.
   transform_only?: boolean
+  // CUL-1835: the owner tapped for this photo's read. Only `true` counts; see ownerTapped.
+  owner_tap?: boolean
   // EN-4 (CUL-1134), refused unless the descriptor has a floor and its key is on for the
   // record's owner:
   //   'floor'   — the record's rules only, over the event: never a Storage download, a model
@@ -1736,6 +1743,10 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
   // Transform-only opt-in (B-228 A8). Any non-`true` value keeps the shipped raw-for-small
   // fetch — so an untrusted/garbled body can only ever tighten the fetch, never loosen it.
   const forceTransform = body.transform_only === true
+  // CUL-1835: the owner tapped for THIS photo's read (Read this photo, Allow on the record,
+  // Re-run, Try again). Only the literal `true`; absent on every path the owner did not tap:
+  // the record's mount, the log path, the photo-add re-read and Ask's photo read.
+  const ownerTapped = body.owner_tap === true
   if (body.mode !== undefined && body.mode !== 'floor' && body.mode !== 'refloor') {
     return Response.json({ error: 'Unknown mode' }, { status: 400, headers: CORS_HEADERS })
   }
@@ -1807,7 +1818,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //    this descriptor's type.
     const { data: event } = await userClient
       .from('events')
-      .select('id, pet_id, event_type, occurred_at, deleted_at, pets(name, species, user_id)')
+      .select('id, pet_id, event_type, occurred_at, created_at, deleted_at, pets(name, species, user_id)')
       .eq('id', eventId)
       .is('deleted_at', null)
       .maybeSingle()
@@ -1861,7 +1872,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // 2. Photo(s) for this event (ordered). May be empty (logged without a photo).
     const { data: attachments } = await userClient
       .from('event_attachments')
-      .select('id, storage_path')
+      // created_at: the database's upload stamp, for CUL-1835's tap rule (photoNeedsTap).
+      .select('id, storage_path, created_at')
       .eq('event_id', eventId)
       .order('sort_order', { ascending: true })
 
@@ -1963,6 +1975,18 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       //    fails closed rather than spending the caller's yes on someone else's pet.
       if (ownerId !== user.id || !(await readAiBoundaryConsent(adminClient, user.id))) {
         gate = { allow: false, reason: 'consent_declined' }
+      } else if (
+        !ownerTapped &&
+        photoNeedsTap(
+          event.created_at,
+          (attachments ?? []).map((a) => a.created_at),
+          await readConsentOnSince(adminClient, user.id),
+          Date.now(),
+        )
+      ) {
+        //  "Sent only if you tap" (CUL-1835, aiConsent.ts): logged before the current yes,
+        //  and nobody tapped. Before the flag and the counter, like a decline: no unit spent.
+        gate = { allow: false, reason: 'photo_predates_consent' }
       } else {
         const { flagEnabled, caps } = await readGateConfig(userClient, descriptor)
         const counts = flagEnabled ? await recordUsage(userClient, descriptor.functionKey) : null

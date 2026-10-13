@@ -662,9 +662,13 @@ export default function EditEventModal() {
                 // read anyway: this call exists because the PHOTO changed, and a read of the
                 // previous photo does not answer the new one (the detail screen's reasoning).
                 if (readClaim === null) await awaitAnalysisChain(id);
+                // CUL-1835: the owner just added or replaced this photo, so the read is theirs to
+                // ask for: a tap, under whatever answer is on file now (a no still declines). Without
+                // it, a photo added under the yes to a record logged before it is held behind the old
+                // read, unseen (adversarial pass 2, finding 1).
                 const { error: readErr } = eventType === 'vomit'
-                  ? await triggerVomitAnalysis(id)
-                  : await triggerStoolAnalysis(id);
+                  ? await triggerVomitAnalysis(id, { ownerTap: true })
+                  : await triggerStoolAnalysis(id, { ownerTap: true });
                 if (readErr) console.warn('[edit-event] per-incident read trigger failed:', readErr);
                 readInvoked = !readErr;
               }
