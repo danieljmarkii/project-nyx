@@ -10,6 +10,7 @@ import {
 } from '../../lib/foodRetry';
 import { useAiConsentStore } from '../../store/aiConsentStore';
 import { useAuthStore } from '../../store/authStore';
+import { saveAiConsent } from '../../store/aiConsentStore';
 
 // CUL-769, the retry half: food detail's retry, over every way the call can answer. Two
 // things hold in all of them. No 'pending' is ever written to the server for this food
@@ -114,6 +115,14 @@ jest.mock('../../store/petStore', () => {
     resolveRecordPetName: () => 'Biscuit',
   };
 });
+// The consent door's read is stubbed (the door itself is real, `useAiConsentDoor`); each
+// test says what the read answers. 'proceed' is a yes on file.
+const mockDoorState = jest.fn();
+jest.mock('../../store/aiConsentStore', () => ({
+  ...jest.requireActual('../../store/aiConsentStore'),
+  consentDoorState: (...args: unknown[]) => mockDoorState(...args),
+  saveAiConsent: jest.fn(),
+}));
 jest.mock('../../store/snackbarStore', () => ({
   useSnackbarStore: { getState: () => ({ show: jest.fn() }) },
 }));
@@ -156,6 +165,8 @@ describe('food detail — the retry never strands the food (CUL-769)', () => {
     alert.mockClear();
     useAuthStore.setState({ user: { id: 'u1' } } as never);
     useAiConsentStore.getState().reset();
+    mockDoorState.mockReset();
+    mockDoorState.mockResolvedValue('proceed');
   });
   afterAll(() => {
     warn.mockRestore();
@@ -184,7 +195,7 @@ describe('food detail — the retry never strands the food (CUL-769)', () => {
     expect(alert).toHaveBeenCalledWith(RETRY_CAP_TITLE, foodCapCopy('daily'));
   });
 
-  it('a declined owner: nothing written, still failed, and "AI reading is off" names the setting', async () => {
+  it('a no recorded on another phone after the door read: the server refuses, and "AI reading is off" names the setting', async () => {
     useAiConsentStore.getState().setRow('u1', declined);
     mockInvoke.mockResolvedValue({ data: { feature_disabled: true }, error: null });
     const view = await renderFailed();
@@ -224,5 +235,121 @@ describe('food detail — the retry never strands the food (CUL-769)', () => {
     expect(view.queryByTestId('food-extraction-failed')).toBeNull();
     expect(view.getByDisplayValue('Chicken, rice')).toBeTruthy();
     expect(alert).not.toHaveBeenCalled();
+  });
+});
+
+// CUL-1905: the retry sends the stored label photos to Anthropic, so it waits on the
+// same consent door as Add by photo. A recorded no, and an owner who has not answered,
+// never reach the invoke from either button unless the door answers yes first.
+describe('food detail — the retry passes the AI consent door (CUL-1905)', () => {
+  // Spied here rather than at definition: the suite above restores its own spies in its
+  // afterAll, which would take spies made at definition time down with them.
+  let warn: jest.SpyInstance;
+  let alert: jest.SpyInstance;
+  beforeAll(() => {
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  });
+  beforeEach(() => {
+    mockUpdates.length = 0;
+    mockReads = 0;
+    mockReadFails = 0;
+    mockInvoke.mockReset();
+    mockInvoke.mockResolvedValue({ data: { extraction: {} }, error: null });
+    alert.mockClear();
+    useAuthStore.setState({ user: { id: 'u1' } } as never);
+    useAiConsentStore.getState().reset();
+    mockDoorState.mockReset();
+  });
+  afterAll(() => {
+    warn.mockRestore();
+    alert.mockRestore();
+  });
+
+  const COMPLETED = { ...FAILED, ai_extraction_status: 'completed', ai_extraction_error: null };
+  const BUTTONS = [
+    { name: 'Try again (failed)', fields: FAILED, testID: 'food-extraction-retry' },
+    { name: 'Re-run AI extraction (completed)', fields: COMPLETED, testID: 'food-extraction-rerun' },
+  ] as const;
+
+  async function renderWith(fields: Record<string, unknown>, testID: string) {
+    mockCurrentRow = foodRow(fields);
+    mockServerRow = mockCurrentRow;
+    const view = render(<FoodDetailScreen />);
+    await waitFor(() => expect(view.getByTestId(testID)).toBeTruthy());
+    return view;
+  }
+
+  async function press(view: ReturnType<typeof render>, testID: string) {
+    await act(async () => {
+      fireEvent.press(view.getByTestId(testID));
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+
+  describe.each(BUTTONS)('$name', ({ fields, testID }) => {
+    it('a recorded no: no sheet, nothing sent, and the owner is told the label was not read', async () => {
+      mockDoorState.mockResolvedValue('declined');
+      const view = await renderWith(fields, testID);
+      await press(view, testID);
+      expect(mockDoorState).toHaveBeenCalledWith('u1');
+      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(view.getByTestId(testID)).toBeTruthy();
+      expect(alert).toHaveBeenCalledWith(RETRY_READING_OFF_NOTICE.title, RETRY_READING_OFF_NOTICE.body);
+    });
+
+    it('no answer yet: the door asks, and Not now sends nothing', async () => {
+      mockDoorState.mockResolvedValue('ask');
+      const view = await renderWith(fields, testID);
+      await press(view, testID);
+      expect(mockInvoke).not.toHaveBeenCalled();
+      await act(async () => {
+        fireEvent.press(view.getByTestId('consent-not-now'));
+      });
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 800));
+      });
+      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(alert).not.toHaveBeenCalled();
+    });
+
+    it("no answer yet: Don't allow sends nothing", async () => {
+      mockDoorState.mockResolvedValue('ask');
+      (saveAiConsent as jest.Mock).mockResolvedValue({ status: 'saved', row: declined });
+      const view = await renderWith(fields, testID);
+      await press(view, testID);
+      await act(async () => {
+        fireEvent.press(view.getByTestId('consent-dont-allow'));
+      });
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 800));
+      });
+      expect(saveAiConsent).toHaveBeenCalledWith('u1', false, 'backstop');
+      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(alert).toHaveBeenCalledWith(RETRY_READING_OFF_NOTICE.title, RETRY_READING_OFF_NOTICE.body);
+    });
+
+    it('no answer yet: Allow saves the yes, then the label is read', async () => {
+      mockDoorState.mockResolvedValue('ask');
+      (saveAiConsent as jest.Mock).mockResolvedValue({ status: 'saved', row: { ...declined, granted: true } });
+      const view = await renderWith(fields, testID);
+      await press(view, testID);
+      expect(mockInvoke).not.toHaveBeenCalled();
+      await act(async () => {
+        fireEvent.press(view.getByTestId('consent-allow'));
+      });
+      await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(1), { timeout: 2000 });
+      expect(saveAiConsent).toHaveBeenCalledWith('u1', true, 'backstop');
+    });
+
+    it('a yes on file: no sheet, and the label is read', async () => {
+      mockDoorState.mockResolvedValue('proceed');
+      const view = await renderWith(fields, testID);
+      await press(view, testID);
+      await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(1));
+      expect(view.queryByTestId('consent-not-now')).toBeNull();
+    });
   });
 });

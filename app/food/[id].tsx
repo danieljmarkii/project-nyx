@@ -29,7 +29,9 @@ import { ExtractionFailedBanner } from '../../components/food/ExtractionFailedBa
 import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
 import { parseGateResponse } from '../../lib/appConfig';
-import { retryNoticeOf, type RetryOutcome } from '../../lib/foodRetry';
+import { retryNoticeOf, RETRY_READING_OFF_NOTICE, type RetryOutcome } from '../../lib/foodRetry';
+import { useAiConsentDoor } from '../../hooks/useAiConsentDoor';
+import { AiConsentSheet } from '../../components/consent/AiConsentSheet';
 import { useAuthStore } from '../../store/authStore';
 import { cachedAiConsent } from '../../store/aiConsentState';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
@@ -159,6 +161,9 @@ export default function FoodDetailScreen() {
 
   const [saving, setSaving] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  // CUL-1905: the retry sends the stored label photos to Anthropic, so it passes the
+  // same consent door as Add by photo (CUL-1834) before the invoke, on both buttons.
+  const consentDoor = useAiConsentDoor('label');
   const [addingPhoto, setAddingPhoto] = useState(false);
   const [removing, setRemoving] = useState(false);
 
@@ -515,6 +520,15 @@ export default function FoodDetailScreen() {
     if (!row) return;
     if (row.photo_paths.length === 0) {
       Alert.alert('Add a photo first', 'The AI needs at least one photo to extract from.');
+      return;
+    }
+    // The door answers before anything is sent. Not now leaves the food as it was (the
+    // owner can tap again); a no, given now or already on file, sends nothing and says
+    // the label wasn't read, so the tap never reads as a read that ran.
+    const answer = await consentDoor.ask();
+    if (answer === 'not_now') return;
+    if (answer === 'declined') {
+      Alert.alert(RETRY_READING_OFF_NOTICE.title, RETRY_READING_OFF_NOTICE.body);
       return;
     }
     const before = row;
@@ -909,6 +923,7 @@ export default function FoodDetailScreen() {
                 onPress={handleRetry}
                 disabled={retrying}
                 hitSlop={8}
+                testID="food-extraction-rerun"
                 activeOpacity={0.7}
               >
                 {retrying
@@ -971,6 +986,8 @@ export default function FoodDetailScreen() {
           }}
         />
       )}
+
+      <AiConsentSheet {...consentDoor.sheetProps} />
     </SafeAreaView>
   );
 }
