@@ -13,7 +13,7 @@
 // ran (the silence CUL-769's comments name).
 
 import { foodCapCopy } from '../constants/monetizationCopy';
-import type { AiConsentRow } from './aiConsent';
+import type { AiConsentRow } from './aiConsentTypes';
 import type { GateResponse } from './appConfig';
 
 export interface RetryNotice {

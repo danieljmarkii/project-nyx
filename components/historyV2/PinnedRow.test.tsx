@@ -22,12 +22,6 @@ jest.mock('expo-router', () => {
 // lib/analytics reaches lib/supabase (an import-time env guard) through
 // feedingArrangements and sync; nothing here reads a table.
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
-// The consent read the row starts (`usePhotoReadingOff`): it fails, which leaves the store
-// as each test set it (a failed read never writes a no it did not see).
-jest.mock('../../lib/aiConsent', () => ({
-  ...jest.requireActual('../../lib/aiConsent'),
-  fetchAiConsent: jest.fn(async () => ({ status: 'error' })),
-}));
 jest.mock('../../lib/sync', () => ({
   syncPendingFeedingArrangements: jest.fn(),
   syncPendingEvents: jest.fn(),
@@ -78,7 +72,7 @@ import { deriveMedicationCourses, type MedicationHistoryRegimen } from '../../li
 import { localDayIndexOf } from '../../lib/utils';
 import { latestVisitBefore } from '../../lib/visitWindow';
 import type { StoreApi, UseBoundStore } from 'zustand';
-import { useAiConsentStore } from '../../store/aiConsentStore';
+import { useAiConsentStore } from '../../store/aiConsentState';
 import { useAuthStore } from '../../store/authStore';
 import { useHistoryListStore } from '../../store/historyListStore';
 import { useHistoryScopeStore } from '../../store/historyScopeStore';

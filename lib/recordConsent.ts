@@ -7,7 +7,7 @@
 // `read_disabled` row and renders frame H. The record's taps send `ownerTap`
 // (lib/analysis.ts); nothing on the phone decides whether a photo may leave it.
 
-import type { AiConsentRow } from './aiConsent';
+import type { AiConsentRow } from './aiConsentTypes';
 
 export type RecordConsent = 'loading' | 'error' | 'unasked' | 'declined' | 'granted';
 

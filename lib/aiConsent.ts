@@ -35,12 +35,8 @@ export const AI_CONSENT_COPY_VERSION = '2026-10-12';
 export type AiConsentSource = 'backstop' | 'settings';
 export const AI_CONSENT_SOURCES: readonly AiConsentSource[] = ['backstop', 'settings'];
 
-export interface AiConsentRow {
-  granted: boolean;
-  copyVersion: string;
-  source: string;
-  decidedAt: string;
-}
+import type { AiConsentRow } from './aiConsentTypes';
+export type { AiConsentRow } from './aiConsentTypes';
 
 export type AiConsentRead =
   | { status: 'ok'; row: AiConsentRow | null }

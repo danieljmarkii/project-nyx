@@ -1,5 +1,5 @@
-import { create } from 'zustand';
 import { useAuthStore } from './authStore';
+import { cachedAiConsent, useAiConsentStore } from './aiConsentState';
 import {
   fetchAiConsent,
   writeAiConsent,
@@ -9,41 +9,19 @@ import {
   type AiConsentWrite,
 } from '../lib/aiConsent';
 
+export { cachedAiConsent, useAiConsentStore };
+
 // The phone's copy of the owner's AI consent (CUL-1834). The server row is the
 // truth and the gate reads only that; this cache exists so a door does not wait on
 // the network once an answer is known, and so Settings' row can say On / Off.
 //
-// KEYED BY USER ID. Every entry names the account it was read for, and a response
-// that lands after the account changed is dropped: on a shared phone, the next
-// owner must never be shown, or be spared a question by, the previous owner's
-// answer. `reset()` runs in `wipeLocalSession` (FR-9 parity).
+// The state itself (keyed by user id, reset on sign-out) is `store/aiConsentState.ts`.
 //
 // WHY A KNOWN ANSWER IS TRUSTED AND A MISSING ONE IS NOT. The table has no DELETE
 // for clients (migration 100 §4), so once a row exists it exists for the life of
 // the account: "this owner answered" can never go stale. "Never asked" can, because
 // the owner may have answered on another phone. So a door re-reads before it asks,
 // and only a fresh "no row" puts a sheet up.
-
-interface AiConsentState {
-  userId: string | null;
-  // undefined: not read yet for this user. null: read, and no answer on file.
-  row: AiConsentRow | null | undefined;
-  setRow: (userId: string, row: AiConsentRow | null) => void;
-  reset: () => void;
-}
-
-export const useAiConsentStore = create<AiConsentState>((set) => ({
-  userId: null,
-  row: undefined,
-  setRow: (userId, row) => set({ userId, row }),
-  reset: () => set({ userId: null, row: undefined }),
-}));
-
-// The cached answer for this user, or undefined when nothing has been read for them.
-export function cachedAiConsent(userId: string): AiConsentRow | null | undefined {
-  const s = useAiConsentStore.getState();
-  return s.userId === userId ? s.row : undefined;
-}
 
 // Reads the server row into the cache. A stale response (the account changed while
 // it was in flight) still returns to its caller but never lands in the cache.
