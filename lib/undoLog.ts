@@ -96,7 +96,8 @@ import { useRecordChangeStore } from '../store/recordChangeStore';
 import { getEventPetId, softDeleteEvent } from './db';
 import { noteRemoval } from './removalNotice';
 import { triggerSignalRegenDebounced } from './signal';
-import { syncPendingEvents } from './sync';
+import { syncPendingAttachments, syncPendingEvents } from './sync';
+import { queueRemovedLogPhotosForPurge } from './attachments';
 import { writeOwingFloorCheck } from './incidentFloorQueue';
 import { reconcileWeightSnapshotAfterDelete } from './weight';
 
@@ -117,10 +118,16 @@ import { reconcileWeightSnapshotAfterDelete } from './weight';
  * With no reading left to fall back on, that is the only correct answer — see
  * lib/weight.ts's delete-side header for why the alternative (nulling) loses data.
  * Omitted by every other caller, and omission is not the same as `null`.
+ *
+ * `purgePhotos` is the completion card's too (CUL-639, PM ruling (a)): an undone
+ * log's photo is deleted from the server even if its upload already landed. Every
+ * other removal leaves an uploaded photo where it is, so a later restore (CUL-707)
+ * can bring it back; a photo still uploading is deleted on every path, by the
+ * upload itself and the queue (lib/attachments.ts).
  */
 export async function reverseLoggedEvent(
   eventId: string,
-  opts?: { restoreWeightSnapshotToKg: number | null },
+  opts?: { restoreWeightSnapshotToKg?: number | null; purgePhotos?: boolean },
 ): Promise<void> {
   // Engines v3 PR-28b (CUL-1436, §8.3): deleting a vomit, lethargy or meal log re-checks
   // the reads around it, and the marker shares the soft delete's transaction. The server's
@@ -139,8 +146,24 @@ export async function reverseLoggedEvent(
   // fired and not waited on), so a reversal still resolves at local-write speed.
   await reconcileWeightSnapshotAfterDelete(
     eventId,
-    opts ? { restoreToKg: opts.restoreWeightSnapshotToKg } : undefined,
+    opts?.restoreWeightSnapshotToKg !== undefined
+      ? { restoreToKg: opts.restoreWeightSnapshotToKg }
+      : undefined,
   );
+  // CUL-639 — after the soft delete, never before: the queue purges an unsynced
+  // photo only once its event reads as deleted. Best-effort, because the removal
+  // has already happened and a reversal that threw now would tell the owner their
+  // log is still there when it is not. A failure here leaves the uploaded photo
+  // where an event-screen Remove would; it is said out loud, not swallowed.
+  let photosQueued = false;
+  if (opts?.purgePhotos) {
+    try {
+      await queueRemovedLogPhotosForPurge(eventId);
+      photosQueued = true;
+    } catch (e) {
+      console.warn('[undo] could not queue the undone log\'s photo for deletion:', e);
+    }
+  }
   // CUL-642 — re-arm the Signal regen for THIS RECORD's pet (header above). Read
   // from the row, never from `activePet`: the day-summary spine and every deep link
   // push `/event/[id]` for any pet's rows, so the current selection is not an answer
@@ -160,4 +183,5 @@ export async function reverseLoggedEvent(
     console.warn('[undo] Signal regen re-arm failed:', e);
   }
   syncPendingEvents().catch(console.error);
+  if (photosQueued) syncPendingAttachments().catch(console.error);
 }

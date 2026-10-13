@@ -65,6 +65,17 @@ jest.mock('./supabase', () => ({
   supabase: { from: jest.fn(() => ({ upsert: (...a: unknown[]) => mockUpsert(...a) })) },
 }));
 
+// CUL-639 — whether the log is still live, asked at each step of the photo chain.
+// A test removes the log at a chosen step by answering false from that call on.
+const mockStillWanted = jest.fn().mockResolvedValue(true);
+const mockMarkLive = jest.fn().mockResolvedValue(true);
+const mockPurge = jest.fn().mockResolvedValue(true);
+jest.mock('./attachments', () => ({
+  attachmentStillWanted: (...a: unknown[]) => mockStillWanted(...a),
+  markAttachmentSyncedIfLive: (...a: unknown[]) => mockMarkLive(...a),
+  purgeRemovedAttachment: (...a: unknown[]) => mockPurge(...a),
+}));
+
 let mockIdCounter = 0;
 jest.mock('./utils', () => {
   const actual = jest.requireActual('./utils');
@@ -73,8 +84,11 @@ jest.mock('./utils', () => {
 
 import { insertSimpleEvent, PREVIEW_BUDGET_MS } from './simpleEvent';
 
-// Let the fire-and-forget photo/upload chain settle.
-const flush = () => new Promise((r) => setImmediate(r));
+// Let the fire-and-forget photo/upload chain settle (several hops: the chain
+// awaits a liveness read between each network step).
+const flush = async () => {
+  for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -83,6 +97,9 @@ beforeEach(() => {
   mockIdCounter = 0;
   mockRunAsync.mockResolvedValue(undefined);
   mockUpsert.mockResolvedValue({ error: null });
+  mockStillWanted.mockResolvedValue(true);
+  mockMarkLive.mockResolvedValue(true);
+  mockPurge.mockResolvedValue(true);
 });
 
 const base = {
@@ -164,7 +181,7 @@ describe('insertSimpleEvent — photo + AI read trigger', () => {
       attachment: { uri: 'file://shot.jpg', takenAt: '2026-08-13T17:30:00.000Z', width: 3000, height: 2000 },
     });
     await flush();
-    // events INSERT + event_attachments INSERT + the synced=1 UPDATE.
+    // events INSERT + event_attachments INSERT; the synced mark is the live-only one.
     const attachInsert = mockRunAsync.mock.calls.find(([sql]) => String(sql).includes('event_attachments'));
     expect(attachInsert).toBeTruthy();
     expect(mockCompress).toHaveBeenCalledWith('file://shot.jpg', 3000, 2000);
@@ -303,8 +320,8 @@ describe('insertSimpleEvent — the analysis-chain claim (CUL-801)', () => {
   it('always settles — a claim is never left outstanding for the life of the process', async () => {
     // A stuck claim would suppress the mount trigger forever: the screen would
     // wait on a chain that is never going to invoke.
-    mockRunAsync.mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error('synced update boom'));
+    // The synced mark lives in markAttachmentSyncedIfLive since CUL-639.
+    mockMarkLive.mockRejectedValueOnce(new Error('synced update boom'));
     await insertSimpleEvent({
       ...base, eventType: 'vomit', attachment: { uri: 'file://s.jpg', takenAt: null },
     });
@@ -373,5 +390,93 @@ describe('EN-4 — the preview never holds the card past its budget (Principle 1
     expect(mockFloorPush).toHaveBeenCalled();
     jest.useRealTimers();
     mockPreview.mockResolvedValue(null);
+  });
+});
+
+// CUL-639 — the owner removes the log while its photo is still on its way up. The
+// PM's ruling: the photo is deleted, not orphaned, and it is not read. Each test
+// removes the log at a different step; a removal anywhere must end with the chain
+// taking down whatever it had put up, and with no read.
+describe('insertSimpleEvent — a log removed mid-upload (CUL-639)', () => {
+  const vomitWithPhoto = {
+    ...base, eventType: 'vomit',
+    attachment: { uri: 'file://shot.jpg', takenAt: null },
+  };
+  const attachment = { id: 'id-2', storage_path: 'pet-1/id-1/id-2.jpg' };
+
+  it('removed before the upload: nothing goes up, the photo is purged, no read', async () => {
+    mockStillWanted.mockResolvedValue(false);
+    await insertSimpleEvent(vomitWithPhoto);
+    await flush();
+    expect(mockUpload).not.toHaveBeenCalled();
+    expect(mockUpsert).not.toHaveBeenCalled();
+    expect(mockPurge).toHaveBeenCalledWith(attachment);
+    expect(mockVomit).not.toHaveBeenCalled();
+    expect(mockSettle).toHaveBeenCalledWith(false);
+  });
+
+  it('removed during the upload: the object it put up is purged, no row, no read', async () => {
+    mockStillWanted.mockResolvedValueOnce(true).mockResolvedValue(false);
+    await insertSimpleEvent(vomitWithPhoto);
+    await flush();
+    expect(mockUpload).toHaveBeenCalledTimes(1);
+    expect(mockUpsert).not.toHaveBeenCalled();
+    expect(mockPurge).toHaveBeenCalledWith(attachment);
+    expect(mockVomit).not.toHaveBeenCalled();
+  });
+
+  it('removed while the row went up: not marked synced, so object and row are purged, no read', async () => {
+    // The live-only mark is the last check, and the one with no gap before it.
+    mockMarkLive.mockResolvedValue(false);
+    await insertSimpleEvent(vomitWithPhoto);
+    await flush();
+    expect(mockUpsert).toHaveBeenCalledTimes(1);
+    expect(mockMarkLive).toHaveBeenCalledWith(expect.anything(), 'id-2');
+    expect(mockPurge).toHaveBeenCalledWith(attachment);
+    expect(mockVomit).not.toHaveBeenCalled();
+    expect(mockSettle).toHaveBeenCalledWith(false);
+  });
+
+  it('removed after the photo landed: no read is spent on it', async () => {
+    // Synced and live at the mark, removed before the read: Undo re-queues the photo
+    // for the queue's purge, so the chain owes no delete, only no read.
+    mockStillWanted
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValue(false);
+    await insertSimpleEvent(vomitWithPhoto);
+    await flush();
+    expect(mockMarkLive).toHaveBeenCalledTimes(1);
+    expect(mockVomit).not.toHaveBeenCalled();
+    expect(mockPurge).not.toHaveBeenCalled();
+  });
+
+  it('upsert failed and the log was removed: the uploaded object is purged', async () => {
+    mockUpsert.mockResolvedValue({ error: { message: 'boom' } });
+    mockStillWanted
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValue(false);
+    await insertSimpleEvent(vomitWithPhoto);
+    await flush();
+    expect(mockPurge).toHaveBeenCalledWith(attachment);
+  });
+
+  it('upsert failed on a live log: the photo is left for the queue, not purged', async () => {
+    mockUpsert.mockResolvedValue({ error: { message: 'boom' } });
+    await insertSimpleEvent(vomitWithPhoto);
+    await flush();
+    expect(mockPurge).not.toHaveBeenCalled();
+    expect(mockMarkLive).not.toHaveBeenCalled();
+  });
+
+  it('a live log is uploaded, marked and read exactly as before', async () => {
+    await insertSimpleEvent(vomitWithPhoto);
+    await flush();
+    expect(mockUpload).toHaveBeenCalledTimes(1);
+    expect(mockMarkLive).toHaveBeenCalledTimes(1);
+    expect(mockPurge).not.toHaveBeenCalled();
+    expect(mockVomit).toHaveBeenCalledWith('id-1');
+    expect(mockSettle).toHaveBeenCalledWith(true);
   });
 });

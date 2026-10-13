@@ -899,12 +899,15 @@ export const useMomentStore = create<MomentState>((set) => ({
       // reaches this only through a completion card whose own write is already in the
       // allow-set, it can only ever REMOVE a row the owner just made, and routing it
       // anywhere else would fork the one reversal C-20 exists to keep single.
-      await reverseLoggedEvent(
-        payload.eventId,
-        payload.kind === 'named' && payload.previousSnapshotKg !== undefined
+      // CUL-639 — `purgePhotos`: an undone log's photo is deleted from the server,
+      // not left behind, even when its upload finished inside the dwell (PM ruling
+      // (a)). Only this card passes it; the event screen's Remove does not.
+      await reverseLoggedEvent(payload.eventId, {
+        purgePhotos: true,
+        ...(payload.kind === 'named' && payload.previousSnapshotKg !== undefined
           ? { restoreWeightSnapshotToKg: payload.previousSnapshotKg }
-          : undefined,
-      );
+          : {}),
+      });
     } catch (e) {
       console.error('[moment] undo failed:', e);
       undoInFlight = false;

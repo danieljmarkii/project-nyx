@@ -269,17 +269,32 @@ const WRITE_PATH: Record<string, { helpers: readonly string[]; why: string }> = 
   },
   'lib/simpleEvent.ts': { helpers: ['insertSimpleEvent'], why: 'declares insertSimpleEvent' },
   'lib/undoLog.ts': {
-    helpers: ['reverseLoggedEvent', 'softDeleteEvent', 'reconcileWeightSnapshotAfterDelete', 'writeOwingFloorCheck'],
+    helpers: [
+      'reverseLoggedEvent', 'softDeleteEvent', 'reconcileWeightSnapshotAfterDelete', 'writeOwingFloorCheck',
+      'queueRemovedLogPhotosForPurge',
+    ],
     why:
       'declares the ONE shared reversal, whose implementation is softDeleteEvent (C-20), ' +
       'and which un-writes a weigh-in\u2019s snapshot on the way out (CUL-641). Since ' +
       'Engines v3 PR-28b the soft delete runs inside writeOwingFloorCheck, so the re-check ' +
-      'marker it owes shares its transaction (CUL-1436)',
+      'marker it owes shares its transaction (CUL-1436). An Undo re-queues the undone ' +
+      'log\u2019s photo so the queue deletes it from the server (CUL-639)',
+  },
+  'lib/attachments.ts': {
+    helpers: [
+      'deleteEventAttachmentLocal', 'detachEventAttachment', 'purgeRemovedAttachment',
+      'markAttachmentSyncedIfLive', 'queueRemovedLogPhotosForPurge',
+    ],
+    why:
+      'the one place an event photo is detached (B-105), and since CUL-639 the purge of a ' +
+      'removed log\u2019s photo; reached from Home only through the shared reversal',
   },
   'lib/sync.ts': {
     // onFloorLanded: the re-check drain hands the server's answer to the arrival rule,
     // which copies the reads and records what the phone said (Engines v3 PR-28b).
-    helpers: ['onFloorLanded'],
+    // purgeRemovedAttachment / markAttachmentSyncedIfLive: the photo queue's drain
+    // deletes a removed log's photo and marks a pushed one only while its log is live (CUL-639).
+    helpers: ['onFloorLanded', 'purgeRemovedAttachment', 'markAttachmentSyncedIfLive'],
     why: 'the queue drains and the hydration mirror \u2014 this IS the durable-write layer',
   },
   'lib/weight.ts': {
