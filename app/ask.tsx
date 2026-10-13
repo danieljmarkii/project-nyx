@@ -35,6 +35,8 @@ import {
 } from '../lib/ask';
 import { askCapCopy } from '../constants/monetizationCopy';
 import { useAiConsentDoor, type ConsentDoorOutcome } from '../hooks/useAiConsentDoor';
+import { cachedAiConsent } from '../store/aiConsentStore';
+import { useAuthStore } from '../store/authStore';
 import { consentUnreadableNotice } from '../constants/aiConsentCopy';
 import { AiConsentSheet } from '../components/consent/AiConsentSheet';
 import { reducedMotionNow } from '../store/reducedMotionStore';
@@ -96,8 +98,9 @@ export default function AskScreen() {
   const consentDoor = useAiConsentDoor('ask');
   const askConsent = consentDoor.ask;
   const consentAsked = useRef(false);
-  const consentYes = useRef(false);
   const consentRereading = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
   const closeAsk = useCallback(() => {
     // A cold link into Ask has no screen behind it, so back would do nothing and
     // leave the owner on a closed Ask.
@@ -105,10 +108,7 @@ export default function AskScreen() {
     else router.replace('/(tabs)');
   }, []);
   const settleConsent = useCallback((outcome: ConsentDoorOutcome): boolean => {
-    if (outcome === 'proceed' || outcome === 'allowed') {
-      consentYes.current = true;
-      return true;
-    }
+    if (outcome === 'proceed' || outcome === 'allowed') return true;
     if (outcome === 'declined' || outcome === 'not_now') closeAsk();
     return false;
   }, [closeAsk]);
@@ -157,9 +157,14 @@ export default function AskScreen() {
       const question = raw.trim();
       if (!question || thinking || !petId || consentDoor.settling) return;
 
-      // Offline and rundown sends reach no model, so they need no answer read.
-      if (online && !isRundownRequest(question) && !consentYes.current) {
+      // Offline and rundown sends reach no model, so they need no answer read. Every
+      // other send checks the cache afresh rather than remembering the open's answer,
+      // so a no given in Settings while Ask stays mounted stops the next send.
+      const userId = useAuthStore.getState().user?.id ?? null;
+      const yesHeld = !!userId && cachedAiConsent(userId)?.granted === true;
+      if (online && !isRundownRequest(question) && !yesHeld) {
         // A second tap while this read is out would come back 'not_now' and close Ask.
+        // `settling` is state and lags a render behind a fast double tap; the ref doesn't.
         if (consentRereading.current) return;
         consentRereading.current = true;
         let outcome: ConsentDoorOutcome;
@@ -168,6 +173,8 @@ export default function AskScreen() {
         } finally {
           consentRereading.current = false;
         }
+        // The owner left during the read: nothing to close, nothing to send.
+        if (!mounted.current) return;
         if (!settleConsent(outcome)) {
           if (outcome === 'unreadable') {
             const notice = consentUnreadableNotice('ask');

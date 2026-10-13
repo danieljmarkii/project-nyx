@@ -193,6 +193,52 @@ describe('Ask: the ask door', () => {
     expect(alertSpy).not.toHaveBeenCalled();
   });
 
+  it('a no given in Settings while Ask stays open stops the next send', async () => {
+    useAiConsentStore.getState().setRow('u1', YES);
+    render(<AskScreen />);
+    await settle('error');
+    // Settings saved a no on this phone; the cache now holds it.
+    useAiConsentStore.getState().setRow('u1', { ...YES, granted: false });
+    await typeAndSend('Is Mochi eating less?');
+    await settle('error');
+    expect(askMock).not.toHaveBeenCalled();
+    expect(router.back).toHaveBeenCalledTimes(1);
+  });
+
+  it('a double tap during the send-time read reads once and never closes Ask', async () => {
+    readAnswers('error');
+    render(<AskScreen />);
+    await settle('error');
+    let release: (v: unknown) => void = () => {};
+    fetchMock.mockReset();
+    fetchMock.mockReturnValue(new Promise((r) => { release = r; }));
+    fireEvent.changeText(screen.getByPlaceholderText('Ask about Mochi…'), 'Is Mochi eating less?');
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Send question'));
+      fireEvent.press(screen.getByLabelText('Send question'));
+    });
+    await act(async () => { release({ status: 'ok', row: YES }); });
+    await settle('error');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(router.back).not.toHaveBeenCalled();
+    expect(askMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaving Ask during the send-time read sends nothing and closes nothing', async () => {
+    readAnswers('error');
+    const view = render(<AskScreen />);
+    await settle('error');
+    let release: (v: unknown) => void = () => {};
+    fetchMock.mockReset();
+    fetchMock.mockReturnValue(new Promise((r) => { release = r; }));
+    await typeAndSend('Is Mochi eating less?');
+    view.unmount();
+    await act(async () => { release({ status: 'ok', row: { ...YES, granted: false } }); });
+    await settle('error');
+    expect(askMock).not.toHaveBeenCalled();
+    expect(router.back).not.toHaveBeenCalled();
+  });
+
   it('a yes the phone holds sends with no second read (the control)', async () => {
     useAiConsentStore.getState().setRow('u1', YES);
     render(<AskScreen />);
