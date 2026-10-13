@@ -81,7 +81,7 @@ class FakeQuery {
     if (this.table === 'events' && this.filters.id !== undefined) {
       const e = w.events.find((x) => x.id === this.filters.id && !(this.liveOnly && x.deleted))
       return {
-        data: e ? { ...e, pet_id: PET_ID, deleted_at: null, pets: { name: 'Nyx', species: w.species, user_id: OWNER } } : null,
+        data: e ? { created_at: e.occurred_at, ...e, pet_id: PET_ID, deleted_at: null, pets: { name: 'Nyx', species: w.species, user_id: OWNER } } : null,
         error: null,
       }
     }
@@ -104,6 +104,9 @@ class FakeQuery {
     }
     // CUL-552 PR 2: the owner has said yes; the declined branch is _shared/incident-analysis.pipeline.test.ts's.
     if (this.table === 'ai_consent') return { data: { granted: true }, error: null }
+    // CUL-1835: one yes long before any event here, so the photo is read as these suites expect;
+    // the held branch is _shared/incident-analysis.pipeline.test.ts's.
+    if (this.table === 'ai_consent_events') return { data: [{ granted: true, decided_at: '2020-01-01T00:00:00+00:00' }], error: null }
     if (this.table !== 'event_ai_analysis') throw new Error(`unexpected table ${this.table}`)
     const id = (this.mode === 'upsert' ? this.values.event_id : this.filters.event_id) as string
     const row = w.rows.get(id) ?? null

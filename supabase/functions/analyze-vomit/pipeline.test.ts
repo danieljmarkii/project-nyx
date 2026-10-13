@@ -71,7 +71,7 @@ class FakeQuery {
     if (this.table === 'events' && this.filters.id !== undefined) {
       return {
         data: {
-          id: EVENT_ID, pet_id: PET_ID, event_type: 'vomit', occurred_at: iso(w.vomitMs), deleted_at: null,
+          id: EVENT_ID, pet_id: PET_ID, event_type: 'vomit', occurred_at: iso(w.vomitMs), created_at: iso(w.vomitMs), deleted_at: null,
           pets: { name: 'Nyx', species: w.species, user_id: OWNER },
         },
         error: null,
@@ -105,6 +105,9 @@ class FakeQuery {
     }
     // CUL-552 PR 2: the owner has said yes; the declined branch is _shared/incident-analysis.pipeline.test.ts's.
     if (this.table === 'ai_consent') return { data: { granted: true }, error: null }
+    // CUL-1835: one yes long before any event here, so the photo is read as these suites expect;
+    // the held branch is _shared/incident-analysis.pipeline.test.ts's.
+    if (this.table === 'ai_consent_events') return { data: [{ granted: true, decided_at: '2020-01-01T00:00:00+00:00' }], error: null }
     if (this.table !== 'event_ai_analysis') throw new Error(`unexpected table ${this.table}`)
     if (this.mode === 'select') return { data: w.row ? { ...w.row } : null, error: null }
     w.writes++

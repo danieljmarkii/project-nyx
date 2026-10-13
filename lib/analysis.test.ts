@@ -106,6 +106,28 @@ describe('triggerStoolAnalysis (B-247)', () => {
   });
 });
 
+// CUL-1835 (PM ruling on CUL-1913): the server reads a photo logged before the owner's yes
+// only on a tap. The tap is named in the body, and only when the caller says so.
+describe('owner_tap (CUL-1835)', () => {
+  beforeEach(() => mockInvoke.mockReset());
+
+  it('is absent unless the caller claims a tap', async () => {
+    mockInvoke.mockResolvedValue({ error: null });
+    await triggerVomitAnalysis('evt-1');
+    await triggerStoolAnalysis('evt-1', {});
+    await triggerVomitAnalysis('evt-1', { ownerTap: false });
+    for (const call of mockInvoke.mock.calls) expect(call[1]).toEqual({ body: { event_id: 'evt-1' } });
+  });
+
+  it('is sent as true on a tap, to both functions', async () => {
+    mockInvoke.mockResolvedValue({ error: null });
+    await triggerVomitAnalysis('evt-1', { ownerTap: true });
+    await triggerStoolAnalysis('evt-2', { ownerTap: true });
+    expect(mockInvoke).toHaveBeenCalledWith('analyze-vomit', { body: { event_id: 'evt-1', owner_tap: true } });
+    expect(mockInvoke).toHaveBeenCalledWith('analyze-stool', { body: { event_id: 'evt-2', owner_tap: true } });
+  });
+});
+
 describe('EDITABLE_STOOL_FIELDS (B-247)', () => {
   it('names the stool structured columns, never an n=1 read column', () => {
     // The editable set feeds the vet report and gates the client edit write —

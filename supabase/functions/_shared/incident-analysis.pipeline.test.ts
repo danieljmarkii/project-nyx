@@ -55,6 +55,14 @@ interface World {
   consent?: Row | null | 'error' | 'throw'
   // Every ai_consent read: its filters and which client made it.
   consentReads: Array<{ filters: Row; client: 'user' | 'admin' }>
+  // CUL-1835: the owner's consent history (ai_consent_events). Absent = one yes long before
+  // the event, so every suite above keeps reading the photo; 'error' = a failed read.
+  consentHistory?: Row[] | 'error' | 'throw'
+  historyReads: Array<{ filters: Row; client: 'user' | 'admin' }>
+  // When the phone logged the event (events.created_at). Absent = just after it occurred.
+  eventCreatedAt?: string | null
+  // The request says the owner tapped for this photo (owner_tap).
+  ownerTap?: unknown
   // The uid auth.getUser() verifies from the JWT (default: the pet's owner).
   callerUid?: string
   // Photo downloads from Storage (a declined owner's photo is never fetched).
@@ -86,6 +94,7 @@ function makeWorld(o: Partial<World> & Pick<World, 'vision'>): World {
     visionCalls: 0,
     writes: [],
     consentReads: [],
+    historyReads: [],
     downloads: 0,
     ...o,
     row: o.row ? { ...OWN, ...o.row } : null,
@@ -118,6 +127,7 @@ class FakeQuery {
       return {
         data: {
           id: 'evt-1', pet_id: 'pet-1', event_type: 'vomit', occurred_at: '2026-09-26T08:00:00Z',
+          created_at: w.eventCreatedAt === undefined ? '2026-09-26T08:00:05.000Z' : w.eventCreatedAt,
           deleted_at: null, pets: { name: 'Mochi', species: 'cat', user_id: 'owner-1' },
         },
         error: null,
@@ -135,6 +145,14 @@ class FakeQuery {
       const row = w.consent === undefined ? { user_id: 'owner-1', scope: 'ai_boundary', granted: true } : w.consent
       const hit = row && Object.entries(this.filters).every(([k, v]) => row[k] === v) ? row : null
       return { data: hit ? { granted: hit.granted } : null, error: null }
+    }
+    if (this.table === 'ai_consent_events') {
+      w.historyReads.push({ filters: { ...this.filters }, client: this.who })
+      if (w.consentHistory === 'throw') throw new Error('ai_consent_events unreachable')
+      if (w.consentHistory === 'error') return { data: null, error: { message: 'history read failed' } }
+      const rows = w.consentHistory ?? [{ user_id: 'owner-1', scope: 'ai_boundary', granted: true, decided_at: '2026-01-01T00:00:00+00:00' }]
+      const mine = rows.filter((r) => Object.entries(this.filters).every(([k, v]) => r[k] === v))
+      return { data: mine.map((r) => ({ granted: r.granted, decided_at: r.decided_at })), error: null }
     }
     if (this.table !== 'event_ai_analysis') throw new Error(`unexpected table ${this.table}`)
 
@@ -262,7 +280,7 @@ async function run(w: World): Promise<{ status: number; body: Row }> {
   const req = new Request('http://local/analyze', {
     method: 'POST',
     headers: { Authorization: 'Bearer test' },
-    body: JSON.stringify({ event_id: 'evt-1' }),
+    body: JSON.stringify(w.ownerTap === undefined ? { event_id: 'evt-1' } : { event_id: 'evt-1', owner_tap: w.ownerTap }),
   })
   const quiet = { error: console.error, warn: console.warn, info: console.info }
   console.error = () => {}
@@ -1046,4 +1064,122 @@ Deno.test('pipeline CUL-552 — a declined re-read over the model\'s own flagles
   await run(w)
   assertStrictEquals(w.row?.recommendation, 'worth_a_call')
   assertStrictEquals(w.row?.read_text, 'PHOTO_CTX:Mochi:ctx_flag:')
+})
+
+
+// ── CUL-1835 (PM ruling on CUL-1913): "sent only if you tap", enforced here ─────────────
+// A yes is on file, but the event was logged before that yes began: the photo waits for the
+// owner's tap. The photo is skipped, never the check that needs no photo.
+
+const YES_AT = '2026-09-26T09:00:00+00:00' // an hour after the event was logged
+const yesFrom = (at: string, extra: Row[] = []): Row[] => [
+  ...extra,
+  { user_id: 'owner-1', scope: 'ai_boundary', granted: true, decided_at: at },
+]
+
+Deno.test('pipeline CUL-1835 — logged before the yes, no tap, no flag: read_disabled, no unit, no download, no model', async () => {
+  const w = makeWorld({ consentHistory: yesFrom(YES_AT), vision: () => CLEAN })
+  const r = await run(w)
+  assertStrictEquals(r.status, 200)
+  assertStrictEquals(r.body.gated, 'photo_predates_consent')
+  assertStrictEquals(w.visionCalls, 0)
+  assertStrictEquals(w.downloads, 0)
+  assertStrictEquals(w.rpcCalls, 0)
+  assertStrictEquals(w.row?.status, 'read_disabled')
+  assertStrictEquals(w.row?.recommendation ?? null, null)
+})
+
+// The adversarial pass's counterexample on the client hold: the check that needs no photo
+// must still run for the held record.
+Deno.test('pipeline CUL-1835 — logged before the yes, no tap, a contextual flag: the call is written, the photo is not read', async () => {
+  const w = makeWorld({ consentHistory: yesFrom(YES_AT), contextFlags: ['ctx_flag'], vision: () => BLOODY })
+  const r = await run(w)
+  assertStrictEquals(r.body.gated, 'photo_predates_consent')
+  assertStrictEquals(w.visionCalls, 0)
+  assertStrictEquals(w.downloads, 0)
+  assertStrictEquals(w.row?.status, 'completed')
+  assertStrictEquals(w.row?.recommendation, 'worth_a_call')
+  assertStrictEquals(w.row?.ai_raw_payload ?? null, null)
+})
+
+Deno.test('pipeline CUL-1835 — the owner tapped: the photo is read', async () => {
+  const w = makeWorld({ consentHistory: yesFrom(YES_AT), ownerTap: true, vision: () => CLEAN })
+  await run(w)
+  assertStrictEquals(w.visionCalls, 1)
+  assertStrictEquals(w.row?.status, 'completed')
+})
+
+Deno.test('pipeline CUL-1835 — only the literal true is a tap', async () => {
+  for (const tap of ['true', 1, {}, null]) {
+    const w = makeWorld({ consentHistory: yesFrom(YES_AT), ownerTap: tap, vision: () => CLEAN })
+    await run(w)
+    assertStrictEquals(w.visionCalls, 0, `owner_tap ${JSON.stringify(tap)}`)
+  }
+})
+
+Deno.test('pipeline CUL-1835 — logged inside the yes: read as always, without a tap', async () => {
+  const w = makeWorld({ consentHistory: yesFrom('2026-09-26T07:00:00+00:00'), vision: () => CLEAN })
+  await run(w)
+  assertStrictEquals(w.visionCalls, 1)
+})
+
+// A re-saved yes re-stamps the state row; the history keeps the start of the run.
+Deno.test('pipeline CUL-1835 — a re-saved yes does not re-hold a photo logged under the yes it repeated', async () => {
+  const w = makeWorld({
+    consentHistory: yesFrom(YES_AT, [{ user_id: 'owner-1', scope: 'ai_boundary', granted: true, decided_at: '2026-09-26T07:00:00+00:00' }]),
+    vision: () => CLEAN,
+  })
+  await run(w)
+  assertStrictEquals(w.visionCalls, 1)
+})
+
+// yes → no → photo logged → yes: the current yes began after the event.
+Deno.test('pipeline CUL-1835 — a yes, then a no, then the log, then a yes: held', async () => {
+  const w = makeWorld({
+    eventCreatedAt: '2026-09-26T08:30:00.000Z',
+    consentHistory: [
+      { user_id: 'owner-1', scope: 'ai_boundary', granted: true, decided_at: '2026-09-26T07:00:00+00:00' },
+      { user_id: 'owner-1', scope: 'ai_boundary', granted: false, decided_at: '2026-09-26T08:00:00+00:00' },
+      { user_id: 'owner-1', scope: 'ai_boundary', granted: true, decided_at: YES_AT },
+    ],
+    vision: () => CLEAN,
+  })
+  await run(w)
+  assertStrictEquals(w.visionCalls, 0)
+})
+
+Deno.test('pipeline CUL-1835 — fails closed: a failed history read, an empty history, a missing log time', async () => {
+  for (const o of [
+    { consentHistory: 'error' as const },
+    { consentHistory: 'throw' as const },
+    { consentHistory: [] },
+    { eventCreatedAt: null },
+    { eventCreatedAt: 'not a time' },
+  ]) {
+    const w = makeWorld({ ...o, contextFlags: ['ctx_flag'], vision: () => CLEAN })
+    const r = await run(w)
+    assertStrictEquals(w.visionCalls, 0, JSON.stringify(o))
+    // …and the check that needs no photo still escalates.
+    assertStrictEquals(r.body.recommendation, 'worth_a_call', JSON.stringify(o))
+  }
+})
+
+Deno.test('pipeline CUL-1835 — the history read is service-role, one scope, the verified uid', async () => {
+  const w = makeWorld({ vision: () => CLEAN })
+  await run(w)
+  assertEquals(w.historyReads, [{ filters: { user_id: 'owner-1', scope: 'ai_boundary' }, client: 'admin' }])
+})
+
+Deno.test('pipeline CUL-1835 — a decline is still a decline: the history is never read, a tap opens nothing', async () => {
+  const w = makeWorld({ consent: { user_id: 'owner-1', scope: 'ai_boundary', granted: false }, ownerTap: true, vision: () => CLEAN })
+  const r = await run(w)
+  assertStrictEquals(r.body.gated, 'consent_declined')
+  assertStrictEquals(w.visionCalls, 0)
+  assertEquals(w.historyReads, [])
+})
+
+Deno.test('pipeline CUL-1835 — a photoless event never reads the history', async () => {
+  const w = makeWorld({ noPhoto: true, consentHistory: yesFrom(YES_AT), contextFlags: ['ctx_flag'], vision: () => CLEAN })
+  await run(w)
+  assertEquals(w.historyReads, [])
 })

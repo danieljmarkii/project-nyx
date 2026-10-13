@@ -43,6 +43,8 @@ interface Db {
   // CUL-552 PR 2: the owner's AI consent. Granted by default, so this suite keeps testing
   // the read it was written for; the declined branch is the shared pipeline suite's.
   ai_consent: Row[]
+  // CUL-1835: the consent history; one yes long before any event here.
+  ai_consent_events: Row[]
   user_profiles: Row[]
   reads: Record<string, number>
   dayCount: number
@@ -60,6 +62,7 @@ function makeDb(o: Partial<Db> = {}): Db {
     event_ai_analysis: [],
     app_config: [],
     ai_consent: [{ user_id: 'owner-1', scope: 'ai_boundary', granted: true }],
+    ai_consent_events: [{ user_id: 'owner-1', scope: 'ai_boundary', granted: true, decided_at: '2020-01-01T00:00:00+00:00' }],
     user_profiles: [{ id: 'owner-1', timezone: 'UTC' }],
     reads: {},
     dayCount: 1,
@@ -100,7 +103,8 @@ class Q {
     const rows = this.rows()
     if (this.mode === 'select') {
       this.db.reads[this.table] = (this.db.reads[this.table] ?? 0) + 1
-      const hit = rows.filter((r) => this.preds.every((p) => p(r)))
+      // An event's log time defaults to when it occurred (CUL-1835's rule reads created_at).
+      const hit = rows.filter((r) => this.preds.every((p) => p(r))).map((r) => (this.table === 'events' ? { created_at: r.occurred_at, ...r } : r))
       return { data: this.single ? (hit[0] ? { ...hit[0] } : null) : hit.map((r) => ({ ...r })), error: null }
     }
     if (this.mode === 'update') {

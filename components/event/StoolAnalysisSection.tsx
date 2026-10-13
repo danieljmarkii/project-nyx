@@ -101,13 +101,11 @@ import { router } from 'expo-router';
 import { usePatternMembership } from '../../hooks/usePatternMembership';
 import { PATTERN_WORDS, patternActionLine } from '../../lib/incidentPattern';
 import { useRecordConsent } from '../../hooks/useRecordConsent';
-import { mountSendFor } from '../../lib/recordConsentRead';
 import {
   besideCallOf,
   cappedFrameOf,
   photoUnreadUnderCall,
   unreadFrameOf,
-  type MountSend,
   type UnreadFrame,
 } from '../../lib/recordConsent';
 import { RecordAskCard, RecordOffBesideCall, RecordUnreadStatus } from '../consent/RecordConsentFrames';
@@ -216,11 +214,8 @@ export function StoolAnalysisSection(
   const latestRow = useRef<AnalysisRow | null | undefined>(undefined);
   latestRow.current = row;
   const watchTeardown = useRef<(() => void) | null>(null);
-  // CUL-1835 — the owner's AI consent and the mount trigger's gate; the vomit record's
-  // twin (VomitAnalysisSection.tsx carries the reasoning).
+  // CUL-1835 — the owner's AI consent, for what sits where an unread photo's read would.
   const consent = useRecordConsent();
-  const [held, setHeld] = useState<Exclude<MountSend, 'send'> | null>(null);
-  const [checkingSend, setCheckingSend] = useState(false);
   const [askDismissed, setAskDismissed] = useState(false);
   const clockNow = useMinuteNow();
   // CUL-1510: the record around this stool (the vomits beside it, the courses on board),
@@ -378,9 +373,6 @@ export function StoolAnalysisSection(
 
   const start = useCallback(async () => {
     cancelled.current = false;
-    // CUL-1835: a superseded run (a new event) may have left either set.
-    setCheckingSend(false);
-    setHeld(null);
     const first = await fetchRow();
     if (cancelled.current) return;
 
@@ -398,16 +390,6 @@ export function StoolAnalysisSection(
     // then, we trigger, so a suppressed trigger can never leave this incident
     // with no read and no escalation.
     setRow(first ?? null);
-    // CUL-1835 — a photo logged while AI reading was off is sent only on a tap.
-    setCheckingSend(true);
-    const send = await mountSendFor(eventId).catch((): MountSend => 'hold_unknown');
-    setCheckingSend(false);
-    if (cancelled.current) return;
-    if (send !== 'send') {
-      setHeld(send);
-      return;
-    }
-    setHeld(null);
     setWorking(true);
     const readAlreadyRunning = await awaitAnalysisChain(eventId);
     if (!readAlreadyRunning) {
@@ -440,8 +422,6 @@ export function StoolAnalysisSection(
 
   async function handleRetry() {
     setRetrying(true);
-    // A tap is the owner asking for this photo's read, so a held photo is held no longer.
-    setHeld(null);
     cancelled.current = false;
     // What the owner is looking at when they tap — the render this handler came from.
     const shown = row ?? null;
@@ -468,7 +448,9 @@ export function StoolAnalysisSection(
     // today, but the pending mark above must come off on every path that did not start a
     // read, not only on the ones that return an error: a throw here would skip the restore
     // below and leave `retrying` set, which renders as a re-read that never ends.
-    const { error } = await triggerStoolAnalysis(eventId).catch((e: unknown) => ({
+    // CUL-1835: every path here is a tap (Read this photo, Allow, Re-run, Try again), so the
+    // server may read a photo logged before the owner's current yes.
+    const { error } = await triggerStoolAnalysis(eventId, { ownerTap: true }).catch((e: unknown) => ({
       error: e instanceof Error ? e.message : String(e),
     }));
     // Navigated away mid-trigger — don't setState or open a watch on an
@@ -608,7 +590,7 @@ export function StoolAnalysisSection(
   // First load, nothing known yet. Only shown WITH a photo — a photoless event
   // stays silent until it resolves (to an escalation, or to nothing), so the
   // section never appears-then-vanishes on the common photoless path (B-363).
-  if (hasPhoto && ((row === undefined && !working) || (checkingSend && !escalationSurvivesReRead(row)))) {
+  if (hasPhoto && row === undefined && !working) {
     return <IncidentReadSection arrival={arrival} announcer={announcer} pending />;
   }
 
@@ -625,7 +607,7 @@ export function StoolAnalysisSection(
 
   // CUL-1835 — what sits where an unread photo's read would (frames E, F, H).
   const consentPet = petName?.trim() || null;
-  function unreadSlot(frame: UnreadFrame, onTryAgain?: () => void) {
+  function unreadSlot(frame: UnreadFrame) {
     if (frame === 'ask' && !askDismissed) {
       return (
         <IncidentReadSection arrival={arrival} announcer={announcer} announcement={RECORD_ASK_TITLE} pending={false}>
@@ -647,19 +629,11 @@ export function StoolAnalysisSection(
           onTurnOn={() => router.push('/settings/ai-reading')}
           onRead={handleRetry}
           reading={retrying}
-          onTryAgain={onTryAgain}
         />
       </IncidentReadSection>
     );
   }
 
-  if (held && !reading && (!row || row.status === 'pending') && !escalationSurvivesReRead(row)) {
-    // A hold_pre_yes was decided on a fresh yes, so a consent the hook has not read yet is
-    // that yes: Read this photo, never a frame with no way on.
-    return held === 'hold_pre_yes'
-      ? unreadSlot(consent === 'loading' || consent === 'error' ? 'read_this' : unreadFrameOf(consent))
-      : unreadSlot('unread', () => { setHeld(null); void start(); });
-  }
 
   // Pending / actively working — UNLESS the record already holds an escalation, which
   // stays on screen through the re-read with the re-read shown in place beside it

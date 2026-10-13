@@ -101,13 +101,11 @@ import { router } from 'expo-router';
 import { usePatternMembership } from '../../hooks/usePatternMembership';
 import { PATTERN_WORDS, patternActionLine } from '../../lib/incidentPattern';
 import { useRecordConsent } from '../../hooks/useRecordConsent';
-import { mountSendFor } from '../../lib/recordConsentRead';
 import {
   besideCallOf,
   cappedFrameOf,
   photoUnreadUnderCall,
   unreadFrameOf,
-  type MountSend,
   type UnreadFrame,
 } from '../../lib/recordConsent';
 import { RecordAskCard, RecordOffBesideCall, RecordUnreadStatus } from '../consent/RecordConsentFrames';
@@ -223,10 +221,6 @@ export function VomitAnalysisSection(
   const watchTeardown = useRef<(() => void) | null>(null);
   // CUL-1835 — the owner's AI consent, for what sits where an unread photo's read would.
   const consent = useRecordConsent();
-  // The mount trigger's consent gate (lib/recordConsent.ts): a photo that predates the
-  // current yes, or one whose send could not be decided, is held for a tap.
-  const [held, setHeld] = useState<Exclude<MountSend, 'send'> | null>(null);
-  const [checkingSend, setCheckingSend] = useState(false);
   // Not now on the ask card: hidden for this visit, nothing written (D13).
   const [askDismissed, setAskDismissed] = useState(false);
   const clockNow = useMinuteNow();
@@ -422,9 +416,6 @@ export function VomitAnalysisSection(
 
   const start = useCallback(async () => {
     cancelled.current = false;
-    // CUL-1835: a superseded run (a new event) may have left either set.
-    setCheckingSend(false);
-    setHeld(null);
     const first = await fetchRow();
     if (cancelled.current) return;
 
@@ -442,19 +433,6 @@ export function VomitAnalysisSection(
     // then, we trigger, so a suppressed trigger can never leave this incident
     // with no read and no escalation.
     setRow(first ?? null);
-    // CUL-1835 — the promise on What's sent: a photo logged while AI reading was off is
-    // sent only on a tap. With no row nothing records that it was off, so ask when the
-    // photo was attached and what the owner has said, freshly, before any invoke. A
-    // photoless record answers 'send' without waiting on the consent read.
-    setCheckingSend(true);
-    const send = await mountSendFor(eventId).catch((): MountSend => 'hold_unknown');
-    setCheckingSend(false);
-    if (cancelled.current) return;
-    if (send !== 'send') {
-      setHeld(send);
-      return;
-    }
-    setHeld(null);
     setWorking(true);
     const readAlreadyRunning = await awaitAnalysisChain(eventId);
     if (!readAlreadyRunning) {
@@ -487,8 +465,6 @@ export function VomitAnalysisSection(
 
   async function handleRetry() {
     setRetrying(true);
-    // A tap is the owner asking for this photo's read, so a held photo is held no longer.
-    setHeld(null);
     cancelled.current = false;
     // What the owner is looking at when they tap — the render this handler came from.
     const shown = row ?? null;
@@ -515,7 +491,9 @@ export function VomitAnalysisSection(
     // today, but the pending mark above must come off on every path that did not start a
     // read, not only on the ones that return an error: a throw here would skip the restore
     // below and leave `retrying` set, which renders as a re-read that never ends.
-    const { error } = await triggerVomitAnalysis(eventId).catch((e: unknown) => ({
+    // CUL-1835: every path here is a tap (Read this photo, Allow, Re-run, Try again), so the
+    // server may read a photo logged before the owner's current yes.
+    const { error } = await triggerVomitAnalysis(eventId, { ownerTap: true }).catch((e: unknown) => ({
       error: e instanceof Error ? e.message : String(e),
     }));
     // Navigated away mid-trigger — don't setState or open a watch on an
@@ -671,7 +649,7 @@ export function VomitAnalysisSection(
   // First load, nothing known yet. Only shown WITH a photo — a photoless event
   // stays silent until it resolves (to an escalation, or to nothing), so the
   // section never appears-then-vanishes on the common photoless path (B-363).
-  if (hasPhoto && ((row === undefined && !working) || (checkingSend && !escalationSurvivesReRead(row)))) {
+  if (hasPhoto && row === undefined && !working) {
     return <IncidentReadSection arrival={arrival} announcer={announcer} pending />;
   }
 
@@ -681,7 +659,7 @@ export function VomitAnalysisSection(
   // no (F), a yes over a photo still unread (H), or, while the consent is not known, the
   // heading and the vet line. A status, never a verdict.
   const consentPet = petName?.trim() || null;
-  function unreadSlot(frame: UnreadFrame, onTryAgain?: () => void) {
+  function unreadSlot(frame: UnreadFrame) {
     if (frame === 'ask' && !askDismissed) {
       return (
         <IncidentReadSection arrival={arrival} announcer={announcer} announcement={RECORD_ASK_TITLE} pending={false}>
@@ -703,7 +681,6 @@ export function VomitAnalysisSection(
           onTurnOn={() => router.push('/settings/ai-reading')}
           onRead={handleRetry}
           reading={retrying}
-          onTryAgain={onTryAgain}
         />
       </IncidentReadSection>
     );
@@ -718,16 +695,6 @@ export function VomitAnalysisSection(
   // nothing in flight falls through to the frames below, each of which carries a retry.
   const reading = working || retrying;
 
-  // CUL-1835 — a held photo, while nothing has been written for it: frame H for a photo
-  // that predates the yes (its frame follows the consent if the owner flips it meanwhile),
-  // and the unread frame with Try again when the send could not be decided.
-  if (held && !reading && (!row || row.status === 'pending') && !escalationSurvivesReRead(row)) {
-    // A hold_pre_yes was decided on a fresh yes, so a consent the hook has not read yet is
-    // that yes: Read this photo, never a frame with no way on.
-    return held === 'hold_pre_yes'
-      ? unreadSlot(consent === 'loading' || consent === 'error' ? 'read_this' : unreadFrameOf(consent))
-      : unreadSlot('unread', () => { setHeld(null); void start(); });
-  }
 
   // Pending / actively working — UNLESS the record already holds an escalation, which
   // stays on screen through the re-read with the re-read shown in place beside it

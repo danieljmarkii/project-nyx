@@ -60,3 +60,85 @@ export async function readAiBoundaryConsent(
     return false
   }
 }
+
+// ── "Sent only if you tap" (CUL-1835, PM ruling on CUL-1913, 2026-10-13) ────────────────
+// What's sent promises: "A photo logged while AI reading was off is sent only if you tap
+// Read this photo." The server keeps that promise, because only the server sees every
+// door: the record's mount, the log path's retry, a second phone, Ask's photo read and an
+// answer changed while a send was in flight. A photo logged before the owner's CURRENT yes
+// began is not read unless the request says the owner tapped for it; the photo is skipped,
+// never the check that needs no photo (the declined branch's contextual escalation).
+//
+// "Logged before the yes" is read on the EVENT's `created_at`: the phone stamps it when the
+// owner logs, and sync pushes it as written. A photo can only be attached at or after that
+// moment, so an event logged inside the current yes has every photo inside it too. A photo
+// added later to an event logged before the yes is held for a tap, which errs toward the
+// tap. The attachment's own `created_at` is the upload time, which for a photo whose upload
+// failed while reading was off lands after the yes: exactly the photo this rule exists for.
+//
+// The current yes begins at the first yes after the latest no (the history, not the state
+// row's `decided_at`, which every re-save re-stamps: a re-saved yes must not re-hold every
+// photo logged under the yes it repeated). Residual, stated: the event stamp is the phone's
+// clock and the yes is the database's, so a phone running AHEAD can carry a photo logged
+// within that skew before the yes past the rule.
+
+// Rows read newest first. A run of yeses longer than this begins no later than the oldest
+// row read, so a cap can only make the start later, which holds more, never less.
+export const CONSENT_HISTORY_LIMIT = 500
+
+/** When the owner's current unbroken yes began (ms), or null: no yes now, an empty or
+ *  unreadable history. Pure; the order is taken from the parsed times, never the text. */
+export function consentOnSince(history: unknown): number | null {
+  if (!Array.isArray(history) || history.length === 0) return null
+  const rows: Array<{ granted: boolean; ms: number }> = []
+  for (const r of history) {
+    if (!r || typeof r !== 'object') return null
+    const ms = typeof (r as { decided_at?: unknown }).decided_at === 'string'
+      ? Date.parse((r as { decided_at: string }).decided_at)
+      : NaN
+    if (Number.isNaN(ms)) return null
+    rows.push({ granted: (r as { granted?: unknown }).granted === true, ms })
+  }
+  rows.sort((a, b) => b.ms - a.ms)
+  let since: number | null = null
+  for (const r of rows) {
+    if (!r.granted) break
+    since = r.ms
+  }
+  return since
+}
+
+/** True when the event was logged before the current yes began, or either time cannot be
+ *  read: the photo then waits for the owner's tap. Fails closed. */
+export function photoNeedsTap(eventCreatedAt: unknown, onSinceMs: number | null): boolean {
+  if (onSinceMs === null) return true
+  const created = typeof eventCreatedAt === 'string' ? Date.parse(eventCreatedAt) : NaN
+  if (Number.isNaN(created)) return true
+  return created < onSinceMs
+}
+
+/** The start of the owner's current yes, read through service_role for the verified uid.
+ *  Never throws; a failed read is null, which holds the photo. */
+export async function readConsentOnSince(
+  adminClient: SupabaseClient,
+  uid: string,
+): Promise<number | null> {
+  if (typeof uid !== 'string' || uid.length === 0) return null
+  try {
+    const { data, error } = await adminClient
+      .from('ai_consent_events')
+      .select('granted, decided_at')
+      .eq('user_id', uid)
+      .eq('scope', AI_CONSENT_SCOPE)
+      .order('decided_at', { ascending: false })
+      .limit(CONSENT_HISTORY_LIMIT)
+    if (error) {
+      console.warn('ai_consent_events read failed; holding the photo:', error.message)
+      return null
+    }
+    return consentOnSince(data)
+  } catch (err) {
+    console.warn('ai_consent_events read threw; holding the photo:', err instanceof Error ? err.message : String(err))
+    return null
+  }
+}

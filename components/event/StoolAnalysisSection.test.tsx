@@ -11,14 +11,11 @@
 
 // A `mock`-prefixed holder the hoisted supabase mock closes over; each test sets it.
 let mockRow: Record<string, unknown> | null = null;
-// CUL-1835: the owner's AI consent as the record renders it, and the mount trigger's
-// consent gate, stubbed at the READS (C-34): the frame decisions are the real ones. A yes
-// and 'send' unless a test says otherwise, so every older test reads as it always has.
+// CUL-1835: the owner's AI consent as the record renders it, stubbed at the READ (C-34): the
+// frame decisions are the real ones. A yes unless a test says otherwise, so every older test
+// reads as it always has.
 let mockConsent: import('../../lib/recordConsent').RecordConsent = 'granted';
 jest.mock('../../hooks/useRecordConsent', () => ({ useRecordConsent: () => mockConsent }));
-let mockMountSend: import('../../lib/recordConsent').MountSend = 'send';
-const mockMountSendFor = jest.fn(async (_id: string) => mockMountSend);
-jest.mock('../../lib/recordConsentRead', () => ({ mountSendFor: (id: string) => mockMountSendFor(id) }));
 const mockSaveAiConsent = jest.fn(async (_u: string, granted: boolean, _s: string) => ({
   status: 'saved' as const,
   row: { granted, copyVersion: '2026-10-12', source: 'backstop', decidedAt: '2026-10-12T10:00:00Z' },
@@ -29,7 +26,6 @@ jest.mock('../../store/aiConsentStore', () => ({
 }));
 afterEach(() => {
   mockConsent = 'granted';
-  mockMountSend = 'send';
   // The consent tests open read watches; later suites count watches from zero.
   (jest.requireMock('../../lib/analysis') as { watchAnalysisRow: jest.Mock }).watchAnalysisRow.mockClear();
 });
@@ -231,7 +227,8 @@ describe('StoolAnalysisSection — cap/flag render states', () => {
     const { findByTestId } = render(<StoolAnalysisSection eventId="e2c" petId="pet-1" petName="Rex" hasPhoto />);
     fireEvent.press(await findByTestId('record-consent-allow'));
     await waitFor(() => expect(mockSaveAiConsent).toHaveBeenCalledWith('u-1', true, 'backstop'));
-    await waitFor(() => expect(trigger).toHaveBeenCalledWith('e2c'));
+    // The tap is what lets the server read a photo logged before the yes (CUL-1913).
+    await waitFor(() => expect(trigger).toHaveBeenCalledWith('e2c', { ownerTap: true }));
     useAuthStore.setState({ user: null });
   });
 
@@ -257,7 +254,7 @@ describe('StoolAnalysisSection — cap/flag render states', () => {
     // Opening the record sent nothing: a resolved row is never re-invoked on mount.
     expect(trigger).not.toHaveBeenCalledWith('e2e');
     fireEvent.press(await findByTestId('record-consent-read-this'));
-    await waitFor(() => expect(trigger).toHaveBeenCalledWith('e2e'));
+    await waitFor(() => expect(trigger).toHaveBeenCalledWith('e2e', { ownerTap: true }));
   });
 
   it('capped, then a no: the off state replaces the cap copy, which promised a read tomorrow', async () => {
@@ -266,35 +263,6 @@ describe('StoolAnalysisSection — cap/flag render states', () => {
     const { findByText, queryByText } = render(<StoolAnalysisSection eventId="e2f" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('AI reading is off')).toBeTruthy();
     expect(queryByText(/will run tomorrow/)).toBeNull();
-  });
-
-  // The panel 1 edge case (CUL-1833 → CUL-1835): no row, and the photo predates the yes.
-  it('no row and a photo from before the yes: held for the tap, never sent on open', async () => {
-    mockConsent = 'granted';
-    mockMountSend = 'hold_pre_yes';
-    mockRow = null;
-    const trigger = triggerStoolAnalysis as jest.Mock;
-    trigger.mockClear();
-    const { findByText, findByTestId } = render(<StoolAnalysisSection eventId="e2g" petId="pet-1" petName="Rex" hasPhoto />);
-    expect(await findByText('Not read yet')).toBeTruthy();
-    expect(trigger).not.toHaveBeenCalled();
-    fireEvent.press(await findByTestId('record-consent-read-this'));
-    await waitFor(() => expect(trigger).toHaveBeenCalledWith('e2g'));
-  });
-
-  it('no row and a send that could not be decided: nothing sent, Try again asks again', async () => {
-    mockMountSend = 'hold_unknown';
-    mockRow = null;
-    const trigger = triggerStoolAnalysis as jest.Mock;
-    trigger.mockClear();
-    mockMountSendFor.mockClear();
-    const { findByText, findByTestId } = render(<StoolAnalysisSection eventId="e2h" petId="pet-1" petName="Rex" hasPhoto />);
-    expect(await findByText("The photo wasn't read")).toBeTruthy();
-    expect(trigger).not.toHaveBeenCalled();
-    mockMountSend = 'send';
-    fireEvent.press(await findByTestId('record-consent-try-again'));
-    await waitFor(() => expect(trigger).toHaveBeenCalledWith('e2h'));
-    expect(mockMountSendFor).toHaveBeenCalledTimes(2);
   });
 
   it('capped while unanswered: the ask card, since the next run is gated', async () => {
@@ -317,12 +285,15 @@ describe('StoolAnalysisSection — cap/flag render states', () => {
     expect(capped.queryByTestId('record-consent-ask')).toBeNull();
   });
 
-  it('a held pre-yes photo while the consent hook is still reading: Read this photo, never a dead end', async () => {
-    mockConsent = 'loading';
-    mockMountSend = 'hold_pre_yes';
+  // CUL-1835: the server holds a photo logged before the yes unless the owner tapped. The
+  // record's own mount must never claim a tap.
+  it('opening a record with no read invokes without claiming a tap', async () => {
     mockRow = null;
-    const { findByTestId } = render(<StoolAnalysisSection eventId="e2n" petId="pet-1" petName="Rex" hasPhoto />);
-    expect(await findByTestId('record-consent-read-this')).toBeTruthy();
+    const trigger = triggerStoolAnalysis as jest.Mock;
+    trigger.mockClear();
+    render(<StoolAnalysisSection eventId="e2o" petId="pet-1" petName="Rex" hasPhoto />);
+    await waitFor(() => expect(trigger).toHaveBeenCalledWith('e2o'));
+    expect(trigger.mock.calls.every((c: unknown[]) => c.length === 1)).toBe(true);
   });
 
   // Frame G: a no never quiets an escalation.

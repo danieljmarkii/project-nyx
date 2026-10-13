@@ -49,14 +49,3 @@ export const EVENT_ATTACHMENT_QUERY =
 export const EVENT_ATTACHMENTS_QUERY =
   `SELECT ${EVENT_ATTACHMENT_COLS} FROM event_attachments
     WHERE event_id = ? ${EVENT_ATTACHMENT_ORDER}`;
-
-/**
- * Every photo's attach time on the event (CUL-1835). The consent gate on a record's
- * mount trigger takes the OLDEST against the current yes: the server reads every photo
- * on the event, so one that predates the yes holds them all. The minimum is taken in JS
- * after parsing, never as SQL `MIN` over the text: hydrated rows carry PostgREST's
- * `+00:00` spelling beside this phone's `.000Z`, and a bare `datetime('now')` default
- * sorts before both, so a text minimum is not the earliest instant (C-40).
- */
-export const EVENT_PHOTO_TIMES_QUERY =
-  `SELECT created_at FROM event_attachments WHERE event_id = ?`;

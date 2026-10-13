@@ -7,7 +7,7 @@ import {
   recentFoodsQuery,
   RecentFoodsBounds,
 } from './foodQueries';
-import { EVENT_ATTACHMENT_QUERY, EVENT_ATTACHMENTS_QUERY, EVENT_PHOTO_TIMES_QUERY } from './eventAttachmentQueries';
+import { EVENT_ATTACHMENT_QUERY, EVENT_ATTACHMENTS_QUERY } from './eventAttachmentQueries';
 import {
   MEDICATION_SCHEMA_SQL,
   doubleDoseWindowHours,
@@ -826,13 +826,6 @@ export async function getEventAttachment(eventId: string): Promise<EventAttachme
 export async function getEventAttachments(eventId: string): Promise<EventAttachmentRow[]> {
   const db = getDb();
   return db.getAllAsync<EventAttachmentRow>(EVENT_ATTACHMENTS_QUERY, [eventId]);
-}
-
-/** Every photo's attach time on this phone, as stored (CUL-1835). */
-export async function getEventPhotoTimes(eventId: string): Promise<string[]> {
-  const db = getDb();
-  const rows = await db.getAllAsync<{ created_at: string | null }>(EVENT_PHOTO_TIMES_QUERY, [eventId]);
-  return rows.map((r) => r.created_at ?? '');
 }
 
 export async function deleteEventAttachmentLocal(attachmentId: string): Promise<void> {
