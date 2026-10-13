@@ -153,6 +153,8 @@ import { defaultHistoryScope, useHistoryScopeStore } from '../../store/historySc
 import { useHistoryListStore } from '../../store/historyListStore';
 import * as historyWindowFacts from '../../lib/historyWindowFacts';
 import { useEventStore } from '../../store/eventStore';
+import { useAuthStore } from '../../store/authStore';
+import { useAiConsentStore } from '../../store/aiConsentState';
 import { useSyncStore } from '../../store/syncStore';
 import { recordDay, recordWeekday } from '../../lib/recordDates';
 import { FOLD_LAYOUT, FOLD_MOTION } from '../motion/foldMotion';
@@ -1229,6 +1231,30 @@ describe('the reads a row can carry', () => {
     // No verdict for a photographed vomit: never nothing, which would read as a calm read.
     expect(screen.getByTestId('spine-unread-vn')).toBeTruthy();
     expect(screen.queryByTestId('spine-verdict-vn')).toBeNull();
+  });
+
+  it('with photo reading off (a recorded no), the unread row is unmarked and the rose stands (AC 23, CUL-1174)', async () => {
+    useAuthStore.setState({ user: { id: 'u1' } } as never);
+    useAiConsentStore.getState().setRow('u1', { granted: false, copyVersion: 'v', source: 'settings', decidedAt: '2026-10-12T00:00:00Z' });
+    try {
+      seedWeek();
+      insertEvent('vr', at(1, 14), 'vomit');
+      insertEvent('vn', at(1, 16), 'vomit');
+      for (const id of ['vr', 'vn']) {
+        mockRaw
+          .prepare(`INSERT INTO event_attachments (id, event_id, pet_id, local_uri, storage_path) VALUES (?, ?, ?, 'file:///x.jpg', 'p/x.jpg')`)
+          .run(`att-${id}`, id, PET_A.id);
+      }
+      mockRaw
+        .prepare(`INSERT INTO event_ai_verdicts (event_id, status, recommendation, updated_at) VALUES ('vr', 'completed', 'worth_a_call', ?)`)
+        .run(at(1, 14, 5));
+      await renderList();
+      expect(screen.getByTestId('spine-verdict-vr')).toBeTruthy();
+      expect(screen.queryByTestId('spine-unread-vn')).toBeNull();
+      expect(screen.getByTestId('spine-photo-vn', { includeHiddenElements: true })).toBeTruthy();
+    } finally {
+      useAiConsentStore.getState().reset();
+    }
   });
 
   it('a note never renders on a row until CUL-848\'s gate flips (AC 39, the row\'s half)', async () => {

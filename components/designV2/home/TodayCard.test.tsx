@@ -82,6 +82,8 @@ jest.mock('../../motion/threadMotion', () => {
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { AccessibilityInfo, LayoutAnimation, StyleSheet } from 'react-native';
 import { useEventStore } from '../../../store/eventStore';
+import { useAiConsentStore } from '../../../store/aiConsentState';
+import { useAuthStore } from '../../../store/authStore';
 import { useReducedMotionStore } from '../../../store/reducedMotionStore';
 import { TODAY_EMPTY_LINE, TODAY_EMPTY_LOOK_LINE, TODAY_FAILED_LINE, TODAY_MEAL_TAIL, TodayCard } from './TodayCard';
 import { RowSpeechContext } from '../../dayRow/rowSpeech';
@@ -257,6 +259,21 @@ describe('the ten-event day', () => {
     await waitFor(() => expect(t.queryByTestId('spine-unread-v1')).toBeNull());
     for (const id of ['spine-read-v1', 'spine-verdict-v1']) expect(t.queryByTestId(id)).toBeNull();
     expect(t.queryByText(/keep an eye out/i)).toBeNull();
+  });
+
+  it('with photo reading off (a recorded no), a photographed row with no read draws no grey mark (CUL-1174)', async () => {
+    useAuthStore.setState({ user: { id: 'u1' } } as never);
+    useAiConsentStore.getState().setRow('u1', { granted: false, copyVersion: 'v', source: 'settings', decidedAt: '2026-10-12T00:00:00Z' });
+    try {
+      const t = render(<TodayCard />);
+      await waitFor(() => expect(t.getByTestId('spine-photo-v2', { includeHiddenElements: true })).toBeTruthy());
+      expect(t.queryByTestId('spine-unread-v2')).toBeNull();
+      // A yes puts it back, with no re-read: the row follows the store.
+      act(() => useAiConsentStore.getState().setRow('u1', { granted: true, copyVersion: 'v', source: 'settings', decidedAt: '2026-10-12T00:00:00Z' }));
+      await waitFor(() => expect(t.getByTestId('spine-unread-v2')).toBeTruthy());
+    } finally {
+      useAiConsentStore.getState().reset();
+    }
   });
 
   it('draws no "No read yet" and no photo before the phone’s copy has answered, then the grey mark (C-12)', async () => {

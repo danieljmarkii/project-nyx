@@ -31,7 +31,7 @@ import { supabase } from '../../lib/supabase';
 import { parseGateResponse } from '../../lib/appConfig';
 import { retryNoticeOf, type RetryOutcome } from '../../lib/foodRetry';
 import { useAuthStore } from '../../store/authStore';
-import { cachedAiConsent } from '../../store/aiConsentStore';
+import { cachedAiConsent } from '../../store/aiConsentState';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
 import { getDb } from '../../lib/db';
 import { seedPickerProteins, pickerProteinWrite, proteinsToCacheText } from '../../lib/protein';

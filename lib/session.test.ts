@@ -648,7 +648,7 @@ describe('every store is classified against the sign-out wipe (CUL-1255)', () =>
   const STORE_DIR = path.join(__dirname, '..', 'store');
 
   const WIPED: Record<string, string> = {
-    aiConsentStore: 'useAiConsentStore',
+    aiConsentState: 'useAiConsentStore',
     askStore: 'useAskStore',
     eventStore: 'useEventStore',
     historyListStore: 'useHistoryListStore',
@@ -664,6 +664,8 @@ describe('every store is classified against the sign-out wipe (CUL-1255)', () =>
     historyScopeStore: { on: 'petStore', wiring: 'usePetStore.subscribe(' },
   };
   const EXEMPT: Record<string, string> = {
+    aiConsentStore: 'declares no store: its reads and writes fill aiConsentState\'s, which is wiped ' +
+      '(CUL-1174 split the state out so Home imports no consent writer)',
     authStore: 'the session itself, nulled by the SIGNED_OUT handler; its recovery state ' +
       'must SURVIVE this wipe, which the reset handler calls mid-attempt (spec §6.3, FR-12)',
     foodLibraryStore: 'a version counter that tells screens to re-read; holds no rows',

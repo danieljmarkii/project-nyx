@@ -219,7 +219,20 @@ export function readVerdictOf(input: ReadStateInput): ReadVerdict {
   const quiet = finished === null ? null : display === 'not_enough_to_say' ? 'not_enough_to_say' : finished;
   // From here the photo was not checked: no read finished, or it finished unable to say.
   if (!input.hasPhoto || !hasPerIncidentRead(input.eventType)) return { state: 'none', verdict: quiet, display };
-  if (input.readingOff) return { state: 'off', verdict: quiet, display };
+  // Off only where no read was attempted (capped, the kill switch, never sent, no copy):
+  // there the owner's no is why nothing was checked, and the record says AI reading is
+  // off too. A read that FAILED, or finished unable to say, ran before the no; its record
+  // still says so (*Couldn't finish reading*, *Not enough to say yet*), and the row keeps
+  // the grey mark that agrees with it (CUL-1234 (a); the PR-15 adversarial pass), never a
+  // silence that reads like a calm read (CUL-1174).
+  // Whether a read RAN is read off the copy before staleness: a replaced photo set takes a
+  // quiet verdict away, never the fact that a read was attempted (the cross-product test).
+  const ran =
+    input.copy?.status === 'failed' ||
+    (input.copy != null && finishedQuietOf({ ...input.copy, photoSetStale: false }) !== null);
+  if (input.readingOff && !ran) {
+    return { state: 'off', verdict: quiet, display };
+  }
   return { state: 'unread', verdict: quiet, display };
 }
 
