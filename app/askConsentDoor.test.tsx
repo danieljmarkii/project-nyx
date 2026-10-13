@@ -25,6 +25,7 @@ jest.mock('../lib/ask', () => ({
 jest.mock('../store/aiConsentStore', () => ({
   consentDoorState: jest.fn(),
   saveAiConsent: jest.fn(),
+  cachedAiConsent: jest.fn(() => undefined),
 }));
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';

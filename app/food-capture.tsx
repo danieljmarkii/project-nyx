@@ -52,6 +52,7 @@ import {
 } from '../lib/trialContaminant';
 import { useAppConfig } from '../hooks/useAppConfig';
 import { useAiConsentDoor } from '../hooks/useAiConsentDoor';
+import { consentUnreadableNotice } from '../constants/aiConsentCopy';
 import { AiConsentSheet } from '../components/consent/AiConsentSheet';
 import { parseGateResponse } from '../lib/appConfig';
 import { EARLY_ACCESS_LABEL, foodCapCopy, careFirstLine } from '../constants/monetizationCopy';
@@ -335,6 +336,13 @@ export default function FoodCaptureScreen() {
     const answer = await consentDoor.ask();
     if (answer === 'declined' || answer === 'not_now') {
       handleManualEntry();
+      return;
+    }
+    // An answer the phone couldn't read sends nothing (CUL-1933): no photo is taken,
+    // the owner stays on this step and the next tap reads again.
+    if (answer === 'unreadable') {
+      const notice = consentUnreadableNotice('label');
+      Alert.alert(notice.title, notice.body);
       return;
     }
     const photo = await pickPhoto('front', source);

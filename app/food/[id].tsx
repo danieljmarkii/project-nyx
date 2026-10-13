@@ -535,12 +535,12 @@ export default function FoodDetailScreen() {
       Alert.alert(RETRY_READING_OFF_NOTICE.title, RETRY_READING_OFF_NOTICE.body);
       return;
     }
-    // The door also says 'proceed' when the consent read failed or stalled, trusting a
-    // server gate that is still held (CUL-552), so an unasked or declined owner's photos
-    // would leave on a slow network. The retry loses nothing by waiting (the food and
-    // its photos are saved), so it sends only on a yes this phone actually holds.
+    // A read that failed or stalled answers 'unreadable' (CUL-1933): nothing is sent,
+    // since the server's gate is still held (CUL-552). The cached check is the second
+    // lock this door had first (#1213): the retry loses nothing by waiting (the food
+    // and its photos are saved), so it sends only on a yes this phone actually holds.
     const userId = useAuthStore.getState().user?.id ?? null;
-    if (!userId || cachedAiConsent(userId)?.granted !== true) {
+    if (answer === 'unreadable' || !userId || cachedAiConsent(userId)?.granted !== true) {
       Alert.alert(RETRY_TRANSPORT_NOTICE.title, RETRY_TRANSPORT_NOTICE.body);
       return;
     }

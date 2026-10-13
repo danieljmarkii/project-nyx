@@ -357,9 +357,23 @@ describe('food detail — the retry passes the AI consent door (CUL-1905)', () =
       expect(saveAiConsent).toHaveBeenCalledWith('u1', true, 'backstop');
     });
 
-    it('the consent read failed or stalled with nothing on the phone: nothing sent, "try again"', async () => {
-      // The door proceeds on a failed read, trusting a server gate that is still held;
-      // the retry does not, because a tap again later loses nothing.
+    it('the consent read failed or stalled: nothing sent, "try again" (CUL-1933)', async () => {
+      mockDoorState.mockResolvedValue('unreadable');
+      const view = await renderWith(fields, testID);
+      await press(view, testID);
+      expect(mockInvoke).not.toHaveBeenCalled();
+      expect(alert).toHaveBeenCalledWith(RETRY_TRANSPORT_NOTICE.title, RETRY_TRANSPORT_NOTICE.body);
+    });
+
+    it('a stale yes in the cache never overrides an unreadable answer', async () => {
+      mockDoorState.mockResolvedValue('unreadable');
+      useAiConsentStore.getState().setRow('u1', granted);
+      const view = await renderWith(fields, testID);
+      await press(view, testID);
+      expect(mockInvoke).not.toHaveBeenCalled();
+    });
+
+    it('a proceed with nothing on the phone: nothing sent, "try again" (the second lock, #1213)', async () => {
       mockDoorState.mockResolvedValue('proceed');
       const view = await renderWith(fields, testID);
       await press(view, testID);
