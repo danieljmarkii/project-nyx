@@ -30,7 +30,7 @@ const styles = StyleSheet.create({
   block: {
     minHeight: 44,
     justifyContent: 'center',
-    gap: 2,
+    gap: theme.space0_5,
   },
   line: {
     fontSize: theme.textMD,

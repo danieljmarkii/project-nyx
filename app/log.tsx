@@ -202,8 +202,6 @@ export default function LogModal() {
   // event flow (renderPhotoAttachRow on the symptom/simple steps; the photo row on
   // PR 3's confirm) — the capability audit stayed clean, only the entry point went.
 
-  // Skip type selection when a type is pre-selected via route param (e.g. FAB
-  // "Log food" → meal, or the Vomit / Loose stool quick taps → vomit / diarrhea)
   // CUL-1835 (frame D0) — the completion card offers the photo's read only to an owner who
   // has not answered, so the answer is read here, before the save, never at it: the log
   // never waits on the network. Not known by the save = no offer (the record still asks).
@@ -211,6 +209,8 @@ export default function LogModal() {
     if (user?.id && cachedAiConsent(user.id) === undefined) void loadAiConsent(user.id).catch(() => undefined);
   }, [user?.id]);
 
+  // Skip type selection when a type is pre-selected via route param (e.g. FAB
+  // "Log food" → meal, or the Vomit / Loose stool quick taps → vomit / diarrhea)
   useEffect(() => {
     if (!typeParam) return;
     if (typeParam === 'meal') {

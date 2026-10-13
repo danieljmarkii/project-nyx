@@ -422,6 +422,9 @@ export function VomitAnalysisSection(
 
   const start = useCallback(async () => {
     cancelled.current = false;
+    // CUL-1835: a superseded run (a new event) may have left either set.
+    setCheckingSend(false);
+    setHeld(null);
     const first = await fetchRow();
     if (cancelled.current) return;
 
@@ -445,8 +448,8 @@ export function VomitAnalysisSection(
     // photoless record answers 'send' without waiting on the consent read.
     setCheckingSend(true);
     const send = await mountSendFor(eventId).catch((): MountSend => 'hold_unknown');
-    if (cancelled.current) return;
     setCheckingSend(false);
+    if (cancelled.current) return;
     if (send !== 'send') {
       setHeld(send);
       return;
@@ -719,8 +722,10 @@ export function VomitAnalysisSection(
   // that predates the yes (its frame follows the consent if the owner flips it meanwhile),
   // and the unread frame with Try again when the send could not be decided.
   if (held && !reading && (!row || row.status === 'pending')) {
+    // A hold_pre_yes was decided on a fresh yes, so a consent the hook has not read yet is
+    // that yes: Read this photo, never a frame with no way on.
     return held === 'hold_pre_yes'
-      ? unreadSlot(unreadFrameOf(consent))
+      ? unreadSlot(consent === 'loading' || consent === 'error' ? 'read_this' : unreadFrameOf(consent))
       : unreadSlot('unread', () => { setHeld(null); void start(); });
   }
 
@@ -767,8 +772,10 @@ export function VomitAnalysisSection(
   // Descriptive read flagged off with NO escalation flags fired (§4.5) → render
   // nothing. No dead "Try again", no empty frame. (If a flag had fired, the row is a
   // normal 'completed' escalation and falls through to the render below.)
+  // Only over a photo: the consent frames speak about a photo, and a photoless record
+  // keeps its shipped silence (the server gates only photographed reads).
   if (status === 'read_disabled') {
-    return unreadSlot(unreadFrameOf(consent));
+    return hasPhoto ? unreadSlot(unreadFrameOf(consent)) : null;
   }
 
   // Cap reached with NO escalation flags fired → the calm §7.3 cap state. Never
@@ -779,7 +786,7 @@ export function VomitAnalysisSection(
   // daily cap of 10.
   // A cap's copy promises a read tomorrow. Under a no it will not run, and unanswered the
   // next run is gated, so those take the unread frames instead (capped then declined).
-  const cappedFrame = status === 'capped' ? cappedFrameOf(consent) : null;
+  const cappedFrame = status === 'capped' && hasPhoto ? cappedFrameOf(consent) : null;
   if (cappedFrame) return unreadSlot(cappedFrame);
   if (status === 'capped') {
     return (

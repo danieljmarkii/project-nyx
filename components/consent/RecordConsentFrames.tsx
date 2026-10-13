@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
@@ -57,6 +57,10 @@ export function RecordAskCard({
   const [whatsSent, setWhatsSent] = useState(false);
   // A double tap sends one answer: the second press lands before `saving` re-renders.
   const inFlight = useRef(false);
+  // Allow swaps this card for the pending read, so the write's last state update may land
+  // after it has gone.
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
   const copy = recordAskCopy(kind, petName);
   const busy = saving !== null;
 
@@ -73,7 +77,7 @@ export function RecordAskCard({
       // Every in-context door writes 'backstop' (team call on CUL-1832, no migration).
       const result = await saveAiConsent(userId, choice === 'allow', 'backstop');
       if (result.status !== 'saved') {
-        setError(CONSENT_WRITE_FAILED);
+        if (mounted.current) setError(CONSENT_WRITE_FAILED);
         return;
       }
       // A no needs nothing more here: the store now holds it, and the record re-renders
@@ -81,10 +85,10 @@ export function RecordAskCard({
       if (choice === 'allow') onAllowed();
     } catch (e) {
       console.warn('[RecordAskCard] consent write threw:', e);
-      setError(CONSENT_WRITE_FAILED);
+      if (mounted.current) setError(CONSENT_WRITE_FAILED);
     } finally {
       inFlight.current = false;
-      setSaving(null);
+      if (mounted.current) setSaving(null);
     }
   }
 
@@ -130,7 +134,7 @@ export function RecordAskCard({
         onPress={onNotNow}
         disabled={busy}
         accessibilityRole="button"
-        style={styles.notNow}
+        style={[styles.notNow, busy ? styles.notNowBusy : null]}
         testID="record-consent-not-now"
       >
         <ThemedText style={styles.notNowText}>{RECORD_NOT_NOW}</ThemedText>
@@ -301,6 +305,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: theme.space1,
+  },
+  notNowBusy: {
+    opacity: theme.opacityDisabled,
   },
   notNowText: {
     fontSize: theme.textMD,

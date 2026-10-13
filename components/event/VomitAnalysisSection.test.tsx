@@ -309,6 +309,34 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     expect(mockMountSendFor).toHaveBeenCalledTimes(2);
   });
 
+  it('capped while unanswered: the ask card, since the next run is gated', async () => {
+    mockConsent = 'unasked';
+    mockRow = row({ status: 'capped' });
+    const { findByTestId, queryByText } = render(<VomitAnalysisSection eventId="e2l" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await findByTestId('record-consent-ask')).toBeTruthy();
+    expect(queryByText(/will run tomorrow/)).toBeNull();
+  });
+
+  it('a photoless record keeps its silence: read_disabled renders nothing, capped keeps the cap copy', async () => {
+    mockConsent = 'unasked';
+    mockRow = row({ status: 'read_disabled' });
+    const quiet = render(<VomitAnalysisSection eventId="e2m" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    await waitFor(() => expect(quiet.toJSON()).toBeNull());
+    quiet.unmount();
+    mockRow = row({ status: 'capped' });
+    const capped = render(<VomitAnalysisSection eventId="e2m2" petId="pet-1" petName="Rex" hasPhoto={false} />);
+    expect(await capped.findByText(/photo reads are used up/i)).toBeTruthy();
+    expect(capped.queryByTestId('record-consent-ask')).toBeNull();
+  });
+
+  it('a held pre-yes photo while the consent hook is still reading: Read this photo, never a dead end', async () => {
+    mockConsent = 'loading';
+    mockMountSend = 'hold_pre_yes';
+    mockRow = null;
+    const { findByTestId } = render(<VomitAnalysisSection eventId="e2n" petId="pet-1" petName="Rex" hasPhoto />);
+    expect(await findByTestId('record-consent-read-this')).toBeTruthy();
+  });
+
   // Frame G: a no never quiets an escalation.
   it('a call over an unread photo while off: the call leads, the off line follows, no Turn on link', async () => {
     mockConsent = 'declined';
