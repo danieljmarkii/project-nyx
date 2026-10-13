@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-13
 
-Row PR-17 of *App Store 1.2.0 · the first public release* (Wave 2), [CUL-1836](https://linear.app/projectnyx/issue/CUL-1836), the last sub-issue of [CUL-552](https://linear.app/projectnyx/issue/CUL-552). Shipped via draft PR (number in its body). Interactive; the PM ruled in session: **(a)** open the draft now, merge after the gate.
+Row PR-17 of *App Store 1.2.0 · the first public release* (Wave 2), [CUL-1836](https://linear.app/projectnyx/issue/CUL-1836), the last sub-issue of [CUL-552](https://linear.app/projectnyx/issue/CUL-552). Shipped via #1216 (draft, CI green). Interactive; the PM ruled in session: **(a)** open the draft now, merge after the gate. The PM then deferred the device QA and the consent answer to a later sitting, so the PR stays a draft and the issue stays In Progress, labelled `Waiting on PM`.
 
 ## What it does
 
