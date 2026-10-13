@@ -479,6 +479,25 @@ describe('the read on a node — nodeReadOf', () => {
       expect(nodeReadOf(landed('v', null, status), false)).toEqual({ state: 'none' });
     }
   });
+  it('photo reading off (a recorded no, CUL-1174): the unread row is unmarked, the rose and the tick stay', () => {
+    const photographedVomit = { eventType: 'vomit', hasPhoto: true };
+    for (const status of ['failed', 'capped', 'read_disabled']) {
+      expect(nodeReadOf(landed('v', null, status), false, photographedVomit, true)).toEqual({ state: 'none' });
+    }
+    expect(nodeReadOf(undefined, false, photographedVomit, true)).toEqual({ state: 'none' });
+    expect(nodeReadOf(landed('v', 'not_enough_to_say', 'uncertain'), false, photographedVomit, true)).toEqual({ state: 'none' });
+    // Presence escalates whatever the owner chose: a call is never stood down.
+    expect(nodeReadOf(landed('v', 'worth_a_call', 'failed'), false, photographedVomit, true)).toEqual({
+      state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call',
+    });
+    expect(nodeReadOf(undefined, true, photographedVomit, true)).toEqual({ state: 'pending' });
+    // Through the pipeline: the model hands the flag to every event node.
+    const on = buildSpine(input({ photographed: new Set(['v1']) }));
+    const off = buildSpine(input({ photographed: new Set(['v1']), readingOff: true }));
+    const readOf = (m: ReturnType<typeof buildSpine>) => eventsOf(m).find((x) => x.id === 'v1')?.read.state ?? null;
+    expect(readOf(on)).toBe('unread');
+    expect(readOf(off)).toBe('none');
+  });
   it('a calm verdict on a failed row does not render calm (only completed / uncertain may)', () => {
     // A 'monitor' left on a row whose status later became 'failed' is not a read that
     // stands; the escalation branch is the only one that outlives a failure.

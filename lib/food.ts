@@ -9,7 +9,8 @@ import type { FoodIntakeStat, PickerFood } from './db';
 // The placeholder a photo capture's food_items row carries until extraction names it
 // (app/food-capture.tsx). The reaper (lib/sync.ts reapStalePendingFoods) requires it on
 // top of 'pending', because the status alone does not mean unconfirmed: retrying
-// extraction re-writes 'pending' onto a confirmed food (CUL-769). It means the SERVER
+// extraction once re-wrote 'pending' onto a confirmed food (CUL-769; the retry no longer
+// writes it, and this guard stays so the next screen that does cannot delete a food). It means the SERVER
 // never received the owner's names, which a lost confirm write also leaves (CUL-1467).
 export const PENDING_CAPTURE_LABEL = 'Extracting…';
 

@@ -140,7 +140,7 @@ export interface ReadStateInput {
   copy: ReadCopy | null | undefined;
   /** A read is being produced right now (`analysisChainOutstanding`, C-30). */
   inFlight: boolean;
-  /** The owner turned photo reading off. Always false until CUL-552 ships (HV-18). */
+  /** The owner turned photo reading off: a recorded no (`photoReadingOffOf`, CUL-1174). */
   readingOff: boolean;
 }
 

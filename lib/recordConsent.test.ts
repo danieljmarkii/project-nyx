@@ -1,4 +1,5 @@
 import {
+  photoReadingOffOf,
   besideCallOf,
   cappedFrameOf,
   photoUnreadUnderCall,
@@ -45,3 +46,14 @@ describe('the frames', () => {
     expect(besideCallOf('granted')).toBeNull();
   });
 });
+
+describe('photoReadingOffOf (CUL-1174): off only on a recorded no', () => {
+  const row = (granted: boolean): AiConsentRow => ({ granted, copyVersion: 'v', source: 'settings', decidedAt: '2026-10-12T00:00:00Z' });
+  it('a no is off; a yes, never asked and not read yet keep the grey mark', () => {
+    expect(photoReadingOffOf(row(false))).toBe(true);
+    expect(photoReadingOffOf(row(true))).toBe(false);
+    expect(photoReadingOffOf(null)).toBe(false);
+    expect(photoReadingOffOf(undefined)).toBe(false);
+  });
+});
+

@@ -1336,7 +1336,8 @@ export async function readVerdicts(
       hasPhoto: true,
       copy: copies.get(eventId),
       inFlight: analysisChainOutstanding(eventId),
-      // The owner's photo-reading choice arrives with CUL-552 (HV-18).
+      // The gallery speaks only `display`, which `off` and `unread` share, so the owner's
+      // choice changes nothing here (CUL-1174 wires it where the STATE draws: the rows).
       readingOff: false,
     }).display;
   }

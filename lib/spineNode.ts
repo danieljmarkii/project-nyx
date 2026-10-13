@@ -143,6 +143,10 @@ export interface SpineInput {
   /** Event ids whose read is being PRODUCED right now (`analysisChainOutstanding`), the
    *  C-30 fact, handed in rather than read here so the model stays pure. */
   working: ReadonlySet<string>;
+  /** The owner turned photo reading off (a recorded no, CUL-1174): an unread photo's row
+   *  then carries no grey mark, and the state is said once on History's type sheet and on
+   *  the record (H-4b). Never stands down the rose. Absent ⇒ on. */
+  readingOff?: boolean;
   /** The feedings the lane would time against: the pet's meals inside the lookback,
    *  yesterday's included (a 6 AM vomit is timed against last night's bowl). */
   feedings: readonly FeedingInput[];
@@ -288,14 +292,14 @@ export function nodeReadOf(
   row: SpineAnalysisRow | undefined,
   working: boolean,
   expect?: NodeReadExpectation,
+  readingOff: boolean = false,
 ): NodeRead {
   const { state, verdict, display } = readVerdictOf({
     eventType: expect?.eventType ?? null,
     hasPhoto: expect?.hasPhoto ?? false,
     copy: row,
     inFlight: working,
-    // The owner's photo-reading choice arrives with CUL-552 (HV-18).
-    readingOff: false,
+    readingOff,
   });
   switch (state) {
     case 'worth_a_call': {
@@ -565,7 +569,7 @@ function eventNode(row: SpineEventInput, input: SpineInput, ctx: DayContext): Sp
   // The read attaches to any row whose record can hold one (`mayCarryRead`, CUL-1197); a
   // meal or a dose never carries a read, whatever the map holds.
   const read: NodeRead = mayCarryRead(row.event_type)
-    ? nodeReadOf(input.analysis.get(row.id), input.working.has(row.id), { eventType: row.event_type, hasPhoto: photo })
+    ? nodeReadOf(input.analysis.get(row.id), input.working.has(row.id), { eventType: row.event_type, hasPhoto: photo }, input.readingOff ?? false)
     : { state: 'none' };
   return {
     kind: 'event',

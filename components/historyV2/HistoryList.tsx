@@ -83,6 +83,7 @@ import {
 } from 'react-native';
 import { router, useFocusEffect, useNavigation } from 'expo-router';
 import { theme } from '../../constants/theme';
+import { usePhotoReadingOff } from '../../hooks/usePhotoReadingOff';
 import { analysisChainOutstanding, awaitAnalysisChain, watchAnalysisRow } from '../../lib/analysis';
 import { focusAccessibility } from '../../lib/a11yFocus';
 import { takeRemovals } from '../../lib/removalNotice';
@@ -586,12 +587,14 @@ export function HistoryList() {
 
   // Every loaded day's nodes at once, over the whole days (R-2), so each card is handed the
   // meals a timing line on another card measures from (`timedElsewhere`, HV-6).
+  // A recorded no leaves an unread photo's row unmarked; the type sheet says it once (H-4b).
+  const readingOff = usePhotoReadingOff();
   const nodesByDay = useMemo(
     () =>
       snapshot && snapshot.filter.kind !== 'noticed'
         ? historyNodesByDay({
             days: snapshot.wholeDays,
-            reads: { analysis: snapshot.analysis, answered: snapshot.answered, working },
+            reads: { analysis: snapshot.analysis, answered: snapshot.answered, working, readingOff },
             timing: snapshot.timing,
             // The looks each card draws among its rows break a run they fall inside (CUL-1719).
             // The read's looks, not the removal-filtered ones: like the rows, the nodes hold
@@ -599,7 +602,7 @@ export function HistoryList() {
             looks: snapshot.looks,
           })
         : NO_NODES_BY_DAY,
-    [snapshot, working],
+    [snapshot, working, readingOff],
   );
   // A re-keyed run (an earlier meal logged, its first meal deleted) stays open: carried in
   // the render that brings the new nodes, so its row never mounts closed (CUL-1757).
