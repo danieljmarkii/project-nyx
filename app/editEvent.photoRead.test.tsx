@@ -153,7 +153,8 @@ describe('a photo changed on the edit screen gets its read (CUL-1680)', () => {
     // Taken before the screen closes, so the detail screen's section finds it held (CUL-801).
     expect(mockClaim.mock.invocationCallOrder[0]).toBeLessThan(mockBack.mock.invocationCallOrder[0]);
     expect(mockVomit).toHaveBeenCalledTimes(1);
-    expect(mockVomit).toHaveBeenCalledWith('evt-1');
+    // CUL-1835: changing the photo is the owner asking for its read (the server's tap rule).
+    expect(mockVomit).toHaveBeenCalledWith('evt-1', { ownerTap: true });
     expect(mockStool).not.toHaveBeenCalled();
     // The read runs after the photo's row reached the server, not before.
     expect(mockUpsert.mock.invocationCallOrder[0]).toBeLessThan(mockVomit.mock.invocationCallOrder[0]);
@@ -166,7 +167,7 @@ describe('a photo changed on the edit screen gets its read (CUL-1680)', () => {
   it('a stool takes the stool read', async () => {
     const utils = await open('diarrhea');
     await attachAndSave(utils);
-    expect(mockStool).toHaveBeenCalledWith('evt-1');
+    expect(mockStool).toHaveBeenCalledWith('evt-1', { ownerTap: true });
     expect(mockVomit).not.toHaveBeenCalled();
   });
 

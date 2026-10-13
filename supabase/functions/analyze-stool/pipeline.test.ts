@@ -81,7 +81,7 @@ class FakeQuery {
     }
     if (this.table === 'event_attachments') {
       const n = w.photos ?? 1
-      return { data: Array.from({ length: n }, (_, i) => ({ id: `0f8e7d6c-5b4a-4938-8271-605f4e3d2c1${i}`, storage_path: `pet-1/evt-1/${i}.jpg` })), error: null }
+      return { data: Array.from({ length: n }, (_, i) => ({ id: `0f8e7d6c-5b4a-4938-8271-605f4e3d2c1${i}`, storage_path: `pet-1/evt-1/${i}.jpg`, created_at: '2020-06-01T00:00:00+00:00' })), error: null }
     }
     if (this.table === 'app_config') {
       return { data: w.en3 ? [{ key: 'engines_v3_en3', value: { enabled: false, allowlist: [OWNER] } }] : [], error: null }

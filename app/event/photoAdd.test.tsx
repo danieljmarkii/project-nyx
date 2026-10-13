@@ -176,7 +176,8 @@ describe('event detail — adding a photo to a record', () => {
     );
     expect(runCalls(MARK_SYNCED)).toEqual([[expect.stringMatching(MARK_SYNCED), [attId]]]);
     expect(mockTriggerVomit).toHaveBeenCalledTimes(1);
-    expect(mockTriggerVomit).toHaveBeenCalledWith('evt-1');
+    // CUL-1835: adding a photo is the owner asking for its read (the server's tap rule).
+    expect(mockTriggerVomit).toHaveBeenCalledWith('evt-1', { ownerTap: true });
     // The chain settles TRUE only because its read was actually made.
     expect(mockSettle).toHaveBeenCalledWith(true);
     // CUL-1219 (BRK-44): the new photo and its read reach the Signal, once the read had its turn.

@@ -58,7 +58,9 @@ interface World {
   // CUL-1835: the owner's consent history (ai_consent_events). Absent = one yes long before
   // the event, so every suite above keeps reading the photo; 'error' = a failed read.
   consentHistory?: Row[] | 'error' | 'throw'
-  historyReads: Array<{ filters: Row; client: 'user' | 'admin' }>
+  historyReads: Array<{ filters: Row; client: 'user' | 'admin'; order: unknown[]; limit: unknown }>
+  // When the photo reached the server (event_attachments.created_at, the database's clock).
+  photoUploadedAt?: string | null
   // When the phone logged the event (events.created_at). Absent = just after it occurred.
   eventCreatedAt?: string | null
   // The request says the owner tapped for this photo (owner_tap).
@@ -113,8 +115,10 @@ class FakeQuery {
   eq(column: string, value: unknown) { this.filters[column] = value; return this }
   is() { return this }
   in() { return this }
-  order() { return this }
-  limit() { return this }
+  private orderArgs: unknown[] = []
+  private limitArg: unknown = undefined
+  order(...args: unknown[]) { this.orderArgs = args; return this }
+  limit(n: unknown) { this.limitArg = n; return this }
   maybeSingle() { return this }
   update(values: Row) { this.mode = 'update'; this.values = values; return this }
   upsert(values: Row) { this.mode = 'upsert'; this.values = values; return this }
@@ -133,7 +137,10 @@ class FakeQuery {
         error: null,
       }
     }
-    if (this.table === 'event_attachments') return { data: w.noPhoto ? [] : [{ id: ATTACHMENT_ID, storage_path: 'pet-1/evt-1/a.jpg' }], error: null }
+    if (this.table === 'event_attachments') {
+      const created_at = w.photoUploadedAt === undefined ? '2026-09-26T08:00:30+00:00' : w.photoUploadedAt
+      return { data: w.noPhoto ? [] : [{ id: ATTACHMENT_ID, storage_path: 'pet-1/evt-1/a.jpg', created_at }], error: null }
+    }
     if (this.table === 'app_config') {
       return w.appConfig === 'error' ? { data: null, error: { message: 'app_config unreachable' } } : { data: w.appConfig ?? [], error: null }
     }
@@ -147,7 +154,7 @@ class FakeQuery {
       return { data: hit ? { granted: hit.granted } : null, error: null }
     }
     if (this.table === 'ai_consent_events') {
-      w.historyReads.push({ filters: { ...this.filters }, client: this.who })
+      w.historyReads.push({ filters: { ...this.filters }, client: this.who, order: this.orderArgs, limit: this.limitArg })
       if (w.consentHistory === 'throw') throw new Error('ai_consent_events unreachable')
       if (w.consentHistory === 'error') return { data: null, error: { message: 'history read failed' } }
       const rows = w.consentHistory ?? [{ user_id: 'owner-1', scope: 'ai_boundary', granted: true, decided_at: '2026-01-01T00:00:00+00:00' }]
@@ -1164,10 +1171,33 @@ Deno.test('pipeline CUL-1835 — fails closed: a failed history read, an empty h
   }
 })
 
-Deno.test('pipeline CUL-1835 — the history read is service-role, one scope, the verified uid', async () => {
+// Newest first and capped: a cap can then only move the start of the yes later (holds more).
+// Ascending, the cap would keep the OLDEST rows and could date the yes before a later no.
+Deno.test('pipeline CUL-1835 — the history read is service-role, one scope, the verified uid, newest first, capped', async () => {
   const w = makeWorld({ vision: () => CLEAN })
   await run(w)
-  assertEquals(w.historyReads, [{ filters: { user_id: 'owner-1', scope: 'ai_boundary' }, client: 'admin' }])
+  assertEquals(w.historyReads, [{
+    filters: { user_id: 'owner-1', scope: 'ai_boundary' },
+    client: 'admin',
+    order: ['decided_at', { ascending: false }],
+    limit: 500,
+  }])
+})
+
+// rls-privacy pass 2: the phone stamped the log after the yes (its clock runs ahead), but the
+// photo reached the server before the yes, by the database's own clock.
+Deno.test('pipeline CUL-1835 — a phone clock running ahead: the upload time holds the photo', async () => {
+  const w = makeWorld({
+    eventCreatedAt: '2026-09-26T09:10:00.000Z',
+    photoUploadedAt: '2026-09-26T08:01:00+00:00',
+    consentHistory: yesFrom(YES_AT),
+    contextFlags: ['ctx_flag'],
+    vision: () => CLEAN,
+  })
+  const r = await run(w)
+  assertStrictEquals(r.body.gated, 'photo_predates_consent')
+  assertStrictEquals(w.visionCalls, 0)
+  assertStrictEquals(r.body.recommendation, 'worth_a_call')
 })
 
 Deno.test('pipeline CUL-1835 — a decline is still a decline: the history is never read, a tap opens nothing', async () => {

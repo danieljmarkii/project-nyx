@@ -98,7 +98,7 @@ class FakeQuery {
         ? { data: null, error: { message: 'answers read failed' } }
         : { data: w.answers ?? [], error: null }) as { data: unknown; error: null }
     }
-    if (this.table === 'event_attachments') return { data: [{ id: '0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b', storage_path: 'pet-1/evt-1/a.jpg' }], error: null }
+    if (this.table === 'event_attachments') return { data: [{ id: '0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b', storage_path: 'pet-1/evt-1/a.jpg', created_at: '2020-06-01T00:00:00+00:00' }], error: null }
     if (this.table === 'app_config') {
       const on = (key: string) => ({ key, value: { enabled: false, allowlist: [OWNER] } })
       return { data: [...(w.en0 ? [on('engines_v3_en0')] : []), ...(w.en5 ? [on('engines_v3_en5')] : [])], error: null }

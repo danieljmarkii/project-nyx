@@ -79,8 +79,8 @@ export async function readAiBoundaryConsent(
 // The current yes begins at the first yes after the latest no (the history, not the state
 // row's `decided_at`, which every re-save re-stamps: a re-saved yes must not re-hold every
 // photo logged under the yes it repeated). Residual, stated: the event stamp is the phone's
-// clock and the yes is the database's, so a phone running AHEAD can carry a photo logged
-// within that skew before the yes past the rule.
+// clock and the yes is the database's, so the photos' upload times (database clock) are
+// checked too; see photoNeedsTap for what that leaves.
 
 // Rows read newest first. A run of yeses longer than this begins no later than the oldest
 // row read, so a cap can only make the start later, which holds more, never less.
@@ -108,13 +108,32 @@ export function consentOnSince(history: unknown): number | null {
   return since
 }
 
-/** True when the event was logged before the current yes began, or either time cannot be
- *  read: the photo then waits for the owner's tap. Fails closed. */
-export function photoNeedsTap(eventCreatedAt: unknown, onSinceMs: number | null): boolean {
+// A log stamp this far past the database's own now proves the phone's clock runs ahead.
+export const FUTURE_STAMP_TOLERANCE_MS = 5 * 60 * 1000
+
+/** True when the photo waits for the owner's tap. Fails closed: held when
+ *   - the current yes cannot be dated, or the event's log time cannot be read;
+ *   - the event was logged before the yes began (the phone's stamp);
+ *   - any photo reached the server before the yes began (the database's own stamp, so a
+ *     phone clock running ahead cannot carry a photo past this test: rls-privacy pass 2);
+ *   - the log stamp is in the future by more than the tolerance (a clock running ahead).
+ *  What remains is a phone running ahead whose offline photo uploads after the yes. */
+export function photoNeedsTap(
+  eventCreatedAt: unknown,
+  attachmentCreatedAts: readonly unknown[],
+  onSinceMs: number | null,
+  nowMs: number,
+): boolean {
   if (onSinceMs === null) return true
   const created = typeof eventCreatedAt === 'string' ? Date.parse(eventCreatedAt) : NaN
   if (Number.isNaN(created)) return true
-  return created < onSinceMs
+  if (created < onSinceMs) return true
+  if (created > nowMs + FUTURE_STAMP_TOLERANCE_MS) return true
+  for (const at of attachmentCreatedAts) {
+    const uploaded = typeof at === 'string' ? Date.parse(at) : NaN
+    if (Number.isNaN(uploaded) || uploaded < onSinceMs) return true
+  }
+  return false
 }
 
 /** The start of the owner's current yes, read through service_role for the verified uid.

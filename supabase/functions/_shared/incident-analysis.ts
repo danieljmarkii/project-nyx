@@ -1872,7 +1872,8 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     // 2. Photo(s) for this event (ordered). May be empty (logged without a photo).
     const { data: attachments } = await userClient
       .from('event_attachments')
-      .select('id, storage_path')
+      // created_at: the database's upload stamp, for CUL-1835's tap rule (photoNeedsTap).
+      .select('id, storage_path, created_at')
       .eq('event_id', eventId)
       .order('sort_order', { ascending: true })
 
@@ -1974,7 +1975,15 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       //    fails closed rather than spending the caller's yes on someone else's pet.
       if (ownerId !== user.id || !(await readAiBoundaryConsent(adminClient, user.id))) {
         gate = { allow: false, reason: 'consent_declined' }
-      } else if (!ownerTapped && photoNeedsTap(event.created_at, await readConsentOnSince(adminClient, user.id))) {
+      } else if (
+        !ownerTapped &&
+        photoNeedsTap(
+          event.created_at,
+          (attachments ?? []).map((a) => a.created_at),
+          await readConsentOnSince(adminClient, user.id),
+          Date.now(),
+        )
+      ) {
         //  "Sent only if you tap" (CUL-1835, aiConsent.ts): logged before the current yes,
         //  and nobody tapped. Before the flag and the counter, like a decline: no unit spent.
         gate = { allow: false, reason: 'photo_predates_consent' }

@@ -97,7 +97,7 @@ class FakeQuery {
     if (this.table === 'pets') return { data: { date_of_birth: w.birthDate }, error: null }
     if (this.table === 'event_attachments') {
       const e = w.events.find((x) => x.id === this.filters.event_id)
-      return { data: e?.photo ? [{ id: '0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b', storage_path: `pet-1/${e.id}/a.jpg` }] : [], error: null }
+      return { data: e?.photo ? [{ id: '0f8e7d6c-5b4a-4938-8271-605f4e3d2c1b', storage_path: `pet-1/${e.id}/a.jpg`, created_at: '2020-06-01T00:00:00+00:00' }] : [], error: null }
     }
     if (this.table === 'app_config') {
       return { data: w.keys.map((key) => ({ key, value: { enabled: false, allowlist: [OWNER] } })), error: null }

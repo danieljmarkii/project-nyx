@@ -658,9 +658,13 @@ export default function EventDetailScreen() {
             // read lands last and wins); skipping would silently drop the very
             // re-read this path exists for.
             if (readClaim === null) await awaitAnalysisChain(event.id);
+            // CUL-1835: the owner just added or replaced this photo, so the read is theirs to
+            // ask for: a tap, under whatever answer is on file now (a no still declines). Without
+            // it, a photo added under the yes to a record logged before it is held behind the old
+            // read, unseen (adversarial pass 2, finding 1).
             const { error: readErr } = event.event_type === 'vomit'
-              ? await triggerVomitAnalysis(event.id)
-              : await triggerStoolAnalysis(event.id);
+              ? await triggerVomitAnalysis(event.id, { ownerTap: true })
+              : await triggerStoolAnalysis(event.id, { ownerTap: true });
             if (readErr) console.warn('[event-detail] per-incident read trigger failed:', readErr);
             readInvoked = !readErr;
           }

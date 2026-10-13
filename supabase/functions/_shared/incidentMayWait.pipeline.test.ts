@@ -103,8 +103,9 @@ class Q {
     const rows = this.rows()
     if (this.mode === 'select') {
       this.db.reads[this.table] = (this.db.reads[this.table] ?? 0) + 1
-      // An event's log time defaults to when it occurred (CUL-1835's rule reads created_at).
-      const hit = rows.filter((r) => this.preds.every((p) => p(r))).map((r) => (this.table === 'events' ? { created_at: r.occurred_at, ...r } : r))
+      // An event's log time defaults to when it occurred, a photo's upload time to long after the
+      // yes (CUL-1835's rule reads both).
+      const hit = rows.filter((r) => this.preds.every((p) => p(r))).map((r) => (this.table === 'events' ? { created_at: r.occurred_at, ...r } : this.table === 'event_attachments' ? { created_at: '2020-06-01T00:00:00+00:00', ...r } : r))
       return { data: this.single ? (hit[0] ? { ...hit[0] } : null) : hit.map((r) => ({ ...r })), error: null }
     }
     if (this.mode === 'update') {
