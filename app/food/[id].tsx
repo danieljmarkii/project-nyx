@@ -29,7 +29,9 @@ import { ExtractionFailedBanner } from '../../components/food/ExtractionFailedBa
 import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
 import { parseGateResponse } from '../../lib/appConfig';
-import { retryNoticeOf, type RetryOutcome } from '../../lib/foodRetry';
+import { retryNoticeOf, RETRY_READING_OFF_NOTICE, RETRY_TRANSPORT_NOTICE, type RetryOutcome } from '../../lib/foodRetry';
+import { useAiConsentDoor } from '../../hooks/useAiConsentDoor';
+import { AiConsentSheet } from '../../components/consent/AiConsentSheet';
 import { useAuthStore } from '../../store/authStore';
 import { cachedAiConsent } from '../../store/aiConsentState';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
@@ -159,6 +161,13 @@ export default function FoodDetailScreen() {
 
   const [saving, setSaving] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  // CUL-1905: the retry sends the stored label photos to Anthropic, so it passes the
+  // same consent door as Add by photo (CUL-1834) before the invoke, on both buttons.
+  const consentDoor = useAiConsentDoor('label');
+  // The row as it is now, for a handler that resumes after the door: the closure's `row`
+  // is the one from the tap, and a realtime update can land while the sheet is up.
+  const rowRef = useRef<FoodRow | null>(null);
+  rowRef.current = row;
   const [addingPhoto, setAddingPhoto] = useState(false);
   const [removing, setRemoving] = useState(false);
 
@@ -517,10 +526,29 @@ export default function FoodDetailScreen() {
       Alert.alert('Add a photo first', 'The AI needs at least one photo to extract from.');
       return;
     }
-    const before = row;
+    // The door answers before anything is sent. Not now leaves the food as it was (the
+    // owner can tap again); a no, given now or already on file, sends nothing and says
+    // the label wasn't read, so the tap never reads as a read that ran.
+    const answer = await consentDoor.ask();
+    if (answer === 'not_now') return;
+    if (answer === 'declined') {
+      Alert.alert(RETRY_READING_OFF_NOTICE.title, RETRY_READING_OFF_NOTICE.body);
+      return;
+    }
+    // The door also says 'proceed' when the consent read failed or stalled, trusting a
+    // server gate that is still held (CUL-552), so an unasked or declined owner's photos
+    // would leave on a slow network. The retry loses nothing by waiting (the food and
+    // its photos are saved), so it sends only on a yes this phone actually holds.
+    const userId = useAuthStore.getState().user?.id ?? null;
+    if (!userId || cachedAiConsent(userId)?.granted !== true) {
+      Alert.alert(RETRY_TRANSPORT_NOTICE.title, RETRY_TRANSPORT_NOTICE.body);
+      return;
+    }
+    const before = rowRef.current;
+    if (!before || before.photo_paths.length === 0) return;
     setRetrying(true);
     // Local only: the UI leaves the 'failed' state at once.
-    setRow({ ...row, ai_extraction_status: 'pending', ai_extraction_error: null });
+    setRow((cur) => (cur ? { ...cur, ai_extraction_status: 'pending', ai_extraction_error: null } : cur));
 
     let outcome: RetryOutcome;
     try {
@@ -536,8 +564,7 @@ export default function FoodDetailScreen() {
 
     await settleAfterRetry(before);
     setRetrying(false);
-    const userId = useAuthStore.getState().user?.id ?? null;
-    const notice = retryNoticeOf(outcome, userId ? cachedAiConsent(userId) : undefined);
+    const notice = retryNoticeOf(outcome, cachedAiConsent(userId));
     if (notice) Alert.alert(notice.title, notice.body);
   }
 
@@ -775,7 +802,7 @@ export default function FoodDetailScreen() {
                 `'failed'` is currently collapsing three ways, and it is CUL-768.
                 Do not re-widen this without it. */}
             {isFailed && row.ai_extraction_error && (
-              <ExtractionFailedBanner onRetry={handleRetry} retrying={retrying} />
+              <ExtractionFailedBanner onRetry={handleRetry} retrying={retrying || consentDoor.settling} />
             )}
 
             {/* B-616 FR-13/FR-14 (mock D) — the food's relationship to the
@@ -909,9 +936,10 @@ export default function FoodDetailScreen() {
                 onPress={handleRetry}
                 disabled={retrying}
                 hitSlop={8}
+                testID="food-extraction-rerun"
                 activeOpacity={0.7}
               >
-                {retrying
+                {retrying || consentDoor.settling
                   ? <WhorlSpinner size="sm" ground="day" />
                   : <ThemedText style={styles.secondaryActionText}>Re-run AI extraction</ThemedText>}
               </TouchableOpacity>
@@ -971,6 +999,8 @@ export default function FoodDetailScreen() {
           }}
         />
       )}
+
+      <AiConsentSheet {...consentDoor.sheetProps} />
     </SafeAreaView>
   );
 }
