@@ -64,6 +64,7 @@ import {
 import type { OnsetConfidence } from '../../../lib/mealTiming';
 import type { FeedingRow } from '../../../lib/patternsTiming';
 import { toLocalDayKey } from '../../../lib/utils';
+import { usePhotoReadingOff } from '../../../hooks/usePhotoReadingOff';
 import { useEventStore } from '../../../store/eventStore';
 import { usePetStore } from '../../../store/petStore';
 import { useSyncStore } from '../../../store/syncStore';
@@ -285,6 +286,9 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
     return new Set([...facts.photographed].filter((id) => !readable.has(id) || copy.answered.has(id)));
   }, [facts, petId, readable, copy.answered]);
 
+  // A recorded no leaves an unread photo's row unmarked (H-4b, CUL-1174).
+  const readingOff = usePhotoReadingOff();
+
   // The day's pipeline (`lib/dayNodes.ts`, History v2 HV-1) — the one History's day
   // cards call too. The facts are this pet's or they are empty: a read that answered
   // for the previous pet is never handed over.
@@ -295,6 +299,7 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
           photographed,
           analysis: copy.rows,
           working,
+          readingOff,
         },
         timings: {
           feedings: facts && facts.petId === petId ? facts.feedings : [],
@@ -302,7 +307,7 @@ export function TodayCard({ trialNotEating = null, onLayout, onLookLayout, onOpe
           priorOnsets: facts && facts.petId === petId ? facts.priorOnsets : [],
         },
       }),
-    [rows, facts, petId, photographed, copy.rows, working],
+    [rows, facts, petId, photographed, copy.rows, working, readingOff],
   );
 
   const readState: 'loading' | 'ready' | 'failed' =

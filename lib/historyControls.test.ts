@@ -20,7 +20,6 @@ jest.mock('./sync', () => ({
 
 import { EVENT_TYPES } from '../constants/eventTypes';
 import {
-  PHOTO_READING_OFF,
   READING_OFF_TEXT,
   TYPE_SHEET_ORDER,
   daysIn,
@@ -377,9 +376,10 @@ describe('Photographed’s line (H-4b)', () => {
     expect(notReadText(0)).toBeNull();
   });
 
-  it('says photo reading is off, once, when the owner chose it (and it is off for nobody until CUL-552)', () => {
+  it('says photo reading is off, once, when the owner chose it, in place of the count (CUL-1174)', () => {
+    // The store counts the TRUE unread rows whatever the answer; the sheet decides.
     expect(byLabel(typeSheetRows(typeInput({ readingOff: true, notRead: 4 })), 'Photographed').detail).toBe(READING_OFF_TEXT);
-    expect(PHOTO_READING_OFF).toBe(false);
+    expect(byLabel(typeSheetRows(typeInput({ readingOff: false, notRead: 4 })), 'Photographed').detail).toBe('4 not read');
   });
 });
 

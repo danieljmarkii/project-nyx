@@ -13,11 +13,10 @@ import FoodDetailScreen from './[id]';
 // This session widened that gate to the status alone, on the argument that a
 // failure hidden by a missing diagnostic string is a failure hidden — and
 // reverted it, because the product review traced where the newly-shown button
-// leads: `handleRetry` writes 'pending', the cap and flag-off paths answer with a
-// typed 200 that `handleRetry` cannot see, and the row stays 'pending', where the
-// Ingredients field becomes a spinner and the reaper can hard-delete the food
-// (CUL-769). Those rows do need a state; it is the calm cap band, not this
-// banner (CUL-768).
+// led: `handleRetry` wrote 'pending', the cap and flag-off paths answered with a
+// typed 200 it could not see, and the row stayed 'pending'. CUL-769 made the retry
+// safe (it writes nothing to the server; `foodDetailRetry.test.tsx`), but those rows
+// still need their own state, the calm cap band rather than this banner (CUL-768).
 //
 // So the null-error case is pinned as ABSENT — with the reason, so the next
 // reader does not repeat the widening. Both directions were confirmed by

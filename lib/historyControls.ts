@@ -92,13 +92,6 @@ const FILTER_LABEL = {
  *  said once, here and on the record, never on the rows. */
 export const READING_OFF_TEXT = 'photo reading is off';
 
-/**
- * Whether the owner has turned photo reading off. FALSE until CUL-552 ships the consent
- * (HV-18, CUL-1174, wires the owner's choice here). One constant, so the sheet's line and
- * the *N not read* count can never disagree about it.
- */
-export const PHOTO_READING_OFF: boolean = false;
-
 /** The search button, and the field it opens (§3.7). The field's button ends the search and
  *  clears it, which the platform calls Cancel: "Done" promises to keep what was found. The
  *  keyboard's own search key keeps it. */
@@ -347,7 +340,7 @@ export interface TypeSheetInput {
   courses: readonly HistoryCourse[];
   /** Photographed rows in the window whose read is `unread`, or null when not known. */
   notRead: number | null;
-  /** The owner turned photo reading off (`PHOTO_READING_OFF` until HV-18). */
+  /** The owner turned photo reading off: a recorded no (`usePhotoReadingOff`, CUL-1174). */
   readingOff: boolean;
   /** The daily look is live for this pet (`lookCardLive`: a cat or a dog). */
   lookLive: boolean;
@@ -546,7 +539,7 @@ export interface PinnedRowInput {
   search: string | null;
   /** The daily look is live for this pet (`lookCardLive`: a cat or a dog). */
   lookLive: boolean;
-  /** The owner turned photo reading off (`PHOTO_READING_OFF` until HV-18). */
+  /** The owner turned photo reading off: a recorded no (`usePhotoReadingOff`, CUL-1174). */
   readingOff: boolean;
   /** The owner's local day: names the windows while the record has not answered. */
   today: string;

@@ -28,6 +28,10 @@ import { PhotoCarousel } from '../../components/food/PhotoCarousel';
 import { ExtractionFailedBanner } from '../../components/food/ExtractionFailedBanner';
 import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
+import { parseGateResponse } from '../../lib/appConfig';
+import { retryNoticeOf, type RetryOutcome } from '../../lib/foodRetry';
+import { useAuthStore } from '../../store/authStore';
+import { cachedAiConsent } from '../../store/aiConsentState';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
 import { getDb } from '../../lib/db';
 import { seedPickerProteins, pickerProteinWrite, proteinsToCacheText } from '../../lib/protein';
@@ -496,31 +500,70 @@ export default function FoodDetailScreen() {
   }
 
   // ── Re-run extraction ──
+  //
+  // CUL-769: the retry NEVER writes 'pending' to the server. It used to, so another
+  // device would see the read in flight, and a call that never came back (offline, the
+  // cap, the flag, a declined owner: the last three answer with a typed 200 and touch
+  // nothing) left a CONFIRMED food at 'pending' for good: the Ingredients field became a
+  // "Reading the label…" spinner, the retry vanished, and the stale-capture reaper was one
+  // guard away from hard-deleting it with its trial and feeding links. The flip is local
+  // now; the function writes the only statuses the server ever sees here ('completed', or
+  // 'failed' from its catch), and the screen re-reads the row once the call answers, so
+  // it ends on the server's truth whatever happened. A few seconds of "in flight" on a
+  // second phone is what that costs.
   async function handleRetry() {
     if (!row) return;
     if (row.photo_paths.length === 0) {
       Alert.alert('Add a photo first', 'The AI needs at least one photo to extract from.');
       return;
     }
+    const before = row;
     setRetrying(true);
-    // Flip status locally so the UI moves out of the 'failed' state immediately —
-    // the Edge Function will write the canonical status on completion via realtime.
+    // Local only: the UI leaves the 'failed' state at once.
     setRow({ ...row, ai_extraction_status: 'pending', ai_extraction_error: null });
-    // Also write through to the DB so a backgrounded screen or another device
-    // sees pending while extraction runs.
-    await supabase
-      .from('food_items')
-      .update({ ai_extraction_status: 'pending', ai_extraction_error: null })
-      .eq('id', row.id);
 
-    const { error } = await supabase.functions.invoke('extract-food-from-photo', {
-      body: { food_item_id: row.id, photo_paths: row.photo_paths },
-    });
-    setRetrying(false);
-    if (error) {
-      console.warn('[food-detail] extraction retry failed:', error.message);
-      Alert.alert("Couldn't start reading the label", 'Try again in a moment.');
+    let outcome: RetryOutcome;
+    try {
+      const { data, error } = await supabase.functions.invoke('extract-food-from-photo', {
+        body: { food_item_id: before.id, photo_paths: before.photo_paths },
+      });
+      if (error) console.warn('[food-detail] extraction retry failed:', error.message);
+      outcome = error ? { kind: 'transport_error' } : { kind: 'answered', gate: parseGateResponse(data) };
+    } catch (err) {
+      console.warn('[food-detail] extraction retry threw:', err);
+      outcome = { kind: 'transport_error' };
     }
+
+    await settleAfterRetry(before);
+    setRetrying(false);
+    const userId = useAuthStore.getState().user?.id ?? null;
+    const notice = retryNoticeOf(outcome, userId ? cachedAiConsent(userId) : undefined);
+    if (notice) Alert.alert(notice.title, notice.body);
+  }
+
+  // The row as the server holds it after a retry. If that read fails too, the status the
+  // screen had before the tap comes back (the server's, since the retry wrote nothing), so
+  // the local 'pending' never outlives the call that set it.
+  async function settleAfterRetry(before: FoodRow) {
+    try {
+      const { data, error } = await supabase
+        .from('food_items')
+        .select(SELECT_COLS)
+        .eq('id', before.id)
+        .maybeSingle();
+      if (error) throw error;
+      if (data) {
+        applyRow(data as FoodRow);
+        return;
+      }
+    } catch (err) {
+      console.warn('[food-detail] re-read after retry failed:', err);
+    }
+    setRow((cur) =>
+      cur && cur.ai_extraction_status === 'pending'
+        ? { ...cur, ai_extraction_status: before.ai_extraction_status, ai_extraction_error: before.ai_extraction_error }
+        : cur,
+    );
   }
 
   // ── Remove from library (archive) ─────────────────────────────────────────
@@ -714,14 +757,13 @@ export default function FoodDetailScreen() {
                 client that separates "we tried and could not read it" from "we
                 did not try".
 
-                That matters because the retry is DESTRUCTIVE on the rows it
-                separates out. `handleRetry` writes `'pending'` to the server; the
-                cap and flag-off paths answer with a typed 200, so `error` is null,
-                nothing writes back, and the row stays `'pending'` — where the
-                Ingredients field below becomes a "Reading the label…" spinner (the
-                one field this banner's own copy tells the owner to fill in) and
-                `reapStalePendingFoods` becomes eligible to hard-delete the food,
-                cascading into `diet_trial_foods`. Details: CUL-769.
+                That mattered because the retry USED to be destructive on the rows
+                it separates out: it wrote `'pending'` to the server, the cap and
+                flag-off paths answered with a typed 200 that wrote nothing back, and
+                the row stayed `'pending'`, its Ingredients field a spinner and the
+                food one guard from the reaper. Since CUL-769 the retry writes nothing
+                to the server and tells the owner what the gate said, so the button is
+                safe; whether these rows should show it is still CUL-768's state model.
 
                 This session widened the gate to `isFailed` alone — the silent-
                 failure argument is real, and the spec forbids a silent extraction

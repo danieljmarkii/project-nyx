@@ -7,7 +7,7 @@
 // `read_disabled` row and renders frame H. The record's taps send `ownerTap`
 // (lib/analysis.ts); nothing on the phone decides whether a photo may leave it.
 
-import type { AiConsentRow } from './aiConsent';
+import type { AiConsentRow } from './aiConsentTypes';
 
 export type RecordConsent = 'loading' | 'error' | 'unasked' | 'declined' | 'granted';
 
@@ -58,4 +58,12 @@ export function besideCallOf(consent: RecordConsent): 'off_line' | 'ask' | null 
   if (consent === 'declined') return 'off_line';
   if (consent === 'unasked') return 'ask';
   return null;
+}
+
+// Whether History and Home treat photo reading as OFF (CUL-1174, spec H-4b): only on a
+// recorded no. Not read yet, a failed read and never asked all keep the grey mark, the
+// louder side: an unread photo must never look like a choice the owner did not make, and
+// an unasked owner's record still offers its ask.
+export function photoReadingOffOf(row: AiConsentRow | null | undefined): boolean {
+  return row?.granted === false;
 }

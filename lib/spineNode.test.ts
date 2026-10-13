@@ -479,6 +479,31 @@ describe('the read on a node — nodeReadOf', () => {
       expect(nodeReadOf(landed('v', null, status), false)).toEqual({ state: 'none' });
     }
   });
+  it('photo reading off (a recorded no, CUL-1174): the unread row is unmarked, the rose and the tick stay', () => {
+    const photographedVomit = { eventType: 'vomit', hasPhoto: true };
+    // Nothing was attempted: the no is why, and the record says AI reading is off.
+    for (const status of ['capped', 'read_disabled']) {
+      expect(nodeReadOf(landed('v', null, status), false, photographedVomit, true)).toEqual({ state: 'none' });
+    }
+    expect(nodeReadOf(undefined, false, photographedVomit, true)).toEqual({ state: 'none' });
+    // A read that ran before the no and failed, or finished unable to say, keeps the mark
+    // its record agrees with: never a silence that reads like a calm read.
+    expect(nodeReadOf(landed('v', null, 'failed'), false, photographedVomit, true)).toEqual({ state: 'unread', label: 'No read yet' });
+    expect(nodeReadOf(landed('v', 'not_enough_to_say', 'uncertain'), false, photographedVomit, true)).toEqual({
+      state: 'unread', label: 'Not enough to say yet',
+    });
+    // Presence escalates whatever the owner chose: a call is never stood down.
+    expect(nodeReadOf(landed('v', 'worth_a_call', 'failed'), false, photographedVomit, true)).toEqual({
+      state: 'worth_a_call', label: 'Worth a call', spoken: 'Worth a call',
+    });
+    expect(nodeReadOf(undefined, true, photographedVomit, true)).toEqual({ state: 'pending' });
+    // Through the pipeline: the model hands the flag to every event node.
+    const on = buildSpine(input({ photographed: new Set(['v1']) }));
+    const off = buildSpine(input({ photographed: new Set(['v1']), readingOff: true }));
+    const readOf = (m: ReturnType<typeof buildSpine>) => eventsOf(m).find((x) => x.id === 'v1')?.read.state ?? null;
+    expect(readOf(on)).toBe('unread');
+    expect(readOf(off)).toBe('none');
+  });
   it('a calm verdict on a failed row does not render calm (only completed / uncertain may)', () => {
     // A 'monitor' left on a row whose status later became 'failed' is not a read that
     // stands; the escalation branch is the only one that outlives a failure.

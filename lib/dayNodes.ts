@@ -64,6 +64,8 @@ export interface DayReads {
   analysis: ReadonlyMap<string, SpineAnalysisRow>;
   /** Event ids whose read is being produced right now (C-30). */
   working: ReadonlySet<string>;
+  /** The owner turned photo reading off (`usePhotoReadingOff`, CUL-1174). Absent ⇒ on. */
+  readingOff?: boolean;
 }
 
 /** What the timing lane measures a vomit against. */
@@ -112,6 +114,7 @@ export function buildDay(events: readonly DayEvent[], { reads, timings }: DayNod
     photographed: reads.photographed,
     analysis: reads.analysis,
     working: reads.working,
+    readingOff: reads.readingOff,
     feedings: timings.feedings,
     freeFedSpans: timings.freeFedSpans,
     priorOnsets: timings.priorOnsets,

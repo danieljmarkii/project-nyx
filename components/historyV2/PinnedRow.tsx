@@ -29,9 +29,9 @@ import { SearchField } from './SearchField';
 import { TypeSheet } from './TypeSheet';
 import { WindowSheet } from './WindowSheet';
 import { useHistoryRecordFacts } from '../../hooks/useHistoryRecordFacts';
+import { usePhotoReadingOff } from '../../hooks/usePhotoReadingOff';
 import { HEADER_CHEVRON_GAP, HEADER_CHEVRON_SIZE, headerSwitcherLabel } from '../../lib/headerName';
 import {
-  PHOTO_READING_OFF,
   RECORD_RETRY,
   pinnedRowViewOf,
   searchLabelOf,
@@ -57,6 +57,8 @@ export function PinnedRow() {
   const searchText = useHistoryScopeStore((s) => s.searchText);
   const record = useHistoryRecordFacts();
   const today = useHistoryToday();
+  // A recorded no: the type sheet's Photographed line says it, once (H-4b, CUL-1174).
+  const readingOff = usePhotoReadingOff();
   const [focusTick, setFocusTick] = useState(0);
   const species = activePet?.species;
 
@@ -68,10 +70,10 @@ export function PinnedRow() {
         window: windowKey,
         search: effectiveSearch({ searchOpen, searchText }),
         lookLive: lookCardLive({ species }),
-        readingOff: PHOTO_READING_OFF,
+        readingOff,
         today,
       }),
-    [record, filter, windowKey, searchOpen, searchText, species, today],
+    [record, filter, windowKey, searchOpen, searchText, species, today, readingOff],
   );
 
   // A failed read retried from either sheet re-reads the ONE record read the list draws

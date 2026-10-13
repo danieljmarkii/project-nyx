@@ -17,7 +17,6 @@ import {
   type HistoryFacts,
   type HistoryFilter,
 } from '../lib/historyDays';
-import { PHOTO_READING_OFF } from '../lib/historyControls';
 import {
   historyFactsFor,
   readDayPage,
@@ -409,7 +408,10 @@ function recordFor(pet: HistoryListPet, today: string, reuse: boolean): Promise<
   if (reuse && recordRead !== null && recordRead.key === key) return recordRead.run;
   // Read at an instant on the request's own day so every field belongs to `today`
   // (`instantOnDay`): the one `WindowFacts` assembly, the pinned row's too (HV-9).
-  const run = readHistoryRecord(pet, PHOTO_READING_OFF, instantOnDay(today, Date.now()));
+  // The TRUE unread count, whatever the owner chose: the type sheet decides at render time
+  // whether to say *N not read* or *photo reading is off* (CUL-1174), so a consent flip
+  // never leaves a count computed under the other answer on screen.
+  const run = readHistoryRecord(pet, false, instantOnDay(today, Date.now()));
   const entry = { key, run };
   recordRead = entry;
   const release = () => {

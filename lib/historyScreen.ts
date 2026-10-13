@@ -282,6 +282,8 @@ export interface HistoryReads {
   answered: ReadonlySet<string>;
   /** Reads being produced right now (C-30). */
   working: ReadonlySet<string>;
+  /** The owner turned photo reading off (`usePhotoReadingOff`, CUL-1174). Absent ⇒ on. */
+  readingOff?: boolean;
 }
 
 /**
@@ -346,6 +348,7 @@ export function historyNodesByDay(args: {
         ),
         analysis: reads.analysis,
         working: reads.working,
+        readingOff: reads.readingOff,
       },
       timings: {
         feedings: timing.feedings,
