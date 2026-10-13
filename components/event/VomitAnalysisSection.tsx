@@ -671,7 +671,7 @@ export function VomitAnalysisSection(
   // First load, nothing known yet. Only shown WITH a photo — a photoless event
   // stays silent until it resolves (to an escalation, or to nothing), so the
   // section never appears-then-vanishes on the common photoless path (B-363).
-  if (hasPhoto && ((row === undefined && !working) || checkingSend)) {
+  if (hasPhoto && ((row === undefined && !working) || (checkingSend && !escalationSurvivesReRead(row)))) {
     return <IncidentReadSection arrival={arrival} announcer={announcer} pending />;
   }
 
@@ -721,7 +721,7 @@ export function VomitAnalysisSection(
   // CUL-1835 — a held photo, while nothing has been written for it: frame H for a photo
   // that predates the yes (its frame follows the consent if the owner flips it meanwhile),
   // and the unread frame with Try again when the send could not be decided.
-  if (held && !reading && (!row || row.status === 'pending')) {
+  if (held && !reading && (!row || row.status === 'pending') && !escalationSurvivesReRead(row)) {
     // A hold_pre_yes was decided on a fresh yes, so a consent the hook has not read yet is
     // that yes: Read this photo, never a frame with no way on.
     return held === 'hold_pre_yes'
@@ -1049,7 +1049,7 @@ export function VomitAnalysisSection(
       {besideCall === 'off_line' ? <RecordOffBesideCall petName={consentPet} /> : null}
       {besideCall === 'ask' && !askDismissed ? (
         <View style={styles.besideCallAsk}>
-          <RecordAskCard kind="vomit" petName={consentPet} onAllowed={handleRetry} onNotNow={() => setAskDismissed(true)} />
+          <RecordAskCard kind="vomit" petName={consentPet} besideCall onAllowed={handleRetry} onNotNow={() => setAskDismissed(true)} />
         </View>
       ) : null}
 

@@ -21,6 +21,7 @@ import {
   RECORD_UNREAD_HEADING,
   WHATS_SENT_LINK,
   recordAskCopy,
+  recordAskVetLineBesideCall,
   recordOffBesideCall,
   recordOffBody,
   recordVetLine,
@@ -43,9 +44,12 @@ export function RecordAskCard({
   petName,
   onAllowed,
   onNotNow,
+  besideCall = false,
 }: {
   kind: RecordKind;
   petName: string | null;
+  /** Under a call (frame G): the vet line backs the log instead of conditioning it. */
+  besideCall?: boolean;
   /** The yes is saved: the record runs the read in place. */
   onAllowed: () => void;
   /** Nothing is written; the card is back next visit. */
@@ -139,7 +143,7 @@ export function RecordAskCard({
       >
         <ThemedText style={styles.notNowText}>{RECORD_NOT_NOW}</ThemedText>
       </TouchableOpacity>
-      <ThemedText style={styles.vetLine}>{copy.vetLine}</ThemedText>
+      <ThemedText style={styles.vetLine}>{besideCall ? recordAskVetLineBesideCall(petName) : copy.vetLine}</ThemedText>
       {/* Mounted only while open: nothing about the sheet costs the record until asked. */}
       {whatsSent ? <WhatsSentSheet petName={petName} onDone={() => setWhatsSent(false)} /> : null}
     </View>

@@ -344,6 +344,8 @@ describe('StoolAnalysisSection — cap/flag render states', () => {
     const { findByText, getByTestId } = render(<StoolAnalysisSection eventId="e2j" petId="pet-1" petName="Rex" hasPhoto />);
     expect(await findByText('Worth a call')).toBeTruthy();
     expect(getByTestId('record-consent-ask')).toBeTruthy();
+    // Under an unconditional call the card's vet line backs the log, never "if it goes on".
+    expect(await findByText("Whatever you choose, Rex's log alone is reason to call your vet.")).toBeTruthy();
   });
 
   it('a read that ran before a later no shows as a read, with nothing added', async () => {

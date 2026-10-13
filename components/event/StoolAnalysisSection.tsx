@@ -608,7 +608,7 @@ export function StoolAnalysisSection(
   // First load, nothing known yet. Only shown WITH a photo — a photoless event
   // stays silent until it resolves (to an escalation, or to nothing), so the
   // section never appears-then-vanishes on the common photoless path (B-363).
-  if (hasPhoto && ((row === undefined && !working) || checkingSend)) {
+  if (hasPhoto && ((row === undefined && !working) || (checkingSend && !escalationSurvivesReRead(row)))) {
     return <IncidentReadSection arrival={arrival} announcer={announcer} pending />;
   }
 
@@ -653,7 +653,7 @@ export function StoolAnalysisSection(
     );
   }
 
-  if (held && !reading && (!row || row.status === 'pending')) {
+  if (held && !reading && (!row || row.status === 'pending') && !escalationSurvivesReRead(row)) {
     // A hold_pre_yes was decided on a fresh yes, so a consent the hook has not read yet is
     // that yes: Read this photo, never a frame with no way on.
     return held === 'hold_pre_yes'
@@ -917,7 +917,7 @@ export function StoolAnalysisSection(
       {besideCall === 'off_line' ? <RecordOffBesideCall petName={consentPet} /> : null}
       {besideCall === 'ask' && !askDismissed ? (
         <View style={styles.besideCallAsk}>
-          <RecordAskCard kind="stool" petName={consentPet} onAllowed={handleRetry} onNotNow={() => setAskDismissed(true)} />
+          <RecordAskCard kind="stool" petName={consentPet} besideCall onAllowed={handleRetry} onNotNow={() => setAskDismissed(true)} />
         </View>
       ) : null}
 

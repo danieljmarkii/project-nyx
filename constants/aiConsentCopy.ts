@@ -245,6 +245,13 @@ export function recordOffBody(pet: string | null): string {
   return `${PetOf(pet)} photo is saved but wasn't read. If you turn AI reading on, you can send this photo to Claude, an AI, for a read.`;
 }
 
+/** The ask card's vet line under a call (frame G, unanswered). The card's own line is
+ *  conditional ("if {pet} keeps vomiting…"), and under an unconditional call that reads as
+ *  "call only if it goes on"; this one backs the log, as G's off line does. */
+export function recordAskVetLineBesideCall(pet: string | null): string {
+  return `Whatever you choose, ${petOf(pet)} log alone is reason to call your vet.`;
+}
+
 /** Frame G's off line, under a warning: it backs the log and offers no link. */
 export function recordOffBesideCall(pet: string | null): string {
   return `AI reading is off. ${PetOf(pet)} log alone is reason to call your vet.`;
