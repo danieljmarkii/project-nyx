@@ -30,7 +30,7 @@ async function openDoor() {
 }
 
 describe('useAiConsentDoor', () => {
-  it('proceeds without a sheet when an answer is on file (or the read failed)', async () => {
+  it('proceeds without a sheet when a yes is on file', async () => {
     needsMock.mockResolvedValue('proceed');
     const { hook, outcome } = await openDoor();
     await expect(outcome).resolves.toBe('proceed');
@@ -165,6 +165,30 @@ describe('useAiConsentDoor', () => {
     expect(hook.result.current.sheetProps.saving).toBeNull();
     expect(hook.result.current.sheetProps.error).toMatch(/didn't save/);
     (console.warn as jest.Mock).mockRestore();
+  });
+
+  it('an unreadable answer is unreadable, with no sheet and no write (CUL-1933)', async () => {
+    needsMock.mockResolvedValue('unreadable');
+    const { hook, outcome } = await openDoor();
+    await expect(outcome).resolves.toBe('unreadable');
+    expect(hook.result.current.sheetProps.visible).toBe(false);
+    expect(hook.result.current.settling).toBe(false);
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it('a read that throws is unreadable, never proceed (CUL-1933)', async () => {
+    needsMock.mockRejectedValue(new Error('network'));
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { outcome } = await openDoor();
+    await expect(outcome).resolves.toBe('unreadable');
+    (console.warn as jest.Mock).mockRestore();
+  });
+
+  it('with no one signed in the door is unreadable, never proceed', async () => {
+    useAuthStore.setState({ user: null });
+    const { outcome } = await openDoor();
+    await expect(outcome).resolves.toBe('unreadable');
+    expect(needsMock).not.toHaveBeenCalled();
   });
 
   it('a no already on file is honoured with no sheet and no write', async () => {

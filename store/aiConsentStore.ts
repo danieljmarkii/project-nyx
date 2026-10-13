@@ -43,12 +43,15 @@ export async function loadAiConsent(userId: string): Promise<AiConsentRead> {
 // recorded no: the door honours it on the phone too, so a photo that will never be
 // read is never taken, and nothing is sent even while a server function runs without
 // its gate (the six CUL-552 holds lift in PR-17, after this client ships). 'proceed'
-// on a yes, and on a failed or stalled read: the server's gate fails closed on its
-// own, and re-asking an owner who already answered is the worse error at a door.
-export type ConsentDoorState = 'ask' | 'declined' | 'proceed';
+// only on a yes the phone holds: cached, or just read. 'unreadable' on a failed or
+// stalled read: the door sends nothing and the screen says try again (CUL-1933, the
+// CUL-1930 stopgap). It used to proceed, trusting the server's gate to fail closed,
+// but that gate is held until PR-17, so an unasked or declined owner's photos and
+// questions left on a slow network.
+export type ConsentDoorState = 'ask' | 'declined' | 'proceed' | 'unreadable';
 
-// A door waits at most this long for the read; past it, the door proceeds as on a
-// failed read, because a tap that does nothing on a stalled network is worse.
+// A door waits at most this long for the read; past it, the door stops as on a
+// failed read, so a stalled network ends in a "try again", never a silent hang.
 export const CONSENT_READ_TIMEOUT_MS = 4000;
 
 function doorStateOf(row: AiConsentRow | null): ConsentDoorState {
@@ -65,7 +68,7 @@ export async function consentDoorState(userId: string): Promise<ConsentDoorState
   });
   try {
     const read = await Promise.race([loadAiConsent(userId), timedOut]);
-    return read.status === 'ok' ? doorStateOf(read.row) : 'proceed';
+    return read.status === 'ok' ? doorStateOf(read.row) : 'unreadable';
   } finally {
     if (timer) clearTimeout(timer);
   }

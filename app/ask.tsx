@@ -8,6 +8,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
@@ -33,7 +34,8 @@ import {
   type AskSuggestions,
 } from '../lib/ask';
 import { askCapCopy } from '../constants/monetizationCopy';
-import { useAiConsentDoor } from '../hooks/useAiConsentDoor';
+import { useAiConsentDoor, type ConsentDoorOutcome } from '../hooks/useAiConsentDoor';
+import { consentUnreadableNotice } from '../constants/aiConsentCopy';
 import { AiConsentSheet } from '../components/consent/AiConsentSheet';
 import { reducedMotionNow } from '../store/reducedMotionStore';
 
@@ -87,20 +89,34 @@ export default function AskScreen() {
   // closed"), and so does a no already on file: Ask stays closed until Settings turns
   // AI reading on. The owner lands back on Home, whose Signal carries the same safety
   // finding Ask's consent-off answer would have led with.
+  //
+  // A question is sent only on a yes this phone holds (CUL-1933). An answer the open
+  // couldn't read leaves Ask open and asks again at the first send; if that read fails
+  // too, the question stays in the field and the owner is told to try again.
   const consentDoor = useAiConsentDoor('ask');
   const askConsent = consentDoor.ask;
   const consentAsked = useRef(false);
+  const consentYes = useRef(false);
+  const consentRereading = useRef(false);
+  const closeAsk = useCallback(() => {
+    // A cold link into Ask has no screen behind it, so back would do nothing and
+    // leave the owner on a closed Ask.
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)');
+  }, []);
+  const settleConsent = useCallback((outcome: ConsentDoorOutcome): boolean => {
+    if (outcome === 'proceed' || outcome === 'allowed') {
+      consentYes.current = true;
+      return true;
+    }
+    if (outcome === 'declined' || outcome === 'not_now') closeAsk();
+    return false;
+  }, [closeAsk]);
   useEffect(() => {
     if (consentAsked.current) return;
     consentAsked.current = true;
-    askConsent().then((outcome) => {
-      if (outcome !== 'declined' && outcome !== 'not_now') return;
-      // A cold link into Ask has no screen behind it, so back would do nothing and
-      // leave the owner on a closed Ask.
-      if (router.canGoBack()) router.back();
-      else router.replace('/(tabs)');
-    }).catch((e) => console.warn('[Ask] consent door failed:', e));
-  }, [askConsent]);
+    askConsent().then(settleConsent).catch((e) => console.warn('[Ask] consent door failed:', e));
+  }, [askConsent, settleConsent]);
   const [suggestions, setSuggestions] = useState<AskSuggestions>({ total: 0, chips: [], hasLooks: false });
   const scrollRef = useRef<ScrollView>(null);
 
@@ -140,6 +156,26 @@ export default function AskScreen() {
     async (raw: string) => {
       const question = raw.trim();
       if (!question || thinking || !petId || consentDoor.settling) return;
+
+      // Offline and rundown sends reach no model, so they need no answer read.
+      if (online && !isRundownRequest(question) && !consentYes.current) {
+        // A second tap while this read is out would come back 'not_now' and close Ask.
+        if (consentRereading.current) return;
+        consentRereading.current = true;
+        let outcome: ConsentDoorOutcome;
+        try {
+          outcome = await askConsent();
+        } finally {
+          consentRereading.current = false;
+        }
+        if (!settleConsent(outcome)) {
+          if (outcome === 'unreadable') {
+            const notice = consentUnreadableNotice('ask');
+            Alert.alert(notice.title, notice.body);
+          }
+          return;
+        }
+      }
       setInput('');
 
       // Rundown-intent (a deflection follow-up or the offline CTA) opens the deterministic
@@ -172,7 +208,7 @@ export default function AskScreen() {
       else if ('capped' in res) resolveCapped(res.capped);
       else resolveDisabled();
     },
-    [thinking, petId, online, petName, pushQuestion, resolveAnswer, resolveCapped, resolveDisabled, consentDoor.settling],
+    [thinking, petId, online, petName, pushQuestion, resolveAnswer, resolveCapped, resolveDisabled, consentDoor.settling, askConsent, settleConsent],
   );
 
   const goTapThrough = useCallback((nav: AskNav) => {

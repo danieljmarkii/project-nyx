@@ -94,6 +94,22 @@ export const ALLOW_LABEL = 'Allow';
 export const DONT_ALLOW_LABEL = 'Don\'t allow';
 export const CONSENT_WRITE_FAILED = 'That didn\'t save. Check your connection and try again.';
 
+// When a door can't read the owner's answer it sends nothing (CUL-1933) and says so.
+// Not words the owner answers, so they change no copy version. The label door's
+// pair is the one food detail's retry already shows (`RETRY_TRANSPORT_NOTICE`), so
+// the owner meets one sentence for one situation.
+export interface ConsentUnreadableNotice {
+  title: string;
+  body: string;
+}
+
+export function consentUnreadableNotice(door: ConsentDoor): ConsentUnreadableNotice {
+  if (door === 'ask') {
+    return { title: 'Couldn\'t send your question', body: 'It\'s still here. Try again in a moment.' };
+  }
+  return { title: 'Couldn\'t start reading the label', body: 'Try again in a moment.' };
+}
+
 // ── What's sent (frame B) ──
 
 export interface WhatsSentSection {

@@ -48,9 +48,15 @@ describe('consentDoorState: only a fresh "no answer" asks', () => {
     await expect(consentDoorState('a')).resolves.toBe('proceed');
   });
 
-  it('never asks on a failed read: re-asking an owner who answered is the worse error', async () => {
+  it('a failed read neither asks nor proceeds: it is unreadable (CUL-1933)', async () => {
     fetchMock.mockResolvedValue({ status: 'error' });
-    await expect(consentDoorState('a')).resolves.toBe('proceed');
+    await expect(consentDoorState('a')).resolves.toBe('unreadable');
+  });
+
+  it('an empty cache that cannot be filled is unreadable, never a yes', async () => {
+    useAiConsentStore.getState().setRow('a', null);
+    fetchMock.mockResolvedValue({ status: 'error' });
+    await expect(consentDoorState('a')).resolves.toBe('unreadable');
   });
 
   it('trusts a cached answer without a read (a row can never be deleted)', async () => {
@@ -121,13 +127,13 @@ describe('keyed by user id', () => {
 });
 
 describe('a stalled read', () => {
-  it('stops waiting and does not ask', async () => {
+  it('stops waiting, does not ask and does not proceed (CUL-1933)', async () => {
     jest.useFakeTimers();
     try {
       fetchMock.mockReturnValue(new Promise(() => {}));
       const pending = consentDoorState('a');
       jest.advanceTimersByTime(CONSENT_READ_TIMEOUT_MS + 1);
-      await expect(pending).resolves.toBe('proceed');
+      await expect(pending).resolves.toBe('unreadable');
     } finally {
       jest.useRealTimers();
     }

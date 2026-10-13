@@ -10,9 +10,12 @@ import type { ConsentChoice } from '../components/consent/AiConsentSheet';
 // screen awaits `ask()` at the moment AI would help and branches on the outcome;
 // this hook owns the read, the sheet and the write.
 //
-//   'proceed'  a yes is on file, or the read failed or stalled. The server's gate
-//              fails closed for an unknown owner, and a door never re-asks an owner
-//              who answered.
+//   'proceed'  a yes is on file: one this phone holds, cached or just read.
+//   'unreadable' the read failed, threw or stalled, or no one is signed in. Nothing
+//              is sent and the screen says try again, keeping what the owner already
+//              took or typed (CUL-1933). The server's gate that would refuse an
+//              unknown owner is held until PR-17, so the phone is the only door; and a
+//              door never re-asks here, since the owner may already have answered.
 //   'allowed'  the owner tapped Allow and the yes is saved.
 //   'declined' the owner tapped Don't allow and the no is saved, or a no was already
 //              on file. A recorded no is honoured here as well as on the server
@@ -24,7 +27,7 @@ import type { ConsentChoice } from '../components/consent/AiConsentSheet';
 // The resolver lives in a ref, not state (C-22): a one-shot answer read from state
 // can fire twice through a stale effect closure.
 
-export type ConsentDoorOutcome = 'proceed' | 'allowed' | 'declined' | 'not_now';
+export type ConsentDoorOutcome = 'proceed' | 'allowed' | 'declined' | 'not_now' | 'unreadable';
 
 // iOS will not present the camera while a Modal is still sliding away, so an
 // answer waits for the sheet's onDismiss. The fallback covers an onDismiss that
@@ -85,10 +88,10 @@ export function useAiConsentDoor(door: ConsentDoor) {
   const ask = useCallback(async (): Promise<ConsentDoorOutcome> => {
     // A second tap while a door is reading or open joins nothing: it does not proceed.
     if (inFlightRef.current) return 'not_now';
-    if (!userId) return 'proceed';
+    if (!userId) return 'unreadable';
     inFlightRef.current = true;
     setSettling(true);
-    let state: ConsentDoorState = 'proceed';
+    let state: ConsentDoorState = 'unreadable';
     try {
       state = await consentDoorState(userId);
     } catch (e) {
@@ -97,7 +100,7 @@ export function useAiConsentDoor(door: ConsentDoor) {
     if (state !== 'ask') {
       inFlightRef.current = false;
       setSettling(false);
-      return state === 'declined' ? 'declined' : 'proceed';
+      return state;
     }
     return new Promise<ConsentDoorOutcome>((resolve) => {
       resolverRef.current = (outcome) => {
