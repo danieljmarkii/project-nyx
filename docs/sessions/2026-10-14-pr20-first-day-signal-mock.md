@@ -23,3 +23,14 @@ Two adversarial passes, the PR cap. Pass 1 failed seven quiet residuals; all wer
 ## Next
 
 The PM rules D1 to D5 and approves the frames on CUL-1838; PR-21 starts on that approval with its own adversarial review, beginning from R3 · 08.
+
+## Round 3.1 (same session, after the PM's reactions)
+
+The PM rejected round 3's direction: too wordy, legalese, a home screen given over to when to call the vet, and five rulings on a shape they did not want. Round 3.1 replaces it as one proposal, and round 3's frames leave the page (git keeps them at `62c8aec`):
+- **The record strip.** Pixel's recent days with every log marked: 14 days in the first week, then 4 weeks. Day one's vomit is a named, timed mark. A quiet stretch is hatched and dated, in place of the stale sentence.
+- **The ghost preview.** A ghost of the real lead card (`WeeklyBars` and a row) with no data and no words, in place of the watching-for prose.
+- **The door line.** The cue block is one line, "Worried? When to call the vet ›", opening the existing sheet.
+
+Day 0 copy went from about 70 words to 8. D1 to D4 are withdrawn. One ask remains (clinical): keep the shortening-gaps warning up until the next log. Dr. Chen's dissent (the signs are now a tap away) is logged on the page, as is an S1 flag on the strip beside the gap warning.
+
+Round 3's binding PR-21 rules about collapsing cues fall away with the cues; the sheet already collapses its own rows. The gap-lane rule (a look never moves the anchor) stands if the PM says yes to the ask.
