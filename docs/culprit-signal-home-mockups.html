@@ -282,9 +282,290 @@
 
   .provenance { margin-top: 72px; border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13px; color: var(--ink-3); }
   .provenance code { font-size: 12px; }
+  /* R3:CSS:BEGIN */
+  /* ══════════════ ROUND 3 (2026-10-14, CUL-1837): the first day ══════════════
+     Frames render the SHIPPED Design v2 Signal card (components/home/SignalZone.tsx
+     styles, constants/theme.ts values): card radius 16, padding 24 scaled to 20 for
+     the frame, text 15 / 13 / 11, ink #0A0A0A / #525252 / #737373 / #A3A3A3,
+     hairline #EAEAEA, accent #00C2A8, accent ink #0B7B6C. Device frames stay light. */
+  .r3 { margin-top: 0; }
+  .r3-banner {
+    background: var(--paper-2); border: 1px solid var(--rule); border-left: 3px solid var(--teal);
+    border-radius: 3px; padding: 16px 20px; margin: 0 0 32px; font-size: 14.5px; color: var(--ink-2);
+  }
+  .r3-banner strong { color: var(--ink); }
+  .r3-ledger { margin: 20px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .r3-ledger li { font-size: 14.5px; color: var(--ink-2); padding-left: 18px; position: relative; }
+  .r3-ledger li::before { content: "·"; position: absolute; left: 2px; color: var(--teal-ink); font-weight: 700; }
+  .r3-ledger li strong { color: var(--ink); }
+
+  .r3-frames { display: flex; flex-wrap: wrap; gap: 32px 24px; margin-top: 28px; align-items: flex-start; }
+  .r3-slot { width: 340px; max-width: 100%; }
+  .r3-tag {
+    display: inline-block; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; font-weight: 700; border-radius: 999px; padding: 3px 10px; margin-bottom: 10px;
+  }
+  .r3-tag.cur { color: var(--teal-ink); background: var(--teal-wash); }
+  .r3-tag.today { color: var(--ink-3); background: var(--rule-soft); }
+  .r3-tag.opt { color: var(--med); background: var(--med-wash); }
+  .r3-optbox { border: 1.5px dashed var(--med); border-radius: 6px; padding: 12px; }
+  .r3-optbox .r3-optnote { font-size: 12.5px; color: var(--ink-2); margin: 0 0 10px; }
+
+  .r3-phone {
+    width: 340px; max-width: 100%; background: #F7F7F7; border-radius: 36px;
+    border: 1px solid rgba(10,10,10,0.14); box-shadow: 0 18px 44px rgba(19,17,46,0.14);
+    padding: 12px 10px 18px; color: #0A0A0A;
+    font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  .r3-notch { width: 92px; height: 22px; background: #0A0A0A; border-radius: 12px; margin: 0 auto 10px; }
+  .r3-ctx { font-size: 11px; color: #737373; text-align: center; margin: -2px 0 10px; }
+  .r3-card { background: #FFFFFF; border-radius: 16px; padding: 18px 18px 14px; box-shadow: 0 4px 14px rgba(10,10,10,0.07); }
+  .r3-label { font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #525252; margin-bottom: 12px; }
+  .r3-head { font-size: 15px; line-height: 22px; color: #0A0A0A; margin: 0 0 2px; }
+  .r3-head .dc { color: #0B7B6C; font-weight: 600; }
+  .r3-see { font-size: 13px; line-height: 18px; color: #525252; margin: 6px 0 0; }
+  .r3-sub { font-size: 13px; line-height: 18px; color: #525252; margin: 14px 0 8px; }
+  .r3-intro { font-size: 15px; line-height: 22px; color: #525252; margin: 0; }
+  .r3-gap { font-size: 13px; line-height: 22px; color: #0A0A0A; margin: 0 0 12px; }
+
+  .r3-cues { border-top: 1px solid #EAEAEA; margin-top: 14px; padding-top: 10px; }
+  .r3-cues .ch { font-size: 13px; line-height: 18px; color: #0A0A0A; font-weight: 600; margin: 0 0 6px; }
+  .r3-cues ul { margin: 0; padding: 0; list-style: none; }
+  .r3-cues li { font-size: 13px; line-height: 20px; color: #0A0A0A; padding-left: 14px; position: relative; }
+  .r3-cues li::before { content: ""; position: absolute; left: 3px; top: 9px; width: 4px; height: 4px; border-radius: 50%; background: #525252; }
+  .r3-door { font-size: 13px; font-weight: 600; color: #0B7B6C; margin-top: 8px; }
+  .r3-doorline { border-top: 1px solid #EAEAEA; margin-top: 12px; padding-top: 10px; font-size: 13px; line-height: 18px; color: #525252; }
+  .r3-doorline .r3-door { margin-top: 4px; }
+
+  .r3-watch { display: flex; gap: 8px; padding: 8px 0; border-top: 1px solid #EAEAEA; }
+  .r3-rail { width: 3px; border-radius: 2px; flex-shrink: 0; opacity: 0.35; background: #00C2A8; }
+  .r3-rail.med { background: #5B7A9E; }
+  .r3-wbody { flex: 1; min-width: 0; }
+  .r3-wtext { font-size: 13px; line-height: 18px; color: #737373; }
+  .r3-glane { position: relative; height: 22px; border: 1px dashed #EAEAEA; border-radius: 8px; margin-top: 8px; }
+  .r3-glane .b { position: absolute; top: 0; bottom: 0; left: 0; width: 30%; background: rgba(0,194,168,0.12); border-radius: 7px; }
+  .r3-glane .d { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; transform: translate(-50%,-50%); border: 1.5px solid #00C2A8; background: transparent; }
+  .r3-glane .d.o { border-color: #C9C9C9; }
+  .r3-gcmp { display: grid; grid-template-columns: 64px 1fr 22px; gap: 8px; align-items: center; font-size: 11px; color: #A3A3A3; margin-top: 4px; }
+  .r3-gcmp:first-child { margin-top: 8px; }
+  .r3-gcmp .t { height: 8px; border-radius: 4px; background: #F0F0F0; position: relative; overflow: hidden; }
+  .r3-gcmp .t i { position: absolute; inset: 0 auto 0 0; background: #00C2A8; opacity: 0.4; border-radius: 4px; }
+  .r3-gcmp .n { text-align: right; }
+  .r3-needs { font-size: 13px; line-height: 22px; color: #0A0A0A; }
+  .r3-floor { border-top: 1px solid #EAEAEA; margin-top: 14px; padding-top: 8px; font-size: 13px; line-height: 18px; color: #525252; }
+  .r3-strike { text-decoration: line-through; text-decoration-color: #B4123B; }
+  .r3-foot { border-top: 1px solid #EAEAEA; margin-top: 14px; padding-top: 10px; font-size: 13px; font-weight: 600; color: #0B7B6C; text-align: right; }
+  .r3-mark { background: rgba(0,194,168,0.14); border-radius: 3px; box-shadow: 0 0 0 2px rgba(0,194,168,0.14); }
+
+  .r3-cap { margin: 14px 2px 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+  .r3-cap b { color: var(--ink); display: block; margin-bottom: 2px; font-size: 13.5px; }
+
+  .r3-briefs { display: grid; gap: 16px; margin-top: 24px; }
+  .r3-brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; padding: 18px 22px; }
+  .r3-brief .bid { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--teal-ink); margin-bottom: 6px; }
+  .r3-brief p { font-size: 14.5px; color: var(--ink-2); margin: 0 0 6px; }
+  .r3-brief p:last-child { margin: 0; }
+  .r3-brief strong { color: var(--ink); }
+  .r3-brief ol { margin: 4px 0 8px; padding-left: 20px; font-size: 14.5px; color: var(--ink-2); }
+  .r3-brief li { margin-bottom: 3px; }
+  .r3-rec { color: var(--teal-ink); font-weight: 600; }
+  table.r3-copy td:first-child { white-space: normal; width: 22%; }
+  table.r3-copy td.was { color: var(--ink-3); }
+  @media (max-width: 640px) { .wrap { padding-left: 16px; padding-right: 16px; } }
+  /* R3:CSS:END */
 </style>
 
 <div class="wrap">
+
+  <!-- R3:BEGIN -->
+  <!-- ══════════════════ ROUND 3 · THE FIRST DAY (2026-10-14, CUL-1837) ══════════════════ -->
+  <section class="r3" id="round-3">
+    <header class="mast">
+      <p class="eyebrow">
+        <span>Culprit</span><span>Signal &amp; Home</span><span>CUL-1837</span><span>2026-10-14</span>
+        <span class="roundtag"><b>Round 3 · the first day</b>&nbsp;· current</span>
+      </p>
+      <h1>The first day's Signal:<br/>say what Culprit can see, and when not to wait.</h1>
+      <p class="standfirst">
+        A new owner's Home opens on <strong>"Not enough recent data to show a pattern"</strong>, and the first week ends on a
+        promise it cannot keep on day one: <strong>"If something needs attention sooner, it won't wait for the week."</strong>
+        This round draws honest first-day words, the shortening gaps warning kept through "stale" (CUL-1468) and a record of
+        daily looks only (CUL-1484). Frames render the shipped Design v2 card. Rule on D1 to D4 at the end; your approval
+        starts the build (CUL-1838, PR-21).
+      </p>
+    </header>
+
+    <div class="r3-banner">
+      <strong>How to read this page.</strong> Round 3 is at the top and is the only live proposal. Every frame carries a tag:
+      <em>current proposal</em>, <em>today, as shipped</em> (the problem, for comparison) or <em>option, drawn for the decision</em>
+      (a real alternative in a dashed box). Round 2.1 below is the locked record of the original Signal design (2026-08-07) and is
+      not under review; much of its card styling has since moved on with Design v2.
+      <ul class="r3-ledger">
+        <li><strong>Why now.</strong> The App Store restart's PR-20 (CUL-1837). The build is PR-21 (CUL-1838) and waits on your approval of these frames.</li>
+        <li><strong>The named case.</strong> Sam installs at 11 pm because Pixel hasn't eaten since yesterday, and logs one clear foam vomit: no photo, no meal. Nothing can fire for that cat tonight. Silence must not read as "it would have told me".</li>
+        <li><strong>What changes.</strong> One first-week card for day 0, the first logs and a looks-only record; the old floor line leaves it. The gap warning survives "stale". The stale line gets a voice pass.</li>
+        <li><strong>What does not change.</strong> No engine, threshold or detection change. The ghost receipts, the E2 copy and the gap row's own words are as shipped.</li>
+      </ul>
+    </div>
+
+    <!-- R3 · 1 -->
+    <section>
+      <div class="sec-head"><span class="sec-num">R3 · 01</span><h2>Day 0: a fresh install</h2></div>
+      <div class="col"><p>Before anything is logged the card should orient, not complain. It says what Culprit can see (only what is logged), that a quiet card is not an all-clear, and the three signs that mean call your vet rather than wait for a pattern.</p></div>
+      <div class="r3-frames"><div class="r3-slot"><span class="r3-tag today">Today, as shipped</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">Pixel · just installed · nothing logged</div><div class="r3-card"><div class="r3-label">Signal</div><p class="r3-intro">Not enough recent data to show a pattern. Log today and we'll keep building Pixel's picture.</p><div class="r3-foot">All patterns ›</div></div></div><p class="r3-cap"><b>Day 0 today: the wrong state</b>A pet with no events has no recent activity, so <code>deriveDisplayState</code> sends it to <code>stale</code>. The first thing a new owner reads is a complaint about missing data.</p></div><div class="r3-slot"><span class="r3-tag cur">Current proposal</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">Pixel · just installed · nothing logged</div><div class="r3-card"><div class="r3-label">Signal</div><p class="r3-head">We're getting to know Pixel.</p><p class="r3-see">Culprit sees only what you log, and patterns take about a week of it. Until then, a quiet card isn't an all-clear.</p>
+<div class="r3-cues"><p class="ch">Call your vet without waiting for a pattern if Pixel:</p><ul><li>hasn't eaten for a day</li><li>vomits three times in a few hours</li><li>has blood in vomit or stool</li></ul><div class="r3-door">When to call the vet ›</div></div>
+<div class="r3-sub">Here's what we're watching for:</div>
+<div class="r3-watch"><div class="r3-rail"></div><div class="r3-wbody"><div class="r3-wtext">Timing — do symptoms follow meals, and how closely</div><div class="r3-glane"><span class="b"></span><span class="d" style="left:8%"></span><span class="d" style="left:15%"></span><span class="d" style="left:21%"></span><span class="d o" style="left:62%"></span></div></div></div>
+<div class="r3-watch"><div class="r3-rail med"></div><div class="r3-wbody"><div class="r3-wtext">Food connections — what tends to come before a reaction</div></div></div>
+<div class="r3-watch"><div class="r3-rail"></div><div class="r3-wbody"><div class="r3-wtext">Change — this week against last, counted from your logs</div><div class="r3-gcmp"><span>Last week</span><span class="t"><i style="width:40%"></i></span><span class="n">—</span></div><div class="r3-gcmp"><span>This week</span><span class="t"><i style="width:65%"></i></span><span class="n">—</span></div></div></div><div class="r3-foot">All patterns ›</div></div></div><p class="r3-cap"><b>Day 0: what Culprit can see, and when to call</b>A zero-event pet never routes to <code>stale</code>. No day count (there is nothing to count). The see line says Culprit only sees what is logged and that a quiet card is not an all-clear; the cues say when to call without waiting; the ghost receipts (SD-6, loved in round 2) still show what is coming.</p></div></div>
+    </section>
+
+    <!-- R3 · 2 -->
+    <section>
+      <div class="sec-head"><span class="sec-num">R3 · 02</span><h2>Sam's first log, at 11 pm</h2></div>
+      <div class="col"><p>The adversarial reviewer's case. One vomit logged, nothing else: every lane that could speak needs more than tonight's record holds. The shipped card's last line says the opposite. The proposal replaces that line with the see line and the cues, and puts the cues where Sam reads them first (D1).</p></div>
+      <div class="r3-frames"><div class="r3-slot"><span class="r3-tag today">Today, as shipped</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">Pixel · one clear foam vomit · no photo · no meal</div><div class="r3-card"><div class="r3-label">Signal</div><p class="r3-head">We're getting to know Pixel. <span class="dc">Day 1 — 1 event so far.</span></p>
+<div class="r3-sub">Patterns usually start appearing within the first week. Here's what we're watching for:</div>
+<div class="r3-watch"><div class="r3-rail"></div><div class="r3-wbody"><div class="r3-wtext">Timing — do symptoms follow meals, and how closely</div><div class="r3-glane"><span class="b"></span><span class="d" style="left:8%"></span><span class="d" style="left:15%"></span><span class="d" style="left:21%"></span><span class="d o" style="left:62%"></span></div></div></div>
+<div class="r3-watch"><div class="r3-rail med"></div><div class="r3-wbody"><div class="r3-wtext">Food connections — what tends to come before a reaction</div></div></div>
+<div class="r3-watch"><div class="r3-rail"></div><div class="r3-wbody"><div class="r3-wtext">Change — this week against last, counted from your logs</div><div class="r3-gcmp"><span>Last week</span><span class="t"><i style="width:40%"></i></span><span class="n">—</span></div><div class="r3-gcmp"><span>This week</span><span class="t"><i style="width:65%"></i></span><span class="n">—</span></div></div></div><div class="r3-floor">If something needs attention sooner, it won't wait for the week.</div><div class="r3-foot">All patterns ›</div></div></div><p class="r3-cap"><b>Sam, 11:05 pm, today</b>The floor line promises "it won't wait for the week". Tonight nothing can fire for Pixel: the intake lane needs four rated meals, the feline flag a meal rated in seven days, the repeat floor more vomits. The promise is the one silence breaks.</p></div><div class="r3-slot"><span class="r3-tag cur">Current proposal</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">Pixel · one clear foam vomit · no photo · no meal</div><div class="r3-card"><div class="r3-label">Signal</div><p class="r3-head">We're getting to know Pixel. <span class="dc">Day 1 — 1 event so far.</span></p><p class="r3-see">Culprit sees only what you log, and patterns take about a week of it. Until then, a quiet card isn't an all-clear.</p>
+<div class="r3-cues"><p class="ch">Call your vet without waiting for a pattern if Pixel:</p><ul><li>hasn't eaten for a day</li><li>vomits three times in a few hours</li><li>has blood in vomit or stool</li></ul><div class="r3-door">When to call the vet ›</div></div>
+<div class="r3-sub">Here's what we're watching for:</div>
+<div class="r3-watch"><div class="r3-rail"></div><div class="r3-wbody"><div class="r3-wtext">Timing — do symptoms follow meals, and how closely</div><div class="r3-glane"><span class="b"></span><span class="d" style="left:8%"></span><span class="d" style="left:15%"></span><span class="d" style="left:21%"></span><span class="d o" style="left:62%"></span></div></div></div>
+<div class="r3-watch"><div class="r3-rail med"></div><div class="r3-wbody"><div class="r3-wtext">Food connections — what tends to come before a reaction</div></div></div>
+<div class="r3-watch"><div class="r3-rail"></div><div class="r3-wbody"><div class="r3-wtext">Change — this week against last, counted from your logs</div><div class="r3-gcmp"><span>Last week</span><span class="t"><i style="width:40%"></i></span><span class="n">—</span></div><div class="r3-gcmp"><span>This week</span><span class="t"><i style="width:65%"></i></span><span class="n">—</span></div></div></div><div class="r3-foot">All patterns ›</div></div></div><p class="r3-cap"><b>Sam, 11:05 pm: the cues lead</b>The floor line is gone from the first week. Sam reads "hasn't eaten for a day" above the fold and knows tonight is a call. The cues are plain ink, no rose, no icon: the calm register, so Jordan's first look does not read as an alarm sheet.</p></div><div class="r3-slot"><span class="r3-tag opt">Option, drawn for the decision, not the current proposal</span><div class="r3-optbox"><p class="r3-optnote">D1 option (b). Same words, the cues moved to where the floor line sits today.</p><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">Pixel · one clear foam vomit · no photo · no meal</div><div class="r3-card"><div class="r3-label">Signal</div><p class="r3-head">We're getting to know Pixel. <span class="dc">Day 1 — 1 event so far.</span></p><p class="r3-see">Culprit sees only what you log, and patterns take about a week of it. Until then, a quiet card isn't an all-clear.</p>
+<div class="r3-sub" style="margin-top:14px">Here's what we're watching for:</div>
+<div class="r3-watch"><div class="r3-rail"></div><div class="r3-wbody"><div class="r3-wtext">Timing — do symptoms follow meals, and how closely</div><div class="r3-glane"><span class="b"></span><span class="d" style="left:8%"></span><span class="d" style="left:15%"></span><span class="d" style="left:21%"></span><span class="d o" style="left:62%"></span></div></div></div>
+<div class="r3-watch"><div class="r3-rail med"></div><div class="r3-wbody"><div class="r3-wtext">Food connections — what tends to come before a reaction</div></div></div>
+<div class="r3-watch"><div class="r3-rail"></div><div class="r3-wbody"><div class="r3-wtext">Change — this week against last, counted from your logs</div><div class="r3-gcmp"><span>Last week</span><span class="t"><i style="width:40%"></i></span><span class="n">—</span></div><div class="r3-gcmp"><span>This week</span><span class="t"><i style="width:65%"></i></span><span class="n">—</span></div></div></div>
+<div class="r3-cues"><p class="ch">Call your vet without waiting for a pattern if Pixel:</p><ul><li>hasn't eaten for a day</li><li>vomits three times in a few hours</li><li>has blood in vomit or stool</li></ul><div class="r3-door">When to call the vet ›</div></div><div class="r3-foot">All patterns ›</div></div></div></div><p class="r3-cap"><b>D1 (b): the cues at the foot</b>Where the floor sits today. Calmer first read; on a 390pt phone under the daily look the cues land below the fold.</p></div></div>
+    </section>
+
+    <!-- R3 · 3 -->
+    <section>
+      <div class="sec-head"><span class="sec-num">R3 · 03</span><h2>The gap warning through "stale"</h2></div>
+      <div class="col"><p>A cat vomits 12, 7 and 3 days apart and then the owner logs nothing for a few days. The gap row stays current until the time since the last vomit is twice the latest gap; "stale" starts at 48 hours. Today "stale" wins and the warning vanishes. Proposed: the warning leads whenever it is current, and the stale line is rewritten so it reads true beside it.</p></div>
+      <div class="r3-frames"><div class="r3-slot"><span class="r3-tag today">Today, as shipped</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">Vomits 12, 7 and 3 days apart · last log Tuesday</div><div class="r3-card"><div class="r3-label">Signal</div><p class="r3-intro">Not enough recent data to show a pattern. Log today and we'll keep building Pixel's picture.</p><div class="r3-foot">All patterns ›</div></div></div><p class="r3-cap"><b>The gap warning, hidden by "stale" today</b>Two and a half days after the last vomit the record goes <code>stale</code>, which turns the watching read off. The shortening gaps row disappears in exactly the window it matters (CUL-1468).</p></div><div class="r3-slot"><span class="r3-tag cur">Current proposal</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">Vomits 12, 7 and 3 days apart · last log Tuesday</div><div class="r3-card"><div class="r3-label">Signal</div><p class="r3-gap">Gaps between vomiting episodes are getting shorter — 12 days, then 7, then 3.</p><p class="r3-see" style="margin-top:0">Nothing logged for Pixel since Tuesday, so these gaps stop at the last vomit you logged.</p><div class="r3-doorline">Culprit sees only what's logged.<div class="r3-door">When to call the vet ›</div></div><div class="r3-foot">All patterns ›</div></div></div><p class="r3-cap"><b>The gap warning leads, "stale" follows</b>The gap row renders above the stale line for as long as it is current, in its shipped escalation register (B-769). The stale line stops claiming "not enough data" and says what the silence means for the count. <code>safetyLive</code> reflects the row.</p></div><div class="r3-slot"><span class="r3-tag cur">Current proposal</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">A mature record · last log Tuesday</div><div class="r3-card"><div class="r3-label">Signal</div><p class="r3-intro">Nothing logged for Pixel since Tuesday, so there's nothing new to read. A quiet card isn't an all-clear.</p><div class="r3-doorline">Culprit sees only what's logged.<div class="r3-door">When to call the vet ›</div></div><div class="r3-foot">All patterns ›</div></div></div><p class="r3-cap"><b>Gone quiet, no warning</b>The nyx-voice pass on the stale line: a date the owner can check (C-19, a record-anchored date is free), no "log today" nudge (Today owns the one nudge), and the same not-an-all-clear clause the first week uses.</p></div></div>
+    </section>
+
+    <!-- R3 · 4 -->
+    <section>
+      <div class="sec-head"><span class="sec-num">R3 · 04</span><h2>A record of daily looks only</h2></div>
+      <div class="col"><p>An owner who answers the daily look every morning and logs nothing else has zero events. Today the card sits at "This is week 1" indefinitely. Proposed: zero events gets the same first-week card as day 0, with a see line that explains why it is not moving.</p></div>
+      <div class="r3-frames"><div class="r3-slot"><span class="r3-tag today">Today, as shipped</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">Pixel · nine days of looks · nothing logged</div><div class="r3-card"><div class="r3-label">Signal</div><p class="r3-head">We're getting to know Pixel.</p><div class="r3-sub">Here's what we're watching, and what each pattern still needs:</div><div class="r3-needs">Change, week to week — needs 2 full weeks of logging to compare. This is week 1.</div><div class="r3-floor">If something needs attention sooner, it won't wait for the week.</div><div class="r3-foot">All patterns ›</div></div></div><p class="r3-cap"><b>Daily looks only, today</b>A look keeps the pet recent but never counts as an event, so the day number pins at 1 and the change row says "This is week 1" forever (CUL-1484).</p></div><div class="r3-slot"><span class="r3-tag cur">Current proposal</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">Pixel · nine days of looks · nothing logged</div><div class="r3-card"><div class="r3-label">Signal</div><p class="r3-head">We're getting to know Pixel.</p><p class="r3-see">Pixel's daily looks are on the record, but patterns come from logged meals and symptoms. A quiet card isn't an all-clear.</p>
+<div class="r3-cues"><p class="ch">Call your vet without waiting for a pattern if Pixel:</p><ul><li>hasn't eaten for a day</li><li>vomits three times in a few hours</li><li>has blood in vomit or stool</li></ul><div class="r3-door">When to call the vet ›</div></div>
+<div class="r3-sub">Here's what we're watching for:</div>
+<div class="r3-watch"><div class="r3-rail"></div><div class="r3-wbody"><div class="r3-wtext">Timing — do symptoms follow meals, and how closely</div><div class="r3-glane"><span class="b"></span><span class="d" style="left:8%"></span><span class="d" style="left:15%"></span><span class="d" style="left:21%"></span><span class="d o" style="left:62%"></span></div></div></div>
+<div class="r3-watch"><div class="r3-rail med"></div><div class="r3-wbody"><div class="r3-wtext">Food connections — what tends to come before a reaction</div></div></div>
+<div class="r3-watch"><div class="r3-rail"></div><div class="r3-wbody"><div class="r3-wtext">Change — this week against last, counted from your logs</div><div class="r3-gcmp"><span>Last week</span><span class="t"><i style="width:40%"></i></span><span class="n">—</span></div><div class="r3-gcmp"><span>This week</span><span class="t"><i style="width:65%"></i></span><span class="n">—</span></div></div></div><div class="r3-foot">All patterns ›</div></div></div><p class="r3-cap"><b>Daily looks only</b>The same first-week card as day 0: zero events is zero events, whatever else the owner answers. The change row is dropped (it can only count events), and the see line says plainly why the card is not moving, without asking for anything.</p></div></div>
+    </section>
+
+    <!-- R3 · 5 -->
+    <section>
+      <div class="sec-head"><span class="sec-num">R3 · 05</span><h2>After the first week: what the floor line becomes</h2></div>
+      <div class="col"><p>Once a record leaves the first week (E2, nothing established), the engine can act sooner on what is logged, so a floor line can stay, scoped to exactly that (D3).</p></div>
+      <div class="r3-frames"><div class="r3-slot"><span class="r3-tag cur">Current proposal</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">A mature record · nothing cleared the bar</div><div class="r3-card"><div class="r3-label">Signal</div><p class="r3-head">No established patterns yet. Nothing in the last month of logs has cleared our evidence bar.</p><p class="r3-see">That isn't an all-clear — keep logging, and the moment something clears it, it'll be here.</p><div class="r3-sub">Here's what we're watching, and what each pattern still needs:</div><div class="r3-needs">Timing — 2 of the 6 episodes a pattern needs, timed against meals you've logged.</div><div class="r3-floor">If something you log needs attention sooner, it won't wait for the week.</div><div class="r3-foot">All patterns ›</div></div></div><p class="r3-cap"><b>After the first week: the floor, scoped</b>E2 (no established pattern) keeps a floor line, with one word of scope: the engine can act sooner only on what is logged. Drawn for D3; the full cue block stays a first-week feature.</p></div></div>
+    </section>
+
+    <!-- R3 · 6 -->
+    <section>
+      <div class="sec-head"><span class="sec-num">R3 · 06</span><h2>Every string, old and new</h2></div>
+      <div class="col"><p>Every string is pinned in B-721 §9 (<code>docs/nyx-signal-home-requirements.md</code>), so approving these frames approves a Tier-2 edit to §9 that PR-21 writes. Cat strings shown; the dog's differ only where marked.</p></div>
+      <div class="tablewrap">
+        <table class="verdicts r3-copy">
+          <thead><tr><th>Where</th><th>Today</th><th>Proposed</th></tr></thead>
+          <tbody>
+            <tr><td>Day 0 (zero events)</td><td class="was">Not enough recent data to show a pattern. Log today and we'll keep building {pet}'s picture.</td><td>The first-week card, below; never <code>stale</code></td></tr>
+            <tr><td>First-week headline</td><td class="was">We're getting to know {pet}. Day {n} — {k} events so far.</td><td>Unchanged. The day count still shows only when there is an event to count</td></tr>
+            <tr><td>See line, days 0 to 7</td><td class="was">(the sub) Patterns usually start appearing within the first week.</td><td>Culprit sees only what you log, and patterns take about a week of it. Until then, a quiet card isn't an all-clear.</td></tr>
+            <tr><td>See line, after day 7</td><td class="was">(the sub) Patterns build from logged events more than from time passing.</td><td>Culprit sees only what you log, and patterns build from logged events more than from time passing. A quiet card isn't an all-clear.</td></tr>
+            <tr><td>See line, looks only</td><td class="was">(none)</td><td>Pixel's daily looks are on the record, but patterns come from logged meals and symptoms. A quiet card isn't an all-clear.</td></tr>
+            <tr><td>Watching sub</td><td class="was">…Here's what we're watching for:</td><td>Here's what we're watching for: (the week clause moved into the see line)</td></tr>
+            <tr><td>Cue head</td><td class="was">(none)</td><td>Call your vet without waiting for a pattern if {pet}:</td></tr>
+            <tr><td>Cue rows, cat</td><td class="was">(none)</td><td>hasn't eaten for a day · vomits three times in a few hours · has blood in vomit or stool</td></tr>
+            <tr><td>Cue rows, dog</td><td class="was">(none)</td><td>hasn't eaten for a day · vomits again within a day · has blood in vomit or stool</td></tr>
+            <tr><td>A cue the record already meets</td><td class="was">(none)</td><td>Collapses to <em>Call your vet today.</em>, the sheet's own rule (daily look spec §4.6)</td></tr>
+            <tr><td>Door</td><td class="was">(none on the Signal)</td><td>When to call the vet › (opens the existing sheet)</td></tr>
+            <tr><td>First-week floor</td><td class="was">If something needs attention sooner, it won't wait for the week.</td><td>Retired from the first week</td></tr>
+            <tr><td>Stale, with a current gap row</td><td class="was">Not enough recent data to show a pattern. Log today and we'll keep building {pet}'s picture. (gap row hidden)</td><td>Gap row, then: Nothing logged for Pixel since Tuesday, so these gaps stop at the last vomit you logged.</td></tr>
+            <tr><td>Stale, no gap row</td><td class="was">Not enough recent data to show a pattern. Log today and we'll keep building {pet}'s picture.</td><td>Nothing logged for Pixel since Tuesday, so there's nothing new to read. A quiet card isn't an all-clear.</td></tr>
+            <tr><td>Stale door line</td><td class="was">(none)</td><td>Culprit sees only what's logged. · When to call the vet ›</td></tr>
+            <tr><td>E2 floor (D3 b)</td><td class="was">If something needs attention sooner, it won't wait for the week.</td><td>If something you log needs attention sooner, it won't wait for the week.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- R3 · 7 -->
+    <section>
+      <div class="sec-head"><span class="sec-num">R3 · 07</span><h2>Decisions: D1 to D4</h2></div>
+      <div class="r3-briefs">
+        <div class="r3-brief">
+          <div class="bid">D1 · Where the cues sit in the first-week card</div>
+          <p><strong>Deciding:</strong> whether the call cues lead the card or close it (frames R3·02, side by side).</p>
+          <ol>
+            <li><span class="r3-rec">(a) Under the see line, above the ghost receipts. Recommended:</span> Sam reads them at 11 pm without scrolling, and concern leads (Principle 3).</li>
+            <li>(b) At the foot, where the floor line sits today: a calmer first read for Jordan, below the fold on a 390pt phone under the daily look.</li>
+          </ol>
+          <p><strong>Consequence:</strong> (a) pushes the ghost receipts down the card for the first week; (b) keeps the shipped order.</p>
+        </div>
+        <div class="r3-brief">
+          <div class="bid">D2 · Which signs the cues name (clinical)</div>
+          <p><strong>Deciding:</strong> the words of the three cues, and whether the sheet behind the door learns them too. Blood, and a cat vomiting again and again, are not on Dr. Chen's signed sheet today (daily look spec §4.6).</p>
+          <ol>
+            <li><span class="r3-rec">(a) Name all three on the card, and add blood and the repeat to the sheet. Recommended:</span> one list behind two doors; Dr. Chen signs each new string first.</li>
+            <li>(b) Only signs already on the sheet (cat: not eating for a day; subdued and vomiting). No new clinical string, but no blood and no repeat for the case this exists for.</li>
+            <li>(c) The three cues on the Signal, the sheet unchanged. Not recommended: two lists, two answers.</li>
+          </ol>
+          <p><strong>Consequence:</strong> (a) adds rows to <code>lib/lookEmergency.ts</code> and a Tier-2 edit to the daily look spec §4.6, inside PR-21. <strong>Forecast:</strong> 1 row (PR-21, unchanged).</p>
+        </div>
+        <div class="r3-brief">
+          <div class="bid">D3 · The old floor line after the first week</div>
+          <p><strong>Deciding:</strong> what E2 (nothing established) says where "If something needs attention sooner, it won't wait for the week" sits today.</p>
+          <ol>
+            <li><span class="r3-rec">(b) Keep it, scoped: "If something you log needs attention sooner…". Recommended:</span> the smallest true edit; past the first week the engine can act sooner, but only on what is logged.</li>
+            <li>(a) Retire it everywhere for the door line ("Culprit sees only what's logged. When to call the vet ›").</li>
+            <li>(c) Keep it as is.</li>
+          </ol>
+          <p><strong>Consequence:</strong> (b) and (a) both edit a §9 string; (c) leaves E2 promising more than a non-logging owner gets.</p>
+        </div>
+        <div class="r3-brief">
+          <div class="bid">D4 · How urgent the cue head sounds</div>
+          <p><strong>Deciding:</strong> whether the card states a tier or leaves tiers to the sheet.</p>
+          <ol>
+            <li><span class="r3-rec">(a) Tierless on the card ("Call your vet … if"), tiers on the sheet. Recommended:</span> the card's job is to break the silence; triage lives one tap away.</li>
+            <li>(b) Two tiers on the card ("Call now" and "Call today" lists): exact, but it doubles the block on an empty state.</li>
+          </ol>
+          <p><strong>Consequence:</strong> (a) keeps the sheet the one place tiers live, so the two never disagree.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- R3 · 8 -->
+    <section>
+      <div class="sec-head"><span class="sec-num">R3 · 08</span><h2>For the build (PR-21, CUL-1838)</h2></div>
+      <div class="col">
+        <ul class="r3-ledger">
+          <li><strong>Routing.</strong> <code>deriveDisplayState</code>: a pet with zero events (a fresh install, or looks only) goes to the first-week card, never <code>stale</code>. Findings still go to <code>live</code> first.</li>
+          <li><strong>Stale keeps the gap lane.</strong> In <code>stale</code> the watching read still runs the gap lane; a current gap row renders above the stale line, and <code>safetyLive</code> reflects it (CUL-1468). Then take the daily look out of the 48-hour recency check and flip <code>SignalZone.lookRecency.test.tsx</code>, as the QA comment on CUL-1468 asks.</li>
+          <li><strong>Looks only.</strong> Zero events drops the change row (it counts events and could only ever say week 1) and uses the looks see line (CUL-1484).</li>
+          <li><strong>The cues read the sheet's facts.</strong> One source: <code>resolveEmergencyDoor</code>'s species-keyed facts, failing closed while unloaded; a met cue collapses to "Call your vet today." A cue with no leaf behind it stays a permanent threshold.</li>
+          <li><strong>Tests</strong> (from CUL-1838): zero events; looks only; the backfill (vomits 12, 7, 3 days apart, last event 2.5 days old); a record gone quiet; Sam's case. The adversarial reviewer runs on Sam's case and the backfill.</li>
+          <li><strong>Patterns' "I'm still getting to know"</strong> matches the Signal's "We're" (CUL-1838).</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- R3 · 9 -->
+    <section>
+      <div class="sec-head"><span class="sec-num">R3 · 09</span><h2>The clinical pass on these frames</h2></div>
+      <div class="col"><p>Pending.</p></div>
+    </section>
+  </section>
+
+
+  <!-- R3:END -->
+
 
   <header class="mast">
     <p class="eyebrow">
