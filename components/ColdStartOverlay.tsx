@@ -5,8 +5,9 @@ import { TAB_HEIGHT } from './nav/NyxTabBar';
 
 // B-054 §6 — the block-only-when-empty cold-start state.
 //
-// Shown ONLY while the first hydration after login is populating a genuinely empty
-// local store (new device / reinstall / account switch after the sign-out wipe). It
+// Shown ONLY while the first hydration after login is reading a record this device has
+// never read (new device / reinstall / account switch after the sign-out wipe), online,
+// and for at most the ceiling (CUL-1214, lib/coldStart.ts). It
 // exists so a freshly-logged-in device never shows a bare, empty timeline that reads
 // as data loss — the exact moment that kicked off B-054 (the PM's wife logging into
 // the shared account on a second phone and seeing nothing).

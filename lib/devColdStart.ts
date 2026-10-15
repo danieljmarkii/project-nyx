@@ -1,7 +1,7 @@
 // The `__DEV__` forced cold start (CUL-1222, MFU-2).
 //
 // The cold-start wait (Design v2's silhouette, the night moment flag-off) shows only on a
-// session's first sync over an EMPTY local store (`isLocalDataEmpty`, hooks/useSync.ts).
+// session's first sync over a never-read, EMPTY local store (lib/coldStart.ts, CUL-1214).
 // Signing out wipes the store, but it also clears the beta opt-ins (lib/session.ts), so an
 // account with data is never both empty and opted in: the flag-on wait could not be
 // reached on a phone at all, and step 1 of the device sitting (CUL-1529) had nothing to

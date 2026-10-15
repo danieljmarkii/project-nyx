@@ -328,11 +328,10 @@ export async function clearLocalData(): Promise<void> {
   }
 }
 
-// B-054 §6 — is the local pet-data store empty? Used to gate the block-only-when-empty
-// cold-start overlay: an empty events+vet_visits store means this is a true cold
-// start (fresh device / reinstall / different account after the sign-out wipe),
-// so the first hydration should block behind "Catching up…". A populated store
-// reconciles silently. Soft-deleted events still count as "has data" — the row
+// B-054 §6 — is the local pet-data store empty? One of the cold-start wait's three
+// facts (lib/coldStart.ts): a populated store reconciles silently. Since CUL-1214 an
+// empty store alone no longer puts up the wait — an owner who has logged nothing is
+// empty too — so the watermark decides whether the record was ever read. Soft-deleted events still count as "has data" — the row
 // exists locally, so this isn't a cold start. meals hang off events, so checking
 // the two record tables is sufficient.
 //

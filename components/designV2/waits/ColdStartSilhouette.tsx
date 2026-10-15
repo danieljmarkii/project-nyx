@@ -1,8 +1,9 @@
 // The cold start (D2-7 / CUL-1068; GA by CUL-1071): Home's silhouette, then Home.
 //
 // Shown by `ColdStartOverlay` under the same trigger discipline as the night moment it
-// replaced (B-054 §6: only the first hydration of an EMPTY local store, only
-// once a pet exists so it can never sit over onboarding). What differs is the exit:
+// replaced (B-054 §6: only the first hydration of a never-read record, online, for at
+// most the ceiling (CUL-1214, lib/coldStart.ts), and only once a pet exists so it can
+// never sit over onboarding). What differs is the exit:
 // no minimum hold and no dissolve to black — the silhouette IS the screen's shape, so
 // it crossfades into the real Home over `COLD_START_CROSSFADE_MS` (the round-2 archive's
 // `.wait` transition, 320ms ease-out) and the record fills the shape. Reduced motion is
