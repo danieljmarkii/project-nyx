@@ -568,6 +568,52 @@ describe('SignalZone — the first gap warning plays no celebration (CUL-1937)',
     expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
   });
 
+  it('CUL-1943 R1: a regen re-read in flight defers the arrival; the warning it finds then withholds it', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    // The regen's tick: the state turns live while the gap re-read it started is in flight.
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: false, retry: jest.fn(), reading: true });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [benign] }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+    expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+    mockUseGapWarning.mockReturnValue({ text: GAP, answered: true, failed: false, retry: jest.fn(), reading: false });
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    expect(view.getByText(GAP)).toBeTruthy();
+  });
+
+  it('CUL-1943 R1 control: the re-read answering calm lets the deferred arrival play', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: false, retry: jest.fn(), reading: true });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [benign] }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: false, retry: jest.fn(), reading: false });
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeTruthy();
+  });
+
   it('control: the same insight alone still arrives (the gate was what held it)', async () => {
     mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
     const view = render(<SignalZone />);

@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { GAP_READ_TIMEOUT_MS, useGapWarning } from './useGapWarning';
 import { usePetStore } from '../store/petStore';
+import { useSyncStore } from '../store/syncStore';
 import { getGapWarning } from '../lib/signalWatching';
 
 // useFocusEffect needs a navigation context; mirror its contract with a plain useEffect
@@ -112,6 +113,32 @@ describe('useGapWarning', () => {
       });
       expect(result.current.failed).toBe(true);
       warn.mockRestore();
+    });
+
+    it('R2: a burst of ticks faster than the box never re-arms it over a hung read', () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockGet.mockReturnValue(new Promise(() => {}));
+      const { result } = renderHook(() => useGapWarning(true));
+      for (let i = 0; i < 3; i++) {
+        act(() => {
+          jest.advanceTimersByTime(GAP_READ_TIMEOUT_MS / 2);
+          useSyncStore.setState((st) => ({ signalTick: st.signalTick + 1 }));
+        });
+      }
+      expect(result.current.failed).toBe(true);
+      warn.mockRestore();
+    });
+
+    it('reading is true while a read is in flight and false once it answers', async () => {
+      let resolve: (v: string | null) => void = () => {};
+      mockGet.mockReturnValue(new Promise<string | null>((r) => (resolve = r)));
+      const { result } = renderHook(() => useGapWarning(true));
+      expect(result.current.reading).toBe(true);
+      await act(async () => {
+        resolve(null);
+        await Promise.resolve();
+      });
+      expect(result.current.reading).toBe(false);
     });
 
     it('a late answer after the box still lands and clears the failure', async () => {

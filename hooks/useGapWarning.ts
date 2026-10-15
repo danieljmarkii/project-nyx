@@ -17,6 +17,11 @@ export interface GapWarningRead {
   // any sentence an earlier read found.
   failed: boolean;
   retry: () => void;
+  // A read is in flight right now, first or re-read. The zone holds the arrival's decision
+  // on it: a regen's tick starts both the state change and the re-read that may find a
+  // warning, so a celebration decided before the re-read answers can land over one
+  // (adversarial pass 2, CUL-1943).
+  reading: boolean;
 }
 
 // The Signal's gap warning, read for the active pet (CUL-1838; the watching-rows hook it
@@ -34,6 +39,11 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
   const [text, setText] = useState<string | null>(null);
   const [answeredKey, setAnsweredKey] = useState<string | null>(null);
   const [failedKey, setFailedKey] = useState<string | null>(null);
+  const [readingKey, setReadingKey] = useState<string | null>(null);
+  // When the oldest still-unsettled read for this pet began. A burst of ticks re-runs the
+  // effect faster than the box, so each run measures from this, never from its own start:
+  // a hung read must not keep the calm up by being asked again (adversarial pass 2, R2).
+  const outstandingSince = useRef<{ petId: string; at: number } | null>(null);
 
   // Synchronous clear on a pet switch or a disable (adjust-state-while-rendering, as
   // useSignal does): one pet's warning must never flash under another pet's name.
@@ -44,6 +54,7 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
     setText(null);
     setAnsweredKey(null);
     setFailedKey(null);
+    setReadingKey(null);
   }
 
   useFocusEffect(
@@ -54,6 +65,10 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
       }
       let cancelled = false;
       let settled = false;
+      setReadingKey(petId);
+      const now = Date.now();
+      if (outstandingSince.current?.petId !== petId) outstandingSince.current = { petId, at: now };
+      const since = outstandingSince.current;
       // Past the box, the read is failed until it answers (a late answer still lands below).
       const timeout = setTimeout(() => {
         if (!cancelled && !settled) {
@@ -61,7 +76,7 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
           setFailedKey(petId);
           setAnsweredKey(petId);
         }
-      }, GAP_READ_TIMEOUT_MS);
+      }, Math.max(0, since.at + GAP_READ_TIMEOUT_MS - now));
       (async () => {
         try {
           const next = await getGapWarning(petId, Date.now());
@@ -77,7 +92,12 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
         }
         settled = true;
         clearTimeout(timeout);
-        if (!cancelled) setAnsweredKey(petId);
+        // Any read that settles, even a superseded one, proves the store is answering.
+        if (outstandingSince.current === since) outstandingSince.current = null;
+        if (!cancelled) {
+          setAnsweredKey(petId);
+          setReadingKey(null);
+        }
       })();
       return () => {
         cancelled = true;
@@ -93,5 +113,6 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
     answered: key === null || answeredKey === key,
     failed: key !== null && failedKey === key,
     retry,
+    reading: key !== null && readingKey === key,
   };
 }

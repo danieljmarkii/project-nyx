@@ -694,6 +694,7 @@ export function SignalZone({
     answered: gapAnswered,
     failed: gapReadFailed,
     retry: retryGapRead,
+    reading: gapReading,
   } = useGapWarning(!showSkeleton);
   const serverGap = findings.find((f) => (f.finding as { type: string }).type === 'gap_shortening') ?? null;
   const gapSentence = showSkeleton ? null : (gapText ?? serverGap?.text ?? null);
@@ -737,9 +738,11 @@ export function SignalZone({
   // ── CUL-601 (§4) — the arrival ────────────────────────────────────────────────
   // The SETTLED state: null while the cache read is in flight, so latency can never be
   // mistaken for an arrival.
-  // Also null while the gap read is held (CUL-1943): whether this is a celebration or a
-  // warning is not known yet, so the decision waits rather than spends the moment.
-  const settledState = isLoading || gapHeld ? null : displayState;
+  // Also null while ANY gap read is in flight, re-reads included (CUL-1943): whether this is
+  // a celebration or a warning is not known yet, so the decision waits rather than spends
+  // the moment. A null never overwrites the last settled state, so the arrival is deferred,
+  // never dropped. A sentence already in hand withholds it anyway.
+  const settledState = isLoading || gapHeld || (gapReading && gapSentence === null) ? null : displayState;
 
   // NEVER FOR A SAFETY FINDING (§4 / S1), AND NEVER FOR A GAP WARNING (CUL-1937). Read over
   // the FULL set: suppression must never be able to unhide the moment. This reading can only
