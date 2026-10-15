@@ -1223,7 +1223,7 @@ const GAP_READ_RETRY = 'Try again';
 const GAP_RETRY_HITSLOP = { top: 0, bottom: 0, left: 8, right: 8 } as const;
 const GAP_RETRY_MIN_HEIGHT = 44;
 function gapReadFailedCopy(petName: string): string {
-  return `Couldn't check ${petName}'s vomiting pattern just now. This doesn't mean nothing's changed.`;
+  return `Couldn't check ${petName}'s vomiting pattern just now, so this isn't an all-clear.`;
 }
 
 // B-734 (CUL-72): the flag-on loading frame — content-shaped Tier-1 skeleton for the

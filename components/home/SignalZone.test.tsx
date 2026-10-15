@@ -386,7 +386,7 @@ describe('SignalZone — the gap warning takes the card', () => {
 
 // ── CUL-1943: an unanswered or failed gap read is never "no warning" ─────────────────
 describe('SignalZone — a gap read that did not answer never draws the quiet line (CUL-1943)', () => {
-  const FAILED = /Couldn't check Nyx's vomiting pattern just now/;
+  const FAILED = /^Couldn't check Nyx's vomiting pattern just now, so this isn't an all-clear\.$/;
 
   for (const displayState of ['building', 'stale', 'no_pattern'] as const) {
     it(`in ${displayState}: a thrown read says so, with Try again, and no quiet line`, async () => {
