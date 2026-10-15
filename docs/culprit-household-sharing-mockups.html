@@ -243,6 +243,7 @@
     <div><b>Round</b><span><span class="roundtag">Round 1</span> One proposal, with five visual choices drawn side by side. Frames tagged <i>current</i> are the proposal; dashed boxes are options drawn for a decision.</span></div>
     <div><b>Spec</b><span><code>docs/nyx-household-sharing-requirements.md</code> v2.0 (draft). It replaces the unmerged August draft, which this round used as evidence.</span></div>
     <div><b>Evidence</b><span><code>docs/research/2026-10-household-sharing.md</code>: 43 pet app listings, 2,585 reviews, analogs, studies. Six isolated team reads and a code audit, on CUL-1935.</span></div>
+    <div><b>Reviews</b><span>The privacy red team and the adversarial review both ran on the spec. Their findings are folded in as controls and rules; D4 states the one residual left.</span></div>
     <div><b>What to do here</b><span>Rule the ten briefs in §09. Each points at the frames it changes. The team calls in §10 are already made; reverse any you disagree with.</span></div>
   </div>
   <p class="jump"><a href="#s09">Jump to the decision round</a><a href="#s01">The shape</a><a href="#s04">The sitter link</a><a href="#s11">The build plan</a></p>
@@ -313,7 +314,7 @@
           <p class="seclabel">Message</p>
           <div class="card" style="box-shadow:none;background:var(--app-subtle)">
             <p class="sline" style="color:var(--app-ink)">Here's your own login for Mochi's and Biscuit's record, so we both log and see the same thing. Free for both of us.</p>
-            <p class="tline">getculprit.app/join · works for 7 days, once</p>
+            <p class="tline">getculprit.app/join · works once</p>
           </div>
           <div class="acts"><span class="btn o">Messages</span><span class="btn o">Mail</span><span class="btn o">Copy</span></div>
           <p class="tline">Pets shared: Mochi, Biscuit · and pets I add later</p>
@@ -329,11 +330,12 @@
         <div class="sheet">
           <span class="grab"></span>
           <p class="serif">Alex wants to join Mochi's and Biscuit's record.</p>
-          <p class="sline">Once you confirm, Alex can see and log everything for both, and record what the vet says. Only you can archive them or give someone else access.</p>
+          <div class="card" style="box-shadow:none;background:var(--app-subtle);gap:2px"><span class="dsub">Signed in as</span><span class="dhead">alex.rivera@icloud.com</span><span class="dsub">Alex's phone shows the code 4821</span></div>
+          <p class="sline">Once you confirm, Alex can see and log everything for both, and record what the vet says. Only you can edit their details, archive them or give someone else access.</p>
           <div class="acts col"><span class="btn p">Yes, share with Alex</span><span class="btn t">That's not Alex. Cancel the invite</span></div>
         </div>
       </div>
-      <figcaption class="frame-cap"><b>Confirm before anything syncs.</b><span>The only control an owner has over a forwarded link. The wording names what Alex can do and what stays the owner's.</span></figcaption>
+      <figcaption class="frame-cap"><b>Confirm before anything syncs.</b><span>The only control an owner has over a forwarded link, so it checks things the invitee can't choose: the address they verified and a code on their phone. Until then the server shows them nothing.</span></figcaption>
     </figure>
   </div>
 </section>
@@ -373,7 +375,7 @@
             <div class="srow"><div class="stime">7:12<small class="who">Jordan</small></div><span class="sdot ink"></span><div class="sbody"><b>Apoquel</b><span>given</span></div></div>
           </div></div>
           <div class="acts col"><span class="btn p">Start</span></div>
-          <p class="tline">Waiting for Jordan to confirm it's you.</p>
+          <p class="tline">Waiting for Jordan to confirm it's you. Your code: 4821.</p>
         </div>
       </div>
       <figcaption class="frame-cap"><b>Joining, never a second Mochi.</b><span>An invitee skips "add your pet". If the app closes first, onboarding's first door asks "Joining someone's pet?".</span></figcaption>
@@ -430,7 +432,7 @@
             <li>To have your label removed, ask Jordan. It then reads "a sitter".</li>
             <li>This link works on this phone only.</li>
           </ul>
-          <p class="big" style="margin-top:4px">May Culprit's AI read photos you add?</p>
+          <p class="big" style="margin-top:4px">May Culprit's AI read the photos and notes you add?</p>
           <p class="tline">It looks for things worth a vet's attention. Either answer is fine.</p>
           <div class="choose"><span class="btn o">Yes</span><span class="btn o">No</span></div>
           <div class="acts col"><span class="btn p">Start</span></div>
@@ -452,7 +454,7 @@
           <p class="nolist">Not: chews, dental chews, pill pockets, table food, Biscuit's bowl. Apoquel goes in a spoon of z/d.</p>
         </div>
         <div class="card" style="padding:9px 11px"><p class="seclabel">Today so far</p>
-          <div class="today"><div><span>Breakfast, both</span><em>7:10</em></div><div><span>Apoquel, Mochi</span><em>given 7:12</em></div><div><span>Evening Apoquel</span><em>due 7 pm</em></div></div>
+          <div class="today"><div><span>Breakfast, both</span><em>7:10</em></div><div><span>Apoquel, Mochi</span><em>given 7:12</em></div><div><span>Evening Apoquel</span><em>none logged, as of 5:02</em></div></div>
         </div>
         <div class="pad">
           <span class="k">Fed everyone<small>z/d, Biscuit's dry</small></span>
@@ -460,7 +462,7 @@
           <span class="k slip">Ate something else</span>
           <span class="k">Didn't eat<small>or ate less</small></span>
           <span class="k">Vomit</span><span class="k">Poop</span>
-          <span class="k wide">Note or photo</span>
+          <span class="k">Tired or not herself</span><span class="k">Note or photo</span>
         </div>
         <div class="sticky"><span class="btn o">Call Jordan</span><span class="btn o">Call the vet</span></div>
       </div>
@@ -477,7 +479,7 @@
           <span class="k slip">Ate something else</span>
           <span class="k">Didn't eat<small>or ate less</small></span>
           <span class="k">Vomit</span><span class="k">Poop</span>
-          <span class="k wide">Note or photo</span>
+          <span class="k">Tired or not herself</span><span class="k">Note or photo</span>
         </div>
         <div class="fold">The rules and today so far ›</div>
         <div class="sticky"><span class="btn o">Call Jordan</span><span class="btn o">Call the vet</span></div>
@@ -517,7 +519,7 @@
         </div>
         <p class="tline" style="text-align:center">The same escalation rules as the app, run on every entry. Never "all good".</p>
       </div>
-      <figcaption class="frame-cap"><b>Safety without push (brief D4).</b><span>The hand-off is person to person, and the copy never implies the owner was told. Server push for safety alerts follows as its own track.</span></figcaption>
+      <figcaption class="frame-cap"><b>Safety without push (brief D4).</b><span>The page runs the app's whole no-model escalation path on every entry, offline included: a burst the sitter saw, lethargy after a vomit, blood in stool, a cat's untouched bowl, a possible double dose. The hand-off is person to person, and the copy never implies the owner was told.</span></figcaption>
     </figure>
     <figure class="frame">
       <span class="ftag t-cur">Current proposal</span>
@@ -722,19 +724,19 @@
     </figure>
     <figure class="frame option small">
       <span class="ftag t-opt">F13 · Option A · recommended</span>
-      <div class="phone crop" role="img" aria-label="On Alex's phone, Mochi's page: an inert line, Only Jordan can archive Mochi">
+      <div class="phone crop" role="img" aria-label="On Alex's phone, Mochi's page: the details shown, then an inert line, Only Jordan can edit Mochi's details, archive Mochi or give someone else access">
         <div class="card">
-          <div class="drow"><div class="dbody"><span class="dhead">Edit Mochi's details</span></div><span class="chev">›</span></div>
-          <div class="drow"><div class="dbody"><span class="dsub">Only Jordan can archive Mochi or give someone else access.</span></div></div>
+          <div class="drow"><div class="dbody"><span class="dsub">Mochi's details</span><span class="dhead">Canine · 6 y · 24.1 kg</span></div></div>
+          <div class="drow"><div class="dbody"><span class="dsub">Only Jordan can edit Mochi's details, archive Mochi or give someone else access.</span></div></div>
         </div>
       </div>
       <figcaption class="frame-cap"><b>An inert line that explains.</b><span>No dimmed button to tap and wonder about.</span></figcaption>
     </figure>
     <figure class="frame option small">
       <span class="ftag t-opt">F13 · Option B</span>
-      <div class="phone crop" role="img" aria-label="A tappable row, Archive Mochi, that opens an explanation sheet">
+      <div class="phone crop" role="img" aria-label="Tappable rows, Edit details and Archive Mochi, each opening an explanation sheet">
         <div class="card">
-          <div class="drow"><div class="dbody"><span class="dhead">Edit Mochi's details</span></div><span class="chev">›</span></div>
+          <div class="drow"><div class="dbody"><span class="dhead" style="color:var(--app-ink-2)">Edit Mochi's details</span><span class="dsub">Jordan's call</span></div><span class="chev">›</span></div>
           <div class="drow"><div class="dbody"><span class="dhead" style="color:var(--app-ink-2)">Archive Mochi</span><span class="dsub">Jordan's call</span></div><span class="chev">›</span></div>
         </div>
       </div>
@@ -801,27 +803,27 @@
   <div class="briefs">
     <div class="brief" id="d1"><h3>D1 · Adopt the shape, and its order <span class="pill">Recommended (a)</span></h3>
       <p><b>Deciding:</b> whether household sharing is built as three ways in over one record, and in what order.</p>
-      <ol type="a"><li><b>Recommended:</b> the card, then readiness and the record's rules, then partners, then the sitter link (the riskiest piece, dark for your household first).</li><li>The card and partners only; the sitter link later.</li><li>Partners only, as August drew it.</li></ol>
-      <p><b>Consequence:</b> (a) unblocks the run order (§11). (b) defers the round's main opening, trial-aware help for the sitter. <b>Forecast:</b> 25 rows; push, "Same one?", transfer and keep-a-copy follow outside it.</p>
+      <ol type="a"><li><b>Recommended:</b> the card, then readiness and the record's rules, then partners, then the sitter link (the riskiest piece, dark for a dogfood household first).</li><li>The card and partners only; the sitter link later.</li><li>Partners only, as August drew it.</li></ol>
+      <p><b>Consequence:</b> (a) unblocks the run order (§11). (b) defers the round's main opening, trial-aware help for the sitter. <b>Forecast:</b> 26 rows; push, "Same one?", transfer and keep-a-copy follow outside it.</p>
       <p class="frames-ref">Frames: §01 to §08.</p></div>
     <div class="brief" id="d2"><h3>D2 · What a partner can do <span class="pill">Recommended (a)</span></h3>
       <p><b>Deciding:</b> whether a partner can change the care plan, not only log.</p>
-      <ol type="a"><li><b>Recommended (every lens, with guards):</b> start, end or extend a trial and add or change a medicine; each change dated, named and undoable; only the pet's owner archives, grants an account or transfers.</li><li>Plan changes owner only (August).</li><li>Two equal owners.</li></ol>
+      <ol type="a"><li><b>Recommended (every lens, with guards):</b> start, end or extend a trial and add or change a medicine; each change dated, named and undoable; only the pet's owner edits the pet's profile, archives, grants an account or transfers; the note on a vet call stays with whoever wrote it, the call itself is shared.</li><li>Plan changes owner only (August).</li><li>Two equal owners.</li></ol>
       <p><b>Consequence:</b> (a) needs two rule changes first: a food added to a trial counts from the day it was added (B-456), and trial changes become append-only so two phones can't silently undo each other.</p>
       <p class="frames-ref">Frames: §07, F13.</p></div>
     <div class="brief" id="d3"><h3>D3 · Sitter links: two kinds <span class="pill">Recommended (a)</span></h3>
       <p><b>Deciding:</b> how long a sitter link lives and what its page shows.</p>
-      <ol type="a"><li><b>Recommended (Trust &amp; Safety and the sitter consultant, reconciled):</b> a stay link ends the morning after its date (one tap extends); a regular link has no date and ends after 30 days unused, when its maker loses access, or if you don't keep it at a 90-day check. Both: bound to one browser, today only, no household names, never "away".</li><li>Stay links only.</li><li>Links that never end.</li></ol>
+      <ol type="a"><li><b>Recommended (Trust &amp; Safety and the sitter consultant, reconciled):</b> a stay link ends the morning after its date, which has a ceiling (one tap extends); a regular link has no date and ends after 30 days unused, or if you don't keep it at a 90-day check. Every link ends when its maker loses access. Both: bound to one browser, today only, no household names, never "away".</li><li>Stay links only.</li><li>Links that never end.</li></ol>
       <p><b>Consequence:</b> (a) a regular link's feedings count as exposures but never make a day "covered": a daycare's lunches can't speak for a home's dinners.</p>
       <p class="frames-ref">Frames: §04.</p></div>
-    <div class="brief" id="d4"><h3>D4 · Safety without push in v1 <span class="pill">Recommended (a), with a condition</span></h3>
-      <p><b>Deciding:</b> whether v1 needs server push so an escalation reaches you when someone else logs it.</p>
-      <ol type="a"><li><b>Recommended:</b> no cross-person push in v1. The person logging sees every escalation; the sitter page runs the same rules and hands off by person; the visit text. Safety push follows as its own track.</li><li>Build safety push in v1 (about 4 more rows, a review cycle, the push provider question answered now).</li><li>No sitter link until push exists.</li></ol>
-      <p><b>Consequence:</b> (a) holds only while the sitter page carries the escalation and no copy implies you were told.</p>
+    <div class="brief" id="d4"><h3>D4 · Safety without push in v1 <span class="pill">Recommended (a), with a stated residual</span></h3>
+      <p><b>Deciding:</b> whether v1 needs server push so an escalation reaches you when someone else's entries raise it.</p>
+      <ol type="a"><li><b>Recommended:</b> no cross-person push in v1. A symptom logged on a shared pet pulls first, so the logger sees what two people's entries make together; an escalation raised by someone else's entry leads Home the moment it arrives; the sitter page runs the same rules, offline too, and hands off by person. <b>Residual:</b> when two entries meet only after a phone reconnects, the phone that completes the pair shows it at once and the other person sees it at their next open. Only push closes that.</li><li>Build safety push in v1 (about 4 more rows, a review cycle, the push provider question answered now).</li><li>No sitter link until push exists.</li></ol>
+      <p><b>Consequence:</b> (a) ships without new infrastructure and accepts the residual until the first server push; (b) closes it now, at the cost of an App Review cycle.</p>
       <p class="frames-ref">Frames: §04, the escalation and the visit text.</p></div>
     <div class="brief" id="d5"><h3>D5 · The record's rules with several loggers, as a set <span class="pill">Recommended (a)</span></h3>
       <p><b>Deciding:</b> how counts, intake and doses stay honest with more than one logger.</p>
-      <ol type="a"><li><b>Recommended:</b> nothing depends on who is signed in; possible duplicates take the louder reading until someone resolves them (both count, the lower intake, every flag); doses checked across people by medicine, with no one-to-two hour clamp; sitter-only days never count as days symptoms were watched; "fed" never records how much was eaten.</li><li>Partner rules now, sitter rules in the sitter phase.</li></ol>
+      <ol type="a"><li><b>Recommended:</b> nothing depends on who is signed in; possible duplicates take the louder reading until someone resolves them (both count, every flag, the lower intake where it can raise a warning and the higher where it sets a baseline); doses checked across people by medicine, any author included, with no one-to-two hour clamp; sitter-only days never count as days symptoms were watched; "fed" never records how much was eaten.</li><li>Partner rules now, sitter rules in the sitter phase.</li></ol>
       <p><b>Consequence:</b> (a) changes the engine and the report, so each such build PR gets an adversarial review.</p>
       <p class="frames-ref">Frames: §05, §06.</p></div>
     <div class="brief" id="d6"><h3>D6 · A check before saving a second dose of a critical medicine <span class="pill open">Persona conflict</span></h3>
@@ -835,7 +837,7 @@
       <p class="frames-ref">Frames: §05 F3, §08 the report.</p></div>
     <div class="brief" id="d8"><h3>D8 · AI reads on a shared pet <span class="pill">Recommended (a)</span></h3>
       <p><b>Deciding:</b> whose yes a photo or note needs before it goes to the AI.</p>
-      <ol type="a"><li><b>Recommended (Trust &amp; Safety):</b> a photo or note needs a yes from the owner, the sender and its author; the Signal needs the owner and the caller; a sitter answers once, no default; AI use is charged to you, with a small allowance per sitter link.</li><li>Owner and caller only (the Oct 13 recommendation).</li><li>Owner only.</li></ol>
+      <ol type="a"><li><b>Recommended (Trust &amp; Safety):</b> a photo or note needs a yes from the owner, the sender and its author; the Signal needs the owner and the caller; a sitter answers once, for photos and notes, no default; AI use is charged to you, with one small sitter allowance across all your links.</li><li>Owner and caller only (the Oct 13 recommendation).</li><li>Owner only.</li></ol>
       <p><b>Consequence:</b> (a) ships before any account gains access to another's pet; the consent copy names the rule.</p>
       <p class="frames-ref">Frames: §04, Start.</p></div>
     <div class="brief" id="d9"><h3>D9 · When people separate <span class="pill">Recommended (a)</span></h3>
@@ -864,20 +866,20 @@
     <li><b>Visual choices follow the recommended options</b>: F3 A, F5 B, F7 A, F9 A, F13 A.</li>
     <li><b>A copy prints that it is a copy; the original never shows one exists.</b> A pet in two homes keeps shared access.</li>
     <li><b>An ended sitter page names no pet</b>; the rules travel in the message you sent.</li>
-    <li><b>A partner can delete a photo they added</b>, pending the spec-stage privacy review; otherwise only you hard-delete.</li>
+    <li><b>A partner can remove a photo they added</b>, through one server action that removes the photo and its file and leaves a "photo removed" mark (accepted by the privacy review). Otherwise only you hard-delete.</li>
   </ul>
 </section>
 
 <!-- §11 -->
 <section id="s11">
   <div class="sec-head"><span class="sec-num">§11</span><h2>The build plan</h2></div>
-  <div class="col"><p>25 rows, starting after 1.2.0 clears App Store review. Schema PRs stay isolated, each migration applied on your typed number.</p></div>
+  <div class="col"><p>26 rows, starting after 1.2.0 clears App Store review. Schema PRs stay isolated, each migration applied on your typed number. The privacy red team re-runs on every schema PR and on the sitter link's function and photos; the adversarial review's second pass runs on the build PRs that carry the record's rules.</p></div>
   <div class="scroll-x">
     <table class="plan">
       <thead><tr><th>Phase</th><th>What lands</th></tr></thead>
       <tbody>
         <tr><td>0 · The card (1)</td><td>"Send the rules": the share sheet and a printable card.</td></tr>
-        <tr><td>1 · Readiness and the record (5)</td><td>The owner's answer joins every AI door; flags and consent by owner on the phone; trial foods count from the day they were added; doses across people; possible duplicates and the louder reading.</td></tr>
+        <tr><td>1 · Readiness and the record (6)</td><td>The owner's answer joins every AI door; flags and consent by owner on the phone; pet photos private; trial foods count from the day they were added; doses across people; possible duplicates and the louder reading.</td></tr>
         <tr><td>2 · Partners (14)</td><td>Five schema PRs (memberships and invites; the event family and Storage; the care record, looks and intake; one pantry; the author column); the invite function; the report's owner line and Appendix G; membership reads and the joining door; the Sharing screens and leaving a shared login; the purge; names and author-aware copy; dose freshness; deleting an account both ways; the privacy policy and terms.</td></tr>
         <tr><td>3 · The sitter link (5)</td><td>Links schema; the link function with the escalation rules; the page on getculprit.app; your link screens and urgent checks for others' entries; sitter photos.</td></tr>
         <tr><td>Fast follows</td><td>Safety push (about 4 rows) · "Same one?" · keep a copy and transfer.</td></tr>
