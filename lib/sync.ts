@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getDb, getWatermark, setWatermark } from './db';
+import { markRecordHydrated } from './coldStart';
 import { isUploadInFlight, markAttachmentSyncedIfLive, purgeRemovedAttachment } from './attachments';
 import { LATEST_WEIGHT_KG_QUERY } from './weightQueries';
 import { uploadPhoto, compressForUpload } from './storage';
@@ -2489,7 +2490,7 @@ interface RemoteNotificationPreference {
   created_at: string; updated_at: string;
 }
 
-async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
+async function hydrateEvents(db: Db, stale: () => boolean): Promise<boolean> {
   // FR-3: pull only events changed since the last successful pull, with the
   // commit-skew safety overlap (see watermarkQueryFloor).
   const since = await getWatermark('events');
@@ -2501,14 +2502,15 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
       'deleted_at, created_at, updated_at, logged_via',
     floor ? { column: 'updated_at', value: floor } : null,
   );
-  if (!rows || rows.length === 0) return;
+  if (!rows) return false;
+  if (rows.length === 0) return true; // read, and the server holds none: still a pull
 
   const localById = await loadLocalRowMeta(db, 'events', rows.map((r) => r.id), 'updated_at');
   // FR-4: server-time LWW — replace only when remote is strictly newer (see
   // lib/hydration.ts header for the accepted failure mode). FR-7: soft-deletes
   // ride along on the deleted_at column, hidden by the WHERE deleted_at IS NULL reads.
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
-  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  if (stale()) return false; // FR-9: signed out during the fetch — don't write to a wiped store.
   for (const e of toWrite) {
     await db.runAsync(
       `INSERT INTO events
@@ -2544,8 +2546,9 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
   // write and here can't re-insert the old account's watermark into the just-
   // cleared table (which would make the next account's login a wrong incremental).
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
-  if (stale()) return;
+  if (stale()) return false;
   if (wm) await setWatermark('events', wm);
+  return true;
 }
 
 async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
@@ -2792,7 +2795,7 @@ async function hydrateEventAttachments(db: Db, stale: () => boolean): Promise<vo
   if (wm) await setWatermark('event_attachments', wm);
 }
 
-async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<void> {
+async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<boolean> {
   // FR-3: incremental on updated_at, with overlap.
   const since = await getWatermark('vet_visits');
   const floor = watermarkQueryFloor(since);
@@ -2809,11 +2812,12 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<void> {
     'id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, deleted_at, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
-  if (!rows || rows.length === 0) return;
+  if (!rows) return false;
+  if (rows.length === 0) return true; // read, and the server holds none: still a pull
 
   const localById = await loadLocalRowMeta(db, 'vet_visits', rows.map((r) => r.id), 'updated_at');
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
-  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  if (stale()) return false; // FR-9: signed out during the fetch — don't write to a wiped store.
   for (const v of toWrite) {
     await db.runAsync(
       `INSERT INTO vet_visits
@@ -2831,8 +2835,9 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<void> {
     );
   }
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
-  if (stale()) return;
+  if (stale()) return false;
   if (wm) await setWatermark('vet_visits', wm);
+  return true;
 }
 
 async function hydrateVetVisitAttachments(db: Db, stale: () => boolean): Promise<void> {
@@ -3488,7 +3493,14 @@ export async function hydrateFromCloud(): Promise<void> {
   const stale = () => signOutEpoch !== epoch;
 
   const db = getDb();
-  await runHydrationStep('events', () => hydrateEvents(db, stale));
+  // CUL-1214 — whether this cycle READ the two record tables (an empty answer counts).
+  // An account with nothing logged never earns a watermark on either, so these two
+  // reads, not a row count, are what retire the cold-start wait (lib/coldStart.ts).
+  let eventsPulled = false;
+  let visitsPulled = false;
+  await runHydrationStep('events', async () => {
+    eventsPulled = await hydrateEvents(db, stale);
+  });
   if (stale()) return;
   await runHydrationStep('meals', () => hydrateMeals(db, stale));
   if (stale()) return;
@@ -3520,8 +3532,20 @@ export async function hydrateFromCloud(): Promise<void> {
   // the step's label (`guards/readState.test.ts` keeps it that way).
   await runHydrationStep('verdict copy', () => pullReadCopies(db, stale));
   if (stale()) return;
-  await runHydrationStep('vet_visits', () => hydrateVetVisits(db, stale));
+  await runHydrationStep('vet_visits', async () => {
+    visitsPulled = await hydrateVetVisits(db, stale);
+  });
   if (stale()) return;
+  // Written as soon as both reads are known, not after the ~20 steps that follow, so an
+  // app killed mid-cycle (or a slow late step) costs no extra wait on the next launch.
+  // The account's id rides in the value: a marker that survived a failed wipe never
+  // vouches for the next account on this phone.
+  if (eventsPulled && visitsPulled) {
+    await runHydrationStep('cold-start marker', async () => {
+      if (!stale()) await markRecordHydrated(session.user.id);
+    });
+    if (stale()) return;
+  }
   await runHydrationStep('vet_visit_attachments', () => hydrateVetVisitAttachments(db, stale));
   if (stale()) return;
   // B-478: vet_documents declares no local FK (its vet_visit_id link is optional
