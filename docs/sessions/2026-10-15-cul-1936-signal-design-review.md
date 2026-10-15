@@ -109,7 +109,7 @@ PR-21 (CUL-1838) starts on the PM's typed go. The subtitle is applied unless the
 **The merge.** The PM typed `/wrap and merge`, but a session merges only its own PR (steward §7), so #1219 lands first.
 - #1219 carries #1217's commits: rounds 3 to 5, the research brief and PR-20's record.
 - That leaves #1217 superseded. It closes unmerged.
-- CUL-1837 is set Done by hand, with a comment pointing here.
+- #1219's body names CUL-1837, so the merge closes it too.
 - PR-20's record still says "shipped via #1217", because session records are never edited. Its work reached `main` inside this squash.
 
 **Merge check:** CLEAN at `d8a6940`. The first run reported REVIEW, but only because the shallow clone hid two branches' merge bases. Fetching deeper cleared it. Landing this makes #1218 conflict on `docs/research/README.md`, where both PRs add an index row; the fix is to keep both (steward §4).
