@@ -16,6 +16,7 @@ import {
   removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
 } from '../../lib/completionCard';
 import { useEventStore } from '../../store/eventStore';
+import { useSyncStore } from '../../store/syncStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { updateEvent, getEventSource } from '../../lib/db';
 import { writeOwingFloorCheck } from '../../lib/incidentFloorQueue';
@@ -437,6 +438,10 @@ export function MealCompletionCard() {
         occurred_at_source: source,
         confidence: { value: 'witnessed', earliest: null, latest: null },
       }));
+      // CUL-1947 — a moved time moves a cut on the gap warning's logged clock (its
+      // recency guard), and this path schedules no regen, so Home (still focused under
+      // the card) re-reads on the local write itself. A peek-and-save moved nothing.
+      if (changed) useSyncStore.getState().bumpRecordTick();
       patchInToday(payload.eventId, { occurred_at: iso });
       patchOccurredAt(iso);
       setPickerFor(null);

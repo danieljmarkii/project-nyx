@@ -629,6 +629,36 @@ describe('MealCompletionCard — Change time', () => {
     expect((updateEvent as jest.Mock).mock.calls[0][1].occurred_at_source).toBe('now');
   });
 
+  // CUL-1947 — a moved time moves a cut on the gap warning's logged clock, and this
+  // card schedules no regen, so Home's gap read re-runs on the local record tick alone,
+  // after the write. A peek-and-save moved nothing and owes no re-read.
+  it('a moved time bumps the record tick, after the write; a peek-and-save does not', async () => {
+    const { useSyncStore } = require('../../store/syncStore');
+    useSyncStore.setState({ recordTick: 0 });
+    seedMeal();
+    const peek = render(<MealCompletionCard />);
+    openPicker(peek);
+    await act(async () => { fireEvent.press(peek.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+    expect(useSyncStore.getState().recordTick).toBe(0);
+    peek.unmount();
+
+    let tickAtWrite = -1;
+    (updateEvent as jest.Mock).mockImplementationOnce(async () => {
+      tickAtWrite = useSyncStore.getState().recordTick;
+    });
+    seedMeal();
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(2);
+    expect(tickAtWrite).toBe(0);
+    expect(useSyncStore.getState().recordTick).toBe(1);
+  });
+
   it('Cancel writes nothing and leaves the card standing', async () => {
     seedMeal();
     const view = render(<MealCompletionCard />);

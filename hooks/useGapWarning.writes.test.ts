@@ -7,9 +7,10 @@
 // about: a log from Home's root log sheet leaves Home focused, so no focus re-run fires.
 //
 // The two writes not driven here have their own proof: the completion card's time edit
-// schedules no regen at all, so `NamedCompletionCard.test.tsx` pins its recordTick bump;
-// a restore lands only through sync, so `useGapWarning.test.ts` pins the hydrationTick
-// re-read. The edit screen's time edit calls the same debounce driven below.
+// schedules no regen at all, so `NamedCompletionCard.test.tsx` (and the meal and dose
+// cards' suites, whose times move the logged clock) pin its recordTick bump; a restore
+// lands only through sync, so `useGapWarning.test.ts` pins the hydrationTick re-read.
+// The edit screen is a modal route, so Home's focus re-read covers it on return.
 
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 
@@ -55,6 +56,7 @@ import { supabase } from '../lib/supabase';
 import { cancelPendingSignalRegens, triggerSignalRegenDebounced } from '../lib/signal';
 import { insertSimpleEvent } from '../lib/simpleEvent';
 import { reverseLoggedEvent } from '../lib/undoLog';
+import { softDeleteEvent } from '../lib/db';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 
@@ -77,9 +79,28 @@ async function mountAnswered() {
   await waitFor(() => expect(hook.result.current.answered).toBe(true));
   expect(hook.result.current.text).toBeNull();
   expect(mockGet).toHaveBeenCalledTimes(1);
-  mockGet.mockResolvedValue(SENTENCE);
+  // The re-read must come AFTER the write (adversarial pass 1): a re-read that ran first
+  // would read the old rows and settle calm. So the warning answers only once the write
+  // under test has landed.
+  mockGet.mockImplementation(async () => (writeLanded() ? SENTENCE : null));
   return hook;
 }
+
+let writeLanded: () => boolean = () => true;
+
+// Inside act() React holds the re-read until the awaited write returns, so the hook alone
+// cannot see a tick bumped BEFORE the write. The order is pinned at the tick itself: the
+// moment recordTick moves, the write under test has landed.
+function recordAtTick(): boolean[] {
+  const seen: boolean[] = [];
+  const unsub = useSyncStore.subscribe((st, prev) => {
+    if (st.recordTick !== prev.recordTick) seen.push(writeLanded());
+  });
+  afterThis.push(unsub);
+  return seen;
+}
+const afterThis: Array<() => void> = [];
+afterEach(() => afterThis.splice(0).forEach((f) => f()));
 
 // Run the debounced regen to completion with generate-signal answering an error.
 async function failTheRegen() {
@@ -114,26 +135,35 @@ describe.each([
   });
 
   it('a vomit logged (insertSimpleEvent, the log sheet and log screen path)', async () => {
+    writeLanded = () => mockRunAsync.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO events'));
     const { result } = await mountAnswered();
+    const atTick = recordAtTick();
     await act(async () => {
       await insertSimpleEvent({ ...VOMIT });
     });
+    expect(atTick).toEqual([true]);
     if (runAndFail) await failTheRegen();
     await waitFor(() => expect(result.current.text).toBe(SENTENCE));
     expect(useSyncStore.getState().signalTick).toBe(0);
   });
 
   it('a vomit removed (reverseLoggedEvent, the card Undo and the event screen)', async () => {
+    writeLanded = () => (softDeleteEvent as jest.Mock).mock.calls.length > 0;
     const { result } = await mountAnswered();
+    const atTick = recordAtTick();
     await act(async () => {
       await reverseLoggedEvent('ev-1');
     });
+    expect(atTick).toEqual([true]);
     if (runAndFail) await failTheRegen();
     await waitFor(() => expect(result.current.text).toBe(SENTENCE));
     expect(useSyncStore.getState().signalTick).toBe(0);
   });
 
-  it("a vomit's time edited (the edit screen schedules the same debounce after its write)", async () => {
+  // The debounce contract only: the edit screen is a modal route over the event screen,
+  // so Home is blurred and its focus re-read covers it on return (adversarial pass 1).
+  it("the debounce a time edit schedules re-reads on its own", async () => {
+    writeLanded = () => true;
     const { result } = await mountAnswered();
     act(() => triggerSignalRegenDebounced('pet-a'));
     if (runAndFail) await failTheRegen();

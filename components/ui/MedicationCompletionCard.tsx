@@ -15,6 +15,7 @@ import { useAppActive } from '../../hooks/useAppActive';
 import { COMPLETION_MOTION, useCompletionArrival } from '../motion/completionMotion';
 import { FOLD_LAYOUT } from '../motion/foldMotion';
 import { useEventStore } from '../../store/eventStore';
+import { useSyncStore } from '../../store/syncStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { getDoubleDoseFlag, getEventSource, updateEvent } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
@@ -226,6 +227,10 @@ export function MedicationCompletionCard() {
         occurred_at_source: source,
         confidence: { value: 'witnessed', earliest: null, latest: null },
       });
+      // CUL-1947 — a moved time moves a cut on the gap warning's logged clock (its
+      // recency guard), and this path schedules no regen, so Home (still focused under
+      // the card) re-reads on the local write itself. A peek-and-save moved nothing.
+      if (changed) useSyncStore.getState().bumpRecordTick();
       patchInToday(payload.eventId, { occurred_at: iso });
       patchOccurredAt(iso);
       setPickerFor(null);
