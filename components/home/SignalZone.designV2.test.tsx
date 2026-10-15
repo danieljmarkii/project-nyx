@@ -17,10 +17,9 @@ jest.mock('../../lib/signalLead', () => ({
 }));
 const mockUseSignal = jest.fn();
 jest.mock('../../hooks/useSignal', () => ({ useSignal: () => mockUseSignal() }));
-jest.mock('../../hooks/useWatchingRows', () => ({
-  useWatchingRows: () => [],
-  useWatchingRowsRead: () => ({ rows: [], answered: true }),
-}));
+jest.mock('../../hooks/useGapWarning', () => ({ useGapWarning: () => ({ text: null, answered: true }) }));
+jest.mock('../../lib/emergencyDoorRead', () => ({ loadEmergencyRead: async () => ({ status: 'failed' }) }));
+jest.mock('../../hooks/useFloorOn', () => ({ useFloorOn: () => false }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 jest.mock('../../lib/signalArrival', () => ({ hasPlayedArrival: async () => true, markArrivalPlayed: async () => {} }));
@@ -83,11 +82,13 @@ function state(findings: CachedFinding[]): SignalState {
     petId: 'pet-1',
     findings,
     coverage: [],
-    displayState: 'live',
     signalText: null,
     petName: 'Nyx',
     isLoading: false,
-    dayNumber: 30,
+    hasRecentActivity: true,
+    hasSubstantialHistory: false,
+    lastLoggedAt: null,
+    lookSinceLastLogged: false,
     eventCount: 80,
     acknowledging: false,
     generatedAt: null,

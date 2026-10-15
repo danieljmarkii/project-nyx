@@ -6,10 +6,10 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text, View,
+  View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { Divider } from '../ui/Divider';
@@ -21,7 +21,16 @@ import type { SignalTrialAnchor } from '../../lib/signalTrialAnchor';
 import { signalTrialWindowOf } from '../../lib/signalScreen';
 import type { TrialCardTrial } from '../../lib/dietTrialCard';
 import { hasSignalTitleRule } from '../../lib/signalTitle';
-import { useWatchingRowsRead } from '../../hooks/useWatchingRows';
+import { useGapWarning } from '../../hooks/useGapWarning';
+import { usePetStore } from '../../store/petStore';
+import { useSyncStore } from '../../store/syncStore';
+import { useFloorOn } from '../../hooks/useFloorOn';
+import { lookSpeciesOf } from '../../constants/lookWords';
+import { signalDoorLabel, type EmergencyRead } from '../../lib/lookEmergency';
+import { loadEmergencyRead } from '../../lib/emergencyDoorRead';
+import { reportHref } from '../../lib/reportRoute';
+import { LookEmergencySheet } from './LookEmergencySheet';
+import { useWarningArrival } from '../motion/warningArrivalMotion';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
 import { hasPlayedArrival, markArrivalPlayed } from '../../lib/signalArrival';
@@ -41,35 +50,31 @@ import { insightArrival } from '../../lib/haptics';
 import { SignalLeadCard } from '../../components/designV2/signal/SignalLeadCard';
 import { SignalRow } from '../../components/designV2/signal/SignalRow';
 import { leadTakesChartCard } from '../../lib/signalWindows';
-import { SignalZoneFoot } from '../../components/designV2/signal/SignalZoneFoot';
+import { SignalZoneFoot, type SignalVetDoor } from '../../components/designV2/signal/SignalZoneFoot';
 import { signalScreenHref } from '../../lib/signalRoute';
 import { foldIdentity, sharedFoldIdentities } from '../../lib/signalFold';
 import { Skeleton } from '../ui/Skeleton';
 import { ThemedText } from '../ui/ThemedText';
 import {
-  BUILDING_FLOOR,
-  BUILDING_WATCHING_FOR,
   NO_PATTERN_HEADLINE,
   NO_PATTERN_SUB,
-  WATCHING_SUB,
+  QUIET_GONE_QUIET_SUB,
+  QUIET_TOO_EARLY_HEADER,
   ackUpdatingCopy,
   arrivalAnnouncementCopy,
-  buildingDayCount,
-  buildingHeadline,
-  buildingHeadlineLead,
-  buildingSub,
-  coverageCopy,
+  deriveDisplayState,
   isStoodDown,
-  staleIntro,
+  quietDayLabel,
+  quietGoneQuietHeader,
+  quietTooEarlySub,
 } from '../../lib/signalCopy';
-import type { CachedFinding, CoverageDiagnostic, SignalFinding } from '../../lib/signal';
+import type { CachedFinding, SignalFinding } from '../../lib/signal';
 import type { DisplayState } from '../../lib/signalCopy';
-import type { WatchingRow } from '../../lib/signalWatching';
 
 // B-734 (adversarial ④) — the skeleton's time-box. The window it covers is a normally-
 // fast network read, but nothing bounds that read, so the skeleton bounds itself: past
-// this, the zone falls through to the honestly-derived state and re-enables the watching
-// read. Sized to cover a slow-but-alive fetch without ever reading as a hung screen.
+// this, the zone falls through to the honestly-derived state and re-enables the gap
+// warning's read. Sized to cover a slow-but-alive fetch without ever reading as a hung screen.
 const SIGNAL_LOAD_SKELETON_MS = 1500;
 
 // ── CUL-601 (§4, DP-3) — the first-insight arrival moment ────────────────────────
@@ -152,13 +157,14 @@ function useArrivalMoment({
   petName,
   settledState,
   findingCount,
-  hasSafetyFinding,
+  withheld,
 }: {
   petId: string | null;
   petName: string;
   settledState: DisplayState | null;
   findingCount: number;
-  hasSafetyFinding: boolean;
+  /** Any safety finding, or any gap warning (CUL-1937): the moment is spent, never drawn. */
+  withheld: boolean;
 }): { playing: boolean; moment: ArrivalMoment | null } {
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
@@ -188,8 +194,8 @@ function useArrivalMoment({
 
   // Read at the instant an arrival starts rather than closed over per render, so these
   // stay out of the transition effect's dependency list.
-  const safety = useRef(hasSafetyFinding);
-  safety.current = hasSafetyFinding;
+  const safety = useRef(withheld);
+  safety.current = withheld;
   const reduced = useRef(reducedMotion);
   reduced.current = reducedMotion;
   const activePet = useRef(petId);
@@ -258,9 +264,11 @@ function useArrivalMoment({
       }
       if (alreadyPlayed) return;
 
-      // Spend it — INCLUDING on the safety path below, which draws nothing (§4). A pet
-      // whose first-ever finding is a concern has spent its moment. The alternative
-      // saves the celebration for the one owner whose record opened badly.
+      // Spend it — INCLUDING on the withheld path below, which draws nothing (§4). A pet
+      // whose first-ever finding is a concern has spent its moment — a safety finding, or
+      // the gap warning (CUL-1937: "gaps between vomits are getting shorter" is a concern
+      // in everything but its class). The alternative saves the celebration for the one
+      // owner whose record opened badly.
       void markArrivalPlayed(petId);
       if (safety.current) return;
 
@@ -594,32 +602,38 @@ interface SignalZoneProps {
   // pair (it would be titled with the new trial), and the rows title a rising one by its own
   // day. A report for another pet, or none, anchors nothing.
   signalTrial?: { petId: string; trial: TrialCardTrial | null; nowMs: number } | null;
+  // CUL-1838 — the trial's own refusal register, for the vet door's read: the same value
+  // Home hands the daily look's door (`TodayCard` → `LookHeader`), so the two doors over one
+  // sheet read one record. Only `=== true` counts (T-20).
+  trialNotEating?: boolean | null;
 }
 
 export function SignalZone({
   withholdFallingVomit = false,
   signalTrial = null,
+  trialNotEating = null,
 }: SignalZoneProps = {}) {
   const {
     petId,
     findings,
-    coverage,
-    displayState,
     petName,
     isLoading,
-    dayNumber,
     eventCount,
+    hasRecentActivity,
+    hasSubstantialHistory,
+    lastLoggedAt,
+    lookSinceLastLogged,
     acknowledging,
     generatedAt,
     answered,
   } = useSignal();
+  const { activePet } = usePetStore();
+  const species = activePet?.id === petId ? lookSpeciesOf(activePet?.species) : null;
 
   // D2-3 (CUL-1065) — Design v2: the lead insight card becomes a title + chart + line, and
   // every other card a ROW — headline, ask, chevron (CUL-1270 · D1 = B) — each a DOOR to its
-  // own finding's screen. The header's "Open ›" retired with CUL-1270 (it always opened the
-  // lead; every card is its own door now), and "not a diagnosis" is said once, at the foot.
-  // The door is keyed on the finding's identity and
-  // THIS zone's pet (C-9) — `useSignal` pairs the two by construction.
+  // own finding's screen. The door is keyed on the finding's identity and THIS zone's pet
+  // (C-9) — `useSignal` pairs the two by construction.
   const openSignal = useCallback(
     (finding: SignalFinding) => {
       if (!petId) return;
@@ -628,26 +642,33 @@ export function SignalZone({
     [petId],
   );
 
-  // Signal/Home design uplift (B-721, SR-1..SR-6) — GA'd 2026-08-20 (CUL-546 Phase 1 /
-  // CUL-547): the uplift IS the Signal surface now. SR-1 the live receipts (via LiveStack →
-  // InsightCard), SR-2 the empty states (E1 building / E2 no_pattern), SR-3 the register
-  // (receded chrome + secondary compression) and the acknowledgment line all render
-  // unconditionally. The Signals-v2 lanes (B-755 / CUL-12/13/14 — the timing-story cards,
-  // the trial card, the watching rows) GA'd in the same PR (CUL-548): the client no longer
-  // gates them, so a v2 finding renders whenever the payload carries it (the server's B-777
-  // eligibility gate still governs whether an account's payload carries one, until GA-3).
-  // `dayNumber` / `eventCount` feed the E1 headline.
+  // ── What the zone can DRAW, and the state it derives from that (CUL-1838) ──────────
+  // The state is derived over the findings this zone will actually draw, never the cache's
+  // raw set: a finding Home has no title for (`gap_shortening`, CUL-1218) or one a safety
+  // gate suppresses (B-789's falling pair over a not-eating cat) used to make the set read
+  // `live` over an EMPTY stack — and `live` switched the gap warning off, so a lone server
+  // gap finding blanked the very card that should have carried it (CUL-1941). Now an
+  // undrawable set falls through to the quiet line, and the gap warning takes the card.
+  const trialAnchor: SignalTrialAnchor | null =
+    signalTrial && petId && signalTrial.petId === petId
+      ? { generatedAt, trial: signalTrial.trial ? signalTrialWindowOf(signalTrial.trial, signalTrial.nowMs) : null }
+      : null;
+  // A fresh array each render, so the speech effect below re-checks on every render; its work
+  // is a set difference over a handful of findings.
+  const rendered = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor);
+  const drawn = rendered.filter((f) => hasSignalTitleRule(f.finding));
+  // A SAFETY finding is never routed to the quiet line, titled or not (adversarial pass, PR-21):
+  // the server can carry a safety type this build has no row for (`weight_loss`, dark behind
+  // engines_v3_en8), and "No pattern right now" over it would assert the opposite of what the
+  // record holds. It keeps `live` — the shipped behaviour for an untitled set — never the quiet line.
+  const holdsLive = drawn.length + rendered.filter((f) => f.finding.priorityClass === 'safety' && !hasSignalTitleRule(f.finding)).length;
+  const displayState = deriveDisplayState(holdsLive, eventCount, hasRecentActivity, hasSubstantialHistory);
 
-  // While the first cache read is in flight, hold the warm building state rather
-  // than letting the empty findings flash 'stale' for a frame. B-734 (CUL-72, GA
-  // Phase 0): this window does NOT render the heavy E1 — a mature pet's live findings
-  // resolve a beat after mount/pet-switch, and the loud "getting to know {pet} / Day N"
-  // headline flashing over a pet with a live safety finding is self-contradicting. The
-  // loading frame is a content-shaped skeleton — and it is TIME-BOXED (adversarial ④):
-  // the wait it covers is the `readSignalCache` network read (Supabase/PostgREST — no
-  // timeout of its own), so an offline/hung read would otherwise hold the skeleton for
-  // the platform socket timeout. Past SIGNAL_LOAD_SKELETON_MS the zone falls through to
-  // the derived state (honest, and it un-suppresses the escalate-only gap row below).
+  // While the first cache read is in flight, hold a content-shaped skeleton rather than
+  // flash a quiet line over a pet whose findings are about to land. B-734 (CUL-72): TIME-
+  // BOXED (adversarial ④) — the read it covers has no timeout of its own, so past
+  // SIGNAL_LOAD_SKELETON_MS the zone falls through to the derived state (honest, and it
+  // un-suppresses the escalate-only gap warning).
   const loading = isLoading && findings.length === 0;
   const [loadTimedOut, setLoadTimedOut] = useState(false);
   useEffect(() => {
@@ -659,94 +680,63 @@ export function SignalZone({
     return () => clearTimeout(t);
   }, [loading]);
   const showSkeleton = loading && !loadTimedOut;
-  const state = loading ? 'building' : displayState;
+  const state: DisplayState = loading ? 'building' : displayState;
 
-  // Signals v2 (B-755 / CUL-14) — the watching system (§4.4 / D5). Per-lane rows with
-  // REAL partial counts, rendered inside whichever empty-state frame is live. Gated on
-  // an empty state (building / no_pattern): in `live` there is a real finding to show and
-  // in `stale` too little to say, so the rows never apply there. The hook reads local
-  // data ONLY when enabled, so live / stale do zero extra work. `dayNumber` is shared
-  // with the E1 headline so the Change row's week count and the "Day N" headline always
-  // agree (one day definition). Not while the skeleton shows (B-734): the pet-switch
-  // reset just cleared localCtx, so a read keyed on the sentinel dayNumber would only be
-  // thrown away — but the gate is the SKELETON, not `loading`, so a hung read can never
-  // suppress the escalate-only gap row past the time-box (adversarial ④).
-  const watchingEnabled = !showSkeleton && (state === 'building' || state === 'no_pattern');
-  const { rows: watching, answered: watchingAnswered } = useWatchingRowsRead(watchingEnabled, dayNumber);
+  // ── The gap warning (CUL-1468, CUL-1838) ───────────────────────────────────────
+  // Read in EVERY state but the skeleton: the quiet states draw it as the whole card, and
+  // `live` draws it under the stack, because Home has no row for the server's own gap
+  // finding (CUL-1218) and the stack would otherwise drop it (CUL-1941's second shape). When
+  // the server holds a gap finding the client read does not reproduce (its clock is the
+  // wall, ours is logged time, so this should not happen), its own template sentence is
+  // drawn: an escalate-only fact is never dropped for a disagreement about recency.
+  const { text: gapText, answered: gapAnswered } = useGapWarning(!showSkeleton);
+  const serverGap = findings.find((f) => (f.finding as { type: string }).type === 'gap_shortening') ?? null;
+  const gapSentence = showSkeleton ? null : (gapText ?? serverGap?.text ?? null);
+  const gapTakesCard = state !== 'live' && gapSentence !== null;
+  // The vet door shows whenever the card draws no finding — the quiet states, and a `live`
+  // set this build cannot title (an untitled safety finding, which holds `live` above). Keyed
+  // on what is DRAWN, not on the state: adversarial pass 2 found the state-keyed door dropped
+  // "Call your vet today ›" for exactly that set, the most worrying one.
+  const quiet = state !== 'live' || drawn.length === 0;
 
-  // B-769 (CUL-29, PM-ruled D3a — GA Phase 0): the escalate-only gap row leaves the
-  // "still needs" umbrella. It is a concerning FACT about the record, not an unmet need,
-  // so it renders in its own register ABOVE the frame's other content (Principle 3 —
-  // concern leads), while the timing/change rows keep the WATCHING_SUB "still needs"
-  // framing. Split once here; the frames place the two pieces.
-  const gapRow = watching.find((r) => r.key === 'gap') ?? null;
-  const needRows = watching.filter((r) => r.key !== 'gap');
+  // The once-ever arrival is not for a warning (CUL-1937): a pet whose first warning is the
+  // gap row has spent its moment, as a safety-led pet has (§4: no celebration over a
+  // concern). Spent once per pet per mount; `markArrivalPlayed` is idempotent anyway.
+  const gapSpentFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!petId || gapSentence === null || gapSpentFor.current === petId) return;
+    gapSpentFor.current = petId;
+    void markArrivalPlayed(petId);
+  }, [petId, gapSentence]);
 
-  // SR-3 receded chrome (§5.2) — the section label drops a tier in the LIVE register
-  // only, where the lead's canvas should dominate. The empty states keep the label
-  // prominent (it orients the owner while the engine is still learning — the round-2.1
-  // mock keeps E1/E2's label at full weight). The footer doorway recedes across every
-  // state (below).
+  // SR-3 receded chrome (§5.2) — the section label drops a tier in the LIVE register only.
   const labelReceded = state === 'live';
 
   // The acknowledgment line shows above the live findings while a fresh log's regen is in
-  // flight (§5.3). Computed once — the render and the iOS announce below read the same value.
+  // flight (§5.3). On the quiet line the Signal holds still on a log (round 7).
   const showAck = acknowledging && state === 'live';
 
-  // `accessibilityLiveRegion` (on AckLine) is Android-only; announce imperatively on iOS
-  // (Nyx ships iOS-first) so VoiceOver reads the "updating…" line when it appears — the
-  // same gap + fix TextField.tsx documents for its error text. Fires on the transition to
-  // showing, not every render; no "cleared" announcement (there is no "done" copy — the
-  // findings just refresh, and re-announcing on clear would be noise).
+  // `accessibilityLiveRegion` (on AckLine) is Android-only; announce imperatively on iOS.
   useEffect(() => {
     if (showAck && Platform.OS === 'ios') {
       AccessibilityInfo.announceForAccessibility(ackUpdatingCopy(petName));
     }
   }, [showAck, petName]);
 
-  // No "mark the Signal seen" write happens here any more. It existed for exactly one
-  // reader — the CulpritMark's `live` pulse in the Home header — and D4 deleted that
-  // cue outright ("no looping animation in app chrome, ever"). "Something new" is now
-  // announced by this card's own content: the live rail, and the once-ever arrival
-  // moment. Nothing else read the seen-signature store, so it went with the pulse
-  // rather than being left writing to a reader that no longer exists.
-
   // ── CUL-601 (§4) — the arrival ────────────────────────────────────────────────
   // The SETTLED state: null while the cache read is in flight, so latency can never be
-  // mistaken for an arrival (see `useArrivalMoment`). Read off `isLoading` rather than
-  // the derived `loading` above, because that one goes false as soon as there are
-  // findings to show, which is the very frame the transition would be judged on.
+  // mistaken for an arrival.
   const settledState = isLoading ? null : displayState;
 
-  // NEVER FOR A SAFETY FINDING (§4 / S1 — plainness is the severity signal). The spec
-  // writes this as "if the first-ever finding LEADS the safety band"; the gate here is
-  // ANY safety finding in the set, not just rank 0. Ranking is decided server-side, and
-  // if a safety card ever sits below the lead, sweeping the card still decorates a
-  // concern — this reading can only ever withhold the moment, never grant it, which is
-  // the direction a severity rule is allowed to be wrong in.
-  const hasSafetyFinding = findings.some((f) => f.finding.priorityClass === 'safety');
+  // NEVER FOR A SAFETY FINDING (§4 / S1), AND NEVER FOR A GAP WARNING (CUL-1937). Read over
+  // the FULL set: suppression must never be able to unhide the moment. This reading can only
+  // ever withhold the moment, never grant it, which is the direction a severity rule may err.
+  const withholdArrival =
+    findings.some((f) => f.finding.priorityClass === 'safety') || serverGap !== null || gapSentence !== null;
 
-  // COUNT WHAT RENDERS, not what the cache holds. `displayState` is derived upstream over
-  // the full set, so a pet whose only finding is dropped by the B-789 suppression still
-  // reads 'live' with an EMPTY stack (the CUL-527 residual). Counting `findings.length`
-  // there would sweep a blank card and spend the marker — on the not-eating cat, the one
-  // record where a celebration is least defensible. The safety gate above deliberately
-  // keeps reading the FULL set: suppression must never be able to unhide the moment.
-  //
-  // CUL-786: a stood-down line is NOT a finding for this count. It only ever exists after a
-  // chronicity card fired — and a first-ever SAFETY card withholds the moment rather than
-  // spending it, so without this exclusion the card standing down would hand the arrival a
-  // count of 1 with no safety finding in the set, and the once-ever celebration would play
-  // over a sentence about absence.
-  const trialAnchor: SignalTrialAnchor | null =
-    signalTrial && petId && signalTrial.petId === petId
-      ? { generatedAt, trial: signalTrial.trial ? signalTrialWindowOf(signalTrial.trial, signalTrial.nowMs) : null }
-      : null;
-  // A fresh array each render, so the speech effect below re-checks on every render; its work
-  // is a set difference over a handful of findings, and an arrival held while Home was not
-  // in front is said on the first render after it is.
-  const rendered = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor);
-  const renderableCount = rendered.filter((f) => !isStoodDown(f.finding)).length;
+  // COUNT WHAT RENDERS (CUL-601), titled findings only: a stood-down line is not a finding
+  // for this count (CUL-786), and a type the stack cannot title is not on screen (CUL-1941).
+  const renderableCount = drawn.filter((f) => !isStoodDown(f.finding)).length;
 
   // GAP-13 (CUL-1566) — a safety finding that arrives on a focused Home is spoken.
   useSafetyArrivalSpeech({ petId, petName, answered, rendered });
@@ -756,27 +746,71 @@ export function SignalZone({
     petName,
     settledState,
     findingCount: renderableCount,
-    hasSafetyFinding,
+    withheld: withholdArrival,
   });
 
+  // ── The vet door (round 7's foot) ────────────────────────────────────────────────
+  // Read on focus, through the composition the daily look's door uses
+  // (`lib/emergencyDoorRead.ts`), so the label can say the imperative once the record meets
+  // a call sign (Dr. Chen, ruled 2026-10-15). Kept per pet (C-9); a switch drops it.
+  const floorOn = useFloorOn();
+  const [doorRead, setDoorRead] = useState<{ petId: string; read: EmergencyRead } | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const signalTick = useSyncStore((s) => s.signalTick);
+  const hydrationTick = useSyncStore((s) => s.hydrationTick);
+  const petSpecies = activePet?.species ?? null;
+  const activePetIdRef = useRef<string | null>(petId);
+  activePetIdRef.current = petId;
+  useFocusEffect(
+    useCallback(() => {
+      if (!petId || !quiet) return;
+      let cancelled = false;
+      loadEmergencyRead({ id: petId, species: petSpecies }, trialNotEating)
+        .then((read) => {
+          if (!cancelled && activePetIdRef.current === petId) setDoorRead({ petId, read });
+        })
+        .catch((e) => {
+          console.warn('[SignalZone] vet door read failed:', e);
+          if (!cancelled && activePetIdRef.current === petId) setDoorRead({ petId, read: { status: 'failed' } });
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [petId, petSpecies, trialNotEating, quiet, signalTick, hydrationTick]),
+  );
+  const read: EmergencyRead = doorRead && doorRead.petId === petId ? doorRead.read : { status: 'loading' };
+  const vetDoor: SignalVetDoor | null = species
+    ? { label: signalDoorLabel(species, read, floorOn), onPress: () => setSheetOpen(true) }
+    : null;
+  const onReport = petId && eventCount > 0 ? () => router.push(reportHref(petId)) : null;
 
-  // The outgoing frame for the crossfade. Captured DURING render because by the time an
-  // effect could run, the state has already flipped to live and the building frame it
-  // would have snapshotted is gone. Idempotent and derived only from this render's own
-  // values, which is what makes the render-time write safe (the same "adjust state while
-  // rendering" reasoning useSignal's pet reset documents). Cleared on a pet switch so
-  // one pet's building frame can never ghost over another's card.
+  // ── The warning's arrival (round 7: the rail leads, the box opens, the sentence lands) ─
+  // An OBSERVED transition, like the arrival: the same pet, a gap read that had answered
+  // with NO warning on screen (in any state — a warning already drawn under a live stack
+  // that then takes the card has not arrived, code review F2), then a warning taking the
+  // card. A cold mount that already has one draws it still. A LAYOUT effect, and the motion
+  // hook's phase is set in one too, so both updates flush before paint: the finished
+  // sentence never shows for a frame before its own arrival (code review F1).
+  const gapShown = gapSentence !== null;
+  const prevGap = useRef<{ petId: string | null; shown: boolean | null }>({ petId: null, shown: null });
+  const [warningEnter, setWarningEnter] = useState(0);
+  const rowSpeech = useRowSpeech();
+  useLayoutEffect(() => {
+    if (!gapAnswered || showSkeleton) return;
+    const prev = prevGap.current;
+    prevGap.current = { petId, shown: gapShown };
+    if (prev.petId !== petId || prev.shown !== false || !gapShown) return;
+    if (gapTakesCard) setWarningEnter((n) => n + 1);
+    // Said, not only drawn: a warning that arrives while Home is in front is spoken once,
+    // queued behind what VoiceOver is reading — the safety arrival's own channel (GAP-13).
+    if (gapSentence !== null && rowSpeech.mayAnnounce()) announceQueued(gapSentence);
+  }, [petId, gapAnswered, gapShown, gapTakesCard, gapSentence, showSkeleton, rowSpeech]);
+
+  // The outgoing frame for the arrival's crossfade, captured DURING render (by the time an
+  // effect could run, the state has already flipped to live). Cleared on a pet switch.
   const lastBuilding = useRef<{ petId: string | null; el: ReactNode }>({ petId: null, el: null });
   const buildingFrame =
-    state === 'building' && !showSkeleton ? (
-      <BuildingStateV2
-        petName={petName}
-        dayNumber={dayNumber}
-        eventCount={eventCount}
-        gapRow={gapRow}
-        needRows={needRows}
-      />
-    ) : null;
+    state === 'building' && !showSkeleton && !gapTakesCard ? <QuietLine petName={petName} state="building" /> : null;
   if (lastBuilding.current.petId !== petId) {
     lastBuilding.current = { petId, el: buildingFrame };
   } else if (buildingFrame) {
@@ -784,82 +818,75 @@ export function SignalZone({
   }
   const outgoingFrame = arriving ? lastBuilding.current.el : null;
 
+  const goneQuietDay = lastLoggedAt ? quietDayLabel(lastLoggedAt, Date.now()) : null;
+
   return (
-    // Signal is the dominant zone — one elevated container holding the ordered
-    // stack of insight rows (PM-decided: rows + dividers, not separate cards, so
-    // it reads as one calm intelligence surface, never a dashboard dump — §3.1).
-    // `cardClip` is applied ONLY while the moment plays: it clips the travelling wash
-    // to the card's rounded corners and keeps the outgoing frame's overlay from spilling
-    // past a shorter live card. Left on permanently it would clip legitimate overflow
-    // (an expanded insight's shadow), so it comes and goes with the 1.2s.
+    // Signal is the dominant zone — one elevated container. `cardClip` is applied ONLY
+    // while the arrival plays (it clips the travelling wash to the card's corners).
     <Card elevated style={arriving ? styles.cardClip : undefined}>
-      {/* The wash goes FIRST — behind every sibling (§4: light moving across paper,
-          never a tint over the words). Reduced motion renders no band at all; that
-          absence is the static frame. */}
       {moment?.sweep ? <ArrivalWash sweep={moment.sweep} /> : null}
-      {/* The style prop stays a SINGLE reference when the chrome isn't receded, so the
-          shipped snapshot is byte-identical (an inline [style, false] array would drift it). */}
       <SectionLabel
         label="Signal"
         header
         style={labelReceded ? [styles.label, styles.labelReceded] : styles.label}
       />
 
-      {/* SR-3 acknowledgment line (§5.3) — one quiet line ABOVE the still-readable FINDINGS
-          while a fresh log's regen is in flight (never a spinner, never blanks the findings).
-          Scoped to the live register: the empty states carry their own "getting to know you"
-          reassurance (E1), so an "updating…" line there would just double it. Clears when the
-          regen settles (useSignal reads the lifecycle flag) or the safety ceiling fires —
-          fail-quiet, never an error surface. */}
       {showAck ? <AckLine petName={petName} /> : null}
 
       {state === 'live' ? (
-        // The stage stays mounted and switches (CUL-1223): one host across the moment's
-        // edges, so the arrival never remounts a row or its card's read.
-        <ArrivalStage
-          active={arriving}
-          moment={moment}
-          outgoingFrame={outgoingFrame}
-          stack={
-            <LiveStack
-              findings={findings}
-              withholdFallingVomit={withholdFallingVomit}
-              arrival={moment}
-              generatedAt={generatedAt}
-              trialAnchor={trialAnchor}
-              petId={petId}
-              onOpen={openSignal}
-            />
-          }
-        />
-      ) : state === 'stale' ? (
-        <ThemedText style={styles.intro}>{staleIntro(petName)}</ThemedText>
-      ) : state === 'no_pattern' ? (
-        // Substantial history, nothing cleared a floor (B-051) — honest, no ghosted
-        // previews (the owner has logged enough to know the surface). B-053: when
-        // the engine knows WHY there's no signal yet, surface the top coverage
-        // diagnostic's one-line why + ≤1 safe action instead of the generic line.
-        // CUL-14: the watching rows compose in additively (the gap row can still
-        // escalate on a mature record).
-        <NoPatternStateV2 petName={petName} coverage={coverage} gapRow={gapRow} needRows={needRows} />
-      ) : // B-734: the loading frame is a time-boxed skeleton, never the heavy E1.
-      showSkeleton ? (
+        <>
+          <ArrivalStage
+            active={arriving}
+            moment={moment}
+            outgoingFrame={outgoingFrame}
+            stack={
+              <LiveStack
+                findings={findings}
+                withholdFallingVomit={withholdFallingVomit}
+                arrival={moment}
+                generatedAt={generatedAt}
+                trialAnchor={trialAnchor}
+                petId={petId}
+                onOpen={openSignal}
+              />
+            }
+          />
+          {gapSentence !== null ? (
+            <>
+              <Divider style={styles.rowDivider} />
+              <GapWarning text={gapSentence} enterKey={0} />
+            </>
+          ) : null}
+        </>
+      ) : showSkeleton ? (
+        // B-734: the loading frame is a time-boxed skeleton, never a quiet line.
         <SignalLoadingSkeleton />
-      ) : (
-        <BuildingStateV2
-          petName={petName}
-          dayNumber={dayNumber}
-          eventCount={eventCount}
-          gapRow={gapRow}
-          needRows={needRows}
+      ) : gapTakesCard && gapSentence !== null ? (
+        <GapWarning
+          text={gapSentence}
+          enterKey={warningEnter}
+          outgoing={<QuietLineText petName={petName} state={state} day={goneQuietDay} lookSince={lookSinceLastLogged} />}
         />
+      ) : (
+        <QuietLine petName={petName} state={state} day={goneQuietDay} lookSince={lookSinceLastLogged} />
       )}
 
-      {/* §8 doorway into the Patterns dashboard — the zone's foot, present in every
-          Signal state so the deeper surface is discoverable from Home: "not a diagnosis",
-          said once, beside the door (CUL-1270). Navigates AWAY to a destination
-          (Principle 3 — not a 4th Home zone, not a tab). */}
-      <SignalZoneFoot petName={petName} showDisclaimer={state === 'live'} />
+      {/* The zone's foot. Live: "not a diagnosis", said once, beside the door to Patterns
+          (CUL-1270). Quiet: the vet's call signs and the vet report (round 7, CUL-1838). */}
+      {state === 'live' && drawn.length > 0 ? (
+        <SignalZoneFoot mode="live" petName={petName} />
+      ) : showSkeleton ? null : (
+        <SignalZoneFoot mode="quiet" petName={petName} vetDoor={vetDoor} onReport={onReport} />
+      )}
+      {species ? (
+        <LookEmergencySheet
+          visible={sheetOpen}
+          species={species}
+          petName={petName}
+          read={read}
+          onClose={() => setSheetOpen(false)}
+        />
+      ) : null}
     </Card>
   );
 }
@@ -1022,271 +1049,112 @@ function LiveStack({
   );
 }
 
-// ── SR-2 empty states (B-721 §6) — E1 (building) + E2 (no_pattern) ─────────────
-// E1 shows the SHAPE of what's coming: ghosted receipts (a dot lane + a stacked
-// compare), hollow dots, and DASHES where a real receipt would print a count — never a
-// fabricated number (§6). E2 is the mature
-// "nothing established" record: the verbatim B-284 §9 copy + the top B-053 coverage
-// diagnostic, restyled into the card rhythm. Neither reads absence as wellness.
+// ── The quiet line (CUL-1838; round 7 of the Signal mock is the design authority) ─────
+// Until there is a finding to draw, the Signal is a header and a subtitle above the foot:
+// "Too early to tell", "Nothing logged since {day}", or "No pattern right now". The header
+// takes the lead row's display face (`SignalRow`'s `headlineLead`) and the subtitle the
+// row's sub style; the mark is the row's own rail, neutral and full height — the still
+// tick it replaced read as a cursor, the app about to speak (round 7). Nothing here reads
+// absence as wellness: every state says what the record can and cannot show.
 
-// The E1-vs-E1-c intensity pick (§6) — the ONE open design decision of this PR,
-// resolved on the PM's device at QA. Ships as E1-c, the COLOR pass: accent + slate
-// washes at ghost opacity, the day counter in accent ink. (Dialing a drawn color
-// pass down on-device is easier than imagining it on a neutral build, so E1-c is the
-// QA starting point.) Every tunable lives in this ONE object so the decision is a
-// single edit, never a hunt through the stylesheet:
-//   • plain E1 (neutral ghost): rails → colorTickIdle at 0.85; band 0.05; dots →
-//     colorTickIdle; compare 0.25; dayCount → colorTextPrimary / weightRegular.
-//   • "somewhere between": nudge the opacities.
-// Rose is deliberately absent — no alarm tone on a state with nothing to report. The
-// row-2 slate is colorEventMedication (a slate-blue WORLD hue); at ghost opacity on a
-// building-state rail it reads as a neutral slate, never a medication cue.
-const GHOST = {
-  rails: [theme.colorAccent, theme.colorEventMedication, theme.colorAccent] as const,
-  railOpacity: 0.35,
-  band: theme.colorAccent,
-  bandOpacity: 0.12,
-  dotInWindow: theme.colorAccent,
-  dotOutWindow: theme.colorTickIdle, // the honest exception: present but pale
-  compareFill: theme.colorAccent,
-  compareFillOpacity: 0.4,
-  dayCountColor: theme.colorAccentInk,
-  dayCountWeight: theme.weightSemibold,
-} as const;
+type QuietState = Exclude<DisplayState, 'live'>;
 
-function BuildingStateV2({
+/** The quiet line's two strings for a state. `day` null (an unreadable last-log time) falls
+ *  back to "Too early to tell"'s honest frame rather than print a guessed date. */
+function quietLineCopy(
+  petName: string,
+  state: QuietState,
+  day: string | null,
+  lookSince: boolean,
+): { header: string; sub: string } {
+  if (state === 'stale' && day !== null) {
+    return { header: quietGoneQuietHeader(day, lookSince), sub: QUIET_GONE_QUIET_SUB };
+  }
+  if (state === 'no_pattern') return { header: NO_PATTERN_HEADLINE, sub: NO_PATTERN_SUB };
+  return { header: QUIET_TOO_EARLY_HEADER, sub: quietTooEarlySub(petName) };
+}
+
+/** The header and subtitle alone — what fades out when a warning arrives. */
+function QuietLineText({
   petName,
-  dayNumber,
-  eventCount,
-  gapRow,
-  needRows,
+  state,
+  day = null,
+  lookSince = false,
 }: {
   petName: string;
-  dayNumber: number;
-  eventCount: number;
-  gapRow: WatchingRow | null;
-  needRows: WatchingRow[];
+  state: QuietState;
+  day?: string | null;
+  lookSince?: boolean;
 }) {
-  // CUL-14 — when a lane qualifies, the real-count watching rows replace the abstract
-  // "what we're watching for" ghost list (their concrete form) while the headline stays.
-  // The watching area carries its own safety floor, so the else-branch (the B-721 E1
-  // ghost list) still owns the sub / BUILDING_FLOOR — no doubling. No qualifying row
-  // renders the ghost list. B-769 (D3a): gap in its own register above the needs block.
-  const showGap = gapRow !== null;
-  const showNeeds = needRows.length > 0;
-  const showWatching = showGap || showNeeds;
+  const { header, sub } = quietLineCopy(petName, state, day, lookSince);
   return (
-    <View>
-      {/* eventCount 0 ⇒ the pre-read sentinel, or a record holding only daily looks (a
-          look keeps the pet recent but never counts, CUL-1468), so hold the day-count
-          clause back rather than print a fabricated "Day 1 — 0 events so far". For the
-          sentinel that is one load frame; a looks-only record keeps it until a real log
-          lands, and its change row stays at week 1 meanwhile (CUL-1484). */}
-      <ThemedText
-        style={styles.v2Headline}
-        accessibilityLabel={
-          eventCount > 0 ? buildingHeadline(petName, dayNumber, eventCount) : buildingHeadlineLead(petName)
-        }
-      >
-        {buildingHeadlineLead(petName)}
-        {eventCount > 0 ? (
-          <ThemedText style={[styles.v2DayCount, { color: GHOST.dayCountColor, fontWeight: GHOST.dayCountWeight }]}>
-            {' '}
-            {buildingDayCount(dayNumber, eventCount)}
-          </ThemedText>
-        ) : null}
-      </ThemedText>
+    <View style={styles.quietBody} accessible accessibilityLabel={`${header}. ${sub}`} testID="signal-quiet-line">
+      <ThemedText style={styles.quietHeader}>{header}</ThemedText>
+      <ThemedText style={styles.quietSub}>{sub}</ThemedText>
+    </View>
+  );
+}
 
-      {showWatching ? (
-        <View>
-          {showGap && gapRow ? <GapEscalationRow row={gapRow} /> : null}
-          {showNeeds ? <WatchingNeedsBlock rows={needRows} /> : null}
-          <ThemedText style={styles.watchingFloor}>{BUILDING_FLOOR}</ThemedText>
-        </View>
+function QuietLine(props: { petName: string; state: QuietState; day?: string | null; lookSince?: boolean }) {
+  return (
+    <View style={styles.quietRow}>
+      <View style={[styles.quietRail, styles.quietRailNeutral]} />
+      <QuietLineText {...props} />
+    </View>
+  );
+}
+
+// The gap warning: the escalate-only sentence, in the display face, beside the insight
+// rail. It takes the whole card in every quiet state (CUL-1468) and sits under the stack in
+// `live`. Plain words, no alarm colour, no icon: plainness is the severity signal (S1). Its
+// evidence lane (the vomits and the unlogged days on one axis) is CUL-1938, after the cut.
+function GapWarning({ text, enterKey, outgoing = null }: { text: string; enterKey: number; outgoing?: ReactNode }) {
+  const reducedMotion = useReducedMotion();
+  const appActive = useAppActive();
+  const { phase, outgoingOpacity, railInk, sentenceOpacity, sentenceShift } = useWarningArrival({
+    enterKey,
+    reducedMotion,
+    appActive,
+  });
+  const sentence = (
+    <ThemedText style={styles.gapSentence} accessibilityRole="text" testID="signal-gap-warning">
+      {text}
+    </ThemedText>
+  );
+  return (
+    <View style={styles.quietRow}>
+      {phase === 'idle' ? (
+        <View style={[styles.quietRail, styles.gapRail]} />
       ) : (
-        <>
-          {/* B-735 (D5a): once the day count outruns the sub's own first-week promise,
-              the sub swaps to the events-not-days framing — "Day 24" must never sit
-              above "within the first week" (the sparse-logger dissonance). */}
-          <ThemedText style={styles.v2Sub}>{buildingSub(dayNumber)}</ThemedText>
-
-          {/* The three things the engine is building toward, in the mock's order
-              (timing → food → change), each with a ghost preview of its future receipt.
-              Every row carries a top hairline — the first one separates the list from the
-              sub-line above (matching the mock's three-divider rhythm). */}
-          <WatchingForRow text={BUILDING_WATCHING_FOR[0]} railColor={GHOST.rails[0]}>
-            <GhostLane />
-          </WatchingForRow>
-          <WatchingForRow text={BUILDING_WATCHING_FOR[1]} railColor={GHOST.rails[1]} />
-          <WatchingForRow text={BUILDING_WATCHING_FOR[2]} railColor={GHOST.rails[2]}>
-            <GhostCompare />
-          </WatchingForRow>
-
-          {/* The safety floor — the weekly-pattern framing must never read as "nothing
-              urgent surfaces before then". Absence is never wellness (§6). */}
-          <ThemedText style={styles.v2Floor}>{BUILDING_FLOOR}</ThemedText>
-        </>
+        <View style={[styles.quietRail, styles.quietRailNeutral]}>
+          <Animated.View style={[StyleSheet.absoluteFill, styles.gapRail, { opacity: railInk }]} />
+        </View>
       )}
-    </View>
-  );
-}
-
-function WatchingForRow({
-  text,
-  railColor,
-  children,
-}: {
-  text: string;
-  railColor: string;
-  children?: ReactNode;
-}) {
-  return (
-    <View style={styles.watchRow}>
-      <View style={[styles.ghostRail, { backgroundColor: railColor, opacity: GHOST.railOpacity }]} />
-      <View style={styles.watchBody}>
-        <ThemedText style={styles.watchText}>{text}</ThemedText>
-        {children}
+      <View style={styles.quietBody}>
+        {phase === 'idle' ? (
+          sentence
+        ) : phase === 'leading' ? (
+          <Animated.View style={{ opacity: outgoingOpacity }} importantForAccessibility="no-hide-descendants">
+            {outgoing}
+          </Animated.View>
+        ) : (
+          <>
+            <Animated.View style={{ opacity: sentenceOpacity, transform: [{ translateY: sentenceShift }] }}>
+              {sentence}
+            </Animated.View>
+            <Animated.View
+              pointerEvents="none"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+              style={[StyleSheet.absoluteFill, { opacity: outgoingOpacity }]}
+            >
+              {outgoing}
+            </Animated.View>
+          </>
+        )}
       </View>
     </View>
   );
-}
-
-// Ghosted dot lane — the SHAPE of a timing receipt (Shape A) before any real episode
-// exists: hollow dots, a tinted "window" band, and one pale out-of-window dot (the
-// honest exception — §4 "the exceptions are the honesty"). No axis numbers, no counts.
-const GHOST_LANE_DOTS = [
-  { left: '8%', inWindow: true },
-  { left: '15%', inWindow: true },
-  { left: '21%', inWindow: true },
-  { left: '62%', inWindow: false },
-] as const;
-
-function GhostLane() {
-  return (
-    <View style={styles.estrip}>
-      <View style={styles.ghostLane}>
-        <View style={[styles.ghostBand, { backgroundColor: GHOST.band, opacity: GHOST.bandOpacity }]} />
-        {GHOST_LANE_DOTS.map((d) => (
-          <View
-            key={d.left}
-            style={[
-              styles.ghostDot,
-              { left: d.left, borderColor: d.inWindow ? GHOST.dotInWindow : GHOST.dotOutWindow },
-            ]}
-          />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// Ghosted stacked-compare — the SHAPE of a change receipt (Shape C): two labeled
-// rows, proportional bars at ghost opacity, and DASHES for the counts. A real
-// week-over-week compare prints numbers here; the building state must not invent them
-// (§6 — "dashes for counts, never fake numbers").
-const GHOST_COMPARE_ROWS = [
-  { label: 'Last week', fill: '40%' },
-  { label: 'This week', fill: '65%' },
-] as const;
-
-function GhostCompare() {
-  return (
-    <View style={styles.estrip}>
-      {GHOST_COMPARE_ROWS.map((r) => (
-        <View key={r.label} style={styles.cmpRow}>
-          <ThemedText style={styles.cmpLabel}>{r.label}</ThemedText>
-          <View style={styles.cmpTrack}>
-            <View
-              style={[
-                styles.cmpFill,
-                { width: r.fill, backgroundColor: GHOST.compareFill, opacity: GHOST.compareFillOpacity },
-              ]}
-            />
-          </View>
-          {/* geist-ok: typographic separator, not copy and not an icon — the em-dash placeholder
-              a comparison row shows in place of a bar. It stays raw so it inherits nothing and
-              asserts nothing; the B-745 GlyphSvg migration does NOT own it. CUL-364 §7. */}
-          <Text style={styles.cmpDash}>—</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-// E2 — mature record, nothing established. The verbatim B-284 §9 copy (headline +
-// dimmed sub), then the top B-053 coverage diagnostic as the one calm corrective
-// (shipped behavior, restyled). No coverage diagnostic → the §9 copy stands alone.
-// The sub line is load-bearing: "isn't an all-clear" — absence is never wellness.
-function NoPatternStateV2({
-  petName,
-  coverage,
-  gapRow,
-  needRows,
-}: {
-  petName: string;
-  coverage: CoverageDiagnostic[];
-  gapRow: WatchingRow | null;
-  needRows: WatchingRow[];
-}) {
-  // CUL-14 — additive watching rows. No qualifying row renders the slots as null, so the
-  // E2 tree is unchanged. B-769 (D3a): the gap escalation renders directly under the
-  // "isn't an all-clear" sub — ABOVE the coverage nag, which is exactly the ordering
-  // Principle 3 requires (an escalation never sits below a data-quality corrective).
-  const showGap = gapRow !== null;
-  const showNeeds = needRows.length > 0;
-  const top = coverage[0];
-  const cov = top ? coverageCopy(top, petName) : null;
-  return (
-    <View>
-      <ThemedText style={styles.v2Headline}>{NO_PATTERN_HEADLINE}</ThemedText>
-      <ThemedText style={styles.v2Sub}>{NO_PATTERN_SUB}</ThemedText>
-      {showGap && gapRow ? <GapEscalationRow row={gapRow} /> : null}
-      {cov ? (
-        <View style={styles.v2Quiet}>
-          <ThemedText style={styles.v2QuietText}>{cov.why}</ThemedText>
-          {cov.action ? <ThemedText style={styles.v2QuietAction}>{cov.action}</ThemedText> : null}
-        </View>
-      ) : null}
-      {showNeeds ? <WatchingNeedsBlock rows={needRows} /> : null}
-      {showGap || showNeeds ? <ThemedText style={styles.watchingFloor}>{BUILDING_FLOOR}</ThemedText> : null}
-    </View>
-  );
-}
-
-// ── CUL-14 the watching system (§4.4 / D5 / G8), split by register (B-769 D3a) ──
-// The per-lane real-count rows. The NEEDS rows (timing / change) keep the WATCHING_SUB
-// "still needs" framing — they are statements about what a lane's math requires. The GAP
-// row is different in kind: an escalate-only FACT about the record, so it renders
-// through GapEscalationRow in its own register, above the frame's other content, never
-// under the "still needs" umbrella (a lone gap row under that sub mislabeled an
-// escalation as an unmet need). PLAIN count-in-words rows — deliberately NO progress
-// bar / dot-fill visual: R-5 ratified the count form precisely because it carries the
-// "N of 6" progress WITHOUT a fill-the-dots visual's implied "a card is coming" (G8 —
-// the count is the progress; it carries no promise). The rows are already ordered +
-// gated (buildWatchingRows); the frames render the BUILDING_FLOOR line whenever any
-// watching content shows (absence ≠ wellness — the weekly cadence must never read as
-// "nothing urgent surfaces before then").
-function WatchingNeedsBlock({ rows }: { rows: WatchingRow[] }) {
-  return (
-    <View>
-      <ThemedText style={styles.watchingSub}>{WATCHING_SUB}</ThemedText>
-      <View style={styles.watchingRows}>
-        {rows.map((r) => (
-          <ThemedText key={r.key} style={styles.watchingRow}>
-            {r.text}
-          </ThemedText>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// The escalate-only gap row, in its own register (B-769 D3a). Plain primary ink — no
-// alarm color, no icon: plainness is the severity signal (S1), and the sentence now
-// leads with its own direction cue ("are getting shorter" — D4), so placement + phrasing
-// carry the register, not decoration.
-function GapEscalationRow({ row }: { row: WatchingRow }) {
-  return <ThemedText style={styles.gapEscalation}>{row.text}</ThemedText>;
 }
 
 // B-734 (CUL-72): the flag-on loading frame — content-shaped Tier-1 skeleton for the
@@ -1360,12 +1228,6 @@ const styles = StyleSheet.create({
     color: theme.colorAccentInk,
     lineHeight: theme.lineHeightXS,
   },
-  intro: {
-    fontSize: theme.textMD,
-    color: theme.colorTextSecondary,
-    lineHeight: theme.lineHeightBody,
-    marginBottom: theme.space2,
-  },
   rowDivider: {
     marginHorizontal: -theme.space1,
   },
@@ -1390,168 +1252,52 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
-  // ── SR-2 empty states (E1/E2) — the empty-state rhythm ──────────────────────
-  v2Headline: {
-    fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
-    lineHeight: theme.lineHeightBody,
-    marginBottom: theme.spaceMicro,
-  },
-  // The day-count clause — its color + weight come from GHOST (the E1-vs-E1-c pick),
-  // applied inline; the size matches the surrounding headline so it reads as one line.
-  v2DayCount: {
-    fontSize: theme.textMD,
-  },
-  v2Sub: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    lineHeight: theme.lineHeightSM,
-    marginBottom: theme.space1,
-  },
-  // A "watching for" row — a ghost rail + the named thing + an optional ghost receipt.
-  // Every row carries a top hairline; the first row's separates the list from the
-  // sub-line above (the mock's three-divider rhythm).
-  watchRow: {
+  // ── The quiet line (CUL-1838) — the lead row's anatomy: rail, display face, sub ──
+  quietRow: {
     flexDirection: 'row',
     gap: theme.space1,
-    paddingVertical: theme.space1,
-    borderTopWidth: 1,
-    borderTopColor: theme.colorBorder,
   },
-  ghostRail: {
-    width: 3,
+  quietRail: {
+    width: RAIL_WIDTH,
+    alignSelf: 'stretch',
     borderRadius: 2,
-    // backgroundColor + opacity applied inline from GHOST.
+    overflow: 'hidden',
   },
-  watchBody: {
+  // Neutral: nothing to report is not a colour.
+  quietRailNeutral: {
+    backgroundColor: theme.colorBorder,
+  },
+  // The insight rail's ink (`SignalRow`'s RAIL_COLOR.insight, at its 0.85): the warning is a
+  // finding on the record, not a safety finding — plainness carries its weight (S1).
+  gapRail: {
+    backgroundColor: theme.colorAccent,
+    opacity: 0.85,
+  },
+  quietBody: {
     flex: 1,
     minWidth: 0,
   },
-  watchText: {
+  // `SignalRow.headlineLead`'s display face.
+  quietHeader: {
+    fontFamily: theme.fontDisplay,
+    fontSize: theme.textLG + 2,
+    lineHeight: theme.lineHeightBody + 2,
+    letterSpacing: theme.trackingTight,
+    color: theme.colorTextPrimary,
+  },
+  // `SignalRow`'s sub.
+  quietSub: {
     fontSize: theme.textSM,
-    color: theme.colorTextTertiary,
     lineHeight: theme.lineHeightSM,
-  },
-  // Ghost receipts — the previews of a real Shape-A lane / Shape-C compare.
-  estrip: {
-    marginTop: theme.space1,
-  },
-  ghostLane: {
-    height: 22,
-    borderRadius: theme.radiusSmall,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderStyle: 'dashed',
-    position: 'relative',
-  },
-  ghostBand: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    width: '26%',
-    borderRadius: theme.radiusSmall,
-    // backgroundColor + opacity applied inline from GHOST.
-  },
-  ghostDot: {
-    position: 'absolute',
-    top: '50%',
-    // Center the 7pt dot on its left% / vertical midpoint (RN has no translate-by-%).
-    marginTop: -3.5,
-    marginLeft: -3.5,
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    borderWidth: 1.5,
-    backgroundColor: 'transparent', // hollow — nothing here is logged yet
-    // left + borderColor applied inline.
-  },
-  cmpRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space1,
+    color: theme.colorTextSecondary,
     marginTop: theme.spaceMicro,
   },
-  cmpLabel: {
-    width: 72,
-    fontSize: theme.textXS,
-    color: theme.colorTextDisabled,
-  },
-  cmpTrack: {
-    flex: 1,
-    height: 8,
-    borderRadius: theme.radiusXS,
-    backgroundColor: theme.colorChartEmpty,
-    overflow: 'hidden',
-  },
-  cmpFill: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    borderRadius: theme.radiusXS,
-    // width + backgroundColor + opacity applied inline.
-  },
-  cmpDash: {
-    width: 28,
-    textAlign: 'right',
-    fontSize: theme.textXS,
-    color: theme.colorTextDisabled,
-  },
-  // The quiet block under E2 — the coverage diagnostic, hairline-set-off like the
-  // shipped states' bottom rhythm.
-  v2Quiet: {
-    borderTopWidth: 1,
-    borderTopColor: theme.colorBorder,
-    marginTop: theme.space2,
-    paddingTop: theme.space1,
-  },
-  v2QuietText: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    lineHeight: theme.lineHeightSM,
-  },
-  v2QuietAction: {
-    fontSize: theme.textSM,
-    fontWeight: theme.weightMedium,
+  gapSentence: {
+    fontFamily: theme.fontDisplay,
+    fontSize: theme.textLG + 2,
+    lineHeight: theme.lineHeightBody + 2,
+    letterSpacing: theme.trackingTight,
     color: theme.colorTextPrimary,
-    lineHeight: theme.lineHeightSM,
-    marginTop: theme.spaceMicro,
-  },
-  // The E1 safety-floor line — same hairline-set-off treatment as E2's quiet block.
-  v2Floor: {
-    borderTopWidth: 1,
-    borderTopColor: theme.colorBorder,
-    marginTop: theme.space2,
-    paddingTop: theme.space1,
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    lineHeight: theme.lineHeightSM,
-  },
-
-  // ── CUL-14 watching block (§4.4) — the sub, the real-count rows, the floor line ──
-  // The intro above the rows: what we're watching, secondary weight (it orients; the
-  // rows carry the facts). Matches the v2Sub tier so the block reads as one register
-  // within the empty-state frame.
-  watchingSub: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    lineHeight: theme.lineHeightSM,
-    marginBottom: theme.space1,
-  },
-  // The rows sit as a quiet list — small gaps, no rails/dots/bars (R-5: count-in-words,
-  // never a fill-the-dots visual that reads as a game / a promise a card is coming).
-  watchingRows: {
-    gap: theme.spaceMicro,
-  },
-  // B-769 (D3a) — the gap escalation's own register: primary ink like the needs rows
-  // (S1: plainness is the severity signal — no rose, no icon), set apart by position
-  // (above the frame's other content) and its own breathing room, never by decoration.
-  gapEscalation: {
-    fontSize: theme.textSM,
-    color: theme.colorTextPrimary,
-    lineHeight: theme.lineHeightBody,
-    marginBottom: theme.space2,
   },
   // B-734 — the flag-on loading frame's content-shaped placeholder rhythm.
   skeleton: {
@@ -1563,23 +1309,5 @@ const styles = StyleSheet.create({
   },
   skeletonMeta: {
     marginTop: theme.space2,
-  },
-  // One row: the primary-ink fact ("Timing — 4 of the 6 …"), body line-height so a
-  // wrapped row stays legible. No color/severity coding — every row is the same calm ink.
-  watchingRow: {
-    fontSize: theme.textSM,
-    color: theme.colorTextPrimary,
-    lineHeight: theme.lineHeightBody,
-  },
-  // The block's own safety-floor line — the same hairline-set-off treatment as v2Floor,
-  // owned here so the block carries the floor into the shipped frame too (which has none).
-  watchingFloor: {
-    borderTopWidth: 1,
-    borderTopColor: theme.colorBorder,
-    marginTop: theme.space2,
-    paddingTop: theme.space1,
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    lineHeight: theme.lineHeightSM,
   },
 });

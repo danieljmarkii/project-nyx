@@ -7,6 +7,7 @@ import { ThemedText } from '../ui/ThemedText';
 // per selectDashboardState). A Principle-5 "empty state is a feature" moment: warm,
 // honest, forward-looking — the "we're getting to know Luna" tone, never a reassuring
 // all-clear (an empty dashboard is "still learning", never "your pet is well", §11 #2).
+// "We're", not "I'm" (CUL-1838): the app speaks as one voice, the Signal's own.
 
 interface Props {
   petName: string;
@@ -16,7 +17,7 @@ export function DashboardEmptyState({ petName }: Props) {
   const name = petName.trim().length > 0 ? petName : 'your pet';
   return (
     <View style={styles.container}>
-      <ThemedText style={styles.title}>I'm still getting to know {name}.</ThemedText>
+      <ThemedText style={styles.title}>We're still getting to know {name}.</ThemedText>
       <ThemedText style={styles.body}>
         Log a few foods and anything that seems off, and {name}'s patterns will start to take shape
         here — how often things happen, what {name} eats most, and what tends to go together.

@@ -1,13 +1,13 @@
-// A daily look keeps the escalate-only gap row on screen (adversarial-reviewer, release QA).
+// The gap warning and the quiet line, end to end (CUL-1838; CUL-1468's case, CUL-1484's).
 //
-// useSignal keeps looks out of the Signal's counts and floor but in its RECENCY check,
-// because `stale` turns the watching read off and with it the gap row ("Gaps between
-// vomiting episodes are getting shorter"). Counting looks out of recency too sent an owner
-// who answers the look every day, while a cat's vomits came 12, 7 and 3 days apart, to the
-// stale frame 48 hours after the last one, and the row went with it. End to end: the real
-// hook, the real watching read and the real SignalZone over a real, upgraded schema. The
-// schema needs COLUMN_UPGRADES: without `occurred_at_confidence` the watching read quietly
-// returns nothing, and "no gap row" would pass over nothing.
+// The real hook, the real gap read and the real SignalZone over a real, upgraded schema.
+// The schema needs COLUMN_UPGRADES: without `occurred_at_confidence` the vomit read throws,
+// the warning resolves to nothing, and "no warning" would pass over nothing — so every
+// "no warning" case here sits beside a case on the same harness where it shows.
+//
+// What it pins: a record gone quiet keeps the warning (logged time, not the wall clock); a
+// daily look neither keeps a record "recent" nor moves the warning's anchor; a look logged
+// after the record went quiet makes the header name meals and symptoms.
 
 import { DatabaseSync } from 'node:sqlite';
 
@@ -33,20 +33,24 @@ jest.mock('../../lib/signal', () => ({
   regenerateSignal: jest.fn(),
   readSignalsAndRefresh: jest.fn(),
 }));
+// The vet door's read reaches the intake-decline service; its words are SignalZone.test's.
+jest.mock('../../lib/emergencyDoorRead', () => ({ loadEmergencyRead: async () => ({ status: 'failed' }) }));
+jest.mock('../../hooks/useFloorOn', () => ({ useFloorOn: () => false }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => true }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 jest.mock('../../lib/signalArrival', () => ({ hasPlayedArrival: async () => true, markArrivalPlayed: async () => {} }));
 jest.mock('../../lib/haptics', () => ({ insightArrival: () => {} }));
 
-import { render, screen } from '@testing-library/react-native';
+import { act, render, screen } from '@testing-library/react-native';
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from '../../lib/localSchema';
 import { usePetStore } from '../../store/petStore';
-import { staleIntro } from '../../lib/signalCopy';
+import { QUIET_TOO_EARLY_HEADER, QUIET_GONE_QUIET_SUB } from '../../lib/signalCopy';
 import { SignalZone } from './SignalZone';
 
 const PET = { id: 'pet-1', name: 'Pixel', species: 'cat' } as never;
+const HOUR = 3_600_000;
 const DAY = 86_400_000;
-const GAP_ROW = /Gaps between vomiting episodes are getting shorter/;
+const GAP = /Gaps between vomiting episodes are getting shorter/;
 /** What `lib/looks.ts` writes as a look's parent event. */
 const LOOK = 'check_in';
 
@@ -56,14 +60,10 @@ function log(type: string, msAgo: number) {
     .prepare('INSERT INTO events (id, pet_id, event_type, occurred_at) VALUES (?, ?, ?, ?)')
     .run(`e-${++seq}`, 'pet-1', type, new Date(Date.now() - msAgo).toISOString());
 }
-/** Vomits 12, 7 and 3 days apart, the last one four days ago, and nothing else logged
- *  (a free-fed cat): an accelerating run whose row is still current at day four. */
-function acceleratingRun() {
-  for (const d of [26, 14, 7, 4]) log('vomit', d * DAY);
-}
-
-function renderZone() {
-  render(<SignalZone />);
+/** Vomits 12, 7 and 3 days apart, the last one `daysAgo` back, and nothing else logged (a
+ *  free-fed cat, Sam's persona). */
+function acceleratingRun(daysAgo: number) {
+  for (const d of [22, 10, 3, 0]) log('vomit', (daysAgo + d) * DAY);
 }
 
 async function freshWorld() {
@@ -80,26 +80,67 @@ async function freshWorld() {
 beforeAll(async () => {
   await freshWorld();
   const view = render(<SignalZone />);
-  await screen.findByText(staleIntro('Pixel'));
+  await screen.findByText(QUIET_TOO_EARLY_HEADER);
   view.unmount();
 }, 60000);
 
 beforeEach(freshWorld);
 
-it('an owner answering the look every day keeps the shortening-gaps row on screen', async () => {
-  acceleratingRun();
-  for (let k = 1; k <= 25; k++) log(LOOK, k * DAY - 3_600_000);
-  log(LOOK, 60_000);
-  renderZone();
-  expect(await screen.findByText(GAP_ROW)).toBeTruthy();
-  expect(screen.queryByText(staleIntro('Pixel'))).toBeNull();
+it('0 events: "Too early to tell", never stale', async () => {
+  render(<SignalZone />);
+  expect(await screen.findByText(QUIET_TOO_EARLY_HEADER)).toBeTruthy();
+  expect(screen.queryByText(/Nothing logged since/)).toBeNull();
 });
 
-// Non-vacuity, and the hole that remains: the same record with no look goes stale and
-// drops the row (pre-existing; CUL-1468 owns it). So the look is what keeps it above.
-it('without a look the same record goes stale and drops the row (CUL-1468)', async () => {
-  acceleratingRun();
-  renderZone();
-  expect(await screen.findByText(staleIntro('Pixel'))).toBeTruthy();
-  expect(screen.queryByText(GAP_ROW)).toBeNull();
+it('looks only (CUL-1484): a month of daily looks reads too early', async () => {
+  for (let k = 0; k <= 30; k++) log(LOOK, k * DAY + HOUR);
+  render(<SignalZone />);
+  expect(await screen.findByText(QUIET_TOO_EARLY_HEADER)).toBeTruthy();
+  expect(screen.queryByText(/week 1|This is week/i)).toBeNull();
+});
+
+it('the backfill case: a history whose last event is 2.5 days old opens with the warning, not the stale line', async () => {
+  acceleratingRun(2.5);
+  render(<SignalZone />);
+  expect(await screen.findByText(GAP)).toBeTruthy();
+  expect(screen.getByText(/12 days, then 7, then 3/)).toBeTruthy();
+  expect(screen.queryByText(QUIET_GONE_QUIET_SUB)).toBeNull();
+});
+
+it('a record gone quiet keeps the warning however long it sits (the wall clock dropped it at day 6.5)', async () => {
+  acceleratingRun(20);
+  render(<SignalZone />);
+  expect(await screen.findByText(GAP)).toBeTruthy();
+});
+
+it('a look answered every day since neither counts as logging nor moves the anchor', async () => {
+  acceleratingRun(20);
+  for (let k = 0; k < 20; k++) log(LOOK, k * DAY + HOUR);
+  render(<SignalZone />);
+  expect(await screen.findByText(GAP)).toBeTruthy();
+});
+
+it('control: meals logged through the quiet days age the run out — the warning was available to show', async () => {
+  acceleratingRun(20);
+  for (let h = 12; h < 20 * 24; h += 12) log('meal', h * HOUR);
+  render(<SignalZone />);
+  // Six weeks of meals is a substantial record: "No pattern right now", and no warning.
+  expect(await screen.findByText('No pattern right now')).toBeTruthy();
+  // Let the gap read answer before asserting its absence (C-12): an unanswered read is not "no warning".
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 50));
+  });
+  expect(screen.queryByText(GAP)).toBeNull();
+});
+
+it('gone quiet with no run: dated, and a look logged since makes it name meals and symptoms', async () => {
+  log('meal', 5 * DAY);
+  log('meal', 4 * DAY);
+  render(<SignalZone />);
+  expect(await screen.findByText(/^Nothing logged since /)).toBeTruthy();
+  expect(screen.getByText(QUIET_GONE_QUIET_SUB)).toBeTruthy();
+  screen.unmount();
+  log(LOOK, HOUR);
+  render(<SignalZone />);
+  expect(await screen.findByText(/^No meals or symptoms since /)).toBeTruthy();
 });
