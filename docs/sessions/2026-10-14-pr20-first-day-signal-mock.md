@@ -1,6 +1,8 @@
 # PR-20: the first day's Signal, mocked (CUL-1837)
 
-**Date:** 2026-10-14
+**Date:** 2026-10-14 (ran into 2026-10-15)
+
+**One thing:** P2 L1 — Reversibility: a mock round is a two-way door, a clinical floor is a one-way door · check: pending
 
 **Mode:** DISCOVERY. Shipped via #1217 (the mock page only, no app code). Round 3 of `docs/culprit-signal-home-mockups.html`, published to the Signal mock's existing artifact (https://claude.ai/artifact/3BUW5uQqA5dhukVnarkKmp).
 
@@ -70,3 +72,15 @@ Round 5 draws the whole Home at four moments. Until there is a real signal, the 
 - "Nothing logged since {day}" once it has gone quiet.
 
 The card takes its full size when it has something true to say; the gaps warning is the earliest that can happen. The research's payoffs stay where they belong: the read-back in Today and on each log's own screen, the record in Today and History. Retired: the ghost receipts, the watching-for list, the "This is week 1" row, "We're getting to know {pet}", the stale paragraph and the old floor line. Round 4 is at `5c214d8`.
+
+## Where it ended
+
+The session ended without a pick. The PM asked for a design review meeting with outside consultant lenses to narrow the directions, filed as CUL-1936. CUL-1936 blocks CUL-1838 (the build, PR-21), which therefore no longer waits on the PM's go, and CUL-1838 has left the `Waiting on PM` label.
+
+**Rulings that stand whatever direction wins:**
+- The gaps warning stays until the next log, counting only logged time, and a look never moves its anchor (PM, 2026-10-14).
+- Dr. Chen's condition holds: a way to the vet signs in every state.
+
+**Done this session:** CUL-1837's deliverable, the frames, exists across rounds 3 to 5 (current: round 5) plus the research brief. The PM's approval of one direction is what CUL-1936 decides.
+
+**Merge check:** REVIEW. The one listed item is `docs/research/README.md`, shared with #1218 and the stale #1183. It is an append-only index table where both sides add a row, so a conflict resolves by keeping both rows (steward skill §4, lists keep both).
