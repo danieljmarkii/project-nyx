@@ -1,4 +1,5 @@
 import { useCrashStore } from '../store/crashStore';
+import { UNHANDLED_REJECTION_SCREEN_ENABLED } from '../constants/flags';
 
 // The two crash doors that live outside React (CUL-1841): a fatal error reaching the
 // global handler, and a promise rejection nobody handled. Both land on the one designed
@@ -9,10 +10,11 @@ import { useCrashStore } from '../store/crashStore';
 // pins that by reading the import list. Sentry is a later, reviewed change (CUL-113).
 //
 // WHAT CHANGES FOR AN OWNER. A fatal JS error used to abort the app (a native crash,
-// the white flash and back to the home screen), and an unhandled rejection in a release
-// build was silent: Hermes only tracks rejections in __DEV__. Now both show the screen,
-// whose one button remounts the tree. A non-fatal report still goes to the handler
-// that was there before, unchanged.
+// the white flash and back to the home screen); now it shows the screen, whose one
+// button remounts the tree. A non-fatal report still goes to the handler that was there
+// before, unchanged. An unhandled rejection in a release build was silent (Hermes only
+// tracks rejections in __DEV__), and it stays so until UNHANDLED_REJECTION_SCREEN_ENABLED
+// is ruled on (`constants/flags.ts` says why it is off).
 
 type GlobalHandler = (error: unknown, isFatal?: boolean) => void;
 
@@ -35,13 +37,19 @@ export interface CrashHandlerDeps {
   errorUtils?: ErrorUtilsLike;
   hermes?: HermesLike;
   isDev: boolean;
+  rejectionScreen: boolean;
 }
 
 let installed = false;
 
 function defaultDeps(): CrashHandlerDeps {
   const g = globalThis as { ErrorUtils?: ErrorUtilsLike; HermesInternal?: HermesLike };
-  return { errorUtils: g.ErrorUtils, hermes: g.HermesInternal, isDev: __DEV__ };
+  return {
+    errorUtils: g.ErrorUtils,
+    hermes: g.HermesInternal,
+    isDev: __DEV__,
+    rejectionScreen: UNHANDLED_REJECTION_SCREEN_ENABLED,
+  };
 }
 
 /**
@@ -51,7 +59,7 @@ function defaultDeps(): CrashHandlerDeps {
 export function installCrashHandlers(deps: CrashHandlerDeps = defaultDeps()): void {
   if (installed) return;
   installed = true;
-  const { errorUtils, hermes, isDev } = deps;
+  const { errorUtils, hermes, isDev, rejectionScreen } = deps;
 
   if (errorUtils) {
     const previous = errorUtils.getGlobalHandler();
@@ -68,8 +76,10 @@ export function installCrashHandlers(deps: CrashHandlerDeps = defaultDeps()): vo
     });
   }
 
-  // Hermes is the only engine this app ships; without it the tracker is not there and
-  // an unhandled rejection stays as it was.
+  // Off, nothing is installed, so React Native's own tracker (development only) is left
+  // as it was. Hermes is the only engine this app ships; without it there is no tracker
+  // and an unhandled rejection stays as it was.
+  if (!rejectionScreen) return;
   hermes?.enablePromiseRejectionTracker?.({
     allRejections: true,
     onUnhandled: (_id, rejection) => {

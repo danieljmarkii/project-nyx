@@ -58,6 +58,7 @@ it('a fatal global error lands on the same screen', () => {
   installCrashHandlers({
     errorUtils: { getGlobalHandler: () => jest.fn(), setGlobalHandler: (h) => (handler = h) },
     isDev: false,
+    rejectionScreen: true,
   });
   render(
     <CrashBoundary>
@@ -71,11 +72,12 @@ it('a fatal global error lands on the same screen', () => {
   expect(screen.getByText('the app')).toBeTruthy();
 });
 
-it('an unhandled rejection lands on the same screen', () => {
+it('with its flag on, an unhandled rejection lands on the same screen', () => {
   let onUnhandled: (id: number, r: unknown) => void = () => {};
   installCrashHandlers({
     hermes: { enablePromiseRejectionTracker: (o) => (onUnhandled = o.onUnhandled) },
     isDev: false,
+    rejectionScreen: true,
   });
   render(
     <CrashBoundary>

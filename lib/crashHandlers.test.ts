@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { installCrashHandlers, resetCrashHandlersForTest } from './crashHandlers';
 import { useCrashStore } from '../store/crashStore';
+import { UNHANDLED_REJECTION_SCREEN_ENABLED } from '../constants/flags';
 
 // CUL-1841: the two crash doors outside React. Each test installs the handlers against
 // fakes of ErrorUtils and Hermes, so it drives the real handler code, never a copy.
@@ -38,7 +39,7 @@ describe('the global handler', () => {
   it('a fatal error sets the crash flag and, in a release build, never reaches the aborting handler', () => {
     const previous = jest.fn();
     const eu = fakeErrorUtils(previous);
-    installCrashHandlers({ errorUtils: eu, isDev: false });
+    installCrashHandlers({ errorUtils: eu, isDev: false, rejectionScreen: true });
 
     eu.fire(new Error('boom'), true);
 
@@ -49,7 +50,7 @@ describe('the global handler', () => {
   it('a fatal error in development still reaches the previous handler, so the red box shows', () => {
     const previous = jest.fn();
     const eu = fakeErrorUtils(previous);
-    installCrashHandlers({ errorUtils: eu, isDev: true });
+    installCrashHandlers({ errorUtils: eu, isDev: true, rejectionScreen: true });
     const err = new Error('boom');
 
     eu.fire(err, true);
@@ -61,7 +62,7 @@ describe('the global handler', () => {
   it('a non-fatal report goes to the previous handler unchanged and opens no screen', () => {
     const previous = jest.fn();
     const eu = fakeErrorUtils(previous);
-    installCrashHandlers({ errorUtils: eu, isDev: false });
+    installCrashHandlers({ errorUtils: eu, isDev: false, rejectionScreen: true });
     const err = new Error('soft');
 
     eu.fire(err, false);
@@ -74,8 +75,8 @@ describe('the global handler', () => {
     const previous = jest.fn();
     const eu = fakeErrorUtils(previous);
     const setSpy = jest.spyOn(eu, 'setGlobalHandler');
-    installCrashHandlers({ errorUtils: eu, isDev: false });
-    installCrashHandlers({ errorUtils: eu, isDev: false });
+    installCrashHandlers({ errorUtils: eu, isDev: false, rejectionScreen: true });
+    installCrashHandlers({ errorUtils: eu, isDev: false, rejectionScreen: true });
     expect(setSpy).toHaveBeenCalledTimes(1);
   });
 });
@@ -83,7 +84,7 @@ describe('the global handler', () => {
 describe('the unhandled rejection tracker', () => {
   it('tracks every rejection and an unhandled one sets the crash flag', () => {
     const hermes = fakeHermes();
-    installCrashHandlers({ hermes, isDev: false });
+    installCrashHandlers({ hermes, isDev: false, rejectionScreen: true });
 
     expect(hermes.holder.options?.allRejections).toBe(true);
     hermes.holder.options?.onUnhandled(1, new Error('nobody caught me'));
@@ -91,8 +92,16 @@ describe('the unhandled rejection tracker', () => {
     expect(useCrashStore.getState().crashed).toBe(true);
   });
 
+  it('off (the shipped default until the PM rules), no tracker is installed at all', () => {
+    const hermes = fakeHermes();
+    const enable = jest.spyOn(hermes, 'enablePromiseRejectionTracker');
+    installCrashHandlers({ hermes, isDev: false, rejectionScreen: false });
+    expect(enable).not.toHaveBeenCalled();
+    expect(UNHANDLED_REJECTION_SCREEN_ENABLED).toBe(false);
+  });
+
   it('without Hermes, installing is a no-op rather than a throw', () => {
-    expect(() => installCrashHandlers({ isDev: false })).not.toThrow();
+    expect(() => installCrashHandlers({ isDev: false, rejectionScreen: true })).not.toThrow();
     expect(useCrashStore.getState().crashed).toBe(false);
   });
 });
@@ -114,6 +123,7 @@ describe('nothing leaves the phone (D9 (a), CUL-1825)', () => {
     'expo-status-bar',
     'expo-splash-screen',
     '../store/crashStore',
+    '../constants/flags',
     '../constants/theme',
     './CrashScreen',
     './ui/ThemedText',
@@ -139,7 +149,7 @@ describe('nothing leaves the phone (D9 (a), CUL-1825)', () => {
     try {
       const eu = fakeErrorUtils(jest.fn());
       const hermes = fakeHermes();
-      installCrashHandlers({ errorUtils: eu, hermes, isDev: false });
+      installCrashHandlers({ errorUtils: eu, hermes, isDev: false, rejectionScreen: true });
       eu.fire(new Error('boom'), true);
       hermes.holder.options?.onUnhandled(2, 'rejected');
       expect(fetchSpy).not.toHaveBeenCalled();
