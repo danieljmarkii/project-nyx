@@ -23,10 +23,9 @@ const mockUseSignal = jest.fn();
 jest.mock('../../hooks/useSignal', () => ({
   useSignal: () => mockUseSignal(),
 }));
-jest.mock('../../hooks/useWatchingRows', () => ({
-  useWatchingRows: () => [],
-  useWatchingRowsRead: () => ({ rows: [], answered: true }),
-}));
+jest.mock('../../hooks/useGapWarning', () => ({ useGapWarning: () => ({ text: null, answered: true }) }));
+jest.mock('../../lib/emergencyDoorRead', () => ({ loadEmergencyRead: async () => ({ status: 'failed' }) }));
+jest.mock('../../hooks/useFloorOn', () => ({ useFloorOn: () => false }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 let mockAppActive = true;
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => mockAppActive }));
@@ -89,16 +88,21 @@ const quieted: CachedFinding = {
   } as unknown as SignalFinding,
 };
 
-function signalState(over: Partial<SignalState> = {}): SignalState {
+/** `displayState` is ignored: the zone derives it from the facts and the findings (CUL-1838). */
+type Over = Partial<SignalState> & { displayState?: string };
+
+function signalState({ displayState: _ignored, ...over }: Over = {}): SignalState {
   return {
     petId: 'pet-1',
     findings: [],
     coverage: [],
-    displayState: 'building',
     signalText: null,
     petName: 'Nyx',
     isLoading: false,
-    dayNumber: 3,
+    hasRecentActivity: true,
+    hasSubstantialHistory: false,
+    lastLoggedAt: null,
+    lookSinceLastLogged: false,
     eventCount: 11,
     acknowledging: false,
     generatedAt: null,
@@ -137,7 +141,7 @@ async function settle() {
 }
 
 /** Mount on a settled set, then land a second settled set: the shape of a regen arriving. */
-async function landOn(first: Partial<SignalState>, next: Partial<SignalState>, provider = true) {
+async function landOn(first: Over, next: Over, provider = true) {
   mockUseSignal.mockReturnValue(signalState(first));
   const view = render(zone(provider));
   await settle();

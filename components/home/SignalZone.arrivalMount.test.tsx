@@ -22,10 +22,9 @@ jest.mock('../../lib/signalLead', () => ({
 }));
 const mockUseSignal = jest.fn();
 jest.mock('../../hooks/useSignal', () => ({ useSignal: () => mockUseSignal() }));
-jest.mock('../../hooks/useWatchingRows', () => ({
-  useWatchingRows: () => [],
-  useWatchingRowsRead: () => ({ rows: [], answered: true }),
-}));
+jest.mock('../../hooks/useGapWarning', () => ({ useGapWarning: () => ({ text: null, answered: true }) }));
+jest.mock('../../lib/emergencyDoorRead', () => ({ loadEmergencyRead: async () => ({ status: 'failed' }) }));
+jest.mock('../../hooks/useFloorOn', () => ({ useFloorOn: () => false }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 jest.mock('../../hooks/useAppActive', () => ({ useAppActive: () => true }));
 // The moment has never played for this pet: the arrival is live.
@@ -46,16 +45,18 @@ const benignLead: CachedFinding = {
   finding: { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 2, priorCount: 3, direction: 'flat', windowDays: 14 },
 };
 
-function state(over: Partial<SignalState>): SignalState {
+function state({ displayState: _ignored, ...over }: Partial<SignalState> & { displayState?: string }): SignalState {
   return {
     petId: 'pet-1',
     findings: [],
     coverage: [],
-    displayState: 'building',
     signalText: null,
     petName: 'Nyx',
     isLoading: false,
-    dayNumber: 30,
+    hasRecentActivity: true,
+    hasSubstantialHistory: false,
+    lastLoggedAt: null,
+    lookSinceLastLogged: false,
     eventCount: 80,
     acknowledging: false,
     generatedAt: null,

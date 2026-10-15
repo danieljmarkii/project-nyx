@@ -1,30 +1,12 @@
-// Signals v2 watching system (B-755 / CUL-14) — the pure gating + predicates + the G8
-// copy round. Spec §4.4 / D5 / G8. The DB read layer (getWatchingRows) is a thin wrapper
-// over these pure functions + the shared patternsTiming reads; it's exercised through the
-// SignalZone render tests (hook mocked). Here we pin: the verbatim mock §05 strings, the
-// G8 register sweep (no imperative / streak / reward / promise / exclamation), the per-lane
-// gates, and the escalate-only gap detector (the clinically-adjacent piece).
+// The Signal's gap warning (Signals v2 B-755 / CUL-14's gap lane; CUL-1838's logged-time
+// clock). Here we pin: the gap row's verbatim copy and its run-aware render, the G8
+// register sweep, the escalate-only detector with its logged-time recency guard, and the
+// detector's null-model fire rate. The DB read (`getGapWarning`) is exercised end to end
+// over real SQLite in `components/home/SignalZone.lookRecency.test.tsx`.
 
-import {
-  WATCHING_SUB,
-  watchingTimingRow,
-  watchingChangeRow,
-  watchingGapRow,
-  watchingGapRowFromHours,
-  formatWatchingGapSequence,
-  BUILDING_FLOOR,
-} from './signalCopy';
-import {
-  buildWatchingRows,
-  windowedTimedEligibleCount,
-  detectWatchingGapShortening,
-  daysSinceLastVomitEpisode,
-  WATCHING_TIMING_NEED,
-  WATCHING_TIMING_QUIET_DAYS,
-  type WatchingRow,
-  type WatchingFacts,
-} from './signalWatching';
-import type { FeedingInput, FreeFedSpan, OnsetConfidence } from './mealTiming';
+import { watchingGapRow, watchingGapRowFromHours, formatWatchingGapSequence } from './signalCopy';
+import { detectWatchingGapShortening, loggedHoursSince, QUIET_STRETCH_MS } from './signalWatching';
+import type { OnsetConfidence } from './mealTiming';
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
@@ -32,6 +14,13 @@ const DAY = 86_400_000;
 // episodes / since now), never a local-day question, so a UTC-anchored instant is stable
 // across runner zones (B-514: the local-day inputs — dayNumber — are integers passed in).
 const NOW = Date.UTC(2026, 7, 15, 12, 0, 0);
+
+/** A log every `h` hours over [from, to] — an owner who logs meals on a steady rhythm. */
+function everyHours(h: number, from: number, to: number): number[] {
+  const out: number[] = [];
+  for (let t = from; t <= to; t += h * HOUR) out.push(t);
+  return out;
+}
 
 // ── The G8 register screens (mirrors of the server's, plus the watching-specific bars) ──
 const REASSURANCE_RE =
@@ -56,19 +45,6 @@ function sweep(s: string): void {
 }
 
 describe('watching copy — verbatim mock §05 strings (the R2-7 Designer round)', () => {
-  it('the sub line is verbatim', () => {
-    expect(WATCHING_SUB).toBe("Here's what we're watching, and what each pattern still needs:");
-  });
-  it('the timing row is verbatim, count-anchored, jargon-free (B-768 D2a — the mechanism clause replaces "timed episodes")', () => {
-    expect(watchingTimingRow(4, 6)).toBe(
-      "Timing — 4 of the 6 episodes a pattern needs, timed against meals you've logged.",
-    );
-  });
-  it('the change row is verbatim, naming the current week', () => {
-    expect(watchingChangeRow(2, 2)).toBe(
-      'Change, week to week — needs 2 full weeks of logging to compare. This is week 2.',
-    );
-  });
   it('the gap row leads with the direction cue (B-769 D4), then the plain time-ordered sequence', () => {
     expect(watchingGapRow('vomiting', '6 days, then 3, then 2')).toBe(
       'Gaps between vomiting episodes are getting shorter — 6 days, then 3, then 2.',
@@ -108,21 +84,12 @@ describe('watching copy — verbatim mock §05 strings (the R2-7 Designer round)
       );
     });
   });
-  it('the safety-floor line is the verbatim, unconditional BUILDING_FLOOR', () => {
-    expect(BUILDING_FLOOR).toBe("If something needs attention sooner, it won't wait for the week.");
-  });
 });
 
 describe('watching copy — the G8 register sweep (transparency, never solicitation)', () => {
   const strings = [
-    WATCHING_SUB,
-    watchingTimingRow(1, 6),
-    watchingTimingRow(5, 6),
-    watchingChangeRow(1, 2),
-    watchingChangeRow(2, 2),
     watchingGapRow('vomiting', '6 days, then 3, then 2'),
     watchingGapRow('vomiting', '3 days, then 18 hours, then 9 hours'),
-    BUILDING_FLOOR,
   ];
   it('every watching string is clean (no exclamation / reassurance / solicitation / game / promise)', () => {
     for (const s of strings) sweep(s);
@@ -151,175 +118,6 @@ describe('formatWatchingGapSequence — mirrors the server phrasing.ts formatter
   });
 });
 
-describe('buildWatchingRows — the per-lane gates + the mock order', () => {
-  // daysSinceLastEpisode 2 — a LIVE record, so the quiet gate (D1a) is inert in the
-  // pre-existing cases; the quiet gate has its own describe below.
-  const base: WatchingFacts = {
-    timedEligibleCount: 0,
-    dayNumber: 30,
-    gapSequenceHours: null,
-    daysSinceLastEpisode: 2,
-  };
-  const rowKeys = (rows: WatchingRow[]) => rows.map((r) => r.key);
-
-  describe('timing lane', () => {
-    it('no row at 0 timeable episodes (no timing question to pose yet)', () => {
-      expect(buildWatchingRows({ ...base, timedEligibleCount: 0 })).toEqual([]);
-    });
-    it('shows "N of 6" for 1..5 timeable episodes', () => {
-      for (const n of [1, 3, 5]) {
-        const rows = buildWatchingRows({ ...base, timedEligibleCount: n });
-        expect(rows).toHaveLength(1);
-        expect(rows[0]).toEqual({
-          key: 'timing',
-          text: `Timing — ${n} of the 6 episodes a pattern needs, timed against meals you've logged.`,
-        });
-      }
-    });
-    it('no row once the floor is met (≥6 — the lane can run, nothing "still needed")', () => {
-      expect(buildWatchingRows({ ...base, timedEligibleCount: WATCHING_TIMING_NEED })).toEqual([]);
-      expect(buildWatchingRows({ ...base, timedEligibleCount: 9 })).toEqual([]);
-    });
-  });
-
-  // B-768, PM-ruled D1a (GA Phase 0): the counter only moves on new episodes, so over a
-  // quiet pet it reads as an owed debt — it withdraws at 14 quiet days. Suppression only:
-  // no "quieted"/"settled" reframe is ever rendered (no reassurance-on-absence).
-  describe('timing lane — the quiet gate (D1a)', () => {
-    it('suppresses the timing row once the last episode is ≥ 14 days back', () => {
-      for (const quiet of [WATCHING_TIMING_QUIET_DAYS, 21, 59]) {
-        expect(
-          buildWatchingRows({ ...base, timedEligibleCount: 4, daysSinceLastEpisode: quiet }),
-        ).toEqual([]);
-      }
-    });
-    it('keeps the timing row while the record is live (last episode < 14 days back)', () => {
-      for (const live of [0, 5, 13.9]) {
-        const rows = buildWatchingRows({ ...base, timedEligibleCount: 4, daysSinceLastEpisode: live });
-        expect(rowKeys(rows)).toEqual(['timing']);
-      }
-    });
-    it('a null recency fails toward suppression (defensive — cannot occur with a positive count)', () => {
-      expect(buildWatchingRows({ ...base, timedEligibleCount: 4, daysSinceLastEpisode: null })).toEqual([]);
-    });
-    it('the quiet gate touches ONLY the timing row — change and gap rows are unaffected', () => {
-      const rows = buildWatchingRows({
-        timedEligibleCount: 4,
-        dayNumber: 12,
-        gapSequenceHours: [6 * 24, 3 * 24, 2 * 24],
-        daysSinceLastEpisode: 30,
-      });
-      // The gap row surviving here is theoretical (its own recency guard would normally
-      // null the run first) — the point is the quiet gate itself never reaches past timing.
-      expect(rowKeys(rows)).toEqual(['change', 'gap']);
-    });
-  });
-
-  describe('change lane', () => {
-    it('shows the current week while fewer than 2 full weeks have elapsed', () => {
-      // day 1 & 7 → week 1; day 8 & 13 → week 2 (still fewer than 2 FULL weeks of span).
-      for (const [day, week] of [[1, 1], [7, 1], [8, 2], [12, 2], [13, 2]] as const) {
-        const rows = buildWatchingRows({ ...base, dayNumber: day });
-        expect(rows).toEqual([
-          { key: 'change', text: `Change, week to week — needs 2 full weeks of logging to compare. This is week ${week}.` },
-        ]);
-      }
-    });
-    it('no row once 2 full weeks exist (day ≥ 14)', () => {
-      expect(buildWatchingRows({ ...base, dayNumber: 14 })).toEqual([]);
-      expect(buildWatchingRows({ ...base, dayNumber: 90 })).toEqual([]);
-    });
-  });
-
-  describe('gap lane', () => {
-    it('no row when the detector returned null (no shortening / stale / too few)', () => {
-      expect(buildWatchingRows({ ...base, gapSequenceHours: null })).toEqual([]);
-    });
-    it('renders the cue-led sequence when a shortening run is supplied', () => {
-      const rows = buildWatchingRows({ ...base, gapSequenceHours: [6 * 24, 3 * 24, 2 * 24] });
-      expect(rows).toEqual([
-        { key: 'gap', text: 'Gaps between vomiting episodes are getting shorter — 6 days, then 3, then 2.' },
-      ]);
-    });
-  });
-
-  it('orders the rows timing → change → gap (the render layer splits gap out — B-769 D3a)', () => {
-    const rows = buildWatchingRows({
-      timedEligibleCount: 4,
-      dayNumber: 12,
-      gapSequenceHours: [6 * 24, 3 * 24, 2 * 24],
-      daysSinceLastEpisode: 2,
-    });
-    expect(rowKeys(rows)).toEqual(['timing', 'change', 'gap']);
-    // The exact frame, reproduced from real-shaped facts.
-    expect(rows.map((r) => r.text)).toEqual([
-      "Timing — 4 of the 6 episodes a pattern needs, timed against meals you've logged.",
-      'Change, week to week — needs 2 full weeks of logging to compare. This is week 2.',
-      'Gaps between vomiting episodes are getting shorter — 6 days, then 3, then 2.',
-    ]);
-  });
-
-  it('returns [] when nothing qualifies (a mature, well-covered record with no shortening)', () => {
-    expect(
-      buildWatchingRows({ timedEligibleCount: 9, dayNumber: 60, gapSequenceHours: null, daysSinceLastEpisode: 2 }),
-    ).toEqual([]);
-  });
-});
-
-// ── daysSinceLastVomitEpisode — the quiet gate's recency input (D1a) ───────────────
-describe('daysSinceLastVomitEpisode', () => {
-  const w = (ms: number) => ({ ms, confidence: 'witnessed' as OnsetConfidence });
-  it('returns days since the most recent event, on RAW events (uncollapsed — the honest, later timestamp)', () => {
-    expect(daysSinceLastVomitEpisode([w(NOW - 5 * DAY), w(NOW - 2 * DAY)], NOW)).toBeCloseTo(2);
-  });
-  it('null for an empty record', () => {
-    expect(daysSinceLastVomitEpisode([], NOW)).toBeNull();
-  });
-  it('ignores non-finite and future-dated entries', () => {
-    expect(daysSinceLastVomitEpisode([w(NaN), w(NOW + DAY), w(NOW - 3 * DAY)], NOW)).toBeCloseTo(3);
-    expect(daysSinceLastVomitEpisode([w(NaN), w(NOW + DAY)], NOW)).toBeNull();
-  });
-});
-
-// ── windowedTimedEligibleCount — the honest "have" for the timing row ─────────────
-describe('windowedTimedEligibleCount', () => {
-  const witnessed = (ms: number): { ms: number; confidence: OnsetConfidence | null } => ({ ms, confidence: 'witnessed' });
-  const meal = (ms: number): FeedingInput => ({ id: `meal-${ms}`, ms, confidence: 'witnessed', intakeRating: null, form: 'meal' });
-  const NO_FREE_FED: FreeFedSpan[] = [];
-
-  it('counts eligible (meal-timeable, witnessed-onset) episodes in the 60-day window', () => {
-    // 3 witnessed vomits, each 1h after a witnessed meal, all recent → 3 eligible.
-    const feedings = [meal(NOW - 5 * DAY), meal(NOW - 3 * DAY), meal(NOW - 1 * DAY)];
-    const onsets = [witnessed(NOW - 5 * DAY + HOUR), witnessed(NOW - 3 * DAY + HOUR), witnessed(NOW - 1 * DAY + HOUR)];
-    expect(windowedTimedEligibleCount(onsets, feedings, NO_FREE_FED, NOW)).toBe(3);
-  });
-
-  it('excludes episodes older than the 60-day window', () => {
-    const feedings = [meal(NOW - 2 * DAY), meal(NOW - 90 * DAY)];
-    const onsets = [witnessed(NOW - 2 * DAY + HOUR), witnessed(NOW - 90 * DAY + HOUR)];
-    expect(windowedTimedEligibleCount(onsets, feedings, NO_FREE_FED, NOW)).toBe(1); // the 90-day-old one is windowed out
-  });
-
-  it('excludes untimeable episodes — a discovered onset and one with no preceding meal', () => {
-    const feedings = [meal(NOW - 2 * DAY)];
-    const onsets = [
-      witnessed(NOW - 2 * DAY + HOUR), // eligible
-      { ms: NOW - 1 * DAY, confidence: 'estimated' as OnsetConfidence }, // discovered → excluded
-      witnessed(NOW - 10 * DAY), // no meal within the 24h lookback → excluded
-    ];
-    expect(windowedTimedEligibleCount(onsets, feedings, NO_FREE_FED, NOW)).toBe(1);
-  });
-
-  it('collapses re-logs (a double-tapped bout is one episode, not two)', () => {
-    const feedings = [meal(NOW - 2 * DAY)];
-    const onsets = [witnessed(NOW - 2 * DAY + HOUR), witnessed(NOW - 2 * DAY + HOUR + 30 * 60_000)]; // 30 min apart
-    expect(windowedTimedEligibleCount(onsets, feedings, NO_FREE_FED, NOW)).toBe(1);
-  });
-});
-
-// ── detectWatchingGapShortening — the escalate-only sub-floor gap detector ─────────
-// Server-faithful (G9): strict-decrease (G5) + the ratio gate (latest ≤ 0.5× median of ALL
-// windowed gaps) + the recency guard, at the 3-gap WATCHING floor + the 180-day era window.
 describe('detectWatchingGapShortening (escalate-only, G5; ratio-gated, server-faithful)', () => {
   const w = (ms: number) => ({ ms, confidence: 'witnessed' as OnsetConfidence });
   // Build ascending onsets from a gaps-in-hours sequence (oldest→newest), the last onset
@@ -332,43 +130,47 @@ describe('detectWatchingGapShortening (escalate-only, G5; ratio-gated, server-fa
   // A pet who typically goes ~10 days, then a shortening tail 6d → 3d → 2d, last 1 day ago.
   // recent = [144,72,48]; median over all 5 gaps = 144h; latest 48 ≤ 0.5×144 = 72 → fires.
   const meaningfulRun = () => onsetsFromGaps([240, 240, 144, 72, 48], 24);
+  // An owner who logs a meal every 12 hours across the whole span: logged time equals the
+  // wall clock, so these cases read exactly as the server's guard does.
+  const steady = everyHours(12, NOW - 200 * DAY, NOW);
 
   it('returns the recent gaps on a meaningful (ratio-passing), current, shortening run', () => {
-    expect(detectWatchingGapShortening(meaningfulRun(), NOW)).toEqual([144, 72, 48]);
+    expect(detectWatchingGapShortening(meaningfulRun(), NOW, steady)).toEqual([144, 72, 48]);
   });
 
   it('null on fewer than 3 gaps (needs ≥4 collapsed episodes — the g-chart watching floor)', () => {
-    expect(detectWatchingGapShortening(onsetsFromGaps([144, 72, 48], 24).slice(1), NOW)).toBeNull(); // 2 gaps
+    expect(detectWatchingGapShortening(onsetsFromGaps([144, 72, 48], 24).slice(1), NOW, steady)).toBeNull(); // 2 gaps
   });
 
   it('null on a lengthening run (absence ≠ wellness — a widening gap never surfaces)', () => {
-    expect(detectWatchingGapShortening(onsetsFromGaps([24, 72, 144], 24), NOW)).toBeNull(); // increasing
+    expect(detectWatchingGapShortening(onsetsFromGaps([24, 72, 144], 24), NOW, steady)).toBeNull(); // increasing
   });
 
   it('null on a flat run (steady gaps are not shortening)', () => {
-    expect(detectWatchingGapShortening(onsetsFromGaps([72, 72, 72], 24), NOW)).toBeNull();
+    expect(detectWatchingGapShortening(onsetsFromGaps([72, 72, 72], 24), NOW, steady)).toBeNull();
   });
 
   it('null on a TRIVIAL flat-looking shortening [50,49,48] — the ratio gate (adversarial 5a)', () => {
     // Strictly decreasing in raw terms, but latest 48 > 0.5 × median(49) — so it would round
     // to a misleading "2 days, then 2, then 2". The ratio gate suppresses it.
-    expect(detectWatchingGapShortening(onsetsFromGaps([50, 49, 48], 24), NOW)).toBeNull();
+    expect(detectWatchingGapShortening(onsetsFromGaps([50, 49, 48], 24), NOW, steady)).toBeNull();
   });
 
   it('null on a 3-gap-only moderate shortening [144,72,48] — not meaningfully shorter than its own median', () => {
     // The mock example as a pet's ONLY 3 gaps: median 72, latest 48 > 36 → a 4-episode record
     // isn't strong enough evidence of acceleration to flag (the noise suppression both reviews asked for).
-    expect(detectWatchingGapShortening(onsetsFromGaps([144, 72, 48], 24), NOW)).toBeNull();
+    expect(detectWatchingGapShortening(onsetsFromGaps([144, 72, 48], 24), NOW, steady)).toBeNull();
   });
 
-  it('null when the run is stale/reversed (open interval ≫ 2× the latest gap — recency guard)', () => {
-    // The meaningful run, but the last episode is 200h back (> 2×48h) → not surfaced as live.
-    expect(detectWatchingGapShortening(onsetsFromGaps([240, 240, 144, 72, 48], 200), NOW)).toBeNull();
+  it('null when the run is stale/reversed (LOGGED time since the last onset ≫ 2× the latest gap — recency guard)', () => {
+    // The meaningful run, but the last episode is 200h back (> 2×48h) and the owner kept
+    // logging meals all through it → the run has not continued.
+    expect(detectWatchingGapShortening(onsetsFromGaps([240, 240, 144, 72, 48], 200), NOW, steady)).toBeNull();
   });
 
   it('uses the most-recent 3 gaps when the record has more (a longer tail is fine)', () => {
     // 6 gaps; the last 3 (6d,3d,2d) are the shortening run reported.
-    expect(detectWatchingGapShortening(onsetsFromGaps([300, 240, 240, 144, 72, 48], 24), NOW)).toEqual([144, 72, 48]);
+    expect(detectWatchingGapShortening(onsetsFromGaps([300, 240, 240, 144, 72, 48], 24), NOW, steady)).toEqual([144, 72, 48]);
   });
 
   it('windows to the 180-day era — an onset >180d ago is excluded and never joins the run (adversarial 7)', () => {
@@ -376,13 +178,65 @@ describe('detectWatchingGapShortening (escalate-only, G5; ratio-gated, server-fa
     // old onset would prepend a ~160-day gap and perturb the median; windowed out, the result
     // is identical to the run alone.
     const withAncient = [w(NOW - 200 * DAY), ...meaningfulRun()];
-    expect(detectWatchingGapShortening(withAncient, NOW)).toEqual([144, 72, 48]);
+    expect(detectWatchingGapShortening(withAncient, NOW, steady)).toEqual([144, 72, 48]);
   });
 
   it('collapses re-logs before measuring gaps (a double-tap does not mint a fake 0h gap)', () => {
     const base = meaningfulRun();
     const doubled = [...base, w(base[base.length - 1].ms + 30 * 60_000)]; // 30-min re-log of the newest
-    expect(detectWatchingGapShortening(doubled, NOW)).toEqual([144, 72, 48]);
+    expect(detectWatchingGapShortening(doubled, NOW, steady)).toEqual([144, 72, 48]);
+  });
+});
+
+// ── The logged-time clock (CUL-1838; PM ruling 2026-10-14 on CUL-1468) ──────────────
+// "A gap in logging is not a gap in vomiting": the recency guard counts only logged time,
+// leaves out any 48h+ stretch with nothing logged but looks, and a look never moves the
+// anchor (looks are not in `loggedMs` — `readLoggedMs` excludes them in SQL, and the
+// end-to-end proof over real SQLite is SignalZone.lookRecency.test.tsx).
+describe('loggedHoursSince', () => {
+  it('counts the wall clock when the owner logs on a steady rhythm', () => {
+    expect(loggedHoursSince(NOW - 100 * HOUR, NOW, everyHours(12, NOW - 200 * HOUR, NOW))).toBeCloseTo(100);
+  });
+  it('leaves out a 48h+ stretch whole, the trailing one included', () => {
+    // A log 10h after the anchor, then nothing for 90h: 10h counted, the 90h left out.
+    expect(loggedHoursSince(NOW - 100 * HOUR, NOW, [NOW - 90 * HOUR])).toBeCloseTo(10);
+  });
+  it('counts a stretch just under the floor and drops one just over it (the boundary is the shipped constant)', () => {
+    const under = QUIET_STRETCH_MS / HOUR - 1;
+    expect(loggedHoursSince(NOW - under * HOUR, NOW, [])).toBeCloseTo(under);
+    expect(loggedHoursSince(NOW - (under + 2) * HOUR, NOW, [])).toBe(0);
+  });
+  it('ignores logs outside the span and an empty span', () => {
+    expect(loggedHoursSince(NOW, NOW, [NOW - HOUR])).toBe(0);
+    expect(loggedHoursSince(NOW - 10 * HOUR, NOW, [NOW - 20 * HOUR, NOW + HOUR])).toBeCloseTo(10);
+  });
+});
+
+describe('detectWatchingGapShortening — the warning stays until the next log (CUL-1468)', () => {
+  const w = (ms: number) => ({ ms, confidence: 'witnessed' as OnsetConfidence });
+  // CUL-1468's cat: vomits 12, 7 and 3 days apart, the last one `daysAgo` back, nothing else.
+  const cat = (daysAgo: number) => [22, 10, 3, 0].map((d) => w(NOW - (daysAgo + d) * DAY));
+
+  it('the backfill case: the last event 2.5 days old still warns (the wall clock had it expire only past day 6)', () => {
+    const onsets = cat(2.5);
+    expect(detectWatchingGapShortening(onsets, NOW, onsets.map((o) => o.ms))).toEqual([288, 168, 72]);
+  });
+
+  it('a record gone quiet keeps the warning however long it sits (the wall clock dropped it at day 6.5)', () => {
+    const onsets = cat(30);
+    expect(detectWatchingGapShortening(onsets, NOW, onsets.map((o) => o.ms))).toEqual([288, 168, 72]);
+  });
+
+  it('non-vacuity: the same record with meals logged through the quiet days does expire', () => {
+    const onsets = cat(30);
+    const meals = everyHours(12, NOW - 30 * DAY, NOW);
+    expect(detectWatchingGapShortening(onsets, NOW, [...onsets.map((o) => o.ms), ...meals])).toBeNull();
+  });
+
+  it('logging again resumes the clock from the next log: a meal an hour ago after a quiet week, still inside the grace', () => {
+    const onsets = cat(7);
+    // Nothing for a week, then one meal an hour ago: the week is left out, 1h counted.
+    expect(detectWatchingGapShortening(onsets, NOW, [...onsets.map((o) => o.ms), NOW - HOUR])).toEqual([288, 168, 72]);
   });
 });
 
@@ -407,6 +261,10 @@ describe('detectWatchingGapShortening — null-model property sweep', () => {
     };
   }
   const TRIALS = 3000;
+  // The sweep's owner logs every 12 hours, so logged time is the wall clock and the
+  // measured residual is the server mirror's (the logged-time clock only ever lengthens
+  // the warning for an owner who STOPS logging; that case is pinned above, not swept).
+  const SWEEP_LOGS = everyHours(12, NOW - 200 * DAY, NOW);
   // Build `eps` onsets whose inter-episode gaps + trailing open interval come from `gapH`
   // (called per gap, so a stateful generator models autocorrelation), ending at NOW − open.
   function fireRate(seed: number, eps: number, gapH: (rng: () => number) => number): number {
@@ -418,7 +276,7 @@ describe('detectWatchingGapShortening — null-model property sweep', () => {
       const ms = [NOW - gapH(rng) * HOUR]; // the open interval, same law (memorylessness)
       for (let i = gaps.length - 1; i >= 0; i--) ms.unshift(ms[0] - gaps[i] * HOUR);
       const onsets = ms.map((m) => ({ ms: m, confidence: 'witnessed' as OnsetConfidence }));
-      if (detectWatchingGapShortening(onsets, NOW) !== null) fires++;
+      if (detectWatchingGapShortening(onsets, NOW, SWEEP_LOGS) !== null) fires++;
     }
     return fires / TRIALS;
   }
@@ -441,7 +299,7 @@ describe('detectWatchingGapShortening — null-model property sweep', () => {
           ms: NOW - rng() * 60 * DAY,
           confidence: 'witnessed' as OnsetConfidence,
         }));
-        if (detectWatchingGapShortening(onsets, NOW) !== null) fires++;
+        if (detectWatchingGapShortening(onsets, NOW, SWEEP_LOGS) !== null) fires++;
       }
       rates.push(fires / TRIALS);
     }
@@ -479,7 +337,7 @@ describe('detectWatchingGapShortening — null-model property sweep', () => {
         const ms = [NOW - draw() * HOUR];
         for (let i = gaps.length - 1; i >= 0; i--) ms.unshift(ms[0] - gaps[i] * HOUR);
         const onsets = ms.map((m) => ({ ms: m, confidence: 'witnessed' as OnsetConfidence }));
-        if (detectWatchingGapShortening(onsets, NOW) !== null) fires++;
+        if (detectWatchingGapShortening(onsets, NOW, SWEEP_LOGS) !== null) fires++;
       }
       return fires / TRIALS;
     }
