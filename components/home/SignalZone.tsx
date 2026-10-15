@@ -693,7 +693,11 @@ export function SignalZone({
   const serverGap = findings.find((f) => (f.finding as { type: string }).type === 'gap_shortening') ?? null;
   const gapSentence = showSkeleton ? null : (gapText ?? serverGap?.text ?? null);
   const gapTakesCard = state !== 'live' && gapSentence !== null;
-  const quiet = state !== 'live';
+  // The vet door shows whenever the card draws no finding — the quiet states, and a `live`
+  // set this build cannot title (an untitled safety finding, which holds `live` above). Keyed
+  // on what is DRAWN, not on the state: adversarial pass 2 found the state-keyed door dropped
+  // "Call your vet today ›" for exactly that set, the most worrying one.
+  const quiet = state !== 'live' || drawn.length === 0;
 
   // The once-ever arrival is not for a warning (CUL-1937): a pet whose first warning is the
   // gap row has spent its moment, as a safety-led pet has (§4: no celebration over a
@@ -869,7 +873,7 @@ export function SignalZone({
 
       {/* The zone's foot. Live: "not a diagnosis", said once, beside the door to Patterns
           (CUL-1270). Quiet: the vet's call signs and the vet report (round 7, CUL-1838). */}
-      {state === 'live' ? (
+      {state === 'live' && drawn.length > 0 ? (
         <SignalZoneFoot mode="live" petName={petName} />
       ) : showSkeleton ? null : (
         <SignalZoneFoot mode="quiet" petName={petName} vetDoor={vetDoor} onReport={onReport} />

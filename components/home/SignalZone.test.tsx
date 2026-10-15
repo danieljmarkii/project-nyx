@@ -518,6 +518,17 @@ describe('SignalZone — an untitled SAFETY finding holds live', () => {
     expect(view.queryByTestId('signal-quiet-line')).toBeNull();
   });
 
+  it('keeps the vet door, and its imperative, on a card that draws nothing (adversarial pass 2)', async () => {
+    mockLoadEmergencyRead.mockResolvedValue({
+      status: 'ready',
+      facts: { refusedRecently: true, vomitCount24h: 0, lethargyRecently: false },
+    });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale', findings: [weightLoss] }));
+    const view = render(<SignalZone />);
+    expect(await view.findByText(SIGNAL_DOOR_CALL_TODAY)).toBeTruthy();
+    expect(view.queryByTestId('signal-zone-patterns')).toBeNull();
+  });
+
   it('control: an untitled INSIGHT alone does fall to the quiet line (CUL-1941)', () => {
     const untitledInsight = { ...weightLoss, finding: { type: 'gap_shortening', priorityClass: 'insight' } } as unknown as CachedFinding;
     mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', findings: [untitledInsight] }));
