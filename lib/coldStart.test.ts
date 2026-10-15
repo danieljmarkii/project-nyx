@@ -21,27 +21,32 @@ beforeEach(() => mockWatermarks.clear());
 
 describe('hydration is decided from the watermark, not a row count', () => {
   it('a device that never read the record has not hydrated', async () => {
-    expect(await hasHydratedRecord()).toBe(false);
+    expect(await hasHydratedRecord('u1')).toBe(false);
   });
 
   it('a zero-event account that has been read once counts as hydrated (the counterexample)', async () => {
     // Both record tables answered empty: no per-table watermark is ever written, so the
     // marker is the only trace of the read, and the local store is still empty.
-    await markRecordHydrated();
+    await markRecordHydrated('u1');
     expect(mockWatermarks.has(COLD_START_HYDRATED_KEY)).toBe(true);
-    const hydrated = await hasHydratedRecord();
+    const hydrated = await hasHydratedRecord('u1');
     expect(hydrated).toBe(true);
     expect(shouldShowColdStartWait({ hydrated, localEmpty: true, online: true })).toBe(false);
   });
 
+  it("another account's marker never vouches for this one (a wipe that failed)", async () => {
+    await markRecordHydrated('someone-else');
+    expect(await hasHydratedRecord('u1')).toBe(false);
+  });
+
   it.each(['events', 'vet_visits'])('a %s watermark alone (an upgraded device) counts as hydrated', async (table) => {
     mockWatermarks.set(table, '2026-10-01T00:00:00.000Z');
-    expect(await hasHydratedRecord()).toBe(true);
+    expect(await hasHydratedRecord('u1')).toBe(true);
   });
 
   it('a watermark on another table does not', async () => {
     mockWatermarks.set('feeding_arrangements', '2026-10-01T00:00:00.000Z');
-    expect(await hasHydratedRecord()).toBe(false);
+    expect(await hasHydratedRecord('u1')).toBe(false);
   });
 });
 

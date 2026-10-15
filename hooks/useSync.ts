@@ -17,9 +17,14 @@ export function useSync() {
   const appState = useRef<AppStateStatus>(AppState.currentState);
   // Tracks whether we were last known to be online so we can detect transitions.
   const wasOnline = useRef<boolean>(true);
+  // CUL-1214 — the account whose first sync this launch already ran. The effect re-runs
+  // on every session object (a token refresh is a new one), and a re-run must not raise
+  // the wait a second time over an owner already using the app.
+  const initialRunFor = useRef<string | null>(null);
 
   useEffect(() => {
     if (!session) return;
+    const userId = session.user.id;
 
     // Idempotent: the ceiling, the settle and an offline transition may each call it.
     const releaseColdStartWait = () => {
@@ -51,7 +56,7 @@ export function useSync() {
       if (isInitial) {
         try {
           const [hydrated, localEmpty, online] = await Promise.all([
-            hasHydratedRecord(),
+            hasHydratedRecord(userId),
             isLocalDataEmpty(),
             getIsOnline(),
           ]);
@@ -102,7 +107,9 @@ export function useSync() {
         console.warn('[sync] cycle failed:', e);
       });
 
-    safeRunSync(true);
+    const isInitialForAccount = initialRunFor.current !== userId;
+    initialRunFor.current = userId;
+    safeRunSync(isInitialForAccount);
 
     const appStateSub = AppState.addEventListener('change', (nextState) => {
       if (appState.current.match(/inactive|background/) && nextState === 'active') {

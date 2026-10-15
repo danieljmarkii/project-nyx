@@ -3536,6 +3536,16 @@ export async function hydrateFromCloud(): Promise<void> {
     visitsPulled = await hydrateVetVisits(db, stale);
   });
   if (stale()) return;
+  // Written as soon as both reads are known, not after the ~20 steps that follow, so an
+  // app killed mid-cycle (or a slow late step) costs no extra wait on the next launch.
+  // The account's id rides in the value: a marker that survived a failed wipe never
+  // vouches for the next account on this phone.
+  if (eventsPulled && visitsPulled) {
+    await runHydrationStep('cold-start marker', async () => {
+      if (!stale()) await markRecordHydrated(session.user.id);
+    });
+    if (stale()) return;
+  }
   await runHydrationStep('vet_visit_attachments', () => hydrateVetVisitAttachments(db, stale));
   if (stale()) return;
   // B-478: vet_documents declares no local FK (its vet_visit_id link is optional
@@ -3575,10 +3585,6 @@ export async function hydrateFromCloud(): Promise<void> {
   if (stale()) return;
   // B-661: account-scoped, no local FK — order is free. Last, after the mirrors.
   await runHydrationStep('notification_preferences', () => hydrateNotificationPreferences(db, stale));
-  if (stale()) return;
-  if (eventsPulled && visitsPulled) {
-    await runHydrationStep('cold-start marker', () => markRecordHydrated());
-  }
 }
 
 // HV-5 (CUL-1162) — a per-incident read that just landed on THIS device, saved to the

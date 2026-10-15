@@ -12,8 +12,10 @@
 // hydrateDietTrialFoods.test.ts uses.
 const mockWatermarks = new Map<string, string>();
 const mockFailing = new Set<string>();
+const mockOnPull: { fn: ((table: string) => void) | null } = { fn: null };
 
 function mockQueryFor(table: string): unknown {
+  mockOnPull.fn?.(table);
   const q: Record<string, unknown> = {};
   for (const m of ['select', 'order', 'range', 'gte', 'eq', 'is', 'in', 'not', 'lte', 'limit']) q[m] = () => q;
   q.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
@@ -51,31 +53,46 @@ jest.mock('./medications', () => ({
 }));
 
 import { COLD_START_HYDRATED_KEY, hasHydratedRecord } from './coldStart';
-import { hydrateFromCloud } from './sync';
+import { hydrateFromCloud, notifySignedOut } from './sync';
 
 describe('hydrateFromCloud writes the cold-start marker only after reading the record', () => {
   let warn: jest.SpyInstance;
   beforeEach(() => {
     mockWatermarks.clear();
     mockFailing.clear();
+    mockOnPull.fn = null;
     warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   });
   afterEach(() => warn.mockRestore());
 
   it('an account with nothing logged: both pulls answer empty, the marker is written', async () => {
-    expect(await hasHydratedRecord()).toBe(false);
+    expect(await hasHydratedRecord('u1')).toBe(false);
     await hydrateFromCloud();
     // No per-table watermark: the empty batch keeps the null prior. The marker is the read.
     expect(mockWatermarks.get('events')).toBeUndefined();
     expect(mockWatermarks.get('vet_visits')).toBeUndefined();
     expect(mockWatermarks.has(COLD_START_HYDRATED_KEY)).toBe(true);
-    expect(await hasHydratedRecord()).toBe(true);
+    expect(await hasHydratedRecord('u1')).toBe(true);
   });
 
   it.each(['events', 'vet_visits'])('offline (%s unreadable): no marker, the next online launch still waits', async (table) => {
     mockFailing.add(table);
     await hydrateFromCloud();
     expect(mockWatermarks.has(COLD_START_HYDRATED_KEY)).toBe(false);
-    expect(await hasHydratedRecord()).toBe(false);
+    expect(await hasHydratedRecord('u1')).toBe(false);
+  });
+
+  it('a sign-out during the cycle leaves no marker for the next account', async () => {
+    mockOnPull.fn = (table) => {
+      if (table === 'vet_visits') notifySignedOut();
+    };
+    await hydrateFromCloud();
+    expect(mockWatermarks.has(COLD_START_HYDRATED_KEY)).toBe(false);
+  });
+
+  it("the marker holds the account's id, so it vouches for that account only", async () => {
+    await hydrateFromCloud();
+    expect(mockWatermarks.get(COLD_START_HYDRATED_KEY)).toBe('u1');
+    expect(await hasHydratedRecord('u2')).toBe(false);
   });
 });

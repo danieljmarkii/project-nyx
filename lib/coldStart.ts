@@ -44,19 +44,23 @@ export function shouldShowColdStartWait(facts: ColdStartFacts): boolean {
   return facts.online && !facts.hydrated && facts.localEmpty;
 }
 
-/** Has this device ever completed a read of the record? Watermarks only, no row count. */
-export async function hasHydratedRecord(): Promise<boolean> {
+/**
+ * Has this device ever completed a read of THIS account's record? Watermarks only, no
+ * row count. The marker holds the account's id, so a marker left by another account
+ * (a wipe that failed to clear `sync_watermarks`) never counts.
+ */
+export async function hasHydratedRecord(userId: string): Promise<boolean> {
   const [marker, events, visits] = await Promise.all([
     getWatermark(COLD_START_HYDRATED_KEY),
     getWatermark('events'),
     getWatermark('vet_visits'),
   ]);
-  return marker !== null || events !== null || visits !== null;
+  return marker === userId || events !== null || visits !== null;
 }
 
 /** Called by `hydrateFromCloud` once both record tables were read this cycle. */
-export async function markRecordHydrated(): Promise<void> {
-  await setWatermark(COLD_START_HYDRATED_KEY, new Date().toISOString());
+export async function markRecordHydrated(userId: string): Promise<void> {
+  await setWatermark(COLD_START_HYDRATED_KEY, userId);
 }
 
 /**

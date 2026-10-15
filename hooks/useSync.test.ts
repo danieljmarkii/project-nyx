@@ -103,6 +103,19 @@ it('the wait lets go at the ceiling while the sync is still running', async () =
   expect(useSyncStore.getState().coldStartHydrating).toBe(false);
 });
 
+it('a token refresh (a new session object, same account) never raises the wait again', async () => {
+  mockState.syncNow.mockImplementation(() => new Promise<void>(() => undefined));
+  const { rerender } = renderHook(() => useSync());
+  await flush();
+  act(() => jest.advanceTimersByTime(COLD_START_CEILING_MS));
+  expect(useSyncStore.getState().coldStartHydrating).toBe(false);
+  seen = [];
+  act(() => useAuthStore.setState({ session: { user: { id: 'u1' }, access_token: 'refreshed' } as never }));
+  rerender({});
+  await flush();
+  expect(seen).not.toContain(true);
+});
+
 it('a connection lost during the wait lets go of the screen at once', async () => {
   mockState.syncNow.mockImplementation(() => new Promise<void>(() => undefined));
   renderHook(() => useSync());
