@@ -34,3 +34,16 @@ The PM rejected round 3's direction: too wordy, legalese, a home screen given ov
 Day 0 copy went from about 70 words to 8. D1 to D4 are withdrawn. One ask remains (clinical): keep the shortening-gaps warning up until the next log. Dr. Chen's dissent (the signs are now a tap away) is logged on the page, as is an S1 flag on the strip beside the gap warning.
 
 Round 3's binding PR-21 rules about collapsing cues fall away with the cues; the sheet already collapses its own rows. The gap-lane rule (a look never moves the anchor) stands if the PM says yes to the ask.
+
+## The research brief, and round 3.2
+
+The PM asked for independent Product Designer research on empty and insufficient-data states. Four isolated lanes ran: tracker teardowns, value-before-data techniques, design guidance and trends, and the logging-burden literature. They are synthesised in `docs/research/2026-10-empty-states-first-value.md`. The core finding is that the Signal should never be the reason to log. People sustain logging when each entry pays off now and the tracking has a bounded purpose.
+
+The PM ruled yes on the gap warning: it stays up until the next log. The PM deferred the design path to the designer ("defer to the experts"), so round 3.2 is the designer's call:
+- **No ghost chart.** It is untested, and a flat ghost shown for days reads as "stable".
+- **A vet report row from the first log**, as present-tense value.
+- **A three-state strip**: a dot for something logged, a ring for a look, hatching for nothing logged. Days before the record began carry no mark.
+- **A read-back of each log**, stated as fact.
+- **Coverage counts**, never progress toward a Signal.
+
+Round 3.1's frames are at `64d518d`. Nothing in 3.2 asks for a ruling. PR-21 starts on the PM's go, and it carries a `vet-report-cold-read` pass on a one-day report.
