@@ -657,7 +657,12 @@ export function SignalZone({
   // is a set difference over a handful of findings.
   const rendered = visibleFindings(findings, withholdFallingVomit, Date.now(), trialAnchor);
   const drawn = rendered.filter((f) => hasSignalTitleRule(f.finding));
-  const displayState = deriveDisplayState(drawn.length, eventCount, hasRecentActivity, hasSubstantialHistory);
+  // A SAFETY finding is never routed to the quiet line, titled or not (adversarial pass, PR-21):
+  // the server can carry a safety type this build has no row for (`weight_loss`, dark behind
+  // engines_v3_en8), and "No pattern right now" over it would assert the opposite of what the
+  // record holds. It keeps `live` — the shipped behaviour for an untitled set — never the quiet line.
+  const holdsLive = drawn.length + rendered.filter((f) => f.finding.priorityClass === 'safety' && !hasSignalTitleRule(f.finding)).length;
+  const displayState = deriveDisplayState(holdsLive, eventCount, hasRecentActivity, hasSubstantialHistory);
 
   // While the first cache read is in flight, hold a content-shaped skeleton rather than
   // flash a quiet line over a pet whose findings are about to land. B-734 (CUL-72): TIME-
@@ -777,15 +782,25 @@ export function SignalZone({
 
   // ── The warning's arrival (round 7: the rail leads, the box opens, the sentence lands) ─
   // An OBSERVED transition, like the arrival: the same pet, a gap read that had answered
-  // with no warning, then a warning. A cold mount that already has one draws it still.
+  // with NO warning on screen (in any state — a warning already drawn under a live stack
+  // that then takes the card has not arrived, code review F2), then a warning taking the
+  // card. A cold mount that already has one draws it still. A LAYOUT effect, and the motion
+  // hook's phase is set in one too, so both updates flush before paint: the finished
+  // sentence never shows for a frame before its own arrival (code review F1).
+  const gapShown = gapSentence !== null;
   const prevGap = useRef<{ petId: string | null; shown: boolean | null }>({ petId: null, shown: null });
   const [warningEnter, setWarningEnter] = useState(0);
-  useEffect(() => {
+  const rowSpeech = useRowSpeech();
+  useLayoutEffect(() => {
     if (!gapAnswered || showSkeleton) return;
     const prev = prevGap.current;
-    prevGap.current = { petId, shown: gapTakesCard };
-    if (prev.petId === petId && prev.shown === false && gapTakesCard) setWarningEnter((n) => n + 1);
-  }, [petId, gapAnswered, gapTakesCard, showSkeleton]);
+    prevGap.current = { petId, shown: gapShown };
+    if (prev.petId !== petId || prev.shown !== false || !gapShown) return;
+    if (gapTakesCard) setWarningEnter((n) => n + 1);
+    // Said, not only drawn: a warning that arrives while Home is in front is spoken once,
+    // queued behind what VoiceOver is reading — the safety arrival's own channel (GAP-13).
+    if (gapSentence !== null && rowSpeech.mayAnnounce()) announceQueued(gapSentence);
+  }, [petId, gapAnswered, gapShown, gapTakesCard, gapSentence, showSkeleton, rowSpeech]);
 
   // The outgoing frame for the arrival's crossfade, captured DURING render (by the time an
   // effect could run, the state has already flipped to live). Cleared on a pet switch.

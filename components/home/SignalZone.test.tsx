@@ -81,6 +81,7 @@ import {
 import { SIGNAL_DOOR_CALL_TODAY, SIGNAL_DOOR_LABEL } from '../../lib/lookEmergency';
 import { usePetStore } from '../../store/petStore';
 import { router } from 'expo-router';
+import { RowSpeechContext } from '../dayRow/rowSpeech';
 import type { TrialCardTrial } from '../../lib/dietTrialCard';
 
 // A minimal live finding so the register (live state) renders a stack.
@@ -497,6 +498,86 @@ describe('SignalZone — the first gap warning plays no celebration (CUL-1937)',
     await flush();
     expect(view.getByText(GAP)).toBeTruthy();
     expect(view.queryByTestId('signal-quiet-line')).toBeNull();
+  });
+});
+
+// Adversarial pass, PR-21: a safety finding this build cannot title must never fall to a
+// quiet line that asserts "No pattern right now" over it.
+describe('SignalZone — an untitled SAFETY finding holds live', () => {
+  const weightLoss = {
+    rank: 0,
+    text: 'Nyx has lost weight between two weigh-ins.',
+    finding: { type: 'weight_loss', priorityClass: 'safety' },
+  } as unknown as CachedFinding;
+
+  it('never reads "No pattern right now" or "Too early to tell" over it', () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', findings: [weightLoss] }));
+    const view = render(<SignalZone />);
+    expect(view.queryByText(NO_PATTERN_HEADLINE)).toBeNull();
+    expect(view.queryByText(QUIET_TOO_EARLY_HEADER)).toBeNull();
+    expect(view.queryByTestId('signal-quiet-line')).toBeNull();
+  });
+
+  it('control: an untitled INSIGHT alone does fall to the quiet line (CUL-1941)', () => {
+    const untitledInsight = { ...weightLoss, finding: { type: 'gap_shortening', priorityClass: 'insight' } } as unknown as CachedFinding;
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'no_pattern', findings: [untitledInsight] }));
+    const view = render(<SignalZone />);
+    expect(view.getByText(untitledInsight.text)).toBeTruthy(); // the server's own gap sentence takes the card
+  });
+});
+
+describe('SignalZone — the warning arrives once, and is said', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => {
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
+    jest.useRealTimers();
+  });
+
+  it('F2: a warning already drawn under a live stack does not re-arrive when the stack empties', async () => {
+    mockUseGapWarning.mockReturnValue({ text: GAP, answered: true });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    const view = render(<SignalZone />);
+    await act(async () => {});
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    // No lead: the sentence is drawn at once, no quiet line fading over it.
+    expect(view.getByText(GAP)).toBeTruthy();
+    expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+  });
+
+  it('a warning that arrives while Home is in front is spoken once, queued', async () => {
+    // `announceQueued` uses the queued iOS call where it exists, else the plain one.
+    const plain = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    const queued =
+      typeof AccessibilityInfo.announceForAccessibilityWithOptions === 'function'
+        ? jest.spyOn(AccessibilityInfo, 'announceForAccessibilityWithOptions').mockImplementation(() => {})
+        : null;
+    const announce = { mock: { get calls() { return [...plain.mock.calls, ...(queued?.mock.calls ?? [])] as unknown[][]; } } };
+    const speech = { petName: 'Nyx', mayAnnounce: () => true };
+    const zone = () => (
+      <RowSpeechContext.Provider value={speech}>
+        <SignalZone />
+      </RowSpeechContext.Provider>
+    );
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(zone());
+    await act(async () => {});
+    expect(announce.mock.calls.filter(([m]) => m === GAP)).toHaveLength(0);
+    mockUseGapWarning.mockReturnValue({ text: GAP, answered: true });
+    await act(async () => {
+      view.rerender(zone());
+    });
+    expect(announce.mock.calls.filter(([m]) => m === GAP)).toHaveLength(1);
+    await act(async () => {
+      view.rerender(zone());
+    });
+    expect(announce.mock.calls.filter(([m]) => m === GAP)).toHaveLength(1);
+    plain.mockRestore();
+    queued?.mockRestore();
   });
 });
 

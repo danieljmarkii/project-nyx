@@ -20,7 +20,7 @@
 // APP BLUR FINISHES, NEVER PAUSES, and Reduce Motion crossfades: the words swap by opacity,
 // nothing moves, the box does not animate.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Animated, Easing, LayoutAnimation } from 'react-native';
 import { FOLD_MOTION, UNFOLD_LAYOUT } from './foldMotion';
 
@@ -95,7 +95,9 @@ export function useWarningArrival({
     timers.current.push(setTimeout(fn, ms));
   }, []);
 
-  useEffect(() => {
+  // A layout effect: the phase lands before the first paint, so the finished sentence is
+  // never drawn for a frame before its own arrival.
+  useLayoutEffect(() => {
     if (enterKey === lastKey.current) return;
     lastKey.current = enterKey;
     if (enterKey === 0) return;
