@@ -1,6 +1,7 @@
-import { renderHook, waitFor } from '@testing-library/react-native';
-import { useGapWarning } from './useGapWarning';
+import { act, renderHook, waitFor } from '@testing-library/react-native';
+import { GAP_READ_TIMEOUT_MS, useGapWarning } from './useGapWarning';
 import { usePetStore } from '../store/petStore';
+import { useSyncStore } from '../store/syncStore';
 import { getGapWarning } from '../lib/signalWatching';
 
 // useFocusEffect needs a navigation context; mirror its contract with a plain useEffect
@@ -26,7 +27,7 @@ beforeEach(() => {
 describe('useGapWarning', () => {
   it('reads nothing and owes nothing when disabled', () => {
     const { result } = renderHook(() => useGapWarning(false));
-    expect(result.current).toEqual({ text: null, answered: true });
+    expect(result.current).toMatchObject({ text: null, answered: true, failed: false });
     expect(mockGet).not.toHaveBeenCalled();
   });
 
@@ -45,13 +46,116 @@ describe('useGapWarning', () => {
     expect(mockGet).toHaveBeenCalledWith('pet-a', expect.any(Number));
   });
 
-  it('a failed read answers with no warning and says so', async () => {
+  it('a failed read is FAILED, never an answer of no warning (CUL-1943), and says so', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockGet.mockRejectedValueOnce(new Error('db closed'));
     const { result } = renderHook(() => useGapWarning(true));
     await waitFor(() => expect(result.current.answered).toBe(true));
+    expect(result.current.failed).toBe(true);
     expect(result.current.text).toBeNull();
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it('Try again re-reads, and a success clears the failure', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGet.mockRejectedValueOnce(new Error('db closed'));
+    const { result } = renderHook(() => useGapWarning(true));
+    await waitFor(() => expect(result.current.failed).toBe(true));
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.text).toBe(SENTENCE));
+    expect(result.current.failed).toBe(false);
+    expect(mockGet).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+
+  it('a re-read that throws keeps the warning already found (it never drops a warning)', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { result } = renderHook(() => useGapWarning(true));
+    await waitFor(() => expect(result.current.text).toBe(SENTENCE));
+    mockGet.mockRejectedValueOnce(new Error('db closed'));
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.failed).toBe(true));
+    expect(result.current.text).toBe(SENTENCE);
+    warn.mockRestore();
+  });
+
+  describe('the time box (adversarial B2)', () => {
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    it('a first read that never answers turns failed past the box, never calm', () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockGet.mockReturnValue(new Promise(() => {}));
+      const { result } = renderHook(() => useGapWarning(true));
+      expect(result.current.answered).toBe(false);
+      act(() => {
+        jest.advanceTimersByTime(GAP_READ_TIMEOUT_MS);
+      });
+      expect(result.current.failed).toBe(true);
+      expect(result.current.text).toBeNull();
+      warn.mockRestore();
+    });
+
+    it('a re-read that hangs after a calm answer turns failed past the box', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockGet.mockResolvedValueOnce(null);
+      const { result } = renderHook(() => useGapWarning(true));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(result.current).toMatchObject({ text: null, answered: true, failed: false });
+      mockGet.mockReturnValue(new Promise(() => {}));
+      act(() => result.current.retry());
+      expect(result.current.failed).toBe(false);
+      act(() => {
+        jest.advanceTimersByTime(GAP_READ_TIMEOUT_MS);
+      });
+      expect(result.current.failed).toBe(true);
+      warn.mockRestore();
+    });
+
+    it('R2: a burst of ticks faster than the box never re-arms it over a hung read', () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      mockGet.mockReturnValue(new Promise(() => {}));
+      const { result } = renderHook(() => useGapWarning(true));
+      for (let i = 0; i < 3; i++) {
+        act(() => {
+          jest.advanceTimersByTime(GAP_READ_TIMEOUT_MS / 2);
+          useSyncStore.setState((st) => ({ signalTick: st.signalTick + 1 }));
+        });
+      }
+      expect(result.current.failed).toBe(true);
+      warn.mockRestore();
+    });
+
+    it('reading is true while a read is in flight and false once it answers', async () => {
+      let resolve: (v: string | null) => void = () => {};
+      mockGet.mockReturnValue(new Promise<string | null>((r) => (resolve = r)));
+      const { result } = renderHook(() => useGapWarning(true));
+      expect(result.current.reading).toBe(true);
+      await act(async () => {
+        resolve(null);
+        await Promise.resolve();
+      });
+      expect(result.current.reading).toBe(false);
+    });
+
+    it('a late answer after the box still lands and clears the failure', async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      let resolve: (v: string) => void = () => {};
+      mockGet.mockReturnValue(new Promise<string>((r) => (resolve = r)));
+      const { result } = renderHook(() => useGapWarning(true));
+      act(() => {
+        jest.advanceTimersByTime(GAP_READ_TIMEOUT_MS);
+      });
+      expect(result.current.failed).toBe(true);
+      await act(async () => {
+        resolve(SENTENCE);
+        await Promise.resolve();
+      });
+      expect(result.current).toMatchObject({ text: SENTENCE, failed: false });
+      warn.mockRestore();
+    });
   });
 });
