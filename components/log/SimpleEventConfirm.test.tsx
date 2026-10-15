@@ -527,12 +527,12 @@ describe('SimpleEventConfirm — photo permissions (CUL-577)', () => {
     expect(askLibrary).not.toHaveBeenCalled();
   });
 
-  it('Choose from library asks only for the library', async () => {
+  it('Choose from library opens the picker with no permission ask (CUL-1840)', async () => {
     const { getByText } = renderConfirm('vomit');
     fireEvent.press(getByText('Add a photo'));
     pressAlert('Choose from library');
     await waitFor(() => expect(launchLibrary).toHaveBeenCalled());
-    expect(askLibrary).toHaveBeenCalled();
+    expect(askLibrary).not.toHaveBeenCalled();
     expect(askCamera).not.toHaveBeenCalled();
   });
 

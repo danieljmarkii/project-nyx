@@ -53,6 +53,14 @@ describe('PetBreedScreen', () => {
     expect(mockedReplace).toHaveBeenCalledWith('/onboarding/pet-type');
   });
 
+  it('says only what breed does today: it goes on the vet report (CUL-1840)', () => {
+    // No detector reads breed, so the old "helps tailor what we watch for" promised
+    // a behaviour the app does not have.
+    const { getByText, queryByText } = render(<PetBreedScreen />);
+    expect(getByText("Optional. It goes on Luna's vet report.")).toBeTruthy();
+    expect(queryByText(/tailor/)).toBeNull();
+  });
+
   it('Skip advances to gender without writing a breed', () => {
     mockUpdate();
     const { getByTestId } = render(<PetBreedScreen />);

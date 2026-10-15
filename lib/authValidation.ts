@@ -40,11 +40,3 @@ export function passwordError(password: string): string | null {
   }
   return null;
 }
-
-// A required free-text name field (first / last). Non-empty after trim is the only
-// rule — we do not police what a real name looks like (mononyms, non-Latin scripts,
-// hyphens all pass). The message names the specific field so a two-field row is
-// unambiguous about which one to fix.
-export function requiredNameError(value: string, label: string): string | null {
-  return value.trim() ? null : `Add your ${label}`;
-}

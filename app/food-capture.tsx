@@ -289,13 +289,9 @@ export default function FoodCaptureScreen() {
         );
         return null;
       }
-    } else {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Photo access needed', 'Allow photo access in Settings to choose a photo.');
-        return null;
-      }
     }
+    // The library needs no grant: the system picker hands back only the chosen
+    // photo (CUL-1840, App Review 5.1.1(iii)).
 
     const opts: ImagePicker.ImagePickerOptions = {
       mediaTypes: ['images'],
