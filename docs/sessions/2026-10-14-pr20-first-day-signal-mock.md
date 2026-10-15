@@ -47,3 +47,16 @@ The PM ruled yes on the gap warning: it stays up until the next log. The PM defe
 - **Coverage counts**, never progress toward a Signal.
 
 Round 3.1's frames are at `64d518d`. Nothing in 3.2 asks for a ruling. PR-21 starts on the PM's go, and it carries a `vet-report-cold-read` pass on a one-day report.
+
+## Round 4: five directions
+
+The PM asked to keep thinking divergently, so round 4 draws five directions side by side, each at day 0, Sam's first vomit and a record gone quiet:
+- **A, the record** (round 3.2).
+- **B, the diary**: the last logs as rows.
+- **C, the case file**: a per-symptom daily count, bounded by the next vet visit.
+- **D, today against usual**: tiles with a learning window.
+- **E, quiet until earned**: one line, leaning on the Today card.
+
+Every direction holds the same floor: the vet signs in every state, silence never drawn as calm, no streaks and no Signal promise, and the gap warning on top.
+
+A finding: Home's Today card already lists today's logs, so a Signal card that repeats the day's log duplicates it. The team leans to A with C's vet-visit row. The Data Scientist leans C, and Dr. Chen objects to D's "usual" until it is clinically defined. Round 3.2's frames are at `80fd1cc`.
