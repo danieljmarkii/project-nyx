@@ -63,10 +63,10 @@ import {
 } from '../../../lib/lookCard';
 import { describeLook, gridChipLabel, gridSectionsFor, isLookRow, lookHeadline } from '../../../lib/lookDisplay';
 import { EMERGENCY_DOOR_LABEL, type EmergencyRead } from '../../../lib/lookEmergency';
-import { loadEmergencyFacts, withIntakeRefusal } from '../../../lib/lookEmergencyFacts';
+import { loadEmergencyFacts } from '../../../lib/lookEmergencyFacts';
+import { composeEmergencyRead } from '../../../lib/emergencyDoorRead';
 import {
   entryWithholdsWords,
-  doorRecordRefusal,
   loadLookWithheldFacts,
   lookWithheldState,
   markWithheldToday,
@@ -394,14 +394,11 @@ export function LookHeader({ trialNotEating = null, onLayout }: Props) {
     const id = activePet.id;
     loadEmergencyFacts(id)
       .then((facts) => {
-        const merged = withIntakeRefusal(
-          facts,
-          trialNotEating === true,
-          // Arm 1 and arm 3 together, the card's own withholding facts (CUL-1372).
-          doorRecordRefusal({ id }, resting?.petId === id ? resting.facts : null),
-        );
+        // One composition for both doors (`lib/emergencyDoorRead.ts`): the Signal's foot opens
+        // this sheet too. Arm 1 and arm 3 ride the card's own withholding facts (CUL-1372).
+        const read = composeEmergencyRead({ id }, facts, trialNotEating, resting?.petId === id ? resting.facts : null);
         if (activePetIdRef.current !== id) return;
-        setEmergencyRead(merged ? { status: 'ready', facts: merged } : { status: 'failed' });
+        setEmergencyRead(read);
       })
       .catch(() => setEmergencyRead({ status: 'failed' }));
   }, [activePet, trialNotEating, resting]);

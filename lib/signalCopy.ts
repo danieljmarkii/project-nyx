@@ -40,7 +40,7 @@ import type {
   TimingStoryFinding,
   TrialResponseFinding,
 } from './signal';
-import { localDayIndex, localDayIndexOf, trialDayCounter } from './utils';
+import { dateTimeFormat, localDayIndex, localDayIndexOf } from './utils';
 import type { BackBecauseReason } from './signalFold';
 import { formatTimingBandLabel } from './timingBandLabels';
 import { careClaimReason } from './careClaimScreens';
@@ -328,21 +328,27 @@ export function onsetMonth(iso: string): string {
   return Number.isNaN(d.getTime()) ? 'then' : MONTH_NAMES[d.getUTCMonth()];
 }
 
-// ── Display state (§3.3 + B-051) ──────────────────────────────────────────────
-// Findings present → live. With no findings, three honest empty states — never an
-// all-clear (§9):
-//   - stale     — gone quiet 48h+ (log today)
-//   - no_pattern — substantial history but nothing cleared a floor. This is the
-//     B-051 fix: a heavily-logging owner must NOT be told "keep logging, patterns
-//     in a few days" (reads as "not enough data" → the §7.1 "silence churns"
-//     trap). It is about the DATA ("no clear pattern yet"), not the pet's health.
-//   - building  — genuinely early (still gathering the first days of logs)
+// ── Display state (the quiet line, CUL-1838; ruled on CUL-1936) ───────────────
+// Findings the zone can draw → live. With none, the Signal is one quiet line — a header
+// and a subtitle — in one of three states, never an all-clear (§9):
+//   - building  — "Too early to tell": no events yet, the first days, or a record of
+//     daily looks alone (a look is never coverage, so it never ages a record into
+//     "week 1", CUL-1484).
+//   - stale     — "Nothing logged since {day}": 48h or more with no meal, symptom or
+//     other log. ZERO EVENTS IS NEVER STALE: a record that never started has not gone
+//     quiet, it has not begun.
+//   - no_pattern — "No pattern right now": a substantial record (8+ events over 7+ days,
+//     B-051) where nothing cleared a floor. About the DATA, never the pet's health.
+// The escalate-only gap warning takes the whole card in any of the three (CUL-1468); the
+// zone decides that, because it is a client read the state cannot see.
 export function deriveDisplayState(
-  findings: CachedFinding[],
+  findingCount: number,
+  eventCount: number,
   hasRecentActivity: boolean,
   hasSubstantialHistory: boolean,
 ): DisplayState {
-  if (findings.length > 0) return 'live';
+  if (findingCount > 0) return 'live';
+  if (eventCount === 0) return 'building';
   if (!hasRecentActivity) return 'stale';
   return hasSubstantialHistory ? 'no_pattern' : 'building';
 }
@@ -355,127 +361,57 @@ export function deriveDisplayState(
 // looking "what's new" mechanism that feeds nothing. Git holds them if a future
 // surface ever needs a structural "is this finding set the one they saw" test.
 
-// ── Empty-state intros ────────────────────────────────────────────────────────
-// Only the `stale` intro survives: E1 (building) and E2 (no_pattern) GA'd their SR-2
-// restyle (CUL-547), so the pre-uplift `buildingIntro` / `noPatternIntro` copy was deleted
-// with the render path that used it. `stale` has no uplift restyle and keeps its intro.
-export function staleIntro(petName: string): string {
-  return `Not enough recent data to show a pattern. Log today and we'll keep building ${petName}'s picture.`;
+// ── The quiet line's words (B-721 §9 as amended by CUL-1838, round 7 of the Signal mock) ─
+// Verbatim-governed: pinned character-for-character by signalCopy.test.ts, so a voice
+// edit here is a spec change. Retired with this block (CUL-1838): "We're getting to know
+// {pet}", "Day N — K events so far", the watching-for list and its ghost receipts, the
+// stale paragraph, the old floor line ("If something needs attention sooner, it won't
+// wait for the week") and the old nothing-found sub's "keep logging, and the moment
+// something clears it, it'll be here". The floor line's job — the vet's call signs are
+// never behind a pattern — is now the foot's "When to call the vet ›", drawn in every
+// quiet state.
+
+/** Too early: the header. */
+export const QUIET_TOO_EARLY_HEADER = 'Too early to tell';
+/** Too early: what each log does now, then an honest word on patterns. "If any" keeps it
+ *  from promising a pattern a quiet record will never get (round 7 · 02). */
+export function quietTooEarlySub(petName: string): string {
+  return `Every log goes into ${petName}'s vet report. Patterns, if any, take weeks.`;
 }
 
-// ── SR-2 empty states — E1 (building) + E2 (no_pattern) restyle ────────────────
-// B-721 §6 / §9. The copy for the two empty states drawn in the round-2.1 mock — GA'd
-// (CUL-547), so this IS the empty-state surface. Verbatim-governed: every string below is
-// pinned character-for-character to §9 (E1) / the B-284 §9 "Signal — empty" row (E2) by
-// signalCopy.test.ts — a voice edit here is a spec change, not a code change. Absence is
-// never wellness: E1 keeps the safety-floor line, E2 says "isn't an all-clear" in its own words.
+/** Gone quiet: dated, never calm. When a daily look was logged after the last log, the
+ *  header names what stopped — meals and symptoms — so it never contradicts the look the
+ *  owner can see in Today. `day` comes from `quietDayLabel`. */
+export function quietGoneQuietHeader(day: string, lookSinceLastLog: boolean): string {
+  return lookSinceLastLog ? `No meals or symptoms since ${day}` : `Nothing logged since ${day}`;
+}
+export const QUIET_GONE_QUIET_SUB = "Signal can only read what's logged.";
 
-// E1 headline (§9), in two parts so the day-count clause can carry the E1-c accent
-// ink as its own visual span while the whole sentence stays the a11y label. The day
-// counter is the B-421 local-day count from the first logged event; the event count
-// is pluralised (the §9 template writes "{k} events", which renders "1 event" on day
-// one — a correct application of the template, not a copy change). `dayNumber` /
-// `eventCount` are supplied by useSignal from local SQLite.
-export function buildingHeadlineLead(petName: string): string {
-  return `We're getting to know ${petName}.`;
-}
-export function buildingDayCount(dayNumber: number, eventCount: number): string {
-  return `Day ${dayNumber} — ${count(eventCount, 'event', 'events')} so far.`;
-}
-export function buildingHeadline(petName: string, dayNumber: number, eventCount: number): string {
-  return `${buildingHeadlineLead(petName)} ${buildingDayCount(dayNumber, eventCount)}`;
-}
+/** Nothing found. "Right now" because the claim is about this read of the record, and the
+ *  sub is the load-bearing clause: absence is never wellness. */
+export const NO_PATTERN_HEADLINE = 'No pattern right now';
+export const NO_PATTERN_SUB = "That isn't an all-clear.";
 
-// The building-state "Day N" counter (§9 / §6). ONE day definition — the B-421
-// local-day counter (`lib/utils`), device zone (the owner's own midnight is the
-// client's day boundary), day-1-inclusive via `trialDayCounter` (max(1, …)): a pet
-// logged for the first time today is on "Day 1", never "Day 0". A missing/malformed
-// first-event timestamp falls back to Day 1 rather than guessing (the same
-// null-not-a-guessed-day contract as `localDayIndexOf`). `nowMs` is passed in (never
-// read here) so this stays pure + timezone-pinnable in tests (B-514).
-export function buildingDayNumber(firstEventIso: string | null, nowMs: number): number {
-  if (!firstEventIso) return 1;
-  const firstIdx = localDayIndexOf(firstEventIso);
-  if (firstIdx === null) return 1;
-  return trialDayCounter(firstIdx, localDayIndex(nowMs));
+/** The {day} in the gone-quiet header: the weekday ("Tue") inside the last six local
+ *  days, else the calendar date ("Sep 22"), so a weekday never names last week. The
+ *  state only exists 48h+ after the last log, so "today" and "yesterday" never arise.
+ *  English formatting, like every other string on the card. */
+export function quietDayLabel(lastLoggedIso: string, nowMs: number): string | null {
+  const ms = Date.parse(lastLoggedIso);
+  const idx = localDayIndexOf(lastLoggedIso);
+  if (!Number.isFinite(ms) || idx === null) return null;
+  const daysBack = localDayIndex(nowMs) - idx;
+  const d = new Date(ms);
+  return daysBack <= 6
+    ? dateTimeFormat('en-US', { weekday: 'short' }).format(d)
+    : dateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(d);
 }
 
-// E1 sub + the three "watching for" rows + the safety floor (§9). The watching-for
-// rows name what the engine is building toward, in the same order as the mock's
-// ghosted receipts (timing → food → change). The floor line is the honesty device:
-// the weekly-pattern framing must never read as "nothing urgent will surface before
-// then" — safety findings don't wait for the week (clinical-guardrails / §6).
-export const BUILDING_SUB =
-  "Patterns usually start appearing within the first week. Here's what we're watching for:";
-// B-735 (GA Phase 0, PM-ruled D5a): a sparse logger (Sam's grazing cat) can cross day 7
-// with fewer than the substantial-history events and stay in E1 — where "Day 24" sits
-// directly above "within the first week" and reads as "am I doing this wrong, or is the
-// app stuck?". Once the day count outruns the week, the sub swaps to the events-not-days
-// framing: no time promise the count already broke, no quantity promise either (the floor
-// is the engine's, not a pledge), and never a nag — a neutral fact about the mechanism.
-export const BUILDING_SUB_SPARSE =
-  "Patterns build from logged events more than from time passing. Here's what we're watching for:";
-/** The E1 sub, keyed on whether the day count has outrun BUILDING_SUB's own first-week
- *  promise. The threshold IS the promise's boundary (7 days) — not a tuned number. */
-export function buildingSub(dayNumber: number): string {
-  return dayNumber > 7 ? BUILDING_SUB_SPARSE : BUILDING_SUB;
-}
-export const BUILDING_WATCHING_FOR = [
-  'Timing — do symptoms follow meals, and how closely',
-  'Food connections — what tends to come before a reaction',
-  'Change — this week against last, counted from your logs',
-] as const;
-export const BUILDING_FLOOR = "If something needs attention sooner, it won't wait for the week.";
-
-// E2 — mature record, nothing established. VERBATIM from the shipped B-284 §9
-// "Signal — empty" copy row (`docs/culprit-in-app-brand-requirements.md`). Split
-// across two lines per the round-2.1 mock (primary line + dimmed sub) — the words
-// are identical to §9 either way. "isn't an all-clear" is the load-bearing clause:
-// a heavily-logged record with no finding is never reassured (absence ≠ wellness).
-export const NO_PATTERN_HEADLINE =
-  'No established patterns yet. Nothing in the last month of logs has cleared our evidence bar.';
-export const NO_PATTERN_SUB =
-  "That isn't an all-clear — keep logging, and the moment something clears it, it'll be here.";
-
-// ── Signals v2 watching system (B-755 / CUL-14, §4.4 / D5 / G8) ────────────────
-// R-5 ("watching, with real counts") ratified as a SYSTEM: the empty state grows a
-// per-lane row that states what the lane HAS and what its math REQUIRES, in real
-// counts computed client-side from local data through lib/mealTiming (G9). These are
-// the strings the mock round-2 §05 frame renders (the Designer copy round, R2-7);
-// signalWatching.test.ts pins each one and sweeps them against the G8 register:
-// transparency, never solicitation — no imperative ("log more"), no streak/unlock/
-// reward language, no promise a card is coming (the count IS the progress; it carries
-// no promise). The rows compose INTO B-721's E1/E2 (content, not a frame — §4.4); the
-// safety-floor line is BUILDING_FLOOR, verbatim and unconditional wherever the rows
-// render — the weekly-cadence framing must never read as "nothing urgent surfaces
-// before then" (absence ≠ wellness; clinical-guardrails / §6).
-
-/** The intro above the watching rows (§05 mock, verbatim). Rendered only when ≥1 row
- *  qualifies. It states what is happening and never asks for anything (G8): "what each
- *  pattern still needs" is a fact about the computation, not a request to log more. */
-export const WATCHING_SUB = "Here's what we're watching, and what each pattern still needs:";
-
-/** Timing lane — "N of the M episodes a pattern needs, timed against meals you've
- *  logged." A fact about the math: how many meal-timeable episodes the timing lanes
- *  (⑤/L1) require before a pattern can be read. Never a promise a card is coming (G8) —
- *  it names what the computation needs, not what the pet will turn out to have. `need`
- *  is the shared minEligibleEpisodes floor (§2 L1), passed in so the copy names the same
- *  number the gate uses. B-768 (GA Phase 0, PM-ruled D2a): "timed episodes" was engine
- *  jargon (`eligibleCount` — the owner never times anything); the trailing clause makes
- *  the mechanism self-carrying — an episode counts when a logged meal lets us place it.
- *  Descriptive, not an imperative (G8): it names where the timing comes from, it does
- *  not ask for anything. */
-export function watchingTimingRow(have: number, need: number): string {
-  return `Timing — ${have} of the ${need} episodes a pattern needs, timed against meals you've logged.`;
-}
-
-/** Change lane — the week-over-week comparison needs two full weeks of span to run.
- *  States the requirement and the current week; never "log more" (G8) — a description
- *  of where the math stands, not a nudge. `weeksNeeded` drives both this copy and the
- *  gate (§4.4) so the stated need can't drift from the enforced one; the mock renders 2. */
-export function watchingChangeRow(currentWeek: number, weeksNeeded: number): string {
-  return `Change, week to week — needs ${weeksNeeded} full weeks of logging to compare. This is week ${currentWeek}.`;
-}
+// ── The gap warning (B-755 / CUL-14, §4.4 / G8; the watching list's one survivor) ────
+// The watching system's timing and change rows retired with the quiet line (CUL-1838):
+// "N of the 6 episodes a pattern needs" and "This is week N" were progress toward a
+// Signal, which round 7 stopped promising. The gap lane survives because it is not
+// progress, it is a concerning fact about the record, and it now takes the whole card.
 
 /** Gap lane (escalate-only, G5) — the recent inter-episode gaps for a symptom, stated
  *  plainly ("6 days, then 3, then 2"). A TRUE fact about the record: a descriptive count

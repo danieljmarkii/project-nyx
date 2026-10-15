@@ -10,7 +10,8 @@ import { ThemedText } from '../../ui/ThemedText';
 // ended with it, so a sick day read it three times in a row; the sentences now live on each
 // finding's screen (where the server's own line still carries it), and Home states it here.
 // It renders only when the zone is showing findings: an empty state reads no logs as a
-// finding, so there is nothing for the line to qualify.
+// finding, so there is nothing for the line to qualify. The quiet states take round 7's
+// foot instead (CUL-1838): the vet's call signs and the vet report.
 //
 // "All patterns ›" is the zone's door to Patterns, in the place the pre-redesign footer's
 // "See all of {pet}'s patterns →" held (retired with it at Design v2's GA, CUL-1071).
@@ -31,14 +32,67 @@ export const FOOT_LINK_HITSLOP = { top: 0, left: 8, right: 8, bottom: 8 } as con
 export const FOOT_MARGIN_TOP = theme.space1;
 export const FOOT_LINK_MIN_HEIGHT = 36;
 
-export function SignalZoneFoot({ petName, showDisclaimer }: { petName: string; showDisclaimer: boolean }) {
+/** The quiet foot's two doors sit at the row's two ends (round 7 of the Signal mock); C-5
+ *  needs their facing reach apart: 8 + 8. */
+export const QUIET_FOOT_GAP = FOOT_LINK_HITSLOP.right + FOOT_LINK_HITSLOP.left;
+
+/** The vet door, resolved by the zone: its words (`signalDoorLabel`) and what it opens. */
+export interface SignalVetDoor {
+  label: string;
+  onPress: () => void;
+}
+
+/**
+ * `live` — a finding is drawn: "not a diagnosis" and the door to Patterns (CUL-1270).
+ * `quiet` — the quiet line or the gap warning (CUL-1838): "When to call the vet ›" always
+ * (absent only for a species the sheet has no signs for), and "Vet report ›" once anything
+ * is logged. Patterns' door is not here: a quiet record has no pattern to open, and round 7
+ * draws neither it nor the disclaimer (PM, 2026-10-15).
+ */
+export function SignalZoneFoot(
+  props:
+    | { mode: 'live'; petName: string }
+    | { mode: 'quiet'; petName: string; vetDoor: SignalVetDoor | null; onReport: (() => void) | null },
+) {
+  if (props.mode === 'quiet') {
+    const { vetDoor, onReport, petName } = props;
+    if (!vetDoor && !onReport) return null;
+    return (
+      <View style={[styles.foot, styles.quietFoot]} testID="signal-zone-foot">
+        {vetDoor ? (
+          <Pressable
+            onPress={vetDoor.onPress}
+            hitSlop={FOOT_LINK_HITSLOP}
+            accessibilityRole="button"
+            // The visible words without the chevron glyph, which a screen reader would spell.
+            accessibilityLabel={vetDoor.label.replace(/\s*›$/, '')}
+            style={styles.link}
+            testID="signal-zone-vet-door"
+          >
+            <ThemedText style={styles.linkText}>{vetDoor.label}</ThemedText>
+          </Pressable>
+        ) : null}
+        {onReport ? (
+          <Pressable
+            onPress={onReport}
+            hitSlop={FOOT_LINK_HITSLOP}
+            accessibilityRole="button"
+            accessibilityLabel={`${petName}'s vet report`}
+            style={[styles.link, styles.reportLink]}
+            testID="signal-zone-report"
+          >
+            <ThemedText style={styles.linkText}>Vet report ›</ThemedText>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
+  const { petName } = props;
   return (
-    <View style={showDisclaimer ? styles.foot : [styles.foot, styles.footLinkOnly]} testID="signal-zone-foot">
-      {showDisclaimer ? (
-        <ThemedText style={styles.disclaimer} testID="signal-zone-disclaimer">
-          {notADiagnosisLine(petName)}
-        </ThemedText>
-      ) : null}
+    <View style={styles.foot} testID="signal-zone-foot">
+      <ThemedText style={styles.disclaimer} testID="signal-zone-disclaimer">
+        {notADiagnosisLine(petName)}
+      </ThemedText>
       <Pressable
         onPress={() => router.push('/insights')}
         hitSlop={FOOT_LINK_HITSLOP}
@@ -61,8 +115,16 @@ const styles = StyleSheet.create({
     columnGap: theme.space2,
     marginTop: FOOT_MARGIN_TOP,
   },
-  footLinkOnly: {
-    justifyContent: 'flex-end',
+  // Round 7's foot: a hairline, then the vet door at the start and the report at the end.
+  quietFoot: {
+    columnGap: QUIET_FOOT_GAP,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colorBorder,
+    paddingTop: theme.space1,
+    marginTop: theme.space2,
+  },
+  reportLink: {
+    marginLeft: 'auto',
   },
   disclaimer: {
     flex: 1,

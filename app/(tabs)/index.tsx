@@ -272,6 +272,7 @@ export default function HomeScreen() {
             <SignalZone
               withholdFallingVomit={withholdFallingVomit}
               signalTrial={signalTrial}
+              trialNotEating={trialNotEating}
             />
           </RowSpeechContext.Provider>
           {/* Engines v3 PR-36 (CUL-1419) — "What did the vet say?" once a call's question
