@@ -5,13 +5,15 @@
 // FOUR safety properties, all load-bearing (R-2 / R-7 / R-13b), all asserted by
 // scripts/demo/demoStory.test.ts:
 //
-//   1. UPSERT-ONLY — every write is `INSERT … ON CONFLICT (id) DO UPDATE`, keyed
-//      on deterministic uuidV5 ids. There is NO bare DELETE and NO bare UPDATE in
-//      the output, so a re-seed LWW-updates the SAME rows in place (no ghost
-//      timeline, no orphaned Storage objects, no second locally-active trial) and
-//      the destructive service-role DELETE that made the v2 design a blocker is
-//      gone. This is the strongest form of the §8 scoping ban: not "every mutation
-//      names both scopes" but "there is no unscoped mutation to name".
+//   1. UPSERT, PLUS TWO EXACT-ID RETIREMENTS — every write is `INSERT … ON CONFLICT
+//      (id) DO UPDATE`, keyed on deterministic uuidV5 ids, so a re-seed LWW-updates
+//      the SAME rows in place (no ghost timeline, no second locally-active trial).
+//      There is no bare UPDATE. The only DELETEs are the D13 (a) retirement of the
+//      2026-08 photo slot (CUL-1848): one event_attachments row and the
+//      event_ai_analysis row on that one seeded vomit, each named by its exact
+//      deterministic id AND the demo pet AND a subquery pinning that pet to the demo
+//      user (C-27), the §8 scoping ban's "every mutation names both scopes". After
+//      the first run they match nothing.
 //
 //   2. TRANSACTION + ASSERTION PRELUDE — the whole seed runs inside one
 //      transaction, and a `DO` prelude runs BEFORE any write. It refuses to
@@ -259,6 +261,7 @@ function trialUpserts(story: DemoStory): string[] {
       'target_protein',
       'target_protein_set_at',
       'ended_at',
+      'vet_visit_id',
     ],
     [
       uuidLit(t.id),
@@ -276,6 +279,7 @@ function trialUpserts(story: DemoStory): string[] {
       // trial-start instant so TP-3 provenance reads "confirmed day 1".
       instantSql({ dayOffset: t.targetProteinSetDayOffset, hour: 12, minute: 0 }),
       'NULL',
+      uuidLit(t.vetVisitId),
     ],
     [
       'pet_id',
@@ -290,6 +294,7 @@ function trialUpserts(story: DemoStory): string[] {
       'target_protein',
       'target_protein_set_at',
       'ended_at',
+      'vet_visit_id',
       'updated_at',
     ],
   );
@@ -353,29 +358,95 @@ function eventUpserts(story: DemoStory): string[] {
         ),
       );
     }
-    if (e.photo) {
-      // Tier-2 photo METADATA only (stable id + path). The benign image BYTES and
-      // the analyze-vomit read land LIVE, in-app, at runbook step 3 (§9, R-9) — the
-      // seed never uploads bytes and never writes event_ai_analysis (§5). The stable
-      // id + path are what make the live-added read survive every re-seed (R-7).
-      out.push(
-        upsert(
-          'event_attachments',
-          ['id', 'event_id', 'pet_id', 'storage_path', 'mime_type', 'sort_order'],
-          [
-            uuidLit(e.photo.attachmentId),
-            uuidLit(e.eventId),
-            p,
-            lit(e.photo.storagePath),
-            lit(e.photo.mimeType),
-            '0',
-          ],
-          ['event_id', 'pet_id', 'storage_path', 'mime_type', 'sort_order'],
-        ),
-      );
-    }
   }
   return out;
+}
+
+/**
+ * The scope every retirement DELETE carries: the demo pet, pinned to the demo user
+ * by a subquery (C-27: a subject named by id PAIRED WITH ITS OWNER). The prelude has
+ * already refused any user but the demo account, so this is the second lock.
+ */
+function ownedPetScope(story: DemoStory): string {
+  const p = uuidLit(story.petId);
+  return `pet_id = ${p} AND pet_id IN (SELECT id FROM pets WHERE id = ${p} AND user_id = ${uuidLit(story.userId)})`;
+}
+
+/**
+ * D13 (a) (PM 2026-10-12, CUL-1848): the demo account carries no photo and no AI
+ * read. The 2026-08 run left a photo row pointing at an object that was never
+ * uploaded, and an analyze-vomit call on that vomit left one read. Both go, by exact
+ * id; neither table has a soft-delete column. On every later run these match nothing.
+ * Hydration is insert-if-absent for attachments, so a device that already synced the
+ * row keeps it until sign-out (the §12.3 step 5 note); the reviewer's device is fresh.
+ */
+function retirePhotoSlot(story: DemoStory): string[] {
+  const scope = ownedPetScope(story);
+  return [
+    `DELETE FROM event_ai_analysis
+WHERE event_id = ${uuidLit(story.retired.eventId)} AND ${scope};`,
+    `DELETE FROM event_attachments
+WHERE id = ${uuidLit(story.retired.attachmentId)}
+  AND event_id = ${uuidLit(story.retired.eventId)} AND ${scope};`,
+  ];
+}
+
+function visitUpserts(story: DemoStory): string[] {
+  const p = uuidLit(story.petId);
+  const v = story.visit;
+  const a = story.appointment;
+  const visitRow = upsert(
+    'vet_visits',
+    ['id', 'pet_id', 'visited_at', 'clinic_name', 'vet_name', 'reason', 'notes', 'next_visit_at', 'deleted_at'],
+    [
+      uuidLit(v.id),
+      p,
+      dateSql(v.visitedDayOffset),
+      lit(v.clinicName),
+      lit(v.vetName),
+      lit(v.reason),
+      lit(v.notes),
+      dateSql(v.nextVisitDayOffset),
+      'NULL',
+    ],
+    // pet_id is never in the update set: 067 makes a visit's pet immutable, and the
+    // conflict row is this pet's by its deterministic id.
+    ['visited_at', 'clinic_name', 'vet_name', 'reason', 'notes', 'next_visit_at', 'deleted_at', 'updated_at'],
+  );
+  const appointmentRow = upsert(
+    'vet_appointments',
+    [
+      'id',
+      'pet_id',
+      'scheduled_at',
+      'clinic_name',
+      'vet_name',
+      'reason',
+      'questions',
+      'notes_draft',
+      'vet_visit_id',
+      'cancelled_at',
+      'deleted_at',
+    ],
+    [
+      uuidLit(a.id),
+      p,
+      instantSql(a.scheduled),
+      lit(a.clinicName),
+      lit(a.vetName),
+      lit(a.reason),
+      'NULL',
+      'NULL',
+      'NULL',
+      'NULL',
+      'NULL',
+    ],
+    // A re-seed moves the booking forward with now() and revives it if the reviewer
+    // cancelled or deleted it; questions and notes_draft are the reviewer's to type
+    // and are left as they are.
+    ['scheduled_at', 'clinic_name', 'vet_name', 'reason', 'vet_visit_id', 'cancelled_at', 'deleted_at', 'updated_at'],
+  );
+  return [visitRow, appointmentRow];
 }
 
 function eventRow(e: DemoEvent, petIdLit: string): string {
@@ -421,6 +492,9 @@ function countsReadback(story: DemoStory): string {
     `UNION ALL SELECT 'meals', count(*) FROM meals WHERE pet_id = ${p}\n` +
     `UNION ALL SELECT 'weight_checks', count(*) FROM weight_checks WHERE pet_id = ${p}\n` +
     `UNION ALL SELECT 'event_attachments', count(*) FROM event_attachments WHERE pet_id = ${p}\n` +
+    `UNION ALL SELECT 'event_ai_analysis', count(*) FROM event_ai_analysis WHERE pet_id = ${p}\n` +
+    `UNION ALL SELECT 'vet_visits', count(*) FROM vet_visits WHERE pet_id = ${p} AND deleted_at IS NULL\n` +
+    `UNION ALL SELECT 'vet_appointments', count(*) FROM vet_appointments WHERE pet_id = ${p} AND deleted_at IS NULL\n` +
     `ORDER BY entity;`
   );
 }
@@ -434,7 +508,7 @@ export function emitSeedSql(story: DemoStory, options: EmitOptions = {}): string
     `-- Culprit App Review demo seed — "${story.pet.name}" (B-271, PR 1).\n` +
     `-- GENERATED by scripts/demo/emitSeedSql.ts from scripts/demo/demoStory.ts.\n` +
     `-- Run via the Supabase MCP execute_sql (SERVICE ROLE) at runbook step 2.\n` +
-    `-- NOT a migration. Upsert-only + assertion-prelude + transaction (§8).\n` +
+    `-- NOT a migration. Upserts + two exact-id retirements + assertion prelude + transaction (§8).\n` +
     `-- ${options.dryRun ? 'DRY RUN — reads counts back, then ROLLBACKs (nothing persists).' : 'LIVE — COMMITs.'}\n`;
 
   const body: string[] = [
@@ -449,7 +523,11 @@ export function emitSeedSql(story: DemoStory, options: EmitOptions = {}): string
       [uuidLit(story.userId), lit(story.timezone)],
       ['timezone', 'updated_at'],
     ),
+    ...retirePhotoSlot(story),
     ...foodUpserts(story),
+    // The visit before the trial: the trial's vet_visit_id names it, and 066's
+    // same-pet guard looks the visit up when the link is written.
+    ...visitUpserts(story),
     ...trialUpserts(story),
     ...eventUpserts(story),
   ];

@@ -190,9 +190,41 @@ describe('demo story — off-diet facts (lib/dietTrial)', () => {
 describe('demo story — emitted SQL safety guarantees', () => {
   const sql = emitSeedSqlForParams(PARAMS);
 
-  it('is upsert-only: no bare DELETE and no bare UPDATE (§8 scoping ban, §13)', () => {
+  it('deletes only the two retired photo-slot rows, each by exact id + demo pet + owner (§8 scoping ban, C-27)', () => {
     // `deleted_at`/`updated_at` are not word-boundary matches for DELETE/UPDATE.
-    expect(sql).not.toMatch(/\bDELETE\s+FROM\b/i);
+    const deletes = sql.split(/;\n/).filter((stmt) => /\bDELETE\s+FROM\b/i.test(stmt));
+    expect(deletes).toHaveLength(2);
+    const ownerScope =
+      `pet_id = '${PARAMS.petId}'::uuid AND pet_id IN (SELECT id FROM pets ` +
+      `WHERE id = '${PARAMS.petId}'::uuid AND user_id = '${PARAMS.userId}'::uuid)`;
+    for (const stmt of deletes) expect(stmt).toContain(ownerScope);
+    const [readDelete, attachmentDelete] = deletes;
+    expect(readDelete).toMatch(/DELETE FROM event_ai_analysis\nWHERE event_id = /);
+    expect(readDelete).toContain(story.retired.eventId);
+    expect(attachmentDelete).toMatch(/DELETE FROM event_attachments\nWHERE id = /);
+    expect(attachmentDelete).toContain(story.retired.attachmentId);
+    expect(attachmentDelete).toContain(story.retired.eventId);
+    // Both run after the prelude and before the story's rows, inside the transaction.
+    const prelude = sql.indexOf('$do$;');
+    const firstInsert = sql.indexOf('INSERT INTO food_items');
+    expect(sql.indexOf('DELETE FROM event_ai_analysis')).toBeGreaterThan(prelude);
+    expect(sql.indexOf('DELETE FROM event_attachments')).toBeLessThan(firstInsert);
+  });
+
+  it('retires the exact ids the 2026-08 story wrote (golden: attachment:vomit-d-3)', () => {
+    expect(story.retired.attachmentId).toBe('6e2b21dc-84d5-5b61-ab56-fbf7a36dd071');
+    expect(story.retired.eventId).toBe(uuidV5('event:vomit-d-3', PARAMS.petId));
+    expect(story.events.some((e) => e.eventId === story.retired.eventId && e.kind === 'vomit')).toBe(true);
+  });
+
+  it('seeds no photo and no AI read (D13 (a))', () => {
+    expect(sql).not.toMatch(/INSERT INTO event_attachments/);
+    expect(sql).not.toMatch(/INSERT INTO event_ai_analysis/);
+    expect(sql).not.toMatch(/ai_consent/);
+    expect(sql).not.toMatch(/\.jpg/);
+  });
+
+  it('has no bare UPDATE: every UPDATE is an upsert', () => {
     const updates = sql.match(/\bUPDATE\b/gi) ?? [];
     const doUpdates = sql.match(/\bDO UPDATE\b/gi) ?? [];
     // Every UPDATE keyword is part of an `ON CONFLICT … DO UPDATE` upsert — there is
@@ -261,6 +293,43 @@ describe('demo story — emitted SQL safety guarantees', () => {
     expect(dry.trimEnd().endsWith('ROLLBACK;')).toBe(true);
     expect(dry).not.toContain('\nCOMMIT;');
     expect(dry).toMatch(/count\(\*\)/);
+  });
+});
+
+describe('demo story — the logged visit and the booked recheck (CUL-1848)', () => {
+  const sql = emitSeedSqlForParams(PARAMS);
+  const { visit, appointment, trial } = story;
+
+  it('logs the visit before the transition and every seeded event, so the report window keeps the whole record', () => {
+    expect(visit.visitedDayOffset).toBeLessThan(trial.transitionStartedDayOffset);
+    for (const e of story.events) expect(visit.visitedDayOffset).toBeLessThan(e.time.dayOffset);
+  });
+
+  it('books the recheck inside Home\'s five-day window, still upcoming after a 48h-late re-seed read', () => {
+    const now = SEED_MS;
+    const at = Date.parse(materializeInstantIso(appointment.scheduled, now));
+    expect(at).toBeGreaterThan(now + 2 * DAY_MS);
+    expect(at).toBeLessThan(now + 5 * DAY_MS);
+    expect(visit.nextVisitDayOffset).toBe(appointment.scheduled.dayOffset);
+  });
+
+  it('links the trial to the visit and writes the visit first', () => {
+    expect(trial.vetVisitId).toBe(visit.id);
+    const visitAt = sql.indexOf('INSERT INTO vet_visits');
+    const trialAt = sql.indexOf('INSERT INTO diet_trials');
+    expect(visitAt).toBeGreaterThan(-1);
+    expect(visitAt).toBeLessThan(trialAt);
+    expect(sql).toContain('INSERT INTO vet_appointments');
+  });
+
+  it('never moves a visit to another pet (067: pet_id stays out of the update set)', () => {
+    const visitStmt = sql.slice(sql.indexOf('INSERT INTO vet_visits'));
+    const set = visitStmt.slice(visitStmt.indexOf('DO UPDATE SET'), visitStmt.indexOf(';'));
+    expect(set).not.toMatch(/\bpet_id\b/);
+  });
+
+  it('keeps the visit note a plan, never an exam verdict', () => {
+    expect(visit.notes).not.toMatch(/normal|healthy|fine|well\b|unremarkable/i);
   });
 });
 
