@@ -57,6 +57,29 @@ describe('useGapWarning', () => {
     warn.mockRestore();
   });
 
+  // CUL-1947 — a local write re-reads with no regen behind it: a log from Home's root log
+  // sheet leaves Home focused (no focus re-run), and a failed regen bumps no signalTick.
+  it('a local record write re-reads the gap warning with no signalTick', async () => {
+    mockGet.mockResolvedValueOnce(null);
+    const { result } = renderHook(() => useGapWarning(true));
+    await waitFor(() => expect(result.current.answered).toBe(true));
+    expect(result.current.text).toBeNull();
+    act(() => useSyncStore.getState().bumpRecordTick());
+    await waitFor(() => expect(result.current.text).toBe(SENTENCE));
+    expect(mockGet).toHaveBeenCalledTimes(2);
+  });
+
+  // A restore (or a time edit) that lands from the server or another device arrives only
+  // through sync; there is no local restore of an event to bump the record tick.
+  it('a completed sync re-reads the gap warning (a restore lands through hydration)', async () => {
+    mockGet.mockResolvedValueOnce(null);
+    const { result } = renderHook(() => useGapWarning(true));
+    await waitFor(() => expect(result.current.answered).toBe(true));
+    act(() => useSyncStore.getState().bumpHydrationTick());
+    await waitFor(() => expect(result.current.text).toBe(SENTENCE));
+    expect(mockGet).toHaveBeenCalledTimes(2);
+  });
+
   it('Try again re-reads, and a success clears the failure', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockGet.mockRejectedValueOnce(new Error('db closed'));

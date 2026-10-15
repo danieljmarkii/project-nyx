@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme, shadows } from '../../constants/theme';
 import { useMomentStore, completionTone, isNamedDimUp } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
+import { useSyncStore } from '../../store/syncStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
@@ -238,6 +239,10 @@ export function NamedCompletionCard() {
         // claim, so a time correction can never promote a row to "seen".
         ...(edit.confidence ? { confidence: edit.confidence } : {}),
       }));
+      // CUL-1947 — a moved time moves the vomit gaps, and this path schedules no regen, so
+      // Home's gap warning (read from local rows, with Home still focused under the card)
+      // re-reads on the local write itself. A peek-and-save moved nothing.
+      if (changed) useSyncStore.getState().bumpRecordTick();
       patchInToday(payload.eventId, {
         occurred_at: edit.occurredAtIso,
         ...(edit.confidence
