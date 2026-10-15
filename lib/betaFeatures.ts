@@ -41,8 +41,8 @@ import {
 //                  a decision, it never silently pulls the feature.
 //   • serverCost — true ⇒ the beta spends a server resource, so D6 / §4.2 REQUIRES
 //                  a server-side gate too (the client-only gate does NOT generalise
-//                  to a server feature). The widget, while it was a beta, published
-//                  from the owner's own local data, so it was false. betaFeatures.test.ts asserts every
+//                  to a server feature). The widget, while a beta, published from
+//                  the owner's own local data, so it was false. The test asserts every
 //                  serverCost:true entry has a matching server gate — the rule is
 //                  grep-able, so beta #2 can't forget it.
 export interface BetaFeature {
@@ -111,8 +111,8 @@ export function deriveBetaShelf(
 // ── The opt-in store (Gate 2 / D4) ────────────────────────────────────────────
 // A local, per-device preference, default OFF, one boolean per beta key. Local-
 // per-device is deliberate and MORE correct than a synced pref, not a shortcut: the
-// first beta, the home-screen widget, was an inherently per-device object, so its
-// opt-in belonged to the device (spec §4.3.2 — and mirroring it server-side would re-introduce exactly
+// first beta, the home-screen widget, was a per-device object, so its opt-in
+// belonged to the device (spec §4.3.2 — and mirroring it server-side would re-introduce exactly
 // the health-data-adjacent consent boundary the measurement plan avoids).
 //
 // Persistence: write-through to AsyncStorage so the choice survives a relaunch;
