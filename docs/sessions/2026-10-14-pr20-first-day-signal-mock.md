@@ -60,3 +60,13 @@ The PM asked to keep thinking divergently, so round 4 draws five directions side
 Every direction holds the same floor: the vet signs in every state, silence never drawn as calm, no streaks and no Signal promise, and the gap warning on top.
 
 A finding: Home's Today card already lists today's logs, so a Signal card that repeats the day's log duplicates it. The team leans to A with C's vet-visit row. The Data Scientist leans C, and Dr. Chen objects to D's "usual" until it is clinically defined. Round 3.2's frames are at `80fd1cc`.
+
+## Round 5: the Signal earns its place
+
+The PM's read on round 4 was that the Signal was becoming History until there's enough data. The team agrees: Home already has the record, in the daily look and the Today card, and the app has History.
+
+Round 5 draws the whole Home at four moments. Until there is a real signal, the Signal is one line, with the way to the vet signs:
+- "Nothing to show yet" while the record is young, or holds only looks.
+- "Nothing logged since {day}" once it has gone quiet.
+
+The card takes its full size when it has something true to say; the gaps warning is the earliest that can happen. The research's payoffs stay where they belong: the read-back in Today and on each log's own screen, the record in Today and History. Retired: the ghost receipts, the watching-for list, the "This is week 1" row, "We're getting to know {pet}", the stale paragraph and the old floor line. Round 4 is at `5c214d8`.
