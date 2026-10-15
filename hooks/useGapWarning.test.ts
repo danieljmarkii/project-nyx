@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react-native';
+import { act, renderHook, waitFor } from '@testing-library/react-native';
 import { useGapWarning } from './useGapWarning';
 import { usePetStore } from '../store/petStore';
 import { getGapWarning } from '../lib/signalWatching';
@@ -26,7 +26,7 @@ beforeEach(() => {
 describe('useGapWarning', () => {
   it('reads nothing and owes nothing when disabled', () => {
     const { result } = renderHook(() => useGapWarning(false));
-    expect(result.current).toEqual({ text: null, answered: true });
+    expect(result.current).toMatchObject({ text: null, answered: true, failed: false });
     expect(mockGet).not.toHaveBeenCalled();
   });
 
@@ -45,13 +45,37 @@ describe('useGapWarning', () => {
     expect(mockGet).toHaveBeenCalledWith('pet-a', expect.any(Number));
   });
 
-  it('a failed read answers with no warning and says so', async () => {
+  it('a failed read is FAILED, never an answer of no warning (CUL-1943), and says so', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockGet.mockRejectedValueOnce(new Error('db closed'));
     const { result } = renderHook(() => useGapWarning(true));
     await waitFor(() => expect(result.current.answered).toBe(true));
+    expect(result.current.failed).toBe(true);
     expect(result.current.text).toBeNull();
     expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('Try again re-reads, and a success clears the failure', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockGet.mockRejectedValueOnce(new Error('db closed'));
+    const { result } = renderHook(() => useGapWarning(true));
+    await waitFor(() => expect(result.current.failed).toBe(true));
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.text).toBe(SENTENCE));
+    expect(result.current.failed).toBe(false);
+    expect(mockGet).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+
+  it('a re-read that throws keeps the warning already found (it never drops a warning)', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { result } = renderHook(() => useGapWarning(true));
+    await waitFor(() => expect(result.current.text).toBe(SENTENCE));
+    mockGet.mockRejectedValueOnce(new Error('db closed'));
+    act(() => result.current.retry());
+    await waitFor(() => expect(result.current.failed).toBe(true));
+    expect(result.current.text).toBe(SENTENCE);
     warn.mockRestore();
   });
 });

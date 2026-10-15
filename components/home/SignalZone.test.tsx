@@ -384,6 +384,76 @@ describe('SignalZone — the gap warning takes the card', () => {
   });
 });
 
+// ── CUL-1943: an unanswered or failed gap read is never "no warning" ─────────────────
+describe('SignalZone — a gap read that did not answer never draws the quiet line (CUL-1943)', () => {
+  const FAILED = /Couldn't check the gaps between Nyx's vomiting episodes/;
+
+  for (const displayState of ['building', 'stale', 'no_pattern'] as const) {
+    it(`in ${displayState}: a thrown read says so, with Try again, and no quiet line`, async () => {
+      const retry = jest.fn();
+      mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: true, retry });
+      mockUseSignal.mockReturnValue(signalState({ displayState }));
+      const view = render(<SignalZone />);
+      await settle();
+      expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+      expect(view.getByTestId('signal-gap-read-failed')).toBeTruthy();
+      expect(view.getByText(FAILED)).toBeTruthy();
+      fireEvent.press(view.getByTestId('signal-gap-retry'));
+      expect(retry).toHaveBeenCalledTimes(1);
+      // The vet door stays: a check that did not run takes no door away.
+      expect(view.getByTestId('signal-zone-vet-door')).toBeTruthy();
+    });
+
+    it(`in ${displayState}: an unanswered read holds the skeleton, then says the check did not run`, async () => {
+      jest.useFakeTimers();
+      try {
+        mockUseGapWarning.mockReturnValue({ text: null, answered: false, failed: false, retry: jest.fn() });
+        mockUseSignal.mockReturnValue(signalState({ displayState }));
+        const view = render(<SignalZone />);
+        expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+        expect(view.getByTestId('signal-loading-skeleton')).toBeTruthy();
+        act(() => {
+          jest.advanceTimersByTime(1500);
+        });
+        expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+        expect(view.queryByTestId('signal-loading-skeleton')).toBeNull();
+        expect(view.getByTestId('signal-gap-read-failed')).toBeTruthy();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  }
+
+  it('the answer, once in, replaces the held frame (control: the quiet line is reachable)', async () => {
+    mockUseGapWarning.mockReturnValue({ text: null, answered: false, failed: false, retry: jest.fn() });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale' }));
+    const view = render(<SignalZone />);
+    expect(view.queryByTestId('signal-quiet-line')).toBeNull();
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: false, retry: jest.fn() });
+    view.rerender(<SignalZone />);
+    await settle();
+    expect(view.getByTestId('signal-quiet-line')).toBeTruthy();
+    expect(view.queryByTestId('signal-gap-read-failed')).toBeNull();
+  });
+
+  it('a failed read that still holds a sentence draws the warning, not the failure line', async () => {
+    mockUseGapWarning.mockReturnValue({ text: GAP, answered: true, failed: true, retry: jest.fn() });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale' }));
+    const view = render(<SignalZone />);
+    await settle();
+    expect(view.getByText(GAP)).toBeTruthy();
+    expect(view.queryByTestId('signal-gap-read-failed')).toBeNull();
+  });
+
+  it('in live: a failed read draws the failure row under the stack', () => {
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: true, retry: jest.fn() });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [liveFinding] }));
+    const view = render(<SignalZone />);
+    expect(view.getByTestId('signal-gap-read-failed')).toBeTruthy();
+    expect(view.getByTestId('signal-zone-patterns')).toBeTruthy();
+  });
+});
+
 // ── CUL-1937: a warning is never celebrated ─────────────────────────────────────────
 describe('SignalZone — the first gap warning plays no celebration (CUL-1937)', () => {
   beforeEach(() => jest.useFakeTimers());

@@ -689,9 +689,31 @@ export function SignalZone({
   // the server holds a gap finding the client read does not reproduce (its clock is the
   // wall, ours is logged time, so this should not happen), its own template sentence is
   // drawn: an escalate-only fact is never dropped for a disagreement about recency.
-  const { text: gapText, answered: gapAnswered } = useGapWarning(!showSkeleton);
+  const {
+    text: gapText,
+    answered: gapAnswered,
+    failed: gapReadFailed,
+    retry: retryGapRead,
+  } = useGapWarning(!showSkeleton);
   const serverGap = findings.find((f) => (f.finding as { type: string }).type === 'gap_shortening') ?? null;
   const gapSentence = showSkeleton ? null : (gapText ?? serverGap?.text ?? null);
+  // A gap read that has not answered, or that threw, is never "no warning" (CUL-1943, C-12):
+  // the quiet line would assert a check that did not run. Unanswered holds the skeleton,
+  // TIME-BOXED like B-734 (a hung local read must not hold a skeleton forever, and must not
+  // resolve to calm either: past the box it says the check did not run). Failed says so,
+  // with Try again. Any sentence in hand (ours, or the server's) wins over both.
+  const gapPending = !showSkeleton && gapSentence === null && !gapAnswered;
+  const [gapTimedOut, setGapTimedOut] = useState(false);
+  useEffect(() => {
+    if (!gapPending) {
+      setGapTimedOut(false);
+      return;
+    }
+    const t = setTimeout(() => setGapTimedOut(true), SIGNAL_LOAD_SKELETON_MS);
+    return () => clearTimeout(t);
+  }, [gapPending, petId]);
+  const gapUnread = !showSkeleton && gapSentence === null && (gapReadFailed || (gapPending && gapTimedOut));
+  const gapHeld = gapPending && !gapUnread;
   const gapTakesCard = state !== 'live' && gapSentence !== null;
   // The vet door shows whenever the card draws no finding — the quiet states, and a `live`
   // set this build cannot title (an untitled safety finding, which holds `live` above). Keyed
@@ -796,7 +818,9 @@ export function SignalZone({
   const [warningEnter, setWarningEnter] = useState(0);
   const rowSpeech = useRowSpeech();
   useLayoutEffect(() => {
-    if (!gapAnswered || showSkeleton) return;
+    // A failed read observes nothing: it must not stand as "answered with no warning", or a
+    // warning a retry then finds would play its arrival over a quiet line never shown.
+    if (!gapAnswered || gapReadFailed || showSkeleton) return;
     const prev = prevGap.current;
     prevGap.current = { petId, shown: gapShown };
     if (prev.petId !== petId || prev.shown !== false || !gapShown) return;
@@ -804,13 +828,13 @@ export function SignalZone({
     // Said, not only drawn: a warning that arrives while Home is in front is spoken once,
     // queued behind what VoiceOver is reading — the safety arrival's own channel (GAP-13).
     if (gapSentence !== null && rowSpeech.mayAnnounce()) announceQueued(gapSentence);
-  }, [petId, gapAnswered, gapShown, gapTakesCard, gapSentence, showSkeleton, rowSpeech]);
+  }, [petId, gapAnswered, gapReadFailed, gapShown, gapTakesCard, gapSentence, showSkeleton, rowSpeech]);
 
   // The outgoing frame for the arrival's crossfade, captured DURING render (by the time an
   // effect could run, the state has already flipped to live). Cleared on a pet switch.
   const lastBuilding = useRef<{ petId: string | null; el: ReactNode }>({ petId: null, el: null });
   const buildingFrame =
-    state === 'building' && !showSkeleton && !gapTakesCard ? <QuietLine petName={petName} state="building" /> : null;
+    state === 'building' && !showSkeleton && !gapTakesCard && !gapHeld && !gapUnread ? <QuietLine petName={petName} state="building" /> : null;
   if (lastBuilding.current.petId !== petId) {
     lastBuilding.current = { petId, el: buildingFrame };
   } else if (buildingFrame) {
@@ -856,11 +880,20 @@ export function SignalZone({
               <Divider style={styles.rowDivider} />
               <GapWarning text={gapSentence} enterKey={0} />
             </>
+          ) : gapUnread ? (
+            <>
+              <Divider style={styles.rowDivider} />
+              <GapReadFailed petName={petName} onRetry={retryGapRead} />
+            </>
           ) : null}
         </>
       ) : showSkeleton ? (
         // B-734: the loading frame is a time-boxed skeleton, never a quiet line.
         <SignalLoadingSkeleton />
+      ) : gapHeld ? (
+        <SignalLoadingSkeleton />
+      ) : gapUnread ? (
+        <GapReadFailed petName={petName} onRetry={retryGapRead} />
       ) : gapTakesCard && gapSentence !== null ? (
         <GapWarning
           text={gapSentence}
@@ -1157,6 +1190,37 @@ function GapWarning({ text, enterKey, outgoing = null }: { text: string; enterKe
   );
 }
 
+// CUL-1943: the gap read did not answer. Said plainly, in the quiet row's anatomy on the
+// neutral rail, with a way to run it again (C-12). Never the quiet line: "No pattern right
+// now" over a check that did not run would claim a calm the record has not shown.
+function GapReadFailed({ petName, onRetry }: { petName: string; onRetry: () => void }) {
+  const header = gapReadFailedCopy(petName);
+  return (
+    <View style={styles.quietRow} testID="signal-gap-read-failed">
+      <View style={[styles.quietRail, styles.quietRailNeutral]} />
+      <View style={styles.quietBody}>
+        <ThemedText style={styles.quietSub} accessibilityRole="text">
+          {header}
+        </ThemedText>
+        <Pressable
+          onPress={onRetry}
+          accessibilityRole="button"
+          hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+          style={styles.gapRetry}
+          testID="signal-gap-retry"
+        >
+          <ThemedText style={styles.gapRetryText}>{GAP_READ_RETRY}</ThemedText>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const GAP_READ_RETRY = 'Try again';
+function gapReadFailedCopy(petName: string): string {
+  return `Couldn't check the gaps between ${petName}'s vomiting episodes just now. This doesn't mean nothing's changed.`;
+}
+
 // B-734 (CUL-72): the flag-on loading frame — content-shaped Tier-1 skeleton for the
 // beat while the local cache read resolves. Never the heavy E1 (whose "getting to know
 // {pet} / Day N" headline is wrong over a mature pet whose findings are about to land),
@@ -1298,6 +1362,16 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightBody + 2,
     letterSpacing: theme.trackingTight,
     color: theme.colorTextPrimary,
+  },
+  // CUL-1943 — the unanswered gap read's retry, the quiet sub's size in the accent ink.
+  gapRetry: {
+    alignSelf: 'flex-start',
+    marginTop: theme.space1,
+  },
+  gapRetryText: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorAccentInk,
   },
   // B-734 — the flag-on loading frame's content-shaped placeholder rhythm.
   skeleton: {

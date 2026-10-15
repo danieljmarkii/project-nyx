@@ -22,7 +22,7 @@ jest.mock('../../lib/signalLead', () => ({
 }));
 const mockUseSignal = jest.fn();
 jest.mock('../../hooks/useSignal', () => ({ useSignal: () => mockUseSignal() }));
-jest.mock('../../hooks/useGapWarning', () => ({ useGapWarning: () => ({ text: null, answered: true }) }));
+jest.mock('../../hooks/useGapWarning', () => ({ useGapWarning: () => ({ text: null, answered: true, failed: false, retry: () => {} }) }));
 jest.mock('../../lib/emergencyDoorRead', () => ({ loadEmergencyRead: async () => ({ status: 'failed' }) }));
 jest.mock('../../hooks/useFloorOn', () => ({ useFloorOn: () => false }));
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
