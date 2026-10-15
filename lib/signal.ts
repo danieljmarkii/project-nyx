@@ -1023,6 +1023,10 @@ export function triggerSignalRegenDebounced(petId: string, delayMs = REGEN_DEBOU
   const generation = (regenGeneration.get(petId) ?? 0) + 1;
   regenGeneration.set(petId, generation);
   useSyncStore.getState().setSignalAcknowledging(petId, true);
+  // CUL-1947 — every caller schedules this after its local write has landed, so the
+  // phone's own reads (the gap warning) re-run NOW, not on the regen's success: a regen
+  // that fails or never fires (offline) must not leave the calm line standing.
+  useSyncStore.getState().bumpRecordTick();
 
   ackCeilingTimers.set(
     petId,

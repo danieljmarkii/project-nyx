@@ -383,6 +383,36 @@ describe('MedicationCompletionCard — Change time', () => {
     expect(fields.occurred_at).toBe('2026-06-07T14:00:00.000Z');
   });
 
+  // CUL-1947 — a moved time moves a cut on the gap warning's logged clock, and this
+  // card schedules no regen, so Home's gap read re-runs on the local record tick alone,
+  // after the write. A peek-and-save moved nothing and owes no re-read.
+  it('a moved time bumps the record tick, after the write; a peek-and-save does not', async () => {
+    const { useSyncStore } = require('../../store/syncStore');
+    useSyncStore.setState({ recordTick: 0 });
+    seedDose();
+    const peek = render(<MedicationCompletionCard />);
+    openPicker(peek);
+    await act(async () => { fireEvent.press(peek.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+    expect(useSyncStore.getState().recordTick).toBe(0);
+    peek.unmount();
+
+    let tickAtWrite = -1;
+    (updateEvent as jest.Mock).mockImplementationOnce(async () => {
+      tickAtWrite = useSyncStore.getState().recordTick;
+    });
+    seedDose();
+    const view = render(<MedicationCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(2);
+    expect(tickAtWrite).toBe(0);
+    expect(useSyncStore.getState().recordTick).toBe(1);
+  });
+
   it('Cancel writes nothing and leaves the card standing', async () => {
     seedDose();
     const view = render(<MedicationCompletionCard />);

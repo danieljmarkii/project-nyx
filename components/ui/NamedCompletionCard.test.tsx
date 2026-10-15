@@ -497,6 +497,58 @@ describe('NamedCompletionCard — Change time', () => {
     expect(fields.occurred_at_source).toBe('manual');
   });
 
+  // CUL-1947 — this card's time edit schedules no Signal regen, and Home stays focused
+  // under it, so the moved vomit re-reads Home's gap warning through the local record
+  // tick alone. A peek-and-save moved no gap and owes no re-read.
+  it('a moved time bumps the record tick, after the write; a peek-and-save does not', async () => {
+    const { useSyncStore } = require('../../store/syncStore');
+    useSyncStore.setState({ recordTick: 0 });
+    let tickAtWrite = -1;
+    (updateEvent as jest.Mock).mockImplementationOnce(async () => {
+      tickAtWrite = useSyncStore.getState().recordTick;
+    });
+    const peek = render(<NamedCompletionCard />);
+    seed();
+    fireEvent.press(peek.getByLabelText('Change time of this log'));
+    await act(async () => { fireEvent.press(peek.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+    expect(useSyncStore.getState().recordTick).toBe(0);
+    peek.unmount();
+
+    const view = render(<NamedCompletionCard />);
+    seed();
+    fireEvent.press(view.getByLabelText('Change time of this log'));
+    const moved = new Date(2026, 5, 7, 16, 5);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, moved);
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect((updateEvent as jest.Mock).mock.calls[1][1].occurred_at).toBe(moved.toISOString());
+    expect(tickAtWrite).toBe(0);
+    expect(useSyncStore.getState().recordTick).toBe(1);
+  });
+
+  // Adversarial pass 2: the write can land and its floor marker then throw. The re-read
+  // still runs, so a moved vomit never waits for the next focus behind the error.
+  it('a moved time whose save throws still bumps the record tick', async () => {
+    const { useSyncStore } = require('../../store/syncStore');
+    useSyncStore.setState({ recordTick: 0 });
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const alert = jest.spyOn(require('react-native').Alert, 'alert').mockImplementation(() => {});
+    (updateEvent as jest.Mock).mockRejectedValueOnce(new Error('marker insert failed'));
+    const view = render(<NamedCompletionCard />);
+    seed();
+    fireEvent.press(view.getByLabelText('Change time of this log'));
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 16, 5));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(alert).toHaveBeenCalled();
+    expect(useSyncStore.getState().recordTick).toBe(1);
+    err.mockRestore();
+    alert.mockRestore();
+  });
+
   // The /log flow writes an owner-typed note on both of this card's paths, and
   // updateEvent used to write `notes` unconditionally — so a Change time tap
   // would have silently deleted what the owner typed thirty seconds earlier.

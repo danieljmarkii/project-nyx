@@ -16,6 +16,7 @@ import {
   removedNoticeCopy, HITSLOP_ACTION_LEFT, HITSLOP_ACTION_RIGHT,
 } from '../../lib/completionCard';
 import { useEventStore } from '../../store/eventStore';
+import { useSyncStore } from '../../store/syncStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { updateEvent, getEventSource } from '../../lib/db';
 import { writeOwingFloorCheck } from '../../lib/incidentFloorQueue';
@@ -389,6 +390,8 @@ export function MealCompletionCard() {
     // opened it for. The card stands, now about the new record; Change time
     // remains one tap away.
     if (pickerFor !== payload.eventId) { setPickerFor(null); return; }
+    // Hoisted so the finally below sees it (CUL-1947, adversarial pass 2).
+    let changed = false;
     setSaving(true);
     try {
       const iso = next.toISOString();
@@ -420,7 +423,7 @@ export function MealCompletionCard() {
       // it was seeded with on a peek, and comparing instants cannot be fooled by a
       // payload whose string is a non-canonical spelling of the same moment. This
       // is the idiom the four surfaces above already use.
-      const changed = next.getTime() !== new Date(payload.occurredAt).getTime();
+      changed = next.getTime() !== new Date(payload.occurredAt).getTime();
       const source = sourceAfterPointEdit(await getEventSource(payload.eventId), changed);
       // Re-assert 'witnessed' — meals are always witnessed (you see yourself put
       // the bowl down; the B-010 found path never applies), and this card only
@@ -448,6 +451,12 @@ export function MealCompletionCard() {
       console.error('[meal-card] failed to update event time:', e);
       Alert.alert('Could not update time', 'Try again or edit from History.');
     } finally {
+      // CUL-1947 — a moved time moves the gap warning's inputs (a vomit onset, or a cut on
+      // its logged clock), and this path schedules no regen, so Home (still focused under
+      // the card) re-reads on the local write. In the finally: a write that lands and then
+      // throws (the floor marker, adversarial pass 2) must still re-read; an extra re-read
+      // after a write that never landed only errs loud. A peek-and-save moved nothing.
+      if (changed) useSyncStore.getState().bumpRecordTick();
       setSaving(false);
     }
   }

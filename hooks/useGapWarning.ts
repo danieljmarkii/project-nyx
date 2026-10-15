@@ -35,6 +35,12 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
   const petId = activePet?.id ?? null;
   // Re-read on a completed regen too (a fresh log moves the gaps and the logged clock).
   const signalTick = useSyncStore((s) => s.signalTick);
+  // And on a local write that moved the record (CUL-1947): a log from the root log sheet
+  // leaves Home focused, so no focus re-run fires, and a failed regen bumps no signalTick.
+  const recordTick = useSyncStore((s) => s.recordTick);
+  // And on a completed sync: a restore or a time edit can land from the server or another
+  // device, and there is no local restore of an event to bump recordTick.
+  const hydrationTick = useSyncStore((s) => s.hydrationTick);
   const [retryTick, setRetryTick] = useState(0);
   const [text, setText] = useState<string | null>(null);
   const [answeredKey, setAnsweredKey] = useState<string | null>(null);
@@ -103,7 +109,7 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
         cancelled = true;
         clearTimeout(timeout);
       };
-    }, [enabled, petId, signalTick, retryTick]),
+    }, [enabled, petId, signalTick, recordTick, hydrationTick, retryTick]),
   );
 
   const retry = useCallback(() => setRetryTick((n) => n + 1), []);

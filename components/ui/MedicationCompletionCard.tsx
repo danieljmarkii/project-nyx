@@ -15,6 +15,7 @@ import { useAppActive } from '../../hooks/useAppActive';
 import { COMPLETION_MOTION, useCompletionArrival } from '../motion/completionMotion';
 import { FOLD_LAYOUT } from '../motion/foldMotion';
 import { useEventStore } from '../../store/eventStore';
+import { useSyncStore } from '../../store/syncStore';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { getDoubleDoseFlag, getEventSource, updateEvent } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
@@ -196,6 +197,8 @@ export function MedicationCompletionCard() {
     // The card moved on to another dose while the sheet was open: write nothing
     // and close (CUL-709; mirrors the meal card).
     if (pickerFor !== payload.eventId) { setPickerFor(null); return; }
+    // Hoisted so the finally below sees it (CUL-1947, adversarial pass 2).
+    let changed = false;
     setSaving(true);
     try {
       const iso = next.toISOString();
@@ -212,7 +215,7 @@ export function MedicationCompletionCard() {
       // photo path onto this card), so the cost is the false claim alone. It goes
       // through the same shared predicate anyway, so the two cards cannot drift
       // and a dose path that DID carry a stamp would inherit the rule.
-      const changed = next.getTime() !== new Date(payload.occurredAt).getTime();
+      changed = next.getTime() !== new Date(payload.occurredAt).getTime();
       const source = sourceAfterPointEdit(await getEventSource(payload.eventId), changed);
       // Doses are always witnessed point-in-time (you administer the dose yourself
       // — the B-010 found/window path never applies to a med, exactly as
@@ -237,6 +240,12 @@ export function MedicationCompletionCard() {
       console.error('[medication-card] failed to update dose time:', e);
       Alert.alert('Could not update time', 'Try again or edit from History.');
     } finally {
+      // CUL-1947 — a moved time moves the gap warning's inputs (a vomit onset, or a cut on
+      // its logged clock), and this path schedules no regen, so Home (still focused under
+      // the card) re-reads on the local write. In the finally: a write that lands and then
+      // throws (the floor marker, adversarial pass 2) must still re-read; an extra re-read
+      // after a write that never landed only errs loud. A peek-and-save moved nothing.
+      if (changed) useSyncStore.getState().bumpRecordTick();
       setSaving(false);
     }
   }

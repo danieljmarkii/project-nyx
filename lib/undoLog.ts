@@ -93,6 +93,7 @@
 // only ever reduce what the record claims.
 
 import { useRecordChangeStore } from '../store/recordChangeStore';
+import { useSyncStore } from '../store/syncStore';
 import { getEventPetId, softDeleteEvent } from './db';
 import { noteRemoval } from './removalNotice';
 import { triggerSignalRegenDebounced } from './signal';
@@ -132,7 +133,16 @@ export async function reverseLoggedEvent(
   // Engines v3 PR-28b (CUL-1436, §8.3): deleting a vomit, lethargy or meal log re-checks
   // the reads around it, and the marker shares the soft delete's transaction. The server's
   // re-floor is raise-only, so the delete lowers nothing it showed (§8.8).
-  await writeOwingFloorCheck(eventId, () => softDeleteEvent(eventId));
+  try {
+    await writeOwingFloorCheck(eventId, () => softDeleteEvent(eventId));
+  } catch (e) {
+    // CUL-1947 (adversarial pass 2) — the soft delete can land and its floor marker then
+    // throw, skipping the regen trigger below that re-reads Home's gap warning. Re-read
+    // anyway before the failure propagates: after a delete that never landed it is only
+    // an extra read of unchanged rows.
+    useSyncStore.getState().bumpRecordTick();
+    throw e;
+  }
   // HV-10 (CUL-1167) — the list the owner returns to folds this row away rather than
   // letting it vanish (History v2 §4). Noted only once the local write has landed: a
   // reversal that failed must never fold a row that is still in the record.
