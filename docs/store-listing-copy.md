@@ -56,7 +56,7 @@ Whether your dog or cat is on a food trial, you're watching a new symptom, or yo
 
 Confirm, don't type
 A food trial runs 8 to 12 weeks. Symptom monitoring can run longer. Most tools ask too much, so the logging stops by week two. Culprit is built the other way around:
-• Log a food your pet had recently in two taps
+• Log one of your pet's recent foods in two taps
 • Note a symptom the moment it happens, an itch, a vomit, a loose stool, one-handed and in seconds
 • Snap a photo of a food or its label and let Culprit read the details for you
 
@@ -84,13 +84,13 @@ Culprit helps you observe, organize, and remember what's happening with your pet
 Culprit isn't owned by a food or pharmacy brand, so nothing here is nudging you toward a sponsor's product. It works for you and your pet, no one else.
 ```
 
-**2,569 / 4000 characters** (counted 2026-10-15). Deliberately not padded to the cap.
+**2,571 / 4000 characters** (counted 2026-10-15). Deliberately not padded to the cap.
 
 **What changed from the 2026-08-09 draft, and why** (the October brief §10.2, `docs/culprit-competitive-landscape-2026-10.md`, plus panel 2):
 
 | Was | Now | Why |
 |---|---|---|
-| "Log a repeat meal in two taps — the food you set up once is a single tap away" | "Log a food your pet had recently in two taps" | A food first logged today is not offered until tomorrow; the shortcut is recent foods, not every food set up once |
+| "Log a repeat meal in two taps — the food you set up once is a single tap away" | "Log one of your pet's recent foods in two taps" | A food first logged today is not offered until tomorrow; the shortcut is the pet's last three foods from the past two weeks, not every food set up once |
 | "itching tends to peak 3 to 6 hours after meals with chicken" | the vomiting-timing pattern with its counts | No template emits the chicken line, and it implies a food cause the engine does not show. The new example is Signal pattern ⑤'s real shape (`supabase/functions/generate-signal/phrasing.ts`, `templatePostprandialTiming`): its denominator is the episodes it could time, never every vomit logged |
 | "A report your vet can read in a minute … a clean, clinical summary … laid out the way a vet actually reads" | "An organized summary for your vet" | The report titles itself an owner-reported summary, and the listing claims no vet's reading of it |
 | "Track every pet in your home, free." | "Track every pet in your home." | D4 (2026-10-12): monetization is undecided, so the pet line claims nothing about price. "Stay free" stays on the care list only (Pets > $) |
@@ -175,6 +175,7 @@ Every competitive sentence stays at text-evidence strength until the hands-on ri
 - [ ] **The demo account (B-271) has a live food trial and a few weeks of logs**, so the reviewer sees the trial, the Signal, the trend, and a rendered vet report, not empty states.
 - [ ] **The vet report renders its trial section, medications and photos for the reviewer.** If any is missing in the cut build, soften the matching words in "An organized summary for your vet" before submitting.
 - [ ] Photo food and label extraction, and multiple pets, are present.
+- [ ] **`app_config.paywall_enabled` reads as boolean `false` at the cut.** It is seeded `true` (migration 030) and was flipped off on 2026-07-24; if it were on, a new owner would see the mock Premium screen with a trial clock, and "Free" and "no trial clock" would be false. Fix the config, not the copy.
 
 **Confirm-with line when done (guide step 13):** `Guide step 13 complete: copy entered, age rating 4+.`
 
