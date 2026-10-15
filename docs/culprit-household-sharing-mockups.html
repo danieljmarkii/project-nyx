@@ -1,0 +1,891 @@
+<title>Sharing Mochi's Record</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Geist:wght@400;500;600&display=swap">
+<style>
+  /* ============================================================
+     Sharing Mochi's Record: household sharing, mock round 1 (CUL-1935, 2026-10-15).
+     One page: the shape, fourteen frames, the visual choices side by side, and the
+     PM's decision round. Spec: docs/nyx-household-sharing-requirements.md v2.0.
+     House system: the tokens and frames of docs/culprit-trial-screen-mockups.html.
+     Layout: a reading column for the argument, frames in wrapping rows beneath it.
+     ============================================================ */
+  :root {
+    --paper: #F5F4F9; --paper-2: #FFFFFF; --ink: #1B1A2E; --ink-2: #5F5C7A; --ink-3: #8B87A8;
+    --rule: #DEDCE9; --rule-soft: #E9E7F1;
+    --teal: #00C2A8; --teal-ink: #0B7B6C; --teal-wash: #E0FBF7;
+    --rose: #F43F5E; --rose-ink: #B4123B; --rose-wash: #FFE4E6;
+    --gold-ink: #8A5A00; --gold-wash: #FDF6E3; --gold-line: #C9A227;
+    --serif: "Newsreader", ui-serif, Charter, "Iowan Old Style", Georgia, serif;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    /* The app's own light tokens (constants/theme.ts), used inside the frames in both page themes. */
+    --app-ground: #FAFAFA; --app-card: #FFFFFF; --app-subtle: #F4F4F5; --app-ink: #0A0A0A;
+    --app-ink-2: #525252; --app-ink-3: #737373; --app-rule: #E7E5E4; --app-empty: #E7E5E4;
+    --app-rose-ink: #B4123B; --app-teal-ink: #0B7B6C; --app-teal-wash: #E0FBF7; --app-gold-wash: #FDF6E3; --app-gold-ink: #8A5A00;
+    --frame-edge: rgba(27,26,46,0.16); --frame-shadow: rgba(19,17,46,0.16);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+      --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+      --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+      --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+      --gold-ink: #F5C451; --gold-wash: rgba(251,191,36,0.14); --gold-line: #C9A227;
+      --frame-edge: rgba(255,255,255,0.18); --frame-shadow: rgba(0,0,0,0.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #13112E; --paper-2: #1D1A42; --ink: #ECEAF6; --ink-2: #A6A2CE; --ink-3: #706BA6;
+    --rule: rgba(196,190,255,0.20); --rule-soft: rgba(196,190,255,0.11);
+    --teal-ink: #4FD8C4; --teal-wash: rgba(0,194,168,0.14);
+    --rose-ink: #FB7185; --rose-wash: rgba(251,113,133,0.14);
+    --gold-ink: #F5C451; --gold-wash: rgba(251,191,36,0.14); --gold-line: #C9A227;
+    --frame-edge: rgba(255,255,255,0.18); --frame-shadow: rgba(0,0,0,0.45);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding-block: 56px 96px; padding-left: max(28px, env(safe-area-inset-left, 0px)); padding-right: max(28px, env(safe-area-inset-right, 0px)); }
+  @media (max-width: 520px) { .wrap { padding-block: 32px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); } }
+  .col { max-width: 68ch; }
+  a { color: var(--teal-ink); }
+  a:focus-visible { outline: 2px solid var(--teal-ink); outline-offset: 2px; border-radius: 3px; }
+
+  /* Masthead */
+  .mast { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 8px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 14px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  h1 { font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.4vw, 46px); line-height: 1.1; letter-spacing: -0.015em; margin: 0 0 14px; text-wrap: balance; }
+  .standfirst { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 64ch; }
+  .roundtag { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 4px 10px; }
+  .kv { display: grid; gap: 8px; margin: 26px 0 8px; }
+  .kv div { display: grid; grid-template-columns: 180px 1fr; gap: 14px; font-size: 14.5px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 8px; }
+  .kv div > b { color: var(--ink); font-weight: 600; }
+  @media (max-width: 640px) { .kv div { grid-template-columns: 1fr; gap: 2px; } }
+  .jump { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 18px; font-size: 14px; }
+
+  /* Sections */
+  section { margin-top: 72px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 10px; border-top: 1px solid var(--rule); padding-top: 18px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: 0.08em; flex-shrink: 0; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.2; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  h3 { font-size: 15.5px; margin: 26px 0 6px; font-weight: 600; }
+  p { margin: 0 0 14px; }
+  .muted { color: var(--ink-2); }
+
+  /* The shape: three ways in */
+  .ways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 22px; }
+  @media (max-width: 860px) { .ways { grid-template-columns: 1fr; } }
+  .way { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .way h3 { margin: 0; font-family: var(--serif); font-weight: 500; font-size: 21px; }
+  .way .who { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+  .way dl { margin: 0; display: grid; grid-template-columns: 64px 1fr; gap: 4px 10px; font-size: 13.5px; color: var(--ink-2); }
+  .way dt { color: var(--ink-3); font-size: 12px; padding-top: 1px; }
+  .way dd { margin: 0; min-width: 0; }
+  .record { margin-top: 14px; background: var(--paper-2); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 18px; font-size: 14px; color: var(--ink-2); display: grid; gap: 6px; }
+  .record b { color: var(--ink); }
+  .nots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .nots span { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); border: 1px solid var(--rule); border-radius: 999px; padding: 2px 8px; text-decoration: line-through; text-decoration-color: var(--rose-ink); }
+
+  /* Frames */
+  .frames { display: flex; flex-wrap: wrap; gap: 36px 28px; margin-top: 26px; align-items: flex-start; }
+  .frame { display: flex; flex-direction: column; gap: 10px; width: 316px; max-width: 100%; margin: 0; }
+  .frame.option { border: 1px dashed var(--gold-line); border-radius: 18px; padding: 12px; width: 342px; }
+  .frame.small { width: 250px; }
+  .frame.option.small { width: 276px; }
+  .ftag { align-self: flex-start; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 999px; padding: 3px 9px; }
+  .t-cur { color: var(--teal-ink); background: var(--teal-wash); }
+  .t-opt { color: var(--gold-ink); background: var(--gold-wash); }
+  .t-next { color: var(--ink-2); background: var(--rule-soft); }
+  .frame-cap { display: flex; flex-direction: column; gap: 4px; }
+  .frame-cap b { font-size: 14.5px; }
+  .frame-cap span { font-size: 13.5px; color: var(--ink-2); }
+
+  .phone { width: 316px; max-width: 100%; background: var(--app-ground); border-radius: 34px; border: 1px solid var(--frame-edge); box-shadow: 0 18px 44px var(--frame-shadow); padding: 10px 12px 16px; color: var(--app-ink); font-family: var(--sans); font-variant-numeric: tabular-nums; font-size: 13px; line-height: 1.4; position: relative; overflow: hidden; display: flex; flex-direction: column; gap: 10px; }
+  .frame.small .phone, .frame.option.small .phone { width: 250px; border-radius: 26px; }
+  .phone.crop { border-radius: 22px; padding-top: 12px; }
+  .sb { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; padding: 0 8px; color: var(--app-ink); }
+  .sbr { width: 38px; height: 10px; border-radius: 3px; background: linear-gradient(90deg, var(--app-ink) 70%, var(--app-rule) 70%); opacity: 0.8; }
+  .url { align-self: center; font-size: 10.5px; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 9px; padding: 4px 12px; display: flex; gap: 6px; align-items: center; }
+  .url i { width: 7px; height: 9px; border: 1.5px solid var(--app-ink-3); border-radius: 2px; display: inline-block; }
+  .apphdr { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; padding: 2px 4px; }
+  .navhdr { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; padding: 2px 4px; }
+  .navhdr .back { color: var(--app-ink-2); font-weight: 500; }
+  .av { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg, #7a5a3a, #c9a27a); flex-shrink: 0; }
+  .av.b { background: linear-gradient(135deg, #3a4a6a, #9aa8c8); }
+  .av.lg { width: 44px; height: 44px; }
+  .ttl { font-family: var(--serif); font-weight: 500; font-size: 22px; line-height: 1.18; letter-spacing: -0.005em; margin: 2px 4px 0; }
+  .tsub { margin: -4px 4px 0; font-size: 11.5px; color: var(--app-ink-2); }
+  .card { background: var(--app-card); border-radius: 16px; padding: 12px 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 4px 14px rgba(0,0,0,0.04); display: flex; flex-direction: column; gap: 6px; }
+  .card.ghost { gap: 7px; }
+  .card.ghost i { display: block; height: 8px; border-radius: 4px; background: var(--app-rule); }
+  .card.ghost i:nth-child(2) { width: 72%; } .card.ghost i:nth-child(3) { width: 58%; }
+  .seclabel { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--app-ink-3); font-weight: 500; margin: 0; }
+  .sline { margin: 0; font-size: 11.5px; color: var(--app-ink-2); }
+  .tline { margin: 0; font-size: 11px; color: var(--app-ink-3); }
+  .big { font-size: 14px; font-weight: 600; margin: 0; line-height: 1.35; }
+  .serif { font-family: var(--serif); font-weight: 500; font-size: 17px; line-height: 1.3; margin: 0; }
+
+  .drow { display: flex; align-items: center; gap: 10px; min-height: 44px; border-top: 1px solid var(--app-rule); padding: 6px 0 0; }
+  .drow:first-of-type { border-top: 0; padding-top: 0; }
+  .dbody { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .dhead { font-size: 13px; font-weight: 600; }
+  .dsub { font-size: 11px; color: var(--app-ink-2); }
+  .chev { color: var(--app-ink-3); font-size: 16px; }
+  .pill-s { font-size: 10px; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 999px; padding: 2px 7px; white-space: nowrap; }
+
+  .btn { border-radius: 12px; padding: 10px 12px; font-weight: 600; font-size: 12.5px; text-align: center; min-height: 44px; display: flex; align-items: center; justify-content: center; }
+  .btn.p { background: var(--app-ink); color: #fff; }
+  .btn.o { border: 1px solid var(--app-rule); background: var(--app-card); color: var(--app-ink); flex: 1; }
+  .btn.t { color: var(--app-ink-2); font-weight: 500; }
+  .btn.r { background: var(--app-rose-ink); color: #fff; }
+  .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .acts.col { flex-direction: column; }
+
+  .sheet { background: var(--app-card); border-radius: 22px 22px 16px 16px; padding: 10px 14px 14px; box-shadow: 0 -6px 24px rgba(0,0,0,0.10); display: flex; flex-direction: column; gap: 9px; margin-top: auto; }
+  .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--app-rule); align-self: center; }
+  .dim { opacity: 0.38; display: flex; flex-direction: column; gap: 10px; }
+
+  /* The shared row (Home's spine and History's day cards draw the same row) */
+  .spine { display: flex; flex-direction: column; gap: 2px; }
+  .srow { display: grid; grid-template-columns: 46px 14px 1fr; align-items: start; gap: 6px; min-height: 40px; padding: 4px 0; }
+  .stime { font-size: 11.5px; color: var(--app-ink-2); text-align: right; line-height: 1.2; padding-top: 1px; }
+  .stime small { display: block; font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--app-ink-3); }
+  .stime small.who { color: var(--app-ink-2); font-weight: 600; }
+  .sdot { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; background: var(--teal); justify-self: center; }
+  .sdot.rose { background: var(--rose); }
+  .sdot.ink { background: #5B7A9E; }
+  .sdot.gold { background: #D69E2E; }
+  .sbody { display: flex; flex-direction: column; min-width: 0; }
+  .sbody b { font-size: 13px; font-weight: 600; }
+  .sbody span { font-size: 11px; color: var(--app-ink-2); }
+  .mark { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--app-ink-2); background: var(--app-subtle); border-radius: 999px; padding: 1px 7px; margin-top: 3px; align-self: flex-start; }
+  .mark::before { content: ""; width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid var(--app-ink-3); }
+
+  /* Dose card */
+  .dose-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .dose-line b { font-size: 15px; }
+  .fresh { font-size: 10.5px; color: var(--app-ink-3); }
+  .namednote { background: var(--app-gold-wash); color: var(--app-gold-ink); border-radius: 10px; padding: 8px 10px; font-size: 11.5px; line-height: 1.38; }
+  .confirm { background: var(--app-card); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.16); }
+
+  /* Widget tiles */
+  .widget { width: 150px; height: 150px; border-radius: 22px; background: var(--app-card); box-shadow: 0 1px 2px rgba(0,0,0,0.06), 0 8px 22px rgba(0,0,0,0.08); padding: 12px; display: flex; flex-direction: column; justify-content: space-between; color: var(--app-ink); font-family: var(--sans); }
+  .widget .wl { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--app-ink-3); }
+  .widget .wv { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .widget .ws { font-size: 10.5px; color: var(--app-ink-2); }
+  .tileset { display: flex; justify-content: center; padding: 18px 0; background: linear-gradient(160deg, #cfd8e6, #e9e3f5); border-radius: 22px; }
+
+  /* The sitter page (a browser page on getculprit.app, not the app) */
+  .web { background: #FBFAF7; }
+  .pet-strip { display: flex; gap: 8px; align-items: center; }
+  .rule-card { background: var(--app-card); border-radius: 14px; padding: 11px 12px; display: flex; flex-direction: column; gap: 5px; border: 1px solid var(--app-rule); }
+  .rule-card .rule { font-family: var(--serif); font-size: 16px; line-height: 1.28; margin: 0; }
+  .nolist { font-size: 11px; color: var(--app-ink-2); margin: 0; }
+  .today { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; }
+  .today div { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid var(--app-rule); padding-top: 3px; }
+  .today div:first-child { border-top: 0; padding-top: 0; }
+  .today em { font-style: normal; color: var(--app-ink-3); }
+  .pad { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+  .pad .k { min-height: 46px; border-radius: 12px; background: var(--app-card); border: 1px solid var(--app-rule); display: flex; flex-direction: column; justify-content: center; padding: 6px 10px; font-size: 12.5px; font-weight: 600; }
+  .pad .k small { font-weight: 400; font-size: 10px; color: var(--app-ink-2); }
+  .pad .k.wide { grid-column: 1 / -1; }
+  .pad .k.slip { background: var(--app-gold-wash); border-color: #EBD9A6; }
+  .sticky { display: flex; gap: 7px; border-top: 1px solid var(--app-rule); padding-top: 9px; margin-top: auto; }
+  .sticky .btn { flex: 1; font-size: 12px; min-height: 42px; }
+  .fold { font-size: 11px; color: var(--app-ink-2); border: 1px dashed var(--app-rule); border-radius: 10px; padding: 7px 10px; }
+  .esc { border-left: 3px solid var(--rose); background: var(--app-card); border-radius: 12px; padding: 10px 11px; display: flex; flex-direction: column; gap: 6px; }
+  .esc .h { font-weight: 600; font-size: 13.5px; margin: 0; }
+  .esc .a { color: var(--app-rose-ink); font-size: 12px; margin: 0; }
+  .textbubble { align-self: flex-end; max-width: 88%; background: #1F8AFF; color: #fff; border-radius: 16px 16px 4px 16px; padding: 8px 11px; font-size: 11.5px; line-height: 1.38; }
+  .saved { font-size: 10.5px; color: var(--app-ink-3); text-align: center; }
+  .startcard { display: flex; flex-direction: column; gap: 8px; }
+  .startcard ul { margin: 0; padding-left: 16px; font-size: 11.5px; color: var(--app-ink-2); display: grid; gap: 3px; }
+  .choose { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+
+  /* Paper (vet report excerpt) */
+  .paper { background: #FFFFFF; color: #111; border: 1px solid var(--frame-edge); border-radius: 4px; padding: 16px 18px; font-family: var(--sans); font-size: 12px; line-height: 1.5; box-shadow: 0 10px 28px var(--frame-shadow); width: 100%; max-width: 520px; }
+  .paper .ph { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #555; margin: 0 0 4px; }
+  .paper p { margin: 0 0 8px; }
+  .paper .foot { border-top: 1px solid #ddd; padding-top: 6px; font-size: 10px; color: #555; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+
+  /* Decision round */
+  .briefs { display: grid; gap: 16px; margin-top: 22px; }
+  .brief { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 16px 18px; font-size: 14.5px; color: var(--ink-2); }
+  .brief h3 { margin: 0 0 8px; font-size: 15.5px; color: var(--ink); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-weight: 600; }
+  .brief p { margin: 0 0 6px; }
+  .brief p:last-child { margin-bottom: 0; }
+  .brief b { color: var(--ink); }
+  .brief ol { margin: 4px 0 8px; padding-left: 20px; display: grid; gap: 4px; }
+  .brief .frames-ref { font-size: 13px; color: var(--ink-3); }
+  .conflict { border-left: 3px solid var(--rose-ink); padding-left: 12px; margin: 8px 0; display: grid; gap: 4px; }
+  .pill { display: inline-flex; align-items: center; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+  .pill.open { color: var(--rose-ink); background: var(--rose-wash); }
+  .pill.rule { color: var(--gold-ink); background: var(--gold-wash); }
+  .calls { display: grid; gap: 8px; margin-top: 18px; padding: 0; list-style: none; }
+  .calls li { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 14px; font-size: 14px; color: var(--ink-2); }
+  .calls b { color: var(--ink); }
+  .plan { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 18px; }
+  .plan th, .plan td { text-align: left; vertical-align: top; border-top: 1px solid var(--rule); padding: 9px 10px 9px 0; }
+  .plan th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); font-weight: 500; }
+  .plan td:first-child { white-space: nowrap; color: var(--ink); font-weight: 600; }
+  .scroll-x { overflow-x: auto; }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow"><span>Culprit</span><span>Household sharing</span><span>CUL-1935</span><span>2026-10-15</span></p>
+  <h1>Everyone who cares for Mochi, on one record</h1>
+  <p class="standfirst">A partner gets their own login. A sitter gets a link that needs no app and no account. Anyone else gets the rules on a card. Underneath, one record knows who saw what, counts the louder reading when two people's entries may overlap, and checks doses across people. All of it free.</p>
+  <div class="kv">
+    <div><b>Round</b><span><span class="roundtag">Round 1</span> One proposal, with five visual choices drawn side by side. Frames tagged <i>current</i> are the proposal; dashed boxes are options drawn for a decision.</span></div>
+    <div><b>Spec</b><span><code>docs/nyx-household-sharing-requirements.md</code> v2.0 (draft). It replaces the unmerged August draft, which this round used as evidence.</span></div>
+    <div><b>Evidence</b><span><code>docs/research/2026-10-household-sharing.md</code>: 43 pet app listings, 2,585 reviews, analogs, studies. Six isolated team reads and a code audit, on CUL-1935.</span></div>
+    <div><b>Reviews</b><span>The privacy red team and the adversarial review both ran on the spec. Their findings are folded in as controls and rules; D4 states the one residual left.</span></div>
+    <div><b>What to do here</b><span>Rule the ten briefs in §09. Each points at the frames it changes. The team calls in §10 are already made; reverse any you disagree with.</span></div>
+  </div>
+  <p class="jump"><a href="#s09">Jump to the decision round</a><a href="#s01">The shape</a><a href="#s04">The sitter link</a><a href="#s11">The build plan</a></p>
+</header>
+
+<!-- §01 -->
+<section id="s01">
+  <div class="sec-head"><span class="sec-num">§01</span><h2>Three ways in, one record</h2></div>
+  <div class="col">
+    <p>Each way in matches how much the person is trusted and how much they want to install. The research found three things no pet app or analog does, and this design does all three: sharing that knows about the diet trial, catching one event logged by two people, and a path for the record when people separate.</p>
+  </div>
+  <div class="ways">
+    <div class="way">
+      <span class="who">Anyone who feeds the pet</span>
+      <h3>The card</h3>
+      <dl><dt>Needs</dt><dd>Nothing. A text or a printout on the fridge or the food bin.</dd><dt>Sees</dt><dd>What Mochi can eat, what not to give, how to give the pill, who to call.</dd><dt>Does</dt><dd>Nothing logs back. Ships first.</dd></dl>
+    </div>
+    <div class="way">
+      <span class="who">A sitter, walker or daycare</span>
+      <h3>The sitter link</h3>
+      <dl><dt>Needs</dt><dd>A phone's browser. No account, no install. Bound to the first browser that starts it.</dd><dt>Sees</dt><dd>The rules, today's care with times and no names, doses due, the owner's numbers.</dd><dt>Does</dt><dd>One-tap entries; a hand-off to call or text when something needs a vet; a visit text.</dd></dl>
+    </div>
+    <div class="way">
+      <span class="who">Someone you live with</span>
+      <h3>The partner</h3>
+      <dl><dt>Needs</dt><dd>Their own login. Free, up to 4 people per pet.</dd><dt>Sees</dt><dd>Everything for the pets you share, from the first day, foods and medicines included.</dd><dt>Does</dt><dd>Everything you do, including what the vet said. Not archive, grant access or transfer.</dd></dl>
+    </div>
+  </div>
+  <div class="record">
+    <span><b>Underneath:</b> every entry knows who recorded it and whether it was seen or found. Entries that may be one event count as two until someone says otherwise. Doses are checked across people by medicine. The vet report says who recorded, in roles.</span>
+    <span><b>Never built:</b></span>
+    <div class="nots"><span>an activity feed</span><span>alerts about a person</span><span>per-person counts</span><span>"Alex hasn't logged"</span><span>location</span><span>"last seen"</span><span>a paid family plan</span></div>
+  </div>
+</section>
+
+<!-- §02 -->
+<section id="s02">
+  <div class="sec-head"><span class="sec-num">§02</span><h2>Inviting a partner</h2></div>
+  <div class="col"><p>Settings gains a Sharing card. Only the pet's owner invites. Nothing syncs until the owner confirms the person by name, so a forwarded link reaches nobody. Brief <a href="#d1">D1</a>, <a href="#d2">D2</a>; team call on confirmation.</p></div>
+  <div class="frames">
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone" role="img" aria-label="Settings, the Sharing card: Mochi and Biscuit, nobody yet, Add someone you live with, Send the rules to a sitter, Sitter links none">
+        <div class="sb"><span>9:41</span><span class="sbr"></span></div>
+        <div class="navhdr"><span class="back">‹ Settings</span></div>
+        <p class="ttl">Sharing</p>
+        <p class="tsub">Mochi and Biscuit</p>
+        <div class="card">
+          <p class="seclabel">People with their own login</p>
+          <div class="drow"><div class="dbody"><span class="dhead">You</span><span class="dsub">Jordan · owner</span></div></div>
+          <div class="drow"><div class="dbody"><span class="dhead" style="color:var(--app-teal-ink)">Add someone you live with</span><span class="dsub">Free for both of you</span></div><span class="chev">›</span></div>
+        </div>
+        <div class="card">
+          <p class="seclabel">Sitters, walkers, daycare</p>
+          <div class="drow"><div class="dbody"><span class="dhead">Make a sitter link</span><span class="dsub">No app or account for them</span></div><span class="chev">›</span></div>
+          <div class="drow"><div class="dbody"><span class="dhead">Send the rules</span><span class="dsub">A card for anyone who feeds Mochi</span></div><span class="chev">›</span></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>The Sharing card.</b><span>Under Settings › You. People, links and the card in one place. Every live link is listed, with who made it.</span></figcaption>
+    </figure>
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone" role="img" aria-label="Share sheet message: Here's your own login for Mochi's record, so we both log and see the same thing. Free for both of us.">
+        <div class="sb"><span>9:42</span><span class="sbr"></span></div>
+        <div class="dim"><div class="card ghost"><i></i><i></i><i></i></div><div class="card ghost"><i></i><i></i></div></div>
+        <div class="sheet">
+          <span class="grab"></span>
+          <p class="seclabel">Message</p>
+          <div class="card" style="box-shadow:none;background:var(--app-subtle)">
+            <p class="sline" style="color:var(--app-ink)">Here's your own login for Mochi's and Biscuit's record, so we both log and see the same thing. Free for both of us.</p>
+            <p class="tline">getculprit.app/join · works once</p>
+          </div>
+          <div class="acts"><span class="btn o">Messages</span><span class="btn o">Mail</span><span class="btn o">Copy</span></div>
+          <p class="tline">Pets shared: Mochi, Biscuit · and pets I add later</p>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>The invite.</b><span>"Pets I add later" is an explicit choice; a new pet never joins silently. The invite says it's free for both, which is the partner's first question.</span></figcaption>
+    </figure>
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone" role="img" aria-label="Owner confirmation sheet: Alex wants to join Mochi's and Biscuit's record. Is this Alex? Yes, share with Alex. Not Alex, cancel the invite.">
+        <div class="sb"><span>10:05</span><span class="sbr"></span></div>
+        <div class="dim"><div class="card ghost"><i></i><i></i><i></i></div><div class="card ghost"><i></i><i></i><i></i></div></div>
+        <div class="sheet">
+          <span class="grab"></span>
+          <p class="serif">Alex wants to join Mochi's and Biscuit's record.</p>
+          <div class="card" style="box-shadow:none;background:var(--app-subtle);gap:2px"><span class="dsub">Signed in as</span><span class="dhead">alex.rivera@icloud.com</span><span class="dsub">Alex's phone shows the code 4821</span></div>
+          <p class="sline">Once you confirm, Alex can see and log everything for both, and record what the vet says. Only you can edit their details, archive them or give someone else access.</p>
+          <div class="acts col"><span class="btn p">Yes, share with Alex</span><span class="btn t">That's not Alex. Cancel the invite</span></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>Confirm before anything syncs.</b><span>The only control an owner has over a forwarded link, so it checks things the invitee can't choose: the address they verified and a code on their phone. Until then the server shows them nothing.</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- §03 -->
+<section id="s03">
+  <div class="sec-head"><span class="sec-num">§03</span><h2>Leaving a shared login</h2></div>
+  <div class="col"><p>The first real case: two adults on one login, two phones. Today's sign-out would also sign out the other phone and wipe anything unsent, and a new account goes straight into making a second Mochi. This flow fixes both. Team calls; spec H4 and H5.</p></div>
+  <div class="frames">
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone" role="img" aria-label="On the partner's phone, still signed in as Jordan: Give this phone its own login. Step one, saving this phone's entries, 3 of 3 sent. Then sign out of this phone only.">
+        <div class="sb"><span>8:10</span><span class="sbr"></span></div>
+        <div class="navhdr"><span class="back">‹ Sharing</span></div>
+        <p class="ttl">Give this phone its own login</p>
+        <p class="tsub">This phone is signed in as Jordan</p>
+        <div class="card">
+          <div class="drow"><div class="dbody"><span class="dhead">Saving this phone's entries</span><span class="dsub">3 of 3 sent</span></div><span class="pill-s">✓</span></div>
+          <div class="drow"><div class="dbody"><span class="dhead">Sign out of this phone only</span><span class="dsub">Jordan's phone stays signed in</span></div></div>
+          <div class="drow"><div class="dbody"><span class="dhead">Make your own login</span><span class="dsub">Then you're back on Mochi's record</span></div></div>
+        </div>
+        <p class="tline" style="margin:0 4px">If anything can't be sent, this stops and says so. Nothing on this phone is lost.</p>
+        <div class="acts col"><span class="btn p">Continue</span></div>
+      </div>
+      <figcaption class="frame-cap"><b>Send first, then sign out this phone only.</b><span>The invite is held in memory, so the wipe needs no exception. Entries made on the shared login stay unattributed: who made them is not known.</span></figcaption>
+    </figure>
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone" role="img" aria-label="After sign up: Care for Mochi with Jordan. Mochi and Biscuit, with today's entries. Start, no new pet created.">
+        <div class="sb"><span>8:14</span><span class="sbr"></span></div>
+        <div style="display:flex;flex-direction:column;gap:12px;padding:18px 6px 0">
+          <div class="pet-strip"><span class="av lg"></span><span class="av lg b"></span></div>
+          <p class="serif" style="font-size:22px">Care for Mochi and Biscuit with Jordan.</p>
+          <p class="sline">You'll see everything for both, and what you log has your name on it. Your own login, your own settings.</p>
+          <div class="card"><p class="seclabel">Today on Mochi's record</p><div class="spine">
+            <div class="srow"><div class="stime">7:10<small class="who">Jordan</small></div><span class="sdot"></span><div class="sbody"><b>Breakfast</b><span>z/d · ate it all</span></div></div>
+            <div class="srow"><div class="stime">7:12<small class="who">Jordan</small></div><span class="sdot ink"></span><div class="sbody"><b>Apoquel</b><span>given</span></div></div>
+          </div></div>
+          <div class="acts col"><span class="btn p">Start</span></div>
+          <p class="tline">Waiting for Jordan to confirm it's you. Your code: 4821.</p>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>Joining, never a second Mochi.</b><span>An invitee skips "add your pet". If the app closes first, onboarding's first door asks "Joining someone's pet?".</span></figcaption>
+    </figure>
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone" role="img" aria-label="On Jordan's phone after confirming Alex: Alex has their own login now. Alex knew your password. Change it so only you sign in as you. Change password and sign out other phones. Not now.">
+        <div class="sb"><span>8:16</span><span class="sbr"></span></div>
+        <div class="dim"><div class="card ghost"><i></i><i></i><i></i></div></div>
+        <div class="sheet">
+          <span class="grab"></span>
+          <p class="serif">Alex has their own login now.</p>
+          <p class="sline">Alex used yours until today. Change your password so only you sign in as you.</p>
+          <div class="acts col"><span class="btn p">Change password, sign out other phones</span><span class="btn t">Not now</span></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>Closing the old door.</b><span>Trust &amp; Safety's control: a move off a shared login, or a removal, ends with the owner offered a password change.</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- §04 -->
+<section id="s04">
+  <div class="sec-head"><span class="sec-num">§04</span><h2>The sitter link</h2></div>
+  <div class="col"><p>Made by the owner or a partner, one per person, for a stay or for a regular walker or daycare. The page lives on getculprit.app, needs no app, and is bound to the first browser that starts it. It shows today only and names nobody in the household. Brief <a href="#d3">D3</a>, <a href="#d4">D4</a>; the page's layout is a visual choice (F9).</p></div>
+  <div class="frames">
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone" role="img" aria-label="Make a sitter link: kind Stay or Regular; For Maria, sitter; pets Mochi and Biscuit; ends Sunday morning; notes prefilled from the trial and Apoquel; preview the page; make link">
+        <div class="sb"><span>18:20</span><span class="sbr"></span></div>
+        <div class="navhdr"><span class="back">‹ Sharing</span></div>
+        <p class="ttl">Make a sitter link</p>
+        <div class="card">
+          <div class="choose"><span class="btn o" style="border-color:var(--app-ink)">For a stay</span><span class="btn o">Regular walker or daycare</span></div>
+          <div class="drow"><div class="dbody"><span class="dsub">Who it's for</span><span class="dhead">Maria, sitter</span></div></div>
+          <div class="drow"><div class="dbody"><span class="dsub">Pets</span><span class="dhead">Mochi, Biscuit</span></div></div>
+          <div class="drow"><div class="dbody"><span class="dsub">Ends</span><span class="dhead">Sunday morning</span></div><span class="pill-s">one tap extends</span></div>
+          <div class="drow"><div class="dbody"><span class="dsub">Notes, from the trial and Apoquel</span><span class="dhead" style="font-weight:500">Only z/d. Apoquel at 7 and 7, in a spoon of z/d.</span></div></div>
+        </div>
+        <div class="acts"><span class="btn o">Preview Maria's page</span><span class="btn p" style="flex:1">Make link</span></div>
+        <p class="tline" style="margin:0 4px">The message carries the rules too, so they outlast the link. Don't add door or alarm codes.</p>
+      </div>
+      <figcaption class="frame-cap"><b>Setting it up.</b><span>Notes come prefilled from the trial and the regimen. A regular link has no date; it ends after 30 days unused, or if the owner doesn't keep it at a 90-day check.</span></figcaption>
+    </figure>
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone web" role="img" aria-label="First open on the sitter's phone: Start. What Jordan sees, what is kept, how to ask for removal. Photos: may Culprit's AI read the photos you add? Yes or No, no default. Start.">
+        <div class="url"><i></i>getculprit.app</div>
+        <div class="startcard" style="padding:6px 4px">
+          <p class="serif" style="font-size:20px">Before you start</p>
+          <ul>
+            <li>Jordan sees what you log here, labelled "Maria, sitter".</li>
+            <li>We keep your entries and photos on Mochi's record. We don't keep your name, number or location.</li>
+            <li>To have your label removed, ask Jordan. It then reads "a sitter".</li>
+            <li>This link works on this phone only.</li>
+          </ul>
+          <p class="big" style="margin-top:4px">May Culprit's AI read the photos and notes you add?</p>
+          <p class="tline">It looks for things worth a vet's attention. Either answer is fine.</p>
+          <div class="choose"><span class="btn o">Yes</span><span class="btn o">No</span></div>
+          <div class="acts col"><span class="btn p">Start</span></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>Start: notice, binding and the photo question.</b><span>Two equal buttons, no default. The instructions show only after Start, on this one browser.</span></figcaption>
+    </figure>
+  </div>
+
+  <h3>F9 · The page's first screen: two layouts</h3>
+  <div class="frames">
+    <figure class="frame option">
+      <span class="ftag t-opt">Option A · recommended</span>
+      <div class="phone web" role="img" aria-label="Sitter page, rules up: Mochi and Biscuit; Only z/d, nothing else, not even a treat; today so far: breakfast 7:10, Apoquel given 7:12; buttons in the thumb zone; call Jordan and call the vet">
+        <div class="url"><i></i>getculprit.app</div>
+        <div class="pet-strip"><span class="av"></span><span class="av b"></span><span class="big">Mochi and Biscuit</span></div>
+        <div class="rule-card">
+          <p class="rule">Mochi: only z/d. Nothing else, not even a treat.</p>
+          <p class="nolist">Not: chews, dental chews, pill pockets, table food, Biscuit's bowl. Apoquel goes in a spoon of z/d.</p>
+        </div>
+        <div class="card" style="padding:9px 11px"><p class="seclabel">Today so far</p>
+          <div class="today"><div><span>Breakfast, both</span><em>7:10</em></div><div><span>Apoquel, Mochi</span><em>given 7:12</em></div><div><span>Evening Apoquel</span><em>none logged, as of 5:02</em></div></div>
+        </div>
+        <div class="pad">
+          <span class="k">Fed everyone<small>z/d, Biscuit's dry</small></span>
+          <span class="k">Gave Apoquel<small>Mochi, 1 tablet</small></span>
+          <span class="k slip">Ate something else</span>
+          <span class="k">Didn't eat<small>or ate less</small></span>
+          <span class="k">Vomit</span><span class="k">Poop</span>
+          <span class="k">Tired or not herself</span><span class="k">Note or photo</span>
+        </div>
+        <div class="sticky"><span class="btn o">Call Jordan</span><span class="btn o">Call the vet</span></div>
+      </div>
+      <figcaption class="frame-cap"><b>Read up, tap down.</b><span>The rule first, then today, then the buttons where the thumb is. No household names: doses read "given 7:12", and the sitter's own entries say "by you".</span></figcaption>
+    </figure>
+    <figure class="frame option">
+      <span class="ftag t-opt">Option B</span>
+      <div class="phone web" role="img" aria-label="Sitter page, pad first: buttons at the top, rules folded below in a tap to open row">
+        <div class="url"><i></i>getculprit.app</div>
+        <div class="pet-strip"><span class="av"></span><span class="av b"></span><span class="big">Mochi and Biscuit</span></div>
+        <div class="pad">
+          <span class="k">Fed everyone<small>z/d, Biscuit's dry</small></span>
+          <span class="k">Gave Apoquel<small>Mochi, 1 tablet</small></span>
+          <span class="k slip">Ate something else</span>
+          <span class="k">Didn't eat<small>or ate less</small></span>
+          <span class="k">Vomit</span><span class="k">Poop</span>
+          <span class="k">Tired or not herself</span><span class="k">Note or photo</span>
+        </div>
+        <div class="fold">The rules and today so far ›</div>
+        <div class="sticky"><span class="btn o">Call Jordan</span><span class="btn o">Call the vet</span></div>
+      </div>
+      <figcaption class="frame-cap"><b>Pad first, rules folded.</b><span>Faster for a walker on visit forty. Riskier on visit one: the rule is a tap away exactly when the sitter doesn't know it yet.</span></figcaption>
+    </figure>
+  </div>
+
+  <div class="frames">
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone web" role="img" aria-label="After tapping Ate something else: Saved, Mochi, 5:40 pm. Did you see it, or find it? A photo of the wrapper helps. Saved on this phone, not sent yet. Text Jordan now?">
+        <div class="url"><i></i>getculprit.app</div>
+        <div class="card" style="gap:8px">
+          <p class="big">Saved: Mochi ate something else, 5:40 pm.</p>
+          <p class="sline">Thanks for logging it. It goes on Mochi's record for the vet.</p>
+          <div class="choose"><span class="btn o">I saw it</span><span class="btn o">I found it</span></div>
+          <div class="acts"><span class="btn o">Photo of the wrapper</span><span class="btn o">What was it?</span></div>
+          <p class="saved">Saved on this phone, not sent yet · sends when you have signal</p>
+        </div>
+        <div class="card" style="gap:6px">
+          <p class="sline" style="color:var(--app-ink)">Culprit doesn't alert Jordan. Want to tell them now?</p>
+          <div class="acts"><span class="btn o">Text Jordan</span><span class="btn t">Not now</span></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>A slip, logged without blame.</b><span>One tap saves; details are optional. "Ate something else" lands on the trial's record as off-diet, dated, even with no food named.</span></figcaption>
+    </figure>
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone web" role="img" aria-label="After logging a third vomit: Call the vet now. Mochi has vomited 3 times today. Culprit doesn't alert Jordan. Call the vet, then call or text Jordan.">
+        <div class="url"><i></i>getculprit.app</div>
+        <div class="esc">
+          <p class="h">Mochi has vomited 3 times since 2 pm.</p>
+          <p class="a">Call the vet now.</p>
+          <p class="sline">Culprit doesn't alert Jordan. Call the vet, then call or text Jordan.</p>
+          <div class="acts col"><span class="btn r">Call the vet</span><span class="btn o">Call Jordan</span><span class="btn o">Text Jordan</span></div>
+        </div>
+        <p class="tline" style="text-align:center">The same escalation rules as the app, run on every entry. Never "all good".</p>
+      </div>
+      <figcaption class="frame-cap"><b>Safety without push (brief D4).</b><span>The page runs the app's whole no-model escalation path on every entry, offline included: a burst the sitter saw, lethargy after a vomit, blood in stool, a cat's untouched bowl, a possible double dose. The hand-off is person to person, and the copy never implies the owner was told.</span></figcaption>
+    </figure>
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone" role="img" aria-label="The sitter's own messaging app with a prefilled text: Mochi and Biscuit, 5:10 pm: fed as planned. Apoquel 5:13. Maria.">
+        <div class="sb"><span>17:16</span><span class="sbr"></span></div>
+        <div class="navhdr"><span class="back">‹</span><span>Jordan</span></div>
+        <div style="flex:1;min-height:160px"></div>
+        <span class="textbubble">Mochi and Biscuit, 5:10 pm: fed as planned. Apoquel 5:13. Biscuit left some of his dry. Maria</span>
+        <p class="tline" style="text-align:center">Built from the visit's taps by "Send to Jordan". Sent from Maria's phone, kept in her sent messages.</p>
+      </div>
+      <figcaption class="frame-cap"><b>The visit text.</b><span>The sitter consultant's idea: the owner gets a sitter's report card moment with no push infrastructure, and the sitter keeps proof of what they did. Worded as what happened, never "all good".</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- §05 -->
+<section id="s05">
+  <div class="sec-head"><span class="sec-num">§05</span><h2>Whose entry is it</h2></div>
+  <div class="col"><p>Names answer "did you log the treat?" without becoming a scoreboard: others by first name, the reader as nothing at all, never on the off-diet list, never on a sitter's page. Home and History draw the same row, so a name shows in both or neither. Brief <a href="#d7">D7</a>; where the name sits is a visual choice (F3).</p></div>
+  <h3>F3 · Where a name sits on the shared row</h3>
+  <div class="frames">
+    <figure class="frame option small">
+      <span class="ftag t-opt">Option A · recommended</span>
+      <div class="phone crop" role="img" aria-label="Row with a small name tag under the time: 7:02 Alex, vomit, foam, found; 7:10 breakfast; 5:40 Maria, ate something else">
+        <div class="spine">
+          <div class="srow"><div class="stime">7:02<small class="who">Alex</small></div><span class="sdot rose"></span><div class="sbody"><b>Vomit</b><span>Foam, small</span></div></div>
+          <div class="srow"><div class="stime">7:10</div><span class="sdot"></span><div class="sbody"><b>Breakfast</b><span>z/d · ate it all</span></div></div>
+          <div class="srow"><div class="stime">5:40<small>found</small><small class="who">Maria</small></div><span class="sdot gold"></span><div class="sbody"><b>Ate something else</b><span>A wrapper, photo</span></div></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>A tag under the time.</b><span>Where "found" already sits. The reader's own rows carry nothing.</span></figcaption>
+    </figure>
+    <figure class="frame option small">
+      <span class="ftag t-opt">Option B</span>
+      <div class="phone crop" role="img" aria-label="Row with the name at the end of the detail line: Foam, small, Alex">
+        <div class="spine">
+          <div class="srow"><div class="stime">7:02</div><span class="sdot rose"></span><div class="sbody"><b>Vomit</b><span>Foam, small · Alex</span></div></div>
+          <div class="srow"><div class="stime">7:10</div><span class="sdot"></span><div class="sbody"><b>Breakfast</b><span>z/d · ate it all</span></div></div>
+          <div class="srow"><div class="stime">5:40<small>found</small></div><span class="sdot gold"></span><div class="sbody"><b>Ate something else</b><span>A wrapper · Maria</span></div></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>On the detail line.</b><span>Reads as part of the event, and competes with what the event was.</span></figcaption>
+    </figure>
+    <figure class="frame option small">
+      <span class="ftag t-opt">Option C</span>
+      <div class="phone crop" role="img" aria-label="Rows with no names; the name appears only in the event's detail">
+        <div class="spine">
+          <div class="srow"><div class="stime">7:02</div><span class="sdot rose"></span><div class="sbody"><b>Vomit</b><span>Foam, small</span></div></div>
+          <div class="srow"><div class="stime">7:10</div><span class="sdot"></span><div class="sbody"><b>Breakfast</b><span>z/d · ate it all</span></div></div>
+          <div class="srow"><div class="stime">5:40<small>found</small></div><span class="sdot gold"></span><div class="sbody"><b>Ate something else</b><span>A wrapper, photo</span></div></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>Detail only.</b><span>The calmest row, and "did you log it?" takes a tap to answer.</span></figcaption>
+    </figure>
+  </div>
+
+  <div class="frames">
+    <figure class="frame">
+      <span class="ftag t-next">Fast follow, drawn now</span>
+      <div class="phone" role="img" aria-label="Completion card after Jordan logs a vomit: Alex logged a vomit at 3:04. Same one? Same one, or two separate.">
+        <div class="sb"><span>15:10</span><span class="sbr"></span></div>
+        <div class="dim"><div class="card ghost"><i></i><i></i></div></div>
+        <div class="sheet">
+          <span class="grab"></span>
+          <p class="big">Vomit logged, 3:08 pm.</p>
+          <div class="card" style="background:var(--app-subtle);box-shadow:none">
+            <p class="sline" style="color:var(--app-ink)">Alex logged a vomit at 3:04. Same one?</p>
+            <div class="acts"><span class="btn o">Same one</span><span class="btn o">Two separate</span></div>
+            <p class="tline">Until you answer, Mochi's record counts both.</p>
+          </div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>"Same one?", after the save.</b><span>Nothing gates the log. Unanswered, both count and the louder reading stands. A merge keeps both names and both photos, and can be undone.</span></figcaption>
+    </figure>
+    <figure class="frame option small">
+      <span class="ftag t-opt">F5 · Option A</span>
+      <div class="phone crop" role="img" aria-label="Home with the question inline: Alex logged a vomit at 3:04, same one? with two buttons on Home">
+        <div class="spine">
+          <div class="srow"><div class="stime">3:04<small class="who">Alex</small></div><span class="sdot rose"></span><div class="sbody"><b>Vomit</b><span>Foam</span></div></div>
+          <div class="srow"><div class="stime">3:08</div><span class="sdot rose"></span><div class="sbody"><b>Vomit</b><span>Foam</span>
+            <div class="acts" style="margin-top:4px"><span class="btn o" style="min-height:32px;padding:4px 8px;font-size:11px">Same one</span><span class="btn o" style="min-height:32px;padding:4px 8px;font-size:11px">Two</span></div></div></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>Answer it on Home.</b><span>Fastest, and a fourth kind of write on Home, which needs a design-principles amendment.</span></figcaption>
+    </figure>
+    <figure class="frame option small">
+      <span class="ftag t-opt">F5 · Option B · recommended</span>
+      <div class="phone crop" role="img" aria-label="Home with a quiet mark on the second vomit: same one? The question opens one tap in">
+        <div class="spine">
+          <div class="srow"><div class="stime">3:04<small class="who">Alex</small></div><span class="sdot rose"></span><div class="sbody"><b>Vomit</b><span>Foam</span></div></div>
+          <div class="srow"><div class="stime">3:08</div><span class="sdot rose"></span><div class="sbody"><b>Vomit</b><span>Foam</span><span class="mark">Same one?</span></div></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>A quiet mark, the question one tap in.</b><span>Home stays an intelligence surface; the answer lives on the entry.</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- §06 -->
+<section id="s06">
+  <div class="sec-head"><span class="sec-num">§06</span><h2>Doses, across people</h2></div>
+  <div class="col"><p>Prevention lives where the next dose is given: the medicine's card says who gave the last one and how fresh this phone's copy is. The check works across people by medicine, so two people's doses always pair. Whether critical medicines also get a question before saving is the round's one persona conflict, drawn here side by side. Brief <a href="#d5">D5</a>, <a href="#d6">D6</a>.</p></div>
+  <div class="frames">
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone" role="img" aria-label="Apoquel card on Mochi's page: Given 8:02, Alex. As of 8:31 on this phone. Button: Log another dose. Below, three states: checking, offline as of 7:55, and no dose logged as of 8:31">
+        <div class="sb"><span>8:31</span><span class="sbr"></span></div>
+        <div class="navhdr"><span class="back">‹ Mochi</span></div>
+        <div class="card">
+          <p class="seclabel">Apoquel · twice a day</p>
+          <div class="dose-line"><b>Given 8:02 · Alex</b><span class="fresh">as of 8:31</span></div>
+          <div class="acts"><span class="btn o">Log another dose</span></div>
+        </div>
+        <p class="seclabel" style="margin:4px 4px 0">The same card, other states</p>
+        <div class="card"><div class="dose-line"><b>Given 8:02 · Alex</b><span class="fresh">checking…</span></div></div>
+        <div class="card"><div class="dose-line"><b>Given 8:02 · Alex</b><span class="fresh">as of 7:55 · offline</span></div></div>
+        <div class="card"><div class="dose-line"><b style="font-weight:500">No dose logged</b><span class="fresh">as of 8:31</span></div><div class="acts"><span class="btn p">Log dose</span></div></div>
+      </div>
+      <figcaption class="frame-cap"><b>The fact at rest.</b><span>Opening the medicine pulls Mochi's doses first. "No dose logged" never reads as "due": no log is not no dose. Freshness is always this phone's, never another person's.</span></figcaption>
+    </figure>
+    <figure class="frame option">
+      <span class="ftag t-opt">D6 · Option A · Designer</span>
+      <div class="phone" role="img" aria-label="After saving a second dose: Logged 18 minutes after Alex's Apoquel dose. Worth checking it wasn't a repeat. Undo.">
+        <div class="sb"><span>8:20</span><span class="sbr"></span></div>
+        <div class="dim"><div class="card ghost"><i></i><i></i></div></div>
+        <div class="sheet">
+          <span class="grab"></span>
+          <p class="big">Apoquel logged, 8:20 am.</p>
+          <div class="namednote">Logged 18 minutes after Alex's 8:02 dose. Worth checking it wasn't a repeat.</div>
+          <div class="acts"><span class="btn o">Undo</span><span class="btn p" style="flex:1">Done</span></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>No question before saving.</b><span>The log is instant; the note names the other dose after the save. Prevention was the card at rest.</span></figcaption>
+    </figure>
+    <figure class="frame option">
+      <span class="ftag t-opt">D6 · Option B · Dr. Chen</span>
+      <div class="phone" role="img" aria-label="Before saving, for a critical medicine only: Insulin was given at 6:10 by Alex. Give another dose? Log another dose, or Not now, call the vet.">
+        <div class="sb"><span>9:05</span><span class="sbr"></span></div>
+        <div class="dim"><div class="card ghost"><i></i><i></i><i></i></div></div>
+        <div class="confirm" style="margin-top:auto">
+          <p class="big">Insulin was given at 6:10 · Alex.</p>
+          <p class="sline">The next dose is due at 6 pm. Log another dose anyway?</p>
+          <div class="acts col"><span class="btn p">Log another dose</span><span class="btn t">Not now</span></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>A question before saving, critical medicines only.</b><span>Needs "critical" defined first (the open owner-toggle question). Never for an ordinary medicine.</span></figcaption>
+    </figure>
+  </div>
+
+  <h3>F7 · The widget's dose tile with two people logging</h3>
+  <div class="frames">
+    <figure class="frame option small">
+      <span class="ftag t-opt">Option A · recommended</span>
+      <div class="tileset" role="img" aria-label="Widget tile: Apoquel, 1 of 2, as of 8:31"><div class="widget"><span class="wl">Apoquel</span><span class="wv">1 of 2</span><span class="ws">as of 8:31</span></div></div>
+      <figcaption class="frame-cap"><b>"As of" on the tile.</b><span>The count can go stale between syncs; the time says how stale.</span></figcaption>
+    </figure>
+    <figure class="frame option small">
+      <span class="ftag t-opt">Option B</span>
+      <div class="tileset" role="img" aria-label="Widget tile: Apoquel, last given 8:02, no count"><div class="widget"><span class="wl">Apoquel</span><span class="wv" style="font-size:17px">Last given 8:02</span><span class="ws">open to check</span></div></div>
+      <figcaption class="frame-cap"><b>No count at all.</b><span>Can't be wrong about the count, and says less.</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- §07 -->
+<section id="s07">
+  <div class="sec-head"><span class="sec-num">§07</span><h2>The plan, and the owner's side of a stay</h2></div>
+  <div class="col"><p>A partner records what the vet said. Every plan change is a dated, named act both people see, and it can be undone. Owner-only actions explain themselves; they never show a dead control. Brief <a href="#d2">D2</a>; the wall is a visual choice (F13).</p></div>
+  <div class="frames">
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone" role="img" aria-label="Alex ending the trial: Jordan started this trial on Sep 2 after the visit. End it on day 41? End the trial, or keep it running.">
+        <div class="sb"><span>12:30</span><span class="sbr"></span></div>
+        <div class="dim"><div class="card ghost"><i></i><i></i><i></i></div></div>
+        <div class="confirm" style="margin-top:auto">
+          <p class="big">Jordan started this trial on Sep 2, after the visit.</p>
+          <p class="sline">End it today, on day 41 of 56? Jordan will see that you ended it, and either of you can undo it.</p>
+          <div class="acts col"><span class="btn p">End the trial</span><span class="btn t">Keep it running</span></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>A partner changes the plan.</b><span>Plan changes aren't moments of event, so a confirm is fair here. It names who started the plan.</span></figcaption>
+    </figure>
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone" role="img" aria-label="Jordan's Home: the trial strip keeps a line: Trial ended by Alex on day 41. Undo. And: Maria is helping with Mochi; today's rows carry Maria's name">
+        <div class="sb"><span>18:05</span><span class="sbr"></span></div>
+        <div class="apphdr"><span class="av"></span>Mochi</div>
+        <div class="card">
+          <p class="seclabel">Diet trial</p>
+          <p class="big">Trial ended by Alex on day 41.</p>
+          <p class="sline">It was set for 56 days. <span style="color:var(--app-teal-ink);font-weight:500">Undo</span></p>
+        </div>
+        <div class="card" style="gap:4px">
+          <p class="sline" style="color:var(--app-ink)">Maria is helping with Mochi and Biscuit.</p>
+          <div class="spine">
+            <div class="srow"><div class="stime">5:10<small class="who">Maria</small></div><span class="sdot"></span><div class="sbody"><b>Dinner, both</b><span>z/d · Biscuit's dry</span></div></div>
+            <div class="srow"><div class="stime">5:13<small class="who">Maria</small></div><span class="sdot ink"></span><div class="sbody"><b>Apoquel</b><span>given</span></div></div>
+          </div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>The trace, and a stay.</b><span>The end stays on Jordan's strip until seen. During a stay, a context line, and the rows carry the sitter's label; the evening Day Summary carries the stay. Nothing ever says "nothing else eaten".</span></figcaption>
+    </figure>
+    <figure class="frame option small">
+      <span class="ftag t-opt">F13 · Option A · recommended</span>
+      <div class="phone crop" role="img" aria-label="On Alex's phone, Mochi's page: the details shown, then an inert line, Only Jordan can edit Mochi's details, archive Mochi or give someone else access">
+        <div class="card">
+          <div class="drow"><div class="dbody"><span class="dsub">Mochi's details</span><span class="dhead">Canine · 6 y · 24.1 kg</span></div></div>
+          <div class="drow"><div class="dbody"><span class="dsub">Only Jordan can edit Mochi's details, archive Mochi or give someone else access.</span></div></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>An inert line that explains.</b><span>No dimmed button to tap and wonder about.</span></figcaption>
+    </figure>
+    <figure class="frame option small">
+      <span class="ftag t-opt">F13 · Option B</span>
+      <div class="phone crop" role="img" aria-label="Tappable rows, Edit details and Archive Mochi, each opening an explanation sheet">
+        <div class="card">
+          <div class="drow"><div class="dbody"><span class="dhead" style="color:var(--app-ink-2)">Edit Mochi's details</span><span class="dsub">Jordan's call</span></div><span class="chev">›</span></div>
+          <div class="drow"><div class="dbody"><span class="dhead" style="color:var(--app-ink-2)">Archive Mochi</span><span class="dsub">Jordan's call</span></div><span class="chev">›</span></div>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>A row that opens an explanation.</b><span>Discoverable, and one more tap that ends in "no".</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- §08 -->
+<section id="s08">
+  <div class="sec-head"><span class="sec-num">§08</span><h2>Ending access, and the vet report</h2></div>
+  <div class="col"><p>Ending access stops the future and never reaches the past. The removed phone purges on its next sync; what the person logged stays, and they become a role. At a clean break, the person leaving can keep a copy (a fast follow). Brief <a href="#d9">D9</a>.</p></div>
+  <div class="frames">
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone" role="img" aria-label="Remove Alex: Alex's phone stops showing Mochi and Biscuit. What Alex logged stays on the record. Remove Alex. Then change your password.">
+        <div class="sb"><span>20:00</span><span class="sbr"></span></div>
+        <div class="dim"><div class="card ghost"><i></i><i></i></div></div>
+        <div class="sheet">
+          <span class="grab"></span>
+          <p class="serif">Stop sharing with Alex?</p>
+          <p class="sline">Alex's phone stops showing Mochi and Biscuit the next time it connects. What Alex logged stays on the record, as "a household member".</p>
+          <div class="acts col"><span class="btn r">Stop sharing</span><span class="btn t">Cancel</span></div>
+          <p class="tline">Next: change your password and sign out other phones.</p>
+        </div>
+      </div>
+      <figcaption class="frame-cap"><b>Removing someone.</b><span>Immediate on the server. No notification goes to the removed person.</span></figcaption>
+    </figure>
+    <figure class="frame">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="phone" role="img" aria-label="Leave Mochi's record: You'll stop seeing Mochi and Biscuit. Save Mochi's vet report first. Keep a copy, coming later. Leave.">
+        <div class="sb"><span>20:02</span><span class="sbr"></span></div>
+        <div class="navhdr"><span class="back">‹ Sharing</span></div>
+        <p class="ttl">Leave Mochi's record</p>
+        <div class="card">
+          <p class="sline" style="color:var(--app-ink)">You'll stop seeing Mochi and Biscuit on this phone. What you logged stays on their record.</p>
+          <div class="drow"><div class="dbody"><span class="dhead">Save Mochi's vet report first</span><span class="dsub">A PDF of the record as it is today</span></div><span class="chev">›</span></div>
+          <div class="drow"><div class="dbody"><span class="dhead" style="color:var(--app-ink-2)">Keep a copy of the record</span><span class="dsub">Coming in a later update</span></div></div>
+        </div>
+        <div class="acts col"><span class="btn r">Leave</span></div>
+      </div>
+      <figcaption class="frame-cap"><b>Leaving.</b><span>Unilateral and silent. In v1 the person leaving can save the report; "Keep a copy" follows, disclosed at invite and never marked on the original.</span></figcaption>
+    </figure>
+    <figure class="frame" style="width:min(520px,100%)">
+      <span class="ftag t-cur">Current proposal</span>
+      <div class="paper" role="img" aria-label="Vet report excerpt: owner of record Jordan; recorded by the owner and 1 household member; a sitter reported 11 entries, Mar 3 to 7; appendix G with initials">
+        <p class="ph">Signalment</p>
+        <p><b>Mochi</b> · Canine · 6 y · Owner of record: Jordan</p>
+        <p class="ph">Recorded by</p>
+        <p>The owner and 1 household member. A sitter reported 11 entries, Mar 3 to 7; incident and exposure rows from those days carry a "sitter" tag.</p>
+        <p class="ph">Appendix G · Observations</p>
+        <p>Initials name who recorded each entry. Two people's entries on one day are two observations, not a change. Entries before Oct 20 were made on a shared login; who recorded them is not known.</p>
+        <div class="foot"><span>Owner of record: Jordan</span><span>Owner- and sitter-reported</span></div>
+      </div>
+      <figcaption class="frame-cap"><b>The report, in roles.</b><span>The owner comes from the pet, never from whoever printed it. No household names on incident or exposure rows; initials only in the observation appendix.</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- §09 -->
+<section id="s09">
+  <div class="sec-head"><span class="sec-num">§09</span><h2>The decision round</h2></div>
+  <div class="col"><p>Ten briefs. Nine carry the team's recommendation; one is a persona conflict with no recommendation. Rule them in the session, by letter (for example "D1 a, D6 b").</p></div>
+  <div class="briefs">
+    <div class="brief" id="d1"><h3>D1 · Adopt the shape, and its order <span class="pill">Recommended (a)</span></h3>
+      <p><b>Deciding:</b> whether household sharing is built as three ways in over one record, and in what order.</p>
+      <ol type="a"><li><b>Recommended:</b> the card, then readiness and the record's rules, then partners, then the sitter link (the riskiest piece, dark for a dogfood household first).</li><li>The card and partners only; the sitter link later.</li><li>Partners only, as August drew it.</li></ol>
+      <p><b>Consequence:</b> (a) unblocks the run order (§11). (b) defers the round's main opening, trial-aware help for the sitter. <b>Forecast:</b> 26 rows; push, "Same one?", transfer and keep-a-copy follow outside it.</p>
+      <p class="frames-ref">Frames: §01 to §08.</p></div>
+    <div class="brief" id="d2"><h3>D2 · What a partner can do <span class="pill">Recommended (a)</span></h3>
+      <p><b>Deciding:</b> whether a partner can change the care plan, not only log.</p>
+      <ol type="a"><li><b>Recommended (every lens, with guards):</b> start, end or extend a trial and add or change a medicine; each change dated, named and undoable; only the pet's owner edits the pet's profile, archives, grants an account or transfers; the note on a vet call stays with whoever wrote it, the call itself is shared.</li><li>Plan changes owner only (August).</li><li>Two equal owners.</li></ol>
+      <p><b>Consequence:</b> (a) needs two rule changes first: a food added to a trial counts from the day it was added (B-456), and trial changes become append-only so two phones can't silently undo each other.</p>
+      <p class="frames-ref">Frames: §07, F13.</p></div>
+    <div class="brief" id="d3"><h3>D3 · Sitter links: two kinds <span class="pill">Recommended (a)</span></h3>
+      <p><b>Deciding:</b> how long a sitter link lives and what its page shows.</p>
+      <ol type="a"><li><b>Recommended (Trust &amp; Safety and the sitter consultant, reconciled):</b> a stay link ends the morning after its date, which has a ceiling (one tap extends); a regular link has no date and ends after 30 days unused, or if you don't keep it at a 90-day check. Every link ends when its maker loses access. Both: bound to one browser, today only, no household names, never "away".</li><li>Stay links only.</li><li>Links that never end.</li></ol>
+      <p><b>Consequence:</b> (a) a regular link's feedings count as exposures but never make a day "covered": a daycare's lunches can't speak for a home's dinners.</p>
+      <p class="frames-ref">Frames: §04.</p></div>
+    <div class="brief" id="d4"><h3>D4 · Safety without push in v1 <span class="pill">Recommended (a), with a stated residual</span></h3>
+      <p><b>Deciding:</b> whether v1 needs server push so an escalation reaches you when someone else's entries raise it.</p>
+      <ol type="a"><li><b>Recommended:</b> no cross-person push in v1. A symptom logged on a shared pet pulls first, so the logger sees what two people's entries make together; an escalation raised by someone else's entry leads Home the moment it arrives; the sitter page runs the same rules, offline too, and hands off by person. <b>Residual:</b> when two entries meet only after a phone reconnects, the phone that completes the pair shows it at once and the other person sees it at their next open. Only push closes that.</li><li>Build safety push in v1 (about 4 more rows, a review cycle, the push provider question answered now).</li><li>No sitter link until push exists.</li></ol>
+      <p><b>Consequence:</b> (a) ships without new infrastructure and accepts the residual until the first server push; (b) closes it now, at the cost of an App Review cycle.</p>
+      <p class="frames-ref">Frames: §04, the escalation and the visit text.</p></div>
+    <div class="brief" id="d5"><h3>D5 · The record's rules with several loggers, as a set <span class="pill">Recommended (a)</span></h3>
+      <p><b>Deciding:</b> how counts, intake and doses stay honest with more than one logger.</p>
+      <ol type="a"><li><b>Recommended:</b> nothing depends on who is signed in; possible duplicates take the louder reading until someone resolves them (both count, every flag, the lower intake where it can raise a warning and the higher where it sets a baseline); doses checked across people by medicine, any author included, with no one-to-two hour clamp; sitter-only days never count as days symptoms were watched; "fed" never records how much was eaten.</li><li>Partner rules now, sitter rules in the sitter phase.</li></ol>
+      <p><b>Consequence:</b> (a) changes the engine and the report, so each such build PR gets an adversarial review.</p>
+      <p class="frames-ref">Frames: §05, §06.</p></div>
+    <div class="brief" id="d6"><h3>D6 · A check before saving a second dose of a critical medicine <span class="pill open">Persona conflict</span></h3>
+      <div class="conflict"><span><b>Designer:</b> people log after the pill is in. A question before saving lands too late to prevent anything and adds a decision at the moment of event. Prevention is the card at rest.</span><span><b>Dr. Chen:</b> for insulin and drugs like it, one stopped double dose is worth the friction. Critical medicines only.</span><span><b>PM decision needed:</b> (a) no check before saving (Designer), or (b) a check before saving for critical medicines only (Dr. Chen)?</span></div>
+      <p><b>Consequence:</b> (b) needs "critical" defined first, which is the open owner-toggle question on CUL-272.</p>
+      <p class="frames-ref">Frames: §06, D6 options A and B.</p></div>
+    <div class="brief" id="d7"><h3>D7 · Who shows by name <span class="pill">Recommended (a)</span></h3>
+      <p><b>Deciding:</b> where a person's name appears.</p>
+      <ol type="a"><li><b>Recommended:</b> names in the app (others by first name on the row; your own rows unnamed; an entry's detail always says who), never on the off-diet list or a sitter's page; the vet report in roles, initials only in its observation appendix; a person who leaves becomes a role.</li><li>Names on the report too.</li><li>No names anywhere.</li></ol>
+      <p><b>Consequence:</b> (a) answers "did you log the treat?" without turning the trial's off-diet list into a list of who slipped.</p>
+      <p class="frames-ref">Frames: §05 F3, §08 the report.</p></div>
+    <div class="brief" id="d8"><h3>D8 · AI reads on a shared pet <span class="pill">Recommended (a)</span></h3>
+      <p><b>Deciding:</b> whose yes a photo or note needs before it goes to the AI.</p>
+      <ol type="a"><li><b>Recommended (Trust &amp; Safety):</b> a photo or note needs a yes from the owner, the sender and its author; the Signal needs the owner and the caller; a sitter answers once, for photos and notes, no default; AI use is charged to you, with one small sitter allowance across all your links.</li><li>Owner and caller only (the Oct 13 recommendation).</li><li>Owner only.</li></ol>
+      <p><b>Consequence:</b> (a) ships before any account gains access to another's pet; the consent copy names the rule.</p>
+      <p class="frames-ref">Frames: §04, Start.</p></div>
+    <div class="brief" id="d9"><h3>D9 · When people separate <span class="pill">Recommended (a)</span></h3>
+      <p><b>Deciding:</b> what each person keeps when a couple splits or someone leaves.</p>
+      <ol type="a"><li><b>Recommended (Trust &amp; Safety and Data, reconciled):</b> v1 ends access at once, offers you a password change, and lets the person leaving save the report. Next: "Keep a copy" at a clean break (names become roles, no future appointments, disclosed at invite, never marked on the original) and transfer. A pet in two homes keeps shared access instead.</li><li>You keep the record; the other person exports only their own entries.</li><li>Nothing leaves.</li></ol>
+      <p><b>Consequence:</b> (a) gives a person leaving a bad home their pet's history without telling the other person.</p>
+      <p class="frames-ref">Frames: §08.</p></div>
+    <div class="brief" id="d10"><h3>D10 · Price <span class="pill">Recommended (a)</span></h3>
+      <p><b>Deciding:</b> whether any part of sharing is paid.</p>
+      <ol type="a"><li><b>Recommended (every lens, the pricing consultant included):</b> all of sharing free forever, written into the boundary table; a future Premium covers everyone on a pet, decided by the pet; the 4-pet gate counts pets you own, never pets you can see; up to 4 accounts on every tier.</li><li>Partners free, sitter links Premium.</li><li>Free up to N people.</li></ol>
+      <p><b>Consequence:</b> (a) forecloses a per-seat family plan; (b) puts a purchase in front of an owner packing to leave.</p>
+      <p class="frames-ref">Frames: §02, the invite's "free for both of you".</p></div>
+  </div>
+</section>
+
+<!-- §10 -->
+<section id="s10">
+  <div class="sec-head"><span class="sec-num">§10</span><h2>Team calls already made</h2></div>
+  <div class="col"><p>Logged on CUL-1935. Each is reversible; say so and it changes.</p></div>
+  <ul class="calls">
+    <li><b>Wording:</b> "Sharing", "share" and the person's name. Never "household", "caregiver" or "member" in the app.</li>
+    <li><b>Invites activate on your confirmation</b>, by name, before anything syncs.</li>
+    <li><b>A person who leaves becomes a role</b> on what they logged.</li>
+    <li><b>Owner-only actions explain themselves</b> with an inert line (F13 A).</li>
+    <li><b>"Same one?" is never answered on Home</b> (F5 B).</li>
+    <li><b>Visual choices follow the recommended options</b>: F3 A, F5 B, F7 A, F9 A, F13 A.</li>
+    <li><b>A copy prints that it is a copy; the original never shows one exists.</b> A pet in two homes keeps shared access.</li>
+    <li><b>An ended sitter page names no pet</b>; the rules travel in the message you sent.</li>
+    <li><b>A partner can remove a photo they added</b>, through one server action that removes the photo and its file and leaves a "photo removed" mark (accepted by the privacy review). Otherwise only you hard-delete.</li>
+  </ul>
+</section>
+
+<!-- §11 -->
+<section id="s11">
+  <div class="sec-head"><span class="sec-num">§11</span><h2>The build plan</h2></div>
+  <div class="col"><p>26 rows, starting after 1.2.0 clears App Store review. Schema PRs stay isolated, each migration applied on your typed number. The privacy red team re-runs on every schema PR and on the sitter link's function and photos; the adversarial review's second pass runs on the build PRs that carry the record's rules.</p></div>
+  <div class="scroll-x">
+    <table class="plan">
+      <thead><tr><th>Phase</th><th>What lands</th></tr></thead>
+      <tbody>
+        <tr><td>0 · The card (1)</td><td>"Send the rules": the share sheet and a printable card.</td></tr>
+        <tr><td>1 · Readiness and the record (6)</td><td>The owner's answer joins every AI door; flags and consent by owner on the phone; pet photos private; trial foods count from the day they were added; doses across people; possible duplicates and the louder reading.</td></tr>
+        <tr><td>2 · Partners (14)</td><td>Five schema PRs (memberships and invites; the event family and Storage; the care record, looks and intake; one pantry; the author column); the invite function; the report's owner line and Appendix G; membership reads and the joining door; the Sharing screens and leaving a shared login; the purge; names and author-aware copy; dose freshness; deleting an account both ways; the privacy policy and terms.</td></tr>
+        <tr><td>3 · The sitter link (5)</td><td>Links schema; the link function with the escalation rules; the page on getculprit.app; your link screens and urgent checks for others' entries; sitter photos.</td></tr>
+        <tr><td>Fast follows</td><td>Safety push (about 4 rows) · "Same one?" · keep a copy and transfer.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+</div>
