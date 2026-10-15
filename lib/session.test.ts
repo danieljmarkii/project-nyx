@@ -668,6 +668,7 @@ describe('every store is classified against the sign-out wipe (CUL-1255)', () =>
       '(CUL-1174 split the state out so Home imports no consent writer)',
     authStore: 'the session itself, nulled by the SIGNED_OUT handler; its recovery state ' +
       'must SURVIVE this wipe, which the reset handler calls mid-attempt (spec §6.3, FR-12)',
+    crashStore: 'one boolean, whether the app has failed (CUL-1841); holds nothing of the account',
     foodLibraryStore: 'a version counter that tells screens to re-read; holds no rows',
     recordChangeStore: 'a version counter a removal raises so screens re-read; holds no rows (CUL-1665)',
     reducedMotionStore: 'the OS Reduce Motion setting, a device fact (C-43)',
