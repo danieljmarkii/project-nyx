@@ -456,56 +456,376 @@
   .r5-schem { font-size: 11px; color: #A3A3A3; margin-top: 8px; }
   .r5-gapcard .r31-gap { margin-bottom: 8px; }
   .r5-fab { width: 44px; height: 44px; border-radius: 50%; background: #0A0A0A; color: #FFFFFF; font-size: 24px; line-height: 44px; text-align: center; margin: 12px 4px 0 auto; }
+  /* R6:CSS:BEGIN */
+  /* Round 6 (2026-10-15, CUL-1936): the design review. Document chrome uses the page's tokens;
+     device frames stay light and are drawn in the SHIPPED Home order: the Signal first, then
+     Today with the look as its header. The motion numbers are the shipped ones:
+     foldMotion.ts (the rail leads 160ms, the box opens 80ms behind it over 370ms with one
+     settle, the sentence lands 40ms later over 300ms from 8pt above), threadMotion.ts (a row
+     lands from 4pt above over 300ms on cubic-bezier(.2,.8,.2,1)), drawInMotion.ts (marks
+     first, words a beat later), lookMotion.ts (a ring draws itself over 320ms). */
+  :root {
+    --heat-0: #FFFFFF; --heat-1: #EEFAF7; --heat-2: #D3F3EC; --heat-3: #AEE8DD; --heat-4: #7FD9C9;
+    --heat-ink: #1B1A2E;
+    --kill-ink: #B4123B;
+    --s-r5: #7A63D9;   /* chart series: round 5 (validated with the A teal, light) */
+    --s-a: #119C87;    /* chart series: direction A */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --heat-0: #1D1A42; --heat-1: rgba(0,194,168,0.10); --heat-2: rgba(0,194,168,0.18);
+      --heat-3: rgba(0,194,168,0.28); --heat-4: rgba(0,194,168,0.42);
+      --heat-ink: #ECEAF6; --kill-ink: #FB7185;
+      --s-r5: #8B78E3; --s-a: #119C87;
+    }
+  }
+  :root[data-theme="dark"] {
+    --heat-0: #1D1A42; --heat-1: rgba(0,194,168,0.10); --heat-2: rgba(0,194,168,0.18);
+    --heat-3: rgba(0,194,168,0.28); --heat-4: rgba(0,194,168,0.42);
+    --heat-ink: #ECEAF6; --kill-ink: #FB7185;
+    --s-r5: #8B78E3; --s-a: #119C87;
+  }
+
+  /* ── The panel ───────────────────────────────────────────── */
+  .r6-panel { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 28px; margin-top: 24px; align-items: start; }
+  @media (max-width: 900px) { .r6-panel { grid-template-columns: minmax(0, 1fr); } }
+  .r6-box { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; padding: 16px 18px; min-width: 0; }
+  .r6-box h3 { margin: 0 0 4px; font-size: 14px; }
+  .r6-box .sub { font-size: 12.5px; color: var(--ink-3); margin: 0 0 12px; }
+  .r6-scroll { overflow-x: auto; }
+  table.r6-matrix { border-collapse: separate; border-spacing: 3px; width: 100%; min-width: 560px; table-layout: fixed; font-variant-numeric: tabular-nums; }
+  .r6-matrix thead th:first-child { width: 132px; }
+  .r6-matrix thead th:last-child { width: 118px; }
+  .r6-matrix th { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; text-align: center; padding: 0 2px 4px; vertical-align: bottom; line-height: 1.25; }
+  .r6-matrix th.c { text-align: left; }
+  .r6-matrix tbody th { text-align: left; font-family: var(--sans); font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--ink); white-space: nowrap; padding-right: 8px; vertical-align: middle; }
+  .r6-matrix tbody th small { display: block; font-size: 11px; color: var(--ink-3); font-weight: 400; }
+  .r6-matrix td { text-align: center; font-size: 14px; font-weight: 600; color: var(--heat-ink); border-radius: 4px; padding: 7px 0; min-width: 44px; position: relative; }
+  .r6-matrix td.h0 { background: var(--heat-0); box-shadow: inset 0 0 0 1px var(--rule); }
+  .r6-matrix td.h1 { background: var(--heat-1); } .r6-matrix td.h2 { background: var(--heat-2); }
+  .r6-matrix td.h3 { background: var(--heat-3); } .r6-matrix td.h4 { background: var(--heat-4); }
+  .r6-matrix td.x::after { content: "×"; position: absolute; top: 1px; right: 4px; font-size: 11px; color: var(--kill-ink); font-weight: 700; }
+  .r6-matrix td.out { text-align: left; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 700; padding-left: 8px; white-space: nowrap; }
+  .r6-matrix td.out.keep { color: var(--teal-ink); }
+  .r6-matrix td.out.kill { color: var(--kill-ink); }
+  .r6-matrix td.out.merge { color: var(--ink-3); }
+  .r6-matrix tr.dead th, .r6-matrix tr.dead td:not(.out) { opacity: 0.55; }
+  .r6-key { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11.5px; color: var(--ink-3); margin-top: 10px; align-items: center; }
+  .r6-key i { display: inline-block; width: 14px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 2px; }
+  .r6-key b { color: var(--kill-ink); }
+
+  /* the trade-off: R5 against A, test by test (means of six, 0 to 3) */
+  .r6-dumb { display: grid; gap: 7px; }
+  .r6-drow { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; align-items: center; font-size: 12.5px; color: var(--ink-2); }
+  .r6-drow .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .r6-track { position: relative; height: 18px; border-left: 1px solid var(--rule); border-right: 1px solid var(--rule-soft); background: linear-gradient(90deg, transparent calc(33.33% - 0.5px), var(--rule-soft) calc(33.33% - 0.5px), var(--rule-soft) calc(33.33% + 0.5px), transparent calc(33.33% + 0.5px), transparent calc(66.66% - 0.5px), var(--rule-soft) calc(66.66% - 0.5px), var(--rule-soft) calc(66.66% + 0.5px), transparent calc(66.66% + 0.5px)); }
+  .r6-track .ln { position: absolute; top: 8px; height: 2px; background: var(--rule); }
+  .r6-track .d { position: absolute; top: 4px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; box-shadow: 0 0 0 2px var(--paper-2); }
+  .r6-track .d.r5 { background: var(--s-r5); }
+  .r6-track .d.a { background: var(--s-a); border-radius: 2px; }
+  .r6-axis { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .r6-axis div { display: flex; justify-content: space-between; }
+  .r6-legend { display: flex; gap: 16px; font-size: 12px; color: var(--ink-2); margin-bottom: 10px; }
+  .r6-legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 6px; vertical-align: -1px; }
+  .r6-legend .r5::before { background: var(--s-r5); border-radius: 50%; }
+  .r6-legend .a::before { background: var(--s-a); border-radius: 2px; }
+  .r6-win { font-size: 11px; color: var(--ink-3); margin-top: 10px; }
+
+  /* ── The finalists, side by side ─────────────────────────── */
+  .r6-grid { display: grid; grid-template-columns: 168px repeat(2, minmax(0, 340px)); gap: 26px 28px; margin-top: 28px; align-items: start; }
+  @media (max-width: 920px) { .r6-grid { grid-template-columns: minmax(0, 1fr); } .r6-grid > .r6-spacer { display: none; } }
+  .r6-fin { background: var(--paper-2); border: 1px solid var(--rule); border-radius: 3px; padding: 16px 18px; min-width: 0; }
+  .r6-fin.rec { border-top: 3px solid var(--teal); }
+  .r6-fin .fn { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .r6-fin .fn b { font-family: var(--serif); font-size: 21px; letter-spacing: -0.01em; color: var(--ink); }
+  .r6-fin .fn .no { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--teal-ink); }
+  .r6-fin .chip { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; color: var(--teal-ink); background: var(--teal-wash); border-radius: 999px; padding: 2px 8px; }
+  .r6-fin p { font-size: 14px; color: var(--ink-2); margin: 0 0 10px; }
+  .r6-fin .obj { border-left: 2px solid var(--rose); padding-left: 12px; margin: 0; }
+  .r6-fin .obj b { display: block; font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--rose-ink); margin-bottom: 3px; }
+  .r6-fin .obj span { display: block; font-size: 13.5px; color: var(--ink); }
+  .r6-fin .obj i { display: block; font-style: normal; font-size: 12.5px; color: var(--ink-3); margin-top: 4px; }
+  .r6-beat { min-width: 0; padding-top: 6px; }
+  .r6-beat .bn { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--teal-ink); }
+  .r6-beat h3 { margin: 4px 0 4px; font-family: var(--serif); font-size: 18px; font-weight: 600; line-height: 1.25; }
+  .r6-beat p { font-size: 13px; color: var(--ink-2); margin: 0 0 12px; }
+  .r6-play { font: 600 13px var(--sans); color: var(--paper-2); background: var(--ink); border: 0; border-radius: 999px; padding: 8px 14px 8px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+  .r6-play::before { content: ""; width: 0; height: 0; border-left: 8px solid currentColor; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+  .r6-play:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  .r6-cell { min-width: 0; }
+  .r6-who { display: inline-block; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700; color: var(--ink-2); background: var(--rule-soft); border-radius: 999px; padding: 3px 9px; margin-bottom: 8px; }
+  .r6-sheet { font-family: var(--mono); font-size: 11px; line-height: 1.6; color: var(--ink-3); margin: 10px 2px 0; }
+  .r6-sheet b { color: var(--ink-2); font-weight: 600; }
+  .r6-same { font-size: 13px; color: var(--ink-3); margin: 8px 2px 0; }
+
+  /* device frames: the shipped light Home, cropped to what changes */
+  .r6-phone { width: 100%; max-width: 340px; background: #F7F7F7; border-radius: 34px; border: 1px solid rgba(10,10,10,0.14); box-shadow: 0 14px 36px rgba(19,17,46,0.12); padding: 10px 10px 14px; color: #0A0A0A; font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  .r6-ctx { font-size: 11px; color: #737373; text-align: center; margin: -2px 0 8px; }
+  .r6-hdr { display: flex; align-items: center; gap: 8px; padding: 0 6px 10px; font-size: 15px; font-weight: 600; }
+  .r6-av { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, #4A4668, #211E4E); color: #F2EEE4; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+  .r6-hdr .dt { margin-left: auto; font-size: 12px; font-weight: 400; color: #737373; }
+  .r6-card { background: #FFFFFF; border-radius: 16px; padding: 14px 16px 12px; box-shadow: 0 4px 14px rgba(10,10,10,0.07); margin-bottom: 10px; }
+  .r6-label { font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #525252; margin-bottom: 10px; }
+  .r6-line { display: flex; align-items: center; gap: 9px; font-size: 15px; line-height: 22px; }
+  .r6-tick { width: 3px; height: 16px; border-radius: 2px; background: #D4D4D4; flex: none; }
+  .r6-body { display: flex; gap: 9px; align-items: stretch; }
+  .r6-rail { width: 3px; border-radius: 2px; background: #00C2A8; flex: none; transform-origin: top center; }
+  .r6-in { flex: 1; min-width: 0; }
+  .r6-sent { font-size: 15px; line-height: 21px; margin: 0 0 10px; }
+  .r6-foot { display: flex; gap: 10px; border-top: 1px solid #EAEAEA; margin-top: 12px; padding-top: 10px; font-size: 13px; font-weight: 600; color: #0B7B6C; }
+  .r6-foot .rep { margin-left: auto; }
+  .r6-q { font-family: var(--serif); font-size: 15.5px; line-height: 21px; margin: 0 0 8px; }
+  .r6-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+  .r6-chips span { font-size: 11.5px; border: 1px solid #EAEAEA; border-radius: 999px; padding: 4px 9px; }
+  .r6-empty { font-size: 13px; line-height: 18px; color: #737373; margin: 0; }
+  .r6-count { font-size: 12px; color: #525252; margin: 0 0 4px; font-variant-numeric: tabular-nums; }
+  .r6-count b { color: #0A0A0A; }
+  .r6-spine { position: relative; padding-left: 18px; }
+  .r6-thread { position: absolute; left: 4px; top: 12px; bottom: 12px; width: 2px; background: #EAEAEA; transform-origin: top center; }
+  .r6-srow { position: relative; display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13px; }
+  .r6-srow .n { position: absolute; left: -18px; width: 10px; height: 10px; border-radius: 50%; background: #00C2A8; box-shadow: 0 0 0 2px #FFFFFF; }
+  .r6-srow .n.s { background: #F43F5E; }
+  .r6-srow .t { margin-left: auto; color: #737373; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .r6-fab { width: 40px; height: 40px; border-radius: 50%; background: #0A0A0A; color: #FFFFFF; font-size: 22px; line-height: 40px; text-align: center; margin: 4px 4px 0 auto; }
+
+  /* the evidence lane: one symptom's episodes and the unlogged days, on one axis */
+  .r6-lane { position: relative; height: 50px; }
+  .r6-ldays { display: flex; gap: 1px; height: 22px; }
+  .r6-ldays i { flex: 1; background: #F5F5F5; border-radius: 2px; }
+  .r6-ldays i.q { background: repeating-linear-gradient(135deg, #CFCFCF 0 1.5px, #FFFFFF 1.5px 4px); }
+  .r6-vd { position: absolute; top: 7px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: #F43F5E; box-shadow: 0 0 0 2px #FFFFFF; }
+  .r6-gb { position: absolute; top: 26px; height: 7px; border: 1.5px solid #737373; border-top: 0; border-radius: 0 0 3px 3px; transform-origin: left center; }
+  .r6-gl { position: absolute; top: 35px; font-size: 10.5px; line-height: 12px; color: #0A0A0A; font-weight: 600; transform: translateX(-50%); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .r6-laxis { display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: #737373; margin-top: 2px; }
+  .r6-laxis .k::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; background: repeating-linear-gradient(135deg, #CFCFCF 0 1.5px, #FFFFFF 1.5px 4px); box-shadow: inset 0 0 0 1px #E5E5E5; }
+
+  /* the week, on History's own day face (components/charts/DayMark.tsx) */
+  .r6-wk { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; position: relative; }
+  .r6-wd { font-size: 10px; color: #A3A3A3; text-align: center; margin-bottom: 3px; }
+  .r6-dm { aspect-ratio: 1; border-radius: 8px; background: #FFFFFF; border: 1px solid #EAEAEA; position: relative; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #525252; font-variant-numeric: tabular-nums; }
+  .r6-dm u { position: absolute; left: 22%; right: 22%; bottom: 4px; height: 2.5px; border-radius: 1px; background: #0FA08B; }
+  .r6-dm u.br { background: repeating-linear-gradient(90deg, #0FA08B 0 3px, transparent 3px 5px); }
+  .r6-dm.grey { background: #F5F5F5; border-color: transparent; }
+  .r6-dm.rose { background: #F43F5E; border-color: transparent; color: #0A0A0A; font-weight: 600; }
+  .r6-dm.rose u { background: #FFFFFF; }
+  .r6-dm.ahead { background: transparent; color: #737373; }
+  .r6-dm.none { background: transparent; border-color: transparent; color: #A3A3A3; }
+  .r6-dm.today { border: 1.5px solid #0A0A0A; }
+  .r6-wkbr { position: relative; height: 26px; }
+  .r6-wgap { position: absolute; top: 3px; height: 7px; border: 1.5px solid #737373; border-top: 0; border-radius: 0 0 3px 3px; transform-origin: left center; }
+  .r6-wgl { position: absolute; top: 12px; font-size: 10.5px; line-height: 12px; font-weight: 600; transform: translateX(-50%); font-variant-numeric: tabular-nums; }
+
+  /* The stages a played frame moves through: pre, mid, then post. At rest (no stage class) a
+     frame shows post, where it lands, so the page is complete with no script. */
+  .r6-phone.st-pre .v-mid, .r6-phone.st-pre .v-post, .r6-phone.st-pre .v-midpost { display: none !important; }
+  .r6-phone.st-mid .v-pre, .r6-phone.st-mid .v-post { display: none !important; }
+  .r6-phone:not(.st-pre):not(.st-mid) .v-pre,
+  .r6-phone:not(.st-pre):not(.st-mid) .v-mid,
+  .r6-phone:not(.st-pre):not(.st-mid) .v-premid { display: none !important; }
+
+  /* the ruling */
+  .r6-brief { background: var(--paper-2); border: 1px solid var(--rule); border-left: 3px solid var(--teal); border-radius: 3px; padding: 18px 22px; margin-top: 20px; display: grid; gap: 10px; max-width: 78ch; }
+  .r6-brief p { margin: 0; font-size: 15px; color: var(--ink-2); }
+  .r6-brief p > b:first-child { color: var(--ink); }
+  .r6-brief ol { margin: 4px 0 0; padding-left: 22px; display: grid; gap: 6px; font-size: 15px; color: var(--ink-2); }
+  .r6-brief .rec { color: var(--teal-ink); font-weight: 700; }
+  .r6-either { margin: 18px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; max-width: 78ch; }
+  .r6-either li { font-size: 14px; color: var(--ink-2); padding-left: 18px; position: relative; }
+  .r6-either li::before { content: "·"; position: absolute; left: 2px; color: var(--teal-ink); font-weight: 700; }
+  .r6-either li b { color: var(--ink); }
+  /* R6:CSS:END */
   /* R3:CSS:END */
 </style>
 
 <div class="wrap">
 
   <!-- R3:BEGIN -->
-  <!-- ══════════════════ ROUND 5 · THE SIGNAL EARNS ITS PLACE (2026-10-15, CUL-1837) ══════════════════ -->
-  <section class="r3" id="round-3">
+  <!-- ══════════════════ ROUND 6 · THE DESIGN REVIEW (2026-10-15, CUL-1936) ══════════════════ -->
+  <section class="r3" id="round-6">
     <header class="mast">
       <p class="eyebrow">
-        <span>Culprit</span><span>Signal &amp; Home</span><span>CUL-1837</span><span>2026-10-15</span>
-        <span class="roundtag"><b>Round 5 · the Signal earns its place</b>&nbsp;· current · supersedes round 4</span>
+        <span>Culprit</span><span>Signal &amp; Home</span><span>CUL-1936</span><span>2026-10-15</span>
+        <span class="roundtag"><b>Round 6 · the design review</b>&nbsp;· current · supersedes round 5</span>
       </p>
-      <h1>Until there's a signal,<br/>the Signal is one line.</h1>
+      <h1>Two finalists,<br/>one ruling.</h1>
       <p class="standfirst">
-        Your read on round 4: the Signal was turning into History until there's enough data. Right. Home already has the
-        record (the daily look and the Today card) and the app has History. So the Signal stops drawing the record: it is one
-        honest line with the way to the vet signs, and it takes the full card the moment it has something true to say.
-        Round 4's five directions are retired (git keeps them at <code>5c214d8</code>).
+        Six outside consultants reviewed round 5 and round 4's five directions, each in a separate room.
+        B, C and D were killed six to nothing, and E folded into round 5. The converge round left two
+        finalists, drawn below the way Home really renders, with the Signal on top. <strong>All six recommend
+        the first.</strong> Round 5 is in git at <code>5c70092</code>.
       </p>
     </header>
 
-    <div class="r3-banner">
-      <strong>Why this holds up</strong>
-      <ul class="r3-ledger">
-        <li><strong>Principle 3:</strong> Home is an intelligence surface, never a feed. A Signal that shows logs is a feed.</li>
-        <li><strong>The research still gets its payoff, in the right places:</strong> each log is read back in Today (and on its own screen, with the photo read), and the record lives in Today and History. None of it needs the Signal.</li>
-        <li><strong>Silence stays honest:</strong> the one line never says calm, and the vet signs are one tap away in every state (Dr. Chen's condition).</li>
-        <li><strong>The first real signal arrives on its own terms:</strong> the gaps warning can fire within days, and it takes the full card.</li>
-        <li><strong>It simplifies the build:</strong> day 0, the first days, looks only and gone quiet all collapse to the one line. Only the gaps warning needs a full card before a finding exists.</li>
-      </ul>
-    </div>
-
     <section>
-      <div class="sec-head"><span class="sec-num">R5 · 01</span><h2>The whole Home, four moments</h2></div>
-      <div class="col"><p>Drawn as the full Home so you can see what fills the screen instead. The look header is schematic.</p></div>
-      <div class="r3-frames"><div class="r3-slot"><span class="r3-tag cur">Current proposal</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">Pixel · just installed · nothing logged</div><div class="r5-look"><div class="r3-label" style="margin-bottom:4px">Noticed</div><div class="r5-chips"><span>Sleeping more</span><span>Restless</span><span>Not herself</span><span>More…</span></div></div><div class="r4-today"><div class="r3-label">Today</div><div class="empty">The look above is enough to start. Meals, symptoms and medication go in with the + button.</div></div><div class="r3-card r4-card-sm"><div class="r3-label">Signal</div><div class="r4-one"><span>Nothing to show yet</span><b>When to call the vet ›</b></div></div><div class="r5-fab">+</div></div><p class="r3-cap"><b>Day 0</b>The look and the + button are the first moves; Today already says so. The Signal is one honest line and the way to the vet signs.</p></div><div class="r3-slot"><span class="r3-tag cur">Current proposal</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">Pixel · one clear foam vomit · no meal</div><div class="r5-look"><div class="r3-label" style="margin-bottom:4px">Noticed</div><div class="r5-chips"><span>Sleeping more</span><span>Restless</span><span>Not herself</span><span>More…</span></div></div><div class="r4-today"><div class="r3-label">Today</div><div class="r4-row"><i class="s"></i>Vomit · clear foam<span class="t">11:05 pm</span></div></div><div class="r3-card r4-card-sm"><div class="r3-label">Signal</div><div class="r4-one"><span>Nothing to show yet</span><b>When to call the vet ›</b></div></div><div class="r5-fab">+</div></div><p class="r3-cap"><b>Sam, 11:05 pm</b>The vomit lands in Today, where the day lives (and opens its own screen, with the photo read if there is one). The Signal does not repeat it: one log is not a signal.</p></div><div class="r3-slot"><span class="r3-tag cur">Current proposal</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">Vomits 12, 7 and 3 days apart</div><div class="r5-look"><div class="r3-label" style="margin-bottom:4px">Noticed</div><div class="r5-chips"><span>Sleeping more</span><span>Restless</span><span>Not herself</span><span>More…</span></div></div><div class="r4-today"><div class="r3-label">Today</div><div class="empty">Nothing logged yet today</div></div><div class="r3-card r5-gapcard"><div class="r3-label">Signal</div><p class="r31-gap">Gaps between vomiting episodes are getting shorter — 12 days, then 7, then 3.</p><div class="r31-door" style="margin-top:4px">Worried? <b>When to call the vet ›</b></div><div class="r3-foot">All patterns ›</div></div><div class="r5-fab">+</div></div><p class="r3-cap"><b>Day 9: the first real signal</b>The card takes its full size the moment it has something true to say. The gaps warning is the earliest a Signal can be, and it stays until the next log (your ruling).</p></div><div class="r3-slot"><span class="r3-tag cur">Current proposal</span><div class="r3-phone"><div class="r3-notch"></div><div class="r3-ctx">A month in · nothing logged since Tuesday</div><div class="r5-look"><div class="r3-label" style="margin-bottom:4px">Noticed</div><div class="r5-chips"><span>Sleeping more</span><span>Restless</span><span>Not herself</span><span>More…</span></div></div><div class="r4-today"><div class="r3-label">Today</div><div class="empty">Nothing logged yet today</div></div><div class="r3-card r4-card-sm"><div class="r3-label">Signal</div><div class="r4-one"><span>Nothing logged since Tue</span><b>When to call the vet ›</b></div></div><div class="r5-fab">+</div></div><p class="r3-cap"><b>Gone quiet</b>Still one line, now dated. No sentence about missing data, and nothing that reads as calm.</p></div></div>
-    </section>
-
-    <section>
-      <div class="sec-head"><span class="sec-num">R5 · 02</span><h2>For the build (PR-21, CUL-1838)</h2></div>
-      <div class="col">
-        <ul class="r3-ledger">
-          <li><strong>One line, two states:</strong> "Nothing to show yet" while the record is young or holds only looks; "Nothing logged since {day}" once it has gone quiet. Both end in "When to call the vet ›", which opens the existing sheet.</li>
-          <li><strong>Routing.</strong> Zero events is never <code>stale</code>. The building, looks-only and stale states render the one line; the no-pattern state on a mature record keeps its shipped copy for now, minus the old floor line.</li>
-          <li><strong>The gaps warning</strong> renders the full card in any of those states, stays until the next log, counts only logged time, and a look never moves its anchor.</li>
-          <li><strong>Retires:</strong> the ghost receipts, the watching-for list, the "This is week 1" row, "We're getting to know {pet}", the stale paragraph and the old floor line.</li>
-        </ul>
+      <div class="sec-head"><span class="sec-num">R6 · 01</span><h2>The panel</h2></div>
+      <div class="col"><p>Six outside consultants, each in their own room, scored round 5 and round 4's five directions against your seven tests.</p></div>
+      <div class="r6-panel">
+        <div class="r6-box">
+          <h3>Round 1: kill</h3>
+          <p class="sub">Each consultant's total, out of 21 (seven tests, 0 to 3 each)</p>
+          <div class="r6-scroll">
+            <table class="r6-matrix">
+              <thead>
+                <tr><th class="c">Candidate</th><th>Calm<br/>designer</th><th>Behavioural<br/>scientist</th><th>GP<br/>vet</th><th>Sam,<br/>11 pm</th><th>Data-<br/>vis</th><th>Motion</th><th class="c">Outcome</th></tr>
+              </thead>
+              <tbody>
+                <tr><th>R5<small>One line until earned</small></th><td class="h3">14</td><td class="h4">16</td><td class="h4">16</td><td class="h4">16</td><td class="h4">16</td><td class="h4">16</td><td class="out keep">Kept · 6 of 6</td></tr>
+                <tr><th>A<small>The record</small></th><td class="h3">15</td><td class="h3">15</td><td class="h4">16</td><td class="h3">15</td><td class="h2 x" title="Killed as the card; kept as the warning's evidence">12</td><td class="h3">14</td><td class="out keep">Kept · 5 of 6</td></tr>
+                <tr><th>E<small>Quiet until earned</small></th><td class="h3">14</td><td class="h4">16</td><td class="h4">16</td><td class="h4">16</td><td class="h4">16</td><td class="h3">15</td><td class="out merge">Merged into R5</td></tr>
+                <tr class="dead"><th>B<small>The diary</small></th><td class="h1">10</td><td class="h2">11</td><td class="h1">10</td><td class="h2">11</td><td class="h2">11</td><td class="h1">10</td><td class="out kill">Killed · 6 of 6</td></tr>
+                <tr class="dead"><th>C<small>The case file</small></th><td class="h1">10</td><td class="h1">9</td><td class="h1">10</td><td class="h1">10</td><td class="h1">7</td><td class="h1">10</td><td class="out kill">Killed · 6 of 6</td></tr>
+                <tr class="dead"><th>D<small>Today against usual</small></th><td class="h0">4</td><td class="h0">3</td><td class="h0">4</td><td class="h0">5</td><td class="h0">5</td><td class="h0">3</td><td class="out kill">Killed · 6 of 6</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="r6-key"><span><i style="background:var(--heat-1)"></i>6–10</span><span><i style="background:var(--heat-2)"></i>11–13</span><span><i style="background:var(--heat-3)"></i>14–15</span><span><i style="background:var(--heat-4)"></i>16+</span><span><b>×</b> killed by that consultant</span></div>
+        </div>
+        <div class="r6-box">
+          <h3>Why both survivors live</h3>
+          <p class="sub">The mean of six scores per test, 0 to 3</p>
+          <div class="r6-legend"><span class="r5">R5</span><span class="a">A</span></div>
+          <div class="r6-dumb" role="img" aria-label="Round 5 against direction A, test by test. Round 5 leads on no duplication, low copy and build cost. A leads at 11 pm, on silence, at day 30 and on the first signal's motion.">
+            <div class="r6-drow"><span class="t">Sam at 11 pm</span><div class="r6-track"><span class="ln" style="left:66.67%;width:22.33%"></span><span class="d r5" style="left:66.67%" title="R5 2.00"></span><span class="d a" style="left:89.00%" title="A 2.67"></span></div></div>
+            <div class="r6-drow"><span class="t">Silence never fine</span><div class="r6-track"><span class="ln" style="left:66.67%;width:22.33%"></span><span class="d r5" style="left:66.67%" title="R5 2.00"></span><span class="d a" style="left:89.00%" title="A 2.67"></span></div></div>
+            <div class="r6-drow"><span class="t">No duplication</span><div class="r6-track"><span class="ln" style="left:33.33%;width:66.67%"></span><span class="d r5" style="left:100.00%" title="R5 3.00"></span><span class="d a" style="left:33.33%" title="A 1.00"></span></div></div>
+            <div class="r6-drow"><span class="t">Friendly, low copy</span><div class="r6-track"><span class="ln" style="left:44.33%;width:44.67%"></span><span class="d r5" style="left:89.00%" title="R5 2.67"></span><span class="d a" style="left:44.33%" title="A 1.33"></span></div></div>
+            <div class="r6-drow"><span class="t">Day 30</span><div class="r6-track"><span class="ln" style="left:44.33%;width:16.67%"></span><span class="d r5" style="left:44.33%" title="R5 1.33"></span><span class="d a" style="left:61.00%" title="A 1.83"></span></div></div>
+            <div class="r6-drow"><span class="t">First signal moves</span><div class="r6-track"><span class="ln" style="left:55.67%;width:44.33%"></span><span class="d r5" style="left:55.67%" title="R5 1.67"></span><span class="d a" style="left:100.00%" title="A 3.00"></span></div></div>
+            <div class="r6-drow"><span class="t">Build cost</span><div class="r6-track"><span class="ln" style="left:66.67%;width:33.33%"></span><span class="d r5" style="left:100.00%" title="R5 3.00"></span><span class="d a" style="left:66.67%" title="A 2.00"></span></div></div>
+          </div>
+          <div class="r6-axis"><span></span><div><span>0</span><span>1</span><span>2</span><span>3</span></div></div>
+          <p class="r6-win">R5 leads where Home is crowded. A leads where Sam needs the record.</p>
+        </div>
       </div>
     </section>
+
+
+    <section>
+      <div class="sec-head"><span class="sec-num">R6 · 02</span><h2>The finalists, side by side</h2></div>
+      <div class="col"><p>Each row is one moment on both finalists. Press Play to watch it land; at rest, each frame shows where it ends.</p></div>
+      <div class="r6-grid">
+        <div class="r6-spacer"></div>
+        <div class="r6-fin rec">
+          <div class="fn"><span class="no">1</span><b>The quiet line</b><span class="chip">Recommended · 6 of 6</span></div>
+          <p>Round 5, amended. One line until there is something true to say, and the line reads “Too early to tell”, never “Nothing to show yet”. The vet report door arrives with the first log. The record stays in Today, the coverage door and History.</p>
+          <p class="obj"><b>Strongest objection</b><span>For weeks, and for good on a record with no pattern, the top of Home answers every log with the same line, and the research says to show the record now.</span><i>Raised by four of the six who back it. Partly answered: Today reads each log back, and the line no longer says “nothing”.</i></p>
+        </div>
+        <div class="r6-fin">
+          <div class="fn"><span class="no">2</span><b>The record</b></div>
+          <p>Direction A, amended. From the first log, the Signal draws this week on History’s own day face: rose for a symptom, grey for nothing logged, a broken line for an unfinished meal. No count, no read-back, no legend.</p>
+          <p class="obj"><b>Strongest objection</b><span>It is History at the top of Home for the weeks most owners stay, the drift you read in round 4, and a second drawing of days that Today, the coverage door and History already draw.</span><i>Raised by five of six. The day face fixes its marks; nothing fixes the repeat.</i></p>
+        </div>
+
+        <div class="r6-beat"><span class="bn">1</span><h3>The empty state</h3><p>Day 0, just installed. Nothing moves and nothing loops.</p></div>
+        <div class="r6-cell"><span class="r6-who">1 · The quiet line</span><div class="r6-phone"><div class="r3-notch"></div><div class="r6-ctx">Day 0 · just installed · nothing logged</div><div class="r6-hdr"><span class="r6-av">P</span>Pixel<span class="dt">Tue 22 Sep</span></div><div class="r6-card"><div class="r6-label">Signal</div><div class="r6-line"><i class="r6-tick"></i>Too early to tell</div><div class="r6-foot"><span>When to call the vet ›</span></div></div><div class="r6-card"><div class="r6-label">Today</div><p class="r6-q">How does Pixel seem today?</p><div class="r6-chips"><span>Off</span><span>Sleeping more</span><span>Hiding</span><span>Lively</span><span>More…</span></div><p class="r6-empty">Nothing logged yet today. Meals, symptoms and medication go in with the + button. The look above is enough to start.</p></div><div class="r6-fab">+</div></div></div>
+        <div class="r6-cell"><span class="r6-who">2 · The record</span><div class="r6-phone"><div class="r3-notch"></div><div class="r6-ctx">Day 0 · just installed · nothing logged</div><div class="r6-hdr"><span class="r6-av">P</span>Pixel<span class="dt">Tue 22 Sep</span></div><div class="r6-card"><div class="r6-label">Signal</div><div class="r6-line"><i class="r6-tick"></i>Too early to tell</div><div class="r6-foot"><span>When to call the vet ›</span></div></div><div class="r6-card"><div class="r6-label">Today</div><p class="r6-q">How does Pixel seem today?</p><div class="r6-chips"><span>Off</span><span>Sleeping more</span><span>Hiding</span><span>Lively</span><span>More…</span></div><p class="r6-empty">Nothing logged yet today. Meals, symptoms and medication go in with the + button. The look above is enough to start.</p></div><div class="r6-fab">+</div></div><p class="r6-same">The same in both, because the record starts with the first log.</p></div>
+
+        <div class="r6-beat"><span class="bn">2</span><h3>A log lands</h3><p>11:05 pm. Sam saves Pixel’s first vomit and comes back to Home.</p><button class="r6-play" type="button" data-play="b2">Play</button></div>
+        <div class="r6-cell" data-row="b2"><span class="r6-who">1 · The quiet line</span><div class="r6-phone" data-stages="pre post"><div class="r3-notch"></div><div class="r6-ctx">Tue 22 Sep · 11:05 pm · Sam logs the first vomit</div><div class="r6-hdr"><span class="r6-av">P</span>Pixel<span class="dt">Tue 22 Sep</span></div><div class="r6-card"><div class="r6-label">Signal</div><div class="r6-line"><i class="r6-tick"></i>Too early to tell</div><div class="r6-foot"><span>When to call the vet ›</span><span class="rep v-post" data-at="post" data-m="fade" data-d="300">Vet report ›</span></div></div><div class="r6-card" data-grow data-grow-d="0"><div class="r6-label">Today</div><p class="r6-q">How does Pixel seem today?</p><div class="r6-chips"><span>Off</span><span>Sleeping more</span><span>Hiding</span><span>Lively</span><span>More…</span></div><p class="r6-empty v-pre">Nothing logged yet today. Meals, symptoms and medication go in with the + button. The look above is enough to start.</p><p class="r6-count v-post" data-at="post" data-m="fade" data-d="0"><b>1</b> logged · 1 vomit</p><div class="v-post"><div class="r6-spine"><span class="r6-thread" data-at="post" data-m="thread" data-d="0"></span><div class="r6-srow" data-at="post" data-m="land" data-d="120"><span class="n s"></span>Vomit · clear foam<span class="t">11:05 pm</span></div></div></div></div><div class="r6-fab">+</div></div><p class="r6-sheet"><b>0</b> the thread draws in Today · <b>120</b> the row lands · <b>300</b> “Vet report ›” fades in. The line, the look and the + button hold still.</p></div>
+        <div class="r6-cell" data-row="b2"><span class="r6-who">2 · The record</span><div class="r6-phone" data-stages="pre post"><div class="r3-notch"></div><div class="r6-ctx">Tue 22 Sep · 11:05 pm · Sam logs the first vomit</div><div class="r6-hdr"><span class="r6-av">P</span>Pixel<span class="dt">Tue 22 Sep</span></div><div class="r6-card" data-grow data-grow-d="0"><div class="r6-label">Signal</div><div class="v-pre"><div class="r6-line"><i class="r6-tick"></i>Too early to tell</div></div><div class="v-post" data-at="post" data-m="fade" data-d="120"><div class="r6-wk"><span class="r6-wd">S</span><span class="r6-wd">M</span><span class="r6-wd">T</span><span class="r6-wd">W</span><span class="r6-wd">T</span><span class="r6-wd">F</span><span class="r6-wd">S</span></div><div class="r6-wk"><span class="r6-dm none">20</span><span class="r6-dm none">21</span><span class="r6-dm rose today ">22<u></u></span><span class="r6-dm ahead">23</span><span class="r6-dm ahead">24</span><span class="r6-dm ahead">25</span><span class="r6-dm ahead">26</span></div></div><div class="r6-foot"><span>When to call the vet ›</span><span class="rep v-post" data-at="post" data-m="fade" data-d="400">Vet report ›</span></div></div><div class="r6-card" data-grow data-grow-d="0"><div class="r6-label">Today</div><p class="r6-q">How does Pixel seem today?</p><div class="r6-chips"><span>Off</span><span>Sleeping more</span><span>Hiding</span><span>Lively</span><span>More…</span></div><p class="r6-empty v-pre">Nothing logged yet today. Meals, symptoms and medication go in with the + button. The look above is enough to start.</p><p class="r6-count v-post" data-at="post" data-m="fade" data-d="0"><b>1</b> logged · 1 vomit</p><div class="v-post"><div class="r6-spine"><span class="r6-thread" data-at="post" data-m="thread" data-d="0"></span><div class="r6-srow" data-at="post" data-m="land" data-d="120"><span class="n s"></span>Vomit · clear foam<span class="t">11:05 pm</span></div></div></div></div><div class="r6-fab">+</div></div><p class="r6-sheet"><b>0</b> the row lands in Today, and the Signal opens for the week with one settle · <b>120</b> the week fades in, Tue 22 in rose · <b>400</b> “Vet report ›” fades in.</p></div>
+
+        <div class="r6-beat"><span class="bn">3</span><h3>The first signal arrives</h3><p>Week 4. Pixel’s fourth vomit comes 3 days after the third, which came 7 after the second, 12 after the first.</p><button class="r6-play" type="button" data-play="b3">Play</button></div>
+        <div class="r6-cell" data-row="b3"><span class="r6-who">1 · The quiet line</span><div class="r6-phone" data-stages="pre mid post"><div class="r3-notch"></div><div class="r6-ctx">Wed 14 Oct · week 4 · the fourth vomit</div><div class="r6-hdr"><span class="r6-av">P</span>Pixel<span class="dt">Wed 14 Oct</span></div><div class="r6-card" data-grow data-grow-d="80"><div class="r6-label">Signal</div><div class="v-premid"><div class="r6-line"><i class="r6-tick"></i>Too early to tell</div></div><div class="r6-body v-post"><i class="r6-rail" data-at="post" data-m="rail" data-from="0.18" data-d="0"></i><div class="r6-in"><p class="r6-sent" data-at="post" data-m="sentence" data-d="640">Gaps between vomiting episodes are getting shorter — 12 days, then 7, then 3.</p><div class="r6-lane"><div class="r6-ldays" data-at="post" data-m="fade" data-d="100"><i></i><i></i><i></i><i></i><i class="q"></i><i class="q"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="q"></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="r6-vd" style="left:2.17%" data-at="post" data-m="pop" data-d="120"></span><span class="r6-vd" style="left:54.35%" data-at="post" data-m="pop" data-d="170"></span><span class="r6-vd" style="left:84.78%" data-at="post" data-m="pop" data-d="220"></span><span class="r6-vd" style="left:97.83%" data-at="post" data-m="pop" data-d="270"></span><span class="r6-gb" style="left:2.17%;width:52.17%" data-at="post" data-m="extend" data-d="300"></span><span class="r6-gb" style="left:54.35%;width:30.43%" data-at="post" data-m="extend" data-d="370"></span><span class="r6-gb" style="left:84.78%;width:13.04%" data-at="post" data-m="extend" data-d="440"></span><span class="r6-gl" style="left:28.26%" data-at="post" data-m="fade" data-d="560">12 d</span><span class="r6-gl" style="left:69.57%" data-at="post" data-m="fade" data-d="600">7 d</span><span class="r6-gl" style="left:91.30%" data-at="post" data-m="fade" data-d="640">3 d</span></div><div class="r6-laxis" data-at="post" data-m="fade" data-d="600"><span>22 Sep · first log</span><span class="k">nothing logged</span><span>Today</span></div></div></div><div class="r6-foot"><span>When to call the vet ›</span><span class="rep">Vet report ›</span></div></div><div class="r6-card" data-grow data-grow-d="0"><div class="r6-label">Today</div><p class="r6-q">How does Pixel seem today?</p><div class="r6-chips"><span>Off</span><span>Sleeping more</span><span>Hiding</span><span>Lively</span><span>More…</span></div><p class="r6-count v-pre"><b>1</b> logged · 1 meal</p><p class="r6-count v-midpost" data-at="mid" data-m="fade" data-d="0"><b>2</b> logged · 1 meal · 1 vomit</p><div class="r6-spine"><span class="r6-thread"></span><div class="r6-srow"><span class="n"></span>Breakfast · ate all<span class="t">7:30 am</span></div><div class="r6-srow v-midpost" data-at="mid" data-m="land" data-d="120"><span class="n s"></span>Vomit · clear foam<span class="t">10:40 pm</span></div></div></div><div class="r6-fab">+</div></div><p class="r6-sheet"><b>0</b> the row lands in Today · <b>+0.9 s</b> the tick grows into the rail · <b>80</b> the box opens with one settle, and Today moves down once · <b>120</b> four vomits appear, oldest first · <b>300</b> the gaps extend, each shorter · <b>640</b> the sentence lands. No tap, no wash, no “first pattern”.</p></div>
+        <div class="r6-cell" data-row="b3"><span class="r6-who">2 · The record</span><div class="r6-phone" data-stages="pre mid post"><div class="r3-notch"></div><div class="r6-ctx">Wed 14 Oct · week 4 · the fourth vomit</div><div class="r6-hdr"><span class="r6-av">P</span>Pixel<span class="dt">Wed 14 Oct</span></div><div class="r6-card" data-grow data-grow-d="80"><div class="r6-label">Signal</div><div class="r6-wk"><span class="r6-wd">S</span><span class="r6-wd">M</span><span class="r6-wd">T</span><span class="r6-wd">W</span><span class="r6-wd">T</span><span class="r6-wd">F</span><span class="r6-wd">S</span></div><div class="r6-wk"><span class="r6-dm rose">11<u></u></span><span class="r6-dm white">12<u></u></span><span class="r6-dm white">13<u></u></span><span class="r6-dm white today v-pre">14<u></u></span><span class="r6-dm rose today v-midpost" data-at="mid" data-m="fade" data-d="120">14<u></u></span><span class="r6-dm ahead">15</span><span class="r6-dm ahead">16</span><span class="r6-dm ahead">17</span></div><div class="r6-wkbr v-post"><span class="r6-wgap" style="left:calc((100% + 4px) * 0.0714 - 2px);width:calc((100% + 4px) * 0.4286)" data-at="post" data-m="extend" data-d="0"></span><span class="r6-wgl" style="left:calc((100% + 4px) * 0.2857 - 2px)" data-at="post" data-m="fade" data-d="260">3 d</span></div><div class="r6-body v-post" style="margin-top:6px"><i class="r6-rail" data-at="post" data-m="rail" data-from="0.3" data-d="80"></i><div class="r6-in"><p class="r6-sent" style="margin:0" data-at="post" data-m="sentence" data-d="420">Gaps between vomiting episodes are getting shorter — 12 days, then 7, then 3.</p></div></div><div class="r6-foot"><span>When to call the vet ›</span><span class="rep">Vet report ›</span></div></div><div class="r6-card" data-grow data-grow-d="0"><div class="r6-label">Today</div><p class="r6-q">How does Pixel seem today?</p><div class="r6-chips"><span>Off</span><span>Sleeping more</span><span>Hiding</span><span>Lively</span><span>More…</span></div><p class="r6-count v-pre"><b>1</b> logged · 1 meal</p><p class="r6-count v-midpost" data-at="mid" data-m="fade" data-d="0"><b>2</b> logged · 1 meal · 1 vomit</p><div class="r6-spine"><span class="r6-thread"></span><div class="r6-srow"><span class="n"></span>Breakfast · ate all<span class="t">7:30 am</span></div><div class="r6-srow v-midpost" data-at="mid" data-m="land" data-d="120"><span class="n s"></span>Vomit · clear foam<span class="t">10:40 pm</span></div></div></div><div class="r6-fab">+</div></div><p class="r6-sheet"><b>0</b> the row lands; Wed 14 turns rose · <b>+0.9 s</b> the last gap is measured on the week, Sun to Wed · <b>80</b> the rail grows and the box opens below the week · <b>420</b> the sentence lands. The marks never move. The full run is one tap in.</p></div>
+
+        <div class="r6-beat"><span class="bn">4</span><h3>Day 30, nothing found</h3><p>Still logging. Nothing has cleared the bar.</p></div>
+        <div class="r6-cell"><span class="r6-who">1 · The quiet line</span><div class="r6-card" style="max-width:340px"><div class="r6-label">Signal</div><div class="r6-line" style="align-items:flex-start"><i class="r6-tick" style="margin-top:3px"></i><span>No pattern in a month of logs. That isn&#8217;t an all-clear.</span></div><div class="r6-foot"><span>When to call the vet ›</span><span class="rep">Vet report ›</span></div></div></div>
+        <div class="r6-cell"><span class="r6-who">2 · The record</span><div class="r6-card" style="max-width:340px"><div class="r6-label">Signal</div><div class="r6-wk"><span class="r6-wd">S</span><span class="r6-wd">M</span><span class="r6-wd">T</span><span class="r6-wd">W</span><span class="r6-wd">T</span><span class="r6-wd">F</span><span class="r6-wd">S</span></div><div class="r6-wk"><span class="r6-dm white">18<u></u></span><span class="r6-dm white">19<u class="br"></u></span><span class="r6-dm grey">20</span><span class="r6-dm white today">21<u></u></span><span class="r6-dm ahead">22</span><span class="r6-dm ahead">23</span><span class="r6-dm ahead">24</span></div><div style="margin-top:12px"><div class="r6-line" style="align-items:flex-start"><i class="r6-tick" style="margin-top:3px"></i><span>No pattern in a month of logs. That isn&#8217;t an all-clear.</span></div></div><div class="r6-foot"><span>When to call the vet ›</span><span class="rep">Vet report ›</span></div></div></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="sec-head"><span class="sec-num">R6 · 03</span><h2>Your one ruling</h2></div>
+      <div class="r6-brief">
+        <p><b>Deciding:</b> what the top of Home shows between a pet’s first log and its first real signal.</p>
+        <ol>
+          <li><span class="rec">The quiet line. Recommended, 6 of 6:</span> Today, the coverage door and History already draw the record, so a fourth drawing can only repeat or contradict them. The line no longer answers a symptom with “nothing”.</li>
+          <li>The record: this week on History’s day face, from the first log.</li>
+        </ol>
+        <p><b>Dissent:</b> none of the six dissents on the pick. For the record: the research brief and the team’s round 4 lean both favoured the record. The behavioural scientist warns that until a finding, “not logged” and “quiet” live only in words. Dr. Chen’s door-line dissent stands under both.</p>
+        <p><b>Consequence:</b> option 1 keeps the build (<a href="https://linear.app/projectnyx/issue/CUL-1838">CUL-1838</a>) to one PR before the cut, with the warning’s evidence lane as the next row after it. Option 2 puts History’s week on Home and needs a second PR before the cut.</p>
+        <p><b>Forecast:</b> option 1, 1 row before the cut and 1 after. Option 2, 2 rows before the cut.</p>
+      </div>
+
+      <h3>Either way: the panel’s calls, each yours to reverse</h3>
+      <ul class="r6-either">
+        <li><b>“Nothing to show yet” retires.</b> Above a logged symptom it reads as checked and fine (four of six).</li>
+        <li><b>No gold wash, tap or “first pattern is ready” over a warning.</b> It plays on main today when a pet’s first finding is the gap warning. Filed as <a href="https://linear.app/projectnyx/issue/CUL-1937">CUL-1937</a> (six of six).</li>
+        <li><b>The warning shows its evidence:</b> the vomits and the days with nothing logged, on one axis, before the sentence. Gaps between logged vomits can shrink just because logging got more careful, so the hatching is part of the claim (data-vis).</li>
+        <li><b>Day 30 is one line:</b> “No pattern in a month of logs. That isn’t an all-clear.” “Keep logging, and the moment something clears it, it’ll be here” retires (three of six; the behavioural scientist would keep the earlier line).</li>
+        <li><b>The vet door shows in every state</b> and never moves or changes wording as the card grows. Whether it should read “Call your vet today ›” once the record meets a call sign goes to Dr. Chen in the build’s clinical gate (the GP vet’s ask).</li>
+        <li><b>Two corrections to round 5:</b> the Signal sits above Today, as shipped, and the gaps warning can arrive at week 4 at the earliest, never day 9.</li>
+      </ul>
+    </section>
+
+    <script>
+      /* Round 6's motion sequences. Each frame rests on its end state (complete with no script);
+         Play snaps a row's frames back to where they start and runs the shipped beats. Reduce
+         Motion turns every move into a crossfade and every size change into a cut. */
+      (function () {
+        var SETTLE = 'cubic-bezier(.34,1.26,.64,1)';   // one felt settle, never a second bounce
+        var LAND = 'cubic-bezier(.2,.8,.2,1)';         // threadMotion's ease
+        var OUT = 'cubic-bezier(.33,1,.68,1)';
+        function reduced() {
+          try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
+        }
+        function anim(el, frames, o) {
+          if (!el.animate) return null;
+          o.fill = 'backwards';
+          return el.animate(frames, o);
+        }
+        var MOTION = {
+          land: function (el, d) { anim(el, [{ opacity: 0, transform: 'translateY(-4px)' }, { opacity: 1, transform: 'none' }], { duration: 300, delay: d, easing: LAND }); },
+          sentence: function (el, d) { anim(el, [{ opacity: 0, transform: 'translateY(-8px)' }, { opacity: 1, transform: 'none' }], { duration: 300, delay: d, easing: OUT }); },
+          rail: function (el, d) { anim(el, [{ transform: 'scaleY(' + (el.getAttribute('data-from') || '0.3') + ')' }, { transform: 'scaleY(1)' }], { duration: 160, delay: d, easing: LAND }); },
+          pop: function (el, d) { anim(el, [{ opacity: 0, transform: 'scale(.3)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 240, delay: d, easing: SETTLE }); },
+          extend: function (el, d) { anim(el, [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: 260, delay: d, easing: LAND }); },
+          thread: function (el, d) { anim(el, [{ transform: 'scaleY(0)' }, { transform: 'scaleY(1)' }], { duration: 370, delay: d, easing: LAND }); },
+          fade: function (el, d) { anim(el, [{ opacity: 0 }, { opacity: 1 }], { duration: 300, delay: d, easing: 'ease-in-out' }); }
+        };
+        function each(list, fn) { Array.prototype.forEach.call(list, fn); }
+        function stage(ph, st) {
+          ph.classList.remove('st-pre', 'st-mid');
+          if (st !== 'post') ph.classList.add('st-' + st);
+        }
+        function heights(ph) {
+          return Array.prototype.map.call(ph.querySelectorAll('[data-grow]'), function (g) { return g.getBoundingClientRect().height; });
+        }
+        function enter(ph, st, before) {
+          var rm = reduced();
+          var after = heights(ph);
+          each(ph.querySelectorAll('[data-grow]'), function (g, i) {
+            if (rm || Math.abs(after[i] - before[i]) < 1 || !g.animate) return;
+            g.style.overflow = 'hidden';
+            var a = g.animate([{ height: before[i] + 'px' }, { height: after[i] + 'px' }],
+              { duration: 370, delay: +(g.getAttribute('data-grow-d') || 0), easing: SETTLE, fill: 'backwards' });
+            a.onfinish = function () { g.style.overflow = ''; };
+          });
+          each(ph.querySelectorAll('[data-at="' + st + '"]'), function (el) {
+            var d = +(el.getAttribute('data-d') || 0);
+            if (rm) { MOTION.fade(el, Math.min(d, 300)); return; }
+            (MOTION[el.getAttribute('data-m')] || MOTION.fade)(el, d);
+          });
+        }
+        function play(ph) {
+          var stages = (ph.getAttribute('data-stages') || 'pre post').split(' ');
+          if (ph.getAnimations) each(ph.getAnimations({ subtree: true }), function (a) { a.cancel(); });
+          stage(ph, stages[0]);
+          var at = 0;
+          for (var s = 1; s < stages.length; s++) {
+            at += s === 1 ? 700 : 900;
+            (function (st, when) {
+              setTimeout(function () { var before = heights(ph); stage(ph, st); enter(ph, st, before); }, when);
+            })(stages[s], at);
+          }
+        }
+        each(document.querySelectorAll('[data-play]'), function (btn) {
+          btn.addEventListener('click', function () {
+            each(document.querySelectorAll('[data-row="' + btn.getAttribute('data-play') + '"] .r6-phone[data-stages]'), play);
+          });
+        });
+      })();
+    </script>
   </section>
 
 
