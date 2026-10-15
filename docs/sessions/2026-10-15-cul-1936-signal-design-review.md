@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-15
 
-**Mode:** DISCOVERY. Shipped via #1219: round 6 of `docs/culprit-signal-home-mockups.html`, republished to the Signal mock's artifact (https://claude.ai/artifact/3BUW5uQqA5dhukVnarkKmp, version 13). The PR is stacked on #1217, which holds rounds 3 to 5 and the research brief. #1217 cannot merge until this review ends, so the stack is deliberate.
+**Mode:** DISCOVERY. Shipped via #1219: rounds 6 and 7 of `docs/culprit-signal-home-mockups.html`, republished to the Signal mock's artifact (https://claude.ai/artifact/3BUW5uQqA5dhukVnarkKmp, versions 13 and 14). The PR is stacked on #1217, which holds rounds 3 to 5 and the research brief. #1217 cannot merge until this review ends, so the stack is deliberate.
 
 ## The method
 
@@ -99,3 +99,5 @@ The build note is now on CUL-1838 and on the project page's PR-21 row. CUL-1937 
 ## Next
 
 PR-21 (CUL-1838) starts on the PM's typed go. The subtitle is applied unless the PM changes it. The PR proposes the Tier-2 edit to `docs/nyx-signal-home-requirements.md` for the strings that B-721 §9 pins.
+
+Merge order: #1217 goes first, now that its last box (the PM picks a direction) is met. Its body names CUL-1936, so merging it closes this issue too. #1219 then conflicts on the mock page. The fix is to merge main into the branch and keep round 7.
