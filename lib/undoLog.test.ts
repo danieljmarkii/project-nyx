@@ -40,6 +40,18 @@ describe('reverseLoggedEvent', () => {
     (triggerSignalRegenDebounced as jest.Mock).mockClear();
   });
 
+  // CUL-1947 (adversarial pass 2): the soft delete can land and its floor marker then
+  // throw, skipping the regen trigger that re-reads Home's gap warning. The local record
+  // tick re-reads it anyway, and the failure still reaches the caller.
+  it('a removal that throws still bumps the record tick, and still throws', async () => {
+    const { useSyncStore } = require('../store/syncStore');
+    useSyncStore.setState({ recordTick: 0 });
+    (softDeleteEvent as jest.Mock).mockRejectedValueOnce(new Error('marker insert failed'));
+    await expect(reverseLoggedEvent('ev-1')).rejects.toThrow('marker insert failed');
+    expect(triggerSignalRegenDebounced).not.toHaveBeenCalled();
+    expect(useSyncStore.getState().recordTick).toBe(1);
+  });
+
   it('soft-deletes the event and queues the tombstone', async () => {
     await reverseLoggedEvent('ev-1');
     expect(softDeleteEvent).toHaveBeenCalledWith('ev-1');
@@ -85,8 +97,12 @@ describe('reverseLoggedEvent', () => {
     // widening, a hard delete reached from a reversal, and it is bounded on purpose: it
     // touches only the photo of the event just removed, never a record row, and every
     // other caller passes no flag. Its tests are below ("an undone log's photo").
+    // CUL-1947 added the sync store's record tick, on the failure path only: a data-free
+    // counter that re-reads Home's gap warning when the delete landed and its floor marker
+    // then threw. It writes no record.
     expect(imports.join('\n')).toBe(
       "import { useRecordChangeStore } from '../store/recordChangeStore';\n" +
+      "import { useSyncStore } from '../store/syncStore';\n" +
       "import { getEventPetId, softDeleteEvent } from './db';\n" +
       "import { noteRemoval } from './removalNotice';\n" +
       "import { triggerSignalRegenDebounced } from './signal';\n" +

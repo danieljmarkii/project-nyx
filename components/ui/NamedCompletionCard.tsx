@@ -213,6 +213,8 @@ export function NamedCompletionCard() {
     // single-point edit, so this is unreachable — but a null here must never
     // become a write that guesses.
     if (!edit) { setPickerOpen(false); return; }
+    // Hoisted so the finally below sees it (CUL-1947, adversarial pass 2).
+    let changed = false;
     setSaving(true);
     try {
       // Provenance is PRESERVED on a peek-and-save. Save is live even when the
@@ -222,7 +224,7 @@ export function NamedCompletionCard() {
       // card applies to `confidence` and to notes. sourceAfterPointEdit is the
       // shared predicate (B-448's "re-selecting the current value is not a new
       // claim", applied to the point).
-      const changed = edit.occurredAtIso !== payload.occurredAt;
+      changed = edit.occurredAtIso !== payload.occurredAt;
       const source = sourceAfterPointEdit(await getEventSource(payload.eventId), changed);
       await writeOwingFloorCheck(payload.eventId, () => updateEvent(payload.eventId, {
         occurred_at: edit.occurredAtIso,
@@ -239,10 +241,6 @@ export function NamedCompletionCard() {
         // claim, so a time correction can never promote a row to "seen".
         ...(edit.confidence ? { confidence: edit.confidence } : {}),
       }));
-      // CUL-1947 — a moved time moves the vomit gaps, and this path schedules no regen, so
-      // Home's gap warning (read from local rows, with Home still focused under the card)
-      // re-reads on the local write itself. A peek-and-save moved nothing.
-      if (changed) useSyncStore.getState().bumpRecordTick();
       patchInToday(payload.eventId, {
         occurred_at: edit.occurredAtIso,
         ...(edit.confidence
@@ -264,6 +262,12 @@ export function NamedCompletionCard() {
       console.error('[named-card] failed to update event time:', e);
       Alert.alert('Could not update time', 'Try again or edit from History.');
     } finally {
+      // CUL-1947 — a moved time moves the gap warning's inputs (a vomit onset, or a cut on
+      // its logged clock), and this path schedules no regen, so Home (still focused under
+      // the card) re-reads on the local write. In the finally: a write that lands and then
+      // throws (the floor marker, adversarial pass 2) must still re-read; an extra re-read
+      // after a write that never landed only errs loud. A peek-and-save moved nothing.
+      if (changed) useSyncStore.getState().bumpRecordTick();
       setSaving(false);
     }
   }
