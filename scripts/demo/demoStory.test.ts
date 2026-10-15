@@ -211,6 +211,36 @@ describe('demo story — emitted SQL safety guarantees', () => {
     expect(sql.indexOf('DELETE FROM event_attachments')).toBeLessThan(firstInsert);
   });
 
+  it('keeps a reviewer\'s own read: the read delete skips an event holding any other photo (rls-privacy F3)', () => {
+    const readDelete = sql.slice(sql.indexOf('DELETE FROM event_ai_analysis'));
+    expect(readDelete.slice(0, readDelete.indexOf(';'))).toContain(
+      `AND NOT EXISTS (SELECT 1 FROM event_attachments x WHERE x.event_id = '${story.retired.eventId}'::uuid ` +
+        `AND x.id <> '${story.retired.attachmentId}'::uuid)`,
+    );
+  });
+
+  it('refuses any story id already owned by another pet, on every pet-scoped table it writes (rls-privacy F2)', () => {
+    const prelude = sql.slice(0, sql.indexOf('$do$;'));
+    const story_ = story;
+    const expectations: Array<[string, string]> = [
+      ['events', story_.events[0].eventId],
+      ['meals', story_.events.find((e) => e.meal)!.meal!.mealId],
+      ['weight_checks', story_.events.find((e) => e.weight)!.weight!.weightCheckId],
+      ['diet_trials', story_.trial.id],
+      ['diet_trial_foods', story_.allowedFoods[0].id],
+      ['vet_visits', story_.visit.id],
+      ['vet_appointments', story_.appointment.id],
+    ];
+    for (const [table, id] of expectations) {
+      const check = new RegExp(
+        `IF EXISTS \\(SELECT 1 FROM ${table} WHERE id IN \\([^)]*'${id}'::uuid[^)]*\\) ` +
+          `AND pet_id IS DISTINCT FROM '${PARAMS.petId}'::uuid\\) THEN\\n` +
+          `    RAISE EXCEPTION 'demo seed refused: a demo ${table} id belongs to another pet'`,
+      );
+      expect(prelude).toMatch(check);
+    }
+  });
+
   it('retires the exact ids the 2026-08 story wrote (golden: attachment:vomit-d-3)', () => {
     expect(story.retired.attachmentId).toBe('6e2b21dc-84d5-5b61-ab56-fbf7a36dd071');
     expect(story.retired.eventId).toBe(uuidV5('event:vomit-d-3', PARAMS.petId));
@@ -293,6 +323,22 @@ describe('demo story — emitted SQL safety guarantees', () => {
     expect(dry.trimEnd().endsWith('ROLLBACK;')).toBe(true);
     expect(dry).not.toContain('\nCOMMIT;');
     expect(dry).toMatch(/count\(\*\)/);
+  });
+
+  it('delivers the dry-run counts as the error execute_sql returns, before and after the retirement (rls-privacy F1)', () => {
+    const dry = emitSeedSqlForParams(PARAMS, { dryRun: true });
+    // execute_sql returns only the last statement's result, so the counts ride a RAISE.
+    expect(dry).toContain(`RAISE EXCEPTION 'demo DRY RUN, nothing written: %', v_counts;`);
+    expect(dry.indexOf('demo DRY RUN')).toBeGreaterThan(dry.lastIndexOf('INSERT INTO'));
+    expect(dry).toContain("current_setting('demo_seed.attachments_before', true)");
+    expect(dry).toContain("current_setting('demo_seed.reads_before', true)");
+    // The before-counts are stored in the prelude, ahead of the deletes, transaction-local.
+    const stored = dry.indexOf("set_config('demo_seed.reads_before'");
+    expect(stored).toBeGreaterThan(-1);
+    expect(stored).toBeLessThan(dry.indexOf('DELETE FROM event_ai_analysis'));
+    expect(dry).toMatch(/set_config\('demo_seed\.attachments_before', [^\n]*, true\)/);
+    // The live seed carries no dry-run RAISE.
+    expect(emitSeedSqlForParams(PARAMS)).not.toContain('demo DRY RUN');
   });
 });
 

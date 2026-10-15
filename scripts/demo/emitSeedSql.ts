@@ -56,9 +56,10 @@ const LIT_TAG = 'demolit';
 
 export interface EmitOptions {
   /**
-   * Dry-run: emit the assertion prelude + all upserts inside a transaction, then a
-   * scoped counts read-back, then ROLLBACK — nothing persists. The operator runs
-   * this first, reads the counts, then runs the real (committing) seed (§8).
+   * Dry-run: emit the assertion prelude + all writes inside a transaction, then a DO
+   * block that RAISEs the scoped counts (so `execute_sql` shows them) — nothing
+   * persists. The operator runs this first, reads the counts, then runs the real
+   * (committing) seed (§8).
    */
   dryRun?: boolean;
 }
@@ -185,9 +186,44 @@ function assertionPrelude(story: DemoStory): string {
     `  ) THEN\n` +
     `    RAISE EXCEPTION 'demo seed refused: a demo food id already belongs to another account';\n` +
     `  END IF;\n` +
+    `  -- (4) No story id on a pet-scoped table belongs to another pet (rls-privacy F2,\n` +
+    `  --     CUL-1848). Ids are client-choosable and uuidV5 of the pet id is in the repo,\n` +
+    `  --     so without this an ON CONFLICT (id) DO UPDATE could overwrite another\n` +
+    `  --     account's row (or, where the upsert carries pet_id, re-parent it).\n` +
+    childIdChecks(story) +
+    `  -- (5) The before-counts the dry run reports beside its after-counts (F1).\n` +
+    `  PERFORM set_config('demo_seed.attachments_before', (SELECT count(*) FROM event_attachments WHERE event_id = ${uuidLit(story.retired.eventId)} AND pet_id = ${p})::text, true);\n` +
+    `  PERFORM set_config('demo_seed.reads_before', (SELECT count(*) FROM event_ai_analysis WHERE event_id = ${uuidLit(story.retired.eventId)} AND pet_id = ${p})::text, true);\n` +
     `END\n` +
     `$do$;`
   );
+}
+
+/** Every id the seed upserts on a table that carries pet_id, grouped by table. */
+function childIds(story: DemoStory): Array<{ table: string; ids: string[] }> {
+  const meals = story.events.flatMap((e) => (e.meal ? [e.meal.mealId] : []));
+  const weights = story.events.flatMap((e) => (e.weight ? [e.weight.weightCheckId] : []));
+  return [
+    { table: 'events', ids: story.events.map((e) => e.eventId) },
+    { table: 'meals', ids: meals },
+    { table: 'weight_checks', ids: weights },
+    { table: 'diet_trials', ids: [story.trial.id] },
+    { table: 'diet_trial_foods', ids: story.allowedFoods.map((a) => a.id) },
+    { table: 'vet_visits', ids: [story.visit.id] },
+    { table: 'vet_appointments', ids: [story.appointment.id] },
+  ];
+}
+
+function childIdChecks(story: DemoStory): string {
+  const p = uuidLit(story.petId);
+  return childIds(story)
+    .map(
+      ({ table, ids }) =>
+        `  IF EXISTS (SELECT 1 FROM ${table} WHERE id IN (${ids.map(uuidLit).join(', ')}) AND pet_id IS DISTINCT FROM ${p}) THEN\n` +
+        `    RAISE EXCEPTION 'demo seed refused: a demo ${table} id belongs to another pet';\n` +
+        `  END IF;\n`,
+    )
+    .join('');
 }
 
 function foodUpserts(story: DemoStory): string[] {
@@ -376,18 +412,22 @@ function ownedPetScope(story: DemoStory): string {
  * D13 (a) (PM 2026-10-12, CUL-1848): the demo account carries no photo and no AI
  * read. The 2026-08 run left a photo row pointing at an object that was never
  * uploaded, and an analyze-vomit call on that vomit left one read. Both go, by exact
- * id; neither table has a soft-delete column. On every later run these match nothing.
+ * id; neither table has a soft-delete column. On every later run these match nothing,
+ * and the read is kept whenever the event holds a photo of its own (a reviewer's).
  * Hydration is insert-if-absent for attachments, so a device that already synced the
  * row keeps it until sign-out (the §12.3 step 5 note); the reviewer's device is fresh.
  */
 function retirePhotoSlot(story: DemoStory): string[] {
   const scope = ownedPetScope(story);
+  const eventId = uuidLit(story.retired.eventId);
+  const attachmentId = uuidLit(story.retired.attachmentId);
   return [
-    `DELETE FROM event_ai_analysis
-WHERE event_id = ${uuidLit(story.retired.eventId)} AND ${scope};`,
-    `DELETE FROM event_attachments
-WHERE id = ${uuidLit(story.retired.attachmentId)}
-  AND event_id = ${uuidLit(story.retired.eventId)} AND ${scope};`,
+    // Only while the event holds no photo but the retired one (rls-privacy F3): a
+    // reviewer who adds their own photo to this vomit gets a real read, and the
+    // cadence re-seed must not take it away.
+    `DELETE FROM event_ai_analysis\nWHERE event_id = ${eventId} AND ${scope}\n` +
+      `  AND NOT EXISTS (SELECT 1 FROM event_attachments x WHERE x.event_id = ${eventId} AND x.id <> ${attachmentId});`,
+    `DELETE FROM event_attachments\nWHERE id = ${attachmentId}\n  AND event_id = ${eventId} AND ${scope};`,
   ];
 }
 
@@ -480,27 +520,51 @@ function eventRow(e: DemoEvent, petIdLit: string): string {
   );
 }
 
-/** A scoped counts read-back for the dry-run — what the seed WOULD leave behind. */
-function countsReadback(story: DemoStory): string {
+/**
+ * The dry run's read-back (rls-privacy F1). `execute_sql` returns only the LAST
+ * statement's result, and a SELECT before a ROLLBACK is not the last, so the counts
+ * travel in an exception message (the fixture seed's shape, emitFixtureSql.ts): the DO
+ * block reads them and RAISEs, which aborts the transaction (nothing persists) and puts
+ * them where the operator is sure to see them. The two retired tables report
+ * before -> after, from the settings the prelude stored.
+ */
+function dryRunReadback(story: DemoStory): string {
   const p = uuidLit(story.petId);
   const u = uuidLit(story.userId);
+  const e = uuidLit(story.retired.eventId);
   return (
-    `SELECT 'food_items' AS entity, count(*) AS n FROM food_items WHERE created_by_user_id = ${u}\n` +
-    `UNION ALL SELECT 'diet_trials', count(*) FROM diet_trials WHERE pet_id = ${p}\n` +
-    `UNION ALL SELECT 'diet_trial_foods', count(*) FROM diet_trial_foods WHERE pet_id = ${p} AND deleted_at IS NULL\n` +
-    `UNION ALL SELECT 'events', count(*) FROM events WHERE pet_id = ${p} AND deleted_at IS NULL\n` +
-    `UNION ALL SELECT 'meals', count(*) FROM meals WHERE pet_id = ${p}\n` +
-    `UNION ALL SELECT 'weight_checks', count(*) FROM weight_checks WHERE pet_id = ${p}\n` +
-    `UNION ALL SELECT 'event_attachments', count(*) FROM event_attachments WHERE pet_id = ${p}\n` +
-    `UNION ALL SELECT 'event_ai_analysis', count(*) FROM event_ai_analysis WHERE pet_id = ${p}\n` +
-    `UNION ALL SELECT 'vet_visits', count(*) FROM vet_visits WHERE pet_id = ${p} AND deleted_at IS NULL\n` +
-    `UNION ALL SELECT 'vet_appointments', count(*) FROM vet_appointments WHERE pet_id = ${p} AND deleted_at IS NULL\n` +
-    `ORDER BY entity;`
+    `DO $do$\n` +
+    `DECLARE\n` +
+    `  v_counts text;\n` +
+    `BEGIN\n` +
+    `  SELECT format(\n` +
+    `    'food_items %s, diet_trials %s, diet_trial_foods %s, events %s, meals %s, weight_checks %s, ' ||\n` +
+    `    'vet_visits %s, vet_appointments %s, trial linked to visit %s, ' ||\n` +
+    `    'retired-event attachments %s -> %s, retired-event reads %s -> %s, pet attachments %s, pet reads %s',\n` +
+    `    (SELECT count(*) FROM food_items WHERE created_by_user_id = ${u}),\n` +
+    `    (SELECT count(*) FROM diet_trials WHERE pet_id = ${p}),\n` +
+    `    (SELECT count(*) FROM diet_trial_foods WHERE pet_id = ${p} AND deleted_at IS NULL),\n` +
+    `    (SELECT count(*) FROM events WHERE pet_id = ${p} AND deleted_at IS NULL),\n` +
+    `    (SELECT count(*) FROM meals WHERE pet_id = ${p}),\n` +
+    `    (SELECT count(*) FROM weight_checks WHERE pet_id = ${p}),\n` +
+    `    (SELECT count(*) FROM vet_visits WHERE pet_id = ${p} AND deleted_at IS NULL),\n` +
+    `    (SELECT count(*) FROM vet_appointments WHERE pet_id = ${p} AND deleted_at IS NULL),\n` +
+    `    (SELECT count(*) FROM diet_trials WHERE id = ${uuidLit(story.trial.id)} AND vet_visit_id = ${uuidLit(story.visit.id)}),\n` +
+    `    current_setting('demo_seed.attachments_before', true),\n` +
+    `    (SELECT count(*) FROM event_attachments WHERE event_id = ${e} AND pet_id = ${p}),\n` +
+    `    current_setting('demo_seed.reads_before', true),\n` +
+    `    (SELECT count(*) FROM event_ai_analysis WHERE event_id = ${e} AND pet_id = ${p}),\n` +
+    `    (SELECT count(*) FROM event_attachments WHERE pet_id = ${p}),\n` +
+    `    (SELECT count(*) FROM event_ai_analysis WHERE pet_id = ${p})\n` +
+    `  ) INTO v_counts;\n` +
+    `  RAISE EXCEPTION 'demo DRY RUN, nothing written: %', v_counts;\n` +
+    `END\n` +
+    `$do$;`
   );
 }
 
 /**
- * Render the whole seed. `dryRun` runs the asserts + upserts, reads counts back,
+ * Render the whole seed. `dryRun` runs the asserts + writes, RAISEs the counts (F1),
  * then ROLLBACKs so nothing persists — the operator's pre-flight (§8).
  */
 export function emitSeedSql(story: DemoStory, options: EmitOptions = {}): string {
@@ -509,7 +573,7 @@ export function emitSeedSql(story: DemoStory, options: EmitOptions = {}): string
     `-- GENERATED by scripts/demo/emitSeedSql.ts from scripts/demo/demoStory.ts.\n` +
     `-- Run via the Supabase MCP execute_sql (SERVICE ROLE) at runbook step 2.\n` +
     `-- NOT a migration. Upserts + two exact-id retirements + assertion prelude + transaction (§8).\n` +
-    `-- ${options.dryRun ? 'DRY RUN — reads counts back, then ROLLBACKs (nothing persists).' : 'LIVE — COMMITs.'}\n`;
+    `-- ${options.dryRun ? 'DRY RUN — RAISEs the counts as an error; nothing persists.' : 'LIVE — COMMITs.'}\n`;
 
   const body: string[] = [
     'BEGIN;',
@@ -533,7 +597,7 @@ export function emitSeedSql(story: DemoStory, options: EmitOptions = {}): string
   ];
 
   if (options.dryRun) {
-    body.push(countsReadback(story), 'ROLLBACK;');
+    body.push(dryRunReadback(story), 'ROLLBACK;');
   } else {
     body.push('COMMIT;');
   }
