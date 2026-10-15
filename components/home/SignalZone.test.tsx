@@ -386,7 +386,7 @@ describe('SignalZone — the gap warning takes the card', () => {
 
 // ── CUL-1943: an unanswered or failed gap read is never "no warning" ─────────────────
 describe('SignalZone — a gap read that did not answer never draws the quiet line (CUL-1943)', () => {
-  const FAILED = /Couldn't check the gaps between Nyx's vomiting episodes/;
+  const FAILED = /Couldn't check Nyx's vomiting pattern just now/;
 
   for (const displayState of ['building', 'stale', 'no_pattern'] as const) {
     it(`in ${displayState}: a thrown read says so, with Try again, and no quiet line`, async () => {
@@ -404,23 +404,12 @@ describe('SignalZone — a gap read that did not answer never draws the quiet li
       expect(view.getByTestId('signal-zone-vet-door')).toBeTruthy();
     });
 
-    it(`in ${displayState}: an unanswered read holds the skeleton, then says the check did not run`, async () => {
-      jest.useFakeTimers();
-      try {
-        mockUseGapWarning.mockReturnValue({ text: null, answered: false, failed: false, retry: jest.fn() });
-        mockUseSignal.mockReturnValue(signalState({ displayState }));
-        const view = render(<SignalZone />);
-        expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
-        expect(view.getByTestId('signal-loading-skeleton')).toBeTruthy();
-        act(() => {
-          jest.advanceTimersByTime(1500);
-        });
-        expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
-        expect(view.queryByTestId('signal-loading-skeleton')).toBeNull();
-        expect(view.getByTestId('signal-gap-read-failed')).toBeTruthy();
-      } finally {
-        jest.useRealTimers();
-      }
+    it(`in ${displayState}: an unanswered read holds the skeleton, never the quiet line`, () => {
+      mockUseGapWarning.mockReturnValue({ text: null, answered: false, failed: false, retry: jest.fn() });
+      mockUseSignal.mockReturnValue(signalState({ displayState }));
+      const view = render(<SignalZone />);
+      expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+      expect(view.getByTestId('signal-loading-skeleton')).toBeTruthy();
     });
   }
 
@@ -434,6 +423,16 @@ describe('SignalZone — a gap read that did not answer never draws the quiet li
     await settle();
     expect(view.getByTestId('signal-quiet-line')).toBeTruthy();
     expect(view.queryByTestId('signal-gap-read-failed')).toBeNull();
+  });
+
+  it('C-5: Try again reaches nothing downward into the foot, and holds the 44pt floor in its own box', async () => {
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: true, retry: jest.fn() });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'stale' }));
+    const view = render(<SignalZone />);
+    await settle();
+    const retry = view.getByTestId('signal-gap-retry');
+    expect(retry.props.hitSlop?.bottom ?? 0).toBe(0);
+    expect(StyleSheet.flatten(retry.props.style).minHeight).toBeGreaterThanOrEqual(44);
   });
 
   it('a failed read that still holds a sentence draws the warning, not the failure line', async () => {
@@ -525,6 +524,48 @@ describe('SignalZone — the first gap warning plays no celebration (CUL-1937)',
     expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
     expect(mockInsightArrival).not.toHaveBeenCalled();
     expect(mockMarkArrivalPlayed).toHaveBeenCalledWith('pet-1');
+  });
+
+  it('CUL-1943 B1: a failed gap read withholds the arrival, and the quiet line is never its outgoing frame', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    expect(view.getByTestId('signal-quiet-line')).toBeTruthy();
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: true, retry: jest.fn() });
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [benign] }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    expect(mockInsightArrival).not.toHaveBeenCalled();
+    expect(view.getByTestId('signal-gap-read-failed')).toBeTruthy();
+  });
+
+  it('CUL-1943 B1: a held gap read defers the arrival (never spends it), then it plays once the read answers', async () => {
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'building' }));
+    const view = render(<SignalZone />);
+    await flush();
+    mockUseGapWarning.mockReturnValue({ text: null, answered: false, failed: false, retry: jest.fn() });
+    mockUseSignal.mockReturnValue(signalState({ displayState: 'live', findings: [benign] }));
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeNull();
+    expect(mockMarkArrivalPlayed).not.toHaveBeenCalled();
+    mockUseGapWarning.mockReturnValue({ text: null, answered: true, failed: false, retry: jest.fn() });
+    await act(async () => {
+      view.rerender(<SignalZone />);
+    });
+    await flush();
+    expect(view.queryByTestId('signal-arrival-wash')).toBeTruthy();
+    expect(view.queryByTestId('signal-quiet-line', { includeHiddenElements: true })).toBeNull();
   });
 
   it('control: the same insight alone still arrives (the gate was what held it)', async () => {

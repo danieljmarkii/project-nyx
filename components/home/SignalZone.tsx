@@ -697,23 +697,12 @@ export function SignalZone({
   } = useGapWarning(!showSkeleton);
   const serverGap = findings.find((f) => (f.finding as { type: string }).type === 'gap_shortening') ?? null;
   const gapSentence = showSkeleton ? null : (gapText ?? serverGap?.text ?? null);
-  // A gap read that has not answered, or that threw, is never "no warning" (CUL-1943, C-12):
-  // the quiet line would assert a check that did not run. Unanswered holds the skeleton,
-  // TIME-BOXED like B-734 (a hung local read must not hold a skeleton forever, and must not
-  // resolve to calm either: past the box it says the check did not run). Failed says so,
-  // with Try again. Any sentence in hand (ours, or the server's) wins over both.
-  const gapPending = !showSkeleton && gapSentence === null && !gapAnswered;
-  const [gapTimedOut, setGapTimedOut] = useState(false);
-  useEffect(() => {
-    if (!gapPending) {
-      setGapTimedOut(false);
-      return;
-    }
-    const t = setTimeout(() => setGapTimedOut(true), SIGNAL_LOAD_SKELETON_MS);
-    return () => clearTimeout(t);
-  }, [gapPending, petId]);
-  const gapUnread = !showSkeleton && gapSentence === null && (gapReadFailed || (gapPending && gapTimedOut));
-  const gapHeld = gapPending && !gapUnread;
+  // A gap read that has not answered, or that failed, is never "no warning" (CUL-1943, C-12):
+  // the quiet line would assert a check that did not run. Unanswered holds the skeleton; the
+  // hook time-boxes every read (a hung one turns `failed`, never calm). Failed says so, with
+  // Try again. Any sentence in hand (ours, or the server's) wins over both.
+  const gapUnread = !showSkeleton && gapSentence === null && gapReadFailed;
+  const gapHeld = !showSkeleton && gapSentence === null && !gapAnswered && !gapUnread;
   const gapTakesCard = state !== 'live' && gapSentence !== null;
   // The vet door shows whenever the card draws no finding — the quiet states, and a `live`
   // set this build cannot title (an untitled safety finding, which holds `live` above). Keyed
@@ -748,13 +737,20 @@ export function SignalZone({
   // ── CUL-601 (§4) — the arrival ────────────────────────────────────────────────
   // The SETTLED state: null while the cache read is in flight, so latency can never be
   // mistaken for an arrival.
-  const settledState = isLoading ? null : displayState;
+  // Also null while the gap read is held (CUL-1943): whether this is a celebration or a
+  // warning is not known yet, so the decision waits rather than spends the moment.
+  const settledState = isLoading || gapHeld ? null : displayState;
 
   // NEVER FOR A SAFETY FINDING (§4 / S1), AND NEVER FOR A GAP WARNING (CUL-1937). Read over
   // the FULL set: suppression must never be able to unhide the moment. This reading can only
   // ever withhold the moment, never grant it, which is the direction a severity rule may err.
   const withholdArrival =
-    findings.some((f) => f.finding.priorityClass === 'safety') || serverGap !== null || gapSentence !== null;
+    findings.some((f) => f.finding.priorityClass === 'safety') ||
+    serverGap !== null ||
+    gapSentence !== null ||
+    // A gap check that did not run is an unknown, and withholding is the direction a
+    // severity rule may err (CUL-1943, adversarial B1).
+    gapUnread;
 
   // COUNT WHAT RENDERS (CUL-601), titled findings only: a stood-down line is not a finding
   // for this count (CUL-786), and a type the stack cannot title is not on screen (CUL-1941).
@@ -835,7 +831,9 @@ export function SignalZone({
   const lastBuilding = useRef<{ petId: string | null; el: ReactNode }>({ petId: null, el: null });
   const buildingFrame =
     state === 'building' && !showSkeleton && !gapTakesCard && !gapHeld && !gapUnread ? <QuietLine petName={petName} state="building" /> : null;
-  if (lastBuilding.current.petId !== petId) {
+  if (lastBuilding.current.petId !== petId || gapHeld || gapUnread) {
+    // A held or failed gap read drops the remembered quiet line too: the arrival's
+    // crossfade must never redraw a calm the zone has stopped asserting (CUL-1943, B1).
     lastBuilding.current = { petId, el: buildingFrame };
   } else if (buildingFrame) {
     lastBuilding.current = { petId, el: buildingFrame };
@@ -1205,7 +1203,7 @@ function GapReadFailed({ petName, onRetry }: { petName: string; onRetry: () => v
         <Pressable
           onPress={onRetry}
           accessibilityRole="button"
-          hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+          hitSlop={GAP_RETRY_HITSLOP}
           style={styles.gapRetry}
           testID="signal-gap-retry"
         >
@@ -1217,8 +1215,12 @@ function GapReadFailed({ petName, onRetry }: { petName: string; onRetry: () => v
 }
 
 const GAP_READ_RETRY = 'Try again';
+// C-5: the quiet foot's doors reach 0 upward and sit FOOT_MARGIN_TOP below, so the retry
+// reaches 0 downward too and carries the 44pt floor in its own box.
+const GAP_RETRY_HITSLOP = { top: 0, bottom: 0, left: 8, right: 8 } as const;
+const GAP_RETRY_MIN_HEIGHT = 44;
 function gapReadFailedCopy(petName: string): string {
-  return `Couldn't check the gaps between ${petName}'s vomiting episodes just now. This doesn't mean nothing's changed.`;
+  return `Couldn't check ${petName}'s vomiting pattern just now. This doesn't mean nothing's changed.`;
 }
 
 // B-734 (CUL-72): the flag-on loading frame — content-shaped Tier-1 skeleton for the
@@ -1366,7 +1368,8 @@ const styles = StyleSheet.create({
   // CUL-1943 — the unanswered gap read's retry, the quiet sub's size in the accent ink.
   gapRetry: {
     alignSelf: 'flex-start',
-    marginTop: theme.space1,
+    minHeight: GAP_RETRY_MIN_HEIGHT,
+    justifyContent: 'center',
   },
   gapRetryText: {
     fontSize: theme.textSM,

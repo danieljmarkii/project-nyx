@@ -4,11 +4,17 @@ import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 import { getGapWarning } from '../lib/signalWatching';
 
+// The time box on every read, first or re-read (adversarial pass, CUL-1943): a hung re-read
+// after a calm answer must not leave that calm standing while a fresh log may have moved the
+// gaps. The same beat as the Signal's own load skeleton (B-734).
+export const GAP_READ_TIMEOUT_MS = 1500;
+
 export interface GapWarningRead {
   text: string | null;
   answered: boolean;
-  // The last read threw. Never "no warning": the zone draws a failure line in place of the
-  // quiet line (CUL-1943, C-12). `text` keeps any sentence an earlier read found.
+  // The last read threw, or has not answered within GAP_READ_TIMEOUT_MS. Never "no warning":
+  // the zone draws a failure line in place of the quiet line (CUL-1943, C-12). `text` keeps
+  // any sentence an earlier read found.
   failed: boolean;
   retry: () => void;
 }
@@ -47,6 +53,15 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
         return;
       }
       let cancelled = false;
+      let settled = false;
+      // Past the box, the read is failed until it answers (a late answer still lands below).
+      const timeout = setTimeout(() => {
+        if (!cancelled && !settled) {
+          console.warn('[useGapWarning] gap read did not answer in time');
+          setFailedKey(petId);
+          setAnsweredKey(petId);
+        }
+      }, GAP_READ_TIMEOUT_MS);
       (async () => {
         try {
           const next = await getGapWarning(petId, Date.now());
@@ -60,10 +75,13 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
           console.warn('[useGapWarning] gap read failed:', e);
           if (!cancelled) setFailedKey(petId);
         }
+        settled = true;
+        clearTimeout(timeout);
         if (!cancelled) setAnsweredKey(petId);
       })();
       return () => {
         cancelled = true;
+        clearTimeout(timeout);
       };
     }, [enabled, petId, signalTick, retryTick]),
   );
