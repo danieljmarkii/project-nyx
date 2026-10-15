@@ -2,6 +2,10 @@
 
 **Date:** 2026-10-15
 
+**One thing (re-ask):** P2 L1 — Reversibility (from 2026-10-14, PR-20: of today's two calls, the subtitle string and "nothing celebrates a warning", which is harder to undo once 1.2.0 ships?) · check: pending
+
+**One thing:** P1 L1 — The strategy kernel: "the Signal should never be the reason to log" is the diagnosis that ranked the subtitle · check: pending
+
 **Mode:** DISCOVERY. Shipped via #1219: rounds 6 and 7 of `docs/culprit-signal-home-mockups.html`, republished to the Signal mock's artifact (https://claude.ai/artifact/3BUW5uQqA5dhukVnarkKmp, versions 13 and 14). The PR is stacked on #1217, which holds rounds 3 to 5 and the research brief. #1217 cannot merge until this review ends, so the stack is deliberate.
 
 ## The method
@@ -100,4 +104,20 @@ The build note is now on CUL-1838 and on the project page's PR-21 row. CUL-1937 
 
 PR-21 (CUL-1838) starts on the PM's typed go. The subtitle is applied unless the PM changes it. The PR proposes the Tier-2 edit to `docs/nyx-signal-home-requirements.md` for the strings that B-721 §9 pins.
 
-Merge order: #1217 goes first, now that its last box (the PM picks a direction) is met. Its body names CUL-1936, so merging it closes this issue too. #1219 then conflicts on the mock page. The fix is to merge main into the branch and keep round 7.
+## Close-out
+
+**The merge.** The PM typed `/wrap and merge`, but a session merges only its own PR (steward §7), so #1219 lands first.
+- #1219 carries #1217's commits: rounds 3 to 5, the research brief and PR-20's record.
+- That leaves #1217 superseded. It closes unmerged.
+- CUL-1837 is set Done by hand, with a comment pointing here.
+- PR-20's record still says "shipped via #1217", because session records are never edited. Its work reached `main` inside this squash.
+
+**Merge check:** CLEAN at `d8a6940`. The first run reported REVIEW, but only because the shallow clone hid two branches' merge bases. Fetching deeper cleared it. Landing this makes #1218 conflict on `docs/research/README.md`, where both PRs add an index row; the fix is to keep both (steward §4).
+
+**Definition of Done:**
+- Every criterion on CUL-1936 passes, including the last one: the PM picked, and the page is one proposal.
+- CI was green on `d8a6940`. The PR is docs only, so there are no tests to add.
+- **Adversarial review: N/A**, because no logic changed. The panel's falsification attempts did change copy:
+  - the nothing found state can start at day 7, so the header claims no month;
+  - a night of several vomits can trigger the burden alert, which ruled out "not single logs";
+  - a weekly vomiter has no pattern until its sixth vomit, so that case goes to Dr. Chen in CUL-1838's clinical gate.
