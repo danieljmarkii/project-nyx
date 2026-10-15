@@ -9,7 +9,7 @@ import {
 
 // The Beta-features program (B-712, docs/nyx-beta-features-requirements.md). Two
 // things live here, both deliberately UI-free so they unit-test in plain jest and
-// so `useWidgetSnapshots` can read the opt-in without pulling a screen's import
+// so a feature's own hook can read the opt-in without pulling a screen's import
 // graph:
 //   1. BETA_REGISTRY — the single source of truth for the shelf (D7 §4.3.1).
 //   2. The opt-in store — Gate 2 (spec §2 / D4): a LOCAL, per-device preference,
@@ -25,7 +25,7 @@ import {
 // ── The registry (D7 §4.3.1) ──────────────────────────────────────────────────
 // One typed row per beta, keyed on the `app_config` eligibility flag — which is
 // ALSO the opt-in store key, so one key carries both gates. The page maps over the
-// entries the caller is eligible for; the widget is the only entry in v1.
+// entries the caller is eligible for; at 1.2.0 it holds none (CUL-1842).
 //
 // The fields past key/title/blurb are the graduation policy's teeth — a small
 // registry with a forcing date is the counter-force to the "beta graveyard" (a
@@ -41,8 +41,8 @@ import {
 //                  a decision, it never silently pulls the feature.
 //   • serverCost — true ⇒ the beta spends a server resource, so D6 / §4.2 REQUIRES
 //                  a server-side gate too (the client-only gate does NOT generalise
-//                  to a server feature). The widget publishes from the owner's own
-//                  local data, so it is false. betaFeatures.test.ts asserts every
+//                  to a server feature). The widget, while it was a beta, published
+//                  from the owner's own local data, so it was false. betaFeatures.test.ts asserts every
 //                  serverCost:true entry has a matching server gate — the rule is
 //                  grep-able, so beta #2 can't forget it.
 export interface BetaFeature {
@@ -56,23 +56,7 @@ export interface BetaFeature {
 }
 
 export const BETA_REGISTRY: BetaFeature[] = [
-  {
-    key: 'widget_enabled',
-    title: 'Home screen widget',
-    // nyx-voice (PR 4 voice pass): warm and concrete, no exclamation, and specific
-    // — "today’s log", "what’s coming up" — rather than selling that it’s "new".
-    blurb:
-      'See today’s log and what’s coming up from your home screen, without opening Culprit.',
-    owner: 'Widget track / Eng',
-    addedDate: '2026-08-08',
-    // ~1 quarter out. A forcing date for the graduate/kill/extend call, not a timer
-    // that disables the widget under the cohort.
-    reviewBy: '2026-11-08',
-    // Client-only publish (spec §4.2 / D6): the widget reads the owner's own local
-    // record and writes nothing server-side, so no server gate is owed.
-    serverCost: false,
-  },
-  // Nine betas graduated to GA and were retired from the shelf. Two Signal betas first
+  // Ten betas graduated to GA and were retired from the shelf. Two Signal betas first
   // (CUL-546 Phase 1 / CUL-547 + CUL-548): `signal_design_v2` (the Signal/Home design
   // uplift, B-721) and `signals_v2` (the "deeper signals" lanes, B-755); `signals_v2`'s
   // SERVER eligibility gate in generate-signal (B-777) is retired separately at GA-3.
@@ -81,9 +65,12 @@ export const BETA_REGISTRY: BetaFeature[] = [
   // grid was the first's grid expanded. Then "Vet visits" (the appointment companion,
   // CUL-898 → CUL-905), whose surfaces now render for every account. Then Noticed
   // (`daily_look`, CUL-876), the trial screen (`trial_screen`, CUL-1307), History v2
-  // (`history_v2`, CUL-1175) and Design v2 (`design_v2`, CUL-1071). Removing a row
-  // removes its shelf card; a persisted opt-in for any of the nine keys self-cleans
-  // (parseBetaOptIns keeps only known keys), so no storage migration is owed.
+  // (`history_v2`, CUL-1175) and Design v2 (`design_v2`, CUL-1071). The Home Screen
+  // widget (`widget_enabled`) went last, at 1.2.0 (CUL-1842, D8): every account gets it,
+  // so the shelf is empty and the Settings row that opens it renders for no one until
+  // the next beta joins. Removing a row removes its shelf card; a persisted opt-in for
+  // any of the ten keys self-cleans (parseBetaOptIns keeps only known keys), so no
+  // storage migration is owed.
 ];
 
 // ── The shelf derivation (B-747 — the OR over the registry) ───────────────────
@@ -123,9 +110,9 @@ export function deriveBetaShelf(
 
 // ── The opt-in store (Gate 2 / D4) ────────────────────────────────────────────
 // A local, per-device preference, default OFF, one boolean per beta key. Local-
-// per-device is deliberate and MORE correct than a synced pref, not a shortcut: a
-// home-screen widget is an inherently per-device object, so its opt-in belongs to
-// the device (spec §4.3.2 — and mirroring it server-side would re-introduce exactly
+// per-device is deliberate and MORE correct than a synced pref, not a shortcut: the
+// first beta, the home-screen widget, was an inherently per-device object, so its
+// opt-in belonged to the device (spec §4.3.2 — and mirroring it server-side would re-introduce exactly
 // the health-data-adjacent consent boundary the measurement plan avoids).
 //
 // Persistence: write-through to AsyncStorage so the choice survives a relaunch;
@@ -215,15 +202,14 @@ export const useBetaOptInStore = create<BetaOptInState>((set) => ({
 }));
 
 // Read one beta's opt-in for the current render (default off). Used by the beta
-// page AND by useWidgetSnapshots — a primitive-boolean selector, so a subscriber
+// page — a primitive-boolean selector, so a subscriber
 // only re-renders when THIS key's value changes.
 export function useBetaOptIn(key: AllowlistFlagKey): boolean {
   return useBetaOptInStore((s) => s.optIns[key] ?? false);
 }
 
 // Load the persisted opt-ins into the store. Call once at app start (app/_layout).
-// Until it resolves, every beta reads off — the safe default (a widget shows the
-// neutral empty door rather than stale real data before we've confirmed opt-in).
+// Until it resolves, every beta reads off — the safe default.
 // Best-effort: a read failure leaves the store at its default-off baseline.
 export async function hydrateBetaOptIns(): Promise<void> {
   try {

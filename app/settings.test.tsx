@@ -6,7 +6,7 @@ import {
   APP_CONFIG_DEFAULTS,
   type AllowlistFlagValues,
 } from '../lib/appConfig';
-import { useBetaOptInStore } from '../lib/betaFeatures';
+import { BETA_REGISTRY, useBetaOptInStore, type BetaFeature } from '../lib/betaFeatures';
 import { JS_UPDATE_ID, JS_CHANNEL, JS_IS_EMBEDDED } from '../lib/appInfo';
 import { formatAppVersion, formatJsBundle } from '../lib/support';
 import { APP_VERSION, APP_BUILD } from '../lib/appInfo';
@@ -77,6 +77,27 @@ jest.mock('../store/authStore', () => ({
 
 const gatedToPm = { enabled: false, allowlist: ['pm-uid'] };
 
+// The shipped shelf is empty at 1.2.0: the widget, its last beta, graduated
+// (CUL-1842). The shelf's machinery stays for the next beta, so its gates are pinned
+// over a fixture beta seeded into the real registry for the cases that need one.
+const FIXTURE_BETA: BetaFeature = {
+  key: 'ask_enabled',
+  title: 'Fixture feature',
+  blurb: 'A fixture feature for the shelf tests.',
+  owner: 'Test',
+  addedDate: '2026-10-01',
+  reviewBy: '2027-01-01',
+  serverCost: false,
+};
+function seedFixtureBeta(): void {
+  beforeEach(() => {
+    BETA_REGISTRY.push(FIXTURE_BETA);
+  });
+  afterEach(() => {
+    BETA_REGISTRY.splice(BETA_REGISTRY.indexOf(FIXTURE_BETA), 1);
+  });
+}
+
 function setAllowlist(over: Partial<AllowlistFlagValues>): void {
   __resetAppConfigForTest({
     values: APP_CONFIG_DEFAULTS,
@@ -95,11 +116,12 @@ afterEach(() => {
 });
 
 describe('Settings — the Early-access row gate (B-747)', () => {
+  seedFixtureBeta();
+
   it('shows the row for an account eligible for a beta', () => {
-    // The B-747 regression was a non-widget beta allowlisted with the widget dark; with
-    // the widget the one beta left on the shelf (Design v2 graduated, CUL-1071) the row
-    // is shown by the same OR over the registry (`lib/betaFeatures.test.ts`).
-    setAllowlist({ widget_enabled: gatedToPm });
+    // The B-747 regression was a beta allowlisted with another dark; the row is shown
+    // by the same OR over the registry (`lib/betaFeatures.test.ts`).
+    setAllowlist({ ask_enabled: gatedToPm });
     const { getByText } = render(<SettingsScreen />);
     expect(getByText('Early access')).toBeTruthy();
   });
@@ -110,12 +132,12 @@ describe('Settings — the Early-access row gate (B-747)', () => {
   });
 
   it('counts every eligible+opted-in beta in the "N on" note', () => {
-    setAllowlist({ widget_enabled: gatedToPm });
+    setAllowlist({ ask_enabled: gatedToPm });
     const { getByText, rerender, queryByText } = render(<SettingsScreen />);
     expect(queryByText('1 on')).toBeNull();
 
     // A store write after mount re-renders the subscribed screen — wrap it.
-    act(() => useBetaOptInStore.getState().setOptIn('widget_enabled', true));
+    act(() => useBetaOptInStore.getState().setOptIn('ask_enabled', true));
     rerender(<SettingsScreen />);
     expect(getByText('1 on')).toBeTruthy();
   });
@@ -123,8 +145,8 @@ describe('Settings — the Early-access row gate (B-747)', () => {
   it('says early access, never beta, in what it shows and speaks (CUL-70)', () => {
     // "Beta" reads as Guideline 2.2 ("demos, betas, and trial versions") in App
     // Review's skim, and a screen-reader user hears the label and hint, not the text.
-    setAllowlist({ widget_enabled: gatedToPm });
-    useBetaOptInStore.getState().setOptIn('widget_enabled', true);
+    setAllowlist({ ask_enabled: gatedToPm });
+    useBetaOptInStore.getState().setOptIn('ask_enabled', true);
     const { getByText, getByLabelText, getByHintText, queryByText } = render(<SettingsScreen />);
 
     expect(getByText('Early access')).toBeTruthy();
@@ -135,10 +157,25 @@ describe('Settings — the Early-access row gate (B-747)', () => {
   });
 
   it('hides the count at 0 on — an eligible owner sees a clean doorway', () => {
-    setAllowlist({ widget_enabled: gatedToPm });
+    setAllowlist({ ask_enabled: gatedToPm });
     const { getByText, queryByText } = render(<SettingsScreen />);
     expect(getByText('Early access')).toBeTruthy();
     expect(queryByText(/\d+ on/)).toBeNull();
+  });
+});
+
+describe('Settings — the widget graduated, so no account sees the opt in (CUL-1842)', () => {
+  it('shows no Early access row with the shipped registry, whatever the allowlists say', () => {
+    // Every allowlist key opened to everyone: the row would have every chance to
+    // render if any shipped beta were left on the shelf.
+    const open = { enabled: true, allowlist: [] };
+    setAllowlist(
+      Object.fromEntries(Object.keys(ALLOWLIST_FLAGS_UNSET).map((k) => [k, open])) as Partial<AllowlistFlagValues>,
+    );
+    const { queryByText } = render(<SettingsScreen />);
+    expect(BETA_REGISTRY).toHaveLength(0);
+    expect(queryByText('Early access')).toBeNull();
+    expect(queryByText('Home screen widget')).toBeNull();
   });
 });
 

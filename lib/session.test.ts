@@ -153,8 +153,6 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
       allowlist: {
         ask_enabled: ['11111111-2222-3333-4444-555555555555'],
         ask_general_enabled: false,
-        // widget_enabled (B-712) also carries account UUIDs — it must be wiped too.
-        widget_enabled: { enabled: false, allowlist: ['66666666-7777-8888-9999-000000000000'] },
         engines_v3_en14: { enabled: false, allowlist: ['66666666-7777-8888-9999-000000000000'] },
         engines_v3_en3: undefined,
         engines_v3_en4: undefined,
@@ -168,9 +166,9 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
 
   // B-712 (Gate 2 / D4). The local beta opt-ins are AsyncStorage-resident device
   // state; on a shared device the prior owner's choices must not carry to the next
-  // person, and a widget left "on" must fall back to the neutral door.
+  // person.
   it('clears the beta opt-ins — memory and the persisted key', async () => {
-    useBetaOptInStore.getState().setOptIn('widget_enabled', true);
+    useBetaOptInStore.getState().setOptIn('ask_enabled', true);
     await Promise.resolve(); // let the fire-and-forget write-through flush
     expect(await AsyncStorage.getItem(BETA_OPT_IN_STORAGE_KEY)).not.toBeNull();
 

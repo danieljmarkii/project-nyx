@@ -2,7 +2,7 @@ import { ComponentType } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { FlaskConical, Info, LayoutGrid } from 'lucide-react-native';
+import { FlaskConical, Info } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card, Header } from '../../components/ui';
 import { useAllowlistFlag } from '../../hooks/useAppConfig';
@@ -17,8 +17,8 @@ import type { AllowlistFlagKey } from '../../lib/appConfig';
 import { ThemedText } from '../../components/ui/ThemedText';
 
 // Early access — the self-serve shelf (B-712 PR 3, spec §5 / §2). A cohort-gated
-// page where an eligible owner opts into unfinished features, one at a time. The
-// widget is the only beta in v1.
+// page where an eligible owner opts into unfinished features, one at a time. At
+// 1.2.0 the shelf is empty: the widget, its last beta, graduated (CUL-1842).
 //
 // OWNER-FACING, IT IS "EARLY ACCESS", NEVER "BETA" (CUL-70, D8 ruled 2026-08-20).
 // "Beta" pattern-matches App Review Guideline 2.2 ("demos, betas, and trial versions
@@ -47,28 +47,13 @@ import { ThemedText } from '../../components/ui/ThemedText';
 type IconComponent = ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
 
 // Per-beta PRESENTATION (icon + the on-state hint) lives here, not in the registry:
-// BETA_REGISTRY is UI-free data (so it unit-tests in plain jest and useWidgetSnapshots
-// can read the opt-in without a screen's import graph). A `switch` with a default
-// keeps any future key renderable without an exhaustiveness burden.
-function presentationFor(key: AllowlistFlagKey): { Icon: IconComponent; onHint?: string } {
-  switch (key) {
-    case 'widget_enabled':
-      // The hint only makes sense on the widget: iOS makes the OWNER add a widget
-      // from the home screen — the app can't place it — so the instruction is
-      // useful exactly once, in the on state. Framed conditionally ("if it isn’t on
-      // your home screen yet") so it never reads as a to-do to an owner who has
-      // already added it: the switch is on either way, and the steps are for the
-      // owner who hasn’t placed it yet. Carried to a PLACED widget ("find Culprit and
-      // add it"), not left at the gallery search, so a first-timer isn't stranded
-      // (pm-feature-review, nyx-voice PR 4 pass).
-      return {
-        Icon: LayoutGrid,
-        onHint:
-          'It’s on. If it isn’t on your home screen yet, touch and hold an empty area, tap +, then find Culprit and add it.',
-      };
-    default:
-      return { Icon: FlaskConical };
-  }
+// BETA_REGISTRY is UI-free data (so it unit-tests in plain jest and a feature's hook
+// can read the opt-in without a screen's import graph). A new beta's case goes in a
+// `switch` here, with this default kept for any key that has none.
+function presentationFor(_key: AllowlistFlagKey): { Icon: IconComponent; onHint?: string } {
+  // The widget's case (its icon and the add-it-from-the-home-screen hint) left with
+  // its graduation (CUL-1842); a new beta adds its case here.
+  return { Icon: FlaskConical };
 }
 
 function BetaFeatureCard({ feature }: { feature: BetaFeature }) {
