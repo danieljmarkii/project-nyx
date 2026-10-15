@@ -62,8 +62,40 @@ What the top of Home shows between the first log and the first real signal: (1) 
 
 **Forecast:** option 1 is 1 row before the cut and 1 after; option 2 is 2 rows before the cut.
 
+## The ruling, and round 7
+
+The PM ruled for the quiet line ("This is a good direction") and kept "Too early to tell" as its header. They asked for "a nicely designed subtitle that sets expectations", offering "keep logging and Signal will surface insights" as an example, followed by "Not sure".
+
+A subtitle round went back to the same six consultants, isolated as before, with three candidates:
+- **S1:** "Patterns need days of logs. Every log goes into Pixel's vet report."
+- **S2:** "Signal reads across days, not single logs."
+- **S3:** the PM's line.
+
+**The result.** All six ranked the PM's line last: it promises a Signal many records never get, and it makes the Signal the reason to log. Four put S1's shape first and two put S2 first.
+
+**The line now current** is the one the calm-health designer and the vet wrote independently: "Every log goes into Pixel's vet report. Patterns, if any, take weeks."
+- "If any" answers the behavioural scientist's worry about conditional perfection (reading "logs bring patterns").
+- S2's "not single logs" read as "one doesn't count" to four of the six. It is also false on a night of several vomits, when the burden alert can speak.
+
+**Other changes from the subtitle round:**
+- **The still tick read as a cursor** to Sam: the app about to speak. The quiet state's mark is now the row's own rail, full height and grey. It is still the mark the warning's rail grows from.
+- **"No pattern in a month of logs" overclaimed.** The nothing-found state can start at day 7 (`useSignal`: 8 events over 7 days), so the header now reads "No pattern right now".
+- **Gone quiet names meals and symptoms** when a look was logged since (the data-vis specialist's catch), so it never contradicts the look in Today.
+
+**Dissent on the record:**
+- The behavioural scientist would make the gone-quiet subtitle a way back: "Anything you remember can still go in with +."
+- The behavioural scientist would also make the nothing-found subtitle affirmative, "Only your vet can say how Pixel is.", because negating "all-clear" primes it.
+- The vet wants the nothing-found subtitle to name the month's symptom count. That goes to Dr. Chen in the build's clinical gate.
+
+**Round 7** (version 14) is one proposal, as the house rule asks after a reaction:
+- a ledger of the PM's reactions;
+- every state with its header and subtitle;
+- two playable frames;
+- the subtitle options, with the PM's example in a labelled box;
+- the build note.
+
+The build note is now on CUL-1838 and on the project page's PR-21 row. CUL-1937 moved to Todo inside it. Round 6 stays in git at `6afb511`.
+
 ## Next
 
-1. The PM rules on CUL-1936.
-2. Redraw the page as one proposal, under the house rule that a reaction round republishes as one proposal.
-3. Update CUL-1838's build note to match, folding in CUL-1937.
+PR-21 (CUL-1838) starts on the PM's typed go. The subtitle is applied unless the PM changes it. The PR proposes the Tier-2 edit to `docs/nyx-signal-home-requirements.md` for the strings that B-721 §9 pins.
