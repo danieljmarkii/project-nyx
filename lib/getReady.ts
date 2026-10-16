@@ -621,8 +621,13 @@ function foldLabel(label: string): string {
  */
 function intakeRow(decline: LocalIntakeDecline): WorthRaisingRow {
   return {
-    // Keyed by the decline, so two device rows never share a React key.
-    id: `intake-${decline.trigger ?? 'decline'}`,
+    // Keyed by the decline, so two device rows never share a React key: the trigger,
+    // and the food for a refusal, since two refusals of two foods are two rows
+    // (CUL-1093). An unknown decline is keyed by its sentence.
+    id:
+      decline.trigger === null
+        ? `intake-decline-${decline.headline}`
+        : `intake-${decline.trigger}${decline.refusedFoodLabel === null ? '' : `-${decline.refusedFoodLabel.trim().toLowerCase()}`}`,
     text: decline.headline,
     detail: null,
     source: 'intake',

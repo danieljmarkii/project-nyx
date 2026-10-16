@@ -1664,6 +1664,13 @@ describe('getReadyIntakeDeclines — every pet, never fewer rows', () => {
     expect(getReadyIntakeDeclines([pate], { intakeDeclineFacts: [tuna] })).toEqual([pate, tuna]);
   });
 
+  it('two refusals reach the page as two rows with two keys (the adversarial pass)', () => {
+    const { rows } = buildWorthRaising(input({ intakeDecline: getReadyIntakeDeclines([pate], { intakeDeclineFacts: [tuna] }) }));
+    const intake = rows.filter((r) => r.source === 'intake');
+    expect(intake.map((r) => r.text)).toEqual([pate.headline, tuna.headline]);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length);
+  });
+
   it('an unknown decline from the trial input is kept beside a known one', () => {
     const unknown = getReadyIntakeDeclines([low], { intakeDeclineHeadline: 'Something the device saw.' });
     expect(unknown).toHaveLength(2);
