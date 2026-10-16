@@ -16,6 +16,7 @@
 import { supabase } from './supabase';
 import { useSyncStore } from '../store/syncStore';
 import { syncPendingEvents, syncPendingMeals } from './sync';
+import { getSyncStatus } from './db';
 
 // ── Client mirror of the cached finding shape ────────────────────────────────
 // The jsonb column ai_signals.findings is the contract. These types mirror the
@@ -900,12 +901,32 @@ function startRegen(
   return started;
 }
 
+// Q14 (CUL-772): whether this device still holds rows the server has not received, read AFTER
+// the push. A push that resolved only says a drain ran, not that a row landed, so the rebuild
+// cannot assume the server's copy is whole. The count is `pendingStatusSql`'s: every queue,
+// any age, `sync_error IS NULL`. Rows the server refused are left out on purpose: no retry
+// moves them, so counting them would hold every Signal at the 1-hour expiry and spend the
+// per-pet cap; they are the stuck-row banner's (Q6). Device wide, not per pet, because the
+// queue is global: an unsent row for one pet shortens every pet's expiry (the louder error).
+// A failed read says yes, for the same reason.
+export async function hasUnsentRows(): Promise<boolean> {
+  try {
+    const { pendingCount } = await getSyncStatus();
+    return pendingCount > 0;
+  } catch {
+    return true;
+  }
+}
+
 async function runRegen(petId: string): Promise<{ error: string | null }> {
   try {
     await syncPendingEvents().catch(() => {});
     await syncPendingMeals().catch(() => {});
+    // generate-signal treats `unsentRows: true` as an incomplete read: the 1-hour expiry and no
+    // reassurance, so a calm Signal is never renewed for a day over rows it has not seen.
+    const unsentRows = await hasUnsentRows();
     const { error } = await supabase.functions.invoke('generate-signal', {
-      body: { petId },
+      body: { petId, unsentRows },
     });
     if (!error) {
       // A successful regen wrote a fresh cache. Bump the signal tick so the Home
