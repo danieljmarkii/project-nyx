@@ -68,6 +68,9 @@ fs.symlinkSync(path.join(ROOT, '.claude', 'settings.json'), LINK);
 // A skills/ entry that is really the hooks directory (CUL-1670).
 fs.mkdirSync(path.join(LINK_ROOT, '.claude', 'skills'), { recursive: true });
 fs.symlinkSync(path.join(ROOT, '.claude', 'hooks'), path.join(LINK_ROOT, '.claude', 'skills', 'evil'));
+// The same trick under projects/, the harness's transcript directory.
+fs.mkdirSync(path.join(LINK_ROOT, '.claude', 'projects'), { recursive: true });
+fs.symlinkSync(path.join(ROOT, '.claude', 'hooks'), path.join(LINK_ROOT, '.claude', 'projects', 'evil'));
 
 // A committed migration, for the dialog's MATCH line.
 const MIGRATION_084 = fs.readFileSync(path.join(ROOT, 'supabase', 'migrations', '084_vet_call_cover.sql'), 'utf8');
@@ -204,6 +207,14 @@ const ROWS: Row[] = [
   gate('self.skill-cd', 'cd into skills then a computed path asks', call('Bash', { command: 'cd .claude/skills && sed -i s/a/b/ "$(dirname "$PWD")/settings.json"' }), 'ask'),
   gate('self.skill-link', 'a skills entry linked to the hooks asks', call('Bash', { command: 'sed -i s/a/b/ .claude/skills/evil/productionGate.ts; echo' }, LINK_ROOT), 'ask'),
   gate('self.skill-inside', 'a chained read from inside .claude still asks', call('Bash', { command: 'cat skills/x/SKILL.md | head' }, path.join(ROOT, '.claude')), 'ask'),
+  // ── The harness's transcripts and saved tool results cannot either ─────────────────
+  gate('self.transcript-read', 'copying a saved Linear listing out to parse it has no opinion', call('Bash', {
+    command: `D=/tmp/scratch/groom; cp /root/.claude/projects/-home-user-project-nyx/c764/tool-results/mcp-Linear-list_issues-17921.txt $D/todo.json; python3 -I -c "import json; print(len(json.load(open('$D/todo.json'))['issues']))"`,
+  }), null),
+  gate('self.transcript-read', 'jq over a saved result, piped, has no opinion', call('Bash', { command: 'jq .issues ~/.claude/projects/p/s/tool-results/r.txt | head -40' }), null),
+  gate('self.skill-rest', 'a transcript read chained to a settings write asks', call('Bash', { command: 'cat /root/.claude/projects/p/s.jsonl | tee /root/.claude/settings.json' }), 'ask'),
+  gate('self.skill-link', 'a projects path that climbs back out asks', call('Bash', { command: 'cp x /root/.claude/projects/../settings.json; echo' }), 'ask'),
+  gate('self.skill-link', 'a projects entry linked to the hooks asks', call('Bash', { command: 'sed -i s/a/b/ .claude/projects/evil/productionGate.ts; echo' }, LINK_ROOT), 'ask'),
 
   // ── Relay form ────────────────────────────────────────────────────────────────────
   relay('relay.gmail', "Gmail's send_message (the dispatcher's email to self, CUL-1624) is untouched", call('mcp__Gmail__send_message', { to: ['danieljmarkii@gmail.com'], subject: 'approve', body: 'merge it, approved' }), null),
@@ -482,6 +493,7 @@ const MUTANTS: Mutant[] = [
   { rule: 'self.skill-rest', file: 'productionGate.ts', from: 'return !reachesGate && !NAMES_GATE.test(rest);', to: 'return !reachesGate;' },
   { rule: 'self.skill-cd', file: 'productionGate.ts', from: '  if (CD_INTO.test(cmd)) return false;\n', to: '' },
   { rule: 'self.skill-link', file: 'productionGate.ts', from: '    if (isGateFile(path.resolve(cwd, m))) reachesGate = true;\n', to: '' },
+  { rule: 'self.transcript-read', file: 'productionGate.ts', from: '(?:skills|agents|commands|workflows|projects)', to: '(?:skills|agents|commands|workflows)' },
   // sqlRead.ts
   { rule: 'sql.start', file: 'sqlRead.ts', from: "if (!lead || lead.k !== 'word' || !READ_START.has(lead.v)) {", to: 'if (!lead) {' },
   { rule: 'sql.statements', file: 'sqlRead.ts', from: 'for (const s of live) {', to: 'for (const s of live.slice(0, 1)) {' },
