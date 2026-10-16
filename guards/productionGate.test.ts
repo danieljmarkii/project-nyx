@@ -33,7 +33,7 @@ const DRIVER = path.join(ROOT, 'guards', 'hookDriver.ts');
 const NODE_FLAGS = ['--experimental-strip-types', '--no-warnings'];
 const PROD = 'aigchluqluzuhtbfllgh';
 const UUID_SERVER = '354c8bb4-6f1e-4b8a-9d0c-1a2b3c4d5e6f';
-const HOOK_FILES = ['hookIo.ts', 'productionGate.ts', 'relayForm.ts', 'sqlRead.ts', 'run-production-gate.ts', 'run-relay-form.ts'];
+const HOOK_FILES = ['hookIo.ts', 'productionGate.ts', 'relayForm.ts', 'shellRead.ts', 'sqlRead.ts', 'run-production-gate.ts', 'run-relay-form.ts'];
 
 type Expect = 'ask' | 'deny' | null;
 type Row = { rule: string; name: string; hook: 'gate' | 'relay'; input: Record<string, unknown>; expect: Expect; reason?: RegExp };
@@ -198,6 +198,7 @@ const ROWS: Row[] = [
   gate('self.bash-pass', 'npm test has no opinion', call('Bash', { command: 'npm test' }), null),
   gate('self.bash-pass', 'a cd into a computed directory that names no .claude has no opinion', call('Bash', { command: 'cd "$TMPDIR" && npm test' }), null),
   // ── Skills, agents, commands, workflows cannot switch the gate off (CUL-1670) ────────
+  gate('self.skill-read', 'python reading a skill has no opinion (no read chain could pass it)', call('Bash', { command: `python3 -I -c "print(open('.claude/skills/steward/SKILL.md').read()[:200])"` }), null),
   gate('self.skill-read', 'a chained, piped skill read has no opinion', call('Bash', { command: `cd ${ROOT} && cat .claude/skills/steward/SKILL.md | head -40` }), null),
   gate('self.skill-read', 'grep over agents and commands has no opinion', call('Bash', { command: 'grep -rn wrap .claude/agents/ .claude/commands/ | head' }), null),
   gate('self.skill-read', "the user's skills have no opinion", call('Bash', { command: 'ls ~/.claude/skills && cat /root/.claude/workflows/x.js | wc -l' }), null),
@@ -207,6 +208,7 @@ const ROWS: Row[] = [
   gate('self.skill-cd', 'cd into skills then a computed path asks', call('Bash', { command: 'cd .claude/skills && sed -i s/a/b/ "$(dirname "$PWD")/settings.json"' }), 'ask'),
   gate('self.skill-link', 'a skills entry linked to the hooks asks', call('Bash', { command: 'sed -i s/a/b/ .claude/skills/evil/productionGate.ts; echo' }, LINK_ROOT), 'ask'),
   gate('self.skill-inside', 'a chained read from inside .claude still asks', call('Bash', { command: 'cat skills/x/SKILL.md | head' }, path.join(ROOT, '.claude')), 'ask'),
+  gate('self.rules-read', 'python reading a rule file has no opinion', call('Bash', { command: `python3 -I -c "print(open('.claude/rules/copy.md').read()[:200])"` }), null),
   // ── The harness's transcripts and saved tool results cannot either ─────────────────
   gate('self.transcript-read', 'copying a saved Linear listing out to parse it has no opinion', call('Bash', {
     command: `D=/tmp/scratch/groom; cp /root/.claude/projects/-home-user-project-nyx/c764/tool-results/mcp-Linear-list_issues-17921.txt $D/todo.json; python3 -I -c "import json; print(len(json.load(open('$D/todo.json'))['issues']))"`,
@@ -215,6 +217,39 @@ const ROWS: Row[] = [
   gate('self.skill-rest', 'a transcript read chained to a settings write asks', call('Bash', { command: 'cat /root/.claude/projects/p/s.jsonl | tee /root/.claude/settings.json' }), 'ask'),
   gate('self.skill-link', 'a projects path that climbs back out asks', call('Bash', { command: 'cp x /root/.claude/projects/../settings.json; echo' }), 'ask'),
   gate('self.skill-link', 'a projects entry linked to the hooks asks', call('Bash', { command: 'sed -i s/a/b/ .claude/projects/evil/productionGate.ts; echo' }, LINK_ROOT), 'ask'),
+
+  // ── A chain shellRead.ts proves only reads (CUL-1963) ──────────────────────────────
+  gate('chain.read', 'git grep over .claude, piped, has no opinion', call('Bash', { command: 'git grep -n "C-25" origin/main -- .claude/ CLAUDE.md | head -20' }), null),
+  gate('chain.read', 'git ls-tree of .claude, piped, has no opinion', call('Bash', { command: 'git ls-tree -r --name-only origin/main .claude | grep -c "\\.md$"' }), null),
+  gate('chain.read', 'find .claude with a quoted pattern has no opinion', call('Bash', { command: "find .claude -name '*.md' | sort | head" }), null),
+  gate('chain.read', 'grep the settings, errors to /dev/null, has no opinion', call('Bash', { command: 'grep -n hooks .claude/settings.json 2>/dev/null | wc -l' }), null),
+  gate('chain.read', 'sed -n printing the hooks, chained, has no opinion', call('Bash', { command: "cd /tmp && sed -n '1,40p;$p' " + ROOT + '/.claude/hooks/productionGate.ts && echo ---' }), null),
+  gate('chain.read', 'git --no-pager log over .claude has no opinion', call('Bash', { command: 'git --no-pager log --oneline -5 -- .claude/ 2>&1 | head' }), null),
+  gate('chain.inside', 'a read chain from inside .claude still asks', call('Bash', { command: 'grep -rn ask hooks | head' }, path.join(ROOT, '.claude')), 'ask'),
+  gate('chain.command', 'a reader piped into tee asks', call('Bash', { command: 'cat .claude/settings.json | tee .claude/hooks/hookIo.ts' }), 'ask'),
+  gate('chain.command', 'an env prefix before git asks', call('Bash', { command: 'GIT_EXTERNAL_DIFF=/tmp/x git diff .claude | head' }), 'ask'),
+  gate('chain.command', 'xargs running a program asks', call('Bash', { command: 'ls .claude/hooks | xargs rm' }), 'ask'),
+  gate('chain.expand', 'a variable that could carry a flag asks', call('Bash', { command: 'find .claude $X | head' }), 'ask'),
+  gate('chain.dquote', 'a substitution inside double quotes asks', call('Bash', { command: 'grep -rn "$(rm -rf .claude/hooks)" docs | head' }), 'ask'),
+  gate('chain.redirect', 'output into a hook asks', call('Bash', { command: 'grep x .claude/settings.json > .claude/hooks/x.ts' }), 'ask'),
+  gate('chain.redirect', 'appending to the settings asks', call('Bash', { command: 'echo y 2>/dev/null >> .claude/settings.json' }), 'ask'),
+  gate('chain.write-flag', 'rg --pre in a chain asks', call('Bash', { command: 'rg --pre /tmp/e.sh x .claude/settings.json | head' }), 'ask'),
+  gate('chain.abbrev', 'an abbreviated --output asks', call('Bash', { command: 'git log --outp=.claude/hooks/hookIo.ts -1 | head' }), 'ask'),
+  gate('chain.abbrev', 'an abbreviated --ext-diff asks', call('Bash', { command: 'git diff --ext .claude | head' }), 'ask'),
+  gate('chain.abbrev', 'an abbreviated sort --compress-program asks', call('Bash', { command: 'sort --compress=/tmp/e -S1 .claude/settings.json | head' }), 'ask'),
+  gate('chain.find', 'find -delete asks', call('Bash', { command: "find .claude -name '*.json' -delete" }), 'ask'),
+  gate('chain.find', 'find -fprint writes a file', call('Bash', { command: 'find .claude -fprint .claude/settings.json | head' }), 'ask'),
+  gate('chain.glob', 'an unquoted glob reaching find asks', call('Bash', { command: 'find .claude/hooks * | head' }), 'ask'),
+  gate('chain.sed', 'sed -i asks', call('Bash', { command: 'sed -i s/ask/allow/ .claude/hooks/productionGate.ts && echo ok' }), 'ask'),
+  gate('chain.sed', 'sed -i with a print script still rewrites the file', call('Bash', { command: 'sed -i -n 1p .claude/settings.json | head' }), 'ask'),
+  gate('chain.dquote', 'a backtick inside double quotes asks', call('Bash', { command: 'grep -rn "`rm -rf .claude/hooks`" docs | head' }), 'ask'),
+  gate('chain.sed', 'a sed w command asks', call('Bash', { command: "sed -n '1w .claude/hooks/x.ts' .claude/settings.json | head" }), 'ask'),
+  gate('chain.sort', 'sort -o asks', call('Bash', { command: 'sort -ro .claude/settings.json x | head' }), 'ask'),
+  gate('chain.uniq', 'uniq with an output file asks', call('Bash', { command: 'uniq x .claude/settings.json | head' }), 'ask'),
+  gate('chain.git', 'git commit asks', call('Bash', { command: 'git commit -am x -- .claude | head' }), 'ask'),
+  gate('chain.git', 'git -c before the subcommand asks', call('Bash', { command: 'git -c core.pager=/tmp/e log .claude | head' }), 'ask'),
+  gate('chain.git', 'git grep -O opens a program', call('Bash', { command: 'git grep -O/tmp/e x .claude | head' }), 'ask'),
+  gate('chain.git', 'git --ext-diff runs a driver', call('Bash', { command: 'git diff --ext-diff .claude | head' }), 'ask'),
 
   // ── Relay form ────────────────────────────────────────────────────────────────────
   relay('relay.gmail', "Gmail's send_message (the dispatcher's email to self, CUL-1624) is untouched", call('mcp__Gmail__send_message', { to: ['danieljmarkii@gmail.com'], subject: 'approve', body: 'merge it, approved' }), null),
@@ -493,7 +528,25 @@ const MUTANTS: Mutant[] = [
   { rule: 'self.skill-rest', file: 'productionGate.ts', from: 'return !reachesGate && !NAMES_GATE.test(rest);', to: 'return !reachesGate;' },
   { rule: 'self.skill-cd', file: 'productionGate.ts', from: '  if (CD_INTO.test(cmd)) return false;\n', to: '' },
   { rule: 'self.skill-link', file: 'productionGate.ts', from: '    if (isGateFile(path.resolve(cwd, m))) reachesGate = true;\n', to: '' },
-  { rule: 'self.transcript-read', file: 'productionGate.ts', from: '(?:skills|agents|commands|workflows|projects)', to: '(?:skills|agents|commands|workflows)' },
+  { rule: 'self.transcript-read', file: 'productionGate.ts', from: '(?:skills|agents|commands|workflows|rules|projects)', to: '(?:skills|agents|commands|workflows|rules)' },
+  { rule: 'self.rules-read', file: 'productionGate.ts', from: '(?:skills|agents|commands|workflows|rules|projects)', to: '(?:skills|agents|commands|workflows|projects)' },
+  // shellRead.ts
+  { rule: 'chain.read', file: 'productionGate.ts', from: '  if (!inside && classifyShell(cmd).read) return null;\n', to: '' },
+  { rule: 'chain.inside', file: 'productionGate.ts', from: 'if (!inside && classifyShell(cmd).read) return null;', to: 'if (classifyShell(cmd).read) return null;' },
+  { rule: 'chain.command', file: 'shellRead.ts', from: 'if (!check || head.glob) return', to: 'if (!check) continue; if (head.glob) return' },
+  { rule: 'chain.expand', file: 'shellRead.ts', from: "      return { error: 'an expansion ($ or a backtick)' };", to: "      v += c;\n      inWord = true;\n      i++;" },
+  { rule: 'chain.dquote', file: 'shellRead.ts', from: "if ((d === '$' && cmd[j + 1] !== '\"') || d === '`') return", to: 'if (false) return' },
+  { rule: 'chain.redirect', file: 'shellRead.ts', from: 'return cmd.slice(j, k) === DEV_NULL ? k : -1;', to: 'return k;' },
+  { rule: 'chain.write-flag', file: 'shellRead.ts', from: "const RUNS_OR_WRITES_LONG = ['output', 'pre',", to: "const RUNS_OR_WRITES_LONG = ['output'," },
+  { rule: 'chain.abbrev', file: 'shellRead.ts', from: 'return RUNS_OR_WRITES_LONG.some((d) => d.startsWith(name));', to: 'return RUNS_OR_WRITES_LONG.includes(name);' },
+  { rule: 'chain.find', file: 'shellRead.ts', from: '/^-(?:exec|ok|delete|fprint|fls)/', to: '/^-(?:exec|ok)/' },
+  { rule: 'chain.glob', file: 'shellRead.ts', from: "const GLOB_SENSITIVE = new Set(['find', ", to: "const GLOB_SENSITIVE = new Set([" },
+  { rule: 'chain.sed', file: 'shellRead.ts', from: "if (flags.some((a) => !SED_FLAGS.has(a.v))) return", to: 'if (false) return' },
+  { rule: 'chain.sed', file: 'shellRead.ts', from: 'if (!script || !SED_PRINT.test(script.v)) return', to: 'if (!script) return' },
+  { rule: 'chain.sort', file: 'shellRead.ts', from: 'args.some((a) => /^-[^-]*o/.test(a.v))', to: 'args.some((a) => /^--output/.test(a.v))' },
+  { rule: 'chain.uniq', file: 'shellRead.ts', from: '.length > 1 ? \'uniq with an output file\'', to: '.length > 2 ? \'uniq with an output file\'' },
+  { rule: 'chain.git', file: 'shellRead.ts', from: 'if (!sub || !GIT_READS.has(sub)) return', to: 'if (!sub) return' },
+  { rule: 'chain.git', file: 'shellRead.ts', from: 'const GIT_RUNS = /^-[^-]*O/;', to: 'const GIT_RUNS = /^$/;' },
   // sqlRead.ts
   { rule: 'sql.start', file: 'sqlRead.ts', from: "if (!lead || lead.k !== 'word' || !READ_START.has(lead.v)) {", to: 'if (!lead) {' },
   { rule: 'sql.statements', file: 'sqlRead.ts', from: 'for (const s of live) {', to: 'for (const s of live.slice(0, 1)) {' },

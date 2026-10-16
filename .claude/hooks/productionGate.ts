@@ -22,8 +22,9 @@
 //    settings) → ask on any write (PM ruling 2026-10-07), so an Auto session cannot edit
 //    the gate out without the dialog. Any shell command that mentions .claude, or runs
 //    from inside it, asks unless it is one plain read, or every .claude it names is
-//    skills/, agents/, commands/, workflows/ (CUL-1670) or projects/ (the harness's
-//    transcripts and saved tool results).
+//    skills/, agents/, commands/, workflows/ (CUL-1670), rules/ or projects/ (the
+//    harness's transcripts and saved tool results), or shellRead.ts proves the whole
+//    chain only reads (CUL-1963).
 //
 // Every quoted value is escaped (control, format and bidirectional characters become
 // visible `\u{…}`), every cut line or list says how much it cut, and the dialog names
@@ -57,6 +58,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import type { Decision, HookInput } from './hookIo.ts';
+import { classifyShell } from './shellRead.ts';
 import { classifySql } from './sqlRead.ts';
 
 export const PRODUCTION_PROJECT_ID = 'aigchluqluzuhtbfllgh';
@@ -258,11 +260,12 @@ const RUNS_OR_WRITES = /^--(?:output|pre)\b/;
 // when every .claude it names is one of these and resolves outside the gate's files
 // (`.claude/skills/../settings.json` and a linked skills/ entry do not), and it changes
 // into no .claude or computed directory (`cd .claude/skills && rm "$(dirname "$PWD")/settings.json"`).
-// projects/ joins them because the harness saves a large tool result there
+// rules/ joins them because it holds the path-scoped conventions, loaded as context like a
+// skill. projects/ joins them because the harness saves a large tool result there
 // (`~/.claude/projects/<p>/<session>/tool-results/…`) and agents copy it out to parse it,
 // a prompt on every Linear listing in a grooming run. It holds transcripts, saved results
 // and auto memory: context, like a skill, and nothing that loads a hook or a setting.
-const SAFE_MENTION = /[^\s'"`;&|<>(){}$\\]*\.claude\/(?:skills|agents|commands|workflows|projects)(?:\/[^\s'"`;&|<>(){}$\\]*)?(?=[\s'"`;&|<>(){}]|$)/g;
+const SAFE_MENTION = /[^\s'"`;&|<>(){}$\\]*\.claude\/(?:skills|agents|commands|workflows|rules|projects)(?:\/[^\s'"`;&|<>(){}$\\]*)?(?=[\s'"`;&|<>(){}]|$)/g;
 const CD_INTO = /(?:^|[\s;&|(])(?:cd|pushd)\s+[^\s;&|]*(?:\.claude|[$`])/;
 
 function namesOnlySafeDirs(cmd: string, cwd: string): boolean {
@@ -281,6 +284,9 @@ function askIfGateCommand(input: HookInput): Decision | null {
   const inside = IN_GATE_DIR.test(cwd) || IN_GATE_DIR.test(realpathOfLongestExisting(cwd));
   if (!NAMES_GATE.test(cmd) && !inside) return null;
   if (!inside && namesOnlySafeDirs(cmd, cwd)) return null;
+  // A chain shellRead.ts proves only reads (CUL-1963). From inside .claude a path can name
+  // the gate without saying .claude, so there only the one plain read below passes.
+  if (!inside && classifyShell(cmd).read) return null;
   if (!SHELL_META.test(cmd)) {
     const words = cmd.trim().split(/\s+/);
     const unsafe = words.some((w) => RUNS_OR_WRITES.test(w));
