@@ -198,16 +198,16 @@ const checkGit: Check = (args) => {
 };
 
 const READERS = new Map<string, Check>([
-  // No rg: its flags run programs (--pre, --hostname-bin, -z), and a denylist loses to the next one.
+  // No rg or diff: rg --hostname-bin and diff -l run programs, and a denylist loses to the next one.
   ['cat', ANY], ['head', ANY], ['tail', ANY], ['wc', ANY], ['grep', ANY], ['ls', ANY],
-  ['stat', ANY], ['diff', ANY], ['jq', ANY], ['sha256sum', ANY], ['md5sum', ANY], ['cut', ANY],
+  ['stat', ANY], ['jq', ANY], ['sha256sum', ANY], ['md5sum', ANY], ['cut', ANY],
   ['tr', ANY], ['echo', ANY], ['printf', ANY], ['true', ANY], ['basename', ANY], ['dirname', ANY],
   ['cd', (a) => (a.length > 1 ? 'cd with more than one argument' : null)],
   ['find', checkFind], ['sort', checkSort], ['uniq', checkUniq], ['sed', checkSed], ['git', checkGit],
 ]);
 
 // Readers where a glob could expand into a flag that writes or runs.
-const GLOB_SENSITIVE = new Set(['find', 'sort', 'uniq', 'sed', 'git', 'diff']);
+const GLOB_SENSITIVE = new Set(['find', 'sort', 'uniq', 'sed', 'git']);
 
 export function classifyShell(cmd: string): ShellRead {
   const lexed = lex(cmd);

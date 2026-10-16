@@ -250,8 +250,9 @@ function askIfGateFile(input: HookInput): Decision | null {
 const NAMES_GATE = /\.claude\b|managed-settings|disableAllHooks/;
 const IN_GATE_DIR = /(?:^|\/)\.claude(?:\/|$)|^\/etc\/claude-code(?:\/|$)/;
 const SHELL_META = /[;&|<>`$\n\\(){}]/;
-// No rg: its flags run programs a denylist keeps missing (--pre, --hostname-bin), CUL-1963.
-const READ_COMMANDS = new Set(['cat', 'head', 'tail', 'wc', 'grep', 'ls', 'stat', 'file', 'diff', 'jq', 'sha256sum', 'md5sum']);
+// No rg, file or diff: rg --hostname-bin runs a program, file -C writes one, diff -l runs
+// pr (CUL-1963 red team). A denylist of their flags loses to the next one.
+const READ_COMMANDS = new Set(['cat', 'head', 'tail', 'wc', 'grep', 'ls', 'stat', 'jq', 'sha256sum', 'md5sum']);
 const READ_GIT = new Set(['diff', 'log', 'show', 'status', 'blame', 'ls-files']);
 const RUNS_OR_WRITES = /^--(?:output|pre)\b/;
 
