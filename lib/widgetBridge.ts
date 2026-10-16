@@ -24,6 +24,7 @@
 import { softDeleteEvent } from './db';
 import { usePetStore } from '../store/petStore';
 import { logMealIntent, logTreatIntent, topUpBowlIntent } from './widgetCapture';
+import { widgetPublishEpoch } from './widgetSnapshot';
 import {
   WIDGET_NAME,
   WIDGET_PROPS_SCHEMA_VERSION,
@@ -88,14 +89,20 @@ export interface DrainOutcome {
   revoked: number;
   failed: WidgetPendingCapture[];
   deferredRevokes: string[];
+  /** Sign-out moved the epoch mid-drain: the pass stopped and wrote nothing more. */
+  fenced: boolean;
 }
 
 export interface DrainDeps {
   logMeal: typeof logMealIntent;
   logTreat: typeof logTreatIntent;
   topUpBowl: typeof topUpBowlIntent;
-  /** Move the just-written inbox records into local SQLite + the sync queue. */
-  ingest: () => Promise<void>;
+  /**
+   * Move the just-written inbox records into local SQLite + the sync queue.
+   * `fenced` answers true once sign-out has moved the epoch; the ingest stops
+   * admitting this account's pets from then on (CUL-1960).
+   */
+  ingest: (fenced: () => boolean) => Promise<void>;
   /** Soft-delete an already-ingested event; a no-op if it isn't there. */
   revokeEvent: (eventId: string) => Promise<void>;
 }
@@ -109,10 +116,12 @@ function defaultDrainDeps(): DrainDeps {
     // is the trust boundary, so it is read here rather than derived from the
     // captures themselves. Required lazily: captureInbox pulls in the Supabase
     // client, whose import-time env guard deliberately throws.
-    ingest: () => {
+    ingest: (fenced) => {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { ingestCaptureInbox } = require('./captureInbox');
-      return ingestCaptureInbox(new Set(usePetStore.getState().pets.map((p) => p.id)));
+      return ingestCaptureInbox(
+        fencedAllowlist(new Set(usePetStore.getState().pets.map((p) => p.id)), fenced),
+      );
     },
     // reverse-path-ok: this is a ROLLBACK of captures the app just replayed on the
     // owner's behalf, not an owner-initiated removal, and it runs as a loop — so the
@@ -146,6 +155,37 @@ function defaultDrainDeps(): DrainDeps {
     // `triggerSignalRegenDebounced` per revoked pet.
     revokeEvent: softDeleteEvent,
   };
+}
+
+// The ingest allowlist, read through the sign-out fence (CUL-1960). The wipe runs
+// `clearLocalData` BEFORE `usePetStore.reset()`, so for the span between them the
+// pet store still names the old account's pets; an ingest already running at the
+// fence would write their meals into the just-wiped SQLite and queue them for sync.
+// `ingestCaptureRecords` asks `has()` once per record, with awaits between, so a
+// view whose `has()` goes false at the fence stops at the next record. `size` stays
+// the snapshot's: an empty set reads as "pets not loaded" and defers everything,
+// which is the same outcome by a different reason. RESIDUAL (CUL-1968): the record
+// whose `has()` already passed when the fence lands completes ALL its writes (its
+// food lookup may still be awaiting) and still queues its pet's Signal regen.
+// Only `size` and `has` are what the ingest reads; the rest of the Set surface is
+// here for the type, and the ES2025 set-algebra methods are not implemented.
+export function fencedAllowlist(
+  petIds: ReadonlySet<string>,
+  fenced: () => boolean,
+): ReadonlySet<string> {
+  return {
+    get size() {
+      return petIds.size;
+    },
+    has: (id: string) => !fenced() && petIds.has(id),
+    forEach: (cb, thisArg) => {
+      if (!fenced()) petIds.forEach(cb, thisArg);
+    },
+    entries: () => (fenced() ? new Set<string>() : petIds).entries(),
+    keys: () => (fenced() ? new Set<string>() : petIds).keys(),
+    values: () => (fenced() ? new Set<string>() : petIds).values(),
+    [Symbol.iterator]: () => (fenced() ? new Set<string>() : petIds)[Symbol.iterator](),
+  } as ReadonlySet<string>;
 }
 
 // Replay ONE captured tap through its W4 intent, carrying the widget's own ids and
@@ -183,15 +223,37 @@ async function applyCapture(capture: WidgetPendingCapture, deps: DrainDeps): Pro
 // whose ingest fails is NOT lost — the inbox file persists and the regular sync
 // cycle ingests it, which is why publishing v2 (and clearing the timeline) after a
 // best-effort drain is safe.
+//
+// ── The sign-out fence (CUL-1960, rls-privacy-reviewer on CUL-1952) ───────────
+// `epoch` is the session's. `wipeLocalSession` moves it before its first await, and
+// a pass that already started would otherwise keep going: an intent writes the old
+// account's capture into the App Group after `clearWidgetData`, and the ingest
+// writes its meals into the wiped SQLite. So the fence is read immediately before
+// every step that writes. Each intent's inbox write is its first statement, before
+// any await (`runCapture`), so a check on the same tick as the call admits nothing
+// after the fence. A fenced pass returns what it did not apply as `failed`, so
+// `publishWidgetPass` never publishes over the signed-out timeline.
 export async function applyOutbox(
   outbox: { pending: WidgetPendingCapture[]; revoked: string[] },
   deps: DrainDeps = defaultDrainDeps(),
+  epoch: number = widgetPublishEpoch(),
 ): Promise<DrainOutcome> {
+  const fenced = () => widgetPublishEpoch() !== epoch;
   const revoked = new Set(outbox.revoked);
   const failed: WidgetPendingCapture[] = [];
   let applied = 0;
-  for (const capture of outbox.pending) {
-    if (revoked.has(capture.id)) continue;
+  const stopped = (unapplied: WidgetPendingCapture[]): DrainOutcome => ({
+    applied,
+    revoked: 0,
+    failed: [...failed, ...unapplied],
+    deferredRevokes: [...revoked],
+    fenced: true,
+  });
+
+  const pending = outbox.pending.filter((c) => !revoked.has(c.id));
+  for (let i = 0; i < pending.length; i++) {
+    if (fenced()) return stopped(pending.slice(i));
+    const capture = pending[i];
     try {
       if (await applyCapture(capture, deps)) applied++;
       else failed.push(capture);
@@ -201,9 +263,10 @@ export async function applyOutbox(
     }
   }
 
+  if (fenced()) return stopped([]);
   let ingested = true;
   try {
-    await deps.ingest();
+    await deps.ingest(fenced);
   } catch (e) {
     console.warn('[widgetBridge] inbox ingest failed; deferring revokes:', e);
     ingested = false;
@@ -211,6 +274,7 @@ export async function applyOutbox(
 
   if (ingested) {
     for (const id of revoked) {
+      if (fenced()) return stopped([]);
       try {
         await deps.revokeEvent(id);
       } catch (e) {
@@ -224,10 +288,17 @@ export async function applyOutbox(
     revoked: ingested ? revoked.size : 0,
     failed,
     deferredRevokes: ingested ? [] : [...revoked],
+    fenced: false,
   };
 }
 
-const EMPTY_DRAIN: DrainOutcome = { applied: 0, revoked: 0, failed: [], deferredRevokes: [] };
+const EMPTY_DRAIN: DrainOutcome = {
+  applied: 0,
+  revoked: 0,
+  failed: [],
+  deferredRevokes: [],
+  fenced: false,
+};
 
 /**
  * Drain any residual v1 outbox from the stored timeline (the §3 one-time upgrade
@@ -236,7 +307,10 @@ const EMPTY_DRAIN: DrainOutcome = { applied: 0, revoked: 0, failed: [], deferred
  * anything. Meant to run BEFORE the first v2 publish, so the drained captures are
  * ingested into SQLite and appear in the props that publish then builds.
  */
-export async function drainResidualV1Outbox(deps?: DrainDeps): Promise<DrainOutcome> {
+export async function drainResidualV1Outbox(
+  deps?: DrainDeps,
+  epoch: number = widgetPublishEpoch(),
+): Promise<DrainOutcome> {
   const widget = getWidget();
   if (!widget) return EMPTY_DRAIN;
   let entries: { date: Date; props: CulpritWidgetProps }[] = [];
@@ -250,7 +324,7 @@ export async function drainResidualV1Outbox(deps?: DrainDeps): Promise<DrainOutc
   // loosely (v2 props carry neither field, so this finds nothing post-upgrade).
   const outbox = collectOutbox(entries as unknown as { props?: V1OutboxProps }[]);
   if (outbox.pending.length === 0 && outbox.revoked.length === 0) return EMPTY_DRAIN;
-  return applyOutbox(outbox, deps);
+  return applyOutbox(outbox, deps, epoch);
 }
 
 // ── Publish ──────────────────────────────────────────────────────────────────
@@ -304,10 +378,12 @@ export function clearWidgetTimeline(): void {
  */
 export async function publishWidgetPass(
   buildProps: () => Promise<CulpritWidgetProps>,
-  opts: { needsDrain: boolean; deps?: DrainDeps; now?: Date },
+  opts: { needsDrain: boolean; deps?: DrainDeps; now?: Date; epoch?: number },
 ): Promise<{ drainComplete: boolean }> {
   if (opts.needsDrain) {
-    const outcome = await drainResidualV1Outbox(opts.deps);
+    const outcome = await drainResidualV1Outbox(opts.deps, opts.epoch ?? widgetPublishEpoch());
+    // Sign-out stopped the drain: publish nothing over the signed-out timeline.
+    if (outcome.fenced) return { drainComplete: false };
     if (outcome.failed.length > 0 || outcome.deferredRevokes.length > 0) {
       console.warn(
         `[widgetBridge] residual v1 drain incomplete (${outcome.failed.length} failed, ` +
