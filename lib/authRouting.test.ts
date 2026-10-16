@@ -59,23 +59,15 @@ describe('signedOutRoute (B-280 FR-20)', () => {
   });
 });
 
-describe('shouldAdoptSessionDuringRecovery (B-280 rls re-review)', () => {
-  it('adopts everything when no exchange window is open (normal auth untouched)', () => {
-    expect(shouldAdoptSessionDuringRecovery('TOKEN_REFRESHED', false)).toBe(true);
-    expect(shouldAdoptSessionDuringRecovery('SIGNED_IN', false)).toBe(true);
-    expect(shouldAdoptSessionDuringRecovery('INITIAL_SESSION', false)).toBe(true);
+describe('shouldAdoptSessionDuringRecovery (B-280 rls re-review, CUL-1205)', () => {
+  it('adopts when no exchange window is open (normal auth untouched)', () => {
+    expect(shouldAdoptSessionDuringRecovery(false)).toBe(true);
   });
 
-  it('during the exchange window, adopts ONLY the exchange emission — never A re-emitted', () => {
-    // The Trap-2 sub-window: auth-js autoRefresh re-emits the pre-recovery owner A.
-    expect(shouldAdoptSessionDuringRecovery('TOKEN_REFRESHED', true)).toBe(false);
-    expect(shouldAdoptSessionDuringRecovery('INITIAL_SESSION', true)).toBe(false);
-    expect(shouldAdoptSessionDuringRecovery('USER_UPDATED', true)).toBe(false);
-    // _recoverAndRefresh emits SIGNED_IN carrying the STORED session, which on a cold
-    // start from a reset link is A (CUL-1886 rls review).
-    expect(shouldAdoptSessionDuringRecovery('SIGNED_IN', true)).toBe(false);
-    // The reset link exchange's PASSWORD_RECOVERY(B) is the one session recovery adopts.
-    expect(shouldAdoptSessionDuringRecovery('PASSWORD_RECOVERY', true)).toBe(true);
+  it('during the exchange window adopts nothing: the handler adopts the returned session', () => {
+    // No event name can open it, PASSWORD_RECOVERY included: an emission carrying A
+    // under that name would otherwise render the form against A (O2).
+    expect(shouldAdoptSessionDuringRecovery(true)).toBe(false);
   });
 });
 

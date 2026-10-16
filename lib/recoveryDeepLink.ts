@@ -20,15 +20,19 @@
 //      because they key on `useAuthStore` — so A's data can't re-publish onto B's
 //      device after the wipe (the F1 blocker). The verifier survives.
 //   5. `exchangeCodeForSession` — onto a clean device, with the verifier intact.
-//   6/7. On success the exchange fires PASSWORD_RECOVERY; the FR-6 branch in
-//      `onAuthStateChange` routes to the set-password form. Nothing to do here.
+//   6/7. On success, adopt EXACTLY the session the exchange returned and route to
+//      the set-password form. The root listener adopts nothing in the window
+//      (CUL-1205), so this is the one writer, whatever auth-js names the event.
 //   8. On failure (FR-15): set the failure state, then a REAL `signOut()` — the
 //      B-576 reconcile that purges A's tokens auth-js still holds after step 4
 //      nulled only the store — then release the gate. Safe here precisely because
-//      the exchange already failed, so no live PKCE flow remains to break.
+//      the exchange already failed, so no live PKCE flow remains to break. A
+//      sign-out that fails is checked, and the keychain is purged directly.
 
 import { router } from 'expo-router';
-import { supabase } from './supabase';
+import type { Session } from '@supabase/supabase-js';
+import { AUTH_STORAGE_KEY, supabase } from './supabase';
+import { ChunkedSecureStoreAdapter } from './secureStore';
 import { flushForSignOut, wipeLocalSession } from './session';
 import {
   useAuthStore,
@@ -58,11 +62,13 @@ let lastHandledUrl: string | null = null;
 async function runExchangeAndFinalize(code: string): Promise<void> {
   const store = useAuthStore.getState();
   let outcome: RecoveryExchangeOutcome;
+  let exchanged: Session | null = null;
   try {
     // The verifier is intact (step 4 did NOT signOut), so B's session arrives onto
     // the clean device the wipe just produced.
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     outcome = classifyExchangeOutcome(error);
+    exchanged = data?.session ?? null;
   } catch (e) {
     // exchangeCodeForSession throws (not just returns { error }) on the local
     // verifier-absent shape; classify the thrown message the same way. Never log the
@@ -71,43 +77,138 @@ async function runExchangeAndFinalize(code: string): Promise<void> {
       message: e instanceof Error ? e.message : 'exchange failed',
     });
   }
-  // The exchange has resolved: its PASSWORD_RECOVERY(B) (on success) has already been
-  // adopted, and A's tokens are gone from auth-js (overwritten by the exchange, or
-  // purged by the reconcile below). Close the adoption window so B's own later TOKEN_REFRESHED
-  // and a resume are adopted normally.
-  store.setRecoveryExchangePending(false);
 
   if (outcome === 'success') {
-    // step 6/7: the exchange's PASSWORD_RECOVERY sets the session; the FR-6 branch in
-    // onAuthStateChange routes to the set-password form (session + gate). No signOut
-    // here — the exchange already replaced A's tokens with B's in auth-js storage.
+    if (!exchanged) {
+      // auth-js returns a session on every success; a success without one has nothing
+      // to adopt, so it fails forward to "send a new link" rather than spinning until
+      // the watchdog (the verifier is already spent, so a retry cannot work).
+      await failAndReconcile('link_unusable');
+      return;
+    }
+    // The store must never say B while auth-js holds someone else: every write the
+    // form makes goes out under auth-js's session, not the store's. `signInWithPassword`
+    // takes no auth-js lock, so a sign-in for A (the Change password re-auth, a login
+    // from the watchdog's Back to log in) can land after the exchange saved B
+    // (rls-privacy-reviewer, reproduced against auth-js 2.105.4). Adopt only when the
+    // stored session IS the returned one; otherwise fail and reconcile.
+    if (!(await authHolds(exchanged))) {
+      await failAndReconcile('failed');
+      return;
+    }
+    // step 6/7 (CUL-1205): adopt EXACTLY the session the exchange returned. auth-js
+    // emitted it as PASSWORD_RECOVERY while the exchange ran, and the root listener
+    // refused it along with everything else in the window, so this is the only write
+    // that can put a session in the store before the window closes. Matching on the
+    // returned object, not an event name, is what keeps A out (O2). The gate is still
+    // armed, so the session lands on the set-password form, never on Home. The user is
+    // pinned for the save, which must write to this account and no other.
+    store.setRecoveryUserId(exchanged.user.id);
+    store.setSession(exchanged);
+    store.setRecoveryExchangePending(false);
     // Clear any failure state a slow-exchange watchdog may have set on the screen, so
     // a late success renders the form rather than a stale "failed".
     store.setRecoveryScreen(null);
+    // supabase-js hands realtime a new token only on SIGNED_IN / TOKEN_REFRESHED, never
+    // on PASSWORD_RECOVERY, so B's channels would join with whatever token A last left
+    // there and RLS would deliver them nothing.
+    supabase.realtime.setAuth(exchanged.access_token).catch((e: unknown) =>
+      console.warn('[recovery] realtime token swap failed:', e instanceof Error ? e.message : e));
+    // FR-6 / Trap 1: pin the route, whichever screen is foreground.
+    router.replace(RECOVERY_ROUTE);
     return;
   }
+  await failAndReconcile(outcome);
+}
 
-  // step 8 (FR-15): render the designed failure state, then reconcile.
+/**
+ * End a reset that cannot finish, the FR-15 way: the designed failure state, a local
+ * sign-out of whatever auth-js holds (purged from the keychain if that fails), and the
+ * gate released. The set-password save calls it when auth-js no longer holds the
+ * recovery user (CUL-1205), so a refused write never leaves an armed gate behind.
+ */
+export async function abandonRecovery(
+  outcome: Exclude<RecoveryExchangeOutcome, 'success'>,
+): Promise<void> {
+  await failAndReconcile(outcome);
+}
+
+async function failAndReconcile(
+  outcome: Exclude<RecoveryExchangeOutcome, 'success'>,
+): Promise<void> {
+  const store = useAuthStore.getState();
+  // step 8 (FR-15): render the designed failure state, then reconcile. The adoption
+  // window is OPEN through the reconcile (opened here for the save's caller, already
+  // open for the handler's): signOut first loads the session, which refreshes a
+  // near-expiry token and emits TOKEN_REFRESHED, and with the window closed the
+  // listener adopted it (rls-privacy-reviewer, reproduced). It closes below, once the
+  // tokens are gone.
+  store.setRecoveryExchangePending(true);
   store.setRecoveryScreen(outcome);
+  // The B-576 reconcile: step 4 nulled the STORE but left A's tokens in auth-js's own
+  // persisted storage, so a failed exchange leaves autoRefresh able to restore A onto
+  // the just-wiped device. A real signOut purges them. Its SIGNED_OUT is handled
+  // teardown-only by app/_layout while the gate is armed (routing + the gate release
+  // are owned here, to avoid a route/release race).
+  //
+  // `scope: 'local'` is load-bearing: the default is 'global', which would revoke A's
+  // sessions on EVERY device A owns — but a failed exchange (an expired or
+  // scanner-consumed link, D8's routine blameless cases) must only purge THIS device's
+  // copy of A's tokens, never evict A elsewhere for an event that never happened
+  // (code-reviewer).
+  //
+  // CUL-1205 O3: even `scope: 'local'` POSTs /logout first, and auth-js hands a network
+  // or 5xx failure back as a RESOLVED `{ error }` without removing the session, so
+  // offline A's tokens stayed and came back on the next refresh. Check the result as
+  // well as a throw, and on either do the storage half of auth-js's own
+  // `_removeSession` (the CUL-1461 teardown DeleteAccountSheet uses): auth-js keeps no
+  // in-memory copy, so with the keychain entries gone nothing can restore A.
   try {
-    // The B-576 reconcile: step 4 nulled the STORE but left A's tokens in auth-js's
-    // own persisted storage, so a failed exchange leaves autoRefresh able to restore
-    // A onto the just-wiped device. A real signOut purges them. Its SIGNED_OUT is
-    // handled teardown-only by app/_layout while the gate is armed (routing + the
-    // gate release are owned here, to avoid a route/release race).
-    //
-    // `scope: 'local'` is load-bearing: the default is 'global', which would revoke
-    // A's sessions on EVERY device A owns — but a failed exchange (an expired or
-    // scanner-consumed link, D8's routine blameless cases) must only purge THIS
-    // device's copy of A's tokens, never evict A elsewhere for an event that never
-    // happened (code-reviewer).
-    await supabase.auth.signOut({ scope: 'local' });
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) await purgePersistedAuthSession(error);
   } catch (e) {
-    console.warn('[recovery] reconcile sign-out failed:', e instanceof Error ? e.message : e);
+    await purgePersistedAuthSession(e);
   }
+  // A purge fires no SIGNED_OUT, so nothing else nulls the store. Null it here, so no
+  // session of A's can outlive its tokens, then close the window so a later resume is
+  // adopted normally, and drop A's token from realtime.
+  store.setSession(null);
+  store.setRecoveryExchangePending(false);
+  supabase.realtime.setAuth().catch((e: unknown) =>
+    console.warn('[recovery] realtime token reset failed:', e instanceof Error ? e.message : e));
   // Release the gate LAST (§6.4 step 8). reset-password keeps rendering the failure
   // state from `recoveryScreen`, which the gate release does not touch.
   await releaseRecoveryGate();
+}
+
+// Whether auth-js's own stored session belongs to the user the exchange returned. By
+// user, not token: a refresh between the exchange and this read (a skewed clock) is
+// still B. A read that fails counts as no: the caller then reconciles, the safe way.
+async function authHolds(session: Session): Promise<boolean> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.user.id === session.user.id;
+  } catch (e) {
+    console.warn('[recovery] stored-session check failed:', e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
+async function purgePersistedAuthSession(cause: unknown): Promise<void> {
+  console.warn(
+    '[recovery] reconcile sign-out failed; purging the stored session:',
+    cause instanceof Error ? cause.message : (cause as { message?: string } | null)?.message ?? cause,
+  );
+  // `removeItem` swallows its own keychain errors, so a failed delete only shows as the
+  // key still being there. Read it back, and try once more before giving up loudly.
+  // `getItem` swallows read errors too (reads null), so a keychain failing on BOTH
+  // reads and deletes still passes this check (CUL-1975).
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await ChunkedSecureStoreAdapter.removeItem(AUTH_STORAGE_KEY);
+    await ChunkedSecureStoreAdapter.removeItem(`${AUTH_STORAGE_KEY}-code-verifier`);
+    if ((await ChunkedSecureStoreAdapter.getItem(AUTH_STORAGE_KEY)) === null) return;
+  }
+  console.warn('[recovery] stored session still present after purge');
 }
 
 /**
@@ -169,7 +270,8 @@ export async function handleRecoveryDeepLink(
   // until B's session arrives from the exchange. `recoveryExchangePending` closes the
   // sibling window the rls re-review found — auth-js's autoRefresh re-emitting A as a
   // `TOKEN_REFRESHED` during the flush and the root listener re-adopting it; while it
-  // is set the listener adopts ONLY the exchange's `PASSWORD_RECOVERY` (CUL-1886).
+  // is set the listener adopts nothing, and the exchange's own return is adopted by
+  // `runExchangeAndFinalize` (CUL-1205).
   // Nulling the STORE (not auth-js) does not touch the flush, which drains A's queue
   // under auth-js's own still-valid session at step 4.
   store.setRecoveryExchangePending(true);
