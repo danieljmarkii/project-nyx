@@ -88,6 +88,7 @@ describe('withoutLiveActivities', () => {
 describe('withWidgetPrivacyManifest', () => {
   interface WidgetPluginModule {
     WIDGET_PRIVACY_MANIFEST: { NSPrivacyTracking: boolean; NSPrivacyAccessedAPITypes: AccessedApiType[] };
+    WIDGET_PRIVACY_MANIFEST_XML: string;
     addManifestToWidgetTarget: (project: FakeProject) => FakeProject;
   }
   const widgetPlugin = jest.requireActual<WidgetPluginModule>('../plugins/withWidgetPrivacyManifest');
@@ -98,6 +99,12 @@ describe('withWidgetPrivacyManifest', () => {
     expect(manifest.NSPrivacyAccessedAPITypes).toEqual([
       { NSPrivacyAccessedAPIType: USER_DEFAULTS, NSPrivacyAccessedAPITypeReasons: APP_GROUP_REASONS },
     ]);
+  });
+
+  it('writes XML that parses to exactly that manifest', () => {
+    // A test-only parse: the plugin itself carries no plist dependency.
+    const plist = jest.requireActual<{ default: { parse: (xml: string) => unknown } }>('@expo/plist').default;
+    expect(plist.parse(widgetPlugin.WIDGET_PRIVACY_MANIFEST_XML)).toEqual(widgetPlugin.WIDGET_PRIVACY_MANIFEST);
   });
 
   // The slice of the `xcode` project API the plugin touches.

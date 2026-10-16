@@ -7,9 +7,14 @@
 // required-reason API needs its own file. Ours does: expo-widgets' generated
 // Swift reads the layout and timeline through `WidgetsStorage`, which is
 // `UserDefaults(suiteName:)` on the App Group. Hence the two UserDefaults
-// reasons, the same pair the app declares:
-//   1C8F.1 — read/write data shared with the app through the App Group;
-//   CA92.1 — read/write data only this bundle itself uses.
+// reasons, the same pair the app declares (the build note asks for both):
+//   1C8F.1 — read/write data shared with the app through the App Group, the
+//            one WidgetsStorage needs;
+//   CA92.1 — read/write data only this bundle uses, cover for the Expo and RN
+//            modules linked into the extension that may touch standard defaults.
+// React Native's CocoaPods privacy aggregation (expo-widgets' Podfile block for
+// the target enables it) merges the pods' reasons INTO this file, since it is
+// already in the target's resources, rather than adding a second one.
 // No tracking, no tracking domains, and no collected data types: the extension
 // sends nothing anywhere (the widget is informational only, never writes).
 //
@@ -39,12 +44,14 @@
 
 const fs = require('fs');
 const path = require('path');
-const plist = require('@expo/plist').default;
 const { withDangerousMod, withXcodeProject } = require('expo/config-plugins');
 
 const WIDGET_TARGET_NAME = 'ExpoWidgetsTarget';
 const MANIFEST_NAME = 'PrivacyInfo.xcprivacy';
 
+// Written as fixed XML below, so the plugin needs no plist package of its own
+// (`@expo/plist` is only a transitive dependency here). The guard checks the
+// XML against this object.
 const WIDGET_PRIVACY_MANIFEST = {
   NSPrivacyTracking: false,
   NSPrivacyTrackingDomains: [],
@@ -57,13 +64,39 @@ const WIDGET_PRIVACY_MANIFEST = {
   ],
 };
 
+const WIDGET_PRIVACY_MANIFEST_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>1C8F.1</string>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
+`;
+
 function withWidgetManifestFile(config) {
   return withDangerousMod(config, [
     'ios',
     async (cfg) => {
       const targetDirectory = path.join(cfg.modRequest.platformProjectRoot, WIDGET_TARGET_NAME);
       fs.mkdirSync(targetDirectory, { recursive: true });
-      fs.writeFileSync(path.join(targetDirectory, MANIFEST_NAME), plist.build(WIDGET_PRIVACY_MANIFEST));
+      fs.writeFileSync(path.join(targetDirectory, MANIFEST_NAME), WIDGET_PRIVACY_MANIFEST_XML);
       return cfg;
     },
   ]);
@@ -141,4 +174,5 @@ module.exports = function withWidgetPrivacyManifest(config) {
 };
 
 module.exports.WIDGET_PRIVACY_MANIFEST = WIDGET_PRIVACY_MANIFEST;
+module.exports.WIDGET_PRIVACY_MANIFEST_XML = WIDGET_PRIVACY_MANIFEST_XML;
 module.exports.addManifestToWidgetTarget = addManifestToWidgetTarget;
