@@ -42,6 +42,13 @@ jest.mock('../../lib/sync', () => ({
   syncPendingWeightChecks: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
+// The Signal's refresh edge (CUL-1948), stubbed so a time edit's regen is assertable and
+// arms no real timer. The rest of the module stays real.
+const mockRegen = jest.fn();
+jest.mock('../../lib/signal', () => ({
+  ...jest.requireActual('../../lib/signal'),
+  triggerSignalRegenDebounced: (...a: unknown[]) => mockRegen(...a),
+}));
 jest.mock('../../lib/haptics', () => ({
   commitRoutine: jest.fn(), commitSymptom: jest.fn(), selectChip: jest.fn(),
   destructiveConfirm: jest.fn(),
@@ -545,6 +552,99 @@ describe('NamedCompletionCard — Change time', () => {
     await act(async () => { fireEvent.press(view.getByText('Save')); });
     expect(alert).toHaveBeenCalled();
     expect(useSyncStore.getState().recordTick).toBe(1);
+    err.mockRestore();
+    alert.mockRestore();
+  });
+
+  // CUL-1948 — the server half of a moved time. The edit screen rebuilds the Signal when the
+  // instant moved (app/edit-event.tsx, `engineInputMoved`); this card did not, so every
+  // server-built finding kept counting the record at its old time. The regen is for the
+  // RECORD's pet (the active pet here is another one), only after the write has landed,
+  // and never for a peek-and-save, which would spend a daily cap unit on nothing (CUL-1087).
+  it('a moved time schedules the Signal regen for the record\'s pet after the write lands; a peek-and-save schedules none', async () => {
+    const peek = render(<NamedCompletionCard />);
+    seed({}, 'p2');
+    fireEvent.press(peek.getByLabelText('Change time of this log'));
+    await act(async () => { fireEvent.press(peek.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+    expect(mockRegen).not.toHaveBeenCalled();
+    peek.unmount();
+
+    let writeLanded = false;
+    let landedAtRegen: boolean | null = null;
+    (updateEvent as jest.Mock).mockImplementationOnce(async () => { writeLanded = true; });
+    (mockRegen as jest.Mock).mockImplementationOnce(() => { landedAtRegen = writeLanded; });
+    const view = render(<NamedCompletionCard />);
+    seed({}, 'p2');
+    fireEvent.press(view.getByLabelText('Change time of this log'));
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(updateEvent).toHaveBeenCalledTimes(2);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledWith('p1');
+    expect(landedAtRegen).toBe(true);
+  });
+
+  // A write that lands and then throws (anything after it in the try) has still moved the
+  // record, so the regen still goes; a write that never landed asks for nothing.
+  it('a moved time whose save lands then throws still schedules the regen; one that never lands does not', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const { syncPendingEvents } = require('../../lib/sync');
+    (syncPendingEvents as jest.Mock).mockImplementationOnce(() => { throw new Error('push refused'); });
+    const view = render(<NamedCompletionCard />);
+    seed({}, 'p2');
+    fireEvent.press(view.getByLabelText('Change time of this log'));
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledWith('p1');
+    view.unmount();
+
+    (updateEvent as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+    const failed = render(<NamedCompletionCard />);
+    seed({}, 'p2');
+    fireEvent.press(failed.getByLabelText('Change time of this log'));
+    await act(async () => {
+      fireEvent(failed.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 45));
+    });
+    await act(async () => { fireEvent.press(failed.getByText('Save')); });
+    expect(alert).toHaveBeenCalledTimes(2);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    err.mockRestore();
+    alert.mockRestore();
+  });
+
+  // The floor wrapper's nested-transaction fallback (lib/incidentFloorQueue.ts runOwingCheck):
+  // BEGIN is refused, the write persists, then the marker throws out of the wrapper. The row
+  // moved, so the regen must still go, which holds only while `landed` is set INSIDE the
+  // wrapper's closure (adversarial review, CUL-1948: set after the wrapper, it survived).
+  it('a moved time whose floor marker throws after the write still schedules the regen', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const floor = jest.spyOn(require('../../lib/incidentFloorQueue'), 'writeOwingFloorCheck')
+      .mockImplementationOnce(async (...a: unknown[]) => {
+        await (a[1] as () => Promise<unknown>)();
+        throw new Error('marker insert failed');
+      });
+    const view = render(<NamedCompletionCard />);
+    seed({}, 'p2');
+    fireEvent.press(view.getByLabelText('Change time of this log'));
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(floor).toHaveBeenCalledTimes(1);
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledWith('p1');
+    floor.mockRestore();
     err.mockRestore();
     alert.mockRestore();
   });

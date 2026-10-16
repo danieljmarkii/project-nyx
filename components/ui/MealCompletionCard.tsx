@@ -17,6 +17,7 @@ import {
 } from '../../lib/completionCard';
 import { useEventStore } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
+import { triggerSignalRegenDebounced } from '../../lib/signal';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { updateEvent, getEventSource } from '../../lib/db';
 import { writeOwingFloorCheck } from '../../lib/incidentFloorQueue';
@@ -392,6 +393,8 @@ export function MealCompletionCard() {
     if (pickerFor !== payload.eventId) { setPickerFor(null); return; }
     // Hoisted so the finally below sees it (CUL-1947, adversarial pass 2).
     let changed = false;
+    // Set the moment the write resolves, so the finally can tell a landed write (CUL-1948).
+    let landed = false;
     setSaving(true);
     try {
       const iso = next.toISOString();
@@ -435,11 +438,14 @@ export function MealCompletionCard() {
       // neither value — the explicit nulls it used to pass were harmless only while
       // no meal path writes a note, and would have made the first one that does
       // erasable by a time edit, with nothing failing.
-      await writeOwingFloorCheck(payload.eventId, () => updateEvent(payload.eventId, {
-        occurred_at: iso,
-        occurred_at_source: source,
-        confidence: { value: 'witnessed', earliest: null, latest: null },
-      }));
+      await writeOwingFloorCheck(payload.eventId, async () => {
+        await updateEvent(payload.eventId, {
+          occurred_at: iso,
+          occurred_at_source: source,
+          confidence: { value: 'witnessed', earliest: null, latest: null },
+        });
+        landed = true;
+      });
       patchInToday(payload.eventId, { occurred_at: iso });
       patchOccurredAt(iso);
       setPickerFor(null);
@@ -457,6 +463,12 @@ export function MealCompletionCard() {
       // throws (the floor marker, adversarial pass 2) must still re-read; an extra re-read
       // after a write that never landed only errs loud. A peek-and-save moved nothing.
       if (changed) useSyncStore.getState().bumpRecordTick();
+      // CUL-1948 — the server half: a moved time moves what generate-signal counted, so the
+      // Signal rebuilds, as app/edit-event.tsx does on the same edit (its `engineInputMoved`).
+      // Gated on `changed` so a peek-and-save spends no daily cap unit (CUL-1087), and on
+      // `landed` so a write that never reached the record asks for nothing; a write that
+      // lands and then throws still asks. The record's own pet, captured at log time.
+      if (changed && landed) triggerSignalRegenDebounced(payload.petId);
       setSaving(false);
     }
   }
