@@ -909,6 +909,23 @@ describe('the local reads', () => {
     }
   });
 
+  it('readSignalEpisodes: each bout carries the day of its LAST row, for the bars (Q12, CUL-1791)', async () => {
+    // A bout from 22:30 that chains past midnight (each gap under three hours), and a lone row.
+    mockGetAllAsync
+      .mockResolvedValueOnce([
+        { id: 'n1', occurred_at: noon(2026, 9, 12, 22, 30), occurred_at_confidence: 'witnessed' },
+        { id: 'n3', occurred_at: noon(2026, 9, 13, 2, 50), occurred_at_confidence: 'witnessed' },
+        { id: 'n2', occurred_at: noon(2026, 9, 13, 0, 40), occurred_at_confidence: 'witnessed' },
+        { id: 'z', occurred_at: noon(2026, 9, 15, 9, 0), occurred_at_confidence: 'witnessed' },
+      ])
+      .mockResolvedValueOnce([]);
+    const episodes = await readSignalEpisodes('pet-1', 'cough');
+    expect(episodes.map((e) => [e.dayKey, e.endDayKey])).toEqual([
+      ['2026-09-12', '2026-09-13'],
+      ['2026-09-15', '2026-09-15'],
+    ]);
+  });
+
   it('readSignalEpisodes: a cough is never timed — the feeding read is not issued', async () => {
     mockGetAllAsync.mockResolvedValueOnce([{ id: 'k', occurred_at: noon(2026, 9, 17), occurred_at_confidence: null }]).mockResolvedValueOnce([]);
     const episodes = await readSignalEpisodes('pet-1', 'cough');

@@ -71,7 +71,7 @@
 
 import { isCallDisplay, louderCall, TIER_WORDS, TIERED_CALLS_READ_AS, type CallDisplay } from './incidentTierWords';
 import { dayKeyFromIndex, localDayIndexOf, MONTHS } from './utils';
-import { weekdayOfIndex, weekStartIndex, weeklyBuckets, type WeeklyBucketsModel } from './chartModels';
+import { weekdayOfIndex, weekStartIndex, weeklyBuckets, type BoutSpan, type WeeklyBucketsModel } from './chartModels';
 import { dateWord } from './chartCopy';
 import { datedCallLinesOf } from './ruleSeam';
 
@@ -253,6 +253,10 @@ export interface MonthModelInput {
    *  count; they are rose (CUL-1530) and they keep the day's words from claiming an
    *  absence. With `episodeDays` they are every day that holds a vomit row. */
   continuationDays?: readonly MonthContinuationDay[];
+  /** Each bout's first and last day (`boutSpansOf`), so a bar over a week a bout carries
+   *  into from the week before says so (Q12, CUL-1539). The vomiting lens only: the entry
+   *  lenses count rows, not bouts. Omitted → no week is marked. */
+  boutSpans?: readonly BoutSpan[];
   /** Days with any logging under the caller's predicate. Duplicates are fine. */
   loggedDays: readonly string[];
   /** Days holding a feeding or a symptom entry (`lib/monthReads.ts`). Required: a caller
@@ -553,6 +557,7 @@ export function buildMonthModel(input: MonthModelInput): MonthModel {
   const lastDrawnKey = dayKeyFromIndex(lastDrawnIdx);
   const weekly = weeklyBuckets({
     episodeDays: input.episodeDays,
+    boutSpans: input.boutSpans,
     loggedDays: input.loggedDays,
     weeksEnding: lastDrawnKey,
     today: input.today,

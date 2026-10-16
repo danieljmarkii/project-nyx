@@ -67,7 +67,7 @@
 
 import { isCallDisplay, tierDisplayOf, type CallDisplay } from './incidentTierWords';
 import { getDb, getTimeline, type TimelineRow } from './db';
-import { episodeDaysOf } from './chartModels';
+import { boutSpansOf, episodeDaysOf, type BoutSpan } from './chartModels';
 import { collapseEpisodes, DEFAULT_MEAL_TIMING_CONFIG, type MealTimingConfig } from './mealTiming';
 import { TIMING_SYMPTOM_TYPE } from './patternsTiming';
 import { isFinishedMeal, qualifyingIntakeMeals, readFreeFedIntakeSpans, SYMPTOM_EVENT_TYPES, type AnalyticsMeal } from './analytics';
@@ -80,6 +80,9 @@ export interface MonthFacts {
   episodeDays: string[];
   /** Days holding a vomit row but no episode start, each with the day its bout began. */
   continuationDays: MonthContinuationDay[];
+  /** Each vomiting bout's first and last day, for the bars' "a bout that began before this
+   *  week continues here" (Q12, CUL-1539). Every bout that reaches the range. */
+  boutSpans: BoutSpan[];
   loggedDays: string[];
   /** Days holding a feeding or a symptom entry: a subset of `loggedDays`. */
   answeringDays: string[];
@@ -260,6 +263,9 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
     .filter((r) => Number.isFinite(r.ms));
   const episodeDays = episodeDaysOf(vomitRows, keyOf).filter((k) => inRange(k, range));
   const continuationDays = continuationDaysOf(vomitRows, keyOf).filter((c) => inRange(c.day, range));
+  // A span reaching into the range from a bout begun in the read's slack is kept: its end is
+  // in range, and that is the week it carries into.
+  const boutSpans = boutSpansOf(vomitRows, keyOf).filter((b) => b.endDay >= range.fromKey && b.startDay <= range.toKey);
 
   // Logged: any surviving event that is not a look (the coverage question, see the header).
   // Answering: a feeding or a symptom entry — the days that may say "no vomiting".
@@ -343,6 +349,7 @@ export async function readMonthFacts(petId: string, range: MonthReadRange): Prom
   return {
     episodeDays,
     continuationDays,
+    boutSpans,
     loggedDays: [...loggedSet].sort(),
     answeringDays: [...answeringSet].sort(),
     leftSomeDays: [...leftSomeSet].sort(),

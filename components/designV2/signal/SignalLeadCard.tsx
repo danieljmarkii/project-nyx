@@ -195,9 +195,9 @@ export function SignalLeadCard({ cached, petId, onOpen, withholdFallingVomit, ge
   // element.
   const chart =
     model.weekly && model.noun ? (
-      <WeeklyBars model={model.weekly} noun={model.noun} spoken={false} drawIn={drawFact.armed} identity={`${identity}:${drawFact.key}`} />
+      <WeeklyBars model={model.weekly} noun={model.noun} spoken={false} lastCarriedSaidBeside drawIn={drawFact.armed} identity={`${identity}:${drawFact.key}`} />
     ) : null;
-  const flightChart = model.weekly && model.noun ? <WeeklyBars model={model.weekly} noun={model.noun} spoken={false} identity={identity} /> : null;
+  const flightChart = model.weekly && model.noun ? <WeeklyBars model={model.weekly} noun={model.noun} spoken={false} lastCarriedSaidBeside identity={identity} /> : null;
   const open = () => onOpen(cached.finding);
   const press = () => {
     if (!FLIGHT_ENABLED || reducedMotion || !chart || !flightChart) {

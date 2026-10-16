@@ -97,6 +97,7 @@ import {
 import { hasSignalTitleRule, signalTitle } from './signalTitle';
 import { isOtherTrialReassurance, signalTrialWindowFor } from './signalTrialAnchor';
 import {
+  boutSpansOfEpisodes,
   signalCompare,
   signalCompareSpec,
   signalLanes,
@@ -149,6 +150,9 @@ export interface SignalScreenEpisode {
    *  own row among them. The loader reads the bout's verdicts from it; the builder never
    *  does. Absent reads as the one row `eventId` names. */
   boutIds?: readonly string[];
+  /** The local day of the bout's LAST row, so a week the bout carries into says so (Q12,
+   *  CUL-1791). `readSignalEpisodes` always sets it; absent reads as `dayKey` (a one-day bout). */
+  endDayKey?: string;
 }
 
 /** One delivered dose on one local day. */
@@ -778,6 +782,7 @@ export function buildSignalScreenModel(input: SignalScreenInput): SignalScreenMo
     today: input.today,
     trial: input.trial,
     episodeDays,
+    boutSpans: boutSpansOfEpisodes(input.episodes),
     loggedDays: input.loggedDays,
     recordStart: input.recordStart,
   };
@@ -1156,8 +1161,12 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
     minutesByOnset = new Map(timing.eligible.map((t) => [t.onsetMs, t.minutesSinceFeeding]));
   }
 
+  const msById = new Map(stamped.map((r) => [r.id, r.ms]));
   return episodes.map((e) => {
     const held = photoByEpisode.get(e.id) ?? null;
+    const boutIds = members.get(e.id) ?? [e.id];
+    // The bout's last row, by instant, from its own members — the same membership the tiles read.
+    const lastMs = boutIds.reduce((m, id) => Math.max(m, msById.get(id) ?? e.ms), e.ms);
     return {
       eventId: held ? held.eventId : e.id,
       occurredAt: e.occurred_at,
@@ -1165,7 +1174,8 @@ export async function readSignalEpisodes(petId: string, symptomType: string): Pr
       minutesSinceMeal: minutesByOnset.get(e.ms) ?? null,
       photo: held ? held.photo : null,
       ...(held && held.eventId !== e.id ? { openedAt: occurredAtById.get(held.eventId) ?? e.occurred_at } : {}),
-      boutIds: members.get(e.id) ?? [e.id],
+      boutIds,
+      endDayKey: toLocalDayKey(new Date(lastMs)),
     };
   });
 }

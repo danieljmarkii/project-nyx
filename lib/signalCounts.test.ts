@@ -67,7 +67,7 @@ const reflection = (over: Partial<ReflectionFinding> = {}): ReflectionFinding =>
 });
 
 function compose(finding: CountedFinding, today: string, episodeDays: string[], loggedDays: string[] = [], notEating: boolean | null = false) {
-  const weekly = signalWeeks({ finding, today, trial: null, episodeDays, loggedDays });
+  const weekly = signalWeeks({ finding, today, trial: null, episodeDays, boutSpans: [], loggedDays });
   const withheld = weekLineWithheld(weekly, {
     finding,
     symptom: finding.symptomType,

@@ -232,6 +232,8 @@ export function MonthInstrument({
             episodeDays: lensEpisodeDays(lens, facts),
             // A bout that runs past midnight is vomiting's rule; other symptoms count entries.
             continuationDays: lens === VOMIT_LENS ? facts.continuationDays : [],
+            // The bars disclose a bout carried in from the week before (Q12): vomiting's bouts only.
+            boutSpans: lens === VOMIT_LENS ? facts.boutSpans : [],
             rowNoun: words.rowNoun,
             episodes: lens === VOMIT_LENS,
             loggedDays: facts.loggedDays,

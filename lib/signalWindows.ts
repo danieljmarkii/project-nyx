@@ -46,6 +46,7 @@ import {
   laneDots,
   timingLanesAxis,
   weeklyBuckets,
+  type BoutSpan,
   type CompareWindowsModel,
   type LaneAxis,
   type LaneInput,
@@ -246,10 +247,19 @@ export interface SignalWeeksInput {
   trial: SignalTrialWindow | null;
   /** One key per EPISODE (after `episodeDaysOf`). */
   episodeDays: readonly string[];
+  /** Each bout's first and last day, so a block a bout carries into says so (Q12, CUL-1791).
+   *  Required: an omitted span is the silent zero this exists to end. */
+  boutSpans: readonly BoutSpan[];
   /** Every local day with any log at all — never derived from the episodes (C-3). */
   loggedDays: readonly string[];
   /** The pet's first logged day, so days before it are not "unlogged". */
   recordStart?: string | null;
+}
+
+/** Each episode's bout span, for `SignalWeeksInput.boutSpans` (Q12, CUL-1791): from its
+ *  onset day to its last row's day (`SignalScreenEpisode.endDayKey`, absent on a one-day bout). */
+export function boutSpansOfEpisodes(episodes: readonly { dayKey: string; endDayKey?: string }[]): BoutSpan[] {
+  return episodes.map((e) => ({ startDay: e.dayKey, endDay: e.endDayKey ?? e.dayKey }));
 }
 
 /** The weekly bars: the card's and the screen's are the same call. */
@@ -257,6 +267,7 @@ export function signalWeeks(input: SignalWeeksInput): WeeklyBucketsModel {
   const weeks = signalWeekCount(input.finding, input.today, input.trial);
   return weeklyBuckets({
     episodeDays: input.episodeDays,
+    boutSpans: input.boutSpans,
     loggedDays: input.loggedDays,
     weeksEnding: input.today,
     today: input.today,
@@ -268,22 +279,25 @@ export function signalWeeks(input: SignalWeeksInput): WeeklyBucketsModel {
 }
 
 /** The two numbers the card's line states, read off the buckets the bars draw. */
-export function weekLineNumbers(model: WeeklyBucketsModel): { thisWeek: number; lastWeek: number | null; soFar: boolean } {
+export function weekLineNumbers(model: WeeklyBucketsModel): { thisWeek: number; lastWeek: number | null; soFar: boolean; carried: boolean } {
   const n = model.weeks.length;
   const last = model.weeks[n - 1];
   const prev = n >= 2 ? model.weeks[n - 2] : null;
-  return { thisWeek: last.count, lastWeek: prev ? prev.count : null, soFar: last.partial };
+  return { thisWeek: last.count, lastWeek: prev ? prev.count : null, soFar: last.partial, carried: last.carriedIn };
 }
 
-/** "2 in the last 7 days · 3 in the 7 before" — the card's one line, read off the last two
+/** "2 in the last 7 days · 3 in the 7 before" — the card's one line (led by "A bout from before
+ *  continues ·" when the last block holds a bout that began earlier, Q12), read off the last two
  *  blocks the bars draw (CUL-1217: the engine's rolling week, never a calendar week, so the
  *  line and the sentence on the screen it opens name one window). A count, never a direction
  *  word. `withholdPrior` drops the earlier count when the pair may not be printed
  *  (`lib/signalWithhold.ts`, CUL-1216) — the recent count alone, the shipped face's density
  *  swap. */
 export function weekLine(model: WeeklyBucketsModel, withholdPrior: boolean = false): string {
-  const { thisWeek, lastWeek } = weekLineNumbers(model);
-  const head = `${thisWeek} in the last 7 days`;
+  const { thisWeek, lastWeek, carried } = weekLineNumbers(model);
+  // Q12 (CUL-1791): the count is bouts that BEGAN in the window, so a bout that began earlier
+  // and is still going reads 0 there. The going bout leads, and "new" names the unit.
+  const head = carried ? `A bout from before continues · ${thisWeek} new in the last 7 days` : `${thisWeek} in the last 7 days`;
   return lastWeek == null || withholdPrior ? head : `${head} · ${lastWeek} in the 7 before`;
 }
 
@@ -345,7 +359,7 @@ export function signalCompareSpec(
   ];
 }
 
-export interface SignalCompareInput extends SignalWeeksInput {}
+export interface SignalCompareInput extends Omit<SignalWeeksInput, 'boutSpans'> {}
 
 /**
  * Whether the screen may draw its own compare for this finding at all (CUL-1359, CUL-1218).
