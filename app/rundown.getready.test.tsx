@@ -676,6 +676,9 @@ describe('CUL-950 — the device’s intake declines reach the list', () => {
 describe('CUL-1093 — the device’s intake decline reaches Get ready for every pet', () => {
   const low = 'Mochi has eaten less than usual today.';
   const lowDecline = { trigger: 'consecutive_low', refusedFoodLabel: null, headline: low };
+  // What `loadDietTrialFacts` really returns for a pet with no trial: its base input,
+  // never null (null is a failed load, which takes the fail-closed branch). C-35.
+  const noTrial = () => ({ trial: null, nowMs: Date.now(), petName: 'Mochi', species: 'cat', otherPetNames: [] });
 
   function answeredEmptySignal() {
     const { supabase } = jest.requireMock('../lib/supabase') as {
@@ -696,7 +699,7 @@ describe('CUL-1093 — the device’s intake decline reaches Get ready for every
   }
 
   it('states the decline for a pet with NO trial when the Signal cannot be read', async () => {
-    mockTrialInput.current = null; // no trial
+    mockTrialInput.current = noTrial();
     mockPetDeclines.current = [lowDecline];
     params.current = { appointmentId: 'appt-1' };
     const r = render(<RundownScreen />);
@@ -712,7 +715,7 @@ describe('CUL-1093 — the device’s intake decline reaches Get ready for every
     // The quiet record (mock B1b) is the one state that earns no section. A decline the
     // device holds is not a quiet record, whatever the cache says.
     answeredEmptySignal();
-    mockTrialInput.current = null;
+    mockTrialInput.current = noTrial();
     mockPetDeclines.current = [lowDecline];
     params.current = { appointmentId: 'appt-1' };
     const r = render(<RundownScreen />);
@@ -720,6 +723,68 @@ describe('CUL-1093 — the device’s intake decline reaches Get ready for every
     await waitFor(() => expect(r.getByText(low)).toBeTruthy());
     expect(r.getByText('Worth raising')).toBeTruthy();
     expect(r.queryByText(/Signal couldn’t be read/)).toBeNull();
+  });
+
+  it('a pet with no trial and a decline does not get a falling vomit pair beside it (B-789)', async () => {
+    // The second adversarial pass: the trial register is the only not-eating fact the
+    // withhold read, and a pet with no trial has none, so "vomited 2 times this week,
+    // down from 5" printed beside the decline it softens.
+    const falling = 'Mochi vomited 2 times this week, down from 5 the week before.';
+    const { supabase } = jest.requireMock('../lib/supabase') as { supabase: { from: jest.Mock } };
+    const chain = supabase.from('ai_signals') as unknown as { maybeSingle: jest.Mock };
+    chain.maybeSingle.mockResolvedValueOnce({
+      data: {
+        signal_text: null,
+        is_building: false,
+        coverage: [],
+        generated_at: new Date(Date.now() - 3_600_000).toISOString(),
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+        findings: [
+          {
+            rank: 0,
+            text: falling,
+            finding: { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 2, priorCount: 5, direction: 'improving', windowDays: 14 },
+          },
+        ],
+      },
+      error: null,
+    });
+    mockTrialInput.current = noTrial();
+    mockPetDeclines.current = [lowDecline];
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText(low)).toBeTruthy());
+    expect(r.queryByText(falling)).toBeNull();
+  });
+
+  it('control: the same falling pair is raised when the pet is eating', async () => {
+    const falling = 'Mochi vomited 2 times this week, down from 5 the week before.';
+    const { supabase } = jest.requireMock('../lib/supabase') as { supabase: { from: jest.Mock } };
+    const chain = supabase.from('ai_signals') as unknown as { maybeSingle: jest.Mock };
+    chain.maybeSingle.mockResolvedValueOnce({
+      data: {
+        signal_text: null,
+        is_building: false,
+        coverage: [],
+        generated_at: new Date(Date.now() - 3_600_000).toISOString(),
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+        findings: [
+          {
+            rank: 0,
+            text: falling,
+            finding: { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 2, priorCount: 5, direction: 'improving', windowDays: 14 },
+          },
+        ],
+      },
+      error: null,
+    });
+    mockTrialInput.current = noTrial();
+    mockPetDeclines.current = [];
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText(falling)).toBeTruthy());
   });
 
   it('a trial pet still states its declines when only the trial input holds them', async () => {

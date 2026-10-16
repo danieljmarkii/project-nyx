@@ -653,6 +653,7 @@ async function buildForAppointment(
     return { rows: [], signalUnavailable: false };
   }
 
+  const intakeDecline = getReadyIntakeDeclines(petDeclines, trialInput);
   return buildWorthRaising({
     findings,
     // CUL-1364: Home's trial anchor, for THIS pet's running trial (C-9), on the build's clock.
@@ -664,7 +665,10 @@ async function buildForAppointment(
     // The same fail-closed rule Home applies (B-789): absence of a refusal fact
     // during a failed load is not evidence of eating, so an unloadable trial
     // suppresses the reassuring trial_response row rather than letting it through.
-    withholdFallingVomit: trialInput ? isAnimalNotEating(trialInput) : true,
+    // And a decline this page states is a not-eating register on its own (CUL-1093):
+    // a pet with no trial has no trial register, so without this its falling vomit
+    // pair printed beside "has eaten less than usual today".
+    withholdFallingVomit: (trialInput ? isAnimalNotEating(trialInput) : true) || intakeDecline.length > 0,
     trialStrip: trialInput ? resolveTrialStrip(trialInput) : null,
     trialScreen,
     // Accepted only when it answered for the trial the input above is about.
@@ -678,7 +682,7 @@ async function buildForAppointment(
     // safety-relevant parameter is the decision). EVERY flag, structured, so
     // `buildWorthRaising` can drop only the ones the Signal already states (CUL-950).
     // Read for every pet, not only through the trial input (CUL-1093).
-    intakeDecline: getReadyIntakeDeclines(petDeclines, trialInput),
+    intakeDecline,
     rundown: built,
     nowMs,
   });
