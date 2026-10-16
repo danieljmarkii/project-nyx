@@ -15,6 +15,7 @@ import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from '../../../lib/ut
 import { StyleSheet } from 'react-native';
 import { theme } from '../../../constants/theme';
 import type { CachedFinding, SignalFinding } from '../../../lib/signal';
+import type { SignalCounts } from '../../../lib/signalCounts';
 import { DOOR_A11Y_HINT, ROW_MIN_HEIGHT, SignalRow, weekPairOf } from './SignalRow';
 
 const cached = (finding: SignalFinding, rank = 1): CachedFinding => ({ rank, text: 'The server’s whole sentence. This is a read of your logs, not a diagnosis.', finding });
@@ -152,7 +153,17 @@ describe('the door', () => {
 });
 
 describe('the row states the screen’s counts (CUL-1569, GC-4 PR 2)', () => {
-  const counts = { recent: { episodes: 6, days: 4 }, prior: { episodes: 2, days: 2 }, lookbackWeeks: 8, activeWeeks: 6, lookbackEpisodes: 17, daysSinceLast: 0 };
+  const none = { carriedDays: 0, carriedBouts: 0, carriedIn: false };
+  const counts: SignalCounts = {
+    recent: { episodes: 6, days: 4, ...none },
+    prior: { episodes: 2, days: 2, ...none },
+    lookbackWeeks: 8,
+    activeWeeks: 6,
+    carriedWeeks: 0,
+    lookbackEpisodes: 17,
+    daysSinceLast: 0,
+    lastRanTo: null,
+  };
 
   it('a safety row draws the finding’s words at once — the ask never waits — then the screen’s title and count', async () => {
     const f = SAFETY[0];
