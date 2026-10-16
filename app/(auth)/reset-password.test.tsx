@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { usePetStore } from '../../store/petStore';
+import { abandonRecovery } from '../../lib/recoveryDeepLink';
 import ResetPasswordScreen from './reset-password';
 
 // The set-password screen renders PURELY from store state the §6.4 handler drives, so
@@ -16,6 +17,7 @@ jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }));
 jest.mock('../../lib/supabase', () => ({
   supabase: { auth: { updateUser: jest.fn(), signOut: jest.fn(), getSession: jest.fn() } },
 }));
+jest.mock('../../lib/recoveryDeepLink', () => ({ abandonRecovery: jest.fn() }));
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
   return { SafeAreaView: View };
@@ -24,6 +26,8 @@ jest.mock('react-native-safe-area-context', () => {
 const mockUpdateUser = supabase.auth.updateUser as jest.Mock;
 const mockSignOut = supabase.auth.signOut as jest.Mock;
 const mockGetSession = supabase.auth.getSession as jest.Mock;
+const mockAbandon = abandonRecovery as jest.Mock;
+const A_SESSION = { access_token: 'access-a', user: { id: 'user-a' } } as never;
 const mockReplace = router.replace as jest.Mock;
 const B_SESSION = { access_token: 'access-b', user: { id: 'user-b' } } as never;
 
@@ -39,6 +43,7 @@ beforeEach(async () => {
     recoveryInProgress: false,
     recoveryScreen: null,
     recoveryEmail: null,
+    recoveryUserId: null,
   });
   usePetStore.setState({ pets: [{ id: 'p1', name: 'Luna' }] as never });
   jest.spyOn(console, 'warn').mockImplementation(() => {});
@@ -140,17 +145,41 @@ describe('ResetPasswordScreen — the set-password form (§5.4)', () => {
     expect(mockReplace).not.toHaveBeenCalledWith('/(auth)/login');
   });
 
-  it("never writes when auth-js holds a different account than the store (CUL-1205)", async () => {
+  it('writes when auth-js holds the recovery user, after B refreshed its token', async () => {
+    useAuthStore.setState({ recoveryUserId: 'user-b' });
+    mockGetSession.mockResolvedValue({ data: { session: { access_token: 'access-b2', user: { id: 'user-b' } } } });
+    const utils = render(<ResetPasswordScreen />);
+    fireEvent.changeText(utils.getByTestId('reset-password-input'), 'a-strong-password');
+    fireEvent.press(utils.getByTestId('reset-save'));
+    await waitFor(() => expect(mockUpdateUser).toHaveBeenCalled());
+    expect(mockAbandon).not.toHaveBeenCalled();
+  });
+
+  it('never writes when auth-js holds a different account than the store (CUL-1205)', async () => {
     // A sign-in for A landed after the exchange (it takes no auth-js lock): the store
     // still says B, but updateUser would set A's password.
-    mockGetSession.mockResolvedValue({ data: { session: { access_token: 'access-a', user: { id: 'user-a' } } } });
+    useAuthStore.setState({ recoveryUserId: 'user-b' });
+    mockGetSession.mockResolvedValue({ data: { session: A_SESSION } });
     const utils = render(<ResetPasswordScreen />);
     fireEvent.changeText(utils.getByTestId('reset-password-input'), 'a-strong-password');
     fireEvent.press(utils.getByTestId('reset-save'));
 
-    await waitFor(() => expect(useAuthStore.getState().recoveryScreen).toBe('failed'));
+    // Ends the reset the FR-15 way, never a bare failed screen over an armed gate.
+    await waitFor(() => expect(mockAbandon).toHaveBeenCalledWith('failed'));
     expect(mockUpdateUser).not.toHaveBeenCalled();
     expect(mockReplace).not.toHaveBeenCalledWith('/(tabs)');
+  });
+
+  it('never writes when the listener re-aligned the store onto another account', async () => {
+    // A signs in after the exchange window closed: the root listener adopts A behind
+    // the armed gate, so store and auth-js AGREE on A. Only the pinned user tells.
+    useAuthStore.setState({ session: A_SESSION, recoveryUserId: 'user-b' });
+    const utils = render(<ResetPasswordScreen />);
+    fireEvent.changeText(utils.getByTestId('reset-password-input'), 'a-strong-password');
+    fireEvent.press(utils.getByTestId('reset-save'));
+
+    await waitFor(() => expect(mockAbandon).toHaveBeenCalledWith('failed'));
+    expect(mockUpdateUser).not.toHaveBeenCalled();
   });
 
   it('does NOT evict when the write fails (FR-18 ordering) and keeps the owner on the form', async () => {

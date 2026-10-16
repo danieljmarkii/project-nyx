@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MailOpen, Smartphone, RefreshCw } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
+import { abandonRecovery } from '../../lib/recoveryDeepLink';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { TextField } from '../../components/ui/TextField';
@@ -42,11 +43,18 @@ import { ThemedText } from '../../components/ui/ThemedText';
 // connection RN's fetch won't time out on, so the owner is never stranded.
 const WORKING_WATCHDOG_MS = 20_000;
 
-async function authMatchesStore(): Promise<boolean> {
+// Whether auth-js holds the user this reset is for. `updateUser` writes to whoever
+// auth-js holds, and once the exchange window closes the root listener adopts any
+// sign-in (a Change password re-auth, a login from the failed screen), so the store
+// can agree with auth-js on the wrong account (rls-privacy-reviewer, reproduced).
+// The exchange pinned `recoveryUserId`; a resume after a force-quit has none, and
+// falls back to the store's user (CUL-1973 owns that path).
+async function authHoldsRecoveryUser(): Promise<boolean> {
   try {
     const { data } = await supabase.auth.getSession();
-    const held = useAuthStore.getState().session;
-    return !!data.session && !!held && data.session.access_token === held.access_token;
+    const st = useAuthStore.getState();
+    const expected = st.recoveryUserId ?? st.session?.user.id ?? null;
+    return !!expected && data.session?.user.id === expected;
   } catch (e) {
     // A read that fails counts as a mismatch: refusing the write is the safe direction.
     console.warn('[recovery] stored-session check failed:', e instanceof Error ? e.message : e);
@@ -94,13 +102,12 @@ export default function ResetPasswordScreen() {
     setSubmitted(true);
     if (passwordError(password)) return;
     setSaving(true);
-    // `updateUser` writes to whoever auth-js holds, not to the store's session. A
-    // sign-in that lands after the exchange (it takes no auth-js lock) can leave the
-    // store on B while auth-js holds another account, and this write would set THAT
-    // account's password (CUL-1205, rls-privacy-reviewer). Write only when they agree.
-    if (!(await authMatchesStore())) {
+    // Write only to the account this reset is for (CUL-1205). Otherwise end the reset
+    // as every failure does (FR-15): failed state, local sign-out, gate released, so
+    // nothing armed is left behind a screen that says the reset failed.
+    if (!(await authHoldsRecoveryUser())) {
       setSaving(false);
-      useAuthStore.getState().setRecoveryScreen('failed');
+      await abandonRecovery('failed');
       return;
     }
     const { error } = await supabase.auth.updateUser({ password });

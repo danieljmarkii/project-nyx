@@ -101,7 +101,9 @@ async function runExchangeAndFinalize(code: string): Promise<void> {
     // refused it along with everything else in the window, so this is the only write
     // that can put a session in the store before the window closes. Matching on the
     // returned object, not an event name, is what keeps A out (O2). The gate is still
-    // armed, so the session lands on the set-password form, never on Home.
+    // armed, so the session lands on the set-password form, never on Home. The user is
+    // pinned for the save, which must write to this account and no other.
+    store.setRecoveryUserId(exchanged.user.id);
     store.setSession(exchanged);
     store.setRecoveryExchangePending(false);
     // Clear any failure state a slow-exchange watchdog may have set on the screen, so
@@ -119,15 +121,29 @@ async function runExchangeAndFinalize(code: string): Promise<void> {
   await failAndReconcile(outcome);
 }
 
+/**
+ * End a reset that cannot finish, the FR-15 way: the designed failure state, a local
+ * sign-out of whatever auth-js holds (purged from the keychain if that fails), and the
+ * gate released. The set-password save calls it when auth-js no longer holds the
+ * recovery user (CUL-1205), so a refused write never leaves an armed gate behind.
+ */
+export async function abandonRecovery(
+  outcome: Exclude<RecoveryExchangeOutcome, 'success'>,
+): Promise<void> {
+  await failAndReconcile(outcome);
+}
+
 async function failAndReconcile(
   outcome: Exclude<RecoveryExchangeOutcome, 'success'>,
 ): Promise<void> {
   const store = useAuthStore.getState();
   // step 8 (FR-15): render the designed failure state, then reconcile. The adoption
-  // window stays OPEN through the reconcile: signOut first loads the session, which
-  // refreshes a near-expiry A token and emits TOKEN_REFRESHED(A), and with the window
-  // closed the listener adopted it (rls-privacy-reviewer, reproduced). It closes below,
-  // once A's tokens are gone.
+  // window is OPEN through the reconcile (opened here for the save's caller, already
+  // open for the handler's): signOut first loads the session, which refreshes a
+  // near-expiry token and emits TOKEN_REFRESHED, and with the window closed the
+  // listener adopted it (rls-privacy-reviewer, reproduced). It closes below, once the
+  // tokens are gone.
+  store.setRecoveryExchangePending(true);
   store.setRecoveryScreen(outcome);
   // The B-576 reconcile: step 4 nulled the STORE but left A's tokens in auth-js's own
   // persisted storage, so a failed exchange leaves autoRefresh able to restore A onto
@@ -165,12 +181,13 @@ async function failAndReconcile(
   await releaseRecoveryGate();
 }
 
-// Whether auth-js's own stored session is the one the exchange returned. A read that
-// fails counts as no: the caller then reconciles, which is the safe direction.
+// Whether auth-js's own stored session belongs to the user the exchange returned. By
+// user, not token: a refresh between the exchange and this read (a skewed clock) is
+// still B. A read that fails counts as no: the caller then reconciles, the safe way.
 async function authHolds(session: Session): Promise<boolean> {
   try {
     const { data } = await supabase.auth.getSession();
-    return data.session?.access_token === session.access_token;
+    return data.session?.user.id === session.user.id;
   } catch (e) {
     console.warn('[recovery] stored-session check failed:', e instanceof Error ? e.message : e);
     return false;
@@ -184,6 +201,8 @@ async function purgePersistedAuthSession(cause: unknown): Promise<void> {
   );
   // `removeItem` swallows its own keychain errors, so a failed delete only shows as the
   // key still being there. Read it back, and try once more before giving up loudly.
+  // `getItem` swallows read errors too (reads null), so a keychain failing on BOTH
+  // reads and deletes still passes this check (CUL-1975).
   for (let attempt = 0; attempt < 2; attempt++) {
     await ChunkedSecureStoreAdapter.removeItem(AUTH_STORAGE_KEY);
     await ChunkedSecureStoreAdapter.removeItem(`${AUTH_STORAGE_KEY}-code-verifier`);

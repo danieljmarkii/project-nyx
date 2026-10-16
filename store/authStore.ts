@@ -45,6 +45,11 @@ interface AuthState {
   // set-password form against the wrong account. Not persisted: a force-quit ends
   // the window (the gate, which IS persisted, governs the resume).
   recoveryExchangePending: boolean;
+  // The user the recovery exchange returned (CUL-1205), held for the life of the reset
+  // so the set-password save writes only to that account: the root listener adopts any
+  // sign-in once the exchange window closes, so the store alone cannot say whose reset
+  // this is. In memory only; a resume after a force-quit has none (CUL-1973).
+  recoveryUserId: string | null;
   // The address the reset was requested for, held in memory by the §6.4 handler
   // BEFORE step 4's wipe clears the disk marker (FR-12) — so §5.5 / §5.5b can send
   // a new link to a PRE-FILLED request screen without re-reading a marker the wipe
@@ -67,6 +72,7 @@ interface AuthState {
   setRecoveryInProgress: (recoveryInProgress: boolean) => void;
   setRecoveryScreen: (recoveryScreen: AuthState['recoveryScreen']) => void;
   setRecoveryExchangePending: (recoveryExchangePending: boolean) => void;
+  setRecoveryUserId: (recoveryUserId: string | null) => void;
   setRecoveryEmail: (recoveryEmail: string | null) => void;
   setDeliberateSignOut: (deliberateSignOut: boolean) => void;
   setSignedOutInvoluntarily: (signedOutInvoluntarily: boolean) => void;
@@ -80,6 +86,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   recoveryInProgress: false,
   recoveryScreen: null,
   recoveryExchangePending: false,
+  recoveryUserId: null,
   recoveryEmail: null,
   deliberateSignOut: false,
   signedOutInvoluntarily: false,
@@ -89,6 +96,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   setRecoveryInProgress: (recoveryInProgress) => set({ recoveryInProgress }),
   setRecoveryScreen: (recoveryScreen) => set({ recoveryScreen }),
   setRecoveryExchangePending: (recoveryExchangePending) => set({ recoveryExchangePending }),
+  setRecoveryUserId: (recoveryUserId) => set({ recoveryUserId }),
   setRecoveryEmail: (recoveryEmail) => set({ recoveryEmail }),
   setDeliberateSignOut: (deliberateSignOut) => set({ deliberateSignOut }),
   setSignedOutInvoluntarily: (signedOutInvoluntarily) => set({ signedOutInvoluntarily }),
@@ -152,6 +160,7 @@ export async function releaseRecoveryGate(): Promise<void> {
     console.warn('[authStore] failed to clear persisted recovery gate:', e);
   }
   useAuthStore.getState().setRecoveryInProgress(false);
+  useAuthStore.getState().setRecoveryUserId(null);
 }
 
 /**

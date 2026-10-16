@@ -1,4 +1,4 @@
-import { handleRecoveryDeepLink, __resetRecoveryDedupeForTest } from './recoveryDeepLink';
+import { handleRecoveryDeepLink, abandonRecovery, __resetRecoveryDedupeForTest } from './recoveryDeepLink';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from './supabase';
 import { router } from 'expo-router';
@@ -85,6 +85,7 @@ beforeEach(() => {
     recoveryScreen: null,
     recoveryExchangePending: false,
     recoveryEmail: null,
+    recoveryUserId: null,
   });
   mockFlush.mockImplementation(async () => {
     calls.push('flush');
@@ -191,6 +192,8 @@ describe('handleRecoveryDeepLink — adopting the exchange session (CUL-1205)', 
 
     // The very object the exchange returned, not a session the listener picked.
     expect(useAuthStore.getState().session).toBe(B_SESSION);
+    // Pinned for the save, which must write to B and nobody else.
+    expect(useAuthStore.getState().recoveryUserId).toBe('user-b');
     expect(useAuthStore.getState().recoveryInProgress).toBe(true);
     expect(useAuthStore.getState().recoveryScreen).toBeNull();
     expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
@@ -250,6 +253,14 @@ describe('handleRecoveryDeepLink — adopting the exchange session (CUL-1205)', 
     expect(useAuthStore.getState().recoveryScreen).toBe('failed');
     expect(calls).toEqual(['flush', 'wipe', 'exchange', 'signOut']);
     expect(useAuthStore.getState().recoveryInProgress).toBe(false);
+  });
+
+  it('adopts by user, so a refresh of B before the check (a skewed clock) is still B', async () => {
+    haveProvenance();
+    mockGetSession.mockResolvedValue({ data: { session: { access_token: 'access-b2', user: { id: 'user-b' } } } });
+    await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
+    expect(useAuthStore.getState().session).toBe(B_SESSION);
+    expect(mockSignOut).not.toHaveBeenCalled();
   });
 
   it('a success that returns no session fails forward to a new link, never spins', async () => {
@@ -445,5 +456,35 @@ describe('handleRecoveryDeepLink — the double-fire guard', () => {
     await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
     await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
     expect(mockExchange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('abandonRecovery — a refused save ends the reset the FR-15 way (CUL-1205)', () => {
+  it('opens the window, signs out locally, nulls the store, releases the gate and unpins the user', async () => {
+    // Post-exchange: window closed, an account in the store behind the armed gate.
+    useAuthStore.setState({
+      session: A_SESSION,
+      recoveryInProgress: true,
+      recoveryExchangePending: false,
+      recoveryUserId: 'user-b',
+    });
+    const reAdopted: unknown[] = [];
+    mockSignOut.mockImplementation(async () => {
+      calls.push('signOut');
+      // signOut's own refresh, emitted mid-reconcile, must not be adopted.
+      emitAuthEvent('TOKEN_REFRESHED', { access_token: 'access-a2', user: { id: 'user-a' } });
+      reAdopted.push(useAuthStore.getState().session);
+      return { error: null };
+    });
+    await abandonRecovery('failed');
+
+    expect(reAdopted).toEqual([A_SESSION]);
+    expect(calls).toEqual(['signOut']);
+    expect(mockSignOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(useAuthStore.getState().session).toBeNull();
+    expect(useAuthStore.getState().recoveryScreen).toBe('failed');
+    expect(useAuthStore.getState().recoveryInProgress).toBe(false);
+    expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
+    expect(useAuthStore.getState().recoveryUserId).toBeNull();
   });
 });
