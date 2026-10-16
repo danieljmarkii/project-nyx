@@ -54,27 +54,20 @@ export type SignedOutRoute = {
 };
 
 // During the recovery EXCHANGE WINDOW — from when the handler nulls the store
-// session (§6.4 step 3) until the exchange resolves — the ONLY session that may enter
-// the store is the exchange's own (the new owner, B). auth-js emits it as
-// `PASSWORD_RECOVERY`: `resetPasswordForEmail` stores the PKCE verifier with a
-// `/recovery` suffix, and the exchange names its event from that suffix (CUL-1886;
-// admitting only `SIGNED_IN` dropped B, so every reset timed out). Every auth-js path
-// that emits `PASSWORD_RECOVERY` carries a session the server just minted for the
-// presented code, never the stored one. `SIGNED_IN` is refused: `_recoverAndRefresh`
-// emits it carrying the STORED session, so on a cold start from a reset link it can be
-// the pre-recovery owner (A), and a successful recovery exchange never emits it (its
-// code only matches a `/recovery` verifier). `TOKEN_REFRESHED` / `INITIAL_SESSION` in
-// that window are A too, whose auth-js tokens are still live and whose `autoRefresh`
-// can fire mid-flush. Adopting any of them would render the set-password form against
-// A, the Trap-2 sub-window (rls-privacy re-reviews, B-280, CUL-1886). Pure +
-// unit-tested. The window is bounded by `recoveryExchangePending`, which a RESUME
-// (row 21) never sets, so a resumed session is adopted normally.
-export function shouldAdoptSessionDuringRecovery(
-  event: string,
-  recoveryExchangePending: boolean,
-): boolean {
-  if (!recoveryExchangePending) return true;
-  return event === 'PASSWORD_RECOVERY';
+// session (§6.4 step 3) until the exchange resolves — the root listener adopts NO
+// session. The only session that may enter the store is the one
+// `exchangeCodeForSession` RETURNED, and the recovery handler adopts that itself
+// (`lib/recoveryDeepLink.ts`), so adoption no longer rests on what an event is called.
+// Keying on the name failed twice: admitting only `SIGNED_IN` dropped B, because
+// auth-js names a reset exchange `PASSWORD_RECOVERY` (CUL-1886), and admitting a name
+// admits ANY emission carrying it, so a `SIGNED_IN` / `PASSWORD_RECOVERY` for the
+// pre-recovery owner (A) resolving inside the window (a Change password re-auth,
+// `_recoverAndRefresh` on a cold start, an autoRefresh `TOKEN_REFRESHED` mid-flush)
+// would render the set-password form against A, the Trap-2 sub-window (CUL-1205 O2).
+// Pure + unit-tested. The window is bounded by `recoveryExchangePending`, which a
+// RESUME (row 21) never sets, so a resumed session is adopted normally.
+export function shouldAdoptSessionDuringRecovery(recoveryExchangePending: boolean): boolean {
+  return !recoveryExchangePending;
 }
 
 export function signedOutRoute(input: {

@@ -1,12 +1,12 @@
 import { AuthClient, type AuthChangeEvent } from '@supabase/supabase-js';
-import { shouldAdoptSessionDuringRecovery } from './authRouting';
 
 // CUL-1886: pins the event auth-js emits when a reset link's code is exchanged, by
 // driving the REAL client through resetPasswordForEmail → exchangeCodeForSession over a
 // fake transport. The recovery handler's unit tests mock the exchange, so they assumed
 // `SIGNED_IN` and never saw auth-js emit `PASSWORD_RECOVERY`, which the adoption guard
 // then dropped on device. If a library bump renames or reshapes the emission, this reds
-// CI instead of a reset timing out on a phone.
+// CI instead of a reset timing out on a phone. Since CUL-1205 the app adopts the session
+// the exchange RETURNS, not the emitted one, so this also pins that the two are B.
 
 const URL_BASE = 'https://example.supabase.co/auth/v1';
 
@@ -56,29 +56,34 @@ function client() {
   });
 }
 
-async function resetLinkExchangeEvents(): Promise<AuthChangeEvent[]> {
+async function resetLinkExchange(): Promise<{ events: AuthChangeEvent[]; emittedUserIds: string[] }> {
   const auth = client();
   const events: AuthChangeEvent[] = [];
+  const emittedUserIds: string[] = [];
   await auth.initialize();
   // Stores the PKCE verifier exactly as the app's Forgot password send does.
   const { error: sendError } = await auth.resetPasswordForEmail('jordan@email.com', {
     redirectTo: 'nyx:///reset-password',
   });
   expect(sendError).toBeNull();
-  const { data: sub } = auth.onAuthStateChange((event) => {
-    if (event !== 'INITIAL_SESSION') events.push(event);
+  const { data: sub } = auth.onAuthStateChange((event, session) => {
+    if (event === 'INITIAL_SESSION') return;
+    events.push(event);
+    if (session) emittedUserIds.push(session.user.id);
   });
   const { data, error } = await auth.exchangeCodeForSession('code-from-link');
   sub.subscription.unsubscribe();
   expect(error).toBeNull();
+  // The returned session is what recoveryDeepLink adopts.
   expect(data.session?.user.id).toBe('user-b');
-  return events;
+  expect(data.session?.access_token).toBe('access-b');
+  return { events, emittedUserIds };
 }
 
 describe('auth-js recovery exchange contract (CUL-1886)', () => {
-  it('a reset link exchange emits PASSWORD_RECOVERY, and the recovery window adopts it', async () => {
-    const events = await resetLinkExchangeEvents();
+  it('a reset link exchange emits PASSWORD_RECOVERY for B and returns B', async () => {
+    const { events, emittedUserIds } = await resetLinkExchange();
     expect(events).toEqual(['PASSWORD_RECOVERY']);
-    expect(shouldAdoptSessionDuringRecovery(events[0], true)).toBe(true);
+    expect(emittedUserIds).toEqual(['user-b']);
   });
 });

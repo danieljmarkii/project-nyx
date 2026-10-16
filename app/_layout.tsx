@@ -283,11 +283,11 @@ function RootLayoutTree() {
       // getSession callback / autoRefresh and needlessly tear down sync. So set only
       // when present; otherwise leave the last-known session untouched.
       if (session) {
-        // During the recovery exchange window, adopt ONLY the exchange's PASSWORD_RECOVERY(B)
-        // (CUL-1886) — never a SIGNED_IN / TOKEN_REFRESHED emission of the pre-recovery
-        // owner A that auth-js can fire mid-flush (rls-privacy re-reviews). Inert
-        // outside that window, so normal auth is untouched.
-        if (!shouldAdoptSessionDuringRecovery(event, useAuthStore.getState().recoveryExchangePending)) {
+        // During the recovery exchange window adopt NOTHING: the recovery handler adopts
+        // exactly the session the exchange returned (CUL-1205), so no emission of the
+        // pre-recovery owner A, whatever its name, can reach the store mid-flush
+        // (rls-privacy re-reviews). Inert outside that window, so normal auth is untouched.
+        if (!shouldAdoptSessionDuringRecovery(useAuthStore.getState().recoveryExchangePending)) {
           return;
         }
         setSession(session);

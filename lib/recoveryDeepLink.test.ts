@@ -4,6 +4,8 @@ import { supabase } from './supabase';
 import { router } from 'expo-router';
 import { wipeLocalSession, flushForSignOut } from './session';
 import { readRecoveryRequest } from './recoveryMarker';
+import { ChunkedSecureStoreAdapter } from './secureStore';
+import { shouldAdoptSessionDuringRecovery } from './authRouting';
 
 // Locks the §6.4 option-(d) ordering — the invariant two review rounds and B-576
 // bought and that the pure passwordRecovery unit tests CANNOT see (they never run
@@ -14,12 +16,23 @@ import { readRecoveryRequest } from './recoveryMarker';
 //     session is nulled (F1 — A's producers must be stood down first);
 //   • a provenance-less link arms NOTHING and wipes NOTHING (FR-14 fail-closed);
 //   • a failed exchange sets the failure state, reconciles with a real signOut, and
-//     releases the gate.
+//     releases the gate; a sign-out that fails (resolved `{ error }` or a throw) purges
+//     the stored session from the keychain (CUL-1205 O3);
+//   • a success adopts EXACTLY the session the exchange returned, and no emission of A
+//     inside the window ever reaches the store (CUL-1205 O2).
+//
+// The exchange mock EMITS what auth-js 2.105.4 emits for a reset link
+// (`PASSWORD_RECOVERY` carrying B, pinned against the real client by
+// lib/authEventContract.test.ts) through `emitAuthEvent`, which applies the root
+// listener's own adoption rule. It never writes the store itself: that fake is how the
+// SIGNED_IN assumption shipped green while every real reset timed out.
 
 jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }));
 jest.mock('./supabase', () => ({
+  AUTH_STORAGE_KEY: 'sb-test-auth-token',
   supabase: { auth: { exchangeCodeForSession: jest.fn(), signOut: jest.fn() } },
 }));
+jest.mock('./secureStore', () => ({ ChunkedSecureStoreAdapter: { removeItem: jest.fn() } }));
 jest.mock('./session', () => ({ wipeLocalSession: jest.fn(), flushForSignOut: jest.fn() }));
 jest.mock('./recoveryMarker', () => {
   const actual = jest.requireActual('./recoveryMarker');
@@ -32,20 +45,34 @@ const mockWipe = wipeLocalSession as jest.Mock;
 const mockFlush = flushForSignOut as jest.Mock;
 const mockRead = readRecoveryRequest as jest.Mock;
 const mockReplace = router.replace as jest.Mock;
+const mockRemoveItem = ChunkedSecureStoreAdapter.removeItem as jest.Mock;
 
 const NOW = 1_754_000_000_000;
-const B_SESSION = { user: { id: 'user-b' } } as never;
+const B_SESSION = { access_token: 'access-b', user: { id: 'user-b' } } as never;
+const A_SESSION = { access_token: 'access-a', user: { id: 'user-a' } } as never;
+
+// The session branch of app/_layout's onAuthStateChange, reduced to its two store
+// effects: adopt only when the window allows, and pin a gated session to set-password.
+function emitAuthEvent(_event: string, session: unknown): void {
+  if (!session) return;
+  const store = useAuthStore.getState();
+  if (!shouldAdoptSessionDuringRecovery(store.recoveryExchangePending)) return;
+  store.setSession(session as never);
+  if (useAuthStore.getState().recoveryInProgress) mockReplace('/(auth)/reset-password');
+}
 
 // An ordered log of the I/O steps, so we can assert e.g. wipe-before-exchange.
 let calls: string[] = [];
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // clearAllMocks keeps implementations; a route recorder must not leak across cases.
+  mockReplace.mockReset();
   __resetRecoveryDedupeForTest();
   calls = [];
   jest.spyOn(console, 'warn').mockImplementation(() => {});
   useAuthStore.setState({
-    session: { user: { id: 'user-a' } } as never,
+    session: A_SESSION,
     recoveryInProgress: false,
     recoveryScreen: null,
     recoveryExchangePending: false,
@@ -64,10 +91,9 @@ beforeEach(() => {
   });
   mockExchange.mockImplementation(async () => {
     calls.push('exchange');
-    // The real exchange adopts B's session (SIGNED_IN); simulate that so success
-    // asserts a genuine swap.
-    useAuthStore.getState().setSession(B_SESSION);
-    return { data: { session: B_SESSION }, error: null };
+    // What auth-js does: save B, emit PASSWORD_RECOVERY(B) to subscribers, return B.
+    emitAuthEvent('PASSWORD_RECOVERY', B_SESSION);
+    return { data: { session: B_SESSION, user: { id: 'user-b' }, redirectType: 'recovery' }, error: null };
   });
 });
 
@@ -125,8 +151,8 @@ describe('handleRecoveryDeepLink — the valid, provenance-present happy path', 
   });
 
   it('opens the exchange window over the wipe and closes it after the exchange (rls re-review)', async () => {
-    // While the window is open the root listener adopts only the exchange SIGNED_IN,
-    // never an autoRefresh re-emission of A. It must be OPEN across the flush + wipe
+    // While the window is open the root listener adopts nothing, so an autoRefresh
+    // re-emission of A cannot reach the store. It must be OPEN across the flush + wipe
     // (when A's autoRefresh could fire) and CLOSED once the exchange resolves.
     haveProvenance();
     let pendingAtWipe: unknown = 'unset';
@@ -137,6 +163,75 @@ describe('handleRecoveryDeepLink — the valid, provenance-present happy path', 
     await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
     expect(pendingAtWipe).toBe(true);
     expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
+  });
+});
+
+describe('handleRecoveryDeepLink — adopting the exchange session (CUL-1205)', () => {
+  it('an emitted PASSWORD_RECOVERY: the store holds exactly the returned session, on set-password', async () => {
+    haveProvenance();
+    mockReplace.mockImplementation((route: string) => calls.push(`route ${route}`));
+    await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
+
+    // Routed to set-password AFTER the exchange too (FR-6 / Trap 1), not only by the
+    // step-3 working route: the owner may have left that screen while it spun.
+    expect(calls.slice(calls.indexOf('exchange'))).toEqual(['exchange', 'route /(auth)/reset-password']);
+
+    // The very object the exchange returned, not a session the listener picked.
+    expect(useAuthStore.getState().session).toBe(B_SESSION);
+    expect(useAuthStore.getState().recoveryInProgress).toBe(true);
+    expect(useAuthStore.getState().recoveryScreen).toBeNull();
+    expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
+    // The last route is the set-password screen, so the form renders (session + gate).
+    expect(mockReplace).toHaveBeenLastCalledWith('/(auth)/reset-password');
+    expect(mockSignOut).not.toHaveBeenCalled();
+  });
+
+  it("refuses every emission of A inside the window, whatever it is called (O2)", async () => {
+    haveProvenance();
+    // Every session written into the store while the window is open, from the moment
+    // the handler nulls A out of it (A sits there until then, by design).
+    const heldInWindow: unknown[] = [];
+    let nulled = false;
+    const unsub = useAuthStore.subscribe((st, prev) => {
+      if (!st.recoveryExchangePending) return;
+      if (!st.session) nulled = true;
+      else if (nulled && st.session !== prev.session) heldInWindow.push(st.session);
+    });
+    mockWipe.mockImplementation(async () => {
+      calls.push('wipe');
+      // autoRefresh firing for A mid-flush.
+      emitAuthEvent('TOKEN_REFRESHED', A_SESSION);
+    });
+    mockExchange.mockImplementation(async () => {
+      calls.push('exchange');
+      // A Change password re-auth for A resolving inside the window, and an emission
+      // for A carrying the recovery name.
+      emitAuthEvent('SIGNED_IN', A_SESSION);
+      emitAuthEvent('PASSWORD_RECOVERY', A_SESSION);
+      emitAuthEvent('PASSWORD_RECOVERY', B_SESSION);
+      return { data: { session: B_SESSION }, error: null };
+    });
+    await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
+    unsub();
+
+    // Only the handler's own write of the returned B, made just before it closes the
+    // window; never A, under any event name.
+    expect(heldInWindow).toEqual([B_SESSION]);
+    expect(useAuthStore.getState().session).toBe(B_SESSION);
+  });
+
+  it('a success that returns no session fails forward to a new link, never spins', async () => {
+    haveProvenance();
+    mockExchange.mockImplementation(async () => {
+      calls.push('exchange');
+      return { data: { session: null }, error: null };
+    });
+    await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
+
+    expect(useAuthStore.getState().session).toBeNull();
+    expect(useAuthStore.getState().recoveryScreen).toBe('link_unusable');
+    expect(calls).toEqual(['flush', 'wipe', 'exchange', 'signOut']);
+    expect(useAuthStore.getState().recoveryInProgress).toBe(false);
   });
 });
 
@@ -156,6 +251,45 @@ describe('handleRecoveryDeepLink — a failed exchange (FR-15)', () => {
     expect(mockSignOut).toHaveBeenCalledWith({ scope: 'local' });
     expect(useAuthStore.getState().recoveryScreen).toBe('link_unusable');
     // Gate released last (step 8).
+    expect(useAuthStore.getState().recoveryInProgress).toBe(false);
+  });
+
+  it('a successful reconcile leaves the keychain to auth-js', async () => {
+    haveProvenance();
+    mockExchange.mockImplementation(async () => {
+      calls.push('exchange');
+      return { data: { session: null }, error: { message: 'Email link is invalid or has expired' } };
+    });
+    await handleRecoveryDeepLink('nyx:///reset-password?code=dead', { nowMs: NOW });
+    expect(mockRemoveItem).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['resolves { error } (offline /logout, auth-js keeps the session)', async () => {
+      calls.push('signOut');
+      return { error: { message: 'Network request failed' } };
+    }],
+    ['throws', async () => {
+      calls.push('signOut');
+      throw new Error('boom');
+    }],
+  ])('a reconcile signOut that %s is checked, surfaced, and the keychain purged (O3)', async (_label, impl) => {
+    haveProvenance();
+    mockExchange.mockImplementation(async () => {
+      calls.push('exchange');
+      return { data: { session: null }, error: { message: 'Email link is invalid or has expired' } };
+    });
+    mockSignOut.mockImplementation(impl);
+    await handleRecoveryDeepLink('nyx:///reset-password?code=dead', { nowMs: NOW });
+
+    // A's persisted session and the verifier beside it, so nothing can restore A.
+    expect(mockRemoveItem).toHaveBeenCalledWith('sb-test-auth-token');
+    expect(mockRemoveItem).toHaveBeenCalledWith('sb-test-auth-token-code-verifier');
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('reconcile sign-out failed'),
+      expect.anything(),
+    );
+    expect(useAuthStore.getState().recoveryScreen).toBe('link_unusable');
     expect(useAuthStore.getState().recoveryInProgress).toBe(false);
   });
 
