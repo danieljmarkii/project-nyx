@@ -250,7 +250,8 @@ function askIfGateFile(input: HookInput): Decision | null {
 const NAMES_GATE = /\.claude\b|managed-settings|disableAllHooks/;
 const IN_GATE_DIR = /(?:^|\/)\.claude(?:\/|$)|^\/etc\/claude-code(?:\/|$)/;
 const SHELL_META = /[;&|<>`$\n\\(){}]/;
-const READ_COMMANDS = new Set(['cat', 'head', 'tail', 'wc', 'grep', 'rg', 'ls', 'stat', 'file', 'diff', 'jq', 'sha256sum', 'md5sum']);
+// No rg: its flags run programs a denylist keeps missing (--pre, --hostname-bin), CUL-1963.
+const READ_COMMANDS = new Set(['cat', 'head', 'tail', 'wc', 'grep', 'ls', 'stat', 'file', 'diff', 'jq', 'sha256sum', 'md5sum']);
 const READ_GIT = new Set(['diff', 'log', 'show', 'status', 'blame', 'ls-files']);
 const RUNS_OR_WRITES = /^--(?:output|pre)\b/;
 

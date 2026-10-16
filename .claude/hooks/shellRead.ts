@@ -142,7 +142,7 @@ function redirect(cmd: string, from: number, dupOk: boolean): number {
 type Check = (args: Word[]) => string | null;
 
 const ANY: Check = () => null;
-// Long flags that write a file or run a program, whatever the reader (rg --pre, git
+// Long flags that write a file or run a program, whatever the reader (git
 // --output, sort --compress-program, git grep --open-files-in-pager, git --ext-diff).
 // GNU getopt and git both take any unambiguous prefix (`--outp=x` is `--output=x`), so a
 // flag is refused when its name is a prefix of one of these.
@@ -159,8 +159,17 @@ const checkFind: Check = (args) =>
 const checkSort: Check = (args) =>
   args.some((a) => /^-[^-]*o/.test(a.v)) ? 'sort -o writes a file' : null;
 
-// `uniq IN OUT` writes OUT.
-const checkUniq: Check = (args) => (args.filter((a) => !a.v.startsWith('-')).length > 1 ? 'uniq with an output file' : null);
+// `uniq IN OUT` writes OUT. `-` (stdin) and anything after `--` are operands too, so
+// `uniq - .claude/settings.json` is caught.
+const checkUniq: Check = (args) => {
+  let operands = 0;
+  let ended = false;
+  for (const a of args) {
+    if (!ended && a.v === '--') ended = true;
+    else if (ended || a.v === '-' || !a.v.startsWith('-')) operands++;
+  }
+  return operands > 1 ? 'uniq with an output file' : null;
+};
 
 const SED_FLAGS = new Set(['-n', '-E', '-r', '-s', '-u', '-z', '--posix', '--quiet', '--silent', '--regexp-extended', '--null-data', '--separate', '--unbuffered']);
 const SED_ADDR = String.raw`(?:\d+|\$|/[^/\\\n]*/)`;
@@ -189,7 +198,8 @@ const checkGit: Check = (args) => {
 };
 
 const READERS = new Map<string, Check>([
-  ['cat', ANY], ['head', ANY], ['tail', ANY], ['wc', ANY], ['grep', ANY], ['rg', ANY], ['ls', ANY],
+  // No rg: its flags run programs (--pre, --hostname-bin, -z), and a denylist loses to the next one.
+  ['cat', ANY], ['head', ANY], ['tail', ANY], ['wc', ANY], ['grep', ANY], ['ls', ANY],
   ['stat', ANY], ['diff', ANY], ['jq', ANY], ['sha256sum', ANY], ['md5sum', ANY], ['cut', ANY],
   ['tr', ANY], ['echo', ANY], ['printf', ANY], ['true', ANY], ['basename', ANY], ['dirname', ANY],
   ['cd', (a) => (a.length > 1 ? 'cd with more than one argument' : null)],
@@ -197,7 +207,7 @@ const READERS = new Map<string, Check>([
 ]);
 
 // Readers where a glob could expand into a flag that writes or runs.
-const GLOB_SENSITIVE = new Set(['find', 'sort', 'uniq', 'sed', 'git', 'rg', 'diff']);
+const GLOB_SENSITIVE = new Set(['find', 'sort', 'uniq', 'sed', 'git', 'diff']);
 
 export function classifyShell(cmd: string): ShellRead {
   const lexed = lex(cmd);
