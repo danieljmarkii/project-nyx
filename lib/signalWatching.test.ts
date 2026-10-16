@@ -5,7 +5,13 @@
 // over real SQLite in `components/home/SignalZone.lookRecency.test.tsx`.
 
 import { watchingGapRow, watchingGapRowFromHours, formatWatchingGapSequence } from './signalCopy';
-import { detectWatchingGapShortening, loggedHoursSince, QUIET_STRETCH_MS } from './signalWatching';
+import {
+  detectWatchingGapShortening,
+  loggedHoursSince,
+  nextGapChangeMs,
+  QUIET_STRETCH_MS,
+  WATCHING_GAP_WINDOW_DAYS,
+} from './signalWatching';
 import type { OnsetConfidence } from './mealTiming';
 
 const HOUR = 3_600_000;
@@ -343,5 +349,119 @@ describe('detectWatchingGapShortening — null-model property sweep', () => {
     }
     const worst = Math.max(markov(7005, 5), markov(7006, 6), markov(7008, 8));
     expect(worst).toBeLessThan(0.08);
+  });
+});
+
+// ── CUL-1949: when the clock alone next moves the answer ─────────────────────────
+// Each case checks the instant against the REAL detector: the answer at the instant
+// differs from the answer one millisecond before it, which is what Home's schedule needs.
+describe('nextGapChangeMs (CUL-1949)', () => {
+  // Gaps 100h, 60h, 30h, 10h: the last three strictly shorten, 10h <= 0.5 × the 45h median,
+  // and the 2× guard gives 20h of logged time. The last onset is L; nothing logged since.
+  const L = NOW - 30 * HOUR;
+  const onsetMs = [L - 200 * HOUR, L - 100 * HOUR, L - 40 * HOUR, L - 10 * HOUR, L];
+  const onsets = onsetMs.map((ms) => ({ ms, confidence: null }));
+  const answer = (now: number) => detectWatchingGapShortening(onsets, now, onsetMs) !== null;
+
+  it('the warning that retired comes back when the silence reaches the quiet stretch, and the schedule names that instant', () => {
+    expect(answer(NOW)).toBe(false); // 30h logged, past the 20h guard
+    const at = nextGapChangeMs(onsets, NOW, onsetMs);
+    expect(at).toBe(L + QUIET_STRETCH_MS);
+    expect(answer(at! - 1)).toBe(false);
+    expect(answer(at!)).toBe(true);
+  });
+
+  it('while the warning is up, the schedule names the retirement', () => {
+    const now = L + 5 * HOUR;
+    expect(answer(now)).toBe(true);
+    const at = nextGapChangeMs(onsets, now, onsetMs)!;
+    expect(at).toBe(L + 20 * HOUR + 1);
+    expect(answer(at - 1)).toBe(true);
+    expect(answer(at)).toBe(false);
+  });
+
+  it('a log since the last onset moves the retirement by the logged clock, not the wall', () => {
+    // A meal 3h after L, then nothing: the retirement is still 20h of logged time from L.
+    const logged = [...onsetMs, L + 3 * HOUR];
+    const now = L + 4 * HOUR;
+    const at = nextGapChangeMs(onsets, now, logged)!;
+    expect(at).toBe(L + 20 * HOUR + 1);
+    expect(detectWatchingGapShortening(onsets, at - 1, logged)).not.toBeNull();
+    expect(detectWatchingGapShortening(onsets, at, logged)).toBeNull();
+  });
+
+  it('a future-dated row is a boundary the moment it starts to count', () => {
+    const future = NOW + 2 * HOUR;
+    // A log becomes a cut just after its instant; a vomit counts AT it.
+    expect(nextGapChangeMs(onsets, NOW, [...onsetMs, future])).toBe(future + 1);
+    expect(nextGapChangeMs([...onsets, { ms: future, confidence: null }], NOW, onsetMs)).toBe(future);
+  });
+
+  it('the trailing piece is anchored on the EPISODE onset, even when a folded-in vomit is not a cut', () => {
+    // Gaps 200h, 100h, 20h; a second vomit 2h into the last episode (one episode), and no
+    // logged rows at all: the guard's piece starts at the episode onset D, so 48h from D.
+    const D = NOW - 41 * HOUR;
+    const rows = [D - 320 * HOUR, D - 120 * HOUR, D - 20 * HOUR, D, D + 2 * HOUR].map((ms) => ({ ms, confidence: null }));
+    expect(detectWatchingGapShortening(rows, NOW, [])).toBeNull();
+    const at = nextGapChangeMs(rows, NOW, [])!;
+    expect(at).toBe(D + QUIET_STRETCH_MS);
+    expect(detectWatchingGapShortening(rows, at - 1, [])).toBeNull();
+    expect(detectWatchingGapShortening(rows, at, [])).not.toBeNull();
+  });
+
+  it('an onset leaving the 180-day era is a boundary', () => {
+    const old = [{ ms: NOW - WATCHING_GAP_WINDOW_DAYS * DAY + HOUR, confidence: null }];
+    expect(nextGapChangeMs(old, NOW, [])).toBe(old[0].ms + WATCHING_GAP_WINDOW_DAYS * DAY + 1);
+  });
+
+  it('property: across random records the answer never moves before the named instant', () => {
+    // A missed boundary is a warning shown late, so sample the span [now, next) densely
+    // and require one answer across it. Seeded (mulberry32), so a failure replays.
+    let seed = 1949;
+    const rand = () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    let comesBack = 0;
+    let retires = 0;
+    for (let trial = 0; trial < 200; trial++) {
+      // A shortening-prone record: 4–6 onsets with shrinking gaps, a few meals between.
+      const n = 4 + Math.floor(rand() * 3);
+      const ons: number[] = [];
+      let t = NOW - rand() * 60 * HOUR;
+      let gap = 4 + rand() * 30;
+      for (let i = 0; i < n; i++) {
+        ons.unshift(t);
+        t -= gap * HOUR;
+        gap *= 1.2 + rand();
+      }
+      const meals = Array.from({ length: Math.floor(rand() * 4) }, () => ons[n - 1] + rand() * 70 * HOUR);
+      const rows = ons.map((ms) => ({ ms, confidence: null }));
+      const logged = [...ons, ...meals];
+      let now = NOW;
+      for (let step = 0; step < 6; step++) {
+        const next = nextGapChangeMs(rows, now, logged);
+        const end = next ?? now + 400 * HOUR;
+        const before = detectWatchingGapShortening(rows, now, logged) !== null;
+        for (let k = 1; k <= 24; k++) {
+          const probe = now + Math.floor(((end - 1 - now) * k) / 24);
+          expect(detectWatchingGapShortening(rows, probe, logged) !== null).toBe(before);
+        }
+        if (next === null) break;
+        const after = detectWatchingGapShortening(rows, next, logged) !== null;
+        if (after && !before) comesBack++;
+        if (before && !after) retires++;
+        now = next;
+      }
+    }
+    // Non-vacuous: the walk crossed real flips, both ways, not only quiet spans.
+    expect(comesBack).toBeGreaterThan(10);
+    expect(retires).toBeGreaterThan(10);
+  });
+
+  it('an empty record has no boundary', () => {
+    expect(nextGapChangeMs([], NOW, [])).toBeNull();
   });
 });

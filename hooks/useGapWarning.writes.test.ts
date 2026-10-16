@@ -18,7 +18,20 @@ jest.mock('expo-router', () => ({
   useFocusEffect: (cb: () => void | (() => void)) => require('react').useEffect(cb, [cb]),
 }));
 
-jest.mock('../lib/signalWatching', () => ({ getGapWarning: jest.fn() }));
+// The hook reads through `getGapWarningRead`; these suites drive the sentence through
+// `getGapWarning` and the clock schedule through `mockNextChangeMs` (null: the ceiling).
+jest.mock('../lib/signalWatching', () => {
+  const getGapWarning = jest.fn();
+  const mockNextChangeMs = jest.fn(() => null);
+  return {
+    getGapWarning,
+    mockNextChangeMs,
+    getGapWarningRead: async (petId: string, nowMs: number) => ({
+      text: await getGapWarning(petId, nowMs),
+      nextChangeMs: mockNextChangeMs(),
+    }),
+  };
+});
 
 const mockRunAsync = jest.fn().mockResolvedValue({ changes: 1 });
 jest.mock('../lib/db', () => ({
