@@ -92,7 +92,7 @@ const mockTrialInput: { current: unknown } = { current: null };
 // CUL-1342: what the recheck's facts read resolves to (null: no trial), or a throw.
 const mockTrialFacts: { current: unknown; fail: boolean } = { current: null, fail: false };
 // CUL-1093: what the pet's own decline read resolves to.
-const mockPetDeclines: { current: unknown[] } = { current: [] };
+const mockPetDeclines: { current: unknown[] | null } = { current: [] };
 jest.mock('../lib/dietTrialFacts', () => ({
   loadDietTrialFacts: jest.fn(async () => {
     if (mockTrialGate.holdNext) {
@@ -785,6 +785,77 @@ describe('CUL-1093 — the device’s intake decline reaches Get ready for every
     const r = render(<RundownScreen />);
     await r.findByTestId('rundown-block');
     await waitFor(() => expect(r.getByText(falling)).toBeTruthy());
+  });
+
+  // CUL-1972: the pet's own read returned null, which is what `readIntakeDecline` now
+  // answers for a check that threw. A no-trial pet built like production (the base input).
+  const fallingSignal = (falling: string) => {
+    const { supabase } = jest.requireMock('../lib/supabase') as { supabase: { from: jest.Mock } };
+    const chain = supabase.from('ai_signals') as unknown as { maybeSingle: jest.Mock };
+    chain.maybeSingle.mockResolvedValueOnce({
+      data: {
+        signal_text: null,
+        is_building: false,
+        coverage: [],
+        generated_at: new Date(Date.now() - 3_600_000).toISOString(),
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+        findings: [
+          {
+            rank: 0,
+            text: falling,
+            finding: { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 2, priorCount: 5, direction: 'improving', windowDays: 14 },
+          },
+        ],
+      },
+      error: null,
+    });
+  };
+  const eatingGap = /couldn’t check how Mochi has been eating/;
+
+  it('an eating check that did not answer is a gap line, never the quiet record (CUL-1972)', async () => {
+    // The issue's worst instance: no trial, the Signal answered empty, the check threw.
+    answeredEmptySignal();
+    mockTrialInput.current = noTrial();
+    mockPetDeclines.current = null;
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText(eatingGap)).toBeTruthy());
+    expect(r.queryByText(/Signal couldn’t be read/)).toBeNull();
+  });
+
+  it('control: an eating check that answered with nothing names no gap', async () => {
+    answeredEmptySignal();
+    mockTrialInput.current = noTrial();
+    mockPetDeclines.current = [];
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText('Your questions')).toBeTruthy());
+    expect(r.queryByText(eatingGap)).toBeNull();
+  });
+
+  it('an eating check that did not answer withholds the falling vomit pair for a no-trial pet', async () => {
+    const falling = 'Mochi vomited 2 times this week, down from 5 the week before.';
+    fallingSignal(falling);
+    mockTrialInput.current = noTrial();
+    mockPetDeclines.current = null;
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText(eatingGap)).toBeTruthy());
+    expect(r.queryByText(falling)).toBeNull();
+  });
+
+  it('with both reads failed, the Signal gap stops calling the page complete', async () => {
+    mockTrialInput.current = noTrial();
+    mockPetDeclines.current = null;
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText(/Signal couldn’t be read on this device/)).toBeTruthy());
+    expect(r.getByText(eatingGap)).toBeTruthy();
+    expect(r.queryByText(/is complete/)).toBeNull();
   });
 
   it('a trial pet still states its declines when only the trial input holds them', async () => {

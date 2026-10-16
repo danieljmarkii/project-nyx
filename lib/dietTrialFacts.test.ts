@@ -1155,3 +1155,41 @@ describe('loadTrialPredicateFacts — three answers, held apart', () => {
     expect(core?.stoppedForRefusal).toBe(true);
   });
 });
+
+// CUL-1972 — a check that did not answer is NULL, never `[]`. `[]` is "ran and saw no
+// decline", and Get ready, Home and the med strip each read that as calm. Mutation-proven:
+// the old `return []` in the catch reds the first case.
+describe('readIntakeDecline — three answers, held apart', () => {
+  function withDecline(impl: () => Promise<unknown>) {
+    jest.resetModules();
+    jest.doMock('./analytics', () => ({ getIntakeDecline: jest.fn(impl) }));
+    return require('./dietTrialFacts') as typeof import('./dietTrialFacts');
+  }
+  const pet = { id: 'pet-1', name: 'Mochi', species: 'cat' as const };
+  const spy = () => jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+  it('a thrown read is null (unknown), never an empty list', async () => {
+    const quiet = spy();
+    const mod = withDecline(() => Promise.reject(new Error('sqlite busy')));
+    await expect(mod.readIntakeDecline(pet, 0)).resolves.toBeNull();
+    quiet.mockRestore();
+  });
+
+  it('a read that answered with no decline is an empty list', async () => {
+    const mod = withDecline(() => Promise.resolve({ status: 'none', flags: [] }));
+    await expect(mod.readIntakeDecline(pet, 0)).resolves.toEqual([]);
+  });
+
+  it('a live decline is its facts', async () => {
+    const mod = withDecline(() =>
+      Promise.resolve({
+        status: 'watch',
+        flags: [{ trigger: 'consecutive_low', daysBelowBaseline: 1, refusedFoodLabel: null }],
+      }),
+    );
+    const out = await mod.readIntakeDecline(pet, 0);
+    expect(out).toEqual([
+      { trigger: 'consecutive_low', refusedFoodLabel: null, headline: 'Mochi has eaten less than usual today.' },
+    ]);
+  });
+});

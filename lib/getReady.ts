@@ -106,6 +106,13 @@ export interface WorthRaising {
    * SQLite, so the page is useful, just not whole.
    */
   signalUnavailable: boolean;
+  /**
+   * True when the device's own eating check did not answer (CUL-1972): the read threw,
+   * as distinct from a check that ran and saw no decline. Like `signalUnavailable` it
+   * names a gap, never an error, and with it set the section can never render as the
+   * quiet record: a cat whose eating nobody checked is not a calm one.
+   */
+  intakeUnavailable: boolean;
 }
 
 /** Jordan: "never more than four." Governs the optional rows; safety sits above it. */
@@ -177,6 +184,14 @@ export interface WorthRaisingInput {
    * default here would hand over a safety fact by writing nothing (C-37).
    */
   intakeDecline: readonly LocalIntakeDecline[];
+  /**
+   * True when the pet's own intake-decline read did not answer (`readIntakeDecline`
+   * returned null, CUL-1972). Then `intakeDecline` above is only what the trial input
+   * held, which may be nothing, and nothing here may treat it as "no decline": the
+   * falling vomit pair is withheld (unknown withholds, as Home's B-789 rule does on
+   * unloaded facts) and the section names the gap. REQUIRED, never defaulted (C-37).
+   */
+  intakeUnavailable: boolean;
   /**
    * The Signal screen's composed sentence for each finding whose screen recounts it from the
    * record (GC-4 PR 3, CUL-1570), keyed by `screenSentenceKey` of the cached finding it was
@@ -372,6 +387,7 @@ export function buildWorthRaising(input: WorthRaisingInput): WorthRaising {
   return {
     rows,
     signalUnavailable: input.findings === null,
+    intakeUnavailable: input.intakeUnavailable,
   };
 }
 
@@ -411,7 +427,11 @@ function buildSignalRows(input: WorthRaisingInput): SignalEntry[] {
   // where it appears nowhere else. The rundown block has a tile for timing and none for
   // a correlation; the correlation is the row with no second home.
   let standDowns = 0;
-  return visibleFindings(input.findings, input.withholdFallingVomit, input.nowMs, input.signalAnchor)
+  // An eating check that did not answer withholds on its own (CUL-1972), whatever the
+  // caller computed: the page cannot know the pet is eating, so a falling pair may not
+  // be raised as good news. Here, not only at the caller, so no host can forget it.
+  const withhold = input.withholdFallingVomit || input.intakeUnavailable;
+  return visibleFindings(input.findings, withhold, input.nowMs, input.signalAnchor)
     .filter((f) => !isStoodDown(f.finding) || ++standDowns <= 1)
     .map((f, i) => ({
       finding: f.finding,

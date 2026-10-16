@@ -582,14 +582,15 @@ async function buildForAppointment(
     // CUL-1093: the device's intake declines for EVERY pet, trial or not. The trial
     // loader returns before its own decline read when there is no trial, so a cat that
     // stopped eating with no trial running reached this page with nothing to say.
-    // The appointment's pet (C-9), on the build's one clock.
+    // The appointment's pet (C-9), on the build's one clock. `null` is a check that did
+    // not answer (CUL-1972), kept apart from `[]` all the way to the page.
     pet
       ? readIntakeDecline({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }, nowMs)
       : Promise.resolve([]),
   ]);
 
   if (loadIdRef.current !== myId) {
-    return { rows: [], signalUnavailable: false };
+    return { rows: [], signalUnavailable: false, intakeUnavailable: false };
   }
 
   // TS-8: the screen's model over the SAME input this page already read, for the same pet.
@@ -650,10 +651,14 @@ async function buildForAppointment(
     (findings ? await answeredWithin(readScreenSentences(subjectId, findings, nowMs), SIGNAL_CACHE_WAIT_MS) : null) ??
     new Map<string, string>();
   if (loadIdRef.current !== myId) {
-    return { rows: [], signalUnavailable: false };
+    return { rows: [], signalUnavailable: false, intakeUnavailable: false };
   }
 
-  const intakeDecline = getReadyIntakeDeclines(petDeclines, trialInput);
+  // The pet's own read is the one that covers every pet, so ITS silence is the unknown:
+  // the trial input's declines come from a second read of the same detector, and its
+  // `[]` cannot tell "no decline" from "did not answer" (CUL-1972).
+  const intakeUnavailable = petDeclines === null;
+  const intakeDecline = getReadyIntakeDeclines(petDeclines ?? [], trialInput);
   return buildWorthRaising({
     findings,
     // CUL-1364: Home's trial anchor, for THIS pet's running trial (C-9), on the build's clock.
@@ -668,7 +673,9 @@ async function buildForAppointment(
     // And a decline this page states is a not-eating register on its own (CUL-1093):
     // a pet with no trial has no trial register, so without this its falling vomit
     // pair printed beside "has eaten less than usual today".
-    withholdFallingVomit: (trialInput ? isAnimalNotEating(trialInput) : true) || intakeDecline.length > 0,
+    // And a check that did not answer withholds too (CUL-1972): unknown is not eating.
+    withholdFallingVomit:
+      (trialInput ? isAnimalNotEating(trialInput) : true) || intakeDecline.length > 0 || intakeUnavailable,
     trialStrip: trialInput ? resolveTrialStrip(trialInput) : null,
     trialScreen,
     // Accepted only when it answered for the trial the input above is about.
@@ -683,6 +690,7 @@ async function buildForAppointment(
     // `buildWorthRaising` can drop only the ones the Signal already states (CUL-950).
     // Read for every pet, not only through the trial input (CUL-1093).
     intakeDecline,
+    intakeUnavailable,
     rundown: built,
     nowMs,
   });

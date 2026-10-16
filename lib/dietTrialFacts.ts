@@ -589,8 +589,11 @@ export async function loadDietTrialFacts(args: {
     antigenArmDark: armDark,
     // ONE read, both fields: the card's single sentence is the first fact's, so the
     // two can never describe different declines (CUL-950).
-    intakeDeclineHeadline: decline[0]?.headline ?? null,
-    intakeDeclineFacts: decline,
+    // A check that did not answer is `[]` HERE ONLY because `TrialCardInput` has no
+    // third state yet (CUL-1972 brief 2a: the card's own reason lands after PR-25).
+    // Home and Get ready read the pet's decline themselves and fail closed on null.
+    intakeDeclineHeadline: decline?.[0]?.headline ?? null,
+    intakeDeclineFacts: decline ?? [],
     // The history, for the terminal cards — see the field's docstring.
     rangeRefusal: facts?.rangeRefusal ?? null,
     // R1 — the now-fact and the two inputs the live register's stand-down reads.
@@ -998,14 +1001,18 @@ async function readArrangements(
 export async function readIntakeDecline(
   pet: DietTrialFactsPet,
   nowMs: number,
-): Promise<IntakeDeclineFact[]> {
+): Promise<IntakeDeclineFact[] | null> {
   try {
     const result = await getIntakeDecline(pet.id, pet.species, nowMs);
     if (result.status !== 'watch') return [];
     return intakeDeclineFacts(result.flags, pet.name);
   } catch (e) {
+    // NULL, never `[]` (CUL-1972, C-12). `[]` is "the check ran and saw no decline";
+    // a throw is "the check did not answer", and only the first may read as calm. The
+    // `[]` this used to return put the quiet record on Get ready over a cat whose
+    // eating nobody had checked. `lib/lookWithheld.ts` is the precedent.
     console.error('[DietTrial] intake-decline read failed:', e);
-    return [];
+    return null;
   }
 }
 
