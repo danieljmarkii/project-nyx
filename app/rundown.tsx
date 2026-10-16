@@ -16,7 +16,7 @@ import { WorthRaisingList } from '../components/vetvisits/WorthRaisingList';
 import { resolveRecordPetName, usePetStore, type Pet } from '../store/petStore';
 import { buildRundown, rundownToPlainText, type Rundown, type RundownTap } from '../lib/rundown';
 import { rundownHistoryHref } from '../lib/historyDoors';
-import { buildWorthRaising, localIntakeDeclines, type WorthRaising } from '../lib/getReady';
+import { buildWorthRaising, getReadyIntakeDeclines, type WorthRaising } from '../lib/getReady';
 import { buildTrialScreenModel } from '../lib/trialScreenModel';
 import { UNKNOWN_ALLOWED_SET } from '../lib/trialAllowedSet';
 import { NO_LEDGER_FACTS, recheckFactsState } from '../lib/trialRecheck';
@@ -25,6 +25,7 @@ import { RecheckQuestions } from '../components/trialScreen/RecheckQuestions';
 import {
   loadDietTrialFacts,
   loadTrialPredicateFacts,
+  readIntakeDecline,
   type TrialPredicateFacts,
 } from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
@@ -545,7 +546,7 @@ async function buildForAppointment(
 
   // One clock for every read and the build, so the two trial reads bound the same window.
   const nowMs = Date.now();
-  const [signalRow, trialInput, recheckRead] = await Promise.all([
+  const [signalRow, trialInput, recheckRead, petDeclines] = await Promise.all([
     answeredWithin(
       readSignalCache(subjectId)
         // `row ? row.findings : null` — NOT `row?.findings ?? []`, and the difference is
@@ -578,6 +579,13 @@ async function buildForAppointment(
       : Promise.resolve(null),
     // For the appointment's pet (C-9).
     pet ? readRecheckFacts(pet, nowMs) : Promise.resolve('unreadable' as const),
+    // CUL-1093: the device's intake declines for EVERY pet, trial or not. The trial
+    // loader returns before its own decline read when there is no trial, so a cat that
+    // stopped eating with no trial running reached this page with nothing to say.
+    // The appointment's pet (C-9), on the build's one clock.
+    pet
+      ? readIntakeDecline({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }, nowMs)
+      : Promise.resolve([]),
   ]);
 
   if (loadIdRef.current !== myId) {
@@ -645,6 +653,7 @@ async function buildForAppointment(
     return { rows: [], signalUnavailable: false };
   }
 
+  const intakeDecline = getReadyIntakeDeclines(petDeclines, trialInput);
   return buildWorthRaising({
     findings,
     // CUL-1364: Home's trial anchor, for THIS pet's running trial (C-9), on the build's clock.
@@ -656,7 +665,10 @@ async function buildForAppointment(
     // The same fail-closed rule Home applies (B-789): absence of a refusal fact
     // during a failed load is not evidence of eating, so an unloadable trial
     // suppresses the reassuring trial_response row rather than letting it through.
-    withholdFallingVomit: trialInput ? isAnimalNotEating(trialInput) : true,
+    // And a decline this page states is a not-eating register on its own (CUL-1093):
+    // a pet with no trial has no trial register, so without this its falling vomit
+    // pair printed beside "has eaten less than usual today".
+    withholdFallingVomit: (trialInput ? isAnimalNotEating(trialInput) : true) || intakeDecline.length > 0,
     trialStrip: trialInput ? resolveTrialStrip(trialInput) : null,
     trialScreen,
     // Accepted only when it answered for the trial the input above is about.
@@ -669,7 +681,8 @@ async function buildForAppointment(
     // default here would have handed that over silently (C-37: a default on a
     // safety-relevant parameter is the decision). EVERY flag, structured, so
     // `buildWorthRaising` can drop only the ones the Signal already states (CUL-950).
-    intakeDecline: localIntakeDeclines(trialInput),
+    // Read for every pet, not only through the trial input (CUL-1093).
+    intakeDecline,
     rundown: built,
     nowMs,
   });
