@@ -75,6 +75,7 @@ import { trialTargetProtein } from './trialProtein';
 import { dayKeyFromIndex, localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
 import {
   mayImplyRecordClean,
+  trialResponseLineCompares,
   type IntakeDeclineFact,
   type TrialCardInput,
   type TrialCardTrial,
@@ -988,6 +989,21 @@ async function readArrangements(
     console.error('[DietTrial] arrangements read failed:', e);
     return null;
   }
+}
+
+/**
+ * Whether the trial's standing vomit line could read as improvement: it takes its
+ * comparing form (`trialResponseLineCompares`, the line's own rule) AND the trial count
+ * is below the baseline's. Switches on the COUNT, the reader's question (C-35).
+ *
+ * The device-eating withhold (CUL-1972 / CUL-1975) asks this, not "is there a line":
+ * when the eating check did not answer, nothing louder leads the page, so a RISE (or the
+ * trial-so-far count) must keep showing — the strip's own rule is that a rise always
+ * shows. Only the fall, the half that can soften a not-eating cat, is withheld.
+ */
+export function vomitLineMayReassure(counts: TrialResponseCounts | null | undefined): boolean {
+  if (!counts) return false;
+  return trialResponseLineCompares(counts) && counts.trialCount < counts.baselineCount;
 }
 
 /** §5.2's structural composition: the same clinically-floored `detectIntakeDecline`

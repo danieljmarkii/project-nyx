@@ -102,13 +102,16 @@ export function WorthRaisingList({
         {/* The device's own eating check did not answer (CUL-1972). Its own line, never
             folded into the Signal's: the two fail for different reasons, and this one
             fails on a page whose Signal may have answered empty — exactly where the
-            list would otherwise read as a quiet record before the vet. It points the
-            owner at the one witness the page has left: what they saw at the bowl. */}
+            list would otherwise read as a quiet record before the vet. Worded to stay
+            true beside a decline row the page DID find (the trial's read, or the
+            Signal's): "may not show everything", never "isn't in this list". It points
+            the owner at the one witness the page has left: what they saw at the bowl. */}
         {intakeUnavailable ? (
           <View style={styles.gap}>
             <ThemedText style={styles.gapText}>
-              This device couldn’t check how {petName} has been eating, so if {petName} is
-              eating less, it isn’t in this list. Tell your vet what you’ve seen at the bowl.
+              This device couldn’t check how {petName} has been eating, so this list may not
+              show everything about {petName}’s appetite. Tell your vet what you’ve seen at
+              the bowl.
             </ThemedText>
           </View>
         ) : null}

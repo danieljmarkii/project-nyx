@@ -26,6 +26,7 @@ import {
   loadDietTrialFacts,
   loadTrialPredicateFacts,
   readIntakeDecline,
+  vomitLineMayReassure,
   type TrialPredicateFacts,
 } from '../lib/dietTrialFacts';
 import { isAnimalNotEating, resolveTrialStrip } from '../lib/dietTrialCard';
@@ -586,7 +587,8 @@ async function buildForAppointment(
     // not answer (CUL-1972), kept apart from `[]` all the way to the page.
     pet
       ? readIntakeDecline({ id: pet.id, name: pet.name, species: pet.species, sex: pet.sex }, nowMs)
-      : Promise.resolve([]),
+      : // No pet to check is a check that did not answer, never "no decline".
+        Promise.resolve(null),
   ]);
 
   if (loadIdRef.current !== myId) {
@@ -622,10 +624,24 @@ async function buildForAppointment(
   const counts = trialInput?.trialResponse ?? null;
   const running = trialScreenModel && trialScreenModel.kind === 'trial' ? trialScreenModel : null;
   const vomitMasking = maskingFor(maskRecord, 'vomit', symptomWord('vomit'), today);
-  const trialScreen =
+  // The pet's own read is the one that covers every pet, so ITS silence is the unknown:
+  // the trial input's declines come from a second read of the same detector, and its
+  // `[]` cannot tell "no decline" from "did not answer" (CUL-1972).
+  const intakeUnavailable = petDeclines === null;
+  const intakeDecline = getReadyIntakeDeclines(petDeclines ?? [], trialInput);
+  const maskedScreen =
     running && vomitMasking && counts
       ? { ...running, vomiting: maskedTrialSentence(vomitMasking, counts, running.vomiting, today) }
       : trialScreenModel;
+  // The recheck quotes the strip's vomiting sentence verbatim, and the strip withholds it
+  // only on the TRIAL input's declines — `[]` when that read threw. So a fall printed
+  // beside "couldn't check how Mochi has been eating" (or beside the pet read's decline)
+  // while the Signal's own falling pair was withheld (the adversarial pass, CUL-1972 #6).
+  // The fall only: a rise or the trial-so-far count stays, as on Home.
+  const trialScreen =
+    maskedScreen && maskedScreen.kind === 'trial' && (intakeUnavailable || intakeDecline.length > 0) && vomitLineMayReassure(counts)
+      ? { ...maskedScreen, vomiting: null }
+      : maskedScreen;
   // The Signal rows are quoted VERBATIM, so a row whose own sentence compares a window a masking
   // span touches (a trial pair, a falling reflection, a stood-down line) is dropped rather than
   // rewritten (the adversarial pass, findings 1 and 2). Dropping can only empty the list, never
@@ -654,11 +670,6 @@ async function buildForAppointment(
     return { rows: [], signalUnavailable: false, intakeUnavailable: false };
   }
 
-  // The pet's own read is the one that covers every pet, so ITS silence is the unknown:
-  // the trial input's declines come from a second read of the same detector, and its
-  // `[]` cannot tell "no decline" from "did not answer" (CUL-1972).
-  const intakeUnavailable = petDeclines === null;
-  const intakeDecline = getReadyIntakeDeclines(petDeclines ?? [], trialInput);
   return buildWorthRaising({
     findings,
     // CUL-1364: Home's trial anchor, for THIS pet's running trial (C-9), on the build's clock.

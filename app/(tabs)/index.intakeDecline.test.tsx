@@ -42,6 +42,8 @@ jest.mock('../../components/home/TrialStrip', () => ({
 const mockDecline: { current: () => Promise<unknown> } = { current: async () => [] };
 jest.mock('../../lib/dietTrialFacts', () => ({
   readIntakeDecline: jest.fn(() => mockDecline.current()),
+  // The rule, never stubbed (C-34): only the read is.
+  vomitLineMayReassure: jest.requireActual('../../lib/dietTrialFacts').vomitLineMayReassure,
 }));
 jest.mock('../../components/home/LookExits', () => ({ LookExits: marker('look-exits'), exitVisibility: () => ({}), lookRectInPage: () => null }));
 jest.mock('../../components/designV2/home/TodayCard', () => ({ TodayCard: marker('today-v2') }));
@@ -184,5 +186,20 @@ describe('the trial strip’s vomit line takes the same check (CUL-1975)', () =>
     const model = mockStripProps.current?.model as { trialResponseLine: string | null } | null;
     expect(model).not.toBeNull();
     expect(model?.trialResponseLine).toBeNull();
+  });
+
+  // The adversarial pass, #7: nothing louder leads Home on a merely unanswered check, so a
+  // RISE keeps its line (the strip's own rule: a rise always shows).
+  it('keeps a RISING vomit line when the check did not answer', async () => {
+    mockDietTrial.current = {
+      input: { ...TRIAL_INPUT, trialResponse: { ...TRIAL_INPUT.trialResponse, trialCount: 9, baselineCount: 1 } },
+      inputIsForPet: true,
+      loadedPetId: 'p1',
+    };
+    mockDecline.current = async () => null;
+    render(<HomeScreen />);
+    await new Promise((r) => setTimeout(r, 0));
+    const model = mockStripProps.current?.model as { trialResponseLine: string | null } | null;
+    expect(model?.trialResponseLine).toEqual(expect.stringMatching(/^Vomiting: 9 in the trial/));
   });
 });

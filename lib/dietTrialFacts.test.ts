@@ -1193,3 +1193,31 @@ describe('readIntakeDecline — three answers, held apart', () => {
     ]);
   });
 });
+
+// The shared "could this vomit line read as a fall" rule behind the device-eating withhold
+// (CUL-1972 #6 / #7): the fall only, never a rise, never the trial-so-far form.
+describe('vomitLineMayReassure', () => {
+  const { vomitLineMayReassure } = jest.requireActual('./dietTrialFacts') as typeof import('./dietTrialFacts');
+  const c = (trialCount: number, baselineCount: number, over: Record<string, unknown> = {}) => ({
+    trialDayNumber: 20,
+    trialCount,
+    trialLastEpisodeDayIndex: null,
+    baselineCount,
+    trialLoggedDays: 20,
+    baselineLoggedDays: 40,
+    baselineWindowDays: 49,
+    densityComparable: true,
+    ...over,
+  });
+  it('a comparing fall may reassure', () => expect(vomitLineMayReassure(c(1, 9))).toBe(true));
+  it('a rise or a flat line does not', () => {
+    expect(vomitLineMayReassure(c(9, 1))).toBe(false);
+    expect(vomitLineMayReassure(c(3, 3))).toBe(false);
+  });
+  it('the trial-so-far form (too few logged days to compare) does not', () =>
+    expect(vomitLineMayReassure(c(1, 9, { baselineLoggedDays: 2 }))).toBe(false));
+  it('no counts does not', () => {
+    expect(vomitLineMayReassure(null)).toBe(false);
+    expect(vomitLineMayReassure(undefined)).toBe(false);
+  });
+});

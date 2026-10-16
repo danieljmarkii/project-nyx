@@ -20,7 +20,7 @@ import { LookExits, exitVisibility, lookRectInPage, type LayoutBox } from '../..
 import { pullThreshold } from '../../lib/haptics';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { resolveTrialStrip, isAnimalNotEating } from '../../lib/dietTrialCard';
-import { readIntakeDecline } from '../../lib/dietTrialFacts';
+import { readIntakeDecline, vomitLineMayReassure } from '../../lib/dietTrialFacts';
 import { TodayCard } from '../../components/designV2/home/TodayCard';
 import { CoverageDoor } from '../../components/designV2/home/CoverageDoor';
 import { HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
@@ -215,10 +215,14 @@ export default function HomeScreen() {
     trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : null;
   const rawTrialStrip = trialInput ? resolveTrialStrip(trialInput) : null;
   // CUL-1975 — the strip's vomit line is the same reassuring summary, so the device's own
-  // eating check withholds it too: `resolveTrialStrip` reads the trial input's declines,
-  // which are `[]` when that read threw (CUL-1972), and Home's read covers the gap.
+  // eating check withholds its falling form too: `resolveTrialStrip` reads the trial
+  // input's declines, which are `[]` when that read threw (CUL-1972).
+  // The FALL only (the adversarial pass, #7): with the check merely unanswered nothing
+  // louder leads Home, so a rising count keeps its line. `!trialFactsFresh` keeps its
+  // whole-line rule, which is about whose facts these are.
   const trialStripModel =
-    rawTrialStrip && (!trialFactsFresh || !deviceSaysEating)
+    rawTrialStrip &&
+    (!trialFactsFresh || (!deviceSaysEating && vomitLineMayReassure(trialInput?.trialResponse)))
       ? { ...rawTrialStrip, trialResponseLine: null }
       : rawTrialStrip;
   // Design v2 — the whole day (D2-4 / CUL-1066; GA by CUL-1071). Today is the spine with
