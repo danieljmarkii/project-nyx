@@ -153,6 +153,7 @@ function episode(dayKey: string, hour: number, over: Partial<SignalScreenEpisode
     eventId: `ev-${dayKey}-${hour}`,
     occurredAt: d.toISOString(),
     dayKey,
+    endDayKey: dayKey,
     minutesSinceMeal: null,
     photo: null,
     ...over,
@@ -223,6 +224,14 @@ describe('buildSignalScreenModel — the mock’s Thursday', () => {
     expect(model.noun).toBe('vomiting');
     expect(model.safety).toBe(true);
     expect(model.identity).toBe('symptom_chronicity:vomit');
+  });
+
+  it('Q12 wiring: the screen\'s bars and line carry a bout from before the last 7 days (CUL-1791)', () => {
+    const carried = episode(shift(THURSDAY, -8), 22, { endDayKey: shift(THURSDAY, -5) });
+    const model = buildSignalScreenModel(mockInput({ episodes: [carried], trial: null }));
+    const weeks = model.weekly?.weeks ?? [];
+    expect(weeks[weeks.length - 1]).toMatchObject({ count: 0, carriedIn: true });
+    expect(model.weekLine?.startsWith('A bout from earlier ran into the last 7 days')).toBe(true);
   });
 
   it('the weekly bars cover the trial, and the line reads the last two bars', () => {

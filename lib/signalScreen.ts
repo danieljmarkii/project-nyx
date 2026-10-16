@@ -151,8 +151,8 @@ export interface SignalScreenEpisode {
    *  does. Absent reads as the one row `eventId` names. */
   boutIds?: readonly string[];
   /** The local day of the bout's LAST row, so a week the bout carries into says so (Q12,
-   *  CUL-1791). `readSignalEpisodes` always sets it; absent reads as `dayKey` (a one-day bout). */
-  endDayKey?: string;
+   *  CUL-1791). Required: a fallback to `dayKey` would be the silent zero one hop down. */
+  endDayKey: string;
 }
 
 /** One delivered dose on one local day. */

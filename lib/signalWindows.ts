@@ -257,9 +257,9 @@ export interface SignalWeeksInput {
 }
 
 /** Each episode's bout span, for `SignalWeeksInput.boutSpans` (Q12, CUL-1791): from its
- *  onset day to its last row's day (`SignalScreenEpisode.endDayKey`, absent on a one-day bout). */
-export function boutSpansOfEpisodes(episodes: readonly { dayKey: string; endDayKey?: string }[]): BoutSpan[] {
-  return episodes.map((e) => ({ startDay: e.dayKey, endDay: e.endDayKey ?? e.dayKey }));
+ *  onset day to its last row's day (`SignalScreenEpisode.endDayKey`). */
+export function boutSpansOfEpisodes(episodes: readonly { dayKey: string; endDayKey: string }[]): BoutSpan[] {
+  return episodes.map((e) => ({ startDay: e.dayKey, endDay: e.endDayKey }));
 }
 
 /** The weekly bars: the card's and the screen's are the same call. */
@@ -286,8 +286,8 @@ export function weekLineNumbers(model: WeeklyBucketsModel): { thisWeek: number; 
   return { thisWeek: last.count, lastWeek: prev ? prev.count : null, soFar: last.partial, carried: last.carriedIn };
 }
 
-/** "2 in the last 7 days · 3 in the 7 before" — the card's one line (led by "A bout from before
- *  continues ·" when the last block holds a bout that began earlier, Q12), read off the last two
+/** "2 in the last 7 days · 3 in the 7 before" — the card's one line (led by "A bout from earlier
+ *  ran into the last 7 days ·" when the last block holds a bout that began earlier, Q12), read off the last two
  *  blocks the bars draw (CUL-1217: the engine's rolling week, never a calendar week, so the
  *  line and the sentence on the screen it opens name one window). A count, never a direction
  *  word. `withholdPrior` drops the earlier count when the pair may not be printed
@@ -296,8 +296,9 @@ export function weekLineNumbers(model: WeeklyBucketsModel): { thisWeek: number; 
 export function weekLine(model: WeeklyBucketsModel, withholdPrior: boolean = false): string {
   const { thisWeek, lastWeek, carried } = weekLineNumbers(model);
   // Q12 (CUL-1791): the count is bouts that BEGAN in the window, so a bout that began earlier
-  // and is still going reads 0 there. The going bout leads, and "new" names the unit.
-  const head = carried ? `A bout from before continues · ${thisWeek} new in the last 7 days` : `${thisWeek} in the last 7 days`;
+  // and ran into it reads 0 there. That bout leads, and "new" names the unit.
+  // "Ran into", never "continues": the bout may have ended days ago (the adversarial pass, R2).
+  const head = carried ? `A bout from earlier ran into the last 7 days · ${thisWeek} new` : `${thisWeek} in the last 7 days`;
   return lastWeek == null || withholdPrior ? head : `${head} · ${lastWeek} in the 7 before`;
 }
 

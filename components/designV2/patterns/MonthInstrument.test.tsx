@@ -576,6 +576,21 @@ describe('MonthInstrument', () => {
     expect(getAllByTestId('daymark')[5].props.accessibilityLabel).toContain('logged, no vomiting'); // Sep 4
   });
 
+  it('Q12 wiring: the vomiting bars name a bout carried in from the week before (CUL-1539)', async () => {
+    // A bout from Sat Sep 12 that ran to Mon Sep 14: the week of Sep 13 counts no onset.
+    const { getByTestId } = mount(
+      jest.fn(async () =>
+        facts({
+          episodeDays: ['2026-09-12'],
+          continuationDays: [{ day: '2026-09-13', from: '2026-09-12' }, { day: '2026-09-14', from: '2026-09-12' }],
+          boutSpans: [{ startDay: '2026-09-12', endDay: '2026-09-14' }],
+        }),
+      ),
+    );
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    expect(getByTestId('weekly-carried-line').props.children).toBe('A bout that began earlier continues into the week of Sep 13');
+  });
+
   it('a pet with no record: every day says "nothing logged yet", the line invites the first entry', async () => {
     const { getByTestId, getAllByLabelText } = mount(jest.fn(async () => facts({ recordStart: null, episodeDays: [], loggedDays: [], leftSomeDays: [], dosedDays: [], photoDays: [] })));
     await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());

@@ -503,7 +503,7 @@ describe('leadTakesChartCard — the bars only where they are the finding’s ev
 describe('Q12 (CUL-1791): a bout that began before the last 7 days is named on the line', () => {
   // The issue's case: one bout from eight days ago that went on into the last 7 days.
   const carriedEpisodes = [{ dayKey: shift(THURSDAY, -7), endDayKey: shift(THURSDAY, -6) }];
-  const weeksOf = (episodes: { dayKey: string; endDayKey?: string }[]) =>
+  const weeksOf = (episodes: { dayKey: string; endDayKey: string }[]) =>
     signalWeeks({
       finding: chronicity(),
       today: THURSDAY,
@@ -513,12 +513,14 @@ describe('Q12 (CUL-1791): a bout that began before the last 7 days is named on t
       loggedDays: [],
     });
 
-  it('onsets are still counted, and the line leads with the bout still going', () => {
+  it('onsets are still counted, and the line leads with the bout that ran in', () => {
     const m = weeksOf(carriedEpisodes);
     expect(weekLineNumbers(m)).toMatchObject({ thisWeek: 0, lastWeek: 1, carried: true });
-    expect(weekLine(m)).toBe('A bout from before continues · 0 new in the last 7 days · 1 in the 7 before');
-    // Withheld prior count: the going bout still leads the one number left.
-    expect(weekLine(m, true)).toBe('A bout from before continues · 0 new in the last 7 days');
+    expect(weekLine(m)).toBe('A bout from earlier ran into the last 7 days · 0 new · 1 in the 7 before');
+    // Withheld prior count: the bout still leads the one number left.
+    expect(weekLine(m, true)).toBe('A bout from earlier ran into the last 7 days · 0 new');
+    // "Ran into", never "continues": this bout ended six days ago (R2).
+    expect(weekLine(m)).not.toMatch(/continues/);
   });
 
   it('never prints a bare zero for the last 7 days while an earlier bout runs into them', () => {
@@ -527,12 +529,12 @@ describe('Q12 (CUL-1791): a bout that began before the last 7 days is named on t
   });
 
   it('a bout beginning inside the last 7 days reads as before, even one that ran past midnight', () => {
-    const m = weeksOf([{ dayKey: shift(THURSDAY, -2), endDayKey: shift(THURSDAY, -1) }, { dayKey: shift(THURSDAY, -8) }]);
+    const m = weeksOf([{ dayKey: shift(THURSDAY, -2), endDayKey: shift(THURSDAY, -1) }, { dayKey: shift(THURSDAY, -8), endDayKey: shift(THURSDAY, -8) }]);
     expect(weekLineNumbers(m).carried).toBe(false);
     expect(weekLine(m)).toBe('1 in the last 7 days · 1 in the 7 before');
   });
 
-  it('an episode with no end day is a one-day bout', () => {
-    expect(boutSpansOfEpisodes([{ dayKey: THURSDAY }])).toEqual([{ startDay: THURSDAY, endDay: THURSDAY }]);
+  it('a span runs from the onset day to the last row\'s day', () => {
+    expect(boutSpansOfEpisodes([{ dayKey: THURSDAY, endDayKey: shift(THURSDAY, 1) }])).toEqual([{ startDay: THURSDAY, endDay: shift(THURSDAY, 1) }]);
   });
 });

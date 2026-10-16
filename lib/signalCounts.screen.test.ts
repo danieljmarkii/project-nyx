@@ -28,7 +28,7 @@ function episode(dayKey: string, hour = 9): SignalScreenEpisode {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
   if (!m) throw new Error(dayKey);
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), hour, 11);
-  return { eventId: `ev-${dayKey}-${hour}`, occurredAt: d.toISOString(), dayKey, minutesSinceMeal: null, photo: null };
+  return { eventId: `ev-${dayKey}-${hour}`, occurredAt: d.toISOString(), dayKey, endDayKey: dayKey, minutesSinceMeal: null, photo: null };
 }
 
 const ENGINE_TEXT = 'The engine’s own sentence.';
