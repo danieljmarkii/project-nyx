@@ -63,7 +63,7 @@ function defaultPublishDeps(): WidgetPublishDeps {
 // `buildProps` resolves, with no await between, so refusing to resolve HERE is the
 // last moment before the timeline push: the throw is what keeps the previous
 // owner's signed-in props off a signed-out Home Screen. A rejection rather than an
-// option on `publishWidgetPass` keeps the fence out of lib/widgetBridge.ts (PM, plan
+// option on `publishWidgetPass` keeps the PUBLISH fence out of lib/widgetBridge.ts (PM, plan
 // option A). TRIP-WIRE: a second caller of `publishWidgetPass` must build its props
 // through this function, or carry its own check, or it is unfenced.
 export class WidgetPublishFenced extends Error {
@@ -123,7 +123,7 @@ export function useWidgetSnapshots() {
       // drain (so a failed build-35 capture is never lost).
       const { drainComplete } = await publishWidgetPass(
         () => buildWidgetPublishProps(undefined, sessionEpoch),
-        { needsDrain: !drainDone },
+        { needsDrain: !drainDone, epoch: sessionEpoch },
       );
       if (drainComplete) drainDone = true;
     };
