@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-16
 **Mode:** DISCOVERY (Product Owner / Backlog Steward lens), attended: the PM asked for the pass
-**Outcome:** shipped via #PR_NUMBER (this record only; the pass's writes are in Linear)
+**Outcome:** shipped via #1233 (this record only; the pass's writes are in Linear)
 **Branch:** `claude/serene-noether-jgdean`
 **Report:** the standing grooming issue [CUL-1962](https://linear.app/projectnyx/issue/CUL-1962), created by this pass. It holds the full report as a comment and the PM's open calls.
 **Predecessor:** `docs/sessions/2026-09-23-backlog-grooming.md`. Its record issue, CUL-719, is closed, and every one of its calls has a home (checked this pass).
