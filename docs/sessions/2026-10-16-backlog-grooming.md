@@ -20,7 +20,7 @@ The whole `backlog-groomer` procedure, steps 0 to 18. This is the first run of t
 
 The 2026-10-11 session had already run an attended staleness pass over the queue alone.
 
-Thirteen read-only lenses ran as background agents, each from one shared brief with the read-only rule written in:
+Eleven read-only lenses ran as background agents, each from one shared brief with the read-only rule written in:
 - the PM queue, in three batches of 28;
 - the retirement sweep with the closed-project leftovers;
 - the veto window with staleness decay;
@@ -31,7 +31,7 @@ Thirteen read-only lenses ran as background agents, each from one shared brief w
 - quick wins;
 - dedup.
 
-This session verified each lens's load-bearing claims against `origin/main` or Linear before acting. Three narrow writer agents then executed a fixed operations file verbatim, each re-checking every precondition at write time. One container restart mid-pass stopped two lenses; both resumed from their transcripts.
+This session verified each lens's load-bearing claims against `origin/main` or Linear before acting. Four narrow writer agents then did the writes: two label strips, one fixed operations file executed verbatim with every precondition re-checked at write time, and one report post. One container restart mid-pass stopped two lenses; both resumed from their transcripts.
 
 ### Evidence base
 
@@ -112,6 +112,21 @@ Briefed on CUL-1962, each with a recommendation:
 - **D5:** Engines v3.1's pile is parked, and the project gets a run order.
 - **D6:** Ask v2 and Reintroduction become projects.
 - **D7:** one "go" for about 40 low-risk board edits the write boundary keeps from an unattended pass (seating, closes on the PM's word, re-ranks, stale relations, two promotions).
+- **D8:** label four harm findings `Live harm` and 22 quick wins `Quick Win`.
+
+## Quick wins (step 6)
+
+The quick-win lens read 50 of the 283 eligible issues filed since 09-23, plus the four existing `Quick Win` issues. Every site it cites was checked on `origin/main`.
+
+- **Existing labels:** keep CUL-1901 and CUL-1766. Drop CUL-421: its PR #791 waits on the PM's stale-PR round, and two later CI steps can rewrite `deno.lock`, so the PR's premise no longer holds. Drop CUL-1449, which was proposed for close.
+- **Recommended:** 22 issues, each one session: tests and CI, dead code left after GA, small trial-surface fixes, and accessibility and copy fixes. The list and each fix shape are on CUL-1962.
+- **Four are live harm, not quick wins.** By `/dispatch`'s sort they can corrupt or lose what a reader sees, in code every account runs:
+  - CUL-1354: after an offline pet switch, a logged dose lands on the wrong pet and reaches the vet report.
+  - CUL-1601: Vet visits shows the previous pet after a switch.
+  - CUL-1286: Edit profile clears the stored weight on bad input.
+  - CUL-1547: the emergency sheet can read calmer than the record.
+
+  All four were filed before the sort existed, so no dispatcher has read them.
 
 ## Lessons
 
