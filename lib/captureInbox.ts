@@ -225,7 +225,10 @@ export interface InboxDecision {
 // between its food lookup and its last write. Once it trips the pass writes
 // nothing more; the current record and every later one come back deferred (the
 // wipe deletes their files anyway). A write issued before the fence is erased
-// by the wipe's own DELETE, which queues behind it on the one connection.
+// by the wipe's DELETE, which lands after it by MARGIN, not by queue order:
+// expo-sqlite runs statements on a concurrent native queue, and clearLocalData
+// makes several native round trips (two reads, file deletes) before its first
+// DELETE, while an issued write needs one more.
 export async function ingestCaptureRecords(
   db: InboxDb,
   files: InboxFilePayload[],

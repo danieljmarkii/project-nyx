@@ -6,6 +6,7 @@ import { getSyncStatus, isLocalDataEmpty } from '../lib/db';
 import { hasHydratedRecord, holdColdStartWait, shouldShowColdStartWait } from '../lib/coldStart';
 import { consumeForcedColdStart } from '../lib/devColdStart';
 import { ingestCaptureInbox } from '../lib/captureInbox';
+import { currentSignOutEpoch } from '../lib/signOutEpoch';
 import { getIsOnline, isOnlineFromState } from '../lib/network';
 import { useAuthStore } from '../store/authStore';
 import { usePetStore } from '../store/petStore';
@@ -25,6 +26,14 @@ export function useSync() {
   useEffect(() => {
     if (!session) return;
     const userId = session.user.id;
+    // CUL-1968 (rls-privacy-reviewer): the sign-out epoch this session's cycles run
+    // under, captured once per session like useWidgetSnapshots' publish epoch. The
+    // ingest also captures the epoch when it starts, which stops a pass already
+    // running at sign-out but not one STARTED during the wipe: _layout.tsx awaits the
+    // wipe before setSession(null), so the foreground and reconnect listeners below
+    // stay live through it, and a pass they start then would take the bumped epoch
+    // as its own while the pet store still names the old pets.
+    const sessionEpoch = currentSignOutEpoch();
 
     // Idempotent: the ceiling, the settle and an offline transition may each call it.
     const releaseColdStartWait = () => {
@@ -80,6 +89,7 @@ export function useSync() {
         // records. Best-effort: an ingest failure must never block the sync.
         await ingestCaptureInbox(
           new Set(usePetStore.getState().pets.map((p) => p.id)),
+          () => currentSignOutEpoch() !== sessionEpoch,
         ).catch((e) => console.warn('[sync] inbox ingest failed:', e));
         await syncNow();
       };

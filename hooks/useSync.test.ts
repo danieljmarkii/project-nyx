@@ -34,6 +34,8 @@ jest.mock('expo-network', () => ({
 }));
 
 import { COLD_START_CEILING_MS } from '../lib/coldStart';
+import { ingestCaptureInbox } from '../lib/captureInbox';
+import { notifySignedOut } from '../lib/signOutEpoch';
 import { useAuthStore } from '../store/authStore';
 import { useSyncStore } from '../store/syncStore';
 import { useSync } from './useSync';
@@ -123,4 +125,26 @@ it('a connection lost during the wait lets go of the screen at once', async () =
   expect(useSyncStore.getState().coldStartHydrating).toBe(true);
   act(() => networkListener?.({ isConnected: false, isInternetReachable: false }));
   expect(useSyncStore.getState().coldStartHydrating).toBe(false);
+});
+
+// CUL-1968 (rls-privacy-reviewer): a cycle STARTED during the wipe (a foreground or a
+// reconnect while _layout.tsx awaits wipeLocalSession, before setSession(null)) hands
+// the ingest a fence that is already tripped, so it writes nothing for the old pets.
+it("a cycle started after sign-out began hands the ingest a fence that is already tripped", async () => {
+  mockState.hydrated = true;
+  const ingest = ingestCaptureInbox as jest.Mock;
+  ingest.mockClear();
+  renderHook(() => useSync());
+  await flush();
+  expect(ingest).toHaveBeenCalledTimes(1);
+  const live = ingest.mock.calls[0][1] as () => boolean;
+  expect(live()).toBe(false); // a live session's pass is not fenced
+
+  notifySignedOut(); // the wipe has begun; the session is still set
+  act(() => networkListener?.({ isConnected: false, isInternetReachable: false }));
+  act(() => networkListener?.({ isConnected: true, isInternetReachable: true }));
+  await flush();
+  expect(ingest).toHaveBeenCalledTimes(2);
+  const duringWipe = ingest.mock.calls[1][1] as () => boolean;
+  expect(duringWipe()).toBe(true);
 });
