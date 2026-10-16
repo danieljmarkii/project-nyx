@@ -990,8 +990,12 @@ async function readArrangements(
 /** §5.2's structural composition: the same clinically-floored `detectIntakeDecline`
  *  the dashboard consumes. A live flag REPLACES the adherence line, because a cat
  *  refusing the hydrolyzed diet every day whose owner dutifully logs the offered
- *  bowl otherwise scores a maximally clean trial over a starving animal. */
-async function readIntakeDecline(
+ *  bowl otherwise scores a maximally clean trial over a starving animal.
+ *
+ *  Exported for Get ready (CUL-1093), which states the decline for EVERY pet: a cat
+ *  with no trial stops eating as surely as one on a trial, and `loadDietTrialFacts`
+ *  returns before this read when there is no trial. */
+export async function readIntakeDecline(
   pet: DietTrialFactsPet,
   nowMs: number,
 ): Promise<IntakeDeclineFact[]> {

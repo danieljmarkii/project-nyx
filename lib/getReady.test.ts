@@ -11,6 +11,7 @@ import * as path from 'path';
 import {
   buildWorthRaising,
   INTAKE_TRIGGER_ORDER,
+  getReadyIntakeDeclines,
   localIntakeDeclines,
   WORTH_RAISING_CAP,
 } from './getReady';
@@ -1626,5 +1627,45 @@ describe('EN-10 (CUL-1421) — a Signal row quotes its context lines as its deta
       expect(rows[0].text).toBe(TEXT);
       expect(rows[0].detail).toBeNull();
     }
+  });
+});
+
+// CUL-1093: the pet's own decline read joined with the trial input's, for every pet.
+describe('getReadyIntakeDeclines — every pet, never fewer rows', () => {
+  const low = { trigger: 'consecutive_low' as const, refusedFoodLabel: null, headline: 'Mochi has eaten less than usual today.' };
+  const pate = {
+    trigger: 'refused_normal_food' as const,
+    refusedFoodLabel: 'Chicken Pâté',
+    headline: 'Mochi just turned down Chicken Pâté, which Mochi normally eats.',
+  };
+  const tuna = {
+    trigger: 'refused_normal_food' as const,
+    refusedFoodLabel: 'Tuna Loaf',
+    headline: 'Mochi just turned down Tuna Loaf, which Mochi normally eats.',
+  };
+
+  it('a pet with no trial keeps its own read', () => {
+    expect(getReadyIntakeDeclines([low], null)).toEqual([low]);
+  });
+
+  it('keeps the trial input’s declines when the pet read holds none', () => {
+    expect(getReadyIntakeDeclines([], { intakeDeclineHeadline: low.headline, intakeDeclineFacts: [low, pate] })).toEqual([
+      low,
+      pate,
+    ]);
+  });
+
+  it('states one decline once when both reads hold it, case-folded on the food', () => {
+    const shouted = { ...pate, refusedFoodLabel: ' CHICKEN PÂTÉ ' };
+    expect(getReadyIntakeDeclines([low, pate], { intakeDeclineFacts: [low, shouted] })).toEqual([low, pate]);
+  });
+
+  it('two refusals of different foods are two declines', () => {
+    expect(getReadyIntakeDeclines([pate], { intakeDeclineFacts: [tuna] })).toEqual([pate, tuna]);
+  });
+
+  it('an unknown decline from the trial input is kept beside a known one', () => {
+    const unknown = getReadyIntakeDeclines([low], { intakeDeclineHeadline: 'Something the device saw.' });
+    expect(unknown).toHaveLength(2);
   });
 });

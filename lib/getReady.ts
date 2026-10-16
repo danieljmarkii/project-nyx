@@ -224,6 +224,37 @@ export function localIntakeDeclines(
 }
 
 /**
+ * The declines Get ready states (CUL-1093): the pet's own read, for every pet, joined
+ * by any the trial input holds that the pet's read does not.
+ *
+ * `loadDietTrialFacts` returns before its decline read when the pet has no trial, so
+ * the trial input alone handed this page nothing for a cat that stopped eating with no
+ * trial running. For a trial pet the two are the same detector on the same clock from
+ * two reads, so they agree; when they do not (one read failed soft to `[]`, or a meal
+ * landed between them) the union keeps both rather than choosing. This can add a row
+ * to the page, never remove one.
+ */
+export function getReadyIntakeDeclines(
+  petDeclines: readonly LocalIntakeDecline[],
+  trial: Pick<TrialCardInput, 'intakeDeclineHeadline' | 'intakeDeclineFacts'> | null,
+): LocalIntakeDecline[] {
+  const merged = [...petDeclines];
+  for (const t of localIntakeDeclines(trial)) {
+    if (!merged.some((p) => sameLocalDecline(p, t))) merged.push(t);
+  }
+  return merged;
+}
+
+/** One decline, two reads: the same trigger and, for a refusal, the same food. An
+ *  unknown decline (no trigger) matches only its own sentence, so it is kept. */
+function sameLocalDecline(a: LocalIntakeDecline, b: LocalIntakeDecline): boolean {
+  if (a.trigger === null || b.trigger === null) return a.headline === b.headline;
+  if (a.trigger !== b.trigger) return false;
+  if (a.trigger !== 'refused_normal_food') return true;
+  return (a.refusedFoodLabel ?? '').trim().toLowerCase() === (b.refusedFoodLabel ?? '').trim().toLowerCase();
+}
+
+/**
  * The engine's order for two intake declines — a MIRROR of `rankFindings`' intake
  * comparator (`supabase/functions/generate-signal/detection.ts`, "an outright refusal
  * leads a consecutive-low"). Same value and the same question — which of two intake
