@@ -2,12 +2,19 @@ import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
-import { getGapWarning } from '../lib/signalWatching';
+import { getGapWarningRead } from '../lib/signalWatching';
 
 // The time box on every read, first or re-read (adversarial pass, CUL-1943): a hung re-read
 // after a calm answer must not leave that calm standing while a fresh log may have moved the
 // gaps. The same beat as the Signal's own load skeleton (B-734).
 export const GAP_READ_TIMEOUT_MS = 1500;
+
+// The longest Home goes between gap reads while it stays focused (CUL-1949). The warning
+// can come back with the clock alone (48h of silence drops out of the logged clock), so
+// each read schedules the next at the instant `nextGapChangeMs` names; this ceiling is the
+// backstop for a boundary that function does not know, and keeps the delay inside
+// setTimeout's 32-bit range.
+export const GAP_REREAD_CEILING_MS = 60 * 60_000;
 
 export interface GapWarningRead {
   text: string | null;
@@ -42,6 +49,9 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
   // device, and there is no local restore of an event to bump recordTick.
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
   const [retryTick, setRetryTick] = useState(0);
+  // Bumped by the clock (CUL-1949): no log, sync or focus fires when time alone moves the
+  // answer, and a phone kept awake on Home sees none of those.
+  const [clockTick, setClockTick] = useState(0);
   const [text, setText] = useState<string | null>(null);
   const [answeredKey, setAnsweredKey] = useState<string | null>(null);
   const [failedKey, setFailedKey] = useState<string | null>(null);
@@ -71,6 +81,7 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
       }
       let cancelled = false;
       let settled = false;
+      let clockTimer: ReturnType<typeof setTimeout> | null = null;
       setReadingKey(petId);
       const now = Date.now();
       if (outstandingSince.current?.petId !== petId) outstandingSince.current = { petId, at: now };
@@ -84,10 +95,13 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
         }
       }, Math.max(0, since.at + GAP_READ_TIMEOUT_MS - now));
       (async () => {
+        // A failed read waits out the ceiling: it knows no boundary.
+        let nextChangeMs: number | null = null;
         try {
-          const next = await getGapWarning(petId, Date.now());
+          const next = await getGapWarningRead(petId, Date.now());
+          nextChangeMs = next.nextChangeMs;
           if (!cancelled) {
-            setText(next);
+            setText(next.text);
             setFailedKey(null);
           }
         } catch (e) {
@@ -103,13 +117,20 @@ export function useGapWarning(enabled: boolean): GapWarningRead {
         if (!cancelled) {
           setAnsweredKey(petId);
           setReadingKey(null);
+          const untilChange = nextChangeMs === null ? Infinity : nextChangeMs - Date.now();
+          clockTimer = setTimeout(
+            () => setClockTick((n) => n + 1),
+            Math.max(0, Math.min(untilChange, GAP_REREAD_CEILING_MS)),
+          );
         }
       })();
+      // Blur, unmount, a pet switch and every re-run clear the schedule: one timer at most.
       return () => {
         cancelled = true;
         clearTimeout(timeout);
+        if (clockTimer !== null) clearTimeout(clockTimer);
       };
-    }, [enabled, petId, signalTick, recordTick, hydrationTick, retryTick]),
+    }, [enabled, petId, signalTick, recordTick, hydrationTick, retryTick, clockTick]),
   );
 
   const retry = useCallback(() => setRetryTick((n) => n + 1), []);

@@ -112,6 +112,16 @@ export function detectWatchingGapShortening(
   nowMs: number,
   loggedMs: readonly number[],
 ): number[] | null {
+  return readRun(vomitOnsets, nowMs, loggedMs)?.recent ?? null;
+}
+
+/** The detector's body, with the last onset it anchored the recency guard on (the
+ *  schedule below needs it to find when the guard flips). */
+function readRun(
+  vomitOnsets: readonly OnsetRow[],
+  nowMs: number,
+  loggedMs: readonly number[],
+): { recent: number[]; lastOnset: number } | null {
   const cutoff = nowMs - WATCHING_GAP_WINDOW_DAYS * MS_PER_DAY;
   const windowed = vomitOnsets.filter((e) => Number.isFinite(e.ms) && e.ms >= cutoff && e.ms <= nowMs);
   const episodes = collapseEpisodes(windowed, DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours);
@@ -138,7 +148,56 @@ export function detectWatchingGapShortening(
   const lastOnset = onsets[onsets.length - 1];
   if (loggedHoursSince(lastOnset, nowMs, loggedMs) > WATCHING_GAP_RECENCY_GRACE_FACTOR * latestGap) return null;
 
-  return recent;
+  return { recent, lastOnset };
+}
+
+/**
+ * PURE (CUL-1949): the earliest instant after `nowMs` at which the same rows, with nothing
+ * written, can make the detector answer differently — or null when none can. Home schedules
+ * its next gap re-read here: the answer moves with the clock alone, and the case that
+ * matters is the warning COMING BACK when the trailing silence reaches `QUIET_STRETCH_MS`
+ * and drops out of the logged clock (latest gap 10h, nothing logged: retired at ~20h,
+ * due again at 48h). No log, sync or focus fires at that instant.
+ *
+ * Every time-driven boundary is a candidate, and the list errs wide: an extra one costs one
+ * local read, a missed one costs a late warning.
+ *   - the trailing piece reaching the silence rule (the latest row + `QUIET_STRETCH_MS`);
+ *   - a future-dated row starting to count (an onset at `<= now`, a cut at `< now`);
+ *   - an onset leaving the 180-day era;
+ *   - while a warning is up, the logged clock passing the 2× recency guard (the
+ *     retirement). Float rounding can only make this one late, never early.
+ */
+export function nextGapChangeMs(
+  vomitOnsets: readonly OnsetRow[],
+  nowMs: number,
+  loggedMs: readonly number[],
+): number | null {
+  let next = Infinity;
+  const consider = (ms: number) => {
+    if (Number.isFinite(ms) && ms > nowMs && ms < next) next = ms;
+  };
+  const onsetMs = vomitOnsets.map((e) => e.ms).filter((ms) => Number.isFinite(ms));
+  for (const ms of [...onsetMs, ...loggedMs]) consider(ms + 1);
+  // Only the latest row before now opens the trailing piece (an earlier row's piece is
+  // already closed by a later cut). Both lists, since an onset counts even off the cuts.
+  const latestBefore = (list: readonly number[]) =>
+    list.filter((ms) => Number.isFinite(ms) && ms < nowMs).reduce((a, b) => Math.max(a, b), -Infinity);
+  consider(latestBefore(onsetMs) + QUIET_STRETCH_MS);
+  consider(latestBefore(loggedMs) + QUIET_STRETCH_MS);
+  for (const ms of onsetMs) consider(ms + WATCHING_GAP_WINDOW_DAYS * MS_PER_DAY + 1);
+
+  const run = readRun(vomitOnsets, nowMs, loggedMs);
+  if (run) {
+    const graceMs = WATCHING_GAP_RECENCY_GRACE_FACTOR * run.recent[run.recent.length - 1] * MS_PER_HOUR;
+    const lastCut = loggedMs
+      .filter((ms) => Number.isFinite(ms) && ms > run.lastOnset && ms < nowMs)
+      .reduce((a, b) => Math.max(a, b), run.lastOnset);
+    const loggedBeforeMs = loggedHoursSince(run.lastOnset, lastCut, loggedMs) * MS_PER_HOUR;
+    const retireAt = Math.floor(lastCut + graceMs - loggedBeforeMs) + 1;
+    // Only while the trailing piece still counts; past the silence rule it drops out first.
+    if (retireAt - lastCut < QUIET_STRETCH_MS) consider(retireAt);
+  }
+  return next === Infinity ? null : next;
 }
 
 /** The look's event type — the one row that is never coverage (`hooks/useSignal.ts` and
@@ -160,17 +219,32 @@ export async function readLoggedMs(petId: string, sinceMs: number): Promise<numb
   return rows.map((r) => Date.parse(r.occurred_at)).filter((ms) => Number.isFinite(ms) && ms >= sinceMs);
 }
 
+export interface GapWarningAnswer {
+  text: string | null;
+  /** When the clock alone can next change `text` (`nextGapChangeMs`), or null. */
+  nextChangeMs: number | null;
+}
+
 /**
  * The gap warning's sentence for a pet, from local data, or null when the lane has
- * nothing to escalate. Throws on a read failure: the caller decides what an unanswered
- * read means (C-12), and for an escalate-only row that is never "no warning" said as fact.
+ * nothing to escalate, with the instant the clock alone can next change it (CUL-1949).
+ * Throws on a read failure: the caller decides what an unanswered read means (C-12), and
+ * for an escalate-only row that is never "no warning" said as fact.
  *
  * `nowMs` is passed in (never read here) so the windows stay pure and timezone-pinnable.
  */
-export async function getGapWarning(petId: string, nowMs: number): Promise<string | null> {
+export async function getGapWarningRead(petId: string, nowMs: number): Promise<GapWarningAnswer> {
   const vomitOnsets = await readVomitOnsets(petId);
   const eraStart = nowMs - WATCHING_GAP_WINDOW_DAYS * MS_PER_DAY;
   const loggedMs = await readLoggedMs(petId, eraStart);
   const run = detectWatchingGapShortening(vomitOnsets, nowMs, loggedMs);
-  return run ? watchingGapRowFromHours(WATCHING_GAP_SYMPTOM_LABEL, run) : null;
+  return {
+    text: run ? watchingGapRowFromHours(WATCHING_GAP_SYMPTOM_LABEL, run) : null,
+    nextChangeMs: nextGapChangeMs(vomitOnsets, nowMs, loggedMs),
+  };
+}
+
+/** The sentence alone (`getGapWarningRead` without the schedule). */
+export async function getGapWarning(petId: string, nowMs: number): Promise<string | null> {
+  return (await getGapWarningRead(petId, nowMs)).text;
 }
