@@ -26,7 +26,7 @@ import {
   localUriUnionSql,
   applyColumnUpgrades,
 } from './localSchema';
-import { pendingStatusSql, quarantineCountSql } from './syncQueue';
+import { pendingStatusSql, quarantineCountSql, unsentForSignalSql } from './syncQueue';
 import { uuid } from './utils';
 import { clearTransientFiles } from './transientFiles';
 
@@ -1020,6 +1020,12 @@ export async function getSyncStatus(): Promise<{
     oldestPendingAt: pending?.oldest ?? null,
     quarantinedCount: quarantined?.count ?? 0,
   };
+}
+
+/** Q14 (CUL-772): rows a Signal rebuild must treat as missing from the server (`unsentForSignalSql`). */
+export async function countUnsentForSignal(): Promise<number> {
+  const row = await getDb().getFirstAsync<{ count: number }>(unsentForSignalSql());
+  return row?.count ?? 0;
 }
 
 export async function getMealForEvent(eventId: string): Promise<{
