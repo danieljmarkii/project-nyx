@@ -620,6 +620,35 @@ describe('NamedCompletionCard — Change time', () => {
     alert.mockRestore();
   });
 
+  // The floor wrapper's nested-transaction fallback (lib/incidentFloorQueue.ts runOwingCheck):
+  // BEGIN is refused, the write persists, then the marker throws out of the wrapper. The row
+  // moved, so the regen must still go, which holds only while `landed` is set INSIDE the
+  // wrapper's closure (adversarial review, CUL-1948: set after the wrapper, it survived).
+  it('a moved time whose floor marker throws after the write still schedules the regen', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const floor = jest.spyOn(require('../../lib/incidentFloorQueue'), 'writeOwingFloorCheck')
+      .mockImplementationOnce(async (...a: unknown[]) => {
+        await (a[1] as () => Promise<unknown>)();
+        throw new Error('marker insert failed');
+      });
+    const view = render(<NamedCompletionCard />);
+    seed({}, 'p2');
+    fireEvent.press(view.getByLabelText('Change time of this log'));
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(floor).toHaveBeenCalledTimes(1);
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledTimes(1);
+    expect(mockRegen).toHaveBeenCalledWith('p1');
+    floor.mockRestore();
+    err.mockRestore();
+    alert.mockRestore();
+  });
+
   // The /log flow writes an owner-typed note on both of this card's paths, and
   // updateEvent used to write `notes` unconditionally — so a Change time tap
   // would have silently deleted what the owner typed thirty seconds earlier.

@@ -723,6 +723,35 @@ describe('MealCompletionCard — Change time', () => {
     alert.mockRestore();
   });
 
+  // The floor wrapper's nested-transaction fallback (lib/incidentFloorQueue.ts runOwingCheck):
+  // BEGIN is refused, the write persists, then the marker throws out of the wrapper. The row
+  // moved, so the regen must still go, which holds only while `landed` is set INSIDE the
+  // wrapper's closure (adversarial review, CUL-1948: set after the wrapper, it survived).
+  it('a moved time whose floor marker throws after the write still schedules the regen', async () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const floor = jest.spyOn(require('../../lib/incidentFloorQueue'), 'writeOwingFloorCheck')
+      .mockImplementationOnce(async (...a: unknown[]) => {
+        await (a[1] as () => Promise<unknown>)();
+        throw new Error('marker insert failed');
+      });
+    seedMeal({}, 'p2');
+    const view = render(<MealCompletionCard />);
+    openPicker(view);
+    await act(async () => {
+      fireEvent(view.UNSAFE_getByType('DateTimePicker' as never), 'change', {}, new Date(2026, 5, 7, 9, 30));
+    });
+    await act(async () => { fireEvent.press(view.getByText('Save')); });
+    expect(floor).toHaveBeenCalledTimes(1);
+    expect(updateEvent).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(triggerSignalRegenDebounced).toHaveBeenCalledTimes(1);
+    expect(triggerSignalRegenDebounced).toHaveBeenCalledWith('p1');
+    floor.mockRestore();
+    err.mockRestore();
+    alert.mockRestore();
+  });
+
   it('Cancel writes nothing and leaves the card standing', async () => {
     seedMeal();
     const view = render(<MealCompletionCard />);
