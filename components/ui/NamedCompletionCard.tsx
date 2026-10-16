@@ -6,6 +6,7 @@ import { theme, shadows } from '../../constants/theme';
 import { useMomentStore, completionTone, isNamedDimUp } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
+import { triggerSignalRegenDebounced } from '../../lib/signal';
 import { usePetStore, resolveRecordPetName } from '../../store/petStore';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { useAppActive } from '../../hooks/useAppActive';
@@ -215,6 +216,8 @@ export function NamedCompletionCard() {
     if (!edit) { setPickerOpen(false); return; }
     // Hoisted so the finally below sees it (CUL-1947, adversarial pass 2).
     let changed = false;
+    // Set the moment the write resolves, so the finally can tell a landed write (CUL-1948).
+    let landed = false;
     setSaving(true);
     try {
       // Provenance is PRESERVED on a peek-and-save. Save is live even when the
@@ -226,21 +229,24 @@ export function NamedCompletionCard() {
       // claim", applied to the point).
       changed = edit.occurredAtIso !== payload.occurredAt;
       const source = sourceAfterPointEdit(await getEventSource(payload.eventId), changed);
-      await writeOwingFloorCheck(payload.eventId, () => updateEvent(payload.eventId, {
-        occurred_at: edit.occurredAtIso,
-        // `severity` and `notes` deliberately OMITTED. The /log flow writes an
-        // owner-typed note on both of this card's paths, and this edit is about
-        // the time and nothing else — restating a field you were not told about
-        // is how B-448's leak happened, in the other direction. updateEvent takes
-        // both optional-by-omission for exactly this caller.
-        occurred_at_source: source,
-        // Spread, not a literal: OMITTING the key is what leaves the three B-010
-        // columns exactly as stored (B-448). resolveNamedTimeEdit only supplies a
-        // confidence when the edit legitimately restates them — a "found by" whose
-        // discovery bound moves with the point. Everything else keeps its stored
-        // claim, so a time correction can never promote a row to "seen".
-        ...(edit.confidence ? { confidence: edit.confidence } : {}),
-      }));
+      await writeOwingFloorCheck(payload.eventId, async () => {
+        await updateEvent(payload.eventId, {
+          occurred_at: edit.occurredAtIso,
+          // `severity` and `notes` deliberately OMITTED. The /log flow writes an
+          // owner-typed note on both of this card's paths, and this edit is about
+          // the time and nothing else — restating a field you were not told about
+          // is how B-448's leak happened, in the other direction. updateEvent takes
+          // both optional-by-omission for exactly this caller.
+          occurred_at_source: source,
+          // Spread, not a literal: OMITTING the key is what leaves the three B-010
+          // columns exactly as stored (B-448). resolveNamedTimeEdit only supplies a
+          // confidence when the edit legitimately restates them — a "found by" whose
+          // discovery bound moves with the point. Everything else keeps its stored
+          // claim, so a time correction can never promote a row to "seen".
+          ...(edit.confidence ? { confidence: edit.confidence } : {}),
+        });
+        landed = true;
+      });
       patchInToday(payload.eventId, {
         occurred_at: edit.occurredAtIso,
         ...(edit.confidence
@@ -268,6 +274,12 @@ export function NamedCompletionCard() {
       // throws (the floor marker, adversarial pass 2) must still re-read; an extra re-read
       // after a write that never landed only errs loud. A peek-and-save moved nothing.
       if (changed) useSyncStore.getState().bumpRecordTick();
+      // CUL-1948 — the server half: a moved time moves what generate-signal counted, so the
+      // Signal rebuilds, as app/edit-event.tsx does on the same edit (its `engineInputMoved`).
+      // Gated on `changed` so a peek-and-save spends no daily cap unit (CUL-1087), and on
+      // `landed` so a write that never reached the record asks for nothing; a write that
+      // lands and then throws still asks. The record's own pet, captured at log time.
+      if (changed && landed) triggerSignalRegenDebounced(payload.petId);
       setSaving(false);
     }
   }
