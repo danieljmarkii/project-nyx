@@ -63,19 +63,14 @@ import {
 } from './vetDocuments';
 import { pullReadCopies, pullReadCopyFor } from './readCopy';
 import { useAuthStore } from '../store/authStore';
+import { currentSignOutEpoch } from './signOutEpoch';
 
 type Db = ReturnType<typeof getDb>;
 
-// Sign-out epoch (FR-9 Trust & Safety gate). Bumped on sign-out. An in-flight
-// hydration captures the epoch at the start of the cycle and re-checks it right
-// before each table's write loop (the network fetch beforehand can take
-// seconds — long enough for a sign-out + clearLocalData to land mid-cycle). If
-// the epoch changed, the hydration bails instead of re-populating the local
-// store that the wipe just cleared with the previous account's data.
-let signOutEpoch = 0;
-export function notifySignedOut(): void {
-  signOutEpoch++;
-}
+// Sign-out epoch (FR-9): the counter lives in lib/signOutEpoch.ts so a writer
+// outside this file can read it without importing this graph (CUL-1968). Every
+// hydration and drain here captures it at the start and re-checks before writing.
+export { notifySignedOut, currentSignOutEpoch } from './signOutEpoch';
 
 // Which local meta column the reconcile strategy needs: 'updated_at' for LWW
 // (events, meals, vet_visits), 'none' for pure insert-only (attachments).
@@ -3489,8 +3484,8 @@ export async function hydrateFromCloud(): Promise<void> {
   // FR-9: capture the sign-out epoch; each step re-checks it before writing so a
   // sign-out + local wipe landing mid-cycle aborts the rest instead of
   // re-populating the just-cleared store.
-  const epoch = signOutEpoch;
-  const stale = () => signOutEpoch !== epoch;
+  const epoch = currentSignOutEpoch();
+  const stale = () => currentSignOutEpoch() !== epoch;
 
   const db = getDb();
   // CUL-1214 — whether this cycle READ the two record tables (an empty answer counts).
@@ -3626,15 +3621,15 @@ export async function refreshReadCopyOutcome(eventId: string): Promise<ReadCopyO
   // epoch, it is `skipped`, so nobody starts a watch carrying the previous account's
   // event id into the next one (CUL-1127's class).
   let epoch: number | null = null;
-  const failed = (): ReadCopyOutcome => (epoch !== null && signOutEpoch === epoch ? 'failed' : 'skipped');
+  const failed = (): ReadCopyOutcome => (epoch !== null && currentSignOutEpoch() === epoch ? 'failed' : 'skipped');
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return 'skipped';
     const appSession = useAuthStore.getState().session;
     if (!appSession || appSession.user.id !== session.user.id) return 'skipped';
-    const asked = signOutEpoch;
+    const asked = currentSignOutEpoch();
     epoch = asked;
-    const changed = await pullReadCopyFor(getDb(), eventId, () => signOutEpoch !== asked);
+    const changed = await pullReadCopyFor(getDb(), eventId, () => currentSignOutEpoch() !== asked);
     if (changed === null) return failed();
     return changed > 0 ? 'changed' : 'unchanged';
   } catch (e) {
@@ -3697,14 +3692,14 @@ export function syncPendingCareAcknowledgements(): Promise<void> {
 const CARE_ACK_MAX_PASSES = 5;
 
 async function drainCareAcknowledgementsQueue(): Promise<void> {
-  const epoch = signOutEpoch;
+  const epoch = currentSignOutEpoch();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   const db = getDb();
   const landedPets = new Set<string>();
   try {
     for (let pass = 0; pass < CARE_ACK_MAX_PASSES; pass++) {
-      if (epoch !== signOutEpoch) return;
+      if (epoch !== currentSignOutEpoch()) return;
       const rows = await db.getAllAsync<{
         id: string; pet_id: string; symptom_type: string; source: string; anchor_on: string;
         vet_visit_id: string | null; diet_trial_id: string | null; medication_id: string | null;
@@ -3727,7 +3722,7 @@ async function drainCareAcknowledgementsQueue(): Promise<void> {
           .select('id');
         // A sign-out landed while the request was in the air: this account's rows are gone
         // from the phone, and nothing more may be marked or armed for them.
-        if (epoch !== signOutEpoch) return;
+        if (epoch !== currentSignOutEpoch()) return;
         if (error && error.code !== '23505') {
           if (classifySyncFailure(error) === 'transient') {
             console.warn('[sync] care_acknowledgements push failed (retrying next cycle):', error.message);
@@ -3748,7 +3743,7 @@ async function drainCareAcknowledgementsQueue(): Promise<void> {
       if (landedThisPass === 0) break;
     }
   } finally {
-    if (landedPets.size > 0 && epoch === signOutEpoch) {
+    if (landedPets.size > 0 && epoch === currentSignOutEpoch()) {
       // Required lazily: lib/signal.ts imports this module, so a top-level import would be
       // a cycle. By the time a row has landed, both modules are long loaded.
       // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -3808,7 +3803,7 @@ async function insertQueuedRows<T extends { id: string }>(
   let landed = 0;
   for (const r of rows) {
     const { data, error } = await supabase.from(table).insert(payload(r)).select('id');
-    if (epoch !== signOutEpoch) return 'stop';
+    if (epoch !== currentSignOutEpoch()) return 'stop';
     if (error && error.code !== '23505') {
       if (classifySyncFailure(error) === 'transient') {
         console.warn(`[sync] ${table} push failed (retrying next cycle):`, error.message);
@@ -3831,14 +3826,14 @@ async function insertQueuedRows<T extends { id: string }>(
 const CALL_QUEUE_MAX_PASSES = 5;
 
 async function drainVetCallsQueue(): Promise<void> {
-  const epoch = signOutEpoch;
+  const epoch = currentSignOutEpoch();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   const db = getDb();
   // Re-selects until nothing moves: an edited note or an Undo names its call and is held
   // behind it, so one read sends the call and the next sends what waited on it.
   for (let pass = 0; pass < CALL_QUEUE_MAX_PASSES; pass++) {
-    if (epoch !== signOutEpoch) return;
+    if (epoch !== currentSignOutEpoch()) return;
     const rows = await db.getAllAsync<{
       id: string; pet_id: string; called_on: string; event_id: string; note: string | null;
       supersedes: string | null; withdrawn: number; covers_rank: number | null; covers_from: string | null;
@@ -3860,12 +3855,12 @@ async function drainVetCallsQueue(): Promise<void> {
 }
 
 async function drainVetCallFollowUpsQueue(): Promise<void> {
-  const epoch = signOutEpoch;
+  const epoch = currentSignOutEpoch();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   const db = getDb();
   for (let pass = 0; pass < CALL_QUEUE_MAX_PASSES; pass++) {
-    if (epoch !== signOutEpoch) return;
+    if (epoch !== currentSignOutEpoch()) return;
     const rows = await db.getAllAsync<{
       id: string; pet_id: string; vet_call_id: string | null; event_id: string; reason: string;
       status: string; answer: string | null; worth_it: string | null; due_at: string; expires_at: string;
@@ -3912,7 +3907,7 @@ export function syncPendingCaptureChanges(): Promise<void> {
 }
 
 async function drainCaptureChangesQueue(): Promise<void> {
-  const epoch = signOutEpoch;
+  const epoch = currentSignOutEpoch();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   const db = getDb();
@@ -3924,11 +3919,11 @@ async function drainCaptureChangesQueue(): Promise<void> {
      ORDER BY created_at ASC, rowid ASC LIMIT 50`,
   );
   for (const r of rows) {
-    if (epoch !== signOutEpoch) return;
+    if (epoch !== currentSignOutEpoch()) return;
     const { error } = await supabase.rpc('record_capture_change', {
       p_id: r.id, p_pet_id: r.pet_id, p_change_key: r.change_key, p_first_seen_at: r.first_seen_at,
     });
-    if (epoch !== signOutEpoch) return;
+    if (epoch !== currentSignOutEpoch()) return;
     if (error) {
       if (classifySyncFailure(error) === 'transient') {
         console.warn('[sync] capture_changes push failed (retrying next cycle):', error.message);
@@ -3975,12 +3970,12 @@ export function syncPendingIncidentFloors(): Promise<void> {
 const FLOOR_QUEUE_MAX_PASSES = 3;
 
 async function drainIncidentFloorQueue(): Promise<void> {
-  const epoch = signOutEpoch;
+  const epoch = currentSignOutEpoch();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
   const db = getDb();
   for (let pass = 0; pass < FLOOR_QUEUE_MAX_PASSES; pass++) {
-    if (epoch !== signOutEpoch) return;
+    if (epoch !== currentSignOutEpoch()) return;
     const rows = await db.getAllAsync<{ id: string; pet_id: string; event_id: string; device_claim: string | null }>(
       incidentFloorPushQueueSql(),
     );
@@ -3993,7 +3988,7 @@ async function drainIncidentFloorQueue(): Promise<void> {
       // Before each request, not only after: a sign-out during the previous trigger's
       // marking or arrival must not send the next trigger's id and claim under whatever
       // session follows (the privacy pass on PR-28b; CUL-642's class).
-      if (epoch !== signOutEpoch) return;
+      if (epoch !== currentSignOutEpoch()) return;
       const claim = [...group].reverse().find((r) => r.device_claim !== null)?.device_claim ?? null;
       let parsedClaim: unknown = null;
       try {
@@ -4014,7 +4009,7 @@ async function drainIncidentFloorQueue(): Promise<void> {
       } catch (e) {
         error = e;
       }
-      if (epoch !== signOutEpoch) return;
+      if (epoch !== currentSignOutEpoch()) return;
       if (error) {
         const failure = classifyFloorCheckFailure(error);
         if (failure === 'transient') {
@@ -4038,7 +4033,7 @@ async function drainIncidentFloorQueue(): Promise<void> {
         // request's answer is said after this one's.
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { onFloorLanded } = require('./incidentFloorArrival') as typeof import('./incidentFloorArrival');
-        await onFloorLanded({ triggerEventId: eventId, petId: group[0].pet_id, eventIds: floored, stale: () => epoch !== signOutEpoch });
+        await onFloorLanded({ triggerEventId: eventId, petId: group[0].pet_id, eventIds: floored, stale: () => epoch !== currentSignOutEpoch() });
       }
     }
     if (landed === 0) return;

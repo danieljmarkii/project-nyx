@@ -121,6 +121,7 @@ function defaultDrainDeps(): DrainDeps {
       const { ingestCaptureInbox } = require('./captureInbox');
       return ingestCaptureInbox(
         fencedAllowlist(new Set(usePetStore.getState().pets.map((p) => p.id)), fenced),
+        fenced,
       );
     },
     // reverse-path-ok: this is a ROLLBACK of captures the app just replayed on the
@@ -164,9 +165,10 @@ function defaultDrainDeps(): DrainDeps {
 // `ingestCaptureRecords` asks `has()` once per record, with awaits between, so a
 // view whose `has()` goes false at the fence stops at the next record. `size` stays
 // the snapshot's: an empty set reads as "pets not loaded" and defers everything,
-// which is the same outcome by a different reason. RESIDUAL (CUL-1968): the record
-// whose `has()` already passed when the fence lands completes ALL its writes (its
-// food lookup may still be awaiting) and still queues its pet's Signal regen.
+// which is the same outcome by a different reason. The record whose `has()` already
+// passed when the fence lands is stopped inside the ingest itself: the same `fenced`
+// is handed to `ingestCaptureInbox`, which re-reads it before every write and arms
+// no Signal regen once it trips (CUL-1968). This view stays as the outer belt.
 // Only `size` and `has` are what the ingest reads; the rest of the Set surface is
 // here for the type, and the ES2025 set-algebra methods are not implemented.
 export function fencedAllowlist(

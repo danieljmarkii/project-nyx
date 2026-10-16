@@ -442,9 +442,14 @@ describe('a drain already running at sign-out stops at its next step', () => {
     try {
       await applyOutbox({ pending: [], revoked: [] }, undefined, widgetPublishEpoch());
       const allowlist = spy.mock.calls[0][0];
+      // CUL-1968: the same fence reaches the ingest itself, which re-reads it before
+      // every write, so the record whose `has()` already passed stops too.
+      const fenced = spy.mock.calls[0][1] as () => boolean;
       expect(allowlist.has(PET)).toBe(true);
+      expect(fenced()).toBe(false);
       fenceWidgetPublish();
       expect(allowlist.has(PET)).toBe(false);
+      expect(fenced()).toBe(true);
     } finally {
       spy.mockRestore();
     }
