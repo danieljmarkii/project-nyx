@@ -15,12 +15,14 @@ import { PrimaryButton } from './ui/PrimaryButton';
 //
 // The words (nyx-voice Pattern 8): say plainly that the app went wrong, not the owner;
 // say what is safe without promising what may not be (an entry mid-save when the app
-// failed may not have landed, so the line is about what was already saved, and it names
-// no place, since a new phone's record may still be on the server); point at
+// failed may not have landed, so the line is about what was already saved, it names no
+// place, since a new phone's record may still be on the server, and the next line asks
+// the owner to check the entry they were in the middle of, PM 2026-10-16); point at
 // the one action; and since this is a health app, say the vet does not need it.
 export const CRASH_COPY = {
   title: 'Culprit hit a problem',
   body: 'Something went wrong on our side, not yours. Everything you had already saved is safe.',
+  logging: 'If you were logging something, check it saved.',
   vet: 'If your pet needs care right now, call your vet. You don’t need the app for that.',
   action: 'Try again',
   hint: 'If this keeps happening, close Culprit and open it again.',
@@ -46,6 +48,7 @@ export function CrashScreen({ onRetry }: Props) {
           {CRASH_COPY.title}
         </ThemedText>
         <ThemedText style={styles.body}>{CRASH_COPY.body}</ThemedText>
+        <ThemedText style={styles.body}>{CRASH_COPY.logging}</ThemedText>
         <ThemedText style={styles.body}>{CRASH_COPY.vet}</ThemedText>
         <PrimaryButton
           label={CRASH_COPY.action}

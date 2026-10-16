@@ -11,7 +11,15 @@ import { UNHANDLED_REJECTION_SCREEN_ENABLED } from '../constants/flags';
 //
 // WHAT CHANGES FOR AN OWNER. A fatal JS error used to abort the app (a native crash,
 // the white flash and back to the home screen); now it shows the screen, whose one
-// button remounts the tree. A non-fatal report still goes to the handler that was there
+// button remounts the tree.
+//
+// A REPEAT CRASHES FOR REAL (PM ruling (b), 2026-10-16). Catching every crash would
+// leave App Store Connect with no crash report at all, and D9 counts on those reports
+// until Sentry; a crash that comes straight back after "Try again" would also loop the
+// owner on the screen. So a crash within REPEAT_CRASH_WINDOW_MS of "Try again" goes to
+// the handler React Native installed, which aborts the app in a release build: the
+// phone files its crash report, and the relaunch starts with nothing in memory. A
+// one-off crash still shows the screen and files nothing. A non-fatal report still goes to the handler that was there
 // before, unchanged. An unhandled rejection in a release build was silent (Hermes only
 // tracks rejections in __DEV__), and it stays so until UNHANDLED_REJECTION_SCREEN_ENABLED
 // is ruled on (`constants/flags.ts` says why it is off).
@@ -40,7 +48,31 @@ export interface CrashHandlerDeps {
   rejectionScreen: boolean;
 }
 
+/** How soon after "Try again" a crash counts as the same failure coming back. */
+export const REPEAT_CRASH_WINDOW_MS = 60_000;
+
 let installed = false;
+// The handler that was there before ours: React Native's own, which reports a fatal
+// error to the native side and, in a release build, aborts the app.
+let nativeHandler: GlobalHandler | null = null;
+
+/**
+ * The one decision every crash door goes through. A first crash shows the screen; a
+ * crash within the window after "Try again" is handed to the native handler, so the
+ * app really crashes and the phone files its report. Without a native handler (tests,
+ * no ErrorUtils), the screen is the only answer.
+ */
+export function handleCrash(error: unknown, now: number = Date.now()): void {
+  const repeat = isRepeatPending(now);
+  useCrashStore.getState().reportCrash();
+  if (repeat && nativeHandler) nativeHandler(error, true);
+}
+
+// True when a crash now would be a repeat: the owner tapped "Try again" inside the window.
+function isRepeatPending(now: number = Date.now()): boolean {
+  const { retriedAt } = useCrashStore.getState();
+  return retriedAt !== null && now - retriedAt < REPEAT_CRASH_WINDOW_MS;
+}
 
 function defaultDeps(): CrashHandlerDeps {
   const g = globalThis as { ErrorUtils?: ErrorUtilsLike; HermesInternal?: HermesLike };
@@ -63,13 +95,15 @@ export function installCrashHandlers(deps: CrashHandlerDeps = defaultDeps()): vo
 
   if (errorUtils) {
     const previous = errorUtils.getGlobalHandler();
+    nativeHandler = previous;
     errorUtils.setGlobalHandler((error, isFatal) => {
       if (isFatal) {
-        useCrashStore.getState().reportCrash();
         // In development the red box still shows, so the developer sees the stack. In a
-        // release build the previous handler would abort the app, which is the white
-        // screen this replaces, so it is not called.
-        if (isDev) previous(error, isFatal);
+        // release build the previous handler would abort the app, so a first crash
+        // does not call it. A repeat skips this line because handleCrash calls the same
+        // handler, and one error should not show the red box twice.
+        if (isDev && !isRepeatPending()) previous(error, isFatal);
+        handleCrash(error);
         return;
       }
       previous(error, isFatal);
@@ -83,7 +117,7 @@ export function installCrashHandlers(deps: CrashHandlerDeps = defaultDeps()): vo
   hermes?.enablePromiseRejectionTracker?.({
     allRejections: true,
     onUnhandled: (_id, rejection) => {
-      useCrashStore.getState().reportCrash();
+      handleCrash(rejection);
       // This replaces React Native's own development tracker, so keep the rejection
       // visible in the console there. A release build logs nothing.
       if (isDev) console.warn('Unhandled promise rejection', rejection);
@@ -95,4 +129,5 @@ export function installCrashHandlers(deps: CrashHandlerDeps = defaultDeps()): vo
 /** Test seam: forget that the handlers were installed. */
 export function resetCrashHandlersForTest(): void {
   installed = false;
+  nativeHandler = null;
 }

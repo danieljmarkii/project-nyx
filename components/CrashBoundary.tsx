@@ -1,5 +1,6 @@
 import { Component, Fragment, ReactNode } from 'react';
 import { useCrashStore } from '../store/crashStore';
+import { handleCrash } from '../lib/crashHandlers';
 import { CrashScreen } from './CrashScreen';
 
 // The root of the app's crash handling (CUL-1841). It draws the one designed screen
@@ -9,12 +10,13 @@ import { CrashScreen } from './CrashScreen';
 //
 // "Try again" clears the flag and remounts the whole tree under a new key, so every
 // effect runs from the start: the auth listener, the sync, the cold-start routing. A
-// remount is the closest thing to a relaunch the JS side can do without a reload.
+// remount is the closest thing to a relaunch the JS side can do without a reload. A
+// crash that comes back soon after it really crashes the app (`handleCrash`), so the
+// owner never loops on this screen and the phone files a crash report.
 
 interface InnerProps {
   crashed: boolean;
-  onReport: () => void;
-  onClear: () => void;
+  onRetry: (now: number) => void;
   children: ReactNode;
 }
 
@@ -30,13 +32,14 @@ class CrashBoundaryInner extends Component<InnerProps, InnerState> {
     return { caught: true };
   }
 
-  componentDidCatch(): void {
-    // The error itself is dropped on purpose: nothing is collected.
-    this.props.onReport();
+  componentDidCatch(error: unknown): void {
+    // The error is passed on only to decide first-or-repeat, and on a repeat to the
+    // native handler; nothing here keeps or sends it.
+    handleCrash(error);
   }
 
   private retry = (): void => {
-    this.props.onClear();
+    this.props.onRetry(Date.now());
     this.setState((s) => ({ caught: false, generation: s.generation + 1 }));
   };
 
@@ -50,10 +53,9 @@ class CrashBoundaryInner extends Component<InnerProps, InnerState> {
 
 export function CrashBoundary({ children }: { children: ReactNode }) {
   const crashed = useCrashStore((s) => s.crashed);
-  const reportCrash = useCrashStore((s) => s.reportCrash);
-  const clearCrash = useCrashStore((s) => s.clearCrash);
+  const retry = useCrashStore((s) => s.retry);
   return (
-    <CrashBoundaryInner crashed={crashed} onReport={reportCrash} onClear={clearCrash}>
+    <CrashBoundaryInner crashed={crashed} onRetry={retry}>
       {children}
     </CrashBoundaryInner>
   );

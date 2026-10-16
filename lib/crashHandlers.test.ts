@@ -1,6 +1,11 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { installCrashHandlers, resetCrashHandlersForTest } from './crashHandlers';
+import {
+  REPEAT_CRASH_WINDOW_MS,
+  handleCrash,
+  installCrashHandlers,
+  resetCrashHandlersForTest,
+} from './crashHandlers';
 import { useCrashStore } from '../store/crashStore';
 import { UNHANDLED_REJECTION_SCREEN_ENABLED } from '../constants/flags';
 
@@ -32,7 +37,7 @@ function fakeHermes() {
 
 beforeEach(() => {
   resetCrashHandlersForTest();
-  useCrashStore.getState().clearCrash();
+  useCrashStore.setState({ crashed: false, retriedAt: null });
 });
 
 describe('the global handler', () => {
@@ -81,6 +86,54 @@ describe('the global handler', () => {
   });
 });
 
+describe('a repeat crash really crashes (PM ruling (b), 2026-10-16)', () => {
+  const T0 = 1_000_000;
+
+  it('a first crash shows the screen and never reaches the native handler', () => {
+    const previous = jest.fn();
+    installCrashHandlers({ errorUtils: fakeErrorUtils(previous), isDev: false, rejectionScreen: false });
+    handleCrash(new Error('first'), T0);
+    expect(useCrashStore.getState().crashed).toBe(true);
+    expect(previous).not.toHaveBeenCalled();
+  });
+
+  it('a crash inside the window after Try again goes to the native handler as fatal', () => {
+    const previous = jest.fn();
+    installCrashHandlers({ errorUtils: fakeErrorUtils(previous), isDev: false, rejectionScreen: false });
+    useCrashStore.getState().retry(T0);
+    const err = new Error('again');
+    handleCrash(err, T0 + REPEAT_CRASH_WINDOW_MS - 1);
+    expect(previous).toHaveBeenCalledTimes(1);
+    expect(previous).toHaveBeenCalledWith(err, true);
+  });
+
+  it('a crash after the window is a first crash again', () => {
+    const previous = jest.fn();
+    installCrashHandlers({ errorUtils: fakeErrorUtils(previous), isDev: false, rejectionScreen: false });
+    useCrashStore.getState().retry(T0);
+    handleCrash(new Error('later'), T0 + REPEAT_CRASH_WINDOW_MS);
+    expect(previous).not.toHaveBeenCalled();
+    expect(useCrashStore.getState().crashed).toBe(true);
+  });
+
+  it('a repeat fatal through the global handler reaches the native handler once, in development too', () => {
+    const previous = jest.fn();
+    const eu = fakeErrorUtils(previous);
+    installCrashHandlers({ errorUtils: eu, isDev: true, rejectionScreen: false });
+    useCrashStore.getState().retry(Date.now());
+    const err = new Error('again');
+    eu.fire(err, true);
+    expect(previous).toHaveBeenCalledTimes(1);
+    expect(previous).toHaveBeenCalledWith(err, true);
+  });
+
+  it('with no native handler installed, a repeat still shows the screen', () => {
+    useCrashStore.getState().retry(T0);
+    expect(() => handleCrash(new Error('again'), T0 + 1)).not.toThrow();
+    expect(useCrashStore.getState().crashed).toBe(true);
+  });
+});
+
 describe('the unhandled rejection tracker', () => {
   it('tracks every rejection and an unhandled one sets the crash flag', () => {
     const hermes = fakeHermes();
@@ -126,6 +179,7 @@ describe('nothing leaves the phone (D9 (a), CUL-1825)', () => {
     '../constants/flags',
     '../constants/theme',
     './CrashScreen',
+    '../lib/crashHandlers',
     './ui/ThemedText',
     './ui/PrimaryButton',
   ]);

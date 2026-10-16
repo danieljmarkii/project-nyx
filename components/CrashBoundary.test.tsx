@@ -20,7 +20,7 @@ function Child() {
 beforeEach(() => {
   shouldThrow = false;
   resetCrashHandlersForTest();
-  useCrashStore.getState().clearCrash();
+  useCrashStore.setState({ crashed: false, retriedAt: null });
 });
 
 it('renders the tree when nothing has failed', () => {
@@ -44,6 +44,7 @@ it('a thrown render error lands on the designed screen, and Try again remounts t
   expect(screen.getByTestId('crash-screen')).toBeTruthy();
   expect(screen.getByText(CRASH_COPY.title)).toBeTruthy();
   expect(screen.getByText(CRASH_COPY.vet)).toBeTruthy();
+  expect(screen.getByText(CRASH_COPY.logging)).toBeTruthy();
   expect(useCrashStore.getState().crashed).toBe(true);
 
   shouldThrow = false;
@@ -97,5 +98,28 @@ it('the screen shows no part of the error', () => {
     </CrashBoundary>,
   );
   expect(screen.queryByText(/render failed/)).toBeNull();
+  consoleError.mockRestore();
+});
+
+it('a render error that comes straight back after Try again really crashes the app', () => {
+  const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+  const native = jest.fn();
+  installCrashHandlers({
+    errorUtils: { getGlobalHandler: () => native, setGlobalHandler: () => {} },
+    isDev: false,
+    rejectionScreen: false,
+  });
+  shouldThrow = true;
+  render(
+    <CrashBoundary>
+      <Child />
+    </CrashBoundary>,
+  );
+  expect(native).not.toHaveBeenCalled();
+
+  // Still broken: Try again remounts the child, which throws again inside the window.
+  fireEvent.press(screen.getByTestId('crash-screen-retry'));
+  expect(native).toHaveBeenCalledTimes(1);
+  expect(native.mock.calls[0][1]).toBe(true);
   consoleError.mockRestore();
 });
