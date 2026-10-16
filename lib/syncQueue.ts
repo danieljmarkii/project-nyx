@@ -649,6 +649,37 @@ export function pendingStatusSql(queues: readonly SyncQueue[] = SYNC_QUEUES): st
 }
 
 /**
+ * The queues whose drain sends a row only once its parent EVENT has landed
+ * (`JOIN events e ON e.id = <t>.event_id … AND e.synced = 1` in lib/sync.ts). Unlike
+ * `parentLandedSql`, a refused parent holds these for good: the event never reaches
+ * `synced = 1`, so the child is never sent, never refused and never quarantined. A runtime
+ * list, so syncQueue.unsentForSignal.test.ts can check it against the drains.
+ */
+export const EVENT_GATED_QUEUES = ['meals', 'weight_checks', 'looks'] as const;
+
+/**
+ * Q14 (CUL-772): "does this device hold rows the server has not received and still could?"
+ * — the flag a Signal rebuild sends generate-signal, which then takes the 1-hour expiry.
+ * `pendingStatusSql`'s rows (every queue, any age, not refused) LESS the children an
+ * event-gated drain holds behind a refused parent: no retry moves them, so counting them
+ * would hold every Signal at the hour for good and spend the per-pet cap of 12 a day, which
+ * delays a later red flag to UTC midnight (the harm the ruling's refused-row exception
+ * exists to prevent; adversarial review, this PR). The refused parent is counted by
+ * `quarantineCountSql` and surfaced there, so the pair is not lost.
+ */
+export function unsentForSignalSql(queues: readonly SyncQueue[] = SYNC_QUEUES): string {
+  const gated: readonly string[] = EVENT_GATED_QUEUES;
+  const arms = queues.map((q) => {
+    const heldForGood = gated.includes(q.table)
+      ? ` AND NOT EXISTS (SELECT 1 FROM events gate_e WHERE gate_e.id = ${q.table}.event_id` +
+        ` AND gate_e.synced = 0 AND gate_e.sync_error IS NOT NULL)`
+      : '';
+    return `SELECT 1 AS unsent FROM ${q.table} WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}${heldForGood}`;
+  });
+  return 'SELECT COUNT(*) AS count FROM (\n  ' + arms.join('\n  UNION ALL\n  ') + '\n)';
+}
+
+/**
  * "How many rows have we given up on?" Rows the owner still holds locally but
  * which will not move without an edit. Surfaced separately because the honest
  * copy is different: pending means "waiting for a connection", quarantined means

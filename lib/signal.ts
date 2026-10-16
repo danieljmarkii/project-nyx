@@ -16,7 +16,7 @@
 import { supabase } from './supabase';
 import { useSyncStore } from '../store/syncStore';
 import { syncPendingEvents, syncPendingMeals } from './sync';
-import { getSyncStatus } from './db';
+import { countUnsentForSignal } from './db';
 
 // ── Client mirror of the cached finding shape ────────────────────────────────
 // The jsonb column ai_signals.findings is the contract. These types mirror the
@@ -903,16 +903,16 @@ function startRegen(
 
 // Q14 (CUL-772): whether this device still holds rows the server has not received, read AFTER
 // the push. A push that resolved only says a drain ran, not that a row landed, so the rebuild
-// cannot assume the server's copy is whole. The count is `pendingStatusSql`'s: every queue,
-// any age, `sync_error IS NULL`. Rows the server refused are left out on purpose: no retry
-// moves them, so counting them would hold every Signal at the 1-hour expiry and spend the
-// per-pet cap; they are the stuck-row banner's (Q6). Device wide, not per pet, because the
+// cannot assume the server's copy is whole. The count is `unsentForSignalSql`'s: every queue,
+// any age, `sync_error IS NULL`. Rows the server refused, and the children a drain holds
+// behind a refused event, are left out on purpose: no retry moves them, so counting them would
+// hold every Signal at the 1-hour expiry and spend the per-pet cap; they are the stuck-row
+// banner's (Q6). Device wide, not per pet, because the
 // queue is global: an unsent row for one pet shortens every pet's expiry (the louder error).
 // A failed read says yes, for the same reason.
 export async function hasUnsentRows(): Promise<boolean> {
   try {
-    const { pendingCount } = await getSyncStatus();
-    return pendingCount > 0;
+    return (await countUnsentForSignal()) > 0;
   } catch {
     return true;
   }
