@@ -26,3 +26,15 @@ export const SOCIAL_AUTH_ENABLED = false;
 // with a one-way flip, and a server-flippable flag would imply a rollback posture
 // we don't want on a recovery path.
 export const PASSWORD_RECOVERY_ENABLED = true;
+
+// UNHANDLED_REJECTION_SCREEN_ENABLED — whether a promise rejection nobody handled lands on
+// the crash screen (CUL-1841). The other two crash doors (a render error, a fatal global
+// error) are always on: before this they aborted the app.
+//
+// OFF until the PM rules. A rejection in a release build has always been silent, and about
+// seventy fire-and-forget calls in the app (`void flushDraft()` on the vet visit, the
+// Promise.all reads behind it) would each, on a single failure, replace the whole tree with
+// the crash screen and drop whatever the owner had half typed. Off keeps today's behaviour
+// exactly: the tracker is not installed, so React Native's own development warning stays
+// and a release build stays silent. The mechanism is built and tested with this on.
+export const UNHANDLED_REJECTION_SCREEN_ENABLED = false;

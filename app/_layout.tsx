@@ -44,6 +44,8 @@ import { FlightHost } from '../components/motion/FlightHost';
 import { startReducedMotionRead, useReducedMotionStore } from '../store/reducedMotionStore';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { recordRouteOptions } from '../lib/recordRoute';
+import { installCrashHandlers } from '../lib/crashHandlers';
+import { CrashBoundary } from '../components/CrashBoundary';
 
 // Hold the native splash until the font gate releases, so the first painted
 // frame is already in the v1.2 faces — no system→custom flash, and no blank
@@ -57,7 +59,22 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 // `useReducedMotion()` in the tree then reads the real value on its first render.
 startReducedMotionRead();
 
+// CUL-1841: a fatal global error and an unhandled promise rejection land on the one
+// designed crash screen, installed at module load so a failure during the first render
+// is already covered. Nothing about the error leaves the phone.
+installCrashHandlers();
+
+// The boundary sits above everything this file renders, so a render error in the root
+// layout itself lands on the same screen as one in any route below it.
 export default function RootLayout() {
+  return (
+    <CrashBoundary>
+      <RootLayoutTree />
+    </CrashBoundary>
+  );
+}
+
+function RootLayoutTree() {
   const { setSession, setLoading } = useAuthStore();
   const { isOnboarded } = usePetStore();
 
