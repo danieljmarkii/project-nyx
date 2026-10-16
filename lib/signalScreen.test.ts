@@ -641,7 +641,8 @@ describe('what the screen may never say', () => {
     // `photoless` holds one call per episode with no photo (CUL-1200), never a summary.
     // `tracksPattern` (CUL-1515) is a fact about the FINDING, not about any read: it decides
     // only whether a tile's own `logged` read is drawn "Part of a pattern".
-    expect(Object.keys(m.episodes ?? {}).sort()).toEqual(['countLine', 'photographedCount', 'photoless', 'tiles', 'total', 'tracksPattern', 'weeks']);
+    // `carriedIn` (CUL-1958) counts a bout that ran into the window, never a read.
+    expect(Object.keys(m.episodes ?? {}).sort()).toEqual(['carriedIn', 'countLine', 'photographedCount', 'photoless', 'tiles', 'total', 'tracksPattern', 'weeks']);
     expect(typeof m.episodes?.tracksPattern).toBe('boolean');
   });
 });

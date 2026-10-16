@@ -36,7 +36,7 @@ function episodes(localUri: string | null): SignalScreenEpisodes {
     verdict: 'worth_a_call',
     photo: { localUri, storagePath: 'pet/ev-1/photo.jpg' },
   };
-  return { total: 1, photographedCount: 1, weeks: 1, countLine: '1, one photographed', tiles: [tile], photoless: [], tracksPattern: false };
+  return { total: 1, carriedIn: 0, photographedCount: 1, weeks: 1, countLine: '1, one photographed', tiles: [tile], photoless: [], tracksPattern: false };
 }
 
 function photoUri(view: ReturnType<typeof render>): string | undefined {
