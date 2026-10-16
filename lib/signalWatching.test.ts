@@ -392,7 +392,21 @@ describe('nextGapChangeMs (CUL-1949)', () => {
 
   it('a future-dated row is a boundary the moment it starts to count', () => {
     const future = NOW + 2 * HOUR;
+    // A log becomes a cut just after its instant; a vomit counts AT it.
     expect(nextGapChangeMs(onsets, NOW, [...onsetMs, future])).toBe(future + 1);
+    expect(nextGapChangeMs([...onsets, { ms: future, confidence: null }], NOW, onsetMs)).toBe(future);
+  });
+
+  it('the trailing piece is anchored on the EPISODE onset, even when a folded-in vomit is not a cut', () => {
+    // Gaps 200h, 100h, 20h; a second vomit 2h into the last episode (one episode), and no
+    // logged rows at all: the guard's piece starts at the episode onset D, so 48h from D.
+    const D = NOW - 41 * HOUR;
+    const rows = [D - 320 * HOUR, D - 120 * HOUR, D - 20 * HOUR, D, D + 2 * HOUR].map((ms) => ({ ms, confidence: null }));
+    expect(detectWatchingGapShortening(rows, NOW, [])).toBeNull();
+    const at = nextGapChangeMs(rows, NOW, [])!;
+    expect(at).toBe(D + QUIET_STRETCH_MS);
+    expect(detectWatchingGapShortening(rows, at - 1, [])).toBeNull();
+    expect(detectWatchingGapShortening(rows, at, [])).not.toBeNull();
   });
 
   it('an onset leaving the 180-day era is a boundary', () => {

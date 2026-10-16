@@ -177,13 +177,22 @@ export function nextGapChangeMs(
     if (Number.isFinite(ms) && ms > nowMs && ms < next) next = ms;
   };
   const onsetMs = vomitOnsets.map((e) => e.ms).filter((ms) => Number.isFinite(ms));
-  for (const ms of [...onsetMs, ...loggedMs]) consider(ms + 1);
-  // Only the latest row before now opens the trailing piece (an earlier row's piece is
-  // already closed by a later cut). Both lists, since an onset counts even off the cuts.
-  const latestBefore = (list: readonly number[]) =>
-    list.filter((ms) => Number.isFinite(ms) && ms < nowMs).reduce((a, b) => Math.max(a, b), -Infinity);
-  consider(latestBefore(onsetMs) + QUIET_STRETCH_MS);
-  consider(latestBefore(loggedMs) + QUIET_STRETCH_MS);
+  // A future-dated onset counts AT its instant (`<= now`), a cut just after it (`< now`).
+  for (const ms of onsetMs) consider(ms);
+  for (const ms of loggedMs) consider(ms + 1);
+  // Only the latest piece start before now opens the trailing piece (an earlier one is
+  // already closed by a later cut): the latest cut, or the last EPISODE's onset, which is
+  // the guard's anchor even when a vomit folded into it is not among the cuts.
+  const latestCut = loggedMs
+    .filter((ms) => Number.isFinite(ms) && ms < nowMs)
+    .reduce((a, b) => Math.max(a, b), -Infinity);
+  consider(latestCut + QUIET_STRETCH_MS);
+  const cutoff = nowMs - WATCHING_GAP_WINDOW_DAYS * MS_PER_DAY;
+  const episodes = collapseEpisodes(
+    vomitOnsets.filter((e) => Number.isFinite(e.ms) && e.ms >= cutoff && e.ms <= nowMs),
+    DEFAULT_MEAL_TIMING_CONFIG.episodeGapHours,
+  );
+  if (episodes.length > 0) consider(episodes[episodes.length - 1].ms + QUIET_STRETCH_MS);
   for (const ms of onsetMs) consider(ms + WATCHING_GAP_WINDOW_DAYS * MS_PER_DAY + 1);
 
   const run = readRun(vomitOnsets, nowMs, loggedMs);
