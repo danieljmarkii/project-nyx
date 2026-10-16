@@ -8,6 +8,8 @@
 
 import { buildLine, buildMonthModel, carryMonthRoses, daysInMonth, monthA11yLabel, monthCallDays, monthOfKey, shiftMonth, MONTH_WEEKS, type MonthCallRead, type MonthPhotoRead } from './monthModel';
 import { dayKeyFromIndex, localDayIndexOf, toLocalDayKey } from './utils';
+import { boutSpansOf, episodeDaysOf } from './chartModels';
+import { weeklyBarsA11yLabel, weeklyCarriedLine } from './chartCopy';
 
 const idx = (key: string): number => {
   const i = localDayIndexOf(key);
@@ -630,5 +632,33 @@ describe('carryMonthRoses — a call with no photo is carried the same way (CUL-
   it('an ANSWERED re-read stands whole: a call the record no longer holds is gone', () => {
     const next: Facts = { photoDays: [], photoReads: [], callReads: [], readEvents: [{ eventId: 'cat-vomit', day: '2026-09-03' }] };
     expect(carryMonthRoses(prev, next)).toBe(next);
+  });
+});
+
+describe('Q12 (CUL-1539): the bar over a week a bout carries into says so', () => {
+  // The issue's repro: a bout from Sat Sep 12 at 23:00, 30 rows 2h50m apart, read on Sep 17.
+  const keyOf = (ms: number) => toLocalDayKey(new Date(ms));
+  const T0 = new Date(2026, 8, 12, 23, 0).getTime();
+  const run = Array.from({ length: 30 }, (_, i) => ({ ms: T0 + i * (170 * 60_000) }));
+
+  it('the bar still counts onsets (0 for the week of Sep 13) and names the bout still going', () => {
+    const m = septModel({ episodeDays: episodeDaysOf(run, keyOf), boutSpans: boutSpansOf(run, keyOf) });
+    const sep13 = m.weekly.weeks.findIndex((w) => w.startKey === '2026-09-13');
+    expect(m.weekly.weeks[sep13].count).toBe(0);
+    expect(m.weekly.weeks[sep13 - 1].count).toBe(1);
+    expect(m.weekly.weeks[sep13].carriedIn).toBe(true);
+    expect(weeklyCarriedLine(m.weekly)).toBe('A bout that began earlier continues into the week of Sep 13');
+    expect(weeklyBarsA11yLabel(m.weekly, 'vomiting')).toContain('A bout that began earlier continues into the week of Sep 13.');
+  });
+
+  it('a bout beginning inside the week reads as before', () => {
+    const m = septModel({ episodeDays: ['2026-09-14'], boutSpans: [{ startDay: '2026-09-14', endDay: '2026-09-15' }] });
+    expect(m.weekly.weeks.some((w) => w.carriedIn)).toBe(false);
+    expect(weeklyCarriedLine(m.weekly)).toBeNull();
+  });
+
+  it('a lens with no bout spans (an entry lens) marks no week', () => {
+    const m = septModel();
+    expect(m.weekly.weeks.some((w) => w.carriedIn)).toBe(false);
   });
 });

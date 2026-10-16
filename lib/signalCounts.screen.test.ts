@@ -28,7 +28,7 @@ function episode(dayKey: string, hour = 9): SignalScreenEpisode {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
   if (!m) throw new Error(dayKey);
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), hour, 11);
-  return { eventId: `ev-${dayKey}-${hour}`, occurredAt: d.toISOString(), dayKey, minutesSinceMeal: null, photo: null };
+  return { eventId: `ev-${dayKey}-${hour}`, occurredAt: d.toISOString(), dayKey, endDayKey: dayKey, minutesSinceMeal: null, photo: null };
 }
 
 const ENGINE_TEXT = 'The engine’s own sentence.';
@@ -258,7 +258,7 @@ describe('the third pass — the earlier window follows the axis that rose', () 
 describe('countsMayCompose', () => {
   it('needs every stated number to be at least the engine’s, and something to state', () => {
     const f = worsening({ currentCount: 2, currentDays: 2 });
-    const weekly = (eps: string[]) => signalWeeks({ finding: f, today: TODAY, trial: null, episodeDays: eps, loggedDays: [] });
+    const weekly = (eps: string[]) => signalWeeks({ finding: f, today: TODAY, trial: null, episodeDays: eps, boutSpans: [], loggedDays: [] });
     const at = (eps: string[]) => signalCountsOf(f, weekly(eps), eps, TODAY);
     expect(countsMayCompose(f, at([shift(TODAY, -1), shift(TODAY, -2)]), { maskTouched: false, elapsedDays: 0 })).toBe(true);
     expect(countsMayCompose(f, at([shift(TODAY, -1), shift(TODAY, -1)]), { maskTouched: false, elapsedDays: 0 })).toBe(false); // 2 episodes, 1 day

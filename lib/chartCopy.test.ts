@@ -10,6 +10,7 @@ import {
   markWord,
   timingLanesA11yLabel,
   weeklyBarsA11yLabel,
+  weeklyCarriedLine,
   weeklyOutsideLine,
   weightDotsA11yLabel,
   weightWord,
@@ -470,5 +471,50 @@ describe('dayMarkA11yLabel — logged is not answered, and a refusal is named (C
     expect(dayMarkA11yLabel(facts({ coverage: 'left_some', leftSomeMeals: 1 }), 'vomiting')).toBe(`${date}, logged, no vomiting, a meal left unfinished`);
     // With the Meals layer off the caller passes no split: the coverage's word stands.
     expect(dayMarkA11yLabel(facts({ coverage: 'left_some' }), 'vomiting')).toBe(`${date}, logged, no vomiting, a meal left unfinished`);
+  });
+});
+
+describe('weeklyCarriedLine (Q12, CUL-1539 / CUL-1791)', () => {
+  // 2026-09-20 is a Sunday. A bout from Sat Aug 29 ran to Mon Sep 14: three weeks carried into.
+  const calendar = weeklyBuckets({
+    episodeDays: ['2026-08-29'],
+    boutSpans: [{ startDay: '2026-08-29', endDay: '2026-09-14' }],
+    loggedDays: [],
+    weeksEnding: '2026-09-22',
+    today: '2026-09-22',
+    weeks: 4,
+  });
+
+  it('names every week a bout carries into, "earlier" and never "the week before" (true on its third week too)', () => {
+    expect(weeklyCarriedLine(calendar)).toBe('A bout that began earlier continues into the weeks of Aug 30, Sep 6 and Sep 13');
+    expect(weeklyCarriedLine(calendar)).not.toMatch(/week before/);
+  });
+
+  it('one week is "the week of"; nothing carried is null', () => {
+    const one = weeklyBuckets({ episodeDays: ['2026-09-19'], boutSpans: [{ startDay: '2026-09-19', endDay: '2026-09-20' }], loggedDays: [], weeksEnding: '2026-09-22', today: '2026-09-22', weeks: 2 });
+    expect(weeklyCarriedLine(one)).toBe('A bout that began earlier continues into the week of Sep 20');
+    const none = weeklyBuckets({ episodeDays: ['2026-09-21'], boutSpans: [{ startDay: '2026-09-21', endDay: '2026-09-22' }], loggedDays: [], weeksEnding: '2026-09-22', today: '2026-09-22', weeks: 2 });
+    expect(weeklyCarriedLine(none)).toBeNull();
+  });
+
+  it('rolling blocks name the last as "the last 7 days"; the card leaves the last to its own line', () => {
+    const rolling = weeklyBuckets({
+      episodeDays: ['2026-09-02'],
+      boutSpans: [{ startDay: '2026-09-02', endDay: '2026-09-17' }],
+      loggedDays: [],
+      weeksEnding: '2026-09-17',
+      today: '2026-09-17',
+      weeks: 3,
+      endAligned: true,
+    });
+    expect(weeklyCarriedLine(rolling)).toBe('A bout that began earlier continues into the 7 days from Sep 4 and the last 7 days');
+    expect(weeklyCarriedLine(rolling, true)).toBe('A bout that began earlier continues into the 7 days from Sep 4');
+  });
+
+  it('the spoken label says it, and carries no verdict', () => {
+    const label = weeklyBarsA11yLabel(calendar, 'vomiting');
+    expect(label).toContain('Counts by week: 0, 0, 0, 0.');
+    expect(label).toContain('A bout that began earlier continues into the weeks of Aug 30, Sep 6 and Sep 13.');
+    expect(label).not.toMatch(NO_VERDICT);
   });
 });

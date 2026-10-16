@@ -67,7 +67,7 @@ function state({ displayState: _ignored, ...over }: Partial<SignalState> & { dis
 
 function leadModel() {
   const today = toLocalDayKey(new Date());
-  const weekly = signalWeeks({ finding: benignLead.finding, today, trial: null, episodeDays: [today], loggedDays: [today] });
+  const weekly = signalWeeks({ finding: benignLead.finding, today, trial: null, episodeDays: [today], boutSpans: [], loggedDays: [today] });
   return { title: 'Vomiting, week over week', weekly, line: weekLine(weekly), lineWithheld: null, noun: 'vomiting', trial: null };
 }
 

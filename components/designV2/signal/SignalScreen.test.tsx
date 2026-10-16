@@ -125,6 +125,7 @@ function episode(dayKey: string, hour: number, over: Partial<SignalScreenEpisode
     eventId: `ev-${dayKey}-${hour}`,
     occurredAt: new Date(y, m - 1, d, hour, 11).toISOString(),
     dayKey,
+    endDayKey: dayKey,
     minutesSinceMeal: null,
     photo: null,
     ...over,

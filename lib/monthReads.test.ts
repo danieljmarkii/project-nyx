@@ -432,6 +432,8 @@ describe('readMonthFacts against the production DDL', () => {
     const facts = await readMonthFacts(PET, RANGE);
     expect(facts.episodeDays).toEqual(['2026-09-12']);
     expect(facts.continuationDays).toEqual([{ day: '2026-09-13', from: '2026-09-12' }]);
+    // The bars' span (Q12): the week of Sep 13 is carried into from Sep 12's bout.
+    expect(facts.boutSpans).toEqual([{ startDay: '2026-09-12', endDay: '2026-09-13' }]);
     expect(facts.loggedDays).toEqual(['2026-09-12', '2026-09-13']);
     // Across the month's first day: the bout began in August, the row is on Sep 1.
     mockDb = freshDb();
@@ -440,6 +442,8 @@ describe('readMonthFacts against the production DDL', () => {
     const edge = await readMonthFacts(PET, RANGE);
     expect(edge.episodeDays).toEqual([]);
     expect(edge.continuationDays).toEqual([{ day: '2026-09-01', from: '2026-08-31' }]);
+    // A span begun in the read's slack is kept: its end is in range.
+    expect(edge.boutSpans).toEqual([{ startDay: '2026-08-31', endDay: '2026-09-01' }]);
   });
 
   it('bounds are parsed, never compared as text: both spellings of a boundary instant land on their day (C-40)', async () => {

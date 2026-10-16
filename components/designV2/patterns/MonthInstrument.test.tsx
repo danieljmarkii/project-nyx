@@ -54,7 +54,7 @@ function facts(over: Partial<MonthFacts> = {}): MonthFacts {
   const loggedDays = over.loggedDays ?? range('2026-07-01', TODAY).filter((k) => k !== '2026-09-08' && k !== '2026-09-09');
   return {
     episodeDays: ['2026-09-02', '2026-09-02', '2026-09-05', '2026-09-11', '2026-09-11', '2026-09-16'],
-    continuationDays: [],
+    continuationDays: [], boutSpans: [],
     loggedDays,
     // Every logged day answers unless a test says otherwise (a meal or a symptom on it).
     answeringDays: loggedDays,
@@ -574,6 +574,21 @@ describe('MonthInstrument', () => {
     expect(within(sep6).queryByTestId('daymark-count')).toBeNull();
     // And the neighbour with no continuation still reads as it did.
     expect(getAllByTestId('daymark')[5].props.accessibilityLabel).toContain('logged, no vomiting'); // Sep 4
+  });
+
+  it('Q12 wiring: the vomiting bars name a bout carried in from the week before (CUL-1539)', async () => {
+    // A bout from Sat Sep 12 that ran to Mon Sep 14: the week of Sep 13 counts no onset.
+    const { getByTestId } = mount(
+      jest.fn(async () =>
+        facts({
+          episodeDays: ['2026-09-12'],
+          continuationDays: [{ day: '2026-09-13', from: '2026-09-12' }, { day: '2026-09-14', from: '2026-09-12' }],
+          boutSpans: [{ startDay: '2026-09-12', endDay: '2026-09-14' }],
+        }),
+      ),
+    );
+    await waitFor(() => expect(getByTestId('month-grid')).toBeTruthy());
+    expect(getByTestId('weekly-carried-line').props.children).toBe('A bout that began earlier continues into the week of Sep 13');
   });
 
   it('a pet with no record: every day says "nothing logged yet", the line invites the first entry', async () => {

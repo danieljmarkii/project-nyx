@@ -153,6 +153,7 @@ function episode(dayKey: string, hour: number, over: Partial<SignalScreenEpisode
     eventId: `ev-${dayKey}-${hour}`,
     occurredAt: d.toISOString(),
     dayKey,
+    endDayKey: dayKey,
     minutesSinceMeal: null,
     photo: null,
     ...over,
@@ -223,6 +224,14 @@ describe('buildSignalScreenModel — the mock’s Thursday', () => {
     expect(model.noun).toBe('vomiting');
     expect(model.safety).toBe(true);
     expect(model.identity).toBe('symptom_chronicity:vomit');
+  });
+
+  it('Q12 wiring: the screen\'s bars and line carry a bout from before the last 7 days (CUL-1791)', () => {
+    const carried = episode(shift(THURSDAY, -8), 22, { endDayKey: shift(THURSDAY, -5) });
+    const model = buildSignalScreenModel(mockInput({ episodes: [carried], trial: null }));
+    const weeks = model.weekly?.weeks ?? [];
+    expect(weeks[weeks.length - 1]).toMatchObject({ count: 0, carriedIn: true });
+    expect(model.weekLine?.startsWith('A bout from earlier ran into the last 7 days')).toBe(true);
   });
 
   it('the weekly bars cover the trial, and the line reads the last two bars', () => {
@@ -907,6 +916,23 @@ describe('the local reads', () => {
       expect(episodes[0].minutesSinceMeal).toBeNull();
       expect(episodes[0].boutIds).toEqual(['b-found', 'a-seen']);
     }
+  });
+
+  it('readSignalEpisodes: each bout carries the day of its LAST row, for the bars (Q12, CUL-1791)', async () => {
+    // A bout from 22:30 that chains past midnight (each gap under three hours), and a lone row.
+    mockGetAllAsync
+      .mockResolvedValueOnce([
+        { id: 'n1', occurred_at: noon(2026, 9, 12, 22, 30), occurred_at_confidence: 'witnessed' },
+        { id: 'n3', occurred_at: noon(2026, 9, 13, 2, 50), occurred_at_confidence: 'witnessed' },
+        { id: 'n2', occurred_at: noon(2026, 9, 13, 0, 40), occurred_at_confidence: 'witnessed' },
+        { id: 'z', occurred_at: noon(2026, 9, 15, 9, 0), occurred_at_confidence: 'witnessed' },
+      ])
+      .mockResolvedValueOnce([]);
+    const episodes = await readSignalEpisodes('pet-1', 'cough');
+    expect(episodes.map((e) => [e.dayKey, e.endDayKey])).toEqual([
+      ['2026-09-12', '2026-09-13'],
+      ['2026-09-15', '2026-09-15'],
+    ]);
   });
 
   it('readSignalEpisodes: a cough is never timed — the feeding read is not issued', async () => {

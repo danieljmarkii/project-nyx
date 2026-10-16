@@ -8,6 +8,7 @@
 import {
   compareWindows,
   daysSoFarLabel,
+  boutSpansOf,
   episodeDaysOf,
   laneDots,
   lanesUntimedLine,
@@ -39,6 +40,11 @@ const idx = (key: string): number => {
   return i;
 };
 const shift = (key: string, days: number): string => dayKeyFromIndex(idx(key) + days);
+const range = (from: string, to: string): string[] => {
+  const out: string[] = [];
+  for (let i = idx(from); i <= idx(to); i++) out.push(dayKeyFromIndex(i));
+  return out;
+};
 
 // 2026-09-20 is a Sunday.
 const SUNDAY = '2026-09-20';
@@ -551,5 +557,97 @@ describe('weightBand — dots by date on a stepped band', () => {
     expect(m.deltaFrac).toBeNull();
     expect(m.delta).toBeNull();
     expect(weightBand([r(-1, '2026-07-01T08:00:00Z'), r(4.5, '2026-09-01T08:00:00Z')]).points.map((p) => p.value)).toEqual([4.5]);
+  });
+});
+
+describe('Q12 (CUL-1539 / CUL-1791): a bout carried into a week from before it', () => {
+  const H = 3_600_000;
+  const keyOf = (ms: number) => toLocalDayKey(new Date(ms));
+  // The CUL-1539 repro: a bout from Sat Sep 12 at 23:00, 30 rows 2h50m apart (local instants).
+  const T0 = new Date(2026, 8, 12, 23, 0).getTime();
+  const run = Array.from({ length: 30 }, (_, i) => ({ ms: T0 + i * (2 * H + 50 * 60_000) }));
+
+  it('boutSpansOf: one span per episode, from the onset day episodeDaysOf counts to the last row', () => {
+    expect(episodeDaysOf(run, keyOf)).toEqual(['2026-09-12']);
+    expect(boutSpansOf(run, keyOf)).toEqual([{ startDay: '2026-09-12', endDay: keyOf(run[29].ms) }]);
+    expect(keyOf(run[29].ms)).toBe('2026-09-16');
+    // Two bouts split by more than the gap are two spans; an unparsed row is dropped.
+    const two = [{ ms: T0 }, { ms: T0 + H }, { ms: T0 + 10 * H }, { ms: Number.NaN }];
+    expect(boutSpansOf(two, keyOf)).toEqual([
+      { startDay: '2026-09-12', endDay: '2026-09-13' },
+      { startDay: '2026-09-13', endDay: '2026-09-13' },
+    ]);
+    expect(boutSpansOf([], keyOf)).toEqual([]);
+  });
+
+  it('onsets are still counted: the week the run carries into reads 0, and is marked carriedIn', () => {
+    const m = weeklyBuckets({
+      episodeDays: episodeDaysOf(run, keyOf),
+      boutSpans: boutSpansOf(run, keyOf),
+      loggedDays: range('2026-09-06', '2026-09-19'),
+      weeksEnding: '2026-09-19',
+      today: '2026-09-19',
+      weeks: 2,
+    });
+    expect(m.weeks.map((w) => w.count)).toEqual([1, 0]);
+    expect(m.weeks.map((w) => w.carriedIn)).toEqual([false, true]);
+    expect(m.total).toBe(1);
+  });
+
+  it('a bout that begins inside the week is not carried in, even when it crosses into the next day', () => {
+    const inside = [{ ms: new Date(2026, 8, 14, 23, 0).getTime() }, { ms: new Date(2026, 8, 15, 1, 0).getTime() }];
+    const m = weeklyBuckets({
+      episodeDays: episodeDaysOf(inside, keyOf),
+      boutSpans: boutSpansOf(inside, keyOf),
+      loggedDays: [],
+      weeksEnding: '2026-09-19',
+      today: '2026-09-19',
+      weeks: 2,
+    });
+    expect(m.weeks.map((w) => w.count)).toEqual([0, 1]);
+    expect(m.weeks.map((w) => w.carriedIn)).toEqual([false, false]);
+  });
+
+  it('a bout beginning on the week\'s own first day is that week\'s onset, never carried into it', () => {
+    // 2026-09-13 is a Sunday: the bout's onset is counted in that week, so nothing came from before.
+    const m = weeklyBuckets({ episodeDays: ['2026-09-13'], boutSpans: [{ startDay: '2026-09-13', endDay: '2026-09-15' }], loggedDays: [], weeksEnding: '2026-09-19', today: '2026-09-19', weeks: 2 });
+    expect(m.weeks.map((w) => w.count)).toEqual([0, 1]);
+    expect(m.weeks.map((w) => w.carriedIn)).toEqual([false, false]);
+  });
+
+  it('a bout across three weeks marks the second and third; a span from before the drawn weeks marks the first', () => {
+    const spans = [{ startDay: '2026-08-29', endDay: '2026-09-14' }];
+    const m = weeklyBuckets({ episodeDays: ['2026-08-29'], boutSpans: spans, loggedDays: [], weeksEnding: '2026-09-19', today: '2026-09-19', weeks: 3 });
+    expect(m.weeks.map((w) => w.startKey)).toEqual(['2026-08-30', '2026-09-06', '2026-09-13']);
+    expect(m.weeks.map((w) => w.carriedIn)).toEqual([true, true, true]);
+    expect(m.before).toBe(1);
+  });
+
+  it('a week that has not arrived is never carried into, nor is the week after the bout ended', () => {
+    const spans = [{ startDay: '2026-09-10', endDay: '2026-09-25' }];
+    const m = weeklyBuckets({ episodeDays: ['2026-09-10'], boutSpans: spans, loggedDays: [], weeksEnding: '2026-09-26', today: '2026-09-12', weeks: 3 });
+    expect(m.weeks.map((w) => w.carriedIn)).toEqual([false, false, false]);
+    const ended = weeklyBuckets({ episodeDays: ['2026-09-10'], boutSpans: [{ startDay: '2026-09-10', endDay: '2026-09-12' }], loggedDays: [], weeksEnding: '2026-09-19', today: '2026-09-19', weeks: 2 });
+    expect(ended.weeks.map((w) => w.carriedIn)).toEqual([false, false]);
+  });
+
+  it('end-aligned blocks (the Signal) mark the block the bout carries into the same way', () => {
+    // Today Thu Sep 17: the last block is Fri Sep 11 → Thu Sep 17; a bout from Sep 10 ends Sep 11.
+    const m = weeklyBuckets({
+      episodeDays: ['2026-09-10'],
+      boutSpans: [{ startDay: '2026-09-10', endDay: '2026-09-11' }],
+      loggedDays: [],
+      weeksEnding: '2026-09-17',
+      today: '2026-09-17',
+      weeks: 2,
+      endAligned: true,
+    });
+    expect(m.weeks.map((w) => w.count)).toEqual([1, 0]);
+    expect(m.weeks.map((w) => w.carriedIn)).toEqual([false, true]);
+  });
+
+  it('no spans handed over marks nothing (the entry lenses, whose unit is not a bout)', () => {
+    const m = weeklyBuckets({ episodeDays: ['2026-09-10'], loggedDays: [], weeksEnding: '2026-09-19', today: '2026-09-19', weeks: 2 });
+    expect(m.weeks.every((w) => w.carriedIn === false)).toBe(true);
   });
 });

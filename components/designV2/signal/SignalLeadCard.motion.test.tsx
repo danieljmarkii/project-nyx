@@ -54,7 +54,7 @@ const reflection: CachedFinding = {
 
 function leadModel() {
   const today = toLocalDayKey(new Date());
-  const weekly = signalWeeks({ finding: reflection.finding, today, trial: null, episodeDays: [today], loggedDays: [today] });
+  const weekly = signalWeeks({ finding: reflection.finding, today, trial: null, episodeDays: [today], boutSpans: [], loggedDays: [today] });
   return { title: 'Vomiting, the last 2 weeks', weekly, line: weekLine(weekly), lineWithheld: null, noun: 'vomiting', trial: null };
 }
 

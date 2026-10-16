@@ -29,6 +29,7 @@ import {
   signalWeekCount,
   signalWeeks,
   signalWindowDays,
+  boutSpansOfEpisodes,
   trialTooYoungToCompare,
   weekLine,
   weekLineNumbers,
@@ -168,7 +169,7 @@ describe('signalWeekCount — enough weeks for the lookback, the trial, never pa
     // "The last 8 weeks" is eight bars, never nine: the engine's rolling weeks, ending today.
     expect(signalWeekCount(chronicity(), THURSDAY, null)).toBe(8);
     expect(signalWeekCount(chronicity(), SUNDAY, null)).toBe(8);
-    const m = signalWeeks({ finding: chronicity(), today: THURSDAY, trial: null, episodeDays: [], loggedDays: [] });
+    const m = signalWeeks({ finding: chronicity(), today: THURSDAY, trial: null, episodeDays: [], boutSpans: [], loggedDays: [] });
     expect(m.firstKey).toBe(shift(THURSDAY, -55));
     expect(m.lastKey).toBe(THURSDAY);
     expect(m.endAligned).toBe(true);
@@ -187,6 +188,7 @@ describe('signalWeekCount — enough weeks for the lookback, the trial, never pa
       today: THURSDAY,
       trial: null,
       episodeDays: [],
+      boutSpans: [],
       loggedDays: [THURSDAY],
       recordStart: shift(THURSDAY, -2),
     });
@@ -201,7 +203,7 @@ describe('signalWeekCount — enough weeks for the lookback, the trial, never pa
     // mark on the first block's second day.
     const trial = trialFor(THURSDAY);
     expect(signalWeekCount(worsening(), THURSDAY, trial)).toBe(8);
-    const m = signalWeeks({ finding: worsening(), today: THURSDAY, trial, episodeDays: [], loggedDays: [] });
+    const m = signalWeeks({ finding: worsening(), today: THURSDAY, trial, episodeDays: [], boutSpans: [], loggedDays: [] });
     expect(m.mark?.outside).toBeNull();
     expect(m.mark?.day).toBe(trial.startDay);
     expect(m.mark?.slot).toBeCloseTo(1 / 7, 6);
@@ -210,7 +212,7 @@ describe('signalWeekCount — enough weeks for the lookback, the trial, never pa
   it('caps at MAX_WEEKS; a longer trial’s mark is placed in words, never dropped (C-37)', () => {
     const trial = trialFor(THURSDAY, 200, 56);
     expect(signalWeekCount(chronicity(), THURSDAY, trial)).toBe(MAX_WEEKS);
-    const m = signalWeeks({ finding: chronicity(), today: THURSDAY, trial, episodeDays: [], loggedDays: [] });
+    const m = signalWeeks({ finding: chronicity(), today: THURSDAY, trial, episodeDays: [], boutSpans: [], loggedDays: [] });
     expect(m.mark?.outside).toBe('before');
     expect(m.mark?.label).toBe('rabbit trial started');
   });
@@ -223,6 +225,7 @@ describe('the week line reads the buckets the bars draw (C-4)', () => {
       today: THURSDAY,
       trial: null,
       episodeDays: [shift(THURSDAY, -1), THURSDAY, shift(THURSDAY, -6), shift(THURSDAY, -7), shift(THURSDAY, -8)],
+      boutSpans: [],
       loggedDays: [],
     });
     // The last block is the Friday before through today; the one before, the seven before it.
@@ -235,7 +238,7 @@ describe('the week line reads the buckets the bars draw (C-4)', () => {
     const monday = shift(SUNDAY, 1);
     const run = [-6, -5, -4, -3, -2].map((d) => shift(monday, d));
     const before = [shift(monday, -9), shift(monday, -11)];
-    const m = signalWeeks({ finding: worsening({ windowDays: 7 }), today: monday, trial: null, episodeDays: [...run, ...before], loggedDays: [] });
+    const m = signalWeeks({ finding: worsening({ windowDays: 7 }), today: monday, trial: null, episodeDays: [...run, ...before], boutSpans: [], loggedDays: [] });
     expect(weekLine(m)).toBe('5 in the last 7 days · 2 in the 7 before');
   });
 
@@ -249,7 +252,7 @@ describe('the week line reads the buckets the bars draw (C-4)', () => {
       const n = Math.floor(rnd() * 40);
       for (let i = 0; i < n; i++) episodeDays.push(shift(today, -Math.floor(rnd() * 100)));
       const loggedDays = episodeDays.filter(() => rnd() < 0.7);
-      const m = signalWeeks({ finding, today, trial: runningTrial, episodeDays, loggedDays });
+      const m = signalWeeks({ finding, today, trial: runningTrial, episodeDays, boutSpans: [], loggedDays });
       const { thisWeek, lastWeek, soFar } = weekLineNumbers(m);
       const last = m.weeks[m.weeks.length - 1];
       const prev = m.weeks[m.weeks.length - 2];
@@ -267,7 +270,7 @@ describe('the week line reads the buckets the bars draw (C-4)', () => {
 
   it('is anchored to the real clock: today’s key is always the last week’s bucket', () => {
     const today = toLocalDayKey(new Date(Date.now()));
-    const m = signalWeeks({ finding: chronicity(), today, trial: null, episodeDays: [today], loggedDays: [today] });
+    const m = signalWeeks({ finding: chronicity(), today, trial: null, episodeDays: [today], boutSpans: [], loggedDays: [today] });
     const last = m.weeks[m.weeks.length - 1];
     expect(idx(last.startKey)).toBeLessThanOrEqual(idx(today));
     expect(idx(last.endKey)).toBeGreaterThanOrEqual(idx(today));
@@ -420,7 +423,7 @@ describe('the lanes — before the trial · in it, or one lane over the lookback
   it('a trial mark sits at its fractional slot (yesterday is 5/7 into the last block)', () => {
     // The mock's Thursday; the trial starting the day before it.
     const trial: SignalTrialWindow = { ...trialFor(THURSDAY, 2), startDay: shift(THURSDAY, -1) };
-    const m = signalWeeks({ finding: worsening(), today: THURSDAY, trial, episodeDays: [], loggedDays: [] });
+    const m = signalWeeks({ finding: worsening(), today: THURSDAY, trial, episodeDays: [], boutSpans: [], loggedDays: [] });
     const weeks = m.weeks.length;
     expect(m.mark?.slot).toBeCloseTo(weeks - 1 + 5 / 7, 6);
   });
@@ -429,11 +432,11 @@ describe('the lanes — before the trial · in it, or one lane over the lookback
 describe('what the caller owes', () => {
   it('refuses an instant where a day key is expected, rather than bucketing by the runner clock', () => {
     const f: SignalFinding = chronicity();
-    expect(() => signalWeeks({ finding: f, today: '2026-09-17T12:00:00Z', trial: null, episodeDays: [], loggedDays: [] })).toThrow(
+    expect(() => signalWeeks({ finding: f, today: '2026-09-17T12:00:00Z', trial: null, episodeDays: [], boutSpans: [], loggedDays: [] })).toThrow(
       /day key/,
     );
     // The compare never reads `startDay` (the day counter is its authority); the mark does.
-    expect(() => signalWeeks({ finding: f, today: THURSDAY, trial: { ...trialFor(THURSDAY), startDay: 'not-a-day' }, episodeDays: [], loggedDays: [] })).toThrow(
+    expect(() => signalWeeks({ finding: f, today: THURSDAY, trial: { ...trialFor(THURSDAY), startDay: 'not-a-day' }, episodeDays: [], boutSpans: [], loggedDays: [] })).toThrow(
       /day key/,
     );
   });
@@ -494,5 +497,44 @@ describe('leadTakesChartCard — the bars only where they are the finding’s ev
     const f = { type: 'food_symptom_correlation', priorityClass: 'insight', symptomType: 'vomit' } as never;
     expect(signalChartSymptomOf(f)).toBeNull();
     expect(leadTakesChartCard(f)).toBe(false);
+  });
+});
+
+describe('Q12 (CUL-1791): a bout that began before the last 7 days is named on the line', () => {
+  // The issue's case: one bout from eight days ago that went on into the last 7 days.
+  const carriedEpisodes = [{ dayKey: shift(THURSDAY, -7), endDayKey: shift(THURSDAY, -6) }];
+  const weeksOf = (episodes: { dayKey: string; endDayKey: string }[]) =>
+    signalWeeks({
+      finding: chronicity(),
+      today: THURSDAY,
+      trial: null,
+      episodeDays: episodes.map((e) => e.dayKey),
+      boutSpans: boutSpansOfEpisodes(episodes),
+      loggedDays: [],
+    });
+
+  it('onsets are still counted, and the line leads with the bout that ran in', () => {
+    const m = weeksOf(carriedEpisodes);
+    expect(weekLineNumbers(m)).toMatchObject({ thisWeek: 0, lastWeek: 1, carried: true });
+    expect(weekLine(m)).toBe('A bout from earlier ran into the last 7 days · 0 new · 1 in the 7 before');
+    // Withheld prior count: the bout still leads the one number left.
+    expect(weekLine(m, true)).toBe('A bout from earlier ran into the last 7 days · 0 new');
+    // "Ran into", never "continues": this bout ended six days ago (R2).
+    expect(weekLine(m)).not.toMatch(/continues/);
+  });
+
+  it('never prints a bare zero for the last 7 days while an earlier bout runs into them', () => {
+    const line = weekLine(weeksOf(carriedEpisodes));
+    expect(line.startsWith('0 in the last 7 days')).toBe(false);
+  });
+
+  it('a bout beginning inside the last 7 days reads as before, even one that ran past midnight', () => {
+    const m = weeksOf([{ dayKey: shift(THURSDAY, -2), endDayKey: shift(THURSDAY, -1) }, { dayKey: shift(THURSDAY, -8), endDayKey: shift(THURSDAY, -8) }]);
+    expect(weekLineNumbers(m).carried).toBe(false);
+    expect(weekLine(m)).toBe('1 in the last 7 days · 1 in the 7 before');
+  });
+
+  it('a span runs from the onset day to the last row\'s day', () => {
+    expect(boutSpansOfEpisodes([{ dayKey: THURSDAY, endDayKey: shift(THURSDAY, 1) }])).toEqual([{ startDay: THURSDAY, endDay: shift(THURSDAY, 1) }]);
   });
 });
