@@ -148,3 +148,17 @@ it("a cycle started after sign-out began hands the ingest a fence that is alread
   const duringWipe = ingest.mock.calls[1][1] as () => boolean;
   expect(duringWipe()).toBe(true);
 });
+
+// The other half: the NEXT account's session captures the post-wipe epoch, so its
+// ingest is not fenced by a sign-out that already finished.
+it("a session that starts after an earlier sign-out hands the ingest a fence that is not tripped", async () => {
+  mockState.hydrated = true;
+  notifySignedOut(); // a previous account's sign-out, finished before this session
+  const ingest = ingestCaptureInbox as jest.Mock;
+  ingest.mockClear();
+  act(() => useAuthStore.setState({ session: { user: { id: 'u2' } } as never }));
+  renderHook(() => useSync());
+  await flush();
+  expect(ingest).toHaveBeenCalledTimes(1);
+  expect((ingest.mock.calls[0][1] as () => boolean)()).toBe(false);
+});
