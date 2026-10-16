@@ -67,6 +67,25 @@ describe('app.json', () => {
     expect(userDefaults?.NSPrivacyAccessedAPITypeReasons).toEqual(expect.arrayContaining(APP_GROUP_REASONS));
   });
 
+  // The PM approved these words on CUL-1839 (2026-10-16); they reuse the consent
+  // copy's recipient line (constants/aiConsentCopy.ts AI_NAMED), so the iOS prompt
+  // names the same AI the in-app sheet does.
+  it('names vet paperwork and the AI recipient in both picker strings', () => {
+    const picker = pluginOptions('expo-image-picker') ?? {};
+    for (const key of ['cameraPermission', 'photosPermission']) {
+      const text = String(picker[key]);
+      expect(text).toContain('vet paperwork');
+      expect(text).toContain('Claude, an AI made by Anthropic');
+    }
+    expect(picker.microphonePermission).toBe(false);
+  });
+
+  it('carries the photo save string Save Image needs', () => {
+    expect(app.expo.ios.infoPlist?.NSPhotoLibraryAddUsageDescription).toBe(
+      'Culprit saves a vet document to your photo library only when you choose Save Image.',
+    );
+  });
+
   it('declares no Live Activities key by hand', () => {
     expect(Object.keys(app.expo.ios.infoPlist ?? {}).filter((k) => k.startsWith('NSSupportsLiveActivities'))).toEqual([]);
   });
