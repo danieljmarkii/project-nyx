@@ -51,6 +51,8 @@ export interface WindowCount {
    *  and the sentence discloses. Every day inside a bout's span holds a row: the re-log chain
    *  (3 hours) cannot step over a whole day. */
   carriedDays: number;
+  /** How many bouts those days are from, so the words say "a bout" or "bouts". */
+  carriedBouts: number;
   /** A bout that began before the window had a row inside it (the bar's own `carriedIn`): an
    *  episode `episodes` does not count. */
   carriedIn: boolean;
@@ -118,11 +120,14 @@ export function signalCountsOf(
     const to = Math.min(indexOf(b.endKey), todayIdx);
     const days = new Set<number>();
     const carried = new Set<number>();
+    let carriedBouts = 0;
     for (const s of spans) {
       if (s.start >= from && s.start <= to) days.add(s.start);
+      const before = carried.size;
       for (let i = Math.max(from, s.start + 1); i <= Math.min(to, s.end); i++) if (!onsetDays.has(i)) carried.add(i);
+      if (carried.size > before) carriedBouts += 1;
     }
-    return { episodes: b.count, days: days.size, carriedDays: carried.size, carriedIn: b.carriedIn };
+    return { episodes: b.count, days: days.size, carriedDays: carried.size, carriedBouts, carriedIn: b.carriedIn };
   };
   // `ceil`, the bars' own rule (`signalWeekCount`): a lookback that is not whole weeks still
   // counts every bar its days fall in, so the sentence never leaves the oldest bar out. The
@@ -228,14 +233,21 @@ export function countedScriptFinding(finding: CountedFinding, c: SignalCounts): 
         episodeCount: c.lookbackEpisodes,
         activeWeeks: c.activeWeeks,
         windowDays: c.lookbackWeeks * 7,
-        daysSinceLastEpisode: c.daysSinceLast ?? finding.daysSinceLastEpisode,
+        // The script's "Most recent" is the newest day holding a row (CUL-1956, the adversarial
+        // pass): read aloud to a vet, a bout that began yesterday and is still logged today is
+        // "today", never yesterday. The sentence says both ends; the script has one slot.
+        daysSinceLastEpisode: c.lastRanTo ?? c.daysSinceLast ?? finding.daysSinceLastEpisode,
         compare: undefined,
       };
     case 'symptom_worsening':
       return {
         ...finding,
         currentCount: c.recent.episodes,
-        currentDays: c.recent.days,
+        // Every day in the last 7 holding a row, the days a bout ran on into included: the script
+        // has no room for the sentence's disclosure, so it reads the louder total, the sentence's
+        // "on N … ; a bout ran on into K more" summed (CUL-1956, the adversarial pass). The
+        // earlier window stays onsets: a lower earlier count only steepens the rise.
+        currentDays: c.recent.days + c.recent.carriedDays,
         priorCount: c.prior?.episodes ?? 0,
         priorDays: c.prior?.days ?? 0,
         windowDays: 7,
@@ -295,7 +307,9 @@ function carriedWeeksPhrase(c: SignalCounts): string | null {
  *  a bout ran on into ("a bout ran on into 1 more day"); on EPISODES, a bout from before the
  *  window that ran into it. Null when the stated count leaves nothing out. */
 function recentCarryPhrase(w: WindowCount, axis: 'days' | 'episodes'): string | null {
-  if (axis === 'days' && w.carriedDays > 0) return `a bout ran on into ${count(w.carriedDays, 'more day', 'more days')}`;
+  if (axis === 'days' && w.carriedDays > 0) {
+    return `${w.carriedBouts > 1 ? 'bouts' : 'a bout'} ran on into ${count(w.carriedDays, 'more day', 'more days')}`;
+  }
   if (w.carriedIn) return 'a bout from earlier ran into them';
   return null;
 }

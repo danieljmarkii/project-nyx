@@ -485,8 +485,15 @@ export function galleryCountLine(
   // The count names its window (CUL-223: a display-window count spoken as a record fact
   // is the anti-pattern; adversarial pass, B8): these are the drawn weeks' episodes. A bout
   // that began earlier and ran in is said beside it, never added (the bars count onsets, Q12).
-  const carried = carriedIn > 0 ? `, and a bout that began earlier ran into them` : '';
-  const scope = `${total} in these ${weeks} ${plural(weeks, 'week')}${carried}`;
+  // With nothing that began in the window, the carried bout is the line, and no "0" leads it:
+  // a zero over masked weeks is the numeral D1 withholds (CUL-1440; the adversarial pass).
+  const span = `${weeks} ${plural(weeks, 'week')}`;
+  const scope =
+    carriedIn > 0
+      ? total === 0
+        ? `A bout that began earlier ran into these ${span}`
+        : `${total} in these ${span}, and a bout that began earlier ran into them`
+      : `${total} in these ${span}`;
   const parts = [photographedCount === 0 ? `${scope}, none photographed` : `${scope}, ${smallNumber(photographedCount)} photographed`];
   let earlier = 0;
   let tiered = 0;

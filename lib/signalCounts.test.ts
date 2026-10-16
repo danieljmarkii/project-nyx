@@ -179,8 +179,8 @@ describe('GC-4 — PROPERTY: every stated number is the chart’s count under it
       // The windows are the bars: the last bar ends today and is 7 days.
       expect(last.endKey).toBe(today);
       // One-day bouts here (no span), so nothing is carried; the carry has its own tests.
-      expect(c.recent).toEqual({ episodes: last.count, days: distinct(last.startKey, last.endKey), carriedDays: 0, carriedIn: false });
-      expect(c.prior).toEqual({ episodes: prev.count, days: distinct(prev.startKey, prev.endKey), carriedDays: 0, carriedIn: false });
+      expect(c.recent).toEqual({ episodes: last.count, days: distinct(last.startKey, last.endKey), carriedDays: 0, carriedBouts: 0, carriedIn: false });
+      expect(c.prior).toEqual({ episodes: prev.count, days: distinct(prev.startKey, prev.endKey), carriedDays: 0, carriedBouts: 0, carriedIn: false });
       const lookback = bars.slice(bars.length - c.lookbackWeeks);
       expect(c.lookbackEpisodes).toBe(lookback.reduce((a, b) => a + b.count, 0));
       expect(c.activeWeeks).toBe(lookback.filter((b) => b.count > 0).length);

@@ -11,6 +11,8 @@ jest.mock('./supabase', () => ({ supabase: { from: jest.fn() } }));
 import { buildSignalScreenModel, type SignalScreenEpisode, type SignalScreenInput } from './signalScreen';
 import type { CachedFinding, ReflectionFinding, SymptomChronicityFinding, SymptomWorseningFinding } from './signal';
 import { signalHomeLine, signalHomeLineFromScreen, type SignalHomeLine } from './signalHomeLine';
+import { screenMaskingOf } from './screenMasking';
+import { phoneScript } from './signalCopy';
 import { dayKeyFromIndex, localDayIndexOf } from './utils';
 
 const idx = (key: string): number => {
@@ -226,6 +228,49 @@ describe('CUL-1958: the gallery keeps a bout that began the night before the fir
   });
 });
 
+describe('the phone script read aloud agrees with the sentence above it (the adversarial pass)', () => {
+  const said = (model: ReturnType<typeof buildSignalScreenModel>) =>
+    (phoneScript(model.scriptFinding, 'Nyx', false, model.scriptMasking, model.scriptCounting) ?? []).map((f) => `${f.label}: ${f.value}`).join(' | ');
+
+  it('chronicity: "Most recent" is the newest day holding a row, never the onset before a bout still going', () => {
+    const { model } = screen(chronicity(), [bout(-1, 0, 23), bout(-14), bout(-30), bout(-40)]);
+    expect(model.sentence).toContain('the most recent began yesterday and ran into today.');
+    expect(said(model)).toContain('Most recent: today');
+    expect(said(model)).not.toContain('Most recent: yesterday');
+  });
+
+  it('firm worsening: the script counts the day the bout ran into, the sentence’s two numbers summed', () => {
+    const { model } = screen(worsening(), [bout(-1, 0, 23), bout(-3), bout(-4), bout(-5), bout(-9)]);
+    expect(model.sentence).toContain('on 4 of the last 7 days (4 episodes; a bout ran on into 1 more day)');
+    expect(said(model)).toContain('Last 7 days: 5 days with vomiting');
+  });
+
+  it('two bouts that each ran on are "bouts", never "a bout"', () => {
+    const { model } = screen(worsening({ currentCount: 1, currentDays: 1, priorCount: 2, priorDays: 2 }), [bout(-7, -6, 23), bout(-2, -1, 23), bout(-9)]);
+    expect(model.sentence).toContain('(1 episode; bouts ran on into 2 more days)');
+  });
+});
+
+describe('CUL-1958 under a masking span: a carried bout alone never leads with a "0"', () => {
+  it('the tile stays, and the line names the bout without the zero D1 withholds', () => {
+    const weeks = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicity()), episodes: [bout(-1)] })).weekly;
+    if (!weeks) throw new Error('no bars');
+    const first = idx(weeks.firstKey) - idx(TODAY);
+    const carried = bout(first - 1, first, 23, true);
+    const masking = screenMaskingOf({
+      sign: 'vomit',
+      signWord: 'vomiting',
+      courses: [{ drugLabel: 'Maropitant', names: [], startedOn: shift(TODAY, -70), endedOn: null, status: 'active' }],
+      visitsOn: [],
+      today: TODAY,
+    });
+    const model = buildSignalScreenModel(inputOf({ cached: cachedOf(chronicity()), episodes: [carried], masking }));
+    expect(model.episodes?.tiles.map((t) => t.eventId)).toEqual([carried.eventId]);
+    expect(model.episodes?.countLine).toBe('A bout that began earlier ran into these 8 weeks, one photographed');
+    expect(model.episodes?.countLine).not.toMatch(/\b0\b/);
+  });
+});
+
 function lcg(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
@@ -309,8 +354,9 @@ describe('PROPERTY: a bout that ran on is counted or said, and nothing reads bel
       } else if (days) {
         if (c.recent.carriedDays > 0) {
           carrySaid += 1;
-          expect(model.sentence).toContain(`a bout ran on into ${c.recent.carriedDays} more day`);
-          expect(row.count).toContain(`a bout ran on into ${c.recent.carriedDays} more day`);
+          const ran = `${c.recent.carriedBouts > 1 ? 'bouts' : 'a bout'} ran on into ${c.recent.carriedDays} more day`;
+          expect(model.sentence).toContain(ran);
+          expect(row.count).toContain(ran);
         } else if (c.recent.carriedIn) {
           expect(model.sentence).toContain('a bout from earlier ran into them');
         }
