@@ -59,6 +59,7 @@ const stoodDown: CachedFinding = {
 function episodes(over: Partial<SignalScreenEpisodes> = {}): SignalScreenEpisodes {
   return {
     total: 2,
+    carriedIn: 0,
     photographedCount: 1,
     weeks: 4,
     countLine: '2 in these 4 weeks, one photographed',

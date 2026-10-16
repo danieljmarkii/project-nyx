@@ -259,7 +259,7 @@ describe('countsMayCompose', () => {
   it('needs every stated number to be at least the engine’s, and something to state', () => {
     const f = worsening({ currentCount: 2, currentDays: 2 });
     const weekly = (eps: string[]) => signalWeeks({ finding: f, today: TODAY, trial: null, episodeDays: eps, boutSpans: [], loggedDays: [] });
-    const at = (eps: string[]) => signalCountsOf(f, weekly(eps), eps, TODAY);
+    const at = (eps: string[]) => signalCountsOf(f, weekly(eps), eps.map((d) => ({ dayKey: d, endDayKey: d })), TODAY);
     expect(countsMayCompose(f, at([shift(TODAY, -1), shift(TODAY, -2)]), { maskTouched: false, elapsedDays: 0 })).toBe(true);
     expect(countsMayCompose(f, at([shift(TODAY, -1), shift(TODAY, -1)]), { maskTouched: false, elapsedDays: 0 })).toBe(false); // 2 episodes, 1 day
     expect(countsMayCompose(f, at([shift(TODAY, -1), shift(TODAY, -2)]), { maskTouched: true, elapsedDays: 0 })).toBe(false); // masked
