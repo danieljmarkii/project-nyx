@@ -18,6 +18,14 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["1C8F.1", "CA92.1"]
+          }
+        ]
+      },
       "entitlements": {
         "com.apple.security.application-groups": [
           "group.com.projectnyx.app"
@@ -59,7 +67,12 @@
           "microphonePermission": false
         }
       ],
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ],
       "expo-sharing",
       [
         "expo-splash-screen",
@@ -73,6 +86,8 @@
       "expo-status-bar",
       "./plugins/withoutPushEntitlement",
       "./plugins/withWidgetIphoneOnly",
+      "./plugins/withoutLiveActivities",
+      "./plugins/withWidgetPrivacyManifest",
       [
         "expo-widgets",
         {
