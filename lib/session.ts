@@ -309,11 +309,9 @@ export async function wipeLocalSession(): Promise<void> {
     console.warn('[session] trial heads-up ledger clear failed:', e));
   // B-712 — the Beta-features opt-ins (Gate 2), an AsyncStorage-resident per-device
   // preference. Not health data, but it is account-adjacent device state: the prior
-  // owner's beta choices must not carry to the next person on a shared device, and a
-  // widget left "on" for a signed-out account must fall back to the neutral empty
-  // door (the eligibility gate re-fails closed anyway, but the opt-in should not
-  // linger). Same FR-9 parity rule as the active-pet selection and the app_config
-  // cache. Wipes both the in-memory store and the key; internally best-effort.
+  // owner's beta choices must not carry to the next person on a shared device. Same
+  // FR-9 parity rule as the active-pet selection and the app_config cache. Wipes both
+  // the in-memory store and the key; internally best-effort.
   await clearBetaOptIns();
   // B-402 — the app_config last-known-good cache, also AsyncStorage-resident. The
   // flags are global product config rather than this account's data, which is why

@@ -496,7 +496,8 @@ describe('adversarial pass 2 (CUL-1872): the QUIET breaks, each a named test', (
 describe('Q5: the allowlist-read keys come from the code', () => {
   it('reads ALLOWLIST_FLAG_KEYS and ENGINE_KEYS, and a kill switch is in neither', () => {
     const keys = allowlistKeysFromCode()!;
-    expect(keys).toEqual(expect.arrayContaining(['ask_enabled', 'widget_enabled', 'engines_v3_en3', 'engines_v3_en9', 'engines_v3_en0']));
+    expect(keys).toEqual(expect.arrayContaining(['ask_enabled', 'ask_general_enabled', 'engines_v3_en3', 'engines_v3_en9', 'engines_v3_en0']));
     expect(keys).not.toContain('ai_vomit_read_enabled');
+    expect(keys).not.toContain('widget_enabled'); // graduated at 1.2.0 (CUL-1842)
   });
 });

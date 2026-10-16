@@ -6,7 +6,7 @@ import {
   APP_CONFIG_DEFAULTS,
   type AllowlistFlagValues,
 } from '../../lib/appConfig';
-import { useBetaOptInStore } from '../../lib/betaFeatures';
+import { BETA_REGISTRY, useBetaOptInStore, type BetaFeature } from '../../lib/betaFeatures';
 
 // Pins the shelf's two body states (B-729, W1-PR-0):
 //   • zero eligible betas → the DESIGNED empty state, and the intro ("switch one
@@ -45,6 +45,27 @@ jest.mock('../../store/authStore', () => ({
 
 const gatedToPm = { enabled: false, allowlist: ['pm-uid'] };
 
+// The shipped shelf is empty at 1.2.0: the widget, its last beta, graduated
+// (CUL-1842). The shelf's machinery stays for the next beta, so its gates are pinned
+// over a fixture beta seeded into the real registry for the cases that need one.
+const FIXTURE_BETA: BetaFeature = {
+  key: 'ask_enabled',
+  title: 'Fixture feature',
+  blurb: 'A fixture feature for the shelf tests.',
+  owner: 'Test',
+  addedDate: '2026-10-01',
+  reviewBy: '2027-01-01',
+  serverCost: false,
+};
+function seedFixtureBeta(): void {
+  beforeEach(() => {
+    BETA_REGISTRY.push(FIXTURE_BETA);
+  });
+  afterEach(() => {
+    BETA_REGISTRY.splice(BETA_REGISTRY.indexOf(FIXTURE_BETA), 1);
+  });
+}
+
 function setAllowlist(over: Partial<AllowlistFlagValues>): void {
   __resetAppConfigForTest({
     values: APP_CONFIG_DEFAULTS,
@@ -77,11 +98,13 @@ describe('BetaFeaturesScreen — zero eligible betas (B-729)', () => {
 });
 
 describe('BetaFeaturesScreen — eligible account', () => {
+  seedFixtureBeta();
+
   it('renders a card per eligible beta and no empty state', () => {
-    setAllowlist({ widget_enabled: gatedToPm });
+    setAllowlist({ ask_enabled: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);
 
-    expect(getByText('Home screen widget')).toBeTruthy();
+    expect(getByText('Fixture feature')).toBeTruthy();
     expect(getByText(/Switch one on to try it early/)).toBeTruthy();
     expect(queryByText('Nothing to try right now')).toBeNull();
   });
@@ -91,15 +114,15 @@ describe('BetaFeaturesScreen — eligible account', () => {
     // behavior useAllowlistFlagsRaw exists to provide: a config fetch landing
     // AFTER mount re-renders the subscribed shelf on its own, no remount, no
     // manual rerender (code-review follow-up on W1-PR-0).
-    setAllowlist({ widget_enabled: gatedToPm });
+    setAllowlist({ ask_enabled: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);
-    expect(getByText('Home screen widget')).toBeTruthy();
+    expect(getByText('Fixture feature')).toBeTruthy();
     expect(queryByText('Nothing to try right now')).toBeNull();
 
     act(() => setAllowlist({})); // the next fetch lands with the account removed
 
     expect(getByText('Nothing to try right now')).toBeTruthy();
-    expect(queryByText('Home screen widget')).toBeNull();
+    expect(queryByText('Fixture feature')).toBeNull();
     expect(queryByText(/Switch one on to try it early/)).toBeNull();
   });
 
@@ -109,26 +132,27 @@ describe('BetaFeaturesScreen — eligible account', () => {
     // THROUGH (the case first used the log picker, retired with CUL-962, then Noticed,
     // retired with CUL-876) — so the note may promise only what holds for every beta:
     // switching one on rewrites nothing already logged.
-    setAllowlist({ widget_enabled: gatedToPm });
+    setAllowlist({ ask_enabled: gatedToPm });
     const { getByText, queryByText } = render(<BetaFeaturesScreen />);
 
-    expect(getByText('Home screen widget')).toBeTruthy();
+    expect(getByText('Fixture feature')).toBeTruthy();
     expect(getByText(/Turning one on doesn’t change anything already in your records\./)).toBeTruthy();
     expect(queryByText(/won’t affect your records/)).toBeNull();
   });
 
-  it('shows no card for a graduated beta: Noticed (CUL-876), History v2 (CUL-1175) and Design v2 (CUL-1071)', () => {
+  it('shows no card for a graduated beta: Noticed (CUL-876), History v2 (CUL-1175), Design v2 (CUL-1071) and the widget (CUL-1842)', () => {
     // Every remaining beta allowlisted, so a graduated card would have every chance to
     // render; its absence is the registry row's removal, not a gate. An allowlist row for
     // a graduated key is ignored by the client union (`lib/appConfig.test.ts`).
-    setAllowlist({ widget_enabled: gatedToPm });
+    setAllowlist({ ask_enabled: gatedToPm });
     const { getByText, queryByText, getAllByRole } = render(<BetaFeaturesScreen />);
 
-    expect(getByText('Home screen widget')).toBeTruthy();
+    expect(getByText('Fixture feature')).toBeTruthy();
     expect(getAllByRole('switch')).toHaveLength(1);
     expect(queryByText('Noticed')).toBeNull();
     expect(queryByText('History v2')).toBeNull();
     expect(queryByText('Design v2')).toBeNull();
+    expect(queryByText('Home screen widget')).toBeNull();
     expect(queryByText(/Switch it off and the app is exactly as it was/)).toBeNull();
   });
 });
@@ -153,17 +177,18 @@ function shownOrSpoken(tree: unknown): string[] {
 const BETA_WORD = /\bbetas?\b/i;
 
 describe('BetaFeaturesScreen — says early access, never beta (CUL-70)', () => {
-  it('shows and speaks no "beta" with every card up and a hint open', () => {
-    setAllowlist({ widget_enabled: gatedToPm });
-    useBetaOptInStore.getState().setOptIn('widget_enabled', true);
+  seedFixtureBeta();
+
+  it('shows and speaks no "beta" with every card up and switched on', () => {
+    setAllowlist({ ask_enabled: gatedToPm });
+    useBetaOptInStore.getState().setOptIn('ask_enabled', true);
     const { toJSON } = render(<BetaFeaturesScreen />);
     const strings = shownOrSpoken(toJSON());
 
-    // Non-vacuity: the walk reached the title, the cards, the on-state hint and the
-    // footer note, so an empty list cannot pass for a clean one.
+    // Non-vacuity: the walk reached the title, the cards and the footer note, so an
+    // empty list cannot pass for a clean one.
     expect(strings).toContain('Early access');
-    expect(strings).toContain('Home screen widget');
-    expect(strings.some((t) => t.startsWith('It’s on. If it isn’t on your home screen'))).toBe(true);
+    expect(strings).toContain('Fixture feature');
     expect(strings.some((t) => t.includes('Early-access features may change'))).toBe(true);
 
     expect(strings.filter((t) => BETA_WORD.test(t))).toEqual([]);
@@ -180,9 +205,9 @@ describe('BetaFeaturesScreen — says early access, never beta (CUL-70)', () => 
   it('labels each switch with its feature’s title and nothing else', () => {
     // The pill is gone, so the label no longer carries a ", beta" to stand in for it:
     // VoiceOver says the title the owner reads, then "switch", then its state.
-    setAllowlist({ widget_enabled: gatedToPm });
+    setAllowlist({ ask_enabled: gatedToPm });
     const { getAllByRole } = render(<BetaFeaturesScreen />);
 
-    expect(getAllByRole('switch').map((sw) => sw.props.accessibilityLabel)).toEqual(['Home screen widget']);
+    expect(getAllByRole('switch').map((sw) => sw.props.accessibilityLabel)).toEqual(['Fixture feature']);
   });
 });
