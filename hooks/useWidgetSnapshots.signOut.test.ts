@@ -59,8 +59,9 @@ jest.mock('../store/eventStore', () => ({
 jest.mock('../store/syncStore', () => ({
   useSyncStore: Object.assign(() => ({}), { subscribe: () => () => {} }),
 }));
+let mockSession: unknown = { user: { id: 'user-1' } };
 jest.mock('../store/authStore', () => ({
-  useAuthStore: () => ({ session: { user: { id: 'user-1' } } }),
+  useAuthStore: () => ({ session: mockSession }),
 }));
 
 import { act, renderHook, waitFor } from '@testing-library/react-native';
@@ -130,6 +131,7 @@ describe('useWidgetSnapshots — sign-out mid-publish (CUL-1952)', () => {
     signOutOnRead = null;
     signOutDuringDrain = false;
     rejectOnRead = null;
+    mockSession = { user: { id: 'user-1' } };
     drainReads = 0;
     pushed = [];
     mockWrites.length = 0;
@@ -233,6 +235,22 @@ describe('useWidgetSnapshots — sign-out mid-publish (CUL-1952)', () => {
 
     expect(mockWrites).toEqual([]);
     expect(pushed).toEqual([]);
+  });
+
+  // The fence must never outlive the session it fenced: the epoch is captured once per
+  // session, so a regression here fails SILENTLY (the widget just stops updating for
+  // the next account). Same hook instance, the `_layout` order: wipe, null, sign in.
+  it('the next account signing in on the same hook publishes again', async () => {
+    const { rerender } = renderHook(() => useWidgetSnapshots());
+    fenceWidgetPublish(); // the wipe, session still set
+    mockSession = null;
+    rerender({});
+    mockSession = { user: { id: 'user-2' } };
+    rerender({});
+    await waitFor(() => expect(pushed.length).toBeGreaterThan(0), { timeout: 3000 });
+
+    expect(mockWrites).toEqual(expect.arrayContaining([`${PET.id}.json`]));
+    expect(pushed.every((p) => p.signedIn)).toBe(true);
   });
 
   it('a sign-out landing during the residual drain, before any read, writes nothing', async () => {

@@ -676,9 +676,9 @@ export function widgetTrialCoverage(
 // the old pet's name, meals and trial day stay on the Home Screen. `wipeLocalSession`
 // moves the epoch first, before its first await; a publish that began under an older
 // epoch writes nothing (here) and pushes no timeline (`buildWidgetPublishProps`).
-// The followUpNotifications idiom, rather than a `session` read: a recovery or
-// account swap moves the session without passing through null, and the wipe is the
-// one moment that has to win.
+// The followUpNotifications idiom, rather than a `session` read: the sign-out
+// handlers run the wipe while the session is still set (`app/_layout.tsx` nulls it
+// after), and the wipe is the one moment that has to win.
 let publishEpoch = 0;
 
 /** Called by `wipeLocalSession`: every publish already running writes nothing more. */
@@ -686,7 +686,7 @@ export function fenceWidgetPublish(): void {
   publishEpoch += 1;
 }
 
-/** The epoch a publish captures when it starts, and re-checks before each write. */
+/** The epoch the publisher captures once per session, and re-checks before each write. */
 export function widgetPublishEpoch(): number {
   return publishEpoch;
 }
@@ -696,8 +696,10 @@ export async function publishWidgetSnapshots(
   epoch: number = publishEpoch,
 ): Promise<{ snapshots: WidgetSnapshot[]; index: PetSlotIndex | null }> {
   const fenced = () => epoch !== publishEpoch;
+  // Fence first: `getSnapshotDirectory` re-creates the directory the wipe deleted.
+  if (fenced()) return { snapshots: [], index: null };
   const dir = getSnapshotDirectory();
-  if (!dir || fenced()) return { snapshots: [], index: null };
+  if (!dir) return { snapshots: [], index: null };
 
   const now = new Date();
   const generatedAt = now.toISOString();

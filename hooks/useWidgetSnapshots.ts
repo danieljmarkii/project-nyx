@@ -33,8 +33,8 @@ import { useSyncStore } from '../store/syncStore';
 // yet / Touch and hold the widget to pick a pet", a door picking a pet could not
 // open. The neutral empty payload that served those owners went with the gate.
 // Signed out, the effect does not run, and sign-out's wipe (lib/session.ts) clears
-// the snapshot files and pushes the "Sign in" timeline. A publish ALREADY running
-// when that wipe lands is fenced (CUL-1952): see `WidgetPublishFenced` below.
+// the snapshot files and pushes the "Sign in" timeline. A publish running or
+// scheduled when that wipe lands is fenced (CUL-1952): see `sessionEpoch` below.
 //
 // Debounced: a burst (hydration writing dozens of rows, a log + its optimistic
 // store update) collapses into one publish. On non-iOS / entitlement-less builds
