@@ -660,24 +660,47 @@ export const EVENT_GATED_QUEUES = ['meals', 'weight_checks', 'looks'] as const;
 /**
  * Q14 (CUL-772): "does this device hold rows the server has not received and still could?"
  * — the flag a Signal rebuild sends generate-signal, which then takes the 1-hour expiry.
- * `pendingStatusSql`'s rows (every queue, any age, not refused) LESS the children an
- * event-gated drain holds behind a refused parent: no retry moves them, so counting them
+ * `pendingStatusSql`'s rows (every queue, any age, not refused) LESS the rows a drain holds
+ * for good behind a refused event (`HELD_FOR_GOOD_SQL`): no retry moves them, so counting them
  * would hold every Signal at the hour for good and spend the per-pet cap of 12 a day, which
  * delays a later red flag to UTC midnight (the harm the ruling's refused-row exception
  * exists to prevent; adversarial review, this PR). The refused parent is counted by
  * `quarantineCountSql` and surfaced there, so the pair is not lost.
  */
 export function unsentForSignalSql(queues: readonly SyncQueue[] = SYNC_QUEUES): string {
-  const gated: readonly string[] = EVENT_GATED_QUEUES;
-  const arms = queues.map((q) => {
-    const heldForGood = gated.includes(q.table)
-      ? ` AND NOT EXISTS (SELECT 1 FROM events gate_e WHERE gate_e.id = ${q.table}.event_id` +
-        ` AND gate_e.synced = 0 AND gate_e.sync_error IS NOT NULL)`
-      : '';
-    return `SELECT 1 AS unsent FROM ${q.table} WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}${heldForGood}`;
-  });
+  const arms = queues.map(
+    (q) =>
+      `SELECT 1 AS unsent FROM ${q.table} WHERE synced = 0 AND ${NOT_QUARANTINED_SQL}` +
+      (HELD_FOR_GOOD_SQL[q.table] ? ` AND NOT (${HELD_FOR_GOOD_SQL[q.table]})` : ''),
+  );
   return 'SELECT COUNT(*) AS count FROM (\n  ' + arms.join('\n  UNION ALL\n  ') + '\n)';
 }
+
+// A refused event, spelled once for the clauses below.
+const refusedEvent = (alias: string): string => `${alias}.synced = 0 AND ${alias}.sync_error IS NOT NULL`;
+
+/**
+ * Per queue, "this row's drain will never send it" — the rows `unsentForSignalSql` leaves out.
+ * Two shapes, both behind a refused event (adversarial passes 1 and 2, this PR):
+ *   · an EVENT_GATED_QUEUES child, whose drain waits on `e.synced = 1`;
+ *   · an EN-4 floor marker, which `floorTriggerLandedSql` holds while its event's meal is
+ *     unsent, when that meal is itself one of the children above. Its own event and its
+ *     intake answer do not hold it for good: a refused parent holds nothing under
+ *     `parentLandedSql`, and an answer goes up and takes its own answer.
+ * syncQueue.unsentForSignal.test.ts keeps both lists honest against the drains and the gates.
+ */
+export const HELD_FOR_GOOD_SQL: Readonly<Record<string, string>> = {
+  ...Object.fromEntries(
+    EVENT_GATED_QUEUES.map((t) => [
+      t,
+      `EXISTS (SELECT 1 FROM events held_e WHERE held_e.id = ${t}.event_id AND ${refusedEvent('held_e')})`,
+    ]),
+  ),
+  incident_floor_queue:
+    `EXISTS (SELECT 1 FROM meals held_m JOIN events held_me ON held_me.id = held_m.event_id` +
+    ` WHERE held_m.event_id = incident_floor_queue.event_id` +
+    ` AND held_m.synced = 0 AND held_m.sync_error IS NULL AND ${refusedEvent('held_me')})`,
+};
 
 /**
  * "How many rows have we given up on?" Rows the owner still holds locally but

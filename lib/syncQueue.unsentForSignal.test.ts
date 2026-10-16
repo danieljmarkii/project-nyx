@@ -10,7 +10,13 @@ const { DatabaseSync } = require('node:sqlite');
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { EVENT_GATED_QUEUES, pendingStatusSql, unsentForSignalSql } from './syncQueue';
+import {
+  EVENT_GATED_QUEUES,
+  HELD_FOR_GOOD_SQL,
+  incidentFloorPushQueueSql,
+  pendingStatusSql,
+  unsentForSignalSql,
+} from './syncQueue';
 import { BASE_SCHEMA_SQL, applyColumnUpgrades } from './localSchema';
 import { MEDICATION_SCHEMA_SQL } from './medications';
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
@@ -104,6 +110,34 @@ describe('Q14 (CUL-772) — unsentForSignalSql over the real schema', () => {
     expect(unsent(db)).toBe(1);
   });
 
+  // EN-4's re-check marker waits on its event's meal (floorTriggerLandedSql). When that meal is
+  // held for good behind a refused event, so is the marker (adversarial pass 2, this PR).
+  it('a floor marker waiting on a meal held for good does not count, and its drain indeed never sends it', async () => {
+    const db = await realSchemaDb();
+    insert(db, 'events', { id: 'e1', event_type: 'meal', synced: 0, sync_error: REFUSED });
+    insert(db, 'meals', { id: 'm1', event_id: 'e1', synced: 0, sync_error: null });
+    insert(db, 'incident_floor_queue', { id: 'f1', event_id: 'e1', synced: 0, sync_error: null });
+    expect(db.prepare(incidentFloorPushQueueSql()).all()).toHaveLength(0);
+    expect(pending(db)).toBe(2);
+    expect(unsent(db)).toBe(0);
+  });
+
+  it('a floor marker under a refused event with no held meal counts: its drain sends it', async () => {
+    const db = await realSchemaDb();
+    insert(db, 'events', { id: 'e1', event_type: 'vomit', synced: 0, sync_error: REFUSED });
+    insert(db, 'incident_floor_queue', { id: 'f1', event_id: 'e1', synced: 0, sync_error: null });
+    expect(db.prepare(incidentFloorPushQueueSql()).all()).toHaveLength(1);
+    expect(unsent(db)).toBe(1);
+  });
+
+  it('a floor marker waiting on a meal that can still land counts, with the meal and its event', async () => {
+    const db = await realSchemaDb();
+    insert(db, 'events', { id: 'e1', event_type: 'meal', synced: 0, sync_error: null });
+    insert(db, 'meals', { id: 'm1', event_id: 'e1', synced: 0, sync_error: null });
+    insert(db, 'incident_floor_queue', { id: 'f1', event_id: 'e1', synced: 0, sync_error: null });
+    expect(unsent(db)).toBe(3);
+  });
+
   it('with no refused parent the count is exactly the pending count (the exclusion takes nothing else)', async () => {
     const db = await realSchemaDb();
     insert(db, 'events', { id: 'e1', synced: 0, sync_error: null });
@@ -123,7 +157,9 @@ describe('EVENT_GATED_QUEUES is exactly the drains that wait on `e.synced = 1`',
   // unsent rows. Read from the drains themselves, both directions.
   const src = readFileSync(join(__dirname, 'sync.ts'), 'utf8');
   const gated = [
-    ...src.matchAll(/FROM (\w+) (\w+)\s+JOIN events e ON e\.id = \2\.event_id\s+WHERE [^`]*?\be\.synced = 1\b/g),
+    ...src.matchAll(
+      /FROM (\w+) (\w+)\s+(?:INNER\s+)?JOIN events (\w+) ON \3\.id\s*=\s*\2\.event_id\s+WHERE [^`]*?\b\3\.synced\s*=\s*1\b/g,
+    ),
   ].map((m) => m[1]);
 
   it('finds the drains (non-vacuous)', () => {
@@ -132,5 +168,33 @@ describe('EVENT_GATED_QUEUES is exactly the drains that wait on `e.synced = 1`',
 
   it('matches the list', () => {
     expect([...new Set(gated)].sort()).toEqual([...EVENT_GATED_QUEUES].sort());
+  });
+});
+
+describe('a gate that waits on an event-gated child is held for good with it (nested holds)', () => {
+  // Pass 2's case: floorTriggerLandedSql waits on `meals`, which the meals drain holds behind a
+  // refused event, so the marker is held too. Any gate in the queue code that waits on an
+  // EVENT_GATED_QUEUES table must be registered in HELD_FOR_GOOD_SQL, or its rows pin every
+  // Signal at the hour. Scans every lib file a drain's gate lives in.
+  const files = ['syncQueue.ts', 'sync.ts'];
+  const nested = files.flatMap((f) => {
+    const src = readFileSync(join(__dirname, f), 'utf8');
+    const out: string[] = [];
+    for (const m of src.matchAll(/NOT EXISTS \(SELECT 1 FROM (\w+) \w+\s+WHERE \w+\.event_id = (\w+)\.event_id/g)) {
+      if ((EVENT_GATED_QUEUES as readonly string[]).includes(m[1])) out.push(m[2]);
+    }
+    return out;
+  });
+
+  it('finds the floor marker gate (non-vacuous)', () => {
+    expect(nested).toContain('incident_floor_queue');
+  });
+
+  it('every queue so gated is registered', () => {
+    for (const q of nested) expect(Object.keys(HELD_FOR_GOOD_SQL)).toContain(q);
+  });
+
+  it('the registry holds exactly the event-gated queues and the nested ones', () => {
+    expect(Object.keys(HELD_FOR_GOOD_SQL).sort()).toEqual([...new Set([...EVENT_GATED_QUEUES, ...nested])].sort());
   });
 });
