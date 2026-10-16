@@ -41,6 +41,12 @@ jest.mock('../../hooks/useEvents', () => ({
 const mockDietTrial: { current: { input: unknown; inputIsForPet: boolean; loadedPetId: string | null } } = {
   current: { input: null, inputIsForPet: false, loadedPetId: null },
 };
+// CUL-1975: Home's own eating check, answered "no decline" so this suite keeps its subject
+// and never touches SQLite. `index.intakeDecline.test.tsx` owns what the read does.
+jest.mock('../../lib/dietTrialFacts', () => ({
+  readIntakeDecline: jest.fn(async () => []),
+  vomitLineMayReassure: jest.requireActual('../../lib/dietTrialFacts').vomitLineMayReassure,
+}));
 jest.mock('../../hooks/useDietTrial', () => ({ useDietTrial: () => mockDietTrial.current }));
 jest.mock('../../lib/sync', () => ({ syncNow: jest.fn() }));
 jest.mock('../../lib/signal', () => ({ regenerateSignal: jest.fn() }));

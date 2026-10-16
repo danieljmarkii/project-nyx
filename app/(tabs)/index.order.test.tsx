@@ -58,6 +58,12 @@ jest.mock('../../components/designV2/home/CoverageDoor', () => ({
 jest.mock('../../hooks/useEvents', () => ({
   useEvents: () => ({ todayEvents: [], loadTodayEvents: jest.fn() }),
 }));
+// CUL-1975: Home's own eating check, answered "no decline" so this suite keeps its subject
+// and never touches SQLite. `index.intakeDecline.test.tsx` owns what the read does.
+jest.mock('../../lib/dietTrialFacts', () => ({
+  readIntakeDecline: jest.fn(async () => []),
+  vomitLineMayReassure: jest.requireActual('../../lib/dietTrialFacts').vomitLineMayReassure,
+}));
 jest.mock('../../hooks/useDietTrial', () => ({
   useDietTrial: () => ({ input: null, inputIsForPet: true }),
 }));

@@ -234,6 +234,7 @@ function input(over: Partial<WorthRaisingInput> = {}): WorthRaisingInput {
     trialFacts: { status: 'unknown' },
     trialResponseCounts: null,
     intakeDecline: [],
+    intakeUnavailable: false,
     rundown: rundown(),
     nowMs: NOW,
     ...over,
@@ -609,6 +610,36 @@ describe('the B-789 suppression is inherited, not re-derived', () => {
     // Without the decline and with the pet eating, the falling week is raised as before.
     const eating = buildWorthRaising(input({ findings: [falling], withholdFallingVomit: false })).rows.map((r) => r.text);
     expect(eating).toContain(falling.text);
+  });
+
+  // CUL-1972: an eating check that did not answer is not an eating pet. The module
+  // withholds on its own, whatever the caller computed, and says the check is missing.
+  // Mutation-proven: dropping `|| input.intakeUnavailable` from `buildSignalRows` reds
+  // the first case; dropping the output field reds the second.
+  it('an eating check that did not answer withholds the falling pair, whatever the caller passed', () => {
+    const falling = finding({
+      text: 'Mochi vomited 2 times this week, down from 5 the week before.',
+      rank: 1,
+      finding: { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 2, priorCount: 5, direction: 'improving', windowDays: 14 },
+    });
+    const flat = finding({ text: 'Mochi vomited 2 times this week, about the same.', rank: 2 });
+    const unknown = buildWorthRaising(
+      input({ findings: [reassuring, falling, flat], withholdFallingVomit: false, intakeUnavailable: true }),
+    ).rows.map((r) => r.text);
+    expect(unknown).not.toContain(reassuring.text);
+    expect(unknown).not.toContain(falling.text);
+    expect(unknown).toContain(flat.text);
+  });
+
+  it('an answered-empty Signal beside an unanswered eating check is never the quiet record', () => {
+    // The worst instance on the issue: no rows at all, and before this the page read
+    // as a calm record with no gap line, because the gap line named only the Signal.
+    const out = buildWorthRaising(input({ findings: [], intakeUnavailable: true }));
+    expect(out.rows).toHaveLength(0);
+    expect(out.signalUnavailable).toBe(false);
+    expect(out.intakeUnavailable).toBe(true);
+    // And an answered check is not a gap.
+    expect(buildWorthRaising(input({ findings: [] })).intakeUnavailable).toBe(false);
   });
 });
 
