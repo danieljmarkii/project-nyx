@@ -1,5 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { publishWidgetSnapshots, type SnapshotPet } from '../lib/widgetSnapshot';
+import {
+  publishWidgetSnapshots,
+  widgetPublishEpoch,
+  type SnapshotPet,
+} from '../lib/widgetSnapshot';
 import { buildWidgetProps, type CulpritWidgetProps } from '../lib/widgetProps';
 import { publishWidgetPass } from '../lib/widgetBridge';
 import { useAuthStore } from '../store/authStore';
@@ -29,7 +33,8 @@ import { useSyncStore } from '../store/syncStore';
 // yet / Touch and hold the widget to pick a pet", a door picking a pet could not
 // open. The neutral empty payload that served those owners went with the gate.
 // Signed out, the effect does not run, and sign-out's wipe (lib/session.ts) clears
-// the snapshot files and pushes the "Sign in" timeline.
+// the snapshot files and pushes the "Sign in" timeline. A publish running or
+// scheduled when that wipe lands is fenced (CUL-1952): see `sessionEpoch` below.
 //
 // Debounced: a burst (hydration writing dozens of rows, a log + its optimistic
 // store update) collapses into one publish. On non-iOS / entitlement-less builds
@@ -42,22 +47,42 @@ const PUBLISH_DEBOUNCE_MS = 1000;
 export interface WidgetPublishDeps {
   publishSnapshots: typeof publishWidgetSnapshots;
   getPets: () => SnapshotPet[];
+  currentEpoch: () => number;
 }
 
 function defaultPublishDeps(): WidgetPublishDeps {
   return {
     publishSnapshots: publishWidgetSnapshots,
     getPets: () => usePetStore.getState().pets,
+    currentEpoch: widgetPublishEpoch,
   };
+}
+
+// Thrown when sign-out's wipe moved the publish epoch while this pass was reading
+// (CUL-1952). `publishWidgetPass` calls `publishWidgetTimeline` on the same tick
+// `buildProps` resolves, with no await between, so refusing to resolve HERE is the
+// last moment before the timeline push: the throw is what keeps the previous
+// owner's signed-in props off a signed-out Home Screen. A rejection rather than an
+// option on `publishWidgetPass` keeps the fence out of lib/widgetBridge.ts (PM, plan
+// option A). TRIP-WIRE: a second caller of `publishWidgetPass` must build its props
+// through this function, or carry its own check, or it is unfenced.
+export class WidgetPublishFenced extends Error {
+  constructor() {
+    super('widget publish fenced by sign-out');
+    this.name = 'WidgetPublishFenced';
+  }
 }
 
 // The props the publish pass pushes to the timeline: the real per-pet snapshot,
 // for every signed-in account. It runs INSIDE `publishWidgetPass`, so the §3
 // residual-v1 drain has already applied any build-35 capture to the record first.
+// `epoch` is the session's, captured when the hook's effect ran for it.
 export async function buildWidgetPublishProps(
   deps: WidgetPublishDeps = defaultPublishDeps(),
+  epoch: number = deps.currentEpoch(),
 ): Promise<CulpritWidgetProps> {
-  const { snapshots, index } = await deps.publishSnapshots(deps.getPets());
+  const { snapshots, index } = await deps.publishSnapshots(deps.getPets(), epoch);
+  if (deps.currentEpoch() !== epoch) throw new WidgetPublishFenced();
   return buildWidgetProps({ index, snapshots, signedIn: true });
 }
 
@@ -83,21 +108,39 @@ export function useWidgetSnapshots() {
     // an untested hook.
     let drainDone = false;
 
+    // CUL-1952: the epoch belongs to the SESSION, captured once per effect run, never
+    // per pass. `app/_layout.tsx` and the delete fallback run `await wipeLocalSession()`
+    // BEFORE `setSession(null)`, so this effect, its timer and its store subscriptions
+    // stay live through the whole wipe; a pass that captured the epoch when it started
+    // would take the wipe's moved epoch as its own and publish the old pet after the
+    // clears (rls-privacy-reviewer, attack 1). Once the wipe moves it, nothing this
+    // effect run schedules can start; the next session's run captures the new epoch.
+    const sessionEpoch = widgetPublishEpoch();
+    const fenced = () => widgetPublishEpoch() !== sessionEpoch;
+
     const publish = async () => {
       // `publishWidgetPass` runs the §3 drain first and only publishes on a clean
       // drain (so a failed build-35 capture is never lost).
       const { drainComplete } = await publishWidgetPass(
-        () => buildWidgetPublishProps(),
+        () => buildWidgetPublishProps(undefined, sessionEpoch),
         { needsDrain: !drainDone },
       );
       if (drainComplete) drainDone = true;
     };
 
     const schedule = () => {
+      if (fenced()) return;
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         timer.current = null;
-        publish().catch((e) => console.warn('[widgetSnapshots] publish failed:', e));
+        // A timer armed before the wipe and firing during it starts nothing, the
+        // residual drain included.
+        if (fenced()) return;
+        publish().catch((e) => {
+          // A fenced pass is the sign-out doing its job, not a failure.
+          if (e instanceof WidgetPublishFenced) return;
+          console.warn('[widgetSnapshots] publish failed:', e);
+        });
       }, PUBLISH_DEBOUNCE_MS);
     };
 

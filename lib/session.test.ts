@@ -24,6 +24,7 @@ jest.mock('./db', () => ({
 }));
 jest.mock('./appGroup', () => ({ clearWidgetData: jest.fn() }));
 jest.mock('./widgetBridge', () => ({ clearWidgetTimeline: jest.fn() }));
+jest.mock('./widgetSnapshot', () => ({ fenceWidgetPublish: jest.fn() }));
 // lib/notifications imports expo-notifications (throws at import without the
 // native module). Mock it — this test only cares that wipeLocalSession CALLS the
 // sign-out cancellation; the primitive's own behavior is covered by
@@ -61,6 +62,7 @@ import { notifySignedOut, flushPendingForSignOut } from './sync';
 import { clearLocalData, getSyncStatus } from './db';
 import { clearWidgetData } from './appGroup';
 import { clearWidgetTimeline } from './widgetBridge';
+import { fenceWidgetPublish } from './widgetSnapshot';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 import { readRecoveryRequest, recordRecoveryRequest } from './recoveryMarker';
 import { hasFlaggedFoodInTrial, recordFlaggedFoodInTrial } from './trialContaminant';
@@ -109,6 +111,22 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect(clearWidgetTimeline).toHaveBeenCalled();
     expect(cancelAllScheduledNotifications).toHaveBeenCalled();
     expect(clearNotificationInteractions).toHaveBeenCalled();
+  });
+
+  // CUL-1952: the widget fence moves BEFORE the first await, so a publish already
+  // reading SQLite cannot write past it, and BEFORE the clears, which then erase
+  // anything it wrote earlier.
+  it('fences the widget publisher synchronously, before the widget clears', () => {
+    (fenceWidgetPublish as jest.Mock).mockClear();
+    (clearWidgetData as jest.Mock).mockClear();
+    const done = wipeLocalSession();
+    expect(fenceWidgetPublish).toHaveBeenCalledTimes(1);
+    expect(clearWidgetData).not.toHaveBeenCalled();
+    return done.then(() => {
+      expect((fenceWidgetPublish as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+        (clearWidgetData as jest.Mock).mock.invocationCallOrder[0],
+      );
+    });
   });
 
   // B-661 (Trust & Safety, non-negotiable). A scheduled local notification lives

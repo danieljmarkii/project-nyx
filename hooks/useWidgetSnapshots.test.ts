@@ -18,6 +18,7 @@ jest.mock('../lib/supabase', () => ({ supabase: {} }));
 // buildWidgetProps (widgetProps is deliberately NOT mocked).
 jest.mock('../lib/widgetSnapshot', () => ({
   publishWidgetSnapshots: jest.fn(async () => ({ snapshots: [], index: null })),
+  widgetPublishEpoch: jest.fn(() => 0),
 }));
 jest.mock('../lib/appGroup', () => ({ clearWidgetData: jest.fn() }));
 jest.mock('../lib/widgetBridge', () => ({ publishWidgetPass: jest.fn() }));
@@ -51,7 +52,12 @@ jest.mock('../store/authStore', () => ({
 }));
 
 import { act, renderHook } from '@testing-library/react-native';
-import { buildWidgetPublishProps, useWidgetSnapshots, type WidgetPublishDeps } from './useWidgetSnapshots';
+import {
+  buildWidgetPublishProps,
+  useWidgetSnapshots,
+  WidgetPublishFenced,
+  type WidgetPublishDeps,
+} from './useWidgetSnapshots';
 import { WIDGET_PROPS_SCHEMA_VERSION, type CulpritWidgetProps } from '../lib/widgetProps';
 import type { WidgetSnapshot } from '../lib/widgetSnapshot';
 import type { PetSlotIndex } from '../lib/widgetResolution';
@@ -105,6 +111,7 @@ function fakeDeps(over: Partial<WidgetPublishDeps> = {}) {
       calls.push('getPets');
       return [{ id: PET, name: 'Biscuit', species: 'dog' }];
     },
+    currentEpoch: () => 0,
     ...over,
   };
   return { deps, calls };
@@ -124,6 +131,31 @@ describe('buildWidgetPublishProps — every account gets the widget (CUL-1842)',
     expect(Object.keys(props.pets)).toContain('slot1');
     expect(props.pets.slot1.petName).toBe('Biscuit');
     expect(props.pets.slot1.active).toBe(true);
+  });
+
+  // CUL-1952: the timeline push follows `buildProps` on the same tick, so a pass whose
+  // epoch moved (sign-out's wipe) must refuse to resolve here, or the previous owner's
+  // signed-in props land over the "Sign in" timeline. The full chain, through the real
+  // `publishWidgetPass` and the real fence, is useWidgetSnapshots.signOut.test.ts.
+  it('refuses to hand props on when sign-out moved the epoch mid-publish', async () => {
+    let epoch = 7;
+    const passed: number[] = [];
+    const { deps } = fakeDeps({
+      currentEpoch: () => epoch,
+      publishSnapshots: (async (_pets: unknown, e?: number) => {
+        passed.push(e ?? -1);
+        epoch += 1; // the wipe lands while the snapshot read is pending
+        return { snapshots: [snapshot()], index: index() };
+      }) as WidgetPublishDeps['publishSnapshots'],
+    });
+    await expect(buildWidgetPublishProps(deps, 7)).rejects.toBeInstanceOf(WidgetPublishFenced);
+    // The epoch the pass STARTED under reaches the file writer, which fences its own writes.
+    expect(passed).toEqual([7]);
+  });
+
+  it('a pass whose epoch held hands its props on', async () => {
+    const { deps } = fakeDeps({ currentEpoch: () => 7 });
+    await expect(buildWidgetPublishProps(deps, 7)).resolves.toMatchObject({ signedIn: true });
   });
 
   it('defaults are wired to the real publisher, and never wipe the snapshot files', async () => {
