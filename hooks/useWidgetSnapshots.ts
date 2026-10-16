@@ -76,7 +76,7 @@ export class WidgetPublishFenced extends Error {
 // The props the publish pass pushes to the timeline: the real per-pet snapshot,
 // for every signed-in account. It runs INSIDE `publishWidgetPass`, so the §3
 // residual-v1 drain has already applied any build-35 capture to the record first.
-// `epoch` is the one the pass captured when it STARTED (before the drain's awaits).
+// `epoch` is the session's, captured when the hook's effect ran for it.
 export async function buildWidgetPublishProps(
   deps: WidgetPublishDeps = defaultPublishDeps(),
   epoch: number = deps.currentEpoch(),
@@ -108,22 +108,34 @@ export function useWidgetSnapshots() {
     // an untested hook.
     let drainDone = false;
 
+    // CUL-1952: the epoch belongs to the SESSION, captured once per effect run, never
+    // per pass. `app/_layout.tsx` and the delete fallback run `await wipeLocalSession()`
+    // BEFORE `setSession(null)`, so this effect, its timer and its store subscriptions
+    // stay live through the whole wipe; a pass that captured the epoch when it started
+    // would take the wipe's moved epoch as its own and publish the old pet after the
+    // clears (rls-privacy-reviewer, attack 1). Once the wipe moves it, nothing this
+    // effect run schedules can start; the next session's run captures the new epoch.
+    const sessionEpoch = widgetPublishEpoch();
+    const fenced = () => widgetPublishEpoch() !== sessionEpoch;
+
     const publish = async () => {
-      // Captured before anything awaits, so a sign-out during the drain fences too.
-      const epoch = widgetPublishEpoch();
       // `publishWidgetPass` runs the §3 drain first and only publishes on a clean
       // drain (so a failed build-35 capture is never lost).
       const { drainComplete } = await publishWidgetPass(
-        () => buildWidgetPublishProps(undefined, epoch),
+        () => buildWidgetPublishProps(undefined, sessionEpoch),
         { needsDrain: !drainDone },
       );
       if (drainComplete) drainDone = true;
     };
 
     const schedule = () => {
+      if (fenced()) return;
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         timer.current = null;
+        // A timer armed before the wipe and firing during it starts nothing, the
+        // residual drain included.
+        if (fenced()) return;
         publish().catch((e) => {
           // A fenced pass is the sign-out doing its job, not a failure.
           if (e instanceof WidgetPublishFenced) return;

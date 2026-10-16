@@ -731,8 +731,11 @@ export async function publishWidgetSnapshots(
   // parameter resolves through (lib/widgetResolution.ts § D5). Read-modify-
   // write of our own file — previous assignments survive so a bound widget
   // never silently re-points (B-086).
-  // No await between the loop's last check and here: the index write and the prune
-  // below run in the same tick, so they need no check of their own.
+  // Checked again here, not left to the loop: a read that REJECTS skips the in-loop
+  // check through the catch, and the slot index carries every pet's name as a
+  // tombstone the next account's publish would keep (rls-privacy-reviewer, attack 2).
+  // The prune below runs on the same tick as this check.
+  if (fenced()) return { snapshots: [], index: null };
   let index: PetSlotIndex | null = null;
   try {
     const previous = readPreviousSlotIndex(dir);

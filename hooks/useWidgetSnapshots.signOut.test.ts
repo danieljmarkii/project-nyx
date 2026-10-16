@@ -82,12 +82,16 @@ describe('useWidgetSnapshots — sign-out mid-publish (CUL-1952)', () => {
   let signOutOnRead: number | null = null;
   /** Or from inside the residual-v1 drain's timeline read, before any SQLite read. */
   let signOutDuringDrain = false;
+  /** Make the Nth SQLite read reject (the read a sign-out can break mid-wipe). */
+  let rejectOnRead: number | null = null;
+  let drainReads = 0;
   let pushed: CulpritWidgetProps[] = [];
   const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
   function onRead() {
     reads += 1;
     if (reads === signOutOnRead) fenceWidgetPublish();
+    if (reads === rejectOnRead) throw new Error('read failed mid-wipe');
   }
 
   beforeEach(async () => {
@@ -125,11 +129,14 @@ describe('useWidgetSnapshots — sign-out mid-publish (CUL-1952)', () => {
     reads = 0;
     signOutOnRead = null;
     signOutDuringDrain = false;
+    rejectOnRead = null;
+    drainReads = 0;
     pushed = [];
     mockWrites.length = 0;
     warn.mockClear();
     const handle: WidgetHandle = {
       getTimeline: async () => {
+        drainReads += 1;
         if (signOutDuringDrain) fenceWidgetPublish();
         return [];
       },
@@ -187,6 +194,41 @@ describe('useWidgetSnapshots — sign-out mid-publish (CUL-1952)', () => {
     mockWrites.length = 0;
     pushed = [];
     signOutOnRead = total;
+    await runOnePass();
+
+    expect(mockWrites).toEqual([]);
+    expect(pushed).toEqual([]);
+  });
+
+  // rls-privacy-reviewer, attack 1: `_layout` runs `await wipeLocalSession()` BEFORE
+  // `setSession(null)`, so the hook's effect (its timer, its subscriptions) is still
+  // live through the wipe. A timer armed by a log a moment before sign-out fires
+  // mid-wipe; it must start nothing, the residual drain included.
+  it('a debounce timer pending when the wipe fences starts nothing, drain included', async () => {
+    renderHook(() => useWidgetSnapshots());
+    fenceWidgetPublish(); // the wipe begins with the session still set, timer armed
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 1300));
+    });
+
+    expect(drainReads).toBe(0);
+    expect(reads).toBe(0);
+    expect(mockWrites).toEqual([]);
+    expect(pushed).toEqual([]);
+  });
+
+  // rls-privacy-reviewer, attack 2: a read that REJECTS as the fence moves skips the
+  // in-loop check through the catch. The slot index it would then write keeps the old
+  // pet's name as a tombstone the next account's first publish inherits.
+  it('a last read that rejects as the fence moves still writes no slot index', async () => {
+    await runOnePass();
+    const total = reads;
+
+    reads = 0;
+    mockWrites.length = 0;
+    pushed = [];
+    signOutOnRead = total;
+    rejectOnRead = total;
     await runOnePass();
 
     expect(mockWrites).toEqual([]);
