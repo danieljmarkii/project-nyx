@@ -1,5 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { publishWidgetSnapshots, type SnapshotPet } from '../lib/widgetSnapshot';
+import {
+  publishWidgetSnapshots,
+  widgetPublishEpoch,
+  type SnapshotPet,
+} from '../lib/widgetSnapshot';
 import { buildWidgetProps, type CulpritWidgetProps } from '../lib/widgetProps';
 import { publishWidgetPass } from '../lib/widgetBridge';
 import { useAuthStore } from '../store/authStore';
@@ -29,7 +33,8 @@ import { useSyncStore } from '../store/syncStore';
 // yet / Touch and hold the widget to pick a pet", a door picking a pet could not
 // open. The neutral empty payload that served those owners went with the gate.
 // Signed out, the effect does not run, and sign-out's wipe (lib/session.ts) clears
-// the snapshot files and pushes the "Sign in" timeline.
+// the snapshot files and pushes the "Sign in" timeline. A publish ALREADY running
+// when that wipe lands is fenced (CUL-1952): see `WidgetPublishFenced` below.
 //
 // Debounced: a burst (hydration writing dozens of rows, a log + its optimistic
 // store update) collapses into one publish. On non-iOS / entitlement-less builds
@@ -42,22 +47,42 @@ const PUBLISH_DEBOUNCE_MS = 1000;
 export interface WidgetPublishDeps {
   publishSnapshots: typeof publishWidgetSnapshots;
   getPets: () => SnapshotPet[];
+  currentEpoch: () => number;
 }
 
 function defaultPublishDeps(): WidgetPublishDeps {
   return {
     publishSnapshots: publishWidgetSnapshots,
     getPets: () => usePetStore.getState().pets,
+    currentEpoch: widgetPublishEpoch,
   };
+}
+
+// Thrown when sign-out's wipe moved the publish epoch while this pass was reading
+// (CUL-1952). `publishWidgetPass` calls `publishWidgetTimeline` on the same tick
+// `buildProps` resolves, with no await between, so refusing to resolve HERE is the
+// last moment before the timeline push: the throw is what keeps the previous
+// owner's signed-in props off a signed-out Home Screen. A rejection rather than an
+// option on `publishWidgetPass` keeps the fence out of lib/widgetBridge.ts (PM, plan
+// option A). TRIP-WIRE: a second caller of `publishWidgetPass` must build its props
+// through this function, or carry its own check, or it is unfenced.
+export class WidgetPublishFenced extends Error {
+  constructor() {
+    super('widget publish fenced by sign-out');
+    this.name = 'WidgetPublishFenced';
+  }
 }
 
 // The props the publish pass pushes to the timeline: the real per-pet snapshot,
 // for every signed-in account. It runs INSIDE `publishWidgetPass`, so the §3
 // residual-v1 drain has already applied any build-35 capture to the record first.
+// `epoch` is the one the pass captured when it STARTED (before the drain's awaits).
 export async function buildWidgetPublishProps(
   deps: WidgetPublishDeps = defaultPublishDeps(),
+  epoch: number = deps.currentEpoch(),
 ): Promise<CulpritWidgetProps> {
-  const { snapshots, index } = await deps.publishSnapshots(deps.getPets());
+  const { snapshots, index } = await deps.publishSnapshots(deps.getPets(), epoch);
+  if (deps.currentEpoch() !== epoch) throw new WidgetPublishFenced();
   return buildWidgetProps({ index, snapshots, signedIn: true });
 }
 
@@ -84,10 +109,12 @@ export function useWidgetSnapshots() {
     let drainDone = false;
 
     const publish = async () => {
+      // Captured before anything awaits, so a sign-out during the drain fences too.
+      const epoch = widgetPublishEpoch();
       // `publishWidgetPass` runs the §3 drain first and only publishes on a clean
       // drain (so a failed build-35 capture is never lost).
       const { drainComplete } = await publishWidgetPass(
-        () => buildWidgetPublishProps(),
+        () => buildWidgetPublishProps(undefined, epoch),
         { needsDrain: !drainDone },
       );
       if (drainComplete) drainDone = true;
@@ -97,7 +124,11 @@ export function useWidgetSnapshots() {
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         timer.current = null;
-        publish().catch((e) => console.warn('[widgetSnapshots] publish failed:', e));
+        publish().catch((e) => {
+          // A fenced pass is the sign-out doing its job, not a failure.
+          if (e instanceof WidgetPublishFenced) return;
+          console.warn('[widgetSnapshots] publish failed:', e);
+        });
       }, PUBLISH_DEBOUNCE_MS);
     };
 

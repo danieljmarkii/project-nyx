@@ -668,20 +668,40 @@ export function widgetTrialCoverage(
   };
 }
 
+// ── The sign-out fence (CUL-1952, rls-privacy-reviewer) ───────────────────
+// A publish already reading SQLite when the account signs out would otherwise write
+// the previous owner's pet back into the App Group AFTER the wipe's clearWidgetData,
+// and the hook would then push a signed-in timeline over clearWidgetTimeline's
+// "Sign in" one. A signed-out device runs no further publish, so nothing heals it:
+// the old pet's name, meals and trial day stay on the Home Screen. `wipeLocalSession`
+// moves the epoch first, before its first await; a publish that began under an older
+// epoch writes nothing (here) and pushes no timeline (`buildWidgetPublishProps`).
+// The followUpNotifications idiom, rather than a `session` read: a recovery or
+// account swap moves the session without passing through null, and the wipe is the
+// one moment that has to win.
+let publishEpoch = 0;
+
+/** Called by `wipeLocalSession`: every publish already running writes nothing more. */
+export function fenceWidgetPublish(): void {
+  publishEpoch += 1;
+}
+
+/** The epoch a publish captures when it starts, and re-checks before each write. */
+export function widgetPublishEpoch(): number {
+  return publishEpoch;
+}
+
 export async function publishWidgetSnapshots(
   pets: SnapshotPet[],
+  epoch: number = publishEpoch,
 ): Promise<{ snapshots: WidgetSnapshot[]; index: PetSlotIndex | null }> {
+  const fenced = () => epoch !== publishEpoch;
   const dir = getSnapshotDirectory();
-  if (!dir) return { snapshots: [], index: null };
+  if (!dir || fenced()) return { snapshots: [], index: null };
 
   const now = new Date();
   const generatedAt = now.toISOString();
   const dayKey = toLocalDayKey(now);
-  // Post-sign-out publish race (FR-9 note): an in-flight publish from a session
-  // that just ended could re-write a stale snapshot moments after
-  // clearWidgetData. Self-healing — the next session's first publish prunes any
-  // file not in ITS pet set — so it's accepted as a millisecond-window cosmetic,
-  // not guarded with extra state.
   const wanted = new Set(pets.map((p) => `${p.id}.json`));
 
   const published: WidgetSnapshot[] = [];
@@ -691,6 +711,8 @@ export async function publishWidgetSnapshots(
       // trial's coverage — comes from local SQLite, so a publish makes no network
       // call at all (the wedge case: an owner mid-diet-trial in airplane mode).
       const inputs = await readSnapshotInputs(pet, now);
+      // The await above is where a sign-out lands; every write below is synchronous.
+      if (fenced()) return { snapshots: [], index: null };
       const snapshot = buildWidgetSnapshot(pet, {
         generatedAt,
         dayKey,
@@ -709,6 +731,8 @@ export async function publishWidgetSnapshots(
   // parameter resolves through (lib/widgetResolution.ts § D5). Read-modify-
   // write of our own file — previous assignments survive so a bound widget
   // never silently re-points (B-086).
+  // No await between the loop's last check and here: the index write and the prune
+  // below run in the same tick, so they need no check of their own.
   let index: PetSlotIndex | null = null;
   try {
     const previous = readPreviousSlotIndex(dir);

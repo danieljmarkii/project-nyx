@@ -1,6 +1,7 @@
 import { notifySignedOut, flushPendingForSignOut } from './sync';
 import { clearLocalData, getSyncStatus } from './db';
 import { clearWidgetData } from './appGroup';
+import { fenceWidgetPublish } from './widgetSnapshot';
 import { clearWidgetTimeline } from './widgetBridge';
 import { clearRecoveryRequest } from './recoveryMarker';
 import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
@@ -137,6 +138,12 @@ export async function wipeLocalSession(): Promise<void> {
   // Same FR-9 parity rule as the App Group / moment-store / trial-cache clears below:
   // wipe every place account state rests, not just SQLite.
   cancelPendingSignalRegens();
+  // CUL-1952 (rls-privacy-reviewer): a widget publish already reading SQLite would
+  // otherwise land AFTER clearWidgetData / clearWidgetTimeline below and put this
+  // owner's pet back on a signed-out Home Screen, where no later publish heals it.
+  // Fenced here, before the first await, so every write it would make after this
+  // line is dropped and every write it made before is erased by the clears below.
+  fenceWidgetPublish();
   // HV-10 (CUL-1167): the removal notices are the previous owner's event ids resting in
   // memory for a few seconds (`lib/removalNotice.ts`). An id matches no other account's
   // row, and it goes anyway: every place account state rests, not just SQLite.
