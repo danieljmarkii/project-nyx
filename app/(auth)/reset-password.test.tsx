@@ -14,7 +14,7 @@ import ResetPasswordScreen from './reset-password';
 
 jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }));
 jest.mock('../../lib/supabase', () => ({
-  supabase: { auth: { updateUser: jest.fn(), signOut: jest.fn() } },
+  supabase: { auth: { updateUser: jest.fn(), signOut: jest.fn(), getSession: jest.fn() } },
 }));
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
@@ -23,14 +23,17 @@ jest.mock('react-native-safe-area-context', () => {
 
 const mockUpdateUser = supabase.auth.updateUser as jest.Mock;
 const mockSignOut = supabase.auth.signOut as jest.Mock;
+const mockGetSession = supabase.auth.getSession as jest.Mock;
 const mockReplace = router.replace as jest.Mock;
-const B_SESSION = { user: { id: 'user-b' } } as never;
+const B_SESSION = { access_token: 'access-b', user: { id: 'user-b' } } as never;
 
 beforeEach(async () => {
   jest.clearAllMocks();
   await AsyncStorage.clear();
   mockUpdateUser.mockResolvedValue({ error: null });
   mockSignOut.mockResolvedValue({ error: null });
+  // By default auth-js holds what the store holds.
+  mockGetSession.mockImplementation(async () => ({ data: { session: useAuthStore.getState().session } }));
   useAuthStore.setState({
     session: null,
     recoveryInProgress: false,
@@ -135,6 +138,19 @@ describe('ResetPasswordScreen — the set-password form (§5.4)', () => {
     // Gate released; never routed back to a login form (Jordan's rule).
     expect(useAuthStore.getState().recoveryInProgress).toBe(false);
     expect(mockReplace).not.toHaveBeenCalledWith('/(auth)/login');
+  });
+
+  it("never writes when auth-js holds a different account than the store (CUL-1205)", async () => {
+    // A sign-in for A landed after the exchange (it takes no auth-js lock): the store
+    // still says B, but updateUser would set A's password.
+    mockGetSession.mockResolvedValue({ data: { session: { access_token: 'access-a', user: { id: 'user-a' } } } });
+    const utils = render(<ResetPasswordScreen />);
+    fireEvent.changeText(utils.getByTestId('reset-password-input'), 'a-strong-password');
+    fireEvent.press(utils.getByTestId('reset-save'));
+
+    await waitFor(() => expect(useAuthStore.getState().recoveryScreen).toBe('failed'));
+    expect(mockUpdateUser).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalledWith('/(tabs)');
   });
 
   it('does NOT evict when the write fails (FR-18 ordering) and keeps the owner on the form', async () => {

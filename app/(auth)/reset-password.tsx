@@ -42,6 +42,18 @@ import { ThemedText } from '../../components/ui/ThemedText';
 // connection RN's fetch won't time out on, so the owner is never stranded.
 const WORKING_WATCHDOG_MS = 20_000;
 
+async function authMatchesStore(): Promise<boolean> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const held = useAuthStore.getState().session;
+    return !!data.session && !!held && data.session.access_token === held.access_token;
+  } catch (e) {
+    // A read that fails counts as a mismatch: refusing the write is the safe direction.
+    console.warn('[recovery] stored-session check failed:', e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
 export default function ResetPasswordScreen() {
   const recoveryScreen = useAuthStore((s) => s.recoveryScreen);
   const session = useAuthStore((s) => s.session);
@@ -82,6 +94,15 @@ export default function ResetPasswordScreen() {
     setSubmitted(true);
     if (passwordError(password)) return;
     setSaving(true);
+    // `updateUser` writes to whoever auth-js holds, not to the store's session. A
+    // sign-in that lands after the exchange (it takes no auth-js lock) can leave the
+    // store on B while auth-js holds another account, and this write would set THAT
+    // account's password (CUL-1205, rls-privacy-reviewer). Write only when they agree.
+    if (!(await authMatchesStore())) {
+      setSaving(false);
+      useAuthStore.getState().setRecoveryScreen('failed');
+      return;
+    }
     const { error } = await supabase.auth.updateUser({ password });
     if (error) {
       setSaving(false);

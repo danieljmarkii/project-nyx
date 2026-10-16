@@ -30,9 +30,14 @@ import { shouldAdoptSessionDuringRecovery } from './authRouting';
 jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }));
 jest.mock('./supabase', () => ({
   AUTH_STORAGE_KEY: 'sb-test-auth-token',
-  supabase: { auth: { exchangeCodeForSession: jest.fn(), signOut: jest.fn() } },
+  supabase: {
+    auth: { exchangeCodeForSession: jest.fn(), signOut: jest.fn(), getSession: jest.fn() },
+    realtime: { setAuth: jest.fn() },
+  },
 }));
-jest.mock('./secureStore', () => ({ ChunkedSecureStoreAdapter: { removeItem: jest.fn() } }));
+jest.mock('./secureStore', () => ({
+  ChunkedSecureStoreAdapter: { removeItem: jest.fn(), getItem: jest.fn() },
+}));
 jest.mock('./session', () => ({ wipeLocalSession: jest.fn(), flushForSignOut: jest.fn() }));
 jest.mock('./recoveryMarker', () => {
   const actual = jest.requireActual('./recoveryMarker');
@@ -46,6 +51,9 @@ const mockFlush = flushForSignOut as jest.Mock;
 const mockRead = readRecoveryRequest as jest.Mock;
 const mockReplace = router.replace as jest.Mock;
 const mockRemoveItem = ChunkedSecureStoreAdapter.removeItem as jest.Mock;
+const mockGetItem = ChunkedSecureStoreAdapter.getItem as jest.Mock;
+const mockGetSession = supabase.auth.getSession as jest.Mock;
+const mockRealtimeSetAuth = supabase.realtime.setAuth as jest.Mock;
 
 const NOW = 1_754_000_000_000;
 const B_SESSION = { access_token: 'access-b', user: { id: 'user-b' } } as never;
@@ -89,6 +97,11 @@ beforeEach(() => {
     calls.push('signOut');
     return { error: null };
   });
+  // auth-js storage: after a successful exchange it holds B (_saveSession); the
+  // keychain reads back empty once purged.
+  mockGetSession.mockResolvedValue({ data: { session: B_SESSION } });
+  mockGetItem.mockResolvedValue(null);
+  mockRealtimeSetAuth.mockResolvedValue(undefined);
   mockExchange.mockImplementation(async () => {
     calls.push('exchange');
     // What auth-js does: save B, emit PASSWORD_RECOVERY(B) to subscribers, return B.
@@ -220,6 +233,25 @@ describe('handleRecoveryDeepLink — adopting the exchange session (CUL-1205)', 
     expect(useAuthStore.getState().session).toBe(B_SESSION);
   });
 
+  it('hands realtime the adopted token (PASSWORD_RECOVERY never reaches supabase-js realtime)', async () => {
+    haveProvenance();
+    await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
+    expect(mockRealtimeSetAuth).toHaveBeenCalledWith('access-b');
+  });
+
+  it('refuses to adopt when auth-js holds another account after the exchange', async () => {
+    // A sign-in for A landed after the exchange saved B (signInWithPassword takes no
+    // auth-js lock): the store must not say B while every write goes out as A.
+    haveProvenance();
+    mockGetSession.mockResolvedValue({ data: { session: A_SESSION } });
+    await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
+
+    expect(useAuthStore.getState().session).toBeNull();
+    expect(useAuthStore.getState().recoveryScreen).toBe('failed');
+    expect(calls).toEqual(['flush', 'wipe', 'exchange', 'signOut']);
+    expect(useAuthStore.getState().recoveryInProgress).toBe(false);
+  });
+
   it('a success that returns no session fails forward to a new link, never spins', async () => {
     haveProvenance();
     mockExchange.mockImplementation(async () => {
@@ -252,6 +284,65 @@ describe('handleRecoveryDeepLink — a failed exchange (FR-15)', () => {
     expect(useAuthStore.getState().recoveryScreen).toBe('link_unusable');
     // Gate released last (step 8).
     expect(useAuthStore.getState().recoveryInProgress).toBe(false);
+  });
+
+  it("keeps the window open through the reconcile: signOut's own refresh of A is refused", async () => {
+    haveProvenance();
+    mockExchange.mockImplementation(async () => {
+      calls.push('exchange');
+      return { data: { session: null }, error: { message: 'Email link is invalid or has expired' } };
+    });
+    // A sits in the store until the handler nulls it at step 3; count only re-entries.
+    const adoptedA: unknown[] = [];
+    let nulled = false;
+    const unsub = useAuthStore.subscribe((st, prev) => {
+      if (!st.session) nulled = true;
+      else if (nulled && st.session !== prev.session && st.session === A_SESSION) adoptedA.push(st.session);
+    });
+    // _signOut loads the session first, refreshing a near-expiry A and emitting it.
+    mockSignOut.mockImplementation(async () => {
+      calls.push('signOut');
+      emitAuthEvent('TOKEN_REFRESHED', A_SESSION);
+      return { error: { message: 'Network request failed' } };
+    });
+    await handleRecoveryDeepLink('nyx:///reset-password?code=dead', { nowMs: NOW });
+    unsub();
+
+    expect(adoptedA).toEqual([]);
+    expect(useAuthStore.getState().session).toBeNull();
+    expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
+    expect(mockRealtimeSetAuth).toHaveBeenCalledWith();
+  });
+
+  it('nulls the store after a purge, which fires no SIGNED_OUT', async () => {
+    haveProvenance();
+    mockExchange.mockImplementation(async () => {
+      calls.push('exchange');
+      return { data: { session: null }, error: { message: 'Email link is invalid or has expired' } };
+    });
+    mockSignOut.mockImplementation(async () => {
+      calls.push('signOut');
+      // Something put a session in the store before the reconcile; the purge path must
+      // not leave it there with no tokens behind it.
+      useAuthStore.getState().setSession(A_SESSION);
+      return { error: { message: 'Network request failed' } };
+    });
+    await handleRecoveryDeepLink('nyx:///reset-password?code=dead', { nowMs: NOW });
+    expect(useAuthStore.getState().session).toBeNull();
+  });
+
+  it('reads the keychain back after a purge, retries once, and warns when it survives', async () => {
+    haveProvenance();
+    mockExchange.mockImplementation(async () => {
+      calls.push('exchange');
+      return { data: { session: null }, error: { message: 'Email link is invalid or has expired' } };
+    });
+    mockSignOut.mockResolvedValue({ error: { message: 'Network request failed' } });
+    mockGetItem.mockResolvedValue('{"access_token":"access-a"}');
+    await handleRecoveryDeepLink('nyx:///reset-password?code=dead', { nowMs: NOW });
+
+    expect(mockRemoveItem).toHaveBeenCalledTimes(4);
+    expect(console.warn).toHaveBeenCalledWith('[recovery] stored session still present after purge');
   });
 
   it('a successful reconcile leaves the keychain to auth-js', async () => {

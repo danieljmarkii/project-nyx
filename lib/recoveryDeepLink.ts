@@ -86,18 +86,32 @@ async function runExchangeAndFinalize(code: string): Promise<void> {
       await failAndReconcile('link_unusable');
       return;
     }
+    // The store must never say B while auth-js holds someone else: every write the
+    // form makes goes out under auth-js's session, not the store's. `signInWithPassword`
+    // takes no auth-js lock, so a sign-in for A (the Change password re-auth, a login
+    // from the watchdog's Back to log in) can land after the exchange saved B
+    // (rls-privacy-reviewer, reproduced against auth-js 2.105.4). Adopt only when the
+    // stored session IS the returned one; otherwise fail and reconcile.
+    if (!(await authHolds(exchanged))) {
+      await failAndReconcile('failed');
+      return;
+    }
     // step 6/7 (CUL-1205): adopt EXACTLY the session the exchange returned. auth-js
     // emitted it as PASSWORD_RECOVERY while the exchange ran, and the root listener
     // refused it along with everything else in the window, so this is the only write
     // that can put a session in the store before the window closes. Matching on the
     // returned object, not an event name, is what keeps A out (O2). The gate is still
-    // armed, so the session lands on the set-password form, never on Home. Set it
-    // BEFORE closing the window, so no listener emission can slot in between.
+    // armed, so the session lands on the set-password form, never on Home.
     store.setSession(exchanged);
     store.setRecoveryExchangePending(false);
     // Clear any failure state a slow-exchange watchdog may have set on the screen, so
     // a late success renders the form rather than a stale "failed".
     store.setRecoveryScreen(null);
+    // supabase-js hands realtime a new token only on SIGNED_IN / TOKEN_REFRESHED, never
+    // on PASSWORD_RECOVERY, so B's channels would join with whatever token A last left
+    // there and RLS would deliver them nothing.
+    supabase.realtime.setAuth(exchanged.access_token).catch((e: unknown) =>
+      console.warn('[recovery] realtime token swap failed:', e instanceof Error ? e.message : e));
     // FR-6 / Trap 1: pin the route, whichever screen is foreground.
     router.replace(RECOVERY_ROUTE);
     return;
@@ -109,11 +123,11 @@ async function failAndReconcile(
   outcome: Exclude<RecoveryExchangeOutcome, 'success'>,
 ): Promise<void> {
   const store = useAuthStore.getState();
-  // The exchange failed: A's tokens are purged by the reconcile below. Close the
-  // adoption window first, as before, so a later resume is adopted normally.
-  store.setRecoveryExchangePending(false);
-
-  // step 8 (FR-15): render the designed failure state, then reconcile.
+  // step 8 (FR-15): render the designed failure state, then reconcile. The adoption
+  // window stays OPEN through the reconcile: signOut first loads the session, which
+  // refreshes a near-expiry A token and emits TOKEN_REFRESHED(A), and with the window
+  // closed the listener adopted it (rls-privacy-reviewer, reproduced). It closes below,
+  // once A's tokens are gone.
   store.setRecoveryScreen(outcome);
   // The B-576 reconcile: step 4 nulled the STORE but left A's tokens in auth-js's own
   // persisted storage, so a failed exchange leaves autoRefresh able to restore A onto
@@ -139,9 +153,28 @@ async function failAndReconcile(
   } catch (e) {
     await purgePersistedAuthSession(e);
   }
+  // A purge fires no SIGNED_OUT, so nothing else nulls the store. Null it here, so no
+  // session of A's can outlive its tokens, then close the window so a later resume is
+  // adopted normally, and drop A's token from realtime.
+  store.setSession(null);
+  store.setRecoveryExchangePending(false);
+  supabase.realtime.setAuth().catch((e: unknown) =>
+    console.warn('[recovery] realtime token reset failed:', e instanceof Error ? e.message : e));
   // Release the gate LAST (§6.4 step 8). reset-password keeps rendering the failure
   // state from `recoveryScreen`, which the gate release does not touch.
   await releaseRecoveryGate();
+}
+
+// Whether auth-js's own stored session is the one the exchange returned. A read that
+// fails counts as no: the caller then reconciles, which is the safe direction.
+async function authHolds(session: Session): Promise<boolean> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token === session.access_token;
+  } catch (e) {
+    console.warn('[recovery] stored-session check failed:', e instanceof Error ? e.message : e);
+    return false;
+  }
 }
 
 async function purgePersistedAuthSession(cause: unknown): Promise<void> {
@@ -149,12 +182,14 @@ async function purgePersistedAuthSession(cause: unknown): Promise<void> {
     '[recovery] reconcile sign-out failed; purging the stored session:',
     cause instanceof Error ? cause.message : (cause as { message?: string } | null)?.message ?? cause,
   );
-  try {
+  // `removeItem` swallows its own keychain errors, so a failed delete only shows as the
+  // key still being there. Read it back, and try once more before giving up loudly.
+  for (let attempt = 0; attempt < 2; attempt++) {
     await ChunkedSecureStoreAdapter.removeItem(AUTH_STORAGE_KEY);
     await ChunkedSecureStoreAdapter.removeItem(`${AUTH_STORAGE_KEY}-code-verifier`);
-  } catch (e) {
-    console.warn('[recovery] stored-session purge failed:', e instanceof Error ? e.message : e);
+    if ((await ChunkedSecureStoreAdapter.getItem(AUTH_STORAGE_KEY)) === null) return;
   }
+  console.warn('[recovery] stored session still present after purge');
 }
 
 /**

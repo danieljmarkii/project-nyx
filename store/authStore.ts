@@ -42,8 +42,8 @@ interface AuthState {
   // root listener adopts NO session; the handler adopts exactly the session the
   // exchange returned (CUL-1205). So no emission of the PRE-recovery owner, which
   // auth-js's autoRefresh can fire in the flush→exchange window, can re-render the
-  // set-password form against the wrong account. Not persisted: a force-quit ends the window (the gate,
-  // which IS persisted, governs the resume).
+  // set-password form against the wrong account. Not persisted: a force-quit ends
+  // the window (the gate, which IS persisted, governs the resume).
   recoveryExchangePending: boolean;
   // The address the reset was requested for, held in memory by the §6.4 handler
   // BEFORE step 4's wipe clears the disk marker (FR-12) — so §5.5 / §5.5b can send
