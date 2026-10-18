@@ -29,10 +29,9 @@ export function TrialLifecycleSheets({
 
   return (
     <>
-      {/* B-417 PR 6 — the completion milestone's sheets (§4.3). Not mounted while
-          closed: unlike StartTrialModal it has no half-filled form to preserve
-          across a dismissal, and every answer on it is deliberately discarded on
-          Cancel rather than pre-filled from a previous attempt. */}
+      {/* B-417 PR 6 — the completion milestone's sheets (§4.3). Always mounted, so
+          its state survives a close; it drops its answers and its read of the
+          record on every close, so each open reads afresh (CUL-1560). */}
       <TrialCompletionSheet
         entry={lifecycle.completionEntry}
         trial={lifecycle.sheetTrial}

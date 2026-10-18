@@ -33,6 +33,22 @@ jest.mock('../../lib/dietTrialOutcomeFacts', () => ({
   loadTrialOutcomeFacts: (...args: unknown[]) => mockLoadFacts(...args),
 }));
 
+// Every facts object the sheet BUILT a render from, in order (CUL-1560's test B).
+// `rerender` flushes effects inside act, so a stale frame that a passive effect
+// clears is invisible to a query; the builder sees every render that painted.
+// A passthrough over the real module (C-34): the read is stubbed, never the rule.
+const mockBuiltFacts: unknown[] = [];
+jest.mock('../../lib/dietTrialCompletion', () => {
+  const actual = jest.requireActual('../../lib/dietTrialCompletion');
+  return {
+    ...actual,
+    buildOutcomeSheet: (args: { facts: unknown }) => {
+      mockBuiltFacts.push(args.facts);
+      return actual.buildOutcomeSheet(args);
+    },
+  };
+});
+
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import { TrialCompletionSheet } from './TrialCompletionSheet';
@@ -307,5 +323,94 @@ describe('an ending the record refused', () => {
     expect(onChanged).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     err.mockRestore();
+  });
+});
+
+// CUL-1560 — the host keeps this sheet mounted while it is closed, so a read taken on
+// one open must never answer the next. The flow is a likely one ("wait, let me log
+// this first"): close, log this morning's vomit, reopen, and the sheet must not say
+// "No symptoms are on the record for either stretch."
+describe('reopening the sheet (CUL-1560)', () => {
+  const ABSENCE = 'No symptoms are on the record for either stretch.';
+  const NOTHING: TrialOutcomeFacts = { ...FACTS, symptoms: [] };
+  const VOMIT: TrialOutcomeFacts = {
+    ...FACTS,
+    symptoms: [{ symptomType: 'vomit', label: 'Vomit', before: 0, during: 1 }],
+  };
+
+  function sheetWith(entry: React.ComponentProps<typeof TrialCompletionSheet>['entry']) {
+    return (
+      <TrialCompletionSheet
+        entry={entry}
+        trial={TRIAL}
+        petName="Biscuit"
+        species="cat"
+        dayCounter={56}
+        onClose={jest.fn()}
+        onExtend={jest.fn()}
+        onChanged={jest.fn()}
+      />
+    );
+  }
+
+  it('A: close and reopen reads the record again and renders the second read', async () => {
+    mockLoadFacts.mockReset().mockResolvedValueOnce(NOTHING).mockResolvedValueOnce(VOMIT);
+    const tree = render(sheetWith('complete'));
+    await waitFor(() => tree.getByText(ABSENCE));
+
+    tree.rerender(sheetWith(null));
+    tree.rerender(sheetWith('complete'));
+
+    await waitFor(() => tree.getByText('Vomit: 0 before · 1 during.'));
+    expect(mockLoadFacts).toHaveBeenCalledTimes(2);
+    expect(tree.queryByText(ABSENCE)).toBeNull();
+  });
+
+  it('B: a read still in flight at close never renders after the reopen', async () => {
+    let resolveFirst: (f: TrialOutcomeFacts) => void = () => {};
+    mockLoadFacts
+      .mockReset()
+      .mockImplementationOnce(() => new Promise<TrialOutcomeFacts>((r) => { resolveFirst = r; }))
+      .mockResolvedValueOnce(VOMIT);
+    const tree = render(sheetWith('complete'));
+    expect(mockLoadFacts).toHaveBeenCalledTimes(1);
+
+    tree.rerender(sheetWith(null));
+    await act(async () => { resolveFirst(NOTHING); });
+
+    mockBuiltFacts.length = 0;
+    tree.rerender(sheetWith('complete'));
+    await waitFor(() => tree.getByText('Vomit: 0 before · 1 during.'));
+    expect(mockLoadFacts).toHaveBeenCalledTimes(2);
+    // Not even for a frame: no render after the reopen was built from the first read.
+    expect(mockBuiltFacts).not.toContain(NOTHING);
+    expect(mockBuiltFacts).toContain(VOMIT);
+    expect(tree.queryByText(ABSENCE)).toBeNull();
+  });
+
+  it('C: one read per open, and only once the outcome step is on screen', async () => {
+    // Refactor safety (green before and after): decision → outcome inside one open.
+    const tree = render(sheetWith('decision'));
+    expect(mockLoadFacts).not.toHaveBeenCalled();
+    fireEvent.press(tree.getByTestId('trial-decision-complete'));
+    await waitFor(() => tree.getByTestId('trial-outcome-density'));
+    expect(mockLoadFacts).toHaveBeenCalledTimes(1);
+  });
+
+  it('C: a reopen at `decision` after an outcome open reads nothing until the owner picks the outcome', async () => {
+    const tree = render(sheetWith('complete'));
+    await waitFor(() => tree.getByTestId('trial-outcome-density'));
+    expect(mockLoadFacts).toHaveBeenCalledTimes(1);
+
+    tree.rerender(sheetWith(null));
+    tree.rerender(sheetWith('decision'));
+    await act(async () => {});
+    // The previous open's step must not answer for this one, not even with a read.
+    expect(mockLoadFacts).toHaveBeenCalledTimes(1);
+    expect(tree.getByTestId('trial-decision-extend')).toBeTruthy();
+
+    fireEvent.press(tree.getByTestId('trial-decision-complete'));
+    await waitFor(() => tree.getByTestId('trial-outcome-density'));
+    expect(mockLoadFacts).toHaveBeenCalledTimes(2);
   });
 });

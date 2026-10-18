@@ -105,6 +105,23 @@ export function TrialCompletionSheet({
     setSaving(false);
   }, [entry]);
 
+  // EVERY OPEN READS THE RECORD AFRESH (CUL-1560). The host keeps this sheet
+  // mounted while it is closed, so state survives a close. An owner who backs out
+  // to log this morning's vomit and reopens must not be shown the read taken
+  // before it ("No symptoms are on the record for either stretch"). Keyed on
+  // `entry` rather than done in `handleClose`, because a close also comes from
+  // `endTrial` and from the host itself: nulling the entry is the one thing every
+  // close shares. The step goes back too, which does two jobs: a reopen at
+  // `decision` never renders, or reads for, the previous open's outcome step; and
+  // since `step` is in the loader's deps, the close cancels a read still in flight,
+  // which would otherwise land after the close, refill `facts`, and leave the
+  // reopen showing it without a read of its own.
+  useEffect(() => {
+    setFacts(null);
+    setFactsLoading(false);
+    if (!entry) setStep('decision');
+  }, [entry]);
+
   // The counts the outcome sheet leads with. Loaded when that step opens rather
   // than on mount: an owner who taps "Stopped early" is never asked how it went,
   // so they never pay for this read.
