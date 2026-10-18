@@ -7099,23 +7099,34 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
   // no food reached the threshold. An Early finding is named here with its counts and its
   // limit (PM, 2026-10-18, amending spec §8.5); it is never stated as a finding, and no p value
   // rides with it, because Early is exactly the tier whose p a reader must not lean on.
-  const early = (c.early ?? [])[0]
-  const earlyBit = early
-    ? // Each count names its denominator and its window (cold read: "0 controls" alone could
-      // not be read). A matched pair is one episode and its time-matched control window; each arm counts the
-      // pairs where the protein fell in the window before it.
-      `, but ${h(capProtein(early.protein))} shows an early association with ${h(
-        symptomLabel(early.symptomType).toLowerCase(),
-      )}</b> (${h(capProtein(early.protein))} in the ${num(early.correlationWindowHours)}&nbsp;h before ${num(early.caseExposed)} of ${num(
-        early.matchedPairs,
-      )} episodes, vs ${num(early.controlExposed)} of ${num(early.matchedPairs)} matched control windows) &mdash; too few events to confirm or rule out; this is not a negative result`
-    : `</b> &mdash; not a negative result: a record this size cannot rule a food out`
+  // EVERY Early finding, the primary sign's first (adversarial pass 1). Naming only the
+  // engine's top-ranked one left the primary sign's out whenever a different symptom ranked
+  // higher, beside a line that now names a peer: exoneration by omission. There are always
+  // few. The hedge sits INSIDE the bold, so a skim cannot lift the association as a finding,
+  // and it states the tier, not a reason: Early also holds findings capped for a shared bowl,
+  // a drug on board or a joint candidate, so "too few events" would be false for some.
+  const primary = snap.clinicalQuestion.primarySymptom
+  const earlies = [...(c.early ?? [])].sort(
+    (a, b) => Number(b.symptomType === primary) - Number(a.symptomType === primary),
+  )
+  const earlyClause = (e: NonNullable<CorrelationSummary['early']>[number]): string =>
+    // Each count names its denominator and its window (cold read: "0 controls" alone could
+    // not be read). A matched pair is one episode and its time-matched control window; each
+    // arm counts the pairs where the protein fell in the window before it.
+    `${h(capProtein(e.protein))} ${e.proteins && e.proteins.length > 1 ? 'show' : 'shows'} an early association with ${h(
+      symptomLabel(e.symptomType).toLowerCase(),
+    )} (${h(capProtein(e.protein))} in the ${num(e.correlationWindowHours)}&nbsp;h before ${num(e.caseExposed)} of ${num(
+      e.matchedPairs,
+    )} episodes, vs ${num(e.controlExposed)} of ${num(e.matchedPairs)} matched control windows)`
+  const earlyBit =
+    earlies.length > 0
+      ? `, but ${earlies.map(earlyClause).join('; and ')} &mdash; short of the established threshold, so not confirmed, and not a negative result</b>`
+      : `</b> &mdash; not a negative result: a record this size cannot rule a food out`
   // A joint candidate caps at Early (§7 #4), so this is where it actually lands: the clause the
   // established branch keeps for it applies here first.
-  const earlyJoint =
-    early && early.proteins && early.proteins.length > 1
-      ? ' These proteins co-occur in every exposure on record, so the association <b>cannot be attributed to either one individually</b>.'
-      : ''
+  const earlyJoint = earlies.some((e) => e.proteins && e.proteins.length > 1)
+    ? ' Proteins named together co-occur in every exposure on record, so that association <b>cannot be attributed to either one individually</b>.'
+    : ''
   return `<b>No food or protein reached the established association threshold over this window${earlyBit}${staple}.${earlyJoint}${timingBit}`
 }
 

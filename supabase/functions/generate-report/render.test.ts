@@ -8430,10 +8430,27 @@ Deno.test('CUL-1978 ⑥ — the null correlation line names an Early association
     { symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 4, caseExposed: 3, controlExposed: 1, riskDifference: 0.5, pValue: 0.2, symptomEventCount: 4, correlationWindowHours: 24 },
   ])
   assert.ok(
-    /No food or protein reached the established association threshold over this window, but Beef shows an early association with vomiting \(Beef in the 24&nbsp;h before 3 of 4 episodes, vs 1 of 4 matched control windows\) &mdash; too few events to confirm or rule out; this is not a negative result\./.test(withEarly),
+    /No food or protein reached the established association threshold over this window, but Beef shows an early association with vomiting \(Beef in the 24&nbsp;h before 3 of 4 episodes, vs 1 of 4 matched control windows\) &mdash; short of the established threshold, so not confirmed, and not a negative result\./.test(withEarly),
     'the Early finding is named with its counts and its limit',
   )
   assert.ok(!/p&nbsp;=&nbsp;0\.200/.test(withEarly), 'no p value rides with an Early association')
+  // Adversarial pass 1: TWO Early findings, the top-ranked on another symptom. Both are named,
+  // the primary sign's first; naming only the top one exonerated beef by omission.
+  const two = text(
+    renderReport(
+      base({
+        clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'vomit' },
+        correlation: {
+          established: [], hasEstablished: false, noThreshold: true, stapleProtein: null, timing: [],
+          early: [
+            { symptomType: 'diarrhea', protein: 'lamb', proteins: ['lamb'], matchedPairs: 4, caseExposed: 4, controlExposed: 0, riskDifference: 1, pValue: 0.06, symptomEventCount: 4, correlationWindowHours: 24 },
+            { symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 3, caseExposed: 3, controlExposed: 0, riskDifference: 1, pValue: 0.12, symptomEventCount: 3, correlationWindowHours: 12 },
+          ],
+        },
+      }),
+    ),
+  )
+  assert.ok(/but Beef shows an early association with vomiting \(.*?\); and Lamb shows an early association with loose stool/.test(two), 'both named, the primary sign first')
   const without = corr([])
   assert.ok(/No food or protein reached the established association threshold over this window &mdash; not a negative result: a record this size cannot rule a food out\./.test(without))
   assert.ok(!/No single food\/protein reached/.test(without), 'the old negative-reading line is gone')
