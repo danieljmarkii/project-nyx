@@ -3794,7 +3794,7 @@ Deno.test('B-351 D10 — an unread ingredient list NEVER renders "nothing else o
   // Names the real provenance — an automated read of an owner's photo, not a human
   // transcription — and tells the reader to confirm against the bag.
   assert.ok(/automated read of the owner&rsquo;s photo/.test(html), 'provenance stated (§9 condition 1)')
-  assert.ok(/label-derived, not lab-verified/.test(html))
+  assert.ok(/not lab-verified/.test(html))
 })
 
 Deno.test('B-351 D10 — a genuinely READ single-protein panel DOES earn the completeness line', () => {
@@ -3889,7 +3889,7 @@ Deno.test('B-351 — the off-trial `*` is defined on the sheet where it appears,
   )
   assert.ok(/a protein other than the trial protein \(Duck\)/.test(withMark), 'the marker is explained')
   // "does not BY ITSELF mean it caused anything" conceded that it might in combination.
-  assert.ok(/records exposure only; Culprit draws no link between it and any symptom/.test(withMark), 'explicitly non-causal')
+  assert.ok(/records exposure only and is not an association test/.test(withMark), 'explicitly non-causal')
 
   const noTrial = renderReport(base({}))
   assert.ok(!/a protein other than the trial protein/.test(noTrial), 'no legend for a symbol that never appears')
@@ -8430,7 +8430,7 @@ Deno.test('CUL-1978 ⑥ — the null correlation line names an Early association
     { symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 4, caseExposed: 3, controlExposed: 1, riskDifference: 0.5, pValue: 0.2, symptomEventCount: 4, correlationWindowHours: 24 },
   ])
   assert.ok(
-    /No food or protein reached the established association threshold over this window, but Beef shows an early association with vomiting \(3\/4 exposed cases vs 1 control\) &mdash; too few events to confirm or rule out; this is not a negative result\./.test(withEarly),
+    /No food or protein reached the established association threshold over this window, but Beef shows an early association with vomiting \(Beef in the 24&nbsp;h before 3 of 4 episodes, vs 1 of 4 matched control windows\) &mdash; too few events to confirm or rule out; this is not a negative result\./.test(withEarly),
     'the Early finding is named with its counts and its limit',
   )
   assert.ok(!/p&nbsp;=&nbsp;0\.200/.test(withEarly), 'no p value rides with an Early association')
@@ -8461,4 +8461,20 @@ Deno.test('CUL-1979 — the label-contamination row names the source of the food
   const owner = row('owner')
   assert.ok(/Entered by the owner, not read from a label photo/.test(owner), owner)
   assert.ok(!/photo of the label/.test(owner))
+})
+
+Deno.test('CUL-1979 — appendix B names the source of the sets it lists, and the off-trial legend never says "no link"', () => {
+  const sheet = (src: { photo: number; owner: number } | undefined) => {
+    const snap = breachedTrialSnap()
+    snap.diet.proteinSources = src
+    return text(renderReport(snap))
+  }
+  assert.ok(/Proteins are as the owner entered them, not read from a label photo/.test(sheet({ photo: 0, owner: 2 })))
+  assert.ok(!/automated read of the owner&rsquo;s photo/.test(sheet({ photo: 0, owner: 2 })), 'typed-in sets are not called photo reads')
+  assert.ok(/Proteins are an automated read of the owner&rsquo;s photo of each product&rsquo;s ingredient panel/.test(sheet({ photo: 3, owner: 0 })))
+  assert.ok(/either an automated read of the owner&rsquo;s photo of a product&rsquo;s ingredient panel or entered by the owner/.test(sheet(undefined)))
+  // CUL-1978 — page 1 may now name an association; the legend must not deny one exists.
+  const html = sheet({ photo: 0, owner: 2 })
+  assert.ok(!/draws no link/.test(html))
+  assert.ok(/not an association test &mdash; any tested food&ndash;symptom association is stated on page&nbsp;1/.test(html))
 })

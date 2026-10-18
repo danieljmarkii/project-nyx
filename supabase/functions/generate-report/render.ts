@@ -1104,7 +1104,7 @@ function capProtein(p: string): string {
 // ── Protein sets (B-351 slice 5 — §9, Dr. Chen's three conditions) ────────────
 //
 // The three conditions govern every string below:
-//   1. PROVENANCE, STATED ONCE — `PROTEIN_PROVENANCE_NOTE`, on the appendix sheet
+//   1. PROVENANCE, STATED ONCE — `proteinProvenanceNote`, on the appendix sheet
 //      that carries the sets. Label-derived, not lab-verified.
 //   2. PRIMARY FIRST — the set always renders `proteins[0]` in bold, with the
 //      secondaries subordinate behind "also". A 60-second scan never hunts for the
@@ -1121,8 +1121,21 @@ function capProtein(p: string): string {
 // wording implying a human transcription — and the page-1 self-contamination line is the
 // most action-changing sentence in the report, so the reader needs the cue to verify it
 // against the bag. Matches the register the report already uses for vomit-photo reads.
-const PROTEIN_PROVENANCE_NOTE =
-  'Proteins are an automated read of the owner&rsquo;s photo of each product&rsquo;s ingredient panel, owner-correctable &mdash; label-derived, not lab-verified, and worth confirming against the bag before acting on it.'
+//
+// CUL-1979 — AND THE PROVENANCE IS THE DATA'S, here as on page 1. The cold read of the demo
+// report found this sheet calling every set a photo read beside rows reading "ingredient list
+// not captured", over two foods the owner typed in. Same decision as `proteinReadCaveat`.
+function proteinProvenanceNote(snap: ReportSnapshot): string {
+  const src = windowProteinSources(snap)
+  const tail = 'owner-correctable &mdash; not lab-verified, and worth confirming against the bag before acting on it.'
+  if (src.length === 1 && src[0] === 'photo') {
+    return `Proteins are an automated read of the owner&rsquo;s photo of each product&rsquo;s ingredient panel, ${tail}`
+  }
+  if (src.length === 1 && src[0] === 'owner') {
+    return `Proteins are as the owner entered them, not read from a label photo &mdash; ${tail}`
+  }
+  return `Proteins are either an automated read of the owner&rsquo;s photo of a product&rsquo;s ingredient panel or entered by the owner &mdash; ${tail}`
+}
 
 /**
  * "during the trial" — or, when the report sees only part of it, what it actually saw.
@@ -1158,7 +1171,7 @@ function offTrialFootnote(targetProtein: string | null): string {
   return targetProtein
     ? `<p class="note"><b>*</b> a protein other than the trial protein (${h(
         capProtein(targetProtein),
-      )}), present on that food&rsquo;s label. This records exposure only; Culprit draws no link between it and any symptom.</p>`
+      )}), on that food&rsquo;s recorded protein list. This records exposure only and is not an association test &mdash; any tested food&ndash;symptom association is stated on page&nbsp;1 under Timing vs symptoms.</p>`
     : ''
 }
 
@@ -7088,11 +7101,14 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
   // rides with it, because Early is exactly the tier whose p a reader must not lean on.
   const early = (c.early ?? [])[0]
   const earlyBit = early
-    ? `, but ${h(capProtein(early.protein))} shows an early association with ${h(
+    ? // Each count names its denominator and its window (cold read: "0 controls" alone could
+      // not be read). A matched pair is one episode and its time-matched control window; each arm counts the
+      // pairs where the protein fell in the window before it.
+      `, but ${h(capProtein(early.protein))} shows an early association with ${h(
         symptomLabel(early.symptomType).toLowerCase(),
-      )}</b> (${num(early.caseExposed)}/${num(early.matchedPairs)} exposed cases vs ${num(early.controlExposed)} control${
-        early.controlExposed === 1 ? '' : 's'
-      }) &mdash; too few events to confirm or rule out; this is not a negative result`
+      )}</b> (${h(capProtein(early.protein))} in the ${num(early.correlationWindowHours)}&nbsp;h before ${num(early.caseExposed)} of ${num(
+        early.matchedPairs,
+      )} episodes, vs ${num(early.controlExposed)} of ${num(early.matchedPairs)} matched control windows) &mdash; too few events to confirm or rule out; this is not a negative result`
     : `</b> &mdash; not a negative result: a record this size cannot rule a food out`
   // A joint candidate caps at Early (§7 #4), so this is where it actually lands: the clause the
   // established branch keeps for it applies here first.
@@ -8966,7 +8982,7 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
     .join('')
   const anyIncomplete = dietFoods.some((f) => !f.set.complete)
   const proteinsBit = proteinRows
-    ? `${proteinRows}<p class="note">${PROTEIN_PROVENANCE_NOTE}${
+    ? `${proteinRows}<p class="note">${proteinProvenanceNote(snap)}${
         anyIncomplete
           ? ' Where the ingredient list was never captured, only the protein on the front of the pack is known &mdash; those foods may contain proteins not listed here.'
           : ''
@@ -8976,7 +8992,7 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
       // along, because appendix C on this same sheet renders label-derived sets whether
       // or not a named DIET food exists, and §9 condition 1 is "stated once", not
       // "stated only when the diet block happens to be populated".
-      `No named diet food in this window to read a protein set from. <span class="rnote">${PROTEIN_PROVENANCE_NOTE}</span>`
+      `No named diet food in this window to read a protein set from. <span class="rnote">${proteinProvenanceNote(snap)}</span>`
 
   // CUL-978 site 1 — the negative is cross-checked against the indications the report
   // already prints. NEVER SYNTHESISED INTO A ROW: an indication is what the owner typed
