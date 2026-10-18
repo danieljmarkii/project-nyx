@@ -51,8 +51,15 @@ const mockStorageControl = {
   createSignedUrls: jest.fn(),
   createSignedUrl: jest.fn(),
 };
+let mockAuthListener: ((event: string, session: unknown) => void) | null = null;
 jest.mock('./supabase', () => ({
   supabase: {
+    auth: {
+      onAuthStateChange: (cb: (event: string, session: unknown) => void) => {
+        mockAuthListener = cb;
+        return { data: { subscription: { unsubscribe: () => {} } } };
+      },
+    },
     storage: {
       from: () => ({
         createSignedUrls: (...args: unknown[]) => mockStorageControl.createSignedUrls(...args),
@@ -72,6 +79,8 @@ const mockManipulateAsync = require('expo-image-manipulator').manipulateAsync as
 import {
   persistCapture, getSignedUrl, getSignedUrls, buildMedicationPhotoPath,
   compressForUpload, MAX_EDGE_PX,
+  getPetPhotoUrl, peekPetPhotoUrl, evictPetPhotoUrl, markPetPhotoChanged, clearPetPhotoLinks,
+  petPhotoVersion, PET_PHOTO_LINK_TTL_SEC, PET_PHOTO_LINK_MIN_REMAINING_MS,
 } from './storage';
 
 // B-352 / B-206 — compressForUpload's contract is "longest edge ≤ MAX_EDGE_PX".
@@ -378,5 +387,110 @@ describe('buildMedicationPhotoPath (B-124 per-user RLS prefix)', () => {
     expect(() => buildMedicationPhotoPath('u', 'i', '../other-uid/evil')).toThrow(/illegal path segment/);
     expect(() => buildMedicationPhotoPath('u', 'i/extra')).toThrow(/illegal path segment/);
     expect(() => buildMedicationPhotoPath('u', 'i', 'a\\b')).toThrow(/illegal path segment/);
+  });
+});
+
+// ── CUL-1856: the pet photo signed-link cache ──────────────────────────────
+// The component suites (components/pet/PetAvatar.test.tsx) drive this through the
+// disc; these pin the cache's own contract, including the two races a disc cannot
+// show: a signing overtaken by a new photo, and one overtaken by an account change.
+describe('pet photo signed links', () => {
+  type Deferred = { resolve: (url: string | null) => void };
+  let pending: Deferred[] = [];
+  beforeEach(() => {
+    clearPetPhotoLinks();
+    pending = [];
+    mockStorageControl.createSignedUrl.mockReset();
+    mockStorageControl.createSignedUrl.mockImplementation(
+      () => new Promise((res) => {
+        pending.push({
+          resolve: (url) => res(url ? { data: { signedUrl: url }, error: null } : { data: null, error: { message: 'nope' } }),
+        });
+      }),
+    );
+  });
+  const flush = () => new Promise((r) => setImmediate(r));
+
+  it('signs the pet photo bucket for the TTL, and caches the link', async () => {
+    const got = getPetPhotoUrl('p1/profile.jpg');
+    pending[0].resolve('https://s/1');
+    expect(await got).toBe('https://s/1');
+    expect(mockStorageControl.createSignedUrl).toHaveBeenCalledWith('p1/profile.jpg', PET_PHOTO_LINK_TTL_SEC, undefined);
+    expect(peekPetPhotoUrl('p1/profile.jpg')).toBe('https://s/1');
+    expect(await getPetPhotoUrl('p1/profile.jpg')).toBe('https://s/1');
+    expect(mockStorageControl.createSignedUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares one request between concurrent asks for one path', async () => {
+    const a = getPetPhotoUrl('p1/profile.jpg');
+    const b = getPetPhotoUrl('p1/profile.jpg');
+    pending[0].resolve('https://s/1');
+    expect(await a).toBe('https://s/1');
+    expect(await b).toBe('https://s/1');
+    expect(mockStorageControl.createSignedUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops handing out a link with less than the floor left', async () => {
+    const t0 = Date.now();
+    const now = jest.spyOn(Date, 'now').mockReturnValue(t0);
+    try {
+      const got = getPetPhotoUrl('p1/profile.jpg');
+      pending[0].resolve('https://s/1');
+      await got;
+      const edge = t0 + PET_PHOTO_LINK_TTL_SEC * 1000 - PET_PHOTO_LINK_MIN_REMAINING_MS;
+      expect(peekPetPhotoUrl('p1/profile.jpg', edge - 1)).toBe('https://s/1');
+      expect(peekPetPhotoUrl('p1/profile.jpg', edge)).toBeNull();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('caches nothing when signing fails, and never throws', async () => {
+    const got = getPetPhotoUrl('p1/profile.jpg');
+    pending[0].resolve(null);
+    expect(await got).toBeNull();
+    expect(peekPetPhotoUrl('p1/profile.jpg')).toBeNull();
+
+    mockStorageControl.createSignedUrl.mockImplementationOnce(() => Promise.reject(new Error('offline')));
+    expect(await getPetPhotoUrl('p1/profile.jpg')).toBeNull();
+  });
+
+  it('evicts only the link that failed', async () => {
+    const got = getPetPhotoUrl('p1/profile.jpg');
+    pending[0].resolve('https://s/1');
+    await got;
+    evictPetPhotoUrl('p1/profile.jpg', 'https://s/other');
+    expect(peekPetPhotoUrl('p1/profile.jpg')).toBe('https://s/1');
+    evictPetPhotoUrl('p1/profile.jpg', 'https://s/1');
+    expect(peekPetPhotoUrl('p1/profile.jpg')).toBeNull();
+  });
+
+  it('a signing overtaken by a new photo never lands', async () => {
+    const before = petPhotoVersion('p1/profile.jpg');
+    const old = getPetPhotoUrl('p1/profile.jpg');
+    markPetPhotoChanged('p1/profile.jpg');
+    expect(petPhotoVersion('p1/profile.jpg')).toBe(before + 1);
+    const fresh = getPetPhotoUrl('p1/profile.jpg');
+    pending[1].resolve('https://s/new');
+    expect(await fresh).toBe('https://s/new');
+    pending[0].resolve('https://s/old');
+    expect(await old).toBeNull();
+    expect(peekPetPhotoUrl('p1/profile.jpg')).toBe('https://s/new');
+  });
+
+  it('a change of account drops the cache, and a signing in flight across it', async () => {
+    const first = getPetPhotoUrl('p1/profile.jpg');
+    pending[0].resolve('https://s/a');
+    await first;
+    mockAuthListener?.('INITIAL_SESSION', { user: { id: 'user-a' } });
+    const crossing = getPetPhotoUrl('p2/profile.jpg');
+    mockAuthListener?.('TOKEN_REFRESHED', { user: { id: 'user-a' } });
+    expect(peekPetPhotoUrl('p1/profile.jpg')).toBe('https://s/a');
+    mockAuthListener?.('SIGNED_IN', { user: { id: 'user-b' } });
+    expect(peekPetPhotoUrl('p1/profile.jpg')).toBeNull();
+    pending[1].resolve('https://s/crossing');
+    expect(await crossing).toBeNull();
+    await flush();
+    expect(peekPetPhotoUrl('p2/profile.jpg')).toBeNull();
   });
 });

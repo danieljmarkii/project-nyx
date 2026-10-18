@@ -11,7 +11,13 @@ import type { Pet } from '../../store/petStore';
 // switch re-titles the tab (the last of the four acceptance criteria).
 
 jest.mock('../../lib/storage', () => ({
-  getPublicUrl: (bucket: string, path: string) => `https://example.test/${bucket}/${path}`,
+  // CUL-1856: a warm signed-link cache, so the photo renders on the first frame
+  // from a SIGNED url; the public shape (/object/public/) never appears.
+  getPetPhotoUrl: () => new Promise(() => {}),
+  peekPetPhotoUrl: (path: string) => `https://signed.test/object/sign/nyx-pet-photos/${path}?token=t`,
+  evictPetPhotoUrl: () => {},
+  petPhotoVersion: () => 0,
+  subscribePetPhotoVersions: () => () => {},
 }));
 
 // The ladder is a function of the window width, and jest-expo's default window is
@@ -173,7 +179,7 @@ describe('the Pet tab is the pet', () => {
     const { UNSAFE_getAllByType, getByText } = render(<NyxTabBar {...makeProps()} />);
     const { Image } = require('react-native');
     const uris = UNSAFE_getAllByType(Image).map((n: any) => n.props.source?.uri);
-    expect(uris).toContain('https://example.test/nyx-pet-photos/pet-1/avatar.jpg');
+    expect(uris).toContain('https://signed.test/object/sign/nyx-pet-photos/pet-1/avatar.jpg?token=t');
     expect(getByText('B', INSIDE_AVATAR)).toBeTruthy();
   });
 
