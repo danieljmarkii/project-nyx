@@ -42,7 +42,7 @@ import {
 } from './dietTrialCard';
 import { getDietTrialProgress } from './analytics';
 import { localDayIndexOf } from './utils';
-import { REFUSAL_WINDOW_DAYS } from './dietTrial';
+import { REFUSAL_WINDOW_DAYS, computeTrialFacts } from './dietTrial';
 import { milestoneNote } from './dietTrialCompletion';
 import type { TrialResponseCounts } from './trialResponseCounts';
 
@@ -3850,5 +3850,198 @@ describe('the Design v2 trial line (CUL-1526)', () => {
   it('the property is not vacuous: active states reach a line', () => {
     const reached = everyState.filter(([, i]) => resolveTrialStrip(i)?.cardLine);
     expect(reached.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// ── CUL-54 / CUL-57 / CUL-60(b): the ruled refusal rows R1, R2, R4 (2026-10-01) ──
+
+describe('R2 · CUL-54(a) — stale refusals speak in the dated past tense', () => {
+  // Jul 3 and Jul 4: the range fact's two refusal days. Read Jul 25 (activeInput).
+  const STALE_HISTORY = {
+    firstUnfinishedDayIndex: localDayIndexOf('2026-07-03')!,
+    lastUnfinishedDayIndex: localDayIndexOf('2026-07-04')!,
+    ratedSinceLastUnfinished: 0,
+    unfinishedInRecentWindow: false,
+  };
+  const stale = (over: Partial<TrialCardInput> = {}, history = STALE_HISTORY, population: 'trial_diet' | 'meal_record' = 'trial_diet') =>
+    activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      rangeRefusal: { days: 2, ratedFeedings: 3, refusedFeedings: 3, population, history },
+      rangeRefusalSpansEpisodes: true,
+      ...over,
+    });
+
+  it('dates the evidence, names the days apart from the span, and says nothing was rated since', () => {
+    const flags = textOf(resolveTrialCard(stale()), 'flag');
+    expect(flags).toEqual([
+      'On 2 days between Jul 3 and Jul 4, 3 of the 3 trial-diet feedings you rated were left ' +
+        'unfinished. Nothing rated since shows whether that has changed.',
+      'If Mochi still isn’t eating it, a cat that isn’t eating needs a call today, whatever the ' +
+        'trial is doing. Rating the next few meals tells Culprit. Culprit isn’t reading this trial ' +
+        'as a clean run.',
+    ]);
+  });
+
+  it('says what was rated since, when something was', () => {
+    const one = textOf(resolveTrialCard(stale({}, { ...STALE_HISTORY, ratedSinceLastUnfinished: 1 })), 'flag')[0];
+    expect(one).toMatch(/ Since then, 1 of 1 rated feeding was finished\.$/);
+    expect(one).not.toContain('Nothing rated since');
+    const two = textOf(resolveTrialCard(stale({}, { ...STALE_HISTORY, ratedSinceLastUnfinished: 2 })), 'flag')[0];
+    expect(two).toMatch(/ Since then, 2 of 2 rated feedings were finished\.$/);
+  });
+
+  it('keeps the dog off the feline clock', () => {
+    const note = textOf(resolveTrialCard(stale({ species: 'dog', petName: 'Rex' })), 'flag')[1];
+    expect(note).toBe(
+      'If Rex still isn’t eating it, it’s worth a call to your vet. Rating the next few meals ' +
+        'tells Culprit. Culprit isn’t reading this trial as a clean run.',
+    );
+  });
+
+  it('names no diet under the meal record', () => {
+    const [head, note] = textOf(resolveTrialCard(stale({}, STALE_HISTORY, 'meal_record')), 'flag');
+    expect(head).toContain('3 of the 3 meals you rated were left unfinished');
+    expect(note).toBe(
+      'Culprit can’t match these meals to the foods on this trial’s list, so it can’t name which ' +
+        'one went untouched. If Mochi still isn’t eating, a cat that isn’t eating needs a call ' +
+        'today, whatever the trial is doing. Rating the next few meals tells Culprit. Culprit ' +
+        'isn’t reading this trial as a clean run.',
+    );
+  });
+
+  it('a recent unfinished feeding keeps today’s present tense', () => {
+    const flags = textOf(resolveTrialCard(stale({}, { ...STALE_HISTORY, unfinishedInRecentWindow: true })), 'flag');
+    expect(flags[0]).toBe('Every one of the 3 trial-diet feedings you’ve rated was left unfinished, across 2 days.');
+    expect(flags[1]).toContain('a cat that isn’t eating what’s put down needs a call today');
+  });
+
+  it('the now-fact always speaks in the present tense', () => {
+    const flags = textOf(resolveTrialCard(stale({ trialDietRefusal: REFUSING_NOW })), 'flag');
+    expect(flags.join(' ')).not.toContain('Nothing rated since');
+    expect(flags.join(' ')).toContain('19 feedings of the 22 trial-diet feedings you’ve rated');
+    // Even one carrying an out-of-contract stale history.
+    const odd = textOf(resolveTrialCard(stale({ trialDietRefusal: { ...REFUSING_NOW, history: STALE_HISTORY } })), 'flag');
+    expect(odd.join(' ')).not.toContain('Nothing rated since');
+  });
+
+  it('a fact with no history reads as recent (the louder tense)', () => {
+    const flags = textOf(resolveTrialCard(activeInput({
+      species: 'cat', petName: 'Mochi', rangeRefusal: REFUSING_RANGE, rangeRefusalSpansEpisodes: true,
+    })), 'flag');
+    expect(flags.join(' ')).toContain('needs a call today');
+    expect(flags.join(' ')).not.toContain('still isn’t eating');
+  });
+
+  // The ruling's boundary end to end: the shipped facts, read the day the last
+  // refusal is still in the window and the day after.
+  describe('through computeTrialFacts', () => {
+    const facts = (nowMs: number) => computeTrialFacts({
+      trial: { id: 't', startedAt: '2026-07-01', targetDurationDays: 56, species: 'cat' },
+      allowedFoods: [{
+        foodItemId: 'zd', foodKey: 'hills zd', label: 'z/d', role: 'primary_diet',
+        allowedFrom: '2026-07-01', allowedUntil: null, primaryProtein: null, proteins: [],
+      }],
+      feedings: [[1, 8], [1, 20], [2, 8]].map(([d, h], i) => ({
+        eventId: `r${i}`, occurredAt: new Date(2026, 6, d, h).toISOString(), foodItemId: 'zd',
+        foodKey: 'hills zd', label: 'z/d', foodType: 'meal', proteins: [], intakeRating: 'refused',
+      })),
+      nowMs,
+    });
+    const card = (day: number) => {
+      const nowMs = new Date(2026, 6, day, 20).getTime();
+      const f = facts(nowMs);
+      return textOf(resolveTrialCard(activeInput({
+        trial: { status: 'active', startedAt: '2026-07-01', targetDurationDays: 56, foodLabel: 'z/d' },
+        nowMs, species: 'cat', petName: 'Mochi',
+        trialDietRefusal: f.trialDietRefusal, rangeRefusal: f.rangeRefusal,
+        rangeRefusalSpansEpisodes: f.rangeRefusalSpansEpisodes,
+        recentFinishedFeedings: f.recentFinishedFeedings, recentRatedFeedings: f.recentRatedFeedings,
+      })), 'flag').join(' ');
+    };
+    const LAST_RECENT_DAY = 2 + REFUSAL_WINDOW_DAYS - 1;
+
+    it('present tense while Jul 2 is inside the window', () => {
+      expect(card(LAST_RECENT_DAY)).toContain('what’s put down needs a call today');
+    });
+
+    it('past tense the day it leaves', () => {
+      expect(card(LAST_RECENT_DAY + 1)).toMatch(/^On 2 days between Jul 1 and Jul 2, 3 of the 3 /);
+    });
+  });
+});
+
+describe('R4 · CUL-57 — a run of refused or picked feedings leads the card', () => {
+  // Read Jul 25 at noon (a Saturday).
+  const withRun = (startedAt: Date, population: 'trial_diet' | 'meal_record' = 'trial_diet') =>
+    activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      trialDietRefusal: {
+        ...REFUSING_NOW,
+        population,
+        run: {
+          feedings: 4,
+          startedAt: startedAt.toISOString(),
+          startDayIndex: localDayIndexOf(
+            `${startedAt.getFullYear()}-${String(startedAt.getMonth() + 1).padStart(2, '0')}-${String(startedAt.getDate()).padStart(2, '0')}`,
+          )!,
+        },
+      },
+    });
+
+  it('names a weekday and time inside six days, above the share sentence', () => {
+    const flags = textOf(resolveTrialCard(withRun(new Date(2026, 6, 21, 18))), 'flag');
+    expect(flags[0]).toBe(
+      'The last 4 trial-diet feedings you rated, back to Tuesday 6 PM, were refused or only picked at.',
+    );
+    expect(flags[1]).toBe(
+      '19 feedings of the 22 trial-diet feedings you’ve rated were left unfinished, across 11 days.',
+    );
+  });
+
+  it('says today for a run that began today, and keeps the minutes', () => {
+    expect(textOf(resolveTrialCard(withRun(new Date(2026, 6, 25, 6, 30))), 'flag')[0])
+      .toContain('back to 6:30 AM today,');
+  });
+
+  it('six days back is a weekday; seven is a date', () => {
+    expect(textOf(resolveTrialCard(withRun(new Date(2026, 6, 19, 20))), 'flag')[0])
+      .toContain('back to Sunday 8 PM,');
+    expect(textOf(resolveTrialCard(withRun(new Date(2026, 6, 18, 20))), 'flag')[0])
+      .toContain('back to Jul 18,');
+  });
+
+  it('the noun follows the population', () => {
+    expect(textOf(resolveTrialCard(withRun(new Date(2026, 6, 21, 18), 'meal_record')), 'flag')[0])
+      .toMatch(/^The last 4 meals you rated/);
+  });
+
+  it('no run, no lead', () => {
+    const flags = textOf(resolveTrialCard(activeInput({ species: 'cat', petName: 'Mochi', trialDietRefusal: REFUSING_NOW })), 'flag');
+    expect(flags.join(' ')).not.toContain('refused or only picked at');
+  });
+});
+
+describe('R1 · CUL-60(b) — the off-diet count is caveated while the refusal speaks from the meal record', () => {
+  // 3 of 4 off-diet: below the caveat's own all-unmatched test, so only R1 can raise it.
+  const card = (population: 'trial_diet' | 'meal_record') => resolveTrialCard(activeInput({
+    species: 'cat',
+    petName: 'Mochi',
+    exposures: { mayStateRecordClean: false, totalFeedings: 4, offDiet: 3 },
+    trialDietRefusal: { days: 3, ratedFeedings: 3, refusedFeedings: 3, population },
+  }));
+
+  it('meal record: the caveat renders and the "not a total" suffix drops', () => {
+    const m = card('meal_record');
+    expect(m.state).toBe('trial_refusal');
+    expect(textOf(m, 'qualifier').join(' ')).toContain('Culprit can’t match these against the food list');
+    expect(textOf(m, 'fact')).toContain('Separately, 3 logged feedings were outside the trial diet.');
+  });
+
+  it('trial diet: unchanged — no caveat, the suffix stays', () => {
+    const t = card('trial_diet');
+    expect(textOf(t, 'qualifier').join(' ')).not.toContain('can’t match these against the food list');
+    expect(textOf(t, 'fact').join(' ')).toContain('The 3 are what’s been logged, not a total.');
   });
 });
