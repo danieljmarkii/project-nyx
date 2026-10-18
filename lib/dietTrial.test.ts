@@ -2764,6 +2764,7 @@ describe('R2 · CUL-54(a) — the range fact carries its own dates', () => {
       firstUnfinishedDayIndex: localDayIndexOf('2026-07-01'),
       lastUnfinishedDayIndex: localDayIndexOf('2026-07-02'),
       ratedSinceLastUnfinished: 0,
+      ratedMealsSinceLastUnfinished: 0,
       unfinishedInRecentWindow: false,
     });
   });
@@ -2784,6 +2785,38 @@ describe('R2 · CUL-54(a) — the range fact carries its own dates', () => {
     });
     const facts = refusedThenQuiet(LAST_RECENT_DAY + 1, [later, unrated]);
     expect(facts.rangeRefusal?.history?.ratedSinceLastUnfinished).toBe(1);
+  });
+
+  it('a recent FINISHED rating is not an unfinished one', () => {
+    const ate = feeding({
+      eventId: 'ate-recent',
+      occurredAt: at(`2026-07-${LAST_RECENT_DAY + 1}`),
+      foodItemId: DRY_DUCK.foodItemId,
+      foodKey: DRY_DUCK.foodKey,
+      intakeRating: 'all',
+    });
+    const facts = refusedThenQuiet(LAST_RECENT_DAY + 1, [ate]);
+    expect(facts.rangeRefusal?.history?.unfinishedInRecentWindow).toBe(false);
+    expect(facts.rangeRefusal?.history?.ratedSinceLastUnfinished).toBe(1);
+  });
+
+  it('a refused meal of another food inside the window keeps it recent; a finished one is counted as rated since', () => {
+    const rival = (rating: string) => feeding({
+      eventId: `rival-${rating}`,
+      occurredAt: at(`2026-07-${LAST_RECENT_DAY + 1}`),
+      foodItemId: 'rival',
+      foodKey: 'rival kibble',
+      intakeRating: rating,
+    });
+    const refused = refusedThenQuiet(LAST_RECENT_DAY + 1, [rival('refused')]);
+    expect(refused.rangeRefusal?.population).toBe('trial_diet');
+    expect(refused.rangeRefusal?.history?.unfinishedInRecentWindow).toBe(true);
+    const finished = refusedThenQuiet(LAST_RECENT_DAY + 1, [rival('all')]);
+    expect(finished.rangeRefusal?.history).toMatchObject({
+      unfinishedInRecentWindow: false,
+      ratedSinceLastUnfinished: 0,
+      ratedMealsSinceLastUnfinished: 1,
+    });
   });
 
   it('is never set on the now-fact', () => {
@@ -2840,6 +2873,28 @@ describe('R4 · CUL-57 — the trailing run of refused or picked ratings', () =>
     });
     // One population, so both facts carry the same run.
     expect(facts.rangeRefusal?.run).toEqual(facts.trialDietRefusal?.run);
+  });
+
+  // The ruling's adversarial counterexample R4 #3: under the narrow population a
+  // finished topper is not in the run, so it neither breaks it nor joins it.
+  it('a finished topper does not break a trial-diet run', () => {
+    const facts = computeTrialFacts({
+      trial: { ...TRIAL, species: 'cat' },
+      allowedFoods: [DRY_DUCK],
+      feedings: [
+        ...[jul(18, 18), jul(19, 8), jul(19, 18)].map((when, i) => feeding({
+          eventId: `d${i}`, occurredAt: when.toISOString(),
+          foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused',
+        })),
+        feeding({
+          eventId: 'topper', occurredAt: jul(19, 19).toISOString(),
+          foodItemId: 'tuna', foodKey: 'tuna topper', intakeRating: 'all',
+        }),
+      ],
+      nowMs: NOW,
+    });
+    expect(facts.trialDietRefusal?.population).toBe('trial_diet');
+    expect(runOf(facts)?.feedings).toBe(3);
   });
 
   it('two members are not a run', () => {

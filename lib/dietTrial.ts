@@ -1502,8 +1502,12 @@ export interface TrialRefusalHistory {
   /** Rated feedings logged after the last unfinished one. Every one of them was
    *  finished, by definition of "last". Zero means nothing rated since. */
   ratedSinceLastUnfinished: number;
-  /** Any unfinished rated feeding inside the recency window. False is the ruling's
-   *  past-tense gate. */
+  /** The same, over the whole meal record (any non-treat food). Equal to the above
+   *  under `meal_record`; under `trial_diet` it is what lets the card say "nothing
+   *  rated since" only when that is true of every meal, not only the trial diet. */
+  ratedMealsSinceLastUnfinished: number;
+  /** Any unfinished rated feeding inside the recency window, of the speaking
+   *  population OR of the meal record. False is the ruling's past-tense gate. */
   unfinishedInRecentWindow: boolean;
 }
 
@@ -2377,8 +2381,18 @@ function refusalRunOf(c: RefusalCounters, recencyStart: number): TrialRefusalRun
   };
 }
 
-/** See `TrialRefusalHistory`. Undefined when nothing was left unfinished. */
-function refusalHistoryOf(c: RefusalCounters): TrialRefusalHistory | undefined {
+/** See `TrialRefusalHistory`. Undefined when nothing was left unfinished.
+ *
+ *  `c` is the population that speaks; `meals` is the WIDE meal record, always. The
+ *  recency gate and the "rated since" count read both, because the first cut read
+ *  `c` alone and `adversarial-reviewer` executed what that cost: three matched
+ *  refusals on Jul 1–2, then twelve refused bowls this week logged against a
+ *  re-photographed bag. One match keeps the narrow population, which saw nothing
+ *  recent, so the card went to the past tense and printed "Nothing rated since"
+ *  over a cat refusing every bowl — quieter than before this PR. A recent unfinished
+ *  meal of ANY food keeps the present tense: the louder reading of "the population
+ *  it speaks for" when the app cannot tell which food the bowl held. */
+function refusalHistoryOf(c: RefusalCounters, meals: RefusalCounters): TrialRefusalHistory | undefined {
   const stamps = c.rangeStamps.filter(Number.isFinite);
   if (c.rangeDays.size === 0 || stamps.length === 0) return undefined;
   const days = [...c.rangeDays];
@@ -2387,7 +2401,8 @@ function refusalHistoryOf(c: RefusalCounters): TrialRefusalHistory | undefined {
     firstUnfinishedDayIndex: Math.min(...days),
     lastUnfinishedDayIndex: Math.max(...days),
     ratedSinceLastUnfinished: c.ratedLog.filter((r) => r.stamp > lastUnfinished).length,
-    unfinishedInRecentWindow: c.recentNotFinished > 0,
+    ratedMealsSinceLastUnfinished: meals.ratedLog.filter((r) => r.stamp > lastUnfinished).length,
+    unfinishedInRecentWindow: c.recentNotFinished > 0 || meals.recentNotFinished > 0,
   };
 }
 
@@ -3062,7 +3077,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
           ratedFeedings: pop.rangeRated,
           days: pop.rangeDays.size,
           population,
-          history: refusalHistoryOf(pop),
+          history: refusalHistoryOf(pop, wide),
           run,
         }
       : null;

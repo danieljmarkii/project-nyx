@@ -1038,21 +1038,32 @@ export function pastRefusalHeadline(
   const wide = refusal.population === 'meal_record';
   const from = formatTrialDate(history.firstUnfinishedDayIndex, today);
   const to = formatTrialDate(history.lastUnfinishedDayIndex, today);
+  // THE DATES BELONG TO THE UNFINISHED FEEDINGS, NOT THE DENOMINATOR. The first cut
+  // opened "On 2 days between Jul 2 and Jul 3, 4 of the 6 …", and two of the six were
+  // rated on Jul 1, outside the dates the sentence put them in (C-37,
+  // `adversarial-reviewer`). The whole-range count leads; the dates follow the
+  // numerator they describe.
   const when =
     history.firstUnfinishedDayIndex === history.lastUnfinishedDayIndex
-      ? `On ${from}`
-      : `On ${refusal.days} days between ${from} and ${to}`;
+      ? `on ${from}`
+      : `on ${refusal.days} days between ${from} and ${to}`;
   const qualified = wide ? 'meals' : 'trial-diet feedings';
   const verb = refusal.refusedFeedings === 1 ? 'was' : 'were';
   const head =
-    `${when}, ${refusal.refusedFeedings} of the ${refusal.ratedFeedings} ${qualified} ` +
-    `you rated ${verb} left unfinished.`;
+    `Of the ${refusal.ratedFeedings} ${qualified} you rated, ${refusal.refusedFeedings} ` +
+    `${verb} left unfinished, ${when}.`;
   const n = history.ratedSinceLastUnfinished;
-  if (n === 0) return `${head} Nothing rated since shows whether that has changed.`;
   const unit = wide ? 'meal' : 'feeding';
-  return n === 1
-    ? `${head} Since then, 1 of 1 rated ${unit} was finished.`
-    : `${head} Since then, ${n} of ${n} rated ${unit}s were finished.`;
+  if (n > 0) {
+    return n === 1
+      ? `${head} Since then, 1 rated ${unit} was finished.`
+      : `${head} Since then, ${n} rated ${unit}s were finished.`;
+  }
+  // "Nothing rated since" only when it is true of every meal. A finished topper
+  // rated since is something rated; it says nothing about the trial diet.
+  return (history.ratedMealsSinceLastUnfinished ?? 0) > 0
+    ? `${head} No trial-diet feeding rated since shows whether that has changed.`
+    : `${head} Nothing rated since shows whether that has changed.`;
 }
 
 /**
@@ -1880,7 +1891,10 @@ function pushRegisterBody(
         return;
       }
       // CUL-57 (R4): the worse case leads, above the share sentence it leaves alone.
-      const runLine = refusalRunLine(refusal, input.nowMs);
+      // Not on a terminal card: its facts stop at `ended_at`, so "the last N you
+      // rated" would be false over feedings rated after the end (executed by
+      // `adversarial-reviewer`: an abandoned trial, then three bowls rated All).
+      const runLine = isTerminalTrial(input) ? null : refusalRunLine(refusal, input.nowMs);
       if (runLine) lines.push({ role: 'flag', text: runLine });
       lines.push({ role: 'flag', text: trialViabilityHeadline(refusal) });
       lines.push({
@@ -2585,7 +2599,9 @@ function unmatchedCaveatApplies(input: TrialCardInput): boolean {
  *  would be quieter. */
 function refusalSpeaksFromMealRecord(register: TrialCardRegister, input: TrialCardInput): boolean {
   if (register !== 'trial_refusal') return false;
-  if ((input.exposures?.totalFeedings ?? 0) <= 0) return false;
+  // The caveat qualifies a COUNT; with no off-diet count on the card, "these" would
+  // point at nothing.
+  if ((input.exposures?.offDiet ?? 0) <= 0) return false;
   return liveRefusal(input)?.population === 'meal_record';
 }
 

@@ -3861,6 +3861,7 @@ describe('R2 · CUL-54(a) — stale refusals speak in the dated past tense', () 
     firstUnfinishedDayIndex: localDayIndexOf('2026-07-03')!,
     lastUnfinishedDayIndex: localDayIndexOf('2026-07-04')!,
     ratedSinceLastUnfinished: 0,
+    ratedMealsSinceLastUnfinished: 0,
     unfinishedInRecentWindow: false,
   };
   const stale = (over: Partial<TrialCardInput> = {}, history = STALE_HISTORY, population: 'trial_diet' | 'meal_record' = 'trial_diet') =>
@@ -3875,8 +3876,8 @@ describe('R2 · CUL-54(a) — stale refusals speak in the dated past tense', () 
   it('dates the evidence, names the days apart from the span, and says nothing was rated since', () => {
     const flags = textOf(resolveTrialCard(stale()), 'flag');
     expect(flags).toEqual([
-      'On 2 days between Jul 3 and Jul 4, 3 of the 3 trial-diet feedings you rated were left ' +
-        'unfinished. Nothing rated since shows whether that has changed.',
+      'Of the 3 trial-diet feedings you rated, 3 were left unfinished, on 2 days between Jul 3 ' +
+        'and Jul 4. Nothing rated since shows whether that has changed.',
       'If Mochi still isn’t eating it, a cat that isn’t eating needs a call today, whatever the ' +
         'trial is doing. Rating the next few meals tells Culprit. Culprit isn’t reading this trial ' +
         'as a clean run.',
@@ -3884,11 +3885,22 @@ describe('R2 · CUL-54(a) — stale refusals speak in the dated past tense', () 
   });
 
   it('says what was rated since, when something was', () => {
-    const one = textOf(resolveTrialCard(stale({}, { ...STALE_HISTORY, ratedSinceLastUnfinished: 1 })), 'flag')[0];
-    expect(one).toMatch(/ Since then, 1 of 1 rated feeding was finished\.$/);
+    const one = textOf(resolveTrialCard(stale({}, { ...STALE_HISTORY, ratedSinceLastUnfinished: 1, ratedMealsSinceLastUnfinished: 1 })), 'flag')[0];
+    expect(one).toMatch(/ Since then, 1 rated feeding was finished\.$/);
     expect(one).not.toContain('Nothing rated since');
-    const two = textOf(resolveTrialCard(stale({}, { ...STALE_HISTORY, ratedSinceLastUnfinished: 2 })), 'flag')[0];
-    expect(two).toMatch(/ Since then, 2 of 2 rated feedings were finished\.$/);
+    const two = textOf(resolveTrialCard(stale({}, { ...STALE_HISTORY, ratedSinceLastUnfinished: 2, ratedMealsSinceLastUnfinished: 2 })), 'flag')[0];
+    expect(two).toMatch(/ Since then, 2 rated feedings were finished\.$/);
+  });
+
+  it('a meal of another food rated since is not "nothing rated since"', () => {
+    const head = textOf(resolveTrialCard(stale({}, { ...STALE_HISTORY, ratedMealsSinceLastUnfinished: 1 })), 'flag')[0];
+    expect(head).toMatch(/ No trial-diet feeding rated since shows whether that has changed\.$/);
+  });
+
+  it('one unfinished day names the day, not a span', () => {
+    const one = { ...STALE_HISTORY, lastUnfinishedDayIndex: STALE_HISTORY.firstUnfinishedDayIndex };
+    const head = textOf(resolveTrialCard(stale({}, one)), 'flag')[0];
+    expect(head).toContain('3 were left unfinished, on Jul 3.');
   });
 
   it('keeps the dog off the feline clock', () => {
@@ -3901,7 +3913,7 @@ describe('R2 · CUL-54(a) — stale refusals speak in the dated past tense', () 
 
   it('names no diet under the meal record', () => {
     const [head, note] = textOf(resolveTrialCard(stale({}, STALE_HISTORY, 'meal_record')), 'flag');
-    expect(head).toContain('3 of the 3 meals you rated were left unfinished');
+    expect(head).toContain('Of the 3 meals you rated, 3 were left unfinished');
     expect(note).toBe(
       'Culprit can’t match these meals to the foods on this trial’s list, so it can’t name which ' +
         'one went untouched. If Mochi still isn’t eating, a cat that isn’t eating needs a call ' +
@@ -3966,7 +3978,44 @@ describe('R2 · CUL-54(a) — stale refusals speak in the dated past tense', () 
     });
 
     it('past tense the day it leaves', () => {
-      expect(card(LAST_RECENT_DAY + 1)).toMatch(/^On 2 days between Jul 1 and Jul 2, 3 of the 3 /);
+      expect(card(LAST_RECENT_DAY + 1)).toMatch(/^Of the 3 trial-diet feedings you rated, 3 were left unfinished, on 2 days between Jul 1 and Jul 2\./);
+    });
+
+    // `adversarial-reviewer` S1, executed: three matched refusals on Jul 1–2, then a
+    // week of refused bowls of a re-photographed bag. One match keeps the narrow
+    // population, which sees nothing recent; the meal record does.
+    it('a refused meal of any food this fortnight keeps the present tense', () => {
+      const nowMs = new Date(2026, 6, 25, 20).getTime();
+      const f = computeTrialFacts({
+        trial: { id: 't', startedAt: '2026-07-01', targetDurationDays: 56, species: 'cat' },
+        allowedFoods: [{
+          foodItemId: 'zd', foodKey: 'hills zd', label: 'z/d', role: 'primary_diet',
+          allowedFrom: '2026-07-01', allowedUntil: null, primaryProtein: null, proteins: [],
+        }],
+        feedings: [
+          ...[[1, 8], [1, 20], [2, 8]].map(([d, h], i) => ({
+            eventId: `r${i}`, occurredAt: new Date(2026, 6, d, h).toISOString(), foodItemId: 'zd',
+            foodKey: 'hills zd', label: 'z/d', foodType: 'meal', proteins: [], intakeRating: 'refused',
+          })),
+          ...[[20, 8], [20, 20], [21, 8], [21, 20]].map(([d, h], i) => ({
+            eventId: `b${i}`, occurredAt: new Date(2026, 6, d, h).toISOString(), foodItemId: 'zd-rephoto',
+            foodKey: 'hills zd feline kibble', label: 'z/d Feline', foodType: 'meal', proteins: [],
+            intakeRating: 'refused',
+          })),
+        ],
+        nowMs,
+      });
+      expect(f.rangeRefusal?.population).toBe('trial_diet');
+      expect(f.rangeRefusal?.history?.unfinishedInRecentWindow).toBe(true);
+      const flags = textOf(resolveTrialCard(activeInput({
+        trial: { status: 'active', startedAt: '2026-07-01', targetDurationDays: 56, foodLabel: 'z/d' },
+        nowMs, species: 'cat', petName: 'Mochi',
+        trialDietRefusal: f.trialDietRefusal, rangeRefusal: f.rangeRefusal,
+        rangeRefusalSpansEpisodes: f.rangeRefusalSpansEpisodes,
+        recentFinishedFeedings: f.recentFinishedFeedings, recentRatedFeedings: f.recentRatedFeedings,
+      })), 'flag').join(' ');
+      expect(flags).toContain('what’s put down needs a call today');
+      expect(flags).not.toContain('Nothing rated since');
     });
   });
 });
@@ -4017,6 +4066,16 @@ describe('R4 · CUL-57 — a run of refused or picked feedings leads the card', 
       .toMatch(/^The last 4 meals you rated/);
   });
 
+  it('not on an ended trial, whose facts stop at the end', () => {
+    const ended = withRun(new Date(2026, 6, 21, 18));
+    const flags = textOf(resolveTrialCard({
+      ...ended,
+      trial: { ...ended.trial!, status: 'abandoned', endedAt: '2026-07-24', stoppedReason: 'refused' },
+    }), 'flag');
+    expect(flags.length).toBeGreaterThan(0); // the register still speaks
+    expect(flags.join(' ')).not.toContain('refused or only picked at');
+  });
+
   it('no run, no lead', () => {
     const flags = textOf(resolveTrialCard(activeInput({ species: 'cat', petName: 'Mochi', trialDietRefusal: REFUSING_NOW })), 'flag');
     expect(flags.join(' ')).not.toContain('refused or only picked at');
@@ -4043,5 +4102,16 @@ describe('R1 · CUL-60(b) — the off-diet count is caveated while the refusal s
     const t = card('trial_diet');
     expect(textOf(t, 'qualifier').join(' ')).not.toContain('can’t match these against the food list');
     expect(textOf(t, 'fact').join(' ')).toContain('The 3 are what’s been logged, not a total.');
+  });
+
+  it('no off-diet count, no caveat: "these" would point at nothing', () => {
+    const none = resolveTrialCard(activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      exposures: { mayStateRecordClean: false, totalFeedings: 4, offDiet: 0 },
+      trialDietRefusal: { days: 3, ratedFeedings: 3, refusedFeedings: 3, population: 'meal_record' },
+    }));
+    expect(none.state).toBe('trial_refusal');
+    expect(textOf(none, 'qualifier').join(' ')).not.toContain('can’t match these against the food list');
   });
 });
