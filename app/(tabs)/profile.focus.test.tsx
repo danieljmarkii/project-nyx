@@ -58,7 +58,15 @@ jest.mock('../../lib/supabase', () => {
 jest.mock('../../lib/storage', () => ({
   uploadPhoto: jest.fn(),
   compressForUpload: jest.fn(),
-  getPublicUrl: () => 'https://example.test/photo.jpg',
+  // CUL-1856: pet photos sign through lib/storage.ts. A signing that never
+  // answers keeps every disc on its initial, which is all this suite needs.
+  getPetPhotoUrl: () => new Promise(() => {}),
+  peekPetPhotoUrl: () => null,
+  evictPetPhotoUrl: () => {},
+  petPhotoVersion: () => 0,
+  subscribePetPhotoVersions: () => () => {},
+  markPetPhotoChanged: jest.fn(),
+  PET_PHOTOS_BUCKET: 'nyx-pet-photos',
   getSignedUrls: jest.fn(() => Promise.resolve(new Map())),
 }));
 

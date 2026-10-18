@@ -17,7 +17,15 @@ jest.mock('../../lib/supabase', () => ({ supabase: {} }));
 // The switcher layer animates in, so it reads the reduced-motion setting; mock the
 // hook rather than let its async AccessibilityInfo read settle outside act().
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
-jest.mock('../../lib/storage', () => ({ getPublicUrl: () => null }));
+jest.mock('../../lib/storage', () => ({
+  // CUL-1856: pet photos sign through lib/storage.ts. A signing that never
+  // answers keeps every disc on its initial, which is all this suite needs.
+  getPetPhotoUrl: () => new Promise(() => {}),
+  peekPetPhotoUrl: () => null,
+  evictPetPhotoUrl: () => {},
+  petPhotoVersion: () => 0,
+  subscribePetPhotoVersions: () => () => {},
+}));
 
 // Stub the confirm + beat so this test is about the SHEET's routing/stages, not the
 // confirm form (tested in SimpleEventConfirm.test) or the beat animation.

@@ -17,7 +17,9 @@ import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
 import { ThemedText } from '../../components/ui/ThemedText';
 import { supabase } from '../../lib/supabase';
-import { uploadPhoto, compressForUpload, getPublicUrl, getSignedUrls } from '../../lib/storage';
+import {
+  uploadPhoto, compressForUpload, getSignedUrls, markPetPhotoChanged, PET_PHOTOS_BUCKET,
+} from '../../lib/storage';
 import { failureCode } from '../../lib/uploadDiagnostics';
 import { VetFilesCard } from '../../components/vetfiles/VetFilesCard';
 import { VET_FILES_ENTRY_ENABLED } from '../../lib/vetFilesEntry';
@@ -36,6 +38,7 @@ import { usePetStore } from '../../store/petStore';
 import { useMomentStore } from '../../store/momentStore';
 import { insertMedicationDose, applyLogTimeDoubleDoseCheck } from '../../lib/medicationDose';
 import { PetSwitcherSheet } from '../../components/pet/PetSwitcherSheet';
+import { usePetPhotoUri } from '../../components/pet/PetAvatar';
 import { HEADER_CHEVRON_SIZE, headerSwitcherLabel } from '../../lib/headerName';
 import { EditPetModal } from '../../components/profile/EditPetModal';
 import { WeightTrendCard } from '../../components/profile/WeightTrendCard';
@@ -77,7 +80,6 @@ import {
 } from '../../lib/pastMedications';
 import { PastMedicationsSection } from '../../components/profile/PastMedicationsSection';
 
-const PET_PHOTO_BUCKET = 'nyx-pet-photos';
 
 interface RegimenDisplay extends Regimen {
   // null = the start date did not parse, so the course's length is unknown (B-441).
@@ -214,6 +216,9 @@ export default function ProfileScreen() {
   // (null off-iOS / before the widget index is published), so the profile names
   // the slot instead of leaving the owner to bind by trial and error.
   const widgetSlotLabel = useWidgetSlotLabel(activePet?.id);
+  // CUL-1856 — the hero reads the same signed link as every avatar disc, and
+  // falls back to the initials on the same terms.
+  const heroPhoto = usePetPhotoUri(activePet?.photo_path ?? null);
 
   // CUL-618 — the pet-switcher sheet, opened from the name (see the header card).
   // PetSwitcherSheet (the Modal wrapper), NOT PetSwitcherPanel: this is a root
@@ -879,7 +884,7 @@ export default function ProfileScreen() {
       // compressForUpload re-encodes to a stripped JPEG (privacy-hardening sweep).
       const uploadUri = await compressForUpload(localUri);
       stage = 'upload';
-      await uploadPhoto(PET_PHOTO_BUCKET, storagePath, uploadUri);
+      await uploadPhoto(PET_PHOTOS_BUCKET, storagePath, uploadUri);
 
       stage = 'link';
       const { error } = await supabase
@@ -889,6 +894,9 @@ export default function ProfileScreen() {
 
       if (error) throw error;
       updatePet({ photo_path: storagePath });
+      // The path is the same on every re-upload, so this is what makes every
+      // disc and this hero sign a new link instead of showing the old face.
+      markPetPhotoChanged(storagePath);
     } catch (e) {
       // nyx-pet-photos holds zero objects and carries a standing "uploads fail
       // with 42501" open question, so the FIRST real upload in this product's
@@ -1118,9 +1126,7 @@ export default function ProfileScreen() {
     );
   }
 
-  const photoUri = activePet.photo_path
-    ? getPublicUrl(PET_PHOTO_BUCKET, activePet.photo_path)
-    : null;
+  const photoUri = heroPhoto.uri;
 
   // CUL-618 — the pet's name IS the switcher on this tab (ruling R2 = shape a2).
   // Derived in the render body, like photoUri above and for the same reason: the
@@ -1166,7 +1172,13 @@ export default function ProfileScreen() {
             disabled={photoUploading}
           >
             {photoUri ? (
-              <Image source={{ uri: photoUri }} style={styles.photo} resizeMode="cover" />
+              <Image
+                key={heroPhoto.attempt}
+                source={{ uri: photoUri }}
+                style={styles.photo}
+                resizeMode="cover"
+                onError={heroPhoto.onError}
+              />
             ) : (
               <View style={styles.photoPlaceholder}>
                 <ThemedText style={styles.photoInitials}>{initials}</ThemedText>
@@ -1181,7 +1193,9 @@ export default function ProfileScreen() {
 
           <TouchableOpacity onPress={handlePickPhoto} disabled={photoUploading} hitSlop={8}>
             <ThemedText style={styles.photoLabel}>
-              {photoUri ? 'Change photo' : 'Add photo'}
+              {/* Off the record, not the link: a pet whose photo failed to
+                  load still has one, and "Add photo" would say otherwise. */}
+              {activePet.photo_path ? 'Change photo' : 'Add photo'}
             </ThemedText>
           </TouchableOpacity>
 

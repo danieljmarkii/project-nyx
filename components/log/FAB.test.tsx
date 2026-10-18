@@ -13,7 +13,15 @@
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 // momentStore reaches the sync layer, which fails fast without the client env.
 jest.mock('../../lib/supabase', () => ({ supabase: {} }));
-jest.mock('../../lib/storage', () => ({ getPublicUrl: () => null }));
+jest.mock('../../lib/storage', () => ({
+  // CUL-1856: pet photos sign through lib/storage.ts. A signing that never
+  // answers keeps every disc on its initial, which is all this suite needs.
+  getPetPhotoUrl: () => new Promise(() => {}),
+  peekPetPhotoUrl: () => null,
+  evictPetPhotoUrl: () => {},
+  petPhotoVersion: () => 0,
+  subscribePetPhotoVersions: () => () => {},
+}));
 // The commit verbs too: a one-tap food that lands reveals its meal card, and the
 // moment store plays the card's haptic at that reveal.
 jest.mock('../../lib/haptics', () => ({
