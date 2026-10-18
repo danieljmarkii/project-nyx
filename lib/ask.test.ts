@@ -14,20 +14,24 @@ import {
   RUNDOWN_CTA,
 } from './ask';
 import { supabase } from './supabase';
-import { getDb } from './db';
+import { countUnsentForSignal, getDb } from './db';
 
 // ask.ts imports the real supabase client (fail-fast env check) and the SQLite
 // handle — replace both before ask.ts resolves them (same pattern as signal.test.ts).
 jest.mock('./supabase', () => ({
   supabase: { functions: { invoke: jest.fn() } },
 }));
-jest.mock('./db', () => ({ getDb: jest.fn() }));
+jest.mock('./db', () => ({ getDb: jest.fn(), countUnsentForSignal: jest.fn() }));
+// CUL-1982: the real hasUnsentRows (lib/signal.ts) runs over a mocked queue count; its push
+// imports are stubbed only so the module resolves (Ask never pushes).
+jest.mock('./sync', () => ({ syncPendingEvents: jest.fn(), syncPendingMeals: jest.fn() }));
 // getDeviceTimezone (B-443) rides the request; pin it to a fixed zone so the body assertion is
 // deterministic under any runner clock (the non-UTC CI job runs jest in Kiritimati/Chatham/Honolulu).
 jest.mock('./profile', () => ({ getDeviceTimezone: jest.fn(() => 'America/Chicago') }));
 
 const mockedInvoke = supabase.functions.invoke as jest.Mock;
 const mockedGetDb = getDb as jest.Mock;
+const mockedUnsent = countUnsentForSignal as jest.Mock;
 
 describe('parseAskResponse — the typed response contract', () => {
   it('discriminates a successful answer body', () => {
@@ -99,14 +103,38 @@ describe('parseAskResponse — the typed response contract', () => {
 });
 
 describe('askQuestion — the network call', () => {
+  beforeEach(() => mockedUnsent.mockReset().mockResolvedValue(0));
   afterEach(() => jest.clearAllMocks());
+
+  const sentUnsent = (): unknown => {
+    expect(mockedInvoke).toHaveBeenCalledTimes(1);
+    return (mockedInvoke.mock.calls[0][1] as { body: { unsent_rows: unknown } }).body.unsent_rows;
+  };
 
   it('sends pet_id + question + prior conversation and returns the parsed answer', async () => {
     mockedInvoke.mockResolvedValue({ data: { outcome: 'answer', headline: 'ok', detail: '', followups: [] }, error: null });
     const res = await askQuestion({ petId: 'p1', question: 'when did she last vomit?', conversation: [{ role: 'user', content: 'hi' }] });
     expect(mockedInvoke).toHaveBeenCalledWith('ask', {
-      body: { pet_id: 'p1', question: 'when did she last vomit?', conversation: [{ role: 'user', content: 'hi' }], timezone: 'America/Chicago' },
+      body: { pet_id: 'p1', question: 'when did she last vomit?', conversation: [{ role: 'user', content: 'hi' }], timezone: 'America/Chicago', unsent_rows: false },
     });
+    expect(res.ok).toBe(true);
+  });
+
+  // CUL-1982: Ask answers from the server's copy, so the phone says when it holds rows that copy
+  // lacks. The count is PR-24's (refused and held-for-good rows are already left out of it, see
+  // syncQueue.unsentForSignal.test.ts); this pins that Ask reads it and what a failure says.
+  it('a row the phone has not sent yet sends unsent_rows: true', async () => {
+    mockedUnsent.mockResolvedValue(2);
+    mockedInvoke.mockResolvedValue({ data: { outcome: 'llm_unavailable', headline: 'h', detail: '', followups: [] }, error: null });
+    await askQuestion({ petId: 'p1', question: 'did she vomit today?', conversation: [] });
+    expect(sentUnsent()).toBe(true);
+  });
+
+  it('a failed unsent read sends unsent_rows: true (the louder error), and still asks', async () => {
+    mockedUnsent.mockRejectedValue(new Error('database is locked'));
+    mockedInvoke.mockResolvedValue({ data: { outcome: 'llm_unavailable', headline: 'h', detail: '', followups: [] }, error: null });
+    const res = await askQuestion({ petId: 'p1', question: 'q', conversation: [] });
+    expect(sentUnsent()).toBe(true);
     expect(res.ok).toBe(true);
   });
 

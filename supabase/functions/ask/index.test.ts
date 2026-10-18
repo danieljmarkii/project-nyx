@@ -7,7 +7,7 @@
 // _shared/aiConsent.test.ts's; the deflection's copy is answer.test.ts's.
 
 import * as assert from 'node:assert/strict'
-import { consentOffAnswer, mapEngineFindings } from './index.ts'
+import { consentOffAnswer, mapEngineFindings, UNSENT_ROWS_PULL, withUnsentRows } from './index.ts'
 import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const SAFETY = { rank: 1, text: 'Biscuit has had loose stool on 5 of the last 7 days — worth a word with your vet.', finding: { type: 'symptom_worsening', priorityClass: 'safety' } }
@@ -89,4 +89,34 @@ Deno.test('CUL-552 wiring — the consent gate runs for the verified uid before 
     assert.ok(at > gate, `${after} runs before the consent gate`)
   }
   assert.equal(handler.split('readAiBoundaryConsent(').length - 1, 1, 'a second consent read in the handler')
+})
+
+// CUL-1982: the phone's unsent rows make the server's copy incomplete, so Ask answers nothing over
+// it. The client's side (what counts as unsent, a failed read is yes) is lib/ask.test.ts's.
+Deno.test('withUnsentRows — strictly true adds the unsent pull; an older build or a non-boolean keeps today', () => {
+  assert.deepEqual(withUnsentRows([], true), [UNSENT_ROWS_PULL])
+  assert.deepEqual(withUnsentRows(['events'], true), ['events', UNSENT_ROWS_PULL])
+  for (const v of [undefined, false, null, 'true', 1, {}]) assert.deepEqual(withUnsentRows(['events'], v), ['events'])
+  assert.deepEqual(withUnsentRows([], undefined), [])
+})
+
+Deno.test('CUL-1982 wiring — the client flag joins recordIncomplete before the deflect branch, which leads with safety and spends no credit', async () => {
+  const { blankComments } = await import('../_shared/sourceScan.testutil.ts')
+  const src = blankComments(await Deno.readTextFile(new URL('./index.ts', import.meta.url)))
+  const handler = src.slice(src.indexOf('const handler = async'))
+  assert.match(handler, /const unsentRows = body\.unsent_rows\n/)
+  const merge = handler.indexOf('recordIncomplete: withUnsentRows(fetched.recordIncomplete, unsentRows)')
+  assert.ok(merge > 0, 'the unsent flag no longer joins recordIncomplete')
+  assert.ok(handler.indexOf('fetchContext(') < merge, 'the flag is merged before the record is read')
+  const branch = handler.indexOf('if (ctx.recordIncomplete.length > 0) {')
+  assert.ok(branch > merge, 'the deflect branch runs before the unsent flag is merged')
+  assert.ok(handler.indexOf('runAskLoop(') > branch, 'the model runs before the incomplete-record branch')
+  const body = handler.slice(branch, handler.indexOf('runAskLoop('))
+  // Unsent entries among the causes get their own copy; a server-side short pull alone keeps today's.
+  assert.match(body, /const withheld = ctx\.recordIncomplete\.includes\(UNSENT_ROWS_PULL\)\s*\? buildDeflection\('unsent_rows', ctx\.petName\)\s*: buildDeflection\('llm_unavailable', ctx\.petName\)/)
+  assert.match(body, /safetyLead: leadingSafetyText\(ctx\.engineFindingsRaw, ctx\.petName\)/)
+  assert.match(body, /conversationCredited: alreadyCredited/)
+  assert.doesNotMatch(body, /recordUsage\(/)
+  // No second reading of the record's completeness skips the merged list.
+  assert.equal(handler.split('fetched.recordIncomplete').length - 1, 1)
 })

@@ -937,6 +937,19 @@ async function fetchContext(
   }
 }
 
+// CUL-1982: the name a device's unsent rows take in `recordIncomplete` (generate-signal's
+// UNSENT_ROWS_PULL, the same claim). The phone sends `unsent_rows: true` when it holds rows the
+// server has not received (`hasUnsentRows`, lib/signal.ts: any queue, any age, a failed read
+// counts as yes; refused rows and the children held behind them do not count, they are the
+// stuck-row banner's). The server's copy is then missing entries, which is an incomplete read
+// like any short pull: Ask answers nothing over it. Strictly `true`: an older build sends nothing
+// and anything else is not the client's claim, so both keep today's behaviour.
+export const UNSENT_ROWS_PULL = 'unsent'
+
+export function withUnsentRows(pulls: readonly string[], unsentRows: unknown): string[] {
+  return unsentRows === true ? [...pulls, UNSENT_ROWS_PULL] : [...pulls]
+}
+
 // ── Handler ─────────────────────────────────────────────────────────────────────
 
 const handler = async (req: Request): Promise<Response> => {
@@ -945,7 +958,7 @@ const handler = async (req: Request): Promise<Response> => {
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
 
-  let body: { pet_id?: string; question?: string; conversation?: AskTurn[]; timezone?: string }
+  let body: { pet_id?: string; question?: string; conversation?: AskTurn[]; timezone?: string; unsent_rows?: unknown }
   try {
     body = (await req.json()) as typeof body
   } catch {
@@ -955,6 +968,7 @@ const handler = async (req: Request): Promise<Response> => {
   // The caller's device IANA zone (B-443) — validated in resolveIanaZone before use, so a
   // garbage or spoofed value is simply ignored in favour of the stored zone, never trusted.
   const requestTimezone = typeof body.timezone === 'string' ? body.timezone : null
+  const unsentRows = body.unsent_rows
   const question = typeof body.question === 'string' ? body.question.trim() : ''
   const conversation: AskTurn[] = Array.isArray(body.conversation)
     ? (body.conversation as unknown[])
@@ -1034,7 +1048,8 @@ const handler = async (req: Request): Promise<Response> => {
     const model = Deno.env.get('ASK_MODEL') || ASK_MODEL // S3 — model id via env override
 
     // 6. Fetch the working set (RLS-scoped) and run the bounded plan-loop.
-    const ctx = await fetchContext(client, petId, pet as { name: string; species: string }, nowMs, requestTimezone)
+    const fetched = await fetchContext(client, petId, pet as { name: string; species: string }, nowMs, requestTimezone)
+    const ctx = { ...fetched, recordIncomplete: withUnsentRows(fetched.recordIncomplete, unsentRows) }
 
     // 6a. CUL-989 — a pull that did not read to the end answers NOTHING. Ask speaks counts, dates
     //     and "how is she doing" in the record's voice, and over a partial record every one of
@@ -1044,7 +1059,11 @@ const handler = async (req: Request): Promise<Response> => {
     //     and an error-level log naming the pulls, because a silent shortfall is the whole defect.
     if (ctx.recordIncomplete.length > 0) {
       console.error('ask incomplete pulls:', petId, ctx.recordIncomplete.join(', '))
-      const withheld = buildDeflection('llm_unavailable', ctx.petName)
+      // CUL-1982: the phone's unsent entries are named when they are a cause (the owner can act
+      // on that one); a server-side short pull alone keeps the cause-neutral copy.
+      const withheld = ctx.recordIncomplete.includes(UNSENT_ROWS_PULL)
+        ? buildDeflection('unsent_rows', ctx.petName)
+        : buildDeflection('llm_unavailable', ctx.petName)
       return answerResponse({
         ...withheld,
         safetyLead: leadingSafetyText(ctx.engineFindingsRaw, ctx.petName),

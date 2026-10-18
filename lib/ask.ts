@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { getDb } from './db';
 import { getDeviceTimezone } from './profile';
+import { hasUnsentRows } from './signal';
 // The row predicate rather than monthReads' LOOK_EVENT_TYPE: lookDisplay has no RN or
 // lucide edge, where monthReads reaches constants/eventTypes (see the note below).
 import { isLookRow } from './lookDisplay';
@@ -132,6 +133,10 @@ export async function askQuestion(params: {
   conversation: AskTurn[];
 }): Promise<AskResponse> {
   try {
+    // CUL-1982: whether this phone still holds entries the server has not received (PR-24's
+    // count; a failed read says yes). Ask answers from the server's copy, so it deflects rather
+    // than answer as if that copy were whole.
+    const unsentRows = await hasUnsentRows();
     const { data, error } = await supabase.functions.invoke('ask', {
       // timezone: the DEVICE zone, so the server's trial "Day N" buckets by the same clock the
       // card does (B-443). null when the runtime can't resolve one → the server falls back to
@@ -141,6 +146,7 @@ export async function askQuestion(params: {
         question: params.question,
         conversation: params.conversation,
         timezone: getDeviceTimezone(),
+        unsent_rows: unsentRows,
       },
     });
     if (error) return { ok: false, error: error.message };

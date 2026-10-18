@@ -521,7 +521,7 @@ Deno.test('buildProvenance: recall/photo tap-through points at the event(s)', ()
 
 const DEFLECTION_REASONS = [
   'clinical_judgment', 'reassurance_fishing', 'general', 'bulk_export', 'unsupported', 'ambiguous', 'data_gap', 'llm_unavailable',
-  'consent_off',
+  'consent_off', 'unsent_rows',
 ] as const
 
 // CUL-552 PR 2: consent_off offers no chip, because every chip is a question re-sent to Ask
@@ -559,6 +559,22 @@ Deno.test('buildDeflection consent_off: a status, never a verdict, a retry or a 
   // Never "try again" (it would deflect the same way), never a word about how the pet is.
   assert.doesNotMatch(text, /try again/i)
   assert.doesNotMatch(text, /\b(fine|healthy|normal|nothing (wrong|to worry)|all clear|okay)\b/i)
+  assert.equal(validateAnswer({ text, allowedNumerals: new Set(), mode: 'data', safety: true }).ok, true)
+})
+
+Deno.test('buildDeflection unsent_rows: says why Ask waits, never a verdict on the pet (CUL-1982)', () => {
+  const d = buildDeflection('unsent_rows', 'Biscuit')
+  // Rendered by every shipped build, and free on the credit grain.
+  assert.equal(d.outcome, 'llm_unavailable')
+  assert.equal(isSubstantiveOutcome(d.outcome), false)
+  assert.equal(d.substantive, false)
+  assert.equal(d.component, null)
+  assert.equal(d.provenance, null)
+  const text = `${d.headline} ${d.detail}`
+  assert.match(d.headline, /Biscuit's entries haven't sent yet/)
+  assert.match(text, /won't guess/)
+  assert.deepEqual(d.followups, ['Put together a vet-visit rundown'])
+  assert.doesNotMatch(text, /\b(fine|healthy|normal|nothing (wrong|to worry)|all clear|okay|no sign)\b/i)
   assert.equal(validateAnswer({ text, allowedNumerals: new Set(), mode: 'data', safety: true }).ok, true)
 })
 
