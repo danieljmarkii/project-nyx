@@ -2377,6 +2377,15 @@ function recentRefusalFires(c: RefusalCounters): boolean {
   );
 }
 
+/** The range fact's floors (no span guard — see `TrialFacts.rangeRefusal`). */
+function rangeRefusalFires(c: RefusalCounters): boolean {
+  return (
+    c.rangeRated >= REFUSAL_MIN_RATED &&
+    c.rangeDays.size >= REFUSAL_MIN_DAYS &&
+    c.rangeNotFinished / c.rangeRated >= REFUSAL_SHARE
+  );
+}
+
 /** The stand-down's own evidence: `REFUSAL_MIN_RATED` recent ratings, a finished
  *  share clearing `1 - REFUSAL_SHARE`. MIRRORED from `isEatingNow`
  *  (`lib/dietTrialCard.ts`), which asks the same question of the card's input; the
@@ -3145,6 +3154,9 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // now-fact fires, the card already warns in the present tense, names the food and
   // carries R4's run; switching to the meal record there lost the run to one finished
   // rival bowl (the first pass) and put "can't match these meals" over matched ones.
+  // Nor when the trial diet's RANGE fact fires and the meal record's does not: finished
+  // rival bowls weeks old dilute the wide share, and the second pass executed a held
+  // record erasing a narrow range fact the report and the withheld card read.
   //
   // ⚠️ NOT COVERED: a fallback that last spoke BEFORE today's recency window (refusals
   // weeks ago, a match, then only unrated bowls) still lets go, as on main. The ruling
@@ -3155,7 +3167,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     !allowedSetUnavailable &&
     narrow.feedings > 0 &&
     firstNarrowDay >= refusalWindowStart &&
-    !recentRefusalFires(narrow)
+    !recentRefusalFires(narrow) &&
+    (!rangeRefusalFires(narrow) || rangeRefusalFires(wide))
   ) {
     const preMatch = emptyRefusalCounters();
     const preMatchWindowStart = Math.max(startDayIndex, firstNarrowDay - REFUSAL_WINDOW_DAYS + 1);
@@ -3186,9 +3199,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
 
   // Same floors, no span guard — see `TrialFacts.rangeRefusal`.
   const rangeRefusal: TrialDietRefusal | null =
-    pop.rangeRated >= REFUSAL_MIN_RATED &&
-    pop.rangeDays.size >= REFUSAL_MIN_DAYS &&
-    pop.rangeNotFinished / pop.rangeRated >= REFUSAL_SHARE
+    rangeRefusalFires(pop)
       ? {
           refusedFeedings: pop.rangeNotFinished,
           ratedFeedings: pop.rangeRated,

@@ -2858,6 +2858,26 @@ describe('CUL-1993 — one recognised bowl never takes back a refusal warning', 
     expect(facts.trialDietRefusal?.run?.feedings).toBe(4);
   });
 
+  it('never trades a firing trial-diet range fact for a diluted meal-record one', () => {
+    // The second pass's record: rival bowls finished twice a day on days 1–7, rival
+    // refusals on days 20–21, matched refusals on days 22–23 inside 12 hours (so the
+    // narrow now-fact misses its span), read on day 35. The narrow range fact fires.
+    const rivalAt = (id: string, d: number, h: number, intakeRating: string) =>
+      feeding({ eventId: id, occurredAt: at(day(d), h), foodItemId: 'tuna', foodKey: 'tuna', intakeRating });
+    const early = Array.from({ length: 14 }, (_, i) => rivalAt(`e${i}`, 1 + Math.floor(i / 2), i % 2 ? 20 : 8, 'all'));
+    const record = [
+      ...early,
+      rivalAt('r1', 20, 8, 'refused'),
+      rivalAt('r2', 20, 20, 'refused'),
+      rivalAt('r3', 21, 8, 'refused'),
+      matched('m1', 22, 'refused', 23),
+      matched('m2', 23, 'refused', 1),
+      matched('m3', 23, 'refused', 2),
+    ];
+    const facts = cat(record, 35);
+    expect(facts.rangeRefusal).toMatchObject({ refusedFeedings: 3, population: 'trial_diet' });
+  });
+
   it('KNOWN LIMIT (the PM’s open fork): a fallback that last spoke before today’s window lets go', () => {
     // Expected to flip if the fork rules that R2's "dated, not expired" reaches past
     // the window. Today it matches main: the match's day has left the window.
