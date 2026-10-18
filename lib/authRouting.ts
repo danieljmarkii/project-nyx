@@ -100,6 +100,18 @@ export async function readUnlessSignedOut<T>(
   return epoch() === before ? result : null;
 }
 
+// Whether a reset running in THIS process owns the session, so the cold start writes
+// and routes nothing (rls-privacy-reviewer, CUL-1973). A warm recovery link that lands
+// while the cold start's reads are in flight has its flush queued on auth-js's lock
+// behind the cold start's getSession, so its wipe (and the epoch bump) can come after
+// the reads resolve; adopting their session then would land inside its exchange window.
+export function recoveryOwnsColdStart(store: {
+  recoveryExchangePending: boolean;
+  recoveryInProgress: boolean;
+}): boolean {
+  return store.recoveryExchangePending || store.recoveryInProgress;
+}
+
 // CUL-1973: the persisted recovery gate says a reset is under way, not whose session the
 // keychain holds. The phase beside it (`lib/recoveryDeepLink.ts`) does: `exchanging`
 // until the handler adopts B, then `exchanged` naming B. A missing or unreadable phase
@@ -119,19 +131,29 @@ export type RecoveryPhase = { kind: 'exchanging' } | { kind: 'exchanged'; userId
 // - 'release'       — nothing stored at all: nothing to resume or to purge.
 export type ColdStartResume =
   | { action: 'resume-form'; userId: string }
-  | { action: 'await-refresh'; userId: string }
+  | { action: 'await-refresh'; userId: string; dropStoreSession: boolean }
   | { action: 'reconcile' }
   | { action: 'release' };
 
+// `storeSessionUserId` is whoever the store already holds: the listener can adopt the
+// stored session before the gate has loaded, and on 'await-refresh' anyone but the
+// pinned user is dropped so the form waits for the pinned user's refresh.
 export function coldStartResume(input: {
   sessionUserId: string | null;
+  storeSessionUserId: string | null;
   decision: ColdStartDecision;
   phase: RecoveryPhase;
 }): ColdStartResume {
-  const { sessionUserId, decision, phase } = input;
+  const { sessionUserId, storeSessionUserId, decision, phase } = input;
   if (decision === 'to-auth') return { action: 'release' };
   if (phase.kind !== 'exchanged') return { action: 'reconcile' };
-  if (decision === 'retain') return { action: 'await-refresh', userId: phase.userId };
+  if (decision === 'retain') {
+    return {
+      action: 'await-refresh',
+      userId: phase.userId,
+      dropStoreSession: storeSessionUserId !== null && storeSessionUserId !== phase.userId,
+    };
+  }
   if (sessionUserId === phase.userId) return { action: 'resume-form', userId: phase.userId };
   return { action: 'reconcile' };
 }

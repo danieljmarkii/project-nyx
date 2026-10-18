@@ -3,6 +3,7 @@ import {
   handleRecoveryDeepLink,
   abandonRecovery,
   loadRecoveryPhase,
+  discardInterruptedRecovery,
   __resetRecoveryDedupeForTest,
 } from './recoveryDeepLink';
 import { useAuthStore } from '../store/authStore';
@@ -572,9 +573,10 @@ describe('handleRecoveryDeepLink — the persisted recovery phase (CUL-1973)', (
   });
 
   it('an unreadable phase reads as exchanging', async () => {
-    const spy = jest.spyOn(AsyncStorage, 'getItem').mockRejectedValueOnce(new Error('disk'));
+    // The in-memory mock's functions are jest mocks already: a one-shot override, never a
+    // spy whose restore would strip the implementation from every later test.
+    (AsyncStorage.getItem as jest.Mock).mockRejectedValueOnce(new Error('disk'));
     expect(await loadRecoveryPhase()).toEqual({ kind: 'exchanging' });
-    spy.mockRestore();
   });
 });
 
@@ -600,7 +602,7 @@ describe('one reconcile at a time (code-reviewer, CUL-1973)', () => {
     expect(useAuthStore.getState().recoveryScreen).toBe('failed');
     expect(useAuthStore.getState().recoveryInProgress).toBe(false);
     expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
-    expect(await AsyncStorage.getItem(GATE_KEY) ?? null).toBeNull();
+    expect(await AsyncStorage.getItem(GATE_KEY)).toBeNull();
   });
 
   it('releases the gate before closing the window, so nothing between reads as a stranger', async () => {
@@ -619,14 +621,51 @@ describe('one reconcile at a time (code-reviewer, CUL-1973)', () => {
 describe('handleRecoveryDeepLink — a phase that cannot be written (CUL-1973)', () => {
   it('never arms the gate on an exchanging it could not persist, and touches nothing', async () => {
     haveProvenance();
-    const spy = jest.spyOn(AsyncStorage, 'setItem').mockRejectedValueOnce(new Error('disk full'));
+    (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
     await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
-    spy.mockRestore();
 
-    expect(await AsyncStorage.getItem(GATE_KEY) ?? null).toBeNull();
+    expect(await AsyncStorage.getItem(GATE_KEY)).toBeNull();
     expect(useAuthStore.getState().recoveryInProgress).toBe(false);
     expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
     expect(useAuthStore.getState().recoveryScreen).toBe('failed');
     expect(calls).toEqual([]);
+  });
+});
+
+// A recovery-link launch after a mid-reset death never runs initColdStart's resume, so
+// the handler settles the old gate first, locally, without the network.
+describe('discardInterruptedRecovery (rls-privacy-reviewer, CUL-1973)', () => {
+  it('no gate: touches nothing and lets the link through', async () => {
+    await expect(discardInterruptedRecovery()).resolves.toBe(true);
+    expect(mockWipe).not.toHaveBeenCalled();
+    expect(mockPurge).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().session).toBe(A_SESSION);
+  });
+
+  it('an armed gate: nulls the store, wipes, purges the keychain, releases gate and phase', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    await AsyncStorage.setItem(PHASE_KEY, 'exchanging');
+    await expect(discardInterruptedRecovery()).resolves.toBe(true);
+    expect(useAuthStore.getState().session).toBeNull();
+    expect(mockWipe).toHaveBeenCalledTimes(1);
+    expect(mockPurge).toHaveBeenCalledTimes(1);
+    expect(mockSignOut).not.toHaveBeenCalled();
+    expect(await AsyncStorage.getItem(GATE_KEY)).toBeNull();
+    expect(await AsyncStorage.getItem(PHASE_KEY)).toBeNull();
+    expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
+    // A's refresh during the purge found the window open; after it, nothing of A is left.
+  });
+
+  it('a purge that cannot confirm keeps the gate armed and the failure state up', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    mockPurge.mockResolvedValue(false);
+    await expect(discardInterruptedRecovery()).resolves.toBe(false);
+    const st = useAuthStore.getState();
+    expect(st.session).toBeNull();
+    expect(st.recoveryScreen).toBe('failed');
+    expect(st.recoveryInProgress).toBe(true);
+    expect(st.recoveryExchangePending).toBe(true);
+    expect(await AsyncStorage.getItem(GATE_KEY)).toBe('1');
+    expect(mockStopAutoRefresh).toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import {
   recoveryAdoption,
   coldStartResume,
   readUnlessSignedOut,
+  recoveryOwnsColdStart,
 } from './authRouting';
 import type { Session, AuthError } from '@supabase/supabase-js';
 
@@ -105,34 +106,34 @@ describe('coldStartResume (CUL-1973)', () => {
   const exchanging = { kind: 'exchanging' } as const;
 
   it('renders the form only for the user the exchange adopted', () => {
-    expect(coldStartResume({ sessionUserId: 'user-b', decision: 'proceed', phase: exchangedB }))
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: 'user-b', decision: 'proceed', phase: exchangedB }))
       .toEqual({ action: 'resume-form', userId: 'user-b' });
   });
 
   it('reconciles a live session the exchange never adopted (death before the exchange saved B)', () => {
-    expect(coldStartResume({ sessionUserId: 'user-a', decision: 'proceed', phase: exchanging }))
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: 'user-a', decision: 'proceed', phase: exchanging }))
       .toEqual({ action: 'reconcile' });
   });
 
   it('reconciles a live session that is not the adopted user', () => {
-    expect(coldStartResume({ sessionUserId: 'user-a', decision: 'proceed', phase: exchangedB }))
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: 'user-a', decision: 'proceed', phase: exchangedB }))
       .toEqual({ action: 'reconcile' });
   });
 
   it('retain waits for the refresh only after an adopted exchange, pinning that user', () => {
-    expect(coldStartResume({ sessionUserId: null, decision: 'retain', phase: exchangedB }))
-      .toEqual({ action: 'await-refresh', userId: 'user-b' });
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: null, decision: 'retain', phase: exchangedB }))
+      .toEqual({ action: 'await-refresh', userId: 'user-b', dropStoreSession: false });
   });
 
   it('retain before the exchange adopted anyone reconciles instead of waiting on A', () => {
-    expect(coldStartResume({ sessionUserId: null, decision: 'retain', phase: exchanging }))
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: null, decision: 'retain', phase: exchanging }))
       .toEqual({ action: 'reconcile' });
   });
 
   it('nothing stored releases the gate', () => {
-    expect(coldStartResume({ sessionUserId: null, decision: 'to-auth', phase: exchanging }))
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: null, decision: 'to-auth', phase: exchanging }))
       .toEqual({ action: 'release' });
-    expect(coldStartResume({ sessionUserId: null, decision: 'to-auth', phase: exchangedB }))
+    expect(coldStartResume({ storeSessionUserId: null, sessionUserId: null, decision: 'to-auth', phase: exchangedB }))
       .toEqual({ action: 'release' });
   });
 });
@@ -185,5 +186,30 @@ describe('readUnlessSignedOut (CUL-1971)', () => {
       },
     );
     expect(result).toBeNull();
+  });
+});
+
+describe('coldStartResume: a session adopted before the gate loaded (rls-privacy-reviewer)', () => {
+  const exchangedB = { kind: 'exchanged', userId: 'user-b' } as const;
+  it('retain drops a store session that is not the pinned user', () => {
+    expect(coldStartResume({ storeSessionUserId: 'user-a', sessionUserId: null, decision: 'retain', phase: exchangedB }))
+      .toEqual({ action: 'await-refresh', userId: 'user-b', dropStoreSession: true });
+  });
+  it('retain keeps the pinned user', () => {
+    expect(coldStartResume({ storeSessionUserId: 'user-b', sessionUserId: null, decision: 'retain', phase: exchangedB }))
+      .toEqual({ action: 'await-refresh', userId: 'user-b', dropStoreSession: false });
+  });
+});
+
+// A warm reset link landing while the cold start's getSession is still in flight: its
+// wipe can come after the reads resolve, so the epoch fence cannot see it.
+describe('recoveryOwnsColdStart (rls-privacy-reviewer, CUL-1973)', () => {
+  it('yields to a reset running in this process, window open or gate armed', () => {
+    expect(recoveryOwnsColdStart({ recoveryExchangePending: true, recoveryInProgress: true })).toBe(true);
+    expect(recoveryOwnsColdStart({ recoveryExchangePending: true, recoveryInProgress: false })).toBe(true);
+    expect(recoveryOwnsColdStart({ recoveryExchangePending: false, recoveryInProgress: true })).toBe(true);
+  });
+  it('owns nothing with no reset under way', () => {
+    expect(recoveryOwnsColdStart({ recoveryExchangePending: false, recoveryInProgress: false })).toBe(false);
   });
 });

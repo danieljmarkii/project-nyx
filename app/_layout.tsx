@@ -21,6 +21,7 @@ import {
   navigateAfterSignOut,
   recoveryAdoption,
   readUnlessSignedOut,
+  recoveryOwnsColdStart,
 } from '../lib/authRouting';
 import { isAuthDeepLink } from '../lib/authDeepLink';
 import { isRecoveryDeepLink } from '../lib/passwordRecovery';
@@ -29,6 +30,7 @@ import {
   abandonRecovery,
   loadRecoveryPhase,
   clearRecoveryPhase,
+  discardInterruptedRecovery,
 } from '../lib/recoveryDeepLink';
 import { currentSignOutEpoch } from '../lib/signOutEpoch';
 import { PASSWORD_RECOVERY_ENABLED } from '../constants/flags';
@@ -161,7 +163,16 @@ function RootLayoutTree() {
       // applied, flashing the login wall on the exact screen Jordan's "lands the
       // owner in the app" rule protects (code-reviewer). `.finally` covers success
       // and failure alike.
-      void handleRecoveryDeepLink(Linking.getLinkingURL()).finally(() => setLoading(false));
+      //
+      // A gate left armed by an earlier launch is settled FIRST (rls-privacy-reviewer,
+      // CUL-1973): a process death mid-reset, then a relaunch by tapping the email again,
+      // never runs `initColdStart`'s resume, so a refused link (its marker went with the
+      // wipe) would leave the previous owner's session to the listener. The new link
+      // supersedes the old reset either way.
+      void discardInterruptedRecovery()
+        .then((clear) => (clear ? handleRecoveryDeepLink(Linking.getLinkingURL()) : undefined))
+        .catch((e: unknown) => console.warn('[recovery] launch failed:', e instanceof Error ? e.message : e))
+        .finally(() => setLoading(false));
     } else {
       // Whatever throws, the loading gate opens: a stuck `isLoading` blanks the Landing.
       void initColdStart()
@@ -187,6 +198,15 @@ function RootLayoutTree() {
         return;
       }
       const [gateArmed, phase, { data: { session }, error }] = reads;
+      // A warm recovery link that arrived while these reads were in flight owns the
+      // session and the routing now (rls-privacy-reviewer, CUL-1973): its flush queues on
+      // auth-js's lock behind this getSession, so its wipe (and the epoch bump) can come
+      // AFTER the reads resolve, and adopting A here would land inside its exchange
+      // window, where the listener refuses everything. Write and route nothing.
+      if (recoveryOwnsColdStart(useAuthStore.getState())) {
+        setLoading(false);
+        return;
+      }
       // The single most diagnostic moment: did the persisted session survive to this
       // cold start? We read `error` too — getSession returns null-WITH-error when the
       // token was within its expiry margin and the refresh network call FAILED
@@ -205,6 +225,7 @@ function RootLayoutTree() {
         // owner A there. `coldStartResume` decides; this only carries it out.
         const resume = coldStartResume({
           sessionUserId: session?.user.id ?? null,
+          storeSessionUserId: useAuthStore.getState().session?.user.id ?? null,
           decision,
           phase,
         });
@@ -223,6 +244,9 @@ function RootLayoutTree() {
           // recover: the listener adopts its session only if it is the pinned user, and
           // the FR-6 branch renders the form. Land on the auth entry meanwhile (the
           // recovery session guard holds the redirect).
+          // A session the listener adopted before the gate loaded and that is not the
+          // pinned user is dropped, so the form waits for the pinned user's refresh.
+          if (resume.dropStoreSession) setSession(null);
           store.setRecoveryInProgress(true);
           store.setRecoveryUserId(resume.userId);
           router.replace('/(auth)');

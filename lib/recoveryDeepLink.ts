@@ -39,6 +39,7 @@ import {
   useAuthStore,
   armRecoveryGate,
   releaseRecoveryGate,
+  loadPersistedRecoveryGate,
 } from '../store/authStore';
 import { readRecoveryRequest, hasLocalProvenance } from './recoveryMarker';
 import {
@@ -262,6 +263,36 @@ async function runReconcile(
   store.setRecoveryExchangePending(false);
   supabase.realtime.setAuth().catch((e: unknown) =>
     console.warn('[recovery] realtime token reset failed:', e instanceof Error ? e.message : e));
+}
+
+/**
+ * Settle a reset an earlier launch left armed, before a recovery-link launch handles its
+ * new link (rls-privacy-reviewer, CUL-1973). Whatever the keychain holds is not known to
+ * be the reset's user, so it goes, locally and without the network (a /logout that RN
+ * never times out must not hold the launch): window open so the listener adopts
+ * nothing, store nulled, local data wiped, keychain purged, gate and phase released.
+ * Resolves true when the launch may go on to the link; false when the purge could not
+ * confirm, in which case the failure state stays up with the gate armed, as the
+ * reconcile does (CUL-1976).
+ */
+export async function discardInterruptedRecovery(): Promise<boolean> {
+  if (!(await loadPersistedRecoveryGate())) return true;
+  const store = useAuthStore.getState();
+  store.setRecoveryExchangePending(true);
+  store.setSession(null);
+  await wipeLocalSession();
+  if (!(await purgeStoredAuthSession())) {
+    store.setRecoveryInProgress(true);
+    store.setRecoveryScreen('failed');
+    supabase.auth.stopAutoRefresh().catch((e: unknown) =>
+      console.warn('[recovery] stopping token refresh failed:', e instanceof Error ? e.message : e));
+    router.replace(RECOVERY_ROUTE);
+    return false;
+  }
+  await releaseRecoveryGate();
+  await clearRecoveryPhase();
+  store.setRecoveryExchangePending(false);
+  return true;
 }
 
 // Whether auth-js's own stored session belongs to the user the exchange returned. By
