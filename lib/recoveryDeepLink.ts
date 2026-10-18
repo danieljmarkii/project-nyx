@@ -280,8 +280,15 @@ export async function discardInterruptedRecovery(): Promise<boolean> {
   const store = useAuthStore.getState();
   store.setRecoveryExchangePending(true);
   store.setSession(null);
+  // No new refresh may start; one already in flight is settled by the read-back below.
+  await supabase.auth.stopAutoRefresh().catch((e: unknown) =>
+    console.warn('[recovery] stopping token refresh failed:', e instanceof Error ? e.message : e));
+  // Flush before the wipe, as the handler does (B-430): the death may have come before
+  // its flush, and the rows are still the previous owner's to send under their session.
+  await flushForSignOut().catch((e) =>
+    console.warn('[recovery] pre-discard flush failed:', e instanceof Error ? e.message : e));
   await wipeLocalSession();
-  if (!(await purgeStoredAuthSession())) {
+  if (!(await purgeStoredAuthSession()) || !(await authHoldsNothing())) {
     store.setRecoveryInProgress(true);
     store.setRecoveryScreen('failed');
     supabase.auth.stopAutoRefresh().catch((e: unknown) =>
@@ -293,6 +300,34 @@ export async function discardInterruptedRecovery(): Promise<boolean> {
   await clearRecoveryPhase();
   store.setRecoveryExchangePending(false);
   return true;
+}
+
+// The purge writes the keychain directly, outside auth-js's lock, so a refresh already
+// in flight at launch (initialize's `_recoverAndRefresh`, INITIAL_SESSION's load) can
+// save the previous owner back after the read-back passed (rls-privacy-reviewer pass 2).
+// `getSession` queues behind any lock holder, so it answers only once that refresh has
+// landed; the window is still open, so whatever it emits is refused. A second purge
+// covers a session it re-saved; a read that fails or hangs counts as not clear.
+const SETTLE_TIMEOUT_MS = 10_000;
+
+async function authHoldsNothing(): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let held: boolean;
+    try {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const read = supabase.auth.getSession().then(({ data }) => data.session !== null);
+      const timeout = new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(true), SETTLE_TIMEOUT_MS);
+      });
+      held = await Promise.race([read, timeout]).finally(() => clearTimeout(timer));
+    } catch (e) {
+      console.warn('[recovery] settling the stored session failed:', e instanceof Error ? e.message : e);
+      return false;
+    }
+    if (!held) return true;
+    if (!(await purgeStoredAuthSession())) return false;
+  }
+  return false;
 }
 
 // Whether auth-js's own stored session belongs to the user the exchange returned. By
@@ -381,6 +416,11 @@ export async function handleRecoveryDeepLink(
   // `runExchangeAndFinalize` (CUL-1205).
   // Nulling the STORE (not auth-js) does not touch the flush, which drains A's queue
   // under auth-js's own still-valid session at step 4.
+  // A reconcile still running (the cold-start resume's is backgrounded, and its signOut
+  // can hang on /logout) ends by releasing the gate and the phase: let it finish first,
+  // so its tail never releases the ones this attempt is about to write
+  // (rls-privacy-reviewer pass 2). A hang here falls to the screen's watchdog.
+  if (reconcileInFlight) await reconcileInFlight.catch(() => {});
   store.setRecoveryExchangePending(true);
   // CUL-1973: the phase first, so a gate on disk never outlives an `exchanging` that
   // says the keychain may still hold the previous owner. If it cannot be written, do

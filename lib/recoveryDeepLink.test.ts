@@ -642,18 +642,44 @@ describe('discardInterruptedRecovery (rls-privacy-reviewer, CUL-1973)', () => {
     expect(useAuthStore.getState().session).toBe(A_SESSION);
   });
 
-  it('an armed gate: nulls the store, wipes, purges the keychain, releases gate and phase', async () => {
+  it('an armed gate: nulls the store, flushes, wipes, purges the keychain, releases gate and phase', async () => {
     await AsyncStorage.setItem(GATE_KEY, '1');
+    mockGetSession.mockResolvedValue({ data: { session: null } });
     await AsyncStorage.setItem(PHASE_KEY, 'exchanging');
     await expect(discardInterruptedRecovery()).resolves.toBe(true);
     expect(useAuthStore.getState().session).toBeNull();
-    expect(mockWipe).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(['flush', 'wipe']);
     expect(mockPurge).toHaveBeenCalledTimes(1);
+    expect(mockStopAutoRefresh).toHaveBeenCalled();
     expect(mockSignOut).not.toHaveBeenCalled();
     expect(await AsyncStorage.getItem(GATE_KEY)).toBeNull();
     expect(await AsyncStorage.getItem(PHASE_KEY)).toBeNull();
     expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
-    // A's refresh during the purge found the window open; after it, nothing of A is left.
+  });
+
+  // Pass 2, A1: the purge runs outside auth-js's lock, so a refresh in flight at launch
+  // can save A back after the read-back passed. getSession waits on that lock.
+  it('a refresh that re-saves A after the purge is purged again before the window closes', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    const windowWhenRead: boolean[] = [];
+    mockGetSession.mockImplementationOnce(async () => {
+      windowWhenRead.push(useAuthStore.getState().recoveryExchangePending);
+      return { data: { session: A_SESSION } };
+    });
+    mockGetSession.mockResolvedValueOnce({ data: { session: null } });
+    await expect(discardInterruptedRecovery()).resolves.toBe(true);
+    expect(windowWhenRead).toEqual([true]);
+    expect(mockPurge).toHaveBeenCalledTimes(2);
+    expect(useAuthStore.getState().session).toBeNull();
+  });
+
+  it('a session that keeps coming back leaves the failure state up, gate armed', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    mockGetSession.mockResolvedValue({ data: { session: A_SESSION } });
+    await expect(discardInterruptedRecovery()).resolves.toBe(false);
+    expect(useAuthStore.getState().recoveryScreen).toBe('failed');
+    expect(useAuthStore.getState().recoveryExchangePending).toBe(true);
+    expect(await AsyncStorage.getItem(GATE_KEY)).toBe('1');
   });
 
   it('a purge that cannot confirm keeps the gate armed and the failure state up', async () => {
@@ -667,5 +693,32 @@ describe('discardInterruptedRecovery (rls-privacy-reviewer, CUL-1973)', () => {
     expect(st.recoveryExchangePending).toBe(true);
     expect(await AsyncStorage.getItem(GATE_KEY)).toBe('1');
     expect(mockStopAutoRefresh).toHaveBeenCalled();
+  });
+});
+
+// Pass 2, A2: a backgrounded reconcile's tail releases the gate and phase; a new link
+// handled meanwhile must not have its own released.
+describe('handleRecoveryDeepLink waits for a reconcile in flight (rls-privacy-reviewer pass 2)', () => {
+  it("never writes its phase or gate until the old reconcile's tail has run", async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    useAuthStore.setState({ recoveryInProgress: true, session: null });
+    let finishLogout: () => void = () => {};
+    mockSignOut.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        finishLogout = () => resolve({ error: null });
+      }),
+    );
+    const old = abandonRecovery('failed');
+    haveProvenance();
+    const fresh = handleRecoveryDeepLink('nyx:///reset-password?code=new', { nowMs: NOW });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toEqual([]); // the new attempt has not started its flush
+    finishLogout();
+    await Promise.all([old, fresh]);
+
+    expect(calls).toEqual(['flush', 'wipe', 'exchange']);
+    expect(await loadRecoveryPhase()).toEqual({ kind: 'exchanged', userId: 'user-b' });
+    expect(await AsyncStorage.getItem(GATE_KEY)).toBe('1');
+    expect(useAuthStore.getState().session).toBe(B_SESSION);
   });
 });
