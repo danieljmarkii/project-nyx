@@ -1,11 +1,17 @@
-import { handleRecoveryDeepLink, abandonRecovery, __resetRecoveryDedupeForTest } from './recoveryDeepLink';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  handleRecoveryDeepLink,
+  abandonRecovery,
+  loadRecoveryPhase,
+  discardInterruptedRecovery,
+  __resetRecoveryDedupeForTest,
+} from './recoveryDeepLink';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from './supabase';
 import { router } from 'expo-router';
-import { wipeLocalSession, flushForSignOut } from './session';
+import { wipeLocalSession, flushForSignOut, purgeStoredAuthSession } from './session';
 import { readRecoveryRequest } from './recoveryMarker';
-import { ChunkedSecureStoreAdapter } from './secureStore';
-import { shouldAdoptSessionDuringRecovery } from './authRouting';
+import { recoveryAdoption } from './authRouting';
 
 // Locks the §6.4 option-(d) ordering — the invariant two review rounds and B-576
 // bought and that the pure passwordRecovery unit tests CANNOT see (they never run
@@ -31,14 +37,23 @@ jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }));
 jest.mock('./supabase', () => ({
   AUTH_STORAGE_KEY: 'sb-test-auth-token',
   supabase: {
-    auth: { exchangeCodeForSession: jest.fn(), signOut: jest.fn(), getSession: jest.fn() },
+    auth: {
+      exchangeCodeForSession: jest.fn(),
+      signOut: jest.fn(),
+      getSession: jest.fn(),
+      stopAutoRefresh: jest.fn(),
+    },
     realtime: { setAuth: jest.fn() },
   },
 }));
-jest.mock('./secureStore', () => ({
-  ChunkedSecureStoreAdapter: { removeItem: jest.fn(), getItem: jest.fn() },
+// The keychain purge is the shared helper (CUL-1974), tested with its read-back in
+// lib/session.purge.test.ts; here only whether the reconcile calls it and what it does
+// with the answer.
+jest.mock('./session', () => ({
+  wipeLocalSession: jest.fn(),
+  flushForSignOut: jest.fn(),
+  purgeStoredAuthSession: jest.fn(),
 }));
-jest.mock('./session', () => ({ wipeLocalSession: jest.fn(), flushForSignOut: jest.fn() }));
 jest.mock('./recoveryMarker', () => {
   const actual = jest.requireActual('./recoveryMarker');
   return { ...actual, readRecoveryRequest: jest.fn() };
@@ -50,8 +65,10 @@ const mockWipe = wipeLocalSession as jest.Mock;
 const mockFlush = flushForSignOut as jest.Mock;
 const mockRead = readRecoveryRequest as jest.Mock;
 const mockReplace = router.replace as jest.Mock;
-const mockRemoveItem = ChunkedSecureStoreAdapter.removeItem as jest.Mock;
-const mockGetItem = ChunkedSecureStoreAdapter.getItem as jest.Mock;
+const mockPurge = purgeStoredAuthSession as jest.Mock;
+const mockStopAutoRefresh = supabase.auth.stopAutoRefresh as jest.Mock;
+const PHASE_KEY = 'nyx.recoveryPhase';
+const GATE_KEY = 'nyx.recoveryInProgress';
 const mockGetSession = supabase.auth.getSession as jest.Mock;
 const mockRealtimeSetAuth = supabase.realtime.setAuth as jest.Mock;
 
@@ -59,12 +76,18 @@ const NOW = 1_754_000_000_000;
 const B_SESSION = { access_token: 'access-b', user: { id: 'user-b' } } as never;
 const A_SESSION = { access_token: 'access-a', user: { id: 'user-a' } } as never;
 
-// The session branch of app/_layout's onAuthStateChange, reduced to its two store
-// effects: adopt only when the window allows, and pin a gated session to set-password.
+// The session branch of app/_layout's onAuthStateChange, reduced to its store effects:
+// adopt only what the adoption rule allows, and pin a gated session to set-password.
 function emitAuthEvent(_event: string, session: unknown): void {
   if (!session) return;
   const store = useAuthStore.getState();
-  if (!shouldAdoptSessionDuringRecovery(store.recoveryExchangePending)) return;
+  const adoption = recoveryAdoption({
+    recoveryExchangePending: store.recoveryExchangePending,
+    recoveryInProgress: store.recoveryInProgress,
+    recoveryUserId: store.recoveryUserId,
+    sessionUserId: (session as { user: { id: string } }).user.id,
+  });
+  if (adoption !== 'adopt') return;
   store.setSession(session as never);
   if (useAuthStore.getState().recoveryInProgress) mockReplace('/(auth)/reset-password');
 }
@@ -72,7 +95,8 @@ function emitAuthEvent(_event: string, session: unknown): void {
 // An ordered log of the I/O steps, so we can assert e.g. wipe-before-exchange.
 let calls: string[] = [];
 
-beforeEach(() => {
+beforeEach(async () => {
+  await AsyncStorage.clear();
   jest.clearAllMocks();
   // clearAllMocks keeps implementations; a route recorder must not leak across cases.
   mockReplace.mockReset();
@@ -101,7 +125,8 @@ beforeEach(() => {
   // auth-js storage: after a successful exchange it holds B (_saveSession); the
   // keychain reads back empty once purged.
   mockGetSession.mockResolvedValue({ data: { session: B_SESSION } });
-  mockGetItem.mockResolvedValue(null);
+  mockPurge.mockResolvedValue(true);
+  mockStopAutoRefresh.mockResolvedValue(undefined);
   mockRealtimeSetAuth.mockResolvedValue(undefined);
   mockExchange.mockImplementation(async () => {
     calls.push('exchange');
@@ -342,20 +367,6 @@ describe('handleRecoveryDeepLink — a failed exchange (FR-15)', () => {
     expect(useAuthStore.getState().session).toBeNull();
   });
 
-  it('reads the keychain back after a purge, retries once, and warns when it survives', async () => {
-    haveProvenance();
-    mockExchange.mockImplementation(async () => {
-      calls.push('exchange');
-      return { data: { session: null }, error: { message: 'Email link is invalid or has expired' } };
-    });
-    mockSignOut.mockResolvedValue({ error: { message: 'Network request failed' } });
-    mockGetItem.mockResolvedValue('{"access_token":"access-a"}');
-    await handleRecoveryDeepLink('nyx:///reset-password?code=dead', { nowMs: NOW });
-
-    expect(mockRemoveItem).toHaveBeenCalledTimes(4);
-    expect(console.warn).toHaveBeenCalledWith('[recovery] stored session still present after purge');
-  });
-
   it('a successful reconcile leaves the keychain to auth-js', async () => {
     haveProvenance();
     mockExchange.mockImplementation(async () => {
@@ -363,7 +374,35 @@ describe('handleRecoveryDeepLink — a failed exchange (FR-15)', () => {
       return { data: { session: null }, error: { message: 'Email link is invalid or has expired' } };
     });
     await handleRecoveryDeepLink('nyx:///reset-password?code=dead', { nowMs: NOW });
-    expect(mockRemoveItem).not.toHaveBeenCalled();
+    expect(mockPurge).not.toHaveBeenCalled();
+  });
+
+  // CUL-1976: the purge's read-back cannot confirm A's session is gone (a keychain that
+  // fails deletes, and reads too). Releasing would let autoRefresh restore A into an
+  // ungated app, so the failure state stays up: the gate and its unexchanged phase on
+  // disk (the next cold start reconciles again), the window shut (the listener adopts
+  // nothing), the refresh ticker stopped.
+  it('a purge that cannot confirm the keychain is clear keeps the gate armed and the failure state up', async () => {
+    haveProvenance();
+    mockExchange.mockImplementation(async () => {
+      calls.push('exchange');
+      return { data: { session: null }, error: { message: 'Email link is invalid or has expired' } };
+    });
+    mockSignOut.mockResolvedValue({ error: { message: 'Network request failed' } });
+    mockPurge.mockResolvedValue(false);
+    await handleRecoveryDeepLink('nyx:///reset-password?code=dead', { nowMs: NOW });
+
+    const st = useAuthStore.getState();
+    expect(st.recoveryScreen).toBe('link_unusable');
+    expect(st.session).toBeNull();
+    expect(st.recoveryInProgress).toBe(true);
+    expect(st.recoveryExchangePending).toBe(true);
+    expect(await AsyncStorage.getItem(GATE_KEY)).toBe('1');
+    expect(await loadRecoveryPhase()).toEqual({ kind: 'exchanging' });
+    expect(mockStopAutoRefresh).toHaveBeenCalled();
+    // A later refresh of A finds the window shut.
+    emitAuthEvent('TOKEN_REFRESHED', A_SESSION);
+    expect(useAuthStore.getState().session).toBeNull();
   });
 
   it.each([
@@ -385,14 +424,15 @@ describe('handleRecoveryDeepLink — a failed exchange (FR-15)', () => {
     await handleRecoveryDeepLink('nyx:///reset-password?code=dead', { nowMs: NOW });
 
     // A's persisted session and the verifier beside it, so nothing can restore A.
-    expect(mockRemoveItem).toHaveBeenCalledWith('sb-test-auth-token');
-    expect(mockRemoveItem).toHaveBeenCalledWith('sb-test-auth-token-code-verifier');
+    expect(mockPurge).toHaveBeenCalledTimes(1);
     expect(console.warn).toHaveBeenCalledWith(
       expect.stringContaining('reconcile sign-out failed'),
       expect.anything(),
     );
     expect(useAuthStore.getState().recoveryScreen).toBe('link_unusable');
     expect(useAuthStore.getState().recoveryInProgress).toBe(false);
+    // Released: the phase goes with the gate.
+    expect(await AsyncStorage.getItem(PHASE_KEY)).toBeNull();
   });
 
   it('maps a verifier-absent error to wrong_device (the §9.3-Q2 shape)', async () => {
@@ -486,5 +526,199 @@ describe('abandonRecovery — a refused save ends the reset the FR-15 way (CUL-1
     expect(useAuthStore.getState().recoveryInProgress).toBe(false);
     expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
     expect(useAuthStore.getState().recoveryUserId).toBeNull();
+  });
+});
+
+// CUL-1973: the phase that tells a resume whose session the keychain holds. Written
+// `exchanging` before the gate is armed, `exchanged:<B>` only once B is adopted.
+describe('handleRecoveryDeepLink — the persisted recovery phase (CUL-1973)', () => {
+  it('writes exchanging before the gate, and names B only after the exchange adopts B', async () => {
+    haveProvenance();
+    await AsyncStorage.setItem(PHASE_KEY, 'exchanged:user-a'); // a stale value
+    const seen: Array<{ gate: string | null; phase: string | null }> = [];
+    mockFlush.mockImplementation(async () => {
+      seen.push({ gate: await AsyncStorage.getItem(GATE_KEY), phase: await AsyncStorage.getItem(PHASE_KEY) });
+      return { pendingCount: 0, quarantinedCount: 0 };
+    });
+    let phaseWhenAdopted: string | null | undefined;
+    const unsub = useAuthStore.subscribe((st, prev) => {
+      if (st.session === B_SESSION && prev.session !== B_SESSION) {
+        void AsyncStorage.getItem(PHASE_KEY).then((v) => { phaseWhenAdopted = v; });
+      }
+    });
+    await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
+    unsub();
+
+    // During the flush (a process death here leaves A in the keychain): armed, exchanging.
+    expect(seen).toEqual([{ gate: '1', phase: 'exchanging' }]);
+    expect(phaseWhenAdopted).toBe('exchanged:user-b');
+    expect(await loadRecoveryPhase()).toEqual({ kind: 'exchanged', userId: 'user-b' });
+  });
+
+  it('a success the stored session does not match never names anyone', async () => {
+    haveProvenance();
+    mockGetSession.mockResolvedValue({ data: { session: A_SESSION } });
+    await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
+    expect(await AsyncStorage.getItem(PHASE_KEY)).toBeNull();
+  });
+
+  it.each([
+    ['nothing stored', null],
+    ['exchanging', 'exchanging'],
+    ['an empty user', 'exchanged:'],
+    ['garbage', '{"phase":1}'],
+  ])('reads %s as exchanging (fail closed)', async (_label, raw) => {
+    if (raw !== null) await AsyncStorage.setItem(PHASE_KEY, raw);
+    expect(await loadRecoveryPhase()).toEqual({ kind: 'exchanging' });
+  });
+
+  it('an unreadable phase reads as exchanging', async () => {
+    // The in-memory mock's functions are jest mocks already: a one-shot override, never a
+    // spy whose restore would strip the implementation from every later test.
+    (AsyncStorage.getItem as jest.Mock).mockRejectedValueOnce(new Error('disk'));
+    expect(await loadRecoveryPhase()).toEqual({ kind: 'exchanging' });
+  });
+});
+
+describe('one reconcile at a time (code-reviewer, CUL-1973)', () => {
+  // The cold-start resume and the root listener can both end the same reset. Two
+  // interleaved reconciles let the first close the window while the second's signOut
+  // still emits A, and a mixed purge outcome leaves the window shut with no gate.
+  it('a second abandon joins the one in flight: one signOut, one release', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    useAuthStore.setState({ recoveryInProgress: true, session: null });
+    let releaseSignOut: () => void = () => {};
+    mockSignOut.mockImplementation(
+      () => new Promise((resolve) => {
+        releaseSignOut = () => resolve({ error: null });
+      }),
+    );
+    const first = abandonRecovery('failed');
+    const second = abandonRecovery('link_unusable');
+    releaseSignOut();
+    await Promise.all([first, second]);
+
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    expect(useAuthStore.getState().recoveryScreen).toBe('failed');
+    expect(useAuthStore.getState().recoveryInProgress).toBe(false);
+    expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
+    expect(await AsyncStorage.getItem(GATE_KEY)).toBeNull();
+  });
+
+  it('releases the gate before closing the window, so nothing between reads as a stranger', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    useAuthStore.setState({ recoveryInProgress: true, session: null });
+    const seen: Array<{ pending: boolean; inProgress: boolean }> = [];
+    const unsub = useAuthStore.subscribe((st) =>
+      seen.push({ pending: st.recoveryExchangePending, inProgress: st.recoveryInProgress }));
+    await abandonRecovery('failed');
+    unsub();
+    // Never the state where the listener would abandon again: window shut, gate up.
+    expect(seen.some((x) => !x.pending && x.inProgress)).toBe(false);
+  });
+});
+
+describe('handleRecoveryDeepLink — a phase that cannot be written (CUL-1973)', () => {
+  it('never arms the gate on an exchanging it could not persist, and touches nothing', async () => {
+    haveProvenance();
+    (AsyncStorage.setItem as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+    await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
+
+    expect(await AsyncStorage.getItem(GATE_KEY)).toBeNull();
+    expect(useAuthStore.getState().recoveryInProgress).toBe(false);
+    expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
+    expect(useAuthStore.getState().recoveryScreen).toBe('failed');
+    expect(calls).toEqual([]);
+  });
+});
+
+// A recovery-link launch after a mid-reset death never runs initColdStart's resume, so
+// the handler settles the old gate first, locally, without the network.
+describe('discardInterruptedRecovery (rls-privacy-reviewer, CUL-1973)', () => {
+  it('no gate: touches nothing and lets the link through', async () => {
+    await expect(discardInterruptedRecovery()).resolves.toBe(true);
+    expect(mockWipe).not.toHaveBeenCalled();
+    expect(mockPurge).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().session).toBe(A_SESSION);
+  });
+
+  it('an armed gate: nulls the store, flushes, wipes, purges the keychain, releases gate and phase', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    mockGetSession.mockResolvedValue({ data: { session: null } });
+    await AsyncStorage.setItem(PHASE_KEY, 'exchanging');
+    await expect(discardInterruptedRecovery()).resolves.toBe(true);
+    expect(useAuthStore.getState().session).toBeNull();
+    expect(calls).toEqual(['flush', 'wipe']);
+    expect(mockPurge).toHaveBeenCalledTimes(1);
+    expect(mockStopAutoRefresh).toHaveBeenCalled();
+    expect(mockSignOut).not.toHaveBeenCalled();
+    expect(await AsyncStorage.getItem(GATE_KEY)).toBeNull();
+    expect(await AsyncStorage.getItem(PHASE_KEY)).toBeNull();
+    expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
+  });
+
+  // Pass 2, A1: the purge runs outside auth-js's lock, so a refresh in flight at launch
+  // can save A back after the read-back passed. getSession waits on that lock.
+  it('a refresh that re-saves A after the purge is purged again before the window closes', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    const windowWhenRead: boolean[] = [];
+    mockGetSession.mockImplementationOnce(async () => {
+      windowWhenRead.push(useAuthStore.getState().recoveryExchangePending);
+      return { data: { session: A_SESSION } };
+    });
+    mockGetSession.mockResolvedValueOnce({ data: { session: null } });
+    await expect(discardInterruptedRecovery()).resolves.toBe(true);
+    expect(windowWhenRead).toEqual([true]);
+    expect(mockPurge).toHaveBeenCalledTimes(2);
+    expect(useAuthStore.getState().session).toBeNull();
+  });
+
+  it('a session that keeps coming back leaves the failure state up, gate armed', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    mockGetSession.mockResolvedValue({ data: { session: A_SESSION } });
+    await expect(discardInterruptedRecovery()).resolves.toBe(false);
+    expect(useAuthStore.getState().recoveryScreen).toBe('failed');
+    expect(useAuthStore.getState().recoveryExchangePending).toBe(true);
+    expect(await AsyncStorage.getItem(GATE_KEY)).toBe('1');
+  });
+
+  it('a purge that cannot confirm keeps the gate armed and the failure state up', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    mockPurge.mockResolvedValue(false);
+    await expect(discardInterruptedRecovery()).resolves.toBe(false);
+    const st = useAuthStore.getState();
+    expect(st.session).toBeNull();
+    expect(st.recoveryScreen).toBe('failed');
+    expect(st.recoveryInProgress).toBe(true);
+    expect(st.recoveryExchangePending).toBe(true);
+    expect(await AsyncStorage.getItem(GATE_KEY)).toBe('1');
+    expect(mockStopAutoRefresh).toHaveBeenCalled();
+  });
+});
+
+// Pass 2, A2: a backgrounded reconcile's tail releases the gate and phase; a new link
+// handled meanwhile must not have its own released.
+describe('handleRecoveryDeepLink waits for a reconcile in flight (rls-privacy-reviewer pass 2)', () => {
+  it("never writes its phase or gate until the old reconcile's tail has run", async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    useAuthStore.setState({ recoveryInProgress: true, session: null });
+    let finishLogout: () => void = () => {};
+    mockSignOut.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        finishLogout = () => resolve({ error: null });
+      }),
+    );
+    const old = abandonRecovery('failed');
+    haveProvenance();
+    const fresh = handleRecoveryDeepLink('nyx:///reset-password?code=new', { nowMs: NOW });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toEqual([]); // the new attempt has not started its flush
+    finishLogout();
+    await Promise.all([old, fresh]);
+
+    expect(calls).toEqual(['flush', 'wipe', 'exchange']);
+    expect(await loadRecoveryPhase()).toEqual({ kind: 'exchanged', userId: 'user-b' });
+    expect(await AsyncStorage.getItem(GATE_KEY)).toBe('1');
+    expect(useAuthStore.getState().session).toBe(B_SESSION);
   });
 });

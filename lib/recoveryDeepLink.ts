@@ -30,14 +30,16 @@
 //      sign-out that fails is checked, and the keychain is purged directly.
 
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
-import { AUTH_STORAGE_KEY, supabase } from './supabase';
-import { ChunkedSecureStoreAdapter } from './secureStore';
-import { flushForSignOut, wipeLocalSession } from './session';
+import { supabase } from './supabase';
+import { flushForSignOut, purgeStoredAuthSession, wipeLocalSession } from './session';
+import type { RecoveryPhase } from './authRouting';
 import {
   useAuthStore,
   armRecoveryGate,
   releaseRecoveryGate,
+  loadPersistedRecoveryGate,
 } from '../store/authStore';
 import { readRecoveryRequest, hasLocalProvenance } from './recoveryMarker';
 import {
@@ -54,6 +56,55 @@ const RECOVERY_ROUTE = '/(auth)/reset-password' as const;
 // re-entry for the same URL is refused synchronously. There is no same-code retry to
 // let through (CUL-1888): auth-js deletes the verifier on any failed exchange.
 let lastHandledUrl: string | null = null;
+
+// CUL-1973: the persisted gate says a reset is under way, not WHOSE session the keychain
+// holds. Until the exchange saves B, it still holds the previous owner A, so a process
+// death between arming and adopting left gate + A, and the next cold start rendered the
+// set-password form on A. The phase travels beside the gate: `exchanging` is written
+// BEFORE the gate is armed (overwriting any stale value), and `exchanged:<userId>` only
+// once the handler has adopted B. A resume shows the form only for that user
+// (`coldStartResume`, lib/authRouting.ts); anything else is reconciled. Its own key, so
+// the gate's storage (store/authStore.ts) is untouched.
+const RECOVERY_PHASE_KEY = 'nyx.recoveryPhase';
+const EXCHANGED_PREFIX = 'exchanged:';
+
+// Resolves false when the write failed: the handler then refuses to arm on an
+// `exchanging` it could not write, since a stale `exchanged:` left on disk would vouch
+// for whoever the keychain holds.
+async function writeRecoveryPhase(value: string): Promise<boolean> {
+  try {
+    await AsyncStorage.setItem(RECOVERY_PHASE_KEY, value);
+    return true;
+  } catch (e) {
+    console.warn('[recovery] failed to persist the recovery phase:', e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
+/** Forget the phase. Called once the gate is released, and on a cold start with no gate. */
+export async function clearRecoveryPhase(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(RECOVERY_PHASE_KEY);
+  } catch (e) {
+    console.warn('[recovery] failed to clear the recovery phase:', e instanceof Error ? e.message : e);
+  }
+}
+
+/**
+ * The persisted phase. A missing, unreadable or unrecognised value reads as
+ * `exchanging`: the resume then reconciles, never renders the form (fail closed).
+ */
+export async function loadRecoveryPhase(): Promise<RecoveryPhase> {
+  try {
+    const raw = await AsyncStorage.getItem(RECOVERY_PHASE_KEY);
+    if (raw?.startsWith(EXCHANGED_PREFIX) && raw.length > EXCHANGED_PREFIX.length) {
+      return { kind: 'exchanged', userId: raw.slice(EXCHANGED_PREFIX.length) };
+    }
+  } catch (e) {
+    console.warn('[recovery] failed to read the recovery phase:', e instanceof Error ? e.message : e);
+  }
+  return { kind: 'exchanging' };
+}
 
 /**
  * Steps 5–8: exchange the code, then finalize. Assumes the gate is ARMED and local
@@ -104,6 +155,10 @@ async function runExchangeAndFinalize(code: string): Promise<void> {
     // armed, so the session lands on the set-password form, never on Home. The user is
     // pinned for the save, which must write to this account and no other.
     store.setRecoveryUserId(exchanged.user.id);
+    // CUL-1973: only now may a resume after a process death render the form, and only
+    // for this user. Awaited before the store write, so the store never says B while
+    // disk would still reconcile a restart.
+    await writeRecoveryPhase(`${EXCHANGED_PREFIX}${exchanged.user.id}`);
     store.setSession(exchanged);
     store.setRecoveryExchangePending(false);
     // Clear any failure state a slow-exchange watchdog may have set on the screen, so
@@ -133,7 +188,22 @@ export async function abandonRecovery(
   await failAndReconcile(outcome);
 }
 
-async function failAndReconcile(
+// One reconcile at a time. The cold-start resume and the root listener can both decide
+// to end the same reset (an emission of A landing while the resume is wiping), and two
+// interleaved reconciles race on the window and the gate: the first to finish closes
+// the window while the second's signOut can still emit A into it, and a mixed purge
+// outcome leaves the window shut with the gate gone, refusing every later sign-in. A
+// second caller joins the run in flight; its outcome is the same failure screen.
+let reconcileInFlight: Promise<void> | null = null;
+
+function failAndReconcile(outcome: Exclude<RecoveryExchangeOutcome, 'success'>): Promise<void> {
+  reconcileInFlight ??= runReconcile(outcome).finally(() => {
+    reconcileInFlight = null;
+  });
+  return reconcileInFlight;
+}
+
+async function runReconcile(
   outcome: Exclude<RecoveryExchangeOutcome, 'success'>,
 ): Promise<void> {
   const store = useAuthStore.getState();
@@ -163,22 +233,101 @@ async function failAndReconcile(
   // well as a throw, and on either do the storage half of auth-js's own
   // `_removeSession` (the CUL-1461 teardown DeleteAccountSheet uses): auth-js keeps no
   // in-memory copy, so with the keychain entries gone nothing can restore A.
+  let purged = true;
   try {
     const { error } = await supabase.auth.signOut({ scope: 'local' });
-    if (error) await purgePersistedAuthSession(error);
+    if (error) purged = await purgeAfterFailedSignOut(error);
   } catch (e) {
-    await purgePersistedAuthSession(e);
+    purged = await purgeAfterFailedSignOut(e);
   }
   // A purge fires no SIGNED_OUT, so nothing else nulls the store. Null it here, so no
-  // session of A's can outlive its tokens, then close the window so a later resume is
-  // adopted normally, and drop A's token from realtime.
+  // session of A's can outlive its tokens.
   store.setSession(null);
+  if (!purged) {
+    // CUL-1976: the keychain may still hold A (a fault that fails deletes, and reads as
+    // well, so nothing could confirm it). Releasing now would let autoRefresh restore A
+    // into an ungated app. So keep the failure screen up, the window shut (the listener
+    // adopts nothing), the gate and its unexchanged phase armed (the next cold start
+    // reconciles again), and stop the refresh ticker that would re-emit A. A sign-in in
+    // this process waits for the next launch: the loud direction.
+    supabase.auth.stopAutoRefresh().catch((e: unknown) =>
+      console.warn('[recovery] stopping token refresh failed:', e instanceof Error ? e.message : e));
+    return;
+  }
+  // Release the gate (§6.4 step 8), then close the window. In that order: with the
+  // window open and the gate released, an emission in between is refused rather than
+  // read as someone other than the reset's user. reset-password keeps rendering the
+  // failure state from `recoveryScreen`, which the gate release does not touch.
+  await releaseRecoveryGate();
+  await clearRecoveryPhase();
   store.setRecoveryExchangePending(false);
   supabase.realtime.setAuth().catch((e: unknown) =>
     console.warn('[recovery] realtime token reset failed:', e instanceof Error ? e.message : e));
-  // Release the gate LAST (§6.4 step 8). reset-password keeps rendering the failure
-  // state from `recoveryScreen`, which the gate release does not touch.
+}
+
+/**
+ * Settle a reset an earlier launch left armed, before a recovery-link launch handles its
+ * new link (rls-privacy-reviewer, CUL-1973). Whatever the keychain holds is not known to
+ * be the reset's user, so it goes, locally and without the network (a /logout that RN
+ * never times out must not hold the launch): window open so the listener adopts
+ * nothing, store nulled, local data wiped, keychain purged, gate and phase released.
+ * Resolves true when the launch may go on to the link; false when the purge could not
+ * confirm, in which case the failure state stays up with the gate armed, as the
+ * reconcile does (CUL-1976).
+ */
+export async function discardInterruptedRecovery(): Promise<boolean> {
+  if (!(await loadPersistedRecoveryGate())) return true;
+  const store = useAuthStore.getState();
+  store.setRecoveryExchangePending(true);
+  store.setSession(null);
+  // No new refresh may start; one already in flight is settled by the read-back below.
+  await supabase.auth.stopAutoRefresh().catch((e: unknown) =>
+    console.warn('[recovery] stopping token refresh failed:', e instanceof Error ? e.message : e));
+  // Flush before the wipe, as the handler does (B-430): the death may have come before
+  // its flush, and the rows are still the previous owner's to send under their session.
+  await flushForSignOut().catch((e) =>
+    console.warn('[recovery] pre-discard flush failed:', e instanceof Error ? e.message : e));
+  await wipeLocalSession();
+  if (!(await purgeStoredAuthSession()) || !(await authHoldsNothing())) {
+    store.setRecoveryInProgress(true);
+    store.setRecoveryScreen('failed');
+    supabase.auth.stopAutoRefresh().catch((e: unknown) =>
+      console.warn('[recovery] stopping token refresh failed:', e instanceof Error ? e.message : e));
+    router.replace(RECOVERY_ROUTE);
+    return false;
+  }
   await releaseRecoveryGate();
+  await clearRecoveryPhase();
+  store.setRecoveryExchangePending(false);
+  return true;
+}
+
+// The purge writes the keychain directly, outside auth-js's lock, so a refresh already
+// in flight at launch (initialize's `_recoverAndRefresh`, INITIAL_SESSION's load) can
+// save the previous owner back after the read-back passed (rls-privacy-reviewer pass 2).
+// `getSession` queues behind any lock holder, so it answers only once that refresh has
+// landed; the window is still open, so whatever it emits is refused. A second purge
+// covers a session it re-saved; a read that fails or hangs counts as not clear.
+const SETTLE_TIMEOUT_MS = 10_000;
+
+async function authHoldsNothing(): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let held: boolean;
+    try {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const read = supabase.auth.getSession().then(({ data }) => data.session !== null);
+      const timeout = new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(true), SETTLE_TIMEOUT_MS);
+      });
+      held = await Promise.race([read, timeout]).finally(() => clearTimeout(timer));
+    } catch (e) {
+      console.warn('[recovery] settling the stored session failed:', e instanceof Error ? e.message : e);
+      return false;
+    }
+    if (!held) return true;
+    if (!(await purgeStoredAuthSession())) return false;
+  }
+  return false;
 }
 
 // Whether auth-js's own stored session belongs to the user the exchange returned. By
@@ -194,21 +343,14 @@ async function authHolds(session: Session): Promise<boolean> {
   }
 }
 
-async function purgePersistedAuthSession(cause: unknown): Promise<void> {
+// The shared keychain purge (CUL-1974), whose read-back sees a failing keychain
+// (CUL-1976). Resolves false when it cannot confirm A's session is gone.
+async function purgeAfterFailedSignOut(cause: unknown): Promise<boolean> {
   console.warn(
     '[recovery] reconcile sign-out failed; purging the stored session:',
     cause instanceof Error ? cause.message : (cause as { message?: string } | null)?.message ?? cause,
   );
-  // `removeItem` swallows its own keychain errors, so a failed delete only shows as the
-  // key still being there. Read it back, and try once more before giving up loudly.
-  // `getItem` swallows read errors too (reads null), so a keychain failing on BOTH
-  // reads and deletes still passes this check (CUL-1975).
-  for (let attempt = 0; attempt < 2; attempt++) {
-    await ChunkedSecureStoreAdapter.removeItem(AUTH_STORAGE_KEY);
-    await ChunkedSecureStoreAdapter.removeItem(`${AUTH_STORAGE_KEY}-code-verifier`);
-    if ((await ChunkedSecureStoreAdapter.getItem(AUTH_STORAGE_KEY)) === null) return;
-  }
-  console.warn('[recovery] stored session still present after purge');
+  return purgeStoredAuthSession();
 }
 
 /**
@@ -274,7 +416,22 @@ export async function handleRecoveryDeepLink(
   // `runExchangeAndFinalize` (CUL-1205).
   // Nulling the STORE (not auth-js) does not touch the flush, which drains A's queue
   // under auth-js's own still-valid session at step 4.
+  // A reconcile still running (the cold-start resume's is backgrounded, and its signOut
+  // can hang on /logout) ends by releasing the gate and the phase: let it finish first,
+  // so its tail never releases the ones this attempt is about to write
+  // (rls-privacy-reviewer pass 2). A hang here falls to the screen's watchdog.
+  if (reconcileInFlight) await reconcileInFlight.catch(() => {});
   store.setRecoveryExchangePending(true);
+  // CUL-1973: the phase first, so a gate on disk never outlives an `exchanging` that
+  // says the keychain may still hold the previous owner. If it cannot be written, do
+  // not arm: nothing has been touched yet, so the owner stays as they were and gets the
+  // designed failure state, with a fresh link one tap away.
+  if (!(await writeRecoveryPhase('exchanging'))) {
+    store.setRecoveryExchangePending(false);
+    store.setRecoveryScreen('failed');
+    router.replace(RECOVERY_ROUTE);
+    return;
+  }
   await armRecoveryGate();
   store.setRecoveryScreen(null);
   useAuthStore.getState().setSession(null);
