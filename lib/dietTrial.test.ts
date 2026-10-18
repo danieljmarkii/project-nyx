@@ -2781,17 +2781,26 @@ describe('CUL-1993 — one recognised bowl never takes back a refusal warning', 
     expect(facts.rangeRefusal?.population).toBe('meal_record');
   });
 
-  it('stands down on REFUSAL_MIN_RATED recent ratings at least half finished — and not one short', () => {
-    // Three refusals and three finished bowls: 3 of 6 finished clears 1 - REFUSAL_SHARE.
+  it('stands down once the meal record says eating and the now-fact has stopped — not at the tie', () => {
     const finished = (k: number) =>
       Array.from({ length: k }, (_, i) => matched(`f${i}`, 4 + i, 'all'));
-    const released = cat([...refusing(3), ...finished(3)], 6);
+    // Three refused, four finished: 4 of 7 clears 1 - REFUSAL_SHARE and the now-fact
+    // (3 of 7) no longer fires.
+    const released = cat([...refusing(3), ...finished(4)], 7);
     expect(released.trialDietRefusal).toBeNull();
     expect(released.rangeRefusal).toBeNull();
-    expect(released.recentRatedFeedings).toBe(3); // the narrow population speaks again
-    // One finished bowl short: 2 of 5 finished, so the evidence does not say eating.
-    const held = cat([...refusing(3), ...finished(2)], 5);
-    expect(held.trialDietRefusal?.population).toBe('meal_record');
+    expect(released.recentRatedFeedings).toBe(4); // the narrow population speaks again
+    // The tie: 3 of 6 is both "half finished" and "half unfinished". The now-fact still
+    // fires over the meal record, so the hold keeps it (the second adversarial pass).
+    const tie = cat([...refusing(3), ...finished(3)], 6);
+    expect(tie.trialDietRefusal).toMatchObject({ refusedFeedings: 3, ratedFeedings: 6, population: 'meal_record' });
+    // Below the stand-down's count: 2 of 5 finished.
+    expect(cat([...refusing(3), ...finished(2)], 5).trialDietRefusal?.population).toBe('meal_record');
+  });
+
+  it('a matched bowl on the same minute as a refusal does not cut that refusal', () => {
+    const facts = cat([...refusing(3), matched('m3', 3, null)], 4);
+    expect(facts.rangeRefusal).toMatchObject({ refusedFeedings: 3, population: 'meal_record' });
   });
 
   it('a fallback that never fired is unchanged: below the floor, one match keeps the narrow lane', () => {
@@ -2808,12 +2817,39 @@ describe('CUL-1993 — one recognised bowl never takes back a refusal warning', 
     expect(facts.rangeRefusal).toBeNull();
   });
 
-  it('a fallback that fired outside the recency window does not hold', () => {
-    // All three refusals (days 1–3) are needed to fire. On day REFUSAL_WINDOW_DAYS the
-    // window opens on day 1 and the hold engages; one day later day 1 has left it.
-    const record = [...refusing(3), matched('m4', 4, null)];
-    expect(cat(record, REFUSAL_WINDOW_DAYS).rangeRefusal?.population).toBe('meal_record');
-    const aged = cat(record, REFUSAL_WINDOW_DAYS + 1);
+  it('holds while the fallback spoke inside the window, even as its first refusals age out', () => {
+    // Refusals on days 1–3, a match on day 4, read on day 15: day 1 has left today's
+    // window, but the fallback was speaking on day 4, which has not (the second pass).
+    const record = [...refusing(3), matched('m4', 4, 'refused')];
+    const facts = cat(record, 15);
+    expect(facts.trialDietRefusal).toMatchObject({ refusedFeedings: 3, population: 'meal_record' });
+    expect(facts.rangeRefusal).toMatchObject({ refusedFeedings: 4, population: 'meal_record' });
+    // The match's day is the last day inside the window: still held.
+    expect(cat(record, 4 + REFUSAL_WINDOW_DAYS - 1).rangeRefusal?.population).toBe('meal_record');
+  });
+
+  it('unrated bowls never stand it down once only the range fact is left', () => {
+    // Read on day 15: day 1 has aged out of today's window, so the now-fact over the
+    // meal record no longer fires and only the stand-down can release the hold.
+    const unrated = Array.from({ length: 10 }, (_, i) => matched(`m${i}`, 4 + i, null));
+    const facts = cat([...refusing(3), ...unrated], 15);
+    expect(facts.trialDietRefusal).toBeNull();
+    expect(facts.rangeRefusal).toMatchObject({ refusedFeedings: 3, population: 'meal_record' });
+  });
+
+  it('measures the fallback over the window that ended at the match, so old finished bowls do not dilute it', () => {
+    // Five finished unmatched bowls on days 1–5, refusals on days 20–22, a match on 23.
+    // The match's window opens on day 10, so the fallback was speaking 3 of 3.
+    const early = Array.from({ length: 5 }, (_, i) => unmatched(i + 1, 'all'));
+    const late = [20, 21, 22].map((d) => unmatched(d));
+    const facts = cat([...early, ...late, matched('m23', 23, 'refused')], 23);
+    expect(facts.trialDietRefusal).toMatchObject({ refusedFeedings: 4, population: 'meal_record' });
+  });
+
+  it('KNOWN LIMIT (the PM’s open fork): a fallback that last spoke before today’s window lets go', () => {
+    // Expected to flip if the fork rules that R2's "dated, not expired" reaches past
+    // the window. Today it matches main: the match's day has left the window.
+    const aged = cat([...refusing(3), matched('m4', 4, null)], 4 + REFUSAL_WINDOW_DAYS);
     expect(aged.trialDietRefusal).toBeNull();
     expect(aged.rangeRefusal).toBeNull();
   });
