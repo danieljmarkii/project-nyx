@@ -31,9 +31,37 @@ import { clearSpentTaps } from './spentTaps';
 import { clearRemovalNotices } from './removalNotice';
 import { cancelAllAnalysisWatches } from './analysis';
 import { abortFlight } from '../components/motion/flightMotion';
-import { supabase } from './supabase';
+import { AUTH_STORAGE_KEY, supabase } from './supabase';
+import { ChunkedSecureStoreAdapter, hasItem } from './secureStore';
 import { cancelAllScheduledNotifications, clearNotificationInteractions } from './notifications';
 import { fenceFollowUpNotifications, setFollowUpNotificationsOn } from './followUpNotifications';
+
+/**
+ * Remove the persisted auth session from the keychain by hand, the storage half of
+ * auth-js's own `_removeSession`, for the paths where a local `signOut` failed and
+ * nothing else will (CUL-1974: the recovery reconcile and the account-deletion
+ * teardown both used to inline it). Resolves `true` only when a read-back that can
+ * see a failing keychain finds the session gone.
+ *
+ * Why the read-back: `removeItem` swallows its own keychain errors, so a failed
+ * delete only shows as the key still being there, and `getItem` swallows read errors
+ * too (reads null), so a keychain failing on BOTH reads and deletes would pass a
+ * `getItem` check (CUL-1976). `hasItem` throws instead; a throw counts as not purged.
+ * One retry, then the caller decides what a surviving credential means for it.
+ */
+export async function purgeStoredAuthSession(): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await ChunkedSecureStoreAdapter.removeItem(AUTH_STORAGE_KEY);
+    await ChunkedSecureStoreAdapter.removeItem(`${AUTH_STORAGE_KEY}-code-verifier`);
+    try {
+      if (!(await hasItem(AUTH_STORAGE_KEY))) return true;
+    } catch (e) {
+      console.warn('[session] keychain read-back failed:', e instanceof Error ? e.message : e);
+    }
+  }
+  console.warn('[session] stored session may survive the purge');
+  return false;
+}
 
 /**
  * B-430 — the pre-sign-out drain. Push everything that can still be pushed, then

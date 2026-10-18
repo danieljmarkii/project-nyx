@@ -16,13 +16,21 @@ import { initDb } from '../lib/db';
 import { wipeLocalSession } from '../lib/session';
 import {
   coldStartDecision,
+  coldStartResume,
   signedOutRoute,
   navigateAfterSignOut,
-  shouldAdoptSessionDuringRecovery,
+  recoveryAdoption,
+  readUnlessSignedOut,
 } from '../lib/authRouting';
 import { isAuthDeepLink } from '../lib/authDeepLink';
 import { isRecoveryDeepLink } from '../lib/passwordRecovery';
-import { handleRecoveryDeepLink } from '../lib/recoveryDeepLink';
+import {
+  handleRecoveryDeepLink,
+  abandonRecovery,
+  loadRecoveryPhase,
+  clearRecoveryPhase,
+} from '../lib/recoveryDeepLink';
+import { currentSignOutEpoch } from '../lib/signOutEpoch';
 import { PASSWORD_RECOVERY_ENABLED } from '../constants/flags';
 import { purgeRetiredStorage } from '../lib/retiredStorage';
 import { useSync } from '../hooks/useSync';
@@ -164,10 +172,18 @@ function RootLayoutTree() {
       // gate; without loading it, the restored session would fall through to Home
       // with the password still unchanged (Trap 1). Read in parallel so a normal
       // cold start pays only one round-trip of latency, not two.
-      const [gateArmed, { data: { session }, error }] = await Promise.all([
+      // CUL-1971: behind the sign-out epoch. A SIGNED_OUT that lands while these are
+      // in flight owns the session and the routing; adopt nothing it has begun wiping.
+      const reads = await readUnlessSignedOut(currentSignOutEpoch, () => Promise.all([
         loadPersistedRecoveryGate(),
+        loadRecoveryPhase(),
         supabase.auth.getSession(),
-      ]);
+      ]));
+      if (!reads) {
+        setLoading(false);
+        return;
+      }
+      const [gateArmed, phase, { data: { session }, error }] = reads;
       // The single most diagnostic moment: did the persisted session survive to this
       // cold start? We read `error` too — getSession returns null-WITH-error when the
       // token was within its expiry margin and the refresh network call FAILED
@@ -175,26 +191,58 @@ function RootLayoutTree() {
       // frequent-logout bug.
       const decision = coldStartDecision(session, error);
 
+      // No gate: any phase left on disk is stale (a reset that finished, or one whose
+      // gate write failed). Clear it so it can never vouch for a later resume.
+      if (!gateArmed) void clearRecoveryPhase();
+
       if (gateArmed) {
-        // Resume an interrupted reset (§10 row 21). The gate is the routing here.
-        useAuthStore.getState().setRecoveryInProgress(true);
-        if (session) {
-          // A live recovery session behind the gate → the set-password form.
+        // Resume an interrupted reset (§10 row 21), but only for the user the exchange
+        // adopted (CUL-1973): the gate alone cannot say whose session the keychain
+        // holds, and a process death before the exchange saved B leaves the previous
+        // owner A there. `coldStartResume` decides; this only carries it out.
+        const resume = coldStartResume({
+          sessionUserId: session?.user.id ?? null,
+          decision,
+          phase,
+        });
+        const store = useAuthStore.getState();
+        if (resume.action === 'resume-form') {
+          // A live recovery session behind the gate → the set-password form, with its
+          // user pinned so the listener and the save adopt and write to no one else.
+          store.setRecoveryInProgress(true);
+          store.setRecoveryUserId(resume.userId);
           setSession(session);
           router.replace('/(auth)/reset-password');
-        } else if (decision === 'retain') {
-          // A TRANSIENT refresh failure on resume (null-with-error) — the recovery
-          // session is almost certainly still in storage, so do NOT release the gate
-          // over a network blip. Keep it and let autoRefresh recover: TOKEN_REFRESHED
-          // then arrives as SIGNED_IN and the FR-6 branch renders the form. Land on
-          // the auth entry meanwhile (the recovery session guard holds the redirect).
+        } else if (resume.action === 'await-refresh') {
+          // A TRANSIENT refresh failure on resume (null-with-error) after an adopted
+          // exchange — the recovery session is almost certainly still in storage, so do
+          // NOT release the gate over a network blip. Keep it and let autoRefresh
+          // recover: the listener adopts its session only if it is the pinned user, and
+          // the FR-6 branch renders the form. Land on the auth entry meanwhile (the
+          // recovery session guard holds the redirect).
+          store.setRecoveryInProgress(true);
+          store.setRecoveryUserId(resume.userId);
           router.replace('/(auth)');
           supabase.auth.startAutoRefresh().catch(() => {});
+        } else if (resume.action === 'reconcile') {
+          // The exchange never adopted this session, or adopted someone else: end the
+          // reset the FR-15 way (failure state, local sign-out with the keychain purge,
+          // gate released) and land on "Couldn't finish that", which offers a fresh
+          // link. The store is nulled first, synchronously, in case the listener
+          // adopted the stored session before the gate had loaded. The wipe runs here
+          // too: the death may have come before the handler's own (§6.4 step 4), and a
+          // sign-out that falls back to the keychain purge emits no SIGNED_OUT to run it.
+          setSession(null);
+          store.setRecoveryInProgress(true);
+          router.replace('/(auth)/reset-password');
+          await wipeLocalSession();
+          await abandonRecovery('failed');
         } else {
           // to-auth (null-without-error): the recovery session genuinely expired.
           // Nothing to resume — release the gate and route to auth rather than wedge
           // the owner on a formless set-password screen.
           await releaseRecoveryGate();
+          await clearRecoveryPhase();
           router.replace('/(auth)');
         }
       } else if (decision === 'proceed') {
@@ -286,8 +334,21 @@ function RootLayoutTree() {
         // During the recovery exchange window adopt NOTHING: the recovery handler adopts
         // exactly the session the exchange returned (CUL-1205), so no emission of the
         // pre-recovery owner A, whatever its name, can reach the store mid-flush
-        // (rls-privacy re-reviews). Inert outside that window, so normal auth is untouched.
-        if (!shouldAdoptSessionDuringRecovery(useAuthStore.getState().recoveryExchangePending)) {
+        // (rls-privacy re-reviews). With the gate armed after the window, adopt only the
+        // user the reset is for: a resumed retain's later TOKEN_REFRESHED for anyone else
+        // ends the reset instead of rendering the form on them (CUL-1973). Inert with no
+        // reset under way, so normal auth is untouched.
+        const st = useAuthStore.getState();
+        const adoption = recoveryAdoption({
+          recoveryExchangePending: st.recoveryExchangePending,
+          recoveryInProgress: st.recoveryInProgress,
+          recoveryUserId: st.recoveryUserId,
+          sessionUserId: session.user.id,
+        });
+        if (adoption === 'refuse') return;
+        if (adoption === 'abandon') {
+          router.replace('/(auth)/reset-password');
+          await abandonRecovery('failed');
           return;
         }
         setSession(session);

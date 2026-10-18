@@ -5,12 +5,7 @@
 
 const mockSignOut = jest.fn();
 jest.mock('../../lib/supabase', () => ({
-  AUTH_STORAGE_KEY: 'sb-test-auth-token',
   supabase: { auth: { signOut: (...a: unknown[]) => mockSignOut(...a) } },
-}));
-const mockRemoveItem = jest.fn(async (_key: string) => undefined);
-jest.mock('../../lib/secureStore', () => ({
-  ChunkedSecureStoreAdapter: { removeItem: (key: string) => mockRemoveItem(key) },
 }));
 const mockReplace = jest.fn();
 jest.mock('expo-router', () => ({ router: { replace: (...a: unknown[]) => mockReplace(...a) } }));
@@ -20,7 +15,13 @@ jest.mock('react-native-safe-area-context', () => ({
 jest.mock('../../hooks/useIsOnline', () => ({ useIsOnline: () => true }));
 jest.mock('../../lib/network', () => ({ getIsOnline: async () => true }));
 const mockWipe = jest.fn(async () => undefined);
-jest.mock('../../lib/session', () => ({ wipeLocalSession: () => mockWipe() }));
+// The keychain purge is the shared helper (CUL-1974), tested with its read-back in
+// lib/session.purge.test.ts; here only that the teardown calls it, and when.
+const mockPurge = jest.fn(async () => true);
+jest.mock('../../lib/session', () => ({
+  wipeLocalSession: () => mockWipe(),
+  purgeStoredAuthSession: () => mockPurge(),
+}));
 jest.mock('../brand/WhorlSpinner', () => ({ WhorlSpinner: () => null }));
 jest.mock('../../lib/account', () => {
   const actual = jest.requireActual('../../lib/account');
@@ -58,7 +59,8 @@ beforeEach(() => {
   mockSignOut.mockReset();
   mockReplace.mockReset();
   mockWipe.mockClear();
-  mockRemoveItem.mockClear();
+  mockPurge.mockReset();
+  mockPurge.mockResolvedValue(true);
   useAuthStore.getState().setSession(DELETED);
 });
 
@@ -69,7 +71,7 @@ it('a clean local sign-out leaves the wipe to the SIGNED_OUT handler', async () 
   expect(mockWipe).not.toHaveBeenCalled();
   expect(mockReplace).not.toHaveBeenCalled();
   // auth-js removed the stored session itself, and the handler clears the store.
-  expect(mockRemoveItem).not.toHaveBeenCalled();
+  expect(mockPurge).not.toHaveBeenCalled();
 });
 
 // What a failed /logout leaves undone, besides the wipe: the persisted session (the
@@ -77,10 +79,9 @@ it('a clean local sign-out leaves the wipe to the SIGNED_OUT handler', async () 
 // stays armed; Back from the login screen re-enters the app as the deleted account).
 function expectNothingOfTheAccountLeft() {
   expect(mockWipe).toHaveBeenCalledTimes(1);
-  expect(mockRemoveItem).toHaveBeenCalledWith('sb-test-auth-token');
-  expect(mockRemoveItem).toHaveBeenCalledWith('sb-test-auth-token-code-verifier');
+  expect(mockPurge).toHaveBeenCalledTimes(1);
   // The credential goes before anything slower: an app killed mid-teardown keeps nothing.
-  expect(Math.max(...mockRemoveItem.mock.invocationCallOrder)).toBeLessThan(mockWipe.mock.invocationCallOrder[0]);
+  expect(mockPurge.mock.invocationCallOrder[0]).toBeLessThan(mockWipe.mock.invocationCallOrder[0]);
   expect(useAuthStore.getState().session).toBeNull();
   expect(mockReplace).toHaveBeenCalledWith('/(auth)/login');
 }
@@ -93,6 +94,16 @@ it('a sign-out that RESOLVES with an error still leaves nothing of the account o
 
 it('a sign-out that throws still leaves nothing of the account on the phone', async () => {
   mockSignOut.mockRejectedValue(new Error('network down'));
+  await confirmDeletion();
+  expectNothingOfTheAccountLeft();
+});
+
+// A purge whose read-back still finds the credential (a keychain fault) cannot block the
+// teardown: the account and its sessions are already gone server-side, so the token is
+// dead, while the pet-health data on the phone is not. The wipe and the route still run.
+it('a purge that cannot confirm the keychain is clear still finishes the teardown', async () => {
+  mockSignOut.mockResolvedValue({ error: { name: 'AuthRetryableFetchError', status: 0 } });
+  mockPurge.mockResolvedValue(false);
   await confirmDeletion();
   expectNothingOfTheAccountLeft();
 });
