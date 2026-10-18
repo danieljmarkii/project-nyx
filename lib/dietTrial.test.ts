@@ -2846,6 +2846,18 @@ describe('CUL-1993 — one recognised bowl never takes back a refusal warning', 
     expect(facts.trialDietRefusal).toMatchObject({ refusedFeedings: 4, population: 'meal_record' });
   });
 
+  it('leaves the lane on the trial diet while the trial diet fires for itself, run line and all', () => {
+    // Three unmatched refusals, then four matched refusals with one finished rival bowl
+    // between them: the narrow now-fact fires 4 of 4 with a run, so nothing is held.
+    const rival = feeding({ eventId: 'r', occurredAt: at(day(5), 8), foodItemId: 'tuna', foodKey: 'tuna', intakeRating: 'all' });
+    const facts = cat(
+      [...refusing(3), matched('m4', 4, 'refused'), rival, matched('m5', 5, 'refused'), matched('m6', 6, 'refused'), matched('m7', 7, 'refused')],
+      7,
+    );
+    expect(facts.trialDietRefusal).toMatchObject({ refusedFeedings: 4, population: 'trial_diet' });
+    expect(facts.trialDietRefusal?.run?.feedings).toBe(4);
+  });
+
   it('KNOWN LIMIT (the PM’s open fork): a fallback that last spoke before today’s window lets go', () => {
     // Expected to flip if the fork rules that R2's "dated, not expired" reaches past
     // the window. Today it matches main: the match's day has left the window.

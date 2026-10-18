@@ -3141,12 +3141,22 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // card's `isEatingNow` stands down only the RANGE fact, never a live now-fact, so
   // releasing at the tie withdrew a warning the record still fires (the second pass).
   //
+  // AND ONLY WHILE THE TRIAL DIET IS NOT SPEAKING FOR ITSELF. When the narrow
+  // now-fact fires, the card already warns in the present tense, names the food and
+  // carries R4's run; switching to the meal record there lost the run to one finished
+  // rival bowl (the first pass) and put "can't match these meals" over matched ones.
+  //
   // ⚠️ NOT COVERED: a fallback that last spoke BEFORE today's recency window (refusals
   // weeks ago, a match, then only unrated bowls) still lets go, as on main. The ruling
   // scoped the hold to the window; whether R2's "dated, not expired" reaches past it is
   // the PM's open fork, filed beside CUL-1993.
   let fallbackHeld = false;
-  if (!allowedSetUnavailable && narrow.feedings > 0 && firstNarrowDay >= refusalWindowStart) {
+  if (
+    !allowedSetUnavailable &&
+    narrow.feedings > 0 &&
+    firstNarrowDay >= refusalWindowStart &&
+    !recentRefusalFires(narrow)
+  ) {
     const preMatch = emptyRefusalCounters();
     const preMatchWindowStart = Math.max(startDayIndex, firstNarrowDay - REFUSAL_WINDOW_DAYS + 1);
     for (const m of wideMembers) {
