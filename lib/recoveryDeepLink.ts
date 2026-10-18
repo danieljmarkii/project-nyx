@@ -67,14 +67,16 @@ let lastHandledUrl: string | null = null;
 const RECOVERY_PHASE_KEY = 'nyx.recoveryPhase';
 const EXCHANGED_PREFIX = 'exchanged:';
 
-async function writeRecoveryPhase(value: string): Promise<void> {
+// Resolves false when the write failed: the handler then refuses to arm on an
+// `exchanging` it could not write, since a stale `exchanged:` left on disk would vouch
+// for whoever the keychain holds.
+async function writeRecoveryPhase(value: string): Promise<boolean> {
   try {
     await AsyncStorage.setItem(RECOVERY_PHASE_KEY, value);
+    return true;
   } catch (e) {
-    // An `exchanging` write that fails leaves whatever was there. The gate write beside
-    // it shares the same storage and almost certainly fails too, so nothing resumes; a
-    // stale `exchanged:` names a user the resume must also find in the keychain.
     console.warn('[recovery] failed to persist the recovery phase:', e instanceof Error ? e.message : e);
+    return false;
   }
 }
 
@@ -185,7 +187,22 @@ export async function abandonRecovery(
   await failAndReconcile(outcome);
 }
 
-async function failAndReconcile(
+// One reconcile at a time. The cold-start resume and the root listener can both decide
+// to end the same reset (an emission of A landing while the resume is wiping), and two
+// interleaved reconciles race on the window and the gate: the first to finish closes
+// the window while the second's signOut can still emit A into it, and a mixed purge
+// outcome leaves the window shut with the gate gone, refusing every later sign-in. A
+// second caller joins the run in flight; its outcome is the same failure screen.
+let reconcileInFlight: Promise<void> | null = null;
+
+function failAndReconcile(outcome: Exclude<RecoveryExchangeOutcome, 'success'>): Promise<void> {
+  reconcileInFlight ??= runReconcile(outcome).finally(() => {
+    reconcileInFlight = null;
+  });
+  return reconcileInFlight;
+}
+
+async function runReconcile(
   outcome: Exclude<RecoveryExchangeOutcome, 'success'>,
 ): Promise<void> {
   const store = useAuthStore.getState();
@@ -236,15 +253,15 @@ async function failAndReconcile(
       console.warn('[recovery] stopping token refresh failed:', e instanceof Error ? e.message : e));
     return;
   }
-  // Close the window so a later resume is adopted normally, and drop A's token from
-  // realtime.
+  // Release the gate (§6.4 step 8), then close the window. In that order: with the
+  // window open and the gate released, an emission in between is refused rather than
+  // read as someone other than the reset's user. reset-password keeps rendering the
+  // failure state from `recoveryScreen`, which the gate release does not touch.
+  await releaseRecoveryGate();
+  await clearRecoveryPhase();
   store.setRecoveryExchangePending(false);
   supabase.realtime.setAuth().catch((e: unknown) =>
     console.warn('[recovery] realtime token reset failed:', e instanceof Error ? e.message : e));
-  // Release the gate LAST (§6.4 step 8). reset-password keeps rendering the failure
-  // state from `recoveryScreen`, which the gate release does not touch.
-  await releaseRecoveryGate();
-  await clearRecoveryPhase();
 }
 
 // Whether auth-js's own stored session belongs to the user the exchange returned. By
@@ -335,8 +352,15 @@ export async function handleRecoveryDeepLink(
   // under auth-js's own still-valid session at step 4.
   store.setRecoveryExchangePending(true);
   // CUL-1973: the phase first, so a gate on disk never outlives an `exchanging` that
-  // says the keychain may still hold the previous owner.
-  await writeRecoveryPhase('exchanging');
+  // says the keychain may still hold the previous owner. If it cannot be written, do
+  // not arm: nothing has been touched yet, so the owner stays as they were and gets the
+  // designed failure state, with a fresh link one tap away.
+  if (!(await writeRecoveryPhase('exchanging'))) {
+    store.setRecoveryExchangePending(false);
+    store.setRecoveryScreen('failed');
+    router.replace(RECOVERY_ROUTE);
+    return;
+  }
   await armRecoveryGate();
   store.setRecoveryScreen(null);
   useAuthStore.getState().setSession(null);

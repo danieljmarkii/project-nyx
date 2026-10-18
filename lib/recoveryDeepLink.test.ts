@@ -577,3 +577,56 @@ describe('handleRecoveryDeepLink — the persisted recovery phase (CUL-1973)', (
     spy.mockRestore();
   });
 });
+
+describe('one reconcile at a time (code-reviewer, CUL-1973)', () => {
+  // The cold-start resume and the root listener can both end the same reset. Two
+  // interleaved reconciles let the first close the window while the second's signOut
+  // still emits A, and a mixed purge outcome leaves the window shut with no gate.
+  it('a second abandon joins the one in flight: one signOut, one release', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    useAuthStore.setState({ recoveryInProgress: true, session: null });
+    let releaseSignOut: () => void = () => {};
+    mockSignOut.mockImplementation(
+      () => new Promise((resolve) => {
+        releaseSignOut = () => resolve({ error: null });
+      }),
+    );
+    const first = abandonRecovery('failed');
+    const second = abandonRecovery('link_unusable');
+    releaseSignOut();
+    await Promise.all([first, second]);
+
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    expect(useAuthStore.getState().recoveryScreen).toBe('failed');
+    expect(useAuthStore.getState().recoveryInProgress).toBe(false);
+    expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
+    expect(await AsyncStorage.getItem(GATE_KEY) ?? null).toBeNull();
+  });
+
+  it('releases the gate before closing the window, so nothing between reads as a stranger', async () => {
+    await AsyncStorage.setItem(GATE_KEY, '1');
+    useAuthStore.setState({ recoveryInProgress: true, session: null });
+    const seen: Array<{ pending: boolean; inProgress: boolean }> = [];
+    const unsub = useAuthStore.subscribe((st) =>
+      seen.push({ pending: st.recoveryExchangePending, inProgress: st.recoveryInProgress }));
+    await abandonRecovery('failed');
+    unsub();
+    // Never the state where the listener would abandon again: window shut, gate up.
+    expect(seen.some((x) => !x.pending && x.inProgress)).toBe(false);
+  });
+});
+
+describe('handleRecoveryDeepLink — a phase that cannot be written (CUL-1973)', () => {
+  it('never arms the gate on an exchanging it could not persist, and touches nothing', async () => {
+    haveProvenance();
+    const spy = jest.spyOn(AsyncStorage, 'setItem').mockRejectedValueOnce(new Error('disk full'));
+    await handleRecoveryDeepLink('nyx:///reset-password?code=abc', { nowMs: NOW });
+    spy.mockRestore();
+
+    expect(await AsyncStorage.getItem(GATE_KEY) ?? null).toBeNull();
+    expect(useAuthStore.getState().recoveryInProgress).toBe(false);
+    expect(useAuthStore.getState().recoveryExchangePending).toBe(false);
+    expect(useAuthStore.getState().recoveryScreen).toBe('failed');
+    expect(calls).toEqual([]);
+  });
+});

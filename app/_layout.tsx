@@ -163,7 +163,10 @@ function RootLayoutTree() {
       // and failure alike.
       void handleRecoveryDeepLink(Linking.getLinkingURL()).finally(() => setLoading(false));
     } else {
-      void initColdStart();
+      // Whatever throws, the loading gate opens: a stuck `isLoading` blanks the Landing.
+      void initColdStart()
+        .catch((e: unknown) => console.warn('[auth] cold start failed:', e instanceof Error ? e.message : e))
+        .finally(() => setLoading(false));
     }
 
     async function initColdStart() {
@@ -193,7 +196,7 @@ function RootLayoutTree() {
 
       // No gate: any phase left on disk is stale (a reset that finished, or one whose
       // gate write failed). Clear it so it can never vouch for a later resume.
-      if (!gateArmed) void clearRecoveryPhase();
+      if (!gateArmed) await clearRecoveryPhase();
 
       if (gateArmed) {
         // Resume an interrupted reset (§10 row 21), but only for the user the exchange
@@ -232,11 +235,20 @@ function RootLayoutTree() {
           // adopted the stored session before the gate had loaded. The wipe runs here
           // too: the death may have come before the handler's own (§6.4 step 4), and a
           // sign-out that falls back to the keychain purge emits no SIGNED_OUT to run it.
+          // The window opens first, synchronously, so an emission of A during the wipe
+          // is refused rather than racing a second reconcile. Not awaited: the reconcile's
+          // signOut POSTs /logout, which RN never times out, and the loading gate must not
+          // wait on it. The failure screen renders from `recoveryScreen`, set at once.
+          store.setRecoveryExchangePending(true);
+          store.setRecoveryScreen('failed');
           setSession(null);
           store.setRecoveryInProgress(true);
           router.replace('/(auth)/reset-password');
-          await wipeLocalSession();
-          await abandonRecovery('failed');
+          void (async () => {
+            await wipeLocalSession();
+            await abandonRecovery('failed');
+          })().catch((e: unknown) =>
+            console.warn('[recovery] resume reconcile failed:', e instanceof Error ? e.message : e));
         } else {
           // to-auth (null-without-error): the recovery session genuinely expired.
           // Nothing to resume — release the gate and route to auth rather than wedge

@@ -114,12 +114,17 @@ describe('purgeStoredAuthSession (CUL-1974, CUL-1976)', () => {
   });
 });
 
-// One helper (CUL-1974): nothing else removes the auth session from the keychain by
-// hand, so a fix to the purge or its read-back reaches every caller.
+// One helper (CUL-1974): nothing else touches the auth session's keychain key, so a fix
+// to the purge or its read-back reaches every caller. Any reference counts, not only a
+// `removeItem(` of it: an alias or a raw SecureStore delete is the same copy by another
+// spelling. The key's own definition (lib/authStorageKey.ts) and the client that hands
+// it to auth-js (lib/supabase.ts) are the only other readers.
 describe('one keychain purge', () => {
   const ROOT = path.resolve(__dirname, '..');
-  const SCAN = ['app', 'components', 'hooks', 'lib', 'store'];
+  const SCAN = ['app', 'components', 'constants', 'hooks', 'lib', 'store', 'widgets'];
+  const ALLOWED = ['lib/authStorageKey.ts', 'lib/session.ts', 'lib/supabase.ts'];
   function walk(dir: string, out: string[]) {
+    if (!fs.existsSync(dir)) return;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(full, out);
@@ -127,12 +132,13 @@ describe('one keychain purge', () => {
     }
   }
 
-  it('only lib/session.ts removes AUTH_STORAGE_KEY', () => {
+  it('only lib/session.ts touches the session key, beside its definition and the client', () => {
     const files: string[] = [];
     for (const d of SCAN) walk(path.join(ROOT, d), files);
-    const offenders = files
-      .filter((f) => /removeItem\(\s*`?\$?\{?AUTH_STORAGE_KEY/.test(fs.readFileSync(f, 'utf8')))
-      .map((f) => path.relative(ROOT, f));
-    expect(offenders).toEqual(['lib/session.ts']);
+    const readers = files
+      .filter((f) => /\bAUTH_STORAGE_KEY\b|\bauthStorageKeyFor\b/.test(fs.readFileSync(f, 'utf8')))
+      .map((f) => path.relative(ROOT, f))
+      .sort();
+    expect(readers).toEqual(ALLOWED);
   });
 });
