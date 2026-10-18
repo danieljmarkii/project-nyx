@@ -143,9 +143,13 @@ export function TrialCompletionSheet({
     return () => { cancelled = true; };
   }, [step, petId, startedAt, readKey, facts]);
 
-  // A different trial must never inherit the previous one's answers. Its counts
-  // are already kept apart by the read's key.
+  // A different trial must never inherit the previous one's counts or answers.
+  // The read's key stops a switch painting the old counts for even one commit;
+  // this clear is still needed, because a trial that goes away (ended elsewhere and
+  // synced in) and comes back with the same key would otherwise bring back the
+  // read taken before the gap, with no read of its own.
   useEffect(() => {
+    setRead(null);
     setOutcome(null);
     setNotes('');
     setStopReason(null);

@@ -413,6 +413,33 @@ describe('reopening the sheet (CUL-1560)', () => {
     expect(mockBuiltFacts).not.toContain(NOTHING);
   });
 
+  it('a trial that goes away and comes back with the same key reads the record again', async () => {
+    mockLoadFacts.mockReset().mockResolvedValueOnce(NOTHING).mockResolvedValueOnce(VOMIT);
+    const withTrial = (trial: typeof TRIAL | null) => (
+      <TrialCompletionSheet
+        entry="complete"
+        trial={trial}
+        petName="Biscuit"
+        species="cat"
+        dayCounter={56}
+        onClose={jest.fn()}
+        onExtend={jest.fn()}
+        onChanged={jest.fn()}
+      />
+    );
+    const tree = render(withTrial(TRIAL));
+    await waitFor(() => tree.getByText(ABSENCE));
+
+    // The sheet renders nothing while the trial is null; to the owner its return
+    // is a reopen, and a vomit may have been logged in between.
+    tree.rerender(withTrial(null));
+    mockBuiltFacts.length = 0;
+    tree.rerender(withTrial({ ...TRIAL }));
+    await waitFor(() => tree.getByText('Vomit: 0 before · 1 during.'));
+    expect(mockLoadFacts).toHaveBeenCalledTimes(2);
+    expect(mockBuiltFacts).not.toContain(NOTHING);
+  });
+
   it('C: one read per open, and only once the outcome step is on screen', async () => {
     // Refactor safety (green before and after): decision → outcome inside one open.
     const tree = render(sheetWith('decision'));
