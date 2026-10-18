@@ -2972,7 +2972,7 @@ Deno.test('B-499 — the correlation line never dead-ends at appendix C (no corr
   assert.ok(/established association threshold/.test(text(established)), 'the finding still renders, with its inline stats')
   assert.ok(!/Detail in appendix/.test(established), 'the established correlation line has no dead-end appendix-C pointer')
   const nullResult = renderReport(base({ correlation: { established: [], hasEstablished: false, noThreshold: true, stapleProtein: null, timing: [] } }))
-  assert.ok(/No single food\/protein reached the established correlation threshold/.test(text(nullResult)), 'the null line renders')
+  assert.ok(/No food or protein reached the established association threshold over this window/.test(text(nullResult)), 'the null line renders')
   assert.ok(!/Detail in appendix/.test(nullResult), 'the null correlation line has no dead-end appendix-C pointer either')
 })
 
@@ -4267,9 +4267,34 @@ Deno.test('B-351 — a CLEAN trial keeps the headline unqualified', () => {
 Deno.test('B-351 — the promoted page-1 protein claim carries its provenance with it', () => {
   // The full provenance note lives in appendix B. Promoting the claim to page 1 without a
   // qualifier invites a vet to change a prescription diet on an unverified automated read.
+  // CUL-1979: a fixture that does not say where its sets came from gets the either-source
+  // wording, never the photo sentence.
   const p1 = text(pageOne(renderReport(breachedTrialSnap())))
-  assert.ok(/Read automatically from the owner&rsquo;s photo of the label/.test(p1))
+  assert.ok(/either read automatically from a label photo or entered by the owner/.test(p1))
+  assert.ok(!/Read automatically from the owner&rsquo;s photo of the label/.test(p1))
   assert.ok(/worth confirming against the bag/.test(p1))
+})
+
+/** CUL-1979 — `breachedTrialSnap` with every food behind the page-1 claim stamped one source. */
+function breachedWithSource(src: 'photo' | 'owner'): ReportSnapshot {
+  const snap = breachedTrialSnap()
+  snap.diet.trial!.proteinSet = { ...snap.diet.trial!.proteinSet, source: src }
+  snap.diet.freeFed = snap.diet.freeFed.map((f) => ({ ...f, proteinSet: { ...f.proteinSet, source: src } }))
+  return snap
+}
+
+Deno.test('CUL-1979 — the photo sentence prints only when every food behind the claim was photo-read', () => {
+  const photo = text(pageOne(renderReport(breachedWithSource('photo'))))
+  assert.ok(/Read automatically from the owner&rsquo;s photo of the label &mdash; worth confirming against the bag/.test(photo))
+  const owner = text(pageOne(renderReport(breachedWithSource('owner'))))
+  assert.ok(/Entered by the owner, not read from a label photo &mdash; worth confirming against the bag/.test(owner))
+  assert.ok(!/photo of the label/.test(owner), 'a typed-in food is never said to be read from a photo')
+  // Mixed: one photo-read, one typed. Neither single-source sentence is true of the pair.
+  const mixedSnap = breachedWithSource('photo')
+  mixedSnap.diet.freeFed = mixedSnap.diet.freeFed.map((f) => ({ ...f, proteinSet: { ...f.proteinSet, source: 'owner' as const } }))
+  const mixed = text(pageOne(renderReport(mixedSnap)))
+  assert.ok(/either read automatically from a label photo or entered by the owner/.test(mixed))
+  assert.ok(!/photo of the label/.test(mixed) && !/Entered by the owner, not/.test(mixed))
 })
 
 Deno.test('B-351 — the exposure chart does not contradict the diet line about a standing exposure', () => {
@@ -8306,4 +8331,107 @@ Deno.test('stool: ruling 2a — a change before the window says so, naming the s
   assert.ok(/Within this window the counts are comparable; against a report covering any period before Mar 20, which under-records normal stools, the normal share here will look better from the change alone\.<br\/>Loose stools had their own entry throughout/.test(exact))
   const by = renderReport(base({ stool: { ...NS_STOOL, normalShortcut: { kind: 'since', at: '2026-03-20T15:00:00Z', exact: false } } }))
   assert.ok(/Logging changed by Mar 20, before this window:/.test(by))
+})
+
+// ── CUL-1978 — the report says what the record cannot show ───────────────────────────────
+// One class: absence or thin coverage rendered as a clean result. One test per instance, each
+// with its control, so a mutation that restores the old line reds it.
+
+const NO_HOUSEHOLD: Household = { others: [], complete: true }
+
+Deno.test('CUL-1978 ① — off-diet feedings take the affirmative out of the callout and put the count in the headline', () => {
+  const breached = renderReport(
+    cleanTrialSnap(NO_HOUSEHOLD, {
+      exposures: { totalFeedings: 44, offDiet: 4, byRung: { derived_protein: 4, unrecognised: 0 }, fedBeforePermitted: 0, unclassifiable: 0, items: [] },
+      mayClaimAllMatched: false,
+    }),
+  )
+  const callout = text(interpretingCallout(breached))
+  assert.ok(!/supports interpreting it/.test(callout), callout)
+  assert.ok(/4 of 44 feedings during the trial did not match the trial diet .*cannot establish that the elimination was clean/.test(callout), callout)
+  const headline = text(/<div class="headline">[\s\S]*?<\/div>/.exec(breached)![0])
+  assert.ok(/4 of 44 logged feedings did not match the trial diet/.test(headline), headline)
+  assert.ok(/see the diet section before reading the trial as a result/.test(headline), headline)
+  // Control: the same trial with nothing off the diet keeps its earned sentence and a plain headline.
+  const clean = renderReport(cleanTrialSnap(NO_HOUSEHOLD))
+  assert.ok(/supports interpreting it/.test(text(interpretingCallout(clean))), 'the affirmative was there to be suppressed')
+  assert.ok(!/did not match the trial diet/.test(text(/<div class="headline">[\s\S]*?<\/div>/.exec(clean)![0])))
+})
+
+Deno.test('CUL-1978 ① — a feeding naming no food and a dose by mouth are the same class, each said', () => {
+  const callout = text(
+    interpretingCallout(
+      renderReport(
+        cleanTrialSnap(NO_HOUSEHOLD, {
+          exposures: { totalFeedings: 30, offDiet: 0, byRung: { derived_protein: 0, unrecognised: 0 }, fedBeforePermitted: 0, unclassifiable: 2, items: [] },
+          oralRoute: [{ eventId: 'd1', occurredAt: '2026-06-01T12:00:00Z', drugLabel: 'Chewable', trigger: 'chewable' as never }],
+          mayClaimAllMatched: false,
+        }),
+      ),
+    ),
+  )
+  assert.ok(!/supports interpreting it/.test(callout), callout)
+  assert.ok(/2 logged feedings during the trial name no food, so they could not be checked against the trial/.test(callout), callout)
+  assert.ok(/1 dose by mouth during the trial may carry a protein/.test(callout), callout)
+})
+
+Deno.test('CUL-1978 ② — the recent run of meals not fully eaten leads the feeding line and the tile', () => {
+  const snap = mealsSnap({ logged: 44, breakdown: [{ rating: 'all', count: 40 }, { rating: 'some', count: 4 }], freeFed: false })
+  snap.diet.mealCompletion = { ...snap.diet.mealCompletion!, recentNotFullyEatenRun: 4 }
+  const html = renderReport(snap)
+  assert.ok(/^The last 4 rated meals in a row were not fully eaten; 40 of 44 rated meals fully eaten over the window \(owner-observed\)/.test(feedingRow(html)), feedingRow(html))
+  // The meals tile renders on a trial report without a coverage figure; it carries the run too.
+  const trialSnap = cleanTrialSnap(NO_HOUSEHOLD)
+  trialSnap.diet.mealCompletion = { ...snap.diet.mealCompletion! }
+  const tiles = pageOne(renderReport(trialSnap))
+  assert.ok(/Meals fully eaten \(rated meals only\)<br\/><b>last <span class="num">4<\/span> in a row not fully eaten<\/b>|Meals fully eaten \(rated meals only\)<br\/><b>last 4 in a row not fully eaten<\/b>/.test(tiles), 'the tile carries the run')
+  // Control: the four left were spread out, so the ratio stands alone.
+  const spread = mealsSnap({ logged: 44, breakdown: [{ rating: 'all', count: 40 }, { rating: 'some', count: 4 }], freeFed: false })
+  spread.diet.mealCompletion = { ...spread.diet.mealCompletion!, recentNotFullyEatenRun: 0 }
+  assert.ok(/^40 of 44 rated meals fully eaten \(owner-observed\)/.test(feedingRow(renderReport(spread))))
+  // A run of every rated meal is already the ratio; a run of one is one meal.
+  for (const run of [1, 44]) {
+    const s = mealsSnap({ logged: 44, breakdown: [{ rating: 'all', count: 40 }, { rating: 'some', count: 4 }], freeFed: false })
+    s.diet.mealCompletion = { ...s.diet.mealCompletion!, recentNotFullyEatenRun: run }
+    assert.ok(!/in a row/.test(feedingRow(renderReport(s))), `run ${run}`)
+  }
+})
+
+Deno.test('CUL-1978 ③ — two stool logs in 27 days are not a loose-stool count of zero', () => {
+  const thin = text(renderReport(base({ stool: { total: 2, normalCount: 2, looseCount: 0, windowDays: 27, loggedDays: 22, normalShortcut: null, ai: null } })))
+  assert.ok(/Stool logged 2 times in 27 days &mdash; not enough to assess diarrhea\./.test(thin), 'the thin record says so')
+  assert.ok(!/Loose \/ watery &times;0/.test(thin), 'no ×0 from two looks')
+  assert.ok(/Normal \/ formed &times;2/.test(thin), 'what was logged still prints')
+  // Control: a loose stool is a finding at any density, and a dense record keeps its zero.
+  const loose = text(renderReport(base({ stool: { total: 2, normalCount: 1, looseCount: 1, windowDays: 27, loggedDays: 22, normalShortcut: null, ai: null } })))
+  assert.ok(/Loose \/ watery &times;1/.test(loose) && !/not enough to assess diarrhea/.test(loose))
+  const dense = text(renderReport(base({ stool: { total: 40, normalCount: 40, looseCount: 0, windowDays: 27, loggedDays: 27, normalShortcut: null, ai: null } })))
+  assert.ok(/Loose \/ watery &times;0/.test(dense) && !/not enough to assess diarrhea/.test(dense))
+})
+
+Deno.test('CUL-1978 ④ — no medication logged is never read as none given', () => {
+  const html = text(pageOne(renderReport(base())))
+  assert.ok(/None logged in this window &mdash; not checked with the owner\./.test(html), 'page 1 says the gap is unasked')
+})
+
+Deno.test('CUL-1978 ⑤ — vomit with no photo read says the blood check had nothing to look at', () => {
+  const none = text(renderReport(base({ vomitPhenotype: emptyPhenotype({ totalIncidents: 4, withAnalysis: 0 }) })))
+  assert.ok(/No photo of any incident was read, so the automated blood and foreign-material check had nothing to look at and could not flag either\./.test(none))
+  assert.ok(/Not a clearance:/.test(none), 'the caveat stays beside it')
+})
+
+Deno.test('CUL-1978 ⑥ — the null correlation line names an Early association and never reads as a negative', () => {
+  const corr = (early: ReportSnapshot['correlation']['early']) =>
+    text(renderReport(base({ correlation: { established: [], hasEstablished: false, noThreshold: true, stapleProtein: null, timing: [], early } })))
+  const withEarly = corr([
+    { symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 4, caseExposed: 3, controlExposed: 1, riskDifference: 0.5, pValue: 0.2, symptomEventCount: 4, correlationWindowHours: 24 },
+  ])
+  assert.ok(
+    /No food or protein reached the established association threshold over this window, but Beef shows an early association with vomiting \(3\/4 exposed cases vs 1 control\) &mdash; too few events to confirm or rule out; this is not a negative result\./.test(withEarly),
+    'the Early finding is named with its counts and its limit',
+  )
+  assert.ok(!/p&nbsp;=&nbsp;0\.200/.test(withEarly), 'no p value rides with an Early association')
+  const without = corr([])
+  assert.ok(/No food or protein reached the established association threshold over this window &mdash; not a negative result: a record this size cannot rule a food out\./.test(without))
+  assert.ok(!/No single food\/protein reached/.test(without), 'the old negative-reading line is gone')
 })
