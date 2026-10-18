@@ -90,7 +90,11 @@ export function TrialCompletionSheet({
   intakeDeclineHeadline, onClose, onExtend, onChanged,
 }: Props) {
   const [step, setStep] = useState<Step>('decision');
-  const [facts, setFacts] = useState<TrialOutcomeFacts | null>(null);
+  // A read remembers the inputs it was read for (CUL-1560). A trial that changes
+  // while the sheet is open must not render the previous trial's counts for even
+  // one commit, and only a key compared at render time can stop that: an effect
+  // that clears the read runs after the render that would paint it.
+  const [read, setRead] = useState<{ key: string; facts: TrialOutcomeFacts } | null>(null);
   const [factsLoading, setFactsLoading] = useState(false);
   const [outcome, setOutcome] = useState<TrialOutcome | null>(null);
   const [notes, setNotes] = useState('');
@@ -105,25 +109,47 @@ export function TrialCompletionSheet({
     setSaving(false);
   }, [entry]);
 
+  // EVERY OPEN READS THE RECORD AFRESH (CUL-1560). The host keeps this sheet
+  // mounted while it is closed, so state survives a close. An owner who backs out
+  // to log this morning's vomit and reopens must not be shown the read taken
+  // before it ("No symptoms are on the record for either stretch"). Keyed on
+  // `entry` rather than done in `handleClose`, because a close also comes from
+  // `endTrial` and from the host itself: nulling the entry is the one thing every
+  // close shares. The step goes back too, which does two jobs: a reopen at
+  // `decision` never renders, or reads for, the previous open's outcome step; and
+  // since `step` is in the loader's deps, the close cancels a read still in flight,
+  // which would otherwise land after the close, refill the read, and leave the
+  // reopen showing it without a read of its own.
+  useEffect(() => {
+    setRead(null);
+    if (!entry) setStep('decision');
+  }, [entry]);
+
   // The counts the outcome sheet leads with. Loaded when that step opens rather
   // than on mount: an owner who taps "Stopped early" is never asked how it went,
   // so they never pay for this read.
   const trialId = trial?.id ?? null;
   const petId = trial?.petId ?? null;
   const startedAt = trial?.startedAt ?? null;
+  const readKey = petId && startedAt ? `${petId}|${startedAt}` : null;
+  const facts = read && read.key === readKey ? read.facts : null;
   useEffect(() => {
-    if (step !== 'outcome' || !petId || !startedAt || facts) return;
+    if (step !== 'outcome' || !petId || !startedAt || !readKey || facts) return;
     let cancelled = false;
     setFactsLoading(true);
     loadTrialOutcomeFacts({ petId, startedAt })
-      .then((f) => { if (!cancelled) setFacts(f); })
+      .then((f) => { if (!cancelled) setRead(f ? { key: readKey, facts: f } : null); })
       .finally(() => { if (!cancelled) setFactsLoading(false); });
     return () => { cancelled = true; };
-  }, [step, petId, startedAt, facts]);
+  }, [step, petId, startedAt, readKey, facts]);
 
   // A different trial must never inherit the previous one's counts or answers.
+  // The read's key stops a switch painting the old counts for even one commit;
+  // this clear is still needed, because a trial that goes away (ended elsewhere and
+  // synced in) and comes back with the same key would otherwise bring back the
+  // read taken before the gap, with no read of its own.
   useEffect(() => {
-    setFacts(null);
+    setRead(null);
     setOutcome(null);
     setNotes('');
     setStopReason(null);
