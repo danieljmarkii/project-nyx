@@ -90,7 +90,11 @@ export function TrialCompletionSheet({
   intakeDeclineHeadline, onClose, onExtend, onChanged,
 }: Props) {
   const [step, setStep] = useState<Step>('decision');
-  const [facts, setFacts] = useState<TrialOutcomeFacts | null>(null);
+  // A read remembers the inputs it was read for (CUL-1560). A trial that changes
+  // while the sheet is open must not render the previous trial's counts for even
+  // one commit, and only a key compared at render time can stop that: an effect
+  // that clears the read runs after the render that would paint it.
+  const [read, setRead] = useState<{ key: string; facts: TrialOutcomeFacts } | null>(null);
   const [factsLoading, setFactsLoading] = useState(false);
   const [outcome, setOutcome] = useState<TrialOutcome | null>(null);
   const [notes, setNotes] = useState('');
@@ -114,11 +118,10 @@ export function TrialCompletionSheet({
   // close shares. The step goes back too, which does two jobs: a reopen at
   // `decision` never renders, or reads for, the previous open's outcome step; and
   // since `step` is in the loader's deps, the close cancels a read still in flight,
-  // which would otherwise land after the close, refill `facts`, and leave the
+  // which would otherwise land after the close, refill the read, and leave the
   // reopen showing it without a read of its own.
   useEffect(() => {
-    setFacts(null);
-    setFactsLoading(false);
+    setRead(null);
     if (!entry) setStep('decision');
   }, [entry]);
 
@@ -128,19 +131,21 @@ export function TrialCompletionSheet({
   const trialId = trial?.id ?? null;
   const petId = trial?.petId ?? null;
   const startedAt = trial?.startedAt ?? null;
+  const readKey = petId && startedAt ? `${petId}|${startedAt}` : null;
+  const facts = read && read.key === readKey ? read.facts : null;
   useEffect(() => {
-    if (step !== 'outcome' || !petId || !startedAt || facts) return;
+    if (step !== 'outcome' || !petId || !startedAt || !readKey || facts) return;
     let cancelled = false;
     setFactsLoading(true);
     loadTrialOutcomeFacts({ petId, startedAt })
-      .then((f) => { if (!cancelled) setFacts(f); })
+      .then((f) => { if (!cancelled) setRead(f ? { key: readKey, facts: f } : null); })
       .finally(() => { if (!cancelled) setFactsLoading(false); });
     return () => { cancelled = true; };
-  }, [step, petId, startedAt, facts]);
+  }, [step, petId, startedAt, readKey, facts]);
 
-  // A different trial must never inherit the previous one's counts or answers.
+  // A different trial must never inherit the previous one's answers. Its counts
+  // are already kept apart by the read's key.
   useEffect(() => {
-    setFacts(null);
     setOutcome(null);
     setNotes('');
     setStopReason(null);

@@ -388,6 +388,31 @@ describe('reopening the sheet (CUL-1560)', () => {
     expect(tree.queryByText(ABSENCE)).toBeNull();
   });
 
+  it('S1: a trial that changes while the sheet is open never renders the old trial’s read', async () => {
+    mockLoadFacts.mockReset().mockResolvedValueOnce(NOTHING).mockResolvedValueOnce(VOMIT);
+    const T2 = { ...TRIAL, id: 't-2', startedAt: '2026-08-01' };
+    const withTrial = (trial: typeof TRIAL) => (
+      <TrialCompletionSheet
+        entry="complete"
+        trial={trial}
+        petName="Biscuit"
+        species="cat"
+        dayCounter={56}
+        onClose={jest.fn()}
+        onExtend={jest.fn()}
+        onChanged={jest.fn()}
+      />
+    );
+    const tree = render(withTrial(TRIAL));
+    await waitFor(() => tree.getByText(ABSENCE));
+
+    mockBuiltFacts.length = 0;
+    tree.rerender(withTrial(T2));
+    await waitFor(() => tree.getByText('Vomit: 0 before · 1 during.'));
+    expect(mockLoadFacts).toHaveBeenLastCalledWith({ petId: 'pet-1', startedAt: '2026-08-01' });
+    expect(mockBuiltFacts).not.toContain(NOTHING);
+  });
+
   it('C: one read per open, and only once the outcome step is on screen', async () => {
     // Refactor safety (green before and after): decision → outcome inside one open.
     const tree = render(sheetWith('decision'));
