@@ -9,13 +9,14 @@
 //
 // TWO RULES, one scan:
 //   1. No source file calls `getPublicUrl(` (the SDK method or a helper of that
-//      name). Every bucket this app reads is private or about to be.
+//      name) or builds a `/object/public/` URL by hand. Every bucket this app
+//      reads is private or about to be.
 //   2. The bucket's name is spelled in lib/storage.ts and nowhere else, so every
 //      read of it goes through `PET_PHOTOS_BUCKET` and the signed-link cache
 //      beside it. A second spelling is a second read path the cache cannot see.
 //
-// SCOPE — every non-test `.ts` / `.tsx` under app/, components/, hooks/, lib/,
-// store/ and widgets/, comments blanked so a sentence ABOUT the call never reads
+// SCOPE — every non-test `.ts` / `.tsx` under app/, components/, constants/,
+// hooks/, lib/, store/ and widgets/, comments blanked so a sentence ABOUT the call never reads
 // as one. supabase/ is out: delete-account names the bucket server-side to purge
 // it, which is not a read.
 //
@@ -29,8 +30,9 @@ import { blankComments } from './blankComments';
 import { createFixtureRoot, removeFixtureRoot, writeFixture } from './fixtureRoot';
 
 const ROOT = path.resolve(__dirname, '..');
-const SCAN_DIRS = ['app', 'components', 'hooks', 'lib', 'store', 'widgets'];
-const PUBLIC_READ = /\bgetPublicUrl\s*\(/g;
+const SCAN_DIRS = ['app', 'components', 'constants', 'hooks', 'lib', 'store', 'widgets'];
+// The SDK call, and a public object URL built by hand (rls-privacy-reviewer).
+const PUBLIC_READ = /\bgetPublicUrl\s*\(|\/object\/public\//g;
 const BUCKET = /nyx-pet-photos/g;
 const BUCKET_HOME = 'lib/storage.ts';
 const EXEMPT = /\/\/[ \t]*public-url-ok:[ \t]*\S/;
@@ -52,7 +54,7 @@ function findPublicReads(root: string): string[] {
   for (const abs of files) {
     const raw = fs.readFileSync(abs, 'utf8');
     const rel = path.relative(root, abs).split(path.sep).join('/');
-    if (!raw.includes('getPublicUrl') && !raw.includes('nyx-pet-photos')) continue;
+    if (!/getPublicUrl|\/object\/public\/|nyx-pet-photos/.test(raw)) continue;
     const code = blankComments(raw);
     const rawLines = raw.split('\n');
     const report = (index: number | undefined) => {
@@ -90,6 +92,15 @@ describe('pet photos load through signed links only (CUL-1856)', () => {
         "const x = 1;\nconst { data } = supabase.storage.from(BUCKET).getPublicUrl(path);\n",
       );
       expect(findPublicReads(root)).toEqual(['components/Hero.tsx:2']);
+    });
+
+    it('finds a public URL built by hand', () => {
+      writeFixture(
+        root,
+        'lib/url.ts',
+        "export const u = (p: string) => `${BASE}/storage/v1/object/public/${PET_PHOTOS_BUCKET}/${p}`;\n",
+      );
+      expect(findPublicReads(root)).toEqual(['lib/url.ts:1']);
     });
 
     it('finds the bucket spelled outside lib/storage.ts, and allows it there', () => {

@@ -32,6 +32,7 @@ jest.mock('expo-image-picker', () => ({
 
 // Supabase: every read this screen fires resolves empty. The sections are not under
 // test here — only the identity block above them.
+let mockPhotoUpdateFails = false;
 jest.mock('../../lib/supabase', () => {
   const result = Promise.resolve({ data: [], error: null });
   const chain: Record<string, unknown> = {};
@@ -39,6 +40,12 @@ jest.mock('../../lib/supabase', () => {
     chain[m] = jest.fn(() => chain);
   }
   Object.assign(chain, { then: result.then.bind(result), catch: result.catch.bind(result) });
+  // The photo's row link can be made to fail, to prove the re-sign does not wait on it.
+  chain.update = jest.fn(() => ({
+    eq: () => Promise.resolve(
+      mockPhotoUpdateFails ? { data: null, error: { message: 'update failed' } } : { data: [], error: null },
+    ),
+  }));
   return { supabase: { from: jest.fn(() => chain), auth: { getUser: jest.fn(() => Promise.resolve({ data: { user: { id: 'u1' } } })) } } };
 });
 // The hero's link comes from these three: the REAL hook (components/pet/PetAvatar)
@@ -47,7 +54,6 @@ const mockGetPetPhotoUrl = jest.fn();
 const mockPeekPetPhotoUrl = jest.fn((_path: string): string | null => null);
 const mockMarkPetPhotoChanged = jest.fn();
 const mockUploadPhoto = jest.fn(() => Promise.resolve());
-const mockGetPublicUrl = jest.fn();
 jest.mock('../../lib/storage', () => ({
   uploadPhoto: (...a: unknown[]) => mockUploadPhoto(...(a as [])),
   compressForUpload: jest.fn((uri: string) => Promise.resolve(uri)),
@@ -57,7 +63,6 @@ jest.mock('../../lib/storage', () => ({
   petPhotoVersion: () => 0,
   subscribePetPhotoVersions: () => () => {},
   markPetPhotoChanged: (path: string) => mockMarkPetPhotoChanged(path),
-  getPublicUrl: (...a: unknown[]) => mockGetPublicUrl(...a),
   PET_PHOTOS_BUCKET: 'nyx-pet-photos',
   getSignedUrls: jest.fn(() => Promise.resolve(new Map())),
 }));
@@ -120,16 +125,13 @@ jest.mock('../../store/petStore', () => ({
   ),
 }));
 
-import { render, fireEvent } from '@testing-library/react-native';
-import { Modal, StyleSheet } from 'react-native';
-import { router } from 'expo-router';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { Alert, Image } from 'react-native';
 import ProfileScreen from './profile';
 
-import { act, screen, waitFor } from '@testing-library/react-native';
-import { Alert, Image } from 'react-native';
-
 const SIGNED = 'https://signed.test/object/sign/nyx-pet-photos/a.jpg?token=1';
-const heroImages = () => screen.UNSAFE_queryAllByType(Image).filter((n: any) => n.props.source?.uri);
+const heroImages = () =>
+  screen.UNSAFE_queryAllByType(Image).filter((n) => Boolean((n.props as { source?: { uri?: string } }).source?.uri));
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -139,13 +141,12 @@ beforeEach(() => {
 });
 
 describe('the Pet profile hero reads a signed link', () => {
-  it('renders the signed link for the pet photo, never a public one', async () => {
+  it('renders the signed link for the pet photo', async () => {
     mockGetPetPhotoUrl.mockResolvedValue(SIGNED);
     render(<ProfileScreen />);
     await waitFor(() => expect(heroImages()).toHaveLength(1));
     expect(heroImages()[0].props.source.uri).toBe(SIGNED);
     expect(mockGetPetPhotoUrl).toHaveBeenCalledWith('a.jpg');
-    expect(mockGetPublicUrl).not.toHaveBeenCalled();
   });
 
   it('shows the initials, never a broken image, when signing fails', async () => {
@@ -190,9 +191,24 @@ describe('the Pet profile hero reads a signed link', () => {
     // The source choice is a system alert; take its library button.
     const alert = jest.spyOn(Alert, 'alert');
     fireEvent.press(screen.getByText('Change photo'));
-    const buttons = alert.mock.calls[0][2] as { text: string; onPress?: () => void }[];
-    act(() => buttons.find((b) => b.text === 'Choose from library')?.onPress?.());
+    const buttons = alert.mock.calls[0][2] as { text: string; onPress?: () => unknown }[];
+    await act(async () => { await buttons.find((b) => b.text === 'Choose from library')?.onPress?.(); });
     await waitFor(() => expect(mockMarkPetPhotoChanged).toHaveBeenCalledWith('p1/profile.jpg'));
     expect(mockUploadPhoto).toHaveBeenCalledWith('nyx-pet-photos', 'p1/profile.jpg', 'file:///pick.jpg');
+  });
+
+  it('a failed row update after the upload still re-signs, since the object changed', async () => {
+    mockGetPetPhotoUrl.mockResolvedValue(SIGNED);
+    mockUploadPhoto.mockImplementationOnce(() => Promise.resolve());
+    render(<ProfileScreen />);
+    await waitFor(() => expect(heroImages()).toHaveLength(1));
+    const alert = jest.spyOn(Alert, 'alert');
+    mockPhotoUpdateFails = true;
+    fireEvent.press(screen.getByText('Change photo'));
+    const buttons = alert.mock.calls[0][2] as { text: string; onPress?: () => unknown }[];
+    await act(async () => { await buttons.find((b) => b.text === 'Choose from library')?.onPress?.(); });
+    await waitFor(() => expect(mockMarkPetPhotoChanged).toHaveBeenCalledWith('p1/profile.jpg'));
+    await act(async () => {});
+    mockPhotoUpdateFails = false;
   });
 });

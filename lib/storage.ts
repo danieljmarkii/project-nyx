@@ -358,8 +358,10 @@ const petPhotoVersions = new Map<string, number>();
 const petPhotoVersionListeners = new Set<() => void>();
 
 // Cleared on sign-out and on a change of user. lib/session.ts's wipe is the usual
-// home for account state outside SQLite; this listener keeps the cache's whole
-// lifecycle in this file. Registered lazily by the first signing.
+// home for account state outside SQLite, and it does not call this yet (that file
+// belonged to a parallel row when this shipped); this listener is what clears it.
+// Registered lazily by the first signing, before the first entry can exist, so an
+// account that never signed a pet photo has nothing to clear.
 function watchAuthForPetPhotos(): void {
   if (petPhotoAuthWatched) return;
   petPhotoAuthWatched = true;
@@ -398,7 +400,10 @@ export function getPetPhotoUrl(storagePath: string): Promise<string | null> {
       return null;
     })
     .then((url) => {
-      if (generation !== petPhotoGeneration) return null;
+      // A signing overtaken by an account change, or by a new photo at this
+      // path (markPetPhotoChanged drops it from the in-flight map), must not
+      // land: its link would be the old face under the image cache's old key.
+      if (generation !== petPhotoGeneration || petPhotoInFlight.get(storagePath) !== request) return null;
       if (url) petPhotoLinks.set(storagePath, { url, expiresAt: signedAt + PET_PHOTO_LINK_TTL_SEC * 1000 });
       return url;
     })

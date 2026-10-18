@@ -885,6 +885,10 @@ export default function ProfileScreen() {
       const uploadUri = await compressForUpload(localUri);
       stage = 'upload';
       await uploadPhoto(PET_PHOTOS_BUCKET, storagePath, uploadUri);
+      // The object is overwritten in place, so every disc and this hero must sign
+      // a new link now, even if linking the row below fails: the old link's cache
+      // key would keep showing the face that is no longer stored.
+      markPetPhotoChanged(storagePath);
 
       stage = 'link';
       const { error } = await supabase
@@ -894,9 +898,6 @@ export default function ProfileScreen() {
 
       if (error) throw error;
       updatePet({ photo_path: storagePath });
-      // The path is the same on every re-upload, so this is what makes every
-      // disc and this hero sign a new link instead of showing the old face.
-      markPetPhotoChanged(storagePath);
     } catch (e) {
       // nyx-pet-photos holds zero objects and carries a standing "uploads fail
       // with 42501" open question, so the FIRST real upload in this product's
