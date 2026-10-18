@@ -5464,7 +5464,7 @@ Deno.test('CUL-1978 — the demo report, cold: every line the cold read flagged 
   assert.ok(/Stool logged 2 times in 27 days — not enough to assess diarrhea\./.test(p) && !/Loose \/ watery ×0/.test(p))
   assert.ok(/None logged in this window — not checked with the owner\./.test(p))
   assert.ok(/No photo of any incident was read, so the automated blood and foreign-material check had nothing to look at/.test(p))
-  assert.ok(/but Beef shows an early association with vomiting \(Beef in the 12 h before 4 of 4 episodes, vs 0 of 4 matched control windows\) — short of the established threshold, so not confirmed, and not a negative result/.test(p))
+  assert.ok(/Beef shows an early association with vomiting \(Beef in the 12 h before 4 of 4 episodes, vs 0 of 4 matched control windows\) — short of the established threshold, so not confirmed; no food or protein reached that threshold over this window\. Not a negative result/.test(p))
   assert.ok(!/No single food\/protein reached/.test(p))
   assert.ok(/Entered by the owner, not read from a label photo/.test(p) && !/photo of the label/.test(p), 'two typed-in foods are never said to be photo-read')
 })

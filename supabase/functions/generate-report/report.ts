@@ -2309,7 +2309,7 @@ export interface CorrelationSummary {
   established: EstablishedCorrelation[]
   /**
    * CUL-1978 — `Early`-tier correlations over the same window. Not a finding: the null line
-   * names them, with their counts and "too few events to confirm", because "no food reached
+   * names them, with their counts and "short of the established threshold, so not confirmed", because "no food reached
    * the established threshold" alone read as a negative over a record whose beef weeks
    * mirrored its vomit weeks. Optional for the fixture corpus; `buildSnapshot` always sets it.
    */

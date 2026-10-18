@@ -8430,7 +8430,7 @@ Deno.test('CUL-1978 ⑥ — the null correlation line names an Early association
     { symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 4, caseExposed: 3, controlExposed: 1, riskDifference: 0.5, pValue: 0.2, symptomEventCount: 4, correlationWindowHours: 24 },
   ])
   assert.ok(
-    /No food or protein reached the established association threshold over this window, but Beef shows an early association with vomiting \(Beef in the 24&nbsp;h before 3 of 4 episodes, vs 1 of 4 matched control windows\) &mdash; short of the established threshold, so not confirmed, and not a negative result\./.test(withEarly),
+    /^Beef shows an early association with vomiting \(Beef in the 24&nbsp;h before 3 of 4 episodes, vs 1 of 4 matched control windows\) &mdash; short of the established threshold, so not confirmed; no food or protein reached that threshold over this window\. Not a negative result\./m.test(withEarly.replace(/Timing vs symptoms/g, '\n')),
     'the Early finding is named with its counts and its limit',
   )
   assert.ok(!/p&nbsp;=&nbsp;0\.200/.test(withEarly), 'no p value rides with an Early association')
@@ -8450,7 +8450,8 @@ Deno.test('CUL-1978 ⑥ — the null correlation line names an Early association
       }),
     ),
   )
-  assert.ok(/but Beef shows an early association with vomiting \(.*?\); and Lamb shows an early association with loose stool/.test(two), 'both named, the primary sign first')
+  assert.ok(/Beef shows an early association with vomiting \(.*?\); and Lamb shows an early association with loose stool/.test(two), 'both named, the primary sign first')
+  assert.ok(two.indexOf('Beef shows an early association') < two.indexOf('no food or protein reached that threshold'), 'the association leads, the null clause follows')
   const without = corr([])
   assert.ok(/No food or protein reached the established association threshold over this window &mdash; not a negative result: a record this size cannot rule a food out\./.test(without))
   assert.ok(!/No single food\/protein reached/.test(without), 'the old negative-reading line is gone')
@@ -8493,5 +8494,28 @@ Deno.test('CUL-1979 — appendix B names the source of the sets it lists, and th
   // CUL-1978 — page 1 may now name an association; the legend must not deny one exists.
   const html = sheet({ photo: 0, owner: 2 })
   assert.ok(!/draws no link/.test(html))
-  assert.ok(/not an association test &mdash; any tested food&ndash;symptom association is stated on page&nbsp;1/.test(html))
+  assert.ok(/not an association test &mdash; the food&ndash;symptom associations this report states are on page&nbsp;1/.test(html))
+})
+
+Deno.test('CUL-1978 ⑥ — an Established finding never silences a second one or any Early one (adversarial pass 2)', () => {
+  const corr = (established: ReportSnapshot['correlation']['established'], early: ReportSnapshot['correlation']['early']) =>
+    text(
+      renderReport(
+        base({
+          clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'vomit' },
+          correlation: { established, hasEstablished: established.length > 0, noThreshold: established.length === 0, stapleProtein: null, timing: [], early },
+        }),
+      ),
+    )
+  const lamb: ReportSnapshot['correlation']['established'][number] = { symptomType: 'diarrhea', protein: 'lamb', proteins: ['lamb'], matchedPairs: 8, caseExposed: 7, controlExposed: 1, riskDifference: 0.75, pValue: 0.03, symptomEventCount: 8, correlationWindowHours: 24 }
+  const beef: ReportSnapshot['correlation']['established'][number] = { symptomType: 'vomit', protein: 'beef', proteins: ['beef'], matchedPairs: 8, caseExposed: 7, controlExposed: 1, riskDifference: 0.75, pValue: 0.03, symptomEventCount: 8, correlationWindowHours: 12 }
+  const chickenEarly: ReportSnapshot['correlation']['established'][number] = { symptomType: 'vomit', protein: 'chicken', proteins: ['chicken'], matchedPairs: 5, caseExposed: 5, controlExposed: 0, riskDifference: 1, pValue: 0.06, symptomEventCount: 5, correlationWindowHours: 12 }
+  // An Established finding on another symptom beside an Early one on the primary sign.
+  const mixed = corr([lamb], [chickenEarly])
+  assert.ok(/lamb reached the established association threshold for loose stool/.test(mixed))
+  assert.ok(/Chicken shows an early association with vomiting \(Chicken in the 12&nbsp;h before 5 of 5 episodes, vs 0 of 5 matched control windows\) &mdash; short of the established threshold, so not confirmed\./.test(mixed), 'the Early finding survives an Established one')
+  // Two Established findings, the primary sign's ranked second by the engine: both print, it first.
+  const two = corr([lamb, beef], [])
+  assert.ok(two.indexOf('beef reached the established association threshold for vomiting') >= 0, 'the second Established finding prints')
+  assert.ok(two.indexOf('beef reached') < two.indexOf('lamb reached'), 'the primary sign leads')
 })

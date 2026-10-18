@@ -1171,7 +1171,7 @@ function offTrialFootnote(targetProtein: string | null): string {
   return targetProtein
     ? `<p class="note"><b>*</b> a protein other than the trial protein (${h(
         capProtein(targetProtein),
-      )}), on that food&rsquo;s recorded protein list. This records exposure only and is not an association test &mdash; any tested food&ndash;symptom association is stated on page&nbsp;1 under Timing vs symptoms.</p>`
+      )}), on that food&rsquo;s recorded protein list. This records exposure only and is not an association test &mdash; the food&ndash;symptom associations this report states are on page&nbsp;1 under Timing vs symptoms.</p>`
     : ''
 }
 
@@ -7024,36 +7024,75 @@ function unlinkedMedLine(u: UnlinkedMedicationGroup): string {
   return `${prefix}${head} (${src}; no regimen configured).${extrasBit}`
 }
 
+/** One Established finding, as the line has always printed it (B-351 slice 6, B-499). */
+function establishedSentence(e: CorrelationSummary['established'][number]): string {
+  // A JOINT candidate (B-351 slice 6) must declare itself HERE, on the most-scanned
+  // line of the report.
+  //
+  // CURRENTLY UNREACHABLE BY CONSTRUCTION, and kept anyway. After the adversarial pass,
+  // a joint candidate caps at Early (§7 #4) and §8.5 admits only Established, so no joint
+  // finding reaches this line today. That cap is a spec-vs-build call the PM may rule
+  // either way; if it is ever relaxed, the report must not silently render a joint
+  // candidate bare. Defence in depth costs one branch here and would cost a vet a wrong
+  // diet decision there. Without the clause a vet reads "chicken and duck reached the
+  // established association threshold" as two independently-implicated antigens and
+  // may drop both from the diet — when the actual finding is that the record cannot
+  // yet distinguish them, and the informative next step is to separate them. The
+  // engine already refuses to credit one; the report must not un-refuse it by
+  // omission.
+  const joint =
+    e.proteins && e.proteins.length > 1
+      ? ` These proteins co-occur in every exposure on record, so the association <b>cannot be attributed to either one individually</b> — separating them would be informative.`
+      : ''
+  // B-499 — NO "Detail in appendix C". Appendix C is the off-diet exposure table; it
+  // holds no correlation detail on any report, and is empty on a clean/refused one, so
+  // the pointer dead-ended. The statistical detail — cases, controls, p — is already
+  // inline on this line, which is where a vet reads it; there is nowhere else to send them.
+  return `${h(e.protein)} reached the established association threshold for ${h(
+    symptomLabel(e.symptomType).toLowerCase(),
+  )} over this window (${num(e.caseExposed)}/${num(e.matchedPairs)} exposed cases vs ${num(
+    e.controlExposed,
+  )} controls; p&nbsp;=&nbsp;${e.pValue.toFixed(3)}). An association, <b>not a proven cause</b>.${joint}`
+}
+
 function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
-  if (c.hasEstablished && c.established.length > 0) {
-    const e = c.established[0]
-    // A JOINT candidate (B-351 slice 6) must declare itself HERE, on the most-scanned
-    // line of the report.
-    //
-    // CURRENTLY UNREACHABLE BY CONSTRUCTION, and kept anyway. After the adversarial pass,
-    // a joint candidate caps at Early (§7 #4) and §8.5 admits only Established, so no joint
-    // finding reaches this line today. That cap is a spec-vs-build call the PM may rule
-    // either way; if it is ever relaxed, the report must not silently render a joint
-    // candidate bare. Defence in depth costs one branch here and would cost a vet a wrong
-    // diet decision there. Without the clause a vet reads "chicken and duck reached the
-    // established association threshold" as two independently-implicated antigens and
-    // may drop both from the diet — when the actual finding is that the record cannot
-    // yet distinguish them, and the informative next step is to separate them. The
-    // engine already refuses to credit one; the report must not un-refuse it by
-    // omission.
-    const joint =
-      e.proteins && e.proteins.length > 1
-        ? ` These proteins co-occur in every exposure on record, so the association <b>cannot be attributed to either one individually</b> — separating them would be informative.`
-        : ''
-    // B-499 — NO "Detail in appendix C". Appendix C is the off-diet exposure table; it
-    // holds no correlation detail on any report, and is empty on a clean/refused one, so
-    // the pointer dead-ended. The statistical detail — cases, controls, p — is already
-    // inline on this line, which is where a vet reads it; there is nowhere else to send them.
-    return `${h(e.protein)} reached the established association threshold for ${h(
+  // EVERY Early finding, the primary sign's first (adversarial pass 1). Naming only the
+  // engine's top-ranked one left the primary sign's out whenever a different symptom ranked
+  // higher, beside a line that now names a peer: exoneration by omission. There are always
+  // few. The hedge sits INSIDE the bold, so a skim cannot lift the association as a finding,
+  // and it states the tier, not a reason: Early also holds findings capped for a shared bowl,
+  // a drug on board or a joint candidate, so "too few events" would be false for some.
+  const primary = snap.clinicalQuestion.primarySymptom
+  const earlies = [...(c.early ?? [])].sort(
+    (a, b) => Number(b.symptomType === primary) - Number(a.symptomType === primary),
+  )
+  const earlyClause = (e: NonNullable<CorrelationSummary['early']>[number]): string =>
+    // Each count names its denominator and its window (cold read: "0 controls" alone could
+    // not be read). A matched pair is one episode and its time-matched control window; each
+    // arm counts the pairs where the protein fell in the window before it.
+    `${h(capProtein(e.protein))} ${e.proteins && e.proteins.length > 1 ? 'show' : 'shows'} an early association with ${h(
       symptomLabel(e.symptomType).toLowerCase(),
-    )} over this window (${num(e.caseExposed)}/${num(e.matchedPairs)} exposed cases vs ${num(
-      e.controlExposed,
-    )} controls; p&nbsp;=&nbsp;${e.pValue.toFixed(3)}). An association, <b>not a proven cause</b>.${joint}`
+    )} (${h(capProtein(e.protein))} in the ${num(e.correlationWindowHours)}&nbsp;h before ${num(e.caseExposed)} of ${num(
+      e.matchedPairs,
+    )} episodes, vs ${num(e.controlExposed)} of ${num(e.matchedPairs)} matched control windows)`
+  // A joint candidate caps at Early (§7 #4), so this is where it actually lands: the clause the
+  // established branch keeps for it applies here first.
+  const earlyJoint = earlies.some((e) => e.proteins && e.proteins.length > 1)
+    ? ' Proteins named together co-occur in every exposure on record, so that association <b>cannot be attributed to either one individually</b>.'
+    : ''
+  if (c.hasEstablished && c.established.length > 0) {
+    // EVERY Established finding, the primary sign's first, then every Early one (adversarial
+    // pass 2, QUIET). This branch rendered `established[0]` and returned, so a second
+    // Established finding and every Early one vanished whenever any finding was established,
+    // the primary sign's included, while appendix C's legend sends the reader here for them.
+    const established = [...c.established].sort(
+      (a, b) => Number(b.symptomType === primary) - Number(a.symptomType === primary),
+    )
+    const earlyTail =
+      earlies.length > 0
+        ? ` <b>${earlies.map(earlyClause).join('; and ')} &mdash; short of the established threshold, so not confirmed.</b>${earlyJoint}`
+        : ''
+    return `${established.map((e) => establishedSentence(e)).join(' ')}${earlyTail}`
   }
   const staple = c.stapleProtein
     // "IS OFFERED", NOT "EATS" (cold read round 10). The staple-washout reason is about
@@ -7062,7 +7101,7 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
     // other source a free-fed bowl nobody observes. "Eats" asserts intake on the one
     // document whose headline is that there wasn't any. Same invariant as the refusal
     // lane: what the app sees is what was put down, never what went in.
-    ? ` — ${h(c.stapleProtein)} is in most of what ${h(snap.signalment.name)} is offered, so it can't be isolated`
+    ? ` ${h(capProtein(c.stapleProtein))} is in most of what ${h(snap.signalment.name)} is offered, so it can't be isolated.`
     : ''
   const timing = c.timing
     .map((t): string => {
@@ -7099,35 +7138,13 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
   // no food reached the threshold. An Early finding is named here with its counts and its
   // limit (PM, 2026-10-18, amending spec §8.5); it is never stated as a finding, and no p value
   // rides with it, because Early is exactly the tier whose p a reader must not lean on.
-  // EVERY Early finding, the primary sign's first (adversarial pass 1). Naming only the
-  // engine's top-ranked one left the primary sign's out whenever a different symptom ranked
-  // higher, beside a line that now names a peer: exoneration by omission. There are always
-  // few. The hedge sits INSIDE the bold, so a skim cannot lift the association as a finding,
-  // and it states the tier, not a reason: Early also holds findings capped for a shared bowl,
-  // a drug on board or a joint candidate, so "too few events" would be false for some.
-  const primary = snap.clinicalQuestion.primarySymptom
-  const earlies = [...(c.early ?? [])].sort(
-    (a, b) => Number(b.symptomType === primary) - Number(a.symptomType === primary),
-  )
-  const earlyClause = (e: NonNullable<CorrelationSummary['early']>[number]): string =>
-    // Each count names its denominator and its window (cold read: "0 controls" alone could
-    // not be read). A matched pair is one episode and its time-matched control window; each
-    // arm counts the pairs where the protein fell in the window before it.
-    `${h(capProtein(e.protein))} ${e.proteins && e.proteins.length > 1 ? 'show' : 'shows'} an early association with ${h(
-      symptomLabel(e.symptomType).toLowerCase(),
-    )} (${h(capProtein(e.protein))} in the ${num(e.correlationWindowHours)}&nbsp;h before ${num(e.caseExposed)} of ${num(
-      e.matchedPairs,
-    )} episodes, vs ${num(e.controlExposed)} of ${num(e.matchedPairs)} matched control windows)`
-  const earlyBit =
+  // THE EARLY ASSOCIATION LEADS (cold read 2, N6): opening on "No food … reached" put the
+  // negative clause where a scan stops, ahead of the association it then names.
+  const lead =
     earlies.length > 0
-      ? `, but ${earlies.map(earlyClause).join('; and ')} &mdash; short of the established threshold, so not confirmed, and not a negative result</b>`
-      : `</b> &mdash; not a negative result: a record this size cannot rule a food out`
-  // A joint candidate caps at Early (§7 #4), so this is where it actually lands: the clause the
-  // established branch keeps for it applies here first.
-  const earlyJoint = earlies.some((e) => e.proteins && e.proteins.length > 1)
-    ? ' Proteins named together co-occur in every exposure on record, so that association <b>cannot be attributed to either one individually</b>.'
-    : ''
-  return `<b>No food or protein reached the established association threshold over this window${earlyBit}${staple}.${earlyJoint}${timingBit}`
+      ? `<b>${earlies.map(earlyClause).join('; and ')} &mdash; short of the established threshold, so not confirmed; no food or protein reached that threshold over this window. Not a negative result.</b>`
+      : `<b>No food or protein reached the established association threshold over this window</b> &mdash; not a negative result: a record this size cannot rule a food out.`
+  return `${lead}${staple}${earlyJoint}${timingBit}`
 }
 
 // ── Footer (per page/section) ────────────────────────────────────────────────────
@@ -8679,7 +8696,7 @@ function offDietAppendix(snap: ReportSnapshot): string {
           snap.trial!.challengeWindowDays,
         )} days after this feeding — the published time-to-flare window in ${h(
           speciesPlural(snap.signalment.species),
-        )} (Olivry &amp; Mueller). <b>Timing only.</b> It is not an attribution: an unlogged exposure is always possible, so no pairing here can be exclusive, and same-day pairs are deliberately excluded. It marks ${num(
+        )} (Olivry &amp; Mueller). <b>Timing only.</b> It is not an attribution, and not the association test on page&nbsp;1: an unlogged exposure is always possible, so no pairing here can be exclusive, and this marker deliberately excludes same-day pairs. It marks ${num(
           daggerRows,
         )} of ${num(grouped.length)} row${grouped.length === 1 ? '' : 's'} here &mdash; but on this record <b>${num(
           markerBaseRate,
