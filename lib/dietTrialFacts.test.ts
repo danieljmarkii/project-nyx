@@ -500,13 +500,15 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
     nowMs: number,
     trialOver: Partial<typeof TRIAL_ROW> = {},
     arrangements: Array<Record<string, unknown>> = [],
-    decline: Record<string, unknown> = { status: 'none', flags: [] },
+    decline: Record<string, unknown> | Error = { status: 'none', flags: [] },
   ) {
     jest.resetModules();
     const db = stubDb(meals, trialOver, arrangements);
     jest.doMock('./db', () => ({ getDb: () => db }));
     jest.doMock('./analytics', () => ({
-      getIntakeDecline: jest.fn().mockResolvedValue(decline),
+      // An Error is a read that throws (CUL-1972).
+      getIntakeDecline:
+        decline instanceof Error ? jest.fn().mockRejectedValue(decline) : jest.fn().mockResolvedValue(decline),
     }));
     jest.doMock('./trialContaminant', () => ({
       loadTrialProteinContext: jest.fn().mockResolvedValue(null),
@@ -521,6 +523,20 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
       nowMs,
     });
   }
+
+  // CUL-1972 (ruling 2a): a decline read that throws reaches the card as UNKNOWN, never as
+  // an empty list read as "eating fine". Mutation-proven: dropping the field reds this.
+  it('an intake-decline read that throws sets intakeDeclineUnknown, and an answered one does not', async () => {
+    const quiet = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const meals = [{ id: 'e1', at: new Date(2026, 6, 4, 8).toISOString(), food: 'f1' }];
+    const now = new Date(2026, 6, 25, 20).getTime();
+    const thrown = await load(meals, now, {}, [], new Error('sqlite busy'));
+    expect(thrown.intakeDeclineUnknown).toBe(true);
+    expect(thrown.intakeDeclineHeadline).toBeNull();
+    const answered = await load(meals, now);
+    expect(answered.intakeDeclineUnknown).toBe(false);
+    quiet.mockRestore();
+  });
 
   // B-704 — the identity protein reaches the card, resolved through the ONE
   // predicate. No stored value → derived from the trial food (the duck stub).
@@ -1153,5 +1169,71 @@ describe('loadTrialPredicateFacts — three answers, held apart', () => {
     });
     const core = await mod.loadTrialPredicateFacts(PET_ARG);
     expect(core?.stoppedForRefusal).toBe(true);
+  });
+});
+
+// CUL-1972 — a check that did not answer is NULL, never `[]`. `[]` is "ran and saw no
+// decline", and Get ready, Home and the med strip each read that as calm. Mutation-proven:
+// the old `return []` in the catch reds the first case.
+describe('readIntakeDecline — three answers, held apart', () => {
+  function withDecline(impl: () => Promise<unknown>) {
+    jest.resetModules();
+    jest.doMock('./analytics', () => ({ getIntakeDecline: jest.fn(impl) }));
+    return require('./dietTrialFacts') as typeof import('./dietTrialFacts');
+  }
+  const pet = { id: 'pet-1', name: 'Mochi', species: 'cat' as const };
+  const spy = () => jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+  it('a thrown read is null (unknown), never an empty list', async () => {
+    const quiet = spy();
+    const mod = withDecline(() => Promise.reject(new Error('sqlite busy')));
+    await expect(mod.readIntakeDecline(pet, 0)).resolves.toBeNull();
+    quiet.mockRestore();
+  });
+
+  it('a read that answered with no decline is an empty list', async () => {
+    const mod = withDecline(() => Promise.resolve({ status: 'none', flags: [] }));
+    await expect(mod.readIntakeDecline(pet, 0)).resolves.toEqual([]);
+  });
+
+  it('a live decline is its facts', async () => {
+    const mod = withDecline(() =>
+      Promise.resolve({
+        status: 'watch',
+        flags: [{ trigger: 'consecutive_low', daysBelowBaseline: 1, refusedFoodLabel: null }],
+      }),
+    );
+    const out = await mod.readIntakeDecline(pet, 0);
+    expect(out).toEqual([
+      { trigger: 'consecutive_low', refusedFoodLabel: null, headline: 'Mochi has eaten less than usual today.' },
+    ]);
+  });
+});
+
+// The shared "could this vomit line read as a fall" rule behind the device-eating withhold
+// (CUL-1972 #6 / #7): the fall only, never a rise, never the trial-so-far form.
+describe('vomitLineMayReassure', () => {
+  const { vomitLineMayReassure } = jest.requireActual('./dietTrialFacts') as typeof import('./dietTrialFacts');
+  const c = (trialCount: number, baselineCount: number, over: Record<string, unknown> = {}) => ({
+    trialDayNumber: 20,
+    trialCount,
+    trialLastEpisodeDayIndex: null,
+    baselineCount,
+    trialLoggedDays: 20,
+    baselineLoggedDays: 40,
+    baselineWindowDays: 49,
+    densityComparable: true,
+    ...over,
+  });
+  it('a comparing fall may reassure', () => expect(vomitLineMayReassure(c(1, 9))).toBe(true));
+  it('a rise or a flat line does not', () => {
+    expect(vomitLineMayReassure(c(9, 1))).toBe(false);
+    expect(vomitLineMayReassure(c(3, 3))).toBe(false);
+  });
+  it('the trial-so-far form (too few logged days to compare) does not', () =>
+    expect(vomitLineMayReassure(c(1, 9, { baselineLoggedDays: 2 }))).toBe(false));
+  it('no counts does not', () => {
+    expect(vomitLineMayReassure(null)).toBe(false);
+    expect(vomitLineMayReassure(undefined)).toBe(false);
   });
 });

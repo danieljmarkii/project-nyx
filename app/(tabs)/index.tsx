@@ -5,6 +5,7 @@ import { useNavigation } from 'expo-router';
 import { useEvents } from '../../hooks/useEvents';
 import { useSyncStore } from '../../store/syncStore';
 import { usePetStore } from '../../store/petStore';
+import { useEventStore } from '../../store/eventStore';
 import { theme } from '../../constants/theme';
 import { syncNow } from '../../lib/sync';
 import { regenerateSignal } from '../../lib/signal';
@@ -18,7 +19,8 @@ import { AppointmentStrip } from '../../components/vetvisits/AppointmentStrip';
 import { LookExits, exitVisibility, lookRectInPage, type LayoutBox } from '../../components/home/LookExits';
 import { pullThreshold } from '../../lib/haptics';
 import { useDietTrial } from '../../hooks/useDietTrial';
-import { resolveTrialStrip, isAnimalNotEating } from '../../lib/dietTrialCard';
+import { resolveTrialStrip, isAnimalNotEating, notEatingFact } from '../../lib/dietTrialCard';
+import { readIntakeDecline, vomitLineMayReassure } from '../../lib/dietTrialFacts';
 import { TodayCard } from '../../components/designV2/home/TodayCard';
 import { CoverageDoor } from '../../components/designV2/home/CoverageDoor';
 import { HOME_V2_SCROLL_INSET } from '../../lib/fabFootprint';
@@ -124,6 +126,32 @@ export default function HomeScreen() {
     inputIsForPet: trialFactsFresh,
     loadedPetId: trialPetId,
   } = useDietTrial(activePetId);
+  // CUL-1975 — the active pet's own intake-decline read, tagged with the pet it answered
+  // for so a switch never lends one pet's "eating fine" to another (C-9). Re-read on a
+  // sync and on a local log (`todayEvents` is a new array on every write), so a refused
+  // meal logged offline reaches the withhold without waiting for the Signal.
+  const activeSpecies = usePetStore((s) => s.activePet?.species ?? null);
+  const todayEvents = useEventStore((s) => s.todayEvents);
+  const [deviceIntake, setDeviceIntake] = useState<{ petId: string; declining: boolean | null } | null>(null);
+  useEffect(() => {
+    if (!activePetId || !activeSpecies) {
+      setDeviceIntake(null);
+      return;
+    }
+    let cancelled = false;
+    readIntakeDecline({ id: activePetId, name: todayPetName ?? 'your pet', species: activeSpecies }, Date.now())
+      // `null` is a check that did not answer (CUL-1972), kept apart from `[]`.
+      .then((facts) => (facts === null ? null : facts.length > 0))
+      .catch(() => null)
+      .then((declining) => {
+        if (!cancelled) setDeviceIntake({ petId: activePetId, declining });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activePetId, activeSpecies, todayPetName, hydrationTick, todayEvents]);
+  // Derived in render, so the instant the active pet changes the old answer stops counting.
+  const deviceSaysEating = deviceIntake?.petId === activePetId && deviceIntake.declining === false;
   // B-789 (§5.2) — withhold every falling vomit pair on the Signal (the event-driven trial_response
   // `fewer` card, and since CUL-1216 a falling vomit reflection, the lead card's week line
   // and a vomit chronicity card's compare) whenever the active pet's
@@ -142,8 +170,19 @@ export default function HomeScreen() {
   // of eating (n=1 never reassures), so suppress until the facts are confirmed for the active pet
   // (`inputIsForPet`). That flag stays true across a same-pet sync, so this never flickers the
   // card on a routine refresh.
+  //
+  // CUL-1975 — and the device's OWN eating check, for every pet. For a pet with no trial,
+  // `trialInput` is the loader's base input (no decline fields: the loader returns before
+  // its decline read), so the line above reads `false` and only a Signal that already
+  // holds an `intake_decline` could withhold — a stale cache (offline logging, a rating
+  // added after the fact) left "vomited 2 times this week, down from 5" over a cat the
+  // phone can see has stopped eating. Get ready made the same fix (CUL-1093). Unknown
+  // withholds (CUL-1972): a check that threw, one not yet answered, or one answered for
+  // another pet is not evidence of eating, so only a confirmed "no decline" for the
+  // active pet lets the pair through.
   const withholdFallingVomit =
-    trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : !trialFactsFresh;
+    (trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : !trialFactsFresh) ||
+    !deviceSaysEating;
   // CUL-1360 — the trial row, for the Signal's anchor: which trial a cached trial finding
   // counted. From the same `trialInput`, only once it is confirmed for the active pet (the
   // pet it names is checked again inside the zone), so a switch never anchors one pet's
@@ -172,11 +211,23 @@ export default function HomeScreen() {
   // `withholdFallingVomit` above is a third reading of the same register — "may this card
   // reassure?" — and it collapses ignorance to suppression for its own reason. Three
   // questions, one fact, each answer named where it is read.
+  // `notEatingFact`, not `isAnimalNotEating`: a trial read whose eating check did not
+  // answer is null here (CUL-1972), so the withheld predicate fails closed on it while
+  // the door, reading `=== true`, stays shut.
   const trialNotEating: boolean | null =
-    trialFactsFresh && trialInput ? isAnimalNotEating(trialInput) : null;
+    trialFactsFresh && trialInput ? notEatingFact(trialInput) : null;
   const rawTrialStrip = trialInput ? resolveTrialStrip(trialInput) : null;
+  // CUL-1975 — the strip's vomit line is the same reassuring summary, so the device's own
+  // eating check withholds its falling form too: `resolveTrialStrip` reads the trial
+  // input's declines, which are `[]` when that read threw (CUL-1972).
+  // The FALL only (the adversarial pass, #7): with the check merely unanswered nothing
+  // louder leads Home, so a rising count keeps its line. `!trialFactsFresh` keeps its
+  // whole-line rule, which is about whose facts these are.
   const trialStripModel =
-    rawTrialStrip && !trialFactsFresh ? { ...rawTrialStrip, trialResponseLine: null } : rawTrialStrip;
+    rawTrialStrip &&
+    (!trialFactsFresh || (!deviceSaysEating && vomitLineMayReassure(trialInput?.trialResponse)))
+      ? { ...rawTrialStrip, trialResponseLine: null }
+      : rawTrialStrip;
   // Design v2 — the whole day (D2-4 / CUL-1066; GA by CUL-1071). Today is the spine with
   // the look as its header, the medication strip's one-tap write is retired (a dose is a
   // fact on the spine once logged; Q1 ruled "that's the FAB's job"), the Trend card is

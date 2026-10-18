@@ -132,27 +132,22 @@ export async function loadMedStripInput(
     items[r.id] = { generic_name: r.generic_name, brand_name: r.brand_name };
   }
 
-  // Best-effort SAFETY lane — a failure here defaults to `false` (no med-strip
-  // withhold) and does NOT take the strip down. This is the ONE withholding reason
-  // that fails toward NOT-withholding, so it is a deliberate call, not an accident:
+  // The SAFETY lane FAILS CLOSED (CUL-1972). A read that throws sets
+  // `intakeDeclineActive` true: "the check did not answer" is not "the pet is eating",
+  // and only the second may let the strip collapse to its calm covered-today state.
   //
-  //   (1) It is an INDEPENDENTLY-REDUNDANT surface. The pet-level intake-decline
-  //       fact reaches Home through the Signal zone, which is driven by the
-  //       server-side `generate-signal` engine — a SEPARATE detection path
-  //       (`generate-signal/summary.ts`: "a safety finding (intake_decline /
-  //       symptom_worsening) drives the summary"), not this client `getIntakeDecline`
-  //       read. Principle 3 leads Home with that safety card. So a failure here
-  //       drops a COURTESY suppression on the med strip, never the primary surfacing.
-  //   (2) It mirrors the shipped, reviewed `dietTrialFacts.readIntakeDecline`
-  //       exactly — the wedge trial card already fails this read soft for the same
-  //       reason. The med-SPECIFIC withholds (refused / missed / in-doubt) come from
-  //       the core `Promise.all` above and fail CLOSED (a core failure → null → no
-  //       card at all), so the only reason that fails soft is the redundant one.
+  // It used to fail soft, on the argument that the Signal zone carries the same fact
+  // from a separate server path. That redundancy is real for a decline the Signal has
+  // already seen, and absent for exactly the case that matters here: the device sees
+  // the decline before the Signal catches up (offline logging, a stale cache). The
+  // `lookWithheld` read made the same call and returns null on a throw.
   //
-  // Data Scientist ✓ (redundancy verified against `generate-signal`; consistent
-  // with the shipped diet-trial precedent). If a future change makes this the ONLY
-  // surfacing of a pet-level safety fact, the default must flip to failing closed.
-  let intakeDeclineActive = false;
+  // Failing closed costs nothing false on screen: an intake-only withhold renders NO
+  // line (`withholdingLine` returns null and defers to the Signal), so the strip never
+  // claims a decline it did not see. It only stops collapsing and stops offering the
+  // calm summary. The med-specific withholds (refused / missed / in-doubt) come from
+  // the core `Promise.all` above and already fail closed (a core failure is no card).
+  let intakeDeclineActive = true;
   try {
     const decline = await getIntakeDecline(pet.id, pet.species, nowMs);
     intakeDeclineActive = decline.status === 'watch' && decline.flags.length > 0;

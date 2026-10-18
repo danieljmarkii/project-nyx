@@ -92,7 +92,7 @@ const mockTrialInput: { current: unknown } = { current: null };
 // CUL-1342: what the recheck's facts read resolves to (null: no trial), or a throw.
 const mockTrialFacts: { current: unknown; fail: boolean } = { current: null, fail: false };
 // CUL-1093: what the pet's own decline read resolves to.
-const mockPetDeclines: { current: unknown[] } = { current: [] };
+const mockPetDeclines: { current: unknown[] | null } = { current: [] };
 jest.mock('../lib/dietTrialFacts', () => ({
   loadDietTrialFacts: jest.fn(async () => {
     if (mockTrialGate.holdNext) {
@@ -111,6 +111,8 @@ jest.mock('../lib/dietTrialFacts', () => ({
   }),
   // CUL-1093: the pet's own decline read, for every pet. Empty unless a test sets it.
   readIntakeDecline: jest.fn(async () => mockPetDeclines.current),
+  // CUL-1972: the rule, never stubbed (C-34).
+  vomitLineMayReassure: jest.requireActual('../lib/dietTrialFacts').vomitLineMayReassure,
 }));
 
 // `mock`-prefixed because a factory below reads it, and jest only permits an
@@ -787,6 +789,86 @@ describe('CUL-1093 — the device’s intake decline reaches Get ready for every
     await waitFor(() => expect(r.getByText(falling)).toBeTruthy());
   });
 
+  // CUL-1972: the pet's own read returned null, which is what `readIntakeDecline` now
+  // answers for a check that threw. A no-trial pet built like production (the base input).
+  const fallingSignal = (falling: string) => {
+    const { supabase } = jest.requireMock('../lib/supabase') as { supabase: { from: jest.Mock } };
+    const chain = supabase.from('ai_signals') as unknown as { maybeSingle: jest.Mock };
+    chain.maybeSingle.mockResolvedValueOnce({
+      data: {
+        signal_text: null,
+        is_building: false,
+        coverage: [],
+        generated_at: new Date(Date.now() - 3_600_000).toISOString(),
+        expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+        findings: [
+          {
+            rank: 0,
+            text: falling,
+            finding: { type: 'reflection', priorityClass: 'insight', symptomType: 'vomit', currentCount: 2, priorCount: 5, direction: 'improving', windowDays: 14 },
+          },
+        ],
+      },
+      error: null,
+    });
+  };
+  const eatingGap = /couldn’t check how Mochi has been eating/;
+
+  it('an eating check that did not answer is a gap line, never the quiet record (CUL-1972)', async () => {
+    // The issue's worst instance: no trial, the Signal answered empty, the check threw.
+    answeredEmptySignal();
+    mockTrialInput.current = noTrial();
+    mockPetDeclines.current = null;
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText(eatingGap)).toBeTruthy());
+    expect(r.queryByText(/Signal couldn’t be read/)).toBeNull();
+  });
+
+  it('an appointment pet the store cannot find is an unanswered check, never "no decline" (#11)', async () => {
+    answeredEmptySignal();
+    mockAppointments['appt-gone'] = { ...mockAppointment, id: 'appt-gone', pet_id: 'p-gone' };
+    params.current = { appointmentId: 'appt-gone' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText(/This device couldn’t check how/)).toBeTruthy());
+  });
+
+  it('control: an eating check that answered with nothing names no gap', async () => {
+    answeredEmptySignal();
+    mockTrialInput.current = noTrial();
+    mockPetDeclines.current = [];
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText('Your questions')).toBeTruthy());
+    expect(r.queryByText(eatingGap)).toBeNull();
+  });
+
+  it('an eating check that did not answer withholds the falling vomit pair for a no-trial pet', async () => {
+    const falling = 'Mochi vomited 2 times this week, down from 5 the week before.';
+    fallingSignal(falling);
+    mockTrialInput.current = noTrial();
+    mockPetDeclines.current = null;
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText(eatingGap)).toBeTruthy());
+    expect(r.queryByText(falling)).toBeNull();
+  });
+
+  it('with both reads failed, the Signal gap stops calling the page complete', async () => {
+    mockTrialInput.current = noTrial();
+    mockPetDeclines.current = null;
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByText(/Signal couldn’t be read on this device/)).toBeTruthy());
+    expect(r.getByText(eatingGap)).toBeTruthy();
+    expect(r.queryByText(/is complete/)).toBeNull();
+  });
+
   it('a trial pet still states its declines when only the trial input holds them', async () => {
     // The pet's read fails soft to `[]`; the trial loader's own read still carries them.
     // The SECOND decline is the one asserted: the first is also the trial input's
@@ -962,6 +1044,46 @@ describe('TS-8 — Get ready’s trial row grows the recheck', () => {
     expect(r.getByText('Has Mochi had anything besides the trial diet?')).toBeTruthy();
     expect(r.getByText('Meals logged on 21 of 23 days.')).toBeTruthy();
     expect(r.queryByText(/Rimadyl|chewable/)).toBeNull();
+  });
+
+  // CUL-1972 (adversarial #6): the recheck quotes the strip's vomiting sentence, which the
+  // strip withholds only on the TRIAL read's declines. With the pet's own check unanswered,
+  // a fall may not print; a rise must.
+  const counts = (trialCount: number, baselineCount: number) => ({
+    trialDayNumber: 23,
+    trialCount,
+    trialLastEpisodeDayIndex: null,
+    baselineCount,
+    trialLoggedDays: 21,
+    baselineLoggedDays: 40,
+    baselineWindowDays: 49,
+    densityComparable: true,
+  });
+  async function getReadyWith(trialResponse: ReturnType<typeof counts>, petDeclines: unknown[] | null) {
+    mockTrialFacts.current = chewableFacts();
+    mockPetDeclines.current = petDeclines;
+    mockTrialInput.current = { ...runningTrial(), trialResponse };
+    params.current = { appointmentId: 'appt-1' };
+    const r = render(<RundownScreen />);
+    await r.findByTestId('rundown-block');
+    await waitFor(() => expect(r.getByTestId('recheck-questions')).toBeTruthy());
+    return r;
+  }
+
+  it('control: the recheck quotes a falling vomit count when the eating check answered', async () => {
+    const r = await getReadyWith(counts(1, 9), []);
+    expect(r.getByText(/^Vomiting: 1 in the trial’s 23 days|^Vomiting: 1 in the trial's 23 days/)).toBeTruthy();
+  });
+
+  it('an unanswered eating check withholds the recheck’s falling vomit count', async () => {
+    const r = await getReadyWith(counts(1, 9), null);
+    await waitFor(() => expect(r.getByText(/couldn’t check how Mochi has been eating/)).toBeTruthy());
+    expect(r.queryByText(/^Vomiting: /)).toBeNull();
+  });
+
+  it('a rising vomit count still prints beside an unanswered eating check', async () => {
+    const r = await getReadyWith(counts(9, 1), null);
+    expect(r.getByText(/^Vomiting: 9 in the trial/)).toBeTruthy();
   });
 
   it('a facts read that answered for a different trial is not quoted', async () => {
