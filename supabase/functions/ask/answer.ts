@@ -1409,6 +1409,7 @@ type DeflectionReason =
   | 'data_gap'
   | 'llm_unavailable'
   | 'consent_off'
+  | 'unsent_rows'
 
 /** The four-way plan contract's non-answer outcomes, rendered as designed deflections
  *  (§7.4). Never blank, never an error toast; every one offers a next step (the rundown,
@@ -1495,6 +1496,19 @@ export function buildDeflection(reason: DeflectionReason, petName: string, clari
         'llm_unavailable',
         `I couldn't answer that just now.`,
         `${p}'s record is still all here. Try again in a moment, or open the vet-visit rundown — it works without a connection.`,
+        ['Put together a vet-visit rundown'],
+      )
+    case 'unsent_rows':
+      // CUL-1982: the phone says it still holds entries the server has not received, so any
+      // count, date or "how is she doing" read over the server's copy could stand over the very
+      // entry that matters (a vomit logged on a bad connection). A STATUS, never a verdict: it
+      // names why Ask is waiting and says nothing about how the pet is. The outcome reuses
+      // 'llm_unavailable' so every shipped build renders it; the live safety finding still leads
+      // it (the I/O layer attaches it).
+      return base(
+        'llm_unavailable',
+        `Some of ${p}'s entries haven't sent yet.`,
+        `I'd be answering without them, so I won't guess. Ask again in a moment, once they've sent, or open the vet-visit rundown.`,
         ['Put together a vet-visit rundown'],
       )
     case 'consent_off':
