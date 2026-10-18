@@ -443,7 +443,8 @@ Deno.test('EN-10 wiring — flag-off makes neither read, and the facts reach the
   assertStrictEquals(/\bweightFacts,/.test(call), true, 'the shell no longer hands the pipeline its weight facts')
   // A failed weight read under the key makes the run incomplete, so a shown card is carried.
   assertStrictEquals(
-    /const incompletePulls = en8On && weightFacts === null \? \[\.\.\.readPulls, 'weights'\] : readPulls/.test(src),
+    // Q14 (CUL-772) wraps the list in withUnsentRows; the weight arm inside it is unchanged.
+    /const incompletePulls = withUnsentRows\(\s*en8On && weightFacts === null \? \[\.\.\.readPulls, 'weights'\] : readPulls,/.test(src),
     true,
     'a failed weight read no longer marks the run incomplete',
   )
