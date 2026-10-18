@@ -8412,6 +8412,9 @@ Deno.test('CUL-1978 ③ — two stool logs in 27 days are not a loose-stool coun
 Deno.test('CUL-1978 ④ — no medication logged is never read as none given', () => {
   const html = text(pageOne(renderReport(base())))
   assert.ok(/None logged in this window &mdash; not checked with the owner\./.test(html), 'page 1 says the gap is unasked')
+  // The trial block's own medication line, the one §7.2's drug caveat is read beside.
+  const trial = text(renderReport(cleanTrialSnap(NO_HOUSEHOLD)))
+  assert.ok(/No medication or supplement is recorded as overlapping the trial window &mdash; not checked with the owner\./.test(trial), 'the trial block says it too')
 })
 
 Deno.test('CUL-1978 ⑤ — vomit with no photo read says the blood check had nothing to look at', () => {
@@ -8434,4 +8437,28 @@ Deno.test('CUL-1978 ⑥ — the null correlation line names an Early association
   const without = corr([])
   assert.ok(/No food or protein reached the established association threshold over this window &mdash; not a negative result: a record this size cannot rule a food out\./.test(without))
   assert.ok(!/No single food\/protein reached/.test(without), 'the old negative-reading line is gone')
+})
+
+Deno.test('CUL-1979 — the label-contamination row names the source of the food it accuses', () => {
+  const chew = { foodItemId: 'fi-chew', foodKey: null, label: 'Dental Chew', role: 'permitted_treat' as const, allowedFrom: '2026-05-08', allowedUntil: null, primaryProtein: 'duck', proteins: ['duck', 'chicken'] }
+  const permitted = (source: 'photo' | 'owner') => [
+    { label: 'Dental Chew', role: 'permitted_treat' as const, allowedFrom: '2026-05-08', allowedUntil: null, feedings: 6, addedAfterStart: false, endedBeforeWindowEnd: false, proteins: ['duck', 'chicken'], panelRead: true, source },
+  ]
+  const row = (source: 'photo' | 'owner') => {
+    const html = text(
+      renderReport(
+        cleanTrialSnap(NO_HOUSEHOLD, {
+          contamination: [{ food: chew, extraProteins: ['chicken'], derivedFromPrimary: [] }],
+          permittedFoods: permitted(source),
+        }),
+      ),
+    )
+    const i = html.indexOf('Label contamination')
+    assert.ok(i >= 0, 'the row renders')
+    return html.slice(i, i + 600)
+  }
+  assert.ok(/Read automatically from the owner&rsquo;s photo of the label/.test(row('photo')))
+  const owner = row('owner')
+  assert.ok(/Entered by the owner, not read from a label photo/.test(owner), owner)
+  assert.ok(!/photo of the label/.test(owner))
 })

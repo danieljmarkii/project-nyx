@@ -16,7 +16,10 @@ import type { ReportInput } from './report.ts'
 
 export const COOPER_NOW = '2026-10-16T20:00:00Z'
 
-export function cooperInput(now: string = COOPER_NOW): ReportInput {
+// The AUDIENCE is the caller's, not this file's: `guards/reportLookPull.test.ts` holds the owner
+// arm to one construction site in shipped code, and this directory's non-test files are what it
+// scans. Each test states who is reading.
+export function cooperInput(now: string = COOPER_NOW): Omit<ReportInput, 'audience'> {
   const nowMs = Date.parse(now)
   const story = buildDemoStory({
     userId: '00000000-0000-4000-8000-000000000001',
@@ -111,6 +114,5 @@ export function cooperInput(now: string = COOPER_NOW): ReportInput {
     vetVisits: [{ visitedAt: materializeDate(story.visit.visitedDayOffset, nowMs), clinicName: story.visit.clinicName, vetName: story.visit.vetName, reason: story.visit.reason }],
     feedingArrangements: [],
     conditions: [],
-    audience: { kind: 'owner', includeLookNotes: true },
   }
 }

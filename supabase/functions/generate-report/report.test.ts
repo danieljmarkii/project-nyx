@@ -5411,6 +5411,8 @@ Deno.test('normal shortcut: round 2 M1 — clocks a few days apart inside the wi
 
 // ── CUL-1978 / CUL-1979 — the facts the report needs to say what the record cannot show ─────
 
+const OWNER: ReportInput['audience'] = { kind: 'owner', includeLookNotes: true }
+
 Deno.test('CUL-1978 — the recent run counts back from the NEWEST rated meal, whatever order the rows arrive in', () => {
   const m = (iso: string, r: 'all' | 'some' | 'picked') => ({ occurredAt: iso, meal: { intakeRating: r } })
   // Shuffled on purpose: a run read off an unsorted list is a run of nothing.
@@ -5433,7 +5435,7 @@ Deno.test('CUL-1979 — the window counts its foods by source, and each meal vie
   const snap = assembleReport(baseInput({ events: [photoMeal, typedMeal, { ...typedMeal, id: 'typed-again', occurredAt: at('2026-06-22') }] }))
   assert.deepEqual(snap.diet.proteinSources, { photo: 1, owner: 1 }, 'distinct foods, not feedings')
   // The demo record: two owner-entered foods, and the trial's allowed food says so too.
-  const cooper = assembleReport(cooperInput())
+  const cooper = assembleReport({ ...cooperInput(), audience: OWNER })
   assert.deepEqual(cooper.diet.proteinSources, { photo: 0, owner: 2 })
   assert.ok(cooper.trial && cooper.trial.permittedFoods.length > 0)
   for (const f of cooper.trial!.permittedFoods) assert.equal(f.source, 'owner', f.label)
@@ -5441,7 +5443,7 @@ Deno.test('CUL-1979 — the window counts its foods by source, and each meal vie
 })
 
 Deno.test('CUL-1978 — the demo record carries its Early beef association and its run of unfinished meals', () => {
-  const snap = assembleReport(cooperInput())
+  const snap = assembleReport({ ...cooperInput(), audience: OWNER })
   assert.equal(snap.correlation.established.length, 0, 'beef is not established on this record')
   const early = snap.correlation.early ?? []
   assert.equal(early.length, 1, 'and the Early finding is carried, not dropped')
@@ -5455,7 +5457,7 @@ Deno.test('CUL-1978 — the demo record carries its Early beef association and i
 
 Deno.test('CUL-1978 — the demo report, cold: every line the cold read flagged now says what the record cannot show', () => {
   // Tags become spaces in `plainText`; fold them so a sentence reads as the vet reads it.
-  const p = plainText(renderReport(assembleReport(cooperInput()))).replace(/\s+/g, ' ').replace(/ ([;.,)\/])/g, '$1').replace(/([(\/]) /g, '$1')
+  const p = plainText(renderReport(assembleReport({ ...cooperInput(), audience: OWNER }))).replace(/\s+/g, ' ').replace(/ ([;.,)\/])/g, '$1').replace(/([(\/]) /g, '$1')
   assert.ok(!/supports interpreting it/.test(p), 'coverage is not printed as validity over four beef feedings')
   assert.ok(/4 of 42 logged feedings did not match the trial diet/.test(p), 'the headline carries the breach')
   assert.ok(/The last 4 rated meals in a row were not fully eaten; 40 of 44 rated meals fully eaten over the window/.test(p))
