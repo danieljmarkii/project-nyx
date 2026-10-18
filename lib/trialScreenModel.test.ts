@@ -380,7 +380,9 @@ describe('a trial refusal (§3.2, §0.3, §12 findings 2 and 3)', () => {
     const card = resolveTrialCard(input);
     expect(m.state).toBe('trial_refusal');
     expect(m.safety).toEqual(card.lines.filter((x) => x.role === 'flag').map((x) => x.text));
-    expect(m.safety![1]).toBe(
+    // safety[0] is the R4 run lead (CUL-57): 10 refused bowls in an unbroken run.
+    expect(m.safety![0]).toMatch(/^The last 10 trial-diet feedings you rated, back to .+, were refused or only picked at\.$/);
+    expect(m.safety![2]).toBe(
       'A diet Mochi isn’t eating can’t answer the question the trial was started for — and it’s worth a call to your vet, whatever the trial is doing. Culprit isn’t reading these days as a clean run while this is going on.',
     );
     // No Keep going and no Stopped early: choosing "wouldn't eat it" would drop the call.
