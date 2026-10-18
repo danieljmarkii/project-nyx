@@ -2766,6 +2766,7 @@ describe('R2 · CUL-54(a) — the range fact carries its own dates', () => {
       ratedSinceLastUnfinished: 0,
       ratedMealsSinceLastUnfinished: 0,
       unfinishedInRecentWindow: false,
+      unfinishedSinceElsewhere: false,
     });
   });
 
@@ -2814,6 +2815,49 @@ describe('R2 · CUL-54(a) — the range fact carries its own dates', () => {
     const finished = refusedThenQuiet(LAST_RECENT_DAY + 1, [rival('all')]);
     expect(finished.rangeRefusal?.history).toMatchObject({
       unfinishedInRecentWindow: false,
+      ratedSinceLastUnfinished: 0,
+      ratedMealsSinceLastUnfinished: 1,
+    });
+  });
+
+  // The second adversarial pass's S1d: trial-diet refusals, two finished, then a run
+  // of refused bowls of a re-photographed bag, all before the window.
+  it('a later unfinished meal of another food marks the dated refusals as not the latest', () => {
+    const later = [4, 5, 6].map((d) => feeding({
+      eventId: `bag-${d}`,
+      occurredAt: at(`2026-07-0${d}`),
+      foodItemId: 'dry-duck-rephotographed',
+      foodKey: 'royal caninduck dry kibble',
+      intakeRating: 'refused',
+    }));
+    const facts = refusedThenQuiet(LAST_RECENT_DAY + 10, later);
+    expect(facts.rangeRefusal?.population).toBe('trial_diet');
+    expect(facts.rangeRefusal?.history).toMatchObject({
+      unfinishedInRecentWindow: false,
+      unfinishedSinceElsewhere: true,
+    });
+  });
+
+  it('a treat counts: refused today keeps it recent; finished since is something rated', () => {
+    const treat = (rating: string, d: number) => feeding({
+      eventId: `treat-${rating}`,
+      occurredAt: at(`2026-07-${d}`),
+      foodItemId: 'chew',
+      foodKey: 'chew',
+      foodType: 'treat',
+      intakeRating: rating,
+    });
+    const refusedToday = refusedThenQuiet(LAST_RECENT_DAY + 1, [treat('refused', LAST_RECENT_DAY + 1)]);
+    expect(refusedToday.rangeRefusal?.history?.unfinishedInRecentWindow).toBe(true);
+    const refusedEarlier = refusedThenQuiet(LAST_RECENT_DAY + 10, [treat('refused', 5)]);
+    expect(refusedEarlier.rangeRefusal?.history).toMatchObject({
+      unfinishedInRecentWindow: false,
+      unfinishedSinceElsewhere: true,
+    });
+    const finished = refusedThenQuiet(LAST_RECENT_DAY + 1, [treat('all', 5)]);
+    expect(finished.rangeRefusal?.history).toMatchObject({
+      unfinishedInRecentWindow: false,
+      unfinishedSinceElsewhere: false,
       ratedSinceLastUnfinished: 0,
       ratedMealsSinceLastUnfinished: 1,
     });

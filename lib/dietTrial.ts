@@ -1502,12 +1502,17 @@ export interface TrialRefusalHistory {
   /** Rated feedings logged after the last unfinished one. Every one of them was
    *  finished, by definition of "last". Zero means nothing rated since. */
   ratedSinceLastUnfinished: number;
-  /** The same, over the whole meal record (any non-treat food). Equal to the above
-   *  under `meal_record`; under `trial_diet` it is what lets the card say "nothing
-   *  rated since" only when that is true of every meal, not only the trial diet. */
+  /** The same, over EVERYTHING rated (every non-treat meal and every treat). What
+   *  lets the card say "nothing rated since" only when that is true of every
+   *  feeding, not only of the population it speaks for. */
   ratedMealsSinceLastUnfinished: number;
+  /** Anything rated after the last dated refusal (any food, treats included) left
+   *  unfinished. True keeps the present tense: the dated refusals are not the latest
+   *  evidence. */
+  unfinishedSinceElsewhere: boolean;
   /** Any unfinished rated feeding inside the recency window, of the speaking
-   *  population OR of the meal record. False is the ruling's past-tense gate. */
+   *  population, the meal record or the treats. False (with the field above) is the
+   *  ruling's past-tense gate. */
   unfinishedInRecentWindow: boolean;
 }
 
@@ -2392,17 +2397,28 @@ function refusalRunOf(c: RefusalCounters, recencyStart: number): TrialRefusalRun
  *  over a cat refusing every bowl — quieter than before this PR. A recent unfinished
  *  meal of ANY food keeps the present tense: the louder reading of "the population
  *  it speaks for" when the app cannot tell which food the bowl held. */
-function refusalHistoryOf(c: RefusalCounters, meals: RefusalCounters): TrialRefusalHistory | undefined {
+function refusalHistoryOf(
+  c: RefusalCounters,
+  everythingRated: readonly RefusalCounters[],
+): TrialRefusalHistory | undefined {
   const stamps = c.rangeStamps.filter(Number.isFinite);
   if (c.rangeDays.size === 0 || stamps.length === 0) return undefined;
   const days = [...c.rangeDays];
   const lastUnfinished = Math.max(...stamps);
+  const since = everythingRated.flatMap((o) => o.ratedLog.filter((r) => r.stamp > lastUnfinished));
   return {
     firstUnfinishedDayIndex: Math.min(...days),
     lastUnfinishedDayIndex: Math.max(...days),
     ratedSinceLastUnfinished: c.ratedLog.filter((r) => r.stamp > lastUnfinished).length,
-    ratedMealsSinceLastUnfinished: meals.ratedLog.filter((r) => r.stamp > lastUnfinished).length,
-    unfinishedInRecentWindow: c.recentNotFinished > 0 || meals.recentNotFinished > 0,
+    ratedMealsSinceLastUnfinished: since.length,
+    unfinishedInRecentWindow:
+      c.recentNotFinished > 0 || everythingRated.some((o) => o.recentNotFinished > 0),
+    // The second pass's S1d: trial-diet refusals on Jul 1–2, two finished on Jul 3,
+    // then ten refused bowls of a re-photographed bag on Jul 4–8. Dating the
+    // trial-diet refusals and saying "since then, 2 were finished" told the opposite
+    // of the latest evidence. Anything left unfinished after the last dated refusal
+    // keeps the present tense instead: louder, and what the card said before R2.
+    unfinishedSinceElsewhere: since.some((r) => r.score < FINISHED_SCORE),
   };
 }
 
@@ -2770,6 +2786,10 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // when food identity misses.
   const narrow = emptyRefusalCounters();
   const wide = emptyRefusalCounters();
+  // Rated TREATS, read only by R2's history (CUL-54): never a refusal population (82%
+  // of feedings are treats, and R1b's denominator excludes them), but a treat rated
+  // Refused today is still something rated since, and something left unfinished now.
+  const treats = emptyRefusalCounters();
   // The viability fact is about the pet NOW, not about the whole trial.
   // ANCHORED ON THE EVIDENCE END, NOT THE COVERAGE END (B-422). This comment's
   // claim — the fact is about the pet NOW — is only true if "now" is the last day
@@ -2819,6 +2839,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // can never teach the tap off one denominator and speak from another.
     if (feeding.foodType !== 'treat' && day >= startDayIndex) {
       tallyRefusal(wide, feeding, day, refusalWindowStart);
+    } else if (feeding.foodType === 'treat' && day >= startDayIndex) {
+      tallyRefusal(treats, feeding, day, refusalWindowStart);
     }
 
     const classification = classifyFeeding(ctx, feeding);
@@ -3077,7 +3099,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
           ratedFeedings: pop.rangeRated,
           days: pop.rangeDays.size,
           population,
-          history: refusalHistoryOf(pop, wide),
+          history: refusalHistoryOf(pop, [wide, treats]),
           run,
         }
       : null;

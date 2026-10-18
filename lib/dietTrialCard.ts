@@ -1020,7 +1020,10 @@ export function liveRefusal(input: TrialCardInput): TrialDietRefusal | null {
  */
 export function refusalIsPastTense(input: TrialCardInput, refusal: TrialDietRefusal): boolean {
   if (input.trialDietRefusal) return false;
-  return refusal.history?.unfinishedInRecentWindow === false;
+  return (
+    refusal.history?.unfinishedInRecentWindow === false &&
+    refusal.history.unfinishedSinceElsewhere === false
+  );
 }
 
 /**
@@ -1053,17 +1056,24 @@ export function pastRefusalHeadline(
     `Of the ${refusal.ratedFeedings} ${qualified} you rated, ${refusal.refusedFeedings} ` +
     `${verb} left unfinished, ${when}.`;
   const n = history.ratedSinceLastUnfinished;
-  const unit = wide ? 'meal' : 'feeding';
+  // The unit names the population, never a bare "feeding" an owner reads as all of
+  // them (the second pass). Everything rated since was finished here: an unfinished
+  // one keeps the present tense (`unfinishedSinceElsewhere`).
+  const unit = wide ? 'meal' : 'trial-diet feeding';
   if (n > 0) {
     return n === 1
       ? `${head} Since then, 1 rated ${unit} was finished.`
       : `${head} Since then, ${n} rated ${unit}s were finished.`;
   }
-  // "Nothing rated since" only when it is true of every meal. A finished topper
-  // rated since is something rated; it says nothing about the trial diet.
-  return (history.ratedMealsSinceLastUnfinished ?? 0) > 0
-    ? `${head} No trial-diet feeding rated since shows whether that has changed.`
-    : `${head} Nothing rated since shows whether that has changed.`;
+  // "Nothing rated since" only when it is true of every feeding, treats included.
+  // A finished topper or treat rated since is something rated; it says nothing about
+  // the population this card speaks for.
+  if ((history.ratedMealsSinceLastUnfinished ?? 0) > 0) {
+    return wide
+      ? `${head} No meal rated since shows whether that has changed.`
+      : `${head} No trial-diet feeding rated since shows whether that has changed.`;
+  }
+  return `${head} Nothing rated since shows whether that has changed.`;
 }
 
 /**
@@ -1894,7 +1904,10 @@ function pushRegisterBody(
       // Not on a terminal card: its facts stop at `ended_at`, so "the last N you
       // rated" would be false over feedings rated after the end (executed by
       // `adversarial-reviewer`: an abandoned trial, then three bowls rated All).
-      const runLine = isTerminalTrial(input) ? null : refusalRunLine(refusal, input.nowMs);
+      // An `ended_at` on a row still marked active (a sync artefact) stops the facts
+      // the same way, so it suppresses the line too (the second pass).
+      const ended = isTerminalTrial(input) || Boolean(input.trial?.endedAt);
+      const runLine = ended ? null : refusalRunLine(refusal, input.nowMs);
       if (runLine) lines.push({ role: 'flag', text: runLine });
       lines.push({ role: 'flag', text: trialViabilityHeadline(refusal) });
       lines.push({

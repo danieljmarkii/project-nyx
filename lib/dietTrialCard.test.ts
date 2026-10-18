@@ -3863,6 +3863,7 @@ describe('R2 · CUL-54(a) — stale refusals speak in the dated past tense', () 
     ratedSinceLastUnfinished: 0,
     ratedMealsSinceLastUnfinished: 0,
     unfinishedInRecentWindow: false,
+    unfinishedSinceElsewhere: false,
   };
   const stale = (over: Partial<TrialCardInput> = {}, history = STALE_HISTORY, population: 'trial_diet' | 'meal_record' = 'trial_diet') =>
     activeInput({
@@ -3886,15 +3887,25 @@ describe('R2 · CUL-54(a) — stale refusals speak in the dated past tense', () 
 
   it('says what was rated since, when something was', () => {
     const one = textOf(resolveTrialCard(stale({}, { ...STALE_HISTORY, ratedSinceLastUnfinished: 1, ratedMealsSinceLastUnfinished: 1 })), 'flag')[0];
-    expect(one).toMatch(/ Since then, 1 rated feeding was finished\.$/);
+    expect(one).toMatch(/ Since then, 1 rated trial-diet feeding was finished\.$/);
     expect(one).not.toContain('Nothing rated since');
     const two = textOf(resolveTrialCard(stale({}, { ...STALE_HISTORY, ratedSinceLastUnfinished: 2, ratedMealsSinceLastUnfinished: 2 })), 'flag')[0];
-    expect(two).toMatch(/ Since then, 2 rated feedings were finished\.$/);
+    expect(two).toMatch(/ Since then, 2 rated trial-diet feedings were finished\.$/);
   });
 
   it('a meal of another food rated since is not "nothing rated since"', () => {
     const head = textOf(resolveTrialCard(stale({}, { ...STALE_HISTORY, ratedMealsSinceLastUnfinished: 1 })), 'flag')[0];
     expect(head).toMatch(/ No trial-diet feeding rated since shows whether that has changed\.$/);
+  });
+
+  it('under the meal record, something rated since is "no meal rated since", never "trial-diet"', () => {
+    const head = textOf(resolveTrialCard(stale({}, { ...STALE_HISTORY, ratedMealsSinceLastUnfinished: 1 }, 'meal_record')), 'flag')[0];
+    expect(head).toMatch(/ No meal rated since shows whether that has changed\.$/);
+  });
+
+  it('anything left unfinished after the dated refusals keeps the present tense', () => {
+    const flags = textOf(resolveTrialCard(stale({}, { ...STALE_HISTORY, unfinishedSinceElsewhere: true })), 'flag');
+    expect(flags[1]).toContain('what’s put down needs a call today');
   });
 
   it('one unfinished day names the day, not a span', () => {
@@ -4064,6 +4075,12 @@ describe('R4 · CUL-57 — a run of refused or picked feedings leads the card', 
   it('the noun follows the population', () => {
     expect(textOf(resolveTrialCard(withRun(new Date(2026, 6, 21, 18), 'meal_record')), 'flag')[0])
       .toMatch(/^The last 4 meals you rated/);
+  });
+
+  it('not on a row still marked active that carries an end date', () => {
+    const ended = withRun(new Date(2026, 6, 21, 18));
+    const flags = textOf(resolveTrialCard({ ...ended, trial: { ...ended.trial!, endedAt: '2026-07-24' } }), 'flag');
+    expect(flags.join(' ')).not.toContain('refused or only picked at');
   });
 
   it('not on an ended trial, whose facts stop at the end', () => {
